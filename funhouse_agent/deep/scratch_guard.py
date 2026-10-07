@@ -23,6 +23,14 @@ never saved at all, and getting only a bare "not found". A missed read now
 resolves to the saved file it plainly meant (the same name without the
 extension), or says what IS saved and that the result it wants is the tool
 message itself.
+
+And it explains an EMPTY scratch search. Field session 2026-10-06: asked for
+two published sources, the references sub-agent ran ``ls('/')`` and four
+``grep`` calls over the empty scratch space, got "No files found" / "No
+matches found", and reported that its searches had found nothing -- it never
+called a reference tool. An ``ls`` / ``glob`` / ``grep`` that finds nothing
+now says what it searched and where to search instead
+(:data:`EMPTY_SCRATCH_NOTE`).
 """
 
 from __future__ import annotations
@@ -165,6 +173,32 @@ def _missing_read_message(path: str, original: str, files: dict) -> str:
             "read_text_file, read_pdf_text or analyze_image.")
 
 
+#: What an empty answer from the scratch space does NOT mean. Field session
+#: 2026-10-06: the references sub-agent, asked for Youd et al. (2001) and
+#: ASCE 7, ran ``ls('/')`` and four ``grep``s over the (empty) scratch space,
+#: got "No files found" / "No matches found", and reported that "tool
+#: searches returned no matches" -- without calling one reference tool.
+EMPTY_SCRATCH_NOTE = (
+    "(That searched only the scratch space: notes written in this "
+    "conversation with write_file, and saved large tool results. It is NOT "
+    "the reference library, the user's documents or SharePoint, so it says "
+    "nothing about what those hold. Search them with the tools made for "
+    "them: the reference tools (list_agents, list_methods, describe_method, "
+    "call_agent) for the references, search_document after open_document "
+    "for a PDF, list_files for real folders.)")
+
+_EMPTY_ANSWER = re.compile(r"^\s*(?:no (?:files|matches|results)\b[^\n]*|)\s*$",
+                           re.IGNORECASE)
+
+
+def _is_empty_search(name: Optional[str], result) -> bool:
+    """A scratch ``ls`` / ``glob`` / ``grep`` that found nothing."""
+    if name not in ("ls", "glob", "grep") or not isinstance(result,
+                                                             ToolMessage):
+        return False
+    return bool(_EMPTY_ANSWER.match(_text(result)))
+
+
 def _message(tool: str, path: str) -> str:
     where = f"'{path}' is on the real disk"
     if tool == "read_file":
@@ -271,12 +305,19 @@ class ScratchFilesystemGuard(AgentMiddleware):
             or call.get("id") or "",
             name="read_file", status="error")
 
+    @staticmethod
+    def _empty_explained(request, result):
+        name = (getattr(request, "tool_call", None) or {}).get("name")
+        if _is_empty_search(name, result):
+            return ScratchFilesystemGuard._noted(result, EMPTY_SCRATCH_NOTE)
+        return result
+
     def wrap_tool_call(self, request, handler):
         blocked = self._intercept(request)
         if blocked is not None:
             return blocked
         request = self._root_for_dot(request)
-        result = handler(request)
+        result = self._empty_explained(request, handler(request))
         missed = self._missed_read(request)
         if missed is None or not _is_not_found(result):
             return result
@@ -295,7 +336,7 @@ class ScratchFilesystemGuard(AgentMiddleware):
         if blocked is not None:
             return blocked
         request = self._root_for_dot(request)
-        result = await handler(request)
+        result = self._empty_explained(request, await handler(request))
         missed = self._missed_read(request)
         if missed is None or not _is_not_found(result):
             return result
@@ -311,4 +352,4 @@ class ScratchFilesystemGuard(AgentMiddleware):
 
 
 __all__ = ["ScratchFilesystemGuard", "looks_real", "PATH_ARG", "REAL_ROOTS",
-           "LARGE_RESULTS", "SCRATCH_PREFIXES"]
+           "LARGE_RESULTS", "SCRATCH_PREFIXES", "EMPTY_SCRATCH_NOTE"]

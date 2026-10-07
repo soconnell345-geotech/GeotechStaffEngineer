@@ -938,16 +938,6 @@ with st.sidebar:
         # its files back and opens it.
         with st.expander("Find a past conversation (permanent storage)",
                          expanded=False):
-            _rc1, _rc2 = st.columns([0.75, 0.25])
-            with _rc1:
-                _rq = (st.text_input("Search mirrored conversations",
-                                     key="sp_restore_query",
-                                     placeholder="Part of the title or date…",
-                                     label_visibility="collapsed") or "")
-            with _rc2:
-                if st.button("Refresh", key="sp_restore_refresh",
-                             use_container_width=True):
-                    ss.pop("sp_remote_list", None)
             # This page's own folder of mirrors — the same owner/page segments
             # the turn records with core.tag_conversation (below), so the
             # geotech page never lists the review page's folder as a
@@ -955,9 +945,26 @@ with st.sidebar:
             _sp_where = {"owner": (_IDENT.display_name if _IDENT.multi_user
                                    else None),
                          "page": _PROFILE.name}
-            if "sp_remote_list" not in ss:
-                ss.sp_remote_list = _sp.list_remote_conversations(**_sp_where)
-            _remote = ss.sp_remote_list or []
+            # Cached PER PAGE (and person): the pages share one session_state
+            # (Streamlit's multipage design), so a single cache key served
+            # whichever page was opened first to both — the review page, the
+            # app's root, so the geotech page showed the review page's list
+            # (owner, 2026-10-06).
+            _sp_list_key = sharepoint_store.listing_cache_key(**_sp_where)
+            _sp_result_key = f"{_sp_list_key}:restore"
+            _rc1, _rc2 = st.columns([0.75, 0.25])
+            with _rc1:
+                _rq = (st.text_input("Search mirrored conversations",
+                                     key=f"sp_restore_query_{_PROFILE.name}",
+                                     placeholder="Part of the title or date…",
+                                     label_visibility="collapsed") or "")
+            with _rc2:
+                if st.button("Refresh", key="sp_restore_refresh",
+                             use_container_width=True):
+                    ss.pop(_sp_list_key, None)
+            if _sp_list_key not in ss:
+                ss[_sp_list_key] = _sp.list_remote_conversations(**_sp_where)
+            _remote = ss[_sp_list_key] or []
             _local_folders = set()
             try:
                 # conversation_folder(), not _sp.folder_name(): that reloads
@@ -993,12 +1000,12 @@ with st.sidebar:
                                             "files back into the app")):
                         _res = _sp.restore_conversation(
                             _r["name"], root=_ROOT, **_sp_where)
-                        ss.sp_restore_result = _res
+                        ss[_sp_result_key] = _res
                         if _res.get("thread_id") and _res.get("status") in (
                                 "restored", "exists"):
                             _open_conversation(_res["thread_id"])
                         st.rerun()
-            _rr = ss.get("sp_restore_result")
+            _rr = ss.get(_sp_result_key)
             if _rr:
                 if _rr.get("status") == "restored":
                     st.success(f"Restored '{_rr.get('title') or _rr['thread_id']}'"
@@ -1144,7 +1151,7 @@ for entry in ss.transcript:
 
 
 # Turn details (A7 local tracer) — the latest turn's trace, when tracing is on
-# (sidebar Behavior toggle, defaulting to the GEOTECH_TRACE env).
+# (sidebar Behavior toggle; on unless GEOTECH_TRACE=0).
 if core.tracing_enabled(ss.behavior.get("trace")):
     _recent = core.load_recent_traces(ss.thread_id, n=1)
     if _recent:
@@ -1269,6 +1276,15 @@ if prompt:
                     page=_PROFILE.name)
             except Exception:                      # never blocks a turn
                 pass
+        # What the conversation already holds on disk -- attached, fetched,
+        # produced -- for THIS turn's message only: the model sees earlier
+        # turns only through its own answers, so without this it can forget
+        # a file it downloaded (field session 2026-10-06).
+        try:
+            _turn_note = core.working_files_note(
+                ss.temp_dir, ss.transcript, exclude_text=agent_content)
+        except Exception:                          # never blocks a turn
+            _turn_note = ""
         core.begin_partial(ss.thread_id, prompt)   # A3: mark in-progress turn
         # Detached execution: the ENTIRE turn pipeline (streaming, partial
         # checkpoints, artifact diffing, transcript/messages persistence,
@@ -1291,5 +1307,6 @@ if prompt:
                 "trace_on": core.tracing_enabled(ss.behavior.get("trace")),
                 "model": ss.model,
                 "behavior": ss.behavior,
+                "turn_note": _turn_note,
             })
         _follow_turn_job(job)          # renders live; ends in st.rerun()

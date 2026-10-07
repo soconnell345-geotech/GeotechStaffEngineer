@@ -64,6 +64,11 @@ call `save_file`, and do NOT ask for the HTML inline. Only set \
 `output_format: "html"` (no `output_path`) when you genuinely need the HTML in \
 the response; the default ("metadata") returns counts/stats with no figure.
 
+To PRODUCE a DIGGS file from logs or lab results you have read, call the \
+`subsurface` module's `write_diggs` with the values as printed: it writes \
+DIGGS 2.6, checks it against the schema and reads it back. Never type DIGGS \
+XML yourself, and call a file DIGGS only when `write_diggs` says it is valid.
+
 ## CRITICAL: Always Use Your Tools for Calculations
 
 NEVER perform numerical calculations yourself — not even simple ones you \

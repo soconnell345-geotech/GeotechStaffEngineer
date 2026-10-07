@@ -682,6 +682,23 @@ def _is_default_page(page: Optional[str]) -> bool:
     return not page or sanitize_folder_name(str(page)) == DEFAULT_PAGE
 
 
+def listing_cache_key(owner: Optional[str] = None,
+                      page: Optional[str] = None) -> str:
+    """The session-state key a page caches its list of mirrored
+    conversations under: one per (person, page).
+
+    The app's pages share ONE ``st.session_state`` (Streamlit's multipage
+    design). Until 2026-10-07 the listing was cached under a single key, so
+    whichever page a session opened first -- the Document Review page, the
+    app's root -- filled it, and the geotech page showed that page's list
+    instead of its own (owner, 2026-10-06: "the geotech page's past
+    conversations no longer show")."""
+    page_key = DEFAULT_PAGE if _is_default_page(page) else \
+        sanitize_folder_name(str(page))
+    owner_key = sanitize_folder_name(str(owner or ""))
+    return f"sp_remote_list:{owner_key}:{page_key}"
+
+
 def page_folder_names() -> set:
     """Folder names the mirror gives pages other than the geotech page; they
     sit beside the geotech page's conversations under ``conversations/``."""

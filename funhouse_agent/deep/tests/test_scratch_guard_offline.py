@@ -310,3 +310,48 @@ def test_calc_reads_real_text_and_carries_the_rules():
     assert "LAYER NAMES" in prompt
     assert "NO memory" in _CALC_DELEGATION_NUDGE
     assert "check the numbers are in it" in _CALC_DELEGATION_NUDGE
+
+
+# -- field session 2026-10-06: an empty scratch search is not "no source" ----
+
+@pytest.mark.parametrize("name, empty", [("ls", "No files found"),
+                                         ("grep", "No matches found"),
+                                         ("glob", "No files found"),
+                                         ("grep", "")])
+def test_an_empty_scratch_search_says_what_it_did_not_search(name, empty):
+    """The references sub-agent searched the empty scratch space for a
+    citation, got "No matches found", and reported that its searches found
+    nothing -- without calling a reference tool."""
+    def handler(r):
+        return ToolMessage(content=empty, tool_call_id="c1", name=name)
+
+    out = ScratchFilesystemGuard().wrap_tool_call(
+        SimpleNamespace(tool_call={"name": name, "id": "c1",
+                                   "args": {"pattern": "Youd", "path": "/"}},
+                        state={"files": {}}), handler)
+    assert "NOT the reference library" in out.content
+    assert "list_methods" in out.content and "search_document" in out.content
+
+
+def test_a_scratch_search_that_found_something_is_untouched():
+    def handler(r):
+        return ToolMessage(content="/notes/a.md:1: Youd", tool_call_id="c1",
+                           name="grep")
+
+    out = ScratchFilesystemGuard().wrap_tool_call(
+        SimpleNamespace(tool_call={"name": "grep", "id": "c1",
+                                   "args": {"pattern": "Youd"}},
+                        state={"files": {"/notes/a.md": {}}}), handler)
+    assert out.content == "/notes/a.md:1: Youd"
+
+
+def test_the_empty_note_on_the_async_path():
+    async def handler(r):
+        return ToolMessage(content="No matches found", tool_call_id="c1",
+                           name="grep")
+
+    out = asyncio.run(ScratchFilesystemGuard().awrap_tool_call(
+        SimpleNamespace(tool_call={"name": "grep", "id": "c1",
+                                   "args": {"pattern": "ASCE 7"}},
+                        state={"files": {}}), handler))
+    assert "NOT the reference library" in out.content

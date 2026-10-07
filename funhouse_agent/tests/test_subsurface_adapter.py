@@ -217,6 +217,8 @@ class TestMethodInfo:
             "validate_diggs_schema", "validate_diggs_dictionary",
             # Native correlation methods (groundhog replacement, 2026-09)
             "spt_correction", "stress_dilatancy",
+            # DIGGS 2.6 from data the agent has read (field session 2026-10-06)
+            "write_diggs",
         }
         assert set(METHOD_INFO.keys()) == expected
 
@@ -231,7 +233,8 @@ class TestDispatch:
         total = sum(len(v) for v in result.values())
         # 8 native + 6 folded-in format-adapter methods (pygef/ags4/pydiggs)
         # + 2 correlation methods (spt_correction, stress_dilatancy)
-        assert total == 16
+        # + write_diggs
+        assert total == 17
 
     def test_describe_parse_diggs(self):
         info = describe_method("subsurface", "parse_diggs")

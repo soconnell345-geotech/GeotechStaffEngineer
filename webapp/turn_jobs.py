@@ -133,7 +133,8 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
                        if e.get("role") == "user")
         activity = activity_log.ActivityLogger(
             core.conversation_dir(thread_id), turn=_turn_no)
-        activity.turn_start(prompt=ctx.get("prompt"), model=ctx.get("model"))
+        activity.turn_start(prompt=ctx.get("prompt"), model=ctx.get("model"),
+                            note=ctx.get("turn_note"))
     except Exception:                                  # noqa: BLE001
         activity = None
     # Which files the turn wrote / only read (field feedback 2026-09-15, N4/N8)
@@ -145,11 +146,14 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
     except Exception:                                  # noqa: BLE001
         collector = None
     callbacks = [c for c in (activity, collector) if c is not None]
+    # The files the conversation already holds, in front of THIS turn's
+    # message only (core.working_files_note; field session 2026-10-06).
+    extra = ({"turn_note": ctx["turn_note"]} if ctx.get("turn_note") else {})
     try:
         for item in core.with_heartbeat(core.stream_turn(
                 agent, messages, thread_id,
                 recursion_limit=recursion_limit,
-                callbacks=callbacks or None)):
+                callbacks=callbacks or None, **extra)):
             kind = item.get("kind")
             job._add(item)
             if kind == "token":

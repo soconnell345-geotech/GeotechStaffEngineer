@@ -192,7 +192,8 @@ class TestSubsurfaceMethodInfo:
         from funhouse_agent.adapters.subsurface_adapter import METHOD_INFO
         # 8 native + 6 folded format-adapter methods (pygef/ags4/pydiggs)
         # + 2 correlation methods (spt_correction, stress_dilatancy)
-        assert len(METHOD_INFO) == 16
+        # + write_diggs (field session 2026-10-06)
+        assert len(METHOD_INFO) == 17
 
 
 class TestSubsurfaceDispatch:
@@ -217,7 +218,8 @@ class TestSubsurfaceDispatch:
         assert "validate_diggs_schema" in all_methods
         assert "spt_correction" in all_methods
         assert "stress_dilatancy" in all_methods
-        assert len(all_methods) == 16
+        assert "write_diggs" in all_methods
+        assert len(all_methods) == 17
 
     def test_describe_method_load_site(self):
         from funhouse_agent.dispatch import describe_method

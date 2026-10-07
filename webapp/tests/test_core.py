@@ -735,13 +735,16 @@ def test_behavior_build_kwargs_route_calc_off():
 # ---------------------------------------------------------------------------
 
 def test_tracing_enabled_env(monkeypatch):
+    """Turn details are ON unless the deployment switches them off (owner,
+    2026-10-06: "Make showing turn details the default")."""
     monkeypatch.delenv("GEOTECH_TRACE", raising=False)
-    assert core.tracing_enabled() is False
-    for v in ("1", "true", "YES", "on"):
+    assert core.tracing_enabled() is True
+    for v in ("1", "true", "YES", "on", ""):
         monkeypatch.setenv("GEOTECH_TRACE", v)
         assert core.tracing_enabled() is True
-    monkeypatch.setenv("GEOTECH_TRACE", "0")
-    assert core.tracing_enabled() is False
+    for v in ("0", "false", "No", "OFF"):
+        monkeypatch.setenv("GEOTECH_TRACE", v)
+        assert core.tracing_enabled() is False
 
 
 def test_friendly_turn_error_translates_recursion():
@@ -756,14 +759,28 @@ def test_friendly_turn_error_translates_recursion():
     assert plain == "ValueError: boom"               # others untouched
 
 
+def test_friendly_turn_error_explains_a_rate_limit():
+    """Field session 2026-10-06: a turn ended on the raw RateLimitError."""
+    class RateLimitError(Exception):
+        pass
+    err = core.friendly_turn_error(RateLimitError(
+        "Reason (from remote): 'Too Many Requests'. {\"code\": "
+        "\"rate_limit_exceeded\"}"))
+    assert "Too Many Requests" in err                 # raw error preserved
+    assert "rate limit was reached" in err and "continue" in err
+
+
 def test_tracing_enabled_behavior_override(monkeypatch):
     """The sidebar toggle (behavior['trace']) wins over the env; None follows it."""
-    monkeypatch.delenv("GEOTECH_TRACE", raising=False)
+    monkeypatch.setenv("GEOTECH_TRACE", "0")
     assert core.tracing_enabled(True) is True       # toggle on, env off
     assert core.tracing_enabled(None) is False
     monkeypatch.setenv("GEOTECH_TRACE", "1")
     assert core.tracing_enabled(False) is False     # toggle off, env on
     assert core.tracing_enabled(None) is True
+    monkeypatch.delenv("GEOTECH_TRACE", raising=False)
+    assert core.tracing_enabled(None) is True       # the default: on
+    assert core.tracing_enabled(False) is False     # still switchable off
 
 
 def test_behavior_trace_round_trip(tmp_path):

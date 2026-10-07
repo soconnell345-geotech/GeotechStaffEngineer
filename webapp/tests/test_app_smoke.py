@@ -266,4 +266,5 @@ def test_restore_from_permanent_storage_opens_the_conversation(monkeypatch,
     assert [b for b in at.sidebar.button if str(b.key) == "open_T-OLD"]
     conv = core.conversation_dir("T-OLD")
     assert os.path.isfile(os.path.join(conv, "files", "report.pdf"))
-    assert at.session_state["sp_restore_result"]["status"] == "restored"
+    key = sp.listing_cache_key(owner=None, page="geotech") + ":restore"
+    assert at.session_state[key]["status"] == "restored"

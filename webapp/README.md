@@ -56,14 +56,15 @@ export GEOTECH_WEBAPP_MODEL=claude-sonnet-5      # startup default (any Claude i
 export GEOTECH_WEBAPP_MAX_TOKENS=8192            # per-response output cap
 ```
 
-### Tracing (optional, off by default) — and the always-on activity log
+### Tracing (turn details on by default) — and the always-on activity log
 
 Every turn is archived to `conversations/<thread>/activity.jsonl` whether or
 not tracing is on (see "What the record holds" below). On top of that, two
-independent opt-in ways to see a turn's summary on screen:
+independent ways to see a turn's summary on screen:
 
-- **Local trace (no account needed):** set `GEOTECH_TRACE=1` or tick **Show
-  turn details** in the sidebar. The app writes one compact JSON line per turn
+- **Local trace (no account needed):** ON by default (owner, 2026-10-06);
+  untick **Show turn details** in the sidebar for one conversation, or set
+  `GEOTECH_TRACE=0` for the deployment. The app writes one compact JSON line per turn
   to `conversations/<thread>/trace.jsonl` (duration, tokens, an 80-character
   one-liner per primary tool call, error) and shows a **"turn details"**
   expander under the chat. It is a summary; sub-agent internals are in

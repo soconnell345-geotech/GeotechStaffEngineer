@@ -515,9 +515,11 @@ def build_agent(model, attachments: dict, temp_dir: str, artifacts: List[str],
     try:
         from webapp import sharepoint_tools
         # thread id = the conversation dir name (temp_dir is <conv>/files), so
-        # an upload with no destination lands in this conversation's folder.
+        # an upload with no destination lands in this conversation's folder;
+        # the conversation dir itself keeps the downloads ledger.
+        _conv_dir = os.path.dirname(os.path.abspath(temp_dir))
         _sp_tools, _sp_prompt = sharepoint_tools.tools_if_configured(
-            thread_id=os.path.basename(os.path.dirname(os.path.abspath(temp_dir))))
+            thread_id=os.path.basename(_conv_dir), record_dir=_conv_dir)
     except Exception:
         _sp_tools, _sp_prompt = [], ""
     if _sp_tools:
@@ -711,12 +713,17 @@ def with_heartbeat(gen, interval_s: Optional[float] = None):
 def stream_turn(agent, messages: list, thread_id: str,
                 max_result_chars: int = 2000,
                 recursion_limit: Optional[int] = None,
-                callbacks: Optional[list] = None):
+                callbacks: Optional[list] = None,
+                turn_note: Optional[str] = None):
     """Stream ONE turn from the compiled deep agent.
 
     ``callbacks`` (optional) are LangChain callback handlers attached to the
     run config alongside the usage-metadata callback; they propagate into
     sub-agent invocations (the ``activity_log.ActivityLogger`` rides here).
+
+    ``turn_note`` (optional) is put in front of the turn's user message for
+    THIS run only (:func:`with_turn_note`) -- the app's per-turn note of the
+    files the conversation already holds (:func:`working_files_note`).
 
     ``messages`` is the full agent-facing history INCLUDING the new user turn
     (the caller appends it and, on completion, appends the assistant answer from
@@ -737,7 +744,7 @@ def stream_turn(agent, messages: list, thread_id: str,
 
     answer_parts: List[str] = []
     saw_tool = False
-    work_messages = list(messages)
+    work_messages = with_turn_note(messages, turn_note)
     continuations = 0
     config = {"configurable": {"thread_id": thread_id}}
     # An agent that ends long requests itself (the lean review agent's
@@ -1322,6 +1329,15 @@ def friendly_turn_error(exc: BaseException) -> str:
         return (text + "\n\nYour monthly Funhouse AI budget is exhausted; "
                 "it resets next month — contact the Funhouse admins to "
                 "raise it.")
+    if "ratelimit" in type(exc).__name__.lower() or \
+            "rate_limit_exceeded" in low or "too many requests" in low:
+        # Field session 2026-10-06: a long read hit the model's tokens-per-
+        # minute limit and the turn ended on the raw error.
+        return (text + "\n\nThe AI model's rate limit was reached (too many "
+                "tokens in the last minute) — a throttle, not a fault. "
+                "Nothing is lost: files downloaded or saved this turn are "
+                "still in the conversation. Wait a minute, then ask the agent "
+                "to continue.")
     return text
 
 
@@ -1353,12 +1369,13 @@ def behavior_build_kwargs(behavior: Optional[dict]) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Run tracing (A7 rec 1): optional, OFF by default
+# Run tracing (A7 rec 1): the local summary is ON by default (owner, 2026-10-06)
 # ---------------------------------------------------------------------------
-# Two independent paths, both opt-in:
+# Two independent paths:
 #   * LangSmith (SaaS) — set LANGCHAIN_TRACING_V2=true + LANGCHAIN_API_KEY; the
 #     langchain/langgraph stack auto-traces every run, no code here.
-#   * Local (no SaaS) — set GEOTECH_TRACE=1 (or tick "Show turn details");
+#   * Local (no SaaS) — on unless GEOTECH_TRACE=0 (or "Show turn details" is
+#     unticked for the conversation);
 #     the app writes ONE compact JSONL SUMMARY line per turn (duration,
 #     tokens, an 80-char one-liner per PRIMARY tool call, error) to
 #     <conversation>/trace.jsonl and shows a "turn details" expander.
@@ -1369,16 +1386,24 @@ def behavior_build_kwargs(behavior: Optional[dict]) -> dict:
 # the calc/references sub-agents, attributed by `task` nesting. That file
 # is the archive; trace.jsonl is the on-screen summary.
 
+#: ``GEOTECH_TRACE`` values that turn the per-turn details OFF. Anything else,
+#: including the variable being unset, leaves them ON.
+_TRACE_OFF = ("0", "false", "no", "off")
+
+
 def tracing_enabled(override: Optional[bool] = None) -> bool:
     """True when the local per-turn tracer is on.
 
     ``override`` is the per-conversation sidebar choice (``behavior["trace"]``):
     an explicit ``True``/``False`` wins; ``None`` falls back to the
-    ``GEOTECH_TRACE`` env default."""
+    ``GEOTECH_TRACE`` env default, which is ON unless the variable says
+    ``0``/``false``/``no``/``off`` (owner, 2026-10-06 field session: "Make
+    showing turn details the default" -- the record is cheap and the person
+    using the app is the one who reads it)."""
     if override is not None:
         return bool(override)
-    return str(os.environ.get("GEOTECH_TRACE", "")).strip().lower() in (
-        "1", "true", "yes", "on")
+    raw = str(os.environ.get("GEOTECH_TRACE", "")).strip().lower()
+    return raw not in _TRACE_OFF
 
 
 def trace_path(thread_id: str, root: Optional[str] = None) -> str:
@@ -1794,4 +1819,188 @@ def artifacts_from_transcript(transcript: Iterable[dict]) -> List[str]:
             if p not in seen:
                 seen.add(p)
                 out.append(p)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# What the conversation already has on disk, told to the agent every turn
+# ---------------------------------------------------------------------------
+# Field session 2026-10-06 (geotech page): the agent downloaded a report from
+# SharePoint in turn 4, worked from it in turns 4 and 5, and in turn 7 told the
+# user it had "only ever had the original attachment" and that its earlier
+# work was "not verified". Nothing was wrong with the file -- it was still in
+# the working folder. The app replays earlier turns to the model as the
+# user's messages and the model's FINAL ANSWERS only (see the Persistence
+# section): every tool result, the download included, is gone from the next
+# turn's view, so the model had no record that the file existed. A turn-6
+# SharePoint failure then read, to the model, as proof it never had the file.
+#
+# Two pieces of record fix that, without replaying tool results:
+#   * a downloads ledger (``downloads.json`` in the conversation folder), which
+#     the SharePoint download tool writes: which SharePoint file became which
+#     local file, so a repeat fetch reuses it under ONE name (the session saved
+#     the same 37 MB report twice under two names) and the agent can be told
+#     where each input came from;
+#   * :func:`working_files_note`, a short "[System note]" put in front of the
+#     CURRENT turn's user message only (never saved into the history): the
+#     files already in the working folder -- attached, fetched, produced --
+#     with their paths.
+
+#: The ledger of SharePoint downloads, in the conversation record folder.
+DOWNLOADS_LEDGER = "downloads.json"
+
+#: How many files the per-turn note names (the newest ones).
+WORKING_FILES_NOTE_MAX = 30
+
+
+def load_downloads(conv_dir: str) -> List[dict]:
+    """The conversation's download ledger, ``[]`` when there is none.
+
+    Each entry: ``{"remote": <SharePoint path>, "local": <absolute path>,
+    "bytes": int, "ts": float}`` -- one per SharePoint file, the latest copy.
+    """
+    try:
+        with open(os.path.join(conv_dir, DOWNLOADS_LEDGER),
+                  encoding="utf-8") as fh:
+            data = _json.load(fh)
+    except (OSError, ValueError):
+        return []
+    return [d for d in data if isinstance(d, dict) and d.get("local")] \
+        if isinstance(data, list) else []
+
+
+def record_download(conv_dir: str, remote: str, local: str,
+                    size: int = 0) -> None:
+    """Record that SharePoint file ``remote`` is the local file ``local``.
+
+    One entry per remote (case-insensitive); a later download of the same
+    remote replaces its entry. Best-effort: a ledger that cannot be written
+    must never fail the download it describes."""
+    if not conv_dir or not remote or not local:
+        return
+    try:
+        entries = [d for d in load_downloads(conv_dir)
+                   if str(d.get("remote", "")).lower() != str(remote).lower()]
+        entries.append({"remote": str(remote),
+                        "local": os.path.abspath(str(local)),
+                        "bytes": int(size or 0), "ts": _time.time()})
+        os.makedirs(conv_dir, exist_ok=True)
+        tmp = os.path.join(conv_dir, DOWNLOADS_LEDGER + ".tmp")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            _json.dump(entries, fh, ensure_ascii=False, indent=1)
+        os.replace(tmp, os.path.join(conv_dir, DOWNLOADS_LEDGER))
+    except (OSError, TypeError, ValueError):
+        pass
+
+
+def _attachment_keys(conv_dir: str) -> List[str]:
+    try:
+        with open(os.path.join(conv_dir, "attachments.json"),
+                  encoding="utf-8") as fh:
+            keys = _json.load(fh)
+    except (OSError, ValueError):
+        return []
+    return [str(k) for k in keys or [] if k]
+
+
+def working_files_note(files_dir: str, transcript: Iterable[dict] = (),
+                       exclude_text: str = "",
+                       limit: int = WORKING_FILES_NOTE_MAX) -> str:
+    """The "[System note]" naming the files this conversation already holds,
+    for the front of the current turn's message; ``""`` when there are none.
+
+    Sources, all already on disk: ``attachments.json`` (the user's uploads),
+    the downloads ledger (SharePoint files fetched to read, with where they
+    came from), and the transcript (each turn's produced files, and the files
+    a turn fetched -- which also covers conversations from before the ledger).
+    Only files that still exist are named. A file whose path or name appears
+    in ``exclude_text`` -- this turn's own attachment note -- is left out, so
+    a fresh upload is not announced twice."""
+    fd = os.path.abspath(files_dir)
+    conv = os.path.dirname(fd)
+    found: Dict[str, dict] = {}
+    order: List[str] = []
+
+    def add(path: str, **info) -> None:
+        try:
+            ap = os.path.abspath(str(path))
+        except (TypeError, ValueError):
+            return
+        if ap not in found:
+            found[ap] = {}
+            order.append(ap)
+        for k, v in info.items():
+            if v not in (None, "") and not found[ap].get(k):
+                found[ap][k] = v
+
+    for key in _attachment_keys(conv):
+        add(os.path.join(fd, key), origin="attached by the user")
+    turn = 0
+    for entry in transcript or ():
+        role = entry.get("role")
+        if role == "user":
+            turn += 1
+        elif role == "assistant":
+            for name in entry.get("inputs") or ():
+                add(os.path.join(fd, str(name)), origin="fetched to read",
+                    turn=turn)
+            for ref in entry.get("artifacts") or ():
+                add(_resolve_artifact(str(ref), fd),
+                    origin="you produced it", turn=turn)
+    for d in load_downloads(conv):
+        add(d["local"], origin="fetched to read", remote=d.get("remote"))
+
+    rows = []
+    excl = str(exclude_text or "")
+    for ap in order:
+        if not os.path.isfile(ap):
+            continue
+        if excl and (ap in excl or f"'{os.path.basename(ap)}'" in excl):
+            continue
+        info = found[ap]
+        where = ""
+        if info.get("remote"):
+            where = f" from SharePoint '{info['remote']}'"
+        when = f" in turn {info['turn']}" if info.get("turn") else ""
+        try:
+            size = f"{os.path.getsize(ap):,} bytes"
+        except OSError:
+            size = "size unknown"
+        rows.append(f"- '{os.path.basename(ap)}' ({size}): "
+                    f"{info.get('origin', 'in the folder')}{where}{when} "
+                    f"-- {ap}")
+    if not rows:
+        return ""
+    skipped = max(0, len(rows) - int(limit))
+    rows = rows[-int(limit):] if skipped else rows
+    head = ("[System note] Files already in this conversation's working "
+            "folder, from earlier turns. You see earlier turns only through "
+            "the answers you gave, not through their tool results, so this "
+            "list is the record of what you already have. Use these files "
+            "by their paths -- do not fetch them again -- and do not tell "
+            "the user a file is unavailable, or that you never had it, while "
+            "it is listed here. Which pages of a file you actually read is "
+            "only in your earlier answers.")
+    if skipped:
+        head += f" (The {skipped} oldest are not listed; list_files shows all.)"
+    return "\n".join([head] + rows)
+
+
+def with_turn_note(messages: list, note: Optional[str]) -> list:
+    """A copy of ``messages`` with ``note`` put in front of the LAST message
+    when that message is the user's (the turn being answered). The caller's
+    list is not touched, so the note never enters the saved history -- each
+    turn gets a fresh one."""
+    out = list(messages or [])
+    if not note or not out:
+        return out
+    last = out[-1]
+    if isinstance(last, dict):
+        if last.get("role") in ("user", "human") and \
+                isinstance(last.get("content"), str):
+            out[-1] = {**last, "content": f"{note}\n\n{last['content']}"}
+        return out
+    if getattr(last, "type", "") == "human" and \
+            isinstance(getattr(last, "content", None), str):
+        out[-1] = {"role": "user", "content": f"{note}\n\n{last.content}"}
     return out

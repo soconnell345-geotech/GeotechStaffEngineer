@@ -488,6 +488,79 @@ def _default_sp_token_getter() -> Callable[[], Optional[str]]:
     return _get
 
 
+#: How often the refresher looks at the staged token, and how close to its
+#: expiry it asks for a new one.
+TOKEN_CHECK_S = 60
+TOKEN_EXPIRY_MARGIN_S = 600
+
+
+def token_expiry(token: Optional[str]) -> Optional[float]:
+    """The ``exp`` (epoch seconds) of a JWT access token, read without
+    verifying it; ``None`` for anything that is not a readable JWT."""
+    import base64
+    import json as _json
+    try:
+        payload = str(token or "").split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        exp = _json.loads(base64.urlsafe_b64decode(payload)).get("exp")
+        return float(exp) if exp is not None else None
+    except Exception:                                      # noqa: BLE001
+        return None
+
+
+def token_refresh_due(token: Optional[str], last_refresh: float, now: float,
+                      interval_s: float,
+                      margin_s: float = TOKEN_EXPIRY_MARGIN_S) -> bool:
+    """Whether the staged token should be re-minted now: the fixed interval
+    has passed, or the token itself expires within ``margin_s``."""
+    if now - last_refresh >= interval_s:
+        return True
+    exp = token_expiry(token)
+    return exp is not None and exp - now <= margin_s
+
+
+def run_token_refresher(token_getter: Callable[[], Optional[str]],
+                        token_path: str, interval_s: float, *,
+                        check_s: float = TOKEN_CHECK_S,
+                        margin_s: float = TOKEN_EXPIRY_MARGIN_S,
+                        sleep: Callable[[float], None] = time.sleep,
+                        clock: Callable[[], float] = time.time,
+                        stop: Optional[Callable[[], bool]] = None) -> None:
+    """Keep the staged token fresh: look every ``check_s`` seconds and
+    re-mint when the interval has passed OR the token is within ``margin_s``
+    of its expiry.
+
+    Why both (field session 2026-10-06): the loop used to sleep the whole
+    interval (30 min) between re-mints, and the silent MSAL flow hands back
+    the SAME cached access token until about five minutes before it expires.
+    A token with ten minutes left at one tick therefore lapsed before the
+    next, and the app ran on an expired token for up to twenty minutes -- the
+    SDK's 401 retry re-reads the file and finds the same token. A SharePoint
+    turn that afternoon failed every call within eight seconds while the
+    same paths worked before and sixteen minutes after (the record kept no
+    status code; it does now). Looking every minute and re-minting near
+    expiry keeps the file holding a live token. Never raises."""
+    last = clock()
+    while not (stop and stop()):
+        sleep(check_s)
+        try:
+            with open(token_path, "r", encoding="utf-8") as fh:
+                current = fh.read().strip()
+        except OSError:
+            current = ""
+        if not token_refresh_due(current, last, clock(), interval_s,
+                                 margin_s):
+            continue
+        try:
+            fresh = token_getter()
+            if fresh:
+                with open(token_path, "w", encoding="utf-8") as fh:
+                    fh.write(fresh)
+                last = clock()
+        except Exception:                                  # noqa: BLE001
+            pass                     # keep last token; retry next tick
+
+
 def stage_sharepoint(
     site_url: str,
     root: str = "Shared Documents/GeotechStaffEngineer",
@@ -503,9 +576,11 @@ def stage_sharepoint(
     Run this in the notebook BEFORE launching the app. It writes the current
     Graph token to a driver-local file, points the ``GEOTECH_SHAREPOINT_*``
     env vars at it (inherited by the launched app), and starts a daemon thread
-    that re-mints a fresh token every ``refresh_interval_s`` seconds — so the
-    app's token never goes stale while the notebook kernel lives (the app's
-    token provider re-reads the file on every request/401-retry).
+    that re-mints a fresh token every ``refresh_interval_s`` seconds AND
+    whenever the staged token is within ten minutes of expiring
+    (:func:`run_token_refresher`) — so the app's token never goes stale while
+    the notebook kernel lives (the app's token provider re-reads the file on
+    every request/401-retry).
 
     Typical use::
 
@@ -538,18 +613,9 @@ def stage_sharepoint(
         env["GEOTECH_SHAREPOINT_ROOT"] = root.strip().strip("/")
 
     if start_refresher:
-        def _refresh_loop() -> None:
-            while True:
-                time.sleep(refresh_interval_s)
-                try:
-                    fresh = token_getter()
-                    if fresh:
-                        with open(token_path, "w", encoding="utf-8") as fh:
-                            fh.write(fresh)
-                except Exception:
-                    pass                     # keep last token; retry next tick
-
-        threading.Thread(target=_refresh_loop, daemon=True,
+        threading.Thread(target=run_token_refresher,
+                         args=(token_getter, token_path, refresh_interval_s),
+                         daemon=True,
                          name="geotech-sp-token-refresher").start()
 
     return {"site_url": env["GEOTECH_SHAREPOINT_SITE_URL"],

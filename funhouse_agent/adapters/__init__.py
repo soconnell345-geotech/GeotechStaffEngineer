@@ -407,7 +407,7 @@ MODULE_REGISTRY = {
     },
     "subsurface": {
         "adapter": "funhouse_agent.adapters.subsurface_adapter",
-        "brief": "Subsurface data I/O: DIGGS parse, Plotly plots (depth profile, Atterberg, plan/section); GEF/BRO-XML CPT+borehole (pygef), AGS4, DIGGS validation (pydiggs)",
+        "brief": "Subsurface data I/O: DIGGS parse, WRITE from logs you read, validate; Plotly plots (depth, Atterberg, plan/section); GEF/BRO-XML CPT+borehole (pygef), AGS4",
     },
     # --- geotech-references agents (reference modules + cross-reference DB) ---
     "reference_db": {

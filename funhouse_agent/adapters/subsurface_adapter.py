@@ -340,6 +340,145 @@ def _run_validate_diggs_dictionary(params: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Writing DIGGS from extracted data
+# ---------------------------------------------------------------------------
+# Field session 2026-10-06: asked to build DIGGS from a report's boring logs,
+# the agent had no way to WRITE DIGGS, so it hand-typed XML into save_file
+# under the DIGGS 2.6 namespace and called it "a best-effort partial DIGGS
+# XML". It fails the DIGGS schema at its first element. The package has had a
+# real DIGGS 2.6 writer, with two gates, since the report-ingest train
+# (report_ingest.diggs_writer); this method puts it behind the dispatch layer,
+# so data the agent has read off logs and lab sheets becomes a DIGGS file
+# that is checked against the schema and read back before anyone calls it
+# DIGGS.
+
+def _validation_problems(exc, where: str) -> list:
+    """A pydantic ValidationError as short "path: message" lines."""
+    out = []
+    try:
+        for err in exc.errors():
+            loc = "".join(f"[{p}]" if isinstance(p, int) else f".{p}"
+                          for p in err.get("loc", ()))
+            out.append(f"{where}{loc}: {err.get('msg')}")
+    except Exception:                                  # noqa: BLE001
+        out.append(f"{where}: {exc}")
+    return out
+
+
+def _as_list(value, name: str) -> list:
+    import json
+    if value is None:
+        return []
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError as exc:
+            raise ValueError(f"{name}: not valid JSON ({exc})") from None
+    if isinstance(value, dict):
+        value = [value]
+    if not isinstance(value, list):
+        raise ValueError(f"{name} must be a list of objects")
+    return value
+
+
+def _run_write_diggs(params: dict) -> dict:
+    import json
+    import os
+
+    from funhouse_agent.adapters import reject_unknown_params
+    from pydantic import ValidationError
+    from report_ingest.diggs_writer import (
+        diggs_roundtrip_gate, diggs_schema_gate, write_diggs,
+    )
+    from report_ingest.model import Investigation, LabTest, Project
+
+    _valid = ("investigations", "lab_tests", "project", "output_path",
+              "document_id")
+    reject_unknown_params(params, _valid, method="write_diggs")
+    require_params(params, ["investigations", "output_path"],
+                   method="write_diggs", valid=_valid)
+
+    problems: list = []
+    investigations = []
+    for i, raw in enumerate(_as_list(params.get("investigations"),
+                                     "investigations")):
+        try:
+            investigations.append(Investigation.model_validate(raw))
+        except ValidationError as exc:
+            problems += _validation_problems(exc, f"investigations[{i}]")
+    lab = []
+    for i, raw in enumerate(_as_list(params.get("lab_tests"), "lab_tests")):
+        try:
+            lab.append(LabTest.model_validate(raw))
+        except ValidationError as exc:
+            problems += _validation_problems(exc, f"lab_tests[{i}]")
+    project = None
+    if params.get("project"):
+        raw = params["project"]
+        if isinstance(raw, str):
+            raw = json.loads(raw)
+        try:
+            project = Project.model_validate(raw)
+        except ValidationError as exc:
+            problems += _validation_problems(exc, "project")
+    if problems:
+        return {"error": "the data does not fit the DIGGS record format; "
+                         "NO file was written",
+                "problems": problems[:25],
+                "n_problems": len(problems),
+                "hint": "fix the named fields (describe_method shows the "
+                        "format) and call write_diggs again"}
+    if not investigations and not lab:
+        return {"error": "nothing to write: no investigations and no lab "
+                         "tests were given"}
+
+    notes: list = []
+    xml = write_diggs(investigations + lab, project,
+                      document_id=str(params.get("document_id") or ""),
+                      notes=notes)
+    out = str(params["output_path"])
+    folder = os.path.dirname(os.path.abspath(out))
+    os.makedirs(folder, exist_ok=True)
+    with open(out, "w", encoding="utf-8") as fh:
+        fh.write(xml)
+    note = notes[0] if notes else None
+    schema_ok, schema_errors = diggs_schema_gate(xml)
+    checked = not any("not installed" in e for e in schema_errors)
+    back_ok, diffs = diggs_roundtrip_gate(xml, investigations,
+                                          project=project, lab_tests=lab,
+                                          notes=note)
+    if schema_ok and back_ok:
+        verdict = ("valid DIGGS 2.6: it passed the schema and reads back "
+                   "equal to the data given")
+    elif not checked:
+        verdict = ("written, but the schema could NOT be checked here "
+                   "(pydiggs is not installed); "
+                   + ("it reads back equal to the data given" if back_ok
+                      else "and it does NOT read back equal to the data "
+                           "given -- see read_back.diffs"))
+    else:
+        verdict = ("written, but it is NOT clean DIGGS: "
+                   + ("" if schema_ok else "it fails the DIGGS 2.6 schema"
+                      + ("" if back_ok else "; "))
+                   + ("" if back_ok else "reading it back does not give the "
+                                         "data given")
+                   + " -- say so; do not call it valid")
+    return clean_result({
+        "output_path": out,
+        "file_exists": os.path.isfile(out),
+        "file_size_bytes": os.path.getsize(out) if os.path.isfile(out) else 0,
+        "verdict": verdict,
+        "schema_check": {"checked": checked, "valid": bool(schema_ok),
+                         "errors": list(schema_errors)[:10]},
+        "read_back": {"equal": bool(back_ok), "diffs": list(diffs)[:15],
+                      "n_diffs": len(diffs)},
+        "written": ({k: (v[:10] if isinstance(v, list) else v)
+                     for k, v in note.to_dict().items()}
+                    if note is not None else {}),
+    })
+
+
+# ---------------------------------------------------------------------------
 # Statistics
 # ---------------------------------------------------------------------------
 
@@ -414,6 +553,7 @@ METHOD_REGISTRY = {
     "validate_ags4": _run_validate_ags4,
     "validate_diggs_schema": _run_validate_diggs_schema,
     "validate_diggs_dictionary": _run_validate_diggs_dictionary,
+    "write_diggs": _run_write_diggs,
 }
 
 _SITE_KEY_DOC = "Key returned by parse_diggs or load_site (preferred). Alternative to site_data."
@@ -679,6 +819,41 @@ METHOD_INFO = {
             "is_valid": "Whether validation passed.",
             "n_errors": "Number of validation errors.",
             "errors": "List of error messages.",
+        },
+    },
+    "write_diggs": {
+        "category": "File Export",
+        "brief": "WRITE a DIGGS 2.6 file from boring/pit/sounding logs and lab results you have read (e.g. off a report's logs). Checks the file against the DIGGS schema and reads it back; never hand-write DIGGS XML.",
+        "parameters": {
+            "investigations": {"type": "array", "required": True, "description": (
+                "One object per boring, pit or sounding, numbers AS PRINTED on the log (never inferred). "
+                "Keys: investigation_id; kind (boring|test_pit|cpt|dcp|hand_auger|well|other); depth_unit ('m'|'ft'); "
+                "x, y, coordinate_system; elevation {value, unit}; total_depth {value, unit}; date_started, date_finished; "
+                "drilling {method, equipment, hammer_type, hammer_energy_ratio, sampler, contractor, logged_by}; "
+                "layers [{top {value, unit}, bottom {value, unit}, description, uscs}]; "
+                "samples [{sample_id, top, bottom, kind (spt|ring|shelby|bulk|grab|core|cuttings|other), recovery_percent, "
+                "water_content, fines_percent, liquid_limit, plastic_limit, uscs}]; "
+                "spt [{depth_top, depth_bottom, blows [per increment; a string for refusal, e.g. '50/10cm'], n (ONLY if printed), refusal, sample_id}]; "
+                "water [{depth {value, unit}, when (while_drilling|at_completion|after_hours|not_encountered|unknown), hours}]; "
+                "remarks; pages (0-based PDF pages). Every depth or elevation is {value, unit}. Unknown keys are refused by name.")},
+            "lab_tests": {"type": "array", "required": False, "description": (
+                "Lab results, one object per test on one specimen: kind (atterberg|gradation|compaction|cbr|moisture_content|density|"
+                "chemical|specific_gravity|unconfined|direct_shear|triaxial|swell_consolidation|permeability|organic_content|other), "
+                "investigation_id, sample_id, depth_top {value, unit}, depth_bottom, standard, pages, and result {kind: the same kind, then: "
+                "atterberg: ll, pl, pi, non_plastic; gradation: gravel_percent, sand_percent, silt_percent, clay_percent, fines_percent, "
+                "percent_passing [{percent_passing, size {value, unit}, sieve}]; compaction: max_dry_density {value, unit}, optimum_wc; "
+                "cbr: cbr_percent, swell_percent, soaked; moisture_content: wc; chemical: pH, sulfate, chloride, resistivity (numbers, "
+                "{value, unit}, or the printed text e.g. '<10')}.")},
+            "project": {"type": "dict", "required": False, "description": "{name, number, client, location, coordinate_system, elevation_datum} as printed."},
+            "output_path": {"type": "str", "required": True, "description": "Where to write the .xml (e.g. '/tmp/site.diggs.xml'); it is attached to the conversation."},
+            "document_id": {"type": "str", "required": False, "description": "An identifier for the source document."},
+        },
+        "returns": {
+            "output_path": "The file written (nothing is written when the data does not fit: 'problems' names each field).",
+            "verdict": "Plain words: valid DIGGS, or what is wrong with it. Report THIS, not your own judgement.",
+            "schema_check": "{checked, valid, errors} against the DIGGS 2.6 XSD (pydiggs).",
+            "read_back": "{equal, diffs}: the file parsed back and compared value by value with the data given.",
+            "written": "Counts written, and anything the writer had to leave out or assume.",
         },
     },
     "validate_diggs_dictionary": {

@@ -262,6 +262,67 @@ def test_stage_sharepoint_no_token_raises(tmp_path):
                             start_refresher=False, env={})
 
 
+def _jwt(exp):
+    import base64
+    import json as _json
+
+    def part(obj):
+        raw = base64.urlsafe_b64encode(_json.dumps(obj).encode()).decode()
+        return raw.rstrip("=")
+    return f"{part({'alg': 'none'})}.{part({'exp': exp})}.sig"
+
+
+def test_token_expiry_reads_a_jwt_and_nothing_else():
+    assert dl.token_expiry(_jwt(1_800_000_000)) == 1_800_000_000.0
+    assert dl.token_expiry("opaque-token") is None
+    assert dl.token_expiry(None) is None
+    assert dl.token_expiry("a.!!!.c") is None
+
+
+def test_refresh_is_due_on_the_interval_or_near_expiry():
+    now = 1_000_000.0
+    fresh = _jwt(now + 3600)
+    assert not dl.token_refresh_due(fresh, last_refresh=now - 60, now=now,
+                                    interval_s=1800)
+    assert dl.token_refresh_due(fresh, now - 1800, now, 1800)   # interval
+    soon = _jwt(now + 300)
+    assert dl.token_refresh_due(soon, now - 60, now, 1800)      # expiry
+    gone = _jwt(now - 10)
+    assert dl.token_refresh_due(gone, now - 60, now, 1800)
+    assert not dl.token_refresh_due("opaque", now - 60, now, 1800)
+
+
+def test_the_refresher_replaces_a_token_before_it_lapses(tmp_path):
+    """Field session 2026-10-06: a 30-minute sleep between re-mints, against
+    a silent flow that hands back the cached token until ~5 minutes before
+    expiry, left an expired token in the file for up to twenty minutes. The
+    refresher now looks every minute and re-mints near expiry."""
+    clock = {"t": 0.0}
+    path = tmp_path / "tok.txt"
+    expires = 25 * 60.0                     # 25 minutes left at staging
+    path.write_text(_jwt(expires))
+    minted = []
+
+    def getter():
+        # the silent flow: the cached token until 5 minutes before expiry
+        if expires - clock["t"] > 300:
+            return _jwt(expires)
+        minted.append(clock["t"])
+        return _jwt(clock["t"] + 3600)
+
+    def sleep(s):
+        # whatever the file holds now must still be live a tick from now
+        assert dl.token_expiry(path.read_text()) > clock["t"] + s
+        clock["t"] += s
+
+    dl.run_token_refresher(getter, str(path), interval_s=1800, check_s=60,
+                           sleep=sleep, clock=lambda: clock["t"],
+                           stop=lambda: clock["t"] >= 40 * 60)
+    assert minted and minted[0] <= expires - 60     # re-minted in time
+    # at no tick did the file hold an expired token
+    assert dl.token_expiry(path.read_text()) > clock["t"]
+
+
 def test_bootstrap_script_reconstructs_from_env_creds():
     src = dl.render_bootstrap_script(
         app_path="/x/app.py", repo_root="/repo", base="/b", port=8080,

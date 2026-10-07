@@ -287,9 +287,10 @@ def test_build_agent_binds_the_upload_tool_to_the_conversation(
     seen = {}
     real = spt.tools_if_configured
 
-    def spy(thread_id=None):
+    def spy(thread_id=None, record_dir=None):
         seen["thread_id"] = thread_id
-        return real(thread_id=thread_id)
+        seen["record_dir"] = record_dir
+        return real(thread_id=thread_id, record_dir=record_dir)
 
     monkeypatch.setattr(spt, "tools_if_configured", spy)
     monkeypatch.setattr(deep_agent, "build_deep_agent",
@@ -299,6 +300,8 @@ def test_build_agent_binds_the_upload_tool_to_the_conversation(
     os.makedirs(files)
     core.build_agent(object(), {}, files, [])
     assert seen["thread_id"] == "conv42"
+    # the download tool keeps its ledger in the conversation's own folder
+    assert seen["record_dir"] == os.path.dirname(os.path.abspath(files))
 
 
 # -- addresses copied from a browser (field session 2026-10-01) --------------
@@ -341,12 +344,16 @@ class TestBrowserUrls:
         assert spt.browser_url_to_path(url) == \
             "/sites/Other/Shared Documents/Reports"
 
-    def test_a_plain_file_address_is_left_for_the_sdk(self, monkeypatch):
+    def test_a_plain_file_address_is_converted_too(self, monkeypatch):
+        """Since 2026-10-07 a plain address becomes its path like the other
+        forms: the Tiny Apps client takes no URLs, and a path is what the
+        name fallback needs when the file is not where the address says."""
         self._site(monkeypatch)
         url = ("https://contoso.sharepoint.com/sites/TeamSite/Shared%20Documents"
                "/General/borings.pdf?web=1")
-        assert spt.browser_url_to_path(url) is None
-        assert spt._resolve(url) == url
+        assert spt.browser_url_to_path(url) == \
+            "Shared Documents/General/borings.pdf"
+        assert spt._resolve(url) == "Shared Documents/General/borings.pdf"
 
     def test_a_token_link_has_no_path_and_says_what_to_paste(self, monkeypatch):
         self._site(monkeypatch)

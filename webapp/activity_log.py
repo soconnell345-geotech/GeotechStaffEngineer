@@ -292,9 +292,16 @@ class ActivityLogger(BaseCallbackHandler):
 
     # -- turn envelope ----------------------------------------------------
     def turn_start(self, prompt: Optional[str] = None,
-                   model: Optional[str] = None) -> None:
-        self._write({"agent": PRIMARY, "event": "turn_start",
-                     "prompt": (prompt or "")[:500], "model": model})
+                   model: Optional[str] = None,
+                   note: Optional[str] = None) -> None:
+        """``note`` is what the app put in front of the user's message for
+        this turn (the working-folder note, ``core.working_files_note``):
+        part of what the model was shown, so it belongs in the record."""
+        rec = {"agent": PRIMARY, "event": "turn_start",
+               "prompt": (prompt or "")[:500], "model": model}
+        if note:
+            rec["context_note"] = str(note)[:DEFAULT_MAX_CHARS]
+        self._write(rec)
 
     def turn_end(self, *, turn_tokens: int = 0, error: Optional[str] = None,
                  answer_chars: int = 0) -> None:
