@@ -894,6 +894,45 @@ LOCATION_PROBE = run_location_probe(_LOC_ENGINE, globals().get("_REC"))
 * **Repeatability.** The 3 + 2 whole-page repeats show whether the two
   clusters (about 0.87 and about 0.97) recur.
 
+### 5.1 The result on Funhouse (2026-10-07, `gpt-5.4-2026-03-05`)
+
+The owner ran the cell (17 calls). Median error against fixture truth, pt:
+
+| view | sent px | input tokens | median err | y scale per answer |
+|---|---|---|---|---|
+| whole page, app default (×3) | 3957 × 2560 | 3,065 each | 58–86 | 1.10, 0.90, 0.87 |
+| whole page at 2048 px (×2) | 2048 × 1326 | 3,065 each | 57–61 | 0.88, 0.89 |
+| whole page at 768 px | 1187 × 768 | 1,289 | 91 | 0.75 |
+| whole page at 2048 px, **pixel boxes**, converted with the TRUE size | 2048 × 1326 | 3,121 | **0.1–5.9 per tag** | — |
+| the same pixel boxes converted with the model's STATED size (2048 × 1365) | | | 4–12 in y | |
+| whole page at 2048 px, size told in the prompt | 2048 × 1326 | 3,077 | 19.5 | 1.02 |
+| left half / top half / 792 pt square | | | 36 / 124 / 36 | 1.12 / 0.50 / 1.08 |
+| the app's 4 × 4 tile r2c2 | 1978 × 1280 | 2,862 | 2.7 | 0.99 |
+| 200 pt windows (T3 / T6) | 1599 × 1599 | 2,823 | 4.2 / 30.1 | — |
+| 80 pt windows (T4 / T7) | 1334 × 1334 | 2,087 | 1.1 / 0.2 | — |
+
+**Readings.**
+1. **The 2,048-px cap is confirmed**: the 3957 × 2560 image cost exactly the
+   tokens of the 2048 × 1326 one (3,065); the 0.06-in lettering reaches the
+   model at half size.
+2. **The 0-999 grid is the problem, not the model's sight.** On the same
+   whole-page image, the grid answers are 57–91 pt off with a scale that
+   changes from answer to answer (1.10, 0.90, 0.87 on identical input), while
+   the model's PIXEL boxes, converted with the image's true size, are within
+   a few points of every tag. GPT-5.4 knows where things are; it cannot
+   express it reliably as 0-999 fractions.
+3. **Its own idea of the image size is off** (it stated 1365 for 1326 px),
+   so a pixel box must be converted with the size the app SENT (and the app
+   must send no more than the host delivers, so the two are the same).
+4. Zooms and tiles stay accurate (0.2–4 pt; one 200 pt window 30 pt, where a
+   second box matched).
+
+So the first fix is the location convention itself: ask the vision call for
+pixel boxes on the image sent (≤ 2,048 px on Funhouse), convert them in code
+with the true size, and hand the agent page or grid boxes computed from those.
+Sol has not been measured with pixel boxes; the tiles and the half-size
+whole page were already accurate for it (§3.2).
+
 ---
 
 ## 6. Open questions

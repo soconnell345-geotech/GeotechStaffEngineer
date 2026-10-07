@@ -238,6 +238,14 @@ can see sit on the tags.
 
 ## Done
 
+- **2026-10-07, check 4 (location measurement), Funhouse GPT-5.4.** Funhouse
+  caps images at 2,048 px (confirmed by token counts). Whole-page positions
+  on the 0-999 grid were 57–91 pt off with a scale that changed between
+  identical calls; the SAME model's pixel positions, converted with the true
+  image size, were within ~1–6 pt; zooms 0.2–4 pt. Next build: ask for pixel
+  positions on images ≤ 2,048 px and convert in code. Details:
+  `module_work/harness_theory/locating_things_on_a_page.md` §5.1.
+
 - **2026-10-07, check 2 on 5.32.0 (Funhouse): the guard WORKED, and Funhouse
   is a FIPS host.** `available()` returned `(False, 'OpenCV cannot load on
   this host (a test import exited with code -6: crypto/fips/fips.c:154:

@@ -73,8 +73,13 @@ rules from single examples)
     `module_work/review_eval_results/2026-10-07_funhouse_5.32.0_check1/TRACE_REVIEW.md`
     and `module_work/harness_theory/locating_things_on_a_page.md`. Whole-page
     vision boxes are a shrunken copy of the truth (a model property; the
-    conversion is exact); zooms land within a few points. Planned fixes, after
-    the owner's measurement (queue check 4): a two-step locate inside the tools
+    conversion is exact); zooms land within a few points. **Owner's
+    measurement (check 4, 2026-10-07): the 0-999 grid is the problem — the
+    same GPT-5.4 answer's PIXEL boxes, converted with the true image size,
+    were within ~1–6 pt on a whole page, the grid boxes 57–91 pt; Funhouse
+    caps images at 2,048 px.** So FIRST: the vision call reports pixel boxes
+    on an image ≤ the host's cap, converted in code with the size sent (the
+    agent-facing interface can stay). Then, as defence in depth: a two-step locate inside the tools
     (no mark or `page_bbox` from a view wider than ~300 pt — zoom with an
     error-sized window and re-locate); zoom windows sized by the source view's
     error (~10 % of it each side), not 15 % of the box; whole-page looks sent
