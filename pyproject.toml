@@ -296,6 +296,11 @@ funhouse_agent = ["geotech_test_suite.json", "eval_samples/*",
 # the library questions with 5.25.0. Both carry invented firms and places.
 report_ingest = ["templates.json.EXAMPLE",
                  "library_questions.EXAMPLE.json"]
+# The DIGGS 2.6 schema (unmodified, MPL-2.0, zipped) so a DIGGS file can be
+# schema-checked on every host without the optional pydiggs (2026-10-08).
+subsurface_characterization = ["formats/schemas/*.zip",
+                               "formats/schemas/LICENSE-DIGGS-SCHEMA",
+                               "formats/schemas/README.md"]
 
 [tool.pytest.ini_options]
 markers = [

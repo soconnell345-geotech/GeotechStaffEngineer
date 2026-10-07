@@ -7,8 +7,9 @@ new to learn, and in an interchange format the industry reads.
 
 TWO GATES, AND WHY NEITHER ALONE IS ENOUGH.
 
-:func:`diggs_schema_gate` runs the file against the DIGGS 2.6 XSD that pydiggs
-bundles. It answers "is this DIGGS": the right elements in the right
+:func:`diggs_schema_gate` runs the file against the DIGGS 2.6 XSD bundled with
+``subsurface_characterization`` (lxml; it ran only where pydiggs was installed
+until 2026-10-08). It answers "is this DIGGS": the right elements in the right
 namespaces in the right order, every measure carrying a ``uom``. It cannot
 tell whether the numbers in it are the log's numbers.
 
@@ -2443,18 +2444,23 @@ def write_diggs(record_or_investigations: Any,
 
 def diggs_schema_gate(xml: str, *, schema_version: str = "2.6"
                       ) -> Tuple[bool, List[str]]:
-    """``(ok, errors)`` from the DIGGS XSD that pydiggs bundles.
+    """``(ok, errors)`` from the DIGGS XSD.
 
-    ``(False, ["pydiggs is not installed"])`` when the optional package is
-    absent, so a caller can tell "the file is wrong" from "nothing checked
-    it" -- which a bare False could not.
+    DIGGS 2.6 is checked against the schema bundled with
+    ``subsurface_characterization`` (lxml, no optional package, no network),
+    so this runs on every host. Until 2026-10-08 it needed pydiggs, which the
+    cluster does not have. ``(False, ["... is not installed ..."])`` when no
+    check is possible here (2.5.a without pydiggs, or lxml missing), so a
+    caller can tell "the file is wrong" from "nothing checked it" -- which a
+    bare False could not.
     """
     from subsurface_characterization.formats.diggs_validation import (
-        has_pydiggs, validate_diggs_schema,
+        has_schema_check, validate_diggs_schema,
     )
-    if not has_pydiggs():
-        return False, ["pydiggs is not installed, so nothing checked this "
-                       "file against the DIGGS schema"]
+    if not has_schema_check(schema_version):
+        return False, [f"the DIGGS {schema_version} schema check is not "
+                       "installed here, so nothing checked this file against "
+                       "the DIGGS schema"]
     result = validate_diggs_schema(content=xml, schema_version=schema_version)
     return bool(result.is_valid), list(result.errors)
 

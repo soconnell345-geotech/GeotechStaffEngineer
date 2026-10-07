@@ -308,17 +308,21 @@ def _run_validate_ags4(params: dict) -> dict:
 
 def _run_validate_diggs_schema(params: dict) -> dict:
     from subsurface_characterization.formats.diggs_validation import (
-        has_pydiggs, validate_diggs_schema,
+        has_schema_check, validate_diggs_schema,
     )
 
-    if not has_pydiggs():
-        return {"error": "pydiggs is not installed. Install with: pip install pydiggs"}
+    version = params.get("schema_version", "2.6")
+    if not has_schema_check(version):
+        # DIGGS 2.6 is bundled and needs nothing extra; 2.5.a needs pydiggs.
+        return {"error": f"The DIGGS {version} schema check is not installed "
+                         "here (2.5.a needs pydiggs: pip install pydiggs). "
+                         "DIGGS 2.6 is always available."}
 
     _require_file_or_content(params, method="validate_diggs_schema")
     result = validate_diggs_schema(
         filepath=params.get("file_path"),
         content=params.get("content"),
-        schema_version=params.get("schema_version", "2.6"),
+        schema_version=version,
     )
     return clean_result(result.to_dict())
 
@@ -806,7 +810,7 @@ METHOD_INFO = {
     },
     "validate_diggs_schema": {
         "category": "File Validation",
-        "brief": "Validate DIGGS XML against XSD schema (v2.6 or v2.5.a, via pydiggs). For DIGGS data EXTRACTION use parse_diggs instead.",
+        "brief": "Validate DIGGS XML against the XSD schema (v2.6 bundled, always available; v2.5.a needs pydiggs). For DIGGS data EXTRACTION use parse_diggs instead.",
         "parameters": {
             "file_path": {"type": "str", "required": False, "description": "Path to DIGGS XML file. Provide file_path or content, not both."},
             "content": {"type": "str", "required": False, "description": "DIGGS XML as string."},

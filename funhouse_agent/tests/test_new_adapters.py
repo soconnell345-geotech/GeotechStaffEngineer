@@ -508,9 +508,12 @@ class TestSubsurfaceFormatAdapterCalls:
             assert "not installed" in result["error"].lower()
 
     def test_validate_diggs_schema_not_installed(self):
+        # DIGGS 2.6 is bundled and always checkable (2026-10-08); only the
+        # older 2.5.a schema still needs pydiggs.
         with patch("subsurface_characterization.formats.diggs_validation.has_pydiggs", return_value=False):
             from funhouse_agent.dispatch import call_agent
-            result = call_agent("subsurface", "validate_diggs_schema", {"file_path": "test.xml"})
+            result = call_agent("subsurface", "validate_diggs_schema",
+                                {"file_path": "test.xml", "schema_version": "2.5.a"})
             assert "error" in result
             assert "not installed" in result["error"].lower()
 
