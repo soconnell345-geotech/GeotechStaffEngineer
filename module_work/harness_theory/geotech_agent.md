@@ -82,7 +82,9 @@ Built by `build_domain_prompt` (`funhouse_agent/deep/prompt.py:224-261`) from
    best-estimate from design values; always comment on confidence; check
    inputs are physically reasonable before calculating and outputs against
    rules of thumb after; cite sources.
-2. **DIGGS workflow** (`system_prompt.py:48-65`).
+2. **DIGGS workflow** (`system_prompt.py:48-65`). *Since 2026-10-07
+   (`3d1cd44`, unreleased):* it points at `subsurface.write_diggs`, which
+   writes schema-checked DIGGS 2.6, and forbids hand-typed DIGGS XML.
 3. **"CRITICAL: Always Use Your Tools for Calculations"** — never compute,
    "not even simple ones" (`system_prompt.py:67-79`).
 4. **Tool discipline** — call `describe_method` before first use, use only

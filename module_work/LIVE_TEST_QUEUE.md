@@ -1,24 +1,34 @@
-# Live checks for 5.32.0 — what to run on Funhouse, and why
+# Live checks — what to run on Funhouse, and why
 
-**Why this list exists.** Several 5.32.0 changes were only tested with
-stand-in models here, or on Foundry with a different model. These checks
-confirm them with the real model on Funhouse. Each one is small. You said
-(2026-10-04): "For small tests moving forward, just start keeping a list of
-tests and we'll do it in funhouse in the future." — so small checks go here
-instead of into a new Foundry round.
+**Why this list exists.** Some changes can only be confirmed with the real
+model on Funhouse: offline tests use stand-in models, and Foundry runs a
+different model. Each check here is small. You said (2026-10-04): "For small
+tests moving forward, just start keeping a list of tests and we'll do it in
+funhouse in the future." So small checks go here instead of into a new
+Foundry round. Tick each one off in "Done" at the bottom with the date and
+what you saw.
 
-**Order.** Do the setup, then check 1 (the most important), check 2 (ten
-seconds, free), then check 3 when you have half an hour. Tick each one off in
-"Done" at the bottom with the date and what you saw.
+**After any check:** send the run folder (the zip, or the SharePoint folder
+name). Every run's full record is read, not just the scores (CLAUDE.md,
+"REVIEW EVERY MODEL RUN IN FULL").
+
+**Still to run, in this order (all on 5.32.1):**
+- check 6, the most important: positions and circles after the location
+  fix;
+- check 5: SharePoint links, remembered files, past conversations;
+- check 3: the report-ingest rerun, when you have half an hour.
+
+Checks 1, 2 and 4 are done (see "Done").
 
 ---
 
-## Setup (once)
+## Setup (once per release)
 
-In a Funhouse notebook, as for any new release:
+5.32.1 is not released yet; it goes out on your word, with planlens 0.12.0.
+In a Funhouse notebook:
 
 ```python
-%pip install "geotech-staff-engineer==5.32.0"
+%pip install "geotech-staff-engineer==5.32.1"
 dbutils.library.restartPython()
 ```
 
@@ -27,16 +37,16 @@ Then, in a new cell, confirm the versions:
 ```python
 import importlib.metadata as md
 print(md.version("geotech-staff-engineer"), md.version("planlens"))
-# expect: 5.32.0 0.11.0
+# expect: 5.32.1 0.12.0
 ```
 
-If pip says it cannot find 5.32.0, the Nexus mirror has not caught up yet (it
-usually lags PyPI by a day or two). Either wait, or upload the two wheel files
-from `foundry_handoff/` to the cluster and install them directly, planlens
-first:
+If pip says it cannot find 5.32.1, the Nexus mirror has not caught up yet (it
+usually lags PyPI by a day or two). Either wait, or upload the two wheel
+files from `foundry_handoff/` to the cluster and install them directly,
+planlens first:
 
 ```python
-%pip install /path/to/planlens-0.11.0-py3-none-any.whl /path/to/geotech_staff_engineer-5.32.0-py3-none-any.whl
+%pip install /path/to/planlens-0.12.0-py3-none-any.whl /path/to/geotech_staff_engineer-5.32.1-py3-none-any.whl
 dbutils.library.restartPython()
 ```
 
@@ -45,101 +55,97 @@ copy) set up in the notebook, as in earlier runs.
 
 ---
 
-## Check 1 — Do the red circles land on the tags? (most important)
+## Check 6 — Do positions now come back right, and do the circles land? (after the location fix; about 45 minutes)
 
-**What changed.** When the app draws circles or boxes on a PDF, it now looks at
-each mark afterwards and asks the model two questions: *is the thing inside
-the circle?* and, new in 5.32, *is the circle drawn closely around it?* The
-second question was added because, in one Foundry run, the agent "fixed"
-circles that were in the wrong place by making them huge (70–125 points
-across around 10-point tags) until the old check accepted them.
+**Why.** Check 4 showed GPT-5.4's positions on the 0-999 grid were 57-91 pt
+off a whole sheet, while its positions in PIXELS were within a few points,
+and that Funhouse shrinks every image to 2,048 px. The location fix
+(`module_work/harness_theory/locating_things_on_a_page.md`, "What changed")
+makes five changes:
+- the app asks for pixel positions and converts them itself, with the size
+  it sent;
+- no image is sent larger than 2,048 px, so small lettering is tiled
+  automatically again;
+- `tiles="6x6"` is no longer silently ignored;
+- a zoom on a reported position is wide enough to hold the thing;
+- planlens refuses a mark placed from a whole-page look (zoom first), and a
+  comment by quote on a CAD notes column lands on the quoted line.
 
-**What could go wrong.** No real model has answered the new question yet. If
-the model judges "closely" too strictly, good circles get rejected and the
-agent keeps redrawing — slow and costly — or leaves correct circles out.
+**Setup.** As in "Setup" above (5.32.1 with planlens 0.12.0).
 
-**Option A — quick look in the app (no notebook).** Open the Document Review
-page, upload a drawing sheet that has small tags on it, and paste:
+**Step 1: the measurement, without the agent (about 23 model calls, ~15
+minutes).** Copy the cell in §5.2 of the location document into one notebook
+cell with `fh_prompter` set up, and run it. **Pass:**
+- the profile line ends "the host delivers at most 2048 px";
+- `page-as-shipped` is within a few points on all three repeats, with
+  y scale near 1.0;
+- the tool line shows `tiles: 9`;
+- both zoom rows say "window holds the tag".
 
-> Circle every GCE penetration callout on this sheet in red (not the legend
-> rows) and give me the marked-up PDF.
+**Send me the printed output** (it also saves a JSON file in the notebook's
+folder).
 
-(Change "GCE penetration callout" to a tag that is really on your sheet.)
-Then open the PDF it gives you. **Pass:** each circle sits snugly round one
-tag, and the turn details show it wrote the file only once or twice. **Fail:**
-circles missing for tags you can see, circles far bigger than the tags, or the
-file written over and over.
-
-If you have no suitable sheet handy, this makes the same synthetic sheet the
-test suite uses (download it from the cluster, then upload it in the app):
-
-```python
-from planlens.testing.tag_fixtures import build_synthetic_tag_set
-open("/tmp/tag_set.pdf", "wb").write(build_synthetic_tag_set().pdf)
-# 7 "GCE" callouts with leaders on page 1, plus look-alikes and a legend
-```
-
-**Option B — the measured way (notebook, about 20–30 minutes, roughly
-$5–10).** This runs the two markup tasks from the test suite three times each
-and scores where the circles landed:
+**Step 2: the circle task again (about 20-30 minutes, roughly $5-10).** This is the
+measured circle task from check 1, in a NEW folder:
 
 ```python
 from funhouse_agent.review_eval import score_review_suite
-
-DOCS = "/Volumes/.../review_eval_docs"   # <- the folder you used for the suite run on Sept 30
+DOCS = "/Volumes/.../review_eval_docs"   # <- the same folder as check 1
 
 res = score_review_suite(
     prompter=fh_prompter, model_name="funhouse-gpt-high",
-    docs_dir=DOCS, out_dir="/tmp/check_532_markups",
+    docs_dir=DOCS, out_dir="/tmp/check_locations_fix",
     ids=["produce-circle-tags", "produce-markup"],
-    arms=("baseline", ("baseline_r2", {}), ("baseline_r3", {})),   # = 3 repeats
-    sharepoint=fh_sp_client)                                         # keeps a copy
-
+    arms=("baseline", ("baseline_r2", {}), ("baseline_r3", {})),
+    sharepoint=fh_sp_client)
 print(res["results_md"])
-for arm, runs in res["results"].items():
-    for task, r in runs.items():
-        print(f"{arm:12} {task:20}",
-              "PASSED" if r["score"]["passed"] else "FAILED",
-              "| times it wrote the marked PDF:",
-              r.get("tool_counts", {}).get("annotate_document", 0),
-              "| minutes:", round((r.get("seconds") or 0) / 60, 1))
 ```
 
-**Pass:** all 6 lines say PASSED, and none wrote the marked PDF more than 3
-times. **Note the minutes** too: 5.32 also limits the app to 8 image calls at
-a time (it crashed Foundry when many ran at once); if any single run takes
-more than about 15 minutes, tell me. **If anything fails:** send me the
-printed table. The run's details are saved under
-`GeotechStaffEngineer/review_eval/check_532_markups` on SharePoint, and I can
-read them from there.
+**Pass:**
+- `produce-circle-tags` passes on at least 2 of the 3 runs;
+- in each marked PDF the circles sit on the tags;
+- the agent zoomed before it circled. If it tried to circle from a
+  whole-page look, the tool refused with "Zoom on the thing first", which
+  is fine, as long as it then zoomed.
 
----
+Also open the three `produce-markup` PDFs: the comment's arrow should point
+at the line "RAMP SLOPE CANNOT EXCEED 8.33% MAX." (the bottom line of
+note 4), not beside note 3.
 
-## Check 2 — Is the "find every copy of a tag" tool still available? (10 seconds, free)
+**Send:** the printed table and the SharePoint folder name
+(`GeotechStaffEngineer/review_eval/check_locations_fix`). Every run is read
+in full.
 
-**What changed.** The `find_like` tool (it finds every copy of a tag across a
-drawing set) uses an image library called OpenCV. On Foundry, simply loading
-OpenCV crashed the whole program, because of a government security setting
-(FIPS mode). 5.32 now tries loading OpenCV in a throwaway process first, and
-hides `find_like` if that process dies, so the app survives. On Funhouse
-OpenCV should load fine, so the tool should still be there. This check
-confirms the new safety test does not hide it by mistake.
+## Check 5 — SharePoint links, remembered files, past conversations (after 5.32.1; in the app, about 20 minutes)
 
-```python
-from planlens.opencv import available
-print(available())            # expect: (True, '')
+**Why.** These come from your geotech-page session of 2026-10-06.
+- **The pasted link was fine.** In one turn every SharePoint call failed for
+  a few seconds, almost certainly an expired sign-in, and the tool reported
+  that as "not found".
+- **The agent "forgot" the file.** It cannot see earlier turns' tool results,
+  only its own answers.
+- **The geotech page listed the review page's past conversations.**
 
-from funhouse_agent.deep.tools import _find_like_available
-print(_find_like_available()) # expect: True
-```
+All three are fixed in 5.32.1. This check confirms the fixes live.
 
-**Pass:** `(True, '')` and `True`. The first line may take a second or two
-(that is the throwaway process). **Fail:** `(False, '...')` — send me the text
-in the quotes.
+**How.** Start the app with SharePoint set up as usual. Then, on the
+**geotech page**:
 
-The same question matters for Tiny Apps: it is worth asking CfA whether their
-App Service runs in FIPS mode. If it does, `find_like` will hide itself there
-and the rest of the app is unaffected.
+1. Paste a SharePoint "copy link" to a PDF and ask for a short summary.
+   **Pass:** it downloads and summarises.
+2. Leave the app open for more than an hour (the sign-in renewal now checks
+   every minute), then ask a follow-up about the same PDF. **Pass:**
+   - it answers from the file it already has, without "I no longer have
+     it";
+   - "Turn details" (now on by default) shows the turn started with a note
+     listing that file.
+3. If a SharePoint call does fail, the message should now say SharePoint
+   refused or is not answering, not "file not found".
+4. Open "Find a past conversation" on the geotech page, then on the
+   Document Review page. **Pass:** each lists its own conversations.
+
+**Send:** the conversation's SharePoint folder name. `activity.jsonl` now
+records the note and any SharePoint error code.
 
 ---
 
@@ -195,141 +201,21 @@ numbers to beat are in brackets):
 files, this run's per-item files record what the model actually wrote, so I
 can see exactly what is still wrong.
 
----
-
-## Check 4 — How far off are the vision model's positions? (about 15 minutes)
-
-**Why.** The circles missed because the vision model reports positions on a
-whole page as a shrunken copy of the truth (the location review,
-`module_work/harness_theory/locating_things_on_a_page.md`), and because
-Funhouse appears to shrink any image wider than 2,048 px before the model
-sees it. This cell measures both directly, without the agent: it sends the
-synthetic tag sheet to GPT-5.4 at several sizes and zooms and compares the
-positions it reports with the true ones.
-
-**How.** Paste `location_measurement_cell_ready.py` (sent in chat; the same
-code is in §5 of the location document) into one notebook cell with
-`fh_prompter` set up. About 17 model calls. **Send me the printed output**
-(it also saves a JSON file in the notebook's folder). The results decide how
-the next release sizes its whole-page looks and its zooms.
-
-## Re-run of check 1 on the 5.32.1rc2 test wheel (after the 2026-10-07 fix)
-
-Upload `geotech_staff_engineer-5.32.1rc2-py3-none-any.whl` (sent in chat;
-not published; it replaces rc1 — rc2 also keeps the model's own words in
-each run's `activity.jsonl`, so the re-run can be reviewed in full) to the
-cluster, then:
-
-```python
-%pip install /path/to/geotech_staff_engineer-5.32.1rc2-py3-none-any.whl
-dbutils.library.restartPython()
-```
-
-**After any check:** send the run folder (the zip, or the SharePoint folder
-name). Every run's full record is read, not just the scores (CLAUDE.md,
-"REVIEW EVERY MODEL RUN IN FULL").
-
-Run the Option B cell again with a NEW `out_dir`,
-`"/tmp/check_532_markups_rc1"`. `sharepoint=fh_sp_client` now works directly
-(the copy fix is in the wheel), and the notebook cell for viewing the PDFs
-works as before with the new folder name. **Pass:** most of the 3
-`produce-circle-tags` runs pass, and none withholds a file whose circles you
-can see sit on the tags.
-
-## Check 5 — SharePoint links, remembered files, past conversations (after 5.32.1; in the app, about 20 minutes)
-
-**Why.** These come from your geotech-page session of 2026-10-06.
-- **The pasted link was fine.** In one turn every SharePoint call failed for
-  a few seconds, almost certainly an expired sign-in, and the tool reported
-  that as "not found".
-- **The agent "forgot" the file.** It cannot see earlier turns' tool results,
-  only its own answers.
-- **The geotech page listed the review page's past conversations.**
-
-All three are fixed in 5.32.1. This check confirms the fixes live.
-
-**How.** Start the app with SharePoint set up as usual. Then, on the
-**geotech page**:
-
-1. Paste a SharePoint "copy link" to a PDF and ask for a short summary.
-   **Pass:** it downloads and summarises.
-2. Leave the app open for more than an hour (the sign-in renewal now checks
-   every minute), then ask a follow-up about the same PDF. **Pass:**
-   - it answers from the file it already has, without "I no longer have
-     it";
-   - "Turn details" (now on by default) shows the turn started with a note
-     listing that file.
-3. If a SharePoint call does fail, the message should now say SharePoint
-   refused or is not answering, not "file not found".
-4. Open "Find a past conversation" on the geotech page, then on the
-   Document Review page. **Pass:** each lists its own conversations.
-
-**Send:** the conversation's SharePoint folder name. `activity.jsonl` now
-records the note and any SharePoint error code.
-
-## Check 6 — Do positions now come back right, and do the circles land? (after the location fix; about 45 minutes)
-
-**Why.** Check 4 showed GPT-5.4's positions on the 0-999 grid were 57-91 pt
-off a whole sheet, while its positions in PIXELS were within a few points,
-and that Funhouse shrinks every image to 2,048 px. The location fix
-(`module_work/harness_theory/locating_things_on_a_page.md`, "What changed")
-makes five changes:
-- the app asks for pixel positions and converts them itself, with the size
-  it sent;
-- no image is sent larger than 2,048 px, so small lettering is tiled
-  automatically again;
-- `tiles="6x6"` is no longer silently ignored;
-- a zoom on a reported position is wide enough to hold the thing;
-- planlens refuses a mark placed from a whole-page look (zoom first), and a
-  comment by quote on a CAD notes column lands on the quoted line.
-
-**Setup.** Install the release that carries the fix (the lead names the
-version, with the planlens version it needs) as in "Setup" above.
-
-**Step 1: the measurement, without the agent (about 23 model calls, ~15
-minutes).** Copy the cell in §5.2 of the location document into one notebook
-cell with `fh_prompter` set up, and run it. **Pass:**
-- the profile line ends "the host delivers at most 2048 px";
-- `page-as-shipped` is within a few points on all three repeats, with
-  y scale near 1.0;
-- the tool line shows `tiles: 9`;
-- both zoom rows say "window holds the tag".
-
-**Send me the printed output** (it also saves a JSON file in the notebook's
-folder).
-
-**Step 2: the circle task again (about 20-30 minutes, roughly $5-10).** Run
-check 1's Option B cell with a NEW folder:
-
-```python
-from funhouse_agent.review_eval import score_review_suite
-DOCS = "/Volumes/.../review_eval_docs"   # <- the same folder as check 1
-
-res = score_review_suite(
-    prompter=fh_prompter, model_name="funhouse-gpt-high",
-    docs_dir=DOCS, out_dir="/tmp/check_locations_fix",
-    ids=["produce-circle-tags", "produce-markup"],
-    arms=("baseline", ("baseline_r2", {}), ("baseline_r3", {})),
-    sharepoint=fh_sp_client)
-print(res["results_md"])
-```
-
-**Pass:**
-- `produce-circle-tags` passes on at least 2 of the 3 runs;
-- in each marked PDF the circles sit on the tags;
-- the agent zoomed before it circled. If it tried to circle from a
-  whole-page look, the tool refused with "Zoom on the thing first", which
-  is fine, as long as it then zoomed.
-
-Also open the three `produce-markup` PDFs: the comment's arrow should point
-at the line "RAMP SLOPE CANNOT EXCEED 8.33% MAX." (the bottom line of
-note 4), not beside note 3.
-
-**Send:** the printed table and the SharePoint folder name
-(`GeotechStaffEngineer/review_eval/check_locations_fix`). Every run is read
-in full.
-
 ## Done
+
+- **2026-10-07, check 1 re-run on the 5.32.1rc1 test wheel (Funhouse,
+  GPT-5.4): still failing, and it located the real cause.**
+  - `produce-markup` passed 3/3.
+  - `produce-circle-tags` failed 3/3, with 0, 5 and 0 of the 7 tags marked.
+    The run with 5 had all 5 of its circles on tags.
+  - The measured size check worked. The third run's 8 circles were all
+    rejected; the file it left was an unchecked draft, not circles the check
+    accepted.
+  - Circles were still placed from whole-page looks, tens of points off.
+
+  That led to check 4 and the location fix, which check 6 re-measures. The
+  rc2 re-run was dropped in favour of check 6. Details:
+  `module_work/harness_theory/locating_things_on_a_page.md` §3.
 
 - **2026-10-07, check 4 (location measurement), Funhouse GPT-5.4.** Funhouse
   caps images at 2,048 px (confirmed by token counts). Whole-page positions

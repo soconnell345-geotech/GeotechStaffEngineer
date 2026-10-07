@@ -149,8 +149,10 @@ format), and milestones M0-M4.
 **M0 is DONE** (runs 1–4 below): every arm measured on Sol and GPT-5.4; the
 5.32.0 decision was to keep every switch off. **The open to-do list is
 `HANDOFF.md` §0a-current ("Open to-dos after 5.32.0")** — one list for the
-whole project. The review-harness items on it: measure the vision call's box
-precision against the synthetic fixtures (no model); the look-alike /
+whole project. The vision call's box precision was measured on 2026-10-07
+(run 5 below; `module_work/harness_theory/locating_things_on_a_page.md`),
+and the location fix built from it awaits live check 6. The other
+review-harness items on the list: the look-alike /
 self-verification and box-carrying boundary found by
 `module_work/harness_theory/`; an image crop/zoom tool for raster uploads;
 then, as before, Phase 5 (rewrite the review prompt around the review method
@@ -273,3 +275,28 @@ the check now also asks whether a mark is drawn close (unverified live:
 `module_work/LIVE_TEST_QUEUE.md` item 1). Page 19 (FBG read as FPG) is named
 in most runs: a look-alike the reader "verifies" with the same kind of call
 that misread it (`module_work/harness_theory/document_review.md`).
+
+**Run 5 — 2026-10-07, Funhouse (live checks 1 and 4, run by the owner),
+GPT-5.4.** These were the two markup tasks × 3, on 5.32.0 and again on the
+5.32.1rc1 test wheel. Every run was read in full:
+`module_work/review_eval_results/2026-10-07_funhouse_5.32.0_check1/`
+(TRACE_REVIEW.md, RESULTS.md) and
+`module_work/harness_theory/locating_things_on_a_page.md`.
+
+| wheel | `produce-markup` | `produce-circle-tags` (tags marked of 7) | tokens in per run | minutes per run |
+|---|---|---|---|---|
+| 5.32.0 | 3/3 | 0/3 (0, 1, 2) | 198k–297k | 2.0–3.4 |
+| 5.32.1rc1 | 3/3 | 0/3 (0, 5, 0) | 158k–359k | 1.6–3.8 |
+
+**Reading.** There were two causes.
+- **5.32.0's "drawn close" question was too strict on GPT-5.4.** It
+  rejected correct rings. The size is now measured instead (`cc697e6`), and
+  rc1 confirmed that check behaves.
+- **Circles were placed from whole-page looks.** Live check 4 measured this
+  directly: GPT-5.4's 0-999 boxes on a whole sheet were 57–91 pt off, while
+  its pixel boxes, converted with the true image size, were 1–6 pt off.
+  Funhouse also caps images at 2,048 px.
+
+The location fix (app `cf43c90`, planlens `08a1d53`) asks for pixel boxes,
+caps renders at 2,048 px, and refuses small marks read off wide views. It is
+unreleased; live check 6 re-measures it.

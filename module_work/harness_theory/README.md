@@ -17,6 +17,27 @@ ingest) and pre-releases **5.32.0rc2/rc3** with planlens 0.11.0rc2 (Document
 Review suite). Where the code has changed since those runs in a way that
 matters, the documents say so.
 
+### Changed since this was written
+
+These changes date from 2026-10-07. They are committed and pushed but not
+released; they ship in app 5.32.1 with planlens 0.12.0. The body text still
+describes 5.32.0; short notes in the affected sections point here.
+
+| Change | Commits | Affects |
+|---|---|---|
+| **Vision locations come back in pixels and are converted in code.** Each side call is told the image size and asks for `px=[…]` boxes; the tool rewrites them as 0-999 boxes with the size it SENT, so the agent still reads one convention. Old 0-999 answers still parse. | app `cf43c90` | `shared_machinery.md` §5.1; `locating_things_on_a_page.md` "What changed" |
+| **No image is rendered larger than the host delivers.** The cap is 2,048 px on the long side by default (`GEOTECH_VISION_MAX_PX`). A fifth probe call measures the host's own limit. Zooms are padded by 10 % of the source view, and `tiles` accepts "NxN". | app `cf43c90` | `shared_machinery.md` §5.2 |
+| **The markup check measures size.** The look returns the thing's box, and a mark counts as too wide only above 30× the thing's area. This replaced 5.32.0's model-judged "drawn closely" question, which rejected correct rings on GPT-5.4. | app `cc697e6`, `cf43c90` | `document_review.md` F3 |
+| **planlens refuses a mark it cannot trust.** Two cases: a small mark read off a view wider than 300 pt, or an `image_box` that is the whole view. Separately, a quote on a multi-line CAD text block now lands on its printed row. | planlens `08a1d53` | `document_review.md`; `locating_things_on_a_page.md` |
+| **`find_like` runs without OpenCV.** A numpy matcher gives the same hits; it is chosen where OpenCV cannot load (Foundry and Funhouse are both FIPS hosts). | planlens `d7d6657`, app `ba12760` | `document_review.md` §3 tools table |
+| **The activity log keeps the model's own words.** `model_end` carries `text` and `reasoning`; `turn_start` carries the per-turn files note. | app `f405765`, `3d1cd44` | `shared_machinery.md` §3.4 |
+| **Every turn starts with a note of the files the conversation holds.** It is added to that turn's message only. | app `3d1cd44` | `shared_machinery.md` §3.3 |
+| **`subsurface.write_diggs`.** It writes real DIGGS 2.6 with the schema and read-back gates. | app `3d1cd44` | `geotech_agent.md` §3.1 |
+| **Empty scratch searches say what they did not search.** | app `3d1cd44` | `geotech_agent.md` §7 |
+
+The geotech-page field session that prompted the last four is written up in
+`module_work/field_feedback/2026-10-06_geotech-report-session_v5.32.0/FINDINGS.md`.
+
 ---
 
 ## The three harnesses, and how they relate

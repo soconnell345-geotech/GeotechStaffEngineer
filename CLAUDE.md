@@ -115,6 +115,26 @@ Key conventions:
 
 ## CURRENT WORKING STATE (2026-10-04) — 5.32.0 RELEASED with planlens 0.11.0 (pin >=0.11): look-first review prompts, checked markups (circles, labels, "drawn close"), Foundry full-resolution + Responses route, the measured Foundry fixes; switches still OFF by default; before it 5.31.0: Document Review M1 behind switches (findings, overview, geometry, digest free layer), all OFF by default; forward plan module_work/REVIEW_ARCHITECTURE.md; before it 5.30.0: the Document Review EVAL SUITE + the review-harness changes behind switches, all OFF by default; before it 5.29.1 with planlens 0.10.1: find_like kept OPTIONAL (not a workflow); 5.29.0 / planlens 0.10.0 added find_like + robust-first vision; 5.28.0 / planlens 0.9.0 measured the vision model; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
 
+- **On master since 5.32.0, UNRELEASED (2026-10-07; ships as 5.32.1 with
+  planlens 0.12.0 on the owner's word).** It comes out of the owner's
+  Funhouse live checks and a geotech-page field session, every run read in
+  full:
+  - the markup check measures size (`cc697e6`);
+  - the SharePoint mirror unwrap (`4334fce`);
+  - the model's own text in `activity.jsonl` (`f405765`);
+  - `find_like` without OpenCV on FIPS hosts (planlens `d7d6657`, app
+    `ba12760`);
+  - SharePoint failures said for what they are, a per-turn note of the
+    conversation's files, `subsurface.write_diggs`, turn details on by
+    default, and past conversations cached per page (`3d1cd44`);
+  - vision locations as pixel boxes converted in code, a 2,048 px render
+    cap, padded zooms, and planlens refusing small marks read off views
+    wider than 300 pt (app `cf43c90`, planlens `08a1d53`).
+
+  The list of changes is in `module_work/harness_theory/README.md`, "Changed
+  since this was written". The live checks to run after the release are in
+  `module_work/LIVE_TEST_QUEUE.md` (checks 3, 5 and 6). Pickup:
+  `HANDOFF.md` §0a-current, item 2a.
 - **5.32.0 RELEASED 2026-10-04 (tag `v5.32.0`) with planlens 0.11.0 (tag
   `v0.11.0`, published first — pin `planlens>=0.11`; no new third-party
   package).** The first release measured on Palantir Foundry before it

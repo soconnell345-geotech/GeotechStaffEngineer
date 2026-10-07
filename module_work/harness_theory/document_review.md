@@ -131,7 +131,8 @@ this page does not have (`deep/tools.py:1161-1172`);
 lean and minimal replace those with page-specific text
 (`review_agent.py:80-156`; `minimal_agent.py:83-116`). `find_like` was hidden
 on Foundry because OpenCV aborts the process there (`brief3/README.txt`;
-`deep/tools.py:158-177`).
+`deep/tools.py:158-177`). *Since 2026-10-07 (unreleased):* a numpy matcher
+runs it where OpenCV cannot load (planlens `d7d6657`, app `ba12760`).
 
 ### 3.3 Tool results (what comes back)
 
@@ -304,7 +305,11 @@ area
 (`review_eval/checks.py:411-468`). The answer said all seven were circled. The
 rc3 check asked only "does the ring enclose what it names"; a wide enough ring
 always does. Fixed after the run: the check now also asks whether the mark is
-drawn closely round the thing (commit `4ea4bd0`, `markup_check.py:49-68`). One
+drawn closely round the thing (commit `4ea4bd0`, `markup_check.py:49-68`).
+*Since 2026-10-07 (unreleased):* that question was too strict on GPT-5.4,
+so the size is now measured instead (`cc697e6`). planlens also refuses a small
+mark read off a view wider than 300 pt (`08a1d53`); see the README,
+"Changed since this was written". One
 side call in this run took 904 s (t = 207 → 1,098 s): an infrastructure stall,
 not agent behaviour.
 

@@ -160,6 +160,13 @@ open documents survive (one process-wide planlens toolkit,
 `funhouse_agent/document_tools.py:13-15`), so a handle quoted in the earlier
 answer can be reused.
 
+*Since 2026-10-07 (app `3d1cd44`, unreleased):* each turn's user message is
+preceded by a note listing the files the conversation already holds,
+whether attached, fetched from SharePoint or produced (`core.working_files_note`).
+The note is not saved into the history. The cause was a field session in
+which the agent forgot a report it had downloaded two turns earlier (README,
+"Changed since this was written").
+
 The geotech evaluation goes further: each question is its own fresh
 `agent.invoke` with no history at all (`eval_harness.py:963-1015`). Questions
 that are written as follow-ups ("Repeat the lateral analysis of the 0.5 m
@@ -176,6 +183,13 @@ sent (`activity_log.py:44-46`). So the traces show what each tool returned to
 the model — which is most of what the model "saw" — but not the system prompt
 version or the rendered images. Vision side calls (§5) appear in the log as
 model calls with `n_messages = 1`.
+
+*Since 2026-10-07 (app `f405765`, `3d1cd44`, unreleased):* the log also
+keeps:
+- the model's own text and any reasoning summary on each `model_end`, up to
+  8,000 characters;
+- the per-turn files note on `turn_start`;
+- SharePoint error codes in the tool results.
 
 ---
 
@@ -288,6 +302,13 @@ reasons from another model's description**; it learns WHERE things are only
 through 0–999 boxes that the side call writes into its prose and that the
 agent must copy back into `render_region(view=…, image_box=…)`.
 
+*Since 2026-10-07 (app `cf43c90`, unreleased):* the side call is told the
+image size and asked for `px=[…]` boxes. The tool converts them to 0-999
+boxes with the size it sent, before the agent reads the answer. Live check
+4 found GPT-5.4's own 0-999 boxes on a whole sheet 57–91 pt off, against
+1–6 pt for its pixel boxes (`locating_things_on_a_page.md` §5.1). Each
+result also carries a `precision` line.
+
 ### 5.2 Image size and detail
 
 `vision_view.render_view` renders to the largest image the model actually
@@ -321,6 +342,13 @@ are a smaller share; `brief3/out_sol_532/runs/*/*/activity.jsonl`). With
 `GEOTECH_VISION_BUDGET=openai-high` (`baseline_high` arm) the same call cost
 about **1,270 input tokens**, and `analyze_pdf_page` auto-tiled far more
 often (465 side calls over 17 runs against 335 over 37 for `baseline`).
+
+*Since 2026-10-07 (app `cf43c90`, unreleased):* no render exceeds 2,048
+px on its long side by default (`GEOTECH_VISION_MAX_PX`; `none` lifts it).
+Funhouse shrinks anything larger before the model sees it, so the size the
+app reasoned with was wrong. A fifth probe call, a 3072 × 1024 image,
+measures the host's own limit. On Foundry this cap replaces the full-size
+images described above unless the variable is set.
 
 `analyze_pdf_page(tiles="auto")` ALSO reads the page in 2×2 to 4×4 overlapping
 tiles, in parallel (4 workers), when the page's small lettering would arrive
