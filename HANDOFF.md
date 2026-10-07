@@ -18,9 +18,10 @@ clean on `master` / `main` at the release.
 1. Install 5.32.0: `%pip install "geotech-staff-engineer==5.32.0"` (brings
    planlens 0.11.0). If the Nexus mirror lags, the release wheels are in
    `../foundry_handoff/` (install planlens first).
-2. Run the small live checks in `module_work/LIVE_TEST_QUEUE.md` on Funhouse
-   (the markup check's "drawn close" question; `find_like` on a normal host;
-   the narrative conventions; the lab reader's link). Tick them off there.
+2. Run the three small live checks in `module_work/LIVE_TEST_QUEUE.md` on
+   Funhouse (written for the owner, with paste-ready cells): do the red
+   circles land on the tags; is `find_like` still available; one report-ingest
+   rerun (narrative rules, lab links, boring logs). Tick them off there.
 3. Ask CfA whether the Tiny Apps App Service enforces FIPS mode. If it does,
    OpenCV cannot load there and `find_like` hides itself (by design since
    5.32.0); the rest of the app is unaffected.
