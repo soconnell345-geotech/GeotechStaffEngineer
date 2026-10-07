@@ -156,10 +156,14 @@ def _truncate(text: str, max_chars: int) -> str:
 
 
 def _find_like_available() -> bool:
-    """Whether the installed planlens can search a drawing set for a mark —
-    and OpenCV can load on this host without killing the process (planlens
-    test-loads it in a child process first; on a FIPS-mode host it aborts the
-    interpreter: Foundry, 2026-10-03)."""
+    """Whether the installed planlens can search a drawing set for a mark on
+    this host. planlens answers that itself once it has a matcher that needs
+    no OpenCV (``planlens.document.findlike.available``: OpenCV where it
+    loads, numpy anywhere else — the FIPS hosts, where loading OpenCV aborts
+    the interpreter: Foundry 2026-10-03, Funhouse 2026-10-07). planlens 0.11
+    has only OpenCV, so there the question is whether OpenCV loads (it
+    test-loads it in a child process first); before 0.11 there is nothing to
+    ask."""
     import importlib.util
     try:
         if importlib.util.find_spec("planlens.document.findlike") is None:
@@ -167,9 +171,12 @@ def _find_like_available() -> bool:
     except (ImportError, ValueError):
         return False
     try:
-        from planlens.opencv import available
-    except ImportError:          # planlens before 0.11: no test-load to ask
-        return True
+        from planlens.document.findlike import available
+    except ImportError:          # planlens 0.11: OpenCV is the only matcher
+        try:
+            from planlens.opencv import available
+        except ImportError:      # planlens before 0.11: no test-load to ask
+            return True
     ok, why = available()
     if not ok:
         import logging
