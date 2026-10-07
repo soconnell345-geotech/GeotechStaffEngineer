@@ -216,6 +216,15 @@ can see sit on the tags.
 
 ## Done
 
+- **2026-10-07, check 2 on 5.32.0 (Funhouse): the guard WORKED, and Funhouse
+  is a FIPS host.** `available()` returned `(False, 'OpenCV cannot load on
+  this host (a test import exited with code -6: crypto/fips/fips.c:154:
+  OpenSSL internal error: FATAL FIPS SELFTEST FAILURE)')`; `find_like` is
+  hidden. So OpenCV — and with it `find_like`, the raster-drawing leg and OCR
+  — has never been usable on Funhouse (before 5.32.0 the first `find_like`
+  would have killed the process), and almost certainly not on Tiny Apps.
+  Follow-up on the to-do list: `find_like` without OpenCV.
+
 - **2026-10-07, check 1 Option B on 5.32.0 (Funhouse, GPT-5.4): FAILED, cause
   found and fixed.** `produce-markup` passed 3/3. `produce-circle-tags` failed
   3/3 (0, 1 and 2 of 7 tags marked). Two causes:

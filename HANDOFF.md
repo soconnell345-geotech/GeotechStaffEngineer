@@ -27,9 +27,11 @@ clean on `master` / `main` at the release.
    rejecting correct circles on GPT-5.4 — now a measured size test (cc697e6);
    plus the SharePoint copy fix (4334fce). Test wheel `5.32.1rc1` was sent for
    a re-run of check 1 first (queue file, "Re-run of check 1").
-3. Ask CfA whether the Tiny Apps App Service enforces FIPS mode. If it does,
-   OpenCV cannot load there and `find_like` hides itself (by design since
-   5.32.0); the rest of the app is unaffected.
+3. Ask CfA whether the Tiny Apps App Service enforces FIPS mode. Funhouse
+   DOES (live check 2, 2026-10-07: OpenCV fails its FIPS self-test there, as
+   on Foundry), so assume Tiny Apps does too: OpenCV cannot load and
+   `find_like` hides itself (by design since 5.32.0); the rest of the app is
+   unaffected. See item 9a.
 
 **B. Owner — decisions only the owner can make**
 4. Confirm or correct the seven DRAFT narrative conventions in
@@ -56,6 +58,17 @@ rules from single examples)
    have no zoom today) — `module_work/FUTURE_IDEAS.md` "VISION HARNESS
    BENCHMARK", which also holds the Chartography run (check its licence) and
    a small geotech chart truth set.
+9a. **`find_like` without OpenCV** (planlens). OpenCV's pip wheels abort on
+    every government host we use (Foundry, Funhouse; likely Tiny Apps), so
+    `find_like` — exact page boxes for every copy of a tag, the thing GPT-5.4
+    lacked when it placed circles from a whole-page look in live check 1 —
+    has never run where users are. It uses only `matchTemplate`
+    (normalised correlation), `resize`, `dilate` and contact-sheet drawing:
+    a numpy correlation, re-rendering the example with PyMuPDF at each scale
+    instead of resizing, and PyMuPDF/PIL for the sheets. Speed is the risk
+    (an 85-sheet set at ~15 scales × 4 rotations): measure against OpenCV
+    first; use OpenCV where it loads. The raster IR leg and OCR have the same
+    dependency. Still an OPTIONAL tool (owner's rule).
 10. The vision side-call boundary (`module_work/harness_theory/`, finding 1):
     first MEASURE the vision call's box precision against the synthetic tag
     fixtures (a script, no model calls); then consider page-coordinate
