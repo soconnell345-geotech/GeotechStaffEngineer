@@ -10,10 +10,9 @@ detailed Phase-E history; this file supersedes it.
 
 ### Open to-dos after 5.32.0 — THE list (2026-10-05)
 
-One list for the whole project; other notes point here. In progress
-(2026-10-07): the location build (item 9b), on master / main. No branch is
-open and no Foundry brief is running. Everything since 5.32.0 is committed
-and unreleased (item 2a).
+One list for the whole project; other notes point here. Nothing is in
+progress (2026-10-07): no branch is open and no Foundry brief is running.
+Everything since 5.32.0 is committed and pushed but unreleased (item 2a).
 
 **A. Owner — the test run**
 1. Install 5.32.0: `%pip install "geotech-staff-engineer==5.32.0"` (brings
@@ -23,9 +22,15 @@ and unreleased (item 2a).
    Funhouse (written for the owner, with paste-ready cells): do the red
    circles land on the tags; is `find_like` still available; one report-ingest
    rerun (narrative rules, lab links, boring logs). Tick them off there.
-2a. **5.32.1 is released only on the owner's word.** It needs planlens
-   0.11.1 first, from unreleased planlens `main` (d7d6657: `find_like` without
-   OpenCV). What master holds after 5.32.0:
+2a. **5.32.1 is released only on the owner's word.** planlens goes first.
+   Release it as **0.12.0**, not 0.11.1, because `write_markups` now refuses
+   some anchors it used to accept. Raise the app pin to `planlens>=0.12`.
+   planlens `main` carries:
+   - d7d6657: `find_like` without OpenCV;
+   - 08a1d53: the wide-view refusal, quote-row anchors and rotated sticky
+     notes.
+
+   What app master holds after 5.32.0:
    - **The markup check measures size** (cc697e6). Live check 1 on
      2026-10-07 found 5.32.0's "drawn close" question rejecting correct
      circles on GPT-5.4.
@@ -36,9 +41,10 @@ and unreleased (item 2a).
      failures said for what they are, a per-turn note of the files the
      conversation holds, `subsurface.write_diggs`, turn details on by default,
      and the past-conversations list cached per page.
-   - **The location build** (9b, in progress).
+   - **The location build** (cf43c90, item 9b).
 
-   The test wheel `5.32.1rc2` only covered the first two of these.
+   The test wheel `5.32.1rc2` only covered the first two of these. After
+   install, run checks 5 and 6 in `module_work/LIVE_TEST_QUEUE.md`.
 3. Ask CfA whether the Tiny Apps App Service enforces FIPS mode. Funhouse
    DOES (live check 2, 2026-10-07: OpenCV fails its FIPS self-test there, as
    on Foundry), so assume Tiny Apps does too: OpenCV cannot load and
@@ -100,7 +106,27 @@ rules from single examples)
     (an 85-sheet set at ~15 scales × 4 rotations): measure against OpenCV
     first; use OpenCV where it loads. The raster IR leg and OCR have the same
     dependency. Still an OPTIONAL tool (owner's rule).
-9b. **Locations (2026-10-07, the cause of the circle failures):** read
+9b. **BUILT 2026-10-07, unreleased** (app cf43c90, planlens 08a1d53).
+    Check 6 in the live-test queue re-measures it. What it does:
+    - Vision calls answer in pixel boxes, converted in code with the size
+      sent.
+    - Renders are capped at 2,048 px (`GEOTECH_VISION_MAX_PX`).
+    - `tiles` accepts "NxN".
+    - Zooms are padded by 10 % of the source view.
+    - planlens refuses a small mark read off a view wider than 300 pt, and an
+      `image_box` that is the whole view.
+    - A quote anchors on its printed row.
+
+    Two calls left open, to settle after check 6:
+    - 3x3 tiles of an 11 x 17 sheet are about 440 pt wide, so every mark
+      needs one zoom. Tiles measured 2.7 pt off, so raising the limit to
+      about 450 pt is the option if zooming per mark proves slow.
+    - The 2,048 px cap also applies on Foundry, where 5.32.0 sent full
+      resolution. A Foundry brief that wants full resolution sets
+      `GEOTECH_VISION_MAX_PX=none`.
+
+    The original note follows.
+    **Locations (2026-10-07, the cause of the circle failures):** read
     `module_work/review_eval_results/2026-10-07_funhouse_5.32.0_check1/TRACE_REVIEW.md`
     and `module_work/harness_theory/locating_things_on_a_page.md`. Whole-page
     vision boxes are a shrunken copy of the truth (a model property; the
