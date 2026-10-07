@@ -83,17 +83,33 @@ def file_manager_of(sharepoint: Any) -> Any:
     """
     if sharepoint is None:
         return None
-    if hasattr(sharepoint, "upload_file"):
+    if _has_file_methods(sharepoint):
         return sharepoint
-    inner = getattr(sharepoint, "file_manager", None)
-    if inner is None:
-        return sharepoint            # let the first call fail onto the summary
-    if callable(inner) and not hasattr(inner, "upload_file"):
-        try:
-            inner = inner()
-        except Exception:
-            return None
-    return inner
+    # A Funhouse client with some file methods of its own but not all of them
+    # (a newer SDK: ``upload_file`` on the client, ``ls`` only on its file
+    # manager) must still be unwrapped -- on 2026-10-07 a run mirrored NOTHING
+    # because the client was taken as the file manager and had no ``ls``.
+    for inner in (getattr(sharepoint, "file_manager", None),
+                  getattr(getattr(sharepoint, "_graph_client", None),
+                          "file_manager", None)):
+        if inner is None:
+            continue
+        if callable(inner) and not _has_file_methods(inner):
+            try:
+                inner = inner()
+            except Exception:
+                continue
+        if inner is not None:
+            return inner
+    return sharepoint                # let the first call fail onto the summary
+
+
+#: What a mirror calls on a file manager.
+FILE_METHODS = ("ls", "upload_file", "create_folder", "download_file")
+
+
+def _has_file_methods(obj: Any) -> bool:
+    return all(callable(getattr(obj, m, None)) for m in FILE_METHODS)
 
 
 def _stamp(path: Path) -> List:

@@ -506,6 +506,8 @@ def score_review_suite(model: Any = None, *, prompter: Any = None,
             getattr(model, "model", type(model).__name__),
             "versions": _versions()}
 
+    mirror_warned: set = set()
+
     def write_results() -> str:
         meta["updated"] = datetime.now().isoformat(timespec="seconds")
         md = summarize(runs, [a for a, _ in arm_list], tasks, meta)
@@ -515,7 +517,15 @@ def score_review_suite(model: Any = None, *, prompter: Any = None,
             encoding="utf-8")
         if mirror is not None:
             try:
-                mirror.mirror_dir(out, mirror.remote_for(out.name))
+                got = mirror.mirror_dir(out, mirror.remote_for(out.name))
+                # A mirror never raises: its failures are in the summary. Say
+                # so once per distinct error, or a run "mirrors" nothing in
+                # silence (2026-10-07: every upload failed and nothing said).
+                for err in (got or {}).get("errors") or []:
+                    head = str(err).split(":", 1)[-1].strip()[:160]
+                    if head not in mirror_warned:
+                        mirror_warned.add(head)
+                        say(f"mirror: a file was NOT copied ({err})")
             except Exception as exc:  # noqa: BLE001
                 say(f"mirror failed: {type(exc).__name__}: {exc}")
         return md

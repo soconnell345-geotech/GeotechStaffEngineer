@@ -101,6 +101,26 @@ class TestWhatItAccepts:
         client = type("Client", (), {"file_manager": fm})()
         assert m.file_manager_of(client) is fm
 
+    def test_a_client_with_SOME_file_methods_is_still_unwrapped(self):
+        """2026-10-07: a newer Funhouse client carried ``upload_file`` itself
+        but not ``ls``; it was taken as the file manager and every mirror
+        call failed. A client is used as-is only with ALL the methods."""
+        fm = FakeFM()
+
+        class Client:
+            file_manager = fm
+
+            def upload_file(self, *a, **k):
+                raise AssertionError("the client's own upload must not be used")
+
+        assert m.file_manager_of(Client()) is fm
+
+    def test_a_graph_client_s_inner_file_manager_is_found(self):
+        fm = FakeFM()
+        client = type("Client", (), {
+            "_graph_client": type("G", (), {"file_manager": fm})()})()
+        assert m.file_manager_of(client) is fm
+
     def test_a_store_whose_file_manager_is_a_METHOD_is_unwrapped(self):
         """The app's SharePointStore exposes it as a method, not a property."""
         fm = FakeFM()
