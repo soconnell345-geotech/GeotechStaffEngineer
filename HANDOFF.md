@@ -25,7 +25,7 @@ clean on `master` / `main` at the release.
 2a. **5.32.1 is ready to release on the owner's word** (master, after
    5.32.0): live check 1 on 2026-10-07 found 5.32.0's "drawn close" question
    rejecting correct circles on GPT-5.4 — now a measured size test (cc697e6);
-   plus the SharePoint copy fix (4334fce). Test wheel `5.32.1rc1` was sent for
+   plus the SharePoint copy fix (4334fce). Test wheel `5.32.1rc2` was sent for
    a re-run of check 1 first (queue file, "Re-run of check 1").
 3. Ask CfA whether the Tiny Apps App Service enforces FIPS mode. Funhouse
    DOES (live check 2, 2026-10-07: OpenCV fails its FIPS self-test there, as

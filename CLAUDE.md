@@ -1,6 +1,6 @@
 # GeotechStaffEngineer
 
-## READ-FIRST TRIGGERS (this file is 73 KB — these five lines are the ones that matter)
+## READ-FIRST TRIGGERS (this file is 73 KB — these six lines are the ones that matter)
 
 This file and `MEMORY.md` are the only docs auto-loaded into your context.
 Everything else below is reached ONLY if you go and read it. When one of these
@@ -12,6 +12,7 @@ answer was re-derived from scratch at least twice:
 | pastes a `%pip install` / cluster install log, or asks "any concerns?" about one | `docs/DATABRICKS_INSTALL.md` — do NOT re-derive the numpy cascade, the seven conflict warnings, or whether a new major version is safe. They are settled and written down. |
 | asks what state things are in, or you are picking up work | `HANDOFF.md` §0a-current — authoritative pickup list, with THE open to-do list at its top |
 | asks you to change an agent or pipeline (prompts, tools, vision, report-ingest stages, scorers) | `module_work/harness_theory/` — how the three harnesses actually work, from the code and the recorded Foundry runs, with their known failure modes and open questions |
+| brings back the results of ANY model run (suite run, live check, Foundry hand-back, a field session's conversation, a report-ingest stage) | the section **"REVIEW EVERY MODEL RUN IN FULL"** just below — read every run's full record (tool calls, results, the model's own text), not just the scores |
 | asks about a number published in planlens docs/README | `module_work/drawing_ground_truth/doc_claims_check.py` — if a number disagrees with that script, the DOCUMENT is wrong |
 | bumps the version / cuts a release | `webapp/tests/test_docs_currency.py` will fail until CLAUDE.md's state block, HANDOFF §0a-current and the install guide's history table each name the new version. Refresh the prose, don't just paste the version in. |
 
@@ -21,6 +22,46 @@ the same conclusions were rebuilt from the raw log instead of read off the
 guide; separately, this file told every agent "BOTH TREES UNCOMMITTED" for two
 days after 5.14.0 shipped. Pointers buried deeper in a 73 KB file get skimmed —
 these are at the top on purpose.
+
+## REVIEW EVERY MODEL RUN IN FULL (owner's standing rule, 2026-10-07)
+
+Whenever the results of a model run come back — a review-suite run, a live
+check on Funhouse, a Foundry hand-back, a field session's conversation
+export, a report-ingest stage, an eval — do NOT judge it from scores, tables
+or a targeted pass alone. Read the full record of EVERY run, passing and
+failing, or have an Opus subagent read it and write it up. The owner: "We
+have a lot of usage available in my Claude Max plan, and this ethic would
+catch problems so much faster." Use the usage; a full read is the default,
+not the exception.
+
+- **The record:** `activity.jsonl` (every tool call with its arguments and
+  result; every model call, and since 2026-10-07 the model's own `text` and
+  any `reasoning` summary on `model_end`), `run.json` / `messages.json` /
+  `transcript.jsonl` (question, answer, check results), `FEEDBACK.md` (what
+  the agent itself reported), and the OUTPUTS — open the PDFs, Word files and
+  images and look at them.
+- **The method:** reconstruct each run step by step — what the model was
+  shown, what it concluded, what it called next and why, how it reacted to
+  each tool result and each check — and set a failing run beside a passing
+  run of the same task (a repeat, another arm, another model). Check every
+  number it acted on against ground truth where there is any (fixtures,
+  answer keys).
+- **Look especially for:** a model acting on information it was never shown,
+  or copied out of another call's prose; tool results that mislead; checks
+  that are wrong, too strict, or gamed; a prompt or tool description steering
+  the wrong way; a scorer measuring something other than what the product
+  did; and gaps in the record itself — if the record cannot answer "why",
+  fix the logging, then say so.
+- **Write it down:** `TRACE_REVIEW.md` beside the results
+  (`module_work/review_eval_results/<date>_<what>/`); raw traces in a
+  gitignored `raw/` folder (`module_work/field_feedback/<date>_<what>/raw/`),
+  never committed when they carry client material.
+- **Background:** `module_work/harness_theory/` describes how each harness
+  works and its known failure modes — read it first.
+
+Why: on 2026-10-07 the first live check of 5.32.0 was diagnosed from circle
+positions and check verdicts alone; the full traces were where the causes
+were, and the record turned out not to keep the model's own words at all.
 
 Python toolkit for LLM-based geotechnical engineering agents.
 32 analysis modules (incl. pavement_design AASHTO 1993 + structural section/RC/frame analysis: section_props, concrete_props, pynite) + OpenSees agent + pyStrata agent + seismic signals agent + liquepy agent + GSTools agent + SALib agent + pystra agent + subsurface characterization (DIGGS/GEF/AGS4 data I/O — folds in the former pygef/ags4/pydiggs wrappers as format adapters) + DXF import + DXF export + PDF import + fem2d (2D plane-strain FEM: T6 quadratic elements, 3D-principal MC return, GL99 strength reduction, staged construction) + reliability (FOSM/PEM/Monte Carlo/native FORM + published COV database) + geo_project (staged, human-gated LLM model setup) + funhouse_agent (engine-agnostic agent with vision).

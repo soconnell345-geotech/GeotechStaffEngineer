@@ -197,15 +197,21 @@ can see exactly what is still wrong.
 
 ---
 
-## Re-run of check 1 on the 5.32.1rc1 test wheel (after the 2026-10-07 fix)
+## Re-run of check 1 on the 5.32.1rc2 test wheel (after the 2026-10-07 fix)
 
-Upload `geotech_staff_engineer-5.32.1rc1-py3-none-any.whl` (sent in chat;
-not published) to the cluster, then:
+Upload `geotech_staff_engineer-5.32.1rc2-py3-none-any.whl` (sent in chat;
+not published; it replaces rc1 — rc2 also keeps the model's own words in
+each run's `activity.jsonl`, so the re-run can be reviewed in full) to the
+cluster, then:
 
 ```python
-%pip install /path/to/geotech_staff_engineer-5.32.1rc1-py3-none-any.whl
+%pip install /path/to/geotech_staff_engineer-5.32.1rc2-py3-none-any.whl
 dbutils.library.restartPython()
 ```
+
+**After any check:** send the run folder (the zip, or the SharePoint folder
+name). Every run's full record is read, not just the scores (CLAUDE.md,
+"REVIEW EVERY MODEL RUN IN FULL").
 
 Run the Option B cell again with a NEW `out_dir`,
 `"/tmp/check_532_markups_rc1"`. `sharepoint=fh_sp_client` now works directly
