@@ -213,6 +213,14 @@ can see exactly what is still wrong.
 
 ## Done
 
+- **2026-10-07, checks 6 and 3 on Foundry (brief 4, 5.32.1rc3; GPT-5.4 and Sol).**
+  - **The location fix held:** whole-page pixel boxes were a median 3.5–19 pt off on GPT-5.4 and 1–1.5 pt on Sol. Every ring was placed from a zoom.
+  - **The circle task** passed 2 of 3 on GPT-5.4 (0 of 3 on Funhouse before) and 3 of 3 on Sol.
+  - **The full suite on Sol** passed 37 of 37.
+  - **Report ingest** narrative recall went from 75 % to 83 %, and `siteResponseMention` from 0/8 to 8/8.
+  - **Next:** the markup check cannot yet confirm review comments, a fix for the next release.
+  - **Write-up:** `module_work/review_eval_results/2026-10-07_foundry_5.32.1rc3/TRACE_REVIEW.md`.
+
 - **2026-10-07, check 1 re-run on the 5.32.1rc1 test wheel (Funhouse,
   GPT-5.4): still failing, and it located the real cause.**
   - `produce-markup` passed 3/3.

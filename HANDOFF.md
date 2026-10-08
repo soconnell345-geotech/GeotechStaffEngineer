@@ -52,6 +52,30 @@ Everything since 5.32.0 is committed and pushed but unreleased (item 2a).
    - C: the whole suite on `baseline`;
    - D: report-ingest stage d.
 
+   **BRIEF 4 IS BACK AND READ IN FULL (2026-10-08):** release 5.32.1 from
+   a4ef417 as measured. See
+   `module_work/review_eval_results/2026-10-07_foundry_5.32.1rc3/TRACE_REVIEW.md`,
+   with REVIEW_HARNESS run 6 and MEASUREMENTS "FOUNDRY RUN 2".
+   - **The location fix held** on both models.
+   - **Circles:** 2/3 passes on GPT-5.4, 3/3 on Sol.
+   - **Suite:** 37/37 on Sol, with no task changing outcome against run 4.
+   - **Report ingest:** narrative 83/85 %.
+
+   An optional cherry-pick is the activity-log lock hunk of 6c81cc5 (logging
+   only). Fixes for the next release, each measured first, are in
+   TRACE_REVIEW §7:
+   1. the markup check must judge a COMMENT by what it is about (0 of 8
+      good comments confirmed), and decide "encloses" from its own box;
+   2. a given `dpi` never lowers a zoom below the budget;
+   3. forgive common markup field slips;
+   4. surface tile-only finds;
+   5. stop `find_like` when the example floods;
+   6. the suite check `markups_point_at`;
+   7. ask for reasoning summaries on the Responses route;
+   8. print `floor_alone`/`model_alone` in report-ingest results, and
+      rescore the saved run for the logs-`index` and gradation-link
+      questions.
+
    **Cut 5.32.1 from a4ef417** (what brief 4 measures), on a `release/5.32.1`
    branch, adding only fixes the Foundry results call for. Master has moved
    on to the next train (`module_work/SCALES_COVERAGE_CROSSCHECKS.md`, for

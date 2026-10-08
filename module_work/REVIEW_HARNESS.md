@@ -300,3 +300,37 @@ GPT-5.4.** These were the two markup tasks × 3, on 5.32.0 and again on the
 The location fix (app `cf43c90`, planlens `08a1d53`) asks for pixel boxes,
 caps renders at 2,048 px, and refuses small marks read off wide views. It is
 unreleased; live check 6 re-measures it.
+
+
+**Run 6 — 2026-10-07, Foundry (brief 4, AI FDE), 5.32.1rc3 + planlens 0.12.0rc1 (app `a4ef417`, planlens `08a1d53`), GPT-5.4 and GPT-5.6 Sol, Responses route, `original` sent as AUTO, the app's 2,048 px cap in force.** Every run read in full: `module_work/review_eval_results/2026-10-07_foundry_5.32.1rc3/` (TRACE_REVIEW.md, RESULTS_partB_gpt54.md, RESULTS_partB_sol.md, RESULTS_partC_sol.md); raw traces in `module_work/field_feedback/2026-10-08_foundry_brief4_5.32.1rc3/raw/`.
+
+| part | GPT-5.4 | Sol |
+|---|---|---|
+| A: whole-page pixel boxes, median error (3 repeats) | 19.2 / 5.1 / 3.5 pt (old 0-999 prompt 28.6) | 1.1 / 1.1 / 1.5 pt (old prompt 8.8) |
+| B: `produce-circle-tags` × 3 (tags ringed of 7) | 2/3 (3, 7, 6) | 3/3 (7, 7, 6) |
+| B: `produce-markup` × 3 | 3/3 by the suite; 2/3 actually on note 4 | 3/3; 3/3 on note 4 |
+| B: tokens in / time, both tasks × 3 | 1.24 M, 593 s | 1.12 M, 915 s |
+| C: baseline, 37 tasks | held by the owner | 37/37; 5.37 M in / 0.63 M out; 76.5 min |
+
+**Reading.**
+- **The location fix held on both models.**
+  - Every box the vision calls wrote was a pixel box (1,574 of 1,574).
+  - Every ring was placed from a zoom, and every tight ring landed 0.1–3.8 pt from its tag.
+  - Every padded zoom in Part B held its target, and no refusal was needed.
+- **GPT-5.4's one failure was detection and judgement, not position.**
+  - T5 was seen only by a tile.
+  - T3 and T4 were dropped after hedged readings on zooms its own `dpi` had shrunk.
+  - T6 was dropped after two wrong check verdicts.
+- **The markup check cannot confirm review comments.** It confirmed 66 of 70 good rings but 0 of 8 good review comments, because it compares what is under a comment with the comment's own words. Agents escape to unchecked quote anchors and sticky notes. GPT-5.4 baseline's comment reached the wrong note that way, and the suite passed it because it checks only for "8.33".
+- **Part C: no task changed outcome against run 4.**
+  - On the 35 originals, input fell 10 %, output rose 38 % and time rose 13 % (a 15-minute hung call aside).
+  - Tiling fires on 90 of 100 page looks (1 of 120 in run 4), and doubled `set-long-rare-tag`'s input for the same answer.
+- **`find_like` (numpy) matches OpenCV exactly.** An example on a heavy grid line floods it (367–400 candidates, 180–289 s).
+- **An agent-set `dpi` quartered 45 of 106 zooms.**
+
+**Decision:** release 5.32.1 from `a4ef417` as measured; the activity-log lock hunk of `6c81cc5` is an optional cherry-pick. Fixes for the next release, each measured first, are in TRACE_REVIEW §7:
+1. the comment check and a geometric "encloses";
+2. the `dpi` floor;
+3. forgiving markup fields;
+4. tile-only finds;
+5. then `markups_point_at` for the suite.

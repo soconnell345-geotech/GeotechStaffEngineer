@@ -4252,3 +4252,33 @@ Lab (stage d run files): `after` == `model_alone` on all 10 sheets — the
 merge did not cause the open-set collapse; the model's LINK did, and the
 scorer compared boring IDs as exact strings (fixed 5e70823; run files now
 keep the records so this is rescoreable next time).
+
+
+## FOUNDRY RUN 2 -- 2026-10-07 -- app 5.32.1rc3, GPT-5.4 (Responses route), Foundry AI FDE
+
+- **What ran:** stage d (logs, lab, narrative) on Palantir Foundry, run by the AI FDE (brief 4, part D), against the 5.32.1rc3 test wheel (`a4ef417`, planlens 0.12.0rc1). numpy 1.26.4 there.
+- **Cost:** 85 calls, 1,103,126 input / 148,630 output tokens, pilot 261 s + full 1,574 s, 0 retries.
+- **Files:** RESULTS.md is in `module_work/field_feedback/2026-10-08_foundry_brief4_5.32.1rc3/raw/part_d/` only, and is never committed. Full reading: `module_work/review_eval_results/2026-10-07_foundry_5.32.1rc3/TRACE_REVIEW.md` §4.
+
+| reader | set | FOUNDRY RUN 1 (5.31.0) | FOUNDRY RUN 2 (5.32.1rc3) | note |
+|---|---|---|---|---|
+| narrative | 8 reports | recall 75 %, precision 77 % | **83 %, 85 %** | open 84/87, blind 83/85; siteResponseMention 0/8 -> 8/8, soilCorrosion 2/6 -> 5/6, propertyType 3/8 -> 8/8 (conventions from the owner's keys, 8e428ce); still weak: earthHazardsExposed 0/3, structureList 3/7 (+1 invented), structureCount 3/8, strata 4/8, recommendedFoundations 4/8; list recall 51 % |
+| lab | open 16 | 83 % -> 46 %, link 55 % | 83 % -> 51 %, link 61 % | hole-ID folding (5e70823) moved link 6 points |
+| lab | blind 15 | 55 % -> 82 %, link 100 % | 55 % -> 78 %, link 98 % | low: chemical 54 %, compaction 1/10, R36_p56 10 % |
+| lab | gradation, 9 sheets | -- | 80 % -> 37 % | R15_p82, R17_p114, R28_p176, R28_p177 collapse to 1-5 values: everything but `kind` lost = a missed LINK, not a merge drop |
+| log | open 6 | 91 % -> 98 % | 91 % -> 98 % | |
+| log | blind 9 | 73 % -> 73 % | 73 % -> **78 %** | recovery 53 -> 100 % is the scorer change (46be026), not the reader; n_value 96 %; uscs 0 -> 100 %; **index 44 -> 0 %, unchanged**; R25_p19 0 % before and after |
+
+**Reading.** The fixes moved what they aimed at. Two items remain, and the rc3 run files settle both with no model call (they keep the merged, model and floor records).
+
+1. **Logs index 7/16 -> 0/16 blind.** Two explanations fit:
+   - **The floor never held those values.** `seed_from_grid` binds an index cell only inside the sample's row group, while the before-score credits any number in the column inside the depth window.
+   - **Or the model overruled them.** `has_evidence` (`report_ingest/floor.py`) is judged per object and passes for any model object with a box and a note, so `model_wins` replaces the floor on every disagreement.
+
+   To settle it, ask for `log_scoring.rescore_saved` on the 9 blind logs: index `floor_alone` / `model_alone` / merged, and the count of `model_wins` / `floor_only` / `model_only` verdicts on index slots.
+2. **Gradation links.** Ask for `lab_scoring.rescore_saved` on the four collapsed sheets. Per specimen:
+   - whether the hole matched after folding;
+   - the depth difference in metres;
+   - whether `after == model_alone`.
+
+RESULTS.md should print `floor_alone` and `model_alone` beside before/after; they are computed and saved but not shown.
