@@ -81,7 +81,10 @@ detailed Phase-E history; this file supersedes it.
   - planlens: the speed fix and `log_grid(values=)`, unreleased on main.
 
   Step 9's live checks are `module_work/LIVE_TEST_QUEUE.md` check 8.
-- **3c. Foundry brief 5:**
+- **3c. Foundry brief 5: SENT 2026-10-08.** The brief is `../foundry_handoff/AI_FDE_BRIEF_5.md`. Its test wheels 5.33.0rc1 and planlens 0.13.0rc1 come from master 39716a8 and main c5bdb8d.
+  - Parts: A, label crops; B, markups ×3; C, Sol suite on baseline and coverage, plus checklist on `report-`; D, GPT-5.4 on the new tasks; E, GEC-12 Fig 7-15; F, patch alignment; G, report-ingest rescore and visual scales off/on.
+  - When it comes back, read every run in full and write a TRACE_REVIEW.
+  - Its original contents:
   - 3a's fixes and 3b;
   - the coverage arms `("baseline", "coverage", "checklist")`;
   - the report-ingest rescore questions (logs `index`, gradation links);
