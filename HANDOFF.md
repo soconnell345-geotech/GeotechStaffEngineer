@@ -6,7 +6,16 @@ detailed Phase-E history; this file supersedes it.
 
 ---
 
-## 0a-current. PICKUP LIST (2026-10-05, supersedes everything below)
+## 0a-current. PICKUP LIST (2026-10-08, supersedes everything below)
+
+**5.32.1 RELEASED 2026-10-08 (tag `v5.32.1`) with planlens 0.12.0 (tag
+`v0.12.0`, published first; pin `planlens>=0.12`; no new third-party
+package).** Cut from a4ef417, which Foundry brief 4 measured as 5.32.1rc3
+(GPT-5.4 and Sol; read in full, verdict: release as measured). It carries
+item 2a's list. Install on Funhouse: `%pip install "geotech-staff-engineer==5.32.1"`
+(brings planlens 0.12.0); the Nexus mirror lags PyPI by a day or two.
+Master has moved on (the next train: `module_work/SCALES_COVERAGE_CROSSCHECKS.md`);
+master's own HANDOFF carries the current list.
 
 ### Open to-dos after 5.32.0 — THE list (2026-10-05)
 
