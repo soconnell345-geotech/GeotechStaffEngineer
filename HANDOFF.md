@@ -122,6 +122,18 @@ Everything since 5.32.0 is committed and pushed but unreleased (item 2a).
      suite with `arms=("baseline", "coverage", "checklist")`, including the
      three `report-` tasks. The coverage switches go on by default only if
      the suite says so.
+   - **(viii) Left by the planlens scales build (a3f2a1d, 2026-10-08):**
+     - **Rectangles read as x, y, w, h.** `loggrid.page_rules` (around line
+       906) and `document._ruling_lines` (line 137) treat PyMuPDF's
+       rectangle items as x, y, w, h, but they are x0, y0, x1, y1. The new
+       code reads them correctly. Fixing the old two changes vector
+       `log_grid` output, so measure the effect on report ingest's log
+       floor first.
+     - **Speed.** `find_scales` takes 1–16 s per dense scanned page (34 s
+       worst) against the design's 0.4–0.8 s. Tighten it before `measure`
+       is used heavily.
+     - **A silent mismatch.** A `values` list of the wrong length is
+       ignored without a specific warning.
    - **(v) GEC-12 Figure 7-15 may be mis-digitised.** The W3 design found this
      in its §10, item 8. `geotech_references/gec_12/figures.py` (used by
      `axial_pile`) differs from a code reading of the chart by −19 % at 32°

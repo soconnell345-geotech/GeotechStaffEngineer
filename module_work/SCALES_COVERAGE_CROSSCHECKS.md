@@ -136,7 +136,7 @@ In each item, [code] means a check code can run; [judge] means the agent works t
 |---|---|
 | W1 | DONE (499e1cf): bundled DIGGS 2.6 schema, checked with lxml on every host |
 | W2 | DONE: `write_diggs` reconciles before writing and returns `cross_checks` |
-| W3 | DESIGN DONE (`module_work/VISUAL_SCALES_DESIGN.md`). Build waits on the owner's answers to its §10 |
+| W3 | Steps 0–5 BUILT in planlens a3f2a1d (`find_scales`, `measure`, `log_grid` on scans). Harness at `module_work/scales_harness/`: GATE PASS, 99.93 % inside ±. Private spot check: 32/32 stratum lines, median 0.007 m. Steps 6–9 (app side) next |
 | W4 | BUILT behind two switches, both OFF (`module_work/COVERAGE_AND_CHECKLIST.md`). The checklist content waits on the owner's markup. Measurement waits on a suite run. |
 
 **W4 in brief.**
