@@ -67,7 +67,10 @@ detailed Phase-E history; this file supersedes it.
   - reasoning summaries;
   - report-ingest `floor_alone`/`model_alone`.
 
-  Restarted with an Opus builder on 2026-10-08, after the release.
+  BUILT 2026-10-08 (app cc36945, planlens cbca2ec; lead re-gated). Nearly
+  every item changes what an agent sees, so all of it goes into brief 5;
+  TRACE_REVIEW §9 lists what to measure. Note J: GPT-5.4 baseline's
+  brief-4 markup now fails the new `markups_point_at` check (2/3).
 - **3b. W3 app side (steps 6–9):**
   - the `measure` tool on both pages, with the label-reading side call;
   - `read_reference_figure`'s second voter;
