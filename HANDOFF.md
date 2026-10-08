@@ -52,6 +52,33 @@ Everything since 5.32.0 is committed and pushed but unreleased (item 2a).
    - C: the whole suite on `baseline`;
    - D: report-ingest stage d.
 
+   **RELEASE IN PROGRESS (night of 2026-10-07/08; the owner: "Ok to release
+   however you see best").**
+   - **planlens 0.12.0 is LIVE on PyPI.** It is tag `v0.12.0` on branch
+     `release/0.12.0`, cut from 08a1d53 (what rc1 measured): 1,500 tests
+     passed, the wheel was built.
+   - **App 5.32.1 is STAGED, NOT TAGGED.** Branch `release/5.32.1` = a4ef417
+     plus the version bump, `planlens>=0.12` and the docs (pushed).
+   - **Gate on that exact tree, with planlens 0.12.0, so far:**
+     - analysis modules: 1,091, and 2,108 with 28 skipped;
+     - fem2d: 399;
+     - funhouse_agent: 2,268 with 10 skipped;
+     - all exit 0.
+   - **Still to run before `git tag v5.32.1`:**
+     - `report_ingest foundry_test_harness webapp/tests validation_examples`,
+       which Claude Code stopped for low memory (not a failure);
+     - the geotech-references suite, unchanged since v5.32.0.
+   - **Run them in a clean copy of the branch,** with PYTHONPATH pointing at
+     a planlens 0.12.0 checkout, one chunk at a time, ideally with the two
+     old Claude sessions closed. Then tag and push the tag (the workflow
+     publishes).
+   - **Meanwhile 5.32.0 installs pull planlens 0.12.0** (its pin is >=0.11).
+     That is compatible: the wide-view refusal only asks the agent to zoom,
+     and 5.32.0 hides `find_like` on FIPS hosts as before.
+   - **After the tag:** copy the released wheels to `../foundry_handoff/`;
+     restart the brief 4 fix-list builder (stopped to free memory; it had
+     written nothing).
+
    **BRIEF 4 IS BACK AND READ IN FULL (2026-10-08):** release 5.32.1 from
    a4ef417 as measured. See
    `module_work/review_eval_results/2026-10-07_foundry_5.32.1rc3/TRACE_REVIEW.md`,
