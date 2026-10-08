@@ -1376,6 +1376,14 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                     Investigation.model_validate(blob["investigation"]))
                 unresolved.extend(blob.get("unresolved") or [])
                 _vote_qa(qa, blob, pages)
+                votes = (blob.get("visual_scales") or {}).get("layer_votes")
+                if votes:
+                    from report_ingest.visual_scales import layer_votes_qa
+                    inv = blob.get("investigation") or {}
+                    qa.extend(layer_votes_qa(
+                        votes, f"investigations["
+                               f"{inv.get('investigation_id', '')}].layers",
+                        inv.get("depth_unit") or "", pages))
             elif reader in ("cpt", "dcp"):
                 blob = cached or _read_sounding(doc, pages, engine, budgets,
                                                 item, report_id, reader)
@@ -1387,6 +1395,9 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                         Investigation.model_validate(blob["investigation"]))
                 unresolved.extend(blob.get("unresolved") or [])
                 _vote_qa(qa, blob, pages)
+                if blob.get("code_trace"):
+                    from report_ingest.visual_scales import trace_check_qa
+                    qa.extend(trace_check_qa(blob["code_trace"], pages))
             elif reader == "calc":
                 blob = cached or _read_calc(doc, pages, engine, budgets,
                                             item, report_id)
@@ -1408,6 +1419,9 @@ def _read_items(doc: Any, engine: Any, budgets: Budgets, out: str,
                     record.lab_tests.append(LabTest.model_validate(test))
                 unresolved.extend(blob.get("unresolved") or [])
                 _vote_qa(qa, blob, pages)
+                if blob.get("plot_check"):
+                    from report_ingest.visual_scales import plot_check_qa
+                    qa.extend(plot_check_qa(blob["plot_check"], pages))
         except Exception as exc:                 # one item must not stop the run
             qa.append(QAEntry(
                 kind="skipped", where=f"items.{item.kind}",

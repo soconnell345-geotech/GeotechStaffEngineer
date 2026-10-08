@@ -13,8 +13,8 @@
   - windows of 25 pt or more, or small marks from views over 300 pt, never snap, but list candidates;
   - a vector ruler is re-tied to its ticks only when it is off by ≥ 0.75 pt;
   - truth for six sheets comes from re-running the lead's frame method.
-- **Left over:** HANDOFF 8a(viii) (rectangle items read as x, y, w, h in two older functions; speed 1–16 s per dense scan; a silent `values` length mismatch).
-- **Steps 6–9 (app side)** are next, after the brief 4 fix list.
+- **Left over:** HANDOFF 8a(viii) (rectangle items read as x, y, w, h in two older functions; speed 1–16 s per dense scan; a silent `values` length mismatch). The speed and the silent mismatch were dealt with in the app build (§12); the rectangle items are still open.
+- **Steps 6–8 (app side) BUILT 2026-10-08, uncommitted, for the lead to review:** §12. Step 9's live checks are queued (`module_work/LIVE_TEST_QUEUE.md` check 8; HANDOFF 3c, Foundry brief 5).
 
 **What this is.** The design asked for in `module_work/SCALES_COVERAGE_CROSSCHECKS.md`, item W3. The owner's direction (2026-10-08):
 
@@ -658,3 +658,91 @@ Against `SCALES_COVERAGE_CROSSCHECKS.md` §W3, "Pieces that exist":
 - **Chart curve.** Pixels darker than the grey gridlines, in the column at the asked axis value.
 - **Snap simulation.** 200 normal draws per true stratum line, nearest candidate crossing the description column.
 - **Cost.** All of it ran in 0.4–0.8 s a page on the owner's laptop.
+
+---
+
+## 12. Steps 6–8 as built
+
+Built 2026-10-08 on master (app) and planlens `main`, uncommitted for the lead to review. Nothing is switched on in report ingest; the agent tools and the chart voter are on.
+
+**Step 6: the tools.**
+- `measure` and `log_grid` joined `document_tools.OPTIONAL_DOCUMENT_TOOL_NAMES`, feature-detected on the installed planlens.
+  - They are on the geotech page and on the Document Review legacy and lean builds (`review_agent.REVIEW_TOOLS`), and the lean build's reading helper gets them too.
+  - The minimal build does not get them; a test pins this.
+- `funhouse_agent/measure_tool.py` wraps planlens' tools:
+  - `source` is an attachment name, a path or an `open_document` handle.
+  - Where the thing is: `bbox` in PDF points, or a look's `view` + `image_box`, converted by `vision_view.image_box_to_page`. The search window is padded by `max(vision_view.location_error(view))`. `to` is a second box on the same view.
+  - The result says where the box came from (`located_from`) and, from a view too wide to snap from, that it lists candidates.
+- **The label-reading side call** is `funhouse_agent/scale_labels.py`.
+  - Every pending label box is cut out, enlarged (lettering about 40 px) and numbered on one contact sheet, drawn with PyMuPDF alone.
+  - One vision call reads `#N | text` lines. The values go to planlens AS PRINTED ("4.0"), so a reading is never written finer than the print.
+  - What was read is remembered per document handle, page and box: a second measurement on the page spends no call.
+  - The parser drops a unit, writes `10^-3`, `10⁻³` and `1E-3` as their values, and makes an unreadable cell `None`.
+- **Descriptions.** `measure` uses the app's own text (§6.2). `log_grid` uses planlens' text without its pointer to `document_roles` (not on either surface), plus "its depth labels are read for you". Neither tool has a `values` parameter in the app. No prompt names either tool.
+- **The precision line** on every look ends with `vision_view.NOT_A_MEASUREMENT`: "A box read off an image locates a thing; it is not a measurement."
+
+**Step 7: `read_reference_figure`'s second voter** (`funhouse_agent/chart_reading.py`).
+- The chart prompt asks for one `READ | x = … | curve = … | value = … | px=[…]` line per curve read, and an `ANSWER` line for an interpolation.
+- Code works from the RAW answer, before its boxes are rewritten on the grid:
+  1. it places each pixel box with the size sent;
+  2. it fits the chart's axes (`find_scales`, reading a textless chart's labels by the same side call);
+  3. it finds the curve with `measure(kind="curve", at=…)`.
+- `code_reading` gives code's value and +/- beside the vision value, `agree` or `disagree`. The flag is set when the gap is over 3x code's +/-.
+  - For an `ANSWER`, the two curves code measured are interpolated linearly in the curve parameter, and both readings are reported.
+  - Several curves near the box: listed, none chosen. No curve, no scale, or labels unread: said, and the vision value stands alone.
+- The result's note says which value rests on what. The tool's description says it returns a measured value beside the estimate.
+- `GEOTECH_CHART_CODE_VOTER=0` turns the voter off. It is on by default.
+
+**Step 8: report ingest** (`report_ingest/visual_scales.py`, behind `GEOTECH_INGEST_VISUAL_SCALES` or `with use_visual_scales():`, OFF by default).
+- **Off.** `log_grid_for` folds every layer boundary planlens found in a scan's pixels back into the layer above. The floor is then what it was before planlens read stratum lines off scans. The readers, the scorers (`log_scoring`, `sounding_scoring`) and the graph all build the grid through this one function.
+- **On, logs.**
+  - A textless scan's depth labels are read by one structured call (`LabelReading`) over the same numbered sheet, and the grid is read again with them.
+  - Where the scan has text, measured tops enter the floor. The note reads "layer top measured from the stratum line drawn on the scan (pixels), +/- …".
+  - Every measured top also votes on the record's tops (`layer_votes`). A gap over 3x its +/- is a `disagreement` QA entry, and a note gives the counts. On a textless scan the floor holds no layer (a layer is its words), so the vote is the measured tops' only say.
+- **On, lab.** `plot_check` sets a floor gradation with sizes against the sheet's plot: log-x, linear-y, every marker read through the fitted axes. A point off by more than max(1 %, 3x +/-) is a new QA kind, `plot_vs_table`, now in the library's review kinds. The table stays the record.
+- **On, soundings.** `trace_check` reads each digitised point again where its channel's trace crosses that depth. The panel is matched to the channel by the range of the values. Each channel gets counts of agree, disagree, several traces and no trace, a `disagreement` QA entry where any disagree, and a note. The record keeps the model's series.
+- **One `zoom_plot`.** `visual_scales.zoom_plot` is the helper behind the lab, calc and sounding readers' tool, with the same messages as before. With the setting on, a crop holding a fitted plot also carries "CODE'S READING OF THIS CROP": its axes and the markers code read.
+
+**Speed and the leftovers in planlens** (HANDOFF 8a(viii)).
+- The decade-pattern fallback `scales._log_decades_by_pairs` was 9 of the worst page's 13 s. It is vectorised with numpy and gives the same answer to the bit, pinned against the old loop.
+- The page's closed frames, the ink projected across each, the ticks on each and each run's axis model are remembered on the page facts.
+- `find_scales(near=…)` (used by `measure`) looks for plot frames only among those holding the box. This alone saved little on a dense log form, where 392 of 566 frames held the box; the memo is what makes a second box fast.
+- Private report, wall clock:
+
+  | | Before | After |
+  |---|---|---|
+  | Worst page, whole page | 13.7 s | 6.9 s |
+  | Typical page, whole page | 1.3–3.5 s | about the same |
+  | A second box on the same page | not measured | 0.3–0.6 s |
+
+- Label values may be given as printed (`scalefinder.label_values`), and the print's resolution is kept.
+- A `values` list of the wrong length is refused with the counts, on the scale and in `log_grid`'s warnings.
+- `log_grid` the TOOL takes `values` and says `needs_values` first.
+- Still open: the two older functions that read rectangles as x, y, w, h.
+
+**Measured (no model).**
+- `module_work/scales_harness/harness.py`: **GATE PASS**, unchanged: 4,404 readings, 99.93 % inside their +/-, 0 wrong snaps without alternatives, misread labels 6/6 dropped and 6/6 refused, 189 s.
+- **The same harness with the app's pads** (a zoom's box, sd 1 pt, searched within the zoom's location error): 3,050 readings, 100 % inside, 0 wrong snaps.
+
+  | Pad | Snapped to the right thing | Candidates listed, none chosen |
+  |---|---|---|
+  | 12 pt | 85.4 % | 13.4 % |
+  | 20 pt | 81.5 % | 18.4 % |
+
+  The design's own regimes (pad 3 pt): 96.6 %.
+- Offline tests: 35 app (`funhouse_agent/deep/tests/test_measure_tool_offline.py`), 14 report ingest (`report_ingest/tests/test_visual_scales.py`), and 17 planlens (the pair search against the old loop, printed values, a wrong count, `near`, the `log_grid` tool's round trip).
+
+**Departures from the design.**
+1. **Report ingest reads the labels with its own small call**, before the reader's first call (§4.5 point 3 folded it into that call). The floor must carry its depths before the model is shown it.
+2. **The chart voter pads by the pixel-box error** (0.8 % of the view, at least 3 pt), not by `location_error`. A whole-page view's location error (61 pt and more on a letter page) would only ever list candidates. The READ line asks for a pixel box, measured 1–6 pt off. The agent-facing `measure` does pad by `location_error`, as the design says.
+3. **Flat arguments.** The app's `measure` takes flat `bbox` / `view` + `image_box` / `to` (as `render_region` does) and `source`, not a nested `where`. It has no `values`: the app reads labels itself.
+4. **Display rounding is planlens'**: "3.9 +/- 0.016" where the labels print one decimal. The unrounded value and +/- are in the same result.
+5. **Soundings: a voter only.** Code reads only at the model's digitised depths, and builds no series of its own in the record. "The floor gains a series" waits for the cluster run.
+6. **Two things the off switch cannot undo.** The planlens raster leg's ruler and column changes (labels' offset from their depth taken out, columns from the rules) are not switchable. They change the depths of scanned logs with Azure DI text even with the setting off.
+7. **`log_grid` is not counted by the coverage ledger** (`coverage.TEXT_TOOLS`).
+
+**What Foundry brief 5 must measure** (also HANDOFF 3c and LIVE_TEST_QUEUE check 8):
+1. GPT-5.4 and Sol reading a numbered label sheet: every label right, and how often a cell is left unread.
+2. Whether an agent uses `measure` from its description alone on a scanned-log question and a plan-distance question (suite tasks, not prompt rules), and how often a measurement from a real zoom snaps or lists.
+3. Whether the READ lines come back with pixel boxes on real reference charts (GEC-12 Fig 7-15 is the obvious one, decision 8), and how often code agrees, disagrees or cannot read.
+4. Report ingest, `score_on_cluster` stages `logs`, `lab` and `ingest` with the setting off and on, into separate `out_dir`s (item files resume). Layer tops, the label-call cost, `plot_vs_table` counts against the lab truth, and the sounding counts. Off must match 5.32.1 except for the planlens ruler change on DI scans (departure 6).

@@ -165,8 +165,10 @@ off it with vision. **Use this whenever a numeric value must come from a chart �
 do not read values off a chart from the caption or from memory.** Find the figure
 first with `call_agent` → `figure_db.figure_search`, then pass its `reference` +
 `figure_number` here with a `prompt` describing the value(s) you need. Returns a
-chart read-off **estimate** — verify it against a closed-form/digitized method
-where one exists.
+chart read-off **estimate** and, where the chart's axes and curve can be found
+in the drawing, a value measured from it with its +/- beside the estimate
+(`code_reading`, flagged where they disagree) — verify against a
+closed-form/digitized method where one exists.
 ```
 <tool_call>
 {"tool_name": "read_reference_figure", "reference": "dm7_2", "figure_number": "4-12", "prompt": "Read Kp for phi'=35 deg, theta=10 deg, delta/phi=0.66"}
@@ -1508,6 +1510,22 @@ _READ_OFF_NOTE = (
     "against a closed-form or digitized method where one exists."
 )
 
+#: The note on a reference chart read-off that also carries code's reading
+#: (W3 step 7): which value rests on what.
+_READ_OFF_NOTE_WITH_CODE = (
+    "Two readings. 'analysis' is a vision read-off estimate from the chart "
+    "image (by eye: a few percent on linear axes, looser on log axes or "
+    "dense curve families). 'code_reading' is measured from the chart's own "
+    "drawing - "
+    "its axes fitted to the gridlines and printed labels, the curve found "
+    "where it crosses the input - with its own +/-: where it gives a value, "
+    "that is the value to use, with the vision value beside it; one marked "
+    "'disagree' differs by more than about 3x code's +/-, so check it before "
+    "relying on either. Where code gives no value it says why, and the "
+    "vision read-off stands alone. Verify against a closed-form or digitized "
+    "method where one exists."
+)
+
 
 def _dispatch_view_worked_example(arguments, engine):
     """Chart read-off: rendered and sent at the chart budget
@@ -1693,6 +1711,13 @@ def _dispatch_read_reference_figure_at_budget(arguments, engine):
         "flag that this is a chart read-off estimate.\n\n"
         f"Request: {question}"
     )
+    # The second voter (W3 step 7): the side call also says, per curve it
+    # read, where on the image the curve crosses the input, so code can
+    # measure the same thing from the drawing.
+    from funhouse_agent import chart_reading
+    code_voter = chart_reading.voter_on()
+    if code_voter:
+        full_prompt = chart_reading.with_read_lines(full_prompt)
 
     try:
         result = engine.analyze_image(
@@ -1717,6 +1742,19 @@ def _dispatch_read_reference_figure_at_budget(arguments, engine):
         "page": page_idx,
         **vision_view.view_payload(info, engine),
     }
+    if code_voter:
+        # Read off the RAW answer, before its pixel boxes are rewritten on
+        # the 0-999 grid for the agent: code places them with the size sent.
+        try:
+            block = chart_reading.code_reading(
+                str(pdf_abs), page_idx, str(result or ""), info["clip"],
+                _sent_size(info), engine)
+        except Exception as e:  # noqa: BLE001 - a second voter, never the answer
+            block = {"status": "unavailable",
+                     "note": f"code could not read the chart: "
+                             f"{type(e).__name__}: {e}"}
+        out["code_reading"] = block
+        out["note"] = _READ_OFF_NOTE_WITH_CODE
     _finish_answer(out, info, tagged_only=True)
     return json.dumps(out)
 

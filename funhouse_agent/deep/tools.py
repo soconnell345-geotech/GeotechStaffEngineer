@@ -610,6 +610,21 @@ _DOCUMENT_TOOL_NOTES = {
 }
 
 
+def _app_document_description(name: str) -> str:
+    """A document tool's model-facing description: planlens' own words, with
+    the app's note where the app changes the contract — and, for the two
+    visual-scale tools, the app's own words (they take a look's view +
+    image_box and read a scan's labels, which planlens' text cannot say)."""
+    if name == "measure":
+        from funhouse_agent.measure_tool import MEASURE_DESCRIPTION
+        return MEASURE_DESCRIPTION
+    if name == "log_grid":
+        from funhouse_agent.measure_tool import log_grid_description
+        return log_grid_description()
+    return (_document_tools.tool_description(name)
+            + _DOCUMENT_TOOL_NOTES.get(name, ""))
+
+
 def make_vision_tools(
     engine=None,
     attachments: Optional[Dict[str, bytes]] = None,
@@ -905,8 +920,10 @@ def make_vision_tools(
         from memory. Find the figure first with ``call_agent`` →
         ``figure_db.figure_search``, then pass its ``reference`` +
         ``figure_number`` here with a ``prompt`` describing the value(s) you
-        need. Returns a chart read-off estimate — verify it against a
-        closed-form/digitized method where one exists.
+        need. Returns a chart read-off estimate and, where code can find the
+        chart's axes and curve in the drawing, a measured value beside it
+        (``code_reading``) — verify against a closed-form/digitized method
+        where one exists.
         """
         return _dispatch(
             "read_reference_figure",
@@ -1070,6 +1087,43 @@ def make_vision_tools(
         result["check"] = block
         return json.dumps(result)
 
+    def measure(source: str, page: int = 0, kind: str = "line",
+                bbox: Optional[list] = None, view: Optional[list] = None,
+                image_box: Optional[list] = None,
+                at: Optional[Dict[str, float]] = None,
+                to: Optional[list] = None, scale: str = "",
+                side: str = "top") -> str:
+        """Measure a position through the page's own scale (planlens'
+        ``measure``; the app converts a look's view + image_box and reads a
+        scan's label values itself)."""
+        from funhouse_agent.measure_tool import run_measure
+        args: Dict[str, Any] = {"source": source, "page": page, "kind": kind,
+                                "side": side}
+        for k, v in (("bbox", bbox), ("view", view), ("image_box", image_box),
+                     ("at", at), ("to", to), ("scale", scale or None)):
+            if v is not None:
+                args[k] = v
+        return _truncate(
+            run_measure(args, attachments, engine,
+                        max_chars=_document_tools.budget_for_cap(reference_cap),
+                        cap=reference_cap or None),
+            reference_cap)
+
+    def log_grid(handle: str, pages: Any = None, rows: bool = True,
+                 offset: int = 0) -> str:
+        """One boring or test-pit log as its grid (planlens' ``log_grid``;
+        the app reads a textless scan's depth labels itself)."""
+        from funhouse_agent.measure_tool import run_log_grid
+        args: Dict[str, Any] = {"handle": handle, "rows": rows,
+                                "offset": offset}
+        if pages not in (None, ""):
+            args["pages"] = pages
+        return _truncate(
+            run_log_grid(args, attachments, engine,
+                         max_chars=_document_tools.budget_for_cap(reference_cap),
+                         cap=reference_cap or None),
+            reference_cap)
+
     def save_file(path: str, content: str, encoding: str = "text") -> str:
         """Save raw text or data to a file. Returns the saved file path. For
         formatted calculation documents, use the ``calc_package`` module via
@@ -1127,6 +1181,13 @@ def make_vision_tools(
         document_review_builders.append(("find_quantities", find_quantities))
     if _document_tools.has_tool("annotate_document"):
         document_review_builders.append(("annotate_document", annotate_document))
+    # Visual scales (planlens' find_scales behind both): described in the
+    # app's own words, because the app takes a look's view + image_box and
+    # reads a scan's label values itself.
+    if _document_tools.has_tool("measure"):
+        document_review_builders.append(("measure", measure))
+    if _document_tools.has_tool("log_grid"):
+        document_review_builders.append(("log_grid", log_grid))
 
     _builders = {
         "list_files": (
@@ -1190,7 +1251,10 @@ def make_vision_tools(
             "Render a digitized reference figure (e.g. a DM7 design chart) "
             "and read a value off it with vision. Find the figure first via "
             "figure_db.figure_search, then read the value off the actual "
-            "chart. Returns a chart read-off estimate.",
+            "chart. Returns the vision read-off estimate and, where the "
+            "chart's axes and curve can be found in the drawing, a value "
+            "MEASURED from it with its +/- beside the estimate "
+            "(code_reading; flagged where the two disagree).",
         ),
         "view_worked_example_source": (
             view_worked_example_source,
@@ -1199,8 +1263,7 @@ def make_vision_tools(
             "find_worked_examples when the entry lists source_pdf_pages; "
             "pdf_page is 1-based (0 = first catalogued page).",
         ),
-        **({name: (fn, _document_tools.tool_description(name)
-                   + _DOCUMENT_TOOL_NOTES.get(name, ""))
+        **({name: (fn, _app_document_description(name))
             for name, fn in document_review_builders}
            if _document_tools.available() else {}),
         "save_file": (

@@ -1650,25 +1650,19 @@ class _Tools:
         self.pages = list(pages)
         self.zooms: List[Dict[str, Any]] = []
 
+    #: Set by the reader: with visual scales on, a zoom may read a scan's
+    #: axis labels to give code's reading of a plot.
+    engine: Any = None
+    charge: Any = None
+
     def zoom_plot(self, arguments: Dict[str, Any]) -> Any:
-        page = int(arguments.get("page", self.pages[0]))
-        if page not in self.pages:
-            raise ValueError(
-                f"page {page} is not part of this sounding ({self.pages})")
-        bbox = arguments.get("bbox")
-        if not bbox or len(list(bbox)) != 4:
-            raise ValueError("bbox must be four numbers: x0, y0, x1, y1")
-        box = [float(v) for v in bbox]
-        png, info = self.doc.render(page, bbox=box, dpi=ZOOM_DPI)
-        self.zooms.append({"page": page, "bbox": box,
-                           "why": str(arguments.get("why") or "")})
-        return [text_block(
-            f"page {page}, box {[round(v, 1) for v in info['clip']]} at "
-            f"{info['dpi']} dpi ({info['width_px']}x{info['height_px']} px). "
-            f"Read each trace against the tick labels you can see, set "
-            f"digitised true, and say in the note where a trace crosses "
-            f"another."),
-            image_block(png)]
+        from report_ingest.visual_scales import zoom_plot
+        return zoom_plot(
+            self.doc, self.pages, arguments, dpi=ZOOM_DPI, noun="sounding",
+            instruction=("Read each trace against the tick labels you can "
+                         "see, set digitised true, and say in the note "
+                         "where a trace crosses another."),
+            zooms=self.zooms, engine=self.engine, charge=self.charge)
 
     def run(self, name: str, arguments: Dict[str, Any]) -> Tuple[Any, bool]:
         """``(content, is_error)`` -- a tool mistake is an answer, not a stop."""
@@ -2322,9 +2316,14 @@ class SoundingReadResult:
     kept: List[Dict[str, Any]] = field(default_factory=list)
     added: List[Dict[str, Any]] = field(default_factory=list)
     reconciled: int = 0
+    #: With visual scales on: each digitised point read again by code where
+    #: its trace crosses that depth. ``None`` when the check did not run.
+    code_trace: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
+            **({"code_trace": dict(self.code_trace)}
+               if self.code_trace is not None else {}),
             "investigation": (self.investigation.model_dump(mode="json")
                               if self.investigation is not None else None),
             "changes": [dict(c) for c in self.changes],
@@ -2438,6 +2437,7 @@ def read_sounding(doc, item_pages: Sequence[int], engine: Engine, *,
     brief = _brief(doc, pages, ledger, item_title, report_id, budget, floor,
                    step)
     tools = _Tools(doc, pages)
+    tools.engine, tools.charge = engine, charge
     messages: List[Dict[str, Any]] = [
         user(text_block(brief), *[image_block(png) for png in images])]
 
@@ -2496,6 +2496,18 @@ def read_sounding(doc, item_pages: Sequence[int], engine: Engine, *,
         source_report=report_id)
     merged, merge_log = merge_sounding(floor_inv, model_investigation,
                                        MergeLog())
+    # VISUAL SCALES (off by default): each digitised point read again by
+    # code where its trace crosses that depth -- a voter; the record keeps
+    # the model's series.
+    trace = None
+    from report_ingest import visual_scales
+    if visual_scales.enabled() and not floor.tabulated:
+        try:
+            trace = visual_scales.trace_check(doc, pages, merged, engine,
+                                              charge)
+        except Exception as exc:                 # a voter, never the read
+            trace = {"status": "unavailable",
+                     "note": f"{type(exc).__name__}: {exc}"}
     spent["seconds"] = round(spent["seconds"], 2)
     spent["dollars"] = round(spent["dollars"], 5)
     return SoundingReadResult(
@@ -2517,4 +2529,5 @@ def read_sounding(doc, item_pages: Sequence[int], engine: Engine, *,
         disagreements=merge_log.disagreements,
         kept=merge_log.kept,
         added=merge_log.added,
-        reconciled=merge_log.reconciled)
+        reconciled=merge_log.reconciled,
+        code_trace=trace)

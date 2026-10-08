@@ -71,15 +71,31 @@ detailed Phase-E history; this file supersedes it.
   every item changes what an agent sees, so all of it goes into brief 5;
   TRACE_REVIEW §9 lists what to measure. Note J: GPT-5.4 baseline's
   brief-4 markup now fails the new `markups_point_at` check (2/3).
-- **3b. W3 app side (steps 6–9):**
-  - the `measure` tool on both pages, with the label-reading side call;
-  - `read_reference_figure`'s second voter;
-  - report ingest on the same functions;
-  - live checks.
+- **3b. W3 app side (steps 6–9):** steps 6–8 BUILT and committed 2026-10-08,
+  lead re-gated (`module_work/VISUAL_SCALES_DESIGN.md` §12):
+  - `measure` and `log_grid` on the geotech page and the Document Review
+    legacy and lean builds (not the minimal one), with the label-reading
+    side call;
+  - `read_reference_figure`'s second voter (`code_reading`);
+  - report ingest's voters behind `GEOTECH_INGEST_VISUAL_SCALES`, OFF;
+  - planlens: the speed fix and `log_grid(values=)`, unreleased on main.
+
+  Step 9's live checks are `module_work/LIVE_TEST_QUEUE.md` check 8.
 - **3c. Foundry brief 5:**
   - 3a's fixes and 3b;
   - the coverage arms `("baseline", "coverage", "checklist")`;
-  - the report-ingest rescore questions (logs `index`, gradation links).
+  - the report-ingest rescore questions (logs `index`, gradation links);
+  - **W3, from LIVE_TEST_QUEUE check 8:**
+    1. GPT-5.4 and Sol reading numbered label crops;
+    2. whether the agents use `measure` from its description alone, and how
+       often a measurement from a real zoom snaps rather than lists. Two
+       suite TASKS are needed for this and are NOT written yet: a log depth
+       on a scanned log, and a distance on a plan (synthetic fixtures with
+       truth, `planlens.testing.visual_scale_fixtures`);
+    3. `code_reading` on real reference charts (GEC-12 Fig 7-15, decision
+       8; DM7.2 Fig 4-12);
+    4. report ingest with `GEOTECH_INGEST_VISUAL_SCALES` off and on, in
+       separate `out_dir`s.
 - **3d. The owner's checklist session, the week of 2026-10-12** (item 8a(vi)).
 
 Machine note: heavy test suites must not overlap on the owner's laptop. Background runs were stopped twice for low memory on 2026-10-07/08.
@@ -175,6 +191,11 @@ One list for the whole project; other notes point here.
        is used heavily.
      - **A silent mismatch.** A `values` list of the wrong length is
        ignored without a specific warning.
+     - **2026-10-08, with W3's app side:** the speed and the
+       silent mismatch are dealt with. The worst private page fell from
+       13.7 s to 6.9 s, and a second box on a page takes 0.3–0.6 s; the
+       counts are now said. See `VISUAL_SCALES_DESIGN.md` §12. The
+       rectangles are still open.
    - **(v) GEC-12 Figure 7-15 may be mis-digitised.** The W3 design found this
      in its §10, item 8. `geotech_references/gec_12/figures.py` (used by
      `axial_pile`) differs from a code reading of the chart by −19 % at 32°

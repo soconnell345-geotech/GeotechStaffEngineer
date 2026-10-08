@@ -67,6 +67,9 @@ REVIEW_TOOLS = (
     "render_page_thumbnails", "find_quantities", "annotate_document",
     "analyze_pdf_page", "render_region", "analyze_image", "find_like",
     "write_docx", "save_file", "list_files", "read_text_file",
+    # Visual scales: read-only, so the reading helper gets them too. Owner,
+    # 2026-10-08: on the legacy and lean builds, NOT the minimal one.
+    "measure", "log_grid",
 )
 
 #: The reading helper's tools: nothing that writes a file or a markup.

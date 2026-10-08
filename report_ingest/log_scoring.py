@@ -718,15 +718,19 @@ def score_one_log(truth: Dict[str, Any], doc: Any, engine: Any, *,
     computed over exactly the same geometry and the difference between them
     is the model and nothing else.
     """
-    from planlens.document.loggrid import log_grid
-
+    from report_ingest import visual_scales
     from report_ingest.log_reader import read_log
 
     log_id = truth["id"]
     pages = [int(p) for p in truth.get("pages") or []]
     report = report_id or log_id.split("_")[0]
+    # The grid as the reader would build it (report_ingest.visual_scales:
+    # the setting decides whether pixel-found layer tops count), so "grid
+    # alone" and the reader's floor are the same grid.
+    extra, charge = visual_scales.meter()
     try:
-        grid = log_grid(doc, pages)
+        grid, scales_info = visual_scales.log_grid_for(doc, pages, engine,
+                                                       charge)
     except Exception as exc:                        # a page that will not read
         error = f"{type(exc).__name__}: {exc}"
         before = LogScore(log_id=log_id, report=report, stage="grid",
@@ -739,6 +743,9 @@ def score_one_log(truth: Dict[str, Any], doc: Any, engine: Any, *,
     try:
         result = read_log(doc, pages, engine, budget=budget, grid=grid,
                           report_id=report)
+        visual_scales.add_cost(result.cost, extra)
+        if scales_info and not result.visual_scales:
+            result.visual_scales = scales_info
     except Exception as exc:                        # a model call that failed
         after = LogScore(log_id=log_id, report=report, stage="record",
                          error=f"{type(exc).__name__}: {exc}")

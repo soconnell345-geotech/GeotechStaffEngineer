@@ -581,6 +581,10 @@ class LabReadResult:
     kept: List[Dict[str, Any]] = field(default_factory=list)
     added: List[Dict[str, Any]] = field(default_factory=list)
     reconciled: int = 0
+    #: With visual scales on (report_ingest.visual_scales): the sheet's
+    #: tabulated gradation set against the curve it plots, read by code.
+    #: ``None`` when the check did not run.
+    plot_check: Optional[Dict[str, Any]] = None
 
     @property
     def kinds(self) -> List[str]:
@@ -608,6 +612,8 @@ class LabReadResult:
             "kept": [dict(k) for k in self.kept],
             "added": [dict(a) for a in self.added],
             "reconciled": self.reconciled,
+            **({"plot_check": dict(self.plot_check)}
+               if self.plot_check is not None else {}),
         }
 
 
@@ -654,24 +660,19 @@ class _Tools:
         self.pages = list(pages)
         self.zooms: List[Dict[str, Any]] = []
 
+    #: The engine and the cost hook, set by the reader: with visual scales on
+    #: a zoom may read a scan's axis labels to give code's reading of a plot.
+    engine: Any = None
+    charge: Any = None
+
     def zoom_plot(self, arguments: Dict[str, Any]) -> Any:
-        page = int(arguments.get("page", self.pages[0]))
-        if page not in self.pages:
-            raise ValueError(
-                f"page {page} is not part of this sheet ({self.pages})")
-        bbox = arguments.get("bbox")
-        if not bbox or len(list(bbox)) != 4:
-            raise ValueError("bbox must be four numbers: x0, y0, x1, y1")
-        box = [float(v) for v in bbox]
-        png, info = self.doc.render(page, bbox=box, dpi=ZOOM_DPI)
-        self.zooms.append({"page": page, "bbox": box,
-                           "why": str(arguments.get("why") or "")})
-        return [text_block(
-            f"page {page}, box {[round(v, 1) for v in info['clip']]} at "
-            f"{info['dpi']} dpi ({info['width_px']}x{info['height_px']} px). "
-            f"Read the values against the axis ticks you can see, and set "
-            f"digitised true on the series you build from them."),
-            image_block(png)]
+        from report_ingest.visual_scales import zoom_plot
+        return zoom_plot(
+            self.doc, self.pages, arguments, dpi=ZOOM_DPI, noun="sheet",
+            instruction=("Read the values against the axis ticks you can "
+                         "see, and set digitised true on the series you "
+                         "build from them."),
+            zooms=self.zooms, engine=self.engine, charge=self.charge)
 
     def run(self, name: str, arguments: Dict[str, Any]) -> Tuple[Any, bool]:
         """``(content, is_error)`` -- a tool mistake is an answer, not a stop."""
@@ -1489,6 +1490,7 @@ def read_lab_sheet(doc, item_pages: Sequence[int], engine: Engine, *,
     brief = _brief(doc, pages, ledger, item_title, report_id, hint_kind,
                    budget, floor=floor)
     tools = _Tools(doc, pages)
+    tools.engine, tools.charge = engine, charge
     messages: List[Dict[str, Any]] = [
         user(text_block(brief), *[image_block(png) for png in images])]
 
@@ -1542,6 +1544,17 @@ def read_lab_sheet(doc, item_pages: Sequence[int], engine: Engine, *,
     # THE MERGE: the model's answer folded onto the floor. Nothing a table
     # held is lost; every contradiction is on the record.
     merged, merge_log = merge_lab_tests(floor.tests, model_tests, MergeLog())
+    # VISUAL SCALES (off by default): the tabulated gradation set against
+    # the curve the sheet plots, read by code. The table stays the record.
+    plot = None
+    from report_ingest import visual_scales
+    if visual_scales.enabled():
+        try:
+            plot = visual_scales.plot_check(doc, pages, floor.tests, engine,
+                                            charge)
+        except Exception as exc:                 # a voter, never the read
+            plot = {"status": "unavailable",
+                    "note": f"{type(exc).__name__}: {exc}"}
     spent["seconds"] = round(spent["seconds"], 2)
     spent["dollars"] = round(spent["dollars"], 5)
     return LabReadResult(
@@ -1560,4 +1573,5 @@ def read_lab_sheet(doc, item_pages: Sequence[int], engine: Engine, *,
         disagreements=merge_log.disagreements,
         kept=merge_log.kept,
         added=merge_log.added,
-        reconciled=merge_log.reconciled)
+        reconciled=merge_log.reconciled,
+        plot_check=plot)

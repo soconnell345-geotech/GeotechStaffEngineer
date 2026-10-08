@@ -259,6 +259,107 @@ and afterwards `os.environ.pop("GEOTECH_VISION_PATCH_ALIGN")`.
 **Send:** both printed outputs and both saved JSON files
 (`location_remeasure_*.json`).
 
+## Check 8 — Visual scales: label crops, `measure`, the chart's second reading, report ingest (next release; on Foundry as part of brief 5)
+
+**Why.** W3's app side (`module_work/VISUAL_SCALES_DESIGN.md` §12) has only
+been tested offline, with stand-in models.
+- The agents now have `measure` and `log_grid`.
+- A scan's label values are read by ONE vision call over numbered crops.
+- `read_reference_figure` returns a value measured from the chart beside
+  the vision estimate.
+- Report ingest can vote with measured layer tops, check a grading plot
+  against its table, and read a digitised sounding again. This one is
+  behind `GEOTECH_INGEST_VISUAL_SCALES`, OFF.
+
+Nothing here has met a real model. Steps 1-3 are small. Step 4 is a cluster
+run and belongs in brief 5.
+
+**Setup.** The release (or test wheel) that carries W3's app side, with its
+planlens.
+
+**Step 1: the model reads numbered label crops** (no agent; about 3 calls
+per model, under 20 thousand input tokens). Run once with
+`funhouse-gpt-high` (GPT-5.4) and, on Foundry, once with Sol.
+
+```python
+from planlens.testing.visual_scale_fixtures import (
+    LogVariant, PlotVariant, build_log, build_plot, build_chart_family, _overlap)
+from planlens.document.scalefinder import find_scales
+from funhouse_agent import scale_labels
+from funhouse_agent.deep.databricks_bridge import PrompterChatModel
+from funhouse_agent.deep.vision_engine import LangChainVisionEngine
+engine = LangChainVisionEngine(PrompterChatModel(prompter=fh_prompter,
+                                                 model="funhouse-gpt-high"))
+for fx in (build_log(LogVariant("lt_log", skew_deg=0.4, seed=91)),
+           build_plot(PlotVariant("lt_grad", "grading", raster=True,
+                                  skew_deg=0.3, seed=52)),
+           build_chart_family("loglog", raster=True, seed=72)):
+    doc = fx.open()
+    items = [(0, b) for s in find_scales(doc, 0).needing_values()
+             for b in s.label_boxes]
+    texts, info = scale_labels.read_labels(doc, items, engine)
+    want = [max(fx.labels, key=lambda lb: _overlap(b, lb.box)).text
+            for _p, b in items]
+    right = sum(t == w for t, w in zip(texts, want))
+    print(fx.name, f"{right}/{len(items)} right,",
+          f"{info['unreadable']} unread,", "wrong:",
+          [(w, t) for t, w in zip(texts, want) if t not in (w, None)])
+```
+
+**Pass:**
+- every label is right, or at most one is unread per sheet;
+- no label is wrong. A wrong one is dropped by the fit if it is alone, and
+  refused if there are two, but say which.
+
+**Step 2: `measure` from a look, in the Document Review app** (one turn,
+about 100-300 thousand tokens).
+- Upload the scanned log fixture as a PDF: `open("lt_log.pdf","wb").write(build_log(LogVariant("lt_log", skew_deg=0.4, seed=91)).pdf)` in a notebook, then download it.
+- Ask: "At what depth does the second layer start on this boring log, to
+  the nearest centimetre?" The true value is 2.26 m.
+- Look in `activity.jsonl` for:
+  - whether the agent called `measure`, which it knows only from the tool's
+    own description;
+  - with what (`bbox`, or a zoom's `view` + `image_box`);
+  - whether one label-reading call was made;
+  - whether the answer is 2.26 m within the result's +/-.
+
+  Not calling it is a finding, not a failure: it is what the suite tasks in
+  brief 5 are for.
+
+**Step 3: the chart's second reading** (on the geotech page, two
+questions, about 50-100 thousand tokens).
+- Ask for the Nordlund toe-resistance limit off GEC-12 Figure 7-15 at
+  phi = 32 deg and at 42 deg.
+- Ask for Kp off DM7.2 Figure 4-12 for phi' = 35 deg, theta = 10 deg,
+  delta/phi = 0.66.
+- In each `read_reference_figure` result, read `code_reading`:
+  - did the vision call write `READ` lines with `px=` boxes;
+  - did code measure (`status: measured`);
+  - do the two agree.
+
+  At 32 and 42 deg, design E8 expects code near 16 tsf and 296 tsf. That is
+  the re-verification owner decision 8 asked for: it reads the chart, it
+  does not settle it.
+
+**Step 4: report ingest with the setting on and off** (cluster, brief 5).
+- `score_on_cluster(stages=("logs", "lab", "ingest"), ...)` twice, each into
+  its own `out_dir` (item files resume, so a shared folder would mix the
+  two runs):
+  - once as shipped;
+  - once inside `from report_ingest.visual_scales import use_visual_scales`
+    / `with use_visual_scales():`, or with
+    `os.environ["GEOTECH_INGEST_VISUAL_SCALES"] = "1"`.
+- Read:
+  - log `layer_top` before and after, against the hand truth;
+  - the label calls' cost;
+  - the `plot_vs_table` entries against the lab truth;
+  - the sounding counts (agree, disagree, several traces).
+- "Off" should match 5.32.1, except where planlens' new ruler moves the
+  depths of scans with Azure DI text (design §12, departure 6).
+
+**Send:** the printed outputs, the conversation folders (steps 2-3) and the
+two RESULTS.md (step 4). Every run is read in full.
+
 ## Done
 
 - **2026-10-07, checks 6 and 3 on Foundry (brief 4, 5.32.1rc3; GPT-5.4 and Sol).**

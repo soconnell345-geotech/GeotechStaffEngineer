@@ -62,6 +62,12 @@ DOCUMENT_TOOL_NAMES = (
 OPTIONAL_DOCUMENT_TOOL_NAMES = (
     "find_quantities",
     "annotate_document",
+    # Visual scales (planlens main a3f2a1d+): a position measured through the
+    # page's own scale, and a boring log read as its grid. The app wraps both
+    # (funhouse_agent.measure_tool): a look's view + image_box, and a scan's
+    # label values read by one vision call.
+    "measure",
+    "log_grid",
 )
 
 #: Who a comment this app writes onto a PDF is signed by. A reviewer opening

@@ -947,6 +947,18 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
         seen_layers.add(key)
         page = int(ly.pages[0]) if ly.pages else pages[0]
         symbol = _USCS.search(description)
+        note = f"layer bound by the grid ({ly.source})"
+        evidence = getattr(ly, "evidence", None) or {}
+        if evidence.get("found_in") == "pixels":
+            # Only with visual scales on (report_ingest.visual_scales): a
+            # top MEASURED from the stratum line the scan draws, with its
+            # +/- -- a geometry voter in the floor.
+            pm = getattr(ly, "plus_minus", None)
+            note = ("layer top measured from the stratum line drawn on the "
+                    "scan (pixels)"
+                    + (f", +/- {float(pm):.3g} {unit}".rstrip() if pm
+                       else "")
+                    + (", drawn dashed" if evidence.get("dashed") else ""))
         layers.append(Layer(
             top=_q(ly.top, unit), bottom=_q(ly.bottom, unit),
             description=str(ly.description or ""),
@@ -956,7 +968,7 @@ def seed_from_grid(grid: Any, pages: Sequence[int], report_id: str = "",
                             method="grid",
                             confidence=max(confidence_floor,
                                            min(1.0, float(ly.confidence))),
-                            note=f"layer bound by the grid ({ly.source})")))
+                            note=note)))
 
     samples: List[Sample] = []
     spt: List[SPT] = []

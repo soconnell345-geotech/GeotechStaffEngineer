@@ -689,22 +689,31 @@ def location_error(view: Sequence[float]) -> Tuple[float, float]:
             max(MIN_LOCATION_ERROR_PT, LOCATION_ERROR_FRAC * (vy1 - vy0)))
 
 
+#: Said on every look's precision line, in general words that name no tool
+#: (owner decision 7, 2026-10-08, module_work/VISUAL_SCALES_DESIGN.md §10):
+#: a box says where a thing is to look at, not where it is to the point.
+NOT_A_MEASUREMENT = ("A box read off an image locates a thing; it is not a "
+                     "measurement.")
+
+
 def precision_note(view: Sequence[float]) -> str:
     """The line every vision result carries on how far its boxes can be
-    trusted, and what that means for zooming and for placing a mark."""
+    trusted, and what that means for zooming and for placing a mark — and
+    that a box is not a measurement (:data:`NOT_A_MEASUREMENT`)."""
     vx0, vy0, vx1, vy1 = (float(v) for v in view)
     vw, vh = vx1 - vx0, vy1 - vy0
     ex, ey = location_error(view)
     if max(vw, vh) <= MARK_VIEW_PT:
         return (f"a box read off this {vw:.0f} x {vh:.0f} pt view is good to "
                 f"a few points: a mark may be anchored on this view + the "
-                f"thing's image_box")
+                f"thing's image_box. {NOT_A_MEASUREMENT}")
     return (f"a box read off this {vw:.0f} x {vh:.0f} pt view can be up to "
             f"~{ex:.0f} x {ey:.0f} pt from the thing: good for finding where "
             f"to zoom (render_region with this view + image_box pads its "
             f"window by that much), NOT for placing a mark — zoom until the "
             f"thing is legible in a view of {MARK_VIEW_PT:.0f} pt or less and "
-            f"anchor the mark on that zoom's view + image_box")
+            f"anchor the mark on that zoom's view + image_box. "
+            f"{NOT_A_MEASUREMENT}")
 
 
 def zoom_window(view: Sequence[float], box: Sequence[float]
@@ -1037,7 +1046,8 @@ __all__ = ["BUDGET_ENV", "DETAIL_ENV", "CHART_BUDGET_ENV", "POLICY_ENV",
            "render_view", "view_payload", "with_grid", "image_box_to_page",
            "px_to_grid", "px_box_to_page", "boxes_to_grid", "boxes_note",
            "LOCATION_ERROR_FRAC", "MIN_LOCATION_ERROR_PT", "MARK_VIEW_PT",
-           "location_error", "precision_note", "zoom_pad", "zoom_window",
+           "location_error", "precision_note", "NOT_A_MEASUREMENT",
+           "zoom_pad", "zoom_window",
            "TEXT_CONTEXT_CHARS", "page_lines", "text_context",
            "LOCATED_INSTRUCTION", "LOCATED_PX_INSTRUCTION", "with_locations",
            "split_located", "BRACKETED_NOTE", "bracketed_note",

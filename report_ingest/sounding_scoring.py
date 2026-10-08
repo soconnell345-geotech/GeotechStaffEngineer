@@ -528,12 +528,12 @@ def score_one_sounding(truth: Dict[str, Any], doc: Any, engine: Any, *,
 def _score_one_pit(truth: Dict[str, Any], doc: Any, engine: Any,
                    pages: Sequence[int], report: str, budget: int
                    ) -> Tuple[SoundingScore, SoundingScore]:
-    from planlens.document.loggrid import log_grid
-
+    from report_ingest import visual_scales
     from report_ingest.log_floor import seed_from_grid
 
+    extra, charge = visual_scales.meter()
     try:
-        grid = log_grid(doc, pages)
+        grid, _info = visual_scales.log_grid_for(doc, pages, engine, charge)
         lines: List[Any] = []
         for page in pages:
             try:
@@ -554,6 +554,7 @@ def _score_one_pit(truth: Dict[str, Any], doc: Any, engine: Any,
     try:
         result = read_log(doc, pages, engine, budget=max(1, budget), grid=grid,
                           report_id=report)
+        visual_scales.add_cost(result.cost, extra)
     except Exception as exc:                      # a model call that failed
         return before, _blank(truth, "record", f"{type(exc).__name__}: {exc}")
     after = score_pit(truth, [result.investigation], "record")

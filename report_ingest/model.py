@@ -2207,7 +2207,10 @@ class Calculation(BaseModel):
 #: reviewer is sent to look.
 QAKind = Literal[
     "skipped", "partial", "conflict", "disagreement", "label_disagreement",
-    "unreadable", "unconverted", "count_mismatch", "out_of_range", "note"]
+    "unreadable", "unconverted", "count_mismatch", "out_of_range", "note",
+    # a sheet's plotted curve, read by code, against its own table
+    # (report_ingest.visual_scales; only with that setting on)
+    "plot_vs_table"]
 
 
 class QAEntry(BaseModel):

@@ -1169,24 +1169,18 @@ class _Tools:
         self.pages = list(pages)
         self.zooms: List[Dict[str, Any]] = []
 
+    #: Set by the reader: with visual scales on, a zoom may read a scan's
+    #: axis labels to give code's reading of a plot.
+    engine: Any = None
+    charge: Any = None
+
     def zoom_plot(self, arguments: Dict[str, Any]) -> Any:
-        page = int(arguments.get("page", self.pages[0]))
-        if page not in self.pages:
-            raise ValueError(
-                f"page {page} is not part of this printout ({self.pages})")
-        bbox = arguments.get("bbox")
-        if not bbox or len(list(bbox)) != 4:
-            raise ValueError("bbox must be four numbers: x0, y0, x1, y1")
-        box = [float(v) for v in bbox]
-        png, info = self.doc.render(page, bbox=box, dpi=ZOOM_DPI)
-        self.zooms.append({"page": page, "bbox": box,
-                           "why": str(arguments.get("why") or "")})
-        return [text_block(
-            f"page {page}, box {[round(v, 1) for v in info['clip']]} at "
-            f"{info['dpi']} dpi ({info['width_px']}x{info['height_px']} px). "
-            f"Read the value against what you can see, and say in the note "
-            f"that you read it off the picture."),
-            image_block(png)]
+        from report_ingest.visual_scales import zoom_plot
+        return zoom_plot(
+            self.doc, self.pages, arguments, dpi=ZOOM_DPI, noun="printout",
+            instruction=("Read the value against what you can see, and say "
+                         "in the note that you read it off the picture."),
+            zooms=self.zooms, engine=self.engine, charge=self.charge)
 
     def run(self, name: str, arguments: Dict[str, Any]) -> Tuple[Any, bool]:
         """``(content, is_error)`` -- a tool mistake is an answer, not a stop."""
@@ -1936,6 +1930,7 @@ def read_calculation(doc, item_pages: Sequence[int], engine: Engine, *,
     brief = _brief(doc, window, pages, ledger, item_title, report_id, budget,
                    floor)
     tools = _Tools(doc, pages)
+    tools.engine, tools.charge = engine, charge
     messages: List[Dict[str, Any]] = [
         user(text_block(brief), *[image_block(png) for png in images])]
 

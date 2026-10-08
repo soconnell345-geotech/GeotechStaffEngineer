@@ -73,7 +73,7 @@ NARRATIVE_FIELDS: Tuple[str, ...] = GENERAL_FIELDS + NATURAL_HAZARD_FIELDS
 #: be able to list across a whole library.
 REVIEW_KINDS: Tuple[str, ...] = (
     "conflict", "disagreement", "label_disagreement", "count_mismatch",
-    "out_of_range", "unreadable",
+    "out_of_range", "unreadable", "plot_vs_table",
 )
 
 #: Where a chunk of text came from, for filtering a search.

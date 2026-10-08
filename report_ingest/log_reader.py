@@ -378,6 +378,10 @@ class LogReadResult:
     #: :class:`report_ingest.log_templates.TemplateMatch`. ``None`` is the
     #: normal state and means nothing about the log.
     template: Optional[Any] = None
+    #: With visual scales on (report_ingest.visual_scales): the scan's depth
+    #: labels read, and how many layer tops were measured from its pixels.
+    #: Empty when the setting is off.
+    visual_scales: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -401,6 +405,8 @@ class LogReadResult:
             "follow_up": self.follow_up,
             "template": (self.template.to_dict()
                          if self.template is not None else None),
+            **({"visual_scales": dict(self.visual_scales)}
+               if self.visual_scales else {}),
         }
 
 
@@ -1131,9 +1137,25 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
         raise ValueError("read_log needs at least one page")
     budget = max(1, min(int(budget), MAX_MODEL_CALLS))
 
+    spent = {"calls": 0, "input_tokens": 0, "output_tokens": 0,
+             "cache_read_tokens": 0, "seconds": 0.0, "dollars": 0.0}
+
+    def charge(reply) -> None:
+        spent["calls"] += 1
+        spent["input_tokens"] += reply.usage.input_tokens
+        spent["output_tokens"] += reply.usage.output_tokens
+        spent["cache_read_tokens"] += reply.usage.cache_read_tokens
+        spent["seconds"] += reply.seconds
+        spent["dollars"] += reply.usage.dollars(reply.model)
+
+    scales_info: Dict[str, Any] = {}
     if grid is None:
-        from planlens.document.loggrid import log_grid
-        grid = log_grid(doc, pages)
+        # The grid as the visual-scales setting says (report_ingest.
+        # visual_scales, OFF by default): off, layer boundaries planlens
+        # found in a scan's pixels are folded away; on, a textless scan's
+        # depth labels are read and its measured layer tops enter the floor.
+        from report_ingest.visual_scales import log_grid_for
+        grid, scales_info = log_grid_for(doc, pages, engine, charge)
     if template is None:
         from report_ingest.log_templates import recognise
 
@@ -1146,17 +1168,6 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
                       if any(ln.startswith(f"p{p:03d} ") for p in pages)]
         except Exception:                        # a ledger is a nicety
             ledger = []
-
-    spent = {"calls": 0, "input_tokens": 0, "output_tokens": 0,
-             "cache_read_tokens": 0, "seconds": 0.0, "dollars": 0.0}
-
-    def charge(reply) -> None:
-        spent["calls"] += 1
-        spent["input_tokens"] += reply.usage.input_tokens
-        spent["output_tokens"] += reply.usage.output_tokens
-        spent["cache_read_tokens"] += reply.usage.cache_read_tokens
-        spent["seconds"] += reply.seconds
-        spent["dollars"] += reply.usage.dollars(reply.model)
 
     def images_for(wanted: Sequence[int]) -> List[bytes]:
         out: List[bytes] = []
@@ -1253,6 +1264,17 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
     # placed is lost; every contradiction is on the record.
     merged, merge_log = merge_investigations(floor, model_investigation,
                                              MergeLog())
+    # VISUAL SCALES (off by default): every layer top measured from the
+    # scan's stratum lines votes on the record's tops. Where the scan has
+    # text those tops are in the floor already; where it has none they are
+    # not (a layer is its words) and this is their only say.
+    from report_ingest import visual_scales
+    if visual_scales.enabled():
+        votes = visual_scales.layer_votes(grid, merged.layers,
+                                          merged.depth_unit or "")
+        if votes:
+            scales_info = dict(scales_info)
+            scales_info["layer_votes"] = votes
     spent["seconds"] = round(spent["seconds"], 2)
     spent["dollars"] = round(spent["dollars"], 5)
     return LogReadResult(
@@ -1271,4 +1293,5 @@ def read_log(doc, item_pages: Sequence[int], engine: Engine, *,
         added=merge_log.added,
         reconciled=merge_log.reconciled,
         follow_up=follow_up,
-        template=template)
+        template=template,
+        visual_scales=scales_info)
