@@ -33,9 +33,9 @@ Checks 1, 2 and 4 are done (see "Done").
 
 ## Setup (once per release)
 
-planlens 0.12.0 is on PyPI (2026-10-08). 5.32.1 is staged and goes out
-once its last release checks finish; install it when it reaches the Nexus
-mirror, a day or two after PyPI.
+5.32.1 and planlens 0.12.0 are on PyPI (2026-10-08); install them when
+they reach the Nexus mirror, a day or two after PyPI. Until then, use the
+wheels in `foundry_handoff/`.
 In a Funhouse notebook:
 
 ```python

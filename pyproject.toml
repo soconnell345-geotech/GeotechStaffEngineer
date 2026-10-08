@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geotech-staff-engineer"
-version = "5.32.0"
+version = "5.32.1"
 description = "Python toolkit for LLM-based geotechnical engineering agents - 33 analysis modules covering foundations, piles, slopes, structural section/RC/frame analysis, reliability, seismic site response, excavation support, pavement design (AASHTO 1993 / UFC 3-250-01), subsurface characterization (DIGGS/GEF/AGS4), FEM, drawing & profile rendering, and a cited public-domain reference layer."
 readme = "README.md"
 license = "MIT"
@@ -155,7 +155,7 @@ dependencies = [
     # `planlens.opencv` (OpenCV test-loaded in a child process so a FIPS host
     # hides find_like instead of aborting), `tag_fixtures` for the suite's
     # new tasks. Dependencies again IDENTICAL: no new package.
-    "planlens>=0.11",
+    "planlens>=0.12",
     # -- structural round 1 (owner, 2026-09-03): section/RC/frame analysis --
     # sectionproperties and concreteproperties were REMOVED in 5.13.0: both
     # require `cytriangle`, whose only manylinux wheel is quarantined by the

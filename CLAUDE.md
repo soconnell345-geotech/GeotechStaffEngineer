@@ -113,7 +113,7 @@ Key conventions:
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
 
-## CURRENT WORKING STATE (2026-10-04) — 5.32.0 RELEASED with planlens 0.11.0 (pin >=0.11): look-first review prompts, checked markups (circles, labels, "drawn close"), Foundry full-resolution + Responses route, the measured Foundry fixes; switches still OFF by default; before it 5.31.0: Document Review M1 behind switches (findings, overview, geometry, digest free layer), all OFF by default; forward plan module_work/REVIEW_ARCHITECTURE.md; before it 5.30.0: the Document Review EVAL SUITE + the review-harness changes behind switches, all OFF by default; before it 5.29.1 with planlens 0.10.1: find_like kept OPTIONAL (not a workflow); 5.29.0 / planlens 0.10.0 added find_like + robust-first vision; 5.28.0 / planlens 0.9.0 measured the vision model; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
+## CURRENT WORKING STATE (2026-10-08) — 5.32.1 RELEASED with planlens 0.12.0 (pin >=0.12): positions read as pixel boxes and converted in code, a 2,048 px image cap, padded zooms, marks refused from wide views, the size-measured markup check, find_like without OpenCV, the 2026-10-06 geotech-session fixes; measured on Foundry first (brief 4); master carries the next train (5.33, unreleased); before it 5.32.0 RELEASED with planlens 0.11.0 (pin >=0.11): look-first review prompts, checked markups (circles, labels, "drawn close"), Foundry full-resolution + Responses route, the measured Foundry fixes; switches still OFF by default; before it 5.31.0: Document Review M1 behind switches (findings, overview, geometry, digest free layer), all OFF by default; forward plan module_work/REVIEW_ARCHITECTURE.md; before it 5.30.0: the Document Review EVAL SUITE + the review-harness changes behind switches, all OFF by default; before it 5.29.1 with planlens 0.10.1: find_like kept OPTIONAL (not a workflow); 5.29.0 / planlens 0.10.0 added find_like + robust-first vision; 5.28.0 / planlens 0.9.0 measured the vision model; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
 
 - **MASTER IS THE NEXT TRAIN (for 5.33), UNRELEASED, switches OFF
   (2026-10-08).** Plan of record: `module_work/SCALES_COVERAGE_CROSSCHECKS.md`.
@@ -136,15 +136,13 @@ Key conventions:
   3. Foundry brief 5.
 
   Pickup: `HANDOFF.md` §0a-current, "Where things stand".
-- **5.32.1: planlens 0.12.0 RELEASED 2026-10-08 (tag `v0.12.0`, live on
-  PyPI); app 5.32.1 STAGED on branch `release/5.32.1` (a8114a2), NOT YET
-  TAGGED.**
+- **5.32.1 RELEASED 2026-10-08 (tag `v5.32.1`, branch `release/5.32.1`,
+  a8114a2) with planlens 0.12.0 (tag `v0.12.0`, published first; pin
+  `planlens>=0.12`; no new third-party package).** Release gate on the
+  exact tree with planlens 0.12.0: 13,790 passed / 38 skipped / 0 failed.
   - **What it is:** a4ef417 as measured on Foundry (brief 4, read in full:
     `module_work/review_eval_results/2026-10-07_foundry_5.32.1rc3/`), plus
     the version bump, `planlens>=0.12` and its docs.
-  - **Still to run before the tag:** two gate chunks (report_ingest /
-    harness / webapp / validation_examples, and geotech-references). Claude
-    Code stopped them for low memory, which is not a failure.
   - **It carries:**
     - the markup check measures size (`cc697e6`);
     - the SharePoint mirror unwrap (`4334fce`);

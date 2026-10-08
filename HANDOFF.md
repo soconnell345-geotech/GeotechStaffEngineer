@@ -10,31 +10,22 @@ detailed Phase-E history; this file supersedes it.
 
 ### Where things stand (2026-10-08)
 
-**1. RELEASE IN PROGRESS: 5.32.1 with planlens 0.12.0.** The owner said, the night of 2026-10-07: "Ok to release however you see best".
-- **planlens 0.12.0 is LIVE on PyPI.**
-  - Tag `v0.12.0` on branch `release/0.12.0` (c58f7ed), cut from 08a1d53, which Foundry measured as 0.12.0rc1.
-  - 1,500 tests passed; no dependency change.
-- **App 5.32.1 is STAGED, NOT TAGGED.**
-  - Branch `release/5.32.1` (a8114a2, pushed) is a4ef417, which Foundry measured as 5.32.1rc3, plus the version bump, `planlens>=0.12` and its docs (CLAUDE.md state block, this list, the install guide's row).
-  - Released as measured; the activity-log lock goes in the next release.
-- **The gate on that exact tree, with planlens 0.12.0, so far** (all exit 0):
+**1. 5.32.1 RELEASED 2026-10-08 with planlens 0.12.0.** The owner said, the night of 2026-10-07: "Ok to release however you see best".
+- **planlens 0.12.0:** tag `v0.12.0` on branch `release/0.12.0` (c58f7ed), cut from 08a1d53, which Foundry measured as 0.12.0rc1. 1,500 tests passed; no dependency change.
+- **App 5.32.1:** tag `v5.32.1` on branch `release/5.32.1` (a8114a2). That is a4ef417, which Foundry measured as 5.32.1rc3, plus the version, `planlens>=0.12` and its docs. Released as measured; the activity-log lock goes in the next release.
+- **Release gate on the exact tree, with planlens 0.12.0:** 13,790 passed / 38 skipped / 0 failed.
 
   | Chunk | Result |
   |---|---|
   | analysis modules | 1,091, and 2,108 with 28 skipped |
   | fem2d | 399 |
   | funhouse_agent | 2,268 with 10 skipped |
+  | webapp + validation_examples + foundry harness | 768 |
+  | report_ingest | 1,363 |
+  | geotech-references | 5,793 |
 
-- **Still to run before `git tag v5.32.1`:**
-  - `report_ingest foundry_test_harness webapp/tests validation_examples`: Claude Code stopped it for low memory, twice, which is not a failure;
-  - the geotech-references suite, whose submodule is unchanged since v5.32.0.
-- **How to run them:** in a clean copy of the branch, with PYTHONPATH pointing at a planlens 0.12.0 checkout, one chunk at a time, in the foreground. The laptop has 15.5 GB; two old Claude Code sessions hold about 0.9 GB.
-- **Then:** tag `v5.32.1` and push the tag; the workflow publishes.
-- **Meanwhile, 5.32.0 installs pull planlens 0.12.0** (its pin is >=0.11). That is compatible: the wide-view refusal only asks the agent to zoom, and 5.32.0 hides `find_like` on FIPS hosts as before.
-- **After the tag:**
-  - copy the released wheels to `../foundry_handoff/`;
-  - port the 5.32.1 install-guide row and state bullet to master's docs;
-  - restart the brief 4 fix-list builder (item 3a).
+- **The wheels are in `../foundry_handoff/`.** The owner installed the 5.32.1 wheel on Funhouse on 2026-10-08, before the tag, for real work and to reload an old geotech conversation. The Nexus mirror delivers PyPI a day or two later.
+- **Master** is now at version 5.32.1 with the same pin, carrying the next train.
 
 **What 5.32.1 carries**, all since 5.32.0:
 - **The markup check measures size** (cc697e6). Live check 1 on 2026-10-07 found 5.32.0's "drawn close" question rejecting correct circles on GPT-5.4.
@@ -76,7 +67,7 @@ detailed Phase-E history; this file supersedes it.
   - reasoning summaries;
   - report-ingest `floor_alone`/`model_alone`.
 
-  An Opus builder was started, then stopped before writing anything to free memory for the release. Restart it after the tag.
+  Restarted with an Opus builder on 2026-10-08, after the release.
 - **3b. W3 app side (steps 6–9):**
   - the `measure` tool on both pages, with the label-reading side call;
   - `read_reference_figure`'s second voter;
@@ -95,7 +86,7 @@ Machine note: heavy test suites must not overlap on the owner's laptop. Backgrou
 One list for the whole project; other notes point here.
 
 **A. Owner — the test run**
-1. Install 5.32.1 once it is tagged and the Nexus mirror delivers it:
+1. Install 5.32.1 (released 2026-10-08) once the Nexus mirror delivers it:
    `%pip install "geotech-staff-engineer==5.32.1"` (brings planlens 0.12.0).
    If the mirror lags, the release wheels go to `../foundry_handoff/`
    (install planlens first).
