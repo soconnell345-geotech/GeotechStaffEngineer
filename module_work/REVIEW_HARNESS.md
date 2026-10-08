@@ -149,10 +149,20 @@ format), and milestones M0-M4.
 **M0 is DONE** (runs 1–4 below): every arm measured on Sol and GPT-5.4; the
 5.32.0 decision was to keep every switch off. **The open to-do list is
 `HANDOFF.md` §0a-current ("Open to-dos after 5.32.0")** — one list for the
-whole project. The vision call's box precision was measured on 2026-10-07
-(run 5 below; `module_work/harness_theory/locating_things_on_a_page.md`),
-and the location fix built from it awaits live check 6. The other
-review-harness items on the list: the look-alike /
+whole project.
+- The vision call's box precision was measured on 2026-10-07 (run 5 below;
+  `module_work/harness_theory/locating_things_on_a_page.md`).
+- The location fix built from it HELD on Foundry (run 6; 5.32.1).
+- Next for this harness:
+  1. the run-6 fix list
+     (`module_work/review_eval_results/2026-10-07_foundry_5.32.1rc3/TRACE_REVIEW.md`
+     §7): comments judged by what they point at, a geometric "encloses", a
+     `dpi` floor, tile-only finds, `markups_point_at`;
+  2. the coverage arms `coverage` / `checklist`
+     (`module_work/COVERAGE_AND_CHECKLIST.md`), measured in Foundry brief 5;
+  3. the `measure` tool (`module_work/VISUAL_SCALES_DESIGN.md`).
+
+The other review-harness items on the list: the look-alike /
 self-verification and box-carrying boundary found by
 `module_work/harness_theory/`; an image crop/zoom tool for raster uploads;
 then, as before, Phase 5 (rewrite the review prompt around the review method

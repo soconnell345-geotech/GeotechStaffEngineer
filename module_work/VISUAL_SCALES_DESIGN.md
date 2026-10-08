@@ -1,5 +1,21 @@
 # Visual scales: one way to measure positions on a page (W3 design)
 
+**BUILD STATUS (2026-10-08).**
+- **Steps 0–5 BUILT in planlens main a3f2a1d** (unreleased):
+  - `planlens/document/scales.py`, `raster.py`, `scalefinder.py` and `measuring.py`;
+  - `log_grid`'s raster leg;
+  - the `measure` tool spec;
+  - 48 fixtures and 134 tests.
+- **Harness (`module_work/scales_harness/`):** GATE PASS, with 99.93 % of 4,404 readings holding the truth inside their ± and no wrong snap returned without its alternatives.
+- **Private spot check:** 32/32 stratum lines on the ten scanned log sheets (median 0.007 m); 0 wrong reads across 835 grading-sheet readings.
+- **Departures from this design:**
+  - ± is a 95 % half-width;
+  - windows of 25 pt or more, or small marks from views over 300 pt, never snap, but list candidates;
+  - a vector ruler is re-tied to its ticks only when it is off by ≥ 0.75 pt;
+  - truth for six sheets comes from re-running the lead's frame method.
+- **Left over:** HANDOFF 8a(viii) (rectangle items read as x, y, w, h in two older functions; speed 1–16 s per dense scan; a silent `values` length mismatch).
+- **Steps 6–9 (app side)** are next, after the brief 4 fix list.
+
 **What this is.** The design asked for in `module_work/SCALES_COVERAGE_CROSSCHECKS.md`, item W3. The owner's direction (2026-10-08):
 
 - the depth fix belongs inside one general workflow for visual scales;

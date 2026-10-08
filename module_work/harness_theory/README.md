@@ -19,8 +19,9 @@ matters, the documents say so.
 
 ### Changed since this was written
 
-These changes date from 2026-10-07. They are committed and pushed but not
-released; they ship in app 5.32.1 with planlens 0.12.0. The body text still
+These changes date from 2026-10-07. They ship in app 5.32.1 with planlens
+0.12.0: planlens 0.12.0 was released on 2026-10-08, and 5.32.1 is staged
+and measured on Foundry (brief 4). The body text still
 describes 5.32.0; short notes in the affected sections point here.
 
 | Change | Commits | Affects |
@@ -37,6 +38,21 @@ describes 5.32.0; short notes in the affected sections point here.
 
 The geotech-page field session that prompted the last four is written up in
 `module_work/field_feedback/2026-10-06_geotech-report-session_v5.32.0/FINDINGS.md`.
+
+**After 5.32.1: on master for the next release (unreleased, 2026-10-08).**
+Plan of record: `module_work/SCALES_COVERAGE_CROSSCHECKS.md`. These change
+what the documents describe only where a switch is on, or where noted.
+
+| Change | Commits | Affects |
+|---|---|---|
+| **The DIGGS 2.6 schema ships with the package** and is checked with lxml on every host, with no pydiggs; `write_diggs` really checks the schema on the cluster | app `499e1cf` | `geotech_agent.md` (DIGGS) |
+| **`write_diggs` runs report ingest's reconciler first**, linking lab tests to borings and comparing a summary table with its sheets, and returns `cross_checks`. It never changes a value | app `438430f` | `geotech_agent.md`; `report_ingest.md` (the reconciler is now used outside the pipeline) |
+| **Coverage in code**, behind `GEOTECH_COVERAGE`, OFF: a ledger of every page any tool or helper read, `document_coverage`, and a once-only gate when an extraction turn tries to finish with data pages unread | app `6c81cc5` | `shared_machinery.md` §3, §4; both agent documents |
+| **Step limits by turn kind**, with the coverage switch: an ordinary turn keeps the app's cap and ends with an answer there; an extraction turn may run to 150 | app `c9d5c8d` | `shared_machinery.md` §4.3 |
+| **The report-review checklist**, behind `GEOTECH_REVIEW_CHECKLIST`, OFF; a DRAFT the owner is marking up | app `6c81cc5` | both agent documents |
+| **The activity log writes each line under a lock.** Parallel tool calls were losing records; earlier traces with parallel page looks may be missing lines | app `6c81cc5` | `shared_machinery.md` §3.4 |
+| **Visual scales in planlens:** `find_scales`, `measure`, and `log_grid` on scanned logs. NOT yet on either agent's tool list | planlens `a3f2a1d` | `locating_things_on_a_page.md`; `report_ingest.md` (`log_grid`) |
+
 
 ---
 

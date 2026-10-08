@@ -138,6 +138,7 @@ In each item, [code] means a check code can run; [judge] means the agent works t
 | W2 | DONE: `write_diggs` reconciles before writing and returns `cross_checks` |
 | W3 | Steps 0–5 BUILT in planlens a3f2a1d (`find_scales`, `measure`, `log_grid` on scans). Harness at `module_work/scales_harness/`: GATE PASS, 99.93 % inside ±. Private spot check: 32/32 stratum lines, median 0.007 m. Steps 6–9 (app side) next |
 | W4 | BUILT behind two switches, both OFF (`module_work/COVERAGE_AND_CHECKLIST.md`). The checklist content waits on the owner's markup. Measurement waits on a suite run. |
+| Next | The brief 4 fix list (TRACE_REVIEW §7, A–M) comes first, then W3's app side, then Foundry brief 5. 5.32.1 itself is being released from a4ef417 (planlens 0.12.0 is live). |
 
 **W4 in brief.**
 - **Switches:** `GEOTECH_COVERAGE` turns on the ledger, `document_coverage` and the gate; `GEOTECH_REVIEW_CHECKLIST` turns on `report_checklist`.

@@ -12,10 +12,9 @@ what you saw.
 name). Every run's full record is read, not just the scores (CLAUDE.md,
 "REVIEW EVERY MODEL RUN IN FULL").
 
-**Moved to Foundry (2026-10-07).** Your Funhouse tokens ran out for the
-month, so checks 6 and 3 now run on Foundry as brief 4, against test wheels,
-before 5.32.1 is released (`../foundry_handoff/AI_FDE_BRIEF_4.md`). Their
-instructions below stay as the Funhouse version, in case either needs
+**Moved to Foundry, and DONE there (2026-10-07).** Your Funhouse tokens ran
+out for the month, so checks 6 and 3 ran on Foundry as brief 4 (see Done).
+Their instructions below stay as the Funhouse version, in case either needs
 repeating there.
 
 **Still to run on Funhouse: check 5 only, after 5.32.1 is released.** It
@@ -34,7 +33,9 @@ Checks 1, 2 and 4 are done (see "Done").
 
 ## Setup (once per release)
 
-5.32.1 is not released yet; it goes out on your word, with planlens 0.12.0.
+planlens 0.12.0 is on PyPI (2026-10-08). 5.32.1 is staged and goes out
+once its last release checks finish; install it when it reaches the Nexus
+mirror, a day or two after PyPI.
 In a Funhouse notebook:
 
 ```python

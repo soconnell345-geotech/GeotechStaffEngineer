@@ -115,26 +115,51 @@ Key conventions:
 
 ## CURRENT WORKING STATE (2026-10-04) — 5.32.0 RELEASED with planlens 0.11.0 (pin >=0.11): look-first review prompts, checked markups (circles, labels, "drawn close"), Foundry full-resolution + Responses route, the measured Foundry fixes; switches still OFF by default; before it 5.31.0: Document Review M1 behind switches (findings, overview, geometry, digest free layer), all OFF by default; forward plan module_work/REVIEW_ARCHITECTURE.md; before it 5.30.0: the Document Review EVAL SUITE + the review-harness changes behind switches, all OFF by default; before it 5.29.1 with planlens 0.10.1: find_like kept OPTIONAL (not a workflow); 5.29.0 / planlens 0.10.0 added find_like + robust-first vision; 5.28.0 / planlens 0.9.0 measured the vision model; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
 
-- **On master since 5.32.0, UNRELEASED (2026-10-07; ships as 5.32.1 with
-  planlens 0.12.0 on the owner's word).** It comes out of the owner's
-  Funhouse live checks and a geotech-page field session, every run read in
-  full:
-  - the markup check measures size (`cc697e6`);
-  - the SharePoint mirror unwrap (`4334fce`);
-  - the model's own text in `activity.jsonl` (`f405765`);
-  - `find_like` without OpenCV on FIPS hosts (planlens `d7d6657`, app
-    `ba12760`);
-  - SharePoint failures said for what they are, a per-turn note of the
-    conversation's files, `subsurface.write_diggs`, turn details on by
-    default, and past conversations cached per page (`3d1cd44`);
-  - vision locations as pixel boxes converted in code, a 2,048 px render
-    cap, padded zooms, and planlens refusing small marks read off views
-    wider than 300 pt (app `cf43c90`, planlens `08a1d53`).
+- **MASTER IS THE NEXT TRAIN (for 5.33), UNRELEASED, switches OFF
+  (2026-10-08).** Plan of record: `module_work/SCALES_COVERAGE_CROSSCHECKS.md`.
+  - W1 (499e1cf): the DIGGS 2.6 schema is bundled and checked with lxml on
+    every host.
+  - W2 (438430f): `write_diggs` runs report ingest's reconciler
+    (`cross_checks`).
+  - W3: visual scales. Design `module_work/VISUAL_SCALES_DESIGN.md`. The
+    planlens part is built (main a3f2a1d: `find_scales`, `measure`,
+    `log_grid` on scans); the app part is not yet.
+  - W4 (6c81cc5, c9d5c8d): the coverage ledger, gate and DRAFT checklist,
+    behind `GEOTECH_COVERAGE` / `GEOTECH_REVIEW_CHECKLIST`. With the
+    switch, an ordinary turn keeps the app's step cap and an extraction turn
+    may run to 150.
+  - The activity-log lock.
 
-  The list of changes is in `module_work/harness_theory/README.md`, "Changed
-  since this was written". The live checks to run after the release are in
-  `module_work/LIVE_TEST_QUEUE.md` (checks 3, 5 and 6). Pickup:
-  `HANDOFF.md` §0a-current, item 2a.
+  Next, in order:
+  1. the brief 4 fix list (TRACE_REVIEW §7);
+  2. W3's app side;
+  3. Foundry brief 5.
+
+  Pickup: `HANDOFF.md` §0a-current, "Where things stand".
+- **5.32.1: planlens 0.12.0 RELEASED 2026-10-08 (tag `v0.12.0`, live on
+  PyPI); app 5.32.1 STAGED on branch `release/5.32.1` (a8114a2), NOT YET
+  TAGGED.**
+  - **What it is:** a4ef417 as measured on Foundry (brief 4, read in full:
+    `module_work/review_eval_results/2026-10-07_foundry_5.32.1rc3/`), plus
+    the version bump, `planlens>=0.12` and its docs.
+  - **Still to run before the tag:** two gate chunks (report_ingest /
+    harness / webapp / validation_examples, and geotech-references). Claude
+    Code stopped them for low memory, which is not a failure.
+  - **It carries:**
+    - the markup check measures size (`cc697e6`);
+    - the SharePoint mirror unwrap (`4334fce`);
+    - the model's own text in `activity.jsonl` (`f405765`);
+    - `find_like` without OpenCV on FIPS hosts (planlens `d7d6657`, app
+      `ba12760`);
+    - the 2026-10-06 geotech-session fixes (`3d1cd44`): SharePoint
+      failures said for what they are, a per-turn note of the
+      conversation's files, `subsurface.write_diggs`, turn details on by
+      default, and past conversations cached per page;
+    - vision locations as pixel boxes converted in code, a 2,048 px render
+      cap, padded zooms, and planlens refusing small marks read off views
+      wider than 300 pt (app `cf43c90`, planlens `08a1d53`).
+  - **Measured on Foundry:** circles passed 2/3 on GPT-5.4 and 3/3 on Sol;
+    the suite passed 37/37 on Sol.
 - **5.32.0 RELEASED 2026-10-04 (tag `v5.32.0`) with planlens 0.11.0 (tag
   `v0.11.0`, published first — pin `planlens>=0.11`; no new third-party
   package).** The first release measured on Palantir Foundry before it

@@ -1,115 +1,108 @@
 # HANDOFF — GeotechStaffEngineer (current state, read this first)
 
-**Last updated: 2026-10-04.** This is the authoritative handoff for a fresh LLM
+**Last updated: 2026-10-08.** This is the authoritative handoff for a fresh LLM
 session (any model). The older `HANDOFF_2026-06-14.md` is kept only for the
 detailed Phase-E history; this file supersedes it.
 
 ---
 
-## 0a-current. PICKUP LIST (2026-10-05, supersedes everything below)
+## 0a-current. PICKUP LIST (2026-10-08, supersedes everything below)
 
-### Open to-dos after 5.32.0 — THE list (2026-10-05)
+### Where things stand (2026-10-08)
 
-One list for the whole project; other notes point here. Nothing is in
-progress (2026-10-07): no branch is open and no Foundry brief is running.
-Everything since 5.32.0 is committed and pushed but unreleased (item 2a).
+**1. RELEASE IN PROGRESS: 5.32.1 with planlens 0.12.0.** The owner said, the night of 2026-10-07: "Ok to release however you see best".
+- **planlens 0.12.0 is LIVE on PyPI.**
+  - Tag `v0.12.0` on branch `release/0.12.0` (c58f7ed), cut from 08a1d53, which Foundry measured as 0.12.0rc1.
+  - 1,500 tests passed; no dependency change.
+- **App 5.32.1 is STAGED, NOT TAGGED.**
+  - Branch `release/5.32.1` (a8114a2, pushed) is a4ef417, which Foundry measured as 5.32.1rc3, plus the version bump, `planlens>=0.12` and its docs (CLAUDE.md state block, this list, the install guide's row).
+  - Released as measured; the activity-log lock goes in the next release.
+- **The gate on that exact tree, with planlens 0.12.0, so far** (all exit 0):
+
+  | Chunk | Result |
+  |---|---|
+  | analysis modules | 1,091, and 2,108 with 28 skipped |
+  | fem2d | 399 |
+  | funhouse_agent | 2,268 with 10 skipped |
+
+- **Still to run before `git tag v5.32.1`:**
+  - `report_ingest foundry_test_harness webapp/tests validation_examples`: Claude Code stopped it for low memory, twice, which is not a failure;
+  - the geotech-references suite, whose submodule is unchanged since v5.32.0.
+- **How to run them:** in a clean copy of the branch, with PYTHONPATH pointing at a planlens 0.12.0 checkout, one chunk at a time, in the foreground. The laptop has 15.5 GB; two old Claude Code sessions hold about 0.9 GB.
+- **Then:** tag `v5.32.1` and push the tag; the workflow publishes.
+- **Meanwhile, 5.32.0 installs pull planlens 0.12.0** (its pin is >=0.11). That is compatible: the wide-view refusal only asks the agent to zoom, and 5.32.0 hides `find_like` on FIPS hosts as before.
+- **After the tag:**
+  - copy the released wheels to `../foundry_handoff/`;
+  - port the 5.32.1 install-guide row and state bullet to master's docs;
+  - restart the brief 4 fix-list builder (item 3a).
+
+**What 5.32.1 carries**, all since 5.32.0:
+- **The markup check measures size** (cc697e6). Live check 1 on 2026-10-07 found 5.32.0's "drawn close" question rejecting correct circles on GPT-5.4.
+- **The SharePoint copy fix** (4334fce).
+- **The model's own words in `activity.jsonl`** (f405765).
+- **`find_like` without OpenCV on FIPS hosts** (planlens d7d6657, app ba12760).
+- **The 2026-10-06 geotech-session fixes** (3d1cd44): SharePoint failures said for what they are, a per-turn note of the conversation's files, `subsurface.write_diggs`, turn details on by default, and the past-conversations list cached per page.
+- **The location build** (cf43c90, planlens 08a1d53): pixel boxes converted in code, a 2,048 px cap, padded zooms, marks refused from wide views, quotes on their printed row.
+
+**How it was measured: Foundry brief 4, read in full** (`module_work/review_eval_results/2026-10-07_foundry_5.32.1rc3/TRACE_REVIEW.md`; REVIEW_HARNESS run 6; MEASUREMENTS "FOUNDRY RUN 2").
+- **The location fix held** on GPT-5.4 and Sol.
+- **Circles:** 2/3 passes on GPT-5.4 (0/3 on Funhouse before), 3/3 on Sol.
+- **Suite:** 37/37 on Sol, with no task changing outcome against run 4.
+- **Report-ingest narrative:** 83/85 %.
+
+**2. MASTER IS THE NEXT TRAIN (for 5.33). Unreleased; switches OFF.** Plan of record: `module_work/SCALES_COVERAGE_CROSSCHECKS.md`.
+- **W1** (499e1cf): the DIGGS 2.6 schema is bundled and checked with lxml on every host, so pydiggs is no longer needed.
+- **W2** (438430f): `write_diggs` runs report ingest's reconciler and returns `cross_checks`.
+- **W3, visual scales.**
+  - Design: `module_work/VISUAL_SCALES_DESIGN.md`; the owner accepted all nine recommendations.
+  - Steps 0–5 BUILT in planlens main a3f2a1d: `find_scales`, `measure`, `log_grid` on scans.
+  - Harness: `module_work/scales_harness/`; GATE PASS.
+  - Private spot check: 32/32 stratum lines, median 0.007 m.
+  - App side (steps 6–9) NOT built.
+- **W4** (6c81cc5, c9d5c8d): the coverage ledger, gate and `document_coverage`, and the DRAFT report-review checklist, behind `GEOTECH_COVERAGE` / `GEOTECH_REVIEW_CHECKLIST`.
+  - Step limits under the switch: an ordinary turn keeps the app's cap; an extraction turn may run to 150.
+  - Design note: `module_work/COVERAGE_AND_CHECKLIST.md`.
+- **Also on master:** the activity-log lock (6c81cc5).
+
+**3. THE NEXT WORK, in order:**
+- **3a. The brief 4 fix list**, TRACE_REVIEW §7, items A–M:
+  - comments judged by what they point at;
+  - a geometric "encloses";
+  - a `dpi` floor;
+  - forgiving markup fields;
+  - tile-only finds;
+  - `find_like` flood stop;
+  - `markups_point_at`;
+  - reasoning summaries;
+  - report-ingest `floor_alone`/`model_alone`.
+
+  An Opus builder was started, then stopped before writing anything to free memory for the release. Restart it after the tag.
+- **3b. W3 app side (steps 6–9):**
+  - the `measure` tool on both pages, with the label-reading side call;
+  - `read_reference_figure`'s second voter;
+  - report ingest on the same functions;
+  - live checks.
+- **3c. Foundry brief 5:**
+  - 3a's fixes and 3b;
+  - the coverage arms `("baseline", "coverage", "checklist")`;
+  - the report-ingest rescore questions (logs `index`, gradation links).
+- **3d. The owner's checklist session, the week of 2026-10-12** (item 8a(vi)).
+
+Machine note: heavy test suites must not overlap on the owner's laptop. Background runs were stopped twice for low memory on 2026-10-07/08.
+
+### Open to-dos (refreshed 2026-10-08)
+
+One list for the whole project; other notes point here.
 
 **A. Owner — the test run**
-1. Install 5.32.0: `%pip install "geotech-staff-engineer==5.32.0"` (brings
-   planlens 0.11.0). If the Nexus mirror lags, the release wheels are in
-   `../foundry_handoff/` (install planlens first).
-2. Run the three small live checks in `module_work/LIVE_TEST_QUEUE.md` on
-   Funhouse (written for the owner, with paste-ready cells): do the red
-   circles land on the tags; is `find_like` still available; one report-ingest
-   rerun (narrative rules, lab links, boring logs). Tick them off there.
-2a. **5.32.1 is released only on the owner's word.** planlens goes first.
-   Release it as **0.12.0**, not 0.11.1, because `write_markups` now refuses
-   some anchors it used to accept. Raise the app pin to `planlens>=0.12`.
-   planlens `main` carries:
-   - d7d6657: `find_like` without OpenCV;
-   - 08a1d53: the wide-view refusal, quote-row anchors and rotated sticky
-     notes.
-
-   What app master holds after 5.32.0:
-   - **The markup check measures size** (cc697e6). Live check 1 on
-     2026-10-07 found 5.32.0's "drawn close" question rejecting correct
-     circles on GPT-5.4.
-   - **The SharePoint copy fix** (4334fce).
-   - **The model's own words in `activity.jsonl`** (f405765).
-   - **`find_like` on FIPS hosts** (ba12760).
-   - **The 2026-10-06 geotech-session fixes** (3d1cd44, item 8a): SharePoint
-     failures said for what they are, a per-turn note of the files the
-     conversation holds, `subsurface.write_diggs`, turn details on by default,
-     and the past-conversations list cached per page.
-   - **The location build** (cf43c90, item 9b).
-
-   **Measured before release on Foundry (2026-10-07).** The owner's Funhouse
-   tokens are spent for the month, so brief 4 runs the test wheels
-   `5.32.1rc3` and planlens `0.12.0rc1`, built from app a4ef417 and planlens
-   08a1d53 (`../foundry_handoff/AI_FDE_BRIEF_4.md`). It has four parts:
-   - A: the location measurement;
-   - B: the markup tasks ×3 on GPT-5.4 and Sol;
-   - C: the whole suite on `baseline`;
-   - D: report-ingest stage d.
-
-   **RELEASE IN PROGRESS (night of 2026-10-07/08; the owner: "Ok to release
-   however you see best").**
-   - **planlens 0.12.0 is LIVE on PyPI.** It is tag `v0.12.0` on branch
-     `release/0.12.0`, cut from 08a1d53 (what rc1 measured): 1,500 tests
-     passed, the wheel was built.
-   - **App 5.32.1 is STAGED, NOT TAGGED.** Branch `release/5.32.1` = a4ef417
-     plus the version bump, `planlens>=0.12` and the docs (pushed).
-   - **Gate on that exact tree, with planlens 0.12.0, so far:**
-     - analysis modules: 1,091, and 2,108 with 28 skipped;
-     - fem2d: 399;
-     - funhouse_agent: 2,268 with 10 skipped;
-     - all exit 0.
-   - **Still to run before `git tag v5.32.1`:**
-     - `report_ingest foundry_test_harness webapp/tests validation_examples`,
-       which Claude Code stopped for low memory (not a failure);
-     - the geotech-references suite, unchanged since v5.32.0.
-   - **Run them in a clean copy of the branch,** with PYTHONPATH pointing at
-     a planlens 0.12.0 checkout, one chunk at a time, ideally with the two
-     old Claude sessions closed. Then tag and push the tag (the workflow
-     publishes).
-   - **Meanwhile 5.32.0 installs pull planlens 0.12.0** (its pin is >=0.11).
-     That is compatible: the wide-view refusal only asks the agent to zoom,
-     and 5.32.0 hides `find_like` on FIPS hosts as before.
-   - **After the tag:** copy the released wheels to `../foundry_handoff/`;
-     restart the brief 4 fix-list builder (stopped to free memory; it had
-     written nothing).
-
-   **BRIEF 4 IS BACK AND READ IN FULL (2026-10-08):** release 5.32.1 from
-   a4ef417 as measured. See
-   `module_work/review_eval_results/2026-10-07_foundry_5.32.1rc3/TRACE_REVIEW.md`,
-   with REVIEW_HARNESS run 6 and MEASUREMENTS "FOUNDRY RUN 2".
-   - **The location fix held** on both models.
-   - **Circles:** 2/3 passes on GPT-5.4, 3/3 on Sol.
-   - **Suite:** 37/37 on Sol, with no task changing outcome against run 4.
-   - **Report ingest:** narrative 83/85 %.
-
-   An optional cherry-pick is the activity-log lock hunk of 6c81cc5 (logging
-   only). Fixes for the next release, each measured first, are in
-   TRACE_REVIEW §7:
-   1. the markup check must judge a COMMENT by what it is about (0 of 8
-      good comments confirmed), and decide "encloses" from its own box;
-   2. a given `dpi` never lowers a zoom below the budget;
-   3. forgive common markup field slips;
-   4. surface tile-only finds;
-   5. stop `find_like` when the example floods;
-   6. the suite check `markups_point_at`;
-   7. ask for reasoning summaries on the Responses route;
-   8. print `floor_alone`/`model_alone` in report-ingest results, and
-      rescore the saved run for the logs-`index` and gradation-link
-      questions.
-
-   **Cut 5.32.1 from a4ef417** (what brief 4 measures), on a `release/5.32.1`
-   branch, adding only fixes the Foundry results call for. Master has moved
-   on to the next train (`module_work/SCALES_COVERAGE_CROSSCHECKS.md`, for
-   5.33). Release on the owner's word once those results are read in full. Check 5
-   (SharePoint, remembered files, past conversations) needs the Funhouse
-   app, so it stays in `module_work/LIVE_TEST_QUEUE.md` for after the
-   release.
+1. Install 5.32.1 once it is tagged and the Nexus mirror delivers it:
+   `%pip install "geotech-staff-engineer==5.32.1"` (brings planlens 0.12.0).
+   If the mirror lags, the release wheels go to `../foundry_handoff/`
+   (install planlens first).
+2. Check 5 in `module_work/LIVE_TEST_QUEUE.md` (SharePoint links,
+   remembered files, past conversations; it needs the Funhouse app) when the
+   Funhouse budget renews. Use the cheaper model and a short PDF. Every
+   heavier check goes to Foundry (memory `feedback-funhouse-token-budget`).
 3. Ask CfA whether the Tiny Apps App Service enforces FIPS mode. Funhouse
    DOES (live check 2, 2026-10-07: OpenCV fails its FIPS self-test there, as
    on Foundry), so assume Tiny Apps does too: OpenCV cannot load and
@@ -144,11 +137,13 @@ Everything since 5.32.0 is committed and pushed but unreleased (item 2a).
    - **(ii) ASCE 7 and Youd et al. (2001).** Neither is in the reference
      library. Adding them is a licensing question.
    - **(iii) The missed 2026 borings** (vector logs taken for "not scanned").
-     Three options:
-     - a measurement task: a synthetic report with vector new logs and
-       scanned old ones;
-     - planlens: start and title a segment at a markup-only divider page;
-     - give the `general-purpose` helper the reading rules, measured first.
+     - The measurement task EXISTS since 6c81cc5: the suite's three
+       `report-` tasks on a synthetic report with vector new logs and
+       scanned old ones.
+     - Still open: planlens starting and titling a segment at a markup-only
+       divider page.
+     - Still open: giving the `general-purpose` helper the reading rules,
+       measured first.
    - **(iv) From the value check of the session's extracted data** (FINDINGS
      §8, 2026-10-07):
      - **What was right:** printed numbers were read correctly (SPT 48/48;
@@ -156,23 +151,24 @@ Everything since 5.32.0 is committed and pushed but unreleased (item 2a).
      - **What went wrong:** layer depths read off scanned logs were off by up
        to 0.7 m, and most of the lab appendix and the second 2026 boring's
        lab results were never extracted.
-     - **Candidates (general capabilities):**
-       - depth from a raster log's drawn scale, measured in code (planlens,
-         beside `log_grid`);
-       - an Atterberg consistency gate (PL ≤ LL, PI = LL − PL) in
-         `report_ingest` and `write_diggs`; the report's own table has PL
-         and LL swapped;
-       - coverage stated as counts in the answer.
+     - **What became of the candidates (owner, 2026-10-08):**
+       - **Depth from a drawn scale:** generalised into the visual-scales
+         workflow for both harnesses (W3; planlens part built, a3f2a1d).
+       - **The Atterberg gate:** DROPPED as over-fitting. Instead
+         `write_diggs` runs the reconciler's general cross-checks (W2), and
+         the report's swapped summary row is caught as a summary-vs-sheet
+         conflict.
+       - **Coverage:** in code, with the checklist (W4, behind switches).
    - **(vi) THE OWNER'S CHECKLIST SESSION, the week of 2026-10-12.** The
      owner wants slow-thinking time on the report-review checklist. It is
      data in `funhouse_agent/report_review_checklist.json`, marked DRAFT;
      the background is in `module_work/COVERAGE_AND_CHECKLIST.md`. Send it to
      the owner as a plain list, take the markup in chat or Word, then
      transfer it to the file (keep each item's `id`).
-   - **(vii) The next Foundry brief, after 5.32.1's results:** the review
-     suite with `arms=("baseline", "coverage", "checklist")`, including the
-     three `report-` tasks. The coverage switches go on by default only if
-     the suite says so.
+   - **(vii) Foundry brief 5** (Where things stand, 3c): the review suite
+     with `arms=("baseline", "coverage", "checklist")`, including the three
+     `report-` tasks. The coverage switches go on by default only if the
+     suite says so.
    - **(viii) Left by the planlens scales build (a3f2a1d, 2026-10-08):**
      - **Rectangles read as x, y, w, h.** `loggrid.page_rules` (around line
        906) and `document._ruling_lines` (line 137) treat PyMuPDF's
@@ -198,7 +194,8 @@ rules from single examples)
    have no zoom today) — `module_work/FUTURE_IDEAS.md` "VISION HARNESS
    BENCHMARK", which also holds the Chartography run (check its licence) and
    a small geotech chart truth set.
-9a. **DONE 2026-10-07, unreleased** (planlens d7d6657, app ba12760): a numpy
+9a. **DONE 2026-10-07; in planlens 0.12.0 and app 5.32.1** (planlens d7d6657,
+    app ba12760). On Foundry (brief 4) it matched OpenCV exactly. It is a numpy
     matcher with the same hits as OpenCV, chosen automatically where OpenCV
     cannot load (`PLANLENS_FINDLIKE_BACKEND`). The raster IR leg and OCR still
     need OpenCV. The original note follows.
@@ -213,8 +210,15 @@ rules from single examples)
     (an 85-sheet set at ~15 scales × 4 rotations): measure against OpenCV
     first; use OpenCV where it loads. The raster IR leg and OCR have the same
     dependency. Still an OPTIONAL tool (owner's rule).
-9b. **BUILT 2026-10-07, unreleased** (app cf43c90, planlens 08a1d53).
-    Check 6 in the live-test queue re-measures it. What it does:
+9b. **BUILT 2026-10-07; in app 5.32.1 and planlens 0.12.0** (app cf43c90,
+    planlens 08a1d53). MEASURED on Foundry brief 4 (REVIEW_HARNESS run 6):
+    - it held on GPT-5.4 and Sol;
+    - every box was a pixel box, and every ring was placed from a zoom;
+    - the refusal never needed to fire: the widest view a ring used was
+      298 pt.
+
+    The two open calls below stand as they are: keep 300 pt, and the cap
+    applies on Foundry. What it does:
     - Vision calls answer in pixel boxes, converted in code with the size
       sent.
     - Renders are capped at 2,048 px (`GEOTECH_VISION_MAX_PX`).
@@ -251,10 +255,10 @@ rules from single examples)
     images at 2,048 px — teach the probe/budget); `tiles` accepting "NxN" or
     failing loudly; the "look that found it" wording; a check that a
     quote-anchored comment sits on its quote (CAD notes are one text block).
-10. The vision side-call boundary (`module_work/harness_theory/`, finding 1):
-    first MEASURE the vision call's box precision against the synthetic tag
-    fixtures (a script, no model calls); then consider page-coordinate
-    locations, or the reasoning model looking itself, as switched arms.
+10. The vision side-call boundary (`module_work/harness_theory/`, finding 1).
+    The box precision is MEASURED (check 4, brief 4 part A) and fixed (pixel
+    boxes, 9b). Still a candidate: the reasoning model looking itself, as a
+    switched arm (`inline`, already built, never a default).
 11. Geotech catalog: five `slope_stability` method descriptions are longer
     than the 8,000-character result cap and reach the model cut off
     (`module_work/harness_theory/geotech_agent.md`).
@@ -272,13 +276,11 @@ rules from single examples)
     cross-reference resolver and revision compare only if they earn a suite
     task (`module_work/REVIEW_HARNESS.md` "Next").
 
-**D. Foundry (the measurement bed).** **Brief 4 is running** (sent
-2026-10-07; see item 2a). Briefs 1–3 are done (`../foundry_handoff/`).
-- When brief 4 comes back, read every B and C run in full, as the CLAUDE.md
-  rule requires. Write `TRACE_REVIEW.md` under
-  `module_work/review_eval_results/2026-10-??_foundry_5.32.1rc3/`, add run 6
-  to `module_work/REVIEW_HARNESS.md`, and add "FOUNDRY RUN 2" to the
-  report-ingest ledger.
+**D. Foundry (the measurement bed).** No brief is running. Briefs 1–4 are
+done (`../foundry_handoff/`).
+- Brief 4 (5.32.1rc3) was read in full on 2026-10-08: TRACE_REVIEW, run 6,
+  FOUNDRY RUN 2.
+- Brief 5 is next (Where things stand, 3c).
 - Heavy measurement goes here, not to Funhouse, whose monthly token budget
   the owner ran out of on 2026-10-07.
 - The geotech eval rerun still needs a numpy-2 repository (numpy 1.26 there
