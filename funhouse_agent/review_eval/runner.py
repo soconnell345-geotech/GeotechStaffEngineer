@@ -508,6 +508,22 @@ def summarize(runs: Dict[str, Dict[str, Dict[str, Any]]], arms: Sequence[str],
                                  f"{t.id} ({t.category}, {t.doc_type})")
         if not any_change:
             lines.append("- no task changed outcome")
+    # Checks a task records without scoring (which tools a run reached for,
+    # and what they gave back): beside the scores, not in them.
+    recorded = []
+    for arm in arms:
+        for t in tasks:
+            r = runs.get(arm, {}).get(t.id)
+            if not r or r.get("skipped"):
+                continue
+            for c in r.get("checks") or []:
+                if c.get("info"):
+                    recorded.append(
+                        f"- `{arm}` {t.id}: {c['label']} - "
+                        f"{'yes' if c['passed'] else 'no'}; "
+                        f"{str(c['detail'])[:300]}")
+    if recorded:
+        lines += ["", "## Recorded, not scored", ""] + recorded
     lines += ["", "## Failed checks", ""]
     for arm in arms:
         for t in tasks:

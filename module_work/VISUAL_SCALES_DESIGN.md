@@ -743,6 +743,6 @@ Built 2026-10-08 on master (app) and planlens `main`, uncommitted for the lead t
 
 **What Foundry brief 5 must measure** (also HANDOFF 3c and LIVE_TEST_QUEUE check 8):
 1. GPT-5.4 and Sol reading a numbered label sheet: every label right, and how often a cell is left unread.
-2. Whether an agent uses `measure` from its description alone on a scanned-log question and a plan-distance question (suite tasks, not prompt rules), and how often a measurement from a real zoom snaps or lists.
+2. Whether an agent uses `measure` from its description alone on a scanned-log question and a plan-distance question (suite tasks, not prompt rules), and how often a measurement from a real zoom snaps or lists. The tasks are `scale-log-depth` (geotech page) and `scale-plan-distance` (review page), run with `ids=["scale-"]`; each records which measuring tools the run called, not scored, under "Recorded, not scored" in RESULTS.md.
 3. Whether the READ lines come back with pixel boxes on real reference charts (GEC-12 Fig 7-15 is the obvious one, decision 8), and how often code agrees, disagrees or cannot read.
 4. Report ingest, `score_on_cluster` stages `logs`, `lab` and `ingest` with the setting off and on, into separate `out_dir`s (item files resume). Layer tops, the label-call cost, `plot_vs_table` counts against the lab truth, and the sounding counts. Off must match 5.32.1 except for the planlens ruler change on DI scans (departure 6).

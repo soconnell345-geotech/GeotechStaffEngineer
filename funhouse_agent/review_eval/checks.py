@@ -662,6 +662,186 @@ def check_pages_covered(answer: str, activity: Sequence[Dict[str, Any]] = (),
     return ok, detail
 
 
+def _json_dict(result: Any) -> Optional[Dict[str, Any]]:
+    if isinstance(result, dict):
+        return result
+    try:
+        import json as _json
+        data = _json.loads(result)
+    except (TypeError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _tool_outcome(name: str, result: Any) -> Tuple[str, Optional[str]]:
+    """``(what came back, a value it gave or None)`` for one finished call
+    of a measuring tool, read from its result as the record keeps it."""
+    data = _json_dict(result)
+    if data is None:
+        return "unreadable result", None
+    if data.get("error"):
+        return "error", None
+    if name == "measure":
+        val = data.get("value")
+        if isinstance(val, dict):
+            shown = val.get("display")
+            if not shown:
+                num = next((v for k, v in val.items()
+                            if isinstance(v, (int, float))
+                            and k not in ("plus_minus", "confidence",
+                                          "plus_minus_pt")), None)
+                shown = f"{num:g}" if num is not None else ""
+            unit = val.get("unit")
+            return "value", (f"{shown} {unit}" if shown and unit else
+                             shown or None)
+        if data.get("ambiguous") or data.get("alternatives"):
+            return "candidates listed, none chosen", None
+        if data.get("scales") is not None:
+            return "scales listed", None
+        if "needs_values" in str(result):
+            return "waiting for label values", None
+        return "no value", None
+    if name == "log_grid":
+        if data.get("needs_values"):
+            return "waiting for label values", None
+        return "layers", f"{len(data.get('layers') or [])} layer(s)"
+    return "result", None
+
+
+def check_tools_called(answer: str, activity: Sequence[Dict[str, Any]] = (),
+                       tools: Sequence[str] = (), min_calls: int = 1,
+                       **_) -> Tuple[bool, str]:
+    """Which of ``tools`` the run called and what each call gave back,
+    from the run's own ``activity.jsonl`` (every call of the primary and its
+    helpers, finished or failed), as ``pages_covered`` reads it. Meant as an
+    ``info`` check: it records whether an agent picked up a tool from its
+    description alone, and what the tool returned beside what the answer
+    said, without failing a right answer reached another way."""
+    if not activity:
+        return False, "no activity record for this run"
+    want = [str(t) for t in tools]
+    calls: Dict[str, List[Any]] = {}
+    order: List[str] = []
+    for rec in activity:
+        ev = rec.get("event")
+        rid = str(rec.get("run_id") or "")
+        if ev == "tool_start" and rec.get("name") in want:
+            calls[rid] = [rec.get("name"), "no result recorded", None]
+            order.append(rid)
+        elif ev == "tool_end" and rid in calls:
+            calls[rid][1], calls[rid][2] = _tool_outcome(calls[rid][0],
+                                                         rec.get("result"))
+        elif ev == "tool_error" and rid in calls:
+            calls[rid][1] = "error"
+    parts, total = [], 0
+    for name in want:
+        mine = [calls[r] for r in order if calls[r][0] == name]
+        total += len(mine)
+        if not mine:
+            parts.append(f"{name}: not called")
+            continue
+        counts: Dict[str, int] = {}
+        for _n, how, _v in mine:
+            counts[how] = counts.get(how, 0) + 1
+        part = (f"{name}: {len(mine)} call(s) - "
+                + ", ".join(f"{k} {v}" for k, v in counts.items()))
+        got = [v for _n, _h, v in mine if v]
+        if got:
+            part += "; gave " + "; ".join(got[:4])
+        parts.append(part)
+    return total >= int(min_calls), "; ".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# A measured value (a depth, a distance) against its truth
+# ---------------------------------------------------------------------------
+
+#: A number as an answer writes it ("3.62", "184", "1,850"), never the tail
+#: of an id or the second end of a range ("B-1", "1.64-3.62").
+_VALUE = re.compile(r"(?<![\w.,/^-])(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)"
+                    r"(?!\d)")
+#: Just before a number: what makes it an uncertainty, not a value.
+_PLUS_MINUS = re.compile(r"(?:±|\+/-|\+-|plus or minus|plus/minus)\s*\(?\s*$")
+#: Just after a number: a unit other than the one asked for.
+_OTHER_UNITS = {
+    "m": r"\s*(?:ft\b|feet\b|foot\b|'|\"|inch|in\.|mm\b|cm\b|km\b|%|pt\b|"
+         r"px\b|kpa\b|°|deg)",
+    "ft": r"\s*(?:m\b|metres?\b|meters?\b|mm\b|cm\b|km\b|\"|inch|in\.|%|"
+          r"pt\b|px\b|°|deg)",
+}
+#: Where a statement ends: a sentence, a line (a table row), a semicolon.
+_STATEMENT_END = re.compile(r"(?<!\d)[.!?](?!\d)|[;\n]")
+
+
+def _normalize_lines(answer: str) -> str:
+    """:func:`normalize`, line by line: a table row stays a row."""
+    return "\n".join(normalize(line) for line in str(answer or "").splitlines())
+
+
+def _scopes(text: str, near: Sequence[Any], window: int
+            ) -> List[Tuple[int, int]]:
+    """``(start, end)`` of the text that speaks about the thing asked:
+    each statement that names it, run on ``window`` characters past the
+    name (a value on the next line of a list: "**GRAVEL**\\n- Top: 3.6 m")."""
+    out = []
+    for term in near:
+        pat = (term["re"] if isinstance(term, dict) and "re" in term
+               else re.escape(normalize(str(term))))
+        for m in re.finditer(pat, text, flags=re.IGNORECASE):
+            start = 0
+            for b in _STATEMENT_END.finditer(text, 0, m.start()):
+                start = b.end()
+            nxt = _STATEMENT_END.search(text, m.end())
+            end = nxt.start() if nxt else len(text)
+            out.append((start, max(end, min(len(text), m.end() + int(window)))))
+    return out
+
+
+def check_value_within(answer: str, value: float = 0.0, tol: float = 0.0,
+                       unit: str = "", near: Sequence[Any] = (),
+                       window: int = 160, **_) -> Tuple[bool, str]:
+    """The answer states the thing's value within ``tol`` of the truth.
+
+    The values counted are those the answer states WITH the thing asked
+    about: in a statement that names it (``near``: terms or ``{"re": ...}``,
+    say the layer or the two borings) or within ``window`` characters after
+    the name. A ``+/-`` figure is not a value, nor is a number in a unit
+    other than ``unit`` ("m" or "ft"). The check passes when one of them is
+    within ``tol`` - so an answer may give the measured value beside its
+    estimate by eye, or beside what a wrong scale would give, and pass on
+    the measured one; an answer that commits to the wrong one of two values
+    it states also passes, which a full read of the run catches. An answer
+    that never names the thing is held to its FIRST value.
+    """
+    text = _normalize_lines(answer)
+    other = _OTHER_UNITS.get(unit)
+    values = []
+    for m in _VALUE.finditer(text):
+        if _PLUS_MINUS.search(text[max(0, m.start() - 16):m.start()]):
+            continue
+        if other and re.match(other, text[m.end():m.end() + 8]):
+            continue
+        values.append((m.start(), float(m.group(1).replace(",", ""))))
+    scopes = _scopes(text, near, window) if near else []
+    if scopes:
+        said = [v for p, v in values if any(a <= p < b for a, b in scopes)]
+        how = "stated with the thing asked about"
+    else:
+        said = [v for _p, v in values[:1]]
+        how = ("the answer never names the thing asked about; its first value"
+               if near else "the answer's first value")
+    u = f" {unit}" if unit else ""
+    if not said:
+        return False, f"no value{u} stated ({how}); truth {value:g}{u}"
+    best = min(said, key=lambda v: abs(v - float(value)))
+    off = abs(best - float(value))
+    ok = off <= float(tol) + 1e-9
+    shown = ", ".join(f"{v:g}" for v in said[:8]) + (
+        " ..." if len(said) > 8 else "")
+    return ok, (f"{how}: {shown}; closest {best:g}{u} is {off:.3g}{u} from "
+                f"the truth {value:g}{u} (tolerance {tol:g}{u})")
+
+
 #: A count ("10 of 23", "all 14") within reach of what was counted.
 _KIND_WORDS = (r"(?:sheet|log|page|test|boring|borehole|exploration|sample|"
                r"result|record)")
@@ -697,10 +877,12 @@ CHECKS = {
     "tool_used": check_tool_used,
     "pages_covered": check_pages_covered,
     "states_coverage": check_states_coverage,
+    "value_within": check_value_within,
+    "tools_called": check_tools_called,
 }
 
 #: Checks on what the run DID (its activity), not on its answer text.
-PROCESS_CHECKS = ("tool_used", "pages_covered")
+PROCESS_CHECKS = ("tool_used", "pages_covered", "tools_called")
 
 
 def run_check(check: Dict[str, Any], answer: str,
@@ -709,7 +891,7 @@ def run_check(check: Dict[str, Any], answer: str,
               activity: Sequence[Dict[str, Any]] = ()) -> Dict[str, Any]:
     """Run one check; never raises (a broken check is a failed check).
     ``activity`` is the run's ``activity.jsonl`` records (for
-    ``pages_covered``)."""
+    ``pages_covered`` and ``tools_called``)."""
     kind = check.get("type")
     fn = CHECKS.get(kind)
     params = {k: v for k, v in check.items()

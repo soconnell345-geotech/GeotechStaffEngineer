@@ -21,7 +21,7 @@ from funhouse_agent.review_eval.tasks import (  # noqa: E402
 
 FILE_CHECKS = {"file_produced", "pdf_markups", "markups_on_targets",
                "markups_point_at",
-               "docx_contains", "tool_used", "pages_covered"}
+               "docx_contains", "tool_used", "pages_covered", "tools_called"}
 
 
 @pytest.fixture(autouse=True)
@@ -57,10 +57,12 @@ def test_tasks_are_well_formed():
     # whole-set coverage, which no public document in the suite can; three
     # more since plan W4 on one synthetic report, because whether EVERY data
     # page of a report was read can only be scored on a report whose every
-    # page is known by construction)
+    # page is known by construction; two more since W3, because how far a
+    # measured depth or distance is from the truth can only be scored where
+    # the truth is known by construction)
     synthetic = [t for t in OPEN_TASKS
                  if any(d.startswith("fixture_") for d in t.documents)]
-    assert len(synthetic) <= 7
+    assert len(synthetic) <= 9
     assert len(synthetic) < len(OPEN_TASKS) / 4
     for t in OPEN_TASKS:
         assert t.page in PAGES, t.id

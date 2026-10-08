@@ -32,7 +32,15 @@ document and the source is recorded in the task's ``truth`` note:
   was read can only be scored on a report whose every page is known by
   construction, and no public report the suite may carry has the shape that
   was lost (new logs as vector pages, old ones as scans, a long laboratory
-  appendix). Its three tasks run on both pages (``Task.page``).
+  appendix). Its three tasks run on both pages (``Task.page``);
+* two SYNTHETIC pages with known scales (``planlens.testing.
+  visual_scale_fixtures``, 2026-10-08) for the measuring tasks: how far a
+  measured depth or distance is from the truth can only be scored where the
+  truth is known by construction. A caveat goes with them: planlens'
+  ``measure`` was built and gated against this same fixture generator, so
+  these two pages are home ground for it. Their parameters are not those of
+  any variant the measuring harness was gated on, but a task here that the
+  tool passes says less than one on a page drawn by someone else.
 
 SPLITS. Everything here is ``open``: builders may read it. A BLIND set — tasks
 the people changing the harness never see — belongs in a private task file on
@@ -57,12 +65,14 @@ from funhouse_agent.review_eval import report_fixture as _RF
 
 #: Categories a task can be in (what the reviewer is doing).
 CATEGORIES = ("orient", "summarize", "locate", "count", "check", "compare",
-              "markups", "produce", "extract")
+              "markups", "produce", "extract", "measure")
 
-#: What kind of document the task is asked of.
+#: What kind of document the task is asked of. ``log_scanned``: a boring
+#: log as an image with no text layer; ``drawing_text``: a drawing sheet
+#: whose lettering is real text (the counterpart of ``drawing_stroke``).
 DOC_TYPES = ("drawing_stroke", "drawing_set", "criteria_text",
              "criteria_scanned", "long_text", "calc_package", "markup_set",
-             "submittal", "report")
+             "submittal", "report", "log_scanned", "drawing_text")
 
 #: Which page of the app a task is asked on: the Document Review page (the
 #: suite's home) or the GeotechStaffEngineer page (the geotech agent, its
@@ -332,6 +342,40 @@ _ASCE7_CHAPTERS = {
 _ASCE7_ENUM_LEAD = r"\b(?:chapters?|chs?\.)\s*"
 _ASCE7_ENUM_TOKENS = {f"ASCE 7 chapter {n}": str(n)
                       for n in _ASCE7_CHAPTER_TITLES}
+
+# Measuring tasks (check type ``value_within``): what names the thing whose
+# value is asked, so the values the answer states WITH it are the ones
+# scored.
+
+#: The GRAVEL layer of the scanned log, and not the "SAND with fine gravel"
+#: above it, the "SAND with trace gravel" below or the "gravelly SAND".
+_GRAVEL_LAYER = {"re": r"(?<!fine )(?<!trace )(?<!with )(?<!some )"
+                       r"(?<!little )(?<!and )\bgravel\b"}
+#: The two borings of the plan task ("B-1", "B1", "B 1"; not "B-10").
+_BORING_1 = {"re": r"\bb\s?-?\s?1(?!\.?\d)"}
+_BORING_4 = {"re": r"\bb\s?-?\s?4(?!\.?\d)"}
+
+#: A disagreement or mismatch, not "no discrepancy" or "not inconsistent".
+_NOT = r"(?<!no )(?<!not )(?<!without )(?<!any )"
+_DISAGREE = (rf"(?:{_NOT}(?:disagree|conflict|inconsisten|mismatch|discrepan|"
+             r"contradict)|do(?:es)?\s*n[o']?t\s+(?:match|agree|correspond)"
+             r"|not\s+(?:match|agree|consistent|correspond))")
+#: The answer notices that the sheet's stated scale is not the scale it is
+#: drawn at: re-plotted or half size, the bar's own 1" = 40', the note and
+#: the bar disagreeing, or the stated scale called wrong.
+_SCALE_NOTE_WRONG = [
+    {"re": r"\bre-?plott?(?:ed|ing)?\b|\bre-?printed\b"},
+    {"re": r"\bhalf[- ]?(?:size|scale)\b|\bat (?:half|50\s*%)"
+           r"|\breduced (?:size|scale)\b"},
+    {"re": r"\b1\s*(?:\"|in\.?|inch)\s*=\s*40\s*(?:'|ft\b|feet\b|foot\b)"
+           r"|\b1\s*:\s*480\b"},
+    {"re": rf"{_DISAGREE}[^.]{{0,80}}\b(?:scale|bar|note)"
+           rf"|\b(?:scale|bar|note)\b[^.]{{0,80}}{_DISAGREE}"},
+    {"re": r"\b(?:stated|printed|noted|written|labell?ed|nominal|"
+           r"title[- ]block)\s+scale\b[^.]{0,60}\b(?:wrong|incorrect|invalid"
+           r"|not (?:valid|correct|reliable|accurate|true)|unreliable"
+           r"|cannot be (?:used|trusted|relied))"},
+]
 
 
 # ---------------------------------------------------------------------------
@@ -1008,6 +1052,68 @@ OPEN_TASKS: List[Task] = [
                "read. (review_eval/report_fixture.py: the planted error has "
                "the shape of the field session's, where the summary table's "
                "PL exceeded its LL.)")),
+
+    # --- measuring: a position read through the page's own scale (W3) ------
+    # Asked as a reviewer would, with nothing said of how to measure. What
+    # is scored is the value, against a truth known by construction, within
+    # the precision the question asks for: a measurement meets it, a
+    # position read by eye usually does not (2026-10-06 field session: 31
+    # layer boundaries placed by eye a median 0.20 m off). Which measuring
+    # tools the run called, and what they gave back, is RECORDED from its
+    # activity and not scored: a right value reached another way is right.
+    Task(
+        id="scale-log-depth",
+        question=("At what depth does the silty sandy GRAVEL layer start on "
+                  "this boring log? Give the depth to the nearest 0.05 m."),
+        documents=["fixture_scale_log"], category="measure",
+        doc_type="log_scanned", page="geotech",
+        checks=[
+            {"type": "value_within", "value": 3.62, "tol": 0.05, "unit": "m",
+             "near": [_GRAVEL_LAYER],
+             "label": "the top of the GRAVEL within 0.05 m of 3.62 m"},
+            {"type": "tools_called", "tools": ["measure", "log_grid"],
+             "info": True,
+             "label": "called measure or log_grid (recorded, not scored)"},
+        ],
+        truth=("The silty sandy GRAVEL starts at 3.62 m: the stratum line "
+               "between the grey clean SAND with fine gravel above (1.64 to "
+               "3.62 m) and the brown, medium dense, silty sandy GRAVEL "
+               "(3.62 to 4.87 m). One image-only page with no text layer, "
+               "stored /Rotate 270 and skewed 0.4 deg; depth scale 0 to 10 m "
+               "at 46 pt a metre, its labels 1.0 to 10.0 printed on their "
+               "baselines 1.5 pt above the depth each marks, so a label's "
+               "centre is 4.7 pt (about 0.10 m) above its depth and a "
+               "reading that takes the centres as the depths puts the top at "
+               "about 3.72 m. (planlens.testing.visual_scale_fixtures."
+               "build_log with review_eval.documents.SCALE_LOG; the truth is "
+               "the fixture's own. Field session 2026-10-06: boundaries read "
+               "by eye a median 0.20 m off.)")),
+    Task(
+        id="scale-plan-distance",
+        question=("How far apart are borings B-1 and B-4 on this site plan? "
+                  "Give the distance in feet, to the nearest foot."),
+        documents=["fixture_scale_plan"], category="measure",
+        doc_type="drawing_text",
+        checks=[
+            {"type": "value_within", "value": 183.85, "tol": 1.0,
+             "unit": "ft", "near": [_BORING_1, _BORING_4],
+             "label": "B-1 to B-4 within 1 ft of 183.85 ft"},
+            {"type": "contains_any", "terms": _SCALE_NOTE_WRONG,
+             "label": "notices that the stated scale disagrees with the bar"},
+            {"type": "tools_called", "tools": ["measure"], "info": True,
+             "label": "called measure (recorded, not scored)"},
+        ],
+        truth=("B-1 and B-4 are 183.8 ft apart: ground coordinates E 1040, N "
+               "2180 and E 1210, N 2110, the square root of 170 squared plus "
+               "70 squared, 183.85 ft. The sheet was re-plotted at half "
+               "size. Its note still reads SCALE: 1\" = 20' and is wrong; the "
+               "graphic scale bar (0, 10, 20, 40 FEET) shrank with the "
+               "drawing and shows 1\" = 40'. Measured at the note's scale "
+               "the distance would come out 91.9 ft. Vector, with a text "
+               "layer; the borings are 2 pt dots labelled in 4 pt lettering. "
+               "(planlens.testing.visual_scale_fixtures.build_plan with "
+               "review_eval.documents.SCALE_PLAN; the truth is the "
+               "fixture's own.)")),
 ]
 
 

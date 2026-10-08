@@ -66,11 +66,56 @@ DOCUMENTS: Dict[str, Dict[str, Any]] = {
     # session's report, every name and number invented.
     "fixture_report": {"fixture": "report",
                        "name": "harbour_road_geotechnical_report.pdf"},
+    # Two pages with known scales (planlens.testing.visual_scale_fixtures,
+    # W3): a scanned boring log with no text layer, and a site plan
+    # re-plotted at half size whose scale note is wrong and whose scale bar
+    # is right. The upload names say nothing of either.
+    "fixture_scale_log": {"fixture": "scale_log", "name": "boring_log.pdf"},
+    "fixture_scale_plan": {"fixture": "scale_plan", "name": "site_plan.pdf"},
 }
 
 #: The long tag set's rare tag and the 0-based pages that carry it.
 LONG_SET_PAGES = 24
 LONG_SET_RARE = {"FPG": [3, 11, 19]}
+
+#: The scanned boring log of ``scale-log-depth`` (planlens ``LogVariant``
+#: arguments). Parameters of its OWN, not one of the variants planlens'
+#: measuring harness was gated on: an image-only page (no text layer) stored
+#: ``/Rotate 270`` and skewed 0.4 deg as the 2026-10-06 session's scans are,
+#: its depth labels printed on their baselines 1.5 pt ABOVE the depth each
+#: marks - so a label's centre sits 4.7 pt (about 0.10 m) above its depth
+#: and reading the centre as the depth is biased by that much.
+SCALE_LOG = {"name": "suite_log_depth", "label_anchor": "baseline",
+             "rotate270": True, "skew_deg": 0.4,
+             "contacts": (1.64, 3.62, 4.87, 6.93), "seed": 211}
+#: The contact the task asks about (index into ``contacts``): the top of the
+#: third layer, "Brown, medium dense, silty sandy GRAVEL."
+SCALE_LOG_CONTACT = 1
+
+#: The site plan of ``scale-plan-distance`` (planlens ``PlanVariant``
+#: arguments): drawn at half size on the same sheet, as a re-plot onto
+#: smaller paper is. Its note still says 1" = 20' and is wrong; its graphic
+#: bar shrank with the drawing and is right (1" = 40').
+SCALE_PLAN = {"name": "replot_half", "replot": 0.5}
+#: The two borings the task asks about.
+SCALE_PLAN_PAIR = ("B-1", "B-4")
+
+
+def scale_fixture(which: str):
+    """The planlens ``ScaleFixture`` behind ``fixture_scale_log``
+    (``which="log"``) or ``fixture_scale_plan`` (``"plan"``): the page and
+    everything true about it. Raises ImportError on a planlens without the
+    visual-scale fixtures."""
+    try:
+        from planlens.testing import visual_scale_fixtures as V
+    except ImportError as exc:          # a planlens before the visual scales
+        raise ImportError(f"needs a planlens with the visual-scale fixtures "
+                          f"({exc})")
+    if which == "log":
+        return V.build_log(V.LogVariant(**SCALE_LOG))
+    if which == "plan":
+        return V.build_plan(V.PlanVariant(**SCALE_PLAN))
+    raise KeyError(f"no scale fixture {which!r}")
 
 
 def _repo_root() -> Path:
@@ -143,6 +188,10 @@ def _fixture(name: str) -> bytes:
         from funhouse_agent.review_eval.report_fixture import (
             build_synthetic_extraction_report)
         return build_synthetic_extraction_report().pdf
+    if name == "scale_log":
+        return scale_fixture("log").pdf
+    if name == "scale_plan":
+        return scale_fixture("plan").pdf
     raise KeyError(f"unknown fixture {name!r}")
 
 
@@ -219,4 +268,5 @@ def collect_public_docs(dest: Any, docs_dir: Any = None) -> Dict[str, Any]:
 
 
 __all__ = ["DOCUMENTS", "DOCS_ENV", "MissingDocument", "resolve", "find_file",
-           "public_files", "collect_public_docs"]
+           "public_files", "collect_public_docs", "scale_fixture",
+           "SCALE_LOG", "SCALE_LOG_CONTACT", "SCALE_PLAN", "SCALE_PLAN_PAIR"]
