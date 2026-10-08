@@ -8,7 +8,7 @@ list_agents) with vision-capable tools and file output tools.
 import json
 import os
 import re
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 
 # ---------------------------------------------------------------------------
@@ -133,8 +133,8 @@ see WHAT is at that location. `bbox` is [x0,y0,x1,y1] in PDF points, TOP-LEFT
 origin with y DOWN (drawing_ir query coordinates are bottom-left/y-up: convert
 with y_pdf = page_height − y_ir, or use the drawing_ir `snip_region` method
 which converts for you). Optional `marks` = [[x,y,label], ...] draws numbered
-circles so the question becomes "what is mark 1 pointing at?". `dpi` is chosen
-automatically (the largest image the vision model reads). Every vision result
+circles so the question becomes "what is mark 1 pointing at?". The zoom is
+always drawn as large as the vision model reads. Every vision result
 carries a `view` (the page rect its image showed) and asks the model to give
 locations as 0-999 boxes on that image: to zoom on one, pass `view` +
 `image_box` instead of `bbox`.
@@ -768,6 +768,13 @@ def _dispatch_render_region(arguments, engine, attachments):
     view each way, at least 12 pt), not by 15 % of the box: a box read off a
     whole sheet can be tens of points off, and a window the size of the box
     showed blank paper (11 first zooms in 11, 2026-10-07).
+
+    A ``dpi`` the caller gives is NOT used while an image budget is in force
+    (the result says so): planlens lowers a dpi that would overshoot the
+    budget but never raises one, so an agent's ``dpi: 300`` on a 100 pt
+    window rendered a quarter of the pixels the budget allowed — 45 of 106
+    zooms in Foundry brief 4 (2026-10-07), at a median 4.2 px per point
+    against 15-17 without, and the hedged readings that dropped two tags.
     """
     from funhouse_agent import vision_view
 
@@ -777,6 +784,12 @@ def _dispatch_render_region(arguments, engine, attachments):
     view = arguments.get("view")
     image_box = arguments.get("image_box")
     dpi = arguments.get("dpi")
+    dpi_note = None
+    if dpi is not None and vision_view.budget(engine) is not None:
+        dpi_note = (f"dpi={dpi} was not used: the zoom is drawn as large as "
+                    f"the vision model reads, and a dpi could only make it "
+                    f"smaller and harder to read")
+        dpi = None
     pad_frac = arguments.get("pad_frac", 0.15)
     marks = arguments.get("marks")
     prompt = arguments.get("prompt", "Describe what this zoomed-in region shows.")
@@ -831,7 +844,11 @@ def _dispatch_render_region(arguments, engine, attachments):
                 f"{padded[1]:g} pt each side, the location error of the view "
                 f"the box was read off; if the thing is not in it, look "
                 f"again rather than concluding it is absent")
+        if dpi_note:
+            out["dpi_note"] = dpi_note
         _finish_answer(out, info)
+        if padded is not None:
+            _say_how_far_from_the_aim(out, view, bbox)
         if "located" in out:
             _fit_region(out)
         return json.dumps(out)
@@ -841,6 +858,150 @@ def _dispatch_render_region(arguments, engine, attachments):
         })
     except Exception as e:
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
+
+
+def _say_how_far_from_the_aim(out, source_view, aim_box) -> None:
+    """For a zoom on ``view`` + ``image_box``: how far the answer's nearest
+    box is from the box the zoom was aimed at, and a note when that is more
+    than a box from the source view is off (:func:`vision_view.aim_tolerance`)
+    — the window is padded widely enough to hold a neighbour too, and in
+    Foundry brief 4 a window aimed at a look-alike was answered about a tag
+    98 pt away, which was then ringed twice."""
+    from funhouse_agent import vision_view
+    try:
+        ax = (float(aim_box[0]) + float(aim_box[2])) / 2.0
+        ay = (float(aim_box[1]) + float(aim_box[3])) / 2.0
+        found = vision_view.answer_boxes(out.get("analysis") or "",
+                                         out["view"])
+        tol = vision_view.aim_tolerance(source_view)
+    except (KeyError, TypeError, ValueError):
+        return
+    out["aim"] = [round(ax, 1), round(ay, 1)]
+    if not found:
+        return
+
+    def dist(b):
+        return ((b[0] + b[2]) / 2.0 - ax) ** 2 + ((b[1] + b[3]) / 2.0 - ay) ** 2
+
+    label, near = min(found, key=lambda lb: dist(lb[1]))
+    d = dist(near) ** 0.5
+    out["nearest_box_from_aim_pt"] = round(d, 1)
+    if len(found) > 1:
+        out["boxes_in_answer"] = len(found)
+    if d > tol:
+        out["aim_note"] = (
+            f"the answer's nearest box{(' (' + label + ')') if label else ''} "
+            f"is {d:.0f} pt from the box this zoom was aimed at — more than a "
+            f"box from that view is off (~{tol:.0f} pt). The window can hold "
+            f"a neighbour: this answer may be about a different thing than "
+            f"the one you zoomed on. Check what it read before using it, or "
+            f"zoom on a smaller box round your target.")
+    elif len(found) > 1:
+        out["aim_note"] = (
+            f"the answer gives {len(found)} boxes; the one nearest the box "
+            f"this zoom was aimed at is {d:.0f} pt from it — make sure you "
+            f"use that one for the thing you zoomed on.")
+
+
+#: Two located things from the page and its tiles are one thing when their
+#: page boxes come within this fraction of the page view's longer side of
+#: each other (at least :data:`vision_view.MIN_LOCATION_ERROR_PT`), and their
+#: labels share a code or one has none.
+MERGE_FRAC = 0.02
+
+#: Most entries in a tiled result's merged list of located things.
+MAX_MERGED = 60
+
+_CODE = re.compile(r"\b(?=[A-Z0-9-]*[A-Z])[A-Z0-9][A-Z0-9-]{1,7}\b")
+
+
+def _codes(label: str) -> set:
+    """The code-like words of a label (GCE, FPG-2, B-14) — what tells two
+    located things apart by name; empty when it carries none."""
+    return {c.strip("-") for c in _CODE.findall(str(label or ""))
+            if len(c.strip("-")) >= 2}
+
+
+def _merge_found(out) -> None:
+    """One list of the things the whole-page answer and its tiles located,
+    each with its page box and where it was seen (``found``) — a thing seen
+    ONLY in tiles marked ``tiles_only`` and named in ``found_note``.
+
+    Foundry brief 4 (2026-10-07): the whole-page answer missed the tag drawn
+    turned 90 degrees; a tile found it; the result nested the tiles under the
+    page answer and nothing said "the tiles found one the page did not", so
+    the agent worked from the page's list and the tag was never ringed (two
+    runs of three on one model, one on the other). The same happened to a
+    note the page answer did not name."""
+    from funhouse_agent import vision_view
+    page_view = out.get("view")
+    if not page_view or not out.get("tiles"):
+        return
+    vx0, vy0, vx1, vy1 = (float(v) for v in page_view)
+    reach = max(vision_view.MIN_LOCATION_ERROR_PT,
+                MERGE_FRAC * max(vx1 - vx0, vy1 - vy0))
+    entries = [("page", lab, box, (vx1 - vx0) * (vy1 - vy0))
+               for lab, box in vision_view.answer_boxes(
+                   out.get("analysis") or "", page_view)]
+    for t in out["tiles"]:
+        if not t.get("analysis") or not t.get("view"):
+            continue
+        tx0, ty0, tx1, ty1 = (float(v) for v in t["view"])
+        entries += [(t["tile"], lab, box, (tx1 - tx0) * (ty1 - ty0))
+                    for lab, box in vision_view.answer_boxes(
+                        t["analysis"], t["view"])]
+    if not entries:
+        return
+
+    def near(a, b):
+        return (a[0] - reach <= b[2] and b[0] - reach <= a[2]
+                and a[1] - reach <= b[3] and b[1] - reach <= a[3])
+
+    groups: List[Dict[str, Any]] = []
+    for src, label, box, area in entries:
+        codes = _codes(label)
+        for g in groups:
+            if near(g["box"], box) and (not codes or not g["codes"]
+                                        or codes & g["codes"]):
+                if src not in g["seen_in"]:
+                    g["seen_in"].append(src)
+                if area < g["area"]:       # a smaller view's box is better
+                    g.update(box=box, area=area, what=label or g["what"])
+                g["codes"] |= codes
+                break
+        else:
+            groups.append({"what": label, "box": box, "area": area,
+                           "seen_in": [src], "codes": set(codes)})
+    groups.sort(key=lambda g: (g["box"][1], g["box"][0]))
+    rows = []
+    for g in groups:
+        row = {"what": g["what"] or "?",
+               "page_bbox": [round(v, 1) for v in g["box"]],
+               "seen_in": g["seen_in"]}
+        if "page" not in g["seen_in"]:
+            row["tiles_only"] = True
+        rows.append(row)
+    only = [r for r in rows if r.get("tiles_only")]
+    # The things only the tiles saw come first, so a cut list keeps them.
+    kept = (only + [r for r in rows if not r.get("tiles_only")])[:MAX_MERGED]
+    out["found"] = sorted(kept, key=lambda r: (r["page_bbox"][1],
+                                               r["page_bbox"][0]))
+    if len(rows) > MAX_MERGED:
+        out["found_cut"] = f"{len(rows) - MAX_MERGED} more not listed"
+    if only:
+        named = "; ".join(f"{r['what']} at {r['page_bbox']} "
+                          f"({', '.join(r['seen_in'])})" for r in only[:12])
+        out["found_note"] = (
+            f"{len(only)} thing(s) were found ONLY in the tiles, not in the "
+            f"whole-page answer: {named}"
+            + (" …" if len(only) > 12 else "")
+            + ". The tiles read small lettering larger — treat these as "
+              "found, and zoom on each before relying on it. 'found' lists "
+              "every located thing with its page box and where it was seen.")
+    else:
+        out["found_note"] = ("'found' lists every located thing with its "
+                             "page box and where it was seen (the page "
+                             "answer and the tiles agree on what is there).")
 
 
 def _lines_for_context(pdf_bytes, page):
@@ -929,6 +1090,10 @@ def _finish_answer(out, info, note: bool = True,
     msg = vision_view.boxes_note(counts, size) if note else None
     if msg:
         out["boxes"] = msg
+    hedge = vision_view.bracketed_note(text) if note and not tagged_only \
+        else None
+    if hedge:
+        out["reading_note"] = hedge
 
 
 #: A render_region result stays under this (the general tool cap is 8,000 —
@@ -1148,6 +1313,14 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
             f"with render_region or, once the thing is legible in a view of "
             f"{vision_view.MARK_VIEW_PT:.0f} pt or less, to place a mark.")
         out.pop("legibility", None)
+        _merge_found(out)
+        if "reading_note" not in out:
+            hedge = next((vision_view.bracketed_note(t.get("analysis"))
+                          for t in out["tiles"]
+                          if vision_view.bracketed_note(t.get("analysis"))),
+                         None)
+            if hedge:
+                out["reading_note"] = hedge
     # Located lists first (they can outgrow the text), then the text.
     _fit_located(out, TILED_RESULT_CHARS)
     if n > 1:

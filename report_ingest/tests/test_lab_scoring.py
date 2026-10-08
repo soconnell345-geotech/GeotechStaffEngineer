@@ -375,3 +375,65 @@ def test_every_value_the_lab_merge_kept_scores(model):
         assert after.scores[metric].found == on_floor.scores[metric].found, \
             (metric, after.scores[metric].misses)
     assert score_record(GRADING_TRUTH, model).scores["index"].found == 0
+
+
+# ---------------------------------------------------------------------------
+# reading and linking measured apart (Foundry brief 4, 2026-10-07)
+# ---------------------------------------------------------------------------
+
+class TestReadingAndLinkingApart:
+    """Brief 4: gradation fell from 80 % before to 37 % after, and the four
+    sheets that collapsed kept 1-5 values each. A specimen whose LINK misses
+    loses every value on it in the linked score; the unlinked score asks
+    only whether each printed value is in the record at all."""
+
+    def test_a_missed_link_loses_the_values_in_after_but_not_in_read(self):
+        from report_ingest.lab_scoring import score_unlinked
+        wrong = _grading_record(boring="B-8")
+        linked = score_record(GRADING_TRUTH, wrong)
+        read = score_unlinked(GRADING_TRUTH, wrong)
+        assert linked.scores["index"].found == 0
+        assert linked.scores["series"].found == 0
+        assert read.scores["index"].found == read.scores["index"].total > 0
+        assert read.scores["series"].found == read.scores["series"].total == 3
+        assert "kind" not in read.scores and "link" not in read.scores
+
+    def test_a_misread_value_is_missed_in_both(self):
+        from report_ingest.lab_scoring import score_unlinked
+        misread = _grading_record(ll=32.0, passing=[100.0, 80.0, 43.0])
+        read = score_unlinked(GRADING_TRUTH, misread)
+        assert any("ll" in m for m in read.scores["index"].misses)
+        assert read.scores["series"].found == 2
+
+    def test_a_saved_run_gets_read_and_floor_on_a_rescore(self):
+        import json
+        from report_ingest.lab_scoring import rescore_saved
+        tests = _grading_record(boring="B-8")
+        floor = _grading_record()
+        after = score_record(GRADING_TRUTH, tests)
+        after.record = [t.model_dump(mode="json") for t in tests]
+        after.floor_record = [t.model_dump(mode="json") for t in floor]
+        blob = json.loads(json.dumps(after.to_dict()))
+        new = rescore_saved(GRADING_TRUTH, blob)
+        assert new["overall"]["found"] < new["floor_alone"]["overall"]["found"]
+        assert new["unlinked"]["scores"]["series"]["found"] == 3
+        assert new["floor_alone"]["scores"]["link"]["found"] == 1
+
+    def test_every_scored_sheet_carries_floor_and_read(self, monkeypatch):
+        from types import SimpleNamespace
+        import report_ingest.lab_reader as reader
+        from report_ingest.lab_scoring import score_one_sheet
+        tests = _grading_record(boring="B-8")
+        monkeypatch.setattr(reader, "read_lab_sheet", lambda *a, **k:
+                            SimpleNamespace(
+                                tests=tests, model_tests=tests,
+                                floor_tests=_grading_record(), cost={},
+                                model_calls=1, tool_calls=0, unresolved=[],
+                                changes=[], warnings=[]))
+        _before, after = score_one_sheet(GRADING_TRUTH, object(), None,
+                                         report_id="R99")
+        blob = after.to_dict()
+        assert blob["floor_alone"]["scores"]["link"]["found"] == 1
+        assert blob["floor_record"] and blob["model_alone"]
+        assert blob["unlinked"]["scores"]["index"]["found"] > 0
+        assert blob["scores"]["index"]["found"] == 0

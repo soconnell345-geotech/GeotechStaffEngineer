@@ -468,6 +468,99 @@ def check_markups_on_targets(answer: str, files: Sequence[str] = (),
                 f"target (precision {precision:.2f} >= {min_precision})")
 
 
+def _point_to_box(p: Sequence[float], box: Sequence[float]) -> float:
+    """Points from ``p`` to the nearest point of ``box`` (0 inside it)."""
+    dx = max(box[0] - p[0], 0.0, p[0] - box[2])
+    dy = max(box[1] - p[1], 0.0, p[1] - box[3])
+    return (dx * dx + dy * dy) ** 0.5
+
+
+def _comment_anchor(m) -> Tuple[str, Tuple[float, float]]:
+    """``(what, point)`` a comment markup is placed by, as a reader sees it:
+    a callout's arrow tip (``points_at``, read from its ``/CL`` line), a
+    sticky note's spot (its icon's top-left corner), else the centre of the
+    box, ring or highlight."""
+    tip = getattr(m, "points_at", None)
+    if tip is not None:
+        return "arrow tip", (float(tip[0]), float(tip[1]))
+    x0, y0, x1, y1 = (float(v) for v in m.bbox)
+    if getattr(m, "kind", "") == "Text":
+        return "note", (x0, y0)
+    return "centre", ((x0 + x1) / 2.0, (y0 + y1) / 2.0)
+
+
+def check_markups_point_at(answer: str, files: Sequence[str] = (),
+                           targets: Sequence[Dict[str, Any]] = (),
+                           text_contains: str = "", pad: float = 4.0,
+                           min_recall: float = 1.0,
+                           min_precision: float = 0.0,
+                           **_) -> Tuple[bool, str]:
+    """A produced PDF's COMMENTS point at the right thing: the counterpart of
+    :func:`check_markups_on_targets` for a comment rather than a ring.
+
+    ``targets`` are the acceptable places, each ``{"page", "box", "name"}``
+    with ``box`` the printed thing's box in displayed-page points, measured
+    once independently of the code under test (the page's own ink, a DWG's
+    text) — never from the tool's own anchoring. The markups kept are those
+    whose text holds ``text_contains``; each is placed by its anchor
+    (:func:`_comment_anchor`) and points at a target when that point lies on
+    the target's box or within ``pad`` points of it. Recall is the targets
+    some comment points at; precision the comments that point at one.
+
+    Foundry brief 4 (2026-10-07): the produce task checked only that some
+    comment mentioned "8.33", and passed a comment on the section label
+    "RAMP SLOPE UP TO 7.5% (8.3% MAX.)" — a different note.
+    """
+    if not targets:
+        return False, "the check names no targets (a broken check)"
+    pdfs = _files(files, ".pdf")
+    if not pdfs:
+        return False, "no PDF produced"
+    from planlens.document import Document
+    best = None
+    for path in pdfs:
+        try:
+            doc = Document(filepath=path)
+            try:
+                marks = doc.markups()
+            finally:
+                doc.close()
+        except Exception as exc:
+            return False, f"{os.path.basename(path)} unreadable: {exc}"
+        want = normalize(text_contains) if text_contains else ""
+        rows, hit_targets = [], set()
+        for m in marks:
+            said = normalize(" ".join(str(x or "") for x in (
+                getattr(m, "text", ""), getattr(m, "appearance_text", ""))))
+            if want and want not in said:
+                continue
+            how, spot = _comment_anchor(m)
+            near = [(round(_point_to_box(spot, t["box"]), 1), i)
+                    for i, t in enumerate(targets)
+                    if int(t.get("page", 0)) == m.page]
+            dist, which = min(near) if near else (None, None)
+            on = dist is not None and dist <= pad
+            if on:
+                hit_targets.add(which)
+            rows.append(f"{m.kind} p{m.page + 1} {how} "
+                        f"({spot[0]:.1f}, {spot[1]:.1f}): "
+                        + (f"{dist} pt from {targets[which].get('name') or which}"
+                           if dist is not None else "no target on its page")
+                        + (" - ON it" if on else ""))
+        recall = len(hit_targets) / len(targets)
+        good = sum(1 for r in rows if r.endswith("ON it"))
+        precision = good / len(rows) if rows else 0.0
+        row = (recall, precision, rows, os.path.basename(path))
+        if best is None or row[:2] > best[:2]:
+            best = row
+    recall, precision, rows, name = best
+    ok = recall >= min_recall - 1e-9 and precision >= min_precision - 1e-9
+    return ok, (f"{name}: recall {recall:.2f} (>= {min_recall}), precision "
+                f"{precision:.2f} (>= {min_precision}); "
+                + ("; ".join(rows[:8]) if rows else
+                   f"no markup says {text_contains!r}"))
+
+
 def check_docx_contains(answer: str, files: Sequence[str] = (),
                         terms: Sequence[Any] = (), **_) -> Tuple[bool, str]:
     docs = _files(files, ".docx")
@@ -598,6 +691,7 @@ CHECKS = {
     "file_produced": check_file_produced,
     "pdf_markups": check_pdf_markups,
     "markups_on_targets": check_markups_on_targets,
+    "markups_point_at": check_markups_point_at,
     "pages_listed": check_pages_listed,
     "docx_contains": check_docx_contains,
     "tool_used": check_tool_used,

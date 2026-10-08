@@ -59,6 +59,14 @@ ran every Foundry suite run of 5.32. It reaches the service through the SDK's
 own private helpers (``palantir_models.models._lms``), so where those are
 missing the chat doors are used instead (``route="auto"``).
 
+**Reasoning summaries** (since the Foundry brief 4 review, 2026-10-07). Each
+Responses request asks for a summary of the model's reasoning where the SDK
+can say so (``GEOTECH_FOUNDRY_REASONING_SUMMARY``: ``auto`` by default,
+``off`` to stop), and the summary the result carries goes on the reply as
+``additional_kwargs["reasoning"]``, which the activity log records on
+``model_end``. A service that refuses the setting is asked once more without
+it, and not asked again.
+
 **Retries.** A Foundry call can drop its connection (Sol's keep-alive drops
 came in pairs), time out on a long reasoning call or hit the project's
 token-per-minute limit. Those — and only those (connection, timeout, rate
@@ -75,6 +83,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import random
 import time
 from typing import Any, Callable, Optional, Sequence
@@ -438,6 +447,82 @@ def _lc_messages_to_responses(messages: Sequence[BaseMessage], r) -> list:
     return out
 
 
+#: Ask the Responses route for a SUMMARY of the model's reasoning on every
+#: call, and keep it (``additional_kwargs["reasoning"]``, which the activity
+#: log writes on ``model_end``). Foundry brief 4 (2026-10-07): the primary
+#: agent wrote no text on any of ~300 tool-calling steps in 49 runs and no
+#: reasoning summary was requested, so why GPT-5.4 ignored the tile that
+#: found a tag, or dropped two tags, could only be read from behaviour.
+#: ``auto`` (default), ``concise`` or ``detailed``; ``off`` asks for none.
+REASONING_SUMMARY_ENV = "GEOTECH_FOUNDRY_REASONING_SUMMARY"
+DEFAULT_REASONING_SUMMARY = "auto"
+
+#: The SDK's names for the request's reasoning settings and for the summary
+#: level (conjure-generated from OpenAI's ``reasoning: {summary: ...}``); the
+#: first that exists is used, and with none of them nothing is asked for.
+_REASONING_TYPES = ("Reasoning", "ResponsesReasoning", "ReasoningConfig",
+                    "OpenAiResponsesReasoning", "ReasoningParams")
+_SUMMARY_TYPES = ("ReasoningSummary", "ReasoningSummaryType",
+                  "ReasoningSummaryMode", "Summary")
+
+
+def reasoning_summary_level() -> Optional[str]:
+    """The summary level to ask for (:data:`REASONING_SUMMARY_ENV`), or
+    ``None`` to ask for none."""
+    raw = str(os.environ.get(REASONING_SUMMARY_ENV,
+                             DEFAULT_REASONING_SUMMARY)).strip().lower()
+    return None if raw in ("", "off", "none", "0", "false", "no") else raw
+
+
+def _reasoning_request(r, level: Optional[str]) -> Any:
+    """The SDK object asking for a reasoning summary at ``level``, or
+    ``None`` where this SDK has no way to ask (then nothing is sent)."""
+    if not level:
+        return None
+    cls = next((getattr(r, n) for n in _REASONING_TYPES if hasattr(r, n)),
+               None)
+    kinds = next((getattr(r, n) for n in _SUMMARY_TYPES if hasattr(r, n)),
+                 None)
+    value = getattr(kinds, level.upper(), None) if kinds is not None else None
+    if cls is None or value is None:
+        return None
+    try:
+        return cls(summary=value)
+    except TypeError:
+        return None
+
+
+def _reasoning_text(resp) -> str:
+    """The reasoning summary a Responses result carries: every output item
+    of the reasoning kind, its summary parts' text joined. Read defensively
+    — the SDK's item is a union with one field set."""
+    parts = []
+    for item in getattr(resp, "output", None) or []:
+        rs = getattr(item, "reasoning", None)
+        if rs is None:
+            continue
+        for s in getattr(rs, "summary", None) or []:
+            text = getattr(s, "text", None)
+            if text is None:
+                inner = getattr(s, "summary_text", None)
+                text = getattr(inner, "text", None) if inner is not None \
+                    else None
+            text = getattr(text, "text", text)
+            if isinstance(text, str) and text.strip():
+                parts.append(text.strip())
+    return "\n\n".join(parts)
+
+
+def _refused_reasoning(exc: BaseException) -> bool:
+    """Whether a failed call reads as the service refusing the reasoning
+    setting (a bad-request naming it, or an invalid-argument error)."""
+    text = str(exc).lower()
+    name = str(getattr(exc, "error_name", None)
+               or getattr(exc, "_error_name", None) or "")
+    return ("reasoning" in text or "summary" in text
+            or "InvalidArgument" in name or "invalid_argument" in text)
+
+
 def _openai_tools_to_responses(openai_tools: list, r) -> list:
     out = []
     for tool in openai_tools:
@@ -558,6 +643,9 @@ class PalantirSdkChatModel(BaseChatModel):
     # The SDK model handles, fetched once on first use (network-free construct).
     _sdk_model: Any = PrivateAttr(default=None)
     _vision_model: Any = PrivateAttr(default=None)
+    # Set once the service has refused the reasoning-summary setting, so it
+    # is not asked for again (one refused call, not one per call).
+    _reasoning_refused: bool = PrivateAttr(default=False)
 
     @property
     def _llm_type(self) -> str:
@@ -668,17 +756,47 @@ class PalantirSdkChatModel(BaseChatModel):
             request_kwargs["temperature"] = temperature
         if tools:
             request_kwargs["tools"] = _openai_tools_to_responses(tools, r)
-        response = self._call_responses(r.OpenAiResponsesRequest(
-            input=_lc_messages_to_responses(messages, r), **request_kwargs))
+        items = _lc_messages_to_responses(messages, r)
+        reasoning = (None if self._reasoning_refused else
+                     _reasoning_request(r, reasoning_summary_level()))
+        request = None
+        if reasoning is not None:
+            try:
+                request = r.OpenAiResponsesRequest(
+                    input=items, reasoning=reasoning, **request_kwargs)
+            except TypeError:           # this SDK's request has no such field
+                reasoning = None
+        if request is None:
+            request = r.OpenAiResponsesRequest(input=items, **request_kwargs)
+        try:
+            response = self._call_responses(request)
+        except Exception as exc:  # noqa: BLE001 - classified below
+            if (reasoning is None or transient_kind(exc) is not None
+                    or not _refused_reasoning(exc)):
+                raise
+            # The service would not take the summary setting: ask once more
+            # without it, and do not ask again on this model.
+            log.warning("Foundry Responses refused the reasoning-summary "
+                        "setting (%s); asking without it from now on",
+                        str(exc)[:200])
+            self._reasoning_refused = True
+            reasoning = None
+            response = self._call_responses(
+                r.OpenAiResponsesRequest(input=items, **request_kwargs))
 
         ai_message = _responses_to_ai_message(response)
+        summary = _reasoning_text(response)
+        if summary:
+            ai_message.additional_kwargs["reasoning"] = summary
         status = str(getattr(response, "status", "")).rsplit(".", 1)[-1]
         finish = ("tool_calls" if ai_message.tool_calls else
                   "length" if status.lower() == "incomplete" else "stop")
         generation_info = {
             "finish_reason": finish,
             "model_name": getattr(response, "model", None)
-            or self.model_api_name}
+            or self.model_api_name,
+            "reasoning_summary": ("requested" if reasoning is not None
+                                  else "not requested")}
         u = getattr(response, "usage", None)
         if u is not None:
             usage = {"prompt_tokens": getattr(u, "input_tokens", None),
@@ -764,4 +882,5 @@ class PalantirSdkChatModel(BaseChatModel):
 PalantirSdkChatModel.model_rebuild()
 
 __all__ = ["PalantirSdkChatModel", "sdk_available", "responses_available",
-           "call_with_retries", "transient_kind", "ROUTES"]
+           "call_with_retries", "transient_kind", "ROUTES",
+           "REASONING_SUMMARY_ENV", "reasoning_summary_level"]

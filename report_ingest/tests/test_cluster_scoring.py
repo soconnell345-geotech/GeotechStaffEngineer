@@ -459,6 +459,37 @@ def test_results_md_carries_the_log_tables_and_names_nobody(logs_cluster):
     assert ".pdf" not in text
 
 
+def test_floor_and_model_are_printed_beside_before_and_after(logs_cluster):
+    """Foundry brief 4: the blind logs' index went 44 % before -> 0 % after,
+    and RESULTS.md could not say whether the floor's record ever held the
+    values or the model overruled them: the floor and the model, each scored
+    alone, are printed in their own columns (an old run file without them
+    shows a dash and the table says how many logs the column is over)."""
+    _reports_dir, out, _truth = logs_cluster
+    path = out / "logs" / "R31_p278.json"
+    blob = json.loads(path.read_text(encoding="utf-8"))
+    blob["after"]["floor_alone"] = {
+        "scores": {"n_value": {"found": 5, "total": 10}},
+        "overall": {"found": 5, "total": 10}}
+    blob["after"]["model_alone"] = {
+        "scores": {"n_value": {"found": 3, "total": 10}},
+        "overall": {"found": 3, "total": 10}}
+    path.write_text(json.dumps(blob), encoding="utf-8")
+    logs = _logs_run(logs_cluster)["logs"]
+    assert logs["sets"]["blind"]["n_floor"] == 1
+    assert logs["sets"]["all"]["n_model"] == 1
+    text = (out / "RESULTS.md").read_text(encoding="utf-8")
+    head = next(l for l in text.splitlines() if l.startswith("metric"))
+    assert head.split() == ["metric", "before", "floor", "model", "after"]
+    blind = text.split("## blind")[1]
+    n_row = next(l for l in blind.splitlines() if l.startswith("n_value"))
+    assert n_row.split()[1:] == ["40%", "4/10", "50%", "5/10", "30%",
+                                 "3/10", "70%", "7/10"]
+    assert "`floor` is over the 1 of 2 log(s)" in text
+    per = next(l for l in text.splitlines() if l.startswith("R36_p38"))
+    assert per.count(" -") >= 2                       # no floor, no model
+
+
 def test_the_logs_results_are_serialisable(logs_cluster):
     _reports_dir, out, _truth = logs_cluster
     _logs_run(logs_cluster)
@@ -573,6 +604,58 @@ class TestTheLabStage:
         # kind and link are the model's alone, and the table says so.
         assert "no before column" in text
         assert "Per kind" in text and "Per sheet" in text
+
+    def test_floor_model_and_values_read_are_printed_beside_after(self):
+        """Foundry brief 4: the run files kept floor_alone and model_alone
+        but RESULTS.md printed only before and after, and an 80 % -> 37 %
+        gradation drop could not be told apart from a linking failure."""
+        from report_ingest.cluster_scoring import _render_lab, _score_lab
+
+        def row(sheet, read=True):
+            after = {"scores": {"kind": {"found": 1, "total": 1},
+                                "link": {"found": 0, "total": 1},
+                                "series": {"found": 1, "total": 28}},
+                     "overall": {"found": 2, "total": 30},
+                     "model_calls": 1, "tool_calls": 0, "unresolved": 0,
+                     "changes": 0, "error": None,
+                     "floor_alone": {"scores": {"series": {"found": 20,
+                                                           "total": 28}},
+                                     "overall": {"found": 20, "total": 30}},
+                     "model_alone": {"scores": {"series": {"found": 1,
+                                                           "total": 28}},
+                                     "overall": {"found": 2, "total": 30}}}
+            if read:
+                after["unlinked"] = {
+                    "scores": {"series": {"found": 27, "total": 28}},
+                    "overall": {"found": 27, "total": 28}}
+            return {"sheet_id": sheet, "report": "R15", "kind": "gradation",
+                    "set": "blind", "served_by": "",
+                    "before": {"scores": {"series": {"found": 28,
+                                                     "total": 28}},
+                               "overall": {"found": 28, "total": 28}},
+                    "after": after,
+                    "cost": {"calls": 1, "input_tokens": 0,
+                             "output_tokens": 0, "cache_read_tokens": 0,
+                             "dollars": 0.0},
+                    "seconds": 1.0}
+
+        done = {"gradation__R15_p82": row("gradation__R15_p82"),
+                "gradation__R17_p114": row("gradation__R17_p114",
+                                           read=False)}
+        scored = _score_lab(done, {}, "m", ())
+        blind = scored["sets"]["blind"]
+        assert blind["n_unlinked"] == 1 and blind["n_floor"] == 2
+        text = "\n".join(_render_lab(scored))
+        head = next(l for l in text.splitlines() if l.startswith("metric"))
+        assert head.split() == ["metric", "before", "floor", "model",
+                                "after", "read"]
+        series = next(l for l in text.splitlines()
+                      if l.startswith("series"))
+        assert "40/56" in series and "2/56" in series and "27/28" in series
+        assert "`read` is over the 1 of 2 sheet(s)" in text
+        per = next(l for l in text.splitlines()
+                   if l.startswith("gradation__R15_p82"))
+        assert "27/28" in per and "20/30" in per
 
     def test_a_sheet_moved_into_the_open_set_moves_in_the_scorecard(self):
         """The split is decided at scoring time, never frozen into a run."""

@@ -832,3 +832,297 @@ Priority order. None is tuned to the tag sheet or 10.31A.
 Model calls include the per-task probe (5 calls here, 4 in run 4). Every
 page look in this run went at most 2,048 px on its long side; run 4's went
 3,296–6,000 px.
+
+---
+
+## 9. What was built
+
+Built 2026-10-08 on app `master` (on top of `e7988b7`) and planlens `main`
+(on top of `4a9393e`), uncommitted for the lead's review. Nothing here is
+tuned to the tag sheet or 10.31A: the regression cases replay what the
+traces showed, on synthetic fixtures or the public suite sheet. **Every item
+except J and M changes what an agent sees, and is to be measured on Foundry
+before it ships.**
+
+| item | built | needs a live measurement |
+|---|---|---|
+| A. markup check judges what a comment is about; every anchor checked | yes | yes |
+| B. "encloses" decided from geometry | yes (ring margin: not built) | yes |
+| C. an agent's `dpi` never shrinks a zoom | yes (app side) | yes |
+| D. `annotate_document` reads the obvious guesses | yes | light |
+| E. what only the tiles found is said | yes | yes |
+| F. a zoom says how far its answer is from its aim | yes | yes |
+| G. best reading; a bracket is settled by a closer zoom | yes | yes |
+| H. `find_like` stops flooding | yes (both halves) | yes |
+| I. one thing marked twice is flagged | yes | yes |
+| J. the suite checks where a comment points | yes | no (rescore) |
+| K. whole 32 px patches, behind a switch | yes, OFF | yes (check 7) |
+| L. reasoning summary; profile and commit in run.json | yes | yes |
+| M. floor / model / values read in RESULTS.md | code part only | no (rescore) |
+
+**A.** `funhouse_agent/markup_check.py` rewritten round one question: is the
+mark on the thing it is meant to mark?
+- The thing is named apart from the comment: the agent's new `target`, else
+  the `label`, else the `quote`. With none, the mark is meant to be "on the
+  thing that comment is about".
+- The comment is shown as a remark or a request ABOUT the thing, never as
+  its name.
+- The look answers `same_thing` (and `comment_fits` when a thing is named
+  and the comment says something else).
+- A callout's or note's look reads the WHOLE line or object at its spot, not
+  a letter. Its crop is 120 pt either side, so a notes line fits.
+- Quote-anchored marks and sticky notes are now checked too. Only replies are
+  not. The note says switching anchor does not settle a verdict.
+- planlens: `MarkupSpec.target` (text, not drawn; a box there is refused)
+  and its line in the tool description. The app's `annotate_document` note
+  and the review prompt's one sentence about the check now say "every mark".
+- Tests: `funhouse_agent/deep/tests/test_markup_check_offline.py`
+  - `test_a_comment_is_a_request_about_the_thing_not_its_name`;
+  - `test_a_quoted_comment_on_the_wrong_line_is_caught` (the GPT-5.4 wrong
+    note, now caught on its quote anchor);
+  - `test_target_names_what_a_mark_is_on`, the crop test, the nested-anchor
+    test;
+  - two existing tests updated: notes and quote marks are now checked.
+- Live: yes. The verdicts are model judgements. Brief 5 should count
+  verdicts against truth for rings AND for comments.
+
+**B.** Enclosure is measured in `markup_check._verdict`.
+- Rule: the thing's centre lies inside the mark with 4 pt of slack, the
+  suite's own rule. Identity comes from the look: `same_thing`, or, on an
+  old-style answer, its reading containing the named thing ("- GCE" holds
+  "GCE"). A QCE or an arrowhead is still rejected.
+- Order: a thing outside the mark is "beside the mark", then size (30×).
+- Tests: `test_a_tight_ring_whose_look_counts_the_leader_end_is_confirmed`
+  (both answer shapes), `test_a_look_alike_inside_the_ring_is_still_misplaced`,
+  `test_the_thing_beside_the_ring_is_misplaced`.
+- **Not built:** the larger margin for small rings in planlens. A leader that
+  touches a tag crosses any ring round it, whatever the margin; the
+  geometric rule removes the dependence on how the look reads that end.
+- Live: yes, with A (the 4 wrong rejections of 70 should go).
+
+**C.** `vision_tools._dispatch_render_region` drops an agent's `dpi` while a
+budget is in force, and says so (`dpi_note`).
+- The deep and native `render_region` schemas no longer offer `dpi`. The
+  text-tool description says the zoom is always drawn as large as the model
+  reads.
+- planlens' `render_page` / `render_region` descriptions say a dpi only makes
+  the image smaller.
+- `document.py:1030` is unchanged: its contract ("under the budget: as
+  asked") is pinned by its own test and serves non-agent callers.
+- Tests: `funhouse_agent/tests/test_vision_brief4.py`
+  - `test_an_agents_dpi_does_not_shrink_a_zoom` (the same 2,048 px image with
+    and without `dpi: 300`);
+  - `test_the_zoom_tools_no_longer_offer_dpi`.
+- Live: yes. Every zoom should go at 15-17 px/pt. Watch whether hedged
+  readings fall.
+
+**D.** planlens `MarkupSpec.from_dict` reads the obvious guesses instead of
+refusing the whole call.
+- What it reads: `color` / `colour` (ignored), kinds `comment` and `text`
+  (written as a note; also `rectangle`, `ellipse` and the like,
+  `KIND_ALIASES`), and an `anchor` object (read as its own fields; a
+  contradiction or a non-anchor inside it is still refused).
+- Each is reported per markup in `WriteReport.adjusted` and the tool
+  result's `adjusted`. The description says each kind has a fixed colour.
+- Tests:
+  - planlens `test_the_obvious_guesses_are_read_with_a_note` and
+    `test_a_nested_anchor_that_contradicts_itself_is_refused`;
+  - the toolkit test;
+  - app `test_the_obvious_guesses_cost_no_round_trip`.
+  - The old planlens test that used `colour` as its unknown field now uses
+    `font`.
+- Live: light. Count refused `annotate_document` calls; expect none of these.
+
+**E.** `vision_tools._merge_found`, on any tiled `analyze_pdf_page`.
+- One `found` list of every thing located: label, page box, `seen_in`
+  (`page`, `r2c1` …). Tile boxes are preferred, as the smaller view.
+- Items seen only in tiles are marked `tiles_only` and named in
+  `found_note` ("found ONLY in the tiles … treat these as found, and zoom on
+  each").
+- Matching: within 2 % of the sheet (24 pt on 11 × 17), with labels that
+  share a code or carry none.
+- Test: `test_a_thing_only_the_tiles_found_is_named`. It replays GPT-5.4
+  baseline: the page answer lists six, a reader answering from the fixture's
+  truth gives the tiles all seven, and T5 comes back alone as `tiles_only`.
+- Live: yes. Does the agent act on `found_note` (T5 ringed)?
+
+**F.** `vision_tools._say_how_far_from_the_aim`, on every
+`render_region(view=, image_box=)`.
+- Fields: `aim`, `nearest_box_from_aim_pt`, `boxes_in_answer`.
+- `aim_note` when the nearest box is more than 2.5 % of the source view away
+  (31 pt off a whole 11 × 17 sheet; at least 12 pt), or when the answer
+  gives several boxes.
+- Test: `test_a_zoom_answered_about_a_neighbour_says_so` (Sol r3's two
+  candidates in one window).
+- Live: yes. Does the duplicate ring of Sol r3 go?
+
+**G.** Reading instruction and bracket note.
+- `vision_view.READING_INSTRUCTION` asks for a best reading, with brackets
+  only where a character truly cannot be told apart in this image.
+- An answer that still holds a bracket gets `reading_note`: settle it with
+  a closer zoom, not by dropping the thing. Chart read-offs never do.
+- `find_like`'s own verifier prompt is unchanged: there an uncertain read is
+  wanted.
+- Tests: `test_the_reading_instruction_asks_for_a_best_reading`,
+  `test_a_bracketed_reading_comes_with_a_closer_zoom_note`.
+- Live: yes. Two things to watch:
+  - hedge rate on zooms;
+  - whether whole-sheet looks start committing to misreads (the 5.29 QCE
+    case). The legibility line and tiling still stand against that.
+
+**H.** Both halves.
+- planlens `findlike._crossing_lines`: ink that runs straight through the
+  example box and on to the edge of a margin round it is left out of the
+  template. That covers a grid line under the lettering, a wall, a rule or a
+  leader's shoulder. Only thin bands (a third of the box or less) count, so
+  a fill keeps the old behaviour and the solid-ink refusal still fires.
+  `example.linework_left_out` says how much was dropped.
+- App `find_like.FLOOD_PER_PAGE` = 200: past it on any page nothing is
+  read. The result is `status: example_matches_linework` and the note says
+  "NOT a count … box another copy, one not crossed by linework".
+- Replay of §3.5 (numpy matcher):
+
+  | example | candidates before | after | callouts of 7 |
+  |---|---|---|---|
+  | T3 | 43 | 43 (template unchanged) | 7 |
+  | Sol r3's T1 box | 400 | 54 | 7 (was 1) |
+  | Sol C's T1 box | 367 | 67 | 7 |
+  | T1's true box | 400 | 55 | 7 (was 2) |
+
+  Through the app, Sol C's example now reads ≤ 4 contact sheets (was 19).
+- Tests:
+  - planlens `test_an_example_on_a_grid_line_does_not_flood_the_search`,
+    `test_a_clean_example_is_unchanged`,
+    `test_a_line_through_the_box_is_left_out_and_the_mark_kept`,
+    `test_a_box_holding_only_a_line_is_refused`;
+  - app `funhouse_agent/tests/test_find_like_brief4.py` (the T1 replay, the
+    flood guard, `flooded_pages`).
+- Live: yes. `find_like` time and calls on the circle task.
+
+**I.** planlens `duplicate_marks` → `WriteReport.duplicates`.
+- Rule: marks of one kind saying the same thing (label, else comment) whose
+  boxes overlap by more than half. Replies never count. Two different
+  comments on one spot are two comments.
+- The tool result carries `duplicates` and a `duplicates_note` ("count each
+  thing once").
+- Only marks in one call are compared. A repeat across two appending calls
+  is not.
+- Tests: planlens `test_one_thing_marked_twice_is_flagged`,
+  `test_two_comments_on_one_spot_are_two_comments`, the toolkit test, and app
+  `test_one_tag_ringed_twice_is_flagged`.
+- Live: yes. Does GPT-5.4 r2's eighth ring go?
+
+**J.** `review_eval/checks.py` `markups_point_at`, with
+`tasks.MECK_1031A_RAMP_NOTE`, scored in `produce-markup` beside the old
+check.
+- Where a comment points: a callout's arrow tip, a note's spot, else a box's
+  or highlight's centre. It must lie on a target box or within 4 pt of it.
+- Recall and precision are reported per markup.
+- The target is note 4's second line, x 60.1–225.5, y 224.5–230.3. It was
+  measured from the page's ink (PyMuPDF only, 8 px/pt, annotations off) and
+  checked by eye — not from planlens' quote anchoring.
+- The slope "B" row is left to the owner and is not a target.
+- **Rescore of the seven saved brief-4 PDFs** (part B × 6, part C × 1):
+  GPT-5.4 baseline FAILS (its tip 335 pt away, on the section label); the
+  other six pass, 0.0–0.1 pt from the line. The suite's 37/37 for Sol is unchanged; GPT-5.4 part B's
+  markup score falls from 3/3 to 2/3.
+- Tests: `test_a_comment_on_the_right_line_points_at_it`,
+  `test_a_comment_on_another_note_fails_however_it_mentions_the_figure`,
+  `test_point_at_needs_targets_a_pdf_and_a_matching_comment`,
+  `test_the_ramp_note_target_on_the_public_sheet` (10.31A, the brief-4
+  anchors).
+- Live: none needed; `rescore=True` applies it to saved runs.
+
+**K.** Behind `GEOTECH_VISION_PATCH_ALIGN` (OFF): `vision_view.align_to_patches`.
+- It pads every rendered image with at most 31 px of white on the right and
+  bottom, so both sides are whole 32 px patches, and widens the view by
+  exactly what that shows. Converted boxes land where they did.
+- It is skipped when the padded side would pass the cap.
+- Tests: `test_patch_alignment_is_off_by_default`,
+  `test_patch_alignment_pads_to_whole_patches_and_keeps_boxes_exact`
+  (2048 × 1325 → 2048 × 1344, the mark within 1.5 pt),
+  `test_patch_alignment_leaves_an_aligned_or_over_cap_image_alone`.
+- Live: yes. `module_work/LIVE_TEST_QUEUE.md` check 7 runs the §5.2 cell
+  off then on, on GPT-5.4. The hypothesis holds if the y scale goes from
+  ~1.015 to ~1.000.
+
+**L.** Three parts.
+- **Reasoning summary** (`webapp/palantir_sdk_engine.py`).
+  - The Responses route asks for one on every call:
+    `GEOTECH_FOUNDRY_REASONING_SUMMARY`, `auto` by default, `off` to stop.
+  - The request type is found from the SDK's own names (`Reasoning` /
+    `ReasoningSummary` and kin). With none, nothing is sent.
+  - A refusal (a bad request naming it, or invalid-argument) is retried once
+    without it and not asked again.
+  - The summary the result carries goes on `additional_kwargs["reasoning"]`,
+    which the activity log already writes on `model_end`.
+  - **Unverified live:** the SDK's real type names for the setting. The
+    first Foundry call says, in `generation_info["reasoning_summary"]`
+    (`requested` / `not requested`) and in `model_end.reasoning`.
+  - The FDE's own glue (`foundry_responses_model.py`, outside this repo)
+    still asks for none and reads only `output_message`. Brief 5 should run
+    the package's `PalantirSdkChatModel(route="responses")`, or the FDE
+    should copy these lines.
+- **run.json** (`review_eval/runner.py`) now carries `versions`, `commits`
+  and `vision_profile`.
+  - Commits come from `GEOTECH_APP_COMMIT` / `PLANLENS_COMMIT` when the
+    operator sets them; else the source checkout's `git rev-parse`, marked
+    `+dirty`; else PEP 610. A test wheel installed from a file says nothing
+    by itself, so the FDE should set the two variables.
+  - `vision_profile` is what the probe measured for the run's model in this
+    process; it is never a new probe.
+  - `results.json` meta and RESULTS.md also name the commits.
+- Tests:
+  - `webapp/tests/test_palantir_reasoning.py` (asked and kept; level and
+    off; an SDK that cannot ask; a refusal dropped once; an unrelated bad
+    request still raised);
+  - `test_run_json_says_what_the_run_ran_on`.
+- Live: yes. Brief 5's `model_end` records should carry `reasoning`.
+
+**M (code only).** Three parts.
+- `log_scoring.score_one_log` scores the floor's record alone on every run
+  (`floor_alone`), not only on a rescore.
+- `lab_scoring` keeps `floor_alone` / `floor_record`, and adds
+  `score_unlinked`. It answers "values read": each printed value counts when
+  it is anywhere in the record, linked or not. `rescore_saved` fills both.
+- RESULTS.md prints, for logs, before | floor | model | after. For lab it
+  prints before | floor | model | after | read, plus a per-kind and
+  per-sheet `read`. A column over fewer runs than the set says so.
+- Tests: the log-reader run-file test, `TestReadingAndLinkingApart` (a missed
+  link loses the values in after but not in read), and two RESULTS rendering
+  tests.
+- **Not built:** per-value evidence in the merge. It waits on the §4.2
+  rescore.
+- Live: none. Old run files show "-" until `lab_scoring.rescore_saved` /
+  `log_scoring.rescore_saved` are run over them (the §4.2 rescore, at no
+  model cost); lab floor needs a run that kept `floor_record`.
+
+**Gates (2026-10-08, each in the foreground, one at a time, exit codes):**
+- planlens 1,644 passed (exit 0);
+- `funhouse_agent/deep/tests` 595 passed, 1 skipped (0);
+- `funhouse_agent/review_eval` 93 passed (0);
+- `funhouse_agent/tests` 1,582 passed, 4 skipped (0);
+- `webapp/tests` 458 passed (0);
+- `report_ingest/tests` 1,369 passed (0).
+
+**What brief 5 must measure** (GPT-5.4 and Sol, through the package's
+Responses engine, with `GEOTECH_APP_COMMIT` / `PLANLENS_COMMIT` set):
+1. **Part B again** (`produce-circle-tags` + `produce-markup`, × 3 per
+   model), against brief 4:
+   - rings on target (T5 found via `found_note`?);
+   - markup-check verdicts against truth, for rings (wrong rejections from
+     4/70 to ~0) AND comments (comments on note 4's line now confirmed; a
+     comment on another note rejected even by quote);
+   - duplicate rings;
+   - refused `annotate_document` calls;
+   - zoom px/pt (no more 4.2);
+   - hedged readings and tags dropped on them;
+   - `find_like` calls and seconds.
+2. **Part C on Sol (the whole suite):** no task may change outcome except
+   `produce-markup`'s new check. Tokens and time against this run; watch
+   `set-long-rare-tag` and the tile cost.
+3. **The record:** `model_end.reasoning` present on Responses calls; run.json
+   with `commits` and `vision_profile`.
+4. **Check 7** (K), the §5.2 cell off and on, on GPT-5.4.
+5. **No model:** rescore brief 4's part D run files (§4.2) for floor, model
+   and read, before deciding on per-value evidence (M).

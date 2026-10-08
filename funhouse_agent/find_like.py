@@ -21,6 +21,11 @@ robust way (owner: "robust first"):
    leader reaches, the legend entries counted apart, what was rejected and
    why, and the contact sheets saved to the conversation folder so the
    reviewer can check every call the tool made.
+
+An example that matches linework rather than the mark floods a page with
+candidates (Foundry brief 4: 367 and 400 on a sheet of seven callouts, 18-20
+vision calls to read them). Past :data:`FLOOD_PER_PAGE` on any page nothing
+is read, and the result says to box a copy not crossed by linework.
 """
 
 from __future__ import annotations
@@ -41,6 +46,23 @@ VERIFY_WORKERS = 4
 #: Result size the tool keeps itself under (the vision cap is 32,000 —
 #: ``deep.tools.DEFAULT_VISION_RESULT_CHARS``).
 RESULT_BUDGET_CHARS = 30000
+
+#: More candidates than this on ONE page is not a mark's copies but the
+#: example matching linework: the read pass is skipped and the agent is told
+#: to box a cleaner copy. Foundry brief 4 (2026-10-07): an example whose
+#: lettering sat on a heavy grid line gave 367 and 400 candidates on a sheet
+#: holding seven callouts and a few dozen look-alikes, and reading them took
+#: 18-20 vision calls and 180-289 s; a clean example gave 43. Half planlens'
+#: own per-page cap (400), and well past what a sheet holds of one mark.
+FLOOD_PER_PAGE = 200
+
+FLOOD_NOTE = (
+    "The example matched {n} places on page(s) {pages} — far more than one "
+    "mark's copies on a sheet — so it is matching LINEWORK, not the mark: a "
+    "grid line, a wall, a leader or a table rule running through the example "
+    "box. The candidates were NOT read and this is NOT a count of instances. "
+    "Box another copy of the mark, one not crossed by linework (a legend "
+    "row is often clean), tight round its lettering, and search again.")
 
 VERIFY_PROMPT = (
     "Each numbered cell (#N) shows ONE candidate mark cut from an engineering "
@@ -127,6 +149,9 @@ def find_like(pdf, page: int, bbox: Sequence[float], engine, *,
         kw = {"threshold": threshold} if threshold else {}
         res = doc.find_like(int(page), bbox, pages, **kw)
         hits = res["hits"]
+        flooded = flooded_pages(hits)
+        if flooded:
+            return _flood_result(res, hits, flooded, text)
         cands = [h for h in hits if include_legend or h.context != "legend"]
         legend = [h for h in hits if h.context == "legend"]
         sheets = doc.like_sheets(cands, per_sheet=PER_SHEET) if cands else []
@@ -234,6 +259,39 @@ def find_like(pdf, page: int, bbox: Sequence[float], engine, *,
     return out
 
 
+def flooded_pages(hits: Sequence[Any],
+                  per_page: int = FLOOD_PER_PAGE) -> Dict[int, int]:
+    """``{page: candidates}`` for every page holding more than ``per_page``
+    candidates — empty when the search looks like a mark's copies."""
+    counts: Dict[int, int] = {}
+    for h in hits:
+        counts[h.page] = counts.get(h.page, 0) + 1
+    return {p: n for p, n in sorted(counts.items()) if n > per_page}
+
+
+def _flood_result(res: Dict[str, Any], hits: Sequence[Any],
+                  flooded: Dict[int, int], text: Optional[str]
+                  ) -> Dict[str, Any]:
+    """What the tool says, without reading anything, when the example
+    floods the search (:data:`FLOOD_PER_PAGE`)."""
+    by_page: Dict[int, int] = {}
+    for h in hits:
+        by_page[h.page] = by_page.get(h.page, 0) + 1
+    out: Dict[str, Any] = {
+        "target": text, "example": res["example"],
+        "pages_searched": len(res["pages"]),
+        "status": "example_matches_linework",
+        "candidates": len(hits),
+        "candidates_by_page": {str(k): v for k, v in sorted(by_page.items())},
+        "note": FLOOD_NOTE.format(
+            n=max(flooded.values()),
+            pages=", ".join(str(p) for p in list(flooded)[:10])),
+    }
+    if res.get("warnings"):
+        out["warnings"] = res["warnings"]
+    return out
+
+
 def _fit(out: Dict[str, Any]) -> None:
     """Keep the JSON under :data:`RESULT_BUDGET_CHARS` by shortening the
     per-instance list (the counts by page always stay)."""
@@ -255,4 +313,5 @@ def _fit(out: Dict[str, Any]) -> None:
             out[key] = out[key][:20]
 
 
-__all__ = ["find_like", "parse_readings", "VERIFY_PROMPT", "PER_SHEET"]
+__all__ = ["find_like", "parse_readings", "VERIFY_PROMPT", "PER_SHEET",
+           "FLOOD_PER_PAGE", "flooded_pages"]

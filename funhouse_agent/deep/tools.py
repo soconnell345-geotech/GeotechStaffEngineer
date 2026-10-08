@@ -600,12 +600,13 @@ _DOCUMENT_TOOL_NOTES = {
         "image_box of the ZOOMED look in which the thing is legible (a view "
         "of 300 pt or less; a whole-page look only says where to zoom, and "
         "a small mark from it is refused) — never a box from memory or an "
-        "estimate. Every box, "
-        "circle or callout placed by location is then CHECKED: a crop of the "
-        "marked copy is looked at and the result's `check` says which marks "
-        "enclose what their label or comment names and which are misplaced. "
-        "Never hand over a file with misplaced marks: find those things "
-        "again and rewrite the copy with append=false."),
+        "estimate. Every mark is then CHECKED, whatever its anchor (box, "
+        "point, quote or note): a crop of the marked copy is looked at and "
+        "the result's `check` says which marks are on the thing their "
+        "target, label or quoted words name — or, naming none, the thing "
+        "their comment is about — and which are misplaced. Never hand over "
+        "a file with misplaced marks: find those things again and rewrite "
+        "the copy with append=false."),
 }
 
 
@@ -852,7 +853,6 @@ def make_vision_tools(
         page: int = 0,
         bbox: Optional[list] = None,
         marks: Optional[list] = None,
-        dpi: Optional[int] = None,
         prompt: str = "Describe what this zoomed-in region shows.",
         view: Optional[list] = None,
         image_box: Optional[list] = None,
@@ -876,13 +876,12 @@ def make_vision_tools(
         (instead of ``bbox``); same ``attachment_key`` and ``page``. The
         window is the box padded by how far a box from that view can be off
         (a tenth of the view each way), so the thing is in it. Every
-        vision result carries a ``view``. ``dpi`` is chosen automatically
-        (the largest image the vision model reads); set it only to override.
+        vision result carries a ``view``. The zoom is always drawn as large
+        as the vision model reads: to see more detail, zoom on a smaller
+        box.
         """
         args = {"attachment_key": attachment_key, "page": page,
                 "prompt": prompt}
-        if dpi is not None:
-            args["dpi"] = dpi
         if bbox is not None:
             args["bbox"] = bbox
         if marks is not None:
@@ -1038,9 +1037,8 @@ def make_vision_tools(
                           append: bool = True, check: bool = True) -> str:
         """Write review comments onto a COPY of the PDF (planlens' own words
         describe the markups; this app resolves the output file and signs
-        them). ``check`` (default on) looks at every box, circle or callout
-        placed by location on the marked copy and reports which are
-        misplaced."""
+        them). ``check`` (default on) looks at every mark on the marked copy,
+        however it was anchored, and reports which are misplaced."""
         args = {
             "handle": handle,
             "output_path": _document_tools.markup_output_path(output_path,

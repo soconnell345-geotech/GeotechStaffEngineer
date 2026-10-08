@@ -212,6 +212,53 @@ numbers to beat are in brackets):
 files, this run's per-item files record what the model actually wrote, so I
 can see exactly what is still wrong.
 
+## Check 7 — Whole 32-px patches: does GPT-5.4's small y stretch go? (next release; about 30 minutes, ~130 thousand input tokens)
+
+**Why.** In brief 4 (part A) GPT-5.4's pixel boxes came back stretched in y
+by 1.4–1.7 % and not at all in x. Each stretch matched the image's height
+rounded UP to whole 32 px patches (1344 / 1325 = 1.014), while the width
+(2,048) already was a whole number of patches. If GPT-5.4 works in a frame
+of whole patches, an image that already is one should remove the stretch:
+up to ~10 pt at the bottom of an 11 × 17 sheet, under 4 pt in a zoom. This
+is a **hypothesis to test, not a fix**: the next release carries a switch,
+`GEOTECH_VISION_PATCH_ALIGN`, OFF by default, that pads every image with at
+most 31 px of white paper on the right and bottom so both sides are whole
+patches (the view is widened to match, so conversions stay exact).
+TRACE_REVIEW §7 item K; code `funhouse_agent/vision_view.align_to_patches`.
+
+**Where.** GPT-5.4 (`funhouse-gpt-high` on Funhouse, or GPT-5.4 on Foundry).
+Sol showed no stretch, so it needs no run.
+
+**Setup.** The release (or test wheel) that carries the switch.
+
+**Step 1: as shipped (switch off).** Run the §5.2 cell of
+`module_work/harness_theory/locating_things_on_a_page.md` unchanged. Note the
+`y scale` of the three `page-as-shipped` rows and of the `tool-tile` rows,
+and T7's error (the lowest tag).
+
+**Step 2: the switch on.** In a new cell run
+
+```python
+import os
+os.environ["GEOTECH_VISION_PATCH_ALIGN"] = "1"
+```
+
+then run the §5.2 cell again, unchanged (it does not clear this setting),
+and afterwards `os.environ.pop("GEOTECH_VISION_PATCH_ALIGN")`.
+
+**What to read.**
+- `page-as-shipped` should now show both sides a multiple of 32: `sent
+  (2048, 1344)` where step 1 showed `(2048, 1325)` (checked offline: the
+  cell runs unchanged with the switch on).
+- **Hypothesis holds:** its y scale is within about 0.003 of 1.000 on all
+  three repeats (was 1.014–1.017), the tool-tile rows likewise (was up to
+  1.011), and T7's error falls to a few points (was 8.7–11.5 pt).
+- **Hypothesis fails:** the y scale stays near 1.015. Then the switch stays
+  off and the stretch is not about patches.
+
+**Send:** both printed outputs and both saved JSON files
+(`location_remeasure_*.json`).
+
 ## Done
 
 - **2026-10-07, checks 6 and 3 on Foundry (brief 4, 5.32.1rc3; GPT-5.4 and Sol).**

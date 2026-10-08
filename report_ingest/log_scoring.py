@@ -244,6 +244,13 @@ class LogScore:
     #: model would have scored without the floor -- which on the first
     #: cluster run was less than the grid. The counts are the merge's own.
     model_alone: Optional[Dict[str, Any]] = None
+    #: The grid's floor RECORD scored alone -- what the merge started from.
+    #: ``before`` scores the grid's cells, which can credit a value the
+    #: floor's record never held (an index value printed a line off its
+    #: sample's row); this is the record's own score, printed beside before,
+    #: model and after (Foundry brief 4: the blind index fell 44 % -> 0 %
+    #: and the RESULTS could not say whether the floor ever had them).
+    floor_alone: Optional[Dict[str, Any]] = None
     disagreements: int = 0
     kept: int = 0
     added: int = 0
@@ -279,6 +286,7 @@ class LogScore:
             "unresolved": self.unresolved, "changes": self.changes,
             "error": self.error,
             "model_alone": self.model_alone,
+            "floor_alone": self.floor_alone,
             "disagreements": self.disagreements, "kept": self.kept,
             "added": self.added, "reconciled": self.reconciled,
             "record": self.record, "model_record": self.model_record,
@@ -755,6 +763,7 @@ def score_one_log(truth: Dict[str, Any], doc: Any, engine: Any, *,
     floor = getattr(result, "floor", None)
     if floor is not None:
         after.floor_record = dump_investigations([floor])
+        after.floor_alone = _scored(score_record(truth, [floor]))
     after.disagreements = len(getattr(result, "disagreements", ()) or ())
     after.kept = len(getattr(result, "kept", ()) or ())
     after.added = len(getattr(result, "added", ()) or ())

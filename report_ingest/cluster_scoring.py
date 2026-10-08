@@ -1318,6 +1318,16 @@ def _lab_totals(rows: Sequence[dict], stage: str
 
 def _score_lab(done: Dict[str, dict], failures: Dict[str, str], model: str,
                openset: Sequence[str]) -> Dict[str, Any]:
+    from report_ingest.lab_scoring import METRICS
+
+    def beside(group):
+        floor, n_floor = _alone_totals(group, "floor_alone", METRICS)
+        alone, n_model = _alone_totals(group, "model_alone", METRICS)
+        read, n_read = _alone_totals(group, "unlinked", METRICS)
+        return {"floor_alone": floor, "n_floor": n_floor,
+                "model_alone": alone, "n_model": n_model,
+                "unlinked": read, "n_unlinked": n_read}
+
     rows = [done[k] for k in sorted(done)]
     sets: Dict[str, Any] = {}
     for name in ("open", "blind", "all"):
@@ -1329,6 +1339,7 @@ def _score_lab(done: Dict[str, dict], failures: Dict[str, str], model: str,
             "n_sheets": len(group),
             "before": _lab_totals(group, "before"),
             "after": _lab_totals(group, "after"),
+            **beside(group),
         }
     by_kind: Dict[str, Any] = {}
     for kind in sorted({r.get("kind") or "?" for r in rows}):
@@ -1337,6 +1348,7 @@ def _score_lab(done: Dict[str, dict], failures: Dict[str, str], model: str,
             "n_sheets": len(group),
             "before": _lab_totals(group, "before"),
             "after": _lab_totals(group, "after"),
+            **beside(group),
         }
     cost = {"calls": 0, "input_tokens": 0, "output_tokens": 0,
             "cache_read_tokens": 0, "dollars": 0.0, "seconds": 0.0}
@@ -1360,6 +1372,9 @@ def _score_lab(done: Dict[str, dict], failures: Dict[str, str], model: str,
             "sheet_id": r["sheet_id"], "set": r["set"],
             "kind": r.get("kind") or "?",
             "before": r["before"]["overall"], "after": r["after"]["overall"],
+            "floor_alone": _overall_of(r, "floor_alone"),
+            "model_alone": _overall_of(r, "model_alone"),
+            "unlinked": _overall_of(r, "unlinked"),
             "model_calls": r["after"].get("model_calls", 0),
             "tool_calls": r["after"].get("tool_calls", 0),
             "unresolved": r["after"].get("unresolved", 0),
@@ -1378,6 +1393,7 @@ def _render_lab(lab: Dict[str, Any]) -> List[str]:
     """The lab stage, as tables that carry IDs, kinds, counts and rates only."""
     from report_ingest.lab_scoring import (
         DEPTH_TOL_M, EXACT_TOL, METRICS, MODEL_ONLY, PASSING_TOL,
+        UNLINKED_METRICS,
     )
 
     out: List[str] = [
@@ -1395,6 +1411,16 @@ def _render_lab(lab: Dict[str, Any]) -> List[str]:
         f"prints; an index value is exact to {EXACT_TOL}; a grading within "
         f"{PASSING_TOL} percent; a curve within the tolerance its own truth "
         f"file states.",
+        "",
+        "Beside them: **floor** is the tables' floor RECORD (the typed tests "
+        "built before any model call) scored alone, **model** the model's "
+        "answer scored alone, before the merge; **read** asks only whether "
+        "each printed VALUE is anywhere in the record, linked to the right "
+        "boring and depth or not -- after asks for the link too, and a "
+        "specimen whose link misses loses every value on it there. So a low "
+        "after with a high read is a linking failure, not a reading one. "
+        "read counts values only (index, series, curve), so its OVERALL "
+        "carries no kind or link.",
     ]
     if lab.get("served_by"):
         out.append(f"Served by: {', '.join(lab['served_by'])}.")
@@ -1409,33 +1435,52 @@ def _render_lab(lab: Dict[str, Any]) -> List[str]:
         row = lab["sets"].get(name)
         if not row:
             continue
+        floor = row.get("floor_alone") if row.get("n_floor") else None
+        alone = row.get("model_alone") if row.get("n_model") else None
+        read = row.get("unlinked") if row.get("n_unlinked") else None
         out += ["", f"## {name} -- {row['n_sheets']} sheet(s)", "", "```",
-                f"{'metric':<10}{'before':>14}{'after':>14}"]
+                f"{'metric':<10}{'before':>14}{'floor':>14}{'model':>14}"
+                f"{'after':>14}{'read':>14}"]
         for metric in METRICS:
             before, after = row["before"].get(metric), row["after"].get(metric)
             if not after or not (before["total"] or after["total"]):
                 continue
-            out.append(f"{metric:<10}{_rate(before):>14}{_rate(after):>14}")
-        before_all = {"found": sum(v["found"] for v in row["before"].values()),
-                      "total": sum(v["total"] for v in row["before"].values())}
-        after_all = {"found": sum(v["found"] for v in row["after"].values()),
-                     "total": sum(v["total"] for v in row["after"].values())}
-        out += [f"{'OVERALL':<10}{_rate(before_all):>14}"
-                f"{_rate(after_all):>14}", "```"]
+            got = (read or {}).get(metric) if metric in UNLINKED_METRICS \
+                else None
+            out.append(f"{metric:<10}{_rate(before):>14}"
+                       f"{_opt_rate((floor or {}).get(metric)):>14}"
+                       f"{_opt_rate((alone or {}).get(metric)):>14}"
+                       f"{_rate(after):>14}{_opt_rate(got):>14}")
+        read_all = (_sum_of({m: v for m, v in read.items()
+                             if m in UNLINKED_METRICS}) if read else None)
+        out += [f"{'OVERALL':<10}{_rate(_sum_of(row['before'])):>14}"
+                f"{_opt_rate(_sum_of(floor) if floor else None):>14}"
+                f"{_opt_rate(_sum_of(alone) if alone else None):>14}"
+                f"{_rate(_sum_of(row['after'])):>14}"
+                f"{_opt_rate(read_all):>14}", "```"]
+        for key, label in (("n_floor", "floor"), ("n_model", "model"),
+                           ("n_unlinked", "read")):
+            if row.get(key, 0) < row["n_sheets"]:
+                out.append(f"`{label}` is over the {row.get(key, 0)} of "
+                           f"{row['n_sheets']} sheet(s) whose run file keeps "
+                           f"it.")
 
     out += ["", "## Per kind", "", "```",
-            f"{'kind':<20}{'sheets':>7}{'before':>14}{'after':>14}"]
+            f"{'kind':<20}{'sheets':>7}{'before':>14}{'after':>14}"
+            f"{'read':>14}"]
     for kind, row in lab.get("kinds", {}).items():
-        before_all = {"found": sum(v["found"] for v in row["before"].values()),
-                      "total": sum(v["total"] for v in row["before"].values())}
-        after_all = {"found": sum(v["found"] for v in row["after"].values()),
-                     "total": sum(v["total"] for v in row["after"].values())}
+        read = row.get("unlinked") if row.get("n_unlinked") else None
+        read_all = (_sum_of({m: v for m, v in read.items()
+                             if m in UNLINKED_METRICS}) if read else None)
         out.append(f"{kind:<20}{row['n_sheets']:>7}"
-                   f"{_rate(before_all):>14}{_rate(after_all):>14}")
+                   f"{_rate(_sum_of(row['before'])):>14}"
+                   f"{_rate(_sum_of(row['after'])):>14}"
+                   f"{_opt_rate(read_all):>14}")
     out.append("```")
 
     out += ["", "## Per sheet", "", "```",
-            f"{'sheet':<28}{'set':<7}{'before':>12}{'after':>12}{'calls':>7}"
+            f"{'sheet':<28}{'set':<7}{'before':>12}{'floor':>12}{'model':>12}"
+            f"{'after':>12}{'read':>12}{'calls':>7}"
             f"{'zoom':>6}{'unres':>7}{'look':>6}{'in':>10}{'out':>8}{'s':>7}"]
     for r in lab["per_sheet"]:
         if r.get("error"):
@@ -1444,7 +1489,9 @@ def _render_lab(lab: Dict[str, Any]) -> List[str]:
             continue
         out.append(
             f"{r['sheet_id']:<28}{r['set']:<7}"
-            f"{_rate(r['before']):>12}{_rate(r['after']):>12}"
+            f"{_rate(r['before']):>12}{_opt_rate(r.get('floor_alone')):>12}"
+            f"{_opt_rate(r.get('model_alone')):>12}{_rate(r['after']):>12}"
+            f"{_opt_rate(r.get('unlinked')):>12}"
             f"{r['model_calls']:>7}{r['tool_calls']:>6}{r['unresolved']:>7}"
             f"{r['changes']:>6}{r['input_tokens']:>10,}"
             f"{r['output_tokens']:>8}{r['seconds']:>7.0f}")
@@ -2491,19 +2538,51 @@ def _totals(rows: Sequence[dict], stage: str) -> Dict[str, Dict[str, int]]:
     return out
 
 
+def _alone_totals(rows: Sequence[dict], key: str, metrics: Sequence[str]
+                  ) -> Tuple[Dict[str, Dict[str, int]], int]:
+    """``(metric -> {found, total}, how many rows carry it)`` for one of the
+    scores kept beside ``after`` (``floor_alone``, ``model_alone``,
+    ``unlinked``), summed over the rows whose run file has it — a run file
+    written before a score was kept simply does not count towards it."""
+    out = {m: {"found": 0, "total": 0} for m in metrics}
+    have = [r for r in rows if isinstance((r.get("after") or {}).get(key),
+                                          dict)]
+    for row in have:
+        for metric, score in (row["after"][key].get("scores") or {}).items():
+            if metric not in out:
+                out[metric] = {"found": 0, "total": 0}
+            out[metric]["found"] += int(score.get("found") or 0)
+            out[metric]["total"] += int(score.get("total") or 0)
+    return out, len(have)
+
+
+def _overall_of(row: dict, key: str) -> Optional[Dict[str, Any]]:
+    got = (row.get("after") or {}).get(key)
+    return got.get("overall") if isinstance(got, dict) else None
+
+
+def _opt_rate(row: Optional[Dict[str, int]]) -> str:
+    return "     -" if not row else _rate(row)
+
+
 def _score_logs(done: Dict[str, dict], failures: Dict[str, str], model: str,
                 openset: Sequence[str]) -> Dict[str, Any]:
+    from report_ingest.log_scoring import METRICS
     rows = [done[k] for k in sorted(done)]
     sets: Dict[str, Any] = {}
     for name in ("open", "blind", "all"):
         group = [r for r in rows if name == "all" or r["set"] == name]
         if not group:
             continue
+        floor, n_floor = _alone_totals(group, "floor_alone", METRICS)
+        alone, n_model = _alone_totals(group, "model_alone", METRICS)
         sets[name] = {
             "logs": [r["log_id"] for r in group],
             "n_logs": len(group),
             "before": _totals(group, "before"),
             "after": _totals(group, "after"),
+            "floor_alone": floor, "n_floor": n_floor,
+            "model_alone": alone, "n_model": n_model,
         }
     cost = {"calls": 0, "input_tokens": 0, "output_tokens": 0,
             "cache_read_tokens": 0, "dollars": 0.0, "seconds": 0.0}
@@ -2525,6 +2604,8 @@ def _score_logs(done: Dict[str, dict], failures: Dict[str, str], model: str,
         "per_log": [{
             "log_id": r["log_id"], "set": r["set"],
             "before": r["before"]["overall"], "after": r["after"]["overall"],
+            "floor_alone": _overall_of(r, "floor_alone"),
+            "model_alone": _overall_of(r, "model_alone"),
             "model_calls": r["after"].get("model_calls", 0),
             "unresolved": r["after"].get("unresolved", 0),
             "changes": r["after"].get("changes", 0),
@@ -2558,7 +2639,11 @@ def _render_logs(logs: Dict[str, Any]) -> List[str]:
         f"**before** is what `log_grid` alone recovered; **after** is what "
         f"the reader's record holds. The grid runs once and is handed to the "
         f"reader, so the difference between the two columns is the model and "
-        f"nothing else. Tolerances: samples, index values and water "
+        f"nothing else. Beside them: **floor** is the floor's RECORD scored "
+        f"alone -- what the merge started from (before scores the grid's "
+        f"cells, which can credit a value the record never held) -- and "
+        f"**model** the model's answer scored alone, before the merge. "
+        f"Tolerances: samples, index values and water "
         f"{SAMPLE_TOL_M} m, layer tops {LAYER_TOL_M} m "
         f"(water {WATER_TOL_M} m); depths compared in metres whatever the "
         f"log prints. N values exact.",
@@ -2576,22 +2661,33 @@ def _render_logs(logs: Dict[str, Any]) -> List[str]:
         row = logs["sets"].get(name)
         if not row:
             continue
+        floor = row.get("floor_alone") if row.get("n_floor") else None
+        alone = row.get("model_alone") if row.get("n_model") else None
         out += ["", f"## {name} -- {row['n_logs']} log(s)", "", "```",
-                f"{'metric':<16}{'before':>14}{'after':>14}"]
+                f"{'metric':<16}{'before':>14}{'floor':>14}{'model':>14}"
+                f"{'after':>14}"]
         for metric in METRICS:
             before, after = row["before"].get(metric), row["after"].get(metric)
             if not before or not (before["total"] or after["total"]):
                 continue
-            out.append(f"{metric:<16}{_rate(before):>14}{_rate(after):>14}")
-        before_all = {"found": sum(v["found"] for v in row["before"].values()),
-                      "total": sum(v["total"] for v in row["before"].values())}
-        after_all = {"found": sum(v["found"] for v in row["after"].values()),
-                     "total": sum(v["total"] for v in row["after"].values())}
+            out.append(f"{metric:<16}{_rate(before):>14}"
+                       f"{_opt_rate((floor or {}).get(metric)):>14}"
+                       f"{_opt_rate((alone or {}).get(metric)):>14}"
+                       f"{_rate(after):>14}")
+        before_all = _sum_of(row["before"])
+        after_all = _sum_of(row["after"])
         out += [f"{'OVERALL':<16}{_rate(before_all):>14}"
+                f"{_opt_rate(_sum_of(floor) if floor else None):>14}"
+                f"{_opt_rate(_sum_of(alone) if alone else None):>14}"
                 f"{_rate(after_all):>14}", "```"]
+        for key, label in (("n_floor", "floor"), ("n_model", "model")):
+            if row.get(key, 0) < row["n_logs"]:
+                out.append(f"`{label}` is over the {row.get(key, 0)} of "
+                           f"{row['n_logs']} log(s) whose run file keeps it.")
 
     out += ["", "## Per log", "", "```",
-            f"{'log':<14}{'set':<7}{'before':>12}{'after':>12}{'calls':>7}"
+            f"{'log':<14}{'set':<7}{'before':>12}{'floor':>12}{'model':>12}"
+            f"{'after':>12}{'calls':>7}"
             f"{'unres':>7}{'look':>6}{'in':>10}{'out':>8}{'s':>7}"]
     for r in logs["per_log"]:
         if r.get("error"):
@@ -2600,7 +2696,8 @@ def _render_logs(logs: Dict[str, Any]) -> List[str]:
             continue
         out.append(
             f"{r['log_id']:<14}{r['set']:<7}"
-            f"{_rate(r['before']):>12}{_rate(r['after']):>12}"
+            f"{_rate(r['before']):>12}{_opt_rate(r.get('floor_alone')):>12}"
+            f"{_opt_rate(r.get('model_alone')):>12}{_rate(r['after']):>12}"
             f"{r['model_calls']:>7}{r['unresolved']:>7}{r['changes']:>6}"
             f"{r['input_tokens']:>10,}{r['output_tokens']:>8,}"
             f"{r['seconds']:>7.0f}")

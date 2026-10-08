@@ -51,7 +51,7 @@ import math
 import os
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 log = logging.getLogger(__name__)
 
@@ -270,5 +270,21 @@ def clear_cache() -> None:
         _CACHE.clear()
 
 
+def cached_profile(model) -> Optional[VisionProfile]:
+    """The profile already measured for ``model`` in this process, WITHOUT
+    probing — for a run record (``None`` when it was never probed)."""
+    if model is None:
+        return None
+    with _LOCK:
+        return _CACHE.get(_cache_key(model))
+
+
+def cached_profiles() -> List[VisionProfile]:
+    """Every profile measured in this process, without probing."""
+    with _LOCK:
+        return list(_CACHE.values())
+
+
 __all__ = ["PROBE_ENV", "WIDE_PX", "VisionProfile", "enabled", "probe",
-           "profile_for", "clear_cache", "host_edge_from_probe"]
+           "profile_for", "clear_cache", "host_edge_from_probe",
+           "cached_profile", "cached_profiles"]

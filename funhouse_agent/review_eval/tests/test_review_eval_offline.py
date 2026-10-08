@@ -20,6 +20,7 @@ from funhouse_agent.review_eval.tasks import (  # noqa: E402
     CATEGORIES, DOC_TYPES, OPEN_TASKS, PAGES, Task, load_tasks, select)
 
 FILE_CHECKS = {"file_produced", "pdf_markups", "markups_on_targets",
+               "markups_point_at",
                "docx_contains", "tool_used", "pages_covered"}
 
 
@@ -262,6 +263,35 @@ def test_runner_scores_both_arms_writes_results_and_resumes(tmp_path):
     score_review_suite(model, ids=["fixture-markups"],
                        arms=("baseline", "lean"), out_dir=out, verbose=False)
     assert len(model.calls) == n
+
+
+def test_run_json_says_what_the_run_ran_on(tmp_path, monkeypatch):
+    """Foundry brief 4: run.json carried neither the commit the wheel was
+    built from nor the vision profile the probe measured. Both are recorded
+    now, never by a new probe."""
+    from funhouse_agent import vision_probe
+    from funhouse_agent.review_eval import runner
+    from funhouse_agent.review_eval.runner import run_task
+    task = next(t for t in OPEN_TASKS if t.id == "fixture-markups")
+    model = _scripted_model(task.truth)
+    runner._commit.cache_clear()
+    monkeypatch.setenv("GEOTECH_APP_COMMIT", "a4ef417")
+    res = run_task(task, model, arm="baseline", arm_env={}, docs_dir=None,
+                   run_dir=str(tmp_path / "run"))
+    assert res["commits"]["app"] == "a4ef417"
+    assert "planlens" in res["commits"]
+    assert res["versions"]["geotech-staff-engineer"]
+    assert res["vision_profile"] == {"probe": "off"}       # the test's switch
+    # with the probe on, the profile measured for the run's model is copied
+    monkeypatch.setenv(vision_probe.PROBE_ENV, "1")
+    prof = vision_probe.VisionProfile(answered_by="gpt-5.4", general="openai-high",
+                                      detailed="openai-original",
+                                      source="probe", max_edge=2048)
+    monkeypatch.setitem(vision_probe._CACHE, vision_probe._cache_key(model),
+                        prof)
+    got = runner._vision_profile(model)
+    assert got["max_edge"] == 2048 and "at most 2048 px" in got["summary"]
+    runner._commit.cache_clear()
 
 
 def test_runner_retries_a_failed_run(tmp_path):
@@ -656,6 +686,104 @@ def test_one_blanket_box_over_the_sheet_is_not_a_hit(tmp_path):
     pdf = _tag_marks(tmp_path, [(50, 50, 1150, 750)], kind="box")
     ok, detail = C.check_markups_on_targets("", [pdf], **ON_TARGET)
     assert not ok and "0/7 targets" in detail
+
+
+# -- where a comment points (Foundry brief 4, 2026-10-07) ----------------------
+
+def _comment_sheet(tmp_path, markups, name="commented.pdf"):
+    """A sheet with two notes that both state a maximum, and the given
+    comments written on a copy (displayed-frame points)."""
+    from planlens.document.markup_writer import write_markups
+    doc = fitz.open()
+    page = doc.new_page(width=792, height=612)
+    page.insert_text((60, 228), "SLOPE SHALL NOT EXCEED 6.25% MAX.",
+                     fontsize=7)
+    page.insert_text((420, 430), "SLOPE UP TO 5% (6.2% MAX.)", fontsize=7)
+    src = doc.tobytes()
+    doc.close()
+    out = str(tmp_path / name)
+    write_markups(src, out, markups, author="AI")
+    return out
+
+
+#: The first note's printed line, as a task would carry it (measured once).
+_NOTE = [{"page": 0, "box": [60.0, 222.0, 190.0, 229.0], "name": "the note"}]
+_ASK = "DRAFT: please confirm the 6.25% maximum."
+
+
+def test_a_comment_on_the_right_line_points_at_it(tmp_path):
+    for i, mark in enumerate([
+            {"kind": "callout", "points_at": [60.0, 226.0]},
+            {"kind": "note", "point": [143.0, 225.0]},
+            {"kind": "box", "bbox": [58.0, 221.0, 192.0, 230.0]},
+            {"kind": "highlight", "quote": "SHALL NOT EXCEED 6.25%"}]):
+        pdf = _comment_sheet(tmp_path, [dict(mark, page=0, comment=_ASK)],
+                             name=f"right{i}.pdf")
+        ok, detail = C.check_markups_point_at(
+            "", [pdf], targets=_NOTE, text_contains="6.25", pad=4.0)
+        assert ok, (mark, detail)
+        assert "ON it" in detail
+
+
+def test_a_comment_on_another_note_fails_however_it_mentions_the_figure(
+        tmp_path):
+    """Brief 4, GPT-5.4 baseline: the comment mentioned 8.33 and pointed at
+    the section label stating 8.3 - the old check passed it."""
+    pdf = _comment_sheet(tmp_path, [
+        {"kind": "callout", "page": 0, "comment": _ASK,
+         "quote": "SLOPE UP TO 5% (6.2% MAX.)"}])
+    assert C.check_pdf_markups("", [pdf], min=1, pages=[0],
+                               text_contains="6.25")[0]
+    ok, detail = C.check_markups_point_at(
+        "", [pdf], targets=_NOTE, text_contains="6.25", pad=4.0)
+    assert not ok and "recall 0.00" in detail
+    # and two comments, one right one wrong: recall met, precision says so
+    pdf2 = _comment_sheet(tmp_path, [
+        {"kind": "callout", "page": 0, "comment": _ASK,
+         "quote": "SLOPE UP TO 5% (6.2% MAX.)"},
+        {"kind": "note", "page": 0, "comment": _ASK, "point": [61, 225]}],
+        name="both.pdf")
+    ok, detail = C.check_markups_point_at(
+        "", [pdf2], targets=_NOTE, text_contains="6.25")
+    assert ok and "precision 0.50" in detail
+    assert not C.check_markups_point_at(
+        "", [pdf2], targets=_NOTE, text_contains="6.25",
+        min_precision=1.0)[0]
+
+
+def test_point_at_needs_targets_a_pdf_and_a_matching_comment(tmp_path):
+    assert not C.check_markups_point_at("", [], targets=_NOTE)[0]
+    assert "no targets" in C.check_markups_point_at("", ["x.pdf"])[1]
+    pdf = _comment_sheet(tmp_path, [
+        {"kind": "note", "page": 0, "comment": "unrelated", "point": [61, 225]}])
+    ok, detail = C.check_markups_point_at("", [pdf], targets=_NOTE,
+                                          text_contains="6.25")
+    assert not ok and "no markup says" in detail
+
+
+def test_the_ramp_note_target_on_the_public_sheet(tmp_path):
+    """The produce-markup task's target on the public sheet 10.31A, against
+    the anchors the brief-4 runs wrote: the five on note 4's line pass, the
+    one on the section label fails."""
+    from planlens.document.markup_writer import write_markups
+    from funhouse_agent.review_eval.tasks import MECK_1031A_RAMP_NOTE
+    path = D.find_file("10.31A.pdf")
+    if not path:
+        pytest.skip("10.31A.pdf is not in this checkout")
+    task = next(t for t in OPEN_TASKS if t.id == "produce-markup")
+    check = next(c for c in task.all_checks()
+                 if c["type"] == "markups_point_at")
+    ask = "DRAFT: Please confirm the 8.33% maximum applies over the run."
+    cases = {(60.0, 227.4): True, (143.0, 227.3): True,
+             (491.8, 434.4): False}
+    for (x, y), want in cases.items():
+        out = str(tmp_path / f"m_{int(x)}.pdf")
+        write_markups(path, out, [{"kind": "callout", "page": 0,
+                                   "comment": ask, "points_at": [x, y]}],
+                      author="AI")
+        r = C.run_check(check, "", files=[out])
+        assert r["passed"] is want, ((x, y), r["detail"])
+    assert check["targets"] is MECK_1031A_RAMP_NOTE
 
 
 def test_the_tag_fixture_resolves_as_a_document():

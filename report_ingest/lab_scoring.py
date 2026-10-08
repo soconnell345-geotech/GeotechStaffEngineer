@@ -54,7 +54,7 @@ __all__ = [
     "find", "number", "quantity", "reported", "depth_unit_of", "report_of",
     "pages_of", "sieve_points", "grading_in", "curve_in", "split_unit",
     "expectations_for", "score_tables", "score_record", "score_one_sheet",
-    "table_numbers", "rescore_saved",
+    "table_numbers", "rescore_saved", "score_unlinked", "UNLINKED_METRICS",
 ]
 
 #: A specimen is linked when its depth lands within this, in metres. The log
@@ -591,15 +591,25 @@ class LabScore:
     #: counts: how many slots the voters split on, how many floor values the
     #: model left out, how many it added, how many both gave.
     model_alone: Optional[Dict[str, Any]] = None
+    #: The tables' floor RECORD (the typed tests built before any model
+    #: call) scored alone, beside before / model / after.
+    floor_alone: Optional[Dict[str, Any]] = None
+    #: The VALUES the record holds wherever they sit, with no link asked for
+    #: (:func:`score_unlinked`): so reading and linking are measured apart.
+    #: Foundry brief 4: gradation fell from 80 % before to 37 % after on four
+    #: sheets whose specimens were not linked to their boring and depth —
+    #: every value on them counted as missed, read or not.
+    unlinked: Optional[Dict[str, Any]] = None
     disagreements: int = 0
     kept: int = 0
     added: int = 0
     reconciled: int = 0
-    #: What the reader recorded for this sheet — the merged tests and the
-    #: model's own — so a check fixed after a run can be re-applied to the
-    #: run file with no model call (:func:`rescore_saved`).
+    #: What the reader recorded for this sheet — the merged tests, the
+    #: model's own and the floor's — so a check fixed after a run can be
+    #: re-applied to the run file with no model call (:func:`rescore_saved`).
     record: Optional[List[Dict[str, Any]]] = None
     model_record: Optional[List[Dict[str, Any]]] = None
+    floor_record: Optional[List[Dict[str, Any]]] = None
 
     def score(self, name: str) -> Score:
         return self.scores.setdefault(name, Score())
@@ -624,9 +634,12 @@ class LabScore:
             "changes": self.changes, "kinds_read": list(self.kinds_read),
             "error": self.error,
             "model_alone": self.model_alone,
+            "floor_alone": self.floor_alone,
+            "unlinked": self.unlinked,
             "disagreements": self.disagreements, "kept": self.kept,
             "added": self.added, "reconciled": self.reconciled,
             "record": self.record, "model_record": self.model_record,
+            "floor_record": self.floor_record,
         }
 
 
@@ -836,6 +849,89 @@ def score_record(truth: Dict[str, Any], tests: Sequence[Any]) -> LabScore:
     return out
 
 
+#: The metrics the unlinked score asks: values, not what they belong to.
+UNLINKED_METRICS: Tuple[str, ...] = ("index", "series", "curve")
+
+
+def _pool_all(tests: Sequence[Any]) -> List[float]:
+    """Every number the record holds, whatever test or row it sits on."""
+    from report_ingest.model import SummaryTableResult
+
+    pool: List[float] = []
+    texts: List[str] = []
+    for test in tests:
+        result = test.result
+        if result is not None:
+            pool.extend(v for _p, v, _u in si_numbers(result))
+            if isinstance(result, SummaryTableResult):
+                for row in result.rows:
+                    texts.extend(str(v) for _name, v in row.other)
+        texts.extend(str(v) for v in test.fields.values())
+    for text in texts:
+        pool.extend(float(t) for t in re.findall(r"-?\d+(?:\.\d+)?", text))
+    return pool
+
+
+def _sieves_all(tests: Sequence[Any]
+                ) -> List[Tuple[Optional[float], float, str]]:
+    """Every grading point the record holds, whatever it is linked to."""
+    from report_ingest.model import GradationResult, SummaryTableResult
+
+    out: List[Tuple[Optional[float], float, str]] = []
+
+    def points(pts):
+        return [(p.size.si_value * 1000.0 if p.size is not None
+                 and p.size.si_value is not None else None,
+                 p.percent_passing, p.sieve) for p in pts]
+
+    for test in tests:
+        result = test.result
+        if isinstance(result, GradationResult):
+            out.extend(points(result.percent_passing))
+        elif isinstance(result, SummaryTableResult):
+            for row in result.rows:
+                out.extend(points(row.percent_passing))
+    return out
+
+
+def score_unlinked(truth: Dict[str, Any], tests: Sequence[Any]) -> LabScore:
+    """The VALUES the record read, wherever they sit: each printed index
+    value, grading point and curve point counts when it is anywhere in the
+    record, linked to the right boring and depth or not. Beside the linked
+    ``after`` score it says whether a low score is the reading or the
+    linking — a specimen whose link misses loses every value in ``after``
+    and none here."""
+    out = _blank(str(truth.get("id") or ""), str(truth.get("kind") or ""),
+                 "unlinked")
+    pool = _pool_all(tests)
+    sieves = _sieves_all(tests)
+    for expect in expectations_for(truth):
+        where = expect.label
+        for name, (value, _unit, printed) in sorted(expect.index.items()):
+            out.score("index").add(
+                any(_close(v, value, EXACT_TOL)
+                    or _close(v, printed, EXACT_TOL) for v in pool),
+                f"{where} {name}={value:.6g}")
+        for size, percent, sieve in expect.series:
+            out.score("series").add(
+                any(_close(p, percent, PASSING_TOL)
+                    and (size is None or s is None
+                         or _close(s, size, max(0.01, size * 0.02)))
+                    for s, p, _name in sieves),
+                f"{where} passing {sieve}={percent:g}")
+        for name, points, tolerance, _xu, _yu in expect.curves:
+            for x, y in points:
+                out.score("curve").add(
+                    any(_close(v, y, tolerance) for v in pool),
+                    f"{where} {name} at x={x:.6g}: y={y:.6g}")
+    return out
+
+
+def _as_blob(score: LabScore) -> Dict[str, Any]:
+    return {"scores": {k: v.to_dict() for k, v in score.scores.items()},
+            "overall": score.total.to_dict()}
+
+
 # ---------------------------------------------------------------------------
 # both, on one sheet
 # ---------------------------------------------------------------------------
@@ -887,6 +983,12 @@ def score_one_sheet(truth: Dict[str, Any], doc: Any, engine: Any, *,
         after.model_alone = {
             "scores": {k: v.to_dict() for k, v in alone.scores.items()},
             "overall": alone.total.to_dict()}
+    # The floor alone, and the values read whatever they are linked to.
+    floor_tests = getattr(result, "floor_tests", None)
+    if floor_tests is not None:
+        after.floor_record = _dump_tests(floor_tests)
+        after.floor_alone = _as_blob(score_record(truth, floor_tests))
+    after.unlinked = _as_blob(score_unlinked(truth, result.tests))
     after.disagreements = len(getattr(result, "disagreements", ()) or ())
     after.kept = len(getattr(result, "kept", ()) or ())
     after.added = len(getattr(result, "added", ()) or ())
@@ -927,4 +1029,8 @@ def rescore_saved(truth: Dict[str, Any], after: Dict[str, Any]
         out["model_alone"] = {
             "scores": {k: v.to_dict() for k, v in alone.scores.items()},
             "overall": alone.total.to_dict()}
+    if after.get("floor_record") is not None:
+        out["floor_alone"] = _as_blob(score_record(
+            truth, [LabTest.model_validate(t) for t in after["floor_record"]]))
+    out["unlinked"] = _as_blob(score_unlinked(truth, tests))
     return out

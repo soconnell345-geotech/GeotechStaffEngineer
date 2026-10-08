@@ -379,8 +379,8 @@ _REVIEW_HAND_BACK = """\
   from memory or estimated by eye. A box read off a whole page or another
   wide view (over about 300 pt) only says where to zoom: zoom with
   `render_region` on that view and box, and anchor on the zoom. The tool
-  looks at every mark it
-  placed by location on the marked copy; fix or leave out any it reports
+  looks at every mark it placed on the marked copy, however it was
+  anchored; fix or leave out any it reports
   misplaced before you hand the file over. Draft responses to a reviewer's
   comments as replies to their markups. Every comment you place is a DRAFT
   for a person to accept, edit or delete, and is attributed that way.

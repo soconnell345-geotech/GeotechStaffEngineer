@@ -333,12 +333,6 @@ OPENAI_TOOLS = [
                         "description": ("[[x,y,label], ...] numbered marker "
                                         "circles (same frame as bbox)."),
                     },
-                    "dpi": {
-                        "type": "integer",
-                        "description": ("Render resolution. Omit: the "
-                                        "largest image the vision model "
-                                        "reads."),
-                    },
                     "prompt": {
                         "type": "string",
                         "description": "What to extract from the region.",

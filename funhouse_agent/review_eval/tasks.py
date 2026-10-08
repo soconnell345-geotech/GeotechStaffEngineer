@@ -214,6 +214,23 @@ _MECK_ALIASES = {"20.00A": ["20.00A", "20.00 A", "20.00-A"],
                  "20.00B": ["20.00B", "20.00 B", "20.00-B", "20.00A/B",
                             "20.00A & B", "20.00A and B", "20.00A-B"]}
 
+#: Where a comment on sheet 10.31A's ramp-slope NOTE may point (check
+#: ``markups_point_at``), in displayed-page points (the sheet is stored with
+#: /Rotate 270). MEASURED ONCE, independently of planlens' quote anchoring:
+#: the page rendered by PyMuPDF alone at 8 px per point with annotations off,
+#: and the rows of ink in the notes column found by projection (2026-10-08);
+#: the second line of note 4 reads "RAMP SLOPE CANNOT EXCEED 8.33% MAX." and
+#: its ink spans x 60.1-225.5, y 224.5-230.3 (checked by eye on the render,
+#: and against the operator's arrow images of Foundry brief 4). Deliberately
+#: NOT targets: the section label "RAMP SLOPE UP TO 7.5% (8.3% MAX.)" (a
+#: different note, and a different figure). Whether the slope "B" row of the
+#: slope table ("SLOPE "B" = 7.5% (8.33% MAX)", displayed x 620-761, y
+#: 288-302) also counts is the owner's call; it is not a target until then.
+MECK_1031A_RAMP_NOTE = [
+    {"page": 0, "box": [60.1, 224.5, 225.5, 230.3],
+     "name": "note 4, 'RAMP SLOPE CANNOT EXCEED 8.33% MAX.'"},
+]
+
 # Coverage tasks on the long manuals (check type ``labelled_set``). Each item
 # counts only when the answer names it by its ID TOGETHER WITH ITS TITLE
 # (the title in the text the id owns, before the next id): a topic list with
@@ -834,9 +851,17 @@ OPEN_TASKS: List[Task] = [
         # for not containing "marked" — a check fault, not the agent's.
         checks=[{"type": "file_produced", "ext": ".pdf"},
                 {"type": "pdf_markups", "min": 1, "pages": [0],
-                 "text_contains": "8.33"}],
+                 "text_contains": "8.33"},
+                # Foundry brief 4: a comment on the section label passed the
+                # check above. Where the comment points is now scored.
+                {"type": "markups_point_at", "text_contains": "8.33",
+                 "targets": MECK_1031A_RAMP_NOTE, "pad": 4.0,
+                 "label": "the comment points at the ramp slope note"}],
         truth="A marked-up copy with at least one comment on page 1 that "
-              "mentions 8.33."),
+              "mentions 8.33 and is anchored on note 4's line 'RAMP SLOPE "
+              "CANNOT EXCEED 8.33% MAX.' (a callout's arrow tip, a note's "
+              "spot, or a box's or highlight's centre on that line or within "
+              "4 pt of it)."),
     Task(
         id="set-long-rare-tag",
         question=("This is a 24-sheet set whose lettering is drawn as lines. "

@@ -95,6 +95,20 @@ DEFAULT_MAX_PX = 2048
 #: An image edge below this is not a sensible cap (a typo, not a choice).
 _MIN_MAX_PX = 256
 
+#: ``1`` renders every image with both sides a whole number of
+#: :data:`PATCH_PX` patches (OFF by default — a hypothesis to measure, not a
+#: fix). GPT-5.4's pixel boxes came back stretched in y by 1.4-1.7 % and not
+#: at all in x, on four images whose height was not a multiple of 32 px and
+#: whose width (2,048) was; each stretch matched the height rounded up to
+#: whole 32 px patches (1344 / 1325 = 1.014; Foundry brief 4, part A). If the
+#: model works in a frame of whole patches, an image that already is one
+#: removes the stretch. Sol showed none either way. See
+#: :func:`align_to_patches` and module_work/LIVE_TEST_QUEUE.md.
+PATCH_ALIGN_ENV = "GEOTECH_VISION_PATCH_ALIGN"
+
+#: The patch a vision model of the GPT-5 family cuts an image into.
+PATCH_PX = 32
+
 #: ``robust`` (default, owner 2026-09-25: "robust first, then maybe we can
 #: dial back for efficiency later"): every image goes at the largest detail
 #: the model was measured to honour, and small lettering is tiled.
@@ -125,12 +139,35 @@ LEGIBLE_TEXT_PX = 12.0
 #: The lettering height a suggested zoom window aims for.
 TARGET_TEXT_PX = 16.0
 
-#: How every vision prompt asks for codes to be read.
+#: How every vision prompt asks for codes to be read: a best reading, with
+#: alternatives only where a character really cannot be told in THIS image.
+#: It used to ask for brackets wherever a character "could be another", and
+#: GPT-5.4 bracketed tags it could read — "[G/C]CE", "G[C/O]E" on zooms at
+#: 300-380 px, even "[G/C/O][C/E]E" at 70 px lettering — and an agent dropped
+#: two real tags on those hedges (Foundry brief 4, 2026-10-07). A bracket
+#: that remains is settled by a closer zoom (:data:`BRACKETED_NOTE`).
 READING_INSTRUCTION = (
-    "Read codes, tags and numbers character by character: where a character "
-    "could be another (G/Q/O/C/D, E/F, B/8, S/5, I/1/L, Z/2), write the "
-    "alternatives in brackets, e.g. A[B/8]C, and say the lettering is too "
-    "small to be sure, rather than picking one.")
+    "Read codes, tags and numbers character by character and give your best "
+    "reading of each. Only where a character truly cannot be told apart in "
+    "this image (the usual confusions are G/Q/O/C/D, E/F, B/8, S/5, I/1/L, "
+    "Z/2) write the alternatives in brackets, e.g. A[B/8]C; lettering you "
+    "can read, write plainly. If the lettering is too small to read "
+    "reliably, say so rather than guessing.")
+
+#: A bracketed reading, as :data:`READING_INSTRUCTION` asks for one.
+_BRACKETED = re.compile(r"\[[A-Za-z0-9](?:\s*/\s*[A-Za-z0-9])+\]")
+
+#: Said beside an answer that still holds a bracketed reading.
+BRACKETED_NOTE = (
+    "this answer has a bracketed reading (a character it could not settle). "
+    "Settle it with a closer zoom — render_region on a smaller box round "
+    "that thing — rather than dropping the thing or counting it on the "
+    "hedge.")
+
+
+def bracketed_note(text: Any) -> Optional[str]:
+    """:data:`BRACKETED_NOTE` when ``text`` holds a bracketed reading."""
+    return BRACKETED_NOTE if _BRACKETED.search(str(text or "")) else None
 
 #: The old location sentence: boxes on a 0-999 grid. Used only where the
 #: image's size is not known; a 0-999 answer is still understood everywhere.
@@ -354,9 +391,58 @@ def render_view(source, page: int = 0, bbox: Optional[Sequence[float]] = None,
                 break
             kwargs["dpi"] = float(info["dpi"]) * (cap - 1.0) / side
             data, info = doc.render(int(page), **kwargs)
+        if patch_align():
+            data, info = align_to_patches(data, info, cap)
         return data, info
     finally:
         doc.close()
+
+
+def patch_align() -> bool:
+    """Whether images are padded to whole :data:`PATCH_PX` patches
+    (``GEOTECH_VISION_PATCH_ALIGN``, OFF by default)."""
+    return str(os.environ.get(PATCH_ALIGN_ENV, "")).strip().lower() in (
+        "1", "true", "yes", "on")
+
+
+def align_to_patches(data: bytes, info: Dict[str, Any],
+                     cap: Optional[int] = None
+                     ) -> Tuple[bytes, Dict[str, Any]]:
+    """``(image, info)`` with both sides of the image rounded UP to whole
+    :data:`PATCH_PX` patches — at most 31 px of white paper added on the
+    right and at the bottom — and the ``clip`` (the view) widened by exactly
+    the points those pixels show, so a box converted with the view and the
+    size sent lands where it did before. ``info['patch_aligned']`` is the
+    ``[x, y]`` pixels added. Left as it was when it already fits, when the
+    padded side would pass ``cap``, or when the image cannot be decoded."""
+    import math
+    w, h = int(info["width_px"]), int(info["height_px"])
+    tw = int(math.ceil(w / PATCH_PX)) * PATCH_PX
+    th = int(math.ceil(h / PATCH_PX)) * PATCH_PX
+    if (tw, th) == (w, h) or (cap and max(tw, th) > cap):
+        return data, info
+    try:
+        import fitz
+        src = fitz.Pixmap(data)
+        if src.alpha:
+            src = fitz.Pixmap(src, 0)
+        if (src.width, src.height) != (w, h):
+            return data, info
+        canvas = fitz.Pixmap(src.colorspace, fitz.IRect(0, 0, tw, th), False)
+        canvas.clear_with(255)
+        canvas.copy(src, fitz.IRect(0, 0, w, h))
+        fmt = str(info.get("format") or "png").lower()
+        out = (canvas.tobytes("jpeg", jpg_quality=85) if fmt == "jpeg"
+               else canvas.tobytes("png"))
+    except Exception:                     # a padding that fails changes nothing
+        return data, info
+    x0, y0, x1, y1 = (float(v) for v in info["clip"])
+    aligned = dict(info)
+    aligned["clip"] = [x0, y0, x0 + (x1 - x0) * tw / w,
+                       y0 + (y1 - y0) * th / h]
+    aligned["width_px"], aligned["height_px"] = tw, th
+    aligned["patch_aligned"] = [tw - w, th - h]
+    return out, aligned
 
 
 def view_payload(info: Dict[str, Any], engine=None) -> Dict[str, Any]:
@@ -650,6 +736,73 @@ def zoom_pad(view: Sequence[float], box: Sequence[float],
     return max(ex, own), max(ey, own)
 
 
+#: How far, as a fraction of the SOURCE view's longer side, a zoom's answer
+#: may sit from the box it was aimed at before the result says the answer
+#: may be about another thing. Pixel boxes off a whole 11 x 17 sheet landed
+#: 1-6 pt from their tags (15-20 pt where a model boxed tag and leader
+#: together; Foundry brief 4, part A), so 2.5 % — 31 pt on that sheet — is
+#: past any of them. The zoom window itself is padded far wider
+#: (:data:`LOCATION_ERROR_FRAC`), and in brief 4 a 259 pt window aimed at a
+#: look-alike also held a tag 98 pt away, and the look answered about the
+#: tag (Sol r3, the tag ringed twice).
+AIM_TOLERANCE_FRAC = 0.025
+
+
+def aim_tolerance(view: Sequence[float]) -> float:
+    """Points a zoom's answer may sit from its aim, for a zoom on a box read
+    off ``view`` (:data:`AIM_TOLERANCE_FRAC`, at least
+    :data:`MIN_LOCATION_ERROR_PT`)."""
+    vx0, vy0, vx1, vy1 = (float(v) for v in view)
+    return max(MIN_LOCATION_ERROR_PT,
+               AIM_TOLERANCE_FRAC * max(vx1 - vx0, vy1 - vy0))
+
+
+#: A box as an answer reads AFTER :func:`boxes_to_grid`: four numbers in
+#: square brackets, each on the 0-999 grid.
+_GRID_BOX_RE = re.compile(
+    rf"\[\s*({_NUM})\s*,\s*({_NUM})\s*,\s*({_NUM})\s*,\s*({_NUM})\s*\]")
+
+#: A box this big on the 0-999 grid (either side) is a region, not a thing.
+REGION_GRID = 300
+
+
+def _label_text(text: str) -> str:
+    """The words before a box, cleaned for a label: markdown, list numbers,
+    table bars and a trailing "at"/"px=" dropped."""
+    t = re.sub(r"[*`|#>]", " ", text)
+    t = re.sub(r"^\s*(?:[-•]|\d+[.)])\s+", "", t)
+    t = re.sub(r"\b(?:px|box|at|in|bbox)\s*[=:]?\s*$", "", t.strip(),
+               flags=re.IGNORECASE)
+    t = re.sub(r"\s+", " ", t).strip(" ,;:-–—()")
+    return t[:60]
+
+
+def answer_boxes(text: str, view: Sequence[float]
+                 ) -> List[Tuple[str, Tuple[float, float, float, float]]]:
+    """``(label, page box)`` for every thing-sized 0-999 box in an answer
+    on ``view`` — the label is the words just before the box on its line
+    (or the line's words, when none) — in PDF points. Region-sized boxes
+    (:data:`REGION_GRID`) and anything that is not a box are left out."""
+    out = []
+    for line in str(text or "").splitlines():
+        prev = 0
+        for m in _GRID_BOX_RE.finditer(line):
+            vals = [float(v) for v in m.groups()]
+            before, prev = line[prev:m.start()], m.end()
+            x0, y0, x1, y1 = vals
+            if not (all(0 <= v <= 999 for v in vals) and x1 > x0 and y1 > y0):
+                continue
+            if x1 - x0 > REGION_GRID or y1 - y0 > REGION_GRID:
+                continue
+            label = _label_text(before) or _label_text(
+                _GRID_BOX_RE.sub(" ", line))
+            try:
+                out.append((label, image_box_to_page(view, vals)))
+            except ValueError:
+                continue
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Grounding a vision call (GEOTECH_VISION_TEXT_CONTEXT / _STRUCTURED)
 # ---------------------------------------------------------------------------
@@ -887,4 +1040,7 @@ __all__ = ["BUDGET_ENV", "DETAIL_ENV", "CHART_BUDGET_ENV", "POLICY_ENV",
            "location_error", "precision_note", "zoom_pad", "zoom_window",
            "TEXT_CONTEXT_CHARS", "page_lines", "text_context",
            "LOCATED_INSTRUCTION", "LOCATED_PX_INSTRUCTION", "with_locations",
-           "split_located"]
+           "split_located", "BRACKETED_NOTE", "bracketed_note",
+           "PATCH_ALIGN_ENV", "PATCH_PX", "patch_align", "align_to_patches",
+           "AIM_TOLERANCE_FRAC", "aim_tolerance", "answer_boxes",
+           "REGION_GRID"]

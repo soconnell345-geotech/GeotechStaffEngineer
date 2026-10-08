@@ -723,6 +723,9 @@ class TestTheFloor:
         # the floor scored alone is what the merge kept: nothing was lost
         assert again["floor_alone"]["overall"]["found"] <= \
             again["overall"]["found"]
+        # ... and every run scores it, not only a rescore (brief 4: the
+        # RESULTS could not say whether the floor ever held the index)
+        assert blob["floor_alone"] == again["floor_alone"]
 
     def test_the_result_serialises_both_voters_and_the_merge(self, imperial):
         import json

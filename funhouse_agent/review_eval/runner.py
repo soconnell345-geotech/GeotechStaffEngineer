@@ -38,6 +38,7 @@ restart RESUMES: a finished run is not paid for twice, a failed one is retried.
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import time
@@ -262,6 +263,14 @@ def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
                           tool_calls=act["tool_calls"], activity=records)
         for c in task.all_checks()]
     result["score"] = _checks.score(result["checks"])
+    # What the run ran on: the code (versions say too little for a test
+    # wheel) and what the vision probe measured for the model.
+    result["versions"] = _versions()
+    result["commits"] = _commits()
+    try:
+        result["vision_profile"] = _vision_profile(model)
+    except Exception as exc:  # noqa: BLE001 - a record, never a failure
+        result["vision_profile"] = {"error": f"{type(exc).__name__}: {exc}"}
     # The uploads are copies of the suite's documents: once scored they are
     # not worth mirroring once per arm and task.
     for p in staged:
@@ -338,6 +347,77 @@ def _versions() -> Dict[str, str]:
     return out
 
 
+#: Where an operator can name the commit a wheel was built from, when the
+#: running copy cannot say (a test wheel installed from a file carries no
+#: git record): the AI FDE's runner knows which commit it built.
+COMMIT_ENVS = {"geotech-staff-engineer": "GEOTECH_APP_COMMIT",
+               "planlens": "PLANLENS_COMMIT"}
+
+
+@functools.lru_cache(maxsize=None)
+def _commit(dist: str, package: str) -> Optional[str]:
+    """The commit ``dist`` runs from: the operator's own word
+    (:data:`COMMIT_ENVS`), else the source checkout it is imported from
+    (``git rev-parse``, ``+dirty`` when tracked files differ), else the
+    install's PEP 610 record of a VCS install; ``None`` when nothing says.
+    Brief 4 (2026-10-07): run.json named versions but not the commit, and
+    test wheels share a version across builds."""
+    env = os.environ.get(COMMIT_ENVS.get(dist, ""), "").strip()
+    if env:
+        return env
+    try:
+        import importlib
+        mod = importlib.import_module(package)
+        here = os.path.dirname(os.path.abspath(
+            getattr(mod, "__file__", None) or next(iter(mod.__path__))))
+        root = os.path.dirname(here)
+        if os.path.exists(os.path.join(root, ".git")):
+            import subprocess
+            head = subprocess.run(
+                ["git", "-C", root, "rev-parse", "--short=12", "HEAD"],
+                capture_output=True, text=True, timeout=10)
+            if head.returncode == 0 and head.stdout.strip():
+                dirty = subprocess.run(
+                    ["git", "-C", root, "status", "--porcelain",
+                     "--untracked-files=no"],
+                    capture_output=True, text=True, timeout=10)
+                return head.stdout.strip() + (
+                    "+dirty" if dirty.returncode == 0
+                    and dirty.stdout.strip() else "")
+    except Exception:  # noqa: BLE001 - a record, never a failure
+        pass
+    try:
+        from importlib.metadata import distribution
+        raw = distribution(dist).read_text("direct_url.json")
+        info = json.loads(raw) if raw else {}
+        return (info.get("vcs_info") or {}).get("commit_id") or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _commits() -> Dict[str, Optional[str]]:
+    """The app's and planlens' commits (:func:`_commit`)."""
+    return {"app": _commit("geotech-staff-engineer", "funhouse_agent"),
+            "planlens": _commit("planlens", "planlens")}
+
+
+def _vision_profile(model) -> Dict[str, Any]:
+    """What the vision probe measured for this run's model, as recorded in
+    this process — never a new probe. Brief 4: run.json did not say which
+    image budget and host edge a run used."""
+    from funhouse_agent import vision_probe
+    if not vision_probe.enabled():
+        return {"probe": "off"}
+    prof = vision_probe.cached_profile(model)
+    if prof is not None:
+        return {"summary": prof.summary(), **prof.to_dict()}
+    others = vision_probe.cached_profiles()
+    if others:
+        return {"summary": "; ".join(p.summary() for p in others),
+                "profiles": [p.to_dict() for p in others]}
+    return {"probe": "not run in this process"}
+
+
 def _mark(run: Optional[Dict[str, Any]]) -> str:
     if run is None:
         return "·"
@@ -359,6 +439,10 @@ def summarize(runs: Dict[str, Dict[str, Dict[str, Any]]], arms: Sequence[str],
                  f"tasks {len(tasks)} · arms {', '.join(arms)}")
     lines.append("Versions: " + ", ".join(
         f"{k} {v}" for k, v in (meta.get("versions") or {}).items()))
+    commits = {k: v for k, v in (meta.get("commits") or {}).items() if v}
+    if commits:
+        lines.append("Commits: " + ", ".join(
+            f"{k} {v}" for k, v in commits.items()))
     lines.append("")
     # "failed calls" are model calls that raised INSIDE a run the agent went
     # on to finish (a dropped connection, a rate limit on a vision call); a
@@ -534,7 +618,7 @@ def score_review_suite(model: Any = None, *, prompter: Any = None,
     runs: Dict[str, Dict[str, Dict[str, Any]]] = {}
     meta = {"model": model_name if prompter is not None else
             getattr(model, "model", type(model).__name__),
-            "versions": _versions()}
+            "versions": _versions(), "commits": _commits()}
 
     mirror_warned: set = set()
 
