@@ -23,7 +23,18 @@ detailed Phase-E history; this file supersedes it.
 - **Tags:**
   - planlens `v0.13.0` (f92541d), 1,686 tests on the clean tree;
   - geotech-references `v1.4.1` (c53e587), 5,833 tests;
-  - app `v5.33.0`: gate on the exact tree recorded in the 5.33.0 commit.
+  - app `v5.33.0` on branch `release/5.33.0` (3ec1dc4). **Release gate on the exact tree, with planlens 0.13.0: 14,624 passed / 34 skipped / 0 failed.**
+
+    | Chunk | Result |
+    |---|---|
+    | analysis modules | 1,555, and 1,708 with 24 skipped |
+    | fem2d | 274 + 135 = 409 |
+    | report_ingest + foundry harness | 1,505 |
+    | webapp + live_smoke harness + validation_examples | 822 |
+    | funhouse_agent | 2,792 with 10 skipped |
+    | geotech-references | 5,833 |
+
+    The wheel was checked: `planlens>=0.13` and `geotech-references>=1.4.1`; the new modules are present; no `module_work`, `raw/` or `tinyapps/reference` files. The release wheels are in `../foundry_handoff/`.
 - **Unverified live on GPT:**
   - vision on gpt-5.1 (768 px images);
   - latency against the new per-kind caps;
