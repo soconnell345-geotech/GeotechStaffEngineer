@@ -6,6 +6,7 @@ Tier 2: Requires SALib (integration tests with Ishigami function)
 """
 
 import json
+import math
 import numpy as np
 import pytest
 
@@ -405,3 +406,83 @@ class TestFoundryIntegration:
         assert "error" not in result
         assert "mu_star" in result
         assert len(result["mu_star"]) == 3
+
+
+# =====================================================================
+# One-call analyses (live smoke G9, 2026-10-08): the model is evaluated
+# here, only the indices come back. Ishigami (a=7, b=0.1, uniform on
+# [-pi, pi]^3) analytic indices: S1 = 0.3139, 0.4424, 0; ST = 0.5576,
+# 0.4424, 0.2437 (Saltelli et al. 2008, Global Sensitivity Analysis).
+# =====================================================================
+
+_ISHIGAMI_EXPR = "sin(x1) + 7*sin(x2)**2 + 0.1*x3**4*sin(x1)"
+_PI_BOUNDS = [[-math.pi, math.pi]] * 3
+
+
+@requires_salib
+class TestOneCallAnalyses:
+
+    def test_sobol_expression_reproduces_ishigami(self):
+        from salib_agent import sobol_analysis
+        r = sobol_analysis(["x1", "x2", "x3"], _PI_BOUNDS,
+                           expression=_ISHIGAMI_EXPR, n_samples=1024)
+        assert r.S1 == pytest.approx([0.3139, 0.4424, 0.0], abs=0.05)
+        assert r.ST == pytest.approx([0.5576, 0.4424, 0.2437], abs=0.05)
+        d = r.to_dict()
+        assert d["n_samples"] == 1024 * (3 + 2)   # no second order
+        assert "sample_matrix" not in d
+        assert d["output_mean"] == pytest.approx(3.5, abs=0.2)  # E[Y] = a/2
+
+    def test_sobol_callable_linear_model(self):
+        """Y = 2 x1 + x2 on [0,1]^2: Var = 4/12 + 1/12 -> S1 = 0.8, 0.2."""
+        from salib_agent import sobol_analysis
+        r = sobol_analysis(["x1", "x2"], [[0, 1], [0, 1]],
+                           model=lambda v: 2 * v["x1"] + v["x2"],
+                           n_samples=512)
+        assert r.S1 == pytest.approx([0.8, 0.2], abs=0.03)
+        assert r.ST == pytest.approx([0.8, 0.2], abs=0.03)
+
+    def test_morris_expression_ranks_ishigami(self):
+        from salib_agent import morris_analysis
+        r = morris_analysis(["x1", "x2", "x3"], _PI_BOUNDS,
+                            expression=_ISHIGAMI_EXPR, n_trajectories=50)
+        d = r.to_dict()
+        assert len(d["mu_star"]) == 3
+        assert "sample_matrix" not in d
+        assert all(m > 0 for m in d["mu_star"])
+
+    def test_exactly_one_model_source(self):
+        from salib_agent import sobol_analysis
+        with pytest.raises(ValueError, match="exactly one"):
+            sobol_analysis(["a", "b"], [[0, 1], [0, 1]])
+        with pytest.raises(ValueError, match="exactly one"):
+            sobol_analysis(["a", "b"], [[0, 1], [0, 1]],
+                           model=lambda v: 0.0, expression="a+b")
+
+    def test_scientific_notation_accepted(self):
+        from salib_agent import compile_expression
+        f = compile_expression("1e-3*a + 2.5E2*b", ["a", "b"])
+        assert f({"a": 1000.0, "b": 0.004}) == pytest.approx(2.0)
+
+    def test_unsafe_expression_refused(self):
+        from salib_agent import sobol_analysis
+        for bad in ("__import__('os')", "a.__class__", "[a for a in b]",
+                    "open('x')", "'a'*3"):
+            with pytest.raises(ValueError):
+                sobol_analysis(["a", "b"], [[0, 1], [0, 1]], expression=bad)
+
+    def test_non_finite_output_is_named(self):
+        from salib_agent import sobol_analysis
+        with pytest.raises(ValueError, match="non-finite"):
+            sobol_analysis(["a", "b"], [[0, 1], [0, 1]],
+                           expression="a * 1e308 * 1e10 + b", n_samples=64)
+        # A model that raises is reported with the point it failed at.
+        with pytest.raises(ValueError, match="failed at sample"):
+            sobol_analysis(["a", "b"], [[0, 1], [0, 1]],
+                           expression="log(a - 0.5) + b", n_samples=64)
+
+    def test_evaluation_limit(self):
+        from salib_agent import sobol_analysis
+        with pytest.raises(ValueError, match="model evaluations"):
+            sobol_analysis(["a", "b"], [[0, 1], [0, 1]], expression="a+b",
+                           n_samples=1024, max_evaluations=100)

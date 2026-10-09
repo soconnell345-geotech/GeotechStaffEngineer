@@ -28,7 +28,14 @@ class SettlementResult:
     consolidation_layers : list of dict, optional
         Per-layer consolidation settlement breakdown.
     time_settlement_curve : list of tuple, optional
-        (time_years, settlement_m) pairs for plotting.
+        (time_years, settlement_m) pairs for plotting; settlement is
+        immediate + primary consolidation at that time (Terzaghi 1-D).
+    cv : float, optional
+        Coefficient of consolidation used for the time curve (m^2/year).
+    Hdr : float, optional
+        Drainage path length used for the time curve (m).
+    t50_years, t90_years : float, optional
+        Times to 50 % and 90 % average degree of consolidation (years).
     """
     immediate: float = 0.0
     consolidation: float = 0.0
@@ -39,6 +46,10 @@ class SettlementResult:
     stress_method: str = ""
     consolidation_layers: Optional[List[Dict[str, Any]]] = None
     time_settlement_curve: Optional[List[Tuple[float, float]]] = None
+    cv: Optional[float] = None
+    Hdr: Optional[float] = None
+    t50_years: Optional[float] = None
+    t90_years: Optional[float] = None
 
     def summary(self) -> str:
         """Return a formatted summary string.
@@ -93,7 +104,7 @@ class SettlementResult:
         dict
             All result fields as a flat dictionary.
         """
-        return {
+        d = {
             "immediate_mm": round(self.immediate * 1000, 2),
             "consolidation_mm": round(self.consolidation * 1000, 2),
             "secondary_mm": round(self.secondary * 1000, 2),
@@ -101,6 +112,33 @@ class SettlementResult:
             "immediate_method": self.immediate_method,
             "stress_method": self.stress_method,
         }
+        if self.consolidation_layers:
+            d["consolidation_layers"] = self.consolidation_layers
+        # The time curve (live smoke G6, SE-4: computed, documented, and
+        # dropped here, so t90 was worked out by hand).
+        if self.time_settlement_curve is not None:
+            if self.cv is not None:
+                d["cv_m2_per_year"] = self.cv
+            if self.Hdr is not None:
+                d["Hdr_m"] = round(self.Hdr, 4)
+            if self.t50_years is not None:
+                d["t50_years"] = round(self.t50_years, 4)
+            if self.t90_years is not None:
+                d["t90_years"] = round(self.t90_years, 4)
+            points = []
+            for t, s in self.time_settlement_curve:
+                p = {"time_years": round(t, 4),
+                     "settlement_mm": round(s * 1000, 2)}
+                if self.consolidation > 0:
+                    u = (s - self.immediate) / self.consolidation * 100.0
+                    p["U_percent"] = round(min(max(u, 0.0), 100.0), 1)
+                points.append(p)
+            d["time_settlement_curve"] = points
+            d["time_settlement_basis"] = (
+                "settlement_mm = immediate + U(t) x primary consolidation "
+                "(Terzaghi 1-D average degree of consolidation, time from "
+                "load application; secondary compression not included)")
+        return d
 
     def plot_time_settlement(self, ax=None):
         """Plot settlement vs time curve.

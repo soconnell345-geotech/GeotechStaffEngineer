@@ -107,6 +107,7 @@ def analyze_site_response(
     motion=None,
     accel_history=None,
     dt=None,
+    target_pga_g=None,
     gwt_depth=0.0,
     bedrock_Vs=760.0,
     bedrock_density=2.4,
@@ -136,6 +137,9 @@ def analyze_site_response(
         Custom acceleration time history (g).
     dt : float, optional
         Time step for custom motion (s).
+    target_pga_g : float, optional
+        Scale the motion so its PGA equals this value (g) before the
+        analysis (built-in motions have fixed PGAs). Default None.
     gwt_depth : float
         Groundwater table depth from surface (m). Default 0.0 (at surface).
     bedrock_Vs : float
@@ -165,10 +169,12 @@ def analyze_site_response(
         layers, gwt_depth, bedrock_Vs, bedrock_density,
         damping, scale_factor, n_elem_per_layer)
 
-    from opensees_agent.ground_motions import validate_motion_input
-    accel_g, dt_motion = validate_motion_input(motion, accel_history, dt)
+    from opensees_agent.ground_motions import (
+        validate_motion_input, motion_label)
+    accel_g, dt_motion = validate_motion_input(
+        motion, accel_history, dt, target_pga_g=target_pga_g)
 
-    motion_name = motion if motion else "custom"
+    motion_name = motion_label(motion, target_pga_g)
 
     from opensees_agent.opensees_utils import fresh_model
     ops = fresh_model(ndm=2, ndf=3)

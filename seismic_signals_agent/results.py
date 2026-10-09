@@ -13,6 +13,12 @@ from typing import Dict, Any, List
 import numpy as np
 
 
+def _pct_label(p: float) -> str:
+    """'50' for 50.0, '84.1' for 84.1 — a JSON key per percentile."""
+    p = float(p)
+    return str(int(p)) if p.is_integer() else f"{p:g}"
+
+
 @dataclass
 class ResponseSpectrumResult:
     """Results from Nigam-Jennings response spectrum analysis.
@@ -80,7 +86,7 @@ class ResponseSpectrumResult:
         return "\n".join(lines)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "motion_name": self.motion_name,
             "n_points": self.n_points,
             "duration_s": round(self.duration_s, 2),
@@ -90,6 +96,15 @@ class ResponseSpectrumResult:
             "pgd_m": round(self.pgd_m, 6),
             "damping": self.damping,
         }
+        # The spectrum itself (live smoke G6: the documented Sa_max_g /
+        # T_peak_s / periods_s / Sa_g were never returned).
+        if len(self.Sa_g) > 0:
+            idx = int(np.argmax(self.Sa_g))
+            d["Sa_max_g"] = round(float(self.Sa_g[idx]), 5)
+            d["T_peak_s"] = round(float(self.periods[idx]), 5)
+            d["periods_s"] = [round(float(t), 5) for t in self.periods]
+            d["Sa_g"] = [round(float(s), 5) for s in self.Sa_g]
+        return d
 
     def plot_spectrum(self, ax=None, show=True, **kwargs):
         """Plot spectral acceleration vs period (log-log)."""
@@ -312,6 +327,14 @@ class RotDSpectrumResult:
         RotD50 — median orientation spectral acceleration (g).
     rotd100 : numpy.ndarray
         RotD100 — maximum orientation spectral acceleration (g).
+    spectra : dict
+        {percentile: Sa array (g)} for EVERY percentile requested
+        (rotd0/50/100 above are the three usual ones).
+    engine : str
+        "pyrotd", or "numpy" when pyrotd could not be imported and the
+        ``rotd_native`` implementation of the same procedure was used.
+    engine_note : str
+        Why the numpy engine was used (the real pyrotd import error).
     """
     motion_a_name: str = ""
     motion_b_name: str = ""
@@ -325,6 +348,9 @@ class RotDSpectrumResult:
     rotd0: np.ndarray = field(default_factory=lambda: np.array([]))
     rotd50: np.ndarray = field(default_factory=lambda: np.array([]))
     rotd100: np.ndarray = field(default_factory=lambda: np.array([]))
+    spectra: Dict[float, np.ndarray] = field(default_factory=dict)
+    engine: str = "pyrotd"
+    engine_note: str = ""
 
     def summary(self) -> str:
         lines = [
@@ -362,6 +388,21 @@ class RotDSpectrumResult:
             d["peak_rotd50_g"] = round(float(np.max(self.rotd50)), 4)
         if len(self.rotd100) > 0:
             d["peak_rotd100_g"] = round(float(np.max(self.rotd100)), 4)
+        # The spectra themselves (live smoke G6: documented, never returned).
+        spectra = dict(self.spectra)
+        for p, arr in ((0.0, self.rotd0), (50.0, self.rotd50),
+                       (100.0, self.rotd100)):
+            if p not in spectra and len(arr) > 0:
+                spectra[p] = arr
+        if spectra and len(self.periods) > 0:
+            d["periods_s"] = [round(float(t), 5) for t in self.periods]
+            d["percentiles"] = [_pct_label(p) for p in sorted(spectra)]
+            d["spectra"] = {
+                _pct_label(p): [round(float(s), 5) for s in spectra[p]]
+                for p in sorted(spectra)}
+        d["engine"] = self.engine
+        if self.engine_note:
+            d["engine_note"] = self.engine_note
         return d
 
     def plot_rotd(self, ax=None, show=True, **kwargs):
@@ -489,6 +530,8 @@ class SignalProcessingResult:
             "dt_s": round(self.dt_s, 6),
             "bandpass_hz": self.bandpass_hz if self.bandpass_hz else None,
             "baseline_order": self.baseline_order if self.baseline_order >= 0 else None,
+            "filter_applied": bool(self.bandpass_hz),
+            "baseline_corrected": self.baseline_order >= 0,
             "pga_original_g": round(self.pga_original_g, 4),
             "pga_processed_g": round(self.pga_processed_g, 4),
             "pgv_processed_m_per_s": round(self.pgv_processed_m_per_s, 4),

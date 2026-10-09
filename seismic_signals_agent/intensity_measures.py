@@ -35,6 +35,7 @@ def analyze_intensity_measures(
     motion=None,
     accel_history=None,
     dt=None,
+    target_pga_g=None,
     sig_dur_start=0.05,
     sig_dur_end=0.95,
 ) -> IntensityMeasuresResult:
@@ -48,6 +49,9 @@ def analyze_intensity_measures(
         Custom acceleration time history (g).
     dt : float, optional
         Time step for custom motion (s).
+    target_pga_g : float, optional
+        Scale the motion so its PGA equals this value (g) before the
+        analysis (built-in motions have fixed PGAs). Default None.
     sig_dur_start : float, optional
         Husid start fraction for significant duration. Default: 0.05.
     sig_dur_end : float, optional
@@ -61,14 +65,13 @@ def analyze_intensity_measures(
     _validate_intensity_inputs(sig_dur_start, sig_dur_end)
 
     # Resolve ground motion
-    from opensees_agent.ground_motions import validate_motion_input
-    accel_g, dt_val = validate_motion_input(motion, accel_history, dt)
+    from opensees_agent.ground_motions import (
+        validate_motion_input, motion_label)
+    accel_g, dt_val = validate_motion_input(
+        motion, accel_history, dt, target_pga_g=target_pga_g)
 
     # Determine motion name
-    if motion is not None:
-        motion_name = motion
-    else:
-        motion_name = "custom"
+    motion_name = motion_label(motion, target_pga_g)
 
     # Import eqsig and create AccSignal (convert g -> m/s²)
     eqsig = import_eqsig()

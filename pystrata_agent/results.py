@@ -8,7 +8,7 @@ Provides:
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 import numpy as np
 
@@ -33,8 +33,9 @@ class EQLSiteResponseResult:
         Peak ground acceleration at surface (g).
     amplification_factor : float
         PGA amplification (surface / input).
-    n_iterations : int
-        Number of EQL iterations to converge (0 for linear).
+    n_iterations : int or None
+        Number of EQL iterations run (wave solves counted; 0 for linear),
+        or None when it could not be counted.
     converged : bool
         Whether EQL iterations converged.
     time : numpy.ndarray
@@ -65,7 +66,7 @@ class EQLSiteResponseResult:
     pga_input_g: float = 0.0
     pga_surface_g: float = 0.0
     amplification_factor: float = 0.0
-    n_iterations: int = 0
+    n_iterations: Optional[int] = 0
     converged: bool = True
     time: np.ndarray = field(default_factory=lambda: np.array([]))
     surface_accel_g: np.ndarray = field(default_factory=lambda: np.array([]))

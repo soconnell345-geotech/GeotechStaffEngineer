@@ -153,25 +153,56 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     # ── Section 2: Neutral Plane Location ──────────────────────────
     np_items = []
 
-    np_items.append(CalcStep(
-        title="Force Equilibrium (Neutral Plane)",
-        equation=(
+    np_method = getattr(r, "neutral_plane_method", "force_equilibrium")
+    np_basis = getattr(r, "neutral_plane_basis", "")
+    np_warnings = list(getattr(r, "warnings", []) or [])
+    if np_method == "settlement_compatibility":
+        np_title = "Settlement Compatibility (Neutral Plane)"
+        np_equation = (
+            "Load and resistance curves do not intersect "
+            "(R_toe > Q_dead + W_pile + whole shaft as drag).\n"
+            "At the neutral plane depth z_np: s_soil(z_np) = s_pile(z_np)"
+        )
+        np_substitution = (
+            "Soil settlement profile = pile settlement (toe penetration "
+            "under the toe force delivered + pile compression below z_np)"
+        )
+        np_reference = "UFC 3-220-20 Fig 6-19 and \u00a76-7.4 step 5"
+    elif np_method == "none":
+        np_title = "Neutral Plane: None (pile overloaded)"
+        np_equation = "Q_dead > R_toe + R_shaft(0\u2192L)"
+        np_substitution = "Dead load exceeds the nominal geotechnical resistance"
+        np_reference = "UFC 3-220-20 \u00a76-7.4 step 5 (limiting case)"
+    else:
+        np_title = "Force Equilibrium (Neutral Plane)"
+        np_equation = (
             "At the neutral plane depth z_np:\n"
             "Q_dead + W_pile(0\u2192z_np) + Dragload(0\u2192z_np) "
             "= R_toe + R_shaft(z_np\u2192L)"
-        ),
-        substitution=(
+        )
+        np_substitution = (
             f"Load from top at NP = Resistance from tip at NP\n"
             f"Q_dead + pile weight + neg. friction = toe + pos. friction"
-        ),
+        )
+        np_reference = ("Fellenius (2004), unified neutral plane method; "
+                        "UFC 3-220-20 \u00a76-7.4 steps 3-5")
+    np_notes = (
+        f"NP at {r.neutral_plane_depth:.2f} m "
+        f"({r.neutral_plane_depth / r.pile_length * 100:.0f}% of pile length)"
+    )
+    if np_basis:
+        np_notes += f". Basis: {np_basis}"
+    for w in np_warnings:
+        np_notes += f"\nWARNING: {w}"
+    np_items.append(CalcStep(
+        title=np_title,
+        equation=np_equation,
+        substitution=np_substitution,
         result_name="z_np",
         result_value=f"{r.neutral_plane_depth:.2f}",
         result_unit="m",
-        reference="Fellenius (2004), unified neutral plane method",
-        notes=(
-            f"NP at {r.neutral_plane_depth:.2f} m "
-            f"({r.neutral_plane_depth / r.pile_length * 100:.0f}% of pile length)"
-        ),
+        reference=np_reference,
+        notes=np_notes,
     ))
 
     # Load components at NP

@@ -784,3 +784,43 @@ class TestSiteResponseIntegration:
         assert result.pga_surface_g > 0
         d = result.to_dict()
         json.dumps(d)
+
+
+# ---------------------------------------------------------------------------
+# G19 (live smoke PST-1, 2026-10-08): built-in motions scaled to a target PGA
+# ---------------------------------------------------------------------------
+
+class TestTargetPGA:
+
+    def test_builtin_motion_scaled_to_target(self):
+        base, dt0 = validate_motion_input(motion="synthetic_pulse")
+        scaled, dt1 = validate_motion_input(motion="synthetic_pulse",
+                                            target_pga_g=0.2)
+        assert dt1 == dt0
+        assert np.max(np.abs(base)) == pytest.approx(0.30, rel=1e-3)
+        assert np.max(np.abs(scaled)) == pytest.approx(0.20, rel=1e-12)
+        # Linear scaling: same shape, every sample by 0.2 / PGA.
+        np.testing.assert_allclose(
+            scaled, base * (0.2 / np.max(np.abs(base))), rtol=1e-12)
+        # The cached built-in record itself is not changed.
+        again, _ = validate_motion_input(motion="synthetic_pulse")
+        np.testing.assert_array_equal(again, base)
+
+    def test_custom_record_scaled(self):
+        acc = 0.05 * np.sin(np.linspace(0, 20, 400))
+        out, dt = validate_motion_input(accel_history=acc, dt=0.01,
+                                        target_pga_g=0.4)
+        assert np.max(np.abs(out)) == pytest.approx(0.4)
+
+    def test_bad_target_refused(self):
+        for bad in (0.0, -0.1, float("nan")):
+            with pytest.raises(ValueError, match="target_pga_g"):
+                validate_motion_input(motion="synthetic_pulse",
+                                      target_pga_g=bad)
+
+    def test_label(self):
+        from opensees_agent.ground_motions import motion_label
+        assert motion_label("synthetic_pulse") == "synthetic_pulse"
+        assert motion_label("synthetic_pulse", 0.2) == \
+            "synthetic_pulse scaled to PGA 0.2 g"
+        assert motion_label(None, None) == "custom"

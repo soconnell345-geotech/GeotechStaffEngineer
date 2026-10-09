@@ -180,7 +180,8 @@ def get_motion(name):
     return accel, dt
 
 
-def validate_motion_input(motion=None, accel_history=None, dt=None):
+def validate_motion_input(motion=None, accel_history=None, dt=None,
+                          target_pga_g=None):
     """Validate and resolve ground motion input.
 
     Either ``motion`` (a built-in name) or ``accel_history`` + ``dt``
@@ -194,6 +195,11 @@ def validate_motion_input(motion=None, accel_history=None, dt=None):
         Custom acceleration history (g).
     dt : float, optional
         Time step for custom motion (s).
+    target_pga_g : float, optional
+        Scale the record linearly so its peak |a| equals this PGA (g). The
+        built-in motions have fixed PGAs (synthetic_pulse 0.30 g,
+        synthetic_long 0.15 g); live smoke G19 (PST-1) needed 0.2 g. Linear
+        amplitude scaling keeps the frequency content and duration.
 
     Returns
     -------
@@ -209,7 +215,7 @@ def validate_motion_input(motion=None, accel_history=None, dt=None):
     """
     if motion is not None:
         accel, dt_out = get_motion(motion)
-        return accel, dt_out
+        return scale_to_pga(accel, target_pga_g), dt_out
 
     if accel_history is not None:
         if dt is None or dt <= 0:
@@ -217,9 +223,35 @@ def validate_motion_input(motion=None, accel_history=None, dt=None):
         accel = np.asarray(accel_history, dtype=float)
         if len(accel) < 10:
             raise ValueError("accel_history must have at least 10 points")
-        return accel, dt
+        return scale_to_pga(accel, target_pga_g), dt
 
     raise ValueError(
         "Must provide either 'motion' (built-in name) or "
         "'accel_history' + 'dt' (custom record)"
     )
+
+
+def scale_to_pga(accel_g, target_pga_g=None):
+    """Return a copy of ``accel_g`` scaled so max |a| = ``target_pga_g``.
+
+    None returns the record unchanged. Raises on a non-positive target or a
+    record with no motion.
+    """
+    accel_g = np.asarray(accel_g, dtype=float)
+    if target_pga_g is None:
+        return accel_g
+    target = float(target_pga_g)
+    if not np.isfinite(target) or target <= 0:
+        raise ValueError(f"target_pga_g must be > 0 (g), got {target_pga_g}")
+    peak = float(np.max(np.abs(accel_g)))
+    if peak <= 0:
+        raise ValueError("cannot scale a record whose PGA is zero")
+    return accel_g * (target / peak)
+
+
+def motion_label(motion=None, target_pga_g=None):
+    """Name for a resolved motion, noting any PGA scaling."""
+    name = motion if motion else "custom"
+    if target_pga_g is not None:
+        name = f"{name} scaled to PGA {float(target_pga_g):g} g"
+    return name

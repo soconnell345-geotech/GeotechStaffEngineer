@@ -7,7 +7,9 @@ seepage solver, and coupled consolidation.
 Analytical validations:
 - Hydrostatic: u = gamma_w * depth_below_gwt
 - 1D Darcy flow: v = k * dh/dx (constant for uniform head gradient)
-- Terzaghi consolidation: settlement increases, pp decreases over time
+- Staggered consolidation keeps a hydrostatic field (no excess is generated
+  by the load in that scheme); the Terzaghi transient itself is validated in
+  test_consolidation_increment.py (monolithic scheme)
 """
 
 import math
@@ -488,7 +490,7 @@ class TestSolveConsolidation:
 
         return nodes, elements, mat, gamma, bc_nodes, k, head_bcs, pp_0
 
-    def test_settlement_increases_over_time(self):
+    def test_settlement_constant_without_excess(self):
         from fem2d.porewater import solve_consolidation
 
         nodes, elements, mat, gamma, bc_nodes, k, head_bcs, pp_0 = \
@@ -500,14 +502,14 @@ class TestSolveConsolidation:
             k=k, head_bcs=head_bcs, time_steps=times,
             pore_pressures_0=pp_0)
 
-        # Settlement magnitude should generally increase
-        # (more negative = more settlement)
+        # The staggered scheme is drained at every step and the initial
+        # field is hydrostatic (equilibrium): the settlement does not change
+        # with time. (It used to grow because the hydrostatic pressure
+        # "dissipated" — G6, 2026-10-09.)
         settlements = result['settlements']
-        # Later settlements should be at least as large as early ones
-        # (settlement becomes more negative over time)
-        assert settlements[-1] <= settlements[0] or abs(settlements[-1]) >= abs(settlements[0]) * 0.99
+        assert settlements[-1] == pytest.approx(settlements[0], rel=1e-9)
 
-    def test_pore_pressure_decreases_over_time(self):
+    def test_hydrostatic_field_kept(self):
         from fem2d.porewater import solve_consolidation
 
         nodes, elements, mat, gamma, bc_nodes, k, head_bcs, pp_0 = \
@@ -520,10 +522,10 @@ class TestSolveConsolidation:
             pore_pressures_0=pp_0)
 
         pp_hist = result['pore_pressures']
-        # Max pore pressure should decrease over time
-        max_pp_early = np.max(pp_hist[1])
-        max_pp_late = np.max(pp_hist[-1])
-        assert max_pp_late <= max_pp_early
+        # The hydrostatic field is kept (total pore pressure), and there is
+        # no excess pore pressure at any time.
+        np.testing.assert_allclose(pp_hist[-1], pp_0, atol=1e-6)
+        assert np.abs(result['excess_pore_pressures']).max() < 1e-6
 
     def test_converged(self):
         from fem2d.porewater import solve_consolidation

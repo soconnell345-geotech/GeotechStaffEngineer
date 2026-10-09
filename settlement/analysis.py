@@ -26,6 +26,7 @@ from settlement.consolidation import (
 from settlement.stress_distribution import stress_at_depth
 from settlement.time_rate import (
     time_factor, degree_of_consolidation, settlement_at_time,
+    time_for_consolidation,
 )
 from settlement.secondary import secondary_settlement
 from settlement.results import SettlementResult
@@ -185,6 +186,11 @@ class SettlementAnalysis:
             result.time_settlement_curve = self._compute_time_curve(
                 result.immediate, result.consolidation
             )
+            Hdr = self._get_Hdr()
+            result.cv = self.cv
+            result.Hdr = Hdr
+            result.t50_years = time_for_consolidation(50.0, self.cv, Hdr)
+            result.t90_years = time_for_consolidation(90.0, self.cv, Hdr)
 
         return result
 

@@ -322,20 +322,53 @@ class TestNeutralPlane:
         expected = result.Q_dead + result.dragload + result.pile_weight_to_np
         assert abs(result.max_pile_load - expected) / expected < 1e-6
 
-    def test_more_dead_load_deeper_np(self):
-        """Increasing dead load should push neutral plane deeper."""
+    def test_more_dead_load_shallower_np(self):
+        """More permanent load moves the neutral plane UP.
+
+        UFC 3-220-20 §6-7.4 step 5: "increasing the permanent load applied
+        to the top of the pile causes the neutral plane to occur at a higher
+        elevation". Force equilibrium says the same: Q_dead + F(0->z) =
+        R_toe + F(z->L), so a larger Q_dead needs a smaller z. (This test
+        used to assert the opposite and passed only because Q_dead = 1000
+        overloads the pile, which silently put the NP at the toe — G8.)
+        """
         analysis_low = self._make_standard_case()
         analysis_low.Q_dead = 200.0
         result_low = analysis_low.compute()
 
         analysis_high = self._make_standard_case()
-        analysis_high.Q_dead = 1000.0
+        analysis_high.Q_dead = 500.0
         result_high = analysis_high.compute()
 
-        assert result_high.neutral_plane_depth > result_low.neutral_plane_depth
+        assert result_low.neutral_plane_method == "force_equilibrium"
+        assert result_high.neutral_plane_method == "force_equilibrium"
+        assert result_high.neutral_plane_depth < result_low.neutral_plane_depth
 
-    def test_no_settling_layers_np_at_tip(self):
-        """With no settling layers, NP should be near pile tip (no downdrag)."""
+    def test_overloaded_pile_has_no_neutral_plane(self):
+        """Q_dead above the total resistance: no NP, said so (G8).
+
+        UFC 3-220-20 §6-7.4 step 5, limiting case: when the applied load
+        reaches the nominal geotechnical resistance "there is no neutral
+        plane". Never the pile toe with the whole shaft counted as drag.
+        """
+        analysis = self._make_standard_case()
+        analysis.Q_dead = 1000.0   # toe + full shaft = 644 kN
+        result = analysis.compute()
+        assert result.neutral_plane_method == "none"
+        assert result.dragload == 0.0
+        assert result.geotechnical_ok is False
+        assert any("NO NEUTRAL PLANE" in w for w in result.warnings)
+        assert result.to_dict()["neutral_plane_method"] == "none"
+
+    def test_no_settling_layers_no_downdrag(self):
+        """No settling layer and a toe the pile cannot fully mobilize.
+
+        The toe resistance (phi = 35 deg, ultimate) exceeds everything the
+        pile can deliver, so the curves never cross. Nothing settles, so the
+        pile settles at least as much as the soil everywhere: no negative
+        skin friction, the NP at the head, zero drag — stated, not the old
+        silent "NP at the toe" with the whole shaft counted as drag (G8).
+        """
         layers = [
             DowndragSoilLayer(
                 thickness=10.0, soil_type="cohesionless",
@@ -352,10 +385,12 @@ class TestNeutralPlane:
             Q_dead=300.0, fill_thickness=0.0, gw_drawdown=0.0,
         )
         result = analysis.compute()
-        # Without settlement, there's no compatibility issue.
-        # Dragload should be small relative to capacity.
-        # NP found by force equilibrium only.
-        assert result.neutral_plane_depth > 0
+        assert result.neutral_plane_method == "settlement_compatibility"
+        assert result.neutral_plane_depth == 0.0
+        assert result.dragload == 0.0
+        assert result.max_pile_load == pytest.approx(300.0)
+        assert "no soil settles" in result.neutral_plane_basis
+        assert any("do not intersect" in w for w in result.warnings)
 
 
 # =============================================================================
@@ -375,14 +410,22 @@ class TestSettlement:
             ),
         ]
         soil = DowndragSoilProfile(layers=layers, gwt_depth=0.0)
+        # Q_dead = 100 kN, below the ~250 kN total resistance, so the curves
+        # cross (Q_dead = 500 used to overload the pile; the "NP at the
+        # toe" default hid that — G8).
         analysis = DowndragAnalysis(
             soil=soil, pile_length=10.0, pile_diameter=0.3,
             pile_E=200e6, pile_area=0.01,
-            Q_dead=500.0, fill_thickness=0.0, gw_drawdown=0.0,
+            Q_dead=100.0, fill_thickness=0.0, gw_drawdown=0.0,
         )
         result = analysis.compute()
-        # Elastic shortening should be positive
+        assert result.neutral_plane_method == "force_equilibrium"
+        # Elastic shortening should be positive, and no more than the
+        # largest load over the length above the NP.
         assert result.elastic_shortening > 0
+        assert result.elastic_shortening <= (
+            result.max_pile_load * result.neutral_plane_depth / (0.01 * 200e6)
+            * 1.0001)
 
     def test_soil_settlement_decreasing_with_depth(self):
         """Soil settlement profile should decrease with depth."""
@@ -971,6 +1014,92 @@ def test_Nt_from_phi_consistent_with_gec12_table_7_9():
     assert 30 <= _Nt_from_phi(33) <= 150    # sand band
     assert 30 <= _Nt_from_phi(38) <= 150    # sand upper band
     assert _Nt_from_phi(25) <= 30           # within clay range top
+
+
+class TestNeutralPlaneWhenCurvesDoNotCross:
+    """G8 (live smoke 2026-10-08, DD-1 / DD-2): with an ultimate toe
+    resistance larger than everything the pile can deliver, the load and
+    resistance curves never cross. The module used to report the pile toe
+    as the neutral plane silently and count the non-settling bearing sand
+    as drag (409 kN for 8 m of clay). UFC 3-220-20 §6-7.4 step 5: the NP of
+    an end-bearing pile in a stratum stiffer than the compressible soil is
+    near the top of the bearing layer; Fig 6-19: pile and soil settle
+    equally at the NP.
+    """
+
+    @staticmethod
+    def _dd1(**kw):
+        # The live-smoke DD-1 input: 8 m of consolidating clay (su 30 kPa,
+        # alpha 0.5 -> fs 15 kPa) over dense sand, 0.4 m pile 15 m long,
+        # 40 kPa surcharge as 2 m of fill.
+        soil = DowndragSoilProfile(layers=[
+            DowndragSoilLayer(thickness=8.0, soil_type="cohesive",
+                              unit_weight=17.0, cu=30.0, alpha=0.5,
+                              settling=True, Cc=0.25, e0=0.9),
+            DowndragSoilLayer(thickness=7.0, soil_type="cohesionless",
+                              unit_weight=19.0, phi=38.0, beta=0.3),
+        ], gwt_depth=1.0)
+        args = dict(soil=soil, pile_length=15.0, pile_diameter=0.4,
+                    fill_thickness=2.0, fill_unit_weight=20.0, Q_dead=0.0)
+        args.update(kw)
+        return DowndragAnalysis(**args)
+
+    def test_dd1_neutral_plane_at_bottom_of_settling_clay(self):
+        r = self._dd1().compute()
+        assert r.neutral_plane_method == "settlement_compatibility"
+        # The clay/sand interface, not the toe (15 m).
+        assert r.neutral_plane_depth == pytest.approx(8.0, abs=0.05)
+        # Drag = clay friction only: 15 kPa x pi x 0.4 m x 8 m = 150.8 kN.
+        assert r.dragload == pytest.approx(15.0 * math.pi * 0.4 * 8.0,
+                                           rel=0.01)
+        assert r.toe_force_mobilized == pytest.approx(0.0, abs=1e-6)
+        d = r.to_dict()
+        assert d["neutral_plane_method"] == "settlement_compatibility"
+        assert any("do not intersect" in w for w in d["warnings"])
+        assert "UFC 3-220-20" in d["neutral_plane_basis"]
+        # The load below the NP falls, it does not keep rising to the toe.
+        assert r.axial_load[-1] < r.max_pile_load
+        # The soil and pile settle (nearly) equally at the NP.
+        assert r.soil_settlement_at_np <= 0.001
+
+    def test_dead_load_goes_to_the_toe_not_beyond_its_resistance(self):
+        r = self._dd1(Q_dead=300.0).compute()
+        assert r.neutral_plane_method == "settlement_compatibility"
+        assert r.neutral_plane_depth == pytest.approx(8.0, abs=0.05)
+        assert 0.0 < r.toe_force_mobilized < r.toe_resistance
+        assert r.axial_load[-1] == pytest.approx(r.toe_force_mobilized,
+                                                 rel=0.02)
+
+    def test_end_bearing_pile_neutral_plane_at_toe_with_basis(self):
+        """Clay settles all the way down to an unyielding toe: NP at the
+        toe is right (UFC §6-7.4 step 5), and the basis says why."""
+        soil = DowndragSoilProfile(layers=[
+            DowndragSoilLayer(thickness=15.0, soil_type="cohesive",
+                              unit_weight=17.0, cu=30.0, alpha=0.5,
+                              settling=True, Cc=0.25, e0=0.9),
+            DowndragSoilLayer(thickness=5.0, soil_type="cohesionless",
+                              unit_weight=21.0, phi=40.0),
+        ], gwt_depth=1.0)
+        r = DowndragAnalysis(soil=soil, pile_length=15.0, pile_diameter=0.4,
+                             fill_thickness=2.0, fill_unit_weight=20.0,
+                             Q_dead=200.0, Nt=2000.0).compute()
+        assert r.neutral_plane_method == "settlement_compatibility"
+        assert r.neutral_plane_depth == pytest.approx(15.0, abs=1e-6)
+        assert "end-bearing" in r.neutral_plane_basis
+
+    def test_mobilized_toe_restores_force_equilibrium_with_a_note(self):
+        """A small (mobilized) toe value: the curves cross, inside the
+        non-settling sand. The result keeps UFC's conservative force
+        equilibrium and says the friction below 8 m is counted as drag."""
+        r = self._dd1(Nt=5.0).compute()
+        assert r.neutral_plane_method == "force_equilibrium"
+        assert r.neutral_plane_depth > 8.5
+        assert any("counted as drag" in w for w in r.warnings)
+
+    def test_summary_states_basis_and_warnings(self):
+        text = self._dd1().compute().summary()
+        assert "Neutral Plane Basis" in text
+        assert "Warnings" in text
 
 
 if __name__ == '__main__':

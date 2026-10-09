@@ -119,11 +119,16 @@ class ConsolidationResult:
     n_nodes : int
     n_elements : int
     n_time_steps : int
-    times : (n_steps,) array — time points (s).
+    times : (n_steps,) array — time since loading (s); times[0] = 0.
     max_settlement_m : float — maximum (most negative) settlement.
     max_excess_pore_pressure_kPa : float
     degree_of_consolidation : float — U at final time (0 to 1).
     converged : bool
+    degree_of_consolidation_history : (n_steps,) array — U at every time.
+    final_drained_settlement_m : float or None — the drained end state of
+        the load (monolithic).
+    scheme : str — "staggered" or "monolithic".
+    notes : list of str — basis and caveats.
     """
     n_nodes: int = 0
     n_elements: int = 0
@@ -134,10 +139,18 @@ class ConsolidationResult:
     degree_of_consolidation: float = 0.0
     converged: bool = True
 
-    # Time histories (not serialized to dict)
+    # Time histories (displacement / pore-pressure fields are not
+    # serialized; U and settlement per time are)
     displacements: Optional[np.ndarray] = field(default=None, repr=False)
     pore_pressures: Optional[np.ndarray] = field(default=None, repr=False)
     settlements: Optional[np.ndarray] = field(default=None, repr=False)
+    degree_of_consolidation_history: Optional[np.ndarray] = field(
+        default=None, repr=False)
+    excess_pore_pressures: Optional[np.ndarray] = field(
+        default=None, repr=False)
+    final_drained_settlement_m: Optional[float] = None
+    scheme: str = ""
+    notes: list = field(default_factory=list)
 
     def summary(self) -> str:
         lines = [
@@ -160,7 +173,7 @@ class ConsolidationResult:
         return "\n".join(lines)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "n_nodes": self.n_nodes,
             "n_elements": self.n_elements,
             "n_time_steps": self.n_time_steps,
@@ -171,6 +184,28 @@ class ConsolidationResult:
             "degree_of_consolidation": round(
                 self.degree_of_consolidation, 4),
         }
+        # Per-time output (live smoke G6, CON-1: time_points were "for
+        # output" but only the final U came back).
+        if self.times is not None and self.settlements is not None:
+            d["time_s"] = [float(t) for t in np.asarray(self.times)]
+            d["surface_settlement_m_by_time"] = [
+                round(float(s), 6) for s in np.asarray(self.settlements)]
+            if self.degree_of_consolidation_history is not None:
+                d["degree_of_consolidation_by_time"] = [
+                    round(float(u), 4)
+                    for u in np.asarray(self.degree_of_consolidation_history)]
+            if self.excess_pore_pressures is not None:
+                ex = np.asarray(self.excess_pore_pressures)
+                d["max_excess_pore_pressure_kPa_by_time"] = [
+                    round(float(v), 2) for v in np.abs(ex).max(axis=1)]
+        if self.final_drained_settlement_m is not None:
+            d["final_drained_settlement_m"] = round(
+                self.final_drained_settlement_m, 6)
+        if self.scheme:
+            d["scheme"] = self.scheme
+        if self.notes:
+            d["notes"] = list(self.notes)
+        return d
 
 
 @dataclass

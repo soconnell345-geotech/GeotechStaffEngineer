@@ -131,6 +131,30 @@ undrained pressure at all (it stays ≈ 0), which is why the monolithic option w
 added. Tests: `validation_examples/test_published_v023_v024.py`
 (`test_v023_monolithic_*`).
 
+**Load increment, head units, per-time U (2026-10-09, live smoke G6 / CON-1).**
+Four defects fixed in `solve_consolidation` / `analyze_consolidation`:
+(1) the monolithic solve applied self-weight undrained with the load, so p0
+carried the self-weight response (386 kPa under 100 kPa on the CON-1 column) —
+the increment is now the load only, self-weight and the hydrostatic field
+being the initial state (linear superposition); (2) drained boundaries took the
+head (m) as a pressure (kPa) — now u = γw·(h − z), clipped ≥ 0, then excess
+over the initial field; (3) the staggered flow acted on the TOTAL pressure with
+no elevation term and with k (m/s) used as a mobility, so a hydrostatic field
+"consolidated" away (≈ +50 % settlement on a 10 m column) — it now diffuses the
+excess with H/γw; (4) U came back only at the last time, the first requested
+time was taken as the loading instant, and the wrapper stepped straight on the
+output times — times now run from loading (t = 0 always reported), the
+monolithic wrapper integrates on a geometric sub-step schedule (~25/decade) and
+reports U and settlement at every requested time. U is the tributary-area
+weighted excess dissipation. Through `analyze_consolidation` with sparse output
+times on this section's column (ny = 40, θ = 0.5): U(Tv) within **0.5 %** of
+Terzaghi for Tv = 0.05–1.0, isochrones p(z,t)/p0 within **0.04 % of p0** (z ≥ 2 m),
+p0 = **83.92 kPa** = M/(M_oed + M)·q; the V-023 numbers above are unchanged
+(final U 0.9936 → 0.9941 from the area weighting only). CON-1 itself
+(1e3, 1e7, 1e8 s): U = 0.005 / 0.985 / 1.000 (Terzaghi 0.014 / 0.985 / 1.000; the
+1e3 s value needs elements thinner than √(c·t) ≈ 0.25 m at the drained
+boundary). Tests: `fem2d/tests/test_consolidation_increment.py`.
+
 ## 6. Cross-check vs slope_stability Bishop (shared geometry)
 
 Shared profile [(0,0),(10,0),(30,10),(50,10)] (2:1, H = 10 m), c' = 10

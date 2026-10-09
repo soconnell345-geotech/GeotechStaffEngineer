@@ -39,6 +39,8 @@ class SobolResult:
     ST: List[float] = field(default_factory=list)
     ST_conf: List[float] = field(default_factory=list)
     S2: Optional[List] = None
+    output_mean: Optional[float] = None
+    output_std: Optional[float] = None
 
     def summary(self) -> str:
         lines = [
@@ -74,6 +76,9 @@ class SobolResult:
                 d["S2"] = self.S2.tolist()
             else:
                 d["S2"] = self.S2
+        if self.output_mean is not None:
+            d["output_mean"] = self.output_mean
+            d["output_std"] = self.output_std
         return d
 
     def plot_sensitivity(self, ax=None, show=True, **kwargs):
@@ -124,6 +129,8 @@ class MorrisResult:
     mu_star: List[float] = field(default_factory=list)
     sigma: List[float] = field(default_factory=list)
     mu_star_conf: List[float] = field(default_factory=list)
+    output_mean: Optional[float] = None
+    output_std: Optional[float] = None
 
     def summary(self) -> str:
         lines = [
@@ -144,7 +151,7 @@ class MorrisResult:
         return "\n".join(lines)
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "n_trajectories": self.n_trajectories,
             "n_vars": self.n_vars,
             "var_names": list(self.var_names),
@@ -152,6 +159,10 @@ class MorrisResult:
             "sigma": [float(x) for x in self.sigma],
             "mu_star_conf": [float(x) for x in self.mu_star_conf],
         }
+        if self.output_mean is not None:
+            d["output_mean"] = self.output_mean
+            d["output_std"] = self.output_std
+        return d
 
     def plot_screening(self, ax=None, show=True, **kwargs):
         """Morris mu*/sigma scatter plot for factor screening."""

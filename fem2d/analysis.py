@@ -680,6 +680,27 @@ def analyze_seepage(nodes, elements, k, head_bcs, t=1.0, gamma_w=9.81):
     )
 
 
+def _consolidation_schedule(out_times, per_decade=25, max_steps=300):
+    """Fine time-step schedule (s) containing every requested output time.
+
+    t = 0, then a geometric sequence from 1/100 of the first positive output
+    time to the last, merged with the output times themselves (which are
+    kept exactly, so they can be picked out of the solution afterwards).
+    """
+    out_times = np.asarray(out_times, dtype=float)
+    pos = out_times[out_times > 0]
+    if len(pos) == 0:
+        return np.array([0.0])
+    t_lo, t_hi = pos[0] / 100.0, pos[-1]
+    decades = max(np.log10(t_hi / t_lo), 1e-9)
+    n = int(np.ceil(decades * min(per_decade, max_steps / decades))) + 1
+    grid = np.logspace(np.log10(t_lo), np.log10(t_hi), max(n, 2))
+    # Drop grid points that merely duplicate an output time to round-off.
+    near = np.min(np.abs(grid[:, None] - pos[None, :]) / pos[None, :], axis=1)
+    grid = grid[near > 1e-6]
+    return np.unique(np.concatenate([[0.0], grid, out_times]))
+
+
 def analyze_consolidation(width, depth, soil_layers, k, load_q,
                           time_points, gwt=0.0, gamma_w=9.81,
                           nx=10, ny=20, t=1.0, n_w=2.2e6,
@@ -707,7 +728,9 @@ def analyze_consolidation(width, depth, soil_layers, k, load_q,
         'E', 'nu', 'gamma' (and optionally 'bottom_elevation').
     k : float — hydraulic conductivity (m/s).
     load_q : float — surface load (kPa, positive downward).
-    time_points : array-like — time points (s).
+    time_points : array-like — OUTPUT times since loading (s); t = 0 (the
+        loading instant) is always reported first. The monolithic scheme
+        integrates on a finer internal schedule between them.
     gwt : float — GWT elevation (m). Default 0.0 (at surface).
     gamma_w : float — unit weight of water (kN/m^3).
     nx, ny : int — mesh density.
@@ -762,17 +785,66 @@ def analyze_consolidation(width, depth, soil_layers, k, load_q,
     # Initial pore pressures (hydrostatic from GWT)
     pp_0 = compute_pore_pressures(nodes, gwt, gamma_w)
 
+    # time_points are OUTPUT times measured from loading; t = 0 (the loading
+    # instant) is always reported first.
+    out_times = np.asarray(time_points, dtype=float).ravel()
+    if out_times.size == 0 or np.any(out_times < 0):
+        raise ValueError(
+            "time_points must be one or more times since loading (s), >= 0")
+    out_times = np.unique(np.concatenate([[0.0], out_times]))
+    schedule = out_times
+    if consolidation_scheme == "monolithic":
+        # The coupled solve steps through a fine geometric schedule between
+        # the requested times, so a sparse output list (e.g. 1e3, 1e7, 1e8 s)
+        # is integrated accurately instead of in three giant steps (one
+        # Crank-Nicolson step of 1e7 s oscillates). Starts two decades below
+        # the first output time, ~25 steps per decade, <= ~300 steps.
+        schedule = _consolidation_schedule(out_times)
+
     result_dict = solve_consolidation(
         nodes, elements, material_props, gamma_arr, bc_nodes,
-        k=k, head_bcs=head_bcs, time_steps=np.asarray(time_points),
+        k=k, head_bcs=head_bcs, time_steps=schedule,
         t=t, gamma_w=gamma_w, n_w=n_w,
         pore_pressures_0=pp_0, surface_loads=surface_loads,
         scheme=consolidation_scheme, theta=theta)
 
+    # Report only the requested times.
+    if len(schedule) != len(out_times):
+        idx = np.searchsorted(result_dict['times'], out_times)
+        for key in ('times', 'displacements', 'pore_pressures', 'settlements',
+                    'excess_pore_pressures', 'total_pore_pressures',
+                    'degree_of_consolidation_history'):
+            if result_dict.get(key) is not None:
+                result_dict[key] = np.asarray(result_dict[key])[idx]
+
+    notes = [
+        "Times are measured from the instant the load is applied; time_s[0] "
+        "= 0 is that instant (added if time_points did not start at 0).",
+        "gwt is the water-table ELEVATION (m) in the model frame: the ground "
+        "surface is at 0 and the base at -depth.",
+    ]
+    if consolidation_scheme == "monolithic":
+        notes.append(
+            "Excess pore pressure and settlement are from the applied load "
+            "only: self-weight and the hydrostatic water pressure are the "
+            "initial state.")
+        notes.append(
+            "Early-time U is only as good as the mesh at the drained "
+            "boundary: elements there should be thinner than sqrt(c t) "
+            "(c = k / (1/n_w + 1/M_oed)); refine ny for small times.")
+    else:
+        notes.append(
+            "The staggered scheme does not turn the applied load into excess "
+            "pore pressure: it is drained at every step (U = 1, no "
+            "consolidation transient), and its settlement includes "
+            "self-weight. Use consolidation_scheme='monolithic' (k as the "
+            "mobility m^2/(kPa.s) = hydraulic conductivity / gamma_w) for "
+            "consolidation under the load.")
+
     return ConsolidationResult(
         n_nodes=len(nodes),
         n_elements=len(elements),
-        n_time_steps=len(time_points),
+        n_time_steps=len(result_dict['times']),
         times=result_dict['times'],
         max_settlement_m=result_dict['max_settlement_m'],
         max_excess_pore_pressure_kPa=result_dict['max_excess_pore_pressure_kPa'],
@@ -781,6 +853,13 @@ def analyze_consolidation(width, depth, soil_layers, k, load_q,
         displacements=result_dict['displacements'],
         pore_pressures=result_dict['pore_pressures'],
         settlements=result_dict['settlements'],
+        degree_of_consolidation_history=result_dict.get(
+            'degree_of_consolidation_history'),
+        excess_pore_pressures=result_dict.get('excess_pore_pressures'),
+        final_drained_settlement_m=result_dict.get(
+            'final_drained_settlement_m'),
+        scheme=consolidation_scheme,
+        notes=notes,
     )
 
 

@@ -42,6 +42,7 @@ def analyze_signal_processing(
     motion=None,
     accel_history=None,
     dt=None,
+    target_pga_g=None,
     bandpass=None,
     baseline_order=None,
 ) -> SignalProcessingResult:
@@ -58,6 +59,9 @@ def analyze_signal_processing(
         Custom acceleration time history (g).
     dt : float, optional
         Time step for custom motion (s).
+    target_pga_g : float, optional
+        Scale the motion so its PGA equals this value (g) before the
+        analysis (built-in motions have fixed PGAs). Default None.
     bandpass : list of float, optional
         Bandpass frequencies [f_low, f_high] in Hz.
     baseline_order : int, optional
@@ -71,14 +75,13 @@ def analyze_signal_processing(
     _validate_processing_inputs(bandpass, baseline_order)
 
     # Resolve ground motion
-    from opensees_agent.ground_motions import validate_motion_input
-    accel_g, dt_val = validate_motion_input(motion, accel_history, dt)
+    from opensees_agent.ground_motions import (
+        validate_motion_input, motion_label)
+    accel_g, dt_val = validate_motion_input(
+        motion, accel_history, dt, target_pga_g=target_pga_g)
 
     # Determine motion name
-    if motion is not None:
-        motion_name = motion
-    else:
-        motion_name = "custom"
+    motion_name = motion_label(motion, target_pga_g)
 
     # Store original PGA
     pga_original = float(np.max(np.abs(accel_g)))

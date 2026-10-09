@@ -689,3 +689,82 @@ class TestFoundryIntegration:
         result = json.loads(gstools_agent("random_field", json.dumps(params)))
         assert "error" not in result
         assert "field" in result
+
+
+# ---------------------------------------------------------------------------
+# G17 (live smoke GS-1, 2026-10-08): four SPT points 10 m apart. gstools'
+# automatic bins (0.6-4.1 m) held no pair, every gamma read 0, and the fit
+# came back as sill 3e-5, range 9e4 m with no warning.
+# ---------------------------------------------------------------------------
+
+_GS1 = dict(x=[0, 10, 0, 10], y=[0, 0, 10, 10], values=[10, 14, 9, 13])
+
+
+@requires_gstools
+class TestDegenerateVariogram:
+
+    def test_gs1_variogram_is_refused_with_the_reason(self):
+        from gstools_agent import analyze_variogram
+        with pytest.raises(ValueError, match="lag class") as exc:
+            analyze_variogram(**_GS1, model_type="Spherical", n_bins=4)
+        msg = str(exc.value)
+        assert "10.0" in msg and "14.142" in msg   # the two separations
+        assert "len_scale" in msg
+
+    def test_gs1_kriging_fit_refused_but_point_estimate_works(self):
+        from gstools_agent import analyze_kriging
+        with pytest.raises(ValueError, match="fit_variogram=false"):
+            analyze_kriging(**_GS1, model_type="Spherical")
+        # A point estimate at (5, 5): one grid line each way.
+        r = analyze_kriging(**_GS1, model_type="Exponential",
+                            grid_x_min=5, grid_x_max=5, n_grid_x=1,
+                            grid_y_min=5, grid_y_max=5, n_grid_y=1,
+                            variance=4.0, len_scale=10.0,
+                            fit_variogram=False)
+        d = r.to_dict()
+        # Symmetric layout: the centre estimate is the data mean, 11.5.
+        assert np.asarray(d["field"]).ravel()[0] == pytest.approx(11.5,
+                                                                  abs=1e-6)
+
+    def test_bins_come_from_the_pair_distances(self):
+        from gstools_agent import analyze_variogram
+        rng = np.random.default_rng(0)
+        x = rng.uniform(0, 100, 60)
+        y = rng.uniform(0, 100, 60)
+        v = np.sin(x / 20) + np.cos(y / 25) + 0.1 * rng.normal(size=60)
+        r = analyze_variogram(x, y, v, model_type="Exponential", n_bins=10)
+        d = r.to_dict()
+        assert all(g > 0 for g in d["gamma"])
+        assert sum(d["pair_counts"]) == 60 * 59 // 2
+        assert len(d["bin_center"]) == len(d["pair_counts"]) <= 10
+
+    def test_sparse_bins_warn(self):
+        from gstools_agent import analyze_variogram
+        x = [0, 3, 7, 12, 20, 26, 31]
+        y = [0, 5, 2, 9, 4, 11, 6]
+        v = [10, 12, 11, 15, 14, 18, 17]
+        r = analyze_variogram(x, y, v, model_type="Exponential", n_bins=5)
+        assert any("fewer than 30 pairs" in w for w in r.warnings)
+
+    def test_simple_kriging_uses_the_sample_mean(self):
+        """gstools' Simple kriging defaults its mean to 0; far from the data
+        the estimate must return to the data mean, not to zero."""
+        from gstools_agent import analyze_kriging
+        r = analyze_kriging(**_GS1, model_type="Exponential",
+                            kriging_type="simple",
+                            grid_x_min=500, grid_x_max=500, n_grid_x=1,
+                            grid_y_min=500, grid_y_max=500, n_grid_y=1,
+                            variance=4.0, len_scale=10.0,
+                            fit_variogram=False)
+        far = float(np.asarray(r.field).ravel()[0])
+        assert far == pytest.approx(11.5, abs=1e-3)
+
+    def test_universal_kriging_runs(self):
+        from gstools_agent import analyze_kriging
+        r = analyze_kriging(**_GS1, model_type="Exponential",
+                            kriging_type="universal",
+                            grid_x_min=0, grid_x_max=10, n_grid_x=3,
+                            grid_y_min=0, grid_y_max=10, n_grid_y=3,
+                            variance=4.0, len_scale=10.0,
+                            fit_variogram=False)
+        assert np.isfinite(np.asarray(r.field)).all()

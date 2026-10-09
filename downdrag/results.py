@@ -65,6 +65,20 @@ class DowndragResult:
         Pile length (m).
     pile_diameter : float
         Pile diameter (m).
+    neutral_plane_method : str
+        How the neutral plane was located: ``"force_equilibrium"`` (the
+        load and resistance curves cross), ``"settlement_compatibility"``
+        (they do not, because the toe resistance exceeds everything the
+        pile can deliver; placed where soil and pile settle equally) or
+        ``"none"`` (the dead load exceeds the total resistance).
+    neutral_plane_basis : str
+        One-sentence statement of that basis, with its source.
+    toe_force_mobilized : float or None
+        Toe force carried at the neutral plane (kN): the full toe
+        resistance under force equilibrium, less when the toe is not
+        fully mobilized.
+    warnings : list of str
+        Anything the engineer must know about the result.
     """
     neutral_plane_depth: float
     dragload: float
@@ -88,6 +102,10 @@ class DowndragResult:
     settlement_ok: Optional[bool]
     pile_length: float
     pile_diameter: float
+    neutral_plane_method: str = "force_equilibrium"
+    neutral_plane_basis: str = ""
+    toe_force_mobilized: Optional[float] = None
+    warnings: list = field(default_factory=list)
 
     def summary(self) -> str:
         """Return a text summary of key results."""
@@ -100,6 +118,7 @@ class DowndragResult:
             "",
             "--- Neutral Plane ---",
             f"Neutral plane depth:    {self.neutral_plane_depth:.2f} m",
+            f"  Basis:                {self.neutral_plane_method}",
             f"Dragload:               {self.dragload:.1f} kN",
             f"Pile weight to NP:      {self.pile_weight_to_np:.1f} kN",
             f"Max pile load at NP:    {self.max_pile_load:.1f} kN",
@@ -107,6 +126,8 @@ class DowndragResult:
             "--- Resistance Below NP ---",
             f"Positive skin friction: {self.positive_skin_friction:.1f} kN",
             f"Toe resistance:         {self.toe_resistance:.1f} kN",
+            *([f"Toe force mobilized:    {self.toe_force_mobilized:.1f} kN"]
+              if self.toe_force_mobilized is not None else []),
             f"Total resistance:       {self.total_resistance:.1f} kN",
             "",
             "--- Settlement ---",
@@ -135,18 +156,28 @@ class DowndragResult:
                 status = "PASS" if self.settlement_ok else "FAIL"
                 lines.append(f"Settlement:             {status}")
 
+        if self.neutral_plane_basis:
+            lines += ["", "--- Neutral Plane Basis ---",
+                      self.neutral_plane_basis]
+        if self.warnings:
+            lines += ["", "--- Warnings ---"]
+            lines += [f"* {w}" for w in self.warnings]
+
         return "\n".join(lines)
 
     def to_dict(self) -> dict:
         """Export results as a dictionary (for JSON serialization)."""
         d = {
             'neutral_plane_depth_m': self.neutral_plane_depth,
+            'neutral_plane_method': self.neutral_plane_method,
+            'neutral_plane_basis': self.neutral_plane_basis,
             'dragload_kN': self.dragload,
             'max_pile_load_kN': self.max_pile_load,
             'Q_dead_kN': self.Q_dead,
             'pile_weight_to_np_kN': self.pile_weight_to_np,
             'positive_skin_friction_kN': self.positive_skin_friction,
             'toe_resistance_kN': self.toe_resistance,
+            'toe_force_mobilized_kN': self.toe_force_mobilized,
             'total_resistance_kN': self.total_resistance,
             'pile_settlement_m': self.pile_settlement,
             'elastic_shortening_m': self.elastic_shortening,
@@ -167,6 +198,7 @@ class DowndragResult:
             d['geotechnical_ok'] = self.geotechnical_ok
         if self.settlement_ok is not None:
             d['settlement_ok'] = self.settlement_ok
+        d['warnings'] = list(self.warnings)
         return d
 
     def plot_axial_load(self, ax=None, show=True, **kwargs):

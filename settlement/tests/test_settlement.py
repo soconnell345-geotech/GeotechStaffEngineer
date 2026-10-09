@@ -434,6 +434,39 @@ class TestCombinedAnalysis:
         t0, s0 = result.time_settlement_curve[0]
         assert t0 == 0.0
 
+    def test_to_dict_carries_time_curve_and_t50_t90(self):
+        """G6 (live smoke SE-4): the time curve was computed and documented
+        but to_dict dropped it, so t90 was hand-calculated. The live input:
+        cv = 3 m2/yr, Hdr = 2 m -> t90 = Tv90 Hdr^2 / cv with Tv90 = 0.848
+        (Terzaghi; -0.9332 log10(0.1) - 0.0851 = 0.8481) = 1.131 yr;
+        t50 = (pi/4)(0.5^2) x 4 / 3 = 0.2618 yr."""
+        analysis = SettlementAnalysis(
+            q_applied=100, B=3.0, L=3.0,
+            immediate_method="elastic", Es_immediate=10000,
+            consolidation_layers=[
+                ConsolidationLayer(thickness=4, depth_to_center=2,
+                                   e0=1.0, Cc=0.3, Cr=0.03, sigma_v0=50)
+            ],
+            cv=3.0, Hdr=2.0, drainage="double",
+        )
+        d = analysis.compute().to_dict()
+        assert d["t90_years"] == pytest.approx(0.8481 * 4 / 3, rel=1e-3)
+        assert d["t50_years"] == pytest.approx(math.pi / 4 * 0.25 * 4 / 3,
+                                               rel=1e-3)
+        curve = d["time_settlement_curve"]
+        assert len(curve) > 10
+        assert curve[0] == {"time_years": 0.0,
+                            "settlement_mm": d["immediate_mm"],
+                            "U_percent": 0.0}
+        assert curve[-1]["U_percent"] > 99.0
+        assert curve[-1]["settlement_mm"] == pytest.approx(
+            d["immediate_mm"] + d["consolidation_mm"], abs=0.5)
+        # U and settlement rise monotonically with time.
+        us = [p["U_percent"] for p in curve]
+        assert us == sorted(us)
+        assert d["consolidation_layers"][0]["settlement_mm"] == pytest.approx(
+            d["consolidation_mm"])
+
     def test_to_dict(self):
         """to_dict should return all key fields."""
         analysis = SettlementAnalysis(

@@ -42,6 +42,25 @@ seismic_signals_agent_foundry.py  # Foundry wrapper (project root)
    different libraries, the Foundry wrapper checks eqsig or pyrotd only for
    the specific method being called.
 
+5. **RotD without pyrotd (2026-10-09, live smoke G10).** pyrotd 0.6.1
+   reads its `__version__` through `pkg_resources`, which setuptools 81+
+   no longer ships, so on a fresh environment it is installed but
+   `import pyrotd` fails. `pyrotd_import_error()` reports which case it is
+   (not installed / installed but failing, with the real exception), and
+   `analyze_rotd_spectrum` falls back to `rotd_native.py`, a numpy
+   implementation of the same procedure (frequency-domain SDOF response,
+   rotation 0-179 deg, linear percentiles, the Stewart et al. 2017 reduced
+   rotation set). It matches pyrotd to round-off (test `TestRotDNative`,
+   which loads pyrotd with a stub `pkg_resources` as the oracle). The
+   result says which engine ran (`engine`, `engine_note`).
+
+6. **Results carry what the tool docs promise (2026-10-09, live smoke G6).**
+   `ResponseSpectrumResult.to_dict` returns `Sa_max_g`, `T_peak_s`,
+   `periods_s`, `Sa_g`; `RotDSpectrumResult.to_dict` returns `periods_s`,
+   `percentiles` and `spectra` (every requested percentile, not just
+   0/50/100); `SignalProcessingResult.to_dict` adds `filter_applied` and
+   `baseline_corrected`.
+
 ## Comparison: eqsig vs Existing Response Spectrum
 
 | Feature | eqsig (this module) | compute_response_spectrum (opensees_utils) |

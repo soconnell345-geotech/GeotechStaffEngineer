@@ -38,12 +38,22 @@ def _validate_kriging_inputs(x, y, values, model_type, kriging_type,
         raise ValueError(
             f"kriging_type must be one of {sorted(_VALID_KRIGE_TYPES)}, got '{kriging_type}'"
         )
-    if grid_x_max <= grid_x_min:
-        raise ValueError(f"grid_x_max must be > grid_x_min")
-    if grid_y_max <= grid_y_min:
-        raise ValueError(f"grid_y_max must be > grid_y_min")
-    if n_grid_x < 2 or n_grid_y < 2:
-        raise ValueError(f"n_grid_x and n_grid_y must be >= 2")
+    # One grid line (n = 1, min == max) is a valid request: kriging at a
+    # single coordinate, e.g. one point (live smoke GS-1 asked for (5, 5)).
+    for axis, lo, hi, n in (("x", grid_x_min, grid_x_max, n_grid_x),
+                            ("y", grid_y_min, grid_y_max, n_grid_y)):
+        if n < 1:
+            raise ValueError(f"n_grid_{axis} must be >= 1")
+        if n == 1:
+            if hi != lo:
+                raise ValueError(
+                    f"n_grid_{axis} = 1 krigs on one line: give "
+                    f"grid_{axis}_min = grid_{axis}_max (the coordinate)")
+        elif hi <= lo:
+            raise ValueError(
+                f"grid_{axis}_max must be > grid_{axis}_min when "
+                f"n_grid_{axis} >= 2 (for a single point use n_grid_{axis}=1 "
+                f"and grid_{axis}_min = grid_{axis}_max)")
 
 
 def analyze_kriging(
@@ -133,19 +143,38 @@ def analyze_kriging(
 
     model = model_cls(dim=2, var=variance, len_scale=len_scale, nugget=nugget)
 
-    # Fit variogram if requested
+    warnings = []
+    notes = []
+    # Fit variogram if requested (same data-based lag classes and the same
+    # refusal / degeneracy checks as analyze_variogram — live smoke GS-1).
     if fit_variogram:
-        bin_center, gamma = gs.vario_estimate([x_arr, y_arr], val_arr)
+        from gstools_agent.variogram import empirical_variogram, fit_warnings
+        try:
+            bin_center, gamma, _counts, warnings = empirical_variogram(
+                gs, x_arr, y_arr, val_arr)
+        except ValueError as exc:
+            raise ValueError(
+                f"{exc} To krige anyway, pass fit_variogram=false with "
+                f"variance and len_scale.") from None
         model.fit_variogram(bin_center, gamma, nugget=nugget >= 0)
+        warnings += fit_warnings(model, val_arr, float(
+            np.max(np.hypot(x_arr[:, None] - x_arr[None, :],
+                            y_arr[:, None] - y_arr[None, :]))))
 
     # Run kriging
-    krige_cls_map = {
-        "ordinary": gs.krige.Ordinary,
-        "simple": gs.krige.Simple,
-        "universal": gs.krige.Universal,
-    }
-    krige_cls = krige_cls_map[kriging_type]
-    krig = krige_cls(model, [x_arr, y_arr], val_arr)
+    if kriging_type == "simple":
+        # Simple kriging needs the field's (known) mean; gstools defaults it
+        # to 0, which pulls every estimate toward zero away from the data.
+        sk_mean = float(np.mean(val_arr))
+        krig = gs.krige.Simple(model, [x_arr, y_arr], val_arr, mean=sk_mean)
+        notes.append(f"Simple kriging about the sample mean {sk_mean:.4g}.")
+    elif kriging_type == "universal":
+        # Universal kriging needs a drift; a linear trend in x and y.
+        krig = gs.krige.Universal(model, [x_arr, y_arr], val_arr,
+                                  drift_functions="linear")
+        notes.append("Universal kriging with a linear drift in x and y.")
+    else:
+        krig = gs.krige.Ordinary(model, [x_arr, y_arr], val_arr)
 
     grid_x = np.linspace(grid_x_min, grid_x_max, n_grid_x)
     grid_y = np.linspace(grid_y_min, grid_y_max, n_grid_y)
@@ -164,4 +193,6 @@ def analyze_kriging(
         krige_variance=krige_var,
         grid_x=grid_x,
         grid_y=grid_y,
+        warnings=warnings or None,
+        notes=notes or None,
     )

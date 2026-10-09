@@ -30,6 +30,52 @@ Two force curves are constructed along the pile:
 The neutral plane is where `Q_top(z_np) = Q_bot(z_np)`. The maximum axial
 load in the pile occurs at this depth.
 
+### How the neutral plane is located (`neutral_plane_method` in the result)
+
+Every result states its basis (`neutral_plane_method`, `neutral_plane_basis`,
+`toe_force_mobilized_kN`, `warnings`). Source: UFC 3-220-20 Vol 2 (DM 7.2)
+Ch 6, §6-7.4 steps 3-5, §6-5.8.4.2 and Fig 6-19 (§6-5.8.4.3), as transcribed
+in `geotech_references/dm7_2/text/chapter06.json`.
+
+1. **`force_equilibrium`** — the curves cross. Side and base resistance are
+   taken fully mobilized: UFC §6-7.4 step 3 calls this "a conservative
+   approach for evaluating the drag force". Unchanged from the original
+   implementation (V-004 and the CGPR #56 cross-check pin it). When the
+   crossing lies below the depth where the computed soil settlement falls to
+   the pile's, a warning says the friction in between is counted as drag,
+   and that full base mobilization is NOT conservative for settlement
+   (§6-5.8.4.2: check 0 %, 50 %, 100 % base mobilization via `Nt`).
+2. **`settlement_compatibility`** — the curves do NOT cross because the toe
+   resistance exceeds everything the pile can carry to its toe
+   (`Q_dead + W + whole shaft as drag < R_toe`). This is the common case with
+   the default ULTIMATE toe (`Nt` from phi, 100-150 in dense sand): the base
+   cannot be fully mobilized, so force equilibrium alone does not place the
+   NP. It is placed where the soil and pile settle equally (Fig 6-19): soil
+   settlement (measured from the toe level) = toe penetration under the toe
+   force the pile actually delivers + elastic compression of the pile below
+   the NP. The toe carries `Q_np - positive friction below` (floored at 0,
+   in which case the friction below is only partly mobilized). For an
+   end-bearing pile in a stratum stiffer than the compressible soil this is
+   near the top of the bearing layer (§6-7.4 step 5); when the soil settles
+   more than the pile all the way to the toe, the NP is AT the toe and the
+   basis says "end-bearing". With no settling soil at all, there is no
+   negative skin friction: NP at the head, zero drag. The warning gives the
+   upper bound (NP at the toe, whole shaft as drag) and how to use force
+   equilibrium instead (give `Nt` for the MOBILIZED toe resistance).
+3. **`none`** — the dead load alone exceeds the total geotechnical resistance
+   (toe + whole shaft). §6-7.4 step 5's limiting case: "there is no neutral
+   plane". Reported at the head with zero drag, `geotechnical_ok = False`,
+   and a `NO NEUTRAL PLANE` warning.
+
+Before 2026-10-09 (live smoke G8) cases 2 and 3 silently reported the pile
+TOE as the neutral plane and counted the whole shaft, non-settling bearing
+sand included, as drag (DD-1: 409 kN where the 8 m of settling clay can give
+151 kN).
+
+Note on direction: more dead load moves the NP UP (UFC §6-7.4 step 5;
+`Q_dead + F(0->z) = R_toe + F(z->L)`). A test used to assert the opposite
+and passed only through the toe default.
+
 ### Settlement Compatibility
 
 At the neutral plane:
@@ -142,13 +188,21 @@ The bearing stratum settlement below the pile tip uses:
 
 ## Edge Cases
 
-- **No settling layers**: If no layers have `settling=True`, there is no
-  consolidation settlement and no downdrag. The neutral plane defaults to
-  the pile tip.
-- **Neutral plane at pile tip**: Occurs when dead load + dragload exceeds
-  the total shaft + toe capacity. This means the pile is overloaded.
-- **Neutral plane at pile head**: Occurs when there is minimal dragload
-  (very little settlement). The pile behaves normally.
+- **No settling layers** (or settling layers with no fill / drawdown to load
+  them): no consolidation settlement. If the curves still cross (a mobilized
+  `Nt`), force equilibrium places the NP as usual (V-004 runs this way);
+  otherwise there is no negative skin friction: NP at the head, zero drag,
+  stated in the basis.
+- **Neutral plane at pile toe**: only when the soil settles more than the
+  pile all the way down to the toe (end-bearing; basis says so), or when the
+  curves cross exactly there. Never as a silent default.
+- **Pile overloaded** (`Q_dead` > toe + whole shaft): no neutral plane
+  (method `none`), zero drag, geotechnical check fails, warning.
+- **Soil settlement profile**: evaluated per sublayer at its MIDPOINT and
+  accumulated from the toe up (zero at the toe level). Before 2026-10-09 each
+  sublayer took the layer and stress at its top node, so the sublayer just
+  below a boundary was given the upper layer's settlement and the top
+  sublayer (sigma'v0 = 0) counted nothing.
 - **Cohesionless settling layers**: Supported via elastic settlement (Eq 6-54).
   Requires E_s and nu_s parameters on the layer.
 

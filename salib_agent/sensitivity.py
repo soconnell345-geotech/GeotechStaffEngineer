@@ -206,6 +206,133 @@ def morris_analyze(
     )
 
 
+# ---------------------------------------------------------------------------
+# One-call analyses: sample, evaluate the model, analyze (live smoke G9).
+# The two-step functions above hand a sample matrix back to the caller to
+# evaluate; an agent cannot loop over 1,280 rows, so these do it here.
+# ---------------------------------------------------------------------------
+
+DEFAULT_MAX_EVALUATIONS = 20000
+
+
+def _resolve_model(model, expression, var_names):
+    if (model is None) == (expression is None):
+        raise ValueError(
+            "Give exactly one of: model (a callable taking a dict of the "
+            "variables) or expression (an arithmetic expression of them, "
+            "e.g. '(c + 18*z*tan(radians(phi)))/40').")
+    if expression is not None:
+        from salib_agent.expression import compile_expression
+        return compile_expression(expression, var_names)
+    if not callable(model):
+        raise ValueError("model must be callable: f(values: dict) -> float")
+    return model
+
+
+def _evaluate(model, X, var_names, max_evaluations):
+    n = len(X)
+    if n > max_evaluations:
+        raise ValueError(
+            f"The design needs {n} model evaluations, above the limit of "
+            f"{max_evaluations}. Use fewer samples (Sobol: N*(2D+2) rows "
+            f"with second-order indices, N*(D+2) without; Morris: "
+            f"trajectories*(D+1)), or screen with Morris first.")
+    Y = np.empty(n)
+    for i, row in enumerate(X):
+        point = {name: float(v) for name, v in zip(var_names, row)}
+        try:
+            Y[i] = float(model(point))
+        except Exception as exc:
+            raise ValueError(
+                f"The model failed at sample {i + 1} of {n}, {point}: "
+                f"{type(exc).__name__}: {exc}") from exc
+    bad = ~np.isfinite(Y)
+    if bad.any():
+        j = int(np.argmax(bad))
+        raise ValueError(
+            f"The model returned a non-finite value at {int(bad.sum())} of "
+            f"{n} sample points (first: "
+            f"{dict(zip(var_names, map(float, X[j])))}). Sensitivity "
+            f"indices need a finite output everywhere inside the bounds: "
+            f"narrow the bounds or guard the model.")
+    return Y
+
+
+def sobol_analysis(
+    var_names,
+    bounds,
+    model=None,
+    expression=None,
+    n_samples=256,
+    calc_second_order=False,
+    seed=42,
+    max_evaluations=DEFAULT_MAX_EVALUATIONS,
+) -> SobolResult:
+    """Sobol indices in one call: sample, evaluate the model, analyze.
+
+    Parameters
+    ----------
+    var_names : list of str
+    bounds : list of [min, max]
+    model : callable, optional
+        ``f(values: dict) -> float`` evaluated at every sample point.
+    expression : str, optional
+        Instead of ``model``: an arithmetic expression of the variables
+        (see ``salib_agent.expression``).
+    n_samples : int
+        Base sample size N (a power of 2 keeps the Sobol sequence balanced).
+        Evaluations = N*(2D+2) with second-order indices, N*(D+2) without.
+        Default 256.
+    calc_second_order : bool
+        Default False (halves the evaluations; S1 and ST do not need it).
+    seed : int
+    max_evaluations : int
+        Refuse a design larger than this. Default 20,000.
+
+    Returns
+    -------
+    SobolResult
+        Indices only, plus the output mean and standard deviation; never
+        the sample matrix.
+    """
+    f = _resolve_model(model, expression, var_names)
+    X = sobol_sample(var_names, bounds, n_samples=n_samples,
+                     calc_second_order=calc_second_order, seed=seed)
+    Y = _evaluate(f, X, list(var_names), max_evaluations)
+    result = sobol_analyze(var_names, bounds, Y, n_samples=n_samples,
+                           calc_second_order=calc_second_order, seed=seed)
+    result.output_mean = float(np.mean(Y))
+    result.output_std = float(np.std(Y))
+    return result
+
+
+def morris_analysis(
+    var_names,
+    bounds,
+    model=None,
+    expression=None,
+    n_trajectories=20,
+    num_levels=4,
+    seed=42,
+    max_evaluations=DEFAULT_MAX_EVALUATIONS,
+) -> MorrisResult:
+    """Morris screening in one call: sample, evaluate the model, analyze.
+
+    Evaluations = n_trajectories * (D + 1). See ``sobol_analysis`` for
+    ``model`` / ``expression``.
+    """
+    f = _resolve_model(model, expression, var_names)
+    X = morris_sample(var_names, bounds, n_trajectories=n_trajectories,
+                      num_levels=num_levels, seed=seed)
+    Y = _evaluate(f, X, list(var_names), max_evaluations)
+    result = morris_analyze(var_names, bounds, X, Y,
+                            n_trajectories=n_trajectories,
+                            num_levels=num_levels, seed=seed)
+    result.output_mean = float(np.mean(Y))
+    result.output_std = float(np.std(Y))
+    return result
+
+
 def morris_sample(
     var_names,
     bounds,

@@ -577,6 +577,10 @@ class TestDowndrag:
             ],
             "Q_dead": 500.0,
             "gwt_depth": 2.0,
+            # A settling layer settles only under a load: 3 m of new fill.
+            # (Without it nothing settles and, since G8, no drag is
+            # reported instead of a silent neutral plane at the toe.)
+            "fill_thickness": 3.0,
         }
         r = H.call(downdrag_agent, "downdrag_analysis", params)
         assert r["neutral_plane_depth_m"] > 0

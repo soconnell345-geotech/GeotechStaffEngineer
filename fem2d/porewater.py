@@ -550,24 +550,38 @@ def solve_consolidation(nodes, elements, material_props, gamma, bc_nodes,
                         scheme="staggered", theta=1.0):
     """Solve Biot consolidation using the staggered or monolithic u-p scheme.
 
-    ``scheme="staggered"`` (**default**, unchanged): sequential split at each dt:
-      1. Displacement: K * u_{n+1} = F_ext - Q * p_n
-      2. Pressure: (S/dt + H) * p_{n+1} = S * p_n / dt - Q^T*(u_{n+1}-u_n)/dt
-    This transports a pre-existing pore field but does NOT convert an applied
-    total-stress increment into excess pore pressure (no undrained transient).
+    Formulation (2026-10-09). ``pore_pressures_0`` is the initial EQUILIBRIUM
+    pore field (hydrostatic; zeros if omitted) and self-weight is in
+    equilibrium with it before loading. The diffusion unknown is the EXCESS
+    pore pressure over that field, so a hydrostatic field carries no flow and
+    never "dissipates". ``head_bcs`` give the drained boundaries as TOTAL HEAD
+    h (m); they become pore pressures u = gamma_w * (h - z), clipped >= 0, and
+    then excess pressures u - p_init. Times are measured from the instant of
+    loading: t = 0 is prepended when the schedule starts later.
 
-    ``scheme="monolithic"``: solve displacement AND pore pressure SIMULTANEOUSLY
-    from the coupled Biot block system (theta-method in time):
+    ``scheme="staggered"`` (**default**): sequential split at each dt:
+      1. Displacement: K * u_{n+1} = F_ext - Q * (p_init + pex_n)
+      2. Excess pressure: (S/dt + H/gamma_w) * pex_{n+1}
+                          = S * pex_n / dt - Q^T*(u_{n+1}-u_n)/dt
+    with k the hydraulic conductivity (m/s). It transports an excess field set
+    up by the boundaries but does NOT convert an applied total-stress increment
+    into excess pore pressure (no undrained transient: drained at every step,
+    U = 1). Use the monolithic scheme for consolidation under a load.
 
-        | K      -Q            | | u_{n+1} |   | F_ext                            |
+    ``scheme="monolithic"``: solve displacement AND excess pore pressure
+    SIMULTANEOUSLY from the coupled Biot block system (theta-method in time),
+    driven by the surface LOAD increment only (self-weight is the initial
+    state; linear superposition):
+
+        | K      -Q            | | u_{n+1} |   | F_load                           |
         | Q^T   (S + theta dt H)| | p_{n+1} | = | Q^T u_n + S p_n - (1-theta)dt H p_n |
 
     The load is applied UNDRAINED at t=0 (the first block solve with no flow gives
     the instantaneous excess pore pressure p0), then it dissipates through H — the
-    full Terzaghi/Biot consolidation transient. ``theta`` in [0.5, 1]; 1.0 =
-    backward Euler (unconditionally stable, recommended for the early undrained
-    boundary layer). Default byte-identical staggered behavior when
-    scheme="staggered".
+    full Terzaghi/Biot consolidation transient. Here ``k`` is the MOBILITY
+    (m^2/(kPa.s)) = hydraulic conductivity / gamma_w. ``theta`` in [0.5, 1];
+    1.0 = backward Euler (unconditionally stable, recommended for the early
+    undrained boundary layer).
 
     Parameters
     ----------
@@ -575,31 +589,39 @@ def solve_consolidation(nodes, elements, material_props, gamma, bc_nodes,
     elements : (n_elements, 3) array — CST connectivity.
     material_props : list of dict — per-element material properties.
         Each dict: {'E', 'nu', ...}. Only elastic materials supported.
-    gamma : float or (n_elements,) array — unit weight (kN/m^3).
+    gamma : float or (n_elements,) array — unit weight (kN/m^3). Enters the
+        staggered displacement step; the monolithic increment excludes it.
     bc_nodes : dict — from detect_boundary_nodes().
-    k : float or (n_elements,) array — hydraulic conductivity (m/s).
-    head_bcs : list of (node_id, head_value) — drainage BCs (fixed head).
-    time_steps : array-like — time points (s), e.g. [0, 100, 1000].
+    k : float or (n_elements,) array — hydraulic conductivity (m/s) for
+        "staggered"; mobility (m^2/(kPa.s)) for "monolithic".
+    head_bcs : list of (node_id, total_head_m) — drained boundaries.
+    time_steps : array-like — times since loading (s), e.g. [0, 100, 1000].
     t : float — thickness.
     gamma_w : float — unit weight of water (kN/m^3).
     n_w : float — bulk modulus of water (kPa).
-    pore_pressures_0 : (n_nodes,) array, optional — initial pore pressures.
+    pore_pressures_0 : (n_nodes,) array, optional — initial equilibrium pore
+        pressures (kPa).
     surface_loads : list of (edge_nodes, qx, qy), optional — surface tractions.
 
     Returns
     -------
     dict with keys:
-        times : (n_steps,) array
+        times : (n_steps,) array — from 0 (the loading instant)
         displacements : (n_steps, 2*n_nodes) array
-        pore_pressures : (n_steps, n_nodes) array
+        pore_pressures : (n_steps, n_nodes) array — TOTAL for "staggered",
+            EXCESS for "monolithic" (as before; see the next two keys)
+        excess_pore_pressures, total_pore_pressures : (n_steps, n_nodes)
         settlements : (n_steps,) array — max surface settlement at each step
+            (monolithic: from the load increment only)
         max_settlement_m : float
-        max_excess_pore_pressure_kPa : float
-        degree_of_consolidation : float — U at final time. For the monolithic
-            scheme this is the mean excess-pore-pressure dissipation
-            (1 - mean|p_final| / mean|p0|); the staggered scheme has no undrained
-            predictor so its settlement-ratio U is identically 1.0.
+        max_excess_pore_pressure_kPa : float — largest |excess| at any time
+        degree_of_consolidation : float — U at the final time
+        degree_of_consolidation_history : (n_steps,) array — U at every time.
+            Monolithic: area-weighted excess-pore-pressure dissipation
+            1 - avg p(t) / avg p0; staggered: 1 (no undrained transient).
+        final_drained_settlement_m : float (monolithic) — the end state
         converged : bool
+        scheme : str
     """
     from fem2d.assembly import (
         assemble_stiffness, assemble_gravity, assemble_surface_load,
@@ -612,19 +634,55 @@ def solve_consolidation(nodes, elements, material_props, gamma, bc_nodes,
     time_steps = np.asarray(time_steps, dtype=float)
     n_nodes = len(nodes)
     n_elem = len(elements)
-    n_steps = len(time_steps)
-    n_dof_u = 2 * n_nodes
 
     if scheme not in ("staggered", "monolithic"):
         raise ValueError(
             f"scheme must be 'staggered' or 'monolithic', got '{scheme}'")
+
+    # Time origin: t = 0 is the instant the load is applied. A schedule that
+    # starts later gets t = 0 prepended, so the first requested time is a real
+    # elapsed time (before 2026-10-09 its first entry was silently taken as
+    # the loading instant: one requested time always gave U = 0).
+    if time_steps.size == 0:
+        raise ValueError("time_steps must contain at least one time (s)")
+    if time_steps[0] < 0:
+        raise ValueError(
+            f"time_steps are times since loading (s) and must be >= 0; "
+            f"got {time_steps[0]}")
+    if time_steps[0] > 0:
+        time_steps = np.concatenate([[0.0], time_steps])
+    n_steps = len(time_steps)
+    n_dof_u = 2 * n_nodes
+
+    # Initial pore pressures: the equilibrium (hydrostatic) field the load
+    # increment starts from. Excess pore pressure is measured from it.
+    if pore_pressures_0 is not None:
+        p_init = np.asarray(pore_pressures_0, dtype=float).copy()
+    else:
+        p_init = np.zeros(n_nodes)
+
+    # Drained boundaries are given as TOTAL HEAD h (m). Convert to pore
+    # pressure, u = gamma_w * (h - z) clipped >= 0 (the convention of
+    # compute_pore_pressures / solve_seepage), then to EXCESS over p_init.
+    # Before 2026-10-09 the head in m was written straight in as a pressure
+    # in kPa (gwt = 20 m gave a 20 kPa boundary pressure).
+    excess_bcs = [
+        (int(node), gamma_w * max(float(head) - nodes[int(node), 1], 0.0)
+         - p_init[int(node)])
+        for node, head in head_bcs
+    ]
+
     if scheme == "monolithic":
         # Monolithic u-p uses a Taylor-Hood (T6 displacement / T3 pressure)
         # pairing to satisfy the LBB (inf-sup) condition; self-assembles on a
         # T6 mesh derived from the CST input mesh.
-        return _monolithic_taylor_hood(
-            nodes, elements, material_props, gamma, bc_nodes, k, head_bcs,
+        res = _monolithic_taylor_hood(
+            nodes, elements, material_props, gamma, bc_nodes, k, excess_bcs,
             time_steps, t, n_w, float(theta), surface_loads)
+        ex = np.asarray(res['pore_pressures'])
+        res['excess_pore_pressures'] = ex
+        res['total_pore_pressures'] = ex + p_init[None, :ex.shape[1]]
+        return res
 
     # Expand material props
     if len(material_props) < n_elem:
@@ -659,14 +717,21 @@ def solve_consolidation(nodes, elements, material_props, gamma, bc_nodes,
         for n in bc_nodes.get(key, []):
             bc_dofs.add(2 * n)
 
+    # Darcy flow in pressure form: q = -(k/gamma_w) grad(p) for the EXCESS
+    # pressure (the hydrostatic initial field carries no flow). k here is the
+    # hydraulic conductivity (m/s), so the pressure-equation flow matrix is
+    # H/gamma_w (before 2026-10-09 k was used as if it were the mobility,
+    # gamma_w times too fast, and the flow acted on the TOTAL pressure with
+    # no elevation term, so a hydrostatic field "consolidated" away).
+    H_flow = H_flow / gamma_w
+
     # Apply displacement BCs to K
     K_bc, F_ext_bc = apply_bcs_penalty(K, F_ext, bc_nodes)
 
-    # Initial pore pressures
-    if pore_pressures_0 is not None:
-        p = np.asarray(pore_pressures_0, dtype=float).copy()
-    else:
-        p = np.zeros(n_nodes)
+    # Pore pressures: p = p_init (equilibrium) + p_ex (excess, the unknown of
+    # the diffusion equation).
+    p_ex = np.zeros(n_nodes)
+    p = p_init + p_ex
 
     # Initial displacement (equilibrium under initial pore pressure + gravity)
     F_init = F_ext_bc + pore_pressure_force(nodes, elements, p, t)
@@ -677,11 +742,13 @@ def solve_consolidation(nodes, elements, material_props, gamma, bc_nodes,
     # Storage for time history
     u_history = np.zeros((n_steps, n_dof_u))
     p_history = np.zeros((n_steps, n_nodes))
+    pex_history = np.zeros((n_steps, n_nodes))
     settlements = np.zeros(n_steps)
 
     # Store initial state
     u_history[0] = u
     p_history[0] = p
+    pex_history[0] = p_ex
 
     # Surface nodes for settlement tracking
     y_max = nodes[:, 1].max()
@@ -697,13 +764,14 @@ def solve_consolidation(nodes, elements, material_props, gamma, bc_nodes,
         if dt <= 0:
             u_history[step] = u
             p_history[step] = p
+            pex_history[step] = p_ex
             settlements[step] = settlements[step - 1]
             continue
 
         u_prev = u.copy()
-        p_prev = p.copy()
+        p_ex_prev = p_ex.copy()
 
-        # Step 1: Displacement with current pore pressure
+        # Step 1: Displacement with current (total) pore pressure
         F_pp = pore_pressure_force(nodes, elements, p, t)
         F_total = F_ext + F_pp
         K_bc_step, F_bc_step = apply_bcs_penalty(K, F_total, bc_nodes)
@@ -712,58 +780,63 @@ def solve_consolidation(nodes, elements, material_props, gamma, bc_nodes,
         except Exception:
             converged = False
             u_history[step:] = u_prev
-            p_history[step:] = p_prev
+            p_history[step:] = p
+            pex_history[step:] = p_ex
             settlements[step:] = settlements[step - 1]
             break
 
-        # Step 2: Pressure update
-        # (S/dt + H) * p_{n+1} = S * p_n / dt - Q^T * (u_{n+1} - u_n) / dt
+        # Step 2: Excess pressure update
+        # (S/dt + H/gw) * pex_{n+1} = S * pex_n / dt - Q^T (u_{n+1}-u_n)/dt
         du = u - u_prev
-        rhs_p = (S @ p_prev) / dt - (Q.T @ du) / dt
+        rhs_p = (S @ p_ex_prev) / dt - (Q.T @ du) / dt
         A_p = S / dt + H_flow
 
-        # Apply head BCs to pressure system
-        A_p_bc, rhs_p_bc = apply_head_bcs(A_p, rhs_p, head_bcs)
+        # Drained boundaries: prescribed excess pressure
+        A_p_bc, rhs_p_bc = apply_head_bcs(A_p, rhs_p, excess_bcs)
         try:
-            p = spsolve(A_p_bc.tocsc(), rhs_p_bc)
+            p_ex = spsolve(A_p_bc.tocsc(), rhs_p_bc)
         except Exception:
             converged = False
-            p = p_prev
+            p_ex = p_ex_prev
             u_history[step:] = u
             p_history[step:] = p
+            pex_history[step:] = p_ex
             settlements[step:] = settlements[step - 1]
             break
 
-        # Clip negative pore pressures (suction not modeled)
-        p = np.maximum(p, 0.0)
+        # Clip negative TOTAL pore pressures (suction not modeled)
+        p = np.maximum(p_init + p_ex, 0.0)
+        p_ex = p - p_init
 
         u_history[step] = u
         p_history[step] = p
+        pex_history[step] = p_ex
         if surface_mask.any():
             settlements[step] = np.min(u[1::2][surface_mask])
 
     # Compute summary statistics
     max_settlement = float(np.min(settlements))  # most negative
-    max_pp = float(np.max(p_history))
+    max_pp = float(np.max(np.abs(pex_history)))
 
-    # Degree of consolidation: U = current_settlement / final_settlement
-    # (settlement is negative, so use ratios of absolute values)
-    s_final = abs(settlements[-1]) if abs(settlements[-1]) > 0 else 1.0
-    s_elastic = abs(settlements[0]) if abs(settlements[0]) > 0 else 0.0
-    if s_final > 1e-12:
-        degree_of_consolidation = abs(settlements[-1]) / s_final
-    else:
-        degree_of_consolidation = 1.0
+    # Degree of consolidation: the staggered split never converts the load
+    # into excess pore pressure (drained at every step), so U is 1 at every
+    # time; reported as such, with a note in the analysis wrapper.
+    doc_history = np.ones(n_steps)
+    degree_of_consolidation = 1.0
 
     return {
         'times': time_steps,
         'displacements': u_history,
         'pore_pressures': p_history,
+        'excess_pore_pressures': pex_history,
+        'total_pore_pressures': p_history,
         'settlements': settlements,
         'max_settlement_m': max_settlement,
         'max_excess_pore_pressure_kPa': max_pp,
         'degree_of_consolidation': degree_of_consolidation,
+        'degree_of_consolidation_history': doc_history,
         'converged': converged,
+        'scheme': 'staggered',
     }
 
 
@@ -775,7 +848,7 @@ def _same_dt(dt_a, dt_b):
     return bool(np.isclose(dt_a, dt_b, rtol=1e-12, atol=0.0))
 
 
-def _monolithic_consolidation(K_bc, F_ext_bc, Q, H, S, head_bcs,
+def _monolithic_consolidation(K_bc, F_ext_bc, Q, H, S, excess_bcs,
                               time_steps, theta, surface_mask):
     """Monolithic (coupled) u-p Biot consolidation, theta time-stepping.
 
@@ -785,8 +858,11 @@ def _monolithic_consolidation(K_bc, F_ext_bc, Q, H, S, head_bcs,
     K_bc / F_ext_bc already carry the displacement BCs (penalty); Q is
     (n_dof_u x n_dof_p), H and S are (n_dof_p x n_dof_p). Dimensions are inferred
     from the matrices, so the same solver serves the CST and the Taylor-Hood
-    (T6/T3) pairings. Drainage (head) BCs are applied to the pressure block by
-    penalty. See ``solve_consolidation``.
+    (T6/T3) pairings. ``p`` is the EXCESS pore pressure and ``F_ext_bc`` the
+    load INCREMENT (self-weight and the hydrostatic field are the initial
+    state); ``excess_bcs`` are (node, prescribed excess pressure kPa) on the
+    drained boundary, applied to the pressure block by penalty. See
+    ``solve_consolidation``.
     """
     time_steps = np.asarray(time_steps, dtype=float)
     n_steps = len(time_steps)
@@ -796,12 +872,13 @@ def _monolithic_consolidation(K_bc, F_ext_bc, Q, H, S, head_bcs,
     if not (0.5 <= theta <= 1.0):
         raise ValueError(f"theta must be in [0.5, 1.0], got {theta}")
 
-    # Pressure (drainage) BCs by penalty: prescribed pore pressure = head value.
+    # Pressure (drainage) BCs by penalty: prescribed EXCESS pore pressure
+    # (kPa), already converted from head by solve_consolidation.
     p_pen = np.zeros(n_dof_p)
     p_val = np.zeros(n_dof_p)
-    for node, head in head_bcs:
+    for node, p_excess in excess_bcs:
         p_pen[int(node)] = penalty
-        p_val[int(node)] = float(head)
+        p_val[int(node)] = float(p_excess)
     idx = np.arange(n_dof_p)
     P_bc = coo_matrix((p_pen, (idx, idx)), shape=(n_dof_p, n_dof_p)).tocsr()
     p_rhs_bc = p_pen * p_val
@@ -862,17 +939,19 @@ def _monolithic_consolidation(K_bc, F_ext_bc, Q, H, S, head_bcs,
         if surface_mask.any():
             settlements[step] = float(np.min(u[1::2][surface_mask]))
 
-    # Degree of consolidation from pore-pressure dissipation (NOT the
-    # settlement-ratio form, which is identically 1.0 here and cannot report the
-    # transient): U = 1 - (mean |excess p| now) / (mean |excess p0|). p_hist[0] is
-    # the instantaneous undrained t=0 field; at full dissipation the final mean
-    # -> 0 so U -> 1, and at t=0 U = 0. Guard a ~zero p0 (no applied load) -> U=1.
-    mean_p0 = float(np.mean(np.abs(p_hist[0])))
-    if mean_p0 > 1e-12:
-        mean_p_final = float(np.mean(np.abs(p_hist[-1])))
-        doc = min(max(1.0 - mean_p_final / mean_p0, 0.0), 1.0)
+    # Degree of consolidation from excess-pore-pressure dissipation, at EVERY
+    # time: U(t) = 1 - avg p(t) / avg p0, the averages weighted by each pressure
+    # node's tributary area (row sums of the storage matrix S, which is
+    # proportional to the lumped mass for a uniform fluid modulus) so U is the
+    # area average Terzaghi defines, not a node count. p_hist[0] is the
+    # instantaneous undrained t=0 field (U = 0); full dissipation gives U = 1.
+    # Guard a ~zero p0 (no applied load) -> U = 1.
+    w = np.asarray(S.sum(axis=1)).ravel()
+    avg_p0 = float(w @ p_hist[0])
+    if abs(avg_p0) > 1e-12:
+        doc_hist = np.clip(1.0 - (p_hist @ w) / avg_p0, 0.0, 1.0)
     else:
-        doc = 1.0
+        doc_hist = np.ones(n_steps)
     return {
         'times': time_steps,
         'displacements': u_hist,
@@ -880,8 +959,11 @@ def _monolithic_consolidation(K_bc, F_ext_bc, Q, H, S, head_bcs,
         'settlements': settlements,
         'max_settlement_m': float(np.min(settlements)),
         'max_excess_pore_pressure_kPa': float(np.max(np.abs(p_hist))),
-        # U at the final time step, from mean excess-pore-pressure dissipation.
-        'degree_of_consolidation': doc,
+        'initial_excess_pore_pressure_avg_kPa': (
+            avg_p0 / float(w.sum()) if w.sum() > 0 else 0.0),
+        # U at the final time step, and at every time.
+        'degree_of_consolidation': float(doc_hist[-1]),
+        'degree_of_consolidation_history': doc_hist,
         'converged': converged,
         'scheme': 'monolithic',
     }
@@ -925,7 +1007,8 @@ def assemble_coupling_taylor_hood(nodes6, elements6, t=1.0, n_gp=3):
 
 
 def _monolithic_taylor_hood(nodes, elements, material_props, gamma, bc_nodes,
-                            k, head_bcs, time_steps, t, n_w, theta, surface_loads):
+                            k, excess_bcs, time_steps, t, n_w, theta,
+                            surface_loads):
     """Monolithic u-p consolidation with the Taylor-Hood (T6/T3) pairing.
 
     Converts the CST input mesh to T6, assembles the quadratic-displacement
@@ -933,11 +1016,19 @@ def _monolithic_taylor_hood(nodes, elements, material_props, gamma, bc_nodes,
     linear-pressure flow/compressibility matrices, and time-steps the coupled
     block system (theta-method) — LBB-stable, so the drained-boundary pressure
     overshoot of the equal-order pairing is avoided.
+
+    The transient is driven by the applied surface loads ONLY. Self-weight
+    (``gamma``) is in equilibrium with the initial hydrostatic pore field
+    before loading — the initial state — so, the system being linear, it is
+    left out of the increment by superposition: excess pore pressure and
+    settlement are those of the load. (Before 2026-10-09 gravity was applied
+    undrained at t = 0 together with the load, so p0 carried the self-weight
+    response: 386 kPa under a 100 kPa load on a 20 m column.) ``gamma`` is
+    accepted for the signature but does not enter the increment.
     """
     from fem2d.mesh import convert_to_t6, t6_boundary_edges, detect_boundary_nodes
     from fem2d.assembly import (
-        assemble_stiffness, assemble_gravity, assemble_surface_load,
-        apply_bcs_penalty,
+        assemble_stiffness, assemble_surface_load, apply_bcs_penalty,
     )
     from fem2d.materials import elastic_D
 
@@ -954,7 +1045,8 @@ def _monolithic_taylor_hood(nodes, elements, material_props, gamma, bc_nodes,
     D_array = np.array([elastic_D(mp['E'], mp['nu']) for mp in material_props])
     K = assemble_stiffness(nodes6, elem6, D_array, t)
 
-    F_ext = assemble_gravity(nodes6, elem6, gamma, t)
+    # Load increment only (see docstring): no gravity term.
+    F_ext = np.zeros(2 * len(nodes6))
     if surface_loads:
         for edges, qx, qy in surface_loads:
             edges3 = t6_boundary_edges(elem6, edges)
@@ -976,7 +1068,16 @@ def _monolithic_taylor_hood(nodes, elements, material_props, gamma, bc_nodes,
     surface_mask = np.abs(nodes6[:, 1] - y_max) < \
         0.01 * (y_max - nodes6[:, 1].min() + 1)
 
-    res = _monolithic_consolidation(K_bc, F_ext_bc, Q, H_p, S_p, head_bcs,
+    res = _monolithic_consolidation(K_bc, F_ext_bc, Q, H_p, S_p, excess_bcs,
                                     time_steps, theta, surface_mask)
     res['scheme'] = 'monolithic_taylor_hood'
+    # The fully drained end state of the same load (the settlement the
+    # transient tends to), for U by settlement and as a check.
+    try:
+        u_dr = spsolve(K_bc.tocsc(), F_ext_bc)
+        res['final_drained_settlement_m'] = (
+            float(np.min(u_dr[1::2][surface_mask])) if surface_mask.any()
+            else 0.0)
+    except Exception:
+        res['final_drained_settlement_m'] = None
     return res

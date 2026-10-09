@@ -165,6 +165,105 @@ class DowndragAnalysis:
             z_nodes, dz, fs, toe_resistance
         )
 
+        # Settlement compatibility (UFC 3-220-20 Fig 6-19: pile and soil
+        # settle equally at the NP), evaluated at every node: the depth
+        # below which the computed soil settlement falls to the pile's.
+        g_settle, toe_force_at = self._settlement_mismatch(
+            z_nodes, dz, drag_from_top, resist_from_tip, toe_resistance,
+            soil_settlement, sigma_v[-1], delta_sigma[-1])
+        z_se = _deepest_positive_crossing(z_nodes, g_settle)
+        any_soil_settles = bool(np.any(soil_settlement > 0))
+
+        warning_list: List[str] = []
+        L = self.pile_length
+        if z_np is not None:
+            # Load and resistance curves cross: UFC 3-220-20 §6-7.4 steps
+            # 3-5, side and base resistance fully mobilized (the standard's
+            # conservative approach for drag force).
+            np_method = "force_equilibrium"
+            toe_force = toe_resistance
+            np_basis = (
+                "Force equilibrium: the load curve (Q_dead + pile weight + "
+                "negative skin friction) meets the resistance curve (toe "
+                "resistance + positive skin friction) at this depth, with "
+                "side and base resistance fully mobilized (UFC 3-220-20 "
+                "§6-7.4 steps 3-5; Fellenius 2004).")
+            if any_soil_settles and z_np > z_se + 1e-6:
+                warning_list.append(
+                    f"The force-equilibrium neutral plane ({z_np:.2f} m) lies "
+                    f"below {z_se:.2f} m, where the computed soil settlement "
+                    f"falls to the pile's; the friction between them is "
+                    f"counted as drag although that soil settles less than "
+                    f"the pile. That is UFC 3-220-20 §6-7.4's conservative "
+                    f"full-mobilization assumption for drag force. For "
+                    f"settlement, full base mobilization is not conservative "
+                    f"(§6-5.8.4.2): re-run with a lower Nt (e.g. 0%, 50% of "
+                    f"the toe resistance).")
+        elif drag_from_top[0] - resist_from_tip[0] > 0:
+            # The dead load alone exceeds the nominal geotechnical
+            # resistance: UFC 3-220-20 §6-7.4 step 5 limiting case, "there
+            # is no neutral plane". The pile plunges, every part of the
+            # shaft moves down relative to the soil, so no drag develops.
+            np_method = "none"
+            z_np = 0.0
+            toe_force = toe_resistance
+            capacity = float(resist_from_tip[0])
+            np_basis = (
+                "No neutral plane: the dead load exceeds the pile's nominal "
+                "geotechnical resistance (UFC 3-220-20 §6-7.4 step 5, the "
+                "limiting case). Reported at the pile head with zero drag.")
+            warning_list.append(
+                f"NO NEUTRAL PLANE: Q_dead = {self.Q_dead:.1f} kN exceeds "
+                f"the total geotechnical resistance (toe + full shaft) = "
+                f"{capacity:.1f} kN. The pile is overloaded; a drag force "
+                f"is not meaningful. Increase the pile length or size.")
+        else:
+            # The toe resistance exceeds everything the pile can carry down
+            # to its toe (Q_dead + pile weight + the whole shaft as drag):
+            # the curves never meet, so full base mobilization is
+            # impossible and force equilibrium alone cannot place the NP.
+            # Use the other half of the unified method: settlement
+            # compatibility (UFC 3-220-20 Fig 6-19, §6-5.8.4.3), with the
+            # toe carrying only the force the pile delivers.
+            np_method = "settlement_compatibility"
+            z_np = z_se
+            toe_force = float(np.interp(z_np, z_nodes, toe_force_at))
+            delivered = float(drag_from_top[-1])
+            if not any_soil_settles:
+                np_basis = (
+                    "Settlement compatibility: no soil settles (no settling "
+                    "layer, or no fill / drawdown to load it), so the pile "
+                    "settles at least as much as the soil everywhere and no "
+                    "negative skin friction develops. Neutral plane at the "
+                    "pile head, zero drag.")
+            elif z_np >= L - 1e-9:
+                np_basis = (
+                    "Settlement compatibility, end-bearing case: the soil "
+                    "settles more than the pile all the way down to the toe, "
+                    "so the neutral plane is at the pile toe (UFC 3-220-20 "
+                    "§6-7.4 step 5; Fellenius 2004).")
+            else:
+                np_basis = (
+                    "Settlement compatibility: the depth where the computed "
+                    "soil settlement equals the pile settlement (UFC 3-220-20 "
+                    "Fig 6-19). For an end-bearing pile in a stratum stiffer "
+                    "than the compressible soil this falls near the top of "
+                    "the bearing layer (UFC 3-220-20 §6-7.4 step 5).")
+            warning_list.append(
+                f"The load and resistance curves do not intersect: the toe "
+                f"resistance ({toe_resistance:.1f} kN, ultimate unless Nt "
+                f"was given as a mobilized value) exceeds everything the "
+                f"pile can carry to its toe ({delivered:.1f} kN with the "
+                f"whole shaft in drag), so full base mobilization is "
+                f"impossible and force equilibrium does not locate the "
+                f"neutral plane. It is placed by settlement compatibility at "
+                f"{z_np:.2f} m, with a toe force of {toe_force:.1f} kN. "
+                f"Upper bound if the soil settled relative to the pile down "
+                f"to the toe: neutral plane at the toe, drag "
+                f"{self._compute_dragload(z_nodes, dz, fs, L):.1f} kN. To use "
+                f"force equilibrium instead, give Nt for the MOBILIZED toe "
+                f"resistance (UFC 3-220-20 §6-5.8.4.2: try 0%, 50%, 100%).")
+
         # Compute dragload and positive resistance
         dragload = self._compute_dragload(z_nodes, dz, fs, z_np)
         pile_weight_to_np = self.pile_unit_weight * self.pile_area * z_np
@@ -174,14 +273,19 @@ class DowndragAnalysis:
         total_resistance = positive_skin + toe_resistance
 
         # Compute axial load distribution along pile
-        axial_load = self._compute_axial_load_distribution(z_nodes, dz, fs,
-                                                            toe_resistance)
+        if np_method == "settlement_compatibility":
+            axial_load = self._axial_load_with_mobilized_toe(
+                z_nodes, drag_from_top, resist_from_tip, toe_resistance,
+                z_np)
+        else:
+            axial_load = self._compute_axial_load_distribution(
+                z_nodes, dz, fs, toe_resistance)
 
         # Compute pile settlement at neutral plane
         elastic_short = self._compute_elastic_shortening(z_nodes, dz,
                                                           axial_load, z_np)
         toe_settle = self._compute_toe_settlement(sigma_v[-1], delta_sigma[-1],
-                                                     toe_resistance)
+                                                     toe_force)
         pile_settlement = elastic_short + toe_settle
 
         # Settlement at the neutral plane from the soil profile
@@ -237,6 +341,10 @@ class DowndragAnalysis:
             settlement_ok=settlement_ok,
             pile_length=self.pile_length,
             pile_diameter=self.pile_diameter,
+            neutral_plane_method=np_method,
+            neutral_plane_basis=np_basis,
+            toe_force_mobilized=toe_force,
+            warnings=warning_list,
         )
 
     # ── Private helper methods ────────────────────────────────────────────
@@ -348,45 +456,57 @@ class DowndragAnalysis:
         Returns
         -------
         numpy.ndarray
-            Soil settlement (m) at each depth. Settlement at the surface
-            is the total settlement; it decreases with depth.
+            Soil settlement (m) at each depth, measured from the pile-toe
+            level (zero at the toe). Settlement at the surface is the total
+            settlement of the soil along the pile; it decreases with depth.
+
+        Notes
+        -----
+        Each sublayer [z_k, z_k+1] is evaluated at its MIDPOINT (layer,
+        initial effective stress and stress change), so a sublayer is
+        never attributed to the layer above a boundary and the top
+        sublayer (where sigma'v0 = 0 at the surface node) still counts.
+        The nodal ``sigma_v`` / ``delta_sigma`` arguments are kept for
+        signature compatibility.
         """
         n = len(z_nodes)
-        sublayer_settlement = np.zeros(n)
+        z_mid = 0.5 * (z_nodes[:-1] + z_nodes[1:])
+        sv_mid = np.array([self.soil.effective_stress_at_depth(z)
+                           for z in z_mid])
+        ds_mid = self._compute_stress_change(z_mid)
+        sublayer_settlement = np.zeros(n - 1)
 
-        for i in range(n):
-            z = z_nodes[i]
+        for k in range(n - 1):
+            h = z_nodes[k + 1] - z_nodes[k]
             try:
-                layer = self.soil.layer_at_depth(z)
+                layer = self.soil.layer_at_depth(z_mid[k])
             except ValueError:
                 continue
 
-            if not layer.settling or delta_sigma[i] <= 0 or sigma_v[i] <= 0:
+            if not layer.settling or ds_mid[k] <= 0 or sv_mid[k] <= 0:
                 continue
 
             if layer.soil_type == "cohesive":
                 # Clay settlement: Eq 6-53 using modified compression indices
                 sigma_p = (layer.sigma_p
-                           if layer.sigma_p is not None else sigma_v[i])
-                sublayer_settlement[i] = _settlement_clay(
-                    H=dz, C_ec=layer.C_ec, C_er=layer.C_er,
-                    sigma_v0=sigma_v[i], sigma_p=sigma_p,
-                    delta_sigma=delta_sigma[i],
+                           if layer.sigma_p is not None else sv_mid[k])
+                sublayer_settlement[k] = _settlement_clay(
+                    H=h, C_ec=layer.C_ec, C_er=layer.C_er,
+                    sigma_v0=sv_mid[k], sigma_p=sigma_p,
+                    delta_sigma=ds_mid[k],
                 )
             else:
                 # Coarse-grained elastic settlement: Eq 6-54
                 if layer.E_s is not None and layer.E_s > 0:
-                    sublayer_settlement[i] = _settlement_sand_elastic(
-                        H=dz, nu_s=layer.nu_s, E_s=layer.E_s,
-                        delta_sigma=delta_sigma[i],
+                    sublayer_settlement[k] = _settlement_sand_elastic(
+                        H=h, nu_s=layer.nu_s, E_s=layer.E_s,
+                        delta_sigma=ds_mid[k],
                     )
 
-        # Cumulate from bottom upward: settlement at depth z is the sum
-        # of all sublayer settlements below z
+        # Cumulate from the toe upward: settlement at depth z_i is the sum
+        # of the sublayer settlements between z_i and the toe.
         cumulative = np.zeros(n)
-        cumulative[-1] = sublayer_settlement[-1]
-        for i in range(n - 2, -1, -1):
-            cumulative[i] = cumulative[i + 1] + sublayer_settlement[i]
+        cumulative[:-1] = np.cumsum(sublayer_settlement[::-1])[::-1]
 
         return cumulative
 
@@ -412,8 +532,12 @@ class DowndragAnalysis:
 
         Returns
         -------
-        z_np : float
-            Neutral plane depth (m).
+        z_np : float or None
+            Neutral plane depth (m), or None when the two curves never
+            cross (either the toe resistance exceeds everything the pile
+            can deliver, or the dead load exceeds the total resistance).
+            The caller decides what that means; it is never silently the
+            pile toe.
         drag_from_top : numpy.ndarray
             Cumulative load from top at each node.
         resist_from_tip : numpy.ndarray
@@ -440,7 +564,7 @@ class DowndragAnalysis:
 
         # Find crossing point: where drag_from_top = resist_from_tip
         diff = drag_from_top - resist_from_tip
-        z_np = z_nodes[-1]  # default to pile tip
+        z_np = None  # no crossing unless found below
 
         for i in range(n - 1):
             if diff[i] <= 0 and diff[i + 1] > 0:
@@ -448,8 +572,83 @@ class DowndragAnalysis:
                 frac = abs(diff[i]) / (abs(diff[i]) + abs(diff[i + 1]))
                 z_np = z_nodes[i] + frac * dz
                 break
+        if z_np is None and diff[-1] == 0.0:
+            z_np = float(z_nodes[-1])  # curves meet exactly at the toe
 
         return z_np, drag_from_top, resist_from_tip
+
+    def _settlement_mismatch(self, z_nodes: np.ndarray, dz: float,
+                             drag_from_top: np.ndarray,
+                             resist_from_tip: np.ndarray,
+                             toe_resistance: float,
+                             soil_settlement: np.ndarray,
+                             sigma_v_tip: float, delta_sigma_tip: float):
+        """Soil minus pile settlement with the neutral plane at each node.
+
+        For a trial neutral plane at node j the pile carries
+        Q_np = drag_from_top[j]; below it positive friction sheds load and
+        the toe takes what is left, never more than ``toe_resistance`` and
+        never less than zero (when the full positive friction below would
+        exceed Q_np, it is only partly mobilized). The pile settlement
+        relative to the soil at the toe level is the toe penetration (the
+        bearing-stratum settlement under the toe force, minus what the
+        fill / drawdown alone causes there) plus the elastic compression
+        of the pile between the trial NP and the toe. The soil settlement
+        profile is already measured from the toe level (it accumulates
+        from the bottom up), so the two compare directly (UFC 3-220-20
+        Fig 6-19 and §6-5.8.4.3: equal settlement at the neutral plane).
+
+        Returns
+        -------
+        g : numpy.ndarray
+            soil settlement - pile settlement at each node (m); positive
+            where the soil settles more than the pile (drag above).
+        toe_force : numpy.ndarray
+            Toe force (kN) carried with the neutral plane at each node.
+        """
+        n = len(z_nodes)
+        AE = self.pile_area * self.pile_E
+        f_below = resist_from_tip - toe_resistance   # positive friction j->L
+        q_toe_raw = drag_from_top - f_below
+        toe_force = np.clip(q_toe_raw, 0.0, toe_resistance)
+
+        s_fill_only = self._compute_toe_settlement(
+            sigma_v_tip, delta_sigma_tip, 0.0)
+        g = np.zeros(n)
+        for j in range(n):
+            q_np = drag_from_top[j]
+            if q_toe_raw[j] >= 0 or f_below[j] <= 0:
+                k = 1.0
+            else:
+                k = q_np / f_below[j]
+            q = q_np - k * (f_below[j] - f_below[j:])
+            compression = (float(np.sum(0.5 * (q[:-1] + q[1:]))) * dz / AE
+                           if AE > 0 and n - j > 1 else 0.0)
+            penetration = max(0.0, self._compute_toe_settlement(
+                sigma_v_tip, delta_sigma_tip, float(toe_force[j]))
+                - s_fill_only)
+            g[j] = soil_settlement[j] - (penetration + compression)
+        return g, toe_force
+
+    def _axial_load_with_mobilized_toe(self, z_nodes: np.ndarray,
+                                       drag_from_top: np.ndarray,
+                                       resist_from_tip: np.ndarray,
+                                       toe_resistance: float,
+                                       z_np: float) -> np.ndarray:
+        """Axial load when the toe is not fully mobilized.
+
+        Above the neutral plane the load is the load-from-top curve; below
+        it positive friction sheds load down to the toe force the pile
+        delivers. When the full positive friction below the NP exceeds the
+        load at the NP, the friction is scaled so the toe force is zero.
+        """
+        f_below = resist_from_tip - toe_resistance
+        q_np = float(np.interp(z_np, z_nodes, drag_from_top))
+        f_np = float(np.interp(z_np, z_nodes, f_below))
+        k = 1.0 if (q_np >= f_np or f_np <= 0) else q_np / f_np
+        below = q_np - k * (f_np - f_below)
+        q = np.where(z_nodes <= z_np, drag_from_top, below)
+        return np.maximum(q, 0.0)
 
     def _compute_dragload(self, z_nodes: np.ndarray, dz: float,
                            fs: np.ndarray, z_np: float) -> float:
@@ -727,6 +926,24 @@ class DowndragAnalysis:
 
 
 # ── Module-level helper functions ─────────────────────────────────────────
+
+def _deepest_positive_crossing(z_nodes: np.ndarray, g: np.ndarray) -> float:
+    """Deepest depth at which ``g`` (soil minus pile settlement) is > 0.
+
+    Interpolated between the deepest node with g > 0 and the node below
+    it. Returns the toe depth when the soil settles more than the pile
+    down to the toe, and 0.0 when it nowhere does.
+    """
+    pos = np.nonzero(g > 0)[0]
+    if len(pos) == 0:
+        return 0.0
+    j = int(pos[-1])
+    if j >= len(z_nodes) - 1:
+        return float(z_nodes[-1])
+    g0, g1 = float(g[j]), float(g[j + 1])
+    frac = g0 / (g0 - g1) if g0 != g1 else 0.0
+    return float(z_nodes[j] + frac * (z_nodes[j + 1] - z_nodes[j]))
+
 
 def _settlement_clay(H: float, C_ec: float, C_er: float,
                      sigma_v0: float, sigma_p: float,

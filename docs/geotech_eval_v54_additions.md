@@ -41,7 +41,7 @@ questions CON-1 / FTG-1 / MRS-1 are the E11 addition (2026-07-07).
 | EPC-3 | retaining_walls | `earth_pressure_coefficient` Caquot-Kerisel log-spiral Kp | 7.2 |
 | MSE-1 | retaining_walls | `mse_lrfd_external_stability` sliding CDR | 1.84 |
 | FF-1 | fem2d | `fem2d_foundation` elastic strip footing | 0.01946 m |
-| CON-1 | fem2d | `fem2d_consolidation` monolithic Taylor-Hood Biot (E11) | U 0.599 at t=1e8 s |
+| CON-1 | fem2d | `fem2d_consolidation` monolithic Taylor-Hood Biot (E11) | U 1.000 at t=1e8 s (Terzaghi Tv = 16.1; re-keyed 2026-10-09 from 0.599, a Crank-Nicolson large-step artifact — live smoke G6) |
 | FTG-1 | fem2d | `fem2d_footing_capacity` load-control collapse, Prandtl (E11) | Nc 5.12 / q_ult 512 kPa |
 | MRS-1 | fem2d | `srm_mesh_refinement_study` mesh-consistency study (E11) | finest FOS 1.531 |
 | CAL-1 | pdf_import | `calibrate_scale` two-point scale | 0.05 m/unit |

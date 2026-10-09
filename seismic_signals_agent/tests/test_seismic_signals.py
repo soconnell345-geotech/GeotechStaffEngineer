@@ -143,8 +143,25 @@ class TestResponseSpectrumResult:
         r = _make_response_spectrum_result()
         d = r.to_dict()
         expected = {"motion_name", "n_points", "duration_s", "dt_s",
-                    "pga_g", "pgv_m_per_s", "pgd_m", "damping"}
+                    "pga_g", "pgv_m_per_s", "pgd_m", "damping",
+                    "Sa_max_g", "T_peak_s", "periods_s", "Sa_g"}
         assert set(d.keys()) == expected
+
+    def test_to_dict_carries_the_spectrum(self):
+        """G6 (live smoke SS2-1): the documented Sa_max_g / T_peak_s /
+        periods_s / Sa_g were never returned, so the model had "no spectral
+        ordinates to report"."""
+        r = _make_response_spectrum_result()
+        d = r.to_dict()
+        assert len(d["periods_s"]) == len(d["Sa_g"]) == 50
+        i = int(np.argmax(r.Sa_g))
+        assert d["Sa_max_g"] == pytest.approx(r.Sa_g[i], abs=1e-5)
+        assert d["T_peak_s"] == pytest.approx(r.periods[i], abs=1e-5)
+        assert d["Sa_max_g"] == pytest.approx(max(d["Sa_g"]))
+
+    def test_to_dict_without_spectrum_has_no_empty_arrays(self):
+        d = ResponseSpectrumResult().to_dict()
+        assert "Sa_g" not in d and "Sa_max_g" not in d
 
     def test_to_dict_json_serializable(self):
         r = _make_response_spectrum_result()
@@ -212,6 +229,18 @@ class TestRotDSpectrumResult:
         assert "peak_rotd50_g" in d
         assert "peak_rotd100_g" in d
 
+    def test_to_dict_carries_the_spectra(self):
+        """G6: periods_s / percentiles / spectra were documented, never
+        returned."""
+        r = _make_rotd_spectrum_result()
+        d = r.to_dict()
+        assert d["percentiles"] == ["0", "50", "100"]
+        assert len(d["periods_s"]) == 50
+        assert set(d["spectra"]) == {"0", "50", "100"}
+        assert max(d["spectra"]["50"]) == pytest.approx(d["peak_rotd50_g"],
+                                                        abs=1e-4)
+        assert d["engine"] == "pyrotd"
+
     def test_to_dict_json_serializable(self):
         r = _make_rotd_spectrum_result()
         s = json.dumps(r.to_dict())
@@ -242,8 +271,13 @@ class TestSignalProcessingResult:
         d = r.to_dict()
         expected = {"motion_name", "n_points", "dt_s", "bandpass_hz",
                     "baseline_order", "pga_original_g", "pga_processed_g",
-                    "pgv_processed_m_per_s", "pgd_processed_m"}
+                    "pgv_processed_m_per_s", "pgd_processed_m",
+                    "filter_applied", "baseline_corrected"}
         assert set(d.keys()) == expected
+        assert d["filter_applied"] is True and d["baseline_corrected"] is True
+        none = SignalProcessingResult().to_dict()
+        assert none["filter_applied"] is False
+        assert none["baseline_corrected"] is False
 
     def test_to_dict_json_serializable(self):
         r = _make_signal_processing_result()
@@ -399,6 +433,43 @@ class TestSignalUtils:
     def test_has_pyrotd_returns_bool(self):
         assert isinstance(has_pyrotd(), bool)
 
+    def test_pyrotd_import_error_is_the_real_one(self, monkeypatch):
+        """G10 (live smoke SS2-1): pyrotd 0.6.1 was installed but its import
+        failed on pkg_resources, and the app said "not installed"."""
+        import builtins
+        import importlib.util
+        from seismic_signals_agent import signal_utils as su
+
+        real_import = builtins.__import__
+        real_find = importlib.util.find_spec
+
+        def fake_import(name, *a, **k):
+            if name == "pyrotd":
+                raise ModuleNotFoundError("No module named 'pkg_resources'")
+            return real_import(name, *a, **k)
+
+        monkeypatch.setattr(importlib.util, "find_spec",
+                            lambda n, *a: object() if n == "pyrotd"
+                            else real_find(n, *a))
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        err = su.pyrotd_import_error()
+        assert err.startswith("pyrotd is installed but cannot be imported")
+        assert "pkg_resources" in err and "setuptools" in err
+        assert su.has_pyrotd() is False
+        with pytest.raises(ImportError, match="installed but cannot"):
+            su.import_pyrotd()
+
+    def test_pyrotd_not_installed_says_so(self, monkeypatch):
+        import importlib.util
+        from seismic_signals_agent import signal_utils as su
+        real_find = importlib.util.find_spec
+        monkeypatch.setattr(importlib.util, "find_spec",
+                            lambda n, *a: None if n == "pyrotd"
+                            else real_find(n, *a))
+        assert su.pyrotd_import_error() == "pyrotd is not installed"
+        with pytest.raises(ImportError, match="not installed"):
+            su.import_pyrotd()
+
 
 # ===================================================================
 # Tier 1: Foundry Metadata Tests
@@ -473,6 +544,21 @@ class TestFoundryMetadata:
 # ===================================================================
 
 class TestResponseSpectrumIntegration:
+    @requires_eqsig
+    def test_requested_periods_come_back_with_sa(self):
+        """G6, the live SS2-1 call: periods given, Sa expected back."""
+        from seismic_signals_agent import analyze_response_spectrum
+        periods = [0.05, 0.1, 0.2, 0.3, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 5.0]
+        d = analyze_response_spectrum(motion="synthetic_pulse",
+                                      damping=0.05,
+                                      periods=periods).to_dict()
+        assert d["periods_s"] == periods
+        assert len(d["Sa_g"]) == len(periods)
+        assert d["Sa_max_g"] == max(d["Sa_g"])
+        assert d["T_peak_s"] in periods
+        # Short-period Sa tends to PGA (rigid oscillator).
+        assert d["Sa_g"][0] == pytest.approx(d["pga_g"], rel=0.1)
+
     @requires_eqsig
     def test_synthetic_pulse(self):
         from seismic_signals_agent import analyze_response_spectrum
@@ -606,11 +692,90 @@ class TestNigamJenningsVsNewmarkBeta:
 
 
 # ===================================================================
-# Tier 2: pyrotd Integration Tests
+# Tier 2: RotD integration tests — pyrotd when it imports, otherwise the
+# numpy implementation of the same procedure (rotd_native), so these run
+# everywhere.
 # ===================================================================
 
+def _load_pyrotd_bypassing_pkg_resources():
+    """pyrotd 0.6 only uses pkg_resources for its __version__; load it with
+    a stub so it can serve as the oracle for the numpy implementation."""
+    import importlib
+    import importlib.metadata as md
+    import importlib.util
+    import sys
+    import types
+    if importlib.util.find_spec("pyrotd") is None:
+        pytest.skip("pyrotd not installed; no oracle")
+    added = "pkg_resources" not in sys.modules
+    if added:
+        stub = types.ModuleType("pkg_resources")
+        stub.get_distribution = lambda n: types.SimpleNamespace(
+            version=md.version(n))
+        sys.modules["pkg_resources"] = stub
+    try:
+        pyrotd = importlib.import_module("pyrotd")
+    finally:
+        if added:
+            del sys.modules["pkg_resources"]
+    pyrotd.processes = 1   # no worker pool (Windows spawn re-imports)
+    return pyrotd
+
+
+class TestRotDNative:
+    def test_matches_pyrotd(self):
+        """The fallback reproduces pyrotd 0.6.1 to round-off (measured
+        max relative difference ~2e-16 on these records)."""
+        from opensees_agent.ground_motions import validate_motion_input
+        from seismic_signals_agent.rotd_native import rotated_spectral_accels
+        pyrotd = _load_pyrotd_bypassing_pkg_resources()
+        a, dt = validate_motion_input("synthetic_pulse", None, None)
+        b, _ = validate_motion_input("synthetic_long", None, None)
+        n = max(len(a), len(b))
+        a = np.pad(a, (0, n - len(a)))
+        b = np.pad(b, (0, n - len(b)))
+        periods = np.logspace(-2, 1, 30)
+        ref = pyrotd.calc_rotated_spec_accels(
+            dt, a, b, 1.0 / periods, osc_damping=0.05,
+            percentiles=[0, 50, 100])
+        ours = rotated_spectral_accels(dt, a, b, periods, 0.05, [0, 50, 100])
+        for p in (0, 50, 100):
+            expected = np.asarray(ref[ref.percentile == p].spec_accel, float)
+            np.testing.assert_allclose(ours[float(p)], expected, rtol=1e-9)
+
+    def test_rotd100_of_one_component_is_its_spectrum(self):
+        """Component B = 0: every rotation is a cos-scaled copy of A, so
+        RotD100 = A's own pseudo-spectral acceleration (theta = 0)."""
+        from seismic_signals_agent.rotd_native import (
+            rotated_spectral_accels, _psa_response,
+        )
+        dt = 0.01
+        t = np.arange(1500) * dt
+        a = 0.2 * np.sin(2 * np.pi * 1.5 * t) * np.exp(-0.2 * t)
+        periods = np.array([0.2, 0.5, 1.0])
+        out = rotated_spectral_accels(dt, a, np.zeros_like(a), periods)
+        fa = np.fft.rfft(a)
+        freqs = np.linspace(0, 1 / (2 * dt), fa.size)
+        own = [np.abs(_psa_response(freqs, fa, 0.05, 1 / T, 5.0)).max()
+               for T in periods]
+        np.testing.assert_allclose(out[100.0], own, rtol=1e-12)
+
+    def test_analysis_falls_back_and_says_why(self, monkeypatch):
+        from seismic_signals_agent import rotd_spectrum
+        monkeypatch.setattr(rotd_spectrum, "pyrotd_import_error",
+                            lambda: "pyrotd is installed but cannot be "
+                                    "imported: ModuleNotFoundError: x")
+        r = rotd_spectrum.analyze_rotd_spectrum(
+            motion_a="synthetic_pulse", motion_b="synthetic_long",
+            percentiles=[0, 50, 84, 100])
+        d = r.to_dict()
+        assert d["engine"] == "numpy"
+        assert "cannot be imported" in d["engine_note"]
+        assert d["percentiles"] == ["0", "50", "84", "100"]
+        assert len(d["spectra"]["84"]) == len(d["periods_s"])
+
+
 class TestRotDSpectrumIntegration:
-    @requires_pyrotd
     def test_two_synthetic_components(self):
         from seismic_signals_agent import analyze_rotd_spectrum
         r = analyze_rotd_spectrum(
@@ -622,7 +787,7 @@ class TestRotDSpectrumIntegration:
         assert r.pga_a_g > 0
         assert r.pga_b_g > 0
 
-    @requires_pyrotd
+    # (runs with pyrotd or the numpy fallback)
     def test_rotd_ordering(self):
         """RotD0 <= RotD50 <= RotD100 at every period."""
         from seismic_signals_agent import analyze_rotd_spectrum
@@ -635,7 +800,7 @@ class TestRotDSpectrumIntegration:
         if len(r.rotd50) > 0 and len(r.rotd100) > 0:
             assert np.all(r.rotd50 <= r.rotd100 + 1e-10)
 
-    @requires_pyrotd
+    # (runs with pyrotd or the numpy fallback)
     def test_identical_components(self):
         """Identical components: RotD50 and RotD100 are close."""
         from seismic_signals_agent import analyze_rotd_spectrum
@@ -649,7 +814,7 @@ class TestRotDSpectrumIntegration:
             ratio = r.rotd100 / np.maximum(r.rotd50, 1e-10)
             assert np.median(ratio) < 2.0
 
-    @requires_pyrotd
+    # (runs with pyrotd or the numpy fallback)
     def test_result_json_serializable(self):
         from seismic_signals_agent import analyze_rotd_spectrum
         r = analyze_rotd_spectrum(
@@ -659,3 +824,16 @@ class TestRotDSpectrumIntegration:
         d = r.to_dict()
         s = json.dumps(d)
         assert isinstance(s, str)
+
+
+@requires_eqsig
+def test_response_spectrum_target_pga():
+    """G19: a built-in motion scaled to a target PGA; Sa scales with it."""
+    from seismic_signals_agent import analyze_response_spectrum
+    periods = [0.1, 0.5, 1.0]
+    a = analyze_response_spectrum(motion="synthetic_pulse", periods=periods)
+    b = analyze_response_spectrum(motion="synthetic_pulse", periods=periods,
+                                  target_pga_g=0.15)
+    assert b.pga_g == pytest.approx(0.15, rel=1e-6)
+    np.testing.assert_allclose(b.Sa_g, a.Sa_g * (0.15 / a.pga_g), rtol=1e-6)
+    assert "scaled to PGA 0.15 g" in b.to_dict()["motion_name"]

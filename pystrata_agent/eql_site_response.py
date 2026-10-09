@@ -270,6 +270,7 @@ def analyze_eql_site_response(
     motion=None,
     accel_history=None,
     dt=None,
+    target_pga_g=None,
     strain_ratio=0.65,
     tolerance=0.01,
     max_iterations=15,
@@ -295,6 +296,9 @@ def analyze_eql_site_response(
         Custom acceleration time history (g).
     dt : float, optional
         Time step for custom motion (s).
+    target_pga_g : float, optional
+        Scale the motion so its PGA equals this value (g) before the
+        analysis (built-in motions have fixed PGAs). Default None.
     strain_ratio : float
         Ratio of effective to maximum shear strain. Default 0.65.
     tolerance : float
@@ -321,9 +325,11 @@ def analyze_eql_site_response(
     _validate_eql_inputs(layers, strain_ratio, tolerance,
                          max_iterations, max_freq_hz, wave_frac)
 
-    from opensees_agent.ground_motions import validate_motion_input
-    accel_g, dt_motion = validate_motion_input(motion, accel_history, dt)
-    motion_name = motion if motion else "custom"
+    from opensees_agent.ground_motions import (
+        validate_motion_input, motion_label)
+    accel_g, dt_motion = validate_motion_input(
+        motion, accel_history, dt, target_pga_g=target_pga_g)
+    motion_name = motion_label(motion, target_pga_g)
 
     from pystrata_agent.pystrata_utils import import_pystrata
     pystrata = import_pystrata()
@@ -340,6 +346,7 @@ def analyze_linear_site_response(
     motion=None,
     accel_history=None,
     dt=None,
+    target_pga_g=None,
     max_freq_hz=25.0,
     wave_frac=0.2,
 ):
@@ -358,6 +365,9 @@ def analyze_linear_site_response(
         Custom acceleration time history (g).
     dt : float, optional
         Time step for custom motion (s).
+    target_pga_g : float, optional
+        Scale the motion so its PGA equals this value (g) before the
+        analysis (built-in motions have fixed PGAs). Default None.
     max_freq_hz : float
         Max frequency for auto-discretization (Hz). Default 25.
     wave_frac : float
@@ -371,9 +381,11 @@ def analyze_linear_site_response(
     # Validate with default EQL params (they won't be used)
     _validate_eql_inputs(layers, max_freq_hz=max_freq_hz, wave_frac=wave_frac)
 
-    from opensees_agent.ground_motions import validate_motion_input
-    accel_g, dt_motion = validate_motion_input(motion, accel_history, dt)
-    motion_name = motion if motion else "custom"
+    from opensees_agent.ground_motions import (
+        validate_motion_input, motion_label)
+    accel_g, dt_motion = validate_motion_input(
+        motion, accel_history, dt, target_pga_g=target_pga_g)
+    motion_name = motion_label(motion, target_pga_g)
 
     from pystrata_agent.pystrata_utils import import_pystrata
     pystrata = import_pystrata()
@@ -441,9 +453,21 @@ def _run_eql_analysis(pystrata, layers, accel_g, dt_motion, motion_name,
         pystrata.output.CompatVelProfile(),
     ])
 
-    # 6. Run analysis
+    # 6. Run analysis. pystrata keeps its EQL iteration count in a local
+    # variable; count the wave solves instead (one per iteration) so the
+    # result reports the real number, not a placeholder (live smoke G6, PST-1).
+    wave_solves = [0]
+    orig_calc_waves = getattr(calc, "_calc_waves", None)
+    if analysis_type != "linear_elastic" and callable(orig_calc_waves):
+        def _counted_calc_waves(*a, **k):
+            wave_solves[0] += 1
+            return orig_calc_waves(*a, **k)
+        calc._calc_waves = _counted_calc_waves
     loc_input = profile.location("outcrop", index=-1)
     calc(ts_motion, profile, loc_input)
+    # The first wave solve is pystrata's linear-elastic start (base-class
+    # __call__); each EQL iteration adds one more.
+    eql_passes = wave_solves[0] - 1
 
     # 7. Compute outputs
     outputs(calc)
@@ -510,9 +534,11 @@ def _run_eql_analysis(pystrata, layers, accel_g, dt_motion, motion_name,
         # max_error on the profile (set by the EQL iteration loop)
         max_error = float(max(calc.profile.max_error))
         converged = bool(max_error < calc.tolerance)
-        # Estimate iteration count: not available from pystrata, report 0
-        # if converged, max_iterations if not
-        n_iterations = 0 if converged else max_iterations
+        # The counted wave solves (one per EQL iteration); None when the
+        # count could not be taken (pystrata internals changed), never a
+        # made-up number.
+        n_iterations = (eql_passes if callable(orig_calc_waves)
+                        and eql_passes >= 1 else None)
 
     return EQLSiteResponseResult(
         analysis_type=analysis_type,

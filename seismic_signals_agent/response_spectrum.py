@@ -33,6 +33,7 @@ def analyze_response_spectrum(
     motion=None,
     accel_history=None,
     dt=None,
+    target_pga_g=None,
     periods=None,
     damping=0.05,
 ) -> ResponseSpectrumResult:
@@ -46,6 +47,9 @@ def analyze_response_spectrum(
         Custom acceleration time history (g).
     dt : float, optional
         Time step for custom motion (s).
+    target_pga_g : float, optional
+        Scale the motion so its PGA equals this value (g) before the
+        analysis (built-in motions have fixed PGAs). Default None.
     periods : array_like, optional
         Spectral periods (s). Default: logspace(-2, 1, 200).
     damping : float, optional
@@ -59,14 +63,13 @@ def analyze_response_spectrum(
     _validate_spectrum_inputs(periods, damping)
 
     # Resolve ground motion (lazy import — no openseespy dependency)
-    from opensees_agent.ground_motions import validate_motion_input
-    accel_g, dt_val = validate_motion_input(motion, accel_history, dt)
+    from opensees_agent.ground_motions import (
+        validate_motion_input, motion_label)
+    accel_g, dt_val = validate_motion_input(
+        motion, accel_history, dt, target_pga_g=target_pga_g)
 
     # Determine motion name
-    if motion is not None:
-        motion_name = motion
-    else:
-        motion_name = "custom"
+    motion_name = motion_label(motion, target_pga_g)
 
     # Default periods
     if periods is None:

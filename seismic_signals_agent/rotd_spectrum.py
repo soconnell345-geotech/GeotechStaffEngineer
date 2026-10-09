@@ -1,5 +1,6 @@
 """
-Rotated spectral acceleration (RotD50/RotD100) using pyrotd.
+Rotated spectral acceleration (RotD50/RotD100) using pyrotd, or the numpy
+implementation of the same procedure when pyrotd cannot be imported.
 
 Computes orientation-independent spectral acceleration from two orthogonal
 horizontal components of ground motion, per Boore (2010).
@@ -7,7 +8,10 @@ horizontal components of ground motion, per Boore (2010).
 
 import numpy as np
 
-from seismic_signals_agent.signal_utils import import_pyrotd
+from seismic_signals_agent.signal_utils import (
+    import_pyrotd, pyrotd_import_error,
+)
+from seismic_signals_agent.rotd_native import rotated_spectral_accels
 from seismic_signals_agent.results import RotDSpectrumResult
 
 
@@ -122,31 +126,39 @@ def analyze_rotd_spectrum(
     # Convert periods to frequencies for pyrotd
     osc_freqs = 1.0 / periods
 
-    # Import pyrotd and compute
-    pyrotd = import_pyrotd()
-    result = pyrotd.calc_rotated_spec_accels(
-        dt_val, accel_a_g, accel_b_g,
-        osc_freqs, osc_damping=damping,
-        percentiles=percentiles,
-    )
+    # pyrotd when it imports; otherwise the numpy implementation of the
+    # same procedure (pyrotd 0.6 cannot import without pkg_resources —
+    # live smoke G10).
+    import_error = pyrotd_import_error()
+    spectra = {}
+    if import_error is None:
+        pyrotd = import_pyrotd()
+        result = pyrotd.calc_rotated_spec_accels(
+            dt_val, accel_a_g, accel_b_g,
+            osc_freqs, osc_damping=damping,
+            percentiles=percentiles,
+        )
+        # pyrotd returns a flat recarray (osc_freq, percentile, spec_accel,
+        # angle), one record per (osc_freq, percentile), in the order of
+        # osc_freqs (= period ascending here).
+        for pctl in percentiles:
+            mask = result.percentile == pctl
+            spectra[float(pctl)] = np.asarray(result[mask].spec_accel,
+                                              dtype=float)
+        engine = "pyrotd"
+        engine_note = ""
+    else:
+        spectra = rotated_spectral_accels(
+            dt_val, accel_a_g, accel_b_g, periods, damping=damping,
+            percentiles=percentiles)
+        engine = "numpy"
+        engine_note = (f"{import_error}; computed with the numpy "
+                       f"implementation of the same procedure "
+                       f"(seismic_signals_agent.rotd_native).")
 
-    # Extract RotD arrays from recarray
-    # pyrotd returns a flat recarray with fields: osc_freq, percentile, spec_accel, angle
-    # One record per (osc_freq, percentile) combination. Filter by percentile.
-    rotd0 = np.array([])
-    rotd50 = np.array([])
-    rotd100 = np.array([])
-
-    for pctl in percentiles:
-        mask = result.percentile == pctl
-        # Sort by osc_freq descending (= period ascending) to match our period array
-        sa_vals = np.asarray(result[mask].spec_accel, dtype=float)
-        if pctl == 0:
-            rotd0 = sa_vals
-        elif pctl == 50:
-            rotd50 = sa_vals
-        elif pctl == 100:
-            rotd100 = sa_vals
+    rotd0 = spectra.get(0.0, np.array([]))
+    rotd50 = spectra.get(50.0, np.array([]))
+    rotd100 = spectra.get(100.0, np.array([]))
 
     return RotDSpectrumResult(
         motion_a_name=name_a,
@@ -161,4 +173,7 @@ def analyze_rotd_spectrum(
         rotd0=rotd0,
         rotd50=rotd50,
         rotd100=rotd100,
+        spectra=spectra,
+        engine=engine,
+        engine_note=engine_note,
     )

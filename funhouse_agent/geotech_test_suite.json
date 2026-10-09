@@ -1313,14 +1313,14 @@
       "values": [
         {
           "name": "degree_of_consolidation",
-          "value": 0.599,
-          "rtol": 0.1,
+          "value": 1.0,
+          "rtol": 0.02,
           "alt": [
-            59.9
+            100.0
           ]
         }
       ],
-      "source": "v5.4 worktree ground truth, 2026-07-07 (recomputed by the E11 offline test)"
+      "source": "Terzaghi 1-D closed form, 2026-10-09 (live smoke G6). c = k/S with S = 1/M + 1/M_oed = 1/4.0e6 + 1/766,667 = 1.554e-6 1/kPa, c = 6.434e-5 m2/s; single drainage Hdr = 20 m; Tv = c t / Hdr^2 = 16.08 at t = 1e8 s -> U = 1.000 (U = 0.985 at 1e7 s, Tv = 1.61). fem2d after the fix: U = 0.0053 / 0.9847 / 1.000 at 1e3 / 1e7 / 1e8 s, settlement -> 2.609 mm = q H / M_oed. The former key 0.599 (v5.4, 2026-07-07) recorded a time-integration artifact: the solver stepped straight from 1e3 to 1e7 to 1e8 s with Crank-Nicolson, whose large-step modes oscillate (surface settlement 0.454 -> 3.556 -> 1.732 mm, past the 2.609 mm drained limit and back)."
     }
   },
   {

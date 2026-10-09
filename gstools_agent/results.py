@@ -49,6 +49,9 @@ class KrigingResult:
     krige_variance: Optional[np.ndarray] = None
     grid_x: Optional[np.ndarray] = None
     grid_y: Optional[np.ndarray] = None
+    # (``field`` is a data attribute here, so no dataclasses.field below)
+    warnings: Optional[list] = None
+    notes: Optional[list] = None
 
     def summary(self) -> str:
         lines = [
@@ -91,6 +94,10 @@ class KrigingResult:
             d["grid_x"] = self.grid_x.tolist()
         if self.grid_y is not None:
             d["grid_y"] = self.grid_y.tolist()
+        if self.warnings:
+            d["warnings"] = list(self.warnings)
+        if self.notes:
+            d["notes"] = list(self.notes)
         return d
 
     def plot_field(self, ax=None, show=True, **kwargs):
@@ -133,6 +140,10 @@ class VariogramResult:
         Bin centers (lag distances).
     gamma : np.ndarray or None
         Empirical variogram values.
+    pair_counts : np.ndarray or None
+        Number of point pairs in each lag class.
+    warnings : list of str
+        Poorly constrained or degenerate fit flags.
     """
     n_data: int = 0
     n_bins: int = 0
@@ -142,6 +153,8 @@ class VariogramResult:
     nugget: float = 0.0
     bin_center: Optional[np.ndarray] = None
     gamma: Optional[np.ndarray] = None
+    pair_counts: Optional[np.ndarray] = None
+    warnings: list = field(default_factory=list)
 
     def summary(self) -> str:
         lines = [
@@ -171,6 +184,10 @@ class VariogramResult:
             d["bin_center"] = [float(x) for x in self.bin_center]
         if self.gamma is not None:
             d["gamma"] = [float(x) for x in self.gamma]
+        if self.pair_counts is not None:
+            d["pair_counts"] = [int(c) for c in self.pair_counts]
+        if self.warnings:
+            d["warnings"] = list(self.warnings)
         return d
 
     def plot_variogram(self, ax=None, show=True, **kwargs):

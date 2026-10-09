@@ -451,6 +451,22 @@ class TestFoundryAgentMetadata:
 @requires_pystrata
 class TestEQLSiteResponseIntegration:
 
+    def test_n_iterations_is_counted_not_synthetic(self):
+        """G6 (live smoke PST-1): n_iterations used to be 0 when converged
+        and max_iterations when not — a placeholder. It is now the number
+        of EQL wave solves pystrata actually ran."""
+        from pystrata_agent import analyze_eql_site_response
+        r = analyze_eql_site_response(layers=_simple_profile(),
+                                      motion="synthetic_pulse",
+                                      max_iterations=15)
+        assert isinstance(r.n_iterations, int)
+        assert 1 <= r.n_iterations <= 15
+        one = analyze_eql_site_response(layers=_simple_profile(),
+                                        motion="synthetic_pulse",
+                                        max_iterations=1)
+        assert one.n_iterations == 1
+        assert r.to_dict()["n_iterations"] == r.n_iterations
+
     def test_darendeli_single_layer(self):
         from pystrata_agent import analyze_eql_site_response
         result = analyze_eql_site_response(
@@ -592,3 +608,13 @@ class TestEQLSiteResponseIntegration:
             max_iterations=50,  # plenty of room
         )
         assert result.converged is True
+
+
+@requires_pystrata
+def test_target_pga_scales_the_input_motion():
+    """G19 (live smoke PST-1): 0.2 g asked, synthetic_pulse is 0.3 g."""
+    from pystrata_agent import analyze_eql_site_response
+    r = analyze_eql_site_response(layers=_simple_profile(),
+                                  motion="synthetic_pulse", target_pga_g=0.2)
+    assert r.pga_input_g == pytest.approx(0.2, rel=1e-6)
+    assert "scaled to PGA 0.2 g" in r.motion_name
