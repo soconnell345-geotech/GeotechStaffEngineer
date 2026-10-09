@@ -41,6 +41,28 @@ of a leader's shoulder as part of a tag ("- GCE") and said tight rings that
 held the whole tag did not enclose it (4 wrong rejections of 70 good rings,
 brief 4); its reading of what is there still decides WHICH thing it is (a QCE,
 an arrowhead), and size is still measured (:data:`MAX_AREA_FACTOR`).
+
+**A mark in an area is judged by the area** (live smoke 2a, 2026-10-09). Asked
+for "a note on the title block", an agent boxed the blank part of the title
+strip and named it ``target: title block``; the look saw blank paper in the
+box, took the comment ("Checked - live smoke test") for one about something
+else, and the comment never became visible. What a mark names may be a THING
+it goes round or an AREA it sits in (a title block, a table, a margin): the
+look now says which, a mark inside the area it names is on it (measured where
+the look gives the area's box), and a general remark or a stamp fits any mark.
+
+**Labels are checked too, by measurement.** A label is placed by planlens,
+not by the agent, and nothing looked at it: on two /Rotate 270 sheets every
+label printed over the sheet title, 90-150 pt from its box, and the answer
+told the user each sat "beside the box". A label more than
+:data:`LABEL_MAX_GAP_PT` from its mark, running off the page, or printed over
+the drawing's lettering (:data:`LABEL_MAX_LETTERING`) is reported.
+
+**One frame.** Every box here — a row's ``bbox``, ``label_bbox`` and
+``points_at``, the crop, the look's box converted back — is in planlens'
+displayed frame (PDF points as the page is shown, ``/Rotate`` applied,
+top-left origin): the frame ``Document.render`` crops in and PyMuPDF's
+``get_pixmap(clip=...)`` renders in, so nothing is rotated here.
 """
 
 from __future__ import annotations
@@ -126,7 +148,8 @@ _KIND_WORDS = {
 #: since GPT-5.4's 0-999 boxes were measured scaled by 0.87-1.10 between
 #: identical calls while its pixel boxes were within a few points
 #: (2026-10-07). An old-style ``thing_box`` on the 0-999 grid still counts.
-_WHERE_Q = ("where that thing is in this {w} x {h} pixel image, as a box "
+_WHERE_Q = ("where that thing is in this {w} x {h} pixel image (for an "
+            "area, the part of it the image shows), as a box "
             "[x0, y0, x1, y1] in pixels (0,0 top-left), or null if it is not "
             "there")
 
@@ -137,6 +160,26 @@ MAX_AREA_FACTOR = 30.0
 #: The smallest area a thing is taken to have, in pt² — a tag's lettering
 #: box can be read very thin.
 MIN_THING_AREA = 25.0
+
+#: A label further than this from its mark (points, box to box) does not
+#: read as that mark's — the live-smoke detector's threshold (H6 a).
+LABEL_MAX_GAP_PT = 20.0
+
+#: A label is over the drawing's lettering when, in any square of it the
+#: label's height across, this share of the paper is ink — not counting
+#: lines that run right across the label (a border it crosses is still
+#: legible). Measured on the live-smoke sheets: labels printed over a title
+#: or a note held 0.09-0.12 in their worst square; clear labels 0, a label
+#: crossing a sheet border 0 (0.07 before the border was taken out).
+LABEL_MAX_LETTERING = 0.04
+
+#: The share of a row or column of the label's render that makes it a line
+#: running right across the label, and the render's pixels per point.
+LABEL_LINE_SHARE = 0.9
+LABEL_PX_PER_PT = 2.0
+
+#: A pixel darker than this (0-255 grey) is ink.
+INK_LEVEL = 128
 
 
 def _thing_on_page(thing_box: Any, view: Any, size: Any = None
@@ -189,6 +232,124 @@ def _encloses(mark_bbox: Any, thing: Optional[Sequence[float]],
     cx, cy = (tx0 + tx1) / 2.0, (ty0 + ty1) / 2.0
     return (mx0 - slack <= cx <= mx1 + slack
             and my0 - slack <= cy <= my1 + slack)
+
+
+def _within(mark_bbox: Any, area: Optional[Sequence[float]],
+            slack: float = ENCLOSE_SLACK_PT) -> Optional[bool]:
+    """Whether the mark's centre lies inside an area's box, ``slack``
+    points each way; ``None`` without a usable box of either."""
+    return _encloses(area, mark_bbox, slack)
+
+
+def _gap(a: Sequence[float], b: Sequence[float]) -> float:
+    """The distance between two boxes, points (0 when they touch)."""
+    dx = max(0.0, max(a[0], b[0]) - min(a[2], b[2]))
+    dy = max(0.0, max(a[1], b[1]) - min(a[3], b[3]))
+    return (dx * dx + dy * dy) ** 0.5
+
+
+def _lettering_under(page, box: Sequence[float]) -> Optional[float]:
+    """The worst share of ink under ``box`` (displayed frame) in any square
+    of it the label's height across, on a render of the page WITHOUT its
+    annotations (the label itself is one), lines that run right across the
+    label left out; ``None`` when the box cannot be rendered."""
+    import fitz
+    import numpy as np
+
+    x0, y0, x1, y1 = (float(v) for v in box)
+    if x1 - x0 < 1.0 or y1 - y0 < 1.0:
+        return None
+    try:
+        pix = page.get_pixmap(matrix=fitz.Matrix(LABEL_PX_PER_PT,
+                                                 LABEL_PX_PER_PT),
+                              clip=fitz.Rect(x0, y0, x1, y1),
+                              colorspace=fitz.csGRAY, alpha=False,
+                              annots=False)
+    except Exception:  # noqa: BLE001 - an unrendered label is not judged
+        return None
+    if pix.width < 2 or pix.height < 2:
+        return None
+    ink = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
+        pix.height, pix.stride)[:, :pix.width] < INK_LEVEL
+    ink = ink.copy()
+    ink[ink.mean(axis=1) >= LABEL_LINE_SHARE, :] = False
+    ink[:, ink.mean(axis=0) >= LABEL_LINE_SHARE] = False
+    rows, cols = ink.shape
+    side = min(rows, cols)
+    step = max(1, side // 2)
+    if cols >= rows:
+        windows = [ink[:, i:i + side]
+                   for i in range(0, max(1, cols - side + 1), step)]
+    else:
+        windows = [ink[i:i + side, :]
+                   for i in range(0, max(1, rows - side + 1), step)]
+    return max(float(w.mean()) for w in windows if w.size)
+
+
+def _label_problem(page, row: Dict[str, Any]) -> Optional[str]:
+    """What is wrong with a written row's visible label, or ``None``: too
+    far from its mark, off the page, or over the drawing's lettering."""
+    try:
+        lb = [float(v) for v in row["label_bbox"]]
+        mb = [float(v) for v in row["bbox"]]
+    except (KeyError, TypeError, ValueError):
+        return None
+    if len(lb) != 4 or len(mb) != 4:
+        return None
+    gap = _gap(lb, mb)
+    if gap > LABEL_MAX_GAP_PT:
+        return (f"the label is {gap:.0f} pt from its mark, so it does not "
+                f"read as that mark's")
+    r = page.rect
+    if lb[0] < r.x0 - 1 or lb[1] < r.y0 - 1 or lb[2] > r.x1 + 1 \
+            or lb[3] > r.y1 + 1:
+        return "the label runs off the page"
+    share = _lettering_under(page, lb)
+    if share is not None and share >= LABEL_MAX_LETTERING:
+        return ("the label is printed over the drawing's own lettering, "
+                "where neither can be read")
+    return None
+
+
+def check_labels(pdf_bytes: bytes, result: Dict[str, Any],
+                 specs: Sequence[Any]) -> List[Dict[str, Any]]:
+    """Every written row's visible label, measured on the marked copy: the
+    ones too far from their mark, off the page or over the drawing's
+    lettering, each with what is wrong. No vision call."""
+    items = [it for it in _rows_with_specs(result, specs)
+             if isinstance(it["row"], dict) and it["row"].get("label")
+             and it["row"].get("label_bbox") is not None]
+    if not items:
+        return []
+    import fitz
+    out: List[Dict[str, Any]] = []
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        for it in items:
+            row = it["row"]
+            try:
+                page = doc[int(row.get("page") or 0)]
+            except (IndexError, ValueError, TypeError):
+                continue
+            problem = _label_problem(page, row)
+            if problem:
+                out.append({"index": it["index"],
+                            "pdf_page": int(row.get("page") or 0) + 1,
+                            "label": row.get("label"),
+                            "label_bbox": row.get("label_bbox"),
+                            "problem": problem})
+    finally:
+        doc.close()
+    return out
+
+
+def _label_reads_supported() -> bool:
+    """Whether the installed planlens takes ``label_reads``."""
+    try:
+        from planlens.document.markup_writer import MarkupSpec
+        return "label_reads" in MarkupSpec.fields_accepted()
+    except Exception:  # noqa: BLE001 - an older planlens simply lacks it
+        return False
 
 
 def _rows_with_specs(result: Dict[str, Any], specs: Sequence[Any]
@@ -281,6 +442,12 @@ def _prompt(kind: str, spec: Dict[str, Any], size: Sequence[int]
     if target:
         parts.append(f"The mark is meant to {verb}: {target}   "
                      f"({_SOURCE_WORDS[source]})")
+        parts.append("What is named may be a single thing (a tag, a line of "
+                     "text, a cell, a symbol) or an AREA of the sheet (a "
+                     "title block, a table, a margin, a drawing view). A "
+                     "mark placed in the blank paper INSIDE a named area is "
+                     "on that area: judge it by the area it sits in, not by "
+                     "the empty paper under it.")
     if comment:
         parts.append(f'The review comment on this mark: "{comment}". A '
                      f"review comment is a remark or a request ABOUT the "
@@ -302,11 +469,20 @@ def _prompt(kind: str, spec: Dict[str, Any], size: Sequence[int]
                            f"paraphrase, a partial reading or a misprint of "
                            f"it counts; a different item that only shares a "
                            f"word or a number does not), else false")]
+    if target:
+        keys.append(("in_area", "true if what is named is an AREA (a title "
+                                "block, a table, a margin, a view) and the "
+                                "mark lies inside it, blank paper and all; "
+                                "false if it is a single thing, or the mark "
+                                "is outside it"))
     asked = ask_comment and bool(target)
     if asked:
         keys.append(("comment_fits", "true if the review comment could be "
-                                     "about what is there; false only if it "
-                                     "is plainly about something else "
+                                     "about what is there or about the "
+                                     "named thing or area — a general remark "
+                                     "or a stamp ('checked', 'reviewed', "
+                                     "'approved') fits any mark; false only "
+                                     "if it is plainly about something else "
                                      "(another note, value or item)"))
     if kind in ENCLOSING_KINDS:
         keys.append(("encloses", f"true if the {word} goes all the way round "
@@ -391,6 +567,12 @@ def _verdict(kind: str, got: Dict[str, Any], row: Dict[str, Any],
     if identity is None and target:
         identity = _names_match(str(got.get("inside") or ""), target)
     fits = _bool(got.get("comment_fits")) if asked_comment else None
+    in_area = _bool(got.get("in_area")) if target else None
+    if got.get("thing_px") is not None:
+        thing_raw, thing_size = got.get("thing_px"), size
+    else:                       # an old-style answer on the 0-999 grid
+        thing_raw, thing_size = got.get("thing_box"), None
+    thing = _thing_on_page(thing_raw, clip, thing_size)
 
     def decided(ok: bool) -> str:
         if sure is False:
@@ -399,14 +581,16 @@ def _verdict(kind: str, got: Dict[str, Any], row: Dict[str, Any],
 
     if fits is False:
         return decided(False), " — the comment is about something else"
+    if in_area is True:
+        # A mark in the blank paper of the area it names (a note on a title
+        # block): on that area — measured against the area's box where the
+        # look gave one, never against the paper under the mark.
+        if thing is not None and _within(row.get("bbox"), thing) is False:
+            return decided(False), " — outside the area it names"
+        return decided(True), " — inside the area it names"
     if kind not in ENCLOSING_KINDS:
         ok = identity if identity is not None else encl_said
         return ("unsure", "") if ok is None else (decided(ok), "")
-    if got.get("thing_px") is not None:
-        thing_raw, thing_size = got.get("thing_px"), size
-    else:                       # an old-style answer on the 0-999 grid
-        thing_raw, thing_size = got.get("thing_box"), None
-    thing = _thing_on_page(thing_raw, clip, thing_size)
     if identity is False:
         return decided(False), ""
     if thing is not None and identity is True:
@@ -502,25 +686,50 @@ def check_marks(output_pdf: str, result: Dict[str, Any], specs: Sequence[Any],
                                 for c in by["not_checked"]]
     if later:
         block["over_limit"] = len(later)
+    try:
+        labels = check_labels(pdf_bytes, result, specs)
+    except Exception as exc:  # noqa: BLE001 - the marks' verdicts stand
+        labels = []
+        block["labels_not_checked"] = f"{type(exc).__name__}: {exc}"[:160]
+    if labels:
+        block["labels"] = labels
     bad = len(by["misplaced"]) + len(by["unsure"])
-    block["note"] = (
-        "Every mark was looked at on the marked copy, and each is on the "
-        "thing it is meant to mark."
-        if not bad else
-        f"{bad} mark(s) are misplaced or could not be confirmed ('seen' says "
-        "what is actually there). Do not hand the file over as it is: find "
-        "the thing each comment is about again and write the copy again "
-        "with append=false, leaving out any mark you cannot place. For a "
-        "thing found by looking, zoom with render_region until it is legible "
-        "in a view of 300 pt or less and take THAT zoom's view + the thing's "
-        "image_box; for words, quote the words the comment is about. Every "
-        "anchor — box, point, quote or note — is checked the same way, so "
-        "switching anchor does not settle a verdict. Widening a mark until "
-        "it takes the thing in does not place it: zoom until you can box the "
-        "thing itself. Name what a mark is on with target when the comment "
-        "is a request rather than the thing's name.")
+    notes = []
+    if not bad and not labels:
+        notes.append("Every mark was looked at on the marked copy, and each "
+                     "is on the thing it is meant to mark; every label sits "
+                     "clear beside its mark.")
+    if bad:
+        notes.append(
+            f"{bad} mark(s) are misplaced or could not be confirmed ('seen' "
+            "says what is actually there). Do not hand the file over as it "
+            "is: find the thing each comment is about again and write the "
+            "copy again with append=false, leaving out any mark you cannot "
+            "place. For a thing found by looking, zoom with render_region "
+            "until it is legible in a view of 300 pt or less and take THAT "
+            "zoom's view + the thing's image_box; for words, quote the words "
+            "the comment is about. Every anchor — box, point, quote or note "
+            "— is checked the same way, so switching anchor does not settle "
+            "a verdict. Widening a mark until it takes the thing in does not "
+            "place it: zoom until you can box the thing itself. Name what a "
+            "mark is on with target when the comment is a request rather "
+            "than the thing's name; a mark in the blank part of an area (a "
+            "title block, a margin) names that area as its target.")
+    if labels:
+        along = (" Where the drawing's own lettering runs up or down the "
+                 "page, give label_reads (up or down) so the label runs the "
+                 "same way." if _label_reads_supported() else "")
+        notes.append(
+            f"{len(labels)} label(s) are not clear of the drawing or not "
+            "beside their mark ('labels' says which and why). A label is "
+            "what the reader sees on the sheet, so do not describe it as "
+            "beside its mark: write the copy again with append=false and a "
+            "shorter label, or no label (the comment still carries the "
+            "words)." + along)
+    block["note"] = " ".join(notes)
     return block
 
 
 __all__ = ["CHECK_KINDS", "GEOMETRY_ANCHORS", "QUOTE_ANCHORS",
-           "CHECKED_ANCHORS", "check_marks", "marks_to_check"]
+           "CHECKED_ANCHORS", "check_labels", "check_marks",
+           "marks_to_check"]

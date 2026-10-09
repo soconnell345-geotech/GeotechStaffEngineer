@@ -143,7 +143,9 @@ def test_mark_up_takes_a_zoom_location_and_writes_a_copy(gt, tmp_path,
                      "view": [100, 100, 300, 300],
                      "image_box": [100, 100, 300, 200]}]}))
     assert out["n_written"] == 1, out
-    assert os.path.isfile(out["output_path"])
+    # named to the model in the conversation, not by a server path (B9)
+    assert out["output_path"] == "marked.pdf"
+    assert os.path.isfile(os.path.join(str(tmp_path), out["output_path"]))
     # The same small box read off the WHOLE page is refused, with the way
     # out: a box read off a view that wide can be tens of points off.
     out = json.loads(_tools_of(agent)["mark_up"].invoke({

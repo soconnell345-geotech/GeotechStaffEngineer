@@ -1268,26 +1268,30 @@ def make_vision_tools(
             "append": append,
         }
         raw = _dispatch("annotate_document", args)
-        if not check:
-            return raw
+        # The check opens the marked copy by its ABSOLUTE path; the model is
+        # handed the conversation-relative name, AFTER the check, so no
+        # server path reaches it (live smoke 2a, B9: the last A6 leak). The
+        # file tools resolve that name in the working folder.
+        from funhouse_agent._fileio import hide_working_folder
         try:
             result = json.loads(raw)
-        except ValueError:
-            return raw                  # an error string, or a cut result
-        out_pdf = result.get("output_path") if isinstance(result, dict) else None
-        if not out_pdf or not os.path.isfile(out_pdf) or "error" in result:
+        except ValueError:              # an error string, or a cut result
+            return hide_working_folder(raw)
+        if not isinstance(result, dict):
             return raw
-        try:
-            from funhouse_agent import markup_check
-            block = markup_check.check_marks(out_pdf, result,
-                                             list(markups or []), engine)
-        except Exception as exc:  # noqa: BLE001 - the file is written either way
-            block = {"error": f"the placement check failed: "
-                              f"{type(exc).__name__}: {exc}"}
-        if block is None:
-            return raw
-        result["check"] = block
-        return json.dumps(result)
+        out_pdf = result.get("output_path")
+        if check and out_pdf and os.path.isfile(out_pdf) \
+                and "error" not in result:
+            try:
+                from funhouse_agent import markup_check
+                block = markup_check.check_marks(out_pdf, result,
+                                                 list(markups or []), engine)
+            except Exception as exc:  # noqa: BLE001 - the file is written either way
+                block = {"error": f"the placement check failed: "
+                                  f"{type(exc).__name__}: {exc}"}
+            if block is not None:
+                result["check"] = block
+        return json.dumps(hide_working_folder(result))
 
     def measure(source: str, page: int = 0, kind: str = "line",
                 bbox: Optional[list] = None, view: Optional[list] = None,

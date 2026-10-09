@@ -334,9 +334,11 @@ def test_a_review_is_written_and_reads_back_through_the_same_tools(
     ])
     assert out["n_written"] == 2 and out["n_skipped"] == 1
     assert out["author"] == document_tools.DEFAULT_MARKUP_AUTHOR
-    assert out["output_path"] == os.path.join(str(tmp_path),
-                                              "submittal_marked.pdf")
-    assert os.path.isfile(out["output_path"])
+    # Written into the working folder, and named to the model by its name
+    # there: no server path reaches the model (live smoke 2a, B9).
+    assert out["output_path"] == "submittal_marked.pdf"
+    assert os.path.isfile(os.path.join(str(tmp_path), "submittal_marked.pdf"))
+    assert str(tmp_path) not in json.dumps(out)
     # The document the agent opened is untouched — it still carries its own
     # five markups and none of ours — and the copy is a new file the same
     # tools read back.

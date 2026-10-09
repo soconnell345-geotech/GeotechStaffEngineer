@@ -319,7 +319,9 @@ def test_a_failed_look_is_reported_not_raised(tmp_path, monkeypatch):
             {"kind": "box", "page": 0, "comment": "x", "bbox": list(TAG)}]}))
     assert out["n_written"] == 1
     assert out["check"]["not_checked"][0]["reason"].startswith("RuntimeError")
-    assert os.path.isfile(out["output_path"])
+    # the model is handed the conversation's name for the copy, not a path
+    assert out["output_path"] == "broken.pdf"
+    assert os.path.isfile(os.path.join(str(tmp_path), out["output_path"]))
 
 
 # ---------------------------------------------------------------------------
@@ -578,3 +580,239 @@ def test_a_nested_anchor_is_read_the_way_planlens_reads_it():
     assert markup_check._target(spec) == ("THE WORDS", "quote")
     assert markup_check._target({"label": "GCE", "quote": "x",
                                  "target": "the tag"}) == ("the tag", "target")
+
+
+# ---------------------------------------------------------------------------
+# Live smoke 2a (2026-10-09): a mark in the blank part of an area (B8), the
+# labels (B1/B8), one frame on rotated pages (B1), no server path (B9)
+# ---------------------------------------------------------------------------
+
+#: A title strip down the left of a portrait sheet: lettering at its top,
+#: blank paper below.
+STRIP = (30.0, 100.0, 130.0, 700.0)
+
+
+def _strip_sheet() -> bytes:
+    doc = fitz.open()
+    page = doc.new_page(width=612, height=792)
+    page.draw_rect(fitz.Rect(*STRIP), color=(0, 0, 0), width=1.2)
+    page.insert_text((40, 130), "COUNTY STANDARDS", fontsize=8)
+    page.insert_text((40, 150), "STD. NO. 21.01", fontsize=8)
+    page.insert_text((200, 300), "GENERAL NOTES: SEE SPECIFICATIONS.",
+                     fontsize=8)
+    data = doc.tobytes()
+    doc.close()
+    return data
+
+
+class LooksAtAnArea:
+    """Answers as a look at a mark in blank paper would: nothing in it; the
+    named thing is an area whose box covers the crop fractions given; a
+    stamp-like comment fits."""
+
+    def __init__(self, area_frac, in_area=True):
+        self.area, self.in_area, self.prompts = area_frac, in_area, []
+
+    def analyze_image(self, image_bytes, prompt):
+        self.prompts.append(prompt)
+        w, h = (int(v) for v in re.search(
+            r"this (\d+) x (\d+) pixel image", prompt).groups())
+        fx0, fy0, fx1, fy1 = self.area
+        out = {"same_thing": False, "inside": "nothing", "encloses": False,
+               "thing_px": [w * fx0, h * fy0, w * fx1, h * fy1],
+               "sure": True}
+        if "in_area" in prompt:
+            out["in_area"] = self.in_area
+        if "comment_fits" in prompt:
+            out["comment_fits"] = True
+        return json.dumps(out)
+
+
+def test_a_note_in_the_blank_part_of_the_area_it_names_is_on_it(
+        tmp_path, monkeypatch):
+    """F04: "put a note on the title block saying 'Checked - live smoke
+    test'". The agent boxed the blank part of the title strip, named it
+    ``target: title block``, and the look saw blank paper and said the
+    comment was about something else, so the note never became visible. A
+    mark inside the area it names is on that area; a stamp fits any mark."""
+    engine = LooksAtAnArea((0.0, 0.0, 1.0, 1.0))
+    tools, handle = _tools_for(engine, tmp_path, monkeypatch, _strip_sheet(),
+                               name="strip.pdf")
+    out = json.loads(tools["annotate_document"].invoke({
+        "handle": handle, "output_path": "stamped.pdf", "markups": [
+            {"kind": "box", "page": 0, "comment": "Checked - live smoke test",
+             "target": "title block", "bbox": [40, 500, 120, 560]}]}))
+    check = out["check"]
+    assert check["confirmed"] == 1, check
+    assert "inside the area it names" not in json.dumps(check["misplaced"])
+    (p,) = engine.prompts
+    assert "AREA of the sheet" in p and '"in_area"' in p
+    assert "a stamp ('checked', 'reviewed', 'approved') fits any mark" in p
+
+
+def test_a_mark_outside_the_area_it_names_is_still_misplaced(tmp_path,
+                                                            monkeypatch):
+    """Measured, not taken on trust: the look says the mark is in the area,
+    but the area's box (the left fifth of the crop) does not hold the mark's
+    centre, so it is not on it."""
+    engine = LooksAtAnArea((0.0, 0.0, 0.2, 1.0))
+    tools, handle = _tools_for(engine, tmp_path, monkeypatch, _strip_sheet(),
+                               name="strip.pdf")
+    out = json.loads(tools["annotate_document"].invoke({
+        "handle": handle, "output_path": "outside.pdf", "markups": [
+            {"kind": "box", "page": 0, "comment": "Checked",
+             "target": "title block", "bbox": [300, 500, 380, 560]}]}))
+    check = out["check"]
+    assert check["confirmed"] == 0
+    assert "outside the area it names" in check["misplaced"][0]["seen"]
+
+
+def test_a_single_thing_in_blank_paper_is_still_misplaced(tmp_path,
+                                                         monkeypatch):
+    """The area rule is for areas: a ring meant for a tag, drawn in blank
+    paper, is misplaced as before (the 2026-10-01 field report)."""
+    engine = LooksAtAnArea((0.4, 0.4, 0.6, 0.6), in_area=False)
+    tools, handle = _tools(engine, tmp_path, monkeypatch)
+    out = json.loads(tools["annotate_document"].invoke({
+        "handle": handle, "output_path": "blank.pdf", "markups": [
+            {"kind": "circle", "page": 0, "comment": "penetration tag",
+             "target": "GCE", "bbox": [430, 250, 500, 320]}]}))
+    assert out["check"]["confirmed"] == 0
+    assert len(out["check"]["misplaced"]) == 1
+
+
+def _labels_sheet() -> bytes:
+    """Lettering where a bad label would land, blank paper elsewhere, and a
+    border line a good label may cross."""
+    doc = fitz.open()
+    page = doc.new_page(width=612, height=792)
+    for i in range(4):
+        page.insert_text((300, 200 + 9 * i), "BIORETENTION CROSS-SECTION",
+                         fontsize=8)
+    page.draw_line((100, 380), (100, 460), color=(0, 0, 0), width=1.2)
+    data = doc.tobytes()
+    doc.close()
+    return data
+
+
+def test_labels_are_measured_far_off_page_and_over_lettering():
+    pdf = _labels_sheet()
+    mark = [80.0, 420.0, 120.0, 440.0]
+    result = {"written": [
+        # beside its mark on blank paper, crossing one border line: fine
+        {"page": 0, "kind": "box", "anchored_by": "bbox", "bbox": mark,
+         "label": "Sheet 50.03", "label_bbox": [70.0, 401.0, 137.0, 418.0]},
+        # the F16 failure: 120 pt from its mark
+        {"page": 0, "kind": "box", "anchored_by": "bbox", "bbox": mark,
+         "label": "Sheet 10.31A", "label_bbox": [240.0, 401.0, 313.0, 418.0]},
+        # next to its mark but printed over the notes
+        {"page": 0, "kind": "box", "anchored_by": "bbox",
+         "bbox": [300.0, 230.0, 340.0, 250.0], "label": "Sheet 11.01",
+         "label_bbox": [300.0, 196.0, 367.0, 213.0]},
+        # off the page
+        {"page": 0, "kind": "box", "anchored_by": "bbox",
+         "bbox": [560.0, 20.0, 600.0, 40.0], "label": "Sheet 30.01",
+         "label_bbox": [580.0, 2.0, 647.0, 19.0]},
+        # no label: nothing to check
+        {"page": 0, "kind": "box", "anchored_by": "bbox", "bbox": mark},
+    ], "skipped": [{"index": 1}]}
+    specs = [{}] * 6
+    got = markup_check.check_labels(pdf, result, specs)
+    by = {g["label"]: g for g in got}
+    assert set(by) == {"Sheet 10.31A", "Sheet 11.01", "Sheet 30.01"}
+    assert "pt from its mark" in by["Sheet 10.31A"]["problem"]
+    assert "over the drawing's own lettering" in by["Sheet 11.01"]["problem"]
+    assert "off the page" in by["Sheet 30.01"]["problem"]
+    # indices are the caller's spec positions, past the skipped one
+    assert by["Sheet 10.31A"]["index"] == 2
+    assert by["Sheet 11.01"]["pdf_page"] == 1
+
+
+class _RedCentre:
+    """Records where the red mark sits in each crop it is shown."""
+
+    def __init__(self):
+        self.centres = []
+
+    def analyze_image(self, image_bytes, prompt):
+        img = PIL.open(io.BytesIO(image_bytes)).convert("RGB")
+        w, h = img.size
+        xs, ys = [], []
+        for y in range(0, h, 2):
+            for x in range(0, w, 2):
+                r, g, b = img.getpixel((x, y))
+                if r > 170 and g < 100 and b < 100:
+                    xs.append(x)
+                    ys.append(y)
+        labelled = "red label beside it" in prompt
+        self.centres.append((labelled, ((min(xs) + max(xs)) / 2.0 / w,
+                                        (min(ys) + max(ys)) / 2.0 / h)
+                             if xs else None))
+        return json.dumps({"same_thing": True, "inside": "NOTE",
+                           "encloses": True, "sure": True})
+
+
+def _rotated_pdf(rot) -> bytes:
+    """Shown 792 x 612 at /Rotate ``rot``, lettering reading across."""
+    from planlens.document.frame import from_display_point
+    doc = fitz.open()
+    w, h = (792, 612) if rot in (0, 180) else (612, 792)
+    page = doc.new_page(width=w, height=h)
+    page.set_rotation(rot)
+    page.insert_text(from_display_point(page, 405, 312), "NOTE", fontsize=8,
+                     rotate=rot)
+    page.insert_text(from_display_point(page, 300, 120), "GENERAL NOTES",
+                     fontsize=8, rotate=rot)
+    data = doc.tobytes()
+    doc.close()
+    return data
+
+
+@pytest.mark.parametrize("rot", [90, 270])
+def test_the_check_crops_the_mark_in_the_frame_planlens_wrote_it(
+        tmp_path, monkeypatch, rot):
+    """B1: one frame. The rows planlens returns, the crop the check renders
+    and the label measurement are all in the displayed frame, so on a
+    rotated sheet the crop is centred on the mark and the label is judged
+    where the reader sees it."""
+    engine = _RedCentre()
+    tools, handle = _tools_for(engine, tmp_path, monkeypatch,
+                               _rotated_pdf(rot), name=f"rot{rot}.pdf")
+    out = json.loads(tools["annotate_document"].invoke({
+        "handle": handle, "output_path": f"rot{rot}_marked.pdf", "markups": [
+            {"kind": "box", "page": 0, "comment": "this note",
+             "bbox": [400, 300, 440, 320]},
+            {"kind": "box", "page": 0, "comment": "the general notes",
+             "label": "N1", "bbox": [700, 540, 750, 575]}]}))
+    assert out["n_written"] == 2
+    (centre,) = [c for labelled, c in engine.centres if not labelled]
+    assert centre is not None
+    assert 0.4 < centre[0] < 0.6 and 0.4 < centre[1] < 0.6, centre
+    row = out["written"][1]
+    if not markup_check._label_reads_supported():
+        return      # a planlens before the B1 fix places labels on 270 badly
+    lb = row["label_bbox"]
+    assert markup_check._gap(lb, row["bbox"]) <= 3.0
+    assert "labels" not in out["check"], out["check"]
+
+
+def test_the_model_is_never_handed_a_server_path(tmp_path, monkeypatch):
+    """B9: the marked copy's absolute path stays inside the tool (the check
+    opens it); the model gets the copy's name in the conversation, checked
+    or not."""
+    for check in (True, False):
+        tools, handle = _tools(PixelEngine(), tmp_path, monkeypatch)
+        out_raw = tools["annotate_document"].invoke({
+            "handle": handle, "output_path": f"named_{check}.pdf",
+            "check": check, "markups": [
+                {"kind": "box", "page": 0, "comment": "tag",
+                 "bbox": list(TAG)}]})
+        out = json.loads(out_raw)
+        assert out["output_path"] == f"named_{check}.pdf"
+        assert str(tmp_path) not in out_raw
+        assert str(tmp_path).replace("\\", "\\\\") not in out_raw
+        assert ("check" in out) is check
+        if check:
+            assert out["check"]["confirmed"] == 1
+        assert os.path.isfile(os.path.join(str(tmp_path),
+                                           out["output_path"]))
