@@ -96,6 +96,28 @@ def check_not_contains(answer: str, terms: Sequence[Any], **_) -> Tuple[bool, st
     return (not hit, "clean" if not hit else f"contains: {hit}")
 
 
+#: An id range written out: "BH-1 to BH-3", "B-1 through B-3", "BH-1 - BH-3"
+#: (en dashes are ASCII after :func:`normalize`), "B-1-3".
+_ID_RANGE = re.compile(
+    r"(?<![\w.])([a-z]{1,4}-?)(\d{1,3})\s*(?:to|through|thru|-)\s*"
+    r"(?:\1)?(\d{1,3})(?![\w]|\.\d)")
+#: The widest id range read as its members.
+ID_RANGE_MAX_SPAN = 20
+
+
+def expand_id_ranges(text: str) -> str:
+    """``text`` with every id range's members written out after it, so "BH-1
+    to BH-3" names BH-2 too (Foundry brief 5: a correct answer naming its
+    borings as ranges failed the borings check). ``text`` is normalized."""
+    def members(m: "re.Match") -> str:
+        prefix, a, b = m.group(1), int(m.group(2)), int(m.group(3))
+        if not 0 < b - a <= ID_RANGE_MAX_SPAN:
+            return m.group(0)
+        return (m.group(0) + " ("
+                + ", ".join(f"{prefix}{n}" for n in range(a, b + 1)) + ")")
+    return _ID_RANGE.sub(members, text)
+
+
 def _mentions(text: str, item: str, aliases: Dict[str, Sequence[str]]) -> bool:
     forms = list(aliases.get(item) or [item])
     for f in forms:
@@ -117,9 +139,10 @@ def check_set_match(answer: str, vocabulary: Sequence[str],
 
     Mentions are counted over the whole answer, so an answer that names a
     sheet to rule it out ("30.01 prints 3600 cu ft, not concrete") is charged
-    a false positive; ``min_precision`` is set with that in mind.
+    a false positive; ``min_precision`` is set with that in mind. An id range
+    ("BH-1 to BH-3") names each of its members (:func:`expand_id_ranges`).
     """
-    text = normalize(answer)
+    text = expand_id_ranges(normalize(answer))
     aliases = aliases or {}
     said = {v for v in vocabulary if _mentions(text, v, aliases)}
     exp = set(expected)
@@ -561,27 +584,81 @@ def check_markups_point_at(answer: str, files: Sequence[str] = (),
                    f"no markup says {text_contains!r}"))
 
 
+def _docx_text(path: str) -> str:
+    """A Word file's text: paragraphs and every table cell."""
+    import docx
+    d = docx.Document(path)
+    texts = [p.text for p in d.paragraphs]
+    for t in d.tables:
+        for row in t.rows:
+            texts += [c.text for c in row.cells]
+    return "\n".join(texts)
+
+
 def check_docx_contains(answer: str, files: Sequence[str] = (),
                         terms: Sequence[Any] = (), **_) -> Tuple[bool, str]:
     docs = _files(files, ".docx")
     if not docs:
         return False, "no .docx produced"
     try:
-        import docx
+        import docx  # noqa: F401
     except ImportError as exc:                       # pragma: no cover
         return False, f"python-docx unavailable: {exc}"
     texts = []
     for path in docs:
         try:
-            d = docx.Document(path)
+            texts.append(_docx_text(path))
         except Exception as exc:
             return False, f"{os.path.basename(path)} unreadable: {exc}"
-        texts += [p.text for p in d.paragraphs]
-        for t in d.tables:
-            for row in t.rows:
-                texts += [c.text for c in row.cells]
     ok, detail = check_contains_all("\n".join(texts), terms)
     return ok, detail
+
+
+#: Files whose text a ``with_files`` check reads beside the answer: the
+#: tables and records a run delivers (Foundry brief 5: every value of
+#: report-extract-all was in the delivered CSV / docx / md, and the check
+#: read only the answer's pointer to them).
+DELIVERED_TEXT_EXTS = (".xml", ".csv", ".tsv", ".md", ".txt", ".json",
+                       ".docx")
+#: Characters read from any one delivered file.
+DELIVERED_MAX_CHARS = 2_000_000
+
+
+def _cells_as_words(text: str, delimiter: str) -> str:
+    """A delimited table's cells separated by " | ", as a table reads, so a
+    value is matched as itself: in raw CSV a cell after a comma ("B-3,7.0,43")
+    looks like the tail of a thousands-separated number to the guarded
+    number terms (``_num``)."""
+    import csv
+    import io
+    rows = csv.reader(io.StringIO(text), delimiter=delimiter)
+    return "\n".join(" | ".join(cell.strip() for cell in row) for row in rows)
+
+
+def delivered_text(files: Sequence[str] = ()) -> Tuple[str, List[str]]:
+    """``(text, names)``: the text of every delivered file of a
+    :data:`DELIVERED_TEXT_EXTS` kind, and the names read. A file that cannot
+    be read is skipped."""
+    texts: List[str] = []
+    names: List[str] = []
+    for path in files or ():
+        ext = os.path.splitext(str(path))[1].lower()
+        if ext not in DELIVERED_TEXT_EXTS or not os.path.isfile(path):
+            continue
+        try:
+            if ext == ".docx":
+                text = _docx_text(path)
+            else:
+                with open(path, encoding="utf-8", errors="replace") as fh:
+                    text = fh.read(DELIVERED_MAX_CHARS)
+                if ext in (".csv", ".tsv"):
+                    text = _cells_as_words(text, "\t" if ext == ".tsv"
+                                           else ",")
+        except Exception:                             # noqa: BLE001
+            continue
+        texts.append(text[:DELIVERED_MAX_CHARS])
+        names.append(os.path.basename(str(path)))
+    return "\n\n".join(texts), names
 
 
 # ---------------------------------------------------------------------------
@@ -891,19 +968,29 @@ def run_check(check: Dict[str, Any], answer: str,
               activity: Sequence[Dict[str, Any]] = ()) -> Dict[str, Any]:
     """Run one check; never raises (a broken check is a failed check).
     ``activity`` is the run's ``activity.jsonl`` records (for
-    ``pages_covered`` and ``tools_called``)."""
+    ``pages_covered`` and ``tools_called``). A check with ``"with_files":
+    true`` reads the answer AND the text of the files the run delivered
+    (:func:`delivered_text`): what the user receives, not only the reply's
+    pointer to it."""
     kind = check.get("type")
     fn = CHECKS.get(kind)
     params = {k: v for k, v in check.items()
-              if k not in ("type", "label", "info")}
+              if k not in ("type", "label", "info", "with_files")}
     label = check.get("label") or kind
     if fn is None:
         return {"type": kind, "label": label, "passed": False,
                 "info": bool(check.get("info")),
                 "detail": f"unknown check type {kind!r}"}
+    text, read = answer or "", []
     try:
-        ok, detail = fn(answer or "", files=files, tool_calls=tool_calls,
+        if check.get("with_files"):
+            extra, read = delivered_text(files)
+            if extra:
+                text = text + "\n\n" + extra
+        ok, detail = fn(text, files=files, tool_calls=tool_calls,
                         activity=activity, **params)
+        if read:
+            detail = f"{detail} (answer + {', '.join(read)})"
     except Exception as exc:
         ok, detail = False, f"check error: {type(exc).__name__}: {exc}"
     return {"type": kind, "label": label, "passed": bool(ok),
@@ -919,4 +1006,5 @@ def score(results: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 __all__ = ["normalize", "term_found", "run_check", "score", "CHECKS",
-           "PROCESS_CHECKS"]
+           "PROCESS_CHECKS", "delivered_text", "expand_id_ranges",
+           "DELIVERED_TEXT_EXTS"]

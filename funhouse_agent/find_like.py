@@ -25,7 +25,11 @@ robust way (owner: "robust first"):
 An example that matches linework rather than the mark floods a page with
 candidates (Foundry brief 4: 367 and 400 on a sheet of seven callouts, 18-20
 vision calls to read them). Past :data:`FLOOD_PER_PAGE` on any page nothing
-is read, and the result says to box a copy not crossed by linework.
+is read, and the result says to box a copy not crossed by linework. A looser
+example can stay under that guard on every page and still flood the whole
+set (brief 5: 978 candidates, 49 sheets, 795 s), so the whole call also
+keeps to one time budget (:data:`BUDGET_ENV`): past it no further sheet is
+read and the result says the search was cut short.
 """
 
 from __future__ import annotations
@@ -33,8 +37,43 @@ from __future__ import annotations
 import json
 import os
 import re
-from concurrent.futures import ThreadPoolExecutor
+import time
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from typing import Any, Dict, List, Optional, Sequence
+
+#: Seconds one ``find_like`` call may spend in all — the search and the
+#: reads of its contact sheets (``GEOTECH_FIND_LIKE_BUDGET_S``; ``0`` = no
+#: limit). Foundry brief 5 (2026-10-08): a loose example (a callout with its
+#: leader) matched 978 places at about 41 a page — under the per-page flood
+#: guard — and the tool read 49 sheets in 795 s for 3 true instances. Past
+#: the budget no further sheet is sent; the reads already under way finish,
+#: and the result says the search was cut short and which pages were not
+#: read.
+BUDGET_ENV = "GEOTECH_FIND_LIKE_BUDGET_S"
+DEFAULT_BUDGET_S = 300.0
+
+#: The clock the budget is kept on (a test replaces it).
+_clock = time.monotonic
+
+
+def budget_s() -> Optional[float]:
+    """The whole-search budget in seconds (:data:`BUDGET_ENV`), or ``None``
+    for none."""
+    raw = (os.environ.get(BUDGET_ENV) or "").strip()
+    try:
+        limit = float(raw) if raw else DEFAULT_BUDGET_S
+    except ValueError:
+        limit = DEFAULT_BUDGET_S
+    return limit if limit > 0 else None
+
+
+CUT_SHORT_NOTE = (
+    "The search was CUT SHORT: its time budget ({budget:g} s) ran out after "
+    "{read} of {total} candidates were read. Every count above covers ONLY "
+    "the candidates read; {left} candidate(s) on page(s) {pages} were NOT "
+    "read and are counted neither way. To finish, search again with "
+    "pages=\"{pages}\". A box tight round the lettering of one copy (no "
+    "leader, no linework) matches fewer look-alikes and reads faster.")
 
 #: Candidates per contact sheet. 20 cells of 460 x 220 px: the lettering stays
 #: above 20 px even after a tile model shrinks the sheet to 768 px.
@@ -143,6 +182,8 @@ def find_like(pdf, page: int, bbox: Sequence[float], engine, *,
     from planlens.document import Document
     from funhouse_agent import vision_view
 
+    budget = budget_s()
+    deadline = None if budget is None else _clock() + budget
     doc = (Document(content=pdf) if isinstance(pdf, (bytes, bytearray))
            else Document(filepath=str(pdf)))
     try:
@@ -170,6 +211,7 @@ def find_like(pdf, page: int, bbox: Sequence[float], engine, *,
 
     readings: Dict[int, Dict[str, str]] = {}
     errors: List[str] = []
+    not_sent: set = set()          # candidate ids on sheets past the budget
     if engine is not None and sheets:
         prompt = VERIFY_PROMPT + (
             f"\n\n(The mark being looked for reads \"{text}\"; report what "
@@ -185,23 +227,39 @@ def find_like(pdf, page: int, bbox: Sequence[float], engine, *,
 
         # Each read runs in a copy of the caller's context, so the run's
         # callbacks (activity log, token count) see these vision calls; a
-        # plain thread pool starts every worker with an empty context.
+        # plain thread pool starts every worker with an empty context. The
+        # sheets go out in page order, a few at a time, and none is sent
+        # once the budget is spent.
         import contextvars
+        queue = list(sheets)
         with ThreadPoolExecutor(max_workers=VERIFY_WORKERS) as ex:
-            futs = [ex.submit(contextvars.copy_context().run, read, s)
-                    for s in sheets]
-            for ids, reply, err in (f.result() for f in futs):
-                if err:
-                    errors.append(f"sheet #{ids[0]}-{ids[-1]}: {err}")
-                got = parse_readings(reply)
-                for i in ids:
-                    if i in got:
-                        readings[i] = got[i]
+            running: set = set()
+            while queue or running:
+                while queue and len(running) < VERIFY_WORKERS:
+                    if deadline is not None and _clock() >= deadline:
+                        for _png, ids in queue:
+                            not_sent.update(ids)
+                        queue = []
+                        break
+                    running.add(ex.submit(contextvars.copy_context().run,
+                                          read, queue.pop(0)))
+                if not running:
+                    break
+                finished, running = wait(running, return_when=FIRST_COMPLETED)
+                for f in finished:
+                    ids, reply, err = f.result()
+                    if err:
+                        errors.append(f"sheet #{ids[0]}-{ids[-1]}: {err}")
+                    got = parse_readings(reply)
+                    for i in ids:
+                        if i in got:
+                            readings[i] = got[i]
 
     rows = []
     for i, h in enumerate(cands, start=1):
         r = readings.get(i, {})
         verdict = (_verdict(r.get("read", ""), text) if r
+                   else "not_read" if i in not_sent
                    else ("unverified" if engine is None or not sheets
                          else "unread"))
         rows.append({"id": i, "page": h.page,
@@ -253,10 +311,37 @@ def find_like(pdf, page: int, bbox: Sequence[float], engine, *,
             for r in pick("unverified")]
     if errors:
         out["verify_errors"] = errors
+    left = pick("not_read")
+    if left:
+        pages_left = _page_ranges(r["page"] for r in left)
+        out["status"] = "cut_short"
+        out["budget_s"] = budget
+        out["candidates"] = len(cands)
+        out["candidates_read"] = len(cands) - len(left)
+        out["not_read"] = len(left)
+        out["not_read_pages"] = pages_left
+        out["note"] = CUT_SHORT_NOTE.format(
+            budget=budget, read=len(cands) - len(left), total=len(cands),
+            left=len(left), pages=pages_left)
     if res.get("warnings"):
         out["warnings"] = res["warnings"]
     _fit(out)
     return out
+
+
+def _page_ranges(pages) -> str:
+    """``"3-5,9"`` for pages 3, 4, 5 and 9 (0-based, as ``pages`` takes
+    them)."""
+    ps = sorted({int(p) for p in pages})
+    parts: List[str] = []
+    i = 0
+    while i < len(ps):
+        j = i
+        while j + 1 < len(ps) and ps[j + 1] == ps[j] + 1:
+            j += 1
+        parts.append(str(ps[i]) if i == j else f"{ps[i]}-{ps[j]}")
+        i = j + 1
+    return ",".join(parts)
 
 
 def flooded_pages(hits: Sequence[Any],
@@ -314,4 +399,5 @@ def _fit(out: Dict[str, Any]) -> None:
 
 
 __all__ = ["find_like", "parse_readings", "VERIFY_PROMPT", "PER_SHEET",
-           "FLOOD_PER_PAGE", "flooded_pages"]
+           "FLOOD_PER_PAGE", "flooded_pages", "BUDGET_ENV",
+           "DEFAULT_BUDGET_S", "budget_s"]

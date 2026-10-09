@@ -23,10 +23,43 @@ Dependency-light: only ``langchain_core`` (for ``HumanMessage``) and stdlib
 from __future__ import annotations
 
 import base64
+import contextvars
+import logging
 import os
 import threading
 from contextlib import contextmanager
 from typing import Iterator, Optional
+
+log = logging.getLogger(__name__)
+
+#: Seconds one vision SIDE call may run before it is given up and asked once
+#: more (:data:`TIMEOUT_RETRIES`). Foundry brief 5 (2026-10-08): side calls
+#: inherited the engine's 900 s read timeout, set for the primary model's long
+#: reasoning, so one stalled tile held a turn for 907 s (and 343 s, and 903 s
+#: in brief 4) while the p99 side call took 74 s. The clock starts when the
+#: call holds its slot (:func:`call_slot`), so queueing behind other calls is
+#: not counted. ``0`` = wait as long as the engine does. The primary agent's
+#: own calls never pass through here and keep the engine's timeout.
+TIMEOUT_ENV = "GEOTECH_VISION_CALL_TIMEOUT_S"
+DEFAULT_TIMEOUT_S = 180.0
+#: How many more times a side call that timed out is asked.
+TIMEOUT_RETRIES = 1
+
+
+class VisionCallTimeout(TimeoutError):
+    """A vision side call that did not answer within its time, every time it
+    was asked: the image was not read."""
+
+
+def call_timeout_s() -> Optional[float]:
+    """The side-call time limit in seconds (:data:`TIMEOUT_ENV`), or
+    ``None`` for none."""
+    raw = (os.environ.get(TIMEOUT_ENV) or "").strip()
+    try:
+        limit = float(raw) if raw else DEFAULT_TIMEOUT_S
+    except ValueError:
+        limit = DEFAULT_TIMEOUT_S
+    return limit if limit > 0 else None
 
 #: At most this many vision side calls run at once in one process. A turn can
 #: fan out several ways at once — the model asks for many pages in one step,
@@ -69,6 +102,62 @@ def call_slot() -> Iterator[None]:
         return
     with sem:
         yield
+
+
+def _invoke_once(model, messages, timeout: Optional[float]):
+    """``model.invoke(messages)`` holding a call slot, given up after
+    ``timeout`` seconds of running.
+
+    With a limit the call runs on its own thread in a COPY of the caller's
+    context, so the run's callbacks (the activity log, the token count) still
+    see it. A call given up is left to finish on that thread — it still holds
+    its slot, so a stalled connection keeps counting against the process's
+    cap rather than letting more calls pile onto the client's pool."""
+    if timeout is None:
+        with call_slot():
+            return model.invoke(messages)
+    box: dict = {}
+    started, done = threading.Event(), threading.Event()
+
+    def run():
+        try:
+            with call_slot():
+                started.set()
+                box["value"] = model.invoke(messages)
+        except BaseException as exc:  # noqa: BLE001 - handed to the caller
+            box["error"] = exc
+        finally:
+            started.set()
+            done.set()
+
+    ctx = contextvars.copy_context()
+    threading.Thread(target=ctx.run, args=(run,), daemon=True,
+                     name="vision-side-call").start()
+    started.wait()                      # queueing for a slot is not counted
+    if not done.wait(timeout):
+        raise VisionCallTimeout(
+            f"the vision call gave no answer within {timeout:g} s")
+    if "error" in box:
+        raise box["error"]
+    return box["value"]
+
+
+def invoke_side_call(model, messages):
+    """One vision side call: :func:`_invoke_once` under the side-call limit
+    (:func:`call_timeout_s`), asked once more if it times out. Raises
+    :class:`VisionCallTimeout` when no ask answered in time — the caller
+    reports that image as not read instead of waiting on it."""
+    timeout = call_timeout_s()
+    for attempt in range(TIMEOUT_RETRIES + 1):
+        try:
+            return _invoke_once(model, messages, timeout)
+        except VisionCallTimeout:
+            if attempt >= TIMEOUT_RETRIES:
+                raise VisionCallTimeout(
+                    f"the vision call gave no answer within {timeout:g} s, "
+                    f"{attempt + 1} times; this image was NOT read") from None
+            log.warning("vision side call gave no answer within %g s; "
+                        "asking once more", timeout)
 
 
 class LangChainVisionEngine:
@@ -180,15 +269,15 @@ class LangChainVisionEngine:
             ])
 
         try:
-            with call_slot():
-                response = self._model.invoke([message(True)])
+            response = invoke_side_call(self._model, [message(True)])
+        except VisionCallTimeout:
+            raise
         except Exception as exc:
             # An older model (GPT-4.1, GPT-5.2) has no "original" detail; ask
             # once more at its default rather than fail the read.
             if not detail or "detail" not in str(exc).lower():
                 raise
-            with call_slot():
-                response = self._model.invoke([message(False)])
+            response = invoke_side_call(self._model, [message(False)])
         return _content_to_text(getattr(response, "content", response))
 
 
@@ -217,4 +306,6 @@ def _content_to_text(content) -> str:
 
 
 __all__ = ["LangChainVisionEngine", "call_slot", "INFLIGHT_ENV",
-           "DEFAULT_MAX_INFLIGHT"]
+           "DEFAULT_MAX_INFLIGHT", "TIMEOUT_ENV", "DEFAULT_TIMEOUT_S",
+           "TIMEOUT_RETRIES", "VisionCallTimeout", "call_timeout_s",
+           "invoke_side_call"]

@@ -1048,6 +1048,11 @@ def build_deep_agent(
                             max_result_chars=max_result_chars)
     if coverage.tools:
         tools = list(tools) + list(coverage.tools)
+    # Every primary tool refuses an argument it does not take, by name,
+    # whichever module built it (brief 5, N3: analyze_pdf_page(pages=12)
+    # silently looked at page 0). See funhouse_agent/deep/strict_args.py.
+    from funhouse_agent.deep.strict_args import strict_tools
+    tools = strict_tools(tools)
 
     subagents = []
     if reference_mode != "off":

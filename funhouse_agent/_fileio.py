@@ -14,8 +14,55 @@ Tool responses must therefore (a) default outputs away from /Workspace,
 local temp dir when the target did not store it.
 """
 
+import contextlib
+import contextvars
 import os
 import tempfile
+
+
+#: The working folder bound to the turn running in THIS context. On a host
+#: where several people share one process (Tiny Apps), a process-wide env var
+#: is repointed by any other session's rerun while a turn is writing, so a
+#: file could land in another person's folder. The web app's turn worker binds
+#: its conversation's folder here (:func:`bind_working_dir`); LangGraph copies
+#: the context into the threads it runs tools in. It wins over the env var.
+_WORKING_DIR: "contextvars.ContextVar" = contextvars.ContextVar(
+    "geotech_working_dir", default=None)
+
+
+def bind_working_dir(path):
+    """Bind ``path`` as this context's working folder; returns the token for
+    :func:`unbind_working_dir`. A falsy ``path`` binds nothing (the env var,
+    then the old fallbacks, apply)."""
+    return _WORKING_DIR.set(os.path.abspath(os.path.expanduser(str(path)))
+                            if path else None)
+
+
+def unbind_working_dir(token) -> None:
+    try:
+        _WORKING_DIR.reset(token)
+    except (ValueError, RuntimeError):     # set in another context
+        pass
+
+
+@contextlib.contextmanager
+def working_dir_bound(path):
+    """``with working_dir_bound(folder):`` -- the folder for this context."""
+    token = bind_working_dir(path)
+    try:
+        yield
+    finally:
+        unbind_working_dir(token)
+
+
+def _bound_or_env():
+    bound = _WORKING_DIR.get()
+    if bound:
+        return bound
+    env = os.environ.get(DEFAULT_OUTPUT_DIR_ENV)
+    if env and env.strip():
+        return os.path.abspath(os.path.expanduser(env.strip()))
+    return None
 
 
 def is_databricks() -> bool:
@@ -39,19 +86,70 @@ def default_output_dir() -> str:
 
     Resolution (first that applies):
 
-    1. ``$GEOTECH_DEFAULT_OUTPUT_DIR`` if set — the host-chosen working folder
+    1. the working folder bound to this turn (:func:`bind_working_dir`), else
+       ``$GEOTECH_DEFAULT_OUTPUT_DIR`` if set — the host-chosen working folder
        (``~`` expanded, made absolute). This is the highest-precedence DEFAULT;
        an explicit ``output_path`` passed to a tool still wins over it.
     2. the system temp dir on Databricks or whenever the current directory is a
        /Workspace FUSE path, where plain file writes are unreliable.
     3. the current directory ("") locally.
     """
-    env = os.environ.get(DEFAULT_OUTPUT_DIR_ENV)
-    if env and env.strip():
-        return os.path.abspath(os.path.expanduser(env.strip()))
+    host = _bound_or_env()
+    if host:
+        return host
     if is_databricks() or _is_workspace_path(os.getcwd()):
         return tempfile.gettempdir()
     return ""
+
+
+def host_output_dir():
+    """The working folder a HOST set for this conversation -- bound to the
+    turn (:func:`bind_working_dir`), else ``$GEOTECH_DEFAULT_OUTPUT_DIR`` (the
+    web app per conversation, the review suite per run) -- absolute, or
+    ``None`` for a library caller that set none (then
+    :func:`default_output_dir` falls back as it always has)."""
+    return _bound_or_env()
+
+
+def _inside(path: str, folder: str) -> bool:
+    try:
+        p = os.path.normcase(os.path.abspath(path))
+        f = os.path.normcase(os.path.abspath(folder))
+        return os.path.commonpath([p, f]) == f
+    except ValueError:              # another drive (Windows)
+        return False
+
+
+def into_working_folder(path: str, folder=None, is_dir: bool = False) -> str:
+    """Where a tool writes the file (or, ``is_dir``, the folder of files) a
+    model named ``path``, once a host has set a working folder.
+
+    Inside that folder (a bare name, a sub-path, or an absolute path already
+    in it) the path is kept. Anywhere else — ``/tmp/x.xml``, another
+    conversation's folder, a home directory — the FILE NAME is kept and the
+    directory is replaced by the working folder; a folder outside it becomes
+    the working folder itself. Foundry brief 5 (2026-10-08): every model
+    copied a ``/tmp`` example into ``write_diggs``, the file was written there
+    and the run never delivered it.
+
+    With no host folder (``folder`` not given and :func:`host_output_dir`
+    ``None``) ``path`` is returned unchanged: library callers keep exactly the
+    behaviour they had.
+    """
+    folder = folder or host_output_dir()
+    if not folder or not isinstance(path, str) or not path.strip():
+        return path
+    folder = os.path.abspath(folder)
+    # join() keeps an absolute (or, on Windows, a rooted "/tmp/...") path
+    # whole and puts a relative one inside the folder.
+    candidate = os.path.abspath(os.path.join(
+        folder, os.path.expanduser(path.strip())))
+    if _inside(candidate, folder):
+        return candidate
+    if is_dir:
+        return folder
+    name = os.path.basename(candidate.rstrip("/\\"))
+    return os.path.join(folder, name) if name else folder
 
 
 def find_in_working_folder(name: str):
@@ -368,7 +466,8 @@ def save_verified(path: str, content) -> dict:
 
 __all__ = [
     "is_databricks", "default_output_dir", "resolve_output_path",
-    "DEFAULT_OUTPUT_DIR_ENV",
+    "DEFAULT_OUTPUT_DIR_ENV", "host_output_dir", "into_working_folder",
+    "bind_working_dir", "unbind_working_dir", "working_dir_bound",
     "written_file_problem", "rescue_write", "workspace_write_hint",
     "workspace_api_upload", "save_verified",
 ]

@@ -147,9 +147,9 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   reads are unreliable) — do NOT conclude the file cannot be read. Plain file
   writes to `/Workspace/...` are often not durably stored (the workspace
   keeps a literal PLACEHOLDER file; binary files like PDFs come out corrupt).
-  Prefer `/tmp/...` or a Unity Catalog `/Volumes/...` path for `output_path`,
-  and tell the user to copy it out with
-  `dbutils.fs.cp('file:/tmp/<name>', ...)` or download it. **`save_file` writes
+  Give `output_path` a bare file name: it lands in the working folder, which
+  is where the user receives files (in the app a tool writes there whatever
+  directory is named). **`save_file` writes
   are VERIFIED**: the response reports the path that actually landed on disk
   (`saved`, with `file_size_bytes`) — a `/Workspace` save is routed through the
   authenticated Databricks workspace API when the SDK is available so it stores

@@ -31,6 +31,7 @@ from typing import Any, Callable, Dict, Optional
 from langchain_core.tools import StructuredTool
 
 from funhouse_agent import document_tools as _document_tools
+from funhouse_agent.deep.strict_args import strict_tool, strict_tools
 from pydantic import BaseModel, ConfigDict, Field
 
 from funhouse_agent.dispatch import (
@@ -544,7 +545,9 @@ def make_core_tools(
             cap,
         )
 
-    return [
+    # Every tool refuses an argument it does not take, by name (brief 5,
+    # N3); call_agent's schema takes extra keys on purpose and is unchanged.
+    return strict_tools([
         StructuredTool.from_function(
             list_agents,
             name="list_agents",
@@ -579,7 +582,7 @@ def make_core_tools(
             ),
             args_schema=_CallAgentArgs,
         ),
-    ]
+    ])
 
 
 # ---------------------------------------------------------------------------
@@ -593,10 +596,10 @@ _DOCUMENT_TOOL_NOTES = {
     "annotate_document": (
         " In this app give output_path a bare file name: it is written into "
         "this conversation's working folder, attached to the reply as a "
-        "download, and it defaults to <document>_marked.pdf. Leave author "
-        "alone unless the user tells you whose review this is — the default "
-        "names the comments as an AI draft, which is what the reviewer must "
-        "be able to see. For a thing you found by looking, pass the view and "
+        "download, and it defaults to <document>_marked.pdf. The app signs "
+        "every comment itself — the person using it, via this app, as an AI "
+        "draft, which is what the reviewer must be able to see — so there is "
+        "no author argument. For a thing you found by looking, pass the view and "
         "image_box of the ZOOMED look in which the thing is legible (a view "
         "of 300 pt or less; a whole-page look only says where to zoom, and "
         "a small mark from it is refused) — never a box from memory or an "
@@ -1050,19 +1053,24 @@ def make_vision_tools(
         return _dispatch("document_markups", args)
 
     def annotate_document(handle: str, markups: Optional[list] = None,
-                          output_path: str = "", author: str = "",
+                          output_path: str = "",
                           append: bool = True, check: bool = True) -> str:
         """Write review comments onto a COPY of the PDF (planlens' own words
         describe the markups; this app resolves the output file and signs
         them). ``check`` (default on) looks at every mark on the marked copy,
-        however it was anchored, and reports which are misplaced."""
+        however it was anchored, and reports which are misplaced.
+
+        The signature is ALWAYS the app's (``markup_author``: the signed-in
+        person via this app, as an AI draft), never the model's: brief 5
+        caught an agent signing "AI Draft Review" unasked, which dropped the
+        reviewer's name from every comment. So there is no ``author``
+        argument."""
         args = {
             "handle": handle,
             "output_path": _document_tools.markup_output_path(output_path,
                                                               handle),
             "markups": markups or [],
-            "author": (author or markup_author
-                       or _document_tools.markup_author()),
+            "author": markup_author or _document_tools.markup_author(),
             "append": append,
         }
         raw = _dispatch("annotate_document", args)
@@ -1289,10 +1297,12 @@ def make_vision_tools(
     tools = []
     for name, (fn, desc) in _builders.items():
         if name in include:
-            tools.append(
+            # An unknown argument (analyze_pdf_page(pages=12)) is refused by
+            # name rather than dropped (brief 5, N3).
+            tools.append(strict_tool(
                 StructuredTool.from_function(
                     fn, name=name, description=overrides.get(name, desc))
-            )
+            ))
     return tools
 
 
@@ -1412,9 +1422,9 @@ def make_report_ingest_tool(
         return _truncate(json.dumps(answer.model_dump()), max_result_chars)
 
     report_ingest.__doc__ = REPORT_INGEST_DESCRIPTION
-    return [StructuredTool.from_function(
+    return [strict_tool(StructuredTool.from_function(
         report_ingest, name="report_ingest",
-        description=REPORT_INGEST_DESCRIPTION)]
+        description=REPORT_INGEST_DESCRIPTION))]
 
 
 def _report_ingest_out_dir(source: str) -> str:
@@ -1493,6 +1503,6 @@ def make_report_library_tool(
                          max_result_chars)
 
     report_library.__doc__ = REPORT_LIBRARY_DESCRIPTION
-    return [StructuredTool.from_function(
+    return [strict_tool(StructuredTool.from_function(
         report_library, name="report_library",
-        description=REPORT_LIBRARY_DESCRIPTION)]
+        description=REPORT_LIBRARY_DESCRIPTION))]

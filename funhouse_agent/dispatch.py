@@ -13,6 +13,7 @@ Tools:
 import json
 import difflib
 import importlib
+import os
 
 from funhouse_agent.adapters import MODULE_REGISTRY
 
@@ -796,10 +797,70 @@ def call_agent(
     try:
         if attachments and "attachment_key" in parameters:
             parameters = _resolve_attachment(parameters, attachments)
+        parameters, named = _outputs_into_working_folder(parameters)
         result = mod.METHOD_REGISTRY[method](parameters)
+        if named and isinstance(result, dict) and "error" not in result:
+            result = dict(result)
+            result["output_note"] = _output_note(named, parameters)
         return result
     except Exception as e:
         return {"error": f"{type(e).__name__}: {e}"}
+
+
+#: Parameters naming a file (``False``) or a folder of files (``True``) that a
+#: module method WRITES. Every writer reached through ``call_agent`` takes one
+#: of these names (``write_diggs``, the calc packages, ``html_to_pdf``,
+#: ``render_figures``, the DXF export, ``snip_region``, the plots).
+_OUTPUT_PARAMS = (("output_path", False), ("output_dir", True))
+
+
+def _outputs_into_working_folder(parameters):
+    """``(parameters, named)``: with a host working folder set, every output
+    path the model gave is moved INTO that folder (file name kept,
+    :func:`funhouse_agent._fileio.into_working_folder`) — the same folder
+    ``write_docx``, ``save_file`` and ``annotate_document`` write to — so the
+    file reaches the user whatever directory was named. ``named`` maps each
+    output parameter given to what the model asked for. With no host folder
+    nothing changes (a library caller keeps today's behaviour)."""
+    from funhouse_agent._fileio import host_output_dir, into_working_folder
+    folder = host_output_dir()
+    if not folder or not isinstance(parameters, dict):
+        return parameters, {}
+    out, named = parameters, {}
+    for key, is_dir in _OUTPUT_PARAMS:
+        asked = parameters.get(key)
+        if not isinstance(asked, str) or not asked.strip():
+            continue
+        named[key] = asked
+        target = into_working_folder(asked, folder, is_dir=is_dir)
+        if target != asked:
+            if out is parameters:
+                out = dict(parameters)
+            out[key] = target
+    return out, named
+
+
+def _output_note(named: dict, parameters: dict) -> str:
+    """What a writer's result says about where its file went."""
+    from funhouse_agent._fileio import host_output_dir
+    folder = host_output_dir() or ""
+    moved = []
+    for key, asked in named.items():
+        went = str(parameters.get(key) or "")
+        # Where the path would have gone as given (a bare name: into the
+        # folder anyway; "/tmp/x" or an absolute path: somewhere else).
+        meant = os.path.abspath(os.path.join(
+            folder, os.path.expanduser(str(asked).strip())))
+        if os.path.normcase(meant) != os.path.normcase(os.path.abspath(went)):
+            moved.append(f"'{asked}' -> '{went}'")
+    note = ("Written into this conversation's working folder, which is where "
+            "the user receives files: it is attached to the conversation. "
+            "Tell the user the file name; a /tmp path or a sandbox: link "
+            "would not reach them.")
+    if moved:
+        note += (" The directory asked for was replaced by that folder (a "
+                 "tool always writes there): " + "; ".join(moved) + ".")
+    return note
 
 
 # ---------------------------------------------------------------------------

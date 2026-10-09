@@ -979,16 +979,20 @@ OPEN_TASKS: List[Task] = [
              "label": "every log page and laboratory page was read"},
             {"type": "states_coverage",
              "label": "the answer states its coverage as counts"},
+            # The answer AND the tables it delivers are read (brief 5: every
+            # value was in the delivered CSV / docx / md, and an answer
+            # pointing at them failed). The question asks for no soil
+            # descriptions, so none is checked.
             {"type": "set_match", "vocabulary": list(_RF.NEW_BORINGS
                                                      + _RF.OLD_BORINGS),
              "expected": list(_RF.NEW_BORINGS + _RF.OLD_BORINGS),
-             "min_recall": 1.0,
+             "min_recall": 1.0, "with_files": True,
              "label": "names all six borings, 2026 and 2011"},
             {"type": "contains_all",
-             "terms": [_num("43"), "shell", _num("41.7"), _num("1.94"),
+             "terms": [_num("43"), _num("41.7"), _num("1.94"),
                        ["1,850", _num("1850")]],
-             "label": "values from the newest log, a scan and the last "
-                      "sheets"},
+             "with_files": True,
+             "label": "values from the newest log and the last sheets"},
         ],
         truth=("Borings of 2026 (vector logs, PDF pages 8-11): B-1 (two "
                "sheets, 14.9 m, water 3.1 m, N 9 to 52), B-2 (7.4 m, water "
@@ -1018,7 +1022,7 @@ OPEN_TASKS: List[Task] = [
             {"type": "set_match", "vocabulary": list(_RF.NEW_BORINGS
                                                      + _RF.OLD_BORINGS),
              "expected": list(_RF.NEW_BORINGS + _RF.OLD_BORINGS),
-             "min_recall": 1.0,
+             "min_recall": 1.0, "with_files": True,
              "label": "names all six borings, 2026 and 2011"},
         ],
         truth=("A DIGGS 2.6 file of the six borings (B-1, B-2, B-3 of 2026 "

@@ -1559,10 +1559,14 @@ class LabTest(BaseModel):
         would be invisible in the JSON.
         """
         if self.result is not None and self.result.kind != self.kind:
+            # Name the fix: the refusal alone left a writer that had filed a
+            # summary table under kind 'other' dropping the table rather than
+            # re-filing it (Foundry brief 5, N9).
             raise ValueError(
                 f"a {self.kind!r} test cannot carry a {self.result.kind!r} "
                 f"result; the result class for {self.kind!r} is "
-                f"{RESULT_CLASS.get(self.kind, OtherResult).__name__}")
+                f"{RESULT_CLASS.get(self.kind, OtherResult).__name__}. To "
+                f"keep this result, give the test kind {self.result.kind!r}")
         return self
 
 

@@ -180,6 +180,7 @@ def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
         "turns": [], "answer": "", "error": None, "outcome_error": None}
     t0 = time.monotonic()
     staged: List[str] = []
+    collector = _output_collector()
     try:
         docs = [_documents.resolve(d, docs_dir) for d in task.documents]
     except _documents.MissingDocument as exc:
@@ -216,10 +217,11 @@ def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
                 logger.turn_start(prompt=text)
                 t_turn = time.monotonic()
                 answer, tokens, err, kind = "", 0, None, None
+                callbacks = [logger] + ([collector] if collector else [])
                 try:
                     for item in core.stream_turn(agent, history, thread,
                                                  recursion_limit=limit,
-                                                 callbacks=[logger]):
+                                                 callbacks=callbacks):
                         if item.get("kind") == "turn_done":
                             answer = item.get("answer") or ""
                             tokens = int(item.get("turn_tokens") or 0)
@@ -245,6 +247,16 @@ def run_task(task: Task, model, *, arm: str, arm_env: Dict[str, str],
             result["error"] = f"{type(exc).__name__}: {exc}"
             result["traceback"] = traceback.format_exc()[-2000:]
     result["seconds"] = round(time.monotonic() - t0, 1)
+    # A file a tool REPORTED writing outside the run's folder (an
+    # ``output_path`` in /tmp) is copied into files/, as the app's turn job
+    # does (webapp/turn_jobs.py): the suite scores what the user receives.
+    # Foundry brief 5 (N1): a valid DIGGS file written to /tmp in 6 of 6
+    # runs failed file_produced 6 of 6.
+    imported = _import_reported(collector, files_dir, staged)
+    if imported:
+        result["imported_outputs"] = {
+            src: os.path.relpath(dst, run_dir)
+            for src, dst in sorted(imported.items())}
     staged_set = {os.path.abspath(p) for p in staged}
     produced = sorted(
         str(p) for p in Path(files_dir).rglob("*")
@@ -304,6 +316,34 @@ def rescore_saved(result: Dict[str, Any], task: Task,
 #: Errors that ARE the page's behaviour (scored, never retried): the legacy
 #: agent's step cap ends a long request this way.
 OUTCOME_ERRORS = ("GraphRecursionError",)
+
+
+def _output_collector():
+    """The app's own record of the files a turn's tools report writing
+    (``webapp.output_capture.OutputCollector``), or ``None`` where the app
+    is not importable."""
+    try:
+        from webapp.output_capture import OutputCollector
+        return OutputCollector()
+    except Exception:  # noqa: BLE001 - the run goes on without it
+        return None
+
+
+def _import_reported(collector, files_dir: str,
+                     staged: Sequence[str]) -> Dict[str, str]:
+    """Copy the files ``collector`` saw reported outside the run's folder
+    into ``files_dir`` with the app's own import
+    (``webapp.core.import_reported_outputs``): staged uploads and files only
+    fetched to be read are left out. ``{source: copy}``; never raises."""
+    if collector is None or not getattr(collector, "outputs", None):
+        return {}
+    try:
+        from webapp import core
+        return core.import_reported_outputs(
+            collector.outputs, files_dir,
+            exclude=list(staged) + list(getattr(collector, "inputs", [])))
+    except Exception:  # noqa: BLE001 - a record, never a failure
+        return {}
 
 
 def _clear_run_dir(run_dir: str) -> None:

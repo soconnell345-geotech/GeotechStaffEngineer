@@ -56,8 +56,8 @@ summary of investigations, measurements, and available parameters.
 2. Use the `site_key` in subsequent plot calls (`plot_parameter_vs_depth`, \
 `plot_plan_view`, `plot_cross_section`, `plot_atterberg_limits`, \
 `plot_multi_parameter`) — no need to re-send the full data.
-3. To produce a figure, **pass `output_path`** to the plot method (e.g. \
-`/Workspace/Users/me/plot.html` or `/tmp/plot.html`): it SAVES the \
+3. To produce a figure, **pass `output_path`** to the plot method (a file \
+name, e.g. `site_plot.html`): it SAVES the \
 self-contained Plotly HTML to that path with a verified write and returns a \
 short `{output_path, file_exists, file_size_bytes}` confirmation — do NOT then \
 call `save_file`, and do NOT ask for the HTML inline. Only set \

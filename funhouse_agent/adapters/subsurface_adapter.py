@@ -670,7 +670,7 @@ METHOD_INFO = {
             "group_trends_by": {"type": "str", "required": False, "default": "", "description": "Group trends by 'uscs' for separate trends per soil class."},
             "title": {"type": "str", "required": False, "default": "", "description": "Custom plot title."},
             "output_format": {"type": "str", "required": False, "default": "metadata", "allowed_values": ["metadata", "html", "json"], "description": "Output format."},
-            "output_path": {"type": "str", "required": False, "description": "If given, SAVE the self-contained figure HTML to this real path (e.g. '/Workspace/Users/me/plot.html' or '/tmp/plot.html') and return a short {output_path, file_exists, size} confirmation instead of the large HTML blob. Forces html rendering; the write is verified. Omit to receive the HTML inline."},
+            "output_path": {"type": "str", "required": False, "description": "If given, SAVE the self-contained figure HTML under this file name (e.g. 'site_plot.html'; in the app it is written into this conversation's folder) and return a short {output_path, file_exists, size} confirmation instead of the large HTML blob. Forces html rendering; the write is verified. Omit to receive the HTML inline."},
         },
         "returns": {
             "plot_type": "Type of plot.",
@@ -687,7 +687,7 @@ METHOD_INFO = {
             "use_elevation": {"type": "bool", "required": False, "default": False, "description": "If True, Y-axis is elevation."},
             "title": {"type": "str", "required": False, "default": "", "description": "Custom plot title."},
             "output_format": {"type": "str", "required": False, "default": "metadata", "allowed_values": ["metadata", "html", "json"], "description": "Output format."},
-            "output_path": {"type": "str", "required": False, "description": "If given, SAVE the self-contained figure HTML to this real path (e.g. '/Workspace/Users/me/plot.html' or '/tmp/plot.html') and return a short {output_path, file_exists, size} confirmation instead of the large HTML blob. Forces html rendering; the write is verified. Omit to receive the HTML inline."},
+            "output_path": {"type": "str", "required": False, "description": "If given, SAVE the self-contained figure HTML under this file name (e.g. 'site_plot.html'; in the app it is written into this conversation's folder) and return a short {output_path, file_exists, size} confirmation instead of the large HTML blob. Forces html rendering; the write is verified. Omit to receive the HTML inline."},
         },
         "returns": {
             "plot_type": "Type of plot.",
@@ -704,7 +704,7 @@ METHOD_INFO = {
             "use_elevation": {"type": "bool", "required": False, "default": False, "description": "If True, Y-axis is elevation."},
             "title": {"type": "str", "required": False, "default": "", "description": "Custom plot title."},
             "output_format": {"type": "str", "required": False, "default": "metadata", "allowed_values": ["metadata", "html", "json"], "description": "Output format."},
-            "output_path": {"type": "str", "required": False, "description": "If given, SAVE the self-contained figure HTML to this real path (e.g. '/Workspace/Users/me/plot.html' or '/tmp/plot.html') and return a short {output_path, file_exists, size} confirmation instead of the large HTML blob. Forces html rendering; the write is verified. Omit to receive the HTML inline."},
+            "output_path": {"type": "str", "required": False, "description": "If given, SAVE the self-contained figure HTML under this file name (e.g. 'site_plot.html'; in the app it is written into this conversation's folder) and return a short {output_path, file_exists, size} confirmation instead of the large HTML blob. Forces html rendering; the write is verified. Omit to receive the HTML inline."},
         },
         "returns": {
             "plot_type": "Type of plot.",
@@ -723,7 +723,7 @@ METHOD_INFO = {
             "parameter_for_color": {"type": "str", "required": False, "default": "", "description": "Parameter name when color_by='parameter'."},
             "title": {"type": "str", "required": False, "default": "", "description": "Custom plot title."},
             "output_format": {"type": "str", "required": False, "default": "metadata", "allowed_values": ["metadata", "html", "json"], "description": "Output format."},
-            "output_path": {"type": "str", "required": False, "description": "If given, SAVE the self-contained figure HTML to this real path (e.g. '/Workspace/Users/me/plot.html' or '/tmp/plot.html') and return a short {output_path, file_exists, size} confirmation instead of the large HTML blob. Forces html rendering; the write is verified. Omit to receive the HTML inline."},
+            "output_path": {"type": "str", "required": False, "description": "If given, SAVE the self-contained figure HTML under this file name (e.g. 'site_plot.html'; in the app it is written into this conversation's folder) and return a short {output_path, file_exists, size} confirmation instead of the large HTML blob. Forces html rendering; the write is verified. Omit to receive the HTML inline."},
         },
         "returns": {
             "plot_type": "Type of plot.",
@@ -743,7 +743,7 @@ METHOD_INFO = {
             "show_gwl": {"type": "bool", "required": False, "default": True, "description": "Show groundwater level dashed line."},
             "title": {"type": "str", "required": False, "default": "", "description": "Custom plot title."},
             "output_format": {"type": "str", "required": False, "default": "metadata", "allowed_values": ["metadata", "html", "json"], "description": "Output format."},
-            "output_path": {"type": "str", "required": False, "description": "If given, SAVE the self-contained figure HTML to this real path (e.g. '/Workspace/Users/me/plot.html' or '/tmp/plot.html') and return a short {output_path, file_exists, size} confirmation instead of the large HTML blob. Forces html rendering; the write is verified. Omit to receive the HTML inline."},
+            "output_path": {"type": "str", "required": False, "description": "If given, SAVE the self-contained figure HTML under this file name (e.g. 'site_plot.html'; in the app it is written into this conversation's folder) and return a short {output_path, file_exists, size} confirmation instead of the large HTML blob. Forces html rendering; the write is verified. Omit to receive the HTML inline."},
         },
         "returns": {
             "plot_type": "Type of plot.",
@@ -876,7 +876,8 @@ METHOD_INFO = {
                 "remarks; pages (0-based PDF pages). Every depth or elevation is {value, unit}. Unknown keys are refused by name.")},
             "lab_tests": {"type": "array", "required": False, "description": (
                 "Lab results, one object per test on one specimen: kind (atterberg|gradation|compaction|cbr|moisture_content|density|"
-                "chemical|specific_gravity|unconfined|direct_shear|triaxial|swell_consolidation|permeability|organic_content|other), "
+                "chemical|specific_gravity|unconfined|unconfined_rock|direct_shear|triaxial|swell_consolidation|permeability|"
+                "organic_content|summary_table|other), "
                 "investigation_id, sample_id, depth_top {value, unit}, depth_bottom, standard, pages, and result {kind: the same kind, then: "
                 "atterberg: ll, pl, pi, non_plastic; gradation: gravel_percent, sand_percent, silt_percent, clay_percent, fines_percent, "
                 "percent_passing [{percent_passing, size {value, unit}, sieve}]; compaction: max_dry_density {value, unit}, optimum_wc; "
@@ -886,7 +887,7 @@ METHOD_INFO = {
                 "gravel_percent, sand_percent, fines_percent, max_dry_density, optimum_wc, pH, sulfate, chloride}]}: it is "
                 "cross-checked against the individual sheets.")},
             "project": {"type": "dict", "required": False, "description": "{name, number, client, location, coordinate_system, elevation_datum} as printed."},
-            "output_path": {"type": "str", "required": True, "description": "Where to write the .xml (e.g. '/tmp/site.diggs.xml'); it is attached to the conversation."},
+            "output_path": {"type": "str", "required": True, "description": "A file name for the .xml, e.g. 'site.diggs.xml'. In the app it is written into this conversation's folder, whatever directory is given, and attached to the conversation."},
             "document_id": {"type": "str", "required": False, "description": "An identifier for the source document."},
         },
         "returns": {

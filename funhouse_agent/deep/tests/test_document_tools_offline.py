@@ -351,23 +351,39 @@ def test_a_review_is_written_and_reads_back_through_the_same_tools(
     assert "State the datum" in " ".join(written["markups"])
 
 
-def test_the_author_comes_from_the_deployment_or_the_call(gt, tmp_path,
-                                                          monkeypatch):
+def test_the_author_comes_from_the_app_never_the_call(gt, tmp_path,
+                                                     monkeypatch):
+    """Foundry brief 5 (AU): an agent signed its comments "AI Draft Review"
+    unasked and the reviewer's name was lost. The signature is the app's —
+    the person signed in (``markup_author``), else the deployment's — and
+    the tool takes no author at all."""
     if not _annotate_ready():
         pytest.skip("installed planlens predates annotate_document")
     monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
     monkeypatch.setenv("GEOTECH_MARKUP_AUTHOR", "Acme Review Bot")
     assert document_tools.markup_author() == "Acme Review Bot"
     tools = make_vision_tools(engine=None, attachments={"s.pdf": gt.pdf})
+    tool = _tool(tools, "annotate_document")
+    assert "author" not in tool.args
     handle = _invoke(_tool(tools, "open_document"), source="s.pdf")["handle"]
     mark = [{"kind": "note", "page": 0, "comment": "x", "point": [90, 90]}]
-    out = _invoke(_tool(tools, "annotate_document"), handle=handle,
-                  output_path="env.pdf", markups=mark)
+    out = _invoke(tool, handle=handle, output_path="env.pdf", markups=mark)
     assert out["author"] == "Acme Review Bot"
-    named = _invoke(_tool(tools, "annotate_document"), handle=handle,
-                    output_path="named.pdf", markups=mark,
-                    author="J. Reviewer, PE")
-    assert named["author"] == "J. Reviewer, PE"
+    # The brief-5 call shape: an author of the agent's own is refused by
+    # name, and nothing is written under it.
+    named = _invoke(tool, handle=handle, output_path="named.pdf",
+                    markups=mark, author="AI Draft Review")
+    assert "author" in named["error"] and "unknown_arguments" in named
+    assert not (tmp_path / "named.pdf").exists()
+    # The signed-in person, bound when the agent is built, signs instead.
+    bound = make_vision_tools(engine=None, attachments={"s.pdf": gt.pdf},
+                              markup_author="J. Reviewer via "
+                                            "GeotechStaffEngineer (AI draft)")
+    h2 = _invoke(_tool(bound, "open_document"), source="s.pdf")["handle"]
+    signed = _invoke(_tool(bound, "annotate_document"), handle=h2,
+                     output_path="bound.pdf", markups=mark)
+    assert signed["author"] == ("J. Reviewer via GeotechStaffEngineer "
+                                "(AI draft)")
 
 
 def test_an_empty_markup_list_is_refused_as_json(gt, tmp_path, monkeypatch):

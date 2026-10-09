@@ -178,3 +178,42 @@ def test_a_lab_test_naming_an_unknown_boring_is_reported(tmp_path):
     text = json.dumps(res["cross_checks"])
     assert res["cross_checks"]["n"] >= 1
     assert "B-9" in text
+
+
+# -- N9 (Foundry brief 5): the kind list and the code agree -----------------
+# The description listed the kinds without summary_table, then said a summary
+# table goes in "as one object of kind summary_table". GPT-5.4 filed it as
+# kind 'other', was refused without being told which kind to use, and wrote
+# the file with no summary at all -- so the planted LL/PL swap was never
+# compared.
+
+def test_the_described_kinds_are_the_models_kinds():
+    import re
+    from typing import get_args
+    from report_ingest.model import LabKind
+
+    desc = _j(describe_method("subsurface", "write_diggs"))
+    text = json.dumps(desc)
+    listed = re.search(r"kind \(atterberg\|([a-z_|]+)\)", text)
+    assert listed, "the lab_tests kind list is gone from the description"
+    kinds = {"atterberg", *listed.group(1).split("|")}
+    assert kinds == set(get_args(LabKind))
+    assert "summary_table" in kinds
+
+
+def test_a_summary_filed_under_other_is_refused_with_the_kind_to_use(tmp_path):
+    """The brief-5 call shape: a summary table's rows under kind 'other'."""
+    wrong = dict(SUMMARY, kind="other")
+    res = _call({"investigations": [BORING], "lab_tests": LAB + [wrong],
+                 "output_path": str(tmp_path / "s.xml")})
+    assert "error" in res and not (tmp_path / "s.xml").exists()
+    problem = " ".join(res["problems"])
+    assert "give the test kind 'summary_table'" in problem, problem
+
+
+def test_a_summary_under_its_own_kind_is_compared(tmp_path):
+    res = _call({"investigations": [BORING], "lab_tests": LAB + [SUMMARY],
+                 "output_path": str(tmp_path / "t.xml")})
+    assert "error" not in res and res["file_exists"] is True
+    assert any(e["kind"] == "conflict"
+               for e in res["cross_checks"]["entries"])

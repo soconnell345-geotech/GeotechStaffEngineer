@@ -458,11 +458,20 @@ REASONING_SUMMARY_ENV = "GEOTECH_FOUNDRY_REASONING_SUMMARY"
 DEFAULT_REASONING_SUMMARY = "auto"
 
 #: The SDK's names for the request's reasoning settings and for the summary
-#: level (conjure-generated from OpenAI's ``reasoning: {summary: ...}``); the
-#: first that exists is used, and with none of them nothing is asked for.
-_REASONING_TYPES = ("Reasoning", "ResponsesReasoning", "ReasoningConfig",
+#: level (conjure-generated from OpenAI's ``reasoning: {summary: ...}``).
+#: Foundry's SDK (setup check ``sdk_reasoning_types``, brief 5, 2026-10-08)
+#: names the request field ``ReasoningConfig(effort, summary)`` and the level
+#: enum ``SummaryConfig`` (AUTO / CONCISE / DETAILED / UNKNOWN); there
+#: ``Reasoning`` and ``ReasoningSummary`` are OUTPUT classes (the result's
+#: reasoning item and its text), and ``ReasoningSummary`` has no AUTO. Taking
+#: the first name that merely EXISTS picked those two, so no summary was ever
+#: asked for (0 of 1,873 model calls). :func:`_reasoning_request` therefore
+#: PROBES: the first summary type that has the level, then the first request
+#: class that can be built with it. The older guesses stay behind the real
+#: names for an SDK that has only them.
+_REASONING_TYPES = ("ReasoningConfig", "Reasoning", "ResponsesReasoning",
                     "OpenAiResponsesReasoning", "ReasoningParams")
-_SUMMARY_TYPES = ("ReasoningSummary", "ReasoningSummaryType",
+_SUMMARY_TYPES = ("SummaryConfig", "ReasoningSummary", "ReasoningSummaryType",
                   "ReasoningSummaryMode", "Summary")
 
 
@@ -479,17 +488,41 @@ def _reasoning_request(r, level: Optional[str]) -> Any:
     ``None`` where this SDK has no way to ask (then nothing is sent)."""
     if not level:
         return None
-    cls = next((getattr(r, n) for n in _REASONING_TYPES if hasattr(r, n)),
-               None)
-    kinds = next((getattr(r, n) for n in _SUMMARY_TYPES if hasattr(r, n)),
-                 None)
-    value = getattr(kinds, level.upper(), None) if kinds is not None else None
-    if cls is None or value is None:
+    want = level.upper()
+    value = None
+    for name in _SUMMARY_TYPES:
+        kinds = getattr(r, name, None)
+        got = getattr(kinds, want, None) if kinds is not None else None
+        if got is not None:
+            value = got
+            break
+    if value is None:
         return None
-    try:
-        return cls(summary=value)
-    except TypeError:
-        return None
+    for name in _REASONING_TYPES:
+        cls = getattr(r, name, None)
+        if cls is None:
+            continue
+        for kwargs in ({"summary": value}, {"effort": None, "summary": value}):
+            try:
+                return cls(**kwargs)
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
+def _output_fields(resp) -> list:
+    """What each output item of a Responses result carries (its set field
+    names), for the one log line written when a summary was asked for and
+    none could be read — so the first live call says where it is."""
+    out = []
+    for item in getattr(resp, "output", None) or []:
+        try:
+            fields = sorted(k.lstrip("_") for k, v in vars(item).items()
+                            if v is not None)
+        except TypeError:
+            fields = []
+        out.append(f"{type(item).__name__}({', '.join(fields)})")
+    return out
 
 
 def _reasoning_text(resp) -> str:
@@ -646,6 +679,8 @@ class PalantirSdkChatModel(BaseChatModel):
     # Set once the service has refused the reasoning-summary setting, so it
     # is not asked for again (one refused call, not one per call).
     _reasoning_refused: bool = PrivateAttr(default=False)
+    # Set once the "summary asked for, none read" line has been logged.
+    _reasoning_fields_logged: bool = PrivateAttr(default=False)
 
     @property
     def _llm_type(self) -> str:
@@ -788,6 +823,14 @@ class PalantirSdkChatModel(BaseChatModel):
         summary = _reasoning_text(response)
         if summary:
             ai_message.additional_kwargs["reasoning"] = summary
+        elif reasoning is not None and not self._reasoning_fields_logged:
+            # Asked for and nothing read back: say once what the output
+            # items carry, so the first live call shows where a summary is
+            # (or that the model wrote none).
+            self._reasoning_fields_logged = True
+            log.info("Foundry Responses: a reasoning summary was requested "
+                     "and none was read; output items: %s",
+                     "; ".join(_output_fields(response)) or "(none)")
         status = str(getattr(response, "status", "")).rsplit(".", 1)[-1]
         finish = ("tool_calls" if ai_message.tool_calls else
                   "length" if status.lower() == "incomplete" else "stop")

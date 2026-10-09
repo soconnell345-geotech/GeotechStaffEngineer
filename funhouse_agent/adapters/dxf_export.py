@@ -65,13 +65,18 @@ def _run_export_geometry_to_dxf(params):
     abs_path = os.path.abspath(output_path)
     file_exists = os.path.isfile(abs_path)
     out["filepath"] = abs_path
+    # ``output_path`` too, as every other writer reports it: it is the key
+    # the app recognises a written file by (webapp/output_capture.py), and a
+    # DXF reported only as ``filepath`` was never delivered (brief 5, N2).
+    out["output_path"] = abs_path
     out["file_exists"] = file_exists
     out["file_size_bytes"] = os.path.getsize(abs_path) if file_exists else 0
     if not file_exists:
         out["error"] = (
             f"DXF export ran but no file was found at '{abs_path}' after "
             "writing. The target location may not be writable from this "
-            "process; retry with a local path (e.g. under /tmp)."
+            "process; retry with a bare file name (e.g. 'section.dxf'), "
+            "which lands in the working folder."
         )
     return out
 
@@ -130,7 +135,7 @@ METHOD_INFO = {
         "category": "Export",
         "brief": "Export cross-section geometry to a DXF file.",
         "parameters": {
-            "output_path": {"type": "str", "required": True, "description": "Output file path for the DXF file."},
+            "output_path": {"type": "str", "required": True, "description": "A file name for the DXF, e.g. 'section.dxf'; in the app it is written into this conversation's folder and attached to the conversation."},
             "surface_points": {"type": "list", "required": False, "description": "Ground surface as [[x,z],...] or [{x,z},...]"},
             "boundary_profiles": {"type": "dict", "required": False, "description": "Soil boundaries: {name: [[x,z],...]}"},
             "gwt_points": {"type": "list", "required": False, "description": "Groundwater table as [[x,z],...]"},

@@ -114,6 +114,15 @@ def start_turn_job(agent, messages: list, thread_id: str,
 def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
                   recursion_limit, ctx: dict) -> None:
     """The entire turn pipeline, Streamlit-free. Never raises."""
+    # This conversation's working folder, bound to THIS worker thread's
+    # context: the process-wide env var is repointed by any other session's
+    # rerun mid-turn, which on a shared host (Tiny Apps) could send this
+    # turn's files into another person's folder. Tools read the binding first.
+    try:
+        from funhouse_agent._fileio import bind_working_dir
+        bind_working_dir(ctx.get("working_dir"))
+    except Exception:                                  # noqa: BLE001
+        pass
     answer = ""
     final = ""
     turn_tokens = 0
