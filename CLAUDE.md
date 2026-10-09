@@ -113,27 +113,44 @@ Key conventions:
 - **Foundry wrappers** (`foundry/` dir + `geotech-references/agents/`): 32 + 14 = 46 agents, 3 functions each (agent/list/describe). NOT part of the pip package, and RETIRED as a deployment route (real Foundry deployment = `webapp/foundry_entry.py` + docs/FOUNDRY.md). Deleting them is NOT quick housekeeping: a 2026-07-18 attempt found 7 agent-wrapper test suites (opensees/pystrata/gstools/salib/liquepy/seismic_signals/pystra) import `foundry.*` throughout — excise those TestFoundry sections first, then delete foundry/ + foundry_test_harness/.
 
 
-## CURRENT WORKING STATE (2026-10-08) — 5.32.1 RELEASED with planlens 0.12.0 (pin >=0.12): positions read as pixel boxes and converted in code, a 2,048 px image cap, padded zooms, marks refused from wide views, the size-measured markup check, find_like without OpenCV, the 2026-10-06 geotech-session fixes; measured on Foundry first (brief 4); master carries the next train (5.33, unreleased); before it 5.32.0 RELEASED with planlens 0.11.0 (pin >=0.11): look-first review prompts, checked markups (circles, labels, "drawn close"), Foundry full-resolution + Responses route, the measured Foundry fixes; switches still OFF by default; before it 5.31.0: Document Review M1 behind switches (findings, overview, geometry, digest free layer), all OFF by default; forward plan module_work/REVIEW_ARCHITECTURE.md; before it 5.30.0: the Document Review EVAL SUITE + the review-harness changes behind switches, all OFF by default; before it 5.29.1 with planlens 0.10.1: find_like kept OPTIONAL (not a workflow); 5.29.0 / planlens 0.10.0 added find_like + robust-first vision; 5.28.0 / planlens 0.9.0 measured the vision model; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
+## CURRENT WORKING STATE (2026-10-09) — 5.33.0 RELEASED with planlens 0.13.0 (pin >=0.13) and geotech-references 1.4.1 (pin >=1.4.1): hardened for OTHER testers on Tiny Apps by live smoke waves (per-user isolation, per-tester Prompter keys, one final answer per turn, Word/Excel in and out, tool errors never end a turn, faster vision, rotated-sheet markups) plus the brief-5 fixes and engineering fixes (GEC-12 Fig 7-15, sheet-pile water table, fem2d consolidation, downdrag basis); all review switches still OFF; before it 5.32.1 RELEASED with planlens 0.12.0 (pin >=0.12): positions read as pixel boxes and converted in code, a 2,048 px image cap, padded zooms, marks refused from wide views, the size-measured markup check, find_like without OpenCV, the 2026-10-06 geotech-session fixes; measured on Foundry first (brief 4); before it 5.32.0 RELEASED with planlens 0.11.0 (pin >=0.11): look-first review prompts, checked markups (circles, labels, "drawn close"), Foundry full-resolution + Responses route, the measured Foundry fixes; switches still OFF by default; before it 5.31.0: Document Review M1 behind switches (findings, overview, geometry, digest free layer), all OFF by default; forward plan module_work/REVIEW_ARCHITECTURE.md; before it 5.30.0: the Document Review EVAL SUITE + the review-harness changes behind switches, all OFF by default; before it 5.29.1 with planlens 0.10.1: find_like kept OPTIONAL (not a workflow); 5.29.0 / planlens 0.10.0 added find_like + robust-first vision; 5.28.0 / planlens 0.9.0 measured the vision model; 5.27.0 / planlens 0.8.0 sized vision to the model; before it 5.26.0 with planlens 0.7.0, the Tiny Apps build (two pages, one app, on BOTH hosts) + document OUTPUT (Word, marked-up PDFs)
 
-- **MASTER IS THE NEXT TRAIN (for 5.33), UNRELEASED, switches OFF
-  (2026-10-08).** Plan of record: `module_work/SCALES_COVERAGE_CROSSCHECKS.md`.
-  - W1 (499e1cf): the DIGGS 2.6 schema is bundled and checked with lxml on
-    every host.
-  - W2 (438430f): `write_diggs` runs report ingest's reconciler
-    (`cross_checks`).
-  - W3: visual scales. Design `module_work/VISUAL_SCALES_DESIGN.md`. The
-    planlens part is built (main a3f2a1d: `find_scales`, `measure`,
-    `log_grid` on scans); the app part is not yet.
-  - W4 (6c81cc5, c9d5c8d): the coverage ledger, gate and DRAFT checklist,
-    behind `GEOTECH_COVERAGE` / `GEOTECH_REVIEW_CHECKLIST`. With the
-    switch, an ordinary turn keeps the app's step cap and an extraction turn
-    may run to 150.
-  - The activity-log lock.
-
-  Next, in order:
-  1. the brief 4 fix list (TRACE_REVIEW §7);
-  2. W3's app side;
-  3. Foundry brief 5.
+- **5.33.0 RELEASED 2026-10-09 (tag `v5.33.0`) with planlens 0.13.0 (tag
+  `v0.13.0`) and geotech-references 1.4.1 (tag `v1.4.1`), both published
+  first; pins `planlens>=0.13`, `geotech-references>=1.4.1`; no new
+  third-party package.** Release gate on the exact tree: see HANDOFF
+  §0a-current.
+  - **Why:** the owner gives the DOCUMENT REVIEW page to OTHER testers on
+    Tiny Apps (week of 2026-10-12; a dosdev round first, then a published
+    address). It was hardened by live smoke waves through the app's real
+    turn path with Claude standing in for GPT (`module_work/live_smoke/`,
+    ~$45 of API credit, every run read in full; reviews in the gitignored
+    `runs/<wave>/REVIEW.md`; wave 3 verdict GO).
+  - **It carries:**
+    - per-user isolation (SharePoint tools, confined reads, one document
+      toolkit per conversation, the working folder bound per turn and
+      fail-closed on shared hosts);
+    - per-tester Prompter keys (Key Vault `PROMPTER-API-KEY--<TESTER>`,
+      see `tinyapps/TINYAPPS.md`);
+    - one final answer per turn; conversation-relative file names; the
+      SharePoint link points at the mirrored copy;
+    - Word/Excel in and out (`office_text.py`, `write_xlsx`), `plot_data`
+      on both pages, `calculate`, DXF read + `annotate_dxf`;
+    - tool errors never end a turn; a 32k output cap with cut detection;
+      a plain 'budget used up' message;
+    - faster vision (concurrent tiles, per-kind caps, kept readings,
+      retries, fairness between conversations);
+    - markups on rotated sheets and safe re-marking;
+    - the brief-5 fix list (`module_work/review_eval_results/2026-10-08_foundry_5.33.0rc1/TRACE_REVIEW.md`)
+      and W1-W4 (DIGGS schema, write_diggs cross-checks, visual scales,
+      coverage + checklist behind OFF switches);
+    - engineering fixes: GEC-12 Fig 7-15 re-measured, the sheet-pile water
+      table at 0 m, fem2d consolidation units and load-only transient, the
+      downdrag neutral-plane basis (owner's judgment pending).
+  - **Unverified live on GPT:** vision on gpt-5.1 (768 px), GPT latency
+    against the caps, real budget/rate-limit responses, testers on
+    separate keys, links behind the IIS proxy. The first-hour check is in
+    `module_work/live_smoke/runs/w3-confirm-sonnet/REVIEW.md`.
 
   Pickup: `HANDOFF.md` §0a-current, "Where things stand".
 - **5.32.1 RELEASED 2026-10-08 (tag `v5.32.1`, branch `release/5.32.1`,

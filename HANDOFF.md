@@ -6,9 +6,36 @@ detailed Phase-E history; this file supersedes it.
 
 ---
 
-## 0a-current. PICKUP LIST (2026-10-08, supersedes everything below)
+## 0a-current. PICKUP LIST (2026-10-09, supersedes everything below)
 
-### Where things stand (2026-10-08)
+### Where things stand (2026-10-09)
+
+**0. 5.33.0 RELEASED 2026-10-09 with planlens 0.13.0 and geotech-references 1.4.1.** The owner's word, 2026-10-09: "go ahead and release when you're done".
+- **What it is for:** the Document Review page goes to OTHER testers on Tiny Apps.
+  - The owner first runs a dosdev round (recipe in `tinyapps/TINYAPPS.md`).
+  - Then CfA gives a published address.
+  - The owner takes the remaining CfA questions to the CfA team the week of 2026-10-12:
+    - per-tester Prompter keys: Key Vault `PROMPTER-API-KEY--<TESTER>`, `CORP\jdoe` → `PROMPTER-API-KEY--CORP-JDOE`; set `PROMPTER_SHARED_KEY_FALLBACK=1` until every tester has one;
+    - the SharePoint app registration: the four `GRAPH-*` / `SHAREPOINT-SITE-URL` values and the `Sites.Selected` grant on the team site;
+    - the published address for `corsAllowedOrigins`;
+    - confirming the identity header (each tester's sidebar shows "Signed in as <their name>").
+- **How it was hardened:** live smoke waves (section 3e below) through the app's real turn path with Claude standing in for GPT. About $45 of the owner's API credit was spent, every run was read in full, and wave 3's verdict was GO.
+- **Tags:**
+  - planlens `v0.13.0` (f92541d), 1,686 tests on the clean tree;
+  - geotech-references `v1.4.1` (c53e587), 5,833 tests;
+  - app `v5.33.0`: gate on the exact tree recorded in the 5.33.0 commit.
+- **Unverified live on GPT:**
+  - vision on gpt-5.1 (768 px images);
+  - latency against the new per-kind caps;
+  - real budget and rate-limit responses;
+  - testers on separate keys;
+  - links behind the IIS proxy.
+
+  First-hour check: `module_work/live_smoke/runs/w3-confirm-sonnet/REVIEW.md`.
+- **Owner's judgment pending:**
+  - downdrag settlement-compatibility basis: the neutral plane sits at the bearing-layer top for default inputs;
+  - fem2d settlements now exclude self-weight.
+- **Spend left:** about $35 of API credit (the account limit is $100; the promo credit expires 2026-11-05). The owner's $20 is reserved for touch-up testing together.
 
 **1. 5.32.1 RELEASED 2026-10-08 with planlens 0.12.0.** The owner said, the night of 2026-10-07: "Ok to release however you see best".
 - **planlens 0.12.0:** tag `v0.12.0` on branch `release/0.12.0` (c58f7ed), cut from 08a1d53, which Foundry measured as 0.12.0rc1. 1,500 tests passed; no dependency change.
