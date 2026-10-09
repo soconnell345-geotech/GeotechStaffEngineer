@@ -273,13 +273,16 @@ def make_reader_tool(model, reader_tools: list,
     def reader():
         with lock:
             if state["agent"] is None:
+                from funhouse_agent.deep.tool_guards import (
+                    OutputLimitGuard, ToolErrorGuard)
                 mw = [m for m in (
                     _patch_tool_calls(),
+                    ToolErrorGuard(),
                     ModelCallBudgetMiddleware(budget,
                                               final_turn_nudge=READER_NUDGE,
                                               exhausted_message=READER_EXHAUSTED),
                 ) if m is not None] + [m for m in (extra_middleware or [])
-                                       if m is not None]
+                                       if m is not None] + [OutputLimitGuard()]
                 state["agent"] = create_agent(
                     model, tools=reader_tools,
                     system_prompt=DOCUMENT_REVIEW_READER_PROMPT,
@@ -408,8 +411,14 @@ def build_review_agent(model, *, engine=None,
     # The image middleware wraps OUTSIDE the budget: it adds the newest
     # images first and the budget's last-call instruction follows them, so
     # the final answer is written with the pages the model was just shown.
+    # The loop guards (live smoke wave 2b): a tool that raises is a tool
+    # error, not the end of the turn (C3); a reply cut at the output limit
+    # is caught before anything acts on it (C5) -- last, so innermost.
+    from funhouse_agent.deep.tool_guards import (OutputLimitGuard,
+                                                 ToolErrorGuard)
     middleware: List[Any] = [m for m in (
         _patch_tool_calls(),
+        ToolErrorGuard(),
         TodoListMiddleware(system_prompt=TODO_PROMPT,
                            tool_description=TODO_TOOL_DESCRIPTION),
         _summarizer(model),
@@ -417,6 +426,7 @@ def build_review_agent(model, *, engine=None,
         ModelCallBudgetMiddleware(budget, final_turn_nudge=FINAL_NUDGE,
                                   exhausted_message=EXHAUSTED),
         coverage.primary(budget=budget),
+        OutputLimitGuard(),
     ) if m is not None]
 
     kwargs: Dict[str, Any] = {}

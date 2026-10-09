@@ -5,9 +5,13 @@ Extends the standard 4 ReAct tools (call_agent, list_methods, describe_method,
 list_agents) with vision-capable tools and file output tools.
 """
 
+import hashlib
 import json
 import os
 import re
+import threading
+import time
+from collections import OrderedDict
 from typing import Any, Callable, Dict, List, Optional
 
 
@@ -675,21 +679,38 @@ def _dispatch_read_text_file(arguments):
     if size > _TEXT_READ_MAX_BYTES:
         return json.dumps({"error": (
             f"'{shown}' is {size / 1e6:.1f} MB, too large to read as text.")})
-    try:
-        with open(resolved, "rb") as fh:
-            data = fh.read()
-    except OSError as exc:
-        return json.dumps({"error": f"Could not read '{shown}': {exc}"})
-    if b"\x00" in data[:4096]:
-        ext = os.path.splitext(resolved)[1].lower()
-        hint = ("read_pdf_text or open_document" if ext == ".pdf"
-                else "open_document" if ext == ".docx"
-                else "analyze_image" if ext in (".png", ".jpg", ".jpeg", ".gif",
-                                                ".bmp", ".tif", ".tiff", ".webp")
-                else "a tool made for that file type")
-        return json.dumps({"error": (
-            f"'{shown}' is a binary file, not text. Use {hint}.")})
-    text = data.decode("utf-8", errors="replace")
+    ext = os.path.splitext(resolved)[1].lower()
+    extra: Dict[str, Any] = {}
+    from funhouse_agent import office_text
+    if office_text.is_office_file(resolved):
+        # A .docx / .xlsx as Markdown (B3); a docx's pictures go to this
+        # conversation's scratch folder, named so write_docx embeds them.
+        image_dir = scratch_dir(create=False)
+        try:
+            text, extra = office_text.read_office(
+                resolved, image_dir=image_dir,
+                image_ref=SCRATCH_DIR if image_dir else None)
+        except office_text.OfficeReadError as exc:
+            return json.dumps({"error": str(exc)})
+    else:
+        try:
+            with open(resolved, "rb") as fh:
+                data = fh.read()
+        except OSError as exc:
+            return json.dumps({"error": f"Could not read '{shown}': {exc}"})
+        if b"\x00" in data[:4096]:
+            if ext in office_text.LEGACY_OFFICE:
+                return json.dumps({"error": (
+                    f"'{shown}': {office_text.LEGACY_OFFICE[ext]}, then "
+                    f"read_text_file it.")})
+            hint = ("read_pdf_text or open_document" if ext == ".pdf"
+                    else "analyze_image" if ext in (".png", ".jpg", ".jpeg",
+                                                    ".gif", ".bmp", ".tif",
+                                                    ".tiff", ".webp")
+                    else "a tool made for that file type")
+            return json.dumps({"error": (
+                f"'{shown}' is a binary file, not text. Use {hint}.")})
+        text = data.decode("utf-8", errors="replace")
     try:
         offset = max(0, int(arguments.get("offset", 0) or 0))
     except (TypeError, ValueError):
@@ -703,6 +724,11 @@ def _dispatch_read_text_file(arguments):
     chunk = text[offset:offset + max_chars]
     result = {"path": shown, "chars_total": len(text), "offset": offset,
               "returned_chars": len(chunk), "text": chunk}
+    if extra:
+        note = extra.pop("note", None)
+        result.update(extra)
+        if note and offset == 0:
+            result["note"] = note
     if offset + max_chars < len(text):
         result["truncated"] = True
         result["next_offset"] = offset + max_chars
@@ -1045,6 +1071,363 @@ def _dispatch_read_pdf_text(arguments, attachments):
     return json.dumps(result)
 
 
+# ---------------------------------------------------------------------------
+# Repeat reads: an identical vision read in the same conversation (B6)
+# ---------------------------------------------------------------------------
+#
+# Live smoke wave 2a: 24 of 80 page reads re-viewed a page an earlier turn had
+# read (433 s of tool time). A read whose file content, page, view or region,
+# prompt and vision setup (model, image budget, detail) are ALL the same as
+# one made earlier in the SAME conversation returns that reading again,
+# marked ``repeat``, instead of asking the model. A different prompt is a
+# different read and is never served from here. The cache is per
+# conversation (the bound working folder, as the document toolkits are
+# kept), never shared between conversations, held in memory and bounded;
+# with no working folder bound (library use) nothing is cached.
+
+#: ``0`` / ``off`` turns repeat reads off.
+REPEAT_CACHE_ENV = "GEOTECH_VISION_REPEAT_CACHE"
+#: Readings kept per conversation (least recently used dropped first).
+REPEAT_MAX_ENTRIES = 64
+#: Characters of readings kept per conversation.
+REPEAT_MAX_CHARS = 2_000_000
+#: Conversations whose readings are kept at once.
+REPEAT_MAX_CONVERSATIONS = 32
+
+REPEAT_NOTE = ("Identical to a read made earlier in this conversation (same "
+               "file, page, view and prompt): that reading is returned "
+               "again, not a new look. Change the prompt to look afresh.")
+
+
+class _RepeatReads:
+    """Per-conversation, size-bounded store of vision tool results."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._convs: "OrderedDict[str, OrderedDict]" = OrderedDict()
+
+    def get(self, conv, key):
+        with self._lock:
+            store = self._convs.get(conv)
+            if store is None or key not in store:
+                return None
+            self._convs.move_to_end(conv)
+            store.move_to_end(key)
+            return store[key][0]
+
+    def put(self, conv, key, text):
+        with self._lock:
+            store = self._convs.get(conv)
+            if store is None:
+                store = self._convs[conv] = OrderedDict()
+            self._convs.move_to_end(conv)
+            store[key] = (text, time.time())
+            store.move_to_end(key)
+            while len(store) > 1 and (
+                    len(store) > REPEAT_MAX_ENTRIES
+                    or sum(len(v[0]) for v in store.values())
+                    > REPEAT_MAX_CHARS):
+                store.popitem(last=False)
+            while len(self._convs) > REPEAT_MAX_CONVERSATIONS:
+                self._convs.popitem(last=False)
+
+    def clear(self):
+        with self._lock:
+            self._convs.clear()
+
+    def size(self, conv=None) -> int:
+        with self._lock:
+            if conv is None:
+                return sum(len(s) for s in self._convs.values())
+            return len(self._convs.get(conv) or ())
+
+
+_REPEATS = _RepeatReads()
+
+
+def clear_repeat_reads() -> None:
+    """Forget every conversation's kept readings."""
+    _REPEATS.clear()
+
+
+def _vision_setup(engine) -> Dict[str, Any]:
+    """What else decides a reading besides the file, view and prompt: the
+    model, the image budget and detail, the vision policy and switches."""
+    model = getattr(engine, "model", None)
+    name = None
+    for attr in ("model_name", "model", "deployment_name", "azure_deployment",
+                 "model_id"):
+        v = getattr(model, attr, None) if model is not None else None
+        if isinstance(v, str) and v:
+            name = v
+            break
+    setup: Dict[str, Any] = {"engine": type(engine).__name__, "model": name}
+    try:
+        from funhouse_agent import review_flags, vision_view
+        setup.update(budget=vision_view.budget_name(engine),
+                     detail=vision_view.detail(engine),
+                     max_px=vision_view.max_px(engine),
+                     policy=vision_view.policy(),
+                     patch_align=vision_view.patch_align(),
+                     text_context=review_flags.vision_text_context(),
+                     structured=review_flags.vision_structured())
+    except Exception:  # noqa: BLE001 - an unknown setup just keys narrower
+        setup["setup"] = "unknown"
+    return setup
+
+
+def _repeat_key(tool, data, normalized, arguments, engine):
+    """``(conversation, key)`` for a vision read, or ``None`` when it must
+    not be served again (switched off, inline looks, no conversation)."""
+    flag = (os.environ.get(REPEAT_CACHE_ENV) or "").strip().lower()
+    if flag in ("0", "off", "false", "no"):
+        return None
+    if arguments.get("_inline"):
+        return None
+    try:
+        from funhouse_agent.deep.vision_engine import conversation_key
+        conv = conversation_key()
+    except Exception:  # noqa: BLE001
+        return None
+    if not conv:
+        return None
+    try:
+        blob = json.dumps({"tool": tool,
+                           "file": hashlib.sha256(bytes(data)).hexdigest(),
+                           "args": normalized,
+                           "setup": _vision_setup(engine)},
+                          sort_keys=True, default=str)
+    except Exception:  # noqa: BLE001
+        return None
+    return conv, hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _repeat_hit(rkey, tool) -> Optional[str]:
+    """The earlier reading for ``rkey``, marked as a repeat, or ``None``."""
+    if rkey is None:
+        return None
+    raw = _REPEATS.get(*rkey)
+    if raw is None:
+        return None
+    try:
+        out = json.loads(raw)
+    except ValueError:
+        return None
+    out["repeat"] = REPEAT_NOTE
+    if tool == "analyze_pdf_page":
+        _fit_located(out, TILED_RESULT_CHARS)
+        if out.get("tiles"):
+            _fit_tiles(out)
+    else:
+        _fit_region(out)
+    return json.dumps(out)
+
+
+def _repeat_store(rkey, raw) -> None:
+    """Keep a COMPLETE reading: never an error, an inline look, or a page
+    read missing a tile or its overview (asking again might fill it)."""
+    if rkey is None:
+        return
+    try:
+        out = json.loads(raw)
+    except (TypeError, ValueError):
+        return
+    if not isinstance(out, dict) or "error" in out or "image_id" in out \
+            or out.get("tiles_not_read") or out.get("overview_not_read") \
+            or out.get("cut_off"):
+        return
+    if any(isinstance(t, dict) and "error" in t
+           for t in out.get("tiles") or ()):
+        return
+    _REPEATS.put(rkey[0], rkey[1], raw)
+
+
+def _repeat_or_read(tool, data, normalized, arguments, engine, read):
+    """``read()``'s result, or the same reading made earlier in this
+    conversation (:data:`REPEAT_NOTE`)."""
+    rkey = _repeat_key(tool, data, normalized, arguments, engine)
+    hit = _repeat_hit(rkey, tool)
+    if hit is not None:
+        return hit
+    raw = read()
+    _repeat_store(rkey, raw)
+    return raw
+
+
+# -- What was read in this conversation (wave 2b, C7) -------------------------
+
+#: Reads remembered per conversation, newest last.
+READ_LOG_MAX = 200
+#: Conversations whose read logs are kept at once.
+READ_LOG_CONVERSATIONS = 64
+
+_READ_LOG_LOCK = threading.Lock()
+_READ_LOG: "OrderedDict[str, list]" = OrderedDict()
+
+
+def _conversation_for(folder=None) -> str:
+    if folder:
+        try:
+            return os.path.normcase(os.path.realpath(str(folder)))
+        except (OSError, ValueError):
+            return str(folder)
+    try:
+        from funhouse_agent.deep.vision_engine import conversation_key
+        return conversation_key()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _document_name(key) -> str:
+    """A document as the user knows it: its file name (a handle stands for
+    the file it was opened from), never a server path."""
+    src = _handle_source(key) or key
+    name = os.path.basename(str(src or "").replace("\\", "/").rstrip("/"))
+    return name or str(key or "")
+
+
+def _note_read(tool, key, page, view, prompt) -> None:
+    """Remember one successful page or region read for this conversation."""
+    conv = _conversation_for()
+    if not conv:
+        return
+    entry = {"document": _document_name(key), "page": page,
+             **_pdf_page(page), "view": view, "tool": tool,
+             "prompt": " ".join(str(prompt or "").split())[:100],
+             "when": round(time.time(), 1)}
+    with _READ_LOG_LOCK:
+        log = _READ_LOG.get(conv)
+        if log is None:
+            log = _READ_LOG[conv] = []
+        _READ_LOG.move_to_end(conv)
+        log.append(entry)
+        del log[:-READ_LOG_MAX]
+        while len(_READ_LOG) > READ_LOG_CONVERSATIONS:
+            _READ_LOG.popitem(last=False)
+
+
+def reads_for_conversation(folder=None) -> List[Dict[str, Any]]:
+    """The page and region reads made in one conversation, newest last:
+    ``document`` (file name), ``page`` (0-based), ``pdf_page`` (1-based),
+    ``view`` (``"page"``, ``"page+tiles NxN"``, or ``[x0, y0, x1, y1]`` in
+    PDF points for a zoom), ``tool``, ``prompt`` (first 100 characters) and
+    ``when`` (epoch seconds). ``folder`` is the conversation's working
+    folder; ``None`` = the one bound in this context. Only successful
+    ``analyze_pdf_page`` / ``render_region`` reads; per conversation, never
+    shared, at most :data:`READ_LOG_MAX` of them."""
+    conv = _conversation_for(folder)
+    if not conv:
+        return []
+    with _READ_LOG_LOCK:
+        return [dict(e) for e in _READ_LOG.get(conv, ())]
+
+
+def clear_read_log() -> None:
+    """Forget every conversation's read log."""
+    with _READ_LOG_LOCK:
+        _READ_LOG.clear()
+
+
+# -- A vision answer cut off at the model's output limit (wave 2b, C5) --------
+
+CUT_OFF_NOTE = ("the vision model's answer was CUT OFF at its output limit, "
+                "so the end of this reading is missing: ask about a smaller "
+                "part (render_region) or a narrower question before relying "
+                "on what is not here")
+
+
+def _is_cut_off(text) -> bool:
+    return bool(getattr(text, "cut_off", False))
+
+
+# -- Only images go to analyze_image (wave 2b, C6) -----------------------------
+
+#: Image types sent as they are; GIF, TIFF and BMP are converted to PNG.
+_IMAGE_MAGIC = (
+    (b"\x89PNG\r\n\x1a\n", "png"), (b"\xff\xd8\xff", "jpeg"),
+    (b"GIF87a", "gif"), (b"GIF89a", "gif"), (b"II*\x00", "tiff"),
+    (b"MM\x00*", "tiff"), (b"BM", "bmp"),
+)
+
+
+class NotAnImage(ValueError):
+    """Bytes analyze_image cannot send as a picture; the message says which
+    tool reads them instead."""
+
+
+def _image_kind(data: bytes) -> Optional[str]:
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    for magic, kind in _IMAGE_MAGIC:
+        if data[:len(magic)] == magic:
+            return kind
+    return None
+
+
+def _not_an_image_message(data: bytes, name: str) -> str:
+    ext = os.path.splitext(name)[1].lower()
+    shown = os.path.basename(name.replace("\\", "/")) or name
+    if data[:5] == b"%PDF-" or ext == ".pdf":
+        return (f"'{shown}' is a PDF, not an image: look at a page with "
+                f"analyze_pdf_page, or open it with open_document.")
+    from funhouse_agent import office_text
+    if office_text.is_office_file(name) or ext in office_text.LEGACY_OFFICE:
+        return (f"'{shown}' is a Word/Excel file, not an image: read it with "
+                f"read_text_file.")
+    if data[:4] == b"PK\x03\x04":
+        return (f"'{shown}' is a zip-based document (an Office file?), not "
+                f"an image.")
+    if data and b"\x00" not in data[:4096]:
+        return (f"'{shown}' is a text file, not an image: read it with "
+                f"read_text_file.")
+    return (f"'{shown}' is not an image this tool can send (PNG, JPEG, "
+            f"WebP, GIF, TIFF or BMP).")
+
+
+def _image_for_vision(data: bytes, name: str, engine=None):
+    """``(bytes, note)`` to send for an image file: PNG, JPEG and WebP as
+    they are; GIF, TIFF and BMP converted to PNG (the first frame or page;
+    held to the vision model's largest edge). Raises :class:`NotAnImage`
+    for anything else — before, every file went out labelled PNG, and an
+    .xlsx came back as a 400 from the API."""
+    data = bytes(data or b"")
+    kind = _image_kind(data)
+    if kind in ("png", "jpeg", "webp"):
+        return data, None
+    if kind is None:
+        raise NotAnImage(_not_an_image_message(data, str(name or "")))
+    import io
+    try:
+        from PIL import Image
+    except ImportError as exc:                   # pragma: no cover - env
+        raise NotAnImage(f"a {kind.upper()} image needs Pillow to be "
+                         f"converted: {exc}") from exc
+    try:
+        im = Image.open(io.BytesIO(data))
+        frames = getattr(im, "n_frames", 1) or 1
+        im.seek(0)
+        if im.mode not in ("1", "L", "LA", "RGB", "RGBA"):
+            im = im.convert("RGBA" if im.mode in ("P", "PA") else "RGB")
+        cap = None
+        try:
+            from funhouse_agent import vision_view
+            cap = vision_view.max_px(engine)
+        except Exception:  # noqa: BLE001
+            cap = None
+        if cap and max(im.size) > cap:
+            im.thumbnail((cap, cap))
+        buf = io.BytesIO()
+        im.save(buf, format="PNG")
+    except Exception as exc:  # noqa: BLE001 - a damaged image
+        raise NotAnImage(f"'{os.path.basename(str(name))}' looks like a "
+                         f"{kind.upper()} image but could not be read: "
+                         f"{type(exc).__name__}: {exc}") from exc
+    note = f"converted from {kind.upper()} to PNG"
+    if frames > 1:
+        note += f" (page 1 of {frames}: only the first was sent)"
+    return buf.getvalue(), note
+
+
 def _dispatch_analyze_image(arguments, engine, attachments):
     """Handle analyze_image tool call."""
     key = arguments.get("attachment_key", "")
@@ -1054,21 +1437,34 @@ def _dispatch_analyze_image(arguments, engine, attachments):
         image_data, src = _resolve_attachment_or_path(key, attachments)
     except FileNotFoundError as e:
         return json.dumps({"error": str(e)})
+    try:
+        image_data, image_note = _image_for_vision(image_data, key, engine)
+    except NotAnImage as e:
+        return json.dumps({"error": str(e)})
 
     if arguments.get("_inline") and src == "path":
         inline = _inline_image_file_result(image_data, key)
         if inline is not None:
             return json.dumps(inline)
 
-    try:
-        result = engine.analyze_image(image_data, prompt)
-        return json.dumps({"analysis": result})
-    except (NotImplementedError, AttributeError) as e:
-        return json.dumps({
-            "error": f"Vision not available on this engine: {e}"
-        })
-    except Exception as e:
-        return json.dumps({"error": f"{type(e).__name__}: {e}"})
+    def read():
+        try:
+            result = engine.analyze_image(image_data, prompt)
+            out = {"analysis": result}
+            if image_note:
+                out["image_note"] = image_note
+            if _is_cut_off(result):
+                out["cut_off"] = CUT_OFF_NOTE
+            return json.dumps(out)
+        except (NotImplementedError, AttributeError) as e:
+            return json.dumps({
+                "error": f"Vision not available on this engine: {e}"
+            })
+        except Exception as e:
+            return json.dumps({"error": _vision_error(e)})
+
+    return _repeat_or_read("analyze_image", image_data, {"prompt": prompt},
+                           {}, engine, read)
 
 
 def _dispatch_render_region(arguments, engine, attachments):
@@ -1143,6 +1539,15 @@ def _dispatch_render_region(arguments, engine, attachments):
     except FileNotFoundError as e:
         return json.dumps({"error": str(e)})
 
+    rkey = _repeat_key("render_region", pdf_bytes, {
+        "page": page, "bbox": arguments.get("bbox"), "view": view,
+        "image_box": image_box, "dpi": arguments.get("dpi"),
+        "pad_frac": pad_frac, "marks": marks, "prompt": prompt},
+        arguments, engine)
+    hit = _repeat_hit(rkey, "render_region")
+    if hit is not None:
+        return hit
+
     try:
         image_bytes, info = vision_view.render_view(
             pdf_bytes, page=page, bbox=window, marks=marks, dpi=dpi,
@@ -1165,6 +1570,8 @@ def _dispatch_render_region(arguments, engine, attachments):
                                         _sent_size(info)))
         out = {"page": page, **_pdf_page(page), "bbox": bbox,
                "analysis": result, **vision_view.view_payload(info, engine)}
+        if _is_cut_off(result):
+            out["cut_off"] = CUT_OFF_NOTE
         if padded is not None:
             out["window_padding_pt"] = padded
             out["window_note"] = (
@@ -1179,13 +1586,17 @@ def _dispatch_render_region(arguments, engine, attachments):
             _say_how_far_from_the_aim(out, view, bbox)
         if "located" in out:
             _fit_region(out)
-        return json.dumps(out)
+        raw = json.dumps(out)
+        _repeat_store(rkey, raw)
+        _note_read("render_region", key, page,
+                   [round(float(v), 1) for v in info["clip"]], prompt)
+        return raw
     except (NotImplementedError, AttributeError) as e:
         return json.dumps({
             "error": f"Vision not available on this engine: {e}"
         })
     except Exception as e:
-        return json.dumps({"error": f"{type(e).__name__}: {e}"})
+        return json.dumps({"error": _vision_error(e)})
 
 
 def _say_how_far_from_the_aim(out, source_view, aim_box) -> None:
@@ -1556,12 +1967,55 @@ def render_region_to_file(path, filepath=None, content=None, page=0,
     return writer(path, png_bytes)
 
 
-#: Parallel vision calls for the tiles of one page.
-TILE_WORKERS = 4
+#: Most threads one page read starts: the whole-page call and up to 4 x 4
+#: tiles, all at once (live smoke wave 2a, B5: the tiles waited for the
+#: whole-page answer they do not use, 10-30 s a read). The process's
+#: in-flight cap (``deep.vision_engine.call_slot``) still bounds how many
+#: are asking the model at any moment.
+TILE_WORKERS = 17
 
 #: The whole tiled result stays under this (the vision cap is 32,000 —
 #: ``deep.tools.DEFAULT_VISION_RESULT_CHARS``).
 TILED_RESULT_CHARS = 30000
+
+
+class _Failed:
+    """A vision call that raised: the error, kept for the result."""
+
+    def __init__(self, exc):
+        self.exc = exc
+
+
+def _vision_error(exc) -> str:
+    """Why a vision call gave no reading, in plain words (a busy model is
+    said to be busy, not dumped as the SDK's error text)."""
+    from funhouse_agent.deep.vision_engine import describe_error
+    try:
+        return describe_error(exc)
+    except Exception:  # noqa: BLE001
+        return f"{type(exc).__name__}: {exc}"
+
+
+def _run_together(jobs):
+    """Run zero-argument ``jobs`` at once, each in a copy of the caller's
+    context (so the run's callbacks — the activity log, the token count —
+    see it; a plain pool starts every worker with an empty one). Results in
+    the jobs' order; a job that raised is a :class:`_Failed`."""
+    from concurrent.futures import ThreadPoolExecutor
+    import contextvars
+
+    def guarded(job):
+        try:
+            return job()
+        except Exception as exc:  # noqa: BLE001 - handed back in order
+            return _Failed(exc)
+
+    if len(jobs) == 1:
+        return [guarded(jobs[0])]
+    with ThreadPoolExecutor(max_workers=min(len(jobs), TILE_WORKERS)) as ex:
+        futs = [ex.submit(contextvars.copy_context().run, guarded, j)
+                for j in jobs]
+        return [f.result() for f in futs]
 
 
 def _dispatch_analyze_pdf_page(arguments, engine, attachments):
@@ -1578,6 +2032,13 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
     times larger, and the result carries the whole-page overview AND every
     tile's reading, each with its ``view`` for zooming. Policy ``efficient``
     turns ``auto`` off.
+
+    The whole-page call and the tiles run AT ONCE (B5), within the process's
+    in-flight cap; the result keeps their order and meaning. A tile that
+    could not be read is named at the top (``tiles_not_read``), and a failed
+    whole-page call with tiles read is said too (``overview_not_read``) —
+    the rest of the reading still comes back (B7). An identical read earlier
+    in the same conversation is returned again, marked ``repeat`` (B6).
     """
     key = arguments.get("attachment_key", "")
     page = arguments.get("page", 0)
@@ -1591,6 +2052,26 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
     except FileNotFoundError as e:
         return json.dumps({"error": str(e)})
 
+    raw = _repeat_or_read(
+        "analyze_pdf_page", pdf_bytes,
+        {"page": page, "prompt": prompt, "tiles": tiles}, arguments, engine,
+        lambda: _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note,
+                               arguments, engine))
+    try:
+        out = json.loads(raw)
+    except ValueError:
+        out = None
+    if isinstance(out, dict) and "error" not in out and "repeat" not in out \
+            and "image_id" not in out:
+        n = int(round(len(out.get("tiles") or ()) ** 0.5))
+        _note_read("analyze_pdf_page", key, page,
+                   f"page+tiles {n}x{n}" if n > 1 else "page", prompt)
+    return raw
+
+
+def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
+                   engine):
+    """:func:`_dispatch_analyze_pdf_page` once the document is in hand."""
     # Render the page at the vision model's image budget.
     from funhouse_agent import vision_view
     try:
@@ -1611,26 +2092,51 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
         # render_region where the lettering is small: no tiles.
         return json.dumps(_inline_result(image_bytes, info, page, engine,
                                          lines))
-    try:
-        result = engine.analyze_image(
-            image_bytes, _vision_prompt(prompt, info["clip"], lines,
-                                        _sent_size(info)))
-    except (NotImplementedError, AttributeError) as e:
-        return json.dumps({
-            "error": f"Vision not available on this engine: {e}"
-        })
-    except Exception as e:
-        return json.dumps({"error": f"{type(e).__name__}: {e}"})
-    out = {"page": page, **_pdf_page(page), "analysis": result,
+    page_prompt = _vision_prompt(prompt, info["clip"], lines,
+                                 _sent_size(info))
+    n = _tile_count(tiles, info)
+    if n > 1 and not _has_ink(image_bytes):
+        # A blank page has nothing to read closer (wave 2b, C11).
+        n = 1
+        tiles_note = "; ".join(filter(None, [
+            tiles_note, "the page has no ink (it is blank), so it was not "
+                        "read in tiles"]))
+    # The whole page and its tiles at once: the tiles never use the
+    # whole-page answer, so the read takes the longest call, not the sum.
+    jobs = [lambda: engine.analyze_image(image_bytes, page_prompt)]
+    if n > 1:
+        jobs += _tile_jobs(pdf_bytes, page, info, n, prompt, engine, lines)
+    results = _run_together(jobs)
+    result, tile_rows = results[0], (results[1:] if n > 1 else None)
+    if isinstance(result, _Failed):
+        exc = result.exc
+        if isinstance(exc, (NotImplementedError, AttributeError)):
+            return json.dumps({
+                "error": f"Vision not available on this engine: {exc}"
+            })
+        if not tile_rows or all("error" in t for t in tile_rows):
+            return json.dumps({"error": _vision_error(exc)})
+    out = {"page": page, **_pdf_page(page),
+           "analysis": "" if isinstance(result, _Failed) else result,
            **vision_view.view_payload(info, engine)}
+    if isinstance(result, _Failed):
+        out["overview_not_read"] = (
+            f"the whole-page view was NOT read ({_vision_error(result.exc)}); "
+            f"the tiles below were read")
+    cut = (["the whole-page view"] if _is_cut_off(result) else []) + [
+        f"tile {t['tile']}" for t in tile_rows or ()
+        if isinstance(t, dict) and t.get("cut_off")]
+    if cut:
+        out["cut_off"] = f"{', '.join(cut)}: {CUT_OFF_NOTE}"
     _finish_answer(out, info)
     if tiles_note:
         out["tiles_note"] = tiles_note
 
-    n = _tile_count(tiles, info)
     if n > 1:
-        out["tiles"] = _read_tiles(pdf_bytes, page, info, n, prompt, engine,
-                                   lines)
+        out["tiles"] = tile_rows
+        failed = _tiles_not_read_note(tile_rows)
+        if failed:
+            out["tiles_not_read"] = failed
         why = ("the page's small lettering was too small in the whole-page "
                "image, so it was ALSO" if tiles == "auto" else "it was ALSO")
         out["tiling"] = (
@@ -1718,9 +2224,59 @@ def _tile_count(tiles, info) -> int:
     return max(1, min(vision_view.MAX_TILES_PER_SIDE, int(tiles)))
 
 
+#: A pixel is ink when its darkest channel is below this (0-255): faint
+#: pencil and a yellow highlight count, paper does not.
+INK_LEVEL = 230
+#: A page is blank when less than this fraction of its pixels is ink
+#: (a few specks of scanner dust are not something to read in tiles).
+BLANK_INK_FRACTION = 1e-5
+
+
+def _has_ink(image_bytes) -> bool:
+    """Whether a rendered page shows anything at all. Unknown = yes, so a
+    page is never left untiled on a guess."""
+    try:
+        import fitz
+        import numpy as np
+        pix = fitz.Pixmap(image_bytes)
+        colour = pix.n - (1 if pix.alpha else 0)
+        a = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
+            pix.height, pix.width, pix.n)[:, :, :max(1, colour)]
+        ink = int((a.min(axis=2) < INK_LEVEL).sum())
+        return ink >= BLANK_INK_FRACTION * pix.width * pix.height
+    except Exception:  # noqa: BLE001
+        return True
+
+
 def _read_tiles(pdf_bytes, page, info, n, prompt, engine, lines=None):
     """Read the page in ``n`` x ``n`` overlapping tiles, in parallel."""
-    from concurrent.futures import ThreadPoolExecutor
+    return _run_together(_tile_jobs(pdf_bytes, page, info, n, prompt, engine,
+                                    lines))
+
+
+def _tiles_not_read_note(rows) -> Optional[str]:
+    """``"tile r2c3 failed: <why>; the rest were read …"`` for the tiles
+    that came back with an error, or ``None`` (B7: a failed tile used to be
+    a silent hole in the page read)."""
+    failed = [t for t in rows or () if isinstance(t, dict) and "error" in t]
+    if not failed:
+        return None
+    names = ", ".join(t.get("tile", "?") for t in failed)
+    why = failed[0]["error"]
+    if len(failed) == len(rows):
+        return (f"NO tile was read ({why}); only the whole-page view "
+                f"above was")
+    word = "tile" if len(failed) == 1 else "tiles"
+    return (f"{word} {names} failed: {why}; the rest were read. That part "
+            f"of the page was NOT read in close-up: read it with "
+            f"render_region(bbox=<the failed tile's view>) before relying "
+            f"on it")
+
+
+def _tile_jobs(pdf_bytes, page, info, n, prompt, engine, lines=None):
+    """One job per tile of an ``n`` x ``n`` overlapping split, in tile
+    order; each renders its tile and reads it, and returns its row (an
+    ``error`` row, naming why in plain words, when it could not)."""
     from funhouse_agent import vision_view
     boxes = vision_view.tile_boxes(info["clip"], n)
 
@@ -1742,23 +2298,17 @@ def _read_tiles(pdf_bytes, page, info, n, prompt, engine, lines=None):
                    "view_px": [tinfo["width_px"], tinfo["height_px"]],
                    **({"text_px": tinfo["text_px"]}
                       if tinfo.get("text_px") else {}),
-                   "analysis": text}
+                   "analysis": text,
+                   **({"cut_off": True} if _is_cut_off(text) else {})}
             _finish_answer(row, tinfo, note=False)
             row.pop("located_note", None)
             return row
         except Exception as exc:                  # one tile, not the page
             return {"tile": f"r{r + 1}c{c + 1}",
                     "view": [round(v, 1) for v in boxes[k]],
-                    "error": f"{type(exc).__name__}: {exc}"}
+                    "error": _vision_error(exc)}
 
-    # Each tile's call runs in a copy of the caller's context, so the run's
-    # callbacks (the activity log, the turn's token count) see it; a plain
-    # thread pool starts every worker with an empty context.
-    import contextvars
-    with ThreadPoolExecutor(max_workers=TILE_WORKERS) as ex:
-        futs = [ex.submit(contextvars.copy_context().run, one, k)
-                for k in range(n * n)]
-        return [f.result() for f in futs]
+    return [(lambda k=k: one(k)) for k in range(n * n)]
 
 
 def _fit_tiles(out) -> None:
@@ -2109,6 +2659,11 @@ def _dispatch_write_docx(arguments, save_fn):
     path = str(arguments.get("path", "") or "")
     markdown = arguments.get("markdown", "")
     title = arguments.get("title") or None
+    # Who File > Info names as the author (B4: it said "python-docx"): the
+    # signed-in person via the app (the host passes ``_author``), else the
+    # deployment's markup author, else the renderer's "GeotechStaffEngineer".
+    author = (str(arguments.get("_author") or "").strip()
+              or os.environ.get("GEOTECH_MARKUP_AUTHOR", "").strip() or None)
 
     if not path:
         return json.dumps({"error": "Missing required parameter: path"})
@@ -2138,7 +2693,7 @@ def _dispatch_write_docx(arguments, save_fn):
     try:
         built = markdown_to_docx(markdown, os.path.join(scratch, "out.docx"),
                                  base_dir=base_dir, title=title,
-                                 warnings=warnings)
+                                 warnings=warnings, author=author)
         with open(built, "rb") as fh:
             blob = fh.read()
     except Exception as exc:

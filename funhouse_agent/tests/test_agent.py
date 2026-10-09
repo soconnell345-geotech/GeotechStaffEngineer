@@ -213,7 +213,8 @@ class TestVisionToolDispatch:
             "Based on the image analysis, the slope angle is 30 degrees.",
         ])
         agent = GeotechAgent(genai_engine=engine)
-        agent.add_attachment("photo", b"fake image bytes")
+        # PNG bytes: analyze_image sends only real images (wave 2b, C6).
+        agent.add_attachment("photo", b"\x89PNG\r\n\x1a\n fake image bytes")
         result = agent.ask("Analyze this photo")
         assert result.rounds == 2
         assert result.tool_calls[0]["tool_name"] == "analyze_image"

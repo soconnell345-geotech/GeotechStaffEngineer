@@ -874,6 +874,24 @@ def _link_is_open(fm, url: str, scope: _Scope) -> bool:
     return bool(where) and scope.where(where) != "private"
 
 
+def _reader_for(local: str) -> str:
+    """A sentence naming the reader for a Word, Excel or DXF download;
+    ``""`` for anything else."""
+    ext = os.path.splitext(str(local))[1].lower()
+    name = os.path.basename(str(local))
+    if ext in (".docx", ".xlsx", ".xlsm"):
+        return (f" Read it with read_text_file(path='{name}') or "
+                f"open_document(source='{name}'): a Word or Excel file comes "
+                "back as Markdown (one table per sheet); it is not a PDF.")
+    if ext in (".doc", ".xls"):
+        return (" It is in an old binary Office format that nothing here "
+                "reads: ask for it saved as .docx / .xlsx.")
+    if ext == ".dxf":
+        return (f" open_document(source='{name}') reads its text and "
+                "entities; it cannot be viewed as a page here.")
+    return ""
+
+
 def _download(path: str, save_as: str, refresh: bool,
               record_dir: Optional[str],
               scope: Optional[_Scope] = None) -> str:
@@ -900,7 +918,7 @@ def _download(path: str, save_as: str, refresh: bool,
                 f"({os.path.getsize(prior):,} bytes) earlier in this "
                 "conversation; reusing that copy (refresh=true fetches it "
                 "again into the same file). It is an input to read, not a "
-                "deliverable.")
+                "deliverable." + _reader_for(prior))
     def local_name(found_remote: str) -> str:
         if save_as:
             return save_as
@@ -928,6 +946,10 @@ def _download(path: str, save_as: str, refresh: bool,
                 core.record_download(record_dir, r, local, size)
         kept = (f" One copy per SharePoint file: refreshed '{os.path.basename(local)}' in place."
                 if keep else "")
+        # Live smoke wave 2b (C2): an .xlsx went through the PDF reader, came
+        # back as nine digits, and the tester was told it was "probably
+        # damaged". Say which reader a Word / Excel / DXF file takes.
+        kept += _reader_for(local)
         # The local copy by its name in the working folder (A6): the file
         # tools resolve it, and a server path never reaches the user.
         return (preface

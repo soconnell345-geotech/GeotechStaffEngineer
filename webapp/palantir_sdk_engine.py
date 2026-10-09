@@ -832,8 +832,13 @@ class PalantirSdkChatModel(BaseChatModel):
                      "and none was read; output items: %s",
                      "; ".join(_output_fields(response)) or "(none)")
         status = str(getattr(response, "status", "")).rsplit(".", 1)[-1]
-        finish = ("tool_calls" if ai_message.tool_calls else
-                  "length" if status.lower() == "incomplete" else "stop")
+        # "length" whenever the reply was cut, tool calls or not: a call cut
+        # off at the output limit has incomplete arguments (parsed as {}),
+        # and the agent's OutputLimitGuard must see that it was cut rather
+        # than run it (live smoke wave 2b, C5: a cut save_file was retried
+        # five times on "content: Field required").
+        finish = ("length" if status.lower() == "incomplete" else
+                  "tool_calls" if ai_message.tool_calls else "stop")
         generation_info = {
             "finish_reason": finish,
             "model_name": getattr(response, "model", None)

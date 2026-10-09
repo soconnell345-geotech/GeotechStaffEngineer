@@ -24,9 +24,14 @@ from __future__ import annotations
 
 import base64
 import contextvars
+import email.utils
+import itertools
 import logging
 import os
+import random
+import re
 import threading
+import time
 from contextlib import contextmanager
 from typing import Iterator, Optional
 
@@ -71,37 +76,311 @@ def call_timeout_s() -> Optional[float]:
 INFLIGHT_ENV = "GEOTECH_VISION_MAX_INFLIGHT"
 DEFAULT_MAX_INFLIGHT = 8
 
+#: A hard cap on one conversation's calls in flight, inside the process cap
+#: (``0``, the default, = none). Fairness does not need it: a freed slot
+#: always goes to the waiting conversation with the FEWEST calls in flight
+#: (:class:`FairSlots`), so one tester's 30-call set read cannot queue a
+#: second tester's one-page question behind all of it (live smoke wave 2a,
+#: B13), while a tester alone still gets every slot. Set it to keep slots
+#: free for newcomers outright.
+PER_CONVERSATION_ENV = "GEOTECH_VISION_MAX_PER_CONVERSATION"
+
+
+class FairSlots:
+    """The process's vision-call slots, shared FAIRLY between conversations.
+
+    At most ``limit`` holders at once. When a slot frees, the waiter served
+    is the one whose conversation has the fewest calls in flight, the oldest
+    first among equals — so a conversation alone uses every slot, and one
+    that arrives while another holds them all is served at the next free
+    slot instead of after the other's whole queue. ``per_conversation``
+    (``0`` = none) also caps any one conversation's holders. Never re-entered
+    by a holder: :func:`call_slot` wraps one model request only."""
+
+    def __init__(self, limit: int, per_conversation: int = 0):
+        self.limit = int(limit)
+        self.per_conversation = max(0, int(per_conversation))
+        self._cond = threading.Condition()
+        self._in_use = 0
+        self._by_conv: dict = {}
+        self._waiting: list = []
+        self._tickets = itertools.count()
+
+    def in_flight(self, conversation=None) -> int:
+        """Calls holding a slot (for one conversation, or all)."""
+        with self._cond:
+            if conversation is None:
+                return self._in_use
+            return self._by_conv.get(conversation, 0)
+
+    def _eligible(self, conv) -> bool:
+        return (not self.per_conversation
+                or self._by_conv.get(conv, 0) < self.per_conversation)
+
+    def _next(self):
+        ready = [w for w in self._waiting if self._eligible(w[1])]
+        if not ready:
+            return None
+        return min(ready, key=lambda w: (self._by_conv.get(w[1], 0), w[0]))
+
+    def acquire(self, conversation="") -> None:
+        with self._cond:
+            me = (next(self._tickets), conversation)
+            self._waiting.append(me)
+            try:
+                while not (self._in_use < self.limit and self._next() is me):
+                    self._cond.wait()
+            except BaseException:
+                self._waiting.remove(me)
+                self._cond.notify_all()      # the next in line may be served
+                raise
+            self._waiting.remove(me)
+            self._in_use += 1
+            self._by_conv[conversation] = \
+                self._by_conv.get(conversation, 0) + 1
+            # Another slot may still be free for the next waiter in line.
+            self._cond.notify_all()
+
+    def release(self, conversation="") -> None:
+        with self._cond:
+            self._in_use = max(0, self._in_use - 1)
+            n = self._by_conv.get(conversation, 0) - 1
+            if n > 0:
+                self._by_conv[conversation] = n
+            else:
+                self._by_conv.pop(conversation, None)
+            self._cond.notify_all()
+
+
 _slots_lock = threading.Lock()
-_slots: Optional[tuple] = None          # (limit, BoundedSemaphore)
+_slots: Optional[tuple] = None          # ((limit, per_conv), FairSlots)
 
 
-def _semaphore() -> Optional[threading.BoundedSemaphore]:
-    raw = (os.environ.get(INFLIGHT_ENV) or "").strip()
+def _int_env(name: str, default: int) -> int:
+    raw = (os.environ.get(name) or "").strip()
     try:
-        limit = int(raw) if raw else DEFAULT_MAX_INFLIGHT
+        return int(raw) if raw else default
     except ValueError:
-        limit = DEFAULT_MAX_INFLIGHT
+        return default
+
+
+def _semaphore() -> Optional[FairSlots]:
+    limit = _int_env(INFLIGHT_ENV, DEFAULT_MAX_INFLIGHT)
     if limit <= 0:
         return None
+    per = max(0, _int_env(PER_CONVERSATION_ENV, 0))
     global _slots
     with _slots_lock:
-        if _slots is None or _slots[0] != limit:
-            _slots = (limit, threading.BoundedSemaphore(limit))
+        if _slots is None or _slots[0] != (limit, per):
+            _slots = ((limit, per), FairSlots(limit, per))
         return _slots[1]
 
 
+def conversation_key() -> str:
+    """Which conversation the call in this context belongs to: the working
+    folder the host bound for the turn (as the document toolkits are kept,
+    :mod:`funhouse_agent.document_tools`), ``""`` for a library caller with
+    none."""
+    try:
+        from funhouse_agent._fileio import host_output_dir
+        folder = host_output_dir()
+    except Exception:  # noqa: BLE001 - fairness must never break a call
+        return ""
+    if not folder:
+        return ""
+    try:
+        return os.path.normcase(os.path.realpath(folder))
+    except (OSError, ValueError):
+        return str(folder)
+
+
 @contextmanager
-def call_slot() -> Iterator[None]:
+def call_slot(conversation: Optional[str] = None) -> Iterator[None]:
     """Hold one of the process's vision-call slots for one model request.
 
     Wrap only the request itself, never work that makes further calls, so a
-    holder never waits on a slot it needs to finish."""
-    sem = _semaphore()
-    if sem is None:
+    holder never waits on a slot it needs to finish. ``conversation``
+    defaults to this context's (:func:`conversation_key`); slots are shared
+    fairly between conversations (:class:`FairSlots`)."""
+    slots = _semaphore()
+    if slots is None:
         yield
         return
-    with sem:
+    conv = conversation_key() if conversation is None else conversation
+    slots.acquire(conv)
+    try:
         yield
+    finally:
+        slots.release(conv)
+
+
+# ---------------------------------------------------------------------------
+# A busy model: retried with backoff (live smoke wave 2a, B7)
+# ---------------------------------------------------------------------------
+
+#: How many times in all a side call is asked when the model answers "busy"
+#: (429, 5xx, overloaded, a dropped connection). Several testers share one
+#: Prompter key on Tiny Apps, and the SDK's own two quick retries are spent
+#: in under a second; F27's overloaded tile survived only by accident.
+BUSY_TRIES_ENV = "GEOTECH_VISION_BUSY_TRIES"
+DEFAULT_BUSY_TRIES = 3
+#: First wait before asking again, in seconds; doubled each time, with some
+#: jitter so callers that failed together do not retry together.
+BUSY_BACKOFF_S = 2.0
+#: Longest wait honoured from a ``retry-after`` header, in seconds.
+MAX_RETRY_AFTER_S = 30.0
+
+#: The wait between tries (tests replace it).
+_sleep = time.sleep
+
+_BUSY_TYPES = {
+    "ratelimiterror", "internalservererror", "overloadederror",
+    "serviceunavailableerror", "apiconnectionerror", "apitimeouterror",
+    "badgatewayerror", "gatewaytimeouterror",
+}
+_BUSY_BODY_TYPES = {"overloaded_error", "rate_limit_error", "api_error",
+                    "server_error", "rate_limit_exceeded"}
+_BUSY_ERROR_NAMES = ("ratelimit", "overloaded", "unavailable", "timeout")
+
+
+def _status_of(exc) -> Optional[int]:
+    """The HTTP status an SDK error carries, if any."""
+    for holder in (exc, getattr(exc, "response", None)):
+        for attr in ("status_code", "status", "http_status"):
+            v = getattr(holder, attr, None)
+            if isinstance(v, int) and 100 <= v < 600:
+                return v
+    return None
+
+
+def _body_error_type(exc) -> str:
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        err = body.get("error") if isinstance(body.get("error"), dict) \
+            else body
+        for key in ("type", "code"):
+            v = err.get(key) if isinstance(err, dict) else None
+            if isinstance(v, str):
+                return v.lower()
+    return ""
+
+
+def _chain(exc):
+    """``exc`` and the errors it was raised FROM (a wrapper's explicit
+    cause; not an unrelated error it was raised while handling)."""
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        yield exc
+        exc = exc.__cause__
+
+
+def busy_kind(exc) -> Optional[str]:
+    """What kind of "busy" ``exc`` is — ``rate limit``, ``overloaded``,
+    ``server error 503``, ``connection`` — or ``None`` for an error that
+    asking again would not fix. Read off the error's type, HTTP status and
+    body, never off words in its message (F27's overload carried
+    ``'details': None``, which a substring test took for a refused
+    ``detail``)."""
+    if isinstance(exc, VisionCallTimeout):
+        return None                       # its own retry (TIMEOUT_RETRIES)
+    for e in _chain(exc):
+        status = _status_of(e)
+        body = _body_error_type(e)
+        name = type(e).__name__.lower()
+        if status == 429 or "ratelimit" in name or body in (
+                "rate_limit_error", "rate_limit_exceeded"):
+            return "rate limit"
+        if status == 529 or "overloaded" in name or body == "overloaded_error":
+            return "overloaded"
+        if status is not None and 500 <= status < 600:
+            return f"server error {status}"
+        if status in (408, 409):
+            return f"server error {status}"
+        if name in _BUSY_TYPES or body in _BUSY_BODY_TYPES:
+            return "server error"
+        err_name = str(getattr(e, "error_name", "") or "").lower()
+        if err_name and any(w in err_name for w in _BUSY_ERROR_NAMES):
+            return "rate limit" if "ratelimit" in err_name else "server error"
+        if isinstance(e, (ConnectionError, TimeoutError)):
+            return "connection"
+    return None
+
+
+def _retry_after_s(exc) -> Optional[float]:
+    """Seconds a ``retry-after`` (or ``retry-after-ms``) header asks for."""
+    for e in _chain(exc):
+        headers = getattr(getattr(e, "response", None), "headers", None)
+        if headers is None:
+            continue
+        try:
+            ms = headers.get("retry-after-ms")
+            if ms is not None:
+                return max(0.0, float(ms) / 1000.0)
+            raw = headers.get("retry-after")
+        except Exception:  # noqa: BLE001 - an odd header object
+            continue
+        if raw is None:
+            continue
+        try:
+            return max(0.0, float(raw))
+        except (TypeError, ValueError):
+            pass
+        try:
+            when = email.utils.parsedate_to_datetime(str(raw))
+            return max(0.0, when.timestamp() - time.time())
+        except (TypeError, ValueError, OverflowError):
+            continue
+    return None
+
+
+def busy_tries() -> int:
+    """How many times in all a busy side call is asked (at least 1)."""
+    return max(1, _int_env(BUSY_TRIES_ENV, DEFAULT_BUSY_TRIES))
+
+
+def _busy_wait_s(exc, attempt: int) -> float:
+    after = _retry_after_s(exc)
+    if after is not None:
+        return min(after, MAX_RETRY_AFTER_S)
+    base = BUSY_BACKOFF_S * (2 ** attempt)
+    return base * random.uniform(0.75, 1.25)
+
+
+def describe_error(exc) -> str:
+    """One plain line saying why a vision call gave no reading — what a tool
+    result (and so the user) is told instead of an SDK's raw error text."""
+    if isinstance(exc, VisionCallTimeout):
+        return str(exc)
+    kind = busy_kind(exc)
+    tries = getattr(exc, "vision_tries", None)
+    if kind:
+        asked = f" after {tries} tries" if tries and tries > 1 else ""
+        what = {"rate limit": "busy (its rate limit was reached)",
+                "overloaded": "busy (overloaded)",
+                "connection": "unreachable (the connection failed)"}.get(
+                    kind, f"busy ({kind})")
+        return (f"the vision model was {what} and gave no answer{asked}; "
+                f"this image was NOT read — try again in a minute")
+    text = " ".join(str(exc).split())
+    if len(text) > 300:
+        text = text[:300] + " …"
+    return f"{type(exc).__name__}: {text}"
+
+
+_DETAIL_WORD = re.compile(r"\bdetail\b", re.IGNORECASE)
+
+
+def refused_detail(exc) -> bool:
+    """Whether ``exc`` is the model refusing the image ``detail`` value: a
+    request error (400/422, or no status at all) that names the parameter —
+    not a busy error whose body happens to hold the word ``details``."""
+    if busy_kind(exc) is not None or isinstance(exc, VisionCallTimeout):
+        return False
+    status = _status_of(exc)
+    if status is not None and status not in (400, 422):
+        return False
+    return bool(_DETAIL_WORD.search(str(exc)))
 
 
 def _invoke_once(model, messages, timeout: Optional[float]):
@@ -144,20 +423,43 @@ def _invoke_once(model, messages, timeout: Optional[float]):
 
 def invoke_side_call(model, messages):
     """One vision side call: :func:`_invoke_once` under the side-call limit
-    (:func:`call_timeout_s`), asked once more if it times out. Raises
-    :class:`VisionCallTimeout` when no ask answered in time — the caller
-    reports that image as not read instead of waiting on it."""
+    (:func:`call_timeout_s`), asked once more if it times out, and asked
+    again with backoff — up to :func:`busy_tries` times in all, honouring a
+    ``retry-after`` — while the model answers busy (:func:`busy_kind`). The
+    waits are spent holding no slot. Raises :class:`VisionCallTimeout` when
+    no ask answered in time, and a busy error that outlasted its tries with
+    ``vision_tries`` set on it — the caller reports that image as not read
+    (:func:`describe_error`) instead of waiting on it."""
     timeout = call_timeout_s()
-    for attempt in range(TIMEOUT_RETRIES + 1):
+    timeouts = 0
+    busy = 0
+    tries = busy_tries()
+    while True:
         try:
             return _invoke_once(model, messages, timeout)
         except VisionCallTimeout:
-            if attempt >= TIMEOUT_RETRIES:
+            timeouts += 1
+            if timeouts > TIMEOUT_RETRIES:
                 raise VisionCallTimeout(
                     f"the vision call gave no answer within {timeout:g} s, "
-                    f"{attempt + 1} times; this image was NOT read") from None
+                    f"{timeouts} times; this image was NOT read") from None
             log.warning("vision side call gave no answer within %g s; "
                         "asking once more", timeout)
+        except Exception as exc:  # noqa: BLE001 - classified, then re-raised
+            kind = busy_kind(exc)
+            if kind is None:
+                raise
+            busy += 1
+            if busy >= tries:
+                try:
+                    exc.vision_tries = busy
+                except Exception:  # noqa: BLE001 - a frozen exception type
+                    pass
+                raise
+            wait = _busy_wait_s(exc, busy - 1)
+            log.warning("vision side call: model busy (%s); asking again in "
+                        "%.1f s (try %d of %d)", kind, wait, busy + 1, tries)
+            _sleep(wait)
 
 
 class LangChainVisionEngine:
@@ -274,11 +576,52 @@ class LangChainVisionEngine:
             raise
         except Exception as exc:
             # An older model (GPT-4.1, GPT-5.2) has no "original" detail; ask
-            # once more at its default rather than fail the read.
-            if not detail or "detail" not in str(exc).lower():
+            # once more at its default rather than fail the read. Only a
+            # request error that names the parameter counts (F27: a busy
+            # error's body held "details" and was asked again by accident).
+            if not detail or not refused_detail(exc):
                 raise
             response = invoke_side_call(self._model, [message(False)])
-        return _content_to_text(getattr(response, "content", response))
+        text = _content_to_text(getattr(response, "content", response))
+        if was_cut_off(response):
+            # The answer stopped at the model's output limit (wave 2b, C5):
+            # its end is missing, and the result must say so.
+            text = VisionAnswer(text)
+            text.cut_off = True
+            log.warning("vision side call: the answer was cut off at the "
+                        "model's output limit (%d characters)", len(text))
+        return text
+
+
+class VisionAnswer(str):
+    """A vision answer as text; ``cut_off`` is True when the model stopped
+    at its output limit, so the end of the reading is missing."""
+
+    cut_off = False
+
+
+#: Finish reasons that mean "stopped at the output limit": OpenAI's
+#: ``length``, Anthropic's ``max_tokens``, the Responses API's
+#: ``max_output_tokens``.
+_CUT_REASONS = {"length", "max_tokens", "max_output_tokens"}
+
+
+def was_cut_off(response) -> bool:
+    """Whether a model response stopped at its output limit, read off its
+    metadata (``finish_reason`` / ``stop_reason`` / an incomplete Responses
+    status), never off the text."""
+    meta = getattr(response, "response_metadata", None)
+    if not isinstance(meta, dict):
+        return False
+    reasons = [meta.get("finish_reason"), meta.get("stop_reason")]
+    info = meta.get("generation_info")
+    if isinstance(info, dict):
+        reasons.append(info.get("finish_reason"))
+    incomplete = meta.get("incomplete_details")
+    if isinstance(incomplete, dict):
+        reasons.append(incomplete.get("reason"))
+    return any(isinstance(r, str) and r.lower() in _CUT_REASONS
+               for r in reasons)
 
 
 def _content_to_text(content) -> str:
@@ -308,4 +651,7 @@ def _content_to_text(content) -> str:
 __all__ = ["LangChainVisionEngine", "call_slot", "INFLIGHT_ENV",
            "DEFAULT_MAX_INFLIGHT", "TIMEOUT_ENV", "DEFAULT_TIMEOUT_S",
            "TIMEOUT_RETRIES", "VisionCallTimeout", "call_timeout_s",
-           "invoke_side_call"]
+           "invoke_side_call", "FairSlots", "PER_CONVERSATION_ENV",
+           "conversation_key", "busy_kind", "busy_tries", "describe_error",
+           "refused_detail", "BUSY_TRIES_ENV", "DEFAULT_BUSY_TRIES",
+           "VisionAnswer", "was_cut_off"]

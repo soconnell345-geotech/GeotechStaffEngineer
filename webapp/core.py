@@ -35,10 +35,14 @@ from dataclasses import dataclass
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 from uuid import uuid4
 
-#: Accepted upload types (mirrors the notebook FileUpload accept list).
+#: Accepted upload types (mirrors the notebook FileUpload accept list). Word
+#: and Excel files are read as Markdown (``funhouse_agent.office_text``) by
+#: ``open_document`` / ``read_document`` / ``read_text_file``; until live
+#: smoke wave 2b (C2) the uploader refused them.
 ACCEPTED_UPLOAD_TYPES = [
     "pdf", "png", "jpg", "jpeg", "tif", "tiff",
     "dxf", "csv", "txt", "xml", "diggs",
+    "docx", "xlsx", "xlsm",
 ]
 
 
@@ -775,30 +779,144 @@ def token_line(turn_tokens: int, total_tokens: int) -> str:
 CONTINUE_NUDGE = "Continue — complete the action you just stated."
 MAX_AUTO_CONTINUES = 2
 
-_INTENT_RE = re.compile(
-    r"\b(let me|let's|i'?ll|i will|now i|next,? i)\b", re.IGNORECASE)
-# Endings addressed TO the user (offers/questions) must never trigger a nudge.
+#: A reply this long is an answer, not a stop on a stated step -- unless its
+#: last line opens something it never delivers (it ends on ":" or "…").
+MID_TASK_MAX_CHARS = 600
+
+# The last sentence must OPEN with the speaker's own next step ("Let me …",
+# "Now I'll …", "Next, I will …"), after an optional list marker or
+# discourse word. "I'll" further in ("… tell me and I'll re-map them") is an
+# offer, not a step being taken.
+_LEAD_INTENT_RE = re.compile(
+    r"^(?:(?:ok(?:ay)?|now|next|first|then|so|right|alright|good|great)"
+    r"[,:]?\s+)*"
+    r"(?:let me|let's|let us|i'?ll|i will|i'?m going to|i am going to|"
+    r"i need to|i'?m now going to)\b", re.IGNORECASE)
+# Anything in the last sentence that makes the step wait on the user, or
+# puts it to the user, makes the reply a finished answer: a condition
+# ("if", "once", "when" … "then"), a request ("tell me", "give me",
+# "send"), an offer ("I can", "happy to", "would you"), or the user named at
+# all ("you", "your").
 _ADDRESSED_RE = re.compile(
-    r"\b(would you|should i|do you|let me know|if you|if needed|happy to|"
-    r"feel free|want me to|prefer)\b", re.IGNORECASE)
+    r"\b(if|once|when|whenever|after|as soon as|then|unless|until|"
+    r"you|your|yours|you'?(?:d|ll|re|ve)|let me know|tell me|give me|"
+    r"send me|show me|say|ask|happy|glad|feel free|want|prefer|wish|"
+    r"can|could|would|should|may|might|wait|await|ready|available|"
+    r"needed|necessary|required)\b", re.IGNORECASE)
+_LIST_MARK_RE = re.compile(r"^(?:[-*•]+|\d+[.)]|\(\w\))\s*")
+
+
+def _last_sentence(text: str) -> str:
+    """The final sentence of ``text``'s last non-empty line, list marker
+    and emphasis stripped."""
+    lines = [ln.strip() for ln in str(text or "").splitlines() if ln.strip()]
+    if not lines:
+        return ""
+    line = _LIST_MARK_RE.sub("", lines[-1]).strip().strip("*_").strip()
+    parts = [p for p in re.split(r"(?<=[.!?])\s+", line) if p.strip()]
+    if not parts:
+        return ""
+    tail = parts[-1].strip()
+    # "2. Give me the name" splits as "2." + "Give me ..."; a bare number is
+    # never the sentence.
+    return _LIST_MARK_RE.sub("", tail).strip().strip("*_").strip()
 
 
 def ends_mid_task(text: str, saw_tool_call: bool) -> bool:
-    """True when an assistant reply looks like it STOPPED on a stated next step.
+    """True when an assistant reply STOPPED on a step it announced and did
+    not take ("Let me get that Ka …" with no tool call behind it).
 
-    Conservative by design (a false nudge costs one extra model call; a missed
-    one just reproduces the old behavior): fires only when the turn actually
-    used tools, the reply doesn't end with a question, and the FINAL sentence
-    contains first-person intent language ("let me …", "I'll …") that is not
-    addressed to the user ("let me know if …", "would you …").
+    An offer to the user ("If your roles are different, tell me and I'll
+    re-map them"), a request ("Give me the file name and I'll look for it"),
+    a step that waits on the user ("Once I have the log, I'll check each
+    submittal") and a question are FINISHED answers. Live smoke wave 2b
+    (C1): the old rule fired on any "I'll" in the last sentence, nudged on
+    three such endings and delivered each answer two or three times, once
+    with a false confession that a save had not happened.
+
+    So it fires only when the turn used tools, the reply does not end with a
+    question, its last sentence OPENS with the speaker's own next step and
+    has nothing in it that hands the step to the user, and the reply is
+    short (narration, :data:`MID_TASK_MAX_CHARS`) or its last line opens
+    something it never delivers (ends on ":" or "…"). A missed stop costs
+    the old behaviour (the user asks again); a false one costs a repeated,
+    contradicting answer -- so it errs towards missing.
     """
     t = (text or "").strip()
     if not t or not saw_tool_call or t.endswith("?"):
         return False
-    tail = re.split(r"(?<=[.!?])\s+|\n+", t)[-1].strip()
-    if not tail or _ADDRESSED_RE.search(tail):
+    tail = _last_sentence(t)
+    if not tail or tail.endswith("?") or not _LEAD_INTENT_RE.match(tail):
         return False
-    return bool(_INTENT_RE.search(tail))
+    if _ADDRESSED_RE.search(tail):
+        return False
+    open_end = t.endswith((":", "…", "...")) or tail.endswith((":", "…",
+                                                               "..."))
+    return len(t) <= MID_TASK_MAX_CHARS or open_end
+
+
+def _without_stated_step(text: str) -> str:
+    """``text`` less the trailing sentence that announced the step a
+    continuation pass then took ("Ka is next. Let me get that Ka." -> "Ka is
+    next."); ``""`` when that sentence was all of it."""
+    t = str(text or "").rstrip()
+    tail = _last_sentence(t)
+    if not tail:
+        return t.strip()
+    cut = t.rfind(tail)
+    if cut < 0:
+        return t.strip()
+    body = t[:cut].rstrip()
+    # a list marker or emphasis left dangling on its own
+    body = re.sub(r"(?:\n|^)\s*(?:[-*•]+|\d+[.)])?\s*[*_]*\s*$", "", body)
+    return body.strip()
+
+
+def _norm_text(text: str) -> str:
+    return " ".join(str(text or "").split()).lower()
+
+
+def merge_continuation(previous: str, following: str) -> str:
+    """The answer after an auto-continue pass: what the earlier reply said
+    before the step it announced, then the reply that took the step.
+
+    The announcement itself ("Let me get that Ka.") is dropped -- the next
+    reply is what came of it -- and so is the earlier text when the next
+    reply already repeats it, so the user never gets one answer twice. An
+    empty next reply leaves the earlier one standing."""
+    nxt = str(following or "").strip()
+    if not nxt:
+        return str(previous or "").strip()
+    body = _without_stated_step(previous)
+    if not body or _norm_text(body) in _norm_text(nxt):
+        return nxt
+    return f"{body}\n\n{nxt}"
+
+
+def _run_messages(chunk) -> Optional[list]:
+    """The whole message list of a ``values``-mode stream item (the graph's
+    state after a step), or ``None``."""
+    if isinstance(chunk, dict) and isinstance(chunk.get("messages"),
+                                              (list, tuple)):
+        return list(chunk["messages"])
+    return None
+
+
+def _new_run_messages(chunk) -> list:
+    """The messages an ``updates``-mode item ADDS to the run (model and tool
+    results), for a host whose stream has no ``values`` mode. A node that
+    rewrites the whole history adds nothing here."""
+    from funhouse_agent.deep.notebook import _update_messages
+    out: list = []
+    if not isinstance(chunk, dict):
+        return out
+    for update in chunk.values():
+        for msg in _update_messages(update):
+            kind = (msg.get("role") if isinstance(msg, dict)
+                    else getattr(msg, "type", None))
+            if kind in ("ai", "assistant", "tool", "AIMessageChunk"):
+                out.append(msg)
+    return out
 
 
 # --- The coverage gate's held-back reply (Foundry brief 5, CV2/N4) -----------
@@ -937,7 +1055,10 @@ def stream_turn(agent, messages: list, thread_id: str,
     handoff never becomes text at all (live smoke wave 1, A3). The live view
     puts a paragraph break between model calls. Only when the stream carried
     no such message (an agent that streams tokens alone) is the streamed text
-    the answer. Each auto-continue pass contributes its own final message.
+    the answer. An auto-continue pass (:func:`ends_mid_task`) goes on from
+    the run's own messages, and its reply takes the place of the step the
+    pass before it announced (:func:`merge_continuation`): one answer, never
+    two copies of it.
 
     When the coverage gate holds a reply back (:func:`coverage_gate_spoke`),
     the reply before its note is left out of ``answer``: the reply after the
@@ -997,9 +1118,24 @@ def stream_turn(agent, messages: list, thread_id: str,
             # a new paragraph in the live view.
             final_text: Optional[str] = None
             boundary = False
+            # The run's own messages -- its tool calls and their results as
+            # well as its replies -- so a continuation pass goes on from what
+            # the run DID, not from a text-only history (wave 2b, C1: the
+            # second pass lost its own save and "confessed" it had never
+            # happened). ``values`` gives the graph's whole state; a host
+            # without that mode falls back to what the updates added.
+            run_state: Optional[list] = None
+            added: list = []
             for mode, chunk in agent.stream(
                     {"messages": work_messages}, config=run_config,
-                    stream_mode=["updates", "messages"]):
+                    stream_mode=["updates", "messages", "values"]):
+                if mode == "values":
+                    state = _run_messages(chunk)
+                    if state is not None:
+                        run_state = state
+                    continue
+                if mode == "updates":
+                    added.extend(_new_run_messages(chunk))
                 if mode == "updates" and coverage_gate_spoke(chunk):
                     # The coverage gate (GEOTECH_COVERAGE) held the reply
                     # streamed so far back from the user and asked for the
@@ -1042,16 +1178,24 @@ def stream_turn(agent, messages: list, thread_id: str,
                 # The model gave nothing after the note: the reply it had is
                 # better than none.
                 pass_text = held_back
-            if answer_parts and pass_text:
-                answer_parts.append("\n\n")
-            answer_parts.append(pass_text)
+            # ONE answer, however many passes: a continuation's reply takes
+            # the place of the step its predecessor announced, never a
+            # second copy of the answer (merge_continuation).
+            answer_parts[:] = [merge_continuation("".join(answer_parts),
+                                                  pass_text)
+                               if continuations else pass_text]
             if (continuations < MAX_AUTO_CONTINUES
                     and ends_mid_task(pass_text, saw_tool)):
                 continuations += 1
-                work_messages = work_messages + [
-                    {"role": "assistant", "content": pass_text},
-                    {"role": "user", "content": CONTINUE_NUDGE},
-                ]
+                if run_state is not None:
+                    history = list(run_state)
+                elif added:
+                    history = list(work_messages) + added
+                else:
+                    history = list(work_messages) + [
+                        {"role": "assistant", "content": pass_text}]
+                work_messages = history + [
+                    {"role": "user", "content": CONTINUE_NUDGE}]
                 yield {"kind": "tool_call",
                        "text": (f"auto-continue {continuations}/"
                                 f"{MAX_AUTO_CONTINUES}: finishing the stated "
@@ -1061,11 +1205,26 @@ def stream_turn(agent, messages: list, thread_id: str,
 
     extra_cbs = list(callbacks or [])
 
+    def _passes_noting_reply(run_config):
+        # A turn that fails keeps the reply it had completed (an earlier
+        # pass's) on the error, for the host to show labelled as cut short
+        # instead of the raw stream (turn_jobs, failed_turn_text).
+        try:
+            yield from _run_passes(run_config)
+        except BaseException as exc:
+            try:
+                done = "".join(answer_parts).strip()
+                if done and not getattr(exc, "geotech_reply", None):
+                    exc.geotech_reply = done
+            except Exception:  # noqa: BLE001 - never mask the error
+                pass
+            raise
+
     if cb_ctx is None:
         run_config = dict(config)
         if extra_cbs:
             run_config["callbacks"] = extra_cbs
-        for entry in _run_passes(run_config):
+        for entry in _passes_noting_reply(run_config):
             yield entry
         yield {"kind": "turn_done", "answer": "".join(answer_parts),
                "turn_tokens": 0}
@@ -1074,7 +1233,7 @@ def stream_turn(agent, messages: list, thread_id: str,
     with cb_ctx as cb:
         run_config = dict(config)
         run_config["callbacks"] = [cb] + extra_cbs
-        for entry in _run_passes(run_config):
+        for entry in _passes_noting_reply(run_config):
             yield entry
         turn_tokens = _sum_callback_tokens(dict(cb.usage_metadata))
     yield {"kind": "turn_done", "answer": "".join(answer_parts),
@@ -1592,11 +1751,47 @@ def set_behavior(thread_id: str, behavior: dict,
     return behavior_from_meta(meta)
 
 
+def _busy_kind(exc: BaseException) -> Optional[str]:
+    """``rate limit`` / ``overloaded`` / ``server error …`` / ``connection``
+    / ``timeout`` for an error that asking again later would fix, else
+    ``None``. Read off the error's type, HTTP status and body
+    (``vision_engine.busy_kind``), with the error's name and text as a
+    fallback for hosts whose errors carry neither."""
+    name = type(exc).__name__.lower()
+    if "timeout" in name or isinstance(exc, TimeoutError):
+        return "timeout"
+    kind = None
+    try:
+        from funhouse_agent.deep.vision_engine import busy_kind
+        kind = busy_kind(exc)
+    except Exception:  # noqa: BLE001 - advice must never mask the error
+        kind = None
+    low = str(exc).lower()
+    if kind is None:
+        if "ratelimit" in name or "rate_limit_exceeded" in low \
+                or "too many requests" in low:
+            kind = "rate limit"
+        elif "overloaded" in name or "overloaded_error" in low:
+            kind = "overloaded"
+    return kind
+
+
 def friendly_turn_error(exc: BaseException) -> str:
     """Turn-failure text for the transcript: the raw error plus, for known
     cases, plain-language advice (owner ask 2026-08: a raw GraphRecursionError
-    traceback reads as a crash, when the fix is one sidebar setting)."""
+    traceback reads as a crash, when the fix is one sidebar setting).
+
+    No server path ever reaches the user (live smoke wave 2b, C3: a MuPDF
+    error showed ``C:\\…\\users\\livesmoke__tester\\…``):
+    :func:`funhouse_agent.error_text.scrub_paths` leaves each path's file
+    name. A busy model (rate limit, overload, a 5xx, a timeout) is said in
+    plain words first, with the raw text after it, shortened."""
     text = f"{type(exc).__name__}: {exc}"
+    try:
+        from funhouse_agent.error_text import scrub_paths
+        text = scrub_paths(text)
+    except Exception:  # noqa: BLE001 - the error is shown either way
+        pass
     low = text.lower()
     if "recursion" in low and "limit" in low:
         return (text + "\n\nThe agent ran out of its per-turn step budget "
@@ -1609,16 +1804,89 @@ def friendly_turn_error(exc: BaseException) -> str:
         return (text + "\n\nYour monthly Funhouse AI budget is exhausted; "
                 "it resets next month — contact the Funhouse admins to "
                 "raise it.")
-    if "ratelimit" in type(exc).__name__.lower() or \
-            "rate_limit_exceeded" in low or "too many requests" in low:
-        # Field session 2026-10-06: a long read hit the model's tokens-per-
-        # minute limit and the turn ended on the raw error.
-        return (text + "\n\nThe AI model's rate limit was reached (too many "
-                "tokens in the last minute) — a throttle, not a fault. "
-                "Nothing is lost: files downloaded or saved this turn are "
-                "still in the conversation. Wait a minute, then ask the agent "
-                "to continue.")
-    return text
+    kind = _busy_kind(exc)
+    if kind is None:
+        return text
+    # A busy model (field session 2026-10-06; live smoke wave 2a, B7): said
+    # in plain words FIRST, the raw text after it for whoever reports it.
+    detail = " ".join(text.split())
+    if len(detail) > 300:
+        detail = detail[:300] + " …"
+    kept = ("Nothing is lost: files downloaded or saved this turn are still "
+            "in the conversation. Wait a minute, then ask the agent to "
+            "continue.")
+    if kind == "rate limit":
+        lead = ("The AI model's rate limit was reached (too many requests "
+                "or tokens in the last minute — several people may be "
+                "sharing it) — a throttle, not a fault.")
+    elif kind == "overloaded":
+        lead = ("The AI model is overloaded right now (busy at the "
+                "provider), so this turn stopped — a temporary condition, "
+                "not a fault in your request.")
+    elif kind == "timeout":
+        lead = ("The AI model did not answer in time, so this turn stopped "
+                "— usually a busy service, not a fault in your request.")
+    elif kind == "connection":
+        lead = ("A network connection to the AI model failed, so this turn "
+                "stopped — usually temporary.")
+    else:
+        lead = (f"The AI service had a temporary problem ({kind}), so this "
+                f"turn stopped — not a fault in your request.")
+    return f"{lead} {kept}\n\n(Details: {detail})"
+
+
+#: How long the readable part of a failed turn's streamed text must be to be
+#: kept (labelled as cut short) rather than replaced by the error alone.
+USEFUL_PARTIAL_CHARS = 200
+
+#: The label put on a failed turn's partial answer.
+CUT_SHORT_LABEL = ("*This answer was cut short: the turn stopped on an error "
+                   "before it finished (see the message below). What follows "
+                   "is what had been written by then.*")
+
+#: What a failed turn says when nothing it wrote is worth keeping.
+NOTHING_KEPT = ("This turn stopped on an error before it could answer (see "
+                "the message below). Files saved or downloaded this turn are "
+                "still in the conversation; ask again, or ask the agent to "
+                "continue.")
+
+
+def _is_narration(paragraph: str) -> bool:
+    """A short paragraph that only announces a step ("I'll open the page
+    map.", "Now let me zoom on the title block:")."""
+    p = paragraph.strip()
+    if not p:
+        return True
+    if len(p) > 240:
+        return False
+    first = _LIST_MARK_RE.sub("", p).strip()
+    return bool(_LEAD_INTENT_RE.match(first)) or p.endswith(":")
+
+
+def failed_turn_text(streamed: str = "", reply: Optional[str] = None) -> str:
+    """What a FAILED turn shows as its answer (the error itself is shown
+    under it).
+
+    A reply the run had completed (an earlier pass's) is kept; otherwise the
+    text streamed so far is kept only when, with the step announcements
+    taken out, it still says something (:data:`USEFUL_PARTIAL_CHARS`) --
+    raw narration ("I'll open the page map.") is not an answer. Either way
+    it is labelled as cut short. Paths are scrubbed."""
+    try:
+        from funhouse_agent.error_text import scrub_paths
+    except Exception:  # noqa: BLE001
+        def scrub_paths(t):
+            return t
+    reply = str(reply or "").strip()
+    if reply:
+        return f"{CUT_SHORT_LABEL}\n\n{scrub_paths(reply)}"
+    paras = [p.strip() for p in re.split(r"\n\s*\n", str(streamed or ""))
+             if p.strip()]
+    kept = [p for p in paras if not _is_narration(p)]
+    body = "\n\n".join(kept)
+    if len(body) >= USEFUL_PARTIAL_CHARS:
+        return f"{CUT_SHORT_LABEL}\n\n{scrub_paths(body)}"
+    return NOTHING_KEPT
 
 
 def depth_prompt(depth: str) -> str:
@@ -1787,6 +2055,79 @@ def files_and_question_title(files_title, prompt,
     if files_title.lower() in gist.lower():
         return gist
     return f"{files_title}{TITLE_JOINER}{gist}"
+
+
+_MORE_RE = re.compile(r"^(\d+) more$")
+_FILE_PIECE_RE = re.compile(r"^[^\s/\\][^/\\]*\.[A-Za-z0-9]{1,6}$")
+
+
+def _title_files(head: str) -> Optional[Tuple[List[str], int]]:
+    """``(names, hidden)`` when ``head`` is a files title
+    (:func:`orientation_title`'s ``a.pdf + b.pdf + 2 more``), else ``None``."""
+    names, hidden = [], 0
+    for piece in [p.strip() for p in str(head or "").split(" + ")]:
+        more = _MORE_RE.match(piece)
+        if more:
+            hidden += int(more.group(1))
+        elif _FILE_PIECE_RE.match(piece):
+            names.append(piece)
+        else:
+            return None
+    return (names, hidden) if names else None
+
+
+def title_with_new_files(meta: Optional[dict], names: Iterable[str],
+                         max_names: int = 3) -> Optional[str]:
+    """The conversation title once files are attached to a conversation that
+    already has one, or ``None`` to keep it.
+
+    Live smoke wave 2b (C14): the 21.01 review stayed titled after
+    "scan_0001.pdf", the blank wrong file, and a report added later never
+    reached its conversation's name. A later upload's names join the files
+    part of the title (``a.pdf + b.pdf — gist``), or go in front of a
+    question title; names already in it, a title the user typed, and a
+    conversation not yet titled (its first turn titles it) are left alone.
+    The SharePoint folder does not follow (``meta.mirror_folder``)."""
+    meta = meta or {}
+    title = str(meta.get("title") or "").strip()
+    if (meta.get("title_source") == TITLE_FROM_USER or not title
+            or title.lower() == "new conversation"):
+        return None
+    low = title.lower()
+    new = []
+    for n in names or ():
+        n = str(n or "").strip()
+        if n and n.lower() not in low and n not in new:
+            new.append(n)
+    if not new:
+        return None
+    head, sep, tail = title.partition(TITLE_JOINER)
+    parsed = _title_files(head)
+    if parsed is not None:
+        known, hidden = parsed
+        allnames = known + new
+        shown = allnames[:max_names]
+        more = hidden + len(allnames) - len(shown)
+        head = " + ".join(shown) + (f" + {more} more" if more > 0 else "")
+        return head + (sep + tail if sep else "")
+    return orientation_title(new, max_names=max_names) + TITLE_JOINER + title
+
+
+def retitle_for_upload(thread_id: str, names: Iterable[str],
+                       root: Optional[str] = None) -> Optional[str]:
+    """Give a conversation that already has a title the names of files
+    attached to it later (:func:`title_with_new_files`). Returns the new
+    title, or ``None`` when it is kept. Never raises."""
+    try:
+        meta = load_meta(thread_id, root)
+        if not meta:
+            return None
+        new = title_with_new_files(meta, names)
+        if new:
+            touch_conversation(thread_id, title=new, root=root)
+        return new
+    except Exception:  # noqa: BLE001 - a title is never worth a failure
+        return None
 
 
 def turn_title(meta: Optional[dict], prompt, user_turns: int,
@@ -2320,11 +2661,94 @@ def _note_name(path: str, files_dir: str) -> str:
     return ap
 
 
+#: Characters of the "already looked at" line at most.
+READS_NOTE_MAX_CHARS = 900
+
+
+def _page_list(pages: List[int]) -> str:
+    """``[1, 2, 3, 5]`` -> ``"1-3, 5"``."""
+    pages = sorted(set(int(p) for p in pages))
+    out, i = [], 0
+    while i < len(pages):
+        j = i
+        while j + 1 < len(pages) and pages[j + 1] == pages[j] + 1:
+            j += 1
+        out.append(str(pages[i]) if i == j else f"{pages[i]}-{pages[j]}")
+        i = j + 1
+    return ", ".join(out)
+
+
+def reads_note(folder: Optional[str]) -> str:
+    """One line naming the pages this conversation has LOOKED AT with the
+    page and zoom tools, per document, in a viewer's page numbers; ``""``
+    when none are recorded.
+
+    Live smoke wave 2b (C7): asked "what pages did you look at?", a model
+    that had viewed all ten sheets said its claim was "stronger than my
+    record supports" and re-read all ten ($1.86, 152 s); 67 of 162 page reads
+    re-read a page an earlier turn had read. The vision tools keep the record
+    (``funhouse_agent.vision_tools.reads_for_conversation``); this puts it in
+    front of the turn."""
+    try:
+        from funhouse_agent.vision_tools import reads_for_conversation
+        reads = reads_for_conversation(folder) if folder else []
+    except Exception:  # noqa: BLE001 - a missing record is no record
+        return ""
+    if not reads:
+        return ""
+    docs: Dict[str, Dict[str, set]] = {}
+    order: List[str] = []
+    for r in reads:
+        name = str(r.get("document") or "").strip()
+        page = r.get("pdf_page")
+        if not name or not isinstance(page, int):
+            continue
+        if name not in docs:
+            docs[name] = {"whole": set(), "tiled": set(), "zoom": set()}
+            order.append(name)
+        view = r.get("view")
+        if isinstance(view, str) and "tiles" in view:
+            docs[name]["tiled"].add(page)
+            docs[name]["whole"].add(page)
+        elif view == "page" or view is None:
+            docs[name]["whole"].add(page)
+        else:
+            docs[name]["zoom"].add(page)
+    parts = []
+    for name in order:
+        d = docs[name]
+        bits = []
+        if d["whole"]:
+            bits.append(f"whole page p. {_page_list(sorted(d['whole']))}")
+        if d["tiled"]:
+            bits.append(f"also in tiles p. {_page_list(sorted(d['tiled']))}")
+        if d["zoom"]:
+            bits.append(f"zoomed on p. {_page_list(sorted(d['zoom']))}")
+        if bits:
+            parts.append(f"'{name}': " + "; ".join(bits))
+    if not parts:
+        return ""
+    line = ("Already LOOKED AT in this conversation (page and zoom tools, "
+            "PDF pages as a viewer counts them): " + " | ".join(parts) + ".")
+    if len(line) > READS_NOTE_MAX_CHARS:
+        line = line[:READS_NOTE_MAX_CHARS - 40].rsplit(" | ", 1)[0] + \
+            " | ... (more not listed)."
+    return line + (" Use this when asked what you looked at; look again only "
+                   "when the question needs something those reads did not "
+                   "cover. Text you read (read_document, search) is not in "
+                   "this list.")
+
+
 def working_files_note(files_dir: str, transcript: Iterable[dict] = (),
                        exclude_text: str = "",
-                       limit: int = WORKING_FILES_NOTE_MAX) -> str:
+                       limit: int = WORKING_FILES_NOTE_MAX,
+                       reads_folder: Optional[str] = None) -> str:
     """The "[System note]" naming the files this conversation already holds,
     for the front of the current turn's message; ``""`` when there are none.
+
+    ``reads_folder`` is the working folder the turn is bound to (the key of
+    the vision tools' record of pages looked at, :func:`reads_note`);
+    ``None`` uses ``files_dir``.
 
     Sources, all already on disk: ``attachments.json`` (the user's uploads),
     the downloads ledger (SharePoint files fetched to read, with where they
@@ -2398,7 +2822,8 @@ def working_files_note(files_dir: str, transcript: Iterable[dict] = (),
         rows.append(f"- '{_note_name(ap, fd)}' ({size}): "
                     f"{info.get('origin', 'in the folder')}{where}{when}"
                     f"{what}")
-    if not rows:
+    looked = reads_note(reads_folder or files_dir)
+    if not rows and not looked:
         return ""
     skipped = max(0, len(rows) - int(limit))
     rows = rows[-int(limit):] if skipped else rows
@@ -2409,11 +2834,15 @@ def working_files_note(files_dir: str, transcript: Iterable[dict] = (),
             "by these names -- every file tool looks a name up in the "
             "working folder -- and do not fetch them again; do not tell "
             "the user a file is unavailable, or that you never had it, while "
-            "it is listed here. Which pages of a file you actually read is "
-            "only in your earlier answers.")
+            "it is listed here.")
+    head += (" The pages you looked at are listed after the files; which "
+             "pages you read as text is only in your earlier answers."
+             if looked else
+             " Which pages of a file you actually read is only in your "
+             "earlier answers.")
     if skipped:
         head += f" (The {skipped} oldest are not listed; list_files shows all.)"
-    return "\n".join([head] + rows)
+    return "\n".join([head] + rows + ([looked] if looked else []))
 
 
 def with_turn_note(messages: list, note: Optional[str]) -> list:

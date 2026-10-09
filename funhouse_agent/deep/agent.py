@@ -57,6 +57,8 @@ from funhouse_agent.deep.limits import (
 from funhouse_agent.deep.scratch_guard import ScratchFilesystemGuard
 from funhouse_agent.deep.unknown_tool import UnknownToolHint
 from funhouse_agent.deep.delivered_log import DeliveredToolResults
+from funhouse_agent.deep.tool_guards import (HideScratchFilesystem,
+                                             OutputLimitGuard, ToolErrorGuard)
 from funhouse_agent.deep.calculate_tool import make_calculate_tool
 
 try:  # the spec deepagents auto-adds; re-declared below to carry the guard
@@ -1195,18 +1197,26 @@ def build_deep_agent(
     for spec in subagents:
         # DeliveredToolResults first: it logs what the guards below made of
         # each result, as the model receives it (live smoke wave 1, G11).
-        extra_mw = [DeliveredToolResults(), ScratchFilesystemGuard()]
+        # ToolErrorGuard next: a tool that raises is a tool error, not the
+        # end of the turn (wave 2b, C3); OutputLimitGuard last: a reply cut
+        # at the output limit is caught before anything acts on it (C5).
+        extra_mw = [DeliveredToolResults(), ToolErrorGuard(),
+                    ScratchFilesystemGuard()]
         scope = _call_scope.get(spec.get("name"))
         if scope and "runnable" not in spec:
             extra_mw.append(UnknownToolHint(scope))
+        if "runnable" not in spec:
+            extra_mw.append(OutputLimitGuard())
         spec["middleware"] = list(spec.get("middleware") or []) + extra_mw
     if (_GENERAL_PURPOSE_SPEC is not None
             and not any(s.get("name") == "general-purpose" for s in subagents)):
         subagents.append({**_GENERAL_PURPOSE_SPEC,
                           "middleware": [DeliveredToolResults(),
+                                         ToolErrorGuard(),
                                          ScratchFilesystemGuard()]
                           + ([UnknownToolHint(allowed_agents)]
-                             if allowed_agents else [])})
+                             if allowed_agents else [])
+                          + [OutputLimitGuard()]})
     if coverage.on:
         # Every helper's reads count: the field session's helper read page
         # ranges the primary never saw (FINDINGS P3).
@@ -1240,11 +1250,23 @@ def build_deep_agent(
     # First of the app's tool middleware: logs each result as the model
     # receives it, after the guards below (live smoke wave 1, G11).
     middleware.append(DeliveredToolResults())
+    # A tool that raises is a tool error the model reads, not the end of the
+    # turn (live smoke wave 2b, C3).
+    middleware.append(ToolErrorGuard())
     middleware.append(ScratchFilesystemGuard())
     if allowed_agents:
         middleware.append(UnknownToolHint(allowed_agents))
+    if review_page:
+        # The Document Review page: deepagents' scratch-filesystem tools see
+        # none of the user's files and answered "not found" for them (wave
+        # 2b, F41); they are kept off this page's menu and prompt.
+        middleware.append(HideScratchFilesystem())
     if coverage.on:
         middleware.append(coverage.primary())
+    # Last: a reply cut at the output-token limit is caught before anything
+    # acts on it -- a cut tool call is not run, cut text is continued
+    # (wave 2b, C5).
+    middleware.append(OutputLimitGuard())
     create_kwargs["middleware"] = middleware
 
     if store is not None:

@@ -158,7 +158,7 @@ def test_build_deep_agent_vision_reachable_through_wrapped_model():
     tools = build_primary_tools(
         allowed_agents=ANALYSIS_MODULES,
         engine=engine,
-        attachments={"site": b"png-bytes"},
+        attachments={"site": b"\x89PNG\r\n\x1a\npng-bytes"},
     )
     analyze = next(t for t in tools if t.name == "analyze_image")
     out = json.loads(analyze.invoke({"attachment_key": "site",

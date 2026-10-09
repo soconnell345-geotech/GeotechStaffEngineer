@@ -141,7 +141,14 @@ class VisionProfile:
 
 
 _CACHE: Dict[Any, VisionProfile] = {}
+#: Guards the cache and the in-flight table; never held while probing.
 _LOCK = threading.Lock()
+#: Probes running now, by model: their finish is awaited, not repeated.
+_INFLIGHT: Dict[Any, threading.Event] = {}
+
+#: Longest a vision call waits for ANOTHER call's probe of its model before
+#: going ahead with the configured budget (seconds).
+PROBE_WAIT_S = 60.0
 
 
 def enabled() -> bool:
@@ -181,8 +188,32 @@ def _image_content(b64: str, detail: str):
             {"type": "text", "text": "Reply with OK."}]
 
 
+def _parallel(calls):
+    """Run ``calls`` (zero-argument callables) at once, each in a copy of
+    this context (so a run's callbacks still see it); returns
+    ``[("ok", value) | ("error", exc), ...]`` in order."""
+    import contextvars
+    from concurrent.futures import ThreadPoolExecutor
+    out = []
+    with ThreadPoolExecutor(max_workers=max(1, len(calls)),
+                            thread_name_prefix="vision-probe") as pool:
+        futures = [pool.submit(contextvars.copy_context().run, c)
+                   for c in calls]
+        for f in futures:
+            try:
+                out.append(("ok", f.result()))
+            except Exception as exc:  # noqa: BLE001 - sorted by the caller
+                out.append(("error", exc))
+    return out
+
+
 def probe(model) -> VisionProfile:
-    """Measure ``model`` (a LangChain chat model). Never raises."""
+    """Measure ``model`` (a LangChain chat model). Never raises.
+
+    The four calls go out AT ONCE (live smoke wave 2b, C10: one after the
+    other they took 23 s before the first vision call of every process
+    could start); the host-edge call 5, which needs call 4's answer,
+    follows."""
     prof = VisionProfile()
     try:
         from planlens.document.budget import (
@@ -191,19 +222,25 @@ def probe(model) -> VisionProfile:
         prof.error = "planlens has no budget_from_probe (needs 0.9)"
         return prof
     try:
-        base, answered = _call(model, "Reply with OK.")
-        prof.answered_by = answered
         small_b64 = _blank_png(PROBE_SMALL_PX)
         large_b64 = _blank_png(PROBE_LARGE_PX)
-        small, a1 = _call(model, _image_content(small_b64, "high"))
-        large, a2 = _call(model, _image_content(large_b64, "high"))
-        prof.answered_by = prof.answered_by or a1 or a2
-        try:
-            orig, _ = _call(model, _image_content(large_b64, "original"))
-        except Exception as exc:          # refused: original unsupported
+        got = _parallel([
+            lambda: _call(model, "Reply with OK."),
+            lambda: _call(model, _image_content(small_b64, "high")),
+            lambda: _call(model, _image_content(large_b64, "high")),
+            lambda: _call(model, _image_content(large_b64, "original")),
+        ])
+        for status, value in got[:3]:
+            if status == "error":
+                raise value
+        (base, answered), (small, a1), (large, a2) = (v for _, v in got[:3])
+        prof.answered_by = answered or a1 or a2
+        if got[3][0] == "ok":
+            orig = got[3][1][0]
+        else:                             # refused: original unsupported
             orig = None
             prof.ratios["original_refused"] = 1.0
-            log.info("vision probe: detail=original refused: %s", exc)
+            log.info("vision probe: detail=original refused: %s", got[3][1])
         if None not in (base, small, large):
             toks = {"small_high": small - base, "large_high": large - base}
             if orig is not None:
@@ -250,7 +287,12 @@ def profile_for(model) -> Optional[VisionProfile]:
     """The cached profile for ``model``, probing it the first time.
 
     ``None`` when probing is switched off. One probe per model per process,
-    even when several conversations ask at once.
+    even when several conversations ask at once: the first caller probes,
+    and a call for the SAME model meanwhile waits for that probe (at most
+    :data:`PROBE_WAIT_S`, then goes ahead on the configured budget, ``None``)
+    rather than probing again. The process-wide lock is no longer held
+    while a probe runs (live smoke wave 2b, C10: every tester's vision call,
+    whatever its model, queued behind one 23 s probe).
     """
     if model is None or not enabled():
         return None
@@ -259,8 +301,27 @@ def profile_for(model) -> Optional[VisionProfile]:
         cached = _CACHE.get(key)
         if cached is not None:
             return cached
+        running = _INFLIGHT.get(key)
+        if running is None:
+            running = _INFLIGHT[key] = threading.Event()
+            mine = True
+        else:
+            mine = False
+    if not mine:
+        running.wait(PROBE_WAIT_S)
+        with _LOCK:
+            return _CACHE.get(key)
+    prof = None
+    try:
         prof = probe(model)
-        _CACHE[key] = prof
+    except Exception as exc:  # noqa: BLE001 - probe() never raises; belt
+        prof = VisionProfile(error=f"{type(exc).__name__}: {exc}"[:300])
+    finally:
+        with _LOCK:
+            if prof is not None:
+                _CACHE[key] = prof
+            _INFLIGHT.pop(key, None)
+        running.set()
     log.info("vision model: %s", prof.summary())
     return prof
 

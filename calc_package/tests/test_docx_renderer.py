@@ -105,8 +105,11 @@ def test_bold_italic_and_inline_code_survive_as_runs(rendered):
     assert any(r.italic and "interpreted" in r.text for r in par.runs)
     assert any(r.font.name == "Consolas" and "analyze_bearing" in r.text
                for r in par.runs)
-    # A soft line break inside a paragraph stays one paragraph.
-    assert "not\nmeasured" not in par.text and "not measured" in par.text
+    # A line break inside a paragraph stays one paragraph AND stays a line
+    # break (live smoke wave 2a, B4: "June 2026" and "Status: DRAFT" were
+    # run together when a soft break was read the CommonMark way, as a space).
+    assert "not\nmeasured" in par.text
+    assert sum(p.text.startswith("Borings were") for p in doc.paragraphs) == 1
 
 
 def test_lists_use_word_list_styles_with_one_level_of_nesting(rendered):

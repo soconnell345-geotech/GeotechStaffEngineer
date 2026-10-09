@@ -78,7 +78,9 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   file-reading TOOLS, not the scratch filesystem.** `read_file` failing on a
   real path does NOT mean the file is unreachable — the file-reading tools open
   REAL paths directly. A text file (HTML, TXT, CSV, JSON — including a report
-  source written earlier in the conversation) is `read_text_file`. To REVIEW a
+  source written earlier in the conversation) is `read_text_file`, and so is a
+  Word (.docx) or Excel (.xlsx, .xlsm) file, which it reads as Markdown. To
+  REVIEW a
   PDF — a report, drawing set, submittal or
   calc package, where the answer may be in prose, a table, a drawing sheet or a
   reviewer's markup — start with **`open_document`** (attachment key or real
@@ -347,18 +349,20 @@ _REVIEW_HOW_YOU_READ = """\
 - **Follow `next` cursors.** A long result continues through them; do not
   assume you saw everything."""
 
-#: The legacy agent has deepagents' scratch filesystem; the lean one does not,
-#: so its prompt never mentions it.
-_REVIEW_SOURCES = """\
-- Any tool that takes a `source` accepts an attachment key or a real path.
-  `read_text_file` reads a plain text, HTML, CSV or JSON file; `list_files`
-  lists a real folder. The scratch filesystem (`ls`, `read_file`,
-  `write_file`) is your own notebook for the session, NOT the real disk."""
-
+#: Neither review agent shows the model deepagents' scratch filesystem: the
+#: lean one never had it, and the legacy build keeps it off the menu since
+#: live smoke wave 2b (``tool_guards.HideScratchFilesystem``), so neither
+#: prompt mentions it. ``read_text_file`` reads Word and Excel files as
+#: Markdown (``funhouse_agent.office_text``), and ``open_document`` reads
+#: them, and a DXF, as text.
 _REVIEW_SOURCES_LEAN = """\
 - Any tool that takes a `source` accepts an attachment key or a real path.
-  `read_text_file` reads a plain text, HTML, CSV or JSON file; `list_files`
-  lists a real folder."""
+  `read_text_file` reads a plain text, HTML, CSV or JSON file, and a Word
+  (.docx) or Excel (.xlsx, .xlsm) file as Markdown; `open_document` reads
+  those too, and a DXF drawing as its text and entities (none of them has
+  pages to look at). `list_files` lists a real folder."""
+
+_REVIEW_SOURCES = _REVIEW_SOURCES_LEAN
 
 _REVIEW_HAND_BACK = """\
 ## What you hand back

@@ -395,7 +395,7 @@ class Session:
 
     # -- app.py: _stage_files / _queue_orientation ----------------------------
     def _stage_files(self, pairs) -> list:
-        from webapp import core
+        from webapp import core, profiles
         ss = self.ss
         atts = core.stage_uploads(ss.attachments, ss.temp_dir, pairs)
         ss.pending_notes.append(core.attachment_note(
@@ -410,6 +410,10 @@ class Session:
             ss.save_error = None
         except Exception as exc:
             ss.save_error = f"{type(exc).__name__}: {exc}"
+        # as app.py: a document added later joins the conversation's title
+        _keys = [a.key for a in atts]
+        if profiles.orient_on_upload(_keys, ss.transcript):
+            core.retitle_for_upload(ss.thread_id, _keys)
         return atts
 
     def _queue_orientation(self, atts) -> None:

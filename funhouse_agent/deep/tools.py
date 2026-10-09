@@ -777,6 +777,22 @@ def make_core_tools(
 #: planlens is framework-neutral and cannot know where a file belongs or who
 #: is signing the review; both are settled here, so the model is told.
 _DOCUMENT_TOOL_NOTES = {
+    # Live smoke wave 2b, C2 / C8: MuPDF read a workbook as nine digits and
+    # could not open a DXF; both are read as text by the app instead.
+    "open_document": (
+        " In this app it also opens a Word (.docx), Excel (.xlsx, .xlsm) or "
+        "DXF file -- not as pages but as text: a Word or Excel file as "
+        "Markdown (one table per sheet), a DXF as its text, leaders and "
+        "dimensions with their positions, layers and entity counts. Its file "
+        "name is then its handle for read_document (start_line pages "
+        "through it) and search_document; the page, markup and vision tools "
+        "do not apply to it."),
+    "read_document": (
+        " For a Word, Excel or DXF file, handle is its file name and "
+        "start_line pages through its lines (pages does not apply)."),
+    "search_document": (
+        " For a Word, Excel or DXF file, handle is its file name; hits are "
+        "its lines."),
     "annotate_document": (
         " In this app give output_path a bare file name: it is written into "
         "this conversation's working folder, attached to the reply as a "
@@ -793,7 +809,13 @@ _DOCUMENT_TOOL_NOTES = {
         "target, label or quoted words name — or, naming none, the thing "
         "their comment is about — and which are misplaced. Never hand over "
         "a file with misplaced marks: find those things again and rewrite "
-        "the copy with append=false."),
+        "the copy with append=false. To change or delete ONE mark of a "
+        "marked copy you wrote, call again with output_path = that copy and "
+        "remove = [its id as document_markups lists it on that copy, e.g. "
+        "'p0.m1', or words from its comment]; the marks you give in markups "
+        "are added, every other mark stays (only this app's marks can be "
+        "removed; ids change after a removal, so list them again before "
+        "removing another)."),
 }
 
 
@@ -975,9 +997,14 @@ def make_vision_tools(
         return _dispatch("read_pdf_text", args)
 
     def read_text_file(path: str, offset: int = 0, max_chars: int = 6000) -> str:
-        """Read a text file this conversation holds -- HTML, TXT, CSV, JSON,
-        MD, such as a report source written earlier. The scratch filesystem's
-        ``read_file`` cannot see it. ``path`` is a file name in the working
+        """Read a file this conversation holds as text -- HTML, TXT, CSV,
+        JSON, MD, such as a report source written earlier -- and a Word
+        (.docx) or Excel (.xlsx) file as Markdown: a .docx in write_docx's
+        own dialect (headings, numbered/bulleted lists, tables, bold/italic,
+        line breaks), so a memo can be read, edited and written back with
+        write_docx without its layout drifting; an .xlsx as one table per
+        sheet with the sheet names. The scratch filesystem's ``read_file``
+        cannot see these files. ``path`` is a file name in the working
         folder (a relative path is inside it); long files page with
         ``offset`` (the result gives ``next_offset``)."""
         return _dispatch("read_text_file",
@@ -1248,37 +1275,47 @@ def make_vision_tools(
 
     def annotate_document(handle: str, markups: Optional[list] = None,
                           output_path: str = "",
-                          append: bool = True, check: bool = True) -> str:
+                          append: bool = True, check: bool = True,
+                          remove: Optional[list] = None) -> str:
         """Write review comments onto a COPY of the PDF (planlens' own words
         describe the markups; this app resolves the output file and signs
         them). ``check`` (default on) looks at every mark on the marked copy,
         however it was anchored, and reports which are misplaced.
+
+        ``remove`` takes marks this app wrote out of an existing marked copy
+        (``output_path``) first -- each a markup id as document_markups lists
+        it on that copy (``"p0.m1"``) or words from its comment naming one
+        mark -- so ``remove`` plus ``markups`` changes one mark and keeps the
+        rest (live smoke wave 2b, C4: one comment was changed by rebuilding
+        all nineteen).
+
+        The copy is written to a temporary file and swapped in, after any
+        handle this conversation holds on it is closed (C4: MuPDF could not
+        save over a copy the toolkit held open on Windows, and the error
+        ended the turn).
 
         The signature is ALWAYS the app's (``markup_author``: the signed-in
         person via this app, as an AI draft), never the model's: brief 5
         caught an agent signing "AI Draft Review" unasked, which dropped the
         reviewer's name from every comment. So there is no ``author``
         argument."""
-        args = {
-            "handle": handle,
-            "output_path": _document_tools.markup_output_path(output_path,
-                                                              handle),
-            "markups": markups or [],
-            "author": markup_author or _document_tools.markup_author(),
-            "append": append,
-        }
-        raw = _dispatch("annotate_document", args)
+        from funhouse_agent._fileio import hide_working_folder
+        from funhouse_agent.error_text import tool_error
+        try:
+            result = _document_tools.write_marked_copy(
+                handle, markups, output_path, append,
+                markup_author or _document_tools.markup_author(),
+                lambda args: _dispatch("annotate_document", args),
+                remove=remove)
+        except Exception as exc:  # noqa: BLE001 - a tool error, not the turn's
+            return json.dumps(hide_working_folder(
+                tool_error("annotate_document", exc)))
         # The check opens the marked copy by its ABSOLUTE path; the model is
         # handed the conversation-relative name, AFTER the check, so no
         # server path reaches it (live smoke 2a, B9: the last A6 leak). The
         # file tools resolve that name in the working folder.
-        from funhouse_agent._fileio import hide_working_folder
-        try:
-            result = json.loads(raw)
-        except ValueError:              # an error string, or a cut result
-            return hide_working_folder(raw)
         if not isinstance(result, dict):
-            return raw
+            return json.dumps(hide_working_folder({"error": str(result)}))
         out_pdf = result.get("output_path")
         if check and out_pdf and os.path.isfile(out_pdf) \
                 and "error" not in result:
@@ -1287,8 +1324,9 @@ def make_vision_tools(
                 block = markup_check.check_marks(out_pdf, result,
                                                  list(markups or []), engine)
             except Exception as exc:  # noqa: BLE001 - the file is written either way
-                block = {"error": f"the placement check failed: "
-                                  f"{type(exc).__name__}: {exc}"}
+                from funhouse_agent.error_text import error_line
+                block = {"error": "the placement check failed: "
+                                  + error_line(exc)}
             if block is not None:
                 result["check"] = block
         return json.dumps(hide_working_folder(result))
@@ -1364,13 +1402,12 @@ def make_vision_tools(
         and tell the user. For a Mathcad-style CALCULATION package use the
         ``calc_package`` module via ``call_agent`` instead.
         """
-        return _with_saved_note(
-            _dispatch(
-                "write_docx",
-                {"path": path, "markdown": markdown, "title": title},
-            ),
-            save_fn,
-        )
+        args = {"path": path, "markdown": markdown, "title": title}
+        if markup_author:
+            # File > Info names the signed-in person (via the app), not
+            # "python-docx" (live smoke wave 2a, B4).
+            args["_author"] = markup_author
+        return _with_saved_note(_dispatch("write_docx", args), save_fn)
 
     def plot_data(series: list, title: str = "", xlabel: str = "",
                   ylabel: str = "", depth_axis: bool = False,
@@ -1443,10 +1480,15 @@ def make_vision_tools(
         ),
         "read_text_file": (
             read_text_file,
-            "Read a text file this conversation holds (HTML, TXT, CSV, JSON, "
-            "MD -- e.g. a report source written earlier), by its name in the "
-            "working folder. The scratch read_file cannot see it. Pages with "
-            "offset / next_offset.",
+            "Read a file this conversation holds, by its name in the working "
+            "folder: text (HTML, TXT, CSV, JSON, MD -- e.g. a report source "
+            "written earlier) as it is; a Word .docx as Markdown in "
+            "write_docx's own dialect (headings, lists, tables, bold/italic, "
+            "line breaks), so a memo can be read, edited and written back "
+            "with write_docx without drifting; an Excel .xlsx as one "
+            "Markdown table per sheet, with the sheet names. The scratch "
+            "read_file cannot see these files. Pages with offset / "
+            "next_offset.",
         ),
         "analyze_image": (
             analyze_image,

@@ -42,7 +42,17 @@ KEY_ENV = "ANTHROPIC_API_KEY"
 
 #: Env var overriding the per-response output token cap.
 MAX_TOKENS_ENV = "GEOTECH_WEBAPP_MAX_TOKENS"
-DEFAULT_MAX_TOKENS = 8192
+#: The per-response output cap every engine the app builds sends
+#: (``max_tokens`` / ``max_completion_tokens`` / ``max_output_tokens``).
+#: Live smoke wave 2b (C5): at 8,192 a long tool call was cut silently --
+#: F40 sent one cut save_file five times, F42's transcription stopped
+#: mid-sentence -- and on GPT-5.x the same cap must also hold the reasoning
+#: tokens. 32,000 holds a Word memo, a markup batch or a whole-page
+#: transcription with reasoning room, and is within every production
+#: model's own output limit (GPT-5.1 / 5.4 / Sol: 128K; GPT-4.1: 32,768;
+#: Claude Opus 4.x and later: 32,000 or more). A cut reply is still caught
+#: (``funhouse_agent.deep.tool_guards.OutputLimitGuard``).
+DEFAULT_MAX_TOKENS = 32000
 
 #: Deployment-supplied model builder (the Prompter hook). Set via
 #: register_model_builder; None means "not injected".

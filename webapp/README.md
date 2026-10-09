@@ -53,7 +53,7 @@ per-response output.
 
 ```bash
 export GEOTECH_WEBAPP_MODEL=claude-sonnet-5      # startup default (any Claude id)
-export GEOTECH_WEBAPP_MAX_TOKENS=8192            # per-response output cap
+export GEOTECH_WEBAPP_MAX_TOKENS=32000           # per-response output cap (the default)
 ```
 
 ### Tracing (turn details on by default) — and the always-on activity log

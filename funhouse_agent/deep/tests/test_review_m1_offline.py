@@ -562,19 +562,24 @@ def test_inline_analyze_image_of_a_file_is_shown_not_described(sheet_png):
         tool, eng = _analyze_image(True, {"photo.png": fh.read()})
     out = json.loads(tool.invoke({"attachment_key": "photo.png"}))
     assert out == {"analysis": "seen"} and len(eng.prompts) == 1
-    # switch off: unchanged
+    # switch off: unchanged (the same read again in this conversation would
+    # be served as a repeat, B6 — forget it so the call is made)
+    from funhouse_agent.vision_tools import clear_repeat_reads
+    clear_repeat_reads()
     tool, eng = _analyze_image(False)
     out = json.loads(tool.invoke({"attachment_key": sheet_png}))
     assert out == {"analysis": "seen"} and len(eng.prompts) == 1
 
 
-def test_inline_analyze_image_keeps_the_call_for_what_it_cannot_show(
-        tmp_path):
+def test_inline_analyze_image_refuses_what_is_not_an_image(tmp_path):
+    """A text file is not shown and not sent as a picture: it is refused,
+    naming the tool that reads it (wave 2b, C6: every file used to go out
+    labelled PNG, and an .xlsx came back as a 400 from the API)."""
     not_image = tmp_path / "work" / "notes.txt"
     not_image.write_text("plain text", encoding="utf-8")
     tool, eng = _analyze_image(True)
     out = json.loads(tool.invoke({"attachment_key": str(not_image)}))
-    assert out == {"analysis": "seen"} and len(eng.prompts) == 1
+    assert "read_text_file" in out["error"] and eng.prompts == []
 
 
 def test_the_lean_inline_agent_sees_the_contact_sheet(sheet_png, monkeypatch):

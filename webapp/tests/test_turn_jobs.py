@@ -103,7 +103,10 @@ class TestWorkerPersistsWithoutFollower:
         assert "engine exploded" in (job.result["error"] or "")
         saved = core.load_transcript(tid)
         assert saved[-1].get("error")
-        assert saved[-1]["text"].startswith("partial")
+        # Live smoke wave 2b: a failed turn shows the friendly error under
+        # one plain line, not the raw stream ("partial ") -- a partial worth
+        # keeping is kept, labelled as cut short (test_wave2b_turns.py).
+        assert saved[-1]["text"] == core.NOTHING_KEPT
 
 
 class TestFollowSemantics:

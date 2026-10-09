@@ -41,7 +41,14 @@ connects it to the app:
   (:func:`markup_output_path`), so the marked-up PDF gets a download card and
   rides the SharePoint mirror like anything else the agent saves, and every
   comment is signed :data:`DEFAULT_MARKUP_AUTHOR` unless the deployment or the
-  call says otherwise.
+  call says otherwise. It is written to a temporary file and swapped in
+  (:func:`write_marked_copy`), and one mark can be removed or replaced by its
+  id (live smoke wave 2b, C4);
+- a Word, Excel or DXF file is read as TEXT (:func:`_side_document`): Word
+  and Excel as Markdown, a DXF as its text and entities -- never through
+  MuPDF (wave 2b, C2 / C8);
+- no document tool raises: an error comes back as JSON with no server path
+  (wave 2b, C3).
 
 Tools and parameters planlens gained after the version this app pins are
 FEATURE-DETECTED from the installed package's own specs
@@ -436,7 +443,15 @@ def dispatch_document_tool(name: str, arguments: Dict[str, Any],
                            cap: Optional[int] = None) -> str:
     """Run one document tool; returns a JSON string within ``max_chars``
     (``cap``, when given, is the host's own limit: the viewer page numbers
-    are added only while the result stays under it)."""
+    are added only while the result stays under it).
+
+    It never raises (live smoke wave 2b, C3: MuPDF's ``FzErrorSystem`` out
+    of ``annotate_document`` ended a tester's whole turn and showed the
+    server path): an error comes back as ``{"error", "hint"}`` with no
+    server path in it, and the conversation goes on. A Word, Excel or DXF
+    file is read here as text (:func:`_side_document`), never through
+    MuPDF, which read a workbook as nine digits (C2) and could not open a
+    DXF at all (C8)."""
     if not available():
         return json.dumps({
             "error": "document tools need planlens with planlens.tools "
@@ -444,16 +459,24 @@ def dispatch_document_tool(name: str, arguments: Dict[str, Any],
             "hint": "pip install -U planlens"})
     # A shallow snapshot: the host mutates its attachments dict between turns.
     token = _ATTACHMENTS.set(dict(attachments or {}))
-    space = _space(hold=True)
+    space = None
     opened_note = None
     try:
+        space = _space(hold=True)
         arguments = dict(arguments or {})
+        side = _side_document(name, arguments, max_chars)
+        if side is not None:
+            return side
         refused, opened_note = _as_handle_or_source(space, name, arguments)
         if refused is not None:
             return refused
         out = space.kit.call_json(name, arguments, max_chars=max_chars)
+    except Exception as exc:  # noqa: BLE001 - a tool error, never the turn's
+        from funhouse_agent.error_text import tool_error_json
+        return tool_error_json(name, exc)
     finally:
-        _release(space)
+        if space is not None:
+            _release(space)
         _ATTACHMENTS.reset(token)
     # The margin planlens was given below the host's cap is where the viewer
     # page numbers fit; a result they would push past it goes out as it came.
@@ -563,15 +586,56 @@ def _short_image_paths(result: str) -> str:
 
 _PAGE_HEADER = re.compile(r"=== page (\d+)( continued)?")
 
+#: A planlens page-range string ("0-2,5,7-9").
+_RANGES = re.compile(r"^\s*\d+(?:\s*-\s*\d+)?(?:\s*,\s*\d+(?:\s*-\s*\d+)?)*\s*$")
+
+
+def _viewer_ranges(text: str) -> str:
+    """``"0-2,5"`` -> ``"1-3,6"``: a 0-based range string as a viewer counts."""
+    return re.sub(r"\d+", lambda m: str(int(m.group(0)) + 1),
+                  re.sub(r"\s+", "", text))
+
+
+def _is_pages_key(key: Any) -> bool:
+    """A key that holds page indexes (``pages``, ``pages_to_view``,
+    ``duplicate_pages``, ``pages_with_hits`` ...), never a cursor."""
+    k = str(key)
+    return k != "next" and not k.startswith("pdf_") and (
+        k == "pages" or k.startswith("pages_") or k.endswith("_pages"))
+
+
+def _viewer_pages_value(value: Any) -> Any:
+    """The viewer's numbering of a page-range value, or ``None`` when it is
+    not one: a range string, a ``{kind: ranges}`` map, or a
+    ``{"<page>": n}`` map."""
+    if isinstance(value, str) and _RANGES.match(value):
+        return _viewer_ranges(value)
+    if isinstance(value, dict) and value:
+        if all(str(k).isdigit() for k in value):
+            return {str(int(k) + 1): v for k, v in value.items()}
+        if all(isinstance(v, str) and _RANGES.match(v)
+               for v in value.values()):
+            return {k: _viewer_ranges(v) for k, v in value.items()}
+    return None
+
 
 def _viewer_pages(obj: Any) -> Any:
     if isinstance(obj, dict):
         out: Dict[str, Any] = {}
         for k, v in obj.items():
-            out[k] = _viewer_pages(v)
+            # A cursor ("next") is handed back to the tool as it is: no
+            # viewer numbers in it to be mistaken for an argument.
+            out[k] = v if k == "next" else _viewer_pages(v)
             if (k == "page" and isinstance(v, int) and not isinstance(v, bool)
                     and "pdf_page" not in obj):
                 out["pdf_page"] = v + 1
+            elif _is_pages_key(k) and f"pdf_{k}" not in obj:
+                # Live smoke wave 2b (C9): a single page had its viewer
+                # number, a range did not, and chapter starts were cited one
+                # page low. Every range now carries the viewer's numbers too.
+                shown = _viewer_pages_value(v)
+                if shown is not None:
+                    out[f"pdf_{k}"] = shown
         return out
     if isinstance(obj, list):
         return [_viewer_pages(v) for v in obj]
@@ -589,8 +653,12 @@ def with_viewer_pages(result: str, limit: Optional[int] = None) -> str:
     cite "page 28"; a reader opening the file in Bluebeam or Acrobat finds
     that content on page 29. Every citation drawn from a result with no
     printed page number was one page early (review of 2026-09-26). So each
-    ``"page": n`` gains ``"pdf_page": n + 1`` and each ``=== page n`` header
-    in read text gains ``[pdf_page n+1]`` — the number the prompt says to cite.
+    ``"page": n`` gains ``"pdf_page": n + 1``, each ``=== page n`` header
+    in read text gains ``[pdf_page n+1]`` — the number the prompt says to cite
+    — and each page RANGE (``"pages": "0-12"``, ``pages_by_kind``,
+    ``pages_to_view``, ``pages_with_hits`` ...) gains a ``pdf_`` twin in the
+    viewer's numbers (``"pdf_pages": "1-13"``; live smoke wave 2b, C9). The
+    tools still TAKE 0-based pages, as their descriptions say.
     Unparseable results, and results the additions would push past
     ``limit``, are returned unchanged.
     """
@@ -605,6 +673,687 @@ def with_viewer_pages(result: str, limit: Optional[int] = None) -> str:
     if limit is not None and len(out) > limit:
         return result
     return out
+
+
+# ---------------------------------------------------------------------------
+# Word, Excel and DXF files: read as text, never as pages
+# ---------------------------------------------------------------------------
+# Live smoke wave 2b. C2: an .xlsx fetched from SharePoint went to MuPDF's
+# Office conversion, which dropped every shared-string cell; read_document
+# returned "0 0 0 0 0 1 0 1 0" and the tester was told three times their log
+# was "probably damaged". C8: a DXF could not be opened at all ("could not
+# open ... as a PDF or image: FileDataError"), though planlens reads DXF
+# exactly (planlens.ir.ingest.from_dxf). Both are now read here, by name:
+# open_document returns the text (and, for a DXF, its layers and entities),
+# read_document pages through it by line, search_document finds lines in it.
+# The file's NAME stands in for a handle -- there are no pages to hand to the
+# page, markup and vision tools, and those say so instead of guessing.
+
+#: Word and Excel files (the older .doc / .xls are named so the reader can
+#: say what to save them as).
+OFFICE_DOCUMENT_EXTENSIONS = (".docx", ".xlsx", ".xlsm", ".doc", ".xls")
+#: CAD drawings read as data.
+CAD_DOCUMENT_EXTENSIONS = (".dxf",)
+#: Tools that work on such a file (the rest need pages).
+SIDE_READ_TOOLS = ("open_document", "read_document", "search_document")
+#: Files read this way kept in memory (by path, mtime and size).
+_SIDE_CACHE_MAX = 16
+_SIDE_CACHE: "OrderedDict[tuple, Dict[str, Any]]" = OrderedDict()
+_SIDE_LOCK = threading.Lock()
+
+
+def side_kind(name: Any) -> Optional[str]:
+    """``"office"`` / ``"cad"`` for a file read as text rather than pages
+    (by its extension), else ``None``."""
+    ext = os.path.splitext(str(name or "").strip())[1].lower()
+    if ext in OFFICE_DOCUMENT_EXTENSIONS:
+        return "office"
+    if ext in CAD_DOCUMENT_EXTENSIONS:
+        return "cad"
+    return None
+
+
+def _side_source(name: str, arguments: Dict[str, Any]) -> Optional[str]:
+    """The Word/Excel/DXF file this call is about, as the model named it (a
+    handle this conversation opened from one counts), or ``None``."""
+    key = "source" if name == "open_document" else "handle"
+    given = str(arguments.get(key) or "").strip()
+    if not given:
+        return None
+    if side_kind(given):
+        return given
+    if looks_like_handle(given):
+        remembered = handle_source(given)
+        if remembered and side_kind(remembered):
+            return remembered
+    return None
+
+
+def _side_path(source: str):
+    """``(path, temporary)`` of a readable copy of ``source``: the file in
+    the working folder, or the attachment's bytes written to a temporary
+    file of the same type. Raises planlens' ``ToolError`` as the document
+    tools do."""
+    resolved = _resolve(source)
+    if isinstance(resolved, (bytes, bytearray)):
+        import tempfile
+        ext = os.path.splitext(source)[1] or ".bin"
+        fd, tmp = tempfile.mkstemp(suffix=ext, prefix="gse_side_")
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(bytes(resolved))
+        return tmp, True
+    return str(resolved), False
+
+
+def _dxf_units_in(path: str) -> Optional[int]:
+    """The ``$INSUNITS`` code a text DXF's header states, if any."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(400_000).decode("latin-1", errors="replace")
+    except OSError:
+        return None
+    m = re.search(r"\$INSUNITS\s*\r?\n\s*70\s*\r?\n\s*(-?\d+)", head)
+    return int(m.group(1)) if m else None
+
+
+#: $INSUNITS codes (DXF reference) -> unit names.
+_INSUNITS_NAMES = {0: None, 1: "in", 2: "ft", 3: "mi", 4: "mm", 5: "cm",
+                   6: "m", 7: "km", 8: "microinches", 9: "mils", 10: "yd"}
+
+
+def _fmt(v: float) -> str:
+    return f"{v:.6g}" if abs(v) < 1e6 else f"{v:.1f}"
+
+
+def _read_cad(path: str, name: str) -> Dict[str, Any]:
+    """A DXF as its text lines (every TEXT/MTEXT/ATTRIB, leader and
+    dimension, in reading order, in DRAWING units) and a summary."""
+    from planlens.dxf.units import UNIT_FACTORS
+    from planlens.ir.ingest import from_dxf
+    code = _dxf_units_in(path)
+    unit = _INSUNITS_NAMES.get(code) if code is not None else None
+    factor = UNIT_FACTORS.get(unit or "", None)
+    # planlens converts to metres by the header's units; reading in the
+    # drawing's own units is what the user's CAD program shows, so the
+    # conversion is undone (a unit planlens does not convert stays as read).
+    ir = from_dxf(filepath=path, units=(unit if factor else "m"))
+    scale = 1.0 / factor if factor else 1.0
+
+    def pt(p) -> str:
+        return f"({_fmt(p[0] * scale)}, {_fmt(p[1] * scale)})"
+
+    rows = []
+    for e in ir.entities:
+        kind = getattr(e, "KIND", "")
+        layer = getattr(e, "layer", None) or "0"
+        if kind == "text":
+            text = " ".join(str(getattr(e, "content", "") or "").split())
+            if text:
+                pos = getattr(e, "position", (0.0, 0.0))
+                rows.append((pos, f"TEXT \"{text}\" at {pt(pos)} "
+                                  f"[layer {layer}]"))
+        elif kind == "leader":
+            verts = list(getattr(e, "vertices", None) or [])
+            tip = verts[0] if verts else (0.0, 0.0)
+            text = " ".join(str(getattr(e, "text", "") or "").split())
+            rows.append((tip, f"LEADER \"{text}\" pointing at {pt(tip)} "
+                              f"[layer {layer}]"))
+        elif kind == "dimension":
+            mid = getattr(e, "text_midpoint", None) or (0.0, 0.0)
+            text = " ".join(str(getattr(e, "text", "") or "").split())
+            meas = getattr(e, "measurement", None)
+            val = (f" = {_fmt(meas * scale)}" if isinstance(meas, (int, float))
+                   and meas else "")
+            rows.append((mid, f"DIMENSION \"{text or '<>'}\"{val} at "
+                              f"{pt(mid)} [layer {layer}]"))
+    # Reading order on a plan: top to bottom, then left to right.
+    rows.sort(key=lambda r: (-round(r[0][1] * scale, 3),
+                             round(r[0][0] * scale, 3)))
+    layers = sorted(ir.counts_by_layer().items(), key=lambda kv: -kv[1])
+    box = ir.bbox()
+    header: Dict[str, Any] = {
+        "kind": "dxf drawing",
+        "read_as": "cad data (exact text and entities, drawing units)",
+        "drawing_units": (unit or "not stated in the file"),
+        "n_entities": len(ir.entities),
+        "entities_by_type": ir.counts_by_type(),
+        "layers": {k: v for k, v in layers[:40]},
+        "n_text_lines": len(rows),
+    }
+    if len(layers) > 40:
+        header["layers_not_listed"] = len(layers) - 40
+    if box is not None:
+        header["extent"] = [float(_fmt(v * scale)) for v in box]
+    if ir.warnings:
+        header["warnings"] = [str(w)[:200] for w in ir.warnings[:5]]
+    header["note"] = (
+        f"'{name}' is a DXF drawing, read as CAD data: every piece of text, "
+        "leader and dimension with its position in drawing units, and the "
+        "layers and entity counts. There are no pages here: it cannot be "
+        "viewed, zoomed or marked up with the page, region or markup tools. "
+        "To LOOK at the sheet or mark it up, ask the user for a PDF plot of "
+        f"it. read_document(handle='{name}', start_line=N) pages through all "
+        f"of its text; search_document(handle='{name}', pattern=...) finds "
+        "text in it.")
+    return {"lines": [r[1] for r in rows], "header": header}
+
+
+def _read_office(path: str, name: str) -> Dict[str, Any]:
+    """A Word or Excel file as Markdown lines (``funhouse_agent.office_text``,
+    the reader read_text_file uses) and what it is."""
+    from funhouse_agent import office_text
+    image_dir = image_ref = None
+    try:
+        from funhouse_agent.vision_tools import SCRATCH_DIR, scratch_dir
+        image_dir = scratch_dir(create=False)
+        image_ref = SCRATCH_DIR if image_dir else None
+    except Exception:  # noqa: BLE001 - pictures are named, not saved
+        image_dir = image_ref = None
+    try:
+        markdown, fields = office_text.read_office(
+            path, image_dir=image_dir, image_ref=image_ref)
+    except TypeError:            # a reader without the picture arguments
+        markdown = office_text.office_to_markdown(path)
+        fields = {}
+    ext = os.path.splitext(name)[1].lower()
+    header: Dict[str, Any] = {
+        "kind": ("word document" if ext in (".docx", ".doc")
+                 else "excel workbook"),
+        "read_as": "markdown"}
+    note = fields.pop("note", None) if isinstance(fields, dict) else None
+    if isinstance(fields, dict):
+        header.update({k: v for k, v in fields.items()
+                       if k not in ("read_as",)})
+    tail = (f" There are no pages here, so the page, markup and vision tools "
+            f"do not apply: read_document(handle='{name}', start_line=N) "
+            f"pages through it, search_document(handle='{name}', "
+            f"pattern=...) finds lines in it, and read_text_file reads it "
+            f"the same way.")
+    header["note"] = (note or f"'{name}' read as Markdown.") + tail
+    return {"lines": str(markdown or "").splitlines(), "header": header}
+
+
+def _side_read(source: str) -> Dict[str, Any]:
+    """The text of a Word/Excel/DXF ``source`` (cached by path, mtime and
+    size). Raises a ``ToolError`` / ``OfficeReadError`` with words fit to
+    show."""
+    path, temporary = _side_path(source)
+    name = os.path.basename(str(source).replace("\\", "/")) or str(source)
+    try:
+        st = os.stat(path)
+        key = (os.path.normcase(os.path.abspath(path)), st.st_mtime_ns,
+               st.st_size)
+        if not temporary:
+            with _SIDE_LOCK:
+                hit = _SIDE_CACHE.get(key)
+                if hit is not None:
+                    _SIDE_CACHE.move_to_end(key)
+                    return hit
+        kind = side_kind(name) or side_kind(path)
+        read = _read_cad(path, name) if kind == "cad" \
+            else _read_office(path, name)
+        read["name"] = name
+        if not temporary:
+            with _SIDE_LOCK:
+                _SIDE_CACHE[key] = read
+                while len(_SIDE_CACHE) > _SIDE_CACHE_MAX:
+                    _SIDE_CACHE.popitem(last=False)
+        return read
+    finally:
+        if temporary:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+
+def _lines_within(lines, start: int, budget: int):
+    """``(text, next_start)``: lines from ``start`` whose JSON fits
+    ``budget``; ``next_start`` is ``None`` at the end."""
+    used, out = 0, []
+    i = start
+    while i < len(lines):
+        size = len(json.dumps(lines[i], ensure_ascii=False)) + 2
+        if out and used + size > budget:
+            return "\n".join(out), i
+        if not out and size > budget:      # one line longer than the room
+            out.append(lines[i][:max(200, budget - 80)] + " ...[line cut]")
+            return "\n".join(out), (i + 1 if i + 1 < len(lines) else None)
+        out.append(lines[i])
+        used += size
+        i += 1
+    return "\n".join(out), None
+
+
+def _side_search(lines, pattern: str, regex: bool, case_sensitive: bool,
+                 fuzzy: bool, min_score: int, max_hits: int):
+    hits = []
+    if regex:
+        rx = re.compile(pattern, 0 if case_sensitive else re.IGNORECASE)
+        test = lambda s: rx.search(s) is not None  # noqa: E731
+    else:
+        needle = pattern if case_sensitive else pattern.lower()
+        test = lambda s: needle in (s if case_sensitive  # noqa: E731
+                                    else s.lower())
+    scorer = None
+    if fuzzy and not regex:
+        try:
+            from rapidfuzz import fuzz
+            scorer = fuzz.partial_ratio
+        except ImportError:
+            scorer = None
+    for i, line in enumerate(lines):
+        if scorer is not None:
+            score = scorer(pattern.lower(), line.lower())
+            if score >= min_score:
+                hits.append({"line": i, "text": line[:400],
+                             "score": round(float(score), 1)})
+        elif test(line):
+            hits.append({"line": i, "text": line[:400]})
+    if scorer is not None:
+        hits.sort(key=lambda h: -h["score"])
+    return hits[:max_hits], len(hits)
+
+
+def _side_document(name: str, arguments: Dict[str, Any],
+                   max_chars: Optional[int]) -> Optional[str]:
+    """The result of a document tool called on a Word, Excel or DXF file,
+    or ``None`` when the call is about a PDF or an image (planlens' own)."""
+    source = _side_source(name, arguments)
+    if source is None:
+        return None
+    shown = os.path.basename(source.replace("\\", "/")) or source
+    kind = side_kind(source)
+    if name not in SIDE_READ_TOOLS:
+        what = ("a DXF drawing, read as CAD data" if kind == "cad"
+                else "a Word or Excel file, read as Markdown")
+        hint = (f"read_document(handle='{shown}') reads it and "
+                f"search_document(handle='{shown}', pattern=...) searches "
+                "it.")
+        hint += (" To look at the sheet or mark it up, ask the user for a "
+                 "PDF plot of it." if kind == "cad" else
+                 " Comments on it go in a document you write (write_docx, "
+                 "write_xlsx).")
+        return json.dumps({
+            "error": f"'{shown}' is {what}: it has no pages here, so "
+                     f"{name} does not apply to it.",
+            "hint": hint}, ensure_ascii=False)
+    try:
+        read = _side_read(source)
+    except Exception as exc:  # noqa: BLE001 - ToolError / OfficeReadError
+        from funhouse_agent.error_text import scrub_paths
+        out = {"error": scrub_paths(str(exc)) or type(exc).__name__}
+        hint = getattr(exc, "hint", None)
+        if hint:
+            out["hint"] = scrub_paths(hint)
+        return json.dumps(out, ensure_ascii=False)
+    lines = read["lines"]
+    budget = max(1000, int(max_chars or 12000) - 600)
+    if name == "search_document":
+        pattern = str(arguments.get("pattern") or "")
+        if not pattern:
+            return json.dumps({"error": "pattern is empty"})
+        try:
+            hits, n = _side_search(
+                lines, pattern, bool(arguments.get("regex")),
+                bool(arguments.get("case_sensitive")),
+                bool(arguments.get("fuzzy")),
+                int(arguments.get("min_score") or 80),
+                max(1, min(int(arguments.get("max_hits") or 100), 500)))
+        except re.error as exc:
+            return json.dumps({"error": f"invalid regular expression: {exc}",
+                               "hint": "pass regex=false for a literal "
+                                       "search"})
+        out: Dict[str, Any] = {"handle": shown, "pattern": pattern,
+                               "n_hits": n, "hits": []}
+        room = budget - len(json.dumps(out))
+        for h in hits:
+            size = len(json.dumps(h, ensure_ascii=False)) + 1
+            if size > room:
+                out["hits_omitted_for_size"] = len(hits) - len(out["hits"])
+                break
+            out["hits"].append(h)
+            room -= size
+        out["note"] = ("hits are LINES of the file's text (line = the "
+                       "start_line read_document takes); a Word/Excel/DXF "
+                       "file has no pages")
+        return json.dumps(out, ensure_ascii=False)
+    try:
+        start = max(0, int(arguments.get("start_line") or 0))
+    except (TypeError, ValueError):
+        start = 0
+    if lines and start >= len(lines):
+        return json.dumps({"error": f"start_line {start} is past the end "
+                                    f"({len(lines)} lines)"})
+    out = {"handle": shown, "source": source, "name": read.get("name", shown)}
+    if name == "open_document" or start == 0:
+        out.update({k: v for k, v in read["header"].items() if k != "note"})
+    out["n_lines"] = len(lines)
+    note = read["header"].get("note") if name == "open_document" else None
+    reserve = len(json.dumps(out, ensure_ascii=False)) + len(
+        json.dumps(note or "", ensure_ascii=False)) + 120
+    text, nxt = _lines_within(lines, start, max(400, budget - reserve))
+    out["lines_returned"] = (f"{start}-{start + max(0, text.count(chr(10)))}"
+                             if text else "none")
+    out["text"] = text
+    if nxt is not None:
+        out["next"] = {"start_line": nxt}
+        out["more"] = (f"call read_document(handle='{shown}', "
+                       f"start_line={nxt}) for the rest")
+    if note:
+        out["note"] = note
+    return json.dumps(out, ensure_ascii=False)
+
+
+# ---------------------------------------------------------------------------
+# Writing a marked-up copy: never over a file in use, one mark at a time
+# ---------------------------------------------------------------------------
+# Live smoke wave 2b, C4 (F31): to change one comment the model rebuilt all 19
+# marks with append=false onto review_set_marked.pdf, which this
+# conversation's toolkit held OPEN (the model had opened the marked copy to
+# read its marks). MuPDF saved straight onto it; Windows refused to remove a
+# file in use and the turn died. On Linux the save succeeds and the open
+# handle silently keeps serving the old marks; a save that fails midway
+# leaves the delivered copy broken. Now the copy is written to a temporary
+# file beside it and swapped in with os.replace, after every handle this
+# conversation holds on it is closed (and reopens, by name, on next use);
+# and one mark can be removed or replaced by its id without rebuilding the
+# rest.
+
+#: How a markup id that planlens' document_markups lists looks ("p0.m1").
+_MARKUP_ID = re.compile(r"^p(\d+)\.m(\d+)$")
+
+
+def forget_path(path: str) -> int:
+    """Close every document THIS conversation's toolkit holds open from the
+    file ``path`` (so it can be replaced, and is re-read when next used: its
+    handle still resolves, by the name it was opened under). Returns how
+    many were closed. planlens has no public call for one document; this
+    reaches into the toolkit's own entries under its lock."""
+    space = _space(create=False)
+    kit = space.kit if space is not None else None
+    if kit is None or not path:
+        return 0
+    _remember(space)
+    target = os.path.normcase(os.path.abspath(str(path)))
+    entries = getattr(kit, "_entries", None)
+    if not isinstance(entries, dict):
+        return 0
+    guard = getattr(kit, "_guard", None)
+    closed = []
+    if guard is not None:
+        guard.acquire()
+    try:
+        for handle, entry in list(entries.items()):
+            p = getattr(entry, "path", None)
+            if p and os.path.normcase(os.path.abspath(str(p))) == target:
+                entries.pop(handle, None)
+                closed.append(entry)
+        by_key = getattr(kit, "_by_key", None)
+        if closed and isinstance(by_key, dict):
+            gone = {e.handle for e in closed}
+            for k in [k for k, h in by_key.items() if h in gone]:
+                by_key.pop(k, None)
+    finally:
+        if guard is not None:
+            guard.release()
+    for entry in closed:
+        try:
+            with entry.lock:
+                entry.doc.close()
+        except Exception:  # noqa: BLE001 - closing is housekeeping
+            pass
+    return len(closed)
+
+
+def _temp_beside(final: str) -> str:
+    """A temporary file name for writing ``final``: in the conversation's
+    scratch folder when ``final`` is in the working folder (never a
+    download card, never mirrored), else beside it as a dot-file."""
+    import uuid
+    stem = os.path.basename(final)
+    folder = os.path.dirname(os.path.abspath(final))
+    try:
+        from funhouse_agent._fileio import host_output_dir
+        from funhouse_agent.vision_tools import SCRATCH_DIR
+        host = host_output_dir()
+        if host and os.path.normcase(os.path.abspath(host)) == \
+                os.path.normcase(folder):
+            folder = os.path.join(folder, SCRATCH_DIR)
+            os.makedirs(folder, exist_ok=True)
+            return os.path.join(folder, f"{stem}.{uuid.uuid4().hex[:8]}.part.pdf")
+    except Exception:  # noqa: BLE001 - beside it, then
+        pass
+    return os.path.join(folder, f".{stem}.{uuid.uuid4().hex[:8]}.part.pdf")
+
+
+def _replace_into(tmp: str, final: str):
+    """``os.replace(tmp, final)`` once nothing here holds ``final`` open;
+    ``(path written, note or None)``. When ``final`` is still in use
+    elsewhere (open in the user's viewer on a Windows host) the copy is
+    saved under the next free name instead, and the note says so."""
+    import time as _t
+    last = None
+    for attempt in range(3):
+        forget_path(final)
+        try:
+            os.replace(tmp, final)
+            return final, None
+        except PermissionError as exc:
+            last = exc
+            _t.sleep(0.2 * (attempt + 1))
+    stem, ext = os.path.splitext(final)
+    n = 2
+    while os.path.exists(f"{stem}_{n}{ext}"):
+        n += 1
+    alt = f"{stem}_{n}{ext}"
+    os.replace(tmp, alt)
+    return alt, (f"'{os.path.basename(final)}' is in use elsewhere "
+                 f"({type(last).__name__ if last else 'locked'}), so the "
+                 f"marked copy was saved as '{os.path.basename(alt)}'; tell "
+                 "the user which file to open")
+
+
+def _ours(author: Optional[str], signer: str) -> bool:
+    """Whether a markup was written by this app (signed by it), so it may be
+    removed; another reviewer's markup in the copy is left alone."""
+    a = str(author or "")
+    return bool(a) and (a == signer or "GeotechStaffEngineer" in a
+                        or "(AI draft)" in a)
+
+
+def _is_label(doc, xref) -> bool:
+    """Whether an annotation is a label grouped with another (``/RT
+    /Group``), as planlens writes a mark's visible label."""
+    try:
+        kind, val = doc.xref_get_key(int(xref), "RT")
+    except Exception:  # noqa: BLE001
+        return False
+    return kind == "name" and str(val).lstrip("/") == "Group"
+
+
+def remove_markups(pdf: bytes, remove, signer: str):
+    """``(new_pdf_bytes, removed, not_removed)``: the marks named in
+    ``remove`` taken out of a marked copy, each with its label and any
+    reply to it. An entry is a markup id as document_markups lists it
+    (``"p0.m1"``) or words from its comment, which must name exactly one
+    mark this app wrote. Only this app's marks are removed."""
+    import fitz
+    from planlens.document.annotations import extract_annotations
+
+    doc = fitz.open(stream=bytes(pdf), filetype="pdf")
+    try:
+        per_page = {i: extract_annotations(doc[i], i)[0]
+                    for i in range(doc.page_count)}
+        everything = [m for ms in per_page.values() for m in ms]
+        chosen, removed, refused = {}, [], []
+        for raw in ([remove] if isinstance(remove, (str, dict))
+                    else list(remove or [])):
+            want = (raw.get("id") or raw.get("text") or "") \
+                if isinstance(raw, dict) else str(raw or "")
+            want = want.strip()
+            if not want:
+                continue
+            m_id = _MARKUP_ID.match(want)
+            if m_id:
+                hits = [m for m in per_page.get(int(m_id.group(1)), [])
+                        if m.id == want]
+                if not hits:
+                    refused.append({"remove": want, "reason": (
+                        "no markup has this id in the copy now (ids are "
+                        "positions on a page and change after a removal: "
+                        "list them again with document_markups)")})
+                    continue
+            else:
+                # A mark's label rides on it (removed with it), so only the
+                # marks themselves are matched by their words.
+                low = want.lower()
+                hits = [m for m in everything if _ours(m.author, signer)
+                        and not _is_label(doc, m.xref)
+                        and low in (m.text or "").lower()]
+                if len(hits) != 1:
+                    refused.append({"remove": want, "reason": (
+                        "no mark this app wrote says that" if not hits else
+                        f"{len(hits)} marks say that "
+                        f"({', '.join(m.id for m in hits[:8])}): give the "
+                        "id of the one meant")})
+                    continue
+            m = hits[0]
+            if not _ours(m.author, signer):
+                refused.append({"remove": want, "reason": (
+                    f"{m.id} is {m.author or 'another reviewer'}'s markup, "
+                    "not one this app wrote; it is left as it is")})
+                continue
+            chosen[(m.page, m.xref)] = m
+        for (page_no, xref), m in chosen.items():
+            page = doc[page_no]
+            doomed = {xref}
+            grew = True
+            while grew:                 # its label, and replies to either
+                grew = False
+                for a in page.annots() or []:
+                    if a.xref in doomed:
+                        continue
+                    kind, val = doc.xref_get_key(a.xref, "IRT")
+                    if kind == "xref" and val:
+                        try:
+                            parent = int(str(val).split()[0])
+                        except ValueError:
+                            continue
+                        if parent in doomed:
+                            doomed.add(a.xref)
+                            grew = True
+            for x in sorted(doomed, reverse=True):
+                try:
+                    page.delete_annot(page.load_annot(x))
+                except Exception:  # noqa: BLE001 - already gone with a parent
+                    pass
+            removed.append({"id": m.id, "page": m.page, "pdf_page": m.page + 1,
+                            "kind": m.kind, "says": (m.text or "")[:120],
+                            "with_attached": len(doomed) - 1})
+        return doc.tobytes(garbage=1), removed, refused
+    finally:
+        doc.close()
+
+
+def _handle_path(handle: str) -> Optional[str]:
+    """The file a document handle (or a file name given as one) stands for
+    in this conversation, when it is a file; ``None`` otherwise."""
+    try:
+        if looks_like_handle(handle):
+            entry = document_entry(handle)
+            if getattr(entry, "path", None):
+                return str(entry.path)
+            handle = handle_source(handle) or ""
+        if not handle:
+            return None
+        from funhouse_agent.vision_tools import find_readable_file
+        return find_readable_file(handle)
+    except Exception:  # noqa: BLE001 - not a file, then
+        return None
+
+
+def write_marked_copy(handle: str, markups: Optional[list], output_path: str,
+                      append: bool, author: str, call, remove=None
+                      ) -> Dict[str, Any]:
+    """Write ``annotate_document``'s marked copy safely (see the section
+    comment): to a temporary file, then swapped in. ``call(args) -> str`` runs
+    planlens' annotate_document (the host's dispatch). ``remove`` takes marks
+    out of an existing marked copy first, so ``remove`` + ``markups``
+    replaces one mark and keeps the rest. Returns the result dict, its
+    ``output_path`` the final file's absolute path."""
+    import shutil
+    final = markup_output_path(output_path, handle)
+    existed = os.path.isfile(final)
+    tmp = _temp_beside(final)
+    marks = list(markups or [])
+    try:
+        removed = refused = None
+        if remove:
+            if not existed:
+                return {"error": (
+                    f"nothing to remove from: '{os.path.basename(final)}' "
+                    "does not exist yet"),
+                    "hint": ("remove takes marks out of a marked copy "
+                             "written earlier; name it in output_path")}
+            with open(final, "rb") as fh:
+                data = fh.read()
+            data, removed, refused = remove_markups(data, remove, author)
+            with open(tmp, "wb") as fh:
+                fh.write(data)
+        elif append and existed:
+            shutil.copyfile(final, tmp)
+        else:
+            src = _handle_path(handle)
+            if src and os.path.normcase(os.path.abspath(src)) == \
+                    os.path.normcase(os.path.abspath(final)):
+                return {"error": (
+                    "this handle is the marked copy itself, and append=false "
+                    "would write every mark again on top of the ones it has"),
+                    "hint": ("to rebuild the copy, pass the ORIGINAL "
+                             "document's handle with append=false; to change "
+                             "or delete one mark, pass remove=[its id] (and "
+                             "the new mark in markups) with output_path = "
+                             "this copy")}
+        if marks:
+            raw = call({"handle": handle, "output_path": tmp,
+                        "markups": marks, "author": author,
+                        # onto the temporary copy when there is one
+                        "append": bool(remove or append)})
+            try:
+                result = json.loads(raw)
+            except (TypeError, ValueError):
+                return {"error": str(raw)[:500]}
+            if not isinstance(result, dict) or "error" in result:
+                return result if isinstance(result, dict) else \
+                    {"error": str(result)[:500]}
+        elif remove:
+            result = {"handle": handle, "author": author, "n_written": 0,
+                      "n_skipped": 0}
+        else:
+            return {"error": "markups is empty: nothing would be written",
+                    "hint": ("each markup is {kind, page, comment} plus ONE "
+                             "anchor; to take marks out, pass remove")}
+        written, moved = _replace_into(tmp, final)
+        result["output_path"] = written
+        result["appended_to_existing"] = bool(existed and (append or remove))
+        if moved:
+            result["saved_elsewhere"] = moved
+        if removed is not None:
+            result["removed"] = removed
+            if refused:
+                result["not_removed"] = refused
+            result["ids_note"] = (
+                "markup ids are positions on a page: after a removal the "
+                "ids on that page change; list them with document_markups "
+                "before removing another by id")
+        return result
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
 
 
 #: The planlens tools the report ingest is built on: the page roles and work

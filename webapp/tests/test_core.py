@@ -931,8 +931,9 @@ def test_stream_turn_auto_continues_once(monkeypatch):
     assert agent.calls[1][-2]["role"] == "assistant"  # first pass carried over
     done = entries[-1]
     assert done["kind"] == "turn_done"
-    assert "Now let me build the report." in done["answer"]
-    assert "Report saved: report.pdf." in done["answer"]
+    # One answer (live smoke wave 2b, C1): the step the first pass announced
+    # is replaced by the reply that took it; what came before it stays.
+    assert done["answer"] == "Ka computed.\n\nReport saved: report.pdf."
     assert any(e["kind"] == "tool_call" and "auto-continue" in e["text"]
                for e in entries)
 

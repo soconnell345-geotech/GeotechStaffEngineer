@@ -58,6 +58,26 @@ DISABLE_STREAMING_ENV = "GEOTECH_PROMPTER_DISABLE_STREAMING"
 REQUEST_TIMEOUT_S = 180.0
 _CHAT_SUFFIX = "/chat/completions"
 
+#: Retries of one model request that the provider refused as busy (429 rate
+#: limit, 5xx, a dropped connection). Several testers share ONE Prompter key
+#: on the pilot, so a burst of rate limits is normal: the OpenAI client waits
+#: as the provider's ``retry-after`` header asks (else an exponential backoff
+#: from half a second) and tries again -- 4 retries, 5 tries in all. A turn
+#: still refused after that ends with the plain-words message
+#: (``webapp.core.friendly_turn_error``). Override with the env var.
+MAX_RETRIES_ENV = "GEOTECH_PROMPTER_MAX_RETRIES"
+DEFAULT_MAX_RETRIES = 4
+
+
+def max_retries() -> int:
+    """Retries per model request (``GEOTECH_PROMPTER_MAX_RETRIES``,
+    default :data:`DEFAULT_MAX_RETRIES`; 0 turns them off)."""
+    raw = str(os.environ.get(MAX_RETRIES_ENV, "")).strip()
+    try:
+        return max(0, min(int(raw), 10)) if raw else DEFAULT_MAX_RETRIES
+    except ValueError:
+        return DEFAULT_MAX_RETRIES
+
 
 @dataclass(frozen=True)
 class PrompterSettings:
@@ -141,7 +161,10 @@ def build_chat_model(model_id: Optional[str] = None, *,
     builder shape the picker expects. Sends ``max_completion_tokens`` rather
     than ``max_tokens`` for the same reason the Foundry route does: the
     reasoning-model tiers reject the old name and a deployment name gives
-    langchain-openai no hint.
+    langchain-openai no hint. Its value is the app's output cap
+    (``engine_config.DEFAULT_MAX_TOKENS``, 32,000 since live smoke wave 2b:
+    on GPT-5.1 it holds the reasoning tokens as well as the reply). Busy
+    refusals are retried :func:`max_retries` times, honouring retry-after.
     """
     import httpx
     from langchain_openai import ChatOpenAI
@@ -163,6 +186,7 @@ def build_chat_model(model_id: Optional[str] = None, *,
         default_headers={"api-key": ps.api_key},
         http_client=client,
         max_completion_tokens=_default_max_tokens(),
+        max_retries=max_retries(),
         disable_streaming=_streaming_disabled(),
     )
 
@@ -191,4 +215,5 @@ def register() -> bool:
 __all__ = ["PrompterSettings", "settings", "configured", "build_chat_model",
            "register", "base_url_from", "ssl_context",
            "ENV_URL", "ENV_MODEL", "ENV_KEY", "ENV_CA_BUNDLE",
-           "DISABLE_STREAMING_ENV", "REQUEST_TIMEOUT_S"]
+           "DISABLE_STREAMING_ENV", "REQUEST_TIMEOUT_S", "MAX_RETRIES_ENV",
+           "DEFAULT_MAX_RETRIES", "max_retries"]

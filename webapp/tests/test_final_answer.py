@@ -180,9 +180,15 @@ def test_auto_continue_still_fires_on_the_final_message():
     entries = _run(agent)
     assert len(agent.inputs) == 2                     # one nudge
     nudged = agent.inputs[1]["messages"]
-    assert nudged[-2] == {"role": "assistant", "content": first}
+    # The next pass goes on from the run's OWN messages -- its tool call and
+    # result as well as its reply (live smoke wave 2b, C1) -- not text alone.
+    kinds =[getattr(m, "type", None) or m.get("role") for m in nudged]
+    assert kinds[-4:] == ["ai", "tool", "ai", "user"]
+    assert nudged[-2].content == first
+    assert nudged[-4].tool_calls[0]["name"] == "call_agent"
     assert nudged[-1]["content"] == core.CONTINUE_NUDGE
-    assert entries[-1]["answer"] == f"{first}\n\n{second}"
+    # One answer: the announced step is replaced by the reply that took it.
+    assert entries[-1]["answer"] == f"Ka is next.\n\n{second}"
     assert "Computing." not in entries[-1]["answer"]
     assert "Running." not in entries[-1]["answer"]
 

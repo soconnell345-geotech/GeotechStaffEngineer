@@ -651,6 +651,17 @@ def _adjust_request_for_param_error(request: dict, message: str):
     low = (message or "").lower()
     new = dict(request)
     changed = False
+    # An output cap above what this model gives ("This model supports at most
+    # 16384 completion tokens") is lowered to the model's own limit.
+    import re as _re
+    most = _re.search(r"at most (\d+)\s*(?:completion |output )?tokens", low)
+    if most:
+        for key in ("max_completion_tokens", "max_tokens"):
+            if key in new and int(new[key] or 0) > int(most.group(1)):
+                new[key] = int(most.group(1))
+                changed = True
+        if changed:
+            return new
     if "temperature" in low and "temperature" in new:
         new.pop("temperature", None)
         changed = True

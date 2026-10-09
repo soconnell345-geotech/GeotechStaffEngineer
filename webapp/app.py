@@ -223,6 +223,12 @@ def _stage_files(pairs) -> list:
         ss.save_error = None
     except Exception as exc:
         ss.save_error = f"{type(exc).__name__}: {exc}"
+    # A document added to a conversation that already has a title joins it
+    # (live smoke wave 2b, C14); the first upload's turn titles a new one,
+    # and a screenshot dropped in mid-conversation is evidence, not a name.
+    _keys = [a.key for a in atts]
+    if profiles.orient_on_upload(_keys, ss.transcript):
+        core.retitle_for_upload(ss.thread_id, _keys)
     return atts
 
 
@@ -799,7 +805,7 @@ with st.sidebar:
                 st.caption(f"⚠️ {_e}")
         if not pairs and _up_errors:
             uploaded = st.file_uploader(
-                "Attach files (PDF, image, DXF, CSV, DIGGS…)",
+                "Attach files (PDF, image, Word, Excel, DXF, CSV, DIGGS…)",
                 type=core.ACCEPTED_UPLOAD_TYPES, accept_multiple_files=True,
                 key=f"uploader_{ss.thread_id}",
             )
@@ -807,7 +813,7 @@ with st.sidebar:
                 pairs = [(f.name, f.getvalue()) for f in uploaded]
     else:
         uploaded = st.file_uploader(
-            "Attach files (PDF, image, DXF, CSV, DIGGS…)",
+            "Attach files (PDF, image, Word, Excel, DXF, CSV, DIGGS…)",
             type=core.ACCEPTED_UPLOAD_TYPES, accept_multiple_files=True,
             key=f"uploader_{ss.thread_id}",
         )
@@ -1316,7 +1322,8 @@ if prompt:
         # a file it downloaded (field session 2026-10-06).
         try:
             _turn_note = core.working_files_note(
-                ss.temp_dir, ss.transcript, exclude_text=agent_content)
+                ss.temp_dir, ss.transcript, exclude_text=agent_content,
+                reads_folder=working_dir)
         except Exception:                          # never blocks a turn
             _turn_note = ""
         core.begin_partial(ss.thread_id, prompt)   # A3: mark in-progress turn
