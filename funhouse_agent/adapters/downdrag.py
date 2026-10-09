@@ -66,7 +66,22 @@ def _run_downdrag_analysis(params):
         fill_thickness=params.get("fill_thickness", 0.0), fill_unit_weight=params.get("fill_unit_weight", 19.0),
         gw_drawdown=params.get("gw_drawdown", 0.0), Nt=params.get("Nt"), n_sublayers=params.get("n_sublayers", 10),
     )
-    return analysis.compute().to_dict()
+    return _basis_first(analysis.compute().to_dict())
+
+
+#: Result keys that say how far to trust the numbers; put ahead of the long
+#: depth profiles so a size-capped tool result can never cut them off.
+_BASIS_KEYS = ("neutral_plane_depth_m", "neutral_plane_method",
+               "neutral_plane_basis", "warnings")
+
+
+def _basis_first(d: dict) -> dict:
+    """The result with the neutral-plane basis and the warnings first (live
+    smoke G8: an untold toe default put the plane at the toe; the result
+    now states its basis, and the warnings must reach the model)."""
+    out = {k: d[k] for k in _BASIS_KEYS if k in d}
+    out.update((k, v) for k, v in d.items() if k not in out)
+    return clean_result(out)
 
 
 # ── CGPR #56 method family (Greenfield & Filz 2009) ──────────────────────
@@ -333,9 +348,27 @@ METHOD_INFO = {
             "pile_perimeter": {"type": "float", "required": False, "description": "Pile perimeter (m). Computed from diameter if omitted."},
             "pile_area": {"type": "float", "required": False, "description": "Pile cross-section area (m2). Computed from diameter if omitted."},
             "structural_capacity": {"type": "float", "required": False, "description": "Pile structural capacity (kN) for the max-load check."},
-            "Nt": {"type": "float", "required": False, "description": "Toe bearing capacity coefficient override."},
+            "Nt": {"type": "float", "required": False, "description": "Toe bearing capacity factor: R_toe = Nt x sigma'v(toe) x A_toe in cohesionless soil, Nt x cu x A_toe in cohesive. Give the MOBILIZED value -- the toe resistance actually developed at the pile's settlement -- not the ultimate. Omitted, Nt is the ULTIMATE value from the toe layer's phi (100-150 in dense sand; 9 in clay); then the load and resistance curves often do not cross and the neutral plane comes from settlement compatibility instead of force equilibrium (see neutral_plane_method). UFC 3-220-20 6-5.8.4.2: check 0 %, 50 % and 100 % toe mobilization."},
+            "pile_unit_weight": {"type": "float", "required": False, "default": 24.0, "description": "Pile material unit weight (kN/m3) for the pile's own weight."},
+            "n_sublayers": {"type": "int", "required": False, "default": 10, "description": "Sublayers per soil layer for the depth discretization."},
         },
-        "returns": {"neutral_plane_depth_m": "Neutral plane depth.", "dragload_kN": "Downdrag force on pile."},
+        "returns": {
+            "neutral_plane_depth_m": "Neutral plane depth (m).",
+            "neutral_plane_method": "How the plane was located: 'force_equilibrium' (load and resistance curves cross), 'settlement_compatibility' (they do not -- the toe resistance exceeds all the pile can deliver -- so the plane is where soil and pile settle equally, UFC 3-220-20 Fig 6-19) or 'none' (dead load exceeds the total resistance: no neutral plane).",
+            "neutral_plane_basis": "One-sentence statement of that basis, with its source. Report it with the result.",
+            "warnings": "What the engineer must know about the result (e.g. curves that do not cross, the upper-bound drag, an overloaded pile). Report every one.",
+            "dragload_kN": "Drag load: negative skin friction above the neutral plane (kN).",
+            "max_pile_load_kN": "Maximum axial load, at the neutral plane (kN).",
+            "toe_resistance_kN": "Toe resistance from Nt (kN; ultimate unless Nt was given as mobilized).",
+            "toe_force_mobilized_kN": "Toe force actually carried at the neutral plane (kN): the full toe resistance under force equilibrium, less under settlement compatibility.",
+            "positive_skin_friction_kN": "Positive shaft resistance below the neutral plane (kN).",
+            "total_resistance_kN": "Toe + positive shaft resistance (kN).",
+            "pile_settlement_m": "Pile head settlement (m).",
+            "soil_settlement_at_np_m": "Soil settlement at the neutral plane (m).",
+            "geotechnical_ok": "Q_dead <= total resistance (when checked).",
+            "structural_ok": "LRFD demand <= structural_capacity (when given).",
+            "z_m": "Depth profile (m); with axial_load_kN, soil_settlement_mm and unit_skin_friction_kPa at the same depths.",
+        },
     },
     "endo_downdrag": {
         "category": "Downdrag",

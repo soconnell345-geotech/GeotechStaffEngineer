@@ -258,14 +258,20 @@ class TestSeismicSignalsCalls:
             })
             assert "error" in result
 
-    def test_rotd_spectrum_not_installed(self):
-        with patch("seismic_signals_agent.has_pyrotd", return_value=False):
+    def test_rotd_spectrum_without_pyrotd_uses_numpy(self):
+        """No pyrotd gate in the adapter: the module falls back to its numpy
+        RotD (live smoke G10), so a missing pyrotd is not an error."""
+        missing = "pyrotd is not installed"
+        with patch("seismic_signals_agent.rotd_spectrum.pyrotd_import_error",
+                   return_value=missing):
             from funhouse_agent.dispatch import call_agent
             result = call_agent("seismic_signals", "rotd_spectrum", {
-                "accel_history_a": [0.1, 0.2], "accel_history_b": [0.05, 0.1],
-                "dt": 0.01,
+                "motion_a": "synthetic_pulse", "motion_b": "synthetic_pulse",
+                "periods": [0.2, 1.0],
             })
-            assert "error" in result
+        assert "error" not in result, result
+        assert result["engine"] == "numpy"
+        assert "not installed" in result["engine_note"]
 
     def test_signal_processing_not_installed(self):
         with patch("seismic_signals_agent.has_eqsig", return_value=False):
@@ -362,6 +368,7 @@ class TestSalibMethodInfo:
     def test_expected_methods(self):
         from funhouse_agent.adapters.salib_adapter import METHOD_INFO
         assert set(METHOD_INFO.keys()) == {
+            "sobol_analysis", "morris_analysis",
             "sobol_sample", "sobol_analyze",
             "morris_sample", "morris_analyze",
         }
@@ -372,7 +379,7 @@ class TestSalibDispatch:
         from funhouse_agent.dispatch import list_methods
         result = list_methods("salib")
         total = sum(len(v) for v in result.values())
-        assert total == 4
+        assert total == 6
 
     def test_describe_method(self):
         from funhouse_agent.dispatch import describe_method

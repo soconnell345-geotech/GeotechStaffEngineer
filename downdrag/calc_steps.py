@@ -192,8 +192,9 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     )
     if np_basis:
         np_notes += f". Basis: {np_basis}"
-    for w in np_warnings:
-        np_notes += f"\nWARNING: {w}"
+    if np_warnings:
+        np_notes += (f"\n{len(np_warnings)} warning(s): see 'Neutral Plane "
+                     f"Basis and Warnings'.")
     np_items.append(CalcStep(
         title=np_title,
         equation=np_equation,
@@ -239,6 +240,16 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     sections.append(CalcSection(
         title="Neutral Plane Location & Dragload", items=np_items
     ))
+
+    # ── Basis and warnings, stated in full where a reviewer reads them ──
+    # (live smoke G8: the result states its neutral-plane basis and its
+    # warnings; the package must carry them as prominently as the numbers,
+    # not only inside one step's notes.)
+    basis_items = basis_and_warnings(r)
+    if basis_items:
+        sections.append(CalcSection(
+            title="Neutral Plane Basis and Warnings", items=basis_items
+        ))
 
     # ── Section 3: Resistance Below NP ─────────────────────────────
     res_items = []
@@ -429,6 +440,42 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         ))
 
     return sections
+
+
+_METHOD_LABELS = {
+    "force_equilibrium": "force equilibrium (load and resistance curves "
+                         "cross)",
+    "settlement_compatibility": "settlement compatibility (soil and pile "
+                                "settle equally)",
+    "none": "none (the pile is overloaded; no neutral plane)",
+}
+
+
+def basis_and_warnings(result) -> list:
+    """Plain-text paragraphs stating how the neutral plane was located and
+    every warning the result carries. Empty when the result states neither
+    (a result built before 2026-10-09)."""
+    method = getattr(result, "neutral_plane_method", "") or ""
+    basis = getattr(result, "neutral_plane_basis", "") or ""
+    warnings = list(getattr(result, "warnings", []) or [])
+    if not basis and not warnings:
+        return []
+    items = []
+    if method:
+        items.append("Neutral plane located by: "
+                     + _METHOD_LABELS.get(method, method) + ".")
+    if basis:
+        items.append("Basis: " + basis)
+    toe = getattr(result, "toe_force_mobilized", None)
+    if toe is not None and method == "settlement_compatibility":
+        items.append(
+            f"Toe force mobilized at the neutral plane: {toe:.1f} kN "
+            f"(toe resistance {result.toe_resistance:.1f} kN).")
+    for w in warnings:
+        items.append("WARNING: " + w)
+    if not warnings:
+        items.append("Warnings: none.")
+    return items
 
 
 def get_figures(result, analysis) -> List[FigureData]:

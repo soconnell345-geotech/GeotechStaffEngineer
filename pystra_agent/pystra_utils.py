@@ -114,63 +114,95 @@ def _apply_numpy2_patches():
     _patches_applied = True
 
 
+_LSF_FUNCS = (
+    'sqrt', 'log', 'exp', 'sin', 'cos', 'tan', 'pi', 'asin', 'acos', 'atan',
+    'atan2', 'sinh', 'cosh', 'tanh', 'log10', 'ceil', 'floor',
+)
+
+
 def _compile_limit_state(expr_str: str, var_names: list) -> callable:
     """
     Compile a limit state expression string into a callable function.
 
+    The expression is parsed and checked as an AST before anything runs:
+    identifiers must be the variable names or the math functions below, and
+    the tree may hold only arithmetic, comparisons, ``a if c else b`` and
+    calls to those functions (no attributes, subscripts, strings, lambdas,
+    comprehensions or keyword calls). It runs with no builtins. Identifiers
+    are taken from the parsed tree, not a regex over the text, so scientific
+    notation (``1e-3``) is accepted.
+
     Args:
-        expr_str: String expression like "R - S" or "R**2 - S"
+        expr_str: String expression like "R - S" or "R**2 - 1e-3*S"
         var_names: List of variable names that can appear in expression
 
     Returns:
-        Callable that takes keyword arguments matching var_names
+        Callable taking the variables as keyword arguments (pystra calls
+        ``expression(**kwargs)``)
 
     Raises:
-        ValueError: If expression contains unknown identifiers
+        ValueError: If expression contains unknown identifiers or any
+        construct outside plain arithmetic
 
     Examples:
         >>> f = _compile_limit_state("R - S", ["R", "S"])
         >>> f(R=200, S=100)
         100
     """
-    import re
+    import ast
     import math
 
-    # Security: only allow math operations and variable names
-    allowed = set(var_names) | {
-        'abs', 'min', 'max', 'sqrt', 'log', 'exp', 'sin', 'cos', 'tan', 'pi',
-        'asin', 'acos', 'atan', 'atan2', 'sinh', 'cosh', 'tanh', 'log10', 'ceil', 'floor'
-    }
+    if not expr_str or not str(expr_str).strip():
+        raise ValueError("Limit state expression cannot be empty")
+    var_names = list(var_names)
+    funcs = {name: getattr(math, name) for name in _LSF_FUNCS
+             if hasattr(math, name)}
+    funcs.update({'abs': abs, 'min': min, 'max': max})
+    allowed = set(var_names) | set(funcs)
 
-    # Extract all identifiers from expression
-    tokens = re.findall(r'[a-zA-Z_]\w*', expr_str)
-    for token in tokens:
-        if token not in allowed:
+    try:
+        tree = ast.parse(str(expr_str), mode="eval")
+    except SyntaxError as exc:
+        raise ValueError(
+            f"Limit state expression is not valid: {exc}") from None
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id not in allowed:
             raise ValueError(
-                f"Unknown identifier '{token}' in limit state expression. "
+                f"Unknown identifier '{node.id}' in limit state expression. "
                 f"Allowed: {', '.join(sorted(var_names))}"
             )
+    ok = (ast.Expression, ast.BinOp, ast.UnaryOp, ast.Call, ast.Name,
+          ast.Constant, ast.Load, ast.IfExp, ast.Compare, ast.BoolOp,
+          ast.And, ast.Or,
+          ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow, ast.Mod,
+          ast.FloorDiv, ast.USub, ast.UAdd,
+          ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.Eq, ast.NotEq)
+    for node in ast.walk(tree):
+        if not isinstance(node, ok):
+            raise ValueError(
+                f"Limit state expression may only contain arithmetic, "
+                f"comparisons and the allowed math functions (rejected: "
+                f"{type(node).__name__}).")
+        if isinstance(node, ast.Call) and (
+                node.keywords or not (isinstance(node.func, ast.Name)
+                                      and node.func.id in funcs)):
+            raise ValueError(
+                f"Limit state function calls are limited to "
+                f"{sorted(funcs)}")
+        if isinstance(node, ast.Constant) and \
+                not isinstance(node.value, (int, float)):
+            raise ValueError("Limit state constants must be numbers")
 
-    # Build lambda function string
-    arg_str = ", ".join(var_names)
-    func_str = f"lambda {arg_str}: {expr_str}"
+    code = compile(tree, "<limit_state>", "eval")
+    namespace = {"__builtins__": {}}
+    namespace.update(funcs)
 
-    # Provide math functions in namespace
-    ns = {
-        name: getattr(math, name)
-        for name in [
-            'sqrt', 'log', 'exp', 'sin', 'cos', 'tan', 'pi',
-            'asin', 'acos', 'atan', 'atan2', 'sinh', 'cosh', 'tanh',
-            'log10', 'ceil', 'floor'
-        ]
-        if hasattr(math, name)
-    }
-    ns['abs'] = abs
-    ns['min'] = min
-    ns['max'] = max
+    def lsf(**kwargs):
+        local = {k: kwargs[k] for k in var_names}
+        return eval(code, namespace, local)  # nosec B307 — AST-whitelisted
 
-    # Compile with restricted builtins
-    return eval(func_str, {"__builtins__": {}}, ns)
+    return lsf
 
 
 def _create_pystra_variable(var_dict: dict):

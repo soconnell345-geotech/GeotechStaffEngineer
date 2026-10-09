@@ -5,7 +5,6 @@ averaging)."""
 
 import ast
 import math
-import re
 
 from funhouse_agent.adapters import (
     clean_result, reject_unknown_params, require_params,
@@ -41,20 +40,23 @@ def _compile_g(expr: str, var_names):
             "g_expression is required, e.g. 'R - S' (margin) or "
             "'(c + q*tan(radians(phi)))/tau' (FOS).")
     allowed = set(var_names) | set(_MATH_FUNCS)
-    for token in re.findall(r"[a-zA-Z_]\w*", expr):
-        if token not in allowed:
-            raise ValueError(
-                f"Unknown identifier '{token}' in g_expression. Allowed "
-                f"variables: {sorted(var_names)}; plus math functions "
-                f"like sqrt/log/exp/tan/radians.")
-    # Defense in depth beyond the identifier allowlist above: parse the
-    # expression and refuse any AST construct outside pure arithmetic —
-    # no attribute access, subscripts, strings, f-strings, lambdas,
-    # comprehensions, or starred/keyword call tricks can reach execution.
     try:
         tree = ast.parse(expr, mode="eval")
     except SyntaxError as exc:
         raise ValueError(f"g_expression is not a valid expression: {exc}")
+    # Identifiers are checked on the PARSED names, not by a regex over the
+    # text: a regex reads the exponent of 1e-3 as an identifier 'e' and
+    # refused scientific notation.
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id not in allowed:
+            raise ValueError(
+                f"Unknown identifier '{node.id}' in g_expression. Allowed "
+                f"variables: {sorted(var_names)}; plus math functions "
+                f"like sqrt/log/exp/tan/radians.")
+    # Beyond the identifier allowlist: refuse any AST construct outside pure
+    # arithmetic — no attribute access, subscripts, strings, f-strings,
+    # lambdas, comprehensions, or starred/keyword call tricks can reach
+    # execution, and the code runs with no builtins.
     _OK = (ast.Expression, ast.BinOp, ast.UnaryOp, ast.Call, ast.Name,
            ast.Constant, ast.Load, ast.IfExp, ast.Compare, ast.BoolOp,
            ast.And, ast.Or,
