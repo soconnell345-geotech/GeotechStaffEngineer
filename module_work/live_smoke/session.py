@@ -22,12 +22,18 @@ mirror, the restore and the agent's SharePoint tools all run against
 user is the IIS header (``identity.from_header_values``, the function
 ``current_identity`` calls on that header -- ``multi_user`` and the
 per-user roots follow); ``DEV_IDENTITY`` and anonymous are available too.
+
+Two things the browser does before the app sees anything are reproduced:
+the uploader's type filter (:func:`uploader_accepts` -- a .docx is refused,
+as Streamlit refuses it), and several people sending at the same moment
+(:func:`say_together`, a flow's ``together_with`` step).
 """
 
 from __future__ import annotations
 
 import os
 import shutil
+import threading
 import time
 import types
 from typing import Any, Dict, List, Optional, Tuple
@@ -50,6 +56,33 @@ _MANAGED_ENV = (
 #: Seconds a single turn may run before the harness gives up following it.
 TURN_TIMEOUT_S = 30 * 60
 
+#: Test-only LangChain tools added to every agent the harness builds (the
+#: dry run's rogue writer, which proves detector (a) still fires). Empty in
+#: every real wave: a flow never sets it.
+HARNESS_TOOLS: List[Any] = []
+
+
+def _bind_working_folder(path) -> None:
+    """app.py ``_bind_working_folder``: bind the conversation's working
+    folder to this thread's context (``_fileio.bind_working_dir``), which the
+    tools read before the process-wide env var. Best-effort."""
+    try:
+        from funhouse_agent._fileio import bind_working_dir
+        bind_working_dir(path)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def uploader_accepts(name: str) -> bool:
+    """Whether the app's uploader takes a file of this name: Streamlit's
+    ``file_uploader(type=core.ACCEPTED_UPLOAD_TYPES)`` and the chat box's
+    ``file_type`` refuse any other extension before the app sees the bytes,
+    so the harness refuses it too (a tester's .docx never reaches the app)."""
+    from webapp import core
+    ext = os.path.splitext(str(name))[1].lower().lstrip(".")
+    return ext in {str(t).lower().lstrip(".")
+                   for t in core.ACCEPTED_UPLOAD_TYPES}
+
 
 class AppEnv:
     """Process setup for one scenario; ``with AppEnv(...) as env:``."""
@@ -71,14 +104,30 @@ class AppEnv:
         #: Called around every turn with the TurnRecord (the runner puts the
         #: outside-folder snapshots and the meter/SharePoint marks here).
         self.turn_hooks: List[Any] = []
+        #: Every Session built on this env, by label (``say_together``).
+        self.sessions: Dict[str, "Session"] = {}
+        self._hook_lock = threading.Lock()
 
+    # A hook may keep per-turn state on itself (the runner's TurnWatch keeps
+    # the outside-folder snapshot). Two turns running at once (a "together"
+    # step) would overwrite each other's, so each turn's view of every hook
+    # is saved at its start and put back before its end.
     def turn_start(self, rec: "TurnRecord") -> None:
-        for h in self.turn_hooks:
-            h.turn_start(rec)
+        with self._hook_lock:
+            saved = {}
+            for h in self.turn_hooks:
+                h.turn_start(rec)
+                saved[id(h)] = dict(getattr(h, "__dict__", {}))
+            rec["_hook_state"] = saved
 
     def turn_end(self, rec: "TurnRecord") -> None:
-        for h in self.turn_hooks:
-            h.turn_end(rec)
+        with self._hook_lock:
+            saved = rec.pop("_hook_state", None) or {}
+            for h in self.turn_hooks:
+                state = saved.get(id(h))
+                if state is not None and hasattr(h, "__dict__"):
+                    h.__dict__.update(state)
+                h.turn_end(rec)
 
     def __enter__(self) -> "AppEnv":
         from webapp import engine_config, sharepoint_store
@@ -216,6 +265,9 @@ class Session:
         self.threads: List[str] = []
         self.sidebar: dict = {}
         self.last_restore: Optional[dict] = None
+        #: Files the uploader refused (an extension Streamlit does not take).
+        self.refused_uploads: List[str] = []
+        env.sessions[label] = self
         # app.py: _init_session() -> _new_conversation()
         self.new_conversation()
 
@@ -234,6 +286,9 @@ class Session:
                     _kw = core.behavior_build_kwargs(ss.behavior)
                     _kw.update(self.profile.build_kwargs())
                     _kw.setdefault("markup_author", self.ident.markup_author)
+                    if HARNESS_TOOLS:          # the dry run only
+                        _kw["extra_tools"] = (list(_kw.get("extra_tools")
+                                                   or []) + HARNESS_TOOLS)
                     ss.agent = core.build_agent(
                         ss.engine.model, ss.attachments, ss.temp_dir,
                         ss.artifacts, **_kw)
@@ -315,6 +370,7 @@ class Session:
         convs = core.list_conversations(self.root)
         _wd = core.working_dir_for(ss.thread_id)
         core.apply_default_output_dir(_wd)
+        _bind_working_folder(_wd)
         downloads = []
         for path in ss.artifacts:
             try:
@@ -369,9 +425,12 @@ class Session:
     def upload(self, pairs: List[Tuple[str, bytes]]) -> List[TurnRecord]:
         """The sidebar uploader (http mode): stage the fresh files, queue the
         orientation, rerun -- which sends the orientation turn on the review
-        page. Returns the turns that ran (none on the geotech page)."""
+        page. Returns the turns that ran (none on the geotech page). A file
+        the uploader does not take (:func:`uploader_accepts`) is refused
+        before the app sees it, as Streamlit does."""
         from webapp import core
         self.render_sidebar()
+        pairs = self._uploader_filter(pairs)
         fresh = [(n, d) for (n, d) in pairs
                  if core.sanitize_key(n) not in self.ss.attachments]
         if not fresh:
@@ -388,6 +447,7 @@ class Session:
         on the rerun."""
         from webapp import core
         self.render_sidebar()
+        files = self._uploader_filter(files)
         _pairs = [(core.pasted_upload_name(n, i), d)
                   for i, (n, d) in enumerate(files)]
         _fresh = [(n, d) for (n, d) in _pairs
@@ -399,6 +459,18 @@ class Session:
                 return self._rerun(prompt=None)
         return self._rerun(prompt=(text or "").strip() or None,
                            rendered=True)
+
+    def _uploader_filter(self, pairs) -> list:
+        """The uploader's type filter: keep what it takes, note the rest."""
+        kept = []
+        for n, d in pairs:
+            if uploader_accepts(n):
+                kept.append((n, d))
+            else:
+                self.refused_uploads.append(n)
+                print(f"[upload] {self.label}: the uploader refuses {n} "
+                      "(not in core.ACCEPTED_UPLOAD_TYPES)")
+        return kept
 
     def say(self, text: str) -> List[TurnRecord]:
         """Type a message and press enter."""
@@ -415,6 +487,7 @@ class Session:
         _orient = ss.pending_orientation
         ss.pending_orientation = None
         kind = "user"
+        _orientation_names = None
         if not prompt and _orient and self.profile.orientation \
                 and ss.agent is not None \
                 and turn_jobs.get_turn_job(ss.thread_id) is None:
@@ -422,16 +495,18 @@ class Session:
                 core.Attachment(key=n, path=os.path.join(ss.temp_dir, n),
                                 size=0) for n in _orient])
             kind = "orientation"
+            _orientation_names = list(_orient)
         if not prompt:
             return []
-        rec = self._send(prompt, kind)
+        rec = self._send(prompt, kind, orientation=_orientation_names)
         # the rerun that follows _follow_turn_job: the sidebar shows the sync
         self.render_sidebar()
         rec["sidebar_after"] = dict(self.sidebar)
         return [rec]
 
     # -- app.py: the "if prompt:" block ---------------------------------------
-    def _send(self, prompt: str, kind: str) -> TurnRecord:
+    def _send(self, prompt: str, kind: str,
+              orientation: Optional[List[str]] = None) -> TurnRecord:
         from webapp import core, profiles, turn_jobs
         # The harness's own bookkeeping goes through this alias, so the
         # app.py-order test (test_harness.py) sees only the app's calls.
@@ -440,6 +515,8 @@ class Session:
         rec = TurnRecord(kind=kind, prompt=prompt, session=self.label,
                          page=self.profile.name, thread_id=ss.thread_id,
                          user=self.ident.qualified_name,
+                         owner_key=self.ident.key,
+                         owner_name=self.ident.display_name,
                          multi_user=self.ident.multi_user)
         if ss.agent is None:
             rec.update(error=("No engine/agent: " + str(ss.agent_error or
@@ -467,11 +544,13 @@ class Session:
         ss.messages.append({"role": "user", "content": agent_content})
 
         before = core.snapshot_dir(ss.temp_dir)
+        before_mtimes = core.snapshot_mtimes(ss.temp_dir)
         artifacts_before_len = len(ss.artifacts)
         staged_inputs = {os.path.join(ss.temp_dir, k) for k in ss.attachments}
 
         working_dir = core.working_dir_for(ss.thread_id)
         core.apply_default_output_dir(working_dir)
+        _bind_working_folder(working_dir)
         before_wd = (core.snapshot_dir(working_dir)
                      if os.path.abspath(working_dir)
                      != os.path.abspath(ss.temp_dir) else None)
@@ -479,8 +558,10 @@ class Session:
         if self.ident.multi_user or self.profile is not profiles.DEFAULT:
             try:
                 core.tag_conversation(
-                    ss.thread_id, owner=(self.ident.display_name
-                                         if self.ident.multi_user else None),
+                    ss.thread_id,
+                    owner=(self.ident.key if self.ident.multi_user else None),
+                    owner_name=(self.ident.display_name
+                                if self.ident.multi_user else None),
                     page=self.profile.name)
             except Exception:
                 pass
@@ -506,8 +587,10 @@ class Session:
             ss.behavior.get("recursion_limit"),
             ctx={
                 "prompt": prompt,
+                "orientation": orientation,
                 "temp_dir": ss.temp_dir,
                 "before": before,
+                "before_mtimes": before_mtimes,
                 "staged_inputs": staged_inputs,
                 "working_dir": working_dir,
                 "before_wd": before_wd,
@@ -576,7 +659,8 @@ class Session:
 
     # -- app.py: Permanent storage > Find a past conversation -----------------
     def sp_where(self) -> dict:
-        return {"owner": (self.ident.display_name if self.ident.multi_user
+        # app.py: the owner is the person's unique key (domain__user).
+        return {"owner": (self.ident.key if self.ident.multi_user
                           else None),
                 "page": self.profile.name}
 
@@ -617,6 +701,46 @@ class Session:
         return res
 
 
+def say_together(pairs: List[Tuple["Session", str]]) -> List[TurnRecord]:
+    """Several people press enter at the same moment (a flow's
+    ``together_with`` step): each ``Session.say`` runs in its own thread, as
+    Streamlit runs each browser session's script in its own thread of one
+    process, so the turns really overlap -- the process-wide output-dir env,
+    the shared document toolkit, the turn-job table and the SharePoint store
+    are all exercised at once. Returns every record, in ``pairs`` order.
+
+    The spend meter cannot tell overlapping turns' model calls apart, so
+    each overlapping turn's cost slice may carry the other's calls too; each
+    record names the sessions it overlapped (``together_with``) and the cost
+    detector reports such a gap as ``meter_overlapping_turns`` (info)."""
+    results: List[Optional[List[TurnRecord]]] = [None] * len(pairs)
+    errors: List[Optional[BaseException]] = [None] * len(pairs)
+
+    def run(i: int, s: "Session", text: str) -> None:
+        try:
+            results[i] = s.say(text)
+        except BaseException as exc:  # noqa: BLE001 - re-raised below
+            errors[i] = exc
+
+    threads = [threading.Thread(target=run, args=(i, s, t), daemon=True,
+                                name=f"livesmoke-{s.label}")
+               for i, (s, t) in enumerate(pairs)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    for exc in errors:
+        if exc is not None:
+            raise exc
+    out: List[TurnRecord] = []
+    for i, recs in enumerate(results):
+        others = [s.label for j, (s, _t) in enumerate(pairs) if j != i]
+        for rec in recs or []:
+            rec["together_with"] = others
+            out.append(rec)
+    return out
+
+
 def _line_count(path: str) -> int:
     try:
         with open(path, "rb") as fh:
@@ -626,4 +750,5 @@ def _line_count(path: str) -> int:
 
 
 __all__ = ["AppEnv", "Session", "TurnRecord", "make_identity",
-           "TURN_TIMEOUT_S"]
+           "TURN_TIMEOUT_S", "HARNESS_TOOLS", "say_together",
+           "uploader_accepts"]

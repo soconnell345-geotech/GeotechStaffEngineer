@@ -281,7 +281,9 @@ class Wave:
                     recs = self._do_step(env, s, step, sessions, retired,
                                          scen_findings)
                     for rec in recs:
-                        turns.append(self._judge(env, s, rec))
+                        # a together_with step returns other people's turns
+                        who = sessions.get(rec.get("session"), s)
+                        turns.append(self._judge(env, who, rec))
                 live = list(sessions.values()) + retired
                 people = {s.ident.key for s in live if s.turns}
                 if len(people) > 1:
@@ -315,6 +317,15 @@ class Wave:
         if "paste" in step:
             files = [docs.resolve(r) for r in step["paste"]]
             return s.paste(files, step.get("say", ""))
+        if "together_with" in step:
+            # This session's message and the others' are sent at the same
+            # moment (session.say_together); the others must have acted
+            # before, so their sessions exist.
+            from live_smoke.session import say_together
+            others = step["together_with"]
+            others = others if isinstance(others, list) else [others]
+            return say_together([(s, step["say"])] + [
+                (sessions[o["as"]], o["say"]) for o in others])
         if "say" in step:
             return s.say(step["say"])
         if step.get("new_conversation"):
@@ -356,6 +367,7 @@ class Wave:
             prompts=prompts)
         result = det.run_turn_detectors(ctx)
         return {"session": s.label, "user": rec.get("user"),
+                "together_with": rec.get("together_with"),
                 "page": rec.get("page"), "kind": rec.get("kind"),
                 "thread_id": rec.get("thread_id"),
                 "prompt": rec.get("prompt"), "final": rec.get("final"),

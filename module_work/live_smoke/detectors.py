@@ -568,7 +568,15 @@ def detect_sharepoint(ctx) -> List[dict]:
     conv = rec["conv_dir"]
     if remote:
         missing, stale = [], []
+        try:
+            from webapp.core import mirror_skips_dir
+        except Exception:  # noqa: BLE001 - an app without the skip list
+            mirror_skips_dir = None
         for root, _dirs, files in os.walk(conv):
+            rel_dir = os.path.relpath(root, conv).replace(os.sep, "/")
+            if mirror_skips_dir is not None and rel_dir != "." and \
+                    mirror_skips_dir(rel_dir):
+                continue          # the mirror leaves scratch/caches local
             for n in files:
                 if n == "sp_manifest.json":
                     continue
@@ -591,8 +599,10 @@ def detect_sharepoint(ctx) -> List[dict]:
         if rec.get("multi_user"):
             try:
                 from webapp.sharepoint_store import sanitize_folder_name
-                who = sanitize_folder_name(str(rec.get("user") or "")
-                                           .split("\\")[-1])
+                # the owner folder is the person's unique key (corp__jdoe)
+                who = sanitize_folder_name(str(
+                    rec.get("owner_key")
+                    or str(rec.get("user") or "").split("\\")[-1]))
             except Exception:  # noqa: BLE001
                 who = ""
             segs = remote.split("/")
@@ -721,11 +731,20 @@ def detect_conversation_record(ctx) -> List[dict]:
                            "looks alike in the sidebar and in the SharePoint "
                            "folder name", title=title))
     if rec.get("multi_user"):
-        who = str(rec.get("user") or "").split("\\")[-1]
+        # meta.owner is the person's unique key (corp__jdoe), meta.owner_name
+        # the display name (app.py, 2026-10-09).
+        who = str(rec.get("owner_key")
+                  or str(rec.get("user") or "").split("\\")[-1])
         if who and str(meta.get("owner") or "") != who:
             out.append(finding(D, "owner_not_recorded", "high",
                                f"multi-user conversation's meta owner is "
                                f"{meta.get('owner')!r}, not {who!r}"))
+        name = str(rec.get("owner_name") or "")
+        if name and str(meta.get("owner_name") or "") != name:
+            out.append(finding(D, "owner_name_not_recorded", "low",
+                               f"multi-user conversation's meta owner_name "
+                               f"is {meta.get('owner_name')!r}, not "
+                               f"{name!r}"))
     if rec.get("page") and rec.get("page") != "geotech" and             meta.get("page") != rec.get("page"):
         out.append(finding(D, "page_not_recorded", "high",
                            f"meta page is {meta.get('page')!r}, not "
@@ -967,10 +986,20 @@ def detect_cost(ctx) -> List[dict]:
                 if a.get("event") in ("model_end", "model_error"))
     n_meter = len(ctx["meter_calls"])
     if (n_act or n_meter) and n_act != n_meter:
-        out.append(finding(D, "meter_activity_mismatch", "medium",
-                           f"the activity log recorded {n_act} model calls "
-                           f"and the spend meter {n_meter}",
-                           activity=n_act, meter=n_meter))
+        if ctx["rec"].get("together_with"):
+            # Overlapping turns (session.say_together): the meter cannot
+            # tell their calls apart, so a gap here is the harness's.
+            out.append(finding(D, "meter_overlapping_turns", "info",
+                               f"the activity log recorded {n_act} model "
+                               f"calls and the spend meter {n_meter}; this "
+                               "turn overlapped "
+                               f"{', '.join(ctx['rec']['together_with'])}'s",
+                               activity=n_act, meter=n_meter))
+        else:
+            out.append(finding(D, "meter_activity_mismatch", "medium",
+                               f"the activity log recorded {n_act} model "
+                               f"calls and the spend meter {n_meter}",
+                               activity=n_act, meter=n_meter))
     return out
 
 

@@ -158,12 +158,22 @@ def test_dry_run_fires_every_detector(tmp_path):
     res = dryrun.run(wave="dry", runs_dir=str(tmp_path / "runs"))
     assert res["missing"] == [], res["fired"]
     assert res["control"] == [], res["control"]
+    # the control: save_file asked for /tmp/<name> lands in the conversation
+    assert res["redirect"]["ok"], res["redirect"]
     assert res["ok"]
     # $0 and its own ledger: the real one is untouched.
     after = os.path.getmtime(real_ledger) if os.path.exists(real_ledger) \
         else None
-    assert before == after
+    if before != after:
+        # Another session's LIVE wave may be writing the real ledger while
+        # this test runs; what matters is that the dry run recorded nothing
+        # in it (no wave of its name, no scenario of its flow).
+        with open(real_ledger, encoding="utf-8") as fh:
+            text = fh.read()
+        assert "dry" not in (json.loads(text).get("waves") or {})
+        assert dryrun.FLOW["id"] not in text
     out = tmp_path / "runs" / "dry"
+    assert (out / "dry_ledger.json").is_file()
     assert (out / "REPORT.md").is_file()
     scen = out / dryrun.FLOW["id"]
     for name in ("detectors.json", "transcript.md", "activity.jsonl",

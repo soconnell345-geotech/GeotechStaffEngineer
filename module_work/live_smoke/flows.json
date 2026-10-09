@@ -1,5 +1,5 @@
 {
- "about": "Multi-turn Tiny Apps tester scenarios for the live smoke harness (module_work/live_smoke/run.py flow). PUBLIC documents only: Review-suite document ids (Mecklenburg County standard details, UFC manuals, the app's sample calc packages, planlens synthetic fixtures), {\"file\": ...} from geotech-references/docs (FHWA/UFC only), {\"sample\": ...} from funhouse_agent/eval_samples, {\"render\": ...} screenshots cut from those. Every flow runs as a Tiny Apps user (IIS header identity LIVESMOKE\\tester) unless it names another; SharePoint is the local fake library. Step keys: upload | paste (+say) | say | new_conversation | open (\"previous\" or an index) | restart | restore; \"as\" picks a session. 'cost' is a rough tier for --max-cost; 'expect' is soft (whether the flow exercised the plumbing it was written for), never a pass/fail.",
+ "about": "Multi-turn Tiny Apps tester scenarios for the live smoke harness (module_work/live_smoke/run.py flow). PUBLIC documents only: Review-suite document ids (Mecklenburg County standard details, UFC manuals, the app's sample calc packages, planlens synthetic fixtures), {\"file\": ...} from geotech-references/docs (FHWA/UFC only), {\"sample\": ...} from funhouse_agent/eval_samples, {\"render\": ...} screenshots cut from those, {\"doc\": <ref>, \"name\": ...} any of those renamed, {\"make\": {\"kind\": ...}} files generated in docs.py (a stamped sheet set C-1..C-10, an invented spec section as PDF or DOCX that contradicts some sheets, a submittal-log XLSX, a DXF plan, a JPEG phone photo, a scan, a sideways sheet, a blank PDF, planlens' synthetic report). Every flow runs as a Tiny Apps user (IIS header identity LIVESMOKE\\tester) unless it names another; SharePoint is the local fake library. Step keys: upload | paste (+say) | say | say + together_with ({\"as\", \"say\"} or a list: sent at the same moment, in threads; those sessions must have acted before) | new_conversation | open (\"previous\" or an index) | restart | restore; \"as\" picks a session. An upload of a type the app's uploader does not take (core.ACCEPTED_UPLOAD_TYPES, e.g. .docx/.xlsx) is refused before the app sees it, as Streamlit refuses it. 'cost' is a rough tier for --max-cost; 'expect' is soft (whether the flow exercised the plumbing it was written for), never a pass/fail.",
  "flows": [
   {
    "id": "F01-review-orient-scale",
@@ -319,6 +319,317 @@
    "cost": "light",
    "steps": [
     {"say": "Give me a Word memo with a table of the Terzaghi bearing capacity factors Nc, Nq and N-gamma for phi from 0 to 40 degrees in 5-degree steps."}
+   ],
+   "expect": {"tools_any": ["write_docx"], "artifact_ext": [".docx"]}
+  },
+  {
+   "id": "F29-review-set-plus-spec-at-once",
+   "title": "Review page: a 10-sheet set and a spec section uploaded together, then 'do the specs agree with the drawings on X'",
+   "page": "document_review",
+   "cost": "heavy",
+   "steps": [
+    {"upload": [{"make": {"kind": "set", "name": "Riverside_Civil_Set_IFC.pdf"}}, {"make": {"kind": "spec"}}]},
+    {"say": "do the specs agree w/ the dwgs on concrete strength and curb ramp slopes?"},
+    {"say": "anything else in the spec that conflicts with the drawings? give me sheet #s and spec paragraph #s"},
+    {"say": "per the spec which one governs when they disagree"}
+   ],
+   "expect": {"tools_any": ["search_document", "read_document", "analyze_pdf_page"]}
+  },
+  {
+   "id": "F30-review-second-document-midway",
+   "title": "Review page: a submittal, then a second report added mid-conversation and questions across both",
+   "page": "document_review",
+   "cost": "medium",
+   "steps": [
+    {"upload": ["fixture_submittal"]},
+    {"say": "how many borings and how deep did they go?"},
+    {"upload": ["fixture_report"]},
+    {"say": "ok I added the harbour road report. do these two even describe the same site? compare boring depths and groundwater"},
+    {"say": "which doc should i trust for B-2"}
+   ],
+   "expect": {"tools_any": ["open_document", "read_document", "search_document"]}
+  },
+  {
+   "id": "F31-review-comment-table-markup-edit-comment",
+   "title": "Review page: every comment as a Word table, then marked up on the PDF, then 'change comment 3' in both",
+   "page": "document_review",
+   "cost": "medium",
+   "steps": [
+    {"upload": ["fixture_review_document"]},
+    {"say": "List every comment you'd raise on this, as a Word table - page, location, comment, severity."},
+    {"say": "now mark them up on the PDF"},
+    {"say": "change comment 3 to say it's a hold point, not a suggestion. update the word table and the markup both"}
+   ],
+   "expect": {"tools_any": ["write_docx", "annotate_document"], "artifact_ext": [".docx", ".pdf"]}
+  },
+  {
+   "id": "F32-review-issues-to-excel",
+   "title": "Review page: issues on a submittal, 'export the issues to Excel', then add a column",
+   "page": "document_review",
+   "cost": "medium",
+   "steps": [
+    {"upload": ["fixture_submittal"]},
+    {"say": "review this submittal. issues only, no essay"},
+    {"say": "Export the issues to Excel - page #, issue, severity."},
+    {"say": "add a column for who needs to fix it (contractor / engineer / us) and resave"}
+   ],
+   "expect": {"tools_any": ["write_xlsx"], "artifact_ext": [".xlsx"]}
+  },
+  {
+   "id": "F33-review-pages-looked-at-missed-sheet",
+   "title": "Review page: a set-wide question, 'what pages did you actually look at?', 'you missed sheet C-3, check again'",
+   "page": "document_review",
+   "cost": "heavy",
+   "steps": [
+    {"upload": [{"make": {"kind": "set", "name": "Riverside_Civil_Set_IFC.pdf"}}]},
+    {"say": "which sheets have slope limits on them? list sheet # and the limit"},
+    {"say": "what pages did you actually look at?"},
+    {"say": "you missed sheet C-3, check again"},
+    {"say": "ok so whats the final list"}
+   ],
+   "expect": {"tools_any": ["analyze_pdf_page", "render_region", "render_page_thumbnails"]}
+  },
+  {
+   "id": "F34-review-scanned-report",
+   "title": "Review page: a 22-page report that is all scans (no text layer), counts, a quoted value, which report it came from",
+   "page": "document_review",
+   "cost": "heavy",
+   "steps": [
+    {"upload": [{"make": {"kind": "image_pdf", "doc": {"make": {"kind": "planlens_report"}}, "skew": 0.4, "name": "Rosewood Geotech Report - signed (scan).pdf"}}]},
+    {"say": "how many borings and test pits, and how deep?"},
+    {"say": "whats the allowable bearing pressure they recommend? quote it and give the page"},
+    {"say": "is that from this firm's report or the old one bound in the back?"}
+   ],
+   "expect": {"tools_any": ["analyze_pdf_page", "render_page_thumbnails"]}
+  },
+  {
+   "id": "F35-review-text-report-summary-then-detail",
+   "title": "Review page: a 30-page report, a broad summary, then where-does-it-say and narrative-vs-logs",
+   "page": "document_review",
+   "cost": "medium",
+   "steps": [
+    {"upload": ["fixture_report"]},
+    {"say": "summarize the findings and recommendations in 5 bullets"},
+    {"say": "where does it say what the groundwater is? page refs"},
+    {"say": "any inconsistencies between the narrative and the boring logs or the lab sheets?"}
+   ],
+   "expect": {"tools_any": ["search_document", "read_document"]}
+  },
+  {
+   "id": "F36-review-long-manual-narrow-vs-broad",
+   "title": "Review page: a 99-page UFC, a narrow question, a whole-manual overview, then a pointed one",
+   "page": "document_review",
+   "cost": "medium",
+   "steps": [
+    {"upload": [{"file": "ufc_3_220_07.pdf"}]},
+    {"say": "what does it say about moisture barriers around foundations? page #s"},
+    {"say": "ok now give me a 1 page overview of the whole manual - chapters and what each covers"},
+    {"say": "which chapter would i use for a slab on grade over high PI clay"}
+   ],
+   "expect": {"tools_any": ["search_document", "document_structure", "read_document"]}
+  },
+  {
+   "id": "F37-review-submittal-complete-stamp",
+   "title": "Review page: 'is this submittal complete?', then the review stamp wording as a Word file",
+   "page": "document_review",
+   "cost": "medium",
+   "steps": [
+    {"upload": ["fixture_submittal"]},
+    {"say": "is this submittal complete? anything missing or duplicated?"},
+    {"say": "ok write the stamp: approved / approved as noted / revise and resubmit, with reasons. word doc pls"}
+   ],
+   "expect": {"tools_any": ["write_docx"], "artifact_ext": [".docx"]}
+  },
+  {
+   "id": "F38-review-calc-package-redline",
+   "title": "Review page: check a retaining-wall calc package, red-line it, then a short memo of the red-lines",
+   "page": "document_review",
+   "cost": "medium",
+   "steps": [
+    {"upload": ["calc_retaining_wall"]},
+    {"say": "check this calc. are the inputs consistent with the summary and are the FS ok?"},
+    {"say": "red-line the PDF wherever a number doesn't follow from the inputs"},
+    {"say": "now a short memo listing the redlines"}
+   ],
+   "expect": {"tools_any": ["annotate_document", "write_docx"], "artifact_ext": [".pdf", ".docx"]}
+  },
+  {
+   "id": "F39-review-phone-photo-jpg",
+   "title": "Review page: a tilted JPEG phone photo of a detail as the only upload; a value, then 'mark it up', then 'as a PDF'",
+   "page": "document_review",
+   "cost": "medium",
+   "steps": [
+    {"upload": [{"make": {"kind": "photo", "doc": "meck_10.25a", "name": "IMG_20261009_0912.jpg"}}]},
+    {"say": "whats the concrete strength on this detail"},
+    {"say": "mark it up - circle the concrete note and write 'spec says 3000, confirm'"},
+    {"say": "can you give me that as a pdf"}
+   ],
+   "expect": {"tools_any": ["analyze_image"]}
+  },
+  {
+   "id": "F40-review-dxf-upload",
+   "title": "Review page: a DXF boring plan uploaded (not a PDF); coordinates, a distance, then 'put a note on it'",
+   "page": "document_review",
+   "cost": "medium",
+   "steps": [
+    {"upload": [{"make": {"kind": "dxf_plan"}}]},
+    {"say": "list the borings with coordinates and ground elevations"},
+    {"say": "how far is B-5 from the nearest building corner?"},
+    {"say": "put a note at B-2 saying 'relocate 10 ft east' and give me the file back"}
+   ],
+   "expect": {"tools_any": ["read_text_file", "open_document", "list_files"]}
+  },
+  {
+   "id": "F41-review-word-excel-refused-then-sharepoint",
+   "title": "Review page: the Word spec and the Excel submittal log won't upload; pulled from SharePoint and checked against each other and the set",
+   "page": "document_review",
+   "cost": "heavy",
+   "sharepoint_seed": [
+    {"doc": {"make": {"kind": "spec", "format": "docx"}}, "folder": "projects/Riverside Drive/specs"},
+    {"doc": {"make": {"kind": "submittal_log"}}, "folder": "projects/Riverside Drive/submittals"},
+    {"doc": {"make": {"kind": "set"}}, "folder": "projects/Riverside Drive/drawings", "as": "Riverside_Civil_Set_IFC.pdf"}
+   ],
+   "steps": [
+    {"upload": [{"make": {"kind": "spec", "format": "docx"}}, {"make": {"kind": "submittal_log"}}]},
+    {"say": "it won't take my word file or the excel log. they're on sharepoint under projects/Riverside Drive (specs and submittals folders). pull both and tell me which submittals don't meet the spec"},
+    {"say": "which of those also conflict with the drawings?"},
+    {"say": "the IFC set is in the drawings folder next to them, use that"}
+   ],
+   "expect": {"tools_any": ["sharepoint_download_file"]}
+  },
+  {
+   "id": "F42-review-blank-pdf-wrong-file",
+   "title": "Review page: a blank 2-page PDF, 'review this', 'anything wrong here?', then the right file",
+   "page": "document_review",
+   "cost": "light",
+   "steps": [
+    {"upload": [{"make": {"kind": "blank", "pages": 2, "name": "scan_0001.pdf"}}]},
+    {"say": "review this"},
+    {"say": "anything wrong here?"},
+    {"upload": ["meck_21.01"]},
+    {"say": "oops wrong file. THIS one - anything wrong?"}
+   ]
+  },
+  {
+   "id": "F43-review-sideways-and-scanned-sheets",
+   "title": "Review page: a sheet that lost its rotation and a scanned sheet, uploaded together",
+   "page": "document_review",
+   "cost": "medium",
+   "steps": [
+    {"upload": [{"make": {"kind": "rotated", "doc": "meck_11.01", "mode": "flag", "rotate": 90, "name": "C-4 typical section.pdf"}}, {"make": {"kind": "image_pdf", "doc": "meck_30.01", "skew": 0.6, "name": "C-9 sediment trap (scan).pdf"}}]},
+    {"say": "the first one came out sideways. whats the R/W width on it?"},
+    {"say": "second one is a scan - whats the min storage volume per acre?"},
+    {"say": "mark the R/W width on the first sheet so I can send it back"}
+   ],
+   "expect": {"tools_any": ["analyze_pdf_page", "render_region", "annotate_document"]}
+  },
+  {
+   "id": "F44-review-ambiguous-asks-typos",
+   "title": "Review page: one sheet and nothing but vague, typo'd asks",
+   "page": "document_review",
+   "cost": "light",
+   "steps": [
+    {"upload": ["meck_21.01"]},
+    {"say": "reveiw this pls"},
+    {"say": "anythign wrong here?"},
+    {"say": "k. just the notes vs the section"}
+   ]
+  },
+  {
+   "id": "F45-review-sharepoint-latest-set-save-links",
+   "title": "Review page: 'pull the latest set from SharePoint' among similar names, then 'save everything to SharePoint' and 'send me links to all the files'",
+   "page": "document_review",
+   "cost": "medium",
+   "sharepoint_seed": [
+    {"doc": {"make": {"kind": "set", "docs": ["meck_10.17a", "meck_10.25a", "meck_10.31a", "meck_11.01"], "project": "RIVERSIDE DRIVE - 50% DESIGN - NOT FOR CONSTRUCTION"}}, "folder": "projects/Riverside Drive/drawings", "as": "Riverside_Civil_Set_50pct.pdf"},
+    {"doc": {"make": {"kind": "set", "docs": ["meck_10.17a", "meck_10.25a", "meck_10.31a", "meck_11.01", "meck_20.00a", "meck_20.00b", "meck_21.01"], "project": "RIVERSIDE DRIVE - 90% DESIGN"}}, "folder": "projects/Riverside Drive/drawings", "as": "Riverside_Civil_Set_90pct.pdf"},
+    {"doc": {"make": {"kind": "set", "docs": ["meck_10.17a", "meck_10.25a", "meck_10.31a", "meck_11.01", "meck_20.00a", "meck_20.00b", "meck_21.01"], "project": "RIVERSIDE DRIVE - 90% DESIGN REV 1"}}, "folder": "projects/Riverside Drive/drawings", "as": "Riverside_Civil_Set_90pct_REV1.pdf"},
+    {"doc": {"make": {"kind": "set", "project": "RIVERSIDE DRIVE - ISSUED FOR CONSTRUCTION 2026-09-30"}}, "folder": "projects/Riverside Drive/drawings", "as": "Riverside Civil Set IFC 2026-09-30.pdf"},
+    {"doc": {"make": {"kind": "set", "project": "RIVERSIDE DRIVE - ISSUED FOR CONSTRUCTION 2026-08-15"}}, "folder": "projects/Riverside Drive/drawings/superseded", "as": "Riverside_Civil_Set_IFC_2026-08-15.pdf"}
+   ],
+   "steps": [
+    {"say": "pull the latest riverside dr set from sharepoint"},
+    {"say": "how many sheets, and what is C-10?"},
+    {"say": "save everything to sharepoint"},
+    {"say": "send me links to all the files"}
+   ],
+   "expect": {"tools_any": ["sharepoint_search_files", "sharepoint_list_files", "sharepoint_download_file", "sharepoint_upload_file"]}
+  },
+  {
+   "id": "F46-review-restart-mid-markup",
+   "title": "Review page: marking up a set, host restart, restore, 'keep going' on the same marked-up PDF",
+   "page": "document_review",
+   "cost": "heavy",
+   "steps": [
+    {"upload": [{"make": {"kind": "set", "name": "Riverside_Civil_Set_IFC.pdf"}}]},
+    {"say": "start marking up: on C-1 to C-3 put a note on each title block with the sheet title"},
+    {"restart": true},
+    {"restore": {}},
+    {"say": "where were we? keep going on C-4 to C-6 and add to the same marked-up pdf"}
+   ],
+   "expect": {"tools_any": ["annotate_document"], "artifact_ext": [".pdf"]}
+  },
+  {
+   "id": "F47-review-two-testers-same-document-at-once",
+   "title": "Review page: two testers mark up the SAME document at the same moment in separate conversations; markups and files stay apart",
+   "page": "document_review",
+   "cost": "medium",
+   "sessions": {"alice": {"user": "LIVESMOKE\\alice"}, "bob": {"user": "LIVESMOKE\\bob"}},
+   "steps": [
+    {"as": "alice", "upload": ["fixture_review_document"]},
+    {"as": "bob", "upload": ["fixture_review_document"]},
+    {"as": "alice", "say": "mark up every place this contradicts itself and give me the marked-up pdf",
+     "together_with": {"as": "bob", "say": "put a note on the drawing sheet's title block saying 'Bob - checked' and give me the pdf"}},
+    {"as": "alice", "say": "list every file in this conversation with its full name"},
+    {"as": "bob", "say": "send me the link to my marked-up pdf"},
+    {"as": "alice", "say": "has anyone else marked this up? whose notes are on my copy?"}
+   ],
+   "expect": {"tools_any": ["annotate_document"], "artifact_ext": [".pdf"]}
+  },
+  {
+   "id": "F48-review-same-file-name-different-sheets",
+   "title": "Review page: two testers upload DIFFERENT sheets both called C-101.pdf, then ask about 'C-101' at the same moment",
+   "page": "document_review",
+   "cost": "medium",
+   "sessions": {"alice": {"user": "LIVESMOKE\\alice"}, "bob": {"user": "LIVESMOKE\\bob"}},
+   "steps": [
+    {"as": "alice", "upload": [{"doc": "meck_10.17a", "name": "C-101.pdf"}]},
+    {"as": "bob", "upload": [{"doc": "meck_21.01", "name": "C-101.pdf"}]},
+    {"as": "alice", "say": "what's the gutter width on C-101?",
+     "together_with": {"as": "bob", "say": "what's the max ponding depth on C-101?"}},
+    {"as": "bob", "say": "what's the title of C-101, exactly as printed?"}
+   ],
+   "expect": {"tools_any": ["open_document", "analyze_pdf_page"]}
+  },
+  {
+   "id": "F49-review-someone-elses-document",
+   "title": "Review page: a tester asks for another person's upload by name (expected: not found, here or on SharePoint)",
+   "page": "document_review",
+   "cost": "light",
+   "sessions": {"alice": {"user": "LIVESMOKE\\alice"}, "bob": {"user": "LIVESMOKE\\bob"}},
+   "steps": [
+    {"as": "alice", "upload": ["fixture_report"]},
+    {"as": "alice", "say": "what's the project name on this report?"},
+    {"as": "bob", "say": "can you open the harbour road report alice uploaded this morning? harbour_road_geotechnical_report.pdf"},
+    {"as": "bob", "say": "check sharepoint for it then"},
+    {"as": "bob", "say": "search for anything with harbour road in the name, anywhere"}
+   ],
+   "expect": {"tools_any": ["list_files", "sharepoint_search_files", "sharepoint_list_files"]}
+  },
+  {
+   "id": "F50-review-long-session-ten-sheets",
+   "title": "Review page: a long session (7 typed turns) on a 10-sheet set - context growth, a Word memo, then recall of an early answer",
+   "page": "document_review",
+   "cost": "heavy",
+   "steps": [
+    {"upload": [{"make": {"kind": "set", "name": "Riverside_Civil_Set_IFC.pdf"}}]},
+    {"say": "list the sheets with their titles"},
+    {"say": "which ones are erosion control?"},
+    {"say": "C-7: max ponding depth and filter media depth?"},
+    {"say": "compare the curb and gutter widths on C-1 vs C-2"},
+    {"say": "what concrete strength is called out anywhere in the set?"},
+    {"say": "now a word memo of everything we found today"},
+    {"say": "what did we say about C-7 earlier? one line"}
    ],
    "expect": {"tools_any": ["write_docx"], "artifact_ext": [".docx"]}
   }

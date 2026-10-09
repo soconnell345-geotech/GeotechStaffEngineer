@@ -176,6 +176,12 @@ def write_transcript(path: str, flow: dict, turns: List[dict],
                  f"{m.get('model_calls', 0)} model calls · "
                  f"{m.get('seconds')} s")
         L.append("")
+        if t.get("together_with"):
+            L.append("*Sent at the same moment as "
+                     f"{', '.join(t['together_with'])}'s turn (the cost "
+                     "meter cannot split overlapping turns, so their costs "
+                     "are approximate).*")
+            L.append("")
         L.append("**User:** " + (t.get("prompt") or "").strip()[:3000])
         L.append("")
         tools = t.get("tools") or []
