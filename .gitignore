@@ -30,3 +30,7 @@ tinyapps/reference/
 
 # Local Tiny Apps configuration (secrets) — never committed
 tinyapps/wrapper_repo/.env
+
+# Live smoke harness: run records and the cumulative spend ledger — local only
+module_work/live_smoke/runs/
+module_work/live_smoke/spend_ledger.json

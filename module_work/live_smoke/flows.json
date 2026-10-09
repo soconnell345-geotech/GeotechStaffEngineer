@@ -1,0 +1,326 @@
+{
+ "about": "Multi-turn Tiny Apps tester scenarios for the live smoke harness (module_work/live_smoke/run.py flow). PUBLIC documents only: Review-suite document ids (Mecklenburg County standard details, UFC manuals, the app's sample calc packages, planlens synthetic fixtures), {\"file\": ...} from geotech-references/docs (FHWA/UFC only), {\"sample\": ...} from funhouse_agent/eval_samples, {\"render\": ...} screenshots cut from those. Every flow runs as a Tiny Apps user (IIS header identity LIVESMOKE\\tester) unless it names another; SharePoint is the local fake library. Step keys: upload | paste (+say) | say | new_conversation | open (\"previous\" or an index) | restart | restore; \"as\" picks a session. 'cost' is a rough tier for --max-cost; 'expect' is soft (whether the flow exercised the plumbing it was written for), never a pass/fail.",
+ "flows": [
+  {
+   "id": "F01-review-orient-scale",
+   "title": "Review page: upload a sheet, automatic orientation, a question",
+   "page": "document_review",
+   "cost": "light",
+   "steps": [
+    {"upload": ["meck_10.17a"]},
+    {"say": "What is this sheet's number and title, and what scale is it drawn at?"}
+   ],
+   "expect": {"tools_any": ["open_document"]}
+  },
+  {
+   "id": "F02-review-word-memo-followup",
+   "title": "Review page: Word memo, then a follow-up that edits the same memo",
+   "page": "document_review",
+   "cost": "medium",
+   "steps": [
+    {"upload": ["fixture_submittal"]},
+    {"say": "Review this submittal against its own stated requirements and write the findings up as a Word memo I can download."},
+    {"say": "Add a one-line summary at the very top of that memo and save it again under the same name."}
+   ],
+   "expect": {"tools_any": ["write_docx"], "artifact_ext": [".docx"]}
+  },
+  {
+   "id": "F03-review-markup-pdf",
+   "title": "Review page: a marked-up PDF of contradictions",
+   "page": "document_review",
+   "cost": "medium",
+   "steps": [
+    {"upload": ["fixture_review_document"]},
+    {"say": "Mark up the PDF: put a review comment on each place where the document contradicts itself, and give me the marked-up copy."}
+   ],
+   "expect": {"tools_any": ["annotate_document"], "artifact_ext": [".pdf"]}
+  },
+  {
+   "id": "F04-review-markup-sharepoint-link",
+   "title": "Review page: markup, then 'save it to SharePoint and send me the link'",
+   "page": "document_review",
+   "cost": "medium",
+   "steps": [
+    {"upload": ["meck_21.01"]},
+    {"say": "Put a note on the title block of this sheet saying 'Checked - live smoke test' and give me the marked-up PDF."},
+    {"say": "Save the marked-up PDF to SharePoint and send me the link."}
+   ],
+   "expect": {"tools_any": ["annotate_document", "sharepoint_upload_file"], "artifact_ext": [".pdf"]}
+  },
+  {
+   "id": "F05-review-report-plot-csv",
+   "title": "Review page: plot from a report's lab table, then the data as CSV",
+   "page": "document_review",
+   "cost": "medium",
+   "steps": [
+    {"upload": ["fixture_report"]},
+    {"say": "Plot moisture content against depth for every sample in the laboratory summary table, with depth increasing downward."},
+    {"say": "Now give me the same data as a CSV file."}
+   ],
+   "expect": {"tools_any": ["plot_data"], "artifact_ext": [".csv"]}
+  },
+  {
+   "id": "F06-review-csv-then-excel",
+   "title": "Review page: a CSV table, then 'can I have that as Excel?'",
+   "page": "document_review",
+   "cost": "medium",
+   "steps": [
+    {"upload": ["fixture_report"]},
+    {"say": "Put the boring summary - boring, ground elevation, depth and groundwater - into a table I can download as a CSV file."},
+    {"say": "Can I have that as an Excel workbook instead?"}
+   ],
+   "expect": {"artifact_ext": [".csv"]}
+  },
+  {
+   "id": "F07-review-sharepoint-fetch",
+   "title": "Review page: 'get <file> from SharePoint and review it' (no upload)",
+   "page": "document_review",
+   "cost": "medium",
+   "sharepoint_seed": [{"doc": "ufc_3_220_04fa", "folder": "uploaded references"}],
+   "steps": [
+    {"say": "Get ufc_3_220_04fa_2004.pdf from SharePoint (it's in the uploaded references folder) and tell me what it covers, chapter by chapter."}
+   ],
+   "expect": {"tools_any": ["sharepoint_download_file"]}
+  },
+  {
+   "id": "F08-review-sharepoint-search",
+   "title": "Review page: find a report on SharePoint by description, download, extract",
+   "page": "document_review",
+   "cost": "medium",
+   "sharepoint_seed": [{"doc": "fixture_report", "folder": "projects/Harbour Road"}],
+   "steps": [
+    {"say": "There's a geotechnical report for Harbour Road somewhere in our SharePoint. Find it, download it and list the borings it describes with their depths."}
+   ],
+   "expect": {"tools_any": ["sharepoint_search_files", "sharepoint_list_files", "sharepoint_download_file"]}
+  },
+  {
+   "id": "F09-review-paste-screenshot",
+   "title": "Review page: upload a sheet, then paste a screenshot with a question",
+   "page": "document_review",
+   "cost": "medium",
+   "steps": [
+    {"upload": ["meck_10.25a"]},
+    {"paste": [{"render": {"doc": "meck_10.25a", "page": 0, "clip": [0.5, 0.5, 1.0, 1.0], "zoom": 1.5, "name": "image.png"}}],
+     "say": "Here's a screenshot of part of the sheet. What does the text in this part say, and which detail is it in?"}
+   ],
+   "expect": {"tools_any": ["analyze_image"]}
+  },
+  {
+   "id": "F10-review-two-users",
+   "title": "Review page: two people on one host - per-user folders stay apart",
+   "page": "document_review",
+   "cost": "medium",
+   "sessions": {"alice": {"user": "LIVESMOKE\\alice"}, "bob": {"user": "LIVESMOKE\\bob"}},
+   "steps": [
+    {"as": "alice", "upload": ["meck_10.17a"]},
+    {"as": "alice", "say": "What scale is this sheet at?"},
+    {"as": "bob", "upload": ["meck_11.01"]},
+    {"as": "bob", "say": "What is this detail for?"},
+    {"as": "alice", "say": "List every file you have in this conversation, with its full name."},
+    {"as": "bob", "say": "Do you have a sheet called 10.17a.pdf anywhere? If so, what is it?"}
+   ]
+  },
+  {
+   "id": "F11-review-restart-restore",
+   "title": "Review page: Word memo, host restart, restore from SharePoint, edit the old memo",
+   "page": "document_review",
+   "cost": "medium",
+   "steps": [
+    {"upload": ["fixture_submittal"]},
+    {"say": "Write a short Word memo summarising this submittal."},
+    {"restart": true},
+    {"restore": {}},
+    {"say": "Open the memo you wrote earlier, add a line at the end saying 'Reviewed again after a restore', and save it as a new file."}
+   ],
+   "expect": {"artifact_ext": [".docx"]}
+  },
+  {
+   "id": "F12-review-open-past-conversation",
+   "title": "Review page: two conversations, reopen the first, ask for a Word summary",
+   "page": "document_review",
+   "cost": "light",
+   "steps": [
+    {"upload": ["meck_30.00"]},
+    {"say": "What is this sheet?"},
+    {"new_conversation": true},
+    {"upload": ["meck_30.01"]},
+    {"say": "What is this sheet?"},
+    {"open": "previous"},
+    {"say": "Remind me which sheet we discussed in this conversation and write me a one-paragraph Word summary of it."}
+   ],
+   "expect": {"artifact_ext": [".docx"]}
+  },
+  {
+   "id": "F13-review-long-ufc-every-page",
+   "title": "Review page: a 538-page UFC and an every-page ask",
+   "page": "document_review",
+   "cost": "heavy",
+   "steps": [
+    {"upload": [{"file": "ufc_3_260_02_2001.pdf"}]},
+    {"say": "Go through every page of this document and list every table title with the page it is on."}
+   ]
+  },
+  {
+   "id": "F14-review-tag-set-csv",
+   "title": "Review page: drawn tags on a sheet set, results as a CSV",
+   "page": "document_review",
+   "cost": "medium",
+   "steps": [
+    {"upload": ["fixture_tags"]},
+    {"say": "Find every FBG callout on every sheet and give me a CSV with the sheet number and where on the sheet each one is."}
+   ],
+   "expect": {"artifact_ext": [".csv"]}
+  },
+  {
+   "id": "F15-review-calc-package-memo",
+   "title": "Review page: check a calc package's arithmetic, Word memo",
+   "page": "document_review",
+   "cost": "medium",
+   "steps": [
+    {"upload": ["calc_bearing"]},
+    {"say": "Check the arithmetic in this calculation package and write me a Word memo listing anything that does not add up."}
+   ],
+   "expect": {"tools_any": ["write_docx"], "artifact_ext": [".docx"]}
+  },
+  {
+   "id": "F16-review-set-markup",
+   "title": "Review page: a 10-sheet set, a note on every title block, one marked-up PDF",
+   "page": "document_review",
+   "cost": "heavy",
+   "steps": [
+    {"upload": ["meck_set"]},
+    {"say": "On every sheet of this set, put a note on the title block giving the sheet number, and give me one marked-up PDF of the whole set."}
+   ],
+   "expect": {"tools_any": ["annotate_document"], "artifact_ext": [".pdf"]}
+  },
+  {
+   "id": "F17-review-scale-plan",
+   "title": "Review page: a measured distance on a re-plotted site plan",
+   "page": "document_review",
+   "cost": "light",
+   "steps": [
+    {"upload": ["fixture_scale_plan"]},
+    {"say": "How far apart are borings B-1 and B-4, in feet?"}
+   ]
+  },
+  {
+   "id": "F18-geotech-calc-package",
+   "title": "Geotech page: bearing capacity with a calc package PDF",
+   "page": "geotech",
+   "cost": "medium",
+   "steps": [
+    {"say": "Compute the ultimate and allowable bearing capacity of a 2 m square footing 1 m deep in sand (phi = 32 degrees, unit weight 19 kN/m3, factor of safety 3) and give me a calculation package as a PDF."}
+   ],
+   "expect": {"artifact_ext": [".pdf"]}
+  },
+  {
+   "id": "F19-geotech-memo-sharepoint-link",
+   "title": "Geotech page: settlement memo, then 'save it to SharePoint and send me the link'",
+   "page": "geotech",
+   "cost": "medium",
+   "steps": [
+    {"say": "Estimate the consolidation settlement of a 3 m square footing carrying 150 kPa, founded 1 m deep on 6 m of normally consolidated clay (Cc = 0.30, e0 = 0.90, unit weight 18 kN/m3, water table at the ground surface), and write it up as a Word memo."},
+    {"say": "Save the memo to SharePoint and send me the link."}
+   ],
+   "expect": {"tools_any": ["sharepoint_upload_file"], "artifact_ext": [".docx"]}
+  },
+  {
+   "id": "F20-geotech-diggs",
+   "title": "Geotech page: a DIGGS file for two borings",
+   "page": "geotech",
+   "cost": "medium",
+   "steps": [
+    {"say": "Make a DIGGS file for two borings. B-1 at 38.8977 N, 77.0365 W, ground elevation 12.0 m: 0-3 m brown silty SAND (SM), 3-8 m grey lean CLAY (CL), 8-12 m dense sandy GRAVEL (GW); groundwater at 2.5 m. B-2 at 38.8980 N, 77.0360 W, ground elevation 11.5 m: 0-2.5 m SM, 2.5-9 m CL, 9-12 m GW; groundwater at 2.0 m."}
+   ],
+   "expect": {"tools_any": ["write_diggs", "subsurface.write_diggs"], "artifact_ext": [".xml"]}
+  },
+  {
+   "id": "F21-geotech-dxf-export",
+   "title": "Geotech page: a slope cross-section exported to DXF",
+   "page": "geotech",
+   "cost": "medium",
+   "steps": [
+    {"say": "Export this slope cross-section to a DXF I can open in CAD: ground surface through (0, 10), (10, 10), (25, 0) and (40, 0) m; a clay layer boundary through (0, 5) and (40, -2); the water table through (0, 7), (25, 0) and (40, 0)."}
+   ],
+   "expect": {"tools_any": ["dxf_export"], "artifact_ext": [".dxf"]}
+  },
+  {
+   "id": "F22-geotech-plot",
+   "title": "Geotech page: a plot from typed data",
+   "page": "geotech",
+   "cost": "light",
+   "steps": [
+    {"say": "Plot SPT N60 against depth for these readings - 1.5 m: 6, 3.0 m: 9, 4.5 m: 14, 6.0 m: 18, 7.5 m: 25, 9.0 m: 31 - with depth increasing downward."}
+   ],
+   "expect": {"tools_any": ["plot_data", "render_figures"]}
+  },
+  {
+   "id": "F23-geotech-upload-dxf-slope",
+   "title": "Geotech page: upload a section DXF, slope analysis, calc package PDF",
+   "page": "geotech",
+   "cost": "medium",
+   "steps": [
+    {"upload": [{"sample": "sample_section.dxf"}]},
+    {"say": "Here is a cross-section DXF. Import it, run a slope stability analysis with reasonable soil parameters that you state, and give me a calculation package PDF."}
+   ],
+   "expect": {"artifact_ext": [".pdf"]}
+  },
+  {
+   "id": "F24-geotech-upload-diggs-csv",
+   "title": "Geotech page: upload a DIGGS file, plot the borings, CSV of layers",
+   "page": "geotech",
+   "cost": "medium",
+   "steps": [
+    {"upload": [{"sample": "sample_site_diggs.xml"}]},
+    {"say": "Read the borings in this DIGGS file, plot them, and give me a CSV of the layers."}
+   ],
+   "expect": {"artifact_ext": [".csv"]}
+  },
+  {
+   "id": "F25-geotech-sharepoint-reference-memo",
+   "title": "Geotech page: fetch a UFC from SharePoint, Word memo from it",
+   "page": "geotech",
+   "cost": "medium",
+   "sharepoint_seed": [{"doc": "ufc_3_220_07", "folder": "uploaded references"}],
+   "steps": [
+    {"say": "Download ufc_3_220_07.pdf from SharePoint (uploaded references) and give me a one-page Word memo on what it says about drilled shafts."}
+   ],
+   "expect": {"tools_any": ["sharepoint_download_file"], "artifact_ext": [".docx"]}
+  },
+  {
+   "id": "F26-geotech-two-users-calc",
+   "title": "Geotech page: two people; a calc package, 'what files do I have', 'send me the link'",
+   "page": "geotech",
+   "cost": "medium",
+   "sessions": {"alice": {"user": "LIVESMOKE\\alice"}, "bob": {"user": "LIVESMOKE\\bob"}},
+   "steps": [
+    {"as": "alice", "say": "Compute the active earth pressure on a 4 m cantilever retaining wall holding back sand (phi = 30 degrees, unit weight 18 kN/m3) and save the calculation as a PDF calc package."},
+    {"as": "bob", "say": "What files are in my working folder?"},
+    {"as": "alice", "say": "Send me the link to the calc package."}
+   ],
+   "expect": {"artifact_ext": [".pdf"]}
+  },
+  {
+   "id": "F27-review-dev-identity",
+   "title": "Review page: a single-user process (DEV_IDENTITY), not the multi-user layout",
+   "page": "document_review",
+   "user": {"dev": "LIVESMOKE\\devuser"},
+   "cost": "light",
+   "steps": [
+    {"upload": ["meck_20.00a"]},
+    {"say": "What is on this sheet?"}
+   ]
+  },
+  {
+   "id": "F28-geotech-anonymous-legacy",
+   "title": "Geotech page, nobody signed in: the legacy single-user layout, Word table",
+   "page": "geotech",
+   "user": null,
+   "cost": "light",
+   "steps": [
+    {"say": "Give me a Word memo with a table of the Terzaghi bearing capacity factors Nc, Nq and N-gamma for phi from 0 to 40 degrees in 5-degree steps."}
+   ],
+   "expect": {"tools_any": ["write_docx"], "artifact_ext": [".docx"]}
+  }
+ ]
+}
