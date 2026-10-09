@@ -121,7 +121,7 @@ def test_friendly_turn_error_budget_exceeded():
         BudgetExceededError("Monthly AI budget exceeded: $50.12 of $50.00"))
     # One plain line since live smoke 2c (D2): the raw text goes to the
     # activity log, and nothing says "ask again".
-    assert err.startswith("The AI budget for this app is used up")
+    assert err.startswith("Your AI budget is used up")
     assert "Tell the app owner" in err and "ask again" not in err
     assert "BudgetExceededError" not in err
     # unrelated errors stay untouched

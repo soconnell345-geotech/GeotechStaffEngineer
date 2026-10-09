@@ -17,6 +17,8 @@ Environment (the deployment's settings, read by :mod:`webapp.tinyapps_settings`
 from env, Key Vault or a local ``.env``)::
 
     PROMPTER_URL / PROMPTER_MODEL / PROMPTER_API_KEY / PROMPTER_CA_BUNDLE
+    PROMPTER-API-KEY--<TESTER> / PROMPTER_KEYS / PROMPTER_SHARED_KEY_FALLBACK
+                                 each tester's own key (webapp.tinyapps_engine)
     GRAPH_TENANT_ID / GRAPH_CLIENT_ID / GRAPH_CLIENT_SECRET / SHAREPOINT_SITE_URL
     GEOTECH_WEBAPP_DATA          where conversations live (the wrapper sets it)
     DEV_IDENTITY                 local stand-in for the IIS identity header

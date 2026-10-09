@@ -135,6 +135,13 @@ def test_consecutive_lines_stay_on_their_own_lines(tmp_path):
     # The title's own text, case and whitespace aside: written once (B4).
     ("Review Comments (DRAFT)", "#  review   COMMENTS (draft) ", False),
     ("Submittal Memo", "# **Submittal Memo**", False),
+    # ... and punctuation aside: the same words in the same order are the
+    # title (live smoke wave 3, F2: F02 and F31's titles printed twice).
+    ("Review Memo – Project Alpha Geotechnical Submittal",
+     "# Review Memo: Project Alpha Geotechnical Submittal", False),
+    ("Review comments - review_set.pdf",
+     "# Review comments: review_set.pdf", False),
+    ("Review Comments (DRAFT)", "# Review comments - draft", False),
     # Anything more or less than the title is kept, so no word is lost
     # (live smoke 2c, E8: F44's longer heading was dropped with its figure
     # number, as were shorter ones that were the title's leading words).
@@ -143,7 +150,9 @@ def test_consecutive_lines_stay_on_their_own_lines(tmp_path):
      "(BMP Fig. 4.1.3)", True),
     ("Submittal Review Stamp - Project Alpha", "# Submittal Review Stamp",
      True),
-    ("Review Comments (DRAFT)", "# Review comments - draft", True),
+    # A number is its digits: 4.1.3 is not 413, and Rev. 2 is not Rev. 3.
+    ("Figure 4.1.3", "# Figure 413", True),
+    ("Std. 21.01 Rev. 2", "# Std. 21.01 Rev. 3", True),
     # A one-word section is a section, not the title.
     ("Findings and Recommendations", "# Findings", True),
     # A different heading under the title stays.

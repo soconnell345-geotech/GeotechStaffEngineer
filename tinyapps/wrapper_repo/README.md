@@ -38,6 +38,9 @@ dosdev, push, and ask the App Services team to sync.
 | Value | Purpose |
 | --- | --- |
 | `PROMPTER_URL`, `PROMPTER_MODEL`, `PROMPTER_API_KEY`, `PROMPTER_CA_BUNDLE` | the model endpoint (the deployment must accept image inputs — the app's vision tools depend on it) |
+| `PROMPTER-API-KEY--<TESTER>` per tester (optional `PROMPTER-MODEL--<TESTER>`, `PROMPTER-URL--<TESTER>`) | each tester's OWN key on the published app. `<TESTER>` is the sign-in `DOMAIN\user` in upper case, every run of other characters one hyphen: `CORP\jdoe` → `PROMPTER-API-KEY--CORP-JDOE` |
+| `PROMPTER-KEYS` (optional) | the alternative: one JSON secret, `{"CORP\\jdoe": {"key": "…", "model": "…", "url": "…"}}` (`model`, `url` optional) |
+| `PROMPTER_SHARED_KEY_FALLBACK` (optional) | `1` lets a signed-in tester with no key of their own use the shared `PROMPTER_API_KEY`. Off by default: a tester without a key is told politely to ask the owner |
 | `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_CLIENT_SECRET`, `SHAREPOINT_SITE_URL` | the app registration that mirrors conversations to the team's SharePoint site |
 | `KV_NAME` (app setting) | the Key Vault the values above live in |
 | `--server.corsAllowedOrigins` in `run.sh` | the published URL of the app |

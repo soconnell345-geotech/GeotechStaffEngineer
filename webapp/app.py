@@ -178,7 +178,11 @@ def _resolve_and_build(model_id: str) -> None:
     # render. Flag the change so the sidebar pushes ss.model INTO the widget
     # before it is instantiated.
     ss._model_dirty = True
-    ss.engine = engine_config.resolve_engine(model_id=model_id)
+    # Built for THIS session's signed-in person: on Tiny Apps the engine
+    # carries their own Prompter key (webapp.tinyapps_engine), so it lives in
+    # this session's state and is never shared.
+    ss.engine = engine_config.resolve_engine(model_id=model_id,
+                                             identity=_IDENT)
     _build_agent_for_session()
 
 
@@ -558,6 +562,8 @@ with st.sidebar:
                  f"build: {ss.agent_error}")
     elif eng.source == "error":
         st.error(eng.message)
+    elif eng.source == "unavailable":      # polite: e.g. no AI key for you
+        st.info(eng.message)
     else:
         st.warning(eng.message)
 
@@ -637,7 +643,7 @@ with st.sidebar:
             from webapp import diagnostics as _diag
             with st.spinner("Running connection tests…"):
                 ss.diag_report = _diag.format_report(
-                    _diag.run_diagnostics(ss.model))
+                    _diag.run_diagnostics(ss.model, identity=_IDENT))
         if ss.get("diag_report"):
             st.code(ss.diag_report, language=None)
     try:
@@ -1221,7 +1227,9 @@ _placeholder = ("Ask a geotechnical question…" if _PROFILE.specialists else
 _chat_files = (ws_upload.upload_mode() == "http" and _chat_input_takes_files())
 _chat_value = st.chat_input(
     _placeholder if ss.agent is not None else
-    "Configure an engine to start (see the sidebar)",
+    ("The AI is not available to you yet (see the sidebar)"
+     if getattr(ss.get("engine"), "source", "") == "unavailable" else
+     "Configure an engine to start (see the sidebar)"),
     **({"accept_file": "multiple", "file_type": core.ACCEPTED_UPLOAD_TYPES}
        if _chat_files else {}))
 prompt = _chat_value
@@ -1259,7 +1267,11 @@ if not prompt and _orient and _PROFILE.orientation and ss.agent is not None \
     _orientation_names = list(_orient)
 
 if prompt:
-    if ss.agent is None:
+    if ss.agent is None and ss.engine.source == "unavailable":
+        # A polite refusal (a Tiny Apps tester with no AI key of their own):
+        # the message as written, not an error.
+        st.chat_message("assistant").info(ss.engine.message)
+    elif ss.agent is None:
         st.chat_message("assistant").error(
             "No engine is configured, so I can't answer yet. "
             + ss.engine.message)

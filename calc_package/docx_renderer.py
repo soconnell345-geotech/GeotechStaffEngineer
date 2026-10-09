@@ -147,21 +147,26 @@ def _plain_inline(token) -> str:
     return "".join(out)
 
 
-def _normal(text: str) -> str:
-    """Text as compared with the title: case folded, runs of whitespace one
-    space, ends trimmed."""
-    return " ".join(str(text or "").split()).casefold()
+def _words(text: str) -> list:
+    """The words of ``text`` as compared with the title: runs of letters and
+    digits, case folded. Punctuation (dashes, colons, commas, brackets,
+    dots) and whitespace only separate words, so "A - B" and "A: B" have
+    the same words."""
+    return re.findall(r"\w+", str(text or "").casefold())
 
 
 def _restates(heading: str, title: str) -> bool:
-    """Whether an opening heading restates the title: exactly the title's
-    text, case and whitespace aside. Anything else is kept, so no word of
-    it is lost (live smoke 2c, E8: F44's heading "Review: Std. No. 21.01,
-    Rev. 2 - Bioretention Cross-Section (BMP Fig. 4.1.3)" began with the
-    title's words, was taken for the title and was dropped with its figure
+    """Whether an opening heading restates the title: the title's own words
+    in the title's order, case, whitespace and punctuation aside (live
+    smoke wave 3, F2: "Review Memo – Project Alpha …" as the title and
+    "Review Memo: Project Alpha …" as the heading printed twice). A heading
+    with any word more or fewer is kept, so no word of it is lost (live
+    smoke 2c, E8: F44's heading "Review: Std. No. 21.01, Rev. 2 -
+    Bioretention Cross-Section (BMP Fig. 4.1.3)" began with the title's
+    words, was taken for the title and was dropped with its figure
     number)."""
-    h = _normal(heading)
-    return bool(h) and h == _normal(title)
+    h = _words(heading)
+    return bool(h) and h == _words(title)
 
 
 def _drop_restated_title(tokens, title):

@@ -60,7 +60,8 @@ system_prompt=build_document_review_prompt())`) and `webapp/tinyapps_entry.py`
   (full URL ending `/chat/completions`), `PROMPTER_MODEL` (the deployment
   name), `PROMPTER_API_KEY` sent as BOTH `api-key` and `Authorization: Bearer`,
   optional `PROMPTER_CA_BUNDLE` (internal CA, PEM text in Key Vault). Keys are
-  per deployment. 180 s per call; the proxy times HTTP out near 120 s (our
+  per deployment; on the published app each TESTER has their own (see
+  "Per-tester Prompter keys" below). 180 s per call; the proxy times HTTP out near 120 s (our
   turns run detached from the request). Strict `json_schema` works. →
   `webapp/tinyapps_engine.py` (`ChatOpenAI`, `max_completion_tokens`).
 - **The pilot key serves ONE model, $50/month.** The deployment behind it
@@ -108,6 +109,90 @@ bump the pin + ask App Services to sync. The engineers fill in
 `corsAllowedOrigins` and provision Key Vault; **nothing in our code changes
 between dosdev and production** — the same names are read from `.env` there
 and Key Vault here.
+
+## Per-tester Prompter keys (built 2026-10-09, unreleased)
+
+Each tester on the published app gets their own Prompter key, so each has
+their own budget, and the list of keys is the pilot's access list.
+
+**Who counts as a tester.** A caller identified by the IIS header
+(`Identity.multi_user`). Single-user hosts keep the shared
+`PROMPTER_API_KEY` exactly as before: dosdev with `DEV_IDENTITY`, a laptop,
+Databricks, and any request with no header.
+
+**Resolution order** for a tester (`webapp/tinyapps_engine.resolve_for`):
+
+1. **The per-tester secret** `PROMPTER-API-KEY--<TESTER>`. The optional
+   `PROMPTER-MODEL--<TESTER>` and `PROMPTER-URL--<TESTER>` fall back to the
+   shared `PROMPTER-MODEL` / `PROMPTER-URL`. A tester's own model wins over
+   the picker's choice, because a key serves one deployment.
+2. **The JSON secret `PROMPTER-KEYS`**:
+   `{"CORP\\jdoe": {"key": "…", "model": "…", "url": "…"}}`. The identity is
+   matched case-insensitively, `DOMAIN\user` or `user@domain`. `model` and
+   `url` are optional, and a bare string value is taken as the key.
+3. **The shared `PROMPTER-API-KEY`**, only when
+   `PROMPTER_SHARED_KEY_FALLBACK` is `1`/`true`/`yes`/`on` (an app setting,
+   a Key Vault secret `PROMPTER-SHARED-KEY-FALLBACK`, or a `.env` line).
+   **It is off by default.**
+4. If none of these applies, the app refuses politely in the sidebar and
+   chat: "No AI key is set up for **jdoe** yet — ask the app owner. (For the
+   app owner: this person's key goes in the Key Vault secret
+   `PROMPTER-API-KEY--CORP-JDOE`.)" There is no error and no trace.
+
+**Naming `<TESTER>`** (`tester_suffix`). Start from the identity key
+(`CORP\jdoe` → `corp__jdoe`). Put it in upper case and turn every run of
+characters other than a letter or digit into ONE hyphen: `CORP-JDOE`,
+`CORP\j.doe` → `CORP-J-DOE`, `jdoe@state.gov` → `STATE-GOV-JDOE`.
+
+- The result is valid for Key Vault: letters, digits and hyphens, starting
+  with a letter.
+- The only `--` in a name is the separator.
+- The app asks the vault for the upper-case name. Key Vault names are
+  case-insensitive, but the upper-case spelling is the one that is
+  guaranteed to match.
+- As an App Service app setting or a `.env` line, the same name uses
+  underscores: `PROMPTER_API_KEY__CORP_JDOE`.
+- A name longer than 127 characters is never looked up. Such a tester needs
+  a `PROMPTER-KEYS` entry.
+- Two people whose names differ only in punctuation (`j.doe` / `j_doe`)
+  would share a secret name. Give them `PROMPTER-KEYS` entries instead.
+
+**Behaviour to know.**
+
+- **Tell CfA to set `PROMPTER_SHARED_KEY_FALLBACK=1` until the per-tester
+  keys exist.** On the published app with only the shared key, every tester
+  is refused while it is off.
+- Per-tester keys need the identity header (open question 5). Without the
+  header, everyone is single-user and uses the shared key. To make sure
+  nobody falls back to the shared key, leave `PROMPTER-API-KEY` out of the
+  production vault.
+- **New testers:** missing secrets are not cached. A secret added for a new
+  tester takes effect at their next new conversation or page reload, with
+  no restart.
+- **Rotated keys:** a key that is found is cached for the life of the
+  process. After CfA rotates a key, the new one is used only after an app
+  restart, the same as the shared key.
+- **Isolation:** the builder resolves the key for the caller it is handed
+  every time it is called and caches no client. `app.py` passes the
+  session's `Identity` to `engine_config.resolve_engine(…, identity=…)`, and
+  the engine lives in that session's state only.
+- **Secrecy:** no key is ever logged or shown. **Connection diagnostics** has
+  a "Prompter key source" line with the caller, the source (per-tester
+  secret / PROMPTER-KEYS mapping / shared key) and the per-tester secret's
+  NAME. `PROMPTER_KEYS` appears only as a length.
+- **Budget messages** speak of the user's own budget ("Your AI budget is
+  used up …", `funhouse_agent/error_text.py`).
+
+**What to tell CfA.** For each tester, create a Key Vault secret named
+`PROMPTER-API-KEY--<TESTER>` whose value is that tester's Prompter key.
+Build `<TESTER>` from the tester's sign-in `DOMAIN\user`: upper case, with
+every run of other characters turned into one hyphen. For example,
+`CORP\jdoe` → `PROMPTER-API-KEY--CORP-JDOE`. If a tester's key is for a
+different model deployment, add `PROMPTER-MODEL--<TESTER>` and, if needed,
+`PROMPTER-URL--<TESTER>`. Keep the shared `PROMPTER-URL`, `PROMPTER-MODEL` and
+`PROMPTER-CA-BUNDLE`. Alternatively, CfA can provide a single JSON secret,
+`PROMPTER-KEYS`. To get the exact name for a tester, have them open the
+app: the refusal message shows it.
 
 ## Built 2026-09-21 (on master, unreleased — candidate 5.26.0)
 

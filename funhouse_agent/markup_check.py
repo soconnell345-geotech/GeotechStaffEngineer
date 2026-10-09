@@ -60,6 +60,16 @@ it goes round or an AREA it sits in (a title block, a table, a margin): the
 look now says which, a mark inside the area it names is on it (measured where
 the look gives the area's box), and a general remark or a stamp fits any mark.
 
+**Blank paper in the area it names is its own verdict** (live smoke wave 3,
+F4). Over blank paper a look is never sure: F47's note, placed on purpose in
+the blank corner of a sheet with no title block and named as such, came back
+``in_area: true, inside: "nothing", sure: false``, so "unsure", and the note
+said "do not hand the file over". Such a mark is now ``on_blank_paper``:
+unconfirmed (a look cannot confirm blank paper) but not misplaced, and the
+note asks the agent to check it and tell the user where it sits. A mark in
+blank paper that does NOT name an area it sits in keeps the old verdicts, so
+a ring drawn in empty paper is still misplaced or unsure.
+
 **Labels are checked too, by measurement.** A label is placed by planlens,
 not by the agent, and nothing looked at it: on two /Rotate 270 sheets every
 label printed over the sheet title, 90-150 pt from its box, and the answer
@@ -361,6 +371,130 @@ def _label_reads_supported() -> bool:
         return False
 
 
+#: The look's question on which way the drawing's own lettering runs, asked
+#: only where planlens had no text to turn a label by (live smoke wave 3,
+#: F7: on a sheet drawn sideways with its lettering drawn as lines, a label
+#: read across the sideways title strip).
+_READS_Q = ("which way the drawing's own lettering right by the mark runs in "
+            "this image (not the red label): 'across' (left to right, the "
+            "usual way), 'up' (its lines run from the bottom of the image to "
+            "the top: you tilt your head left to read them), 'down' (from the "
+            "top to the bottom: you tilt your head right), or 'none' if there "
+            "is no lettering by the mark")
+
+#: How each direction is said in a label problem.
+_READS_DESC = {"up": "bottom to top", "down": "top to bottom"}
+
+#: planlens turns a label by the text layer when it holds this many letters
+#: within this many points of the mark, or this many on the page
+#: (``markup_writer.LABEL_READS_REACH`` and ``_text_reads``).
+TEXT_READS_REACH_PT = 24.0
+TEXT_READS_NEAR_LETTERS = 3
+TEXT_READS_PAGE_LETTERS = 20
+
+
+def _reads_word(value: Any) -> Optional[str]:
+    """A look's ``lettering_reads`` as ``"across"``, ``"up"`` or ``"down"``;
+    ``None`` for none or anything else."""
+    t = " ".join(re.sub(r"[^a-z]", " ", str(value or "").lower()).split())
+    if t.startswith(("up", "bottom")):
+        return "up"
+    if t.startswith(("down", "top")):
+        return "down"
+    if t.startswith(("across", "left", "horizontal")):
+        return "across"
+    return None
+
+
+def _text_letters(page) -> List[Tuple[Tuple[float, float, float, float],
+                                      int]]:
+    """The page's text-layer words as ``(displayed box, letters)``. Read off
+    a display list WITHOUT the annotations, as planlens reads the text
+    layer: ``get_text`` also returns the words annotations draw, and on a
+    marked copy that is the labels themselves. A display list's text is in
+    the displayed frame (planlens ``pdf_text._textpage``)."""
+    import fitz
+    stext = page.get_displaylist(annots=False).get_textpage()
+    tp = stext if isinstance(stext, fitz.TextPage) else fitz.TextPage(stext)
+    tp.parent = page
+    return [((float(w[0]), float(w[1]), float(w[2]), float(w[3])),
+             len(str(w[4]).strip()))
+            for w in page.get_text("words", textpage=tp)]
+
+
+def _text_turns_label(letters, mark_bbox: Any) -> bool:
+    """Whether planlens had text-layer lettering to turn this mark's label by
+    (near the mark, or enough on the page)."""
+    if sum(n for _b, n in letters) >= TEXT_READS_PAGE_LETTERS:
+        return True
+    try:
+        x0, y0, x1, y1 = (float(v) for v in mark_bbox)
+    except (TypeError, ValueError):
+        return False
+    r = TEXT_READS_REACH_PT
+    near = sum(n for b, n in letters
+               if b[0] < x1 + r and b[2] > x0 - r
+               and b[1] < y1 + r and b[3] > y0 - r)
+    return near >= TEXT_READS_NEAR_LETTERS
+
+
+def _reads_to_ask(pdf_bytes: bytes, items: Sequence[Dict[str, Any]]) -> set:
+    """The indices of the marks whose look is also asked which way the
+    drawing's lettering runs: a visible label planlens wrote across (the
+    row reports no ``label_reads``), the caller gave none, and the page's
+    text layer said nothing planlens could turn it by."""
+    want = [it for it in items
+            if isinstance(it.get("row"), dict) and it["row"].get("label")
+            and it["row"].get("label_bbox") is not None
+            and not it["row"].get("label_reads")
+            and not str(it["spec"].get("label_reads") or "").strip()]
+    if not want or not _label_reads_supported():
+        return set()
+    import fitz
+    out, letters = set(), {}
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        for it in want:
+            pno = int(it["row"].get("page") or 0)
+            if pno not in letters:
+                letters[pno] = _text_letters(doc[pno])
+            if not _text_turns_label(letters[pno], it["row"].get("bbox")):
+                out.add(it["index"])
+    finally:
+        doc.close()
+    return out
+
+
+def _label_runs_across(labels: List[Dict[str, Any]],
+                       checks: Sequence[Dict[str, Any]],
+                       items: Sequence[Dict[str, Any]]
+                       ) -> List[Dict[str, Any]]:
+    """``labels`` with a problem added for every label written across where
+    the look saw the drawing's own lettering run up or down beside it."""
+    rows = {it["index"]: it["row"] for it in items}
+    out = [dict(lab) for lab in labels]
+    for c in checks:
+        word = c.get("lettering_reads")
+        if word not in _READS_DESC:
+            continue
+        row = rows.get(c.get("index")) or {}
+        problem = (f"the drawing's own lettering by this mark runs {word} "
+                   f"({_READS_DESC[word]}) and the label runs across it: "
+                   f"write the copy again with label_reads='{word}' on "
+                   f"this mark")
+        hit = next((lab for lab in out if lab.get("index") == c["index"]),
+                   None)
+        if hit is not None:
+            hit["problem"] = f"{hit.get('problem')}; and {problem}"
+            continue
+        out.append({"index": c["index"],
+                    "pdf_page": int(row.get("page") or 0) + 1,
+                    "label": row.get("label"),
+                    "label_bbox": row.get("label_bbox"),
+                    "problem": problem})
+    return sorted(out, key=lambda lab: lab.get("index") or 0)
+
+
 def _rows_with_specs(result: Dict[str, Any], specs: Sequence[Any]
                      ) -> List[Dict[str, Any]]:
     """Pair each written row with the spec it came from. Rows come back in
@@ -435,8 +569,8 @@ _SOURCE_WORDS = {
 }
 
 
-def _prompt(kind: str, spec: Dict[str, Any], size: Sequence[int]
-            ) -> Tuple[str, bool]:
+def _prompt(kind: str, spec: Dict[str, Any], size: Sequence[int],
+            ask_reads: bool = False) -> Tuple[str, bool]:
     """The look's prompt for one mark, and whether it asks about the comment
     as well as the thing (``comment_fits``)."""
     word, verb, where = _KIND_WORDS.get(kind, ("mark", "mark", "at the mark"))
@@ -515,6 +649,8 @@ def _prompt(kind: str, spec: Dict[str, Any], size: Sequence[int]
     if kind in ENCLOSING_KINDS and size:
         keys.append(("thing_px", _WHERE_Q.format(
             w=int(size[0]), h=int(size[1])).strip()))
+    if ask_reads:
+        keys.append(("lettering_reads", _READS_Q))
     keys.append(("sure", "true or false"))
     skeleton = "{" + ", ".join(f'"{k}": ...' for k, _d in keys) + "}"
     parts.append("Reply with ONLY a JSON object " + skeleton + ", where:\n"
@@ -578,6 +714,25 @@ def _names_match(seen: str, target: str) -> Optional[bool]:
     return True if (b in a or a in b) else None
 
 
+#: The verdict of a mark on blank paper inside the area it names (F4).
+BLANK_AREA = "on_blank_paper"
+
+#: How a look says it saw blank paper (the prompt asks for 'nothing').
+_BLANK_WORDS = ("nothing", "blank", "none", "empty", "white")
+
+#: Words before the one that says what was seen ("only blank paper").
+_LEAD_WORDS = ("a", "an", "the", "only", "just", "plain")
+
+
+def _saw_blank(inside: Any) -> bool:
+    """Whether the look's reading of what is under a mark is blank paper:
+    its first word (after "a", "only" ...) says nothing is there."""
+    words = re.sub(r"[^a-z ]", " ", str(inside or "").lower()).split()
+    while words and words[0] in _LEAD_WORDS:
+        words.pop(0)
+    return not words or words[0] in _BLANK_WORDS
+
+
 def _verdict(kind: str, got: Dict[str, Any], row: Dict[str, Any],
              spec: Dict[str, Any], clip: Any, size: Any,
              asked_comment: bool) -> Tuple[str, str]:
@@ -609,6 +764,10 @@ def _verdict(kind: str, got: Dict[str, Any], row: Dict[str, Any],
         # look gave one, never against the paper under the mark.
         if thing is not None and _within(row.get("bbox"), thing) is False:
             return decided(False), " — outside the area it names"
+        if sure is False and _saw_blank(got.get("inside")):
+            # Placed on blank paper on purpose: a look is never sure there
+            # (F4), which is no sign the mark is wrong.
+            return BLANK_AREA, " — on blank paper inside the area it names"
         return decided(True), " — inside the area it names"
     if kind not in ENCLOSING_KINDS:
         ok = identity if identity is not None else encl_said
@@ -655,7 +814,8 @@ def _check_one(pdf_bytes: bytes, item: Dict[str, Any], engine) -> Dict[str, Any]
             pdf_bytes, page=int(row.get("page") or 0), bbox=crop,
             pad_frac=0.0, engine=engine)
         size = (int(info["width_px"]), int(info["height_px"]))
-        prompt, asked_comment = _prompt(kind, spec, size)
+        prompt, asked_comment = _prompt(kind, spec, size,
+                                        bool(item.get("ask_reads")))
         from funhouse_agent.vision_tools import ask_vision
         answer = ask_vision(engine, image, prompt, "check")
     except Exception as exc:  # noqa: BLE001 - a failed check is reported
@@ -669,6 +829,8 @@ def _check_one(pdf_bytes: bytes, item: Dict[str, Any], engine) -> Dict[str, Any]
     clip = (info or {}).get("clip") or crop
     verdict, why = _verdict(kind, got, row, spec, clip, size, asked_comment)
     out["verdict"] = verdict
+    if item.get("ask_reads"):
+        out["lettering_reads"] = _reads_word(got.get("lettering_reads"))
     out["seen"] = (str(got.get("inside") or "")[:120] + why)[:160]
     return out
 
@@ -685,6 +847,12 @@ def check_marks(output_pdf: str, result: Dict[str, Any], specs: Sequence[Any],
     with open(output_pdf, "rb") as fh:
         pdf_bytes = fh.read()
     todo, later = items[:max_checks], items[max_checks:]
+    try:
+        ask = _reads_to_ask(pdf_bytes, todo)
+    except Exception:  # noqa: BLE001 - the direction is then not asked
+        ask = set()
+    for it in todo:
+        it["ask_reads"] = it["index"] in ask
     # Each worker runs in a COPY of this call's context, so the activity log
     # attributes its vision call to this turn (as sweep_pages does).
     with ThreadPoolExecutor(max_workers=max(1, int(workers))) as pool:
@@ -692,7 +860,8 @@ def check_marks(output_pdf: str, result: Dict[str, Any], specs: Sequence[Any],
                                pdf_bytes, it, engine) for it in todo]
         checks = [f.result() for f in futures]
     by = {v: [c for c in checks if c["verdict"] == v]
-          for v in ("confirmed", "misplaced", "unsure", "not_checked")}
+          for v in ("confirmed", "misplaced", "unsure", "not_checked",
+                    BLANK_AREA)}
     block: Dict[str, Any] = {
         "checked": len(checks),
         "confirmed": len(by["confirmed"]),
@@ -703,6 +872,11 @@ def check_marks(output_pdf: str, result: Dict[str, Any], specs: Sequence[Any],
                                           "names", "seen")}
                    for c in by["unsure"]],
     }
+    blank = by[BLANK_AREA]
+    if blank:
+        block[BLANK_AREA] = [{k: c.get(k) for k in ("index", "pdf_page",
+                                                    "kind", "names", "seen")}
+                             for c in blank]
     if by["not_checked"]:
         block["not_checked"] = [{k: c.get(k) for k in ("index", "pdf_page",
                                                        "reason")}
@@ -714,14 +888,18 @@ def check_marks(output_pdf: str, result: Dict[str, Any], specs: Sequence[Any],
     except Exception as exc:  # noqa: BLE001 - the marks' verdicts stand
         labels = []
         block["labels_not_checked"] = f"{type(exc).__name__}: {exc}"[:160]
+    labels = _label_runs_across(labels, checks, todo)
     if labels:
         block["labels"] = labels
     bad = len(by["misplaced"]) + len(by["unsure"])
     notes = []
-    if not bad and not labels:
+    if not bad and not labels and not blank:
         notes.append("Every mark was looked at on the marked copy, and each "
                      "is on the thing it is meant to mark; every label sits "
                      "clear beside its mark.")
+    elif not bad and not labels and by["confirmed"]:
+        notes.append("Every other mark was looked at on the marked copy, and "
+                     "each is on the thing it is meant to mark.")
     if bad:
         notes.append(
             f"{bad} mark(s) are misplaced or could not be confirmed ('seen' "
@@ -740,13 +918,23 @@ def check_marks(output_pdf: str, result: Dict[str, Any], specs: Sequence[Any],
             "title block, a margin) names that area as its target. A label "
             "is only the text the reader sees and is never compared with "
             "what is under the mark: add target= and keep your labels.")
+    if blank:
+        notes.append(
+            f"{len(blank)} mark(s) sit on blank paper inside the area they "
+            f"name ('{BLANK_AREA}'): UNCONFIRMED, because a look cannot "
+            "confirm blank paper, but not misplaced, so this alone is no "
+            "reason to rewrite the copy or hold it back. Check each is where "
+            "it was asked to go, and when you hand the file over tell the "
+            "user where each one sits (for example 'in the blank lower-right "
+            "corner of sheet S-1, which has no title block').")
     if labels:
         along = (" Where the drawing's own lettering runs up or down the "
                  "page, give label_reads (up or down) so the label runs the "
                  "same way." if _label_reads_supported() else "")
         notes.append(
-            f"{len(labels)} label(s) are not clear of the drawing or not "
-            "beside their mark ('labels' says which and why). A label is "
+            f"{len(labels)} label(s) are not clear of the drawing, not "
+            "beside their mark, or run across the drawing's own lettering "
+            "('labels' says which and why). A label is "
             "what the reader sees on the sheet, so do not describe it as "
             "beside its mark: write the copy again with append=false and a "
             "shorter label, or no label (the comment still carries the "

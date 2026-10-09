@@ -1519,12 +1519,17 @@ def clear_read_log() -> None:
 # working folder), and ``analyze_pdf_page(reuse=true)`` hands back the
 # latest one for that page instead of a new look. The model decides: the
 # result says what that reading was asked.
+#
+# Zoom readings are kept the same way, keyed by page AND region (live smoke
+# wave 3, F6: F44's five zooms in t2, about 160 s of vision, were not
+# offered in t3, which read the page again in tiles), and
+# ``render_region(reuse=true)`` hands back a kept zoom of the same region.
 
 #: The kept readings of one conversation, beside :data:`READS_FILE`.
 READINGS_FILE = "page_readings.json"
-#: Readings kept per conversation (one per file, page and view; oldest
-#: dropped first) ...
-READINGS_MAX = 40
+#: Readings kept per conversation (one per file, page and view -- a zoom's
+#: view is its region; oldest dropped first) ...
+READINGS_MAX = 80
 #: ... and characters of results kept per conversation.
 READINGS_MAX_CHARS = 1_500_000
 #: Conversations kept in memory when there is no folder to keep them in.
@@ -1537,6 +1542,24 @@ REUSED_NOTE = (
     "again without reuse, or zoom with render_region.")
 NO_EARLIER_READING = ("no earlier reading of this page is kept in this "
                       "conversation, so it was read now")
+
+#: A kept reading's ``view`` when it is a zoom (its ``region`` says where).
+ZOOM_VIEW = "zoom"
+
+REUSED_ZOOM_NOTE = (
+    "An earlier zoom on this region in this conversation (view {region}; it "
+    "was asked: \"{prompt}\"), returned without a new look. If the question "
+    "now needs something that zoom was not asked for, call render_region "
+    "again without reuse.")
+NO_EARLIER_ZOOM = ("no earlier zoom on this region is kept in this "
+                   "conversation, so it was read now")
+
+#: A kept zoom answers ``render_region(reuse=true)`` when its region and the
+#: one asked for overlap this much (intersection over union) ...
+ZOOM_REUSE_IOU = 0.8
+#: ... or it holds the region asked for and is at most this many times its
+#: area (a wider zoom draws the lettering smaller).
+ZOOM_REUSE_MAX_AREA = 2.0
 
 _READINGS_LOCK = threading.Lock()
 _READINGS_MEM: "OrderedDict[str, list]" = OrderedDict()
@@ -1583,9 +1606,18 @@ def _file_id(data) -> str:
     return hashlib.sha256(bytes(data)).hexdigest()[:20]
 
 
-def _keep_reading(key, data, page, view, prompt, raw) -> None:
-    """Keep one page read's full result for this conversation (the newest
-    per file, page and view)."""
+def _reading_key(r) -> tuple:
+    """What a kept reading is the newest of: its file, page and view, and a
+    zoom's region."""
+    region = r.get("region")
+    return (r.get("file"), r.get("page"), r.get("view"),
+            tuple(region) if isinstance(region, list) else None)
+
+
+def _keep_reading(key, data, page, view, prompt, raw, region=None) -> None:
+    """Keep one page read's or zoom's full result for this conversation (the
+    newest per file, page and view; a zoom's ``view`` is :data:`ZOOM_VIEW`
+    and its ``region`` the rect it shows)."""
     conv = _conversation_for()
     if not conv:
         return
@@ -1593,6 +1625,8 @@ def _keep_reading(key, data, page, view, prompt, raw) -> None:
              "page": page, **_pdf_page(page), "view": view,
              "prompt": " ".join(str(prompt or "").split())[:300],
              "when": round(time.time(), 1), "result": raw}
+    if region is not None:
+        entry["region"] = [round(float(v), 1) for v in region]
     try:
         path = readings_file()
     except Exception:  # noqa: BLE001 - memory only, then
@@ -1601,8 +1635,7 @@ def _keep_reading(key, data, page, view, prompt, raw) -> None:
         kept = (_load_readings(path) if path
                 else list(_READINGS_MEM.get(conv) or []))
         kept = [r for r in kept
-                if (r.get("file"), r.get("page"), r.get("view"))
-                != (entry["file"], page, view)] + [entry]
+                if _reading_key(r) != _reading_key(entry)] + [entry]
         while len(kept) > 1 and (
                 len(kept) > READINGS_MAX
                 or sum(len(str(r.get("result") or "")) for r in kept)
@@ -1633,8 +1666,9 @@ def _all_readings(folder=None) -> list:
 def readings_for_conversation(folder=None) -> List[Dict[str, Any]]:
     """The page readings kept for one conversation, oldest first, WITHOUT
     their results: ``document``, ``page`` (0-based), ``pdf_page``, ``view``
-    (``"page"`` or ``"page+tiles NxN"``), ``prompt`` (what it was asked,
-    first 300 characters) and ``when``. ``folder`` as in
+    (``"page"``, ``"page+tiles NxN"`` or ``"zoom"``, with the zoom's
+    ``region`` in PDF points), ``prompt`` (what it was asked, first 300
+    characters) and ``when``. ``folder`` as in
     :func:`reads_for_conversation`."""
     return [{k: v for k, v in r.items() if k not in ("result", "file")}
             for r in _all_readings(folder)]
@@ -1648,7 +1682,7 @@ def _earlier_reading(data, page, tiles) -> Optional[dict]:
     fid = _file_id(data)
     mine = [r for r in _all_readings()
             if r.get("file") == fid and r.get("page") == page
-            and r.get("result")]
+            and r.get("result") and r.get("view") != ZOOM_VIEW]
     if not mine:
         return None
     want = ("page" if tiles == "off"
@@ -1676,6 +1710,59 @@ def _reused_result(entry) -> str:
     return json.dumps(out)
 
 
+def _box_area(b) -> float:
+    return max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1])
+
+
+def _zoom_matches(kept, wanted) -> bool:
+    """Whether a kept zoom's region answers a zoom on ``wanted`` (both PDF
+    points, displayed frame): nearly the same rect, or one holding it at
+    most :data:`ZOOM_REUSE_MAX_AREA` times its area."""
+    try:
+        k = [float(v) for v in kept]
+        w = [float(v) for v in wanted]
+    except (TypeError, ValueError):
+        return False
+    if len(k) != 4 or len(w) != 4 or _box_area(w) <= 0:
+        return False
+    ix = max(0.0, min(k[2], w[2]) - max(k[0], w[0]))
+    iy = max(0.0, min(k[3], w[3]) - max(k[1], w[1]))
+    inter = ix * iy
+    union = _box_area(k) + _box_area(w) - inter
+    if union > 0 and inter / union >= ZOOM_REUSE_IOU:
+        return True
+    slack = 1.0
+    holds = (k[0] - slack <= w[0] and k[1] - slack <= w[1]
+             and k[2] + slack >= w[2] and k[3] + slack >= w[3])
+    return holds and _box_area(k) <= ZOOM_REUSE_MAX_AREA * _box_area(w)
+
+
+def _earlier_zoom(data, page, wanted) -> Optional[dict]:
+    """The newest kept zoom of this file's ``page`` whose region answers a
+    zoom on ``wanted`` (:func:`_zoom_matches`), or ``None``."""
+    fid = _file_id(data)
+    mine = [r for r in _all_readings()
+            if r.get("file") == fid and r.get("page") == page
+            and r.get("view") == ZOOM_VIEW and r.get("result")
+            and _zoom_matches(r.get("region"), wanted)]
+    return mine[-1] if mine else None
+
+
+def _reused_zoom_result(entry) -> str:
+    """A kept zoom as the tool's result, saying what it is."""
+    try:
+        out = json.loads(entry["result"])
+    except (TypeError, ValueError):
+        return entry["result"]
+    if not isinstance(out, dict):
+        return entry["result"]
+    out.pop("repeat", None)
+    out["reused"] = REUSED_ZOOM_NOTE.format(
+        region=entry.get("region") or out.get("view"),
+        prompt=str(entry.get("prompt") or "")[:200])
+    return json.dumps(out)
+
+
 # -- A vision answer cut off at the model's output limit (wave 2b, C5) --------
 
 CUT_OFF_NOTE = ("the vision model's answer was CUT OFF at its output limit, "
@@ -1700,6 +1787,21 @@ def _is_cut_off(text) -> bool:
 # runaway answer is bounded. A capped answer still says so (``cut_off``).
 # The whole-page call made while tiles read the page asks for the layout
 # only (:func:`_overview_prompt`), and gets the smallest cap.
+#
+# Live smoke wave 3 (F1): zooms and pages read whole became the long pole --
+# 17 such calls over 20 s took 533 s, at about 123 output tokens a second,
+# and about two-thirds of their output tokens were the model's own
+# reasoning (their visible text runs at ~1.4 characters a token against
+# 2.46 for the main model's plain answers). The visible third was verbose:
+# a box for every leader segment, narration, closing summaries. Both kinds
+# now get :func:`_answer_shape` (no change to what the image shows: same
+# sizes, same tiling), and the page-alone cap is 8,000 -- still above the
+# longest page answer on record (6,766 in wave 3, 5,844 in 2a-2c), so no
+# reading in the record would have been cut, while a runaway's reasoning is
+# bounded at about a minute. The zoom cap stays 8,000: the longest zoom on
+# record is 6,841 and a 4,000 cap would have cut 4 of wave 3's 27 zooms
+# (on a reasoning model the cap holds the reasoning too, so a lower one
+# cuts the answer's end, or all of it).
 
 #: Output tokens per vision answer, by kind of call: ``overview`` = the
 #: whole page while tiles read it, ``tile``, ``page`` = a page read whole
@@ -1708,7 +1810,7 @@ def _is_cut_off(text) -> bool:
 #: ``find`` = find_like's read of a sheet of candidates (702). The chart
 #: read-offs (read_reference_figure, worked-example pages) keep the model's
 #: own cap: a reasoning model's read-off is the work there.
-VISION_OUTPUT_CAPS = {"overview": 4000, "tile": 6000, "page": 12000,
+VISION_OUTPUT_CAPS = {"overview": 4000, "tile": 6000, "page": 8000,
                       "region": 8000, "image": 8000, "check": 4000,
                       "find": 8000}
 
@@ -1756,6 +1858,45 @@ def _overview_prompt(prompt, n) -> str:
         f"confidence (a title, a sheet number); do not transcribe or answer "
         f"from small text - the tiles do that.\n\n"
         f"What is being asked of this sheet: {prompt}")
+
+
+# -- How a zoom or a page read whole answers (live smoke wave 3, F1) ----------
+#
+# The agent's own prompt says WHAT to read; this says how to write it back,
+# for the agent rather than for a person. It asks for nothing less than
+# before -- the request, and the lettering in view quoted exactly -- and for
+# none of what made F44's zooms and F41's index pages run 30-50 s: a box
+# for every leader segment and sub-position, narration of how the image was
+# read, restated requests and closing summaries.
+
+_SHAPE_TAIL = (
+    "List each item once, on its own short line. Give ONE box per thing you "
+    "name, round the thing itself: no boxes for parts of it, for the path "
+    "of a leader, or for positions inside a line. Where the request needs "
+    "it, say in a few words what a leader or arrow points at. If the "
+    "lettering does not read left to right, say which way it runs, in one "
+    "line. No preamble, no restating the request, no account of how you "
+    "read the image and no closing summary; if part of the image is cut off "
+    "or too small to read, say so in one line.")
+
+#: Appended to the prompt of a page read whole (no tiles).
+PAGE_ANSWER_SHAPE = (
+    "How to answer: briefly, for the agent that asked rather than for a "
+    "person. Answer the request above from this page, quoting the page's "
+    "own lettering that bears on it exactly as printed. " + _SHAPE_TAIL)
+
+#: Appended to the prompt of a zoom (render_region).
+ZOOM_ANSWER_SHAPE = (
+    "How to answer: briefly, for the agent that asked rather than for a "
+    "person. First answer the request above; then give the rest of the "
+    "lettering in this view, quoted exactly as printed. " + _SHAPE_TAIL)
+
+
+def _answer_shape(kind: str) -> Optional[str]:
+    """The answer-shape paragraph for a vision call of ``kind`` (``page``:
+    a page read whole, ``region``: a zoom), or ``None`` (tiles, the layout
+    overview, checks and images keep their own prompts)."""
+    return {"page": PAGE_ANSWER_SHAPE, "region": ZOOM_ANSWER_SHAPE}.get(kind)
 
 
 # -- Only images go to analyze_image (wave 2b, C6) -----------------------------
@@ -1959,6 +2100,14 @@ def _dispatch_render_region(arguments, engine, attachments):
     if refused is not None:
         return refused
 
+    # reuse (F6): a kept zoom of the same region, instead of a new look. The
+    # region asked for is the bbox as given, or the padded window.
+    reuse = _truthy(arguments.get("reuse")) and not arguments.get("_inline")
+    if reuse and window is not None:
+        earlier = _earlier_zoom(pdf_bytes, page, window)
+        if earlier is not None:
+            return _reused_zoom_result(earlier)
+
     rkey = _repeat_key("render_region", pdf_bytes, {
         "page": page, "bbox": arguments.get("bbox"), "view": view,
         "image_box": image_box, "dpi": arguments.get("dpi"),
@@ -1987,7 +2136,8 @@ def _dispatch_render_region(arguments, engine, attachments):
     try:
         result = ask_vision(
             engine, image_bytes,
-            _vision_prompt(prompt, info["clip"], lines, _sent_size(info)),
+            _vision_prompt(prompt, info["clip"], lines, _sent_size(info),
+                           shape=_answer_shape("region")),
             "region")
         out = {"page": page, **_pdf_page(page), "bbox": bbox,
                "analysis": result, **vision_view.view_payload(info, engine)}
@@ -2009,8 +2159,13 @@ def _dispatch_render_region(arguments, engine, attachments):
             _fit_region(out)
         raw = json.dumps(out)
         _repeat_store(rkey, raw)
-        _note_read("render_region", key, page,
-                   [round(float(v), 1) for v in info["clip"]], prompt)
+        clip = [round(float(v), 1) for v in info["clip"]]
+        _note_read("render_region", key, page, clip, prompt)
+        _keep_reading(key, pdf_bytes, page, ZOOM_VIEW, prompt, raw,
+                      region=clip)
+        if reuse:
+            out["reuse_note"] = NO_EARLIER_ZOOM
+            raw = json.dumps(out)
         return raw
     except (NotImplementedError, AttributeError) as e:
         return json.dumps({
@@ -2182,18 +2337,20 @@ def _sent_size(info):
         return None
 
 
-def _vision_prompt(prompt, clip, lines, size=None) -> str:
+def _vision_prompt(prompt, clip, lines, size=None, shape=None) -> str:
     """The prompt one page/region vision call gets: the text layer inside its
-    view (when switched on), the agent's own prompt, the location
-    instruction — boxes in pixels of an image of ``size`` (w, h), or with no
-    size the old 0-999 grid — and the LOCATED instruction (when switched
-    on)."""
+    view (when switched on), the agent's own prompt, the answer shape for its
+    kind (``shape``, :func:`_answer_shape`), the location instruction —
+    boxes in pixels of an image of ``size`` (w, h), or with no size the old
+    0-999 grid — and the LOCATED instruction (when switched on)."""
     from funhouse_agent import review_flags, vision_view
     parts = []
     if lines is not None:
         parts.append(vision_view.text_context(lines[0], clip, lines[1],
                                               size=size))
     parts.append(prompt)
+    if shape:
+        parts.append(shape)
     text = vision_view.with_location("\n\n".join(parts), size)
     if review_flags.vision_structured():
         text = vision_view.with_locations(text, size)
@@ -2549,7 +2706,7 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
     page_kind = "overview" if n > 1 else "page"
     page_prompt = _vision_prompt(
         _overview_prompt(prompt, n) if n > 1 else prompt, info["clip"],
-        lines, _sent_size(info))
+        lines, _sent_size(info), shape=_answer_shape(page_kind))
     # The whole page and its tiles at once: the tiles never use the
     # whole-page answer, so the read takes the longest call, not the sum.
     jobs = [lambda: ask_vision(engine, image_bytes, page_prompt, page_kind)]

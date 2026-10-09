@@ -101,9 +101,11 @@ def _env_check() -> dict:
             "GEOTECH_FOUNDRY_DISABLE_STREAMING", "GEOTECH_TRACE")
     if engine_config.is_tinyapps_deployment():
         # The Tiny Apps engine settings, named as CfA names them; the key
-        # itself only ever as a length.
+        # (and the per-tester key mapping) itself only ever as a length.
         envs = ("PROMPTER_URL", "PROMPTER_MODEL", "PROMPTER_API_KEY",
-                "PROMPTER_CA_BUNDLE", "GEOTECH_PROMPTER_DISABLE_STREAMING",
+                "PROMPTER_CA_BUNDLE", "PROMPTER_KEYS",
+                "PROMPTER_SHARED_KEY_FALLBACK",
+                "GEOTECH_PROMPTER_DISABLE_STREAMING",
                 "GEOTECH_WEBAPP_MAX_TOKENS", "GEOTECH_TRACE")
     elif not engine_config.is_foundry_deployment():
         envs = ("ANTHROPIC_API_KEY",) + envs
@@ -115,6 +117,7 @@ def _env_check() -> dict:
         elif e in ("GEOTECH_FOUNDRY_MODELS", "GEOTECH_WEBAPP_MAX_TOKENS",
                    "GEOTECH_FOUNDRY_DISABLE_STREAMING", "GEOTECH_TRACE",
                    "PROMPTER_URL", "PROMPTER_MODEL",
+                   "PROMPTER_SHARED_KEY_FALLBACK",
                    "GEOTECH_PROMPTER_DISABLE_STREAMING"):
             parts.append(f"{e}={v}")          # not secrets — show them
         else:
@@ -122,10 +125,32 @@ def _env_check() -> dict:
     return _check("environment", PASS, " | ".join(parts))
 
 
-def _resolution_check(model_id: Optional[str]) -> dict:
+def _prompter_key_check(identity: Any = None) -> dict:
+    """Tiny Apps: which Prompter key SOURCE serves this caller — per-tester
+    secret, the PROMPTER-KEYS mapping or the shared key — and the per-tester
+    secret's NAME. Never a key (``tinyapps_engine.key_source_report``)."""
+    name = "Prompter key source"
+    try:
+        from webapp import tinyapps_engine
+        ok, detail = tinyapps_engine.key_source_report(identity)
+    except Exception as exc:                         # noqa: BLE001
+        return _check(name, WARN, f"{type(exc).__name__}: {exc}")
+    return _check(name, PASS if ok else WARN, detail)
+
+
+def _engine_kwargs(model_id: Optional[str], identity: Any) -> dict:
+    """``resolve_engine`` arguments: the caller only when known (older
+    callers and test fakes take ``model_id`` alone)."""
+    kw = {"model_id": model_id}
+    if identity is not None:
+        kw["identity"] = identity
+    return kw
+
+
+def _resolution_check(model_id: Optional[str], identity: Any = None) -> dict:
     from webapp import engine_config
     try:
-        eng = engine_config.resolve_engine(model_id=model_id)
+        eng = engine_config.resolve_engine(**_engine_kwargs(model_id, identity))
     except Exception as exc:  # resolve_engine "never raises", but belt+braces
         return _check("engine resolution", FAIL,
                       f"{type(exc).__name__}: {exc}")
@@ -134,9 +159,9 @@ def _resolution_check(model_id: Optional[str]) -> dict:
                   f"source={eng.source} model={eng.model_name} — {eng.message}")
 
 
-def _get_model(model_id: Optional[str]):
+def _get_model(model_id: Optional[str], identity: Any = None):
     from webapp import engine_config
-    eng = engine_config.resolve_engine(model_id=model_id)
+    eng = engine_config.resolve_engine(**_engine_kwargs(model_id, identity))
     return eng.model if eng.ok else None
 
 
@@ -426,21 +451,27 @@ def _vision_check(model: Any) -> dict:
     return _check(name, PASS, prof.summary())
 
 
-def run_diagnostics(model_id: Optional[str] = None) -> List[dict]:
+def run_diagnostics(model_id: Optional[str] = None,
+                    identity: Any = None) -> List[dict]:
     """Run every stage against the CURRENTLY CONFIGURED engine and return the
     check list. Never raises. Live checks each make one tiny model call (a few
     tokens) — three calls when everything passes, plus the vision probe's four
-    the first time it runs in this process."""
+    the first time it runs in this process. ``identity`` is the signed-in
+    caller: on Tiny Apps the engine is built with THEIR key, and the report
+    says which key source that is (never the key)."""
+    from webapp import engine_config
     checks = [_versions_check(), _drift_check(), _env_check(),
-              _upload_probe_check(), _reference_docs_check(),
-              _resolution_check(model_id)]
+              _upload_probe_check(), _reference_docs_check()]
+    if engine_config.is_tinyapps_deployment():
+        checks.append(_prompter_key_check(identity))
+    checks.append(_resolution_check(model_id, identity))
     if checks[-1]["status"] != PASS:
         checks.append(_check("plain request (invoke)", SKIP,
                              "engine did not resolve"))
         checks.append(_check("streaming request", SKIP, ""))
         checks.append(_check("tool-calling request", SKIP, ""))
         return checks
-    model = _get_model(model_id)
+    model = _get_model(model_id, identity)
     if model is None:
         checks.append(_check("plain request (invoke)", SKIP,
                              "engine did not resolve"))

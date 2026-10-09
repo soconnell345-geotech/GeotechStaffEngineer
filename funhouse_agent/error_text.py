@@ -296,10 +296,12 @@ def budget_exhausted(exc) -> Optional[BudgetStop]:
 def budget_message(stop: Optional[BudgetStop] = None) -> str:
     """What a TESTER is shown when the AI budget is used up: one plain
     line, the date it comes back when the provider gave one, no provider
-    text and no "ask again"."""
+    text and no "ask again". It is THEIR budget: on Tiny Apps each tester
+    has a key, and so a budget, of their own (per-tester keys, 2026-10-09);
+    on Funhouse the budget is per user too."""
     until = f" (until {stop.until})" if stop is not None and stop.until \
         else ""
-    return (f"The AI budget for this app is used up{until}. Your "
+    return (f"Your AI budget is used up{until}. Your "
             "conversation and its files are kept, but nothing more can run "
             "until the budget is renewed. Tell the app owner.")
 
@@ -309,14 +311,14 @@ def budget_tool_note(stop: Optional[BudgetStop] = None) -> str:
     budget: what happened, and that retrying cannot help."""
     until = f" (until {stop.until})" if stop is not None and stop.until \
         else ""
-    return (f"the AI budget for this app is used up{until}, so this model "
+    return (f"the user's AI budget is used up{until}, so this model "
             "call was refused and nothing was read")
 
 
 #: The hint a tool result carries with :func:`budget_tool_note`.
 BUDGET_HINT = ("No model call can run until the budget is renewed, so do NOT "
                "retry this or any other tool that looks at a page. Tell the "
-               "user plainly that the app's AI budget is used up and that "
+               "user plainly that their AI budget is used up and that "
                "they should tell the app owner.")
 
 

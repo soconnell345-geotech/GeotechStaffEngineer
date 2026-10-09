@@ -72,7 +72,7 @@ class BudgetExceededError(RuntimeError):
 ])
 def test_a_spent_budget_is_one_plain_line(exc, until):
     text = core.friendly_turn_error(exc)
-    assert text.startswith("The AI budget for this app is used up")
+    assert text.startswith("Your AI budget is used up")
     assert text.endswith("Tell the app owner.")
     if until:
         assert until in text
@@ -128,7 +128,7 @@ def test_a_turn_on_a_spent_budget_never_says_ask_again(tmp_path,
     assert job.result["final"] == core.NOTHING_KEPT_NO_RETRY
     assert "ask again" not in job.result["final"]
     assert job.result["error"].startswith(
-        "The AI budget for this app is used up (until 2026-11-01")
+        "Your AI budget is used up (until 2026-11-01")
     # The provider's own text is kept for the owner, in the activity log.
     from webapp import activity_log
     ends = [r for r in activity_log.load(core.conversation_dir("W2CBUDGET"))
@@ -182,7 +182,7 @@ def test_the_prompter_client_does_not_retry_a_spent_quota():
         _chat(client)
     assert len(calls) == 1                         # asked once, not 4 more
     assert core.friendly_turn_error(caught.value).startswith(
-        "The AI budget for this app is used up")
+        "Your AI budget is used up")
 
 
 def test_the_prompter_client_still_retries_a_rate_limit():

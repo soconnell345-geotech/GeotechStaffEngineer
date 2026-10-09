@@ -805,6 +805,226 @@ def test_a_single_thing_in_blank_paper_is_still_misplaced(tmp_path,
     assert len(out["check"]["misplaced"]) == 1
 
 
+class Answers:
+    """Answers every look with ``answer``; ``thing_px: "crop"`` is the whole
+    crop (F47's look gave [0, 0, 2046, 604] for its 2046 x 604 crop)."""
+
+    def __init__(self, **answer):
+        self.answer, self.prompts = answer, []
+
+    def analyze_image(self, image_bytes, prompt):
+        self.prompts.append(prompt)
+        size = re.search(r"this (\d+) x (\d+) pixel image", prompt)
+        out = dict(self.answer)
+        if out.get("thing_px") == "crop":
+            if size:                    # asked only for a box or a ring
+                w, h = (int(v) for v in size.groups())
+                out["thing_px"] = [0, 0, w, h]
+            else:
+                del out["thing_px"]
+        return json.dumps(out)
+
+
+#: Bob's mark in F47 (live smoke wave 3, F4): a stamp put on purpose in the
+#: blank corner of a sheet with no title block, named as that corner.
+BLANK_CORNER = {"kind": "box", "page": 0, "bbox": [420, 720, 560, 760],
+                "comment": "Bob - checked. Placed in the bottom-right corner "
+                           "because the sheet has no title block.",
+                "target": "blank bottom-right corner of the sheet (no title "
+                          "block on the sheet)"}
+
+
+def test_a_mark_put_on_blank_paper_in_the_area_it_names_is_not_held_back(
+        tmp_path, monkeypatch):
+    """F4: F47's look said in_area true, inside "nothing", sure false -- a
+    look is never sure over blank paper -- and the note said "Do not hand
+    the file over". It is now its own verdict: unconfirmed, not misplaced,
+    and the agent is asked to say where it sits."""
+    engine = Answers(same_thing=True, in_area=True, comment_fits=True,
+                     encloses=True, inside="nothing", thing_px="crop",
+                     sure=False)
+    tools, handle = _tools_for(engine, tmp_path, monkeypatch, _strip_sheet(),
+                               name="strip.pdf")
+    out = json.loads(tools["annotate_document"].invoke({
+        "handle": handle, "output_path": "stamped.pdf",
+        "markups": [BLANK_CORNER]}))
+    check = out["check"]
+    assert check["confirmed"] == 0 and check["misplaced"] == [] \
+        and check["unsure"] == [], check
+    (blank,) = check[markup_check.BLANK_AREA]
+    assert blank["index"] == 0 and blank["pdf_page"] == 1
+    assert blank["seen"] == ("nothing — on blank paper inside the area it "
+                             "names")
+    assert "Do not hand the file over" not in check["note"]
+    assert "UNCONFIRMED" in check["note"]
+    assert "tell the user where each one sits" in check["note"]
+    assert os.path.isfile(os.path.join(str(tmp_path), "stamped.pdf"))
+
+
+def test_blank_paper_beside_good_marks_says_the_others_are_confirmed(
+        tmp_path, monkeypatch):
+    class ByTarget(Answers):
+        def analyze_image(self, image_bytes, prompt):
+            self.answer = (
+                dict(same_thing=True, in_area=True, comment_fits=True,
+                     inside="nothing", thing_px="crop", sure=False)
+                if "bottom-right corner" in prompt else
+                dict(same_thing=True, in_area=False, comment_fits=True,
+                     inside="STD. NO. 21.01", sure=True))
+            return super().analyze_image(image_bytes, prompt)
+
+    tools, handle = _tools_for(ByTarget(), tmp_path, monkeypatch,
+                               _strip_sheet(), name="strip.pdf")
+    out = json.loads(tools["annotate_document"].invoke({
+        "handle": handle, "output_path": "two.pdf", "markups": [
+            BLANK_CORNER,
+            {"kind": "highlight", "page": 0, "comment": "Standard number",
+             "quote": "STD. NO. 21.01"}]}))
+    check = out["check"]
+    assert check["confirmed"] == 1 and len(check[markup_check.BLANK_AREA]) == 1
+    assert check["note"].startswith("Every other mark was looked at")
+    assert "Do not hand the file over" not in check["note"]
+
+
+@pytest.mark.parametrize("answer", [
+    # Blank paper, but the look puts the mark OUTSIDE any area it names:
+    # a ring drawn in empty paper stays a problem (the 2026-10-01 field
+    # report), so the old wording stands.
+    dict(same_thing=False, in_area=False, comment_fits=True,
+         inside="nothing", sure=False),
+    # In the area, unsure, and something IS there: the look could not
+    # settle it, which is not blank paper.
+    dict(same_thing=True, in_area=True, comment_fits=True,
+         inside="GENERAL NOTES: SEE SPECIFICATIONS.", sure=False),
+])
+def test_other_unconfirmed_marks_still_say_do_not_hand_over(
+        tmp_path, monkeypatch, answer):
+    tools, handle = _tools_for(Answers(**answer), tmp_path, monkeypatch,
+                               _strip_sheet(), name="strip.pdf")
+    out = json.loads(tools["annotate_document"].invoke({
+        "handle": handle, "output_path": "unsure.pdf",
+        "markups": [BLANK_CORNER]}))
+    check = out["check"]
+    assert markup_check.BLANK_AREA not in check
+    assert len(check["unsure"]) == 1, check
+    assert "Do not hand the file over" in check["note"]
+
+
+@pytest.mark.parametrize("inside, blank", [
+    ("nothing", True), ("Nothing.", True), ("", True), (None, True),
+    ("blank paper", True), ("only blank white paper", True),
+    ("none", True), ("empty", True), ("a blank corner", True),
+    ("nothing — inside the area it names", True),
+    ("STD. NO. 21.01", False), ("GCE", False),
+    ("a small circle with a thin grey leader line", False),
+])
+def test_what_counts_as_blank_paper(inside, blank):
+    assert markup_check._saw_blank(inside) is blank
+
+
+def _linework_sheet() -> bytes:
+    """A sheet whose 'lettering' is drawn as lines (no text layer), like
+    F04's Std. No. 21.01: a tall title strip down the left edge."""
+    doc = fitz.open()
+    page = doc.new_page(width=612, height=792)
+    page.draw_rect(fitz.Rect(30, 100, 80, 760), color=(0, 0, 0), width=1.0)
+    for i in range(12):                 # strokes standing in for letters
+        y = 600 + 12 * i
+        page.draw_line((45, y), (45, y + 8), color=(0, 0, 0), width=1.0)
+    data = doc.tobytes()
+    doc.close()
+    return data
+
+
+#: F04's mark: a box round the standard number in the sideways title strip,
+#: with a visible label.
+STRIP_BOX = {"kind": "box", "page": 0, "bbox": [35, 690, 65, 770],
+             "comment": "Checked - live smoke test",
+             "label": "Checked - live smoke test",
+             "target": "Std. No. 21.01 / Rev. 2 box"}
+
+ON_IT = dict(same_thing=True, in_area=False, comment_fits=True,
+             encloses=True, inside="STD. NO. 21.01 REV. 2", thing_px="crop",
+             sure=True)
+
+
+def _needs_label_reads():
+    if not markup_check._label_reads_supported():
+        pytest.skip("installed planlens predates label_reads")
+
+
+def test_a_label_across_sideways_lettering_drawn_as_lines_is_reported(
+        tmp_path, monkeypatch):
+    """F7: no text layer, so planlens wrote the label across; the look sees
+    the lettering by the mark run up the page, and the check says to write
+    it again with label_reads='up'."""
+    _needs_label_reads()
+    engine = Answers(lettering_reads="up", **ON_IT)
+    tools, handle = _tools_for(engine, tmp_path, monkeypatch,
+                               _linework_sheet(), name="lines.pdf")
+    out = json.loads(tools["annotate_document"].invoke({
+        "handle": handle, "output_path": "lines_marked.pdf",
+        "markups": [STRIP_BOX]}))
+    (row,) = out["written"]
+    assert not row.get("label_reads")           # planlens wrote it across
+    (p,) = engine.prompts
+    assert '"lettering_reads"' in p and "tilt your head left" in p
+    check = out["check"]
+    assert check["confirmed"] == 1
+    (lab,) = check["labels"]
+    assert lab["index"] == 0 and lab["label"] == "Checked - live smoke test"
+    assert "runs up (bottom to top)" in lab["problem"]
+    assert "label_reads='up'" in lab["problem"]
+    assert "run across the drawing's own lettering" in check["note"]
+    assert "give label_reads (up or down)" in check["note"]
+
+
+@pytest.mark.parametrize("reads", ["across", "none", None])
+def test_lettering_that_runs_across_is_not_reported(tmp_path, monkeypatch,
+                                                    reads):
+    _needs_label_reads()
+    answer = dict(ON_IT, **({"lettering_reads": reads} if reads else {}))
+    tools, handle = _tools_for(Answers(**answer), tmp_path, monkeypatch,
+                               _linework_sheet(), name="lines.pdf")
+    out = json.loads(tools["annotate_document"].invoke({
+        "handle": handle, "output_path": "lines_marked.pdf",
+        "markups": [STRIP_BOX]}))
+    assert "labels" not in out["check"], out["check"]
+
+
+def test_the_direction_is_not_asked_where_planlens_had_text_or_was_told(
+        tmp_path, monkeypatch):
+    """With a text layer planlens turned the label by it, and a caller's
+    label_reads is the caller's: neither is second-guessed by a look."""
+    _needs_label_reads()
+    engine = Answers(lettering_reads="up", **ON_IT)
+    tools, handle = _tools_for(engine, tmp_path, monkeypatch, _strip_sheet(),
+                               name="strip.pdf")
+    out = json.loads(tools["annotate_document"].invoke({
+        "handle": handle, "output_path": "text.pdf", "markups": [
+            dict(STRIP_BOX, bbox=[35, 120, 125, 160])]}))
+    assert '"lettering_reads"' not in engine.prompts[-1]
+    assert "labels" not in out["check"] or not any(
+        "label_reads=" in lab["problem"] for lab in out["check"]["labels"])
+    engine = Answers(lettering_reads="up", **ON_IT)
+    tools, handle = _tools_for(engine, tmp_path, monkeypatch,
+                               _linework_sheet(), name="lines.pdf")
+    out = json.loads(tools["annotate_document"].invoke({
+        "handle": handle, "output_path": "told.pdf", "markups": [
+            dict(STRIP_BOX, label_reads="across")]}))
+    assert '"lettering_reads"' not in engine.prompts[-1]
+    assert "labels" not in out["check"]
+
+
+@pytest.mark.parametrize("said, word", [
+    ("up", "up"), ("Up.", "up"), ("bottom to top", "up"),
+    ("down", "down"), ("top-to-bottom", "down"), ("across", "across"),
+    ("left to right", "across"), ("none", None), ("", None), (None, None),
+])
+def test_how_a_look_says_the_direction(said, word):
+    assert markup_check._reads_word(said) == word
+
+
 def _labels_sheet() -> bytes:
     """Lettering where a bad label would land, blank paper elsewhere, and a
     border line a good label may cross."""

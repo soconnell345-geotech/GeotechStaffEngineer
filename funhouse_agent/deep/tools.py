@@ -847,7 +847,10 @@ _DOCUMENT_TOOL_NOTES = {
         "point, quote or note): a crop of the marked copy is looked at and "
         "the result's `check` says which marks are on the thing their "
         "target or quoted words name — or, naming neither, the thing their "
-        "comment is about — and which are misplaced. A label is only the "
+        "comment is about — and which are misplaced. A mark put on blank "
+        "paper on purpose (a stamp in an empty corner) names that area as "
+        "its target; the check reports it under on_blank_paper, which a "
+        "look cannot confirm: tell the user where it sits. A label is only the "
         "text the reader sees beside a mark (a tag, a verdict such as "
         "'460.1?'): it is never compared with what is under the mark, so it "
         "need not match it. Never hand over a file with misplaced marks: "
@@ -1172,6 +1175,7 @@ def make_vision_tools(
         view: Optional[list] = None,
         image_box: Optional[list] = None,
         pdf_page: Optional[int] = None,
+        reuse: bool = False,
     ) -> str:
         """Render a ZOOMED-IN crop of a PDF page and analyze it with vision —
         the "geometry says WHERE, vision says WHAT" primitive for drawings.
@@ -1196,6 +1200,9 @@ def make_vision_tools(
         as the vision model reads: to see more detail, zoom on a smaller
         box. ``page`` counts from 0 (default 0); or give ``pdf_page``,
         1-based, as a PDF viewer shows.
+        ``reuse``: true hands back this conversation's kept zoom of the same
+        region (it says what it was asked) instead of a new look -- for a
+        follow-up that zoom already answers; look again when it does not.
         """
         args = {"attachment_key": attachment_key, "prompt": prompt}
         if page is not None:
@@ -1210,6 +1217,8 @@ def make_vision_tools(
             args["view"] = view
         if image_box is not None:
             args["image_box"] = image_box
+        if reuse:
+            args["reuse"] = True
         if inline_images:
             args["_inline"] = True
         return _dispatch("render_region", args)
@@ -1680,7 +1689,9 @@ def make_vision_tools(
             "something an earlier vision result located, pass its view + "
             "the 0-999 image_box its analysis gave instead of bbox: the "
             "window is padded by that view's location error, so the thing "
-            "is in it." + _PDF_PAGE_NOTE,
+            "is in it. reuse=true returns this conversation's kept zoom of "
+            "the same region (saying what it was asked) instead of a new "
+            "look." + _PDF_PAGE_NOTE,
         ),
         "read_reference_figure": (
             read_reference_figure,

@@ -254,6 +254,15 @@ def _resolve_foundry(model_id: str) -> "EngineResolution":
         f"Using the Foundry OpenAI proxy ({model_id}).")
 
 
+class EngineUnavailable(RuntimeError):
+    """A builder's POLITE refusal: nothing is broken, this caller simply has
+    no engine yet — a Tiny Apps tester with no AI key of their own
+    (:mod:`webapp.tinyapps_engine`), a deployment whose settings are
+    incomplete. :func:`resolve_engine` shows the message exactly as written
+    (no exception name, no trace) with ``source="unavailable"``. The message
+    must never carry a key."""
+
+
 def register_model_builder(builder: Optional[Callable[..., object]]) -> None:
     """Install (or clear, with ``None``) the deployment model builder.
 
@@ -275,6 +284,11 @@ def register_model_builder(builder: Optional[Callable[..., object]]) -> None:
     Pair with ``GEOTECH_PROMPTER_MODELS`` (``Label=id,...``) so the sidebar
     picker offers the choices (see ``core.prompter_model_choices``). Zero-arg
     builders keep the pre-5.11 behavior: model fixed by the deployment.
+
+    A builder with a parameter NAMED ``identity`` is also handed the
+    signed-in caller (:class:`webapp.identity.Identity`) when the app knows
+    it — the Tiny Apps builder picks that tester's own Prompter key with it.
+    Such a builder may raise :class:`EngineUnavailable` to refuse politely.
     """
     global _MODEL_BUILDER
     _MODEL_BUILDER = builder
@@ -294,6 +308,17 @@ def _builder_takes_model_id(builder: Callable) -> bool:
         return False
 
 
+def _builder_takes_identity(builder: Callable) -> bool:
+    """True when the registered builder has a parameter named ``identity``
+    (only an explicit name counts: a ``**kwargs`` builder is not handed one
+    it never asked for)."""
+    import inspect
+    try:
+        return "identity" in inspect.signature(builder).parameters
+    except (TypeError, ValueError):
+        return False
+
+
 @dataclass
 class EngineResolution:
     """The outcome of :func:`resolve_engine`.
@@ -304,7 +329,9 @@ class EngineResolution:
         A LangChain-compatible chat model to hand to ``build_deep_agent``, or
         ``None`` when no engine is configured / an error occurred.
     source : str
-        ``"prompter"`` | ``"anthropic"`` | ``"none"`` | ``"error"``.
+        ``"prompter"`` | ``"anthropic"`` | ``"none"`` | ``"error"`` |
+        ``"unavailable"`` (a builder's polite refusal: :class:`EngineUnavailable`
+        — e.g. a Tiny Apps tester with no AI key; ``message`` is for the user).
     model_name : str
         Human-readable model identifier (e.g. the model id, or the builder's
         class name), for display.
@@ -333,7 +360,8 @@ def _default_max_tokens() -> int:
     return DEFAULT_MAX_TOKENS
 
 
-def resolve_engine(model_id: Optional[str] = None) -> EngineResolution:
+def resolve_engine(model_id: Optional[str] = None,
+                   identity: Optional[object] = None) -> EngineResolution:
     """Resolve the chat engine from the environment. Never raises.
 
     ``model_id`` (optional) is the in-app model-picker selection: it OVERRIDES
@@ -341,18 +369,28 @@ def resolve_engine(model_id: Optional[str] = None) -> EngineResolution:
     and is forwarded to a deployment builder that accepts an argument (Prompter
     model switching; zero-arg builders stay deployment-fixed).
     ``None`` (the default) is byte-identical to the pre-picker behaviour.
+
+    ``identity`` (optional) is the signed-in caller; it is forwarded to a
+    builder with an ``identity`` parameter (Tiny Apps per-tester keys) and
+    ignored by every other path. The result is built for THAT caller and
+    must not be handed to anyone else.
     """
     # 1) Deployment-injected builder (Prompter hook). A builder that accepts
     #    an argument gets the picker selection (Prompter model switching); a
     #    zero-arg builder keeps the model deployment-fixed.
     if _MODEL_BUILDER is not None:
         _picked = model_id or None
+        _kw = ({"identity": identity}
+               if identity is not None and _builder_takes_identity(_MODEL_BUILDER)
+               else {})
         try:
             if _builder_takes_model_id(_MODEL_BUILDER):
-                model = _MODEL_BUILDER(_picked)
+                model = _MODEL_BUILDER(_picked, **_kw)
             else:
                 model = _MODEL_BUILDER()
                 _picked = None            # selection cannot apply
+        except EngineUnavailable as exc:  # a polite refusal, said as written
+            return EngineResolution(None, "unavailable", "", str(exc))
         except Exception as exc:  # a bad builder must not crash the app
             return EngineResolution(
                 None, "error", "prompter",

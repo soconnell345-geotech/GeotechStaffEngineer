@@ -1652,6 +1652,29 @@ def markups_with_pages(markups) -> tuple:
     return out, None
 
 
+def _nothing_written(result: Dict[str, Any], final: str, existed: bool,
+                     had_marks: bool, removed, refused) -> Dict[str, Any]:
+    """``result`` for a call that placed no mark and removed none: no
+    ``output_path`` (nothing to download), and a note saying nothing was
+    written, why, and which copy -- if any -- is still there unchanged."""
+    out = {k: v for k, v in result.items()
+           if k not in ("output_path", "appended_to_existing", "note")}
+    name = os.path.basename(final)
+    why = ("every mark was skipped: read each skipped row's reason"
+           if had_marks else "no mark named in remove could be removed")
+    kept = (f"'{name}' is unchanged, as it was before this call" if existed
+            else f"'{name}' was not created")
+    out["nothing_written"] = True
+    out["note"] = (f"Nothing was written: {why}. No marked copy was saved; "
+                   f"{kept}. Fix what the reasons say and call again; do not "
+                   "offer the user a marked copy from this call.")
+    if removed is not None:
+        out["removed"] = removed
+    if refused:
+        out["not_removed"] = refused
+    return out
+
+
 def _write_marked_copy(handle, markups, output_path, append, author, call,
                        remove) -> Dict[str, Any]:
     """:func:`write_marked_copy`; a file-system failure raises
@@ -1728,6 +1751,12 @@ def _write_marked_copy(handle, markups, output_path, append, author, call,
             return {"error": "markups is empty: nothing would be written",
                     "hint": ("each markup is {kind, page, comment} plus ONE "
                              "anchor; to take marks out, pass remove")}
+        if not int(result.get("n_written") or 0) and not removed:
+            # Every mark skipped and nothing taken out: no file is written,
+            # so no "marked" copy without marks becomes a download card
+            # (live smoke wave 3, F3: F04's first call saved a 0-mark copy).
+            return _nothing_written(result, final, existed,
+                                    bool(marks), removed, refused)
         try:
             written, moved = _replace_into(tmp, final)
         except OSError as exc:

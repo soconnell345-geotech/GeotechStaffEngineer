@@ -99,7 +99,7 @@ def test_a_spent_budget_is_recognised_by_status_body_and_type(make, until):
     assert stop is not None and stop.until == until
     assert busy_kind(exc) is None                  # never "wait a minute"
     msg = budget_message(stop)
-    assert msg.startswith("The AI budget for this app is used up")
+    assert msg.startswith("Your AI budget is used up")
     assert "Tell the app owner" in msg and "ask again" not in msg
     assert "{" not in msg and "req_" not in msg
 
@@ -165,7 +165,7 @@ def test_a_vision_side_call_on_a_spent_budget_is_asked_once(waits, make):
         LangChainVisionEngine(model, detail="").analyze_image(PNG, "x")
     assert model.calls == 1 and waits == []
     text = describe_error(caught.value)
-    assert "AI budget for this app is used up" in text
+    assert "AI budget is used up" in text
     assert "NOT read" in text and "do NOT retry" in text
     assert "429" not in text and "{" not in text
 
@@ -180,7 +180,7 @@ def test_a_plain_429_on_a_side_call_is_still_asked_again(waits):
 
 def test_a_tool_error_on_a_spent_budget_says_do_not_retry():
     out = tool_error("annotate_document", anthropic_usage_limit())
-    assert "AI budget for this app is used up" in out["error"]
+    assert "AI budget is used up" in out["error"]
     assert out["hint"] == BUDGET_HINT
     assert "request_id" not in json.dumps(out)
 
@@ -222,7 +222,7 @@ def _look(engine, pdf, tool="analyze_pdf_page", **args):
 def test_a_page_read_on_a_spent_budget_says_so_plainly(monkeypatch):
     monkeypatch.setenv(vision_engine.TIMEOUT_ENV, "0")
     out = _look(_Spent(), _pdf(), page=0)
-    assert "AI budget for this app is used up" in out["error"]
+    assert "AI budget is used up" in out["error"]
     assert "insufficient_quota" not in out["error"]
 
 

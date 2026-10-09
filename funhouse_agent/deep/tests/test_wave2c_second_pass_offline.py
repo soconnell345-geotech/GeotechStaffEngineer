@@ -154,7 +154,8 @@ def test_a_page_read_whole_is_the_reading_and_keeps_the_question():
     _read(engine, _pdf(), tiles="off")
     ((who, prompt, cap),) = engine.calls
     assert prompt.startswith(QUESTION) and "LAYOUT" not in prompt
-    assert cap == vision_tools.VISION_OUTPUT_CAPS["page"] == 12000
+    # 12,000 until live smoke wave 3 (F1): see test_wave3_latency_offline
+    assert cap == vision_tools.VISION_OUTPUT_CAPS["page"] == 8000
 
 
 def test_zoom_and_image_calls_have_their_caps():

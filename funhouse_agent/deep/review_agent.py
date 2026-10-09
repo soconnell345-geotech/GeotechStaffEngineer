@@ -120,8 +120,10 @@ REVIEW_DESCRIPTIONS: Dict[str, str] = {
         "thing is in it). marks = [[x, y, label], ...] numbers spots so you can ask "
         "what is at each. Use it to read small lettering, confirm a "
         "character, see what a note, markup or leader points at, or check a "
-        "dimension before you quote it. page is 0-based; or give pdf_page, "
-        "1-based, as a PDF viewer shows."),
+        "dimension before you quote it. Every zoom is kept for the "
+        "conversation: reuse=true returns the kept zoom of the same region - "
+        "saying what it was asked - instead of a new look. page is 0-based; "
+        "or give pdf_page, 1-based, as a PDF viewer shows."),
     "analyze_image": (
         "Look at an image file - an uploaded picture, or a contact sheet "
         "that render_page_thumbnails wrote (pass its path) - and answer your "

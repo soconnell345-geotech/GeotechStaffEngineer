@@ -2651,6 +2651,10 @@ def load_downloads(conv_dir: str) -> List[dict]:
 
     Each entry: ``{"remote": <SharePoint path>, "local": <absolute path>,
     "bytes": int, "ts": float}`` -- one per SharePoint file, the latest copy.
+    The file holds ``local`` relative to the conversation folder
+    (:func:`_ledger_name`); it is returned absolute, resolved against
+    ``conv_dir`` -- so a conversation restored to another place still finds
+    its downloads. An older ledger's absolute path is returned as it is.
     """
     try:
         with open(os.path.join(conv_dir, DOWNLOADS_LEDGER),
@@ -2658,8 +2662,32 @@ def load_downloads(conv_dir: str) -> List[dict]:
             data = _json.load(fh)
     except (OSError, ValueError):
         return []
-    return [d for d in data if isinstance(d, dict) and d.get("local")] \
-        if isinstance(data, list) else []
+    if not isinstance(data, list):
+        return []
+    out = []
+    for d in data:
+        if not isinstance(d, dict) or not d.get("local"):
+            continue
+        local = str(d["local"])
+        if not os.path.isabs(local):
+            d = {**d, "local": os.path.normpath(
+                os.path.join(os.path.abspath(conv_dir), local))}
+        out.append(d)
+    return out
+
+
+def _ledger_name(conv_dir: str, local: str) -> str:
+    """``local`` as the ledger stores it: relative to the conversation
+    folder, forward slashes (``files/report.pdf``), never the server's
+    absolute path (live smoke wave 3, F8: the ledger, mirrored to
+    SharePoint, carried each download's path on the server). A file on
+    another drive, which no relative name reaches, keeps its path."""
+    ap = os.path.abspath(str(local))
+    try:
+        return os.path.relpath(ap, os.path.abspath(conv_dir)).replace(
+            os.sep, "/")
+    except ValueError:              # another drive (Windows)
+        return ap
 
 
 #: One lock per conversation folder for the ledger's read-modify-write.
@@ -2693,11 +2721,12 @@ def record_download(conv_dir: str, remote: str, local: str,
         return
     try:
         with _downloads_lock(conv_dir):
-            entries = [d for d in load_downloads(conv_dir)
+            entries = [{**d, "local": _ledger_name(conv_dir, d["local"])}
+                       for d in load_downloads(conv_dir)
                        if str(d.get("remote", "")).lower()
                        != str(remote).lower()]
             entries.append({"remote": str(remote),
-                            "local": os.path.abspath(str(local)),
+                            "local": _ledger_name(conv_dir, local),
                             "bytes": int(size or 0), "ts": _time.time()})
             os.makedirs(conv_dir, exist_ok=True)
             tmp = os.path.join(
@@ -2816,8 +2845,9 @@ def reads_note(folder: Optional[str]) -> str:
                    "this list.") + readings_note(folder)
 
 
-#: Characters of the "readings kept" sentence at most.
-READINGS_NOTE_MAX_CHARS = 700
+#: Characters of the "readings kept" sentence at most (zooms are listed
+#: too since live smoke wave 3, F6, each with the box to pass back).
+READINGS_NOTE_MAX_CHARS = 1000
 
 
 def readings_note(folder: Optional[str]) -> str:
@@ -2843,13 +2873,20 @@ def readings_note(folder: Optional[str]) -> str:
         asked = " ".join(str(r.get("prompt") or "").split())
         if len(asked) > 60:
             asked = asked[:57].rstrip() + "..."
-        items.append(f"'{name}' p. {page} ({r.get('view') or 'page'}, "
-                     f"asked \"{asked}\")")
+        view = r.get("view") or "page"
+        region = r.get("region")
+        if view == "zoom" and isinstance(region, list) and len(region) == 4:
+            # the box to pass back for this zoom (live smoke wave 3, F6)
+            view = "zoom bbox=[" + ", ".join(f"{float(v):g}"
+                                             for v in region) + "]"
+        items.append(f"'{name}' p. {page} ({view}, asked \"{asked}\")")
     if not items:
         return ""
     head = (" Readings already taken and kept (newest first; "
-            "analyze_pdf_page(..., pdf_page=N, reuse=true) returns one "
-            "without a new look, and says what it was asked): ")
+            "analyze_pdf_page(..., pdf_page=N, reuse=true) returns a page "
+            "reading and render_region(..., pdf_page=N, bbox=<the zoom's "
+            "bbox>, reuse=true) a zoom, without a new look, each saying what "
+            "it was asked): ")
     room = READINGS_NOTE_MAX_CHARS - len(head) - 30
     shown: List[str] = []
     for it in items:
