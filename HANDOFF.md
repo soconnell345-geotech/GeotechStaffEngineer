@@ -84,7 +84,7 @@ detailed Phase-E history; this file supersedes it.
 - **3c. Foundry brief 5: BACK and READ IN FULL 2026-10-08.**
   - **The readings:** `module_work/review_eval_results/2026-10-08_foundry_5.33.0rc1/TRACE_REVIEW.md`, plus four slice files. Also REVIEW_HARNESS run 7 and MEASUREMENTS "FOUNDRY RUN 3". Raw traces sit in `module_work/field_feedback/2026-10-08_foundry_brief5_5.33.0rc1/raw/`.
   - **Verdict:** all four switches stay OFF and nothing is released from rc1.
-  - **The fix list** is TRACE_REVIEW groups 1–6. **E5 comes first:** the GEC-12 Fig 7-15 table, which `axial_pile/nordlund.py` also uses, is +41 % at φ 30° in released code. It waits on the owner's rule for values outside 30–43.75°.
+  - **The fix list** is TRACE_REVIEW groups 1–6. **E5 is DONE on master** (refs `d9dab7a`, app `7d8771e`): GEC-12 Fig 7-15 was re-measured (the released table is +41 % at φ 30°). Owner's rule: the reference refuses outside 30–43.75°, and Nordlund completes with a warning on `AxialPileResult.warnings`. It reaches users with the next release.
   - **Claude API credit** (owner, $100 promotional, expires 2026-11-05): spend it only on B3, on R if orientation needs a vision call, and on a Haiku smoke run before brief 6. Everything else replays offline from the traces.
   - The brief was `../foundry_handoff/AI_FDE_BRIEF_5.md`, with test wheels 5.33.0rc1 and planlens 0.13.0rc1 from master 39716a8 and main c5bdb8d.
   - Its original contents:

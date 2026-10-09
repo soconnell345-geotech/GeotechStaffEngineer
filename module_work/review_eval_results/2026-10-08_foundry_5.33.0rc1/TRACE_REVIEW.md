@@ -123,7 +123,7 @@ Classes:
 
 | id | fix | class |
 |---|---|---|
-| **E5** | Replace the Fig 7-15 table in `geotech_references/gec_12/figures.py:194-220` and `axial_pile/nordlund.py:299-318` with the measured 1° nodes. **Owner's call:** below 30° and above 43.75°, refuse, or clamp to the end values with a warning | P |
+| **E5** | **DONE 2026-10-08** (refs `d9dab7a`, app `7d8771e`). Fig 7-15 replaced by the measured 1° nodes in `geotech_references/gec_12/figures.py` and `axial_pile/nordlund.py`. Owner's rule: the reference refuses outside 30–43.75°, and Nordlund completes at the end value with a warning carried on `AxialPileResult.warnings`. V-001's toe is now +0.3 % against the published plateau (was −4.6 %). Reaches users with the next release | P |
 | N2 | Every `call_agent` writer saves into the conversation's files folder, whatever path is given. Fix the DXF export, which is not copied even in the app (`dxf_export.py:67`) | P |
 | N3 | An unknown argument (`pages=12`) is refused with the right name, never silently dropped (`deep/tools.py:808,1293`) | P |
 | T | Side calls get their own read timeout, near the p99, and retry once (`palantir_sdk_engine.py:639`) | P |
@@ -199,7 +199,7 @@ Almost everything above replays offline from these traces, at no cost: a scripte
 
 ## Next
 
-1. **Owner:** decide E5's out-of-range rule. Then fix it first; it is a correctness fix to released code.
+1. ~~E5~~ DONE 2026-10-08, with the owner's rule: the reference refuses, and Nordlund warns.
 2. **Build groups 1–2,** plus N1 and N5 so the suite tells the truth. Each change is tested offline from these traces.
 3. **Then groups 3–4.** Re-measure on Foundry (brief 6) with repeats where results vary between runs.
 4. **The checklist** waits for the owner's session.
