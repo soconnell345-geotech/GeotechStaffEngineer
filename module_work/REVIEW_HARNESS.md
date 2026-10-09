@@ -344,3 +344,39 @@ unreleased; live check 6 re-measures it.
 3. forgiving markup fields;
 4. tile-only finds;
 5. then `markups_point_at` for the suite.
+
+
+**Run 7 — 2026-10-08, Foundry (brief 5, AI FDE).**
+- **Wheels:** 5.33.0rc1 + planlens 0.13.0rc1 (app `39716a8`, planlens `c5bdb8d`).
+- **Models:** GPT-5.4 and GPT-5.6 Sol, through the package's own Responses-route engine.
+- **Every run was read in full,** 114 agent runs across four readers. The readings are in `module_work/review_eval_results/2026-10-08_foundry_5.33.0rc1/`: TRACE_REVIEW.md plus four slice files. Raw traces: `module_work/field_feedback/2026-10-08_foundry_brief5_5.33.0rc1/raw/`.
+
+| part | GPT-5.4 | Sol |
+|---|---|---|
+| A: label crops (needs_values) | 32/32 | 32/32 |
+| B: `produce-circle-tags` × 3 (tags ringed of 7) | 2/3 (6, 6, 5) | 2/3 (7, 2, 7) |
+| B: `produce-markup` × 3 | 1/3 (two arrows on a different label) | 3/3 |
+| C: 42 tasks, `baseline` | — | 39/42; 8.18 M in / 0.78 M out; 75 min |
+| C: 42 tasks, `coverage` | — | 39/42; 12.0 M in / 1.21 M out; 109 min |
+| C/D: `checklist`, report tasks | 2/5 (with the scale tasks) | 1/3 |
+| D: 5 new tasks, each arm | 2/5 | — |
+
+**Reading.**
+- **The new tasks' failures are mostly the harness:**
+  - the DIGGS file was written valid to `/tmp` and the runner does not collect it;
+  - the values check reads only the answer text, not the delivered tables.
+- **The `write_diggs` cross-checks caught the planted LL/PL swap 3 of 3 times on Sol.** GPT-5.4 "corrected" it before writing.
+- **Coverage states its counts but is not ready:**
+  - it doubles the answer when it fires;
+  - weak planlens roles arm it on prose manuals;
+  - it cost +47 % input, 56 % of that on ordinary tasks.
+- **The checklist is not ready:** a false fail, a false pass, a stuck "unsure".
+- **Visual scales:**
+  - Sol used them and passed both new tasks; GPT-5.4 read the log depth by eye.
+  - `log_grid` reads table rules as strata.
+- **Markups:** GPT-5.4's wrong arrows point at another label, and the check trusted the agent's own `target`. That check also rejected 13 exact rings and confirmed 12 over-large ones.
+- **Older tasks:** no change against run 6. Turned lettering explains the remaining misreads.
+- **Fig 7-15 (part E):** the reference table is wrong (+41 % at 30°), and `axial_pile/nordlund.py` uses it.
+- **Reasoning summaries:** never requested, because the code uses the wrong SDK class names.
+
+**Decision:** all four switches stay OFF, and there is no release from rc1. The fix list is in TRACE_REVIEW.md: groups 1–5, with E5 (Fig 7-15) first, pending the owner's out-of-range rule.

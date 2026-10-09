@@ -4282,3 +4282,34 @@ keep the records so this is rescoreable next time).
    - whether `after == model_alone`.
 
 RESULTS.md should print `floor_alone` and `model_alone` beside before/after; they are computed and saved but not shown.
+
+
+## FOUNDRY RUN 3 -- 2026-10-08 -- app 5.33.0rc1, GPT-5.4 (Responses route), Foundry AI FDE
+
+- **What ran:** brief 5 part G, against the 5.33.0rc1 test wheel (`39716a8`, planlens `c5bdb8d`). numpy 1.26.4.
+  - **G1:** brief 4's (rc3) run files rescored with no model call.
+  - **G2:** stages logs and lab, with `GEOTECH_INGEST_VISUAL_SCALES` off and on.
+- **Files:** `part_g/` in `module_work/field_feedback/2026-10-08_foundry_brief5_5.33.0rc1/raw/` only, never committed. G1's `misses` lists were removed by the FDE.
+- **Full reading:** `module_work/review_eval_results/2026-10-08_foundry_5.33.0rc1/TRACE_REVIEW_B_AEFG.md` §5.
+
+| reader | set | G1 rescore (rc3 files): after / model alone / floor alone | G2 OFF (rc1) | G2 ON (rc1) | note |
+|---|---|---|---|---|---|
+| log | open 6 | 301/307 / 292/307 / 248/307 | 300/307 (98 %) | 300/307 | |
+| log | blind 9 | 166/214 / 151/214 / 146/214 | 166/214 (78 %) | 168/214 (79 %) | +2 is R13_p45 index, variance |
+| log | blind index | 0/16 / 0/16 / 0/16 | 0/16 | 2/16 | **settled: the floor never held them; nothing was overruled** |
+| log | blind layer_top | -- | 22/36 | 22/36 | voters made no label call: DI gives the scans text |
+| lab | all 31 (after / read) | -- | 520/825 / 552/667 | 516/825 / 552/667 | link flips between arms (R17_p136 9/10 vs 1/10) |
+
+**Reading.**
+1. **Logs index 0 % blind: settled.** The floor, the model and the merge all hold 0/16.
+   - 13 of the 16 values are on R13_p45.
+   - `seed_from_grid` binds index cells only inside the sample's row group, and the model does not attach them on that form.
+   - Fix G2 binds them to the nearest sample. Per-value evidence is not needed.
+2. **Gradation collapse: three link failures, one reading failure.**
+   - Link failures: R28_p176, R28_p177, R17_p114.
+   - Reading failure: R15_p82, 21 % read.
+   - The same link signature shows on three more open sheets: 120 values read became 10 after linking.
+   - Linking is unstable from run to run, so a link fix must be measured over repeats. The FDE can hand back, per specimen, whether the hole matched and the depth difference in bands.
+3. **Visual scales in ingest cannot be measured on this corpus.** The voters act only on scans whose labels lack text, and DI supplies that text.
+   - Leave the switch off.
+   - RESULTS should print the `visual_scales` counts (fix G3).

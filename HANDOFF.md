@@ -81,9 +81,12 @@ detailed Phase-E history; this file supersedes it.
   - planlens: the speed fix and `log_grid(values=)`, unreleased on main.
 
   Step 9's live checks are `module_work/LIVE_TEST_QUEUE.md` check 8.
-- **3c. Foundry brief 5: SENT 2026-10-08.** The brief is `../foundry_handoff/AI_FDE_BRIEF_5.md`. Its test wheels 5.33.0rc1 and planlens 0.13.0rc1 come from master 39716a8 and main c5bdb8d.
-  - Parts: A, label crops; B, markups ×3; C, Sol suite on baseline and coverage, plus checklist on `report-`; D, GPT-5.4 on the new tasks; E, GEC-12 Fig 7-15; F, patch alignment; G, report-ingest rescore and visual scales off/on.
-  - When it comes back, read every run in full and write a TRACE_REVIEW.
+- **3c. Foundry brief 5: BACK and READ IN FULL 2026-10-08.**
+  - **The readings:** `module_work/review_eval_results/2026-10-08_foundry_5.33.0rc1/TRACE_REVIEW.md`, plus four slice files. Also REVIEW_HARNESS run 7 and MEASUREMENTS "FOUNDRY RUN 3". Raw traces sit in `module_work/field_feedback/2026-10-08_foundry_brief5_5.33.0rc1/raw/`.
+  - **Verdict:** all four switches stay OFF and nothing is released from rc1.
+  - **The fix list** is TRACE_REVIEW groups 1–6. **E5 comes first:** the GEC-12 Fig 7-15 table, which `axial_pile/nordlund.py` also uses, is +41 % at φ 30° in released code. It waits on the owner's rule for values outside 30–43.75°.
+  - **Claude API credit** (owner, $100 promotional, expires 2026-11-05): spend it only on B3, on R if orientation needs a vision call, and on a Haiku smoke run before brief 6. Everything else replays offline from the traces.
+  - The brief was `../foundry_handoff/AI_FDE_BRIEF_5.md`, with test wheels 5.33.0rc1 and planlens 0.13.0rc1 from master 39716a8 and main c5bdb8d.
   - Its original contents:
   - 3a's fixes and 3b;
   - the coverage arms `("baseline", "coverage", "checklist")`;
