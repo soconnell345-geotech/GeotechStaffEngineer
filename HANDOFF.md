@@ -103,6 +103,26 @@ detailed Phase-E history; this file supersedes it.
     4. report ingest with `GEOTECH_INGEST_VISUAL_SCALES` off and on, in
        separate `out_dir`s.
 - **3d. The owner's checklist session, the week of 2026-10-12** (item 8a(vi)).
+- **3e. Live smoke before the Tiny Apps tester deploy (2026-10-08/09).**
+  - **The owner's goal:** the Document Review page goes to OTHER testers on Tiny Apps in the week of 2026-10-12, and it is the primary focus. The owner gave $80 of the $100 promotional Anthropic API credit for plumbing smoke tests, with $20 kept for touch-up with the owner. The credit expires 2026-11-05.
+  - **The harness:** `module_work/live_smoke/` (`run.py` docstring). It runs 50 flows (F01–F50; F29–F50 are Document Review), the geotech questions and the suite tasks through the app's real turn path, with Claude standing in for GPT. It checks each turn for files outside the conversation folder, links, cards, mirror gaps and tool errors. The spend ledger sits beside it (gitignored).
+  - **Runs and reviews** are in `module_work/live_smoke/runs/<wave>/` (gitignored), each wave with a REVIEW.md from an Opus full read:
+    - w1 (Haiku): flows, geotech, suite;
+    - w2a (Sonnet): review flows;
+    - w2b (Sonnet): 14 of the new flows;
+    - w2c (Sonnet): the 8 untested flows plus re-runs.
+  - **Fixed and committed** (3195ede, e01db59, cada395, 7a8b979, 9445781, 8ef04ad; planlens f679daf):
+    - per-user isolation: SharePoint tools, disk reads, one document toolkit per conversation, the working folder bound per turn, owner = unique key;
+    - the final answer only; files and links with conversation-relative names; the SharePoint link points at the mirrored copy;
+    - Word/Excel in and out (`office_text.py`, `write_xlsx`); `plot_data` on both pages; `calculate`;
+    - tool errors never end a turn; an output cap of 32k with cut-call detection; auto-continue only on real stops;
+    - vision: concurrent tiles, retries, fairness between conversations, an already-read note;
+    - markups on rotated pages (needs the planlens release) and safe re-marking;
+    - module fixes: the sheet-pile water table at 0 m, fem2d consolidation units and load-only transient, the downdrag neutral-plane basis, and others.
+  - **Owner's judgment needed:**
+    - downdrag: settlement-compatibility basis, which puts the neutral plane at the bearing-layer top for the default inputs;
+    - fem2d settlements now exclude self-weight.
+  - **Before the testers arrive:** release (on the owner's word) planlens (rotated markups, `label_reads`) and the app, then deploy to Tiny Apps.
 
 Machine note: heavy test suites must not overlap on the owner's laptop. Background runs were stopped twice for low memory on 2026-10-07/08.
 
