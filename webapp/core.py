@@ -647,6 +647,43 @@ def ends_mid_task(text: str, saw_tool_call: bool) -> bool:
     return bool(_INTENT_RE.search(tail))
 
 
+# --- The coverage gate's held-back reply (Foundry brief 5, CV2/N4) -----------
+# With GEOTECH_COVERAGE on, the gate can stop the model as it finishes, take
+# its reply out of the conversation and give it a note (the pages nobody read;
+# state coverage as counts) in its place. The reply streamed before that note
+# is then NOT the answer: the reply after it is, whole. Brief 5 delivered
+# every gated answer as the first reply glued to the second (10 of 10 on the
+# new tasks, 5 of 6 on ordinary ones), sometimes mid-line.
+
+#: The status line shown when the gate holds a reply back.
+GATE_STATUS = ("coverage check: the app listed what has not been read; the "
+               "answer is being written again with it")
+
+
+def coverage_gate_spoke(chunk) -> bool:
+    """Whether an ``updates``-mode stream item carries the coverage gate's
+    note (a user-role message opening with the gate's prefix)."""
+    if not isinstance(chunk, dict):
+        return False
+    from funhouse_agent.coverage import GATE_PREFIX
+    for update in chunk.values():
+        if not isinstance(update, dict):
+            continue
+        msgs = update.get("messages")
+        if not isinstance(msgs, (list, tuple)):
+            continue
+        for msg in msgs:
+            if isinstance(msg, dict):
+                kind, content = msg.get("role"), msg.get("content")
+            else:
+                kind = getattr(msg, "type", None)
+                content = getattr(msg, "content", None)
+            if kind in ("human", "user") and isinstance(content, str) \
+                    and content.startswith(GATE_PREFIX):
+                return True
+    return False
+
+
 #: Seconds of stream silence before a heartbeat item is emitted. Behind the
 #: Databricks driver proxy, a websocket with no traffic for ~1-2 min gets
 #: killed ("Connecting" flaps, orphaned turns — observed live through 5.10.2):
@@ -739,6 +776,11 @@ def stream_turn(agent, messages: list, thread_id: str,
       carrying the concatenated answer and the token spend for this turn
       (aggregated across every model call in the run, sub-agents included).
 
+    When the coverage gate holds a reply back (:func:`coverage_gate_spoke`),
+    the text streamed before its note is left out of ``answer``: the reply
+    after the note is the answer (or, if the model gave nothing after it,
+    the reply held back).
+
     Reuses the PURE ``_format_update`` parser and ``_sum_callback_tokens`` from
     ``funhouse_agent.deep.notebook`` so the stream contract is shared with the
     notebook UI. The whole stream runs under a usage-metadata callback; if that
@@ -783,9 +825,22 @@ def stream_turn(agent, messages: list, thread_id: str,
         nonlocal work_messages, continuations, saw_tool
         while True:
             pass_parts: List[str] = []
+            held_back: Optional[str] = None
             for mode, chunk in agent.stream(
                     {"messages": work_messages}, config=run_config,
                     stream_mode=["updates", "messages"]):
+                if mode == "updates" and coverage_gate_spoke(chunk):
+                    # The coverage gate (GEOTECH_COVERAGE) held the reply
+                    # streamed so far back from the user and asked for the
+                    # whole answer again: the reply after its note is THE
+                    # answer, never the two glued (Foundry brief 5, CV2/N4).
+                    held_back = "".join(pass_parts)
+                    pass_parts = []
+                    yield {"kind": "tool_call", "text": GATE_STATUS}
+                    if held_back.strip():
+                        # Keeps the live view from running the two replies
+                        # together; the delivered answer is turn_done's.
+                        yield {"kind": "token", "text": "\n\n"}
                 for entry in _format_update(mode, chunk,
                                             max_result_chars=max_result_chars):
                     if entry["kind"] == "token":
@@ -794,6 +849,10 @@ def stream_turn(agent, messages: list, thread_id: str,
                         saw_tool = True
                     yield entry
             pass_text = "".join(pass_parts)
+            if held_back is not None and not pass_text.strip():
+                # The model gave nothing after the note: the reply it had is
+                # better than none.
+                pass_text = held_back
             if answer_parts and pass_text:
                 answer_parts.append("\n\n")
             answer_parts.append(pass_text)

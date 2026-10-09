@@ -28,8 +28,9 @@ use it are :mod:`funhouse_agent.deep.coverage_tools`):
   to finish with data pages unread, the list the agent is told once.
 
 "Read" means: looked at by a vision tool, or read as text by a text tool on a
-page that HAS a usable text layer. A scanned page read only as text was not
-read - there was nothing to read - and the coverage says so.
+page that HAS a usable text layer (``log_grid`` counts as a text read of each
+page whose rows it returned in full). A scanned page read only as text was
+not read - there was nothing to read - and the coverage says so.
 
 Pages are 0-based here, as in every tool; ``pdf_pages`` (one higher) are what
 a reader cites.
@@ -83,6 +84,31 @@ TEXT_TOOLS = ("read_document", "read_pdf_text")
 LOOK_TOOLS = ("analyze_pdf_page", "render_region")
 #: A tool that reads or looks at each page of a range itself.
 SWEEP_TOOLS = ("sweep_pages",)
+#: Tools that return a log's printed content row by row, each row naming its
+#: page (planlens' ``log_grid``): a page whose rows all came back was read,
+#: as text. Foundry brief 5 (N6): a run that took four log pages through
+#: ``log_grid`` alone, every printed value returned, was told by the gate
+#: that it had not read them.
+GRID_TOOLS = ("log_grid",)
+#: Not reads, by design: ``measure`` returns a position measured through the
+#: page's scale, not the page's content - like a search, it answers one
+#: question about a page; the look or the text read that found the thing is
+#: the read. Nor are searches, thumbnails, ``find_like``, ``find_quantities``
+#: or the digest's page rows.
+
+#: Fewest planlens role confidence that is the page's own evidence: a page
+#: that names itself (planlens "named" 0.8, "strong" 0.9), a log's
+#: continuation sheet (0.7), a page of a bound report (0.85). Below it are
+#: planlens' "weak" cues (0.6: a test named on a page of working, a few test
+#: words, a form's shape), roles inherited from a tab (0.5-0.6) and guesses
+#: from the page's shape (0.35-0.4).
+STRONG_CONFIDENCE = 0.7
+#: planlens evidence tags for a role INHERITED from the page's appendix tab
+#: (the page says nothing about itself).
+INHERITED_TAGS = ("tab-declares", "between-pages-of-one-log")
+#: Version of the rules an inventory was built with; a saved inventory from
+#: older rules is rebuilt the next time its document is touched.
+INVENTORY_RULES = 2
 
 #: Fewest characters of text for a page to count as having a text layer
 #: (the same threshold ``read_pdf_text`` uses to call a page scanned).
@@ -108,8 +134,10 @@ def states_coverage(text: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def parse_pages(spec: Any, n_pages: Optional[int] = None) -> List[int]:
-    """0-based pages from an int, a list, or a string like ``"2-4,7"``.
-    Anything unreadable is dropped; ``n_pages`` bounds the result."""
+    """0-based pages from an int, a list, a string like ``"2-4,7"``, or a
+    dict of those (``{"logs": "7-10", "lab": [16, 17]}``, or
+    ``{"pages": [...]}``: every value is read). Anything unreadable is
+    dropped; ``n_pages`` bounds the result."""
     out: List[int] = []
     if spec is None or spec == "":
         return out
@@ -117,6 +145,9 @@ def parse_pages(spec: Any, n_pages: Optional[int] = None) -> List[int]:
         return out
     if isinstance(spec, int):
         out = [spec]
+    elif isinstance(spec, dict):
+        for v in spec.values():
+            out.extend(parse_pages(v, n_pages))
     elif isinstance(spec, (list, tuple, set)):
         for v in spec:
             out.extend(parse_pages(v, n_pages))
@@ -222,7 +253,48 @@ def pages_from_call(name: str, args: Optional[dict], result: Any
         failed = {r.get("page") for r in data.get("unanswered") or []
                   if isinstance(r, dict)}
         return ("source", src), [(p, "sweep") for p in sorted(checked - failed)]
+    if name in GRID_TOOLS:
+        if data is None:
+            return None, []
+        ref = ("handle", str(args.get("handle") or data.get("handle") or ""))
+        return ref, [(p, "text") for p in _grid_pages_returned(args, data)]
     return None, []
+
+
+def _grid_pages_returned(args: dict, data: dict) -> List[int]:
+    """The pages whose rows a ``log_grid`` result has returned IN FULL.
+
+    The rows come a window at a time (``offset`` in, ``next_offset`` out),
+    in page order, each naming its page. A page is complete in this window
+    when a later page's rows follow it, or when this is the last window
+    (no ``next_offset``); the last page of a window that goes on may go on
+    in the next. A window after the first (``offset`` > 0) also completes
+    the pages of the call that come before its first row's page: their rows
+    were the earlier windows' (a page whose rows ended exactly at a window's
+    end shows only here). A call with no rows (``rows=false``, a scan with
+    no text) returns no page's content and reads nothing."""
+    rows = data.get("rows")
+    if not isinstance(rows, list):
+        return []
+    order: List[int] = []
+    for row in rows:
+        page = row.get("page") if isinstance(row, dict) else None
+        if isinstance(page, int) and not isinstance(page, bool) \
+                and (not order or order[-1] != page):
+            order.append(page)
+    if not order:
+        return []
+    more = data.get("next_offset") not in (None, "", False)
+    done = order[:-1] if more else list(order)
+    try:
+        offset = int(args.get("offset") or data.get("offset") or 0)
+    except (TypeError, ValueError):
+        offset = 0
+    if offset > 0:
+        listed = parse_pages(data.get("pages"))
+        if order[0] in listed:
+            done.extend(listed[:listed.index(order[0])])
+    return sorted(set(done))
 
 
 # ---------------------------------------------------------------------------
@@ -241,19 +313,164 @@ class PageInfo:
     #: True for a page of a report bound inside this one; ``group`` is then
     #: what the page itself is (its inner role), when planlens could tell.
     bound: bool = False
+    #: planlens' confidence in ``role`` and the tag of its evidence
+    #: ("page-title", "tab-declares", ...).
+    confidence: Optional[float] = None
+    evidence: Optional[str] = None
+    #: Set when planlens calls the page a log, a lab sheet or a field-test
+    #: sheet and the inventory does NOT count it as one (``group`` is then
+    #: "other"): why - the evidence is weak, or the page stands alone.
+    not_data: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"page": self.page, "role": self.role, "group": self.group,
-                "kind": self.kind, "has_text": self.has_text,
-                "item": self.item, "bound": self.bound}
+        d = {"page": self.page, "role": self.role, "group": self.group,
+             "kind": self.kind, "has_text": self.has_text,
+             "item": self.item, "bound": self.bound}
+        if self.confidence is not None:
+            d["confidence"] = round(float(self.confidence), 2)
+        if self.evidence:
+            d["evidence"] = self.evidence
+        if self.not_data:
+            d["not_data"] = self.not_data
+        return d
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "PageInfo":
+        conf = d.get("confidence")
         return cls(page=int(d["page"]), role=str(d.get("role", "other")),
                    group=str(d.get("group", "other")),
                    kind=str(d.get("kind", "mixed")),
                    has_text=bool(d.get("has_text", True)),
-                   item=d.get("item"), bound=bool(d.get("bound", False)))
+                   item=d.get("item"), bound=bool(d.get("bound", False)),
+                   confidence=float(conf) if conf is not None else None,
+                   evidence=d.get("evidence"), not_data=d.get("not_data"))
+
+
+#: Pages passed over when looking for a data page's neighbour: a tab, the
+#: contents, a cover or a blank page sits between two appendices of data.
+_PASS_OVER_ROLES = ("divider", "toc", "cover")
+
+
+def _data_evidence(role_row: Any, has_text: bool) -> Optional[str]:
+    """``None`` when planlens' evidence that a page IS a log, a lab sheet
+    or a field-test sheet is strong; otherwise why it is not.
+
+    Strong: the page names itself (planlens 0.7 and up), or it is a scan
+    under a tab that declares it - a page with no text cannot name itself,
+    so its tab is all the evidence there can be (the field session's older
+    logs were scans behind a tab). Weak: one of planlens' own "weak" cues
+    (0.6 - a test named on a page of working, a few test words, a form's
+    shape), a role inherited from a tab by a page that HAS text and says
+    nothing about itself (it could have, and did not), or a guess from the
+    page's shape."""
+    conf = float(getattr(role_row, "confidence", 0.0) or 0.0)
+    ev = getattr(role_row, "evidence", None) or {}
+    tag = ev.get("tag")
+    if conf >= STRONG_CONFIDENCE:
+        return None
+    if tag in INHERITED_TAGS and not has_text:
+        return None
+    if tag in INHERITED_TAGS:
+        return (f"weak evidence (planlens {conf:.2f}): the role is its "
+                "appendix tab's, and the page, which has text, says nothing "
+                "about itself")
+    why = ev.get("why") or ev.get("rule") or "no title of its own"
+    return f"weak evidence (planlens {conf:.2f}): {str(why)[:90]}"
+
+
+def classify_pages(summaries: Sequence[Any], role_rows: Sequence[Any]
+                   ) -> List[PageInfo]:
+    """The inventory's pages from planlens' page map and page roles.
+
+    Only STRONG evidence makes a page a log, a lab sheet or a field-test
+    sheet here (Foundry brief 5, CV1: planlens' weak roles called 33 of the
+    60 pages of a backfill manual laboratory sheets, the gate then held a
+    narrow question to them and the answers told users "laboratory sheets:
+    3 of 33 read"). A data page counts when:
+
+    * its own evidence is strong (:func:`_data_evidence`), or it belongs to
+      a planlens work item - a log's sheets, one test's pages - that has a
+      page with strong evidence of the same kind (a continuation sheet); and
+    * it stands with other data pages: the next data-like page before or
+      after it (passing over tabs, contents, covers and blank pages) is one
+      too. Logs and laboratory sheets come in sets - a log's sheets, an
+      appendix of logs, a run of test sheets; a page the rules call a lab
+      sheet, alone among pages of prose, is a page that names a test.
+
+    A page that fails either is counted as ``other`` (``not_data`` says
+    why): a declared or written-out extraction still covers it, and the
+    implicit "data pages were read" arming does not see it.
+    """
+    roles: Dict[int, Any] = {getattr(r, "page", None): r for r in role_rows}
+    pages: List[PageInfo] = []
+    for s in summaries:
+        r = roles.get(s.page)
+        role = getattr(r, "role", None) or "other"
+        group = ROLE_GROUP.get(role, "other")
+        bound = role == "appended_report"
+        evidence = getattr(r, "evidence", None) or {}
+        if bound:
+            inner = evidence.get("inner_role")
+            if inner in ROLE_GROUP and ROLE_GROUP[inner] not in ("front",):
+                group = ROLE_GROUP[inner]
+        has_text = (int(getattr(s, "n_text_chars", 0) or 0)
+                    >= MIN_TEXT_CHARS
+                    and bool(getattr(s, "text_reliable", True))
+                    and getattr(s, "kind", "") != "scanned")
+        conf = getattr(r, "confidence", None)
+        pages.append(PageInfo(page=s.page, role=role, group=group,
+                              kind=str(getattr(s, "kind", "mixed")),
+                              has_text=has_text,
+                              item=getattr(r, "item_id", None), bound=bound,
+                              confidence=(float(conf) if conf is not None
+                                          else None),
+                              evidence=evidence.get("tag")))
+
+    # 1. Each data page's own evidence (a bound report's page: the binding
+    #    is strong, and what the page is inside it is planlens' own reading).
+    weak: Dict[int, str] = {}
+    for p in pages:
+        if p.group not in DATA_GROUPS or p.bound:
+            continue
+        why = _data_evidence(roles.get(p.page), p.has_text)
+        if why:
+            weak[p.page] = why
+    # 2. A weak page of a work item that has a strong page of its group.
+    strong_items = {(p.item, p.group) for p in pages
+                    if p.group in DATA_GROUPS and p.item
+                    and p.page not in weak}
+    for p in pages:
+        if p.page in weak and (p.item, p.group) in strong_items:
+            del weak[p.page]
+    # 3. Data pages stand with other data pages.
+    by_page = {p.page: p for p in pages}
+
+    def is_data(q: int) -> bool:
+        info = by_page.get(q)
+        return (info is not None and info.group in DATA_GROUPS
+                and q not in weak)
+
+    def neighbour(page: int, step: int) -> Optional[int]:
+        q = page + step
+        while q in by_page and (by_page[q].role in _PASS_OVER_ROLES
+                                or by_page[q].kind == "blank"):
+            q += step
+        return q if q in by_page else None
+
+    alone = {}
+    for p in pages:
+        if not is_data(p.page):
+            continue
+        if not any(q is not None and is_data(q)
+                   for q in (neighbour(p.page, -1), neighbour(p.page, 1))):
+            alone[p.page] = ("stands alone: no other log, laboratory or "
+                             "field-test page beside it")
+    for p in pages:
+        why = weak.get(p.page) or alone.get(p.page)
+        if why and p.group in DATA_GROUPS:
+            p.not_data = why
+            p.group = "other"
+    return pages
 
 
 @dataclass
@@ -264,47 +481,32 @@ class Inventory:
     pages: List[PageInfo]
     items: List[Dict[str, Any]] = field(default_factory=list)
     note: str = ""
+    #: :data:`INVENTORY_RULES` when built; 1 for an inventory saved before
+    #: the rules were versioned.
+    rules: int = INVENTORY_RULES
 
     @classmethod
     def from_document(cls, doc, name: str = "") -> "Inventory":
         """Built from a planlens Document: its page map (kind, text layer)
-        and its page roles and work items. Where the roles cannot be had
-        (an old planlens, a document they fail on) every page is ``other``
-        and the inventory says so."""
+        and its page roles and work items (:func:`classify_pages`). Where
+        the roles cannot be had (an old planlens, a document they fail on)
+        every page is ``other`` and the inventory says so."""
         summaries = list(doc.page_map())
         n = len(summaries)
-        roles: Dict[int, Any] = {}
+        role_rows: List[Any] = []
         items: List[Dict[str, Any]] = []
         note = ""
         try:
             from planlens.document.roles import roles_and_items
             role_rows, item_rows = roles_and_items(doc)
-            roles = {r.page: r for r in role_rows}
             for it in item_rows:
                 items.append({"id": it.id, "kind": it.kind,
                               "title": it.title, "pages": list(it.pages)})
         except Exception as exc:  # noqa: BLE001 - an inventory without roles
+            role_rows = []
             note = (f"page roles unavailable ({type(exc).__name__}); every "
                     "page is counted as 'other'")
-        pages: List[PageInfo] = []
-        for s in summaries:
-            r = roles.get(s.page)
-            role = getattr(r, "role", None) or "other"
-            group = ROLE_GROUP.get(role, "other")
-            bound = role == "appended_report"
-            if bound:
-                inner = (getattr(r, "evidence", None) or {}).get("inner_role")
-                if inner in ROLE_GROUP and ROLE_GROUP[inner] not in ("front",):
-                    group = ROLE_GROUP[inner]
-            has_text = (int(getattr(s, "n_text_chars", 0) or 0)
-                        >= MIN_TEXT_CHARS
-                        and bool(getattr(s, "text_reliable", True))
-                        and getattr(s, "kind", "") != "scanned")
-            pages.append(PageInfo(page=s.page, role=role, group=group,
-                                  kind=str(getattr(s, "kind", "mixed")),
-                                  has_text=has_text,
-                                  item=getattr(r, "item_id", None),
-                                  bound=bound))
+        pages = classify_pages(summaries, role_rows)
         return cls(name=name or getattr(doc, "name", "") or "document",
                    n_pages=n, pages=pages, items=items, note=note)
 
@@ -322,6 +524,7 @@ class Inventory:
 
     def to_dict(self) -> Dict[str, Any]:
         return {"name": self.name, "n_pages": self.n_pages,
+                "rules": self.rules,
                 "pages": [p.to_dict() for p in self.pages],
                 "items": list(self.items), "note": self.note}
 
@@ -330,7 +533,8 @@ class Inventory:
         return cls(name=str(d.get("name", "")), n_pages=int(d.get("n_pages", 0)),
                    pages=[PageInfo.from_dict(p) for p in d.get("pages") or []],
                    items=list(d.get("items") or []),
-                   note=str(d.get("note", "")))
+                   note=str(d.get("note", "")),
+                   rules=int(d.get("rules", 1) or 1))
 
 
 # ---------------------------------------------------------------------------
@@ -366,11 +570,14 @@ class CoverageLedger:
         self._lock = threading.RLock()
         self.seq = 0
         #: doc_key -> {"name", "inventory", "reads", "marks", "declared",
-        #: "source"}
+        #: "scope", "source"}; ``scope`` is the declared task's pages (None:
+        #: the whole document).
         self.docs: Dict[str, Dict[str, Any]] = {}
         self._handles: Dict[str, str] = {}       # handle -> doc_key
         self._sources: Dict[str, Tuple[str, str]] = {}  # source -> (handle, key)
         self.turn_starts: Dict[str, int] = {}
+        #: The user turn begun last (:meth:`begin_turn`).
+        self.current_turn: Optional[str] = None
         self.fired: Dict[str, Dict[str, Any]] = {}
         #: Extraction outputs written (write_diggs), newest last.
         self.outputs: List[Dict[str, Any]] = []
@@ -389,13 +596,18 @@ class CoverageLedger:
             return
         self.seq = int(data.get("seq", 0))
         for key, d in (data.get("documents") or {}).items():
-            inv = d.get("inventory")
+            inv = Inventory.from_dict(d["inventory"]) \
+                if d.get("inventory") else None
+            if inv is not None and inv.rules < INVENTORY_RULES:
+                inv = None        # older rules: rebuilt when next touched
+            scope = d.get("scope")
             self.docs[key] = {
                 "name": d.get("name", ""),
-                "inventory": Inventory.from_dict(inv) if inv else None,
+                "inventory": inv,
                 "reads": {int(p): r for p, r in (d.get("reads") or {}).items()},
                 "marks": {int(p): m for p, m in (d.get("marks") or {}).items()},
                 "declared": d.get("declared"),
+                "scope": parse_pages(scope) if scope else None,
                 "source": d.get("source"),
             }
         self.turn_starts = dict(data.get("turn_starts") or {})
@@ -416,6 +628,8 @@ class CoverageLedger:
                 "documents": {
                     k: {"name": d["name"], "source": d.get("source"),
                         "declared": d.get("declared"),
+                        "scope": (compact(d["scope"]) if d.get("scope")
+                                  else None),
                         "inventory": (d["inventory"].to_dict()
                                       if d.get("inventory") else None),
                         "reads": {str(p): r for p, r in
@@ -517,7 +731,7 @@ class CoverageLedger:
                 d = self.docs[key] = {"name": getattr(entry, "name", ""),
                                       "inventory": None, "reads": {},
                                       "marks": {}, "declared": None,
-                                      "source": None}
+                                      "scope": None, "source": None}
             if not d.get("source"):
                 d["source"] = (getattr(entry, "source", None)
                                or getattr(entry, "path", None) or ref[1])
@@ -640,11 +854,39 @@ class CoverageLedger:
                                               "seq": seq})
         self.save()
 
-    def declare(self, key: str) -> None:
-        """The agent opened a coverage task on this document."""
+    def declared_this_turn(self, key: str) -> bool:
+        """Whether the document has a coverage task opened in the current
+        user turn."""
+        d = self.docs.get(key) or {}
+        start = self.turn_starts.get(self.current_turn or "", 0)
+        return d.get("declared") is not None and int(d["declared"]) >= start
+
+    def declare(self, key: str, pages: Optional[Iterable[int]] = None
+                ) -> None:
+        """The agent opened a coverage task on this document, over ``pages``
+        (``None``: the whole document).
+
+        A declaration STAYS PUT (Foundry brief 5, CV3: every call of the
+        tool re-declared the whole document, so a question about one chapter
+        of a 538-page manual was held to 400 pages it never touched). Within
+        one user turn, a call that names no ``pages`` keeps the task's scope;
+        ``pages`` sets it. A new turn's task starts over: the whole document
+        unless it names its pages. Marking pages is not a declaration
+        (:meth:`mark`)."""
         with self._lock:
-            self.docs[key]["declared"] = self.next_seq()
+            d = self.docs[key]
+            scope = sorted(set(pages)) if pages is not None else None
+            if self.declared_this_turn(key):
+                if pages is not None:
+                    d["scope"] = scope or None
+            else:
+                d["declared"] = self.next_seq()
+                d["scope"] = scope or None
         self.save()
+
+    def scope(self, key: str) -> Optional[List[int]]:
+        """The declared task's pages on this document (``None``: all)."""
+        return (self.docs.get(key) or {}).get("scope") or None
 
     def mark(self, key: str, pages: Iterable[int], status: str,
              reason: str = "") -> List[int]:
@@ -692,16 +934,20 @@ class CoverageLedger:
             return "text_only"
         return "unread"
 
-    def group_rows(self, key: str, groups: Optional[Iterable[str]] = None
+    def group_rows(self, key: str, groups: Optional[Iterable[str]] = None,
+                   pages: Optional[Iterable[int]] = None
                    ) -> List[Dict[str, Any]]:
-        """Per group: pages, read, extracted, skipped, and what is not read."""
+        """Per group: pages, read, extracted, skipped, and what is not read
+        (over ``pages`` only, when given: a declared task's scope)."""
         d = self.docs[key]
         inv: Inventory = d["inventory"]
         want = list(groups) if groups is not None else [k for k, _, _ in GROUPS]
+        within = set(pages) if pages is not None else None
         rows = []
         for g in want:
             pages = [p.page for p in inv.pages if p.group == g
-                     and p.kind != "blank"]
+                     and p.kind != "blank"
+                     and (within is None or p.page in within)]
             if not pages:
                 continue
             status = {p: self._status(key, p) for p in pages}
@@ -736,30 +982,42 @@ class CoverageLedger:
         return rows
 
     def statement(self, key: str,
-                  groups: Optional[Iterable[str]] = None) -> str:
+                  groups: Optional[Iterable[str]] = None,
+                  pages: Optional[Iterable[int]] = None) -> str:
         """Coverage in one line, for the answer: counts, and the PDF pages
-        not read (over ``groups``, default every target group)."""
+        not read (over ``groups``, default every target group; over
+        ``pages`` only, when given)."""
         d = self.docs[key]
+        pages = list(pages) if pages is not None else None
         parts = []
         for row in self.group_rows(key, tuple(groups) if groups is not None
-                                   else TARGET_GROUPS):
+                                   else TARGET_GROUPS, pages):
             s = f"{row['label']} {row['read']} of {row['pages']} read"
             if row.get("not_read_pdf"):
                 s += f" (not read: PDF pages {row['not_read_pdf']})"
             if row["skipped"]:
                 s += f", {row['skipped']} skipped"
             parts.append(s)
-        return f"Coverage of {d['name']}: " + "; ".join(parts) + "."
+        where = f" (PDF pages {compact(pages, 1)})" if pages else ""
+        if not parts:
+            return f"Coverage of {d['name']}{where}: no pages to read."
+        return f"Coverage of {d['name']}{where}: " + "; ".join(parts) + "."
 
     def report(self, key: str, max_items: int = 40) -> Dict[str, Any]:
         """What the coverage tool returns: the inventory by group, what was
-        read, and the line to state in the answer."""
+        read, and the line to state in the answer - over the declared
+        task's pages when it named them."""
         d = self.docs[key]
         inv: Inventory = d["inventory"]
-        out: Dict[str, Any] = {
-            "document": d["name"], "n_pages": inv.n_pages,
-            "groups": self.group_rows(key),
-            "statement": self.statement(key),
+        scope = self.scope(key) if self.declared_this_turn(key) else None
+        out: Dict[str, Any] = {"document": d["name"], "n_pages": inv.n_pages}
+        if scope:
+            out["task_pages"] = compact(scope)
+            out["task_pages_pdf"] = compact(scope, 1)
+            out["pages_outside_the_task"] = inv.n_pages - len(scope)
+        out.update({
+            "groups": self.group_rows(key, pages=scope),
+            "statement": self.statement(key, pages=scope),
             "how_read_is_counted": (
                 "From the app's record of every tool call in this "
                 "conversation, yours and your helpers': a page is read when "
@@ -767,9 +1025,21 @@ class CoverageLedger:
                 "has a text layer. A page with no text layer read only as "
                 "text was not read. Pages are 0-based; *_pdf lists are what "
                 "a reader cites."),
-        }
+        })
+        not_data = [p.page for p in inv.pages if p.not_data
+                    and (scope is None or p.page in scope)]
+        if not_data:
+            out["counted_as_other"] = (
+                f"pages {compact(not_data)}: the page roles call them logs "
+                "or test sheets on weak evidence, or they stand alone among "
+                "pages of another kind, so they are counted as other pages")
+        within = set(scope) if scope else None
+        counted = {p.page for p in inv.pages if not p.not_data}
         items = [it for it in inv.items
-                 if it.get("kind") not in ("front_matter",)]
+                 if it.get("kind") not in ("front_matter",)
+                 and any(p in counted for p in it.get("pages") or [])
+                 and (within is None
+                      or any(p in within for p in it.get("pages") or []))]
         if items:
             rows = []
             for it in items[:max_items]:
@@ -789,6 +1059,7 @@ class CoverageLedger:
         with self._lock:
             if turn_key not in self.turn_starts:
                 self.turn_starts[turn_key] = self.seq + 1
+            self.current_turn = turn_key
 
     def gate_fired(self, turn_key: str) -> bool:
         return turn_key in self.fired
@@ -798,7 +1069,8 @@ class CoverageLedger:
         """Documents this turn is held to: ``{key: (groups, why)}``.
 
         * ``declared``: the agent opened a coverage task on the document
-          this turn (the coverage tool) - every target group;
+          this turn (the coverage tool) - every target group, over the
+          task's pages (:meth:`held_pages`);
         * ``output``: a data file was written from what was read
           (``write_diggs``) and the document was read this turn - every
           target group;
@@ -831,6 +1103,11 @@ class CoverageLedger:
                         out[key] = (DATA_GROUPS, "data")
         return out
 
+    def held_pages(self, key: str, why: str) -> Optional[List[int]]:
+        """The pages a turn armed for ``why`` is held to on this document:
+        a declared task's own pages, else ``None`` (the whole document)."""
+        return self.scope(key) if why == "declared" else None
+
     def gate_note(self, turn_key: str, answer: str = "",
                   extra: Sequence[str] = ()) -> Optional[str]:
         """The note the agent is given once, or ``None``.
@@ -838,17 +1115,28 @@ class CoverageLedger:
         It is given when a document the turn is held to (:meth:`armed`) has
         pages nobody read; or, for a declared or written-out extraction with
         everything read, when the answer does not state coverage as counts;
-        or when ``extra`` (failed checklist checks) has anything in it."""
+        or when ``extra`` (failed checklist checks) has anything in it.
+
+        The note goes to the model INSTEAD of its answer: the gate holds the
+        reply back (:class:`funhouse_agent.deep.coverage_tools.CoverageGate`)
+        and the reply after the note is the one the user gets. So the note
+        asks for the whole answer, not a continuation (Foundry brief 5,
+        CV2/N4: "This note comes once; then finish your answer" was read
+        two ways, and every gated answer reached the user as the first reply
+        glued to the second)."""
         armed = self.armed(turn_key)
         if not armed:
             return None
         lines: List[str] = []
         any_unread = False
         explicit = any(why != "data" for _g, why in armed.values())
-        for key, (groups, _why) in armed.items():
-            rows = [r for r in self.group_rows(key, groups)]
+        for key, (groups, why) in armed.items():
+            held = self.held_pages(key, why)
+            rows = [r for r in self.group_rows(key, groups, held)]
             unread_rows = [r for r in rows if r.get("not_read")]
             name = self.docs[key]["name"]
+            if held:
+                name += f" (the task's pages: PDF pages {compact(held, 1)})"
             if unread_rows:
                 any_unread = True
                 lines.append(f"In {name} these pages have not been read or "
@@ -873,8 +1161,10 @@ class CoverageLedger:
         if not any_unread and not extra and (not explicit
                                              or states_coverage(answer)):
             return None
-        head = (f"{GATE_PREFIX} The app records every page any tool or "
-                "helper reads or looks at in this conversation.")
+        head = (f"{GATE_PREFIX} Before your answer goes to the user, the app "
+                "has checked it against its record of every page any tool or "
+                "helper read or looked at in this conversation. The answer "
+                "you had written is held back: the user will not see it.")
         if any_unread:
             body = ("\n".join(lines) + "\nRead or look at them now, or mark "
                     "the ones you leave out as skipped with a reason "
@@ -882,15 +1172,19 @@ class CoverageLedger:
                     "were not needed.")
         else:
             body = "Every page this task covers has been read."
-        statements = "\n".join(f"- {self.statement(k, g)}"
-                               for k, (g, _w) in armed.items())
+        statements = "\n".join(
+            f"- {self.statement(k, g, self.held_pages(k, w))}"
+            for k, (g, w) in armed.items())
         tail = ("State the coverage in your answer as counts, from this "
                 "record:\n" + statements)
         parts = [head, body]
         if extra:
             parts.append("\n".join(extra))
         parts.append(tail)
-        parts.append("This note comes once; then finish your answer.")
+        parts.append("This note comes once. Then write your whole answer to "
+                     "the user's request, as they will read it: it replaces "
+                     "the one held back, so it must stand on its own, with "
+                     "the coverage in it.")
         return "\n".join(parts)
 
     def note_fired(self, turn_key: str, note: str) -> None:
@@ -916,5 +1210,7 @@ def ledger_path(folder: Optional[str]) -> Optional[str]:
 
 __all__ = ["CoverageLedger", "Inventory", "PageInfo", "GROUPS",
            "GROUP_LABEL", "ROLE_GROUP", "TARGET_GROUPS", "DATA_GROUPS",
-           "GATE_PREFIX", "FILE_NAME", "parse_pages", "compact",
+           "GATE_PREFIX", "FILE_NAME", "TEXT_TOOLS", "LOOK_TOOLS",
+           "SWEEP_TOOLS", "GRID_TOOLS", "STRONG_CONFIDENCE",
+           "INVENTORY_RULES", "classify_pages", "parse_pages", "compact",
            "pages_from_call", "states_coverage", "ledger_path"]

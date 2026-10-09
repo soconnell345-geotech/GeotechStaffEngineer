@@ -858,3 +858,442 @@ def test_the_web_app_runs_the_turn_under_the_extraction_cap():
                           recursion_limit=50))
     assert plain.configs[0]["recursion_limit"] == 50
     assert CT.ALLOWANCE_KEY not in plain.configs[0]["configurable"]
+
+
+# ---------------------------------------------------------------------------
+# Foundry brief 5 (module_work/review_eval_results/2026-10-08_foundry_
+# 5.33.0rc1/TRACE_REVIEW.md, "The fix list" group 2)
+# ---------------------------------------------------------------------------
+# CV2 / N4: every gated answer reached the user as the reply before the
+# gate's note glued to the reply after it. The gate now takes the first
+# reply out of the conversation (the model writes its answer once, whole)
+# and the web app delivers only the reply after the note.
+
+from types import SimpleNamespace  # noqa: E402
+
+from langchain_core.messages import (AIMessageChunk, RemoveMessage,  # noqa: E402
+                                     ToolMessage)
+
+DRAFT = "Sheet B-2 S-3: LL 32, PL 20 (PDF page 19)."
+ADDENDUM = "Coverage: laboratory sheets 3 of 14 read; the rest not needed."
+WHOLE = DRAFT + "\n\n" + ADDENDUM
+
+
+class _Drafter(BaseChatModel):
+    """Reads three lab sheets and answers. After the gate's note it does what
+    brief 5's Sol did in 4 of 11 gated runs: if its first reply is still in
+    the conversation it writes only an addendum; if not, the whole answer."""
+
+    seen_draft_after_note: list = Field(default_factory=list)
+    calls: int = 0
+
+    @property
+    def _llm_type(self) -> str:
+        return "scripted-drafter"
+
+    def bind_tools(self, tools, **kw):
+        return self
+
+    def _generate(self, messages, stop=None, run_manager=None, **kw):
+        self.calls += 1
+        tools = [m for m in messages if m.type == "tool"]
+        humans = [m for m in messages if m.type == "human"]
+        gate = any(str(m.content).startswith(C.GATE_PREFIX) for m in humans)
+        handle = None
+        for m in tools:
+            if m.name == "open_document":
+                handle = json.loads(m.content)["handle"]
+        if handle is None:
+            return _reply(calls=[("open_document", {"source": KEY})])
+        if not any(m.name == "read_document" for m in tools):
+            return _reply(calls=[("read_document",
+                                  {"handle": handle, "pages": "16-18"})])
+        if not gate:
+            return _reply(DRAFT)
+        draft_kept = any(m.type == "ai" and DRAFT in str(m.content)
+                         for m in messages)
+        self.seen_draft_after_note.append(draft_kept)
+        return _reply(ADDENDUM if draft_kept else WHOLE)
+
+
+def _reply(text="", calls=()):
+    return ChatResult(generations=[ChatGeneration(message=AIMessage(
+        content=text, tool_calls=[{"name": n, "args": a, "id": f"c{i}_{n}"}
+                                  for i, (n, a) in enumerate(calls)]))])
+
+
+@pytest.mark.parametrize("page", ["review", "geotech"])
+def test_a_gated_turn_delivers_one_whole_answer(att, tmp_path, monkeypatch,
+                                                page):
+    from webapp.activity_log import load
+    monkeypatch.setenv(review_flags.COVERAGE_ENV, "1")
+    model = _Drafter()
+    agent = _build(model, att, tmp_path, page)
+    answer = _run(agent, tmp_path)
+    # the model never saw its first reply after the note...
+    assert model.seen_draft_after_note == [False]
+    # ...so it wrote the answer whole, and that is what the user gets, once
+    assert answer == WHOLE
+    assert answer.count("LL 32") == 1
+    records = load(str(tmp_path))
+    gates = [r for r in records if r["event"] == "coverage_gate"]
+    assert len(gates) == 1
+    assert "held back" in gates[0]["text"]
+    assert "write your whole answer" in gates[0]["text"]
+    # the held-back reply stays in the record of the run
+    said = [r.get("text") for r in records if r["event"] == "model_end"]
+    assert DRAFT in said and WHOLE in said
+
+
+def _chunk(text, node="model"):
+    return ("messages", (AIMessageChunk(content=text),
+                         {"langgraph_node": node}))
+
+
+class _Replay:
+    """A compiled agent's stream, replayed: the shape of a gated pass as
+    LangGraph emits it (the reply streamed, the model node's update, the
+    gate's update taking the reply out and adding its note, a tool round,
+    the reply after the note)."""
+
+    def __init__(self, draft, after, tool_round=True):
+        self.draft, self.after, self.tool_round = draft, after, tool_round
+
+    def stream(self, payload, config=None, stream_mode=None):
+        note = C.GATE_PREFIX + " Before your answer goes to the user ..."
+        for word in self.draft.split(" "):
+            yield _chunk(word + " ")
+        yield ("updates", {"model": {"messages": [
+            AIMessage(content=self.draft, id="draft-1")]}})
+        yield ("messages", (HumanMessage(content=note),
+                            {"langgraph_node": "CoverageGate.after_model"}))
+        yield ("updates", {"CoverageGate.after_model": {
+            "messages": [RemoveMessage(id="draft-1"),
+                         HumanMessage(content=note)],
+            "jump_to": "model"}})
+        if self.tool_round:
+            yield ("updates", {"model": {"messages": [AIMessage(
+                content="", tool_calls=[{"name": "analyze_pdf_page",
+                                         "args": {"page": 5}, "id": "t1"}])]}})
+            yield ("updates", {"tools": {"messages": [ToolMessage(
+                content='{"page": 5}', tool_call_id="t1",
+                name="analyze_pdf_page")]}})
+        for word in self.after.split(" ") if self.after else []:
+            yield _chunk(word + " ")
+        if self.after:
+            yield ("updates", {"model": {"messages": [
+                AIMessage(content=self.after)]}})
+
+
+def _stream(agent):
+    from webapp import core
+    items = list(core.stream_turn(agent, [{"role": "user", "content": "q"}],
+                                  "t1", recursion_limit=50))
+    done = [i for i in items if i["kind"] == "turn_done"][0]
+    return items, done["answer"]
+
+
+@pytest.mark.parametrize("draft,after", [
+    # brief 5's common shape: the reply, then the whole answer again with
+    # the coverage counts in it
+    ("Allowable pressure 398.4 kPa, matching page 4.",
+     "Allowable pressure 398.4 kPa, matching page 4. Coverage: calculation "
+     "pages 1 of 1 read."),
+    # the run-on shape: a short reply, then a reply that starts mid-thought
+    ("Page 8 duplicates page 3.",
+     "Yes. Page 8 duplicates page 3; their text and footer match. Coverage: "
+     "exploration logs 3 of 3 read."),
+])
+def test_stream_turn_replays_a_gated_pass(draft, after):
+    from webapp import core
+    items, answer = _stream(_Replay(draft, after))
+    assert answer.strip() == after
+    assert draft not in answer.replace(after, "")
+    # the user is told what happened, and the live text does not run on
+    assert {"kind": "tool_call", "text": core.GATE_STATUS} in items
+    live = "".join(i["text"] for i in items if i["kind"] == "token")
+    assert "\n\n" in live and live.index("\n\n") > live.index(draft[:10])
+
+
+def test_nothing_after_the_note_keeps_the_held_back_reply():
+    _items, answer = _stream(_Replay("The answer as first written.", ""))
+    assert answer.strip() == "The answer as first written."
+
+
+def test_an_ungated_turn_is_assembled_as_before():
+    from webapp import core
+
+    class _Plain:
+        def stream(self, payload, config=None, stream_mode=None):
+            yield _chunk("One ")
+            yield _chunk("answer.")
+            yield ("updates", {"model": {"messages": [
+                AIMessage(content="One answer.")]}})
+
+    items, answer = _stream(_Plain())
+    assert answer == "One answer."
+    assert not any(i.get("text") == core.GATE_STATUS for i in items)
+    assert not core.coverage_gate_spoke({"model": {"messages": [
+        HumanMessage(content="an ordinary user message")]}})
+    assert not core.coverage_gate_spoke({"CoverageGate.after_model": None})
+
+
+# CV1: only strong role evidence makes a page a log, a lab sheet or a
+# field-test sheet; weak roles never arm the gate or become its targets.
+
+def _summary(page, kind="text", chars=900):
+    return SimpleNamespace(page=page, kind=kind, n_text_chars=chars,
+                           text_reliable=True)
+
+
+def _role(page, role, conf, tag="page-title", item=None, why=""):
+    return SimpleNamespace(page=page, role=role, confidence=conf,
+                           evidence={"tag": tag, "why": why}, item_id=item)
+
+
+def test_weak_and_lone_roles_are_not_data_pages():
+    """The shape of a criteria manual: many pages the rules call laboratory
+    sheets on weak evidence, and one strong one alone among prose."""
+    sums = [_summary(p) for p in range(12)]
+    roles = [_role(p, "narrative", 0.85, "narrative-block")
+             for p in range(12)]
+    for p in (2, 3, 6, 7, 10):
+        roles[p] = _role(p, "lab_test", 0.6,
+                         why="laboratory test name on a page of working")
+    roles[5] = _role(5, "lab_test", 0.9, why="laboratory test title")
+    roles[8] = _role(8, "boring_log", 0.6, "tab-declares")   # text page
+    pages = C.classify_pages(sums, roles)
+    assert [p.page for p in pages if p.group in C.DATA_GROUPS] == []
+    by = {p.page: p for p in pages}
+    assert by[2].group == "other" and by[2].role == "lab_test"
+    assert by[2].not_data.startswith("weak evidence (planlens 0.60)")
+    assert "says nothing about itself" in by[8].not_data
+    assert by[5].not_data.startswith("stands alone")
+
+
+def test_strong_roles_in_a_set_are_data_pages():
+    """The shape of a report: logs that name themselves, a log's
+    continuation sheet, older logs as scans behind their tab, a laboratory
+    appendix behind a divider."""
+    sums = [_summary(p, "mixed", 400) for p in range(14)]
+    roles = [_role(0, "cover", 0.8, "cover"),
+             _role(1, "narrative", 0.85, "narrative-block"),
+             _role(2, "divider", 0.85, "tab"),
+             _role(3, "boring_log", 0.9, item="i1"),
+             _role(4, "boring_log", 0.6, item="i1",
+                   why="log form shape, 7 log form fields"),
+             _role(5, "boring_log", 0.9, item="i2"),
+             _role(6, "divider", 0.85, "tab"),
+             _role(7, "boring_log", 0.6, "tab-declares", item="i3"),
+             _role(8, "boring_log", 0.6, "tab-declares", item="i3"),
+             _role(9, "divider", 0.85, "tab"),
+             _role(10, "lab_test", 0.8, item="i4"),
+             _role(11, "lab_test", 0.8, item="i5"),
+             _role(12, "divider", 0.85, "tab"),
+             _role(13, "lab_test", 0.9, item="i6")]
+    for p in (7, 8):
+        sums[p] = _summary(p, "scanned", 0)
+    pages = C.classify_pages(sums, roles)
+    data = {p.page: p.group for p in pages if p.group in C.DATA_GROUPS}
+    assert data == {3: "logs", 4: "logs", 5: "logs", 7: "logs", 8: "logs",
+                    10: "lab", 11: "lab", 13: "lab"}
+    assert all(p.not_data is None for p in pages)
+
+
+def test_the_report_fixture_keeps_every_data_page(att, report):
+    ledger = C.CoverageLedger(attachments=att)
+    key = ledger.resolve(("source", KEY))
+    inv = ledger.docs[key]["inventory"]
+    assert sorted(inv.targets(C.DATA_GROUPS)) == sorted(report.target_pages)
+    assert [p.page for p in inv.pages if p.not_data] == []
+    assert inv.rules == C.INVENTORY_RULES
+    # the scans are held by their tab: a scan cannot name itself
+    assert {inv.pages[p].evidence for p in (12, 13, 14)} == {"tab-declares"}
+
+
+def test_a_page_that_inherits_its_role_but_says_nothing_is_not_held():
+    """brief 5 fixture-duplicate-page: the two log forms were read, and the
+    gate then asked for the duplicated TEXT page its tab called a log."""
+    from funhouse_agent.review_eval import documents as D
+    name, data = D.resolve("fixture_submittal")
+    ledger = C.CoverageLedger(attachments={name: data})
+    ledger.begin_turn("1:a")
+    for p in (5, 6, 7):
+        _look(ledger, p, key=name)
+    key = next(iter(ledger.docs))
+    inv = ledger.docs[key]["inventory"]
+    assert inv.targets(C.DATA_GROUPS) == [5, 6]
+    assert inv.pages[7].group == "other" and inv.pages[7].role == "boring_log"
+    assert ledger.gate_note("1:a", answer="Page 8 duplicates page 3.") is None
+
+
+def test_an_inventory_saved_under_older_rules_is_rebuilt(att, tmp_path):
+    path = C.ledger_path(str(tmp_path))
+    ledger = C.CoverageLedger(path=path, attachments=att)
+    _look(ledger, 12)
+    key = next(iter(ledger.docs))
+    data = json.loads(open(path, encoding="utf-8").read())
+    data["documents"][key]["inventory"].pop("rules")
+    for p in data["documents"][key]["inventory"]["pages"]:
+        p["group"] = "lab"                         # the old rules' mistake
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(data))
+    again = C.CoverageLedger(path=path, attachments=att)
+    assert again.docs[key]["inventory"] is None    # not trusted
+    assert 12 in again.docs[key]["reads"]          # the reads are kept
+    _look(again, 13)                               # touched: rebuilt
+    inv = again.docs[key]["inventory"]
+    assert inv.rules == C.INVENTORY_RULES and inv.pages[2].group != "lab"
+
+
+# CV3: a declaration has a page scope, and it stays put across calls.
+
+def test_a_declared_task_is_held_to_its_own_pages(att):
+    ledger = C.CoverageLedger(attachments=att)
+    ledger.begin_turn("1:a")
+    tool = CT.make_coverage_tool(ledger)
+    out = json.loads(tool.invoke({"source": KEY, "pages": "16-29"}))
+    assert out["task"] == {"open": True, "pages": "16-29",
+                           "pages_pdf": "17-30"}
+    assert out["task_pages_pdf"] == "17-30"
+    assert {g["group"] for g in out["groups"]} == {"lab"}
+    for p in range(16, 28):
+        _look(ledger, p)
+    note = ledger.gate_note("1:a", answer="The summary disagrees.")
+    assert "laboratory sheets: 2 of 14 not read - pages 28-29" in note
+    # nothing outside the task's pages is asked for
+    for word in ("exploration logs", "text pages", "plans, profiles"):
+        assert word not in note
+    assert "(the task's pages: PDF pages 17-30)" in note
+    assert "Coverage of report.pdf (PDF pages 17-30): laboratory sheets " \
+           "12 of 14 read" in note
+    _look(ledger, 28)
+    _look(ledger, 29)
+    assert ledger.gate_note("1:a", answer="laboratory sheets 14 of 14 "
+                                          "read") is None
+
+
+def test_marking_pages_does_not_declare_or_move_the_task(att):
+    ledger = C.CoverageLedger(attachments=att)
+    ledger.begin_turn("1:a")
+    tool = CT.make_coverage_tool(ledger)
+    # a call that only marks pages opens no task
+    out = json.loads(tool.invoke({"source": KEY, "skipped": "12-14",
+                                  "reason": "superseded"}))
+    key = next(iter(ledger.docs))
+    assert ledger.docs[key]["declared"] is None
+    assert out["task"] == {"open": False}
+    assert ledger.armed("1:a") == {}
+    # the task, scoped; then marks and a status call leave it where it is
+    tool.invoke({"source": KEY, "pages": "7-14"})
+    declared = ledger.docs[key]["declared"]
+    out = json.loads(tool.invoke({"source": KEY, "extracted": "7-10"}))
+    assert out["marked"] == {"extracted": "7-10"}
+    out = json.loads(tool.invoke({"source": KEY}))
+    assert ledger.docs[key]["declared"] == declared
+    assert ledger.scope(key) == list(range(7, 15))
+    assert out["task"]["pages"] == "7-14"
+    # naming pages moves it
+    tool.invoke({"source": KEY, "pages": [7, 8, 9, 10]})
+    assert ledger.scope(key) == [7, 8, 9, 10]
+    # a new user turn's task starts over: the whole document
+    ledger.begin_turn("2:b")
+    assert not ledger.declared_this_turn(key)
+    out = json.loads(tool.invoke({"source": KEY}))
+    assert ledger.scope(key) is None
+    assert out["task"]["pages"] == "whole document"
+    assert ledger.armed("2:b")[key] == (C.TARGET_GROUPS, "declared")
+
+
+def test_marks_given_in_other_shapes_are_read_or_reported(att):
+    ledger = C.CoverageLedger(attachments=att)
+    tool = CT.make_coverage_tool(ledger)
+    out = json.loads(tool.invoke({"source": KEY, "extracted": {
+        "logs": "7-10,12-14", "lab": [16, 17]}}))
+    assert out["marked"] == {"extracted": "7-10,12-14,16-17"}
+    out = json.loads(tool.invoke({"source": KEY, "extracted": [
+        {"pages": [18, 19], "group": "lab"}]}))
+    assert out["marked"] == {"extracted": "18-19"}
+    out = json.loads(tool.invoke({"source": KEY, "extracted": "the logs"}))
+    assert "the logs" in out["marks_not_read"]
+    err = json.loads(tool.invoke({"source": KEY, "pages": "chapter 12"}))
+    assert "pages=" in err["error"]
+
+
+# CV4: the tool describes itself - what it is for, and what it costs.
+
+def test_the_coverage_tool_says_what_it_is_for_and_what_it_costs(att):
+    text = CT.DOCUMENT_COVERAGE_DESCRIPTION
+    assert "takes the data out of many of its pages" in text
+    assert "What it costs" in text
+    assert ("A question answered from a few pages, a search or a list of "
+            "titles does not need it.") in text
+    assert "whole-set review" not in text and "reviews all of it" not in text
+    tool = CT.make_coverage_tool(C.CoverageLedger(attachments=att))
+    assert "pages" in tool.args
+
+
+# N6: a page whose rows log_grid returned was read; measure is not a read.
+
+def _grid(pages, rows, nxt=None):
+    out = {"handle": "doc_g", "pages": pages,
+           "rows": [{"page": p, "text": "x"} for p in rows]}
+    if nxt is not None:
+        out["next_offset"] = nxt
+    return json.dumps(out)
+
+
+def test_log_grid_rows_returned_in_full_are_reads():
+    def got(args, result):
+        ref, pages = C.pages_from_call("log_grid", args, result)
+        assert ref in (None, ("handle", "doc_g"))
+        return [p for p, how in pages if how == "text"]
+
+    span = [7, 8, 9, 10, 12, 13, 14]
+    a = {"handle": "doc_g", "pages": "7-10,12-14"}
+    # windows of rows, in page order; a page may go on into the next window
+    assert got(a, _grid(span, [7] * 24, 24)) == []
+    assert got(dict(a, offset=24), _grid(span, [7] * 6 + [8] * 17, 47)) == [7]
+    # a page whose rows end exactly at a window's end completes in the next
+    assert got(dict(a, offset=47), _grid(span, [9] * 24, 71)) == [7, 8]
+    assert got(dict(a, offset=71), _grid(span, [9] * 6 + [10] * 20)) == \
+        [7, 8, 9, 10]
+    # one call that returns every row
+    assert got({"handle": "doc_g", "pages": "9"}, _grid([9], [9] * 30)) == [9]
+    # no rows (rows=false; a scan's grid with no text): no page's content
+    assert got({"handle": "doc_g", "pages": "12-14"},
+               _grid([12, 13, 14], [])) == []
+    assert got(a, json.dumps({"handle": "doc_g", "pages": span,
+                              "n_rows": 60})) == []
+    assert got(a, json.dumps({"error": "no such handle"})) == []
+    # measure answers one question about a page: not a read
+    assert C.pages_from_call("measure", {"source": "doc_g", "page": 0},
+                             json.dumps({"page": 0, "value": {}})) == \
+        (None, [])
+
+
+def test_log_grid_reads_count_in_the_ledger(att):
+    """The real tool over the report fixture's logs, paged to the end: the
+    ledger counts the text pages read, and the scans still want a look."""
+    from funhouse_agent import document_tools
+    if not document_tools.has_tool("log_grid"):
+        pytest.skip("this planlens has no log_grid")
+    ledger = C.CoverageLedger(attachments=att)
+    ledger.begin_turn("1:a")
+    h = _handle(att)
+    args = {"handle": h, "pages": "7-10,12-14", "rows": True}
+    for _ in range(20):
+        out = document_tools.dispatch_document_tool("log_grid", args,
+                                                    attachments=att,
+                                                    max_chars=14000)
+        ledger.record_call("log_grid", dict(args), out)
+        nxt = json.loads(out).get("next_offset")
+        if not nxt:
+            break
+        args = dict(args, offset=nxt)
+    key = next(iter(ledger.docs))
+    assert [p for p in (7, 8, 9, 10) if ledger.covered(key, p)] == \
+        [7, 8, 9, 10]
+    assert not any(ledger.covered(key, p) for p in (12, 13, 14))
+    note = ledger.gate_note("1:a")
+    assert "exploration logs: 3 of 7 not read - pages 12-14" in note

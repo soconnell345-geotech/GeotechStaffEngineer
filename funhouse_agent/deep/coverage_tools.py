@@ -19,7 +19,9 @@ The ledger itself, with no LangChain in it, is :mod:`funhouse_agent.coverage`.
   page but the cover, contents and tabs counts), or read pages of a data
   group (then every log, lab and field-test page counts) - and such pages
   nobody read remain, the model is told ONCE, with the list, and goes on: it
-  may read them, mark them skipped with a reason, or say why not. It never
+  may read them, mark them skipped with a reason, or say why not. Its reply
+  is held back (taken out of the conversation) and the reply it writes after
+  the note is the answer, whole - never the two glued together. It never
   loops: one note per user turn (an auto-continue of the same turn counts
   as the same turn), and it stands down when the turn is nearly out of steps
   or model calls, so it can never cost a turn its answer. The precedent is
@@ -35,7 +37,7 @@ import hashlib
 import json
 from typing import Any, Dict, List, Optional
 
-from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.messages import HumanMessage, RemoveMessage, ToolMessage
 
 try:
     from langchain.agents.middleware import AgentMiddleware, hook_config
@@ -87,20 +89,28 @@ EXTRACTION_TOOLS = ("report_ingest",)
 CONTINUE_NUDGE = "Continue — complete the action you just stated."
 
 DOCUMENT_COVERAGE_DESCRIPTION = (
-    "Coverage of one document for a task that takes data out of it or "
-    "reviews all of it: every boring log and laboratory sheet of a report, a "
-    "report into DIGGS or a table, a whole-set review. Call it when such a "
-    "task starts: it lists the document's pages by what they are "
-    "(exploration logs, laboratory sheets, plans and figures, calculations, "
-    "text...), read from the document's own structure, and from then on the "
-    "app records every page any tool or helper reads or looks at. Call it "
-    "again to mark pages `extracted` (their data is in your output) or "
-    "`skipped` with a `reason`, and before you answer, to get the coverage "
-    "to state in your answer as counts ('laboratory sheets 10 of 23 read; "
-    "not read: PDF pages 96-103'). A page with no text layer counts as read "
-    "only once it has been looked at. `source`: the document's handle, "
-    "attachment key or path. Pages are 0-based, as in every tool; the "
-    "*_pdf lists are what a reader cites.")
+    "Coverage of one document, for a task that takes the data out of many of "
+    "its pages: every boring log and laboratory sheet of a report into a "
+    "table, a DIGGS file or a list of every value. It lists the document's "
+    "pages by what they are (exploration logs, laboratory sheets, plans and "
+    "figures, calculations, text...), read from the document's own "
+    "structure, and from then on the app records every page any tool or "
+    "helper reads or looks at. What it costs: calling it opens a coverage "
+    "task over its `pages` (default: the whole document), and before your "
+    "answer goes out the app lists every page of the task nobody has read; "
+    "you then read or look at each one, or mark it skipped with a reason, "
+    "or say why it was not needed. On a long document that is a great many "
+    "reads. A question answered from a few pages, a search or a list of "
+    "titles does not need it. Call it again to mark pages `extracted` "
+    "(their data is in your output) or `skipped` with a `reason` - marking "
+    "does not change the task's pages - and before you answer, for the "
+    "coverage to state as counts ('laboratory sheets 10 of 23 read; not "
+    "read: PDF pages 96-103'). A page with no text layer counts as read only "
+    "once it has been looked at. `source`: the document's handle, "
+    "attachment key or path. `pages`: the part of the document the task "
+    "covers when it is not all of it (one appendix, one chapter), e.g. "
+    "'40-75'. Pages are 0-based, as in every tool; the *_pdf lists are what "
+    "a reader cites.")
 
 REPORT_CHECKLIST_DESCRIPTION = (
     "The report-review checklist for a geotechnical report (a DRAFT the "
@@ -343,8 +353,19 @@ class CoverageGate(CoverageRecorder):
                 return None
             self.ledger.note_fired(key, note)
             _emit(note)
-            return {"messages": [HumanMessage(content=note)],
-                    "jump_to": "model"}
+            # The reply the model was finishing with is HELD BACK: taken out
+            # of the conversation and replaced by the note, so the model
+            # writes its answer once, after the note, as the whole answer
+            # (Foundry brief 5, CV2/N4: kept in, it was read two ways - a
+            # restatement or an addendum - and the user got both replies
+            # glued together). The draft stays in the activity log's
+            # model_end record; the web app delivers only the reply after
+            # the note (webapp.core.stream_turn).
+            out: List[Any] = []
+            if getattr(last, "id", None):
+                out.append(RemoveMessage(id=last.id))
+            out.append(HumanMessage(content=note))
+            return {"messages": out, "jump_to": "model"}
         except Exception as exc:  # noqa: BLE001 - never cost the answer
             self.ledger.last_error = f"gate: {type(exc).__name__}: {exc}"
             return None
@@ -395,8 +416,13 @@ def make_coverage_tool(ledger: "_cov.CoverageLedger",
     """The ``document_coverage`` tool over ``ledger``."""
     from langchain_core.tools import StructuredTool
 
-    def document_coverage(source: str, extracted: Any = None,
-                          skipped: Any = None, reason: str = "") -> str:
+    def _given(value: Any) -> bool:
+        return value is not None and value != "" and value != [] \
+            and value != {}
+
+    def document_coverage(source: str, pages: Any = None,
+                          extracted: Any = None, skipped: Any = None,
+                          reason: str = "") -> str:
         try:
             key = ledger.resolve(_ref(source))
         except Exception as exc:  # noqa: BLE001 - reported to the model
@@ -411,17 +437,48 @@ def make_coverage_tool(ledger: "_cov.CoverageLedger",
         if skip_pages and not str(reason or "").strip():
             return json.dumps({"error": "say why the pages are skipped: "
                                         "pass a reason"})
-        ledger.declare(key)
+        scope = None
+        if _given(pages):
+            scope = _cov.parse_pages(pages, n)
+            if not scope:
+                return json.dumps({
+                    "error": f"no page of this {n}-page document could be "
+                             f"read from pages={pages!r}",
+                    "hint": "0-based pages, e.g. '40-75' or '3,7-9'; leave "
+                            "pages out for the whole document"})
+        # A call that only marks pages is bookkeeping, not a new task: it
+        # neither opens one nor moves its pages (Foundry brief 5, CV3).
+        marking = _given(extracted) or _given(skipped)
+        if scope is not None or not marking:
+            ledger.declare(key, scope)
         marked: Dict[str, str] = {}
-        got = ledger.mark(key, _cov.parse_pages(extracted, n), "extracted")
+        unread_marks: List[str] = []
+        ext_pages = _cov.parse_pages(extracted, n)
+        got = ledger.mark(key, ext_pages, "extracted")
         if got:
             marked["extracted"] = _cov.compact(got)
+        elif _given(extracted):
+            unread_marks.append(f"extracted={extracted!r}")
         got = ledger.mark(key, skip_pages, "skipped", str(reason or ""))
         if got:
             marked["skipped"] = _cov.compact(got)
-        out = ledger.report(key)
+        elif _given(skipped):
+            unread_marks.append(f"skipped={skipped!r}")
+        task: Dict[str, Any] = {"open": False}
+        if ledger.declared_this_turn(key):
+            held = ledger.scope(key)
+            task = {"open": True,
+                    "pages": _cov.compact(held) if held else "whole document",
+                    "pages_pdf": (_cov.compact(held, 1) if held
+                                  else "whole document")}
+        out = {"task": task, **ledger.report(key)}
         if marked:
             out = {"marked": marked, **out}
+        if unread_marks:
+            out = {"marks_not_read": (
+                "no page of this document could be read from "
+                + "; ".join(s[:120] for s in unread_marks)
+                + " - give 0-based pages, e.g. '7-10,12-14'"), **out}
         return _fit(out, max_result_chars)
 
     return StructuredTool.from_function(
