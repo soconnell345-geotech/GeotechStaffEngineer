@@ -123,6 +123,16 @@ detailed Phase-E history; this file supersedes it.
     - downdrag: settlement-compatibility basis, which puts the neutral plane at the bearing-layer top for the default inputs;
     - fem2d settlements now exclude self-weight.
   - **Before the testers arrive:** release (on the owner's word) planlens (rotated markups, `label_reads`) and the app, then deploy to Tiny Apps.
+  - **2026-10-09, later: waves 2c and 3 and their fixes.**
+    - Commits: 5dee6a6 (D1: concurrent testers crossed folders; context copied into the heartbeat pump, shared hosts fail closed), f4849a6 + a87d5a3 (D2–D7, E3, E7–E10), c05e56b (E1, E2, E4–E6).
+    - **Wave 3 (final confirmation, 10 flows, Sonnet): GO, with no high findings.** Review: `runs/w3-confirm-sonnet/REVIEW.md`. Tiled whole-page reads are down to a median of 11.8 s (from 17.6 s), and the DXF note takes 8 s (from 179 s).
+    - **Spend:** $44.59 of the $80 smoke budget; the account limit was raised to $100.
+    - **Remaining polish** (F1–F8, a builder is on it): zoom latency 30–50 s, Word title punctuation, 0-mark copies, notes on blank paper, the planlens callout aim, zoom readings kept, rotated labels, `downloads.json` paths.
+  - **GO conditions:**
+    1. Release planlens (f679daf and later) first, then the app.
+    2. The CfA items: image-capable Prompter values, SharePoint app registration, identity header, published origin.
+    3. A first-hour check on Tiny Apps (steps in the wave 3 REVIEW.md).
+  - **Only live GPT on Tiny Apps can show:** vision on gpt-5.1 (768 px), GPT latency against the caps, the real budget and rate-limit responses, several testers on one key, and links behind the proxy.
 
 Machine note: heavy test suites must not overlap on the owner's laptop. Background runs were stopped twice for low memory on 2026-10-07/08.
 
