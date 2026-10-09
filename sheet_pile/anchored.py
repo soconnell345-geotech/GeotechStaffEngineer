@@ -165,8 +165,8 @@ def analyze_anchored(
                 net_passive = pp_reduced * dz
 
                 # Water
-                u_active = gamma_w * max(0, z - (gwt_depth_active or 1e10))
-                u_passive = gamma_w * max(0, z_below - max(0, (gwt_depth_passive or 1e10) - H))
+                u_active = gamma_w * max(0, z - (1e10 if gwt_depth_active is None else gwt_depth_active))
+                u_passive = gamma_w * max(0, z_below - max(0, (1e10 if gwt_depth_passive is None else gwt_depth_passive) - H))
                 net_active += (u_active - u_passive) * dz
 
                 moment_driving += net_active * arm
@@ -228,8 +228,8 @@ def analyze_anchored(
             pp = Kp * sigma_v_p + 2 * layer.cohesion * math.sqrt(Kp)
             total_passive_force += (pp / FOS_passive) * dz
 
-            u_a = gamma_w * max(0, z - (gwt_depth_active or 1e10))
-            u_p = gamma_w * max(0, z_below - max(0, (gwt_depth_passive or 1e10) - H))
+            u_a = gamma_w * max(0, z - (1e10 if gwt_depth_active is None else gwt_depth_active))
+            u_p = gamma_w * max(0, z_below - max(0, (1e10 if gwt_depth_passive is None else gwt_depth_passive) - H))
             total_active_force += (u_a - u_p) * dz
 
     anchor_force = total_active_force - total_passive_force

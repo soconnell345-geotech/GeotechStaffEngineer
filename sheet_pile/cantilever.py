@@ -557,8 +557,8 @@ def _compute_max_moment(excavation_depth, embedment, soil_layers,
             net_pressure = pa - pp_reduced
 
             # Water
-            u_active = gamma_w * max(0, z - (gwt_active or 1e10))
-            u_passive = gamma_w * max(0, z_below - max(0, (gwt_passive or 1e10) - H))
+            u_active = gamma_w * max(0, z - (1e10 if gwt_active is None else gwt_active))
+            u_passive = gamma_w * max(0, z_below - max(0, (1e10 if gwt_passive is None else gwt_passive) - H))
             net_pressure += u_active - u_passive
 
         shear += net_pressure * dz

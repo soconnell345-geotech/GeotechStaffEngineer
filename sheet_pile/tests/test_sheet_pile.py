@@ -472,3 +472,35 @@ class TestEmbedmentRefinement:
         D2 = analyze_anchored(excavation_depth=6.05, anchor_depth=1.5,
                               soil_layers=sand).embedment_depth
         assert 0.0 < abs(D2 - D1) < 0.06
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# A water table AT the ground surface (depth 0) is water, not "no water".
+# Live smoke 2026-10-09 (geotech review G2): ``(gwt or 1e10)`` read a 0 m
+# water table as none, so the pore-pressure term vanished -- the cantilever's
+# maximum moment landed at the free tip and the anchored wall came out
+# unconservative. Depth 0 must behave like depth 0.001.
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestWaterTableAtSurface:
+
+    @staticmethod
+    def _layers():
+        return [WallSoilLayer(thickness=20.0, unit_weight=19.0,
+                              friction_angle=32.0)]
+
+    def test_cantilever_gwt_zero_matches_gwt_just_below(self):
+        at0 = analyze_cantilever(4.0, self._layers(), gwt_depth_active=0.0)
+        near0 = analyze_cantilever(4.0, self._layers(), gwt_depth_active=0.001)
+        dry = analyze_cantilever(4.0, self._layers(), gwt_depth_active=None)
+        assert at0.max_moment == pytest.approx(near0.max_moment, rel=0.02)
+        assert at0.embedment_depth == pytest.approx(near0.embedment_depth,
+                                                    rel=0.02)
+        assert abs(at0.max_moment - dry.max_moment) > 0.05 * dry.max_moment
+
+    def test_anchored_gwt_zero_matches_gwt_just_below(self):
+        at0 = analyze_anchored(6.0, 1.0, self._layers(), gwt_depth_active=0.0)
+        near0 = analyze_anchored(6.0, 1.0, self._layers(),
+                                 gwt_depth_active=0.001)
+        assert at0.max_moment == pytest.approx(near0.max_moment, rel=0.02)
+        assert at0.anchor_force == pytest.approx(near0.anchor_force, rel=0.02)

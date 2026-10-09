@@ -592,7 +592,7 @@ def _compute_pressures(result, analysis, n_points=200):
 
             # Differential water pressure
             if gwt_p is not None and z > gwt_p:
-                u_p = gamma_w * max(0, z_below - max(0, (gwt_p or 1e10) - H))
+                u_p = gamma_w * max(0, z_below - max(0, (1e10 if gwt_p is None else gwt_p) - H))
                 pp_reduced += u_p
 
             p_active[idx] = pa
