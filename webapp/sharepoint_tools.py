@@ -599,6 +599,48 @@ def _name_matches(query: str, name: str) -> bool:
     return all(w in words for w in q.split())
 
 
+def _below(path: str, base: str) -> List[str]:
+    """``path``'s folder names below the search root ``base`` (compared as
+    :func:`_segments` reads them), its own name last. A path not under
+    ``base`` keeps the segments after the app's root, else all of them."""
+    segs = _segments(path) or []
+    for root in (base, _root()):
+        rsegs = _segments(root) or []
+        n = len(rsegs)
+        if not n:
+            continue
+        for i in range(len(segs) - n + 1):
+            if segs[i:i + n] == rsegs:
+                return segs[i + n:]
+    return segs
+
+
+def _path_matches(query: str, entry: dict, base: str) -> str:
+    """How ``entry`` matches ``query``: ``"name"`` (its own name, as
+    :func:`_name_matches`), ``"folder"`` (the folders it sits in below the
+    search root, or the whole path there: "riverside dr" finds every file
+    under "projects/Riverside Drive/"), else ``""``. A query word matches a
+    path word it starts ("dr" -> "drive")."""
+    name = str(entry.get("name") or "")
+    if _name_matches(query, name):
+        return "name"
+    path = str(entry.get("path") or "")
+    below = _below(path, base) if path else []
+    if not below:
+        return ""
+    text = _norm(" ".join(below))
+    q = _norm(query)
+    if not q or not text:
+        return ""
+    if q in text:
+        return "folder"
+    words = text.split()
+    if all(any(w == t or (len(w) >= 2 and t.startswith(w)) for t in words)
+           for w in q.split()):
+        return "folder"
+    return ""
+
+
 def _queries(text: str) -> List[str]:
     """What to ask the search index: the text as given, without its file
     extension, and then its longest word alone. The index can miss a long
@@ -629,12 +671,14 @@ def _search(fm, query: str, scope: str) -> List[dict]:
 
 
 def _walk(fm, base: str, budget: int = WALK_BUDGET,
-          scope: Optional[_Scope] = None) -> Tuple[List[dict], int]:
+          scope: Optional[_Scope] = None,
+          folders: Optional[List[dict]] = None) -> Tuple[List[dict], int]:
     """Files under ``base``, breadth first, listing at most ``budget``
     folders. The app's own mirror of conversations is walked last: the
     files people mean are almost never in it. With a ``scope``, other
     people's conversation folders are never entered. ``(files,
-    folders_listed)``."""
+    folders_listed)``; the folders seen are appended to ``folders`` when it
+    is given."""
     files: List[dict] = []
     queue = deque([base])
     later: List[str] = []
@@ -662,6 +706,8 @@ def _walk(fm, base: str, budget: int = WALK_BUDGET,
             if _is_folder(e):
                 (later if path.lower().rstrip("/").endswith(own_mirror)
                  or own_mirror in path.lower() else queue).append(path)
+                if folders is not None:
+                    folders.append({**e, "path": path})
             else:
                 files.append({**e, "path": path})
     return files, listed
@@ -1189,11 +1235,69 @@ def _share_mirrored_copy(thread_id: str, record_dir: Optional[str],
         url = sharepoint_store.fix_web_url(_fm().get_web_url(remote))
     except Exception:                                      # noqa: BLE001
         url = ""
+    source = _downloaded_from(conv_dir, local)
+    if source is not None:
+        return _original_first(name, source, remote, url)
     return (f"'{name}' is in this conversation's SharePoint folder: {remote}. "
             "The app keeps that folder in step with the conversation after "
             "every turn, so this is the ONE copy: it follows later edits to "
             "the file, and no second copy was made."
             + (f" Link: {url}" if url else ""))
+
+
+def _downloaded_from(conv_dir: Optional[str], local: str) -> Optional[str]:
+    """The SharePoint file this conversation's ``local`` copy was downloaded
+    from (the downloads ledger, ``core.record_download``), or ``None`` for a
+    file the conversation made or was given. Matched by its path, else --
+    for a conversation restored to another place -- by its path inside the
+    working folder."""
+    if not conv_dir:
+        return None
+    try:
+        from webapp import core
+        entries = core.load_downloads(conv_dir)
+    except Exception:                                      # noqa: BLE001
+        return None
+    want = os.path.normcase(os.path.abspath(local))
+    tail = os.path.normcase(os.path.join(
+        os.path.basename(os.path.dirname(want)), os.path.basename(want)))
+    for d in reversed(entries):
+        got = os.path.normcase(os.path.abspath(str(d.get("local") or "")))
+        if got == want:
+            return str(d.get("remote") or "") or None
+    for d in reversed(entries):
+        got = os.path.normcase(os.path.abspath(str(d.get("local") or "")))
+        if os.path.join(os.path.basename(os.path.dirname(got)),
+                        os.path.basename(got)) == tail:
+            return str(d.get("remote") or "") or None
+    return None
+
+
+def _original_first(name: str, source: str, snapshot: str,
+                    snapshot_url: str) -> str:
+    """The links of a file downloaded from SharePoint: the ORIGINAL first
+    -- the file the project keeps and edits -- then this conversation's
+    snapshot copy, said for what it is (live smoke wave 2c, D6: "send me the
+    links" handed out only the snapshot, and the result said no second copy
+    had been made)."""
+    if source.lower().startswith("http"):
+        original_url = source
+    else:
+        try:
+            original_url = sharepoint_store.fix_web_url(
+                _fm().get_web_url(source))
+        except Exception:                                  # noqa: BLE001
+            original_url = ""
+    return (f"'{name}' was downloaded from SharePoint. The ORIGINAL is "
+            f"{source}" + (f" -- Link: {original_url}" if original_url
+                           else "")
+            + ". Give the user that link: it is the project's own file, and "
+            "it follows edits made to it. This conversation also keeps a "
+            f"SNAPSHOT copy, taken when it was downloaded, in its own "
+            f"SharePoint folder: {snapshot}"
+            + (f" -- Link: {snapshot_url}" if snapshot_url else "")
+            + ". The snapshot does not follow later edits to the original; "
+            "nothing new was uploaded.")
 
 
 @tool
@@ -1278,10 +1382,12 @@ def make_conversation_upload_tool(thread_id: str,
     return sharepoint_upload_file
 
 
-_SEARCH_DOC = """Search SharePoint for files by name.
+_SEARCH_DOC = """Search SharePoint for files by name -- the file's own name or the
+folders it sits in ("riverside dr" finds the files under a "Riverside Drive"
+folder, and the folder itself).
 
-query: filename text to search for (e.g. "boring log", "Kinshasa"), or a
-whole file name.
+query: filename or folder text to search for (e.g. "boring log",
+"Kinshasa"), or a whole file name.
 path: optional folder to scope the search — relative to the base folder,
 or absolute. Default searches from the base folder.
 
@@ -1289,6 +1395,42 @@ NOTE: search uses an index that lags NEW uploads by several minutes and
 can miss long names with underscores; when the index finds nothing the
 tool also tries shorter queries and looks through the folders by name.
 """
+
+
+#: Folders listed again under each folder whose NAME matches a search, so
+#: its files are listed even when the main walk ran out first.
+FOLDER_WALK_BUDGET = 10
+#: Matching folders whose files are listed that way.
+MAX_MATCHED_FOLDERS = 3
+
+
+def _walk_matching(fm, query: str, remote: str,
+                   scope: Optional[_Scope]) -> Tuple[List[dict], int, int]:
+    """``(hits, folders_listed, matched_by_folder)`` from walking
+    ``remote``: the folders whose path below it matches ``query`` (first),
+    then every file whose name or folders match -- the files under a
+    matching folder listed even when the main walk did not reach them. With
+    a ``scope``, other people's conversation folders are never entered."""
+    folders: List[dict] = []
+    files, listed = _walk(fm, remote, scope=scope, folders=folders)
+    matched = [f for f in folders if _path_matches(query, f, remote)]
+    seen = {str(f.get("path") or "").lower() for f in files}
+    for folder in matched[:MAX_MATCHED_FOLDERS]:
+        more, n = _walk(fm, str(folder.get("path") or ""),
+                        budget=FOLDER_WALK_BUDGET, scope=scope)
+        listed += n
+        for f in more:
+            key = str(f.get("path") or "").lower()
+            if key not in seen:
+                seen.add(key)
+                files.append(f)
+    hits, by_folder = list(matched), 0
+    for f in files:
+        how = _path_matches(query, f, remote)
+        if how:
+            hits.append(f)
+            by_folder += how == "folder"
+    return hits, listed, by_folder
 
 
 def _search_tool(query: str, path: str = "",
@@ -1310,9 +1452,14 @@ def _search_tool(query: str, path: str = "",
         return _failure("search", exc).replace("SharePoint search failed",
                                                "SharePoint search error", 1)
     how = ""
+    by_folder = 0
     if not hits:
         # The index found nothing for the text as given. Shorter queries
-        # first, then the folders themselves -- matched by name.
+        # first, then the folders themselves -- matched by the file's name
+        # OR the folders it sits in (live smoke wave 2c, D7: "riverside dr"
+        # found nothing though the folder "Riverside Drive" held every set;
+        # the "riverside" hits were dropped for lacking "dr" in the FILE
+        # name).
         seen = set()
         for q in _queries(query)[1:]:
             try:
@@ -1321,14 +1468,15 @@ def _search_tool(query: str, path: str = "",
                 more = []
             for h in more:
                 key = str(h.get("path") or h.get("name")).lower()
-                if key not in seen and _name_matches(query, h.get("name")):
+                matched = _path_matches(query, h, remote)
+                if key not in seen and matched:
                     seen.add(key)
                     hits.append(h)
+                    by_folder += matched == "folder"
         if hits:
             how = " (found by a shorter search; the full text found nothing)"
         else:
-            files, listed = _walk(fm, remote, scope=scope)
-            hits = [f for f in files if _name_matches(query, f.get("name"))]
+            hits, listed, by_folder = _walk_matching(fm, query, remote, scope)
             if hits:
                 how = (f" (found by looking through {listed} folders; the "
                        "search index found nothing)")
@@ -1338,10 +1486,13 @@ def _search_tool(query: str, path: str = "",
                     return _not_answering(f"the search for '{query}'", detail)
                 return (f"No files matching '{query}' under {remote} (the "
                         f"search index found none, and {listed} folders were "
-                        "looked through by name)."
+                        "looked through by file and folder name)."
                         + (" Other people's conversation folders are private "
                            "and are never searched." if scope is not None
                            else ""))
+    if by_folder:
+        how += (f" ({by_folder} matched by the folder they are in, not "
+                "their own name)")
     lines = [f"Matches for '{query}' ({len(hits)}"
              + (f", first {MAX_ENTRIES} shown" if len(hits) > MAX_ENTRIES
                 else "") + f"){how}:"]

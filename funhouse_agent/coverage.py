@@ -240,10 +240,16 @@ def pages_from_call(name: str, args: Optional[dict], result: Any
         if result is None or (isinstance(result, str) and not result.strip()):
             return None, []
         src = str(args.get("attachment_key") or args.get("source") or "")
-        try:
-            page = int(args.get("page", 0) or 0)
-        except (TypeError, ValueError):
-            return None, []
+        # The page the tool READ (its result names it), else the one asked
+        # for -- a 1-based pdf_page included (live smoke wave 2c).
+        page = data.get("page") if data is not None else None
+        if not isinstance(page, int) or isinstance(page, bool):
+            try:
+                pdf_page = args.get("pdf_page")
+                page = (int(pdf_page) - 1 if pdf_page not in (None, "")
+                        else int(args.get("page", 0) or 0))
+            except (TypeError, ValueError):
+                return None, []
         return ("source", src), [(page, "look")]
     if name in SWEEP_TOOLS:
         if data is None:

@@ -148,10 +148,59 @@ def test_an_excel_workbook_reads_as_one_table_per_sheet(folder):
     assert "Excel rows 3-3, columns B-B" in md
     by_name = {s["name"]: s for s in read["sheets"]}
     assert by_name["Submittal Log"] == {"name": "Submittal Log", "rows": 4,
-                                        "columns": 5}
+                                        "columns": 5, "header_row": 1}
     assert by_name["Lookup"]["hidden"] is True
     assert by_name["Empty"]["rows"] == 0
     assert "sheet" in read["note"].lower()
+
+
+def test_an_excel_header_below_a_title_is_found_and_said(folder):
+    """Live smoke 2c, E7 (F41): the log's title is row 1, a project line row
+    2, and the header row 4; the reader said "row 1 is the header". The
+    header is the first row filled across the table, mostly with text; the
+    rows above it are kept as text, and the result says which row it used."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Submittal Log"
+    ws["A1"] = "RIVERSIDE DRIVE STREETSCAPE - SUBMITTAL LOG"
+    ws["A2"] = "Project No. 24-117"
+    ws["D2"] = "Updated 2026-09-28"
+    ws.append([])
+    ws.append(["Submittal No.", "Description", "Rev", "Received", "Status",
+               "Reviewer", "Remarks"])
+    ws.append(["32 16 00-001", "Concrete mix design", 0, "2026-09-02",
+               "Approved", "J. Patel", None])
+    ws.append(["32 16 00-003", "Detectable warning mats", 1, "2026-09-09",
+               "Revise and Resubmit", "J. Patel", "Colour not shown"])
+    # A sheet of numbers with no header row at all: the first row is taken,
+    # and the text says so.
+    nums = wb.create_sheet("Readings")
+    nums.append(["Readings"])
+    for r in ([0.5, 12, 1.1], [1.0, 15, 1.3], [1.5, 19, 1.2]):
+        nums.append(r)
+    wb.save(str(folder / "log.xlsx"))
+
+    read = _call("read_text_file", {"path": "log.xlsx"})
+    md = read["text"]
+    assert ("Excel rows 4-6, columns A-G; row 4 is the header (the first row "
+            "filled across the table, mostly with text).") in md
+    assert ("Row 1, above the table: RIVERSIDE DRIVE STREETSCAPE - "
+            "SUBMITTAL LOG") in md
+    assert "Row 2, above the table: Project No. 24-117; Updated 2026-09-28" \
+        in md
+    assert ("| # | Submittal No. | Description | Rev | Received | Status | "
+            "Reviewer | Remarks |") in md
+    assert "| 6 | 32 16 00-003 | Detectable warning mats | 1 |" in md
+    by_name = {s["name"]: s for s in read["sheets"]}
+    assert by_name["Submittal Log"] == {
+        "name": "Submittal Log", "rows": 3, "columns": 7, "header_row": 4,
+        "rows_above_header": 2}
+    # The numbers sheet: its one-cell title row is not filled across, and
+    # the first row filled across is numbers, so there is no header row.
+    assert ("row 1 is the header (no row filled across the table is mostly "
+            "text, so the first row is taken)") in md
+    assert by_name["Readings"]["header_row"] == 1
+    assert "first row filled across" in read["note"]
 
 
 def test_office_to_markdown_is_the_one_shared_reader(tmp_path):

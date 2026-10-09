@@ -22,8 +22,18 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 #: Characters Excel refuses in a sheet name, and its length limit.
 _BAD_SHEET_CHARS = re.compile(r"[\[\]:*?/\\]")
 MAX_SHEET_NAME = 31
-#: Widest a column is sized to (characters).
+#: Widest a column is sized to (characters). A longer cell WRAPS inside it
+#: (live smoke 2c, E7: F32's issues ran to 272 characters in a 60-wide column
+#: with no wrap, and showed as one clipped line).
 MAX_COLUMN_WIDTH = 60
+#: Narrowest a column is sized to (characters).
+MIN_COLUMN_WIDTH = 8
+#: The height of one line of Excel's default font (Calibri 11), and Excel's
+#: tallest row, in points: a row holding wrapped cells is set tall enough
+#: for its longest one, so every viewer shows the whole text (Excel alone
+#: re-fits a row on opening; previews and other readers do not).
+LINE_HEIGHT_PT = 15.0
+MAX_ROW_HEIGHT_PT = 409.0
 #: Most rows written to one sheet (Excel's own limit is 1,048,576).
 MAX_ROWS = 100_000
 
@@ -181,6 +191,52 @@ def sheet_name(name: Any, taken: Iterable[str]) -> str:
         n += 1
 
 
+def _lines(value: Any) -> List[str]:
+    return str(value).split("\n") if value is not None else []
+
+
+def _longest_line(value: Any) -> int:
+    """The longest line of a cell's text, in characters (0 when empty)."""
+    return max((len(line) for line in _lines(value)), default=0)
+
+
+def column_width(longest: int) -> float:
+    """A column's width (Excel characters) for its longest line of text:
+    that plus a margin, between :data:`MIN_COLUMN_WIDTH` and
+    :data:`MAX_COLUMN_WIDTH` (a longer cell wraps inside it)."""
+    return float(min(MAX_COLUMN_WIDTH, max(MIN_COLUMN_WIDTH, longest + 2)))
+
+
+def _wrapped_lines(value: Any, width: float) -> int:
+    """How many lines a cell's text takes when wrapped in a column
+    ``width`` characters wide (generous: proportional letters are mostly
+    narrower than the '0' Excel's width counts in)."""
+    per_line = max(1, int(width) - 1)
+    return sum(max(1, -(-len(line) // per_line)) for line in _lines(value))
+
+
+def _wrap_and_fit(ws, width_of: Dict[int, float], Alignment) -> int:
+    """Top-align every cell; wrap each cell longer than its column or
+    holding a line break, and make its row tall enough to show it. Returns
+    how many cells wrap."""
+    n_wrapped = 0
+    for row in ws.iter_rows():
+        lines_needed = 1
+        for cell in row:
+            v = cell.value
+            width = width_of.get(cell.column, MIN_COLUMN_WIDTH)
+            wrap = isinstance(v, str) and (
+                "\n" in v or _longest_line(v) > width - 2)
+            cell.alignment = Alignment(vertical="top", wrap_text=wrap)
+            if wrap:
+                n_wrapped += 1
+                lines_needed = max(lines_needed, _wrapped_lines(v, width))
+        if lines_needed > 1:
+            ws.row_dimensions[row[0].row].height = min(
+                MAX_ROW_HEIGHT_PT, LINE_HEIGHT_PT * lines_needed)
+    return n_wrapped
+
+
 def build_workbook(sheets: Optional[List[Dict[str, Any]]] = None,
                    markdown: str = "",
                    header: bool = True) -> Tuple[bytes, List[Dict[str, Any]],
@@ -190,10 +246,13 @@ def build_workbook(sheets: Optional[List[Dict[str, Any]]] = None,
     ``sheets``: ``[{"name": str, "rows": [[...], ...] or [{...}, ...],
     "header": bool}]``; ``markdown``: text whose pipe tables become sheets
     after those. The first row of each sheet is its header (bold, frozen)
-    unless ``header`` is false for it. Raises ``ValueError`` when there is no
-    table at all."""
+    unless ``header`` is false for it. Each column is sized to its longest
+    line of text (:data:`MIN_COLUMN_WIDTH` to :data:`MAX_COLUMN_WIDTH`), a
+    cell longer than its column (or holding line breaks) wraps, every cell
+    is top-aligned, and a row with a wrapped cell is made tall enough to
+    show it. Raises ``ValueError`` when there is no table at all."""
     from openpyxl import Workbook
-    from openpyxl.styles import Font
+    from openpyxl.styles import Alignment, Font
     from openpyxl.utils import get_column_letter
 
     specs: List[Dict[str, Any]] = []
@@ -240,19 +299,22 @@ def build_workbook(sheets: Optional[List[Dict[str, Any]]] = None,
                 cell = ws.cell(row=r, column=c, value=v)
                 if spec["header"] and r == 1:
                     cell.font = Font(bold=True)
-                widths[c] = max(widths.get(c, 0),
-                                len(str(v)) if v is not None else 0)
-        for c, w in widths.items():
-            ws.column_dimensions[get_column_letter(c)].width = \
-                min(MAX_COLUMN_WIDTH, max(8, w + 2))
+                widths[c] = max(widths.get(c, 0), _longest_line(v))
+        width_of = {c: column_width(w) for c, w in widths.items()}
+        for c, w in width_of.items():
+            ws.column_dimensions[get_column_letter(c)].width = w
+        n_wrapped = _wrap_and_fit(ws, width_of, Alignment)
         if spec["header"] and len(rows) > 1:
             ws.freeze_panes = "A2"
         summary.append({"sheet": name, "rows": len(rows), "columns": n_cols,
-                        "header": spec["header"]})
+                        "header": spec["header"],
+                        **({"wrapped_cells": n_wrapped} if n_wrapped
+                           else {})})
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue(), summary, warnings
 
 
 __all__ = ["available", "build_workbook", "tables_from_markdown",
-           "cell_value", "sheet_name", "MAX_SHEET_NAME", "MAX_ROWS"]
+           "cell_value", "column_width", "sheet_name", "MAX_SHEET_NAME",
+           "MAX_ROWS", "MAX_COLUMN_WIDTH"]

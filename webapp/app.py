@@ -131,7 +131,7 @@ _APP_STATE_KEYS = (
     "initialized", "thread_id", "temp_dir", "attachments", "artifacts",
     "messages", "transcript", "pending_notes", "total_tokens",
     "last_turn_tokens", "agent", "agent_error", "engine", "model", "save_error",
-    "behavior", "upload_epoch", "pending_orientation",
+    "behavior", "upload_epoch", "pending_orientation", "sp_sync",
 )
 
 
@@ -200,6 +200,7 @@ def _new_conversation() -> None:
     ss.save_error = None
     ss.feedback_saved = None
     ss.recovered_notice = False
+    ss.sp_sync = None                   # D3: the sidebar shows THIS one's only
     ss.behavior = core.default_behavior()       # A5: per-conversation pickers
     _resolve_and_build(core.default_model_id())
 
@@ -302,6 +303,7 @@ def _open_conversation(thread_id: str) -> None:
     ss.last_turn_tokens = 0
     ss.save_error = None
     ss.feedback_saved = None
+    ss.sp_sync = None                   # D3: the sidebar shows THIS one's only
     _meta = core.load_meta(thread_id) or {}
     ss.behavior = core.behavior_from_meta(_meta)     # A5: restore pickers
     _resolve_and_build(_meta.get("model") or core.default_model_id())
@@ -919,7 +921,11 @@ with st.sidebar:
     if _sp.configured:
         st.divider()
         st.subheader("Permanent storage")
-        _sync = ss.get("sp_sync") or _sp.last_sync
+        # This conversation's own mirror record only -- never the store-wide
+        # last sync, which on a shared host is another person's folder and
+        # link (live smoke wave 2c, D3).
+        _sync = sharepoint_store.sync_for_conversation(
+            _sp, ss.thread_id, ss.get("sp_sync"))
         if _sync:
             _n_err = len(_sync.get("errors") or [])
             _line = (f"SharePoint: {_sync['uploaded']} uploaded, "

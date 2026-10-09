@@ -14,9 +14,13 @@ lost its numbered list; F02's labels ran together); F31 invented a
   code, ``---`` page breaks and pictures — so read -> edit -> write keeps the
   document's shape.
 * An **.xlsx / .xlsm** comes back as one ``## Sheet: <name>`` pipe table per
-  sheet, the first non-empty row as its header and a ``#`` column of Excel
-  row numbers, values as Excel last calculated them (a formula never
-  calculated shows as its formula).
+  sheet with a ``#`` column of Excel row numbers, values as Excel last
+  calculated them (a formula never calculated shows as its formula). Its
+  header is the first row filled across the table, mostly with text
+  (:func:`_header_index`); rows above it -- a title, a project line -- are
+  listed above the table, and the text says which row is the header (live
+  smoke 2c, E7: F41's log has its title in row 1 and its header in row 4,
+  and the reader said "row 1 is the header").
 
 :func:`office_to_markdown` is the plain text; :func:`read_office` adds the
 fields a tool result carries (format, title, sheets, pictures, a note). Both
@@ -159,6 +163,42 @@ def _cell_text(v) -> str:
     return s.replace("|", r"\|").replace("\n", "<br>")
 
 
+_NUMBER_TEXT = re.compile(r"^[+-]?[\d,]*\.?\d+(?:[eE][+-]?\d+)?%?$")
+
+
+def _is_words(v) -> bool:
+    """Whether a spreadsheet value is words -- a header's kind of cell --
+    rather than a number, a date, a flag or a formula (a number stored as
+    text counts as a number)."""
+    if not isinstance(v, str):
+        return False
+    s = v.strip()
+    return bool(s) and not s.startswith("=") \
+        and not _NUMBER_TEXT.match(s.replace(" ", ""))
+
+
+def _header_index(grid) -> Tuple[int, bool]:
+    """``(index, found)`` of a sheet's header among its non-empty rows
+    ``grid`` (``(row number, cells, words)`` each, ``words`` saying which
+    cells are words): the first row filled across the table -- at least
+    three fifths of the widest row's cells, and never fewer than two when
+    the widest has two or more -- if most of its cells are words. Rows less
+    filled above it are a title or a project line. When the first row
+    filled across holds mostly numbers there is no header row, and the
+    first row is taken (``found`` false)."""
+    fills = [sum(1 for v in cells if v) for _n, cells, _w in grid]
+    widest = max(fills)
+    need = widest if widest <= 2 else max(2, -(-widest * 3 // 5))
+    for i, (_n, cells, words) in enumerate(grid):
+        filled = [k for k, v in enumerate(cells) if v]
+        if len(filled) < need:
+            continue
+        if 2 * sum(1 for k in filled if words[k]) > len(filled):
+            return i, True
+        break
+    return 0, False
+
+
 def _xlsx(path):
     from openpyxl import load_workbook
     from openpyxl.utils import get_column_letter
@@ -187,19 +227,20 @@ def _xlsx(path):
             grid, cut = [], False
             for r_no, row in enumerate(ws.iter_rows(values_only=True), 1):
                 f_row = next(f_rows, None) if f_rows is not None else None
-                cells = []
+                cells, words = [], []
                 for j, v in enumerate(row):
                     if v is None and f_row is not None and j < len(f_row) \
                             and isinstance(f_row[j], str) \
                             and f_row[j].startswith("="):
                         v = f_row[j]
                     cells.append(_cell_text(v))
-                grid.append((r_no, cells))
+                    words.append(_is_words(v))
+                grid.append((r_no, cells, words))
                 budget -= max(1, len(cells))
                 if budget <= 0:
                     cut = True
                     break
-            grid = [(n, c) for n, c in grid if any(c)]
+            grid = [(n, c, w) for n, c, w in grid if any(c)]
             hidden = getattr(ws, "sheet_state", "visible") != "visible"
             title = f"## Sheet: {ws.title}" + (" (hidden)" if hidden else "")
             if not grid:
@@ -207,17 +248,31 @@ def _xlsx(path):
                 sheets.append({"name": ws.title, "rows": 0, "columns": 0,
                                **({"hidden": True} if hidden else {})})
                 continue
-            used = [k for _n, c in grid for k, v in enumerate(c) if v]
+            # The header is found, not assumed (E7); a title or project line
+            # above it is kept as text above the table.
+            head_i, found = _header_index(grid)
+            above, table = grid[:head_i], grid[head_i:]
+            used = [k for _n, c, _w in table for k, v in enumerate(c) if v]
             c0, c1 = min(used), max(used) + 1
             width = c1 - c0
-            rows = [(n, (c + [""] * c1)[c0:c1]) for n, c in grid]
+            rows = [(n, (c + [""] * c1)[c0:c1]) for n, c, _w in table]
             head_no, head = rows[0]
-            lines = [f"{title}\n\nExcel rows {head_no}-{rows[-1][0]}, "
-                     f"columns {get_column_letter(c0 + 1)}-"
-                     f"{get_column_letter(c1)}; row {head_no} is the header.",
-                     "",
-                     "| # | " + " | ".join(head) + " |",
-                     "| --- | " + " | ".join(["---"] * width) + " |"]
+            why = ("the first row filled across the table, mostly with text"
+                   if found else "no row filled across the table is mostly "
+                   "text, so the first row is taken")
+            lines = [title, ""]
+            for n, c, _w in above:
+                lines.append(f"Row {n}, above the table: "
+                             + "; ".join(v for v in c if v))
+            if above:
+                lines.append("")
+            lines += [f"Excel rows {head_no}-{rows[-1][0]}, "
+                      f"columns {get_column_letter(c0 + 1)}-"
+                      f"{get_column_letter(c1)}; row {head_no} is the header "
+                      f"({why}).",
+                      "",
+                      "| # | " + " | ".join(head) + " |",
+                      "| --- | " + " | ".join(["---"] * width) + " |"]
             lines += [f"| {n} | " + " | ".join(c) + " |" for n, c in rows[1:]]
             if cut:
                 lines.append("")
@@ -227,7 +282,9 @@ def _xlsx(path):
                 stopped_at = ws.title
             parts.append("\n".join(lines))
             sheets.append({"name": ws.title, "rows": len(rows),
-                           "columns": width,
+                           "columns": width, "header_row": head_no,
+                           **({"rows_above_header": len(above)} if above
+                              else {}),
                            **({"hidden": True} if hidden else {})})
     finally:
         values.close()
@@ -236,7 +293,10 @@ def _xlsx(path):
     note = ("An Excel workbook read as Markdown: one '## Sheet:' table per "
             "sheet, values as Excel last calculated them (a formula never "
             "calculated shows as its formula), the '#' column the Excel row "
-            "number. write_xlsx writes a new workbook.")
+            "number. Each table's header is the first row filled across it, "
+            "mostly with text (the line above the table says which row); "
+            "rows above the header, such as a title, are listed before the "
+            "table. write_xlsx writes a new workbook.")
     if stopped_at:
         note += (f" Reading stopped in sheet '{stopped_at}' at "
                  f"{XLSX_MAX_CELLS:,} cells; later sheets are listed, "

@@ -245,7 +245,9 @@ WRITE_XLSX_DESCRIPTION = (
     "the header), OR as 'markdown' holding pipe tables (each table becomes "
     "its own sheet, named by the heading above it); both may be given. "
     "Numbers are written as numbers (an id with a leading zero stays text), "
-    "the header row is bold and frozen, columns are sized to fit. 'path' is "
+    "the header row is bold and frozen, columns are sized to their text (at "
+    "most 60 characters wide) and a longer cell wraps, its row made tall "
+    "enough to show it all. 'path' is "
     "the file name (.xlsx is added); a bare name lands in the working folder "
     "and appears as a download card. Never save SpreadsheetML, an .xls or a "
     "CSV in its place when the user asked for Excel.")
@@ -776,6 +778,14 @@ def make_core_tools(
 #: Appended to planlens' own description where THIS app changes the contract.
 #: planlens is framework-neutral and cannot know where a file belongs or who
 #: is signing the review; both are settled here, so the model is told.
+#: Every page-range document tool also takes the viewer's 1-based numbers
+#: (live smoke wave 2c: a model passed PDF page 5 of a 5-page document).
+_PDF_PAGES_NOTE = (" pages counts from 0; or give pdf_pages instead, "
+                   "1-based as a PDF viewer shows (e.g. '1-3,6').")
+#: The same for a one-page argument.
+_PDF_PAGE_NOTE = (" page counts from 0; or give pdf_page instead, 1-based "
+                  "as a PDF viewer shows.")
+
 _DOCUMENT_TOOL_NOTES = {
     # Live smoke wave 2b, C2 / C8: MuPDF read a workbook as nine digits and
     # could not open a DXF; both are read as text by the app instead.
@@ -789,10 +799,15 @@ _DOCUMENT_TOOL_NOTES = {
         "do not apply to it."),
     "read_document": (
         " For a Word, Excel or DXF file, handle is its file name and "
-        "start_line pages through its lines (pages does not apply)."),
+        "start_line pages through its lines (pages does not apply)."
+        + _PDF_PAGES_NOTE),
     "search_document": (
         " For a Word, Excel or DXF file, handle is its file name; hits are "
-        "its lines."),
+        "its lines." + _PDF_PAGES_NOTE),
+    "document_page_map": _PDF_PAGES_NOTE,
+    "document_markups": _PDF_PAGES_NOTE,
+    "find_quantities": _PDF_PAGES_NOTE,
+    "render_page_thumbnails": _PDF_PAGES_NOTE,
     "annotate_document": (
         " In this app give output_path a bare file name: it is written into "
         "this conversation's working folder, attached to the reply as a "
@@ -806,16 +821,23 @@ _DOCUMENT_TOOL_NOTES = {
         "estimate. Every mark is then CHECKED, whatever its anchor (box, "
         "point, quote or note): a crop of the marked copy is looked at and "
         "the result's `check` says which marks are on the thing their "
-        "target, label or quoted words name — or, naming none, the thing "
-        "their comment is about — and which are misplaced. Never hand over "
-        "a file with misplaced marks: find those things again and rewrite "
-        "the copy with append=false. To change or delete ONE mark of a "
-        "marked copy you wrote, call again with output_path = that copy and "
-        "remove = [its id as document_markups lists it on that copy, e.g. "
-        "'p0.m1', or words from its comment]; the marks you give in markups "
-        "are added, every other mark stays (only this app's marks can be "
+        "target or quoted words name — or, naming neither, the thing their "
+        "comment is about — and which are misplaced. A label is only the "
+        "text the reader sees beside a mark (a tag, a verdict such as "
+        "'460.1?'): it is never compared with what is under the mark, so it "
+        "need not match it. Never hand over a file with misplaced marks: "
+        "find those things again and rewrite the copy with append=false. "
+        "To change or delete ONE mark of a marked copy you wrote, call again "
+        "with output_path = that copy and remove = [its id as "
+        "document_markups lists it on that copy, e.g. 'p0.m1', or words "
+        "from its comment or its label]; the marks you give in markups are "
+        "added, every other mark stays (only this app's marks can be "
         "removed; ids change after a removal, so list them again before "
-        "removing another)."),
+        "removing another). The result's in_file counts what the copy "
+        "holds: the marks this call added and those kept from before, by "
+        "author — the document's own markups are always kept. A markup may "
+        "give pdf_page (1-based, as a PDF viewer shows) instead of page "
+        "(0-based)."),
 }
 
 
@@ -826,10 +848,10 @@ def _app_document_description(name: str) -> str:
     image_box and read a scan's labels, which planlens' text cannot say)."""
     if name == "measure":
         from funhouse_agent.measure_tool import MEASURE_DESCRIPTION
-        return MEASURE_DESCRIPTION
+        return MEASURE_DESCRIPTION + _PDF_PAGE_NOTE
     if name == "log_grid":
         from funhouse_agent.measure_tool import log_grid_description
-        return log_grid_description()
+        return log_grid_description() + _PDF_PAGES_NOTE
     return (_document_tools.tool_description(name)
             + _DOCUMENT_TOOL_NOTES.get(name, ""))
 
@@ -1029,34 +1051,43 @@ def make_vision_tools(
 
     def analyze_pdf_page(
         attachment_key: str,
-        page: int = 0,
+        page: Optional[int] = None,
         prompt: str = "Describe the content of this page.",
         tiles: str = "auto",
+        pdf_page: Optional[int] = None,
     ) -> str:
         """Render a PDF page and analyze it using vision.
 
         ``attachment_key`` is the key of the attached PDF file; ``page`` is the
-        0-indexed page number; ``prompt`` is what to extract from the page.
+        0-indexed page number (default 0) -- or give ``pdf_page`` instead,
+        1-based, the number a PDF viewer shows; ``prompt`` is what to extract
+        from the page.
         ``tiles``: ``"auto"`` (default) ALSO reads the page in overlapping
         tiles when its small lettering is too small in the whole-page image
         (the result then carries every tile's reading and view); ``"off"``;
         or N / ``"NxN"`` with N 2-4 (``"3"`` or ``"3x3"``) for a fixed split.
         """
-        args = {"attachment_key": attachment_key, "page": page,
-                "prompt": prompt, "tiles": tiles}
+        args = {"attachment_key": attachment_key, "prompt": prompt,
+                "tiles": tiles}
+        if page is not None:
+            args["page"] = page
+        if pdf_page is not None:
+            args["pdf_page"] = pdf_page
         if inline_images:
             args["_inline"] = True
         return _dispatch("analyze_pdf_page", args)
 
     def find_like(
         attachment_key: str,
-        page: int = 0,
+        page: Optional[int] = None,
         bbox: Optional[list] = None,
         text: str = "",
         pages: Optional[str] = None,
         include_legend: bool = False,
         view: Optional[list] = None,
         image_box: Optional[list] = None,
+        pdf_page: Optional[int] = None,
+        pdf_pages: Optional[str] = None,
     ) -> str:
         """Find EVERY copy of one mark — a tag, a code, a symbol — across the
         document, including drawing sheets whose lettering is drawn as lines
@@ -1077,24 +1108,28 @@ def make_vision_tools(
         analyze_image by the name given).
         Use it when the user wants EVERY occurrence of one repeated mark
         across many sheets; for anything else the reading and zoom tools are
-        the way.
+        the way. ``page`` / ``pages`` count from 0; ``pdf_page`` /
+        ``pdf_pages`` are the same 1-based, as a PDF viewer shows.
         """
-        args = {"attachment_key": attachment_key, "page": page,
+        args = {"attachment_key": attachment_key,
                 "include_legend": include_legend}
-        for k, v in (("bbox", bbox), ("text", text or None), ("pages", pages),
-                     ("view", view), ("image_box", image_box)):
+        for k, v in (("page", page), ("bbox", bbox), ("text", text or None),
+                     ("pages", pages), ("view", view),
+                     ("image_box", image_box), ("pdf_page", pdf_page),
+                     ("pdf_pages", pdf_pages)):
             if v is not None:
                 args[k] = v
         return _dispatch("find_like", args)
 
     def render_region(
         attachment_key: str,
-        page: int = 0,
+        page: Optional[int] = None,
         bbox: Optional[list] = None,
         marks: Optional[list] = None,
         prompt: str = "Describe what this zoomed-in region shows.",
         view: Optional[list] = None,
         image_box: Optional[list] = None,
+        pdf_page: Optional[int] = None,
     ) -> str:
         """Render a ZOOMED-IN crop of a PDF page and analyze it with vision —
         the "geometry says WHERE, vision says WHAT" primitive for drawings.
@@ -1117,10 +1152,14 @@ def make_vision_tools(
         (a tenth of the view each way), so the thing is in it. Every
         vision result carries a ``view``. The zoom is always drawn as large
         as the vision model reads: to see more detail, zoom on a smaller
-        box.
+        box. ``page`` counts from 0 (default 0); or give ``pdf_page``,
+        1-based, as a PDF viewer shows.
         """
-        args = {"attachment_key": attachment_key, "page": page,
-                "prompt": prompt}
+        args = {"attachment_key": attachment_key, "prompt": prompt}
+        if page is not None:
+            args["page"] = page
+        if pdf_page is not None:
+            args["pdf_page"] = pdf_page
         if bbox is not None:
             args["bbox"] = bbox
         if marks is not None:
@@ -1189,17 +1228,27 @@ def make_vision_tools(
         return _dispatch("document_structure",
                          {"handle": handle, "offset": offset})
 
+    def _with_pdf_pages(args: dict, pdf_pages: Any) -> dict:
+        """``pdf_pages`` (1-based, as a viewer shows) handed on; the
+        document tools' dispatch turns it into ``pages`` (live smoke 2c)."""
+        if pdf_pages not in (None, "", [], ()):
+            args["pdf_pages"] = pdf_pages
+        return args
+
     def render_page_thumbnails(handle: str, pages: Any = None,
-                               columns: int = 6) -> str:
+                               columns: int = 6,
+                               pdf_pages: Any = None) -> str:
         """Contact sheets of every page (thumbnail + page number + kind),
         written as PNG files to look at with analyze_image."""
         args = {"handle": handle, "columns": columns}
         if pages not in (None, ""):
             args["pages"] = pages
-        return _dispatch("render_page_thumbnails", args)
+        return _dispatch("render_page_thumbnails",
+                         _with_pdf_pages(args, pdf_pages))
 
     def document_page_map(handle: str, pages: Any = None, kind: str = "",
-                          with_evidence: bool = False) -> str:
+                          with_evidence: bool = False,
+                          pdf_pages: Any = None) -> str:
         """One row per page: kind, label, heading, counts."""
         args = {"handle": handle}
         if pages not in (None, ""):
@@ -1208,12 +1257,13 @@ def make_vision_tools(
             args["kind"] = kind
         if with_evidence:
             args["with_evidence"] = True
-        return _dispatch("document_page_map", args)
+        return _dispatch("document_page_map", _with_pdf_pages(args, pdf_pages))
 
     def read_document(handle: str, pages: Any = None, start_line: int = 0,
                       with_locations: bool = False,
                       include_tables: bool = True,
-                      include_markups: bool = True) -> str:
+                      include_markups: bool = True,
+                      pdf_pages: Any = None) -> str:
         """Read pages: text (optionally with boxes), tables, markups."""
         args = {"handle": handle, "start_line": start_line,
                 "with_locations": with_locations,
@@ -1221,13 +1271,13 @@ def make_vision_tools(
                 "include_markups": include_markups}
         if pages not in (None, ""):
             args["pages"] = pages
-        return _dispatch("read_document", args)
+        return _dispatch("read_document", _with_pdf_pages(args, pdf_pages))
 
     def search_document(handle: str, pattern: str, pages: Any = None,
                         regex: bool = False, case_sensitive: bool = False,
                         include_markups: bool = True,
                         max_hits: int = 100, fuzzy: bool = False,
-                        min_score: int = 80) -> str:
+                        min_score: int = 80, pdf_pages: Any = None) -> str:
         """Find text, hidden CAD text and markup comments. ``fuzzy=True``
         matches approximately (score 0-100, best first) for text read
         optically or plotted as strokes; ``min_score`` defaults to 80."""
@@ -1246,11 +1296,11 @@ def make_vision_tools(
         if fuzzy:
             args["fuzzy"] = True
             args["min_score"] = min_score
-        return _dispatch("search_document", args)
+        return _dispatch("search_document", _with_pdf_pages(args, pdf_pages))
 
     def find_quantities(handle: str, pages: Any = None, kinds: Any = None,
                         units: Any = None, include_markups: bool = True,
-                        offset: int = 0) -> str:
+                        offset: int = 0, pdf_pages: Any = None) -> str:
         """Every number WITH A UNIT the document states, with its wording,
         qualifier, page and box."""
         args = {"handle": handle, "include_markups": include_markups,
@@ -1261,17 +1311,17 @@ def make_vision_tools(
             args["kinds"] = kinds
         if units not in (None, "", [], ()):
             args["units"] = units
-        return _dispatch("find_quantities", args)
+        return _dispatch("find_quantities", _with_pdf_pages(args, pdf_pages))
 
     def document_markups(handle: str, pages: Any = None, author: str = "",
-                         offset: int = 0) -> str:
+                         offset: int = 0, pdf_pages: Any = None) -> str:
         """The review record: every markup with author, date and target."""
         args = {"handle": handle, "offset": offset}
         if pages not in (None, ""):
             args["pages"] = pages
         if author:
             args["author"] = author
-        return _dispatch("document_markups", args)
+        return _dispatch("document_markups", _with_pdf_pages(args, pdf_pages))
 
     def annotate_document(handle: str, markups: Optional[list] = None,
                           output_path: str = "",
@@ -1284,27 +1334,59 @@ def make_vision_tools(
 
         ``remove`` takes marks this app wrote out of an existing marked copy
         (``output_path``) first -- each a markup id as document_markups lists
-        it on that copy (``"p0.m1"``) or words from its comment naming one
-        mark -- so ``remove`` plus ``markups`` changes one mark and keeps the
-        rest (live smoke wave 2b, C4: one comment was changed by rebuilding
-        all nineteen).
+        it on that copy (``"p0.m1"``) or words from its comment OR its
+        visible label naming one mark -- so ``remove`` plus ``markups``
+        changes one mark and keeps the rest (live smoke wave 2b, C4: one
+        comment was changed by rebuilding all nineteen; 2c, E9: a label's
+        words were refused, as only comments were matched).
 
         The copy is written to a temporary file and swapped in, after any
         handle this conversation holds on it is closed (C4: MuPDF could not
         save over a copy the toolkit held open on Windows, and the error
         ended the turn).
 
+        The result's ``in_file`` and the opening of its ``note`` say what the
+        copy holds -- the marks this call added, the ones kept from before
+        and who wrote those (live smoke 2c, E10: told only "a NEW file: the
+        document you opened is unchanged" and ``n_written: 1``, a model said
+        the document's five markups were missing from the copy).
+
         The signature is ALWAYS the app's (``markup_author``: the signed-in
         person via this app, as an AI draft), never the model's: brief 5
         caught an agent signing "AI Draft Review" unasked, which dropped the
         reviewer's name from every comment. So there is no ``author``
         argument."""
+        from funhouse_agent import markup_check
         from funhouse_agent._fileio import hide_working_folder
         from funhouse_agent.error_text import tool_error
+        # A markup may give pdf_page (1-based) instead of page (live smoke
+        # 2c); converted once, so the check reads the same pages.
+        markups, problem = _document_tools.markups_with_pages(markups)
+        if problem is not None:
+            return json.dumps(problem)
+        signer = markup_author or _document_tools.markup_author()
+        # Words in remove name a mark by its comment OR its label (E9): the
+        # ones naming exactly one mark become its id here; the rest are
+        # refused here, never guessed.
+        refused_here = []
+        if remove:
+            try:
+                final = _document_tools.markup_output_path(output_path,
+                                                           handle)
+                if os.path.isfile(final):
+                    with open(final, "rb") as fh:
+                        named, refused_here = \
+                            markup_check.name_marks_by_words(
+                                fh.read(), remove, signer)
+                    # Nothing left to take out: [""] still makes the copy
+                    # the base for any new marks (the remover skips an
+                    # empty entry).
+                    remove = named or [""]
+            except Exception:  # noqa: BLE001 - the remover's own matching stands
+                refused_here = []
         try:
             result = _document_tools.write_marked_copy(
-                handle, markups, output_path, append,
-                markup_author or _document_tools.markup_author(),
+                handle, markups, output_path, append, signer,
                 lambda args: _dispatch("annotate_document", args),
                 remove=remove)
         except Exception as exc:  # noqa: BLE001 - a tool error, not the turn's
@@ -1316,11 +1398,18 @@ def make_vision_tools(
         # file tools resolve that name in the working folder.
         if not isinstance(result, dict):
             return json.dumps(hide_working_folder({"error": str(result)}))
+        if refused_here and "error" not in result:
+            result["not_removed"] = (list(result.get("not_removed") or [])
+                                     + refused_here)
         out_pdf = result.get("output_path")
+        if out_pdf and os.path.isfile(out_pdf) and "error" not in result:
+            try:
+                markup_check.describe_copy(result, signer)
+            except Exception:  # noqa: BLE001 - planlens' own note stands
+                pass
         if check and out_pdf and os.path.isfile(out_pdf) \
                 and "error" not in result:
             try:
-                from funhouse_agent import markup_check
                 block = markup_check.check_marks(out_pdf, result,
                                                  list(markups or []), engine)
             except Exception as exc:  # noqa: BLE001 - the file is written either way
@@ -1331,16 +1420,21 @@ def make_vision_tools(
                 result["check"] = block
         return json.dumps(hide_working_folder(result))
 
-    def measure(source: str, page: int = 0, kind: str = "line",
+    def measure(source: str, page: Optional[int] = None, kind: str = "line",
                 bbox: Optional[list] = None, view: Optional[list] = None,
                 image_box: Optional[list] = None,
                 at: Optional[Dict[str, float]] = None,
                 to: Optional[list] = None, scale: str = "",
-                side: str = "top") -> str:
+                side: str = "top", pdf_page: Optional[int] = None) -> str:
         """Measure a position through the page's own scale (planlens'
         ``measure``; the app converts a look's view + image_box and reads a
-        scan's label values itself)."""
+        scan's label values itself). ``page`` counts from 0 (default 0);
+        ``pdf_page`` is the same, 1-based."""
         from funhouse_agent.measure_tool import run_measure
+        from funhouse_agent.page_numbers import resolve_page
+        page, problem = resolve_page(page, pdf_page)
+        if problem is not None:
+            return json.dumps(problem)
         args: Dict[str, Any] = {"source": source, "page": page, "kind": kind,
                                 "side": side}
         for k, v in (("bbox", bbox), ("view", view), ("image_box", image_box),
@@ -1354,7 +1448,7 @@ def make_vision_tools(
             reference_cap)
 
     def log_grid(handle: str, pages: Any = None, rows: bool = True,
-                 offset: int = 0) -> str:
+                 offset: int = 0, pdf_pages: Any = None) -> str:
         """One boring or test-pit log as its grid (planlens' ``log_grid``;
         the app reads a textless scan's depth labels itself)."""
         from funhouse_agent.measure_tool import run_log_grid
@@ -1362,6 +1456,8 @@ def make_vision_tools(
                                 "offset": offset}
         if pages not in (None, ""):
             args["pages"] = pages
+        if pdf_pages not in (None, ""):
+            args["pdf_pages"] = pdf_pages
         return _truncate(
             run_log_grid(args, attachments, engine,
                          max_chars=_document_tools.budget_for_cap(reference_cap),
@@ -1505,7 +1601,7 @@ def make_vision_tools(
             "lettering is too small in the whole-page image), 'off', or N or "
             "'NxN' with N from 2 to 4 (e.g. '3x3') for a fixed split. Boxes "
             "come back on a 0-999 grid with the result's view; a whole-page "
-            "box says where to zoom, not where to put a mark.",
+            "box says where to zoom, not where to put a mark." + _PDF_PAGE_NOTE,
         ),
         "find_like": (
             find_like,
@@ -1513,7 +1609,9 @@ def make_vision_tools(
             "set — even lettering drawn as lines — from one zoomed, confirmed "
             "example box + the text it reads; every candidate is verified by "
             "vision. Returns instances by page, callouts (with where each "
-            "leader points) apart from legend entries, and uncertain reads.",
+            "leader points) apart from legend entries, and uncertain reads. "
+            "page / pages count from 0; pdf_page / pdf_pages are the same "
+            "1-based, as a PDF viewer shows.",
         ),
         "render_region": (
             render_region,
@@ -1526,7 +1624,7 @@ def make_vision_tools(
             "something an earlier vision result located, pass its view + "
             "the 0-999 image_box its analysis gave instead of bbox: the "
             "window is padded by that view's location error, so the thing "
-            "is in it.",
+            "is in it." + _PDF_PAGE_NOTE,
         ),
         "read_reference_figure": (
             read_reference_figure,

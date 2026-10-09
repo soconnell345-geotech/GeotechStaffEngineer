@@ -1771,6 +1771,8 @@ def _busy_kind(exc: BaseException) -> Optional[str]:
     (``vision_engine.busy_kind``), with the error's name and text as a
     fallback for hosts whose errors carry neither."""
     name = type(exc).__name__.lower()
+    if budget_exhausted(exc) is not None:
+        return None                     # used up: asking later cannot fix it
     if "timeout" in name or isinstance(exc, TimeoutError):
         return "timeout"
     kind = None
@@ -1789,6 +1791,17 @@ def _busy_kind(exc: BaseException) -> Optional[str]:
     return kind
 
 
+def budget_exhausted(exc: BaseException):
+    """The :class:`funhouse_agent.error_text.BudgetStop` of an error that
+    says the AI budget or quota is USED UP, else ``None`` (live smoke wave
+    2c, D2). Never raises."""
+    try:
+        from funhouse_agent.error_text import budget_exhausted as _spent
+        return _spent(exc)
+    except Exception:  # noqa: BLE001 - advice must never mask the error
+        return None
+
+
 def friendly_turn_error(exc: BaseException) -> str:
     """Turn-failure text for the transcript: the raw error plus, for known
     cases, plain-language advice (owner ask 2026-08: a raw GraphRecursionError
@@ -1798,7 +1811,22 @@ def friendly_turn_error(exc: BaseException) -> str:
     error showed ``C:\\…\\users\\livesmoke__tester\\…``):
     :func:`funhouse_agent.error_text.scrub_paths` leaves each path's file
     name. A busy model (rate limit, overload, a 5xx, a timeout) is said in
-    plain words first, with the raw text after it, shortened."""
+    plain words first, with the raw text after it, shortened.
+
+    An AI budget or quota that is USED UP (:func:`budget_exhausted`: the
+    Funhouse SDK's ``BudgetExceededError``, an ``insufficient_quota`` 429,
+    Anthropic's 400 "usage limits", a 402) is ONE plain line and nothing
+    else -- no provider JSON, no request id, no "ask again" (live smoke wave
+    2c, D2: the tester saw Anthropic's raw 400 under "ask again"). The raw
+    text goes to the activity log (``turn_jobs``)."""
+    stop = budget_exhausted(exc)
+    if stop is not None:
+        try:
+            from funhouse_agent.error_text import budget_message
+            return budget_message(stop)
+        except Exception:  # noqa: BLE001
+            return ("The AI budget for this app is used up. Tell the app "
+                    "owner.")
     text = f"{type(exc).__name__}: {exc}"
     try:
         from funhouse_agent.error_text import scrub_paths
@@ -1813,10 +1841,6 @@ def friendly_turn_error(exc: BaseException) -> str:
                 "Advanced caps in the sidebar (e.g. 50-100) and re-ask — "
                 "or split the request across turns; work done so far "
                 "(downloads, saved files) is kept.")
-    if "budgetexceeded" in type(exc).__name__.lower():
-        return (text + "\n\nYour monthly Funhouse AI budget is exhausted; "
-                "it resets next month — contact the Funhouse admins to "
-                "raise it.")
     kind = _busy_kind(exc)
     if kind is None:
         return text
@@ -1863,6 +1887,12 @@ NOTHING_KEPT = ("This turn stopped on an error before it could answer (see "
                 "still in the conversation; ask again, or ask the agent to "
                 "continue.")
 
+#: The same, when asking again cannot help (the AI budget is used up: live
+#: smoke wave 2c, D2) -- the message below says what to do instead.
+NOTHING_KEPT_NO_RETRY = ("This turn stopped before it could answer (see the "
+                         "message below). Files saved or downloaded in this "
+                         "conversation are kept.")
+
 
 def _is_narration(paragraph: str) -> bool:
     """A short paragraph that only announces a step ("I'll open the page
@@ -1876,7 +1906,8 @@ def _is_narration(paragraph: str) -> bool:
     return bool(_LEAD_INTENT_RE.match(first)) or p.endswith(":")
 
 
-def failed_turn_text(streamed: str = "", reply: Optional[str] = None) -> str:
+def failed_turn_text(streamed: str = "", reply: Optional[str] = None,
+                     retry: bool = True) -> str:
     """What a FAILED turn shows as its answer (the error itself is shown
     under it).
 
@@ -1884,7 +1915,9 @@ def failed_turn_text(streamed: str = "", reply: Optional[str] = None) -> str:
     text streamed so far is kept only when, with the step announcements
     taken out, it still says something (:data:`USEFUL_PARTIAL_CHARS`) --
     raw narration ("I'll open the page map.") is not an answer. Either way
-    it is labelled as cut short. Paths are scrubbed."""
+    it is labelled as cut short. Paths are scrubbed. ``retry=False`` (an
+    error asking again cannot fix: the AI budget is used up) never says
+    "ask again" (:data:`NOTHING_KEPT_NO_RETRY`)."""
     try:
         from funhouse_agent.error_text import scrub_paths
     except Exception:  # noqa: BLE001
@@ -1899,7 +1932,7 @@ def failed_turn_text(streamed: str = "", reply: Optional[str] = None) -> str:
     body = "\n\n".join(kept)
     if len(body) >= USEFUL_PARTIAL_CHARS:
         return f"{CUT_SHORT_LABEL}\n\n{scrub_paths(body)}"
-    return NOTHING_KEPT
+    return NOTHING_KEPT if retry else NOTHING_KEPT_NO_RETRY
 
 
 def depth_prompt(depth: str) -> str:

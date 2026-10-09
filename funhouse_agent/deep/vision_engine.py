@@ -281,9 +281,16 @@ def busy_kind(exc) -> Optional[str]:
     asking again would not fix. Read off the error's type, HTTP status and
     body, never off words in its message (F27's overload carried
     ``'details': None``, which a substring test took for a refused
-    ``detail``)."""
+    ``detail``).
+
+    An AI budget or quota that is USED UP is not busy, whatever its status
+    (an ``insufficient_quota`` 429 included): asking again cannot fix it,
+    so it is never retried (:func:`funhouse_agent.error_text.
+    budget_exhausted`; live smoke wave 2c, D2)."""
     if isinstance(exc, VisionCallTimeout):
         return None                       # its own retry (TIMEOUT_RETRIES)
+    if _budget_spent(exc):
+        return None
     for e in _chain(exc):
         status = _status_of(e)
         body = _body_error_type(e)
@@ -305,6 +312,16 @@ def busy_kind(exc) -> Optional[str]:
         if isinstance(e, (ConnectionError, TimeoutError)):
             return "connection"
     return None
+
+
+def _budget_spent(exc):
+    """The :class:`~funhouse_agent.error_text.BudgetStop` of an error that
+    says the AI budget is used up, else ``None``."""
+    try:
+        from funhouse_agent.error_text import budget_exhausted
+        return budget_exhausted(exc)
+    except Exception:  # noqa: BLE001 - classifying must never fail a call
+        return None
 
 
 def _retry_after_s(exc) -> Optional[float]:
@@ -352,6 +369,11 @@ def describe_error(exc) -> str:
     result (and so the user) is told instead of an SDK's raw error text."""
     if isinstance(exc, VisionCallTimeout):
         return str(exc)
+    stop = _budget_spent(exc)
+    if stop is not None:
+        from funhouse_agent.error_text import BUDGET_HINT, budget_tool_note
+        return f"{budget_tool_note(stop)} -- this image was NOT read. " \
+               f"{BUDGET_HINT}"
     kind = busy_kind(exc)
     tries = getattr(exc, "vision_tries", None)
     if kind:
@@ -375,7 +397,8 @@ def refused_detail(exc) -> bool:
     """Whether ``exc`` is the model refusing the image ``detail`` value: a
     request error (400/422, or no status at all) that names the parameter —
     not a busy error whose body happens to hold the word ``details``."""
-    if busy_kind(exc) is not None or isinstance(exc, VisionCallTimeout):
+    if busy_kind(exc) is not None or isinstance(exc, VisionCallTimeout) \
+            or _budget_spent(exc) is not None:
         return False
     status = _status_of(exc)
     if status is not None and status not in (400, 422):

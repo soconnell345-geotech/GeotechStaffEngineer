@@ -79,6 +79,37 @@ def max_retries() -> int:
         return DEFAULT_MAX_RETRIES
 
 
+#: Refusals the OpenAI client would retry that may mean a SPENT budget.
+_RETRIED_REFUSALS = (429,)
+
+
+def no_retry_when_budget_spent(response) -> None:
+    """httpx response hook: a refusal that says the AI budget or quota is
+    used up is not retried (live smoke wave 2c, D2).
+
+    The OpenAI client retries EVERY 429, and a gateway reports a spent
+    budget as a 429 coded ``insufficient_quota``: four retries a request,
+    then "wait a minute" for a stop that lasts until the budget is renewed.
+    The client obeys an ``x-should-retry: false`` header, so the hook sets
+    one when the body says the budget is spent
+    (:func:`funhouse_agent.error_text.budget_signal`); a plain rate limit is
+    left alone and still retried. Never raises."""
+    try:
+        if response.status_code not in _RETRIED_REFUSALS:
+            return
+        response.read()
+        try:
+            body = response.json()
+        except Exception:  # noqa: BLE001 - a body that is not JSON
+            body = None
+        from funhouse_agent.error_text import budget_signal
+        if budget_signal(response.status_code, body,
+                         response.text or "") is not None:
+            response.headers["x-should-retry"] = "false"
+    except Exception:  # noqa: BLE001 - the client decides as it always has
+        pass
+
+
 @dataclass(frozen=True)
 class PrompterSettings:
     url: str
@@ -164,7 +195,9 @@ def build_chat_model(model_id: Optional[str] = None, *,
     langchain-openai no hint. Its value is the app's output cap
     (``engine_config.DEFAULT_MAX_TOKENS``, 32,000 since live smoke wave 2b:
     on GPT-5.1 it holds the reasoning tokens as well as the reply). Busy
-    refusals are retried :func:`max_retries` times, honouring retry-after.
+    refusals are retried :func:`max_retries` times, honouring retry-after;
+    a refusal that says the budget is spent is not
+    (:func:`no_retry_when_budget_spent`).
     """
     import httpx
     from langchain_openai import ChatOpenAI
@@ -178,7 +211,9 @@ def build_chat_model(model_id: Optional[str] = None, *,
             "a .env file locally).")
     ctx = ssl_context(ps.ca_bundle)
     client = httpx.Client(verify=ctx if ctx is not None else True,
-                          timeout=REQUEST_TIMEOUT_S)
+                          timeout=REQUEST_TIMEOUT_S,
+                          event_hooks={"response":
+                                       [no_retry_when_budget_spent]})
     return ChatOpenAI(
         model=model_id or ps.model,
         api_key=ps.api_key,
@@ -216,4 +251,5 @@ __all__ = ["PrompterSettings", "settings", "configured", "build_chat_model",
            "register", "base_url_from", "ssl_context",
            "ENV_URL", "ENV_MODEL", "ENV_KEY", "ENV_CA_BUNDLE",
            "DISABLE_STREAMING_ENV", "REQUEST_TIMEOUT_S", "MAX_RETRIES_ENV",
-           "DEFAULT_MAX_RETRIES", "max_retries"]
+           "DEFAULT_MAX_RETRIES", "max_retries",
+           "no_retry_when_budget_spent"]

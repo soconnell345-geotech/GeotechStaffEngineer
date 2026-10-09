@@ -83,6 +83,49 @@ def test_rows_and_objects_and_sheet_names():
     assert wb[names[1]]["C3"].value == 3.2
 
 
+def test_long_cells_wrap_in_sized_columns_under_a_frozen_header():
+    """Live smoke 2c, E7 (F32): issues of up to 272 characters in a column
+    capped at 60 with no wrap showed as one clipped line each. A cell longer
+    than its column now wraps, every cell is top-aligned, and its row is
+    made tall enough to show it; short columns stay sized to their text."""
+    from openpyxl import load_workbook
+    import io
+    long_issue = ("Boring logs have blank Description column: no soil types, "
+                  "stratigraphy, groundwater, sample types or lab results; "
+                  "only Depth and SPT values. No header data (elevation, "
+                  "date, driller, method, total depth, groundwater, units).")
+    assert len(long_issue) > 200
+    data, summary, _ = xlsx_writer.build_workbook(sheets=[{
+        "name": "Issues", "rows": [
+            ["#", "PDF page", "Issue", "Severity"],
+            [1, "6-7", long_issue, "Critical"],
+            [2, "11", "Divider only", "Minor"],
+            [3, "2", "Two lines\nin one cell", "Major"]]}])
+    assert summary[0]["wrapped_cells"] == 2
+    ws = load_workbook(io.BytesIO(data))["Issues"]
+    assert ws.freeze_panes == "A2" and ws["A1"].font.bold
+    widths = {c: ws.column_dimensions[c].width for c in "ABCD"}
+    assert widths["C"] == xlsx_writer.MAX_COLUMN_WIDTH
+    assert widths["A"] == 8 and widths["B"] == 10 and widths["D"] == 10
+    # the long issue and the two-line cell wrap; nothing else does
+    assert ws["C2"].alignment.wrap_text and ws["C4"].alignment.wrap_text
+    assert not ws["C3"].alignment.wrap_text
+    assert not ws["D2"].alignment.wrap_text and not ws["C1"].alignment.wrap_text
+    # every cell is top-aligned, so a short cell beside a tall one lines up
+    assert all(c.alignment.vertical == "top" for row in ws.iter_rows()
+               for c in row)
+    # the rows are tall enough: about 220 characters over a 60-wide column
+    # is four lines or more; the short row keeps Excel's own height
+    assert ws.row_dimensions[2].height >= 4 * 15
+    assert ws.row_dimensions[4].height == 2 * 15
+    assert ws.row_dimensions[3].height is None
+
+
+def test_the_xlsx_tool_says_it_wraps():
+    desc = _tools()["write_xlsx"].description
+    assert "wraps" in desc and "frozen" in desc
+
+
 def test_no_table_is_an_error():
     with pytest.raises(ValueError, match="no table to write"):
         xlsx_writer.build_workbook(markdown="just prose, no table")

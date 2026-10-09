@@ -148,6 +148,7 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
     final = ""
     turn_tokens = 0
     turn_error = None
+    error_detail = None
     _chunks = 0
     trace_t0 = time.time()
     trace_tools: list[dict] = []
@@ -205,12 +206,24 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
             turn_error = core.friendly_turn_error(exc)
         except Exception:
             turn_error = f"{type(exc).__name__}: {exc}"
+        # An AI budget that is used up (live smoke wave 2c, D2): the tester
+        # gets one plain line and no "ask again"; the provider's own text
+        # (its JSON, the request id) is kept for the owner in the activity
+        # log, never shown.
+        spent = core.budget_exhausted(exc) is not None
+        if spent:
+            try:
+                from funhouse_agent.error_text import scrub_paths
+                error_detail = scrub_paths(f"{type(exc).__name__}: {exc}")
+            except Exception:                      # noqa: BLE001
+                error_detail = type(exc).__name__
         # A failed turn shows the friendly error under a clearly labelled
         # partial answer -- or under one line saying it stopped -- never the
         # raw stream of step announcements (live smoke wave 2b, C3/B7).
         try:
             final = core.failed_turn_text(
-                answer, getattr(exc, "geotech_reply", None))
+                answer, getattr(exc, "geotech_reply", None),
+                retry=not spent)
         except Exception:                          # noqa: BLE001
             final = ""
 
@@ -218,7 +231,8 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
     if activity is not None:
         try:
             activity.turn_end(turn_tokens=turn_tokens, error=turn_error,
-                              answer_chars=len(final))
+                              answer_chars=len(final),
+                              error_detail=error_detail)
         except Exception:                              # noqa: BLE001
             pass
     save_error = None

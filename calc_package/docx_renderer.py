@@ -79,8 +79,8 @@ def markdown_to_docx(markdown: str, output_path: str, *,
         ``![](profile.png)`` finds the PNG it just wrote.
     title : str, optional
         Rendered ONCE as a Title paragraph above everything else: an opening
-        heading that restates it (the same words, or the title's leading
-        words) is not printed again beneath it.
+        heading with exactly its text (case and whitespace aside) is not
+        printed again beneath it; any other opening heading is kept.
     warnings : list, optional
         If a list is passed it receives one line per thing that could not be
         rendered as asked (a missing image, a heading deeper than Word's
@@ -147,27 +147,27 @@ def _plain_inline(token) -> str:
     return "".join(out)
 
 
-def _words(text: str) -> list:
-    return re.findall(r"[a-z0-9]+", str(text or "").lower())
+def _normal(text: str) -> str:
+    """Text as compared with the title: case folded, runs of whitespace one
+    space, ends trimmed."""
+    return " ".join(str(text or "").split()).casefold()
 
 
 def _restates(heading: str, title: str) -> bool:
-    """Whether an opening heading restates the title: the same words, or
-    one is the other's leading words, two or more of them ("Submittal Review
-    Stamp" under the title "Submittal Review Stamp — Project Alpha"; a
-    one-word section such as "Findings" is never taken for the title)."""
-    h, t = _words(heading), _words(title)
-    if not h or not t:
-        return False
-    if h == t:
-        return True
-    n = min(len(h), len(t))
-    return n >= 2 and h[:n] == t[:n]
+    """Whether an opening heading restates the title: exactly the title's
+    text, case and whitespace aside. Anything else is kept, so no word of
+    it is lost (live smoke 2c, E8: F44's heading "Review: Std. No. 21.01,
+    Rev. 2 - Bioretention Cross-Section (BMP Fig. 4.1.3)" began with the
+    title's words, was taken for the title and was dropped with its figure
+    number)."""
+    h = _normal(heading)
+    return bool(h) and h == _normal(title)
 
 
 def _drop_restated_title(tokens, title):
     """``tokens`` without an opening heading that restates ``title`` (live
-    smoke wave 2a, B4: the title printed twice, as Title and as Heading 1)."""
+    smoke wave 2a, B4: the title printed twice, as Title and as Heading 1;
+    see :func:`_restates` for what counts)."""
     if len(tokens) >= 3 and tokens[0].type == "heading_open" \
             and tokens[1].type == "inline" \
             and tokens[2].type == "heading_close" \

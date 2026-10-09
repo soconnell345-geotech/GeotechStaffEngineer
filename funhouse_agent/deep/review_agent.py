@@ -100,7 +100,7 @@ REVIEW_DESCRIPTIONS: Dict[str, str] = {
         "to put a mark. When the page's small lettering is too small "
         "for one image, the page is also read in tiles (tiles='off' skips "
         "that; N or 'NxN' with N from 2 to 4, e.g. '3x3', forces it). page "
-        "is 0-based."),
+        "is 0-based; or give pdf_page, 1-based, as a PDF viewer shows."),
     "render_region": (
         "Zoom on part of a page and look at it. The region is re-drawn from "
         "the PDF to fill the image, so a smaller box shows finer lettering - "
@@ -113,7 +113,8 @@ REVIEW_DESCRIPTIONS: Dict[str, str] = {
         "thing is in it). marks = [[x, y, label], ...] numbers spots so you can ask "
         "what is at each. Use it to read small lettering, confirm a "
         "character, see what a note, markup or leader points at, or check a "
-        "dimension before you quote it. page is 0-based."),
+        "dimension before you quote it. page is 0-based; or give pdf_page, "
+        "1-based, as a PDF viewer shows."),
     "analyze_image": (
         "Look at an image file - an uploaded picture, or a contact sheet "
         "that render_page_thumbnails wrote (pass its path) - and answer your "
@@ -145,7 +146,8 @@ INLINE_DESCRIPTIONS: Dict[str, str] = {
         "sheets, scans, figures and forms - not only when a text result "
         "looks wrong; where the lettering is too small, zoom "
         "with render_region. prompt is only a note of what you are after. "
-        "page is 0-based."),
+        "page is 0-based; or give pdf_page, 1-based, as a PDF viewer "
+        "shows."),
     "render_region": (
         "Zoom on part of a page and look at it yourself: the region is "
         "re-drawn from the PDF to fill the image and shown to you with your "
@@ -155,7 +157,8 @@ INLINE_DESCRIPTIONS: Dict[str, str] = {
         "read_document(with_locations=true), search_document and "
         "document_markups give), or with an earlier view + a 0-999 image_box "
         "on its image. marks = [[x, y, label], ...] numbers spots on the "
-        "image. page is 0-based."),
+        "image. page is 0-based; or give pdf_page, 1-based, as a PDF viewer "
+        "shows."),
     "analyze_image": (
         "Look at an image. An image FILE - a contact sheet that "
         "render_page_thumbnails wrote (pass its path) - is shown to you "

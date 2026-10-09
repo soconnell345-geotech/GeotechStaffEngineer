@@ -278,7 +278,10 @@ def run_log_grid(arguments: Dict[str, Any],
     from funhouse_agent import document_tools as dt
     from funhouse_agent import scale_labels
 
-    args = {k: arguments[k] for k in ("handle", "pages", "rows", "offset")
+    # pdf_pages (1-based) is turned into pages by the document tools' own
+    # dispatch (document_tools._one_based_pages).
+    args = {k: arguments[k] for k in ("handle", "pages", "pdf_pages", "rows",
+                                      "offset")
             if arguments.get(k) not in (None, "")}
 
     def call(extra: Optional[Dict[str, Any]] = None) -> str:

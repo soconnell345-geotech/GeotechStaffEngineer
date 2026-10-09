@@ -308,6 +308,59 @@ def _pdf_page(page) -> Dict[str, int]:
         return {}
 
 
+def _page_count(data) -> Optional[int]:
+    """How many pages ``data`` (PDF or image bytes) has, or ``None`` when it
+    cannot be opened here (the renderer then says what is wrong)."""
+    try:
+        import fitz
+    except ImportError:
+        return None
+    for kind in ("pdf", None):
+        try:
+            doc = (fitz.open(stream=bytes(data), filetype=kind) if kind
+                   else fitz.open(stream=bytes(data)))
+        except Exception:  # noqa: BLE001 - not this kind of file
+            continue
+        try:
+            return int(doc.page_count)
+        finally:
+            doc.close()
+    return None
+
+
+def _checked_page(arguments, data):
+    """``(page, None)`` -- the 0-based page a page tool's ``page`` or
+    ``pdf_page`` (1-based) names, checked against the document -- or
+    ``(None, error_json)``: a page the document does not have is a clear
+    error, with "pages are 0-based here; PDF page 5 is page 4" when it is
+    one past the end, never a raise (live smoke wave 2c: analyze_pdf_page
+    RAISED IndexError on PDF page 5 of 5)."""
+    from funhouse_agent.page_numbers import page_error, resolve_page
+    given_pdf = arguments.get("pdf_page") not in (None, "")
+    given_page = arguments.get("page") not in (None, "")
+    page, problem = resolve_page(arguments.get("page"),
+                                 arguments.get("pdf_page"))
+    if problem is not None:
+        return None, json.dumps(problem)
+    n = _page_count(data)
+    if n is not None:
+        problem = page_error(page, n, as_pdf_page=given_pdf and not given_page)
+        if problem is not None:
+            return None, json.dumps(problem)
+    return page, None
+
+
+def _render_error(exc) -> str:
+    """A render that failed, as the tool's JSON error (with the 0-based
+    hint when it was a page out of range)."""
+    from funhouse_agent.page_numbers import range_hint
+    out = {"error": str(exc)}
+    hint = range_hint(str(exc))
+    if hint:
+        out["hint"] = hint
+    return json.dumps(out)
+
+
 # ---------------------------------------------------------------------------
 # What the read tools may read: this conversation's files (live smoke 1, A2)
 # ---------------------------------------------------------------------------
@@ -1258,11 +1311,77 @@ def _repeat_or_read(tool, data, normalized, arguments, engine, read):
 
 #: Reads remembered per conversation, newest last.
 READ_LOG_MAX = 200
-#: Conversations whose read logs are kept at once.
+#: Conversations whose read logs are kept in memory at once (the record on
+#: disk is kept for every conversation: see :func:`reads_file`).
 READ_LOG_CONVERSATIONS = 64
+
+#: The conversation's record of its page and region reads (live smoke wave
+#: 2c, D4: the log lived in memory only, so a restart or an App Service
+#: recycle lost it and a restored conversation never had it). In the web
+#: app it sits in the CONVERSATION folder beside ``activity.jsonl`` -- not a
+#: download card, mirrored to SharePoint and restored with the rest; for a
+#: bare working folder (a library or eval host) in its ``.scratch``.
+READS_FILE = "reads.json"
 
 _READ_LOG_LOCK = threading.Lock()
 _READ_LOG: "OrderedDict[str, list]" = OrderedDict()
+
+
+def reads_file(folder=None) -> Optional[str]:
+    """Where the read record of the conversation whose working folder is
+    ``folder`` (``None`` = the one bound in this context) is kept, or
+    ``None`` with no folder. The web app's working folder is
+    ``<conversation>/files`` beside the conversation's ``meta.json``: the
+    record goes in the conversation folder. Any other folder keeps it in
+    its own :data:`SCRATCH_DIR`."""
+    if folder is None:
+        try:
+            folder = _host_folder()
+        except Exception:  # noqa: BLE001 - an unbound shared host
+            folder = None
+    if not folder:
+        return None
+    folder = os.path.abspath(str(folder))
+    parent = os.path.dirname(folder)
+    if os.path.basename(folder) == "files" and \
+            os.path.isfile(os.path.join(parent, "meta.json")):
+        return os.path.join(parent, READS_FILE)
+    return os.path.join(folder, SCRATCH_DIR, READS_FILE)
+
+
+def _load_reads(path: Optional[str]) -> Optional[list]:
+    """The reads kept at ``path``; ``None`` when there is no readable
+    record."""
+    if not path:
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    reads = data.get("reads") if isinstance(data, dict) else data
+    if not isinstance(reads, list):
+        return None
+    return [r for r in reads if isinstance(r, dict)]
+
+
+def _save_reads(path: Optional[str], reads: list) -> None:
+    """Write the record whole, through a temporary file. Best-effort: a
+    record that cannot be written never fails the read it describes."""
+    if not path:
+        return
+    tmp = f"{path}.tmp"
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"reads": reads[-READ_LOG_MAX:]}, fh,
+                      ensure_ascii=False)
+        os.replace(tmp, path)
+    except (OSError, TypeError, ValueError):
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
 
 
 def _conversation_for(folder=None) -> str:
@@ -1287,7 +1406,9 @@ def _document_name(key) -> str:
 
 
 def _note_read(tool, key, page, view, prompt) -> None:
-    """Remember one successful page or region read for this conversation."""
+    """Remember one successful page or region read for this conversation:
+    in memory, and in the conversation's record on disk
+    (:func:`reads_file`), which outlives the process."""
     conv = _conversation_for()
     if not conv:
         return
@@ -1295,15 +1416,28 @@ def _note_read(tool, key, page, view, prompt) -> None:
              **_pdf_page(page), "view": view, "tool": tool,
              "prompt": " ".join(str(prompt or "").split())[:100],
              "when": round(time.time(), 1)}
+    try:
+        path = reads_file()
+    except Exception:  # noqa: BLE001 - memory only, then
+        path = None
     with _READ_LOG_LOCK:
-        log = _READ_LOG.get(conv)
-        if log is None:
-            log = _READ_LOG[conv] = []
+        log = _newest_record(_load_reads(path), _READ_LOG.get(conv))
+        log = (log + [entry])[-READ_LOG_MAX:]
+        _READ_LOG[conv] = log
         _READ_LOG.move_to_end(conv)
-        log.append(entry)
-        del log[:-READ_LOG_MAX]
         while len(_READ_LOG) > READ_LOG_CONVERSATIONS:
             _READ_LOG.popitem(last=False)
+        _save_reads(path, log)
+
+
+def _newest_record(on_disk: Optional[list], in_memory: Optional[list]) -> list:
+    """The fuller of the two records of one conversation's reads: the one
+    on disk (it outlives the process, and a restore brings it back) unless
+    memory holds more (a write that failed)."""
+    mem = list(in_memory or [])
+    if on_disk is not None and len(on_disk) >= len(mem):
+        return list(on_disk)
+    return mem
 
 
 def reads_for_conversation(folder=None) -> List[Dict[str, Any]]:
@@ -1314,16 +1448,25 @@ def reads_for_conversation(folder=None) -> List[Dict[str, Any]]:
     ``when`` (epoch seconds). ``folder`` is the conversation's working
     folder; ``None`` = the one bound in this context. Only successful
     ``analyze_pdf_page`` / ``render_region`` reads; per conversation, never
-    shared, at most :data:`READ_LOG_MAX` of them."""
+    shared, at most :data:`READ_LOG_MAX` of them. Read back from the
+    conversation's record on disk (:func:`reads_file`), so a restart, a
+    recycled host or a restored conversation keeps it (live smoke wave 2c,
+    D4)."""
     conv = _conversation_for(folder)
     if not conv:
         return []
+    try:
+        on_disk = _load_reads(reads_file(folder))
+    except Exception:  # noqa: BLE001 - memory only, then
+        on_disk = None
     with _READ_LOG_LOCK:
-        return [dict(e) for e in _READ_LOG.get(conv, ())]
+        log = _newest_record(on_disk, _READ_LOG.get(conv))
+    return [dict(e) for e in log]
 
 
 def clear_read_log() -> None:
-    """Forget every conversation's read log."""
+    """Forget every conversation's read log IN MEMORY (what a restart does;
+    each conversation's record on disk stays)."""
     with _READ_LOG_LOCK:
         _READ_LOG.clear()
 
@@ -1503,7 +1646,6 @@ def _dispatch_render_region(arguments, engine, attachments):
     from funhouse_agent import vision_view
 
     key = arguments.get("attachment_key", "")
-    page = arguments.get("page", 0)
     bbox = arguments.get("bbox")
     view = arguments.get("view")
     image_box = arguments.get("image_box")
@@ -1538,6 +1680,9 @@ def _dispatch_render_region(arguments, engine, attachments):
         pdf_bytes, _src = _resolve_attachment_or_path(key, attachments)
     except FileNotFoundError as e:
         return json.dumps({"error": str(e)})
+    page, refused = _checked_page(arguments, pdf_bytes)
+    if refused is not None:
+        return refused
 
     rkey = _repeat_key("render_region", pdf_bytes, {
         "page": page, "bbox": arguments.get("bbox"), "view": view,
@@ -1557,8 +1702,8 @@ def _dispatch_render_region(arguments, engine, attachments):
         return json.dumps({
             "error": "PyMuPDF required for PDF rendering. pip install PyMuPDF"
         })
-    except ValueError as e:
-        return json.dumps({"error": str(e)})
+    except (ValueError, IndexError) as e:
+        return _render_error(e)
 
     lines = _lines_for_context(pdf_bytes, page)
     if arguments.get("_inline"):
@@ -2041,7 +2186,6 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
     in the same conversation is returned again, marked ``repeat`` (B6).
     """
     key = arguments.get("attachment_key", "")
-    page = arguments.get("page", 0)
     prompt = arguments.get("prompt", "Describe the content of this page.")
     tiles, tiles_note, tiles_error = _parse_tiles(arguments.get("tiles", "auto"))
     if tiles_error:
@@ -2051,6 +2195,9 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
         pdf_bytes, _src = _resolve_attachment_or_path(key, attachments)
     except FileNotFoundError as e:
         return json.dumps({"error": str(e)})
+    page, refused = _checked_page(arguments, pdf_bytes)
+    if refused is not None:
+        return refused
 
     raw = _repeat_or_read(
         "analyze_pdf_page", pdf_bytes,
@@ -2083,8 +2230,8 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
         return json.dumps({
             "error": "PyMuPDF required for PDF rendering. pip install PyMuPDF"
         })
-    except ValueError as e:
-        return json.dumps({"error": str(e)})
+    except (ValueError, IndexError) as e:
+        return _render_error(e)
 
     lines = _lines_for_context(pdf_bytes, page)
     if arguments.get("_inline"):
@@ -2334,8 +2481,8 @@ def _dispatch_find_like(arguments, engine, attachments):
     """
     from funhouse_agent import find_like as _fl
     from funhouse_agent import vision_view
+    from funhouse_agent.page_numbers import pdf_pages_to_pages, range_hint
     key = arguments.get("attachment_key", "")
-    page = arguments.get("page", 0)
     bbox = arguments.get("bbox")
     view, image_box = arguments.get("view"), arguments.get("image_box")
     if view is not None or image_box is not None:
@@ -2355,6 +2502,18 @@ def _dispatch_find_like(arguments, engine, attachments):
         pdf_bytes, _src = _resolve_attachment_or_path(key, attachments)
     except FileNotFoundError as e:
         return json.dumps({"error": str(e)})
+    page, refused = _checked_page(arguments, pdf_bytes)
+    if refused is not None:
+        return refused
+    pages = arguments.get("pages")
+    one_based = arguments.get("pdf_pages") not in (None, "", [], ())
+    if one_based:
+        if pages not in (None, "", [], ()):
+            return json.dumps({"error": "give pages (0-based) or pdf_pages "
+                                        "(1-based), not both"})
+        pages, problem = pdf_pages_to_pages(arguments.get("pdf_pages"))
+        if problem is not None:
+            return json.dumps(problem)
     try:
         # The conversation's tool scratch folder (A9: working images, not
         # download cards); with no working folder bound, the contact sheets
@@ -2366,16 +2525,18 @@ def _dispatch_find_like(arguments, engine, attachments):
         out = _fl.find_like(
             pdf_bytes, int(page), [float(v) for v in bbox], engine,
             text=(arguments.get("text") or None),
-            pages=arguments.get("pages"),
+            pages=pages,
             include_legend=bool(arguments.get("include_legend", False)),
             threshold=arguments.get("threshold"),
             save_dir=save_dir)
     except ImportError as e:
         return json.dumps({"error": f"find_like cannot run here: {e}"})
     except (ValueError, IndexError) as e:
+        hint = range_hint(str(e), one_based)
         return json.dumps({"error": str(e),
-                           "hint": "box the mark's lettering tightly, with no "
-                                   "leader or table rule inside the box"})
+                           "hint": hint or (
+                               "box the mark's lettering tightly, with no "
+                               "leader or table rule inside the box")})
     if isinstance(out, dict) and out.get("contact_sheets"):
         # Named by their place in the conversation, which analyze_image
         # resolves; the server path stays internal (A6).

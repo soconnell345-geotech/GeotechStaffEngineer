@@ -115,13 +115,17 @@ def test_a_misplaced_mark_is_caught_and_a_right_one_confirmed(tmp_path,
     assert check["checked"] == 4 and check["confirmed"] == 3
     assert [m["index"] for m in check["misplaced"]] == [2]
     bad = check["misplaced"][0]
-    assert bad["pdf_page"] == 1 and bad["names"] == "GCE"
+    # A label is display text, never the name (live smoke 2c, E3): with no
+    # target, the mark is judged by what its comment is about.
+    assert bad["pdf_page"] == 1 and bad["names"] == "penetration tag"
     assert "append=false" in check["note"]
-    # the circles' looks were asked about the label, and told the label is
-    # not the thing
+    # the circles' looks were shown the label as display text and told it
+    # is not the name of what is marked
     rings = [p for p in engine.prompts if "red ring" in p]
     assert len(rings) == 2
-    assert all("GCE" in p and "label" in p for p in rings)
+    assert all('The red label reads "GCE"' in p
+               and "NOT the name of what is marked" in p for p in rings)
+    assert not any("meant to enclose: GCE" in p for p in rings)
 
 
 def test_a_ring_round_the_right_thing_but_far_too_wide_is_not_confirmed(
@@ -468,7 +472,7 @@ def _ring_check(engine, tmp_path, monkeypatch, name):
     return json.loads(tools["annotate_document"].invoke({
         "handle": handle, "output_path": name, "markups": [
             {"kind": "circle", "page": 0, "comment": "penetration tag",
-             "label": "GCE", "bbox": list(TAG)}]}))["check"]
+             "target": "GCE", "label": "GCE", "bbox": list(TAG)}]}))["check"]
 
 
 def test_a_tight_ring_whose_look_counts_the_leader_end_is_confirmed(
@@ -486,6 +490,122 @@ def test_a_tight_ring_whose_look_counts_the_leader_end_is_confirmed(
     new = _AnswersWithBox(*leader_and_tag, same_thing=True, encloses=False,
                           inside="- GCE")
     assert _ring_check(new, tmp_path, monkeypatch, "new.pdf")["confirmed"] == 1
+
+
+def test_a_labelled_ring_with_no_target_is_judged_by_its_comment(
+        tmp_path, monkeypatch):
+    """E3: a ring labelled "GCE" with no target is on the thing its comment
+    is about; the look's box (leader end and tag) is measured as before."""
+    leader_and_tag = (0.30, 0.47, 0.58, 0.53)
+    eng = _AnswersWithBox(*leader_and_tag, same_thing=True, encloses=False,
+                          inside="- GCE")
+    tools, handle = _tools(eng, tmp_path, monkeypatch)
+    check = json.loads(tools["annotate_document"].invoke({
+        "handle": handle, "output_path": "label_only.pdf", "markups": [
+            {"kind": "circle", "page": 0, "comment": "penetration tag",
+             "label": "GCE", "bbox": list(TAG)}]}))["check"]
+    assert check["confirmed"] == 1, check
+    (p,) = eng.prompts
+    assert "the thing that comment is about" in p
+    assert "meant to enclose: GCE" not in p
+
+
+#: A calc page like F38's: printed lines, each to be boxed with a reviewer's
+#: VERDICT as its label (live smoke 2c, E3).
+CALC_LINES = {
+    "stab": ((60, 200), "M_stab = 460.1 kN-m/m"),
+    "slide": ((60, 260), "FOS_sliding = 101.2/91.7 = 1.185"),
+    "ecc": ((60, 320), "e = 3.00/2 - 1.056 = 0.444"),
+}
+
+
+def _calc_sheet() -> bytes:
+    doc = fitz.open()
+    page = doc.new_page(width=612, height=792)
+    for (x, y), text in CALC_LINES.values():
+        page.insert_text((x, y), text, fontsize=9)
+    data = doc.tobytes()
+    doc.close()
+    return data
+
+
+def _line_box(key):
+    (x, y), text = CALC_LINES[key]
+    return [x - 2, y - 10, x + 5.2 * len(text), y + 3]
+
+
+class ReadsThePrintedLine:
+    """Knows which printed line each comment's box sits on, and answers as
+    the look did in F38: what is there is the thing named only when the
+    name is in the printed words; with nothing named, it is the thing the
+    comment is about."""
+
+    def __init__(self, printed_by_comment):
+        self.printed, self.prompts = printed_by_comment, []
+
+    def analyze_image(self, image_bytes, prompt):
+        self.prompts.append(prompt)
+        comment = re.search(r'review comment on this mark: "(.+?)"',
+                            prompt).group(1)
+        printed = self.printed[comment]
+        named = re.search(r"meant to [a-z ]+: (.+?)   \(", prompt)
+        fold = markup_check._fold
+        same = (fold(named.group(1)) in fold(printed)
+                or fold(printed) in fold(named.group(1))) if named else True
+        out = {"same_thing": same, "inside": printed, "sure": True}
+        if '"encloses"' in prompt:
+            out["encloses"] = True
+        if "comment_fits" in prompt:
+            out["comment_fits"] = True
+        return json.dumps(out)
+
+
+def test_a_verdict_label_is_never_taken_for_the_things_name(tmp_path,
+                                                            monkeypatch):
+    """F38 t3: 18 boxes on the right numbers, labelled with the reviewer's
+    verdicts ("460.1 vs 455.4", "= 1.10, not 1.185", "e = 0.444 ok"). The
+    check named each thing by its label, confirmed 8 of 18, and the rebuild
+    that passed dropped every label. Labels are display text now: the boxes
+    are judged by their comments, confirmed with their labels on, and a
+    misplaced mark's note says to keep the labels."""
+    comments = {
+        "stab": "DRAFT: the total moment does not follow from the table.",
+        "slide": "DRAFT: 101.2 / 91.7 = 1.104, not 1.185.",
+        "ecc": "DRAFT: eccentricity uses the uncorrected moment.",
+        "wrong": "DRAFT: check the sliding factor of safety here.",
+    }
+    printed = {comments[k]: CALC_LINES[k][1] for k in CALC_LINES}
+    printed[comments["wrong"]] = CALC_LINES["ecc"][1]     # boxed the e line
+    engine = ReadsThePrintedLine(printed)
+    tools, handle = _tools_for(engine, tmp_path, monkeypatch, _calc_sheet(),
+                               name="calc.pdf")
+    out = json.loads(tools["annotate_document"].invoke({
+        "handle": handle, "output_path": "calc_redline.pdf", "markups": [
+            {"kind": "box", "page": 0, "bbox": _line_box("stab"),
+             "label": "460.1 vs 455.4", "comment": comments["stab"]},
+            {"kind": "box", "page": 0, "bbox": _line_box("slide"),
+             "label": "= 1.10, not 1.185", "comment": comments["slide"]},
+            {"kind": "box", "page": 0, "bbox": _line_box("ecc"),
+             "label": "e = 0.444 ok", "comment": comments["ecc"]},
+            # named, and on the wrong line: still caught
+            {"kind": "box", "page": 0, "bbox": _line_box("ecc"),
+             "target": "FOS_sliding", "label": "1.10?",
+             "comment": comments["wrong"]}]}))
+    assert out["n_written"] == 4
+    check = out["check"]
+    assert check["checked"] == 4 and check["confirmed"] == 3, check
+    (bad,) = check["misplaced"]
+    assert bad["index"] == 3 and bad["names"] == "FOS_sliding"
+    assert "add target= and keep your labels" in check["note"]
+    # every label was shown as display text, none as the thing's name
+    for label in ("460.1 vs 455.4", "= 1.10, not 1.185", "e = 0.444 ok",
+                  "1.10?"):
+        assert any(f'The red label reads "{label}"' in p
+                   for p in engine.prompts)
+        assert not any(f"meant to enclose: {label}" in p
+                       for p in engine.prompts)
+    # the labels are on the delivered copy
+    assert all(row.get("label_bbox") for row in out["written"])
 
 
 def test_a_look_alike_inside_the_ring_is_still_misplaced(tmp_path,
@@ -580,6 +700,10 @@ def test_a_nested_anchor_is_read_the_way_planlens_reads_it():
     assert markup_check._target(spec) == ("THE WORDS", "quote")
     assert markup_check._target({"label": "GCE", "quote": "x",
                                  "target": "the tag"}) == ("the tag", "target")
+    # a label never names the thing (E3)
+    assert markup_check._target({"label": "460.1?", "quote": "x"}) == (
+        "x", "quote")
+    assert markup_check._target({"label": "460.1?"}) == ("", "")
 
 
 # ---------------------------------------------------------------------------

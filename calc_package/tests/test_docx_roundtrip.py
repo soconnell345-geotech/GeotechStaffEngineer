@@ -132,11 +132,18 @@ def test_consecutive_lines_stay_on_their_own_lines(tmp_path):
 
 
 @pytest.mark.parametrize("title, opening, kept", [
-    # The same words (any case or punctuation): written once.
-    ("Review Comments (DRAFT)", "# Review comments - draft", False),
-    # The opening heading is the title's leading words: written once.
+    # The title's own text, case and whitespace aside: written once (B4).
+    ("Review Comments (DRAFT)", "#  review   COMMENTS (draft) ", False),
+    ("Submittal Memo", "# **Submittal Memo**", False),
+    # Anything more or less than the title is kept, so no word is lost
+    # (live smoke 2c, E8: F44's longer heading was dropped with its figure
+    # number, as were shorter ones that were the title's leading words).
+    ("Review: Std. No. 21.01 Rev. 2, Bioretention Cross-Section",
+     "# Review: Std. No. 21.01 Rev. 2, Bioretention Cross-Section "
+     "(BMP Fig. 4.1.3)", True),
     ("Submittal Review Stamp - Project Alpha", "# Submittal Review Stamp",
-     False),
+     True),
+    ("Review Comments (DRAFT)", "# Review comments - draft", True),
     # A one-word section is a section, not the title.
     ("Findings and Recommendations", "# Findings", True),
     # A different heading under the title stays.
@@ -148,6 +155,9 @@ def test_the_title_is_written_once(tmp_path, title, opening, kept):
     pars = [(p.style.name, p.text) for p in docx.Document(path).paragraphs]
     assert pars[0] == ("Title", title)
     assert any(s == "Heading 1" for s, _t in pars) is kept
+    if kept:            # with every one of its words
+        heading = next(t for s, t in pars if s == "Heading 1")
+        assert heading.split() == opening.lstrip("# ").split()
 
 
 def test_file_info_names_the_author_and_the_title(tmp_path):

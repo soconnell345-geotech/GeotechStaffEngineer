@@ -374,7 +374,20 @@ class SharePointStore:
         self._lock = threading.Lock()
         self._made_dirs: set = set()
         self._folder_urls: Dict[str, str] = {}
+        #: The latest mirror of ANY conversation in this process -- kept for
+        #: callers that read it, never shown to a user (D3: on a shared host
+        #: it is whoever mirrored last). The sidebar reads
+        #: :meth:`last_sync_for` instead.
         self.last_sync: Optional[dict] = None
+        self._syncs: Dict[str, dict] = {}
+
+    def last_sync_for(self, thread_id: Optional[str]) -> Optional[dict]:
+        """This conversation's own latest mirror summary in this process,
+        or ``None`` -- never another conversation's (live smoke wave 2c,
+        D3: a fresh session's sidebar showed the last tester's folder link)."""
+        if not thread_id:
+            return None
+        return self._syncs.get(str(thread_id))
 
     # -- configuration / client -------------------------------------------
 
@@ -524,13 +537,15 @@ class SharePointStore:
         """Upload this conversation's new/changed files. Never raises.
 
         Returns a summary dict: ``{"uploaded", "skipped", "errors", "web_url",
-        "duration_s", "folder"}`` — plus ``"renamed_from"`` on the first sync
-        after a rename — also stored as ``self.last_sync``.
+        "duration_s", "folder", "thread_id"}`` — plus ``"renamed_from"`` on
+        the first sync after a rename — also kept as this conversation's own
+        record (:meth:`last_sync_for`) and as ``self.last_sync``.
         """
         t0 = time.time()
         summary: dict = {"uploaded": 0, "skipped": 0, "errors": [],
                          "web_url": self._folder_urls.get(thread_id),
-                         "duration_s": 0.0, "folder": None}
+                         "duration_s": 0.0, "folder": None,
+                         "thread_id": str(thread_id)}
         with self._lock:
             try:
                 self._mirror_locked(thread_id, root, summary)
@@ -538,6 +553,7 @@ class SharePointStore:
                 summary["errors"].append(f"{type(exc).__name__}: {exc}")
         summary["duration_s"] = round(time.time() - t0, 3)
         self.last_sync = summary
+        self._syncs[str(thread_id)] = summary
         return summary
 
     def _mirror_locked(self, thread_id: str, root: Optional[str],
@@ -905,6 +921,37 @@ def get_store(refresh: bool = False) -> SharePointStore:
     return _STORE
 
 
+def sync_for_conversation(store: Any, thread_id: Optional[str],
+                          session_sync: Optional[dict] = None
+                          ) -> Optional[dict]:
+    """The mirror summary the sidebar shows for conversation ``thread_id``:
+    the session's own record when it is this conversation's, else the
+    store's record for this conversation -- never another conversation's.
+
+    Live smoke wave 2c (D3): the sidebar fell back to the store-wide
+    ``last_sync``, which on a shared host is whoever mirrored last, so a
+    fresh session showed another tester's folder name and "Open session
+    folder" link. A session record that names a different conversation is
+    ignored; one with no ``thread_id`` (an older summary shape) is taken as
+    the session's own, since the app clears it on a new or opened
+    conversation."""
+    tid = str(thread_id or "")
+    if not tid:
+        return None
+    if isinstance(session_sync, dict):
+        owner = str(session_sync.get("thread_id") or "")
+        if not owner or owner == tid:
+            return session_sync
+    getter = getattr(store, "last_sync_for", None)
+    if not callable(getter):
+        return None
+    try:
+        found = getter(tid)
+    except Exception:                                  # noqa: BLE001
+        return None
+    return found if isinstance(found, dict) else None
+
+
 __all__ = ["SharePointStore", "get_store", "configured", "DEFAULT_ROOT",
            "MANIFEST_NAME", "MOVED_NAME", "conversation_folder",
-           "sanitize_folder_name", "folder_date"]
+           "sanitize_folder_name", "folder_date", "sync_for_conversation"]

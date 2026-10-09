@@ -451,7 +451,12 @@ def dispatch_document_tool(name: str, arguments: Dict[str, Any],
     server path in it, and the conversation goes on. A Word, Excel or DXF
     file is read here as text (:func:`_side_document`), never through
     MuPDF, which read a workbook as nine digits (C2) and could not open a
-    DXF at all (C8)."""
+    DXF at all (C8).
+
+    Pages: ``pdf_pages`` (1-based, as a viewer shows) is taken in place of
+    ``pages`` and ``pdf_page`` in place of ``page``; a page the document
+    does not have comes back as an error with a hint ("pages are 0-based
+    here; PDF page 5 is page 4") -- live smoke wave 2c."""
     if not available():
         return json.dumps({
             "error": "document tools need planlens with planlens.tools "
@@ -461,9 +466,13 @@ def dispatch_document_tool(name: str, arguments: Dict[str, Any],
     token = _ATTACHMENTS.set(dict(attachments or {}))
     space = None
     opened_note = None
+    one_based = False
     try:
         space = _space(hold=True)
         arguments = dict(arguments or {})
+        one_based, refused = _one_based_pages(arguments)
+        if refused is not None:
+            return refused
         side = _side_document(name, arguments, max_chars)
         if side is not None:
             return side
@@ -473,11 +482,12 @@ def dispatch_document_tool(name: str, arguments: Dict[str, Any],
         out = space.kit.call_json(name, arguments, max_chars=max_chars)
     except Exception as exc:  # noqa: BLE001 - a tool error, never the turn's
         from funhouse_agent.error_text import tool_error_json
-        return tool_error_json(name, exc)
+        return _with_range_hint(tool_error_json(name, exc), one_based)
     finally:
         if space is not None:
             _release(space)
         _ATTACHMENTS.reset(token)
+    out = _with_range_hint(out, one_based)
     # The margin planlens was given below the host's cap is where the viewer
     # page numbers fit; a result they would push past it goes out as it came.
     if cap and cap > 0:
@@ -491,6 +501,60 @@ def dispatch_document_tool(name: str, arguments: Dict[str, Any],
     if opened_note:
         out = _with_note(out, "opened", opened_note, limit)
     return out
+
+
+def _one_based_pages(arguments: Dict[str, Any]):
+    """Rewrite ``pdf_pages`` / ``pdf_page`` (1-based) in ``arguments`` into
+    the 0-based ``pages`` / ``page`` planlens takes, in place. Returns
+    ``(one_based, error_json or None)``: giving both forms of one argument
+    is refused unless they agree (never a guess)."""
+    from funhouse_agent.page_numbers import (PAGE_ARGS_NOTE,
+                                             pdf_pages_to_pages,
+                                             resolve_page)
+    one_based = False
+    if "pdf_pages" in arguments:
+        spec = arguments.pop("pdf_pages")
+        if spec not in (None, "", [], ()):
+            if arguments.get("pages") not in (None, "", [], ()):
+                return True, json.dumps({
+                    "error": "give pages (0-based) or pdf_pages (1-based), "
+                             "not both",
+                    "hint": "pdf_pages counts as a PDF viewer does; pages "
+                            "counts from 0"})
+            pages, problem = pdf_pages_to_pages(spec)
+            if problem is not None:
+                return True, json.dumps(problem)
+            arguments["pages"] = pages
+            one_based = True
+    if "pdf_page" in arguments:
+        given = arguments.pop("pdf_page")
+        if given not in (None, ""):
+            page, problem = resolve_page(arguments.get("page"), given)
+            if problem is not None:
+                problem.setdefault("hint", PAGE_ARGS_NOTE)
+                return True, json.dumps(problem)
+            arguments["page"] = page
+            one_based = True
+    return one_based, None
+
+
+def _with_range_hint(out: str, one_based: bool = False) -> str:
+    """``out`` (a tool's JSON) with a hint added when its error is a page
+    out of range (:func:`funhouse_agent.page_numbers.range_hint`)."""
+    if not isinstance(out, str) or '"error"' not in out[:400]:
+        return out
+    try:
+        data = json.loads(out)
+    except ValueError:
+        return out
+    if not isinstance(data, dict) or "error" not in data:
+        return out
+    from funhouse_agent.page_numbers import range_hint
+    hint = range_hint(str(data["error"]), one_based)
+    if not hint:
+        return out
+    data["hint"] = f"{hint}. {data['hint']}" if data.get("hint") else hint
+    return json.dumps(data, ensure_ascii=False)
 
 
 def _as_handle_or_source(space: _Space, name: str,
@@ -1109,9 +1173,14 @@ def forget_path(path: str) -> int:
 def _temp_beside(final: str) -> str:
     """A temporary file name for writing ``final``: in the conversation's
     scratch folder when ``final`` is in the working folder (never a
-    download card, never mirrored), else beside it as a dot-file."""
+    download card, never mirrored), else beside it as a dot-file.
+
+    The name is SHORT -- ``<8 hex>.part.pdf``, no stem (live smoke wave 2c,
+    D5): ``.scratch\\<the final name>.<8 hex>.part.pdf`` added 27
+    characters to an already long name and pushed the path past Windows'
+    260-character limit (F46 at 265, F16), where MuPDF could not open it."""
     import uuid
-    stem = os.path.basename(final)
+    tag = uuid.uuid4().hex[:8]
     folder = os.path.dirname(os.path.abspath(final))
     try:
         from funhouse_agent._fileio import host_output_dir
@@ -1121,10 +1190,75 @@ def _temp_beside(final: str) -> str:
                 os.path.normcase(folder):
             folder = os.path.join(folder, SCRATCH_DIR)
             os.makedirs(folder, exist_ok=True)
-            return os.path.join(folder, f"{stem}.{uuid.uuid4().hex[:8]}.part.pdf")
+            return os.path.join(folder, f"{tag}.part.pdf")
     except Exception:  # noqa: BLE001 - beside it, then
         pass
-    return os.path.join(folder, f".{stem}.{uuid.uuid4().hex[:8]}.part.pdf")
+    return os.path.join(folder, f".{tag}.part.pdf")
+
+
+#: Longest full path Windows opens without long-path support.
+WINDOWS_MAX_PATH = 260
+
+
+class MarkedCopyNotWritten(OSError):
+    """The marked copy could not be written on the server: a file-system
+    failure, not a problem with the marks, so the same call fails again."""
+
+
+#: The hint a write failure carries (D5: F16 retried the same call five
+#: times on the generic "try it again once").
+WRITE_FAILED_HINT = (
+    "This is a file problem on the server, not a problem with the marks: "
+    "calling annotate_document again the same way will fail the same way, "
+    "and check=false will not help. If the cause says the path is too long, "
+    "a shorter output_path may work, once; otherwise tell the user plainly "
+    "that the marked copy could not be saved, with the cause, and stop "
+    "retrying.")
+
+
+def _write_failure(path: str, cause: Any = None) -> MarkedCopyNotWritten:
+    """A :class:`MarkedCopyNotWritten` naming what failed and, where it can
+    be told, why -- a path too long for Windows is said as such, since
+    MuPDF's own message is cut off mid-path and keeps no cause."""
+    from funhouse_agent.error_text import scrub_paths
+    why = ""
+    if isinstance(cause, BaseException):
+        why = " ".join(scrub_paths(f"{type(cause).__name__}: {cause}").split())
+    elif cause:
+        why = " ".join(scrub_paths(str(cause)).split())
+    if len(why) > 240:
+        why = why[:240] + " …"
+    n = len(os.path.abspath(path))
+    if os.name == "nt" and n >= WINDOWS_MAX_PATH - 1:
+        why = (f"the server path is {n} characters long, over Windows' "
+               f"{WINDOWS_MAX_PATH}-character limit"
+               + (f" ({why})" if why else ""))
+    return MarkedCopyNotWritten(
+        "could not write the marked copy on the server"
+        + (f": {why}" if why else ""))
+
+
+def _probe_writable(tmp: str) -> None:
+    """Create and remove ``tmp`` before planlens writes there: a path the
+    server cannot write fails HERE, with its cause, instead of deep inside
+    MuPDF with a message cut off mid-path. Raises
+    :class:`MarkedCopyNotWritten`."""
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(tmp)), exist_ok=True)
+        with open(tmp, "wb"):
+            pass
+        os.remove(tmp)
+    except OSError as exc:
+        raise _write_failure(tmp, exc) from exc
+
+
+def _is_write_failure(error_text: str, tmp: str) -> bool:
+    """Whether planlens' error is the temporary copy failing to save (a
+    MuPDF system error, or one naming the temporary file) rather than a
+    problem with the marks."""
+    text = str(error_text or "")
+    return ("FzErrorSystem" in text or os.path.basename(tmp) in text
+            or "cannot open file" in text or "cannot remove file" in text)
 
 
 def _replace_into(tmp: str, final: str):
@@ -1282,11 +1416,44 @@ def write_marked_copy(handle: str, markups: Optional[list], output_path: str,
     out of an existing marked copy first, so ``remove`` + ``markups``
     replaces one mark and keeps the rest. Returns the result dict, its
     ``output_path`` the final file's absolute path."""
+    try:
+        return _write_marked_copy(handle, markups, output_path, append,
+                                  author, call, remove)
+    except MarkedCopyNotWritten as exc:
+        return {"error": str(exc), "hint": WRITE_FAILED_HINT}
+
+
+def markups_with_pages(markups) -> tuple:
+    """``(markups, None)`` with each markup's ``pdf_page`` (1-based, the
+    number a viewer shows) turned into planlens' 0-based ``page``, or
+    ``([], error)``: a markup whose ``page`` and ``pdf_page`` name
+    different pages is refused, never guessed (live smoke wave 2c)."""
+    from funhouse_agent.page_numbers import resolve_page
+    out = []
+    for i, m in enumerate(list(markups or [])):
+        if isinstance(m, dict) and "pdf_page" in m:
+            m = dict(m)
+            page, problem = resolve_page(m.get("page"), m.pop("pdf_page"),
+                                         default=None)
+            if problem is not None:
+                return [], {"error": f"markup {i}: {problem['error']}",
+                            "hint": problem.get("hint", "")}
+            m["page"] = page
+        out.append(m)
+    return out, None
+
+
+def _write_marked_copy(handle, markups, output_path, append, author, call,
+                       remove) -> Dict[str, Any]:
+    """:func:`write_marked_copy`; a file-system failure raises
+    :class:`MarkedCopyNotWritten` (D5)."""
     import shutil
+    marks, problem = markups_with_pages(markups)
+    if problem is not None:
+        return problem
     final = markup_output_path(output_path, handle)
     existed = os.path.isfile(final)
     tmp = _temp_beside(final)
-    marks = list(markups or [])
     try:
         removed = refused = None
         if remove:
@@ -1299,11 +1466,18 @@ def write_marked_copy(handle: str, markups: Optional[list], output_path: str,
             with open(final, "rb") as fh:
                 data = fh.read()
             data, removed, refused = remove_markups(data, remove, author)
-            with open(tmp, "wb") as fh:
-                fh.write(data)
+            try:
+                with open(tmp, "wb") as fh:
+                    fh.write(data)
+            except OSError as exc:
+                raise _write_failure(tmp, exc) from exc
         elif append and existed:
-            shutil.copyfile(final, tmp)
+            try:
+                shutil.copyfile(final, tmp)
+            except OSError as exc:
+                raise _write_failure(tmp, exc) from exc
         else:
+            _probe_writable(tmp)
             src = _handle_path(handle)
             if src and os.path.normcase(os.path.abspath(src)) == \
                     os.path.normcase(os.path.abspath(final)):
@@ -1324,9 +1498,20 @@ def write_marked_copy(handle: str, markups: Optional[list], output_path: str,
                 result = json.loads(raw)
             except (TypeError, ValueError):
                 return {"error": str(raw)[:500]}
+            if isinstance(result, dict) and "error" in result \
+                    and _is_write_failure(result["error"], tmp):
+                # MuPDF could not save the temporary copy: said as the
+                # server-side failure it is, not "try it again once" (D5).
+                raise _write_failure(tmp, result["error"])
             if not isinstance(result, dict) or "error" in result:
                 return result if isinstance(result, dict) else \
                     {"error": str(result)[:500]}
+            from funhouse_agent.page_numbers import range_hint
+            for row in result.get("skipped") or ():
+                hint = range_hint(str(row.get("reason") or "")) \
+                    if isinstance(row, dict) else None
+                if hint:
+                    row["hint"] = hint
         elif remove:
             result = {"handle": handle, "author": author, "n_written": 0,
                       "n_skipped": 0}
@@ -1334,7 +1519,10 @@ def write_marked_copy(handle: str, markups: Optional[list], output_path: str,
             return {"error": "markups is empty: nothing would be written",
                     "hint": ("each markup is {kind, page, comment} plus ONE "
                              "anchor; to take marks out, pass remove")}
-        written, moved = _replace_into(tmp, final)
+        try:
+            written, moved = _replace_into(tmp, final)
+        except OSError as exc:
+            raise _write_failure(final, exc) from exc
         result["output_path"] = written
         result["appended_to_existing"] = bool(existed and (append or remove))
         if moved:

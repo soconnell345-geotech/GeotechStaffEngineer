@@ -347,11 +347,18 @@ class ActivityLogger(BaseCallbackHandler):
         self._write(rec)
 
     def turn_end(self, *, turn_tokens: int = 0, error: Optional[str] = None,
-                 answer_chars: int = 0) -> None:
-        self._write({"agent": PRIMARY, "event": "turn_end",
-                     "duration_s": round(self._clock() - self._t0, 3),
-                     "turn_tokens": turn_tokens, "answer_chars": answer_chars,
-                     "error": error})
+                 answer_chars: int = 0,
+                 error_detail: Optional[str] = None) -> None:
+        """``error`` is what the user was shown; ``error_detail`` the
+        provider's own text when that was NOT shown (a spent AI budget:
+        its JSON and request id are for the owner, live smoke 2c, D2)."""
+        rec = {"agent": PRIMARY, "event": "turn_end",
+               "duration_s": round(self._clock() - self._t0, 3),
+               "turn_tokens": turn_tokens, "answer_chars": answer_chars,
+               "error": error}
+        if error_detail:
+            rec["error_detail"] = str(error_detail)[:DEFAULT_MAX_CHARS]
+        self._write(rec)
 
     # -- tools ------------------------------------------------------------
     def on_tool_start(self, serialized, input_str, *, run_id, parent_run_id=None,

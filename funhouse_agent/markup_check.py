@@ -20,11 +20,20 @@ COMMENT. A review comment is a request ("Please confirm the 8.33 % maximum
 ...") rather than the name of a thing, so on 10 checks of comments placed on
 the right line none was confirmed and 8 "misplaced" verdicts were wrong. The
 thing is now named apart from the comment — the agent's ``target``, else the
-``label``, else the ``quote`` the mark was anchored on — and the question is
-whether the mark is on THAT thing and whether the comment could be about it.
-With nothing named, the question is whether the mark is on the thing the
-comment is about. A callout's or a note's look reads the whole line or object
-at its spot, not the one letter under the arrow's tip.
+``quote`` the mark was anchored on — and the question is whether the mark is
+on THAT thing and whether the comment could be about it. With nothing named,
+the question is whether the mark is on the thing the comment is about. A
+callout's or a note's look reads the whole line or object at its spot, not the
+one letter under the arrow's tip.
+
+**A label is what the reader sees, never what the mark is on** (live smoke
+2c, E3). The check used to take the ``label`` as the thing's name when no
+``target`` was given. A reviewer's label is usually a verdict or a question
+("460.1?", "e = 0.444", "1.056 ok"), so on F38's red-line 10 of 18 boxes on
+the right numbers came back misplaced; the agent rebuilt them with ``target``
+and no labels, and the delivered red-line had no visible text. The label is
+now shown to the look as display text to disregard, never compared with what
+is under the mark (its PLACE is still measured: see the labels below).
 
 **Every anchor is checked.** Quote-anchored marks and sticky notes were not,
 and after "misplaced" verdicts every agent re-placed its comment by quote or as
@@ -394,9 +403,11 @@ def _text(value: Any, limit: int) -> str:
 
 def _target(spec: Dict[str, Any]) -> Tuple[str, str]:
     """``(what the mark is meant to be on, where that came from)`` — the
-    agent's ``target``, else the ``label``, else the ``quote``; ``("", "")``
-    when the spec names no thing (the comment then says what it is about)."""
-    for key in ("target", "label", "quote"):
+    agent's ``target``, else the ``quote`` it was anchored on; ``("", "")``
+    when the spec names no thing (the comment then says what it is about).
+    Never the ``label``: that is the text the reader sees beside the mark,
+    often a verdict ("460.1?"), and need not match anything printed (E3)."""
+    for key in ("target", "quote"):
         value = _text(spec.get(key), 160)
         if value:
             return value, key
@@ -407,7 +418,7 @@ def _expected(spec: Dict[str, Any]) -> str:
     """What the result says the mark was compared with."""
     target, _src = _target(spec)
     return target or _text(spec.get("comment"), 160) or \
-        "(no target, label, quote or comment given)"
+        "(no target, quote or comment given)"
 
 
 def _fold(text: str) -> str:
@@ -420,7 +431,6 @@ def _same_words(a: str, b: str) -> bool:
 
 _SOURCE_WORDS = {
     "target": "what the mark is on",
-    "label": "the mark's label",
     "quote": "the printed words the mark was anchored on",
 }
 
@@ -433,12 +443,19 @@ def _prompt(kind: str, spec: Dict[str, Any], size: Sequence[int]
     target, source = _target(spec)
     comment = _text(spec.get("comment"), 300)
     ask_comment = bool(comment) and not _same_words(comment, target)
-    label_note = (" with a short red label beside it" if spec.get("label")
-                  else "")
+    label = _text(spec.get("label"), 80)
+    label_note = " with a short red label beside it" if label else ""
     placed = "placed" if kind == "note" else "drawn"
     parts = [f"This is a crop of a page that a review tool has just marked "
              f"up. A {word} has been {placed} on it{label_note}. The question is "
              f"whether the mark is on the right thing."]
+    if label:
+        # E3: the label is display text, often a verdict ("460.1?"); taken
+        # for the thing's name it failed 10 good boxes of 18 (F38).
+        parts.append(f'The red label reads "{label}". It is the reviewer\'s '
+                     f"own display text (a tag, a verdict or a question), NOT "
+                     f"the name of what is marked: never judge the mark by "
+                     f"whether the label matches what is there.")
     if target:
         parts.append(f"The mark is meant to {verb}: {target}   "
                      f"({_SOURCE_WORDS[source]})")
@@ -453,17 +470,22 @@ def _prompt(kind: str, spec: Dict[str, Any], size: Sequence[int]
                      f"review comment is a remark or a request ABOUT the "
                      f"thing marked; it need not repeat the words printed "
                      f"there.")
-    if not target:
+    if not target and comment:
         parts.append(f"The mark is meant to {verb} the thing that comment "
                      f"is about.")
+    elif not target:
+        parts.append(f"Nothing names what the mark is meant to {verb}: "
+                     f"judge whether it {verb}s one definite thing (a tag, a "
+                     f"line of text, a symbol).")
     whole = (" Read the WHOLE line of text, or the whole object, there — "
              "not a single letter or stroke." if kind in POINTING_KINDS
              or kind == "highlight" else "")
     own = ("the icon itself" if kind == "note"
            else "the mark's own red label or comment box")
     parts.append(f"Look at what is actually {where} — not at {own}.{whole}")
-    named = "the thing named above" if target else \
-        "the thing the comment is about"
+    named = ("the thing named above" if target else
+             "the thing the comment is about" if comment else
+             "one definite thing")
     spot = where.split(" —")[0]
     keys = [("same_thing", f"true if what is there IS {named} (a "
                            f"paraphrase, a partial reading or a misprint of "
@@ -714,7 +736,9 @@ def check_marks(output_pdf: str, result: Dict[str, Any], specs: Sequence[Any],
             "place it: zoom until you can box the thing itself. Name what a "
             "mark is on with target when the comment is a request rather "
             "than the thing's name; a mark in the blank part of an area (a "
-            "title block, a margin) names that area as its target.")
+            "title block, a margin) names that area as its target. A label "
+            "is only the text the reader sees and is never compared with "
+            "what is under the mark: add target= and keep your labels.")
     if labels:
         along = (" Where the drawing's own lettering runs up or down the "
                  "page, give label_reads (up or down) so the label runs the "
@@ -730,6 +754,155 @@ def check_marks(output_pdf: str, result: Dict[str, Any], specs: Sequence[Any],
     return block
 
 
+# ---------------------------------------------------------------------------
+# A mark named by its words, and what a marked copy holds (live smoke 2c)
+# ---------------------------------------------------------------------------
+
+#: How planlens' annotate result opens. Bob's model (F47, E10) read it, with
+#: ``n_written: 1``, as "the copy holds only this one note", and told the
+#: user the five markups already on the document were missing. They were not.
+_PLANLENS_LEAD = "a NEW file: the document you opened is unchanged."
+
+
+def _copy_markups(pdf_bytes: bytes, signer: str) -> List[Dict[str, Any]]:
+    """Every markup in a PDF, each as ``{"m", "label", "ours", "parent"}``:
+    ``label`` when it is a mark's visible label (planlens ties a label to its
+    mark with ``/IRT`` and ``/RT /Group``), ``parent`` that mark, ``ours``
+    when this app wrote it (signed ``signer`` or as this app)."""
+    import fitz
+    from planlens.document.annotations import extract_annotations
+
+    from funhouse_agent.document_tools import _is_label, _ours
+
+    doc = fitz.open(stream=bytes(pdf_bytes), filetype="pdf")
+    try:
+        out: List[Dict[str, Any]] = []
+        for i in range(doc.page_count):
+            marks, _cad = extract_annotations(doc[i], i)
+            by_id = {m.id: m for m in marks}
+            for m in marks:
+                label = m.xref is not None and _is_label(doc, m.xref)
+                out.append({"m": m, "label": label,
+                            "ours": _ours(m.author, signer),
+                            "parent": (by_id.get(m.in_reply_to)
+                                       if label and m.in_reply_to else None)})
+        return out
+    finally:
+        doc.close()
+
+
+def _plural(n: int, word: str) -> str:
+    return f"{n} {word}" if n == 1 else f"{n} {word}s"
+
+
+def name_marks_by_words(pdf_bytes: bytes, remove: Any, signer: str
+                        ) -> Tuple[List[Any], List[Dict[str, str]]]:
+    """``(remove, refused)`` for ``annotate_document(remove=...)`` on the
+    marked copy ``pdf_bytes``: each entry of words that names exactly ONE
+    mark this app wrote — in its comment OR in its visible label — becomes
+    that mark's id, so the mark is removed with its label.
+
+    Live smoke 2c (E9): F47's ``remove: ["Embedment: not shown"]`` was a
+    label's text; the remover matched comments only, said "no mark this app
+    wrote says that", and removing by id took another list-and-remove round.
+
+    Words naming no mark, or several, are taken out of the list and
+    returned in ``refused`` (rows shaped like the remover's ``not_removed``)
+    — never handed on, since the remover, matching comments only, would
+    take the one mark whose COMMENT says them although another's label
+    does too. Ids, and entries without words, are left for the remover."""
+    from funhouse_agent.document_tools import _MARKUP_ID
+
+    entries = ([remove] if isinstance(remove, (str, dict))
+               else list(remove or []))
+    rows = _copy_markups(pdf_bytes, signer)
+    out: List[Any] = []
+    refused: List[Dict[str, str]] = []
+    for raw in entries:
+        if isinstance(raw, dict):
+            want = "" if raw.get("id") else str(raw.get("text") or "")
+        else:
+            want = str(raw or "")
+        want = want.strip()
+        if not want or _MARKUP_ID.match(want):
+            out.append(raw)
+            continue
+        low = want.lower()
+        hits: Dict[Tuple[int, Any], Any] = {}
+        for r in rows:
+            m = r["m"]
+            if not r["ours"] or low not in (m.text or "").lower():
+                continue
+            if not r["label"]:
+                hits[(m.page, m.xref)] = m
+            elif r["parent"] is not None:
+                p = r["parent"]
+                hits[(p.page, p.xref)] = p
+        if len(hits) == 1:
+            out.append(next(iter(hits.values())).id)
+        elif hits:
+            ids = ", ".join(m.id for m in list(hits.values())[:8])
+            refused.append({"remove": want, "reason": (
+                f"{len(hits)} marks say that in their comment or label "
+                f"({ids}): give the id of the one meant")})
+        else:
+            refused.append({"remove": want, "reason": (
+                "no mark this app wrote says that, in its comment or its "
+                "label")})
+    return out, refused
+
+
+def describe_copy(result: Dict[str, Any], signer: str) -> None:
+    """Say in ``result`` what the marked copy at ``result["output_path"]``
+    holds, counted off the file (live smoke 2c, E10): ``in_file`` — its
+    markups (a mark's visible label is part of the mark, not counted
+    apart), the ones this call added, the ones kept from before and who
+    wrote those, and any this call removed — and a ``note`` that opens by
+    saying so in words. Raises when the file cannot be read; the caller
+    leaves the result as it was."""
+    import os
+
+    path = str(result.get("output_path") or "")
+    with open(path, "rb") as fh:
+        data = fh.read()
+    marks = [r for r in _copy_markups(data, signer) if not r["label"]]
+    added = int(result.get("n_written") or 0)
+    total = len(marks)
+    kept = max(0, total - added)
+    by: Dict[str, int] = {}
+    ours = 0
+    for r in marks:
+        if r["ours"]:
+            ours += 1
+        else:
+            who = str(r["m"].author or "").strip() or "unsigned"
+            by[who] = by.get(who, 0) + 1
+    if ours > added:
+        by["this app, earlier calls"] = ours - added
+    removed = len(result.get("removed") or [])
+    block: Dict[str, Any] = {"markups": total, "added_by_this_call": added,
+                             "kept_from_before": kept}
+    if by:
+        block["kept_by_author"] = by
+    if removed:
+        block["removed_by_this_call"] = removed
+    result["in_file"] = block
+
+    said = (f"'{os.path.basename(path)}' holds {_plural(total, 'markup')}: "
+            f"{added} added by this call and {kept} kept from before")
+    if by:
+        said += " (" + ", ".join(f"{who} {n}" for who, n in by.items()) + ")"
+    if removed:
+        said += f"; {removed} removed by this call"
+    said += (". Every markup already on the document is in the copy (remove "
+             "takes out only this app's marks); the document you opened is "
+             "unchanged.")
+    note = str(result.get("note") or "").strip()
+    if note.startswith(_PLANLENS_LEAD):
+        note = note[len(_PLANLENS_LEAD):].strip()
+    result["note"] = said + (" " + note if note else "")
+
+
 __all__ = ["CHECK_KINDS", "GEOMETRY_ANCHORS", "QUOTE_ANCHORS",
            "CHECKED_ANCHORS", "check_labels", "check_marks",
-           "marks_to_check"]
+           "describe_copy", "marks_to_check", "name_marks_by_words"]
