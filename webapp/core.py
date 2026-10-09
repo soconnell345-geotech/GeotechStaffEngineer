@@ -2662,26 +2662,57 @@ def load_downloads(conv_dir: str) -> List[dict]:
         if isinstance(data, list) else []
 
 
+#: One lock per conversation folder for the ledger's read-modify-write.
+_DOWNLOADS_LOCKS: Dict[str, threading.Lock] = {}
+_DOWNLOADS_LOCKS_GUARD = threading.Lock()
+
+
+def _downloads_lock(conv_dir: str) -> threading.Lock:
+    key = os.path.normcase(os.path.abspath(str(conv_dir)))
+    with _DOWNLOADS_LOCKS_GUARD:
+        lock = _DOWNLOADS_LOCKS.get(key)
+        if lock is None:
+            lock = _DOWNLOADS_LOCKS[key] = threading.Lock()
+        return lock
+
+
 def record_download(conv_dir: str, remote: str, local: str,
                     size: int = 0) -> None:
     """Record that SharePoint file ``remote`` is the local file ``local``.
 
     One entry per remote (case-insensitive); a later download of the same
     remote replaces its entry. Best-effort: a ledger that cannot be written
-    must never fail the download it describes."""
+    must never fail the download it describes.
+
+    Live smoke wave 2c (E5): two downloads 3 ms apart each read the ledger,
+    added their own entry and wrote it back through one shared temporary
+    file, so one entry was lost. The read-modify-write now holds the
+    conversation's lock, and each write goes through a temporary file of
+    its own."""
     if not conv_dir or not remote or not local:
         return
     try:
-        entries = [d for d in load_downloads(conv_dir)
-                   if str(d.get("remote", "")).lower() != str(remote).lower()]
-        entries.append({"remote": str(remote),
-                        "local": os.path.abspath(str(local)),
-                        "bytes": int(size or 0), "ts": _time.time()})
-        os.makedirs(conv_dir, exist_ok=True)
-        tmp = os.path.join(conv_dir, DOWNLOADS_LEDGER + ".tmp")
-        with open(tmp, "w", encoding="utf-8") as fh:
-            _json.dump(entries, fh, ensure_ascii=False, indent=1)
-        os.replace(tmp, os.path.join(conv_dir, DOWNLOADS_LEDGER))
+        with _downloads_lock(conv_dir):
+            entries = [d for d in load_downloads(conv_dir)
+                       if str(d.get("remote", "")).lower()
+                       != str(remote).lower()]
+            entries.append({"remote": str(remote),
+                            "local": os.path.abspath(str(local)),
+                            "bytes": int(size or 0), "ts": _time.time()})
+            os.makedirs(conv_dir, exist_ok=True)
+            tmp = os.path.join(
+                conv_dir, f"{DOWNLOADS_LEDGER}.{os.getpid()}-"
+                          f"{threading.get_ident()}.tmp")
+            try:
+                with open(tmp, "w", encoding="utf-8") as fh:
+                    _json.dump(entries, fh, ensure_ascii=False, indent=1)
+                os.replace(tmp, os.path.join(conv_dir, DOWNLOADS_LEDGER))
+            except (OSError, TypeError, ValueError):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+                raise
     except (OSError, TypeError, ValueError):
         pass
 
@@ -2782,7 +2813,51 @@ def reads_note(folder: Optional[str]) -> str:
     return line + (" Use this when asked what you looked at; look again only "
                    "when the question needs something those reads did not "
                    "cover. Text you read (read_document, search) is not in "
-                   "this list.")
+                   "this list.") + readings_note(folder)
+
+
+#: Characters of the "readings kept" sentence at most.
+READINGS_NOTE_MAX_CHARS = 700
+
+
+def readings_note(folder: Optional[str]) -> str:
+    """The sentence naming the page READINGS kept for this conversation --
+    each page's full result, with what it was asked -- and how to have one
+    back without a new look; ``""`` when none are kept.
+
+    Live smoke wave 2c (E2): F44 transcribed one sheet whole in all four
+    turns (206 s) though the note above said it had been looked at; the
+    note said WHICH pages, not what was seen, and the full readings were
+    gone after each turn."""
+    try:
+        from funhouse_agent.vision_tools import readings_for_conversation
+        kept = readings_for_conversation(folder) if folder else []
+    except Exception:  # noqa: BLE001 - no record, no sentence
+        return ""
+    items: List[str] = []
+    for r in reversed(kept):              # the newest first
+        name = str(r.get("document") or "").strip()
+        page = r.get("pdf_page")
+        if not name or not isinstance(page, int):
+            continue
+        asked = " ".join(str(r.get("prompt") or "").split())
+        if len(asked) > 60:
+            asked = asked[:57].rstrip() + "..."
+        items.append(f"'{name}' p. {page} ({r.get('view') or 'page'}, "
+                     f"asked \"{asked}\")")
+    if not items:
+        return ""
+    head = (" Readings already taken and kept (newest first; "
+            "analyze_pdf_page(..., pdf_page=N, reuse=true) returns one "
+            "without a new look, and says what it was asked): ")
+    room = READINGS_NOTE_MAX_CHARS - len(head) - 30
+    shown: List[str] = []
+    for it in items:
+        if sum(len(s) + 2 for s in shown) + len(it) > room:
+            break
+        shown.append(it)
+    more = len(items) - len(shown)
+    return head + "; ".join(shown) + (f"; and {more} more." if more else ".")
 
 
 def working_files_note(files_dir: str, transcript: Iterable[dict] = (),

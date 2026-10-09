@@ -218,10 +218,12 @@ def find_like(pdf, page: int, bbox: Sequence[float], engine, *,
             f"each cell ACTUALLY shows, whether or not it matches.)"
             if text else "")
 
+        from funhouse_agent.vision_tools import ask_vision
+
         def read(sheet):
             png, ids = sheet
             try:
-                return ids, engine.analyze_image(png, prompt), None
+                return ids, ask_vision(engine, png, prompt, "find"), None
             except Exception as exc:              # a sheet, not the search
                 return ids, "", f"{type(exc).__name__}: {exc}"
 

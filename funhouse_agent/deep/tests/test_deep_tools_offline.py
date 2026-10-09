@@ -226,6 +226,9 @@ def test_vision_tools_build_and_error_without_engine():
     from funhouse_agent.deep.tools import _plot_available, _xlsx_available
     out_names = (({"plot_data"} if _plot_available() else set())
                  | ({"write_xlsx"} if _xlsx_available() else set()))
+    # notes on a DXF copy, where ezdxf imports (wave 2c, E4)
+    from funhouse_agent.deep.tools import _dxf_notes_available
+    out_names |= {"annotate_dxf"} if _dxf_notes_available() else set()
     assert names == {"list_files", "read_pdf_text", "read_text_file",
                      "analyze_image",
                      "analyze_pdf_page", "render_region",

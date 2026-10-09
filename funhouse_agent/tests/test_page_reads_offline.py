@@ -161,9 +161,16 @@ def test_nothing_read_is_a_plain_error():
 
 def test_cut_off_answers_are_flagged_in_the_result():
     out = _read(Reader(cut={"page", "r1c2"}), _pdf(), tiles="2")
-    assert out["cut_off"].startswith("the whole-page view, tile r1c2: ")
+    # With tiles the whole page is asked for the layout only (wave 2c, E1):
+    # its cut is said apart, and the reading's cut names the tile.
+    assert out["cut_off"].startswith("tile r1c2: ")
     assert "CUT OFF" in out["cut_off"]
+    assert "layout answer stopped" in out["overview_cut"]
     assert next(t for t in out["tiles"] if t["tile"] == "r1c2")["cut_off"]
+    # A page read whole, with no tiles, is the reading: its cut says so.
+    out = _read(Reader(cut={"page"}), _pdf(), tiles="off")
+    assert out["cut_off"].startswith("the whole-page view: ")
+    assert "overview_cut" not in out
 
 
 # -- C11: a blank page is not tiled -------------------------------------------

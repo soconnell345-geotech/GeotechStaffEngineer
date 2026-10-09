@@ -485,6 +485,47 @@ def invoke_side_call(model, messages):
             _sleep(wait)
 
 
+#: The fields a LangChain chat model keeps its output cap in: ``max_tokens``
+#: (ChatAnthropic; ChatOpenAI, sent as ``max_completion_tokens`` or the
+#: Responses API's ``max_output_tokens``; the Foundry SDK and Prompter
+#: wrappers), then the other spellings some integrations use.
+_CAP_FIELDS = ("max_tokens", "max_output_tokens", "max_completion_tokens")
+
+
+def capped_model(model, cap):
+    """``model`` with its per-answer output cap held to ``cap`` tokens, as a
+    shallow copy that shares the original's client; ``model`` itself when
+    its own cap is already that low, or when it keeps no cap a copy can
+    change (then the call goes out as before).
+
+    Live smoke wave 2c (E1): the vision side calls used the main model
+    object, so since the output cap went to 32,000 (C5) one vision answer
+    could run to 10,778 tokens (70 s) — on a reasoning model the cap holds
+    the reasoning as well as the reply."""
+    try:
+        cap = int(cap)
+    except (TypeError, ValueError):
+        return model
+    if cap <= 0:
+        return model
+    fields = getattr(type(model), "model_fields", None)
+    copy = getattr(model, "model_copy", None)
+    if not isinstance(fields, dict) or not callable(copy):
+        return model
+    for name in _CAP_FIELDS:
+        if name not in fields:
+            continue
+        current = getattr(model, name, None)
+        if isinstance(current, int) and not isinstance(current, bool) \
+                and 0 < current <= cap:
+            return model
+        try:
+            return copy(update={name: cap})
+        except Exception:  # noqa: BLE001 - an uncopyable model keeps its cap
+            return model
+    return model
+
+
 class LangChainVisionEngine:
     """Adapt a LangChain chat model to the minimal vision surface v5 needs.
 
@@ -525,16 +566,32 @@ class LangChainVisionEngine:
     #: may be sent (see ``vision_view.render_view(allow_jpeg=...)``).
     accepts_jpeg = True
 
+    #: :meth:`analyze_image` takes ``max_output_tokens``: a cap for that one
+    #: answer (live smoke wave 2c, E1). Engines without this attribute are
+    #: called as before.
+    accepts_output_cap = True
+
     def __init__(self, model, media_type: Optional[str] = None,
                  detail: Optional[str] = None):
         self._model = model
         self._media_type = media_type
         self._detail = detail
+        self._capped: dict = {}
 
     @property
     def model(self):
         """The wrapped LangChain chat model."""
         return self._model
+
+    def _model_for(self, cap):
+        """The model to ask with an output cap of ``cap`` tokens (a copy made
+        once per cap, :func:`capped_model`); the model itself for none."""
+        if not cap:
+            return self._model
+        m = self._capped.get(cap)
+        if m is None:
+            m = self._capped[cap] = capped_model(self._model, cap)
+        return m
 
     def vision_profile(self):
         """What this model really is and what images it really takes —
@@ -547,6 +604,7 @@ class LangChainVisionEngine:
         self,
         image_input,
         user_prompt: str = "Describe this image.",
+        max_output_tokens: Optional[int] = None,
     ) -> str:
         """Analyze an image with the wrapped LangChain model.
 
@@ -557,6 +615,11 @@ class LangChainVisionEngine:
             ``ClaudeEngine.analyze_image`` / the ``GenAIEngine`` contract.
         user_prompt : str
             What to extract / describe from the image.
+        max_output_tokens : int, optional
+            The most tokens this answer may take (reasoning included, on a
+            reasoning model), never more than the model's own cap; ``None``
+            = the model's own cap. An answer that stops there comes back
+            with ``cut_off`` set.
 
         Returns
         -------
@@ -593,8 +656,9 @@ class LangChainVisionEngine:
                 {"type": "text", "text": user_prompt},
             ])
 
+        model = self._model_for(max_output_tokens)
         try:
-            response = invoke_side_call(self._model, [message(True)])
+            response = invoke_side_call(model, [message(True)])
         except VisionCallTimeout:
             raise
         except Exception as exc:
@@ -604,7 +668,7 @@ class LangChainVisionEngine:
             # error's body held "details" and was asked again by accident).
             if not detail or not refused_detail(exc):
                 raise
-            response = invoke_side_call(self._model, [message(False)])
+            response = invoke_side_call(model, [message(False)])
         text = _content_to_text(getattr(response, "content", response))
         if was_cut_off(response):
             # The answer stopped at the model's output limit (wave 2b, C5):
@@ -612,7 +676,8 @@ class LangChainVisionEngine:
             text = VisionAnswer(text)
             text.cut_off = True
             log.warning("vision side call: the answer was cut off at the "
-                        "model's output limit (%d characters)", len(text))
+                        "output limit (%s tokens; %d characters of answer)",
+                        max_output_tokens or "the model's", len(text))
         return text
 
 
@@ -677,4 +742,4 @@ __all__ = ["LangChainVisionEngine", "call_slot", "INFLIGHT_ENV",
            "invoke_side_call", "FairSlots", "PER_CONVERSATION_ENV",
            "conversation_key", "busy_kind", "busy_tries", "describe_error",
            "refused_detail", "BUSY_TRIES_ENV", "DEFAULT_BUSY_TRIES",
-           "VisionAnswer", "was_cut_off"]
+           "VisionAnswer", "was_cut_off", "capped_model"]

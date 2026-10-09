@@ -205,6 +205,31 @@ def _xlsx_available() -> bool:
     return available()
 
 
+def _dxf_notes_available() -> bool:
+    """Whether DXF notes can be written (ezdxf, a core app dependency
+    through planlens; a guard for a stripped library install)."""
+    try:
+        from funhouse_agent.dxf_notes import available
+    except Exception:                                  # noqa: BLE001
+        return False
+    return available()
+
+
+ANNOTATE_DXF_DESCRIPTION = (
+    "Add review notes to a COPY of a DXF drawing - each note a TEXT (MTEXT "
+    "for several lines) on a markup layer of its own (default REVIEW, red), "
+    "optionally with a leader to the point it is about - written by a CAD "
+    "library, so nothing else in the drawing changes; the copy is read back "
+    "and the result says every original entity is still there. source = "
+    "the DXF's file name; notes = [{text, x, y, leader_to?: [x, y], "
+    "height?}] in the drawing's own units and coordinates, as "
+    "open_document / read_document list them (a CIRCLE's centre, a TEXT's "
+    "position; put the note a little beside the thing and point at it with "
+    "leader_to). output_path = a bare file name (default "
+    "<name>_marked.dxf). Use it for any note, comment or label on a DXF; "
+    "never retype a DXF with save_file.")
+
+
 #: What the app adds to the module's own description of ``plot_data``.
 _PLOT_APP_NOTE = (
     " In this app the chart appears as an INTERACTIVE card under your reply "
@@ -941,6 +966,10 @@ def make_vision_tools(
             include |= {"plot_data"}
         if _xlsx_available():
             include |= {"write_xlsx"}
+        # Notes on a DXF, written by a CAD library -- never retyped by the
+        # model (live smoke wave 2c, E4).
+        if _dxf_notes_available():
+            include |= {"annotate_dxf"}
         # find_like needs planlens 0.10 (planlens.document.findlike).
         if _find_like_available():
             include |= {"find_like"}
@@ -1018,7 +1047,8 @@ def make_vision_tools(
             args["pages"] = pages
         return _dispatch("read_pdf_text", args)
 
-    def read_text_file(path: str, offset: int = 0, max_chars: int = 6000) -> str:
+    def read_text_file(path: str, offset: int = 0, max_chars: int = 6000,
+                       limit: Optional[int] = None) -> str:
         """Read a file this conversation holds as text -- HTML, TXT, CSV,
         JSON, MD, such as a report source written earlier -- and a Word
         (.docx) or Excel (.xlsx) file as Markdown: a .docx in write_docx's
@@ -1027,10 +1057,15 @@ def make_vision_tools(
         write_docx without its layout drifting; an .xlsx as one table per
         sheet with the sheet names. The scratch filesystem's ``read_file``
         cannot see these files. ``path`` is a file name in the working
-        folder (a relative path is inside it); long files page with
-        ``offset`` (the result gives ``next_offset``)."""
-        return _dispatch("read_text_file",
-                         {"path": path, "offset": offset, "max_chars": max_chars})
+        folder (a relative path is inside it). ``limit`` (or ``max_chars``)
+        is how many characters to return, 6,000 by default and at most
+        12,000 per call; ``offset`` is where to start. The result's
+        ``showing`` says which characters came back of how many, and
+        ``next_offset`` where the rest starts."""
+        args = {"path": path, "offset": offset, "max_chars": max_chars}
+        if limit is not None:
+            args["limit"] = limit
+        return _dispatch("read_text_file", args)
 
     def analyze_image(attachment_key: str,
                       prompt: str = "Describe this image.") -> str:
@@ -1055,6 +1090,7 @@ def make_vision_tools(
         prompt: str = "Describe the content of this page.",
         tiles: str = "auto",
         pdf_page: Optional[int] = None,
+        reuse: bool = False,
     ) -> str:
         """Render a PDF page and analyze it using vision.
 
@@ -1066,6 +1102,10 @@ def make_vision_tools(
         tiles when its small lettering is too small in the whole-page image
         (the result then carries every tile's reading and view); ``"off"``;
         or N / ``"NxN"`` with N 2-4 (``"3"`` or ``"3x3"``) for a fixed split.
+        ``reuse``: true hands back this conversation's latest reading of the
+        page (it says what it was asked) instead of a new look -- for a
+        follow-up the earlier reading already answers; look again when it
+        does not.
         """
         args = {"attachment_key": attachment_key, "prompt": prompt,
                 "tiles": tiles}
@@ -1073,6 +1113,8 @@ def make_vision_tools(
             args["page"] = page
         if pdf_page is not None:
             args["pdf_page"] = pdf_page
+        if reuse:
+            args["reuse"] = True
         if inline_images:
             args["_inline"] = True
         return _dispatch("analyze_pdf_page", args)
@@ -1532,6 +1574,16 @@ def make_vision_tools(
         """Write an Excel workbook (one sheet per table)."""
         return _write_xlsx(path, sheets, markdown, save_fn)
 
+    def annotate_dxf(source: str, notes: list, output_path: str = "",
+                     layer: str = "REVIEW") -> str:
+        """Add review notes to a COPY of a DXF drawing (a CAD library
+        writes it; see the tool description)."""
+        args: Dict[str, Any] = {"source": source, "notes": notes,
+                                "layer": layer}
+        if output_path:
+            args["output_path"] = output_path
+        return _with_saved_note(_dispatch("annotate_dxf", args), save_fn)
+
     # Each document tool is described to the model in planlens' own words, and
     # the ones a newer planlens added appear only where they exist.
     document_review_builders = [
@@ -1583,8 +1635,10 @@ def make_vision_tools(
             "line breaks), so a memo can be read, edited and written back "
             "with write_docx without drifting; an Excel .xlsx as one "
             "Markdown table per sheet, with the sheet names. The scratch "
-            "read_file cannot see these files. Pages with offset / "
-            "next_offset.",
+            "read_file cannot see these files. limit = characters to return "
+            "(6,000 by default, at most 12,000 a call), offset = where to "
+            "start; the result's 'showing' says which characters came back "
+            "of how many, and next_offset where the rest starts.",
         ),
         "analyze_image": (
             analyze_image,
@@ -1601,7 +1655,9 @@ def make_vision_tools(
             "lettering is too small in the whole-page image), 'off', or N or "
             "'NxN' with N from 2 to 4 (e.g. '3x3') for a fixed split. Boxes "
             "come back on a 0-999 grid with the result's view; a whole-page "
-            "box says where to zoom, not where to put a mark." + _PDF_PAGE_NOTE,
+            "box says where to zoom, not where to put a mark. reuse=true "
+            "returns this conversation's latest reading of the page (saying "
+            "what it was asked) instead of a new look." + _PDF_PAGE_NOTE,
         ),
         "find_like": (
             find_like,
@@ -1667,6 +1723,8 @@ def make_vision_tools(
            if _plot_available() else {}),
         **({"write_xlsx": (write_xlsx, WRITE_XLSX_DESCRIPTION)}
            if _xlsx_available() else {}),
+        **({"annotate_dxf": (annotate_dxf, ANNOTATE_DXF_DESCRIPTION)}
+           if _dxf_notes_available() else {}),
     }
 
     overrides = dict(description_overrides or {})

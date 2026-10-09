@@ -829,6 +829,191 @@ def _fmt(v: float) -> str:
     return f"{v:.6g}" if abs(v) < 1e6 else f"{v:.1f}"
 
 
+# -- A DXF's geometry, listed with the text it sits by (wave 2c, E4) ----------
+# F40: the boring circles, the building outline and the arrow line were
+# counted but not listed, so `search_document("CIRCLE")` found nothing and
+# the model read coordinates off raw DXF pages, 3-4 calls a turn.
+
+#: Geometry lines listed per DXF at most (the text is always listed whole).
+CAD_GEOMETRY_MAX = 20000
+#: Vertices written out per polyline or hatch boundary.
+CAD_VERTICES_SHOWN = 12
+#: Grid cells one entity may search for nearby text (a sheet border's
+#: outline is not "near" any one label).
+_NEAR_MAX_CELLS = 2500
+#: Geometry kinds listed, in this order.
+_CAD_GEOMETRY_KINDS = ("circle", "arc", "polyline", "line", "region")
+
+
+def _seg_dist(p, a, b) -> float:
+    ax, ay, bx, by = a[0], a[1], b[0], b[1]
+    dx, dy = bx - ax, by - ay
+    L2 = dx * dx + dy * dy
+    t = 0.0 if L2 == 0 else max(0.0, min(1.0, ((p[0] - ax) * dx
+                                               + (p[1] - ay) * dy) / L2))
+    return ((p[0] - ax - t * dx) ** 2 + (p[1] - ay - t * dy) ** 2) ** 0.5
+
+
+def _inside(p, ring) -> bool:
+    """Whether point ``p`` lies inside the closed ``ring`` (ray casting)."""
+    x, y, hit = p[0], p[1], False
+    n = len(ring)
+    for i in range(n):
+        x1, y1 = ring[i][0], ring[i][1]
+        x2, y2 = ring[(i + 1) % n][0], ring[(i + 1) % n][1]
+        if (y1 > y) != (y2 > y) and \
+                x < (x2 - x1) * (y - y1) / ((y2 - y1) or 1e-12) + x1:
+            hit = not hit
+    return hit
+
+
+def _ring_of(e):
+    kind = getattr(e, "KIND", "")
+    if kind == "polyline":
+        return list(getattr(e, "vertices", None) or []), \
+            bool(getattr(e, "closed", False))
+    if kind == "region":
+        return list(getattr(e, "boundary", None) or []), True
+    return [], False
+
+
+def _distance_to(e, p) -> float:
+    """Distance from point ``p`` to entity ``e``'s drawn geometry."""
+    kind = getattr(e, "KIND", "")
+    if kind in ("circle", "arc"):
+        c, r = getattr(e, "center", (0.0, 0.0)), getattr(e, "radius", 0.0)
+        return abs(((p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2) ** 0.5 - r)
+    if kind == "line":
+        return _seg_dist(p, e.start, e.end)
+    pts, closed = _ring_of(e)
+    if not pts:
+        return float("inf")
+    if len(pts) == 1:
+        return _seg_dist(p, pts[0], pts[0])
+    segs = list(zip(pts, pts[1:])) + ([(pts[-1], pts[0])] if closed else [])
+    return min(_seg_dist(p, a, b) for a, b in segs)
+
+
+class _TextGrid:
+    """The drawing's text items in grid cells of the "near" radius."""
+
+    def __init__(self, texts, radius):
+        self.texts, self.r = texts, radius
+        self.cells: Dict[tuple, list] = {}
+        for i, t in enumerate(texts):
+            self.cells.setdefault(self._cell(t[0]), []).append(i)
+
+    def _cell(self, p):
+        return (int(p[0] // self.r), int(p[1] // self.r))
+
+    def candidates(self, box):
+        """Text indices within the radius of ``box``, or ``None`` when the
+        box is too large to say one label is near it."""
+        x0, y0 = self._cell((box[0] - self.r, box[1] - self.r))
+        x1, y1 = self._cell((box[2] + self.r, box[3] + self.r))
+        if (x1 - x0 + 1) * (y1 - y0 + 1) > _NEAR_MAX_CELLS:
+            return None
+        out = []
+        for ix in range(x0, x1 + 1):
+            for iy in range(y0, y1 + 1):
+                out.extend(self.cells.get((ix, iy), ()))
+        return out
+
+
+def _near_text(e, grid: Optional[_TextGrid]) -> str:
+    """`` near "B-2"`` (the closest text within the radius) and, for a
+    closed outline, `` encloses "BUILDING"``; ``""`` when neither."""
+    if grid is None or getattr(e, "bbox", None) is None:
+        return ""
+    idx = grid.candidates(e.bbox)
+    if not idx:
+        return ""
+    bits = []
+    ring, closed = _ring_of(e)
+    if closed and 3 <= len(ring) <= 2000:
+        # The label of an outline sits near its middle: the texts whose
+        # middles are nearest its middle first.
+        cx, cy = (e.bbox[0] + e.bbox[2]) / 2, (e.bbox[1] + e.bbox[3]) / 2
+        inside = sorted(
+            (grid.texts[i] for i in idx if _inside(grid.texts[i][0], ring)),
+            key=lambda t: (t[2][0] - cx) ** 2 + (t[2][1] - cy) ** 2)
+        if inside:
+            more = len(inside) - 2
+            bits.append("encloses " + ", ".join(
+                f'"{t[1]}"' for t in inside[:2]) + (
+                f" and {more} more text{'s' if more > 1 else ''}"
+                if more > 0 else ""))
+    best, best_d = None, grid.r
+    for i in idx:
+        d = _distance_to(e, grid.texts[i][0])
+        if d <= best_d:
+            best, best_d = grid.texts[i][1], d
+    if best is not None and not any(best in b for b in bits):
+        bits.append(f'near "{best}"')
+    return (" " + "; ".join(bits)) if bits else ""
+
+
+def _cad_geometry(ir, pt, scale, texts):
+    """``(rows, n_listed, n_all)``: one line per circle, arc, polyline, line
+    and hatch, in drawing units, with the text it sits by."""
+    heights = sorted(float(getattr(e, "height", 0) or 0) for e in ir.entities
+                     if getattr(e, "KIND", "") == "text"
+                     and (getattr(e, "height", 0) or 0) > 0)
+    box = ir.bbox()
+    diag = (((box[2] - box[0]) ** 2 + (box[3] - box[1]) ** 2) ** 0.5
+            if box is not None else 0.0)
+    radius = max(4 * heights[len(heights) // 2] if heights else 0.0,
+                 0.02 * diag)
+    grid = _TextGrid(texts, radius) if texts and radius > 0 else None
+
+    def num(v) -> str:
+        return _fmt(v * scale)
+
+    def where(e) -> str:
+        layer = getattr(e, "layer", None) or "0"
+        style = str(getattr(e, "style", None) or "")
+        block = (f" [block {style.split('|')[0][len('block:'):]}]"
+                 if style.startswith("block:") else "")
+        return f" [layer {layer}]{block}"
+
+    def verts(points) -> str:
+        shown = " ".join(pt(p) for p in points[:CAD_VERTICES_SHOWN])
+        more = len(points) - CAD_VERTICES_SHOWN
+        return shown + (f" ... (+{more} more)" if more > 0 else "")
+
+    picked = [e for e in ir.entities
+              if getattr(e, "KIND", "") in _CAD_GEOMETRY_KINDS]
+    order = {k: i for i, k in enumerate(_CAD_GEOMETRY_KINDS)}
+
+    def key(e):
+        b = getattr(e, "bbox", None) or (0.0, 0.0, 0.0, 0.0)
+        return (order[e.KIND], -round(b[3], 6), round(b[0], 6))
+
+    picked.sort(key=key)
+    rows = []
+    for e in picked[:CAD_GEOMETRY_MAX]:
+        kind = e.KIND
+        if kind == "circle":
+            text = (f"CIRCLE centre {pt(e.center)} radius {num(e.radius)}")
+        elif kind == "arc":
+            text = (f"ARC centre {pt(e.center)} radius {num(e.radius)}, "
+                    f"{_fmt(e.start_angle)} to {_fmt(e.end_angle)} deg")
+        elif kind == "line":
+            text = (f"LINE {pt(e.start)} to {pt(e.end)}, length "
+                    f"{num(e.length())}")
+        elif kind == "polyline":
+            vs = list(e.vertices or [])
+            text = (f"POLYLINE {'closed' if e.closed else 'open'}, "
+                    f"{len(vs)} vertices: {verts(vs)}")
+        else:
+            vs = list(getattr(e, "boundary", None) or [])
+            area = e.area() * scale * scale
+            text = (f"HATCH area {_fmt(area)}, boundary of {len(vs)} "
+                    f"vertices: {verts(vs)}")
+        rows.append(text + where(e) + _near_text(e, grid))
+    return rows, len(rows), len(picked)
+
+
 def _read_cad(path: str, name: str) -> Dict[str, Any]:
     """A DXF as its text lines (every TEXT/MTEXT/ATTRIB, leader and
     dimension, in reading order, in DRAWING units) and a summary."""
@@ -847,6 +1032,7 @@ def _read_cad(path: str, name: str) -> Dict[str, Any]:
         return f"({_fmt(p[0] * scale)}, {_fmt(p[1] * scale)})"
 
     rows = []
+    texts = []         # (position, text, middle): what geometry sits by
     for e in ir.entities:
         kind = getattr(e, "KIND", "")
         layer = getattr(e, "layer", None) or "0"
@@ -854,6 +1040,10 @@ def _read_cad(path: str, name: str) -> Dict[str, Any]:
             text = " ".join(str(getattr(e, "content", "") or "").split())
             if text:
                 pos = getattr(e, "position", (0.0, 0.0))
+                b = getattr(e, "bbox", None)
+                mid = (((b[0] + b[2]) / 2, (b[1] + b[3]) / 2) if b
+                       else tuple(pos))
+                texts.append((pos, text[:60], mid))
                 rows.append((pos, f"TEXT \"{text}\" at {pt(pos)} "
                                   f"[layer {layer}]"))
         elif kind == "leader":
@@ -873,7 +1063,13 @@ def _read_cad(path: str, name: str) -> Dict[str, Any]:
     # Reading order on a plan: top to bottom, then left to right.
     rows.sort(key=lambda r: (-round(r[0][1] * scale, 3),
                              round(r[0][0] * scale, 3)))
+    geometry, n_listed, n_geometry = _cad_geometry(ir, pt, scale, texts)
     layers = sorted(ir.counts_by_layer().items(), key=lambda kv: -kv[1])
+    by_layer: Dict[str, Dict[str, int]] = {}
+    for e in ir.entities:
+        d = by_layer.setdefault(getattr(e, "layer", None) or "0", {})
+        k = getattr(e, "KIND", "") or "other"
+        d[k] = d.get(k, 0) + 1
     box = ir.bbox()
     header: Dict[str, Any] = {
         "kind": "dxf drawing",
@@ -882,8 +1078,12 @@ def _read_cad(path: str, name: str) -> Dict[str, Any]:
         "n_entities": len(ir.entities),
         "entities_by_type": ir.counts_by_type(),
         "layers": {k: v for k, v in layers[:40]},
+        "entities_by_layer": {k: by_layer.get(k, {}) for k, _ in layers[:40]},
         "n_text_lines": len(rows),
+        "n_geometry_lines": n_listed,
     }
+    if n_geometry > n_listed:
+        header["geometry_not_listed"] = n_geometry - n_listed
     if len(layers) > 40:
         header["layers_not_listed"] = len(layers) - 40
     if box is not None:
@@ -891,15 +1091,22 @@ def _read_cad(path: str, name: str) -> Dict[str, Any]:
     if ir.warnings:
         header["warnings"] = [str(w)[:200] for w in ir.warnings[:5]]
     header["note"] = (
-        f"'{name}' is a DXF drawing, read as CAD data: every piece of text, "
-        "leader and dimension with its position in drawing units, and the "
-        "layers and entity counts. There are no pages here: it cannot be "
-        "viewed, zoomed or marked up with the page, region or markup tools. "
-        "To LOOK at the sheet or mark it up, ask the user for a PDF plot of "
-        f"it. read_document(handle='{name}', start_line=N) pages through all "
-        f"of its text; search_document(handle='{name}', pattern=...) finds "
-        "text in it.")
-    return {"lines": [r[1] for r in rows], "header": header}
+        f"'{name}' is a DXF drawing, read as CAD data, in drawing units: "
+        "every piece of text, leader and dimension with its position, then "
+        "the geometry - each CIRCLE (centre, radius), ARC, POLYLINE "
+        "(vertices, closed or open), LINE (ends) and HATCH - with the text "
+        "it sits by ('near', 'encloses'); and the entity counts per layer. "
+        f"read_document(handle='{name}', start_line=N) pages through it all; "
+        f"search_document(handle='{name}', pattern=...) finds a line (e.g. "
+        "'CIRCLE', or a label). To add a note or comment to the drawing, "
+        "use annotate_dxf (a copy, written by a CAD library) - never retype "
+        "the DXF with save_file. There are no pages here: to LOOK at the "
+        "sheet, or for a marked-up PDF, ask the user for a PDF plot of it.")
+    lines = [r[1] for r in rows]
+    if geometry:
+        lines += ["GEOMETRY (drawing units; 'near' = the closest text):"] \
+            + geometry
+    return {"lines": lines, "header": header}
 
 
 def _read_office(path: str, name: str) -> Dict[str, Any]:
@@ -1034,8 +1241,10 @@ def _side_document(name: str, arguments: Dict[str, Any],
         hint = (f"read_document(handle='{shown}') reads it and "
                 f"search_document(handle='{shown}', pattern=...) searches "
                 "it.")
-        hint += (" To look at the sheet or mark it up, ask the user for a "
-                 "PDF plot of it." if kind == "cad" else
+        hint += (" To add a note to the drawing, use annotate_dxf (it "
+                 "writes a copy); to look at the sheet or for a marked-up "
+                 "PDF, ask the user for a PDF plot of it." if kind == "cad"
+                 else
                  " Comments on it go in a document you write (write_docx, "
                  "write_xlsx).")
         return json.dumps({

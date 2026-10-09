@@ -73,12 +73,15 @@ REVIEW_TOOLS = (
     # A chart and a spreadsheet, as on the legacy build (live smoke wave 1,
     # A12); each is built only where its library imports.
     "plot_data", "write_xlsx",
+    # Notes on a DXF copy, written by a CAD library (live smoke wave 2c, E4).
+    "annotate_dxf",
 )
 
 #: The reading helper's tools: nothing that writes a file or a markup.
 READER_TOOLS = tuple(t for t in REVIEW_TOOLS
                      if t not in ("annotate_document", "write_docx",
-                                  "save_file", "plot_data", "write_xlsx"))
+                                  "save_file", "plot_data", "write_xlsx",
+                                  "annotate_dxf"))
 
 #: Descriptions written for this page (the geotech page's versions point at
 #: drawing_ir tools this page does not have, and the core "look" tool had one
@@ -99,7 +102,11 @@ REVIEW_DESCRIPTIONS: Dict[str, str] = {
         "with render_region - a whole-page box says where to zoom, not where "
         "to put a mark. When the page's small lettering is too small "
         "for one image, the page is also read in tiles (tiles='off' skips "
-        "that; N or 'NxN' with N from 2 to 4, e.g. '3x3', forces it). page "
+        "that; N or 'NxN' with N from 2 to 4, e.g. '3x3', forces it). "
+        "Every reading is kept for the conversation: reuse=true returns the "
+        "latest reading of the page - saying what it was asked - instead of "
+        "a new look, for a follow-up that reading already answers; look "
+        "again when the question needs more. page "
         "is 0-based; or give pdf_page, 1-based, as a PDF viewer shows."),
     "render_region": (
         "Zoom on part of a page and look at it. The region is re-drawn from "

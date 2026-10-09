@@ -656,7 +656,8 @@ def _check_one(pdf_bytes: bytes, item: Dict[str, Any], engine) -> Dict[str, Any]
             pad_frac=0.0, engine=engine)
         size = (int(info["width_px"]), int(info["height_px"]))
         prompt, asked_comment = _prompt(kind, spec, size)
-        answer = engine.analyze_image(image, prompt)
+        from funhouse_agent.vision_tools import ask_vision
+        answer = ask_vision(engine, image, prompt, "check")
     except Exception as exc:  # noqa: BLE001 - a failed check is reported
         out.update(verdict="not_checked",
                    reason=f"{type(exc).__name__}: {str(exc)[:160]}")

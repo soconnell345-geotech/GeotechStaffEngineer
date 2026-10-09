@@ -283,9 +283,13 @@ def dispatch_extended_tool(
     elif tool_name == "view_worked_example_source":
         return _dispatch_view_worked_example(arguments, engine)
     elif tool_name == "save_file":
-        return _dispatch_save_file(arguments, save_fn or _default_save_fn)
+        return _dispatch_save_file_tool(arguments, attachments,
+                                        save_fn or _default_save_fn)
     elif tool_name == "write_docx":
         return _dispatch_write_docx(arguments, save_fn or _default_save_fn)
+    elif tool_name == "annotate_dxf":
+        return _dispatch_annotate_dxf(arguments, attachments,
+                                      save_fn or _default_save_fn)
     else:
         return json.dumps({"error": f"Unknown extended tool: {tool_name}"})
 
@@ -679,10 +683,16 @@ def _resolve_attachment_or_path(key, attachments):
 # read_text_file — a REAL text file from disk (HTML, TXT, CSV, JSON, MD)
 # ---------------------------------------------------------------------------
 
-#: Characters returned per call. JSON escaping can nearly double HTML, so this
-#: stays well under the 16,000-character reference cap and the result is
-#: never cut into invalid JSON; longer files page with ``offset``.
+#: Characters returned per call when the call names no number.
 _TEXT_READ_MAX_CHARS = 6000
+#: The most characters one call returns (``max_chars`` / ``limit``); longer
+#: files page with ``offset`` (live smoke wave 2c, E6: asked for 20,000, a
+#: model silently got 6,000).
+_TEXT_READ_CEILING = 12000
+#: The whole JSON result stays under this, so it is never cut into invalid
+#: JSON by the 16,000-character reference cap: JSON escaping can nearly
+#: double HTML, so such text comes back in a shorter piece.
+_TEXT_READ_JSON_BUDGET = 14500
 #: Files larger than this are refused rather than read into memory.
 _TEXT_READ_MAX_BYTES = 20 * 1024 * 1024
 
@@ -768,23 +778,48 @@ def _dispatch_read_text_file(arguments):
         offset = max(0, int(arguments.get("offset", 0) or 0))
     except (TypeError, ValueError):
         offset = 0
+    # ``limit`` and ``max_chars`` name the same thing; ``limit`` wins.
+    asked = arguments.get("limit")
+    if asked in (None, ""):
+        asked = arguments.get("max_chars", _TEXT_READ_MAX_CHARS)
     try:
-        max_chars = int(arguments.get("max_chars", _TEXT_READ_MAX_CHARS)
-                        or _TEXT_READ_MAX_CHARS)
+        requested = int(asked or _TEXT_READ_MAX_CHARS)
     except (TypeError, ValueError):
-        max_chars = _TEXT_READ_MAX_CHARS
-    max_chars = max(200, min(max_chars, _TEXT_READ_MAX_CHARS))
-    chunk = text[offset:offset + max_chars]
-    result = {"path": shown, "chars_total": len(text), "offset": offset,
-              "returned_chars": len(chunk), "text": chunk}
-    if extra:
-        note = extra.pop("note", None)
-        result.update(extra)
-        if note and offset == 0:
-            result["note"] = note
-    if offset + max_chars < len(text):
-        result["truncated"] = True
-        result["next_offset"] = offset + max_chars
+        requested = _TEXT_READ_MAX_CHARS
+    requested = max(200, requested)
+    allowed = min(requested, _TEXT_READ_CEILING)
+    total = len(text)
+
+    def build(chunk):
+        end = offset + len(chunk)
+        showing = f"chars {offset:,}-{end:,} of {total:,}"
+        if end < total:
+            showing += f"; pass offset={end} for more"
+        if len(chunk) < requested and end < total:
+            showing += (f" ({requested:,} were asked for; "
+                        f"{len(chunk):,} came back"
+                        + (f", the most one call returns"
+                           if len(chunk) == _TEXT_READ_CEILING else
+                           ", the most that fits one result")
+                        + ")")
+        res = {"path": shown, "showing": showing, "chars_total": total,
+               "offset": offset, "returned_chars": len(chunk),
+               "text": chunk}
+        if extra:
+            res.update({k: v for k, v in extra.items() if k != "note"})
+            if extra.get("note") and offset == 0:
+                res["note"] = extra["note"]
+        if end < total:
+            res["truncated"] = True
+            res["next_offset"] = end
+        return res
+
+    chunk = text[offset:offset + allowed]
+    result = build(chunk)
+    while len(chunk) > 200 and \
+            len(json.dumps(result)) > _TEXT_READ_JSON_BUDGET:
+        chunk = chunk[:max(200, int(len(chunk) * 0.85))]
+        result = build(chunk)
     return json.dumps(result)
 
 
@@ -1287,7 +1322,7 @@ def _repeat_store(rkey, raw) -> None:
         return
     if not isinstance(out, dict) or "error" in out or "image_id" in out \
             or out.get("tiles_not_read") or out.get("overview_not_read") \
-            or out.get("cut_off"):
+            or out.get("cut_off") or out.get("overview_cut"):
         return
     if any(isinstance(t, dict) and "error" in t
            for t in out.get("tiles") or ()):
@@ -1469,6 +1504,176 @@ def clear_read_log() -> None:
     each conversation's record on disk stays)."""
     with _READ_LOG_LOCK:
         _READ_LOG.clear()
+    with _READINGS_LOCK:
+        _READINGS_MEM.clear()
+
+
+# -- Each page's full reading, kept for the conversation (wave 2c, E2) --------
+#
+# F44: one sheet was transcribed whole in all four turns (206 s), and F50 t6
+# re-viewed all ten sheets: the read log says WHICH pages were looked at, not
+# what was seen, and the identical-read cache (B6) never hits once the prompt
+# differs. The full result of every page read is kept beside the read log
+# (``page_readings.json``: a conversation file, never a download card,
+# mirrored and restored with the conversation; ``.scratch`` for a bare
+# working folder), and ``analyze_pdf_page(reuse=true)`` hands back the
+# latest one for that page instead of a new look. The model decides: the
+# result says what that reading was asked.
+
+#: The kept readings of one conversation, beside :data:`READS_FILE`.
+READINGS_FILE = "page_readings.json"
+#: Readings kept per conversation (one per file, page and view; oldest
+#: dropped first) ...
+READINGS_MAX = 40
+#: ... and characters of results kept per conversation.
+READINGS_MAX_CHARS = 1_500_000
+#: Conversations kept in memory when there is no folder to keep them in.
+READINGS_CONVERSATIONS = 16
+
+REUSED_NOTE = (
+    "An earlier reading of this page in this conversation ({view}; it was "
+    "asked: \"{prompt}\"), returned without a new look. If the question now "
+    "needs something that reading was not asked for, call analyze_pdf_page "
+    "again without reuse, or zoom with render_region.")
+NO_EARLIER_READING = ("no earlier reading of this page is kept in this "
+                      "conversation, so it was read now")
+
+_READINGS_LOCK = threading.Lock()
+_READINGS_MEM: "OrderedDict[str, list]" = OrderedDict()
+
+
+def readings_file(folder=None) -> Optional[str]:
+    """Where the conversation whose working folder is ``folder`` (``None`` =
+    the one bound in this context) keeps its page readings: beside its read
+    record (:func:`reads_file`); ``None`` with no folder."""
+    path = reads_file(folder)
+    return os.path.join(os.path.dirname(path), READINGS_FILE) if path \
+        else None
+
+
+def _load_readings(path: Optional[str]) -> list:
+    if not path:
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return []
+    kept = data.get("readings") if isinstance(data, dict) else None
+    return [r for r in kept or [] if isinstance(r, dict)]
+
+
+def _save_readings(path: str, kept: list) -> None:
+    """Write the readings whole through a temporary file of this thread's
+    own (best-effort: a reading that cannot be kept never fails the read)."""
+    tmp = f"{path}.{os.getpid()}-{threading.get_ident()}.tmp"
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"readings": kept}, fh, ensure_ascii=False)
+        os.replace(tmp, path)
+    except (OSError, TypeError, ValueError):
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+
+
+def _file_id(data) -> str:
+    return hashlib.sha256(bytes(data)).hexdigest()[:20]
+
+
+def _keep_reading(key, data, page, view, prompt, raw) -> None:
+    """Keep one page read's full result for this conversation (the newest
+    per file, page and view)."""
+    conv = _conversation_for()
+    if not conv:
+        return
+    entry = {"document": _document_name(key), "file": _file_id(data),
+             "page": page, **_pdf_page(page), "view": view,
+             "prompt": " ".join(str(prompt or "").split())[:300],
+             "when": round(time.time(), 1), "result": raw}
+    try:
+        path = readings_file()
+    except Exception:  # noqa: BLE001 - memory only, then
+        path = None
+    with _READINGS_LOCK:
+        kept = (_load_readings(path) if path
+                else list(_READINGS_MEM.get(conv) or []))
+        kept = [r for r in kept
+                if (r.get("file"), r.get("page"), r.get("view"))
+                != (entry["file"], page, view)] + [entry]
+        while len(kept) > 1 and (
+                len(kept) > READINGS_MAX
+                or sum(len(str(r.get("result") or "")) for r in kept)
+                > READINGS_MAX_CHARS):
+            kept.pop(0)
+        if path:
+            _save_readings(path, kept)
+        else:
+            _READINGS_MEM[conv] = kept
+            _READINGS_MEM.move_to_end(conv)
+            while len(_READINGS_MEM) > READINGS_CONVERSATIONS:
+                _READINGS_MEM.popitem(last=False)
+
+
+def _all_readings(folder=None) -> list:
+    try:
+        path = readings_file(folder)
+    except Exception:  # noqa: BLE001
+        path = None
+    if path:
+        with _READINGS_LOCK:
+            return _load_readings(path)
+    conv = _conversation_for(folder)
+    with _READINGS_LOCK:
+        return list(_READINGS_MEM.get(conv) or [])
+
+
+def readings_for_conversation(folder=None) -> List[Dict[str, Any]]:
+    """The page readings kept for one conversation, oldest first, WITHOUT
+    their results: ``document``, ``page`` (0-based), ``pdf_page``, ``view``
+    (``"page"`` or ``"page+tiles NxN"``), ``prompt`` (what it was asked,
+    first 300 characters) and ``when``. ``folder`` as in
+    :func:`reads_for_conversation`."""
+    return [{k: v for k, v in r.items() if k not in ("result", "file")}
+            for r in _all_readings(folder)]
+
+
+def _earlier_reading(data, page, tiles) -> Optional[dict]:
+    """The kept reading of this file's ``page`` to hand back for
+    ``reuse=true``: the newest in the view asked for (``tiles``: ``"off"``
+    = the page alone, N = N x N), else the newest of the page in any
+    view."""
+    fid = _file_id(data)
+    mine = [r for r in _all_readings()
+            if r.get("file") == fid and r.get("page") == page
+            and r.get("result")]
+    if not mine:
+        return None
+    want = ("page" if tiles == "off"
+            else f"page+tiles {tiles}x{tiles}" if isinstance(tiles, int)
+            else None)
+    same = [r for r in mine if want is not None and r.get("view") == want]
+    return (same or mine)[-1]          # kept oldest first: the newest
+
+
+def _reused_result(entry) -> str:
+    """A kept reading as the tool's result, saying what it is."""
+    try:
+        out = json.loads(entry["result"])
+    except (TypeError, ValueError):
+        return entry["result"]
+    if not isinstance(out, dict):
+        return entry["result"]
+    out.pop("repeat", None)
+    out["reused"] = REUSED_NOTE.format(
+        view=entry.get("view") or "page",
+        prompt=str(entry.get("prompt") or "")[:200])
+    _fit_located(out, TILED_RESULT_CHARS)
+    if out.get("tiles"):
+        _fit_tiles(out)
+    return json.dumps(out)
 
 
 # -- A vision answer cut off at the model's output limit (wave 2b, C5) --------
@@ -1481,6 +1686,76 @@ CUT_OFF_NOTE = ("the vision model's answer was CUT OFF at its output limit, "
 
 def _is_cut_off(text) -> bool:
     return bool(getattr(text, "cut_off", False))
+
+
+# -- An output cap for each kind of vision call (live smoke wave 2c, E1) ------
+#
+# The side calls used the main model's 32,000-token cap (C5), so one answer
+# could run on: F44's whole-page call took 70.6 s and 10,778 output tokens
+# (about 1,000 of them answer, the rest the model's reasoning over lettering
+# too small to read whole) while its nine tiles finished in 11-15 s. Each
+# cap sits above the longest answer of its kind in live smoke waves 2a-2c
+# (Sonnet, reasoning included: tile 4,335, page read alone 5,844, zoom 6,841,
+# image 2,609), so a reading is not cut where it used to be whole, and a
+# runaway answer is bounded. A capped answer still says so (``cut_off``).
+# The whole-page call made while tiles read the page asks for the layout
+# only (:func:`_overview_prompt`), and gets the smallest cap.
+
+#: Output tokens per vision answer, by kind of call: ``overview`` = the
+#: whole page while tiles read it, ``tile``, ``page`` = a page read whole
+#: with no tiles, ``region`` = a zoom, ``image`` = an image file, ``check``
+#: = the markup check's look at one placed mark (longest seen 1,041),
+#: ``find`` = find_like's read of a sheet of candidates (702). The chart
+#: read-offs (read_reference_figure, worked-example pages) keep the model's
+#: own cap: a reasoning model's read-off is the work there.
+VISION_OUTPUT_CAPS = {"overview": 4000, "tile": 6000, "page": 12000,
+                      "region": 8000, "image": 8000, "check": 4000,
+                      "find": 8000}
+
+#: ``off`` sends every vision call with the model's own cap again; a number
+#: sets every kind's cap to it (a live tune without a release).
+VISION_CAP_ENV = "GEOTECH_VISION_MAX_TOKENS"
+
+
+def vision_output_cap(kind: str) -> Optional[int]:
+    """The output cap for one vision call of ``kind``
+    (:data:`VISION_OUTPUT_CAPS`), or ``None`` for the model's own."""
+    raw = (os.environ.get(VISION_CAP_ENV) or "").strip().lower()
+    if raw in ("off", "0", "none", "no", "false"):
+        return None
+    if raw:
+        try:
+            return max(256, int(raw))
+        except ValueError:
+            pass
+    return VISION_OUTPUT_CAPS.get(kind)
+
+
+def ask_vision(engine, image, prompt, kind):
+    """``engine.analyze_image(image, prompt)``, capped for a call of
+    ``kind`` (:func:`vision_output_cap`) when the engine takes a cap."""
+    cap = vision_output_cap(kind)
+    if cap and getattr(engine, "accepts_output_cap", False):
+        return engine.analyze_image(image, prompt, max_output_tokens=cap)
+    return engine.analyze_image(image, prompt)
+
+
+def _overview_prompt(prompt, n) -> str:
+    """What the whole-page call is asked while ``n`` x ``n`` tiles read the
+    page: the layout, and where the things asked about are -- not the small
+    lettering, which the tiles read (E1). The agent's own prompt rides along
+    so the layout can point at what it asks about."""
+    return (
+        f"This image is the WHOLE sheet, shrunk to fit one image. Its small "
+        f"lettering is being read separately, in {n}x{n} close-up tiles of "
+        f"the same sheet. From this view give only the LAYOUT, briefly: what "
+        f"the sheet is and which way it is turned; its parts (views, "
+        f"sections, plans, tables, note blocks, title block, legend) and "
+        f"where each sits; and where on the sheet the things asked about "
+        f"below are. Quote only lettering large enough to read with "
+        f"confidence (a title, a sheet number); do not transcribe or answer "
+        f"from small text - the tiles do that.\n\n"
+        f"What is being asked of this sheet: {prompt}")
 
 
 # -- Only images go to analyze_image (wave 2b, C6) -----------------------------
@@ -1592,7 +1867,7 @@ def _dispatch_analyze_image(arguments, engine, attachments):
 
     def read():
         try:
-            result = engine.analyze_image(image_data, prompt)
+            result = ask_vision(engine, image_data, prompt, "image")
             out = {"analysis": result}
             if image_note:
                 out["image_note"] = image_note
@@ -1710,9 +1985,10 @@ def _dispatch_render_region(arguments, engine, attachments):
         return json.dumps(_inline_result(image_bytes, info, page, engine,
                                          lines, bbox=bbox))
     try:
-        result = engine.analyze_image(
-            image_bytes, _vision_prompt(prompt, info["clip"], lines,
-                                        _sent_size(info)))
+        result = ask_vision(
+            engine, image_bytes,
+            _vision_prompt(prompt, info["clip"], lines, _sent_size(info)),
+            "region")
         out = {"page": page, **_pdf_page(page), "bbox": bbox,
                "analysis": result, **vision_view.view_payload(info, engine)}
         if _is_cut_off(result):
@@ -2184,6 +2460,11 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
     whole-page call with tiles read is said too (``overview_not_read``) —
     the rest of the reading still comes back (B7). An identical read earlier
     in the same conversation is returned again, marked ``repeat`` (B6).
+
+    ``reuse`` (E2): hand back the latest reading of this page kept for the
+    conversation (:func:`_keep_reading`), marked ``reused`` with the view and
+    prompt it was made with, instead of a new look; with none kept the page
+    is read now and ``reuse_note`` says so.
     """
     key = arguments.get("attachment_key", "")
     prompt = arguments.get("prompt", "Describe the content of this page.")
@@ -2199,6 +2480,12 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
     if refused is not None:
         return refused
 
+    reuse = _truthy(arguments.get("reuse")) and not arguments.get("_inline")
+    if reuse:
+        earlier = _earlier_reading(pdf_bytes, page, tiles)
+        if earlier is not None:
+            return _reused_result(earlier)
+
     raw = _repeat_or_read(
         "analyze_pdf_page", pdf_bytes,
         {"page": page, "prompt": prompt, "tiles": tiles}, arguments, engine,
@@ -2211,9 +2498,19 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
     if isinstance(out, dict) and "error" not in out and "repeat" not in out \
             and "image_id" not in out:
         n = int(round(len(out.get("tiles") or ()) ** 0.5))
-        _note_read("analyze_pdf_page", key, page,
-                   f"page+tiles {n}x{n}" if n > 1 else "page", prompt)
+        view = f"page+tiles {n}x{n}" if n > 1 else "page"
+        _note_read("analyze_pdf_page", key, page, view, prompt)
+        _keep_reading(key, pdf_bytes, page, view, prompt, raw)
+    if reuse and isinstance(out, dict) and "error" not in out:
+        out["reuse_note"] = NO_EARLIER_READING
+        raw = json.dumps(out)
     return raw
+
+
+def _truthy(value) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)
 
 
 def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
@@ -2239,8 +2536,6 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
         # render_region where the lettering is small: no tiles.
         return json.dumps(_inline_result(image_bytes, info, page, engine,
                                          lines))
-    page_prompt = _vision_prompt(prompt, info["clip"], lines,
-                                 _sent_size(info))
     n = _tile_count(tiles, info)
     if n > 1 and not _has_ink(image_bytes):
         # A blank page has nothing to read closer (wave 2b, C11).
@@ -2248,9 +2543,16 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
         tiles_note = "; ".join(filter(None, [
             tiles_note, "the page has no ink (it is blank), so it was not "
                         "read in tiles"]))
+    # With tiles, the whole-page call is asked for the layout only: the
+    # tiles read the lettering (E1: asked to transcribe a sheet too small to
+    # read whole, it was the read's long pole -- 55-72 s against 11-15 s).
+    page_kind = "overview" if n > 1 else "page"
+    page_prompt = _vision_prompt(
+        _overview_prompt(prompt, n) if n > 1 else prompt, info["clip"],
+        lines, _sent_size(info))
     # The whole page and its tiles at once: the tiles never use the
     # whole-page answer, so the read takes the longest call, not the sum.
-    jobs = [lambda: engine.analyze_image(image_bytes, page_prompt)]
+    jobs = [lambda: ask_vision(engine, image_bytes, page_prompt, page_kind)]
     if n > 1:
         jobs += _tile_jobs(pdf_bytes, page, info, n, prompt, engine, lines)
     results = _run_together(jobs)
@@ -2270,11 +2572,19 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
         out["overview_not_read"] = (
             f"the whole-page view was NOT read ({_vision_error(result.exc)}); "
             f"the tiles below were read")
-    cut = (["the whole-page view"] if _is_cut_off(result) else []) + [
+    # With tiles, a whole-page LAYOUT answer that stopped at its cap leaves
+    # the reading whole (the tiles hold it), and is said so apart.
+    overview_cut = n > 1 and _is_cut_off(result)
+    cut = (["the whole-page view"] if _is_cut_off(result) and n == 1
+           else []) + [
         f"tile {t['tile']}" for t in tile_rows or ()
         if isinstance(t, dict) and t.get("cut_off")]
     if cut:
         out["cut_off"] = f"{', '.join(cut)}: {CUT_OFF_NOTE}"
+    if overview_cut:
+        out["overview_cut"] = (
+            "the whole-page layout answer stopped at its output limit, so it "
+            "may be incomplete; the tiles below read the lettering")
     _finish_answer(out, info)
     if tiles_note:
         out["tiles_note"] = tiles_note
@@ -2288,8 +2598,10 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
                "image, so it was ALSO" if tiles == "auto" else "it was ALSO")
         out["tiling"] = (
             f"{why} read in {n}x{n} overlapping tiles (each at the same "
-            f"image size, lettering {n}x larger). Trust a tile over the "
-            f"overview for small lettering. Each tile's boxes are on that "
+            f"image size, lettering {n}x larger). The whole-page 'analysis' "
+            f"was asked for the LAYOUT only (what is where); the tiles read "
+            f"the lettering, so take small lettering from a tile. Each "
+            f"tile's boxes are on that "
             f"tile's own 0-999 grid: pass them with the TILE's view, to zoom "
             f"with render_region or, once the thing is legible in a view of "
             f"{vision_view.MARK_VIEW_PT:.0f} pt or less, to place a mark.")
@@ -2412,7 +2724,9 @@ def _tiles_not_read_note(rows) -> Optional[str]:
     why = failed[0]["error"]
     if len(failed) == len(rows):
         return (f"NO tile was read ({why}); only the whole-page view "
-                f"above was")
+                f"above was, and it was asked for the layout only: read the "
+                f"page again, or zoom with render_region, before relying on "
+                f"its lettering")
     word = "tile" if len(failed) == 1 else "tiles"
     return (f"{word} {names} failed: {why}; the rest were read. That part "
             f"of the page was NOT read in close-up: read it with "
@@ -2437,9 +2751,10 @@ def _tile_jobs(pdf_bytes, page, info, n, prompt, engine, lines=None):
             where = (f"This image is tile row {r + 1} of {n}, column {c + 1} "
                      f"of {n} of the sheet (tiles overlap slightly). Report "
                      f"only what is IN this tile, briefly.")
-            text = engine.analyze_image(
-                img, _vision_prompt(f"{prompt}\n\n{where}", tinfo["clip"],
-                                    lines, _sent_size(tinfo)))
+            text = ask_vision(
+                engine, img,
+                _vision_prompt(f"{prompt}\n\n{where}", tinfo["clip"], lines,
+                               _sent_size(tinfo)), "tile")
             row = {"tile": f"r{r + 1}c{c + 1}",
                    "view": [round(v, 1) for v in tinfo["clip"]],
                    "view_px": [tinfo["width_px"], tinfo["height_px"]],
@@ -3005,6 +3320,215 @@ def _dispatch_save_file(arguments, save_fn):
                 )
     if host:
         _name_saved_file(result, save_fn)
+    return json.dumps(result)
+
+
+# -- A DXF is never retyped by the model (live smoke wave 2c, E4) -------------
+
+#: A save that copies at least this share of the entities of a DXF this
+#: conversation holds, each one unchanged (every group code and value), is
+#: a retyped copy of it. Entities rather than the whole file: two drawings
+#: made from the same template share nearly all of their header and tables.
+DXF_RETYPE_SHARE = 0.6
+#: DXFs compared at most, and the largest compared (bytes).
+_DXF_COMPARE_MAX_FILES = 30
+_DXF_COMPARE_MAX_BYTES = 20 * 1024 * 1024
+_DXF_START = re.compile(r"\s*0\s*\r?\n\s*SECTION\b")
+
+
+def _dxf_entities(text: str) -> set:
+    """The entities of a DXF's ENTITIES section, each as the tuple of its
+    (group code, value) pairs."""
+    lines = [ln.strip() for ln in text.splitlines()]
+    pairs = list(zip(lines[0::2], lines[1::2]))
+    found, cur, inside = set(), None, False
+    for i, (code, value) in enumerate(pairs):
+        if code == "2" and i and pairs[i - 1] == ("0", "SECTION"):
+            inside = value.upper() == "ENTITIES"
+            continue
+        if not inside:
+            continue
+        if code == "0":
+            if cur:
+                found.add(tuple(cur))
+            cur = [(code, value)]
+            if value.upper() == "ENDSEC":
+                inside, cur = False, None
+        elif cur is not None:
+            cur.append((code, value))
+    return found
+
+
+def _dxf_save_text(arguments) -> Optional[str]:
+    """The text of a ``save_file`` call that writes a DXF (by its name or
+    its content), else ``None``."""
+    content = arguments.get("content")
+    if not content:
+        return None
+    named = str(arguments.get("path") or "").lower().endswith(".dxf")
+    if arguments.get("encoding") == "base64":
+        import base64
+        try:
+            # Any other file: only its start is looked at.
+            raw = str(content) if named else str(content)[:400]
+            text = base64.b64decode(raw).decode("latin-1")
+        except Exception:  # noqa: BLE001 - save_file reports bad base64
+            return None
+        if not named and _DXF_START.match(text[:200]):
+            text = base64.b64decode(content).decode("latin-1")
+    else:
+        text = str(content)
+    return text if named or _DXF_START.match(text[:200]) else None
+
+
+def _conversation_dxfs(attachments):
+    """``(name, text)`` of each DXF this conversation holds: attachments,
+    then the working folder (two levels, no dot-folders)."""
+    out = []
+    for k, v in (attachments or {}).items():
+        if str(k).lower().endswith(".dxf") and isinstance(v, (bytes,
+                                                              bytearray)):
+            out.append((os.path.basename(str(k)),
+                        bytes(v).decode("latin-1", errors="replace")))
+    host = _host_folder()
+    if host and os.path.isdir(host):
+        top = os.path.abspath(host)
+        for root, dirs, names in os.walk(top):
+            rel = os.path.relpath(root, top)
+            depth = 0 if rel == "." else rel.count(os.sep) + 1
+            dirs[:] = [d for d in dirs if not d.startswith(".")
+                       and depth < 1]
+            for n in names:
+                if len(out) >= _DXF_COMPARE_MAX_FILES:
+                    return out
+                if not n.lower().endswith(".dxf"):
+                    continue
+                p = os.path.join(root, n)
+                try:
+                    if os.path.getsize(p) > _DXF_COMPARE_MAX_BYTES:
+                        continue
+                    with open(p, "rb") as fh:
+                        out.append((n, fh.read().decode("latin-1",
+                                                         errors="replace")))
+                except OSError:
+                    continue
+    return out
+
+
+def _dispatch_save_file_tool(arguments, attachments, save_fn):
+    """``save_file`` as the agent calls it: a DXF that retypes one this
+    conversation holds is refused (annotate_dxf writes notes on a copy),
+    and any other DXF is read back by a CAD library before it is saved."""
+    text = _dxf_save_text(arguments)
+    if text is None:
+        return _dispatch_save_file(arguments, save_fn)
+    mine = _dxf_entities(text)
+    for name, other in _conversation_dxfs(attachments) if mine else ():
+        theirs = _dxf_entities(other)
+        if not theirs:
+            continue
+        same = len(mine & theirs)
+        if same / len(theirs) >= DXF_RETYPE_SHARE:
+            return json.dumps({
+                "error": (f"Not saved: this is a retyped copy of '{name}' "
+                          f"({same} of its {len(theirs)} entities copied "
+                          f"unchanged). A DXF is never retyped as text - one "
+                          f"changed character can break it without any sign "
+                          f"(a retyped copy once wrote group code 43 for "
+                          f"143)."),
+                "hint": (f"To add notes or comments to the drawing, call "
+                         f"annotate_dxf(source='{name}', notes=[{{text, x, "
+                         f"y}}, ...]) with positions in drawing units as "
+                         f"open_document lists them; it writes a copy with "
+                         f"a CAD library and checks it.")})
+    check = None
+    from funhouse_agent import dxf_notes
+    if dxf_notes.available():
+        # The bytes that will be saved: base64 content as sent (read back as
+        # latin-1 above), text as UTF-8 (how save_file writes it).
+        raw = text.encode("latin-1" if arguments.get("encoding") == "base64"
+                          else "utf-8", errors="replace")
+        try:
+            doc = dxf_notes._read(raw)
+        except dxf_notes.DxfNoteError as exc:
+            return json.dumps({
+                "error": f"Not saved: {exc}.",
+                "hint": "fix the DXF text, or to add notes to an existing "
+                        "drawing use annotate_dxf"})
+        n = sum(dxf_notes._counts(doc).values())
+        check = (f"read back with a CAD library: {n} entities. It was "
+                 f"written as text by the model, so check it in a CAD "
+                 f"program before relying on it.")
+    result = json.loads(_dispatch_save_file(arguments, save_fn))
+    if check and "error" not in result:
+        result["dxf_check"] = check
+    return json.dumps(result)
+
+
+def _dispatch_annotate_dxf(arguments, attachments, save_fn):
+    """Handle annotate_dxf: notes on a COPY of a DXF, written by a CAD
+    library (:mod:`funhouse_agent.dxf_notes`) and saved as save_file saves,
+    so it lands in the conversation as a download card."""
+    from funhouse_agent import dxf_notes
+    if not dxf_notes.available():
+        return json.dumps({"error": "DXF notes need the ezdxf package, "
+                                    "which is not installed here."})
+    source = str(arguments.get("source") or arguments.get("handle")
+                 or arguments.get("attachment_key") or "").strip()
+    if not source:
+        return json.dumps({"error": "'source' is required: the DXF's file "
+                                    "name (as open_document took it)."})
+    try:
+        data, _src = _resolve_attachment_or_path(source, attachments)
+    except FileNotFoundError as e:
+        return json.dumps({"error": str(e)})
+    real = _handle_source(source) or source
+    name = os.path.basename(str(real).replace("\\", "/")) or "drawing.dxf"
+    if not name.lower().endswith(".dxf"):
+        return json.dumps({"error": f"'{name}' is not a DXF drawing; "
+                                    f"annotate_dxf writes notes on a .dxf "
+                                    f"(annotate_document marks up a PDF)."})
+    notes = arguments.get("notes")
+    if isinstance(notes, str):             # a list sent as JSON text
+        try:
+            notes = json.loads(notes)
+        except ValueError:
+            pass
+    if isinstance(notes, dict):            # one note sent on its own
+        notes = [notes]
+    try:
+        out, report = dxf_notes.add_notes(
+            data, notes,
+            layer=arguments.get("layer") or dxf_notes.DEFAULT_LAYER)
+    except dxf_notes.DxfNoteError as exc:
+        return json.dumps({"error": f"No copy written: {exc}"})
+    stem = os.path.splitext(name)[0]
+    target = os.path.basename(str(arguments.get("output_path") or "")
+                              .replace("\\", "/").strip())
+    if not target:
+        target = name if stem.lower().endswith("_marked") \
+            else f"{stem}_marked.dxf"
+    if not target.lower().endswith(".dxf"):
+        target += ".dxf"
+    if target.lower() == name.lower() and \
+            not stem.lower().endswith("_marked"):
+        target = f"{stem}_marked.dxf"          # never over the original
+    import base64
+    result = json.loads(_dispatch_save_file(
+        {"path": target, "encoding": "base64",
+         "content": base64.b64encode(out).decode("ascii")}, save_fn))
+    if "error" in result:
+        return json.dumps(result)
+    result.update(report)
+    added = (f"{report['notes_added']} note(s) added on layer "
+             f"'{report['layer']}'")
+    said = (f"'{target}' updated in place with {added} (it is the marked "
+            f"copy; the drawing it was made from is unchanged)."
+            if target.lower() == name.lower() else
+            f"a NEW file, '{target}': '{name}' with {added}; the original "
+            f"is unchanged.")
+    result["note"] = said + (f" {result['note']}" if result.get("note")
+                             else "")
     return json.dumps(result)
 
 
