@@ -12,7 +12,9 @@ limit-state functions (``reliability_adapter._compile_g``: arithmetic,
 comparisons, conditionals and a fixed list of math functions; no names,
 attributes, strings or calls beyond those). Integer constants are made
 floats first, so a huge power overflows at once instead of building an
-enormous integer.
+enormous integer; and the evaluator refuses any exact integer power above
+about 1e308 before computing it (``floor(9)**floor(9)**floor(9)`` held the
+process for minutes, live smoke wave 2a), so no expression can stall a turn.
 """
 
 from __future__ import annotations
@@ -62,8 +64,13 @@ def _constants_as_names(expression: str, values: Dict[str, float]) -> str:
 def evaluate(expression: str, variables: Optional[Dict[str, Any]] = None
              ) -> Dict[str, Any]:
     """``{"value", "expression", "variables"}`` or ``{"error", ...}``."""
-    from funhouse_agent.adapters.reliability_adapter import _compile_g
+    from funhouse_agent.adapters.reliability_adapter import (
+        _MAX_EXPR_CHARS, _compile_g)
     expr = str(expression or "").strip()
+    if len(expr) > _MAX_EXPR_CHARS:
+        return {"error": f"the expression is too long ({len(expr):,} "
+                         f"characters; the limit is {_MAX_EXPR_CHARS:,})",
+                "expression": expr[:200] + "..."}
     raw = variables if isinstance(variables, dict) else {}
     values: Dict[str, float] = {}
     for name, v in raw.items():
@@ -100,7 +107,12 @@ def evaluate(expression: str, variables: Optional[Dict[str, Any]] = None
         if isinstance(value, float) and not math.isfinite(value):
             return {"error": f"the result is not a finite number ({value})",
                     "expression": expr, "variables": values}
-        out = float(value)
+        try:
+            out = float(value)
+        except OverflowError:                # an exact integer above 1e308
+            return {"error": "the result is too large to be a number "
+                             "(above about 1e308)",
+                    "expression": expr, "variables": values}
     else:
         return {"error": f"the expression did not give a number ({value!r})",
                 "expression": expr}

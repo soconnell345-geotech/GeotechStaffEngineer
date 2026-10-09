@@ -28,17 +28,81 @@ _MATH_FUNCS = {
 }
 _MATH_FUNCS.update({"abs": abs, "min": min, "max": max})
 
+#: An integer power whose result would need more bits than this (2**1024 is
+#: about 1.8e308, the largest float) is refused BEFORE it is computed. Python
+#: evaluates ``int ** int`` exactly, so ``9**9**9`` -- or ``floor(9)`` raised
+#: the same way, or an integer variable -- builds a 370-million-digit integer
+#: and holds the interpreter for minutes (live smoke wave 2a). A float power
+#: overflows at once by itself and is left alone.
+_MAX_POW_BITS = 1024
+
+#: The longest expression accepted. With every power bounded, only a chain of
+#: multiplications can still grow an integer, and this keeps that chain short.
+_MAX_EXPR_CHARS = 10_000
+
+
+def _bounded_pow(base, exp):
+    """``base ** exp``, refusing an exact integer result above about 1e308.
+
+    Only a Python ``int`` raised to a positive ``int`` is checked (``bool`` is
+    an ``int``); floats and numpy values overflow quickly on their own."""
+    if isinstance(base, int) and isinstance(exp, int) and exp > 0:
+        bits = abs(base).bit_length()
+        if bits > 1 and (bits - 1) * exp > _MAX_POW_BITS:
+            raise OverflowError(
+                "a power whose result is larger than about 1e308 was "
+                "refused before it was computed")
+    return base ** exp
+
+
+def _bound_powers(tree, var_names) -> str:
+    """Rewrite every ``a ** b`` in the (already checked) ``tree`` as a call to
+    :func:`_bounded_pow`; the name it is bound to, chosen so no variable
+    shadows it."""
+    name = "__gse_pow__"
+    while name in set(var_names):
+        name += "_"
+
+    def _call(node):
+        # both new nodes take the power's location (ast.fix_missing_locations
+        # recurses, so it is not used)
+        func = ast.copy_location(ast.Name(id=name, ctx=ast.Load()), node)
+        return ast.copy_location(ast.Call(
+            func=func, args=[node.left, node.right], keywords=[]), node)
+
+    def _is_pow(node):
+        return isinstance(node, ast.BinOp) and isinstance(node.op, ast.Pow)
+
+    # Iterative, children before parents (reversed breadth-first order), so
+    # a long chain cannot hit the recursion limit and a nested power
+    # (a ** b ** c) is rewritten inside the call that replaces its parent.
+    for parent in reversed(list(ast.walk(tree))):
+        for field, value in ast.iter_fields(parent):
+            if _is_pow(value):
+                setattr(parent, field, _call(value))
+            elif isinstance(value, list):
+                for i, item in enumerate(value):
+                    if _is_pow(item):
+                        value[i] = _call(item)
+    return name
+
 
 def _compile_g(expr: str, var_names):
     """Compile a limit-state/FOS expression string into g(values_dict).
 
     Same restricted-eval pattern as the pystra adapter: only the variable
-    names and math functions are allowed identifiers.
+    names and math functions are allowed identifiers. Every power is bounded
+    (:func:`_bounded_pow`) and the expression's length capped, so no
+    expression can stall the interpreter on a huge integer.
     """
     if not expr or not str(expr).strip():
         raise ValueError(
             "g_expression is required, e.g. 'R - S' (margin) or "
             "'(c + q*tan(radians(phi)))/tau' (FOS).")
+    if len(str(expr)) > _MAX_EXPR_CHARS:
+        raise ValueError(
+            f"g_expression is too long ({len(str(expr)):,} characters; the "
+            f"limit is {_MAX_EXPR_CHARS:,}).")
     allowed = set(var_names) | set(_MATH_FUNCS)
     try:
         tree = ast.parse(expr, mode="eval")
@@ -80,9 +144,11 @@ def _compile_g(expr: str, var_names):
             raise ValueError(
                 "g_expression constants must be numbers, got "
                 f"{type(node.value).__name__}.")
+    pow_name = _bound_powers(tree, var_names)
     code = compile(tree, "<g_expression>", "eval")
     ns = {"__builtins__": {}}
     ns.update(_MATH_FUNCS)
+    ns[pow_name] = _bounded_pow
 
     def g(values):
         local = {k: values[k] for k in var_names}

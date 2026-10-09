@@ -397,6 +397,23 @@ def plotly_download_twin(path: str) -> str:
     return p
 
 
+def plotly_picture_twin(path: str) -> Optional[str]:
+    """The static picture (PNG, else JPG) beside a ``*.plotly.json`` sidecar,
+    or ``None`` when ``path`` is not a sidecar or has no picture. The card
+    list keeps only the sidecar (:func:`collect_turn_artifacts`), so the
+    per-turn file note names the picture from here (live smoke wave 2a,
+    B10: "put that plot in the memo" had no image to find)."""
+    p = str(path)
+    if not p.lower().endswith(PLOTLY_SIDECAR_SUFFIX):
+        return None
+    stem = p[:-len(PLOTLY_SIDECAR_SUFFIX)]
+    for ext in _SUPERSEDED_IMAGE_EXTS:
+        for cand in (stem + ext, stem + ext.upper()):
+            if os.path.isfile(cand):
+                return cand
+    return None
+
+
 def _plotly_sidecar_stems(paths: Iterable[str]) -> set:
     """Lower-cased paths-without-suffix of every ``*.plotly.json`` in ``paths``."""
     stems = set()
@@ -484,6 +501,34 @@ def mirror_skips_dir(rel_dir: str) -> bool:
         return False
     return parts[1] in CACHE_DIRS or any(p.startswith(".")
                                          for p in parts[1:])
+
+
+#: Files that exist only while a turn runs or a write is half done: the
+#: turn's checkpoint in the conversation folder (:func:`begin_partial`) ...
+IN_FLIGHT_FILES = ("partial.json",)
+#: ... and the part files a write renames into place when it is complete
+#: (``.part``: SharePoint downloads, the coverage ledger, reference PDFs;
+#: ``.tmp``: the downloads ledger).
+IN_FLIGHT_SUFFIXES = (".part", ".tmp")
+
+
+def is_in_flight_file(rel_path) -> bool:
+    """Whether a conversation file -- given relative to the CONVERSATION
+    folder, '/' separators -- is an in-progress file the SharePoint mirror
+    never uploads and a restore never downloads.
+
+    Live smoke wave 2a (B2): "save it to SharePoint" mirrors the conversation
+    in the MIDDLE of a turn, which uploaded that turn's ``partial.json``; the
+    end-of-turn mirror never removed it, and restoring the conversation later
+    turned it into a fake "interrupted" turn. ``partial.json`` counts only at
+    the top of the conversation folder: a file of that name a user put in
+    ``files/`` is theirs."""
+    rel = str(rel_path or "").replace("\\", "/").strip("/")
+    if not rel:
+        return False
+    if rel in IN_FLIGHT_FILES:
+        return True
+    return rel.lower().endswith(IN_FLIGHT_SUFFIXES)
 
 
 def snapshot_dir(temp_dir: str) -> set:
@@ -1694,7 +1739,8 @@ def auto_title(text, n_words: int = 8) -> str:
 
 #: Where a conversation's title came from (meta ``title_source``): the
 #: attached files (an orientation turn), the first typed question, or the
-#: user's own Rename. Only an attachments title is replaced by a question.
+#: user's own Rename. Only an attachments title is changed by a question,
+#: and then only extended: the files stay in it (:func:`turn_title`).
 TITLE_FROM_ATTACHMENTS = "attachments"
 TITLE_FROM_QUESTION = "question"
 TITLE_FROM_USER = "user"
@@ -1714,6 +1760,35 @@ def orientation_title(names: Iterable[str], max_names: int = 3) -> str:
     return head + (f" + {more} more" if more > 0 else "")
 
 
+#: Words of the first typed question added after a files title.
+QUESTION_GIST_WORDS = 6
+
+#: Between a files title and the question's gist.
+TITLE_JOINER = " — "
+
+
+def files_and_question_title(files_title, prompt,
+                             n_words: int = QUESTION_GIST_WORDS) -> str:
+    """A files title extended by the first typed question's gist:
+    ``3000.pdf — What is this sheet?``.
+
+    Live smoke wave 2a (B11): the question used to REPLACE the files title,
+    so two conversations about two different sheets were both "What is this
+    sheet?" in the sidebar and neither named its file. The files stay; the
+    gist alone is used only when it already names the files title, and the
+    files title alone when there is no question."""
+    files_title = str(files_title or "").strip()
+    gist = auto_title(prompt, n_words=n_words) if str(prompt or "").strip() \
+        else ""
+    if not files_title or files_title.lower() == "new conversation":
+        return gist or "New conversation"
+    if not gist:
+        return files_title
+    if files_title.lower() in gist.lower():
+        return gist
+    return f"{files_title}{TITLE_JOINER}{gist}"
+
+
 def turn_title(meta: Optional[dict], prompt, user_turns: int,
                orientation: Optional[Iterable[str]] = None
                ) -> Tuple[Optional[str], Optional[str]]:
@@ -1722,9 +1797,11 @@ def turn_title(meta: Optional[dict], prompt, user_turns: int,
 
     An orientation turn (``orientation`` = the attached names) titles a
     conversation that has no typed question yet after its files; the first
-    TYPED question then retitles it (and a conversation's first turn, typed,
-    titles it as it always has). A title the user typed (Rename) is never
-    replaced."""
+    TYPED question then adds its gist to that title, keeping the files in it
+    (:func:`files_and_question_title`); a conversation whose first turn is
+    typed is titled by the question as it always has been. A title the user
+    typed (Rename) is never replaced. The SharePoint folder never follows a
+    retitle: it is fixed at the first mirror (``meta.mirror_folder``)."""
     meta = meta or {}
     source = meta.get("title_source")
     if source == TITLE_FROM_USER:
@@ -1737,7 +1814,10 @@ def turn_title(meta: Optional[dict], prompt, user_turns: int,
         return None, None
     if not prompt:
         return None, None
-    if user_turns == 1 or source == TITLE_FROM_ATTACHMENTS:
+    if source == TITLE_FROM_ATTACHMENTS:
+        return (files_and_question_title(meta.get("title"), prompt),
+                TITLE_FROM_QUESTION)
+    if user_turns == 1:
         return auto_title(prompt), TITLE_FROM_QUESTION
     return None, None
 
@@ -1955,11 +2035,41 @@ def clear_partial(thread_id: str, root: Optional[str] = None) -> None:
         pass
 
 
+def partial_is_stale(data: Optional[dict], transcript: Iterable[dict]) -> bool:
+    """Whether a turn checkpoint belongs to a turn the transcript shows as
+    FINISHED, so it records no interruption.
+
+    A turn writes its question to the transcript, then the checkpoint, and
+    its answer last; an interrupted turn therefore always leaves its question
+    as the transcript's LAST entry. So a checkpoint is stale when the last
+    entry is an answer and the checkpoint's question has one (or it names no
+    question at all). Such checkpoints came from a mirror taken mid-turn and
+    restored later (live smoke wave 2a, B2), or a turn whose answer was saved
+    but whose checkpoint could not be removed."""
+    entries = [e for e in (transcript or ()) if isinstance(e, dict)]
+    if not entries or entries[-1].get("role") != "assistant":
+        return False
+    prompt = str((data or {}).get("prompt") or "").strip()
+    if not prompt:
+        return True
+    answered = set()
+    question = None
+    for e in entries:
+        if e.get("role") == "user":
+            question = str(e.get("text") or "").strip()
+        elif e.get("role") == "assistant" and question is not None:
+            answered.add(question)
+            question = None
+    return prompt in answered
+
+
 def recover_partial(thread_id: str, root: Optional[str] = None) -> Optional[dict]:
     """If a turn was interrupted (``partial.json`` present), return a recovered
-    display entry to append to the transcript, else ``None``. Dedupes the rare
-    append-succeeded-but-clear-failed case by comparing against the last
-    assistant entry already on disk. Clears the partial file either way."""
+    display entry to append to the transcript, else ``None``. A checkpoint
+    whose turn the transcript shows as answered is stale and ignored
+    (:func:`partial_is_stale`); the rare append-succeeded-but-clear-failed
+    case is also caught by comparing against the last assistant entry
+    already on disk. Clears the partial file either way."""
     p = partial_path(thread_id, root)
     if not os.path.isfile(p):
         return None
@@ -1969,9 +2079,13 @@ def recover_partial(thread_id: str, root: Optional[str] = None) -> Optional[dict
     except (OSError, ValueError):
         clear_partial(thread_id, root)
         return None
+    transcript = load_transcript(thread_id, root)
+    if not isinstance(data, dict) or partial_is_stale(data, transcript):
+        clear_partial(thread_id, root)
+        return None
     text = (data.get("text") or "").strip()
     if text:
-        for e in reversed(load_transcript(thread_id, root)):
+        for e in reversed(transcript):
             if e.get("role") == "assistant":
                 if text in (e.get("text") or ""):
                     clear_partial(thread_id, root)
@@ -2248,8 +2362,19 @@ def working_files_note(files_dir: str, transcript: Iterable[dict] = (),
                 add(os.path.join(fd, str(name)), origin="fetched to read",
                     turn=turn)
             for ref in entry.get("artifacts") or ():
-                add(_resolve_artifact(str(ref), fd),
-                    origin="you produced it", turn=turn)
+                path = _resolve_artifact(str(ref), fd)
+                # A chart's card is its interactive sidecar; its picture is
+                # named too, beside it, for a document that needs the image.
+                picture = plotly_picture_twin(path)
+                if picture:
+                    add(picture, origin="you produced it", turn=turn,
+                        note="the picture of the chart "
+                             f"'{_note_name(path, fd)}'; use it in documents")
+                    add(path, origin="you produced it", turn=turn,
+                        note="the interactive chart shown to the user; "
+                             f"its picture is '{_note_name(picture, fd)}'")
+                else:
+                    add(path, origin="you produced it", turn=turn)
     for d in load_downloads(conv):
         add(d["local"], origin="fetched to read", remote=d.get("remote"))
 
@@ -2265,12 +2390,14 @@ def working_files_note(files_dir: str, transcript: Iterable[dict] = (),
         if info.get("remote"):
             where = f" from SharePoint '{info['remote']}'"
         when = f" in turn {info['turn']}" if info.get("turn") else ""
+        what = f" -- {info['note']}" if info.get("note") else ""
         try:
             size = f"{os.path.getsize(ap):,} bytes"
         except OSError:
             size = "size unknown"
         rows.append(f"- '{_note_name(ap, fd)}' ({size}): "
-                    f"{info.get('origin', 'in the folder')}{where}{when}")
+                    f"{info.get('origin', 'in the folder')}{where}{when}"
+                    f"{what}")
     if not rows:
         return ""
     skipped = max(0, len(rows) - int(limit))

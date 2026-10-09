@@ -130,7 +130,9 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
     # SharePoint mirror names its folder once, at the first mirror, and a
     # link handed out during this turn must already point at that folder.
     # An orientation turn is titled after the attached files; the first
-    # typed question retitles the conversation (the folder does not move).
+    # typed question adds its gist and keeps the files in the title
+    # ("3000.pdf — What is this sheet?", live smoke wave 2a B11). The
+    # folder does not move.
     try:
         _user_turns = sum(1 for e in (ctx.get("transcript") or [])
                           if e.get("role") == "user")

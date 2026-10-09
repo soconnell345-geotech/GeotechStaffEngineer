@@ -119,10 +119,12 @@ def test_an_orientation_then_a_question_through_the_worker(monkeypatch):
     _run_turn(monkeypatch, tid, files, transcript,
               "Which sheets carry the GCE tag?")
     meta = core.load_meta(tid)
-    assert meta["title"] == "Which sheets carry the GCE tag?"
+    # the files stay in the title (live smoke wave 2a, B11)
+    assert meta["title"] == "21.01.pdf — Which sheets carry the GCE tag?"
     assert meta["title_source"] == core.TITLE_FROM_QUESTION
     _run_turn(monkeypatch, tid, files, transcript, "and the FBG tag?")
-    assert core.load_meta(tid)["title"] == "Which sheets carry the GCE tag?"
+    assert core.load_meta(tid)["title"] == \
+        "21.01.pdf — Which sheets carry the GCE tag?"
 
 
 def test_a_renamed_conversation_keeps_its_name(monkeypatch):

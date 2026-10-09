@@ -119,6 +119,28 @@ _LSF_FUNCS = (
     'atan2', 'sinh', 'cosh', 'tanh', 'log10', 'ceil', 'floor',
 )
 
+#: An integer power whose exact result would need more bits than this (2**1024
+#: is about 1.8e308, the largest float) is refused before it is computed:
+#: Python evaluates ``int ** int`` exactly, and ``9**9**9`` builds a
+#: 370-million-digit integer that holds the interpreter for minutes (live
+#: smoke wave 2a). Float and numpy powers overflow at once and are left alone.
+_MAX_POW_BITS = 1024
+
+#: The longest expression accepted (with powers bounded, only a long chain of
+#: multiplications could still grow an integer).
+_MAX_EXPR_CHARS = 10_000
+
+
+def _bounded_pow(base, exp):
+    """``base ** exp``, refusing an exact integer result above about 1e308."""
+    if isinstance(base, int) and isinstance(exp, int) and exp > 0:
+        bits = abs(base).bit_length()
+        if bits > 1 and (bits - 1) * exp > _MAX_POW_BITS:
+            raise OverflowError(
+                "a power whose result is larger than about 1e308 was "
+                "refused before it was computed")
+    return base ** exp
+
 
 def _compile_limit_state(expr_str: str, var_names: list) -> callable:
     """
@@ -154,6 +176,10 @@ def _compile_limit_state(expr_str: str, var_names: list) -> callable:
 
     if not expr_str or not str(expr_str).strip():
         raise ValueError("Limit state expression cannot be empty")
+    if len(str(expr_str)) > _MAX_EXPR_CHARS:
+        raise ValueError(
+            f"Limit state expression is too long ({len(str(expr_str)):,} "
+            f"characters; the limit is {_MAX_EXPR_CHARS:,})")
     var_names = list(var_names)
     funcs = {name: getattr(math, name) for name in _LSF_FUNCS
              if hasattr(math, name)}
@@ -194,9 +220,38 @@ def _compile_limit_state(expr_str: str, var_names: list) -> callable:
                 not isinstance(node.value, (int, float)):
             raise ValueError("Limit state constants must be numbers")
 
+    # Every ``a ** b`` becomes a call to _bounded_pow (after the checks, so
+    # the name is not one an expression can write), under a name no variable
+    # shadows.
+    pow_name = "__gse_pow__"
+    while pow_name in set(var_names):
+        pow_name += "_"
+
+    def _call(node):
+        # both new nodes take the power's location (ast.fix_missing_locations
+        # recurses, so it is not used)
+        func = ast.copy_location(ast.Name(id=pow_name, ctx=ast.Load()), node)
+        return ast.copy_location(ast.Call(
+            func=func, args=[node.left, node.right], keywords=[]), node)
+
+    def _is_pow(node):
+        return isinstance(node, ast.BinOp) and isinstance(node.op, ast.Pow)
+
+    # Iterative, children before parents (reversed breadth-first order): a
+    # long chain cannot hit the recursion limit, and a nested power
+    # (a ** b ** c) is rewritten inside the call that replaces its parent.
+    for parent in reversed(list(ast.walk(tree))):
+        for field, value in ast.iter_fields(parent):
+            if _is_pow(value):
+                setattr(parent, field, _call(value))
+            elif isinstance(value, list):
+                for i, item in enumerate(value):
+                    if _is_pow(item):
+                        value[i] = _call(item)
     code = compile(tree, "<limit_state>", "eval")
     namespace = {"__builtins__": {}}
     namespace.update(funcs)
+    namespace[pow_name] = _bounded_pow
 
     def lsf(**kwargs):
         local = {k: kwargs[k] for k in var_names}

@@ -187,7 +187,16 @@ def conversation_folder(thread_id: str, meta: Optional[dict] = None,
     each other's ``meta.json`` / ``transcript.jsonl``. The earliest-created
     claimant keeps the bare name so an existing folder does not move just
     because a same-named conversation was started later.
+
+    A conversation whose meta already carries its fixed folder gets that
+    name back. ``siblings`` are THIS host's conversations only; the first
+    mirror also checks the remote library (``SharePointStore._pin_folder``),
+    because a wiped or redeployed host, or a second host, cannot see the
+    folders its predecessors made (live smoke wave 2a, B12).
     """
+    pinned = str((meta or {}).get(MIRROR_FOLDER_KEY) or "").strip()
+    if pinned:
+        return pinned                    # fixed at the first mirror
     base = _base_folder(thread_id, meta)
     if base == str(thread_id):
         return base                      # already unique
@@ -401,13 +410,14 @@ class SharePointStore:
         return conversation_folder(thread_id, meta, siblings)
 
     def _pin_folder(self, thread_id: str, root: Optional[str],
-                    manifest: dict) -> None:
+                    manifest: dict, fm: Any = None) -> None:
         """Fix the conversation's folder name (``MIRROR_FOLDER_KEY``) the
         first time it is mirrored under a real title -- or, for a
         conversation mirrored before this field existed, the titled folder it
         already has, so it does not move. An untitled conversation is not
         fixed yet: it mirrors under its thread id until it has a title.
-        Best-effort."""
+        A NEW name is also checked against the remote library
+        (:meth:`_unclaimed_remotely`). Best-effort."""
         try:
             root = root or core.thread_root(thread_id)
             meta = core.load_meta(thread_id, root)
@@ -425,10 +435,57 @@ class SharePointStore:
                                            core.list_conversations(root))
                 if name == str(thread_id):
                     return
+                name = self._unclaimed_remotely(fm, thread_id, meta, name)
             meta[MIRROR_FOLDER_KEY] = name
             core.save_meta(thread_id, meta, root)
         except Exception:                              # noqa: BLE001
             pass
+
+    def _unclaimed_remotely(self, fm: Any, thread_id: str, meta: dict,
+                            name: str) -> str:
+        """``name``, or ``name_<first 6 of the thread id>`` when a folder of
+        that name already exists in the remote library and is not this
+        conversation's.
+
+        The local dedupe (:func:`conversation_folder`) sees only this host's
+        conversations; after a wiped or redeployed host, or on a second host,
+        two conversations on the same file the same day chose the same
+        ``<file>_<date>`` folder and would overwrite each other's record
+        (live smoke wave 2a, B12). Only a NEW name is checked: a folder
+        already fixed in a conversation's meta is never changed. SharePoint
+        names are case-insensitive, so the comparison is too. When the
+        library cannot be read the shard is added -- a unique name is the
+        safe choice; a file manager with no listing at all is not checked."""
+        tid = str(thread_id)
+        shard = f"{name}_{tid[:6]}"
+        if fm is None or not callable(getattr(fm, "ls", None)) \
+                or name.endswith(f"_{tid[:6]}"):
+            return name
+        base = self.conversations_base(meta.get("owner"), meta.get("page"))
+        try:
+            entries = fm.ls(base) or []
+        except Exception:                              # noqa: BLE001
+            return shard
+        wanted = name.lower()
+        same = [str(e.get("name") or "").strip() for e in entries
+                if isinstance(e, dict) and _is_folder(e)
+                and str(e.get("name") or "").strip().lower() == wanted]
+        if not same:
+            return name
+        # The folder exists: keep the name only if it is this conversation's.
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                local = os.path.join(td, "meta.json")
+                fm.download_file(f"{base}/{same[0]}/meta.json",
+                                 local_path=local, return_bytes=False,
+                                 overwrite=True)
+                with open(local, "r", encoding="utf-8") as fh:
+                    remote = json.load(fh)
+        except Exception:                              # noqa: BLE001
+            return shard
+        owner_tid = str((remote or {}).get("thread_id") or "") \
+            if isinstance(remote, dict) else ""
+        return name if owner_tid == tid else shard
 
     def session_folder(self, thread_id: str, root: Optional[str] = None) -> str:
         """The remote folder path for one conversation.
@@ -496,7 +553,7 @@ class SharePointStore:
             return
         manifest = _load_manifest(conv_dir)
         files = _manifest_files(manifest)
-        self._pin_folder(thread_id, root, manifest)
+        self._pin_folder(thread_id, root, manifest, fm)
         remote_base = self.session_folder(thread_id, root)
         summary["folder"] = remote_base
 
@@ -513,6 +570,20 @@ class SharePointStore:
             files = {}
             self._folder_urls.pop(thread_id, None)
 
+        # In-progress files (core.is_in_flight_file: the turn checkpoint
+        # partial.json, half-written *.part / *.tmp) are never uploaded. One
+        # an older version uploaded -- the manifest says so -- is deleted
+        # from the folder where the file manager can, and forgotten either
+        # way: a restore skips it too (live smoke wave 2a, B2).
+        for rel in [r for r in files if core.is_in_flight_file(r)]:
+            files.pop(rel, None)
+            delete = getattr(fm, "delete_file", None)
+            if callable(delete):
+                try:
+                    delete(f"{remote_base}/{rel}")
+                except Exception:                      # noqa: BLE001
+                    pass
+
         for dirpath, _dirnames, filenames in os.walk(conv_dir):
             rel_dir = os.path.relpath(dirpath, conv_dir).replace(os.sep, "/")
             # The working folder's tool scratch (files/.scratch, any dot-
@@ -527,6 +598,8 @@ class SharePointStore:
                     continue
                 local = os.path.join(dirpath, name)
                 rel = name if rel_dir == "." else f"{rel_dir}/{name}"
+                if core.is_in_flight_file(rel):
+                    continue                    # a turn checkpoint, a part file
                 try:
                     stamp = _stamp(local)
                 except OSError:
@@ -684,6 +757,10 @@ class SharePointStore:
         for rel, remote_path in files:
             if rel == MANIFEST_NAME:
                 continue                     # never restore a stale manifest
+            if core.is_in_flight_file(rel):
+                # a turn checkpoint mirrored mid-turn would come back as a
+                # fake "interrupted" turn (live smoke wave 2a, B2)
+                continue
             local = os.path.join(conv_dir, *rel.split("/"))
             os.makedirs(os.path.dirname(local), exist_ok=True)
             try:
