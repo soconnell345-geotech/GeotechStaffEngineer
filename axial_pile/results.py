@@ -34,6 +34,9 @@ class AxialPileResult:
         Per-layer skin friction breakdown.
     sigma_v_tip : float
         Effective stress at pile tip (kPa).
+    warnings : list of str
+        Things the user must be told about the result, e.g. a toe friction
+        angle outside the chart the toe limit is read from.
     """
     Q_ultimate: float = 0.0
     Q_skin: float = 0.0
@@ -46,6 +49,7 @@ class AxialPileResult:
     method: str = ""
     layer_breakdown: Optional[List[Dict[str, Any]]] = None
     sigma_v_tip: float = 0.0
+    warnings: List[str] = field(default_factory=list)
 
     def summary(self) -> str:
         """Return a formatted summary string."""
@@ -80,6 +84,10 @@ class AxialPileResult:
                     f"({layer['soil_type']}, {layer['method']})"
                 )
 
+        if self.warnings:
+            lines.extend(["", "  Warnings:"])
+            lines.extend(f"    - {w}" for w in self.warnings)
+
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
@@ -103,6 +111,8 @@ class AxialPileResult:
         }
         if self.Q_uplift is not None:
             d["Q_uplift_kN"] = round(self.Q_uplift, 1)
+        if self.warnings:
+            d["warnings"] = list(self.warnings)
         return d
 
     def plot_load_transfer(self, ax=None, show=True, **kwargs):

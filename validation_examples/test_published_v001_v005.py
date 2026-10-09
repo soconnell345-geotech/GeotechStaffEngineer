@@ -20,8 +20,9 @@ instead would integrate ~5 ft of spurious skin friction above the pile head.)
 Summary of verdicts (details in each test docstring and RESULTS.md):
 - V-001 axial_pile Nordlund (sand): shaft PASS (-8%..+5%); toe PASS — the v5.2
   per-layer AxialSoilLayer.toe_friction_angle lets the high-level API apply the
-  example's separate Layer-3 toe phi=40 (design limit), reaching 408.5 kips
-  (-4.6% vs the published 428.1 plateau). The old single-phi toe (phi=36 -> 301
+  example's separate Layer-3 toe phi=40 (design limit), reaching 429.3 kips
+  (+0.3% vs the published 428.1 plateau; -4.6% before Fig 7-15 was re-measured
+  2026-10-08). The old single-phi toe (phi=36 -> 301
   kips, -30%) is retained below as the documented default-behaviour baseline.
 - V-002 axial_pile alpha (clay): toe (9*cu) PASS; shaft CONVENTION — the module's
   simplified Tomlinson alpha-vs-cu curve gives a lower alpha for stiff clay than the
@@ -114,11 +115,12 @@ def test_v001_nordlund_shaft_resistance_matches():
 
 def test_v001_toe_with_design_limit_phi40_matches():
     """Toe resistance reproduces the Table D-6 Layer-3 plateau (428.1 kips) to
-    within -5% when driven with the example's separate Layer-3 toe phi = 40 deg
+    within 1% when driven with the example's separate Layer-3 toe phi = 40 deg
     (the GEC-12 design-limit toe friction angle).
 
-    The module's q_L cap (Meyerhof Fig 7-15) at phi=40 governs, giving 408.5
-    kips — the basis for the published ~428 kip plateau.
+    The module's q_L cap (Meyerhof Fig 7-15) at phi=40 governs, giving 429.3
+    kips (+0.3%; 408.5 before Fig 7-15 was re-measured 2026-10-08) — the
+    basis for the published ~428 kip plateau.
     """
     pile = make_h_pile("HP12x74")
     soil = _v001_profile()
@@ -135,7 +137,7 @@ def test_v001_toe_single_phi_api_is_default_behaviour():
     """DEFAULT BEHAVIOUR: with NO per-layer toe phi set, the high-level
     AxialPileAnalysis API uses ONE phi per layer, so it applies phi=36
     (shaft) at the toe too. With the CORRECTED Fig 7-15 qL digitization
-    (2026-07-19: qL(36)=7,182 kPa per the printed tsf chart — the old table's
+    (re-measured 2026-10-08: qL(36)=7,201 kPa per the printed tsf chart — the old table's
     14,000 was ~2x unconservative there), that gives ~154 kips in Layer 3
     (-64% vs the published 428.1, which REQUIRES the design-limit toe phi=40
     that GEC-12's own example selects — see the next test). The pre-fix pin
@@ -172,8 +174,8 @@ def test_v001_highlevel_api_toe_phi40_matches_plateau():
     Layer-3 per-layer toe phi=40 (AxialSoilLayer.toe_friction_angle), now
     reproduces the Table D-6 toe plateau (428.1 kips) to within +/-15% at every
     depth where the tip is in Layer 3 — closing the old single-phi CONVENTION
-    gap. The q_L cap (Meyerhof Fig 7-15) at phi=40 governs at 408.5 kips
-    (-4.6%). The shaft is unaffected (still uses phi=36)."""
+    gap. The q_L cap (Meyerhof Fig 7-15) at phi=40 governs at 429.3 kips
+    (+0.3%; -4.6% before Fig 7-15 was re-measured 2026-10-08). The shaft is unaffected (still uses phi=36)."""
     pile = make_h_pile("HP12x74")
     soil = _v001_profile_with_toe_phi40()
     for D_ft in (50, 60, 70):           # depths where the tip is in Layer 3

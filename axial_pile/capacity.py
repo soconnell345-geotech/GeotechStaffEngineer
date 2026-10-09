@@ -179,7 +179,9 @@ class AxialPileAnalysis:
         # Outside skin friction (before any inside/plug friction is added)
         Qs_outside = total_Qs
 
-        # End bearing
+        # End bearing. ``notes`` collects warnings the user must see (a toe
+        # friction angle outside GEC-12 Figure 7-15); they ride on the result.
+        notes: List[str] = []
         tip_layer = self.soil.layer_at_depth(tip_depth - 0.01)
         sigma_v_tip = self.soil.effective_stress_at_depth(tip_depth)
 
@@ -199,7 +201,8 @@ class AxialPileAnalysis:
         elif tip_layer.soil_type == "cohesionless":
             Qt = end_bearing_cohesionless(
                 tip_layer.toe_phi, sigma_v_tip,
-                self.pile.tip_area, self.pile_length, self.pile.width
+                self.pile.tip_area, self.pile_length, self.pile.width,
+                notes=notes,
             )
         else:
             Qt = end_bearing_cohesive(tip_layer.cohesion, self.pile.tip_area)
@@ -222,7 +225,8 @@ class AxialPileAnalysis:
             elif tip_layer.soil_type == "cohesionless":
                 Qt_plugged = end_bearing_cohesionless(
                     tip_layer.toe_phi, sigma_v_tip,
-                    self.pile.tip_area_plugged, self.pile_length, self.pile.width
+                    self.pile.tip_area_plugged, self.pile_length, self.pile.width,
+                    notes=notes,
                 )
             else:
                 Qt_plugged = end_bearing_cohesive(
@@ -265,6 +269,7 @@ class AxialPileAnalysis:
             method=self.method,
             layer_breakdown=layer_results,
             sigma_v_tip=sigma_v_tip,
+            warnings=notes,
         )
 
     def _layer_skin_friction(self, layer: AxialSoilLayer, z_top: float,
@@ -407,6 +412,7 @@ class AxialPileAnalysis:
                     "Q_ultimate_kN": round(r.Q_ultimate, 1),
                     "Q_skin_kN": round(r.Q_skin, 1),
                     "Q_tip_kN": round(r.Q_tip, 1),
+                    **({"warnings": r.warnings} if r.warnings else {}),
                 })
             except Exception:
                 pass

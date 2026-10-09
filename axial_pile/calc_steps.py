@@ -272,7 +272,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_value=f"{result.Q_tip:,.1f}",
             result_unit="kN",
             reference="Meyerhof (1976); FHWA GEC-12 Ch. 7",
-            notes=f"\u03c3'_v at pile tip = {result.sigma_v_tip:.1f} kPa.",
+            notes=(f"\u03c3'_v at pile tip = {result.sigma_v_tip:.1f} kPa."
+                   + "".join(f" WARNING: {w}" for w in result.warnings)),
         ))
     else:
         tip_items.append(CalcStep(

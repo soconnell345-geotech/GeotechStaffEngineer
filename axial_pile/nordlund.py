@@ -276,10 +276,25 @@ def alpha_t_factor(Db_ratio: float) -> float:
         return 1.0
 
 
+# GEC-12 Figure 7-15 (after Meyerhof 1976), measured off the printed figure
+# (GEC 12 Vol 1, pdf page index 283) on 2026-10-08. The same nodes are
+# geotech_references.gec_12.figure_7_15_limiting_toe_resistance, in tsf.
+# The axis starts at 30 deg and the curve ends at 43.75 deg.
+TSF_TO_KPA = 95.76
+_FIG_7_15_PHI = [30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 43.75]
+_FIG_7_15_QL_TSF = [7.1, 10.1, 16.0, 24.5, 35.9, 53.7, 75.2, 102.3, 133.6,
+                    168.3, 208.5, 251.6, 296.0, 339.2, 368.0]
+_FIG_7_15_QL_KPA = [q * TSF_TO_KPA for q in _FIG_7_15_QL_TSF]
+TOE_LIMIT_PHI_MIN = _FIG_7_15_PHI[0]
+TOE_LIMIT_PHI_MAX = _FIG_7_15_PHI[-1]
+
+
 def _limiting_tip_resistance(phi_deg: float) -> float:
     """Limiting unit tip resistance q_L from GEC-12 Figure 7-15 (Meyerhof, 1976).
 
-    Piecewise linear interpolation of the chart values.
+    Piecewise linear interpolation of the chart's 1-degree nodes; outside
+    the chart (below 30 deg, above 43.75 deg) the curve's end value is used
+    and :func:`toe_limit_chart_note` says so.
 
     Parameters
     ----------
@@ -295,36 +310,58 @@ def _limiting_tip_resistance(phi_deg: float) -> float:
     ----------
     FHWA GEC-12, Figure 7-15 (after Meyerhof, 1976).
 
-    Provenance (FIXED 2026-07-19, sample-calc defect detection): the previous
-    table (5,000..19,000 kPa over phi 26-40) matched the printed chart ONLY at
-    the phi=40 end — at phi=30 it read 10,000 kPa where the chart prints
-    ~10 tsf (958 kPa), i.e. ~10x UNCONSERVATIVE at low phi (the curve is
-    strongly convex, near-zero below phi=30; the old near-linear table missed
-    that entirely). Values below are the page-QC'd digitization from
-    geotech_references.gec_12.figure_7_15_limiting_toe_resistance (tsf,
-    x 95.76 kPa/tsf), re-confirmed visually against the printed chart
-    (GEC 12 Vol 1, pdf p. 284) — flagged by the NHI-06-089 Ex 9-2 curation,
-    which found the manual's worked answer governed by a ~10 ksf limit our
-    table exceeded 20x. The chart spans 26-45 deg (old cap at 40 was also
-    wrong); clamped to the printed end values outside.
+    Provenance.
+    - 2026-07-19: replaced a table about 10x unconservative at phi = 30.
+    - 2026-10-08: re-measured off the figure (gridline-fitted; a second
+      pixel read and two vision models agree within about 1 tsf).
+      - The 2026-07-19 table was still +41 % at 30 deg, +25 % at 32 deg and
+        +11 % at 34 deg, and 3-6 % low from 38 to 43 deg.
+      - It also carried nodes at 26, 28, 44 and 45 deg that are not on the
+        chart.
+      - GEC-12's worked example (NHI-06-089, the 428.1 kip toe plateau at a
+        toe phi of 40) now agrees to +0.3 % (429.3 kips) instead of -4.6 %.
     """
-    # (phi_deg, q_L kPa) = refs Fig 7-15 digitization (tsf) * 95.76
-    _phi_values = [26, 28, 30, 32, 34, 36, 38, 40, 42, 44, 45]
-    _ql_values = [192, 479, 958, 1915, 3830, 7182,
-                  12449, 19152, 26813, 34474, 38304]
+    phi = min(max(phi_deg, TOE_LIMIT_PHI_MIN), TOE_LIMIT_PHI_MAX)
+    return float(np.interp(phi, _FIG_7_15_PHI, _FIG_7_15_QL_KPA))
 
-    if phi_deg < 26:
-        return 192.0   # chart floor (printed curve is ~0 below phi=30)
-    if phi_deg > 45:
-        return 38304.0
 
-    return float(np.interp(phi_deg, _phi_values, _ql_values))
+def toe_limit_chart_note(phi_deg: float, governed: Optional[bool] = None
+                         ) -> Optional[str]:
+    """Say when the toe friction angle is outside GEC-12 Figure 7-15.
+
+    Returns None inside the chart (30-43.75 deg). Outside it, returns the
+    warning to show the user: which end value was used, and, below 30 deg,
+    that the true limit is lower. ``governed`` (whether the limit capped the
+    toe resistance) adds one clause when known.
+    """
+    if TOE_LIMIT_PHI_MIN <= phi_deg <= TOE_LIMIT_PHI_MAX:
+        return None
+    if phi_deg < TOE_LIMIT_PHI_MIN:
+        end, where = _FIG_7_15_QL_TSF[0], "below"
+        tail = (" The chart's curve falls toward zero below 30 deg, so the "
+                "true limit is LOWER than this and the toe resistance may be "
+                "overstated; check it by another method.")
+    else:
+        end, where = _FIG_7_15_QL_TSF[-1], "above"
+        tail = (" The curve stops at 43.75 deg, so holding its end value is "
+                "on the low side of any extrapolation.")
+    note = (f"Toe friction angle {phi_deg:g} deg is {where} GEC-12 Figure "
+            f"7-15 (it spans 30-43.75 deg). The limiting toe resistance was "
+            f"held at the chart's end value, {end:g} tsf "
+            f"({end * TSF_TO_KPA:,.0f} kPa).{tail}")
+    if governed is True:
+        note += " The limit governed the toe resistance here."
+    elif governed is False and phi_deg < TOE_LIMIT_PHI_MIN:
+        note += (" It did not govern here, but a lower true limit might "
+                 "have.")
+    return note
 
 
 def end_bearing_cohesionless(phi_deg: float, sigma_v_tip: float,
                               tip_area: float,
                               pile_depth: float,
-                              pile_width: float) -> float:
+                              pile_width: float,
+                              notes: Optional[list] = None) -> float:
     """Compute end bearing in cohesionless soil (Nordlund/Meyerhof).
 
     Qt = alpha_t * Nq' * sigma_v' * At
@@ -343,6 +380,10 @@ def end_bearing_cohesionless(phi_deg: float, sigma_v_tip: float,
         Pile embedment depth (m).
     pile_width : float
         Pile width or diameter (m).
+    notes : list, optional
+        When given, a warning about a toe friction angle outside Figure
+        7-15 is appended here (for the result to carry to the user). When
+        omitted, the same warning is raised with :func:`warnings.warn`.
 
     Returns
     -------
@@ -361,6 +402,13 @@ def end_bearing_cohesionless(phi_deg: float, sigma_v_tip: float,
 
     # Limiting tip resistance from GEC-12 Figure 7-15 (Meyerhof, 1976)
     qt_limit = _limiting_tip_resistance(phi_deg)
+    note = toe_limit_chart_note(phi_deg, governed=qt >= qt_limit)
+    if note:
+        if notes is not None:
+            if note not in notes:
+                notes.append(note)
+        else:
+            warnings.warn(note, stacklevel=2)
 
     qt = min(qt, qt_limit)
     return qt * tip_area

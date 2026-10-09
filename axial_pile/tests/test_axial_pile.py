@@ -20,6 +20,7 @@ from axial_pile.tomlinson import alpha_tomlinson, skin_friction_cohesive, end_be
 from axial_pile.nordlund import (
     delta_from_phi, nordlund_Kd, nordlund_CF, skin_friction_cohesionless,
     end_bearing_cohesionless, nordlund_Nq_prime, _limiting_tip_resistance,
+    toe_limit_chart_note,
 )
 from axial_pile.beta_method import beta_from_phi, skin_friction_beta, Nt_from_phi
 from axial_pile.capacity import AxialPileAnalysis
@@ -427,56 +428,95 @@ class TestNordlundCosOmega:
 class TestLimitingTipResistance:
     """Verify limiting tip resistance from GEC-12 Figure 7-15 (Meyerhof 1976).
 
-    VALUES CORRECTED 2026-07-19 (sample-calc defect detection): the printed
-    chart is qL in TSF on a linear axis, strongly convex — ~10 tsf (958 kPa)
-    at phi=30, 200 tsf (19,152 kPa) at phi=40, extending to 45 deg. The old
-    table (5,000..19,000 kPa over 26-40) matched print only at phi=40 and was
-    ~10x UNCONSERVATIVE at phi=30; these tests pinned that wrong table
-    (self-consistent digitization error). New pins = the page-QC'd refs
-    digitization x 95.76 kPa/tsf, chart re-confirmed visually (GEC 12 Vol 1
-    pdf p. 284)."""
+    History of these pins.
+    - 2026-07-19: the earlier table was about 10x unconservative at phi = 30.
+    - 2026-10-08: re-measured off the printed figure (GEC 12 Vol 1, pdf page
+      index 283). x was fitted to the 1-degree gridlines and y to the 25-tsf
+      gridlines; a second pixel read and two vision models agree within
+      about 1 tsf.
+      - The 2026-07-19 table read 10 tsf at 30 deg where the figure reads
+        7.1 (+41 %).
+      - It also carried nodes at 26, 28, 44 and 45 deg that are not on the
+        chart. The axis starts at 30 deg and the curve ends at 43.75 deg.
 
-    def test_phi_26(self):
-        assert _limiting_tip_resistance(26) == pytest.approx(192, rel=1e-3)
+    Outside the chart the end value is used, with a warning (owner's rule,
+    2026-10-08)."""
 
-    def test_phi_28(self):
-        assert _limiting_tip_resistance(28) == pytest.approx(479, rel=1e-3)
+    @pytest.mark.parametrize("phi, ql_tsf", [
+        (30, 7.1), (32, 16.0), (34, 35.9), (36, 75.2), (38, 133.6),
+        (40, 208.5), (42, 296.0), (43, 339.2), (43.75, 368.0),
+    ])
+    def test_measured_nodes(self, phi, ql_tsf):
+        assert _limiting_tip_resistance(phi) == pytest.approx(
+            ql_tsf * 95.76, rel=1e-6)
 
-    def test_phi_30(self):
-        assert _limiting_tip_resistance(30) == pytest.approx(958, rel=1e-3)
+    def test_interpolation_between_nodes(self):
+        assert _limiting_tip_resistance(35.5) == pytest.approx(
+            (53.7 + 75.2) / 2 * 95.76, rel=1e-6)
 
-    def test_phi_34(self):
-        assert _limiting_tip_resistance(34) == pytest.approx(3830, rel=1e-3)
+    def test_below_chart_held_at_the_30_deg_end_value(self):
+        for phi in (20, 26, 29.9):
+            assert _limiting_tip_resistance(phi) == pytest.approx(
+                7.1 * 95.76, rel=1e-6)
 
-    def test_phi_38(self):
-        assert _limiting_tip_resistance(38) == pytest.approx(12449, rel=1e-3)
-
-    def test_phi_40(self):
-        assert _limiting_tip_resistance(40) == pytest.approx(19152, rel=1e-3)
-
-    def test_phi_below_26_clamped(self):
-        """phi < 26: clamped to the chart floor (printed curve ~0 below 30)."""
-        assert _limiting_tip_resistance(20) == pytest.approx(192, rel=1e-3)
-        assert _limiting_tip_resistance(25) == pytest.approx(192, rel=1e-3)
-
-    def test_phi_above_45_capped(self):
-        """The printed chart extends to 45 deg (old 40-deg cap was wrong)."""
-        assert _limiting_tip_resistance(42) == pytest.approx(26813, rel=1e-3)
-        assert _limiting_tip_resistance(45) == pytest.approx(38304, rel=1e-3)
-        assert _limiting_tip_resistance(47) == pytest.approx(38304, rel=1e-3)
-
-    def test_interpolation_phi_29(self):
-        """phi=29 interpolates between the phi=28 and phi=30 chart points."""
-        expected = 479 + (958 - 479) * (29 - 28) / (30 - 28)
-        assert _limiting_tip_resistance(29) == pytest.approx(expected, rel=1e-3)
+    def test_above_chart_held_at_the_curve_end_value(self):
+        for phi in (43.8, 45, 47):
+            assert _limiting_tip_resistance(phi) == pytest.approx(
+                368.0 * 95.76, rel=1e-6)
 
     def test_end_bearing_respects_limit(self):
         """End bearing should be capped by the limiting tip resistance."""
-        # Very high sigma_v to force qt > qt_limit
+        # Very high sigma_v to force qt > qt_limit(phi=30) = 7.1 tsf
         Qt = end_bearing_cohesionless(30, 5000, 0.1, 20, 0.3)
-        # qt = alpha_t * Nq' * sigma_v >> qt_limit(phi=30) = 958 kPa
-        # So Qt is limited: 958 * 0.1 kN
-        assert Qt == pytest.approx(958 * 0.1, rel=0.01)
+        assert Qt == pytest.approx(7.1 * 95.76 * 0.1, rel=0.01)
+
+
+class TestToeLimitOutsideTheChart:
+    """A toe phi outside Figure 7-15 completes, and the user is told."""
+
+    def test_no_note_inside_the_chart(self):
+        assert toe_limit_chart_note(30) is None
+        assert toe_limit_chart_note(43.75) is None
+
+    def test_note_below_the_chart_says_the_limit_is_lower(self):
+        note = toe_limit_chart_note(28, governed=True)
+        assert "below GEC-12 Figure 7-15" in note
+        assert "7.1 tsf" in note and "LOWER" in note
+        assert "governed" in note
+
+    def test_note_above_the_chart_names_the_curve_end(self):
+        note = toe_limit_chart_note(45)
+        assert "above GEC-12 Figure 7-15" in note and "368 tsf" in note
+
+    def test_end_bearing_warns_when_no_list_is_given(self):
+        with pytest.warns(UserWarning, match="below GEC-12 Figure 7-15"):
+            end_bearing_cohesionless(28, 100, 0.1, 15, 0.3)
+
+    def test_end_bearing_appends_once_to_a_given_list(self):
+        notes = []
+        end_bearing_cohesionless(28, 100, 0.1, 15, 0.3, notes=notes)
+        end_bearing_cohesionless(28, 100, 0.2, 15, 0.3, notes=notes)
+        assert len(notes) == 1
+
+    def _analysis(self, toe_phi):
+        soil = AxialSoilProfile(layers=[
+            AxialSoilLayer(thickness=20.0, soil_type="cohesionless",
+                           unit_weight=19.0, friction_angle=toe_phi),
+        ])
+        return AxialPileAnalysis(pile=make_h_pile("HP12x74"), soil=soil,
+                                 pile_length=15.0, method="auto")
+
+    def test_result_carries_the_warning_to_the_user(self):
+        r = self._analysis(28).compute()
+        assert len(r.warnings) == 1
+        assert "below GEC-12 Figure 7-15" in r.warnings[0]
+        assert r.to_dict()["warnings"] == r.warnings
+        assert "Warnings:" in r.summary()
+
+    def test_no_warning_inside_the_chart(self):
+        r = self._analysis(35).compute()
+        assert r.warnings == []
+        assert "warnings" not in r.to_dict()
 
 
 # ═══════════════════════════════════════════════════════════════════════
