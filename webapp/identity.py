@@ -177,6 +177,14 @@ def current_identity() -> Identity:
     launcher-captured email, else :data:`ANONYMOUS`. Never raises."""
     ident = from_header_values(_streamlit_header_values())
     if ident is not None:
+        if ident.multi_user:
+            # Several people share this process: tools must never fall back
+            # to the process-wide working-folder env var (live smoke 2c, D1).
+            try:
+                from funhouse_agent._fileio import require_turn_binding
+                require_turn_binding(True)
+            except Exception:                          # noqa: BLE001
+                pass
         return ident
     dev = os.environ.get(DEV_IDENTITY_ENV, "").strip()
     if dev:

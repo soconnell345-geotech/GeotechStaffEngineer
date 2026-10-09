@@ -78,3 +78,45 @@ def test_the_turn_worker_binds_its_conversation_folder(tmp_path, monkeypatch):
     t.start()
     t.join(30)
     assert seen.get("dir") == str(mine)
+
+
+def test_heartbeat_pump_keeps_the_turn_binding(tmp_path, monkeypatch):
+    """Live smoke 2c (F47): core.with_heartbeat ran the agent stream on a bare
+    thread, so the turn's folder binding was lost and two testers wrote into
+    each other's folders."""
+    from webapp import core
+    monkeypatch.setenv(_fileio.DEFAULT_OUTPUT_DIR_ENV, str(tmp_path / "env"))
+
+    def gen():
+        yield _fileio.default_output_dir()
+
+    with _fileio.working_dir_bound(tmp_path / "mine"):
+        items = [i for i in core.with_heartbeat(gen(), interval_s=5)
+                 if not (isinstance(i, dict) and i.get("kind") == "heartbeat")]
+    assert items == [str(tmp_path / "mine")]
+
+
+def test_shared_host_refuses_an_unbound_folder(tmp_path, monkeypatch):
+    from webapp import core
+    monkeypatch.setenv(_fileio.DEFAULT_OUTPUT_DIR_ENV, str(tmp_path / "env"))
+    monkeypatch.setattr(_fileio, "_REQUIRE_BINDING", True)
+    import pytest
+    with pytest.raises(_fileio.UnboundWorkingDir):
+        _fileio.default_output_dir()
+    with _fileio.working_dir_bound(tmp_path / "mine"):
+        assert _fileio.default_output_dir() == str(tmp_path / "mine")
+    # the app never sets the shared env var on such a host
+    core.apply_default_output_dir(str(tmp_path / "someone"))
+    assert os.environ.get(_fileio.DEFAULT_OUTPUT_DIR_ENV) is None
+
+
+def test_a_header_identity_turns_on_shared_host_mode(monkeypatch):
+    from webapp import identity
+    monkeypatch.setattr(_fileio, "_REQUIRE_BINDING", False)
+    fake = identity.parse_principal(r"corp\jdoe", "header")
+    if fake is None or not fake.multi_user:
+        import pytest
+        pytest.skip("header identity shape differs")
+    monkeypatch.setattr(identity, "from_header_values", lambda *_: fake)
+    identity.current_identity()
+    assert _fileio.turn_binding_required()

@@ -222,6 +222,11 @@ def make_identity(user: Any):
     from webapp import identity
     if isinstance(user, str) and user:
         ident = identity.from_header_values([user])
+        if ident is not None and ident.multi_user:
+            # What identity.current_identity does on a header identity:
+            # a shared host fails closed on an unbound working folder.
+            from funhouse_agent._fileio import require_turn_binding
+            require_turn_binding(True)
         if ident is None:
             raise ValueError(f"unparseable principal {user!r}")
         return ident

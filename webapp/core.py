@@ -1005,8 +1005,14 @@ def with_heartbeat(gen, interval_s: Optional[float] = None):
         except BaseException as exc:                    # re-raised on consumer
             q.put(("exc", exc))
 
-    _threading.Thread(target=_pump, daemon=True,
-                      name="geotech-turn-pump").start()
+    # Run the pump in a COPY of this context: the turn worker binds the
+    # conversation's working folder in a contextvar, and a bare Thread starts
+    # with an empty context -- the tools then fell back to the process-wide
+    # env var, so two testers at once wrote into each other's folders (live
+    # smoke wave 2c, F47).
+    import contextvars as _contextvars
+    _threading.Thread(target=_contextvars.copy_context().run, args=(_pump,),
+                      daemon=True, name="geotech-turn-pump").start()
     t0 = _time.monotonic()
     while True:
         try:
@@ -1485,8 +1491,15 @@ def apply_default_output_dir(path: Optional[str]) -> None:
     ``output_path`` > this working folder > the temp fallback."""
     try:
         from funhouse_agent._fileio import DEFAULT_OUTPUT_DIR_ENV as _ENV
+        from funhouse_agent._fileio import turn_binding_required
     except Exception:
         _ENV = "GEOTECH_DEFAULT_OUTPUT_DIR"
+        turn_binding_required = lambda: False          # noqa: E731
+    if turn_binding_required():
+        # A shared host: the env var would belong to whoever reran last.
+        # Each turn binds its own folder in its context instead.
+        os.environ.pop(_ENV, None)
+        return
     if path:
         os.environ[_ENV] = str(path)
     else:

@@ -56,10 +56,35 @@ def working_dir_bound(path):
         unbind_working_dir(token)
 
 
+#: Set on a host where several people share one process (Tiny Apps): with
+#: no folder bound to the running context, refuse rather than fall back to
+#: the process-wide env var, which belongs to whoever reran last.
+_REQUIRE_BINDING = False
+
+
+class UnboundWorkingDir(RuntimeError):
+    """No working folder is bound to this turn on a shared host."""
+
+
+def require_turn_binding(on: bool = True) -> None:
+    """Fail closed from now on (process-wide): an unbound context raises
+    :class:`UnboundWorkingDir` instead of using the env var."""
+    global _REQUIRE_BINDING
+    _REQUIRE_BINDING = bool(on)
+
+
+def turn_binding_required() -> bool:
+    return _REQUIRE_BINDING
+
+
 def _bound_or_env():
     bound = _WORKING_DIR.get()
     if bound:
         return bound
+    if _REQUIRE_BINDING:
+        raise UnboundWorkingDir(
+            "no working folder is bound to this turn on a shared host; "
+            "refusing to guess whose folder to use")
     env = os.environ.get(DEFAULT_OUTPUT_DIR_ENV)
     if env and env.strip():
         return os.path.abspath(os.path.expanduser(env.strip()))
