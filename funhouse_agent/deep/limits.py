@@ -30,14 +30,51 @@ stages instead of cutting the consult off with a stock "limits exceeded" note:
 Neither stage raises: the parent agent always receives a final message.
 """
 
-from langchain.agents.middleware import ModelCallLimitMiddleware, hook_config
+from langchain.agents.middleware import (AgentMiddleware,
+                                        ModelCallLimitMiddleware, hook_config)
 from langchain_core.messages import AIMessage, HumanMessage
 
 #: Default model-call budget per references consult (one ``task`` delegation).
 #: Picked from the rc7 run data: good reference answers complete in a few
 #: rounds (median question spend was modest); the token burners were consults
-#: looping well past that. 8 calls = up to 7 tool rounds + the final answer.
-DEFAULT_REFERENCES_MAX_MODEL_CALLS = 8
+#: looping well past that. Raised 8 -> 10 on 2026-10-09: in live smoke wave 1
+#: (G5) 17 of 18 consults stopped at exactly 8, their forced answers listing
+#: items "not searched", about one call each having gone to scratch-file
+#: tools the consult cannot use (now hidden from it: :class:`HideTools`).
+#: 10 calls = up to 9 tool rounds + the final answer. Measure against 12.
+DEFAULT_REFERENCES_MAX_MODEL_CALLS = 10
+
+#: deepagents' scratch-filesystem tools a references consult has no use for:
+#: it never writes, and an empty scratch space answers nothing about the
+#: library. ``read_file`` is kept -- an evicted large tool result is read
+#: back with it.
+REFERENCE_HIDDEN_TOOLS = frozenset({"ls", "glob", "grep", "write_file",
+                                    "edit_file", "execute"})
+
+
+class HideTools(AgentMiddleware):
+    """Keep the named tools out of the model's view (they stay registered,
+    so nothing that refers to them breaks). deepagents attaches its
+    filesystem tools to every sub-agent; this takes the ones a sub-agent
+    must not spend calls on off the menu."""
+
+    def __init__(self, names):
+        super().__init__()
+        self.hidden = frozenset(names or ())
+
+    def _filtered(self, request):
+        if not self.hidden:
+            return request
+        tools = [t for t in (request.tools or [])
+                 if (t.get("name") if isinstance(t, dict)
+                     else getattr(t, "name", None)) not in self.hidden]
+        return request.override(tools=tools)
+
+    def wrap_model_call(self, request, handler):
+        return handler(self._filtered(request))
+
+    async def awrap_model_call(self, request, handler):
+        return await handler(self._filtered(request))
 
 #: Injected as a user message on the last budgeted model call (with tools
 #: stripped) so the sub-agent spends its final call answering, not searching.
@@ -151,6 +188,8 @@ class ModelCallBudgetMiddleware(ModelCallLimitMiddleware):
 
 __all__ = [
     "ModelCallBudgetMiddleware",
+    "HideTools",
+    "REFERENCE_HIDDEN_TOOLS",
     "DEFAULT_REFERENCES_MAX_MODEL_CALLS",
     "FINAL_TURN_NUDGE",
     "BUDGET_EXHAUSTED_MESSAGE",

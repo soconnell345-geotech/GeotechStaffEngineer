@@ -385,6 +385,29 @@ def _as_list(value, name: str) -> list:
     return value
 
 
+def _diggs_default_name(investigations, project=None) -> str:
+    """A DIGGS file name made from what it holds: the investigation ids
+    (``B-1.diggs.xml``, ``B-1_B-2.diggs.xml``, ``B-1_to_B-12.diggs.xml``),
+    else the project name, else ``site.diggs.xml`` (live smoke wave 1, A15f:
+    write_diggs refused a call that gave no output_path)."""
+    import re
+
+    def _clean(text) -> str:
+        return re.sub(r"[^A-Za-z0-9._-]+", "_", str(text or "")).strip("._-")
+
+    ids = [c for c in (_clean(getattr(i, "investigation_id", ""))
+                       for i in investigations or ()) if c]
+    if len(ids) == 1:
+        stem = ids[0]
+    elif 1 < len(ids) <= 3:
+        stem = "_".join(ids)
+    elif ids:
+        stem = f"{ids[0]}_to_{ids[-1]}"
+    else:
+        stem = _clean(getattr(project, "name", "")) or "site"
+    return f"{stem[:60]}.diggs.xml"
+
+
 def _run_write_diggs(params: dict) -> dict:
     import json
     import os
@@ -399,7 +422,7 @@ def _run_write_diggs(params: dict) -> dict:
     _valid = ("investigations", "lab_tests", "project", "output_path",
               "document_id")
     reject_unknown_params(params, _valid, method="write_diggs")
-    require_params(params, ["investigations", "output_path"],
+    require_params(params, ["investigations"],
                    method="write_diggs", valid=_valid)
 
     problems: list = []
@@ -460,7 +483,11 @@ def _run_write_diggs(params: dict) -> dict:
     xml = write_diggs(record, project,
                       document_id=str(params.get("document_id") or ""),
                       notes=notes)
-    out = str(params["output_path"])
+    if params.get("output_path"):
+        out = str(params["output_path"])
+    else:
+        from funhouse_agent._fileio import resolve_output_path
+        out = resolve_output_path(_diggs_default_name(investigations, project))
     folder = os.path.dirname(os.path.abspath(out))
     os.makedirs(folder, exist_ok=True)
     with open(out, "w", encoding="utf-8") as fh:
@@ -887,7 +914,7 @@ METHOD_INFO = {
                 "gravel_percent, sand_percent, fines_percent, max_dry_density, optimum_wc, pH, sulfate, chloride}]}: it is "
                 "cross-checked against the individual sheets.")},
             "project": {"type": "dict", "required": False, "description": "{name, number, client, location, coordinate_system, elevation_datum} as printed."},
-            "output_path": {"type": "str", "required": True, "description": "A file name for the .xml, e.g. 'site.diggs.xml'. In the app it is written into this conversation's folder, whatever directory is given, and attached to the conversation."},
+            "output_path": {"type": "str", "required": False, "description": "A file name for the .xml, e.g. 'site.diggs.xml'; omitted, it is named after the investigations (e.g. 'B-1_to_B-12.diggs.xml'). In the app it is written into this conversation's folder, whatever directory is given, and attached to the conversation."},
             "document_id": {"type": "str", "required": False, "description": "An identifier for the source document."},
         },
         "returns": {

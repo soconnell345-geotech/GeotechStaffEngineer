@@ -70,6 +70,48 @@ def _domain_allowed(addr: str) -> bool:
     return bool(domain) and domain.endswith(ALLOWED_SUFFIXES)
 
 
+def _attachment(file_path: str):
+    """``(real path, shown name, None)`` for the file to attach, or
+    ``(None, None, message)``.
+
+    While a host has bound a working folder (the web app, per conversation)
+    only this conversation's files -- and the reference library -- can be
+    emailed, resolved the way the read tools resolve them
+    (:func:`funhouse_agent.vision_tools.find_readable_file`): a name in the
+    working folder, never another server file (live smoke 1, A2 -- one
+    process serves many people). The file is named by its place in the
+    conversation, never by its server path (A6). With no folder bound,
+    any readable path, as before."""
+    given = str(file_path or "").strip()
+    try:
+        from funhouse_agent.vision_tools import (PathRefused, display_path,
+                                                 files_here_text,
+                                                 find_readable_file,
+                                                 read_roots)
+    except Exception:                                      # noqa: BLE001
+        if os.path.isfile(given):
+            return given, given, None
+        return None, None, (f"Local file not found: {given} — check the "
+                            "path with list_files (no email was sent).")
+    if read_roots() is None:
+        if os.path.isfile(given):
+            return given, given, None
+        return None, None, (f"Local file not found: {given} — check the "
+                            "path with list_files (no email was sent).")
+    try:
+        found = find_readable_file(given) if given else None
+    except PathRefused:
+        return None, None, (
+            f"Not sent: '{given}' is not one of this conversation's files, "
+            "and only those can be emailed. Files here: "
+            f"{files_here_text()} (no email was sent).")
+    if not found:
+        return None, None, (
+            f"Local file not found: '{given}'. Files here: "
+            f"{files_here_text()} (no email was sent).")
+    return found, display_path(found), None
+
+
 @tool
 def email_file(to: str, file_path: str, subject: str = "",
                body: str = "") -> str:
@@ -80,8 +122,9 @@ def email_file(to: str, file_path: str, subject: str = "",
     address (the mail relay accepts nothing else). Pass "me" (or leave
     empty) to send to the app user's own address, which the app knows from
     the launch session — do NOT guess their address.
-    file_path: the local file to attach (as returned by save_file /
-    calc-package tools).
+    file_path: the file to attach, by its name in the working folder (as
+    save_file or the tool that built it named it). Only this
+    conversation's files can be sent.
     subject, body: optional; sensible defaults mention GeotechStaffEngineer
     and the filename.
 
@@ -100,16 +143,16 @@ def email_file(to: str, file_path: str, subject: str = "",
         return (f"Recipient not allowed: '{addr}'. The Funhouse mail relay "
                 "only delivers to .gov, .mil, or .sbu addresses — check the "
                 "address with the user (no email was sent).")
-    if not os.path.isfile(file_path):
-        return (f"Local file not found: {file_path} — check the path with "
-                "list_files (no email was sent).")
+    path, shown, problem = _attachment(file_path)
+    if problem:
+        return problem
     try:
-        with open(file_path, "rb") as fh:
+        with open(path, "rb") as fh:
             data = fh.read()
     except OSError as exc:
-        return (f"Could not read {file_path}: {type(exc).__name__}: {exc} "
+        return (f"Could not read {shown}: {type(exc).__name__} "
                 "(no email was sent).")
-    filename = os.path.basename(file_path)
+    filename = os.path.basename(path)
     subject = (subject or "").strip() or f"[GeotechStaffEngineer] {filename}"
     body = (body or "").strip() or (
         f"Attached: {filename} ({len(data):,} bytes), produced by the "

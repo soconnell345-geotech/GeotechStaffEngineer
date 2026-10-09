@@ -164,6 +164,24 @@ def reject_unknown_params(params: dict, valid, *, method: str, aliases=()):
 # Figure-output helpers (save a plot's HTML to a file instead of returning it)
 # ---------------------------------------------------------------------------
 
+def mark_required(method_info: dict, required: dict) -> dict:
+    """Give every parameter of ``method_info`` an explicit ``required`` flag
+    (True for the names in ``required[method]``, else False) and a
+    ``description`` (copied from an older-style ``brief`` when it has none),
+    so every adapter documents its parameters ONE way. Live smoke wave 1
+    (G7): four adapters carried no ``required`` flags, and models spent
+    calls discovering what the code demanded. Returns ``method_info``."""
+    for method, info in method_info.items():
+        must = set(required.get(method, ()))
+        for name, spec in (info.get("parameters") or {}).items():
+            if not isinstance(spec, dict):
+                continue
+            spec["required"] = name in must
+            if "description" not in spec and "brief" in spec:
+                spec["description"] = spec.pop("brief")
+    return method_info
+
+
 def figure_output_format(params: dict, default: str = "metadata") -> str:
     """Resolve a plot method's ``output_format``, honoring ``output_path``.
 
@@ -255,7 +273,8 @@ def save_html_output(result: dict, params: dict, *, html_key: str = "html",
     else:
         result["renderer_note"] = (
             "The figure HTML could NOT be stored at output_path — see 'error' "
-            "and 'rescue_path'; report the rescue path to the user."
+            "and 'rescue_path': the rescue copy, by the name the error gives, "
+            "is the file."
         )
     return result
 

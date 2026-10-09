@@ -95,7 +95,10 @@ def start_turn_job(agent, messages: list, thread_id: str,
       prompt, temp_dir, before (files snapshot), staged_inputs,
       working_dir, before_wd (or None), artifacts (the session list, mutated
       in place), artifacts_before_len, transcript (session list, mutated),
-      trace_on (bool), model, behavior (dict).
+      trace_on (bool), model, behavior (dict); optionally before_mtimes
+      (``core.snapshot_mtimes``: rewritten files get cards) and orientation
+      (the attached names when the app sent the orientation request: the
+      conversation is titled after them).
     """
     with _JOBS_LOCK:
         existing = _JOBS.get(thread_id)
@@ -121,6 +124,22 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
     try:
         from funhouse_agent._fileio import bind_working_dir
         bind_working_dir(ctx.get("working_dir"))
+    except Exception:                                  # noqa: BLE001
+        pass
+    # The title is settled when the turn STARTS (live smoke wave 1, A10): the
+    # SharePoint mirror names its folder once, at the first mirror, and a
+    # link handed out during this turn must already point at that folder.
+    # An orientation turn is titled after the attached files; the first
+    # typed question retitles the conversation (the folder does not move).
+    try:
+        _user_turns = sum(1 for e in (ctx.get("transcript") or [])
+                          if e.get("role") == "user")
+        _title, _source = core.turn_title(
+            core.load_meta(thread_id), ctx.get("prompt"), _user_turns,
+            orientation=ctx.get("orientation"))
+        if _title:
+            core.touch_conversation(thread_id, title=_title,
+                                    title_source=_source)
     except Exception:                                  # noqa: BLE001
         pass
     answer = ""
@@ -201,6 +220,12 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
         dir_new = [p for p in core.new_artifacts(ctx["temp_dir"], ctx["before"],
                                                  ctx["staged_inputs"])
                    if os.path.abspath(p) not in fetched]
+        # A file the turn wrote AGAIN (a memo rewritten under its own name)
+        # gets this turn's card too (live smoke wave 1, A13).
+        for p in core.rewritten_files(ctx["temp_dir"], ctx.get("before_mtimes"),
+                                      ctx["staged_inputs"]):
+            if os.path.abspath(p) not in fetched and p not in dir_new:
+                dir_new.append(p)
         if ctx.get("before_wd") is not None:
             for p in core.import_external_artifacts(
                     ctx["working_dir"], ctx["temp_dir"], ctx["before_wd"],
@@ -214,7 +239,8 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
             try:
                 copied = core.import_reported_outputs(
                     collector.outputs, ctx["temp_dir"],
-                    exclude=list(ctx["staged_inputs"]) + sorted(fetched))
+                    exclude=list(ctx["staged_inputs"]) + sorted(fetched),
+                    working_dir=ctx.get("working_dir"))
             except Exception:                          # noqa: BLE001
                 copied = {}
         for i, p in enumerate(artifacts):
@@ -228,7 +254,9 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
         for p in dir_new:
             if p not in artifacts:
                 artifacts.append(p)
-        turn_paths = core.collect_turn_artifacts(save_new, dir_new)
+        # Tool scratch and caches (files/.scratch, digest/) never make cards.
+        turn_paths = [p for p in core.collect_turn_artifacts(save_new, dir_new)
+                      if not core.is_cache_path(p, ctx["temp_dir"])]
 
         assistant_entry = {"role": "assistant", "text": final,
                            "artifacts": turn_paths}
@@ -251,11 +279,9 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
             core.append_transcript(thread_id, assistant_entry)
             transcript = ctx["transcript"]
             user_turns = sum(1 for e in transcript if e.get("role") == "user")
-            title = (core.auto_title(ctx.get("prompt"))
-                     if user_turns == 1 and ctx.get("prompt") else None)
+            # (the title was settled when the turn started; see above)
             core.save_messages(thread_id, messages)
-            core.touch_conversation(thread_id, title=title,
-                                    turn_count=user_turns,
+            core.touch_conversation(thread_id, turn_count=user_turns,
                                     model=ctx.get("model"))
             core.set_behavior(thread_id,
                               ctx.get("behavior") or core.default_behavior())

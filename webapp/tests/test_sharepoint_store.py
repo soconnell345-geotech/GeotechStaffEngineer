@@ -308,9 +308,62 @@ def test_mirror_lands_in_the_named_folder(tmp_path):
     assert all("/MCAC_Micropile_" in r for (_l, r, _o) in fm.uploads)
 
 
-def test_rename_moves_the_mirror_and_leaves_a_pointer(tmp_path):
-    """A later rename re-mirrors under the new name and drops MOVED.txt in the
-    old folder (the file manager has no server-side move)."""
+def test_a_rename_keeps_the_mirror_folder(tmp_path):
+    """The folder is named at the first mirror and never moves: a link
+    handed out into it must not go stale when the conversation is retitled
+    (live smoke wave 1, A10). Only the displayed title changes."""
+    root = str(tmp_path)
+    tid, _conv = _make_conversation(root, "renamekeep01")
+    core.rename_conversation(tid, "21.01.pdf", root=root)
+    fm = FakeFM()
+    store = sp.SharePointStore(file_manager=fm)
+    first = store.mirror_conversation(tid, root=root)
+    assert "21.01.pdf_" in first["folder"]
+    assert core.load_meta(tid, root)[sp.MIRROR_FOLDER_KEY] == \
+        first["folder"].rsplit("/", 1)[-1]
+    core.rename_conversation(tid, "Which sheets carry GCE?", root=root)
+    second = store.mirror_conversation(tid, root=root)
+    assert second["folder"] == first["folder"]
+    assert "renamed_from" not in second
+    assert store.session_folder(tid, root=root) == first["folder"]
+    assert core.load_meta(tid, root)["title"] == "Which sheets carry GCE?"
+
+
+def test_an_untitled_conversation_is_named_once_it_has_a_title(tmp_path):
+    root = str(tmp_path)
+    tid, _conv = _make_conversation(root, "untitled0001")
+    fm = FakeFM()
+    store = sp.SharePointStore(file_manager=fm)
+    first = store.mirror_conversation(tid, root=root)
+    assert first["folder"].endswith("/" + tid)
+    assert sp.MIRROR_FOLDER_KEY not in core.load_meta(tid, root)
+    core.rename_conversation(tid, "Bridge 21", root=root)
+    second = store.mirror_conversation(tid, root=root)
+    assert "Bridge_21_" in second["folder"]
+    assert second["renamed_from"] == first["folder"]
+    core.rename_conversation(tid, "Bridge 21 plans", root=root)
+    assert store.mirror_conversation(tid, root=root)["folder"] == \
+        second["folder"]
+
+
+def test_a_fixed_folder_name_is_never_given_to_another_conversation(tmp_path):
+    root = str(tmp_path)
+    a, _ = _make_conversation(root, "aaaaaaaa0001")
+    core.rename_conversation(a, "Site X", root=root)
+    store = sp.SharePointStore(file_manager=FakeFM())
+    fa = store.mirror_conversation(a, root=root)["folder"]
+    core.rename_conversation(a, "Something else", root=root)
+    b, _ = _make_conversation(root, "bbbbbbbb0002")
+    core.rename_conversation(b, "Site X", root=root)
+    fb = store.mirror_conversation(b, root=root)["folder"]
+    assert fb != fa and fb.startswith(fa)
+
+
+def test_a_changed_root_moves_the_mirror_and_leaves_a_pointer(tmp_path,
+                                                              monkeypatch):
+    """A changed GEOTECH_SHAREPOINT_ROOT re-mirrors under the new root and
+    drops MOVED.txt in the old folder (the file manager has no server-side
+    move)."""
     root = str(tmp_path)
     tid, _conv = _make_conversation(root, "renameconv01")
     core.rename_conversation(tid, "Working Name", root=root)
@@ -321,10 +374,11 @@ def test_rename_moves_the_mirror_and_leaves_a_pointer(tmp_path):
     assert "Working_Name_" in old_folder
     n_before = len(fm.uploads)
 
-    core.rename_conversation(tid, "Praia Downdrag", root=root)
+    monkeypatch.setenv(sp.ENV_ROOT, "Shared Documents/Other/GSE_app")
     second = store.mirror_conversation(tid, root=root)
     assert second["renamed_from"] == old_folder
-    assert "Praia_Downdrag_" in second["folder"]
+    assert second["folder"].startswith("Shared Documents/Other/GSE_app/")
+    assert "Working_Name_" in second["folder"]      # the fixed name moves along
     # every file re-uploaded under the new name; nothing left "skipped"
     assert second["uploaded"] == n_before and second["skipped"] == 0
     new_remotes = [r for (_l, r, _o) in fm.uploads[n_before:]]
@@ -359,19 +413,19 @@ def test_old_flat_manifest_is_read_not_discarded(tmp_path):
     assert "renamed_from" not in s                    # no folder -> no "move"
 
 
-def test_moved_pointer_failure_is_captured_not_raised(tmp_path):
+def test_moved_pointer_failure_is_captured_not_raised(tmp_path, monkeypatch):
     root = str(tmp_path)
     tid, _conv = _make_conversation(root, "movedfail001")
     core.rename_conversation(tid, "First", root=root)
     fm = FakeFM()
     store = sp.SharePointStore(file_manager=fm)
     store.mirror_conversation(tid, root=root)
-    core.rename_conversation(tid, "Second", root=root)
+    monkeypatch.setenv(sp.ENV_ROOT, "Shared Documents/Moved")   # a move
     fm.fail_names = {sp.MOVED_NAME}
     s = store.mirror_conversation(tid, root=root)
     assert any(sp.MOVED_NAME in e for e in s["errors"])
     assert s["uploaded"] >= 2            # the real re-mirror still happened
-    assert "Second_" in s["folder"]
+    assert s["folder"].startswith("Shared Documents/Moved/")
 
 
 def test_fix_web_url_repairs_single_slash():

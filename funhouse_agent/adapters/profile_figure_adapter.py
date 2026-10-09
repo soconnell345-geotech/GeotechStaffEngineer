@@ -293,7 +293,8 @@ METHOD_INFO = {
         },
         "returns": {
             "status": "success or error.",
-            "output_path": "Absolute path of the saved PNG.",
+            "output_path": ("The saved PNG: its name in the working folder (an "
+                            "absolute path only outside one)."),
             "file_exists": ("True if the file was verified on disk. Trust this "
                             "field — do NOT try to verify with agent-side "
                             "filesystem tools (they may be sandboxed)."),
@@ -380,7 +381,8 @@ METHOD_INFO = {
         },
         "returns": {
             "status": "success or error.",
-            "output_path": "Absolute path of the saved PNG.",
+            "output_path": ("The saved PNG: its name in the working folder (an "
+                            "absolute path only outside one)."),
             "file_exists": "True if the file was verified on disk — trust it.",
             "file_size_bytes": "Size of the saved PNG.",
             "width_px": "Rendered width in pixels.",
@@ -390,7 +392,7 @@ METHOD_INFO = {
             "html_img_tag": ("Ready-to-paste <img> tag referencing the saved "
                              "PNG — drop it straight into report HTML for "
                              "html_to_pdf."),
-            "plotly_json_path": ("Path of the interactive chart written beside "
+            "plotly_json_path": ("Name of the interactive chart written beside "
                                  "the PNG; this is what the chat shows. Absent "
                                  "when interactive=false."),
             "warnings": "Non-fatal notes (e.g. non-finite points dropped).",

@@ -226,6 +226,18 @@ def _stage_files(pairs) -> list:
     return atts
 
 
+def _bind_working_folder(path) -> None:
+    """Bind this conversation's working folder to the current script run's
+    context (``funhouse_agent._fileio.bind_working_dir``): every tool or
+    folder read on this thread resolves names there, whatever another
+    session did to the process-wide env var. Best-effort."""
+    try:
+        from funhouse_agent._fileio import bind_working_dir
+        bind_working_dir(path)
+    except Exception:                                  # noqa: BLE001
+        pass
+
+
 def _queue_orientation(atts) -> None:
     """The review page orients itself on a fresh upload — one cheap turn,
     sent on the user's behalf at the next run (owner, 2026-09-21: automatic,
@@ -673,6 +685,10 @@ with st.sidebar:
         core.set_working_dir(ss.thread_id, _wd_in)
         st.rerun()
     core.apply_default_output_dir(_wd)
+    # ...and bound to THIS script run's context, which the tools read first:
+    # the env var is process-wide and another session's rerun repoints it
+    # (on a shared host, someone else's folder). The env stays a fallback.
+    _bind_working_folder(_wd)
 
     # Behavior (A5): per-conversation pickers, persisted in meta. A change
     # rebuilds the agent for THIS conversation going forward (defaults reproduce
@@ -942,7 +958,7 @@ with st.sidebar:
             # the turn records with core.tag_conversation (below), so the
             # geotech page never lists the review page's folder as a
             # conversation, and the review page lists its own.
-            _sp_where = {"owner": (_IDENT.display_name if _IDENT.multi_user
+            _sp_where = {"owner": (_IDENT.key if _IDENT.multi_user
                                    else None),
                          "page": _PROFILE.name}
             # Cached PER PAGE (and person): the pages share one session_state
@@ -1081,13 +1097,18 @@ def _render_artifact_card(path: str) -> None:
     with st.container(border=True):
         st.markdown(f"{icon} **{card.name}** · {card.size:,} bytes · "
                     f"{card.kind.upper()}")
+        # A chart card downloads the figure's PNG (its HTML copy when there
+        # is no PNG), not Plotly's JSON (live smoke wave 1, A15d).
+        dl_path = (core.plotly_download_twin(path) if card.kind == "plotly"
+                   else path)
         try:
-            data = core.artifact_bytes(path)
+            data = core.artifact_bytes(dl_path)
         except OSError:
             st.caption("(file unavailable)")
             return
-        st.download_button("Download", data=data, file_name=card.name,
-                           mime=_mime_for(card.name),
+        dl_name = os.path.basename(dl_path)
+        st.download_button("Download", data=data, file_name=dl_name,
+                           mime=_mime_for(dl_name),
                            key=f"dlcard_{path}")
         if card.kind == "plotly":
             # Native interactive chart from a *.plotly.json sidecar. plotly is
@@ -1213,6 +1234,7 @@ if _chat_value is not None and not isinstance(_chat_value, str):
 # attachment names; this run sends the request as if the user had typed it.
 # A typed message in the same run wins — the user's question, not ours.
 _orient = ss.pop("pending_orientation", None)
+_orientation_names = None        # set when THIS turn is the orientation
 if not prompt and _orient and _PROFILE.orientation and ss.agent is not None \
         and turn_jobs.get_turn_job(ss.thread_id) is None:
     # The same text the review suite sends (webapp.profiles); with
@@ -1220,6 +1242,9 @@ if not prompt and _orient and _PROFILE.orientation and ss.agent is not None \
     prompt = profiles.orientation_request_for(_PROFILE, [
         core.Attachment(key=n, path=os.path.join(ss.temp_dir, n), size=0)
         for n in _orient])
+    # The conversation is titled after the files, not after this request
+    # (core.turn_title; live smoke wave 1, A10).
+    _orientation_names = list(_orient)
 
 if prompt:
     if ss.agent is None:
@@ -1245,6 +1270,8 @@ if prompt:
 
         import os as _os
         before = core.snapshot_dir(ss.temp_dir)
+        # and each file's time, so a file REWRITTEN this turn gets a card (A13)
+        before_mtimes = core.snapshot_mtimes(ss.temp_dir)
         artifacts_before_len = len(ss.artifacts)     # save_fn appends here live
         staged_inputs = {  # staged upload paths are inputs, not artifacts
             _os.path.join(ss.temp_dir, k) for k in ss.attachments
@@ -1260,6 +1287,7 @@ if prompt:
         # browser tab's sidebar rerun (a different conversation) could have
         # repointed it since this tab's last rerun (QC 2026-07-15).
         core.apply_default_output_dir(working_dir)
+        _bind_working_folder(working_dir)
         before_wd = (core.snapshot_dir(working_dir)
                      if os.path.abspath(working_dir) != os.path.abspath(ss.temp_dir)
                      else None)
@@ -1270,9 +1298,15 @@ if prompt:
         # nothing and keeps its layout).
         if _IDENT.multi_user or _PROFILE is not profiles.DEFAULT:
             try:
+                # owner = the person's unique key (domain__user, the same
+                # key as their local users/<key> folder): two people with
+                # the same display name in two domains must not share one
+                # SharePoint owner folder. owner_name is for display.
                 core.tag_conversation(
-                    ss.thread_id, owner=(_IDENT.display_name
-                                         if _IDENT.multi_user else None),
+                    ss.thread_id,
+                    owner=(_IDENT.key if _IDENT.multi_user else None),
+                    owner_name=(_IDENT.display_name if _IDENT.multi_user
+                                else None),
                     page=_PROFILE.name)
             except Exception:                      # never blocks a turn
                 pass
@@ -1296,8 +1330,10 @@ if prompt:
             ss.behavior.get("recursion_limit"),
             ctx={
                 "prompt": prompt,
+                "orientation": _orientation_names,
                 "temp_dir": ss.temp_dir,
                 "before": before,
+                "before_mtimes": before_mtimes,
                 "staged_inputs": staged_inputs,
                 "working_dir": working_dir,
                 "before_wd": before_wd,

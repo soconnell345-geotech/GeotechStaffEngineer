@@ -53,8 +53,33 @@ def _text_of(output) -> str:
     return content if isinstance(content, str) else str(content)
 
 
+def _real(path: str) -> str:
+    """A path a tool result named, as a real path. Since live smoke 1 (A6)
+    results name a file by its place in the conversation -- ``'memo.docx'``,
+    ``figs/x.png`` -- rather than by its server path: quotes are stripped
+    and a relative name is resolved in the working folder the host bound for
+    the turn (this runs in the tool's context, where it is bound). With no
+    working folder bound the path is returned as it came."""
+    p = str(path or "").strip()
+    if len(p) >= 2 and p[0] == p[-1] and p[0] in "'\"":
+        p = p[1:-1].strip()
+    expanded = os.path.expanduser(p)
+    # A rooted path ("/tmp/x" -- not "absolute" on Windows since Python
+    # 3.13) or one with a drive is a server path, kept as it came.
+    if not p or os.path.isabs(expanded) or expanded[:1] in "/\\" \
+            or os.path.splitdrive(expanded)[0]:
+        return p
+    try:
+        from funhouse_agent._fileio import host_output_dir
+        folder = host_output_dir()
+    except Exception:  # noqa: BLE001 - capture must never cost a turn
+        folder = None
+    return os.path.abspath(os.path.join(folder, p)) if folder else p
+
+
 def paths_in(text: str) -> tuple:
-    """``(outputs, inputs)`` named in one tool result's text."""
+    """``(outputs, inputs)`` named in one tool result's text, as real paths
+    (a name in the working folder is resolved there: :func:`_real`)."""
     outputs: List[str] = []
     for raw in _JSON_KEY.findall(text):
         try:
@@ -64,7 +89,7 @@ def paths_in(text: str) -> tuple:
     outputs += _REPR_KEY.findall(text)
     outputs += _UPLOADED.findall(text)
     inputs = _DOWNLOADED.findall(text)
-    return outputs, inputs
+    return [_real(p) for p in outputs], [_real(p) for p in inputs]
 
 
 class OutputCollector(BaseCallbackHandler):

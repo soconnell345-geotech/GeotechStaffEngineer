@@ -25,8 +25,9 @@ from datetime import datetime
 from funhouse_agent.adapters import (apply_aliases, require_keys,
                                      require_params, reject_unknown_params)
 from funhouse_agent._fileio import (
-    default_output_dir, rescue_write, resolve_output_path, save_verified,
-    workspace_write_hint, written_file_problem,
+    default_output_dir, find_in_working_folder, rescue_note, rescue_write,
+    resolve_output_path, save_verified, workspace_write_hint,
+    written_file_problem,
 )
 
 
@@ -74,7 +75,28 @@ _NO_FIGURES = {"html_to_pdf", "render_figures"}
 def _slug(text: str, n: int = 40) -> str:
     import re
     t = re.sub(r"[^A-Za-z0-9]+", "_", str(text or "")).strip("_").lower()
-    return (t or "figure")[:n]
+    return (t or "figure")[:n].strip("_") or "figure"
+
+
+#: Longest full path a generated figure is given. Windows refuses a path over
+#: 260 characters unless long paths are enabled, and a conversation folder is
+#: already deep; a 266-character figure path failed to save in live smoke
+#: wave 1 (A14).
+_MAX_FIGURE_PATH = 220
+
+
+def _figure_file_name(out_dir: str, stem: str, index: int, title: str,
+                      ts: str) -> str:
+    """``<stem>_f<i>_<title slug>_<HHMMSS>.png``, short: the title slug is
+    cut, then dropped, to keep the full path under :data:`_MAX_FIGURE_PATH`."""
+    room = _MAX_FIGURE_PATH - len(os.path.abspath(out_dir)) - 1
+    base = f"{stem}_f{index}"
+    tail = f"_{ts}.png"
+    slug = _slug(title, 24)
+    for name in (f"{base}_{slug}{tail}", f"{base}{tail}"):
+        if len(name) <= room:
+            return name
+    return f"f{index}{tail}"
 
 
 def _figures_response(module: str, result, analysis, opts: dict,
@@ -101,8 +123,8 @@ def _figures_response(module: str, result, analysis, opts: dict,
     out_dir = (resolve_output_path(str(out_dir)) if out_dir
                else default_output_dir())
     os.makedirs(out_dir, exist_ok=True)
-    stem = opts.get("name_prefix") or module
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    stem = _slug(opts.get("name_prefix") or module, 24)
+    ts = datetime.now().strftime("%H%M%S")
 
     saved_figs = []
     problems = []
@@ -115,7 +137,8 @@ def _figures_response(module: str, result, analysis, opts: dict,
             problems.append(f"figure {i} ('{title}'): undecodable image "
                             f"({type(exc).__name__})")
             continue
-        path = os.path.join(out_dir, f"{stem}_{ts}_fig{i}_{_slug(title)}.png")
+        path = os.path.join(out_dir, _figure_file_name(out_dir, stem, i,
+                                                       title, ts))
         saved = save_verified(path, png)
         abs_path = saved.get("saved", os.path.abspath(path))
         entry = {
@@ -265,10 +288,7 @@ def _build_response(module: str, result, analysis, params: dict,
         )
         if rescue:
             response["rescue_path"] = rescue
-            response["error"] += (
-                f" A verified copy of the calc package was saved to "
-                f"'{rescue}' — report THAT path to the user."
-            )
+            response["error"] += rescue_note(rescue)
     if extra:
         response.update(extra)
     return response
@@ -1284,8 +1304,9 @@ _MAX_INLINE_BYTES = 12 * 1024 * 1024
 
 _EMBED_FIX = (
     "Fix: render each figure to a PNG file, then reference it either as "
-    '<img src="/real/absolute/path/fig.png"> (a real local PNG/JPEG path is '
-    'read and embedded for you) or as a base64 data URI (<img '
+    '<img src="fig.png"> (the name a figure tool returned: a PNG/JPEG in the '
+    'working folder, or a real local path, is read and embedded for you) or '
+    'as a base64 data URI (<img '
     'src="data:image/png;base64,...">). For a layered subsurface profile call '
     "call_agent('profile_figure', 'subsurface_profile', {...}) — it saves the "
     "PNG and hands back a ready-to-paste html_img_tag. Every other analysis "
@@ -1434,6 +1455,10 @@ def _generate_html_to_pdf(params: dict) -> dict:
     base_dir = None
     if not html:
         src = os.path.abspath(html_path)
+        if not os.path.isfile(src):
+            # a bare name is the file of that name in the working folder
+            # (results name files that way since 2026-10-09)
+            src = find_in_working_folder(html_path) or src
         if not os.path.isfile(src):
             return {"status": "error",
                     "error": f"html_path not found on the real filesystem: "
@@ -1671,13 +1696,15 @@ _COMMON_PARAMS = {
 _COMMON_RETURNS = {
     "status": "success or error.",
     "analysis_type": "Type of analysis performed.",
-    "output_path": "Absolute path of the saved calc package file.",
+    "output_path": ("The saved calc package file: its name in the working "
+                    "folder (an absolute path only outside one)."),
     "file_exists": "True if the file was verified on disk after writing. "
                    "Trust this field — do NOT try to verify the file with "
                    "agent-side filesystem tools (they may be sandboxed).",
     "file_size_bytes": "Size of the saved file (0 if file_exists is false).",
-    "rescue_path": "Only on write failure: a verified copy of the package in "
-                   "the local temp dir — report this path to the user.",
+    "rescue_path": "Only on write failure: a verified copy of the package, in "
+                   "the working folder (the temp dir outside the app); the "
+                   "error names it.",
     "format": "Output format used.",
     "html_length": "Length of generated content.",
 }
@@ -1788,9 +1815,10 @@ METHOD_INFO = {
         "parameters": {
             "html": {"type": "str", "required": False,
                      "description": "Self-contained HTML content to render. Inline all "
-                                    "CSS. FIGURES: use <img src=\"/real/path/fig.png\"> "
-                                    "(a real local PNG/JPEG file is read and embedded "
-                                    "for you — this is the easy path, e.g. the "
+                                    "CSS. FIGURES: use <img src=\"fig.png\"> "
+                                    "(a PNG/JPEG in the working folder, named as the "
+                                    "figure tool returned it, or a real local path, "
+                                    "is read and embedded for you — this is the easy path, e.g. the "
                                     "html_img_tag returned by profile_figure) or a "
                                     "base64 PNG/JPEG data URI. Inline <svg>, remote "
                                     "image URLs and literal '[image]' placeholders are "

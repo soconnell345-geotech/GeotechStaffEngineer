@@ -88,7 +88,8 @@ def test_write_diggs_to_tmp_lands_in_the_folder(folder):
     res = _j(call_agent("subsurface", "write_diggs", {
         "investigations": [BORING], "output_path": f"/tmp/{name}"}))
     assert "error" not in res, res
-    assert res["output_path"] == os.path.join(str(folder), name)
+    # named in the working folder, never by the server path (A6)
+    assert res["output_path"] == name
     assert (folder / name).is_file() and res["file_exists"] is True
     assert not os.path.exists(os.path.join(os.path.abspath("/tmp"), name))
     assert "working folder" in res["output_note"]
@@ -98,7 +99,8 @@ def test_write_diggs_to_tmp_lands_in_the_folder(folder):
 def test_write_diggs_bare_name_lands_in_the_folder_not_the_cwd(folder):
     res = _j(call_agent("subsurface", "write_diggs", {
         "investigations": [BORING], "output_path": "site.diggs.xml"}))
-    assert res["output_path"] == os.path.join(str(folder), "site.diggs.xml")
+    assert res["output_path"] == "site.diggs.xml"
+    assert (folder / "site.diggs.xml").is_file()
     assert "replaced" not in res["output_note"]
 
 
@@ -120,10 +122,12 @@ def test_dxf_export_lands_in_the_folder_and_reports_output_path(folder,
     assert "error" not in res, res
     want = os.path.join(str(folder), "section.dxf")
     # output_path is the key the app's capture recognises a written file by
-    assert res["output_path"] == res["filepath"] == want
+    assert res["output_path"] == res["filepath"] == "section.dxf"
     assert os.path.isfile(want) and not (elsewhere / "section.dxf").exists()
     from webapp.output_capture import paths_in
-    assert want in paths_in(json.dumps(res))[0]
+    captured = [p if os.path.isabs(p) else os.path.join(str(folder), p)
+                for p in paths_in(json.dumps(res))[0]]
+    assert want in captured
 
 
 def test_html_to_pdf_lands_in_the_folder(folder, elsewhere):
@@ -132,7 +136,7 @@ def test_html_to_pdf_lands_in_the_folder(folder, elsewhere):
         "html": "<h1>Memo</h1><p>Bearing 150 kPa.</p>",
         "output_path": str(elsewhere / "memo.pdf")}))
     assert "error" not in res, res
-    assert res["output_path"] == os.path.join(str(folder), "memo.pdf")
+    assert res["output_path"] == "memo.pdf"
     assert (folder / "memo.pdf").is_file()
 
 
@@ -142,7 +146,8 @@ def test_plot_data_lands_in_the_folder(folder, elsewhere):
         "series": [{"x": [1, 2, 3], "y": [4, 5, 6], "label": "a"}],
         "output_path": str(elsewhere / "spt.png")}))
     assert "error" not in res, res
-    assert res["output_path"] == os.path.join(str(folder), "spt.png")
+    assert res["output_path"] == "spt.png"
+    assert (folder / "spt.png").is_file()
 
 
 def test_snip_region_lands_in_the_folder(folder, elsewhere, tmp_path):
@@ -155,8 +160,8 @@ def test_snip_region_lands_in_the_folder(folder, elsewhere, tmp_path):
         "file_path": str(src), "output_path": str(elsewhere / "crop.png"),
         "bbox": [20, 30, 120, 80], "frame": "pdf"}))
     assert "error" not in res, res
-    assert os.path.normcase(res["saved"]) == os.path.normcase(
-        os.path.join(str(folder), "crop.png"))
+    assert res["saved"] == "crop.png"
+    assert (folder / "crop.png").is_file()
 
 
 def test_a_library_caller_keeps_its_path(monkeypatch, elsewhere):

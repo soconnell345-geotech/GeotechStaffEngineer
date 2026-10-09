@@ -316,7 +316,11 @@ class TestFindByName:
         assert f"/sites/TeamSite/{ROOT}/projects/archive/Borings 2011.pdf" in \
             out
         assert os.path.isfile(os.path.join(tree.work, "Borings 2011.pdf"))
-        # the "Downloaded X -> path (N bytes)" line the app reads inputs from
+        # The local copy is named by its place in the working folder, never
+        # by its server path (live smoke 1, A6) ...
+        assert "-> 'Borings 2011.pdf' (" in out and tree.work not in out
+        # ... and the "Downloaded X -> name (N bytes)" line the app reads
+        # inputs from still resolves to the real file.
         from webapp.output_capture import paths_in
         assert paths_in(out)[1] == [os.path.join(tree.work, "Borings 2011.pdf")]
 

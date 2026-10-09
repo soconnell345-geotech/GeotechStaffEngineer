@@ -129,7 +129,12 @@ def test_upload_on_the_review_page_triggers_orientation(harness, tmp_path):
     assert at.session_state["transcript"][1]["text"] == "Oriented."
     # ...and it is persisted under the user's own root, tagged owner + page
     meta = core.load_meta(tid)
-    assert meta["owner"] == "jdoe" and meta["page"] == "document_review"
+    # owner: the person's unique key (domain__user), so two jdoes in two
+    # domains never share a SharePoint folder; owner_name for display
+    assert meta["owner"] == "corp__jdoe" and meta["owner_name"] == "jdoe"
+    assert meta["page"] == "document_review"
+    # titled after the attached file, not the orientation request (A10)
+    assert meta["title"] == "plans.pdf"
     # nothing is queued twice
     assert "pending_orientation" not in at.session_state
 

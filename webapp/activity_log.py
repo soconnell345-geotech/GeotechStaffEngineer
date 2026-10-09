@@ -30,8 +30,12 @@ Record shape (one JSON object per line)::
 
 ``event`` is one of ``turn_start``, ``tool_start``, ``tool_end``,
 ``tool_error``, ``model_start``, ``model_end``, ``model_error``,
-``turn_end``, and ``coverage_gate`` (the note the coverage gate gave the
-model, with ``GEOTECH_COVERAGE`` on). ``agent`` is ``primary`` or the sub-agent's name, attributed
+``turn_end``, ``coverage_gate`` (the note the coverage gate gave the
+model, with ``GEOTECH_COVERAGE`` on), and -- since 2026-10-09 (live smoke
+wave 1, G11) -- ``tool_delivered`` (what the model RECEIVED from a tool call,
+when the agent's middleware changed the tool's own output) and
+``tool_refused`` (a call no tool ran: an unknown tool name, an
+interception). ``agent`` is ``primary`` or the sub-agent's name, attributed
 by run ancestry: each event's parent-run chain is followed up to the ``task``
 call it ran inside (whose ``subagent_type`` names the sub-agent), or to the
 top of the turn (primary). Until 2026-09-15 this was a stack of open ``task``
@@ -119,6 +123,20 @@ def _to_text(obj: Any) -> str:
         return ""
     if isinstance(obj, str):
         return obj
+    # A LangGraph Command (a sub-agent's ``task`` result is
+    # ``Command(update={"messages": [ToolMessage(...)], ...})``): log what
+    # its messages SAY, not the object's repr (live smoke wave 1, A15e).
+    update = getattr(obj, "update", None)
+    if isinstance(update, dict) and not hasattr(obj, "content"):
+        msgs = update.get("messages")
+        if isinstance(msgs, (list, tuple)):
+            texts = [_to_text(m) for m in msgs]
+            texts = [t for t in texts if t]
+            if texts:
+                return "\n".join(texts)
+    if isinstance(obj, (list, tuple)) and obj and all(
+            hasattr(o, "content") or hasattr(o, "update") for o in obj):
+        return "\n".join(t for t in (_to_text(o) for o in obj) if t)
     content = getattr(obj, "content", None)      # ToolMessage / Command-ish
     if isinstance(content, str):
         return content
@@ -259,6 +277,9 @@ class ActivityLogger(BaseCallbackHandler):
         self._parent: dict = {}           # run_id -> parent run_id (or None)
         self._names: dict = {}            # run_id -> tool name
         self._starts: dict = {}           # run_id -> start time
+        self._sources: dict = {}          # model run_id -> lc_source
+        self._call_ids: dict = {}         # tool run_id -> tool_call_id
+        self._outputs: dict = {}          # tool_call_id -> the tool's output
         self.records_written = 0
         self.last_error: Optional[str] = None
 
@@ -342,6 +363,8 @@ class ActivityLogger(BaseCallbackHandler):
             self._names[rid] = name
             self._starts[rid] = self._clock()
             self._note(rid, parent_run_id)
+            if kwargs.get("tool_call_id"):
+                self._call_ids[rid] = str(kwargs["tool_call_id"])
             args = inputs if inputs is not None else input_str
             rec = {"agent": self._agent_of(parent_run_id), "event": "tool_start",
                    "name": name, "run_id": rid,
@@ -386,6 +409,9 @@ class ActivityLogger(BaseCallbackHandler):
 
     def on_tool_end(self, output, *, run_id, parent_run_id=None, **kwargs):
         try:
+            call_id = self._call_ids.pop(str(run_id), None)
+            if call_id:
+                self._outputs[call_id] = _to_text(output)
             self._tool_finish("tool_end", run_id, "result", output,
                               parent_run_id)
         except Exception as exc:                       # noqa: BLE001
@@ -414,12 +440,20 @@ class ActivityLogger(BaseCallbackHandler):
                     or (serialized or {}).get("name")
             except Exception:                          # noqa: BLE001
                 model = None
-            self._write({"agent": self._agent_of(parent_run_id),
-                         "event": "model_start",
-                         "run_id": rid,
-                         "parent_run_id": (str(parent_run_id)
-                                           if parent_run_id else None),
-                         "model": model, "n_messages": n_msgs})
+            rec = {"agent": self._agent_of(parent_run_id),
+                   "event": "model_start",
+                   "run_id": rid,
+                   "parent_run_id": (str(parent_run_id)
+                                     if parent_run_id else None),
+                   "model": model, "n_messages": n_msgs}
+            # langchain's own internal calls say what they are (the context
+            # summarizer: ``lc_source: summarization``) -- not a reply.
+            source = (metadata or {}).get("lc_source") \
+                if isinstance(metadata, dict) else None
+            if source:
+                rec["source"] = str(source)
+                self._sources[rid] = str(source)
+            self._write(rec)
         except Exception as exc:                       # noqa: BLE001
             self.last_error = f"{type(exc).__name__}: {exc}"
 
@@ -436,6 +470,9 @@ class ActivityLogger(BaseCallbackHandler):
                       "n_tool_calls": _n_tool_calls(response),
                       "duration_s": (round(self._clock() - t_start, 3)
                                      if t_start is not None else None)}
+            source = self._sources.pop(rid, None)
+            if source:
+                record["source"] = source
             text, reasoning = _model_output(response)
             if text:
                 record["text"], record["text_truncated"], _n = _cap(
@@ -454,6 +491,9 @@ class ActivityLogger(BaseCallbackHandler):
         coverage_tools``) -- part of what the model was shown, so it belongs
         in the record."""
         try:
+            if name == "tool_delivered":
+                self._delivered(data, run_id)
+                return
             if name != "coverage_gate":
                 return
             note = (data or {}).get("note") if isinstance(data, dict) else data
@@ -463,6 +503,27 @@ class ActivityLogger(BaseCallbackHandler):
                          "truncated": truncated})
         except Exception as exc:                       # noqa: BLE001
             self.last_error = f"{type(exc).__name__}: {exc}"
+
+    def _delivered(self, data, run_id) -> None:
+        """A tool result as the model received it (``funhouse_agent.deep.
+        delivered_log``): logged when no tool ran (``tool_refused`` -- an
+        unknown tool name, a guard's interception) or when what the model
+        got differs from the tool's own output (``tool_delivered``: a note
+        added, a result replaced). Identical results are not logged twice."""
+        if not isinstance(data, dict):
+            return
+        call_id = str(data.get("tool_call_id") or "")
+        content = str(data.get("content") or "")
+        own = self._outputs.pop(call_id, None) if call_id else None
+        if own is not None and own == content:
+            return
+        refused = bool(data.get("refused")) or own is None
+        text, truncated, n = _cap(content, self.max_chars)
+        self._write({"agent": self._agent_of(run_id),
+                     "event": "tool_refused" if refused else "tool_delivered",
+                     "name": data.get("name"), "tool_call_id": call_id or None,
+                     "status": data.get("status"), "text": text,
+                     "truncated": truncated, "chars": n})
 
     def on_llm_error(self, error, *, run_id, parent_run_id=None, **kwargs):
         try:

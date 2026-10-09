@@ -158,8 +158,13 @@ def stage_uploads(attachments: dict, temp_dir: str,
 def attachment_note(atts: List[Attachment], review: bool = False) -> str:
     """Build the system-style note telling the agent about staged attachments —
     the attachment key (for analyze_image / analyze_pdf_page / read_pdf_text)
-    AND the on-disk path (for pdf_import / dxf_import / drawing_ir tools that
-    need a real file path). Returns ``""`` for an empty list.
+    AND that the same NAME is a file in the working folder (for pdf_import /
+    dxf_import / drawing_ir tools that need a file path: a bare name is
+    looked up there). Returns ``""`` for an empty list.
+
+    No server path: the note named the absolute staging path until
+    2026-10-09, and the model used it and repeated it to users (live smoke
+    wave 1, A6). Every file tool resolves the bare name.
 
     ``review=True`` is the Document Review page's wording when that page runs
     its own lean agent (``GEOTECH_REVIEW_AGENT=lean``): it names only tools
@@ -178,7 +183,8 @@ def attachment_note(atts: List[Attachment], review: bool = False) -> str:
         for a in atts:
             lines.append(f"- '{a.key}': open it with open_document(source="
                          f"'{a.key}'); the page and region tools take the same "
-                         f"name (also on disk at '{a.path}').")
+                         f"name (it is a file of that name in the working "
+                         f"folder).")
         return "\n".join(lines)
     lines = ["[System note] The user attached files, available to you as:"]
     for a in atts:
@@ -186,9 +192,10 @@ def attachment_note(atts: List[Attachment], review: bool = False) -> str:
             f"- '{a.key}': attachment key '{a.key}' "
             f"(to review a PDF, open_document with source='{a.key}'; use "
             f"analyze_image / analyze_pdf_page / read_pdf_text with "
-            f"attachment_key='{a.key}'); also staged on disk at '{a.path}' "
-            f"(pass this path to pdf_import / dxf_import / drawing_ir tools that "
-            f"need a real file path)."
+            f"attachment_key='{a.key}'); it is also the file '{a.key}' in the "
+            f"working folder (tools that take a file path -- pdf_import / "
+            f"dxf_import / drawing_ir, a call_agent file_path -- take that "
+            f"name)."
         )
     return "\n".join(lines)
 
@@ -264,7 +271,12 @@ def make_save_fn(temp_dir: str, artifacts: List[str]) -> Callable[[str, object],
         else:
             with open(p, "w", encoding="utf-8") as fh:
                 fh.write(str(content))
-        if p not in artifacts:
+        # A REWRITE of a file saved in an earlier turn is not appended again
+        # (the download list stays one entry per file); it still gets this
+        # turn's card, because the turn compares file times
+        # (:func:`rewritten_files`, live smoke wave 1, A13). Tool scratch
+        # (a dot-folder, a cache folder) is never a deliverable.
+        if p not in artifacts and not is_cache_path(p, temp_dir):
             artifacts.append(p)
         return p
 
@@ -363,6 +375,26 @@ def pdf_data_uri(path, max_bytes: int = PDF_PREVIEW_MAX_BYTES) -> Optional[str]:
 #: this suffix (``lateral_pressure.png`` / ``lateral_pressure.plotly.json``).
 PLOTLY_SIDECAR_SUFFIX = ".plotly.json"
 _SUPERSEDED_IMAGE_EXTS = (".png", ".jpg", ".jpeg")
+#: Every twin a sidecar's card stands for: the static image, and the
+#: self-contained HTML copy a plot method also writes (a 4.8 MB second card
+#: for the same figure in live smoke wave 1, A15d).
+_SUPERSEDED_BY_PLOTLY_EXTS = _SUPERSEDED_IMAGE_EXTS + (".html", ".htm")
+
+
+def plotly_download_twin(path: str) -> str:
+    """The file a plotly card's Download button serves: the figure's PNG
+    (else JPG, else its HTML copy) beside the ``*.plotly.json``; the sidecar
+    itself only when there is no twin -- a reader downloading a chart wants
+    the picture, not Plotly's JSON (live smoke wave 1, A15d)."""
+    p = str(path)
+    if not p.lower().endswith(PLOTLY_SIDECAR_SUFFIX):
+        return p
+    stem = p[:-len(PLOTLY_SIDECAR_SUFFIX)]
+    for ext in (".png", ".jpg", ".jpeg", ".html", ".htm"):
+        for cand in (stem + ext, stem + ext.upper()):
+            if os.path.isfile(cand):
+                return cand
+    return p
 
 
 def _plotly_sidecar_stems(paths: Iterable[str]) -> set:
@@ -376,10 +408,11 @@ def _plotly_sidecar_stems(paths: Iterable[str]) -> set:
 
 
 def _superseded_by_plotly(path: str, stems: set) -> bool:
-    """True when ``path`` is the static image of a figure that also has an
-    interactive sidecar in the same list."""
+    """True when ``path`` is the static image -- or the self-contained HTML
+    copy -- of a figure that also has an interactive sidecar in the same
+    list."""
     low = str(path).lower()
-    if not low.endswith(_SUPERSEDED_IMAGE_EXTS):
+    if not low.endswith(_SUPERSEDED_BY_PLOTLY_EXTS):
         return False
     return os.path.splitext(low)[0] in stems
 
@@ -391,8 +424,10 @@ def collect_turn_artifacts(save_new: Iterable[str],
     order-preserving (save_fn first).
 
     One figure, one card: when a ``*.plotly.json`` sidecar is present, the PNG
-    (or JPG) of the SAME figure is dropped from this list, so the chat shows
-    the interactive chart rather than a chart and a picture of it. Only the
+    (or JPG, or the self-contained HTML copy) of the SAME figure is dropped
+    from this list, so the chat shows the interactive chart rather than a
+    chart and a picture of it; the card's Download serves the PNG
+    (:func:`plotly_download_twin`). Only the
     CARD list is filtered — the caller's own artifact list still carries the
     image, so the SharePoint mirror, the sidebar downloads and ``html_to_pdf``
     are untouched."""
@@ -408,24 +443,98 @@ def collect_turn_artifacts(save_new: Iterable[str],
     return [p for p in out if not _superseded_by_plotly(p, stems)]
 
 
-#: Cache folders tools keep in the working folder: their files are working
-#: data, not deliverables, so they never become download cards. They still
-#: ride the SharePoint mirror with the rest of the conversation folder.
-#: ``digest`` = the Document Review digest (funhouse_agent.review_digest).
-CACHE_DIRS = ("digest",)
+#: Cache and scratch folders tools keep in the working folder: their files are
+#: working data, not deliverables, so they never become download cards, are
+#: never listed to the model as the conversation's files, and are not
+#: mirrored to SharePoint (``sharepoint_store`` prunes them; see
+#: :func:`mirror_skips_dir`). ``digest`` = the Document Review digest
+#: (funhouse_agent.review_digest: code only, rebuilt from the PDF in
+#: seconds); ``.scratch`` = the per-conversation tool scratch (contact
+#: sheets, thumbnails). Any other dot-folder is treated the same way.
+CACHE_DIRS = ("digest", ".scratch")
+
+
+def _skipped_dir(name: str) -> bool:
+    return name in CACHE_DIRS or name.startswith(".")
+
+
+def is_cache_path(path, files_dir: str) -> bool:
+    """True when ``path`` lies in a cache or scratch folder of ``files_dir``
+    (a top-level :data:`CACHE_DIRS` entry, or any dot-folder at any depth)."""
+    try:
+        ap = os.path.abspath(str(path))
+        fd = os.path.abspath(files_dir)
+    except (TypeError, ValueError):
+        return False
+    if not ap.startswith(fd + os.sep):
+        return False
+    parts = os.path.relpath(ap, fd).split(os.sep)[:-1]
+    return bool(parts) and (parts[0] in CACHE_DIRS
+                            or any(p.startswith(".") for p in parts))
+
+
+def mirror_skips_dir(rel_dir: str) -> bool:
+    """Whether the SharePoint mirror leaves out a conversation sub-folder,
+    given relative to the CONVERSATION folder with '/' separators: the
+    working folder's cache and scratch folders (``files/digest``,
+    ``files/.scratch``, any dot-folder under ``files/``)."""
+    parts = [p for p in str(rel_dir or "").replace("\\", "/").split("/")
+             if p and p != "."]
+    if len(parts) < 2 or parts[0] != "files":
+        return False
+    return parts[1] in CACHE_DIRS or any(p.startswith(".")
+                                         for p in parts[1:])
 
 
 def snapshot_dir(temp_dir: str) -> set:
     """Return the set of file paths currently under ``temp_dir`` (recursive),
-    leaving out the top-level :data:`CACHE_DIRS`."""
+    leaving out the top-level :data:`CACHE_DIRS` and every dot-folder."""
     found = set()
     top = os.path.abspath(temp_dir)
     for root, dirs, names in os.walk(temp_dir):
         if os.path.abspath(root) == top:
-            dirs[:] = [d for d in dirs if d not in CACHE_DIRS]
+            dirs[:] = [d for d in dirs if not _skipped_dir(d)]
+        else:
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
         for n in names:
             found.add(os.path.join(root, n))
     return found
+
+
+def snapshot_mtimes(temp_dir: str) -> Dict[str, Tuple[int, int]]:
+    """``{path: (mtime_ns, size)}`` for :func:`snapshot_dir`'s files -- taken
+    before a turn so a file REWRITTEN during it is found (A13)."""
+    out: Dict[str, Tuple[int, int]] = {}
+    for p in snapshot_dir(temp_dir):
+        try:
+            st = os.stat(p)
+        except OSError:
+            continue
+        out[p] = (st.st_mtime_ns, st.st_size)
+    return out
+
+
+def rewritten_files(temp_dir: str, before: Optional[dict],
+                    input_paths: Iterable[str] = ()) -> List[str]:
+    """Files that existed before the turn (``before`` from
+    :func:`snapshot_mtimes`) and were written again during it -- a memo
+    rewritten under the same name gets its card in the turn that rewrote it
+    (live smoke wave 1, A13: the only card was the earlier turn's). Staged
+    inputs are left out. Sorted."""
+    if not before:
+        return []
+    inputs = {os.path.abspath(p) for p in (input_paths or ())}
+    out = []
+    for p, stamp in before.items():
+        if os.path.abspath(p) in inputs:
+            continue
+        try:
+            st = os.stat(p)
+        except OSError:
+            continue
+        if (st.st_mtime_ns, st.st_size) != tuple(stamp):
+            out.append(p)
+    return sorted(out)
 
 
 def new_artifacts(temp_dir: str, before: set, input_paths: Iterable[str]) -> List[str]:
@@ -773,20 +882,31 @@ def stream_turn(agent, messages: list, thread_id: str,
     * ``{"kind": "token", "text": str}`` — a streamed answer token.
     * ``{"kind": "tool_call"|"todos"|"tool_result", "text": str}`` — activity.
     * ``{"kind": "turn_done", "answer": str, "turn_tokens": int}`` — final,
-      carrying the concatenated answer and the token spend for this turn
-      (aggregated across every model call in the run, sub-agents included).
+      carrying the answer and the token spend for this turn (aggregated
+      across every model call in the run, sub-agents included).
+
+    The ANSWER is the run's final AI message -- the last one that requested
+    no tool, read off the ``updates`` stream -- not every token the model
+    streamed: narration between tool calls ("I'll open the page map.") is
+    shown live but is not the reply, and a context-summarization call's
+    handoff never becomes text at all (live smoke wave 1, A3). The live view
+    puts a paragraph break between model calls. Only when the stream carried
+    no such message (an agent that streams tokens alone) is the streamed text
+    the answer. Each auto-continue pass contributes its own final message.
 
     When the coverage gate holds a reply back (:func:`coverage_gate_spoke`),
-    the text streamed before its note is left out of ``answer``: the reply
-    after the note is the answer (or, if the model gave nothing after it,
-    the reply held back).
+    the reply before its note is left out of ``answer``: the reply after the
+    note is the answer (or, if the model gave nothing after it, the reply
+    held back).
 
     Reuses the PURE ``_format_update`` parser and ``_sum_callback_tokens`` from
     ``funhouse_agent.deep.notebook`` so the stream contract is shared with the
     notebook UI. The whole stream runs under a usage-metadata callback; if that
     is unavailable the turn still streams (token spend simply reports 0).
     """
-    from funhouse_agent.deep.notebook import _format_update, _sum_callback_tokens
+    from funhouse_agent.deep.notebook import (_final_answer_in_update,
+                                              _format_update,
+                                              _sum_callback_tokens)
 
     answer_parts: List[str] = []
     saw_tool = False
@@ -826,6 +946,12 @@ def stream_turn(agent, messages: list, thread_id: str,
         while True:
             pass_parts: List[str] = []
             held_back: Optional[str] = None
+            # The reply: the last AI message of this pass that asked for no
+            # tool (None until one arrives). ``boundary``: a model call has
+            # finished since the last streamed token, so the next token opens
+            # a new paragraph in the live view.
+            final_text: Optional[str] = None
+            boundary = False
             for mode, chunk in agent.stream(
                     {"messages": work_messages}, config=run_config,
                     stream_mode=["updates", "messages"]):
@@ -834,21 +960,39 @@ def stream_turn(agent, messages: list, thread_id: str,
                     # streamed so far back from the user and asked for the
                     # whole answer again: the reply after its note is THE
                     # answer, never the two glued (Foundry brief 5, CV2/N4).
-                    held_back = "".join(pass_parts)
+                    held_back = (final_text if final_text is not None
+                                 else "".join(pass_parts))
                     pass_parts = []
+                    final_text = None
+                    boundary = False
                     yield {"kind": "tool_call", "text": GATE_STATUS}
                     if held_back.strip():
                         # Keeps the live view from running the two replies
                         # together; the delivered answer is turn_done's.
                         yield {"kind": "token", "text": "\n\n"}
+                elif mode == "updates":
+                    saw_ai, final = _final_answer_in_update(chunk)
+                    if saw_ai:
+                        boundary = True
+                    if final is not None:
+                        final_text = final
                 for entry in _format_update(mode, chunk,
                                             max_result_chars=max_result_chars):
                     if entry["kind"] == "token":
+                        if boundary and pass_parts and \
+                                not pass_parts[-1].endswith("\n\n"):
+                            # Narration of one model call must not run into
+                            # the next call's text mid-sentence.
+                            pass_parts.append("\n\n")
+                            yield {"kind": "token", "text": "\n\n"}
+                        boundary = False
                         pass_parts.append(entry["text"])
                     elif entry["kind"] == "tool_call":
                         saw_tool = True
                     yield entry
-            pass_text = "".join(pass_parts)
+            streamed = "".join(pass_parts)
+            pass_text = (final_text if final_text and final_text.strip()
+                         else streamed)
             if held_back is not None and not pass_text.strip():
                 # The model gave nothing after the note: the reply it had is
                 # better than none.
@@ -1209,12 +1353,26 @@ def _same_bytes(a: str, b: str, chunk: int = 1 << 20) -> bool:
         return False
 
 
+def _reported_path(path, base: str) -> str:
+    """A path a tool reported, made absolute: a relative one is a name in
+    the working folder ``base`` -- tool results name files that way since
+    2026-10-09 (live smoke wave 1, A6) -- not a path under the process cwd."""
+    p = os.path.expanduser(str(path).strip().strip("'\""))
+    if not os.path.isabs(p):
+        p = os.path.join(base, p)
+    return os.path.abspath(p)
+
+
 def import_reported_outputs(paths: Iterable[str], files_dir: str,
-                            exclude: Iterable[str] = ()) -> dict:
+                            exclude: Iterable[str] = (),
+                            working_dir: Optional[str] = None) -> dict:
     """Copy files a tool REPORTED writing outside the conversation folder into
     ``files_dir``, so they get a download card, show inline and reach the
     SharePoint mirror (field feedback 2026-09-15, N4: the calc package and its
     figures were written to /tmp and the owner never received them).
+
+    A RELATIVE reported path is a name in the working folder (``working_dir``,
+    default ``files_dir``): results give conversation-relative names.
 
     Files already inside the conversation directory, missing files, excluded
     paths (staged uploads, files fetched only to be read) and files over
@@ -1224,16 +1382,17 @@ def import_reported_outputs(paths: Iterable[str], files_dir: str,
     """
     fd = os.path.abspath(files_dir)
     conv = os.path.dirname(fd)
+    base = os.path.abspath(working_dir) if working_dir else fd
     skip = set()
     for p in exclude or ():
         try:
-            skip.add(os.path.abspath(p))
+            skip.add(_reported_path(p, base))
         except (TypeError, ValueError):
             continue
     copied: dict = {}
     for p in dict.fromkeys(paths or ()):
         try:
-            src = os.path.abspath(str(p))
+            src = _reported_path(p, base)
         except (TypeError, ValueError):
             continue
         if (src in skip or src in copied or not os.path.isfile(src)
@@ -1326,7 +1485,8 @@ AGENT_TYPES = {
 
 DEFAULT_BEHAVIOR = {
     "references": "anytime",
-    "ref_max_calls": 8,
+    # 10 since 2026-10-09 (funhouse_agent.deep.limits: live smoke wave 1, G5)
+    "ref_max_calls": 10,
     # 25 (the LangGraph default) proved too tight once SharePoint fetch +
     # multi-page PDF reads entered normal workflows (owner hit the cap on the
     # downdrag task 2026-08); 50 covers those while still bounding runaways.
@@ -1532,6 +1692,56 @@ def auto_title(text, n_words: int = 8) -> str:
     return title
 
 
+#: Where a conversation's title came from (meta ``title_source``): the
+#: attached files (an orientation turn), the first typed question, or the
+#: user's own Rename. Only an attachments title is replaced by a question.
+TITLE_FROM_ATTACHMENTS = "attachments"
+TITLE_FROM_QUESTION = "question"
+TITLE_FROM_USER = "user"
+
+
+def orientation_title(names: Iterable[str], max_names: int = 3) -> str:
+    """A conversation title for an automatic orientation turn: the attached
+    files' names (``21.01.pdf``, ``a.pdf + b.pdf``, ``a.pdf + b.pdf + 2
+    more``), not the request the app sent for the user. Live smoke wave 1,
+    A10: 18 of 28 conversations were titled "I just attached `x.pdf`.
+    Before I ask anything,…", and so were their SharePoint folders."""
+    shown = [str(n).strip() for n in (names or ()) if str(n or "").strip()]
+    if not shown:
+        return "New conversation"
+    head = " + ".join(shown[:max_names])
+    more = len(shown) - max_names
+    return head + (f" + {more} more" if more > 0 else "")
+
+
+def turn_title(meta: Optional[dict], prompt, user_turns: int,
+               orientation: Optional[Iterable[str]] = None
+               ) -> Tuple[Optional[str], Optional[str]]:
+    """``(title, title_source)`` a finished turn gives the conversation, or
+    ``(None, None)`` to keep the title it has.
+
+    An orientation turn (``orientation`` = the attached names) titles a
+    conversation that has no typed question yet after its files; the first
+    TYPED question then retitles it (and a conversation's first turn, typed,
+    titles it as it always has). A title the user typed (Rename) is never
+    replaced."""
+    meta = meta or {}
+    source = meta.get("title_source")
+    if source == TITLE_FROM_USER:
+        return None, None
+    if orientation is not None:
+        # Only a conversation's FIRST turn: a later upload's orientation
+        # keeps the title the conversation already has.
+        if source is None and user_turns <= 1:
+            return orientation_title(orientation), TITLE_FROM_ATTACHMENTS
+        return None, None
+    if not prompt:
+        return None, None
+    if user_turns == 1 or source == TITLE_FROM_ATTACHMENTS:
+        return auto_title(prompt), TITLE_FROM_QUESTION
+    return None, None
+
+
 def _conv_path(thread_id, name, root=None) -> str:
     return os.path.join(conversation_dir(thread_id, root), name)
 
@@ -1569,12 +1779,16 @@ def ensure_conversation(thread_id: str, title: Optional[str] = None,
 def touch_conversation(thread_id: str, *, title: Optional[str] = None,
                        turn_count: Optional[int] = None,
                        model: Optional[str] = None,
-                       root: Optional[str] = None) -> dict:
+                       root: Optional[str] = None,
+                       title_source: Optional[str] = None) -> dict:
     """Update ``updated`` (and optionally ``title`` / ``turn_count`` / ``model``)
-    on a conversation's meta; creates it if missing."""
+    on a conversation's meta; creates it if missing. ``title_source`` records
+    where a new title came from (:func:`turn_title`)."""
     meta = ensure_conversation(thread_id, title=title, root=root)
     if title is not None:
         meta["title"] = title
+        if title_source is not None:
+            meta["title_source"] = title_source
     if turn_count is not None:
         meta["turn_count"] = turn_count
     if model is not None:
@@ -1603,8 +1817,10 @@ def tag_conversation(thread_id: str, root: Optional[str] = None,
 
 def rename_conversation(thread_id: str, title: str,
                         root: Optional[str] = None) -> dict:
-    """Set a conversation's title."""
-    return touch_conversation(thread_id, title=str(title), root=root)
+    """Set a conversation's title (the user's own: never replaced by a
+    question's, see :func:`turn_title`)."""
+    return touch_conversation(thread_id, title=str(title), root=root,
+                              title_source=TITLE_FROM_USER)
 
 
 def list_conversations(root: Optional[str] = None) -> List[dict]:
@@ -1919,7 +2135,8 @@ def artifacts_from_transcript(transcript: Iterable[dict]) -> List[str]:
 #   * :func:`working_files_note`, a short "[System note]" put in front of the
 #     CURRENT turn's user message only (never saved into the history): the
 #     files already in the working folder -- attached, fetched, produced --
-#     with their paths.
+#     by their names in that folder (never server paths: live smoke wave 1,
+#     A6, a model quoted the absolute path from this note to the user).
 
 #: The ledger of SharePoint downloads, in the conversation record folder.
 DOWNLOADS_LEDGER = "downloads.json"
@@ -1978,6 +2195,17 @@ def _attachment_keys(conv_dir: str) -> List[str]:
     return [str(k) for k in keys or [] if k]
 
 
+def _note_name(path: str, files_dir: str) -> str:
+    """A file as the turn note names it: relative to the working folder
+    (forward slashes) when inside it -- the name the tools resolve -- and the
+    path as it is only for a file elsewhere (a custom working folder)."""
+    ap = os.path.abspath(path)
+    fd = os.path.abspath(files_dir)
+    if ap.startswith(fd + os.sep):
+        return os.path.relpath(ap, fd).replace(os.sep, "/")
+    return ap
+
+
 def working_files_note(files_dir: str, transcript: Iterable[dict] = (),
                        exclude_text: str = "",
                        limit: int = WORKING_FILES_NOTE_MAX) -> str:
@@ -2028,7 +2256,7 @@ def working_files_note(files_dir: str, transcript: Iterable[dict] = (),
     rows = []
     excl = str(exclude_text or "")
     for ap in order:
-        if not os.path.isfile(ap):
+        if not os.path.isfile(ap) or is_cache_path(ap, fd):
             continue
         if excl and (ap in excl or f"'{os.path.basename(ap)}'" in excl):
             continue
@@ -2041,9 +2269,8 @@ def working_files_note(files_dir: str, transcript: Iterable[dict] = (),
             size = f"{os.path.getsize(ap):,} bytes"
         except OSError:
             size = "size unknown"
-        rows.append(f"- '{os.path.basename(ap)}' ({size}): "
-                    f"{info.get('origin', 'in the folder')}{where}{when} "
-                    f"-- {ap}")
+        rows.append(f"- '{_note_name(ap, fd)}' ({size}): "
+                    f"{info.get('origin', 'in the folder')}{where}{when}")
     if not rows:
         return ""
     skipped = max(0, len(rows) - int(limit))
@@ -2052,7 +2279,8 @@ def working_files_note(files_dir: str, transcript: Iterable[dict] = (),
             "folder, from earlier turns. You see earlier turns only through "
             "the answers you gave, not through their tool results, so this "
             "list is the record of what you already have. Use these files "
-            "by their paths -- do not fetch them again -- and do not tell "
+            "by these names -- every file tool looks a name up in the "
+            "working folder -- and do not fetch them again; do not tell "
             "the user a file is unavailable, or that you never had it, while "
             "it is listed here. Which pages of a file you actually read is "
             "only in your earlier answers.")

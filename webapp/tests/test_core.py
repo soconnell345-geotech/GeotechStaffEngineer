@@ -49,13 +49,16 @@ def test_sanitize_key_strips_path_and_unsafe_chars():
     assert core.sanitize_key("") == "file"
 
 
-def test_attachment_note_mentions_key_and_path(tmp_path):
+def test_attachment_note_mentions_key_and_name_never_the_server_path(tmp_path):
     attachments = {}
     atts = core.stage_uploads(attachments, str(tmp_path),
                               [("report.pdf", b"x"), ("plan.dxf", b"y")])
     note = core.attachment_note(atts)
     assert "report.pdf" in note and "plan.dxf" in note
-    assert atts[0].path in note                       # staged disk path
+    # live smoke wave 1, A6: the staged absolute path is never handed over;
+    # the file is named as it is in the working folder
+    assert atts[0].path not in note and str(tmp_path) not in note
+    assert "the file 'report.pdf' in the working folder" in note
     assert "attachment_key='report.pdf'" in note      # vision key
     assert "read_pdf_text" in note and "dxf_import" in note
 
@@ -680,7 +683,7 @@ def test_checkpoint_partial_never_raises(tmp_path):
 
 def test_default_behavior_matches_current_defaults():
     assert core.default_behavior() == {
-        "references": "anytime", "ref_max_calls": 8, "recursion_limit": 50,
+        "references": "anytime", "ref_max_calls": 10, "recursion_limit": 50,
         "analysis_depth": "standard", "agent_type": "full", "route_calc": True,
         "trace": None}
     b = core.default_behavior()          # fresh copy each call, not shared
@@ -696,7 +699,7 @@ def test_behavior_from_meta_defaults_and_merges():
                       "bogus": 1}})
     assert merged["references"] == "off"
     assert merged["analysis_depth"] == "comprehensive"
-    assert merged["ref_max_calls"] == 8          # missing key -> default
+    assert merged["ref_max_calls"] == 10         # missing key -> default
     assert "bogus" not in merged                 # unknown key ignored
 
 
@@ -719,7 +722,7 @@ def test_depth_prompt_levels():
 def test_behavior_build_kwargs_defaults_preserve():
     kw = core.behavior_build_kwargs(None)
     assert kw["reference_mode"] == "anytime"
-    assert kw["references_max_model_calls"] == 8
+    assert kw["references_max_model_calls"] == 10
     assert "extra_system_prompt" not in kw          # standard => no preset
     assert kw["enable_calc_subagent"] is True       # A2 default-on in the app
 

@@ -70,12 +70,15 @@ REVIEW_TOOLS = (
     # Visual scales: read-only, so the reading helper gets them too. Owner,
     # 2026-10-08: on the legacy and lean builds, NOT the minimal one.
     "measure", "log_grid",
+    # A chart and a spreadsheet, as on the legacy build (live smoke wave 1,
+    # A12); each is built only where its library imports.
+    "plot_data", "write_xlsx",
 )
 
 #: The reading helper's tools: nothing that writes a file or a markup.
 READER_TOOLS = tuple(t for t in REVIEW_TOOLS
                      if t not in ("annotate_document", "write_docx",
-                                  "save_file"))
+                                  "save_file", "plot_data", "write_xlsx"))
 
 #: Descriptions written for this page (the geotech page's versions point at
 #: drawing_ir tools this page does not have, and the core "look" tool had one

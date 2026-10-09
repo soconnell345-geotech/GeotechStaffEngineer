@@ -40,8 +40,13 @@ def test_list_methods_topic_category_through_the_tool():
 
 def test_describe_unknown_puts_the_closest_first():
     tool = _tools(allowed_agents=ANALYSIS_MODULES)["describe_method"]
+    # a guess whose words name ONE method is answered with its docs (G12)
+    unique = json.loads(tool.invoke({"agent_name": "lateral_pile",
+                                     "method": "composite_ei"}))
+    assert "composite_section_ei" in unique["_note"]
+    assert "parameters" in unique
     raw = tool.invoke({"agent_name": "lateral_pile",
-                       "method": "composite_ei"})
+                       "method": "composite_qq"})
     out = json.loads(raw)
     assert out["closest"][0] == "composite_section_ei"
     assert "available_methods" in out

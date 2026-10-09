@@ -50,9 +50,14 @@ from funhouse_agent.reviewer import CONSULTANT_FRAMING, REVIEWER_DEEP_PROMPT
 
 from funhouse_agent.deep.limits import (
     DEFAULT_REFERENCES_MAX_MODEL_CALLS,
+    REFERENCE_HIDDEN_TOOLS,
+    HideTools,
     ModelCallBudgetMiddleware,
 )
 from funhouse_agent.deep.scratch_guard import ScratchFilesystemGuard
+from funhouse_agent.deep.unknown_tool import UnknownToolHint
+from funhouse_agent.deep.delivered_log import DeliveredToolResults
+from funhouse_agent.deep.calculate_tool import make_calculate_tool
 
 try:  # the spec deepagents auto-adds; re-declared below to carry the guard
     from deepagents.middleware.subagents import (
@@ -84,6 +89,13 @@ _REFERENCES_CONCISION = (
     "with the exact citation (reference + section/table/figure). Do NOT paste "
     "long chapter-text passages or restate full sections — a few sentences "
     "plus the citation is ideal."
+)
+
+#: The consult's model-call budget, stated to it (live smoke wave 1, G5).
+_REFERENCES_BUDGET = (
+    " You have {n} model calls for this consult, the last of which must be "
+    "your answer: make independent lookups in the SAME turn (several tool "
+    "calls at once) rather than one per turn."
 )
 
 
@@ -316,6 +328,7 @@ def build_references_subagent(
         allowed_agents=REFERENCE_MODULES,
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
+        attachments=attachments,
     ) + make_vision_tools(
         engine=engine,
         attachments=attachments,
@@ -323,10 +336,12 @@ def build_references_subagent(
         include={"read_reference_figure"},
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
-    )
+    ) + [make_calculate_tool()]
     if extra_tools:
         tools = list(tools) + list(extra_tools)
     system_prompt = CONSULTANT_FRAMING + _REFERENCES_CONCISION
+    if max_model_calls:
+        system_prompt += _REFERENCES_BUDGET.format(n=int(max_model_calls))
     if extra_system_prompt:
         system_prompt = system_prompt + "\n\n" + extra_system_prompt
     spec = {
@@ -335,10 +350,15 @@ def build_references_subagent(
         "system_prompt": system_prompt,
         "tools": tools,
     }
+    # The consult never writes and an empty scratch space answers nothing:
+    # deepagents' ls/glob/grep cost about one call a consult in live smoke
+    # wave 1 (G5), so they are kept off its menu.
+    middleware = [HideTools(REFERENCE_HIDDEN_TOOLS)]
     if max_model_calls:
         # deepagents appends SubAgent-spec middleware to the sub-agent's
         # default stack (see create_deep_agent's subagent processing).
-        spec["middleware"] = [ModelCallBudgetMiddleware(max_model_calls)]
+        middleware.insert(0, ModelCallBudgetMiddleware(max_model_calls))
+    spec["middleware"] = middleware
     return spec
 
 
@@ -381,7 +401,10 @@ _CALC_PREAMBLE = (
     "analysis modules (call_agent / list_methods / describe_method), the "
     "`calc_package` module (canned *_package reports, render_figures, "
     "html_to_pdf), the `profile_figure` module (subsurface_profile schematic, "
-    "plot_data data plots), save_file, and read access to the working folder "
+    "plot_data data plots), the reference modules' equation, table and chart "
+    "functions (DM7, GEC, UFC, micropile...), the `calculate` tool for a "
+    "stated formula no method computes, save_file, and read access to the "
+    "working folder "
     "(list_files, read_pdf_text, read_text_file). You run the numbers AND "
     "build the "
     "deliverable — report and figures — for the delegating agent."
@@ -509,10 +532,19 @@ def build_calc_subagent(
     """
     allowed = frozenset(ANALYSIS_MODULES if allowed_agents is None
                         else allowed_agents)
+    if allowed == frozenset(ANALYSIS_MODULES):
+        # The full agent's calc engine also runs the reference modules'
+        # equation, table and chart FUNCTIONS (DM7, GEC, UFC, micropile...):
+        # in live smoke wave 1 (G3) it could not reach gec8's downdrag
+        # equation or the micropile tables and hand-calculated instead. The
+        # two pure search modules stay with the references librarian.
+        allowed = allowed | (frozenset(REFERENCE_MODULES)
+                             - {"reference_db", "figure_db"})
     tools = make_core_tools(
         allowed_agents=allowed,
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
+        attachments=attachments,
     ) + make_vision_tools(
         engine=engine,
         attachments=attachments,
@@ -524,10 +556,13 @@ def build_calc_subagent(
         # delivered report — a false provenance claim. Isolation is about
         # keeping bulky OUTPUT out of the primary context, not blinding the
         # sub-agent to the job's inputs.
-        include={"save_file", "list_files", "read_pdf_text", "read_text_file"},
+        # write_xlsx: a sweep or a results table as a spreadsheet (it is
+        # only built where openpyxl imports).
+        include={"save_file", "list_files", "read_pdf_text", "read_text_file",
+                 "write_xlsx"},
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
-    )
+    ) + [make_calculate_tool()]
     if extra_tools:
         tools = list(tools) + list(extra_tools)
     # NOT CONSULTANT_FRAMING: that is the references sub-agent's librarian
@@ -623,6 +658,7 @@ def build_primary_tools(
         allowed_agents=allowed_agents,
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
+        attachments=attachments,
     ) if allowed_agents else []
     return core_tools + make_vision_tools(
         engine=engine,
@@ -631,7 +667,7 @@ def build_primary_tools(
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
         markup_author=markup_author,
-    )
+    ) + [make_calculate_tool()]
 
 
 def _merge_tools(*groups):
@@ -1145,13 +1181,32 @@ def build_deep_agent(
     # prompt so it carries the guard too (naming a spec "general-purpose" is
     # how deepagents lets a caller replace it; without "tools" it inherits
     # the primary's tools, as the stock one does).
+    # An agent with call_agent also gets the unknown-tool hint: a module
+    # method called as if it were a tool is answered with the call_agent form
+    # (live smoke wave 1, A15g), scoped to the modules that agent reaches.
+    _calc_scope = frozenset(allowed_agents or ())
+    if _calc_scope == frozenset(ANALYSIS_MODULES):      # as build_calc_subagent
+        _calc_scope |= (frozenset(REFERENCE_MODULES)
+                        - {"reference_db", "figure_db"})
+    _call_scope = {"references": REFERENCE_MODULES,
+                   "reviewer": REFERENCE_MODULES,
+                   "calc": _calc_scope,
+                   "general-purpose": allowed_agents}
     for spec in subagents:
-        spec["middleware"] = (list(spec.get("middleware") or [])
-                              + [ScratchFilesystemGuard()])
+        # DeliveredToolResults first: it logs what the guards below made of
+        # each result, as the model receives it (live smoke wave 1, G11).
+        extra_mw = [DeliveredToolResults(), ScratchFilesystemGuard()]
+        scope = _call_scope.get(spec.get("name"))
+        if scope and "runnable" not in spec:
+            extra_mw.append(UnknownToolHint(scope))
+        spec["middleware"] = list(spec.get("middleware") or []) + extra_mw
     if (_GENERAL_PURPOSE_SPEC is not None
             and not any(s.get("name") == "general-purpose" for s in subagents)):
         subagents.append({**_GENERAL_PURPOSE_SPEC,
-                          "middleware": [ScratchFilesystemGuard()]})
+                          "middleware": [DeliveredToolResults(),
+                                         ScratchFilesystemGuard()]
+                          + ([UnknownToolHint(allowed_agents)]
+                             if allowed_agents else [])})
     if coverage.on:
         # Every helper's reads count: the field session's helper read page
         # ranges the primary never saw (FINDINGS P3).
@@ -1182,7 +1237,12 @@ def build_deep_agent(
                 keep=summarization_keep,
             )
         )
+    # First of the app's tool middleware: logs each result as the model
+    # receives it, after the guards below (live smoke wave 1, G11).
+    middleware.append(DeliveredToolResults())
     middleware.append(ScratchFilesystemGuard())
+    if allowed_agents:
+        middleware.append(UnknownToolHint(allowed_agents))
     if coverage.on:
         middleware.append(coverage.primary())
     create_kwargs["middleware"] = middleware

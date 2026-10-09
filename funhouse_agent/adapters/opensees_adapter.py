@@ -1,6 +1,6 @@
 """OpenSees adapter — PM4Sand DSS, 1D site response."""
 
-from funhouse_agent.adapters import clean_result, require_params
+from funhouse_agent.adapters import mark_required, clean_result, require_params
 
 
 def _check_opensees():
@@ -110,7 +110,7 @@ METHOD_INFO = {
         "category": "OpenSees",
         "brief": "1D effective-stress site response analysis (PDMY02/PIMY + Lysmer dashpot).",
         "parameters": {
-            "layers": {"type": "array", "brief": "Soil layers: list of dicts with thickness, Vs, density, material_type (sand/clay), phi or su."},
+            "layers": {"type": "array", "brief": "Soil layers (required): list of dicts, each with thickness (m), Vs (m/s), density (Mg/m3) and material_type: 'sand' needs phi (degrees; optional K0), 'clay' needs su (kPa)."},
             "motion": {"type": "str", "brief": "Built-in motion name (e.g. 'synthetic_pulse').", "default": None},
             "accel_history": {"type": "array", "brief": "Custom acceleration time history (g).", "default": None},
             "dt": {"type": "float", "brief": "Time step for custom motion (s).", "default": None},
@@ -129,3 +129,32 @@ METHOD_INFO = {
         },
     },
 }
+
+
+def _motion_alternatives(method_info: dict) -> dict:
+    """Say on each motion parameter that a built-in name OR a custom history
+    (+ dt) is needed: neither alone is marked required, one of them is."""
+    for info in method_info.values():
+        params = info.get("parameters") or {}
+        for name, spec in params.items():
+            if not isinstance(spec, dict):
+                continue
+            suffix = name[len("motion"):] if name.startswith("motion") else (
+                name[len("accel_history"):] if name.startswith("accel_history")
+                else None)
+            if suffix is None:
+                continue
+            spec["description"] = (
+                spec.get("description", "").rstrip(". ")
+                + f". Give motion{suffix} (a built-in name) OR "
+                  f"accel_history{suffix} + dt: one of the two is required.")
+    return method_info
+
+
+# One METHOD_INFO style everywhere: explicit required flags matching the code
+# above (live smoke wave 1, G7).
+mark_required(METHOD_INFO, {
+    "pm4sand_cyclic_dss": ["Dr", "G0", "hpo", "Den"],
+    "site_response_1d": ["layers"],
+})
+_motion_alternatives(METHOD_INFO)

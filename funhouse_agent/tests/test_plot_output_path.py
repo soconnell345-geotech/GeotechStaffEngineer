@@ -206,10 +206,11 @@ def test_plot_bare_output_path_lands_in_working_folder(site_key, tmp_path,
                      {"site_key": site_key, "parameter": "N_spt",
                       "output_path": "pvd.html"})
     assert "error" not in res, res
-    assert os.path.abspath(res["output_path"]) == str(tmp_path / "pvd.html")
+    # through call_agent the result names files in the working folder by
+    # their names there, never by the server path (live smoke wave 1, A6)
+    assert res["output_path"] == "pvd.html"
     assert (tmp_path / "pvd.html").is_file()
-    assert os.path.abspath(res["plotly_json_path"]) == \
-        str(tmp_path / "pvd.plotly.json")
+    assert res["plotly_json_path"] == "pvd.plotly.json"
     assert (tmp_path / "pvd.plotly.json").is_file()
 
 
@@ -299,9 +300,8 @@ def test_plot_data_bare_output_path_puts_both_in_the_working_folder(
     monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
     res = call_agent("profile_figure", "plot_data",
                      {"series": _PLOT_SERIES, "output_path": "sweep"})
-    assert os.path.abspath(res["output_path"]) == str(tmp_path / "sweep.png")
-    assert os.path.abspath(res["plotly_json_path"]) == \
-        str(tmp_path / "sweep.plotly.json")
+    assert res["output_path"] == "sweep.png"
+    assert res["plotly_json_path"] == "sweep.plotly.json"
     assert (tmp_path / "sweep.png").is_file()
     assert (tmp_path / "sweep.plotly.json").is_file()
 

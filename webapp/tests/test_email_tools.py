@@ -177,3 +177,31 @@ def test_env_own_address_still_domain_checked(monkeypatch, tmp_path):
     f.write_bytes(b"x")
     out = et.email_file.invoke({"to": "me", "file_path": str(f)})
     assert "not allowed" in out
+
+# ============================================================================
+# Only this conversation's files (live smoke 1, A2 / A6)
+# ============================================================================
+
+def test_only_the_conversations_files_can_be_emailed(monkeypatch, tmp_path):
+    """One process serves many people on Tiny Apps: with a working folder
+    bound, a file is named by its place in the conversation and any other
+    server path is refused -- another person's file, the server's own."""
+    from funhouse_agent import _fileio
+    sent = _install_fake_sdk(monkeypatch)
+    mine = tmp_path / "bob" / "files"
+    mine.mkdir(parents=True)
+    (mine / "memo.pdf").write_bytes(b"%PDF bob")
+    theirs = tmp_path / "alice" / "files"
+    theirs.mkdir(parents=True)
+    (theirs / "private.pdf").write_bytes(b"%PDF alice")
+    with _fileio.working_dir_bound(mine):
+        refused = et.email_file.invoke({"to": "a@state.gov",
+                                        "file_path": str(theirs / "private.pdf")})
+        missing = et.email_file.invoke({"to": "a@state.gov",
+                                        "file_path": "nope.pdf"})
+        out = et.email_file.invoke({"to": "a@state.gov",
+                                    "file_path": "memo.pdf"})
+    assert "only those can be emailed" in refused and "memo.pdf" in refused
+    assert "no email was sent" in missing and str(mine) not in missing
+    assert "Emailed memo.pdf to a@state.gov" in out and str(mine) not in out
+    assert sent["attachments"] == [("memo.pdf", b"%PDF bob")]

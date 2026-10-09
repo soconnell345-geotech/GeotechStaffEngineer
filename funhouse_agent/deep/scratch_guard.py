@@ -114,6 +114,8 @@ def _text(result) -> str:
     if isinstance(content, str):
         return content
     if isinstance(content, list):
+        if not content:
+            return "[]"             # a tool that returned an empty list
         return " ".join(b.get("text", "") if isinstance(b, dict) else str(b)
                         for b in content)
     return ""
@@ -187,8 +189,12 @@ EMPTY_SCRATCH_NOTE = (
     "call_agent) for the references, search_document after open_document "
     "for a PDF, list_files for real folders.)")
 
-_EMPTY_ANSWER = re.compile(r"^\s*(?:no (?:files|matches|results)\b[^\n]*|)\s*$",
-                           re.IGNORECASE)
+#: An empty answer: "No files found", "No matches found", nothing at all, or
+#: an empty list -- ``glob`` with no hits returns ``[]`` (live smoke wave 1,
+#: A15a: the note never fired on it).
+_EMPTY_ANSWER = re.compile(
+    r"^\s*(?:no (?:files|matches|results)\b[^\n]*|\[\s*\]|\(\s*\)|)\s*$",
+    re.IGNORECASE)
 
 
 def _is_empty_search(name: Optional[str], result) -> bool:

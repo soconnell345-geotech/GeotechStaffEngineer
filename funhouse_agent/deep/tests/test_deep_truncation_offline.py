@@ -62,23 +62,28 @@ def _fake_model():
 # make_core_tools — truncation behavior
 # ---------------------------------------------------------------------------
 
-def test_core_tool_truncates_large_result():
-    """list_agents returns the full catalog; a tiny cap must truncate it."""
-    full = _tool_by_name(make_core_tools(max_result_chars=0), "list_agents").invoke({})
-    assert len(full) > 50  # the catalog is comfortably bigger than the cap
-
+def test_core_catalog_over_the_cap_is_shortened_never_cut():
+    """list_agents over the cap is made SHORTER BY STRUCTURE, never cut
+    mid-JSON (live smoke wave 1, G1): the briefs go, every module stays."""
+    full = json.loads(_tool_by_name(make_core_tools(max_result_chars=0),
+                                    "list_agents").invoke({}))
     capped = _tool_by_name(
         make_core_tools(max_result_chars=50), "list_agents"
     ).invoke({})
-    # First 50 chars are preserved verbatim, then the marker is appended.
-    assert capped.startswith(full[:50])
-    assert _TRUNC_MARKER in capped
-    # The kept content is exactly the cap; the only extra is the marker line.
-    body, _, marker = capped.partition("\n...")
-    assert len(body) == 50
-    assert marker.startswith(_TRUNC_MARKER)
-    # The marker reports the dropped-character count.
-    assert str(len(full) - 50) in marker
+    assert _TRUNC_MARKER not in capped
+    data = json.loads(capped)                 # complete, valid JSON
+    assert sorted(data["modules"]) == sorted(full)
+    assert "_shortened" in data
+
+
+def test_truncate_still_cuts_a_text_payload_with_its_marker():
+    """``_truncate`` (reference READS: their text is the payload) still cuts
+    at the cap and says how much it dropped."""
+    from funhouse_agent.deep.tools import _truncate
+    out = _truncate("x" * 120, 50)
+    body, _, marker = out.partition("\n...")
+    assert len(body) == 50 and marker.startswith(_TRUNC_MARKER)
+    assert "70" in marker
 
 
 def test_core_tool_zero_disables_truncation():
@@ -136,8 +141,9 @@ def test_default_cap_truncates_oversized_result():
     if len(full) <= DEFAULT_MAX_RESULT_CHARS:
         pytest.skip("catalog smaller than the default cap; nothing to truncate")
     capped = _tool_by_name(make_core_tools(), "list_agents").invoke({})
-    assert _TRUNC_MARKER in capped
-    assert len(capped) < len(full)
+    assert _TRUNC_MARKER not in capped        # shortened by structure (G1)
+    assert len(capped) <= DEFAULT_MAX_RESULT_CHARS
+    json.loads(capped)                        # complete JSON
 
 
 # ---------------------------------------------------------------------------
@@ -175,10 +181,10 @@ def test_vision_tool_zero_disables_truncation():
 
 def test_truncation_marker_includes_search_narrower_nudge():
     """The truncation marker tells the agent to follow up with a narrower
-    search instead of re-requesting the same oversized item."""
-    capped = _tool_by_name(
-        make_core_tools(max_result_chars=50), "list_agents"
-    ).invoke({})
+    search instead of re-requesting the same oversized item (it serves the
+    reference READS; catalog tools are fitted by structure instead, G1)."""
+    from funhouse_agent.deep.tools import _truncate
+    capped = _truncate("y" * 200, 50)
     assert _TRUNC_MARKER in capped
     assert SEARCH_NARROWER_NUDGE in capped
     assert "NARROWER" in capped
@@ -252,9 +258,8 @@ def test_catalog_tools_keep_general_cap_when_reference_cap_raised():
         make_core_tools(max_result_chars=50, reference_result_chars=100_000),
         "list_agents",
     ).invoke({})
-    assert _TRUNC_MARKER in capped
-    body, _, _ = capped.partition("\n...")
-    assert len(body) == 50
+    # held to the GENERAL cap: shortened to names (never cut mid-JSON, G1)
+    assert "_shortened" in json.loads(capped)
 
 
 # ---------------------------------------------------------------------------
@@ -272,14 +277,14 @@ def test_references_subagent_tools_truncate():
     the sub-agent is where the big reference text comes from)."""
     spec = build_references_subagent(max_result_chars=40)
     call = _tool_by_name(spec["tools"], "list_agents")
-    out = call.invoke({})
-    assert _TRUNC_MARKER in out
+    out = json.loads(call.invoke({}))
+    assert "_shortened" in out                # fitted to the cap (G1)
     # Reference modules are visible to this sub-agent (sanity: right scope).
-    full = _tool_by_name(
+    full = json.loads(_tool_by_name(
         make_core_tools(allowed_agents=REFERENCE_MODULES, max_result_chars=0),
         "list_agents",
-    ).invoke({})
-    assert out.startswith(full[:40])
+    ).invoke({}))
+    assert sorted(out["modules"]) == sorted(full)
 
 
 def test_references_subagent_prompt_has_concision_instruction():

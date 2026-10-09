@@ -46,6 +46,15 @@ a download's path comes back not found, the tool tries the address itself
 follows a renamed or moved file), then looks for the file BY ITS NAME -- in
 the folder the address named, through the search index, then by walking the
 base folder -- and says plainly which file it found and downloaded.
+
+OTHER PEOPLE'S CONVERSATIONS ARE PRIVATE (live smoke 1, 2026-10-08, A1). On
+a multi-user host the tools built for a conversation keep to its owner's own
+folders under ``<root>/conversations/<owner>/`` and the shared folders;
+other people's are left out of lists and searches and refused as a download
+source or upload destination (:class:`_Scope`). A file of the conversation
+is never uploaded twice: "save it and send me the link" syncs the mirror and
+links its copy (A5). Results name local files by their place in the
+conversation, never by server path (A6).
 """
 
 from __future__ import annotations
@@ -233,6 +242,217 @@ def _parent(remote: str) -> str:
     return remote.rstrip("/").rsplit("/", 1)[0] if "/" in remote else ""
 
 
+# ---------------------------------------------------------------------------
+# Other people's conversations are private (live smoke 1, A1)
+# ---------------------------------------------------------------------------
+#
+# On a multi-user host the mirror files each person's conversations under
+# ``<root>/conversations/<owner>/...``. Until 2026-10-09 these tools reached
+# every folder of the site alike: in F10 Bob's agent searched for a file
+# name, found it in Alice's conversation folder, downloaded it and described
+# it. Now, for a conversation that belongs to a person on a multi-user host,
+# a path under ``<root>/conversations/`` is open only below that person's
+# own folder (and this conversation's own); list and search leave the rest
+# out, and download and upload refuse it. The shared folders (uploaded
+# references, projects, anything outside ``conversations/``) stay open. A
+# single-user host -- nobody identified, DEV_IDENTITY, the Databricks
+# launcher's email -- records no owner and keeps the old behaviour.
+
+def _segments(path) -> Optional[List[str]]:
+    """``path`` as comparable folder names: a browser address turned into
+    its path, %-escapes decoded, lower case, trailing dots and spaces
+    dropped (SharePoint ignores both). ``None`` when it climbs with
+    ``..``, which no honest SharePoint path needs."""
+    s = str(path or "").strip()
+    if s.lower().startswith("http"):
+        s = browser_url_to_path(s) or unquote(urlsplit(s).path)
+    s = unquote(s).replace("\\", "/")
+    out: List[str] = []
+    for seg in s.split("/"):
+        if seg.strip() == "..":
+            return None
+        seg = seg.strip().rstrip(". ").strip().lower()
+        if seg:
+            out.append(seg)
+    return out
+
+
+def _conversations_needle() -> List[str]:
+    """The folder names that lead to the conversations folder, without the
+    library (paths reach it as ``Shared Documents/…``, ``Documents/…``,
+    ``/sites/<site>/…`` or a Graph ``…/root:/…``, so the match is on the
+    folders that follow): ``["general", "gse_app", "conversations"]``."""
+    root = _segments(_root()) or []
+    tail = root[1:] if len(root) > 1 else root
+    return tail + ["conversations"]
+
+
+class _Scope:
+    """Which conversation folders one conversation may touch."""
+
+    def __init__(self, own_folders: List[str]):
+        self.needle = _conversations_needle()
+        self.own: List[List[str]] = []
+        for folder in own_folders:
+            segs = _segments(folder) or []
+            for i in self._positions(segs):
+                rest = segs[i + len(self.needle):]
+                if rest and rest not in self.own:
+                    self.own.append(rest)
+        self.own_folder = own_folders[0] if own_folders else ""
+
+    def _positions(self, segs: List[str]) -> List[int]:
+        n = len(self.needle)
+        return [i for i in range(len(segs) - n + 1)
+                if segs[i:i + n] == self.needle]
+
+    def where(self, remote) -> str:
+        """``open`` (not a conversation folder), ``own``, ``container``
+        (the conversations folder itself) or ``private``."""
+        segs = _segments(remote)
+        if segs is None:
+            return "private"
+        positions = self._positions(segs)
+        if not positions:
+            return "open"
+        verdict = "own"
+        for i in positions:
+            rest = segs[i + len(self.needle):]
+            if not rest:
+                verdict = "container"
+                continue
+            if not any(rest[:len(o)] == o for o in self.own):
+                return "private"
+        return verdict
+
+    def refusal(self, remote: str, action: str) -> str:
+        own = (f" This conversation's own SharePoint folder is "
+               f"'{self.own_folder}'." if self.own_folder else "")
+        return (f"SharePoint {action} refused: '{remote}' is in another "
+                "person's conversation storage. Other people's "
+                "conversations are private -- they are never listed, "
+                "searched, downloaded from or uploaded to, and nothing can "
+                "be said about what they hold." + own + " The shared folders "
+                "(uploaded references, project folders) are open.")
+
+    def container_refusal(self, remote: str, action: str) -> str:
+        return (f"SharePoint {action} refused: '{remote}' holds each "
+                "person's conversation folders. Upload with no dest_folder "
+                "to put a file in this conversation's own folder"
+                + (f" ('{self.own_folder}')." if self.own_folder else "."))
+
+    def keep(self, entry: dict, folder: str = "") -> bool:
+        """Whether a listed or found entry may be shown."""
+        where = _entry_location(entry, folder)
+        if not where:
+            return False                 # nowhere to judge it by: private
+        return self.where(where) != "private"
+
+
+def _entry_location(entry: dict, folder: str = "") -> str:
+    if not isinstance(entry, dict):
+        return ""
+    for key in ("path", "web_url", "webUrl", "url"):
+        value = entry.get(key)
+        if value:
+            return str(value)
+    name = entry.get("name")
+    return f"{folder}/{name}" if folder and name else ""
+
+
+def _meta_of(record_dir: Optional[str], thread_id: Optional[str]) -> dict:
+    """The conversation's meta.json (owner, page), read when a tool RUNS:
+    the app records the owner at the start of the turn, after the tools
+    were built."""
+    if record_dir:
+        try:
+            import json
+            with open(os.path.join(record_dir, "meta.json"),
+                      encoding="utf-8") as fh:
+                meta = json.load(fh)
+            return meta if isinstance(meta, dict) else {}
+        except (OSError, ValueError):
+            return {}
+    if thread_id:
+        try:
+            from webapp import core
+            return core.load_meta(thread_id) or {}
+        except Exception:                                  # noqa: BLE001
+            return {}
+    return {}
+
+
+def _root_of(record_dir: Optional[str]) -> Optional[str]:
+    """The conversations root a record folder lives under
+    (``<root>/conversations/<thread id>``), or ``None``."""
+    if not record_dir:
+        return None
+    parent = os.path.dirname(os.path.abspath(record_dir))
+    if os.path.basename(parent) != "conversations":
+        return None
+    return os.path.dirname(parent)
+
+
+def _multi_user_layout(record_dir: Optional[str]) -> bool:
+    """A record folder under ``<data root>/users/<person>/<page>/`` belongs
+    to a person on a multi-user host (``webapp.profiles.session_root``),
+    even when its meta does not name the owner yet -- fail closed."""
+    root = _root_of(record_dir)
+    if not root:
+        return False
+    users = os.path.dirname(os.path.dirname(root))
+    if os.path.basename(users) != "users":
+        return False
+    try:
+        from webapp import core
+        data = core.data_root()
+    except Exception:                                      # noqa: BLE001
+        return False
+    return os.path.normcase(os.path.abspath(os.path.dirname(users))) == \
+        os.path.normcase(os.path.abspath(data))
+
+
+def _session_folder(thread_id: Optional[str],
+                    record_dir: Optional[str] = None) -> str:
+    if not thread_id:
+        return ""
+    try:
+        return sharepoint_store.get_store().session_folder(
+            thread_id, root=_root_of(record_dir))
+    except Exception:                                      # noqa: BLE001
+        return ""
+
+
+def _scope(record_dir: Optional[str] = None,
+           thread_id: Optional[str] = None) -> Optional[_Scope]:
+    """The scope of a conversation that belongs to a person on a multi-user
+    host, else ``None`` (no limit: the single-user layouts)."""
+    if not record_dir and not thread_id:
+        return None
+    if not thread_id and record_dir:
+        thread_id = os.path.basename(os.path.abspath(record_dir))
+    owner = str(_meta_of(record_dir, thread_id).get("owner") or "").strip()
+    if not owner and not _multi_user_layout(record_dir):
+        return None
+    own: List[str] = []
+    if owner:
+        own.append(sharepoint_store.get_store().conversations_base(owner))
+    session = _session_folder(thread_id, record_dir)
+    if session:
+        own.append(session)
+    return _Scope(own)
+
+
+def _shown(path: str) -> str:
+    """A local file as a result names it: its place in the working folder,
+    never the server path (A6). Unchanged where no working folder is bound."""
+    try:
+        from funhouse_agent.vision_tools import display_path
+        return display_path(path)
+    except Exception:                                      # noqa: BLE001
+        return os.path.basename(str(path)) or str(path)
+
+
 def _working_dir() -> str:
     """Where downloads land: the conversation's working folder when set."""
     try:
@@ -408,10 +628,13 @@ def _search(fm, query: str, scope: str) -> List[dict]:
     return [h for h in (hits or []) if isinstance(h, dict)]
 
 
-def _walk(fm, base: str, budget: int = WALK_BUDGET) -> Tuple[List[dict], int]:
+def _walk(fm, base: str, budget: int = WALK_BUDGET,
+          scope: Optional[_Scope] = None) -> Tuple[List[dict], int]:
     """Files under ``base``, breadth first, listing at most ``budget``
     folders. The app's own mirror of conversations is walked last: the
-    files people mean are almost never in it. ``(files, folders_listed)``."""
+    files people mean are almost never in it. With a ``scope``, other
+    people's conversation folders are never entered. ``(files,
+    folders_listed)``."""
     files: List[dict] = []
     queue = deque([base])
     later: List[str] = []
@@ -434,6 +657,8 @@ def _walk(fm, base: str, budget: int = WALK_BUDGET) -> Tuple[List[dict], int]:
                 continue
             name = str(e.get("name") or "")
             path = str(e.get("path") or f"{folder}/{name}")
+            if scope is not None and scope.where(path) == "private":
+                continue
             if _is_folder(e):
                 (later if path.lower().rstrip("/").endswith(own_mirror)
                  or own_mirror in path.lower() else queue).append(path)
@@ -442,10 +667,12 @@ def _walk(fm, base: str, budget: int = WALK_BUDGET) -> Tuple[List[dict], int]:
     return files, listed
 
 
-def _find_by_name(fm, name: str, near: str = "") -> Tuple[List[dict], str]:
+def _find_by_name(fm, name: str, near: str = "",
+                  scope: Optional[_Scope] = None) -> Tuple[List[dict], str]:
     """Files whose name IS ``name`` (compared by :func:`_norm`): in the
     folder ``near`` first, then through the search index, then by a bounded
-    walk of the base folder. ``(hits, how)``."""
+    walk of the base folder -- never in another person's conversations
+    (``scope``). ``(hits, how)``."""
     target = _norm(name)
     if not target:
         return [], ""
@@ -454,6 +681,8 @@ def _find_by_name(fm, name: str, near: str = "") -> Tuple[List[dict], str]:
         out, seen = [], set()
         for e in entries:
             if _is_folder(e) or _norm(e.get("name")) != target:
+                continue
+            if scope is not None and not scope.keep(e):
                 continue
             path = str(e.get("path") or "")
             if path.lower() in seen:
@@ -477,7 +706,7 @@ def _find_by_name(fm, name: str, near: str = "") -> Tuple[List[dict], str]:
             hits = []
         if hits:
             return hits, "through the SharePoint search"
-    files, listed = _walk(fm, _root())
+    files, listed = _walk(fm, _root(), scope=scope)
     hits = keep(files)
     return hits, (f"by looking through {listed} folders under {_root()}"
                   if hits else f"(looked through {listed} folders)")
@@ -487,24 +716,32 @@ def _find_by_name(fm, name: str, near: str = "") -> Tuple[List[dict], str]:
 # The tools
 # ---------------------------------------------------------------------------
 
-@tool
-def sharepoint_list_files(path: str = "") -> str:
-    """List files and folders in a SharePoint folder.
+_LIST_DOC = """List files and folders in a SharePoint folder.
 
-    path: folder to list — relative to the app's base SharePoint folder
-    (default "" = the base folder itself), or an absolute
-    "Shared Documents/..." / "/sites/..." path, or a SharePoint address
-    copied from the browser.
-    """
+path: folder to list — relative to the app's base SharePoint folder
+(default "" = the base folder itself), or an absolute
+"Shared Documents/..." / "/sites/..." path, or a SharePoint address
+copied from the browser.
+"""
+
+
+def _list(path: str, scope: Optional[_Scope] = None) -> str:
     if not sharepoint_store.configured():
         return _NOT_CONFIGURED
     try:
         fm = _fm()
         remote = _resolve(path)
+        if scope is not None and scope.where(remote) == "private":
+            return scope.refusal(remote, "list")
         entries = fm.ls(remote) or []
     except Exception as exc:
         return _failure("list", exc).replace("SharePoint list failed",
                                              "SharePoint list error", 1)
+    if scope is not None and entries:
+        kept = [e for e in entries if scope.keep(e, remote)]
+        if not kept:
+            return f"(nothing here that this conversation may see: {remote})"
+        entries = kept
     if entries:
         lines = [f"Contents of {remote} ({len(entries)} items"
                  + (f", first {MAX_ENTRIES} shown" if len(entries) > MAX_ENTRIES
@@ -528,6 +765,22 @@ def sharepoint_list_files(path: str = "") -> str:
     if remote.lower().startswith("http") and browser_url_to_path(remote) is None:
         return f"{msg}\n{TOKEN_LINK_HINT}"
     return msg
+
+
+def make_list_tool(record_dir: Optional[str] = None,
+                   thread_id: Optional[str] = None):
+    """``sharepoint_list_files`` bound to one conversation: on a multi-user
+    host other people's conversation folders are left out and refused."""
+
+    def sharepoint_list_files(path: str = "") -> str:
+        return _list(path, _scope(record_dir, thread_id))
+
+    sharepoint_list_files.__doc__ = _LIST_DOC
+    return tool(sharepoint_list_files)
+
+
+#: The list tool with no conversation (no owner: the single-user rules).
+sharepoint_list_files = make_list_tool()
 
 
 #: (working folder, remote path) -> local copy: a file already fetched is
@@ -601,8 +854,29 @@ def _fetch(fm, target: str, dest_dir: str) -> str:
         raise
 
 
+def _link_is_open(fm, url: str, scope: _Scope) -> bool:
+    """Whether a sharing link that carries no path may be followed for a
+    conversation with a ``scope``: only when SharePoint says where the file
+    is and that place is not another person's conversation. A link whose
+    place cannot be learnt is not followed (fail closed)."""
+    details_of = getattr(fm, "get_file_details", None)
+    if not callable(details_of):
+        return False
+    try:
+        details = details_of(url) or {}
+    except Exception:                                      # noqa: BLE001
+        return False
+    parent = (details.get("parentReference") or {}).get("path") \
+        if isinstance(details.get("parentReference"), dict) else ""
+    where = (details.get("path")
+             or (f"{parent}/{details.get('name')}" if parent else "")
+             or details.get("web_url") or details.get("webUrl") or "")
+    return bool(where) and scope.where(where) != "private"
+
+
 def _download(path: str, save_as: str, refresh: bool,
-              record_dir: Optional[str]) -> str:
+              record_dir: Optional[str],
+              scope: Optional[_Scope] = None) -> str:
     if not sharepoint_store.configured():
         return _NOT_CONFIGURED
     original = (path or "").strip()
@@ -612,10 +886,17 @@ def _download(path: str, save_as: str, refresh: bool,
     except Exception as exc:
         return _failure("download", exc).replace(
             "SharePoint download failed", "SharePoint download error", 1)
+    if scope is not None:
+        for target in {remote, original}:
+            verdict = scope.where(target)
+            if verdict == "private":
+                return scope.refusal(remote, "download")
+            if verdict == "container":
+                return scope.container_refusal(remote, "download")
     dest_dir = _working_dir()
     prior = _prior_copy(dest_dir, [remote], record_dir)
     if prior and not refresh:
-        return (f"Downloaded {remote} -> {prior} "
+        return (f"Downloaded {remote} -> '{_shown(prior)}' "
                 f"({os.path.getsize(prior):,} bytes) earlier in this "
                 "conversation; reusing that copy (refresh=true fetches it "
                 "again into the same file). It is an input to read, not a "
@@ -647,17 +928,22 @@ def _download(path: str, save_as: str, refresh: bool,
                 core.record_download(record_dir, r, local, size)
         kept = (f" One copy per SharePoint file: refreshed '{os.path.basename(local)}' in place."
                 if keep else "")
+        # The local copy by its name in the working folder (A6): the file
+        # tools resolve it, and a server path never reaches the user.
         return (preface
-                + f"Downloaded {found_remote} -> {local} ({size:,} bytes). "
-                "The file is now in the working folder and available to the "
-                "file tools by this path or by its name. It is an input to "
-                "read, not a deliverable." + kept
+                + f"Downloaded {found_remote} -> '{_shown(local)}' "
+                f"({size:,} bytes). The file is now in the working folder "
+                "and available to the file tools by that name. It is an "
+                "input to read, not a deliverable." + kept
                 + (" (The file is empty.)" if size == 0 else ""))
 
     attempts = [remote]
     if original.lower().startswith("http") and original != remote:
         attempts.append(original)       # the SDK's sharing-link route
     for target in attempts:
+        if scope is not None and target.lower().startswith("http") \
+                and not _link_is_open(fm, target, scope):
+            continue
         try:
             part = _fetch(fm, target, dest_dir)
         except Exception as exc:                           # noqa: BLE001
@@ -677,7 +963,7 @@ def _download(path: str, save_as: str, refresh: bool,
     if not ok:
         return _not_answering(f"downloading {remote}", detail)
     wanted = link_target_name(original) or os.path.basename(remote)
-    hits, how = _find_by_name(fm, wanted, near=_parent(remote))
+    hits, how = _find_by_name(fm, wanted, near=_parent(remote), scope=scope)
     if len(hits) == 1:
         found = str(hits[0]["path"])
         try:
@@ -721,16 +1007,19 @@ refresh: download again (into the same local file) even if already fetched.
 """
 
 
-def make_download_tool(record_dir: Optional[str] = None):
+def make_download_tool(record_dir: Optional[str] = None,
+                       thread_id: Optional[str] = None):
     """``sharepoint_download_file`` bound to one conversation's record folder,
     where it keeps the downloads ledger (``core.record_download``): which
     SharePoint file became which local file -- one copy per file, kept
     across a restart of the app, and named to the agent on every turn
-    (``core.working_files_note``)."""
+    (``core.working_files_note``). On a multi-user host it refuses other
+    people's conversation folders (A1)."""
 
     def sharepoint_download_file(path: str, save_as: str = "",
                                  refresh: bool = False) -> str:
-        return _download(path, save_as, refresh, record_dir)
+        return _download(path, save_as, refresh, record_dir,
+                         _scope(record_dir, thread_id))
 
     sharepoint_download_file.__doc__ = _DOWNLOAD_DOC
     return tool(sharepoint_download_file)
@@ -740,31 +1029,92 @@ def make_download_tool(record_dir: Optional[str] = None):
 sharepoint_download_file = make_download_tool()
 
 
+def _inside_local(path: str, folder: Optional[str]) -> bool:
+    if not folder:
+        return False
+    try:
+        p = os.path.normcase(os.path.realpath(path))
+        f = os.path.normcase(os.path.realpath(folder))
+        return os.path.commonpath([p, f]) == f
+    except (ValueError, OSError):
+        return False
+
+
+def _local_file(local_path: str, record_dir: Optional[str] = None
+                ) -> Tuple[Optional[str], Optional[str]]:
+    """``(path, None)`` for the local file an upload names, or ``(None,
+    message)``. With a working folder bound only this conversation's files
+    may be uploaded -- a name in the working folder, or a file inside the
+    conversation's own folder -- never another server file (A2); the
+    message names the conversation's files, not server paths. With none
+    bound, any readable path, as before."""
+    given = str(local_path or "").strip()
+    try:
+        from funhouse_agent.vision_tools import (PathRefused, files_here_text,
+                                                 find_readable_file,
+                                                 read_roots)
+    except Exception:                                      # noqa: BLE001
+        if os.path.isfile(given):
+            return os.path.abspath(given), None
+        return None, f"Local file not found: {given}"
+    if read_roots() is None:
+        if os.path.isfile(given):
+            return os.path.abspath(given), None
+        found = find_readable_file(given) if given else None
+        return (found, None) if found else (
+            None, f"Local file not found: {given}")
+    absolute = os.path.expanduser(given)
+    if os.path.isabs(absolute) and _inside_local(absolute, record_dir) \
+            and os.path.isfile(absolute):
+        return os.path.abspath(absolute), None
+    try:
+        found = find_readable_file(given) if given else None
+    except PathRefused:
+        found = None
+        if not (os.path.isabs(absolute) and _inside_local(absolute,
+                                                         record_dir)):
+            return None, (f"Local file not found: '{given}' is not one of "
+                          f"this conversation's files, and only those can "
+                          f"be uploaded. Files here: {files_here_text()}.")
+    if found:
+        return found, None
+    return None, (f"Local file not found: '{given}'. Files here: "
+                  f"{files_here_text()}.")
+
+
 def _upload(local_path: str, dest_folder: str, default_folder=None,
-            default_label: str = "") -> str:
+            default_label: str = "", scope: Optional[_Scope] = None,
+            record_dir: Optional[str] = None) -> str:
     """Shared body of both upload tools; ``default_folder`` (a callable
     returning the remote folder) applies when ``dest_folder`` is empty."""
     if not sharepoint_store.configured():
         return _NOT_CONFIGURED
-    if not os.path.isfile(local_path):
-        return f"Local file not found: {local_path}"
+    local, problem = _local_file(local_path, record_dir)
+    if problem:
+        return problem
     try:
         fm = _fm()
         if (dest_folder or "").strip() or default_folder is None:
             folder, label = _resolve(dest_folder), ""
         else:
             folder, label = default_folder(), default_label
+        if scope is not None:
+            verdict = scope.where(folder)
+            if verdict == "private":
+                return scope.refusal(folder, "upload")
+            if verdict == "container":
+                return scope.container_refusal(folder, "upload")
         try:
             fm.create_folder(folder)
         except Exception:
             pass                                    # may already exist
-        name = os.path.basename(local_path)
+        name = os.path.basename(local)
         remote = f"{folder}/{name}"
-        ok = fm.upload_file(local_path, remote, overwrite=False)
+        ok = fm.upload_file(local, remote, overwrite=False)
         if not ok:                                  # name taken -> unique name
             stem, ext = os.path.splitext(name)
             remote = f"{folder}/{stem}_{time.strftime('%Y%m%d_%H%M%S')}{ext}"
-            ok = fm.upload_file(local_path, remote, overwrite=False)
+            ok = fm.upload_file(local, remote, overwrite=False)
         if not ok:
             return f"SharePoint upload failed for {remote} (upload rejected)."
         try:
@@ -772,10 +1122,56 @@ def _upload(local_path: str, dest_folder: str, default_folder=None,
             url = fix_web_url(fm.get_web_url(remote))
         except Exception:
             url = ""
-        return (f"Uploaded {local_path} -> {remote}{label}."
+        return (f"Uploaded '{_shown(local)}' -> {remote}{label}."
                 + (f" Link: {url}" if url else ""))
     except Exception as exc:
         return f"SharePoint upload error: {type(exc).__name__}: {exc}"
+
+
+def _mirrored(conv_dir: str, rel: str, local: str) -> bool:
+    """Whether the conversation mirror's manifest holds ``rel`` as it is on
+    disk now (the mirror leaves some working folders out)."""
+    try:
+        files = sharepoint_store._manifest_files(
+            sharepoint_store._load_manifest(conv_dir))
+        return files.get(rel) == sharepoint_store._stamp(local)
+    except Exception:                                      # noqa: BLE001
+        return False
+
+
+def _share_mirrored_copy(thread_id: str, record_dir: Optional[str],
+                         conv_dir: str, local: str) -> Optional[str]:
+    """A5: a file of this conversation is already kept in the
+    conversation's SharePoint folder by the mirror (after every turn, under
+    the same relative path). "Save it to SharePoint and send me the link"
+    therefore syncs the mirror now and links to THAT copy -- the one later
+    edits update -- instead of uploading a timestamped second copy beside it
+    that nothing updates (live smoke 1: F04, F19, F26). ``None`` when the
+    mirror did not take the file (the caller then uploads it)."""
+    store = sharepoint_store.get_store()
+    summary = store.mirror_conversation(thread_id, root=_root_of(record_dir))
+    folder = summary.get("folder")
+    rel = os.path.relpath(os.path.abspath(local),
+                          os.path.abspath(conv_dir)).replace(os.sep, "/")
+    name = os.path.basename(local)
+    errors = [e for e in summary.get("errors") or []
+              if e.startswith(f"{rel}:") or e.startswith("SharePoint client")]
+    if errors:
+        return (f"SharePoint upload failed for '{name}': this conversation's "
+                f"SharePoint folder could not be brought up to date "
+                f"({errors[0][:300]}).")
+    if not folder or not _mirrored(conv_dir, rel, local):
+        return None
+    remote = f"{folder}/{rel}"
+    try:
+        url = sharepoint_store.fix_web_url(_fm().get_web_url(remote))
+    except Exception:                                      # noqa: BLE001
+        url = ""
+    return (f"'{name}' is in this conversation's SharePoint folder: {remote}. "
+            "The app keeps that folder in step with the conversation after "
+            "every turn, so this is the ONE copy: it follows later edits to "
+            "the file, and no second copy was made."
+            + (f" Link: {url}" if url else ""))
 
 
 @tool
@@ -792,7 +1188,8 @@ def sharepoint_upload_file(local_path: str, dest_folder: str = "") -> str:
     return _upload(local_path, dest_folder)
 
 
-def make_conversation_upload_tool(thread_id: str):
+def make_conversation_upload_tool(thread_id: str,
+                                  record_dir: Optional[str] = None):
     """``sharepoint_upload_file`` bound to one conversation: with no
     ``dest_folder`` the file goes to that conversation's SharePoint folder
     (``<root>/conversations/<title>_<date>/files``, beside everything the
@@ -802,46 +1199,91 @@ def make_conversation_upload_tool(thread_id: str):
     agent chose the users' "uploaded references" folder, then guessed a
     conversation path by thread id -- but the mirror names the folder by title
     and date, which the agent had no way to know.
+
+    Live smoke 1 (A5): a file of THIS conversation is not uploaded a second
+    time -- the mirror already keeps it in that folder -- the mirror is
+    synced and its copy linked. On a multi-user host other people's
+    conversation folders are refused as a destination (A1).
     """
     def _folder():
-        return f"{sharepoint_store.get_store().session_folder(thread_id)}/files"
+        return f"{_session_folder(thread_id, record_dir)}/files"
 
     @tool
     def sharepoint_upload_file(local_path: str, dest_folder: str = "") -> str:
-        """Upload a local file (a report, figure or calc package) to SharePoint.
+        """Put a local file (a report, figure or calc package) on SharePoint
+        and get its link.
 
-        local_path: the local file (as returned by save_file or the tool that
-        built it).
-        dest_folder: leave EMPTY to put the file in this conversation's
-        SharePoint folder (the usual choice). Otherwise a folder relative to
-        the base folder, or absolute. Created if missing. An existing file of
-        the same name is not overwritten; a timestamped name is used instead.
+        local_path: the file, by its name in the working folder (as save_file
+        or the tool that built it named it).
+        dest_folder: leave EMPTY for this conversation's SharePoint folder
+        (the usual choice): a file of this conversation is already kept
+        there, so the result links to that copy, which follows later edits.
+        Otherwise a folder relative to the base folder, or absolute, created
+        if missing; there an existing file of the same name is not
+        overwritten and a timestamped name is used instead.
         """
-        return _upload(local_path, dest_folder, default_folder=_folder,
-                       default_label=" (this conversation's SharePoint folder)")
+        if not sharepoint_store.configured():
+            return _NOT_CONFIGURED
+        conv_dir = record_dir
+        if not conv_dir:
+            try:
+                from webapp import core
+                conv_dir = core.conversation_dir(thread_id)
+            except Exception:                              # noqa: BLE001
+                conv_dir = None
+        local, problem = _local_file(local_path, conv_dir)
+        if problem:
+            return problem
+        explicit = (dest_folder or "").strip()
+        if conv_dir and _inside_local(local, conv_dir):
+            session = _session_folder(thread_id, record_dir)
+            asked = _segments(_resolve(explicit)) if explicit else None
+            if not explicit or (session and asked in (
+                    _segments(session), _segments(f"{session}/files"))):
+                try:
+                    shared = _share_mirrored_copy(thread_id, record_dir,
+                                                  conv_dir, local)
+                except Exception as exc:                   # noqa: BLE001
+                    shared = (f"SharePoint upload error: "
+                              f"{type(exc).__name__}: {exc}")
+                if shared is not None:
+                    return shared
+        return _upload(local, dest_folder, default_folder=_folder,
+                       default_label=" (this conversation's SharePoint folder)",
+                       scope=_scope(record_dir, thread_id),
+                       record_dir=conv_dir)
 
     return sharepoint_upload_file
 
 
-@tool
-def sharepoint_search_files(query: str, path: str = "") -> str:
-    """Search SharePoint for files by name.
+_SEARCH_DOC = """Search SharePoint for files by name.
 
-    query: filename text to search for (e.g. "boring log", "Kinshasa"), or a
-    whole file name.
-    path: optional folder to scope the search — relative to the base folder,
-    or absolute. Default searches from the base folder.
+query: filename text to search for (e.g. "boring log", "Kinshasa"), or a
+whole file name.
+path: optional folder to scope the search — relative to the base folder,
+or absolute. Default searches from the base folder.
 
-    NOTE: search uses an index that lags NEW uploads by several minutes and
-    can miss long names with underscores; when the index finds nothing the
-    tool also tries shorter queries and looks through the folders by name.
-    """
+NOTE: search uses an index that lags NEW uploads by several minutes and
+can miss long names with underscores; when the index finds nothing the
+tool also tries shorter queries and looks through the folders by name.
+"""
+
+
+def _search_tool(query: str, path: str = "",
+                 scope: Optional[_Scope] = None) -> str:
     if not sharepoint_store.configured():
         return _NOT_CONFIGURED
+
+    def visible(found):
+        return [h for h in found if isinstance(h, dict)
+                and (scope is None or scope.keep(h))]
+
     try:
         fm = _fm()
         remote = _resolve(path)
-        hits = _search(fm, query, remote)
+        if scope is not None and scope.where(remote) == "private":
+            return scope.refusal(remote, "search")
+        hits = visible(_search(fm, query, remote))
     except Exception as exc:
         return _failure("search", exc).replace("SharePoint search failed",
                                                "SharePoint search error", 1)
@@ -852,7 +1294,7 @@ def sharepoint_search_files(query: str, path: str = "") -> str:
         seen = set()
         for q in _queries(query)[1:]:
             try:
-                more = _search(fm, q, remote)
+                more = visible(_search(fm, q, remote))
             except Exception:                              # noqa: BLE001
                 more = []
             for h in more:
@@ -863,7 +1305,7 @@ def sharepoint_search_files(query: str, path: str = "") -> str:
         if hits:
             how = " (found by a shorter search; the full text found nothing)"
         else:
-            files, listed = _walk(fm, remote)
+            files, listed = _walk(fm, remote, scope=scope)
             hits = [f for f in files if _name_matches(query, f.get("name"))]
             if hits:
                 how = (f" (found by looking through {listed} folders; the "
@@ -874,13 +1316,33 @@ def sharepoint_search_files(query: str, path: str = "") -> str:
                     return _not_answering(f"the search for '{query}'", detail)
                 return (f"No files matching '{query}' under {remote} (the "
                         f"search index found none, and {listed} folders were "
-                        "looked through by name).")
+                        "looked through by name)."
+                        + (" Other people's conversation folders are private "
+                           "and are never searched." if scope is not None
+                           else ""))
     lines = [f"Matches for '{query}' ({len(hits)}"
              + (f", first {MAX_ENTRIES} shown" if len(hits) > MAX_ENTRIES
                 else "") + f"){how}:"]
     for h in hits[:MAX_ENTRIES]:
         lines.append(_fmt_entry(h) if isinstance(h, dict) else f"- {h}")
     return "\n".join(lines)
+
+
+def make_search_tool(record_dir: Optional[str] = None,
+                     thread_id: Optional[str] = None):
+    """``sharepoint_search_files`` bound to one conversation: on a
+    multi-user host other people's conversation folders are never searched
+    and their files never named (A1)."""
+
+    def sharepoint_search_files(query: str, path: str = "") -> str:
+        return _search_tool(query, path, _scope(record_dir, thread_id))
+
+    sharepoint_search_files.__doc__ = _SEARCH_DOC
+    return tool(sharepoint_search_files)
+
+
+#: The search tool with no conversation (no owner: the single-user rules).
+sharepoint_search_files = make_search_tool()
 
 
 #: Prompt block injected alongside the tools (build_agent), so the agent knows
@@ -905,10 +1367,10 @@ SHAREPOINT_PROMPT = (
     "Files you produce (reports, "
     "figures, files written to /tmp) are copied into this conversation and "
     "mirrored to its SharePoint folder after every turn, so a deliverable "
-    "needs no upload; if the user asks for one anyway, call "
-    "sharepoint_upload_file WITHOUT dest_folder and it goes to this "
-    "conversation's folder. The 'uploaded references' folder holds the users' "
-    "input documents: never upload there.")
+    "needs no upload; if the user asks for one anyway (or for its link), "
+    "call sharepoint_upload_file WITHOUT dest_folder: it links the copy "
+    "already in this conversation's folder. The 'uploaded references' folder "
+    "holds the users' input documents: never upload there.")
 
 
 def tools_if_configured(thread_id: Optional[str] = None,
@@ -916,19 +1378,27 @@ def tools_if_configured(thread_id: Optional[str] = None,
     """``(tools, prompt)`` when SharePoint is configured, else ``([], "")``.
     With ``thread_id`` the upload tool defaults to that conversation's
     SharePoint folder; with ``record_dir`` (the conversation's record folder)
-    the download tool keeps that conversation's downloads ledger."""
+    the download tool keeps that conversation's downloads ledger. With
+    either, all four tools are bound to the conversation: on a multi-user
+    host (the conversation's meta names its owner) they keep to that
+    person's own conversation folders and the shared folders (A1)."""
     if not sharepoint_store.configured():
         return [], ""
-    upload = (make_conversation_upload_tool(thread_id) if thread_id
-              else sharepoint_upload_file)
-    download = (make_download_tool(record_dir) if record_dir
-                else sharepoint_download_file)
-    return ([sharepoint_list_files, download, upload,
-             sharepoint_search_files], SHAREPOINT_PROMPT)
+    if not thread_id and not record_dir:
+        return ([sharepoint_list_files, sharepoint_download_file,
+                 sharepoint_upload_file, sharepoint_search_files],
+                SHAREPOINT_PROMPT)
+    if not thread_id:                     # the record folder is named by it
+        thread_id = os.path.basename(os.path.abspath(record_dir))
+    upload = make_conversation_upload_tool(thread_id, record_dir)
+    return ([make_list_tool(record_dir, thread_id),
+             make_download_tool(record_dir, thread_id), upload,
+             make_search_tool(record_dir, thread_id)], SHAREPOINT_PROMPT)
 
 
 __all__ = ["tools_if_configured", "SHAREPOINT_PROMPT", "MAX_ENTRIES",
            "sharepoint_list_files", "sharepoint_download_file",
            "sharepoint_upload_file", "sharepoint_search_files",
-           "make_download_tool", "browser_url_to_path", "link_target_name",
-           "TOKEN_LINK_HINT"]
+           "make_download_tool", "make_list_tool", "make_search_tool",
+           "make_conversation_upload_tool", "browser_url_to_path",
+           "link_target_name", "TOKEN_LINK_HINT"]

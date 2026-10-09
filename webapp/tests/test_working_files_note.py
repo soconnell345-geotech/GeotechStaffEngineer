@@ -92,7 +92,10 @@ def test_the_note_names_every_file_and_where_it_came_from(conv):
     full = by_name["Report_full.pdf"]
     assert "fetched to read from SharePoint" in full and "in turn 4" in full
     assert "uploaded references/Report Vol I_2026.pdf" in full
-    assert os.path.join(files, "Report_full.pdf") in full
+    # by its name in the working folder, never the server path (A6)
+    assert full.startswith("- 'Report_full.pdf' ")
+    assert files not in note and conv_dir not in note
+    assert "by these names" in note
     assert "you produced it in turn 2" in by_name["extraction_notes.txt"]
     assert "in turn 5" in by_name["stratigraphy.csv"]
 

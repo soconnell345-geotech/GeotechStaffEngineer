@@ -304,29 +304,311 @@ def _pdf_page(page) -> Dict[str, int]:
         return {}
 
 
-def _resolve_attachment_or_path(key, attachments):
-    """Return ``(bytes, source_type)`` for an attachment key OR a real file path.
+# ---------------------------------------------------------------------------
+# What the read tools may read: this conversation's files (live smoke 1, A2)
+# ---------------------------------------------------------------------------
+#
+# On a host that has bound a working folder for the turn (the web app, per
+# conversation; the review suite, per run) the real-disk tools read only:
+# that folder (the conversation's uploads, saves and downloads, and its tool
+# scratch), the reference library the app fetches PDFs into, and any folder a
+# deployment names in GEOTECH_EXTRA_READ_ROOTS. A relative path means a path
+# inside the working folder -- never the server process's own folder. One
+# process serves many people on Tiny Apps; before this, ``list_files('.')``
+# listed the server's folder and a calc sub-agent walked other conversations
+# (live smoke 2026-10-08, F23/F26). Library and notebook callers that bind no
+# folder keep the old behaviour: any readable path, relative to the cwd.
 
-    The ``attachments`` dict takes PRECEDENCE; only if the key is not an
-    attachment is it tried as a filesystem path (driver-local ``/tmp/...`` or a
-    ``/Volumes/...`` path). The dict is never written to. Raises
-    ``FileNotFoundError`` with an informative message listing the available
-    attachment keys AND noting that real paths are accepted.
+#: The per-conversation folder tool scratch images go in (page thumbnails,
+#: find_like contact sheets): inside the working folder, named to the model
+#: by a short relative name (``.scratch/<file>.png``) that ``analyze_image``
+#: resolves. The host keeps it off the download cards.
+SCRATCH_DIR = ".scratch"
+
+#: More folders the read tools may read while a working folder is bound
+#: (separated by ``os.pathsep``) -- e.g. a single-user deployment that wants
+#: its agent to browse a ``/Volumes`` share. Never set it on a shared host.
+EXTRA_READ_ROOTS_ENV = "GEOTECH_EXTRA_READ_ROOTS"
+
+#: How many of the working folder's file names a refusal lists.
+_NAMES_IN_REFUSAL = 25
+
+
+class PathRefused(FileNotFoundError):
+    """A real path outside what this conversation's tools may read. A
+    ``FileNotFoundError``, so every read tool already reports it as an
+    error result rather than raising."""
+
+
+def _host_folder() -> Optional[str]:
+    """The working folder a host bound for this turn, or ``None``."""
+    from funhouse_agent._fileio import host_output_dir
+    return host_output_dir()
+
+
+def scratch_dir(create: bool = True) -> Optional[str]:
+    """This conversation's tool scratch folder (:data:`SCRATCH_DIR` inside
+    the bound working folder), or ``None`` when no folder is bound."""
+    host = _host_folder()
+    if not host:
+        return None
+    path = os.path.join(host, SCRATCH_DIR)
+    if create:
+        os.makedirs(path, exist_ok=True)
+    return path
+
+
+def reference_read_roots() -> List[str]:
+    """The folders reference PDFs are read from: ``GEOTECH_REFERENCES_DOCS``,
+    the cache the app fetches them into, and a source checkout's
+    ``geotech-references/docs``."""
+    roots: List[str] = []
+    env = os.environ.get("GEOTECH_REFERENCES_DOCS", "").strip()
+    if env:
+        roots.append(env)
+    try:
+        from funhouse_agent import reference_docs
+        roots.append(reference_docs.cache_dir())
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from geotech_references import _figures_db
+        roots.append(os.path.join(str(_figures_db._REPO_ROOT), "docs"))
+    except Exception:  # noqa: BLE001
+        pass
+    roots.append(os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "geotech-references", "docs"))
+    out: List[str] = []
+    for r in roots:
+        a = os.path.abspath(os.path.expanduser(r))
+        if a not in out:
+            out.append(a)
+    return out
+
+
+#: Folders the read tools may also read on Databricks: there the app serves
+#: ONE person (the owner's own Funhouse cluster), whose data lives in Unity
+#: Catalog volumes and their workspace folder. Tiny Apps -- one process for
+#: many people -- is not Databricks and gets none of these.
+DATABRICKS_READ_ROOTS = ("/Volumes", "/Workspace")
+
+
+def _extra_read_roots() -> List[str]:
+    """The folders a deployment exposes beyond the conversation: the
+    Databricks data folders on Databricks, and :data:`EXTRA_READ_ROOTS_ENV`."""
+    roots: List[str] = []
+    try:
+        from funhouse_agent._fileio import is_databricks
+        if is_databricks():
+            roots += list(DATABRICKS_READ_ROOTS)
+    except Exception:  # noqa: BLE001
+        pass
+    raw = os.environ.get(EXTRA_READ_ROOTS_ENV, "")
+    roots += [p.strip() for p in raw.split(os.pathsep) if p.strip()]
+    out: List[str] = []
+    for r in roots:
+        a = os.path.abspath(os.path.expanduser(r))
+        if a not in out:
+            out.append(a)
+    return out
+
+
+def read_roots() -> Optional[List[str]]:
+    """What the read tools may read, the working folder FIRST; ``None`` when
+    no working folder is bound (library use: unconfined)."""
+    host = _host_folder()
+    if not host:
+        return None
+    return ([os.path.abspath(host)] + reference_read_roots()
+            + _extra_read_roots())
+
+
+def _within(path: str, root: str) -> bool:
+    """``path`` is ``root`` or inside it, symlinks and ``..`` resolved."""
+    try:
+        p = os.path.normcase(os.path.realpath(path))
+        r = os.path.normcase(os.path.realpath(root))
+        return os.path.commonpath([p, r]) == r
+    except (ValueError, OSError):           # another drive (Windows)
+        return False
+
+
+def working_folder_names(limit: int = 200) -> List[str]:
+    """The files of the bound working folder by their names (one level of
+    sub-folders as ``sub/name``), scratch and partial downloads left out."""
+    host = _host_folder()
+    if not host or not os.path.isdir(host):
+        return []
+    names: List[str] = []
+    try:
+        top = sorted(os.scandir(host), key=lambda e: e.name.lower())
+    except OSError:
+        return []
+    for e in top:
+        if e.name == SCRATCH_DIR or e.name.startswith(".") \
+                or e.name.endswith(".part"):
+            continue
+        if _safe_is_dir(e):
+            try:
+                for c in sorted(os.scandir(e.path), key=lambda c: c.name.lower()):
+                    if not _safe_is_dir(c) and not c.name.startswith("."):
+                        names.append(f"{e.name}/{c.name}")
+            except OSError:
+                pass
+        else:
+            names.append(e.name)
+        if len(names) >= limit:
+            break
+    return names
+
+
+def files_here_text() -> str:
+    """``"a.pdf, memo.docx, …"`` -- what a refusal or a miss names."""
+    names = working_folder_names()
+    if not names:
+        return "none yet"
+    shown = ", ".join(names[:_NAMES_IN_REFUSAL])
+    more = len(names) - _NAMES_IN_REFUSAL
+    return shown + (f" … and {more} more (list_files)" if more > 0 else "")
+
+
+def refusal_message(name: str) -> str:
+    """Why a real path is not read, and where the user's files are -- by
+    name, never by server path."""
+    extra = _extra_read_roots()
+    opened = (f", the reference library and these folders: "
+              f"{', '.join(extra)}" if extra else " and the reference library")
+    return (
+        f"'{name}' is outside this conversation's files. The file tools read "
+        "only this conversation's own files (its uploads, and what was saved "
+        f"or downloaded here){opened}; other folders on the server are not "
+        "available. Pass a file by its name. Files here: "
+        f"{files_here_text()}.")
+
+
+def confine_read_path(name: str) -> str:
+    """The absolute path a read tool may open for ``name``.
+
+    With a working folder bound, a relative ``name`` is inside that folder
+    and an absolute one must lie inside :func:`read_roots`, else
+    :class:`PathRefused` (whose message names the conversation's files).
+    With none bound, ``name`` resolves against the cwd as it always has.
+    """
+    p = os.path.expanduser(str(name or "").strip())
+    roots = read_roots()
+    if roots is None:
+        return os.path.abspath(p)
+    cand = os.path.abspath(p if os.path.isabs(p) else os.path.join(roots[0], p))
+    if any(_within(cand, r) for r in roots):
+        return cand
+    raise PathRefused(refusal_message(str(name)))
+
+
+def find_readable_file(name) -> Optional[str]:
+    """The real file ``name`` names, or ``None``; raises :class:`PathRefused`
+    for a path outside what this conversation may read.
+
+    With a working folder bound: the name inside that folder (a bare name,
+    ``sub/x.png``, ``.scratch/x.png``, or an absolute path inside it), else
+    a relative name inside a reference folder (a reference PDF by its file
+    name). With none bound: the path as given, else the name in the working
+    folder -- the old behaviour.
+    """
+    s = str(name or "").strip()
+    if not s:
+        return None
+    roots = read_roots()
+    if roots is None:
+        p = os.path.expanduser(s)
+        if os.path.isfile(p):
+            return os.path.abspath(p)
+        from funhouse_agent._fileio import find_in_working_folder
+        return find_in_working_folder(p)
+    cand = confine_read_path(s)
+    if os.path.isfile(cand):
+        return cand
+    p = os.path.expanduser(s)
+    if not os.path.isabs(p):
+        for r in roots[1:]:
+            c = os.path.abspath(os.path.join(r, p))
+            if _within(c, r) and os.path.isfile(c):
+                return c
+    return None
+
+
+def display_path(path) -> str:
+    """How a result names a real file: relative to the working folder
+    (``memo.docx``, ``.scratch/x.png``; ``.`` for the folder itself), a
+    reference PDF by its name in the library -- never the server path. With
+    no working folder bound, the path as it was (library use)."""
+    if not isinstance(path, str) or not path:
+        return path
+    roots = read_roots()
+    if roots is None:
+        return path
+    for i, root in enumerate(roots):
+        if not _within(path, root):
+            continue
+        if i >= len(roots) - len(_extra_read_roots()) and i > 0:
+            return os.path.abspath(path)     # a folder the deployment exposed
+        rel = os.path.relpath(os.path.abspath(path), os.path.abspath(root))
+        if rel.startswith(".."):             # reached through a symlink
+            rel = os.path.relpath(os.path.realpath(path),
+                                  os.path.realpath(root))
+        return "." if rel == "." else rel.replace(os.sep, "/")
+    return os.path.basename(path.rstrip("/\\")) or path
+
+
+def _handle_source(key) -> Optional[str]:
+    """The source (attachment key or file) behind a document handle THIS
+    conversation opened, else ``None`` (A7: a handle works wherever a file
+    is expected)."""
+    if not key or not str(key).startswith("doc_"):
+        return None
+    try:
+        from funhouse_agent import document_tools
+        return document_tools.handle_source(str(key))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _resolve_attachment_or_path(key, attachments):
+    """Return ``(bytes, source_type)`` for an attachment key, an open
+    document handle, or a real file.
+
+    The ``attachments`` dict takes PRECEDENCE. A document handle this
+    conversation opened (``doc_…``) stands for the document it was opened
+    from. Anything else is a file: with a working folder bound, a name in
+    that folder (or a reference PDF by its name) -- a path outside what this
+    conversation may read raises :class:`PathRefused`; with none bound, any
+    readable path. The dict is never written to. Raises
+    ``FileNotFoundError`` naming the attachment keys (and, on a host, the
+    conversation's files by name).
     """
     attachments = attachments or {}
     if key and key in attachments:
         return attachments[key], "attachment"
-    path = key if key and os.path.isfile(key) else None
-    if path is None and key:
-        from funhouse_agent._fileio import find_in_working_folder
-        path = find_in_working_folder(key)
+    target = key
+    source = _handle_source(key)
+    if source and source != key:
+        if source in attachments:
+            return attachments[source], "attachment"
+        target = source
+    path = find_readable_file(target) if target else None
     if path:
         try:
             with open(path, "rb") as fh:
                 return fh.read(), "path"
         except OSError as e:
-            raise FileNotFoundError(f"'{key}' exists but could not be read: {e}")
+            raise FileNotFoundError(
+                f"'{key}' exists but could not be read: {e}")
     available = sorted(attachments.keys())
+    if read_roots() is not None:
+        raise FileNotFoundError(
+            f"'{key}' is not an attachment key, a document handle this "
+            f"conversation opened, or a file in this conversation's working "
+            f"folder. Attachment keys: {available}. Files here: "
+            f"{files_here_text()}.")
     raise FileNotFoundError(
         f"'{key}' not found as an attachment key, a readable file path, or a "
         f"file name in the working folder. Available attachment keys: "
@@ -349,8 +631,12 @@ _TEXT_READ_MAX_BYTES = 20 * 1024 * 1024
 
 
 def _real_path_for(path: str) -> str:
-    """``path`` as given if it exists; a bare or relative name that does not
-    is tried in the working folder (``default_output_dir``)."""
+    """The real file ``path`` names. With a working folder bound: inside it
+    (or a reference PDF by name), :class:`PathRefused` outside what this
+    conversation may read. With none: ``path`` as given if it exists, else a
+    bare or relative name tried in the working folder."""
+    if read_roots() is not None:
+        return find_readable_file(path) or confine_read_path(path)
     p = os.path.expanduser(path)
     if os.path.exists(p) or os.path.isabs(p):
         return os.path.abspath(p)
@@ -369,31 +655,40 @@ def _dispatch_read_text_file(arguments):
     path = str(arguments.get("path") or arguments.get("file_path") or "").strip()
     if not path:
         return json.dumps({"error": "'path' is required (a real file path)."})
-    resolved = _real_path_for(path)
+    try:
+        resolved = _real_path_for(path)
+    except PathRefused as exc:
+        return json.dumps({"error": str(exc)})
+    shown = display_path(resolved)
     if not os.path.isfile(resolved):
+        if read_roots() is not None:
+            return json.dumps({"error": (
+                f"No such file: '{path}' in this conversation's files. Files "
+                f"here: {files_here_text()}. Use list_files to find it.")})
         return json.dumps({"error": (
             f"No such file: '{path}' (looked at '{resolved}'). Use list_files "
             "to find it.")})
     try:
         size = os.path.getsize(resolved)
     except OSError as exc:
-        return json.dumps({"error": f"Could not stat '{resolved}': {exc}"})
+        return json.dumps({"error": f"Could not stat '{shown}': {exc}"})
     if size > _TEXT_READ_MAX_BYTES:
         return json.dumps({"error": (
-            f"'{resolved}' is {size / 1e6:.1f} MB, too large to read as text.")})
+            f"'{shown}' is {size / 1e6:.1f} MB, too large to read as text.")})
     try:
         with open(resolved, "rb") as fh:
             data = fh.read()
     except OSError as exc:
-        return json.dumps({"error": f"Could not read '{resolved}': {exc}"})
+        return json.dumps({"error": f"Could not read '{shown}': {exc}"})
     if b"\x00" in data[:4096]:
         ext = os.path.splitext(resolved)[1].lower()
         hint = ("read_pdf_text or open_document" if ext == ".pdf"
+                else "open_document" if ext == ".docx"
                 else "analyze_image" if ext in (".png", ".jpg", ".jpeg", ".gif",
                                                 ".bmp", ".tif", ".tiff", ".webp")
                 else "a tool made for that file type")
         return json.dumps({"error": (
-            f"'{resolved}' is a binary file, not text. Use {hint}.")})
+            f"'{shown}' is a binary file, not text. Use {hint}.")})
     text = data.decode("utf-8", errors="replace")
     try:
         offset = max(0, int(arguments.get("offset", 0) or 0))
@@ -406,7 +701,7 @@ def _dispatch_read_text_file(arguments):
         max_chars = _TEXT_READ_MAX_CHARS
     max_chars = max(200, min(max_chars, _TEXT_READ_MAX_CHARS))
     chunk = text[offset:offset + max_chars]
-    result = {"path": resolved, "chars_total": len(text), "offset": offset,
+    result = {"path": shown, "chars_total": len(text), "offset": offset,
               "returned_chars": len(chunk), "text": chunk}
     if offset + max_chars < len(text):
         result["truncated"] = True
@@ -457,12 +752,13 @@ def _list_entry_for(dir_entry, name):
     }
 
 
-def _collect_entries(root, depth, max_entries, char_budget):
+def _collect_entries(root, depth, max_entries, char_budget, skip_top=()):
     """Collect listing records under ``root`` (BFS, dirs-first within each dir).
 
     Descends up to ``depth`` levels (0 = immediate children only). Stops at
     ``max_entries`` OR when the serialized size would exceed ``char_budget``,
-    returning ``(entries, truncated)``.
+    returning ``(entries, truncated)``. ``skip_top`` names children of
+    ``root`` itself to leave out.
     """
     entries = []
     used = 0
@@ -473,7 +769,7 @@ def _collect_entries(root, depth, max_entries, char_budget):
         try:
             with os.scandir(current) as it:
                 children = sorted(
-                    it,
+                    (c for c in it if lvl or c.name not in skip_top),
                     key=lambda e: (not _safe_is_dir(e), e.name.lower()),
                 )
         except OSError as e:
@@ -526,8 +822,28 @@ def _dispatch_list_files(arguments):
         depth = 0
     depth = max(0, min(depth, _LIST_FILES_MAX_DEPTH))
 
-    abs_path = os.path.abspath(os.path.expanduser(path))
+    # With a working folder bound, '.' and every relative path are inside
+    # it, and nothing outside this conversation's files is listed (A2).
+    roots = read_roots()
+    try:
+        abs_path = confine_read_path(path)
+    except PathRefused as e:
+        return json.dumps({"error": str(e)})
+    shown = display_path(abs_path)
+    if not os.path.exists(abs_path) and roots is not None \
+            and os.path.normcase(os.path.abspath(abs_path)) == \
+            os.path.normcase(os.path.abspath(roots[0])):
+        return json.dumps({"path": ".", "depth": depth, "n_entries": 0,
+                           "entries": [],
+                           "note": "The conversation's working folder is "
+                                   "empty: nothing has been uploaded, saved "
+                                   "or downloaded here yet."})
     if not os.path.exists(abs_path):
+        if roots is not None:
+            return json.dumps({"error": (
+                f"Path not found: '{path}' is not in this conversation's "
+                f"working folder. Files here: {files_here_text()}. "
+                "list_files() with no path lists the working folder.")})
         return json.dumps({
             "error": (
                 f"Path not found: '{path}' (resolved to '{abs_path}'). Give an "
@@ -543,7 +859,7 @@ def _dispatch_list_files(arguments):
         except OSError as e:
             info = {"stat_error": str(e)}
         return json.dumps({
-            "path": abs_path,
+            "path": shown,
             "is_file": True,
             **info,
             "note": ("This is a file, not a directory. Read it with "
@@ -551,21 +867,31 @@ def _dispatch_list_files(arguments):
                      "list its parent directory."),
         })
 
+    # The tool scratch folder (thumbnails, contact sheets) is working data,
+    # not the user's files: left out of a listing of the working folder.
+    at_home = roots is not None and _within(abs_path, roots[0]) \
+        and os.path.normcase(os.path.realpath(abs_path)) == \
+        os.path.normcase(os.path.realpath(roots[0]))
     try:
         entries, truncated = _collect_entries(
-            abs_path, depth, max_entries, _LIST_FILES_CHAR_BUDGET)
+            abs_path, depth, max_entries, _LIST_FILES_CHAR_BUDGET,
+            skip_top=(SCRATCH_DIR,) if at_home else ())
     except PermissionError as e:
-        return json.dumps({"error": f"Permission denied reading '{abs_path}': {e}"})
+        return json.dumps({"error": f"Permission denied reading '{shown}': {e}"})
     except OSError as e:
         return json.dumps({
-            "error": f"Could not read '{abs_path}': {type(e).__name__}: {e}"})
+            "error": f"Could not read '{shown}': {type(e).__name__}: {e}"})
 
     result = {
-        "path": abs_path,
+        "path": shown,
         "depth": depth,
         "n_entries": len(entries),
         "entries": entries,
     }
+    if at_home:
+        result["note"] = ("This is the conversation's working folder: the "
+                          "user's uploads and the files saved or downloaded "
+                          "here. Pass a file to the other tools by its name.")
     if truncated:
         result["truncated"] = True
         result["truncated_note"] = (
@@ -1479,13 +1805,12 @@ def _dispatch_find_like(arguments, engine, attachments):
         pdf_bytes, _src = _resolve_attachment_or_path(key, attachments)
     except FileNotFoundError as e:
         return json.dumps({"error": str(e)})
-    save_dir = None
     try:
-        from funhouse_agent._fileio import default_output_dir
-        # The conversation's working folder (the host sets it); with none,
-        # the contact sheets are not written anywhere.
-        save_dir = default_output_dir() or None
-    except Exception:
+        # The conversation's tool scratch folder (A9: working images, not
+        # download cards); with no working folder bound, the contact sheets
+        # are not written anywhere.
+        save_dir = scratch_dir()
+    except OSError:
         save_dir = None
     try:
         out = _fl.find_like(
@@ -1501,6 +1826,15 @@ def _dispatch_find_like(arguments, engine, attachments):
         return json.dumps({"error": str(e),
                            "hint": "box the mark's lettering tightly, with no "
                                    "leader or table rule inside the box"})
+    if isinstance(out, dict) and out.get("contact_sheets"):
+        # Named by their place in the conversation, which analyze_image
+        # resolves; the server path stays internal (A6).
+        out["contact_sheets"] = [display_path(p)
+                                 for p in out["contact_sheets"]]
+        out.setdefault("contact_sheets_note", (
+            "the contact sheets are working images in this conversation's "
+            "scratch folder: view one with analyze_image(attachment_key=<its "
+            "name>)"))
     return json.dumps(out)
 
 
@@ -1618,7 +1952,9 @@ def _dispatch_view_worked_example_at_budget(arguments, engine):
         "catalogued_pages": pages,
         "analysis": analysis,
         "note": _READ_OFF_NOTE,
-        "source": str(pdf_abs),
+        # The PDF by its name in the reference library, which render_region
+        # resolves; the server path stays internal.
+        "source": display_path(str(pdf_abs)),
         "page": page_1b - 1,
         **vision_view.view_payload(info, engine),
     }
@@ -1737,8 +2073,9 @@ def _dispatch_read_reference_figure_at_budget(arguments, engine):
         "analysis": result,
         "note": _READ_OFF_NOTE,
         # Zooming on the chart (an axis, a curve label) goes through
-        # render_region on the same PDF page.
-        "source": str(pdf_abs),
+        # render_region on the same PDF page -- named by its file name in
+        # the reference library, which render_region resolves.
+        "source": display_path(str(pdf_abs)),
         "page": page_idx,
         **vision_view.view_payload(info, engine),
     }
@@ -1842,9 +2179,22 @@ def _dispatch_save_file(arguments, save_fn):
             return json.dumps({"error": f"Invalid base64 content: {e}"})
 
     from funhouse_agent._fileio import (
-        rescue_write, workspace_write_hint, written_file_problem,
-        workspace_api_upload, _is_workspace_path,
+        into_working_folder, rescue_write, workspace_write_hint,
+        written_file_problem, workspace_api_upload, _is_workspace_path,
     )
+
+    # With a working folder bound, a save lands in this conversation: a path
+    # elsewhere on the server (another conversation's folder, /tmp, the
+    # server's own folder) keeps its file name and goes into the working
+    # folder instead (A2). A host's own writer still decides where a bare
+    # name goes, as it always has.
+    host = _host_folder()
+    if host:
+        given = os.path.expanduser(str(path))
+        if save_fn is _default_save_fn:
+            path = into_working_folder(str(path), host)
+        elif os.path.isabs(given) and not _within(given, host):
+            path = os.path.basename(given.rstrip("/\\")) or path
 
     expected = (content if isinstance(content, bytes)
                 else content.encode("utf-8", errors="replace"))
@@ -1937,4 +2287,27 @@ def _dispatch_save_file(arguments, save_fn):
                     "so file_exists/file_size_bytes reflect the local view "
                     "only."
                 )
+    if host:
+        _name_saved_file(result, save_fn)
     return json.dumps(result)
+
+
+def _name_saved_file(result: dict, save_fn) -> None:
+    """A save made in a conversation names the file by its place in the
+    conversation (``memo.docx``), which every file tool resolves -- the
+    server path stays internal and never reaches the user (A6). The host's
+    ``saved_note`` hook is asked about the REAL path first, so its note
+    ("this file is attached to the chat") survives the renaming."""
+    saved = result.get("saved")
+    if not isinstance(saved, str) or not os.path.isabs(saved):
+        return
+    hook = getattr(save_fn, "saved_note", None)
+    if callable(hook) and not result.get("error"):
+        try:
+            note = hook(saved)
+        except Exception:  # noqa: BLE001 - a note, never the save
+            note = None
+        if note:
+            existing = result.get("note")
+            result["note"] = f"{existing} {note}" if existing else str(note)
+    result["saved"] = display_path(saved)

@@ -75,6 +75,12 @@ from uuid import uuid4
 #: streaming) are NOT shown in the answer bubble.
 _MODEL_NODE = "model"
 
+#: Run-metadata key langchain sets on its own internal model calls, and the
+#: values that mark a call whose text is NOT for the user (the context
+#: summarizer). Its chunks still carry ``langgraph_node == "model"``.
+_LC_SOURCE_KEY = "lc_source"
+_INTERNAL_SOURCES = frozenset({"summarization"})
+
 #: Tools whose call we render with bespoke one-liners; everything else falls back
 #: to a generic ``name({args})`` summary.
 _KNOWN_TOOLS = {
@@ -288,6 +294,13 @@ def _format_messages_chunk(chunk: Any) -> list:
     meta = metadata if isinstance(metadata, dict) else {}
     if meta.get("langgraph_node", _MODEL_NODE) != _MODEL_NODE:
         return []
+    # A context-summarization call runs INSIDE the model node (deepagents'
+    # SummarizationMiddleware wraps the model call) and tags its own run with
+    # ``lc_source: summarization``. Its tokens are an internal handoff
+    # ("SESSION INTENT ... NEXT STEPS", with server paths), never answer text
+    # (live smoke wave 1, A3: one was pasted into a delivered answer).
+    if meta.get(_LC_SOURCE_KEY) in _INTERNAL_SOURCES:
+        return []
     # Skip pure tool-call-argument streaming chunks (no visible text).
     if getattr(message, "tool_call_chunks", None):
         return []
@@ -310,8 +323,9 @@ def _format_updates_chunk(chunk: Any, *, max_result_chars: int = 2000) -> list:
     for _node, update in chunk.items():
         if not isinstance(update, dict):
             continue
+        messages = _update_messages(update)
         # 1) Tool calls live on AIMessages in the node's "messages".
-        for msg in update.get("messages", []) or []:
+        for msg in messages:
             for tc in getattr(msg, "tool_calls", None) or []:
                 if isinstance(tc, dict):
                     entries.append({
@@ -326,7 +340,7 @@ def _format_updates_chunk(chunk: Any, *, max_result_chars: int = 2000) -> list:
             if rendered:
                 entries.append({"kind": "todos", "text": rendered})
         # 3) Tool RESULTS are ToolMessages in the node's "messages".
-        for msg in update.get("messages", []) or []:
+        for msg in messages:
             if _is_tool_message(msg):
                 name = getattr(msg, "name", None) or "tool"
                 result = _content_to_text(getattr(msg, "content", ""))
@@ -343,6 +357,62 @@ def _is_tool_message(msg: Any) -> bool:
         getattr(msg, "type", None) == "tool"
         or type(msg).__name__ == "ToolMessage"
     )
+
+
+def _update_messages(update: Any) -> list:
+    """The NEW messages in one node's update, as a list.
+
+    A node may instead REWRITE the whole history -- ``Overwrite([...])``
+    (deepagents' tool-call patcher and large-result eviction) or a list that
+    opens with ``RemoveMessage(REMOVE_ALL_MESSAGES)`` (langchain's summarizer)
+    -- and that is not news: it re-sends every earlier message, earlier
+    turns' answers included. Those return ``[]``."""
+    if not isinstance(update, dict):
+        return []
+    msgs = update.get("messages")
+    if not isinstance(msgs, (list, tuple)):
+        return []
+    for m in msgs:
+        mid = m.get("id") if isinstance(m, dict) else getattr(m, "id", None)
+        kind = m.get("type") if isinstance(m, dict) else getattr(m, "type",
+                                                                   None)
+        if kind == "remove" and mid == "__remove_all__":
+            return []
+    return list(msgs)
+
+
+def _is_ai_message(msg: Any) -> bool:
+    if isinstance(msg, dict):
+        return msg.get("role") in ("assistant", "ai") or msg.get("type") == "ai"
+    return getattr(msg, "type", None) in ("ai", "AIMessageChunk")
+
+
+def _final_answer_in_update(chunk: Any) -> tuple:
+    """``(saw_ai, final_text)`` for one ``updates``-mode item.
+
+    ``saw_ai`` -- whether a model call finished in it (any AI message);
+    ``final_text`` -- the text of the LAST AI message in it that requested no
+    tool, or ``None``. That message is the reply: an AI message that also
+    calls tools is narration between steps ("I'll check the page map..."),
+    and a context summary is never an AI message of the graph at all. The
+    web app delivers this, not the concatenated stream (live smoke wave 1,
+    A3: narration glued mid-sentence into 16 of 95 answers)."""
+    saw_ai, final = False, None
+    if not isinstance(chunk, dict):
+        return saw_ai, final
+    for _node, update in chunk.items():
+        for msg in _update_messages(update):
+            if not _is_ai_message(msg):
+                continue
+            saw_ai = True
+            calls = (msg.get("tool_calls") if isinstance(msg, dict)
+                     else getattr(msg, "tool_calls", None))
+            if calls:
+                continue
+            content = (msg.get("content") if isinstance(msg, dict)
+                       else getattr(msg, "content", ""))
+            final = _content_to_text(content)
+    return saw_ai, final
 
 
 def _sum_callback_tokens(callback_usage: Any) -> int:
@@ -649,10 +719,15 @@ class DeepNotebookChat:
         from langchain_core.callbacks import get_usage_metadata_callback
 
         answer_parts: list[str] = []
+        final_message = None        # the last AI message that called no tool
         with get_usage_metadata_callback() as cb:
             config = dict(self._config())
             config["callbacks"] = [cb]
             for mode, chunk in self._stream_items(question, config=config):
+                if mode == "updates":
+                    _saw, text = _final_answer_in_update(chunk)
+                    if text is not None:
+                        final_message = text
                 for entry in _format_update(
                     mode, chunk, max_result_chars=self._max_result_chars
                 ):
@@ -666,7 +741,10 @@ class DeepNotebookChat:
             turn_tokens = _sum_callback_tokens(dict(cb.usage_metadata))
         self._total_tokens += turn_tokens
         self._last_turn_tokens = turn_tokens
-        final = "".join(answer_parts)
+        # The reply is the final AI message, not the narration streamed
+        # between tool calls (the web app's rule too: webapp.core.stream_turn).
+        final = (final_message if final_message and final_message.strip()
+                 else "".join(answer_parts))
         # Record the assistant turn in the client-side history so the next send
         # replays it (continuity without a checkpointer).
         if final:

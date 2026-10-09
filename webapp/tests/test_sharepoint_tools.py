@@ -112,7 +112,10 @@ def test_download_lands_in_working_folder(fake_sp, tmp_path):
     out = spt.sharepoint_download_file.invoke({"path": "boring_logs.pdf"})
     dest = tmp_path / "work" / "boring_logs.pdf"
     assert dest.exists() and dest.read_bytes() == b"PDF-bytes"
-    assert "Downloaded" in out and str(dest) in out
+    # Named by its place in the working folder, never by the server path
+    # (live smoke 1, A6).
+    assert "Downloaded" in out and "-> 'boring_logs.pdf'" in out
+    assert str(tmp_path) not in out
     assert fake_sp.last_download == \
         "Shared Documents/General/GSE_app/boring_logs.pdf"
 
@@ -122,9 +125,17 @@ def test_download_missing_gives_guidance(fake_sp):
     assert "not found" in out and "sharepoint_search_files" in out
 
 
+def _work_file(tmp_path, name, data=b"x"):
+    """A file in the conversation's working folder (the fixture binds it):
+    only those may be uploaded once a working folder is bound (A2)."""
+    work = tmp_path / "work"
+    work.mkdir(exist_ok=True)
+    (work / name).write_bytes(data)
+    return work / name
+
+
 def test_upload_creates_folder_and_reports_link(fake_sp, tmp_path):
-    local = tmp_path / "calc_package.pdf"
-    local.write_bytes(b"x")
+    local = _work_file(tmp_path, "calc_package.pdf")
     out = spt.sharepoint_upload_file.invoke(
         {"local_path": str(local), "dest_folder": "deliverables"})
     assert fake_sp.uploads[-1][1] == \
@@ -135,8 +146,7 @@ def test_upload_creates_folder_and_reports_link(fake_sp, tmp_path):
 
 def test_upload_name_collision_gets_timestamped_name(fake_sp, tmp_path):
     fake_sp.existing_names.add("calc_package.pdf")
-    local = tmp_path / "calc_package.pdf"
-    local.write_bytes(b"x")
+    local = _work_file(tmp_path, "calc_package.pdf")
     out = spt.sharepoint_upload_file.invoke({"local_path": str(local)})
     assert "Uploaded" in out
     assert "calc_package_" in fake_sp.uploads[-1][1]     # timestamp suffix
@@ -230,8 +240,7 @@ class TestConversationFolder:
                             lambda self, tid, root=None: self_folder(tid))
         tools, prompt = spt.tools_if_configured(thread_id="t1")
         up = next(t for t in tools if t.name == "sharepoint_upload_file")
-        local = tmp_path / "SOE_sensitivity_review_embedded.pdf"
-        local.write_bytes(b"x")
+        local = _work_file(tmp_path, "SOE_sensitivity_review_embedded.pdf")
         out = up.invoke({"local_path": str(local)})
         assert fake_sp.uploads[-1][1] == \
             f"{self.FOLDER}/files/SOE_sensitivity_review_embedded.pdf"
@@ -245,8 +254,7 @@ class TestConversationFolder:
                             lambda self, tid, root=None: self_folder(tid))
         up = next(t for t in spt.tools_if_configured(thread_id="t1")[0]
                   if t.name == "sharepoint_upload_file")
-        local = tmp_path / "a.pdf"
-        local.write_bytes(b"x")
+        local = _work_file(tmp_path, "a.pdf")
         up.invoke({"local_path": str(local), "dest_folder": "deliverables"})
         assert fake_sp.uploads[-1][1] == \
             "Shared Documents/General/GSE_app/deliverables/a.pdf"

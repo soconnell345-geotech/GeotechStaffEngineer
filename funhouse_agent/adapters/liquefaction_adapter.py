@@ -131,10 +131,25 @@ def _run_cpt_bi2014(params: dict) -> dict:
     _check_liquepy()
     from liquepy_agent import analyze_cpt_liquefaction
 
+    depth = _first(params, "depth", required=True, label="depth")
+    q_c = _first(params, "q_c", "qc", required=True, label="q_c")
+    f_s = _first(params, "f_s", "fs", required=True, label="f_s")
+    # A CPT is a PROFILE: liquepy works over the readings (one reading gave a
+    # raw IndexError in live smoke wave 1, G7).
+    lengths = {k: (len(v) if isinstance(v, (list, tuple)) else 1)
+               for k, v in (("depth", depth), ("q_c", q_c), ("f_s", f_s))}
+    if min(lengths.values()) < 2:
+        raise ValueError(
+            "CPT input needs a profile: depth, q_c and f_s as lists of at "
+            f"least 2 readings each (got {lengths}). For a single depth, give "
+            "the readings just above and below it, or use SPT input.")
+    if len(set(lengths.values())) > 1:
+        raise ValueError(
+            f"depth, q_c and f_s must be the same length (got {lengths}).")
     result = analyze_cpt_liquefaction(
-        depth=_first(params, "depth", required=True, label="depth"),
-        q_c=_first(params, "q_c", "qc", required=True, label="q_c"),
-        f_s=_first(params, "f_s", "fs", required=True, label="f_s"),
+        depth=depth,
+        q_c=q_c,
+        f_s=f_s,
         u_2=_first(params, "u_2", "u2"),
         gwl=_first(params, "gwl", "gwt_depth", default=1.0),
         pga=_first(params, "pga", "amax_g", default=0.25),
@@ -230,21 +245,40 @@ METHOD_INFO = {
             "depth": {"type": "array", "required": True,
                       "description": "Layer mid-depths / CPT depths (m)."},
             # SPT inputs
+            # Required for SPT input (live smoke wave 1, G7: FC was
+            # described as optional and the SPT route refused the call).
             "N160": {"type": "array", "required": False,
-                     "description": "SPT (N1)60 blow counts (presence => SPT input)."},
+                     "required_for": "SPT input",
+                     "description": "REQUIRED for SPT input: SPT (N1)60 blow "
+                                    "counts per layer (presence => SPT input)."},
             "FC": {"type": "array", "required": False,
-                   "description": "Fines content (%) per layer (SPT)."},
+                   "required_for": "SPT input",
+                   "description": "REQUIRED for SPT input: fines content (%) "
+                                  "per layer."},
             "gamma": {"type": "array", "required": False,
-                      "description": "Total unit weight (kN/m3) per layer (SPT)."},
+                      "required_for": "SPT input",
+                      "description": "REQUIRED for SPT input: total unit "
+                                     "weight (kN/m3) per layer."},
             "gwt_depth": {"type": "float", "required": False,
-                          "description": "Groundwater depth (m) (SPT; alias gwl)."},
+                          "required_for": "SPT input",
+                          "description": "REQUIRED for SPT input: groundwater "
+                                         "depth (m below surface; alias "
+                                         "gwl). For CPT input, default 1.0."},
             "amax_g": {"type": "float", "required": False,
-                       "description": "Peak ground acceleration (g) (SPT; alias pga)."},
+                       "required_for": "SPT input",
+                       "description": "REQUIRED for SPT input: peak ground "
+                                      "acceleration (g; alias pga). For CPT "
+                                      "input, default 0.25."},
             # CPT inputs
             "q_c": {"type": "array", "required": False,
-                    "description": "Cone tip resistance (kPa) (presence => CPT input)."},
+                    "required_for": "CPT input",
+                    "description": "REQUIRED for CPT input: cone tip "
+                                   "resistance (kPa) at each depth, at least "
+                                   "2 readings (presence => CPT input)."},
             "f_s": {"type": "array", "required": False,
-                    "description": "Sleeve friction (kPa) (CPT)."},
+                    "required_for": "CPT input",
+                    "description": "REQUIRED for CPT input: sleeve friction "
+                                   "(kPa) at each depth."},
             "u_2": {"type": "array", "required": False,
                     "description": "Pore pressure behind cone (kPa) (CPT, optional)."},
             "gwl": {"type": "float", "required": False,

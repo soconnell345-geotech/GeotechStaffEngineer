@@ -1,6 +1,6 @@
 """liquepy adapter — CPT-based liquefaction triggering and field correlations."""
 
-from funhouse_agent.adapters import apply_aliases, clean_result, require_params
+from funhouse_agent.adapters import mark_required, apply_aliases, clean_result, require_params
 
 
 def _check_liquepy():
@@ -159,3 +159,12 @@ METHOD_INFO = {
         },
     },
 }
+
+# One METHOD_INFO style everywhere: explicit required flags matching the code
+# above (live smoke wave 1, G7).
+mark_required(METHOD_INFO, {
+    "cpt_liquefaction": ["depth", "q_c", "f_s"],
+    "spt_liquefaction": ["depth", "N160", "FC", "gamma", "amax_g",
+                         "gwt_depth"],
+    "field_correlations": ["depth", "q_c", "f_s"],
+})

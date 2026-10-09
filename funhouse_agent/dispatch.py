@@ -14,6 +14,8 @@ import json
 import difflib
 import importlib
 import os
+import re
+from typing import Optional
 
 from funhouse_agent.adapters import MODULE_REGISTRY
 
@@ -410,6 +412,14 @@ def describe_method(agent_name: str, method: str, allowed_agents=None) -> dict:
     except Exception as e:
         return {"error": f"Failed to load module '{agent_name}': {e}"}
     if method not in mod.METHOD_INFO:
+        text_tool = _text_tool_for(mod, method)
+        if text_tool is not None and text_tool in mod.METHOD_INFO:
+            # 'search' / 'text_search' / 'Text Retrieval' on a reference
+            # module: its own text tool's docs (live smoke wave 1, G13)
+            return {**mod.METHOD_INFO[text_tool],
+                    "_note": f"'{method}' is not a method name — this "
+                             f"module's text tool is '{text_tool}'. Showing "
+                             "its docs."}
         return _unknown_method_error(mod, agent_name, method, allowed_agents)
     return mod.METHOD_INFO[method]
 
@@ -423,6 +433,11 @@ def _unknown_method_error(mod, agent_name: str, method: str,
     available = sorted(k for k, v in mod.METHOD_INFO.items()
                        if not v.get("alias_of"))
     closest = _closest_methods(mod, method)
+    elsewhere = (_text_search_elsewhere(agent_name, method, allowed_agents)
+                 if isinstance(method, str)
+                 and _text_tool_for(mod, method) is None else None)
+    if elsewhere is not None:
+        return {**elsewhere, "closest": closest}
     msg = (f"Unknown method '{method}' for module '{agent_name}'. "
            f"Closest: {closest}.")
     out = {"error": msg, "closest": closest}
@@ -436,33 +451,150 @@ def _unknown_method_error(mod, agent_name: str, method: str,
             f"(describe_method('{right_agent}', '{right_method}')). "
             f"Closest '{agent_name}' methods: {closest}.")
         out["redirect"] = {"agent_name": right_agent, "method": right_method}
-    out["available"] = available
+    if len(available) <= _MAX_LISTED_METHODS:
+        out["available"] = available
+    else:
+        out["available"] = _available_hint(mod, agent_name, method)
     return out
 
 
-def _resolve_attachment(parameters: dict, attachments: dict) -> dict:
-    """If parameters contains attachment_key, decode it to content.
+def _method_params(mod, method: str) -> dict:
+    """The documented parameters of ``method`` (``{}`` when undocumented)."""
+    try:
+        info = mod.METHOD_INFO.get(method) or {}
+        params = info.get("parameters") or {}
+        return params if isinstance(params, dict) else {}
+    except Exception:                                  # noqa: BLE001
+        return {}
 
-    Bridges the widget/file-upload attachment system to adapters that
-    accept text content (e.g. parse_diggs with DIGGS XML).
+
+def _resolve_attachment(parameters: dict, attachments: dict,
+                        documented: dict = None) -> dict:
+    """Turn an ``attachment_key`` into what the method reads.
+
+    Bridges the upload system to the adapters. The key names an uploaded
+    file: its bytes in ``attachments`` (decoded to ``content`` for a method
+    that reads text, e.g. parse_diggs with DIGGS XML), or the file of that
+    name in the working folder, where the app stages every upload (passed as
+    ``file_path``). A method documenting ``file_path`` but no ``content``
+    (parse_cpt, read_ags4...) gets the file. Until 2026-10-09 the deep
+    agent's ``call_agent`` passed no attachments, so the key never resolved
+    and the error then asked for an ``attachment_key`` (live smoke wave 1,
+    A8).
     """
     key = parameters.get("attachment_key")
-    if not key or not attachments:
+    if not key:
         return parameters
-    if key not in attachments:
-        available = sorted(attachments.keys()) or ["(none)"]
-        raise KeyError(
-            f"attachment_key '{key}' not found. Available: {available}"
-        )
-    raw = attachments[key]
-    if isinstance(raw, (bytes, bytearray)):
-        content = raw.decode("utf-8", errors="replace")
-    else:
-        content = str(raw)
+    from funhouse_agent._fileio import find_in_working_folder
+    documented = documented or {}
+    wants_path = "file_path" in documented and "content" not in documented
     params = dict(parameters)
-    params["content"] = content
     params.pop("attachment_key")
-    return params
+    key = str(key)
+    on_disk = find_in_working_folder(key)
+    if on_disk is None and os.path.isfile(key):
+        on_disk = os.path.abspath(key)
+    if attachments and key in attachments and not (wants_path and on_disk):
+        raw = attachments[key]
+        if isinstance(raw, (bytes, bytearray)):
+            params["content"] = raw.decode("utf-8", errors="replace")
+        else:
+            params["content"] = str(raw)
+        return params
+    if on_disk:
+        params["file_path"] = on_disk
+        return params
+    available = sorted(attachments.keys()) if attachments else []
+    raise KeyError(
+        f"attachment_key '{key}' is neither an attached file "
+        f"(attached: {available or 'none'}) nor a file of that name in the "
+        "working folder. Pass the uploaded file's name exactly as the "
+        "attachment note gives it, or a 'file_path'.")
+
+
+#: Parameters naming a file a module method READS (a bare name is looked up
+#: in the working folder, as the file tools do).
+_INPUT_PATH_PARAMS = ("file_path", "html_path")
+_INPUT_PATH_LIST_PARAMS = ("file_paths",)
+
+
+def _inputs_from_working_folder(parameters):
+    """A bare file name given for a file a method reads is the file of that
+    name in the working folder when there is no such file relative to the
+    process (live smoke wave 1, A6: results and notes name files by their
+    conversation-relative name, so the model passes those names back)."""
+    if not isinstance(parameters, dict):
+        return parameters
+    from funhouse_agent._fileio import find_in_working_folder
+
+    def _resolve(value):
+        if not isinstance(value, str) or not value.strip():
+            return value
+        if os.path.isabs(os.path.expanduser(value)) or os.path.exists(value):
+            return value
+        return find_in_working_folder(value) or value
+
+    out = parameters
+    for key in _INPUT_PATH_PARAMS + _INPUT_PATH_LIST_PARAMS:
+        if key not in parameters:
+            continue
+        value = parameters[key]
+        new = ([_resolve(v) for v in value] if isinstance(value, list)
+               else _resolve(value))
+        if new != value:
+            if out is parameters:
+                out = dict(parameters)
+            out[key] = new
+    return out
+
+
+#: What a TypeError says when the CALL did not fit the function's signature
+#: (as opposed to a type problem inside the computation).
+_SIGNATURE_ERROR = re.compile(
+    r"(missing \d+ required (?:positional|keyword-only) argument"
+    r"|unexpected keyword argument|got multiple values for argument"
+    r"|takes \d+ positional arguments? but \d+ (?:was|were) given"
+    r"|required (?:positional|keyword) argument)")
+
+
+def _parameter_error(mod, agent_name: str, method: str, parameters: dict,
+                     exc: BaseException) -> dict:
+    """The answer to a call whose parameters did not fit the method: what
+    was wrong in plain words, the parameters the method takes (required
+    first) and where its documentation is -- never the raw TypeError, which
+    named internals such as ``_build.<locals>.reference_get()`` (live smoke
+    wave 1, A15b)."""
+    documented = _method_params(mod, method)
+    required = sorted(k for k, v in documented.items()
+                      if isinstance(v, dict) and v.get("required"))
+    optional = sorted(k for k in documented if k not in required)
+    given = sorted(parameters or {})
+    text = str(exc)
+    m = re.search(r"unexpected keyword argument '([^']+)'", text)
+    if m:
+        what = f"'{m.group(1)}' is not a parameter of {method}"
+    else:
+        missing = re.findall(r"'([^']+)'", text.split("argument", 1)[-1]) \
+            if "missing" in text else []
+        if missing:
+            what = (f"{method} needs "
+                    + ", ".join(f"'{p}'" for p in missing))
+        else:
+            what = f"the parameters given do not fit {method}"
+    out = {"error": (f"{agent_name}.{method}: {what}. "
+                     f"Parameters given: {given or 'none'}."),
+           # the function's own words, minus internal qualifiers
+           "detail": re.sub(r"[\w.]*<locals>\.", "", text),
+           "required_parameters": required,
+           "optional_parameters": optional,
+           "directive": (f"Call call_agent('{agent_name}', '{method}', "
+                         "{...}) with these parameter names, inside "
+                         "'parameters'; describe_method gives each one's "
+                         "meaning and units.")}
+    if not documented:
+        out.pop("required_parameters")
+        out.pop("optional_parameters")
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -717,8 +849,43 @@ def _selector_value_candidates(mod, name: str):
     return hits
 
 
+#: Names models give a reference module's TEXT tools, mapped to the method
+#: each module actually has (live smoke wave 1, G13: 'search', 'text_search',
+#: the category name 'Text Retrieval' and 'search_sections' on dm7 each cost
+#: a failed call). The first name a module has wins.
+_TEXT_SEARCH_GUESSES = frozenset({
+    "search", "text_search", "search_text", "search_section", "section_search",
+    "search_sections", "search_reference", "reference_search", "full_text_search",
+    "keyword_search", "find", "find_section", "find_sections", "lookup", "query",
+    "text_retrieval", "search_chapters", "search_references"})
+_TEXT_SEARCH_METHODS = ("search_sections", "reference_search", "figure_search")
+_SECTION_GET_GUESSES = frozenset({
+    "retrieve", "get_section", "read_section", "fetch_section", "section",
+    "retrieve_sections", "get_text", "retrieve_section", "reference_get",
+    "section_text"})
+_SECTION_GET_METHODS = ("retrieve_section", "reference_get", "figure_get")
+
+
+def _norm_guess(method) -> str:
+    return re.sub(r"[\s\-]+", "_", str(method or "").strip().lower())
+
+
+def _text_tool_for(mod, method) -> Optional[str]:
+    """The module's own text-search or section method a guessed text-tool
+    name means, else ``None``."""
+    g = _norm_guess(method)
+    for guesses, methods in ((_TEXT_SEARCH_GUESSES, _TEXT_SEARCH_METHODS),
+                             (_SECTION_GET_GUESSES, _SECTION_GET_METHODS)):
+        if g in guesses:
+            for real in methods:
+                if real in mod.METHOD_REGISTRY:
+                    return real
+    return None
+
+
 def _resolve_unknown_method(mod, agent_name: str, method: str, parameters: dict):
-    """Resolve a guessed method via the curated alias map.
+    """Resolve a guessed method via the curated alias map, or a guessed
+    text-tool name to the module's own text tool.
 
     Returns ``(real_method, new_params)`` or ``None``.  Only curated (verified)
     aliases route automatically; selector-value guesses are surfaced as a
@@ -726,11 +893,67 @@ def _resolve_unknown_method(mod, agent_name: str, method: str, parameters: dict)
     """
     entry = _METHOD_ALIASES.get((agent_name, method.strip().lower()))
     if entry is None:
+        text_tool = _text_tool_for(mod, method)
+        if text_tool is not None:
+            return text_tool, dict(parameters)
         return None
     real, inject = (entry, {}) if isinstance(entry, str) else entry
     if real in mod.METHOD_REGISTRY:
         return real, {**parameters, **(inject or {})}
     return None
+
+
+def _text_search_elsewhere(agent_name: str, method: str,
+                           allowed_agents=None) -> Optional[dict]:
+    """For a reference module with NO text tools (dm7, ufc_pavement...): the
+    error that names ``reference_db.reference_search`` and the reference ids
+    that module's text is indexed under, when the guess was a text tool."""
+    g = _norm_guess(method)
+    if g not in _TEXT_SEARCH_GUESSES | _SECTION_GET_GUESSES:
+        return None
+    if not _is_visible("reference_db", allowed_agents):
+        return None
+    ids: list = []
+    try:
+        from geotech_references._retrieval_db import list_indexed_references
+        key = re.sub(r"[^a-z0-9]", "", agent_name.lower())
+        for row in list_indexed_references():
+            ref = str(row.get("reference") or "")
+            if re.sub(r"[^a-z0-9]", "", ref.lower()).startswith(key):
+                ids.append(ref)
+    except Exception:                                  # noqa: BLE001
+        ids = []
+    which = (f" with reference={ids[0]!r}" + (f" (or {', '.join(map(repr, ids[1:]))})"
+                                              if len(ids) > 1 else "")
+             if ids else "")
+    return {"error": (
+        f"'{agent_name}' has no text-search tools (its methods are equations, "
+        f"tables and charts). Its text is searched with call_agent("
+        f"'reference_db', 'reference_search', {{'query': ...}}){which}; "
+        "a section is fetched with reference_db.reference_get."),
+        "redirect": {"agent_name": "reference_db",
+                     "method": "reference_search",
+                     **({"reference": ids} if ids else {})}}
+
+
+#: Most method names an unknown-method error lists in full; past this the
+#: closest names, the count and how to list them by category are given
+#: (live smoke wave 1, G13: ~11 KB of dm7 names per miss).
+_MAX_LISTED_METHODS = 40
+
+
+def _available_hint(mod, agent_name: str, method: str) -> str:
+    """The 'Available: ...' part of an unknown-method error, capped."""
+    available = sorted(k for k, v in mod.METHOD_INFO.items()
+                       if not v.get("alias_of"))
+    if len(available) <= _MAX_LISTED_METHODS:
+        return f"Available: {available}"
+    cats = sorted({v.get("category", "General")
+                   for v in mod.METHOD_INFO.values()
+                   if not v.get("alias_of")})
+    return (f"'{agent_name}' has {len(available)} methods: "
+            f"list_methods('{agent_name}', category=<one of {cats}>) lists "
+            "them by category")
 
 
 def call_agent(
@@ -753,12 +976,18 @@ def call_agent(
     attachments : dict, optional
         Agent attachments ({key: bytes}).  If parameters contains an
         ``attachment_key``, the corresponding bytes are decoded to text
-        and injected as ``content`` before calling the adapter.
+        and injected as ``content`` before calling the adapter -- or, for a
+        method that reads a file, or a key that only names a file in the
+        working folder, the file is passed as ``file_path``.
 
     Returns
     -------
     dict
-        Calculation results or {"error": "..."}.
+        Calculation results or {"error": "..."}. With a host working folder
+        bound, every path in the result that lies inside it is given
+        relative to it (``_fileio.hide_working_folder``): the model names
+        files the way the file tools resolve them, and never repeats a
+        server path to the user.
     """
     agent_name = _canonical_agent_name(agent_name)
     if not _is_visible(agent_name, allowed_agents):
@@ -775,8 +1004,7 @@ def call_agent(
         if resolved is not None:
             method, parameters = resolved
         else:
-            available = sorted(k for k, v in mod.METHOD_INFO.items()
-                               if not v.get("alias_of"))
+            avail = _available_hint(mod, agent_name, method)
             redirect = _cross_module_redirect(agent_name, method, allowed_agents)
             if redirect is not None:
                 right_agent, right_method = redirect
@@ -784,27 +1012,42 @@ def call_agent(
                         f"'{method}' is not a '{agent_name}' method — it lives "
                         f"on module '{right_agent}' as '{right_method}'. Call "
                         f"call_agent('{right_agent}', '{right_method}', {{...}}). "
-                        f"Available '{agent_name}' methods: {available}"}
+                        f"{avail}"}
+            elsewhere = _text_search_elsewhere(agent_name, method,
+                                               allowed_agents)
+            if elsewhere is not None:
+                return elsewhere
             cands = _selector_value_candidates(mod, method)
             if cands:
                 opts = ", ".join(f"{m}({p}='{method}')" for m, p in cands)
                 return {"error": f"'{method}' is a value for a selector "
                                  f"parameter, not a method name — call: {opts}. "
-                                 f"Available methods: {available}"}
+                                 f"{avail}"}
             near = _closest_methods(mod, method)
             return {"error": f"Unknown method '{method}'. Did you mean: "
-                             f"{near}? Available: {available}"}
+                             f"{near}? {avail}"}
+    from funhouse_agent._fileio import hide_working_folder
+    if not isinstance(parameters, dict):
+        parameters = {}
     try:
-        if attachments and "attachment_key" in parameters:
-            parameters = _resolve_attachment(parameters, attachments)
+        if "attachment_key" in parameters:
+            parameters = _resolve_attachment(
+                parameters, attachments, _method_params(mod, method))
+        parameters = _inputs_from_working_folder(parameters)
         parameters, named = _outputs_into_working_folder(parameters)
-        result = mod.METHOD_REGISTRY[method](parameters)
+        try:
+            result = mod.METHOD_REGISTRY[method](parameters)
+        except TypeError as e:
+            if not _SIGNATURE_ERROR.search(str(e)):
+                raise
+            return hide_working_folder(
+                _parameter_error(mod, agent_name, method, parameters, e))
         if named and isinstance(result, dict) and "error" not in result:
             result = dict(result)
             result["output_note"] = _output_note(named, parameters)
-        return result
+        return hide_working_folder(result)
     except Exception as e:
-        return {"error": f"{type(e).__name__}: {e}"}
+        return hide_working_folder({"error": f"{type(e).__name__}: {e}"})
 
 
 #: Parameters naming a file (``False``) or a folder of files (``True``) that a

@@ -130,10 +130,17 @@ class TestRescueWrite:
         finally:
             os.remove(rescue)
 
-    def test_rescue_refuses_same_path(self, tmp_path, monkeypatch):
+    def test_rescue_never_overwrites_the_path_that_failed(self, tmp_path,
+                                                          monkeypatch):
+        # Since 2026-10-09 a rescue may land in the folder of the failed
+        # target (the working folder): it takes ANOTHER name there.
+        monkeypatch.delenv("GEOTECH_DEFAULT_OUTPUT_DIR", raising=False)
         monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = str(tmp_path / "x.html")
-        assert rescue_write(target, b"abc") is None
+        rescue = rescue_write(target, b"abc")
+        assert rescue is not None and rescue != target
+        assert os.path.basename(rescue) == "x_1.html"
+        assert not os.path.exists(target)
 
 
 class TestDefaultOutputDir:

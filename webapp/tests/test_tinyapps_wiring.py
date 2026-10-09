@@ -31,6 +31,11 @@ _ALL_ENVS = (
 
 @pytest.fixture(autouse=True)
 def _clean(monkeypatch):
+    # ``te.register()`` writes GEOTECH_PROMPTER_MODELS / GEOTECH_WEBAPP_MODEL
+    # straight into os.environ, and monkeypatch records no undo for a
+    # variable it deleted while absent: restore them by hand, or later test
+    # files (test_core.py's engine tests) inherit this file's model list.
+    before = {e: os.environ.get(e) for e in _ALL_ENVS}
     for e in _ALL_ENVS:
         monkeypatch.delenv(e, raising=False)
     ts.reset()
@@ -38,6 +43,11 @@ def _clean(monkeypatch):
     yield
     ts.reset()
     engine_config.register_model_builder(None)
+    for e, value in before.items():
+        if value is None:
+            os.environ.pop(e, None)
+        else:
+            os.environ[e] = value
 
 
 # ---------------------------------------------------------------- settings

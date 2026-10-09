@@ -8,15 +8,31 @@ from webapp import engine_config, profiles, tinyapps_entry
 from webapp.identity import ANONYMOUS, parse_principal
 
 
+#: Env the entry WRITES straight into ``os.environ`` (``mark_deployment``'s
+#: ``GEOTECH_DEPLOYMENT``, ``register_engine``'s model list and default), on
+#: top of what the tests set. monkeypatch records no undo for a variable it
+#: deleted while absent, so these are restored by hand: left behind,
+#: ``GEOTECH_DEPLOYMENT=tinyapps`` turned four engine tests in
+#: ``test_core.py`` into "No model configured" when they ran after this file.
+_ENV = ("GEOTECH_DEPLOYMENT", "GEOTECH_APP_PROFILE", "PROMPTER_URL",
+        "PROMPTER_MODEL", "PROMPTER_API_KEY", "GEOTECH_PROMPTER_MODELS",
+        "GEOTECH_WEBAPP_MODEL")
+
+
 @pytest.fixture(autouse=True)
 def _clean(monkeypatch):
-    for e in ("GEOTECH_DEPLOYMENT", "GEOTECH_APP_PROFILE", "PROMPTER_URL",
-              "PROMPTER_MODEL", "PROMPTER_API_KEY"):
+    before = {e: os.environ.get(e) for e in _ENV}
+    for e in _ENV:
         monkeypatch.delenv(e, raising=False)
     monkeypatch.setattr(tinyapps_entry, "_ENGINE_REGISTERED", False)
     engine_config.register_model_builder(None)
     yield
     engine_config.register_model_builder(None)
+    for e, value in before.items():
+        if value is None:
+            os.environ.pop(e, None)
+        else:
+            os.environ[e] = value
 
 
 def test_app_path_points_at_packaged_app():

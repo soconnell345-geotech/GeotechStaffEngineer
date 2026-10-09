@@ -1,6 +1,6 @@
 """Seismic signals adapter — response spectra, intensity measures, RotD, signal processing."""
 
-from funhouse_agent.adapters import clean_result
+from funhouse_agent.adapters import mark_required, clean_result
 
 
 def _check_eqsig():
@@ -190,3 +190,30 @@ METHOD_INFO = {
         },
     },
 }
+
+
+def _motion_alternatives(method_info: dict) -> dict:
+    """Say on each motion parameter that a built-in name OR a custom history
+    (+ dt) is needed: neither alone is marked required, one of them is."""
+    for info in method_info.values():
+        params = info.get("parameters") or {}
+        for name, spec in params.items():
+            if not isinstance(spec, dict):
+                continue
+            suffix = name[len("motion"):] if name.startswith("motion") else (
+                name[len("accel_history"):] if name.startswith("accel_history")
+                else None)
+            if suffix is None:
+                continue
+            spec["description"] = (
+                spec.get("description", "").rstrip(". ")
+                + f". Give motion{suffix} (a built-in name) OR "
+                  f"accel_history{suffix} + dt: one of the two is required.")
+    return method_info
+
+
+# One METHOD_INFO style everywhere: explicit required flags matching the code
+# above (live smoke wave 1, G7). Every method needs a motion -- a built-in
+# name or a custom history -- which no single parameter carries alone.
+mark_required(METHOD_INFO, {})
+_motion_alternatives(METHOD_INFO)

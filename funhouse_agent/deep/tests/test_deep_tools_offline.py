@@ -222,12 +222,16 @@ def test_vision_tools_build_and_error_without_engine():
     # find_like on the same rule: only where planlens can search (0.10+).
     from funhouse_agent.deep.tools import _find_like_available
     like_names = {"find_like"} if _find_like_available() else set()
+    # a chart and a spreadsheet, each where its library imports (A12)
+    from funhouse_agent.deep.tools import _plot_available, _xlsx_available
+    out_names = (({"plot_data"} if _plot_available() else set())
+                 | ({"write_xlsx"} if _xlsx_available() else set()))
     assert names == {"list_files", "read_pdf_text", "read_text_file",
                      "analyze_image",
                      "analyze_pdf_page", "render_region",
                      "read_reference_figure",
                      "view_worked_example_source", "save_file"} \
-        | document_names | docx_names | like_names
+        | document_names | docx_names | like_names | out_names
 
     # read_reference_figure without args → clear error (no raise).
     out = _invoke(
@@ -316,9 +320,11 @@ def test_write_docx_writes_a_word_file_a_reader_can_open(tmp_path,
                   "![Interpreted profile](profile.png)\n"),
     )
     assert "error" not in out, out
-    assert out["saved"].endswith("memo.docx")
+    # Named by its place in the conversation, never by the server path
+    # (live smoke 1, A6); the file tools resolve that name.
+    assert out["saved"] == "memo.docx"
     assert "warnings" not in out              # the figure was found
-    doc = docx_pkg.Document(out["saved"])
+    doc = docx_pkg.Document(str(tmp_path / out["saved"]))
     texts = [p.text for p in doc.paragraphs]
     assert "Foundation Review" in texts and "Findings" in texts
     assert len(doc.inline_shapes) == 1
@@ -333,7 +339,8 @@ def test_write_docx_reports_a_figure_it_could_not_find(tmp_path, monkeypatch):
                   markdown="![Section](nowhere.png)\n")
     assert "error" not in out                 # the document was still written
     assert any("nowhere.png" in w for w in out["warnings"])
-    assert os.path.isfile(out["saved"])
+    assert out["saved"] == "gap.docx"
+    assert os.path.isfile(tmp_path / out["saved"])
 
 
 def test_write_docx_is_hidden_when_python_docx_is_missing(monkeypatch):
@@ -533,15 +540,21 @@ def test_calc_subagent_configured():
     assert "call_agent" in names
     assert "save_file" in names                         # can persist the full payload
 
-    # Scoped to ANALYSIS modules: call_agent accepts an analysis module and
-    # refuses a reference module (mirror of the references-scope assertion).
+    # Scoped to the ANALYSIS modules plus the reference modules' computing
+    # functions (live smoke wave 1, G3); the two pure search modules stay
+    # with the references librarian.
     call = _tool_by_name(spec["tools"], "call_agent")
     analysis_raw = call.invoke({"agent_name": "bearing_capacity",
                                 "method": "__nope__", "parameters": {}})
     assert "Unknown module" not in analysis_raw         # analysis module allowed
     ref_attempt = json.loads(
         call.invoke({"agent_name": "dm7", "method": "x", "parameters": {}}))
-    assert "Unknown module" in ref_attempt["error"]     # reference module refused
+    assert "Unknown module" not in ref_attempt["error"]  # dm7 equations reach
+    search_attempt = json.loads(call.invoke(
+        {"agent_name": "reference_db", "method": "reference_search",
+         "parameters": {"query": "x"}}))
+    assert "Unknown module" in search_attempt["error"]  # search refused
+    assert "calculate" in names                         # a stated formula
 
 
 def test_calc_subagent_off_by_default():

@@ -109,3 +109,49 @@ def test_displayable_markdown_counts_a_plotly_sidecar_as_the_figure():
     out = core.displayable_markdown(text, ["/root/c/files/pywall.plotly.json"])
     assert "*(Lateral pressure — shown below)*" in out
     assert "not viewable" not in out
+
+
+def test_a_fetched_file_named_by_its_place_is_still_only_an_input(
+        tmp_path, monkeypatch):
+    """N8 under live smoke 1's A6 wording: the SharePoint download now names
+    its local copy by its place in the working folder ("-> 'a b.pdf'"),
+    not by its server path. The collector must still resolve it to the real
+    file, so the turn keeps a fetched file off the produced files (no card);
+    the save and upload results' relative names resolve the same way."""
+    import webapp.sharepoint_store as sp
+    import webapp.sharepoint_tools as spt
+
+    files = tmp_path / "conv" / "files"
+    files.mkdir(parents=True)
+    monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(files))
+    monkeypatch.setenv(sp.ENV_SITE, "https://t.sharepoint.com/sites/X")
+    monkeypatch.setenv(sp.ENV_TOKEN, "tok")
+    monkeypatch.setenv(sp.ENV_ROOT, "Shared Documents/General/GSE_app")
+
+    class FM:
+        def download_file(self, path, local_path=None, return_bytes=True,
+                          overwrite=False):
+            with open(local_path, "wb") as fh:
+                fh.write(b"%PDF fetched")
+            return True
+
+    monkeypatch.setattr(sp, "_STORE", sp.SharePointStore(file_manager=FM()))
+    spt._DOWNLOADS.clear()
+    before = core.snapshot_dir(str(files))
+    out = spt.sharepoint_download_file.invoke(
+        {"path": "uploaded references/a b.pdf"})
+    assert "-> 'a b.pdf' (" in out and str(files) not in out
+
+    c = OutputCollector()
+    c.on_tool_end(ToolMessage(content=out, tool_call_id="1"))
+    assert c.inputs == [os.path.abspath(files / "a b.pdf")]
+    # what the turn worker does with them (webapp.turn_jobs)
+    fetched = set(c.inputs)
+    dir_new = [p for p in core.new_artifacts(str(files), before, [])
+               if os.path.abspath(p) not in fetched]
+    assert dir_new == []
+
+    c.on_tool_end(json.dumps({"saved": "memo.docx"}))
+    c.on_tool_end("Uploaded 'figs/x.png' -> Shared Documents/x/x.png.")
+    assert c.outputs == [os.path.abspath(files / "memo.docx"),
+                         os.path.abspath(files / "figs" / "x.png")]

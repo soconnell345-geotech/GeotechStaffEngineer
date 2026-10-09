@@ -10,8 +10,9 @@ Additionally, on DBR 14+ a notebook's working directory IS its /Workspace
 folder, so even bare default filenames land on the unreliable mount.
 
 Tool responses must therefore (a) default outputs away from /Workspace,
-(b) verify what actually landed on disk, and (c) rescue the content to the
-local temp dir when the target did not store it.
+(b) verify what actually landed on disk, and (c) rescue the content when
+the target did not store it -- into the conversation's working folder when
+a host bound one, else the local temp dir (:func:`rescue_write`).
 """
 
 import contextlib
@@ -234,37 +235,175 @@ def written_file_problem(abs_path: str, expected: bytes = None):
     return None
 
 
-def rescue_write(filename: str, expected: bytes):
-    """Write ``expected`` to the system temp dir as a rescue copy.
+#: Longest full path a rescue copy is given. Windows refuses paths over 260
+#: characters unless long paths are enabled; a rescue exists because a write
+#: failed, so its own name must not fail the same way (live smoke wave 1,
+#: A14: a 266-character figure path).
+MAX_RESCUE_PATH = 200
 
-    Returns the verified absolute rescue path, or ``None`` if even the temp
-    dir write failed (or would overwrite the original path).
+
+def rescue_dir() -> str:
+    """Where a rescue copy goes: the working folder a host bound (the
+    conversation's folder in the web app, where the user receives files),
+    else the system temp dir (a library caller)."""
+    return host_output_dir() or tempfile.gettempdir()
+
+
+def _short_stem(stem: str, room: int) -> str:
+    """``stem`` cut to ``room`` characters, kept unique by a short hash."""
+    if len(stem) <= room:
+        return stem
+    import hashlib
+    tag = hashlib.sha1(stem.encode("utf-8", "replace")).hexdigest()[:6]
+    return stem[:max(room - 7, 8)].rstrip("_- .") + "_" + tag
+
+
+def rescue_write(filename: str, expected: bytes):
+    """Write ``expected`` as a rescue copy in :func:`rescue_dir`.
+
+    Since 2026-10-09 the copy goes into the conversation's working folder
+    when a host bound one -- where the user gets a card for it and the
+    mirror carries it -- instead of the system temp folder, where it reached
+    nobody (live smoke wave 1, A14). Its name is shortened when the full path
+    would exceed :data:`MAX_RESCUE_PATH`, and it never overwrites the path
+    that failed.
+
+    Returns the verified absolute rescue path, or ``None`` if even this
+    write failed.
     """
-    base = os.path.basename(filename)
+    folder = os.path.abspath(rescue_dir())
+    base = os.path.basename(str(filename)) or "rescued_file"
     stem, ext = os.path.splitext(base)
-    rescue = os.path.abspath(os.path.join(tempfile.gettempdir(), base))
-    # Uniquify so two rescues with the same basename never clobber each other.
-    n = 1
-    while os.path.exists(rescue) and rescue != os.path.abspath(filename):
+    stem = _short_stem(stem, MAX_RESCUE_PATH - len(folder) - len(ext) - 5)
+    original = os.path.abspath(str(filename))
+    n = 0
+    while True:
+        name = f"{stem}_{n}{ext}" if n else f"{stem}{ext}"
+        rescue = os.path.join(folder, name)
+        if rescue == original:
+            n += 1
+            continue
+        if not os.path.exists(rescue):
+            break
         try:
             with open(rescue, "rb") as f:
                 if f.read() == expected:
                     return rescue  # identical rescue already present
         except OSError:
             pass
-        rescue = os.path.abspath(
-            os.path.join(tempfile.gettempdir(), f"{stem}_{n}{ext}"))
         n += 1
         if n > 100:
             return None
-    if rescue == os.path.abspath(filename):
-        return None
     try:
+        os.makedirs(folder, exist_ok=True)
         with open(rescue, "wb") as f:
             f.write(expected)
     except OSError:
         return None
     return rescue if written_file_problem(rescue, expected) is None else None
+
+
+def rescue_note(rescue: str) -> str:
+    """The sentence a failed save's error carries about its rescue copy.
+
+    It names the copy as the user will see it -- by its file name in the
+    working folder -- and never asks the model to hand a server path to the
+    user (until 2026-10-09: "report THAT path to the user", with the temp
+    path)."""
+    shown = conversation_name(rescue)
+    if shown != rescue:
+        return (f" A verified copy was saved in the working folder as "
+                f"'{shown}' -- that copy is the file; call it by that name "
+                "(it is attached to the conversation).")
+    return f" A verified copy was saved at '{rescue}' -- that copy is the file."
+
+
+def conversation_name(path):
+    """How a file is named to the model: relative to the working folder a
+    host bound, when the file is inside it (forward slashes; ``.`` for the
+    folder itself); anything else unchanged. The file tools resolve such a
+    name in the working folder (:func:`find_in_working_folder`), so absolute
+    server paths stay internal (live smoke wave 1, A6)."""
+    folder = host_output_dir()
+    if not folder or not isinstance(path, str) or not path.strip():
+        return path
+    try:
+        ap = os.path.abspath(os.path.expanduser(path.strip()))
+    except (TypeError, ValueError):
+        return path
+    if not os.path.isabs(os.path.expanduser(path.strip())) or \
+            not _inside(ap, folder):
+        return path
+    rel = os.path.relpath(ap, os.path.abspath(folder))
+    return "." if rel == "." else rel.replace(os.sep, "/")
+
+
+def _folder_patterns(folder: str):
+    """``(inside, bare)`` regexes: the folder followed by a separator (a
+    path inside it), and the folder on its own."""
+    import re
+    folder = os.path.abspath(folder).rstrip("\\/")
+    spellings = {folder, folder.replace("\\", "/"), folder.replace("/", "\\")}
+    alts = "|".join(re.escape(s) for s in sorted(spellings, key=len,
+                                                 reverse=True))
+    flags = re.IGNORECASE if os.name == "nt" else 0
+    inside = re.compile(f"(?:{alts})[\\\\/]+", flags)
+    bare = re.compile(f"(?:{alts})(?![\\w.\\-])", flags)
+    return inside, bare
+
+
+def hide_working_folder(obj):
+    """``obj`` (a tool result: dicts, lists, strings) with every mention of
+    the host's working folder taken out: a path inside it becomes its
+    conversation-relative name (``figs/x.png``, which the tools resolve), a
+    value that IS the folder becomes ``.``, and the folder named in prose
+    becomes "the working folder". With no host folder ``obj`` is returned
+    as it is. The input is never modified."""
+    folder = host_output_dir()
+    if not folder:
+        return obj
+    inside, bare = _folder_patterns(folder)
+    import re
+    # the rest of a path after the folder: up to a space, quote or bracket
+    rest = re.compile(r"[^\s\"'<>|]*")
+
+    def _relative(m) -> str:
+        tail = rest.match(m.string, m.end()).group(0)
+        return tail.replace("\\", "/")
+
+    def _text(s: str) -> str:
+        if not s:
+            return s
+        if bare.fullmatch(s.strip()):
+            return "."
+        out, pos = [], 0
+        for m in inside.finditer(s):
+            if m.start() < pos:
+                continue
+            out.append(s[pos:m.start()])
+            tail = _relative(m)
+            out.append(tail)
+            pos = m.end() + len(tail)
+        out.append(s[pos:])
+        return bare.sub("the working folder", "".join(out))
+
+    def _walk(o, depth=0):
+        if depth > 40:
+            return o
+        if isinstance(o, str):
+            return _text(o)
+        if isinstance(o, dict):
+            return {k: _walk(v, depth + 1) for k, v in o.items()}
+        if isinstance(o, list):
+            return [_walk(v, depth + 1) for v in o]
+        if isinstance(o, tuple):
+            return tuple(_walk(v, depth + 1) for v in o)
+        return o
+
+    try:
+        return _walk(obj)
+    except Exception:                                  # noqa: BLE001
+        return obj
 
 
 def workspace_write_hint(path: str) -> str:
@@ -404,7 +543,8 @@ def save_verified(path: str, content) -> dict:
     * the write is read back and compared (size + head) — a target that stored
       only a ``PLACEHOLDER`` is caught;
     * on a verify failure or a writer exception, a verified copy is staged to
-      the temp dir and returned as ``rescue_path``.
+      :func:`rescue_dir` (the working folder in the web app) and returned
+      as ``rescue_path``.
 
     ``content`` may be ``str`` or ``bytes``. Returns a structured dict:
     ``{saved, file_exists, file_size_bytes, [save_method], [error],
@@ -432,9 +572,7 @@ def save_verified(path: str, content) -> dict:
         rescue = rescue_write(os.path.abspath(path), expected)
         if rescue:
             out["rescue_path"] = rescue
-            out["error"] += (
-                f" A verified copy was saved to '{rescue}' — report THAT path "
-                "to the user.")
+            out["error"] += rescue_note(rescue)
         if api_error:
             out["workspace_api_note"] = (
                 f"The Databricks workspace API was tried first and failed "
@@ -454,9 +592,7 @@ def save_verified(path: str, content) -> dict:
         rescue = rescue_write(abs_path, expected)
         if rescue:
             out["rescue_path"] = rescue
-            out["error"] += (
-                f" A verified copy was saved to '{rescue}' — report THAT path "
-                "to the user.")
+            out["error"] += rescue_note(rescue)
     if api_error:
         out["workspace_api_note"] = (
             f"The Databricks workspace API was unavailable ({api_error}); used "
@@ -468,6 +604,8 @@ __all__ = [
     "is_databricks", "default_output_dir", "resolve_output_path",
     "DEFAULT_OUTPUT_DIR_ENV", "host_output_dir", "into_working_folder",
     "bind_working_dir", "unbind_working_dir", "working_dir_bound",
-    "written_file_problem", "rescue_write", "workspace_write_hint",
+    "written_file_problem", "rescue_write", "rescue_dir", "rescue_note",
+    "MAX_RESCUE_PATH", "conversation_name", "hide_working_folder",
+    "find_in_working_folder", "workspace_write_hint",
     "workspace_api_upload", "save_verified",
 ]

@@ -140,23 +140,20 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   ("no text layer — use analyze_pdf_page") — for those scanned pages, and for
   figures / plotted cross-sections / a boring-log sheet, use **`analyze_pdf_page`**
   (vision, one page). `analyze_image`, and the `pdf_import` / `dxf_import` /
-  `drawing_ir` agent methods and geo_project ingest, also open real paths. All of
-  these accept an attachment key OR a real path (`/tmp/...`, `/Volumes/...`; a
-  plain path, never a `file:` URI). If a real path errors on every tool, ask the
-  user to copy the file to driver-local `/tmp` or a `/Volumes` path (`/Workspace`
-  reads are unreliable) — do NOT conclude the file cannot be read. Plain file
-  writes to `/Workspace/...` are often not durably stored (the workspace
-  keeps a literal PLACEHOLDER file; binary files like PDFs come out corrupt).
-  Give `output_path` a bare file name: it lands in the working folder, which
+  `drawing_ir` agent methods and geo_project ingest, also open files. All of
+  these accept an attachment key OR a file's name in the working folder (as
+  the tools and the per-turn note name it; a plain name, never a `file:`
+  URI). The read tools reach this conversation's files, the reference
+  documents and any folder the deployment opens; a tool's refusal says
+  what it can read. Give `output_path` a bare file name: it lands in the
+  working folder, which
   is where the user receives files (in the app a tool writes there whatever
   directory is named). **`save_file` writes
-  are VERIFIED**: the response reports the path that actually landed on disk
-  (`saved`, with `file_size_bytes`) — a `/Workspace` save is routed through the
-  authenticated Databricks workspace API when the SDK is available so it stores
-  durably. Whenever a tool response reports a `rescue_path`, the requested
-  location did not store the file — give the user the `rescue_path`, not the
-  original path. `list_files` a destination folder first if you are unsure it
-  exists.
+  are VERIFIED**: the response names the file that actually landed
+  (`saved`, with `file_size_bytes`). Whenever a tool response reports a `rescue_path`, the requested
+  location did not store the file — the rescue copy is the file; call it by
+  the name the error gives. `list_files` a destination folder first if you
+  are unsure it exists.
 - **Theory names and qualifiers are not method names.** Names like
   vesic/meyerhof/hansen and qualifiers like ultimate/net/effective-area are
   `factor_method`/parameter values or output labels, not methods. Each module

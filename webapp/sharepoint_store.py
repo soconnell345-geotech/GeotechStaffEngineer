@@ -100,6 +100,19 @@ MOVED_NAME = "MOVED.txt"
 #: that survive the API but break the resulting URL (``#`` and ``%``).
 _FORBIDDEN_CHARS = '"*:<>?/\\|#%'
 
+#: Characters a title carries that do not belong in a folder name: Markdown
+#: code marks, commas and the ellipsis ``core.auto_title`` ends a cut title
+#: with. Dropped (a comma becomes a word break).
+_DROPPED_CHARS = ("`", ",", "…")
+
+#: ``meta.json`` field holding the conversation's mirror folder NAME, fixed
+#: at its first mirror under a real title and never changed after: a link
+#: handed out to ``<folder>/files/<name>`` must not go stale when the
+#: conversation is retitled (live smoke wave 1, A10 -- an orientation turn's
+#: title is replaced by the first typed question). Renaming changes the
+#: displayed title only.
+MIRROR_FOLDER_KEY = "mirror_folder"
+
 #: Titles that mean "this conversation has no name yet" — mirror under the
 #: thread id instead of making a folder called "New conversation_2026-09-04".
 _PLACEHOLDER_TITLES = {"", "new conversation", "untitled"}
@@ -117,9 +130,15 @@ def sanitize_folder_name(name, max_len: int = MAX_NAME_CHARS) -> str:
     rather than spaces so the folder's URL carries no ``%20`` — breaks up the
     reserved ``_vti_`` token and a leading ``~$``, caps the length, and strips
     the leading/trailing dots, spaces and underscores SharePoint also rejects.
-    Non-ASCII letters are kept; SharePoint accepts them.
+    Non-ASCII letters are kept; SharePoint accepts them. Backticks, commas
+    and the ellipsis "…" are dropped: a title is prose (Markdown code marks,
+    a truncated question), and they made folders like
+    ``I_just_attached_`21.01.pdf`._Before_I_ask_anything,…`` (live smoke
+    wave 1, A10).
     """
     text = str(name or "")
+    for ch in _DROPPED_CHARS:
+        text = text.replace(ch, " " if ch == "," else "")
     cleaned = "".join(
         "_" if (ch in _FORBIDDEN_CHARS or ch.isspace() or ord(ch) < 32) else ch
         for ch in text
@@ -156,9 +175,11 @@ def conversation_folder(thread_id: str, meta: Optional[dict] = None,
     ``<sanitized title>_<YYYY-MM-DD created>`` when the conversation carries a
     real name — the sidebar title, whether the user typed it via Rename or it
     was derived from their first question — and the bare thread id when it does
-    not. Renaming the conversation therefore renames the folder on the next
-    sync (see ``SharePointStore._mirror_locked`` for what happens to the old
-    one).
+    not. The name is computed here once: the first mirror under a real title
+    fixes it in ``meta.json`` (:data:`MIRROR_FOLDER_KEY`), and a later rename
+    changes the displayed title only, so links into the folder keep working.
+    (A changed root or owner still moves the mirror; see
+    ``SharePointStore._mirror_locked``.)
 
     ``siblings`` is the other conversations' metas (``core.list_conversations``).
     A short thread-id shard is appended when one of them would claim the same
@@ -170,6 +191,12 @@ def conversation_folder(thread_id: str, meta: Optional[dict] = None,
     base = _base_folder(thread_id, meta)
     if base == str(thread_id):
         return base                      # already unique
+    # A folder another conversation has already fixed as its own is taken,
+    # whatever that conversation is titled now (see MIRROR_FOLDER_KEY).
+    taken = {str(m.get(MIRROR_FOLDER_KEY) or "") for m in (siblings or [])
+             if str(m.get("thread_id")) != str(thread_id)}
+    if base in taken:
+        return f"{base}_{str(thread_id)[:6]}"
     rivals = [
         m for m in (siblings or [])
         if str(m.get("thread_id")) != str(thread_id)
@@ -365,10 +392,43 @@ class SharePointStore:
         root = root or core.thread_root(thread_id)
         try:
             meta = core.load_meta(thread_id, root)
+            pinned = str((meta or {}).get(MIRROR_FOLDER_KEY) or "").strip()
+            if pinned:
+                return pinned            # fixed at the first mirror
             siblings = core.list_conversations(root)
         except Exception:
             return str(thread_id)
         return conversation_folder(thread_id, meta, siblings)
+
+    def _pin_folder(self, thread_id: str, root: Optional[str],
+                    manifest: dict) -> None:
+        """Fix the conversation's folder name (``MIRROR_FOLDER_KEY``) the
+        first time it is mirrored under a real title -- or, for a
+        conversation mirrored before this field existed, the titled folder it
+        already has, so it does not move. An untitled conversation is not
+        fixed yet: it mirrors under its thread id until it has a title.
+        Best-effort."""
+        try:
+            root = root or core.thread_root(thread_id)
+            meta = core.load_meta(thread_id, root)
+            if not meta or str(meta.get(MIRROR_FOLDER_KEY) or "").strip():
+                return
+            name = None
+            previous = manifest.get("folder") if isinstance(manifest,
+                                                            dict) else None
+            if isinstance(previous, str) and previous.strip("/"):
+                last = previous.rstrip("/").rsplit("/", 1)[-1]
+                if last and last != str(thread_id):
+                    name = last
+            if name is None:
+                name = conversation_folder(thread_id, meta,
+                                           core.list_conversations(root))
+                if name == str(thread_id):
+                    return
+            meta[MIRROR_FOLDER_KEY] = name
+            core.save_meta(thread_id, meta, root)
+        except Exception:                              # noqa: BLE001
+            pass
 
     def session_folder(self, thread_id: str, root: Optional[str] = None) -> str:
         """The remote folder path for one conversation.
@@ -436,10 +496,12 @@ class SharePointStore:
             return
         manifest = _load_manifest(conv_dir)
         files = _manifest_files(manifest)
+        self._pin_folder(thread_id, root, manifest)
         remote_base = self.session_folder(thread_id, root)
         summary["folder"] = remote_base
 
-        # A rename (or a changed GEOTECH_SHAREPOINT_ROOT) moves the mirror to a
+        # A changed GEOTECH_SHAREPOINT_ROOT (or, before folder names were
+        # fixed at the first mirror, a rename) moves the mirror to a
         # new folder. Rather than move it server-side — the Funhouse file
         # manager exposes no rename/move, and a half-finished move is worse
         # than a duplicate — re-upload into the new folder and leave a pointer
@@ -453,6 +515,13 @@ class SharePointStore:
 
         for dirpath, _dirnames, filenames in os.walk(conv_dir):
             rel_dir = os.path.relpath(dirpath, conv_dir).replace(os.sep, "/")
+            # The working folder's tool scratch (files/.scratch, any dot-
+            # folder) and rebuildable caches (files/digest) stay local
+            # (core.mirror_skips_dir). Pruned here so the walk never enters.
+            _dirnames[:] = [
+                d for d in _dirnames
+                if not core.mirror_skips_dir(
+                    d if rel_dir == "." else f"{rel_dir}/{d}")]
             for name in sorted(filenames):
                 if name == MANIFEST_NAME:
                     continue

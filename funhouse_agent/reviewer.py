@@ -267,7 +267,11 @@ CONSULTANT_FRAMING = (
     "nothing, say so rather than citing from memory. If "
     "a value lives in a design chart, find it with figure_search and read it off "
     "with read_reference_figure (never infer chart values from memory). Do NOT "
-    "perform engineering calculations — reference lookup only.\n\nQuestion: "
+    "run engineering analyses — that is the asker's job. When the question "
+    "gives the inputs and the reference gives the equation or table, return "
+    "the value the reference's own function computes, or evaluate the "
+    "equation with the `calculate` tool if you have it; never do arithmetic "
+    "in your head.\n\nQuestion: "
 )
 
 

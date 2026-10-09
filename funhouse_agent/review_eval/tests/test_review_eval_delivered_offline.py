@@ -138,8 +138,9 @@ def _one_call_model(name, args, answer):
 
 
 def test_a_file_reported_outside_the_run_is_delivered(tmp_path):
-    """N1: save_file honours an absolute path outside the run's folder; the
-    runner copies the reported file in, as the app does."""
+    """N1 + the 2026-10-09 confinement (live smoke A2): a save_file aimed at
+    an absolute path outside the run's folder lands IN the run's folder
+    instead (file name kept), and is delivered."""
     from funhouse_agent.review_eval.runner import run_task
     outside = tmp_path / "elsewhere"
     outside.mkdir()
@@ -154,10 +155,8 @@ def test_a_file_reported_outside_the_run_is_delivered(tmp_path):
     res = run_task(task, model, arm="baseline", arm_env={}, docs_dir=None,
                    run_dir=str(tmp_path / "run"))
     assert res["error"] is None, res.get("traceback")
-    assert target.is_file()                     # where the tool put it
+    assert not target.exists()                  # nothing written outside
     assert os.path.join("files", "table.csv") in res["files"]
-    assert res["imported_outputs"] == {
-        str(target): os.path.join("files", "table.csv")}
     assert res["score"]["passed"], res["checks"]
 
 

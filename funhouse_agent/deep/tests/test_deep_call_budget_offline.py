@@ -147,10 +147,11 @@ def _final_text(result) -> str:
 def test_references_spec_carries_budget_middleware_by_default():
     spec = build_references_subagent()
     mws = spec.get("middleware", [])
-    assert len(mws) == 1
+    # the budget, then the scratch tools kept off the consult's menu (G5)
+    assert len(mws) == 2
     mw = mws[0]
     assert isinstance(mw, ModelCallBudgetMiddleware)
-    assert mw.run_limit == DEFAULT_REFERENCES_MAX_MODEL_CALLS == 8
+    assert mw.run_limit == DEFAULT_REFERENCES_MAX_MODEL_CALLS == 10
     # Graceful, never raising.
     assert mw.exit_behavior == "end"
 
@@ -163,7 +164,9 @@ def test_references_spec_budget_is_configurable():
 @pytest.mark.parametrize("disabled", [None, 0])
 def test_references_spec_budget_can_be_disabled(disabled):
     spec = build_references_subagent(max_model_calls=disabled)
-    assert "middleware" not in spec
+    # no budget; the scratch tools stay off the consult's menu (G5)
+    assert not any(isinstance(m, ModelCallBudgetMiddleware)
+                   for m in spec.get("middleware", []))
 
 
 def test_budget_middleware_rejects_nonpositive_budget():

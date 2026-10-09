@@ -270,7 +270,8 @@ class TestValidationSaysWhatToPass:
         out = call_agent("liquefaction", "liquefaction_analysis", {
             "depth": [3], "N160": [10], "gamma": [18], "gwt_depth": 1,
             "amax_g": 0.3, "method": "nceer2001"})
-        assert "FC (Fines content (%)" in out["error"]
+        # names the input and that the SPT route needs it (G7)
+        assert "FC (REQUIRED for SPT input: fines content (%)" in out["error"]
 
     def test_unknown_reinforcement_name_is_named(self):
         from funhouse_agent.adapters.retaining_walls import (

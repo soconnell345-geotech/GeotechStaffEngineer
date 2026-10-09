@@ -127,13 +127,22 @@ def test_without_an_engine_the_candidates_are_marked_unverified(gt):
     assert out["instances"] == 0 and out["unverified"]
 
 
-def test_the_dispatcher_saves_to_the_working_folder(gt, tmp_path):
+def test_the_dispatcher_saves_to_the_conversation_scratch(gt, tmp_path):
+    """Live smoke 1, A9: the contact sheets are working images -- in the
+    conversation's scratch folder (no download cards), named by a short
+    name analyze_image resolves, never by their server path."""
+    from funhouse_agent.vision_tools import (SCRATCH_DIR,
+                                             _resolve_attachment_or_path)
     cands = _candidates(gt, 0, gt.example_bbox)
     out = json.loads(_dispatch_find_like(
         {"attachment_key": "set", "page": 0, "bbox": list(gt.example_bbox),
          "text": "GCE"}, TruthReader(gt, cands), {"set": gt.pdf}))
     assert "error" not in out, out
-    assert out["contact_sheets"][0].startswith(str(tmp_path / "work"))
+    first = out["contact_sheets"][0]
+    assert first.startswith(f"{SCRATCH_DIR}/") and str(tmp_path) not in first
+    assert (tmp_path / "work" / first).is_file()
+    data, kind = _resolve_attachment_or_path(first, {})
+    assert kind == "path" and data[:8] == b"\x89PNG\r\n\x1a\n"
     assert len(json.dumps(out)) <= fl.RESULT_BUDGET_CHARS
 
 

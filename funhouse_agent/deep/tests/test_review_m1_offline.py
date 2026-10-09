@@ -324,11 +324,11 @@ def test_markdown_comment_log():
 def test_markdown_renders_as_a_word_table(tmp_path):
     docx = pytest.importorskip("docx")
     out = json.loads(vision_tools._dispatch_write_docx(
-        {"path": str(tmp_path / "log.docx"),
+        {"path": str(tmp_path / "work" / "log.docx"),
          "markdown": RF.to_markdown(_rendered_findings()),
          "title": "Review comments"}, vision_tools._default_save_fn))
     assert "error" not in out, out
-    doc = docx.Document(str(tmp_path / "log.docx"))
+    doc = docx.Document(str(tmp_path / "work" / "log.docx"))
     table = doc.tables[0]
     assert [c.text for c in table.rows[0].cells] == [
         "No.", "Severity", "Finding", "Where", "Evidence"]
@@ -533,7 +533,8 @@ def sheet_png(gt, tmp_path):
         png, _info = doc.render_thumbnails()[0]
     finally:
         doc.close()
-    path = tmp_path / "contact_sheet_1.png"
+    # in the working folder: the read tools read the conversation's files
+    path = tmp_path / "work" / "contact_sheet_1.png"
     path.write_bytes(png)
     return str(path)
 
@@ -569,7 +570,7 @@ def test_inline_analyze_image_of_a_file_is_shown_not_described(sheet_png):
 
 def test_inline_analyze_image_keeps_the_call_for_what_it_cannot_show(
         tmp_path):
-    not_image = tmp_path / "notes.txt"
+    not_image = tmp_path / "work" / "notes.txt"
     not_image.write_text("plain text", encoding="utf-8")
     tool, eng = _analyze_image(True)
     out = json.loads(tool.invoke({"attachment_key": str(not_image)}))
@@ -756,7 +757,7 @@ def test_a_citation_by_handle_is_resolved_and_named(gt, tmp_path):
         {"format": "markdown", "marked_up_pdf": True}))
     assert rep["marked_up"][0]["n_written"] == 1, rep
     # a handle opened from a PATH (not an upload) resolves too
-    path = tmp_path / "copy.pdf"
+    path = tmp_path / "work" / "copy.pdf"
     path.write_bytes(gt.pdf)
     by_path = _open(str(path), {})
     assert by_path != handle

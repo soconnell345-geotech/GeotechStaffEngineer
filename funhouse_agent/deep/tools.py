@@ -31,6 +31,8 @@ from typing import Any, Callable, Dict, Optional
 from langchain_core.tools import StructuredTool
 
 from funhouse_agent import document_tools as _document_tools
+from funhouse_agent.deep.fit_results import (fit_catalog, fit_method_choices,
+                                             fit_method_doc, fit_method_list)
 from funhouse_agent.deep.strict_args import strict_tool, strict_tools
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -185,6 +187,120 @@ def _find_like_available() -> bool:
     return ok
 
 
+def _plot_available() -> bool:
+    """Whether the data-plot module can be imported (matplotlib is a core
+    app dependency, so this is a guard for a stripped library install)."""
+    try:
+        import profile_figure  # noqa: F401
+    except Exception:                                  # noqa: BLE001
+        return False
+    return True
+
+
+def _xlsx_available() -> bool:
+    try:
+        from funhouse_agent.xlsx_writer import available
+    except Exception:                                  # noqa: BLE001
+        return False
+    return available()
+
+
+#: What the app adds to the module's own description of ``plot_data``.
+_PLOT_APP_NOTE = (
+    " In this app the chart appears as an INTERACTIVE card under your reply "
+    "(zoom and hover); the PNG it also saves is the copy for a report "
+    "(html_img_tag) or a Word document (![title](<output_path>) in "
+    "write_docx). Give output_path a bare file name, or leave it out. Never "
+    "draw a chart by hand as SVG or as text.")
+
+
+def _plot_description() -> str:
+    """``plot_data``'s model-facing description, in the module's own words
+    (``profile_figure`` METHOD_INFO), with the app's note."""
+    try:
+        from funhouse_agent.adapters.profile_figure_adapter import METHOD_INFO
+        info = METHOD_INFO["plot_data"]
+        params = info.get("parameters") or {}
+        lines = [str(info.get("brief") or "").strip()]
+        for key in ("series", "xlabel", "ylabel", "depth_axis", "logx",
+                    "hlines", "vlines", "legend", "interactive"):
+            desc = (params.get(key) or {}).get("description")
+            if desc:
+                lines.append(f"{key}: {desc}")
+        return " ".join(lines) + _PLOT_APP_NOTE
+    except Exception:                                  # noqa: BLE001
+        return ("Plot one or more x/y data series (series: [{x: [...], y: "
+                "[...], label}]) -- SPT or CPT vs depth (depth_axis=true), "
+                "settlement vs time, a sweep, quantities from a document."
+                + _PLOT_APP_NOTE)
+
+
+#: ``write_xlsx``'s model-facing description.
+WRITE_XLSX_DESCRIPTION = (
+    "Write an Excel workbook (.xlsx), one sheet per table -- a schedule, a "
+    "quantity take-off, a comment log, test results, a comparison table: "
+    "anything the reader will sort, filter or calculate with. Give the "
+    "tables EITHER as 'sheets' = [{name, rows}] with rows a list of lists "
+    "(the first row is the header) or a list of objects (their keys become "
+    "the header), OR as 'markdown' holding pipe tables (each table becomes "
+    "its own sheet, named by the heading above it); both may be given. "
+    "Numbers are written as numbers (an id with a leading zero stays text), "
+    "the header row is bold and frozen, columns are sized to fit. 'path' is "
+    "the file name (.xlsx is added); a bare name lands in the working folder "
+    "and appears as a download card. Never save SpreadsheetML, an .xls or a "
+    "CSV in its place when the user asked for Excel.")
+
+
+def _write_xlsx(path: str, sheets, markdown: str, save_fn) -> str:
+    """The ``write_xlsx`` tool: build the workbook, save it through the
+    host's ``save_fn`` (so the web app records it and gives it a card), and
+    name it by its conversation-relative name."""
+    from funhouse_agent import xlsx_writer
+    from funhouse_agent._fileio import (conversation_name, host_output_dir,
+                                        into_working_folder,
+                                        resolve_output_path)
+    name = str(path or "").strip() or "tables.xlsx"
+    stem, ext = os.path.splitext(name)
+    if ext.lower() != ".xlsx":
+        name = (stem if ext.lower() in (".xls", ".csv", ".xml", ".txt")
+                else name) + ".xlsx"
+    try:
+        data, summary, warnings = xlsx_writer.build_workbook(
+            sheets=sheets if isinstance(sheets, list) else None,
+            markdown=str(markdown or ""))
+    except ValueError as exc:
+        return json.dumps({"error": str(exc)})
+    except Exception as exc:                           # noqa: BLE001
+        return json.dumps({"error": f"the workbook could not be built: "
+                                    f"{type(exc).__name__}: {exc}"})
+    target = (into_working_folder(name) if host_output_dir()
+              else resolve_output_path(name))
+    try:
+        saved = save_fn(target, data)
+    except Exception as exc:                           # noqa: BLE001
+        return json.dumps({"error": f"the workbook could not be saved: "
+                                    f"{type(exc).__name__}: {exc}"})
+    saved_abs = os.path.abspath(str(saved or target))
+    size = os.path.getsize(saved_abs) if os.path.isfile(saved_abs) else 0
+    if size < len(data):
+        return json.dumps({"error": f"the workbook was written but the file "
+                                    f"holds {size} of {len(data)} bytes",
+                           "saved": conversation_name(saved_abs)})
+    out: Dict[str, Any] = {"saved": conversation_name(saved_abs),
+                           "file_size_bytes": size, "sheets": summary}
+    if warnings:
+        out["warnings"] = warnings
+    hook = getattr(save_fn, "saved_note", None)
+    if callable(hook):
+        try:
+            note = hook(saved_abs)
+        except Exception:                              # noqa: BLE001
+            note = None
+        if note:
+            out["note"] = str(note)
+    return json.dumps(out, default=str)
+
+
 def _resolve_reference_cap(max_result_chars: int,
                            reference_result_chars: Optional[int]) -> int:
     """Resolve the cap used for REFERENCE reads.
@@ -286,6 +402,23 @@ def _resolve_describe_method(agent_name, method, allowed_agents):
                 )
             return out
 
+    # (a2) A text-tool name on a reference module ('search', 'text_search',
+    # 'Text Retrieval') -> that module's own search / section method (G13).
+    try:
+        from funhouse_agent.dispatch import _text_tool_for
+        text_tool = _text_tool_for(_load_adapter(agent_name), method)
+    except Exception:
+        text_tool = None
+    if text_tool is not None:
+        docs = _describe_method(agent_name=agent_name, method=text_tool,
+                                allowed_agents=allowed_agents)
+        if "error" not in docs:
+            out = dict(docs)
+            out["_note"] = (f"'{method}' is not a method name — this "
+                            f"module's text tool is '{text_tool}'. Showing "
+                            "its docs.")
+            return out
+
     # (b) A method of ANOTHER module (e.g. an apparent-pressure envelope asked
     # of retaining_walls): describing is read-only, so show that method's docs
     # and say where it lives — call_agent still refuses to run it here.
@@ -330,7 +463,50 @@ def _resolve_describe_method(agent_name, method, allowed_agents):
             )
             return out
 
+    # (d) A guess that can only mean ONE method: the module's only method,
+    # or the one method whose name contains the guess (or all its words) --
+    # 'infinite_slope' -> 'infinite_slope_fos', 'basal_heave' ->
+    # 'check_basal_heave'. Describing is read-only, so it is answered with
+    # that method's docs (live smoke wave 1, G12: 33 of 106 questions spent
+    # a model call on a guessed describe_method name).
+    only = _unique_method_match(mod, method)
+    if only is not None:
+        docs = _describe_method(
+            agent_name=agent_name, method=only, allowed_agents=allowed_agents,
+        )
+        if "error" not in docs:
+            out = dict(docs)
+            out["_note"] = (
+                f"'{method}' is not a '{agent_name}' method name; the one "
+                f"method it can mean is '{only}'. Showing its docs; call "
+                f"call_agent('{agent_name}', '{only}', {{...}}).")
+            return out
+
     return None
+
+
+def _unique_method_match(mod, guess) -> Optional[str]:
+    """The one listed method ``guess`` can mean, else ``None``: the module's
+    only method, or the single method whose name contains the guess or all
+    of its words."""
+    from funhouse_agent.dispatch import _name_tokens
+    names = [m for m, info in mod.METHOD_INFO.items()
+             if not info.get("alias_of")]
+    if len(names) == 1:
+        return names[0]
+    g = str(guess or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if len(g) < 4:
+        return None
+    contains = [m for m in names if g in m.lower()]
+    if len(contains) == 1:
+        return contains[0]
+    if contains:
+        return None
+    words = _name_tokens(g)
+    if not words:
+        return None
+    by_words = [m for m in names if words <= _name_tokens(m)]
+    return by_words[0] if len(by_words) == 1 else None
 
 
 def _enriched_unknown_method_error(agent_name, method, allowed_agents):
@@ -406,8 +582,16 @@ def make_core_tools(
     allowed_agents=None,
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
     reference_result_chars: Optional[int] = None,
+    attachments: Optional[Dict[str, bytes]] = None,
 ) -> list:
     """Build the 4 core dispatch tools bound to an ``allowed_agents`` scope.
+
+    ``attachments`` is the conversation's ``{key: bytes}`` (the live dict the
+    host mutates): ``call_agent`` hands it to the dispatcher so a method
+    given ``attachment_key`` (``parse_diggs``...) reads the uploaded file.
+    Until 2026-10-09 it passed ``None`` and the key never resolved (live
+    smoke wave 1, A8); a key naming a file in the working folder resolves
+    either way.
 
     Parameters
     ----------
@@ -441,10 +625,9 @@ def make_core_tools(
     def list_agents() -> str:
         """List all available geotechnical analysis modules with brief
         descriptions."""
-        return _truncate(
-            json.dumps(_list_agents(allowed_agents=allowed_agents), default=str),
-            max_result_chars,
-        )
+        # Fitted by structure, never cut mid-JSON (live smoke wave 1, G1).
+        return fit_catalog(_list_agents(allowed_agents=allowed_agents),
+                           max_result_chars)
 
     def list_methods(agent_name: str = "", category: str = "") -> str:
         """List available methods for a specific analysis module.
@@ -454,17 +637,13 @@ def make_core_tools(
         modules to pick from. ``category`` is an optional category filter;
         empty string for all.
         """
-        return _truncate(
-            json.dumps(
-                _list_methods(
-                    agent_name=agent_name,
-                    category=category or "",
-                    allowed_agents=allowed_agents,
-                ),
-                default=str,
+        return fit_method_list(
+            _list_methods(
+                agent_name=agent_name,
+                category=category or "",
+                allowed_agents=allowed_agents,
             ),
-            max_result_chars,
-        )
+            max_result_chars, agent_name)
 
     def describe_method(agent_name: str, method: str) -> str:
         """Get full parameter documentation for a method. Always call this
@@ -502,7 +681,12 @@ def make_core_tools(
                 )
                 if enriched is not None:
                     result = enriched
-        return _truncate(json.dumps(result, default=str), max_result_chars)
+        # Never cut mid-JSON: a long doc keeps every parameter and shortens
+        # its prose; a long method list drops briefs (live smoke wave 1, G1).
+        if isinstance(result, dict) and "available_methods" in result:
+            return fit_method_choices(result, max_result_chars, agent_name,
+                                      result.get("closest") or ())
+        return fit_method_doc(result, max_result_chars)
 
     def call_agent(
         agent_name: str,
@@ -537,7 +721,7 @@ def make_core_tools(
                     agent_name=agent_name,
                     method=method,
                     parameters=params,
-                    attachments=None,
+                    attachments=attachments,
                     allowed_agents=allowed_agents,
                 ),
                 default=str,
@@ -707,6 +891,12 @@ def make_vision_tools(
         # Word output, on the same rule: offered only where it can be produced.
         if _docx_available():
             include |= {"write_docx"}
+        # A plot and a spreadsheet on BOTH pages (live smoke wave 1, A12: the
+        # review page had no plot tool and neither page wrote Excel).
+        if _plot_available():
+            include |= {"plot_data"}
+        if _xlsx_available():
+            include |= {"write_xlsx"}
         # find_like needs planlens 0.10 (planlens.document.findlike).
         if _find_like_available():
             include |= {"find_like"}
@@ -752,16 +942,17 @@ def make_vision_tools(
 
     def list_files(path: str = ".", max_entries: int = 200,
                    depth: int = 0) -> str:
-        """Browse a REAL directory (read-only) to find the user's files and
-        where to save output. Returns each entry's name, type (dir/file), size,
-        and modified time.
+        """List the files this conversation holds (read-only): each entry's
+        name, type (dir/file), size and modified time.
 
-        Use this to DISCOVER the real folder structure before reading a report
-        or choosing a save path — the scratch filesystem's ``ls`` / ``read_file``
-        do NOT see real paths (``/Workspace``, ``/Volumes``, ``/tmp``), this tool
-        does. ``path`` is a real directory; ``max_entries`` caps the count
-        (default 200); ``depth`` descends sub-directories (0 = children only,
-        max 2).
+        ``path`` defaults to ``.``, the conversation's working folder (the
+        user's uploads, the files fetched or produced, and ``.scratch`` for
+        tool scratch images); a relative path is inside it. The read tools
+        reach only this conversation's files, the reference documents and any
+        folder the deployment opens -- not the server's disk. The scratch
+        filesystem's ``ls`` / ``read_file`` see none of these. ``max_entries``
+        caps the count (default 200); ``depth`` descends sub-directories (0 =
+        children only, max 2).
         """
         return _dispatch(
             "list_files",
@@ -773,9 +964,8 @@ def make_vision_tools(
         this FIRST for a text-based report (boring logs, lab summaries,
         recommendations, specs) instead of vision-reading every page.
 
-        ``source`` is an attachment key OR a real filesystem path
-        (driver-local /tmp/... or a /Volumes/... path; /Workspace reads are
-        unreliable). ``pages`` is an int, a list, or a "start-end" range like
+        ``source`` is an attachment key or a file name in the working folder
+        (a relative path is inside it). ``pages`` is an int, a list, or a "start-end" range like
         "0-9"; omit for the first several pages. A page with no text layer
         (scanned image) is flagged per-page — use analyze_pdf_page for those.
         """
@@ -785,21 +975,23 @@ def make_vision_tools(
         return _dispatch("read_pdf_text", args)
 
     def read_text_file(path: str, offset: int = 0, max_chars: int = 6000) -> str:
-        """Read a REAL text file from disk -- HTML, TXT, CSV, JSON, MD, such
-        as a report source written earlier. The scratch filesystem's
-        ``read_file`` cannot see real files. ``path`` is a real path (a bare
-        name is looked up in the working folder); long files page with
+        """Read a text file this conversation holds -- HTML, TXT, CSV, JSON,
+        MD, such as a report source written earlier. The scratch filesystem's
+        ``read_file`` cannot see it. ``path`` is a file name in the working
+        folder (a relative path is inside it); long files page with
         ``offset`` (the result gives ``next_offset``)."""
         return _dispatch("read_text_file",
                          {"path": path, "offset": offset, "max_chars": max_chars})
 
     def analyze_image(attachment_key: str,
                       prompt: str = "Describe this image.") -> str:
-        """Analyze an attached image using vision. Returns text
-        description/analysis of the image content.
+        """Analyze an image using vision. Returns text description/analysis
+        of the image content.
 
-        ``attachment_key`` is the key of the attached image file; ``prompt``
-        is what to extract or analyze from the image.
+        ``attachment_key`` is an attached image's key, an image file's name
+        in the working folder, or the name a tool returned for a scratch
+        image (``.scratch/...`` -- render_page_thumbnails' contact sheets,
+        find_like's sheets); ``prompt`` is what to extract or analyze.
         """
         args = {"attachment_key": attachment_key, "prompt": prompt}
         if inline_image_files:
@@ -853,7 +1045,9 @@ def make_vision_tools(
         Returns the instances by page, callouts (a leader is drawn from the
         tag; ``points_to`` is where it points) apart from legend entries
         (``include_legend`` to list them), uncertain reads to zoom on, and
-        contact sheets saved to the working folder for the user to check.
+        contact sheets of the candidates, written to the conversation's
+        scratch folder (``.scratch/...``, no download cards; look at one with
+        analyze_image by the name given).
         Use it when the user wants EVERY occurrence of one repeated mark
         across many sheets; for anything else the reading and zoom tools are
         the way.
@@ -1174,6 +1368,33 @@ def make_vision_tools(
             save_fn,
         )
 
+    def plot_data(series: list, title: str = "", xlabel: str = "",
+                  ylabel: str = "", depth_axis: bool = False,
+                  logx: bool = False, logy: bool = False,
+                  hlines: Optional[list] = None,
+                  vlines: Optional[list] = None,
+                  legend: Optional[bool] = None, output_path: str = "",
+                  interactive: bool = True) -> str:
+        """Plot x/y data (the ``profile_figure`` module's ``plot_data``)."""
+        params: Dict[str, Any] = {
+            "series": series, "title": title, "xlabel": xlabel,
+            "ylabel": ylabel, "depth_axis": depth_axis, "logx": logx,
+            "logy": logy, "interactive": interactive}
+        for k, v in (("hlines", hlines), ("vlines", vlines),
+                     ("legend", legend), ("output_path", output_path or None)):
+            if v is not None:
+                params[k] = v
+        return _truncate(json.dumps(
+            _call_agent(agent_name="profile_figure", method="plot_data",
+                        parameters=params, attachments=attachments,
+                        allowed_agents=None),
+            default=str), max_result_chars)
+
+    def write_xlsx(path: str, sheets: Optional[list] = None,
+                   markdown: str = "") -> str:
+        """Write an Excel workbook (one sheet per table)."""
+        return _write_xlsx(path, sheets, markdown, save_fn)
+
     # Each document tool is described to the model in planlens' own words, and
     # the ones a newer planlens added appear only where they exist.
     document_review_builders = [
@@ -1200,28 +1421,35 @@ def make_vision_tools(
     _builders = {
         "list_files": (
             list_files,
-            "Browse a REAL directory (read-only) to find the user's files and "
-            "where to save output. Returns name, type (dir/file), size, and "
-            "modified time per entry. Use it to discover the real folder "
-            "structure (/Workspace, /Volumes, /tmp) before reading or saving; "
-            "the scratch filesystem does not see real paths.",
+            "List the files this conversation holds (read-only): name, type "
+            "(dir/file), size and modified time per entry. path defaults to "
+            "'.', the conversation's working folder (uploads, fetched and "
+            "produced files, and .scratch for tool scratch images); a "
+            "relative path is inside it. The read tools reach only this "
+            "conversation's files, the reference documents and any folder the "
+            "deployment opens. The scratch filesystem's ls does not see them.",
         ),
         "read_pdf_text": (
             read_pdf_text,
             "Extract the TEXT LAYER of a PDF (PyMuPDF — cheap, no vision). "
             "First-choice reader for a text-based report; a scanned page with "
             "no text layer is flagged per-page (use analyze_pdf_page there). "
-            "source is an attachment key or a real filesystem path.",
+            "source is an attachment key or a file name in the working "
+            "folder.",
         ),
         "read_text_file": (
             read_text_file,
-            "Read a REAL text file from disk (HTML, TXT, CSV, JSON, MD -- e.g. "
-            "a report source written earlier). The scratch read_file cannot "
-            "see real files. Pages with offset / next_offset.",
+            "Read a text file this conversation holds (HTML, TXT, CSV, JSON, "
+            "MD -- e.g. a report source written earlier), by its name in the "
+            "working folder. The scratch read_file cannot see it. Pages with "
+            "offset / next_offset.",
         ),
         "analyze_image": (
             analyze_image,
-            "Analyze an attached image using vision. Returns text "
+            "Analyze an image using vision: an attached image (its key), an "
+            "image file in the working folder, or a scratch image a tool "
+            "returned by name (.scratch/... from render_page_thumbnails or "
+            "find_like). Returns text "
             "description/analysis of the image content.",
         ),
         "analyze_pdf_page": (
@@ -1291,6 +1519,10 @@ def make_vision_tools(
             "warnings and the document is still written. For a Mathcad-style "
             "calculation package use the calc_package module instead.",
         )} if _docx_available() else {}),
+        **({"plot_data": (plot_data, _plot_description())}
+           if _plot_available() else {}),
+        **({"write_xlsx": (write_xlsx, WRITE_XLSX_DESCRIPTION)}
+           if _xlsx_available() else {}),
     }
 
     overrides = dict(description_overrides or {})
