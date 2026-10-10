@@ -189,15 +189,17 @@ detailed Phase-E history; this file supersedes it.
 
 Machine note: heavy test suites must not overlap on the owner's laptop. Background runs were stopped twice for low memory on 2026-10-07/08.
 
-### Open to-dos (refreshed 2026-10-08)
+### Open to-dos (refreshed 2026-10-10)
 
 One list for the whole project; other notes point here.
 
 **A. Owner — the test run**
-1. Install 5.32.1 (released 2026-10-08) once the Nexus mirror delivers it:
-   `%pip install "geotech-staff-engineer==5.32.1"` (brings planlens 0.12.0).
-   If the mirror lags, the release wheels go to `../foundry_handoff/`
-   (install planlens first).
+1. Install 5.33.0 (released 2026-10-09) once the Nexus mirror delivers it:
+   `%pip install "geotech-staff-engineer==5.33.0"` (brings planlens 0.13.0
+   and geotech-references 1.4.1). If the mirror lags, the release wheels are
+   in `../foundry_handoff/` (install planlens first). Then the dosdev round
+   (`tinyapps/TINYAPPS.md` recipe) and the CfA questions (Where things
+   stand, item 0).
 2. Check 5 in `module_work/LIVE_TEST_QUEUE.md` (SharePoint links,
    remembered files, past conversations; it needs the Funhouse app) when the
    Funhouse budget renews. Use the cheaper model and a short PDF. Every
@@ -285,7 +287,9 @@ One list for the whole project; other notes point here.
        13.7 s to 6.9 s, and a second box on a page takes 0.3–0.6 s; the
        counts are now said. See `VISUAL_SCALES_DESIGN.md` §12. The
        rectangles are still open.
-   - **(v) GEC-12 Figure 7-15 may be mis-digitised.** The W3 design found this
+   - **(v) DONE 2026-10-09, in 5.33.0** (refs d9dab7a, app 7d8771e): re-measured
+     off the figure; the reference refuses outside 30–43.75°, and Nordlund
+     warns. The original note follows. **GEC-12 Figure 7-15 may be mis-digitised.** The W3 design found this
      in its §10, item 8. `geotech_references/gec_12/figures.py` (used by
      `axial_pile`) differs from a code reading of the chart by −19 % at 32°
      to +6 % at 42–43°; zoomed renders support the code reading. Re-verify
@@ -380,11 +384,12 @@ rules from single examples)
     cross-reference resolver and revision compare only if they earn a suite
     task (`module_work/REVIEW_HARNESS.md` "Next").
 
-**D. Foundry (the measurement bed).** No brief is running. Briefs 1–4 are
-done (`../foundry_handoff/`).
+**D. Foundry (the measurement bed).** No brief is running. Briefs 1–5 are
+done (`../foundry_handoff/`); brief 5 was read in full on 2026-10-08 (3c).
+A brief 6 would measure on GPT what the Claude smoke waves could not (list
+E5 below).
 - Brief 4 (5.32.1rc3) was read in full on 2026-10-08: TRACE_REVIEW, run 6,
   FOUNDRY RUN 2.
-- Brief 5 is next (Where things stand, 3c).
 - Heavy measurement goes here, not to Funhouse, whose monthly token budget
   the owner ran out of on 2026-10-07.
 - The geotech eval rerun still needs a numpy-2 repository (numpy 1.26 there
@@ -393,6 +398,88 @@ done (`../foundry_handoff/`).
 The package now speaks
 Foundry's Responses route itself (`GEOTECH_FOUNDRY_ROUTE`); the FDE's glue is
 still useful for its retry/throttle and per-task process isolation.
+
+**E. Technical follow-ups (added 2026-10-10)**
+Sources: the brief 5 TRACE_REVIEW and the live smoke reviews
+(`module_work/live_smoke/runs/<wave>/REVIEW.md`, gitignored). The IDs are
+those files' IDs. None blocks the testers.
+
+- **E1. Engineering: the owner's decisions** (owner's rule: methods open to
+  assumptions; grey areas go to the references sub-agent).
+  - **Downdrag (a282d48, next release).**
+    - Default: `auto` (UFC 3-220-20, today's numbers), or report the
+      comparison without picking?
+    - The materiality thresholds: plane max(0.5 m, 5 % L); drag
+      max(10 kN, 10 %).
+    - `skin_friction_stress="final"` (UFC step 2) as the default?
+  - **fem2d (4bf710c, next release).** Is stage 0 always the gravity stage
+    (`reset_displacements_after` default)?
+- **E2. Engineering: build items.**
+  - **Downdrag:**
+    - the ~4 % quadrature mismatch between the crossing search and the
+      reported drag;
+    - the Endo ratios are unverified (CGPR #56 is not in the repo);
+    - post-liquefaction drag (GEC-10 §10.7) is not implemented.
+  - **fem2d:**
+    - θ = 0.5 leaves ±5 kPa ringing at drained boundaries (θ = 1 is clean);
+    - `analyze_staged` ignores `n_steps` (one load step per phase), which
+      matters for plastic stages;
+    - consolidation fill under water is refused.
+  - **SOE:** `soe/free_earth.py` (~286, 371) returns a value when no root is
+    found; it should return null plus a warning (G16).
+  - **Small reference items:**
+    - an example section id '5.7.2' that does not exist (G14);
+    - `.html.png` names (G15);
+    - slow rigorous searches (G18).
+- **E3. Document Review vision (from brief 5 groups 3–4; not built).**
+  - **R:** render turned or sideways lettering upright. In brief 5, 6 of 15
+    turned look-alikes were misread, against 0 of 11 upright ones.
+  - **`found`:** B1, judge region vs text line by aspect; B2, carry the text
+    read.
+  - **Notes:** MK1 / `aim_note` from the aim box; MK2 / `found_note` noise;
+    MK3 / MK5, say when looks disagree or a zoom is coarser.
+  - **planlens:**
+    - E1, the raster decision per region;
+    - E2b, a y-scale labelled every 4th line;
+    - E3, `code_reading` following the input line on a single-curve chart;
+    - N7, multi-log `log_grid` header fields;
+    - N8, table row rules read as strata;
+    - N14, `measure` `to` across a second zoom;
+    - the rectangle x,y,w,h bug (8a(viii));
+    - C4's suggested public API: `ReviewToolkit.forget(path)`, an atomic
+      save in `write_markups`, and stable markup ids (the app now uses
+      private internals).
+  - **Zoom latency:** 30–50 s on dense pages (F1). The next lever is a
+    reasoning setting on vision calls, A/B on GPT.
+- **E4. Report ingest:**
+  - G2, bind log index cells to the nearest sample;
+  - G3, RESULTS print the visual-scales counts;
+  - gradation linking flips between runs, so measure a link fix over
+    repeats;
+  - the per-specimen hole-match and depth bands (brief 5 §5).
+- **E5. Only GPT can tell us (brief 6 or the Tiny Apps first hour):**
+  - vision on gpt-5.1 (768 px images);
+  - latency against the new per-kind caps;
+  - real budget and rate-limit responses;
+  - testers on separate keys;
+  - links behind the IIS proxy;
+  - whether the agent uses `reuse=true`;
+  - the coverage switch after CV1–CV4 (all switches stay OFF until
+    measured);
+  - reasoning summaries now requested (L1);
+  - patch alignment with ≥ 10 repeats (F1 statistic);
+  - GPT habits M1–M4 (log depth by eye, "correcting" a summary, layers
+    invented).
+- **E6. Not verified live by the smoke waves:**
+  - the D2 budget message;
+  - busy retries;
+  - restore after restart;
+  - the Excel writer;
+  - two testers saving at the same moment;
+  - `annotate_dxf` output opening in real CAD (ezdxf rewrites the file);
+  - D3: the harness copies the old sidebar code.
+
+  The smoke harness has its own list (H1–H18 in the reviews).
 
 **Open questions** about how the harnesses behave are listed at the end of
 each document in `module_work/harness_theory/` — read that folder before
