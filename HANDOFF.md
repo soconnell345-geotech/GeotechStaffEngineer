@@ -47,6 +47,21 @@ detailed Phase-E history; this file supersedes it.
   - downdrag settlement-compatibility basis: the neutral plane sits at the bearing-layer top for default inputs;
   - fem2d settlements now exclude self-weight.
 - **Spend left:** about $35 of API credit (the account limit is $100; the promo credit expires 2026-11-05). The owner's $20 is reserved for touch-up testing together.
+- **Master after 5.33.0: the next train, unreleased.** The owner: "that's stuff that can just roll into the next release".
+  - **a282d48, downdrag.** Every cited neutral-plane basis is an option (UFC 3-220-20 / DM 7.2, GEC-12, GEC-10, CGPR #56). The methods table, with sections and pages, is in `downdrag/DESIGN.md`. Every run reports the comparison and the basis used, plus a judgment block when the bases differ materially. UFC App. B-5.5 is reproduced.
+    - The owner's direction: "Downdrag has many methods and it should be open to multiple assumptions."
+    - Owner decisions open:
+      - keep the default `auto` (UFC's procedure, numbers unchanged), or report the comparison without picking;
+      - the materiality thresholds;
+      - `skin_friction_stress="final"` (UFC step 2) as the default?
+      - an older ~4 % quadrature mismatch.
+  - **4bf710c, fem2d.** Per-stage delta, cumulative and since-reference movements (`reset_displacements_after`, default after the gravity stage). Phasing decides self-weight. Three latent staged-analysis bugs fixed.
+    - The owner's direction: "Construction phasing will determine output."
+    - Owner decisions open:
+      - is stage 0 always the gravity stage?
+      - θ=0.5 ringing at drained boundaries;
+      - `analyze_staged` ignores `n_steps`.
+  - **The references sub-agent.** The GSE main agent's `references` sub-agent was already wired to handle method and parameter calls (owner, 2026-10-09). Modules must not hide method choices; the plain `judgment` data in results makes a choice visible to it.
 
 **1. 5.32.1 RELEASED 2026-10-08 with planlens 0.12.0.** The owner said, the night of 2026-10-07: "Ok to release however you see best".
 - **planlens 0.12.0:** tag `v0.12.0` on branch `release/0.12.0` (c58f7ed), cut from 08a1d53, which Foundry measured as 0.12.0rc1. 1,500 tests passed; no dependency change.
