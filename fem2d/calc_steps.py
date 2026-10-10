@@ -436,10 +436,44 @@ def _seepage_section(result) -> CalcSection:
     ])
 
 
+def _mm(v):
+    return f"{float(v) * 1000:.2f}"
+
+
+def _movement_rows(label, m):
+    """Table rows for one movement summary (fem2d.results.movement_summary)."""
+    def _at(xy):
+        return f" at ({xy[0]:.1f}, {xy[1]:.1f})" if xy else ""
+    return [
+        [f"{label}: settlement",
+         f"{_mm(m['settlement_m'])} mm{_at(m.get('settlement_at_xy'))}"],
+        [f"{label}: heave",
+         f"{_mm(m['heave_m'])} mm{_at(m.get('heave_at_xy'))}"],
+        [f"{label}: horizontal",
+         f"{_mm(m['horizontal_m'])} mm{_at(m.get('horizontal_at_xy'))}"],
+        [f"{label}: max |u|",
+         f"{_mm(m['total_m'])} mm{_at(m.get('total_at_xy'))}"],
+    ]
+
+
+def _judgment_item(judgment):
+    """The reference-stage judgment as a table (option, basis, result)."""
+    return TableData(
+        title="Judgment: " + judgment["question"],
+        headers=["Option", "Assumes", "Result", "Used"],
+        rows=[[o["name"], o["assumptions"], o["result"],
+               "yes" if o["name"] == judgment["used"] else ""]
+              for o in judgment["options"]],
+        notes=judgment["why"],
+    )
+
+
 def _consolidation_section(result) -> CalcSection:
+    ref = result.displacement_reference or {}
     rows = [
         ["Time steps", str(result.n_time_steps)],
-        ["Max settlement", f"{result.max_settlement_m * 1000:.2f} mm"],
+        ["Max settlement", f"{result.max_settlement_m * 1000:.2f} mm"
+         + (f" (from the {ref['measured_from']})" if ref else "")],
         ["Max excess pore pressure",
          f"{result.max_excess_pore_pressure_kPa:.2f} kPa"],
         ["Degree of consolidation (final)",
@@ -450,11 +484,16 @@ def _consolidation_section(result) -> CalcSection:
         t = np.asarray(result.times, dtype=float)
         rows.insert(1, ["Time range",
                         f"{t.min():.3g} to {t.max():.3g} s"])
-    return CalcSection(title="Consolidation Results", items=[
+    if result.scheme == "monolithic":
+        eq = ("Monolithic u-p (Taylor-Hood T6/T3): load applied undrained, "
+              "then equilibrium + flow continuity solved together in time")
+    else:
+        eq = ("Staggered u-p scheme: equilibrium with effective stress + "
+              "transient flow continuity (drained at every step)")
+    items = [
         CalcStep(
             title="Coupled Biot Consolidation",
-            equation="Staggered u-p scheme: equilibrium with "
-                     "effective stress + transient flow continuity",
+            equation=eq,
             substitution="",
             result_name="U_final",
             result_value=f"{result.degree_of_consolidation:.3f}",
@@ -465,28 +504,73 @@ def _consolidation_section(result) -> CalcSection:
             headers=["Item", "Value"],
             rows=rows,
         ),
-    ])
+    ]
+    if result.stages:
+        items.append(TableData(
+            title="Construction Stages",
+            headers=["Stage", "What happens", "Settlement this stage (mm)",
+                     "Cumulative settlement (mm)"],
+            rows=[[f"{st['stage']} {st['name']}", st['description'],
+                   _mm(st['surface_settlement_m']),
+                   _mm(st['cumulative_surface_settlement_m'])]
+                  for st in result.stages],
+            notes=("Surface settlement, negative = down. Reported "
+                   f"settlements are measured from the "
+                   f"{ref.get('measured_from', 'start of analysis')} "
+                   f"(chosen by: {ref.get('chosen_by', '-')})."),
+        ))
+        load = result.stages[-1]
+        if load.get("time_s"):
+            U = load.get("degree_of_consolidation_by_time") or \
+                [None] * len(load["time_s"])
+            items.append(TableData(
+                title="Load Stage by Time",
+                headers=["t (s)", "U", "Settlement this stage (mm)",
+                         "Cumulative settlement (mm)"],
+                rows=[[f"{tt:.3g}", "-" if u is None else f"{u:.3f}",
+                       _mm(s), _mm(c)]
+                      for tt, u, s, c in zip(
+                          load["time_s"], U,
+                          load["surface_settlement_m_by_time"],
+                          load["cumulative_surface_settlement_m_by_time"])],
+            ))
+    if result.judgment:
+        items.append(_judgment_item(result.judgment))
+    return CalcSection(title="Consolidation Results", items=items)
 
 
 def _staged_sections(result) -> list:
     sections = []
+    ref = result.displacement_reference or {}
+
+    def _s(m):
+        return _mm(m['settlement_m']) if m else "-"
+
     overview_rows = [[
         str(p.phase_index + 1), p.phase_name,
         str(p.n_active_elements), str(p.n_active_beams),
         "yes" if p.converged else "NO",
-        f"{p.max_displacement_m:.4g}",
+        _s(p.delta_displacement), _s(p.displacement_since_reference),
+        _s(p.cumulative_displacement),
     ] for p in result.phases]
-    sections.append(CalcSection(
-        title="Construction Sequence",
-        items=[TableData(
-            title="Phase Overview",
-            headers=["#", "Phase", "Active elements", "Active beams",
-                     "Converged", "δ_max (m)"],
-            rows=overview_rows,
-            notes="Displacements, stresses and plastic state carry "
-                  "forward cumulatively between phases.",
-        )],
-    ))
+    items = [TableData(
+        title="Phase Overview",
+        headers=["#", "Phase", "Active elements", "Active beams",
+                 "Converged", "Settlement this stage (mm)",
+                 "Settlement since reference (mm)",
+                 "Cumulative settlement (mm)"],
+        rows=overview_rows,
+        notes=("Settlement = most negative vertical movement (negative = "
+               "down) over the stage's active nodes. Stresses and plastic "
+               "state carry forward between phases; an element activated "
+               "in a stage is placed stress-free. Displacements reset after: "
+               f"{ref.get('measured_from', 'start of analysis')} (chosen by: "
+               f"{ref.get('chosen_by', '-')}); stage numbers here are 1-based, "
+               f"stage indices in that statement are 0-based."),
+    )]
+    if result.judgment:
+        items.append(_judgment_item(result.judgment))
+    sections.append(CalcSection(title="Construction Sequence", items=items))
 
     for p in result.phases:
         items = []
@@ -494,10 +578,27 @@ def _staged_sections(result) -> list:
             ["Converged", "yes" if p.converged else "NO"],
             ["Active elements / beams",
              f"{p.n_active_elements} / {p.n_active_beams}"],
-            ["Max displacement |u|", f"{p.max_displacement_m:.4g} m"],
-            ["Max u_x / u_y",
-             f"{p.max_displacement_x_m:.4g} / "
-             f"{p.max_displacement_y_m:.4g} m"],
+        ]
+        if p.delta_displacement is not None:
+            rows += _movement_rows("This stage", p.delta_displacement)
+            # Skip bases identical to the delta (stage 0 starts from rest;
+            # a stage right after the reference is measured from its start).
+            if (p.reference_stage_index is not None
+                    and p.reference_stage_index < p.phase_index - 1):
+                rows += _movement_rows(f"Since {p.reference_stage}",
+                                       p.displacement_since_reference)
+            if p.phase_index > 0:
+                rows += _movement_rows("Cumulative",
+                                       p.cumulative_displacement)
+        else:
+            rows += [
+                ["Max displacement |u| (cumulative)",
+                 f"{p.max_displacement_m:.4g} m"],
+                ["Max u_x / u_y (cumulative)",
+                 f"{p.max_displacement_x_m:.4g} / "
+                 f"{p.max_displacement_y_m:.4g} m"],
+            ]
+        rows += [
             ["σ_yy range (active)",
              f"{p.min_sigma_yy_kPa:.1f} to "
              f"{p.max_sigma_yy_kPa:.1f} kPa"],
@@ -603,11 +704,14 @@ def get_figures(result, analysis) -> List[FigureData]:
 
     # ---- consolidation --------------------------------------------------
     if _is_consolidation(result):
+        ref = result.displacement_reference or {}
         _add(lambda: _plots.plot_consolidation_history(result),
              "Consolidation Time History",
              f"Settlement and excess pore pressure dissipation; "
              f"final degree of consolidation "
-             f"U = {result.degree_of_consolidation:.2f}.", 75)
+             f"U = {result.degree_of_consolidation:.2f}"
+             + (f"; settlement measured from the {ref['measured_from']}"
+                if ref.get('measured_from') else "") + ".", 75)
         return figures
 
     # ---- staged construction -------------------------------------------
@@ -616,16 +720,24 @@ def get_figures(result, analysis) -> List[FigureData]:
         for p in result.phases:
             if p.displacements is None or p.n_active_elements == 0:
                 continue
+            own = p.delta_displacements is not None
             shim = types.SimpleNamespace(
                 nodes=result.nodes, elements=result.elements,
-                displacements=p.displacements, stresses=p.stresses)
-            _add(lambda s=shim, name=p.phase_name:
+                displacements=(p.delta_displacements if own
+                               else p.displacements),
+                stresses=p.stresses)
+            _add(lambda s=shim, name=p.phase_name, own=own:
                  _plots.plot_contour(
                      s, field='u_mag',
-                     title=f'|u| — {name}'),
+                     title=(f'|u| this stage — {name}' if own
+                            else f'|u| — {name}')),
                  f"Displacement |u| — {p.phase_name}",
-                 f"Cumulative displacement magnitude at the end of "
-                 f"phase '{p.phase_name}'.")
+                 (f"Displacement magnitude of phase '{p.phase_name}' "
+                  f"alone (this stage's own movement; the cumulative and "
+                  f"since-reference values are in the phase table)."
+                  if own else
+                  f"Cumulative displacement magnitude at the end of "
+                  f"phase '{p.phase_name}'."))
         return figures
 
     # ---- FEMResult ------------------------------------------------------

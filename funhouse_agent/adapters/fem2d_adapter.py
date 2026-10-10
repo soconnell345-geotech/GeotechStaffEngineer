@@ -314,7 +314,7 @@ def _run_analyze_consolidation(params: dict) -> dict:
     from fem2d import analyze_consolidation
     _valid = ("width", "depth", "soil_layers", "k", "load_q", "time_points",
               "gwt", "gamma_w", "nx", "ny", "t", "n_w", "layer_polylines",
-              "consolidation_scheme", "theta")
+              "consolidation_scheme", "theta", "reset_displacements_after")
     reject_unknown_params(params, _valid, method="fem2d_consolidation")
     require_params(params, ["width", "depth", "soil_layers", "k", "load_q",
                             "time_points"],
@@ -343,6 +343,8 @@ def _run_analyze_consolidation(params: dict) -> dict:
     )
     if "layer_polylines" in params:
         kwargs["layer_polylines"] = params["layer_polylines"]
+    if params.get("reset_displacements_after") is not None:
+        kwargs["reset_displacements_after"] = params["reset_displacements_after"]
 
     result = analyze_consolidation(**kwargs)
     return clean_result(result.to_dict())
@@ -357,7 +359,7 @@ def _run_analyze_staged(params: dict) -> dict:
 
     _valid = ("nodes", "elements", "material_props", "gamma",
               "element_groups", "phases", "t", "max_iter", "tol", "gamma_w",
-              "beam_elements")
+              "beam_elements", "reset_displacements_after")
     reject_unknown_params(params, _valid, method="fem2d_staged")
     require_params(params, ["nodes", "elements", "material_props", "gamma",
                             "element_groups", "phases"],
@@ -401,6 +403,7 @@ def _run_analyze_staged(params: dict) -> dict:
         max_iter=params.get("max_iter", 100),
         tol=params.get("tol", 1e-5),
         gamma_w=params.get("gamma_w", 9.81),
+        reset_displacements_after=params.get("reset_displacements_after"),
     )
 
     # Beam elements if provided
@@ -615,7 +618,7 @@ METHOD_INFO = {
         "parameters": {
             "width": {"type": "float", "required": True, "description": "Domain width (m)."},
             "depth": {"type": "float", "required": True, "description": "Domain depth (m)."},
-            "soil_layers": {"type": "array", "required": True, "description": "Soil property dicts, each with 'E' (kPa), 'nu', 'gamma' (kN/m3) AND 'bottom_elevation' (m; 'top_elevation' optional, defaults to the domain top / the layer above)."},
+            "soil_layers": {"type": "array", "required": True, "description": "Soil property dicts, each with 'E' (kPa), 'nu', 'gamma' (kN/m3) AND 'bottom_elevation' (m; 'top_elevation' optional, defaults to the domain top / the layer above). Add 'fill': true to a layer PLACED during construction: its self-weight then moves from the initial stage into the load stage (monolithic: applied undrained with the load, so it consolidates). Fill layers must be the top layers and lie above the water table (gwt at or below their base)."},
             "k": {"type": "float", "required": True, "description": "Hydraulic conductivity (m/s) for 'staggered'; for 'monolithic' pass the MOBILITY m^2/(kPa.s)."},
             "load_q": {"type": "float", "required": True, "description": "Surface load (kPa, positive downward)."},
             "time_points": {"type": "array", "required": True, "description": "OUTPUT times since the load is applied (seconds, >= 0). t = 0 (the loading instant) is always reported first; U and settlement come back at each of these times. The monolithic scheme integrates on a finer internal schedule between them, so a sparse list (e.g. [1e3, 1e6, 1e7]) is fine."},
@@ -631,40 +634,51 @@ METHOD_INFO = {
                                      "description": "Biot solver: 'staggered' (default, sequential split; drained at every step, so U = 1 and NO consolidation transient under the load) or 'monolithic' (coupled u-p, Taylor-Hood T6/T3, reproduces the load-induced undrained response p0 and the Terzaghi transient; use it for U and settlement versus time). For 'monolithic', pass k as the MOBILITY m^2/(kPa.s) and n_w as the Biot modulus M (kPa)."},
             "theta": {"type": "float", "required": False, "default": 1.0,
                       "description": "Time-integration parameter for the monolithic scheme (1.0 backward Euler; 0.5 Crank-Nicolson, more accurate). Range [0.5, 1.0]."},
+            "reset_displacements_after": {"type": "string", "required": False,
+                                          "allowed_values": ["initial", "start"],
+                                          "description": "Which stage the reported settlements are measured from. The analysis has two stages: 0 'initial' (self-weight of the soil in place, drained, with the hydrostatic water table and any ponded water) and 1 'load' (load_q + any 'fill' layers, then consolidation). 'initial' = from the end of the initial stage, i.e. the load stage alone (common FE practice; the DEFAULT when omitted). 'start' = cumulative, self-weight settlement included. Omitting it lets the default apply and the result then carries a 'judgment' record if the choice matters."},
         },
         "returns": {
             "n_nodes": "Mesh nodes.",
             "n_elements": "Mesh elements.",
             "n_time_steps": "Number of reported times (len(time_s)).",
             "converged": "Whether analysis converged.",
-            "max_settlement_m": "Maximum settlement (m, most negative = downward).",
+            "max_settlement_m": "Maximum surface settlement (m, most negative = downward), measured from displacement_reference (default: the load stage alone).",
             "max_excess_pore_pressure_kPa": "Peak excess pore pressure over the run (kPa).",
             "degree_of_consolidation": "Degree of consolidation U (0-1) at the final time.",
             "time_s": "The reported times (s since loading): 0 first, then each requested time_points value.",
             "degree_of_consolidation_by_time": "U (0-1) at each time in time_s, same order.",
-            "surface_settlement_m_by_time": "Surface settlement (m) at each time in time_s, same order.",
+            "surface_settlement_m_by_time": "Surface settlement (m, negative = down) at each time in time_s, measured from displacement_reference (default: the load stage alone). Since 2026-10-09 the staggered scheme follows the reference too (it used to include self-weight).",
             "max_excess_pore_pressure_kPa_by_time": "Peak |excess pore pressure| (kPa) at each time in time_s.",
-            "final_drained_settlement_m": "Monolithic: the drained end-state settlement under the load (m), the U = 1 reference.",
+            "final_drained_settlement_m": "Monolithic: the drained end-state settlement of the LOAD stage (m), the U = 1 reference.",
+            "displacement_reference": "{reset_after_stage, measured_from, chosen_by ('default' or 'user')}: the stage the reported settlements start from.",
+            "stages": "Per construction stage: [0] 'initial' (self-weight) and [1] 'load' — each with surface_settlement_m (this stage's own) and cumulative_surface_settlement_m, delta_displacement / cumulative_displacement extremes {settlement_m (negative = down), heave_m, horizontal_m, total_m, and *_at_xy}; the load stage also per time: surface_settlement_m_by_time (this stage), cumulative_surface_settlement_m_by_time, degree_of_consolidation_by_time.",
+            "judgment": "Present only when the default reference stage was applied AND it changes the reported settlement materially: {question, options [{name, source, assumptions, applies, result}], used, why} — the self-weight movement counts or not depending on the construction sequence; say which basis the reported number uses.",
             "scheme": "'staggered' or 'monolithic'.",
-            "notes": "Basis and caveats: the time origin, gwt as an elevation, what the excess pore pressure includes, the early-time mesh limit; for 'staggered', that it is drained at every step (U = 1, no transient).",
+            "notes": "Basis and caveats: the time origin, gwt as an elevation, the displacement reference, what the excess pore pressure includes, the early-time mesh limit; for 'staggered', that it is drained at every step (U = 1, no transient).",
         },
     },
     "fem2d_staged": {
         "category": "FEM 2D",
-        "brief": "Staged construction analysis (multi-phase, activate/deactivate soil groups and beams).",
+        "brief": "Staged construction analysis (multi-phase, activate/deactivate soil groups and beams); reports each stage's own movement, the cumulative movement and the movement since a reference stage.",
         "parameters": {
             "nodes": {"type": "array", "required": True, "description": "Node coordinates [[x,y],...]."},
             "elements": {"type": "array", "required": True, "description": "Element connectivity [[n1,n2,n3],...]."},
             "material_props": {"type": "array", "required": True, "description": "Per-element material dicts."},
             "gamma": {"type": "float|array", "required": True, "description": "Unit weight. Scalar or per-element."},
             "element_groups": {"type": "dict", "required": True, "description": "Group name -> list of element indices."},
-            "phases": {"type": "array", "required": True, "description": "Array of phase dicts with name, active_soil_groups, etc."},
+            "phases": {"type": "array", "required": True, "description": "Array of phase dicts: name, active_soil_groups, active_beam_ids, surface_loads [[edges, qx, qy]], gwt, n_steps, reset_displacements (true = report this phase's movements from its START, PLAXIS 'reset displacements to zero'; reporting only). Phase 0 is normally the initial (gravity) stage; soil PLACED during construction (fill) is a group first activated in a later phase, so its self-weight movement falls in that phase."},
             "beam_elements": {"type": "array", "required": False, "description": "Array of beam element dicts."},
+            "reset_displacements_after": {"type": "int|string", "required": False,
+                                          "description": "The stage at whose END displacement_since_reference is zeroed: a stage index, a stage name, 'initial' (= stage 0) or 'start' (no reset: cumulative). DEFAULT when omitted (and no phase sets reset_displacements): after stage 0, taken as the initial gravity/K0 stage, so construction movements exclude self-weight (common FE practice); the result then carries a 'judgment' record if the choice matters."},
         },
         "returns": {
             "n_phases": "Number of phases completed.",
             "converged": "Whether all phases converged.",
-            "phases": "Per-phase results.",
+            "phases": "Per-phase results. max_displacement_m/_x_m/_y_m are CUMULATIVE from the start (gravity included). delta_displacement = this stage's own movement; cumulative_displacement = from the start; displacement_since_reference = from reference_stage. Each is {settlement_m (most negative uy, negative = down), heave_m (most positive uy), horizontal_m (ux of largest magnitude, signed +x), total_m (largest |u|), and *_at_xy}, over the nodes of the stage's active elements.",
+            "displacement_reference": "{reset_after_stages, measured_from, chosen_by ('default' or 'user')}: where displacement_since_reference starts.",
+            "judgment": "Present only when the default reference stage was applied AND it changes the reported movement materially: {question, options [{name, source, assumptions, applies, result}], used, why}. Say which basis a reported movement uses.",
+            "notes": "Basis of each displacement key.",
         },
     },
 }

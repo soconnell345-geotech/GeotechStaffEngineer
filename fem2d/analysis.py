@@ -701,15 +701,88 @@ def _consolidation_schedule(out_times, per_decade=25, max_steps=300):
     return np.unique(np.concatenate([[0.0], grid, out_times]))
 
 
+_CUMULATIVE_OPTION = "cumulative from start"
+_INITIAL_OPTION = "from end of the initial (gravity) stage"
+
+
+def _fmt_movement(m):
+    """'settlement 41.0 mm, max |u| 41.2 mm' from a movement summary."""
+    txt = f"settlement {abs(m['settlement_m']) * 1000:.1f} mm"
+    if m.get('heave_m', 0.0) * 1000 >= 0.05:
+        txt += f", heave {m['heave_m'] * 1000:.1f} mm"
+    if 'total_m' in m:
+        txt += f", max |u| {m['total_m'] * 1000:.1f} mm"
+    return txt
+
+
+def _reference_judgment(initial_name, where, from_initial, cumulative,
+                        option_hint):
+    """The reference-stage choice as a ``judgment`` record: emitted only
+    when the default was applied and it changes the reported numbers
+    materially (callers check). ``from_initial`` / ``cumulative`` are
+    movement summaries (dicts with settlement_m and optionally heave_m /
+    total_m) at ``where`` (e.g. "stage 2 'Load'")."""
+    return {
+        "question": "Which stage are movements measured from?",
+        "options": [
+            {"name": _INITIAL_OPTION,
+             "source": "common FE practice (e.g. PLAXIS: reset "
+                       "displacements to zero after the K0/gravity stage)",
+             "assumptions": f"the soil of {initial_name} was in place "
+                            "before construction; its self-weight movement "
+                            "is not a construction movement",
+             "applies": True,
+             "result": f"{where}: {_fmt_movement(from_initial)}"},
+            {"name": _CUMULATIVE_OPTION,
+             "source": "the total FE displacement since the start of the "
+                       "analysis",
+             "assumptions": "the self-weight movement happens during "
+                            "construction (e.g. the soil is placed as fill)",
+             "applies": True,
+             "result": f"{where}: {_fmt_movement(cumulative)}"},
+        ],
+        "used": _INITIAL_OPTION,
+        "why": "reset_displacements_after was not given, so construction "
+               "movements exclude the initial self-weight movement. "
+               + option_hint,
+    }
+
+
+def _movement_differs(a, b):
+    """True when two movement summaries differ materially (settlement or
+    largest |u|)."""
+    from fem2d.results import _material_difference
+    keys = [k for k in ("settlement_m", "total_m") if k in a and k in b]
+    return any(_material_difference(a[k], b[k]) for k in keys)
+
+
 def analyze_consolidation(width, depth, soil_layers, k, load_q,
                           time_points, gwt=0.0, gamma_w=9.81,
                           nx=10, ny=20, t=1.0, n_w=2.2e6,
                           layer_polylines=None,
-                          consolidation_scheme="staggered", theta=1.0):
+                          consolidation_scheme="staggered", theta=1.0,
+                          reset_displacements_after=None):
     """1D-like consolidation of a loaded soil column.
 
     Sets up rectangular domain, applies surface load, tracks
     settlement and pore pressure dissipation over time.
+
+    Construction stages (2026-10-09). The analysis has two stages, each
+    reported with its own movement and the cumulative movement
+    (``ConsolidationResult.stages``): stage 0 ``initial`` — the self-weight
+    of the soil in place, drained, in equilibrium with the hydrostatic water
+    table (plus ponded water when ``gwt`` is above the surface); stage 1
+    ``load`` — ``load_q`` plus the self-weight of any layer flagged
+    ``'fill': True`` (placed during construction, with the load), then
+    consolidation. ``reset_displacements_after`` picks the stage the
+    reported settlements (``settlements``, ``surface_settlement_m_by_time``,
+    ``max_settlement_m``) are measured from: None (default) or ``"initial"``
+    — the end of the initial stage, so they are the load stage alone (common
+    FE practice; the result carries a ``judgment`` record when this default
+    changes the numbers materially); ``"start"`` — cumulative from the start,
+    self-weight included. Phasing, not a global switch, decides whether
+    self-weight movement counts: flag a layer ``fill`` when it is placed
+    during construction.
 
     ``consolidation_scheme`` selects the Biot solver: "staggered" (**default**,
     sequential split — transports a pore field but does not create excess pore
@@ -725,7 +798,9 @@ def analyze_consolidation(width, depth, soil_layers, k, load_q,
     width : float — domain width (m).
     depth : float — domain depth (m).
     soil_layers : list of dict — soil properties, each with:
-        'E', 'nu', 'gamma' (and optionally 'bottom_elevation').
+        'E', 'nu', 'gamma' (and optionally 'bottom_elevation', and
+        'fill': True for a layer placed as fill during construction; fill
+        layers must be the top layers and lie above the water table).
     k : float — hydraulic conductivity (m/s).
     load_q : float — surface load (kPa, positive downward).
     time_points : array-like — OUTPUT times since loading (s); t = 0 (the
@@ -736,13 +811,31 @@ def analyze_consolidation(width, depth, soil_layers, k, load_q,
     nx, ny : int — mesh density.
     t : float — thickness.
     n_w : float — bulk modulus of water (kPa).
+    reset_displacements_after : None, "initial" (or 0), or "start" — see
+        above. Default None = after the initial stage.
 
     Returns
     -------
     ConsolidationResult
     """
     from fem2d.porewater import solve_consolidation, compute_pore_pressures
-    from fem2d.results import ConsolidationResult
+    from fem2d.results import ConsolidationResult, movement_summary
+
+    # Which stage the reported movements are measured from.
+    ref = reset_displacements_after
+    if ref is None:
+        ref_idx, chosen_by = 0, "default"
+    else:
+        key = str(ref).strip().lower()
+        if key in ("initial", "0", "first"):
+            ref_idx, chosen_by = 0, "user"
+        elif key in ("start", "none"):
+            ref_idx, chosen_by = -1, "user"
+        else:
+            raise ValueError(
+                f"reset_displacements_after={ref!r}: use 'initial' (movements "
+                f"from the end of the initial self-weight stage, the default) "
+                f"or 'start' (cumulative from the start of the analysis)")
 
     nodes, elements = generate_rect_mesh(0, width, -depth, 0, nx, ny)
     bc_nodes = detect_boundary_nodes(nodes)
@@ -760,6 +853,8 @@ def analyze_consolidation(width, depth, soil_layers, k, load_q,
     # Build material props and gamma
     material_props = []
     gamma_arr = np.zeros(len(elements))
+    fill_elements = []
+    fill_names = []
     for e in range(len(elements)):
         lid = min(layer_ids[e], len(soil_layers) - 1)
         sl = soil_layers[lid]
@@ -769,6 +864,21 @@ def analyze_consolidation(width, depth, soil_layers, k, load_q,
         }
         material_props.append(mp)
         gamma_arr[e] = sl.get('gamma', 18)
+        if sl.get('fill'):
+            # Placed as fill during construction: its self-weight belongs
+            # to the load stage, not the initial state.
+            fill_elements.append(e)
+            name = sl.get('name', f"layer {lid}")
+            if name not in fill_names:
+                fill_names.append(name)
+    if fill_elements:
+        cy = nodes[elements].mean(axis=1)[:, 1]
+        in_place_cy = np.delete(cy, fill_elements)
+        if len(in_place_cy) and cy[fill_elements].min() < in_place_cy.max():
+            raise ValueError(
+                "soil_layers flagged 'fill' must be the TOP layers (placed on "
+                "the soil in place); a fill layer lies below an unflagged "
+                "one.")
 
     # Surface load: find top edges
     x_tol = 0.01
@@ -778,6 +888,13 @@ def analyze_consolidation(width, depth, soil_layers, k, load_q,
     for i in range(len(surface_nodes) - 1):
         surface_edges.append((surface_nodes[i], surface_nodes[i + 1]))
     surface_loads = [(surface_edges, 0.0, -load_q)]
+
+    # Water above the ground surface (gwt > 0) is ponded water: it loads the
+    # surface in the initial state (without it the hydrostatic pore pressure
+    # would lift the soil).
+    pond_m = max(float(gwt), 0.0)
+    initial_surface_loads = ([(surface_edges, 0.0, -gamma_w * pond_m)]
+                             if pond_m > 0 else None)
 
     # Drainage BCs: top surface is drained (head = gwt elevation)
     head_bcs = [(int(n), float(gwt)) for n in surface_nodes]
@@ -806,60 +923,159 @@ def analyze_consolidation(width, depth, soil_layers, k, load_q,
         k=k, head_bcs=head_bcs, time_steps=schedule,
         t=t, gamma_w=gamma_w, n_w=n_w,
         pore_pressures_0=pp_0, surface_loads=surface_loads,
-        scheme=consolidation_scheme, theta=theta)
+        scheme=consolidation_scheme, theta=theta,
+        initial_surface_loads=initial_surface_loads,
+        fill_elements=fill_elements)
+
+    # Per-stage fields: the initial stage, and the load stage per time.
+    u0 = np.asarray(result_dict['initial_stage_displacements'], dtype=float)
+    nodes_u = np.asarray(result_dict['displacement_nodes'], dtype=float)
+    smask = np.asarray(result_dict['surface_node_mask'], dtype=bool)
+
+    def _surface(rows):
+        rows = np.atleast_2d(np.asarray(rows, dtype=float))
+        if not smask.any():
+            return np.zeros(len(rows))
+        return rows[:, 1::2][:, smask].min(axis=1)
+
+    # Largest reported settlement over the whole (internal) schedule.
+    load_full = np.asarray(result_dict['load_stage_displacements'],
+                           dtype=float)
+    max_settlement = float(_surface(
+        load_full if ref_idx == 0 else load_full + u0[None, :]).min())
 
     # Report only the requested times.
     if len(schedule) != len(out_times):
         idx = np.searchsorted(result_dict['times'], out_times)
         for key in ('times', 'displacements', 'pore_pressures', 'settlements',
                     'excess_pore_pressures', 'total_pore_pressures',
-                    'degree_of_consolidation_history'):
+                    'degree_of_consolidation_history',
+                    'load_stage_displacements'):
             if result_dict.get(key) is not None:
                 result_dict[key] = np.asarray(result_dict[key])[idx]
+
+    times_out = np.asarray(result_dict['times'], dtype=float)
+    load_u = np.asarray(result_dict['load_stage_displacements'], dtype=float)
+    cum_u = load_u + u0[None, :]
+    load_s, cum_s = _surface(load_u), _surface(cum_u)
+    init_s = float(_surface(u0)[0])
+    rep_u, rep_s = (load_u, load_s) if ref_idx == 0 else (cum_u, cum_s)
+    U_hist = result_dict.get('degree_of_consolidation_history')
+
+    weightless = not np.any(gamma_arr != 0.0)
+    if weightless:
+        init_desc = ("weightless soil (unit weight 0): the initial stage "
+                     "carries no load")
+    else:
+        init_desc = ("self-weight of the soil in place, drained, in "
+                     "equilibrium with the hydrostatic water table")
+        if pond_m > 0:
+            init_desc += f" and {pond_m:g} m of ponded water"
+        if fill_names:
+            init_desc += f" (fill layers {fill_names} not yet placed)"
+    load_desc = f"surface load {load_q:g} kPa"
+    if fill_names:
+        load_desc += f" + self-weight of fill layers {fill_names}"
+    load_desc += (", applied undrained, then consolidation"
+                  if consolidation_scheme == "monolithic"
+                  else ", drained (staggered scheme: no transient)")
+
+    def _r(v):
+        return round(float(v), 6) + 0.0
+
+    stages = [
+        {"stage": 0, "name": "initial", "description": init_desc,
+         "surface_settlement_m": _r(init_s),
+         "cumulative_surface_settlement_m": _r(init_s),
+         "delta_displacement": movement_summary(nodes_u, u0),
+         "cumulative_displacement": movement_summary(nodes_u, u0)},
+        {"stage": 1, "name": "load", "description": load_desc,
+         "time_s": [float(x) for x in times_out],
+         "surface_settlement_m_by_time": [_r(v) for v in load_s],
+         "cumulative_surface_settlement_m_by_time": [_r(v) for v in cum_s],
+         "degree_of_consolidation_by_time": (
+             [round(float(x), 4) for x in np.asarray(U_hist)]
+             if U_hist is not None else None),
+         "surface_settlement_m": _r(load_s[-1]),
+         "cumulative_surface_settlement_m": _r(cum_s[-1]),
+         "delta_displacement": movement_summary(nodes_u, load_u[-1]),
+         "cumulative_displacement": movement_summary(nodes_u, cum_u[-1])},
+    ]
+    measured_from = ("end of stage 0 'initial' (self-weight)" if ref_idx == 0
+                     else "start of analysis")
+    displacement_reference = {
+        "reset_after_stage": 0 if ref_idx == 0 else None,
+        "measured_from": measured_from,
+        "chosen_by": chosen_by,
+    }
+    judgment = None
+    if chosen_by == "default":
+        a = {"settlement_m": float(load_s[-1])}
+        b = {"settlement_m": float(cum_s[-1])}
+        if _movement_differs(a, b):
+            judgment = _reference_judgment(
+                "the column", f"surface at t = {times_out[-1]:.3g} s",
+                a, b,
+                "Pass reset_displacements_after='start' for cumulative "
+                "settlement, or flag a layer 'fill': true when it is placed "
+                "during construction.")
 
     notes = [
         "Times are measured from the instant the load is applied; time_s[0] "
         "= 0 is that instant (added if time_points did not start at 0).",
         "gwt is the water-table ELEVATION (m) in the model frame: the ground "
         "surface is at 0 and the base at -depth.",
+        f"Settlements (max_settlement_m, surface_settlement_m_by_time) are "
+        f"measured from the {measured_from}; stages[] gives each stage's own "
+        f"movement and the cumulative movement.",
     ]
     if consolidation_scheme == "monolithic":
         notes.append(
-            "Excess pore pressure and settlement are from the applied load "
-            "only: self-weight and the hydrostatic water pressure are the "
-            "initial state.")
+            "Excess pore pressure comes from the load stage only (the "
+            "surface load, plus any layer flagged fill): the self-weight of "
+            "the soil in place is the initial stage, in drained equilibrium "
+            "with the hydrostatic water before loading.")
         notes.append(
             "Early-time U is only as good as the mesh at the drained "
             "boundary: elements there should be thinner than sqrt(c t) "
             "(c = k / (1/n_w + 1/M_oed)); refine ny for small times.")
+        if fill_names:
+            notes.append(
+                "Fill layers are saturated like the rest of the column in "
+                "the monolithic scheme: above the water table that "
+                "overstates their excess pore pressure.")
     else:
         notes.append(
             "The staggered scheme does not turn the applied load into excess "
             "pore pressure: it is drained at every step (U = 1, no "
-            "consolidation transient), and its settlement includes "
-            "self-weight. Use consolidation_scheme='monolithic' (k as the "
-            "mobility m^2/(kPa.s) = hydraulic conductivity / gamma_w) for "
-            "consolidation under the load.")
+            "consolidation transient). Use consolidation_scheme='monolithic' "
+            "(k as the mobility m^2/(kPa.s) = hydraulic conductivity / "
+            "gamma_w) for consolidation under the load.")
 
     return ConsolidationResult(
         n_nodes=len(nodes),
         n_elements=len(elements),
         n_time_steps=len(result_dict['times']),
         times=result_dict['times'],
-        max_settlement_m=result_dict['max_settlement_m'],
+        max_settlement_m=max_settlement,
         max_excess_pore_pressure_kPa=result_dict['max_excess_pore_pressure_kPa'],
         degree_of_consolidation=result_dict['degree_of_consolidation'],
         converged=result_dict['converged'],
-        displacements=result_dict['displacements'],
+        displacements=rep_u,
         pore_pressures=result_dict['pore_pressures'],
-        settlements=result_dict['settlements'],
-        degree_of_consolidation_history=result_dict.get(
-            'degree_of_consolidation_history'),
+        settlements=rep_s,
+        degree_of_consolidation_history=U_hist,
         excess_pore_pressures=result_dict.get('excess_pore_pressures'),
         final_drained_settlement_m=result_dict.get(
             'final_drained_settlement_m'),
         scheme=consolidation_scheme,
         notes=notes,
+        stages=stages,
+        displacement_reference=displacement_reference,
+        judgment=judgment,
+        initial_stage_displacements=u0,
+        load_stage_displacements=load_u,
+        displacement_nodes=nodes_u,
     )
 
 
@@ -877,7 +1093,12 @@ class ConstructionPhase:
     gwt : float, (M,2) array, or None — groundwater table for this phase.
         None means no pore pressures.
     n_steps : int — gravity load increments for this phase.
-    reset_displacements : bool — zero u at start of this phase.
+    reset_displacements : bool — report this phase's displacements (and
+        later ones) from the START of this phase, i.e. the end of the
+        previous one (PLAXIS "reset displacements to zero"). Reporting
+        only: the solver's state is never altered. (Before 2026-10-09 it
+        zeroed u in the solver, which then re-converged to the same total
+        displacement, so it had no effect.)
     """
     name: str = "Phase"
     active_soil_groups: List[str] = field(default_factory=list)
@@ -934,14 +1155,58 @@ def assign_element_groups(nodes, elements, regions):
     return groups
 
 
+def _resolve_reset_stage(value, phase_names):
+    """``reset_displacements_after`` -> None (not given), -1 (no reset:
+    cumulative from the start) or a stage index."""
+    if value is None:
+        return None
+    hint = (f"use a stage index (0..{len(phase_names) - 1}), a stage name "
+            f"{phase_names}, 'initial' (the first stage) or 'start' "
+            f"(no reset: cumulative from the start)")
+    if isinstance(value, bool):
+        raise ValueError(f"reset_displacements_after={value!r}: {hint}")
+    if isinstance(value, str):
+        v = value.strip()
+        if v.lower() in ("start", "none"):
+            return -1
+        if v in phase_names:
+            return phase_names.index(v)
+        if v.lower() in ("initial", "first"):
+            return 0
+        try:
+            value = int(v)
+        except ValueError:
+            raise ValueError(
+                f"reset_displacements_after={value!r}: {hint}") from None
+    try:
+        idx = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"reset_displacements_after={value!r}: {hint}") \
+            from None
+    if idx != value or not 0 <= idx < len(phase_names):
+        raise ValueError(f"reset_displacements_after={value!r}: {hint}")
+    return idx
+
+
 def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
                    element_groups, phases, beam_elements=None,
-                   t=1.0, max_iter=100, tol=1e-5, gamma_w=9.81):
+                   t=1.0, max_iter=100, tol=1e-5, gamma_w=9.81,
+                   reset_displacements_after=None):
     """Staged construction analysis.
 
     Solves a sequence of construction phases. Each phase activates a
     subset of soil element groups and (optionally) beam elements.
-    Displacements, stresses, and strains carry forward cumulatively.
+    Displacements, stresses, and strains carry forward cumulatively
+    (per Gauss point). An element activated in a phase is placed
+    stress-free on the deformed mesh: its strain counts from activation.
+
+    Movements per stage (2026-10-09). Every phase reports its own movement
+    (``delta_displacement``), the movement from the start of the analysis
+    (``cumulative_displacement``; also ``max_displacement_*``, unchanged) and
+    the movement from a reference stage (``displacement_since_reference``).
+    Phasing decides whether self-weight counts: soil placed during
+    construction (a fill group activated in a later phase) moves in that
+    phase's delta; soil in place from the first phase is the initial state.
 
     Parameters
     ----------
@@ -957,6 +1222,17 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
     max_iter : int — max NR iterations per step.
     tol : float — convergence tolerance.
     gamma_w : float — unit weight of water.
+    reset_displacements_after : int, str or None — the stage at whose END
+        ``displacement_since_reference`` is zeroed (later stages are
+        measured from it; stages up to it from the start). A stage index, a
+        stage name, ``"initial"`` (the first stage) or ``"start"`` (no
+        reset: cumulative). Default None: if no phase sets
+        ``reset_displacements``, the FIRST stage is taken as the initial
+        (gravity / K0) stage and displacements are reset after it — common
+        FE practice, so construction movements exclude self-weight — and
+        the result carries a ``judgment`` record when that default changes
+        the reported numbers materially. A phase's own
+        ``reset_displacements=True`` also resets at its start.
 
     Returns
     -------
@@ -965,12 +1241,29 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
     from fem2d.assembly import (
         build_rotation_dof_map, beam_element_dofs,
     )
-    from fem2d.results import BeamForceResult
+    from fem2d.results import BeamForceResult, movement_summary
 
     nodes = np.asarray(nodes, dtype=float)
     elements = np.asarray(elements, dtype=int)
     n_nodes_count = len(nodes)
     n_elem = len(elements)
+
+    # Reference stage(s) for reporting: the stage ends at which the
+    # reported (since-reference) displacements are zeroed.
+    phase_names = [p.name for p in phases]
+    user_ref = _resolve_reset_stage(reset_displacements_after, phase_names)
+    phase_resets = {j - 1 for j, p in enumerate(phases)
+                    if j >= 1 and p.reset_displacements}
+    if user_ref is not None:
+        reset_points = set(phase_resets)
+        if user_ref >= 0:
+            reset_points.add(user_ref)
+        chosen_by = "user"
+    elif any(p.reset_displacements for p in phases):
+        reset_points, chosen_by = set(phase_resets), "user"
+    else:
+        reset_points = {0} if phases else set()
+        chosen_by = "default"
 
     # Expand material properties
     if len(material_props) < n_elem:
@@ -984,14 +1277,60 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
         rotation_dof_map, n_dof_total = build_rotation_dof_map(
             n_nodes_count, beam_elements)
 
-    # Initialize cumulative state
+    # Initialize cumulative state. The Gauss-point stress/strain arrays carry
+    # between phases (element averages lose the T6 variation and the
+    # out-of-plane stress of a plastic point).
     u = np.zeros(n_dof_total)
     sigma = np.zeros((n_elem, 3))
     strain = np.zeros((n_elem, 3))
+    sig_gp = None
+    eps_gp = None
     elem_state = [None] * n_elem
+    prev_active = set()
+    gp_cache = {}
 
+    def _kinematic_strain(u_vec):
+        """Strain B u at every Gauss point (n_e, n_gp, 3)."""
+        if 'gp' not in gp_cache:
+            from fem2d.solver import _gp_precompute
+            gp_cache['gp'] = _gp_precompute(nodes, elements, t)
+        gp = gp_cache['gp']
+        return np.einsum('egki,ei->egk', gp['B'], u_vec[gp['dofs']])
+
+    def _active_node_mask(active_elems, active_bms):
+        mask = np.zeros(n_nodes_count, dtype=bool)
+        if active_elems:
+            mask[np.unique(elements[sorted(active_elems)].ravel())] = True
+        if beam_elements and active_bms:
+            for idx in active_bms:
+                if 0 <= idx < len(beam_elements):
+                    mask[beam_elements[idx].node_i] = True
+                    mask[beam_elements[idx].node_j] = True
+        return mask
+
+    u_ends = []          # translational u at the end of each phase
     phase_results = []
     all_converged = True
+
+    def _stage_movements(pr, pi, u_trans, mask):
+        """Delta / cumulative / since-reference movements of phase pi."""
+        prev = u_ends[pi - 1] if pi > 0 else np.zeros_like(u_trans)
+        mask2 = np.repeat(mask, 2)
+        delta = np.where(mask2, u_trans - prev, 0.0)
+        earlier = [j for j in reset_points if j < pi]
+        ref_k = max(earlier) if earlier else None
+        u_ref = u_ends[ref_k] if ref_k is not None else np.zeros_like(u_trans)
+        since = np.where(mask2, u_trans - u_ref, 0.0)
+        pr.delta_displacements = delta
+        pr.displacements_since_reference = since
+        pr.active_node_mask = mask
+        pr.delta_displacement = movement_summary(nodes, delta, mask)
+        pr.cumulative_displacement = movement_summary(nodes, u_trans, mask)
+        pr.displacement_since_reference = movement_summary(nodes, since, mask)
+        pr.reference_stage_index = ref_k
+        pr.reference_stage = (f"end of stage {ref_k} '{phases[ref_k].name}'"
+                              if ref_k is not None else "start of analysis")
+        u_ends.append(u_trans.copy())
 
     for pi, phase in enumerate(phases):
         # 1. Compute active elements from group names
@@ -1011,9 +1350,20 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
             from fem2d.porewater import compute_pore_pressures
             pp = compute_pore_pressures(nodes, phase.gwt, gamma_w)
 
-        # 4. Reset displacements if requested
-        if phase.reset_displacements:
-            u = np.zeros(n_dof_total)
+        # 4. Elements activated in this phase are placed stress-free on the
+        #    deformed mesh: zero stress, strain = B u now (so only movement
+        #    after placement strains them), fresh HS state. Without this a
+        #    fill's strain counted the movement its shared nodes made before
+        #    it existed. (reset_displacements is reporting only — step 9.)
+        newly = sorted(active_elems - prev_active)
+        if newly and sig_gp is not None:
+            sig_gp = np.array(sig_gp, dtype=float)
+            eps_gp = np.array(eps_gp, dtype=float)
+            sig_gp[newly] = 0.0
+            eps_gp[newly] = _kinematic_strain(u)[newly]
+            for e in newly:
+                elem_state[e] = None
+        prev_active = set(active_elems)
 
         # 5. Handle empty active elements gracefully
         if len(active_elems) == 0:
@@ -1027,6 +1377,8 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
                 stresses=sigma.copy(),
                 strains=strain.copy(),
             )
+            _stage_movements(pr, pi, u[:2 * n_nodes_count].copy(),
+                             _active_node_mask(active_elems, active_bms))
             phase_results.append(pr)
             continue
 
@@ -1039,13 +1391,17 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
             pore_pressures=pp,
             active_elements=active_elems,
             active_beams=active_bms,
-            u_init=u, sigma_init=sigma, strain_init=strain,
+            u_init=u,
+            sigma_init=sig_gp if sig_gp is not None else sigma,
+            strain_init=eps_gp if eps_gp is not None else strain,
             state_init=elem_state,
             surface_loads=phase.surface_loads,
             return_state=True,
+            return_gp=True,
         )
 
-        converged, u_new, sigma_new, strain_new, state_new = result
+        (converged, u_new, sigma_new, strain_new, state_new,
+         sig_gp, eps_gp) = result
 
         # 7. Update cumulative state
         u = u_new
@@ -1121,12 +1477,49 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
                 max(abs(bf.shear_i), abs(bf.shear_j))
                 for bf in beam_force_results)
 
+        # Movements: this stage's own, cumulative, and since the reference.
+        _stage_movements(pr, pi, u_trans.copy(),
+                         _active_node_mask(active_elems, active_bms))
         phase_results.append(pr)
 
         # 10. Break if not converged
         if not converged:
             all_converged = False
             break
+
+    # Which stage the reported (since-reference) movements start from.
+    resets = sorted(j for j in reset_points if j < len(phases))
+    displacement_reference = {
+        "reset_after_stages": resets,
+        "measured_from": (
+            "; ".join(f"end of stage {j} '{phases[j].name}'" for j in resets)
+            if resets else "start of analysis"),
+        "chosen_by": chosen_by,
+    }
+    judgment = None
+    if chosen_by == "default" and len(phase_results) > 1:
+        last = phase_results[-1]
+        if _movement_differs(last.displacement_since_reference,
+                             last.cumulative_displacement):
+            judgment = _reference_judgment(
+                f"stage 0 '{phases[0].name}'",
+                f"stage {last.phase_index} '{last.phase_name}'",
+                last.displacement_since_reference,
+                last.cumulative_displacement,
+                "Pass reset_displacements_after='start' for cumulative "
+                "movements, or a stage index or name; soil placed during "
+                "construction belongs in its own stage.")
+    notes = [
+        "max_displacement_m / _x_m / _y_m and the displacements array are "
+        "cumulative from the start of the analysis (every stage, gravity "
+        "included).",
+        "delta_displacement is each stage's own movement; "
+        "displacement_since_reference is measured from "
+        "displacement_reference (settlement_m negative = down, heave_m "
+        "positive = up, horizontal_m signed +x).",
+        "An element activated in a stage is placed stress-free on the "
+        "deformed mesh; its nodes' movement counts from placement.",
+    ]
 
     return StagedConstructionResult(
         n_phases=len(phase_results),
@@ -1136,6 +1529,9 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
         phases=phase_results,
         nodes=nodes,
         elements=elements,
+        displacement_reference=displacement_reference,
+        judgment=judgment,
+        notes=notes,
     )
 
 

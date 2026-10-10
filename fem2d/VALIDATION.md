@@ -155,6 +155,43 @@ p0 = **83.92 kPa** = M/(M_oed + M)·q; the V-023 numbers above are unchanged
 1e3 s value needs elements thinner than √(c·t) ≈ 0.25 m at the drained
 boundary). Tests: `fem2d/tests/test_consolidation_increment.py`.
 
+## 5a. Movements per construction stage (2026-10-09)
+
+Owner direction: "construction phasing will determine output (ie output the
+delta movement per stage)" — G6 had fixed the monolithic settlement to exclude
+self-weight; now every stage reports its own movement, the cumulative movement
+and the movement since a reference stage (`reset_displacements_after`, default
+after the initial stage, with a `judgment` record when that default changes the
+numbers materially). Checks are against independent solves on the same mesh
+(linear, so superposition is exact) and 1-D closed forms. Tests:
+`fem2d/tests/test_stage_movements.py`,
+`funhouse_agent/tests/test_fem2d_stage_movements_adapter.py`.
+
+| Check | Reference | fem2d | Difference |
+|---|---|---|---|
+| Strip footing B = 2 m, 100 kPa, T6 20x10, E 20 MPa, ν 0.3, γ 18: gravity stage's own movement | gravity-only solve (33.43 mm max) | same field | 6e-16 m |
+| same, footing stage's own movement | load-only solve: settlement **15.90 mm** | same field | 4e-16 m |
+| same, cumulative after the footing stage | gravity + load: **49.33 mm** | same field | 5e-16 m |
+| 2 m fill group activated on 6 m of soil after its gravity stage: fill stage's own movement | solve under the fill weight alone: **9.36 mm** | same field | 1e-16 m (was off by K_fill·u_prev: activation strain not reset) |
+| Plastic T6 (c 1, φ 20°) gravity, then a stage that changes nothing | 0 | **0** | was 0.08 mm (1.5 % of the 5.5 mm gravity settlement) with element-average state |
+| CON-1 column (G6), initial stage: buoyant self-weight with 20 m ponded water | γ′H²/(2 M_oed) = 2.137 mm | **2.137 mm** | 0.0 % |
+| CON-1 load stage (reported by default) | q H / M_oed = 2.609 mm, U = 1.000 at 1e8 s | 2.609 mm, U 1.000 | unchanged from G6 |
+| CON-1 cumulative | initial + load = 4.746 mm | 4.746 mm | — |
+| 10 m staggered column, 50 kPa: load stage / initial stage | 37.14 / 30.42 mm | 37.14 / 30.52 mm | 0.0 % / +0.3 % (CST) |
+| 2 m dry fill flagged `fill` on 18 m clay (WT at the clay top): initial / load-stage drained | γ′·18²/(2M) = 1.731 mm; (20q + 38γ)/M = 3.501 mm | 1.731 / 3.501 mm | 0.0 % |
+
+Basis changes: the staggered column's `surface_settlement_m_by_time` /
+`max_settlement_m` now follow the reference stage (default: load stage alone;
+they used to include self-weight); a staged phase's `reset_displacements`
+flag now works (reporting only — it used to zero u in the solver, which
+re-converged to the same total, so it did nothing). `max_displacement_*` of a
+staged phase stays cumulative. Fill flagged in the consolidation column must
+lie above the water table (refused otherwise: water standing on the soil in
+place before an underwater fill is not modelled). Observation, not changed:
+with θ = 0.5 a ±5 kPa Crank–Nicolson ringing persists at the drained boundary
+long after U → 1 (max |excess| 4.96 kPa at Tv = 16; θ = 1 gives 0), so
+`max_excess_pore_pressure_kPa_by_time` carries it at late times.
+
 ## 6. Cross-check vs slope_stability Bishop (shared geometry)
 
 Shared profile [(0,0),(10,0),(30,10),(50,10)] (2:1, H = 10 m), c' = 10

@@ -14,6 +14,75 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 
 
+def movement_summary(nodes, u, mask=None) -> Dict[str, Any]:
+    """Extremes of a nodal displacement field, with where they occur.
+
+    Parameters
+    ----------
+    nodes : (n_nodes, 2) array — node coordinates (m).
+    u : (>= 2*n_nodes,) array — interleaved [ux, uy] displacements (m);
+        rotational DOFs beyond 2*n_nodes are ignored.
+    mask : (n_nodes,) bool array, optional — nodes to consider (e.g. those
+        in active elements). None = all nodes.
+
+    Returns
+    -------
+    dict (y is up, so a negative uy is downward):
+        settlement_m — the most negative vertical displacement (m, signed:
+            negative = down; 0.0 when nothing moved down)
+        heave_m — the most positive vertical displacement (m; 0.0 when
+            nothing moved up)
+        horizontal_m — the horizontal displacement of largest magnitude
+            (m, signed: positive = +x)
+        total_m — the largest displacement magnitude |u| (m)
+        *_at_xy — [x, y] (m) of each (None when the value is 0)
+    """
+    nodes = np.asarray(nodes, dtype=float)
+    n = len(nodes)
+    u = np.asarray(u, dtype=float)[:2 * n]
+    ux, uy = u[0::2], u[1::2]
+    idx = np.arange(n) if mask is None else np.where(np.asarray(mask))[0]
+    out = {}
+
+    def _at(i, value):
+        if i is None or value == 0.0:
+            return None
+        return [round(float(nodes[i, 0]), 3), round(float(nodes[i, 1]), 3)]
+
+    if len(idx) == 0:
+        for key in ("settlement", "heave", "horizontal", "total"):
+            out[f"{key}_m"] = 0.0
+            out[f"{key}_at_xy"] = None
+        return out
+    i_down = idx[np.argmin(uy[idx])]
+    i_up = idx[np.argmax(uy[idx])]
+    i_h = idx[np.argmax(np.abs(ux[idx]))]
+    mag = np.sqrt(ux ** 2 + uy ** 2)
+    i_t = idx[np.argmax(mag[idx])]
+    s = round(min(float(uy[i_down]), 0.0), 6) + 0.0
+    hv = round(max(float(uy[i_up]), 0.0), 6) + 0.0
+    hz = round(float(ux[i_h]), 6) + 0.0
+    tt = round(float(mag[i_t]), 6) + 0.0
+    out["settlement_m"] = s
+    out["settlement_at_xy"] = _at(i_down, s)
+    out["heave_m"] = hv
+    out["heave_at_xy"] = _at(i_up, hv)
+    out["horizontal_m"] = hz
+    out["horizontal_at_xy"] = _at(i_h, hz)
+    out["total_m"] = tt
+    out["total_at_xy"] = _at(i_t, tt)
+    return out
+
+
+def _material_difference(a, b, rel=0.05, abs_floor=1e-4):
+    """True when two displacements (m) differ by more than 5 % of the larger
+    AND by more than 0.1 mm — the threshold for a reference-stage choice to
+    count as changing the reported numbers."""
+    a, b = float(a), float(b)
+    diff = abs(a - b)
+    return diff > abs_floor and diff > rel * max(abs(a), abs(b))
+
+
 @dataclass
 class BeamForceResult:
     """Internal forces for one beam element.
@@ -120,15 +189,29 @@ class ConsolidationResult:
     n_elements : int
     n_time_steps : int
     times : (n_steps,) array — time since loading (s); times[0] = 0.
-    max_settlement_m : float — maximum (most negative) settlement.
+    max_settlement_m : float — maximum (most negative) surface settlement,
+        measured from the reference stage (``displacement_reference``).
     max_excess_pore_pressure_kPa : float
     degree_of_consolidation : float — U at final time (0 to 1).
     converged : bool
+    settlements / displacements : per-time surface settlement / field,
+        measured from the reference stage (default: the end of the initial
+        self-weight stage, i.e. the load stage alone).
     degree_of_consolidation_history : (n_steps,) array — U at every time.
     final_drained_settlement_m : float or None — the drained end state of
-        the load (monolithic).
+        the LOAD stage (monolithic), the U = 1 reference.
     scheme : str — "staggered" or "monolithic".
     notes : list of str — basis and caveats.
+    stages : list of dict — per construction stage: the initial
+        (self-weight) stage and the load / consolidation stage, each with
+        its own movement and the cumulative movement (see to_dict).
+    displacement_reference : dict — which stage the reported movements are
+        measured from, and who chose it.
+    judgment : dict or None — the reference-stage choice when it was a
+        default AND it changes the reported numbers materially.
+    initial_stage_displacements, load_stage_displacements,
+    displacement_nodes : the per-stage fields (load stage per time) and the
+        nodes they refer to (T6 nodes for the monolithic scheme).
     """
     n_nodes: int = 0
     n_elements: int = 0
@@ -151,6 +234,14 @@ class ConsolidationResult:
     final_drained_settlement_m: Optional[float] = None
     scheme: str = ""
     notes: list = field(default_factory=list)
+    stages: list = field(default_factory=list)
+    displacement_reference: Optional[Dict[str, Any]] = None
+    judgment: Optional[Dict[str, Any]] = None
+    initial_stage_displacements: Optional[np.ndarray] = field(
+        default=None, repr=False)
+    load_stage_displacements: Optional[np.ndarray] = field(
+        default=None, repr=False)
+    displacement_nodes: Optional[np.ndarray] = field(default=None, repr=False)
 
     def summary(self) -> str:
         lines = [
@@ -167,9 +258,16 @@ class ConsolidationResult:
             f"{self.max_excess_pore_pressure_kPa:.2f} kPa",
             f"  Degree of consolidation: "
             f"{self.degree_of_consolidation:.3f}",
-            "",
-            "=" * 60,
         ]
+        if self.displacement_reference:
+            lines.append(f"  Movements measured from: "
+                         f"{self.displacement_reference.get('measured_from')}")
+        for st in self.stages:
+            lines.append(
+                f"  Stage {st['stage']} ({st['name']}): this stage "
+                f"{st['surface_settlement_m'] * 1000:.2f} mm, cumulative "
+                f"{st['cumulative_surface_settlement_m'] * 1000:.2f} mm")
+        lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -201,6 +299,12 @@ class ConsolidationResult:
         if self.final_drained_settlement_m is not None:
             d["final_drained_settlement_m"] = round(
                 self.final_drained_settlement_m, 6)
+        if self.displacement_reference:
+            d["displacement_reference"] = dict(self.displacement_reference)
+        if self.stages:
+            d["stages"] = [dict(st) for st in self.stages]
+        if self.judgment:
+            d["judgment"] = self.judgment
         if self.scheme:
             d["scheme"] = self.scheme
         if self.notes:
@@ -372,6 +476,22 @@ class PhaseResult:
     n_beam_elements : int
     max_beam_moment_kNm_per_m : float
     max_beam_shear_kN_per_m : float
+
+    Displacement bases (2026-10-09). ``max_displacement_*`` and the
+    ``displacements`` array are CUMULATIVE from the start of the analysis
+    (every stage, the gravity stage included) — their meaning is unchanged.
+    Beside them, each stage reports three movement summaries
+    (``fem2d.results.movement_summary`` dicts, over the nodes of the
+    stage's active elements):
+    delta_displacement : this stage's own movement (end of this stage
+        minus end of the previous one; a node placed in this stage moves
+        from its placement).
+    cumulative_displacement : from the start of the analysis.
+    displacement_since_reference : from the end of the reference stage
+        (``reference_stage``), or from the start when no reset precedes this
+        stage — the PLAXIS "reset displacements to zero" convention.
+    The matching arrays are ``delta_displacements`` and
+    ``displacements_since_reference``.
     """
     phase_name: str = "Phase"
     phase_index: int = 0
@@ -389,9 +509,19 @@ class PhaseResult:
     max_beam_moment_kNm_per_m: float = 0.0
     max_beam_shear_kN_per_m: float = 0.0
     beam_forces: Optional[List] = field(default=None, repr=False)
+    delta_displacement: Optional[Dict[str, Any]] = None
+    cumulative_displacement: Optional[Dict[str, Any]] = None
+    displacement_since_reference: Optional[Dict[str, Any]] = None
+    reference_stage: str = ""
+    reference_stage_index: Optional[int] = None
 
     # Raw arrays (not serialized to dict)
     displacements: Optional[np.ndarray] = field(default=None, repr=False)
+    delta_displacements: Optional[np.ndarray] = field(
+        default=None, repr=False)
+    displacements_since_reference: Optional[np.ndarray] = field(
+        default=None, repr=False)
+    active_node_mask: Optional[np.ndarray] = field(default=None, repr=False)
     stresses: Optional[np.ndarray] = field(default=None, repr=False)
     strains: Optional[np.ndarray] = field(default=None, repr=False)
 
@@ -401,10 +531,24 @@ class PhaseResult:
             f"    Active elements: {self.n_active_elements}"
             f", beams: {self.n_active_beams}",
             f"    Converged: {self.converged}",
-            f"    Max displacement: {self.max_displacement_m:.4f} m",
-            f"    sigma_yy range: {self.min_sigma_yy_kPa:.1f} to "
-            f"{self.max_sigma_yy_kPa:.1f} kPa",
+            f"    Max displacement (cumulative): "
+            f"{self.max_displacement_m:.4f} m",
         ]
+        if self.delta_displacement is not None:
+            dd = self.delta_displacement
+            lines.append(
+                f"    This stage: settlement {dd['settlement_m'] * 1000:.2f}"
+                f" mm, heave {dd['heave_m'] * 1000:.2f} mm, horizontal "
+                f"{dd['horizontal_m'] * 1000:.2f} mm")
+        if self.displacement_since_reference is not None:
+            ds = self.displacement_since_reference
+            lines.append(
+                f"    Since {self.reference_stage}: settlement "
+                f"{ds['settlement_m'] * 1000:.2f} mm, |u| "
+                f"{ds['total_m'] * 1000:.2f} mm")
+        lines.append(
+            f"    sigma_yy range: {self.min_sigma_yy_kPa:.1f} to "
+            f"{self.max_sigma_yy_kPa:.1f} kPa")
         if self.n_beam_elements > 0:
             lines.append(
                 f"    Max moment: {self.max_beam_moment_kNm_per_m:.2f}"
@@ -426,6 +570,14 @@ class PhaseResult:
             "min_sigma_yy_kPa": round(self.min_sigma_yy_kPa, 2),
             "max_tau_xy_kPa": round(self.max_tau_xy_kPa, 2),
         }
+        if self.delta_displacement is not None:
+            d["delta_displacement"] = dict(self.delta_displacement)
+        if self.cumulative_displacement is not None:
+            d["cumulative_displacement"] = dict(self.cumulative_displacement)
+        if self.displacement_since_reference is not None:
+            d["displacement_since_reference"] = dict(
+                self.displacement_since_reference)
+            d["reference_stage"] = self.reference_stage
         if self.n_beam_elements > 0:
             d["n_beam_elements"] = self.n_beam_elements
             d["max_beam_moment_kNm_per_m"] = round(
@@ -448,12 +600,21 @@ class StagedConstructionResult:
     n_elements : int
     converged : bool — True if all phases converged.
     phases : list of PhaseResult
+    displacement_reference : dict — which stage movements are measured
+        from (``reset_after_stage``, its name, and whether the user or the
+        default chose it).
+    judgment : dict or None — the reference-stage choice when it was a
+        default AND it changes the reported numbers materially.
+    notes : list of str
     """
     n_phases: int = 0
     n_nodes: int = 0
     n_elements: int = 0
     converged: bool = True
     phases: List[PhaseResult] = field(default_factory=list)
+    displacement_reference: Optional[Dict[str, Any]] = None
+    judgment: Optional[Dict[str, Any]] = None
+    notes: List[str] = field(default_factory=list)
 
     # Shared mesh (not serialized)
     nodes: Optional[np.ndarray] = field(default=None, repr=False)
@@ -490,8 +651,12 @@ class StagedConstructionResult:
             f"  Mesh: {self.n_nodes} nodes, {self.n_elements} elements",
             f"  Phases: {self.n_phases}",
             f"  All converged: {self.converged}",
-            "",
         ]
+        if self.displacement_reference:
+            lines.append(
+                f"  Displacements reset after: "
+                f"{self.displacement_reference.get('measured_from')}")
+        lines.append("")
         for p in self.phases:
             lines.append(p.summary())
             lines.append("")
@@ -499,10 +664,17 @@ class StagedConstructionResult:
         return "\n".join(lines)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "n_phases": self.n_phases,
             "n_nodes": self.n_nodes,
             "n_elements": self.n_elements,
             "converged": self.converged,
             "phases": [p.to_dict() for p in self.phases],
         }
+        if self.displacement_reference:
+            d["displacement_reference"] = dict(self.displacement_reference)
+        if self.judgment:
+            d["judgment"] = self.judgment
+        if self.notes:
+            d["notes"] = list(self.notes)
+        return d

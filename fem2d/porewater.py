@@ -547,8 +547,21 @@ def solve_consolidation(nodes, elements, material_props, gamma, bc_nodes,
                         k, head_bcs, time_steps, t=1.0,
                         gamma_w=9.81, n_w=2.2e6,
                         pore_pressures_0=None, surface_loads=None,
-                        scheme="staggered", theta=1.0):
+                        scheme="staggered", theta=1.0,
+                        initial_surface_loads=None, fill_elements=None):
     """Solve Biot consolidation using the staggered or monolithic u-p scheme.
+
+    Two construction stages (2026-10-09, per-stage movements). Stage 0, the
+    INITIAL state: the self-weight of the soil in place before loading, in
+    drained equilibrium with the hydrostatic ``pore_pressures_0`` field, plus
+    any ``initial_surface_loads`` (e.g. ponded water above the ground
+    surface). Stage 1, the LOAD stage: ``surface_loads`` plus the self-weight
+    of any ``fill_elements`` (soil placed as fill during construction, with
+    the load), followed by consolidation. The stage-0 field and the stage-1
+    increment are returned separately, so the caller reports movements per
+    stage and chooses which stage they are measured from. A soil with zero
+    unit weight everywhere is a weightless analysis: the initial stage then
+    carries no load at all (no self-weight, no water force).
 
     Formulation (2026-10-09). ``pore_pressures_0`` is the initial EQUILIBRIUM
     pore field (hydrostatic; zeros if omitted) and self-weight is in
@@ -601,18 +614,35 @@ def solve_consolidation(nodes, elements, material_props, gamma, bc_nodes,
     n_w : float — bulk modulus of water (kPa).
     pore_pressures_0 : (n_nodes,) array, optional — initial equilibrium pore
         pressures (kPa).
-    surface_loads : list of (edge_nodes, qx, qy), optional — surface tractions.
+    surface_loads : list of (edge_nodes, qx, qy), optional — surface tractions
+        applied in the load stage.
+    initial_surface_loads : list of (edge_nodes, qx, qy), optional — tractions
+        that belong to the INITIAL state (ponded water above the surface).
+        The staggered scheme also carries them in every step (it is
+        cumulative); the monolithic increment never sees them.
+    fill_elements : iterable of int, optional — elements placed as fill
+        during construction, ABOVE the water table (ValueError otherwise):
+        their self-weight leaves the initial state and joins the load stage
+        (monolithic: applied UNDRAINED with the load, so it raises excess
+        pore pressure and consolidates).
 
     Returns
     -------
     dict with keys:
         times : (n_steps,) array — from 0 (the loading instant)
-        displacements : (n_steps, 2*n_nodes) array
+        displacements : (n_steps, 2*n_nodes) array — CUMULATIVE (initial
+            stage + load stage) for "staggered", the LOAD-STAGE increment for
+            "monolithic" (as before; see the per-stage keys below)
+        initial_stage_displacements : (2*n_u,) — the initial stage
+        load_stage_displacements : (n_steps, 2*n_u) — the load stage alone
+        displacement_nodes : (n_u, 2) — the nodes these arrays refer to (the
+            T6 nodes for "monolithic", the input nodes for "staggered")
+        surface_node_mask : (n_u,) bool — the ground-surface nodes
         pore_pressures : (n_steps, n_nodes) array — TOTAL for "staggered",
             EXCESS for "monolithic" (as before; see the next two keys)
         excess_pore_pressures, total_pore_pressures : (n_steps, n_nodes)
         settlements : (n_steps,) array — max surface settlement at each step
-            (monolithic: from the load increment only)
+            (monolithic: from the load increment only; staggered: cumulative)
         max_settlement_m : float
         max_excess_pore_pressure_kPa : float — largest |excess| at any time
         degree_of_consolidation : float — U at the final time
@@ -672,13 +702,36 @@ def solve_consolidation(nodes, elements, material_props, gamma, bc_nodes,
         for node, head in head_bcs
     ]
 
+    # Construction stages: the soil in place before loading (initial state)
+    # versus fill placed with the load. A zero unit weight everywhere is a
+    # weightless analysis: the initial state then carries no load at all
+    # (weightless soil under a water table would otherwise be "buoyed up").
+    weightless = not np.any(np.asarray(gamma, dtype=float) != 0.0)
+    fill_set = (set(int(e) for e in fill_elements)
+                if fill_elements is not None else set())
+    if fill_set:
+        # Fill placed above the water table only: underwater (hydraulic)
+        # fill would need the water standing on the soil in place before
+        # placement as an initial-state traction — not modelled.
+        fill_nodes = np.unique(elements[sorted(fill_set)].ravel())
+        if np.any(p_init[fill_nodes] > 1e-9):
+            raise ValueError(
+                "fill_elements must lie above the water table (zero initial "
+                "pore pressure in and under them): fill placed under water "
+                "is not modelled. Lower gwt to the top of the soil in place "
+                "or below it, or leave the layer out of the fill.")
+    in_place = [e for e in range(n_elem) if e not in fill_set]
+    init_loads = [] if weightless else list(initial_surface_loads or [])
+
     if scheme == "monolithic":
         # Monolithic u-p uses a Taylor-Hood (T6 displacement / T3 pressure)
         # pairing to satisfy the LBB (inf-sup) condition; self-assembles on a
         # T6 mesh derived from the CST input mesh.
         res = _monolithic_taylor_hood(
             nodes, elements, material_props, gamma, bc_nodes, k, excess_bcs,
-            time_steps, t, n_w, float(theta), surface_loads)
+            time_steps, t, n_w, float(theta), surface_loads,
+            p_init=p_init, initial_surface_loads=init_loads,
+            fill_elements=fill_set, weightless=weightless)
         ex = np.asarray(res['pore_pressures'])
         res['excess_pore_pressures'] = ex
         res['total_pore_pressures'] = ex + p_init[None, :ex.shape[1]]
@@ -696,11 +749,21 @@ def solve_consolidation(nodes, elements, material_props, gamma, bc_nodes,
     D_array = np.array(D_list)
     K = assemble_stiffness(nodes, elements, D_array, t)
 
-    # External force (gravity + surface loads)
+    # External force (gravity + surface loads + initial-state tractions such
+    # as ponded water; the staggered displacement is cumulative)
     F_ext = assemble_gravity(nodes, elements, gamma, t)
     if surface_loads:
         for edges, qx, qy in surface_loads:
             F_ext += assemble_surface_load(nodes, edges, qx, qy, t)
+    for edges, qx, qy in init_loads:
+        F_ext += assemble_surface_load(nodes, edges, qx, qy, t)
+
+    def _pp_force(p_total):
+        # Water force in the displacement step. Weightless analysis: the
+        # hydrostatic field is only the reference for the excess, so only
+        # the excess acts (see the stage note in the docstring).
+        p_act = p_total - p_init if weightless else p_total
+        return pore_pressure_force(nodes, elements, p_act, t)
 
     # Assembly flow/coupling matrices
     Q = assemble_coupling(nodes, elements, t)
@@ -734,10 +797,26 @@ def solve_consolidation(nodes, elements, material_props, gamma, bc_nodes,
     p = p_init + p_ex
 
     # Initial displacement (equilibrium under initial pore pressure + gravity)
-    F_init = F_ext_bc + pore_pressure_force(nodes, elements, p, t)
+    F_init = F_ext_bc + _pp_force(p)
     # Re-apply BCs to the combined force
     _, F_init_bc = apply_bcs_penalty(K, F_init, bc_nodes)
     u = spsolve(K_bc.tocsc(), F_init_bc)
+
+    # The initial stage alone: self-weight of the soil in place before
+    # loading (not the fill) in drained equilibrium with the hydrostatic
+    # field, plus the initial-state tractions. Linear and drained, so the
+    # load stage is the cumulative field minus this one.
+    if weightless:
+        u_stage0 = np.zeros(n_dof_u)
+    else:
+        F0 = assemble_gravity(nodes, elements, gamma, t,
+                              active_elements=in_place)
+        F0 = F0 + pore_pressure_force(nodes, elements, p_init, t,
+                                      active_elements=in_place)
+        for edges, qx, qy in init_loads:
+            F0 += assemble_surface_load(nodes, edges, qx, qy, t)
+        _, F0_bc = apply_bcs_penalty(K, F0, bc_nodes)
+        u_stage0 = spsolve(K_bc.tocsc(), F0_bc)
 
     # Storage for time history
     u_history = np.zeros((n_steps, n_dof_u))
@@ -772,7 +851,7 @@ def solve_consolidation(nodes, elements, material_props, gamma, bc_nodes,
         p_ex_prev = p_ex.copy()
 
         # Step 1: Displacement with current (total) pore pressure
-        F_pp = pore_pressure_force(nodes, elements, p, t)
+        F_pp = _pp_force(p)
         F_total = F_ext + F_pp
         K_bc_step, F_bc_step = apply_bcs_penalty(K, F_total, bc_nodes)
         try:
@@ -827,6 +906,10 @@ def solve_consolidation(nodes, elements, material_props, gamma, bc_nodes,
     return {
         'times': time_steps,
         'displacements': u_history,
+        'initial_stage_displacements': u_stage0,
+        'load_stage_displacements': u_history - u_stage0[None, :],
+        'displacement_nodes': nodes,
+        'surface_node_mask': surface_mask,
         'pore_pressures': p_history,
         'excess_pore_pressures': pex_history,
         'total_pore_pressures': p_history,
@@ -969,13 +1052,17 @@ def _monolithic_consolidation(K_bc, F_ext_bc, Q, H, S, excess_bcs,
     }
 
 
-def assemble_coupling_taylor_hood(nodes6, elements6, t=1.0, n_gp=3):
+def assemble_coupling_taylor_hood(nodes6, elements6, t=1.0, n_gp=3,
+                                  active_elements=None):
     """Taylor-Hood solid-fluid coupling Q (T6 displacement x T3 corner pressure).
 
     Q_e = integral_T B_u^T m N_p dA, with B_u the T6 strain-displacement matrix
     (3x12) and N_p = [L1, L2, L3] the linear (T3) pressure shape on the corner
     nodes. Global Q is (2*n6 x n_corner); pressure DOFs live on the corner nodes
     only (indices 0..n_corner-1 in the convert_to_t6 node ordering).
+    ``active_elements`` (optional set of element indices) assembles over a
+    subset with the full global shape (e.g. the hydrostatic water force on
+    the soil present in the initial stage only).
     """
     from fem2d.elements import t6_B_detJ, TRI_GAUSS
 
@@ -984,9 +1071,13 @@ def assemble_coupling_taylor_hood(nodes6, elements6, t=1.0, n_gp=3):
     n6 = len(nodes6)
     n_corner = int(elements6[:, :3].max()) + 1
     pts, wts = TRI_GAUSS[n_gp]
+    if active_elements is not None:
+        active_elements = set(int(e) for e in active_elements)
 
     rows, cols, vals = [], [], []
     for e in range(len(elements6)):
+        if active_elements is not None and e not in active_elements:
+            continue
         conn = elements6[e]
         coords = nodes6[conn]                 # (6, 2)
         Qe = np.zeros((12, 3))
@@ -1008,7 +1099,9 @@ def assemble_coupling_taylor_hood(nodes6, elements6, t=1.0, n_gp=3):
 
 def _monolithic_taylor_hood(nodes, elements, material_props, gamma, bc_nodes,
                             k, excess_bcs, time_steps, t, n_w, theta,
-                            surface_loads):
+                            surface_loads, p_init=None,
+                            initial_surface_loads=None, fill_elements=None,
+                            weightless=False):
     """Monolithic u-p consolidation with the Taylor-Hood (T6/T3) pairing.
 
     Converts the CST input mesh to T6, assembles the quadratic-displacement
@@ -1017,18 +1110,22 @@ def _monolithic_taylor_hood(nodes, elements, material_props, gamma, bc_nodes,
     block system (theta-method) — LBB-stable, so the drained-boundary pressure
     overshoot of the equal-order pairing is avoided.
 
-    The transient is driven by the applied surface loads ONLY. Self-weight
-    (``gamma``) is in equilibrium with the initial hydrostatic pore field
-    before loading — the initial state — so, the system being linear, it is
-    left out of the increment by superposition: excess pore pressure and
-    settlement are those of the load. (Before 2026-10-09 gravity was applied
-    undrained at t = 0 together with the load, so p0 carried the self-weight
-    response: 386 kPa under a 100 kPa load on a 20 m column.) ``gamma`` is
-    accepted for the signature but does not enter the increment.
+    The transient is driven by the LOAD STAGE only: the applied surface loads
+    plus the effective self-weight of any ``fill_elements`` (soil placed with
+    the load). The self-weight of the soil already in place is in equilibrium
+    with the initial hydrostatic pore field before loading — the INITIAL
+    stage — so, the system being linear, it is left out of the increment by
+    superposition and solved on its own (drained) as
+    ``initial_stage_displacements``. (Before 2026-10-09 all gravity was
+    applied undrained at t = 0 together with the load, so p0 carried the
+    self-weight response: 386 kPa under a 100 kPa load on a 20 m column.)
+    Which stage the reported movements are measured from is the caller's
+    choice (``analyze_consolidation(reset_displacements_after=...)``).
     """
     from fem2d.mesh import convert_to_t6, t6_boundary_edges, detect_boundary_nodes
     from fem2d.assembly import (
         assemble_stiffness, assemble_surface_load, apply_bcs_penalty,
+        assemble_gravity,
     )
     from fem2d.materials import elastic_D
 
@@ -1045,17 +1142,23 @@ def _monolithic_taylor_hood(nodes, elements, material_props, gamma, bc_nodes,
     D_array = np.array([elastic_D(mp['E'], mp['nu']) for mp in material_props])
     K = assemble_stiffness(nodes6, elem6, D_array, t)
 
-    # Load increment only (see docstring): no gravity term.
+    # Load-stage increment (see docstring): the surface loads, plus the
+    # effective self-weight of any fill placed with the load. The self-weight
+    # of the soil already in place is the initial stage, solved below.
     F_ext = np.zeros(2 * len(nodes6))
     if surface_loads:
         for edges, qx, qy in surface_loads:
             edges3 = t6_boundary_edges(elem6, edges)
             F_ext += assemble_surface_load(nodes6, edges3, qx, qy, t)
 
+    n_corner = int(elem6[:, :3].max()) + 1
+    p_corner = (np.zeros(n_corner) if p_init is None
+                else np.asarray(p_init, dtype=float)[:n_corner])
+    fill = set(fill_elements or ())
+
     # Displacement BCs on the T6 mesh (re-detect so midside boundary nodes are
     # constrained too); geometry matches the CST detection.
     bc6 = detect_boundary_nodes(nodes6)
-    K_bc, F_ext_bc = apply_bcs_penalty(K, F_ext, bc6)
 
     # Linear-pressure (T3) flow + compressibility on the corner skeleton
     # (identical to the original CST element matrices).
@@ -1064,6 +1167,18 @@ def _monolithic_taylor_hood(nodes, elements, material_props, gamma, bc_nodes,
 
     Q = assemble_coupling_taylor_hood(nodes6, elem6, t)
 
+    # Water force of the hydrostatic field on the soil (Q p: tension-positive
+    # effective stress, so below the water table it buoys the soil up).
+    F_water_all = Q @ p_corner
+    F_water_fill = np.zeros_like(F_water_all)
+    if fill and not weightless:
+        F_water_fill = assemble_coupling_taylor_hood(
+            nodes6, elem6, t, active_elements=fill) @ p_corner
+        F_ext += assemble_gravity(nodes6, elem6, gamma, t,
+                                  active_elements=fill) + F_water_fill
+
+    K_bc, F_ext_bc = apply_bcs_penalty(K, F_ext, bc6)
+
     y_max = nodes6[:, 1].max()
     surface_mask = np.abs(nodes6[:, 1] - y_max) < \
         0.01 * (y_max - nodes6[:, 1].min() + 1)
@@ -1071,6 +1186,26 @@ def _monolithic_taylor_hood(nodes, elements, material_props, gamma, bc_nodes,
     res = _monolithic_consolidation(K_bc, F_ext_bc, Q, H_p, S_p, excess_bcs,
                                     time_steps, theta, surface_mask)
     res['scheme'] = 'monolithic_taylor_hood'
+
+    # The INITIAL stage: drained self-weight of the soil in place (not the
+    # fill) with the hydrostatic water force, plus the initial-state
+    # tractions (ponded water). Zero for a weightless analysis.
+    u0 = np.zeros(2 * len(nodes6))
+    if not weightless:
+        in_place = [e for e in range(len(elem6)) if e not in fill]
+        F0 = assemble_gravity(nodes6, elem6, gamma, t,
+                              active_elements=in_place)
+        F0 = F0 + (F_water_all - F_water_fill)
+        for edges, qx, qy in initial_surface_loads or []:
+            F0 += assemble_surface_load(
+                nodes6, t6_boundary_edges(elem6, edges), qx, qy, t)
+        if np.any(F0 != 0.0):
+            _, F0_bc = apply_bcs_penalty(K, F0, bc6)
+            u0 = spsolve(K_bc.tocsc(), F0_bc)
+    res['initial_stage_displacements'] = u0
+    res['load_stage_displacements'] = res['displacements']
+    res['displacement_nodes'] = nodes6
+    res['surface_node_mask'] = surface_mask
     # The fully drained end state of the same load (the settlement the
     # transient tends to), for U by settlement and as a check.
     try:

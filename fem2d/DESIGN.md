@@ -220,12 +220,30 @@ transient with `c = k_mob/S`, `S = 1/M + α²/(K+4G/3)`.
   schedule (θ must be in [0.5, 1]).
 - **Default preserved.** `scheme="staggered"` is the default and the staggered code path
   is byte-for-byte unchanged.
-- **`degree_of_consolidation`.** For the monolithic scheme this is the mean
-  excess-pore-pressure dissipation `U = 1 − mean|p_final| / mean|p0|` (p0 = the
-  instantaneous undrained t=0 field), so it rises from 0 at t=0 toward 1 as the
-  excess dissipates. (The staggered scheme has no undrained predictor, so its
-  settlement-ratio `U` is identically 1.0 and cannot report the transient — left
-  unchanged as the default.)
+- **`degree_of_consolidation`.** For the monolithic scheme this is the
+  area-weighted excess-pore-pressure dissipation `U = 1 − avg p(t) / avg p0`
+  (p0 = the instantaneous undrained t=0 field; weights = tributary areas), at
+  every reported time, so it rises from 0 at t=0 toward 1 as the excess
+  dissipates. (The staggered scheme has no undrained predictor: U = 1.)
+- **Construction stages (2026-10-09).** `analyze_consolidation` has two stages,
+  both reported in `ConsolidationResult.stages` with this stage's own and the
+  cumulative surface settlement and movement extremes: stage 0 `initial` — the
+  self-weight of the soil in place, drained, in equilibrium with the
+  hydrostatic field (`K u0 = F_gravity + Q p_init`, plus the ponded-water
+  traction γw·gwt on the surface when gwt is above it — without that load the
+  hydrostatic pore pressure would lift the soil); stage 1 `load` — `load_q`
+  plus the self-weight of any soil layer flagged `'fill': True` (top layers
+  only, above the water table; monolithic: applied UNDRAINED with the load),
+  then consolidation. Linear, so the load stage is solved on its own (the G6
+  increment) and cumulative = initial + load. `reset_displacements_after`
+  (None/`"initial"` default, or `"start"`) picks what `settlements`,
+  `surface_settlement_m_by_time` and `max_settlement_m` report: the load stage
+  alone (default, as G6) or cumulative. A `judgment` record accompanies the
+  default when it changes the final settlement materially. All unit weights
+  zero = a weightless analysis: no initial-stage load (and the staggered
+  displacement step then sees only the excess pore pressure). The staggered
+  scheme follows the same reference (before 2026-10-09 its settlement
+  included self-weight).
 - **Factorization reuse (monolithic).** The coupled A-block depends only on Δt
   (K/Q/S/H are constant), so a uniform-time-step schedule is LU-factorized once
   (`scipy.sparse.linalg.splu`) and reused across steps; the factorization is
@@ -246,7 +264,9 @@ forward between phases.
 - `surface_loads`: list of (edges, qx, qy) tractions
 - `gwt`: groundwater table (float, polyline, or None)
 - `n_steps`: gravity load increments
-- `reset_displacements`: zero u at phase start (keeps stress/strain)
+- `reset_displacements`: report this phase's (and later phases') movement from
+  the START of this phase — PLAXIS "reset displacements to zero". Reporting
+  only; the solver state is untouched (see "Movements per stage")
 
 **Element group assignment** (`assign_element_groups()`):
 - Groups defined by bounding box regions (x_min, x_max, y_min, y_max)
@@ -261,17 +281,57 @@ forward between phases.
 - Beam filtering via `active_beams` parameter on beam assembly functions
 
 **Cumulative state carryover**:
-- Each phase starts from previous phase's u, sigma, strain, elem_state
+- Each phase starts from previous phase's u and the per-GAUSS-POINT stress,
+  strain and elem_state (`solve_nonlinear(return_gp=True)`; since 2026-10-09 —
+  element averages lost the T6 variation and the out-of-plane stress of a
+  plastic point, so a stage in which nothing changed still moved ~1.5 % of the
+  gravity settlement)
 - `solve_nonlinear()` accepts `u_init`, `sigma_init`, `strain_init`, `state_init`
 - HS hardening state preserved across phases
-- `reset_displacements=True` zeros u but keeps stress/strain (useful for
-  construction reference levels)
+- `u` is never altered between phases: the solver's strain is TOTAL (B·u), so
+  zeroing u (what `reset_displacements` did before 2026-10-09) only made the
+  solver re-converge to the same total displacement
 
 **Delta gravity loading**:
 - Each phase applies full gravity for its active elements from scratch
-  (incremental via n_steps), with initial state from previous phase
-- Newly activated elements start contributing gravity in their phase
-- Deactivated elements are simply skipped (no unloading of previous stress)
+  (with `u_init` given, `solve_nonlinear` applies a phase in one step), with
+  initial state from previous phase
+- Newly activated elements start contributing gravity in their phase, and are
+  placed STRESS-FREE on the deformed mesh: zero stress, strain initialized to
+  B·u at activation, fresh HS state (since 2026-10-09; before, a fill's strain
+  counted the movement its shared nodes had made before it existed, so the
+  fill stage's movement was wrong by K_fill·u_prev)
+- Deactivated elements are simply skipped (no unloading of previous stress);
+  nodes left in no active element are fixed and excluded from the reported
+  movements
+
+**Movements per stage** (owner direction 2026-10-09: "construction phasing
+will determine output — output the delta movement per stage"). Each
+`PhaseResult` carries three movement bases, each a
+`results.movement_summary` dict over the nodes of the stage's active elements
+(`settlement_m` = most negative uy, signed; `heave_m` = most positive uy;
+`horizontal_m` = ux of largest magnitude, signed +x; `total_m` = max |u|; and
+`*_at_xy`), with the matching arrays:
+
+| Basis | Key / array | Meaning |
+|---|---|---|
+| this stage | `delta_displacement` / `delta_displacements` | u(end of k) − u(end of k−1); a node placed in stage k moves from its placement |
+| cumulative | `cumulative_displacement` / `displacements` | from the start of the analysis (also `max_displacement_*`, meaning UNCHANGED) |
+| since reference | `displacement_since_reference` / `displacements_since_reference` | u(end of k) − u(end of the latest reset stage before k); stages up to the reset stage are measured from the start |
+
+The reset stage(s): `analyze_staged(reset_displacements_after=...)` — a stage
+index, a stage name, `"initial"` (= stage 0) or `"start"` (no reset) — plus
+any phase with `reset_displacements=True` (resets at its start). **Default**
+(neither given): reset after stage 0, which is taken as the initial gravity/K0
+stage, so construction movements exclude the self-weight movement (common FE
+practice). Phasing, not a global switch, decides whether self-weight counts:
+soil placed during construction is a group activated in a later phase, and its
+self-weight movement is in that phase's delta. When the DEFAULT was applied and
+it changes the last stage's movement materially (> 5 % and > 0.1 mm against
+cumulative), the result carries a `judgment` record (question, both options
+with their numbers, which was used and why) for the agent to surface.
+`StagedConstructionResult.displacement_reference` names the reset stages and
+whether the user or the default chose them.
 
 **Typical workflow**:
 ```python

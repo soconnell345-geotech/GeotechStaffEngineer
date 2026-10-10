@@ -287,7 +287,10 @@ class TestFem2dConsolidationPerTime:
             "k": 1e-10, "load_q": 100.0, "time_points": [1e3, 1e7, 1e8],
             "consolidation_scheme": "monolithic", "theta": 0.5, "n_w": M,
             "nx": 3, "ny": 20})
-        _assert_documented("fem2d", "fem2d_consolidation", r)
+        # judgment only appears when the default reference stage changes
+        # the numbers (weightless soil here: no initial-stage movement).
+        _assert_documented("fem2d", "fem2d_consolidation", r,
+                           conditional=("judgment",))
         assert r["time_s"] == [0.0, 1e3, 1e7, 1e8]
         for k in ("degree_of_consolidation_by_time",
                   "surface_settlement_m_by_time",
@@ -376,12 +379,15 @@ class TestDowndragBasis:
         assert r["neutral_plane_basis"].startswith("Settlement compatibility")
         assert r["warnings"] and "do not intersect" in r["warnings"][0]
         keys = list(r)
-        assert keys[:4] == ["neutral_plane_depth_m", "neutral_plane_method",
-                            "neutral_plane_basis", "warnings"]
+        # 2026-10-09: the judgment block (DD-1's bases differ materially)
+        # and the comparison of every basis lead with the basis.
+        assert keys[:6] == ["neutral_plane_depth_m", "neutral_plane_method",
+                            "neutral_plane_basis", "judgment", "warnings",
+                            "neutral_plane_comparison"]
         # Ahead of the depth profiles, so a size-capped result keeps them.
         assert keys.index("warnings") < keys.index("z_m")
         _assert_documented("downdrag", "downdrag_analysis", r,
-                           conditional=("structural_ok",))
+                           conditional=("structural_ok", "judgment"))
 
     def test_mobilized_nt_gives_force_equilibrium(self):
         r = call_agent("downdrag", "downdrag_analysis",

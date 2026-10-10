@@ -843,17 +843,27 @@ def _generate_downdrag_package(params: dict) -> dict:
         structural_capacity=params.get("structural_capacity"),
         allowable_settlement=params.get("allowable_settlement"),
         Nt=params.get("Nt"),
+        neutral_plane_method=params.get("neutral_plane_method", "auto"),
+        toe_mobilization=params.get("toe_mobilization", 1.0),
+        endo_bearing_condition=params.get("endo_bearing_condition"),
+        skin_friction_stress=params.get("skin_friction_stress", "initial"),
     )
     result = analysis.compute()
 
+    extra = {
+        "neutral_plane_m": round(result.neutral_plane_depth, 2),
+        "neutral_plane_method": result.neutral_plane_method,
+        "neutral_plane_basis": result.neutral_plane_basis,
+    }
+    if result.judgment is not None:
+        extra["judgment"] = result.judgment
     return _build_response(
         "downdrag", result, analysis, params,
         analysis_type="Downdrag",
         extra={
-            "neutral_plane_m": round(result.neutral_plane_depth, 2),
-            "neutral_plane_method": result.neutral_plane_method,
-            "neutral_plane_basis": result.neutral_plane_basis,
+            **extra,
             "warnings": list(result.warnings),
+            "neutral_plane_comparison": result.comparison_rows(),
             "dragload_kN": round(result.dragload, 1),
             "max_pile_load_kN": round(result.max_pile_load, 1),
             "pile_settlement_mm": round(result.pile_settlement * 1000, 2),
@@ -2004,12 +2014,18 @@ METHOD_INFO = {
             "structural_capacity": {"type": "float", "required": False, "description": "Factored structural resistance P_r (kN) for the UFC Eq 6-80 check."},
             "allowable_settlement": {"type": "float", "required": False, "description": "Allowable settlement (m) for the serviceability check."},
             "Nt": {"type": "float", "required": False, "description": "Toe bearing capacity factor: R_toe = Nt x sigma'v(toe) x A_toe in cohesionless soil, Nt x cu x A_toe in cohesive. Give the MOBILIZED value -- the toe resistance actually developed at the pile's settlement -- not the ultimate. Omitted, Nt is the ULTIMATE value from the toe layer's phi (100-150 in dense sand; 9 in clay); then the load and resistance curves often do not cross and the neutral plane comes from settlement compatibility instead of force equilibrium (see neutral_plane_method). UFC 3-220-20 6-5.8.4.2: check 0 %, 50 % and 100 % toe mobilization."},
+            "neutral_plane_method": {"type": "string", "required": False, "default": "auto", "description": "Neutral-plane basis, as in downdrag.downdrag_analysis: 'auto' (UFC 3-220-20 6-7.4), 'force_equilibrium', 'settlement_compatibility', 'bearing_layer_top', 'pile_toe', 'endo'. The package tabulates every basis whatever is chosen.", "allowed_values": ["auto", "force_equilibrium", "settlement_compatibility", "bearing_layer_top", "pile_toe", "endo"]},
+            "toe_mobilization": {"type": "float", "required": False, "default": 1.0, "description": "Fraction (0-1) of the toe resistance for force equilibrium (UFC 6-5.8.4.2: 0, 0.5, 1)."},
+            "endo_bearing_condition": {"type": "string", "required": False, "description": "CGPR #56 Table 3.1 condition for the Endo basis.", "allowed_values": ["floating", "stiff_flexible", "end_bearing"]},
+            "skin_friction_stress": {"type": "string", "required": False, "default": "initial", "description": "'initial' or 'final' (UFC 6-7.4 step 2) effective stress for beta friction.", "allowed_values": ["initial", "final"]},
             **_COMMON_PARAMS,
         },
         "returns": {**_COMMON_RETURNS,
                     "neutral_plane_m": "Neutral plane depth (m).",
-                    "neutral_plane_method": "'force_equilibrium', 'settlement_compatibility' or 'none' (see downdrag.downdrag_analysis).",
+                    "neutral_plane_method": "'force_equilibrium', 'settlement_compatibility', 'bearing_layer_top', 'pile_toe', 'endo' or 'none' (see downdrag.downdrag_analysis).",
                     "neutral_plane_basis": "One-sentence basis of the neutral plane, with its source; also printed in the package.",
+                    "judgment": "Present only when the cited bases differ materially: question, options, used, why. Report it; the engineer chooses.",
+                    "neutral_plane_comparison": "Every cited basis on the same inputs (also tabulated in the package).",
                     "warnings": "What the engineer must know about the result; also printed in the package. Report every one.",
                     "dragload_kN": "Dragload (kN).",
                     "max_pile_load_kN": "Maximum pile load at the neutral plane (kN).",
