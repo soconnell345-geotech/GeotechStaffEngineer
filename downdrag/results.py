@@ -68,9 +68,10 @@ class DowndragResult:
     neutral_plane_method : str
         How the neutral plane was located: ``"force_equilibrium"`` (the
         load and resistance curves cross), ``"settlement_compatibility"``
-        (they do not, because the toe resistance exceeds everything the
-        pile can deliver; placed where soil and pile settle equally) or
-        ``"none"`` (the dead load exceeds the total resistance).
+        (placed where soil and pile settle equally; the default when the
+        curves do not cross), ``"bearing_layer_top"``, ``"pile_toe"``,
+        ``"endo"`` (rules, chosen by the caller) or ``"none"`` (the dead
+        load exceeds the total resistance).
     neutral_plane_basis : str
         One-sentence statement of that basis, with its source.
     toe_force_mobilized : float or None
@@ -79,6 +80,20 @@ class DowndragResult:
         fully mobilized.
     warnings : list of str
         Anything the engineer must know about the result.
+    neutral_plane_requested : str
+        The ``neutral_plane_method`` asked for (``"auto"`` by default).
+    toe_mobilization : float
+        Fraction of the toe resistance used for force equilibrium.
+    skin_friction_stress : str
+        ``"initial"`` or ``"final"`` effective stress for beta friction.
+    neutral_plane_comparison : list of dict
+        Every cited neutral-plane basis on the same inputs: name, method,
+        role, source, assumptions, applies, reason, and (when it applies)
+        the plane depth, drag load, load at the plane, toe force, and soil
+        and pile settlement at the plane (from the soil at the toe level).
+    judgment : dict or None
+        Present when the applicable bases differ materially: question,
+        options (name, source, assumptions, applies, result), used, why.
     """
     neutral_plane_depth: float
     dragload: float
@@ -106,6 +121,26 @@ class DowndragResult:
     neutral_plane_basis: str = ""
     toe_force_mobilized: Optional[float] = None
     warnings: list = field(default_factory=list)
+    neutral_plane_requested: str = "auto"
+    toe_mobilization: float = 1.0
+    skin_friction_stress: str = "initial"
+    neutral_plane_comparison: list = field(default_factory=list)
+    judgment: Optional[dict] = None
+
+    def comparison_rows(self) -> list:
+        """The comparison rows rounded for display / JSON."""
+        out = []
+        for r in self.neutral_plane_comparison:
+            row = dict(r)
+            for key, nd in (("neutral_plane_depth_m", 3),
+                            ("dragload_kN", 1), ("max_pile_load_kN", 1),
+                            ("toe_force_kN", 1),
+                            ("soil_settlement_at_np_mm", 2),
+                            ("pile_settlement_at_np_mm", 2)):
+                if row.get(key) is not None:
+                    row[key] = round(float(row[key]), nd)
+            out.append(row)
+        return out
 
     def summary(self) -> str:
         """Return a text summary of key results."""
@@ -158,7 +193,29 @@ class DowndragResult:
 
         if self.neutral_plane_basis:
             lines += ["", "--- Neutral Plane Basis ---",
+                      f"Requested: {self.neutral_plane_requested}",
                       self.neutral_plane_basis]
+        if self.neutral_plane_comparison:
+            lines += ["", "--- Neutral-Plane Bases Compared ---",
+                      f"{'Basis':<30}{'NP (m)':>8}{'Drag (kN)':>11}"
+                      f"{'s_soil/s_pile at NP (mm)':>27}"]
+            for r in self.neutral_plane_comparison:
+                if r["applies"]:
+                    tag = "" if r["role"] == "basis" else f" [{r['role']}]"
+                    lines.append(
+                        f"{r['name'] + tag:<30}"
+                        f"{r['neutral_plane_depth_m']:>8.2f}"
+                        f"{r['dragload_kN']:>11.1f}"
+                        f"{r['soil_settlement_at_np_mm']:>15.1f} / "
+                        f"{r['pile_settlement_at_np_mm']:<9.1f}")
+                else:
+                    lines.append(f"{r['name']:<30}  not applicable: "
+                                 f"{r['reason']}")
+        if self.judgment:
+            lines += ["", "--- Judgment ---",
+                      self.judgment["question"],
+                      f"Used: {self.judgment['used']}. "
+                      f"{self.judgment['why']}"]
         if self.warnings:
             lines += ["", "--- Warnings ---"]
             lines += [f"* {w}" for w in self.warnings]
@@ -199,6 +256,12 @@ class DowndragResult:
         if self.settlement_ok is not None:
             d['settlement_ok'] = self.settlement_ok
         d['warnings'] = list(self.warnings)
+        d['neutral_plane_requested'] = self.neutral_plane_requested
+        d['toe_mobilization'] = self.toe_mobilization
+        d['skin_friction_stress'] = self.skin_friction_stress
+        d['neutral_plane_comparison'] = self.comparison_rows()
+        if self.judgment is not None:
+            d['judgment'] = self.judgment
         return d
 
     def plot_axial_load(self, ax=None, show=True, **kwargs):

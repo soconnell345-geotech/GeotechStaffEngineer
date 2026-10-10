@@ -232,3 +232,76 @@ class TestGroupAdapters:
             "n_piles": 9, "location": "edge", "s_over_d": 3.0,
         })
         assert "error" in res and "location" in res["error"]
+
+
+# ── downdrag_analysis: neutral-plane options, comparison and judgment ─────
+
+DD1 = {
+    # The live-smoke DD-1 input: 8 m of consolidating clay over dense sand.
+    "pile_length": 15.0, "pile_diameter": 0.4,
+    "layers": [
+        {"thickness": 8.0, "soil_type": "cohesive", "unit_weight": 17.0,
+         "cu": 30.0, "alpha": 0.5, "settling": True, "Cc": 0.25, "e0": 0.9},
+        {"thickness": 7.0, "soil_type": "cohesionless", "unit_weight": 19.0,
+         "phi": 38.0, "beta": 0.3},
+    ],
+    "gwt_depth": 1.0, "fill_thickness": 2.0, "fill_unit_weight": 20.0,
+}
+
+FLOATING = {
+    # A friction pile floating in settling clay: every basis agrees.
+    "pile_length": 20.0, "pile_diameter": 0.4, "Q_dead": 300.0,
+    "layers": [
+        {"thickness": 25.0, "soil_type": "cohesive", "unit_weight": 17.0,
+         "cu": 30.0, "alpha": 1.0, "settling": True, "Cc": 0.3, "e0": 1.0},
+    ],
+    "gwt_depth": 1.0, "fill_thickness": 2.0,
+}
+
+
+class TestDowndragAnalysisNeutralPlaneBases:
+    def test_dd1_carries_judgment_ahead_of_the_profiles(self):
+        res = _call("downdrag_analysis", dict(DD1))
+        assert "error" not in res, res
+        j = res["judgment"]
+        assert set(j) == {"question", "options", "used", "why"}
+        assert j["used"] == "settlement_compatibility"
+        for o in j["options"]:
+            assert set(o) == {"name", "source", "assumptions", "applies",
+                              "result"}
+        keys = list(res)
+        assert keys.index("judgment") < keys.index("z_m")
+        assert keys.index("neutral_plane_comparison") < keys.index("z_m")
+        assert len(res["neutral_plane_comparison"]) == 7
+
+    def test_clear_cut_case_has_no_judgment(self):
+        res = _call("downdrag_analysis", dict(FLOATING))
+        assert "error" not in res, res
+        assert "judgment" not in res
+        assert res["neutral_plane_comparison"]
+
+    def test_options_pass_through(self):
+        res = _call("downdrag_analysis", dict(
+            DD1, neutral_plane_method="endo",
+            endo_bearing_condition="stiff_flexible"))
+        assert res["neutral_plane_method"] == "endo"
+        assert res["neutral_plane_depth_m"] == pytest.approx(11.25)
+        res = _call("downdrag_analysis", dict(
+            DD1, neutral_plane_method="force_equilibrium",
+            toe_mobilization=0.0))
+        assert res["neutral_plane_method"] == "force_equilibrium"
+        assert res["toe_mobilization"] == 0.0
+
+    def test_inapplicable_basis_is_an_error_with_the_reason(self):
+        res = _call("downdrag_analysis", dict(
+            DD1, neutral_plane_method="force_equilibrium"))
+        assert "error" in res and "do not cross" in res["error"]
+
+    def test_method_info_lists_the_options(self):
+        info = describe_method("downdrag", "downdrag_analysis")
+        p = info["parameters"]
+        assert p["neutral_plane_method"]["allowed_values"] == [
+            "auto", "force_equilibrium", "settlement_compatibility",
+            "bearing_layer_top", "pile_toe", "endo"]
+        assert "toe_mobilization" in p
+        assert "judgment" in info["returns"]

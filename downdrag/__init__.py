@@ -22,7 +22,7 @@ References:
 """
 
 from downdrag.soil import DowndragSoilLayer, DowndragSoilProfile
-from downdrag.analysis import DowndragAnalysis
+from downdrag.analysis import DowndragAnalysis, NEUTRAL_PLANE_METHODS
 from downdrag.results import DowndragResult
 from downdrag.cgpr56 import (
     endo_method, poulos_method, fellenius_method_cgpr56, pileneg_procedure,
@@ -35,7 +35,7 @@ from downdrag.cgpr56 import (
 
 __all__ = [
     'DowndragSoilLayer', 'DowndragSoilProfile',
-    'DowndragAnalysis', 'DowndragResult',
+    'DowndragAnalysis', 'DowndragResult', 'NEUTRAL_PLANE_METHODS',
     'endo_method', 'poulos_method', 'fellenius_method_cgpr56',
     'pileneg_procedure', 'rigid_block_method', 'drag_load_reduction_factor',
     'drag_load_reduction_method', 'downdrag_method_comparison',

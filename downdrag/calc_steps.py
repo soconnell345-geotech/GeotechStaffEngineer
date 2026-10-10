@@ -34,6 +34,13 @@ REFERENCES = [
     'Section 10.7.3.7: Downdrag.',
     'Fellenius, B.H. (1991). "Pile foundations." Chapter 13 in '
     'Foundation Engineering Handbook, 2nd Ed. Van Nostrand Reinhold.',
+    'Hannigan, P.J. et al. (2016). "Design and Construction of Driven Pile '
+    'Foundations." FHWA-NHI-16-009 (GEC-12), Vol I, Sections 7.3.5.7 and '
+    '7.3.6.1.',
+    'Siegel, T.C. et al. (2013). Neutral plane method for drag force and '
+    'downdrag within LRFD (as cited by UFC 3-220-20 and GEC-12).',
+    'Greenfield, M.L. and Filz, G.M. (2009). "Downdrag and Drag Load on '
+    'Piles." Virginia Tech CGPR #56, Section 3.2.1 (Endo method).',
 ]
 
 
@@ -91,6 +98,22 @@ def get_input_summary(result, analysis) -> List[InputItem]:
     if analysis.Nt is not None:
         items.append(InputItem("N_t", "Toe bearing factor (user)",
                                f"{analysis.Nt:.1f}", ""))
+
+    # The neutral-plane basis is a choice: say which was asked for.
+    method = getattr(analysis, "neutral_plane_method", "auto")
+    items.append(InputItem("NP basis", "Neutral-plane method requested",
+                           method, ""))
+    mob = getattr(analysis, "toe_mobilization", 1.0)
+    items.append(InputItem("m_toe", "Toe mobilization for force equilibrium",
+                           f"{mob * 100:.0f}", "%"))
+    if getattr(analysis, "endo_bearing_condition", None):
+        items.append(InputItem("Endo", "Endo bearing condition (CGPR #56 "
+                               "Table 3.1)",
+                               analysis.endo_bearing_condition, ""))
+    if getattr(analysis, "skin_friction_stress", "initial") == "final":
+        items.append(InputItem("σ'_fs", "Effective stress for skin "
+                               "friction", "final (σ'v0 + Δσ)",
+                               ""))
 
     return items
 
@@ -173,6 +196,24 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         np_equation = "Q_dead > R_toe + R_shaft(0\u2192L)"
         np_substitution = "Dead load exceeds the nominal geotechnical resistance"
         np_reference = "UFC 3-220-20 \u00a76-7.4 step 5 (limiting case)"
+    elif np_method == "bearing_layer_top":
+        np_title = "Neutral Plane: Base of the Settling Soil (rule)"
+        np_equation = "z_np = depth to the base of the settling soil"
+        np_substitution = ("End-bearing pile in a stratum much stiffer than "
+                           "the compressible soil")
+        np_reference = "UFC 3-220-20 \u00a76-7.4 step 5"
+    elif np_method == "pile_toe":
+        np_title = "Neutral Plane: Pile Toe (upper bound)"
+        np_equation = "z_np = L (whole shaft as drag)"
+        np_substitution = "Upper bound on the drag load"
+        np_reference = ("GEC-12 \u00a77.3.5.7 (group settlement; "
+                        "Goudreault & Fellenius 1994)")
+    elif np_method == "endo":
+        np_title = "Neutral Plane: Endo Ratio (assumed)"
+        np_equation = "z_np = ratio \u00d7 L  (CGPR #56 Table 3.1)"
+        np_substitution = (f"Bearing condition: "
+                           f"{getattr(analysis, 'endo_bearing_condition', '')}")
+        np_reference = "CGPR #56 \u00a73.2.1 (Endo et al. 1969)"
     else:
         np_title = "Force Equilibrium (Neutral Plane)"
         np_equation = (
@@ -186,6 +227,13 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         )
         np_reference = ("Fellenius (2004), unified neutral plane method; "
                         "UFC 3-220-20 \u00a76-7.4 steps 3-5")
+        mob = getattr(r, "toe_mobilization", 1.0)
+        if mob < 1.0:
+            np_substitution += (
+                f"\nToe at {mob * 100:.0f}% of R_toe "
+                f"({mob * r.toe_resistance:.1f} kN)")
+            np_reference += ("; \u00a76-5.8.4.2 and GEC-12 \u00a77.3.6.1 "
+                             "(partial toe mobilization)")
     np_notes = (
         f"NP at {r.neutral_plane_depth:.2f} m "
         f"({r.neutral_plane_depth / r.pile_length * 100:.0f}% of pile length)"
@@ -205,6 +253,11 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         reference=np_reference,
         notes=np_notes,
     ))
+
+    # Every cited basis on the same inputs (the basis is a choice).
+    comparison = comparison_table(r)
+    if comparison is not None:
+        np_items.append(comparison)
 
     # Load components at NP
     np_items.append(TableData(
@@ -447,8 +500,66 @@ _METHOD_LABELS = {
                          "cross)",
     "settlement_compatibility": "settlement compatibility (soil and pile "
                                 "settle equally)",
+    "bearing_layer_top": "the bearing-layer rule (plane at the base of the "
+                         "settling soil)",
+    "pile_toe": "the pile toe (upper bound: whole shaft as drag)",
+    "endo": "the Endo ratio (plane assumed at a fraction of the embedment)",
     "none": "none (the pile is overloaded; no neutral plane)",
 }
+
+
+def comparison_table(result):
+    """TableData of every cited neutral-plane basis on the same inputs, or
+    None when the result carries no comparison (built before 2026-10-09).
+    Settlements at the NP are measured from the soil at the toe level."""
+    rows = list(getattr(result, "neutral_plane_comparison", []) or [])
+    if not rows:
+        return None
+    method = getattr(result, "neutral_plane_method", "")
+    mob = getattr(result, "toe_mobilization", 1.0)
+
+    def is_used(row):
+        if not row["applies"] or row["method"] != method:
+            return False
+        if method == "force_equilibrium":
+            return abs((row["toe_mobilization"] or 0.0) - mob) < 1e-9
+        return True
+
+    table_rows = []
+    for row in rows:
+        name = row["name"]
+        if is_used(row):
+            name += " (used)"
+        if row["applies"]:
+            note = "" if row["role"] == "basis" else row["role"]
+            if row.get("reason"):
+                note = (note + ": " if note else "") + row["reason"]
+            table_rows.append([
+                name, row["source"], "Yes",
+                f"{row['neutral_plane_depth_m']:.2f}",
+                f"{row['dragload_kN']:.1f}",
+                f"{row['max_pile_load_kN']:.1f}",
+                f"{row['soil_settlement_at_np_mm']:.1f} / "
+                f"{row['pile_settlement_at_np_mm']:.1f}",
+                note or row["assumptions"],
+            ])
+        else:
+            table_rows.append([name, row["source"], "No", "-", "-", "-",
+                               "-", row["reason"]])
+    return TableData(
+        title="Neutral-Plane Bases Compared (same inputs)",
+        headers=["Basis", "Source", "Applies", "z_np (m)", "Drag (kN)",
+                 "Q_np (kN)", "s_soil / s_pile at NP (mm)",
+                 "Assumptions / reason"],
+        rows=table_rows,
+        notes=(
+            "The neutral-plane basis is the engineer's choice; the result "
+            "uses the requested method (default: UFC 3-220-20 §6-7.4). "
+            "Settlements at the NP are measured from the soil at the toe "
+            "level: soil = consolidation of the soil between the NP and "
+            "the toe; pile = toe penetration + pile compression below the "
+            "NP. Equal values = settlement-compatible."),
+    )
 
 
 def basis_and_warnings(result) -> list:
@@ -461,11 +572,20 @@ def basis_and_warnings(result) -> list:
     if not basis and not warnings:
         return []
     items = []
+    requested = getattr(result, "neutral_plane_requested", None)
+    if requested:
+        items.append(f"Neutral-plane method requested: {requested}.")
     if method:
         items.append("Neutral plane located by: "
                      + _METHOD_LABELS.get(method, method) + ".")
     if basis:
         items.append("Basis: " + basis)
+    judgment = getattr(result, "judgment", None)
+    if judgment:
+        items.append(
+            f"JUDGMENT REQUIRED: {judgment['question']} Used: "
+            f"{judgment['used']}. {judgment['why']} The options are "
+            f"tabulated under 'Neutral-Plane Bases Compared'.")
     toe = getattr(result, "toe_force_mobilized", None)
     if toe is not None and method == "settlement_compatibility":
         items.append(

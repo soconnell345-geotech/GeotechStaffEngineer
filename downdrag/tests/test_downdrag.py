@@ -1102,5 +1102,382 @@ class TestNeutralPlaneWhenCurvesDoNotCross:
         assert "Warnings" in text
 
 
+# =============================================================================
+# Neutral-plane bases: options, comparison and judgment (owner, 2026-10-09:
+# "Downdrag has many methods and it should be open to multiple assumptions.
+# See DM 7.2 or the FHWA driven pile manual.")
+# =============================================================================
+
+FT = 0.3048
+KIP = 4.4482216
+PSF = 0.04788026
+PCF = 0.15708746   # kN/m3 per pcf
+
+
+def _dd1(**kw):
+    """The live-smoke DD-1 input (G8): 8 m of consolidating clay (fs 15 kPa)
+    over dense sand, 0.4 m pile 15 m long, 40 kPa of fill."""
+    soil = DowndragSoilProfile(layers=[
+        DowndragSoilLayer(thickness=8.0, soil_type="cohesive",
+                          unit_weight=17.0, cu=30.0, alpha=0.5,
+                          settling=True, Cc=0.25, e0=0.9),
+        DowndragSoilLayer(thickness=7.0, soil_type="cohesionless",
+                          unit_weight=19.0, phi=38.0, beta=0.3),
+    ], gwt_depth=1.0)
+    args = dict(soil=soil, pile_length=15.0, pile_diameter=0.4,
+                fill_thickness=2.0, fill_unit_weight=20.0, Q_dead=0.0)
+    args.update(kw)
+    return DowndragAnalysis(**args)
+
+
+def _floating(**kw):
+    """A friction pile floating in settling clay (toe in the clay): the
+    clear-cut case where every applicable basis agrees."""
+    soil = DowndragSoilProfile(layers=[
+        DowndragSoilLayer(thickness=25.0, soil_type="cohesive",
+                          unit_weight=17.0, cu=30.0, alpha=1.0,
+                          settling=True, Cc=0.3, e0=1.0),
+    ], gwt_depth=1.0)
+    args = dict(soil=soil, pile_length=20.0, pile_diameter=0.4,
+                fill_thickness=2.0, Q_dead=300.0)
+    args.update(kw)
+    return DowndragAnalysis(**args)
+
+
+def _ufc_b5(**kw):
+    """UFC 3-220-20 (16 Jan 2025) Appendix B-5, Example 5 (pp. 633-643):
+    12 in square PPC piles, 65 ft long below the cap at the original grade,
+    8 ft of new fill; soft clay 40 ft (su 500 psf, alpha 1.0 -> 2 k/ft),
+    stiff clay below (su 3000 psf): a 10 ft transition (720 psf -> 2.9 k/ft)
+    then alpha 0.5 (1500 psf -> 6 k/ft); Rb = 9 su B^2 = 27 kips; Qd = 40
+    kips per pile; the load curve carries no pile weight (B-5.5).
+    Compressibility of the clays is not used by force equilibrium; the
+    values here are placeholders, not the example's (Fig B-16)."""
+    soil = DowndragSoilProfile(layers=[
+        DowndragSoilLayer(thickness=40 * FT, soil_type="cohesive",
+                          unit_weight=100 * PCF, cu=500 * PSF, alpha=1.0,
+                          settling=True, Cc=0.5, e0=1.5,
+                          description="soft clay"),
+        DowndragSoilLayer(thickness=10 * FT, soil_type="cohesive",
+                          unit_weight=120 * PCF, cu=3000 * PSF,
+                          alpha=720.0 / 3000.0,
+                          description="stiff clay, transition"),
+        DowndragSoilLayer(thickness=41 * FT, soil_type="cohesive",
+                          unit_weight=120 * PCF, cu=3000 * PSF, alpha=0.5,
+                          description="stiff clay"),
+    ], gwt_depth=0.0)
+    args = dict(soil=soil, pile_length=65 * FT, pile_diameter=1 * FT,
+                pile_perimeter=4 * FT, pile_area=FT * FT,
+                pile_E=4030e3 * 144 * PSF, pile_unit_weight=0.0,
+                Q_dead=40 * KIP, fill_thickness=8 * FT,
+                fill_unit_weight=120 * PCF, n_sublayers=40)
+    args.update(kw)
+    return DowndragAnalysis(**args)
+
+
+def _rows(result):
+    return {r["name"]: r for r in result.neutral_plane_comparison}
+
+
+class TestUFCAppendixB5NeutralPlane:
+    """UFC 3-220-20 App. B-5.5, Table B-28 (p. 640): the neutral plane for
+    0 %, 50 % and 100 % base mobilization (Siegel et al. 2013, as UFC
+    §6-5.8.4.2 recommends). Published: NP 48 / 50 / 52 ft below the final
+    ground surface (pile head 8 ft below it), Pmax 120 / 126 / 133 kips.
+    Exact from the printed load-transfer rates: 47.75 / 50.16 / 52.48 ft,
+    119.5 / 126.3 / 133.0 kips. Achieved: 47.81 / 50.16 / 52.50 ft,
+    119.6 / 126.1 / 132.9 kips."""
+
+    @pytest.mark.parametrize("mob, np_pub, np_exact, p_pub, p_exact", [
+        (0.0, 48.0, 47.75, 120.0, 119.5),
+        (0.5, 50.0, 50.155, 126.0, 126.25),
+        (1.0, 52.0, 52.483, 133.0, 132.99),
+    ])
+    def test_table_b28(self, mob, np_pub, np_exact, p_pub, p_exact):
+        r = _ufc_b5(neutral_plane_method="force_equilibrium",
+                    toe_mobilization=mob).compute()
+        assert r.toe_resistance / KIP == pytest.approx(27.0, rel=0.005)
+        np_gs_ft = r.neutral_plane_depth / FT + 8.0
+        assert np_gs_ft == pytest.approx(np_exact, abs=0.3)
+        assert np_gs_ft == pytest.approx(np_pub, abs=1.0)
+        assert r.max_pile_load / KIP == pytest.approx(p_exact, rel=0.01)
+        assert r.max_pile_load / KIP == pytest.approx(p_pub, abs=1.0)
+        assert r.neutral_plane_method == "force_equilibrium"
+
+    def test_comparison_rows_carry_the_same_three_planes(self):
+        rows = _rows(_ufc_b5().compute())
+        for mob, np_pub in ((0.0, 48.0), (0.5, 50.0), (1.0, 52.0)):
+            row = rows[f"force_equilibrium, toe {round(mob * 100)}%"]
+            assert row["applies"]
+            assert (row["neutral_plane_depth_m"] / FT + 8.0
+                    == pytest.approx(np_pub, abs=1.0))
+
+    def test_bearing_layer_rule_is_the_base_of_the_soft_clay(self):
+        """UFC B-5.7: 'the position of the neutral plane is below the bottom
+        of the soft clay' (48 ft); the end-bearing rule puts it there."""
+        row = _rows(_ufc_b5().compute())["bearing_layer_top"]
+        assert row["applies"]
+        assert row["neutral_plane_depth_m"] / FT + 8.0 == pytest.approx(
+            48.0, abs=1e-6)
+        # Q_np = 40 + 2 k/ft x 40 ft = 120 kips
+        assert row["max_pile_load_kN"] / KIP == pytest.approx(120.0,
+                                                              rel=0.01)
+
+
+class TestNeutralPlaneComparison:
+    """Every cited basis on the same inputs, marked when it does not
+    apply, with the reason."""
+
+    def test_dd1_rows(self):
+        r = _dd1().compute()
+        rows = _rows(r)
+        assert list(rows) == [
+            "force_equilibrium, toe 100%", "force_equilibrium, toe 50%",
+            "force_equilibrium, toe 0%", "settlement_compatibility",
+            "bearing_layer_top", "pile_toe", "endo"]
+        # The ultimate toe (Nt 150) cannot be mobilized: no crossing.
+        for name in ("force_equilibrium, toe 100%",
+                     "force_equilibrium, toe 50%"):
+            assert rows[name]["applies"] is False
+            assert "do not cross" in rows[name]["reason"]
+        assert rows["force_equilibrium, toe 0%"]["applies"]
+        assert rows["force_equilibrium, toe 0%"][
+            "neutral_plane_depth_m"] > 8.0
+        clay_drag = 15.0 * math.pi * 0.4 * 8.0       # 150.8 kN
+        for name in ("settlement_compatibility", "bearing_layer_top"):
+            assert rows[name]["neutral_plane_depth_m"] == pytest.approx(
+                8.0, abs=0.05)
+            assert rows[name]["dragload_kN"] == pytest.approx(clay_drag,
+                                                              rel=0.01)
+        toe = rows["pile_toe"]
+        assert toe["role"] == "bound"
+        assert toe["neutral_plane_depth_m"] == pytest.approx(15.0)
+        assert toe["dragload_kN"] > 2.5 * clay_drag
+        assert rows["endo"]["applies"] is False
+        assert "endo_bearing_condition" in rows["endo"]["reason"]
+        for row in rows.values():
+            assert row["source"] and row["assumptions"]
+
+    def test_settlements_at_the_plane_are_reported(self):
+        rows = _rows(_dd1(Q_dead=300.0).compute())
+        sc = rows["settlement_compatibility"]
+        # compatible: soil and pile settle (nearly) equally at the plane
+        assert sc["soil_settlement_at_np_mm"] == pytest.approx(
+            sc["pile_settlement_at_np_mm"], abs=0.5)
+        fe0 = rows["force_equilibrium, toe 0%"]
+        # A shallow 0 % plane leaves the soil settling far more than the
+        # pile there: the basis is not compatible for this end-bearing pile.
+        assert fe0["soil_settlement_at_np_mm"] > (
+            fe0["pile_settlement_at_np_mm"] + 50.0)
+
+    def test_extra_toe_mobilization_gets_its_own_row(self):
+        r = _floating(toe_mobilization=0.3).compute()
+        rows = _rows(r)
+        assert "force_equilibrium, toe 30%" in rows
+        assert r.neutral_plane_method == "force_equilibrium"
+        assert r.neutral_plane_depth == pytest.approx(
+            rows["force_equilibrium, toe 30%"]["neutral_plane_depth_m"])
+
+    def test_overloaded_pile_no_basis_applies(self):
+        r = _dd1(Q_dead=5000.0).compute()
+        assert r.neutral_plane_method == "none"
+        assert r.judgment is None
+        for row in r.neutral_plane_comparison:
+            if row["name"] != "endo":
+                assert row["applies"] is False
+                assert "no neutral plane" in row["reason"]
+
+    def test_floating_pile_settlement_compatibility_equals_force_equilibrium(
+            self):
+        """Clay settles more than the pile down past the force-equilibrium
+        plane, so the toe yields at full resistance (elastic-plastic toe):
+        compatibility and full-mobilization equilibrium agree."""
+        r = _floating(neutral_plane_method="settlement_compatibility").compute()
+        rows = _rows(r)
+        assert r.neutral_plane_depth == pytest.approx(
+            rows["force_equilibrium, toe 100%"]["neutral_plane_depth_m"])
+        assert "toe yields" in r.neutral_plane_basis
+        assert rows["bearing_layer_top"]["applies"] is False
+        assert "floating" in rows["bearing_layer_top"]["reason"]
+
+
+class TestNeutralPlaneOptions:
+    """Each neutral_plane_method on its own."""
+
+    def test_default_is_auto_and_unchanged(self):
+        r = _dd1().compute()
+        assert r.neutral_plane_requested == "auto"
+        assert r.neutral_plane_method == "settlement_compatibility"
+        assert r.neutral_plane_depth == pytest.approx(8.0, abs=0.05)
+
+    def test_force_equilibrium_raises_when_curves_do_not_cross(self):
+        with pytest.raises(ValueError, match="do not cross"):
+            _dd1(neutral_plane_method="force_equilibrium").compute()
+
+    def test_force_equilibrium_zero_toe(self):
+        r = _dd1(neutral_plane_method="force_equilibrium",
+                 toe_mobilization=0.0).compute()
+        row = _rows(r)["force_equilibrium, toe 0%"]
+        assert r.neutral_plane_method == "force_equilibrium"
+        assert r.neutral_plane_depth == pytest.approx(
+            row["neutral_plane_depth_m"])
+        assert r.toe_force_mobilized == 0.0
+        assert "toe at 0%" in r.neutral_plane_basis
+        # Equilibrium at the plane: Q_np = positive friction below, to the
+        # quadrature of the grid (the crossing sums friction with the lower
+        # node's value, the reported drag / positive friction with the upper
+        # node's: they differ by at most ~ max fs x perimeter x dz each).
+        dz = r.z[1] - r.z[0]
+        tol = 2 * max(r.unit_skin_friction) * math.pi * 0.4 * dz
+        assert abs(r.max_pile_load - r.positive_skin_friction) <= tol
+
+    def test_settlement_compatibility(self):
+        r = _dd1(neutral_plane_method="settlement_compatibility").compute()
+        assert r.neutral_plane_method == "settlement_compatibility"
+        assert r.neutral_plane_depth == pytest.approx(8.0, abs=0.05)
+
+    def test_bearing_layer_top(self):
+        r = _dd1(neutral_plane_method="bearing_layer_top",
+                 Q_dead=200.0).compute()
+        assert r.neutral_plane_method == "bearing_layer_top"
+        assert r.neutral_plane_depth == pytest.approx(8.0, abs=1e-9)
+        assert r.dragload == pytest.approx(15.0 * math.pi * 0.4 * 8.0,
+                                           rel=0.01)
+        assert "§6-7.4 step 5" in r.neutral_plane_basis
+        # The load below the plane falls to the toe force it delivers.
+        assert r.axial_load[-1] == pytest.approx(r.toe_force_mobilized,
+                                                 rel=0.02)
+
+    def test_bearing_layer_top_not_for_a_floating_pile(self):
+        with pytest.raises(ValueError, match="floating"):
+            _floating(neutral_plane_method="bearing_layer_top").compute()
+
+    def test_pile_toe_upper_bound(self):
+        r = _dd1(neutral_plane_method="pile_toe").compute()
+        assert r.neutral_plane_method == "pile_toe"
+        assert r.neutral_plane_depth == pytest.approx(15.0)
+        assert "upper bound" in r.neutral_plane_basis
+        assert r.dragload == pytest.approx(
+            _rows(r)["pile_toe"]["dragload_kN"])
+
+    def test_endo_matches_cgpr56_function(self):
+        """The Endo option is CGPR #56 §3.2.1 (validated on its Section
+        3.4.2 worked example in test_cgpr56.py): plane at 0.75 L for
+        'stiff_flexible', drag = shaft friction above it. Cross-checked
+        against downdrag.endo_method on the module's own fs profile."""
+        from downdrag import endo_method
+        a = _dd1(neutral_plane_method="endo",
+                 endo_bearing_condition="stiff_flexible", Q_dead=100.0)
+        r = a.compute()
+        assert r.neutral_plane_method == "endo"
+        assert r.neutral_plane_depth == pytest.approx(0.75 * 15.0)
+        ref = endo_method(
+            Q_static=100.0, pile_length=15.0,
+            pile_perimeter=a.pile_perimeter,
+            skin_friction_profile=list(zip(r.z, r.unit_skin_friction)),
+            bearing_condition="stiff_flexible")
+        assert r.dragload == pytest.approx(ref.drag_load, rel=0.02)
+        assert "endo (stiff_flexible)" in _rows(r)
+
+    def test_invalid_inputs(self):
+        with pytest.raises(ValueError, match="neutral_plane_method"):
+            _dd1(neutral_plane_method="fellenius")
+        with pytest.raises(ValueError, match="toe_mobilization"):
+            _dd1(toe_mobilization=1.5)
+        with pytest.raises(ValueError, match="endo_bearing_condition"):
+            _dd1(neutral_plane_method="endo")
+        with pytest.raises(ValueError, match="endo_bearing_condition"):
+            _dd1(endo_bearing_condition="rock")
+        with pytest.raises(ValueError, match="skin_friction_stress"):
+            _dd1(skin_friction_stress="effective")
+
+    def test_final_stress_raises_beta_friction(self):
+        """UFC 3-220-20 §6-7.4 step 2: side resistance evaluated on the
+        stress profile including the change that causes settlement."""
+        soil = DowndragSoilProfile(layers=[
+            DowndragSoilLayer(thickness=6.0, soil_type="cohesionless",
+                              unit_weight=18.0, phi=30.0, settling=True,
+                              E_s=8000.0),
+            DowndragSoilLayer(thickness=10.0, soil_type="cohesionless",
+                              unit_weight=20.0, phi=36.0),
+        ], gwt_depth=1.0)
+        base = dict(soil=soil, pile_length=12.0, pile_diameter=0.4,
+                    fill_thickness=2.0, Q_dead=200.0,
+                    neutral_plane_method="pile_toe")
+        r0 = DowndragAnalysis(**base).compute()
+        r1 = DowndragAnalysis(skin_friction_stress="final",
+                              **base).compute()
+        assert r1.dragload > r0.dragload * 1.1
+        assert "§6-7.4 step 2" in r1.neutral_plane_basis
+        assert r1.to_dict()["skin_friction_stress"] == "final"
+
+
+class TestJudgment:
+    """The `judgment` block: present only when the bases differ
+    materially, in the agreed shape."""
+
+    def test_dd1_carries_judgment(self):
+        r = _dd1().compute()
+        j = r.judgment
+        assert j is not None
+        assert set(j) == {"question", "options", "used", "why"}
+        assert j["question"] == "Which neutral-plane basis governs for this pile?"
+        assert j["used"] == "settlement_compatibility"
+        assert "UFC 3-220-20" in j["why"] and "choose" in j["why"]
+        names = [o["name"] for o in j["options"]]
+        assert j["used"] in names
+        for o in j["options"]:
+            assert set(o) == {"name", "source", "assumptions", "applies",
+                              "result"}
+            if not o["applies"]:
+                assert o["result"].startswith("not applicable")
+        assert any("differ materially" in w for w in r.warnings)
+        d = r.to_dict()
+        assert d["judgment"] == j
+        assert isinstance(d["neutral_plane_comparison"], list)
+
+    def test_clear_cut_case_has_no_judgment(self):
+        r = _floating().compute()
+        assert r.judgment is None
+        assert "judgment" not in r.to_dict()
+        assert not any("differ materially" in w for w in r.warnings)
+        # ...but the comparison is still there to read.
+        assert len(r.to_dict()["neutral_plane_comparison"]) == 7
+
+    def test_explicit_choice_says_so(self):
+        r = _dd1(neutral_plane_method="bearing_layer_top").compute()
+        assert r.judgment["used"] == "bearing_layer_top"
+        assert "Chosen by the caller" in r.judgment["why"]
+
+    def test_summary_shows_comparison_and_judgment(self):
+        text = _dd1().compute().summary()
+        assert "Neutral-Plane Bases Compared" in text
+        assert "--- Judgment ---" in text
+
+
+class TestCalcPackageNeutralPlaneBases:
+    """The calc package shows the options and the basis."""
+
+    def test_package_tabulates_every_basis_and_the_judgment(self):
+        from downdrag.calc_steps import get_calc_steps, get_input_summary
+        a = _dd1()
+        r = a.compute()
+        sections = get_calc_steps(r, a)
+        tables = [it for s in sections for it in s.items
+                  if getattr(it, "title", "") ==
+                  "Neutral-Plane Bases Compared (same inputs)"]
+        assert len(tables) == 1
+        names = [row[0] for row in tables[0].rows]
+        assert "settlement_compatibility (used)" in names
+        assert any(n.startswith("force_equilibrium, toe 100%") for n in names)
+        basis = [s for s in sections
+                 if s.title == "Neutral Plane Basis and Warnings"][0]
+        text = "\n".join(str(i) for i in basis.items)
+        assert "JUDGMENT REQUIRED" in text
+        assert "Neutral-plane method requested: auto" in text
+        inputs = {i.name: i.value for i in get_input_summary(r, a)}
+        assert inputs["NP basis"] == "auto"
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
