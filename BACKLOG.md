@@ -10,12 +10,16 @@ list:
 
 ## How every session uses this file
 
-1. **Starting work.** Read §0 and the tier you are working in. Say which IDs you are taking.
+1. **Starting work.**
+   - Read the owner's answers on the **Backlog Desk** (https://claude.ai/artifact/9M7saxwayRQ6c7v1TeDjyQ: `ArtifactData` list of collection `responses`) and fold any new ones in here (`module_work/backlog_dashboard/README.md`).
+   - Then read §0 and the tier you are working in, and say which IDs you are taking.
 2. **While working.** Anything new goes HERE the moment it is found, under its area with the next free ID: a bug, a gap, a follow-up, an unverified claim, an owner question, a fix list from a review or a field session. The next free ID is the highest number in use for that prefix, plus one; never reuse one.
    - One line per item: what it is and why it matters, then `*Src:*` the document holding the detail.
    - A detailed write-up elsewhere is fine. A to-do list elsewhere is not.
 3. **Finishing an item.** Delete its line and add it to "Done since the last sweep" with the commit. If a §0 item changed, update HANDOFF §0a-current's slice too.
 4. **Releasing.** Sweep: every item the release closed moves to Done. Raise or lower tiers for the next train.
+
+After any change to this file, rebuild and republish the Backlog Desk (`module_work/backlog_dashboard/build.py`, same URL). Every `[owner]` item needs a plain-English card in `module_work/backlog_dashboard/context/`; the guard test checks this.
 5. **A full sweep** (on the owner's ask, or every few weeks): re-read the plan documents against this file, as on 2026-10-12. Clear "Done since the last sweep" and record the date below.
 
 `webapp/tests/test_backlog.py` (part of the gate) checks four things:

@@ -110,3 +110,19 @@ def test_claude_md_sends_sessions_to_the_backlog():
     assert "BACKLOG.md" in head, (
         "CLAUDE.md's read-first block must name BACKLOG.md, so a fresh "
         "session finds the one list")
+
+
+def test_every_owner_item_has_a_desk_card():
+    """The Backlog Desk explains every item that waits on the owner."""
+    import json
+    cards = {}
+    for p in (ROOT / "module_work" / "backlog_dashboard" / "context").glob("*.json"):
+        cards.update(json.loads(p.read_text(encoding="utf-8")))
+    text = BACKLOG.read_text(encoding="utf-8")
+    owner = re.findall(r"^- \*\*([A-Z]{2,3}-\d{2,3})\*\* \[[A-Za-z]+\] \[owner\]",
+                       text, re.M)
+    missing = sorted(set(owner) - set(cards))
+    assert not missing, (
+        f"[owner] items without a Backlog Desk card: {missing}. Add one to "
+        "module_work/backlog_dashboard/context/*.json (fields in its README), "
+        "then rebuild and republish the page.")
