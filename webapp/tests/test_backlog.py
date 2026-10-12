@@ -66,14 +66,32 @@ def test_ids_are_unique_known_and_tiered():
         seen[item_id] = tier
 
 
+_DONE = "## Done since the last sweep"
+_DONE_ITEM = re.compile(r"^- \*\*([A-Z]{2,3}-\d{2,3})\*\*", re.M)
+
+
+def _done_ids():
+    """IDs closed since the last sweep (bold at the start of a Done bullet)."""
+    text = BACKLOG.read_text(encoding="utf-8")
+    done = text.split(_DONE, 1)[1] if _DONE in text else ""
+    return set(_DONE_ITEM.findall(done))
+
+
 def test_ids_cited_in_the_backlog_exist():
     defined = {i for i, _ in _items()}
     text = BACKLOG.read_text(encoding="utf-8")
     cited = {f"{p}-{n}" for p, n in _ID.findall(text)}
-    missing = sorted(cited - defined)
+    missing = sorted(cited - defined - _done_ids())
     assert not missing, (
         f"BACKLOG.md cites IDs no item defines: {missing}. Fix the reference "
         "or add the item.")
+
+
+def test_closed_ids_are_not_reused():
+    reused = sorted(_done_ids() & {i for i, _ in _items()})
+    assert not reused, (
+        f"{reused} are listed as done AND as open items; a closed ID is never "
+        "reused, take the next free number")
 
 
 def test_handoff_slice_cites_only_existing_ids():

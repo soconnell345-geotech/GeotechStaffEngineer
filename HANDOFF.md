@@ -214,10 +214,9 @@ about 60 of them were on the list that stood here ("Open to-dos (refreshed
   3. OWN-30: the first-hour check.
   4. OWN-31: the checklist session.
 - **Owner decisions:**
-  - OWN-01 / OWN-02: the downdrag and fem2d defaults.
   - OWN-03: three copyrighted standards PDFs tracked in the PUBLIC refs repo.
   - OWN-04: the PyMuPDF licence question for DT.
-  - OWN-27: the stray root files.
+  - Before the next release, not this week: OWN-01 / OWN-02, the downdrag and fem2d defaults.
 - **Agent work:**
   - DR-01–DR-03: the default review page testers get still has three Phase-1 defects. `render_region` names tools the page lacks; the helper runs without the review rules; a long turn ends in GraphRecursionError instead of an answer. The fixes exist only behind the OFF `lean` switch.
   - DR-14: the markup check is wrong both ways.

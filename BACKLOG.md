@@ -44,15 +44,15 @@ list:
 The Document Review page goes to other testers on Tiny Apps; it is the primary focus.
 
 - **Owner's steps:** OWN-29 (install 5.33.0, dosdev round) → OWN-43–OWN-51 (the CfA questions, one meeting) → OWN-30 (first-hour check) → OWN-31 (checklist session).
-- **Owner decisions wanted this week:** OWN-01, OWN-02 (downdrag, fem2d), OWN-03 (copyrighted PDFs), OWN-04 (PyMuPDF licence), OWN-27 (stray files).
+- **Owner decisions wanted this week:** OWN-03 (copyrighted PDFs), OWN-04 (PyMuPDF licence). The downdrag and fem2d defaults (OWN-01, OWN-02) are wanted before the next release, not this week.
 - **Agent work for testers:** DR-01, DR-02, DR-03 (Phase-1 defects still on the default review page); DR-14 (markup check wrong both ways); TA-01 (plain message on a refused key); TA-02 (suites on the CfA fleet pins); EV-01 (a rehearsal wave at the gpt-5.1 budget); TA-03 (what only live GPT shows, read in the first hour); DOC-04, DOC-05 (stale install guide and `TINYAPPS.md`).
 
 ## 1. Owner: decisions and actions
 
 ### Decisions
 
-- **OWN-01** [Now] [owner] **Downdrag defaults**: keep `auto` (UFC 3-220-20, today's numbers) or report the comparison without picking; the materiality thresholds (plane max(0.5 m, 5 % L), drag max(10 kN, 10 %)); `skin_friction_stress="final"` as default; the settlement-compatibility basis that puts the neutral plane at the bearing-layer top. Commit a282d48. *Src:* `downdrag/DESIGN.md`; *was:* H E1, 0, 3e
-- **OWN-02** [Now] [owner] **fem2d staged movements**: is stage 0 always the gravity stage (`reset_displacements_after` default)? Settlements now exclude self-weight; confirm. Commit 4bf710c. *Src:* `fem2d/DESIGN.md:322-335`; *was:* H E1, 0
+- **OWN-01** [Next] [owner] **Downdrag defaults**: keep `auto` (UFC 3-220-20, today's numbers) or report the comparison without picking; the materiality thresholds (plane max(0.5 m, 5 % L), drag max(10 kN, 10 %)); `skin_friction_stress="final"` as default; the settlement-compatibility basis that puts the neutral plane at the bearing-layer top. Commit a282d48. *Src:* `downdrag/DESIGN.md`; *was:* H E1, 0, 3e
+- **OWN-02** [Next] [owner] **fem2d staged movements**: is stage 0 always the gravity stage (`reset_displacements_after` default)? Settlements now exclude self-weight; confirm. Commit 4bf710c. *Src:* `fem2d/DESIGN.md:322-335`; *was:* H E1, 0
 - **OWN-03** [Now] [owner] **Three copyrighted PDFs are tracked in the PUBLIC refs repo**: `docs/aashto1993.pdf`, `docs/en.1997.2.2007-1.pdf`, `docs/eurocode_7_-_geotechnical_designen.1997.1.2004.pdf`; their text and lookups also ship in the MIT wheel. Provenance unknown (possibly Public.Resource.Org); no licence note anywhere. Keep, note provenance, or remove; nothing is deleted without the owner.
 - **OWN-04** [Now] [owner] **Ask DT whether PyMuPDF's AGPL licence is acceptable** on Tiny Apps; the whole document layer sits on it ("ask once, before TinyApps; do not switch pre-emptively"). *Src:* `module_work/PLANLENS_PACKAGE_SURVEY.md:84-86`
 - **OWN-05** [Next] [owner] **Pick uses for the promo API credit before it expires 2026-11-05** (~$35 left, $20 reserved for touch-up together): EV-03, EV-01, waves after EV-04/EV-05, a cross-family overfitting check, Batch API probes. *was:* H 0, 3c
@@ -77,7 +77,7 @@ The Document Review page goes to other testers on Tiny Apps; it is the primary f
 - **OWN-24** [Parked] [owner] **Vision efficiency dial-back**: robust first (2026-09-25), "do not act until asked" (VIS-20).
 - **OWN-25** [Later] [owner] **Published answer vocabulary** in public `report_ingest/model.py` carries a building-type value from the owner's wording: object, or load it from a private file? *Src:* H:1482-1497
 - **OWN-26** [Later] [owner] **Repo visibility**: three of seven tracked field-feedback folder names carry a place name. Private, or scrub? *Src:* `module_work/REPORT_INGEST_PLAN.md:906-910`
-- **OWN-27** [Now] [owner] **OK to delete the stray root files and stale branches** (INF-01, INF-08); archive `suite_trial.json` (the only copy of a June baseline) to a gitignored folder.
+- **OWN-27** [Later] [owner] **OK to delete the stray root files and stale branches** (INF-01, INF-08); archive `suite_trial.json` (the only copy of a June baseline) to a gitignored folder.
 - **OWN-28** [Next] [owner] **Review the unmerged refs branch `rescue/reference-wip-2026-06-02`** (7fb6fe8, on origin): merge or drop (REF-04). A lead can review and propose.
 
 ### Actions and data
@@ -389,7 +389,7 @@ Parked at 5.25.0; every number since is GPT-5.4 on Foundry. Code items were conf
 
 ## 10. Infrastructure, releases, dependencies, repo hygiene
 
-- **INF-01** [Now] [owner] **Stray untracked root files** (nothing the tracked versions lack): `A2_CONTEXT_DESIGN_copy.md`, `A7_INDUSTRY_MEMO_copy.md`, `APP_PLAN_copy.md`, `FOUNDRY_APP_PLAN_copy.md`, `V5.4_PLAN_copy.md`, `FOUNDRY_setup_copy.md`, `provenance_audit_other.md`, `provenance_audit_slope.md`, `CONSOLIDATION_PLAN.md.local-bak`, `suite_trial.json.md` (+ `suite_trial.json`: archive). Also `docs/geotech_eval_20260713.md`. OWN-27.
+- **INF-01** [Later] [owner] **Stray untracked root files** (nothing the tracked versions lack): `A2_CONTEXT_DESIGN_copy.md`, `A7_INDUSTRY_MEMO_copy.md`, `APP_PLAN_copy.md`, `FOUNDRY_APP_PLAN_copy.md`, `V5.4_PLAN_copy.md`, `FOUNDRY_setup_copy.md`, `provenance_audit_other.md`, `provenance_audit_slope.md`, `CONSOLIDATION_PLAN.md.local-bak`, `suite_trial.json.md` (+ `suite_trial.json`: archive). Also `docs/geotech_eval_20260713.md`. OWN-27.
 - **INF-02** [Next] **`check_pins.py` against the Nexus list** (after OWN-35).
 - **INF-03** [Next] **Agent-stack caps** (`deepagents<0.8`, `langchain<1.4`, `langgraph<1.3`): raise only after the deep and webapp suites pass; read the canary first (OWN-33).
 - **INF-04** [Later] **The `openai<3` pin comment is wrong** (httpx2 arrives via langsmith; `pyproject.toml:46-50`); does the pin still earn its place?
@@ -413,8 +413,7 @@ Long items kept in their own sections: DR-08–DR-13, GM-39, VIS-11, VIS-20, TA-
 
 ## 12. Stale docs to fix
 
-- **DOC-01** [Now] **HANDOFF**: "Last updated: 2026-10-08" (§0a is 10-09/10-10); §1–§6 (~2833-3088) not marked HISTORICAL: "(private)" repo, master v5.6.0, the `v5.1-todos` worktree, V5.4_PLAN current, eval 97/100.
-- **DOC-02** [Now] **HANDOFF §0a**: 3c "NOT written yet" (39716a8); 3e "a builder is on it" (83a77f4, planlens f92541d); E2 "small reference items" (G15, G18 are module items).
+- **DOC-01** [Next] **HANDOFF**: §1–§6 (~2833-3088) not marked HISTORICAL: "(private)" repo, master v5.6.0, the `v5.1-todos` worktree, V5.4_PLAN current, eval 97/100.
 - **DOC-03** [Next] **CLAUDE.md**: "this file is 73 KB" (169 KB); :251 "committed, not released" (0.11.0); :1237 missing plan (DOC-15); :1819 "fully QC'd"; :1872 "3529 tests"; :1909 "ten tools" (15); :2109-2112 footing method (done 0aea590), "~22 more figures" (done 3b25e0e), chapter text "uncommitted" (1176620; rest REF-04).
 - **DOC-04** [Now] **`docs/DATABRICKS_INSTALL.md`**: :17 `==5.25.0`; :33-35 5.20.0 / planlens 0.6.0 / refs 1.4.0; :10 last verified 5.14.0; rows 5.15–5.33 "Replace this row…". The gate checks only the history table.
 - **DOC-05** [Now] **`tinyapps/TINYAPPS.md`**: :3 status 2026-09-23 "waiting on"; :113 per-tester keys "unreleased" (in 5.33.0); :197 "candidate 5.26.0". `webapp/README.md:115-120` storage question (answered `TINYAPPS.md:85`); old checklists `docs/webapp_guide.md:94-109`, `webapp/README.md:367-400`.
@@ -434,6 +433,8 @@ Long items kept in their own sections: DR-08–DR-13, GM-39, VIS-11, VIS-20, TA-
 ## Done since the last sweep
 
 Older docs still list these as open. Delete this section at the next sweep.
+
+- **DOC-02** (HANDOFF §0a stale lines: 3c "NOT written yet", 3e "a builder is on it", the E2 label) and DOC-01's "Last updated" line: fixed in e329b22.
 
 - **Releases and trains**: W1–W4 (5.33.0); brief 4 fix list A–M (cc36945, planlens cbca2ec); brief 5 groups 1, 2, 5 (233a40e, b6d7ffd); smoke-wave fixes w1–w3 incl. F2–F8 polish (3195ede … 83a77f4; planlens f679daf, f92541d); "release planlens then the app" (GO 1); the activity-log lock (6c81cc5); 9a `find_like` without OpenCV; 9b locations (cf43c90, planlens 08a1d53); 8a(iv) candidates resolved (W2, W3, W4; the Atterberg gate dropped); 8a(v) GEC-12 Fig 7-15 (refs d9dab7a, app 7d8771e); 8a(vii) brief 5 ran; 8a(viii) speed and mismatch.
 - **Document Review**: Phase 0 suite (42 tasks); Phase 1 small fixes; M0 runs; the two scale tasks, N1, N5 (39716a8); peer-session prompt notes (ad83eb2); feedback becomes suite tasks (`extra_tasks=`); LTQ checks 1–4, 6, 8 (steps 1, 2, 4).
