@@ -1,5 +1,9 @@
 # Future possibilities — considered 2026-07-18 (owner-requested ideas pass)
 
+> **2026-10-12: every open idea in this file is tracked by ID in `BACKLOG.md`**
+> (repo root; mostly §11 LT-nn, plus the GM/VIS/RI/TA items that cite
+> `FI`). This file keeps the long-form reasoning; status lives in the backlog.
+
 > **UPDATE 2026-07-20 — the sample-calc-as-defect-detector doctrine (proven).**
 > Items 1-2 below evolved into an operating doctrine that FOUND FOUR REAL
 > DEFECTS in three days (Reese cyclic tables, drawdown Kf c'>0, shaft

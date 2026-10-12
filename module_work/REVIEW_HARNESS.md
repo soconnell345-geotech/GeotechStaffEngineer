@@ -148,8 +148,9 @@ format), and milestones M0-M4.
 
 **M0 is DONE** (runs 1–4 below): every arm measured on Sol and GPT-5.4; the
 5.32.0 decision was to keep every switch off. **The open to-do list is
-`HANDOFF.md` §0a-current ("Open to-dos after 5.32.0")** — one list for the
-whole project.
+`BACKLOG.md` at the repo root** (since 2026-10-12): one list for the whole
+project. The review-harness items are its §2 (DR-nn) and §3 (VIS-nn); the
+"Next" notes below are history.
 - The vision call's box precision was measured on 2026-10-07 (run 5 below;
   `module_work/harness_theory/locating_things_on_a_page.md`).
 - The location fix built from it HELD on Foundry (run 6; 5.32.1).

@@ -10,7 +10,7 @@ answer was re-derived from scratch at least twice:
 | When the owner... | Read this FIRST |
 |---|---|
 | pastes a `%pip install` / cluster install log, or asks "any concerns?" about one | `docs/DATABRICKS_INSTALL.md` — do NOT re-derive the numpy cascade, the seven conflict warnings, or whether a new major version is safe. They are settled and written down. |
-| asks what state things are in, or you are picking up work | `HANDOFF.md` §0a-current — authoritative pickup list, with THE open to-do list at its top |
+| asks what state things are in, or you are picking up work, or wants something added to the to-do list | `HANDOFF.md` §0a-current — authoritative pickup list — and `BACKLOG.md`, THE one list of open work across the app, planlens and geotech-references (add new to-dos THERE, never a new list in HANDOFF or a plan doc) |
 | asks you to change an agent or pipeline (prompts, tools, vision, report-ingest stages, scorers) | `module_work/harness_theory/` — how the three harnesses actually work, from the code and the recorded Foundry runs, with their known failure modes and open questions |
 | brings back the results of ANY model run (suite run, live check, Foundry hand-back, a field session's conversation, a report-ingest stage) | the section **"REVIEW EVERY MODEL RUN IN FULL"** just below — read every run's full record (tool calls, results, the model's own text), not just the scores |
 | asks about a number published in planlens docs/README | `module_work/drawing_ground_truth/doc_claims_check.py` — if a number disagrees with that script, the DOCUMENT is wrong |
@@ -155,7 +155,7 @@ Key conventions:
   - **Master after 5.33.0 (next train, unreleased):** downdrag neutral-plane
     methods as cited options with a comparison (a282d48) and fem2d per-stage
     delta/cumulative movements (4bf710c); owner decisions and the technical
-    follow-ups are in HANDOFF "Open to-dos" E1-E6.
+    follow-ups are in `BACKLOG.md` (OWN-01, OWN-02, GM-01-GM-09).
 
   Pickup: `HANDOFF.md` §0a-current, "Where things stand".
 - **5.32.1 RELEASED 2026-10-08 (tag `v5.32.1`, branch `release/5.32.1`,

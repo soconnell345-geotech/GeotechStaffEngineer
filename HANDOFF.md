@@ -1,6 +1,6 @@
 # HANDOFF — GeotechStaffEngineer (current state, read this first)
 
-**Last updated: 2026-10-08.** This is the authoritative handoff for a fresh LLM
+**Last updated: 2026-10-12** (open work moved to `BACKLOG.md`). This is the authoritative handoff for a fresh LLM
 session (any model). The older `HANDOFF_2026-06-14.md` is kept only for the
 detailed Phase-E history; this file supersedes it.
 
@@ -148,14 +148,14 @@ detailed Phase-E history; this file supersedes it.
     1. GPT-5.4 and Sol reading numbered label crops;
     2. whether the agents use `measure` from its description alone, and how
        often a measurement from a real zoom snaps rather than lists. Two
-       suite TASKS are needed for this and are NOT written yet: a log depth
+       suite TASKS were needed for this (written since, 39716a8): a log depth
        on a scanned log, and a distance on a plan (synthetic fixtures with
        truth, `planlens.testing.visual_scale_fixtures`);
     3. `code_reading` on real reference charts (GEC-12 Fig 7-15, decision
        8; DM7.2 Fig 4-12);
     4. report ingest with `GEOTECH_INGEST_VISUAL_SCALES` off and on, in
        separate `out_dir`s.
-- **3d. The owner's checklist session, the week of 2026-10-12** (item 8a(vi)).
+- **3d. The owner's checklist session, the week of 2026-10-12** (BACKLOG OWN-31).
 - **3e. Live smoke before the Tiny Apps tester deploy (2026-10-08/09).**
   - **The owner's goal:** the Document Review page goes to OTHER testers on Tiny Apps in the week of 2026-10-12, and it is the primary focus. The owner gave $80 of the $100 promotional Anthropic API credit for plumbing smoke tests, with $20 kept for touch-up with the owner. The credit expires 2026-11-05.
   - **The harness:** `module_work/live_smoke/` (`run.py` docstring). It runs 50 flows (F01–F50; F29–F50 are Document Review), the geotech questions and the suite tasks through the app's real turn path, with Claude standing in for GPT. It checks each turn for files outside the conversation folder, links, cards, mirror gaps and tool errors. The spend ledger sits beside it (gitignored).
@@ -180,7 +180,7 @@ detailed Phase-E history; this file supersedes it.
     - Commits: 5dee6a6 (D1: concurrent testers crossed folders; context copied into the heartbeat pump, shared hosts fail closed), f4849a6 + a87d5a3 (D2–D7, E3, E7–E10), c05e56b (E1, E2, E4–E6).
     - **Wave 3 (final confirmation, 10 flows, Sonnet): GO, with no high findings.** Review: `runs/w3-confirm-sonnet/REVIEW.md`. Tiled whole-page reads are down to a median of 11.8 s (from 17.6 s), and the DXF note takes 8 s (from 179 s).
     - **Spend:** $44.59 of the $80 smoke budget; the account limit was raised to $100.
-    - **Remaining polish** (F1–F8, a builder is on it): zoom latency 30–50 s, Word title punctuation, 0-mark copies, notes on blank paper, the planlens callout aim, zoom readings kept, rotated labels, `downloads.json` paths.
+    - **Remaining polish** (F1–F8; done in 83a77f4 and planlens f92541d except F1, zoom latency = BACKLOG VIS-07, and F7, rotated labels = DR-18): zoom latency 30–50 s, Word title punctuation, 0-mark copies, notes on blank paper, the planlens callout aim, zoom readings kept, rotated labels, `downloads.json` paths.
   - **GO conditions:**
     1. Release planlens (f679daf and later) first, then the app.
     2. The CfA items: image-capable Prompter values, SharePoint app registration, identity header, published origin.
@@ -189,301 +189,46 @@ detailed Phase-E history; this file supersedes it.
 
 Machine note: heavy test suites must not overlap on the owner's laptop. Background runs were stopped twice for low memory on 2026-10-07/08.
 
-### Open to-dos (refreshed 2026-10-10)
+### Open to-dos → `BACKLOG.md` (2026-10-12)
 
-One list for the whole project; other notes point here.
+**All open work across the app, planlens and geotech-references is in
+`BACKLOG.md` at the repo root: one list, stable IDs, tiers Now / Next /
+Later / Parked.** Add new to-dos THERE. Never start a new to-do list here or
+in a plan document; plans keep the detail, the backlog keeps one line and a
+pointer.
 
-**A. Owner — the test run**
-1. Install 5.33.0 (released 2026-10-09) once the Nexus mirror delivers it:
-   `%pip install "geotech-staff-engineer==5.33.0"` (brings planlens 0.13.0
-   and geotech-references 1.4.1). If the mirror lags, the release wheels are
-   in `../foundry_handoff/` (install planlens first). Then the dosdev round
-   (`tinyapps/TINYAPPS.md` recipe) and the CfA questions (Where things
-   stand, item 0).
-2. Check 5 in `module_work/LIVE_TEST_QUEUE.md` (SharePoint links,
-   remembered files, past conversations; it needs the Funhouse app) when the
-   Funhouse budget renews. Use the cheaper model and a short PDF. Every
-   heavier check goes to Foundry (memory `feedback-funhouse-token-budget`).
-3. Ask CfA whether the Tiny Apps App Service enforces FIPS mode. Funhouse
-   DOES (live check 2, 2026-10-07: OpenCV fails its FIPS self-test there, as
-   on Foundry), so assume Tiny Apps does too: OpenCV cannot load and
-   `find_like` hides itself (by design since 5.32.0); the rest of the app is
-   unaffected. See item 9a.
+**Why (owner, 2026-10-12):** "the recent sessions lost track of some of our
+future plans and started new, more-narrow todo lists in the handoff doc". A
+sweep that day read every plan, design note, ledger, smoke review and memory
+file across the three repos. It found about 280 distinct open items, and only
+about 60 of them were on the list that stood here ("Open to-dos (refreshed
+2026-10-10)", A1–E6).
+- That list was folded into the backlog item by item.
+- Each old id is noted on its new item as *was: H A1* and so on.
+- The old text is in git history (commit 414525a, HANDOFF.md lines 192–487).
 
-**B. Owner — decisions only the owner can make**
-4. Confirm or correct the seven DRAFT narrative conventions in
-   `report_ingest/narrative_glossary.py` — especially the mention fields
-   ("was it done") and `soilCorrosion` ("what was found"), which were re-read
-   from the owner's own answer keys on 2026-10-04.
-5. Define `structureCount` (what counts as a structure — the reader
-   over-counts) and whether `figureCount` includes appendix figures.
-6. Report-ingest page labels: `label_policy` stays `structural` and
-   `review_mode` stays `disagreements`, but neither is settled — the rules win
-   on the reports they were tuned on, the vote wins by 2 pages of 60 blind,
-   and the disagreement review LOST 1.5 points on Foundry. Deciding needs a
-   few hundred more hand-labelled pages from the blind reports (ledger
-   `module_work/field_feedback/2026-09-16_report-ingest/MEASUREMENTS.md`,
-   "FOUNDRY RUN 1").
-7. The calculation and sounding readers have no blind test set: hand truth
-   for a few unseen items, if those readers matter.
-8. `slope_stability`: expose the Ito–Matsui stabilizing-pile force as its own
-   method? It exists but only inside the full slope analyses (eval SPL-3).
-8a. **The geotech-page session of 2026-10-06.** Ledger:
-   `module_work/field_feedback/2026-10-06_geotech-report-session_v5.32.0/FINDINGS.md`.
-   The fixes are in 3d1cd44. What remains is the owner's call:
-   - **(i) Report ingest on the geotech page.** Measure it on one Funhouse
-     run of a report like this one first. Then offer it as an opt-in sidebar
-     switch, off by default. That needs the engine and the output folder
-     plumbed, which they are not today.
-   - **(ii) ASCE 7 and Youd et al. (2001).** Neither is in the reference
-     library. Adding them is a licensing question.
-   - **(iii) The missed 2026 borings** (vector logs taken for "not scanned").
-     - The measurement task EXISTS since 6c81cc5: the suite's three
-       `report-` tasks on a synthetic report with vector new logs and
-       scanned old ones.
-     - Still open: planlens starting and titling a segment at a markup-only
-       divider page.
-     - Still open: giving the `general-purpose` helper the reading rules,
-       measured first.
-   - **(iv) From the value check of the session's extracted data** (FINDINGS
-     §8, 2026-10-07):
-     - **What was right:** printed numbers were read correctly (SPT 48/48;
-       lab sheets exact).
-     - **What went wrong:** layer depths read off scanned logs were off by up
-       to 0.7 m, and most of the lab appendix and the second 2026 boring's
-       lab results were never extracted.
-     - **What became of the candidates (owner, 2026-10-08):**
-       - **Depth from a drawn scale:** generalised into the visual-scales
-         workflow for both harnesses (W3; planlens part built, a3f2a1d).
-       - **The Atterberg gate:** DROPPED as over-fitting. Instead
-         `write_diggs` runs the reconciler's general cross-checks (W2), and
-         the report's swapped summary row is caught as a summary-vs-sheet
-         conflict.
-       - **Coverage:** in code, with the checklist (W4, behind switches).
-   - **(vi) THE OWNER'S CHECKLIST SESSION, the week of 2026-10-12.** The
-     owner wants slow-thinking time on the report-review checklist. It is
-     data in `funhouse_agent/report_review_checklist.json`, marked DRAFT;
-     the background is in `module_work/COVERAGE_AND_CHECKLIST.md`. Send it to
-     the owner as a plain list, take the markup in chat or Word, then
-     transfer it to the file (keep each item's `id`).
-   - **(vii) Foundry brief 5** (Where things stand, 3c): the review suite
-     with `arms=("baseline", "coverage", "checklist")`, including the three
-     `report-` tasks. The coverage switches go on by default only if the
-     suite says so.
-   - **(viii) Left by the planlens scales build (a3f2a1d, 2026-10-08):**
-     - **Rectangles read as x, y, w, h.** `loggrid.page_rules` (around line
-       906) and `document._ruling_lines` (line 137) treat PyMuPDF's
-       rectangle items as x, y, w, h, but they are x0, y0, x1, y1. The new
-       code reads them correctly. Fixing the old two changes vector
-       `log_grid` output, so measure the effect on report ingest's log
-       floor first.
-     - **Speed.** `find_scales` takes 1–16 s per dense scanned page (34 s
-       worst) against the design's 0.4–0.8 s. Tighten it before `measure`
-       is used heavily.
-     - **A silent mismatch.** A `values` list of the wrong length is
-       ignored without a specific warning.
-     - **2026-10-08, with W3's app side:** the speed and the
-       silent mismatch are dealt with. The worst private page fell from
-       13.7 s to 6.9 s, and a second box on a page takes 0.3–0.6 s; the
-       counts are now said. See `VISUAL_SCALES_DESIGN.md` §12. The
-       rectangles are still open.
-   - **(v) DONE 2026-10-09, in 5.33.0** (refs d9dab7a, app 7d8771e): re-measured
-     off the figure; the reference refuses outside 30–43.75°, and Nordlund
-     warns. The original note follows. **GEC-12 Figure 7-15 may be mis-digitised.** The W3 design found this
-     in its §10, item 8. `geotech_references/gec_12/figures.py` (used by
-     `axial_pile`) differs from a code reading of the chart by −19 % at 32°
-     to +6 % at 42–43°; zoomed renders support the code reading. Re-verify
-     before changing anything: a confirmed fix changes `axial_pile` toe
-     resistance (Nordlund).
-
-**C. Next build — candidates, none started** (judge each on the suite; no
-rules from single examples)
-9. An image crop/zoom tool for raster uploads and pasted screenshots (they
-   have no zoom today) — `module_work/FUTURE_IDEAS.md` "VISION HARNESS
-   BENCHMARK", which also holds the Chartography run (check its licence) and
-   a small geotech chart truth set.
-9a. **DONE 2026-10-07; in planlens 0.12.0 and app 5.32.1** (planlens d7d6657,
-    app ba12760). On Foundry (brief 4) it matched OpenCV exactly. It is a numpy
-    matcher with the same hits as OpenCV, chosen automatically where OpenCV
-    cannot load (`PLANLENS_FINDLIKE_BACKEND`). The raster IR leg and OCR still
-    need OpenCV. The original note follows.
-    **`find_like` without OpenCV** (planlens). OpenCV's pip wheels abort on
-    every government host we use (Foundry, Funhouse; likely Tiny Apps), so
-    `find_like` — exact page boxes for every copy of a tag, the thing GPT-5.4
-    lacked when it placed circles from a whole-page look in live check 1 —
-    has never run where users are. It uses only `matchTemplate`
-    (normalised correlation), `resize`, `dilate` and contact-sheet drawing:
-    a numpy correlation, re-rendering the example with PyMuPDF at each scale
-    instead of resizing, and PyMuPDF/PIL for the sheets. Speed is the risk
-    (an 85-sheet set at ~15 scales × 4 rotations): measure against OpenCV
-    first; use OpenCV where it loads. The raster IR leg and OCR have the same
-    dependency. Still an OPTIONAL tool (owner's rule).
-9b. **BUILT 2026-10-07; in app 5.32.1 and planlens 0.12.0** (app cf43c90,
-    planlens 08a1d53). MEASURED on Foundry brief 4 (REVIEW_HARNESS run 6):
-    - it held on GPT-5.4 and Sol;
-    - every box was a pixel box, and every ring was placed from a zoom;
-    - the refusal never needed to fire: the widest view a ring used was
-      298 pt.
-
-    The two open calls below stand as they are: keep 300 pt, and the cap
-    applies on Foundry. What it does:
-    - Vision calls answer in pixel boxes, converted in code with the size
-      sent.
-    - Renders are capped at 2,048 px (`GEOTECH_VISION_MAX_PX`).
-    - `tiles` accepts "NxN".
-    - Zooms are padded by 10 % of the source view.
-    - planlens refuses a small mark read off a view wider than 300 pt, and an
-      `image_box` that is the whole view.
-    - A quote anchors on its printed row.
-
-    Two calls left open, to settle after check 6:
-    - 3x3 tiles of an 11 x 17 sheet are about 440 pt wide, so every mark
-      needs one zoom. Tiles measured 2.7 pt off, so raising the limit to
-      about 450 pt is the option if zooming per mark proves slow.
-    - The 2,048 px cap also applies on Foundry, where 5.32.0 sent full
-      resolution. A Foundry brief that wants full resolution sets
-      `GEOTECH_VISION_MAX_PX=none`.
-
-    The original note follows.
-    **Locations (2026-10-07, the cause of the circle failures):** read
-    `module_work/review_eval_results/2026-10-07_funhouse_5.32.0_check1/TRACE_REVIEW.md`
-    and `module_work/harness_theory/locating_things_on_a_page.md`. Whole-page
-    vision boxes are a shrunken copy of the truth (a model property; the
-    conversion is exact); zooms land within a few points. **Owner's
-    measurement (check 4, 2026-10-07): the 0-999 grid is the problem — the
-    same GPT-5.4 answer's PIXEL boxes, converted with the true image size,
-    were within ~1–6 pt on a whole page, the grid boxes 57–91 pt; Funhouse
-    caps images at 2,048 px.** So FIRST: the vision call reports pixel boxes
-    on an image ≤ the host's cap, converted in code with the size sent (the
-    agent-facing interface can stay). Then, as defence in depth: a two-step locate inside the tools
-    (no mark or `page_bbox` from a view wider than ~300 pt — zoom with an
-    error-sized window and re-locate); zoom windows sized by the source view's
-    error (~10 % of it each side), not 15 % of the box; whole-page looks sent
-    at a modest size and tiled from the size actually RECEIVED (Funhouse caps
-    images at 2,048 px — teach the probe/budget); `tiles` accepting "NxN" or
-    failing loudly; the "look that found it" wording; a check that a
-    quote-anchored comment sits on its quote (CAD notes are one text block).
-10. The vision side-call boundary (`module_work/harness_theory/`, finding 1).
-    The box precision is MEASURED (check 4, brief 4 part A) and fixed (pixel
-    boxes, 9b). Still a candidate: the reasoning model looking itself, as a
-    switched arm (`inline`, already built, never a default).
-11. Geotech catalog: five `slope_stability` method descriptions are longer
-    than the 8,000-character result cap and reach the model cut off
-    (`module_work/harness_theory/geotech_agent.md`).
-12. The geotech eval runs a configuration users never get (no calc
-    sub-agent, no step cap, no conversation history) — decide whether to
-    align it (same document).
-13. Report-ingest small items: ~1,080 QA entries per report with nothing
-    ranking them; the lab merge's specimen pairing does not fold leading
-    zeros ("B-07" vs "B-7"); continuation sheets that repeat a hole id are not
-    merged by the reconciler (R16); `score_on_cluster` demands a prompter
-    even for the no-model `vote` stage; `figureCount` could come from the page
-    labels instead of the reader.
-14. Review harness, as before: Phase 5 (the review prompt rewritten around the
-    review method, every incident rule the suite does not need dropped); a
-    cross-reference resolver and revision compare only if they earn a suite
-    task (`module_work/REVIEW_HARNESS.md` "Next").
-
-**D. Foundry (the measurement bed).** No brief is running. Briefs 1–5 are
-done (`../foundry_handoff/`); brief 5 was read in full on 2026-10-08 (3c).
-A brief 6 would measure on GPT what the Claude smoke waves could not (list
-E5 below).
-- Brief 4 (5.32.1rc3) was read in full on 2026-10-08: TRACE_REVIEW, run 6,
-  FOUNDRY RUN 2.
-- Heavy measurement goes here, not to Funhouse, whose monthly token budget
-  the owner ran out of on 2026-10-07.
-- The geotech eval rerun still needs a numpy-2 repository (numpy 1.26 there
-  broke 17 questions).
-
-The package now speaks
-Foundry's Responses route itself (`GEOTECH_FOUNDRY_ROUTE`); the FDE's glue is
-still useful for its retry/throttle and per-task process isolation.
-
-**E. Technical follow-ups (added 2026-10-10)**
-Sources: the brief 5 TRACE_REVIEW and the live smoke reviews
-(`module_work/live_smoke/runs/<wave>/REVIEW.md`, gitignored). The IDs are
-those files' IDs. None blocks the testers.
-
-- **E1. Engineering: the owner's decisions** (owner's rule: methods open to
-  assumptions; grey areas go to the references sub-agent).
-  - **Downdrag (a282d48, next release).**
-    - Default: `auto` (UFC 3-220-20, today's numbers), or report the
-      comparison without picking?
-    - The materiality thresholds: plane max(0.5 m, 5 % L); drag
-      max(10 kN, 10 %).
-    - `skin_friction_stress="final"` (UFC step 2) as the default?
-  - **fem2d (4bf710c, next release).** Is stage 0 always the gravity stage
-    (`reset_displacements_after` default)?
-- **E2. Engineering: build items.**
-  - **Downdrag:**
-    - the ~4 % quadrature mismatch between the crossing search and the
-      reported drag;
-    - the Endo ratios are unverified (CGPR #56 is not in the repo);
-    - post-liquefaction drag (GEC-10 §10.7) is not implemented.
-  - **fem2d:**
-    - θ = 0.5 leaves ±5 kPa ringing at drained boundaries (θ = 1 is clean);
-    - `analyze_staged` ignores `n_steps` (one load step per phase), which
-      matters for plastic stages;
-    - consolidation fill under water is refused.
-  - **SOE:** `soe/free_earth.py` (~286, 371) returns a value when no root is
-    found; it should return null plus a warning (G16).
-  - **Small reference items:**
-    - an example section id '5.7.2' that does not exist (G14);
-    - `.html.png` names (G15);
-    - slow rigorous searches (G18).
-- **E3. Document Review vision (from brief 5 groups 3–4; not built).**
-  - **R:** render turned or sideways lettering upright. In brief 5, 6 of 15
-    turned look-alikes were misread, against 0 of 11 upright ones.
-  - **`found`:** B1, judge region vs text line by aspect; B2, carry the text
-    read.
-  - **Notes:** MK1 / `aim_note` from the aim box; MK2 / `found_note` noise;
-    MK3 / MK5, say when looks disagree or a zoom is coarser.
-  - **planlens:**
-    - E1, the raster decision per region;
-    - E2b, a y-scale labelled every 4th line;
-    - E3, `code_reading` following the input line on a single-curve chart;
-    - N7, multi-log `log_grid` header fields;
-    - N8, table row rules read as strata;
-    - N14, `measure` `to` across a second zoom;
-    - the rectangle x,y,w,h bug (8a(viii));
-    - C4's suggested public API: `ReviewToolkit.forget(path)`, an atomic
-      save in `write_markups`, and stable markup ids (the app now uses
-      private internals).
-  - **Zoom latency:** 30–50 s on dense pages (F1). The next lever is a
-    reasoning setting on vision calls, A/B on GPT.
-- **E4. Report ingest:**
-  - G2, bind log index cells to the nearest sample;
-  - G3, RESULTS print the visual-scales counts;
-  - gradation linking flips between runs, so measure a link fix over
-    repeats;
-  - the per-specimen hole-match and depth bands (brief 5 §5).
-- **E5. Only GPT can tell us (brief 6 or the Tiny Apps first hour):**
-  - vision on gpt-5.1 (768 px images);
-  - latency against the new per-kind caps;
-  - real budget and rate-limit responses;
-  - testers on separate keys;
-  - links behind the IIS proxy;
-  - whether the agent uses `reuse=true`;
-  - the coverage switch after CV1–CV4 (all switches stay OFF until
-    measured);
-  - reasoning summaries now requested (L1);
-  - patch alignment with ≥ 10 repeats (F1 statistic);
-  - GPT habits M1–M4 (log depth by eye, "correcting" a summary, layers
-    invented).
-- **E6. Not verified live by the smoke waves:**
-  - the D2 budget message;
-  - busy retries;
-  - restore after restart;
-  - the Excel writer;
-  - two testers saving at the same moment;
-  - `annotate_dxf` output opening in real CAD (ezdxf rewrites the file);
-  - D3: the harness copies the old sidebar code.
-
-  The smoke harness has its own list (H1–H18 in the reviews).
+**Now: this week, the Tiny Apps tester deploy** (details in BACKLOG §0):
+- **Owner, in order:**
+  1. OWN-29: install 5.33.0, then the dosdev round.
+  2. OWN-43–OWN-51: the CfA questions. Three of them fell off the old list: gateway streaming, Nexus vs vendoring, and the shared VM's resources.
+  3. OWN-30: the first-hour check.
+  4. OWN-31: the checklist session.
+- **Owner decisions:**
+  - OWN-01 / OWN-02: the downdrag and fem2d defaults.
+  - OWN-03: three copyrighted standards PDFs tracked in the PUBLIC refs repo.
+  - OWN-04: the PyMuPDF licence question for DT.
+  - OWN-27: the stray root files.
+- **Agent work:**
+  - DR-01–DR-03: the default review page testers get still has three Phase-1 defects. `render_region` names tools the page lacks; the helper runs without the review rules; a long turn ends in GraphRecursionError instead of an answer. The fixes exist only behind the OFF `lean` switch.
+  - DR-14: the markup check is wrong both ways.
+  - TA-01: a refused Prompter key shows raw IIS HTML.
+  - TA-02: the suites have never run on CfA's fleet pins.
+  - EV-01: no smoke wave ran at the gpt-5.1 budget.
+  - DOC-04 / DOC-05: the install guide still says 5.25.0.
 
 **Open questions** about how the harnesses behave are listed at the end of
-each document in `module_work/harness_theory/` — read that folder before
-changing a harness.
+each document in `module_work/harness_theory/`. Read that folder before
+changing a harness (BACKLOG EV-12).
 
 ### 5.32.0 RELEASED 2026-10-04 (tag `v5.32.0`) with planlens 0.11.0 (tag `v0.11.0`)
 

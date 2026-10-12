@@ -2,8 +2,8 @@
 
 **CLOSED RECORD.** 5.32.0 and planlens 0.11.0 were released 2026-10-04. This
 file is the day-by-day history of how they were built and measured; nothing
-in it is a live to-do. **The open to-do list is `HANDOFF.md` §0a-current,
-"Open to-dos after 5.32.0".** Section 1 (the owner's standing directions)
+in it is a live to-do. **The open to-do list is `BACKLOG.md` at the repo root**
+(since 2026-10-12). Section 1 (the owner's standing directions)
 still holds. Session "document-review-architecture" (Claude Code, Opus 5.5).
 
 ## 1. The owner's standing directions (this session and before)
