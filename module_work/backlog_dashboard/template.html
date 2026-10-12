@@ -1,0 +1,641 @@
+<title>GSE Backlog Desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,500..800&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap">
+<style>
+/* Layout: a desk with one working column. Summary strip on top, tabs, then
+   "hold points" (items waiting on the owner) as expandable sign-off cards;
+   the full backlog reads like a field log, strata of sections. */
+:root {
+  --paper: #f3f5f4;
+  --card: #ffffff;
+  --ink: #16201e;
+  --muted: #586563;
+  --faint: #8a9593;
+  --rule: #d6dddb;
+  --rule-strong: #b9c4c1;
+  --accent: #0b6b69;
+  --accent-ink: #ffffff;
+  --accent-soft: #dcefee;
+  --now: #b42318;   --now-soft: #fde8e6;
+  --next: #a14e06;  --next-soft: #fdf0e1;
+  --later: #44546a; --later-soft: #e8edf3;
+  --parked: #6f7680; --parked-soft: #eceef0;
+  --ok: #067647;    --ok-soft: #dcf3e6;
+  --wait: #8a5a00;  --wait-soft: #fbefd0;
+  --code-bg: #e9eeec;
+  --shadow: 0 1px 2px rgb(22 32 30 / 6%), 0 2px 8px rgb(22 32 30 / 5%);
+  --f-display: "Archivo", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "Source Sans 3", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0f1514; --card: #172120; --ink: #e5ecea; --muted: #a3b0ad; --faint: #75827f;
+    --rule: #283432; --rule-strong: #3a4845; --accent: #5cc2bd; --accent-ink: #062b2a; --accent-soft: #163634;
+    --now: #ff8a7a; --now-soft: #3a1914; --next: #f5b056; --next-soft: #362512;
+    --later: #a9bbd3; --later-soft: #1d2836; --parked: #aab0b8; --parked-soft: #23272c;
+    --ok: #5fd39a; --ok-soft: #12301f; --wait: #f2c45a; --wait-soft: #33290f;
+    --code-bg: #1f2b29; --shadow: 0 1px 2px rgb(0 0 0 / 40%);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0f1514; --card: #172120; --ink: #e5ecea; --muted: #a3b0ad; --faint: #75827f;
+  --rule: #283432; --rule-strong: #3a4845; --accent: #5cc2bd; --accent-ink: #062b2a; --accent-soft: #163634;
+  --now: #ff8a7a; --now-soft: #3a1914; --next: #f5b056; --next-soft: #362512;
+  --later: #a9bbd3; --later-soft: #1d2836; --parked: #aab0b8; --parked-soft: #23272c;
+  --ok: #5fd39a; --ok-soft: #12301f; --wait: #f2c45a; --wait-soft: #33290f;
+  --code-bg: #1f2b29; --shadow: 0 1px 2px rgb(0 0 0 / 40%);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--paper); color: var(--ink); font-family: var(--f-body); font-size: 15.5px; line-height: 1.5; }
+.wrap { max-width: 1080px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 48px; display: flex; flex-direction: column; gap: 18px; }
+h1, h2, h3 { font-family: var(--f-display); font-stretch: 87.5%; line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: 1.85rem; font-weight: 800; letter-spacing: -0.01em; }
+h2 { font-size: 1.15rem; font-weight: 700; }
+h3 { font-size: .95rem; font-weight: 700; }
+a { color: var(--accent); }
+code { font-family: var(--f-mono); font-size: .86em; background: var(--code-bg); padding: .05em .3em; border-radius: 3px; overflow-wrap: anywhere; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* header */
+.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 8px 20px; }
+.top p { margin: 4px 0 0; color: var(--muted); max-width: 62ch; }
+.stamp { font-family: var(--f-mono); font-size: .78rem; color: var(--faint); text-align: right; }
+
+/* summary strip */
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.panel { background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; box-shadow: var(--shadow); min-width: 0; }
+.panel .label { font-family: var(--f-display); font-stretch: 87.5%; text-transform: uppercase; letter-spacing: .06em; font-size: .74rem; font-weight: 700; color: var(--muted); }
+.big { font-family: var(--f-display); font-weight: 800; font-size: 1.9rem; line-height: 1.1; }
+.big small { font-size: .95rem; font-weight: 600; color: var(--muted); }
+.bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--rule); margin-top: 10px; }
+.bar span { display: block; height: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; font-size: .84rem; color: var(--muted); }
+.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+
+/* tabs */
+.tabs { display: flex; gap: 4px; border-bottom: 2px solid var(--rule); overflow-x: auto; }
+.tab { background: none; border: 0; padding: 9px 14px 8px; font-family: var(--f-display); font-stretch: 87.5%; font-weight: 700; font-size: .98rem; color: var(--muted); cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; white-space: nowrap; }
+.tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.tab .count { font-family: var(--f-mono); font-size: .78rem; font-weight: 500; color: var(--faint); margin-left: 4px; }
+
+/* filters */
+.filters { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--rule-strong); border-radius: 6px; overflow: hidden; }
+.seg button { background: var(--card); border: 0; border-right: 1px solid var(--rule); padding: 5px 10px; font-size: .86rem; cursor: pointer; color: var(--muted); }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.search { flex: 1 1 200px; min-width: 0; padding: 6px 10px; border: 1px solid var(--rule-strong); border-radius: 6px; background: var(--card); }
+.flabel { font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); font-weight: 600; }
+.fgroup { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+select.sel { padding: 5px 8px; border: 1px solid var(--rule-strong); border-radius: 6px; background: var(--card); font-size: .88rem; max-width: 100%; }
+
+/* callout */
+.callout { border-left: 4px solid var(--accent); background: var(--accent-soft); border-radius: 0 8px 8px 0; padding: 12px 16px; }
+.callout ul { margin: 6px 0 0; padding-left: 18px; }
+.callout li { margin: 3px 0; }
+
+/* pills */
+.pill { display: inline-flex; align-items: center; gap: 4px; font-family: var(--f-mono); font-size: .72rem; font-weight: 600; padding: 1px 7px; border-radius: 999px; white-space: nowrap; letter-spacing: .02em; }
+.t-Now { color: var(--now); background: var(--now-soft); }
+.t-Next { color: var(--next); background: var(--next-soft); }
+.t-Later { color: var(--later); background: var(--later-soft); }
+.t-Parked { color: var(--parked); background: var(--parked-soft); }
+.s-open { color: var(--muted); background: var(--code-bg); }
+.s-waiting { color: var(--wait); background: var(--wait-soft); }
+.s-answered { color: var(--ok); background: var(--ok-soft); }
+.s-deferred, .s-wontdo { color: var(--parked); background: var(--parked-soft); }
+.kind { font-size: .78rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.who { font-size: .8rem; color: var(--accent); font-weight: 600; }
+.id { font-family: var(--f-mono); font-weight: 600; font-size: .85rem; color: var(--ink); text-decoration: none; white-space: nowrap; }
+
+/* hold-point cards */
+.list { display: flex; flex-direction: column; gap: 8px; }
+.card { background: var(--card); border: 1px solid var(--rule); border-radius: 8px; box-shadow: var(--shadow); min-width: 0; }
+.card.is-Now { border-left: 4px solid var(--now); }
+.card.is-Next { border-left: 4px solid var(--next); }
+.card.is-Later { border-left: 4px solid var(--later); }
+.card.is-Parked { border-left: 4px solid var(--parked); }
+.card-head { width: 100%; display: grid; grid-template-columns: auto 1fr auto; gap: 4px 12px; align-items: start; padding: 12px 14px; background: none; border: 0; text-align: left; cursor: pointer; border-radius: 8px; }
+.card-head .lead { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.card-head .q { font-weight: 600; font-size: 1.02rem; min-width: 0; }
+.card-head .meta { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; margin-top: 3px; }
+.card-head .meta .sec { font-size: .8rem; color: var(--faint); }
+.chev { color: var(--faint); font-size: .9rem; transition: transform .15s; margin-top: 2px; }
+.card[data-open="1"] .chev { transform: rotate(90deg); }
+.card-body { padding: 0 16px 16px; display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 18px; border-top: 1px dashed var(--rule); padding-top: 14px; margin: 0 0 0 0; }
+.card-body h3 { margin-bottom: 4px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-size: .74rem; }
+.card-body p { margin: 0 0 12px; max-width: 70ch; }
+.opts { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.opt { border: 1px solid var(--rule); border-radius: 6px; padding: 7px 10px; }
+.opt b { display: block; }
+.opt span { color: var(--muted); font-size: .92rem; }
+.rec { border: 1px solid var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 8px 11px; margin-bottom: 12px; }
+.rec b { color: var(--accent); }
+.msg { background: var(--code-bg); border-radius: 6px; padding: 10px 12px; white-space: pre-wrap; font-size: .92rem; margin: 0 0 6px; }
+.steps { margin: 0 0 12px; padding-left: 20px; }
+.steps li { margin: 3px 0; }
+.small { font-size: .86rem; color: var(--muted); }
+.line { border-top: 1px solid var(--rule); padding-top: 10px; margin-top: 4px; }
+.answer { background: var(--paper); border: 1px solid var(--rule); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px; align-self: start; }
+.answer h3 { color: var(--ink); }
+.statuses { display: flex; flex-wrap: wrap; gap: 6px; }
+.statuses label, .choices label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: .9rem; }
+.statuses label { border: 1px solid var(--rule-strong); border-radius: 999px; padding: 3px 10px; background: var(--card); }
+.statuses input { accent-color: var(--accent); margin: 0; }
+.choices { display: flex; flex-direction: column; gap: 4px; }
+.choices input { accent-color: var(--accent); }
+textarea { width: 100%; min-height: 96px; resize: vertical; padding: 8px 10px; border: 1px solid var(--rule-strong); border-radius: 6px; background: var(--card); }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.btn { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 6px; padding: 7px 14px; font-weight: 700; cursor: pointer; }
+.btn:disabled { opacity: .55; cursor: default; }
+.btn.ghost { background: var(--card); color: var(--accent); border: 1px solid var(--accent); padding: 4px 10px; font-weight: 600; font-size: .86rem; }
+.savestate { font-size: .84rem; color: var(--muted); }
+.savestate.err { color: var(--now); }
+
+/* backlog log view */
+.stratum { display: flex; flex-direction: column; gap: 0; background: var(--card); border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; box-shadow: var(--shadow); }
+.stratum > header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 10px 14px; border-bottom: 1px solid var(--rule); background: var(--paper); }
+.stratum > header .counts { display: flex; gap: 6px; flex-wrap: wrap; }
+.subhead { padding: 7px 14px 3px; font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; color: var(--faint); }
+.row-item { display: grid; grid-template-columns: 4.6rem 4.4rem minmax(0, 1fr); gap: 2px 10px; padding: 9px 14px; border-top: 1px solid var(--rule); }
+.row-item:first-of-type { border-top: 0; }
+.row-item .t { font-weight: 600; }
+.row-item .b { color: var(--ink); }
+.row-item .refs { font-size: .8rem; color: var(--faint); margin-top: 2px; overflow-wrap: anywhere; }
+.row-item .you { margin-left: 6px; }
+.row-item.flash, .card.flash { animation: flash 1.6s ease-out; }
+@keyframes flash { from { box-shadow: 0 0 0 3px var(--accent); } to { box-shadow: none; } }
+.table-wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--rule); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: .92rem; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-family: var(--f-display); font-stretch: 87.5%; text-transform: uppercase; letter-spacing: .05em; font-size: .74rem; color: var(--muted); }
+.empty { padding: 24px; text-align: center; color: var(--muted); background: var(--card); border: 1px dashed var(--rule-strong); border-radius: 8px; }
+.bundle { display: flex; flex-direction: column; gap: 8px; }
+.notice { font-size: .88rem; color: var(--wait); background: var(--wait-soft); border-radius: 6px; padding: 8px 12px; }
+
+@media (max-width: 760px) {
+  .card-body { grid-template-columns: minmax(0, 1fr); }
+  .row-item { grid-template-columns: auto auto minmax(0, 1fr); }
+  .row-item .t, .row-item .b, .row-item .refs { grid-column: 1 / -1; }
+  h1 { font-size: 1.5rem; }
+}
+@media (prefers-reduced-motion: reduce) { .chev { transition: none; } .row-item.flash, .card.flash { animation: none; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>GSE Backlog Desk</h1>
+      <p>Every open item across the app, planlens and geotech-references, from <code>BACKLOG.md</code>. Hold points are the items waiting on you: read the card, record your answer, and Claude picks it up from here.</p>
+    </div>
+    <div class="stamp" id="stamp"></div>
+  </header>
+
+  <section class="summary" aria-label="Summary">
+    <div class="panel">
+      <div class="label">Hold points (waiting on you)</div>
+      <div class="big num" id="hp-big">–</div>
+      <div class="bar" id="hp-bar" aria-hidden="true"></div>
+      <div class="legend" id="hp-legend"></div>
+    </div>
+    <div class="panel">
+      <div class="label">Whole backlog</div>
+      <div class="big num" id="bl-big">–</div>
+      <div class="bar" id="bl-bar" aria-hidden="true"></div>
+      <div class="legend" id="bl-legend"></div>
+    </div>
+  </section>
+
+  <nav class="tabs" role="tablist" aria-label="Views">
+    <button class="tab" role="tab" id="tab-hold" data-tab="hold">Hold points<span class="count" id="c-hold"></span></button>
+    <button class="tab" role="tab" id="tab-backlog" data-tab="backlog">Full backlog<span class="count" id="c-backlog"></span></button>
+    <button class="tab" role="tab" id="tab-switches" data-tab="switches">Switches<span class="count" id="c-switches"></span></button>
+    <button class="tab" role="tab" id="tab-done" data-tab="done">Done<span class="count" id="c-done"></span></button>
+  </nav>
+
+  <div id="db-note" class="notice" hidden></div>
+  <main id="view"></main>
+</div>
+
+<script>
+const DATA = /*__BACKLOG_DATA__*/null;
+const TIERS = ["Now", "Next", "Later", "Parked"];
+const TIER_COLOR = { Now: "var(--now)", Next: "var(--next)", Later: "var(--later)", Parked: "var(--parked)" };
+const STATUSES = [
+  ["open", "Open"], ["waiting", "Asked, waiting"], ["answered", "Answered"],
+  ["deferred", "Deferred"], ["wontdo", "Won't do"]];
+const STATUS_LABEL = Object.fromEntries(STATUSES);
+const KIND_LABEL = { decision: "Decide", action: "Do", ask: "Ask someone" };
+const ID_RE = /\b(OWN|DR|VIS|TA|PL|RI|GM|REF|EV|INF|LT|DOC)-\d{2,3}\b/g;
+
+const items = DATA.items;
+const byId = Object.fromEntries(items.map(i => [i.id, i]));
+const cards = DATA.cards || {};
+const sectionName = Object.fromEntries(DATA.sections.filter(s => s.num != null).map(s => [s.num, s.name]));
+const holds = items.filter(i => i.owner);
+
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("bd:" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("bd:" + k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem("bd:" + k); } catch {} },
+};
+
+const state = {
+  tab: store.get("tab", "hold"),
+  hold: Object.assign({ tier: "all", kind: "all", status: "todo", who: "all", q: "" }, store.get("holdf", {})),
+  bl: Object.assign({ tier: "all", section: "all", ownerOnly: false, q: "" }, store.get("blf", {})),
+  open: new Set(),
+  responses: {},
+  db: null, dbState: "loading", canWrite: true,
+};
+
+/* ---------- text helpers ---------- */
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+function md(s) {
+  let h = esc(s);
+  h = h.replace(/`([^`]+)`/g, "<code>$1</code>");
+  h = h.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  h = h.replace(/(^|[\s(])\*([^*\s][^*]*?)\*(?=[\s).,;:]|$)/g, "$1<em>$2</em>");
+  h = h.replace(/(<code>[^<]*<\/code>)|\b((?:OWN|DR|VIS|TA|PL|RI|GM|REF|EV|INF|LT|DOC)-\d{2,3})\b/g,
+    (m, code, id) => code ? code : (byId[id] ? `<a href="#${id}" data-goto="${id}">${id}</a>` : id));
+  return h;
+}
+function statusOf(id) { return (state.responses[id] && state.responses[id].status) || "open"; }
+function ago(iso) {
+  if (!iso) return "";
+  const s = (Date.now() - Date.parse(iso)) / 1000;
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.round(s / 60) + " min ago";
+  if (s < 86400) return Math.round(s / 3600) + " h ago";
+  return new Date(iso).toLocaleDateString();
+}
+function tierRank(t) { const i = TIERS.indexOf(t); return i < 0 ? 9 : i; }
+function cmpItems(a, b) { return tierRank(a.tier) - tierRank(b.tier) || a.id.localeCompare(b.id, undefined, { numeric: true }); }
+
+/* ---------- summary ---------- */
+function renderSummary() {
+  const h = DATA.header || {};
+  document.getElementById("stamp").innerHTML =
+    `backlog @ ${esc(h.backlog_commit || "?")} · built ${esc(h.built || "")}<br>last full sweep ${esc((h.last_sweep || "").split(" (")[0])}`;
+  const counts = { open: 0, waiting: 0, answered: 0, deferred: 0, wontdo: 0 };
+  holds.forEach(i => counts[statusOf(i.id)]++);
+  const total = holds.length;
+  const settled = counts.answered + counts.wontdo;
+  document.getElementById("hp-big").innerHTML = `${settled}<small> / ${total} settled</small>`;
+  const segs = [["answered", "var(--ok)"], ["wontdo", "var(--parked)"], ["waiting", "var(--wait)"], ["deferred", "var(--rule-strong)"]];
+  document.getElementById("hp-bar").innerHTML = segs.map(([k, c]) => counts[k] ? `<span style="width:${100 * counts[k] / total}%;background:${c}"></span>` : "").join("");
+  document.getElementById("hp-legend").innerHTML =
+    [["open", "var(--rule-strong)", "open"], ["waiting", "var(--wait)", "waiting on others"], ["answered", "var(--ok)", "answered"], ["deferred", "var(--rule-strong)", "deferred"], ["wontdo", "var(--parked)", "won't do"]]
+      .filter(([k]) => counts[k] || k === "open").map(([k, c, l]) => `<span class="num"><i style="background:${c}"></i>${counts[k]} ${l}</span>`).join("");
+  const tc = Object.fromEntries(TIERS.map(t => [t, items.filter(i => i.tier === t).length]));
+  document.getElementById("bl-big").innerHTML = `${items.length}<small> open items</small>`;
+  document.getElementById("bl-bar").innerHTML = TIERS.map(t => `<span style="width:${100 * tc[t] / items.length}%;background:${TIER_COLOR[t]}"></span>`).join("");
+  document.getElementById("bl-legend").innerHTML = TIERS.map(t => `<span class="num"><i style="background:${TIER_COLOR[t]}"></i>${tc[t]} ${t}</span>`).join("");
+  document.getElementById("c-hold").textContent = total - settled;
+  document.getElementById("c-backlog").textContent = items.length;
+  document.getElementById("c-switches").textContent = DATA.switches.length;
+  document.getElementById("c-done").textContent = DATA.done.length;
+}
+
+/* ---------- tabs ---------- */
+function setTab(t) {
+  state.tab = t; store.set("tab", t);
+  document.querySelectorAll(".tab").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === t ? "true" : "false"));
+  renderView();
+}
+
+function seg(name, value, options) {
+  return `<span class="seg" role="group">${options.map(([v, l]) =>
+    `<button type="button" data-f="${name}" data-v="${esc(v)}" aria-pressed="${String(v) === String(value)}">${esc(l)}</button>`).join("")}</span>`;
+}
+
+/* ---------- hold points ---------- */
+function holdMatches(i) {
+  const f = state.hold, c = cards[i.id] || {};
+  if (f.tier !== "all" && i.tier !== f.tier) return false;
+  if (f.kind !== "all" && (c.kind || "decision") !== f.kind) return false;
+  if (f.who !== "all" && (c.ask_who || "") !== f.who) return false;
+  const st = statusOf(i.id);
+  if (f.status === "todo" && !(st === "open" || st === "waiting")) return false;
+  if (f.status !== "todo" && f.status !== "all" && st !== f.status) return false;
+  if (f.q) {
+    const hay = [i.id, i.title, i.body, c.question, c.why, c.background, c.ask_who].join(" ").toLowerCase();
+    if (!hay.includes(f.q.toLowerCase())) return false;
+  }
+  return true;
+}
+
+function renderHold() {
+  const f = state.hold;
+  const whos = [...new Set(holds.map(i => (cards[i.id] || {}).ask_who).filter(Boolean))].sort();
+  const week = (DATA.this_week || []).map(l => `<li>${md(l)}</li>`).join("");
+  const list = holds.filter(holdMatches).sort(cmpItems);
+  let bundle = "";
+  if (f.who !== "all") {
+    const asks = list.filter(i => (cards[i.id] || {}).message_to_send);
+    if (asks.length) {
+      bundle = `<div class="panel bundle"><div class="row"><h2>${asks.length} question${asks.length > 1 ? "s" : ""} for ${esc(f.who)}</h2>
+        <button class="btn ghost" type="button" data-copy-bundle>Copy all as one message</button><span class="savestate" id="bundle-state"></span></div>
+        <p class="small">One message with every open question below, numbered, ready to paste into an email or Teams. Record each answer on its card.</p></div>`;
+    }
+  }
+  return `
+    <div class="callout"><h2>This week</h2><ul>${week}</ul></div>
+    <div class="filters">
+      <span class="fgroup"><span class="flabel">Tier</span>${seg("hold.tier", f.tier, [["all", "All"], ...TIERS.map(t => [t, t])])}</span>
+      <span class="fgroup"><span class="flabel">Type</span>${seg("hold.kind", f.kind, [["all", "All"], ["decision", "Decide"], ["action", "Do"], ["ask", "Ask someone"]])}</span>
+      <span class="fgroup"><span class="flabel">Status</span>${seg("hold.status", f.status, [["todo", "To do"], ["answered", "Answered"], ["deferred", "Deferred"], ["all", "All"]])}</span>
+      <span class="fgroup"><span class="flabel">Who</span><select class="sel" id="f-who" aria-label="Who to ask"><option value="all">Anyone</option>${whos.map(w => `<option ${w === f.who ? "selected" : ""}>${esc(w)}</option>`).join("")}</select></span>
+      <input class="search" id="f-hold-q" type="search" placeholder="Search hold points" value="${esc(f.q)}" aria-label="Search hold points">
+    </div>
+    ${bundle}
+    <div class="list">${list.length ? list.map(holdCard).join("") : `<div class="empty">Nothing matches these filters.${f.status === "todo" ? " Everything here is settled; switch Status to All to review answers." : ""}</div>`}</div>`;
+}
+
+function holdCard(i) {
+  const c = cards[i.id] || {};
+  const st = statusOf(i.id);
+  const open = state.open.has(i.id);
+  return `<article class="card is-${esc(i.tier)}" id="card-${i.id}" data-id="${i.id}" data-open="${open ? 1 : 0}">
+    <button class="card-head" type="button" data-toggle="${i.id}" aria-expanded="${open}">
+      <span class="lead"><span class="id">${i.id}</span><span class="pill t-${esc(i.tier)}">${esc(i.tier)}</span></span>
+      <span style="min-width:0">
+        <span class="q">${md(c.question || i.title)}</span>
+        <span class="meta"><span class="kind">${esc(KIND_LABEL[c.kind] || "Decide")}</span>${c.ask_who ? `<span class="who">${esc(c.ask_who)}</span>` : ""}<span class="sec">${esc(sectionName[i.section] || "")}</span></span>
+      </span>
+      <span class="lead" style="align-items:flex-end"><span class="pill s-${st}" data-status-pill="${i.id}">${esc(STATUS_LABEL[st])}</span><span class="chev" aria-hidden="true">▸</span></span>
+    </button>
+    ${open ? cardBody(i) : ""}
+  </article>`;
+}
+
+function cardBody(i) {
+  const c = cards[i.id] || {};
+  const r = state.responses[i.id] || {};
+  const draft = store.get("draft:" + i.id, null);
+  const cur = draft || r;
+  const st = cur.status || "open";
+  const opts = c.options || [];
+  const left = [];
+  if (!c.question) left.push(`<p class="small">No card written for this item yet; the backlog line is below.</p>`);
+  if (c.why) left.push(`<h3>Why it matters</h3><p>${md(c.why)}</p>`);
+  if (c.background) left.push(`<h3>Background</h3><p>${md(c.background)}</p>`);
+  if (opts.length) left.push(`<h3>Options</h3><div class="opts">${opts.map(o => `<div class="opt"><b>${md(o.label)}</b><span>${md(o.effect)}</span></div>`).join("")}</div>`);
+  if (c.recommendation) left.push(`<div class="rec"><b>Claude recommends:</b> ${md(c.recommendation)}</div>`);
+  if (c.steps && c.steps.length) left.push(`<h3>Steps</h3><ol class="steps">${c.steps.map(s => `<li>${md(s)}</li>`).join("")}</ol>`);
+  if (c.message_to_send) left.push(`<h3>Message you can send${c.ask_who ? " to " + esc(c.ask_who) : ""}</h3><pre class="msg" id="msg-${i.id}">${esc(c.message_to_send)}</pre><div class="row" style="margin-bottom:12px"><button class="btn ghost" type="button" data-copy="${i.id}">Copy message</button><span class="savestate" id="copy-${i.id}"></span></div>`);
+  if (c.if_no_answer) left.push(`<h3>If you don't answer</h3><p>${md(c.if_no_answer)}</p>`);
+  if (c.unblocks && c.unblocks.length) left.push(`<h3>Unblocks</h3><p>${c.unblocks.map(u => md(u)).join(", ")}</p>`);
+  left.push(`<div class="line small"><b>Backlog line:</b> ${md(i.title)}${i.body ? ": " + md(i.body) : ""}${i.src ? `<br><b>Source:</b> ${md(i.src)}` : ""}${i.was ? ` · <b>was:</b> ${md(i.was)}` : ""}${c.sources && c.sources.length ? `<br><b>Read more:</b> ${c.sources.map(md).join("; ")}` : ""}</div>`);
+  const canSave = state.db && state.canWrite;
+  const savedLine = r.updatedAt ? `Saved ${ago(r.updatedAt)}` : (draft ? "Draft, not saved yet" : "Not answered yet");
+  return `<div class="card-body">
+    <div>${left.join("")}</div>
+    <form class="answer" data-form="${i.id}" autocomplete="off">
+      <h3>Your answer</h3>
+      <div class="statuses" role="radiogroup" aria-label="Status">${STATUSES.map(([v, l]) => `<label><input type="radio" name="st-${i.id}" value="${v}" ${st === v ? "checked" : ""}> ${l}</label>`).join("")}</div>
+      ${opts.length ? `<div class="choices" role="radiogroup" aria-label="Choice"><span class="flabel">Your choice</span>${opts.map((o, k) => `<label><input type="radio" name="ch-${i.id}" value="${esc(o.label)}" ${cur.choice === o.label ? "checked" : ""}> ${esc(o.label)}</label>`).join("")}<label><input type="radio" name="ch-${i.id}" value="Other (see notes)" ${cur.choice === "Other (see notes)" ? "checked" : ""}> Other (see notes)</label></div>` : ""}
+      <label class="flabel" for="notes-${i.id}">Notes, answer or what they said</label>
+      <textarea id="notes-${i.id}" name="notes" placeholder="${c.kind === "ask" ? "Paste their reply, or note when you asked." : "Your decision and any conditions."}">${esc(cur.notes || "")}</textarea>
+      <div class="row"><button class="btn" type="submit" ${canSave ? "" : "disabled"}>Save answer</button><span class="savestate" id="save-${i.id}">${esc(savedLine)}</span></div>
+      ${canSave ? "" : `<span class="small">${state.dbState === "loading" ? "Connecting to storage…" : "Answers can't be saved in this view. Your draft stays in this browser."}</span>`}
+    </form>
+  </div>`;
+}
+
+/* ---------- full backlog ---------- */
+function blMatches(i) {
+  const f = state.bl;
+  if (f.tier !== "all" && i.tier !== f.tier) return false;
+  if (f.section !== "all" && String(i.section) !== String(f.section)) return false;
+  if (f.ownerOnly && !i.owner) return false;
+  if (f.q) {
+    const hay = [i.id, i.title, i.body, i.src, i.was].join(" ").toLowerCase();
+    if (!hay.includes(f.q.toLowerCase())) return false;
+  }
+  return true;
+}
+
+function renderBacklog() {
+  const f = state.bl;
+  const secs = DATA.sections.filter(s => s.kind === "items");
+  const out = [`<div class="filters">
+      <span class="fgroup"><span class="flabel">Tier</span>${seg("bl.tier", f.tier, [["all", "All"], ...TIERS.map(t => [t, t])])}</span>
+      <span class="fgroup"><span class="flabel">Area</span><select class="sel" id="f-sec" aria-label="Area"><option value="all">All areas</option>${secs.map(s => `<option value="${s.num}" ${String(s.num) === String(f.section) ? "selected" : ""}>${s.num}. ${esc(s.name)}</option>`).join("")}</select></span>
+      <label class="fgroup"><input type="checkbox" id="f-owner" ${f.ownerOnly ? "checked" : ""}> <span class="flabel" style="letter-spacing:.02em">Needs me</span></label>
+      <input class="search" id="f-bl-q" type="search" placeholder="Search the backlog" value="${esc(f.q)}" aria-label="Search the backlog">
+    </div>`];
+  let shown = 0;
+  for (const s of secs) {
+    const its = items.filter(i => i.section === s.num && blMatches(i));
+    if (!its.length) continue;
+    shown += its.length;
+    const tc = TIERS.map(t => [t, its.filter(i => i.tier === t).length]).filter(([, n]) => n);
+    let rows = "", lastGroup = null;
+    for (const i of its) {
+      if (i.group && i.group !== lastGroup) { rows += `<div class="subhead">${esc(i.group)}</div>`; lastGroup = i.group; }
+      const st = i.owner ? statusOf(i.id) : null;
+      rows += `<div class="row-item" id="row-${i.id}">
+        <a class="id" href="#${i.id}" data-goto="${i.id}">${i.id}</a>
+        <span><span class="pill t-${esc(i.tier)}">${esc(i.tier)}</span></span>
+        <div style="min-width:0"><span class="t">${md(i.title)}</span>${i.owner ? `<span class="pill s-${st} you" data-status-pill="${i.id}">you · ${esc(STATUS_LABEL[st])}</span>` : ""}
+          ${i.body ? `<div class="b">${md(i.body)}</div>` : ""}
+          ${i.src || i.was ? `<div class="refs">${i.src ? "Source: " + md(i.src) : ""}${i.src && i.was ? " · " : ""}${i.was ? "was: " + md(i.was) : ""}</div>` : ""}
+        </div></div>`;
+    }
+    out.push(`<section class="stratum"><header><h2>${s.num}. ${esc(s.name)}</h2><span class="counts">${tc.map(([t, n]) => `<span class="pill t-${t}">${n} ${t}</span>`).join("")}</span></header>${rows}</section>`);
+  }
+  if (!shown) out.push(`<div class="empty">Nothing matches these filters.</div>`);
+  return `<div class="list" style="gap:14px">${out.join("")}</div>`;
+}
+
+function renderSwitches() {
+  return `<p class="small" style="margin:0 0 10px">Features built behind switches. They stay as listed until a measurement or your decision (OWN-06) says otherwise.</p>
+    <div class="table-wrap"><table><thead><tr><th>Switch</th><th>Default</th><th>Waiting on</th></tr></thead><tbody>${DATA.switches.map(s => `<tr><td>${md(s.switch)}</td><td>${md(s.default)}</td><td>${md(s.awaits)}</td></tr>`).join("")}</tbody></table></div>`;
+}
+function renderDone() {
+  return `<p class="small" style="margin:0 0 10px">Finished work that older documents still list as open. Cleared at the next full sweep.</p>
+    <div class="panel"><ul style="margin:0;padding-left:18px">${DATA.done.map(d => `<li style="margin:6px 0">${md(d)}</li>`).join("")}</ul></div>`;
+}
+
+function renderView() {
+  const v = document.getElementById("view");
+  v.innerHTML = state.tab === "hold" ? renderHold() : state.tab === "backlog" ? renderBacklog() : state.tab === "switches" ? renderSwitches() : renderDone();
+}
+
+/* ---------- events ---------- */
+document.addEventListener("click", async e => {
+  const tab = e.target.closest(".tab");
+  if (tab) { setTab(tab.dataset.tab); return; }
+  const f = e.target.closest("[data-f]");
+  if (f) {
+    const [scope, key] = f.dataset.f.split(".");
+    state[scope][key] = f.dataset.v;
+    store.set(scope === "hold" ? "holdf" : "blf", state[scope]);
+    renderView(); return;
+  }
+  const tog = e.target.closest("[data-toggle]");
+  if (tog) {
+    const id = tog.dataset.toggle;
+    state.open.has(id) ? state.open.delete(id) : state.open.add(id);
+    const el = document.getElementById("card-" + id);
+    if (el) el.outerHTML = holdCard(byId[id]);
+    return;
+  }
+  const go = e.target.closest("[data-goto]");
+  if (go) { e.preventDefault(); goTo(go.dataset.goto); return; }
+  const cp = e.target.closest("[data-copy]");
+  if (cp) { copyText(cards[cp.dataset.copy].message_to_send, document.getElementById("copy-" + cp.dataset.copy), document.getElementById("msg-" + cp.dataset.copy)); return; }
+  if (e.target.closest("[data-copy-bundle]")) {
+    const list = holds.filter(holdMatches).sort(cmpItems).filter(i => (cards[i.id] || {}).message_to_send);
+    const text = `Questions for ${state.hold.who}\n\n` + list.map((i, k) => `${k + 1}. ${cards[i.id].message_to_send}`).join("\n\n");
+    copyText(text, document.getElementById("bundle-state"), null);
+  }
+});
+document.addEventListener("input", e => {
+  if (e.target.id === "f-hold-q") { state.hold.q = e.target.value; store.set("holdf", state.hold); rerenderKeepingFocus(e.target.id); }
+  else if (e.target.id === "f-bl-q") { state.bl.q = e.target.value; store.set("blf", state.bl); rerenderKeepingFocus(e.target.id); }
+  const form = e.target.closest("form[data-form]");
+  if (form) saveDraft(form);
+});
+document.addEventListener("change", e => {
+  if (e.target.id === "f-who") { state.hold.who = e.target.value; store.set("holdf", state.hold); renderView(); }
+  else if (e.target.id === "f-sec") { state.bl.section = e.target.value; store.set("blf", state.bl); renderView(); }
+  else if (e.target.id === "f-owner") { state.bl.ownerOnly = e.target.checked; store.set("blf", state.bl); renderView(); }
+  const form = e.target.closest("form[data-form]");
+  if (form) saveDraft(form);
+});
+document.addEventListener("submit", async e => {
+  const form = e.target.closest("form[data-form]");
+  if (!form) return;
+  e.preventDefault();
+  await saveAnswer(form);
+});
+
+let qTimer = null;
+function rerenderKeepingFocus(id) {
+  clearTimeout(qTimer);
+  qTimer = setTimeout(() => {
+    const el = document.getElementById(id); const pos = el ? el.selectionStart : null;
+    renderView();
+    const n = document.getElementById(id);
+    if (n) { n.focus(); if (pos != null) n.setSelectionRange(pos, pos); }
+  }, 180);
+}
+
+function readForm(form) {
+  const id = form.dataset.form;
+  const st = form.querySelector(`input[name="st-${id}"]:checked`);
+  const ch = form.querySelector(`input[name="ch-${id}"]:checked`);
+  return { status: st ? st.value : "open", choice: ch ? ch.value : "", notes: form.querySelector("textarea").value.trim() };
+}
+function saveDraft(form) {
+  const id = form.dataset.form;
+  store.set("draft:" + id, readForm(form));
+  const s = document.getElementById("save-" + id);
+  if (s) { s.textContent = "Draft, not saved yet"; s.classList.remove("err"); }
+}
+async function saveAnswer(form) {
+  const id = form.dataset.form;
+  const btn = form.querySelector("button[type=submit]");
+  const s = document.getElementById("save-" + id);
+  if (!state.db) { s.textContent = "Storage isn't available in this view."; s.classList.add("err"); return; }
+  const body = Object.assign(readForm(form), { id, tier: byId[id].tier, question: (cards[id] || {}).question || byId[id].title, updatedAt: new Date().toISOString() });
+  btn.disabled = true; s.textContent = "Saving…"; s.classList.remove("err");
+  try {
+    await state.db.doc("responses/" + id).set(body);
+    state.responses[id] = body;
+    store.del("draft:" + id);
+    s.textContent = "Saved just now";
+    refreshStatus(id); renderSummary();
+  } catch (err) {
+    s.classList.add("err");
+    s.textContent = err && err.code === "invalid_argument" ? "You can't save answers on this page (view-only access)." :
+      err && err.code === "quota_exceeded" ? "Storage is full; tell Claude." : "Couldn't save. Try again in a moment.";
+    if (err && err.code === "invalid_argument") { state.canWrite = false; }
+  } finally { btn.disabled = !state.canWrite; }
+}
+function refreshStatus(id) {
+  const st = statusOf(id);
+  document.querySelectorAll(`[data-status-pill="${id}"]`).forEach(p => {
+    p.className = p.className.replace(/\bs-\w+/, "s-" + st);
+    p.textContent = p.classList.contains("you") ? "you · " + STATUS_LABEL[st] : STATUS_LABEL[st];
+  });
+}
+async function copyText(text, stateEl, selectEl) {
+  try { await navigator.clipboard.writeText(text); if (stateEl) stateEl.textContent = "Copied"; }
+  catch {
+    if (selectEl) { const r = document.createRange(); r.selectNodeContents(selectEl); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }
+    if (stateEl) stateEl.textContent = selectEl ? "Selected; press Ctrl+C to copy" : "Copy isn't allowed here";
+  }
+}
+function goTo(id) {
+  const it = byId[id]; if (!it) return;
+  if (it.owner) {
+    state.open.add(id);
+    const f = state.hold; f.tier = "all"; f.kind = "all"; f.who = "all"; f.q = ""; if (f.status === "todo" && !["open", "waiting"].includes(statusOf(id))) f.status = "all";
+    setTab("hold");
+    flash("card-" + id);
+  } else {
+    const f = state.bl; f.tier = "all"; f.section = "all"; f.ownerOnly = false; f.q = "";
+    setTab("backlog");
+    flash("row-" + id);
+  }
+}
+function flash(domId) {
+  requestAnimationFrame(() => {
+    const el = document.getElementById(domId); if (!el) return;
+    el.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1700);
+  });
+}
+
+/* ---------- storage ---------- */
+async function connect() {
+  const note = document.getElementById("db-note");
+  let db = null;
+  try { db = window.claude && window.claude.use ? await window.claude.use("db") : null; } catch { db = null; }
+  if (!db) {
+    state.dbState = "none";
+    note.hidden = false;
+    note.textContent = "Answers can't be saved or loaded in this view. Open the page on claude.ai while signed in to record answers.";
+    renderView(); return;
+  }
+  state.db = db; state.dbState = "ready";
+  try {
+    const user = window.claude.use ? await window.claude.use("user") : null;
+    if (user && typeof user.can === "function") { const ok = await user.can("data.write"); if (ok === false) state.canWrite = false; }
+  } catch {}
+  if (!state.canWrite) { note.hidden = false; note.textContent = "You can read this page but not record answers on it."; }
+  db.collection("responses").onSnapshot(snap => {
+    const next = {};
+    snap.docs.forEach(d => { if (d.exists) next[d.id] = d.data(); });
+    const changed = new Set([...Object.keys(next), ...Object.keys(state.responses)]);
+    state.responses = next;
+    renderSummary();
+    changed.forEach(refreshStatus);
+    if (!document.querySelector("form[data-form] textarea:focus")) {
+      // Only re-render when nobody is typing, so a draft is never interrupted.
+      const openForms = [...document.querySelectorAll("form[data-form]")].map(f => f.dataset.form);
+      if (!openForms.length) renderView();
+    }
+  }, err => {
+    note.hidden = false;
+    note.textContent = "Lost the connection to saved answers. Reload the page to reconnect.";
+  });
+  renderView();
+}
+
+/* ---------- boot ---------- */
+renderSummary();
+document.querySelectorAll(".tab").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === state.tab ? "true" : "false"));
+const startId = (location.hash || "").slice(1);
+if (startId && byId[startId]) { goTo(startId); } else { renderView(); }
+connect();
+</script>

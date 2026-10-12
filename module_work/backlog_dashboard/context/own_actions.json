@@ -1,0 +1,634 @@
+{
+ "OWN-29": {
+  "kind": "action",
+  "ask_who": null,
+  "question": "Install 5.33.0 on dosdev from the Nexus mirror through the wrapper's packages.txt, then run the dosdev test round.",
+  "why": "Everything testers will get is in 5.33.0: per-tester keys, per-person isolation, Word and Excel, faster vision. The dosdev round is the first install beside CfA's fleet pins (pandas 3.0.2, streamlit 1.62.0) and the first real-Prompter check of this release, before the published app and the first-hour check.",
+  "background": "Released 2026-10-09 with planlens 0.13.0 and geotech-references 1.4.1, which pip brings along. The Nexus mirror usually lags PyPI by a day or two. The release wheels in ../foundry_handoff/ are a fallback wherever a file can be copied in (install planlens first). The wrapper's packages.txt still says geotech-staff-engineer>=5.26; pin the exact tested release before asking App Services to sync. Found while writing this: the app reads DEV_IDENTITY, GEOTECH_PROMPTER_DISABLE_STREAMING and GEOTECH_SHAREPOINT_ROOT from the real environment only, so those lines in .env are ignored. Your 2026-09-24 dosdev run measured the key's model as gpt-5.1; delete any GEOTECH_VISION_BUDGET line so the app's own probe decides.",
+  "options": [],
+  "recommendation": "Do it as soon as pip finds 5.33.0. The Connection diagnostics checks also answer the streaming question (OWN-49) before the CfA meeting.",
+  "if_no_answer": "Testers would get an install nobody tried on dosdev, and the CfA fleet pins stay untested beside our package.",
+  "message_to_send": null,
+  "steps": [
+   "In a fresh dosdev venv, change packages.txt to geotech-staff-engineer==5.33.0 and run python -m pip install -r packages.txt.",
+   "If pip cannot find 5.33.0, the mirror has not caught up yet; wait a day and retry.",
+   "Check versions with python -m pip show: geotech-staff-engineer 5.33.0, planlens 0.13.0, geotech-references 1.4.1.",
+   "Fill .env with the Prompter values. Set DEV_IDENTITY in the terminal itself (PowerShell: $env:DEV_IDENTITY='DOMAIN\\you'); the .env line is ignored.",
+   "python -m streamlit run app.py: sidebar shows your name and model; Connection diagnostics passes plain, streaming and tool-call checks and names the vision model.",
+   "Upload a short PDF: the orientation reply appears by itself. Ask for a marked-up copy and a Word summary: two download cards.",
+   "Switch to the GeotechStaffEngineer page: it lists its own conversations. If SharePoint values exist, Permanent storage, Sync now: the folder appears.",
+   "Commit the pin to the GHE wrapper repo, and send a session the results, including any failed diagnostics line."
+  ],
+  "unblocks": [
+   "OWN-30"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-29)",
+   "HANDOFF.md (§0a-current, Where things stand, item 0)",
+   "tinyapps/TINYAPPS.md (dosdev test recipe)",
+   "tinyapps/wrapper_repo/packages.txt",
+   "tinyapps/wrapper_repo/.env.example",
+   "webapp/identity.py (current_identity: DEV_IDENTITY read from os.environ)",
+   "HANDOFF.md (5.28.0 section: the first Tiny Apps run)"
+  ]
+ },
+ "OWN-30": {
+  "kind": "action",
+  "ask_who": null,
+  "question": "Once the app is published, run the 20-minute first-hour check with a second tester, a short PDF and a few set requests.",
+  "why": "The live smoke waves used Claude standing in for GPT. Only the real app can show vision on gpt-5.1's smaller images, GPT's speed against the app's time caps, real budget and rate-limit replies, two testers on separate keys, and links working behind the IIS proxy.",
+  "background": "It needs the CfA items first: image-capable keys (OWN-47), per-tester keys or the shared-key fallback (OWN-43), the identity header (OWN-46), the published address (OWN-45) and, for the SharePoint step, the app registration (OWN-44). Each conversation's activity.jsonl records every model and tool call and is copied to the conversation's SharePoint folder. In it, vision_model names the model the app measured, budget the image size it chose, and cut_off marks a reply cut short by the output cap. Wave 3 of the smoke tests gave GO for the tester deploy with these checks as a condition.",
+  "options": [],
+  "recommendation": "Run it the first day the published app works, before inviting more testers. Use a short PDF so each tester's budget stays intact.",
+  "if_no_answer": "Testers become the first live GPT test; a cut-off vision reply or a broken link would surface in their sessions instead.",
+  "message_to_send": null,
+  "steps": [
+   "Two people sign in; each sidebar shows its own name.",
+   "Each uploads a short sheet; the orientation reply arrives within about 30 seconds.",
+   "Ask: 'Put a note on the title block and give me the PDF.' Open the card and find the note.",
+   "Ask: 'Save it to SharePoint and send me the link.' The link opens.",
+   "Ask for a short Word memo; open it and check the title appears once.",
+   "In each conversation's activity.jsonl, note vision_model and budget, and search for cut_off.",
+   "Check that each person's file list holds only that person's files.",
+   "Send both conversations' SharePoint folder names to a session for a full read."
+  ],
+  "unblocks": [
+   "TA-03",
+   "TA-04"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-30, TA-03, TA-04)",
+   "module_work/live_smoke/runs/w3-confirm-sonnet/REVIEW.md (First-hour check on Tiny Apps; local only)",
+   "HANDOFF.md (§0a-current, 3e GO conditions)"
+  ]
+ },
+ "OWN-31": {
+  "kind": "action",
+  "ask_who": null,
+  "question": "Mark up the draft report-review checklist (18 items): add, cut or reword items, and say which judgement items code should check.",
+  "why": "The checklist tells the agent what a complete geotechnical report review covers. It is your engineering judgement, not the developers'. Until you approve it, it stays DRAFT, its switch stays off for testers, and the review-prompt rewrite (DR-06) waits.",
+  "background": "File: funhouse_agent/report_review_checklist.json, drafted 2026-10-08 from the 2026-10-06 field session. Six sections: Completeness 6, Consistency 5, Currency 2, Traceability 2, Recommendations 2, Plausibility 1. Seven items are checked by code from the app's own records (which pages were read, the report's text, the cross-checks write_diggs runs); eleven are handed to the agent to judge. A code item that cannot run in a conversation goes to the agent instead, so nothing is dropped. It is used only when GEOTECH_REVIEW_CHECKLIST is on (off by default), and needs a suite measurement before it goes on for everyone. You asked for slow-thinking time on it.",
+  "options": [],
+  "recommendation": "Do it this week as planned. Spend most of the time on the judgement items: they decide what the agent is asked to look for in every report review.",
+  "if_no_answer": "The checklist stays DRAFT and switched off; testers' reviews run without it, and DR-06 waits.",
+  "message_to_send": null,
+  "steps": [
+   "Ask a session to send the checklist as a plain numbered list, each item with its section and whether code or the agent checks it.",
+   "Mark it up in chat or in Word: add, cut or reword items.",
+   "For each judgement item, say whether code should learn to check it.",
+   "The session transfers your markup into the file, keeps every item's id, and removes the DRAFT status."
+  ],
+  "unblocks": [
+   "DR-06",
+   "OWN-06"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-31; §2 switch table, GEOTECH_REVIEW_CHECKLIST)",
+   "funhouse_agent/report_review_checklist.json (status_note, how_to_edit)",
+   "module_work/COVERAGE_AND_CHECKLIST.md (What is left for you)"
+  ]
+ },
+ "OWN-32": {
+  "kind": "action",
+  "ask_who": null,
+  "question": "When the Funhouse budget renews, run live check 5 on Funhouse: SharePoint links, remembered files and past-conversation lists.",
+  "why": "Three fixes from your 2026-10-06 geotech session have never been confirmed live: a SharePoint sign-in failure reported as 'not found', the agent forgetting an earlier file, and the geotech page listing the review page's conversations. They need the Funhouse app's own SharePoint sign-in, which Foundry lacks.",
+  "background": "Runbook: module_work/LIVE_TEST_QUEUE.md, check 5. It tests connections rather than the model, so use the cheaper model in the sidebar (funhouse-gpt-medium) and a 2–5 page PDF: about 50–150 thousand tokens in all. The Funhouse budget is monthly (it renewed 1 October) and ran low on 2026-10-07. The runbook was written for 5.32.1; install 5.33.0, which carries the same fixes. Pair it with the metering check (OWN-36) in the same session.",
+  "options": [],
+  "recommendation": "Run it on the first day of the new budget, together with OWN-36, on the cheaper model.",
+  "if_no_answer": "The fixes stay unconfirmed on Funhouse. The risk is low: testers go to Tiny Apps, and Funhouse is the backup host.",
+  "message_to_send": null,
+  "steps": [
+   "In a Funhouse notebook: %pip install \"geotech-staff-engineer==5.33.0\", then dbutils.library.restartPython().",
+   "Launch the app with SharePoint as usual and pick funhouse-gpt-medium in the sidebar.",
+   "Geotech page: paste a SharePoint copy link to a short PDF and ask for a summary. Pass: it downloads and summarises.",
+   "Leave it open over an hour, then ask a follow-up. Pass: it answers from the file; Turn details shows a note listing it.",
+   "If a SharePoint call fails, the message should say SharePoint refused or is not answering, not 'file not found'.",
+   "Open 'Find a past conversation' on each page. Pass: each lists only its own conversations.",
+   "Send the conversation's SharePoint folder name to a session for a full read."
+  ],
+  "unblocks": [],
+  "sources": [
+   "BACKLOG.md (OWN-32)",
+   "module_work/LIVE_TEST_QUEUE.md (Setup; Check 5)"
+  ]
+ },
+ "OWN-33": {
+  "kind": "action",
+  "ask_who": null,
+  "question": "Open claude.ai/code/routines, check whether the two scheduled routines have ever run, and retire or fix each.",
+  "why": "Both look unattended. The weekend references QC appears never to have run. The Monday drift canary is the early warning for library releases that break the agent, and raising the agent-library caps (INF-03) is meant to read its reports first.",
+  "background": "Weekend QC: compares the references' digitised text against the source PDFs and pushes fixes to qc/* branches; created 2026-06-02 on a Pro plan with an older Sonnet model. Evidence it never ran: qc_progress.json still says last_run: null, and the local refs checkout has no qc/* branches. Its audit cannot pass anyway until REF-05 (it demands section summaries; 853 errors over three GECs). Drift canary: Mondays 10:00 UTC; it force-upgrades the agent libraries in a scratch environment, runs the deep-agent and webapp tests, and reports DRIFT SAFE or DRIFT BREAKAGE. A session can disable a routine with /schedule; deleting one is done in the web page.",
+  "options": [
+   {
+    "label": "Retire QC, keep canary",
+    "effect": "Delete the weekend QC. Keep the Monday canary, or have a session re-create it if it never ran, so INF-03 has its reports."
+   },
+   {
+    "label": "Fix both",
+    "effect": "A session fixes REF-05 first, then updates the QC routine's model and plan; the canary stays. Uses weekend usage on your Claude plan."
+   },
+   {
+    "label": "Retire both",
+    "effect": "No scheduled work. Library drift is then caught only when a session runs the suites on newer versions by hand."
+   }
+  ],
+  "recommendation": "Retire the weekend QC: it never ran and its check cannot pass yet. Keep the drift canary if its reports exist; if it never ran either, have a session re-create it.",
+  "if_no_answer": "Nothing changes: the QC keeps not running, and the caps decision (INF-03) goes ahead without the canary's evidence.",
+  "message_to_send": null,
+  "steps": [
+   "Open claude.ai/code/routines and open each routine's run history.",
+   "Weekend references QC: note the date of its last run, if any.",
+   "Monday drift canary: open the latest run and note DRIFT SAFE or DRIFT BREAKAGE and the versions it lists.",
+   "Pick an option below and tell a session; it changes the routine and records the outcome."
+  ],
+  "unblocks": [
+   "INF-03",
+   "REF-05"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-33, REF-05, INF-03)",
+   "geotech-references/CLAUDE.md (Weekend QC Agent)",
+   "geotech-references/qc_progress.json (last_run)",
+   "memory project_geotech_qc_routine.md"
+  ]
+ },
+ "OWN-34": {
+  "kind": "ask",
+  "ask_who": "Testers and a colleague",
+  "question": "Ask testers which documents and questions matter to them and for past reviews with known answers; ask a colleague to write a blind set.",
+  "why": "All 42 review-suite tasks were written by the people tuning the app, over public or synthetic documents, so the suite can reward fixes that only suit itself. Tasks from real users' work, and a blind set nobody tuning sees, keep the measurements honest.",
+  "background": "The suite (funhouse_agent/review_eval) holds 42 tasks over 21 documents: public county drawings, UFC manuals, synthetic fixtures and calculation packages; all are 'open'. Rule since 5.30.0: tester feedback becomes a suite task, not a prompt rule. Private tasks (Department documents) live in a JSON file on SharePoint and reach the suite as extra_tasks; they are never committed to the public repo. A blind task is marked split 'blind' and written by someone who does not tune the app. A session can turn a tester's conversation plus their known answers into a task file.",
+  "options": [],
+  "recommendation": "Ask the testers during their first week. Ask one colleague for the blind set once the app has settled.",
+  "if_no_answer": "The suite stays developer-written and fully open; improvements keep being judged on documents chosen by the people making them.",
+  "message_to_send": "Thanks for trying the document review app. To measure it on work like yours, could you tell me (1) what kinds of documents you would review with it and the questions you would ask, and (2) whether you have a past review where you know the right answers, so we can turn it into a private test? Separately, would one of you write five to ten such questions with answers that the developers never see? Everything stays out of the public code.",
+  "steps": null,
+  "unblocks": [
+   "DR-24"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-34, DR-24)",
+   "module_work/REVIEW_HARNESS.md (Rules going forward)",
+   "funhouse_agent/review_eval/tasks.py and runner.py (extra_tasks, split)"
+  ]
+ },
+ "OWN-35": {
+  "kind": "ask",
+  "ask_who": "Funhouse developer",
+  "question": "Ask the Funhouse developer for a current copy of the Nexus approved/blocked package list (the CSV).",
+  "why": "Every release adds or moves package versions. With the list, a small script (INF-02) checks our pins against blocked versions on the laptop before a release, instead of finding a quarantined package when an install fails on the cluster, as happened with 5.12.0.",
+  "background": "The list is the file nexus_pip_install loads before every install (nexus_approved_blocked.csv). Its link on the Funhouse static site returns 404, and the SDK's own access-requests page records the link as broken. No local copy exists. Until then each new package is probed one at a time on the cluster with nexus_pip_install (on 2026-09-16 it reported 858 blocked versions). The copy would be kept locally in a gitignored folder, never committed, because the repos are public.",
+  "options": [],
+  "recommendation": "Send it together with the other Funhouse questions (OWN-54). It is a small favour that prevents failed installs like 5.12.0's.",
+  "if_no_answer": "New packages keep being checked one at a time on the cluster; a blocked version is found only when an install fails.",
+  "message_to_send": "Could you send me a current copy of the Nexus approved/blocked package list, the CSV that nexus_pip_install loads? Its link on the Funhouse static site returns 404 for me. I would keep it locally and use it to check our package pins against blocked versions before each release, instead of discovering a quarantined package when an install fails. Thank you.",
+  "steps": null,
+  "unblocks": [
+   "INF-02"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-35, INF-02)",
+   "module_work/PLANLENS_PACKAGE_SURVEY.md (compliance status; Part E gate, step 4)",
+   "HANDOFF.md (5.13.0 section: the cytriangle quarantine)"
+  ]
+ },
+ "OWN-36": {
+  "kind": "action",
+  "ask_who": null,
+  "question": "On Funhouse, confirm app usage now reaches the Funhouse meter at a real cost, and that DXF drawings report their block entities.",
+  "why": "Metering is a usage-terms obligation: until 5.14.0 every app call was priced, logged and silently dropped. The fix shipped, but nobody has checked it on the cluster, nor whether the pricing table charges $0.00 for the funhouse-* model names. The DXF check confirms an older drawing fix.",
+  "background": "Diagnosis and copy-paste notebook snippets: module_work/prompter_metering/DIAGNOSIS.md §8. Cause: the meter writes to a local SQLite file whose location only the notebook kernel knew; since 5.14.0 the launcher passes it to the app. Step 2's query should show a fresh Prompter ChatCompletion row at the time of your question. Step 3's should show your user name (not unknown_user) and a cost above 0.00. A cost of 0.00 with a model name filled in means that model is missing from the pricing table (OWN-42). DXF: a drawing result should carry n_block_entities and no longer say blocks_exploded false. One short question on the cheaper model is enough.",
+  "options": [],
+  "recommendation": "Do it in the same Funhouse session as OWN-32, when the budget renews. It adds only one short question.",
+  "if_no_answer": "App usage may still be missing from, or priced at $0.00 in, the Funhouse meter: a compliance gap nobody has measured.",
+  "message_to_send": null,
+  "steps": [
+   "Launch the 5.33.0 app on Funhouse as usual and ask one short question on the cheaper model; note the time.",
+   "Run DIAGNOSIS.md §8 Step 2's query in the notebook. Pass: a Prompter ChatCompletion row at that time.",
+   "Run Step 3's query. Pass: user_name is you and cost is above 0.00; note any model priced at 0.00.",
+   "Upload a small DXF that uses blocks and ask the app to digitize it. Pass: Turn details show n_block_entities.",
+   "Send the printed results to a session to record in the install guide."
+  ],
+  "unblocks": [
+   "OWN-42",
+   "TA-13"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-36)",
+   "docs/DATABRICKS_INSTALL.md (§9 Post-install verification)",
+   "module_work/prompter_metering/DIAGNOSIS.md (§0 Headline; §8 Verification)",
+   "HANDOFF.md (FUNHOUSE METERING WAS SILENTLY DROPPING EVERY APP RECORD, 2026-09-10)"
+  ]
+ },
+ "OWN-37": {
+  "kind": "ask",
+  "ask_who": "DT",
+  "question": "Ask DT two questions from their September Nexus scan: the pandas 2.x critical flag, and matplotlib's 'License-Threat Not Assigned'.",
+  "why": "If DT removes pandas 2.x from Nexus, cluster installs jump to pandas 3, which our test suites have never run on. The matplotlib flag is probably a scanner gap, but an unexplained licence flag on a core plotting library could block a later security review.",
+  "background": "DT's 2026-09-02 package-violation list was never saved; these items were noted from it. pandas arrives through streamlit and other libraries; the app does not pin it. On Tiny Apps CfA's fleet pins already fix pandas 3.0.2, so the suites need a pandas-3 run anyway (TA-02). matplotlib is under its own permissive, PSF-style licence. The third item, releasing cytriangle from quarantine, is low value: it blocked two structural libraries that 5.13.0 replaced with our own code. The PyMuPDF licence question (OWN-04) also goes to DT and can share the email.",
+  "options": [],
+  "recommendation": "Send questions 1 and 2 in one email with the PyMuPDF question (OWN-04). Drop the cytriangle request: nothing has needed it since 5.13.0.",
+  "if_no_answer": "A pandas 2.x removal would arrive unannounced and could break a cluster install until the pandas-3 test run (TA-02) is done.",
+  "message_to_send": "Two follow-ups from the September Nexus scan of our geotechnical app's packages: (1) pandas 2.x was flagged critical. Will pandas 2.x versions be removed from Nexus, and if so, when? (2) matplotlib shows 'License-Threat Not Assigned'. Can you confirm that is a gap in the scanner's licence data (matplotlib uses a permissive, PSF-style licence) rather than a block? Thank you.",
+  "steps": null,
+  "unblocks": [],
+  "sources": [
+   "BACKLOG.md (OWN-37, TA-02, OWN-04)",
+   "CLAUDE.md (groundhog removal section: DT package-violation list notes)",
+   "HANDOFF.md (5.13.0 section: the quarantined structural libraries are gone)",
+   "tinyapps/TINYAPPS.md (Environment facts: CfA fleet pins)"
+  ]
+ },
+ "OWN-38": {
+  "kind": "action",
+  "ask_who": null,
+  "question": "Collect a few real drawings, kept private: subsurface investigation plans, one Bluebeam-calibrated PDF, scrubbed team sheets including a scan, and one doubled scan.",
+  "why": "Several drawing features have only been measured on synthetic test files or on public county drawings whose text is drawn as lines. Without real sheets, the boring-spacing answer, the stored-scale reader, duplicate-scan detection and text-dependent drawing reading are untested on documents like yours.",
+  "background": "What each serves. The subsurface investigation plan you chose in September as the driving example, plus two to four more, give ground truth for 'what is the average spacing of the borings on this plan' (DR-12). A PDF where someone set the scale in Bluebeam tests the stored-scale reader, never run on a real calibrated page (PL-12). Two or three of the team's own sheets, scrubbed of anything sensitive and including one scan, widen the drawing truth set beyond one public corpus (VIS-21). A real document scanned twice tests the duplicate-scan finder, which has only seen synthetic duplicates. Client documents stay out of the public repos.",
+  "options": [],
+  "recommendation": "Later tier: gather them when convenient. The boring-spacing plans matter most, because that question is the original driving example of the document-review work.",
+  "if_no_answer": "These features stay unmeasured on real documents. In September the boring-spacing question gave a plausible wrong number rather than a refusal.",
+  "message_to_send": null,
+  "steps": [
+   "Find the subsurface investigation plan you chose as the driving example, plus two to four more, as PDFs.",
+   "Add one PDF in which someone set the measuring scale in Bluebeam.",
+   "Add two or three team sheets with sensitive details removed, one of them a scan.",
+   "Add one real document that was scanned twice, so its pages repeat.",
+   "Put them somewhere private (a field-feedback raw/ folder or SharePoint), never the repos, and tell a session where they are."
+  ],
+  "unblocks": [
+   "DR-12",
+   "PL-12",
+   "VIS-21"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-38, DR-12, PL-12, VIS-21)",
+   "HANDOFF.md (NEW DIRECTION, owner correction: the driving example)",
+   "planlens/planlens/document/DESIGN.md (no real Bluebeam-calibrated page)",
+   "module_work/DRAWING_INTELLIGENCE_DESIGN.md (representative team sheets)"
+  ]
+ },
+ "OWN-39": {
+  "kind": "action",
+  "ask_who": null,
+  "question": "When report ingest resumes, supply the missing data: Azure DI text for the scanned reports, the R39 PDF, and blind truth for new readers.",
+  "why": "The report-ingest numbers are mostly in-sample: tuned and scored on the same reports. Scanned pages with no text cannot be read at all where the app runs, and the calculation, test-pit and sounding readers have no blind test set, so their scores say little about unseen reports.",
+  "background": "Azure Document Intelligence (DI) is the only OCR on the government hosts, because the free OCR needs OpenCV, which cannot load under FIPS; it costs about $2 per 1,000 pages. Owed: R02, R31, R32, R38, the scanned pages of R03 and R33, and a fresh R17. That is about 1,700 pages whole, of which roughly 300 need OCR, so under $4. R39 is the PDF behind a 153-page hand-label sheet never matched to a report; its DI result already exists, making it the cheapest blind set. Also wanted: hand truth for a few unseen calculation, test-pit and sounding items, and a private question set for the report library (RI-10). Report ingest is parked behind Tiny Apps.",
+  "options": [],
+  "recommendation": "Leave it until report ingest resumes, except R39: it costs nothing and gives the first genuinely blind page-label test.",
+  "if_no_answer": "Report-ingest accuracy stays measured mainly on the reports it was tuned on, and scanned pages without text stay unread.",
+  "message_to_send": null,
+  "steps": [
+   "Drop the PDF behind the unmatched 153-page label sheet into the private corpus folder as R39.",
+   "Run Azure DI on R02, R31, R32, R38, R17 and the scanned pages of R03 and R33; save the results beside the others.",
+   "Optional: hand-truth a few unseen calculation, test-pit and sounding items before any session sees them.",
+   "Optional: write a short private list of library questions with their answers and report pages."
+  ],
+  "unblocks": [
+   "OWN-09",
+   "RI-10"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-39, OWN-09, RI-10)",
+   "module_work/REPORT_INGEST_PLAN.md (R39, item 2)",
+   "module_work/field_feedback/2026-09-16_report-ingest/MEASUREMENTS.md (page-kind table; R39 holdout note)",
+   "memory feedback_ocr_backend_choice.md (DI cost)"
+  ]
+ },
+ "OWN-40": {
+  "kind": "action",
+  "ask_who": null,
+  "question": "Upload the Wood Handbook PDF to SharePoint GSE_app/primary_references; fetch FEMA P-2192 Volume 1 only if OWN-21 says to use it.",
+  "why": "Reference PDFs are not in the package; the app fetches each from that SharePoint folder the first time a chart or worked-example page is needed. Without the Wood Handbook there, its charts cannot be read or shown. It affects wood and structural questions only, not geotechnical ones.",
+  "background": "File: USDA_Wood_Handbook_FPL-GTR-282.pdf (104 MB) in geotech-references/docs on the laptop. It is gitignored because it is over GitHub's 100 MB file limit, so only you can upload it. Keep the file name exactly, capitals included. In the sidebar, Connection diagnostics, the row 'reference PDFs (chart read-off)' lists any file it cannot reach. FEMA P-2192 Volume 1 (2020 NEHRP design examples, about 1,000 pages) was never fetched: automated downloads hit server errors in September; a browser download may work. Whether to use it at all is a scope call (OWN-21). On Tiny Apps the folder is reachable only after the SharePoint registration (OWN-44).",
+  "options": [],
+  "recommendation": "A two-minute upload; do it next time you are in that SharePoint folder. Leave FEMA P-2192 until OWN-21 is decided.",
+  "if_no_answer": "Wood Handbook charts stay unreadable in the app; nothing geotechnical is affected.",
+  "message_to_send": null,
+  "steps": [
+   "Upload geotech-references/docs/USDA_Wood_Handbook_FPL-GTR-282.pdf to SharePoint GSE_app/primary_references, keeping the name exactly.",
+   "On Funhouse, open Connection diagnostics: the reference-PDF row should no longer list it as missing.",
+   "If OWN-21 says use FEMA P-2192, download Volume 1 in a browser and tell a session where it is."
+  ],
+  "unblocks": [
+   "REF-14"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-40, REF-14, OWN-21)",
+   "webapp/README.md (§3 Reference PDFs)",
+   "geotech-references/.gitignore (Wood Handbook line)",
+   "module_work/STRUCTURAL_REFS_SURVEY.md (campaign outcome; FEMA P-2192)"
+  ]
+ },
+ "OWN-41": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Should your firm's own calculation packages become worked examples the agent learns from, kept local and never published?",
+  "why": "The 27 worked examples all come from published manuals and benchmarks. You asked for 'real ones in real reports': your own packages would show the agent how your office sets up and documents problems. It means building a harvest step and confirming each example yourself.",
+  "background": "Not built. The sketch (module_work/FUTURE_IDEAS.md §1, Phase 2): a local folder named by GEOTECH_EXAMPLES_DIR holds the PDFs; their text is pulled into one draft entry per report (the problem, the key numbers, which module methods reproduce them); the agent proposes the reconstruction and you confirm it before it is trusted, each marked 'firm report, unverified' or 'verified reproduction'. Firm reports stay strictly local and never go into the published package. Today every worked example is verified by running its calculation calls in the test suite.",
+  "options": [
+   {
+    "label": "Yes, after Tiny Apps settles",
+    "effect": "You pick a few packages; a session builds the local harvest step, and you confirm each reconstruction before the agent may use it."
+   },
+   {
+    "label": "Not now",
+    "effect": "Stays on the Later list; the agent keeps the 27 published examples."
+   },
+   {
+    "label": "Drop it",
+    "effect": "Removed from the backlog. Report ingest's library of read reports may cover part of the same need later."
+   }
+  ],
+  "recommendation": "Not now. Tiny Apps and report review come first; revisit when report ingest resumes, since its library of read reports may serve part of the same purpose.",
+  "if_no_answer": "Stays parked on the Later list; nothing is built.",
+  "message_to_send": null,
+  "steps": null,
+  "unblocks": [],
+  "sources": [
+   "BACKLOG.md (OWN-41)",
+   "module_work/FUTURE_IDEAS.md (§1 Worked-examples corpus, Phase 2)",
+   "funhouse_agent/worked_examples.json (27 entries)"
+  ]
+ },
+ "OWN-42": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Send or drop the drafted Funhouse admin note about September's one-off 401, and report that their pricing table may price funhouse-* models at $0?",
+  "why": "The 401 note asks the admins to check a gateway setting behind one failed model call on 2026-09-09; no recurrence is on record, and Funhouse is now the backup host. The pricing gap matters more: usage priced at $0.00 under-reports spend against the budget.",
+  "background": "The draft (ADMIN_NOTE.md in the 2026-09-09 field-feedback folder) asks two things: whether the SDK supports key-based Prompter sign-in, and whether the proxy's IIS read-ahead limit is at its default. A second call on the same credentials succeeded seconds later. The app still has no sign-in-specific message or retry on that path (TA-01 covers the Tiny Apps side). Pricing: Funhouse's pricing table matches model names exactly and lists no funhouse-* aliases, so app usage may be metered at $0.00. The metering check (OWN-36) shows whether that actually happens.",
+  "options": [
+   {
+    "label": "Drop 401 note; pricing after OWN-36",
+    "effect": "No admin time on a month-old one-off. If OWN-36 shows rows at $0.00, send the admins a two-line note naming the exact model strings."
+   },
+   {
+    "label": "Send both now",
+    "effect": "The admins check a month-old gateway log, and hear about pricing before we have seen a $0.00 row ourselves."
+   },
+   {
+    "label": "Drop both",
+    "effect": "No admin contact. If the pricing gap is real, Funhouse under-reports this app's spend."
+   }
+  ],
+  "recommendation": "Drop the 401 note unless it recurs. Run OWN-36 first; if it shows $0.00 rows, send the admins a short pricing note with the exact model names.",
+  "if_no_answer": "Neither note is sent, and a possible $0.00 pricing gap goes unreported.",
+  "message_to_send": null,
+  "steps": null,
+  "unblocks": [],
+  "sources": [
+   "BACKLOG.md (OWN-42, TA-01)",
+   "HANDOFF.md (FUNHOUSE METERING section, 'Still theirs, not ours'; FIELD FEEDBACK 2026-09-09 section)",
+   "module_work/field_feedback/ (2026-09-09 folder, ADMIN_NOTE.md)"
+  ]
+ },
+ "OWN-43": {
+  "kind": "ask",
+  "ask_who": "CfA (Tiny Apps team)",
+  "question": "Ask CfA for one Prompter key per tester, stored as Key Vault secret PROMPTER-API-KEY--<TESTER>, and the shared-key fallback switched on meanwhile.",
+  "why": "Each tester's own key gives them their own AI budget, and the list of keys becomes the pilot's access list. Without per-tester keys, testers either share one $50-a-month key (fallback on) or are all politely refused (fallback off, the default).",
+  "background": "<TESTER> is the sign-in DOMAIN\\user in upper case, with each run of characters other than letters and digits turned into one hyphen: CORP\\jdoe becomes PROMPTER-API-KEY--CORP-JDOE. Optional PROMPTER-MODEL--<TESTER> and PROMPTER-URL--<TESTER> if a key serves another deployment. Alternative: one JSON secret, PROMPTER-KEYS. Fallback: app setting PROMPTER_SHARED_KEY_FALLBACK=1 (or Key Vault secret PROMPTER-SHARED-KEY-FALLBACK). A tester without a key sees a polite message naming their exact secret, so the easiest way to get each name is to have the tester open the app once. A new secret works at the tester's next new conversation; a rotated key needs an app restart. No key is ever logged or shown.",
+  "options": [],
+  "recommendation": "Ask for both: per-tester keys, plus the fallback on until the last key exists, then off. Have each tester open the app once to see their exact secret name.",
+  "if_no_answer": "With the fallback off (the default) every tester is refused; with it on, all testers share one key and one $50 monthly budget.",
+  "message_to_send": "Per-tester AI keys: could you create one Prompter key per tester and store each in our Key Vault as PROMPTER-API-KEY--<TESTER>? <TESTER> is the sign-in DOMAIN\\user in upper case with other characters turned into hyphens, e.g. CORP\\jdoe becomes PROMPTER-API-KEY--CORP-JDOE. I will send the tester list. Until all keys exist, please set the app setting PROMPTER_SHARED_KEY_FALLBACK=1. What budget does each key carry, and is each on the same model deployment?",
+  "steps": null,
+  "unblocks": [
+   "OWN-30"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-43; §2 switch table, PROMPTER_SHARED_KEY_FALLBACK)",
+   "tinyapps/TINYAPPS.md (Per-tester Prompter keys)",
+   "webapp/tinyapps_engine.py (module docstring; resolve_for, tester_suffix)",
+   "tinyapps/wrapper_repo/.env.example"
+  ]
+ },
+ "OWN-44": {
+  "kind": "ask",
+  "ask_who": "CfA (Tiny Apps team)",
+  "question": "Ask CfA for the SharePoint app registration: four Key Vault values and a Sites.Selected grant with write access on our team site.",
+  "why": "Without it, testers on Tiny Apps get no SharePoint at all: no conversation copies on the team site, no 'save it to SharePoint and send me the link', and no reference PDFs, so charts in the design manuals cannot be read (REF-20). Conversations still save on the App Service itself.",
+  "background": "The app reads GRAPH-TENANT-ID, GRAPH-CLIENT-ID, GRAPH-CLIENT-SECRET and SHAREPOINT-SITE-URL (Key Vault spelling; app settings use underscores). It signs in as the app with client credentials on Microsoft's public Graph endpoints, because the Department's SharePoint is commercial-side; uploads show the app's name in SharePoint's audit trail. It lists, searches, downloads, uploads and creates folders, so the grant must allow writing. The base folder is the app setting GEOTECH_SHAREPOINT_ROOT, read from the environment only, not Key Vault; default 'Shared Documents/GeotechStaffEngineer'. Reference PDFs are looked for in its primary_references subfolder, so point it at the folder the Funhouse app uses. Whether the tenant is inside the pilot boundary is OWN-52.",
+  "options": [],
+  "recommendation": "Ask now: it is the one item that turns on SharePoint links, the conversation copies and chart reading for testers. Send the exact base-folder path you use on Funhouse with the request.",
+  "if_no_answer": "Testers work without SharePoint: no shareable links, no copies on the team site, and no chart read-off from the design manuals.",
+  "message_to_send": "SharePoint: could you set up the Entra app registration for our team site, with Sites.Selected and write access to that one site, and put four values in our Key Vault: GRAPH-TENANT-ID, GRAPH-CLIENT-ID, GRAPH-CLIENT-SECRET and SHAREPOINT-SITE-URL? Please also add the app setting GEOTECH_SHAREPOINT_ROOT, set to our existing base folder on that site (I will send the path). The app uses it to keep conversation copies and to fetch reference PDFs.",
+  "steps": null,
+  "unblocks": [
+   "REF-20",
+   "OWN-30"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-44, REF-20)",
+   "webapp/graph_sharepoint.py (module docstring; setting names)",
+   "webapp/sharepoint_store.py (GEOTECH_SHAREPOINT_ROOT, DEFAULT_ROOT)",
+   "webapp/reference_fetch.py (primary_references under the base folder)",
+   "tinyapps/TINYAPPS.md (Environment facts: SharePoint)"
+  ]
+ },
+ "OWN-45": {
+  "kind": "ask",
+  "ask_who": "CfA (Tiny Apps team)",
+  "question": "Ask CfA for the exact published address (or addresses) testers will open, for Streamlit's corsAllowedOrigins setting in run.sh.",
+  "why": "Behind the IIS proxy, Streamlit refuses the browser's connection unless every published address is listed: the app looks started but the page never loads (confirmed live on 2026-09-17). Listing the address keeps the CORS and XSRF protections on.",
+  "background": "The wrapper's run.sh carries a CHANGE-ME placeholder in --server.corsAllowedOrigins, one flag per address the browser shows. Its comment says the App Services team fills it in at deployment; the repo is ours on GHE, so confirm who edits it. Other fixed settings: the port comes from $PORT (8000; App Service recycles the container if nothing answers there), and the health check path is /_stcore/health. If the app is published under a sub-path, the app setting STREAMLIT_SERVER_BASE_URL_PATH must match it.",
+  "options": [],
+  "recommendation": "Ask for the address and offer to commit the run.sh change yourself, so the repo and the deployed copy stay the same.",
+  "if_no_answer": "The published page will not load, and the app cannot reach testers.",
+  "message_to_send": "Published address: what exact address (or addresses) will testers open for our app? Streamlit needs each one in --server.corsAllowedOrigins in our run.sh, or it refuses the connection behind IIS and the page never loads. Will the app sit at the root or under a sub-path? And will your team fill that line in at deployment, or should I commit it to our repo?",
+  "steps": null,
+  "unblocks": [
+   "OWN-30"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-45)",
+   "tinyapps/wrapper_repo/run.sh (comments)",
+   "tinyapps/TINYAPPS.md (Environment facts: Streamlit on App Service)"
+  ]
+ },
+ "OWN-46": {
+  "kind": "ask",
+  "ask_who": "CfA (Tiny Apps team)",
+  "question": "Ask CfA to confirm IIS passes X-Windows-Auth-Header (DOMAIN\\user) to pilot Streamlit apps and replaces any value a browser sends.",
+  "why": "The header is how the app tells testers apart: their own folders, conversation lists, SharePoint folders and AI keys all hang on it. Without it everyone is one anonymous user sharing one conversation list and the shared key, which is unsafe for several testers.",
+  "background": "The app reads the header from each request (its name can be changed with the WINDOWS_AUTH_HEADER setting) and trusts it without checking, because two controls outside our code make it safe: the App Service accepts traffic only from the IIS servers, and IIS overwrites any client-supplied value. If one request carries two copies of the header, the app trusts neither. Both DOMAIN\\user and user@domain forms are understood; the form decides each tester's Key Vault secret name (OWN-43). Visible sign: each tester's sidebar shows 'Signed in as <their name>'. CfA's own starter code says the header is passed.",
+  "options": [],
+  "recommendation": "Ask for written confirmation of both controls; privacy between testers depends on them. Then verify in the first-hour check: two testers, two names.",
+  "if_no_answer": "Per-tester keys and folders do not work; all testers share one anonymous space and the shared key.",
+  "message_to_send": "Identity header: please confirm that IIS passes X-Windows-Auth-Header with the signed-in DOMAIN\\user to pilot Streamlit apps, overwrites any value a browser sends, and that our App Service accepts traffic only from the IIS servers. Is the value DOMAIN\\user or user@domain? Our app relies on it to keep each tester's files, conversations and AI key separate.",
+  "steps": null,
+  "unblocks": [
+   "OWN-43",
+   "OWN-30"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-46)",
+   "webapp/identity.py (module docstring; from_header_values, current_identity)",
+   "tinyapps/TINYAPPS.md (Environment facts: Identity; question 5)"
+  ]
+ },
+ "OWN-47": {
+  "kind": "ask",
+  "ask_who": "CfA (Tiny Apps team)",
+  "question": "Ask CfA to confirm every tester's key is on a deployment that accepts images, and whether a GPT-5.4-class deployment is available.",
+  "why": "Looking at pages is why the app exists beside the Department's chatbot; a key whose model takes no images breaks drawing review outright. The current model also shrinks a whole sheet so far that small lettering is unreadable, which costs extra zoom calls and time.",
+  "background": "Measured on dosdev 2026-09-24: your current key's model answers as gpt-5.1 and accepts images, but it is a tile model. A whole sheet arrives about 768 pixels on its short side, so 5-point lettering is about 5 pixels; it accepts the full-resolution option and ignores it. The app measures the model itself (Connection diagnostics, 'vision model') and compensates by reading the text layer first and zooming. Funhouse's GPT-5.4 honours full resolution. Every smoke wave ran at 2,048 pixels on Claude, so gpt-5.1 vision is untested (EV-01). The app adapts to whatever model it is given; no code change is needed.",
+  "options": [],
+  "recommendation": "Ask this first in the meeting. If only gpt-5.1 is offered, accept it: the app adapts, and the first-hour check measures how well.",
+  "if_no_answer": "Assume gpt-5.1 for everyone: vision works at reduced resolution, with more zooms and slower answers on drawings.",
+  "message_to_send": "Image input (our most important question): the app reviews drawings and scans by looking at the pages. Will every tester's key be on a model deployment that accepts image inputs? Our current key's model (gpt-5.1) does, but it shrinks a whole sheet to about 768 pixels on its short side. Is a GPT-5.4-class deployment, which reads images at full resolution, available for the pilot?",
+  "steps": null,
+  "unblocks": [
+   "OWN-30",
+   "TA-03"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-47, EV-01, TA-03)",
+   "HANDOFF.md (5.28.0 section: the first Tiny Apps run)",
+   "memory reference_funhouse_model_tiers.md",
+   "tinyapps/TINYAPPS.md (Environment facts: the pilot key serves one model)"
+  ]
+ },
+ "OWN-48": {
+  "kind": "ask",
+  "ask_who": "CfA (Tiny Apps team)",
+  "question": "Ask CfA whether the App Service runs in FIPS mode, as Funhouse and Foundry do.",
+  "why": "Under FIPS one image-processing library (OpenCV) cannot load. The app already checks this safely and works around it, but the answer says whether free OCR of scanned pages could ever run there, which decides the OCR plan (VIS-11).",
+  "background": "On a FIPS host OpenCV's bundled crypto library fails its self-test and kills the whole process, and every user's session with it. planlens therefore test-loads OpenCV in a separate process first and leaves raster work out if that test dies. Since 5.32.1 the find-every-copy tool (find_like) uses a numpy matcher and works without OpenCV, so the BACKLOG line saying it hides itself is out of date. Still lost under FIPS: the raster drawing reader and free OCR, so scanned pages with no text layer are read only by vision or by paid Azure Document Intelligence.",
+  "options": [],
+  "recommendation": "A yes-or-no question for the list; plan as if the answer is yes.",
+  "if_no_answer": "Assume FIPS: no OpenCV and so no free OCR there; the rest of the app is unaffected.",
+  "message_to_send": "FIPS: does our App Service run with OpenSSL in FIPS mode, as other Department analytics platforms do? On those hosts one image library (OpenCV) cannot load. Our app already detects this safely and works around it; the answer tells us whether we can plan on free text recognition (OCR) for scanned pages there.",
+  "steps": null,
+  "unblocks": [
+   "VIS-11"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-48, VIS-11)",
+   "planlens/planlens/opencv.py (module docstring)",
+   "planlens/planlens/document/findlike.py (numpy backend)",
+   "funhouse_agent/deep/tools.py (find_like availability check)"
+  ]
+ },
+ "OWN-49": {
+  "kind": "ask",
+  "ask_who": "CfA (Tiny Apps team)",
+  "question": "Ask CfA three leftover questions: does the Prompter gateway pass streaming; is a Nexus install acceptable, with which pins; what are the shared VM's limits?",
+  "why": "Streaming keeps a long answer arriving instead of a silent wait. The install route and pins decide whether an update is a one-line pin bump. The VM limits decide whether heavy analyses (finite-element meshes, Monte Carlo runs) need throttling on a machine shared with other teams.",
+  "background": "Streaming: the app streams by default; on dosdev, Connection diagnostics' 'streaming request' check tests it against the Prompter endpoint. If it fails, set the app setting GEOTECH_PROMPTER_DISABLE_STREAMING=1 (environment only; a .env line is ignored). Install: the wrapper repo holds only a few small files; the app arrives from Nexus as the released package, so an update is a pin bump plus an App Services sync. CfA fleet pins: streamlit 1.62.0, pandas 3.0.2, PyJWT[crypto] 2.13.0, msal 1.37.0, azure-identity 1.21.0, azure-keyvault-secrets 4.9.0; our test suites have not yet run on pandas 3 (TA-02). VM: multi-tenant, one slot; CfA monitors usage.",
+  "options": [],
+  "recommendation": "Answer the streaming question yourself on dosdev first (Connection diagnostics) and drop it from the list if it passes. Ask the other two.",
+  "if_no_answer": "Streaming stays on (switch it off if diagnostics fail), installs continue from Nexus, and heavy analyses run unthrottled on the shared VM.",
+  "message_to_send": "Three smaller questions: (1) Does the Prompter gateway pass streaming responses, or should we switch streaming off? (2) Is it fine for our app to install as a released package from Nexus through packages.txt, rather than being copied into the repo, and which version pins do you expect beside your fleet pins? (3) What CPU, memory and run-time limits apply on the shared VM? A few of our engineering analyses are computation-heavy.",
+  "steps": null,
+  "unblocks": [
+   "TA-02"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-49, TA-02)",
+   "tinyapps/TINYAPPS.md (questions 1, 6, 7; Environment facts; Deployment architecture)",
+   "webapp/tinyapps_engine.py (_streaming_disabled)",
+   "webapp/diagnostics.py (streaming request check)"
+  ]
+ },
+ "OWN-50": {
+  "kind": "ask",
+  "ask_who": "CfA (Tiny Apps team)",
+  "question": "Ask CfA exactly what the Prompter returns when a key's monthly budget is spent: the HTTP status code and the response body.",
+  "why": "The app is meant to tell a tester plainly 'your AI budget is used up' and stop retrying. That detection is built on guesses from other providers' replies. If the guess is wrong, a tester with a spent budget sees retries, a 'busy, try again' message or a raw error.",
+  "background": "Today the app treats as a spent budget: status 402; error codes such as insufficient_quota or quota_exceeded; or phrases such as 'exceeded your current quota' or 'budget exceeded'. A 429 coded as a rate limit is treated as busy and retried up to four times, honouring any retry-after header. None of this has been seen live from the Prompter. Once CfA answers, a test pins the real reply (TA-06). Also useful: the day budgets reset, and what a rate-limit refusal looks like.",
+  "options": [],
+  "recommendation": "Ask for a copied example response if they have one; a real sample is worth more than a description.",
+  "if_no_answer": "Detection stays a guess; the first spent budget, read from a tester's activity log, becomes the sample.",
+  "message_to_send": "Spent budget: when a key's monthly budget is used up, what exactly does the Prompter return: the HTTP status code and the response body (error code and message)? What does a rate-limit refusal look like, including any retry-after header? And on what day do budgets reset? We want testers to see a plain 'your budget is used up' message instead of an error or pointless retries.",
+  "steps": null,
+  "unblocks": [
+   "TA-06"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-50, TA-06)",
+   "funhouse_agent/error_text.py (budget_signal, BUDGET_CODES, BUDGET_PHRASES)",
+   "webapp/tinyapps_engine.py (no_retry_when_budget_spent, max_retries)"
+  ]
+ },
+ "OWN-51": {
+  "kind": "ask",
+  "ask_who": "CfA (Tiny Apps team)",
+  "question": "Ask CfA to confirm that calling the Prompter directly with the pilot key is the sanctioned, metered route on Tiny Apps.",
+  "why": "The Funhouse SDK's guidance says calling Azure AI directly, bypassing its metering, breaches the usage terms. On Tiny Apps the app calls the Prompter with a key, as CfA's own example code does. A written yes protects the pilot; a no would change how the app connects.",
+  "background": "The Funhouse SDK cannot be installed on Tiny Apps, so the app uses the Prompter endpoint and key the CfA engineers provision, sending the key in both the api-key and Bearer headers, exactly like CfA's example code. Each key carries its own budget, which suggests the Prompter meters per key, but nothing in writing says so. The app keeps its own per-turn record (activity.jsonl) but has no Funhouse meter on Tiny Apps.",
+  "options": [],
+  "recommendation": "Ask; the expected answer is yes, and a one-line written confirmation is enough.",
+  "if_no_answer": "The app keeps using the key route, which matches CfA's example code; the compliance question stays open in writing.",
+  "message_to_send": "Metering: on Tiny Apps our app calls the Prompter endpoint directly with the pilot key, the same way your example code does, rather than through the Funhouse SDK, which cannot be installed there. Could you confirm this is the sanctioned route, and that usage is metered and logged on your side, so we meet the AI usage terms?",
+  "steps": null,
+  "unblocks": [],
+  "sources": [
+   "BACKLOG.md (OWN-51)",
+   "Funhouse_for_Reference/funhouse-sdk-python (funhouse-gotchas skill: Azure AI through the SDK)",
+   "module_work/FUTURE_IDEAS.md (unmetered AI = Terms breach note)",
+   "tinyapps/TINYAPPS.md (Environment facts: Prompter)"
+  ]
+ },
+ "OWN-52": {
+  "kind": "ask",
+  "ask_who": "CfA (Tiny Apps team)",
+  "question": "Ask CfA where the approval path stands, whether our SharePoint connection needs a DT CAB approval, and how the monthly check-in will run.",
+  "why": "Testers can use the published app only after the approval steps finish. If the Department's SharePoint counts as outside the pilot's data boundary, the connection needs a DT change-board (CAB) approval, which could delay the SharePoint features. The pilot also requires a monthly check-in.",
+  "background": "Approval path from CfA's guide: MOU, then the GHE repo, then the SIA (1–2 weeks; the guide has a business-justification script), then DT CAB only for connections outside the boundary, then a PCR (1–2 days). Code must run locally first; the App Services team deploys and pushes updates. The App Service runs in Azure Government while the Department's SharePoint tenant is commercial-side, hence the boundary question. Monthly obligation: a check-in on performance, friction and feature requests, plus cooperating with CfA's telemetry; findings go in tinyapps/TINYAPPS.md.",
+  "options": [],
+  "recommendation": "Ask the boundary question early: a CAB item takes the longest and gates the SharePoint features (OWN-44).",
+  "if_no_answer": "Approval timing stays unknown, and the SharePoint registration could stall on the boundary question.",
+  "message_to_send": "Process: (1) Where does our approval stand on the path (MOU, GHE repo, SIA, CAB, PCR), and what is the next step? (2) Is the Department's SharePoint tenant inside the pilot's data boundary, or does our app's SharePoint connection need a DT CAB approval? (3) When would you like our monthly check-in, and what usage telemetry will you share with us?",
+  "steps": null,
+  "unblocks": [
+   "OWN-44"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-52)",
+   "tinyapps/TINYAPPS.md (Environment facts: approval path; question 4; Monthly obligations)"
+  ]
+ },
+ "OWN-53": {
+  "kind": "ask",
+  "ask_who": "CfA (Tiny Apps team)",
+  "question": "Ask CfA whether the app can reach the public, keyless USGS seismic design-maps service through Tiny Apps' API-First egress route.",
+  "why": "That service returns ASCE 7 seismic design values for a site's coordinates, free and without licensing ASCE 7 itself (OWN-12). The App Service has no internet access, so outside services must go through API-First. The feature is not built; the answer decides whether it can be.",
+  "background": "Recorded in module_work/FUTURE_IDEAS.md (structural survey and round 1 decisions, 2026-09-03): the ASCE Hazard Tool API is paid and key-gated; the USGS design-maps web services are free and keyless, and USGS also publishes its risk-targeted ground-motion calculator as Python source. The idea was deferred until the pilot's networking answers. Today seismic site classes come from FEMA P-2082 and UFC 3-301-01 in the reference library.",
+  "options": [],
+  "recommendation": "Add it to the CfA meeting as one quick question; build nothing until the answer is yes and you want the feature.",
+  "if_no_answer": "No coordinate-based ASCE 7 lookup; seismic values keep coming from the published references the library already holds.",
+  "message_to_send": "Outbound access: the App Service has no internet access. Could our app call one public, keyless government web service, the USGS seismic design-maps service that returns ASCE 7 design values for a site's coordinates, through the API-First route? If so, how do we request it, and how long does approval usually take?",
+  "steps": null,
+  "unblocks": [
+   "OWN-12"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-53, OWN-12)",
+   "module_work/FUTURE_IDEAS.md (ASSOCIATIONS note; Structural round 1 decisions)"
+  ]
+ },
+ "OWN-54": {
+  "kind": "ask",
+  "ask_who": "Funhouse developer",
+  "question": "Ask the Funhouse developer about an in-enclave MCP host, shipping small model files through Nexus, and the org skill naming geotechnical_engineering_query.",
+  "why": "Each answer unblocks a parked plan: an MCP host would let other agents use planlens and the geotech toolkit directly; approved model files would allow free OCR of scanned pages where OpenCV cannot load; and someone else is wiring a geotechnical tool into the org's agent framework, which should line up with ours.",
+  "background": "MCP (Model Context Protocol) lets an AI host call outside tools. planlens already has an MCP server that has never run in the enclave (PL-15); a toolkit server over the geotech modules waits on the same host (LT-06). The mcp package cleared Nexus on 2026-09-16 (2.2.0). OCR: the free text-recognition models (ONNX files) would ship as package data or a private wheel through Nexus (VIS-11), after a check that their runtime loads under FIPS. Skill: an example deepagent skill in the Funhouse SDK references a tool called geotechnical_engineering_query; who maintains it is unknown.",
+  "options": [],
+  "recommendation": "Send it with the Nexus list request (OWN-35) in one message; none of it is urgent.",
+  "if_no_answer": "The MCP servers, free OCR and the skill alignment stay parked.",
+  "message_to_send": "Three Funhouse questions: (1) Is there, or will there be, a host inside the enclave that can run MCP tool servers? (2) Can small open-licence model files (ONNX text-recognition models) be shipped through Nexus as package data or a private wheel? That would give us free OCR on FIPS hosts. (3) Who maintains the example deepagent skill that references a geotechnical_engineering_query tool? I would like to align it with our geotechnical app's tools.",
+  "steps": null,
+  "unblocks": [
+   "PL-15",
+   "LT-06",
+   "VIS-11"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-54, PL-15, LT-06, VIS-11)",
+   "module_work/FUTURE_IDEAS.md (Funhouse SDK survey item 8; toolkit MCP server TODO; Tier 2 OCR)",
+   "module_work/field_feedback/2026-09-09 folder, PLANLENS_SURVEY_MEASUREMENTS.md (Nexus firewall probe)"
+  ]
+ }
+}

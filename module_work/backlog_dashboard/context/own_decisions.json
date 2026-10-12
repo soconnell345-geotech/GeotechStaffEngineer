@@ -1,0 +1,854 @@
+{
+ "OWN-01": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Which downdrag defaults should stand: UFC's procedure as the default basis, the materiality thresholds, and initial or final stress for skin friction?",
+  "why": "The neutral-plane basis sets the drag load in the structural check. On test case DD-1 the bases range from 151 kN (plane at the bearing-layer top) to 409 kN (plane at the toe). Every basis is now shown; the default decides which number an answer leads with.",
+  "background": "Commit a282d48 (master, unreleased) makes every cited basis an option: force equilibrium at 100/50/0 % toe mobilization (UFC 3-220-20 §6-7.4, §6-5.8.4.2; GEC-12 §7.3.6.1), settlement compatibility (UFC Fig 6-19), bearing-layer top, pile toe (upper bound) and Endo ratios (CGPR #56). Every run reports all of them; a judgment block appears when planes differ by more than max(0.5 m, 5 % of L) or drag by more than max(10 kN, 10 %). Default `auto` follows UFC: force equilibrium, or settlement compatibility when the curves do not cross. 5.33.0 already ships that compatibility fix (DD-1: 409 to 151 kN). UFC App. B-5.5 is reproduced (planes 47.8/50.2/52.5 ft vs 48/50/52). Skin friction uses initial effective stress by default; UFC §6-7.4 step 2 uses final.",
+  "options": [
+   {
+    "label": "Keep auto, thresholds and initial stress",
+    "effect": "Numbers stay as validated (V-004, UFC App. B-5.5). The comparison and judgment block still show every basis with its citation."
+   },
+   {
+    "label": "Keep auto, switch to final stress",
+    "effect": "Matches UFC §6-7.4 step 2 (Siegel et al. 2013). Beta friction and drag rise; V-004 and the smoke-test keys need re-checking before release."
+   },
+   {
+    "label": "No default: the engineer always picks",
+    "effect": "Every run returns the comparison with a judgment block and the agent must state the basis it used. Nothing is chosen silently; answers get longer."
+   },
+   {
+    "label": "Change the materiality thresholds",
+    "effect": "Give new values (now 0.5 m or 5 % of L for the plane; 10 kN or 10 % for drag). Tighter flags more cases for judgment."
+   }
+  ],
+  "recommendation": "Keep `auto` and the thresholds: UFC governs DoD work and every alternative is already shown with its citation, so nothing is silent. Confirm settlement compatibility (it removed a 2.7x drag overstatement on DD-1). Adopt final stress only after re-running V-004 to see the shift.",
+  "if_no_answer": "The next release ships `auto` (UFC's procedure), today's thresholds and initial stress, with the comparison and judgment block on every run.",
+  "message_to_send": null,
+  "unblocks": [],
+  "sources": [
+   "downdrag/DESIGN.md (Neutral-plane methods; Options, comparison and the default)",
+   "HANDOFF.md (§0a-current, item 0: master after 5.33.0)",
+   "git a282d48 (unreleased), e01db59 (in 5.33.0)"
+  ]
+ },
+ "OWN-02": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Should fem2d measure construction movements from the end of stage 0 by default, treating stage 0 as the gravity stage?",
+  "why": "It decides whether reported settlements include the ground's own weight. On the test strip footing the footing stage alone settles 15.9 mm, but the cumulative movement is 49.3 mm because 33.4 mm is gravity. Quoting the wrong one triples the settlement.",
+  "background": "Commit 4bf710c (master, unreleased) gives every stage three movements: its own (delta), cumulative from the start, and since a reference stage. `reset_displacements_after` sets the reference; if nobody sets it, the reference is the end of stage 0, assumed to be the initial gravity/K0 stage. Soil placed later (a fill group) is its own stage, so its self-weight movement shows there. When the default changes the final movement by more than 5 % and 0.1 mm, the result carries a judgment block with both numbers. The same commit fixed three bugs: resets never took effect, new fill inherited earlier movement as strain, and an unchanged plastic stage moved 1.5 %. 5.33.0 already made the consolidation settlement load-only.",
+  "options": [
+   {
+    "label": "Confirm: measure from end of stage 0",
+    "effect": "Construction movements exclude the existing ground's self-weight unless a stage places soil. All three bases stay in the result, with a judgment block when the default matters."
+   },
+   {
+    "label": "Default to cumulative from the start",
+    "effect": "Reported settlement includes the gravity movement of the existing ground (49.3 mm instead of 15.9 mm on the test case). Rarely what a designer wants."
+   },
+   {
+    "label": "Confirm, with a guard on stage 0",
+    "effect": "As confirming, but if stage 0 carries loads or excavation, measure from the start and warn. A small extra build."
+   }
+  ],
+  "recommendation": "Confirm the default with the guard (option 3). Excluding the initial gravity movement is common FE practice (the design note says so), all three bases are reported anyway, and the guard covers a model whose first stage is not a gravity stage.",
+  "if_no_answer": "The next release measures from the end of stage 0 by default; results carry all three movement bases and a judgment block when the choice matters.",
+  "message_to_send": null,
+  "unblocks": [],
+  "sources": [
+   "fem2d/DESIGN.md (Movements per stage)",
+   "fem2d/VALIDATION.md (§5a Movements per construction stage)",
+   "HANDOFF.md (§0a-current, item 0)",
+   "git 4bf710c (unreleased)"
+  ]
+ },
+ "OWN-03": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Three copyrighted standards PDFs sit in the public references repo: keep them with a provenance note, remove the PDFs, or remove more?",
+  "why": "AASHTO 1993 and the two Eurocode 7 parts are copyrighted. Anyone can download them from the public GitHub repo, and text extracted from them ships in the MIT-licensed package on PyPI. That is a licensing exposure for you, not a technical problem.",
+  "background": "Tracked in geotech-references since commit 4c64e25 (2026-07-15): docs/aashto1993.pdf (30.6 MB), the EN 1997-2 PDF (5.6 MB) and the EN 1997-1 PDF (3.4 MB). Code comments call both Eurocode files public.resource.org copies; the AASHTO file's source is not recorded; there is no licence note. The wheel ships each module's chapter text (about 950 KB of JSON for the three) and lookup tables, not the PDFs. The app's pavement_design module and three agent adapters depend on these modules. Deleting a file does not remove it from git history; only a history rewrite and force-push would, and wheels already on PyPI keep their text. The other 36 tracked PDFs are government publications.",
+  "options": [
+   {
+    "label": "Keep, add a provenance note",
+    "effect": "No code change. A note records the public.resource.org source; the AASHTO source stays unknown. The exposure is unchanged."
+   },
+   {
+    "label": "Remove the three PDFs only",
+    "effect": "Files leave the repo from now on (still in history). Modules, text and lookups keep working; figure read-off takes the PDFs from SharePoint instead."
+   },
+   {
+    "label": "Remove PDFs and the chapter text",
+    "effect": "Keeps the numeric lookups, drops copied prose from future wheels. Reference search loses these three standards; needs a refs release."
+   },
+   {
+    "label": "Also purge from git history",
+    "effect": "Rewrites the refs repo history and force-pushes. Removes past copies on GitHub; forks and published wheels keep theirs. Disruptive; combine with option 2 or 3."
+   }
+  ],
+  "recommendation": "Option 2 now, and consider option 3: move the PDFs to the SharePoint primary_references folder, where the app already fetches reference PDFs, and record their source. The numeric lookups are the most defensible part; copied chapter text in an MIT wheel is the hardest to defend.",
+  "if_no_answer": "The PDFs stay public and the text keeps shipping with each refs release; nothing is deleted without your word.",
+  "message_to_send": null,
+  "unblocks": [],
+  "sources": [
+   "geotech-references/geotech_references/eurocode_7_1/tables.py (OCR note)",
+   "geotech-references/geotech_references/eurocode_7_2/tables.py (module docstring)",
+   "geotech-references/pyproject.toml (package-data)",
+   "git geotech-references 4c64e25"
+  ]
+ },
+ "OWN-04": {
+  "kind": "ask",
+  "ask_who": "DT",
+  "question": "Does DT accept PyMuPDF's AGPL-3.0 licence for an internal app hosted on Tiny Apps?",
+  "why": "Every document tool (open, read, search, render, markups) runs on PyMuPDF. If DT's licence scan blocks AGPL after testers start, Document Review stops. Replacing it means rebuilding the whole document layer, so the answer is wanted before the tester deploy.",
+  "background": "PyMuPDF is dual-licensed by Artifex: AGPL-3.0 for free, or a paid commercial licence. planlens is MIT, but that does not change PyMuPDF's terms; 26 planlens source files import it. It already installs through Nexus and runs on Funhouse. Corporate licence scanners flag AGPL, mainly for its network-use clause on web apps. The 2026-09-14 package survey's advice: ask DT once before Tiny Apps; do not switch pre-emptively. The permissive fallback is pypdfium2 (Apache/BSD) with pypdf and pdfplumber, at the cost of the entire document layer. Related trap: pymupdf4llm and pymupdf-layout are non-commercial licences; they are not used and must not be installed.",
+  "options": [],
+  "recommendation": "Ask now, in writing, with the facts in the message. Do not switch libraries unless DT says no; if they do, ask whether an Artifex commercial licence is acceptable before anyone plans a rewrite.",
+  "if_no_answer": "Testers start on PyMuPDF anyway; a later DT block would take Document Review offline until a licence or a rewrite.",
+  "message_to_send": "Hi - before our Tiny Apps pilot (Document Review) opens to more testers: the app's PDF layer uses PyMuPDF (Python package 'pymupdf', by Artifex), licensed AGPL-3.0 or commercially. It is installed from Nexus, unmodified, and used internally only. Is AGPL-3.0 acceptable for this use, or would you need a commercial licence or a different library? We would rather know now than after testers depend on it. Thanks.",
+  "unblocks": [],
+  "sources": [
+   "module_work/PLANLENS_PACKAGE_SURVEY.md (Plain-English summary; Part C, licensing facts)"
+  ]
+ },
+ "OWN-05": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "How should the remaining ~$35 of promotional API credit be spent before it expires on 2026-11-05?",
+  "why": "Unused credit is lost on 2026-11-05. It is the only way to run the app's real turn path with Claude standing in for GPT, so it buys plumbing checks that Funhouse tokens and Foundry runs cannot cover cheaply.",
+  "background": "Of the $100 credit, $80 went to smoke testing and $44.59 of that is spent (ledger, 2026-10-09), so about $35 is left; your $20 is reserved for touch-up testing together. Past waves cost $0.55-1.20 on Haiku and $6.46 (10 flows) to $15.00 (14 flows) on Sonnet. Candidates: EV-01, a rehearsal wave at the gpt-5.1 tile budget (every wave so far ran at 2,048 px); EV-03, the markup check on Sonnet (under $1) and a Haiku smoke of the next release candidate; more waves after the harness fixes (EV-04); prompt caching (EV-05, not yet on) would cut repeat cost. A cross-family overfitting check and Batch API probes (half price, slow) are listed but not described in any other document.",
+  "options": [
+   {
+    "label": "Tester-deploy checks first (EV-01, EV-03)",
+    "effect": "About $8-12 (estimate): production-like tiling and timing before testers arrive, plus the markup check. Leaves about $20 for later."
+   },
+   {
+    "label": "Caching first, then spread the waves",
+    "effect": "EV-05 first (agent work, no spend), then EV-01, EV-03, a release-candidate smoke and one post-fix wave; each dollar goes further."
+   },
+   {
+    "label": "Hold most for the next release candidate",
+    "effect": "Keep about $25 for a smoke of the next rc; the credit is lost if the rc slips past 2026-11-05."
+   }
+  ],
+  "recommendation": "Option 2: caching first, then EV-01 and EV-03 this week (about $10), a Haiku smoke of the next release candidate (about $3), and the rest on one wave after the EV-04 fixes, all before 2026-10-31. Keep the $20 touch-up reserve.",
+  "if_no_answer": "Nothing runs; about $35, plus any unused part of the $20 reserve, expires on 2026-11-05.",
+  "message_to_send": null,
+  "unblocks": [
+   "EV-01",
+   "EV-03"
+  ],
+  "sources": [
+   "HANDOFF.md (§0a-current, item 0: spend left)",
+   "module_work/live_smoke/spend_ledger.json (gitignored; per-wave totals)",
+   "module_work/live_smoke/runs/w3-confirm-sonnet/REVIEW.md (H24; gitignored)",
+   "BACKLOG.md (§9, EV-01 to EV-05)"
+  ]
+ },
+ "OWN-06": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "For each OFF Document Review switch: measure it again, turn it on, or retire it?",
+  "why": "About a dozen review features are built but switched off, so testers get none of them. The planned step 'flip winning switches to defaults' never ran. Each one left off still costs tests and upkeep; each one turned on unmeasured risks the tester experience.",
+  "background": "From BACKLOG §2: lean agent 34/35 on Sol at 768 px, never measured on GPT or since 5.32; minimal 33/35 at about 4x the tokens; vision text context 34/35; inline images lost 3 locate tasks; sweep ties baseline at 2.4x the tokens; findings never measured; overview lost on one manual (9/10 vs 10/10); geometry tied 35/35; digest 34/35 and needs large-document tasks. Coverage, checklist and patch alignment are not ready (brief 5: coverage doubled the answer on 10 of 10 gated tasks and added 47 % input). The rule since 5.30.0: a switch goes on by default only when the suite says so.",
+  "options": [
+   {
+    "label": "Keep all off until brief 6",
+    "effect": "Re-measure on GPT in Foundry brief 6 (EV-02), then flip clear winners. No change for testers now."
+   },
+   {
+    "label": "Retire overview now, rest wait",
+    "effect": "Delete the overview switch (it lost and nothing awaits it); keep minimal only as a measuring arm; the others wait for brief 6."
+   },
+   {
+    "label": "Turn geometry on now",
+    "effect": "It tied baseline; the drawing-construct finders would reach users, with more tools and tokens and no measured gain."
+   }
+  ],
+  "recommendation": "Keep everything off until brief 6 measures it on GPT, then flip only clear winners. Retire overview now; keep minimal as a measuring arm, not a candidate. Findings needs its own arm and tasks first (DR-27).",
+  "if_no_answer": "All switches stay off; testers get the legacy review page and the built work stays unused.",
+  "message_to_send": null,
+  "unblocks": [
+   "EV-02"
+  ],
+  "sources": [
+   "BACKLOG.md (§2, Switches table)",
+   "module_work/REVIEW_ARCHITECTURE.md (Milestones, M1)",
+   "module_work/review_eval_results/2026-10-08_foundry_5.33.0rc1/TRACE_REVIEW.md (Switch verdicts)"
+  ]
+ },
+ "OWN-07": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Confirm or correct the seven DRAFT house rules the narrative reader follows when answering your standing report questions.",
+  "why": "The rules decide how the reader answers where a report is silent or ambiguous, and its scores are measured against your own answer keys. Where a rule differs from how you wrote the keys, a correct reading is scored as a failure.",
+  "background": "report_ingest/narrative_glossary.py holds seven rules, all DRAFT and all in force: (1) explorations the report says were not done count 0, not null; (2) null means the report does not say, never 'none' or 'N/A'; (3) the three 'mention' fields mean the work was done for the project (site response means a site-specific analysis, not a code site class); (4) soilCorrosion is the finding (yes, no or mixed, plus the basis); (5) postName is the city only, null for outside projects; (6) primeAe is the architect-engineer of record, not the geotechnical firm or contractor; (7) earthHazardsExposed uses the listed phrases and never seismic shaking. After rules 3-4 were re-read from your keys (2026-10-04), the next run went from 75/77 % to 83/85 % recall/precision.",
+  "options": [
+   {
+    "label": "Confirm all seven",
+    "effect": "Status becomes CONFIRMED; answers do not change. The prompt stops marking the rules as unconfirmed."
+   },
+   {
+    "label": "Correct some rules",
+    "effect": "Name the rule and the right reading. It changes the answers and the scores on the next Foundry run, and nothing else."
+   }
+  ],
+  "recommendation": "Check rules 1, 3 and 7 first: they touch the most fields, including the exploration counts. The others follow your keys as already read.",
+  "if_no_answer": "All seven stay in force marked DRAFT; nothing breaks, but the scores keep resting on the lead's reading of your keys.",
+  "message_to_send": null,
+  "unblocks": [],
+  "sources": [
+   "report_ingest/narrative_glossary.py (CONVENTIONS)",
+   "module_work/field_feedback/2026-09-16_report-ingest/MEASUREMENTS.md (FOUNDRY RUN 2 table)"
+  ]
+ },
+ "OWN-08": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "What counts as a structure for structureCount, and does figureCount include figures in appendices?",
+  "why": "Both are scored against your answer keys. The reader got structureCount right on only 3 of 8 reports and tends to over-count; figureCount was wrong on 4 of 8 in an earlier run. Without your definition nobody can tell whether the reader or the rule is wrong.",
+  "background": "Both fields come from your standing query schema. The narrative reader answers structureCount from the report text; the only rule is the DRAFT 'count 0 when the report says none'. figureCount is counted in code from figure captions and given to the reader as a fact; the reader answers from the report's own list of figures and any disagreement is recorded. Run 7 (September): figureCount, structureCount and structureList each wrong on 4 of 8. Foundry run 2 (2026-10-07): structureCount 3/8, structureList 3/7 with one invented. RI-08 notes figureCount could come from the page labels instead.",
+  "options": [
+   {
+    "label": "structureCount = items in structureList",
+    "effect": "The two fields always agree; the definition of a structure lives in structureList (each structure the report gives recommendations for)."
+   },
+   {
+    "label": "Another structure definition (state it)",
+    "effect": "For example only new buildings, or every named facility; written as a CONFIRMED rule and applied on the next run."
+   },
+   {
+    "label": "figureCount includes appendix figures",
+    "effect": "Counts every captioned figure, main body and appendices alike."
+   },
+   {
+    "label": "figureCount: main-body figures only",
+    "effect": "Counts the figures in the report's own list of figures; appendix plates and logs are left out."
+   }
+  ],
+  "recommendation": "Tell us the rule you used when writing the answer keys; matching it is the point. If you had none, option 1 keeps the two structure fields consistent.",
+  "if_no_answer": "The reader keeps guessing; structureCount stays near 3 of 8, and its misses can be neither fixed nor blamed on the reader.",
+  "message_to_send": null,
+  "unblocks": [
+   "RI-08",
+   "RI-13"
+  ],
+  "sources": [
+   "report_ingest/narrative_reader.py (COUNTS instructions)",
+   "report_ingest/narrative_glossary.py (CONVENTIONS, FIELD_NOTES)",
+   "module_work/field_feedback/2026-09-16_report-ingest/MEASUREMENTS.md (Run 7; FOUNDRY RUN 2)"
+  ]
+ },
+ "OWN-09": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Which page-labelling policy and label-review mode should report ingest use by default, or should it wait for more blind labels?",
+  "why": "Page labels decide which reader sees each page; a wrong label means a log or lab sheet is never read. The current defaults are not supported by the measurements, and the paid label review lost accuracy on the latest run.",
+  "background": "Defaults: label_policy 'structural' (vision labels except four classes the rules own) and review_mode 'disagreements' (the paid review sees only pages where the voters split). Measured 2026-10-04 on GPT-5.4, 13 in-sample reports (3,418 pages): rules 0.896, structural 0.878, structural plus review 0.863, so the review lost 1.5 points (on Funhouse in September it gained 0.8). On 60 honest-blind pages: rules 0.767, structural 0.800, a difference of two pages. On every set the pages where voters agree already carry more error than the 0.98 target, so no review of the disagreements can reach it. Report ingest is parked at 5.25.0.",
+  "options": [
+   {
+    "label": "Keep structural plus disagreement review",
+    "effect": "No change. Pays for the review on split pages (about $0.45 a report if it ran on every page) for no measured gain."
+   },
+   {
+    "label": "Rules only, no review",
+    "effect": "Best in-sample score and no vision or review spend; slightly worse on the 60 blind pages."
+   },
+   {
+    "label": "Decide after more blind pages",
+    "effect": "Use the R39 PDF (153 pages already hand-labelled, never used) as a blind set first (OWN-39), then pick."
+   }
+  ],
+  "recommendation": "Option 3, with no rush while ingest is parked: R39's 153 labelled pages are the cheapest way to settle it. Meanwhile consider switching the disagreement review off, since it lost accuracy on the latest run.",
+  "if_no_answer": "Defaults stay structural with the disagreement review; nothing runs while report ingest is parked.",
+  "message_to_send": null,
+  "unblocks": [
+   "RI-15"
+  ],
+  "sources": [
+   "module_work/field_feedback/2026-09-16_report-ingest/MEASUREMENTS.md (FOUNDRY RUN 1; Stage b and the label policy)",
+   "BACKLOG.md (OWN-39, RI-15)"
+  ]
+ },
+ "OWN-10": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Are Ensoft-style calculation tables still the next module train, or has another priority replaced them?",
+  "why": "You named them 'the next train' on 2026-09-11 and they never started; Document Review and Tiny Apps took over. Without a yes or no the item sits at the top of the module list and planning around it stays unclear.",
+  "background": "The ask: save LPILE/APILE/GROUP-style tables with each report: per-depth p-y and load transfer, per-slice slope tables, per-layer capacity contributions and iteration histories, as CSV and as HTML tables in the calc package. Planned design: calc_package.export_tables beside render_figures, and a get_tables() for each module. Nothing is built: neither function exists, though 19 source files already build table objects that could feed it. Related: the specialist agents cannot produce reports or figures at all (GM-40), and SOE and reliability have no calc package (GM-41).",
+  "options": [
+   {
+    "label": "Yes, the next module train",
+    "effect": "Starts after the Tiny Apps deploy settles; touches every calc package and the calc prompt."
+   },
+   {
+    "label": "Yes, but after GM-40 and GM-41",
+    "effect": "First let specialists draw and report, and give SOE a calc package; tables follow."
+   },
+   {
+    "label": "Park it",
+    "effect": "Moves to Parked; module time goes to open defects instead (for example SRM mesh dependence, small toe circles)."
+   }
+  ],
+  "recommendation": "Option 2: tables are worth more once SOE has a calc package (its reports are bespoke today, which caused the 2026-09-15 'numbers gone' failure) and the specialists can produce reports at all.",
+  "if_no_answer": "GM-39 stays 'Next' and unstarted.",
+  "message_to_send": null,
+  "unblocks": [
+   "GM-39"
+  ],
+  "sources": [
+   "module_work/FUTURE_IDEAS.md (§9 App feedback train follow-ups)",
+   "module_work/field_feedback/2026-09-11_app-usage_v5.14.0/FINDINGS.md",
+   "BACKLOG.md (GM-39 to GM-41)"
+  ]
+ },
+ "OWN-11": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Should report ingest be offered on the geotech page as an opt-in switch, after one measured run?",
+  "why": "Report ingest turns a geotechnical report into a cited record and a DIGGS file that the geotech page could analyse. It is built but no user can reach it. It is also expensive, and it cannot yet run on Tiny Apps.",
+  "background": "From the 2026-10-06 geotech-page session: measure ingest on one Funhouse run of a similar report, then offer an off-by-default sidebar switch; the engine and output folder are not plumbed today. Three defects come first: summary and library citations print 0-based pages (RI-01); the sub-agent's limits are declared but not enforced (RI-02); the ingest engine needs the Funhouse SDK prompter, so it cannot run on Tiny Apps (RI-03). Cost on Foundry (13 reports): 60-897 model calls and 8 minutes to 3.2 hours per report, about 3 M input tokens on average; up to roughly $14 a report at GPT-5.4 rates (my estimate; some calls used a cheaper model). Report ingest is parked at 5.25.0.",
+  "options": [
+   {
+    "label": "Yes: fix RI-01 to RI-03, measure, switch",
+    "effect": "Ingest reaches the geotech page on both hosts, off by default; one Funhouse run's tokens are needed to measure it."
+   },
+   {
+    "label": "Funhouse only, skip RI-03",
+    "effect": "Quicker; testers on Tiny Apps never see it."
+   },
+   {
+    "label": "Keep parked",
+    "effect": "No work now; revisit when report ingest is unparked."
+   }
+  ],
+  "recommendation": "Keep parked until the tester deploy settles: a tool costing up to about $14 a report needs a cost cap before it sits beside $50-a-month tester keys. When picked up, option 1.",
+  "if_no_answer": "Report ingest stays unreachable from either page.",
+  "message_to_send": null,
+  "unblocks": [
+   "RI-01",
+   "RI-02",
+   "RI-03"
+  ],
+  "sources": [
+   "git 414525a HANDOFF.md (old item 8a(i))",
+   "BACKLOG.md (§6, RI-01 to RI-03)",
+   "module_work/harness_theory/report_ingest.md (§7, stage b numbers)"
+  ]
+ },
+ "OWN-12": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Get licensed copies of ASCE 7 and Youd et al. (2001) for the reference library, or rely on public documents that reproduce them?",
+  "why": "In the 2026-10-06 geotech session the references sub-agent could cite neither. The modules implement Youd's liquefaction procedure and SPT corrections and ASCE 7 site classes, but the library cannot show the printed basis, so answers cite secondary sources or nothing.",
+  "background": "Neither is in the reference library. Both are copyrighted (ASCE 7 by ASCE; Youd et al. 2001 is an ASCE journal paper), and the reference repos are public. Public routes: GEC-5 Fig 5-20 reproduces Youd's CPT charts (the lookup is listed but not written, REF-10); FEMA P-2082 and UFC 3-301-01, already in the library, cover ASCE 7-22 site classes; the free, keyless USGS design-maps services return ASCE 7 values by coordinate, but Tiny Apps blocks outside internet except through its API-first route (OWN-53).",
+  "options": [
+   {
+    "label": "Public routes only",
+    "effect": "Write the GEC-5 Fig 5-20 lookup and lean on FEMA P-2082 and UFC 3-301-01; USGS later through OWN-53. No licensing cost."
+   },
+   {
+    "label": "Buy copies, keep them private",
+    "effect": "PDFs on SharePoint only, never in the repos; using them in the app needs a private catalog that does not exist yet."
+   },
+   {
+    "label": "Leave as is",
+    "effect": "The agent keeps saying the primary source is not in the library."
+   }
+  ],
+  "recommendation": "Option 1: it covers the values engineers need and nothing copyrighted enters the public repos. Add option 2 only if a reviewer insists on the primary citation.",
+  "if_no_answer": "Both stay missing; answers cite GEC-5 or nothing.",
+  "message_to_send": null,
+  "unblocks": [
+   "REF-10"
+  ],
+  "sources": [
+   "module_work/field_feedback/2026-10-06_geotech-report-session_v5.32.0/FINDINGS.md (P6)",
+   "module_work/FUTURE_IDEAS.md (structural survey: USGS design-maps note)",
+   "BACKLOG.md (OWN-53, REF-10)"
+  ]
+ },
+ "OWN-13": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Should the Ito-Matsui stabilizing-pile force be its own callable method, not only an option inside a full slope analysis?",
+  "why": "Asked directly for the Ito-Matsui force on a pile (eval question SPL-3, expected 412 kN per pile), the agent concluded the method did not exist and declined, because it appears only as a sub-option of the slope analysis's stabilizing-pile input.",
+  "background": "slope_stability already has ito_matsui_lateral_force and ito_matsui_pressure, verified against the 1975 paper in v5.3.0, and uses them when a stabilizing pile is given ito_matsui=true. The agent finds tools only through the catalog and method descriptions, so a capability named in neither is invisible to it. Exposing it means one adapter method and its description. The module catalog is 12 characters under its 8,000-character cap (GM-42); a new method adds to the module's method list rather than the catalog text.",
+  "options": [
+   {
+    "label": "Yes, expose it as a method",
+    "effect": "One adapter method; the agent can answer pile-force questions directly, and SPL-3 should pass."
+   },
+   {
+    "label": "No, keep it inside the slope analysis",
+    "effect": "The force is still used in full analyses; direct questions keep failing."
+   }
+  ],
+  "recommendation": "Yes. It is an existing, verified calculation; exposing it is a general capability, not a rule fitted to one question.",
+  "if_no_answer": "SPL-3 keeps failing and direct Ito-Matsui questions get 'not available'.",
+  "message_to_send": null,
+  "unblocks": [],
+  "sources": [
+   "module_work/harness_theory/geotech_agent.md (catalog briefs; SPL-3)",
+   "funhouse_agent/adapters/slope_stability.py (stabilizing_piles parameter)",
+   "docs/geotech_eval_v54_additions.md (SPL-3)"
+  ]
+ },
+ "OWN-14": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Answer five planning questions for large reviews: page threshold and cost consent, first disciplines, deliverables, overnight turnaround, and public or private test sets.",
+  "why": "They shape the two bigger review modes still to build: large single-scope reviews (M2) and multi-discipline mega-reviews run as background jobs (M3). Building either without them means guessing the office's format, budget tolerance and disciplines.",
+  "background": "Plan of record, agreed 2026-09-28: small reviews (about 20 pages or fewer) on today's loop; large single-scope reviews on a free digest built at upload, with paid page notes on demand after a cost estimate; mega-reviews split by discipline under an editable plan, run in the background. The free digest is built (538 pages in about 3.5 s) but switched off. The questions: (1) the page threshold between the shapes (about 20?) and when to ask before paid page notes (always, or above a dollar amount); (2) the first disciplines and where their checklists come from; (3) deliverables: comment log, compliance matrix, marked-up PDFs, memo; (4) is 'results by morning' acceptable; (5) large test sets public and committed, or private on SharePoint.",
+  "options": [
+   {
+    "label": "Answer all five now",
+    "effect": "M2 and M3 can be designed to the office's format; nothing is built until you say."
+   },
+   {
+    "label": "Answer 1 and 5 now, rest later",
+    "effect": "Unblocks M2 (threshold, consent, test sets); disciplines, deliverables and turnaround wait for M3."
+   },
+   {
+    "label": "Wait for tester feedback",
+    "effect": "See what document sizes testers actually bring before planning large reviews."
+   }
+  ],
+  "recommendation": "Option 2: the threshold, consent rule and test-set location are what M2 needs now. The M3 questions are better answered after testers show what large reviews they bring.",
+  "if_no_answer": "M2 and M3 stay unbuilt; large documents keep going through the small-review loop.",
+  "message_to_send": null,
+  "unblocks": [
+   "DR-08",
+   "DR-09"
+  ],
+  "sources": [
+   "module_work/REVIEW_ARCHITECTURE.md (Decisions recorded; Open questions for the owner)"
+  ]
+ },
+ "OWN-15": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Measure the report-ingest visual-scales switch on scanned logs without Azure DI text, or decide it will never be used?",
+  "why": "The switch reads depths off the drawn scale of a scanned log. It may matter most where the app runs: on the FIPS hosts Azure DI is the only OCR, so scans without DI have no text. It cannot be judged on the current test corpus.",
+  "background": "GEOTECH_INGEST_VISUAL_SCALES (off) lets report ingest use planlens' scale-reading voters on scanned logs. Foundry brief 5 (2026-10-08) ran it off and on: logs 466 vs 468 of 521 values (noise) and blind layer tops 22 of 36 both ways. No label call was made, because the voters act only on scans whose labels have no text, and every scan in this corpus has Azure DI text. On the Document Review page the same scale tools worked on Sol (3.60 m vs 3.62 m true) while GPT-5.4 read a log by eye. Report ingest is parked and cannot run on Tiny Apps (RI-03).",
+  "options": [
+   {
+    "label": "Measure with DI text withheld",
+    "effect": "Re-run the log stage on the same scanned logs with DI turned off, using the existing hand truth. One Foundry stage. (A suggestion; not yet tried.)"
+   },
+   {
+    "label": "Measure on a new no-DI scan set",
+    "effect": "Needs new scanned reports and new hand truth; slower and costlier."
+   },
+   {
+    "label": "Decide 'never' and remove it",
+    "effect": "Less code; scanned logs without text keep losing their depths (RI-18)."
+   }
+  ],
+  "recommendation": "Option 1 when report ingest is unparked: it reuses the existing scans and hand truth, and it matches the FIPS-host case where no DI runs. Until then leave it off.",
+  "if_no_answer": "The switch stays off and unmeasured.",
+  "message_to_send": null,
+  "unblocks": [
+   "RI-24"
+  ],
+  "sources": [
+   "module_work/review_eval_results/2026-10-08_foundry_5.33.0rc1/TRACE_REVIEW.md (item 6; Switch verdicts)",
+   "BACKLOG.md (VIS-11, RI-18, RI-24)"
+  ]
+ },
+ "OWN-16": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "In the markup test task, does a comment pointing at the slope table's 'B' row count as commenting on the ramp slope note?",
+  "why": "The suite's produce-markup task now scores where a comment points. Whether the table row counts decides pass or fail for runs that anchor there, and the suite feeds every switch and release verdict.",
+  "background": "The task asks for a comment on a public drawing sheet's ramp slope note, asking the designer to confirm that the 8.33 % maximum applies over the full ramp. Today the only target is note 4's line 'RAMP SLOPE CANNOT EXCEED 8.33% MAX.' (within 4 pt). Deliberately not a target: the section label 'RAMP SLOPE UP TO 7.5% (8.3% MAX.)', a different note. Undecided: the slope table row 'SLOPE \"B\" = 7.5% (8.33% MAX)'. The sheet states a maximum ramp slope in four places. In brief 4 GPT-5.4's baseline commented on the section label; in brief 5 the vision step dropped both note 4 and the B row from its findings (fix B1).",
+  "options": [
+   {
+    "label": "Not a target: only note 4",
+    "effect": "The check stays strict: the comment must sit on the note the question names."
+   },
+   {
+    "label": "Yes: the B row also counts",
+    "effect": "One data line added; runs anchored on the table row pass. Looser, but closer to how some reviewers might mark it."
+   }
+  ],
+  "recommendation": "Not a target. The question says 'note', and the table row is a separate statement; one target keeps the check unambiguous. Change it if you, as a reviewer, would accept that comment.",
+  "if_no_answer": "Only note 4 counts; a comment on the B row fails the task.",
+  "message_to_send": null,
+  "unblocks": [],
+  "sources": [
+   "funhouse_agent/review_eval/tasks.py (produce-markup task and its target list)",
+   "module_work/review_eval_results/2026-10-07_foundry_5.32.1rc3/TRACE_REVIEW.md (§2.6)",
+   "module_work/review_eval_results/2026-10-08_foundry_5.33.0rc1/TRACE_REVIEW_B_AEFG.md (B1)"
+  ]
+ },
+ "OWN-17": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "What should the rapid-drawdown stage-3 default be: keep 'fellenius', switch to 'gle', or report both?",
+  "why": "It sets the factor of safety on rapid-drawdown checks. On the published test case the default gives 1.273 against 1.443 (12 % low, conservative); the opt-in 'gle' gives 1.370 (5 % low). You kept 'fellenius' on 2026-07-08 while checking your notes.",
+  "background": "Three-stage rapid drawdown (Duncan, Wright and Brandon). Stage 3 needs an effective normal stress on each slice. The default 'fellenius' uses the Fellenius/OMS slice estimate; 'gle' uses the rigorous GLE normal from stage 1, and falls back to 'fellenius' if the drained GLE does not converge. The specialist who diagnosed it (2026-07-07) called the Fellenius estimate an outright bug because it is inconsistent with stage 1. You recalled a substantive reason for the cruder estimate and planned to check your graduate-school notes. Published case: #96 (V-038), 1.443.",
+  "options": [
+   {
+    "label": "Keep 'fellenius' (notes support it)",
+    "effect": "Default unchanged and conservative; 'gle' stays opt-in. Record the reason from your notes."
+   },
+   {
+    "label": "Switch the default to 'gle'",
+    "effect": "Closer to published values (1.370 vs 1.443); drawdown factors of safety rise; validation pins updated."
+   },
+   {
+    "label": "Report both, default unchanged",
+    "effect": "Every run returns both stage-3 results with a judgment note, as downdrag now does; nothing silent."
+   }
+  ],
+  "recommendation": "Option 3: it follows your rule that methods with several accepted bases are shown side by side, keeps the conservative default, and lets your notes settle the default later.",
+  "if_no_answer": "'fellenius' stays the default (conservative); 'gle' stays opt-in and unmentioned in results.",
+  "message_to_send": null,
+  "unblocks": [],
+  "sources": [
+   "module_work/V5.4_PLAN.md (Workstream E, item E2)",
+   "slope_stability/rapid_drawdown.py (stage3_effective_normal)"
+  ]
+ },
+ "OWN-18": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Make the PyNiteFEA frame-analysis package an optional extra, so cluster installs stop upgrading numpy and numba?",
+  "why": "PyNiteFEA alone forces numpy from the cluster's 2.1.3 to 2.4.6, which drags numba and llvmlite up and leaves four notebook packages unsatisfied in every install log. Harmless so far, but noisy, and it may matter on hosts with a fixed numpy.",
+  "background": "Settled in the install guide: PyNiteFEA 3.1.0 requires numpy 2.4.0 or later; numba caps numpy below 2.5, so the resolver lands on 2.4.6; numba goes 0.61 to 0.67 and llvmlite 0.44 to 0.49 (numba 0.67 verified numerically identical for pystrata). Nothing else needs numpy above 2.1.3, so moving this one dependency removes four of the install log's conflict warnings. Cost: frame analysis (continuous beams, 2D/3D frames) would need an extra at install; the module already hides itself when PyNite is missing. Since 5.8.1 a plain install brings the whole stack, at your request. EV-08 (a Foundry eval where numpy 1.26 broke 17 questions) might benefit; not verified.",
+  "options": [
+   {
+    "label": "Yes, make it an optional extra",
+    "effect": "Cluster installs keep numpy 2.1.3; frame analysis needs the extra. Breaks 'a plain install brings everything' for this one package."
+   },
+   {
+    "label": "No, keep it in core",
+    "effect": "Install logs keep the four known, harmless warnings."
+   }
+  ],
+  "recommendation": "Yes, unless you use frame analysis on the cluster. The cascade causes four of the install log's warnings, and the module already degrades cleanly without PyNite.",
+  "if_no_answer": "PyNiteFEA stays in core; every cluster install keeps upgrading numpy and numba.",
+  "message_to_send": null,
+  "unblocks": [
+   "EV-08"
+  ],
+  "sources": [
+   "docs/DATABRICKS_INSTALL.md (§4, the numpy cascade)",
+   "pyproject.toml (PyNiteFEA comment)",
+   "pynite_agent/pynite_utils.py (has_pynite)"
+  ]
+ },
+ "OWN-19": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Should lateral_pile get a cracked or moment-curvature pile stiffness, or should the V-017 residual be closed as accepted?",
+  "why": "Reinforced-concrete piles and shafts crack under lateral load; uncracked stiffness underestimates deflection, which is unconservative. The validation case already passes, so this is about the general capability, not that test.",
+  "background": "V-017 (grout-filled casing pile vs an LPILE run): with the composite uncracked stiffness (EI 8,109 kN·m², 1.13 times the casing alone) the head deflection is 3.60 mm vs published 3.3 mm, +9.2 %, a pass within the ±10 % band. The validation note blames the residual on LPILE's nonlinear (cracked) EI. That looks backwards: a softer cracked EI would raise our 3.60 mm further above 3.3 mm, so the residual's real cause is unknown. lateral_pile today offers composite_section_ei (uncracked, an upper-bound stiffness) and no moment-curvature analysis. Pending since v5.3 (July).",
+  "options": [
+   {
+    "label": "Build moment-curvature EI",
+    "effect": "LPILE-style nonlinear EI for RC piles and shafts; realistic deflections at high moment. Medium build plus validation cases."
+   },
+   {
+    "label": "Add a simple cracked-EI option",
+    "effect": "For example ACI 318's reduced moments of inertia; small build, cited basis, shown beside the uncracked result."
+   },
+   {
+    "label": "Close V-017 as accepted",
+    "effect": "No build; results keep uncracked stiffness, documented as an upper bound."
+   }
+  ],
+  "recommendation": "Option 2 now, reported beside the uncracked value with its citation; option 1 later if RC drilled-shaft work is common. Close V-017 as a pass and correct the note about the residual's cause.",
+  "if_no_answer": "lateral_pile keeps uncracked stiffness only; RC pile deflections at high load stay underestimated.",
+  "message_to_send": null,
+  "unblocks": [],
+  "sources": [
+   "validation_examples/RESULTS.md (V-017, composite EI)",
+   "module_work/V5.4_PLAN.md (E5)"
+  ]
+ },
+ "OWN-20": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Add opt-in switches so three modules can match published examples, or keep the current defensible defaults?",
+  "why": "Three validation cases differ from published examples by convention, not error. Anyone comparing the app with those references will see the gaps, up to 2x on drilled-shaft base resistance, and may distrust the module unless the basis is stated or selectable.",
+  "background": "(1) V-008b drilled shaft: the module applies GEC-10's large-diameter base reduction (1.27/Db, a factor of 0.521 in the example); the example does not, so base resistance can differ up to 2x. The module is conservative. (2) V-021 bearing capacity: compute() is 17.6 % above the GEC-6 example because it applies Vesic depth factors (dq 1.10-1.20; the example uses 1.0) and its water-table model gives no reduction; the example's closed form is matched to 4 figures when assembled its way. The module is less conservative here. (3) V-002 driven pile: Tomlinson alpha about 0.42 in stiff clay (su about 1.9 ksf) vs 0.76 in the example; shaft 18-22 % low, conservative.",
+  "options": [
+   {
+    "label": "Opt-in switches, defaults unchanged",
+    "effect": "Each choice becomes a named option with its citation; results state the basis used. Validation numbers unchanged."
+   },
+   {
+    "label": "Report both values side by side",
+    "effect": "Results show the default and the reference-matching value together, as downdrag now does."
+   },
+   {
+    "label": "Leave as is",
+    "effect": "The basis stays documented only in the validation notes."
+   }
+  ],
+  "recommendation": "Report both values for the bearing-capacity depth factor, where the default is the less conservative one; opt-in switches for the other two. Either way the result should name its basis, per your rule against silent choices.",
+  "if_no_answer": "Defaults stay; the gaps stay explained only in validation_examples/RESULTS.md.",
+  "message_to_send": null,
+  "unblocks": [],
+  "sources": [
+   "module_work/V5.2_COVERAGE.md (Deliberately deferred / owner-call)",
+   "validation_examples/RESULTS.md (V-002, V-008b, V-021; owner notes)"
+  ]
+ },
+ "OWN-21": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "For eight parked scope items, which should be built, kept parked, or dropped for good?",
+  "why": "Each sits half-open across documents that disagree (pavement is 'out of scope' in its design note and 'parked' in the project notes). A one-line ruling per item stops sessions re-raising them.",
+  "background": "(1) Soldier-pile SOE mode: the Caltrans simplified method, reproduced by hand in V-012 but not in the module. (2) Pavement: UFC 3-260-02 airfields, rigid vehicle curves F-2 to F-31, AASHTO Part III overlays. (3) Frost and dewatering references, deleted in June as low-value or wrong, never replaced. (4) GEC-13 column-supported embankments and deep mixing (the GEC-13 figure catalog is about 14 % complete). (5) RAP upper-zone stiffness settlement (V-018). (6) A diesel-hammer combustion model (V-003 blow count -60 %). (7) Structural future rounds: pelicun loss estimation, and an AISC letter only if steel modules are built. (8) FEMA P-2192: the download failed (fema.gov errors); fetch by browser if wanted (OWN-40).",
+  "options": [
+   {
+    "label": "Rule on each item now",
+    "effect": "Each is built (goes to the backlog), parked or dropped, and the documents are made consistent."
+   },
+   {
+    "label": "Build soldier-pile mode, park the rest",
+    "effect": "Common in practice, with a published worked example to validate against; the other seven are marked parked in one place."
+   },
+   {
+    "label": "Park all eight formally",
+    "effect": "Nothing is built; the documents say 'parked' consistently."
+   }
+  ],
+  "recommendation": "Option 2: soldier-pile walls are routine excavation support and V-012 gives a ready validation case. Mark the other seven parked in one place, and do not replace the frost and dewatering references unless a project needs them.",
+  "if_no_answer": "All eight stay half-open, and the documents keep disagreeing about pavement scope.",
+  "message_to_send": null,
+  "unblocks": [
+   "GM-24",
+   "OWN-40",
+   "REF-19"
+  ],
+  "sources": [
+   "validation_examples/RESULTS.md (V-012)",
+   "module_work/V5.2_COVERAGE.md (deferred items: V-003, V-018)",
+   "module_work/FUTURE_IDEAS.md (structural round decisions)",
+   "BACKLOG.md (GM-24, REF-08, REF-19, OWN-40)"
+  ]
+ },
+ "OWN-22": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Test the experimental model-setup agent (geo_project) yourself, park it formally, or retire it?",
+  "why": "It has been built and switched off since June, unreachable from either page, while the slope and FEM modules moved on. It still costs tests and upkeep, and its gaps grow with each module change.",
+  "background": "geo_project is a versioned project file for slope and FEM model setup: provenance tracking, a quarantine on vision-drafted geometry, 25+ validators, builders into the limit-equilibrium and FEM modules, DXF/PDF ingest and an echo-back drawing. A staged setup sub-agent asks for confirmation at each gate. It is off by default (enable_setup_agent=False) and the web app never turns it on. In June you kept it out of the presentation: 'haven't properly tested it'. Drift since (GM-37): no anisotropic su, pore-pressure points, stabilizing piles or tension cracks, and only the first surcharge reaches the slope model.",
+  "options": [
+   {
+    "label": "Test it in a session",
+    "effect": "You try it on one real slope or FEM setup; findings go to the backlog; if good, it gets a switch on the geotech page."
+   },
+   {
+    "label": "Park it formally",
+    "effect": "Stays in the package, off; GM-37 is parked with it; revisit with the modelling GUI (LT-07)."
+   },
+   {
+    "label": "Retire it",
+    "effect": "Remove geo_project and the setup sub-agent; less code to carry; the work stays in git history."
+   }
+  ],
+  "recommendation": "Park it formally. Document Review and Tiny Apps come first, and the project file is the groundwork for the parked modelling GUI, so deleting it would throw away that prerequisite.",
+  "if_no_answer": "It stays off and drifting; GM-37 grows.",
+  "message_to_send": null,
+  "unblocks": [
+   "GM-37"
+  ],
+  "sources": [
+   "HANDOFF_2026-06-14.md (§2e)",
+   "geo_project/UPGRADE_PLAN.md",
+   "funhouse_agent/deep/agent.py (enable_setup_agent)"
+  ]
+ },
+ "OWN-23": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Now that Tiny Apps makes the app multi-user, should it stay on Streamlit, or should a different multi-user interface be planned?",
+  "why": "The July industry memo said Streamlit is right 'until multi-user' and to discuss a FastAPI/React or Chainlit rebuild only then. Several testers on Tiny Apps meet that condition, so the item needs a ruling.",
+  "background": "Memo recommendation 6 (July): a multi-user UI is 'N/A now; discuss only if that need appears'. Since then CfA's own Tiny Apps template has turned out to be Streamlit on Azure App Service. 5.33.0 added per-user isolation (separate folders, SharePoint tools and document toolkit per conversation, the working folder bound per turn, fail-closed on shared hosts) and per-tester Prompter keys, hardened by live smoke waves. Not yet known: the shared VM's resource limits (OWN-49) and how several testers at once behave live (TA-04).",
+  "options": [
+   {
+    "label": "Stay on Streamlit, close it",
+    "effect": "No rebuild; per-user isolation is the multi-user answer."
+   },
+   {
+    "label": "Revisit after the tester weeks",
+    "effect": "Decide once real concurrent use shows whether Streamlit holds up."
+   },
+   {
+    "label": "Plan a FastAPI/React rebuild",
+    "effect": "A large effort, and a departure from CfA's Streamlit template."
+   }
+  ],
+  "recommendation": "Stay on Streamlit and close it, reopening only if testers hit concurrency or performance limits. CfA's own template is Streamlit.",
+  "if_no_answer": "Nothing changes; the item stays open.",
+  "message_to_send": null,
+  "unblocks": [],
+  "sources": [
+   "module_work/A7_INDUSTRY_MEMO.md (Recommendations, item 6)",
+   "tinyapps/TINYAPPS.md (environment facts)",
+   "CLAUDE.md (5.33.0 state block)"
+  ]
+ },
+ "OWN-24": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Keep vision on 'robust first', or start dialling back its cost now that testers use $50-a-month keys?",
+  "why": "Robust-first sends large images and tiles small-lettered pages automatically. On the testers' gpt-5.1, a tile model at 768 px, that means many extra calls per sheet, and each tester's key holds about $50 a month, so vision cost may decide how far a tester gets.",
+  "background": "Your rule (2026-09-25): robust first, cost is fine, dial back later, and do not act until you ask. Knobs on file: GEOTECH_VISION_POLICY=efficient (largest detail only for chart read-offs); 2x2 tiles first, escalating only where needed; crop to the drawing area before tiling; keep the vision probe's result instead of four small calls per process. On gpt-5.1 every stroke-lettered 11x17 sheet tiles 4x4 (up to 16 extra calls). In brief 4, 90 of 100 looks were tiled and a long set's input doubled. Tiny Apps testers have no spend line in the sidebar yet (TA-05).",
+  "options": [
+   {
+    "label": "Stay parked",
+    "effect": "Robust stays until you ask."
+   },
+   {
+    "label": "Measure first, then decide",
+    "effect": "Add the spend line (TA-05), watch a week of tester use, then pick knobs from the numbers."
+   },
+   {
+    "label": "Dial back now",
+    "effect": "Switch to 'efficient' and 2x2-first tiling: cheaper turns, some risk of misread small lettering."
+   }
+  ],
+  "recommendation": "Option 2: measure per-conversation cost during the tester weeks before giving up any accuracy. Robust-first was set for good reasons, and the trade-off needs numbers.",
+  "if_no_answer": "Vision stays robust; testers may exhaust their key budgets sooner on drawing sets.",
+  "message_to_send": null,
+  "unblocks": [
+   "VIS-20"
+  ],
+  "sources": [
+   "module_work/FUTURE_IDEAS.md (VISION EFFICIENCY)",
+   "BACKLOG.md (VIS-20, TA-05)"
+  ]
+ },
+ "OWN-25": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Leave your own answer wording for two report-ingest fields in the public code, or move it to a private file?",
+  "why": "The repos are public. One value in the published vocabulary names a building type in your wording, and it ships in the PyPI package. The lead judged it generic, but what reads as sensitive is your call.",
+  "background": "report_ingest/model.py (commit 5628ce1) lists the answer vocabulary for two fields (compound type and phase type), copied verbatim from your hand answers so the scorer's fuzzy match still recognises correct readings. The fields are plain text, so the list is only a prompt hint and a folding table; nothing refuses an answer. The option on record: a generic default list in the code, with the real wording loaded at run time from a private file that travels with the truth folders. A follow-up commit would not remove the strings from git history or from wheels already on PyPI.",
+  "options": [
+   {
+    "label": "Leave as is",
+    "effect": "No work; the wording stays public."
+   },
+   {
+    "label": "Move it to a private file",
+    "effect": "A small change at the next report-ingest pickup; future releases carry only generic values; history unchanged."
+   }
+  ],
+  "recommendation": "Option 2 at the next report-ingest pickup: it is small, costs no accuracy, and fits your habit of keeping Department-related material local. Rewriting history is not worth it for this.",
+  "if_no_answer": "The wording stays in the public code and every future wheel.",
+  "message_to_send": null,
+  "unblocks": [],
+  "sources": [
+   "HANDOFF.md (the published answer vocabulary, about lines 1481-1497)",
+   "report_ingest/model.py"
+  ]
+ },
+ "OWN-26": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "The public app repo's field-feedback folder names include place names: make the repo private, or scrub the names?",
+  "why": "Three of the seven tracked field-feedback folders are named after a project's location, and those names also appear in at least 22 tracked files and at least 12 commit messages. Anyone browsing the public GitHub repo can see where the office works.",
+  "background": "Flagged 2026-09-16 (REPORT_INGEST_PLAN item 8): CLAUDE.md then called the repo private, but GitHub reports it public, as are planlens and geotech-references. Newer field sessions keep client material in gitignored raw/ folders and use IDs, so new work is clean. Scrubbing renames the folders and edits current files, but old commits keep the names unless history is rewritten and force-pushed. Going private hides everything at once; PyPI releases and the Nexus install path do not depend on GitHub. Costs of private: reviewers need invitations (a Department reviewer has read the public repo, LT-03) and GitHub Actions minutes become limited.",
+  "options": [
+   {
+    "label": "Make the app repo private",
+    "effect": "Hides names and history at once; reviewers need invitations; Actions minutes become metered. planlens and refs can stay public."
+   },
+   {
+    "label": "Scrub the names going forward",
+    "effect": "Rename three folders and edit current files; old commits still show the names."
+   },
+   {
+    "label": "Scrub and rewrite history",
+    "effect": "Removes the names from GitHub; the force-push disrupts clones and worktrees; existing forks keep old copies."
+   },
+   {
+    "label": "Leave as is",
+    "effect": "The names stay public."
+   }
+  ],
+  "recommendation": "Option 2, plus the existing rule of IDs and gitignored raw/ folders. It removes the names from what people read today without breaking clones; go private only if the Department asks.",
+  "if_no_answer": "Place names stay visible in the public repo and its history.",
+  "message_to_send": null,
+  "unblocks": [],
+  "sources": [
+   "module_work/REPORT_INGEST_PLAN.md (item 8, Repo visibility)",
+   "BACKLOG.md (LT-03)",
+   "CLAUDE.md (Environment)"
+  ]
+ },
+ "OWN-27": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "May the stray untracked root files, old worktrees and stale branches be deleted, after archiving the two that may be unique?",
+  "why": "Housekeeping only. Copies of plans beside the real ones confuse sessions, and old worktrees take disk space. Deleting is the one step that needs your word, because a couple of files may be the only copy of something.",
+  "background": "Root files, all untracked, each with a tracked original (INF-01): five '_copy.md' plan copies, FOUNDRY_setup_copy.md, two provenance audits, a CONSOLIDATION_PLAN backup and suite_trial.json.md (198 KB). suite_trial.json (634 KB) is the only copy of a June baseline: archive it. Also untracked: docs/geotech_eval_20260713.md (301 KB); no tracked twin was found, so it may be the only record of a 2026-07-13 eval run: archive it too. INF-08: the gitignored build/ folder (9.1 MB); old release worktrees and agent worktrees; branches hotfix/5.12.1-structural-extra (app), fix/advice-names-no-missing-tools (planlens, shipped as 0d9787b) and the merged refs branch feature/reference-query-expansion.",
+  "options": [
+   {
+    "label": "Yes: archive two, delete the rest",
+    "effect": "Archive suite_trial.json and the July eval file to a gitignored folder, then delete the stray files, build/, old worktrees and the three branches."
+   },
+   {
+    "label": "Archive everything, delete nothing",
+    "effect": "Move all stray files into a gitignored archive folder; branches and worktrees stay."
+   },
+   {
+    "label": "Not now",
+    "effect": "The clutter stays."
+   }
+  ],
+  "recommendation": "Option 1. Every deleted file has a tracked original or is rebuilt on demand, and the two possibly unique files are archived first. Check that no running session uses a worktree before removing it.",
+  "if_no_answer": "Nothing is deleted; the clutter stays.",
+  "message_to_send": null,
+  "unblocks": [
+   "INF-01",
+   "INF-08"
+  ],
+  "sources": [
+   "BACKLOG.md (INF-01, INF-08)"
+  ]
+ },
+ "OWN-28": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Merge or drop the June rescue branch of reference chapter text and summaries in geotech-references, after a lead reviews it?",
+  "why": "Six GECs have no section summaries (0 of 670 sections), so search shows bare titles. The branch covers four of them and adds missing chapters, about 3,300 lines never reviewed. It is the quickest gain in what the references sub-agent can find.",
+  "background": "Branch rescue/reference-wip-2026-06-02 (one commit, 7fb6fe8, on origin) was cut from refs 1.2.5 in June; main is now 1.4.1. It changes 51 files (+3,287 lines): GEC-7 chapters 6-10 and GEC-12 Vol II chapters 9-18, summaries for GEC-6/7/12/13, and a script add_gec13_summaries.py. Main has GEC-7 chapters 1-5 and GEC-12 chapters 1-8. Since June, main has changed only one of the branch's files (CLAUDE.md), so a merge should be nearly conflict-free. The text was agent-built and never checked against the PDFs; the weekend QC routine appears never to have run (OWN-33). The source GECs are FHWA publications.",
+  "options": [
+   {
+    "label": "Lead reviews, then merge",
+    "effect": "A lead spot-checks sections against the PDFs, fixes errors and merges for the next refs release. Better section search and chapter retrieval."
+   },
+   {
+    "label": "Merge as is",
+    "effect": "Fastest; unreviewed text reaches the references sub-agent and the PyPI package."
+   },
+   {
+    "label": "Drop the branch",
+    "effect": "Nothing gained; the text would be rebuilt from scratch if ever wanted."
+   }
+  ],
+  "recommendation": "Option 1. The content is FHWA text with no merge conflicts; a sampled check against the PDFs is cheap, and summaries are what make section search useful.",
+  "if_no_answer": "The branch stays unmerged; search keeps showing bare titles for those GECs.",
+  "message_to_send": null,
+  "unblocks": [
+   "REF-04",
+   "REF-05",
+   "REF-06"
+  ],
+  "sources": [
+   "BACKLOG.md (REF-04 to REF-06, OWN-33)",
+   "git geotech-references 7fb6fe8 (diff against merge base 829b897)"
+  ]
+ }
+}

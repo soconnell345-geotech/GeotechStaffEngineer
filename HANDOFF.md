@@ -221,6 +221,7 @@ about 60 of them were on the list that stood here ("Open to-dos (refreshed
   - DR-01–DR-03: the default review page testers get still has three Phase-1 defects. `render_region` names tools the page lacks; the helper runs without the review rules; a long turn ends in GraphRecursionError instead of an answer. The fixes exist only behind the OFF `lean` switch.
   - DR-14: the markup check is wrong both ways.
   - TA-01: a refused Prompter key shows raw IIS HTML.
+  - TA-17: three settings in the wrapper's `.env` (`DEV_IDENTITY`, `GEOTECH_SHAREPOINT_ROOT`, `GEOTECH_PROMPTER_DISABLE_STREAMING`) are ignored on a local run; set them as real environment variables for the dosdev round.
   - TA-02: the suites have never run on CfA's fleet pins.
   - EV-01: no smoke wave ran at the gpt-5.1 budget.
   - DOC-04 / DOC-05: the install guide still says 5.25.0.

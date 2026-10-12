@@ -1,0 +1,473 @@
+{
+  "DR-12": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Keep the boring-spacing question as a dedicated build, or make it ordinary suite tasks once you supply real investigation plans?",
+    "why": "It was the driving example of the 2026-09-13 reset, but no agent can reach the spacing maths, and it cannot be measured without real plans. Today the question risks a plausible wrong number rather than a refusal.",
+    "background": "planlens/ir/spatial.py computes spacing three ways: nearest neighbour; density-equivalent sqrt(area/n), which is what 'borings at 50-ft centres' means; and the mean of all pairs. It reports the spread between them: on a regular 3x3 grid they differ by 2.45x, so the API deliberately has no single 'average spacing'. The `measure` tool now reads distances off drawings, but nothing on the review page calls spatial.py. Blocked on OWN-38: the original driving sheet is in neither repo, and 2-4 more subsurface-investigation plans are needed as ground truth. The approved plan file it cites is also missing (DOC-15).",
+    "options": [
+      {"label": "Suite tasks, all three conventions reported", "effect": "You supply 3-5 plans; an agent adds tasks whose checks expect each convention with its definition and the spread. General capability, no question-specific prompt rule."},
+      {"label": "Dedicated vertical slice, as first planned", "effect": "Wire spatial.py into the review page as its own path, tuned on this question. Quicker to demonstrate; risks fitting one example."},
+      {"label": "Drop it", "effect": "Close DR-12; spatial.py stays in planlens unused. Spacing questions are answered, if at all, by the general measuring tools."}
+    ],
+    "recommendation": "Suite tasks. Supply the plans (OWN-38); report all three conventions with their definitions, per your 'methods open to assumptions' rule, and let the suite judge rather than tuning prompts to this one question.",
+    "if_no_answer": "Stays Later and blocked on OWN-38; nothing is built.",
+    "message_to_send": null,
+    "steps": null,
+    "unblocks": [],
+    "sources": ["HANDOFF.md (lines 2546-2578, NEW DIRECTION)", "planlens repo: planlens/ir/spatial.py (module docstring)", "BACKLOG.md (OWN-38, DOC-15)"]
+  },
+  "DR-13": {
+    "kind": "action",
+    "ask_who": null,
+    "question": "Pick one or two standards you review documents against, plus a document that breaks them, for standards-conformance test tasks.",
+    "why": "Users will ask 'does this set follow our standards?'. The agent can only be tested on that with real standards and a document known to break them. Nothing is built or measured for it yet.",
+    "background": "The 2026-09-04 product framing lists standards conformance as a later phase: compare what is on the sheets or in the report with standards supplied as uploads or reference modules, citing both the sheet region and the clause compared. Related owner items: OWN-14 asks which disciplines come first and where their checklists come from; OWN-31 is the checklist session for funhouse_agent/report_review_checklist.json, which may already supply a first standard. Unknown: whether your standards can be public (open suite tasks) or are Department-internal (private tasks kept off the public repo).",
+    "options": [],
+    "recommendation": "Wait for the checklist session (OWN-31); the review checklist may serve as the first standard, so this needs little extra from you.",
+    "if_no_answer": "Stays Later; standards conformance remains untested.",
+    "message_to_send": null,
+    "steps": [
+      "Choose one or two standards you actually review against, such as a drafting standard or a report-content checklist.",
+      "Say whether each may be public; if not, it stays in a private folder and is never committed.",
+      "Pick a document that breaks a few clauses and list those clauses with page numbers.",
+      "Hand both over; an agent writes them up as suite tasks with deterministic checks."
+    ],
+    "unblocks": [],
+    "sources": ["module_work/DRAWING_INTELLIGENCE_DESIGN.md (PRODUCT FRAMING, lines 217-232)", "BACKLOG.md (OWN-14, OWN-31)"]
+  },
+  "DR-24": {
+    "kind": "ask",
+    "ask_who": "a colleague who has not seen the suite",
+    "question": "Ask a colleague to write a private blind set of review questions with expected answers, kept off the public repo.",
+    "why": "All 42 suite tasks are public, and every release is tuned while reading them, so the suite can reward fitting to its own tasks. A blind half written by someone else is the only check that a change helps reviews in general.",
+    "background": "The suite (funhouse_agent/review_eval) already accepts private tasks: a JSON file on SharePoint passed as score_review_suite(extra_tasks=[path]) with split 'blind'. Each task is a question, its document(s) and checks (what the answer must contain, pages to cite, marks expected). Brief 5 scored 39/42 on GPT-5.6 Sol. One conflict to settle: your rule that every run is read in full means agents would read blind traces, so their findings must stay general, or you read blind traces yourself. OWN-34 covers suite inputs more broadly.",
+    "options": [],
+    "recommendation": "Ask one colleague for 15-20 tasks now. Score them each release, pass agents only totals and general failure types, and read blind traces yourself or have agents report general bugs only.",
+    "if_no_answer": "The suite stays all-open; release decisions keep resting on tasks the tuning sessions have seen.",
+    "message_to_send": "Would you write 15-20 questions you would ask when reviewing a geotechnical report or drawing set, on documents of your choosing (public or ours)? For each: the document, the question, what a correct answer must say or cite (page numbers help), and anything it must not claim. I will keep them in a private SharePoint file to test our review assistant; nobody tuning it will see them. A plain Word list is fine; I will convert it.",
+    "steps": null,
+    "unblocks": [],
+    "sources": ["module_work/REVIEW_HARNESS.md (Rules going forward, lines 132-137)", "funhouse_agent/review_eval/tasks.py (Task, load_tasks)", "module_work/review_eval_results/2026-10-08_foundry_5.33.0rc1/TRACE_REVIEW.md (What ran)"]
+  },
+  "VIS-11": {
+    "kind": "action",
+    "ask_who": null,
+    "question": "Run a free onnxruntime import probe on both FIPS hosts; only if it loads, raise the OCR-weights approval with Funhouse/CfA (OWN-54).",
+    "why": "Scanned reports and stroke-lettered sheets have no text layer. Where the app runs, OpenCV aborts under FIPS, so RapidOCR cannot load, and the only OCR is paid Document Intelligence (about $2 per 1,000 pages, a separate workflow).",
+    "background": "RapidOCR (Apache-2.0, ~60 MB with onnxruntime; its PP-OCR models ship inside the wheel, so nothing downloads at runtime) works on the laptop but imports OpenCV. Whether onnxruntime itself loads under FIPS is untested. FUTURE_IDEAS ranks 'general OCR without OpenCV' third of its machine-learning candidates: run the ONNX models with numpy pre- and post-processing. This item merges the Tier-2 scanned-page engines and PL-21 (image-only logs are read as 'figure' today). Your rule: paid OCR is never a required dependency. OWN-48 asks whether Tiny Apps enforces FIPS.",
+    "options": [],
+    "recommendation": "Run the probe during the dosdev round (OWN-29); it costs nothing. Hold the numpy rewrite until onnxruntime is shown to load and the weights question has an answer.",
+    "if_no_answer": "Scanned pages stay readable only by vision calls or paid DI; PL-21 stays blocked.",
+    "message_to_send": null,
+    "steps": [
+      "An agent writes a probe cell that imports onnxruntime in a child process, as planlens.opencv does for OpenCV.",
+      "You run it once on Funhouse and once on the Tiny Apps dosdev host, and paste the output back.",
+      "If it loads: raise the bundled-weights question with Funhouse/CfA as part of OWN-54.",
+      "If it aborts: free OCR is off the table there; paid DI stays the only OCR on those hosts.",
+      "Only after both answers: an agent rebuilds RapidOCR's image handling in numpy so OpenCV is never imported."
+    ],
+    "unblocks": ["PL-21"],
+    "sources": ["module_work/FUTURE_IDEAS.md (Tier 2 note ~388; MACHINE LEARNING FOR SCALES AND SCANS ~466-500)", "planlens repo: pyproject.toml (ocr extra)", "BACKLOG.md (OWN-48, OWN-54, PL-21)"]
+  },
+  "VIS-20": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Keep vision on 'robust first' through the tester weeks, or turn on efficiency knobs now that their cost is partly measured?",
+    "why": "Each tester spends their own Prompter key budget. Robust vision buys reliability, but automatic tiling cost a lot and bought no score on the suite. You parked this on 2026-09-25: 'do not act until asked'.",
+    "background": "Brief 4 (Foundry, 5.32.1rc3): tiling fired on 90 of 100 page looks (485 tiles) against 1 of 120 the round before; no task changed outcome; on the long tag-sheet task input more than doubled. Brief 5 (MK5): 8 of 36 zooms were coarser than tiles already read, about 24K tokens. On GPT-5.4, 'robust' sends ~10k image tokens a view against ~0.7k at 'high'. Tiny Apps' gpt-5.1 reads at 768 px, so every stroke-lettered 11x17 sheet tiles 4x4. Knobs: GEOTECH_VISION_POLICY=efficient, 2x2 tiles first, crop to the drawing, keep the vision probe per model. Related: OWN-24.",
+    "options": [
+      {"label": "Stay robust; record real cost first", "effect": "Keep defaults. Record per-conversation vision cost in the first-hour check (OWN-30) and tester sessions, then decide with numbers from the real host."},
+      {"label": "Cheap knobs only", "effect": "An agent adds 2x2-first tiling and a remembered probe; ordinary views stay at the largest detail. Each change measured on the suite before it becomes default."},
+      {"label": "Switch to the 'efficient' policy now", "effect": "Ordinary views at 'high', 'original' only for chart read-offs, no automatic tiling. Cheapest; risks the small-lettering misreads that led to robust-first."}
+    ],
+    "recommendation": "Stay robust for the tester weeks. The cost that matters is gpt-5.1 at 768 px, which no run has measured yet (EV-01). Revisit with that number and the first testers' spend.",
+    "if_no_answer": "Stays parked; robust defaults continue and testers' keys spend at the robust rate.",
+    "message_to_send": null,
+    "steps": null,
+    "unblocks": [],
+    "sources": ["module_work/FUTURE_IDEAS.md (VISION EFFICIENCY, ~437-464)", "module_work/review_eval_results/2026-10-07_foundry_5.32.1rc3/TRACE_REVIEW.md (3.3 Tiling)", "module_work/review_eval_results/2026-10-08_foundry_5.33.0rc1/TRACE_REVIEW_suite_meck.md (MK5)"]
+  },
+  "PL-12": {
+    "kind": "action",
+    "ask_who": null,
+    "question": "Supply a Bluebeam-calibrated PDF and a real document with one page scanned twice, into a local private folder.",
+    "why": "planlens reads the scale Bluebeam or Acrobat store in a PDF and flags duplicate scans, but both were built to the specification and tested only on synthetic files. A misreading would first show up as a plausible wrong number on a real sheet.",
+    "background": "Measured over 162 local PDFs: 2 had a populated viewport; 0 of 426 annotations were measurement markups; the only rectilinear viewport was the 1:1 identity, and a real submittal's one viewport was georeferenced (/GEO, survey control: detected, not parsed). The code cross-checks the stored ratio against the stored factor and warns above 2 % disagreement. Image-hash duplicate detection has only synthetic positives; on one real report the older rule wrongly called 69 of 73 lab-appendix pages duplicates (now 0). Part of OWN-38's document request.",
+    "options": [],
+    "recommendation": null,
+    "if_no_answer": "Stored-scale and duplicate-scan features stay unverified on real files.",
+    "message_to_send": null,
+    "steps": [
+      "In Bluebeam, open any drawing PDF, set the scale with Calibrate, draw two or three length measurements, and save.",
+      "Find a real report or set in which the same sheet was scanned twice.",
+      "If you have one, add a georeferenced PDF such as a survey or GIS export.",
+      "Put them in a gitignored local folder an agent names; never in a public repo.",
+      "An agent re-runs the scale probe and the duplicate check and records the numbers."
+    ],
+    "unblocks": [],
+    "sources": ["planlens repo: planlens/document/DESIGN.md (stored scale, lines 320-376; Duplicates on scans, ~461-583)", "BACKLOG.md (OWN-38)"]
+  },
+  "PL-15": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Pursue planlens' MCP server inside the enclave once a host exists, or treat it as a desktop-only feature?",
+    "why": "The server lets any MCP-capable assistant use planlens' review tools. It has never run where the app runs, it authenticates nobody, and its package pins are unchecked against the app's stack.",
+    "background": "planlens has shipped an MCP server since 0.4.0 (extra mcp>=2,<3). mcp 2.2.0 cleared the Nexus probe on 2026-09-16 with pinned idna, pydantic, pyjwt and starlette, not yet checked against streamlit's. The server opens whatever files the caller names with the launcher's privileges; --root narrows it to one folder, and --http adds no authentication, so on a shared multi-user host it is a data-isolation question. Whether an in-enclave MCP host exists at all is OWN-54. LT-06 waits on this.",
+    "options": [
+      {"label": "Wait for OWN-54's answer", "effect": "No work now. If Funhouse names an enclave MCP host, an agent checks the pins and runs the server there, single-user, behind the host's own sign-in."},
+      {"label": "Desktop only; close PL-15", "effect": "Document MCP as a laptop feature. LT-06 is dropped or parked indefinitely."}
+    ],
+    "recommendation": "Wait for OWN-54. Build nothing until an enclave host exists and says how it authenticates users.",
+    "if_no_answer": "Stays Later; the server keeps working on desktops only.",
+    "message_to_send": null,
+    "steps": null,
+    "unblocks": ["LT-06"],
+    "sources": ["planlens repo: README.md (MCP caveats, lines 605-625)", "planlens repo: pyproject.toml (mcp extra)", "module_work/FUTURE_IDEAS.md (toolkit MCP server TODO, ~398-414)"]
+  },
+  "PL-16": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Cap OpenCV below version 6 in the next planlens release, and re-run the planlens suite on OpenCV 5?",
+    "why": "planlens accepts any OpenCV from 4.8 up, so a future OpenCV 6 would reach the cluster unannounced, as OpenCV 5 did. A cap turns the next major version into a decision instead of a surprise.",
+    "background": "The cluster resolved opencv-python-headless 5.0.0.93. It was checked safe on 2026-09-11 with the planlens suite as it stood (792 tests); the suite is about 1,430 tests now and has not been re-run on OpenCV 5. The OpenCV calls used are few and long-stable. On the FIPS hosts OpenCV cannot load at all and find_like already works without it, so the exposure is the Databricks cluster. planlens' own pyproject says tightening the pin is 'a deliberate release, not a drive-by'.",
+    "options": [
+      {"label": "Cap below 6 and re-run on 5", "effect": "One line in planlens' pyproject at its next release plus one suite run on OpenCV 5. A future OpenCV 6 is then held back until tested."},
+      {"label": "Re-run on 5, no cap", "effect": "Confirms today's cluster; the next major version can still arrive unannounced."},
+      {"label": "Leave as is", "effect": "No work; rely on the install guide's major-version watch list."}
+    ],
+    "recommendation": "Cap below 6 and re-run on 5, folded into the next planlens release; the cost is one suite run.",
+    "if_no_answer": "No cap; OpenCV 5 coverage stays at the September check.",
+    "message_to_send": null,
+    "steps": null,
+    "unblocks": [],
+    "sources": ["planlens repo: pyproject.toml (opencv-python-headless comment, ~lines 36-52)", "docs/DATABRICKS_INSTALL.md (section 7, Major-version watch list)"]
+  },
+  "RI-10": {
+    "kind": "action",
+    "ask_who": null,
+    "question": "Write 15-25 questions you would ask across past reports, noting which reports a correct answer must cite.",
+    "why": "The report library's search half scores well on a synthetic library, but the model that answers questions over real ingested reports has never been measured. It stays OFF until it is, and the measurement needs your questions.",
+    "background": "Measured with no model, 20 questions over six synthetic records: the sub-agent's chosen queries found the right reports at 0.949 precision / 1.000 recall and pages at 0.939 / 1.000, against 0.647 / 0.943 and 0.417 / 0.323 for plain search. The answering agent checks its own citations: a report and page it cites that no query returned is dropped and listed as a gap. File shape: report_ingest/library_questions.EXAMPLE.json; the real file lives in the private truth folder. It also needs a library of current ingested records (RI-09). Listed under OWN-39.",
+    "options": [],
+    "recommendation": "Write the list after the ingest re-run (RI-09) so the library holds current records; a plain list is enough.",
+    "if_no_answer": "The library agent stays OFF and unmeasured.",
+    "message_to_send": null,
+    "steps": [
+      "List 15-25 questions you genuinely ask across reports, such as which recommended deep foundations or which found liquefiable soils.",
+      "For each, note the corpus report IDs a correct answer must cite; leave it empty where the library cannot know.",
+      "Include 3-5 questions deliberately unanswerable from the library.",
+      "Add page numbers where you know them; this is optional.",
+      "Save it in the private truth folder; an agent converts a plain list to the JSON shape.",
+      "The library model is then scored on the cluster or Foundry, with every run read in full."
+    ],
+    "unblocks": [],
+    "sources": ["module_work/harness_theory/report_ingest.md (section 1, line 36)", "report_ingest/library_questions.EXAMPLE.json", "CLAUDE.md (app 5.25.0, item 5: the library)", "BACKLOG.md (OWN-39, RI-09)"]
+  },
+  "RI-22": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Who writes the per-report triage verdict, especially 'bound documents: yes or no, which pages', for the 38 corpus reports?",
+    "why": "Triage decides whether a report contains other bound reports, and each bound one is ingested as its own record at 206-897 model calls. Triage flags 19 of 38 reports and nobody has checked whether that is right, so cost and duplicate records go unchecked.",
+    "background": "The plan scores triage on all 38 reports against a hand verdict per report: kind, completeness, bound-together documents, scan fraction, and agreement with the printed contents. No verdict was ever written. On a six-report development checkpoint triage flagged 1 report as bound; on the first GPT run it flagged 17 of 28. The plan's gate wants triage right on every unusual report (multi-volume, appendix-only, partial, scanned, appended prior reports). The corpus PDFs are local and private; verdicts stay in the gitignored truth folder.",
+    "options": [
+      {"label": "You write all 38 verdicts", "effect": "Most trustworthy; a few minutes per report you know, longer for the rest."},
+      {"label": "Agent drafts, you confirm bound calls", "effect": "An Opus agent reads each PDF's structure and drafts verdicts; you check the bound-documents column (yes or no, page ranges), at least the 19 flagged."},
+      {"label": "Score only the 19 flagged", "effect": "Cheaper; catches false alarms but not bound reports triage missed."}
+    ],
+    "recommendation": "Agent drafts, you confirm the bound-document calls: the agent does the reading, and you settle the one call that drives cost. Label the verdicts 'agent-drafted, owner-confirmed' in the scorecard.",
+    "if_no_answer": "Triage stays unscored; bound-document ingest keeps its unchecked cost.",
+    "message_to_send": null,
+    "steps": null,
+    "unblocks": [],
+    "sources": ["module_work/REPORT_INGEST_PLAN.md (WP1b triage, lines 580-611)", "module_work/field_feedback/2026-09-16_report-ingest/MEASUREMENTS.md (WP1b checkpoint ~2480; CLUSTER RUN 1 ~3667)", "BACKLOG.md (RI-21)"]
+  },
+  "GM-24": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Which sheet-pile and support-of-excavation options to add: a soldier-pile mode, a balanced-water input, a cited basis for braced bottom-span load?",
+    "why": "Three published cases need workarounds or fall outside the module. Your rule is that where references give several methods, the module offers them as cited options rather than one silent basis.",
+    "background": "Soldier piles (V-012, Caltrans): active pressure on the 2-ft hole, passive on an arching width 0.08·φ·b = 5.6 ft, and a simplified toe-moment cubic; published D 14.73 ft, Mmax 379.7 kip-ft. The module's continuous per-metre solver cannot do this; scope is OWN-21. Braced walls: the bottom span's load goes wholly to the lowest support (conservative for that support); the free-earth load from below is already reported alongside. Balanced water (Das waterfront bulkhead): matched D within 3.3 % and anchor force within 3 % only by entering the effective unit weight by hand, an undocumented workaround.",
+    "options": [
+      {"label": "Braced-load option plus balanced water", "effect": "Small: expose the bottom-span basis (tributary or free-earth) as a named, cited choice with both results, and add a balanced-water input. Soldier piles wait on OWN-21."},
+      {"label": "All three, including soldier piles", "effect": "Adds the Caltrans simplified soldier-pile method pinned to V-012. Larger; worth it only if soldier-pile excavation support is in scope."},
+      {"label": "None for now", "effect": "Keep the water workaround documented; current results stand, conservative on the lowest braced support."}
+    ],
+    "recommendation": "Braced-load option plus balanced water in the next module train; decide soldier piles with OWN-21.",
+    "if_no_answer": "Stays Later; braced support loads stay conservative and the water workaround stays manual.",
+    "message_to_send": null,
+    "steps": null,
+    "unblocks": [],
+    "sources": ["validation_examples/RESULTS.md (V-012, V-013, lines 225-246)", "soe/DESIGN.md (Tributary Area Method, lines 44-55)", "module_work/wiki_verification/das_solutions_sweep.md (problem 3b)"]
+  },
+  "GM-37": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Bring the model-setup agent's project schema up to date with the slope module, or leave it parked with the setup agent?",
+    "why": "geo_project (the staged, human-gated model-setup agent) is OFF and untested by you (OWN-22). The slope module has since gained features its schema cannot carry, so catching up only pays if the setup agent will be used.",
+    "background": "Missing from geo_project: anisotropic undrained strength, pore-pressure points (TIN grids), stabilizing piles and tension cracks (exit side, truncation model), all added to the slope module in 5.4-5.5. Its limit-equilibrium builder maps only the first surcharge (the schema stores a list and validation warns on extras), and there is no path to ingest a confirmed drawing IR. FEM with SHANSEP or Hoek-Brown layers is blocked by design, since fem2d is Mohr-Coulomb only. The catch-up has not been sized.",
+    "options": [
+      {"label": "Park with OWN-22", "effect": "No work until you test the setup agent; then size the catch-up."},
+      {"label": "Catch up now", "effect": "An agent extends the schema, builders and validators after a sizing. Useful only if the setup agent goes live."},
+      {"label": "Retire geo_project", "effect": "Remove the OFF setup agent; LT-07 (modelling GUI) loses its prerequisite."}
+    ],
+    "recommendation": "Park with OWN-22. Decide OWN-22 first; this follows it.",
+    "if_no_answer": "Stays Later; the setup agent stays OFF and drifts further behind.",
+    "message_to_send": null,
+    "steps": null,
+    "unblocks": [],
+    "sources": ["geo_project/UPGRADE_PLAN.md (Descoped, lines 92-105)", "HANDOFF_2026-06-14.md (2e Model-setup agent)", "BACKLOG.md (OWN-22)"]
+  },
+  "GM-39": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "If calculation tables are still wanted (OWN-10), pilot them on three modules first or build all fifteen at once?",
+    "why": "You named Ensoft-style calculation tables 'the next train' on 2026-09-11 and it never started. The tables already sit inside every calc-package PDF but cannot be pulled out as data to check or reuse.",
+    "background": "All 15 calc-package modules already build tables for the PDF (TableData in each calc_steps.py). Nothing exports them: there is no calc_package.export_tables and no per-module get_tables(). The ask: CSV plus an HTML table block per report, and a Tables section in the calc agent's deliverable, carrying what LPILE, APILE and GROUP print: per-depth p-y and load-transfer, per-slice, per-layer capacity contributions, iteration histories. Size not estimated. Whether it is still next is OWN-10.",
+    "options": [
+      {"label": "Pilot on three modules", "effect": "lateral_pile, axial_pile and slope_stability first, so the export pattern settles before the other 12 follow."},
+      {"label": "All fifteen in one train", "effect": "One consistent release; larger, and competes with document-review work."},
+      {"label": "Defer", "effect": "Tables stay inside the PDFs only."}
+    ],
+    "recommendation": "Pilot on three modules after the tester weeks, if OWN-10 says tables are still wanted.",
+    "if_no_answer": "Stays Next with no start date; tables remain PDF-only.",
+    "message_to_send": null,
+    "steps": null,
+    "unblocks": [],
+    "sources": ["module_work/FUTURE_IDEAS.md (section 9, App feedback train follow-ups, ~292-302)", "*/calc_steps.py (15 modules build TableData)", "BACKLOG.md (OWN-10)"]
+  },
+  "REF-04": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Review and merge the June rescue branch (GEC-7 ch 6-10, GEC-12 ch 9-18, section summaries), merge it as is, or drop it?",
+    "why": "The reference library lacks GEC-7's soil-nail design chapters and GEC-12's later chapters (load testing onward). The work exists but was never checked against the source PDFs, and an earlier build agent once mis-reconstructed equations.",
+    "background": "Branch rescue/reference-wip-2026-06-02 (7fb6fe8, on GitHub): 51 files, +3,287 / -30 lines. New chapters: GEC-12 9-18 (ch 9 'Static Load Testing', 7 sections) and GEC-7 6-10 (ch 6 'Design of Soil Nail Walls', 12 sections), condensed to about 10-12k characters each. Also one-line summaries for sections of GEC-6, GEC-7 ch 1-5, GEC-12 ch 1-8 and GEC-13 (the search index already reads summaries), and a 152-line script. Based on refs 1.2.5; main is 31 commits ahead, but none touch these chapter files, so only CLAUDE.md conflicts. The GEC PDFs are local. The decision itself is OWN-28.",
+    "options": [
+      {"label": "Agent checks against PDFs, then merge", "effect": "An agent checks every new section against the GEC PDFs, fixes errors, adds tests, and merges it for the next refs release on your word."},
+      {"label": "Merge as is", "effect": "Fast; unchecked text enters what the agent cites."},
+      {"label": "Drop the branch", "effect": "Rebuild those chapters later from scratch if wanted."}
+    ],
+    "recommendation": "Check against the PDFs, then merge: the content fills real gaps (soil-nail design, pile load testing), applies cleanly, and a source check is the standard the rest of the library met.",
+    "if_no_answer": "The branch stays unmerged on GitHub; those chapters stay unsearchable.",
+    "message_to_send": null,
+    "steps": null,
+    "unblocks": [],
+    "sources": ["geotech-references: git log --stat -1 rescue/reference-wip-2026-06-02 (7fb6fe8)", "geotech-references: git diff main..rescue (merge base 829b897 = 1.2.5)", "geotech-references/geotech_references/_retrieval_db.py (summary field indexed)", "BACKLOG.md (OWN-28)"]
+  },
+  "REF-14": {
+    "kind": "action",
+    "ask_who": null,
+    "question": "Upload the Wood Handbook PDF to the SharePoint reference folder; fetch FEMA P-2192 Vol 1 only if OWN-21 says use it.",
+    "why": "The wood_handbook module's figure read-off needs its source PDF, which lives only on the laptop (104 MB, too big for GitHub). On the cluster and Tiny Apps, reference PDFs are fetched from SharePoint the first time they are needed.",
+    "background": "The file is geotech-references/docs/USDA_Wood_Handbook_FPL-GTR-282.pdf (gitignored); the figure catalog expects that exact name. The app fetches from SharePoint GSE_app/primary_references when a figure is first needed. On Tiny Apps this works only once the SharePoint app registration exists (OWN-44). FEMA P-2192 Vol 1, about 1,000 pages of worked seismic examples, was never fetched: FEMA's website returned 502 errors in September. It was meant as ground truth for future structural modules, which is a scope call (OWN-21). Owner item OWN-40.",
+    "options": [],
+    "recommendation": null,
+    "if_no_answer": "Wood Handbook figures stay readable on the laptop only; P-2192 stays unfetched.",
+    "message_to_send": null,
+    "steps": [
+      "Copy geotech-references/docs/USDA_Wood_Handbook_FPL-GTR-282.pdf to SharePoint GSE_app/primary_references, keeping the file name exactly.",
+      "Tell the next session it is there, so one figure read-off can be checked on the cluster.",
+      "Only if OWN-21 keeps structural rounds: download FEMA P-2192 Vol 1 in a browser and keep it locally."
+    ],
+    "unblocks": [],
+    "sources": ["geotech-references/scripts/manifests/wood_handbook.json (source_note)", "webapp/reference_fetch.py (module docstring)", "module_work/STRUCTURAL_REFS_SURVEY.md (header, Verified download links)", "BACKLOG.md (OWN-21, OWN-40, OWN-44)"]
+  },
+  "REF-19": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Is a further structural reference round wanted (NIST briefs, FEMA P-2192 examples, pelicun loss), or does structural stop at round 1?",
+    "why": "Round 1 shipped six public-domain structural references and three analysis engines. More rounds only make sense if structural work is part of the product's direction, and they compete with document review for effort.",
+    "background": "Survey leftovers (2026-09-03): FEMA P-2192 Vol 1 worked seismic examples (download blocked); NIST NEHRP Seismic Design Technical Briefs 1-13; the FHWA steel-bridge handbook and LRFD superstructure examples (only if bridges enter scope). pelicun (BSD-3, FEMA P-58 loss assessment, bundles its damage library) was deferred as the strongest next-round library. AISC's free shapes database forbids reproduction without written permission, so steel shape tables would need an AISC letter, and only if steel modules are built. The scope call is in OWN-21.",
+    "options": [
+      {"label": "Stop at round 1", "effect": "Close REF-19; the six structural references stay as they are."},
+      {"label": "Park until a structural need appears", "effect": "Status quo; revisit if a tester or project asks for structural work."},
+      {"label": "Plan round 2", "effect": "An agent sizes the P-2192 examples plus pelicun as a separate train after document review."}
+    ],
+    "recommendation": "Park until a structural need appears; nothing in the tester work needs it.",
+    "if_no_answer": "Stays Later; no structural work.",
+    "message_to_send": null,
+    "steps": null,
+    "unblocks": [],
+    "sources": ["module_work/STRUCTURAL_REFS_SURVEY.md (header, Prioritized inventory, lines 1-68)", "module_work/FUTURE_IDEAS.md (STRUCTURAL SURVEY 2026-09-03, ~322-358)", "BACKLOG.md (OWN-21)"]
+  },
+  "EV-01": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Spend up to about $10 of the promo API credit on one smoke wave at Tiny Apps' 768 px vision budget before testers start?",
+    "why": "Every smoke wave ran with 2,048 px images. Testers' gpt-5.1 reads images at 768 px, which means more tiles, more side calls and longer turns. No run has shown how the app behaves at that budget.",
+    "background": "Wave 3 (10 flows, Claude Sonnet, 2,048 px) cost $6.46 for 389 calls and gave a GO. The rehearsal sets GEOTECH_VISION_BUDGET=gpt-4.1-high and production's retry count (max_retries=2). Claude stands in for GPT, so it rehearses tile counts, timing, caps and side-call volume, not gpt-5.1's reading accuracy. Credit: $35.41 of the $80 wave allowance is left, with a further $20 kept for touch-up together; it expires 2026-11-05 (OWN-05). The cost at 768 px is unknown but likely above wave 3's.",
+    "options": [
+      {"label": "Run on Sonnet, capped at $10", "effect": "Wave 3's flows at the 768 px budget; every run read in full; fixes go to the backlog before or during tester week."},
+      {"label": "Run on Haiku, capped at $3", "effect": "A cheaper plumbing check of tiling and timing; a weaker stand-in for a reasoning model."},
+      {"label": "Skip; learn from the first hour", "effect": "No spend; real gpt-5.1 behaviour shows up with the testers (OWN-30, TA-03)."}
+    ],
+    "recommendation": "Run on Sonnet, capped at $10, this week. It is the one production difference no run has covered, and it fits the free part of the credit.",
+    "if_no_answer": "The testers' sessions become the first run at 768 px.",
+    "message_to_send": null,
+    "steps": null,
+    "unblocks": [],
+    "sources": ["module_work/live_smoke/runs/w3-confirm-sonnet/REVIEW.md (H24, ~lines 266-271; gitignored)", "module_work/live_smoke/spend_ledger.json (per-wave spend)", "BACKLOG.md (OWN-05, OWN-30, TA-03)"]
+  },
+  "EV-02": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "When should Foundry brief 6 run, and is its scope (repeats, patch alignment, reasoning call, coverage re-measure) right?",
+    "why": "Several OFF switches wait on it: coverage, patch alignment and the Foundry reasoning summary. The brief is not written yet. A Foundry round takes about a day of the AI FDE's time, and every run must then be read in full.",
+    "background": "Scope from brief 5's trace review: brief 5 groups 3-4 again with repeats; Part B (circle and markup tasks) x3 and Part E on both models; patch alignment settled by 10 or more repeats per arm, 20+ tags spread over the sheet and a second aspect ratio (about 60-80 calls, ~250K input on GPT-5.4); one reasoning-summary call (L1); coverage re-measured after fixes CV1-CV4; GPT habits M1-M4; VIS-08 (log depths read by eye); the DM7.2 Fig 4-12 read-off; the inline probe. A Haiku smoke of the next release candidate ($1-3, EV-03) should catch crashes first.",
+    "options": [
+      {"label": "After the tester week, full scope", "effect": "An agent writes brief 6 against the next release candidate once tester findings are in, so the round also checks their fixes."},
+      {"label": "Now, measurement items only", "effect": "Patch alignment, Part B x3 and the reasoning call only; switches decided sooner, tester fixes measured later."},
+      {"label": "Hold until OWN-06", "effect": "First decide which switches you care about, then size the brief to them."}
+    ],
+    "recommendation": "After the tester week, full scope, preceded by the Haiku smoke (EV-03). One round then covers tester fixes and the open switch measurements.",
+    "if_no_answer": "The coverage and patch-alignment switches stay OFF and undecided.",
+    "message_to_send": null,
+    "steps": null,
+    "unblocks": ["OWN-06"],
+    "sources": ["module_work/review_eval_results/2026-10-08_foundry_5.33.0rc1/TRACE_REVIEW_B_AEFG.md (part F, lines 570-595)", "module_work/review_eval_results/2026-10-08_foundry_5.33.0rc1/TRACE_REVIEW.md (credit, ~194-198)", "BACKLOG.md (section 2 switch table; EV-03)"]
+  },
+  "EV-08": {
+    "kind": "action",
+    "ask_who": null,
+    "question": "Ask the AI FDE for a Foundry repo running numpy 2, and rerun the 106-question geotech eval there.",
+    "why": "The last geotech eval on Foundry ran on numpy 1.26, which broke 17 of 106 questions for environmental reasons, so its result says little about the agent. Full suites belong on Foundry, not on Funhouse tokens.",
+    "background": "Foundry gives each FDE repo one environment. The wheel declares numpy >=2.0, but the FDE loads it by unzipping onto the path, so pip never enforces that. On numpy 1.26.4: 2 SOE questions failed on np.trapezoid (our code), 15 on np.long (a dependency), and 1 on missing pydiggs; with those set aside, 62 of 66 keyed answers were right, though 31 real tool errors remained. July on Funhouse: 43/60 keyed (71.7 %). Possible snag: PyNiteFEA needs numpy >=2.4 while numba caps it below 2.5 (OWN-18).",
+    "options": [],
+    "recommendation": "Fold it into brief 6 (EV-02) as a separate part; it needs no new code.",
+    "if_no_answer": "The geotech agent's last clean measurement stays July's, many releases old.",
+    "message_to_send": null,
+    "steps": [
+      "In the next brief, ask the AI FDE to create a separate repo whose environment has numpy 2.x.",
+      "Install the current release wheels there and confirm numpy's version in the first cell.",
+      "Run the 106-question geotech eval with the release's default settings.",
+      "Hand back the full run folder; an agent reads every question's trace before any fix."
+    ],
+    "unblocks": [],
+    "sources": ["module_work/SESSION_2026-10-02_doc-review-5.32.md (numpy 1.26.4, ~lines 97-106, 198-206)", "docs/DATABRICKS_INSTALL.md (PyNiteFEA numpy cascade, ~68-84)", "BACKLOG.md (OWN-18, EV-02)"]
+  },
+  "INF-01": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Delete the nine stale root copies, and move the three old eval-run records to a private local archive?",
+    "why": "Twelve untracked files clutter the repo root and get swept into agents' reading. Nine are older copies of tracked documents; three are the only full records of the June and July eval runs.",
+    "background": "Checked 2026-10-12. Identical to the tracked versions apart from line endings: the A2, A7, APP_PLAN, FOUNDRY_APP_PLAN and V5.4_PLAN copies. Older than the tracked versions, holding only superseded text: both provenance audits, CONSOLIDATION_PLAN.md.local-bak, and FOUNDRY_setup_copy.md (obsolete install extras). The only copies: suite_trial.json (634 KB) and suite_trial.json.md (198 KB), a June 76-question run; docs/geotech_eval_20260713.md (301 KB), the July 100-question run whose headline (43/60 keyed, 71.7 %) is quoted elsewhere. The decision itself is OWN-27.",
+    "options": [
+      {"label": "Delete copies, archive run records", "effect": "Nine copies deleted; the three run records moved to a gitignored local archive folder. Nothing unique is lost."},
+      {"label": "Delete all twelve", "effect": "Cleanest; the June and July run details are gone for good."},
+      {"label": "Leave them", "effect": "No change."}
+    ],
+    "recommendation": "Delete the copies and archive the three run records.",
+    "if_no_answer": "Files stay; no harm beyond clutter.",
+    "message_to_send": null,
+    "steps": null,
+    "unblocks": [],
+    "sources": ["BACKLOG.md (INF-01, OWN-27)", "repo root (files checked against tracked versions, 2026-10-12)", "module_work/SESSION_2026-10-02_doc-review-5.32.md (July 43/60 headline, line 126)"]
+  },
+  "INF-08": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "OK to remove leftover build folders, old worktrees and three merged or superseded branches, including one on GitHub?",
+    "why": "About 620 MB of stale working copies and three dead branches remain. They confuse sessions that share the checkout and cost disk space; none holds work missing from a release.",
+    "background": "Checked 2026-10-12. build/ (9.1 MB, gitignored). .claude/worktrees/: three folders, 614 MB (two agent copies from 2026-09-01, v5.1-todos from 2026-07-17), no longer registered with git, so uncommitted edits inside them cannot be checked cheaply. Release worktrees wt_app_rel533 and wt_pl_rel013 beside the repos; git also holds nine stale worktree records. Branches: app hotfix/5.12.1-structural-extra (local only, never tagged, superseded by 5.13.0's native structural modules); planlens fix/advice-names-no-missing-tools (already in main); refs origin/feature/reference-query-expansion (merged; deleting it touches GitHub). Two worktrees under the current session's scratchpad may be in use. OWN-27.",
+    "options": [
+      {"label": "Remove all listed", "effect": "Local folders, stale worktree records and the three branches go, including the merged GitHub branch."},
+      {"label": "Local only, keep GitHub branch", "effect": "Everything on the laptop is cleaned; the merged GitHub branch stays."},
+      {"label": "Leave them", "effect": "No change."}
+    ],
+    "recommendation": "Remove all listed; everything is merged, released or superseded. An agent first looks inside the three orphaned folders for uncommitted files, and leaves the current session's scratchpad worktrees alone.",
+    "if_no_answer": "Leftovers stay: about 620 MB and three dead branches.",
+    "message_to_send": null,
+    "steps": null,
+    "unblocks": [],
+    "sources": ["BACKLOG.md (INF-08, OWN-27)", "git worktree list and .git/worktrees (checked 2026-10-12)", "git cherry / git tag --contains for the three branches (checked 2026-10-12)"]
+  },
+  "LT-02": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "When, if ever, to move the whole package under one 'geotech_staff_engineer' namespace as version 6.0.0?",
+    "why": "The package installs 37 top-level names such as 'reliability' and 'webapp', which can collide with other packages in a shared Python environment. The fix is safe but needs a dedicated, full-gate session.",
+    "background": "Plan of 2026-07-20: 2,795 import lines in 517 files rewritten by script, about 60 dynamic module strings, 7 path traps fixed by hand, and compatibility stubs so old imports (including the Tiny Apps wrapper's 'from webapp.tinyapps_entry import main' and the Foundry snippet) keep working with a warning. Estimated 4-8 agent hours plus 2-3 full gate runs; the code has grown since (report_ingest and more), so that estimate is now low. A real PyPI package named 'reliability' exists. Unknown: whether Tiny Apps' environment is shared enough for a clash to bite.",
+    "options": [
+      {"label": "Stay parked", "effect": "No work; the risk stays theoretical until a clash appears."},
+      {"label": "Quiet week after the pilot settles", "effect": "One dedicated session, re-sized first, released as 6.0.0 on your word; stubs keep every existing import working."},
+      {"label": "Before testers widen", "effect": "Earliest fix; competes with tester-week work and risks a disruptive release."}
+    ],
+    "recommendation": "Do it in a quiet week after the pilot settles: worth doing once, but not during the tester deploy.",
+    "if_no_answer": "Stays parked; no change.",
+    "message_to_send": null,
+    "steps": null,
+    "unblocks": [],
+    "sources": ["module_work/V6.0_RESTRUCTURE_PLAN.md (Measured surface, Effort verdict)", "pyproject.toml ([tool.setuptools.packages.find] include, 37 names)", "tinyapps/wrapper_repo/app.py (line 32)"]
+  },
+  "LT-03": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Unpark any repo-slimming work, starting with moving old release history out of CLAUDE.md and HANDOFF into history files?",
+    "why": "A Department reviewer called the package 'millions of tokens'. CLAUDE.md is loaded into every agent session; at 170 KB it costs about 42k tokens each time, and HANDOFF has grown to 207 KB. Both grew after the item was parked.",
+    "background": "Measured 2026-09-22: the repo is about 14.6M tokens, 60 % generated artefacts (docs HTML, the manual PDF, plotly.js, extracts); code about 2M; the wheel about 1.8M and already excludes docs, module_work, validation_examples and foundry. Your rulings: keep salib and pystra; worked-example extracts stay on GitHub, never in the wheel; the example-product inventory needs a proper review first. Ranked list: inventory review; delete foundry/ (INF-06); drop old result files; move release history out of CLAUDE.md and HANDOFF while a docs-currency test stays green; decide module_work's home. Parked 2026-09-22 behind Tiny Apps.",
+    "options": [
+      {"label": "Unpark only the doc trim", "effect": "Release narrative moves to history files; current state, triggers and inventory stay. Cuts every session's start-up load with no code risk."},
+      {"label": "Unpark the whole list", "effect": "Starts with the inventory review with you; larger, and competes with tester work."},
+      {"label": "Stay parked", "effect": "The docs keep growing."}
+    ],
+    "recommendation": "Unpark only the doc trim, after the tester week; the rest stays parked.",
+    "if_no_answer": "Stays parked; CLAUDE.md and HANDOFF keep growing.",
+    "message_to_send": null,
+    "steps": null,
+    "unblocks": [],
+    "sources": ["module_work/FUTURE_IDEAS.md (REPO SLIMMING + EXAMPLE-PRODUCT INVENTORY, ~29-115)", "CLAUDE.md and HANDOFF.md (file sizes, 2026-10-12)", "BACKLOG.md (INF-06)"]
+  },
+  "LT-04": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Is your private reference wiki ready to connect as a retrieval layer for the agents, or does it stay parked?",
+    "why": "You parked this on 2026-07-13 because the wiki needed more work. It would let agents cite primary sources not in the public library, but that library is private and largely copyrighted, so it cannot ride in the public repo or wheel.",
+    "background": "The wiki (an index of about 7,300 records over roughly 8,000 PDFs) was used once already, in July, for a verification campaign: it found 2 real defects (the lateral-pile cyclic sand tables and the rapid-drawdown Kf) and confirmed 6 items against primary sources with no discrepancy. The plan was a retrieval layer beside geotech-references, upgrading audit items to primary-source-backed. Open: where it would live so the cluster or Tiny Apps could reach it, and what licence terms allow.",
+    "options": [
+      {"label": "Stay parked", "effect": "No work."},
+      {"label": "Local verification use only", "effect": "Use the wiki on the laptop for module verification campaigns, as in July; nothing deployed."},
+      {"label": "Plan the retrieval layer", "effect": "An agent designs private hosting and access; needs your answers on location and licensing."}
+    ],
+    "recommendation": "Local verification use only, whenever a module train needs primary sources; a deployed layer waits until hosting and licensing are clear.",
+    "if_no_answer": "Stays parked.",
+    "message_to_send": null,
+    "steps": null,
+    "unblocks": [],
+    "sources": ["module_work/V5.4_PLAN.md (NEXT BIG EFFORT, lines 308-313)", "module_work/APP_PLAN.md (line 79)", "CLAUDE.md (v5.9.0 status: WikiLLM verification campaign)"]
+  },
+  "LT-06": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Keep the toolkit MCP server parked until Funhouse names an in-enclave MCP host and planlens' server runs there?",
+    "why": "An MCP server would let any MCP-capable assistant call the geotech modules directly. Without a host inside the enclave it has no users, and building it early adds code to maintain.",
+    "background": "Agreed 2026-09-16: one thin server over the dispatch layer (list_agents, list_methods, describe_method, call_agent, worked examples), generated from the existing tool specs as planlens' server is; about 150 lines plus tests, one agent. Open design points: how calc packages return PDFs, reference figures needing source PDFs on disk, vision tools handing images to the host's model, and the engineering disclaimers in the server's instructions. Waits on OWN-54 and PL-15.",
+    "options": [
+      {"label": "Keep parked", "effect": "Build once both conditions hold."},
+      {"label": "Build now for desktop use", "effect": "Usable from a desktop assistant on the laptop; no enclave users."},
+      {"label": "Drop it", "effect": "Close LT-06."}
+    ],
+    "recommendation": "Keep parked.",
+    "if_no_answer": "Stays parked.",
+    "message_to_send": null,
+    "steps": null,
+    "unblocks": [],
+    "sources": ["module_work/FUTURE_IDEAS.md (TODO toolkit MCP server, ~398-414)", "BACKLOG.md (OWN-54, PL-15)"]
+  },
+  "LT-07": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Keep the full browser modelling GUI (an editor for slope and FEM models) parked, or drop it?",
+    "why": "Engineers set up slope and FEM models by hand in commercial tools; an editor would let them do it in the app. It was estimated at 2-4 weeks of agent work and parked in June 2026.",
+    "background": "Its prerequisite, geo_project's versioned project schema, was built, but the setup agent is OFF and untested (OWN-22) and has drifted behind the slope module (GM-37). The calc-visualisation plan put a modelling GUI out of scope; calc packages already produce SLOPE/W- and PLAXIS-style figures and single-file interactive viewers. The app's current focus is document review on Tiny Apps.",
+    "options": [
+      {"label": "Keep parked", "effect": "No work; revisit after OWN-22."},
+      {"label": "Drop it", "effect": "Close LT-07; model setup stays chat-driven."}
+    ],
+    "recommendation": "Keep parked; it depends on OWN-22 and GM-37.",
+    "if_no_answer": "Stays parked.",
+    "message_to_send": null,
+    "steps": null,
+    "unblocks": [],
+    "sources": ["HANDOFF_2026-06-14.md (2d calc-viz, 2e model-setup agent)", "docs/CALC_VIZ_PLAN.md (scope, line 6)", "BACKLOG.md (OWN-22, GM-37)"]
+  }
+}

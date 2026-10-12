@@ -45,7 +45,7 @@ The Document Review page goes to other testers on Tiny Apps; it is the primary f
 
 - **Owner's steps:** OWN-29 (install 5.33.0, dosdev round) → OWN-43–OWN-51 (the CfA questions, one meeting) → OWN-30 (first-hour check) → OWN-31 (checklist session).
 - **Owner decisions wanted this week:** OWN-03 (copyrighted PDFs), OWN-04 (PyMuPDF licence). The downdrag and fem2d defaults (OWN-01, OWN-02) are wanted before the next release, not this week.
-- **Agent work for testers:** DR-01, DR-02, DR-03 (Phase-1 defects still on the default review page); DR-14 (markup check wrong both ways); TA-01 (plain message on a refused key); TA-02 (suites on the CfA fleet pins); EV-01 (a rehearsal wave at the gpt-5.1 budget); TA-03 (what only live GPT shows, read in the first hour); DOC-04, DOC-05 (stale install guide and `TINYAPPS.md`).
+- **Agent work for testers:** DR-01, DR-02, DR-03 (Phase-1 defects still on the default review page); DR-14 (markup check wrong both ways); TA-01 (plain message on a refused key); TA-17 (three `.env` settings ignored on dosdev); TA-02 (suites on the CfA fleet pins); EV-01 (a rehearsal wave at the gpt-5.1 budget); TA-03 (what only live GPT shows, read in the first hour); DOC-04, DOC-05 (stale install guide and `TINYAPPS.md`).
 
 ## 1. Owner: decisions and actions
 
@@ -70,10 +70,10 @@ The Document Review page goes to other testers on Tiny Apps; it is the primary f
 - **OWN-17** [Later] [owner] **Rapid-drawdown stage-3 default** kept `'fellenius'` on 2026-07-08 (1.273 vs published 1.443, conservative; `'gle'` 1.370) while the owner checks notes; record the outcome. *Src:* `module_work/V5.4_PLAN.md:68-79`
 - **OWN-18** [Later] [owner] **Move PyNiteFEA to an optional extra?** Removes the numpy 2.4 / numba cascade on the cluster; may unblock EV-08. *Src:* `docs/DATABRICKS_INSTALL.md:81-84`
 - **OWN-19** [Later] [owner] **Lateral pile cracked / moment-curvature EI** (V-017 residual +9 %), pending since v5.3. *Src:* `validation_examples/RESULTS.md:365-367`
-- **OWN-20** [Later] [owner] **Reference-matching opt-in defaults**: drilled-shaft large-D base reduction (V-008b); bearing depth factor and GW defaults (V-021); Tomlinson α low in stiff clay (V-002, conservative). *Src:* `module_work/V5.2_COVERAGE.md:198-200`
+- **OWN-20** [Later] [owner] **Reference-matching opt-in defaults**: drilled-shaft large-D base reduction (V-008b); bearing depth factor and GW defaults (V-021); Tomlinson α low in stiff clay (V-002, conservative). *Src:* `module_work/V5.2_COVERAGE.md:69-75`
 - **OWN-21** [Later] [owner] **Scope calls**: soldier-pile SOE mode; pavement parked scope (UFC 3-260-02 airfield, rigid curves F-2..F-31, AASHTO Part III; DESIGN says "out of scope", CLAUDE.md "parked"); frost / dewatering references dropped in June with no replacement; GEC-13 column-supported embankments and deep mixing; RAP upper zone; diesel hammer; structural future rounds; FEMA P-2192.
 - **OWN-22** [Later] [owner] **Model-setup agent (`geo_project`)**: OFF until the owner tests it; test or park formally. *Src:* `HANDOFF_2026-06-14.md:93-101`
-- **OWN-23** [Later] [owner] **Multi-user UI (A7 rec 6)** was "N/A until multi-user"; Tiny Apps is multi-user now. Re-decide or close. *Src:* `module_work/A7_INDUSTRY_MEMO.md:189-191`
+- **OWN-23** [Later] [owner] **Multi-user UI (A7 rec 6)** was "N/A until multi-user"; Tiny Apps is multi-user now. Re-decide or close. *Src:* `module_work/A7_INDUSTRY_MEMO.md:61-63`
 - **OWN-24** [Parked] [owner] **Vision efficiency dial-back**: robust first (2026-09-25), "do not act until asked" (VIS-20).
 - **OWN-25** [Later] [owner] **Published answer vocabulary** in public `report_ingest/model.py` carries a building-type value from the owner's wording: object, or load it from a private file? *Src:* H:1482-1497
 - **OWN-26** [Later] [owner] **Repo visibility**: three of seven tracked field-feedback folder names carry a place name. Private, or scrub? *Src:* `module_work/REPORT_INGEST_PLAN.md:906-910`
@@ -104,7 +104,7 @@ The Document Review page goes to other testers on Tiny Apps; it is the primary f
 - **OWN-45** [Now] [owner] **The published address** for `corsAllowedOrigins`. *was:* H A1, 0
 - **OWN-46** [Now] [owner] **Confirm the identity header** ("Signed in as <name>"). *was:* H A1, 0
 - **OWN-47** [Now] [owner] **An image-capable Prompter deployment** (make-or-break). *was:* H 3e GO 2
-- **OWN-48** [Now] [owner] **Does the App Service enforce FIPS?** Assume yes (OpenCV cannot load; `find_like` hides itself). *was:* H A3
+- **OWN-48** [Now] [owner] **Does the App Service enforce FIPS?** Assume yes: OpenCV cannot load there, so OCR and the raster drawing leg are unavailable; `find_like` still works on its numpy backend (planlens 0.12+). *was:* H A3
 - **OWN-49** [Now] [owner] **Questions that fell off A1**: does the gateway pass streaming; Nexus install vs vendoring and the fleet pins CfA expects of our tree; the shared VM's resource envelope (fem2d meshes, Monte Carlo). *Src:* `tinyapps/TINYAPPS.md:236-253`
 - **OWN-50** [Now] [owner] **What does the Prompter return when a key's budget is spent** (status and body)? The D2 classifier is built on guesses (TA-06).
 - **OWN-51** [Now] [owner] **Is the pilot Prompter key the sanctioned, metered route?** (the Funhouse SDK Terms say direct Azure AI calls bypass metering).
@@ -227,6 +227,7 @@ All OFF unless marked. Decisions: OWN-06.
 - **TA-14** [Later] **Auto-continue evidence audits** (false completion claims) from the Funhouse SDK (status unclear). *Src:* FI:231-234
 - **TA-15** [Later] **Old live checks never recorded** (largely overtaken; status unclear): `email_file`, opt-in streaming, the model picker (5.11.x); 5.15 PDF figures and restore; 5.16–5.18 prompt-level checks. *Src:* H:1710-1749, 2695-2730
 - **TA-16** [Parked] **Durable LangGraph checkpointer** and the **per-model API thinking layer**. *Src:* `module_work/APP_PLAN.md:83-103`
+- **TA-17** [Now] **Three settings in the wrapper's `.env` are silently ignored on a local run**: `DEV_IDENTITY`, `GEOTECH_SHAREPOINT_ROOT` and `GEOTECH_PROMPTER_DISABLE_STREAMING` are read only from the process environment (`webapp/identity.py:189`, `webapp/sharepoint_store.py:84`, `webapp/diagnostics.py:108`), while `.env` is consulted only through `get_setting` (`webapp/tinyapps_settings.py`). On dosdev the identity line in `.env` does nothing; on the App Service `GEOTECH_SHAREPOINT_ROOT` must be an app setting. Load `.env` into the environment for local runs, or route those reads through `get_setting`; until then, set them as real environment variables. *Src:* `tinyapps/wrapper_repo/.env.example:28-34`
 
 ## 5. planlens
 
