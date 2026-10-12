@@ -152,6 +152,11 @@ Key conventions:
     separate keys, links behind the IIS proxy. The first-hour check is in
     `module_work/live_smoke/runs/w3-confirm-sonnet/REVIEW.md`.
 
+  - **Master after 5.33.0 (next train, unreleased):** downdrag neutral-plane
+    methods as cited options with a comparison (a282d48) and fem2d per-stage
+    delta/cumulative movements (4bf710c); owner decisions and the technical
+    follow-ups are in HANDOFF "Open to-dos" E1-E6.
+
   Pickup: `HANDOFF.md` §0a-current, "Where things stand".
 - **5.32.1 RELEASED 2026-10-08 (tag `v5.32.1`, branch `release/5.32.1`,
   a8114a2) with planlens 0.12.0 (tag `v0.12.0`, published first; pin
