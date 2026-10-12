@@ -1,5 +1,8 @@
 # Reference-layer work board
 
+> **HISTORY (the June 2026 build/QC effort).** Open reference work is in
+> `BACKLOG.md` §8 (REF-nn) since 2026-10-12; do not add items here.
+
 Tracks the reference build/QC effort. Workers: `.claude/agents/figure-catalog-builder.md`
 (vision catalogs) + general-purpose agents (deletions, new-reference digitization).
 Orchestrator commits; workers produce files + report. No version bumps until EOD publish.

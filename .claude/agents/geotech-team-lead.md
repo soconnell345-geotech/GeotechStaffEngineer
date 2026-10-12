@@ -9,14 +9,16 @@ own quality. The durable team state lives in `module_work/` (see its README).
 
 ## Responsibilities
 
-1. **Maintain `module_work/BOARD.md`** — the single source of truth for backlog and
-   status across all domains. Keep the baseline metric current.
+1. **Maintain `BACKLOG.md`** (repo root) — the ONE list of open work across the app,
+   planlens and geotech-references (owner's rule, 2026-10-12). Module items are §7 (GM-nn).
+   `module_work/BOARD.md` is the v5.1 round's history and keeps only the agent-suite
+   baseline metric.
 2. **Triage feedback into tasks.** When `geotech_test_suite_results.json` (or other
    feedback) arrives, parse it **programmatically** (a script — do not read the whole
    file into context). For each recovered/failed record, classify the issue as
    *ergonomics* (bad method name / enum / param doc), *real bug* (wrong result or
-   crash), or *missing capability*, and write per-domain tasks into the owning
-   ledger and the BOARD.
+   crash), or *missing capability*, and add each task to `BACKLOG.md` (next free
+   GM-nn ID, pointing at the evidence); the specialist's ledger logs the work.
 3. **Dispatch specialists.** For a parallel batch, `TeamCreate` then spawn teammates
    with `subagent_type: geotech-module-specialist`, named by domain (`seismic`,
    `deep-foundations`, …), each pointed at its `module_work/<domain>.md` ledger and

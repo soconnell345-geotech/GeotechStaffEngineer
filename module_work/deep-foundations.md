@@ -1,5 +1,7 @@
 # Ledger — deep-foundations
 
+> Progress log only. Open items for these modules are in `BACKLOG.md` §7 (GM-nn).
+
 **Owned modules:** axial_pile, drilled_shaft, lateral_pile, pile_group, wave_equation
 
 ## Reference map

@@ -108,7 +108,7 @@ detailed Phase-E history; this file supersedes it.
   - Design note: `module_work/COVERAGE_AND_CHECKLIST.md`.
 - **Also on master:** the activity-log lock (6c81cc5).
 
-**3. THE NEXT WORK, in order:**
+**3. The work of 2026-10-08/09 (record; what is still open is in `BACKLOG.md`):**
 - **3a. The brief 4 fix list**, TRACE_REVIEW §7, items A–M:
   - comments judged by what they point at;
   - a geometric "encloses";
@@ -283,8 +283,8 @@ Foundry, narrative conventions re-read from the owner's answer keys (DRAFT).
 Suite checks: LaTeX numbers, "pages:" and bulleted page lists;
 `score_review_suite(rescore=True)`.
 
-What is not yet verified live, and every owner item, is in the to-do list
-above. **Also written 2026-10-04:** `module_work/harness_theory/` — a theory
+What is not yet verified live, and every owner item, is in `BACKLOG.md`
+(since 2026-10-12). **Also written 2026-10-04:** `module_work/harness_theory/` — a theory
 of operation of the three harnesses (shared machinery, Document Review, the
 geotech agent, report ingest), from the code and the recorded Foundry runs,
 by an independent agent at the owner's request; its evidence is kept locally

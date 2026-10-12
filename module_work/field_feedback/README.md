@@ -17,11 +17,13 @@ Conventions:
   triage date. Version = the geotech-staff-engineer release the session
   ran (check meta + the session's install cell).
 - Every feedback item gets a disposition in FINDINGS.md: FIXED (commit),
-  PLANNED (HANDOFF/backlog pointer), or WON'T/BLOCKED (reason).
+  PLANNED (its `BACKLOG.md` ID), or WON'T/BLOCKED (reason).
 - During heavy development the owner expects PLANS, not immediate fixes
   (their words, 2026-09-04) — but trivial fixes may land immediately.
-- Cross-reference: durable backlog items also go in HANDOFF.md §0a so
-  they survive session handoffs.
+- Cross-reference: every open item (PLANNED, follow-ups, owner questions)
+  gets a line in `BACKLOG.md` with the next free ID, pointing back at the
+  FINDINGS section, so it survives session handoffs (since 2026-10-12; the
+  backlog is the one list, never HANDOFF).
 - Since 5.15.0 a conversation export carries `FEEDBACK.md` / `feedback.jsonl`
   (`webapp/feedback.py`): the owner's sidebar notes (`source: user`) and the
   agent's own `record_feedback` calls (`source: agent` — capability gaps,

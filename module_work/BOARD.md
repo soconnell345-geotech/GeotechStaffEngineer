@@ -1,5 +1,8 @@
 # Module-Improvement BOARD
 
+> **HISTORY (the v5.1 module-fix round).** Open module work is in `BACKLOG.md`
+> §7 (GM-nn) since 2026-10-12; do not add items here.
+
 Top-level backlog and status. Maintained by the team lead.
 
 Status: ☐ todo · ◐ in progress · ☑ done · ⚠ blocked

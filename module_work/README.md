@@ -1,5 +1,9 @@
 # module_work — geotech module-improvement team
 
+> **Open work is in `BACKLOG.md` at the repo root** (one list across the app,
+> planlens and geotech-references, since 2026-10-12). Plans and ledgers here
+> keep detail and history; they are not to-do lists.
+
 Durable state for the standing module-improvement agent team. Claude Code
 teammates are ephemeral (fresh context each spawn), so the team's **identity and
 memory live here as files**, version-controlled with the repo.

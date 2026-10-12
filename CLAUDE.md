@@ -14,7 +14,8 @@ answer was re-derived from scratch at least twice:
 | asks you to change an agent or pipeline (prompts, tools, vision, report-ingest stages, scorers) | `module_work/harness_theory/` — how the three harnesses actually work, from the code and the recorded Foundry runs, with their known failure modes and open questions |
 | brings back the results of ANY model run (suite run, live check, Foundry hand-back, a field session's conversation, a report-ingest stage) | the section **"REVIEW EVERY MODEL RUN IN FULL"** just below — read every run's full record (tool calls, results, the model's own text), not just the scores |
 | asks about a number published in planlens docs/README | `module_work/drawing_ground_truth/doc_claims_check.py` — if a number disagrees with that script, the DOCUMENT is wrong |
-| bumps the version / cuts a release | `webapp/tests/test_docs_currency.py` will fail until CLAUDE.md's state block, HANDOFF §0a-current and the install guide's history table each name the new version. Refresh the prose, don't just paste the version in. |
+| bumps the version / cuts a release | `webapp/tests/test_docs_currency.py` will fail until CLAUDE.md's state block, HANDOFF §0a-current and the install guide's history table each name the new version. Refresh the prose, don't just paste the version in. Then sweep `BACKLOG.md`: every item the release closed moves to "Done since the last sweep" with its commit. |
+| finds a bug, a gap, a follow-up or an owner question while working — or a review, trace read, smoke wave or field session produces a fix list | add each item to `BACKLOG.md` under its area with the next free ID (section "How every session uses this file" at its top). Never start a new to-do list anywhere else; `webapp/tests/test_backlog.py` checks the IDs. |
 
 **Why this block is here.** After a context compaction a fresh agent keeps only
 this file and `MEMORY.md`. Three releases running, an install log arrived and
@@ -55,7 +56,9 @@ not the exception.
 - **Write it down:** `TRACE_REVIEW.md` beside the results
   (`module_work/review_eval_results/<date>_<what>/`); raw traces in a
   gitignored `raw/` folder (`module_work/field_feedback/<date>_<what>/raw/`),
-  never committed when they carry client material.
+  never committed when they carry client material. Every fix or follow-up
+  the read turns up goes into `BACKLOG.md` by ID, pointing back at the
+  TRACE_REVIEW section; the TRACE_REVIEW keeps the evidence, not the list.
 - **Background:** `module_work/harness_theory/` describes how each harness
   works and its known failure modes — read it first.
 
@@ -2053,10 +2056,12 @@ identity and memory live as **version-controlled files**:
 - `.claude/agents/geotech-module-specialist.md` — the reusable specialist (spawn one per domain,
   named by domain, e.g. `seismic`): reads its ledger → edits its module + adapter → runs
   `pytest <module>/ -v` → updates its ledger → returns a diff (does NOT commit; the lead reviews).
-- `module_work/BOARD.md` — backlog + status across all domains; the single source of truth, with
-  the triaged feedback categories and the 28-clean / 40-recovered / 0-failed agent-suite baseline.
-- `module_work/<domain>.md` — per-domain progress ledgers (owned modules, reference map, backlog,
-  log). A specialist reads its ledger at task start and updates it at the end.
+- `module_work/BOARD.md` — HISTORY of the v5.1 module-fix round (the triaged feedback categories
+  and the 28-clean / 40-recovered / 0-failed agent-suite baseline). It is NOT the backlog: open
+  module work is in `BACKLOG.md` §7 (GM-nn) since 2026-10-12.
+- `module_work/<domain>.md` — per-domain progress ledgers (owned modules, reference map, log). A
+  specialist reads its ledger at task start and logs its work at the end; new open items go to
+  `BACKLOG.md`, not the ledger.
 - `module_work/triage_feedback.py` + `module_feedback.json` — turn a Databricks
   `geotech_test_suite_results.json` run into per-domain/per-module work orders.
 - `funhouse_agent/geotech_test_suite.json` + `funhouse_agent/smoke_test_native.py` — the
@@ -2077,7 +2082,8 @@ A separate ongoing effort builds/QCs the geotech-references library. Infrastruct
 - `.claude/agents/figure-catalog-builder.md` — reusable subagent that drives any catalog's
   `page_estimated → 0` (finds each figure's true PDF page via caption/footer/List-of-Figures
   search) and builds catalogs for new references; can fan out one worker per reference.
-- `reference_work/BOARD.md` — running ledger of the reference build/QC backlog + status.
+- `reference_work/BOARD.md` — HISTORY of the June 2026 reference build/QC effort. Open reference
+  work is in `BACKLOG.md` §8 (REF-nn) since 2026-10-12.
 
 **Working model (user preference, 2026-06-05): autonomous, milestone-level — NOT per-step.**
 Drive the multi-agent work to completion; pick sensible defaults for ordering / which-first and
@@ -2104,7 +2110,7 @@ decisions. See memory `feedback-reference-layer-autonomy`.
   (`module_work/module_feedback.json`). (A `fdm2d` wall-clock guard was added here too; `fdm2d`
   has since been removed in the Phase 1 consolidation — see `CONSOLIDATION_CHANGES.md`.)
 
-**Open backlog:** the ~23 per-module param-name/value bugs and the `retaining_walls`
+**Open backlog (history; current status is `BACKLOG.md` §8 and the "Done since the last sweep" list there):** the ~23 per-module param-name/value bugs and the `retaining_walls`
 earth-pressure-coefficient gap were FIXED in v5.1 (adapter-ergonomics stream). Still open:
 module-*selection* mis-routing (e.g. Rankine guessed on the wrong module) and a `fem2d`
 footing-SRM convenience method.
@@ -2150,7 +2156,7 @@ gec_6/7/12/13 chapter-text edits are a separate uncommitted workstream.
   impossible — if the agent is ever still seen reporting chart values without rendering,
   escalate to the Hard backstop (TODO P4).
 
-### TODO — remaining work (prioritized)
+### TODO — remaining work (prioritized) — HISTORY; open items are tracked in `BACKLOG.md` (REF-17, VIS-10, REF-09, INF-05)
 - [ ] **P1 — Hallucination-on-tool-error (concerning, general, NOT figure-specific).**
       When a tool call errors, the ReAct loop may **fabricate success** instead of
       retrying/reporting. Observed: after a failed `figure_search`, the agent invented

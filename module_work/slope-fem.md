@@ -1,5 +1,7 @@
 # Ledger — slope-fem
 
+> Progress log only. Open items for these modules are in `BACKLOG.md` §7 (GM-nn).
+
 **Owned modules:** slope_stability, fem2d
 
 ## Reference map

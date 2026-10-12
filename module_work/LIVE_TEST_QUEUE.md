@@ -1,5 +1,9 @@
 # Live checks — what to run on Funhouse, and why
 
+> **This file is the RUNBOOK for live checks; the list of what is open is
+> `BACKLOG.md`** (OWN-32, EV-02, TA-03, TA-04). A new check is written up here
+> AND added to the backlog by ID.
+
 **Why this list exists.** Some changes can only be confirmed with the real
 model on Funhouse: offline tests use stand-in models, and Foundry runs a
 different model. Each check here is small. You said (2026-10-04): "For small

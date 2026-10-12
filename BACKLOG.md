@@ -1,15 +1,43 @@
 # BACKLOG — GeotechStaffEngineer, planlens, geotech-references
 
-- This is THE one list of open work across the three repos (the app, `planlens`, `geotech-references`).
-- `HANDOFF.md` §0a-current "Open to-dos" is the near-term slice; it points here by ID.
-- Plans and design docs keep the detail. This file keeps one line per item plus a pointer.
-- New to-dos are added HERE, never as a new list elsewhere.
-- When an item is done, move it to "Done since the last sweep" with the commit, and delete it at the next sweep.
-- IDs are stable and never reused.
-- Tiers: **Now** = this week / the Tiny Apps tester deploy; **Next** = the next train; **Later**; **Parked** = an owner decision to wait.
-- **[owner]** = needs the owner (a decision, an action, data, or CfA). *was:* = the id in an older list (HANDOFF `A1`–`E6`, "Where things stand" `0`–`3e`).
-- Short names: `H` = `HANDOFF.md`; `FI` = `module_work/FUTURE_IDEAS.md`; `B5` = `module_work/review_eval_results/2026-10-08_foundry_5.33.0rc1/` (Foundry brief 5 TRACE_REVIEW and slices); `LTQ` = `module_work/LIVE_TEST_QUEUE.md`; `RA` = `module_work/REVIEW_ARCHITECTURE.md`; `RH` = `module_work/REVIEW_HARNESS.md`; `HT` = `module_work/harness_theory/`; smoke reviews = `module_work/live_smoke/runs/<wave>/REVIEW.md` (gitignored).
-- Last full sweep: 2026-10-12 (app master 414525a, planlens f92541d = v0.13.0, refs c53e587 = v1.4.1).
+THE one list of open work across the three repos: the app, `planlens` and
+`geotech-references`. Owner's rule, 2026-10-12: earlier sessions kept starting
+narrower to-do lists, and whole plans dropped off. There is no other to-do
+list:
+- HANDOFF §0a-current names only this week's slice, by ID.
+- Plans, design notes, TRACE_REVIEWs, smoke REVIEWs, field-feedback FINDINGS and `LIVE_TEST_QUEUE.md` keep the detail and the evidence.
+- Every open item in those documents has a line here pointing back to it.
+
+## How every session uses this file
+
+1. **Starting work.** Read §0 and the tier you are working in. Say which IDs you are taking.
+2. **While working.** Anything new goes HERE the moment it is found, under its area with the next free ID: a bug, a gap, a follow-up, an unverified claim, an owner question, a fix list from a review or a field session. The next free ID is the highest number in use for that prefix, plus one; never reuse one.
+   - One line per item: what it is and why it matters, then `*Src:*` the document holding the detail.
+   - A detailed write-up elsewhere is fine. A to-do list elsewhere is not.
+3. **Finishing an item.** Delete its line and add it to "Done since the last sweep" with the commit. If a §0 item changed, update HANDOFF §0a-current's slice too.
+4. **Releasing.** Sweep: every item the release closed moves to Done. Raise or lower tiers for the next train.
+5. **A full sweep** (on the owner's ask, or every few weeks): re-read the plan documents against this file, as on 2026-10-12. Clear "Done since the last sweep" and record the date below.
+
+`webapp/tests/test_backlog.py` (part of the gate) checks four things:
+- the IDs are unique;
+- each ID has a tier;
+- every ID cited here, or in HANDOFF §0a-current, exists;
+- CLAUDE.md and HANDOFF still point here.
+
+**Key:**
+- **Tiers:** **Now** = this week / the Tiny Apps tester deploy. **Next** = the next train. **Later**. **Parked** = the owner decided to wait.
+- **[owner]** = needs the owner: a decision, an action, data, or CfA.
+- *was:* = the item's id in an older list: HANDOFF `A1`–`E6`, or "Where things stand" `0`–`3e`. That old text is in git history at 414525a.
+- **Short names:**
+  - `H` = `HANDOFF.md` (line numbers as of e329b22)
+  - `FI` = `module_work/FUTURE_IDEAS.md`
+  - `B5` = `module_work/review_eval_results/2026-10-08_foundry_5.33.0rc1/` (Foundry brief 5 TRACE_REVIEW and slices)
+  - `LTQ` = `module_work/LIVE_TEST_QUEUE.md`
+  - `RA` = `module_work/REVIEW_ARCHITECTURE.md`
+  - `RH` = `module_work/REVIEW_HARNESS.md`
+  - `HT` = `module_work/harness_theory/`
+  - smoke reviews = `module_work/live_smoke/runs/<wave>/REVIEW.md` (gitignored)
+- **Last full sweep:** 2026-10-12 (app master 414525a, planlens f92541d = v0.13.0, refs c53e587 = v1.4.1).
 
 ## 0. This week: the Tiny Apps tester deploy
 
