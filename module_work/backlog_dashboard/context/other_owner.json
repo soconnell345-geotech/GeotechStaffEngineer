@@ -75,13 +75,13 @@
     "ask_who": null,
     "question": "Keep vision on 'robust first' through the tester weeks, or turn on efficiency knobs now that their cost is partly measured?",
     "why": "Each tester spends their own Prompter key budget. Robust vision buys reliability, but automatic tiling cost a lot and bought no score on the suite. You parked this on 2026-09-25: 'do not act until asked'.",
-    "background": "Brief 4 (Foundry, 5.32.1rc3): tiling fired on 90 of 100 page looks (485 tiles) against 1 of 120 the round before; no task changed outcome; on the long tag-sheet task input more than doubled. Brief 5 (MK5): 8 of 36 zooms were coarser than tiles already read, about 24K tokens. On GPT-5.4, 'robust' sends ~10k image tokens a view against ~0.7k at 'high'. Tiny Apps' gpt-5.1 reads at 768 px, so every stroke-lettered 11x17 sheet tiles 4x4. Knobs: GEOTECH_VISION_POLICY=efficient, 2x2 tiles first, crop to the drawing, keep the vision probe per model. Related: OWN-24.",
+    "background": "Brief 4 (Foundry, 5.32.1rc3): tiling fired on 90 of 100 page looks (485 tiles) against 1 of 120 the round before; no task changed outcome; on the long tag-sheet task input more than doubled. Brief 5 (MK5): 8 of 36 zooms were coarser than tiles already read, about 24K tokens. On GPT-5.4, 'robust' sends ~10k image tokens a view against ~0.7k at 'high'. Testers get one GPT-5.6 Sol-or-higher deployment (owner, 2026-10-12); brief 4's tiling was measured on Sol at full resolution. Knobs: GEOTECH_VISION_POLICY=efficient, 2x2 tiles first, crop to the drawing, keep the vision probe per model. Related: OWN-24.",
     "options": [
       {"label": "Stay robust; record real cost first", "effect": "Keep defaults. Record per-conversation vision cost in the first-hour check (OWN-30) and tester sessions, then decide with numbers from the real host."},
       {"label": "Cheap knobs only", "effect": "An agent adds 2x2-first tiling and a remembered probe; ordinary views stay at the largest detail. Each change measured on the suite before it becomes default."},
       {"label": "Switch to the 'efficient' policy now", "effect": "Ordinary views at 'high', 'original' only for chart read-offs, no automatic tiling. Cheapest; risks the small-lettering misreads that led to robust-first."}
     ],
-    "recommendation": "Stay robust for the tester weeks. The cost that matters is gpt-5.1 at 768 px, which no run has measured yet (EV-01). Revisit with that number and the first testers' spend.",
+    "recommendation": "Stay robust for the tester weeks. Revisit with the first testers' spend per turn (TA-03, OWN-30).",
     "if_no_answer": "Stays parked; robust defaults continue and testers' keys spend at the robust rate.",
     "message_to_send": null,
     "steps": null,

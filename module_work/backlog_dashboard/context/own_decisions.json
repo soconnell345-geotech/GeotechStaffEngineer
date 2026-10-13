@@ -119,33 +119,32 @@
   "ask_who": null,
   "question": "How should the remaining ~$35 of promotional API credit be spent before it expires on 2026-11-05?",
   "why": "Unused credit is lost on 2026-11-05. It is the only way to run the app's real turn path with Claude standing in for GPT, so it buys plumbing checks that Funhouse tokens and Foundry runs cannot cover cheaply.",
-  "background": "Of the $100 credit, $80 went to smoke testing and $44.59 of that is spent (ledger, 2026-10-09), so about $35 is left; your $20 is reserved for touch-up testing together. Past waves cost $0.55-1.20 on Haiku and $6.46 (10 flows) to $15.00 (14 flows) on Sonnet. Candidates: EV-01, a rehearsal wave at the gpt-5.1 tile budget (every wave so far ran at 2,048 px); EV-03, the markup check on Sonnet (under $1) and a Haiku smoke of the next release candidate; more waves after the harness fixes (EV-04); prompt caching (EV-05, not yet on) would cut repeat cost. A cross-family overfitting check and Batch API probes (half price, slow) are listed but not described in any other document.",
+  "background": "Of the $100 credit, $80 went to smoke testing and $44.59 of that is spent (ledger, 2026-10-09), so about $35 is left; your $20 is reserved for touch-up testing together. Past waves cost $0.55-1.20 on Haiku and $6.46 (10 flows) to $15.00 (14 flows) on Sonnet. Candidates: EV-03, the markup check on Sonnet (under $1) and a Haiku smoke of the next release candidate; more waves after the harness fixes (EV-04); prompt caching (EV-05, not yet on) would cut repeat cost. A cross-family overfitting check and Batch API probes (half price, slow) are listed but not described in any other document. The gpt-5.1 rehearsal wave (EV-01) was dropped on 2026-10-12: testers get GPT-5.6 Sol, which Foundry has already measured at full resolution.",
   "options": [
    {
-    "label": "Tester-deploy checks first (EV-01, EV-03)",
-    "effect": "About $8-12 (estimate): production-like tiling and timing before testers arrive, plus the markup check. Leaves about $20 for later."
+    "label": "Tester-deploy check first (EV-03)",
+    "effect": "Under $1: the markup check on Sonnet before testers arrive. Leaves about $34 for later."
    },
    {
     "label": "Caching first, then spread the waves",
-    "effect": "EV-05 first (agent work, no spend), then EV-01, EV-03, a release-candidate smoke and one post-fix wave; each dollar goes further."
+    "effect": "EV-05 first (agent work, no spend), then EV-03, a release-candidate smoke and one post-fix wave; each dollar goes further."
    },
    {
     "label": "Hold most for the next release candidate",
     "effect": "Keep about $25 for a smoke of the next rc; the credit is lost if the rc slips past 2026-11-05."
    }
   ],
-  "recommendation": "Option 2: caching first, then EV-01 and EV-03 this week (about $10), a Haiku smoke of the next release candidate (about $3), and the rest on one wave after the EV-04 fixes, all before 2026-10-31. Keep the $20 touch-up reserve.",
+  "recommendation": "Option 2: caching first, then EV-03 this week (under $1), a Haiku smoke of the next release candidate (about $3), and the rest on one wave after the EV-04 fixes, all before 2026-10-31. Keep the $20 touch-up reserve.",
   "if_no_answer": "Nothing runs; about $35, plus any unused part of the $20 reserve, expires on 2026-11-05.",
   "message_to_send": null,
   "unblocks": [
-   "EV-01",
    "EV-03"
   ],
   "sources": [
    "HANDOFF.md (§0a-current, item 0: spend left)",
    "module_work/live_smoke/spend_ledger.json (gitignored; per-wave totals)",
    "module_work/live_smoke/runs/w3-confirm-sonnet/REVIEW.md (H24; gitignored)",
-   "BACKLOG.md (§9, EV-01 to EV-05)"
+   "BACKLOG.md (§9, EV-03 to EV-05)"
   ]
  },
  "OWN-06": {
@@ -701,8 +700,8 @@
   "kind": "decision",
   "ask_who": null,
   "question": "Keep vision on 'robust first', or start dialling back its cost now that testers use $50-a-month keys?",
-  "why": "Robust-first sends large images and tiles small-lettered pages automatically. On the testers' gpt-5.1, a tile model at 768 px, that means many extra calls per sheet, and each tester's key holds about $50 a month, so vision cost may decide how far a tester gets.",
-  "background": "Your rule (2026-09-25): robust first, cost is fine, dial back later, and do not act until you ask. Knobs on file: GEOTECH_VISION_POLICY=efficient (largest detail only for chart read-offs); 2x2 tiles first, escalating only where needed; crop to the drawing area before tiling; keep the vision probe's result instead of four small calls per process. On gpt-5.1 every stroke-lettered 11x17 sheet tiles 4x4 (up to 16 extra calls). In brief 4, 90 of 100 looks were tiled and a long set's input doubled. Tiny Apps testers have no spend line in the sidebar yet (TA-05).",
+  "why": "Testers get one GPT-5.6 Sol-or-higher deployment (owner, 2026-10-12). Robust-first sends it full-size images and tiles small-lettered pages automatically; on Sol in brief 4, 90 of 100 looks were tiled. Each tester's key holds about $50 a month, so vision cost may decide how far a tester gets.",
+  "background": "Your rule (2026-09-25): robust first, cost is fine, dial back later, and do not act until you ask. Knobs on file: GEOTECH_VISION_POLICY=efficient (largest detail only for chart read-offs); 2x2 tiles first, escalating only where needed; crop to the drawing area before tiling; keep the vision probe's result instead of four small calls per process. In brief 4 (Foundry, Sol at full resolution), 90 of 100 looks were tiled and a long set's input doubled; on GPT-5.4, 'robust' sends about 10k image tokens a view against about 0.7k at 'high'. Tiny Apps testers have no spend line in the sidebar yet (TA-05).",
   "options": [
    {
     "label": "Stay parked",

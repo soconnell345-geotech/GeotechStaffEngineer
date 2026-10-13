@@ -213,8 +213,8 @@ about 60 of them were on the list that stood here ("Open to-dos (refreshed
   2. OWN-43–OWN-51: the CfA questions. Three of them fell off the old list: gateway streaming, Nexus vs vendoring, and the shared VM's resources.
   3. OWN-30: the first-hour check.
   4. OWN-31: the checklist session.
+- **Rollout model (owner, 2026-10-12):** one GPT-5.6 Sol-or-higher deployment for every call, not gpt-5.1; the app measures it on first use. So the gpt-5.1 rehearsal wave is dropped, and the standards PDFs stay with a provenance note (BACKLOG "Done").
 - **Owner decisions:**
-  - OWN-03: three copyrighted standards PDFs tracked in the PUBLIC refs repo.
   - OWN-04: the PyMuPDF licence question for DT.
   - Before the next release, not this week: OWN-01 / OWN-02, the downdrag and fem2d defaults.
 - **Agent work:**
@@ -223,7 +223,6 @@ about 60 of them were on the list that stood here ("Open to-dos (refreshed
   - TA-01: a refused Prompter key shows raw IIS HTML.
   - TA-17: three settings in the wrapper's `.env` (`DEV_IDENTITY`, `GEOTECH_SHAREPOINT_ROOT`, `GEOTECH_PROMPTER_DISABLE_STREAMING`) are ignored on a local run; set them as real environment variables for the dosdev round.
   - TA-02: the suites have never run on CfA's fleet pins.
-  - EV-01: no smoke wave ran at the gpt-5.1 budget.
   - DOC-04 / DOC-05: the install guide still says 5.25.0.
 
 **Open questions** about how the harnesses behave are listed at the end of
