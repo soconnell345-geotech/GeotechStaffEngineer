@@ -49,8 +49,8 @@ The Document Review page goes to other testers on Tiny Apps; it is the primary f
 
 - **Owner's steps:** OWN-29 (install 5.33.0, dosdev round) → OWN-43–OWN-51 (the CfA questions, one meeting) → OWN-30 (first-hour check) → OWN-31 (checklist session).
 - **Rollout model (owner, 2026-10-12):** testers get ONE deployment, GPT-5.6 Sol or higher, for every call; not the pilot's `tinyapp-gpt-medium` (GPT-5.1, 768 px). The app measures whatever answers on first use (`funhouse_agent/vision_probe.py`), and planlens maps `gpt-5.6` to `openai-high` / `openai-original`. Sol has run the suite at full resolution on Foundry (5.32.0rc3; B5 39/42).
-- **Owner decisions wanted this week:** OWN-04 (PyMuPDF licence). The downdrag and fem2d defaults (OWN-01, OWN-02) are wanted before the next release, not this week.
-- **Agent work for testers:** DR-01, DR-02, DR-03 (Phase-1 defects still on the default review page); DR-14 (markup check wrong both ways); TA-01 (plain message on a refused key); TA-17 (three `.env` settings ignored on dosdev); TA-02 (suites on the CfA fleet pins); TA-03 (what only live GPT shows, read in the first hour); DOC-04, DOC-05 (stale install guide and `TINYAPPS.md`).
+- **Owner decisions wanted this week:** OWN-55 (a release before or during tester week: 5.33.0 cannot install beside CfA's pandas 3.0.2 pin, and master carries tonight's fixes). The downdrag and fem2d defaults (OWN-01, OWN-02) are wanted before the next release.
+- **Agent work for testers:** all done on master 2026-10-12 (see Done; unreleased until OWN-55). Left: TA-03 (what only live GPT shows, read in the first hour) and EV-13 (the next suite run covers tonight's default-page changes).
 
 ## 1. Owner: decisions and actions
 
@@ -58,7 +58,6 @@ The Document Review page goes to other testers on Tiny Apps; it is the primary f
 
 - **OWN-01** [Next] [owner] **Downdrag defaults**: keep `auto` (UFC 3-220-20, today's numbers) or report the comparison without picking; the materiality thresholds (plane max(0.5 m, 5 % L), drag max(10 kN, 10 %)); `skin_friction_stress="final"` as default; the settlement-compatibility basis that puts the neutral plane at the bearing-layer top. Commit a282d48. *Src:* `downdrag/DESIGN.md`; *was:* H E1, 0, 3e
 - **OWN-02** [Next] [owner] **fem2d staged movements**: is stage 0 always the gravity stage (`reset_displacements_after` default)? Settlements now exclude self-weight; confirm. Commit 4bf710c. *Src:* `fem2d/DESIGN.md:322-335`; *was:* H E1, 0
-- **OWN-04** [Now] [owner] **Ask DT whether PyMuPDF's AGPL licence is acceptable** on Tiny Apps; the whole document layer sits on it ("ask once, before TinyApps; do not switch pre-emptively"). *Src:* `module_work/PLANLENS_PACKAGE_SURVEY.md:84-86`
 - **OWN-05** [Next] [owner] **Pick uses for the promo API credit before it expires 2026-11-05** (~$35 left, $20 reserved for touch-up together): EV-03, waves after EV-04/EV-05, a cross-family overfitting check, Batch API probes. *was:* H 0, 3c
 - **OWN-06** [Next] [owner] **Decide the OFF review switches** (table in §2): measure, flip or retire each. The M1 exit step "flip winning switches to defaults" never ran. *Src:* RA:206-213; *was:* H C10, 8a(vii)
 - **OWN-07** [Next] [owner] **The seven DRAFT narrative conventions** in `report_ingest/narrative_glossary.py`. *was:* H B4
@@ -86,7 +85,7 @@ The Document Review page goes to other testers on Tiny Apps; it is the primary f
 
 ### Actions and data
 
-- **OWN-29** [Now] [owner] **Install 5.33.0** when Nexus delivers it (wheels in `../foundry_handoff/` otherwise, planlens first), then the dosdev round (`tinyapps/TINYAPPS.md`). *was:* H A1
+- **OWN-29** [Now] [owner] **Install 5.33.0** when Nexus delivers it (wheels in `../foundry_handoff/` otherwise, planlens first), then the dosdev round (`tinyapps/TINYAPPS.md`). *was:* H A1 **packages.txt (2026-10-12):** its pandas==3.0.2 pin is commented out, because 5.33.0's python-ags4 caps pandas below 3 (TA-02, in Done); restore it with the release that makes python-ags4 optional (OWN-55).
 - **OWN-30** [Now] [owner] **First-hour check on Tiny Apps** (two people, orientation time, note + PDF, SharePoint link, Word title, `vision_model` / `budget` / `cut_off`; steps in `live_smoke/runs/w3-confirm-sonnet/REVIEW.md`). Feeds TA-03. *was:* H 3e GO 3
 - **OWN-31** [Now] [owner] **The checklist session**: `funhouse_agent/report_review_checklist.json` as a plain list, markup in chat or Word, transferred keeping each `id`. *was:* H 8a(vi), 3d
 - **OWN-32** [Next] [owner] **LTQ check 5 on Funhouse** (SharePoint links, remembered files, past conversations) when the budget renews; cheap model, short PDF. *was:* H A2
@@ -101,6 +100,9 @@ The Document Review page goes to other testers on Tiny Apps; it is the primary f
 - **OWN-41** [Later] [owner] **The owner's own reports as worked-example exemplars** (Phase 2, local-only `GEOTECH_EXAMPLES_DIR`). *Src:* FI:127-136
 - **OWN-42** [Later] [owner] **Funhouse admin**: send or drop the drafted 401 admin note; `funhouse-*` aliases price at $0.00 in the pricing table. *Src:* H:2142-2144
 
+- **OWN-55** [Now] [owner] **Release before or during tester week?** Master after 5.33.0 carries the review-page fixes (DR-01-DR-03, DR-14), the 401 message and retry (TA-01), the local `.env` fix (TA-17), python-ags4 as an extra so the app installs beside CfA's pandas 3.0.2 pin (TA-02), and the downdrag/fem2d train (OWN-01, OWN-02 open). Released 5.33.0 cannot install beside that pin. Nothing is released without your word. *Src:* commits ae50842, da28a69, 0562ddf, a229090
+- **OWN-56** [Later] [owner] **Department addresses in the public app repo's git history**: your work address (prompter_metering DIAGNOSIS), CfA support mailboxes, the SharePoint host and site name, the published-app domains. Current files are scrubbed (24b46df); history keeps them. Purge (rewrite + force-push) or accept? Pairs with OWN-26.
+
 ### CfA and Funhouse questions
 
 - **OWN-43** [Now] [owner] **Per-tester Prompter keys** (Key Vault `PROMPTER-API-KEY--<TESTER>`); `PROMPTER_SHARED_KEY_FALLBACK=1` until all exist. *was:* H A1, 0
@@ -109,7 +111,7 @@ The Document Review page goes to other testers on Tiny Apps; it is the primary f
 - **OWN-46** [Now] [owner] **Confirm the identity header** ("Signed in as <name>"). *was:* H A1, 0
 - **OWN-47** [Now] [owner] **An image-capable Prompter deployment** (make-or-break): now the GPT-5.6 Sol-or-higher deployment testers will get (owner, 2026-10-12). *was:* H 3e GO 2
 - **OWN-48** [Now] [owner] **Does the App Service enforce FIPS?** Assume yes: OpenCV cannot load there, so OCR and the raster drawing leg are unavailable; `find_like` still works on its numpy backend (planlens 0.12+). *was:* H A3
-- **OWN-49** [Now] [owner] **Questions that fell off A1**: does the gateway pass streaming; Nexus install vs vendoring and the fleet pins CfA expects of our tree; the shared VM's resource envelope (fem2d meshes, Monte Carlo). *Src:* `tinyapps/TINYAPPS.md:236-253`
+- **OWN-49** [Now] [owner] **Questions that fell off A1**: does the gateway pass streaming; Nexus install vs vendoring and the fleet pins CfA expects of our tree; the shared VM's resource envelope (fem2d meshes, Monte Carlo). *Src:* `tinyapps/TINYAPPS.md:236-253` **Fleet pins (TA-02, 2026-10-12):** our tree cannot install beside pandas==3.0.2 until the release after 5.33.0; ask whether a pandas 2.x from the mirror is acceptable meanwhile.
 - **OWN-50** [Now] [owner] **What does the Prompter return when a key's budget is spent** (status and body)? The D2 classifier is built on guesses (TA-06).
 - **OWN-51** [Now] [owner] **Is the pilot Prompter key the sanctioned, metered route?** (the Funhouse SDK Terms say direct Azure AI calls bypass metering).
 - **OWN-52** [Next] [owner] **Process questions**: whether the Department SharePoint tenant is inside the pilot's data boundary (a DT CAB item); approval-path status (MOU → GHE → SIA → CAB → PCR); a monthly CfA check-in with telemetry noted in `TINYAPPS.md`. *Src:* `TINYAPPS.md:91-94, 242-253`
@@ -122,9 +124,6 @@ The Document Review page goes to other testers on Tiny Apps; it is the primary f
 
 Testers get the legacy deepagents build (`GEOTECH_REVIEW_AGENT` unset); the plan's Phase-1 fixes exist only behind `lean`, OFF.
 
-- **DR-01** [Now] **`render_region`'s description names `drawing_ir` / `digitize_drawing` / `query_drawing`**, tools the review page lacks (`funhouse_agent/deep/tools.py` ~1183, ~1685); also trim `analyze_pdf_page`'s 417-char description (`tools.py:1098`). *Src:* `~/.claude/plans/we-ve-been-working-on-synchronous-lemon.md` Phase 1; check1 TRACE_REVIEW C3
-- **DR-02** [Now] **deepagents' `general-purpose` helper keeps its stock prompt**, none of the review rules (`deep/agent.py` ~1182-1215); check1 C8 shows whole-page boxes used as anchors. Give it the reading rules, measured first. *was:* H 8a(iii)
-- **DR-03** [Now] **No graceful step cap**: `recursion_limit` 50 (`webapp/core.py` `DEFAULT_BEHAVIOR`) ends long turns in GraphRecursionError (~17 model calls) with advice to raise the cap. `ModelCallBudgetMiddleware` / `geotech_min_recursion_limit` exist only in lean and minimal (`deep/review_agent.py:457`, `deep/minimal_agent.py:280`). Answer from what was gathered; riskier on gpt-5.1. *Src:* RH:21-22, 192-194
 - **DR-04** [Next] **The default page still offers `read_reference_figure` / `view_worked_example_source`** (`make_vision_tools` called without `include`, `deep/agent.py` ~665) and deepagents' coding prompt (~7.7K chars). *Src:* HT `document_review.md:122`
 - **DR-05** [Next] **Re-measure `GEOTECH_REVIEW_AGENT=lean`** at full resolution and on GPT after 5.32–5.33 (last 34/35, Sol, 768 px); until lean or legacy wins, DR-01–DR-04 stay on the legacy build. *Src:* RH:35, 239
 
@@ -167,7 +166,6 @@ All OFF unless marked. Decisions: OWN-06.
 
 ### Markups and checks
 
-- **DR-14** [Now] **B3: the markup check judges size and enclosure against the agent's free-text `target`**: 13 exact rings rejected, 12 of 12 blankets confirmed, a wrong-note comment confirmed after the agent renamed `target` (`funhouse_agent/markup_check.py:538-548`; no previous-verdict guard). The <$1 Sonnet check never ran (EV-03). *Src:* B5 TRACE_REVIEW:152, 192-196; *was:* H 3c
 - **DR-15** [Next] **GPT-5.4 stops after two rejected markups**: tell it to keep correcting until confirmed, up to N tries. *Src:* check1 TRACE_REVIEW C6
 - **DR-16** [Next] **Return the corrected box**, not only "misplaced" (the crop look already finds the thing; `markup_check.py:775-778`). *Src:* HT `locating_things_on_a_page.md:1326-1329`
 - **DR-17** [Next] **B4: the duplicate-mark note should say a duplicate may hide an unmarked thing** (`planlens/tools/toolkit.py:926-933`). *Src:* B5 `TRACE_REVIEW_B_AEFG.md:250-270`
@@ -215,9 +213,8 @@ All OFF unless marked. Decisions: OWN-06.
 
 ## 4. Tiny Apps, Funhouse/Databricks and hosting
 
-- **TA-01** [Now] **A plain message when a Prompter key is refused (401)**: `friendly_turn_error` (`webapp/core.py` ~1805-1870) has budget, recursion and busy cases but no auth case, so raw IIS HTML reaches the user. Name the surface, strip the HTML, retry once with a fresh client. Planned 2026-09-09/11. *Src:* H:2023-2025, 2207-2212
-- **TA-02** [Now] **Run the suites on the CfA fleet pins** (pandas 3.0.2, streamlit 1.62.0) in a scratch venv, chunked in the foreground; never run on pandas 3. *Src:* H:658-662
 - **TA-03** [Now] **What only live GPT can show**: the rollout model's vision (no `GEOTECH_VISION_BUDGET` / `GEOTECH_CHART_BUDGET` lines; diagnostics should name GPT-5.6 Sol or higher at `openai-high`, charts at `openai-original`, and the host's edge; a half-size sheet answered from the text layer); spend per turn against each tester's budget, since full-size images cost several times gpt-5.1's 768 px (OWN-50), latency vs caps, budget and rate-limit responses, separate keys, links behind IIS, `reuse=true`. *was:* H E5, 0, 3e
+- **TA-18** [Later] **The 401 retry reuses the client's pooled connection** (TA-01's retry, 0562ddf): if a refusal survives the retry live, rebuild the model client for the retry (the 2026-09-09 hypothesis was a stale NTLM connection). *Src:* HANDOFF 2026-09-09 field feedback
 - **TA-04** [Next] **Not verified live**: the D2 budget message; busy retries; restore after restart; the Excel writer; two testers saving at once (H12); `annotate_dxf` in real CAD; D3 (harness copies the old sidebar). *was:* H E6
 - **TA-05** [Next] **An SDK-free spend line in the sidebar** for testers on a $50/month key (`webapp/budget_panel.py` is SDK-only). *Src:* H:681-683
 - **TA-06** [Next] **Pin the budget-spent response in a test** after OWN-50.
@@ -231,7 +228,6 @@ All OFF unless marked. Decisions: OWN-06.
 - **TA-14** [Later] **Auto-continue evidence audits** (false completion claims) from the Funhouse SDK (status unclear). *Src:* FI:231-234
 - **TA-15** [Later] **Old live checks never recorded** (largely overtaken; status unclear): `email_file`, opt-in streaming, the model picker (5.11.x); 5.15 PDF figures and restore; 5.16–5.18 prompt-level checks. *Src:* H:1710-1749, 2695-2730
 - **TA-16** [Parked] **Durable LangGraph checkpointer** and the **per-model API thinking layer**. *Src:* `module_work/APP_PLAN.md:83-103`
-- **TA-17** [Now] **Three settings in the wrapper's `.env` are silently ignored on a local run**: `DEV_IDENTITY`, `GEOTECH_SHAREPOINT_ROOT` and `GEOTECH_PROMPTER_DISABLE_STREAMING` are read only from the process environment (`webapp/identity.py:189`, `webapp/sharepoint_store.py:84`, `webapp/diagnostics.py:108`), while `.env` is consulted only through `get_setting` (`webapp/tinyapps_settings.py`). On dosdev the identity line in `.env` does nothing; on the App Service `GEOTECH_SHAREPOINT_ROOT` must be an app setting. Load `.env` into the environment for local runs, or route those reads through `get_setting`; until then, set them as real environment variables. *Src:* `tinyapps/wrapper_repo/.env.example:28-34`
 
 ## 5. planlens
 
@@ -380,7 +376,7 @@ Parked at 5.25.0; every number since is GPT-5.4 on Foundry. Code items were conf
 ## 9. Measurement beds: Foundry, LIVE_TEST_QUEUE, the live smoke harness
 
 - **EV-02** [Next] [owner] **Foundry brief 6 (not written)**: brief 5 groups 3–4 with repeats; Part B ×3 and Part E on both models; patch alignment (≥10 repeats, spread targets, second aspect ratio; LTQ check 7); an L1 reasoning call; coverage after CV1–CV4; GPT habits M1–M4; VIS-08; LTQ check 8 step 3 (DM7.2 Fig 4-12); the inline probe. *Src:* B5 `TRACE_REVIEW_B_AEFG.md:583-595`; *was:* H D, E5
-- **EV-03** [Next] **Claude-credit items before brief 6**: the B3 Sonnet check (<$1, DR-14); R on Haiku if needed; a Haiku smoke of the next rc. *was:* H 3c
+- **EV-03** [Next] **Claude-credit items before brief 6**: the B3 Sonnet check (<$1; the fix landed in da28a69, so this now checks it); R on Haiku if needed; a Haiku smoke of the next rc. *was:* H 3c
 - **EV-04** [Next] **Smoke-harness H-items**: SharePoint classifier wordings (`detectors.py:86`); exclude non-app files; recovery grading; isolation by bytes and author, with forced overlapping writes; missing detectors (truncation, output at cap, slow-turn cause, labels far from marks); ledger integrity on OneDrive; `session.py` mirroring `app.py` (D3), short sandbox root, HEAD recorded, separate worktree. *Src:* smoke REVIEWs w1–w3; *was:* H E6
 - **EV-05** [Next] **Turn on prompt caching on the Claude engine path** (no `cache_control` anywhere) before more waves.
 - **EV-06** [Next] **Record gaps**: LangGraph step count at `turn_end`; side-call prompt, detail, image size and kind on `model_end`; a prompt / tool fingerprint in `run.json`; per-mark truth rows. *Src:* check1 TRACE_REVIEW:503-520
@@ -390,6 +386,7 @@ Parked at 5.25.0; every number since is GPT-5.4 on Foundry. Code items were conf
 - **EV-10** [Later] **CI mock-eval subset** in GitHub Actions. *Src:* FI:286-288
 - **EV-11** [Later] **Open eval questions**: what the references sub-agent did inside consults; numbers traceable to no `call_agent`; per-call overhead; a pinpoint citation spot check. *Src:* HT `geotech_agent.md:335-349`
 - **EV-12** [Later] **Read `module_work/harness_theory/` open questions before changing a harness.** *was:* H "Open questions"
+- **EV-13** [Next] **The next suite run measures tonight's default-page changes** (2026-10-12): the 40-call budget whose last call answers (DR-03; GEOTECH_REVIEW_MAX_MODEL_CALLS=off restores the old cap), the helper with the reading rules (DR-02), the zoom tool's wording (DR-01) and the markup check against the printed thing (DR-14), against brief 5's baseline (Sol 39/42). Read every run in full. *Src:* ae50842, da28a69
 
 ## 10. Infrastructure, releases, dependencies, repo hygiene
 
@@ -402,6 +399,7 @@ Parked at 5.25.0; every number since is GPT-5.4 on Foundry. Code items were conf
 - **INF-07** [Later] **Is master CI green?** ("should self-heal … (VERIFY)", H:2585).
 - **INF-08** [Later] [owner] **Leftovers**: gitignored `build/`; old release worktrees and `.claude/worktrees/agent-*`; branches app `hotfix/5.12.1-structural-extra`, planlens `fix/advice-names-no-missing-tools` (shipped as 0d9787b), refs `origin/feature/reference-query-expansion` (merged). OWN-27.
 - **INF-09** [Later] **Rebuild the private Harness Map** (outside the repos; last built 2026-09-29).
+- **INF-10** [Next] **Run the geotech module suites on a fresh resolve** (numpy 2.5.4, plotly 7.1.0, deepagents 0.7.13, langchain 1.3.18 on 2026-10-12): TA-02 ran only what pandas and Streamlit reach. Recipe: WSL Ubuntu, `~/.local/bin/uv`, Python 3.12, repo on PYTHONPATH, GIT_OPTIONAL_LOCKS=0 (Smart App Control blocks fresh DLLs on Windows). Also `report_ingest/tests/test_cluster_scoring.py::test_a_workspace_out_dir_runs_rather_than_raising` assumes `/Workspace` can be created (fails on Linux as a non-root user).
 
 ## 11. Long-term programs and parked ideas
 
@@ -419,8 +417,6 @@ Long items kept in their own sections: DR-08–DR-13, GM-39, VIS-11, VIS-20, TA-
 
 - **DOC-01** [Next] **HANDOFF**: §1–§6 (~2833-3088) not marked HISTORICAL: "(private)" repo, master v5.6.0, the `v5.1-todos` worktree, V5.4_PLAN current, eval 97/100.
 - **DOC-03** [Next] **CLAUDE.md**: "this file is 73 KB" (169 KB); :251 "committed, not released" (0.11.0); :1237 missing plan (DOC-15); :1819 "fully QC'd"; :1872 "3529 tests"; :1909 "ten tools" (15); :2109-2112 footing method (done 0aea590), "~22 more figures" (done 3b25e0e), chapter text "uncommitted" (1176620; rest REF-04).
-- **DOC-04** [Now] **`docs/DATABRICKS_INSTALL.md`**: :17 `==5.25.0`; :33-35 5.20.0 / planlens 0.6.0 / refs 1.4.0; :10 last verified 5.14.0; rows 5.15–5.33 "Replace this row…". The gate checks only the history table.
-- **DOC-05** [Now] **`tinyapps/TINYAPPS.md`**: :3 status 2026-09-23 "waiting on"; :113 per-tester keys "unreleased" (in 5.33.0); :197 "candidate 5.26.0". `webapp/README.md:115-120` storage question (answered `TINYAPPS.md:85`); old checklists `docs/webapp_guide.md:94-109`, `webapp/README.md:367-400`.
 - **DOC-06** [Next] **`LTQ`**: :20 "check 5 only, after 5.32.1 is released"; "Done" omits brief 5; setup :36-42 installs 5.32.1.
 - **DOC-07** [Next] **`HT/README.md:55-56`** marks W3 and brief-4 fixes "uncommitted"; silent on brief 5 and the smoke-wave changes.
 - **DOC-08** [Next] **`RH:141-171`** "Next" stale; :151 points at "Open to-dos after 5.32.0".
@@ -437,6 +433,17 @@ Long items kept in their own sections: DR-08–DR-13, GM-39, VIS-11, VIS-20, TA-
 ## Done since the last sweep
 
 Older docs still list these as open. Delete this section at the next sweep.
+
+- **DR-01** (the default review page's zoom tool named tools the page lacks): ae50842. Unreleased (OWN-55); measured by EV-13.
+- **DR-02** (the default page's helper now carries the reading rules, read-only tools and a 14-call budget): ae50842.
+- **DR-03** (the default page's 40-call budget whose last call answers; `GEOTECH_REVIEW_MAX_MODEL_CALLS=off` restores the old cap): ae50842.
+- **DR-14** (markup check measured against the printed thing; a rename keeps its verdict): da28a69.
+- **TA-01** (a refused key said plainly, one retry on a 401): 0562ddf.
+- **TA-17** (`.env` exported on a local run, so env-only settings work on dosdev): 0562ddf.
+- **TA-02** (suites on CfA's fleet pins): run 2026-10-12 in WSL (Python 3.12, pandas 3.0.2, streamlit 1.62.0). Found python-ags4 blocks the install; fixed on master (a229090). Follow-ups OWN-55, INF-10.
+- **DOC-04** (`docs/DATABRICKS_INSTALL.md` current for 5.33.0): 24b46df.
+- **DOC-05** (`TINYAPPS.md` current; the retired TinyApp checklists point at it): 24b46df.
+- **OWN-04** (PyMuPDF's AGPL licence on Tiny Apps): the owner, 2026-10-12: "We're good to use pymupdf. The funhouse sdk uses it, so we can too."
 
 - **EV-01** (a rehearsal smoke wave at the gpt-5.1 768 px budget): closed by the owner, 2026-10-12, on the Backlog Desk. Testers get one GPT-5.6 Sol-or-higher deployment, not gpt-5.1. Sol already ran the suite at full resolution on Foundry (5.32.0rc3; B5 39/42), the app measures the model on first use and planlens maps `gpt-5.6` to full-size budgets, so a Claude stand-in wave would cover no gap.
 - **OWN-03** (three non-government standards PDFs in the public refs repo): the owner kept them, since copies are openly available online. A provenance note is in the refs README (refs 3e582d8).

@@ -215,15 +215,10 @@ about 60 of them were on the list that stood here ("Open to-dos (refreshed
   4. OWN-31: the checklist session.
 - **Rollout model (owner, 2026-10-12):** one GPT-5.6 Sol-or-higher deployment for every call, not gpt-5.1; the app measures it on first use. So the gpt-5.1 rehearsal wave is dropped, and the standards PDFs stay with a provenance note (BACKLOG "Done").
 - **Owner decisions:**
-  - OWN-04: the PyMuPDF licence question for DT.
-  - Before the next release, not this week: OWN-01 / OWN-02, the downdrag and fem2d defaults.
-- **Agent work:**
-  - DR-01–DR-03: the default review page testers get still has three Phase-1 defects. `render_region` names tools the page lacks; the helper runs without the review rules; a long turn ends in GraphRecursionError instead of an answer. The fixes exist only behind the OFF `lean` switch.
-  - DR-14: the markup check is wrong both ways.
-  - TA-01: a refused Prompter key shows raw IIS HTML.
-  - TA-17: three settings in the wrapper's `.env` (`DEV_IDENTITY`, `GEOTECH_SHAREPOINT_ROOT`, `GEOTECH_PROMPTER_DISABLE_STREAMING`) are ignored on a local run; set them as real environment variables for the dosdev round.
-  - TA-02: the suites have never run on CfA's fleet pins.
-  - DOC-04 / DOC-05: the install guide still says 5.25.0.
+  - OWN-55: release before or during tester week? The released 5.33.0 cannot install beside CfA's pandas 3.0.2 pin (its python-ags4 caps pandas below 3), so `packages.txt` leaves pandas unpinned for now; master carries the fix and tonight's work.
+  - Before the next release: OWN-01 / OWN-02, the downdrag and fem2d defaults.
+- **Agent work, done on master 2026-10-12 (unreleased):** the default review page's zoom wording, reading helper and answering budget; the markup check against the printed thing; a plain message and one retry on a refused key; `.env` working on dosdev; the suites run on CfA's pins (WSL), which found the python-ags4 install conflict; the install guide and `TINYAPPS.md` current; Department addresses scrubbed from tracked files (history: OWN-56). Commits ae50842, da28a69, 0562ddf, a229090, 24b46df.
+- **Agent work left:** TA-03 (read in the first hour), EV-13 (the next suite run measures tonight's default-page changes).
 
 **Open questions** about how the harnesses behave are listed at the end of
 each document in `module_work/harness_theory/`. Read that folder before

@@ -630,5 +630,69 @@
    "module_work/FUTURE_IDEAS.md (Funhouse SDK survey item 8; toolkit MCP server TODO; Tier 2 OCR)",
    "module_work/field_feedback/2026-09-09 folder, PLANLENS_SURVEY_MEASUREMENTS.md (Nexus firewall probe)"
   ]
+ },
+ "OWN-55": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Cut a release (5.34.0) before or during tester week, so testers get tonight's fixes and the app installs beside CfA's pandas 3.0.2 pin?",
+  "why": "The released 5.33.0 cannot install beside the pandas 3.0.2 pin in packages.txt, and tonight's review-page and Tiny Apps fixes reach testers only in a release.",
+  "background": "Master after 5.33.0 holds: the default review page's zoom wording, a reading helper with the review rules, and a 40-call budget whose last call answers instead of erroring (DR-01 to DR-03); the markup check measured against the printed thing (DR-14); a plain message and one retry when a key is refused (TA-01); .env settings working on dosdev (TA-17); python-ags4 as an optional extra, so pip resolves beside pandas 3.0.2 (TA-02); and the downdrag and fem2d train, whose defaults (OWN-01, OWN-02) are still open. Offline tests pass on Windows and on CfA's pins in Linux. None of it has run on the suite with a real model yet (EV-13). Nexus delivers a release a day or two after PyPI.",
+  "options": [
+   {
+    "label": "Release after one suite run",
+    "effect": "Run EV-13 on Foundry first (about a day), then the release gate and PyPI. Testers start on 5.33.0 with pandas left unpinned."
+   },
+   {
+    "label": "Release now",
+    "effect": "The full release gate (about 14,600 tests in foreground batches), then PyPI; Nexus has it in a day or two. The suite measures it afterwards."
+   },
+   {
+    "label": "Hold to the next train",
+    "effect": "Testers use 5.33.0 with the pandas pin commented out; tonight's fixes wait."
+   }
+  ],
+  "recommendation": "Release after one suite run if Foundry is free this week; otherwise release now. The changes act only on long turns, refused keys and markups, and the pinned deploy needs the install fix either way.",
+  "if_no_answer": "Testers run 5.33.0 with pandas unpinned in packages.txt; nothing on master reaches them.",
+  "message_to_send": null,
+  "steps": null,
+  "unblocks": [
+   "OWN-29",
+   "EV-13"
+  ],
+  "sources": [
+   "git: ae50842, da28a69, 0562ddf, a229090, 24b46df",
+   "BACKLOG.md (Done since the last sweep; OWN-55, EV-13)",
+   "tinyapps/wrapper_repo/packages.txt (the pandas note)"
+  ]
+ },
+ "OWN-56": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Purge Department addresses from the public app repo's git history, or accept that old commits keep them?",
+  "why": "Your rule is no Department emails or hostnames in the public repos. The current files are clean (24b46df), but older commits on GitHub still show them, including your own work address.",
+  "background": "Found 2026-10-12: your work address in a metering diagnosis note, the CfA support mailboxes, the Department SharePoint host and team-site name, the published-app domains in the Tiny Apps run.sh, and a service-account domain in tests. A purge means rewriting the app repo's history and force-pushing; clones and forks keep their copies. Wheels already on PyPI carry one launcher docstring with the SharePoint site address and cannot be changed. planlens and the references repo are clean.",
+  "options": [
+   {
+    "label": "Accept history; keep files clean",
+    "effect": "No disruption. Old commits and released wheels keep the addresses."
+   },
+   {
+    "label": "Purge history",
+    "effect": "Rewrite with a filter tool and force-push; old wheels unchanged. Disruptive; best done together with OWN-26."
+   },
+   {
+    "label": "Make the app repo private",
+    "effect": "Hides history and files at once; PyPI wheels stay public, and the cluster and Foundry install from PyPI, so they are unaffected."
+   }
+  ],
+  "recommendation": "Accept for now and settle a purge or a private repo together with OWN-26 after tester week: the most sensitive item, your own address, is one line in one note.",
+  "if_no_answer": "The current files stay clean; history keeps the old addresses.",
+  "message_to_send": null,
+  "steps": null,
+  "unblocks": [],
+  "sources": [
+   "git: 24b46df (the scrub)",
+   "BACKLOG.md (OWN-26, OWN-56)"
+  ]
  }
 }

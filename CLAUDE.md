@@ -150,15 +150,24 @@ Key conventions:
     - engineering fixes: GEC-12 Fig 7-15 re-measured, the sheet-pile water
       table at 0 m, fem2d consolidation units and load-only transient, the
       downdrag neutral-plane basis (owner's judgment pending).
-  - **Unverified live on GPT:** vision on gpt-5.1 (768 px), GPT latency
-    against the caps, real budget/rate-limit responses, testers on
-    separate keys, links behind the IIS proxy. The first-hour check is in
+  - **Unverified live on GPT:** the rollout model's vision through the
+    Prompter (testers get ONE GPT-5.6 Sol-or-higher deployment, owner
+    2026-10-12; the app measures it on first use), GPT latency against the
+    caps, real budget/rate-limit responses, testers on separate keys, links
+    behind the IIS proxy. The first-hour check is in
     `module_work/live_smoke/runs/w3-confirm-sonnet/REVIEW.md`.
 
   - **Master after 5.33.0 (next train, unreleased):** downdrag neutral-plane
     methods as cited options with a comparison (a282d48) and fem2d per-stage
     delta/cumulative movements (4bf710c); owner decisions and the technical
-    follow-ups are in `BACKLOG.md` (OWN-01, OWN-02, GM-01-GM-09).
+    follow-ups are in `BACKLOG.md` (OWN-01, OWN-02, GM-01-GM-09). Then,
+    2026-10-12 night: the default review page's zoom wording, reading
+    helper and answering 40-call budget (ae50842); the markup check against
+    the printed thing (da28a69); a refused key said plainly and retried once,
+    `.env` working on dosdev (0562ddf); python-ags4 an extra and openpyxl
+    core, so the app installs beside CfA's pandas 3.0.2 pin (a229090); docs
+    current and Department addresses scrubbed (24b46df). Release: OWN-55;
+    the suite measures it: EV-13.
 
   Pickup: `HANDOFF.md` §0a-current, "Where things stand".
 - **5.32.1 RELEASED 2026-10-08 (tag `v5.32.1`, branch `release/5.32.1`,
