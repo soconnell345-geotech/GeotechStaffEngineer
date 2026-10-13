@@ -632,6 +632,7 @@ def build_primary_tools(
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
     reference_result_chars: Optional[int] = None,
     markup_author: Optional[str] = None,
+    description_overrides: Optional[dict] = None,
 ) -> list:
     """Build the primary agent's tool list.
 
@@ -649,6 +650,9 @@ def build_primary_tools(
         Larger cap for reference reads (here only ``read_reference_figure``,
         since the primary's ``call_agent`` scope excludes the reference
         modules); see :func:`~funhouse_agent.deep.tools.make_core_tools`.
+    description_overrides : dict, optional
+        ``{tool name: description}`` for the vision/file tools, forwarded to
+        ``make_vision_tools`` (the Document Review page's wording).
     """
     if allowed_agents is None:
         allowed_agents = ANALYSIS_MODULES
@@ -669,6 +673,7 @@ def build_primary_tools(
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
         markup_author=markup_author,
+        description_overrides=description_overrides,
     ) + [make_calculate_tool()]
 
 
@@ -688,6 +693,86 @@ def _merge_tools(*groups):
 
 def _join_prompts(*parts):
     return "\n\n".join(p for p in parts if p) or None
+
+
+# ---------------------------------------------------------------------------
+# The Document Review page on this (default) build: three fixes the lean
+# build already had (BACKLOG DR-01 - DR-03; the review of 2026-09-26 and
+# check 1's trace review, causes C3 and C8)
+# ---------------------------------------------------------------------------
+
+#: Turns the page's model-call budget off on this build (the step cap then
+#: ends a long turn with GraphRecursionError, as before 5.34): a way back on a
+#: live host without a release. The lean build always keeps its budget.
+_BUDGET_OFF = ("0", "off", "none", "no", "false")
+
+#: Graph steps per model call on this build, with room to spare: one model
+#: call is the model node, the tools node and the middleware's before- and
+#: after-model nodes. Measured offline on deepagents 0.6.8: about 3 without
+#: the budget (33 calls in 100 steps; 17 in the app's 50) and at most 5 with
+#: it (40 calls in 200 steps); 8 leaves room for newer deepagents.
+REVIEW_PAGE_STEPS_PER_CALL = 8
+
+#: What the primary is told the reading helper is (the ``task`` tool lists it).
+REVIEW_READER_DESCRIPTION = (
+    "A reading helper with your reading and looking tools and your reading "
+    "rules. Hand it a self-contained reading job and get back a compact list "
+    "of findings with citations - e.g. 'open <source>, read sheets 12-20 and "
+    "list every note that sets a concrete strength, with the sheet'. It sees "
+    "NOTHING of this conversation: put everything it needs in the "
+    "description (the source name, the pages, what to find, what to "
+    "return). It cannot write files or markups.")
+
+
+def _review_page_descriptions() -> dict:
+    """The page's own wording where the geotech wording is wrong here:
+    ``render_region`` sends the agent to the ``drawing_ir`` module for
+    coordinates, and this page has no modules (DR-01, check 1 C3)."""
+    from funhouse_agent.deep.review_agent import REVIEW_DESCRIPTIONS
+    return {"render_region": REVIEW_DESCRIPTIONS["render_region"]}
+
+
+def _review_reader_subagent(primary_tools) -> Optional[dict]:
+    """deepagents' ``general-purpose`` helper, re-declared for the review
+    page with the review's reading rules, the read-only tools and a budget
+    whose last call reports (DR-02, check 1 C8: the stock helper had a
+    286-character prompt and returned whole-page boxes as anchors).
+
+    The name stays ``general-purpose`` so it REPLACES the stock helper. Its
+    tools are the primary's reading and looking tools, the same set the lean
+    build's ``page_reader`` gets; nothing that writes a file or a markup.
+    """
+    if _GENERAL_PURPOSE_SPEC is None:
+        return None
+    from funhouse_agent.deep.prompt import DOCUMENT_REVIEW_READER_PROMPT
+    from funhouse_agent.deep.review_agent import (
+        READER_EXHAUSTED, READER_MAX_MODEL_CALLS, READER_NUDGE, READER_TOOLS)
+    wanted = set(READER_TOOLS)
+    return {
+        **_GENERAL_PURPOSE_SPEC,
+        "description": REVIEW_READER_DESCRIPTION,
+        "system_prompt": DOCUMENT_REVIEW_READER_PROMPT,
+        "tools": [t for t in primary_tools
+                  if getattr(t, "name", None) in wanted],
+        "middleware": [ModelCallBudgetMiddleware(
+                           READER_MAX_MODEL_CALLS,
+                           final_turn_nudge=READER_NUDGE,
+                           exhausted_message=READER_EXHAUSTED),
+                       HideScratchFilesystem()],
+    }
+
+
+def review_page_budget() -> Optional[int]:
+    """The review page's model calls per request on this build
+    (``GEOTECH_REVIEW_MAX_MODEL_CALLS``, default 40 as on the lean build), or
+    ``None`` when that variable is ``off``."""
+    import os
+    from funhouse_agent.deep.review_agent import (MAX_MODEL_CALLS_ENV,
+                                                  max_model_calls)
+    raw = os.environ.get(MAX_MODEL_CALLS_ENV, "").strip().lower()
+    if raw in _BUDGET_OFF:
+        return None
+    return max_model_calls()
 
 
 #: The model-call budget declared on the report-ingest sub-agent's spec.
@@ -1028,6 +1113,8 @@ def build_deep_agent(
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
         markup_author=markup_author,
+        description_overrides=(_review_page_descriptions() if review_page
+                               else None),
     )
     if extra_tools:
         tools = list(tools) + list(extra_tools)
@@ -1175,6 +1262,14 @@ def build_deep_agent(
             )
         )
 
+    # The review page's reading helper replaces deepagents' stock one, so it
+    # carries the reading rules (DR-02); appended here so the guards below
+    # and the coverage recorder reach it like every other helper.
+    if review_page:
+        reader = _review_reader_subagent(tools)
+        if reader is not None:
+            subagents.append(reader)
+
     # Scratch-filesystem guard on every agent in the build (field feedback
     # 2026-09-15, N1/N12): deepagents' ls/read_file/grep/glob/write_file/
     # edit_file see only scratch space and answered "not found" for real
@@ -1261,6 +1356,19 @@ def build_deep_agent(
         # none of the user's files and answered "not found" for them (wave
         # 2b, F41); they are kept off this page's menu and prompt.
         middleware.append(HideScratchFilesystem())
+    # The review page: a model-call budget whose last call answers from what
+    # was gathered, so a long turn ends with findings and what was not
+    # checked, never a GraphRecursionError (DR-03). With the coverage gate
+    # on, the gate already ends an ordinary turn with an answer, so it keeps
+    # that job alone.
+    page_budget = None
+    if review_page and not coverage.gate_on:
+        page_budget = review_page_budget()
+        if page_budget:
+            from funhouse_agent.deep.review_agent import EXHAUSTED, FINAL_NUDGE
+            middleware.append(ModelCallBudgetMiddleware(
+                page_budget, final_turn_nudge=FINAL_NUDGE,
+                exhausted_message=EXHAUSTED))
     if coverage.on:
         middleware.append(coverage.primary())
     # Last: a reply cut at the output-token limit is caught before anything
@@ -1310,6 +1418,12 @@ def build_deep_agent(
     # the same dict it handed to build_deep_agent.
     try:
         agent.geotech_attachments = attachments
+        if page_budget:
+            # The host's step cap is raised to fit the budget, so the budget,
+            # not a GraphRecursionError, ends a long request (webapp
+            # core.stream_turn reads this, as for the lean build).
+            agent.geotech_min_recursion_limit = (
+                REVIEW_PAGE_STEPS_PER_CALL * page_budget + 30)
     except Exception:
         pass
     if coverage.on:

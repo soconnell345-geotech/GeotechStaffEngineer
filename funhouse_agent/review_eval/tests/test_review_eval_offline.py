@@ -324,7 +324,12 @@ def test_a_retry_is_not_scored_on_the_failed_attempt_s_files(tmp_path):
 
 
 def test_the_step_cap_is_a_result_and_is_not_paid_for_twice(tmp_path):
-    """Review finding 6: a GraphRecursionError is the page's own behaviour."""
+    """Review finding 6: a GraphRecursionError is the page's own behaviour.
+
+    Since DR-03 the page's budget ends a long turn with an answer; with the
+    budget turned off (``GEOTECH_REVIEW_MAX_MODEL_CALLS=off``) the step cap
+    is back, and is recorded as a result."""
+    off = [("baseline", {"GEOTECH_REVIEW_MAX_MODEL_CALLS": "off"})]
     from langchain_core.language_models.fake_chat_models import (
         FakeMessagesListChatModel)
     from langchain_core.messages import AIMessage
@@ -346,13 +351,13 @@ def test_the_step_cap_is_a_result_and_is_not_paid_for_twice(tmp_path):
 
     model = Loops(responses=[AIMessage(content="x")], calls=[])
     res = score_review_suite(model, ids=["fixture-markups"], out_dir=tmp_path,
-                             recursion_limit=8, verbose=False)
+                             arms=off, recursion_limit=8, verbose=False)
     run = res["results"]["baseline"]["fixture-markups"]
     assert run["error"] is None and "GraphRecursionError" in run["outcome_error"]
     assert not run["score"]["passed"]
     n = len(model.calls)
     score_review_suite(model, ids=["fixture-markups"], out_dir=tmp_path,
-                       recursion_limit=8, verbose=False)
+                       arms=off, recursion_limit=8, verbose=False)
     assert len(model.calls) == n
     assert "step caps" in res["results_md"]
 

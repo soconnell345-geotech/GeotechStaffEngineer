@@ -143,6 +143,119 @@ def test_switch_off_builds_the_page_exactly_as_before():
     assert not hasattr(a, "geotech_review_agent")
 
 
+# ---------------------------------------------------------------------------
+# The default page's own fixes, every switch off (BACKLOG DR-01 - DR-03)
+# ---------------------------------------------------------------------------
+def _looping_model(final="FINDINGS SO FAR"):
+    """Calls list_files whenever tools are offered; answers once they go."""
+    model = _model([])
+    calls = {"n": 0}
+
+    def generate(self, messages, stop=None, run_manager=None, **kw):
+        calls["n"] += 1
+        self.seen.append(list(messages))
+        tools_offered = self.bound and self.bound[-1]
+        self.bound.append([])
+        msg = (_call("list_files", {"path": "."}, calls["n"])
+               if tools_offered else AIMessage(content=final))
+        return ChatResult(generations=[ChatGeneration(message=msg)])
+
+    return model, calls, generate
+
+
+def test_default_page_zoom_tool_names_no_missing_tools():
+    """DR-01 (check 1, C3): render_region sent the review agent to the
+    drawing_ir module, which this page does not have."""
+    agent = build_deep_agent(_model([]), **_review_kwargs())
+    desc = _tools_of(agent)["render_region"].description
+    assert not any(w in desc for w in GEOTECH_WORDS)
+    assert "search_document" in desc and "image_box" in desc
+    # the geotech page keeps its wording: it does have drawing_ir
+    geo = build_deep_agent(_model([]))
+    assert "drawing_ir" in _tools_of(geo)["render_region"].description
+
+
+def test_default_page_helper_has_the_review_rules_and_no_writing_tools():
+    """DR-02 (check 1, C8): deepagents' stock helper ran with a
+    286-character prompt; the page's helper reads by the page's rules."""
+    from funhouse_agent.deep import agent as agent_mod
+    from funhouse_agent.deep.prompt import DOCUMENT_REVIEW_READER_PROMPT
+    primary = make_vision_tools(engine=FakeEngine())
+    spec = agent_mod._review_reader_subagent(primary)
+    assert spec["name"] == "general-purpose"            # replaces the stock one
+    assert spec["system_prompt"] == DOCUMENT_REVIEW_READER_PROMPT
+    names = {t.name for t in spec["tools"]}
+    assert {"analyze_pdf_page", "render_region", "read_document"} <= names
+    assert not names & {"annotate_document", "write_docx", "save_file",
+                        "plot_data", "write_xlsx", "annotate_dxf"}
+
+    model = _model([
+        _call("task", {"description": "read page 1 of x.pdf; list the notes",
+                       "subagent_type": "general-purpose"}),
+        AIMessage(content="- note (sheet S-1), read from text"),
+        AIMessage(content="done"),
+    ])
+    agent = build_deep_agent(model, **_review_kwargs())
+    from webapp import core
+    list(core.stream_turn(agent, [{"role": "user", "content": "go"}], "t"))
+    systems = [_system_text(m) for m in model.seen]
+    assert any("You are reading part of a document" in s for s in systems)
+    assert not any("In order to complete the objective" in s for s in systems)
+
+
+def test_default_page_budget_ends_a_long_request_with_an_answer(monkeypatch):
+    """DR-03: the step cap ended long turns in GraphRecursionError after
+    about 17 model calls; the budget's last call answers instead."""
+    from webapp import core
+    monkeypatch.setenv("GEOTECH_REVIEW_MAX_MODEL_CALLS", "6")
+    model, calls, generate = _looping_model()
+    monkeypatch.setattr(Scripted, "_generate", generate)
+    agent = build_deep_agent(model, **_review_kwargs())
+    assert not hasattr(agent, "geotech_review_agent")       # the default build
+    out = list(core.stream_turn(agent, [{"role": "user", "content": "go"}],
+                                "t", recursion_limit=50))
+    done = [e for e in out if e["kind"] == "turn_done"][0]
+    assert calls["n"] == 6
+    assert "FINDINGS SO FAR" in done["answer"]
+    last = model.seen[-1][-1]
+    assert isinstance(last, HumanMessage) and "Step budget" in str(last.content)
+
+
+def test_default_page_step_floor_fits_the_default_budget(monkeypatch):
+    """The host's cap is raised enough for all 40 calls of the default
+    budget on this build (REVIEW_PAGE_STEPS_PER_CALL)."""
+    from webapp import core
+    from funhouse_agent.deep.review_agent import DEFAULT_MAX_MODEL_CALLS
+    model, calls, generate = _looping_model()
+    monkeypatch.setattr(Scripted, "_generate", generate)
+    agent = build_deep_agent(model, **_review_kwargs())
+    out = list(core.stream_turn(agent, [{"role": "user", "content": "go"}],
+                                "t", recursion_limit=core.DEFAULT_BEHAVIOR[
+                                    "recursion_limit"]))
+    assert calls["n"] == DEFAULT_MAX_MODEL_CALLS
+    assert "FINDINGS SO FAR" in [e for e in out
+                                 if e["kind"] == "turn_done"][0]["answer"]
+
+
+def test_default_page_budget_off_restores_the_step_cap(monkeypatch):
+    """GEOTECH_REVIEW_MAX_MODEL_CALLS=off is the way back on a live host."""
+    from langgraph.errors import GraphRecursionError
+    from webapp import core
+    monkeypatch.setenv("GEOTECH_REVIEW_MAX_MODEL_CALLS", "off")
+    model, calls, generate = _looping_model()
+    monkeypatch.setattr(Scripted, "_generate", generate)
+    agent = build_deep_agent(model, **_review_kwargs())
+    assert not getattr(agent, "geotech_min_recursion_limit", None)
+    with pytest.raises(GraphRecursionError):
+        list(core.stream_turn(agent, [{"role": "user", "content": "go"}],
+                              "t", recursion_limit=20))
+
+
+def test_geotech_page_has_no_review_budget():
+    agent = build_deep_agent(_model([]))
+    assert not getattr(agent, "geotech_min_recursion_limit", None)
+
+
 def test_lean_agent_carries_only_review_tools(monkeypatch):
     monkeypatch.setenv(review_flags.AGENT_ENV, "lean")
     agent = build_deep_agent(_model([]), **_review_kwargs())
