@@ -670,7 +670,7 @@
   "ask_who": null,
   "question": "Purge Department addresses from the public app repo's git history, or accept that old commits keep them?",
   "why": "Your rule is no Department emails or hostnames in the public repos. The current files are clean (24b46df), but older commits on GitHub still show them, including your own work address.",
-  "background": "Found 2026-10-12: your work address in a metering diagnosis note, the CfA support mailboxes, the Department SharePoint host and team-site name, the published-app domains in the Tiny Apps run.sh, and a service-account domain in tests. A purge means rewriting the app repo's history and force-pushing; clones and forks keep their copies. Wheels already on PyPI carry one launcher docstring with the SharePoint site address and cannot be changed. planlens and the references repo are clean.",
+  "background": "Found 2026-10-12: your work address in a metering diagnosis note, the CfA support mailboxes, the Department SharePoint host and team-site name, the published-app domains in the Tiny Apps run.sh, and a service-account domain in tests. A purge means rewriting the app repo's history and force-pushing; clones and forks keep their copies. Files already on PyPI cannot be changed; what they carry is OWN-57. planlens and the references repo are clean.",
   "options": [
    {
     "label": "Accept history; keep files clean",
@@ -693,6 +693,38 @@
   "sources": [
    "git: 24b46df (the scrub)",
    "BACKLOG.md (OWN-26, OWN-56)"
+  ]
+ },
+ "OWN-57": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "The PyPI audit found the Department SharePoint site address and post names in published app releases. Accept, or delete releases once testers have moved on?",
+  "why": "Your rule is no Department emails, hostnames or content in public places. PyPI files are public and cannot be edited, only deleted.",
+  "background": "Audit 2026-10-13 of all 248 published files of your four PyPI projects (geotech-staff-engineer, planlens, geotech-references, geotech-report-extraction). No Department email appears anywhere; the only address is your Gmail as the author. App releases 5.10.0 to 5.33.0 (39 versions) carry the Department SharePoint tenant and team-site address in two webapp docstrings. App releases from 5.12.0 carry field-session post and project names in code comments, and report_ingest the embassy answer vocabulary (OWN-25). geotech-report-extraction (all 12 versions) describes an embassy report format and names a post in its test data. Funhouse, Prompter, SharePoint, CfA, Tiny Apps and Key Vault appear throughout the app as integration code, with no addresses. planlens and geotech-references are clean apart from naming Funhouse and Databricks as example hosts. Master already drops the SharePoint address (24b46df); the post names are INF-11.",
+  "options": [
+   {
+    "label": "Accept; keep the next release clean",
+    "effect": "INF-11 scrubs master before the next release. Old files stay on PyPI; the SharePoint address needs a Department sign-in to use."
+   },
+   {
+    "label": "Delete the affected app releases after testers move on",
+    "effect": "Permanent: those version numbers can never be reused, and any install pinned to one breaks. The Department's Nexus mirror and public PyPI mirrors keep their copies."
+   },
+   {
+    "label": "Also delete the geotech-report-extraction project",
+    "effect": "Removes the older extraction package (superseded by report_ingest) and its post name from PyPI. Same mirror caveat."
+   }
+  ],
+  "recommendation": "Accept for now and keep the next release clean (INF-11). Revisit deletion with OWN-56 after tester week: deleting 5.33.0 now would break the tester install, and mirrors already hold copies.",
+  "if_no_answer": "INF-11 goes ahead before the next release; nothing on PyPI is deleted.",
+  "message_to_send": null,
+  "steps": null,
+  "unblocks": [
+   "INF-11"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-56, OWN-57, INF-11)",
+   "PyPI JSON API and every published file, 2026-10-13"
   ]
  }
 }
