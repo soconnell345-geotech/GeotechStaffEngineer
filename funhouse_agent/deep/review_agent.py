@@ -286,9 +286,10 @@ def make_reader_tool(model, reader_tools: list,
         with lock:
             if state["agent"] is None:
                 from funhouse_agent.deep.tool_guards import (
-                    OutputLimitGuard, ToolErrorGuard)
+                    OutputLimitGuard, ToolErrorGuard, auth_retry)
                 mw = [m for m in (
                     _patch_tool_calls(),
+                    auth_retry(),
                     ToolErrorGuard(),
                     ModelCallBudgetMiddleware(budget,
                                               final_turn_nudge=READER_NUDGE,
@@ -427,9 +428,10 @@ def build_review_agent(model, *, engine=None,
     # error, not the end of the turn (C3); a reply cut at the output limit
     # is caught before anything acts on it (C5) -- last, so innermost.
     from funhouse_agent.deep.tool_guards import (OutputLimitGuard,
-                                                 ToolErrorGuard)
+                                                 ToolErrorGuard, auth_retry)
     middleware: List[Any] = [m for m in (
         _patch_tool_calls(),
+        auth_retry(),
         ToolErrorGuard(),
         TodoListMiddleware(system_prompt=TODO_PROMPT,
                            tool_description=TODO_TOOL_DESCRIPTION),

@@ -306,6 +306,73 @@ def budget_message(stop: Optional[BudgetStop] = None) -> str:
             "until the budget is renewed. Tell the app owner.")
 
 
+# ---------------------------------------------------------------------------
+# A model call refused at sign-in (HTTP 401; BACKLOG TA-01)
+# ---------------------------------------------------------------------------
+#
+# Field session 2026-09-09 (Nairobi SoE): the agent's own model call to the
+# Funhouse proxy came back as an IIS "401 - Unauthorized" HTML page, the turn's
+# error showed that page raw, and it read as a SharePoint permissions failure.
+# It was transient: the next turn worked seconds later on the same
+# credentials. On Tiny Apps a key that is wrong, expired or not enabled for
+# the model is refused the same way.
+
+_TITLE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+_TAGS = re.compile(r"<[^>]+>")
+_HTML_PAGE = re.compile(r"<(?:!doctype|html|head|body|title)\b", re.IGNORECASE)
+#: Anything shaped like a key or a bearer token, never shown.
+_SECRETS = re.compile(
+    r"\b(?:sk|pk|rk)-[A-Za-z0-9_*\-]{6,}|\bBearer\s+\S+|\b[A-Za-z0-9_\-]{32,}\b")
+
+
+def auth_refused(exc) -> bool:
+    """Whether ``exc`` (or an error it was raised from) is the AI service
+    refusing a call's sign-in: OpenAI's ``AuthenticationError`` or any HTTP
+    401. A spent budget (:func:`budget_exhausted`) is never one. Never
+    raises."""
+    try:
+        if budget_exhausted(exc) is not None:
+            return False
+        for e in _chain(exc):
+            if type(e).__name__ == "AuthenticationError" or _status_of(e) == 401:
+                return True
+            low = str(e).lower()
+            if "error code: 401" in low or "401 - unauthorized" in low:
+                return True
+    except Exception:  # noqa: BLE001 - classifying never fails the caller
+        return False
+    return False
+
+
+def html_gist(text: Any, limit: int = 200) -> str:
+    """Error text fit for one line: an HTML error page cut to its title
+    (else its text without tags), anything shaped like a key masked, the
+    spacing collapsed, at most ``limit`` characters."""
+    import html as _html
+    s = str(text or "")
+    if _HTML_PAGE.search(s):
+        m = _TITLE.search(s)
+        s = _html.unescape(m.group(1) if m else _TAGS.sub(" ", s))
+    s = _SECRETS.sub("…", s)
+    s = " ".join(s.split())
+    return s if len(s) <= limit else s[:limit] + " …"
+
+
+def auth_message(exc) -> str:
+    """What a user is shown when the AI service refused a call's sign-in:
+    the service named, its page cut to its title, what to do."""
+    gist = html_gist(scrub_paths(str(exc)))
+    said = f": {gist}" if gist else ""
+    return ("The AI model service refused this app's sign-in (HTTP 401"
+            f"{said}), so this turn stopped. It is not a problem with your "
+            "request or your documents, and nothing is lost: files saved or "
+            "downloaded this turn are still in the conversation. Ask again in "
+            "a moment - a one-off refusal has cleared by the next turn "
+            "before. If it keeps happening, tell the app owner: the AI key "
+            "this app uses for you may be missing, expired or not enabled for "
+            "this model.")
+
+
 def budget_tool_note(stop: Optional[BudgetStop] = None) -> str:
     """What a TOOL result says when a model call it made hit a spent
     budget: what happened, and that retrying cannot help."""
@@ -325,4 +392,5 @@ BUDGET_HINT = ("No model call can run until the budget is renewed, so do NOT "
 __all__ = ["scrub_paths", "error_line", "tool_error", "tool_error_json",
            "BudgetStop", "budget_signal", "budget_exhausted",
            "budget_message", "budget_tool_note", "BUDGET_HINT",
-           "BUDGET_CODES", "BUDGET_PHRASES"]
+           "BUDGET_CODES", "BUDGET_PHRASES", "auth_refused", "auth_message",
+           "html_gist"]

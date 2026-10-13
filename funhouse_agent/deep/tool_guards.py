@@ -415,6 +415,32 @@ class HideScratchFilesystem(_hide_tools_base()):
         return request
 
 
+# ---------------------------------------------------------------------------
+# A model call refused at sign-in (BACKLOG TA-01)
+# ---------------------------------------------------------------------------
+
+#: Seconds before the one retry of a refused call.
+AUTH_RETRY_DELAY_S = 1.0
+
+
+def auth_retry():
+    """A middleware that asks the model ONCE more, after
+    :data:`AUTH_RETRY_DELAY_S`, when the AI service refused a call's sign-in
+    (an HTTP 401: :func:`funhouse_agent.error_text.auth_refused`); a second
+    refusal is raised, and the turn's error says it plainly. Field session
+    2026-09-09: one such refusal ended a turn, and the next turn worked
+    seconds later on the same credentials. Nothing else is retried here.
+    ``None`` where langchain has no ``ModelRetryMiddleware``."""
+    try:
+        from langchain.agents.middleware import ModelRetryMiddleware
+        from funhouse_agent.error_text import auth_refused
+        return ModelRetryMiddleware(
+            max_retries=1, retry_on=auth_refused, on_failure="error",
+            initial_delay=AUTH_RETRY_DELAY_S, jitter=False)
+    except Exception:  # noqa: BLE001 - an older langchain: no retry
+        return None
+
+
 def loop_guards() -> list:
     """The two guards in the order an agent's middleware list wants them:
     ``ToolErrorGuard`` near the outside of the tool middleware, and
@@ -425,4 +451,5 @@ def loop_guards() -> list:
 __all__ = ["ToolErrorGuard", "OutputLimitGuard", "output_was_cut",
            "cut_call_error", "CUT_REASONS", "CONTINUE_CUT_TEXT",
            "MAX_TEXT_CONTINUES", "loop_guards", "HideScratchFilesystem",
-           "SCRATCH_TOOLS", "strip_scratch_prompt"]
+           "SCRATCH_TOOLS", "strip_scratch_prompt", "auth_retry",
+           "AUTH_RETRY_DELAY_S"]

@@ -25,7 +25,7 @@ _ALL_ENVS = (
     "SHAREPOINT_SITE_URL", "GEOTECH_DEPLOYMENT", "GEOTECH_PROMPTER_MODELS",
     "GEOTECH_WEBAPP_MODEL", "ANTHROPIC_API_KEY", "DEV_IDENTITY",
     "GEOTECH_USER_EMAIL", "GEOTECH_MARKUP_AUTHOR", "WINDOWS_AUTH_HEADER",
-    "GEOTECH_PROMPTER_DISABLE_STREAMING",
+    "GEOTECH_PROMPTER_DISABLE_STREAMING", "GEOTECH_SHAREPOINT_ROOT",
 )
 
 
@@ -101,6 +101,43 @@ def test_dev_identity_and_email_fallbacks(monkeypatch):
     assert ident.key == "state.gov__jane.doe"
     monkeypatch.setenv("DEV_IDENTITY", "CORP\\jdoe")
     assert identity.current_identity().source == "dev"
+
+
+def test_local_dotenv_reaches_settings_read_from_the_environment(
+        tmp_path, monkeypatch):
+    """TA-17: DEV_IDENTITY, GEOTECH_SHAREPOINT_ROOT and
+    GEOTECH_PROMPTER_DISABLE_STREAMING are read straight from the
+    environment, so their .env lines did nothing on dosdev. A local start
+    exports the .env; a real environment variable still wins, and an empty
+    line stays unset."""
+    from webapp import tinyapps_entry
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "DEV_IDENTITY=CORP\\jdoe\n"
+        "GEOTECH_SHAREPOINT_ROOT=Shared Documents/Pilot\n"
+        "GEOTECH_PROMPTER_DISABLE_STREAMING=1\n"
+        "PROMPTER_MODEL=from-dotenv\n"
+        "GEOTECH_USER_EMAIL=\n", encoding="utf-8")
+    monkeypatch.setenv("GEOTECH_DOTENV", str(env_file))
+    monkeypatch.setenv("PROMPTER_MODEL", "from-env")
+    assert identity.current_identity() is identity.ANONYMOUS
+    done = tinyapps_entry.load_local_settings()
+    assert set(done) == {"DEV_IDENTITY", "GEOTECH_SHAREPOINT_ROOT",
+                         "GEOTECH_PROMPTER_DISABLE_STREAMING"}
+    assert os.environ["PROMPTER_MODEL"] == "from-env"
+    assert "GEOTECH_USER_EMAIL" not in os.environ
+    ident = identity.current_identity()
+    assert ident.source == "dev" and ident.username == "jdoe"
+    assert os.environ["GEOTECH_SHAREPOINT_ROOT"] == "Shared Documents/Pilot"
+
+
+def test_the_app_service_exports_nothing(tmp_path, monkeypatch):
+    env_file = tmp_path / ".env"
+    env_file.write_text("DEV_IDENTITY=CORP\\jdoe\n", encoding="utf-8")
+    monkeypatch.setenv("GEOTECH_DOTENV", str(env_file))
+    monkeypatch.setenv("APP_ENV", "azure")
+    assert ts.export_dotenv() == []
+    assert "DEV_IDENTITY" not in os.environ
 
 
 def test_key_is_case_insensitive_and_folder_safe():

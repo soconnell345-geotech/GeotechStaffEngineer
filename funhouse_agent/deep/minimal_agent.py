@@ -202,8 +202,10 @@ def _helper_tool(model, engine, helper_tools: list,
     def helper():
         with lock:
             if state["agent"] is None:
+                from funhouse_agent.deep.tool_guards import auth_retry
                 mw = [m for m in (
                     _patch_tool_calls(),
+                    auth_retry(),
                     InlineImageMiddleware(engine=engine),
                     ModelCallBudgetMiddleware(
                         budget, final_turn_nudge=READER_NUDGE,
@@ -261,8 +263,10 @@ def build_minimal_agent(model, *, engine=None,
     system_prompt = MINIMAL_PROMPT
     if extra_system_prompt:
         system_prompt = system_prompt + "\n\n" + extra_system_prompt
+    from funhouse_agent.deep.tool_guards import auth_retry
     middleware: List[Any] = [m for m in (
         _patch_tool_calls(),
+        auth_retry(),
         _summarizer(model),
         InlineImageMiddleware(engine=engine),
         ModelCallBudgetMiddleware(budget, final_turn_nudge=FINAL_NUDGE,

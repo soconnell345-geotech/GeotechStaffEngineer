@@ -58,7 +58,8 @@ from funhouse_agent.deep.scratch_guard import ScratchFilesystemGuard
 from funhouse_agent.deep.unknown_tool import UnknownToolHint
 from funhouse_agent.deep.delivered_log import DeliveredToolResults
 from funhouse_agent.deep.tool_guards import (HideScratchFilesystem,
-                                             OutputLimitGuard, ToolErrorGuard)
+                                             OutputLimitGuard, ToolErrorGuard,
+                                             auth_retry)
 from funhouse_agent.deep.calculate_tool import make_calculate_tool
 
 try:  # the spec deepagents auto-adds; re-declared below to carry the guard
@@ -1297,6 +1298,9 @@ def build_deep_agent(
         # at the output limit is caught before anything acts on it (C5).
         extra_mw = [DeliveredToolResults(), ToolErrorGuard(),
                     ScratchFilesystemGuard()]
+        retry = auth_retry() if "runnable" not in spec else None
+        if retry is not None:
+            extra_mw.insert(0, retry)
         scope = _call_scope.get(spec.get("name"))
         if scope and "runnable" not in spec:
             extra_mw.append(UnknownToolHint(scope))
@@ -1306,9 +1310,11 @@ def build_deep_agent(
     if (_GENERAL_PURPOSE_SPEC is not None
             and not any(s.get("name") == "general-purpose" for s in subagents)):
         subagents.append({**_GENERAL_PURPOSE_SPEC,
-                          "middleware": [DeliveredToolResults(),
-                                         ToolErrorGuard(),
-                                         ScratchFilesystemGuard()]
+                          "middleware": [m for m in (auth_retry(),)
+                                         if m is not None]
+                          + [DeliveredToolResults(),
+                             ToolErrorGuard(),
+                             ScratchFilesystemGuard()]
                           + ([UnknownToolHint(allowed_agents)]
                              if allowed_agents else [])
                           + [OutputLimitGuard()]})
@@ -1342,6 +1348,11 @@ def build_deep_agent(
                 keep=summarization_keep,
             )
         )
+    # A model call refused at sign-in (a 401) is asked once more before the
+    # turn ends on it (BACKLOG TA-01; field session 2026-09-09).
+    retry = auth_retry()
+    if retry is not None:
+        middleware.append(retry)
     # First of the app's tool middleware: logs each result as the model
     # receives it, after the guards below (live smoke wave 1, G11).
     middleware.append(DeliveredToolResults())

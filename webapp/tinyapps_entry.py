@@ -59,8 +59,22 @@ def register_engine() -> bool:
     return ok
 
 
+def load_local_settings() -> list:
+    """A local run (dosdev, a laptop): the ``.env`` lines that are not real
+    environment variables become ones, so the settings read straight from
+    the environment (``DEV_IDENTITY``, ``GEOTECH_SHAREPOINT_ROOT``,
+    ``GEOTECH_PROMPTER_DISABLE_STREAMING``) work from ``.env`` too (BACKLOG
+    TA-17). Nothing on the App Service. Never fails the start."""
+    try:
+        from webapp import tinyapps_settings
+        return tinyapps_settings.export_dotenv()
+    except Exception:  # noqa: BLE001 - get_setting still reads the .env
+        return []
+
+
 def main() -> None:
     """Run the two-page app in the current Streamlit script context."""
+    load_local_settings()
     mark_deployment()
     register_engine()
     pages_entry.run()

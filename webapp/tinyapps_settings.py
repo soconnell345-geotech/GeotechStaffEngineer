@@ -139,6 +139,31 @@ def get_setting(name: str, default: Optional[str] = None,
     return value
 
 
+def export_dotenv() -> list:
+    """Local runs: put every ``.env`` setting that is not already a real
+    environment variable INTO the environment; returns the names it set.
+
+    BACKLOG TA-17: some settings are read straight from the environment,
+    never through :func:`get_setting` -- ``DEV_IDENTITY``
+    (``webapp.identity``), ``GEOTECH_SHAREPOINT_ROOT``
+    (``webapp.sharepoint_store``), ``GEOTECH_PROMPTER_DISABLE_STREAMING``
+    (the engine) -- so their ``.env`` lines did nothing on dosdev. Exported
+    at start-up, every ``.env`` line reaches the app however it is read, and
+    a real environment variable still wins, as in :func:`get_setting`. An
+    EMPTY line (``GEOTECH_SHAREPOINT_ROOT=`` in ``.env.example``) means not
+    set and is left out, so the app's own default stands. On the App
+    Service (``APP_ENV=azure``) nothing happens: its app settings are real
+    environment variables already, and no ``.env`` is read."""
+    if app_env() == "azure":
+        return []
+    done = []
+    for key, value in _load_dotenv().items():
+        if key and value and key not in os.environ:
+            os.environ[key] = value
+            done.append(key)
+    return done
+
+
 def reset() -> None:
     """Forget cached values and the parsed ``.env`` (tests, secret rotation)."""
     global _dotenv
@@ -146,6 +171,6 @@ def reset() -> None:
     _dotenv = None
 
 
-__all__ = ["get_setting", "app_env", "dotenv_path", "reset",
+__all__ = ["get_setting", "app_env", "dotenv_path", "reset", "export_dotenv",
            "APP_ENV_VAR", "KV_NAME_VAR", "IDENTITY_ENDPOINT_VAR",
            "DOTENV_PATH_VAR", "KEY_VAULT_SUFFIX"]

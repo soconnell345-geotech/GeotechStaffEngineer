@@ -1818,7 +1818,13 @@ def friendly_turn_error(exc: BaseException) -> str:
     Anthropic's 400 "usage limits", a 402) is ONE plain line and nothing
     else -- no provider JSON, no request id, no "ask again" (live smoke wave
     2c, D2: the tester saw Anthropic's raw 400 under "ask again"). The raw
-    text goes to the activity log (``turn_jobs``)."""
+    text goes to the activity log (``turn_jobs``).
+
+    The AI service refusing the call's sign-in (an HTTP 401: OpenAI's
+    ``AuthenticationError``, an IIS "401 - Unauthorized" page) is said
+    plainly, naming the model service, with the page cut to its title
+    (BACKLOG TA-01; field session 2026-09-09 showed the raw IIS page, which
+    read as a SharePoint failure)."""
     stop = budget_exhausted(exc)
     if stop is not None:
         try:
@@ -1827,6 +1833,12 @@ def friendly_turn_error(exc: BaseException) -> str:
         except Exception:  # noqa: BLE001
             return ("The AI budget for this app is used up. Tell the app "
                     "owner.")
+    try:
+        from funhouse_agent.error_text import auth_message, auth_refused
+        if auth_refused(exc):
+            return auth_message(exc)
+    except Exception:  # noqa: BLE001 - the raw error is shown instead
+        pass
     text = f"{type(exc).__name__}: {exc}"
     try:
         from funhouse_agent.error_text import scrub_paths
