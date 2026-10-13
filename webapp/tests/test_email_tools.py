@@ -51,11 +51,11 @@ def test_send_success_attaches_real_bytes(monkeypatch, tmp_path):
     sent = _install_fake_sdk(monkeypatch)
     f = tmp_path / "calc_package.pdf"
     f.write_bytes(b"%PDF-real-content")
-    out = et.email_file.invoke({"to": "jane.doe@state.gov",
+    out = et.email_file.invoke({"to": "jane.doe@agency.gov",
                                 "file_path": str(f)})
-    assert "Emailed calc_package.pdf to jane.doe@state.gov" in out
+    assert "Emailed calc_package.pdf to jane.doe@agency.gov" in out
     assert "no-reply" in out
-    assert sent["to"] == "jane.doe@state.gov"
+    assert sent["to"] == "jane.doe@agency.gov"
     assert sent["attachments"] == [("calc_package.pdf", b"%PDF-real-content")]
     name, content = sent["attachments"][0]
     assert isinstance(content, bytes)
@@ -89,7 +89,7 @@ def test_blocked_domain_rejected_client_side(monkeypatch, tmp_path, addr):
     assert sent == {}                              # SDK never touched
 
 
-@pytest.mark.parametrize("addr", ["a@state.gov", "b@navy.MIL", "c@dept.sbu"])
+@pytest.mark.parametrize("addr", ["a@agency.gov", "b@navy.MIL", "c@dept.sbu"])
 def test_allowed_suffixes_case_insensitive(monkeypatch, tmp_path, addr):
     sent = _install_fake_sdk(monkeypatch)
     f = tmp_path / "x.pdf"
@@ -100,7 +100,7 @@ def test_allowed_suffixes_case_insensitive(monkeypatch, tmp_path, addr):
 
 def test_missing_file(monkeypatch):
     sent = _install_fake_sdk(monkeypatch)
-    out = et.email_file.invoke({"to": "a@state.gov",
+    out = et.email_file.invoke({"to": "a@agency.gov",
                                 "file_path": "/nope/missing.pdf"})
     assert "Local file not found" in out and "no email was sent" in out
     assert sent == {}
@@ -111,7 +111,7 @@ def test_sdk_exception_becomes_readable_error(monkeypatch, tmp_path):
                       send_exc=RuntimeError("SMTP relay refused connection"))
     f = tmp_path / "x.pdf"
     f.write_bytes(b"x")
-    out = et.email_file.invoke({"to": "a@state.gov", "file_path": str(f)})
+    out = et.email_file.invoke({"to": "a@agency.gov", "file_path": str(f)})
     assert "Email error" in out and "SMTP relay refused connection" in out
 
 
@@ -135,7 +135,7 @@ def test_tool_without_sdk_reports_not_raises(monkeypatch, tmp_path):
     _uninstall_sdk(monkeypatch)
     f = tmp_path / "x.pdf"
     f.write_bytes(b"x")
-    out = et.email_file.invoke({"to": "a@state.gov", "file_path": str(f)})
+    out = et.email_file.invoke({"to": "a@agency.gov", "file_path": str(f)})
     assert "Email error" in out
 
 # ============================================================================
@@ -144,12 +144,12 @@ def test_tool_without_sdk_reports_not_raises(monkeypatch, tmp_path):
 
 def test_me_resolves_from_env(monkeypatch, tmp_path):
     sent = _install_fake_sdk(monkeypatch)
-    monkeypatch.setenv(et.USER_EMAIL_ENV, "OConnellSJ@state.gov")
+    monkeypatch.setenv(et.USER_EMAIL_ENV, "Reviewer@agency.gov")
     f = tmp_path / "pkg.pdf"
     f.write_bytes(b"x")
     out = et.email_file.invoke({"to": "me", "file_path": str(f)})
-    assert "Emailed" in out and "OConnellSJ@state.gov" in out
-    assert sent["to"] == "OConnellSJ@state.gov"
+    assert "Emailed" in out and "Reviewer@agency.gov" in out
+    assert sent["to"] == "Reviewer@agency.gov"
 
 
 def test_empty_to_resolves_from_env(monkeypatch, tmp_path):
@@ -195,13 +195,13 @@ def test_only_the_conversations_files_can_be_emailed(monkeypatch, tmp_path):
     theirs.mkdir(parents=True)
     (theirs / "private.pdf").write_bytes(b"%PDF alice")
     with _fileio.working_dir_bound(mine):
-        refused = et.email_file.invoke({"to": "a@state.gov",
+        refused = et.email_file.invoke({"to": "a@agency.gov",
                                         "file_path": str(theirs / "private.pdf")})
-        missing = et.email_file.invoke({"to": "a@state.gov",
+        missing = et.email_file.invoke({"to": "a@agency.gov",
                                         "file_path": "nope.pdf"})
-        out = et.email_file.invoke({"to": "a@state.gov",
+        out = et.email_file.invoke({"to": "a@agency.gov",
                                     "file_path": "memo.pdf"})
     assert "only those can be emailed" in refused and "memo.pdf" in refused
     assert "no email was sent" in missing and str(mine) not in missing
-    assert "Emailed memo.pdf to a@state.gov" in out and str(mine) not in out
+    assert "Emailed memo.pdf to a@agency.gov" in out and str(mine) not in out
     assert sent["attachments"] == [("memo.pdf", b"%PDF bob")]

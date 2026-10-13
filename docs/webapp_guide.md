@@ -91,22 +91,14 @@ Deferred — capture these on first real run and drop them here:
 
 ---
 
-## TinyApp submission checklist
+## Tiny Apps deployment
 
-TinyApp (Azure Government) hosts application code you submit; Streamlit/Python is
-a listed stack, and **Prompter** is a listed data connection.
-
-1. **Submit** `webapp/app.py`, the `webapp/` package (`core.py`,
-   `engine_config.py`), and `webapp/requirements.txt`.
-2. **Wire the engine.** Either the platform exposes `ANTHROPIC_API_KEY` (nothing
-   else to do), or register the Prompter-backed model at startup:
-   `webapp.engine_config.register_model_builder(lambda: PrompterChatModel(fh_prompter))`.
-   We do not ship a Prompter HTTP client — the deployment provides the SDK.
-3. **Cold-open test.** Confirm the app renders (banner + disclaimer) before any
-   engine is wired — reviewers may click it cold.
-4. **Smoke test.** Ask a simple question (e.g. "Bearing capacity of a 2 m strip
-   footing, phi=30, gamma=18"), upload a small PDF and ask the agent to read it,
-   and confirm an artifact download appears when you ask for a calc package.
+The Tiny Apps deployment is a thin wrapper repo over the released package:
+`tinyapps/wrapper_repo/` (`app.py`, `packages.txt`, `run.sh`, `.env.example`).
+Settings, per-tester keys, storage, the dosdev recipe and the questions for
+CfA are in `tinyapps/TINYAPPS.md`, the plan of record; open work is in
+`BACKLOG.md` (TA-nn, OWN-43 to OWN-51). The older submit-`app.py`-and-
+`requirements.txt` checklist that stood here was retired on 2026-10-12.
 
 ---
 

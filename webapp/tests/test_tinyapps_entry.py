@@ -126,7 +126,7 @@ def test_session_root_keeps_the_legacy_layout_for_the_single_user_app(tmp_path):
     # nobody identified, DEV_IDENTITY, the Databricks launcher's email: ONE
     # person per process — the geotech page keeps the data root itself
     dev = parse_principal("CORP\\jdoe", "dev")
-    email = parse_principal("jane.doe@state.gov", "email")
+    email = parse_principal("jane.doe@agency.gov", "email")
     for who in (ANONYMOUS, dev, email):
         assert not who.multi_user
         assert profiles.session_root(profiles.GEOTECH, who, base) == base

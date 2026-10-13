@@ -350,7 +350,7 @@ def fix_web_url(url) -> str:
     The SDK intentionally emits ``https:/host/...`` (ONE slash) so Databricks
     log redaction doesn't eat the link — but that is an invalid URL: browsers
     resolve it as a RELATIVE path against the current page, producing e.g.
-    ``https://adb-dp-.../usdos.sharepoint.com/...`` (owner-reported dead
+    ``https://adb-dp-.../<tenant>.sharepoint.com/...`` (owner-reported dead
     sidebar link, 2026-09). Normalize back to ``https://``.
     """
     text = str(url or "")

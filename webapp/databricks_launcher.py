@@ -585,7 +585,7 @@ def stage_sharepoint(
     Typical use::
 
         from webapp.databricks_launcher import stage_sharepoint, run_on_databricks
-        stage_sharepoint("https://usdos.sharepoint.com/sites/CSEGeotechGroup",
+        stage_sharepoint("https://contoso.sharepoint.com/sites/GeotechTeam",
                          root="Shared Documents/General/GSE_app")
         handle = run_on_databricks(prompter=fh_prompter)
 

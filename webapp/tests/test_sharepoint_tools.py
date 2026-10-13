@@ -210,7 +210,7 @@ class TestBaseFolderNotDoubled:
 
     def test_absolute_paths_still_pass_through(self, fake_sp):
         for p in ("Shared Documents/General/GSE_app/x.pdf",
-                  "/sites/CSEGeotechGroup/Shared Documents/x.pdf",
+                  "/sites/GeotechTeam/Shared Documents/x.pdf",
                   "https://t.sharepoint.com/sites/x/y.pdf"):
             assert spt._resolve(p) == p
 

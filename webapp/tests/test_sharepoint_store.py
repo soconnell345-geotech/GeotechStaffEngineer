@@ -429,8 +429,8 @@ def test_moved_pointer_failure_is_captured_not_raised(tmp_path, monkeypatch):
 
 
 def test_fix_web_url_repairs_single_slash():
-    assert sp.fix_web_url("https:/usdos.sharepoint.com/sites/X?web=1") == \
-        "https://usdos.sharepoint.com/sites/X?web=1"
+    assert sp.fix_web_url("https:/contoso.sharepoint.com/sites/X?web=1") == \
+        "https://contoso.sharepoint.com/sites/X?web=1"
     assert sp.fix_web_url("http:/host/p") == "http://host/p"
     # already-valid and non-URL inputs untouched
     assert sp.fix_web_url("https://ok.example/p") == "https://ok.example/p"

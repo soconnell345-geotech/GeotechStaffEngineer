@@ -112,12 +112,10 @@ accepts a `checkpointer=` argument so a durable saver (e.g.
 `langgraph-checkpoint-sqlite`) can be dropped in later without other changes; the
 in-tree `InMemorySaver` covers within-session thread state.
 
-> ⚠️ **TinyApp storage caveat.** Whether the TinyApp environment gives the app a
-> **persistent, writable** filesystem is unknown until the platform answer. If it
-> does, set `GEOTECH_WEBAPP_DATA` to that persistent volume and conversations
-> survive restarts/redeploys. If storage is **ephemeral**, conversations live
-> only for the container's lifetime (the app still works; it just won't persist
-> across a redeploy). Confirm with the hosting team.
+> **Tiny Apps storage (answered).** App Service keeps `/home` across restarts,
+> and the wrapper's `app.py` sets `GEOTECH_WEBAPP_DATA=/home/data/geotech_webapp`,
+> so conversations survive restarts and redeploys; they also mirror to
+> SharePoint (`tinyapps/TINYAPPS.md`).
 
 ### Where your files live (and the working folder)
 
@@ -214,7 +212,7 @@ refresh token), so the app's token never goes stale:
 
 ```python
 from webapp.databricks_launcher import stage_sharepoint
-stage_sharepoint("https://usdos.sharepoint.com/sites/CSEGeotechGroup",
+stage_sharepoint("https://contoso.sharepoint.com/sites/GeotechTeam",
                  root="Shared Documents/General/GSE_app")
 ```
 
@@ -364,40 +362,14 @@ and the cluster allows the driver-proxy for your workspace. The local path
 
 ---
 
-## 4. TinyApp deployment (Azure Government)
+## 4. Tiny Apps deployment (Azure Government)
 
-TinyApp hosts application code you submit (Streamlit/Python is a first-class
-stack). Submit:
-
-- `webapp/app.py` (+ the `webapp/` package: `core.py`, `engine_config.py`)
-- `webapp/requirements.txt` — pins `geotech-staff-engineer[deep,full,webapp]`
-
-**Engine via the "Prompter" data connection.** TinyApp lists *Prompter* as an
-allowed data connection. When the deployment provides a Prompter/`fh_prompter`
-LLM client, register it as the app's model at startup (e.g. in a small
-`startup`/`bootstrap` hook the platform runs before `app.py`):
-
-```python
-from webapp.engine_config import register_model_builder
-# The deployment supplies a LangChain-compatible chat model wrapping the Prompter
-# client. We do NOT ship a Prompter HTTP client — the environment provides the SDK.
-register_model_builder(lambda: PrompterChatModel(fh_prompter))
-```
-
-`resolve_engine()` then prefers that model over `ANTHROPIC_API_KEY`. If the
-platform instead exposes an Anthropic key as an env var, set `ANTHROPIC_API_KEY`
-and no registration is needed. If neither is present the app boots into the
-"no engine configured" banner rather than erroring — safe for a cold reviewer
-click.
-
-**Checklist**
-- [ ] `requirements.txt` present and installs cleanly.
-- [ ] Engine wired: Prompter builder registered **or** `ANTHROPIC_API_KEY` set.
-- [ ] App opens cold (no engine) without a traceback — shows the banner.
-- [ ] Disclaimer renders at the top.
-- [ ] File upload → the agent can read the staged file (see `webapp_guide.md`).
-- [ ] `GEOTECH_WEBAPP_DATA` pointed at a **persistent** volume if conversations
-      should survive redeploys (else they are per-container; see section 2).
+The Tiny Apps deployment is a thin wrapper repo over the released package:
+`tinyapps/wrapper_repo/` (`app.py`, `packages.txt`, `run.sh`, `.env.example`).
+Settings, per-tester keys, storage, the dosdev recipe and the questions for
+CfA are in `tinyapps/TINYAPPS.md`, the plan of record; open work is in
+`BACKLOG.md` (TA-nn, OWN-43 to OWN-51). The older submit-`app.py`-and-
+`requirements.txt` checklist that stood here was retired on 2026-10-12.
 
 ---
 

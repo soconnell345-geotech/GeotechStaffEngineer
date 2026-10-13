@@ -39,5 +39,5 @@ exec python -m streamlit run "$APP_DIR/app.py" \
     --browser.gatherUsageStats false \
     --client.toolbarMode viewer \
     --server.fileWatcherType none \
-    --server.corsAllowedOrigins "https://CHANGE-ME.cfaapp.cfa.state.sbu"
-    # --server.corsAllowedOrigins "https://CHANGE-ME.app.data.state.sbu"  # repeat per additional published origin
+    --server.corsAllowedOrigins "https://CHANGE-ME"   # the published address CfA gives you
+    # --server.corsAllowedOrigins "https://CHANGE-ME-TOO"  # repeat per additional published origin

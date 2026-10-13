@@ -45,4 +45,4 @@ dosdev, push, and ask the App Services team to sync.
 | `KV_NAME` (app setting) | the Key Vault the values above live in |
 | `--server.corsAllowedOrigins` in `run.sh` | the published URL of the app |
 
-Support: CfATinyAppsSupport@state.gov.
+Support: CfA's Tiny Apps support mailbox (its address is in the Tiny Apps user guide).

@@ -98,8 +98,8 @@ def test_suffix_is_the_identity_key_in_key_vault_alphabet():
     assert te.tester_suffix(ALICE) == "CORP-ALICE"
     assert te.tester_suffix(identity.Identity("Corp", "J.Doe", "header")) \
         == "CORP-J-DOE"
-    upn = identity.parse_principal("jdoe@state.gov", "header")
-    assert te.tester_suffix(upn) == "STATE-GOV-JDOE"
+    upn = identity.parse_principal("jdoe@agency.gov", "header")
+    assert te.tester_suffix(upn) == "AGENCY-GOV-JDOE"
     name = te.tester_secret_name("PROMPTER_API_KEY", ALICE)
     assert name == "PROMPTER-API-KEY--CORP-ALICE"
     assert te.tester_secret_name("PROMPTER-MODEL", ALICE) == \

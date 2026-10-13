@@ -7,14 +7,17 @@ warnings matter, whether a new major version is safe. This file is the standing
 answer so that review is a two-minute check against a list, not an
 investigation. **Read this BEFORE triaging an install log.**
 
-Last verified against a real cluster log: **5.14.0, 2026-09-11** (clean).
+Last install log triaged line by line: **5.14.0, 2026-09-11** (clean). Installed
+and used on the cluster since: 5.20.0 (2026-09-18, the first scoring run) and
+5.32.0 (2026-10-07, live checks 1 and 4); neither log was pasted for triage.
+The current release is **5.33.0** (2026-10-09).
 
 ---
 
 ## 1. The install
 
 ```python
-%pip install "geotech-staff-engineer==5.25.0"
+%pip install "geotech-staff-engineer==5.33.0"
 %restart_python
 ```
 
@@ -30,10 +33,11 @@ that the already-running Python process cannot see.
 
 Three lines decide it. Find them and you're done:
 
-1. **`Successfully installed ... geotech-staff-engineer-5.20.0 ...`** — with
-   `planlens-0.6.0` and `geotech-references-1.4.0` in the same list.
-   `planlens-0.6.0` brings no package that `planlens-0.4.0` did not, so
-   nothing new should appear beside it.
+1. **`Successfully installed ... geotech-staff-engineer-5.33.0 ...`** — with
+   `planlens-0.13.0` and `geotech-references-1.4.1` in the same list.
+   `planlens-0.13.0` declares exactly the dependencies `planlens-0.4.0` did
+   (numpy, ezdxf, PyMuPDF, opencv-python-headless, rapidfuzz), so nothing
+   new should appear beside it.
 2. **No `403` and no `quarantined` anywhere.**
 3. The final `ERROR: pip's dependency resolver ...` block lists **only** the
    conflicts in §3. That block is a *warning printed as ERROR* — pip says
@@ -155,21 +159,21 @@ verified:
 
 | Package | Pin | Cluster has | Status |
 |---|---|---|---|
-| `opencv-python-headless` (via `planlens`) | `>=4.8` — **no ceiling** | **5.0.0.93** | **Verified safe.** Full planlens suite (792 passed / 1 skipped, the suite as it stood on 2026-09-11; it is 1,307 at planlens 0.6.0 and has NOT been re-run against OpenCV 5 since) run against OpenCV 5.0.0. The cv2 surface we use is small and long-stable (`imdecode`, `cvtColor`, `Canny`, `HoughLinesP`, `HoughCircles`, `findContours`, `approxPolyDP`, `threshold`, `medianBlur`, `rotate`), and `findContours` is already unpacked version-agnostically (`found[0] if len(found)==2 else found[1]`). |
+| `opencv-python-headless` (via `planlens`) | `>=4.8` — **no ceiling** | **5.0.0.93** | **Verified safe.** Full planlens suite run against OpenCV 5.0.0: 792 passed / 1 skipped on 2026-09-11, and again at planlens 0.13.0 on 2026-10-12, 1,658 passed / 2 skipped (Python 3.12, OpenCV 5.0.0.93, numpy 2.5.4: the TA-02 run on CfA's fleet pins). The cv2 surface we use is small and long-stable (`imdecode`, `cvtColor`, `Canny`, `HoughLinesP`, `HoughCircles`, `findContours`, `approxPolyDP`, `threshold`, `medianBlur`, `rotate`), and `findContours` is already unpacked version-agnostically (`found[0] if len(found)==2 else found[1]`). |
 | `rapidfuzz` (via `planlens`, new at 5.18.0) | `>=3.9` — **no ceiling** | **3.14.6** expected | **New at 5.18.0.** Arrives with planlens 0.4.0, which moved it into its core; it is not an app dependency. Cleared the Nexus probe 2026-09-16 at 3.14.6. MIT, and it pulls **no dependencies of its own** — a C++ extension with prebuilt wheels, so it cannot disturb the numpy or streamlit resolution. |
 | `numpy` | `>=2.0` | 2.4.6 | §4 |
 | `streamlit` | `>=1.39` | 1.63.0 | fine |
 | `openai` | `<3` | 2.54.0 | bounded |
 | agent stack | ranges `<0.8` / `<1.4` / `<1.3` | ceilings | §6 |
 
-**planlens 0.6.0 (the 5.20.0 pin) adds no third-party package at all**, and
-neither did 0.5.0. Every one of them declares exactly what 0.4.0 declared —
+**No planlens since 0.4.0 has added a third-party package** (0.13.0, the
+5.33.0 pin, included). Every one declares exactly what 0.4.0 declared —
 numpy, ezdxf, PyMuPDF, opencv-python-headless, rapidfuzz, with `ocr` and
-`mcp` as extras we do not install — so the 5.20.0 log should read like
-5.18.0's with `planlens-0.6.0` in place of `planlens-0.4.0` and nothing else
-moved. The app's own `report_ingest` package is pure Python over what is
-already installed: `anthropic` is optional and deliberately absent here, and
-`openpyxl` already arrives as a hard requirement of `python-ags4`.
+`mcp` as extras we do not install — so a log should read like 5.18.0's with
+the new planlens in place of `planlens-0.4.0` and nothing else moved. The
+app's own `report_ingest` package is pure Python over what is already
+installed: `anthropic` is optional and deliberately absent here. `openpyxl`
+arrives through `python-ags4` up to 5.33.0 and directly after it (§8).
 
 **OpenCV 5 arrived unannounced and unbounded** — we only found out by reading
 an install log. It happens to be fine. Optional hardening: bound planlens'
@@ -192,6 +196,14 @@ cd <planlens> && ../scratch/Scripts/python -m pytest -q
 ---
 
 ## 8. What is deliberately NOT installed on the cluster
+
+**python-ags4 (from the release after 5.33.0).** Every python-ags4 release
+caps pandas below 3.0, and CfA's Tiny Apps fleet pins pandas 3.0.2, so it
+left the core dependencies for the `[ags4]` extra (master a229090, BACKLOG
+TA-02). From that release the log no longer lists `python-ags4`, and
+`openpyxl` is a direct dependency instead of arriving through it. AGS4 read/validate on the geotech page then says it needs the
+extra; `%pip install "geotech-staff-engineer[ags4]==<version>"` brings it back
+on the cluster, where pandas stays below 3.
 
 **OCR.** The app pins plain `planlens`, whose core brings OpenCV and rapidfuzz
 — **not** `rapidocr-onnxruntime`. So scanned sheets and SHX-stroked lettering

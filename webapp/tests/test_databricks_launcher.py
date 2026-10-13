@@ -208,7 +208,7 @@ class _FakePrompter:
     """Live-fh_prompter stand-in with the NTLM credential attributes."""
 
     def __init__(self, verify=False):
-        self.username = "appservices.state.sbu\\svcAccount"
+        self.username = "appservices.agency.sbu\\svcAccount"
         self.password = "s3cret"
         self.base_url = "https://dsaaiapi.example/api/v1"
         self.verify = verify
@@ -217,7 +217,7 @@ class _FakePrompter:
 
 def test_build_launch_env_threads_prompter_credentials():
     env = dl.build_launch_env({}, prompter=_FakePrompter(verify=False))
-    assert env["GEOTECH_FH_USERNAME"] == "appservices.state.sbu\\svcAccount"
+    assert env["GEOTECH_FH_USERNAME"] == "appservices.agency.sbu\\svcAccount"
     assert env["GEOTECH_FH_PASSWORD"] == "s3cret"
     assert env["GEOTECH_FH_BASE_URL"] == "https://dsaaiapi.example/api/v1"
     assert env["GEOTECH_FH_VERIFY"] == "0"
@@ -242,13 +242,13 @@ def test_stage_sharepoint_writes_token_and_envs(tmp_path):
         return f"token-{len(calls)}"
 
     out = dl.stage_sharepoint(
-        "https://usdos.sharepoint.com/sites/CSEGeotechGroup/",
+        "https://contoso.sharepoint.com/sites/GeotechTeam/",
         root="/Shared Documents/General/GSE_app/",
         token_getter=getter, token_path=tok_path,
         start_refresher=False, env=env)
     assert open(tok_path).read() == "token-1"
     assert env["GEOTECH_SHAREPOINT_SITE_URL"] == \
-        "https://usdos.sharepoint.com/sites/CSEGeotechGroup"
+        "https://contoso.sharepoint.com/sites/GeotechTeam"
     assert env["GEOTECH_SHAREPOINT_TOKEN_FILE"] == tok_path
     assert env["GEOTECH_SHAREPOINT_ROOT"] == "Shared Documents/General/GSE_app"
     assert out["refresher"] is False

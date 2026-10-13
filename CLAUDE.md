@@ -1558,8 +1558,8 @@ Funhouse is THE deployment target.** (1) **SharePoint permanent storage**
 (`webapp/sharepoint_store.py`): after every turn the conversation dir (meta/
 transcript/trace/uploads/artifacts) mirrors incrementally (local manifest) to
 `<ROOT>/conversations/<thread_id>/`; sidebar "Permanent storage" block +
-Sync now; best-effort, never breaks a turn. Owner target: site
-CSEGeotechGroup, root "Shared Documents/General/GSE_app". Auth =
+Sync now; best-effort, never breaks a turn. Owner target: the
+team's site, root "Shared Documents/General/GSE_app". Auth =
 `stage_sharepoint(site, root)` in `databricks_launcher` (delegated-OAuth:
 writes the Graph token to a driver-local file + 30-min silent-refresh daemon
 via MSALAuth secret_manager cache; store reads via

@@ -315,7 +315,7 @@ fresh process:
 
 ```
 budget.sqlite_directory -> C:/…/tmp/meterdir
-session.user_name       -> oconnells@state.gov
+session.user_name       -> <the owner's work address>
 should_write            -> True
 resolved path           -> C:/…/tmp/meterdir\funhouse_meter.sqlite
 ```

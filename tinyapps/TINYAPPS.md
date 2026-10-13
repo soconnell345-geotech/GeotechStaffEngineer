@@ -1,7 +1,12 @@
 # Tiny Apps — plan of record and working notes
 
-**Status (2026-09-23): 5.26.0 RELEASED and BOOTED ON DOSDEV; waiting on
-CfA for the Prompter and SharePoint values.** The pilot was awarded
+**Status (2026-10-12): 5.33.0 RELEASED (2026-10-09, with per-tester
+Prompter keys); testers arrive the week of 2026-10-12; the owner meets CfA
+this week for the Prompter and SharePoint values (BACKLOG OWN-43 to
+OWN-51).** Testers get ONE GPT-5.6 Sol-or-higher deployment (owner,
+2026-10-12); the app measures it on first use. `packages.txt` cannot pin
+pandas 3.0.2 beside 5.33.0 (python-ags4 caps pandas below 3; see the file).
+Earlier status (2026-09-23): 5.26.0 released and booted on dosdev. The pilot was awarded
 2026-09-03; the owner has GitHub Enterprise access and the **dosdev**
 development environment (a virtual desktop, Python 3.11.9, VS Code, push to
 GHE). On 2026-09-23 `pip install geotech-staff-engineer==5.26.0` resolved on
@@ -21,8 +26,8 @@ documents are never committed): `Data.State Tiny Apps User Guide v1.1`
 (2026-03-06, 20 pp, text extract beside it), `TinyApps Pilot Guidelines`, and
 CfA's **`exampleCode`** repo (module versions 2026-08-28 → 2026-09-17: the
 `settings.py` / `prompter.py` / `sharepoint.py` / `auth.py` patterns and a
-Streamlit starter). Support: CfATinyAppsSupport@state.gov; GitHub:
-CFAGitHubSupport@state.gov.
+Streamlit starter). Support: CfA's Tiny Apps and GitHub support mailboxes
+(addresses in the local user guide; never in this public repo).
 
 ## What the app is FOR on this host (owner, 2026-09-21)
 
@@ -90,7 +95,7 @@ system_prompt=build_document_review_prompt())`) and `webapp/tinyapps_entry.py`
   require ≥3.10).
 - Approval path: MOU → GHE repo → SIA (1–2 wk; business-justification script
   in guide §5.3.1) → DT CAB only for connections outside the Data.State
-  boundary (usdos.sharepoint.com — ask) → PCR (1–2 d). Code must run locally
+  boundary (the Department's SharePoint tenant — ask) → PCR (1–2 d). Code must run locally
   first; the App Services team deploys and pushes updates (§7.2).
 
 ## Deployment architecture: THIN WRAPPER repo (`tinyapps/wrapper_repo/`)
@@ -110,7 +115,7 @@ bump the pin + ask App Services to sync. The engineers fill in
 between dosdev and production** — the same names are read from `.env` there
 and Key Vault here.
 
-## Per-tester Prompter keys (built 2026-10-09, unreleased)
+## Per-tester Prompter keys (built 2026-10-09, released in 5.33.0)
 
 Each tester on the published app gets their own Prompter key, so each has
 their own budget, and the list of keys is the pilot's access list.
@@ -142,7 +147,7 @@ Databricks, and any request with no header.
 **Naming `<TESTER>`** (`tester_suffix`). Start from the identity key
 (`CORP\jdoe` → `corp__jdoe`). Put it in upper case and turn every run of
 characters other than a letter or digit into ONE hyphen: `CORP-JDOE`,
-`CORP\j.doe` → `CORP-J-DOE`, `jdoe@state.gov` → `STATE-GOV-JDOE`.
+`CORP\j.doe` → `CORP-J-DOE`, `jdoe@agency.gov` → `AGENCY-GOV-JDOE`.
 
 - The result is valid for Key Vault: letters, digits and hyphens, starting
   with a letter.
@@ -194,7 +199,7 @@ different model deployment, add `PROMPTER-MODEL--<TESTER>` and, if needed,
 `PROMPTER-KEYS`. To get the exact name for a tester, have them open the
 app: the refusal message shows it.
 
-## Built 2026-09-21 (on master, unreleased — candidate 5.26.0)
+## Built 2026-09-21 (released in 5.26.0)
 
 - `webapp/tinyapps_settings.py` — CfA's `get_setting` pattern.
 - `webapp/identity.py` — header / `DEV_IDENTITY` / `GEOTECH_USER_EMAIL` →
@@ -221,8 +226,9 @@ app: the refusal message shows it.
 ## dosdev test recipe (owner, once the values arrive)
 
 1. Clone the wrapper repo; `python -m pip install -r packages.txt`
-   (proves the whole tree clears Nexus — pandas 3.0.2 and streamlit 1.62.0
-   included); `cp .env.example .env` and fill it in.
+   (proves the whole tree clears Nexus; streamlit 1.62.0 is pinned, and
+   pandas 3.0.2 only from the release after 5.33.0, which makes python-ags4
+   optional: TA-02, 2026-10-12); `cp .env.example .env` and fill it in.
 2. `python -m streamlit run app.py` → Document Review page; sidebar shows
    "Signed in as …" (`DEV_IDENTITY`) and the model; Connection diagnostics
    → the Prompter self-tests (plain / stream / tool call).
@@ -234,12 +240,14 @@ app: the refusal message shows it.
 
 ## Office-hours / App Services questions (revised 2026-09-21)
 
-1. **Does the model deployment behind our key accept IMAGE inputs, and is it
-   GPT-4.1-class or better?** (make-or-break) Does the gateway pass streaming?
+1. **Is every tester's key on the GPT-5.6 Sol (or newer) deployment, with
+   IMAGE input enabled, and does the gateway pass full-resolution images
+   through unchanged?** (make-or-break; BACKLOG OWN-47) Does the gateway pass
+   streaming?
 2. `PROMPTER_URL` / `PROMPTER_MODEL` / key; is `PROMPTER_CA_BUNDLE` needed?
 3. The published origin(s) for `corsAllowedOrigins`.
 4. SharePoint app registration for the team site (the four `GRAPH_*` /
-   `SHAREPOINT_SITE_URL` values); is usdos.sharepoint.com inside the boundary
+   `SHAREPOINT_SITE_URL` values); is the Department's SharePoint tenant inside the boundary
    (CAB)?
 5. Is the identity header passed for pilot Streamlit apps (the starter says
    yes)?

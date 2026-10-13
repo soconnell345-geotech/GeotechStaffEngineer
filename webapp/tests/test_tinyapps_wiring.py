@@ -95,10 +95,10 @@ def test_two_header_values_trust_neither():
 
 def test_dev_identity_and_email_fallbacks(monkeypatch):
     assert identity.current_identity() is identity.ANONYMOUS
-    monkeypatch.setenv("GEOTECH_USER_EMAIL", "jane.doe@state.gov")
+    monkeypatch.setenv("GEOTECH_USER_EMAIL", "jane.doe@agency.gov")
     ident = identity.current_identity()
     assert ident.source == "email" and ident.username == "jane.doe"
-    assert ident.key == "state.gov__jane.doe"
+    assert ident.key == "agency.gov__jane.doe"
     monkeypatch.setenv("DEV_IDENTITY", "CORP\\jdoe")
     assert identity.current_identity().source == "dev"
 
