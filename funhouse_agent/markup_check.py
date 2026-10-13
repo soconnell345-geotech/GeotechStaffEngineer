@@ -51,6 +51,17 @@ held the whole tag did not enclose it (4 wrong rejections of 70 good rings,
 brief 4); its reading of what is there still decides WHICH thing it is (a QCE,
 an arrowhead), and size is still measured (:data:`MAX_AREA_FACTOR`).
 
+**A name says WHICH thing; the printed thing says where** (Foundry brief 5,
+B3). ``target`` is the agent's free text, and the look measured enclosure and
+size against whatever box that text led it to: told "tag with leader", a
+look boxed tag and leader, so exact rings round the tags were "beside the
+mark" and rings widened to take in the leader were the right size (25 wrong
+ring verdicts of 81). The look now boxes the printed lettering or symbol
+itself, leader left out, whatever the name says. And a mark written again at
+the same place with only its target changed, to what the check saw there,
+keeps its earlier verdict (no new look): naming the thing a mark happens to
+sit on no longer passes it.
+
 **A mark in an area is judged by the area** (live smoke 2a, 2026-10-09). Asked
 for "a note on the title block", an agent boxed the blank part of the title
 strip and named it ``target: title block``; the look saw blank paper in the
@@ -89,6 +100,8 @@ from __future__ import annotations
 import contextvars
 import json
 import re
+import threading
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -167,10 +180,23 @@ _KIND_WORDS = {
 #: since GPT-5.4's 0-999 boxes were measured scaled by 0.87-1.10 between
 #: identical calls while its pixel boxes were within a few points
 #: (2026-10-07). An old-style ``thing_box`` on the 0-999 grid still counts.
-_WHERE_Q = ("where that thing is in this {w} x {h} pixel image (for an "
-            "area, the part of it the image shows), as a box "
-            "[x0, y0, x1, y1] in pixels (0,0 top-left), or null if it is not "
-            "there")
+_WHERE_Q = ("where that thing is in this {w} x {h} pixel image: the printed "
+            "lettering or symbol itself (with any frame drawn round it), "
+            "leaving out any leader line or arrow that runs from it; for an "
+            "area, the part of it the image shows. A box [x0, y0, x1, y1] "
+            "in pixels (0,0 top-left), or null if it is not there")
+
+#: Said to the look of an enclosing mark that names its thing. Foundry brief
+#: 5 (B3): told "GCE callout tag WITH LEADER", a look boxed tag and leader
+#: as the thing, so seven exact rings round the tags were "beside the mark"
+#: (13 wrong rejections over three rounds) and rings widened to take in the
+#: leader were the right size (12 of 12 blankets confirmed). A name
+#: describes the thing; what a ring or a rectangle goes round is the printed
+#: lettering or symbol it names.
+_ENCLOSE_WHAT = ("If that name takes in more than one printed thing (for "
+                 "example 'a tag with its leader'), what the {word} must go "
+                 "round is the printed lettering or symbol it names, not a "
+                 "leader or arrow running from it.")
 
 #: A mark this many times the area of the thing it names is a blanket, not a
 #: mark (the suite's own placement check uses 60).
@@ -599,6 +625,8 @@ def _prompt(kind: str, spec: Dict[str, Any], size: Sequence[int],
                      "mark placed in the blank paper INSIDE a named area is "
                      "on that area: judge it by the area it sits in, not by "
                      "the empty paper under it.")
+        if kind in ENCLOSING_KINDS:
+            parts.append(_ENCLOSE_WHAT.format(word=word))
     if comment:
         parts.append(f'The review comment on this mark: "{comment}". A '
                      f"review comment is a remark or a request ABOUT the "
@@ -799,6 +827,122 @@ def _verdict(kind: str, got: Dict[str, Any], row: Dict[str, Any],
     return decided(bool(ok)), ""
 
 
+# -- A mark's verdict, kept for the conversation (Foundry brief 5, B3 (b)) ---
+#
+# GPT-5.4 r2: the check came back "unsure" on a comment placed on the wrong
+# note ("inside": "UP TO 7.5%"). The agent wrote the SAME mark again with
+# target="UP TO 7.5%" -- the check's own reading -- and the check confirmed
+# it. ``target`` never moves a mark; it only changes what the check compares
+# with, so naming the thing a mark happens to sit on always passed. A mark
+# written again at the same place, with the same comment, whose only change
+# is a target equal to what the check saw there, keeps the earlier verdict
+# (no new look), and ``seen`` says why.
+
+#: Conversations whose verdicts are kept, and marks kept per conversation.
+VERDICT_CONVERSATIONS = 16
+VERDICT_MARKS = 400
+#: Two marks are the same mark when every edge is within this many points.
+SAME_MARK_PT = 2.0
+
+RENAMED_NOTE = (" — the same mark as before, now named after what the "
+                "check saw there; a new name does not move a mark")
+
+_VERDICTS_LOCK = threading.Lock()
+_VERDICTS: "OrderedDict[str, list]" = OrderedDict()
+
+
+def _conversation() -> str:
+    """This conversation's key: where its read record is kept (one per
+    working folder); ``""`` with no folder (a notebook)."""
+    try:
+        from funhouse_agent.vision_tools import reads_file
+        return reads_file() or ""
+    except Exception:  # noqa: BLE001 - one shared key then
+        return ""
+
+
+def _mark_box(row: Dict[str, Any]) -> Any:
+    if row.get("kind") == "callout" and row.get("points_at"):
+        x, y = row["points_at"]
+        return [x, y, x, y]
+    return row.get("bbox")
+
+
+def _same_box(a: Any, b: Any, tol: float = SAME_MARK_PT) -> bool:
+    try:
+        a, b = [float(v) for v in a], [float(v) for v in b]
+    except (TypeError, ValueError):
+        return False
+    return len(a) == len(b) == 4 and all(abs(x - y) <= tol
+                                         for x, y in zip(a, b))
+
+
+def _remembered(row: Dict[str, Any], spec: Dict[str, Any],
+                check: Dict[str, Any]) -> Dict[str, Any]:
+    return {"page": row.get("page"), "kind": row.get("kind"),
+            "box": _mark_box(row),
+            "comment": _fold(_text(spec.get("comment"), 300)),
+            "target": _fold(_target(spec)[0]),
+            "verdict": check.get("verdict"),
+            "inside": check.get("inside") or ""}
+
+
+def _kept_verdict(conv: str, item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The earlier verdict this mark keeps, or ``None``: the same mark (page,
+    kind, place and comment) found misplaced or unsure, written again with
+    only its target changed -- to the words the check saw there."""
+    row, spec = item["row"], item["spec"]
+    target = _fold(_target(spec)[0])
+    if not target:
+        return None
+    with _VERDICTS_LOCK:
+        kept = list(_VERDICTS.get(conv) or [])
+    box = _mark_box(row)
+    comment = _fold(_text(spec.get("comment"), 300))
+    for k in reversed(kept):
+        if not (k["page"] == row.get("page") and k["kind"] == row.get("kind")
+                and k["comment"] == comment and _same_box(k["box"], box)):
+            continue
+        seen = _fold(k["inside"])
+        if (k["verdict"] in ("misplaced", "unsure") and target != k["target"]
+                and len(seen) >= 2 and not _saw_blank(k["inside"])
+                and (target in seen or seen in target)):
+            return k
+        return None
+    return None
+
+
+def _keep_verdicts(conv: str, checks: Sequence[Dict[str, Any]],
+                   items: Sequence[Dict[str, Any]]) -> None:
+    by_index = {it["index"]: it for it in items}
+    new = [_remembered(by_index[c["index"]]["row"],
+                       by_index[c["index"]]["spec"], c)
+           for c in checks if c["index"] in by_index
+           and c.get("verdict") not in (None, "not_checked")]
+    with _VERDICTS_LOCK:
+        kept = (_VERDICTS.pop(conv, []) + new)[-VERDICT_MARKS:]
+        _VERDICTS[conv] = kept
+        while len(_VERDICTS) > VERDICT_CONVERSATIONS:
+            _VERDICTS.popitem(last=False)
+
+
+def clear_kept_verdicts() -> None:
+    """Forget every conversation's verdicts (tests)."""
+    with _VERDICTS_LOCK:
+        _VERDICTS.clear()
+
+
+def _check_from_kept(item: Dict[str, Any], kept: Dict[str, Any]
+                     ) -> Dict[str, Any]:
+    row, spec = item["row"], item["spec"]
+    return {"index": item["index"], "page": row.get("page"),
+            "pdf_page": (row.get("page") or 0) + 1, "kind": row.get("kind"),
+            "names": _expected(spec), "bbox": row.get("bbox"),
+            "anchored_by": row.get("anchored_by"),
+            "verdict": kept["verdict"], "inside": kept["inside"],
+            "seen": (kept["inside"][:120] + RENAMED_NOTE)[:200]}
+
+
 def _check_one(pdf_bytes: bytes, item: Dict[str, Any], engine) -> Dict[str, Any]:
     from funhouse_agent import vision_view
 
@@ -831,7 +975,8 @@ def _check_one(pdf_bytes: bytes, item: Dict[str, Any], engine) -> Dict[str, Any]
     out["verdict"] = verdict
     if item.get("ask_reads"):
         out["lettering_reads"] = _reads_word(got.get("lettering_reads"))
-    out["seen"] = (str(got.get("inside") or "")[:120] + why)[:160]
+    out["inside"] = str(got.get("inside") or "")[:120]
+    out["seen"] = (out["inside"] + why)[:160]
     return out
 
 
@@ -853,12 +998,23 @@ def check_marks(output_pdf: str, result: Dict[str, Any], specs: Sequence[Any],
         ask = set()
     for it in todo:
         it["ask_reads"] = it["index"] in ask
+    # A mark renamed after what the check saw keeps its verdict, unlooked.
+    conv = _conversation()
+    kept = {it["index"]: _check_from_kept(it, k) for it in todo
+            for k in [_kept_verdict(conv, it)] if k is not None}
     # Each worker runs in a COPY of this call's context, so the activity log
     # attributes its vision call to this turn (as sweep_pages does).
     with ThreadPoolExecutor(max_workers=max(1, int(workers))) as pool:
-        futures = [pool.submit(contextvars.copy_context().run, _check_one,
-                               pdf_bytes, it, engine) for it in todo]
-        checks = [f.result() for f in futures]
+        futures = {it["index"]: pool.submit(
+                       contextvars.copy_context().run, _check_one,
+                       pdf_bytes, it, engine)
+                   for it in todo if it["index"] not in kept}
+        checks = [kept[it["index"]] if it["index"] in kept
+                  else futures[it["index"]].result() for it in todo]
+    try:
+        _keep_verdicts(conv, checks, todo)
+    except Exception:  # noqa: BLE001 - the verdicts stand without it
+        pass
     by = {v: [c for c in checks if c["verdict"] == v]
           for v in ("confirmed", "misplaced", "unsure", "not_checked",
                     BLANK_AREA)}

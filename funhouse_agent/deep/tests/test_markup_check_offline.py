@@ -1160,3 +1160,149 @@ def test_the_model_is_never_handed_a_server_path(tmp_path, monkeypatch):
             assert out["check"]["confirmed"] == 1
         assert os.path.isfile(os.path.join(str(tmp_path),
                                            out["output_path"]))
+
+
+# ---------------------------------------------------------------------------
+# Foundry brief 5, B3: the check judged against the agent's free-text target
+# ---------------------------------------------------------------------------
+@pytest.fixture(autouse=True)
+def _fresh_verdicts():
+    markup_check.clear_kept_verdicts()
+    yield
+    markup_check.clear_kept_verdicts()
+
+
+#: A leader drawn from the tag, as on brief 5's sheet: 60 pt to its left.
+LEADER = (580.0, 525.0, 640.0, 525.0)
+
+
+def _ring_with_leader_check(tmp_path, monkeypatch, ring, target):
+    """One ring on a sheet whose tag has a leader. The look boxes what it is
+    asked for, in the crop's pixels: the tag's lettering alone when the
+    question leaves the leader out, tag AND leader when it does not (what
+    Sol's look did with "tag with leader", brief 5 r2)."""
+    doc = fitz.open(stream=_sheet(), filetype="pdf")
+    doc[0].draw_line(fitz.Point(*LEADER[:2]), fitz.Point(*LEADER[2:]),
+                     color=(0, 0, 0), width=0.8)
+    pdf = doc.tobytes()
+    doc.close()
+    prompts = []
+
+    class Look:
+        def analyze_image(self, image_bytes, prompt):
+            prompts.append(prompt)
+            w, h = (int(v) for v in re.search(
+                r"this (\d+) x (\d+) pixel image", prompt).groups())
+            x0, y0, x1, y1 = ring      # the crop: the ring and its context
+            mx = max(markup_check.CONTEXT_PT,
+                     markup_check.CONTEXT_FRAC * (x1 - x0))
+            my = max(markup_check.CONTEXT_PT,
+                     markup_check.CONTEXT_FRAC * (y1 - y0))
+            clip = (x0 - mx, y0 - my, x1 + mx, y1 + my)
+            thing = (TAG if "leaving out any leader line" in prompt
+                     else (LEADER[0], TAG[1], TAG[2], TAG[3]))
+            sx, sy = w / (clip[2] - clip[0]), h / (clip[3] - clip[1])
+            px = [(thing[0] - clip[0]) * sx, (thing[1] - clip[1]) * sy,
+                  (thing[2] - clip[0]) * sx, (thing[3] - clip[1]) * sy]
+            return json.dumps({"same_thing": True, "encloses": True,
+                               "inside": "GCE", "thing_px": px,
+                               "sure": True})
+
+    tools, handle = _tools_for(Look(), tmp_path, monkeypatch, pdf,
+                               name="leader.pdf")
+    out = json.loads(tools["annotate_document"].invoke({
+        "handle": handle, "output_path": "rings.pdf", "markups": [
+            {"kind": "circle", "page": 0, "comment": "penetration tag",
+             "target": target, "bbox": list(ring)}]}))
+    return out["check"], prompts
+
+
+def test_a_tight_ring_named_with_its_leader_is_measured_round_the_tag(
+        tmp_path, monkeypatch):
+    """B3, Sol r2: seven exact rings round the tags, target "GCE callout tag
+    with leader", came back "beside the mark" because the look boxed tag and
+    leader. The look is asked for the printed lettering, leader left out."""
+    ring = (TAG[0] - 3, TAG[1] - 3, TAG[2] + 3, TAG[3] + 3)
+    check, prompts = _ring_with_leader_check(
+        tmp_path, monkeypatch, ring, "GCE callout tag with leader")
+    assert check["confirmed"] == 1, check
+    (p,) = prompts
+    assert "leaving out any leader line or arrow that runs from it" in p
+    assert "not a leader or arrow running from it" in p
+
+
+def test_a_ring_widened_to_take_in_the_leader_is_too_wide(tmp_path,
+                                                          monkeypatch):
+    """B3, GPT-5.4 r3 and Sol r2's annotate #4: rings widened to tag +
+    leader were confirmed, because the look's tag + leader box made them the
+    right size. Measured against the tag, they are blankets."""
+    # about 51 x the tag's area, but only 14 x tag + leader's: the old
+    # measurement confirmed it
+    ring = (LEADER[0] - 40, TAG[1] - 60, TAG[2] + 40, TAG[3] + 60)
+    check, _ = _ring_with_leader_check(
+        tmp_path, monkeypatch, ring, "complete GCE callout tag and its leader")
+    assert check["confirmed"] == 0, check
+    (bad,) = check["misplaced"]
+    assert "times the area" in bad["seen"]
+
+
+def test_a_mark_renamed_after_what_the_check_saw_keeps_its_verdict(
+        tmp_path, monkeypatch):
+    """B3 (b), GPT-5.4 r2: "unsure" on a comment on the wrong note (seen
+    "UP TO 7.5%"); the same mark written again with target="UP TO 7.5%" was
+    confirmed. A new name does not move a mark: it keeps its verdict, with
+    no new look."""
+    prompts = []
+
+    class SaysWhatIsThere:
+        def analyze_image(self, image_bytes, prompt):
+            prompts.append(prompt)
+            named = re.search(r"meant to [a-z ]+: (.+?)   \(", prompt)
+            target = named.group(1) if named else ""
+            same = WRONG_LINE in target or target in WRONG_LINE
+            return json.dumps({"same_thing": same, "comment_fits": True,
+                               "inside": WRONG_LINE, "sure": same})
+
+    tools, handle = _tools_for(SaysWhatIsThere(), tmp_path, monkeypatch,
+                               _notes_sheet())
+    mark = {"kind": "callout", "page": 0, "comment": REQUEST,
+            "points_at": [430, 427]}
+    first = json.loads(tools["annotate_document"].invoke({
+        "handle": handle, "output_path": "slope.pdf",
+        "markups": [dict(mark, target="the ramp slope note")]}))["check"]
+    assert first["confirmed"] == 0
+    looks = len(prompts)
+    again = json.loads(tools["annotate_document"].invoke({
+        "handle": handle, "output_path": "slope.pdf", "append": False,
+        "markups": [dict(mark, target=WRONG_LINE)]}))["check"]
+    assert again["confirmed"] == 0, again
+    assert len(prompts) == looks                    # no new look
+    bad = (again["misplaced"] + again["unsure"])[0]
+    assert "a new name does not move a mark" in bad["seen"]
+    # moved to another line, the mark is looked at again on its merits
+    moved = json.loads(tools["annotate_document"].invoke({
+        "handle": handle, "output_path": "slope.pdf", "append": False,
+        "markups": [dict(mark, target=RIGHT_LINE,
+                         points_at=[62, 226])]}))["check"]
+    assert len(prompts) == looks + 1
+    assert "a new name does not move a mark" not in json.dumps(moved)
+
+
+def test_kept_verdicts_belong_to_one_conversation_and_one_rename():
+    """Verdicts are kept per conversation (its working folder); a mark that
+    was confirmed keeps nothing, and a rename to anything other than what
+    the check saw is looked at again."""
+    mc = markup_check
+    item = {"index": 0, "row": {"page": 0, "kind": "box",
+                                "bbox": [1, 1, 9, 9]},
+            "spec": {"comment": "c", "target": "first"}}
+    mc._keep_verdicts("conv-a", [{"index": 0, "verdict": "misplaced",
+                                  "inside": "OTHER"}], [item])
+    renamed = dict(item, spec={"comment": "c", "target": "OTHER"})
+    assert mc._kept_verdict("conv-a", renamed) is not None
+    assert mc._kept_verdict("conv-b", renamed) is None
+    other = dict(item, spec={"comment": "c", "target": "something new"})
+    assert mc._kept_verdict("conv-a", other) is None
+    mc._keep_verdicts("conv-a", [{"index": 0, "verdict": "confirmed",
+                                  "inside": "OTHER"}], [item])
+    assert mc._kept_verdict("conv-a", renamed) is None
