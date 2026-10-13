@@ -175,6 +175,14 @@ textarea { width: 100%; min-height: 96px; resize: vertical; padding: 8px 10px; b
 table { border-collapse: collapse; width: 100%; font-size: .92rem; }
 th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--rule); vertical-align: top; }
 th { font-family: var(--f-display); font-stretch: 87.5%; text-transform: uppercase; letter-spacing: .05em; font-size: .74rem; color: var(--muted); }
+.closed { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--rule); font-size: .88rem; color: var(--ok); font-weight: 600; }
+.closed a { color: var(--ok); font-family: var(--f-mono); font-size: .84rem; }
+.closed-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.closed-list li { display: grid; grid-template-columns: 4.6rem minmax(0, 1fr); gap: 2px 10px; padding: 9px 0; border-top: 1px solid var(--rule); }
+.closed-list li:first-child { border-top: 0; padding-top: 2px; }
+.closed-list .ans { color: var(--muted); font-size: .92rem; }
+.closed-list li.flash { animation: flash 1.6s ease-out; }
+@media (max-width: 760px) { .closed-list li { grid-template-columns: minmax(0, 1fr); } }
 .empty { padding: 24px; text-align: center; color: var(--muted); background: var(--card); border: 1px dashed var(--rule-strong); border-radius: 8px; }
 .bundle { display: flex; flex-direction: column; gap: 8px; }
 .notice { font-size: .88rem; color: var(--wait); background: var(--wait-soft); border-radius: 6px; padding: 8px 12px; }
@@ -203,6 +211,7 @@ th { font-family: var(--f-display); font-stretch: 87.5%; text-transform: upperca
       <div class="big num" id="hp-big">–</div>
       <div class="bar" id="hp-bar" aria-hidden="true"></div>
       <div class="legend" id="hp-legend"></div>
+      <div class="closed" id="hp-closed" hidden></div>
     </div>
     <div class="panel">
       <div class="label">Whole backlog</div>
@@ -267,6 +276,18 @@ function md(s) {
   return h;
 }
 function statusOf(id) { return (state.responses[id] && state.responses[id].status) || "open"; }
+// Answers whose item has since been folded into the backlog and closed: the item
+// is no longer in this build, so it would otherwise drop out of every count.
+function closedAnswers() {
+  return Object.entries(state.responses)
+    .filter(([id, r]) => !(id in byId) && r && (r.status === "answered" || r.status === "wontdo"))
+    .map(([id, r]) => Object.assign({ id }, r))
+    .sort((a, b) => String(b.foldedAt || b.updatedAt || "").localeCompare(String(a.foldedAt || a.updatedAt || "")) || a.id.localeCompare(b.id, undefined, { numeric: true }));
+}
+function goToClosed(id) {
+  setTab("done");
+  flash("closed-" + id);
+}
 function ago(iso) {
   if (!iso) return "";
   const s = (Date.now() - Date.parse(iso)) / 1000;
@@ -287,7 +308,11 @@ function renderSummary() {
   holds.forEach(i => counts[statusOf(i.id)]++);
   const total = holds.length;
   const settled = counts.answered + counts.wontdo;
-  document.getElementById("hp-big").innerHTML = `${settled}<small> / ${total} settled</small>`;
+  document.getElementById("hp-big").innerHTML = `${settled}<small> / ${total} open settled</small>`;
+  const closed = closedAnswers();
+  const ce = document.getElementById("hp-closed");
+  ce.hidden = !closed.length;
+  ce.innerHTML = closed.length ? `✓ ${closed.length} answered and closed: ${closed.map(r => `<a href="#" data-closed="${esc(r.id)}">${esc(r.id)}</a>`).join(", ")}` : "";
   const segs = [["answered", "var(--ok)"], ["wontdo", "var(--parked)"], ["waiting", "var(--wait)"], ["deferred", "var(--rule-strong)"]];
   document.getElementById("hp-bar").innerHTML = segs.map(([k, c]) => counts[k] ? `<span style="width:${100 * counts[k] / total}%;background:${c}"></span>` : "").join("");
   document.getElementById("hp-legend").innerHTML =
@@ -300,7 +325,7 @@ function renderSummary() {
   document.getElementById("c-hold").textContent = total - settled;
   document.getElementById("c-backlog").textContent = items.length;
   document.getElementById("c-switches").textContent = DATA.switches.length;
-  document.getElementById("c-done").textContent = DATA.done.length;
+  document.getElementById("c-done").textContent = DATA.done.length + closed.length;
 }
 
 /* ---------- tabs ---------- */
@@ -460,7 +485,17 @@ function renderSwitches() {
     <div class="table-wrap"><table><thead><tr><th>Switch</th><th>Default</th><th>Waiting on</th></tr></thead><tbody>${DATA.switches.map(s => `<tr><td>${md(s.switch)}</td><td>${md(s.default)}</td><td>${md(s.awaits)}</td></tr>`).join("")}</tbody></table></div>`;
 }
 function renderDone() {
-  return `<p class="small" style="margin:0 0 10px">Finished work that older documents still list as open. Cleared at the next full sweep.</p>
+  const closed = closedAnswers();
+  const closedHtml = closed.length ? `<h2 style="margin:0 0 8px">Your answers, closed</h2>
+    <p class="small" style="margin:0 0 10px">Hold points you answered here that Claude has since worked into the backlog. They no longer appear under Hold points.</p>
+    <div class="panel" style="margin-bottom:18px"><ul class="closed-list">${closed.map(r => {
+      const ans = [r.choice, r.notes].filter(Boolean).map(esc).join(" — ");
+      const when = r.foldedAt ? `closed ${esc(r.foldedAt)}` : (r.updatedAt ? `answered ${esc(ago(r.updatedAt))}` : "");
+      return `<li id="closed-${esc(r.id)}"><span><span class="id">${esc(r.id)}</span><br><span class="pill s-${r.status === "wontdo" ? "wontdo" : "answered"}">${STATUS_LABEL[r.status] || "Answered"}</span></span>
+        <div><div class="t" style="font-weight:600">${esc(r.question || "")}</div>${ans ? `<div class="ans">${ans}</div>` : ""}${when ? `<div class="small">${when}</div>` : ""}</div></li>`;
+    }).join("")}</ul></div>
+    <h2 style="margin:0 0 8px">Other finished work</h2>` : "";
+  return closedHtml + `<p class="small" style="margin:0 0 10px">Finished work that older documents still list as open. Cleared at the next full sweep.</p>
     <div class="panel"><ul style="margin:0;padding-left:18px">${DATA.done.map(d => `<li style="margin:6px 0">${md(d)}</li>`).join("")}</ul></div>`;
 }
 
@@ -488,6 +523,8 @@ document.addEventListener("click", async e => {
     if (el) el.outerHTML = holdCard(byId[id]);
     return;
   }
+  const cl = e.target.closest("[data-closed]");
+  if (cl) { e.preventDefault(); goToClosed(cl.dataset.closed); return; }
   const go = e.target.closest("[data-goto]");
   if (go) { e.preventDefault(); goTo(go.dataset.goto); return; }
   const cp = e.target.closest("[data-copy]");
