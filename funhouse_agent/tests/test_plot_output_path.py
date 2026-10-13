@@ -163,6 +163,11 @@ _PLOT_CASES = [
 ]
 
 
+#: How a Plotly HTML document opens: Plotly 6 starts at <html>, Plotly 7
+#: (what a fresh install resolves to, 2026-10) with <!doctype html>.
+_HTML_STARTS = ("<html", "<!doctype html")
+
+
 @pytest.mark.parametrize("method,extra", _PLOT_CASES)
 def test_plot_output_path_saves_file_and_drops_html(method, extra, site_key, tmp_path):
     out = tmp_path / f"{method}.html"
@@ -176,8 +181,9 @@ def test_plot_output_path_saves_file_and_drops_html(method, extra, site_key, tmp
     assert os.path.abspath(res["output_path"]) == os.path.abspath(str(out))
     assert "renderer_note" in res
     assert out.is_file()
-    # a self-contained Plotly HTML doc
-    assert out.read_text(encoding="utf-8").lstrip().lower().startswith("<html")
+    # a self-contained Plotly HTML doc (Plotly 7 opens it with a doctype)
+    assert out.read_text(encoding="utf-8").lstrip().lower().startswith(
+        _HTML_STARTS)
 
 
 def test_plot_output_path_emits_plotly_sidecar(site_key, tmp_path):
@@ -231,7 +237,8 @@ def test_plot_output_format_html_still_returns_blob_inline(site_key):
     res = call_agent("subsurface", "plot_parameter_vs_depth",
                      {"site_key": site_key, "parameter": "N_spt",
                       "output_format": "html"})
-    assert "html" in res and res["html"].lstrip().lower().startswith("<html")
+    assert "html" in res and res["html"].lstrip().lower().startswith(
+        _HTML_STARTS)
     assert "renderer_note" not in res
 
 

@@ -112,6 +112,18 @@ def test_no_question_hardcodes_a_repo_relative_sample_path():
 # THE GATE: every sample parses through the REAL module API
 # ===========================================================================
 
+def _has_ags4():
+    from subsurface_characterization.formats.ags4 import has_ags4
+    return has_ags4()
+
+
+#: python-ags4 is an optional extra (``[ags4]``): every release of it caps
+#: pandas below 3, which CfA's Tiny Apps fleet pins (pandas 3.0.2).
+requires_ags4 = pytest.mark.skipif(not _has_ags4(),
+                                   reason="python-ags4 not installed")
+
+
+@requires_ags4
 def test_ags4_sample_parses():
     """sample_borehole.ags reads via python-ags4 with the expected groups."""
     from subsurface_characterization.formats.ags4 import read_ags4
@@ -122,6 +134,7 @@ def test_ags4_sample_parses():
     assert d["group_row_counts"]["ISPT"] == 6  # 3 SPTs in each of 2 boreholes
 
 
+@requires_ags4
 def test_ags4_sample_validates():
     """sample_borehole.ags passes AGS4 rule validation with zero errors."""
     from subsurface_characterization.formats.ags4 import validate_ags4

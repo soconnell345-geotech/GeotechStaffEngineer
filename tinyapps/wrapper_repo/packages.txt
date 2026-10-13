@@ -13,7 +13,14 @@ geotech-staff-engineer>=5.26
 # pinned because an unpinned resolve picks whatever the firewall has or has
 # not cleared that week.
 streamlit==1.62.0
-pandas==3.0.2
+# pandas==3.0.2 is the fleet pin, but it CANNOT install beside
+# geotech-staff-engineer 5.33.0 or earlier: their python-ags4 dependency caps
+# pandas below 3, so pip finds no solution at all (found 2026-10-12, BACKLOG
+# TA-02). The release after 5.33.0 makes python-ags4 optional and installs on
+# pandas 3.0.2 (tested: Python 3.12, Streamlit 1.62.0, the web-app and agent
+# test suites). Until that release is pinned above, leave pandas unpinned:
+# pip takes the newest pandas 2.x the mirror has, as on dosdev 2026-09-23.
+# pandas==3.0.2
 PyJWT[crypto]==2.13.0
 msal==1.37.0
 

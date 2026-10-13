@@ -155,3 +155,25 @@ def test_empty_scope_builds_an_agent_with_no_dispatch_tools():
     agent = build_deep_agent(FakeListChatModel(responses=["ok"]),
                              **profiles.DOCUMENT_REVIEW.build_kwargs())
     assert agent is not None
+
+
+#: Core dependencies known to cap pandas below 3.0 - CfA's fleet pins
+#: pandas==3.0.2, so one of these in core makes the wrapper's packages.txt
+#: unresolvable (BACKLOG TA-02, 2026-10-12: every python-ags4 release).
+PANDAS_LT3 = ("python-ags4",)
+
+
+def test_core_dependencies_install_beside_cfa_s_pandas_pin():
+    import pathlib
+    tomllib = pytest.importorskip("tomllib")          # Python 3.11+
+    root = pathlib.Path(__file__).parents[2]
+    project = tomllib.loads((root / "pyproject.toml").read_text(
+        encoding="utf-8"))["project"]
+    core = [d.split(">")[0].split("=")[0].split("<")[0].strip().lower()
+            for d in project["dependencies"]]
+    assert not set(core) & set(PANDAS_LT3)
+    # the review page's spreadsheet reader and writer, once it came only
+    # through python-ags4
+    assert "openpyxl" in core
+    assert any("python-ags4" in d
+               for d in project["optional-dependencies"]["ags4"])
