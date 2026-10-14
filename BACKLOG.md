@@ -296,6 +296,7 @@ Parked at 5.25.0; every number since is GPT-5.4 on Foundry. Code items were conf
 ### fem2d
 - **GM-07** [Next] **θ = 0.5 rings ±5 kPa at drained boundaries.** *was:* H E2
 - **GM-09** [Next] **Consolidation fill under water is refused.** *was:* H E2
+- **GM-70** [Now] **fem2d excavation walls are built as a zigzag with T6 elements (the default)**: `create_wall_elements` takes every node within `tol = max(0.6 dx, 0.5)` of x = 0, which with T6 includes the midside nodes at ±dx/2, so the beams hop across the excavation face. Width 10, depth 5, wall 10 m, clay: T6 M_max 77.8 / 91.6 kN·m/m against 21.5 with T3 on the same mesh (~4x). Being fixed in the tables train (one node column; vertical beams; T3/T6 agreement test). *Src:* calc-tables agent, 2026-10-14
 - **GM-61** [Next] **Staged analysis: a wall or beam activated in a later stage carries the movement its nodes made before it existed**: a gravity-then-install stage with no change shows 186 kN/m axial and 9 kNm/m moment with zero stage movement (same on the old code). The same class as the fill fix in 4bf710c. *Src:* fem2d agent report 2026-10-14
 - **GM-62** [Next] **`analyze_staged` `max_iter` default 100 is low for plastic stages** (a 260 kPa footing converges with 500, not 100); documented, not changed.
 - **GM-63** [Next] **Deep undrained slope: SRM 0.648 on every mesh against limit equilibrium 0.719 / 0.722 (−10 %)** (Duncan Ex 1 with a 2H foundation); Taylor's deep-foundation value is about 0.66-0.69. Settle which side is off.
