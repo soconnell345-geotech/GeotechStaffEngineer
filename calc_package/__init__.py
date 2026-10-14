@@ -234,8 +234,17 @@ def generate_calc_package(
     # beside the package.
     if tables is True:
         echo = input_table(input_items)
-        calc_tables = ([echo] if echo is not None else []) + module_tables(
-            reg, result, analysis)
+        try:
+            own = module_tables(reg, result, analysis)
+        except Exception as exc:        # noqa: BLE001 - never cost the package
+            import warnings
+            own = []
+            message = (f"the calculation tables of '{module}' could not be "
+                       f"built ({type(exc).__name__}: {exc})")
+            warnings.warn(message)
+            if render_report is not None:
+                render_report["tables_error"] = message
+        calc_tables = ([echo] if echo is not None else []) + own
     else:
         calc_tables = list(tables or [])
     csv_names = list(table_files or [])

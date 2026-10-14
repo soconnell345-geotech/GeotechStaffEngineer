@@ -533,6 +533,39 @@ def get_figures(result, analysis) -> List[FigureData]:
     return figures
 
 
+def get_tables(result, analysis) -> list:
+    """The result's own tables (a cantilever wall's pressure, shear and
+    moment along the wall, and its design summary) and the soil layers as
+    input (CSV only).
+
+    An anchored wall gives no per-depth table yet: its moment integration
+    applies the anchor reaction from the top of the wall (reported to the
+    lead 2026-10-14), and the table would print that."""
+    from geotech_common.tables import CalcTable, tables_from
+
+    tables = tables_from(result)
+    layers = analysis.get("soil_layers") if isinstance(analysis, dict) \
+        else getattr(analysis, "soil_layers", None)
+    rows, depth = [], 0.0
+    for i, layer in enumerate(layers or [], 1):
+        rows.append([i, depth, depth + layer.thickness, layer.description,
+                     layer.unit_weight, layer.friction_angle, layer.cohesion,
+                     layer.wall_friction_deg])
+        depth += layer.thickness
+    if rows:
+        tables.append(CalcTable(
+            title="Soil layers",
+            columns=["Layer", ("Top", "m"), ("Bottom", "m"), "Description",
+                     ("Unit weight γ", "kN/m³"),
+                     ("Friction angle φ", "deg"), ("Cohesion c", "kPa"),
+                     ("Wall friction δ", "deg")],
+            rows=rows,
+            note="The soil layers as input, depths below the top of the wall",
+            name="soil_layers", printed=False,
+        ))
+    return tables
+
+
 # ── Private helper functions ─────────────────────────────────────
 
 

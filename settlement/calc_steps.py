@@ -457,6 +457,51 @@ def get_figures(result, analysis) -> List[FigureData]:
     return figures
 
 
+def get_tables(result, analysis) -> list:
+    """The result's own tables, with the per-layer consolidation table
+    given each layer's inputs too (e0, Cc, Cr, σ'v0, σ'p beside Δσ and
+    S_c), and the Schmertmann sublayers as input (CSV only)."""
+    from geotech_common.tables import CalcTable
+
+    tables = list(result.get_tables())
+    inputs = analysis.consolidation_layers or []
+    computed = result.consolidation_layers or []
+    if inputs and len(inputs) == len(computed):
+        rich = CalcTable(
+            title="Consolidation settlement per layer",
+            columns=["Layer", ("Depth to centre z", "m", ".2f"),
+                     ("Thickness H", "m", ".2f"), "e0", "Cc", "Cr",
+                     ("σ'v0", "kPa", ".1f"), ("σ'p", "kPa", ".1f"),
+                     ("Stress increase Δσ", "kPa", ".1f"),
+                     ("Settlement S_c", "mm", ".2f")],
+            rows=[[i, c["depth_m"], c["thickness_m"], lay.e0, lay.Cc,
+                   lay.Cr, lay.sigma_v0, lay.sigma_p, c["delta_sigma_kPa"],
+                   c["settlement_mm"]]
+                  for i, (lay, c) in enumerate(zip(inputs, computed), 1)],
+            note=(f"Primary consolidation by the e-log(p) method, S_c = "
+                  f"H/(1+e0) [Cr log(σ'p/σ'v0) + Cc log("
+                  f"σ'vf/σ'p)] (Cr alone below σ'p); "
+                  f"Δσ at each layer centre by the "
+                  f"{analysis.stress_method} method"),
+            name="consolidation_per_layer",
+        )
+        tables = [rich if t.name == rich.name else t for t in tables]
+
+    sub = analysis.schmertmann_layers or []
+    if sub:
+        tables.append(CalcTable(
+            title="Schmertmann sublayers",
+            columns=["Sublayer", ("Top", "m"), ("Bottom", "m"),
+                     ("Modulus E_s", "kPa")],
+            rows=[[i, s.depth_top, s.depth_bottom, s.Es]
+                  for i, s in enumerate(sub, 1)],
+            note="The Schmertmann sublayers as input, depths below the "
+                 "footing base",
+            name="schmertmann_sublayers", printed=False,
+        ))
+    return tables
+
+
 # -- Helper functions -------------------------------------------------------
 
 def _immediate_Iw(analysis) -> float:

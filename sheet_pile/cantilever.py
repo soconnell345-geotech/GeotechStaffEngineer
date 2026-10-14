@@ -86,6 +86,64 @@ class CantileverWallResult:
     excavation_depth: float = 0.0
     embedment_converged: float = 0.0
     embedment_increase: float = 1.0
+    #: The moment integration's own points, top to toe: [z, p_a, p_p/FOS,
+    #: net water pressure, net pressure p, shear V, moment M] (kPa, kN/m,
+    #: kN-m/m). Not in to_dict; read by get_tables.
+    profile: List[list] = field(default_factory=list, repr=False)
+
+    def get_tables(self) -> list:
+        """The pressure diagram along the wall with the shear and bending
+        moment the module integrates from it (the points its maximum moment
+        is found on), and the design summary (CSV only; the calc package
+        prints it). Values are this result's own, per metre of wall.
+
+        Returns
+        -------
+        list of geotech_common.tables.CalcTable
+        """
+        from geotech_common.tables import CalcTable
+
+        tables = []
+        if self.profile:
+            tables.append(CalcTable(
+                title="Pressure, shear and moment along the wall",
+                columns=[("Depth z", "m", ".3f"),
+                         ("Active pressure p_a", "kPa", ".2f"),
+                         ("Passive pressure p_p/FOS", "kPa", ".2f"),
+                         ("Net water pressure", "kPa", ".2f"),
+                         ("Net pressure p", "kPa", ".2f"),
+                         ("Shear V", "kN/m", ".2f"),
+                         ("Bending moment M", "kN-m/m", ".2f")],
+                rows=[list(r) for r in self.profile],
+                note=(f"Free earth support, wall {self.total_wall_length:.2f}"
+                      f" m long, excavation {self.excavation_depth:.2f} m; "
+                      f"passive divided by FOS = {self.FOS_passive:g}; V and "
+                      "M integrated from the top at the midpoint of each of "
+                      f"{len(self.profile)} steps; the maximum |M| is "
+                      f"{self.max_moment:.1f} kN-m/m at "
+                      f"{self.max_moment_depth:.2f} m"),
+                name="wall_pressures",
+            ))
+        tables.append(CalcTable(
+            title="Wall design summary",
+            columns=["Quantity", "Symbol", "Value", "Unit"],
+            rows=[
+                ["Excavation depth", "H", self.excavation_depth, "m"],
+                ["Embedment from moment equilibrium", "D0",
+                 self.embedment_converged, "m"],
+                ["Embedment increase", "", self.embedment_increase, ""],
+                ["Design embedment", "D", self.embedment_depth, "m"],
+                ["Total wall length", "H + D", self.total_wall_length, "m"],
+                ["Factor of safety on passive", "FOS", self.FOS_passive, ""],
+                ["Maximum bending moment", "M_max", self.max_moment,
+                 "kN-m/m"],
+                ["Depth of maximum moment", "z_Mmax", self.max_moment_depth,
+                 "m"],
+            ],
+            note="Cantilever sheet pile wall, free earth support",
+            name="design_summary", printed=False,
+        ))
+        return tables
 
     def summary(self) -> str:
         lines = [
@@ -253,11 +311,14 @@ def analyze_cantilever(
 
     total_wall = excavation_depth + D_design
 
-    # Compute maximum moment
+    # Compute maximum moment (and keep the integration's points for the
+    # calculation tables)
+    profile = []
     max_moment, max_moment_depth = _compute_max_moment(
         excavation_depth, D_design, soil_layers,
         gwt_depth_active, gwt_depth_passive,
-        surcharge, FOS_passive, gamma_w, pressure_method, n_points=500
+        surcharge, FOS_passive, gamma_w, pressure_method, n_points=500,
+        profile=profile,
     )
 
     return CantileverWallResult(
@@ -269,6 +330,7 @@ def analyze_cantilever(
         excavation_depth=excavation_depth,
         embedment_converged=D_converged,
         embedment_increase=embedment_increase,
+        profile=profile,
     )
 
 
@@ -519,8 +581,12 @@ def _cumulative_stress_passive(z_below_exc: float, excavation_depth: float,
 def _compute_max_moment(excavation_depth, embedment, soil_layers,
                         gwt_active, gwt_passive, surcharge,
                         FOS_passive, gamma_w,
-                        pressure_method="rankine", n_points=500):
-    """Compute maximum bending moment and its location."""
+                        pressure_method="rankine", n_points=500,
+                        profile=None):
+    """Compute maximum bending moment and its location.
+
+    ``profile``, when a list is given, receives one row per integration
+    point: ``[z, p_a, p_p/FOS, net water, net pressure, V, M]``."""
     H = excavation_depth
     total_length = H + embedment
     dz = total_length / n_points
@@ -537,13 +603,16 @@ def _compute_max_moment(excavation_depth, embedment, soil_layers,
         Ka, Kp = _compute_Ka_Kp(layer.friction_angle, pressure_method, layer.wall_friction_deg)
 
         net_pressure = 0.0
+        pp_reduced = 0.0
+        water = 0.0
         if z <= H:
             sigma_v = surcharge + _cumulative_stress(z, soil_layers, gwt_active, gamma_w)
             pa = Ka * sigma_v - 2 * layer.cohesion * math.sqrt(Ka)
             pa = max(pa, 0)
             net_pressure = pa
             if gwt_active is not None and z > gwt_active:
-                net_pressure += gamma_w * (z - gwt_active)
+                water = gamma_w * (z - gwt_active)
+                net_pressure += water
         else:
             z_below = z - H
             sigma_v_a = surcharge + _cumulative_stress(z, soil_layers, gwt_active, gamma_w)
@@ -559,7 +628,8 @@ def _compute_max_moment(excavation_depth, embedment, soil_layers,
             # Water
             u_active = gamma_w * max(0, z - (1e10 if gwt_active is None else gwt_active))
             u_passive = gamma_w * max(0, z_below - max(0, (1e10 if gwt_passive is None else gwt_passive) - H))
-            net_pressure += u_active - u_passive
+            water = u_active - u_passive
+            net_pressure += water
 
         shear += net_pressure * dz
         moment += shear * dz
@@ -567,5 +637,8 @@ def _compute_max_moment(excavation_depth, embedment, soil_layers,
         if abs(moment) > abs(max_moment):
             max_moment = abs(moment)
             max_moment_depth = z
+        if profile is not None:
+            profile.append([z, pa, pp_reduced, water, net_pressure, shear,
+                            moment])
 
     return max_moment, max_moment_depth

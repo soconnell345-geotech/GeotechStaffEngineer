@@ -107,6 +107,42 @@ class BearingGraphResult:
             "max_tens_stresses_kPa": self.max_tens_stresses.tolist(),
         }
 
+    def get_tables(self) -> list:
+        """The bearing graph as GRLWEAP prints it: for each assumed
+        ultimate resistance, the permanent set, the blow count and the
+        maximum compression and tension in the pile. Values are this
+        result's arrays.
+
+        Returns
+        -------
+        list of geotech_common.tables.CalcTable
+        """
+        from geotech_common.tables import CalcTable
+
+        if len(self.R_values) == 0:
+            return []
+        rows = [[float(self.R_values[i]), float(self.permanent_sets[i]),
+                 float(self.blow_counts[i]),
+                 float(self.max_comp_forces[i])
+                 if i < len(self.max_comp_forces) else None,
+                 float(self.max_comp_stresses[i]),
+                 float(self.max_tens_stresses[i])]
+                for i in range(len(self.R_values))]
+        return [CalcTable(
+            title="Bearing graph",
+            columns=[("Ultimate resistance R_ult", "kN", ".0f"),
+                     ("Permanent set s", "m"), ("Blow count", "blows/m",
+                                                ".1f"),
+                     ("Maximum compression force", "kN", ".0f"),
+                     ("Maximum compression stress", "kPa", ".0f"),
+                     ("Maximum tension stress", "kPa", ".0f")],
+            rows=rows,
+            note=("One Smith-model wave equation blow per assumed R_ult "
+                  "(GEC-12 Section 12.5; WEAP87); blow count = 1/set, "
+                  "1,000,000 meaning refusal (set under 0.001 mm)"),
+            name="bearing_graph",
+        )]
+
 
 def generate_bearing_graph(
     hammer: Hammer,

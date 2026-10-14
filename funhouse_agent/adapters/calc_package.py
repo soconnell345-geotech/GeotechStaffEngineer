@@ -1935,7 +1935,7 @@ METHOD_INFO = {
     },
     "bearing_capacity_package": {
         "category": "Calculation Package",
-        "brief": "Run bearing capacity analysis and generate Mathcad-style calc package.",
+        "brief": "Run bearing capacity analysis and generate Mathcad-style calc package, with a table (CSV + printed) of the factors N, s, d, i, b, g and the value of each term.",
         "parameters": {
             "width": {"type": "float", "required": True, "description": "Footing width B (m)."},
             "unit_weight": {"type": "float", "required": True, "description": "Soil unit weight (kN/m3)."},
@@ -2019,7 +2019,7 @@ METHOD_INFO = {
     },
     "settlement_package": {
         "category": "Calculation Package",
-        "brief": "Run settlement analysis and generate calc package.",
+        "brief": "Run settlement analysis and generate calc package, with tables (CSV + printed) of consolidation settlement per layer (e0, Cc, Cr, stresses) and settlement against time.",
         "parameters": {
             "q_applied": {"type": "float", "required": True, "description": "Applied bearing pressure (kPa)."},
             "B": {"type": "float", "required": False, "default": 1.0, "description": "Footing width (m)."},
@@ -2049,7 +2049,7 @@ METHOD_INFO = {
     },
     "drilled_shaft_package": {
         "category": "Calculation Package",
-        "brief": "Run drilled shaft capacity analysis and generate calc package.",
+        "brief": "Run drilled shaft capacity analysis and generate SHAFT-style calc package, with tables (CSV + printed) of side resistance per layer, load transfer at the ultimate load and capacity against shaft length.",
         "parameters": {
             "diameter": {"type": "float", "required": True, "description": "Shaft diameter (m)."},
             "length": {"type": "float", "required": True, "description": "Shaft length (m)."},
@@ -2215,7 +2215,7 @@ METHOD_INFO = {
     },
     "sheet_pile_package": {
         "category": "Calculation Package",
-        "brief": "Run sheet pile wall analysis and generate calc package.",
+        "brief": "Run sheet pile wall analysis and generate calc package; a cantilever wall adds a table (CSV + printed) of pressure, shear and moment along the wall.",
         "parameters": {
             "excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."},
             "soil_layers": {"type": "array", "required": True, "description": "List of dicts: thickness, unit_weight, friction_angle, cohesion."},

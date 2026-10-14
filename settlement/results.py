@@ -140,6 +140,86 @@ class SettlementResult:
                 "load application; secondary compression not included)")
         return d
 
+    def time_curve_rows(self) -> List[list]:
+        """``[time_years, U_percent, settlement_m]`` for each point of the
+        time curve; U as :meth:`to_dict` gives it, (S - S_i) / S_c."""
+        rows = []
+        for t, s in self.time_settlement_curve or []:
+            u = None
+            if self.consolidation > 0:
+                u = min(max((s - self.immediate) / self.consolidation
+                            * 100.0, 0.0), 100.0)
+            rows.append([t, u, s])
+        return rows
+
+    def get_tables(self) -> list:
+        """Settle3-style tables: consolidation settlement per layer, the
+        settlement against time (when a cv was given), and the settlement
+        summary (CSV only; the calc package prints it in its summary).
+        Values are this result's own, in its units (the per-layer
+        settlement is in mm, as the module reports it).
+
+        Returns
+        -------
+        list of geotech_common.tables.CalcTable
+        """
+        from geotech_common.tables import CalcTable
+
+        tables = []
+        if self.consolidation_layers:
+            tables.append(CalcTable(
+                title="Consolidation settlement per layer",
+                columns=["Layer", ("Depth to centre z", "m", ".2f"),
+                         ("Thickness H", "m", ".2f"), "Description",
+                         ("Stress increase Δσ", "kPa", ".1f"),
+                         "OCR", ("Settlement S_c", "mm", ".2f")],
+                rows=[[i, lb["depth_m"], lb["thickness_m"],
+                       lb.get("description", ""), lb["delta_sigma_kPa"],
+                       lb["OCR"], lb["settlement_mm"]]
+                      for i, lb in enumerate(self.consolidation_layers, 1)],
+                note=(f"Primary consolidation by the "
+                      f"{self.consolidation_method or 'e-log(p)'} method; "
+                      f"Δσ at each layer centre by the "
+                      f"{self.stress_method} method"),
+                name="consolidation_per_layer",
+            ))
+        if self.time_settlement_curve:
+            note = ("Terzaghi 1-D consolidation: S = S_i + U(t) S_c, time "
+                    "from load application; secondary compression not "
+                    "included")
+            if self.cv is not None and self.Hdr is not None:
+                note += (f"; cv = {self.cv:g} m²/year, H_dr = "
+                         f"{self.Hdr:g} m")
+            tables.append(CalcTable(
+                title="Settlement against time",
+                columns=[("Time t", "years"),
+                         ("Average degree of consolidation U", "%", ".1f"),
+                         ("Settlement S", "m")],
+                rows=self.time_curve_rows(), note=note,
+                name="time_settlement",
+            ))
+        summary = [
+            ["Immediate settlement", "S_i", self.immediate, "m"],
+            ["Primary consolidation settlement", "S_c", self.consolidation,
+             "m"],
+            ["Secondary compression settlement", "S_s", self.secondary, "m"],
+            ["Total settlement", "S", self.total, "m"],
+        ]
+        if self.t50_years is not None:
+            summary.append(["Time to 50 % consolidation", "t50",
+                            self.t50_years, "years"])
+        if self.t90_years is not None:
+            summary.append(["Time to 90 % consolidation", "t90",
+                            self.t90_years, "years"])
+        tables.append(CalcTable(
+            title="Settlement summary",
+            columns=["Quantity", "Symbol", "Value", "Unit"], rows=summary,
+            note=(f"Immediate: {self.immediate_method or 'none'}; stress "
+                  f"distribution: {self.stress_method or 'none'}"),
+            name="settlement_summary", printed=False,
+        ))
+        return tables
+
     def plot_time_settlement(self, ax=None):
         """Plot settlement vs time curve.
 

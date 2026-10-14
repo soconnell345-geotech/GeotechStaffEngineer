@@ -237,6 +237,39 @@ class LiquefactionResult:
             "layer_results": self.layer_results,
         }
 
+    def get_tables(self) -> list:
+        """The triggering evaluation at every depth: (N1)60, fines,
+        stresses, CSR, CRR and the factor of safety, as this result holds
+        them (the module rounds them).
+
+        Returns
+        -------
+        list of geotech_common.tables.CalcTable
+        """
+        from geotech_common.tables import CalcTable
+
+        if not self.layer_results:
+            return []
+        return [CalcTable(
+            title="Liquefaction triggering at each depth",
+            columns=[("Depth z", "m", ".2f"), "(N1)60", "(N1)60cs",
+                     ("Fines content FC", "%"), ("σv", "kPa"),
+                     ("σ'v", "kPa"), ("CSR (M 7.5)", "", ".4f"),
+                     ("CRR (M 7.5)", "", ".4f"), ("FS_liq", "", ".3f"),
+                     "Liquefiable"],
+            rows=[[r["depth_m"], r["N160"], r["N160cs"], r["FC_pct"],
+                   r["sigma_v_kPa"], r["sigma_v_eff_kPa"], r["CSR"],
+                   r["CRR"], r["FOS_liq"], r["liquefiable"]]
+                  for r in self.layer_results],
+            note=(f"NCEER / Youd et al. (2001) SPT simplified procedure: "
+                  f"CSR = 0.65 (amax/g)(σv/σ'v) rd / MSF with "
+                  f"amax = {self.amax_g:g} g, M = {self.magnitude:g}, rd by "
+                  "Liao & Whitman (1986); CRR from the NCEER clean-sand "
+                  "curve; FS = CRR/CSR; groundwater at "
+                  f"{self.gwt_depth:g} m"),
+            name="liquefaction",
+        )]
+
     def plot_fos_profile(self, ax=None, show=True, **kwargs):
         """Plot liquefaction FOS vs depth.
 

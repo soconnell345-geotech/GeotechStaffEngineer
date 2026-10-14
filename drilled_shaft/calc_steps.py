@@ -624,6 +624,69 @@ def get_figures(result, analysis) -> List[FigureData]:
     return figures
 
 
+#: Shaft lengths in the capacity-against-length table.
+CAPACITY_TABLE_POINTS = 20
+
+
+def get_tables(result, analysis) -> list:
+    """SHAFT-style tables: the result's own (side resistance per layer,
+    load transfer at the ultimate load, capacity summary), the ultimate
+    capacity against shaft length (``analysis.capacity_vs_depth``: the same
+    analysis re-run at each length), and the soil layers as input (CSV
+    only)."""
+    from geotech_common.tables import CalcTable
+
+    tables = list(result.get_tables())
+
+    length = analysis.shaft.length
+    top = max(length, analysis.soil.total_thickness)
+    low = min(3.0, length)
+    if top > low:
+        rows = [[r["depth_m"], r["Q_skin_kN"], r["Q_tip_kN"],
+                 r["Q_ultimate_kN"]]
+                for r in analysis.capacity_vs_depth(
+                    depth_min=low, depth_max=top,
+                    n_points=CAPACITY_TABLE_POINTS)]
+        if rows:
+            tables.append(CalcTable(
+                title="Ultimate capacity against shaft length",
+                columns=[("Shaft length L", "m", ".2f"),
+                         ("Side resistance Q_s", "kN", ".1f"),
+                         ("Base resistance Q_b", "kN", ".1f"),
+                         ("Ultimate capacity Q_ult", "kN", ".1f")],
+                rows=rows,
+                note=("The same analysis re-run with the shaft length set "
+                      "to each value (SHAFT's capacity against depth); FS "
+                      "is not applied"),
+                name="capacity_vs_length",
+            ))
+
+    layer_rows, depth = [], 0.0
+    for i, layer in enumerate(analysis.soil.layers, 1):
+        layer_rows.append([
+            i, depth, depth + layer.thickness, layer.soil_type,
+            layer.description, layer.unit_weight, layer.cu, layer.phi,
+            layer.N60, layer.qu, layer.RQD])
+        depth += layer.thickness
+    if layer_rows:
+        gwt = analysis.soil.gwt_depth
+        tables.append(CalcTable(
+            title="Soil layers",
+            columns=["Layer", ("Top", "m"), ("Bottom", "m"), "Soil type",
+                     "Description", ("Unit weight γ", "kN/m³"),
+                     ("Undrained shear strength c_u", "kPa"),
+                     ("Friction angle φ", "deg"), "N60",
+                     ("Unconfined compressive strength q_u", "kPa"),
+                     ("RQD", "%")],
+            rows=layer_rows,
+            note=("The soil layers as input, depths below the ground "
+                  "surface; groundwater at "
+                  + (f"{gwt:g} m" if gwt is not None else "none given")),
+            name="soil_layers", printed=False,
+        ))
+    return tables
+
+
 # ── Helper functions ──────────────────────────────────────────────
 
 def _layer_properties_str(layer) -> str:

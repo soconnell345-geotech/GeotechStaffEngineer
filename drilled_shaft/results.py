@@ -129,6 +129,92 @@ class DrillShaftResult:
             )
         return d
 
+    def get_tables(self) -> list:
+        """SHAFT-style tables: side resistance per layer (with the GEC-10
+        exclusion zones), the load in the shaft at the ultimate load, and
+        the capacity summary (CSV only; the calc package prints it in its
+        Capacity section). Values are this result's own, in its units: the
+        per-layer values are rounded to 0.1 as the module reports them.
+
+        Returns
+        -------
+        list of geotech_common.tables.CalcTable
+        """
+        from geotech_common.tables import CalcTable
+
+        tables = []
+        layers = self.layer_breakdown or []
+        if layers:
+            rows, cum = [], 0.0
+            for lb in layers:
+                cum += lb["side_resistance_kN"]
+                rows.append([
+                    lb["depth_top_m"], lb["depth_bottom_m"],
+                    lb.get("effective_top_m"), lb.get("effective_bottom_m"),
+                    lb["soil_type"], lb["method"], lb.get("sigma_v_kPa"),
+                    lb.get("fs_kPa"), lb["side_resistance_kN"], cum])
+            tables.append(CalcTable(
+                title="Side resistance per layer",
+                columns=[("Top", "m", ".2f"), ("Bottom", "m", ".2f"),
+                         ("Effective top", "m", ".2f"),
+                         ("Effective bottom", "m", ".2f"), "Soil type",
+                         "Method", ("σ'v", "kPa", ".1f"),
+                         ("Unit side resistance f_s", "kPa", ".1f"),
+                         ("Side resistance Q_s", "kN", ".1f"),
+                         ("Cumulative Q_s", "kN", ".1f")],
+                rows=rows,
+                note=("GEC-10 side resistance: α method in cohesive "
+                      "layers, β method in cohesionless layers, rock "
+                      "socket in rock; 'Effective' top and bottom leave out "
+                      "the exclusion zones (top 1.5 m or the casing; 1D above "
+                      "the base in cohesive layers), which carry none"),
+                name="side_resistance",
+            ))
+
+            head = layers[0]["depth_top_m"]
+            load_rows = [[head, 0.0, self.Q_ultimate]]
+            cum = 0.0
+            for lb in layers:
+                cum += lb["side_resistance_kN"]
+                load_rows.append([lb["depth_bottom_m"], cum,
+                                  self.Q_ultimate - cum])
+            tables.append(CalcTable(
+                title="Load transfer at the ultimate load",
+                columns=[("Depth z", "m", ".2f"),
+                         ("Side resistance above z", "kN", ".1f"),
+                         ("Axial load in shaft Q", "kN", ".1f")],
+                rows=load_rows,
+                note=(f"Q(z) = Q_ult - Σ Q_s above z, with Q_ult = "
+                      f"{self.Q_ultimate:.1f} kN at the head; at the base "
+                      f"it is the base resistance Q_b = {self.Q_tip:.1f} kN "
+                      "(within the 0.1 kN rounding of the layer values)"),
+                name="load_transfer",
+            ))
+
+        summary = [
+            ["Side resistance, cohesive layers", "Q_s,clay",
+             self.Q_side_clay, "kN"],
+            ["Side resistance, cohesionless layers", "Q_s,sand",
+             self.Q_side_sand, "kN"],
+            ["Side resistance, rock socket", "Q_s,rock",
+             self.Q_side_rock, "kN"],
+            ["Side resistance", "Q_s", self.Q_skin, "kN"],
+            ["Base resistance", "Q_b", self.Q_tip, "kN"],
+            ["Ultimate capacity", "Q_ult", self.Q_ultimate, "kN"],
+            ["Factor of safety", "FS", self.factor_of_safety, ""],
+            ["Allowable capacity", "Q_all", self.Q_allowable, "kN"],
+            ["Effective vertical stress at the base", "σ'v,base",
+             self.sigma_v_tip, "kPa"],
+        ]
+        tables.append(CalcTable(
+            title="Capacity summary",
+            columns=["Quantity", "Symbol", "Value", "Unit"], rows=summary,
+            note=(f"Shaft D = {self.shaft_diameter:g} m, L = "
+                  f"{self.shaft_length:g} m, {self.method}"),
+            name="capacity_summary", printed=False,
+        ))
+        return tables
+
     def plot_load_transfer(self, ax=None, show=True, **kwargs):
         """Plot cumulative side resistance vs depth.
 

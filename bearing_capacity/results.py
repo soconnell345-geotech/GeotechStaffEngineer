@@ -265,3 +265,70 @@ class BearingCapacityResult:
         if self.notes:
             d["notes"] = list(self.notes)
         return d
+
+    def get_tables(self) -> list:
+        """The bearing capacity factor and term breakdown: for the cohesion,
+        overburden and self-weight terms, the factor N and the shape, depth,
+        load-inclination, base-tilt and ground-slope factors, and the term's
+        contribution to q_ult; and the capacity summary (CSV only; the calc
+        package prints it). Values are this result's own, in its units.
+
+        Returns
+        -------
+        list of geotech_common.tables.CalcTable
+        """
+        from geotech_common.tables import CalcTable
+
+        rows = [
+            ["Cohesion (c)", self.Nc, self.sc, self.dc, self.ic, self.bc,
+             self.gc, self.term_cohesion],
+            ["Overburden (q)", self.Nq, self.sq, self.dq, self.iq, self.bq,
+             self.gq, self.term_overburden],
+            ["Self-weight (γ)", self.Ngamma, self.sgamma, self.dgamma,
+             self.igamma, self.bgamma, self.ggamma, self.term_selfweight],
+        ]
+        method = ("Terzaghi (1943)" if self.factor_method == "terzaghi"
+                  else f"{self.factor_method} factors")
+        note = (f"q_ult = c Nc sc dc ic bc gc + q Nq sq dq iq bq gq + "
+                f"0.5 γ' B' Nγ sγ dγ iγ bγ "
+                f"gγ ({method}, Nγ by {self.ngamma_method}); "
+                f"q = {self.q_overburden:.2f} kPa, γ' = "
+                f"{self.gamma_eff:.2f} kN/m³, B' = {self.B_eff:.3f} m")
+        if self.is_two_layer:
+            note += ("; two-layer case: the terms are those of the upper "
+                     "layer, q_ult is the load-spread combination")
+        tables = [CalcTable(
+            title="Bearing capacity factors and terms",
+            columns=["Term", ("Bearing capacity factor N", "", ".3f"),
+                     ("Shape s", "", ".4f"), ("Depth d", "", ".4f"),
+                     ("Load inclination i", "", ".4f"),
+                     ("Base tilt b", "", ".4f"), ("Ground slope g", "", ".4f"),
+                     ("Term value", "kPa", ".1f")],
+            rows=rows, note=note, name="factors_and_terms",
+        )]
+        summary = [
+            ["Ultimate bearing capacity", "q_ult", self.q_ultimate, "kPa"],
+            ["Net ultimate bearing capacity", "q_net", self.q_net, "kPa"],
+            ["Factor of safety", "FS", self.factor_of_safety, ""],
+            ["Allowable bearing capacity", "q_all", self.q_allowable, "kPa"],
+            ["Effective overburden at the base", "q", self.q_overburden,
+             "kPa"],
+            ["Effective unit weight below the base", "γ'",
+             self.gamma_eff, "kN/m³"],
+            ["Effective width", "B'", self.B_eff, "m"],
+            ["Effective length", "L'", self.L_eff, "m"],
+        ]
+        if self.is_two_layer:
+            summary += [
+                ["q_ult of the upper layer alone", "q_t",
+                 self.q_upper_layer, "kPa"],
+                ["q_ult of the lower layer alone", "q_b",
+                 self.q_lower_layer, "kPa"],
+            ]
+        tables.append(CalcTable(
+            title="Bearing capacity summary",
+            columns=["Quantity", "Symbol", "Value", "Unit"], rows=summary,
+            note=f"Failure mode: {self.failure_mode}",
+            name="capacity_summary", printed=False,
+        ))
+        return tables

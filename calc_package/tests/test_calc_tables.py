@@ -125,6 +125,27 @@ class TestGenerateCalcPackage:
         # the input echo is CSV-only: printed once, as section 1
         assert html.count("Input parameters") == 0
 
+    def test_a_failing_table_costs_the_tables_not_the_package(
+            self, tmp_path, monkeypatch):
+        import calc_package
+        result, analysis = _lateral()
+        reg = calc_package._ensure_registered("lateral_pile")
+
+        def boom(*a, **k):
+            raise RuntimeError("bad table")
+        monkeypatch.setitem(reg, "get_tables", boom)
+        report = {}
+        with pytest.warns(UserWarning, match="bad table"):
+            html = generate_calc_package(
+                "lateral_pile", result, analysis,
+                output_path=str(tmp_path / "x.html"), render_report=report)
+        assert "Pile Section Properties" in html
+        assert "Calculation Tables" not in html
+        assert "bad table" in report["tables_error"]
+        # the input echo is still written
+        assert [os.path.basename(t["path"]) for t in report["tables"]] == [
+            "x_inputs.csv"]
+
     def test_tables_false_writes_and_prints_nothing(self, tmp_path):
         result, analysis = _lateral()
         html = generate_calc_package("lateral_pile", result, analysis,
