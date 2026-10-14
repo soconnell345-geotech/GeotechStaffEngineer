@@ -9,20 +9,58 @@ Materials:
   Sand: PressureDependMultiYield02
   Clay: PressureIndependMultiYield
 
+The model follows the OpenSees example "Effective Stress Site Response
+Analysis of a Layered Soil Column" (McGann & Arduino, University of
+Washington; OpenSeesPy docs section 14.4.2, freeFieldEffective.py):
+gravity as element body forces, an elastic then an elastoplastic gravity
+stage, the clock set back to zero, then the motion as a force history on
+the base dashpot.
+
 References:
     Lysmer, J. & Kuhlemeyer, R.L. (1969). "Finite Dynamic Model for
     Infinite Media." J. Eng. Mech. Div., ASCE, 95(4), 859-877.
 
+    Joyner, W.B. & Chen, A.T.F. (1975). "Calculation of Nonlinear Ground
+    Response in Earthquakes." Bull. Seismol. Soc. Am., 65(5), 1315-1336.
+
     Yang, Z., Elgamal, A., & Parra, E. (2003). "Computational Model
     for Cyclic Mobility and Associated Shear Deformation." J. Geotech.
     Geoenviron. Eng., 129(12), 1119-1127.
+
+    Kramer, S.L. (1996). Geotechnical Earthquake Engineering. Prentice
+    Hall. Section 7.2 (uniform damped soil on elastic rock).
+
+    Kwok, A.O.L., Stewart, J.P., Hashash, Y.M.A., et al. (2007). "Use of
+    Exact Solutions of Wave Propagation Problems to Guide Implementation
+    of Nonlinear Seismic Ground Response Analysis Procedures." J. Geotech.
+    Geoenviron. Eng., 133(11), 1385-1398.
 """
 
+import json
 import math
+import os
+import pickle
+import subprocess
+import sys
+import tempfile
 
 import numpy as np
 
 from opensees_agent.results import SiteResponseResult
+
+
+# The analysis runs in a child process so a solver that never returns can
+# be stopped: openseespy holds the Python GIL inside ops.analyze(), so a
+# stuck step would freeze every thread of the calling process (an app
+# server, a test run). GM-77, 2026-10-14.
+DEFAULT_TIME_LIMIT_S = 600.0
+
+# Gravity stages (McGann & Arduino's example: 10 elastic and 40
+# elastoplastic steps of 500 s, long enough for the pore pressures to
+# settle to hydrostatic under a low-permeability clay).
+_GRAVITY_DT_S = 500.0
+_GRAVITY_ELASTIC_STEPS = 10
+_GRAVITY_PLASTIC_STEPS = 40
 
 
 # ===========================================================================
@@ -114,6 +152,8 @@ def analyze_site_response(
     damping=0.02,
     scale_factor=1.0,
     n_elem_per_layer=4,
+    linear_elastic=False,
+    time_limit_s=DEFAULT_TIME_LIMIT_S,
 ):
     """Run 1D effective-stress site response analysis.
 
@@ -128,11 +168,16 @@ def analyze_site_response(
         Soil layers from top to bottom. Each dict must contain:
         ``thickness`` (m), ``Vs`` (m/s), ``density`` (Mg/m3),
         ``material_type`` ('sand' or 'clay').
-        Sand requires: ``phi`` (degrees). Optional: ``K0``.
-        Clay requires: ``su`` (kPa).
-        Optional for all: ``n_surf`` (default 20), ``e_init``.
+        Sand requires: ``phi`` (degrees). Optional: ``K0``, ``PTAng``
+        (phase-transformation angle, degrees; default 26, capped at phi).
+        Clay requires: ``su`` (kPa), the undrained strength in simple
+        shear (the column shears in simple shear; the model's peak
+        stress there equals su).
+        Optional for all: ``n_surf`` (default 20), ``e_init`` (void
+        ratio; default 0.77 sand, 0.85 clay).
     motion : str, optional
-        Built-in motion name (e.g. 'synthetic_pulse').
+        Built-in motion name (e.g. 'synthetic_pulse'). The motion is
+        taken as a ROCK OUTCROP motion.
     accel_history : array_like, optional
         Custom acceleration time history (g).
     dt : float, optional
@@ -142,16 +187,31 @@ def analyze_site_response(
         analysis (built-in motions have fixed PGAs). Default None.
     gwt_depth : float
         Groundwater table depth from surface (m). Default 0.0 (at surface).
+        The model puts it at the deepest node at or above this depth
+        (exact when it falls on a node, e.g. a layer boundary).
     bedrock_Vs : float
         Bedrock shear wave velocity (m/s). Default 760.
     bedrock_density : float
         Bedrock mass density (Mg/m3). Default 2.4.
     damping : float
-        Target Rayleigh damping ratio. Default 0.02.
+        Target Rayleigh damping ratio, matched at the site frequency
+        Vs/(4H) and five times it (a little less between). Default 0.02.
     scale_factor : float
         Scale factor applied to input acceleration. Default 1.0.
     n_elem_per_layer : int
         Number of elements per soil layer. Default 4.
+    linear_elastic : bool
+        Keep the soil in its linear elastic stage through the shaking
+        (shear modulus rho*Vs^2, no yielding, damping from the Rayleigh
+        term only). A check of the column against the closed-form
+        response of a uniform damped layer on elastic rock, not a design
+        analysis. Default False (nonlinear effective-stress analysis).
+    time_limit_s : float or None
+        Wall-clock limit (s). The analysis runs in a child process that
+        is stopped at this limit with a RuntimeError, because a stuck
+        OpenSees step cannot be interrupted any other way (a 30-element
+        column through 4,000 steps takes about 7 s). None runs it in this
+        process with no limit. Default 600.
 
     Returns
     -------
@@ -164,10 +224,19 @@ def analyze_site_response(
         For invalid input parameters.
     ImportError
         If openseespy is not installed.
+    RuntimeError
+        If a gravity stage or a dynamic step does not converge, or the
+        analysis does not finish within ``time_limit_s``.
     """
     _validate_site_response_inputs(
         layers, gwt_depth, bedrock_Vs, bedrock_density,
         damping, scale_factor, n_elem_per_layer)
+    if time_limit_s is not None and not (
+            isinstance(time_limit_s, (int, float))
+            and math.isfinite(time_limit_s) and time_limit_s > 0):
+        raise ValueError(
+            f"time_limit_s must be a positive number of seconds or None, "
+            f"got {time_limit_s!r}")
 
     from opensees_agent.ground_motions import (
         validate_motion_input, motion_label)
@@ -176,17 +245,104 @@ def analyze_site_response(
 
     motion_name = motion_label(motion, target_pga_g)
 
+    job = dict(
+        layers=[dict(L) for L in layers],
+        accel_g=np.asarray(accel_g, dtype=float),
+        dt_motion=float(dt_motion),
+        gwt_depth=float(gwt_depth),
+        bedrock_Vs=float(bedrock_Vs),
+        bedrock_density=float(bedrock_density),
+        damping=float(damping),
+        scale_factor=float(scale_factor),
+        n_elem_per_layer=int(n_elem_per_layer),
+        motion_name=motion_name,
+        linear_elastic=bool(linear_elastic),
+    )
+    if time_limit_s is None:
+        return _run_job(job)
+    return _run_job_in_child(job, float(time_limit_s))
+
+
+# ===========================================================================
+# Running the job (in this process, or in a child process with a limit)
+# ===========================================================================
+
+def _run_job(job):
+    """Build and run the OpenSees model for one job dict (this process)."""
     from opensees_agent.opensees_utils import fresh_model
     ops = fresh_model(ndm=2, ndf=3)
-
     try:
-        return _run_site_response_model(
-            ops, layers, accel_g, dt_motion,
-            gwt_depth, bedrock_Vs, bedrock_density,
-            damping, scale_factor, n_elem_per_layer,
-            motion_name)
+        return _run_site_response_model(ops, **job)
     finally:
         ops.wipe()
+
+
+# The child imports this module from the parent's own sys.path (passed as
+# JSON), so it finds the same package whether it is installed, editable or
+# only on a test run's path.
+_CHILD_CODE = (
+    "import json, sys\n"
+    "sys.path[:0] = json.loads(sys.argv[3])\n"
+    "from opensees_agent.site_response import _child_main\n"
+    "_child_main(sys.argv[1], sys.argv[2])\n"
+)
+
+
+def _child_main(job_path, out_path):
+    """Child-process entry: run the job, pickle ('ok', result) or the error."""
+    with open(job_path, "rb") as f:
+        job = pickle.load(f)
+    try:
+        payload = ("ok", _run_job(job))
+    except Exception as exc:  # reported to the parent, re-raised there
+        payload = ("error", (type(exc).__name__, str(exc)))
+    with open(out_path, "wb") as f:
+        pickle.dump(payload, f)
+
+
+_ERROR_TYPES = {"ValueError": ValueError, "ImportError": ImportError,
+                "ModuleNotFoundError": ImportError}
+
+
+def _run_job_in_child(job, time_limit_s):
+    """Run the job in a child Python process stopped at ``time_limit_s``."""
+    path = [os.path.abspath(p) if p else os.getcwd() for p in sys.path]
+    with tempfile.TemporaryDirectory(prefix="gse_site_response_",
+                                     ignore_cleanup_errors=True) as tmp:
+        job_path = os.path.join(tmp, "job.pkl")
+        out_path = os.path.join(tmp, "result.pkl")
+        with open(job_path, "wb") as f:
+            pickle.dump(job, f)
+        cmd = [sys.executable, "-c", _CHILD_CODE, job_path, out_path,
+               json.dumps(path)]
+        try:
+            proc = subprocess.run(cmd, cwd=tmp, capture_output=True,
+                                  text=True, errors="replace",
+                                  timeout=time_limit_s)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(
+                f"The OpenSees site response analysis did not finish within "
+                f"time_limit_s = {time_limit_s:g} s and was stopped. A "
+                f"solver step that never returns is the usual cause; try "
+                f"more elements per layer, a shorter or weaker motion, or "
+                f"linear_elastic=True to check the column.") from None
+        except OSError as exc:
+            raise RuntimeError(
+                f"Could not start the child process for the OpenSees site "
+                f"response analysis ({exc}). time_limit_s=None runs it in "
+                f"this process, without the time limit.") from exc
+        if not os.path.exists(out_path):
+            tail = (proc.stderr or proc.stdout or "").strip()[-1500:]
+            raise RuntimeError(
+                f"The OpenSees site response child process ended without a "
+                f"result (exit code {proc.returncode}). Its last output:\n"
+                f"{tail}")
+        with open(out_path, "rb") as f:
+            status, payload = pickle.load(f)
+    if status == "ok":
+        return payload
+    name, message = payload
+    raise _ERROR_TYPES.get(name, RuntimeError)(message)
 
 
 # ===========================================================================
@@ -196,7 +352,7 @@ def analyze_site_response(
 def _run_site_response_model(ops, layers, accel_g, dt_motion,
                              gwt_depth, bedrock_Vs, bedrock_density,
                              damping, scale_factor, n_elem_per_layer,
-                             motion_name):
+                             motion_name, linear_elastic=False):
     """Build model, run gravity + dynamic, extract results."""
     g_accel = 9.81  # m/s^2
     col_width = 1.0  # m (plane-strain unit width)
@@ -255,12 +411,23 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
     ops.fix(left_node(top_idx), 0, 0, 1)
     ops.fix(right_node(top_idx), 0, 0, 1)
 
-    # Nodes above GWT: fix pore pressure (no pore water)
+    # Nodes at or above the GWT: fix pore pressure at zero. The water
+    # table then sits at the deepest node at or above gwt_depth (exactly
+    # at gwt_depth when it falls on a node, e.g. a layer boundary).
+    # (Until GM-77 a node AT the water table was left free, which put the
+    # water table one element too shallow.)
+    drained = [i == top_idx for i in range(n_nodes_col)]
     for i in range(n_nodes_col):
         depth_from_surface = total_depth - elevations[i]
-        if depth_from_surface < gwt_depth and i != top_idx:
+        if depth_from_surface <= gwt_depth + 1.0e-9 and i != top_idx:
             ops.fix(left_node(i), 0, 0, 1)
             ops.fix(right_node(i), 0, 0, 1)
+            drained[i] = True
+    # An element with zero pore pressure at both its node rows holds no
+    # pore water: its ru is 0 (its vertical effective stress still swings
+    # with the column's vertical motion, which is not pore pressure).
+    elem_dry = [drained[e] and drained[e + 1]
+                for e in range(n_nodes_col - 1)]
 
     # ------------------------------------------------------------------
     # 4. Create materials (one per layer)
@@ -278,17 +445,22 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
 
         # Depth from surface for stress calculation
         depth_from_surface_mid = total_depth - depth_mid
+        # Vertical effective stress at mid-layer: the weight of every
+        # layer above plus half this one, less hydrostatic pore pressure
+        sigma_v_eff_mid = _sigma_v_eff(layers, depth_from_surface_mid,
+                                       gwt_depth, g_accel)
 
         mat_type = L_dict["material_type"].lower().strip()
 
         if mat_type == "sand":
             perm = _create_sand_material(
-                ops, mat_tag, L_dict, depth_from_surface_mid, gwt_depth)
+                ops, mat_tag, L_dict, sigma_v_eff_mid)
         else:
             perm = _create_clay_material(
-                ops, mat_tag, L_dict, depth_from_surface_mid, gwt_depth)
+                ops, mat_tag, L_dict, sigma_v_eff_mid)
 
-        e_init = L_dict.get("e_init", 0.65 if mat_type == "sand" else 0.85)
+        e_init = L_dict.get(
+            "e_init", PDMY02_DR40["e"] if mat_type == "sand" else 0.85)
 
         mat_tags.append(mat_tag)
         perms.append(perm)
@@ -314,6 +486,14 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
             perm_val = perms[layer_idx_local]
             e_val = e_inits[layer_idx_local]
 
+            # Gravity is the element body force: SSPquadUP takes the
+            # COMPONENTS OF GRAVITY (0, -g), not unit weights (OpenSees
+            # SSPquadUP note 3). It loads the soil with its saturated
+            # weight and the pore fluid with its own, so the pore
+            # pressure settles hydrostatic and the effective stress
+            # buoyant below the water table. (Until GM-77 the weight was
+            # nodal loads on a Linear time series, factor = time, so at
+            # t = 10,000 s the column carried 10,000 times its weight.)
             ops.element('SSPquadUP', elem_tag,
                         n1, n2, n3, n4,
                         mat_tags[layer_idx_local],
@@ -323,7 +503,9 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
                         perm_val,  # horizontal permeability
                         perm_val,  # vertical permeability
                         e_val,     # void ratio
-                        1.0e-5)    # alpha (numerical damping)
+                        1.0e-5,    # alpha (pressure stabilization)
+                        0.0,       # b1: horizontal gravity component
+                        -g_accel)  # b2: vertical gravity component
 
             elem_mat_idx.append(layer_idx_local)
             elem_tag += 1
@@ -349,32 +531,10 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
                 '-mat', dashpot_mat, '-dir', 1)
 
     # ------------------------------------------------------------------
-    # 7. Gravity analysis (elastic stage)
+    # 7. Gravity analysis (elastic stage). The weight is the element body
+    #    force (step 5), constant from the first step; the transient
+    #    steps of 500 s let the pore pressures settle to hydrostatic.
     # ------------------------------------------------------------------
-    # Body forces: gravity applied through element self-weight
-    ops.timeSeries('Linear', 1)
-    ops.pattern('Plain', 1, 1)
-
-    # Apply gravity body forces as nodal loads
-    # Each element's weight is distributed to its 4 nodes
-    for e_idx in range(n_elem_total):
-        li = elem_mat_idx[e_idx]
-        rho = layer_elems[li][0]["density"]
-        h_e = layer_elems[li][1]
-        # Weight per node = rho * g * h * width / 4 (4 nodes per element)
-        w_node = -rho * g_accel * h_e * col_width / 4.0
-
-        n1 = left_node(e_idx)
-        n2 = right_node(e_idx)
-        n3 = right_node(e_idx + 1)
-        n4 = left_node(e_idx + 1)
-
-        ops.load(n1, 0.0, w_node, 0.0)
-        ops.load(n2, 0.0, w_node, 0.0)
-        ops.load(n3, 0.0, w_node, 0.0)
-        ops.load(n4, 0.0, w_node, 0.0)
-
-    # Set all materials to elastic stage (stage 0)
     for mt in mat_tags:
         ops.updateMaterialStage('-material', mt, '-stage', 0)
 
@@ -386,15 +546,24 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
     ops.integrator('Newmark', 0.5, 0.25)
     ops.analysis('Transient')
 
-    ops.analyze(10, 500.0)
+    _gravity_stage(ops, _GRAVITY_ELASTIC_STEPS, "elastic")
 
     # ------------------------------------------------------------------
-    # 8. Switch to elastoplastic (stage 1)
+    # 8. Switch to elastoplastic (stage 1) -- unless the column is kept
+    #    linear elastic through the shaking.
     # ------------------------------------------------------------------
-    for mt in mat_tags:
-        ops.updateMaterialStage('-material', mt, '-stage', 1)
+    if not linear_elastic:
+        for mt in mat_tags:
+            ops.updateMaterialStage('-material', mt, '-stage', 1)
+        _gravity_stage(ops, _GRAVITY_PLASTIC_STEPS, "elastoplastic")
 
-    ops.analyze(10, 500.0)
+    # Set the clock back to zero: the gravity stages end at t = 25,000 s
+    # (or 5,000 s), and the input motion's force history starts at
+    # t = 0, so without this the shaking stage reads the history past its
+    # end and applies NO input (GM-77: 8.5e-7 g at the surface from a
+    # 0.30 g motion). As in the OpenSees example (setTime 0.0).
+    ops.setTime(0.0)
+    ops.wipeAnalysis()
 
     # ------------------------------------------------------------------
     # 9. Record initial stresses for ru computation
@@ -408,13 +577,19 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
     # ------------------------------------------------------------------
     # 10. Set up dynamic loading
     # ------------------------------------------------------------------
-    accel_scaled = accel_g * scale_factor
+    accel_scaled = np.asarray(accel_g, dtype=float) * scale_factor
 
-    # Integrate acceleration to velocity
-    velocity = np.cumsum(accel_scaled * g_accel * dt_motion)
+    # Integrate acceleration to velocity (trapezoid, at rest at t = 0)
+    a_ms2 = accel_scaled * g_accel
+    velocity = np.concatenate(
+        ([0.0], np.cumsum(0.5 * (a_ms2[1:] + a_ms2[:-1]) * dt_motion)))
 
-    # Force at base: factor 2 for outcrop motion assumption
-    force_vals = 2.0 * c_dashpot * velocity
+    # Force at the base (Joyner & Chen 1975): F = 2 * rho_r * Vs_r * A *
+    # v_incident, and a rock OUTCROP motion is twice the incident
+    # (upgoing) wave, so F = rho_r * Vs_r * A * v_outcrop = c * v_outcrop.
+    # (Until GM-77 the outcrop velocity was doubled again, which doubled
+    # the input.) Same as the OpenSees example (-factor = c * area).
+    force_vals = c_dashpot * velocity
 
     # Path time series for the force
     ts_dyn = 100
@@ -431,9 +606,9 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
     # Average Vs (travel-time weighted)
     Vs_avg = total_depth / sum(
         L["thickness"] / L["Vs"] for L in layers)
-    T1 = 4.0 * total_depth / Vs_avg  # fundamental period
+    T1 = 4.0 * total_depth / Vs_avg  # site period 4H/Vs
     f1 = 1.0 / T1
-    f2 = 5.0 * f1  # target 5th mode approx
+    f2 = 5.0 * f1  # second target: five times the site frequency
     omega1 = 2.0 * math.pi * f1
     omega2 = 2.0 * math.pi * f2
     a0_ray = 2.0 * damping * omega1 * omega2 / (omega1 + omega2)
@@ -453,15 +628,16 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
     ops.integrator('Newmark', 0.5, 0.25)
     ops.analysis('Transient')
 
-    n_steps = len(accel_g)
-    surface_accel = np.zeros(n_steps)
+    n_steps = len(accel_scaled)
+    surface_accel = np.zeros(n_steps)  # index k is t = k * dt; at rest at 0
     max_accel = np.zeros(n_elem_total)
     max_strain = np.zeros(n_elem_total)
     max_ru = np.zeros(n_elem_total)
 
     surface_node = left_node(top_idx)
 
-    for step in range(n_steps):
+    for step in range(1, n_steps):
+        t_target = step * dt_motion
         ok = ops.analyze(1, dt_motion)
         if ok != 0:
             # Fallback: ModifiedNewton
@@ -469,11 +645,22 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
             ok = ops.analyze(1, dt_motion)
             ops.algorithm('KrylovNewton')
         if ok != 0:
-            # Fallback: substeps
-            for _sub in range(10):
-                ok = ops.analyze(1, dt_motion / 10.0)
+            # Fallback: substeps up to the same target time
+            n_sub = 10
+            while ops.getTime() < t_target - 1.0e-9 * dt_motion:
+                dt_sub = min(dt_motion / n_sub, t_target - ops.getTime())
+                ok = ops.analyze(1, dt_sub)
                 if ok != 0:
                     break
+        if ok != 0:
+            # A bounded failure, not a hang and not silently skipped: the
+            # record would no longer line up with the input motion.
+            raise RuntimeError(
+                f"The dynamic analysis did not converge at t = "
+                f"{ops.getTime():.3f} s (step {step} of {n_steps - 1}, "
+                f"after Krylov-Newton, modified Newton and 10 substeps). "
+                f"The soil may have failed or liquefied under this motion; "
+                f"try more elements per layer or a weaker motion.")
 
         # Surface acceleration
         a_surf = ops.nodeAccel(surface_node, 1)
@@ -499,7 +686,8 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
                     max_strain[e] = gamma
 
             # Pore pressure ratio
-            if len(stress) > 1 and initial_sigma_v[e] > 1.0:
+            if (len(stress) > 1 and initial_sigma_v[e] > 1.0
+                    and not elem_dry[e]):
                 sigma_v_curr = -stress[1]
                 ru = 1.0 - sigma_v_curr / initial_sigma_v[e]
                 ru = max(0.0, min(ru, 1.0))
@@ -544,15 +732,71 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
         periods=periods,
         Sa_surface_g=Sa_surface,
         Sa_input_g=Sa_input,
+        analysis_type=("linear elastic" if linear_elastic
+                       else "nonlinear effective stress"),
+        site_period_s=T1,
+        initial_sigma_v_eff_kPa=initial_sigma_v,
     )
+
+
+def _gravity_stage(ops, n_steps, stage):
+    """Run one gravity stage step by step; raise if a step fails."""
+    for i in range(n_steps):
+        if ops.analyze(1, _GRAVITY_DT_S) != 0:
+            raise RuntimeError(
+                f"The {stage} gravity stage did not converge (step {i + 1} "
+                f"of {n_steps}). The column could not carry its own weight "
+                f"with these properties: check su (clay) and phi (sand) "
+                f"against the layers' stresses, or use more elements per "
+                f"layer.")
 
 
 # ===========================================================================
 # Material creation helpers
 # ===========================================================================
 
-def _create_sand_material(ops, mat_tag, layer, depth_from_surface, gwt_depth):
+# PressureDependMultiYield02 calibration constants: the OpenSees wiki's
+# table of suggested parameters ("PressureDependMultiYield02 Material",
+# Dr = 40 % column; also the medium sand of the OpenSeesPy effective-stress
+# site response example): phase-transformation angle 26 deg, contrac1
+# 0.067, contrac3 0.23, dilat1 0.06, dilat3 0.27, void ratio 0.77; and the
+# command's documented defaults contrac2 5.0, dilat2 3.0, liquefac1 1.0,
+# liquefac2 0.0, cs1 0.9, cs2 0.02, cs3 0.7, pa 101 kPa.
+PDMY02_DR40 = dict(
+    PTAng=26.0,
+    contrac1=0.067, contrac3=0.23,
+    dilat1=0.06, dilat3=0.27,
+    contrac2=5.0, dilat2=3.0,
+    liquefac1=1.0, liquefac2=0.0,
+    e=0.77,
+    cs1=0.9, cs2=0.02, cs3=0.7, pa=101.0,
+)
+
+
+def _sigma_v_eff(layers, depth, gwt_depth, g_accel=9.81):
+    """Vertical effective stress (kPa) at ``depth`` (m) below the surface.
+
+    Layers are top to bottom; densities are saturated (Mg/m3); the pore
+    pressure is hydrostatic below ``gwt_depth``.
+    """
+    sigma_v = 0.0
+    top = 0.0
+    for L in layers:
+        bottom = top + L["thickness"]
+        if depth <= top:
+            break
+        sigma_v += L["density"] * g_accel * (min(depth, bottom) - top)
+        top = bottom
+    u = 1.0 * g_accel * max(0.0, depth - gwt_depth)
+    return sigma_v - u
+
+
+def _create_sand_material(ops, mat_tag, layer, sigma_v_eff):
     """Create PressureDependMultiYield02 material for a sand layer.
+
+    ``sigma_v_eff`` is the vertical effective stress at mid-layer (kPa);
+    the reference shear modulus rho*Vs^2 is taken at the mean effective
+    stress there, so the layer's Vs holds at its mid-depth.
 
     Returns permeability (m/s) for use in element creation.
     """
@@ -560,8 +804,11 @@ def _create_sand_material(ops, mat_tag, layer, depth_from_surface, gwt_depth):
     rho = layer["density"]
     phi = layer["phi"]
     K0 = layer.get("K0", 1.0 - math.sin(math.radians(phi)))
-    n_surf = layer.get("n_surf", 20)
-    e_init = layer.get("e_init", 0.65)
+    n_surf = int(layer.get("n_surf", 20))
+    e_init = layer.get("e_init", PDMY02_DR40["e"])
+    # Phase transformation cannot exceed the friction angle (at phi it
+    # means no dilation, the table's loosest column).
+    pt_ang = min(float(layer.get("PTAng", PDMY02_DR40["PTAng"])), phi)
 
     # Gmax = rho * Vs^2 (kPa)
     Gmax = rho * Vs ** 2
@@ -569,49 +816,55 @@ def _create_sand_material(ops, mat_tag, layer, depth_from_surface, gwt_depth):
     nu_drain = 0.3
     Bmax = 2.0 * Gmax * (1.0 + nu_drain) / (3.0 * (1.0 - 2.0 * nu_drain))
 
-    # Reference confining pressure at layer mid-depth
-    gamma_w = 9.81
-    depth_below_gwt = max(0.0, depth_from_surface - gwt_depth)
-    sigma_v = rho * 9.81 * depth_from_surface - gamma_w * depth_below_gwt
-    sigma_mean = max(sigma_v * (1.0 + 2.0 * K0) / 3.0, 5.0)
+    # Reference confining pressure: mean effective stress at mid-layer
+    sigma_mean = max(sigma_v_eff * (1.0 + 2.0 * K0) / 3.0, 5.0)
 
     gamma_max = 0.1  # 10% peak shear strain
-
-    # Contraction/dilation parameters (conservative defaults)
-    # c1, c3, c2 — contraction
-    c1, c3, c2 = 0.067, 0.23, 0.0
-    # d1, d3, d2 — dilation
-    d1, d3, d2 = 0.06, 0.27, 0.0
+    p = PDMY02_DR40
 
     perm = 1.0e-4  # m/s (sand)
 
+    # Argument order as documented (OpenSees wiki, PressureDependMultiYield02
+    # Material; OpenSeesPy docs): tag nd rho refShearModul refBulkModul
+    # frictionAng peakShearStra refPress pressDependCoe PTAng contrac1
+    # contrac3 dilat1 dilat3 noYieldSurf contrac2 dilat2 liquefac1
+    # liquefac2 e cs1 cs2 cs3 pa. (Until GM-77 PTAng was left out, so
+    # every later value sat one slot off: 20 surfaces read as PTAng, 0.27
+    # as the number of yield surfaces, the void ratio and the critical
+    # state constants as 0.)
     ops.nDMaterial('PressureDependMultiYield02', mat_tag,
-                   2,            # ndm
-                   rho,          # mass density (Mg/m3)
-                   Gmax,         # reference shear modulus (kPa)
-                   Bmax,         # reference bulk modulus (kPa)
-                   phi,          # friction angle (degrees)
-                   gamma_max,    # peak shear strain
-                   sigma_mean,   # reference confining pressure (kPa)
-                   0.5,          # pressure dependence coefficient
-                   n_surf,       # number of yield surfaces
-                   c1, c3, c2,   # contraction params
-                   d1, d3, d2,   # dilation params
-                   0.0, 0.0, 0.0, 0.0, 0.0,  # liquefaction params
-                   e_init)       # void ratio
+                   2,              # nd
+                   rho,            # saturated mass density (Mg/m3)
+                   Gmax,           # refShearModul at refPress (kPa)
+                   Bmax,           # refBulkModul at refPress (kPa)
+                   phi,            # frictionAng (degrees)
+                   gamma_max,      # peakShearStra
+                   sigma_mean,     # refPress (kPa)
+                   0.5,            # pressDependCoe
+                   pt_ang,         # PTAng (degrees)
+                   p["contrac1"], p["contrac3"],
+                   p["dilat1"], p["dilat3"],
+                   n_surf,         # noYieldSurf (> 0: no r/Gs pairs follow)
+                   p["contrac2"], p["dilat2"],
+                   p["liquefac1"], p["liquefac2"],
+                   e_init,         # e (void ratio)
+                   p["cs1"], p["cs2"], p["cs3"], p["pa"])
 
     return perm
 
 
-def _create_clay_material(ops, mat_tag, layer, depth_from_surface, gwt_depth):
+def _create_clay_material(ops, mat_tag, layer, sigma_v_eff):
     """Create PressureIndependMultiYield material for a clay layer.
+
+    ``sigma_v_eff`` is the vertical effective stress at mid-layer (kPa);
+    with a pressure dependence coefficient of 0 it only sets refPress.
 
     Returns permeability (m/s) for use in element creation.
     """
     Vs = layer["Vs"]
     rho = layer["density"]
     su = layer["su"]
-    n_surf = layer.get("n_surf", 20)
+    n_surf = int(layer.get("n_surf", 20))
 
     Gmax = rho * Vs ** 2
     # Nearly incompressible for undrained clay
@@ -621,16 +874,25 @@ def _create_clay_material(ops, mat_tag, layer, depth_from_surface, gwt_depth):
     Bmax = min(Bmax, Gmax * 100.0)
 
     gamma_max = 0.1  # 10%
-    sigma_mean = max(rho * 9.81 * depth_from_surface * 0.67, 5.0)
+    sigma_mean = max(sigma_v_eff * 0.67, 5.0)
 
     perm = 1.0e-7  # m/s (clay, effectively undrained)
+
+    # PIMY with phi = 0 is von Mises: its strength in simple shear (how a
+    # 1D column shears) is 2c/sqrt(3) = 1.155c, not c. The OpenSees wiki
+    # (PressureIndependMultiYield Material) gives c = sqrt(3)/2 * sigma_m
+    # for the peak shear stress sigma_m of a user-defined backbone; the
+    # same relation makes the column's simple-shear strength equal su.
+    # Checked on one SSPquad element in simple shear: peak tau = 1.1547c.
+    # (Until GM-77 su went in as c, so the clay was 15 % too strong.)
+    cohesion = math.sqrt(3.0) / 2.0 * su
 
     ops.nDMaterial('PressureIndependMultiYield', mat_tag,
                    2,            # ndm
                    rho,          # mass density
                    Gmax,         # reference shear modulus (kPa)
                    Bmax,         # reference bulk modulus (kPa)
-                   su,           # cohesion / undrained shear strength (kPa)
+                   cohesion,     # cohesi: simple-shear strength = su (kPa)
                    gamma_max,    # peak shear strain
                    0.0,          # friction angle (0 for total stress)
                    sigma_mean,   # reference pressure (kPa)

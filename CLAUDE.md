@@ -178,6 +178,8 @@ Key conventions:
       bearing capacity (8e723d5); the anchored sheet-pile moment (7e8e273);
       straight T6 excavation walls (429f62d); a staged excavation that
       unloads in lifts, pinned to the USS cantilever example (GM-71);
+      OpenSees site response applies its input, at the column's real
+      weight (GM-77);
     - Ensoft-style calculation tables in 13 modules' calc packages (GM-39);
     - Document Review: markups keep correcting and return the found box,
       geotech tools off the page (077192c); turned lettering, cut lines,
@@ -190,7 +192,7 @@ Key conventions:
     - DIGGS writer and reader fixes (d81c1f8); shipped code free of field
       post names, with a guard (accfc92); CI's five months-old failures and
       the workflow (9152c66).
-    Open next: GM-77 (OpenSees site response), the Foundry brief that measures all of this
+    Open next: the Foundry brief that measures all of this
     (EV-13, DR-05).
 
   Pickup: `HANDOFF.md` §0a-current, "Where things stand".
@@ -1873,7 +1875,7 @@ suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save
 | reliability | 176 | Probabilistic geotech engines (FOSM/PEM/Monte Carlo/native FORM), published COV knowledge base (Duncan 2000/TC304/Phoon-Kulhawy), Vanmarcke spatial averaging, bearing/pile/slope wrappers |
 | downdrag | 53 | Fellenius neutral plane, UFC 3-220-20 downdrag |
 | geotech_common | 288 | SoilProfile (82) + checks (93) + adapters (89) + plots (21) |
-| opensees_agent | 106 | PM4Sand cyclic DSS, 1D site response |
+| opensees_agent | 116 | PM4Sand cyclic DSS, 1D site response |
 | pystrata_agent | 60 | 1D EQL site response (SHAKE-type, Darendeli/Menq/custom) |
 | seismic_signals | 74 | Earthquake signal processing (eqsig/pyrotd) |
 | liquepy_agent | 59 | Boulanger & Idriss (2014) liquefaction triggering — CPT (LPI/LSN/LDI) + SPT |

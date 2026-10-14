@@ -219,6 +219,14 @@ class SiteResponseResult:
         Surface response spectrum (g).
     Sa_input_g : numpy.ndarray
         Input response spectrum (g).
+    analysis_type : str
+        "nonlinear effective stress" or "linear elastic".
+    site_period_s : float
+        Site period 4H / Vs (Vs averaged by travel time), the fundamental
+        period of the soil column on rigid rock (Kramer 1996, Sec. 7.2).
+    initial_sigma_v_eff_kPa : numpy.ndarray
+        Vertical effective stress at each element centre after the
+        gravity stages (kPa), the denominator of ru.
     """
     total_depth_m: float = 0.0
     n_layers: int = 0
@@ -235,6 +243,10 @@ class SiteResponseResult:
     periods: np.ndarray = field(default_factory=lambda: np.array([]))
     Sa_surface_g: np.ndarray = field(default_factory=lambda: np.array([]))
     Sa_input_g: np.ndarray = field(default_factory=lambda: np.array([]))
+    analysis_type: str = "nonlinear effective stress"
+    site_period_s: float = 0.0
+    initial_sigma_v_eff_kPa: np.ndarray = field(
+        default_factory=lambda: np.array([]))
 
     def summary(self) -> str:
         lines = [
@@ -242,9 +254,11 @@ class SiteResponseResult:
             "  1D EFFECTIVE-STRESS SITE RESPONSE RESULTS",
             "=" * 60,
             "",
+            f"  Analysis:             {self.analysis_type}",
             f"  Profile depth:        {self.total_depth_m:.1f} m",
             f"  Number of layers:     {self.n_layers}",
-            f"  Input motion:         {self.motion_name}",
+            f"  Site period (4H/Vs):  {self.site_period_s:.3f} s",
+            f"  Input motion:         {self.motion_name} (rock outcrop)",
             "",
             f"  PGA (input):          {self.pga_input_g:.3f} g",
             f"  PGA (surface):        {self.pga_surface_g:.3f} g",
@@ -260,8 +274,10 @@ class SiteResponseResult:
 
     def to_dict(self) -> Dict[str, Any]:
         d = {
+            "analysis_type": self.analysis_type,
             "total_depth_m": self.total_depth_m,
             "n_layers": self.n_layers,
+            "site_period_s": round(self.site_period_s, 4),
             "motion_name": self.motion_name,
             "pga_input_g": round(self.pga_input_g, 4),
             "pga_surface_g": round(self.pga_surface_g, 4),

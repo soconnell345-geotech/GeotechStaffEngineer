@@ -71,6 +71,7 @@ def _run_site_response_1d(params: dict) -> dict:
         damping=params.get("damping", 0.02),
         scale_factor=params.get("scale_factor", 1.0),
         n_elem_per_layer=params.get("n_elem_per_layer", 4),
+        linear_elastic=bool(params.get("linear_elastic", False)),
     )
     return clean_result(result.to_dict())
 
@@ -111,8 +112,8 @@ METHOD_INFO = {
         "category": "OpenSees",
         "brief": "1D effective-stress site response analysis (PDMY02/PIMY + Lysmer dashpot).",
         "parameters": {
-            "layers": {"type": "array", "brief": "Soil layers (required): list of dicts, each with thickness (m), Vs (m/s), density (Mg/m3) and material_type: 'sand' needs phi (degrees; optional K0), 'clay' needs su (kPa)."},
-            "motion": {"type": "str", "brief": "Built-in motion name (e.g. 'synthetic_pulse').", "default": None},
+            "layers": {"type": "array", "brief": "Soil layers (required): list of dicts, each with thickness (m), Vs (m/s), density (Mg/m3) and material_type: 'sand' needs phi (degrees; optional K0, PTAng), 'clay' needs su (kPa, undrained strength in simple shear)."},
+            "motion": {"type": "str", "brief": "Built-in motion name (e.g. 'synthetic_pulse'), taken as a rock outcrop motion.", "default": None},
             "accel_history": {"type": "array", "brief": "Custom acceleration time history (g).", "default": None},
             "dt": {"type": "float", "brief": "Time step for custom motion (s).", "default": None},
             "target_pga_g": {"type": "float", "brief": "Scale the input motion linearly so its PGA equals this value (g) before the analysis (the built-in motions have fixed PGAs: synthetic_pulse 0.30 g, synthetic_long 0.15 g). Applied before scale_factor; give one or the other.", "default": None},
@@ -122,10 +123,13 @@ METHOD_INFO = {
             "damping": {"type": "float", "brief": "Target Rayleigh damping ratio.", "default": 0.02},
             "scale_factor": {"type": "float", "brief": "Scale factor for input acceleration.", "default": 1.0},
             "n_elem_per_layer": {"type": "int", "brief": "Elements per soil layer.", "default": 4},
+            "linear_elastic": {"type": "bool", "brief": "Keep the soil linear elastic through the shaking (Gmax = rho*Vs^2, Rayleigh damping only): a check of the column, not a design analysis.", "default": False},
         },
         "returns": {
+            "analysis_type": "'nonlinear effective stress' or 'linear elastic'.",
             "total_depth_m": "Profile depth (m).",
             "n_layers": "Number of layers.",
+            "site_period_s": "Site period 4H/Vs (s).",
             "motion_name": "Input motion name (notes any PGA scaling).",
             "pga_surface_g": "Peak ground acceleration at surface (g).",
             "pga_input_g": "Peak input acceleration (g).",

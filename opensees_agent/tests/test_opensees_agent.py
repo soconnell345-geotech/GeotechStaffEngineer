@@ -11,6 +11,14 @@ Tier 1 tests (no openseespy required):
 Tier 2 tests (require openseespy, skipped if not installed):
   - PM4Sand DSS integration
   - Site response integration
+  - Site response benchmarks (GM-77): closed-form response of a uniform
+    damped layer on elastic rock (Kramer 1996, Sec. 7.2), pystrata's
+    frequency-domain linear and equivalent-linear runs of the same column
+
+Windows Smart App Control blocks the openseespy DLL, so every Tier 2
+test skips there; run them in WSL or on CI (BACKLOG INF-13). Every site
+response run here goes through the child process with a time limit, so a
+stuck solver step fails the test instead of hanging the run.
 """
 
 import json
@@ -35,6 +43,11 @@ from opensees_agent.site_response import _validate_site_response_inputs
 requires_opensees = pytest.mark.skipif(
     not has_opensees(), reason="openseespy not installed"
 )
+
+# Wall-clock limit for every site response run in this file (each takes
+# a few seconds); a stuck solver step fails the test instead of hanging
+# CI (GM-77, INF-07).
+TEST_TIME_LIMIT_S = 180.0
 
 
 # ===========================================================================
@@ -716,13 +729,21 @@ class TestSiteResponseIntegration:
             motion="synthetic_pulse",
             bedrock_Vs=760.0,
             n_elem_per_layer=4,
+            time_limit_s=TEST_TIME_LIMIT_S,
         )
         assert isinstance(result, SiteResponseResult)
         assert result.total_depth_m == 20.0
         assert result.n_layers == 1
         assert result.pga_input_g > 0
-        assert result.pga_surface_g > 0
-        assert result.amplification_factor > 0
+        # GM-77: 8.5e-7 g came out of a 0.30 g input when the motion was
+        # never applied; "> 0" let that pass.
+        assert result.pga_surface_g > 0.1 * result.pga_input_g
+        assert result.amplification_factor > 0.1
+        # Saturated sand of the Dr = 40 % calibration under 0.30 g for
+        # 20 s near the site frequency liquefies.
+        assert np.max(result.max_pore_pressure_ratio) > 0.9
+        assert result.analysis_type == "nonlinear effective stress"
+        assert result.site_period_s == pytest.approx(0.4)
         assert len(result.time) > 100
         assert len(result.surface_accel_g) == len(result.time)
         assert len(result.depths) == 4  # n_elem_per_layer
@@ -754,11 +775,14 @@ class TestSiteResponseIntegration:
             }],
             motion="synthetic_pulse",
             n_elem_per_layer=3,
+            time_limit_s=TEST_TIME_LIMIT_S,
         )
         assert isinstance(result, SiteResponseResult)
         assert result.n_layers == 1
-        assert result.pga_surface_g > 0
+        assert result.pga_surface_g > 0.1 * result.pga_input_g
         assert len(result.depths) == 3
+        # Clay (PIMY, total stress) builds no excess pore pressure
+        assert np.max(result.max_pore_pressure_ratio) < 0.1
 
     @requires_opensees
     def test_multilayer_sand_clay(self):
@@ -777,11 +801,12 @@ class TestSiteResponseIntegration:
             motion="synthetic_pulse",
             gwt_depth=2.0,
             n_elem_per_layer=2,
+            time_limit_s=TEST_TIME_LIMIT_S,
         )
         assert result.total_depth_m == pytest.approx(25.0)
         assert result.n_layers == 3
         assert len(result.depths) == 6  # 3 layers * 2 elements
-        assert result.pga_surface_g > 0
+        assert result.pga_surface_g > 0.1 * result.pga_input_g
         d = result.to_dict()
         json.dumps(d)
 
@@ -824,3 +849,523 @@ class TestTargetPGA:
         assert motion_label("synthetic_pulse", 0.2) == \
             "synthetic_pulse scaled to PGA 0.2 g"
         assert motion_label(None, None) == "custom"
+
+
+# ===========================================================================
+# GM-77 (2026-10-14): the column's OpenSees commands, checked without
+# openseespy (Tier 1, so the Windows gate sees them too)
+# ===========================================================================
+
+SAND33 = {"thickness": 20.0, "Vs": 200.0, "density": 1.9,
+          "material_type": "sand", "phi": 33.0}
+CLAY60 = {"thickness": 15.0, "Vs": 150.0, "density": 1.7,
+          "material_type": "clay", "su": 60.0}
+
+PDMY02_ARG_NAMES = (
+    "type", "tag", "nd", "rho", "refShearModul", "refBulkModul",
+    "frictionAng", "peakShearStra", "refPress", "pressDependCoe", "PTAng",
+    "contrac1", "contrac3", "dilat1", "dilat3", "noYieldSurf",
+    "contrac2", "dilat2", "liquefac1", "liquefac2", "e",
+    "cs1", "cs2", "cs3", "pa")
+
+PIMY_ARG_NAMES = (
+    "type", "tag", "nd", "rho", "refShearModul", "refBulkModul", "cohesi",
+    "peakShearStra", "frictionAng", "refPress", "pressDependCoe",
+    "noYieldSurf")
+
+
+class _FakeOps:
+    """Stands in for openseespy.opensees and records every call."""
+
+    def __init__(self, fail_dynamic=False, fail_gravity=False):
+        self.calls = []
+        self.time = 0.0
+        self.shaking = False
+        self.fail_dynamic = fail_dynamic
+        self.fail_gravity = fail_gravity
+
+    def analyze(self, n, dt):
+        self.calls.append(("analyze", (n, dt)))
+        gravity = dt >= 1.0
+        self.shaking = self.shaking or not gravity
+        if (gravity and self.fail_gravity) or (
+                not gravity and self.fail_dynamic):
+            return -3
+        self.time += n * dt
+        return 0
+
+    def getTime(self):
+        return self.time
+
+    def setTime(self, t):
+        self.calls.append(("setTime", (t,)))
+        self.time = t
+
+    def eleResponse(self, tag, what):
+        # Vertical effective stress halves once the shaking starts
+        s = 0.5 if self.shaking else 1.0
+        if what == "stress":
+            return [-50.0 * s, -100.0 * s, -50.0 * s, 0.0, 0.0]
+        return [0.0, 0.0, 0.0]
+
+    def nodeAccel(self, node, dof):
+        return 0.0
+
+    def __getattr__(self, name):
+        def record(*args):
+            self.calls.append((name, args))
+        return record
+
+    def named(self, name):
+        return [args for n, args in self.calls if n == name]
+
+    def index(self, name, pred=lambda a: True, last=False):
+        idx = [i for i, (n, a) in enumerate(self.calls)
+               if n == name and pred(a)]
+        return idx[-1] if last else idx[0]
+
+
+def _build_fake(layers, linear_elastic=False, gwt_depth=0.0, accel=None,
+                n_elem_per_layer=2, **fake_kw):
+    from opensees_agent.site_response import _run_site_response_model
+    ops = _FakeOps(**fake_kw)
+    acc = (accel if accel is not None
+           else 0.1 * np.sin(np.linspace(0.0, 6.0, 50)))
+    result = _run_site_response_model(
+        ops, layers=layers, accel_g=acc, dt_motion=0.01,
+        gwt_depth=gwt_depth, bedrock_Vs=760.0, bedrock_density=2.4,
+        damping=0.02, scale_factor=1.0, n_elem_per_layer=n_elem_per_layer,
+        motion_name="test", linear_elastic=linear_elastic)
+    return ops, result
+
+
+class TestSiteResponseModelWiring:
+
+    def _material(self, ops, kind, names):
+        (args,) = [a for a in ops.named("nDMaterial") if a[0] == kind]
+        assert len(args) == len(names)
+        return dict(zip(names, args))
+
+    def test_sand_material_arguments_in_documented_order(self):
+        """Defect 2: PTAng was left out, so every later value sat one slot
+        off (noYieldSurf read 0.27, e and the critical-state constants 0)."""
+        ops, _ = _build_fake([SAND33])
+        a = self._material(ops, "PressureDependMultiYield02",
+                           PDMY02_ARG_NAMES)
+        assert a["nd"] == 2
+        assert a["refShearModul"] == pytest.approx(1.9 * 200.0 ** 2)
+        assert a["frictionAng"] == 33.0
+        assert a["peakShearStra"] == 0.1
+        assert a["pressDependCoe"] == 0.5
+        # OpenSees wiki table of suggested parameters, Dr = 40 % column
+        assert a["PTAng"] == 26.0
+        assert (a["contrac1"], a["contrac3"], a["dilat1"], a["dilat3"]) \
+            == (0.067, 0.23, 0.06, 0.27)
+        assert a["noYieldSurf"] == 20 and isinstance(a["noYieldSurf"], int)
+        assert (a["contrac2"], a["dilat2"], a["liquefac1"],
+                a["liquefac2"]) == (5.0, 3.0, 1.0, 0.0)
+        assert a["e"] == 0.77
+        assert (a["cs1"], a["cs2"], a["cs3"], a["pa"]) \
+            == (0.9, 0.02, 0.7, 101.0)
+        # refPress is the mean effective stress at mid-layer (10 m, water
+        # at the surface): sigma'v = (1.9 - 1.0) * 9.81 * 10
+        K0 = 1.0 - math.sin(math.radians(33.0))
+        assert a["refPress"] == pytest.approx(
+            0.9 * 9.81 * 10.0 * (1.0 + 2.0 * K0) / 3.0)
+
+    def test_phase_transformation_angle_capped_at_phi(self):
+        loose = dict(SAND33, phi=24.0)
+        ops, _ = _build_fake([loose])
+        a = self._material(ops, "PressureDependMultiYield02",
+                           PDMY02_ARG_NAMES)
+        assert a["PTAng"] == 24.0
+        ops, _ = _build_fake([dict(SAND33, PTAng=28.0, e_init=0.6,
+                                   n_surf=15)])
+        a = self._material(ops, "PressureDependMultiYield02",
+                           PDMY02_ARG_NAMES)
+        assert (a["PTAng"], a["e"], a["noYieldSurf"]) == (28.0, 0.6, 15)
+
+    def test_clay_strength_in_simple_shear_is_su(self):
+        """PIMY (phi = 0, von Mises) peaks at 2c/sqrt(3) in simple shear,
+        so c = sqrt(3)/2 * su (OpenSees wiki, PressureIndependMultiYield)."""
+        ops, _ = _build_fake([CLAY60])
+        a = self._material(ops, "PressureIndependMultiYield",
+                           PIMY_ARG_NAMES)
+        assert a["cohesi"] == pytest.approx(math.sqrt(3.0) / 2.0 * 60.0)
+        assert 2.0 * a["cohesi"] / math.sqrt(3.0) == pytest.approx(60.0)
+        assert (a["frictionAng"], a["pressDependCoe"], a["noYieldSurf"]) \
+            == (0.0, 0.0, 20)
+
+    def test_gravity_is_element_body_force_not_a_time_series(self):
+        """The weight was nodal loads on a Linear series (factor = time):
+        10,000 times the weight at t = 10,000 s."""
+        ops, _ = _build_fake([SAND33])
+        elements = [a for a in ops.named("element") if a[0] == "SSPquadUP"]
+        assert len(elements) == 2
+        for a in elements:
+            assert a[-2:] == (0.0, -9.81)
+        series = [a[0] for a in ops.named("timeSeries")]
+        assert series == ["Path"]
+        assert all(a[2] == 0.0 for a in ops.named("load"))  # no y loads
+
+    def test_clock_set_to_zero_before_the_motion(self):
+        """Defect 1: the gravity stages left the clock at 10,000 s, past
+        the end of the motion's force history, so no motion was applied."""
+        ops, _ = _build_fake([SAND33])
+        gravity = [a for a in ops.named("analyze") if a[1] >= 1.0]
+        assert gravity == [(1, 500.0)] * 50  # 10 elastic + 40 plastic
+        last_gravity = ops.index("analyze", lambda a: a[1] >= 1.0,
+                                 last=True)
+        reset = ops.index("setTime")
+        path = ops.index("timeSeries", lambda a: a[0] == "Path")
+        first_dynamic = ops.index("analyze", lambda a: a[1] < 1.0)
+        assert last_gravity < reset < path < first_dynamic
+        assert ops.calls[reset][1] == (0.0,)
+        stages = [a[3] for a in ops.named("updateMaterialStage")]
+        assert stages == [0, 1]
+
+    def test_input_force_is_dashpot_times_outcrop_velocity(self):
+        """F = rho_r * Vs_r * A * v_outcrop (Joyner & Chen 1975): an
+        outcrop motion is already twice the incident wave."""
+        dt = 0.01
+        acc = 0.2 * np.sin(2 * np.pi * 2.0 * np.arange(0, 2.0, dt))
+        ops, _ = _build_fake([SAND33], accel=acc)
+        (path,) = [a for a in ops.named("timeSeries") if a[0] == "Path"]
+        i0 = path.index("-values") + 1
+        i1 = path.index("-factor")
+        force = np.array(path[i0:i1])
+        a = acc * 9.81
+        v = np.concatenate(([0.0], np.cumsum(0.5 * (a[1:] + a[:-1]) * dt)))
+        np.testing.assert_allclose(force, 2.4 * 760.0 * 1.0 * v,
+                                   rtol=1e-12, atol=1e-12)
+        assert path[path.index("-dt") + 1] == dt
+
+    def test_linear_elastic_stays_in_the_elastic_stage(self):
+        ops, r = _build_fake([SAND33], linear_elastic=True)
+        stages = [a[3] for a in ops.named("updateMaterialStage")]
+        assert stages == [0]
+        gravity = [a for a in ops.named("analyze") if a[1] >= 1.0]
+        assert len(gravity) == 10
+        assert r.analysis_type == "linear elastic"
+
+    def test_water_table_on_a_node_is_drained(self):
+        """A node AT the water table has zero pore pressure (it was left
+        free, which put the water table one element too shallow)."""
+        layer = dict(SAND33, thickness=10.0)  # nodes at 10, 5, 0 m depth
+        ops, _ = _build_fake([layer], gwt_depth=5.0)
+        drained = {a[0] for a in ops.named("fix") if a[1:] == (0, 0, 1)}
+        # left column tags 1, 2, 3 from the base: depth 10, 5, 0
+        assert drained == {2, 3, 5, 6}
+        ops, _ = _build_fake([layer], gwt_depth=4.0)
+        drained = {a[0] for a in ops.named("fix") if a[1:] == (0, 0, 1)}
+        assert drained == {3, 6}
+
+    def test_ru_only_where_there_is_pore_water(self):
+        """ru = 1 - sigma'v / sigma'v0 below the water table; 0 in an
+        element with no pore water (its sigma'v still swings with the
+        column's vertical motion, which is not pore pressure)."""
+        layer = dict(SAND33, thickness=10.0)  # elements 0-5 m, 5-10 m
+        _, wet = _build_fake([layer], gwt_depth=0.0)
+        np.testing.assert_allclose(wet.max_pore_pressure_ratio, [0.5, 0.5])
+        _, dry = _build_fake([layer], gwt_depth=40.0)
+        np.testing.assert_allclose(dry.max_pore_pressure_ratio, [0.0, 0.0])
+        _, half = _build_fake([layer], gwt_depth=5.0)
+        # element order is from the base: 5-10 m wet, 0-5 m dry
+        np.testing.assert_allclose(half.max_pore_pressure_ratio, [0.5, 0.0])
+
+    def test_sigma_v_eff_hand_calculation(self):
+        from opensees_agent.site_response import _sigma_v_eff
+        layers = [dict(SAND33, thickness=5.0, density=1.8),
+                  dict(CLAY60, thickness=10.0, density=1.6)]
+        # 5 m of sand at 1.8 + 2.5 m of clay at 1.6, water at 2 m
+        expected = 9.81 * (1.8 * 5.0 + 1.6 * 2.5) - 9.81 * (7.5 - 2.0)
+        assert _sigma_v_eff(layers, 7.5, 2.0) == pytest.approx(expected)
+        assert _sigma_v_eff(layers, 1.0, 2.0) == pytest.approx(
+            9.81 * 1.8 * 1.0)
+
+    def test_dynamic_step_failure_is_an_error_not_skipped(self):
+        with pytest.raises(RuntimeError, match="did not converge at t ="):
+            _build_fake([SAND33], fail_dynamic=True)
+
+    def test_gravity_failure_is_an_error(self):
+        with pytest.raises(RuntimeError, match="gravity stage did not"):
+            _build_fake([SAND33], fail_gravity=True)
+
+    def test_surface_record_lines_up_with_the_input(self):
+        acc = 0.1 * np.sin(np.linspace(0.0, 6.0, 50))
+        _, r = _build_fake([SAND33], accel=acc)
+        assert len(r.time) == len(r.surface_accel_g) == len(acc)
+        assert r.time[0] == 0.0 and r.surface_accel_g[0] == 0.0
+        assert r.site_period_s == pytest.approx(4 * 20.0 / 200.0)
+
+    def test_result_dict_names_the_analysis(self):
+        _, r = _build_fake([SAND33])
+        d = r.to_dict()
+        assert d["analysis_type"] == "nonlinear effective stress"
+        assert d["site_period_s"] == pytest.approx(0.4)
+        json.dumps(d)
+
+
+class TestSiteResponseTimeLimit:
+    """A stuck OpenSees step holds the GIL and cannot be interrupted, so
+    the analysis runs in a child process stopped at time_limit_s."""
+
+    def test_bad_time_limit_refused(self):
+        from opensees_agent.site_response import analyze_site_response
+        for bad in (0, -5.0, float("nan"), "60"):
+            with pytest.raises(ValueError, match="time_limit_s"):
+                analyze_site_response([SAND33], motion="synthetic_pulse",
+                                      time_limit_s=bad)
+
+    def test_child_stopped_at_the_limit(self):
+        from opensees_agent.site_response import _run_job_in_child
+        with pytest.raises(RuntimeError, match="did not finish within"):
+            _run_job_in_child({"layers": []}, time_limit_s=0.001)
+
+    @requires_opensees
+    def test_child_error_reaches_the_caller(self):
+        from opensees_agent.site_response import _run_job_in_child
+        with pytest.raises(RuntimeError, match="unexpected keyword"):
+            _run_job_in_child({"bogus": 1}, time_limit_s=TEST_TIME_LIMIT_S)
+
+
+# ===========================================================================
+# GM-77 benchmarks (Tier 2): the column against closed-form and
+# independent solutions
+# ===========================================================================
+
+def _kramer_transfer(f, H, Vs, rho, Vs_rock, rho_rock, xi):
+    """|surface / rock outcrop| of a uniform damped layer on elastic rock.
+
+    Kramer (1996), Geotechnical Earthquake Engineering, Sec. 7.2.1:
+    F(w) = 1 / (cos(k* H) + i alpha* sin(k* H)), k* = w / Vs*,
+    Vs* = Vs sqrt(1 + 2 i xi), alpha* = rho Vs* / (rho_r Vs_r).
+    At the site frequency Vs/4H this is about 1 / (alpha + pi xi / 2).
+    """
+    Vs_c = Vs * np.sqrt(1.0 + 2.0j * xi)
+    k = 2.0 * np.pi * f / Vs_c
+    alpha = rho * Vs_c / (rho_rock * Vs_rock)
+    return float(np.abs(1.0 / (np.cos(k * H) + 1j * alpha * np.sin(k * H))))
+
+
+def _rayleigh_xi(f, f1, xi):
+    """Damping ratio of the module's Rayleigh damping (f1 and 5 f1)."""
+    w1, w2, w = 2 * np.pi * f1, 2 * np.pi * 5 * f1, 2 * np.pi * f
+    a0 = 2 * xi * w1 * w2 / (w1 + w2)
+    a1 = 2 * xi / (w1 + w2)
+    return a0 / (2 * w) + a1 * w / 2
+
+
+def _ramped_sine(f, amp_g=0.01, duration=12.0, dt=0.005, ramp=2.0):
+    t = np.arange(0.0, duration, dt)
+    return amp_g * np.sin(2 * np.pi * f * t) * np.minimum(1.0, t / ramp), dt
+
+
+def _hyperbolic_masing(gamma_ref, xi_min, strains):
+    """G/Gmax and Masing damping of a hyperbolic backbone (Hardin &
+    Drnevich), the backbone PIMY builds its yield surfaces on."""
+    x = strains / gamma_ref
+    ggmax = 1.0 / (1.0 + x)
+    damping = ((4.0 / np.pi) * (1.0 + 1.0 / x)
+               * (1.0 - np.log(1.0 + x) / x) - 2.0 / np.pi)
+    return ggmax, damping + xi_min
+
+
+class TestSiteResponseBenchmarks:
+    """The column checked against solutions it does not share code with.
+
+    Linear elastic (``linear_elastic=True``): the closed-form transfer
+    function of a uniform damped layer on elastic rock (Kramer 1996,
+    Sec. 7.2; the check Kwok et al. 2007 use for nonlinear codes) and
+    pystrata's frequency-domain linear-elastic run of the same column.
+    These pin the input convention, the clock, the dashpot, the mass and
+    the modulus to a few per cent.
+
+    Nonlinear: the same clay column run equivalent-linear in pystrata with
+    the backbone PIMY uses (hyperbolic, reference strain su/Gmax, Masing
+    damping). The two agree at small strain and part as strain grows: EQL
+    applies one strain-compatible modulus and damping to the whole record
+    and has no shear strength, while the nonlinear model follows the
+    backbone cycle by cycle and cannot pass more shear stress than su, so
+    it amplifies less in strong shaking (Kramer 1996, Sec. 7.2-7.3).
+    """
+
+    H, VS, RHO = 20.0, 200.0, 1.9
+    VS_ROCK, RHO_ROCK, XI = 760.0, 2.4, 0.02
+
+    def _layer(self):
+        return {"thickness": self.H, "Vs": self.VS, "density": self.RHO,
+                "material_type": "sand", "phi": 33.0}
+
+    @requires_opensees
+    def test_rock_column_reproduces_the_outcrop_motion(self):
+        """A column with the rock's own impedance and no damping passes
+        the outcrop motion to the surface unchanged (|F| = 1). The old
+        doubled input force gave 2.0, the old clock 0."""
+        from opensees_agent.site_response import analyze_site_response
+        r = analyze_site_response(
+            [{"thickness": 20.0, "Vs": 760.0, "density": 2.4,
+              "material_type": "sand", "phi": 33.0}],
+            motion="synthetic_pulse", bedrock_Vs=760.0,
+            bedrock_density=2.4, damping=0.0, n_elem_per_layer=4,
+            linear_elastic=True, time_limit_s=TEST_TIME_LIMIT_S)
+        assert r.amplification_factor == pytest.approx(1.0, abs=0.01)
+        # The motion reaches the surface within the travel time H/Vs
+        first = r.time[np.argmax(np.abs(r.surface_accel_g) > 1e-4)]
+        assert first < 0.1
+
+    @requires_opensees
+    @pytest.mark.parametrize("f_ratio", [0.5, 1.0, 2.0, 3.0])
+    def test_linear_transfer_function_matches_closed_form(self, f_ratio):
+        """Steady-state surface/outcrop amplitude of a sine at f_ratio x
+        the site frequency (2.5 Hz) against Kramer's closed form, within
+        3 % (measured: -1.1 % at 0.5, +0.2 % at 1, 0.0 % at 2, -1.6 % at
+        3 with 10 elements; the third-mode error is the mesh). At
+        resonance the closed form is 4.17."""
+        from opensees_agent.site_response import analyze_site_response
+        f1 = self.VS / (4.0 * self.H)
+        f = f_ratio * f1
+        acc, dt = _ramped_sine(f)
+        r = analyze_site_response(
+            [self._layer()], accel_history=acc, dt=dt, damping=self.XI,
+            bedrock_Vs=self.VS_ROCK, bedrock_density=self.RHO_ROCK,
+            n_elem_per_layer=10, linear_elastic=True,
+            time_limit_s=TEST_TIME_LIMIT_S)
+        steady = r.time > r.time[-1] - 3.0
+        fe = np.max(np.abs(r.surface_accel_g[steady])) / 0.01
+        closed = _kramer_transfer(f, self.H, self.VS, self.RHO,
+                                  self.VS_ROCK, self.RHO_ROCK,
+                                  _rayleigh_xi(f, f1, self.XI))
+        assert fe == pytest.approx(closed, rel=0.03)
+        if f_ratio == 1.0:
+            assert closed == pytest.approx(4.17, abs=0.01)
+
+    @requires_opensees
+    def test_linear_matches_pystrata_linear_elastic(self):
+        """Time domain (OpenSees, Rayleigh damping) against frequency
+        domain (pystrata, constant 2 % damping) for the same column and
+        motion: PGA within 5 % (measured 1.3 %), spectral accelerations
+        from 0.1 to 1 s within 6 % (measured at most 3.3 %)."""
+        pystrata_agent = pytest.importorskip("pystrata_agent")
+        if not pystrata_agent.has_pystrata():
+            pytest.skip("pystrata not installed")
+        from opensees_agent.site_response import analyze_site_response
+        os_r = analyze_site_response(
+            [self._layer()], motion="synthetic_pulse", damping=self.XI,
+            bedrock_Vs=self.VS_ROCK, bedrock_density=self.RHO_ROCK,
+            n_elem_per_layer=10, linear_elastic=True,
+            time_limit_s=TEST_TIME_LIMIT_S)
+        ps_r = pystrata_agent.analyze_linear_site_response(
+            [{"thickness": self.H, "Vs": self.VS,
+              "unit_wt": self.RHO * 9.81, "soil_model": "linear",
+              "damping": self.XI},
+             {"thickness": 0, "Vs": self.VS_ROCK,
+              "unit_wt": self.RHO_ROCK * 9.81, "soil_model": "linear",
+              "damping": 0.0}],
+            motion="synthetic_pulse")
+        assert os_r.pga_surface_g == pytest.approx(ps_r.pga_surface_g,
+                                                   rel=0.05)
+        for T in (0.1, 0.2, 0.4, 0.5, 1.0):
+            sa_os = np.interp(T, os_r.periods, os_r.Sa_surface_g)
+            sa_ps = np.interp(T, ps_r.periods, ps_r.Sa_surface_g)
+            assert sa_os == pytest.approx(sa_ps, rel=0.06), T
+
+    @requires_opensees
+    def test_gravity_stresses_match_hand_calculation(self):
+        """Sand over clay over sand, water at the sand/clay boundary:
+        vertical effective stress after the gravity stages within 1 % of
+        the weight of the layers above less hydrostatic pore pressure
+        (measured within 0.05 %). Before GM-77 it was 10,000 times."""
+        from opensees_agent.site_response import (
+            analyze_site_response, _sigma_v_eff)
+        layers = [
+            {"thickness": 5.0, "Vs": 150.0, "density": 1.8,
+             "material_type": "sand", "phi": 30.0},
+            {"thickness": 10.0, "Vs": 120.0, "density": 1.6,
+             "material_type": "clay", "su": 40.0},
+            {"thickness": 10.0, "Vs": 250.0, "density": 1.9,
+             "material_type": "sand", "phi": 35.0},
+        ]
+        r = analyze_site_response(layers, motion="synthetic_pulse",
+                                  target_pga_g=0.05, gwt_depth=5.0,
+                                  n_elem_per_layer=2,
+                                  time_limit_s=TEST_TIME_LIMIT_S)
+        hand = np.array([_sigma_v_eff(layers, d, 5.0) for d in r.depths])
+        np.testing.assert_allclose(r.initial_sigma_v_eff_kPa, hand,
+                                   rtol=0.01)
+
+    def _clay_run(self, pga, linear_elastic=False):
+        from opensees_agent.site_response import analyze_site_response
+        return analyze_site_response(
+            [CLAY60], motion="synthetic_pulse", target_pga_g=pga,
+            damping=self.XI, n_elem_per_layer=6,
+            linear_elastic=linear_elastic, time_limit_s=TEST_TIME_LIMIT_S)
+
+    @requires_opensees
+    def test_nonlinear_small_strain_approaches_linear(self):
+        """At 0.01 g (max strain about 0.01 %) the nonlinear clay column
+        amplifies within 10 % of the linear elastic one (measured 2.62
+        against 2.81: -7 %, the hysteretic damping of the first yield
+        surfaces)."""
+        lin = self._clay_run(0.01, linear_elastic=True)
+        nl = self._clay_run(0.01)
+        assert np.max(nl.max_strain_pct) < 0.05
+        assert nl.amplification_factor == pytest.approx(
+            lin.amplification_factor, rel=0.10)
+
+    @requires_opensees
+    def test_nonlinear_against_equivalent_linear(self):
+        """Clay H = 15 m, Vs 150 m/s, su 60 kPa, synthetic pulse. Measured
+        amplification (nonlinear / EQL with the same hyperbolic backbone):
+        0.05 g 2.79 / 3.17 (max strain about 0.1 %), 0.30 g 0.97 / 1.40
+        (about 0.5 %). Pinned: within 20 % at 0.05 g; at 0.30 g the
+        nonlinear column amplifies less than EQL (its stress is capped at
+        su) and less than half what it does at 0.01 g."""
+        pystrata_agent = pytest.importorskip("pystrata_agent")
+        if not pystrata_agent.has_pystrata():
+            pytest.skip("pystrata not installed")
+        G = CLAY60["density"] * CLAY60["Vs"] ** 2
+        strains = np.logspace(-6, -1, 30)
+        ggmax, damping = _hyperbolic_masing(CLAY60["su"] / G, self.XI,
+                                            strains)
+        eql_layers = [
+            {"thickness": CLAY60["thickness"], "Vs": CLAY60["Vs"],
+             "unit_wt": CLAY60["density"] * 9.81, "soil_model": "custom",
+             "strains": strains.tolist(), "mod_reduc": ggmax.tolist(),
+             "damping_values": damping.tolist()},
+            {"thickness": 0, "Vs": self.VS_ROCK,
+             "unit_wt": self.RHO_ROCK * 9.81, "soil_model": "linear",
+             "damping": 0.0},
+        ]
+        amp = {}
+        for pga in (0.01, 0.05, 0.30):
+            nl = self._clay_run(pga)
+            eql = pystrata_agent.analyze_eql_site_response(
+                eql_layers, motion="synthetic_pulse", target_pga_g=pga)
+            amp[pga] = (nl.amplification_factor, eql.amplification_factor)
+        nl05, eql05 = amp[0.05]
+        assert nl05 == pytest.approx(eql05, rel=0.20)
+        nl30, eql30 = amp[0.30]
+        assert nl30 < eql30
+        assert nl30 < 0.5 * amp[0.01][0]
+
+    @requires_opensees
+    def test_sand_over_clay_finishes(self):
+        """Defect 3: sand over clay hung in the first elastoplastic gravity
+        step, with or without water (the shifted sand arguments and the
+        10,000-times weight); now about 2 s."""
+        from opensees_agent.site_response import analyze_site_response
+        layers = [
+            {"thickness": 5.0, "Vs": 150.0, "density": 1.8,
+             "material_type": "sand", "phi": 30.0},
+            {"thickness": 10.0, "Vs": 120.0, "density": 1.6,
+             "material_type": "clay", "su": 40.0},
+        ]
+        for gwt in (2.0, 50.0):
+            r = analyze_site_response(layers, motion="synthetic_pulse",
+                                      gwt_depth=gwt, n_elem_per_layer=2,
+                                      time_limit_s=TEST_TIME_LIMIT_S)
+            assert r.pga_surface_g > 0.1 * r.pga_input_g
+            assert np.all(np.isfinite(r.surface_accel_g))
+        # the dry run (water below the column) reports no pore pressure
+        assert np.all(r.max_pore_pressure_ratio == 0.0)
