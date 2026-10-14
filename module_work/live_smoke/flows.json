@@ -632,6 +632,16 @@
     {"say": "what did we say about C-7 earlier? one line"}
    ],
    "expect": {"tools_any": ["write_docx"], "artifact_ext": [".docx"]}
+  },
+  {
+   "id": "F51-geotech-fem-excavation",
+   "title": "Geotech page: a staged FEM excavation with a strut, and the wall's design forces (GM-71)",
+   "page": "geotech",
+   "cost": "medium",
+   "steps": [
+    {"say": "Run a 2D finite-element staged excavation: a 10 m wide, 5 m deep cut in stiff clay (c' = 25 kPa, phi' = 20 degrees, E = 20 MPa, nu = 0.3, unit weight 18 kN/m3) retained by a 10 m long sheet pile wall (EI = 50,000 kN*m2/m, EA = 2,000,000 kN/m) with one strut at 1.5 m depth (stiffness 50,000 kN/m per m). Give the moment and shear to design the wall for, the strut force, and how far the wall top moves and in which direction."}
+   ],
+   "expect": {"tools_any": ["fem2d.fem2d_excavation", "fem2d_excavation"]}
   }
  ]
 }
