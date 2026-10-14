@@ -1306,3 +1306,152 @@ def test_kept_verdicts_belong_to_one_conversation_and_one_rename():
     mc._keep_verdicts("conv-a", [{"index": 0, "verdict": "confirmed",
                                   "inside": "OTHER"}], [item])
     assert mc._kept_verdict("conv-a", renamed) is None
+
+
+# ---------------------------------------------------------------------------
+# DR-16: a misplaced ring comes back with where the thing is
+# DR-15: keep correcting, up to MAX_CORRECTION_ROUNDS checks of a copy
+# ---------------------------------------------------------------------------
+class _SeesTheTag:
+    """A look that sees the printed tag where it really is and reports it
+    in pixels of the crop it was sent (the crop recorded as the check
+    takes it)."""
+
+    def __init__(self, crops):
+        self.crops, self.prompts = crops, []
+
+    def analyze_image(self, image_bytes, prompt):
+        self.prompts.append(prompt)
+        w, h = (int(v) for v in re.search(
+            r"this (\d+) x (\d+) pixel image", prompt).groups())
+        x0, y0, x1, y1 = self.crops[-1]
+        sx, sy = w / (x1 - x0), h / (y1 - y0)
+        px = [(TAG[0] - x0) * sx, (TAG[1] - y0) * sy,
+              (TAG[2] - x0) * sx, (TAG[3] - y0) * sy]
+        return json.dumps({"same_thing": True, "encloses": True,
+                           "inside": "GCE", "thing_px": px, "sure": True})
+
+
+def _recording_crops(monkeypatch):
+    crops = []
+    real = markup_check._crop_box
+
+    def record(row):
+        crops.append(real(row))
+        return crops[-1]
+
+    monkeypatch.setattr(markup_check, "_crop_box", record)
+    return crops
+
+
+def _ring(tools, handle, bbox, name="dr16.pdf", kind="circle"):
+    return json.loads(tools["annotate_document"].invoke({
+        "handle": handle, "output_path": name, "append": False,
+        "markups": [{"kind": kind, "page": 0, "comment": "penetration tag",
+                     "target": "GCE", "bbox": list(bbox)}]}))["check"]
+
+
+def test_a_ring_beside_its_tag_comes_back_with_where_the_tag_is(
+        tmp_path, monkeypatch):
+    """DR-16 (locating_things_on_a_page.md, Observations 4): the crop look
+    already finds the thing; a ring that missed it is told where it is, in
+    page points, and put right in one step with no new zoom."""
+    crops = _recording_crops(monkeypatch)
+    tools, handle = _tools(_SeesTheTag(crops), tmp_path, monkeypatch)
+    off = [TAG[0] + 30, TAG[1], TAG[2] + 30, TAG[3]]      # 30 pt to the right
+    first = _ring(tools, handle, off)
+    (bad,) = first["misplaced"]
+    assert "beside the mark" in bad["seen"]
+    assert all(abs(a - b) <= 1.0 for a, b in zip(bad["found_bbox"], TAG)), bad
+    assert "bbox set to found_bbox" in first["note"]
+    again = _ring(tools, handle, bad["found_bbox"])
+    assert again["confirmed"] == 1 and not again["misplaced"], again
+
+
+def test_a_rectangle_is_given_a_margin_round_the_found_thing(tmp_path,
+                                                             monkeypatch):
+    crops = _recording_crops(monkeypatch)
+    tools, handle = _tools(_SeesTheTag(crops), tmp_path, monkeypatch)
+    off = [TAG[0] + 30, TAG[1], TAG[2] + 30, TAG[3]]
+    (bad,) = _ring(tools, handle, off, kind="box")["misplaced"]
+    m = markup_check.FOUND_BOX_MARGIN_PT
+    want = [TAG[0] - m, TAG[1] - m, TAG[2] + m, TAG[3] + m]
+    assert all(abs(a - b) <= 1.0 for a, b in zip(bad["found_bbox"], want))
+
+
+def test_a_too_wide_ring_comes_back_with_the_things_own_box(tmp_path,
+                                                            monkeypatch):
+    crops = _recording_crops(monkeypatch)
+    tools, handle = _tools(_SeesTheTag(crops), tmp_path, monkeypatch)
+    big = [TAG[0] - 70, TAG[1] - 50, TAG[2] + 70, TAG[3] + 50]
+    (bad,) = _ring(tools, handle, big)["misplaced"]
+    assert "times the area" in bad["seen"]
+    assert all(abs(a - b) <= 1.0 for a, b in zip(bad["found_bbox"], TAG))
+
+
+def test_no_found_box_for_another_thing_an_area_or_the_whole_view(
+        tmp_path, monkeypatch):
+    """Only the NAMED thing's box is offered: never a look-alike's, never
+    an area's, never a box that is the look's whole view."""
+    corner = (0.02, 0.02, 0.20, 0.12)
+    qce = _AnswersWithBox(*corner, same_thing=False, encloses=True,
+                          inside="QCE")
+    (bad,) = _ring_check(qce, tmp_path, monkeypatch, "qce.pdf")["misplaced"]
+    assert "found_bbox" not in bad
+    whole = _AnswersWithBox(0.0, 0.0, 1.0, 1.0, same_thing=True,
+                            encloses=False, inside="GCE")
+    check = _ring_check(whole, tmp_path, monkeypatch, "whole.pdf")
+    assert all("found_bbox" not in m for m in check["misplaced"])
+    got = {"same_thing": True, "in_area": True,
+           "thing_px": [10, 10, 20, 20]}
+    assert markup_check._found_box("circle", got, {"target": "title block"},
+                                   [0, 0, 100, 100], (100, 100),
+                                   False) is None
+    got = {"same_thing": True, "comment_fits": False,
+           "thing_px": [10, 10, 20, 20]}
+    assert markup_check._found_box("circle", got, {"target": "GCE",
+                                                   "comment": "x"},
+                                   [0, 0, 100, 100], (100, 100), True) is None
+    # a callout or a note is not given one: its look does not box the thing
+    got = {"same_thing": True, "thing_px": [10, 10, 20, 20]}
+    assert markup_check._found_box("callout", got, {"target": "GCE"},
+                                   [0, 0, 100, 100], (100, 100),
+                                   False) is None
+
+
+def test_the_note_says_keep_correcting_then_stop_after_the_last_check(
+        tmp_path, monkeypatch):
+    """DR-15 (check 1, C6): GPT-5.4 stopped after the second rejected
+    attempt in all three runs. The note says which check of the copy this
+    was, to keep correcting without stopping to ask, and after the last one
+    to stop and report the unconfirmed marks."""
+    n = markup_check.MAX_CORRECTION_ROUNDS
+    assert n == 4
+    tools, handle = _tools(PixelEngine(), tmp_path, monkeypatch)
+    empty = [430, 250, 500, 320]                      # empty paper
+    notes = []
+    for k in range(1, n + 1):
+        check = _ring(tools, handle, empty, name="rounds.pdf")
+        assert check["check_of_this_copy"] == k
+        assert check["most_checks"] == n
+        notes.append(check["note"])
+    for k, note in enumerate(notes[:-1], start=1):
+        assert f"This was check {k} of up to {n} of this copy" in note
+        assert "keep correcting now, without stopping to ask the user" in note
+        assert "Do not hand the file over" in note
+    last = notes[-1]
+    assert f"This was check {n} of this copy" in last
+    assert "stop correcting it now" in last and "UNCONFIRMED" in last
+    assert "Do not hand the file over" not in last
+    assert "keep correcting now" not in last
+    # another copy keeps its own count
+    other = _ring(tools, handle, empty, name="other.pdf")
+    assert other["check_of_this_copy"] == 1
+    # a check that leaves nothing to correct ends the run of checks ...
+    good = _ring(tools, handle, TAG, name="rounds.pdf")
+    assert good["confirmed"] == 1 and "check_of_this_copy" not in good
+    assert good["note"].startswith("Every mark was looked at")
+    assert "This was check" not in good["note"]
+    # ... and the next miss starts again at 1
+    again = _ring(tools, handle, empty, name="rounds.pdf")
+    assert again["check_of_this_copy"] == 1

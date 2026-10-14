@@ -93,12 +93,28 @@ the drawing's lettering (:data:`LABEL_MAX_LETTERING`) is reported.
 displayed frame (PDF points as the page is shown, ``/Rotate`` applied,
 top-left origin): the frame ``Document.render`` crops in and PyMuPDF's
 ``get_pixmap(clip=...)`` renders in, so nothing is rotated here.
+
+**Where the thing is, when a ring or a rectangle missed it** (DR-16). The
+look of an enclosing mark already says where the named thing is in its crop.
+When it saw the named thing beside the mark, or inside one drawn far too
+wide, the misplaced row carries ``found_bbox``: that box in page points,
+ready to pass back as the mark's ``bbox``, so the mark is put right in one
+step instead of another round of zooms.
+
+**Keep correcting, up to a limit** (DR-15; check 1, C6). GPT-5.4 stopped
+after the second rejected attempt in all three runs, each ending "If you
+want, I can ...", while Sol corrected until its marks were confirmed. The
+note now says which check of the copy this was, to keep correcting without
+stopping to ask until every mark is confirmed or
+:data:`MAX_CORRECTION_ROUNDS` checks have been made, and after the last one
+to stop and tell the user plainly which marks are unconfirmed.
 """
 
 from __future__ import annotations
 
 import contextvars
 import json
+import os
 import re
 import threading
 from collections import OrderedDict
@@ -225,6 +241,23 @@ LABEL_PX_PER_PT = 2.0
 
 #: A pixel darker than this (0-255 grey) is ink.
 INK_LEVEL = 128
+
+#: Checks of one marked copy, in a row, that the note asks the agent to
+#: correct through before it stops and reports what is still unconfirmed
+#: (DR-15). In check 1 (C6) GPT-5.4 gave up after 2 in every run; Sol
+#: corrected until confirmed, in 1, 7 and 2 calls on its baseline runs and up
+#: to 4 on sweep. A 7-call run in brief 3 (F3) got there by widening its
+#: rings until they passed, which the measured size now refuses.
+MAX_CORRECTION_ROUNDS = 4
+
+#: Margin added round a found thing's box for a rectangle, in points, so the
+#: rectangle is not drawn on the lettering; a ring is drawn round the box it
+#: is given by planlens itself (DR-16).
+FOUND_BOX_MARGIN_PT = 2.0
+
+#: A look's box of the thing covering more than this share of its crop is
+#: the view, not the thing, and is not offered as ``found_bbox``.
+FOUND_BOX_MAX_SHARE = 0.5
 
 
 def _thing_on_page(thing_box: Any, view: Any, size: Any = None
@@ -827,6 +860,45 @@ def _verdict(kind: str, got: Dict[str, Any], row: Dict[str, Any],
     return decided(bool(ok)), ""
 
 
+def _found_box(kind: str, got: Dict[str, Any], spec: Dict[str, Any],
+               clip: Any, size: Any, asked_comment: bool
+               ) -> Optional[List[float]]:
+    """Where the look found the named thing, in page points, ready to pass
+    back as a misplaced ring's or rectangle's ``bbox`` (DR-16); ``None``
+    unless the look said what is there IS the named thing and gave a box of
+    it. Never for an area (a mark there belongs inside it, not round it),
+    a comment about something else (moving the mark would not help), or a
+    box covering most of the crop (the look boxed its view)."""
+    if kind not in ENCLOSING_KINDS:
+        return None
+    target, _src = _target(spec)
+    identity = _bool(got.get("same_thing"))
+    if identity is None and target:
+        identity = _names_match(str(got.get("inside") or ""), target)
+    if identity is not True:
+        return None
+    if target and _bool(got.get("in_area")) is True:
+        return None
+    if asked_comment and _bool(got.get("comment_fits")) is False:
+        return None
+    if got.get("thing_px") is not None:
+        thing = _thing_on_page(got.get("thing_px"), clip, size)
+    else:
+        thing = _thing_on_page(got.get("thing_box"), clip, None)
+    try:
+        x0, y0, x1, y1 = (float(v) for v in thing)
+        cx0, cy0, cx1, cy1 = (float(v) for v in clip)
+    except (TypeError, ValueError):
+        return None
+    if x1 - x0 < 0.5 or y1 - y0 < 0.5:
+        return None
+    if (x1 - x0) * (y1 - y0) > FOUND_BOX_MAX_SHARE * (cx1 - cx0) * (cy1 - cy0):
+        return None
+    m = FOUND_BOX_MARGIN_PT if kind == "box" else 0.0
+    return [round(x0 - m, 1), round(y0 - m, 1),
+            round(x1 + m, 1), round(y1 + m, 1)]
+
+
 # -- A mark's verdict, kept for the conversation (Foundry brief 5, B3 (b)) ---
 #
 # GPT-5.4 r2: the check came back "unsure" on a comment placed on the wrong
@@ -926,10 +998,31 @@ def _keep_verdicts(conv: str, checks: Sequence[Dict[str, Any]],
             _VERDICTS.popitem(last=False)
 
 
+#: (conversation, marked copy) -> checks of that copy in a row that left
+#: something to correct (DR-15); dropped when a check leaves nothing.
+_ROUNDS: "OrderedDict[Tuple[str, str], int]" = OrderedDict()
+
+
+def _correction_round(conv: str, output_pdf: str, needs_fix: bool) -> int:
+    """Which check of this copy, in a row, left something to correct: 1 for
+    the first, 0 when this one left nothing (the count then starts again)."""
+    key = (conv, os.path.normcase(os.path.abspath(str(output_pdf))))
+    with _VERDICTS_LOCK:
+        if not needs_fix:
+            _ROUNDS.pop(key, None)
+            return 0
+        n = _ROUNDS.pop(key, 0) + 1
+        _ROUNDS[key] = n
+        while len(_ROUNDS) > VERDICT_MARKS:
+            _ROUNDS.popitem(last=False)
+        return n
+
+
 def clear_kept_verdicts() -> None:
-    """Forget every conversation's verdicts (tests)."""
+    """Forget every conversation's verdicts and check counts (tests)."""
     with _VERDICTS_LOCK:
         _VERDICTS.clear()
+        _ROUNDS.clear()
 
 
 def _check_from_kept(item: Dict[str, Any], kept: Dict[str, Any]
@@ -973,6 +1066,10 @@ def _check_one(pdf_bytes: bytes, item: Dict[str, Any], engine) -> Dict[str, Any]
     clip = (info or {}).get("clip") or crop
     verdict, why = _verdict(kind, got, row, spec, clip, size, asked_comment)
     out["verdict"] = verdict
+    if verdict == "misplaced":
+        found = _found_box(kind, got, spec, clip, size, asked_comment)
+        if found is not None:
+            out["found_bbox"] = found
     if item.get("ask_reads"):
         out["lettering_reads"] = _reads_word(got.get("lettering_reads"))
     out["inside"] = str(got.get("inside") or "")[:120]
@@ -1022,7 +1119,8 @@ def check_marks(output_pdf: str, result: Dict[str, Any], specs: Sequence[Any],
         "checked": len(checks),
         "confirmed": len(by["confirmed"]),
         "misplaced": [{k: c.get(k) for k in ("index", "pdf_page", "kind",
-                                             "names", "bbox", "seen")}
+                                             "names", "bbox", "seen",
+                                             "found_bbox") if k in c}
                       for c in by["misplaced"]],
         "unsure": [{k: c.get(k) for k in ("index", "pdf_page", "kind",
                                           "names", "seen")}
@@ -1048,6 +1146,16 @@ def check_marks(output_pdf: str, result: Dict[str, Any], specs: Sequence[Any],
     if labels:
         block["labels"] = labels
     bad = len(by["misplaced"]) + len(by["unsure"])
+    # Which check of this copy, in a row, left something to correct (DR-15).
+    try:
+        attempt = _correction_round(conv, output_pdf, bool(bad or labels))
+    except Exception:  # noqa: BLE001 - the verdicts stand without a count
+        attempt = 0
+    stop = attempt >= MAX_CORRECTION_ROUNDS
+    if attempt:
+        block["check_of_this_copy"] = attempt
+        block["most_checks"] = MAX_CORRECTION_ROUNDS
+    found = any("found_bbox" in m for m in block["misplaced"])
     notes = []
     if not bad and not labels and not blank:
         notes.append("Every mark was looked at on the marked copy, and each "
@@ -1056,13 +1164,21 @@ def check_marks(output_pdf: str, result: Dict[str, Any], specs: Sequence[Any],
     elif not bad and not labels and by["confirmed"]:
         notes.append("Every other mark was looked at on the marked copy, and "
                      "each is on the thing it is meant to mark.")
-    if bad:
+    if bad and stop:
+        notes.append(
+            f"{bad} mark(s) are misplaced or could not be confirmed ('seen' "
+            "says what is actually there).")
+    elif bad:
         notes.append(
             f"{bad} mark(s) are misplaced or could not be confirmed ('seen' "
             "says what is actually there). Do not hand the file over as it "
             "is: find the thing each comment is about again and write the "
             "copy again with append=false, leaving out any mark you cannot "
-            "place. For a thing found by looking, zoom with render_region "
+            "place."
+            + (" Where a misplaced row has found_bbox, the check saw the "
+               "named thing there: write that mark again with bbox set to "
+               "found_bbox (page points), with no new zoom." if found else "")
+            + " For a thing found by looking, zoom with render_region "
             "until it is legible in a view of 300 pt or less and take THAT "
             "zoom's view + the thing's image_box; for words, quote the words "
             "the comment is about. Every anchor — box, point, quote or note "
@@ -1083,7 +1199,12 @@ def check_marks(output_pdf: str, result: Dict[str, Any], specs: Sequence[Any],
             "it was asked to go, and when you hand the file over tell the "
             "user where each one sits (for example 'in the blank lower-right "
             "corner of sheet S-1, which has no title block').")
-    if labels:
+    if labels and stop:
+        notes.append(
+            f"{len(labels)} label(s) are not clear of the drawing, not "
+            "beside their mark, or run across the drawing's own lettering "
+            "('labels' says which and why).")
+    elif labels:
         along = (" Where the drawing's own lettering runs up or down the "
                  "page, give label_reads (up or down) so the label runs the "
                  "same way." if _label_reads_supported() else "")
@@ -1095,6 +1216,23 @@ def check_marks(output_pdf: str, result: Dict[str, Any], specs: Sequence[Any],
             "beside its mark: write the copy again with append=false and a "
             "shorter label, or no label (the comment still carries the "
             "words)." + along)
+    if attempt and not stop:
+        notes.append(
+            f"This was check {attempt} of up to {MAX_CORRECTION_ROUNDS} of "
+            "this copy: keep correcting now, without stopping to ask the "
+            "user, and write the copy again after each check until every "
+            "mark is confirmed and every label is clear, or "
+            f"{MAX_CORRECTION_ROUNDS} checks have been made.")
+    elif stop:
+        notes.append(
+            f"This was check {attempt} of this copy, and "
+            f"{MAX_CORRECTION_ROUNDS} is as many as to make: stop correcting "
+            "it now, unless the user has asked you to keep trying. Hand the "
+            "file over and say plainly in your answer which marks are "
+            "UNCONFIRMED and which labels are not clear (each one's page "
+            "and what 'seen' or 'problem' says), and whether you left each "
+            "unconfirmed mark out or kept it. Never describe an unconfirmed "
+            "mark as on the thing it names.")
     block["note"] = " ".join(notes)
     return block
 

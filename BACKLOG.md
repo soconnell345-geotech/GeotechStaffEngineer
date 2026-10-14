@@ -48,7 +48,7 @@ After any change to this file, rebuild and republish the Backlog Desk (`module_w
 CfA says the SharePoint connection and the per-user Prompter keys are a few weeks out (owner, 2026-10-14). Until they arrive, Now is core work on the app itself. The Tiny Apps production items (OWN-29, OWN-30, OWN-43–OWN-51, TA-03) wait in Next and come back when CfA delivers.
 
 - **Engineering answers that err on the unsafe side** (geotech page): the first round is done (BACKLOG "Done", 2026-10-14). Follow-ups it found: GM-59, GM-60, GM-61, GM-63 (Next).
-- **Document Review accuracy** (testers' page; general fixes, no single-example rules): PL-07 (distinct sheets flagged as duplicates), VIS-01 (turned lettering read upright), VIS-04 (a zoom that cuts text lines), VIS-05 (boxes on sideways sheets), DR-15–DR-17 (markups), DR-04 (geotech tools still on the page), VIS-09 (zoom for pasted screenshots and image uploads).
+- **Document Review accuracy** (testers' page; general fixes, no single-example rules): VIS-01 (turned lettering read upright), VIS-04 (a zoom that cuts text lines), VIS-05 (boxes on sideways sheets), VIS-09 (zoom for pasted screenshots and image uploads). Done 2026-10-14: distinct sheets no longer called duplicates, the markup fixes, the geotech tools off the page (BACKLOG "Done").
 - **Release readiness:** INF-10 (module suites on a fresh resolve, since the next release admits pandas 3; no release is planned (OWN-55), but these keep master releasable), EV-13 with DR-05 (one Foundry suite run that measures this train, tonight's default-page changes and the lean build).
 - **Calculation tables** (OWN-10, 2026-10-14: yes, the next module train): GM-39, after the tracks above.
 - **Owner:** OWN-31 (the checklist session, perhaps next week), OWN-58 (downdrag: the pile's own weight in the load curve?). Answered 2026-10-14 and folded: OWN-01 (became GM-48), OWN-02, OWN-10, OWN-55 (hold the release; the Prompter key works on Funhouse this month), OWN-57. Report ingest stays parked, so its questions (OWN-07, OWN-08, OWN-09, OWN-11, OWN-25) wait in Next and Later.
@@ -123,7 +123,7 @@ CfA says the SharePoint connection and the per-user Prompter keys are a few week
 
 Testers get the legacy deepagents build (`GEOTECH_REVIEW_AGENT` unset); the plan's Phase-1 fixes exist only behind `lean`, OFF.
 
-- **DR-04** [Now] **The default page still offers `read_reference_figure` / `view_worked_example_source`** (`make_vision_tools` called without `include`, `deep/agent.py` ~665) and deepagents' coding prompt (~7.7K chars). *Src:* HT `document_review.md:122`
+- **DR-29** [Next] **The default review page still carries deepagents' generic prompt** (6,276 of its 14,479 system-prompt characters: the base prompt with "read relevant files, check existing patterns", the todo and task sections) and `read_pdf_text`. Recommended: a middleware like `HideScratchFilesystem` that removes `BASE_AGENT_PROMPT` word for word and swaps the todo/task sections for the lean build's short texts, behind a switch, measured on the suite (DR-05 is the other route). *Src:* review1 report 2026-10-14
 - **DR-05** [Now] **Re-measure `GEOTECH_REVIEW_AGENT=lean`** at full resolution and on GPT after 5.32–5.33 (last 34/35, Sol, 768 px); until lean or legacy wins, DR-01–DR-04 stay on the legacy build. *Src:* RH:35, 239
 
 ### Review architecture (M2–M4 and the owner's questions)
@@ -165,9 +165,7 @@ All OFF unless marked. Decisions: OWN-06.
 
 ### Markups and checks
 
-- **DR-15** [Now] **GPT-5.4 stops after two rejected markups**: tell it to keep correcting until confirmed, up to N tries. *Src:* check1 TRACE_REVIEW C6
-- **DR-16** [Now] **Return the corrected box**, not only "misplaced" (the crop look already finds the thing; `markup_check.py:775-778`). *Src:* HT `locating_things_on_a_page.md:1326-1329`
-- **DR-17** [Now] **B4: the duplicate-mark note should say a duplicate may hide an unmarked thing** (`planlens/tools/toolkit.py:926-933`). *Src:* B5 `TRACE_REVIEW_B_AEFG.md:250-270`
+- **DR-30** [Later] **The markup check returns a corrected box for rings and rectangles only**; callout, note and highlight looks are not asked for one (asking would change how their area check is measured). Also: the correction count runs per marked copy, not per turn, so a later "try again" meets the stop note until a clean check resets it.
 - **DR-18** [Later] **A rotated mark's label should follow the text under it** (F7/B8; 83a77f4 only suggests `label_reads`). *was:* H 3e "rotated labels"
 - **DR-19** [Later] **DXF viewing**: render a DXF to PDF so the vision tools can look at it. *Src:* w2b REVIEW:124, 176-180
 
@@ -236,7 +234,7 @@ All OFF unless marked. Decisions: OWN-06.
 - **PL-04** [Next] **`log_grid` N7 / N8**: multi-log header fields; table row rules read as strata. *was:* H E3
 - **PL-05** [Next] **N14: `measure`'s `to` across a second zoom.** *was:* H E3
 - **PL-06** [Next] **C4 public API**: `ReviewToolkit.forget(path)`, atomic save in `write_markups`, stable markup ids (positional today, `annotations.py:194`). *was:* H E3
-- **PL-07** [Now] **Distinct stroke-drawn sheets are flagged as duplicates** (22 of 24; `document/document.py:436-441`), inviting skipped pages. *Src:* HT `document_review.md:335-341`
+- **PL-22** [Next] **Release planlens past 0.13 and raise the app's pin**: the distinct-sheets duplicate fix (PL-07, planlens 89711ea) and the duplicate-mark note (DR-17) reach the app only then. Pairs with the next app release (held, owner 2026-10-14).
 - **PL-08** [Later] **`log_grid` blind gaps**: index values 8/17 (plotted column), header fields 33/54, sheets with no depth unit, one zero-scoring log unexamined. *Src:* `planlens/document/DESIGN.md:1286-1310`
 - **PL-09** [Later] **Reading gaps**: multi-column / visual reading order; tables spanning pages; captions on non-figure pages. *Src:* DESIGN.md:71-72, 1318-1327
 - **PL-10** [Later] **Page roles**: `dcp_log` on scans (0.54); no pressuremeter, vane or dilatometer roles. *Src:* DESIGN.md:977-980
@@ -438,6 +436,11 @@ Long items kept in their own sections: DR-08–DR-13, GM-39, VIS-11, VIS-20, TA-
 
 Older docs still list these as open. Delete this section at the next sweep.
 
+- **PL-07** (distinct stroke-drawn sheets flagged as duplicates, 22 of 24): planlens 89711ea. Words name a repeat only with 15+ words outside the header/footer bands; every nominated repeat must also render the same (hashes within 2 bits, a ~36 dpi render within 16 grey levels everywhere); `duplicate_of` names the earliest page. 22 → 0 on the suite set; true repeats still caught; page-map time unchanged. Reaches the app with PL-22.
+- **DR-17** (the duplicate-mark note): says a repeat usually means one of the things meant is still unmarked (planlens 89711ea; PL-22).
+- **DR-04** (geotech tools on the default review page): `read_reference_figure` and `view_worked_example_source` are filtered out when `review_page` is set (tools 35 → 33); a test pins the page's tool list. The generic deepagents prompt is DR-29.
+- **DR-15** (GPT-5.4 stopped after two rejected markups): checks 1-3 of a marked copy say to keep correcting without asking, check 4 says to hand the file over naming every unconfirmed mark (`MAX_CORRECTION_ROUNDS` = 4); the `annotate_document` description says the same; no system-prompt change. Unmeasured live: EV-13.
+- **DR-16** (return the corrected box): a misplaced ring or rectangle whose look found the named thing carries `found_bbox` in page points, and the note says to re-mark with it; a ring 30 pt off is re-marked and confirmed in one step.
 - **GM-20** (SOE free earth support returned a depth with no solution): when no moment balance exists within 6H, the embedment and everything computed from it come back null with `converged=False` and a plain note in the Caltrans T&S terms; every caller handles it (`compute_embedment`, both excavation analyses, the FHWA single-anchor branch keeps the load above the anchor). One existing test asserted the bug (`test_braced_soft_clay`: 4c < γH + q) and now expects no balance.
 - **GM-42** (no catalog headroom): 38 module briefs rewritten, keeping method and standard names; `list_agents` 7,988 → 7,217 characters (cap 8,000).
 - **GM-30** (Terzaghi bearing capacity): `factor_method="terzaghi"` (and `bearing_capacity_factors(method="terzaghi")`, the calc package), general or local shear, UFC 3-220-20 Table 5-5 shape factors, no depth or inclination factors (inclined loads and slopes refused, UFC Table 5-3). N-gamma: Kumbhojkar (1993) as tabulated in Das by default, Coduto et al. (2016, the basis of UFC Table 5-2) as the alternative, both named in every result. Matches UFC Table 5-2 at every row except four misprints (REF-21) and Das's table within 0.5 %. Also fixed: the `bearing_capacity/terzaghi` alias silently returned a Vesic answer.

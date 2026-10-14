@@ -725,6 +725,13 @@ REVIEW_READER_DESCRIPTION = (
     "return). It cannot write files or markups.")
 
 
+#: Tools the geotech page has and this page cannot use: they render a
+#: reference library figure and a worked example's printed source page, and
+#: the review page has neither the library nor the examples (DR-04; the
+#: review of 2026-09-26). The lean build never had them.
+GEOTECH_ONLY_TOOLS = ("read_reference_figure", "view_worked_example_source")
+
+
 def _review_page_descriptions() -> dict:
     """The page's own wording where the geotech wording is wrong here:
     ``render_region`` sends the agent to the ``drawing_ir`` module for
@@ -870,10 +877,12 @@ def build_deep_agent(
     ``review_page=True`` marks the Document Review page's build: with
     ``GEOTECH_REVIEW_AGENT=lean`` it is handed to
     :func:`funhouse_agent.deep.review_agent.build_review_agent`, the page's
-    own agent; with the switch off (the default) it is built here exactly as
-    before. ``working_dir`` (the conversation's working folder) is used only
-    on that lean route - its findings ledger and digests are bound to it at
-    build time - and is ignored by this build.
+    own agent; with the switch off (the default) it is built here, with the
+    page's own fixes: its zoom wording, its reading helper, its model-call
+    budget (DR-01 - DR-03) and without the two geotech-only tools
+    (:data:`GEOTECH_ONLY_TOOLS`, DR-04). ``working_dir`` (the conversation's
+    working folder) is used only on that lean route - its findings ledger and
+    digests are bound to it at build time - and is ignored by this build.
 
     By default this agent already has — courtesy of deepagents — *planning*
     (the ``write_todos`` tool, via ``TodoListMiddleware``) and an in-thread
@@ -1117,6 +1126,9 @@ def build_deep_agent(
         description_overrides=(_review_page_descriptions() if review_page
                                else None),
     )
+    if review_page:
+        tools = [t for t in tools
+                 if getattr(t, "name", None) not in GEOTECH_ONLY_TOOLS]
     if extra_tools:
         tools = list(tools) + list(extra_tools)
 

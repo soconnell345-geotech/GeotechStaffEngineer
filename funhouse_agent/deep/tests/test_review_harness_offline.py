@@ -134,12 +134,15 @@ def test_switches_set_exactly_the_arm_and_restore(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_switch_off_builds_the_page_exactly_as_before():
+    from funhouse_agent.deep.agent import GEOTECH_ONLY_TOOLS
     kw = _review_kwargs()
     legacy = dict(kw)
     legacy.pop("review_page")
     a = build_deep_agent(_model([]), **kw)
     b = build_deep_agent(_model([]), **legacy)
-    assert set(_tools_of(a)) == set(_tools_of(b))
+    # The page's own build leaves out only the two geotech-only tools (DR-04).
+    assert set(_tools_of(b)) - set(_tools_of(a)) == set(GEOTECH_ONLY_TOOLS)
+    assert set(_tools_of(a)) <= set(_tools_of(b))
     assert not hasattr(a, "geotech_review_agent")
 
 
@@ -173,6 +176,42 @@ def test_default_page_zoom_tool_names_no_missing_tools():
     # the geotech page keeps its wording: it does have drawing_ir
     geo = build_deep_agent(_model([]))
     assert "drawing_ir" in _tools_of(geo)["render_region"].description
+
+
+#: The default page's own tools with every switch off (DR-04), besides the
+#: planlens document tools and the optional ones (each offered where its
+#: library imports).
+REVIEW_PAGE_TOOLS = {"analyze_image", "analyze_pdf_page", "render_region",
+                     "calculate", "list_files", "read_pdf_text",
+                     "read_text_file", "save_file"}
+
+#: deepagents' own tools: planning, the helper and the scratch filesystem
+#: (hidden from this page's menu by HideScratchFilesystem); which of them a
+#: build has depends on the deepagents version.
+DEEPAGENTS_OWN = {"write_todos", "task", "ls", "read_file", "write_file",
+                  "edit_file", "glob", "grep", "execute"}
+
+
+def test_default_page_offers_only_the_review_tools():
+    """DR-04: the default page offered read_reference_figure and
+    view_worked_example_source, geotech tools that cannot work there (no
+    reference library, no worked examples). The geotech page keeps them."""
+    from funhouse_agent.deep import tools as tools_mod
+    from funhouse_agent.deep.agent import GEOTECH_ONLY_TOOLS
+    agent = build_deep_agent(_model([]), **_review_kwargs())
+    names = set(_tools_of(agent)) - DEEPAGENTS_OWN
+    optional = {"write_docx": tools_mod._docx_available(),
+                "plot_data": tools_mod._plot_available(),
+                "write_xlsx": tools_mod._xlsx_available(),
+                "annotate_dxf": tools_mod._dxf_notes_available(),
+                "find_like": tools_mod._find_like_available()}
+    expected = (REVIEW_PAGE_TOOLS
+                | set(document_tools.document_tool_names())
+                | {name for name, ok in optional.items() if ok})
+    assert names == expected
+    assert not names & set(GEOTECH_ONLY_TOOLS)
+    geo = set(_tools_of(build_deep_agent(_model([]))))
+    assert set(GEOTECH_ONLY_TOOLS) <= geo
 
 
 def test_default_page_helper_has_the_review_rules_and_no_writing_tools():
