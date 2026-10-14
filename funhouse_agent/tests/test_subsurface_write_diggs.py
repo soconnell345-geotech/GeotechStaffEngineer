@@ -114,6 +114,30 @@ def test_data_that_does_not_fit_writes_nothing_and_names_the_fields(tmp_path):
     assert "investigations[0].colour" in text
 
 
+def test_a_printed_refusal_in_n_names_the_refusal_field(tmp_path):
+    # 2026-10-14 on Funhouse: an agent put a printed ">50" in n, was refused
+    # 17 times and concluded refusal could not be written. The problem line
+    # must name the field that records it.
+    bad = json.loads(json.dumps(BORING))
+    bad["spt"][1]["n"] = ">50"
+    res = _call({"investigations": [bad],
+                 "output_path": str(tmp_path / "r.xml")})
+    assert "NO file was written" in res["error"]
+    text = " ".join(res["problems"])
+    assert "investigations[0].spt[1].n" in text
+    assert "refusal: true" in text and "leave n out" in text
+
+
+def test_a_refusal_written_as_the_hint_says_is_accepted(tmp_path):
+    good = json.loads(json.dumps(BORING))
+    good["spt"][1].update({"blows": [20, 30, '50/5"'], "refusal": True})
+    good["spt"][1].pop("n")
+    out = tmp_path / "r.xml"
+    res = _call({"investigations": [good], "output_path": str(out)})
+    assert "error" not in res, res
+    assert res["file_exists"] and res["read_back"]["equal"], res["read_back"]
+
+
 def test_hand_typed_xml_is_not_diggs():
     """What the agent wrote in the field session, in shape: invented
     elements under the DIGGS namespace. The schema says so."""

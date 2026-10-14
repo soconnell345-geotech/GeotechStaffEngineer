@@ -361,9 +361,21 @@ def _validation_problems(exc, where: str) -> list:
     out = []
     try:
         for err in exc.errors():
+            path = err.get("loc", ())
             loc = "".join(f"[{p}]" if isinstance(p, int) else f".{p}"
-                          for p in err.get("loc", ()))
-            out.append(f"{where}{loc}: {err.get('msg')}")
+                          for p in path)
+            msg = err.get("msg")
+            given = err.get("input")
+            if (path and path[-1] == "n" and "spt" in path
+                    and isinstance(given, str)):
+                # 2026-10-14 on Funhouse: an agent put a printed ">50" in n,
+                # was refused 17 times, and concluded refusal could not be
+                # written at all. Name the field that records it.
+                msg = (f"{msg} (got {given!r}). A printed '>50' or "
+                       "'50/5\"' is a refusal, not an N: set refusal: true, "
+                       "leave n out, and keep the printed drives in blows, "
+                       "e.g. blows: [20, 30, '50/5\"']")
+            out.append(f"{where}{loc}: {msg}")
     except Exception:                                  # noqa: BLE001
         out.append(f"{where}: {exc}")
     return out
