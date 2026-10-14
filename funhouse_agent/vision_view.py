@@ -487,8 +487,8 @@ def view_payload(info: Dict[str, Any], engine=None) -> Dict[str, Any]:
 
 
 #: Lettering assumed on a CAD sheet whose lettering cannot be measured (drawn
-#: as lines): 0.06 in, the small end of plotted half-size sheets — the IZD set
-#: of 2026-09-25.
+#: as lines): 0.06 in, the small end of plotted half-size sheets — the
+#: drawing set of the 2026-09-25 test run.
 ASSUMED_CAD_LETTERING_PT = 4.3
 
 #: Most tiles one sheet is split into for a read (4 x 4).

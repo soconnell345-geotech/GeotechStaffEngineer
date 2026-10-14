@@ -211,7 +211,7 @@ about 60 of them were on the list that stood here ("Open to-dos (refreshed
 - **Agent work, in three tracks:**
   - engineering answers that err on the unsafe side: GM-14, GM-13, GM-05, GM-06, GM-20, GM-08, GM-48 with GM-01 (downdrag as the owner asked), then GM-42 and GM-30;
   - Document Review accuracy: PL-07, VIS-01, VIS-04, VIS-05, DR-15–DR-17, DR-04, VIS-09;
-  - release readiness: INF-11, INF-10, and EV-13 with DR-05 (one Foundry suite run for the whole train);
+  - release readiness: INF-10 and EV-13 with DR-05 (one Foundry suite run for the whole train); the post-name cleanup of the shipped code is done (BACKLOG "Done");
   - then the calculation tables, GM-39 (the next module train, owner 2026-10-14).
 - **Owner:** OWN-31 (the checklist session, perhaps next week). Answered on the desk 2026-10-14 (BACKLOG "Done"): hold the release and use the Prompter key on Funhouse this month; downdrag shows every method, skin-friction stress per GEC-12; fem2d measures from the end of stage 0; calculation tables are the next module train; the old `geotech-report-extraction` project is deleted from PyPI.
 - **Rollout model (owner, 2026-10-12):** one GPT-5.6 Sol-or-higher deployment for every call, not gpt-5.1; the app measures it on first use. So the gpt-5.1 rehearsal wave is dropped, and the standards PDFs stay with a provenance note (BACKLOG "Done").

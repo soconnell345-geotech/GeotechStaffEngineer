@@ -21,7 +21,7 @@ General/GSE_app/...`` — where the first segment names the document library
 (Graph calls it a drive) and the rest is the path inside it.
 
 The login and Graph hosts are the PUBLIC cloud ones on purpose: the
-Department's SharePoint tenant is commercial-side even though the App Service
+organisation's SharePoint tenant is commercial-side even though the App Service
 runs in Azure Government (their note). Only the standard library is used;
 ``urllib`` is what their connector uses and it keeps this file dependency-free.
 """

@@ -39,8 +39,8 @@ interception). ``agent`` is ``primary`` or the sub-agent's name, attributed
 by run ancestry: each event's parent-run chain is followed up to the ``task``
 call it ran inside (whose ``subagent_type`` names the sub-agent), or to the
 top of the turn (primary). Until 2026-09-15 this was a stack of open ``task``
-calls, which mislabelled two sub-agents running at once -- in the Nairobi
-session every call of a parallel calc/general-purpose pair was filed under
+calls, which mislabelled two sub-agents running at once -- in the 2026-09-15
+SOE session every call of a parallel calc/general-purpose pair was filed under
 the second, and the two task results swapped names (field feedback N15). No
 deepagents internals are read, so this stays correct across versions.
 

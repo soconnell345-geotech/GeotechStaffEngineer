@@ -553,7 +553,7 @@ def build_calc_subagent(
         attachments=attachments,
         save_fn=save_fn,
         # save_file for persisting the calc package, PLUS read access to the
-        # working folder. Field feedback 2026-09-04 (Praia_Downdrag): with
+        # working folder. Field feedback 2026-09-04 (a downdrag session): with
         # save_file alone the calc sub-agent could not open the source PDFs
         # the user supplied and wrote "source PDFs weren't available" into a
         # delivered report — a false provenance claim. Isolation is about

@@ -7,7 +7,7 @@ cantilever put the passive resultant at H + D/3 about the wall base; the
 braced embedment started the active triangle at zero at the support and put
 the passive resultant at D/3 below the excavation instead of 2D/3). On a
 6.3 m cantilever in uniform sand they gave 2.5 m of embedment where 6.9 m is
-required. Field feedback 2026-09-15 (Nairobi SOE re-run), item N2.
+required. Field feedback 2026-09-15 (an SOE re-run session), item N2.
 
 Both procedures follow the Caltrans Trenching and Shoring Manual (2025):
 

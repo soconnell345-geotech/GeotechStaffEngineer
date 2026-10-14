@@ -1,6 +1,6 @@
 """Which files did this turn write, and which did it only read?
 
-Field feedback 2026-09-15 (Nairobi SOE re-run), N4/N6/N8. The agents wrote
+Field feedback 2026-09-15 (an SOE re-run session), N4/N6/N8. The agents wrote
 the calc package, its figures and a plot to /tmp. The app offers downloads,
 previews and the SharePoint mirror only for files in the conversation's
 ``files/`` folder, so the owner never received the PDF ("Where is the PDF?"),
@@ -36,7 +36,7 @@ except Exception:  # pragma: no cover - langchain always present in the app
 
 # ``plotly_json_path`` is the interactive-chart sidecar a figure tool writes
 # beside its image/HTML. It must be captured too: a sidecar left in /tmp is
-# exactly the Nairobi failure mode — the chat would have nothing to render.
+# exactly that session's failure mode — the chat would have nothing to render.
 _JSON_KEY = re.compile(
     r'"(?:output_path|saved|plotly_json_path)"\s*:\s*"((?:[^"\\]|\\.)+)"')
 _REPR_KEY = re.compile(

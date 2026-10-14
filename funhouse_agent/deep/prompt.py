@@ -265,7 +265,7 @@ def build_domain_prompt(allowed_agents=None, *, memory_enabled: bool = False) ->
 #: reader may be an architect, a construction manager, a structural or civil
 #: engineer, and the document may be a drawing set, a specification, a
 #: submittal, an RFI, a report, a calculation package or a contract. What the
-#: page exists for — and what the Department's chatbot cannot do — is to LOOK
+#: page exists for — and what a general-purpose chatbot cannot do — is to LOOK
 #: at pages and to hand back documents, so those two habits are the spine of
 #: the prompt. It carries no module catalog; the geotechnical calculation
 #: tools live on the other page.

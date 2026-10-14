@@ -93,7 +93,7 @@ base. Below the base the net water pressure is a driving pressure.
 
 ### Defect history (2026-09-15, field feedback N2)
 
-Found on a real review session (`module_work/field_feedback/2026-09-15_nairobi-soe-rerun_v5.15.0/FINDINGS.md`):
+Found on a real review session (the 2026-09-15 SOE re-run; its `FINDINGS.md` is under `module_work/field_feedback/`):
 - `analyze_cantilever_excavation` took γ, φ, c from the **first layer only**
   and put the passive resultant at **H + D/3 about the wall base** (should be
   D/3); max moment was taken at the dredge line. A 6.3 m wall in uniform sand

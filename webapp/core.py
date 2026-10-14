@@ -223,7 +223,7 @@ def assemble_user_message(pending_notes: Iterable[str], user_text: str) -> str:
 #: up as download cards in the transcript and in the sidebar — but the model had
 #: no way to know it, so it wrote reports there and told the user in the same
 #: breath that it "can't directly attach the binary PDF into the chat stream"
-#: (field feedback 2026-09-04, Praia_Downdrag). Awareness gap, not a capability
+#: (field feedback 2026-09-04, a downdrag session). Awareness gap, not a capability
 #: gap: the tool result now says what the save already accomplished.
 ATTACHMENT_NOTE = (
     "This file is now ATTACHED to this conversation — it appears as a download "

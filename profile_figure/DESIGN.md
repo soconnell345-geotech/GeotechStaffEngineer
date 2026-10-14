@@ -5,8 +5,8 @@ Built 2026-09-04 from field feedback: asked for "a figure showing the pile and
 a subsurface profile", the agent had **no drawing tool at all** and delivered a
 PDF with an `[image]` placeholder plus an HTML table with coloured rows
 presented as a "figure"
-(`module_work/field_feedback/2026-09-04_praia-downdrag_v5.11.2/FINDINGS.md`,
-item 3). This module is the capability that was missing.
+(the 2026-09-04 downdrag field session's `FINDINGS.md` under
+`module_work/field_feedback/`, item 3). This module is the capability that was missing.
 
 ## Scope
 

@@ -1296,7 +1296,7 @@ def _generate_sheet_pile_package(params: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 # --- figure embedding -------------------------------------------------------
-# Field feedback 2026-09-04 (Praia downdrag): the model shipped a report PDF
+# Field feedback 2026-09-04 (a downdrag session): the model shipped a report PDF
 # containing a literal "[image]" placeholder, because the Story renderer drops
 # anything it cannot embed WITHOUT complaining. So: inline what we can (a real
 # local PNG/JPEG path), and refuse loudly for the rest.

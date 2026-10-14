@@ -310,7 +310,7 @@ def budget_message(stop: Optional[BudgetStop] = None) -> str:
 # A model call refused at sign-in (HTTP 401; BACKLOG TA-01)
 # ---------------------------------------------------------------------------
 #
-# Field session 2026-09-09 (Nairobi SoE): the agent's own model call to the
+# Field session 2026-09-09 (an SOE session): the agent's own model call to the
 # Funhouse proxy came back as an IIS "401 - Unauthorized" HTML page, the turn's
 # error showed that page raw, and it read as a SharePoint permissions failure.
 # It was transient: the next turn worked seconds later on the same

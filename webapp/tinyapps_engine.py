@@ -26,7 +26,7 @@ else a local ``.env``)::
     PROMPTER_CA_BUNDLE   optional: the internal CA certificate, as the PEM
                          text itself (how the Key Vault secret holds it) or a
                          path to a ``.pem`` — Prompter's TLS certificate is
-                         signed by the Department's own authority, so
+                         signed by an internal certificate authority, so
                          without this the connection is refused
 
 Behaviour knobs (env): ``GEOTECH_PROMPTER_DISABLE_STREAMING=1`` makes

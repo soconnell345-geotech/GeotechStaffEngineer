@@ -3,7 +3,7 @@
 deepagents gives every agent ``ls``, ``read_file``, ``write_file``,
 ``edit_file``, ``glob`` and ``grep`` over an in-memory scratch space. Pointed
 at a real file they answer "not found" or "No matches found", which read as
-true answers. In the 2026-09-15 Nairobi session agents ran them about 35 times
+true answers. In a 2026-09-15 SOE session agents ran them about 35 times
 on real files (25+ greps over a 260-page PDF, all empty), and a sub-agent that
 "could not find" the earlier report on disk rebuilt it with placeholder text
 where the numbers belonged (field feedback N1 and N12). Prompts already said
