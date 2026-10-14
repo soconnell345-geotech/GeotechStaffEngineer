@@ -82,6 +82,20 @@ Uses scipy.spatial.Delaunay with:
 - Laplacian smoothing (3-5 iterations)
 - Soil layer assignment via centroid elevation check
 
+`generate_slope_mesh` (the slope mesher behind `analyze_slope_srm`) places
+`ny + 1` nodes in each of `nx + 1` columns from the base to the ground
+surface and triangulates them. Delaunay covers the convex hull of the
+points, which for any slope includes the notch above the toe and the slope
+face; triangles with their centroid outside the soil section are removed
+(since 2026-10-14). Before, they were kept as soil: a fan of sliver
+triangles (minimum angles 0.1-0.9 deg) bridging the toe ground to the
+upper slope face, weighing on it and propping it — 130 m2 of extra soil on
+a 1,800 m2 section, 60 m2 on the 242 m2 Griffiths & Lane Ex 1 section —
+and every strength-reduction FOS on this mesher was too high (a 10 m 2:1
+slope, limit equilibrium 1.887, gave 3.0 = never failed on the default
+30x15 mesh). Each column still gets `ny` rows whatever its height, so a
+thin base layer (D ~ 1) makes flat elements under the toe run.
+
 ### Boundary Conditions
 
 Standard geotechnical BCs:
@@ -102,11 +116,61 @@ For nonlinear problems (MC/HS materials):
 
 ### Strength Reduction Method (SRM)
 
-1. Establish gravity equilibrium at SRF = 1.0
-2. Bracket failure: increment SRF by 0.1 until non-convergence
+1. Each trial applies gravity (2 increments) at the reduced strengths
+   c/SRF, arctan(tan φ/SRF), from zero stress; the elastic stiffness is
+   factorized once and shared by every trial (constant-stiffness iteration,
+   Smith & Griffiths)
+2. Bracket failure: verify the lower bound, then step the SRF by 0.1 from
+   1.0 until a trial fails
 3. Bisect [SRF_low, SRF_high] until tolerance (default 0.02)
 4. Critical SRF = FOS
 5. For HS elements: reduce c and φ, pass stiffness params unchanged
+
+**Failure criterion (2026-10-14).** Griffiths & Lane (1999): failure is
+non-convergence within the iteration ceiling "accompanied by a dramatic
+increase in the nodal displacements". A trial fails when a load step
+reaches `max_iter` (1000) without the residual ratio meeting `tol` (1e-5)
+AND its displacements are still moving: the largest nodal displacement
+change over the second half of the iterations is at least `settled_ratio`
+(0.1) times the change over the first half (a mechanism slides at an about
+constant rate per iteration, ratio near 1), or the residual ratio is above
+1e-2 and no longer falling. A step that reaches the ceiling with its
+displacements standing still is accepted (`srf_history[i]['settled']`);
+one whose displacements plainly stand still is accepted before the ceiling
+(checked every 50 iterations after half-way, with 10 times the recent rate
+of movement as margin). Two things stall the
+residual while the displacements stand still: Gauss points near the apex or
+edges of the Mohr-Coulomb surface switching return region back and forth
+(chatter, residual ~1e-4 with |du| ~1e-9 m), and slow convergence where a
+large region yields — under level ground the gravity stress state with
+K0 = ν/(1−ν) violates the reduced strength once sin φ_red < 1 − 2ν
+(Zheng, Liu & Li 2005), so the whole far field yields and the
+constant-stiffness iteration crawls. Before, every such trial counted as
+failure: the FOS followed the convergence rate, which falls as the mesh is
+refined (10 m 2:1 slope, c' 15, φ' 25°, LE 1.887: 1.80 on 40x20, 1.15 on
+60x30; ACADS 1(a): 0.93 on 56x20, 0.80 on 72x24). With the mesher fix the
+SRM FOS now varies by at most 1.7 % between the coarsest and finest mesh
+tried on every benchmark once the slope is spanned by 4 or more elements
+(2.7 % at 3 elements), and sits 0–5 % below the limit-equilibrium value
+(VALIDATION.md §7).
+
+**Warnings on the result** (`FEMResult.warnings`, plain language): the
+slope spanned by fewer than 4 elements from toe to crest (the coarsest
+mesh measured, 3 elements, was +2.7 % against a fine mesh); a soil layer
+with no elements, or thinner than its elements (elements take the layer of
+their centroid, so a thin weak seam is lost or becomes a jagged band); a
+search range that did not bracket failure. `mesh_check=True` also runs a
+mesh 1.5x finer each way, reports both (`result.mesh_check`) and warns when
+they differ by more than 5 %. Poisson's ratio 0.5 is refused.
+
+**Volumetric locking (GM-06, 2026-10-14).** The T6 / 3-point FOS does not
+lock as ν → 0.5: Griffiths & Lane Ex 4 (undrained, D = 2) gives 1.419 at
+ν = 0.30, 0.49, 0.495, 0.499 and 0.4999 alike (published 1.47; limit
+equilibrium 1.486). The +19–26 % once recorded at ν = 0.49 came from the
+soil-filled notch. A B-bar (mean-dilatation, T6/P0) variant was built and
+measured: it lowered collapse loads 7–12 % below the standard element and
+the published values (Ex 4 1.33; Prandtl Nc 4.52 against 5.14), so it was
+not adopted.
 
 Validated against Griffiths & Lane (1999) and Bishop results from
 the slope_stability module.
@@ -117,9 +181,10 @@ returns a `MeshRefinementResult` (per-mesh FOS table + successive changes,
 `converged` flag, and a Richardson-extrapolated mesh-independent FOS when the
 finest three levels settle monotonically). It only drives the existing SRM at
 several densities — no algorithm/default change. Used to demonstrate that the FE
-FOS is mesh-converged and consistent with the limit-equilibrium answer (GL99
-Ex1 stays banded near the published 1.4; the shared-geometry Bishop cross-check
-converges monotonically toward the LE value with refinement). Convergence tables:
+FOS is mesh-converged and consistent with the limit-equilibrium answer (since
+2026-10-14 GL99 Ex1 gives 1.331 on every mesh and the shared-geometry Bishop
+cross-check 1.156-1.169 against LE 1.173; the "monotonic convergence toward
+LE" seen before was the soil-filled notch thinning out). Convergence tables:
 `VALIDATION.md` §7.
 
 ### Pore Water Pressures and Effective Stress
@@ -263,7 +328,8 @@ forward between phases.
 - `active_beam_ids`: beam indices to include (None = no beams)
 - `surface_loads`: list of (edges, qx, qy) tractions
 - `gwt`: groundwater table (float, polyline, or None)
-- `n_steps`: gravity load increments
+- `n_steps`: load increments for the phase (honoured since 2026-10-14;
+  see "Delta gravity loading")
 - `reset_displacements`: report this phase's (and later phases') movement from
   the START of this phase — PLAXIS "reset displacements to zero". Reporting
   only; the solver state is untouched (see "Movements per stage")
@@ -293,9 +359,17 @@ forward between phases.
   solver re-converge to the same total displacement
 
 **Delta gravity loading**:
-- Each phase applies full gravity for its active elements from scratch
-  (with `u_init` given, `solve_nonlinear` applies a phase in one step), with
-  initial state from previous phase
+- Each phase applies full gravity for its active elements from scratch,
+  with initial state from previous phase. The phase's out-of-balance load
+  is ramped over `n_steps`: from the internal force of the state it starts
+  from (the load that state is in equilibrium with, on this phase's active
+  elements and members) to the phase's full load, `F_start + λ (F_ext −
+  F_start)`. Before 2026-10-14 `solve_nonlinear` applied any phase with a
+  `u_init` in ONE step whatever `n_steps` said (the first phase too), so a
+  plastic stage gave the one-step answer, or none: a strip footing loaded
+  to 360 kPa on c' 20 kPa, φ' 25° soil does not converge in one step and
+  settles 68 mm in ten (`test_staged.py::TestStageLoadSteps`). An elastic
+  phase is unaffected (linear)
 - Newly activated elements start contributing gravity in their phase, and are
   placed STRESS-FREE on the deformed mesh: zero stress, strain initialized to
   B·u at activation, fresh HS state (since 2026-10-09; before, a fill's strain

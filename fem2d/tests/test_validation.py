@@ -95,18 +95,21 @@ def _ex4_run(ratio, nu, tol=0.02):
 @pytest.mark.slow
 class TestGriffithsLaneExample4:
 
-    def test_homogeneous_taylor_bracketed(self):
-        """cu2/cu1 = 1, published 1.47 (Taylor). The undrained
-        (incompressible) case is the formulation's weak spot: nu=0.49
-        locks high (+~25%), nu=0.30 yields out-of-plane early (-~10%).
-        The published value must be BRACKETED (VALIDATION.md sec 2).
-        """
+    def test_homogeneous_taylor_no_volumetric_locking(self):
+        """cu2/cu1 = 1, published 1.47 (Taylor); limit equilibrium
+        (slope_stability search) 1.486. nu = 0.30 and nu = 0.49 give the
+        same FOS (1.419 at 40x16, -3.5 %): the T6 strength-reduction FOS
+        does not lock as nu -> 0.5 (1.419 up to nu = 0.4999). The
+        +19-26 % recorded at nu = 0.49 before 2026-10-14 came from the
+        soil-filled notch the slope mesher left above the slope face, the
+        -11 % at nu = 0.30 from stalled iterations read as collapse
+        (VALIDATION.md sec 2)."""
         lo = _ex4_run(1.0, 0.30)['FOS']
         hi = _ex4_run(1.0, 0.49)['FOS']
         print(f"\n  GL99 Ex4 ratio 1.0: nu=0.30 -> {lo:.3f}, "
               f"nu=0.49 -> {hi:.3f} (published 1.47)")
-        assert lo - 0.05 <= 1.47 <= hi + 0.05
-        assert 1.0 < lo < hi < 2.1
+        assert abs(hi - lo) < 0.03
+        assert 1.38 <= lo <= 1.52 and 1.38 <= hi <= 1.52
 
     def test_strong_foundation(self):
         """cu2/cu1 = 2: toe circle, published ~2.1 (nu=0.30 run)."""
@@ -215,7 +218,7 @@ class TestBishopCrossCheck:
             element_type='t6')
 
         print(f"\n  Bishop={bishop:.3f}  SRM T6={srm.FOS:.3f}")
-        # SRM sits above Bishop at this density and refines toward it
-        # (1.419 @ 40x20, 1.306 @ 56x24 vs Bishop 1.173 — VALIDATION.md)
-        assert srm.FOS >= bishop - 0.05
-        assert (srm.FOS - bishop) / bishop < 0.30
+        # 1.156 at 40x20 and 56x24 vs Bishop 1.173 (VALIDATION.md sec 0, 6).
+        # Before 2026-10-14 (soil-filled notch above the slope): 1.419 and
+        # 1.306, +21 % and +11 %.
+        assert abs(srm.FOS - bishop) / bishop < 0.05

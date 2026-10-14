@@ -138,7 +138,8 @@ def _run_analyze_slope_srm(params: dict) -> dict:
     _valid = ("surface_points", "soil_layers", "nx", "ny", "srf_tol",
               "n_load_steps", "t", "gamma_w", "max_iter", "tol",
               "element_type", "srm_field", "blowup_factor", "srf_range",
-              "n_gp", "depth", "x_extend", "gwt", "layer_polylines")
+              "n_gp", "depth", "x_extend", "gwt", "layer_polylines",
+              "mesh_check")
     reject_unknown_params(params, _valid, method="fem2d_slope_srm")
     require_params(params, ["surface_points", "soil_layers"],
                    method="fem2d_slope_srm", valid=_valid)
@@ -178,6 +179,7 @@ def _run_analyze_slope_srm(params: dict) -> dict:
         blowup_factor=params.get("blowup_factor", 15.0),
         srf_range=tuple(params.get("srf_range", (0.5, 3.0))),
         n_gp=int(n_gp) if n_gp is not None else None,
+        mesh_check=bool(params.get("mesh_check", False)),
     )
     if "depth" in params:
         kwargs["depth"] = params["depth"]
@@ -192,6 +194,8 @@ def _run_analyze_slope_srm(params: dict) -> dict:
     out = clean_result(result.to_dict())
     out["fos_basis"] = getattr(result, "fos_basis", None)
     out["n_srf_trials"] = getattr(result, "n_srf_trials", None)
+    if getattr(result, "mesh_check", None):
+        out["mesh_check"] = result.mesh_check
     curve = getattr(result, "srf_curve", None)
     if curve is not None:
         srf, dim = curve
@@ -245,6 +249,7 @@ def _run_analyze_local_fos(params: dict) -> dict:
     out["FOS"] = result.FOS
     out["fos_basis"] = getattr(result, "fos_basis", None)
     out["converged"] = result.converged
+    out["warnings"] = list(result.warnings)
     return clean_result(out)
 
 
@@ -531,8 +536,9 @@ METHOD_INFO = {
             "depth": {"type": "float", "required": False, "description": "Depth below lowest surface (m). Default 2*H."},
             "nx": {"type": "int", "required": False, "default": 30, "description": "Mesh divisions in x."},
             "ny": {"type": "int", "required": False, "default": 15, "description": "Mesh divisions in y."},
-            "x_extend": {"type": "float", "required": False, "description": "Horizontal extension (m). Default 2*width."},
+            "x_extend": {"type": "float", "required": False, "description": "Horizontal margin (m), 30 % added on each side. Default max(0.5*H, depth, 5). Pass 0 when the profile already has margins."},
             "srf_tol": {"type": "float", "required": False, "default": 0.02, "description": "SRF bisection tolerance (0.01 for benchmark-grade runs)."},
+            "mesh_check": {"type": "bool", "required": False, "default": False, "description": "Also run a mesh 1.5x finer each way and report both FOS (mesh_check), warning when they differ by more than 5 %. About 3x the run time."},
             "gwt": {"type": "float|array", "required": False, "description": "Groundwater table: float elevation, or [[x,y],...] polyline."},
             "element_type": {"type": "str", "required": False, "default": "t6", "allowed_values": ["t6", "cst"], "description": "Soil element. t6 (quadratic, recommended): collapse loads within a few % of published benchmarks. cst locks (overpredicts FOS) - elastic work only."},
             "srm_field": {"type": "str", "required": False, "default": "c_phi", "allowed_values": ["c_phi", "c", "phi"], "description": "Strengths reduced by the SRF: both (default), cohesion only, or friction only."},
@@ -549,6 +555,8 @@ METHOD_INFO = {
             "srf_curve": "SRF vs dimensionless displacement E*dmax/(gamma*H^2) for converged trials (plotting / failure-onset review).",
             "max_displacement_m": "Maximum displacement at the last stable SRF.",
             "converged": "Whether SRM bracketing succeeded.",
+            "warnings": "Plain-language cautions: slope covered by too few elements, search range that did not bracket failure, finer mesh that disagrees.",
+            "mesh_check": "With mesh_check: {mesh, FOS, finer_mesh, FOS_finer_mesh, change_pct}.",
         },
     },
     "fem2d_local_fos": {

@@ -257,6 +257,137 @@ def analyze_footing_capacity(B, c, phi=0.0, gamma=0.0, E=1e5, nu=0.3, psi=0.0,
     return result
 
 
+# Elements across the slope height below which the strength-reduction FOS
+# moved by more than ~2 % against a finer mesh (VALIDATION.md section 7:
+# +2.7 % at 3 elements; within 1.7 % at 4.6 and more).
+_SRM_MIN_ELEMENTS_ACROSS_SLOPE = 4
+_SRM_MESH_CHECK_TOL_PCT = 5.0
+# At or below this cohesion a slope face is treated as cohesionless (a
+# larger c' makes a thin slide parallel to the face stronger than
+# tan(phi')/tan(beta)).
+_COHESIONLESS_C_KPA = 0.5
+
+
+def _element_size(corners):
+    """Per element: the side of the square two such triangles would make,
+    sqrt(2 * area)."""
+    x, y = corners[:, :, 0], corners[:, :, 1]
+    area = 0.5 * np.abs((x[:, 1] - x[:, 0]) * (y[:, 2] - y[:, 0])
+                        - (x[:, 2] - x[:, 0]) * (y[:, 1] - y[:, 0]))
+    return np.sqrt(2.0 * area)
+
+
+def _layer_warnings(nodes, elements, layer_ids, soil_layers, z_top, z_bottom,
+                    elevation_layers):
+    """A soil layer with no elements, or thinner than the elements there, is
+    lost or reduced to a jagged band (elements take the layer of their
+    centroid)."""
+    warnings = []
+    corners = nodes[np.asarray(elements)[:, :3]]
+    size = _element_size(corners)
+    # elements below the last bottom take the last layer
+    ids = np.minimum(np.asarray(layer_ids), len(soil_layers) - 1)
+    top = z_top
+    for i, sl in enumerate(soil_layers):
+        name = sl.get('name', f'layer {i}')
+        mine = ids == i
+        if elevation_layers:
+            bottom = (z_bottom if i == len(soil_layers) - 1
+                      else max(sl['bottom_elevation'], z_bottom))
+            thick = top - bottom
+            top = min(top, sl['bottom_elevation'])
+            if thick <= 0:
+                continue
+        if not np.any(mine):
+            warnings.append(
+                f"Soil layer {name!r} has no elements: it is thinner than "
+                "the mesh there, so the model leaves it out. Refine ny "
+                "(more rows) until the layer is two elements thick.")
+            continue
+        if elevation_layers:
+            h = float(np.median(size[mine]))
+            if thick < h:
+                warnings.append(
+                    f"Soil layer {name!r} is {thick:.2f} m thick but the "
+                    f"elements in it are about {h:.1f} m across: it is "
+                    "modelled as a jagged band of whole elements, and a "
+                    "failure along it is poorly represented. Refine ny until "
+                    "the layer is two elements thick.")
+    return warnings
+
+
+def _cohesionless_face_warnings(surf, soil_layers, fos):
+    """c' ~ 0 at a dry slope face: the critical slide is a shallow one
+    parallel to the face, FOS = tan(phi') / tan(beta) (infinite slope). A
+    mesh captures it only with small elements at the face, so a
+    strength-reduction FOS above it is too high (Duncan Ex 2, c' 0.1 kPa,
+    phi' 40 deg, 2:1: 1.81 / 1.74 / 1.71 on 15x8 / 30x15 / 45x24 against
+    1.68)."""
+    if fos is None:
+        return []
+    bottoms = [sl['bottom_elevation'] for sl in soil_layers]
+    worst = None
+    for (x0, z0), (x1, z1) in zip(surf[:-1], surf[1:]):
+        if x1 == x0 or z1 == z0:
+            continue
+        beta = math.atan(abs(z1 - z0) / abs(x1 - x0))
+        zm = 0.5 * (z0 + z1)
+        idx = min(sum(zm < b for b in bottoms), len(soil_layers) - 1)
+        sl = soil_layers[idx]
+        c, phi = sl.get('c', 0.0), sl.get('phi', 0.0)
+        if c > _COHESIONLESS_C_KPA or phi <= 0:
+            continue
+        f_inf = math.tan(math.radians(phi)) / math.tan(beta)
+        if worst is None or f_inf < worst[0]:
+            worst = (f_inf, math.degrees(beta), sl, c, phi)
+    if worst is None or fos <= 1.02 * worst[0]:
+        return []
+    f_inf, beta_deg, sl, c, phi = worst
+    return [
+        f"The soil at the slope face ({sl.get('name', 'surface layer')!r}, "
+        f"c' = {c:g} kPa, phi' = {phi:g} deg) is cohesionless: the critical "
+        "slide there is shallow and parallel to the face, with factor of "
+        f"safety tan(phi')/tan(beta) = {f_inf:.2f} on the {beta_deg:.1f} deg "
+        f"face (infinite slope, dry). The strength-reduction FOS {fos:.2f} "
+        "is higher because the elements at the face are too large to "
+        f"capture that slide: refine the mesh at the face, or take "
+        f"{f_inf:.2f}."]
+
+
+def _srm_warnings(nodes, elements, z_toe, H, srm_result, srf_range):
+    """Plain-language warnings for a strength-reduction result."""
+    warnings = []
+    corners = nodes[np.asarray(elements)[:, :3]]
+    if H > 0:
+        size = _element_size(corners)
+        above_toe = corners[:, :, 1].mean(axis=1) > z_toe
+        if np.any(above_toe):
+            h = float(np.median(size[above_toe]))
+            n_across = H / h
+            if n_across < _SRM_MIN_ELEMENTS_ACROSS_SLOPE:
+                warnings.append(
+                    f"The elements on the slope are about {h:.1f} m across, "
+                    f"so only {n_across:.1f} of them span the {H:.1f} m "
+                    "height from toe to crest. With fewer than "
+                    f"{_SRM_MIN_ELEMENTS_ACROSS_SLOPE} the strength-reduction "
+                    "factor of safety can depend on the mesh: refine nx and "
+                    "ny, or pass mesh_check=True to compare with a finer "
+                    "mesh.")
+    basis = srm_result.get('fos_basis')
+    lo, hi = srf_range
+    if basis == 'range_exhausted':
+        warnings.append(
+            f"The slope did not fail at any strength reduction factor up to "
+            f"{hi}: the factor of safety is at least {hi}. Raise srf_range "
+            "to find it.")
+    elif not srm_result.get('converged', True):
+        warnings.append(
+            f"The slope already fails at the lowest strength reduction "
+            f"factor tried ({lo}): the factor of safety is below {lo}. Lower "
+            "srf_range to find it.")
+    return warnings
+
+
 def analyze_slope_srm(surface_points, soil_layers, depth=None,
                       nx=30, ny=15, x_extend=None,
                       srf_tol=0.02, n_load_steps=2, t=1.0,
@@ -266,7 +397,8 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
                       element_type='t6', srm_field='c_phi',
                       blowup_factor=15.0, srf_range=(0.5, 3.0),
                       n_gp=None, nr_method='elastic', nr_fallback=False,
-                      compute_local_fos=False, local_fos_cap=10.0):
+                      compute_local_fos=False, local_fos_cap=10.0,
+                      settled_ratio=0.1, mesh_check=False):
     """Slope stability FOS via Strength Reduction Method.
 
     Parameters
@@ -278,8 +410,9 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
     depth : float, optional — depth below lowest surface. Default 2×H.
     nx, ny : int — mesh density.
     x_extend : float, optional — extra flat margin added to BOTH sides
-        (0.3x each). Default max(0.5*H, 5). Pass 0 when the profile
-        already includes adequate crest/toe margins (recommended).
+        (0.3x each). Default max(0.5*H, depth, 5). Pass 0 when the
+        profile already includes adequate crest/toe margins
+        (recommended).
     srf_tol : float — SRF bisection tolerance.
     n_load_steps : int — gravity increments.
     t : float
@@ -293,15 +426,34 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
         SRF). None = pure non-convergence criterion (Griffiths & Lane).
     srf_range : (float, float) — SRF search range.
     n_gp : int, optional — T6 Gauss rule override (3 or 6).
+    settled_ratio : float or None — a trial that reaches the iteration
+        ceiling still counts as stable when its displacements have stopped
+        moving (see `strength_reduction`). Default 0.1.
+    mesh_check : bool — also run the analysis on a mesh 1.5 times finer
+        in each direction and report both factors of safety
+        (``result.mesh_check``), with a warning when they differ by more
+        than 5 %. Roughly triples the run time. Default False.
 
     Returns
     -------
-    FEMResult with FOS, srf_history, srf_curve, fos_basis
+    FEMResult with FOS, srf_history, srf_curve, fos_basis, warnings
+    (plain-language: a slope covered by too few elements, a soil layer
+    with no elements or thinner than its elements, a cohesionless dry face
+    whose FOS came out above tan(phi')/tan(beta), a search range that did
+    not bracket failure, a finer mesh that disagrees) and, with
+    mesh_check, ``mesh_check``.
     """
     surf = np.array(surface_points)
     z_min_surf = surf[:, 1].min()
     z_max_surf = surf[:, 1].max()
     H = z_max_surf - z_min_surf
+    for sl in soil_layers:
+        nu_l = sl.get('nu', 0.3)
+        if not -1.0 < nu_l < 0.5:
+            raise ValueError(
+                f"soil layer {sl.get('name', '?')!r}: Poisson's ratio "
+                f"{nu_l} must be below 0.5 (use 0.49 to 0.499 for "
+                "undrained behaviour)")
 
     if depth is None:
         depth = max(2.0 * H, 10.0)
@@ -362,7 +514,8 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
         max_nr_iter=max_iter, nr_tol=tol,
         pore_pressures=pp, srm_field=srm_field,
         blowup_factor=blowup_factor, srf_range=srf_range, n_gp=n_gp,
-        h_ref=H, nr_method=nr_method, nr_fallback=nr_fallback)
+        h_ref=H, nr_method=nr_method, nr_fallback=nr_fallback,
+        settled_ratio=settled_ratio)
 
     result = _build_result(
         nodes, elements, srm_result['u_failure'],
@@ -375,6 +528,36 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
     result.srf_curve = srm_result.get('srf_curve')
     result.fos_basis = srm_result.get('fos_basis')
     result.plastic_points = srm_result.get('plastic_gp')
+    result.warnings.extend(_srm_warnings(
+        nodes, elements, z_min_surf, H, srm_result, srf_range))
+    result.warnings.extend(_layer_warnings(
+        nodes, elements, layer_ids, soil_layers, z_max_surf,
+        float(nodes[:, 1].min()), elevation_layers=not layer_polylines))
+    if gwt is None and not layer_polylines:
+        result.warnings.extend(_cohesionless_face_warnings(
+            [tuple(p) for p in surf], soil_layers, result.FOS))
+    if mesh_check:
+        nx2, ny2 = int(math.ceil(1.5 * nx)), int(math.ceil(1.5 * ny))
+        fine = analyze_slope_srm(
+            surface_points, soil_layers, depth=depth, nx=nx2, ny=ny2,
+            x_extend=x_extend, srf_tol=srf_tol, n_load_steps=n_load_steps,
+            t=t, gwt=gwt, gamma_w=gamma_w, max_iter=max_iter, tol=tol,
+            layer_polylines=layer_polylines, element_type=element_type,
+            srm_field=srm_field, blowup_factor=blowup_factor,
+            srf_range=srf_range, n_gp=n_gp, nr_method=nr_method,
+            nr_fallback=nr_fallback, settled_ratio=settled_ratio)
+        change = (fine.FOS - result.FOS) / result.FOS * 100.0
+        result.mesh_check = {
+            'mesh': f"{nx}x{ny}", 'FOS': result.FOS,
+            'finer_mesh': f"{nx2}x{ny2}", 'FOS_finer_mesh': fine.FOS,
+            'change_pct': round(change, 1),
+        }
+        if abs(change) > _SRM_MESH_CHECK_TOL_PCT:
+            result.warnings.append(
+                f"Factor of safety {result.FOS:.2f} on the {nx}x{ny} mesh "
+                f"but {fine.FOS:.2f} on {nx2}x{ny2} ({change:+.0f} %): the "
+                "answer depends on the mesh. Refine until two meshes agree "
+                "(srm_mesh_refinement_study runs a sequence).")
     if compute_local_fos:
         # Local FOS at the critical-SRF stress field, evaluated with the
         # ORIGINAL (un-reduced) strengths: the low-FOS band traces the slip

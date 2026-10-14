@@ -480,6 +480,37 @@ class TestGenerateSlopeMesh:
         for elem in elements:
             assert len(elem) == 3
 
+    @pytest.mark.parametrize("surface, xe", [
+        ([(-20, 0), (0, 0), (20, 10), (40, 10)], 6.0),      # toe left
+        ([(0, 10), (12, 10), (32, 0), (44, 0)], 0.0),       # crest left
+        ([(0, 0), (10, 0), (20, 5), (26, 5), (36, 10), (50, 10)], 3.0),
+    ])
+    def test_mesh_covers_only_the_soil(self, surface, xe):
+        """Delaunay fills the convex hull of the points; the triangles in
+        the notch above the toe and the slope face are air and must go.
+        Before 2026-10-14 they were kept as soil (a buttress propping the
+        face: 130 m2 on a 1,800 m2 section, every SRM FOS too high)."""
+        from fem2d.mesh import generate_slope_mesh, points_in_polygon
+        depth = 10.0
+        nodes, elements = generate_slope_mesh(
+            surface, depth=depth, nx=30, ny=12,
+            x_extend_left=xe, x_extend_right=xe)
+        s = np.array(surface, dtype=float)
+        x0, x1 = s[0, 0] - xe, s[-1, 0] + xe
+        y_min = s[:, 1].min() - depth
+        xs = np.linspace(x0, x1, 20001)
+        section = np.trapezoid(np.interp(xs, s[:, 0], s[:, 1]) - y_min, xs)
+        P = nodes[elements]
+        area = 0.5 * np.abs((P[:, 1, 0] - P[:, 0, 0]) * (P[:, 2, 1] - P[:, 0, 1])
+                            - (P[:, 2, 0] - P[:, 0, 0]) * (P[:, 1, 1] - P[:, 0, 1]))
+        assert area.sum() == pytest.approx(section, rel=1e-9)
+        poly = np.vstack([[x0, y_min], [x0, s[0, 1]], s,
+                          [x1, s[-1, 1]], [x1, y_min]])
+        assert points_in_polygon(P.mean(axis=1), poly).all()
+        used = np.zeros(len(nodes), dtype=bool)
+        used[elements.ravel()] = True
+        assert used.all()
+
 
 class TestGeneratePolygonMesh:
     def test_square_domain(self):

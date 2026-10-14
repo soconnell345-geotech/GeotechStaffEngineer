@@ -457,9 +457,10 @@ def _movement_rows(label, m):
 
 
 def _judgment_item(judgment):
-    """The reference-stage judgment as a table (option, basis, result)."""
+    """The reference-stage choice as a table (option, basis, result),
+    titled by the question it answers."""
     return TableData(
-        title="Judgment: " + judgment["question"],
+        title=judgment["question"],
         headers=["Option", "Assumes", "Result", "Used"],
         rows=[[o["name"], o["assumptions"], o["result"],
                "yes" if o["name"] == judgment["used"] else ""]

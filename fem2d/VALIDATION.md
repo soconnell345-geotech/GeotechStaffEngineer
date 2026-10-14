@@ -7,12 +7,89 @@ sigma_zz), and Griffiths-Lane-grade Strength Reduction Method.
 Method for all SRM rows: constant-stiffness (initial stiffness)
 iteration — the elastic global stiffness is factorized once and shared
 by every SRF trial; residual tolerance 1e-5, iteration ceiling 1000 per
-load step, 2 gravity steps, psi = 0. Failure = non-convergence
-(Griffiths & Lane 1999); bisection to the stated tolerance.
+load step, 2 gravity steps, psi = 0. Failure = non-convergence with the
+displacements still moving (Griffiths & Lane 1999: "accompanied by a
+dramatic increase in the nodal displacements"); a trial that reaches the
+ceiling with its displacements standing still is stable (`settled_ratio`
+0.1, since 2026-10-14); bisection to the stated tolerance.
 Reproduction: `fem2d/tests/test_validation.py` (`-m slow`) runs the
 starred (*) rows with documented assertion bands.
 
 ---
+
+## 0. 2026-10-14: two defects in every strength-reduction FOS before this date (BACKLOG GM-05, GM-06)
+
+Two defects, found while reproducing a live run (a 10 m 2:1 slope,
+c' = 15 kPa, phi' = 25 deg, gamma = 19, 20 m below the toe, E 50 MPa,
+nu 0.3: FOS 1.80 on 40x20 but 1.147 on 60x30, `warnings: []`; limit
+equilibrium with slope_stability's search: Bishop **1.887**, Spencer
+**1.883**):
+
+1. **The slope mesher filled the notch above the slope with soil.**
+   `generate_slope_mesh` Delaunay-triangulates columns of nodes and kept
+   every triangle of the convex hull, so the region between the toe ground
+   and the slope face (air) was meshed with a fan of slivers (minimum
+   angles 0.1-0.9 deg) carrying weight, stiffness and strength — a buttress
+   propping the face against the toe ground. Extra soil: 130 m2 on that
+   slope's 1,800 m2 section; 60 m2 on Griffiths & Lane Ex 1's 242 m2 (25 %);
+   50 m2 on the ACADS 1(a) and Bishop cross-check sections; 120 m2 on Ex 4.
+   With the buttress the discrete model held equilibrium far above the real
+   FOS: Ex 1 32x12 still converged at SRF 1.6 (published 1.4), and the slope
+   above returned FOS 3.0 (never failed) on the default 30x15 mesh. Fixed:
+   triangles whose centroid lies outside the section are dropped (element
+   area now equals the section area to round-off, `test_fem2d.py`).
+2. **A stalled residual was read as collapse.** In 1000 constant-stiffness
+   iterations the residual can stall near 1e-4 while the displacements
+   stand still (|du| ~ 1e-9 m per iteration): Gauss points near the apex or
+   edges of the Mohr-Coulomb surface switching return region back and
+   forth, and slow convergence where a large region yields — under level
+   ground the gravity stress state (K0 = nu/(1-nu) = 0.43 at nu = 0.3)
+   violates the reduced strength once sin(phi_red) < 1 - 2 nu (Zheng, Liu &
+   Li 2005), so the whole far field yields. Such trials counted as failure,
+   the stall comes sooner on finer meshes, and the FOS fell with refinement
+   (the slope above: 1.80 → 1.15; ACADS 1(a): 0.934 → 0.80) while the
+   buttress pushed coarse meshes up. Fixed: failure needs the displacements
+   to keep moving — over the second half of the iterations the largest
+   nodal displacement change must be at least 0.1 of the change over the
+   first half (a mechanism slides at a near-constant rate per iteration,
+   ratio ~1; a stalled residual leaves 0.00-0.02), or the residual must
+   still be above 1e-2 and no longer falling. (Slow convergence can leave
+   it above 1e-2 after 1000 iterations: Ex 4, nu 0.30, 56x24 at SRF 1.2 —
+   1.3e-2 and falling, growth ratio 0.04 — converges given 3,200.)
+
+| Case (reference) | Mesh | FOS before | FOS after | after vs reference |
+|---|---|---|---|---|
+| 10 m 2:1, c' 15, phi' 25 (LE Bishop 1.887 / Spencer 1.883) | 20x10 | — | 1.934 | +2.5 % |
+| | 30x15 (adapter default) | **3.000** (never failed) | 1.909 | +1.2 % |
+| | 40x20 | 1.803 | 1.897 | +0.5 % |
+| | 60x30 | **1.147** | 1.884 | −0.2 % |
+| | 80x40, 6-pt | 1.134 | — | |
+| GL99 Ex 1 (published FE 1.4; LE 1.368, B&M 1.380) | 16x6 | — | 1.344 | −4.0 % |
+| | 32x12 * | 1.341 | 1.331 | −4.9 % |
+| | 48x16 | 1.366 | 1.331 | −4.9 % |
+| | 64x20 | 1.456 | 1.331 | −4.9 % |
+| ACADS 1(a) (published 1.00; LE 0.985) | 30x15 | — | 0.965 | −3.5 % |
+| | 40x16 | — | 0.957 | −4.3 % |
+| | 56x20 | 0.934 | 0.949 | −5.1 % |
+| | 72x24 | **0.80** | 0.949 | −5.1 % |
+| Bishop cross-check §6 (LE 1.173) | 20x10 | — | 1.169 | −0.3 % |
+| | 40x20 * | 1.419 | 1.156 | −1.4 % |
+| | 56x24 | 1.306 | 1.156 | −1.4 % |
+| GL99 Ex 4, cu2/cu1 = 1 (Taylor 1.47; LE 1.486) nu 0.30 | 40x16 | 1.306 | 1.419 | −3.5 % |
+| nu 0.30 | 56x24 | 1.244 | 1.406 | −4.4 % |
+| nu 0.49 | 40x16 | **1.853** | 1.419 | −3.5 % |
+| nu 0.49 | 56x24 | 1.756 | 1.406 | −4.4 % |
+
+"vs reference" is against the published value where there is one (GL99,
+ACADS, Taylor), else limit equilibrium. The FOS now varies by at most
+1.7 % between the coarsest and finest mesh on each benchmark once the
+slope is spanned by 4 or more elements (2.7 % at 3), and lies between
++2.5 % and −5.4 % of our limit-equilibrium search (below it on every
+fine mesh, as a non-associated psi = 0 strength reduction should). `analyze_slope_srm` warns in plain
+words when the slope is spanned by fewer than 4 elements, when a soil
+layer has no elements or is thinner than its elements, and when the
+search range does not bracket failure; `mesh_check=True` runs a mesh 1.5x
+finer and warns when the two differ by more than 5 %.
 
 ## 1. Griffiths & Lane (1999) Example 1 — homogeneous 2:1 slope
 
@@ -22,53 +99,66 @@ kN/m3), psi = 0, E' = 1e5 kPa, nu' = 0.3, D = 1 (firm base just below
 toe; modeled with a 0.5 m base layer). Published: **FE FOS = 1.4**
 (GL99), **Bishop & Morgenstern 1.380**. Bisection tol 0.01.
 
+Since 2026-10-14 (corrected mesher and failure criterion, §0); the
+numbers before are in §0 and in git history.
+
 | Element | Mesh | Elements | FOS | vs published 1.4 |
 |---|---|---|---|---|
-| T6 (3-pt) * | 32x12, D=1 | 794 | **1.341** | -4.2% |
-| T6 (3-pt) | 48x16, D=1 | 1573 | **1.366** | -2.4% |
-| T6 (3-pt) | 48x24, D=1.5 | 2341 | **1.341** | -4.2% — GL99 Ex2 invariance (FOS unchanged when a foundation layer is added) reproduced |
-| T6 (3-pt) | 32x12, D=1.5 | 794 | 1.866 | +33% — UNDER-REFINED deep domain; refine ny for D > 1 |
-| CST | any D=1 mesh | — | no result | fails to converge even at SRF 0.5 — sliver triangles from the column mesher on thin base layers |
-| CST | 12x6 small slope (tests) | 112 | caps the 3.0 search range | locking: cannot collapse |
+| T6 (3-pt) | 16x6, D=1 | 194 | **1.344** | -4.0% |
+| T6 (3-pt) | 24x8, D=1 | 386 | **1.331** | -4.9% |
+| T6 (3-pt) * | 32x12, D=1 | 770 | **1.331** | -4.9% |
+| T6 (3-pt) | 48x16, D=1 | 1538 | **1.331** | -4.9% |
+| T6 (3-pt) | 64x20, D=1 | 2562 | **1.331** | -4.9% |
+| T6 (3-pt) | 32x12, D=1.5 | 770 | **1.356** | -3.1% — GL99 Ex2 (FOS unchanged when a foundation layer is added) reproduced; was 1.866 (+33 %, written off as an under-refined deep domain: it was the soil-filled notch) |
+| T6 (3-pt) | 48x24, D=1.5 | 2306 | **1.344** | -4.0% |
+| CST | 32x12, D=1 | 770 | 1.431 | +2.2% — constant-strain triangles stiffer than T6 (+7.5 %); before 2026-10-14 no result at all (the air slivers kept it from converging even at SRF 0.5) |
+| CST | 12x6 small slope (tests) | — | — | locking: do not use CST for collapse (§3) |
 
 SRF vs dimensionless displacement E' delta_max/(gamma H^2), T6 32x12
 D=1 (*), against GL99 Table 2:
 
 | SRF | GL99 published | fem2d T6 |
 |---|---|---|
-| 0.8-1.0 | 0.379-0.381 | 0.417 |
-| 1.2 | 0.422 | 0.455 |
-| 1.3 | 0.453 | 0.479 |
-| 1.4 | 1.476 (no convergence) | no convergence at ~1.35 |
+| 0.8-1.0 | 0.379-0.381 | 0.421 |
+| 1.2 | 0.422 | 0.482 |
+| 1.3 | 0.453 | 0.553 |
+| 1.325 | — | 0.635 (last stable) |
+| 1.35 | 0.544 | no convergence (flowing) |
+| 1.4 | 1.476 (no convergence) | no convergence |
 
 Curve shape (flat, then knee just below failure) reproduces the paper;
-the ~9% level offset is the 0.5 m base-layer settlement plus T6-vs-Q8
-discretization.
+the ~10% level offset is the 0.5 m base-layer settlement plus T6-vs-Q8
+discretization, and the knee comes about 0.05 earlier (FOS 1.331 against
+1.4).
 
 ## 2. Griffiths & Lane (1999) Example 4 — undrained two-layer, D=2
 
 2:1 slope, H = 10 m, phi_u = 0, slope soil cu1/(gamma H) = 0.25 (cu1 =
 50 kPa); foundation to D = 2 (10 m below toe), strength cu2. Published:
 cu2/cu1 = 1: **1.47** (Taylor); >= 1.5: plateau **~2.1** (toe circle).
-T6 40x16 (1314 elem) unless noted, tol 0.02.
+Limit equilibrium (slope_stability, circles, cu2/cu1 = 1): 1.486.
+T6 40x16 (1282 elem) unless noted, tol 0.02; 2026-10-14 values (§0),
+the earlier ones in brackets.
 
 | cu2/cu1 | Published | T6, nu = 0.49 | T6, nu = 0.30 |
 |---|---|---|---|
-| 0.6 | (weak foundation, deep wedge) | — | 0.883 |
-| 1.0 * | **1.47** | 1.853 (+26%); 1.756 @ 56x24 (+19%) | 1.306 (-11%); 1.244 @ 56x24 (-15%) |
-| 1.5 | ~2.0-2.1 | — | 1.819 |
-| 2.0 | **~2.1** (plateau) | range-capped at 3.0 | 2.319 (+10%, plateau not fully captured) |
+| 0.6 | (weak foundation, deep wedge) | — | 0.914 [0.883] |
+| 1.0 * | **1.47** | **1.419** (-3.5%) [1.853]; 1.406 @ 56x24 (-4.4%) [1.756] | **1.419** (-3.5%) [1.306]; 1.406 @ 56x24 (-4.4%) [1.244] |
+| 1.5 | ~2.0-2.1 | — | 2.019 [1.819] |
+| 2.0 | **~2.1** (plateau) | — [range-capped at 3.0] | 2.156 (+3%) [2.319] |
 
-Honest reading: the undrained (incompressible) case is the weakest spot
-of the T6/3-pt formulation. nu = 0.49 (standard undrained elasticity)
-locks the nearly-incompressible response and overpredicts ~20-25%;
-nu = 0.30 (GL99's nominal elastic constants) underpredicts 10-15%
-because elastic sigma_zz = nu(sxx+syy) leaves plane-strain Tresca
-yield activated out-of-plane earlier than the in-plane circle. The
-published value is bracketed (* the test asserts this bracket).
-Designed path: 15-node cubic-strain triangles or B-bar/selective
-reduced integration for the incompressible limit, and an undrained-A
-style szz treatment; tracked in UPGRADE_PLAN.md as future work.
+No volumetric locking: the FOS is the same at nu = 0.30, 0.49, 0.495,
+0.499 and 0.4999 (1.419 at 40x16), as it should be for a perfectly
+plastic collapse load. What was recorded here before — nu = 0.49 locking
+high by 20-25 % and nu = 0.30 low by 10-15 % "via out-of-plane Tresca
+yield", the published value bracketed between them — came from the
+soil-filled notch above the slope (high) and from stalled iterations read
+as collapse while the deep foundation yields under gravity at nu = 0.30
+(low; K0 = 0.43 under level ground exceeds the Tresca limit at depth).
+A B-bar (mean-dilatation T6/P0) variant was measured as the planned remedy
+and gave 1.33 here (Prandtl Nc 4.52 against 5.14): not adopted
+(UPGRADE_PLAN.md). (* the test asserts the two agree and lie within
+1.38-1.52.)
 
 ## 3. Prandtl bearing capacity — the element-quality centerpiece
 
@@ -192,6 +282,23 @@ with θ = 0.5 a ±5 kPa Crank–Nicolson ringing persists at the drained boundar
 long after U → 1 (max |excess| 4.96 kPa at Tv = 16; θ = 1 gives 0), so
 `max_excess_pore_pressure_kPa_by_time` carries it at late times.
 
+**Load steps within a stage (2026-10-14, BACKLOG GM-08).** Until then every
+stage — the first (gravity) stage too — was applied in ONE step whatever its
+`n_steps`. A stage now ramps its out-of-balance load over `n_steps`, from the
+load its starting state is in equilibrium with to the stage's full load.
+Checks (`fem2d/tests/test_staged.py::TestStageLoadSteps`, T6 16x8, footing
+B = 2 m on c' 20 kPa, φ' 25°, ψ 0, E 20 MPa, ν 0.3, γ 18):
+
+| Check | Reference | fem2d |
+|---|---|---|
+| 360 kPa footing stage, `n_steps` = 10 | the same load as 10 stages of 36 kPa (incremental by construction) | footing settlement within 0.1 %, every node within 0.1 % of max |u| |
+| same stage, `n_steps` = 1 (the old behaviour) | — | no equilibrium within 500 iterations (the stage reports non-convergence); 10 steps settle 68 mm |
+| plastic gravity stage, `n_steps` = 4 | `solve_nonlinear` with 4 steps, no initial state | identical to 1e-9 |
+| elastic stages, `n_steps` 1 vs 7 | linear | identical to 1e-8 |
+
+The elastic checks in the table above are unchanged (linear stages give the
+same answer in any number of steps).
+
 ## 6. Cross-check vs slope_stability Bishop (shared geometry)
 
 Shared profile [(0,0),(10,0),(30,10),(50,10)] (2:1, H = 10 m), c' = 10
@@ -199,20 +306,24 @@ kPa, phi' = 15 deg, gamma = 18 kN/m3, dry, 5 m foundation.
 slope_stability `search_critical_surface(method='bishop')` (read-only
 import) vs `analyze_slope_srm` with x_extend = 0:
 
-| Method | FOS |
-|---|---|
-| Bishop, critical-circle search | **1.173** |
-| SRM T6 40x20 * | 1.419 (+21%) |
-| SRM T6 56x24 | 1.306 (+11%, converging toward LE with refinement) |
-| SRM CST 40x20 | 1.706 (+45% — locking, same mesh as the T6 1.419 row) |
+| Method | FOS (2026-10-14) | before (§0) |
+|---|---|---|
+| Bishop, critical-circle search | **1.173** | |
+| Spencer, critical-circle search | 1.170 | |
+| SRM T6 20x10 | 1.169 (−0.3%) | — |
+| SRM T6 30x15 | 1.156 (−1.4%) | — |
+| SRM T6 40x20 * | **1.156** (−1.4%) | 1.419 (+21%) |
+| SRM T6 56x24 | 1.156 (−1.4%) | 1.306 (+11%, "converging toward LE") |
+| SRM CST 40x20 | 1.206 (+2.8%) | 1.706 (+45%) |
 
-Found while building this row: the old `analyze_slope_srm` default
-`x_extend = 2 x domain width` silently starved the slope face of
-elements at fixed nx — same mesh with the default extension returned
-FOS 2.24 (+91%). The default is now `max(0.5 H, 5 m)` and profiles with
-their own margins should pass `x_extend=0`. Orientation (crest-left vs
-crest-right) was verified to make no difference (mirrored geometry,
-identical FOS).
+The "convergence toward LE with refinement" recorded here before was the
+soil-filled notch being thinned out by finer meshes. Found while building
+this row (2026-06, before the §0 corrections): the old `analyze_slope_srm`
+default `x_extend = 2 x domain width` starved the slope face of elements at
+fixed nx (FOS 2.24 then; the default is now `max(0.5 H, depth, 5 m)` and
+profiles with their own margins should pass `x_extend=0`). Orientation
+(crest-left vs crest-right) was verified to make no difference (mirrored
+geometry, identical FOS).
 
 ## 7. SRM mesh-refinement (mesh-consistency) study — B2e
 
@@ -226,48 +337,70 @@ monotonic and settling (characteristic size `h ∝ 1/√elements`). It only driv
 the existing SRM at several densities — no algorithm or default changes. This
 makes the fem2d↔LE mesh-consistency check reproducible in one call.
 
-**Griffiths & Lane (1999) Example 1** (published FE **1.4**), T6, D=1 (0.5 m
-base sliver), `srf_tol` 0.02, `x_extend=0`:
+Re-measured 2026-10-14 after the §0 corrections (`srf_tol` 0.02); the
+values before are in brackets. "Across" is the number of elements spanning
+the slope height (the measure behind the coarse-mesh warning, which fires
+below 4).
 
-| Mesh | Elements | FOS | vs 1.4 |
-|---|---|---|---|
-| T6 24x10 | 500 | 1.381 | −1.4% |
-| T6 32x12 | 794 | 1.344 | −4.0% |
-| T6 40x16 | 1312 | 1.381 | −1.4% |
+**Griffiths & Lane (1999) Example 1** (published FE **1.4**; LE 1.368), T6,
+D=1, `x_extend=0`:
 
-Mesh-**consistent**: every density sits in a tight band 1.34–1.38 just below the
-published FE value (all within ~4%). Point-to-point convergence is **noisy**
-rather than strictly monotonic here — the D=1 column-mesher slivers under the toe
-(see Known limitations) inject ~±0.03 of discretization noise, comparable to the
-refinement trend — so no Richardson estimate is reported for this case
-(`fos_richardson is None`). No mesh runs away; the FOS is bounded near 1.4 at
-every density, which is the mesh-consistency the SRM FOS needs.
+| Mesh | Elements | Across | FOS | vs 1.4 |
+|---|---|---|---|---|
+| T6 16x6 | 194 | 4.8 | 1.344 | −4.0% |
+| T6 24x8 | 386 | 6.9 | 1.331 | −4.9% |
+| T6 32x12 | 770 | 9.9 | 1.331 [1.344] | −4.9% |
+| T6 40x16 | 1282 | — | 1.331 [1.381] | −4.9% |
+| T6 64x20 | 2562 | — | 1.331 [1.456] | −4.9% |
 
 **Shared-geometry Bishop cross-check** (§6 geometry; LE Bishop **1.173**), T6,
-5 m foundation (clean mesh), `srf_tol` 0.02, `x_extend=0`:
+5 m foundation, `x_extend=0`:
 
-| Mesh | Elements | FOS | vs LE 1.173 | step |
+| Mesh | Elements | Across | FOS | vs LE 1.173 |
 |---|---|---|---|---|
-| T6 24x12 | 593 | 1.531 | +30.5% | — |
-| T6 32x16 | 1046 | 1.456 | +24.1% | −4.9% |
-| T6 40x20 | 1623 | 1.419 | +21.0% | −2.5% |
+| T6 20x10 | 400 | 5.2 | 1.169 | −0.3% |
+| T6 24x12 | 578 | — | 1.169 [1.531] | −0.3% |
+| T6 32x16 | 1026 | — | 1.156 [1.456] | −1.4% |
+| T6 40x20 | 1600 | 10.3 | 1.156 [1.419] | −1.4% |
+| T6 56x24 | 2690 | — | 1.156 [1.306] | −1.4% |
 
-Here the mesh is clean (no base sliver) and the SRM FOS decreases
-**monotonically** toward the LE value with each refinement, the step shrinks
-(−4.9% → −2.5%, i.e. settling), and Richardson extrapolation gives a
-mesh-independent estimate **≈ 1.376** (observed order p ≈ 2.8). The finest 40x20
-value 1.419 matches the value recorded in §6. The residual offset above the LE
-1.173 at these densities is the expected SRM-vs-Bishop discretization gap
-(SRM sits above Bishop and refines toward it; deeper refinement — 56x24 → 1.306,
-§6 — continues the trend). Tests: `fem2d/tests/test_mesh_study.py`
-(`-m slow` for the two benchmark runs; the extrapolation math + bookkeeping are
-fast unit tests).
+**10 m 2:1 slope, c' 15 kPa, phi' 25 deg** (§0; LE Bishop 1.887), T6, 20 m
+foundation, 6 m margins:
 
-Note: the constant-stiffness SRM **failure-detection** mesh dependence on very
-low-c'/low-φ faces (ACADS 1a: stall point drifts down with refinement) is a
-**separate**, still-open tracked follow-up (`UPGRADE_PLAN.md` "SRM
-failure-detection mesh consistency") — the GL99 and cross-check meshes/strengths
-above do not stall, so they are unaffected.
+| Mesh | Elements | Across | FOS | vs LE |
+|---|---|---|---|---|
+| T6 20x10 | 404 | 3.0 (warns) | 1.934 | +2.5% |
+| T6 30x15 | 904 | 4.6 | 1.909 [3.000] | +1.2% |
+| T6 40x20 | 1604 | 6.1 | 1.897 [1.803] | +0.5% |
+| T6 60x30 | 3602 | — | 1.884 [1.147] | −0.2% |
+
+**ACADS 1(a)** (published 1.00; LE 0.985), T6, 5 m foundation:
+
+| Mesh | Elements | Across | FOS | vs 1.00 |
+|---|---|---|---|---|
+| T6 30x15 | 900 | 7.7 | 0.965 | −3.5% |
+| T6 40x16 | 1280 | 9.2 | 0.957 | −4.3% |
+| T6 56x20 | 2242 | 12.2 | 0.949 [0.934] | −5.1% |
+| T6 72x24 | 3458 | — | 0.949 [0.80] | −5.1% |
+
+Every benchmark is now mesh-consistent: the FOS moves by at most 1.7 %
+between its coarsest and finest mesh once 4 or more elements span the slope
+(2.7 % at 3 elements), against swings of 0.934 → 0.80, 1.80 → 1.15 and
+1.531 → 1.419 before. With no trend left, Richardson extrapolation has
+nothing to work on (`fos_richardson is None`); `converged` is True. The
+old "monotonic convergence toward LE" of the cross-check was the soil-filled
+notch being thinned out by refinement. Tests: `fem2d/tests/test_mesh_study.py`
+(`-m slow` for the two benchmark runs; the extrapolation math + bookkeeping
+are fast unit tests) and `test_srm_robustness.py::TestMeshConsistency`.
+
+**How a trial is judged** (`srf_history`: `settled`, `growth_ratio`,
+`final_residual`). Near the FOS the growth ratio — displacement change over
+the second half of a load step's iterations against the first half — rises
+steeply with the SRF; GL99 Ex1 32x12, every step run to the ceiling: 0.02
+at 1.300, 0.05 at 1.325 (stable), 0.12 at 1.338, 0.23 at 1.350, 0.62 at
+1.400 (failing). The 0.1 threshold therefore moves the FOS by about the
+bisection tolerance. A step accepted before the ceiling (displacements
+plainly standing still) records the upper bound it was accepted on.
 
 ## 8. Local factor-of-safety field (mobilized-strength map) — F5
 
@@ -284,14 +417,17 @@ ORIGINAL strengths on the critical-SRF stress field):
 
 | Case | c', phi' | global SRM FOS | min local FOS | min / global | frac < 1 |
 |---|---|---|---|---|---|
-| critical | 10 kPa, 20 deg | 1.344 | 1.303 | **0.97** | 0% |
-| stable   | 25 kPa, 25 deg | 2.156 | 1.994 | **0.93** | 0% |
+| critical | 10 kPa, 20 deg | 1.331 | 1.291 | **0.97** | 0% |
+| stable   | 25 kPa, 25 deg | 2.244 | 2.071 | **0.92** | 0% |
+
+(Re-measured 2026-10-14 after the §0 corrections; before: 1.344 / 1.303
+and 2.156 / 1.994.)
 
 The minimum local FOS tracks the global SRM factor of safety (within ~3–7%) and
 no element is inadmissible (`local_FOS >= 1` everywhere) — the slope is evaluated
 at its last STABLE SRF. The low-FOS band is the mobilized failure mass: at the
 critical SRF the whole potential sliding mass is near `c'/SRF` mobilization
-(here `frac < 1.5` ≈ 83% of the section), reddest along the slip zone and
+(here `frac < 1.5` ≈ 65% of the section), reddest along the slip zone and
 minimum on it, while the low-confinement surface wedge and the deep foundation
 sit higher (green). It envelops the Bishop LE critical circle (gallery Exhibit
 13), and its minimum is the local analogue of the global FOS — the same
@@ -310,45 +446,76 @@ the base/toe — a genuine stress concentration at the fixed-boundary corner. It
 Wall-clock on the dev machine, single process, including mesh build and
 ALL SRF trials (bracket + bisection):
 
-| Case | Time |
-|---|---|
-| GL99 Ex1, T6 32x12, 794 elem, 10 trials, tol 0.01 | **11 s** |
-| GL99 Ex1, T6 48x16, 1573 elem | 49 s |
-| GL99 Ex1, T6 48x24 (D=1.5), 2341 elem | 98 s |
-| Prandtl footing, T6 40x20, 60 load steps | ~20 s |
-| Prandtl footing, T6 60x30 | ~54 s |
-| Ex4 undrained, T6 40x16 | 44-75 s |
-| Bishop cross-check, T6 56x24 | 154 s |
+2026-10-14, after the §0 corrections (srf_tol 0.02; the laptop shared
+with another test run), with the committed code before them where it was
+timed the same way:
+
+| Case | Before | After |
+|---|---|---|
+| GL99 Ex1, T6 32x12, 9 trials | 10.0 s (FOS 1.344) | **12.9 s** (1.331) |
+| GL99 Ex1, T6 48x16 | 49 s | 36.6 s |
+| GL99 Ex1, T6 64x20 | — | 63.6 s |
+| GL99 Ex2, T6 48x24 (D=1.5) | 98 s | 86.7 s |
+| 10 m slope (§0), T6 30x15 (adapter default) | 91.0 s (FOS 3.000) | 44.3 s (1.909) |
+| 10 m slope, T6 40x20 | 97.2 s (1.803) | 96.1 s (1.897) |
+| 10 m slope, T6 60x30 | 42.5 s (1.147, stopped early) | 241.8 s (1.884) |
+| Bishop cross-check, T6 40x20 | 69.6 s (1.419) | 46.2 s (1.156) |
+| Bishop cross-check, T6 56x24 | 154 s | 83.5 s |
+| ACADS 1(a), T6 72x24 | — | 135.3 s |
+| Ex4 undrained, T6 40x16 | 44-75 s | 26-46 s |
+| Prandtl footing, T6 40x20, 60 load steps | ~20 s | ~20 s (unchanged path) |
+
+Trials near the FOS that reach the ceiling with their displacements
+standing still run their 1000 iterations before they are accepted (or
+stop early when the displacements plainly stand still, checked every 50
+iterations after half-way), so a run whose old answer came from an early
+stall is now slower (60x30 above); runs the old code had pushed past the
+true FOS are faster.
 
 One splu factorization serves all trials of an SRM run (the elastic
 operator does not depend on c/phi); each iteration is a
 back-substitution plus a fully vectorized Gauss-point return mapping.
 The phase-2 vectorization made the pre-existing test suite ~19x faster;
-the full suite (321 tests incl. slow SRM) runs in ~13 min.
+the full suite (461 tests incl. slow SRM, 2026-10-14) runs in ~14 min.
 
 ## Known limitations (documented, by design)
 
 - **Mesher**: `generate_slope_mesh` places fixed-count node columns and
-  Delaunay-triangulates; thin base layers (D ~ 1) make high-aspect
-  slivers under the toe run. T6 tolerates them; CST may fail to
-  converge spuriously. Keep the base layer >= 10% of H unless
-  reproducing a D=1 benchmark with T6.
-- **Deep/wide domains at fixed nx/ny**: FOS overpredicts when the slope
-  face is under-resolved (D=1.5 @ ny=12: +33%; old x_extend default:
-  +91%). Refine until FOS stabilizes; the Ex1 rows above are the
-  reference densities.
-- **Undrained (nu -> 0.5)**: T6/3-pt retains some incompressibility
-  locking (+20-25% at nu=0.49); nu=0.3 underpredicts 10-15% via
-  out-of-plane Tresca yield. Bracket with both, or wait for
-  B-bar/15-node elements (future work).
-- **Cohesionless slope faces (c ~ 0)**: zero-confinement surface Gauss
-  points chatter and the constant-stiffness residual plateaus at ~1e-4,
-  which the benchmark-calibrated failure criterion (residual 1e-5,
-  ceiling 1000) reads as failure. There is NO residual level that
-  separates this chatter from true collapse (measured: failing GL99
-  trials plateau in the same band), so the criterion is left calibrated
-  and cohesionless-face runs should pass tol ~1e-3 or add 1-2 kPa of
-  cohesion (standard SRM practice).
+  Delaunay-triangulates (keeping only the triangles inside the soil
+  since 2026-10-14, §0); thin base layers (D ~ 1) make flat elements
+  under the toe run, because every column gets `ny` rows. T6 tolerates
+  them (GL99 Ex1 1.331 at D = 1, Ex2 1.344-1.356 at D = 1.5). Keep the
+  base layer >= 10% of H unless reproducing a D=1 benchmark.
+- **Coarse meshes**: the result warns when fewer than 4 elements span the
+  slope height (3 elements measured +2.7 % against a fine mesh), and when
+  a soil layer has no elements or is thinner than its elements (a thin
+  weak seam is lost or becomes a jagged band). `mesh_check=True` compares
+  with a mesh 1.5x finer. (The +33 % at D = 1.5 / ny = 12 and the +91 %
+  of the old x_extend default recorded here before were measured with the
+  soil-filled notch in the mesh.)
+- **Undrained (nu -> 0.5)**: no volumetric locking in the SRM FOS — GL99
+  Ex4 1.419 at nu = 0.30, 0.49, 0.495, 0.499 and 0.4999 (§2). The
+  +20-25 % at nu = 0.49 and the -10-15 % at nu = 0.30 recorded before
+  came from the soil-filled notch and from stalled iterations read as
+  collapse. nu = 0.5 is refused.
+- **Cohesionless slope faces (c ~ 0)**: the zero-confinement chatter that
+  the residual-only criterion read as failure is now accepted when the
+  displacements stand still (§0). What remains is resolution: the
+  critical slide is a thin layer parallel to the face (infinite slope,
+  FOS = tan phi' / tan beta), so a coarse mesh comes out high — Duncan
+  Ex 2 (c' 0.1 kPa, phi' 40 deg, 2:1): 1.81 / 1.74 / 1.71 on 15x8 /
+  30x15 / 45x24 against 1.68 (2.475 on 15x8 before). The result warns
+  and quotes tan phi' / tan beta when the surface soil has c' <= 0.5 kPa
+  and the slope is dry.
+- **Over a firm base**: an undrained slope with a firm layer just below
+  the toe fails along the base, not on a circle. Compare with a
+  non-circular limit-equilibrium search: Duncan Ex 1 (cu 28.7 kPa, 12.2 m
+  2:1, base 1.2 m below the toe): SRM 0.883 = Spencer non-circular 0.883;
+  circles 0.969 (published circles 0.95-1.08).
+- **Staged construction**: `analyze_staged(max_iter=100)` is low for a
+  plastic stage under the constant-stiffness iteration (a footing at 260
+  kPa on c' 20 kPa, phi' 25 deg converged with 500 and not with 100);
+  pass a larger `max_iter` for plastic stages.
 - **psi policy**: psi_red = min(psi, phi_red) during reduction (PLAXIS
   convention); GL99 used psi = 0 throughout.
 - **delta_max curves** include foundation settlement — compare to

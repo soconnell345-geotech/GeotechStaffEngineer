@@ -240,7 +240,12 @@ Ex5 drawdown validation optional; T6 seepage not planned.
 
 Future work (designed, descoped):
 - B-bar / selective reduced integration or 15-node triangles for the
-  incompressible (undrained nu->0.5) limit; would close the Ex4 bracket.
+  incompressible (undrained nu->0.5) limit. 2026-10-14: NOT NEEDED for the
+  strength-reduction FOS — once the slope mesher stopped filling the notch
+  with soil, GL99 Ex4 gives 1.419 at nu = 0.30 to 0.4999 alike. A B-bar
+  (mean-dilatation T6/P0, plane-strain form) was built and measured: it
+  lowered collapse loads 7-12 % below the standard T6 and the published
+  values (Ex4 1.33 vs 1.47; Prandtl Nc 4.52 vs 5.14) and was removed.
 - Structured (transfinite) slope mesher to remove toe-run sliver
   triangles at D ~ 1 and restore CST convergence there.
 - GL99 Ex3 (thin weak layer) and Ex5 (slow drawdown) validation rows:
@@ -269,7 +274,32 @@ sensitivity: nu=0.49 locks high, nu=0.3 runs low — report both, designed
 path = higher-order/B-bar elements; Bishop cross-check needs x_extend=0).
 
 
-## Tracked follow-up: SRM failure-detection mesh consistency (found 2026-06-11, post-merge)
+## RESOLVED 2026-10-14 (BACKLOG GM-05, GM-06): two causes, both fixed
+
+1. `generate_slope_mesh` never removed the triangles outside the soil:
+   Delaunay fills the convex hull, so the notch above the toe and the
+   slope face was "soil" — sliver triangles (min angles 0.1-0.9 deg)
+   propping the face against the toe ground (130 m2 on a 1,800 m2
+   section; 60 m2 on GL99 Ex1's 242 m2). The discrete model then held
+   equilibrium far above the real FOS (GL99 Ex1 32x12 converged at SRF
+   1.6; a 10 m 2:1 slope with LE 1.887 returned 3.0 on the default 30x15
+   mesh). Fixed: centroid-in-section filter.
+2. Failure = non-convergence in 1000 constant-stiffness iterations read a
+   stalled residual (apex/edge chatter; slow convergence where the level
+   ground yields under gravity once sin(phi_red) < 1 - 2 nu, Zheng, Liu &
+   Li 2005) as collapse, and the stall comes sooner on finer meshes. That
+   is what gave the falling stall FOS below (0.934 -> 0.80) and hid
+   cause 1 on coarse meshes. Fixed: a trial that reaches the ceiling with
+   its displacements standing still is stable (`settled_ratio`, the GL99
+   "non-convergence accompanied by a dramatic increase in displacements").
+
+After both: GL99 Ex1 1.331 at 16x6 to 64x20 (published 1.4, LE 1.368);
+ACADS 1(a) 0.965 / 0.957 / 0.949 / 0.949 from 30x15 to 72x24 (LE 0.985);
+the 10 m slope 1.934 / 1.909 / 1.897 / 1.884 from 20x10 to 60x30 (LE
+1.887); Ex4 1.419 (Taylor 1.47). `nr_method='tangent'` / `nr_fallback`
+remain opt-in and were not re-validated. Details: VALIDATION.md §7.
+
+## Tracked follow-up (history): SRM failure-detection mesh consistency (found 2026-06-11, post-merge)
 
 On ACADS 1(a) (10 m, 2:1, c'=3 kPa, phi'=19.6 — published FOS 1.00, our LE
 0.985): the constant-stiffness SRM stall point moves DOWN with refinement

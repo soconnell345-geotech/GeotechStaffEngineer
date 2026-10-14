@@ -64,6 +64,16 @@ class TestSRMDuncanExample1:
     - Published FOS (Table 7.2): Fellenius 0.95-1.02, Bishop 1.00-1.08
 
     SRM reduces c only (phi=0), so this is the ideal SRM test case.
+
+    The published values are circles over a firm base at the toe
+    (slope_stability's circle search with the base 1.2 m below the toe:
+    0.969). Over such a base the critical surface is NOT a circle: it runs
+    along the base, and the non-circular search (Spencer, entry-exit) gives
+    0.883 — the SRM value. With the default 2H-deep foundation used by the
+    trend test the circle search gives 0.719 and the SRM 0.648 on every
+    mesh from 15x8 to 45x24. Before 2026-10-14 this test compared the
+    deep model with the shallow-base publication and passed only because
+    the slope mesher's soil-filled notch propped the slope.
     """
 
     H = _ft_to_m(40)  # 12.19 m
@@ -90,17 +100,19 @@ class TestSRMDuncanExample1:
         }
 
     def test_undrained_clay_fos_range(self):
-        """SRM FOS for undrained clay within 0.7-1.4 (published ~1.0)."""
+        """Firm base 1.2 m below the toe: SRM within 3 % of the
+        non-circular limit-equilibrium value 0.883, below the circles."""
+        layer = dict(self._layer(), bottom_elevation=-1.2)
         result = analyze_slope_srm(
-            surface_points=self._surface(),
-            soil_layers=[self._layer()],
-            **SRM_KWARGS)
+            surface_points=self._surface(), soil_layers=[layer],
+            depth=1.2, x_extend=0.0, nx=32, ny=12, srf_tol=0.02)
 
         print(f"\n  Example 1 (undrained clay): SRM FOS = {result.FOS:.3f}")
-        print(f"  Published range: Fellenius 0.95-1.02, Bishop 1.00-1.08")
+        print("  Non-circular LE 0.883; circles 0.969; published circles "
+              "Fellenius 0.95-1.02, Bishop 1.00-1.08")
         assert result.FOS is not None, "SRM did not produce a FOS"
-        assert 0.7 < result.FOS < 1.4, (
-            f"SRM FOS={result.FOS:.3f} outside expected range [0.7, 1.4]")
+        assert abs(result.FOS - 0.883) / 0.883 < 0.03
+        assert result.FOS < 0.969
 
     def test_srm_vs_bishop_trend_ex1(self):
         """SRM FOS increases when cohesion increases (same direction as LE)."""

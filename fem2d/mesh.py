@@ -101,9 +101,13 @@ def generate_slope_mesh(surface_points, depth, nx=30, ny=15,
                         x_extend_left=0.0, x_extend_right=0.0):
     """Generate a triangular mesh for a slope cross-section.
 
-    Creates a rectangular domain from the surface profile down to a
-    specified depth, then uses Delaunay triangulation with surface-
-    conforming node placement.
+    Creates a domain from the surface profile down to a specified depth,
+    then uses Delaunay triangulation with surface-conforming node placement
+    and keeps only the triangles inside the soil. (Delaunay fills the convex
+    hull of the points; for any slope that includes the notch above the toe
+    and the slope face. Before 2026-10-14 those sliver triangles were kept
+    as soil, a buttress propping the face against the toe ground, and every
+    strength-reduction FOS on this mesher was too high.)
 
     Parameters
     ----------
@@ -147,6 +151,20 @@ def generate_slope_mesh(surface_points, depth, nx=30, ny=15,
     # Delaunay triangulation
     tri = Delaunay(all_pts)
     elements = tri.simplices
+
+    # Keep only triangles inside the soil section (Delaunay covers the
+    # convex hull, which includes the air above a slope face). Every surface
+    # node is a vertex, so a triangle is either inside or outside.
+    xs_in = surf[(surf[:, 0] > x_min) & (surf[:, 0] < x_max)]
+    section = np.vstack([
+        [[x_min, y_min],
+         [x_min, np.interp(x_min, surf[:, 0], surf[:, 1])]],
+        xs_in,
+        [[x_max, np.interp(x_max, surf[:, 0], surf[:, 1])],
+         [x_max, y_min]],
+    ])
+    centroids = all_pts[elements].mean(axis=1)
+    elements = elements[points_in_polygon(centroids, section)]
 
     # Remove degenerate triangles (zero area)
     areas = _triangle_areas(all_pts, elements)

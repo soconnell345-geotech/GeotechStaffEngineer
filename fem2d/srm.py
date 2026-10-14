@@ -4,10 +4,20 @@ Strength Reduction Method (SRM) for slope stability FOS.
 Progressively reduces c and tan(phi) by a Strength Reduction Factor
 (SRF) until the FEM model fails. The critical SRF = FOS.
 
-Failure detection (Griffiths & Lane, 1999):
+Failure detection (Griffiths & Lane, 1999: "non-convergence ... accompanied
+by a dramatic increase in the nodal displacements"):
 - primary: non-convergence of the constant-stiffness iteration within the
-  iteration ceiling (no stress distribution satisfies both the MC criterion
-  and global equilibrium);
+  iteration ceiling WITH the displacements still moving (no stress
+  distribution satisfies both the MC criterion and global equilibrium, so
+  the mechanism keeps sliding). A trial that reaches the ceiling with its
+  displacements standing still — the residual stalled by Gauss points near
+  the apex or edges of the yield surface switching back and forth, or by
+  slow convergence where a large region yields (under level ground once
+  sin(phi_red) < 1 - 2 nu, Zheng, Liu & Li 2005) — is stable
+  (`settled_ratio`; since 2026-10-14). Before, every such trial counted as
+  failure, so the FOS followed the convergence rate, which falls with mesh
+  refinement: a 10 m 2:1 slope with c' 15 kPa, phi' 25 deg (limit
+  equilibrium 1.887) gave 1.80 on a 40x20 mesh and 1.15 on 60x30;
 - secondary: dimensionless-displacement blowup — E_ref*delta_max/(gamma*H^2)
   exceeding `blowup_factor` times its value at the lowest converged SRF
   (the "knee" of the SRF vs displacement curve, GL99 Fig. 2).
@@ -105,7 +115,8 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
                        pore_pressures=None, srm_field='c_phi',
                        bracket_step=0.1, blowup_factor=15.0,
                        n_gp=None, disp_tol=None, stall_window=None,
-                       h_ref=None, nr_method='elastic', nr_fallback=False):
+                       h_ref=None, nr_method='elastic', nr_fallback=False,
+                       settled_ratio=0.1):
     """Find slope stability FOS using the Strength Reduction Method.
 
     Parameters
@@ -134,18 +145,30 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
         disable and use pure non-convergence (GL99).
     n_gp : int, optional — Gauss rule override for T6.
     disp_tol : float or None — displacement-increment convergence
-        criterion. Default None: convergence is judged on the residual
-        alone, which is the correct failure indicator for the
-        constant-stiffness scheme (the dual criterion can accept
-        stalled near-collapse states and overestimate FOS).
+        criterion (dual with the residual). Default None: the residual
+        decides, and a trial that reaches the ceiling is judged by
+        `settled_ratio`.
     stall_window : int or None — abort a trial early when the residual
         has not improved by >2% over this many iterations. Default
-        None (off): on coarse meshes slow-but-real convergence can
-        be misclassified as failure, biasing FOS low. Opt-in speedup.
+        None (off): a stalled residual is not failure (see
+        settled_ratio), so this biases the FOS low. Opt-in speedup.
     h_ref : float, optional — reference height for the dimensionless
         displacement E_ref*delta_max/(gamma_ref*h_ref^2) (Griffiths &
         Lane). Default: total mesh height. Pass the SLOPE height to
         compare against published curves.
+    settled_ratio : float or None — a load step that reaches
+        `max_nr_iter` without meeting `nr_tol` is still stable when the
+        largest nodal displacement change over the second half of its
+        iterations is below `settled_ratio` times the change over the
+        first half (the displacements have stopped moving) and the
+        residual ratio is below 1e-2 or still falling. A mechanism keeps
+        moving at an about constant rate (ratio near 1); a stalled residual
+        leaves the displacements still (0.00-0.02). Near the FOS the ratio rises
+        steeply with the SRF (Griffiths & Lane Ex 1, 32x12: 0.02 at 1.300,
+        0.05 at 1.325, 0.12 at 1.338, 0.23 at 1.350, 0.62 at 1.400), so
+        the choice of 0.1 moves the FOS by about the bisection tolerance
+        (VALIDATION.md section 7). Default 0.1. None restores the
+        residual-only rule.
 
     Returns
     -------
@@ -157,7 +180,9 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
         'stresses_failure': (n_elements, 3) array (element-avg in-plane).
         'n_srf_trials': int — number of SRF evaluations.
         'srf_history': list of dict — per-trial: 'srf', 'max_disp_m',
-            'dimensionless_disp', 'converged', 'failed', 'n_iter'.
+            'dimensionless_disp', 'converged', 'failed', 'n_iter',
+            'settled' (stable at the ceiling with the displacements
+            standing still), 'final_residual', 'growth_ratio'.
         'srf_curve': (srf, E_ref*dmax/(gamma*H^2)) arrays for plotting.
     """
     nodes = np.asarray(nodes, dtype=float)
@@ -202,7 +227,8 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
         mats = _material_arrays(reduced, n_elem)
         res = run_nl(ctx, n_steps=n_load_steps, max_iter=max_nr_iter,
                      tol=nr_tol, disp_tol=disp_tol, method=nr_method,
-                     mats_override=mats, stall_window=stall_window)
+                     mats_override=mats, stall_window=stall_window,
+                     settled_ratio=settled_ratio)
         conv = res['converged']
         extended = False
         if not conv and nr_fallback and nr_method == 'elastic':
@@ -215,7 +241,8 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
             res = run_nl(ctx, n_steps=n_load_steps,
                          max_iter=max(200, max_nr_iter // 4),
                          tol=nr_tol, disp_tol=disp_tol, method='tangent',
-                         mats_override=mats, stall_window=stall_window)
+                         mats_override=mats, stall_window=stall_window,
+                         settled_ratio=settled_ratio)
             conv = res['converged']
         dmax = _max_disp(res['u'])
         dim_disp = dmax * dim_scale
@@ -234,6 +261,11 @@ def strength_reduction(nodes, elements, material_props, gamma, bc_nodes=None,
             'failed': bool(failed),
             'n_iter': res['n_iter_total'],
             'extended': extended,
+            # accepted at the iteration ceiling with the displacements
+            # standing still (see settled_ratio)
+            'settled': bool(conv and res.get('settled')),
+            'final_residual': res.get('final_residual'),
+            'growth_ratio': res.get('final_growth_ratio'),
         })
         return (not failed), res
 

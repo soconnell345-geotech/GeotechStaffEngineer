@@ -7,9 +7,8 @@ densities and pin the documented mesh-convergence behaviour:
 - Griffiths & Lane (1999) Example 1: the FE strength-reduction FOS stays
   mesh-consistent (a tight band around the published FE value 1.4) as the mesh
   is refined (VALIDATION.md §1).
-- shared-geometry Bishop cross-check: the SRM FOS converges monotonically
-  toward the limit-equilibrium value as the mesh is refined, with shrinking
-  steps and a Richardson estimate (VALIDATION.md §6).
+- shared-geometry Bishop cross-check: the SRM FOS sits within 3 % of the
+  limit-equilibrium value at every density (VALIDATION.md §6, §7).
 """
 
 import pytest
@@ -109,9 +108,9 @@ class TestSRMMeshConsistency:
 
     def test_gl99_ex1_mesh_consistent_near_published(self):
         """GL99 Ex1 (published FE 1.4): the SRM FOS is mesh-consistent — every
-        refinement level sits in a tight band just below 1.4 (the D=1 base
-        sliver makes it noisy rather than strictly monotonic, VALIDATION.md
-        §1 / Known limitations), and the finest mesh is within ~6% of 1.4."""
+        refinement level sits in a tight band just below 1.4 (1.331 on each
+        since 2026-10-14, VALIDATION.md §0), and the finest mesh is within
+        ~6% of 1.4."""
         study = srm_mesh_refinement_study(
             EX1_SURF, EX1_LAYER, meshes=[(24, 10), (32, 12), (40, 16)],
             depth=0.5, x_extend=0.0, element_type='t6', srf_tol=0.02,
@@ -124,28 +123,20 @@ class TestSRMMeshConsistency:
         # finest mesh within ~6% of the published FE value
         assert abs(study.fos_finest - 1.4) / 1.4 < 0.06
 
-    def test_xcheck_converges_toward_limit_equilibrium(self):
-        """Shared-geometry Bishop cross-check (LE FOS ≈ 1.173): the SRM FOS
-        decreases MONOTONICALLY toward the LE value as the mesh is refined,
-        with shrinking steps, and Richardson-extrapolates below the finest
-        mesh. 40x20 reproduces the documented 1.419 (VALIDATION.md §6)."""
+    def test_xcheck_matches_limit_equilibrium_on_every_mesh(self):
+        """Shared-geometry Bishop cross-check (LE FOS 1.173): every level
+        sits within 3 % of the LE value and the study reports converged
+        (VALIDATION.md §0, §7). Before 2026-10-14 the slope mesher filled
+        the notch above the slope with soil and these meshes gave 1.531 /
+        1.456 / 1.419 — the 'convergence toward LE' this test used to pin
+        was that buttress being thinned out by refinement."""
         study = srm_mesh_refinement_study(
             XCHK_SURF, XCHK_LAYER, meshes=[(24, 12), (32, 16), (40, 20)],
             depth=5.0, x_extend=0.0, element_type='t6', srf_tol=0.02,
             published=1.173)
         print("\n" + study.summary())
         f = [lv['FOS'] for lv in study.levels]
-        # monotonic decreasing toward the LE value
-        assert f[0] > f[1] > f[2]
-        # error vs LE shrinks every level
-        errs = [abs(lv['error_vs_published']) for lv in study.levels]
-        assert errs[0] > errs[1] > errs[2]
-        # settling: the last step is smaller than the first
-        assert abs(study.levels[-1]['rel_change']) < abs(study.levels[1]['rel_change'])
+        for lv in study.levels:
+            assert abs(lv['error_vs_published']) < 0.03, lv
+        assert max(f) - min(f) < 0.03
         assert study.converged                      # last step < 3%
-        # documented finest value
-        assert study.fos_finest == pytest.approx(1.419, abs=0.03)
-        # Richardson estimate produced, below the finest, toward LE
-        assert study.fos_richardson is not None
-        assert 1.25 <= study.fos_richardson < study.fos_finest
-        assert 1.5 <= study.observed_order <= 4.0

@@ -898,6 +898,123 @@ class TestEdgeCases:
 
 
 # ===========================================================================
+# Load steps within a stage (BACKLOG GM-08)
+# ===========================================================================
+
+def _plastic_footing():
+    """T6 strip footing on Mohr-Coulomb soil (c 20 kPa, phi 25 deg; K0
+    state inside the yield surface, sin(phi) > 1 - 2 nu)."""
+    from fem2d.mesh import convert_to_t6, t6_boundary_edges
+    nodes, elements = generate_rect_mesh(-6, 6, -6, 0, 16, 8)
+    n_corner = len(nodes)
+    nodes, elements = convert_to_t6(nodes, elements)
+    bc = detect_boundary_nodes(nodes)
+    surf = np.where(np.abs(nodes[:n_corner, 1]) < 1e-9)[0]
+    foot = surf[np.abs(nodes[surf, 0]) <= 1.0 + 1e-9]
+    foot = foot[np.argsort(nodes[foot, 0])]
+    edges = t6_boundary_edges(
+        elements, [(foot[i], foot[i + 1]) for i in range(len(foot) - 1)])
+    mats = [{'E': 2e4, 'nu': 0.3, 'c': 20.0, 'phi': 25.0, 'psi': 0.0}] \
+        * len(elements)
+    groups = {'soil': list(range(len(elements)))}
+    return nodes, elements, bc, edges, mats, groups, foot
+
+
+class TestStageLoadSteps:
+    """A stage applies its load in `n_steps` increments (BACKLOG GM-08).
+
+    Before 2026-10-14 every stage after the start was applied in ONE step
+    whatever `n_steps` said, so a plastic stage gave the one-step answer
+    (and the first stage, gravity, was one step too). The incremental
+    answer is checked against the same load applied as separate stages of
+    q/n each, which is incremental by construction.
+    """
+
+    Q = 360.0      # kPa, close to collapse: strongly plastic
+    N = 10
+
+    def _run(self, load_phases, max_iter=500, must_converge=True):
+        nodes, elements, bc, edges, mats, groups, foot = _plastic_footing()
+        phases = [ConstructionPhase(name="Gravity",
+                                    active_soil_groups=['soil'],
+                                    n_steps=5)]
+        phases += load_phases(edges)
+        res = analyze_staged(nodes, elements, mats, 18.0, bc, groups,
+                             phases, max_iter=max_iter)
+        if must_converge:
+            assert res.converged
+        return res, foot
+
+    @staticmethod
+    def _footing_settlement(res, foot):
+        last, grav = res.phases[-1], res.phases[0]
+        return float((last.displacements[1::2][foot]
+                      - grav.displacements[1::2][foot]).min())
+
+    def test_plastic_stage_follows_the_load_in_n_steps(self):
+        incr, foot = self._run(lambda edges: [ConstructionPhase(
+            name="Footing", active_soil_groups=['soil'],
+            surface_loads=[(edges, 0.0, -self.Q)], n_steps=self.N)])
+        stages, _ = self._run(lambda edges: [ConstructionPhase(
+            name=f"Footing {k}", active_soil_groups=['soil'],
+            surface_loads=[(edges, 0.0, -self.Q * k / self.N)], n_steps=1)
+            for k in range(1, self.N + 1)])
+        s_incr = self._footing_settlement(incr, foot)
+        s_stages = self._footing_settlement(stages, foot)
+        assert s_incr < -0.02
+        assert s_incr == pytest.approx(s_stages, rel=1e-3)
+        u1, u2 = incr.phases[-1].displacements, stages.phases[-1].displacements
+        np.testing.assert_allclose(u1, u2, atol=1e-3 * np.abs(u2).max())
+
+    def test_one_step_misses_the_plastic_equilibrium(self):
+        """The setting matters: applied in one step this near-collapse
+        load finds no equilibrium within the iteration ceiling (the stage
+        reports non-convergence), where the incremental path does."""
+        one, _ = self._run(lambda edges: [ConstructionPhase(
+            name="Footing", active_soil_groups=['soil'],
+            surface_loads=[(edges, 0.0, -self.Q)], n_steps=1)],
+            must_converge=False)
+        incr, foot = self._run(lambda edges: [ConstructionPhase(
+            name="Footing", active_soil_groups=['soil'],
+            surface_loads=[(edges, 0.0, -self.Q)], n_steps=self.N)])
+        assert not one.converged and not one.phases[-1].converged
+        assert self._footing_settlement(incr, foot) < -0.05
+
+    def test_first_stage_is_the_plain_nonlinear_solve(self):
+        """The first stage (gravity) is ramped like solve_nonlinear."""
+        nodes, elements, bc, _, mats, groups, _ = _plastic_footing()
+        mats = [dict(m, c=2.0, phi=30.0) for m in mats]
+        phases = [ConstructionPhase(name="Gravity",
+                                    active_soil_groups=['soil'], n_steps=4)]
+        res = analyze_staged(nodes, elements, mats, 18.0, bc, groups,
+                             phases, max_iter=500)
+        conv, u, _, _ = solve_nonlinear(nodes, elements, mats, 18.0, bc,
+                                        n_steps=4, max_iter=500)
+        assert res.converged and conv
+        np.testing.assert_allclose(res.phases[0].displacements, u,
+                                   atol=1e-9 * np.abs(u).max())
+
+    def test_elastic_stage_does_not_depend_on_n_steps(self):
+        nodes, elements, bc, edges, mats, groups, foot = _plastic_footing()
+        mats = [dict(m, c=1e6) for m in mats]
+        out = []
+        for n in (1, 7):
+            phases = [ConstructionPhase(name="Gravity",
+                                        active_soil_groups=['soil'],
+                                        n_steps=n),
+                      ConstructionPhase(name="Footing",
+                                        active_soil_groups=['soil'],
+                                        surface_loads=[(edges, 0.0, -100.0)],
+                                        n_steps=n)]
+            res = analyze_staged(nodes, elements, mats, 18.0, bc, groups,
+                                 phases)
+            assert res.converged
+            out.append(res.phases[-1].displacements)
+        np.testing.assert_allclose(out[0], out[1],
+                                   atol=1e-8 * np.abs(out[1]).max())
+
+
+# ===========================================================================
 # solve_nonlinear return_state Tests
 # ===========================================================================
 

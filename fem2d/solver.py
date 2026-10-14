@@ -515,7 +515,8 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
            hs_state_init=None, method='elastic', reform_interval=1,
            disp_tol=None, disp_residual_cap=0.01, max_cutbacks=3,
            line_search=False, mats_override=None,
-           stall_window=None, stall_ratio=0.98, f_int_offset=None):
+           stall_window=None, stall_ratio=0.98, f_int_offset=None,
+           settled_ratio=None, settled_residual_cap=1e-2, F_start=None):
     """Run the incremental-iterative nonlinear solution on a context.
 
     Parameters
@@ -526,10 +527,11 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
     tol : float — residual convergence: ||R_free|| / ||F_ext|| < tol.
     disp_tol : float or None — optional displacement-increment criterion:
         ||du|| / ||u|| < disp_tol, accepted only if the residual ratio is
-        also below `disp_residual_cap`. Default None (residual only):
-        near collapse the constant-stiffness iteration can stall with
-        small du but a large residual, so a loose dual criterion
-        overestimates SRM FOS (verified against Griffiths & Lane Ex. 1).
+        also below `disp_residual_cap`. Default None (residual only).
+        (It was judged to overestimate the SRM FOS on Griffiths & Lane
+        Ex. 1, but on meshes that still carried the soil-filled notch
+        above the slope face — see mesh.generate_slope_mesh. The SRM now
+        uses `settled_ratio`.)
     method : 'elastic' (constant-stiffness, factorize once) or
         'tangent' (NR with continuum tangent).
     reform_interval : int — tangent reform interval ('tangent' only;
@@ -546,11 +548,40 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
         body relaxes to equilibrium with the released boundary traction-
         free (rather than re-applying the in-situ field as an external
         load). None = standard residual `R = F_ext - F_int`.
+    settled_ratio : float or None — accept a load step that reaches
+        `max_iter` without meeting `tol` when its displacements have
+        stopped moving: the largest nodal displacement change over the
+        second half of its iterations is below `settled_ratio` times the
+        change over the first half, and the residual ratio is below
+        `settled_residual_cap` or still falling (lower than at half-way;
+        slow convergence where a large region yields can leave it above
+        1e-2 after 1000 iterations). Griffiths & Lane (1999) define failure as
+        non-convergence accompanied by a dramatic increase in
+        displacements; with the constant-stiffness scheme the residual can
+        stall (Gauss points near the yield-surface apex or edges switching
+        back and forth, or slow convergence where a large region yields)
+        while the displacements stand still. A step whose displacements
+        plainly stand still is accepted before the ceiling: checked every
+        50 iterations after half-way, it is accepted when even 10 times
+        its recent rate of movement could not bring the second-half change
+        to `settled_ratio` of the first half. Default None (off: every
+        non-converged step is a failure). Accepted steps are listed in
+        ``settled``.
+    F_start : (n_dof,) array, optional — the load already in equilibrium
+        with the initial state. The step load then ramps from F_start to
+        ctx['F_ext'] over `n_steps` (F_start + lam (F_ext - F_start))
+        instead of from zero. Staged construction passes the internal
+        force of the previous stage's state.
 
     Returns
     -------
     dict with keys: converged, u, sigma_gp, eps_gp, hs_state,
-        iterations (list per step), n_iter_total.
+        iterations (list per step), n_iter_total, r_history (last step),
+        settled (list of {'step', 'n_iter', 'residual', 'growth_ratio'}
+        for steps accepted under `settled_ratio`), final_residual and
+        final_growth_ratio (of the last step attempted; the growth ratio
+        is None when the step converged or stopped before half its
+        iterations).
     """
     mats = mats_override if mats_override is not None else ctx['mats']
     n_dof = ctx['n_dof']
@@ -574,7 +605,9 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
     if F_norm < 1e-30:
         return {'converged': True, 'u': u, 'sigma_gp': sig_gp,
                 'eps_gp': eps_gp, 'hs_state': hs_state,
-                'iterations': [], 'n_iter_total': 0}
+                'iterations': [], 'n_iter_total': 0, 'r_history': [],
+                'settled': [], 'final_residual': 0.0,
+                'final_growth_ratio': None}
 
     if method == 'elastic':
         lu = _elastic_factor(ctx, mats)
@@ -582,6 +615,10 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
     iters_per_step = []
     converged_overall = True
     n_iter_total = 0
+    settled = []
+    n_trans = 2 * ctx['n_nodes']
+    r_ratio = 0.0
+    growth = None
 
     # Pseudo-time stepping with optional cutback
     lam_done = 0.0
@@ -590,12 +627,21 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
 
     while lam_done < 1.0 - 1e-12:
         lam_t = min(1.0, lam_done + d_lam)
-        F_ext = lam_t * F_full
+        if F_start is None:
+            F_ext = lam_t * F_full
+        else:
+            F_ext = F_start + lam_t * (F_full - F_start)
 
         # Snapshot committed state for possible cutback
         u_save = u.copy()
+        u_half = None
+        half = max_iter // 2
 
         step_conv = False
+        exhausted = False
+        early_growth = None
+        growth = None
+        r_half = None
         lu_t = None
         n_it = 0
         R_norm_prev = None
@@ -671,6 +717,26 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
             u = u + du
             du_prev = du
             R_norm_prev = R_norm
+            if n_it == half:
+                u_half = u.copy()
+                u_check = u_half
+                r_half = r_ratio
+            elif (settled_ratio is not None and u_half is not None
+                  and (n_it - half) % _SETTLED_CHECK_EVERY == 0):
+                # Early acceptance of a step whose displacements stand
+                # still: even at _SETTLED_RATE_MARGIN times the recent rate
+                # of movement, the rest of the iterations could not lift the
+                # second-half change to settled_ratio of the first half.
+                d1 = _max_nodal_move(u_half - u_save, n_trans)
+                bound = (_max_nodal_move(u - u_half, n_trans)
+                         + _SETTLED_RATE_MARGIN
+                         * _max_nodal_move(u - u_check, n_trans)
+                         * (max_iter - n_it) / _SETTLED_CHECK_EVERY)
+                u_check = u
+                if (d1 > 0 and bound < settled_ratio * d1
+                        and r_ratio < 0.5 * settled_residual_cap):
+                    early_growth = bound / d1
+                    break
 
             # Displacement-change criterion (Griffiths & Lane)
             if disp_tol is not None and du_norm / u_norm < disp_tol \
@@ -680,6 +746,38 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
                 sig_new, eps_new, _, hs_tent = _constitutive(
                     ctx, mats, u, sig_gp, eps_gp, hs_state, False)
                 break
+        else:
+            exhausted = True
+
+        # Iteration ceiling reached: did the displacements keep moving
+        # (a mechanism) or stand still (a stalled residual)?
+        if (exhausted or early_growth is not None) and u_half is not None:
+            if early_growth is not None:
+                growth = early_growth
+            else:
+                d1 = _max_nodal_move(u_half - u_save, n_trans)
+                d2 = _max_nodal_move(u - u_half, n_trans)
+                growth = d2 / d1 if d1 > 0 else \
+                    (0.0 if d2 == 0 else np.inf)
+            if settled_ratio is not None and growth < settled_ratio:
+                sig_new, eps_new, _, hs_tent = _constitutive(
+                    ctx, mats, u, sig_gp, eps_gp, hs_state, False)
+                F_int = _internal_force(ctx, sig_new)
+                if ctx['K_lin'] is not None:
+                    F_int += ctx['K_lin'] @ u
+                if f_int_offset is not None:
+                    F_int = F_int - f_int_offset
+                R = F_ext - F_int
+                R[bc] = -penalty * u[bc]
+                r_ratio = np.linalg.norm(np.where(free, R, 0.0)) / F_norm
+                # a small residual, or one still falling (slow convergence,
+                # not an iteration swinging about a large residual)
+                if r_ratio < settled_residual_cap or r_ratio < r_half:
+                    step_conv = True
+                    settled.append({'step': len(iters_per_step),
+                                    'n_iter': n_it,
+                                    'residual': float(r_ratio),
+                                    'growth_ratio': float(growth)})
 
         n_iter_total += n_it
 
@@ -710,7 +808,24 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
     return {'converged': converged_overall, 'u': u, 'sigma_gp': sig_gp,
             'eps_gp': eps_gp, 'hs_state': hs_state,
             'iterations': iters_per_step, 'n_iter_total': n_iter_total,
-            'r_history': r_hist}
+            'r_history': r_hist, 'settled': settled,
+            'final_residual': float(r_ratio),
+            'final_growth_ratio': (None if growth is None
+                                   else float(growth))}
+
+
+# Early acceptance of a settled step (run_nl): checked every this many
+# iterations after the half-way point, with this margin on the recent rate
+# of movement (a mechanism near the FOS moves at ~2e-4 of the first-half
+# movement per iteration; a stalled residual leaves ~1e-6).
+_SETTLED_CHECK_EVERY = 50
+_SETTLED_RATE_MARGIN = 10.0
+
+
+def _max_nodal_move(du, n_trans):
+    """Largest nodal translation |(dux, duy)| in a DOF vector."""
+    d = du[:n_trans]
+    return float(np.max(np.hypot(d[0::2], d[1::2]))) if n_trans else 0.0
 
 
 # ===========================================================================
@@ -814,9 +929,20 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
     sig_gp0, eps_gp0 = _legacy_state_in(sigma_init, strain_init, mats,
                                         n_e, ngp)
 
-    # When initial state is provided (staged construction), apply the full
-    # load directly — the initial state already represents equilibrium.
-    n_steps_actual = 1 if u_init is not None else n_steps
+    # A stage that starts from a previous state (staged construction) ramps
+    # its out-of-balance load over n_steps: from the load the initial state
+    # is in equilibrium with (its internal force on this stage's active
+    # elements and members) to this stage's full load. Before 2026-10-14
+    # such a stage was applied in one step whatever n_steps said, so a
+    # plastic stage gave the one-step answer.
+    n_steps_actual = n_steps
+    F_start = None
+    if u_init is not None and not initial_stress_relaxation:
+        sig_start = sig_gp0 if sig_gp0 is not None \
+            else np.zeros((n_e, ngp, 4))
+        F_start = _internal_force(ctx, sig_start)
+        if ctx['K_lin'] is not None:
+            F_start = F_start + ctx['K_lin'] @ np.asarray(u_init, float)
 
     f_int_offset = None
     if initial_stress_relaxation:
@@ -831,16 +957,14 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
         ctx = dict(ctx)
         ctx['F_ext'] = ctx['F_ext'] - F0
         f_int_offset = F0
-        # Relaxation is an unloading path — always ramp over n_steps even if
-        # u_init is supplied.
-        n_steps_actual = n_steps
 
     res = run_nl(ctx, n_steps=n_steps_actual, max_iter=max_iter, tol=tol,
                  u_init=u_init, sigma_gp_init=sig_gp0,
                  strain_gp_init=eps_gp0, hs_state_init=state_init,
                  method=method, reform_interval=reform_interval,
                  disp_tol=disp_tol, max_cutbacks=max_cutbacks,
-                 line_search=line_search, f_int_offset=f_int_offset)
+                 line_search=line_search, f_int_offset=f_int_offset,
+                 F_start=F_start)
 
     sig_gp = res['sigma_gp']
     eps_gp = res['eps_gp']

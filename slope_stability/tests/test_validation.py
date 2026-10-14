@@ -197,10 +197,10 @@ class TestB6FemSRMCrossCheck:
                           "gamma": 20.0}],
             depth=5.0, nx=56, ny=20, srf_tol=0.01, x_extend=0.0,
         )
-        # LE search gives 0.985-0.989, published 1.00; T6 SRM on this
-        # pinned mesh gives 0.934 (~95 s). NOTE: SRM failure detection on
-        # this low-c/low-phi face is mesh-sensitive (finer meshes stall
-        # earlier; see fem2d/UPGRADE_PLAN.md "SRM failure-detection mesh
-        # consistency") — the pinned mesh keeps this row in the usual
-        # LE-vs-FEM band around the published FOS.
+        # LE search gives 0.982-0.989, published 1.00; T6 SRM gives 0.949
+        # on this mesh and on 72x24 alike since the 2026-10-14 fixes (the
+        # mesher no longer fills the notch above the toe with soil, and a
+        # stalled residual with still displacements is not read as
+        # failure; fem2d/VALIDATION.md section 0). The band is the usual
+        # LE-vs-FEM spread around the published FOS.
         assert 0.93 <= res.FOS <= 1.12

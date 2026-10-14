@@ -50,7 +50,7 @@ detailed Phase-E history; this file supersedes it.
     - The owner's direction: "Downdrag has many methods and it should be open to multiple assumptions", and on 2026-10-14: "presenting all of them is fine".
   - **4bf710c, fem2d.** Per-stage delta, cumulative and since-reference movements (`reset_displacements_after`, default after the gravity stage). Phasing decides self-weight. Three latent staged-analysis bugs fixed.
     - The owner's direction: "Construction phasing will determine output."
-    - Stage 0 as the gravity stage: confirmed by the owner, 2026-10-14. Open: θ=0.5 ringing at drained boundaries (GM-07); `analyze_staged` ignores `n_steps` (GM-08).
+    - Stage 0 as the gravity stage: confirmed by the owner, 2026-10-14. Open: θ=0.5 ringing at drained boundaries (GM-07). `n_steps` is honoured since 2026-10-14.
   - **The references sub-agent.** The GSE main agent's `references` sub-agent was already wired to handle method and parameter calls (owner, 2026-10-09). Modules must not hide method choices; the plain `judgment` data in results makes a choice visible to it.
 
 **1. 5.32.1 RELEASED 2026-10-08 with planlens 0.12.0.** The owner said, the night of 2026-10-07: "Ok to release however you see best".
@@ -197,7 +197,7 @@ about 60 of them were on the list that stood here ("Open to-dos (refreshed
 
 **Now (from 2026-10-14): core improvements while CfA sets up Tiny Apps** (details in BACKLOG §0). CfA says the SharePoint connection and the per-user Prompter keys (one per user) are a few weeks out, so the Tiny Apps production items (OWN-29, OWN-30, OWN-43–OWN-51, TA-03) moved to Next until they arrive.
 - **Agent work, in three tracks:**
-  - engineering answers that err on the unsafe side: GM-05, GM-06, GM-20, GM-08, then GM-42 and GM-30 (done 2026-10-14: downdrag as the owner asked; the slope search's sand-slope, toe-circle and reinforcement misses; see BACKLOG "Done"; OWN-58 asks about the pile's own weight);
+  - engineering answers that err on the unsafe side: GM-20, then GM-42 and GM-30 (done 2026-10-14: downdrag as the owner asked; the slope search's sand-slope, toe-circle and reinforcement misses; fem2d's mesh-dependent strength reduction, which was a soil-filled notch in the slope mesher, and staged `n_steps`; see BACKLOG "Done"; OWN-58 asks about the pile's own weight);
   - Document Review accuracy: PL-07, VIS-01, VIS-04, VIS-05, DR-15–DR-17, DR-04, VIS-09;
   - release readiness: INF-10 and EV-13 with DR-05 (one Foundry suite run for the whole train); the post-name cleanup of the shipped code is done (BACKLOG "Done");
   - then the calculation tables, GM-39 (the next module train, owner 2026-10-14).
