@@ -39,5 +39,23 @@ and the two zips as received.
    `write_diggs` because a printed N of ">50" went into `n`; the hint now
    names the refusal field (RI-26, cc51fa7).
 
-The full step-by-step read (CLAUDE.md "REVIEW EVERY MODEL RUN IN FULL")
-follows in `TRACE_REVIEW.md`; its fix list goes into `BACKLOG.md` by ID.
+## The full read (2026-10-14)
+
+`TRACE_REVIEW.md` (an Opus subagent read every record; private tables,
+scripts and page images are in `raw/notes/`). In short: where the reading
+finished it was good (401 of 406 checked values right), but the work was
+lost: four helpers stopped holding extracted data and returned apologies;
+the requested grid was mirrored and never reached a file; agent model calls
+had no busy ladder, and the final refusals fit a tokens-per-minute limit
+reached through very large tool results. This was a pipeline job done by a
+chat loop.
+
+Dispositions (BACKLOG):
+- PLANNED, Now: TA-19 (an errored turn keeps its work), TA-20 (busy ladder
+  on agent calls), TA-21 (a failed helper returns its data as a file),
+  TA-22 (helper cap, token pacer, helper budget), EV-14 (the record),
+  RI-27 (`write_diggs` silent zeros; a printed ">50" becomes a refusal).
+- PLANNED, Next: RI-28, PL-24, PL-25, VIS-24, VIS-25, EV-15.
+- PLANNED, Later: RI-29 (report to DIGGS through `report_ingest`, after
+  OWN-11), TA-23.
+- FIXED: RI-26 (cc51fa7), the error message for a printed ">50".
