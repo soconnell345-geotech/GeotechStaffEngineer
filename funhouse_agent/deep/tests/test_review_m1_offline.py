@@ -668,6 +668,9 @@ def test_arms_are_the_old_ones_plus_overview():
         # plan W4 (coverage in code), pinned in test_coverage_offline.py
         "coverage": {A.COVERAGE_ENV: "1"},
         "checklist": {A.COVERAGE_ENV: "1", A.CHECKLIST_ENV: "1"},
+        # VIS-01 turned lettering, pinned in funhouse_agent/tests/
+        # test_vision_turned.py
+        "turn_retry": {A.VISION_TURN_RETRY_ENV: "1"},
     }
 
 

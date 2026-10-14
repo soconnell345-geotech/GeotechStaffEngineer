@@ -122,6 +122,8 @@ Analyze an attached image using vision. Returns text description/analysis.
 Render ONE PDF page and analyze it using vision — for a SCANNED page, a figure,
 a boring-log sheet, or a plotted cross-section. For a text-layer report prefer
 `read_pdf_text` (cheaper). `attachment_key` is an attachment key OR a real path.
+`turn` = 90, 180 or 270 sends the page turned that many degrees clockwise, for
+lettering that runs up the page (90), down it (270) or upside down (180).
 ```
 <tool_call>
 {"tool_name": "analyze_pdf_page", "attachment_key": "report", "page": 0, "prompt": "Extract geometry from this cross-section"}
@@ -141,7 +143,9 @@ circles so the question becomes "what is mark 1 pointing at?". The zoom is
 always drawn as large as the vision model reads. Every vision result
 carries a `view` (the page rect its image showed) and asks the model to give
 locations as 0-999 boxes on that image: to zoom on one, pass `view` +
-`image_box` instead of `bbox`.
+`image_box` instead of `bbox`. `turn` = 90, 180 or 270 sends the zoom turned
+that many degrees clockwise (lettering running up the page reads upright at 90,
+down it at 270); boxes still come back on the view as the page shows it.
 ```
 <tool_call>
 {"tool_name": "render_region", "attachment_key": "sheet.pdf", "page": 0, "bbox": [400, 180, 480, 240], "marks": [[440, 210, "1"]], "prompt": "What is mark 1 pointing at?"}
@@ -1258,7 +1262,8 @@ def _vision_setup(engine) -> Dict[str, Any]:
                      policy=vision_view.policy(),
                      patch_align=vision_view.patch_align(),
                      text_context=review_flags.vision_text_context(),
-                     structured=review_flags.vision_structured())
+                     structured=review_flags.vision_structured(),
+                     turn_retry=review_flags.vision_turn_retry())
     except Exception:  # noqa: BLE001 - an unknown setup just keys narrower
         setup["setup"] = "unknown"
     return setup
@@ -2075,6 +2080,9 @@ def _dispatch_render_region(arguments, engine, attachments):
     pad_frac = arguments.get("pad_frac", 0.15)
     marks = arguments.get("marks")
     prompt = arguments.get("prompt", "Describe what this zoomed-in region shows.")
+    turn_arg, turn_error = _parse_turn(arguments.get("turn"))
+    if turn_error:
+        return json.dumps({"error": turn_error, "accepted": TURN_ACCEPTED})
 
     window, render_pad, padded = bbox, pad_frac, None
     if view is not None or image_box is not None:
@@ -2111,7 +2119,8 @@ def _dispatch_render_region(arguments, engine, attachments):
     rkey = _repeat_key("render_region", pdf_bytes, {
         "page": page, "bbox": arguments.get("bbox"), "view": view,
         "image_box": image_box, "dpi": arguments.get("dpi"),
-        "pad_frac": pad_frac, "marks": marks, "prompt": prompt},
+        "pad_frac": pad_frac, "marks": marks, "prompt": prompt,
+        "turn": turn_arg},
         arguments, engine)
     hit = _repeat_hit(rkey, "render_region")
     if hit is not None:
@@ -2127,12 +2136,19 @@ def _dispatch_render_region(arguments, engine, attachments):
     if widened is not None:
         window, render_pad = widened[0], 0.0
 
-    try:
-        image_bytes, info = vision_view.render_view(
+    def render(turn=None, default_turn=0):
+        return vision_view.render_view(
             pdf_bytes, page=page, bbox=window, marks=marks, dpi=dpi,
             pad_frac=render_pad,
             allow_jpeg=getattr(engine, "accepts_jpeg", False), engine=engine,
-            upright=not inline, text_layer=layer)
+            upright=not inline, text_layer=layer, turn=turn,
+            default_turn=default_turn)
+
+    try:
+        # Inline, the main model writes image_box on the image it is shown:
+        # that image goes as the page shows it, whatever turn says.
+        image_bytes, info = (render() if inline else render(
+            turn_arg, _start_turn(turn_arg, pdf_bytes, page)))
     except ImportError:
         return json.dumps({
             "error": "PyMuPDF required for PDF rendering. pip install PyMuPDF"
@@ -2142,18 +2158,32 @@ def _dispatch_render_region(arguments, engine, attachments):
 
     lines = _lines_for_context(pdf_bytes, page)
     if inline:
-        return json.dumps(_inline_result(image_bytes, info, page, engine,
-                                         lines, bbox=bbox))
+        out = _inline_result(image_bytes, info, page, engine, lines, bbox=bbox)
+        if turn_arg:
+            out["turn_note"] = ("turn is not used when you look at the "
+                                "image yourself: it is shown as the page "
+                                "shows it")
+        return json.dumps(out)
+
+    def prompt_for(view_info, tag=False):
+        return _vision_prompt(prompt, view_info["clip"], lines,
+                              _sent_size(view_info),
+                              shape=_answer_shape("region"),
+                              turn=_sent_turn(view_info),
+                              cut=_cut_note(view_info, layer), tag=tag)
+
     try:
-        result = ask_vision(
-            engine, image_bytes,
-            _vision_prompt(prompt, info["clip"], lines, _sent_size(info),
-                           shape=_answer_shape("region"),
-                           turn=_sent_turn(info),
-                           cut=_cut_note(info, layer)),
-            "region")
+        asked = _wants_turn_tag(turn_arg, info)
+        result = ask_vision(engine, image_bytes, prompt_for(info, asked),
+                            "region")
+        result, info = _settle_turn(
+            engine, result, info, asked=asked, data=pdf_bytes, page=page,
+            layer=layer, render=lambda t: render(t), prompt_for=prompt_for,
+            kind="region")
         out = {"page": page, **_pdf_page(page), "bbox": bbox,
                "analysis": result, **vision_view.view_payload(info, engine)}
+        if info.get("turn_retry_failed"):
+            out["turn_retry_failed"] = info["turn_retry_failed"]
         if _is_cut_off(result):
             out["cut_off"] = CUT_OFF_NOTE
         if padded is not None:
@@ -2408,12 +2438,172 @@ def _cut_note(info, layer) -> Optional[str]:
         return None
 
 
+# -- Turned lettering: the agent's turn, and the switched re-read ---------------
+#
+# VIS-01 (Foundry brief 5): Sol misread turned lettering far more often than
+# upright, and every sheet it did so on had no text layer to say which way
+# its lettering runs. Two levers for those sheets: ``turn`` on the page and
+# zoom tools, which the agent may use (on), and behind
+# ``GEOTECH_VISION_TURN_RETRY`` (OFF until the suite measures it) a look that
+# finds its lettering turned is read once more upright, and a page found
+# turned is sent turned.
+
+#: What ``turn`` accepts, in the words the agent sees.
+TURN_ACCEPTED = ("90, 180 or 270 (degrees clockwise), or 0 to send the page "
+                 "as it shows")
+
+#: The ``turn`` argument, as the page and zoom tools describe it.
+TURN_ARG_NOTE = (
+    "turn = 90, 180 or 270 sends the image turned that many degrees "
+    "clockwise before the look: lettering that runs up the page (bottom to "
+    "top) reads upright at 90, down it (top to bottom) at 270, upside down at "
+    "180 - turned lettering is misread far more often than upright, so when "
+    "a look says its lettering runs up or down, look again with turn. Boxes "
+    "still come back on the view as the page shows it. A view whose text "
+    "layer shows its lettering turned is turned without asking; turn=0 "
+    "sends the page as it shows.")
+
+
+def _parse_turn(value):
+    """``(turn, error)`` for a tool's ``turn`` argument: ``None`` (decide by
+    itself: omitted, empty or ``"auto"``), 0, 90, 180 or 270 — or an error
+    naming what is accepted."""
+    if value is None or isinstance(value, bool):
+        return None, None
+    if isinstance(value, str):
+        text = value.strip().lower().rstrip("°").strip()
+        if text in ("", "auto"):
+            return None, None
+    else:
+        text = value
+    try:
+        num = float(text)
+    except (TypeError, ValueError):
+        num = None
+    if num is None or not num.is_integer() or int(num) % 90:
+        return None, (f"turn={value!r} is not a quarter turn: give "
+                      f"{TURN_ACCEPTED}.")
+    return int(num) % 360, None
+
+
+#: A page is sent turned once at least this many looks at it, each sent as
+#: the page shows it, found its lettering running the same turned way ...
+TURN_REMEMBER_LOOKS = 2
+#: ... and more of the page's looked-at area turned that way than not (each
+#: look weighted by its share of the page: a whole-page look outweighs any
+#: number of zooms on turned tags among upright ones).
+_TURN_PAGES_KEPT = 512
+_TURN_LOCK = threading.Lock()
+_TURN_SEEN: "OrderedDict[tuple, list]" = OrderedDict()
+
+
+def _turn_key(data, page) -> tuple:
+    return (_conversation_for(), _file_id(data), int(page))
+
+
+def _view_weight(clip, layer) -> float:
+    """The share of the page a view shows (1 when the page size is not
+    known)."""
+    try:
+        x0, y0, x1, y1 = (float(v) for v in clip)
+        area = float(layer.width) * float(layer.height)
+        return max(0.0, min(1.0, (x1 - x0) * (y1 - y0) / area))
+    except Exception:  # noqa: BLE001
+        return 1.0
+
+
+def _note_turn(data, page, turn, weight) -> None:
+    """Keep what one look sent as the page shows it found: the turn its
+    lettering needed (0 = it read left to right) and its share of the page."""
+    with _TURN_LOCK:
+        key = _turn_key(data, page)
+        _TURN_SEEN.setdefault(key, []).append((int(turn or 0) % 360,
+                                               float(weight)))
+        _TURN_SEEN.move_to_end(key)
+        while len(_TURN_SEEN) > _TURN_PAGES_KEPT:
+            _TURN_SEEN.popitem(last=False)
+
+
+def remembered_turn(data, page) -> int:
+    """The turn later looks at this page are sent at, from what the looks so
+    far found (:data:`TURN_REMEMBER_LOOKS`); 0 when they do not agree it is
+    turned. Only with ``GEOTECH_VISION_TURN_RETRY`` does anything use it."""
+    with _TURN_LOCK:
+        seen = list(_TURN_SEEN.get(_turn_key(data, page)) or ())
+    count = {t: 0 for t in (0, 90, 180, 270)}
+    area = {t: 0.0 for t in (0, 90, 180, 270)}
+    for t, w in seen:
+        if t in count:
+            count[t] += 1
+            area[t] += w
+    best = max((90, 180, 270), key=lambda t: (count[t], area[t]))
+    if count[best] >= TURN_REMEMBER_LOOKS and area[best] > area[0]:
+        return best
+    return 0
+
+
+def clear_turn_memory() -> None:
+    """Forget what looks found about every page's turn."""
+    with _TURN_LOCK:
+        _TURN_SEEN.clear()
+
+
+def _start_turn(turn_arg, data, page) -> int:
+    """The turn a look is sent at when the text layer cannot say: a turn
+    remembered for the page (switch on, no ``turn`` asked for), else 0."""
+    from funhouse_agent import review_flags
+    if turn_arg is not None or not review_flags.vision_turn_retry():
+        return 0
+    return remembered_turn(data, page)
+
+
+def _wants_turn_tag(turn_arg, info) -> bool:
+    """Whether a look is asked for the TURNED line: the switch is on, no
+    ``turn`` was asked for, and the image goes as the page shows it because
+    nothing (the text layer, a remembered turn) said otherwise."""
+    from funhouse_agent import review_flags
+    return (review_flags.vision_turn_retry() and turn_arg is None
+            and not _sent_turn(info) and not info.get("direction_known"))
+
+
+def _settle_turn(engine, answer, info, *, asked, data, page, layer, render,
+                 prompt_for, kind):
+    """``(answer, info)`` for a look asked for the TURNED line (``asked``):
+    the answer without that line and, when it says the lettering runs other
+    than left to right, the answer of ONE more look at the same view, sent
+    turned so it reads upright (``render(turn)`` draws it, ``prompt_for(info)``
+    asks it), with that look's info. What the first look found is kept for
+    the page (:func:`remembered_turn`). A second look that fails leaves the
+    first answer, with ``info['turn_retry_failed']`` saying why."""
+    from funhouse_agent import vision_view
+    if not asked or not isinstance(answer, str):
+        return answer, info
+    answer, turn = vision_view.read_turn_tag(answer)
+    _note_turn(data, page, turn or 0, _view_weight(info.get("clip"), layer))
+    if not turn:
+        return answer, info
+    try:
+        img, again_info = render(turn)
+        again_info = dict(again_info)
+        again_info["turn_from"] = "retry"
+        again = ask_vision(engine, img, prompt_for(again_info), kind)
+    except Exception as exc:  # noqa: BLE001 - the first reading still stands
+        failed = dict(info)
+        failed["turn_retry_failed"] = (
+            f"a first look found this view's lettering turned; reading it "
+            f"again upright failed ({_vision_error(exc)}), so this is the "
+            f"first reading")
+        return answer, failed
+    return again, again_info
+
+
 def _vision_prompt(prompt, clip, lines, size=None, shape=None, turn=0,
-                   cut=None) -> str:
+                   cut=None, tag=False) -> str:
     """The prompt one page/region vision call gets: the text layer inside its
     view (when switched on), the agent's own prompt, the answer shape for its
     kind (``shape``, :func:`_answer_shape`), which lines its edges cut
-    (``cut``, :func:`_cut_note`), the location instruction — boxes in pixels
+    (``cut``, :func:`_cut_note`), the TURNED line (``tag``,
+    :func:`_wants_turn_tag`), the location instruction — boxes in pixels
     of an image of ``size`` (w, h), or with no size the old 0-999 grid — and
     the LOCATED instruction (when switched on). ``turn``: the image goes
     turned that many degrees clockwise, ``size`` as sent."""
@@ -2427,6 +2617,8 @@ def _vision_prompt(prompt, clip, lines, size=None, shape=None, turn=0,
         parts.append(shape)
     if cut:
         parts.append(cut)
+    if tag:
+        parts.append(vision_view.TURN_TAG_INSTRUCTION)
     text = vision_view.with_location("\n\n".join(parts), size)
     if review_flags.vision_structured():
         text = vision_view.with_locations(text, size)
@@ -2706,6 +2898,9 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
     tiles, tiles_note, tiles_error = _parse_tiles(arguments.get("tiles", "auto"))
     if tiles_error:
         return json.dumps({"error": tiles_error, "accepted": TILES_ACCEPTED})
+    turn_arg, turn_error = _parse_turn(arguments.get("turn"))
+    if turn_error:
+        return json.dumps({"error": turn_error, "accepted": TURN_ACCEPTED})
 
     try:
         pdf_bytes, _src = _resolve_attachment_or_path(key, attachments)
@@ -2723,9 +2918,10 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
 
     raw = _repeat_or_read(
         "analyze_pdf_page", pdf_bytes,
-        {"page": page, "prompt": prompt, "tiles": tiles}, arguments, engine,
+        {"page": page, "prompt": prompt, "tiles": tiles, "turn": turn_arg},
+        arguments, engine,
         lambda: _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note,
-                               arguments, engine))
+                               arguments, engine, turn_arg=turn_arg))
     try:
         out = json.loads(raw)
     except ValueError:
@@ -2749,20 +2945,29 @@ def _truthy(value) -> bool:
 
 
 def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
-                   engine):
+                   engine, turn_arg=None):
     """:func:`_dispatch_analyze_pdf_page` once the document is in hand."""
     # Render the page at the vision model's image budget -- turned so its
     # lettering reads upright where the text layer says it runs otherwise
-    # (VIS-01). Inline, the main model writes image_box itself on the image
-    # it is shown, so that image goes as the page shows it.
+    # (VIS-01), or as the agent's ``turn`` asks, or as earlier looks found
+    # the page (GEOTECH_VISION_TURN_RETRY). Inline, the main model writes
+    # image_box itself on the image it is shown, so that image goes as the
+    # page shows it.
     from funhouse_agent import vision_view
     inline = bool(arguments.get("_inline"))
     layer = None if inline else vision_view.page_text_layer(pdf_bytes, page)
-    try:
-        image_bytes, info = vision_view.render_view(
+    start = 0 if inline else _start_turn(turn_arg, pdf_bytes, page)
+
+    def render(turn=None, default_turn=0):
+        return vision_view.render_view(
             pdf_bytes, page=page,
             allow_jpeg=getattr(engine, "accepts_jpeg", False),
-            engine=engine, upright=not inline, text_layer=layer)
+            engine=engine, upright=not inline, text_layer=layer, turn=turn,
+            default_turn=default_turn)
+
+    try:
+        image_bytes, info = (render() if inline
+                             else render(turn_arg, start))
     except ImportError:
         return json.dumps({
             "error": "PyMuPDF required for PDF rendering. pip install PyMuPDF"
@@ -2774,8 +2979,12 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
     if inline:
         # The main model looks at the whole page itself and zooms with
         # render_region where the lettering is small: no tiles.
-        return json.dumps(_inline_result(image_bytes, info, page, engine,
-                                         lines))
+        out = _inline_result(image_bytes, info, page, engine, lines)
+        if turn_arg:
+            out["turn_note"] = ("turn is not used when you look at the "
+                                "image yourself: it is shown as the page "
+                                "shows it")
+        return json.dumps(out)
     n = _tile_count(tiles, info)
     if n > 1 and not _has_ink(image_bytes):
         # A blank page has nothing to read closer (wave 2b, C11).
@@ -2787,18 +2996,33 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
     # tiles read the lettering (E1: asked to transcribe a sheet too small to
     # read whole, it was the read's long pole -- 55-72 s against 11-15 s).
     page_kind = "overview" if n > 1 else "page"
-    page_prompt = _vision_prompt(
-        _overview_prompt(prompt, n) if n > 1 else prompt, info["clip"],
-        lines, _sent_size(info), shape=_answer_shape(page_kind),
-        turn=_sent_turn(info), cut=_cut_note(info, layer))
+
+    def page_prompt(view_info, tag=False):
+        return _vision_prompt(
+            _overview_prompt(prompt, n) if n > 1 else prompt,
+            view_info["clip"], lines, _sent_size(view_info),
+            shape=_answer_shape(page_kind), turn=_sent_turn(view_info),
+            cut=_cut_note(view_info, layer), tag=tag)
+
+    def page_look():
+        asked = _wants_turn_tag(turn_arg, info)
+        text = ask_vision(engine, image_bytes, page_prompt(info, asked),
+                          page_kind)
+        return _settle_turn(
+            engine, text, info, asked=asked, data=pdf_bytes, page=page,
+            layer=layer, render=lambda t: render(t), prompt_for=page_prompt,
+            kind=page_kind)
+
     # The whole page and its tiles at once: the tiles never use the
     # whole-page answer, so the read takes the longest call, not the sum.
-    jobs = [lambda: ask_vision(engine, image_bytes, page_prompt, page_kind)]
+    jobs = [page_look]
     if n > 1:
         jobs += _tile_jobs(pdf_bytes, page, info, n, prompt, engine, lines,
-                           layer=layer)
+                           layer=layer, turn_arg=turn_arg, start_turn=start)
     results = _run_together(jobs)
     result, tile_rows = results[0], (results[1:] if n > 1 else None)
+    if not isinstance(result, _Failed):
+        result, info = result
     if isinstance(result, _Failed):
         exc = result.exc
         if isinstance(exc, (NotImplementedError, AttributeError)):
@@ -2810,6 +3034,8 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
     out = {"page": page, **_pdf_page(page),
            "analysis": "" if isinstance(result, _Failed) else result,
            **vision_view.view_payload(info, engine)}
+    if info.get("turn_retry_failed"):
+        out["turn_retry_failed"] = info["turn_retry_failed"]
     if isinstance(result, _Failed):
         out["overview_not_read"] = (
             f"the whole-page view was NOT read ({_vision_error(result.exc)}); "
@@ -2853,10 +3079,10 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
         if turned:
             out["tiles_turned"] = (
                 f"tile(s) {', '.join(turned)} were sent turned (degrees "
-                f"clockwise in each tile's 'turned') so their lettering, "
-                f"which the text layer shows turned on the page, read "
-                f"upright; their boxes were turned back, so each is on its "
-                f"tile's view as the page shows it")
+                f"clockwise in each tile's 'turned', and why in its "
+                f"'turned_why') so their lettering read upright; their "
+                f"boxes were turned back, so each is on its tile's view as "
+                f"the page shows it")
         _merge_found(out)
         if "reading_note" not in out:
             hedge = next((vision_view.bracketed_note(t.get("analysis"))
@@ -2986,37 +3212,64 @@ def _tiles_not_read_note(rows) -> Optional[str]:
             f"on it")
 
 
+#: A tile row's word for where its turn came from (``render_view``'s
+#: ``turn_from``, or ``retry``).
+_TURNED_WHY = {"text_layer": "the text layer shows its lettering turned",
+               "asked": "as asked",
+               "remembered": "earlier looks found this page turned",
+               "retry": "a first look found its lettering turned; read again"}
+
+
 def _tile_jobs(pdf_bytes, page, info, n, prompt, engine, lines=None,
-               layer=None):
+               layer=None, turn_arg=None, start_turn=0):
     """One job per tile of an ``n`` x ``n`` overlapping split, in tile
     order; each renders its tile and reads it, and returns its row (an
     ``error`` row, naming why in plain words, when it could not). A tile
     whose text-layer lettering runs sideways is sent turned upright
-    (``layer``: the page's text layer, read once for all the tiles), and
-    the call is told which lines the tile's edges cut."""
+    (``layer``: the page's text layer, read once for all the tiles), as is
+    every tile when the agent asked for a ``turn_arg`` or the page is
+    remembered turned (``start_turn``); with GEOTECH_VISION_TURN_RETRY a
+    tile found turned is read again upright. The call is told which lines
+    the tile's edges cut."""
     from funhouse_agent import vision_view
     boxes = vision_view.tile_boxes(info["clip"], n)
 
     def one(k):
         r, c = divmod(k, n)
         try:
-            img, tinfo = vision_view.render_view(
-                pdf_bytes, page=page, bbox=boxes[k], pad_frac=0.0,
-                allow_jpeg=getattr(engine, "accepts_jpeg", False),
-                engine=engine, upright=True, text_layer=layer)
+            def render(turn=None, default_turn=0):
+                return vision_view.render_view(
+                    pdf_bytes, page=page, bbox=boxes[k], pad_frac=0.0,
+                    allow_jpeg=getattr(engine, "accepts_jpeg", False),
+                    engine=engine, upright=True, text_layer=layer, turn=turn,
+                    default_turn=default_turn)
+
+            img, tinfo = render(turn_arg, start_turn)
             where = (f"This image is tile row {r + 1} of {n}, column {c + 1} "
                      f"of {n} of the sheet (tiles overlap slightly). Report "
                      f"only what is IN this tile, briefly.")
-            text = ask_vision(
-                engine, img,
-                _vision_prompt(f"{prompt}\n\n{where}", tinfo["clip"], lines,
-                               _sent_size(tinfo), turn=_sent_turn(tinfo),
-                               cut=_cut_note(tinfo, layer)), "tile")
+
+            def tile_prompt(view_info, tag=False):
+                return _vision_prompt(
+                    f"{prompt}\n\n{where}", view_info["clip"], lines,
+                    _sent_size(view_info), turn=_sent_turn(view_info),
+                    cut=_cut_note(view_info, layer), tag=tag)
+
+            asked = _wants_turn_tag(turn_arg, tinfo)
+            text = ask_vision(engine, img, tile_prompt(tinfo, asked), "tile")
+            text, tinfo = _settle_turn(
+                engine, text, tinfo, asked=asked, data=pdf_bytes, page=page,
+                layer=layer, render=lambda t: render(t),
+                prompt_for=tile_prompt, kind="tile")
             row = {"tile": f"r{r + 1}c{c + 1}",
                    "view": [round(v, 1) for v in tinfo["clip"]],
                    "view_px": [tinfo["width_px"], tinfo["height_px"]],
-                   **({"turned": _sent_turn(tinfo)}
+                   **({"turned": _sent_turn(tinfo),
+                       "turned_why": _TURNED_WHY.get(
+                           str(tinfo.get("turn_from")), "turned")}
                       if _sent_turn(tinfo) else {}),
+                   **({"turn_retry_failed": tinfo["turn_retry_failed"]}
+                      if tinfo.get("turn_retry_failed") else {}),
                    **({"text_px": tinfo["text_px"]}
                       if tinfo.get("text_px") else {}),
                    "analysis": text,

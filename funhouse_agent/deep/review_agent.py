@@ -59,6 +59,7 @@ from funhouse_agent.deep.tools import (
     _find_like_available,
     make_vision_tools,
 )
+from funhouse_agent.vision_tools import TURN_ARG_NOTE
 
 #: The page agent's tools, all built by ``make_vision_tools``.
 REVIEW_TOOLS = (
@@ -106,7 +107,7 @@ REVIEW_DESCRIPTIONS: Dict[str, str] = {
         "Every reading is kept for the conversation: reuse=true returns the "
         "latest reading of the page - saying what it was asked - instead of "
         "a new look, for a follow-up that reading already answers; look "
-        "again when the question needs more. page "
+        "again when the question needs more. " + TURN_ARG_NOTE + " page "
         "is 0-based; or give pdf_page, 1-based, as a PDF viewer shows."),
     "render_region": (
         "Zoom on part of a page and look at it. The region is re-drawn from "
@@ -122,8 +123,9 @@ REVIEW_DESCRIPTIONS: Dict[str, str] = {
         "character, see what a note, markup or leader points at, or check a "
         "dimension before you quote it. Every zoom is kept for the "
         "conversation: reuse=true returns the kept zoom of the same region - "
-        "saying what it was asked - instead of a new look. page is 0-based; "
-        "or give pdf_page, 1-based, as a PDF viewer shows."),
+        "saying what it was asked - instead of a new look. " + TURN_ARG_NOTE
+        + " page is 0-based; or give pdf_page, 1-based, as a PDF viewer "
+        "shows."),
     "analyze_image": (
         "Look at an image file - an uploaded picture, or a contact sheet "
         "that render_page_thumbnails wrote (pass its path) - and answer your "

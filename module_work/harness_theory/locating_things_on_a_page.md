@@ -179,12 +179,31 @@ Uncommitted for the lead's review; offline tests in
    the image as sent (`cut_note`); tiles are told too. Every look now ends
    with one general sentence: quote only what is visible of cut lettering,
    write (cut) where it stops, and never complete it (`READING_INSTRUCTION`).
-4. **What this does not reach.** A sheet with no text layer is sent as it
-   is. Every brief-5 case is such a sheet: the ten Mecklenburg sheets
-   (lettering drawn as strokes; 10.31A has only hidden CAD text, which has
-   boxes and no direction) and the synthetic tag sets. For them, only the
-   two general sentences apply. `render_view(turn=...)` turns a view by
-   hand; nothing on the tool surface offers it yet.
+4. **Sheets with no text layer.** Every brief-5 case is such a sheet: the
+   ten Mecklenburg sheets (lettering drawn as strokes; 10.31A has only
+   hidden CAD text, which has boxes and no direction) and the synthetic tag
+   sets. Nothing turns them by itself. Two levers reach them:
+   * **`turn` on `analyze_pdf_page` and `render_region` (on).** 90, 180 or
+     270 sends the page (and its tiles) or the zoom turned that many
+     degrees clockwise; 0 sends it as the page shows. Boxes come back on the
+     view as the page shows it. It is described only in the tools' own
+     descriptions (`vision_tools.TURN_ARG_NOTE`, in `deep/tools.py`,
+     `deep/review_agent.py` `REVIEW_DESCRIPTIONS` and `native_tools.py`);
+     no system prompt names it. The look already says which way its
+     lettering runs (`_SHAPE_TAIL`), so the agent can look again turned.
+   * **`GEOTECH_VISION_TURN_RETRY` (OFF; arm `turn_retry` on the default
+     agent).** A look sent as the page shows it, with nothing to say which
+     way its lettering runs, is asked to end with `TURNED: bottom-to-top`,
+     `top-to-bottom` or `upside-down` (`vision_view.TURN_TAG_INSTRUCTION`).
+     When it does, that view is read ONCE more, turned upright, and that
+     reading is the answer (`turned` says it is a second reading). The line
+     is dropped from the answer. Page looks, tiles and zooms all do this.
+     What each first look found is kept per conversation, file and page.
+     Once two looks found the same turn, and they cover more of the page
+     than the looks found upright (each look weighted by its share of the
+     page), later looks at that page are sent turned from the start
+     (`remembered_turn`). So zooms on a few turned tags never turn an
+     upright sheet whose whole-page look read upright.
 5. **Not turned:** the inline route (the main model writes `image_box` on
    the image it is shown), the markup check's crops, `sweep_pages` and the
    chart read-offs. These call `render_view` without `upright`.

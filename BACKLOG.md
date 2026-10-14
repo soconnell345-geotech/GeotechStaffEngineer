@@ -48,7 +48,7 @@ After any change to this file, rebuild and republish the Backlog Desk (`module_w
 CfA says the SharePoint connection and the per-user Prompter keys are a few weeks out (owner, 2026-10-14). Until they arrive, Now is core work on the app itself. The Tiny Apps production items (OWN-29, OWN-30, OWN-43–OWN-51, TA-03) wait in Next and come back when CfA delivers.
 
 - **Engineering answers that err on the unsafe side** (geotech page): the first round is done (BACKLOG "Done", 2026-10-14). Follow-ups it found: GM-59, GM-60, GM-61, GM-63 (Next).
-- **Document Review accuracy** (testers' page; general fixes, no single-example rules): VIS-01 (turned lettering read upright: the stroke-lettered half), VIS-09 (zoom for pasted screenshots and image uploads). Done 2026-10-14: distinct sheets no longer called duplicates, the markup fixes, the geotech tools off the page (BACKLOG "Done").
+- **Document Review accuracy** (testers' page; general fixes, no single-example rules): VIS-09 (zoom for pasted screenshots and image uploads). Done 2026-10-14: distinct sheets no longer called duplicates, the markup fixes, the geotech tools off the page (BACKLOG "Done").
 - **From the 2026-10-14 report-to-DIGGS session** (`module_work/field_feedback/2026-10-14_report-to-diggs_v5.33.0/`): TA-19 (an errored turn keeps none of its work); the full read is under way and its fix list lands here.
 - **Release readiness:** INF-10 (module suites on a fresh resolve, since the next release admits pandas 3; no release is planned (OWN-55), but these keep master releasable), EV-13 with DR-05 (one Foundry suite run that measures this train, tonight's default-page changes and the lean build).
 - **Calculation tables** (OWN-10, 2026-10-14: yes, the next module train): GM-39, after the tracks above.
@@ -147,6 +147,7 @@ All OFF unless marked. Decisions: OWN-06.
 | `GEOTECH_REVIEW_AGENT=lean` | unset | DR-05 (34/35 on Sol at 768 px, 5.31; never on GPT or after 5.32) |
 | `GEOTECH_REVIEW_AGENT=minimal` | unset | Not a candidate (33/35 at ~4x tokens) |
 | `GEOTECH_VISION_TEXT_CONTEXT` / `_STRUCTURED` | off | 34/35; structured partly superseded by pixel boxes; the agent-supplied `context` parameter never built |
+| `GEOTECH_VISION_TURN_RETRY` | off | Built 2026-10-14 (VIS-01): a look that ends "TURNED: ..." is re-read once turned upright, and a page found turned is remembered; arm `turn_retry`; EV-13 |
 | `GEOTECH_VISION_INLINE` | off | Lost 3 locate tasks; DR-28, VIS-13 |
 | `GEOTECH_REVIEW_SWEEP` | off | Ties baseline at 2.4x tokens; needs a task it wins (DR-25) |
 | `GEOTECH_REVIEW_FINDINGS` | off | **Never measured** (DR-27) |
@@ -187,7 +188,6 @@ All OFF unless marked. Decisions: OWN-06.
 
 ## 3. Vision
 
-- **VIS-01** [Now] **R: render turned or sideways lettering upright** (6 of 15 turned look-alikes misread vs 0 of 11 upright). Text-layer half done 2026-10-14: a view whose text layer runs one turned way is sent turned upright, boxes converted back (UFC 3-260-02's 29 turned table pages now read upright). Every measured failure is stroke-lettered (no text layer), so left: an optional `turn` on render_region / analyze_pdf_page (in their own descriptions) and an automatic turned re-read behind `GEOTECH_VISION_TURN_RETRY`, OFF until measured. *was:* H E3
 - **VIS-02** [Next] **`found` B1 / B2**: judge region vs text line by aspect; carry the text read (`vision_view.py:775, 804`). *was:* H E3
 - **VIS-03** [Next] **Notes MK1 / MK2 / MK3 / MK5**: `aim_note` false alarms; `found_note` noise; say when looks disagree or a zoom is coarser than the tiles. *was:* H E3
 - **VIS-06** [Next] **E4: `code_reading` should flag a READ input outside the fitted axis** (110 tsf at φ 28° on a 30–45° axis; `funhouse_agent/chart_reading.py`). *Src:* `TRACE_REVIEW_B_AEFG.md:495-499`
@@ -196,6 +196,7 @@ All OFF unless marked. Decisions: OWN-06.
 - **VIS-09** [Now] **A crop/zoom tool for raster uploads and pasted screenshots.** *Src:* FI "VISION HARNESS BENCHMARK"; *was:* H C9
 - **VIS-10** [Next] **Per-figure crop boxes in the reference catalogs (P7)**: whole-page renders blind `find_scales` on two-figure pages, so `code_reading` never measured Fig 7-15. Find each box once at build time. *Src:* FI:540-543; B5 TRACE_REVIEW:82
 - **VIS-11** [Next] [owner] **Free OCR on FIPS hosts**: only paid DI works where the app runs (RapidOCR imports OpenCV, which aborts). First a child-process probe of `onnxruntime` under FIPS, then approval of vendored weights (OWN-54). Merges Tier-2 engines and PL-21. *Src:* FI:384-386, 489-494
+- **VIS-23** [Later] **Turn small ends**: `read_turn_tag` drops a TURNED line naming no direction; the unused `_read_tiles` does not pass `turn`; the tiled read runs overview and tiles together, so the remembered turn cannot help within that one call.
 - **VIS-22** [Later] **A widened kept zoom can be up to 2.25x the asked area**, past `ZOOM_REUSE_MAX_AREA` 2.0, so `reuse=true` can miss it; and `page_text_layer` costs 0.08-0.15 s a look (PL-23).
 - **VIS-12** [Later] **MK7: offer `measure` / `log_grid` only when a scale or log page exists** (~930 tokens a call). *Src:* `TRACE_REVIEW_suite_meck.md:61-67`
 - **VIS-13** [Later] **The inline route still asks for 0-999 boxes** (`deep/inline_images.py:71`; measured 57–91 pt off). *Src:* HT `locating_things_on_a_page.md:144-147`
@@ -441,6 +442,7 @@ Long items kept in their own sections: DR-08–DR-13, GM-39, VIS-11, VIS-20, TA-
 
 Older docs still list these as open. Delete this section at the next sweep.
 
+- **VIS-01** (turned lettering read upright): the text-layer turn (c9febc8), an optional `turn` (0/90/180/270) on `analyze_pdf_page` and `render_region` described only in the tools' own descriptions (ON), and the automatic turned re-read with per-page memory behind `GEOTECH_VISION_TURN_RETRY` (OFF, arm `turn_retry`). Every measured failure was stroke-lettered; the suite's set-long-rare-tag and Mecklenburg tasks measure it (EV-13; the list of what to count is in `module_work/harness_theory/locating_things_on_a_page.md`).
 - **GM-68** (found and fixed 2026-10-14 in the tables train: `pile_group_package` dropped the axial / lateral stiffness and batter, so `method_6dof` always raised): it now builds piles and loads through the pile-group adapter; a missing `axial_stiffness` is named.
 - **VIS-05** (boxes on sideways sheets): every location request carries one general sentence (give boxes in the image as sent, even where the drawing is turned) and every conversion takes the page's /Rotate and any view turn. /Rotate 0-270 x lettering 0-270: worst box-centre error 0.38 pt; the brief-5 failure shape 130 pt off → 0.38 pt.
 - **VIS-04** (a zoom that cuts text lines invents the rest): every look ends with one sentence (quote only what is visible, write (cut), never complete); `render_region` widens the window to take in the lines it cuts (≤ a quarter a side, never past 300 pt for a mark-anchoring window; `window_widened`), and lines still cut are named to the call with the edge that cuts them (`edge_note`). All measured cases were stroke-lettered, so only the sentence reaches them; EV-13 measures it.

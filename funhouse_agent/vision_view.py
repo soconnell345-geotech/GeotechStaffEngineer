@@ -388,6 +388,7 @@ def render_view(source, page: int = 0, bbox: Optional[Sequence[float]] = None,
                 engine=None, upright: bool = False,
                 turn: Optional[int] = None,
                 text_layer: Optional["TextLayer"] = None,
+                default_turn: int = 0,
                 ) -> Tuple[bytes, Dict[str, Any]]:
     """Render ``page`` (or ``bbox`` on it) of a PDF for the vision model.
 
@@ -403,13 +404,17 @@ def render_view(source, page: int = 0, bbox: Optional[Sequence[float]] = None,
 
     ``upright`` sends the view turned so that its lettering reads upright,
     when the page's text layer says which way it runs (:func:`reading_turn`;
-    ``text_layer`` is that layer when the caller already has it). ``turn``
-    (0/90/180/270, clockwise) turns it by hand instead. A turned image
-    carries ``info['turn']``, and ``width_px``/``height_px`` are its size AS
-    SENT; ``clip`` is still the page rect it shows, as the page displays
-    it — pixel boxes on it go through :func:`unturn_px_box` (which
-    :func:`px_to_grid`, :func:`px_box_to_page`, :func:`boxes_to_grid` and
-    :func:`split_located` do when given the turn).
+    ``text_layer`` is that layer when the caller already has it), and turned
+    ``default_turn`` when the text layer cannot say (a turn earlier looks
+    found for the page). ``turn`` (0/90/180/270, clockwise) turns it by hand
+    instead. A turned image carries ``info['turn']`` and where the turn came
+    from (``info['turn_from']``: ``text_layer``, ``remembered`` or
+    ``asked``), and ``width_px``/``height_px`` are its size AS SENT; ``clip``
+    is still the page rect it shows, as the page displays it — pixel boxes
+    on it go through :func:`unturn_px_box` (which :func:`px_to_grid`,
+    :func:`px_box_to_page`, :func:`boxes_to_grid` and :func:`split_located`
+    do when given the turn). ``info['direction_known']`` says the text layer
+    decided the view's direction (upright included).
     """
     from planlens.document import Document
     doc = (Document(content=source) if isinstance(source, (bytes, bytearray))
@@ -437,17 +442,27 @@ def render_view(source, page: int = 0, bbox: Optional[Sequence[float]] = None,
             data, info = doc.render(int(page), **kwargs)
         if patch_align():
             data, info = align_to_patches(data, info, cap)
-        quarter = 0
+        quarter, source, known = 0, None, None
         if turn is not None:
             quarter = int(turn) % 360 if int(turn) % 90 == 0 else 0
+            source = "asked"
         elif upright:
             layer = (text_layer if text_layer is not None
                      else _text_layer_of(doc, int(page)))
-            quarter = reading_turn(layer, info["clip"])
+            known = reading_turn(layer, info["clip"], default=None)
+            if known is None:
+                quarter = int(default_turn or 0) % 360
+                quarter = quarter if quarter in TURNS else 0
+                source = "remembered"
+            else:
+                quarter, source = known, "text_layer"
         if quarter:
             data, info = turn_image(data, info, quarter)
-            if turn is not None and info.get("turn"):
-                info["turn_asked"] = True
+            if info.get("turn"):
+                info["turn_from"] = source
+        if known is not None:
+            info = dict(info)
+            info["direction_known"] = True
         return data, info
     finally:
         doc.close()
@@ -511,7 +526,7 @@ def view_payload(info: Dict[str, Any], engine=None) -> Dict[str, Any]:
         "precision": precision_note(info["clip"])}
     quarter = int(info.get("turn") or 0)
     if quarter:
-        out["turned"] = turned_note(quarter, bool(info.get("turn_asked")))
+        out["turned"] = turned_note(quarter, info.get("turn_from"))
     prof = engine_profile(engine)
     if prof is not None and prof.answered_by:
         out["vision_model"] = prof.answered_by
@@ -1233,16 +1248,18 @@ def _inside(bbox, clip) -> Tuple[float, float]:
             min(bbox[3], clip[3]) - max(bbox[1], clip[1]))
 
 
-def reading_turn(layer: Optional[TextLayer], clip: Sequence[float]) -> int:
+def reading_turn(layer: Optional[TextLayer], clip: Sequence[float],
+                 default: Optional[int] = 0) -> Optional[int]:
     """The turn (degrees clockwise, :data:`TURNS`) that sets the lettering
     in ``clip`` upright, from the text layer's own reading directions: 90
     for lines that run from bottom to top, 270 from top to bottom, 180
-    upside down. 0 when the lettering already reads upright, when the view
-    has too little lettering with a known direction to say
-    (:data:`TURN_MIN_CHARS`, :data:`TURN_MIN_CHARS_PER_SQ_IN`), or when no
-    one way holds :data:`TURN_SHARE` of it."""
+    upside down. 0 when the lettering already reads upright, or when no one
+    way holds :data:`TURN_SHARE` of it. ``default`` when the view has too
+    little lettering with a known direction to say
+    (:data:`TURN_MIN_CHARS`, :data:`TURN_MIN_CHARS_PER_SQ_IN`) — ``None``
+    asks to be told so."""
     if not layer or not layer.lines:
-        return 0
+        return default
     x0, y0, x1, y1 = (float(v) for v in clip)
     weight = {t: 0.0 for t in TURNS}
     total = 0.0
@@ -1263,6 +1280,8 @@ def reading_turn(layer: Optional[TextLayer], clip: Sequence[float]) -> int:
     best = max((90, 180, 270), key=lambda t: weight[t])
     sq_in = (x1 - x0) * (y1 - y0) / (72.0 * 72.0)
     floor = max(float(TURN_MIN_CHARS), TURN_MIN_CHARS_PER_SQ_IN * sq_in)
+    if total < floor:
+        return default
     if weight[best] >= floor and weight[best] >= TURN_SHARE * total:
         return best
     return 0
@@ -1298,18 +1317,70 @@ def turn_image(data: bytes, info: Dict[str, Any], turn: int
     return body, turned
 
 
-def turned_note(turn: int, asked: bool = False) -> str:
-    """What a result says about a view sent turned ``turn`` degrees —
-    ``asked`` when the turn was asked for rather than read off the text
-    layer."""
+def turned_note(turn: int, source: Optional[str] = "text_layer") -> str:
+    """What a result says about a view sent turned ``turn`` degrees, by
+    where the turn came from (``render_view``'s ``info['turn_from']``, or
+    ``retry`` for a view read again after a first look found it turned)."""
     quarter = int(turn or 0) % 360
-    why = ("as asked" if asked else
-           f"because the page's text layer shows its lettering running "
-           f"{_RUNS.get(quarter, 'turned')}: the vision call read it upright")
+    runs = _RUNS.get(quarter, "turned")
+    why = {
+        "asked": "as asked",
+        "remembered": (f"because earlier looks at this page found its "
+                       f"lettering running {runs}: the vision call read it "
+                       f"upright"),
+        "retry": (f"because a first look, as the page shows it, found its "
+                  f"lettering running {runs}: this is a second reading, "
+                  f"turned so the lettering read upright"),
+    }.get(str(source), (f"because the page's text layer shows its lettering "
+                        f"running {runs}: the vision call read it upright"))
     return (f"this view's image was sent turned {quarter} degrees clockwise, "
             f"{why}. Its boxes were turned back in code, so every image_box "
             f"is on this view as the page shows it; words such as top or "
             f"left in the analysis describe the turned image.")
+
+
+#: Asked of a look whose image goes as the page shows it, with
+#: ``GEOTECH_VISION_TURN_RETRY`` on (:func:`read_turn_tag` reads the line).
+TURN_TAG_INSTRUCTION = (
+    "If most of the lettering in this image does not read from left to "
+    "right, end your answer with one line saying which way it runs: "
+    "TURNED: bottom-to-top, TURNED: top-to-bottom or TURNED: upside-down.")
+
+#: The tagged line, however a model dresses it (bold, a list mark, a full
+#: stop).
+_TURN_TAG = re.compile(r"^[ \t*_>`\-]*TURNED[ \t*]*:[ \t]*(.*?)[ \t*_`.]*$",
+                       re.IGNORECASE | re.MULTILINE)
+
+
+def _turn_for(phrase: str) -> Optional[int]:
+    """The turn (degrees clockwise) that sets lettering running ``phrase``
+    upright, or ``None`` for a phrase that names no turned direction."""
+    p = " " + re.sub(r"[-_]", " ", str(phrase or "").lower()) + " "
+    if "upside" in p:
+        return 180
+    b, t = p.find("bottom"), p.find(" top")
+    if b >= 0 and t >= 0:
+        return 90 if b < t else 270
+    if " up " in p or "upward" in p:
+        return 90
+    if " down " in p or "downward" in p:
+        return 270
+    return None
+
+
+def read_turn_tag(text: Any) -> Tuple[Any, Optional[int]]:
+    """``(answer without its TURNED line, the turn that sets its lettering
+    upright)`` for an answer to :data:`TURN_TAG_INSTRUCTION`; the turn is
+    ``None`` when there is no such line or it names no turned direction (the
+    line is dropped either way). The last such line counts."""
+    if not isinstance(text, str) or "turned" not in text.lower():
+        return text, None
+    found = list(_TURN_TAG.finditer(text))
+    if not found:
+        return text, None
+    m = found[-1]
+    rest = (text[:m.start()].rstrip() + "\n" + text[m.end():].lstrip()).strip()
+    return rest, _turn_for(m.group(1))
 
 
 def unturned_size(size: Sequence[int], turn: int = 0) -> Tuple[int, int]:
@@ -1511,4 +1582,4 @@ __all__ = ["BUDGET_ENV", "DETAIL_ENV", "CHART_BUDGET_ENV", "POLICY_ENV",
            "LayerLine", "TextLayer", "page_text_layer", "reading_turn",
            "turn_image", "turned_note", "unturned_size", "unturn_px_box",
            "turn_px_box", "turn_edge", "cut_lines", "widen_to_lines",
-           "cut_note"]
+           "cut_note", "TURN_TAG_INSTRUCTION", "read_turn_tag"]

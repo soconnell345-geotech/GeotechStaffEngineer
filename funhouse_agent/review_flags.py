@@ -81,6 +81,17 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     run from the ledger and the data's cross-checks, and the judgement items
     returned for the agent to report against. With ``GEOTECH_COVERAGE`` on
     too, a failed code check joins the gate's note.
+``GEOTECH_VISION_TURN_RETRY``
+    ``1`` makes a look whose image goes as the page shows it (no turn asked
+    for, none read off the text layer) end with one tagged line when most of
+    its lettering does not read left to right (``TURNED: bottom-to-top``,
+    ``top-to-bottom``, ``upside-down``). That view is then read ONCE more,
+    turned so its lettering reads upright, and that reading is the answer.
+    When looks at a page keep finding it turned (two or more, and more of the
+    page's looked-at area turned than not), later looks at the page are sent
+    turned from the start. Both pages; page and region looks and tiles
+    (BACKLOG VIS-01: the sheets Sol misread sideways in Foundry brief 5 have
+    no text layer to say which way their lettering runs).
 """
 
 from __future__ import annotations
@@ -100,10 +111,12 @@ GEOMETRY_ENV = "GEOTECH_REVIEW_GEOMETRY"
 DIGEST_ENV = "GEOTECH_REVIEW_DIGEST"
 COVERAGE_ENV = "GEOTECH_COVERAGE"
 CHECKLIST_ENV = "GEOTECH_REVIEW_CHECKLIST"
+VISION_TURN_RETRY_ENV = "GEOTECH_VISION_TURN_RETRY"
 
 ALL_ENVS = (AGENT_ENV, VISION_TEXT_ENV, VISION_STRUCTURED_ENV,
             VISION_INLINE_ENV, SWEEP_ENV, FINDINGS_ENV, OVERVIEW_ENV,
-            GEOMETRY_ENV, DIGEST_ENV, COVERAGE_ENV, CHECKLIST_ENV)
+            GEOMETRY_ENV, DIGEST_ENV, COVERAGE_ENV, CHECKLIST_ENV,
+            VISION_TURN_RETRY_ENV)
 
 #: Not a switch but the overview's setting: above this many pages in the
 #: new uploads (all of them together) the orientation asks for contact sheets.
@@ -190,6 +203,12 @@ def checklist() -> bool:
     return _on(CHECKLIST_ENV)
 
 
+def vision_turn_retry() -> bool:
+    """Whether a look whose lettering is found turned is read again upright,
+    and a page found turned is sent turned (both pages)."""
+    return _on(VISION_TURN_RETRY_ENV)
+
+
 def overview_pages() -> int:
     """The page count above which the orientation asks for contact sheets
     (``GEOTECH_REVIEW_OVERVIEW_PAGES``, default 20)."""
@@ -226,6 +245,9 @@ ARMS: Dict[str, Dict[str, str]] = {
     # coverage tool and the gate; then the same plus the report checklist.
     "coverage": {COVERAGE_ENV: "1"},
     "checklist": {COVERAGE_ENV: "1", CHECKLIST_ENV: "1"},
+    # Turned lettering read again upright (VIS-01, 2026-10-14). On the
+    # DEFAULT agent, so it compares straight against `baseline`.
+    "turn_retry": {VISION_TURN_RETRY_ENV: "1"},
 }
 
 
@@ -264,10 +286,10 @@ def describe() -> str:
 __all__ = ["AGENT_ENV", "VISION_TEXT_ENV", "VISION_STRUCTURED_ENV",
            "VISION_INLINE_ENV", "SWEEP_ENV", "FINDINGS_ENV", "OVERVIEW_ENV",
            "GEOMETRY_ENV", "DIGEST_ENV", "COVERAGE_ENV", "CHECKLIST_ENV",
-           "OVERVIEW_PAGES_ENV",
+           "VISION_TURN_RETRY_ENV", "OVERVIEW_PAGES_ENV",
            "DEFAULT_OVERVIEW_PAGES", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
            "lean_agent",
            "vision_text_context", "vision_structured", "vision_inline",
            "sweep", "findings", "overview", "geometry", "digest",
-           "coverage", "checklist", "overview_pages", "switches",
-           "describe"]
+           "coverage", "checklist", "vision_turn_retry", "overview_pages",
+           "switches", "describe"]

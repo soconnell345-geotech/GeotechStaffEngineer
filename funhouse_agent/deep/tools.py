@@ -52,6 +52,7 @@ from funhouse_agent.dispatch import (
     _selector_value_candidates,
 )
 from funhouse_agent.vision_tools import (
+    TURN_ARG_NOTE,
     dispatch_extended_tool as _dispatch_extended_tool,
     docx_available as _docx_available,
     _default_save_fn,
@@ -1099,6 +1100,7 @@ def make_vision_tools(
         tiles: str = "auto",
         pdf_page: Optional[int] = None,
         reuse: bool = False,
+        turn: Optional[int] = None,
     ) -> str:
         """Render a PDF page and analyze it using vision.
 
@@ -1114,6 +1116,9 @@ def make_vision_tools(
         page (it says what it was asked) instead of a new look -- for a
         follow-up the earlier reading already answers; look again when it
         does not.
+        ``turn``: 90, 180 or 270 sends the page (and its tiles) turned that
+        many degrees clockwise, for lettering that runs up the page (90),
+        down it (270) or upside down (180); 0 sends it as the page shows.
         """
         args = {"attachment_key": attachment_key, "prompt": prompt,
                 "tiles": tiles}
@@ -1123,6 +1128,8 @@ def make_vision_tools(
             args["pdf_page"] = pdf_page
         if reuse:
             args["reuse"] = True
+        if turn is not None:
+            args["turn"] = turn
         if inline_images:
             args["_inline"] = True
         return _dispatch("analyze_pdf_page", args)
@@ -1181,6 +1188,7 @@ def make_vision_tools(
         image_box: Optional[list] = None,
         pdf_page: Optional[int] = None,
         reuse: bool = False,
+        turn: Optional[int] = None,
     ) -> str:
         """Render a ZOOMED-IN crop of a PDF page and analyze it with vision —
         the "geometry says WHERE, vision says WHAT" primitive for drawings.
@@ -1208,6 +1216,10 @@ def make_vision_tools(
         ``reuse``: true hands back this conversation's kept zoom of the same
         region (it says what it was asked) instead of a new look -- for a
         follow-up that zoom already answers; look again when it does not.
+        ``turn``: 90, 180 or 270 sends the zoom turned that many degrees
+        clockwise, for lettering that runs up the page (90), down it (270)
+        or upside down (180); boxes still come back on the view as the page
+        shows it. 0 sends it as the page shows.
         """
         args = {"attachment_key": attachment_key, "prompt": prompt}
         if page is not None:
@@ -1224,6 +1236,8 @@ def make_vision_tools(
             args["image_box"] = image_box
         if reuse:
             args["reuse"] = True
+        if turn is not None:
+            args["turn"] = turn
         if inline_images:
             args["_inline"] = True
         return _dispatch("render_region", args)
@@ -1671,7 +1685,8 @@ def make_vision_tools(
             "come back on a 0-999 grid with the result's view; a whole-page "
             "box says where to zoom, not where to put a mark. reuse=true "
             "returns this conversation's latest reading of the page (saying "
-            "what it was asked) instead of a new look." + _PDF_PAGE_NOTE,
+            "what it was asked) instead of a new look. " + TURN_ARG_NOTE
+            + _PDF_PAGE_NOTE,
         ),
         "find_like": (
             find_like,
@@ -1696,7 +1711,7 @@ def make_vision_tools(
             "window is padded by that view's location error, so the thing "
             "is in it. reuse=true returns this conversation's kept zoom of "
             "the same region (saying what it was asked) instead of a new "
-            "look." + _PDF_PAGE_NOTE,
+            "look. " + TURN_ARG_NOTE + _PDF_PAGE_NOTE,
         ),
         "read_reference_figure": (
             read_reference_figure,

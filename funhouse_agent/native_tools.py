@@ -13,6 +13,7 @@ from typing import Any, Callable, Dict, Optional
 from funhouse_agent.dispatch import (
     call_agent, describe_method, list_agents, list_methods,
 )
+from funhouse_agent.vision_tools import TURN_ARG_NOTE
 
 # ---------------------------------------------------------------------------
 # OpenAI tool schemas
@@ -257,6 +258,11 @@ OPENAI_TOOLS = [
                                         "or NxN with N from 2 to 4 (e.g. "
                                         "3x3) for a fixed split."),
                     },
+                    "turn": {
+                        "type": "integer",
+                        "enum": [0, 90, 180, 270],
+                        "description": TURN_ARG_NOTE,
+                    },
                 },
                 "required": ["attachment_key"],
             },
@@ -350,6 +356,11 @@ OPENAI_TOOLS = [
                         "items": {"type": "number"},
                         "description": ("A 0-999 box the earlier analysis "
                                         "gave on that view's image."),
+                    },
+                    "turn": {
+                        "type": "integer",
+                        "enum": [0, 90, 180, 270],
+                        "description": TURN_ARG_NOTE,
                     },
                 },
                 "required": ["attachment_key"],
