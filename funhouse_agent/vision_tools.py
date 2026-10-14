@@ -2117,11 +2117,22 @@ def _dispatch_render_region(arguments, engine, attachments):
     if hit is not None:
         return hit
 
+    # The page's text layer (not for an inline look, whose image the main
+    # model reads itself): it says which way the lettering in the window
+    # runs (VIS-01) and which lines the window's edges cut (VIS-04). A
+    # window that cuts lines is widened, within a limit, to take them in.
+    inline = bool(arguments.get("_inline"))
+    layer = None if inline else vision_view.page_text_layer(pdf_bytes, page)
+    widened = _widen_window(window, render_pad, layer)
+    if widened is not None:
+        window, render_pad = widened[0], 0.0
+
     try:
         image_bytes, info = vision_view.render_view(
             pdf_bytes, page=page, bbox=window, marks=marks, dpi=dpi,
             pad_frac=render_pad,
-            allow_jpeg=getattr(engine, "accepts_jpeg", False), engine=engine)
+            allow_jpeg=getattr(engine, "accepts_jpeg", False), engine=engine,
+            upright=not inline, text_layer=layer)
     except ImportError:
         return json.dumps({
             "error": "PyMuPDF required for PDF rendering. pip install PyMuPDF"
@@ -2130,14 +2141,16 @@ def _dispatch_render_region(arguments, engine, attachments):
         return _render_error(e)
 
     lines = _lines_for_context(pdf_bytes, page)
-    if arguments.get("_inline"):
+    if inline:
         return json.dumps(_inline_result(image_bytes, info, page, engine,
                                          lines, bbox=bbox))
     try:
         result = ask_vision(
             engine, image_bytes,
             _vision_prompt(prompt, info["clip"], lines, _sent_size(info),
-                           shape=_answer_shape("region")),
+                           shape=_answer_shape("region"),
+                           turn=_sent_turn(info),
+                           cut=_cut_note(info, layer)),
             "region")
         out = {"page": page, **_pdf_page(page), "bbox": bbox,
                "analysis": result, **vision_view.view_payload(info, engine)}
@@ -2150,13 +2163,26 @@ def _dispatch_render_region(arguments, engine, attachments):
                 f"{padded[1]:g} pt each side, the location error of the view "
                 f"the box was read off; if the thing is not in it, look "
                 f"again rather than concluding it is absent")
+        if widened is not None:
+            out["window_widened"] = (
+                f"the window was widened to take in whole {widened[1]} "
+                f"line(s) of lettering its edges cut ('view' is the window "
+                f"drawn)")
+        still_cut = len(vision_view.cut_lines(info["clip"], layer))
+        if still_cut:
+            out["edge_note"] = (
+                f"{still_cut} line(s) of lettering run past this view's "
+                f"edges; the vision call was told to say where each is cut "
+                f"rather than complete it. To read one whole, zoom on a "
+                f"window that holds it.")
         if dpi_note:
             out["dpi_note"] = dpi_note
         _finish_answer(out, info)
         if padded is not None:
             _say_how_far_from_the_aim(out, view, bbox)
-        if "located" in out:
-            _fit_region(out)
+        # Under the tool cap as valid JSON: the located list, and the notes
+        # on a turned or widened window, can carry a long answer past it.
+        _fit_region(out)
         raw = json.dumps(out)
         _repeat_store(rkey, raw)
         clip = [round(float(v), 1) for v in info["clip"]]
@@ -2173,6 +2199,28 @@ def _dispatch_render_region(arguments, engine, attachments):
         })
     except Exception as e:
         return json.dumps({"error": _vision_error(e)})
+
+
+def _widen_window(window, pad_frac, layer):
+    """``(clip, n)`` for a zoom whose window cuts ``n`` text-layer lines it
+    can take in whole: the clip planlens would draw for ``window`` (padded
+    by ``pad_frac``, held to the page), widened by
+    :func:`vision_view.widen_to_lines` — to render with no further padding.
+    ``None`` when nothing was taken in (the window is drawn as before)."""
+    from funhouse_agent import vision_view
+    if window is None or layer is None:
+        return None
+    try:
+        from planlens.ir.render import clip_rect_for_bbox
+        clip = clip_rect_for_bbox(tuple(float(v) for v in window),
+                                  (0.0, 0.0, layer.width, layer.height),
+                                  float(pad_frac))
+        wide, n = vision_view.widen_to_lines(clip, layer)
+    except Exception:  # noqa: BLE001 - the window as asked still renders
+        return None
+    if not n:
+        return None
+    return [round(v, 2) for v in wide], n
 
 
 def _say_how_far_from_the_aim(out, source_view, aim_box) -> None:
@@ -2337,27 +2385,55 @@ def _sent_size(info):
         return None
 
 
-def _vision_prompt(prompt, clip, lines, size=None, shape=None) -> str:
+def _sent_turn(info) -> int:
+    """How far (degrees clockwise) the image was turned before it was sent
+    (``vision_view.render_view(upright=True)``); 0 when it was not."""
+    try:
+        return int(info.get("turn") or 0)
+    except (AttributeError, TypeError, ValueError):
+        return 0
+
+
+def _cut_note(info, layer) -> Optional[str]:
+    """What the vision call is told about the text-layer lines its image's
+    edges cut (VIS-04), or ``None``."""
+    from funhouse_agent import vision_view
+    if layer is None:
+        return None
+    try:
+        return vision_view.cut_note(
+            vision_view.cut_lines(info["clip"], layer), info["clip"],
+            _sent_size(info), _sent_turn(info))
+    except Exception:  # noqa: BLE001 - a note is never worth a failed look
+        return None
+
+
+def _vision_prompt(prompt, clip, lines, size=None, shape=None, turn=0,
+                   cut=None) -> str:
     """The prompt one page/region vision call gets: the text layer inside its
     view (when switched on), the agent's own prompt, the answer shape for its
-    kind (``shape``, :func:`_answer_shape`), the location instruction —
-    boxes in pixels of an image of ``size`` (w, h), or with no size the old
-    0-999 grid — and the LOCATED instruction (when switched on)."""
+    kind (``shape``, :func:`_answer_shape`), which lines its edges cut
+    (``cut``, :func:`_cut_note`), the location instruction — boxes in pixels
+    of an image of ``size`` (w, h), or with no size the old 0-999 grid — and
+    the LOCATED instruction (when switched on). ``turn``: the image goes
+    turned that many degrees clockwise, ``size`` as sent."""
     from funhouse_agent import review_flags, vision_view
     parts = []
     if lines is not None:
         parts.append(vision_view.text_context(lines[0], clip, lines[1],
-                                              size=size))
+                                              size=size, turn=turn))
     parts.append(prompt)
     if shape:
         parts.append(shape)
+    if cut:
+        parts.append(cut)
     text = vision_view.with_location("\n\n".join(parts), size)
     if review_flags.vision_structured():
         text = vision_view.with_locations(text, size)
     return text
 
 
-def _split_located(out, clip, size=None) -> None:
+def _split_located(out, clip, size=None, turn=0) -> None:
     """Move a structured LOCATED list out of ``out['analysis']`` into
     ``out['located']`` with page boxes (``GEOTECH_VISION_STRUCTURED``)."""
     from funhouse_agent import review_flags, vision_view
@@ -2365,7 +2441,7 @@ def _split_located(out, clip, size=None) -> None:
         return
     try:
         text, located = vision_view.split_located(str(out["analysis"]), clip,
-                                                  size)
+                                                  size, turn)
     except Exception:  # noqa: BLE001 - an unparsed answer is still an answer
         return
     out["analysis"] = text
@@ -2390,21 +2466,23 @@ def _finish_answer(out, info, note: bool = True,
     """Turn a vision answer's locations into what the agent works with: the
     structured LOCATED list split off (when switched on), then every pixel
     box in the prose rewritten on the 0-999 grid of this view
-    (:func:`vision_view.boxes_to_grid`), converted with the size SENT.
+    (:func:`vision_view.boxes_to_grid`), converted with the size SENT and,
+    for an image sent turned, turned back to the view as the page shows it.
     ``note`` adds the line saying so (a tile's rows leave it to the page);
     ``tagged_only`` (chart read-offs) converts only boxes tagged ``px=``."""
     from funhouse_agent import vision_view
-    size = _sent_size(info)
-    _split_located(out, info["clip"], size)
+    size, turn = _sent_size(info), _sent_turn(info)
+    _split_located(out, info["clip"], size, turn)
     if not size or not isinstance(out.get("analysis"), str):
         return
     try:
         text, counts = vision_view.boxes_to_grid(out["analysis"], size,
-                                                 tagged_only=tagged_only)
+                                                 tagged_only=tagged_only,
+                                                 turn=turn)
     except Exception:  # noqa: BLE001 - an unconverted answer is still one
         return
     out["analysis"] = text
-    msg = vision_view.boxes_note(counts, size) if note else None
+    msg = vision_view.boxes_note(counts, size, turn) if note else None
     if msg:
         out["boxes"] = msg
     hedge = vision_view.bracketed_note(text) if note and not tagged_only \
@@ -2673,13 +2751,18 @@ def _truthy(value) -> bool:
 def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
                    engine):
     """:func:`_dispatch_analyze_pdf_page` once the document is in hand."""
-    # Render the page at the vision model's image budget.
+    # Render the page at the vision model's image budget -- turned so its
+    # lettering reads upright where the text layer says it runs otherwise
+    # (VIS-01). Inline, the main model writes image_box itself on the image
+    # it is shown, so that image goes as the page shows it.
     from funhouse_agent import vision_view
+    inline = bool(arguments.get("_inline"))
+    layer = None if inline else vision_view.page_text_layer(pdf_bytes, page)
     try:
         image_bytes, info = vision_view.render_view(
             pdf_bytes, page=page,
             allow_jpeg=getattr(engine, "accepts_jpeg", False),
-            engine=engine)
+            engine=engine, upright=not inline, text_layer=layer)
     except ImportError:
         return json.dumps({
             "error": "PyMuPDF required for PDF rendering. pip install PyMuPDF"
@@ -2688,7 +2771,7 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
         return _render_error(e)
 
     lines = _lines_for_context(pdf_bytes, page)
-    if arguments.get("_inline"):
+    if inline:
         # The main model looks at the whole page itself and zooms with
         # render_region where the lettering is small: no tiles.
         return json.dumps(_inline_result(image_bytes, info, page, engine,
@@ -2706,12 +2789,14 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
     page_kind = "overview" if n > 1 else "page"
     page_prompt = _vision_prompt(
         _overview_prompt(prompt, n) if n > 1 else prompt, info["clip"],
-        lines, _sent_size(info), shape=_answer_shape(page_kind))
+        lines, _sent_size(info), shape=_answer_shape(page_kind),
+        turn=_sent_turn(info), cut=_cut_note(info, layer))
     # The whole page and its tiles at once: the tiles never use the
     # whole-page answer, so the read takes the longest call, not the sum.
     jobs = [lambda: ask_vision(engine, image_bytes, page_prompt, page_kind)]
     if n > 1:
-        jobs += _tile_jobs(pdf_bytes, page, info, n, prompt, engine, lines)
+        jobs += _tile_jobs(pdf_bytes, page, info, n, prompt, engine, lines,
+                           layer=layer)
     results = _run_together(jobs)
     result, tile_rows = results[0], (results[1:] if n > 1 else None)
     if isinstance(result, _Failed):
@@ -2763,6 +2848,15 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
             f"with render_region or, once the thing is legible in a view of "
             f"{vision_view.MARK_VIEW_PT:.0f} pt or less, to place a mark.")
         out.pop("legibility", None)
+        turned = [t["tile"] for t in tile_rows
+                  if isinstance(t, dict) and t.get("turned")]
+        if turned:
+            out["tiles_turned"] = (
+                f"tile(s) {', '.join(turned)} were sent turned (degrees "
+                f"clockwise in each tile's 'turned') so their lettering, "
+                f"which the text layer shows turned on the page, read "
+                f"upright; their boxes were turned back, so each is on its "
+                f"tile's view as the page shows it")
         _merge_found(out)
         if "reading_note" not in out:
             hedge = next((vision_view.bracketed_note(t.get("analysis"))
@@ -2864,10 +2958,11 @@ def _has_ink(image_bytes) -> bool:
         return True
 
 
-def _read_tiles(pdf_bytes, page, info, n, prompt, engine, lines=None):
+def _read_tiles(pdf_bytes, page, info, n, prompt, engine, lines=None,
+                layer=None):
     """Read the page in ``n`` x ``n`` overlapping tiles, in parallel."""
     return _run_together(_tile_jobs(pdf_bytes, page, info, n, prompt, engine,
-                                    lines))
+                                    lines, layer=layer))
 
 
 def _tiles_not_read_note(rows) -> Optional[str]:
@@ -2891,10 +2986,14 @@ def _tiles_not_read_note(rows) -> Optional[str]:
             f"on it")
 
 
-def _tile_jobs(pdf_bytes, page, info, n, prompt, engine, lines=None):
+def _tile_jobs(pdf_bytes, page, info, n, prompt, engine, lines=None,
+               layer=None):
     """One job per tile of an ``n`` x ``n`` overlapping split, in tile
     order; each renders its tile and reads it, and returns its row (an
-    ``error`` row, naming why in plain words, when it could not)."""
+    ``error`` row, naming why in plain words, when it could not). A tile
+    whose text-layer lettering runs sideways is sent turned upright
+    (``layer``: the page's text layer, read once for all the tiles), and
+    the call is told which lines the tile's edges cut."""
     from funhouse_agent import vision_view
     boxes = vision_view.tile_boxes(info["clip"], n)
 
@@ -2904,17 +3003,20 @@ def _tile_jobs(pdf_bytes, page, info, n, prompt, engine, lines=None):
             img, tinfo = vision_view.render_view(
                 pdf_bytes, page=page, bbox=boxes[k], pad_frac=0.0,
                 allow_jpeg=getattr(engine, "accepts_jpeg", False),
-                engine=engine)
+                engine=engine, upright=True, text_layer=layer)
             where = (f"This image is tile row {r + 1} of {n}, column {c + 1} "
                      f"of {n} of the sheet (tiles overlap slightly). Report "
                      f"only what is IN this tile, briefly.")
             text = ask_vision(
                 engine, img,
                 _vision_prompt(f"{prompt}\n\n{where}", tinfo["clip"], lines,
-                               _sent_size(tinfo)), "tile")
+                               _sent_size(tinfo), turn=_sent_turn(tinfo),
+                               cut=_cut_note(tinfo, layer)), "tile")
             row = {"tile": f"r{r + 1}c{c + 1}",
                    "view": [round(v, 1) for v in tinfo["clip"]],
                    "view_px": [tinfo["width_px"], tinfo["height_px"]],
+                   **({"turned": _sent_turn(tinfo)}
+                      if _sent_turn(tinfo) else {}),
                    **({"text_px": tinfo["text_px"]}
                       if tinfo.get("text_px") else {}),
                    "analysis": text,

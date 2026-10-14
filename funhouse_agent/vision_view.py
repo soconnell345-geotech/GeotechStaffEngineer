@@ -60,6 +60,19 @@ the one place that decides how:
 * **Legibility.** planlens reports how tall the page's small lettering is in
   each image (``text_px``). Below :data:`LEGIBLE_TEXT_PX` the result says so
   and points at the text layer and at a zoom window small enough to read in.
+* **Turned lettering is sent upright.** Where the page's text layer shows
+  the lettering in a view running up, down or upside down, the image is sent
+  turned so it reads upright (:func:`reading_turn`, :func:`turn_image`) —
+  Sol misread turned lettering far more often than upright (Foundry brief 5;
+  those sheets had no text layer, so this does not reach them). The view
+  stays the page rect as displayed, and every pixel box is turned back in
+  code before it becomes a 0-999 box, so ``view`` + ``image_box`` mean the
+  same thing whether or not the image was turned. A sheet with no text
+  layer (lettering drawn as strokes, a scan) is sent as it is.
+* **Lettering cut by the window's edge.** A zoom whose edge cuts text-layer
+  lines is widened, within a limit, to take them in whole
+  (:func:`widen_to_lines`), and the vision call is told which lines its
+  edges still cut (:func:`cut_note`).
 
 planlens gained budgets after the version this app pins; on an older planlens
 the renders fall back to the fixed sizes and everything else still works.
@@ -74,7 +87,9 @@ import os
 import re
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
+from typing import (
+    Any, Dict, Iterator, List, NamedTuple, Optional, Sequence, Tuple,
+)
 
 log = logging.getLogger(__name__)
 
@@ -146,13 +161,19 @@ TARGET_TEXT_PX = 16.0
 #: 300-380 px, even "[G/C/O][C/E]E" at 70 px lettering — and an agent dropped
 #: two real tags on those hedges (Foundry brief 4, 2026-10-07). A bracket
 #: that remains is settled by a closer zoom (:data:`BRACKETED_NOTE`).
+#: Its last sentence (VIS-04): a zoom window that cut a turned note's lines
+#: came back with the cut words completed as plausible values -- a 4 in pipe
+#: and 6 in spacing where 6 in and 3 in are printed (Foundry brief 5,
+#: 2026-10-08) -- while the zooms either side said "cut off".
 READING_INSTRUCTION = (
     "Read codes, tags and numbers character by character and give your best "
     "reading of each. Only where a character truly cannot be told apart in "
     "this image (the usual confusions are G/Q/O/C/D, E/F, B/8, S/5, I/1/L, "
     "Z/2) write the alternatives in brackets, e.g. A[B/8]C; lettering you "
     "can read, write plainly. If the lettering is too small to read "
-    "reliably, say so rather than guessing.")
+    "reliably, say so rather than guessing. Where lettering runs off the "
+    "edge of the image, quote only the characters you can see and write "
+    "(cut) where they stop; never complete a cut word or line.")
 
 #: A bracketed reading, as :data:`READING_INSTRUCTION` asks for one.
 _BRACKETED = re.compile(r"\[[A-Za-z0-9](?:\s*/\s*[A-Za-z0-9])+\]")
@@ -169,12 +190,22 @@ def bracketed_note(text: Any) -> Optional[str]:
     """:data:`BRACKETED_NOTE` when ``text`` holds a bracketed reading."""
     return BRACKETED_NOTE if _BRACKETED.search(str(text or "")) else None
 
+#: Said with every location request (VIS-05): one whole-page answer on a
+#: sheet drawn sideways gave every box in the frame of the sheet turned
+#: upright to read -- the same box turned 90 degrees, about 300 pt from the
+#: thing (Foundry brief 5, 2026-10-08, 1 look of 28).
+FRAME_INSTRUCTION = (
+    "Give every box in this image as it is, even where the drawing or its "
+    "lettering is turned sideways: never in a frame turned so that the "
+    "lettering reads upright.")
+
 #: The old location sentence: boxes on a 0-999 grid. Used only where the
 #: image's size is not known; a 0-999 answer is still understood everywhere.
 GRID_INSTRUCTION = (
     "If you give the location of anything in this image, give it as a box "
     "[x0, y0, x1, y1] on a 0-999 grid over the whole image (origin at the "
-    "top-left corner, x to the right, y down). " + READING_INSTRUCTION)
+    "top-left corner, x to the right, y down). " + FRAME_INSTRUCTION + " "
+    + READING_INSTRUCTION)
 
 #: The location sentence every vision prompt ends with when the image's size
 #: is known: boxes in PIXELS of the image, tagged ``px=`` so they cannot be
@@ -184,7 +215,7 @@ PIXEL_INSTRUCTION = (
     "in it, give it as a box in PIXELS of this image, written px=[x0, y0, "
     "x1, y1]: origin at the top-left corner, x to the right (0 to {w}), y "
     "down (0 to {h}). Box the thing itself, tightly, and write px= before "
-    "every box. " + READING_INSTRUCTION)
+    "every box. " + FRAME_INSTRUCTION + " " + READING_INSTRUCTION)
 
 #: What the agent is told about the ``view`` a vision result carries.
 ZOOM_HINT = ("to zoom on something the analysis located, call "
@@ -354,7 +385,10 @@ def render_view(source, page: int = 0, bbox: Optional[Sequence[float]] = None,
                 marks: Optional[Sequence[Sequence[Any]]] = None,
                 dpi: Optional[float] = None, pad_frac: float = 0.1,
                 allow_jpeg: bool = False,
-                engine=None) -> Tuple[bytes, Dict[str, Any]]:
+                engine=None, upright: bool = False,
+                turn: Optional[int] = None,
+                text_layer: Optional["TextLayer"] = None,
+                ) -> Tuple[bytes, Dict[str, Any]]:
     """Render ``page`` (or ``bbox`` on it) of a PDF for the vision model.
 
     ``source`` is PDF bytes or a file path. Returns ``(image_bytes, info)``
@@ -366,6 +400,16 @@ def render_view(source, page: int = 0, bbox: Optional[Sequence[float]] = None,
     profile picks the budget (see :func:`budget_name`). The image is never
     larger than :func:`max_px` on its long side, so ``info``'s size is the
     size the model sees.
+
+    ``upright`` sends the view turned so that its lettering reads upright,
+    when the page's text layer says which way it runs (:func:`reading_turn`;
+    ``text_layer`` is that layer when the caller already has it). ``turn``
+    (0/90/180/270, clockwise) turns it by hand instead. A turned image
+    carries ``info['turn']``, and ``width_px``/``height_px`` are its size AS
+    SENT; ``clip`` is still the page rect it shows, as the page displays
+    it — pixel boxes on it go through :func:`unturn_px_box` (which
+    :func:`px_to_grid`, :func:`px_box_to_page`, :func:`boxes_to_grid` and
+    :func:`split_located` do when given the turn).
     """
     from planlens.document import Document
     doc = (Document(content=source) if isinstance(source, (bytes, bytearray))
@@ -393,6 +437,17 @@ def render_view(source, page: int = 0, bbox: Optional[Sequence[float]] = None,
             data, info = doc.render(int(page), **kwargs)
         if patch_align():
             data, info = align_to_patches(data, info, cap)
+        quarter = 0
+        if turn is not None:
+            quarter = int(turn) % 360 if int(turn) % 90 == 0 else 0
+        elif upright:
+            layer = (text_layer if text_layer is not None
+                     else _text_layer_of(doc, int(page)))
+            quarter = reading_turn(layer, info["clip"])
+        if quarter:
+            data, info = turn_image(data, info, quarter)
+            if turn is not None and info.get("turn"):
+                info["turn_asked"] = True
         return data, info
     finally:
         doc.close()
@@ -454,6 +509,9 @@ def view_payload(info: Dict[str, Any], engine=None) -> Dict[str, Any]:
         "view_px": [info["width_px"], info["height_px"]],
         "zoom_hint": ZOOM_HINT,
         "precision": precision_note(info["clip"])}
+    quarter = int(info.get("turn") or 0)
+    if quarter:
+        out["turned"] = turned_note(quarter, bool(info.get("turn_asked")))
     prof = engine_profile(engine)
     if prof is not None and prof.answered_by:
         out["vision_model"] = prof.answered_by
@@ -504,7 +562,10 @@ def tile_grid(info: Dict[str, Any]) -> int:
     :data:`ASSUMED_CAD_LETTERING_PT`."""
     import math
     x0, y0, x1, y1 = info["clip"]
-    px_per_pt = info["width_px"] / max(x1 - x0, 1e-6)
+    # The image's width ALONG the view's x: its height when sent turned.
+    across, _down = unturned_size((info["width_px"], info["height_px"]),
+                                  info.get("turn") or 0)
+    px_per_pt = across / max(x1 - x0, 1e-6)
     text_px = info.get("text_px")
     if text_px is None:
         if info.get("text_chars", 1 << 30) >= 40:
@@ -579,10 +640,16 @@ def _is_box(m) -> bool:
     return bool(m.group("pre") or m.group("post") or m.group("open") == "[")
 
 
-def px_to_grid(px_box: Sequence[float], size: Sequence[int]
-               ) -> List[int]:
+def px_to_grid(px_box: Sequence[float], size: Sequence[int],
+               turn: int = 0) -> List[int]:
     """A pixel box on an image of ``size`` (w, h) as a whole-number box on
-    the 0-999 grid over the same image (corners ordered, clamped)."""
+    the 0-999 grid over the same image (corners ordered, clamped). For an
+    image sent turned ``turn`` degrees clockwise (``size`` as sent), the
+    grid is over the view as the page shows it: the box is turned back
+    first (:func:`unturn_px_box`)."""
+    if int(turn or 0) % 360:
+        px_box = unturn_px_box(px_box, size, turn)
+        size = unturned_size(size, turn)
     w, h = (max(float(v), 1.0) for v in size)
     x0, y0, x1, y1 = (float(v) for v in px_box)
     x0, x1 = min(x0, x1), max(x0, x1)
@@ -594,15 +661,20 @@ def px_to_grid(px_box: Sequence[float], size: Sequence[int]
 
 
 def px_box_to_page(view: Sequence[float], px_box: Sequence[float],
-                   size: Sequence[int]) -> Tuple[float, float, float, float]:
+                   size: Sequence[int], turn: int = 0
+                   ) -> Tuple[float, float, float, float]:
     """A pixel box on the image of ``view`` (``size`` = the image's w, h as
     SENT) as PDF points on the page — the exact conversion, with no grid in
-    between."""
+    between. ``turn`` is how far (degrees clockwise) the image was turned
+    before it was sent; the box is turned back first."""
     if len(view) != 4 or len(px_box) != 4:
         raise ValueError("view and the box must each be [x0, y0, x1, y1]")
     vx0, vy0, vx1, vy1 = (float(v) for v in view)
     if vx1 <= vx0 or vy1 <= vy0:
         raise ValueError("view must be a non-empty [x0, y0, x1, y1] rect")
+    if int(turn or 0) % 360:
+        px_box = unturn_px_box(px_box, size, turn)
+        size = unturned_size(size, turn)
     w, h = (max(float(v), 1.0) for v in size)
     x0, y0, x1, y1 = (float(v) for v in px_box)
     fx0, fx1 = sorted((min(1.0, max(0.0, x0 / w)), min(1.0, max(0.0, x1 / w))))
@@ -612,7 +684,8 @@ def px_box_to_page(view: Sequence[float], px_box: Sequence[float],
 
 
 def boxes_to_grid(text: str, size: Optional[Sequence[int]],
-                  tagged_only: bool = False) -> Tuple[str, Dict[str, int]]:
+                  tagged_only: bool = False,
+                  turn: int = 0) -> Tuple[str, Dict[str, int]]:
     """A vision answer with every pixel box rewritten as a 0-999 box on the
     same image, so the agent reads ONE convention — the one
     ``render_region(view=, image_box=)`` and ``annotate_document`` take.
@@ -627,6 +700,9 @@ def boxes_to_grid(text: str, size: Optional[Sequence[int]],
     answer is taken as an old-style 0-999 box and left as written.
     ``tagged_only`` converts tagged boxes alone — for a chart read-off, whose
     answer is about values and may hold a bracketed list of four readings.
+    ``turn``: the image was sent turned that many degrees clockwise
+    (``size`` is its size as sent); each pixel box is turned back, so the
+    0-999 box is on the view as the page shows it.
     Returns the text and ``{"converted": n, "grid": m}`` — the pixel boxes
     rewritten and the untagged boxes left as grid boxes."""
     counts = {"converted": 0, "grid": 0}
@@ -654,23 +730,28 @@ def boxes_to_grid(text: str, size: Optional[Sequence[int]],
         tagged = bool(m.group("pre") or m.group("post"))
         if tagged or (not tagged_only and in_pixels and pixel_shaped(vals)):
             counts["converted"] += 1
-            return "[{}, {}, {}, {}]".format(*px_to_grid(vals, (w, h)))
+            return "[{}, {}, {}, {}]".format(*px_to_grid(vals, (w, h), turn))
         counts["grid"] += 1
         return m.group(0)
 
     return _BOX.sub(rewrite, text), counts
 
 
-def boxes_note(counts: Dict[str, int], size: Sequence[int]) -> Optional[str]:
+def boxes_note(counts: Dict[str, int], size: Sequence[int],
+               turn: int = 0) -> Optional[str]:
     """What the agent is told about the boxes in an answer, or ``None`` when
     it gave none."""
     w, h = (int(v) for v in size)
+    quarter = int(turn or 0) % 360
     if counts.get("converted"):
         left = counts.get("grid") or 0
+        turned = (f" (sent turned {quarter} degrees clockwise; each box was "
+                  f"turned back, so it is on this view as the page shows it)"
+                  if quarter else "")
         return (f"the boxes in this analysis are on the 0-999 grid over this "
                 f"view's image, converted in code from the vision call's "
-                f"pixel boxes on the {w} x {h} px image it was sent: pass one "
-                f"as image_box with this view"
+                f"pixel boxes on the {w} x {h} px image it was sent{turned}: "
+                f"pass one as image_box with this view"
                 + (f" ({left} bracketed list(s) that were not pixel boxes "
                    f"were left as written)" if left else ""))
     if counts.get("grid"):
@@ -870,13 +951,16 @@ def page_lines(source, page: int
 
 def text_context(lines, clip, reliable: bool = True,
                  limit: int = TEXT_CONTEXT_CHARS,
-                 size: Optional[Sequence[int]] = None) -> str:
+                 size: Optional[Sequence[int]] = None,
+                 turn: int = 0) -> str:
     """The block put in front of a vision prompt: the text-layer lines whose
     centre falls inside ``clip`` (points), each with its box on the image of
     that view — in pixels (``px=[..]``) when the image's ``size`` (w, h) is
     given, the same convention the answer is asked for, otherwise on the
     0-999 grid — or a plain statement that the view has no text layer, so
-    every word must be read off the image."""
+    every word must be read off the image. ``turn``: the image is sent
+    turned that many degrees clockwise (``size`` as sent), and the pixel
+    boxes are given on it as sent."""
     x0, y0, x1, y1 = (float(v) for v in clip)
     w, h = max(x1 - x0, 1e-6), max(y1 - y0, 1e-6)
     rows = []
@@ -886,10 +970,14 @@ def text_context(lines, clip, reliable: bool = True,
             continue
         if size:
             sw, sh = (float(v) for v in size)
-            box = [max(0, min(round(sw), round((bx0 - x0) / w * sw))),
-                   max(0, min(round(sh), round((by0 - y0) / h * sh))),
-                   max(0, min(round(sw), round((bx1 - x0) / w * sw))),
-                   max(0, min(round(sh), round((by1 - y0) / h * sh)))]
+            uw, uh = unturned_size(size, turn)
+            box = turn_px_box([(bx0 - x0) / w * uw, (by0 - y0) / h * uh,
+                               (bx1 - x0) / w * uw, (by1 - y0) / h * uh],
+                              (uw, uh), turn)
+            box = [max(0, min(round(sw), round(box[0]))),
+                   max(0, min(round(sh), round(box[1]))),
+                   max(0, min(round(sw), round(box[2]))),
+                   max(0, min(round(sh), round(box[3])))]
             rows.append(f"px={box} {text}")
             continue
         box = [max(0, min(999, round((bx0 - x0) / w * 999))),
@@ -950,15 +1038,16 @@ def with_locations(prompt: str, size: Optional[Sequence[int]] = None) -> str:
     return f"{prompt.rstrip()}\n\n{LOCATED_INSTRUCTION}"
 
 
-def split_located(text: str, view, size: Optional[Sequence[int]] = None
-                  ) -> Tuple[str, List[Dict[str, Any]]]:
+def split_located(text: str, view, size: Optional[Sequence[int]] = None,
+                  turn: int = 0) -> Tuple[str, List[Dict[str, Any]]]:
     """``(answer without the LOCATED line, located items)`` — each item's
     box given as ``image_box`` (0-999) and as ``page_bbox`` in PDF points on
     the page, which ``render_region(bbox=...)`` takes directly. An item's
-    ``px`` box (pixels of the image, ``size`` = its w, h as sent) is
-    converted exactly; an old-style ``box`` is read on the 0-999 grid (in
-    pixels if a value is past 999 and the size is known). Never raises: an
-    answer with no parseable LOCATED line comes back whole with no items."""
+    ``px`` box (pixels of the image, ``size`` = its w, h as sent, ``turn``
+    = degrees clockwise it was turned before sending) is converted exactly;
+    an old-style ``box`` is read on the 0-999 grid (in pixels if a value is
+    past 999 and the size is known). Never raises: an answer with no
+    parseable LOCATED line comes back whole with no items."""
     import json as _json
     if not text or "LOCATED:" not in text:
         return text, []
@@ -1000,9 +1089,9 @@ def split_located(text: str, view, size: Optional[Sequence[int]] = None
             else:
                 pxb = None
             if pxb is not None:
-                row["image_box"] = px_to_grid(pxb, size)
+                row["image_box"] = px_to_grid(pxb, size, turn)
                 row["page_bbox"] = [round(v, 1) for v in
-                                    px_box_to_page(view, pxb, size)]
+                                    px_box_to_page(view, pxb, size, turn)]
             elif isinstance(box, (list, tuple)) and len(box) == 4:
                 row["image_box"] = [float(v) for v in box]
                 row["page_bbox"] = [round(v, 1) for v in
@@ -1016,6 +1105,368 @@ def split_located(text: str, view, size: Optional[Sequence[int]] = None
                 row.pop(k, None)
         out.append(row)
     return head, out
+
+
+# ---------------------------------------------------------------------------
+# Turned lettering (VIS-01, VIS-05) and lettering cut by a window (VIS-04)
+# ---------------------------------------------------------------------------
+#
+# Foundry brief 5 (2026-10-08, module_work/review_eval_results/
+# 2026-10-08_foundry_5.33.0rc1/): Sol read turned lettering markedly worse
+# than upright (6 of 15 turned look-alike tags misread, 0 of 11 upright;
+# sheet numbers and titles misread on sideways sheets); one whole-page
+# answer gave its boxes in the frame of the sheet turned to read; and a zoom
+# whose edge cut a note's lines came back with the cut words made up. Where
+# the page's text layer says which way its lines run, the view is sent so
+# they read upright and every box is turned back in code; a zoom is widened
+# to take in whole the lines its edge cuts, and the lines it still cuts are
+# named to the vision call. Where there is no text layer the image goes as
+# before, and the general sentences in :data:`FRAME_INSTRUCTION` and
+# :data:`READING_INSTRUCTION` are all the help it gets. Every sheet of the
+# brief-5 cases above is such a sheet: the Mecklenburg set and the synthetic
+# tag sets carry their lettering as strokes, with no text layer.
+
+#: The turns a view's image can be sent at: degrees CLOCKWISE from the page
+#: as displayed (0 = as the page shows it).
+TURNS = (0, 90, 180, 270)
+
+#: A view is turned when at least this share of its lettering (characters,
+#: each line weighted by how much of it lies in the view) runs one turned
+#: way ...
+TURN_SHARE = 0.6
+#: ... and that is at least this many characters ...
+TURN_MIN_CHARS = 3
+#: ... and at least this many per square inch of the view: a whole sheet is
+#: not turned for a vertical stamp when the rest of its lettering is drawn
+#: as strokes the text layer cannot see.
+TURN_MIN_CHARS_PER_SQ_IN = 0.5
+#: A line within this many degrees of a quarter turn runs that way; lettering
+#: at other angles (a name along a curved road) counts against every turn.
+TURN_SNAP_DEG = 10.0
+
+#: The quality a turned JPEG is written at (planlens' own render quality).
+TURN_JPEG_QUALITY = 92
+
+#: Which way lettering runs on the page, by the turn that sets it upright.
+_RUNS = {90: "from bottom to top", 180: "upside down",
+         270: "from top to bottom"}
+
+#: The image's edges in clockwise order: a quarter turn clockwise moves each
+#: edge one place on.
+EDGES = ("top", "right", "bottom", "left")
+
+#: A text-layer line is cut by a view's edge when it runs at least this far
+#: past it, and lies at least this far inside it (glyph boxes carry slack).
+CUT_TOL_PT = 1.0
+#: A zoom window is widened to take in whole the lines its edges cut, by at
+#: most this fraction of its own size on each side ...
+WIDEN_MAX_FRAC = 0.25
+#: ... or this many points when that is more (a small window).
+WIDEN_MIN_PT = 12.0
+#: Paper left round a line taken in.
+WIDEN_MARGIN_PT = 2.0
+#: Most cut lines named to one vision call.
+CUT_LINES_LISTED = 8
+
+#: planlens' ``model.SOURCE_CAD_HIDDEN``: AutoCAD's hidden "SHX Text" — one
+#: box for a whole block of rows and no direction, so it neither turns a view
+#: nor counts as a cut line.
+_CAD_HIDDEN = "cad_hidden_text"
+
+
+class LayerLine(NamedTuple):
+    """One line of the page's text layer: its text, its box (displayed
+    points, top-left origin) and its reading direction (degrees
+    counter-clockwise as displayed; ``None`` when not known)."""
+    text: str
+    bbox: Tuple[float, float, float, float]
+    rotation: Optional[float]
+
+
+class TextLayer(NamedTuple):
+    """A page's text-layer lines and the page's displayed size in points."""
+    lines: List[LayerLine]
+    width: float
+    height: float
+
+
+def _text_layer_of(doc, page: int) -> Optional[TextLayer]:
+    """:func:`page_text_layer` on an open planlens ``Document``."""
+    try:
+        pc = doc.page(int(page), tables=False)
+        lines = []
+        for ln in pc.lines:
+            if getattr(ln, "source", None) == _CAD_HIDDEN:
+                continue
+            text = " ".join(str(ln.text or "").split())
+            if not text:
+                continue
+            rot = getattr(ln, "rotation", None)
+            lines.append(LayerLine(text, tuple(float(v) for v in ln.bbox),
+                                   None if rot is None else float(rot)))
+        return TextLayer(lines, float(pc.width), float(pc.height))
+    except Exception:  # noqa: BLE001 - no layer is never a failed render
+        return None
+
+
+def page_text_layer(source, page: int) -> Optional[TextLayer]:
+    """The page's text-layer lines with their boxes and reading directions,
+    and its size — ``None`` when the page cannot be read. Never raises."""
+    try:
+        from planlens.document import Document
+        doc = (Document(content=source) if isinstance(source, (bytes, bytearray))
+               else Document(filepath=str(source)))
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        return _text_layer_of(doc, page)
+    finally:
+        try:
+            doc.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _inside(bbox, clip) -> Tuple[float, float]:
+    """How far (x, y, points) a box and a clip overlap; <= 0 when apart."""
+    return (min(bbox[2], clip[2]) - max(bbox[0], clip[0]),
+            min(bbox[3], clip[3]) - max(bbox[1], clip[1]))
+
+
+def reading_turn(layer: Optional[TextLayer], clip: Sequence[float]) -> int:
+    """The turn (degrees clockwise, :data:`TURNS`) that sets the lettering
+    in ``clip`` upright, from the text layer's own reading directions: 90
+    for lines that run from bottom to top, 270 from top to bottom, 180
+    upside down. 0 when the lettering already reads upright, when the view
+    has too little lettering with a known direction to say
+    (:data:`TURN_MIN_CHARS`, :data:`TURN_MIN_CHARS_PER_SQ_IN`), or when no
+    one way holds :data:`TURN_SHARE` of it."""
+    if not layer or not layer.lines:
+        return 0
+    x0, y0, x1, y1 = (float(v) for v in clip)
+    weight = {t: 0.0 for t in TURNS}
+    total = 0.0
+    for ln in layer.lines:
+        if ln.rotation is None:
+            continue
+        ix, iy = _inside(ln.bbox, (x0, y0, x1, y1))
+        if ix <= 0 or iy <= 0:
+            continue
+        area = (max(ln.bbox[2] - ln.bbox[0], 1e-6)
+                * max(ln.bbox[3] - ln.bbox[1], 1e-6))
+        n = len(ln.text.replace(" ", "")) * min(1.0, ix * iy / area)
+        total += n
+        r = float(ln.rotation) % 360.0
+        quarter = (int(round(r / 90.0)) % 4) * 90
+        if abs((r - quarter + 180.0) % 360.0 - 180.0) <= TURN_SNAP_DEG:
+            weight[quarter] += n
+    best = max((90, 180, 270), key=lambda t: weight[t])
+    sq_in = (x1 - x0) * (y1 - y0) / (72.0 * 72.0)
+    floor = max(float(TURN_MIN_CHARS), TURN_MIN_CHARS_PER_SQ_IN * sq_in)
+    if weight[best] >= floor and weight[best] >= TURN_SHARE * total:
+        return best
+    return 0
+
+
+def turn_image(data: bytes, info: Dict[str, Any], turn: int
+               ) -> Tuple[bytes, Dict[str, Any]]:
+    """The image turned ``turn`` degrees clockwise (a quarter turn moves
+    whole pixels: nothing is resampled), in its own format, with ``info``
+    giving its size AS SENT and ``turn``. ``clip`` — the page rect the image
+    shows — is unchanged. Left as it was for no turn, or an image that
+    cannot be decoded."""
+    quarter = int(turn or 0) % 360
+    if quarter not in TURNS or not quarter:
+        return data, info
+    try:
+        import fitz
+        import numpy as np
+        pix = fitz.Pixmap(data)
+        a = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
+            pix.height, pix.width, pix.n)
+        r = np.ascontiguousarray(np.rot90(a, k=-(quarter // 90)))
+        out = fitz.Pixmap(pix.colorspace, r.shape[1], r.shape[0], r.tobytes(),
+                          pix.alpha)
+        fmt = str(info.get("format") or "png").lower()
+        body = (out.tobytes("jpeg", jpg_quality=TURN_JPEG_QUALITY)
+                if fmt == "jpeg" else out.tobytes("png"))
+    except Exception:  # noqa: BLE001 - an image that will not turn goes as is
+        return data, info
+    turned = dict(info)
+    turned["width_px"], turned["height_px"] = out.width, out.height
+    turned["turn"] = quarter
+    return body, turned
+
+
+def turned_note(turn: int, asked: bool = False) -> str:
+    """What a result says about a view sent turned ``turn`` degrees —
+    ``asked`` when the turn was asked for rather than read off the text
+    layer."""
+    quarter = int(turn or 0) % 360
+    why = ("as asked" if asked else
+           f"because the page's text layer shows its lettering running "
+           f"{_RUNS.get(quarter, 'turned')}: the vision call read it upright")
+    return (f"this view's image was sent turned {quarter} degrees clockwise, "
+            f"{why}. Its boxes were turned back in code, so every image_box "
+            f"is on this view as the page shows it; words such as top or "
+            f"left in the analysis describe the turned image.")
+
+
+def unturned_size(size: Sequence[int], turn: int = 0) -> Tuple[int, int]:
+    """(w, h) of the image as the page shows it, for one of ``size`` (w, h)
+    sent turned ``turn`` degrees — and the other way round: a quarter turn
+    swaps the sides."""
+    w, h = (int(v) for v in size)
+    return (h, w) if int(turn or 0) % 180 == 90 else (w, h)
+
+
+def _ordered(box: Sequence[float]) -> Tuple[float, float, float, float]:
+    x0, y0, x1, y1 = (float(v) for v in box)
+    return min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)
+
+
+def unturn_px_box(px_box: Sequence[float], size: Sequence[int],
+                  turn: int = 0) -> List[float]:
+    """A pixel box on an image sent turned ``turn`` degrees clockwise
+    (``size`` = its w, h AS SENT) as the same box on the image before the
+    turn — the view as the page shows it. Corners ordered."""
+    x0, y0, x1, y1 = _ordered(px_box)
+    w, h = (float(v) for v in size)
+    quarter = int(turn or 0) % 360
+    if quarter == 90:
+        return [y0, w - x1, y1, w - x0]
+    if quarter == 180:
+        return [w - x1, h - y1, w - x0, h - y0]
+    if quarter == 270:
+        return [h - y1, x0, h - y0, x1]
+    return [x0, y0, x1, y1]
+
+
+def turn_px_box(px_box: Sequence[float], size: Sequence[int],
+                turn: int = 0) -> List[float]:
+    """The reverse of :func:`unturn_px_box`: a pixel box on the image as the
+    page shows it (``size`` = ITS w, h) as the box on that image turned
+    ``turn`` degrees clockwise."""
+    u0, v0, u1, v1 = _ordered(px_box)
+    w, h = (float(v) for v in size)
+    quarter = int(turn or 0) % 360
+    if quarter == 90:
+        return [h - v1, u0, h - v0, u1]
+    if quarter == 180:
+        return [w - u1, h - v1, w - u0, h - v0]
+    if quarter == 270:
+        return [v0, w - u1, v1, w - u0]
+    return [u0, v0, u1, v1]
+
+
+def turn_edge(edge: str, turn: int = 0) -> str:
+    """Which edge of an image turned ``turn`` degrees clockwise the given
+    edge of the unturned image becomes (the top goes to the right)."""
+    return EDGES[(EDGES.index(edge) + int(turn or 0) // 90) % 4]
+
+
+def cut_lines(clip: Sequence[float], layer: Optional[TextLayer]
+              ) -> List[Tuple[LayerLine, List[str]]]:
+    """Every text-layer line that ``clip``'s edges cut, with the edges
+    (``top``/``right``/``bottom``/``left`` of the view as the page shows it)
+    it runs past — a line partly in the view, not one wholly inside or
+    wholly outside it."""
+    if not layer or not layer.lines:
+        return []
+    x0, y0, x1, y1 = (float(v) for v in clip)
+    out = []
+    for ln in layer.lines:
+        ix, iy = _inside(ln.bbox, (x0, y0, x1, y1))
+        if ix <= CUT_TOL_PT or iy <= CUT_TOL_PT:
+            continue
+        bx0, by0, bx1, by1 = ln.bbox
+        edges = [e for e, past in (("top", y0 - by0), ("right", bx1 - x1),
+                                   ("bottom", by1 - y1), ("left", x0 - bx0))
+                 if past > CUT_TOL_PT]
+        if edges:
+            out.append((ln, edges))
+    return out
+
+
+def widen_to_lines(clip: Sequence[float], layer: Optional[TextLayer]
+                   ) -> Tuple[Tuple[float, float, float, float], int]:
+    """``(clip, n)``: ``clip`` widened to take in whole the ``n`` text-layer
+    lines its edges cut — each only when all of it lies within
+    :data:`WIDEN_MAX_FRAC` of the clip's size (at least
+    :data:`WIDEN_MIN_PT`) of the edge, so a zoom is never spread so wide its
+    lettering shrinks away; held to the page. A window narrow enough to
+    place a mark from (:data:`MARK_VIEW_PT`) stays that narrow: a line that
+    would take it past is left out. One pass, nearest lines first: a line
+    the wider window then cuts is named to the vision call
+    (:func:`cut_note`), not chased."""
+    x0, y0, x1, y1 = (float(v) for v in clip)
+    lim_x = max(WIDEN_MIN_PT, WIDEN_MAX_FRAC * (x1 - x0))
+    lim_y = max(WIDEN_MIN_PT, WIDEN_MAX_FRAC * (y1 - y0))
+    cap = MARK_VIEW_PT if max(x1 - x0, y1 - y0) <= MARK_VIEW_PT else None
+    page_w = layer.width if layer is not None and layer.width > 0 else None
+    page_h = layer.height if layer is not None and layer.height > 0 else None
+
+    def grown(box, bx0, by0, bx1, by1):
+        g = (min(box[0], bx0 - WIDEN_MARGIN_PT),
+             min(box[1], by0 - WIDEN_MARGIN_PT),
+             max(box[2], bx1 + WIDEN_MARGIN_PT),
+             max(box[3], by1 + WIDEN_MARGIN_PT))
+        if page_w is not None and page_h is not None:
+            g = (max(0.0, g[0]), max(0.0, g[1]), min(page_w, g[2]),
+                 min(page_h, g[3]))
+        return g
+
+    def need(ln):
+        bx0, by0, bx1, by1 = ln.bbox
+        return max(0.0, x0 - bx0, bx1 - x1, y0 - by0, by1 - y1)
+
+    box = (x0, y0, x1, y1)
+    taken = 0
+    for ln, _edges in sorted(cut_lines(box, layer), key=lambda c: need(c[0])):
+        bx0, by0, bx1, by1 = ln.bbox
+        if (x0 - bx0 > lim_x or bx1 - x1 > lim_x
+                or y0 - by0 > lim_y or by1 - y1 > lim_y):
+            continue
+        wider = grown(box, bx0, by0, bx1, by1)
+        if cap is not None and max(wider[2] - wider[0],
+                                   wider[3] - wider[1]) > cap:
+            continue
+        box = wider
+        taken += 1
+    return box, taken
+
+
+def cut_note(cuts: Sequence[Tuple[LayerLine, List[str]]],
+             clip: Sequence[float], size: Optional[Sequence[int]],
+             turn: int = 0) -> Optional[str]:
+    """What a vision call is told about the lines its image's edges cut
+    (:func:`cut_lines`): where each one's visible part is — in pixels of the
+    image as sent (``size``, turned ``turn`` degrees) — and which edge cuts
+    it; ``None`` when none is cut. The text itself is not given: the call
+    reads what it can see and says where it stops."""
+    if not cuts or not size:
+        return None
+    x0, y0, x1, y1 = (float(v) for v in clip)
+    vw, vh = max(x1 - x0, 1e-6), max(y1 - y0, 1e-6)
+    uw, uh = unturned_size(size, turn)
+    sw, sh = (int(v) for v in size)
+    rows = []
+    for ln, edges in list(cuts)[:CUT_LINES_LISTED]:
+        bx0, by0 = max(ln.bbox[0], x0), max(ln.bbox[1], y0)
+        bx1, by1 = min(ln.bbox[2], x1), min(ln.bbox[3], y1)
+        box = turn_px_box([(bx0 - x0) / vw * uw, (by0 - y0) / vh * uh,
+                           (bx1 - x0) / vw * uw, (by1 - y0) / vh * uh],
+                          (uw, uh), turn)
+        box = [max(0, min(sw, round(box[0]))), max(0, min(sh, round(box[1]))),
+               max(0, min(sw, round(box[2]))), max(0, min(sh, round(box[3])))]
+        sides = " and ".join(turn_edge(e, turn) for e in edges)
+        rows.append(f"px={box} (cut by the {sides} edge)")
+    more = len(cuts) - len(rows)
+    return (f"The page's text layer shows {len(cuts)} line(s) of lettering "
+            f"running past the edge of this image: " + "; ".join(rows)
+            + (f"; and {more} more" if more > 0 else "")
+            + ". Quote only what you can see of each and write (cut) where it "
+              "stops.")
 
 
 def image_box_to_page(view: Sequence[float], image_box: Sequence[float]
@@ -1053,4 +1504,11 @@ __all__ = ["BUDGET_ENV", "DETAIL_ENV", "CHART_BUDGET_ENV", "POLICY_ENV",
            "split_located", "BRACKETED_NOTE", "bracketed_note",
            "PATCH_ALIGN_ENV", "PATCH_PX", "patch_align", "align_to_patches",
            "AIM_TOLERANCE_FRAC", "aim_tolerance", "answer_boxes",
-           "REGION_GRID"]
+           "REGION_GRID", "FRAME_INSTRUCTION",
+           "TURNS", "TURN_SHARE", "TURN_MIN_CHARS", "TURN_MIN_CHARS_PER_SQ_IN",
+           "TURN_SNAP_DEG", "EDGES", "CUT_TOL_PT", "WIDEN_MAX_FRAC",
+           "WIDEN_MIN_PT", "WIDEN_MARGIN_PT", "CUT_LINES_LISTED",
+           "LayerLine", "TextLayer", "page_text_layer", "reading_turn",
+           "turn_image", "turned_note", "unturned_size", "unturn_px_box",
+           "turn_px_box", "turn_edge", "cut_lines", "widen_to_lines",
+           "cut_note"]

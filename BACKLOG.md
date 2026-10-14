@@ -48,7 +48,7 @@ After any change to this file, rebuild and republish the Backlog Desk (`module_w
 CfA says the SharePoint connection and the per-user Prompter keys are a few weeks out (owner, 2026-10-14). Until they arrive, Now is core work on the app itself. The Tiny Apps production items (OWN-29, OWN-30, OWN-43–OWN-51, TA-03) wait in Next and come back when CfA delivers.
 
 - **Engineering answers that err on the unsafe side** (geotech page): the first round is done (BACKLOG "Done", 2026-10-14). Follow-ups it found: GM-59, GM-60, GM-61, GM-63 (Next).
-- **Document Review accuracy** (testers' page; general fixes, no single-example rules): VIS-01 (turned lettering read upright), VIS-04 (a zoom that cuts text lines), VIS-05 (boxes on sideways sheets), VIS-09 (zoom for pasted screenshots and image uploads). Done 2026-10-14: distinct sheets no longer called duplicates, the markup fixes, the geotech tools off the page (BACKLOG "Done").
+- **Document Review accuracy** (testers' page; general fixes, no single-example rules): VIS-01 (turned lettering read upright: the stroke-lettered half), VIS-09 (zoom for pasted screenshots and image uploads). Done 2026-10-14: distinct sheets no longer called duplicates, the markup fixes, the geotech tools off the page (BACKLOG "Done").
 - **Release readiness:** INF-10 (module suites on a fresh resolve, since the next release admits pandas 3; no release is planned (OWN-55), but these keep master releasable), EV-13 with DR-05 (one Foundry suite run that measures this train, tonight's default-page changes and the lean build).
 - **Calculation tables** (OWN-10, 2026-10-14: yes, the next module train): GM-39, after the tracks above.
 - **Owner:** OWN-31 (the checklist session, perhaps next week), OWN-58 (downdrag: the pile's own weight in the load curve?). Answered 2026-10-14 and folded: OWN-01 (became GM-48), OWN-02, OWN-10, OWN-55 (hold the release; the Prompter key works on Funhouse this month), OWN-57. Report ingest stays parked, so its questions (OWN-07, OWN-08, OWN-09, OWN-11, OWN-25) wait in Next and Later.
@@ -186,17 +186,16 @@ All OFF unless marked. Decisions: OWN-06.
 
 ## 3. Vision
 
-- **VIS-01** [Now] **R: render turned or sideways lettering upright** (6 of 15 turned look-alikes misread vs 0 of 11 upright). *was:* H E3
+- **VIS-01** [Now] **R: render turned or sideways lettering upright** (6 of 15 turned look-alikes misread vs 0 of 11 upright). Text-layer half done 2026-10-14: a view whose text layer runs one turned way is sent turned upright, boxes converted back (UFC 3-260-02's 29 turned table pages now read upright). Every measured failure is stroke-lettered (no text layer), so left: an optional `turn` on render_region / analyze_pdf_page (in their own descriptions) and an automatic turned re-read behind `GEOTECH_VISION_TURN_RETRY`, OFF until measured. *was:* H E3
 - **VIS-02** [Next] **`found` B1 / B2**: judge region vs text line by aspect; carry the text read (`vision_view.py:775, 804`). *was:* H E3
 - **VIS-03** [Next] **Notes MK1 / MK2 / MK3 / MK5**: `aim_note` false alarms; `found_note` noise; say when looks disagree or a zoom is coarser than the tiles. *was:* H E3
-- **VIS-04** [Now] **MK4: a zoom that cuts text lines invents the rest**; one general sentence: say "cut". *Src:* B5 `TRACE_REVIEW_suite_meck.md:264-271`
-- **VIS-05** [Now] **MK6: boxes stay in the image as sent when the drawing is sideways** (one answer ~300 pt off). *Src:* `TRACE_REVIEW_suite_meck.md:275-279`
 - **VIS-06** [Next] **E4: `code_reading` should flag a READ input outside the fitted axis** (110 tsf at φ 28° on a 30–45° axis; `funhouse_agent/chart_reading.py`). *Src:* `TRACE_REVIEW_B_AEFG.md:495-499`
 - **VIS-07** [Next] **Zoom latency 30–50 s (F1)**: A/B a reasoning setting on vision calls on GPT; a ~4k zoom cap (still 8k). *Src:* w3 REVIEW:220; *was:* H E3, 3e
 - **VIS-08** [Next] **GPT-5.4 reads log depths by eye (M1)**: lead the `measure` / `log_grid` descriptions with the reviewer's questions; measure ×3 per wording. *Src:* `TRACE_REVIEW_new_tasks.md:402-426`; *was:* H E5
 - **VIS-09** [Now] **A crop/zoom tool for raster uploads and pasted screenshots.** *Src:* FI "VISION HARNESS BENCHMARK"; *was:* H C9
 - **VIS-10** [Next] **Per-figure crop boxes in the reference catalogs (P7)**: whole-page renders blind `find_scales` on two-figure pages, so `code_reading` never measured Fig 7-15. Find each box once at build time. *Src:* FI:540-543; B5 TRACE_REVIEW:82
 - **VIS-11** [Next] [owner] **Free OCR on FIPS hosts**: only paid DI works where the app runs (RapidOCR imports OpenCV, which aborts). First a child-process probe of `onnxruntime` under FIPS, then approval of vendored weights (OWN-54). Merges Tier-2 engines and PL-21. *Src:* FI:384-386, 489-494
+- **VIS-22** [Later] **A widened kept zoom can be up to 2.25x the asked area**, past `ZOOM_REUSE_MAX_AREA` 2.0, so `reuse=true` can miss it; and `page_text_layer` costs 0.08-0.15 s a look (PL-23).
 - **VIS-12** [Later] **MK7: offer `measure` / `log_grid` only when a scale or log page exists** (~930 tokens a call). *Src:* `TRACE_REVIEW_suite_meck.md:61-67`
 - **VIS-13** [Later] **The inline route still asks for 0-999 boxes** (`deep/inline_images.py:71`; measured 57–91 pt off). *Src:* HT `locating_things_on_a_page.md:144-147`
 - **VIS-14** [Later] **`find_like`'s example box can come from a wide view**: apply the 300 pt rule. *Src:* same, :145-147
@@ -235,6 +234,7 @@ All OFF unless marked. Decisions: OWN-06.
 - **PL-05** [Next] **N14: `measure`'s `to` across a second zoom.** *was:* H E3
 - **PL-06** [Next] **C4 public API**: `ReviewToolkit.forget(path)`, atomic save in `write_markups`, stable markup ids (positional today, `annotations.py:194`). *was:* H E3
 - **PL-22** [Next] **Release planlens past 0.13 and raise the app's pin**: the distinct-sheets duplicate fix (PL-07, planlens 89711ea) and the duplicate-mark note (DR-17) reach the app only then. Pairs with the next app release (held, owner 2026-10-14).
+- **PL-23** [Later] **A cheap public accessor for a page's text lines**: the app's `page_text_layer` goes through `Document.page`, which builds the page summary and image hash (0.08-0.15 s a look).
 - **PL-08** [Later] **`log_grid` blind gaps**: index values 8/17 (plotted column), header fields 33/54, sheets with no depth unit, one zero-scoring log unexamined. *Src:* `planlens/document/DESIGN.md:1286-1310`
 - **PL-09** [Later] **Reading gaps**: multi-column / visual reading order; tables spanning pages; captions on non-figure pages. *Src:* DESIGN.md:71-72, 1318-1327
 - **PL-10** [Later] **Page roles**: `dcp_log` on scans (0.54); no pressuremeter, vane or dilatometer roles. *Src:* DESIGN.md:977-980
@@ -436,6 +436,8 @@ Long items kept in their own sections: DR-08–DR-13, GM-39, VIS-11, VIS-20, TA-
 
 Older docs still list these as open. Delete this section at the next sweep.
 
+- **VIS-05** (boxes on sideways sheets): every location request carries one general sentence (give boxes in the image as sent, even where the drawing is turned) and every conversion takes the page's /Rotate and any view turn. /Rotate 0-270 x lettering 0-270: worst box-centre error 0.38 pt; the brief-5 failure shape 130 pt off → 0.38 pt.
+- **VIS-04** (a zoom that cuts text lines invents the rest): every look ends with one sentence (quote only what is visible, write (cut), never complete); `render_region` widens the window to take in the lines it cuts (≤ a quarter a side, never past 300 pt for a mark-anchoring window; `window_widened`), and lines still cut are named to the call with the edge that cuts them (`edge_note`). All measured cases were stroke-lettered, so only the sentence reaches them; EV-13 measures it.
 - **PL-07** (distinct stroke-drawn sheets flagged as duplicates, 22 of 24): planlens 89711ea. Words name a repeat only with 15+ words outside the header/footer bands; every nominated repeat must also render the same (hashes within 2 bits, a ~36 dpi render within 16 grey levels everywhere); `duplicate_of` names the earliest page. 22 → 0 on the suite set; true repeats still caught; page-map time unchanged. Reaches the app with PL-22.
 - **DR-17** (the duplicate-mark note): says a repeat usually means one of the things meant is still unmarked (planlens 89711ea; PL-22).
 - **DR-04** (geotech tools on the default review page): `read_reference_figure` and `view_worked_example_source` are filtered out when `review_page` is set (tools 35 → 33); a test pins the page's tool list. The generic deepagents prompt is DR-29.

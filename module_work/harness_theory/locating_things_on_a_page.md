@@ -146,6 +146,49 @@ model writes 0-999 boxes itself (planlens' refusal still covers its marks);
 `find_like`'s `view` + `image_box` example box (a box read off a wide view
 makes a poor template, a candidate for the same rule).
 
+## What changed (2026-10-14, BACKLOG VIS-01, VIS-04, VIS-05)
+
+Uncommitted for the lead's review; offline tests in
+`funhouse_agent/tests/test_vision_turned.py`.
+
+1. **Turned lettering is sent upright (VIS-01).** `analyze_pdf_page` (page
+   and tiles) and `render_region` read the page's text layer
+   (`vision_view.page_text_layer`). When most of the lettering in the view
+   runs up, down or upside down (`reading_turn`: 60 % of its characters, at
+   least 3 and at least 0.5 per square inch of the view), the image is
+   turned a quarter or half turn before it is sent (`turn_image`; whole
+   pixels move, nothing is resampled). The result says so (`turned`, a
+   tile's `turned`, `tiles_turned`).
+2. **The frame stays the page's (VIS-05).** `view` is still the page rect
+   as displayed, and `view_px` is the image as sent. Every pixel box,
+   `LOCATED` item and text-context box goes through `unturn_px_box` /
+   `turn_px_box`, so `view` + `image_box` mean the same thing whether or
+   not the image was turned. That holds for `render_region`, `find_like`
+   and planlens' `annotate_document`. Checked on pages with `/Rotate` 0, 90,
+   180 and 270 combined with lettering in all four directions: the worst
+   box centre is 0.4 pt off. A box written by planlens from a turned zoom
+   lands on the thing within 1.5 pt. Every location request also says,
+   generally, to give boxes in the image as it is, even where the drawing
+   is turned (`FRAME_INSTRUCTION`).
+3. **Lettering cut by a window's edge (VIS-04).** A zoom whose edges cut
+   text-layer lines is widened to take them in whole
+   (`vision_view.widen_to_lines`). The limit is a quarter of the window's
+   own size on each side, at least 12 pt. A window of 300 pt or less is
+   never taken past 300 pt, so a mark can still be anchored on it. The
+   vision call is told where the lines still cut are, and by which edge of
+   the image as sent (`cut_note`); tiles are told too. Every look now ends
+   with one general sentence: quote only what is visible of cut lettering,
+   write (cut) where it stops, and never complete it (`READING_INSTRUCTION`).
+4. **What this does not reach.** A sheet with no text layer is sent as it
+   is. Every brief-5 case is such a sheet: the ten Mecklenburg sheets
+   (lettering drawn as strokes; 10.31A has only hidden CAD text, which has
+   boxes and no direction) and the synthetic tag sets. For them, only the
+   two general sentences apply. `render_view(turn=...)` turns a view by
+   hand; nothing on the tool surface offers it yet.
+5. **Not turned:** the inline route (the main model writes `image_box` on
+   the image it is shown), the markup check's crops, `sweep_pages` and the
+   chart read-offs. These call `render_view` without `upright`.
+
 ---
 
 ## 1. The routes, end to end
