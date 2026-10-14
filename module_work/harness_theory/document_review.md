@@ -117,9 +117,10 @@ unreadable, split long sets among helpers, cite tool page + 1.
 | `task` | deepagents `general-purpose` (7,570) | `page_reader` (803) | `page_looker` (574) |
 | planlens reading tools (8) + `annotate_document` | yes | yes | `annotate_document` only, wrapped as `mark_up` |
 | `analyze_pdf_page`, `render_region`, `analyze_image` | side call | side call (inline with the switch) | inline |
+| (since 2026-10-14, d1bc722) `render_region` on an image file, `analyze_image(tiles, turn)`; `turn` on `analyze_pdf_page` / `render_region` | yes | yes | — (inline ignores `turn`) |
 | `find_like` | yes where OpenCV loads | same | — |
 | `read_pdf_text`, `read_text_file`, `list_files`, `save_file`, `write_docx` | yes | yes (no `read_pdf_text`) | `write_docx` only |
-| geotech-only `read_reference_figure`, `view_worked_example_source` | **yes** (inherited, cannot work here) | — | — |
+| geotech-only `read_reference_figure`, `view_worked_example_source` | removed 2026-10-14 (077192c; they were inherited and could not work here) | — | — |
 | `sweep_pages` | — | yes | — |
 | `page_count` | — | — | yes |
 

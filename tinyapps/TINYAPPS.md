@@ -199,6 +199,32 @@ different model deployment, add `PROMPTER-MODEL--<TESTER>` and, if needed,
 `PROMPTER-KEYS`. To get the exact name for a tester, have them open the
 app: the refusal message shows it.
 
+## Long turns and rate limits (on master since 2026-10-14; the next release)
+
+A 2026-10-14 session on Funhouse lost 51 minutes of work to one rate-limit
+refusal (`module_work/field_feedback/2026-10-14_report-to-diggs_v5.33.0/`).
+From the next release:
+- a turn that ends on an error keeps its tool results, so "continue" picks
+  up from them;
+- a helper that stops writes what it read to the conversation's `kept/`
+  folder;
+- the agents' own model calls wait out busy refusals (retry-after, else
+  15/30/60/120 s);
+- at most two helpers run at once.
+
+Settings (environment or app settings, not Key Vault; all optional, listed
+in `wrapper_repo/.env.example`):
+- `GEOTECH_TOKENS_PER_MINUTE`: pace calls under the deployment's limit. Ask
+  CfA for the rollout deployment's tokens-per-minute and set a little under
+  it; unset means no pacing.
+- `GEOTECH_MAX_HELPERS` (2), `GEOTECH_HELPER_MAX_MODEL_CALLS` (30),
+  `GEOTECH_AGENT_BUSY_TRIES` (5), `GEOTECH_BUSY_TURN_MAX_S` (900).
+- `GEOTECH_PROMPTER_STREAM_USAGE` (on): token use is requested on streamed
+  replies so each turn's cost is recorded; set 0 only if the gateway refuses.
+
+Add the tokens-per-minute question to the CfA list (with OWN-50, what a spent
+budget returns).
+
 ## Built 2026-09-21 (released in 5.26.0)
 
 - `webapp/tinyapps_settings.py` — CfA's `get_setting` pattern.

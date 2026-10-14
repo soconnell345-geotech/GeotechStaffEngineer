@@ -158,17 +158,39 @@ Key conventions:
     behind the IIS proxy. The first-hour check is in
     `module_work/live_smoke/runs/w3-confirm-sonnet/REVIEW.md`.
 
-  - **Master after 5.33.0 (next train, unreleased):** downdrag neutral-plane
-    methods as cited options with a comparison (a282d48) and fem2d per-stage
-    delta/cumulative movements (4bf710c); owner decisions and the technical
-    follow-ups are in `BACKLOG.md` (OWN-01, OWN-02, GM-01-GM-09). Then,
-    2026-10-12 night: the default review page's zoom wording, reading
-    helper and answering 40-call budget (ae50842); the markup check against
-    the printed thing (da28a69); a refused key said plainly and retried once,
-    `.env` working on dosdev (0562ddf); python-ags4 an extra and openpyxl
-    core, so the app installs beside CfA's pandas 3.0.2 pin (a229090); docs
-    current and Department addresses scrubbed (24b46df). Release: OWN-55;
-    the suite measures it: EV-13.
+  - **Master after 5.33.0 (next train, unreleased; the owner holds the
+    release, 2026-10-14):** downdrag neutral-plane methods (a282d48) and
+    fem2d per-stage movements (4bf710c). 2026-10-12 night: the default review
+    page's zoom wording, reading helper and answering 40-call budget
+    (ae50842); the markup check against the printed thing (da28a69); a
+    refused key said plainly and retried once, `.env` working on dosdev
+    (0562ddf); python-ags4 an extra and openpyxl core, so the app installs
+    beside CfA's pandas 3.0.2 pin (a229090); Department addresses scrubbed
+    (24b46df).
+  - **2026-10-14, the core-improvements train** (CfA's SharePoint and
+    per-user keys are weeks out; `BACKLOG.md` "Done since the last sweep"
+    has every item with its commit):
+    - unsafe-side module answers: downdrag shows every neutral-plane method
+      with final effective stress (e787b11); the slope search finds
+      sand-slope, toe-circle and reinforced critical surfaces (dbf1cdd,
+      b3ab88a); fem2d strength reduction no longer depends on the mesh
+      (c21c8cc); SOE free earth says when there is no solution, Terzaghi
+      bearing capacity (8e723d5); the anchored sheet-pile moment (7e8e273);
+      straight T6 excavation walls (429f62d);
+    - Ensoft-style calculation tables in 13 modules' calc packages (GM-39);
+    - Document Review: markups keep correcting and return the found box,
+      geotech tools off the page (077192c); turned lettering, cut lines,
+      sideways boxes (c9febc8, 46e2736); zoom and tiles on images (d1bc722);
+      planlens 89711ea (distinct sheets not duplicates; unreleased);
+    - long turns: an errored turn keeps its work, a stopped helper returns a
+      file, busy refusals retried, two helpers at once (6ffa347, 8cd38f4);
+      the record (4dee54a);
+    - DIGGS writer and reader fixes (d81c1f8); shipped code free of field
+      post names, with a guard (accfc92); CI's five months-old failures and
+      the workflow (9152c66).
+    Open next: GM-71 (`fem2d.analyze_excavation` does not model an
+    excavation), INF-10, the Foundry brief that measures all of this
+    (EV-13, DR-05).
 
   Pickup: `HANDOFF.md` §0a-current, "Where things stand".
 - **5.32.1 RELEASED 2026-10-08 (tag `v5.32.1`, branch `release/5.32.1`,

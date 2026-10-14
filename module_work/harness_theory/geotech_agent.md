@@ -160,7 +160,7 @@ Built by `build_domain_prompt` (`funhouse_agent/deep/prompt.py:224-261`) from
 | `references` | `CONSULTANT_FRAMING` ("REFERENCE LIBRARIAN … CITE … only references your tools returned … never infer chart values from memory … Do NOT perform engineering calculations") + a concision rule (`reviewer.py:260-271`; `deep/agent.py:82-87, 315-342`) | dispatch tools scoped to the 33 reference modules (cap 16,000 for reference text) + `read_reference_figure` | 8 model calls, last one forced to answer |
 | `reviewer` | `REVIEWER_DEEP_PROMPT`: PASS / FLAG / REVISE review against the references (`reviewer.py:100-131`; `deep/agent.py:549-587`) | reference dispatch tools | none |
 | `calc` (app only) | `_CALC_PREAMBLE` + `_CALC_FRAMING`: run the numbers, build the deliverable with figures, save everything, never write placeholders (`deep/agent.py:379-456`) | analysis dispatch tools + `save_file`, `list_files`, `read_pdf_text`, `read_text_file` | 16 |
-| `general-purpose` | deepagents' stock prompt (short; none of the domain rules) | the primary's tools | none |
+| `general-purpose` | deepagents' stock prompt (short; none of the domain rules), plus since 2026-10-14 one line: return the data gathered and what is missing, never only an apology | the primary's tools | none; since 2026-10-14 (8cd38f4) 30 calls (`GEOTECH_HELPER_MAX_MODEL_CALLS`), the last one hands over the data; at most 2 helpers at once (`GEOTECH_MAX_HELPERS`); a helper that stops keeps its reading in `kept/helper_*.md` (`shared_machinery.md` §5.4) |
 
 Each sub-agent sees ONLY the `description` the primary writes in the `task`
 call; it does not see the conversation, and deepagents does not pass the

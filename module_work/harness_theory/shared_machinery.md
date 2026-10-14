@@ -167,6 +167,20 @@ The note is not saved into the history. The cause was a field session in
 which the agent forgot a report it had downloaded two turns earlier (README,
 "Changed since this was written").
 
+*Since 2026-10-14 (app `6ffa347`, unreleased; BACKLOG TA-19):* a turn that
+ends on an error (or is killed with the process) is no longer saved as the
+question plus an error stub. `stream_turn` records every AI reply and tool
+result as it arrives (`webapp/turn_record.py`, checkpointed to
+`partial_messages.json`), and on an error that record becomes replayable
+history in valid order (a call that never returned gets a "Not finished"
+result), closed by a note asking the model to pick up from it. So a
+"continue" after an error starts from the earlier tool results. Results over
+60,000 characters are kept whole in the conversation's `kept/` folder with
+their first 4,000 characters in the history. A SUCCESSFUL turn still keeps
+only its answer text, as above. The cause was a 51-minute field session lost
+to one rate-limit refusal
+(`module_work/field_feedback/2026-10-14_report-to-diggs_v5.33.0/`).
+
 The geotech evaluation goes further: each question is its own fresh
 `agent.invoke` with no history at all (`eval_harness.py:963-1015`). Questions
 that are written as follow-ups ("Repeat the lateral analysis of the 0.5 m
@@ -190,6 +204,23 @@ keeps:
   8,000 characters;
 - the per-turn files note on `turn_start`;
 - SharePoint error codes in the tool results.
+
+*Since 2026-10-14 (app `4dee54a`, unreleased; BACKLOG EV-14):*
+- token use on the Prompter key route (langchain-openai turned
+  `stream_usage` off for a custom base_url, so `usage` was null on every
+  call; now requested, with a fallback if the gateway refuses
+  `stream_options`);
+- `task_id` and the helper's brief on every event from inside a helper,
+  vision calls from its tools included;
+- on a refused call: status, retry-after, `x-ratelimit-*` headers, the busy
+  ladder's tries (`model_busy`, `model_error`), and every HTTP try inside a
+  call (`webapp/http_trace.py`);
+- the engine and retry policy in `turn_start` and `meta.json` (never a key or
+  an address);
+- time queued for a vision slot and for a document's lock;
+- payloads cut in the log kept whole in `activity_full/`;
+- vision events labelled with kind, page, tile, image size and their tool;
+- `helper_queued`, `helper_kept`, `pacer_wait`.
 
 ---
 
@@ -379,6 +410,24 @@ added after unbounded fan-out (parallel tool calls × tiles × markup checks)
 overflowed a 10-connection pool on Foundry and aborted the process
 (`vision_engine.py:31-37`; commit `be742b0`). The brief-3 originals ran on rc2
 with the same cap applied by the operator's adapter instead (`brief3/README.txt`).
+
+*Since 2026-10-14 (app `6ffa347`, `8cd38f4`, unreleased; BACKLOG TA-20,
+TA-21, TA-22):*
+- **Helpers:** at most `GEOTECH_MAX_HELPERS` (default 2) `task` helpers run at
+  once per conversation, first come first served; a general-purpose helper
+  has a 30-call budget (`GEOTECH_HELPER_MAX_MODEL_CALLS`) whose last call
+  hands over what it gathered; a helper that raises, hits its budget or gives
+  up after a large read writes everything it read to `kept/helper_*.md` and
+  the primary gets the path (`funhouse_agent/deep/keep_work.py`).
+- **Busy refusals:** `AgentBusyRetry` (`deep/busy_retry.py`), the outermost
+  model-call middleware on the primary and every sub-agent, retries a 429 /
+  529 / 5xx / overloaded / connection refusal on the provider's retry-after
+  or 15/30/60/120 s, 5 tries, within a 900 s per-turn bound; a spent budget
+  is raised at once. Vision side calls keep their own shorter ladder (3 tries
+  at 2 s and 4 s; BACKLOG TA-24).
+- **Tokens per minute:** an optional per-key pacer over agent and vision
+  calls (`deep/pacing.py`, `GEOTECH_TOKENS_PER_MINUTE`, off until the
+  deployment's limit is known).
 
 ---
 

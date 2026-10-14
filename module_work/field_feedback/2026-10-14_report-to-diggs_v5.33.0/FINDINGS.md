@@ -50,12 +50,20 @@ had no busy ladder, and the final refusals fit a tokens-per-minute limit
 reached through very large tool results. This was a pipeline job done by a
 chat loop.
 
-Dispositions (BACKLOG):
-- PLANNED, Now: TA-19 (an errored turn keeps its work), TA-20 (busy ladder
-  on agent calls), TA-21 (a failed helper returns its data as a file),
-  TA-22 (helper cap, token pacer, helper budget), EV-14 (the record),
-  RI-27 (`write_diggs` silent zeros; a printed ">50" becomes a refusal).
-- PLANNED, Next: RI-28, PL-24, PL-25, VIS-24, VIS-25, EV-15.
+Dispositions (BACKLOG; all fixes on master, unreleased):
+- FIXED 2026-10-14:
+  - TA-19, an errored turn keeps its work (6ffa347);
+  - TA-21, a stopped helper returns its reading as a file (6ffa347);
+  - TA-20, busy ladder on agent calls (8cd38f4);
+  - TA-22, two helpers at once, a token pacer, a helper budget (6ffa347,
+    8cd38f4);
+  - EV-14, the record (4dee54a);
+  - RI-27, DIGGS: not-encountered water, unknown positions as NaN / None,
+    printed refusals written (d81c1f8);
+  - RI-26, the error message for a printed ">50" (cc51fa7).
+- PLANNED, Next: RI-28, RI-30, PL-24, PL-25, VIS-24, VIS-25, EV-15, TA-24.
 - PLANNED, Later: RI-29 (report to DIGGS through `report_ingest`, after
-  OWN-11), TA-23.
-- FIXED: RI-26 (cc51fa7), the error message for a printed ">50".
+  OWN-11), TA-23, EV-16.
+- Live checks (only a real run shows them): whether the gateway honours
+  token-use reporting and what its 429s carry; GPT replayed on its own
+  earlier tool calls after an errored turn.

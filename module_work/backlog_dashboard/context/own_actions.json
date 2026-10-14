@@ -541,7 +541,7 @@
   "options": [],
   "recommendation": "Ask for a copied example response if they have one; a real sample is worth more than a description.",
   "if_no_answer": "Detection stays a guess; the first spent budget, read from a tester's activity log, becomes the sample.",
-  "message_to_send": "Spent budget: when a key's monthly budget is used up, what exactly does the Prompter return: the HTTP status code and the response body (error code and message)? What does a rate-limit refusal look like, including any retry-after header? And on what day do budgets reset? We want testers to see a plain 'your budget is used up' message instead of an error or pointless retries.",
+  "message_to_send": "Spent budget: when a key's monthly budget is used up, what exactly does the Prompter return: the HTTP status code and the response body (error code and message)? What does a rate-limit refusal look like, including any retry-after header? And on what day do budgets reset? Finally, what is the tokens-per-minute limit on the deployment our testers will use? We want testers to see a plain 'your budget is used up' message instead of an error or pointless retries, and the app to pace its calls under that limit.",
   "steps": null,
   "unblocks": [
    "TA-06"
