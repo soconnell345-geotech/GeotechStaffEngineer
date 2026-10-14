@@ -99,7 +99,8 @@ class TestUltimateCapacity:
 
 class TestInteractionDiagram:
     @pytest.fixture(scope="class")
-    def diagram(self):
+    @classmethod
+    def diagram(cls):
         return analyze_rc_rectangle(include_interaction=True,
                                     n_interaction_points=24, **ANCHOR)
 

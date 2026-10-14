@@ -24,7 +24,8 @@ class TestSimplySupportedUDL:
     """L=6 m, w=10 kN/m: R=wL/2=30, |M|=wL^2/8=45, d=5wL^4/384EI=8.4375mm."""
 
     @pytest.fixture(scope="class")
-    def res(self):
+    @classmethod
+    def res(cls):
         return _ss_beam(member_dist_loads=[
             {"member": "M1", "direction": "FY", "w": -10}])
 
@@ -98,7 +99,8 @@ class TestContinuousBeam:
     M_support = -wL^2/8, span sagging = 9wL^2/128."""
 
     @pytest.fixture(scope="class")
-    def res(self):
+    @classmethod
+    def res(cls):
         return analyze_continuous_beam([5, 5], E_kPa=E, I_m4=I, udl_kN_m=10)
 
     def test_reactions(self, res):

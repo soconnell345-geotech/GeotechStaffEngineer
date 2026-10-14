@@ -54,7 +54,8 @@ class TestCaltransExample8_1:
     Vmax = T1L = 8,026 lb/ft (manual pp. 8-11 to 8-19)."""
 
     @pytest.fixture(scope="class")
-    def sol(self):
+    @classmethod
+    def sol(cls):
         H, d, g = 25 * FT, 10 * FT, 115 * PCF
         prof = LayeredProfile([_sand(100.0, g, 30.0)], H, Kp=4.7)
         pe = 0.65 * prof.Ka[0] * g * H ** 2 / (H - d / 3 - (H - d) / 3)
@@ -269,7 +270,8 @@ class TestFhwaSingleAnchor:
     KIP = 4.44822162  # kN
 
     @pytest.fixture(scope="class")
-    def r(self):
+    @classmethod
+    def r(cls):
         from soe.earth_pressure import fhwa_apparent_pressure_anchored_wall
         return fhwa_apparent_pressure_anchored_wall(
             H=25 * FT, anchor_depths=[10 * FT], gamma=115 * PCF, phi=30.0,

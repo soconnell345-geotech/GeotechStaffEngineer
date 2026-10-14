@@ -151,7 +151,8 @@ class TestIntersliceForces:
 
 class TestProbabilisticPlots:
     @pytest.fixture(scope="class")
-    def variables(self):
+    @classmethod
+    def variables(cls):
         return {
             "phi:Clay": {"mean": 22, "cov": 0.10},
             "c_prime:Clay": {"mean": 12, "cov": 0.30, "dist": "lognormal"},

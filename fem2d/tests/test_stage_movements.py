@@ -223,7 +223,8 @@ class TestFillPlacedInAStage:
     before it existed)."""
 
     @pytest.fixture(scope="class")
-    def fill(self):
+    @classmethod
+    def fill(cls):
         nodes, elements = generate_rect_mesh(0, 10, -8, 0, 10, 8)
         nodes, elements = convert_to_t6(nodes, elements)
         bc = detect_boundary_nodes(nodes)

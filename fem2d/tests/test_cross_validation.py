@@ -72,10 +72,11 @@ class TestGravityStressVsAnalytical:
     NU = 0.3
 
     @pytest.fixture(scope="class")
-    def gravity_result(self):
+    @classmethod
+    def gravity_result(cls):
         return analyze_gravity(
-            width=self.WIDTH, depth=self.DEPTH, gamma=self.GAMMA,
-            E=self.E, nu=self.NU, nx=40, ny=10)
+            width=cls.WIDTH, depth=cls.DEPTH, gamma=cls.GAMMA,
+            E=cls.E, nu=cls.NU, nx=40, ny=10)
 
     def test_vertical_stress_profile(self, gravity_result):
         """FEM sigma_yy should match gamma*z (tension-positive: negative).
@@ -156,10 +157,11 @@ class TestFoundationSettlementVsSettlementModule:
     NU = 0.3
 
     @pytest.fixture(scope="class")
-    def foundation_result(self):
+    @classmethod
+    def foundation_result(cls):
         return analyze_foundation(
-            B=self.B, q=self.Q, depth=self.DEPTH,
-            E=self.E, nu=self.NU, gamma=0.0, nx=40, ny=20)
+            B=cls.B, q=cls.Q, depth=cls.DEPTH,
+            E=cls.E, nu=cls.NU, gamma=0.0, nx=40, ny=20)
 
     def test_stress_distribution_below_footing(self, foundation_result):
         """FEM sigma_yy below footing center vs Boussinesq (plane strain approx)."""
@@ -323,7 +325,8 @@ class TestEarthPressureVsRetainingWalls:
     """FEM lateral stress vs K0 / Ka earth pressure theory."""
 
     @pytest.fixture(scope="class")
-    def gravity_result(self):
+    @classmethod
+    def gravity_result(cls):
         return analyze_gravity(
             width=40, depth=10, gamma=18, E=30000, nu=0.3, nx=40, ny=10)
 
@@ -395,7 +398,8 @@ class TestFoundationStressDistribution:
     """Stress bulb under strip footing: FEM vs Boussinesq."""
 
     @pytest.fixture(scope="class")
-    def foundation_result(self):
+    @classmethod
+    def foundation_result(cls):
         return analyze_foundation(
             B=3, q=150, depth=20, E=30000, nu=0.3, gamma=0.0, nx=40, ny=20)
 

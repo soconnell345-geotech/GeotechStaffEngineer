@@ -29,7 +29,8 @@ class TestSinglyReinforcedAnchor:
     """
 
     @pytest.fixture(scope="class")
-    def res(self):
+    @classmethod
+    def res(cls):
         return analyze_rc_rectangle(
             b_mm=300, h_mm=550, fc_MPa=32, fy_MPa=500,
             n_bot=3, dia_bot_mm=28, cover_mm=48)

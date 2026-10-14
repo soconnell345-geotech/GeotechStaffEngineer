@@ -206,7 +206,8 @@ class TestSearchSection:
 
 class TestProbabilisticSection:
     @pytest.fixture(scope="class")
-    def prob(self, geom):
+    @classmethod
+    def prob(cls, geom):
         from slope_stability import monte_carlo_fos, fosm_fos
         variables = {
             "phi:Clay": {"mean": 22, "cov": 0.10, "source": "CPT corr."},

@@ -15,7 +15,8 @@ class TestRectangleExact:
     """Rectangle 100 x 200 mm — every property has an exact closed form."""
 
     @pytest.fixture(scope="class")
-    def rect(self):
+    @classmethod
+    def rect(cls):
         return analyze_section("rectangle", d=200, b=100)
 
     def test_area_and_centroid(self, rect):
