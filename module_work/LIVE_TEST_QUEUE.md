@@ -290,6 +290,8 @@ suite task can follow (EV-15).
 
 **Send:** the printed output and the saved JSON.
 
+**Run on Claude Sonnet, 2026-10-14** (`foundry_handoff/image_zoom_check_foundry.py`, $0.11): look and 2 x 2 tiles 27/28 tags read (6 with a box round the whole callout from one tile), 3 legend cells as strays; zooms 8/8 right, within 0.7 px, the turned tag and the QCE decoy included. The image path works live; the rollout model is measured in Foundry brief 6 part A.
+
 ## Check 8 — Visual scales: label crops, `measure`, the chart's second reading, report ingest (next release; on Foundry as part of brief 5)
 
 **Why.** W3's app side (`module_work/VISUAL_SCALES_DESIGN.md` §12) has only
