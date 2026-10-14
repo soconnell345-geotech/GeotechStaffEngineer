@@ -85,4 +85,8 @@ Plotly plan view and an SPT profile. SPT records for the six 2026 LBA
 borings were withheld ("sample depths must be graphically digitized"),
 though helpers called `log_grid` 13 times and `measure` once; the 1987
 borings are placeholders. Its plan view labels a drawing grid Easting /
-Northing (GM-76). Read in full: TRACE_REVIEW.md, Part 3.
+Northing (GM-76). Read in full: TRACE_REVIEW.md, Part 3: 250 of 256 checked
+values right; the SPT records were withheld because `log_grid` returns no
+sample intervals and "as printed" does not cover a depth read off the log's
+own scale. Filed: PL-24, RI-28, RI-31, PL-25, EV-15, EV-18, GM-76, RI-30,
+TA-28.

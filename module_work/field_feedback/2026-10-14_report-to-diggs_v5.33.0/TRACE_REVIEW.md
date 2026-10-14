@@ -269,7 +269,7 @@ pages. Pages are PDF pages (1-based). The values themselves are in
 |---|---|---|---:|---:|---:|---|---|
 | TP-1 (the saved file) | 2026, vector log + narrative | 43 (copy on 158), 14, 20 | 12 | 12 | 0 | all 3 strata | position 0, 0 and ground elevation 0 (the writer) |
 | LB-1 | 2019, vector | 98–99 | 81 | 80 | 1 (a misspelling silently corrected) | 8 recovery lengths | — |
-| boring 12 | 1987, scan | 133 | 61 | 58 | 3 (elevation 871.12 for 870.12; one moisture 43.4 for 45.4; one description garbled) | 1 moisture (flagged unsure); no layers | — |
+| boring 12 | 1987, scan | 133 | 61 | 58 | 3 (an elevation 1.00 m off; one moisture 43.4 for 45.4; one description garbled) | 1 moisture (flagged unsure); no layers | — |
 | boring 20 | 1987, scan | 149 | 64 | 64 | 0 | 2 SPT rows (one unsure, one refusal row) | — |
 | P5-4 | 2024, scan | 72 | 87 | 86 | 1 (a description cut short, USCS lost) | 12 moisture values | water at 0 m |
 | P6-1 | 2024, scan | 74–75 | 101 | 101 | 0 | 14 moisture values | water at 0 m |
@@ -741,7 +741,7 @@ elsewhere:
      2019, 1987 and 2024 sets. Each is written at elevation 0, about 880 m
      below its neighbours. `parse_diggs` reports `elevation_m: 0.0` (EB-1,
      line 113).
-   - LB-1's log prints its elevation (876.14). The second turn did not have
+   - LB-1's log prints its elevation. The second turn did not have
      it.
    - 1987-B20 has no x, y. It was written at 0, 0, which in this file is
      the grid's own origin: a real-looking point at the corner of the
@@ -884,3 +884,506 @@ Part 2's actions (B1–B5) follow the first table.
   the turn waited on it only once.
 - **The reading quality of the scanned logs.** It is not where this turn
   failed (§2.1).
+
+---
+
+## Part 3. The retry turn (turn 3), and turn 2 from its record
+
+**Source.**
+- The app's export after turn 3: `raw/run3/conversation/` and `raw/run3/files/`.
+  Its `activity.jsonl` holds all three turns in 3,865 records: turn 1 is
+  #0–#2695 (as in Part 1), turn 2 #2696–#2996, turn 3 #2997–#3864. "#N" is
+  the 0-based line.
+- Helpers were rebuilt by the same chaining as Part 1. Every chain ends
+  exactly when its `task` returns.
+- Checked against the PDF pages, the vector geometry of the logs and of the
+  investigation plan (PyMuPDF), and Part 1's truth tables.
+- Private tables, scripts and page crops: `raw/notes/run3/` (`NOTES_run3.md`).
+
+**The owner's three turns.**
+1. Turn 1: 51 min, rate limit (Parts 1 and 2).
+2. Turn 2, "Are you able to continue?": hung on one `reviewer` model request
+   (TA-26, TA-25, fixed).
+3. Turn 3, "Can you retry?", with "Consult references" switched off: 1,036 s
+   (17 min), no errors, a DIGGS file, a plan view and an SPT profile.
+
+---
+
+### In short
+
+1. **The 54 SPT records for LBA-1 to LBA-6 were in hand and right, and were
+   held back** (P3.2).
+   - The 2026 logs print no sample depth as a number. Each sample is a box
+     drawn against the log's depth scale, exact in the PDF (1.05–1.50 m,
+     2.55–3.00 m, every 1.5 m).
+   - `log_grid` read the scale right and placed every row in depth. But it
+     reports no sample intervals. And 7 of its 8 results stopped after the
+     first 2.6–4.4 m of each log, and nobody asked for the rest.
+   - The helper took layer contacts off that same scale. It refused sample
+     depths off it as "not printed". It kept EGB-2's only because a vision
+     call happened to state them.
+   - Its 60 SPT records were 59/60 right for blows and 60/60 for N. Turn 2's
+     helper made the same call.
+   - Verdict: not a tool failure. A tool gap plus a description gap, which
+     turned a sound "never guess" rule into a wrong one.
+2. **The file is accurate where it has data: 250 of 256 checked values
+   right** (P3.3). Of the 6 wrong, one matters most: TP-1 sits 141 m away,
+   on another exploration's coordinates.
+3. **What it leaves out is larger than what it holds:**
+   - 54 SPT records;
+   - every recovery value;
+   - all four 1987 borings (their helper had read the SPT tables and gave
+     up);
+   - all the 2024 borings;
+   - 16 printed layer contacts.
+4. **The grid is right-handed and page-aligned, median 0.94 m off the
+   symbols** (P3.4). Three of 15 points are off their symbol: one on its
+   label, one beside it, one copied from the wrong row. The plan view calls the page axes
+   Easting and Northing (GM-76). Here +y points about 116° from north.
+5. **11 fields read back as zero** (P3.5). RI-27 on master turns 7 of them
+   into "unknown". The 4 total-depth zeros remain (RI-30).
+6. **The turn spent its time queuing and retyping** (P3.6):
+   - 4 helpers at once on 8 vision slots, full in 8 of 17 minutes;
+   - 25 pages looked at again that earlier turns had already read;
+   - the primary retyped 29,000 characters of helper output into
+     `write_diggs`. Several of the file's faults entered there.
+
+---
+
+### P3.1 What ran
+
+**Turn 2, now from its record** (Part 2 read only the progress list):
+
+| helper | brief | t (s) | agent calls | returned |
+|---|---|---|---|---|
+| inventory | programs, IDs, pages | 9–145 | 6 | an inventory, 8,128 chars |
+| 2026 logs | PDF 28–43 | 203–388 | 7 | records with no sample depths, 29,498 chars |
+| grid | Figure 2 | 203–527 | 7 | the right-handed grid (Part 2: median 0.3 m) |
+
+- The primary wrote its file at t 573. It called the `reviewer` at t 577.6.
+  After the reviewer's one `model_start`, the record holds nothing more
+  from that turn but the end of a parse started at the same moment (TA-26).
+- Turn 2 made 74 model calls before the hang: 8 primary, 20 helper,
+  45 vision and 1 reviewer.
+- **The 2026 helper paged.** It called `log_grid` 15 times: 8 first pages,
+  then 7 second pages. It still reached only 5.0–8.6 m of 12–21 m logs. Like
+  turn 3's, it gave no sample depths, and the primary wrote "SPT held for
+  depth QA".
+- **One reuse worked and one missed.**
+  - The primary's `analyze_pdf_page(reuse=true)` on page 24 returned a kept
+    reading in 0.04 s.
+  - Its `render_region(reuse=true)` passed a box that matched no kept zoom
+    (a letter-size box on a 17 × 11 in sheet). It looked again (38.5 s).
+
+**Turn 3**: 13 primary calls, 34 helper calls, 168 vision calls. All four
+helpers started within 14 ms of each other (t 54.18–54.19).
+
+| helper | brief | t (s) | agent calls | tool results (chars) | returned |
+|---|---|---|---|---|---|
+| G | the Figure 2 grid | 54–931 | 16 | 197,675 | a coordinate table, 5,350 chars (#3829) |
+| 2026 | the 2026 logs, PDF 28–43 | 54–605 | 7 | 226,695 | JSON, 30,713 chars (#3474) |
+| 2019 | the 2019 logs, PDF 98–106 | 54–257 | 3 | 67,005 | JSON, 17,800 chars (#3258) |
+| 1987 | the 1987 logs, PDF 108–156 | 54–827 | 8 | 284,026 | **an apology, 162 chars** (#3636) |
+
+**The primary**, step by step:
+- t 0–54: it reread page 24's text (12 s) and three searches.
+  `document_page_map` refused one result for being 159 characters over its
+  14,500 limit, and the primary did not retry.
+- t 54: the four helpers. No helper was sent for the 2024 light-pole logs.
+- t 931–999: one model call of 63.9 s that typed 29,293 characters of
+  `write_diggs` arguments.
+- Then `parse_diggs`, the two plots and the answer at t 1,036.
+- The primary's own model time was 136 s.
+
+---
+
+### P3.2 Why the 2026 SPT records were withheld (question 1)
+
+**Were the depths printed?**
+- **No, not as numbers.**
+  - On the 2026 logs a sample is a box in the sample columns, drawn against
+    the depth scale.
+  - The only depths printed as numbers are the scale ticks every metre, an
+    elevation beside each stratum change, and a few remarks.
+- **They are exact in the drawing.**
+  - The box rules on these vector pages put every SPT at 1.05–1.50,
+    2.55–3.00, 4.05–4.50, 5.55–6.00, 7.05–7.50 m and so on, every 1.5 m.
+  - That is ±0.01 m against the page's own ruler (`truth_spt2026.json`).
+  - Refusals are shorter: EGB-2's S-5 box ends at 10.30 m.
+- **The 2019 logs print each interval** in their remarks ("SS 0 to 0.5 m").
+  That is why the 2019 SPT records reached the file and the 2026 ones did not.
+
+**What the tools returned.**
+
+| call | by | returned |
+|---|---|---|
+| `log_grid` ×8 | 2026 helper, PDF 28–43 | ruler at confidence 0.98; every row placed in depth (LBA-1's S-1 label at 1.20–1.35 m, its three blows at 1.12, 1.24, 1.37 m); layers with contacts off the drawn stratum lines. **No sample intervals.** 7 of 8 results stopped at 33–43 of 117–234 rows, i.e. at 2.6–4.4 m; no call passed `offset` |
+| `log_grid` ×1 | 2019 helper, nine pages at once | 20 of 544 rows (to 0.68 m) |
+| `log_grid` ×4 | 1987 helper, scans | 0 rows, `needs_values`; 415–417 s each |
+| `measure` ×1 | grid helper, the plan sheet | the stated 1:1500 scale; nothing to do with the logs |
+
+The vision page reads (16 by the 2026 helper) gave blows, N and recoveries.
+They stated intervals only on EGB-2's two pages, where the side-call model
+read the ruler itself ("interval 7.05–7.50 m"). They stated none on the LBA
+pages.
+
+**What the helper did.**
+- It wrote: "Most SPT interval depths are graphical rather than numerically
+  printed. Except for EGB-2 intervals verified directly, they were not
+  inferred; SPT records are keyed to sample ID."
+- The primary then left them out of the file: "depth intervals require
+  additional graphical digitization".
+
+**Was it sound?**
+- **The values were right.**
+  - Checked against the pages, the helper's 60 SPT records were 59/60 right
+    for the blows and 60/60 for N or refusal.
+  - The one slip is EGB-2's S-1: two blows for a printed three.
+  - 54 of the 60 were withheld.
+- **The rule was applied unevenly.**
+  - The same helper took its layer contacts off the same drawn scale
+    (`log_grid`'s stratum lines: LBA-1 at 0.75 m and 5.55 m).
+  - It took EGB-2's sample depths from a vision call reading that scale.
+  - That is the less exact route, and it got one wrong. EGB-2's S-5 was
+    written 10.05–10.50 m; the drawing gives 10.05–10.30 m, 32 blows plus
+    50 for 5 cm.
+  - So whether a boring's SPT reached the file depended on whether a side
+    call happened to volunteer a depth.
+- **It is systematic.** Turn 2's helper, a separate run, held the same records
+  back for the same reason.
+- **The cause.**
+  - `write_diggs` says "numbers AS PRINTED on the log (never inferred)", and
+    the brief added "do not infer". Neither says what a depth measured off
+    the log's own scale is.
+  - `log_grid`, the tool built to measure that scale, does not report a
+    sample's interval. Its paging hid the deeper half of every log.
+  - Not a tool failure: the ruler and the row depths were right. A tool gap
+    and a description gap.
+
+---
+
+### P3.3 The delivered file, checked against the pages
+
+`SAL_DI1_Volume_I_initial.diggs.xml`: 16 explorations, 47 layers,
+40 samples, 38 SPT records. Verdict "valid DIGGS 2.6 … reads back equal",
+0 cross-check entries, `assumed: []` (#3837).
+
+**Contents by program:**
+- **2026:** EGB-2 with SPT; LBA-1 to LBA-6 with layers and no samples; TP-1.
+- **2019:** LB-1 to LB-4 with layers, samples and SPT.
+- **1987:** four placeholders (borings 12, 13, 14, 20).
+
+**The tally.** All the file's positions, elevations, depths, dates, layer
+contacts and test values were checked, not a sample. Descriptions and
+drilling details were not counted.
+
+| class | checked | right | wrong |
+|---|---:|---:|---:|
+| positions (x, y), against the vector symbols | 15 | 12 | 3: TP-1 141 m off; LB-2 4.5 m (on its label); boring 14 3.9 m (beside its symbol) |
+| ground elevations (2026 ×7, 2019 ×4) | 11 | 11 | 0 |
+| total depths (the "End of boring" line where the header rounds it) | 12 | 12 | 0 |
+| start and finish dates | 24 | 24 | 0 |
+| internal layer contacts, against the printed elevation marks (±0.1 m) | 36 | 36 | 0 |
+| SPT: top, bottom, blows, N or refusal (38 records) | 152 | 149 | 3 (below) |
+| LB-3 core runs: top, bottom, recovery % | 6 | 6 | 0 |
+| **total** | **256** | **250** | **6** |
+
+**The three SPT faults:**
+1. EGB-2 S-1: blows `[3, 4]`. The log prints 3 / 3 / 4, N 7. The written N is
+   right.
+2. EGB-2 S-5: bottom 10.50 m. Drawn 10.30 m.
+3. LB-1 S-8, a refusal printed `60/15"` beside the remark "SS 3.5 to 3.65 m".
+   - The helper kept the printed text. The primary rewrote it `60/15in`.
+   - The writer turned that into a 0.381 m drive inside a 0.15 m interval.
+
+**Printed but not in the file:**
+- **54 SPT records** of LBA-1 to LBA-6 (P3.2).
+- **Every recovery value.** The tool offers only `recovery_percent` (RI-28).
+  So are all the 2026 disturbed samples, which print a non-unique "D".
+- **From the 2019 logs:**
+  - LB-3's grab sample (0–0.4 m, drawn);
+  - two strength readings in LB-3's remarks;
+  - nine DCP intervals (the answer says the writer has no place for them).
+- **16 printed layer contacts**, merged into a neighbour.
+  - 5 are a topsoil or asphalt layer.
+  - 14 of the 47 written layers span one.
+  - The written descriptions are the primary's short summaries, not the
+    printed text.
+- **"Not encountered" groundwater** on all 12 logs, in remarks only. DIGGS can
+  say it (`notEncountered`), and the writer on master writes it (RI-27).
+- **TP-1's three strata**, for the third time.
+- **The 1987 logs.**
+  - The 1987 helper's 3×3 tiles read the SPT tables.
+  - Boring 12's tile matches turn 1's transcription row for row. Part 1
+    checked that transcription: 58 of 61 values right on boring 12.
+  - The helper still returned only "I'm sorry, but I couldn't complete a
+    sufficiently reliable structured extraction …" (TA-21, fixed since).
+- **The 2024 logs**: no helper was sent. The answer lists them as remaining
+  work.
+
+**Written but not printed:**
+- **11 zero fields** (P3.5).
+- **Four page lists for the 1987 placeholders.**
+  - They are even splits of the 1987 section (boring 12: PDF 108–119).
+  - Boring 12's log is on PDF 133–134. The helper's own `log_grid` calls
+    named the right pages, but its answer was an apology, so the primary
+    made the lists up.
+  - The answer calls this "source traceability".
+- **The drive length.** All 108 drive sets are written as 0.1524 m on forms
+  headed "BL/15cm" (the writer's default, RI-28).
+- **The hammer type field** holds a sentence about where the value came from.
+  The logs leave it blank.
+
+**Changed silently:** two misspellings on the logs were corrected (an
+equipment entry and a firm name); `60/15"` became `60/15in`.
+
+**Where each fault came from:**
+- **The primary's retyping:** `60/15in`, the shortened descriptions, the
+  dropped recoveries, the made-up page lists.
+- **A helper's slip:** TP-1's position.
+- **A vision read:** EGB-2's S-5 bottom.
+
+---
+
+### P3.4 The grid
+
+**How it is defined.**
+- The origin is the outer frame's lower-left corner, displayed (34.92,
+  757.08) pt. The vector frame lines confirm it.
+- +x runs page-right and +y page-up, at 0.5291667 m per point (1:1500).
+- It is **right-handed, not mirrored**, and page-aligned: +x points about
+  206° from north, +y about 116°.
+- The coordinate-system text says "not georeferenced" but not where north is
+  (RI-28).
+
+**Checked against the vector symbol centres** (15 placed points):
+- Median **0.94 m** off. 8 within 1 m; 12 on their symbol.
+- **Off their symbol:**
+  - LB-2, 4.5 m: its vision box was on the label.
+  - Boring 14, 3.9 m: beside the symbol.
+  - **TP-1, 141 m.**
+- The answer claimed ±0.5 to ±0.8 m. Only 6 of 15 meet their own stated
+  figure.
+
+**How the points were made.**
+- `render_region` returns boxes on a 0–999 grid over its view, not page
+  points. The helper converted those boxes to page points in its head (most
+  within 0.3 pt) and multiplied them out with 94 `calculate` calls.
+  - Two of the calls had a `**` typo; both were redone.
+  - The 2026 boxes sat on the symbols. The boxes for LB-2 and the 1987
+    borings sat partly on their labels.
+- **TP-1:**
+  - The helper's own calculation (t 864) had TP-1 within 1.4 m of its
+    diamond.
+  - Its final table gave TP-1 EB-1's numbers. Its evidence column reads
+    "locally overlaps EB-1 vicinity".
+  - The primary saw two explorations at one point and told the owner they
+    "appear in the same immediate vicinity on Figure 2" and need a field
+    check. In fact they are 141 m apart.
+- **Boring 20** was left unplaced, rightly. The writer then put it at 0, 0
+  (P3.5).
+
+**Three turns, three grids.**
+- Turn 1: mirrored, median 4.7 m (Part 1).
+- Turn 2: right-handed, median 0.3 m (Part 2).
+- Turn 3: right-handed, median 0.94 m, one point 141 m off.
+- Turn 2's file, with the better grid, sat in the working folder. Every
+  turn-3 helper's `list_files` showed it. But the turn-3 files note named
+  only turn 1's files, and nobody opened it (P3.6).
+
+---
+
+### P3.5 Zeros (question 3)
+
+**Where a missing value became zero:**
+
+| where | exploration | field | written / read | why |
+|---|---|---|---|---|
+| file (`gml:pos`) | TP-1 | ground elevation | 0 (centre line 0 to −1.5) | the log prints no elevation |
+| file | borings 12, 13, 14 | ground elevation | 0; centre line 0 to 0 | not transcribed (the 1987 logs print one) |
+| file | boring 20 | x, y, ground elevation | 0, 0, 0 | not plotted on Figure 2 |
+| read-back (`parse_diggs`, #3845) | TP-1, borings 12, 13, 14, 20 | `elevation_m` | 0.0 (5 fields) | as above |
+| read-back | borings 12, 13, 14, 20 | `total_depth_m` | 0.0 (4 fields) | no depth given |
+| read-back | boring 20 | `x`, `y` | 0.0, 0.0 (2 fields) | as above |
+| plan view | boring 20 | the marker | drawn and labelled at the grid's origin | from the read-back |
+| plan view | the same five | hover text | "Elev: 0.0m" (5), "Depth: 0.0m" (4) | from the read-back |
+
+- **11 fields read back as zero.** The answer said so, plainly: "these zeros
+  should not be interpreted as actual elevations, depths, or coordinates".
+- **On master, RI-27:**
+  - The writer marks an unknown x, y or elevation as NaN. The reader returns
+    None, and plots skip such points and list them.
+  - That covers 7 of the 11 fields and boring 20's marker.
+- **Still open, RI-30:** `total_depth_m` is still 0.0 when no depth is given.
+  That is the other 4 fields and the "Depth: 0.0m" hovers.
+- **One more gap:** for borings 12–14 the elevation is printed but was not
+  transcribed. "Not transcribed" is not "unknown", and the placeholder's
+  remark should be the only place that says which.
+
+---
+
+### P3.6 How the turn used its budget (question 4)
+
+**Model calls.**
+- The primary made 13. The helpers: G 16, 2026 7, 2019 3, 1987 8.
+- 168 vision side calls on top. Only 15 can be pinned to a helper; the other
+  153 ran while several helpers had looks in flight (EV-14 adds the
+  `task_id`).
+- `turn_tokens` is 0 again: no usage was recorded (EV-14).
+- No refusals and no retries.
+
+**Where the 17 minutes went.**
+- **Critical path:**
+  - first look 54 s;
+  - the grid helper 877 s;
+  - the write step 68 s (one 64 s model call);
+  - parse, plots and answer 37 s.
+- **The vision slots** (8 per process) were full in 8 of the 17 minutes:
+  minutes 2–6 and 10–12.
+  - The 2026 helper's 16 whole-page looks at vector logs took 97–239 s
+    each.
+  - The grid helper's 9 zooms took 51–232 s each, 1,230 s in all.
+  - Most of that is queuing for a slot.
+- **The 1987 helper's four `log_grid` calls**, on scanned pages:
+  - 415–417 s each, all ending within 1.1 s of each other (t 568.8–569.9);
+  - that pattern points at a wait, not work;
+  - Part 1 timed one scanned pair at 14–20 s alone;
+  - the record cannot say what they waited on. EV-14 now times lock and
+    slot waits.
+
+**Tool results.**
+- 882,000 characters into the helpers' and primary's contexts:
+  - the 1987 helper 284 k;
+  - the 2026 helper 227 k;
+  - the grid helper 198 k, with one `drawing_ir` geometry result of 43 k;
+  - the primary 106 k;
+  - the 2019 helper 67 k.
+- The 1987 helper's 284 k ended as 162 characters.
+- **The same data was typed twice.**
+  - The 2026 helper spent 85 s typing a 30.7 k JSON answer.
+  - The primary spent 64 s retyping it, with the 2019 answer, as 29.3 k of
+    `write_diggs` arguments.
+  - The retyping is where four kinds of fault entered (P3.3).
+
+**Repeats.**
+- Turn 3 looked again at **25 pages that turns 1 and 2 had already looked
+  at**: page 24, the TP-1 log, the nine 2019 log pages and 14 of the 1987
+  pages.
+  - The turn-start note listed 80 kept readings, but only the primary sees
+    that note. No helper passed `reuse=true`.
+- **Turn 2's file was missed.**
+  - The note named the PDF and turn 1's TP-1 file, not the file turn 2
+    wrote. Turn 2 was interrupted, so its files never reached the note.
+  - So turn 3 built a third grid while a better one sat in the folder.
+
+**What the fixes on master would change here:**
+
+| fix | effect on this session |
+|---|---|
+| TA-19 (an errored turn keeps its work) | Turn 1's transcriptions would have reached turns 2 and 3: the 2019 and 1987 JSON (Part 1: 401/406 right) and the 21 light-pole borings. The 1987 placeholders and the missing 2024 set are exactly what turn 1 had. Whether a turn killed mid-turn (turn 2) gets its files into the next turn's note is worth a test |
+| TA-21 (a stopped helper returns a file) | The 1987 helper read 284 k characters, including the SPT tables, and gave up. It would now leave `kept/helper_….md` with every result and a summary, and the primary would get the path. Its prompt now asks for data over an apology |
+| TA-22 (two helpers at once, pacer, 30-call budget) | Four helpers would run two at a time: probably a longer turn, shorter vision queues. No 429 came, so the cap would have saved nothing here. The grid helper's 16 calls fit the budget |
+| TA-20 (busy ladder), TA-26 (time limit), TA-25 (reviewer) | Turn 3: nothing (no refusal; references off). Turn 2: the reviewer request would have timed out and been retried, and the reviewer's description now says it cannot check data against a report |
+| EV-14 (the record) | Token use; a `task_id` on all 168 vision calls; queue times that would explain the 415 s `log_grid` calls and the 97–239 s looks |
+| RI-27 (writer and reader) | 7 of the 11 zeros become "unknown"; boring 20 is not drawn at the origin; water rows passed as not encountered would be written as such (this turn passed none) |
+
+---
+
+### P3.7 The plan view and the SPT profile (question 5)
+
+**Plan view** (`SAL_DI1_initial_plan.html`, a Plotly scatter with equal axes):
+- **The axes are labelled "X (Easting)" and "Y (Northing)"** (GM-76).
+  - On this grid +x points about 206° from north and +y about 116°.
+  - The agent's own answer says they are not eastings and northings.
+  - The plot has no north arrow.
+- **Boring 20** is drawn and labelled at (0, 0), the frame corner, a place
+  where no boring is (P3.5).
+- **TP-1** is drawn on EB-1's spot, 141 m from its symbol.
+- **The rest:** 12 of the 15 real points sit on their symbols. The plot is
+  page-aligned, so it can be laid against Figure 2 by eye.
+- **That comparison is the check that would have caught TP-1 at once.**
+  GM-76's option of ringing each point on the report's own plan sheet (the
+  grid's inverse transform) does it without the eye.
+
+**SPT profile** (`SAL_DI1_initial_SPT.html`):
+- 35 points: EGB-2 4, LB-1 7, LB-2 4, LB-3 14, LB-4 6. Every plotted N
+  matches the logs.
+- The title says "2019 plus EGB-2", which is honest about the 54 missing
+  LBA values.
+- **The three refusals are not drawn**: EGB-2 S-5 and S-6, LB-1 S-8. The
+  densest material is missing from the plot, with no mark.
+- **N is drawn at the top of each drive** (LB-1's first at 0.0 m), and the
+  plot does not say so.
+- **Two hammer types share one axis without a note**: a donut hammer in 2019,
+  a safety hammer in 2026. The axis reads `N_spt`, not "field N,
+  uncorrected".
+
+---
+
+### P3.8 The answer against the record
+
+**True and useful:**
+- the validation counts;
+- the zero warning;
+- that the coordinates are a drawing grid;
+- that boring 20 is not plotted;
+- the termination depths used over rounded headers;
+- the EGB-2 / EBG-2 spelling note;
+- the remaining-work list.
+
+**Not borne out:**
+- **EGB-2's sample depths** "could be read directly with adequate
+  confidence". They were read off the drawn scale, as the LBA depths could
+  have been.
+- **The LBA depths** "must be graphically digitized". The PDF holds them
+  exactly, and the helper had every value but the depth.
+- **The 1987 logs** "not sufficiently reliable for bulk automated
+  transcription". The tiles read them, and turn 1's transcription of the same
+  logs checked 58/61 and 64/64.
+- **"Source traceability"** for the 1987 placeholders. The page lists were
+  made up.
+- **"±0.5 to ±0.8 m"**. The median is 0.94 m and three points are 3.9–141 m
+  off.
+- **TP-1 and EB-1** "in the same immediate vicinity". They are 141 m apart.
+
+---
+
+### P3.9 Lessons and recommended actions
+
+**Lessons:**
+- **"As printed, never inferred" needs a definition of printed for drawn
+  data.** On a vector log the scale is data. A depth read off it with
+  geometry is a measurement, and refusing it lost 54 correct records.
+- **A tool that measures must return what the writer needs.** `log_grid`
+  measured every row and still left the agent to turn rows into sample
+  intervals.
+- **Data should travel as files, not as retyped text.** Each retyping step
+  added faults.
+- **Checks that compare a record with itself catch what "reads back equal"
+  cannot:** a drive longer than its interval, two explorations at one point,
+  a page list nobody read.
+- **Earlier turns' readings must reach the helpers**, not just the primary.
+
+Each action below is general (no rule fitted to this report). Tiers are
+suggestions for the lead.
+
+| # | what | why (evidence) | where | tier | extends |
+|---|---|---|---|---|---|
+| C1 | **`log_grid` returns sample intervals**: each sample's top and bottom off the drawn sample box and the log's own ruler, with the box and a confidence, and the drives inside it. Plus a compact per-log record by default, so paging cannot hide the lower half of a log | 54 SPT records withheld with blows and N in hand (54/54 right); the boxes are exact to ±0.01 m; 7 of 8 results stopped at 2.6–4.4 m and were never paged on (turns 2 and 3) | planlens `document/loggrid.py` and the toolkit spec | Next | PL-24, PL-04 |
+| C2 | **Say what "as printed" means for drawn depths**: in the `write_diggs` description and the general-purpose helper prompt, a depth measured off the log's own depth scale (by `log_grid`, `measure` or a zoom against the ruler) is read off the page, not inferred. Record how it was read. A record with values in hand is written, or listed in `written.left_out` with its reason, never silently held back | the same call in two separate turns; layer contacts taken off the scale, sample boxes refused; EGB-2 kept only because a side call volunteered depths, and one of those was wrong | `funhouse_agent/adapters/subsurface_adapter.py` (description), the general-purpose prompt in `funhouse_agent/deep/agent.py` | Next | RI-28 |
+| C3 | **Writer cross-checks inside an SPT**: drive lengths add up to the interval; a record that is not a refusal has as many drives as the form's increments; a drive length in a unit other than the log's depth unit is named in `assumed` | `60/15in` became a 0.381 m drive in a 0.15 m interval; EGB-2 S-5 had 0.20 m of drive in a 0.45 m interval; EGB-2 S-1 had two drives for a printed three; all passed "reads back equal" | `report_ingest/diggs_writer.py` (`_drive_sets`), the cross-checks in `_run_write_diggs` | Next | RI-28 |
+| C4 | **Helpers hand records over as a file** in `write_diggs`'s own schema, and `write_diggs` takes that file, so the primary assembles by name instead of retyping | 30.7 k typed by the helper, then 29.3 k retyped by the primary (85 s and 64 s of generation); the retyping shortened descriptions, dropped recoveries, turned `60/15"` into `60/15in` and made up the 1987 page lists | `write_diggs` (a file input), the helper prompt | Next | new (with TA-21, GM-45) |
+| C5 | **Cited pages are checked against pages read**: `write_diggs` in the app compares each exploration's `pages` with the pages this conversation read and lists any never read. The description says pages are where the values came from, and a placeholder has none | four 1987 page lists were even splits of the section; the logs are on other pages, which the helper's own calls named | `subsurface_adapter._run_write_diggs`, the reads record (`reads.json`) | Next | new |
+| C6 | **Plan locations: checks and page points.** The plan-location tool flags two explorations at one point and any point outside the symbol it names. `render_region` returns page-point boxes beside its 0–999 boxes, so no agent converts by hand | TP-1 written with EB-1's coordinates (141 m) although the helper's own calculation was right; 3 of 15 points on labels or beside their symbols; boxes converted to page points in the model's head, then 94 `calculate` calls for one linear transform; three turns, three grids (4.7, 0.3, 0.94 m median) | planlens (PL-25's tool), `funhouse_agent/vision_tools.py` (`render_region` result) | Next | PL-25, VIS-24 |
+| C7 | **Plots say what they show**: the plan view takes its axis labels from the stated coordinate system and draws a north arrow when one is stated; the SPT profile marks refusals at the axis edge and says it plots field N at the top of each drive | "X (Easting)" for an axis pointing 206° from north; the three refusals absent; N drawn at drive tops without a word | `subsurface_characterization/plots_plan.py` and the depth-plot module | Next | GM-76 |
+| C8 | **The last silent zero**: total depth None when not given, and the plots' hover text with it. A placeholder for a log that prints an elevation says "not transcribed", not "unknown" | 4 of this file's 11 zero fields and the "Depth: 0.0m" hovers; borings 12–14 print elevations | `subsurface_characterization/site_model.py`, `diggs_parser.py` | Next | RI-30 |
+| C9 | **Earlier turns' work reaches the helpers**: the files note lists every file in the working folder, including an interrupted turn's, and the vision tools reuse a kept reading of the same page and view without being asked, saying so | turn 3 rebuilt a grid the folder already held, a better one, from turn 2; 25 pages looked at again that earlier turns had read; 80 kept readings went to the primary only | `webapp/core.py` (the per-turn files note), `funhouse_agent/vision_tools.py` (kept readings) | Next | TA-19 |
+| C10 | **Suite tasks and one live check**: SPT on a vector log whose sample depths are drawn, not printed; a refusal printed in inches on a metric log; two explorations near each other on a plan; a scanned log legible only in tiles, where the helper must hand back data. Live: re-run this retry on master and confirm the 1987 helper's kept file reaches the primary | P3.2, P3.3, P3.4; the 1987 helper's 284 k → 162 characters | `funhouse_agent/review_eval/` or the geotech eval; `module_work/LIVE_TEST_QUEUE.md` | Next | EV-15, TA-04 |
+
+**What is not an action.**
+- **Leaving boring 20 unplaced.** It is right; only the writer's 0, 0 was
+  wrong, and RI-27 fixed that.
+- **Holding back the 1987 values** would have been sound if they had been
+  illegible. They were not: the fault was returning nothing (TA-21, done).
+- **The reading quality of the vector logs.** 59/60 and 60/60 for the 2026
+  SPT and 127/128 for the 2019 SPT; it is not where this turn lost data.
