@@ -245,5 +245,51 @@ class AgentBusyRetry(AgentMiddleware):
             return response
 
 
+def retry_policy() -> dict:
+    """The waiting, pacing and helper policy in force, for the record
+    (BACKLOG EV-14: the field session's record named the model only)."""
+    out: dict = {"agent_busy_tries": tries(), "agent_ladder_s": list(LADDER_S),
+                 "agent_max_retry_after_s": MAX_RETRY_AFTER_S}
+    try:
+        from funhouse_agent.deep import keep_work, pacing, vision_engine
+        from funhouse_agent.deep.limits import helper_max_model_calls
+        out.update({
+            "busy_turn_max_s": keep_work.TurnScope().busy_limit_s,
+            "max_helpers": keep_work.max_helpers(),
+            "helper_max_model_calls": helper_max_model_calls(),
+            "tokens_per_minute": pacing.tokens_per_minute() or None,
+            "vision_busy_tries": vision_engine.busy_tries(),
+            "vision_max_inflight": vision_engine._int_env(
+                vision_engine.INFLIGHT_ENV,
+                vision_engine.DEFAULT_MAX_INFLIGHT),
+            "vision_call_timeout_s": vision_engine.call_timeout_s(),
+        })
+    except Exception:  # noqa: BLE001 - a record, never a failure
+        pass
+    return out
+
+
+def engine_facts(model) -> dict:
+    """Which client a chat model is, for the record: its class, model
+    name, the client's own retries and timeout, whether streamed replies
+    carry usage. Never a key or an address."""
+    if model is None:
+        return {}
+    out: dict = {"class": type(model).__name__}
+    for attr, key in (("model_name", "model"), ("model", "model"),
+                      ("max_retries", "client_max_retries"),
+                      ("request_timeout", "client_timeout_s"),
+                      ("timeout", "client_timeout_s"),
+                      ("stream_usage", "stream_usage"),
+                      ("disable_streaming", "streaming_disabled"),
+                      ("streaming_enabled", "streaming")):
+        v = getattr(model, attr, None)
+        if key not in out and isinstance(v, (str, int, float, bool)) \
+                and not isinstance(v, type):
+            out[key] = v
+    return out
+
+
 __all__ = ["AgentBusyRetry", "LADDER_S", "MAX_RETRY_AFTER_S", "TRIES_ENV",
-           "DEFAULT_TRIES", "tries", "busy", "wait_s", "refusal_facts"]
+           "DEFAULT_TRIES", "tries", "busy", "wait_s", "refusal_facts",
+           "retry_policy", "engine_facts"]

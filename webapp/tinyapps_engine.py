@@ -461,6 +461,85 @@ def _streaming_disabled() -> bool:
         "1", "true", "yes", "on")
 
 
+#: Ask the endpoint for the token count of a STREAMED reply
+#: (``stream_options.include_usage``). langchain-openai turns this on by
+#: itself only for OpenAI's own address; with a custom ``base_url`` it stays
+#: off, and the app streams every turn, so every call on this route was
+#: recorded with no usage (field session 2026-10-14, BACKLOG EV-14: 989
+#: ``model_end`` records, ``usage`` null on all). ``0`` turns it off, for a
+#: gateway that refuses ``stream_options``.
+STREAM_USAGE_ENV = "GEOTECH_PROMPTER_STREAM_USAGE"
+
+
+def stream_usage() -> bool:
+    return str(os.environ.get(STREAM_USAGE_ENV, "")).strip().lower() not in (
+        "0", "false", "no", "off")
+
+
+def refuses_stream_options(exc: BaseException) -> bool:
+    """Whether ``exc`` is the endpoint refusing ``stream_options`` (a 400
+    or 422 that names it)."""
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+    return status in (400, 422) and "stream_options" in str(exc).lower()
+
+
+_CHAT_CLASS = None
+
+
+def _chat_openai_class():
+    """``ChatOpenAI`` that asks once more WITHOUT ``stream_options`` when
+    the endpoint refuses it, and stops sending it from then on: a gateway
+    that does not take the usage option must not cost a turn (BACKLOG
+    EV-14). Built once, lazily, so importing this module needs no
+    langchain."""
+    global _CHAT_CLASS
+    if _CHAT_CLASS is None:
+        _CHAT_CLASS = _make_chat_class()
+    return _CHAT_CLASS
+
+
+def _make_chat_class():
+    from langchain_openai import ChatOpenAI
+
+    class PrompterChatOpenAI(ChatOpenAI):
+        def _stream(self, *args, **kwargs):
+            started = False
+            try:
+                for chunk in super()._stream(*args, **kwargs):
+                    started = True
+                    yield chunk
+                return
+            except Exception as exc:  # noqa: BLE001 - classified below
+                if started or not self.stream_usage or \
+                        not refuses_stream_options(exc):
+                    raise
+                log.warning("the Prompter endpoint refused stream_options; "
+                            "streaming without the usage count from now on")
+                self.stream_usage = False
+            yield from super()._stream(*args, **kwargs)
+
+        async def _astream(self, *args, **kwargs):
+            started = False
+            try:
+                async for chunk in super()._astream(*args, **kwargs):
+                    started = True
+                    yield chunk
+                return
+            except Exception as exc:  # noqa: BLE001
+                if started or not self.stream_usage or \
+                        not refuses_stream_options(exc):
+                    raise
+                log.warning("the Prompter endpoint refused stream_options; "
+                            "streaming without the usage count from now on")
+                self.stream_usage = False
+            async for chunk in super()._astream(*args, **kwargs):
+                yield chunk
+
+    return PrompterChatOpenAI
+
+
 def build_chat_model(model_id: Optional[str] = None, *,
                      prompter: Optional[PrompterSettings] = None):
     """A ``ChatOpenAI`` against the deployment's Prompter endpoint.
@@ -475,11 +554,17 @@ def build_chat_model(model_id: Optional[str] = None, *,
     on GPT-5.1 it holds the reasoning tokens as well as the reply). Busy
     refusals are retried :func:`max_retries` times, honouring retry-after;
     a refusal that says the budget is spent is not
-    (:func:`no_retry_when_budget_spent`).
+    (:func:`no_retry_when_budget_spent`). A streamed reply carries its
+    token count (:func:`stream_usage`; an endpoint that refuses the option
+    is asked again without it, :func:`_chat_openai_class`), and each HTTP
+    response's status and
+    rate-limit headers go to the activity log
+    (:func:`webapp.http_trace.note_response`).
     """
     import httpx
-    from langchain_openai import ChatOpenAI
     from webapp.engine_config import _default_max_tokens
+    from webapp.http_trace import note_response
+    ChatOpenAI = _chat_openai_class()
 
     ps = prompter or settings()
     if ps is None:
@@ -491,7 +576,8 @@ def build_chat_model(model_id: Optional[str] = None, *,
     client = httpx.Client(verify=ctx if ctx is not None else True,
                           timeout=REQUEST_TIMEOUT_S,
                           event_hooks={"response":
-                                       [no_retry_when_budget_spent]})
+                                       [no_retry_when_budget_spent,
+                                        note_response]})
     return ChatOpenAI(
         model=model_id or ps.model,
         api_key=ps.api_key,
@@ -501,6 +587,7 @@ def build_chat_model(model_id: Optional[str] = None, *,
         max_completion_tokens=_default_max_tokens(),
         max_retries=max_retries(),
         disable_streaming=_streaming_disabled(),
+        stream_usage=stream_usage(),
     )
 
 
@@ -555,7 +642,8 @@ def register() -> bool:
 __all__ = ["PrompterSettings", "settings", "configured", "build_chat_model",
            "register", "base_url_from", "ssl_context",
            "ENV_URL", "ENV_MODEL", "ENV_KEY", "ENV_CA_BUNDLE",
-           "DISABLE_STREAMING_ENV", "REQUEST_TIMEOUT_S", "MAX_RETRIES_ENV",
+           "DISABLE_STREAMING_ENV", "STREAM_USAGE_ENV", "stream_usage",
+           "REQUEST_TIMEOUT_S", "MAX_RETRIES_ENV",
            "DEFAULT_MAX_RETRIES", "max_retries",
            "no_retry_when_budget_spent",
            # per-tester keys

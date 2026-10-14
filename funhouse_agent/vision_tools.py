@@ -1838,13 +1838,17 @@ def vision_output_cap(kind: str) -> Optional[int]:
     return VISION_OUTPUT_CAPS.get(kind)
 
 
-def ask_vision(engine, image, prompt, kind):
+def ask_vision(engine, image, prompt, kind, where=None):
     """``engine.analyze_image(image, prompt)``, capped for a call of
-    ``kind`` (:func:`vision_output_cap`) when the engine takes a cap."""
+    ``kind`` (:func:`vision_output_cap`) when the engine takes a cap. The
+    call is labelled with ``kind`` and ``where`` (``page``, ``tile``) for
+    the activity log (``vision_engine.side_call``; BACKLOG EV-14)."""
+    from funhouse_agent.deep.vision_engine import side_call
     cap = vision_output_cap(kind)
-    if cap and getattr(engine, "accepts_output_cap", False):
-        return engine.analyze_image(image, prompt, max_output_tokens=cap)
-    return engine.analyze_image(image, prompt)
+    with side_call(kind=kind, **(where or {})):
+        if cap and getattr(engine, "accepts_output_cap", False):
+            return engine.analyze_image(image, prompt, max_output_tokens=cap)
+        return engine.analyze_image(image, prompt)
 
 
 def _overview_prompt(prompt, n) -> str:
@@ -2175,7 +2179,7 @@ def _dispatch_render_region(arguments, engine, attachments):
     try:
         asked = _wants_turn_tag(turn_arg, info)
         result = ask_vision(engine, image_bytes, prompt_for(info, asked),
-                            "region")
+                            "region", where={"page": page})
         result, info = _settle_turn(
             engine, result, info, asked=asked, data=pdf_bytes, page=page,
             layer=layer, render=lambda t: render(t), prompt_for=prompt_for,
@@ -3007,7 +3011,7 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
     def page_look():
         asked = _wants_turn_tag(turn_arg, info)
         text = ask_vision(engine, image_bytes, page_prompt(info, asked),
-                          page_kind)
+                          page_kind, where={"page": page})
         return _settle_turn(
             engine, text, info, asked=asked, data=pdf_bytes, page=page,
             layer=layer, render=lambda t: render(t), prompt_for=page_prompt,
@@ -3256,7 +3260,9 @@ def _tile_jobs(pdf_bytes, page, info, n, prompt, engine, lines=None,
                     cut=_cut_note(view_info, layer), tag=tag)
 
             asked = _wants_turn_tag(turn_arg, tinfo)
-            text = ask_vision(engine, img, tile_prompt(tinfo, asked), "tile")
+            text = ask_vision(engine, img, tile_prompt(tinfo, asked), "tile",
+                              where={"page": page,
+                                     "tile": f"r{r + 1}c{c + 1}"})
             text, tinfo = _settle_turn(
                 engine, text, tinfo, asked=asked, data=pdf_bytes, page=page,
                 layer=layer, render=lambda t: render(t),

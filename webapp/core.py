@@ -2326,6 +2326,30 @@ def touch_conversation(thread_id: str, *, title: Optional[str] = None,
     return meta
 
 
+def engine_record(agent) -> dict:
+    """Which client served a turn (class, model, the client's own retries,
+    whether streamed replies carry usage) and the waiting, pacing and
+    helper policy in force (BACKLOG EV-14: the field session's ``meta.json``
+    named the model only). Never a key or an address; ``{}`` on failure."""
+    try:
+        from funhouse_agent.deep.busy_retry import engine_facts, retry_policy
+        out = engine_facts(getattr(agent, "geotech_model", None))
+        out["policy"] = retry_policy()
+        return out
+    except Exception:  # noqa: BLE001 - a record, never the turn
+        return {}
+
+
+def record_engine(thread_id: str, record: dict,
+                  root: Optional[str] = None) -> None:
+    """Keep the latest turn's :func:`engine_record` in ``meta.json``."""
+    if not record:
+        return
+    meta = ensure_conversation(thread_id, root=root)
+    meta["engine"] = record
+    save_meta(thread_id, meta, root)
+
+
 def tag_conversation(thread_id: str, root: Optional[str] = None,
                      **fields) -> dict:
     """Set descriptive fields on a conversation's meta that are not already

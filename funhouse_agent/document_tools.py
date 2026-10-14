@@ -437,6 +437,76 @@ def _toolkit():
     return _space().kit
 
 
+#: The waits for planlens' per-document lock during the call running in this
+#: context, added up (BACKLOG EV-14). Field session 2026-10-14: raster
+#: ``log_grid`` calls held one document's lock 14-20 s each, other tools
+#: queued behind them for up to 10 minutes, and the record could not tell a
+#: slow tool from a queued one.
+_LOCK_WAIT: "ContextVar[Optional[list]]" = ContextVar(
+    "geotech_document_lock_wait", default=None)
+
+#: A wait shorter than this is not put on the record.
+LOCK_WAIT_MIN_S = 0.05
+
+
+class _TimedLock:
+    """planlens' per-document lock with each wait for it timed: the same
+    lock, held over the same work, only the wait is measured and added to
+    the running call's tally (:data:`_LOCK_WAIT`)."""
+
+    def __init__(self, lock):
+        self._lock = lock
+
+    def acquire(self, blocking: bool = True, timeout: float = -1):
+        t0 = time.monotonic()
+        got = self._lock.acquire(blocking, timeout)
+        tally = _LOCK_WAIT.get()
+        if tally is not None:
+            tally[0] += time.monotonic() - t0
+        return got
+
+    def release(self) -> None:
+        self._lock.release()
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def __exit__(self, *exc) -> bool:
+        self.release()
+        return False
+
+    def __getattr__(self, name):
+        return getattr(self._lock, name)
+
+
+def _time_document_lock(space, arguments: Dict[str, Any]) -> None:
+    """Time the lock of the document this call names (best effort: needs
+    planlens' entry lookup; nothing changes when it is not there)."""
+    handle = str((arguments or {}).get("handle") or "").strip()
+    lookup = getattr(getattr(space, "kit", None), "_entry", None)
+    if not handle or not callable(lookup):
+        return
+    try:
+        entry = lookup(handle)
+        lock = getattr(entry, "lock", None)
+        if lock is not None and not isinstance(lock, _TimedLock):
+            entry.lock = _TimedLock(lock)
+    except Exception:  # noqa: BLE001 - an unknown handle: the call says so
+        pass
+
+
+def _report_lock_wait(name: str, waited: float) -> None:
+    if waited < LOCK_WAIT_MIN_S:
+        return
+    try:
+        from langchain_core.callbacks.manager import dispatch_custom_event
+        dispatch_custom_event("document_lock_wait",
+                              {"tool": name, "waited_s": round(waited, 3)})
+    except Exception:  # noqa: BLE001 - outside a run, or no logger
+        pass
+
+
 def dispatch_document_tool(name: str, arguments: Dict[str, Any],
                            attachments: Optional[Dict[str, bytes]] = None,
                            max_chars: Optional[int] = None,
@@ -479,7 +549,14 @@ def dispatch_document_tool(name: str, arguments: Dict[str, Any],
         refused, opened_note = _as_handle_or_source(space, name, arguments)
         if refused is not None:
             return refused
-        out = space.kit.call_json(name, arguments, max_chars=max_chars)
+        _time_document_lock(space, arguments)
+        tally = [0.0]
+        lock_token = _LOCK_WAIT.set(tally)
+        try:
+            out = space.kit.call_json(name, arguments, max_chars=max_chars)
+        finally:
+            _LOCK_WAIT.reset(lock_token)
+            _report_lock_wait(name, tally[0])
     except Exception as exc:  # noqa: BLE001 - a tool error, never the turn's
         from funhouse_agent.error_text import tool_error_json
         return _with_range_hint(tool_error_json(name, exc), one_based)

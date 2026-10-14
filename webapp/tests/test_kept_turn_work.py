@@ -25,7 +25,7 @@ import webapp.core as core
 import webapp.turn_jobs as tj
 from webapp import turn_record as tr
 
-ROW = "LB-1 | 1.5 m | N=22 | SP-SM | w=9% \n"
+ROW = "B-1 | 1.5 m | N=22 | SP-SM | w=9% \n"
 
 
 @pytest.fixture(autouse=True)

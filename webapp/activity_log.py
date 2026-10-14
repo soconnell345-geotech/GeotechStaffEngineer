@@ -116,8 +116,59 @@ APP_EVENTS = frozenset({"helper_kept", "helper_queued", "model_busy",
 PRIMARY = "primary"
 
 
+#: Where a payload too long for its record is kept whole, beside the log
+#: (BACKLOG EV-14: the field session's 50,529-character helper answer was
+#: cut at 32,000 and a helper's summary at 8,000; the record could not say
+#: what the primary had been given). The record names the file in its
+#: ``full`` / ``text_full`` / ``reasoning_full`` field.
+SIDECAR_DIR = "activity_full"
+
+
 def activity_path(conv_dir: str) -> str:
     return os.path.join(conv_dir, FILE_NAME)
+
+
+def _helper_fields() -> dict:
+    """``task_id`` and ``helper`` of the ``task`` helper this event runs
+    inside (``funhouse_agent.deep.keep_work``), else nothing. Field session
+    2026-10-14: every helper's events said only ``general-purpose``, and 607
+    of 916 vision calls could not be tied to a helper."""
+    try:
+        from funhouse_agent.deep.keep_work import current_helper
+        rec = current_helper()
+    except Exception:                                  # noqa: BLE001
+        return {}
+    if rec is None:
+        return {}
+    brief = " ".join(str(rec.brief or "").split())
+    return {"task_id": rec.task_id,
+            "helper": (brief[:80] + " ...") if len(brief) > 80 else brief}
+
+
+def _side_call_fields() -> Optional[dict]:
+    """The label of the vision side call running here (``kind``, ``page``,
+    ``tile``, ``image_px``, ``detail``, ``queued_s``), if any."""
+    try:
+        from funhouse_agent.deep.vision_engine import current_side_call
+        info = current_side_call()
+    except Exception:                                  # noqa: BLE001
+        return None
+    return dict(info) if info else None
+
+
+def _refusal_fields(error) -> dict:
+    """A model error's HTTP status, ``retry-after`` and ``x-ratelimit-*``
+    headers, and the busy ladder's tries when it gave up."""
+    out: dict = {}
+    try:
+        from funhouse_agent.deep.busy_retry import refusal_facts
+        out.update(refusal_facts(error))
+    except Exception:                                  # noqa: BLE001
+        pass
+    busy = getattr(error, "geotech_busy", None)
+    if isinstance(busy, dict):
+        out["busy_ladder"] = busy
+    return out
 
 
 def _cap(text: Any, max_chars: int) -> tuple:
@@ -292,6 +343,9 @@ class ActivityLogger(BaseCallbackHandler):
         self._sources: dict = {}          # model run_id -> lc_source
         self._call_ids: dict = {}         # tool run_id -> tool_call_id
         self._outputs: dict = {}          # tool_call_id -> the tool's output
+        self._vision: dict = {}           # tool run_id -> [calls, queued_s]
+        self._lock_wait: dict = {}        # tool run_id -> document lock wait
+        self._lock = threading.Lock()
         self.records_written = 0
         self.last_error: Optional[str] = None
 
@@ -328,12 +382,47 @@ class ActivityLogger(BaseCallbackHandler):
         except Exception as exc:                       # noqa: BLE001
             self.last_error = f"{type(exc).__name__}: {exc}"
 
+    def _tool_of(self, parent_run_id) -> Optional[str]:
+        """The run id of the tool call a run sits inside (the nearest open
+        tool run up its parent chain), else ``None``."""
+        pid = str(parent_run_id) if parent_run_id else None
+        seen = set()
+        while pid and pid not in seen:
+            if pid in self._names:
+                return pid
+            seen.add(pid)
+            pid = self._parent.get(pid)
+        return None
+
+    def _cap_whole(self, text: Any, max_chars: int, label: str,
+                   run_id: Any) -> tuple:
+        """``(text, truncated, full_len, sidecar)``: ``text`` cut at
+        ``max_chars`` as :func:`_cap` does, the whole of it written to
+        :data:`SIDECAR_DIR` when cut (``sidecar`` its name relative to the
+        conversation folder, else ``None``)."""
+        whole = text if isinstance(text, str) else _to_text(text)
+        cut, truncated, n = _cap(whole, max_chars)
+        if not truncated:
+            return cut, False, n, None
+        try:
+            folder = os.path.join(self.conv_dir, SIDECAR_DIR)
+            os.makedirs(folder, exist_ok=True)
+            safe = "".join(ch if ch.isalnum() else "-" for ch in label)[:40]
+            name = f"turn{self.turn}_{safe}_{str(run_id or '')[:8]}.txt"
+            with open(os.path.join(folder, name), "w",
+                      encoding="utf-8") as fh:
+                fh.write(whole)
+            return cut, True, n, f"{SIDECAR_DIR}/{name}"
+        except Exception as exc:                       # noqa: BLE001
+            self.last_error = f"{type(exc).__name__}: {exc}"
+            return cut, True, n, None
+
     # -- writer -----------------------------------------------------------
     def _write(self, rec: dict) -> None:
         try:
             now = self._clock()
             rec = {"turn": self.turn, "ts": round(now, 3),
-                   "t": round(now - self._t0, 3), **rec}
+                   "t": round(now - self._t0, 3), **_helper_fields(), **rec}
             os.makedirs(self.conv_dir, exist_ok=True)
             line = json.dumps(rec, ensure_ascii=False, default=str) + "\n"
             path = activity_path(self.conv_dir)
@@ -348,12 +437,17 @@ class ActivityLogger(BaseCallbackHandler):
     # -- turn envelope ----------------------------------------------------
     def turn_start(self, prompt: Optional[str] = None,
                    model: Optional[str] = None,
-                   note: Optional[str] = None) -> None:
+                   note: Optional[str] = None,
+                   engine: Optional[dict] = None) -> None:
         """``note`` is what the app put in front of the user's message for
         this turn (the working-folder note, ``core.working_files_note``):
-        part of what the model was shown, so it belongs in the record."""
+        part of what the model was shown, so it belongs in the record.
+        ``engine`` is which client served the turn and the retry, pacing
+        and helper policy in force (``webapp.core.engine_record``)."""
         rec = {"agent": PRIMARY, "event": "turn_start",
                "prompt": (prompt or "")[:500], "model": model}
+        if engine:
+            rec["engine"] = engine
         if note:
             rec["context_note"] = str(note)[:DEFAULT_MAX_CHARS]
         self._write(rec)
@@ -415,15 +509,28 @@ class ActivityLogger(BaseCallbackHandler):
         if parent_run_id is None:
             parent_run_id = self._parent.get(rid)
         agent = self._agent_of(parent_run_id)
-        text, truncated, full_len = _cap(payload, self.max_chars)
+        text, truncated, full_len, sidecar = self._cap_whole(
+            payload, self.max_chars, f"{event}_{name}", rid)
         rec = {"agent": agent, "event": event, "name": name, "run_id": rid,
                "parent_run_id": str(parent_run_id) if parent_run_id else None,
                payload_key: text, "truncated": truncated,
                "chars": full_len,
                "duration_s": (round(self._clock() - t_start, 3)
                               if t_start is not None else None)}
+        if sidecar:
+            rec["full"] = sidecar
         if sub:
             rec["subagent"] = sub
+        # Time the tool spent waiting rather than working (EV-14): its
+        # vision calls' waits for a slot, its waits for the document lock.
+        with self._lock:
+            vision = self._vision.pop(rid, None)
+            lock_wait = self._lock_wait.pop(rid, None)
+        if vision:
+            rec["vision_calls"] = vision[0]
+            rec["vision_queued_s"] = round(vision[1], 3)
+        if lock_wait:
+            rec["lock_wait_s"] = round(lock_wait, 3)
         self._write(rec)
 
     def on_tool_end(self, output, *, run_id, parent_run_id=None, **kwargs):
@@ -472,9 +579,44 @@ class ActivityLogger(BaseCallbackHandler):
             if source:
                 rec["source"] = str(source)
                 self._sources[rid] = str(source)
+            # A vision side call: what it looked at, and the tool it ran in
+            # (EV-14; field session 2026-10-14: a bare model_start with
+            # n_messages 1).
+            side = _side_call_fields()
+            if side:
+                rec["vision"] = side
+                tool_rid = self._tool_of(parent_run_id)
+                if tool_rid:
+                    rec["tool"] = self._names.get(tool_rid)
+                    rec["tool_run_id"] = tool_rid
+                    with self._lock:
+                        acc = self._vision.setdefault(tool_rid, [0, 0.0])
+                        acc[0] += 1
+                        acc[1] += float(side.get("queued_s") or 0.0)
+            try:
+                from webapp import http_trace
+                http_trace.begin()
+            except Exception:                          # noqa: BLE001
+                pass
             self._write(rec)
         except Exception as exc:                       # noqa: BLE001
             self.last_error = f"{type(exc).__name__}: {exc}"
+
+    @staticmethod
+    def _http_fields(require_more: bool = True) -> dict:
+        """The HTTP tries of the call that just ended on this thread
+        (``webapp.http_trace``): kept when there was more than one, or one
+        that was not a 200."""
+        try:
+            from webapp import http_trace
+            tries = http_trace.take()
+        except Exception:                              # noqa: BLE001
+            return {}
+        if not tries:
+            return {}
+        if require_more and len(tries) == 1 and tries[0].get("status") == 200:
+            return {}
+        return {"http_tries": len(tries), "http": tries}
 
     def on_llm_end(self, response, *, run_id, parent_run_id=None, **kwargs):
         try:
@@ -494,11 +636,17 @@ class ActivityLogger(BaseCallbackHandler):
                 record["source"] = source
             text, reasoning = _model_output(response)
             if text:
-                record["text"], record["text_truncated"], _n = _cap(
-                    text, MODEL_TEXT_CHARS)
+                (record["text"], record["text_truncated"], _n,
+                 whole) = self._cap_whole(text, MODEL_TEXT_CHARS,
+                                          f"model_text_{source or ''}", rid)
+                if whole:
+                    record["text_full"] = whole
             if reasoning:
-                record["reasoning"], _t, _n = _cap(reasoning,
-                                                   MODEL_TEXT_CHARS)
+                (record["reasoning"], _t, _n, whole) = self._cap_whole(
+                    reasoning, MODEL_TEXT_CHARS, "model_reasoning", rid)
+                if whole:
+                    record["reasoning_full"] = whole
+            record.update(self._http_fields())
             self._write(record)
         except Exception as exc:                       # noqa: BLE001
             self.last_error = f"{type(exc).__name__}: {exc}"
@@ -512,6 +660,17 @@ class ActivityLogger(BaseCallbackHandler):
         try:
             if name == "tool_delivered":
                 self._delivered(data, run_id)
+                return
+            if name == "document_lock_wait":
+                # Added to the tool call's own tool_end (``lock_wait_s``).
+                waited = float((data or {}).get("waited_s") or 0.0) \
+                    if isinstance(data, dict) else 0.0
+                tool_rid = (str(run_id) if str(run_id) in self._names
+                            else self._tool_of(run_id))
+                if tool_rid and waited > 0:
+                    with self._lock:
+                        self._lock_wait[tool_rid] = \
+                            self._lock_wait.get(tool_rid, 0.0) + waited
                 return
             if name in APP_EVENTS:
                 rec = {"agent": self._agent_of(run_id), "event": name}
@@ -544,12 +703,17 @@ class ActivityLogger(BaseCallbackHandler):
         if own is not None and own == content:
             return
         refused = bool(data.get("refused")) or own is None
-        text, truncated, n = _cap(content, self.max_chars)
-        self._write({"agent": self._agent_of(run_id),
-                     "event": "tool_refused" if refused else "tool_delivered",
-                     "name": data.get("name"), "tool_call_id": call_id or None,
-                     "status": data.get("status"), "text": text,
-                     "truncated": truncated, "chars": n})
+        text, truncated, n, whole = self._cap_whole(
+            content, self.max_chars, f"delivered_{data.get('name') or ''}",
+            call_id or run_id)
+        rec = {"agent": self._agent_of(run_id),
+               "event": "tool_refused" if refused else "tool_delivered",
+               "name": data.get("name"), "tool_call_id": call_id or None,
+               "status": data.get("status"), "text": text,
+               "truncated": truncated, "chars": n}
+        if whole:
+            rec["full"] = whole
+        self._write(rec)
 
     def on_llm_error(self, error, *, run_id, parent_run_id=None, **kwargs):
         try:
@@ -558,13 +722,18 @@ class ActivityLogger(BaseCallbackHandler):
             text, truncated, _n = _cap(f"{type(error).__name__}: {error}",
                                        self.max_chars)
             parent = parent_run_id or self._parent.get(rid)
+            # What the refusal said (EV-14: the record held only the
+            # exception's text): its status, retry-after, rate-limit
+            # headers, and each HTTP try inside the call.
             self._write({"agent": self._agent_of(parent), "event": "model_error",
                          "run_id": rid,
                          "parent_run_id": (str(parent_run_id)
                                            if parent_run_id else None),
                          "error": text, "truncated": truncated,
                          "duration_s": (round(self._clock() - t_start, 3)
-                                        if t_start is not None else None)})
+                                        if t_start is not None else None),
+                         **_refusal_fields(error),
+                         **self._http_fields(require_more=False)})
         except Exception as exc:                       # noqa: BLE001
             self.last_error = f"{type(exc).__name__}: {exc}"
 

@@ -194,6 +194,42 @@ def conversation_key() -> str:
         return str(folder)
 
 
+#: What the vision side call running in this context is (BACKLOG EV-14):
+#: ``kind`` (tile, page, region, check...), ``page`` and ``tile`` when the
+#: caller gave them, the image's pixel size and ``detail``, and ``queued_s``
+#: (the wait for a vision slot). Set by :func:`side_call` around one look;
+#: the activity log puts it on the call's ``model_start``. Field session
+#: 2026-10-14: 607 of 916 side calls could not be tied to anything.
+_SIDE_CALL: "contextvars.ContextVar[Optional[dict]]" = contextvars.ContextVar(
+    "geotech_side_call", default=None)
+
+
+@contextmanager
+def side_call(**label) -> Iterator[dict]:
+    """``with side_call(kind="tile", page=4, tile="r1c2"):`` -- label the
+    vision call(s) made inside."""
+    info = {k: v for k, v in label.items() if v is not None}
+    token = _SIDE_CALL.set(info)
+    try:
+        yield info
+    finally:
+        try:
+            _SIDE_CALL.reset(token)
+        except (ValueError, RuntimeError):
+            pass
+
+
+def current_side_call() -> Optional[dict]:
+    """The label of the vision side call running in this context, if any."""
+    return _SIDE_CALL.get()
+
+
+def _note_side_call(**facts) -> None:
+    info = _SIDE_CALL.get()
+    if info is not None:
+        info.update({k: v for k, v in facts.items() if v is not None})
+
+
 @contextmanager
 def call_slot(conversation: Optional[str] = None) -> Iterator[None]:
     """Hold one of the process's vision-call slots for one model request.
@@ -204,10 +240,15 @@ def call_slot(conversation: Optional[str] = None) -> Iterator[None]:
     fairly between conversations (:class:`FairSlots`)."""
     slots = _semaphore()
     if slots is None:
+        _note_side_call(queued_s=0.0)
         yield
         return
     conv = conversation_key() if conversation is None else conversation
+    t0 = time.monotonic()
     slots.acquire(conv)
+    # The wait for the slot, on the call's record (EV-14): a slow tool is
+    # told apart from a queued one.
+    _note_side_call(queued_s=round(time.monotonic() - t0, 3))
     try:
         yield
     finally:
@@ -672,6 +713,8 @@ class LangChainVisionEngine:
         data_uri = f"data:{media_type};base64,{base64.b64encode(data).decode()}"
         detail = (self._detail if self._detail is not None
                   else vision_view.detail(self)) or None
+        _note_side_call(image_px=_image_px(data), detail=detail,
+                        image_bytes=len(data))
 
         def message(with_detail: bool) -> "HumanMessage":
             image_url = {"url": data_uri}
@@ -705,6 +748,17 @@ class LangChainVisionEngine:
                         "output limit (%s tokens; %d characters of answer)",
                         max_output_tokens or "the model's", len(text))
         return text
+
+
+def _image_px(data: bytes) -> Optional[list]:
+    """``[width, height]`` of an image, read from its header; ``None``."""
+    try:
+        import io
+        from PIL import Image
+        with Image.open(io.BytesIO(data)) as im:
+            return [int(im.size[0]), int(im.size[1])]
+    except Exception:  # noqa: BLE001 - a record, never the call
+        return None
 
 
 class VisionAnswer(str):
@@ -768,4 +822,5 @@ __all__ = ["LangChainVisionEngine", "call_slot", "INFLIGHT_ENV",
            "invoke_side_call", "FairSlots", "PER_CONVERSATION_ENV",
            "conversation_key", "busy_kind", "busy_tries", "describe_error",
            "refused_detail", "BUSY_TRIES_ENV", "DEFAULT_BUSY_TRIES",
-           "VisionAnswer", "was_cut_off", "capped_model"]
+           "VisionAnswer", "was_cut_off", "capped_model", "side_call",
+           "current_side_call"]

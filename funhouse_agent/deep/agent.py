@@ -1488,6 +1488,9 @@ def build_deep_agent(
     # the same dict it handed to build_deep_agent.
     try:
         agent.geotech_attachments = attachments
+        # The chat model, so a host can record which client served a turn
+        # (BACKLOG EV-14; webapp.core.engine_record).
+        agent.geotech_model = model
         if page_budget:
             # The host's step cap is raised to fit the budget, so the budget,
             # not a GraphRecursionError, ends a long request (webapp

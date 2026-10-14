@@ -177,6 +177,14 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
     # per-turn SUMMARY in trace.jsonl and its expander). Best-effort: a
     # logger problem must never cost the turn.
     activity = None
+    # Which client serves this turn and the waiting policy in force, on
+    # the record and in meta.json (BACKLOG EV-14).
+    engine = {}
+    try:
+        engine = core.engine_record(agent)
+        core.record_engine(thread_id, engine)
+    except Exception:                                  # noqa: BLE001
+        pass
     try:
         from webapp import activity_log
         _turn_no = sum(1 for e in (ctx.get("transcript") or [])
@@ -184,7 +192,7 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
         activity = activity_log.ActivityLogger(
             core.conversation_dir(thread_id), turn=_turn_no)
         activity.turn_start(prompt=ctx.get("prompt"), model=ctx.get("model"),
-                            note=ctx.get("turn_note"))
+                            note=ctx.get("turn_note"), engine=engine or None)
     except Exception:                                  # noqa: BLE001
         activity = None
     # Which files the turn wrote / only read (field feedback 2026-09-15, N4/N8)
