@@ -45,7 +45,9 @@ def embedment_detail(geometry: ExcavationGeometry, FOS_passive: float = 1.5,
 
     A ``SupportSolution`` (D with FS, D at FS = 1, the lowest support's load
     from below, moment and shear) for a braced wall; a ``CantileverSolution``
-    (D0, D = 1.2 D0, ...) when there are no supports.
+    (D0, D = 1.2 D0, ...) when there are no supports. With no moment balance
+    within 6H the depths (and what follows from them) are None,
+    ``converged`` is False and the first note says why.
     """
     geometry.validate()
     prof = profile_for(geometry)
@@ -62,7 +64,8 @@ def embedment_detail(geometry: ExcavationGeometry, FOS_passive: float = 1.5,
 
 def compute_embedment(geometry: ExcavationGeometry,
                       FOS_passive: float = 1.5,
-                      embedment_increase: Optional[float] = None) -> float:
+                      embedment_increase: Optional[float] = None,
+                      ) -> Optional[float]:
     """Compute required wall embedment below excavation level (m).
 
     Parameters
@@ -78,8 +81,10 @@ def compute_embedment(geometry: ExcavationGeometry,
 
     Returns
     -------
-    float
-        Required embedment depth below excavation level (m).
+    float or None
+        Required embedment depth below excavation level (m); None when no
+        depth within 6H balances the moments (the wall cannot stand as
+        configured -- :func:`embedment_detail` carries the warning).
     """
     detail = embedment_detail(geometry, FOS_passive=FOS_passive)
     if isinstance(detail, CantileverSolution):
@@ -90,4 +95,4 @@ def compute_embedment(geometry: ExcavationGeometry,
         base = detail.D
     if inc < 1.0:
         raise ValueError("embedment_increase must be >= 1.0")
-    return base * inc
+    return None if base is None else base * inc

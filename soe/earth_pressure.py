@@ -524,8 +524,12 @@ def fhwa_apparent_pressure_anchored_wall(
          max_moment_kN_m_per_m, ...}. Each anchors[] entry: {depth_m,
          TH_kN_per_m (horizontal load), design_load_kN}. For n=1 also
          TH_upper/TH_lower, embedment_D_m, embedment_D_FS1_m,
-         max_moment_depth_m, and subgrade_reaction_kN_per_m = None (the
-         passive pressure below the excavation takes the base load).
+         max_moment_depth_m, converged, notes, and
+         subgrade_reaction_kN_per_m = None (the passive pressure below the
+         excavation takes the base load). With no moment balance within 6H
+         (``converged`` False) the depths that have no root, and the anchor
+         load, design load and moment when MR = MD has none, are None and
+         the first note says why.
 
     References
     ----------
@@ -582,14 +586,19 @@ def fhwa_apparent_pressure_anchored_wall(
 
         sol = solve_about_support(prof, pivot=d[0], body_top=0.0,
                                   FS=FOS_embedment, above=above)
+
+        def _r(x, nd):
+            return None if x is None else round(x, nd)
+
         TH_upper = (2.0 / 3.0) * H1 * pe + H1 * ps
-        TH = sol.support_load
+        TH = sol.support_load  # None with no moment balance at FS = 1
         anchors.append({
             "depth_m": round(d[0], 3),
             "TH_upper_kN_per_m": round(TH_upper, 3),
-            "TH_lower_kN_per_m": round(TH - TH_upper, 3),
-            "TH_kN_per_m": round(TH, 3),
-            "design_load_kN": round(TH * spacing / cos_incl, 2),
+            "TH_lower_kN_per_m": None if TH is None else round(TH - TH_upper, 3),
+            "TH_kN_per_m": _r(TH, 3),
+            "design_load_kN": (None if TH is None
+                               else round(TH * spacing / cos_incl, 2)),
         })
         moments.append(sol.max_moment)
         single = {
@@ -597,11 +606,11 @@ def fhwa_apparent_pressure_anchored_wall(
                                     "(Caltrans T&S Manual 8-4, Example 8-1)",
             "Kp": round(Kp_used, 4),
             "FOS_embedment": FOS_embedment,
-            "embedment_D_m": round(sol.D, 3),
-            "embedment_D_FS1_m": round(sol.D_prime, 3),
-            "max_moment_depth_m": round(sol.max_moment_depth, 3),
-            "zero_shear_depth_m": (None if sol.zero_shear_depth is None
-                                   else round(sol.zero_shear_depth, 3)),
+            "embedment_D_m": _r(sol.D, 3),
+            "embedment_D_FS1_m": _r(sol.D_prime, 3),
+            "max_moment_depth_m": _r(sol.max_moment_depth, 3),
+            "zero_shear_depth_m": _r(sol.zero_shear_depth, 3),
+            "converged": sol.converged,
             "notes": list(sol.notes),
         }
     else:
@@ -640,7 +649,9 @@ def fhwa_apparent_pressure_anchored_wall(
         "n_anchors": n,
         "anchors": anchors,
         "subgrade_reaction_kN_per_m": None if R is None else round(R, 3),
-        "max_moment_kN_m_per_m": round(max(moments), 3),
+        # None for a single anchor with no moment balance (see notes)
+        "max_moment_kN_m_per_m": (None if None in moments
+                                  else round(max(moments), 3)),
         "spacing_m": spacing,
         "inclination_deg": inclination_deg,
     }

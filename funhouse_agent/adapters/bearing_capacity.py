@@ -7,6 +7,8 @@ from bearing_capacity.soil_profile import SoilLayer, BearingSoilProfile
 from bearing_capacity.capacity import BearingCapacityAnalysis
 from bearing_capacity.factors import (
     bearing_capacity_Nc, bearing_capacity_Nq, bearing_capacity_Ngamma,
+    TERZAGHI_NGAMMA_SOURCES, terzaghi_Nc, terzaghi_Nq, terzaghi_Ngamma,
+    terzaghi_local_shear,
 )
 
 # Every top-level parameter _run_bearing_capacity_analysis consumes. Anything
@@ -17,7 +19,7 @@ _ANALYSIS_VALID_PARAMS = (
     "layer1_thickness", "layer1_description", "layer2_cohesion",
     "layer2_friction_angle", "layer2_unit_weight", "layer2_description",
     "gwt_depth", "load_inclination", "ground_slope", "vertical_load",
-    "factor_of_safety", "ngamma_method", "factor_method",
+    "factor_of_safety", "ngamma_method", "factor_method", "failure_mode",
 )
 
 
@@ -29,8 +31,9 @@ _ANALYSIS_ALIASES = {
 }
 
 #: factor_method drives the shape/depth/inclination factors, which exist in
-#: the Vesic and Meyerhof forms only; Hansen is an N-gamma option.
-_FACTOR_METHODS = ("vesic", "meyerhof")
+#: the Vesic and Meyerhof forms; Hansen is an N-gamma option. "terzaghi" is
+#: Terzaghi (1943) whole: his Nc, Nq, N-gamma and shape coefficients.
+_FACTOR_METHODS = ("vesic", "meyerhof", "terzaghi")
 
 
 def _run_bearing_capacity_analysis(params: dict) -> dict:
@@ -45,9 +48,9 @@ def _run_bearing_capacity_analysis(params: dict) -> dict:
         raise ValueError(
             f"bearing_capacity_analysis: factor_method must be one of "
             f"{list(_FACTOR_METHODS)} (it sets the shape, depth and "
-            f"inclination factors), got '{params.get('factor_method')}'. "
-            f"Hansen's N-gamma is chosen separately with "
-            f"ngamma_method='hansen'.")
+            f"inclination factors; 'terzaghi' = Terzaghi 1943 throughout), "
+            f"got '{params.get('factor_method')}'. Hansen's N-gamma is "
+            f"chosen separately with ngamma_method='hansen'.")
     params = {**params, "factor_method": factor_method}
     footing = Footing(
         width=params["width"],
@@ -80,20 +83,56 @@ def _run_bearing_capacity_analysis(params: dict) -> dict:
         ground_slope=params.get("ground_slope", 0.0),
         vertical_load=params.get("vertical_load", 0.0),
         factor_of_safety=params.get("factor_of_safety", 3.0),
-        ngamma_method=params.get("ngamma_method", "vesic"),
+        ngamma_method=params.get("ngamma_method"),
         factor_method=params.get("factor_method", "vesic"),
+        failure_mode=params.get("failure_mode", "general"),
     )
     return analysis.compute().to_dict()
 
 
+def _terzaghi_factors(phi, params: dict) -> dict:
+    source = str(params.get("ngamma_method") or "kumbhojkar").strip().lower()
+    mode = str(params.get("failure_mode", "general")).strip().lower()
+    if mode not in ("general", "local"):
+        raise ValueError("failure_mode must be 'general' or 'local'")
+    phi_used = phi if mode == "general" else terzaghi_local_shear(0.0, phi)[1]
+    out = {
+        "Nc": round(terzaghi_Nc(phi_used), 2),
+        "Nq": round(terzaghi_Nq(phi_used), 2),
+        "Ngamma": round(terzaghi_Ngamma(phi_used, source), 2),
+        "method": "terzaghi",
+        "ngamma_method": source,
+        "Ngamma_source": TERZAGHI_NGAMMA_SOURCES[source],
+        "Ngamma_alternatives": {
+            k: round(terzaghi_Ngamma(phi_used, k), 2)
+            for k in TERZAGHI_NGAMMA_SOURCES
+            if k != source and (k != "kumbhojkar" or phi_used <= 50)},
+        "failure_mode": mode,
+        "friction_angle_deg": phi,
+    }
+    if mode == "local":
+        out["phi_used_deg"] = round(phi_used, 3)
+        out["note"] = ("Local shear: factors at phi* = atan(2/3 tan phi); use "
+                       "them with c* = 2/3 c (Terzaghi 1943; UFC 3-220-20 "
+                       "Table 5-4).")
+    return out
+
+
 def _run_bearing_capacity_factors(params: dict) -> dict:
-    reject_unknown_params(params, ("friction_angle", "method"),
-                          method="bearing_capacity_factors")
+    valid = ("friction_angle", "method", "ngamma_method", "failure_mode")
+    reject_unknown_params(params, valid, method="bearing_capacity_factors")
     require_params(params, ["friction_angle"],
-                   method="bearing_capacity_factors",
-                   valid=["friction_angle", "method"])
+                   method="bearing_capacity_factors", valid=list(valid))
     phi = params["friction_angle"]
-    method = params.get("method", "vesic")
+    method = str(params.get("method", "vesic")).strip().lower()
+    if method == "terzaghi":
+        return _terzaghi_factors(phi, params)
+    if (params.get("ngamma_method")
+            or str(params.get("failure_mode", "general")).lower() != "general"):
+        raise ValueError(
+            "bearing_capacity_factors: ngamma_method and failure_mode go "
+            "with method='terzaghi'; for the others, method IS the N-gamma "
+            "choice.")
     return {
         "Nc": round(bearing_capacity_Nc(phi), 2),
         "Nq": round(bearing_capacity_Nq(phi), 2),
@@ -111,7 +150,7 @@ METHOD_REGISTRY = {
 METHOD_INFO = {
     "bearing_capacity_analysis": {
         "category": "Bearing Capacity",
-        "brief": "Full bearing capacity analysis for a shallow foundation (Vesic/Meyerhof/Hansen).",
+        "brief": "Full bearing capacity analysis for a shallow foundation (Vesic/Meyerhof/Hansen, or Terzaghi 1943 via factor_method='terzaghi').",
         "parameters": {
             "width": {"type": "float", "required": True, "description": "Footing width B (m)."},
             "length": {"type": "float", "required": False, "description": "Footing length L (m). Omit for strip."},
@@ -126,8 +165,9 @@ METHOD_INFO = {
             "layer2_unit_weight": {"type": "float", "required": False, "description": "Second layer gamma (kN/m3). Triggers 2-layer analysis."},
             "layer1_thickness": {"type": "float", "required": False, "description": "First layer thickness (m) for 2-layer."},
             "factor_of_safety": {"type": "float", "required": False, "default": 3.0, "description": "Factor of safety."},
-            "factor_method": {"type": "str", "required": False, "default": "vesic", "allowed_values": ["vesic", "meyerhof"], "description": "Shape/depth/inclination-factor method. Hansen applies to N-gamma only: use ngamma_method='hansen'."},
-            "ngamma_method": {"type": "str", "required": False, "default": "vesic", "allowed_values": ["vesic", "meyerhof", "hansen"], "description": "Ngamma factor method (may differ from factor_method)."},
+            "factor_method": {"type": "str", "required": False, "default": "vesic", "allowed_values": ["vesic", "meyerhof", "terzaghi"], "description": "Shape/depth/inclination-factor method. Hansen applies to N-gamma only: use ngamma_method='hansen'. 'terzaghi' = Terzaghi (1943): his Nc, Nq, N-gamma and shape coefficients (1.3cNc; 0.4/0.3 gamma B Ngamma square/circular), no depth or inclination factors; not for inclined loads, slopes or tilted bases (UFC 3-220-20 Table 5-3)."},
+            "ngamma_method": {"type": "str", "required": False, "default": "vesic", "allowed_values": ["vesic", "meyerhof", "hansen", "kumbhojkar", "coduto"], "description": "Ngamma factor method (may differ from factor_method). With factor_method='terzaghi' (Terzaghi gave N-gamma only as a chart): 'kumbhojkar' (default; Kumbhojkar 1993 as tabulated in Das) or 'coduto' (Coduto et al. 2016 approximation, UFC 3-220-20 Table 5-2); the result reports the other beside it."},
+            "failure_mode": {"type": "str", "required": False, "default": "general", "allowed_values": ["general", "local"], "description": "factor_method='terzaghi' only: 'local' applies Terzaghi's local-shear reduction c* = 2/3 c, tan(phi*) = 2/3 tan(phi) (UFC 3-220-20 Table 5-4)."},
             "base_tilt": {"type": "float", "required": False, "default": 0.0, "description": "Base tilt angle (degrees)."},
             "eccentricity_B": {"type": "float", "required": False, "default": 0.0, "description": "Load eccentricity along B (m)."},
             "eccentricity_L": {"type": "float", "required": False, "default": 0.0, "description": "Load eccentricity along L (m)."},
@@ -139,14 +179,18 @@ METHOD_INFO = {
             "q_ultimate_kPa": "Ultimate bearing capacity.",
             "q_allowable_kPa": "Allowable bearing capacity (q_ult / FOS).",
             "Nc": "Cohesion factor.", "Nq": "Overburden factor.", "Ngamma": "Unit weight factor.",
+            "Ngamma_alternatives": "Terzaghi: N-gamma from the other cited source.",
+            "notes": "Terzaghi: method basis, N-gamma source, shape interpolation, Df/B and local-shear notes.",
         },
     },
     "bearing_capacity_factors": {
         "category": "Bearing Capacity",
-        "brief": "Quick lookup of Nc, Nq, Ngamma for a given friction angle.",
+        "brief": "Quick lookup of Nc, Nq, Ngamma for a given friction angle (Vesic/Meyerhof/Hansen N-gamma, or Terzaghi's factors).",
         "parameters": {
             "friction_angle": {"type": "float", "required": True, "description": "Friction angle phi (degrees, 0-50)."},
-            "method": {"type": "str", "required": False, "default": "vesic", "allowed_values": ["vesic", "meyerhof", "hansen"], "description": "Ngamma method."},
+            "method": {"type": "str", "required": False, "default": "vesic", "allowed_values": ["vesic", "meyerhof", "hansen", "terzaghi"], "description": "Ngamma method; 'terzaghi' returns Terzaghi's (1943) Nc, Nq and Ngamma."},
+            "ngamma_method": {"type": "str", "required": False, "default": "kumbhojkar", "allowed_values": ["kumbhojkar", "coduto"], "description": "method='terzaghi' only: Terzaghi N-gamma source (Kumbhojkar 1993 as tabulated in Das, or Coduto et al. 2016 / UFC 3-220-20 Table 5-2)."},
+            "failure_mode": {"type": "str", "required": False, "default": "general", "allowed_values": ["general", "local"], "description": "method='terzaghi' only: 'local' gives the factors at phi* = atan(2/3 tan phi)."},
         },
         "returns": {"Nc": "Cohesion factor.", "Nq": "Overburden factor.", "Ngamma": "Unit weight factor."},
     },

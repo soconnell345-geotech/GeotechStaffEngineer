@@ -310,3 +310,146 @@ class TestFhwaSingleAnchor:
             surcharge=11.0, spacing=2.4, inclination_deg=15.0)
         assert "single_anchor_method" not in r
         assert r["subgrade_reaction_kN_per_m"] is not None
+
+
+# ---------------------------------------------------------------------------
+# GM-20: no moment balance within 6H is reported as such, never as a depth
+# ---------------------------------------------------------------------------
+
+class TestNoMomentBalance:
+    """Until 2026-10-14 ``_first_root`` handed back the 6H search limit when
+    no depth balanced the moments, and the solvers reported D0 = 6H, D = 1.2
+    x 6H and a moment, shear and support load computed at that arbitrary
+    depth, with only a note. A soft clay (phi = 0) under a 6 m cut is the
+    clean case: below the excavation the net Rankine pressure is
+    pp - pa = 4c - gamma*H - q, so with 4c < gamma*H + q the passive side
+    never catches up at any depth (Caltrans T&S 7-5.02 / 8-4.02)."""
+
+    H = 6.0
+
+    def _clay(self, c=20.0):
+        return [SOEWallLayer(40.0, 18.0, 0.0, c, soil_type="soft_clay")]
+
+    def _geo(self, c=20.0, supports=()):
+        return ExcavationGeometry(
+            excavation_depth=self.H, soil_layers=self._clay(c),
+            support_levels=[SupportLevel(depth=d) for d in supports],
+            surcharge=10.0)
+
+    # -- solvers ------------------------------------------------------------
+
+    def test_cantilever_solver_returns_none(self):
+        sol = solve_cantilever(LayeredProfile(self._clay(), self.H,
+                                              surcharge=10.0))
+        assert sol.converged is False
+        for name in ("D0", "D", "net_force_at_O", "max_moment",
+                     "max_moment_depth", "max_shear"):
+            assert getattr(sol, name) is None, name
+        assert "6H = 36.0 m" in sol.notes[0]
+        assert "cannot stand as a cantilever" in sol.notes[0]
+
+    def test_support_solver_returns_none(self):
+        sol = solve_about_support(LayeredProfile(self._clay(), self.H,
+                                                 surcharge=10.0),
+                                  pivot=2.0, FS=1.3)
+        assert sol.converged is False
+        for name in ("D", "D_prime", "support_load", "max_moment",
+                     "max_moment_depth", "zero_shear_depth",
+                     "moment_at_zero_shear", "max_shear"):
+            assert getattr(sol, name) is None, name
+        assert "MR = MD is never reached" in sol.notes[0]
+
+    def test_support_solver_balance_at_fs1_only(self):
+        """c = 32 kPa: MR = MD is reached (4c > gamma*H + q) but MR/MD tends
+        to 1 at depth and never reaches 1.3. D is None; D-prime and the
+        FS = 1 body (support load, moments) are real."""
+        sol = solve_about_support(LayeredProfile(self._clay(32.0), self.H,
+                                                 surcharge=10.0),
+                                  pivot=2.0, FS=1.3)
+        assert sol.converged is False
+        assert sol.D is None
+        assert 0 < sol.D_prime < 6 * self.H
+        assert sol.support_load > 0 and sol.max_moment > 0
+        assert "MR = 1.3 x MD is never reached (MR = MD is)" in sol.notes[0]
+
+    # -- public entry points ------------------------------------------------
+
+    def test_compute_embedment_returns_none(self):
+        assert compute_embedment(self._geo()) is None
+        assert compute_embedment(self._geo(supports=(2.0,))) is None
+        assert compute_embedment(self._geo(32.0, supports=(2.0,)),
+                                 FOS_passive=1.3) is None
+        detail = embedment_detail(self._geo())
+        assert detail.converged is False and detail.D0 is None
+
+    def test_cantilever_excavation(self):
+        import json
+        r = analyze_cantilever_excavation(self._geo())
+        assert r.converged is False
+        d = r.to_dict()
+        for key in ("required_embedment_m", "embedment_converged_m",
+                    "total_wall_length_m", "max_moment_kNm_per_m",
+                    "max_moment_depth_m", "max_shear_kN_per_m",
+                    "net_force_at_O_kN_per_m", "required_Sx_cm3"):
+            assert d[key] is None, key
+        assert d["converged"] is False
+        assert d["Ka"] == pytest.approx(1.0) and d["Kp"] == pytest.approx(1.0)
+        assert "cannot stand as a cantilever" in d["notes"][0]
+        assert "null" in json.dumps(d)
+        s = r.summary()
+        assert "not found" in s and "36.0 m" in s
+
+    def test_braced_excavation_no_balance_at_all(self):
+        r = analyze_braced_excavation(self._geo(supports=(2.0,)),
+                                      FOS_passive=1.3)
+        d = r.to_dict()
+        assert d["converged"] is False and d["free_earth"]["converged"] is False
+        for key in ("required_embedment_m", "total_wall_length_m",
+                    "max_moment_kNm_per_m", "max_moment_depth_m",
+                    "max_shear_kN_per_m", "required_Sx_cm3"):
+            assert d[key] is None, key
+        for key in ("embedment_D_m", "embedment_D_FS1_m",
+                    "lowest_support_load_from_below_kN_per_m",
+                    "max_moment_kNm_per_m", "max_moment_depth_m"):
+            assert d["free_earth"][key] is None, key
+        # the tributary support load does not depend on the embedment
+        assert d["support_reactions"][0]["load_kN_per_m"] > 0
+        assert "MR = MD is never reached" in d["notes"][0]
+        assert any("undefined without a moment balance" in n for n in d["notes"])
+        assert "not found" in r.summary()
+
+    def test_braced_excavation_balance_at_fs1_only(self):
+        r = analyze_braced_excavation(self._geo(32.0, supports=(2.0,)),
+                                      FOS_passive=1.3)
+        assert r.converged is False
+        assert r.required_embedment_m is None and r.total_wall_length_m is None
+        assert r.free_earth["embedment_D_FS1_m"] > 0
+        assert r.max_moment_kNm_per_m > 0 and r.required_Sx_cm3 > 0
+        assert "Required embedment:  not found" in r.summary()
+
+    def test_fhwa_single_anchor(self):
+        from soe.earth_pressure import fhwa_apparent_pressure_anchored_wall
+        r = fhwa_apparent_pressure_anchored_wall(
+            H=6.0, anchor_depths=[2.0], gamma=18.0, phi=5.0, Kp=1.0)
+        a = r["anchors"][0]
+        assert r["converged"] is False
+        assert a["TH_kN_per_m"] is None and a["design_load_kN"] is None
+        assert a["TH_lower_kN_per_m"] is None
+        assert a["TH_upper_kN_per_m"] > 0  # the tributary load above the anchor
+        for key in ("embedment_D_m", "embedment_D_FS1_m",
+                    "max_moment_kN_m_per_m", "max_moment_depth_m"):
+            assert r[key] is None, key
+        assert "never reached" in r["notes"][0]
+
+    def test_converged_cases_say_so(self):
+        """The ordinary results carry converged = True and no warning."""
+        r = analyze_cantilever_excavation(
+            ExcavationGeometry(excavation_depth=5.0, soil_layers=[_sand()],
+                               surcharge=0.0))
+        assert r.converged is True and r.to_dict()["converged"] is True
+        b = analyze_braced_excavation(
+            ExcavationGeometry(excavation_depth=6.0, soil_layers=[_sand()],
+                               support_levels=[SupportLevel(depth=3.0)],
+                               surcharge=0.0))
+        assert b.converged is True and b.free_earth["converged"] is True
+        assert not any("moment balance" in n for n in b.notes)

@@ -30,7 +30,19 @@ REFERENCES = [
     'Baustoffe." Zeitschrift fur Angewandte Mathematik und Mechanik, 1(1).',
     'Hansen, J.B. (1970). "A Revised and Extended Formula for Bearing '
     'Capacity." Danish Geotechnical Institute Bulletin 28.',
+    "Terzaghi, K. (1943). Theoretical Soil Mechanics. Wiley, New York.",
+    'Kumbhojkar, A.S. (1993). "Numerical Evaluation of Terzaghi\'s Nγ." '
+    "J. Geotech. Eng., ASCE, 119(3), 598-607 (values as tabulated in Das, "
+    "Principles of Foundation Engineering).",
+    "UFC 3-220-20 (2025). Foundations. Ch. 5, Tables 5-2 to 5-5 (Terzaghi "
+    "factors with the Coduto et al. 2016 Nγ approximation, shape "
+    "factors, local shear).",
 ]
+
+_TERZAGHI_NG_LABEL = {
+    "kumbhojkar": "Kumbhojkar (1993), as tabulated in Das",
+    "coduto": "Coduto et al. (2016); UFC 3-220-20 Table 5-2",
+}
 
 
 def get_input_summary(result, analysis) -> List[InputItem]:
@@ -75,10 +87,17 @@ def get_input_summary(result, analysis) -> List[InputItem]:
     if s.gwt_depth is not None:
         items.append(InputItem("GWT", "Groundwater depth", s.gwt_depth, "m"))
 
-    items.extend([
-        InputItem("FS", "Factor of safety", analysis.factor_of_safety, ""),
-        InputItem("Method", "N\u03b3 method", analysis.ngamma_method.capitalize(), ""),
-    ])
+    items.append(InputItem("FS", "Factor of safety", analysis.factor_of_safety, ""))
+    if analysis.factor_method == "terzaghi":
+        items.extend([
+            InputItem("Method", "Bearing capacity method",
+                      f"Terzaghi (1943), {analysis.failure_mode} shear", ""),
+            InputItem("N\u03b3", "N\u03b3 source",
+                      _TERZAGHI_NG_LABEL[analysis.ngamma_method], ""),
+        ])
+    else:
+        items.append(InputItem("Method", "N\u03b3 method",
+                               analysis.ngamma_method.capitalize(), ""))
 
     if analysis.load_inclination != 0:
         items.append(InputItem("\u03b2", "Load inclination", analysis.load_inclination, "deg"))
@@ -162,6 +181,10 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     ))
 
     sections.append(CalcSection(title="Effective Dimensions & Overburden", items=eff_steps))
+
+    if analysis.factor_method == "terzaghi":
+        sections.extend(_terzaghi_sections(r, analysis))
+        return sections
 
     # ── Section: Bearing Capacity Factors ──────────────────────
     bc_steps = []
@@ -417,6 +440,131 @@ def get_figures(result, analysis) -> List[FigureData]:
 
 
 # ── Helper functions ──────────────────────────────────────────────
+
+def _terzaghi_sections(r, analysis) -> List[CalcSection]:
+    """Factor, shape and equation sections for Terzaghi (1943)."""
+    phi0 = analysis.soil.layer1.friction_angle
+    c0 = analysis.soil.layer1.cohesion
+    phi = r.phi_used if r.phi_used is not None else phi0
+    c = r.c_used if r.c_used is not None else c0
+    sections = []
+
+    bc_steps = []
+    if analysis.failure_mode == "local":
+        bc_steps.append(CalcStep(
+            title="Local Shear Strengths",
+            equation="c* = (2/3) c,  φ* = atan((2/3) tan φ)",
+            substitution=(f"c* = (2/3) × {c0:.2f},  "
+                          f"φ* = atan((2/3) tan {phi0:.1f}°)"),
+            result_name="c*, φ*",
+            result_value=f"{c:.2f} kPa, {phi:.2f}°",
+            reference="Terzaghi (1943); UFC 3-220-20 Table 5-4",
+        ))
+    bc_steps.append(CalcStep(
+        title="Bearing Capacity Factor N_q",
+        equation=("N_q = a² / (2 cos²(45 + φ/2)),  "
+                  "a = exp((3π/4 - φ/2) tan φ)"),
+        substitution=f"φ = {phi:.2f}°",
+        result_name="N_q",
+        result_value=f"{r.Nq:.2f}",
+        reference="Terzaghi (1943); UFC 3-220-20 Table 5-2",
+    ))
+    bc_steps.append(CalcStep(
+        title="Bearing Capacity Factor N_c",
+        equation=("N_c = 1.5π + 1 = 5.7 (φ = 0)" if phi == 0
+                  else "N_c = (N_q - 1) cot φ"),
+        substitution="" if phi == 0 else
+        f"N_c = ({r.Nq:.2f} - 1) / tan({phi:.2f}°)",
+        result_name="N_c",
+        result_value=f"{r.Nc:.2f}",
+        reference="Terzaghi (1943); UFC 3-220-20 Table 5-2",
+    ))
+    if analysis.ngamma_method == "coduto":
+        ng_eq = "N_γ = 2 (N_q + 1) tan φ / (1 + 0.4 sin 4φ)"
+        ng_sub = f"φ = {phi:.2f}°, N_q = {r.Nq:.2f}"
+    else:
+        ng_eq = "N_γ from the tabulated values (log-linear between whole degrees)"
+        ng_sub = f"φ = {phi:.2f}°"
+    alt = "; ".join(f"{_TERZAGHI_NG_LABEL[k]}: {v:.2f}"
+                    for k, v in r.Ngamma_alternatives.items())
+    bc_steps.append(CalcStep(
+        title="Bearing Capacity Factor N_γ",
+        equation=ng_eq,
+        substitution=ng_sub,
+        result_name="N_γ",
+        result_value=f"{r.Ngamma:.2f}",
+        reference=_TERZAGHI_NG_LABEL[analysis.ngamma_method],
+        notes=(f"Terzaghi gave Nγ only as a chart; other cited value: "
+               f"{alt}" if alt else ""),
+    ))
+    sections.append(CalcSection(title="Bearing Capacity Factors (Terzaghi 1943)",
+                                items=bc_steps))
+
+    shape_items = [
+        CalcStep(
+            title="Shape Factors",
+            equation=("strip: s_c = 1, s_γ = 1;  square: s_c = 1.3, "
+                      "s_γ = 0.8;  circular: s_c = 1.3, s_γ = 0.6;  "
+                      "s_q = 1"),
+            substitution=f"shape = {analysis.footing.shape}",
+            result_name="s_c, s_q, s_γ",
+            result_value=f"{r.sc:.4f}, {r.sq:.4f}, {r.sgamma:.4f}",
+            reference="Terzaghi (1943); UFC 3-220-20 Table 5-5",
+        ),
+        "Terzaghi's method has no depth, load-inclination, base-tilt or "
+        "ground-slope factors (UFC 3-220-20 Sec 5-3.3.1; Table 5-3: "
+        "D_f/B ≤ 1, no inclined loads, slopes or tilted bases).",
+    ]
+    sections.append(CalcSection(title="Shape Factors", items=shape_items))
+
+    eq_items = [
+        CalcStep(
+            title="Terzaghi Bearing Capacity Equation",
+            equation=("q_ult = s_c × c × N_c + q × N_q "
+                      "+ 0.5 × s_γ × γ' × B' × N_γ"),
+            substitution=(
+                f"q_ult = {r.sc:.3f} × {c:.2f} × {r.Nc:.2f} + "
+                f"{r.q_overburden:.2f} × {r.Nq:.2f} + 0.5 × "
+                f"{r.sgamma:.3f} × {r.gamma_eff:.2f} × {r.B_eff:.3f}"
+                f" × {r.Ngamma:.2f}"),
+            result_name="q_ult",
+            result_value=f"{r.q_ultimate:,.1f}",
+            result_unit="kPa",
+            reference="Terzaghi (1943); UFC 3-220-20 Eq. 5-15",
+        ),
+        TableData(
+            title="Term Breakdown",
+            headers=["Term", "Value (kPa)"],
+            rows=[
+                ["Cohesion", f"{r.term_cohesion:,.1f}"],
+                ["Overburden", f"{r.term_overburden:,.1f}"],
+                ["Self-weight", f"{r.term_selfweight:,.1f}"],
+                ["Total q_ult", f"{r.q_ultimate:,.1f}"],
+            ],
+        ),
+        CalcStep(
+            title="Allowable Bearing Capacity",
+            equation="q_all = q_ult / FS",
+            substitution=f"q_all = {r.q_ultimate:,.1f} / {r.factor_of_safety:.1f}",
+            result_name="q_all",
+            result_value=f"{r.q_allowable:,.1f}",
+            result_unit="kPa",
+        ),
+    ]
+    if r.is_two_layer:
+        eq_items.append(TableData(
+            title="Two-Layer Capacities (load-spread method; NAVFAC DM-7.01 / Bowles)",
+            headers=["Layer", "q_ult (kPa)"],
+            rows=[
+                ["Upper layer (if semi-infinite)", f"{r.q_upper_layer:,.1f}"],
+                ["Lower layer (if semi-infinite)", f"{r.q_lower_layer:,.1f}"],
+                ["Combined (load-spread)", f"{r.q_ultimate:,.1f}"],
+            ],
+        ))
+    eq_items.extend(r.notes)
+    sections.append(CalcSection(title="Bearing Capacity Equation", items=eq_items))
+    return sections
+
 
 def _shape_factor_equation(method: str, phi_deg: float) -> str:
     """Return the shape factor equation as text.

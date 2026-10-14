@@ -242,16 +242,54 @@ def _shear_moment(q: Callable, top: float, bottom: float, breaks,
 # solutions
 # ---------------------------------------------------------------------------
 
+#: Depth searched for a moment balance, as a multiple of H.
+_SEARCH_H = 6.0
+
+
+def _no_balance_cantilever(H: float) -> str:
+    return (f"No moment balance about the point of rotation O within "
+            f"{_SEARCH_H:g}H = {_SEARCH_H * H:.1f} m of embedment: the wall "
+            "cannot stand as a cantilever in this soil (the passive resistance "
+            "below the excavation never balances the driving pressures, "
+            "Caltrans T&S 7-5.02). Consider supports (a braced or anchored "
+            "wall) or a deeper or stiffer stratum. Embedment, moment and shear "
+            "are not reported.")
+
+
+def _no_balance_support(H: float, FS: float, at_fs: bool, at_one: bool) -> str:
+    if not at_one:
+        what = ("MR = MD is never reached: the passive resistance below the "
+                "excavation cannot hold the toe of the wall")
+        lost = ("D' (FS = 1), the support load from below, the moment and the "
+                "shear are not reported"
+                + (" (D at FS < 1 is)." if at_fs else ", nor is the embedment."))
+    else:
+        what = (f"MR = {FS:g} x MD is never reached (MR = MD is): the passive "
+                "resistance below the excavation cannot hold the toe of the "
+                "wall with that margin")
+        lost = (f"The embedment at FS = {FS:g} is not reported; D' (FS = 1), "
+                "the support load and the moments are.")
+    return (f"No moment balance about the support within {_SEARCH_H:g}H = "
+            f"{_SEARCH_H * H:.1f} m below the excavation (free earth support, "
+            f"Caltrans T&S 8-4.02). {what}. Consider another support level, a "
+            "lower support, or a deeper or stiffer stratum. " + lost)
+
+
 @dataclass
 class CantileverSolution:
-    """Caltrans Simplified Method result (per metre of wall)."""
-    D0: float
-    D: float
+    """Caltrans Simplified Method result (per metre of wall).
+
+    With no moment balance within 6H (``converged`` False) D0, D and every
+    quantity taken from the pressure diagram to O are None, and the first
+    note says why.
+    """
+    D0: Optional[float]
+    D: Optional[float]
     embedment_increase: float
-    net_force_at_O: float
-    max_moment: float
-    max_moment_depth: float
-    max_shear: float
+    net_force_at_O: Optional[float]
+    max_moment: Optional[float]
+    max_moment_depth: Optional[float]
+    max_shear: Optional[float]
     converged: bool
     notes: List[str] = field(default_factory=list)
 
@@ -261,7 +299,9 @@ def solve_cantilever(profile: LayeredProfile, FS_passive: float = 1.5,
     """Cantilever wall by the Caltrans Simplified Method (Sec 7-5.02).
 
     Passive pressure is divided by ``FS_passive``; D = ``embedment_increase``
-    x D0. Moment and shear come from the pressure diagram to point O.
+    x D0. Moment and shear come from the pressure diagram to point O. When
+    no D0 within 6H balances the moments the result carries None for the
+    embedment, moment and shear, ``converged=False`` and a warning note.
     """
     if FS_passive <= 0:
         raise ValueError("FS_passive must be positive")
@@ -280,11 +320,14 @@ def solve_cantilever(profile: LayeredProfile, FS_passive: float = 1.5,
         mr = _integrate(lambda z: resist(z) * (O - z), H, O, brk + [O])
         return mr - md
 
-    notes: List[str] = []
-    D0, ok = _first_root(net, 1e-3, 6.0 * H)
+    D0, ok = _first_root(net, 1e-3, _SEARCH_H * H)
     if not ok:
-        notes.append(f"No moment balance within 6H = {6 * H:.1f} m of embedment; "
-                     "the wall cannot be a cantilever in this soil.")
+        return CantileverSolution(
+            D0=None, D=None, embedment_increase=embedment_increase,
+            net_force_at_O=None, max_moment=None, max_moment_depth=None,
+            max_shear=None, converged=False,
+            notes=[_no_balance_cantilever(H)])
+    notes: List[str] = []
     O = H + D0
     F_drive = _integrate(drive, 0.0, O, brk)
     F_resist = _integrate(resist, H, O, brk + [O])
@@ -299,20 +342,26 @@ def solve_cantilever(profile: LayeredProfile, FS_passive: float = 1.5,
         D0=D0, D=D0 * embedment_increase, embedment_increase=embedment_increase,
         net_force_at_O=float(net_force), max_moment=float(abs(M[k])),
         max_moment_depth=float(z[k]), max_shear=float(np.max(np.abs(V))),
-        converged=ok, notes=notes)
+        converged=True, notes=notes)
 
 
 @dataclass
 class SupportSolution:
-    """Free earth support about a support level (per metre of wall)."""
-    D: float
-    D_prime: float
-    support_load: float
-    max_moment: float
-    max_moment_depth: float
+    """Free earth support about a support level (per metre of wall).
+
+    ``D`` is None when MR = FS x MD has no root within 6H; ``D_prime`` and
+    everything taken from the FS = 1 body (support load, moments, shear) are
+    None when MR = MD has none. ``converged`` is False in either case and the
+    first note says which.
+    """
+    D: Optional[float]
+    D_prime: Optional[float]
+    support_load: Optional[float]
+    max_moment: Optional[float]
+    max_moment_depth: Optional[float]
     zero_shear_depth: Optional[float]
     moment_at_zero_shear: Optional[float]
-    max_shear: float
+    max_shear: Optional[float]
     converged: bool
     notes: List[str] = field(default_factory=list)
 
@@ -364,11 +413,19 @@ def solve_about_support(profile: LayeredProfile, pivot: float,
 
     notes: List[str] = []
     D, ok = _first_root(lambda d: (lambda m: m[1] - FS * m[0])(moments(d)),
-                        1e-3, 6.0 * H)
+                        1e-3, _SEARCH_H * H)
     Dp, ok_p = _first_root(lambda d: (lambda m: m[1] - m[0])(moments(d)),
-                           1e-3, 6.0 * H)
+                           1e-3, _SEARCH_H * H)
     if not (ok and ok_p):
-        notes.append(f"No moment balance within 6H = {6 * H:.1f} m of embedment.")
+        notes.append(_no_balance_support(H, FS, ok, ok_p))
+    if not ok:
+        D = None
+    if not ok_p:
+        return SupportSolution(
+            D=D, D_prime=None, support_load=None, max_moment=None,
+            max_moment_depth=None, zero_shear_depth=None,
+            moment_at_zero_shear=None, max_shear=None, converged=False,
+            notes=notes)
     bot = H + Dp
     T = (_integrate(drive, body_top, bot, brk)
          - _integrate(profile.passive, H, bot, brk + [bot]))

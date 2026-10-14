@@ -5,7 +5,7 @@ Stores all computed factors and provides summary output and optional plotting.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 
 @dataclass
@@ -63,6 +63,17 @@ class BearingCapacityResult:
         qult of upper layer (two-layer analysis only).
     q_lower_layer : float, optional
         qult of lower layer (two-layer analysis only).
+
+    failure_mode : str
+        "general", or "local" (Terzaghi's local-shear reduction).
+    Ngamma_alternatives : dict
+        Terzaghi only: Ngamma from the other cited source(s), by
+        ``ngamma_method`` name, beside the one used.
+    c_used, phi_used : float, optional
+        Terzaghi only: the strengths the factors were computed with (the
+        reduced c*, phi* for local shear).
+    notes : list of str
+        Method basis and applicability notes (Terzaghi results).
     """
     # Primary results
     q_ultimate: float = 0.0
@@ -120,6 +131,13 @@ class BearingCapacityResult:
     q_upper_layer: Optional[float] = None
     q_lower_layer: Optional[float] = None
 
+    # Terzaghi basis
+    failure_mode: str = "general"
+    Ngamma_alternatives: Dict[str, float] = field(default_factory=dict)
+    c_used: Optional[float] = None
+    phi_used: Optional[float] = None
+    notes: List[str] = field(default_factory=list)
+
     def summary(self) -> str:
         """Return a formatted summary string.
 
@@ -146,13 +164,25 @@ class BearingCapacityResult:
             f"    Nc = {self.Nc:.2f}   Nq = {self.Nq:.2f}   Ng = {self.Ngamma:.2f}"
             f"  ({self.ngamma_method})",
             "",
-            "  Correction Factors ({0}):".format(self.factor_method),
-            f"    Shape:       sc={self.sc:.3f}  sq={self.sq:.3f}  sg={self.sgamma:.3f}",
-            f"    Depth:       dc={self.dc:.3f}  dq={self.dq:.3f}  dg={self.dgamma:.3f}",
-            f"    Inclination: ic={self.ic:.3f}  iq={self.iq:.3f}  ig={self.igamma:.3f}",
-            f"    Base tilt:   bc={self.bc:.3f}  bq={self.bq:.3f}  bg={self.bgamma:.3f}",
-            f"    Ground:      gc={self.gc:.3f}  gq={self.gq:.3f}  gg={self.ggamma:.3f}",
-            "",
+        ]
+        if self.factor_method == "terzaghi":
+            lines.extend([
+                f"  Terzaghi (1943), {self.failure_mode} shear:",
+                f"    Shape:       sc={self.sc:.3f}  sq={self.sq:.3f}  sg={self.sgamma:.3f}",
+                "    No depth, inclination, base or ground factors.",
+                "",
+            ])
+        else:
+            lines.extend([
+                "  Correction Factors ({0}):".format(self.factor_method),
+                f"    Shape:       sc={self.sc:.3f}  sq={self.sq:.3f}  sg={self.sgamma:.3f}",
+                f"    Depth:       dc={self.dc:.3f}  dq={self.dq:.3f}  dg={self.dgamma:.3f}",
+                f"    Inclination: ic={self.ic:.3f}  iq={self.iq:.3f}  ig={self.igamma:.3f}",
+                f"    Base tilt:   bc={self.bc:.3f}  bq={self.bq:.3f}  bg={self.bgamma:.3f}",
+                f"    Ground:      gc={self.gc:.3f}  gq={self.gq:.3f}  gg={self.ggamma:.3f}",
+                "",
+            ])
+        lines.extend([
             "  Term Breakdown:",
             f"    Cohesion term:    {self.term_cohesion:,.1f} kPa"
             f"  ({self._pct(self.term_cohesion)}%)",
@@ -160,7 +190,7 @@ class BearingCapacityResult:
             f"  ({self._pct(self.term_overburden)}%)",
             f"    Self-weight term: {self.term_selfweight:,.1f} kPa"
             f"  ({self._pct(self.term_selfweight)}%)",
-        ]
+        ])
 
         if self.is_two_layer:
             lines.extend([
@@ -169,6 +199,10 @@ class BearingCapacityResult:
                 f"    Upper layer qult: {self.q_upper_layer:,.1f} kPa",
                 f"    Lower layer qult: {self.q_lower_layer:,.1f} kPa",
             ])
+
+        if self.notes:
+            lines.append("")
+            lines.extend(f"  Note: {n}" for n in self.notes)
 
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
@@ -186,7 +220,7 @@ class BearingCapacityResult:
         dict
             All result fields as a flat dictionary.
         """
-        return {
+        d = {
             "q_ultimate_kPa": round(self.q_ultimate, 2),
             "q_allowable_kPa": round(self.q_allowable, 2),
             "q_net_kPa": round(self.q_net, 2),
@@ -220,3 +254,14 @@ class BearingCapacityResult:
             "factor_method": self.factor_method,
             "is_two_layer": self.is_two_layer,
         }
+        if self.factor_method == "terzaghi":
+            d["method"] = "Terzaghi (1943)"
+            d["failure_mode"] = self.failure_mode
+            d["Ngamma_alternatives"] = {
+                k: round(v, 3) for k, v in self.Ngamma_alternatives.items()}
+            if self.failure_mode == "local":
+                d["c_used_kPa"] = round(self.c_used, 3)
+                d["phi_used_deg"] = round(self.phi_used, 3)
+        if self.notes:
+            d["notes"] = list(self.notes)
+        return d

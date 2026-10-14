@@ -2,8 +2,9 @@
 Main bearing capacity calculation engine.
 
 Computes ultimate and allowable bearing capacity using the general
-bearing capacity equation (Vesic/Meyerhof/Hansen forms) for one-layer
-and two-layer soil systems.
+bearing capacity equation (Vesic/Meyerhof/Hansen forms), or Terzaghi's
+(1943) equation with his own factors, for one-layer and two-layer soil
+systems.
 
 References:
     FHWA GEC-6 (FHWA-IF-02-054), Chapter 6
@@ -29,8 +30,20 @@ from bearing_capacity.factors import (
     bearing_capacity_Nc,
     bearing_capacity_Nq,
     bearing_capacity_Ngamma,
+    TERZAGHI_NGAMMA_SOURCES,
+    terzaghi_Nc,
+    terzaghi_Nq,
+    terzaghi_Ngamma,
+    terzaghi_shape_factors,
+    terzaghi_local_shear,
 )
 from bearing_capacity.results import BearingCapacityResult
+
+#: factor_method values: the Vesic and Meyerhof correction-factor sets, or
+#: Terzaghi (1943) -- his own Nc, Nq, Ngamma and shape coefficients.
+FACTOR_METHODS = ("vesic", "meyerhof", "terzaghi")
+#: N-gamma choices that go with the Vesic/Meyerhof factor sets.
+GENERAL_NGAMMA_METHODS = ("vesic", "meyerhof", "hansen")
 
 
 @dataclass
@@ -53,9 +66,19 @@ class BearingCapacityAnalysis:
     factor_of_safety : float, optional
         Required factor of safety. Default 3.0.
     ngamma_method : str, optional
-        Method for Ngamma: "vesic" (default), "meyerhof", or "hansen".
+        Method for Ngamma: "vesic" (default), "meyerhof", or "hansen"; with
+        ``factor_method="terzaghi"``, "kumbhojkar" (default) or "coduto"
+        (see ``factors.TERZAGHI_NGAMMA_SOURCES``).
     factor_method : str, optional
-        Method for shape/depth/inclination factors: "vesic" (default) or "meyerhof".
+        Method for shape/depth/inclination factors: "vesic" (default) or
+        "meyerhof"; or "terzaghi" for Terzaghi (1943): his own Nc, Nq,
+        Ngamma and shape coefficients (1.3 c Nc, 0.4 / 0.3 gamma B Ngamma),
+        no depth or inclination factors. Terzaghi is not for inclined loads,
+        sloping ground or tilted bases (UFC 3-220-20 Table 5-3) and raises
+        on them.
+    failure_mode : str, optional
+        "general" (default) or, with ``factor_method="terzaghi"``, "local":
+        Terzaghi's local-shear reduction c* = 2/3 c, tan(phi*) = 2/3 tan(phi).
 
     Examples
     --------
@@ -74,8 +97,9 @@ class BearingCapacityAnalysis:
     ground_slope: float = 0.0
     vertical_load: float = 0.0
     factor_of_safety: float = 3.0
-    ngamma_method: str = "vesic"
+    ngamma_method: Optional[str] = None
     factor_method: str = "vesic"
+    failure_mode: str = "general"
 
     def __post_init__(self):
         if self.footing is None:
@@ -84,6 +108,46 @@ class BearingCapacityAnalysis:
             raise ValueError("Soil profile must be provided")
         if self.factor_of_safety <= 0:
             raise ValueError(f"Factor of safety must be positive, got {self.factor_of_safety}")
+        self.factor_method = str(self.factor_method).strip().lower()
+        if self.factor_method not in FACTOR_METHODS:
+            raise ValueError(
+                f"factor_method must be one of {list(FACTOR_METHODS)}, got "
+                f"'{self.factor_method}'")
+        terzaghi = self.factor_method == "terzaghi"
+        if self.ngamma_method is None:
+            self.ngamma_method = "kumbhojkar" if terzaghi else "vesic"
+        self.ngamma_method = str(self.ngamma_method).strip().lower()
+        if terzaghi and self.ngamma_method not in TERZAGHI_NGAMMA_SOURCES:
+            raise ValueError(
+                f"factor_method='terzaghi' takes Terzaghi's own N-gamma: "
+                f"ngamma_method {list(TERZAGHI_NGAMMA_SOURCES)} (default "
+                f"'kumbhojkar'), got '{self.ngamma_method}'")
+        if not terzaghi and self.ngamma_method in TERZAGHI_NGAMMA_SOURCES:
+            raise ValueError(
+                f"ngamma_method '{self.ngamma_method}' is a Terzaghi (1943) "
+                f"N-gamma; use it with factor_method='terzaghi', or pick one "
+                f"of {list(GENERAL_NGAMMA_METHODS)}")
+        self.failure_mode = str(self.failure_mode).strip().lower()
+        if self.failure_mode not in ("general", "local"):
+            raise ValueError(
+                f"failure_mode must be 'general' or 'local', got "
+                f"'{self.failure_mode}'")
+        if self.failure_mode == "local" and not terzaghi:
+            raise ValueError(
+                "failure_mode='local' is Terzaghi's local-shear reduction "
+                "(c* = 2/3 c, tan phi* = 2/3 tan phi); use it with "
+                "factor_method='terzaghi'.")
+        if terzaghi:
+            bad = [name for name, v in (
+                ("load_inclination", self.load_inclination),
+                ("ground_slope", self.ground_slope),
+                ("base_tilt", self.footing.base_tilt)) if v]
+            if bad:
+                raise ValueError(
+                    f"Terzaghi (1943) has no factors for {', '.join(bad)} "
+                    "(UFC 3-220-20 Table 5-3: do not use it for inclined "
+                    "loads, slopes or tilted bases); use factor_method="
+                    "'vesic' or 'meyerhof'.")
 
     def compute(self) -> BearingCapacityResult:
         """Run the bearing capacity analysis.
@@ -105,6 +169,8 @@ class BearingCapacityAnalysis:
                  + q*Nq*sq*dq*iq*bq*gq
                  + 0.5*gamma*B'*Ng*sg*dg*ig*bg*gg
         """
+        if self.factor_method == "terzaghi":
+            return self._compute_terzaghi()
         layer = self.soil.layer1
         phi = layer.friction_angle
         c = layer.cohesion
@@ -177,6 +243,93 @@ class BearingCapacityAnalysis:
             factor_method=self.factor_method,
         )
 
+    def _compute_terzaghi(self) -> BearingCapacityResult:
+        """Terzaghi (1943), one layer.
+
+            qult = c Nc sc + q Nq + 0.5 gamma B Ngamma sgamma
+
+        with Terzaghi's Nc, Nq, the chosen Ngamma source and his shape
+        coefficients; every other factor is 1 (UFC 3-220-20 Sec 5-3.3.1).
+        For local shear, c and phi are first reduced to c* = 2/3 c and
+        phi* = atan(2/3 tan phi). The other Ngamma source is reported beside
+        the one used.
+        """
+        layer = self.soil.layer1
+        c, phi = layer.cohesion, layer.friction_angle
+        notes = []
+        c_used, phi_used = c, phi
+        if self.failure_mode == "local":
+            c_used, phi_used = terzaghi_local_shear(c, phi)
+            notes.append(
+                f"Local shear (Terzaghi 1943; UFC 3-220-20 Table 5-4): "
+                f"c* = 2/3 c = {c_used:.2f} kPa, phi* = atan(2/3 tan phi) = "
+                f"{phi_used:.2f} deg. UFC 3-220-20 notes it is probably too "
+                "conservative for sands.")
+
+        B = self.footing.B_for_factors
+        L = self.footing.L_for_factors
+        Df = self.footing.depth
+
+        Nc = terzaghi_Nc(phi_used)
+        Nq = terzaghi_Nq(phi_used)
+        Ng = terzaghi_Ngamma(phi_used, self.ngamma_method)
+        alternatives = {
+            src: terzaghi_Ngamma(phi_used, src)
+            for src in TERZAGHI_NGAMMA_SOURCES
+            if src != self.ngamma_method
+            and (src != "kumbhojkar" or phi_used <= 50)
+        }
+        note = (f"Terzaghi (1943) bearing capacity; N-gamma = {Ng:.2f} from "
+                f"{TERZAGHI_NGAMMA_SOURCES[self.ngamma_method]}.")
+        if alternatives:
+            note += " Other cited N-gamma: " + "; ".join(
+                f"ngamma_method='{src}' gives {v:.2f}"
+                for src, v in alternatives.items()) + "."
+        notes.append(note)
+
+        shape = self.footing.shape
+        if shape in ("square", "rectangular") and abs(B - L) <= 1e-9 * L:
+            shape = "square"
+        sc, sq, sg, shape_note = terzaghi_shape_factors(shape, B, L)
+        if shape_note:
+            notes.append(shape_note)
+        if Df > B:
+            notes.append(
+                f"Df/B = {Df / B:.2f} > 1: Terzaghi's method is for Df/B <= 1 "
+                "(UFC 3-220-20 Table 5-3); it ignores the shear strength of "
+                "the soil above the base. Consider factor_method='meyerhof'.")
+
+        q = self.soil.overburden_pressure(Df)
+        gamma = self.soil.gamma_below_footing(Df, B)
+
+        term_c = c_used * Nc * sc
+        term_q = q * Nq * sq
+        term_g = 0.5 * gamma * B * Ng * sg
+        q_ultimate = term_c + term_q + term_g
+
+        return BearingCapacityResult(
+            q_ultimate=q_ultimate,
+            q_allowable=q_ultimate / self.factor_of_safety,
+            q_net=q_ultimate - q,
+            factor_of_safety=self.factor_of_safety,
+            Nc=Nc, Nq=Nq, Ngamma=Ng,
+            sc=sc, sq=sq, sgamma=sg,
+            q_overburden=q,
+            gamma_eff=gamma,
+            B_eff=B,
+            L_eff=L,
+            term_cohesion=term_c,
+            term_overburden=term_q,
+            term_selfweight=term_g,
+            ngamma_method=self.ngamma_method,
+            factor_method=self.factor_method,
+            failure_mode=self.failure_mode,
+            Ngamma_alternatives=alternatives,
+            c_used=c_used,
+            phi_used=phi_used,
+            notes=notes,
+        )
+
     def _compute_two_layer(self) -> BearingCapacityResult:
         """Compute bearing capacity for a two-layer soil profile.
 
@@ -237,6 +390,7 @@ class BearingCapacityAnalysis:
             factor_of_safety=self.factor_of_safety,
             ngamma_method=self.ngamma_method,
             factor_method=self.factor_method,
+            failure_mode=self.failure_mode,
         )._compute_single_layer()
         qb = result_bottom.q_ultimate
 

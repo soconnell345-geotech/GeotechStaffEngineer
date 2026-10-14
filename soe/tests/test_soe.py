@@ -389,12 +389,23 @@ class TestBracedExcavation:
             assert rxn["load_kN_per_m"] > 0
 
     def test_braced_soft_clay(self):
-        """Braced excavation in soft clay."""
+        """Braced excavation in soft clay.
+
+        H = 8 m, cu = 30 kPa, q = 10 kPa: below the excavation the net
+        Rankine pressure 4c - gamma*H - q = -34 kPa never turns resisting,
+        so free earth support has no moment balance (GM-20). Until
+        2026-10-14 this test passed on a moment computed at the 6H search
+        limit; the tributary loads are still real, the embedment and the
+        wall moment are not reported."""
         geo = _clay_geometry(H=8.0, cu=30.0, soil_type="soft_clay")
         result = analyze_braced_excavation(geo)
 
         assert result.apparent_pressure_type == "soft_clay"
-        assert result.max_moment_kNm_per_m > 0
+        assert result.support_reactions[0]["load_kN_per_m"] > 0
+        assert result.converged is False
+        assert result.required_embedment_m is None
+        assert result.max_moment_kNm_per_m is None
+        assert "never reached" in result.notes[0]
 
     def test_braced_stiff_clay(self):
         """Braced excavation in stiff clay (trapezoidal envelope)."""

@@ -197,7 +197,7 @@ about 60 of them were on the list that stood here ("Open to-dos (refreshed
 
 **Now (from 2026-10-14): core improvements while CfA sets up Tiny Apps** (details in BACKLOG §0). CfA says the SharePoint connection and the per-user Prompter keys (one per user) are a few weeks out, so the Tiny Apps production items (OWN-29, OWN-30, OWN-43–OWN-51, TA-03) moved to Next until they arrive.
 - **Agent work, in three tracks:**
-  - engineering answers that err on the unsafe side: GM-20, then GM-42 and GM-30 (done 2026-10-14: downdrag as the owner asked; the slope search's sand-slope, toe-circle and reinforcement misses; fem2d's mesh-dependent strength reduction, which was a soil-filled notch in the slope mesher, and staged `n_steps`; see BACKLOG "Done"; OWN-58 asks about the pile's own weight);
+  - engineering answers that err on the unsafe side: the first round is done 2026-10-14 (downdrag as the owner asked; the slope search's sand-slope, toe-circle and reinforcement misses; fem2d's mesh-dependent strength reduction, which was a soil-filled notch in the slope mesher, and staged `n_steps`; SOE free earth with no solution; catalog headroom; Terzaghi factors; see BACKLOG "Done"). Follow-ups in Next: GM-59, GM-60, GM-61, GM-63. OWN-58 asks about the pile's own weight;
   - Document Review accuracy: PL-07, VIS-01, VIS-04, VIS-05, DR-15–DR-17, DR-04, VIS-09;
   - release readiness: INF-10 and EV-13 with DR-05 (one Foundry suite run for the whole train); the post-name cleanup of the shipped code is done (BACKLOG "Done");
   - then the calculation tables, GM-39 (the next module train, owner 2026-10-14).

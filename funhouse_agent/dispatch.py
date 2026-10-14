@@ -621,9 +621,13 @@ _METHOD_ALIASES = {
         ("bearing_capacity_analysis", {"factor_method": "vesic"}),
     ("bearing_capacity", "vesic_footing"):
         ("bearing_capacity_analysis", {"factor_method": "vesic"}),
-    # terzaghi/two-layer aren't separate factor methods — the full analysis
-    # covers them (two-layer via the layer2_* params), default factor_method.
-    ("bearing_capacity", "terzaghi"): "bearing_capacity_analysis",
+    # Terzaghi (1943) is factor_method='terzaghi' (GM-30; until 2026-10-14 the
+    # guess 'terzaghi' quietly ran the default Vesic analysis). Two-layer is
+    # not a separate method: the full analysis covers it via layer2_*.
+    ("bearing_capacity", "terzaghi"):
+        ("bearing_capacity_analysis", {"factor_method": "terzaghi"}),
+    ("bearing_capacity", "terzaghi_bearing_capacity"):
+        ("bearing_capacity_analysis", {"factor_method": "terzaghi"}),
     ("bearing_capacity", "two_layer_clay"): "bearing_capacity_analysis",
     ("settlement", "consolidation"): "consolidation_settlement",
     ("settlement", "elastic_foundation"): "elastic_settlement",

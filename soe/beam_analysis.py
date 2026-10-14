@@ -154,12 +154,18 @@ def analyze_braced_excavation(geometry: ExcavationGeometry,
     if embedment_increase < 1.0:
         raise ValueError("embedment_increase must be >= 1.0")
     fe = embedment_detail(geometry, FOS_passive=FOS_passive)
-    embedment = fe.D * embedment_increase
-    if fe.max_moment > max_moment:
+    embedment = None if fe.D is None else fe.D * embedment_increase
+    span_moment = max_moment
+    if fe.max_moment is None:
+        # No FS = 1 body: the moment below the excavation is unknown, so the
+        # wall's maximum moment (and the section it sizes) is too.
+        max_moment = max_moment_depth = max_shear = None
+    elif fe.max_moment > max_moment:
         max_moment, max_moment_depth = fe.max_moment, fe.max_moment_depth
         max_shear = max(max_shear, fe.max_shear)
 
-    notes: List[str] = [
+    # A no-balance warning goes first, ahead of the method notes.
+    notes: List[str] = list(fe.notes) + [
         f"Pressure above the excavation: {ap['type']} apparent envelope "
         f"(max {ap['max_pressure_kPa']:.2f} kPa) + surcharge "
         f"{ap['surcharge_pressure_kPa']:.2f} kPa"
@@ -167,11 +173,21 @@ def analyze_braced_excavation(geometry: ExcavationGeometry,
            else "")
         + " (GEC-4 5.2.4 adds surcharge and water explicitly).",
         "The bottom span's load is assigned wholly to the lowest support; "
-        "free earth support gives that support "
-        f"{fe.support_load:.1f} kN/m from the wall below it.",
+        + (f"free earth support gives that support {fe.support_load:.1f} kN/m "
+           "from the wall below it." if fe.support_load is not None else
+           "free earth support gives no load from below (no moment balance)."),
         f"Embedment: free earth support about the lowest support, MR = FS x MD "
         f"with FS = {FOS_passive:g} (Caltrans T&S 8-4 uses 1.3).",
-    ] + list(fe.notes)
+    ]
+    if max_moment is None:
+        notes.append(
+            f"The spans above the excavation reach {span_moment:.1f} kN·m/m; "
+            "the moment below the excavation, and so the wall's maximum "
+            "moment and required section, are undefined without a moment "
+            "balance.")
+
+    def _r(x, nd):
+        return None if x is None else round(x, nd)
 
     support_reactions = [
         {"depth_m": round(sup.depth, 3),
@@ -186,22 +202,25 @@ def analyze_braced_excavation(geometry: ExcavationGeometry,
         apparent_pressure_type=ap["type"],
         max_apparent_pressure_kPa=round(float(ap["max_pressure_kPa"]), 2),
         support_reactions=support_reactions,
-        max_moment_kNm_per_m=round(max_moment, 2),
-        max_moment_depth_m=round(max_moment_depth, 2),
-        max_shear_kN_per_m=round(max_shear, 2),
-        required_embedment_m=round(embedment, 2),
-        total_wall_length_m=round(H + embedment, 2),
-        required_Sx_cm3=round(_section_modulus_cm3(max_moment, Fy), 1),
+        max_moment_kNm_per_m=_r(max_moment, 2),
+        max_moment_depth_m=_r(max_moment_depth, 2),
+        max_shear_kN_per_m=_r(max_shear, 2),
+        required_embedment_m=_r(embedment, 2),
+        total_wall_length_m=None if embedment is None else round(H + embedment, 2),
+        required_Sx_cm3=(None if max_moment is None
+                         else round(_section_modulus_cm3(max_moment, Fy), 1)),
         embedment_FS=FOS_passive,
         surcharge_pressure_kPa=round(float(ap["surcharge_pressure_kPa"]), 2),
         water_pressure_included=bool(ap["water_pressure_added"]),
         free_earth={
-            "embedment_D_m": round(fe.D, 3),
-            "embedment_D_FS1_m": round(fe.D_prime, 3),
-            "lowest_support_load_from_below_kN_per_m": round(fe.support_load, 2),
-            "max_moment_kNm_per_m": round(fe.max_moment, 2),
-            "max_moment_depth_m": round(fe.max_moment_depth, 2),
+            "embedment_D_m": _r(fe.D, 3),
+            "embedment_D_FS1_m": _r(fe.D_prime, 3),
+            "lowest_support_load_from_below_kN_per_m": _r(fe.support_load, 2),
+            "max_moment_kNm_per_m": _r(fe.max_moment, 2),
+            "max_moment_depth_m": _r(fe.max_moment_depth, 2),
+            "converged": fe.converged,
         },
+        converged=fe.converged,
         notes=notes,
     )
 
@@ -261,6 +280,17 @@ def analyze_cantilever_excavation(
             f"H = {H:.1f} m: cantilever walls are mainly used for excavations up "
             f"to about {_CANTILEVER_TYPICAL_MAX_H:.1f} m (18 ft, Caltrans T&S "
             "7-1); check deflection.")
+
+    if not sol.converged:
+        # No D0 within 6H: nothing below is reported (see the first note).
+        return CantileverExcavationResult(
+            excavation_depth=H, FOS_passive=FOS_passive,
+            Ka=round(float(prof.Ka[i]), 4), Kp=round(float(prof.Kp[i]), 4),
+            required_embedment_m=None, total_wall_length_m=None,
+            max_moment_kNm_per_m=None, max_shear_kN_per_m=None,
+            required_Sx_cm3=None, embedment_converged_m=None,
+            embedment_increase=embedment_increase, max_moment_depth_m=None,
+            net_force_at_O_kN_per_m=None, converged=False, notes=notes)
 
     return CantileverExcavationResult(
         excavation_depth=H,

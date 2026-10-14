@@ -47,7 +47,7 @@ After any change to this file, rebuild and republish the Backlog Desk (`module_w
 
 CfA says the SharePoint connection and the per-user Prompter keys are a few weeks out (owner, 2026-10-14). Until they arrive, Now is core work on the app itself. The Tiny Apps production items (OWN-29, OWN-30, OWN-43–OWN-51, TA-03) wait in Next and come back when CfA delivers.
 
-- **Engineering answers that err on the unsafe side** (geotech page; each gets a warning in the result first, then the fix): GM-20 (free-earth returns a depth with no root). Then GM-42 (catalog headroom, needed before any new method) and GM-30 (Terzaghi factors).
+- **Engineering answers that err on the unsafe side** (geotech page): the first round is done (BACKLOG "Done", 2026-10-14). Follow-ups it found: GM-59, GM-60, GM-61, GM-63 (Next).
 - **Document Review accuracy** (testers' page; general fixes, no single-example rules): PL-07 (distinct sheets flagged as duplicates), VIS-01 (turned lettering read upright), VIS-04 (a zoom that cuts text lines), VIS-05 (boxes on sideways sheets), DR-15–DR-17 (markups), DR-04 (geotech tools still on the page), VIS-09 (zoom for pasted screenshots and image uploads).
 - **Release readiness:** INF-10 (module suites on a fresh resolve, since the next release admits pandas 3; no release is planned (OWN-55), but these keep master releasable), EV-13 with DR-05 (one Foundry suite run that measures this train, tonight's default-page changes and the lean build).
 - **Calculation tables** (OWN-10, 2026-10-14: yes, the next module train): GM-39, after the tracks above.
@@ -316,7 +316,7 @@ Parked at 5.25.0; every number since is GPT-5.4 on Foundry. Code items were conf
 - **GM-19** [Later] **Methods never built**: Janbu rigorous, Sarma, Barton-Bandis, a liquefied strength, a curved envelope, Hassiotis / Kumar & Hall piles. *Src:* `slope_stability/IMPROVEMENT_PLAN.md:170-176`
 
 ### SOE and sheet pile
-- **GM-20** [Now] **`soe/free_earth.py` returns a value when no root is found**; return null plus a warning (G16). *was:* H E2
+- **GM-65** [Later] **SOE free earth support searches only to 6H**: a balance deeper than that is reported as "none within 6H" (the result says so); no option to search deeper.
 - **GM-21** [Next] **Caquot-Kerisel Kp0 and R(δ/φ) verified only at φ = 30°**; they drive every passive result; cross-read the DM7.2 Kp chart in the catalog. *Src:* `soe/DESIGN.md:190-200`
 - **GM-22** [Later] **Ground-anchor design has no benchmark** (GEC-4 Table 4 nominal; a GEC-4-vs-PTI exhibit planned). *Src:* `soe/DESIGN.md:202-212`
 - **GM-23** [Later] **SOE "Future Work"**: ACI 318 secant / diaphragm walls; wale and strut connections; beam-spring SSI; lagging; rakers and corners; seismic apparent pressure. *Src:* `soe/DESIGN.md:214-222`
@@ -330,7 +330,6 @@ Parked at 5.25.0; every number since is GPT-5.4 on Foundry. Code items were conf
 - **GM-29** [Later] **wave_equation**: no real diesel ram cycle or GRLWEAP helmet data (V-003 blow count −60 %); quake / damping defaults unchecked vs GEC-12 Table 12-3. *Src:* `wave_equation/DESIGN.md:12-20`
 
 ### Shallow foundations, settlement, ground improvement
-- **GM-30** [Now] **Terzaghi bearing-capacity factors are missing** ("testers ask for Terzaghi often"; a memo shipped with N-gamma blank). *Src:* w1-flows REVIEW:213-217
 - **GM-31** [Later] **Ergonomics**: moist / saturated γ about the GWT (Das #4); Highter-Anders (Das #5); the FHWA Schmertmann variant; GEC-6 Fig 5-19 / T6-1 cross-read; vibro spacing unsourced; RAP upper zone (OWN-21). *Src:* `TIER_A_LEDGER.md:110, 133-148`
 
 ### Earth retention and seismic
@@ -348,7 +347,6 @@ Parked at 5.25.0; every number since is GPT-5.4 on Foundry. Code items were conf
 - **GM-39** [Now] **Ensoft-style calculation TABLES**: `calc_package.export_tables`, a `get_tables()` per module, CSV + HTML (per-depth p-y, per-slice, per-layer, iteration histories). The owner's 2026-09-11 "next train"; confirmed as the next module train 2026-10-14 (OWN-10). *Src:* FI:292-298
 - **GM-40** [Next] **Specialists cannot draw or report**: foundations, earth-retention, slope-fem and seismic scopes exclude `calc_package` and `profile_figure` (`funhouse_agent/dispatch.py:122-178`); no SharePoint or email tools either. *Src:* FI:303-304
 - **GM-41** [Next] **`soe` and `reliability` have no calc package**, so SOE reports are bespoke `html_to_pdf` (behind the 2026-09-15 "numbers gone" failure). *Src:* `calc_package/__init__.py`
-- **GM-42** [Now] **The `list_agents` catalog is at 7,988 of 8,000 chars**: the next brief fails five tests; rebalance first. *Src:* H:1978-1979
 - **GM-43** [Later] **The geotech `reviewer` sub-agent is never invoked (0/106)**; `CONSULTANT_FRAMING` ends with a dangling "Question: " (`reviewer.py:274`). *Src:* HT `geotech_agent.md:168-170, 315-358`
 - **GM-44** [Later] **Playbooks**: standard multi-step workflows as data. *Src:* FI:138-149
 - **GM-45** [Later] **Document work on the geotech page is token-heavy** (~2.25 M tokens in five turns; 2026-10-14 on Funhouse, a report's boring logs were extracted by one `task` helper per log, each returning the whole log as JSON, up to ~49k characters, into the main context, for 45+ minutes): measure; turn the SOE re-run's agent errors (wrong stratum in basal heave; a real match dismissed) into suite tasks. *Src:* an SOE re-run session (2026-09-15) FINDINGS:319-352
@@ -376,6 +374,7 @@ Parked at 5.25.0; every number since is GPT-5.4 on Foundry. Code items were conf
 - **REF-17** [Later] **Conditional retrieval**: a deterministic chart backstop (P4) only if needed; text embeddings deferred (image embeddings rejected). *Src:* CLAUDE.md P4, P6
 - **REF-18** [Later] **Provenance cross-reads** (mostly in-house): Peck N→φ, vibro spacing, downdrag β, GEC-12 T7-1/T9-2, GEC-10 Fig 13-5, GEC-6 Fig 5-19, TC304 rows; with GM-21, GM-22, GM-25, GM-27. Slope wishlist sources not in the library. *Src:* `module_work/provenance_audit_other.md:150-263`
 - **REF-19** [Later] [owner] **Structural future rounds**, pelicun, an AISC letter only if steel modules are built. *Src:* `module_work/STRUCTURAL_REFS_SURVEY.md:38-68`
+- **REF-21** [Later] **UFC 3-220-20 Table 5-2 (Terzaghi factors) has four misprints** against the closed forms: Nc 18° printed 15 (15.52; Das's own 15.12 carried over), Nq 27° printed 17 (15.90), Nc 44° printed 160 (151.95), Nq 49° printed 350 (344.6). The `dm7_2.terzaghi_*` functions compute from the formula; add an erratum note to the reference. Also check the Kumbhojkar (1993) N-gamma table against the book or paper in hand (transcribed from Das, cross-checked against one reproduction, 51/51 rows). *Src:* `bearing_capacity/DESIGN.md` (Terzaghi)
 - **REF-20** [Later] **Chart read-off on Tiny Apps** needs OWN-44 and has never been measured on gpt-5.1.
 
 ## 9. Measurement beds: Foundry, LIVE_TEST_QUEUE, the live smoke harness
@@ -439,6 +438,9 @@ Long items kept in their own sections: DR-08–DR-13, GM-39, VIS-11, VIS-20, TA-
 
 Older docs still list these as open. Delete this section at the next sweep.
 
+- **GM-20** (SOE free earth support returned a depth with no solution): when no moment balance exists within 6H, the embedment and everything computed from it come back null with `converged=False` and a plain note in the Caltrans T&S terms; every caller handles it (`compute_embedment`, both excavation analyses, the FHWA single-anchor branch keeps the load above the anchor). One existing test asserted the bug (`test_braced_soft_clay`: 4c < γH + q) and now expects no balance.
+- **GM-42** (no catalog headroom): 38 module briefs rewritten, keeping method and standard names; `list_agents` 7,988 → 7,217 characters (cap 8,000).
+- **GM-30** (Terzaghi bearing capacity): `factor_method="terzaghi"` (and `bearing_capacity_factors(method="terzaghi")`, the calc package), general or local shear, UFC 3-220-20 Table 5-5 shape factors, no depth or inclination factors (inclined loads and slopes refused, UFC Table 5-3). N-gamma: Kumbhojkar (1993) as tabulated in Das by default, Coduto et al. (2016, the basis of UFC Table 5-2) as the alternative, both named in every result. Matches UFC Table 5-2 at every row except four misprints (REF-21) and Das's table within 0.5 %. Also fixed: the `bearing_capacity/terzaghi` alias silently returned a Vesic answer.
 - **RI-26** (found and fixed 2026-10-14, from a Funhouse run): an agent passed a printed SPT N of ">50" to `write_diggs` as `n`, was refused on 17 rows and concluded refusal could not be written. The writer already records refusal (`refusal: true`, the drives in `blows` as printed, e.g. `'50/5"'`); the refusal message for a text `n` now says so. Tests pin the hint and a refusal written that way (valid DIGGS, read back equal).
 - **GM-05** (SRM factor of safety depended on the mesh): two causes. (1) `generate_slope_mesh` kept the whole Delaunay hull, so the notch above the toe was meshed as sliver "soil" that propped the face (25 % extra area on GL99 Ex 1); triangles outside the section are now dropped. (2) A residual that stalled while the displacements stood still was read as collapse; failure now needs non-convergence with displacements still growing (Griffiths & Lane's definition). Every benchmark now varies ≤ 1.7 % across meshes once ≥ 4 elements span the slope and lies within +2.5 / −5.4 % of limit equilibrium: the 10 m 2:1 slope 3.000 / 1.803 / 1.147 on three meshes → 1.909 / 1.897 / 1.884 (LE 1.887); GL99 Ex 1 1.331 on every mesh (published 1.4, LE 1.368); ACADS 1(a) 0.949 (published 1.00). Results warn plainly on too few elements across the slope, an unmeshed or too-thin layer, a dry cohesionless face above tan φ′/tan β, a range that did not bracket failure; ν ≥ 0.5 is refused; `mesh_check=True` re-runs 1.5x finer and reports both.
 - **GM-06** (undrained locking): measured, there is none: GL99 Ex 4 gives 1.419 at ν 0.30 through 0.4999 (Taylor 1.47, LE 1.486). The old +19-26 % was the soil-filled notch. B-bar was built, measured worse (Ex 4 1.33, Prandtl Nc 4.52 against 5.14) and removed; no ν warning, since ν does not move the answer.

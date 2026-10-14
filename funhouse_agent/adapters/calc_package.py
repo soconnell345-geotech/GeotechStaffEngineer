@@ -327,8 +327,9 @@ def _generate_bearing_capacity_package(params: dict) -> dict:
         ground_slope=params.get("ground_slope", 0.0),
         vertical_load=params.get("vertical_load", 0.0),
         factor_of_safety=params.get("factor_of_safety", 3.0),
-        ngamma_method=params.get("ngamma_method", "vesic"),
+        ngamma_method=params.get("ngamma_method"),
         factor_method=params.get("factor_method", "vesic"),
+        failure_mode=params.get("failure_mode", "general"),
     )
     result = analysis.compute()
 
@@ -1889,7 +1890,9 @@ METHOD_INFO = {
             "shape": {"type": "str", "required": False, "default": "strip", "allowed_values": ["strip", "square", "rectangular", "circular"], "description": "Footing shape."},
             "length": {"type": "float", "required": False, "description": "Footing length L (m). Required for rectangular."},
             "factor_of_safety": {"type": "float", "required": False, "default": 3.0, "description": "Factor of safety."},
-            "ngamma_method": {"type": "str", "required": False, "default": "vesic", "allowed_values": ["vesic", "meyerhof", "hansen"], "description": "Ngamma factor method."},
+            "ngamma_method": {"type": "str", "required": False, "default": "vesic", "allowed_values": ["vesic", "meyerhof", "hansen", "kumbhojkar", "coduto"], "description": "Ngamma factor method; with factor_method='terzaghi', 'kumbhojkar' (default) or 'coduto'."},
+            "factor_method": {"type": "str", "required": False, "default": "vesic", "allowed_values": ["vesic", "meyerhof", "terzaghi"], "description": "Correction-factor method; 'terzaghi' = Terzaghi (1943) factors and shape coefficients."},
+            "failure_mode": {"type": "str", "required": False, "default": "general", "allowed_values": ["general", "local"], "description": "factor_method='terzaghi' only: 'local' = Terzaghi's local-shear reduction."},
             "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m)."},
             **_COMMON_PARAMS,
         },

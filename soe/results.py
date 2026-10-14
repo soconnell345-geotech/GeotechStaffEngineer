@@ -8,6 +8,9 @@ for LLM agent consumption.
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 
+#: Printed in summary() where free earth support found no moment balance.
+_NOT_FOUND = "not found (no moment balance; see notes)"
+
 
 # ============================================================================
 # Stability check result
@@ -237,22 +240,27 @@ class BracedExcavationResult:
         H + embedment (m).
     required_Sx_cm3 : float
         Required section modulus for ASD (cm³).
+    converged : bool
+        False when free earth support found no moment balance within 6H:
+        the embedment (and, with no FS = 1 balance, the maximum moment,
+        shear and section) are then None and the first note says why.
     """
     excavation_depth: float = 0.0
     n_support_levels: int = 0
     apparent_pressure_type: str = ""
     max_apparent_pressure_kPa: float = 0.0
     support_reactions: List[Dict[str, Any]] = field(default_factory=list)
-    max_moment_kNm_per_m: float = 0.0
-    max_moment_depth_m: float = 0.0
-    max_shear_kN_per_m: float = 0.0
-    required_embedment_m: float = 0.0
-    total_wall_length_m: float = 0.0
-    required_Sx_cm3: float = 0.0
+    max_moment_kNm_per_m: Optional[float] = 0.0
+    max_moment_depth_m: Optional[float] = 0.0
+    max_shear_kN_per_m: Optional[float] = 0.0
+    required_embedment_m: Optional[float] = 0.0
+    total_wall_length_m: Optional[float] = 0.0
+    required_Sx_cm3: Optional[float] = 0.0
     embedment_FS: float = 1.5
     surcharge_pressure_kPa: float = 0.0
     water_pressure_included: bool = False
     free_earth: Dict[str, Any] = field(default_factory=dict)
+    converged: bool = True
     notes: List[str] = field(default_factory=list)
 
     def summary(self) -> str:
@@ -274,18 +282,35 @@ class BracedExcavationResult:
                 f"    z = {rxn['depth_m']:.2f} m  |  "
                 f"{rxn['load_kN_per_m']:.1f} kN/m  |  {rxn['type']}"
             )
-        lines.extend([
-            "",
-            f"  Max bending moment:  {self.max_moment_kNm_per_m:.2f} kN·m/m"
-            f"  (at z = {self.max_moment_depth_m:.2f} m)",
-            f"  Max shear:           {self.max_shear_kN_per_m:.2f} kN/m",
-            f"  Required Sx (ASD):   {self.required_Sx_cm3:.1f} cm³",
-            "",
-            f"  Required embedment:  {self.required_embedment_m:.2f} m"
-            f"  (free earth support, FS = {self.embedment_FS:g})",
-            f"  Total wall length:   {self.total_wall_length_m:.2f} m",
-            "",
-        ])
+        if self.max_moment_kNm_per_m is None:
+            lines.extend([
+                "",
+                f"  Max bending moment:  {_NOT_FOUND}",
+                f"  Required Sx (ASD):   {_NOT_FOUND}",
+            ])
+        else:
+            lines.extend([
+                "",
+                f"  Max bending moment:  {self.max_moment_kNm_per_m:.2f} kN·m/m"
+                f"  (at z = {self.max_moment_depth_m:.2f} m)",
+                f"  Max shear:           {self.max_shear_kN_per_m:.2f} kN/m",
+                f"  Required Sx (ASD):   {self.required_Sx_cm3:.1f} cm³",
+            ])
+        if self.required_embedment_m is None:
+            lines.extend([
+                "",
+                f"  Required embedment:  {_NOT_FOUND}"
+                f"  (free earth support, FS = {self.embedment_FS:g})",
+                "",
+            ])
+        else:
+            lines.extend([
+                "",
+                f"  Required embedment:  {self.required_embedment_m:.2f} m"
+                f"  (free earth support, FS = {self.embedment_FS:g})",
+                f"  Total wall length:   {self.total_wall_length_m:.2f} m",
+                "",
+            ])
         lines.extend(f"  Note: {n}" for n in self.notes)
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
@@ -308,6 +333,7 @@ class BracedExcavationResult:
             "total_wall_length_m": self.total_wall_length_m,
             "required_Sx_cm3": self.required_Sx_cm3,
             "free_earth": self.free_earth,
+            "converged": self.converged,
             "notes": self.notes,
         }
 
@@ -345,6 +371,10 @@ class CantileverExcavationResult:
     net_force_at_O_kN_per_m : float
         Driving minus resisting force to O; positive means embedment must
         increase (Caltrans 7-5.02 step 4).
+    converged : bool
+        False when no D0 within 6H balances the moments about O: the wall
+        cannot stand as a cantilever, every quantity above except Ka and Kp
+        is None, and the first note says why.
     notes : list of str
         Method and applicability notes.
 
@@ -355,15 +385,16 @@ class CantileverExcavationResult:
     FOS_passive: float = 1.5
     Ka: float = 0.0
     Kp: float = 0.0
-    required_embedment_m: float = 0.0
-    total_wall_length_m: float = 0.0
-    max_moment_kNm_per_m: float = 0.0
-    max_shear_kN_per_m: float = 0.0
-    required_Sx_cm3: float = 0.0
-    embedment_converged_m: float = 0.0
+    required_embedment_m: Optional[float] = 0.0
+    total_wall_length_m: Optional[float] = 0.0
+    max_moment_kNm_per_m: Optional[float] = 0.0
+    max_shear_kN_per_m: Optional[float] = 0.0
+    required_Sx_cm3: Optional[float] = 0.0
+    embedment_converged_m: Optional[float] = 0.0
     embedment_increase: float = 1.2
-    max_moment_depth_m: float = 0.0
-    net_force_at_O_kN_per_m: float = 0.0
+    max_moment_depth_m: Optional[float] = 0.0
+    net_force_at_O_kN_per_m: Optional[float] = 0.0
+    converged: bool = True
     notes: List[str] = field(default_factory=list)
 
     def summary(self) -> str:
@@ -377,17 +408,26 @@ class CantileverExcavationResult:
             f"  FOS (passive):          {self.FOS_passive:.2f}",
             f"  Ka = {self.Ka:.4f}    Kp = {self.Kp:.4f}  (embedment layer)",
             "",
-            f"  Max bending moment: {self.max_moment_kNm_per_m:.2f} kN·m/m"
-            f"  (at z = {self.max_moment_depth_m:.2f} m)",
-            f"  Max shear:          {self.max_shear_kN_per_m:.2f} kN/m",
-            f"  Required Sx (ASD):  {self.required_Sx_cm3:.1f} cm³",
-            "",
-            f"  Required embedment: {self.required_embedment_m:.2f} m"
-            f"  (= {self.embedment_increase:g} x D0 = "
-            f"{self.embedment_increase:g} x {self.embedment_converged_m:.2f})",
-            f"  Total wall length:  {self.total_wall_length_m:.2f} m",
-            "",
         ]
+        if self.required_embedment_m is None:
+            lines.extend([
+                f"  Required embedment: {_NOT_FOUND}",
+                "  Moment, shear and section: not reported",
+                "",
+            ])
+        else:
+            lines.extend([
+                f"  Max bending moment: {self.max_moment_kNm_per_m:.2f} kN·m/m"
+                f"  (at z = {self.max_moment_depth_m:.2f} m)",
+                f"  Max shear:          {self.max_shear_kN_per_m:.2f} kN/m",
+                f"  Required Sx (ASD):  {self.required_Sx_cm3:.1f} cm³",
+                "",
+                f"  Required embedment: {self.required_embedment_m:.2f} m"
+                f"  (= {self.embedment_increase:g} x D0 = "
+                f"{self.embedment_increase:g} x {self.embedment_converged_m:.2f})",
+                f"  Total wall length:  {self.total_wall_length_m:.2f} m",
+                "",
+            ])
         lines.extend(f"  Note: {n}" for n in self.notes)
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
@@ -410,5 +450,6 @@ class CantileverExcavationResult:
             "required_Sx_cm3": self.required_Sx_cm3,
             "method": "Caltrans T&S Manual 7-5.02 Simplified Method, layered "
                       "Rankine pressures with water",
+            "converged": self.converged,
             "notes": self.notes,
         }

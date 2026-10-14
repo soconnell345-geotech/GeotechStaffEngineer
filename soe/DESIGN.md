@@ -85,6 +85,34 @@ layer; every depth uses its own layer. A note is added past H = 5.5 m (18 ft,
 Caltrans 7-1). **Pinned** to the closed form for uniform dry sand and to
 `sheet_pile.analyze_cantilever` (layered, wet, surcharge; D0 within 0.5 %).
 
+### No moment balance within 6H
+
+Both solvers search 0 < D ≤ 6H for the first depth where the resisting moment
+catches up. When none does — e.g. a φ = 0 clay where the net pressure below
+the excavation, 4c − γH − q, is negative, so the passive side never catches up
+at any depth — the result says so instead of reporting a depth:
+- `solve_cantilever`: D0, D, the net force at O, moment and shear are `None`,
+  `converged=False`, and the first note reads "No moment balance about the
+  point of rotation O within 6H = … m of embedment: the wall cannot stand as a
+  cantilever in this soil … Consider supports … or a deeper or stiffer
+  stratum."
+- `solve_about_support`: `D` is `None` when MR = FS·MD has no root; `D_prime`,
+  the support load, moments and shear are `None` when MR = MD has none (they all
+  come from the FS = 1 body). The note says which of the two failed.
+- Callers carry the `None` through: `compute_embedment` returns `None`;
+  `analyze_cantilever_excavation` and `analyze_braced_excavation` return
+  `None` for the embedment, wall length and (with no FS = 1 body) the moment,
+  shear and Sx, with `converged=False` in `to_dict()` and the warning as the
+  first note; the braced tributary support loads stay (they do not depend on
+  the embedment) and a note gives the span moment above the excavation. The
+  single-anchor `fhwa_apparent_pressure_anchored_wall` returns `None` for the
+  anchor load, design load, D, D′ and moment, and keeps `TH_upper` (the
+  tributary load above the anchor).
+
+Until 2026-10-14 (BACKLOG GM-20) the root finder handed back the 6H search
+limit and the solvers reported D0 = 6H, D = 1.2 × 6H and a moment, shear and
+support load computed at that arbitrary depth, with only a note.
+
 ### Water on the two sides
 
 Retained side: hydrostatic from `gwt_depth`. Excavation side: from

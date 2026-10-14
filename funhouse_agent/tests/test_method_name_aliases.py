@@ -26,7 +26,8 @@ from funhouse_agent.dispatch import (
 ROUTING_CASES = [
     ("bearing_capacity", "vesic", "bearing_capacity_analysis", ("factor_method", "vesic")),
     ("bearing_capacity", "vesic_footing", "bearing_capacity_analysis", ("factor_method", "vesic")),
-    ("bearing_capacity", "terzaghi", "bearing_capacity_analysis", None),
+    ("bearing_capacity", "terzaghi", "bearing_capacity_analysis", ("factor_method", "terzaghi")),
+    ("bearing_capacity", "terzaghi_bearing_capacity", "bearing_capacity_analysis", ("factor_method", "terzaghi")),
     ("bearing_capacity", "two_layer_clay", "bearing_capacity_analysis", None),
     ("settlement", "consolidation", "consolidation_settlement", None),
     ("settlement", "elastic_foundation", "elastic_settlement", None),
