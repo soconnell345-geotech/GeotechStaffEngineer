@@ -351,7 +351,7 @@ Parked at 5.25.0; every number since is GPT-5.4 on Foundry. Code items were conf
 - **GM-42** [Now] **The `list_agents` catalog is at 7,988 of 8,000 chars**: the next brief fails five tests; rebalance first. *Src:* H:1978-1979
 - **GM-43** [Later] **The geotech `reviewer` sub-agent is never invoked (0/106)**; `CONSULTANT_FRAMING` ends with a dangling "Question: " (`reviewer.py:274`). *Src:* HT `geotech_agent.md:168-170, 315-358`
 - **GM-44** [Later] **Playbooks**: standard multi-step workflows as data. *Src:* FI:138-149
-- **GM-45** [Later] **Document work on the geotech page is token-heavy** (~2.25 M tokens in five turns): measure; turn the SOE re-run's agent errors (wrong stratum in basal heave; a real match dismissed) into suite tasks. *Src:* an SOE re-run session (2026-09-15) FINDINGS:319-352
+- **GM-45** [Later] **Document work on the geotech page is token-heavy** (~2.25 M tokens in five turns; 2026-10-14 on Funhouse, a report's boring logs were extracted by one `task` helper per log, each returning the whole log as JSON, up to ~49k characters, into the main context, for 45+ minutes): measure; turn the SOE re-run's agent errors (wrong stratum in basal heave; a real match dismissed) into suite tasks. *Src:* an SOE re-run session (2026-09-15) FINDINGS:319-352
 - **GM-46** [Later] **Wave-1 leftovers** (unclear): a SoilProfile stresses tool (G3(d)); unique-name describe (G12); capped "Available" (G13); PAV-6 / PAV-7. *Src:* w1-geotech REVIEW:110-120
 - **GM-47** [Later] **Validation gaps**: GEC-8 CFA (scanned); DM7 worked examples by vision; V-053 zoned dam; V-027 and Slide2 #63 (need sharper sources). Convention residuals kept on record: V-002, V-019, V-026, V-040, V-043, V-049/050, V-052. *Src:* `validation_examples/INVENTORY.md:835-918`
 
