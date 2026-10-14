@@ -201,6 +201,71 @@ def test_build_chat_model_sends_key_both_ways(monkeypatch):
     assert model.max_tokens == engine_config._default_max_tokens()
 
 
+def test_build_chat_model_request_times_out_on_a_silent_server(monkeypatch):
+    """A request the endpoint never answers fails as a timeout. The OpenAI
+    client passes its own timeout on every request and langchain-openai's
+    default is None (no limit), which overrode the httpx client's: a field
+    session's helper waited over 3.5 hours on one request (2026-10-14)."""
+    pytest.importorskip("langchain_openai")
+    import socket
+    import threading
+    import time
+
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(4)
+    held = []
+
+    def _accept():
+        try:
+            while True:
+                held.append(srv.accept()[0])
+        except OSError:
+            pass
+
+    threading.Thread(target=_accept, daemon=True).start()
+    port = srv.getsockname()[1]
+    monkeypatch.setattr(te, "REQUEST_TIMEOUT_S", 1.0)
+    monkeypatch.setenv(te.MAX_RETRIES_ENV, "0")
+    ps = te.PrompterSettings(
+        f"http://127.0.0.1:{port}/v1/chat/completions", "m", "k")
+    model = te.build_chat_model(prompter=ps)
+    assert model.root_client.timeout == 1.0
+    outcome = {}
+
+    def _call():
+        try:
+            model.invoke("hi")
+            outcome["result"] = "answered"
+        except Exception as exc:  # noqa: BLE001
+            outcome["result"] = type(exc).__name__
+
+    started = time.monotonic()
+    worker = threading.Thread(target=_call, daemon=True)
+    worker.start()
+    worker.join(30)
+    srv.close()
+    for conn in held:
+        conn.close()
+    assert not worker.is_alive(), "the request never timed out"
+    assert "Timeout" in outcome["result"]
+    assert time.monotonic() - started < 30
+
+
+def test_every_built_model_has_a_request_timeout(monkeypatch):
+    """The Foundry and Anthropic routes carry a request timeout too."""
+    pytest.importorskip("langchain_openai")
+    pytest.importorskip("langchain_anthropic")
+    monkeypatch.setenv("GEOTECH_FOUNDRY_TOKEN", "t")
+    monkeypatch.setenv("GEOTECH_FOUNDRY_HOST", "stack.example.com")
+    limit = engine_config.MODEL_REQUEST_TIMEOUT_S
+    gpt = engine_config._resolve_foundry("ri.language-model-service..gpt-x")
+    assert gpt.model.root_client.timeout == limit
+    claude = engine_config._resolve_foundry(
+        "ri.language-model-service..anthropic-x")
+    assert claude.model._client.timeout == limit
+
+
 def test_register_installs_builder_and_publishes_model(monkeypatch):
     pytest.importorskip("langchain_openai")
     assert te.register() is False

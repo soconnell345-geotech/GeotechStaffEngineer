@@ -287,8 +287,8 @@ _REFERENCES_DESCRIPTION = (
 )
 
 _REVIEWER_DESCRIPTION = (
-    "A senior geotechnical reviewer. Delegate to it AFTER you have produced a "
-    "draft answer that involved calculations, to check the methodology, "
+    "A senior geotechnical reviewer. Delegate to it only AFTER you have "
+    "produced a draft answer that involved calculations, to check the methodology, "
     "parameter ranges, required factors of safety, and any missing code "
     "provisions against the published references (DM7, GECs, UFCs, FEMA). It "
     "returns a structured PASS / FLAG / REVISE review with citations; it does "

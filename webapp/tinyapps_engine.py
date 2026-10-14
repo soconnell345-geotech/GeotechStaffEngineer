@@ -127,6 +127,11 @@ NOT_CONFIGURED_MESSAGE = (
 
 #: CfA's module allows 180 s per request; the proxy in front of the app times
 #: HTTP out near 120 s, but the app's turns run detached from the request.
+#: Given to the ChatOpenAI itself, not only to its httpx client: the OpenAI
+#: client passes its own timeout on every request, and langchain-openai's
+#: default is None (no limit), which overrode this one until 2026-10-14 (a
+#: request the gateway never answered held a helper for over 3.5 hours; the
+#: field session's 989 answered calls on this route took 106 s at most).
 REQUEST_TIMEOUT_S = 180.0
 _CHAT_SUFFIX = "/chat/completions"
 
@@ -584,6 +589,7 @@ def build_chat_model(model_id: Optional[str] = None, *,
         base_url=ps.base_url,
         default_headers={"api-key": ps.api_key},
         http_client=client,
+        timeout=REQUEST_TIMEOUT_S,
         max_completion_tokens=_default_max_tokens(),
         max_retries=max_retries(),
         disable_streaming=_streaming_disabled(),

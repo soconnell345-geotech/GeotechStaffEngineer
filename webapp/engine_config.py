@@ -54,6 +54,16 @@ MAX_TOKENS_ENV = "GEOTECH_WEBAPP_MAX_TOKENS"
 #: (``funhouse_agent.deep.tool_guards.OutputLimitGuard``).
 DEFAULT_MAX_TOKENS = 32000
 
+#: Seconds one model request may wait on the provider (to connect, to send,
+#: or between two streamed chunks) before it fails as a timeout, which the
+#: retries then treat as busy. langchain-openai and langchain-anthropic hand
+#: their SDK client ``timeout=None`` unless given one, and None means NO
+#: limit; it also overrides an httpx client's own timeout. In a field session
+#: (2026-10-14, app 5.33.0) one request the gateway never answered held a
+#: helper for over 3.5 hours. 600 s is the OpenAI and Anthropic SDKs' own
+#: default. The Prompter key route sets its own (``tinyapps_engine``).
+MODEL_REQUEST_TIMEOUT_S = 600.0
+
 #: Deployment-supplied model builder (the Prompter hook). Set via
 #: register_model_builder; None means "not injected".
 _MODEL_BUILDER: Optional[Callable[[], object]] = None
@@ -204,6 +214,7 @@ def _resolve_foundry(model_id: str) -> "EngineResolution":
                 anthropic_api_url=f"{base}/api/v2/llm/proxy/anthropic",
                 anthropic_api_key=token,
                 default_headers={"Authorization": f"Bearer {token}"},
+                timeout=MODEL_REQUEST_TIMEOUT_S,
             )
         except Exception as exc:
             return EngineResolution(
@@ -243,6 +254,7 @@ def _resolve_foundry(model_id: str) -> "EngineResolution":
             base_url=f"{base}/api/v2/llm/proxy/openai/v1",
             disable_streaming=_disable_stream,
             max_completion_tokens=_default_max_tokens(),
+            timeout=MODEL_REQUEST_TIMEOUT_S,
         )
     except Exception as exc:
         return EngineResolution(
@@ -450,7 +462,8 @@ def resolve_engine(model_id: Optional[str] = None,
                 "pip install 'geotech-staff-engineer[deep,webapp]'.")
         try:
             model = ChatAnthropic(model=model_id,
-                                  max_tokens=_default_max_tokens())
+                                  max_tokens=_default_max_tokens(),
+                                  timeout=MODEL_REQUEST_TIMEOUT_S)
         except Exception as exc:
             return EngineResolution(
                 None, "error", model_id,
