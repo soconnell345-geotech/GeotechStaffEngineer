@@ -47,24 +47,22 @@ After any change to this file, rebuild and republish the Backlog Desk (`module_w
 
 CfA says the SharePoint connection and the per-user Prompter keys are a few weeks out (owner, 2026-10-14). Until they arrive, Now is core work on the app itself. The Tiny Apps production items (OWN-29, OWN-30, OWN-43–OWN-51, TA-03) wait in Next and come back when CfA delivers.
 
-- **Engineering answers that err on the unsafe side** (geotech page; each gets a warning in the result first, then the fix): GM-14 (sand slopes: the circle search misses the planar failure, 1.55 vs 0.94), GM-13 (small toe circles, +20 %), GM-05 (coarse-mesh SRM), GM-06 (undrained locking), GM-20 (free-earth returns a depth with no root), GM-08 (staged analysis ignores `n_steps`), GM-01 (with the downdrag defaults). Then GM-42 (catalog headroom, needed before any new method) and GM-30 (Terzaghi factors).
+- **Engineering answers that err on the unsafe side** (geotech page; each gets a warning in the result first, then the fix): GM-14 (sand slopes: the circle search misses the planar failure, 1.55 vs 0.94), GM-13 (small toe circles, +20 %), GM-05 (coarse-mesh SRM), GM-06 (undrained locking), GM-20 (free-earth returns a depth with no root), GM-08 (staged analysis ignores `n_steps`), GM-48 with GM-01 (downdrag as the owner asked). Then GM-42 (catalog headroom, needed before any new method) and GM-30 (Terzaghi factors).
 - **Document Review accuracy** (testers' page; general fixes, no single-example rules): PL-07 (distinct sheets flagged as duplicates), VIS-01 (turned lettering read upright), VIS-04 (a zoom that cuts text lines), VIS-05 (boxes on sideways sheets), DR-15–DR-17 (markups), DR-04 (geotech tools still on the page), VIS-09 (zoom for pasted screenshots and image uploads).
-- **Release readiness:** INF-11 (post and project names out of the shipped code; the PyPI audit is OWN-57), INF-10 (module suites on a fresh resolve, since the next release admits pandas 3), EV-13 with DR-05 (one Foundry suite run that measures this train, tonight's default-page changes and the lean build).
-- **Owner:** OWN-55 (when to release), OWN-57 (what to do about the published PyPI files, incl. the old `geotech-report-extraction` project; INF-11 follows it), OWN-01 and OWN-02 (the downdrag and fem2d defaults, before that release), OWN-10 (are calculation tables the next module train?), OWN-31 (the checklist session). Report ingest stays parked, so its questions (OWN-07, OWN-08, OWN-09, OWN-11, OWN-25) wait in Next and Later.
+- **Release readiness:** INF-11 (post and project names out of the shipped code; the PyPI audit is OWN-57), INF-10 (module suites on a fresh resolve, since the next release admits pandas 3; no release is planned (OWN-55), but these keep master releasable), EV-13 with DR-05 (one Foundry suite run that measures this train, tonight's default-page changes and the lean build).
+- **Calculation tables** (OWN-10, 2026-10-14: yes, the next module train): GM-39, after the tracks above.
+- **Owner:** OWN-31 (the checklist session, perhaps next week). Answered 2026-10-14 and folded: OWN-01 (became GM-48), OWN-02, OWN-10, OWN-55 (hold the release; the Prompter key works on Funhouse this month), OWN-57. Report ingest stays parked, so its questions (OWN-07, OWN-08, OWN-09, OWN-11, OWN-25) wait in Next and Later.
 - **Rollout model (owner, 2026-10-12):** testers get ONE deployment, GPT-5.6 Sol or higher, for every call; not the pilot's `tinyapp-gpt-medium` (GPT-5.1, 768 px). The app measures whatever answers on first use (`funhouse_agent/vision_probe.py`), and planlens maps `gpt-5.6` to `openai-high` / `openai-original`. Sol has run the suite at full resolution on Foundry (5.32.0rc3; B5 39/42).
 
 ## 1. Owner: decisions and actions
 
 ### Decisions
 
-- **OWN-01** [Now] [owner] **Downdrag defaults**: keep `auto` (UFC 3-220-20, today's numbers) or report the comparison without picking; the materiality thresholds (plane max(0.5 m, 5 % L), drag max(10 kN, 10 %)); `skin_friction_stress="final"` as default; the settlement-compatibility basis that puts the neutral plane at the bearing-layer top. Commit a282d48. *Src:* `downdrag/DESIGN.md`; *was:* H E1, 0, 3e
-- **OWN-02** [Now] [owner] **fem2d staged movements**: is stage 0 always the gravity stage (`reset_displacements_after` default)? Settlements now exclude self-weight; confirm. Commit 4bf710c. *Src:* `fem2d/DESIGN.md:322-335`; *was:* H E1, 0
 - **OWN-05** [Next] [owner] **Pick uses for the promo API credit before it expires 2026-11-05** (~$35 left, $20 reserved for touch-up together): EV-03, waves after EV-04/EV-05, a cross-family overfitting check, Batch API probes. *was:* H 0, 3c
 - **OWN-06** [Next] [owner] **Decide the OFF review switches** (table in §2): measure, flip or retire each. The M1 exit step "flip winning switches to defaults" never ran. *Src:* RA:206-213; *was:* H C10, 8a(vii)
 - **OWN-07** [Next] [owner] **The seven DRAFT narrative conventions** in `report_ingest/narrative_glossary.py`. *was:* H B4
 - **OWN-08** [Next] [owner] **Define `structureCount`; does `figureCount` include appendix figures?** *was:* H B5
 - **OWN-09** [Later] [owner] **Report-ingest `label_policy` / `review_mode`**: unsettled (rules win in sample, the vote by 2 of 60 blind pages, the review lost 1.5 points); needs more blind hand labels or R39 (OWN-39). *was:* H B6
-- **OWN-10** [Now] [owner] **Are the Ensoft-style calculation tables (GM-39) still the next module train?** Named "the next train" 2026-09-11, never started.
 - **OWN-11** [Later] [owner] **Report ingest on the geotech page**: measure on one run, then an opt-in switch; RI-01–RI-03 first. *was:* H 8a(i)
 - **OWN-12** [Later] [owner] **ASCE 7 and Youd et al. (2001) licensing.** Public routes exist: GEC-5 Fig 5-20 (Youd CPT charts), FEMA P-2082 / UFC 3-301-01 (ASCE 7-22 site classes), USGS design maps (OWN-53). *was:* H 8a(ii)
 - **OWN-13** [Later] [owner] **Ito–Matsui stabilizing-pile force as its own method?** (eval SPL-3). *was:* H B8
@@ -101,9 +99,7 @@ CfA says the SharePoint connection and the per-user Prompter keys are a few week
 - **OWN-41** [Later] [owner] **The owner's own reports as worked-example exemplars** (Phase 2, local-only `GEOTECH_EXAMPLES_DIR`). *Src:* FI:127-136
 - **OWN-42** [Later] [owner] **Funhouse admin**: send or drop the drafted 401 admin note; `funhouse-*` aliases price at $0.00 in the pricing table. *Src:* H:2142-2144
 
-- **OWN-55** [Now] [owner] **When to cut the next release (5.34.0)?** Testers are a few weeks out (CfA, 2026-10-14), so no date forces it; the Now train in §0 adds to it. Master after 5.33.0 carries the review-page fixes (DR-01-DR-03, DR-14), the 401 message and retry (TA-01), the local `.env` fix (TA-17), python-ags4 as an extra so the app installs beside CfA's pandas 3.0.2 pin (TA-02), and the downdrag/fem2d train (OWN-01, OWN-02 open). Released 5.33.0 cannot install beside that pin. Nothing is released without your word. *Src:* commits ae50842, da28a69, 0562ddf, a229090
 - **OWN-56** [Later] [owner] **Department addresses in the public app repo's git history**: your work address (prompter_metering DIAGNOSIS), CfA support mailboxes, the SharePoint host and site name, the published-app domains. Current files are scrubbed (24b46df); history keeps them. Purge (rewrite + force-push) or accept? Pairs with OWN-26.
-- **OWN-57** [Now] [owner] **What the published PyPI files carry** (audit 2026-10-13 of all 248 files of the account's four projects; scan read every wheel and sdist in memory). No Department email in any of them; the only address is the author Gmail. App 5.10.0-5.33.0 (39 versions) carry the Department SharePoint tenant and team-site address in two `webapp/` docstrings. App 5.12.0 onward carry field-session post and project names in code comments, and `report_ingest` the embassy answer vocabulary (OWN-25). `geotech-report-extraction` (all 12 versions) describes an embassy report format and names a post in its test data. Funhouse, Prompter, SharePoint, CfA, Tiny Apps and Key Vault appear throughout the app as integration code. planlens and geotech-references hold no Department specifics. PyPI files cannot be edited: accept, or delete releases (permanent; breaks installs pinned to them; the Nexus mirror and public mirrors keep their copies). Pairs with OWN-56, INF-11.
 
 ### CfA and Funhouse questions
 
@@ -291,6 +287,7 @@ Parked at 5.25.0; every number since is GPT-5.4 on Foundry. Code items were conf
 - **GM-01** [Now] **~4 % quadrature mismatch** between the crossing search and the reported drag. *was:* H E2
 - **GM-02** [Next] **Endo ratios unverified.** CGPR #56 IS on disk in a downdrag field session's gitignored `raw/` (2026-09-04): verify locally, commit nothing (not public domain). *was:* H E2
 - **GM-03** [Next] **Post-liquefaction drag (GEC-10 §10.7)** not implemented; pair with a liquefaction worked-example anchor (NCHRP downdrag Appendix G CPT example). *was:* H E2
+- **GM-48** [Now] **Downdrag as the owner asked (OWN-01, 2026-10-14)**: present every method's neutral plane and drag force side by side, named as the cited reference names them; drop the coined wording ("materiality thresholds", "settlement-compatibility basis", "judgment block") from results, DESIGN and docs. Skin friction stress: what FHWA GEC-12 says about initial vs final effective stress; if it is silent, final stress as UFC 3-220-20 §6-7.4 step 2. Re-check V-004 and UFC App. B-5.5 after. Pairs with GM-01. *Src:* `downdrag/DESIGN.md`; commit a282d48
 - **GM-04** [Later] **Downdrag limits**: Poulos / PILENEG outside the comparison; single pile, ultimate consolidation only; β shaft far below Nordlund in dense gravel (V-004); β = 0.3 default uncited. *Src:* `downdrag/DESIGN.md:61-64, 317-325`
 
 ### fem2d
@@ -342,7 +339,7 @@ Parked at 5.25.0; every number since is GPT-5.4 on Foundry. Code items were conf
 - **GM-38** [Later] **Common**: Peck-Hanson-Thornburn N→φ unverified; interpreted cross-sections; gstools anisotropy hidden; unit constants (unclear). *Src:* `geotech_common/DESIGN.md:42-52`
 
 ### Calc packages and the geotech page
-- **GM-39** [Next] [owner] **Ensoft-style calculation TABLES**: `calc_package.export_tables`, a `get_tables()` per module, CSV + HTML (per-depth p-y, per-slice, per-layer, iteration histories). The owner's 2026-09-11 "next train", never started (OWN-10). *Src:* FI:292-298
+- **GM-39** [Now] **Ensoft-style calculation TABLES**: `calc_package.export_tables`, a `get_tables()` per module, CSV + HTML (per-depth p-y, per-slice, per-layer, iteration histories). The owner's 2026-09-11 "next train"; confirmed as the next module train 2026-10-14 (OWN-10). *Src:* FI:292-298
 - **GM-40** [Next] **Specialists cannot draw or report**: foundations, earth-retention, slope-fem and seismic scopes exclude `calc_package` and `profile_figure` (`funhouse_agent/dispatch.py:122-178`); no SharePoint or email tools either. *Src:* FI:303-304
 - **GM-41** [Next] **`soe` and `reliability` have no calc package**, so SOE reports are bespoke `html_to_pdf` (behind the 2026-09-15 "numbers gone" failure). *Src:* `calc_package/__init__.py`
 - **GM-42** [Now] **The `list_agents` catalog is at 7,988 of 8,000 chars**: the next brief fails five tests; rebalance first. *Src:* H:1978-1979
@@ -402,7 +399,7 @@ Parked at 5.25.0; every number since is GPT-5.4 on Foundry. Code items were conf
 - **INF-08** [Later] [owner] **Leftovers**: gitignored `build/`; old release worktrees and `.claude/worktrees/agent-*`; branches app `hotfix/5.12.1-structural-extra`, planlens `fix/advice-names-no-missing-tools` (shipped as 0d9787b), refs `origin/feature/reference-query-expansion` (merged). OWN-27.
 - **INF-09** [Later] **Rebuild the private Harness Map** (outside the repos; last built 2026-09-29).
 - **INF-10** [Now] **Run the geotech module suites on a fresh resolve** (numpy 2.5.4, plotly 7.1.0, deepagents 0.7.13, langchain 1.3.18 on 2026-10-12): TA-02 ran only what pandas and Streamlit reach. Recipe: WSL Ubuntu, `~/.local/bin/uv`, Python 3.12, repo on PYTHONPATH, GIT_OPTIONAL_LOCKS=0 (Smart App Control blocks fresh DLLs on Windows). Also `report_ingest/tests/test_cluster_scoring.py::test_a_workspace_out_dir_runs_rather_than_raising` assumes `/Workspace` can be created (fails on Linux as a non-root user).
-- **INF-11** [Now] **Take field-session post and project names out of the shipped code before the next release** (OWN-57, OWN-55): comments in `webapp/core.py`, `webapp/output_capture.py`, `webapp/activity_log.py`, `funhouse_agent/deep/agent.py`, `funhouse_agent/deep/scratch_guard.py`, `funhouse_agent/error_text.py`, `funhouse_agent/adapters/calc_package.py`, `funhouse_agent/vision_view.py`, `soe/free_earth.py` (and `soe/DESIGN.md`, not shipped). The "Department's ..." remarks in `funhouse_agent/deep/prompt.py`, `webapp/graph_sharepoint.py` and `webapp/tinyapps_engine.py` too, if OWN-57 says so. Then a guard test over the wheel's packages.
+- **INF-11** [Now] **Take field-session post and project names out of the shipped code before the next release** (OWN-57, OWN-55): comments in `webapp/core.py`, `webapp/output_capture.py`, `webapp/activity_log.py`, `funhouse_agent/deep/agent.py`, `funhouse_agent/deep/scratch_guard.py`, `funhouse_agent/error_text.py`, `funhouse_agent/adapters/calc_package.py`, `funhouse_agent/vision_view.py`, `soe/free_earth.py` (and `soe/DESIGN.md`, not shipped). The "Department's ..." remarks in `funhouse_agent/deep/prompt.py`, `webapp/graph_sharepoint.py` and `webapp/tinyapps_engine.py` too (OWN-57, 2026-10-14). Then a guard test over the wheel's packages.
 
 ## 11. Long-term programs and parked ideas
 
@@ -437,6 +434,11 @@ Long items kept in their own sections: DR-08–DR-13, GM-39, VIS-11, VIS-20, TA-
 
 Older docs still list these as open. Delete this section at the next sweep.
 
+- **OWN-01** (downdrag defaults): the owner, 2026-10-14: "I think presenting all of them is fine ... For stress, see what FHWA GEC 12 says about initial vs final stress and go with that; if it's silent, use final stress like UFC." Also: the card's coined wording made no sense to them. The work is GM-48.
+- **OWN-02** (fem2d staged movements): confirmed, measure from the end of stage 0: "this is standard stuff. Don't measure the gravity stage." Default as built in 4bf710c.
+- **OWN-10** (calculation tables): "Yes, the next module train"; GM-39 is in Now.
+- **OWN-55** (release timing): hold: "We can use the prompter key in Funhouse this month. We can play it by ear if anything warrants a release before then."
+- **OWN-57** (published PyPI files): the owner deleted the `geotech-report-extraction` project from PyPI on 2026-10-14 (confirmed: its JSON API returns 404; the account holds three projects). App releases stay; INF-11 cleans master, including the "Department's ..." remarks.
 - **DR-01** (the default review page's zoom tool named tools the page lacks): ae50842. Unreleased (OWN-55); measured by EV-13.
 - **DR-02** (the default page's helper now carries the reading rules, read-only tools and a 14-call budget): ae50842.
 - **DR-03** (the default page's 40-call budget whose last call answers; `GEOTECH_REVIEW_MAX_MODEL_CALLS=off` restores the old cap): ae50842.

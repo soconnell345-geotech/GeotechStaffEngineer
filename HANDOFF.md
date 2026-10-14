@@ -209,10 +209,11 @@ about 60 of them were on the list that stood here ("Open to-dos (refreshed
 
 **Now (from 2026-10-14): core improvements while CfA sets up Tiny Apps** (details in BACKLOG §0). CfA says the SharePoint connection and the per-user Prompter keys (one per user) are a few weeks out, so the Tiny Apps production items (OWN-29, OWN-30, OWN-43–OWN-51, TA-03) moved to Next until they arrive.
 - **Agent work, in three tracks:**
-  - engineering answers that err on the unsafe side: GM-14, GM-13, GM-05, GM-06, GM-20, GM-08, GM-01, then GM-42 and GM-30;
+  - engineering answers that err on the unsafe side: GM-14, GM-13, GM-05, GM-06, GM-20, GM-08, GM-48 with GM-01 (downdrag as the owner asked), then GM-42 and GM-30;
   - Document Review accuracy: PL-07, VIS-01, VIS-04, VIS-05, DR-15–DR-17, DR-04, VIS-09;
-  - release readiness: INF-11, INF-10, and EV-13 with DR-05 (one Foundry suite run for the whole train).
-- **Owner:** OWN-55 (when to release), OWN-57 (the published PyPI files; INF-11 follows it), OWN-01 / OWN-02 (the downdrag and fem2d defaults, before that release), OWN-10 (calculation tables as the next module train?), OWN-31 (the checklist session).
+  - release readiness: INF-11, INF-10, and EV-13 with DR-05 (one Foundry suite run for the whole train);
+  - then the calculation tables, GM-39 (the next module train, owner 2026-10-14).
+- **Owner:** OWN-31 (the checklist session, perhaps next week). Answered on the desk 2026-10-14 (BACKLOG "Done"): hold the release and use the Prompter key on Funhouse this month; downdrag shows every method, skin-friction stress per GEC-12; fem2d measures from the end of stage 0; calculation tables are the next module train; the old `geotech-report-extraction` project is deleted from PyPI.
 - **Rollout model (owner, 2026-10-12):** one GPT-5.6 Sol-or-higher deployment for every call, not gpt-5.1; the app measures it on first use. So the gpt-5.1 rehearsal wave is dropped, and the standards PDFs stay with a provenance note (BACKLOG "Done").
 - **Done on master 2026-10-12 (unreleased):** the default review page's zoom wording, reading helper and answering budget; the markup check against the printed thing; a plain message and one retry on a refused key; `.env` working on dosdev; the suites run on CfA's pins (WSL), which found the python-ags4 install conflict; the install guide and `TINYAPPS.md` current; Department addresses scrubbed from tracked files (history: OWN-56). Commits ae50842, da28a69, 0562ddf, a229090, 24b46df. On dosdev, 5.33.0 installs with pandas left unpinned (pip takes 2.x) until the next release.
 
