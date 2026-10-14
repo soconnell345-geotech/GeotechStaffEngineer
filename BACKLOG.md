@@ -317,6 +317,7 @@ Parked at 5.25.0; every number since is GPT-5.4 on Foundry. Code items were conf
 
 ### SOE and sheet pile
 - **GM-65** [Later] **SOE free earth support searches only to 6H**: a balance deeper than that is reported as "none within 6H" (the result says so); no option to search deeper.
+- **GM-69** [Now] **Anchored sheet pile: the maximum moment is overstated by T·a**: `sheet_pile/anchored.py`'s moment loop starts the shear at -T at the top of the wall instead of applying the anchor reaction at its depth, so below the anchor M(z) = M_true(z) - T·a. Uniform sand φ 30°, H 6 m, anchor at 1.5 m: 252.3 kN·m/m against 139.6 by hand (+81 %; conservative, grows with anchor depth). No test checks it against a reference. Being fixed in the tables train with a published worked example. *Src:* calc-tables agent, 2026-10-14
 - **GM-21** [Next] **Caquot-Kerisel Kp0 and R(δ/φ) verified only at φ = 30°**; they drive every passive result; cross-read the DM7.2 Kp chart in the catalog. *Src:* `soe/DESIGN.md:190-200`
 - **GM-22** [Later] **Ground-anchor design has no benchmark** (GEC-4 Table 4 nominal; a GEC-4-vs-PTI exhibit planned). *Src:* `soe/DESIGN.md:202-212`
 - **GM-23** [Later] **SOE "Future Work"**: ACI 318 secant / diaphragm walls; wale and strut connections; beam-spring SSI; lagging; rakers and corners; seismic apparent pressure. *Src:* `soe/DESIGN.md:214-222`
