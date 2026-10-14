@@ -65,7 +65,7 @@ METHOD_INFO = {
             "dt": {"type": "float", "required": False, "description": "Time step of accel_history (s); required with it.", "default": None},
             "target_pga_g": {"type": "float", "required": False, "description": "Scale the input motion linearly so its PGA equals this value (g) before the analysis (the built-in motions have fixed PGAs: synthetic_pulse 0.30 g, synthetic_long 0.15 g). Frequency content and duration are kept.", "default": None},
             "strain_ratio": {"type": "float", "required": False, "description": "Effective-to-max shear strain ratio (0.5-1.0).", "default": 0.65},
-            "tolerance": {"type": "float", "required": False, "description": "Convergence tolerance.", "default": 0.01},
+            "tolerance": {"type": "float", "required": False, "description": "Convergence tolerance as a fraction: stop when no layer's shear modulus or damping changes by more than this between iterations (0.01 = 1 %).", "default": 0.01},
             "max_iterations": {"type": "int", "required": False, "description": "Maximum EQL iterations.", "default": 15},
             "max_freq_hz": {"type": "float", "required": False, "description": "Max frequency for auto-discretization (Hz).", "default": 25.0},
             "wave_frac": {"type": "float", "required": False, "description": "Wavelength fraction for auto-discretization.", "default": 0.2},

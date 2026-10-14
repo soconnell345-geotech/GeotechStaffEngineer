@@ -609,6 +609,22 @@ class TestEQLSiteResponseIntegration:
         )
         assert result.converged is True
 
+    def test_tolerance_is_a_fraction_and_converges_early(self):
+        """GM-78: pystrata's error is in percent; the fraction 0.01 used to
+        go through as 0.01 %, so every run used all its iterations and was
+        reported not converged. 1 % now stops well before the limit."""
+        from pystrata_agent import analyze_eql_site_response
+        r = analyze_eql_site_response(layers=_simple_profile(),
+                                      motion="synthetic_pulse",
+                                      tolerance=0.01, max_iterations=15)
+        assert r.converged is True
+        assert r.n_iterations < 15
+        tight = analyze_eql_site_response(layers=_simple_profile(),
+                                          motion="synthetic_pulse",
+                                          tolerance=1e-9, max_iterations=4)
+        assert tight.converged is False
+        assert tight.n_iterations == 4
+
 
 @requires_pystrata
 def test_target_pga_scales_the_input_motion():

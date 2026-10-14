@@ -31,6 +31,31 @@ _SOIL_MODELS = ("darendeli", "menq", "linear", "custom")
 # Input validation
 # ===========================================================================
 
+def _max_abs_error_percent(profile):
+    """The largest change, in percent, of any soil layer's shear modulus or
+    damping over the last iteration. pystrata's own ``max_error`` keeps the
+    sign of the change, so a layer that stiffened could read as converged;
+    this takes its size. Falls back to ``max_error`` if the layer
+    properties cannot be read."""
+    errs = []
+    for layer in list(profile)[:-1]:
+        for prop in (getattr(layer, "_shear_mod", None),
+                     getattr(layer, "_damping", None)):
+            prev = getattr(prop, "previous", None)
+            val = getattr(prop, "value", None)
+            if prev is None or val is None:
+                continue
+            with np.errstate(divide="ignore", invalid="ignore"):
+                e = 100.0 * np.max(np.abs(
+                    (np.asarray(prev, float) - np.asarray(val, float))
+                    / np.asarray(val, float)))
+            if np.isfinite(e):
+                errs.append(float(e))
+    if errs:
+        return max(errs)
+    return float(max(profile.max_error))
+
+
 def _validate_eql_inputs(layers, strain_ratio=0.65, tolerance=0.01,
                          max_iterations=15, max_freq_hz=25.0,
                          wave_frac=0.2):
@@ -302,7 +327,10 @@ def analyze_eql_site_response(
     strain_ratio : float
         Ratio of effective to maximum shear strain. Default 0.65.
     tolerance : float
-        Convergence tolerance for strain-compatible iteration. Default 0.01.
+        Convergence tolerance for strain-compatible iteration, as a
+        FRACTION: the iteration stops once no layer's shear modulus or
+        damping changes by more than ``tolerance`` (0.01 = 1 %) between
+        iterations. Default 0.01. (pystrata itself works in percent.)
     max_iterations : int
         Maximum number of EQL iterations. Default 15.
     max_freq_hz : float
@@ -434,7 +462,10 @@ def _run_eql_analysis(pystrata, layers, accel_g, dt_motion, motion_name,
     else:
         calc = pystrata.propagation.EquivalentLinearCalculator(
             strain_ratio=strain_ratio,
-            tolerance=tolerance,
+            # pystrata's relative error is in PERCENT; passing the fraction
+            # straight through (0.01) asked for a 0.01 % change, so every
+            # run went to max_iterations (BACKLOG GM-78).
+            tolerance=tolerance * 100.0,
             max_iterations=max_iterations,
         )
 
@@ -532,8 +563,8 @@ def _run_eql_analysis(pystrata, layers, accel_g, dt_motion, motion_name,
     else:
         # pystrata does not expose iteration count; check convergence via
         # max_error on the profile (set by the EQL iteration loop)
-        max_error = float(max(calc.profile.max_error))
-        converged = bool(max_error < calc.tolerance)
+        max_error = _max_abs_error_percent(calc.profile)
+        converged = bool(max_error < tolerance * 100.0)
         # The counted wave solves (one per EQL iteration); None when the
         # count could not be taken (pystrata internals changed), never a
         # made-up number.
