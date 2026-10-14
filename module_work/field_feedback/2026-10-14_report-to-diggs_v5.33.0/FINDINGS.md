@@ -65,6 +65,8 @@ Dispositions (BACKLOG; all fixes on master, unreleased):
     request the gateway never answered (its activity log: `model_start`
     at 9.6 min, nothing after): no model request had a time limit, since
     langchain-openai's default of None overrode the httpx 180 s.
+    Confirmed on the cluster: the app's one stuck thread sat reading the
+    open connection to the Prompter; nothing else in the app was busy.
   - TA-25, the reviewer had no model-call budget and was asked to check
     data it cannot open; its description now says so.
 - PLANNED, Next: RI-28, RI-30, PL-24, PL-25, VIS-24, VIS-25, EV-15, TA-24.
