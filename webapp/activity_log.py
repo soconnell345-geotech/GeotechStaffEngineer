@@ -101,6 +101,12 @@ DEFAULT_MAX_CHARS = 32_000
 #: Name of the deepagents delegation tool whose nesting defines sub-agents.
 TASK_TOOL = "task"
 
+#: App events written as they come (``funhouse_agent.deep.keep_work``):
+#: ``helper_kept`` (a stopped helper's work went to a file: ``path``,
+#: ``why``), ``helper_queued`` (a helper waited ``queued_s`` for a place
+#: under the cap of helpers at once).
+APP_EVENTS = frozenset({"helper_kept", "helper_queued"})
+
 PRIMARY = "primary"
 
 
@@ -500,6 +506,13 @@ class ActivityLogger(BaseCallbackHandler):
         try:
             if name == "tool_delivered":
                 self._delivered(data, run_id)
+                return
+            if name in APP_EVENTS:
+                rec = {"agent": self._agent_of(run_id), "event": name}
+                if isinstance(data, dict):
+                    rec.update({k: _json_safe(v) for k, v in data.items()
+                                if k not in ("agent", "event")})
+                self._write(rec)
                 return
             if name != "coverage_gate":
                 return

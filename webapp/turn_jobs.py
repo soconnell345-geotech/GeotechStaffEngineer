@@ -114,6 +114,25 @@ def start_turn_job(agent, messages: list, thread_id: str,
     return job
 
 
+def _accepts(fn, name: str) -> bool:
+    """Whether ``fn`` takes a keyword argument ``name`` (or any keyword)."""
+    import inspect
+    try:
+        params = inspect.signature(fn).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(p.name == name or p.kind is p.VAR_KEYWORD for p in params)
+
+
+def _turn_no_of(ctx: dict) -> int:
+    """The 1-based number of the turn being run (its user entries)."""
+    try:
+        return sum(1 for e in (ctx.get("transcript") or [])
+                   if e.get("role") == "user")
+    except Exception:                                  # noqa: BLE001
+        return 0
+
+
 def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
                   recursion_limit, ctx: dict) -> None:
     """The entire turn pipeline, Streamlit-free. Never raises."""
@@ -180,6 +199,21 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
     # The files the conversation already holds, in front of THIS turn's
     # message only (core.working_files_note; field session 2026-10-06).
     extra = ({"turn_note": ctx["turn_note"]} if ctx.get("turn_note") else {})
+    # The turn's own model replies and tool results, as they arrive, with a
+    # checkpoint on disk: a turn that errors, or that the process never
+    # finishes, keeps its work in the history (BACKLOG TA-19; field session
+    # 2026-10-14 lost 51 minutes of helpers' extraction to one refusal).
+    record = None
+    try:
+        if _accepts(core.stream_turn, "record"):
+            from webapp.turn_record import TurnRecord
+            record = TurnRecord(
+                question=messages[-1] if messages else None,
+                checkpoint_path=core.partial_messages_path(thread_id))
+            extra["record"] = record
+    except Exception:                                  # noqa: BLE001
+        record = None
+    kept = None
     try:
         for item in core.with_heartbeat(core.stream_turn(
                 agent, messages, thread_id,
@@ -202,8 +236,17 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
                 final = item.get("answer", "")
                 turn_tokens = item.get("turn_tokens", 0)
     except Exception as exc:                      # noqa: BLE001
+        # What the turn had done: its tool calls and results, in an order a
+        # replay accepts, the largest moved to kept/ (TA-19).
+        if record is not None:
+            try:
+                kept = record.kept(ctx.get("working_dir") or ctx["temp_dir"],
+                                   turn=_turn_no_of(ctx))
+            except Exception:                      # noqa: BLE001
+                kept = None
         try:
-            turn_error = core.friendly_turn_error(exc)
+            turn_error = core.friendly_turn_error(
+                exc, kept=kept.line() if kept is not None else None)
         except Exception:
             turn_error = f"{type(exc).__name__}: {exc}"
         # An AI budget that is used up (live smoke wave 2c, D2): the tester
@@ -297,7 +340,24 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
                 "before any output (raise GEOTECH_WEBAPP_MAX_TOKENS), or the "
                 "proxy rejecting a request parameter.")
 
-        messages.append({"role": "assistant", "content": final})
+        if kept is not None and kept.messages:
+            # The stopped turn's work stays in the history, then a note
+            # saying where it stopped (TA-19).
+            messages.extend(kept.messages)
+            note = kept.history_note(turn_error or "")
+            messages.append({"role": "assistant",
+                             "content": (f"{final}\n\n{note}"
+                                         if final not in (core.NOTHING_KEPT,
+                                                          core.NOTHING_KEPT_NO_RETRY)
+                                         else note)})
+            assistant_entry["kept"] = {"tool_results": kept.n_results,
+                                       "files": [os.path.basename(p)
+                                                 for p in kept.files],
+                                       "helper_files": [
+                                           os.path.basename(p)
+                                           for p in kept.helper_files]}
+        else:
+            messages.append({"role": "assistant", "content": final})
         ctx["transcript"].append(assistant_entry)
         try:
             core.append_transcript(thread_id, assistant_entry)

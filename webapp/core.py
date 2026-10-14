@@ -508,8 +508,9 @@ def mirror_skips_dir(rel_dir: str) -> bool:
 
 
 #: Files that exist only while a turn runs or a write is half done: the
-#: turn's checkpoint in the conversation folder (:func:`begin_partial`) ...
-IN_FLIGHT_FILES = ("partial.json",)
+#: turn's checkpoints in the conversation folder (:func:`begin_partial`, and
+#: the turn's messages so far, ``webapp.turn_record.CHECKPOINT_NAME``) ...
+IN_FLIGHT_FILES = ("partial.json", "partial_messages.json")
 #: ... and the part files a write renames into place when it is complete
 #: (``.part``: SharePoint downloads, the coverage ledger, reference PDFs;
 #: ``.tmp``: the downloads ledger).
@@ -1029,11 +1030,23 @@ def with_heartbeat(gen, interval_s: Optional[float] = None):
             raise payload
 
 
+def _turn_scope():
+    """The scope one turn's agents share (:mod:`funhouse_agent.deep.
+    keep_work`), or a no-op where it cannot be imported."""
+    try:
+        from funhouse_agent.deep.keep_work import turn_scope
+        return turn_scope()
+    except Exception:  # noqa: BLE001 - the turn runs without it
+        import contextlib
+        return contextlib.nullcontext(None)
+
+
 def stream_turn(agent, messages: list, thread_id: str,
                 max_result_chars: int = 2000,
                 recursion_limit: Optional[int] = None,
                 callbacks: Optional[list] = None,
-                turn_note: Optional[str] = None):
+                turn_note: Optional[str] = None,
+                record=None):
     """Stream ONE turn from the compiled deep agent.
 
     ``callbacks`` (optional) are LangChain callback handlers attached to the
@@ -1043,6 +1056,13 @@ def stream_turn(agent, messages: list, thread_id: str,
     ``turn_note`` (optional) is put in front of the turn's user message for
     THIS run only (:func:`with_turn_note`) -- the app's per-turn note of the
     files the conversation already holds (:func:`working_files_note`).
+
+    ``record`` (optional, a :class:`webapp.turn_record.TurnRecord`) is
+    handed every model reply and tool result the run adds, as they arrive,
+    so a turn that errors keeps its work (BACKLOG TA-19). The whole run is
+    one turn scope (:func:`funhouse_agent.deep.keep_work.turn_scope`): its
+    agents share the turn's bound on waiting for a busy model, and its
+    very large results are kept whole there; ``record.scope`` is set to it.
 
     ``messages`` is the full agent-facing history INCLUDING the new user turn
     (the caller appends it and, on completion, appends the assistant answer from
@@ -1141,7 +1161,13 @@ def stream_turn(agent, messages: list, thread_id: str,
                         run_state = state
                     continue
                 if mode == "updates":
-                    added.extend(_new_run_messages(chunk))
+                    new = _new_run_messages(chunk)
+                    added.extend(new)
+                    if record is not None and new:
+                        try:
+                            record.add(new)
+                        except Exception:  # noqa: BLE001 - never the turn
+                            pass
                 if mode == "updates" and coverage_gate_spoke(chunk):
                     # The coverage gate (GEOTECH_COVERAGE) held the reply
                     # streamed so far back from the user and asked for the
@@ -1216,7 +1242,13 @@ def stream_turn(agent, messages: list, thread_id: str,
         # pass's) on the error, for the host to show labelled as cut short
         # instead of the raw stream (turn_jobs, failed_turn_text).
         try:
-            yield from _run_passes(run_config)
+            with _turn_scope() as scope:
+                if record is not None:
+                    try:
+                        record.scope = scope
+                    except Exception:  # noqa: BLE001
+                        pass
+                yield from _run_passes(run_config)
         except BaseException as exc:
             try:
                 done = "".join(answer_parts).strip()
@@ -1802,10 +1834,17 @@ def budget_exhausted(exc: BaseException):
         return None
 
 
-def friendly_turn_error(exc: BaseException) -> str:
+def friendly_turn_error(exc: BaseException, kept: Optional[str] = None) -> str:
     """Turn-failure text for the transcript: the raw error plus, for known
     cases, plain-language advice (owner ask 2026-08: a raw GraphRecursionError
     traceback reads as a crash, when the fix is one sidebar setting).
+
+    ``kept`` is the sentence saying what the stopped turn kept
+    (``webapp.turn_record.KeptWork.line``; BACKLOG TA-19). Without it the
+    text claims only what is always true -- files saved or downloaded are
+    in the conversation -- never "nothing is lost" (field session
+    2026-10-14: that claim sent the user to "continue" into a turn that
+    started from nothing).
 
     No server path ever reaches the user (live smoke wave 2b, C3: a MuPDF
     error showed ``C:\\…\\users\\livesmoke__tester\\…``):
@@ -1851,19 +1890,21 @@ def friendly_turn_error(exc: BaseException) -> str:
                 "before finishing. For document-heavy or multi-part requests, "
                 "raise 'Primary step cap (recursion limit)' under Behavior > "
                 "Advanced caps in the sidebar (e.g. 50-100) and re-ask — "
-                "or split the request across turns; work done so far "
-                "(downloads, saved files) is kept.")
+                "or split the request across turns; "
+                + (kept if kept else "work done so far (downloads, saved "
+                   "files) is kept."))
     kind = _busy_kind(exc)
     if kind is None:
-        return text
+        return text + (f"\n\n{kept}" if kept else "")
     # A busy model (field session 2026-10-06; live smoke wave 2a, B7): said
     # in plain words FIRST, the raw text after it for whoever reports it.
     detail = " ".join(text.split())
     if len(detail) > 300:
         detail = detail[:300] + " …"
-    kept = ("Nothing is lost: files downloaded or saved this turn are still "
-            "in the conversation. Wait a minute, then ask the agent to "
-            "continue.")
+    kept = ((kept + " Wait a minute, then ask the agent to continue.")
+            if kept else
+            ("Files downloaded or saved this turn are still in the "
+             "conversation. Wait a minute, then ask the agent to continue."))
     if kind == "rate limit":
         lead = ("The AI model's rate limit was reached (too many requests "
                 "or tokens in the last minute — several people may be "
@@ -2426,12 +2467,57 @@ def checkpoint_partial(thread_id: str, text: str,
         pass
 
 
+def partial_messages_path(thread_id: str, root: Optional[str] = None) -> str:
+    """The running turn's messages so far (``webapp.turn_record``): what a
+    turn the process never finished is recovered from (BACKLOG TA-19)."""
+    from webapp.turn_record import CHECKPOINT_NAME
+    return _conv_path(thread_id, CHECKPOINT_NAME, root)
+
+
 def clear_partial(thread_id: str, root: Optional[str] = None) -> None:
-    """Remove the partial checkpoint after a turn is durably persisted."""
+    """Remove the partial checkpoints (the streamed text and the turn's
+    messages) after a turn is durably persisted."""
+    for path in (partial_path(thread_id, root),
+                 partial_messages_path(thread_id, root)):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def _fold_partial_messages(thread_id: str, root: Optional[str] = None,
+                           question: str = "") -> int:
+    """Fold an interrupted turn's checkpointed messages into
+    ``messages.json``: the question (when the saved history does not end
+    with it), the turn's tool calls and results in valid order (large ones
+    moved to ``kept/``), and a closing note; how many tool results were
+    kept. Never raises."""
     try:
-        os.remove(partial_path(thread_id, root))
-    except OSError:
-        pass
+        from webapp.turn_record import KeptWork, TurnRecord
+        rec = TurnRecord.from_checkpoint(partial_messages_path(thread_id, root))
+        if rec is None or not len(rec):
+            return 0
+        n_user = sum(1 for e in load_transcript(thread_id, root)
+                     if e.get("role") == "user")
+        kept = rec.kept(working_dir_for(thread_id, root=root), turn=n_user)
+        if not kept.messages:
+            return 0
+        history = load_messages(thread_id, root)
+        q = rec.question or ({"role": "user", "content": question}
+                             if question else None)
+        last_user = next((m for m in reversed(history)
+                          if m.get("role") in ("user", "human")), None)
+        if q is not None and (not history or history[-1].get("role")
+                              not in ("user", "human")
+                              or last_user.get("content") != q.get("content")):
+            history.append(q)
+        history.extend(kept.messages)
+        history.append({"role": "assistant", "content": kept.history_note(
+            "the app restarted or the turn was interrupted")})
+        save_messages(thread_id, history, root)
+        return kept.n_results
+    except Exception:  # noqa: BLE001 - recovery never blocks the open
+        return 0
 
 
 def partial_is_stale(data: Optional[dict], transcript: Iterable[dict]) -> bool:
@@ -2471,6 +2557,7 @@ def recover_partial(thread_id: str, root: Optional[str] = None) -> Optional[dict
     already on disk. Clears the partial file either way."""
     p = partial_path(thread_id, root)
     if not os.path.isfile(p):
+        clear_partial(thread_id, root)        # a stray messages checkpoint
         return None
     try:
         with open(p, encoding="utf-8") as fh:
@@ -2490,20 +2577,47 @@ def recover_partial(thread_id: str, root: Optional[str] = None) -> Optional[dict
                     clear_partial(thread_id, root)
                     return None
                 break
+    # The turn's tool calls and results so far go into the history, so a
+    # "continue" picks up from them (BACKLOG TA-19).
+    kept = _fold_partial_messages(thread_id, root,
+                                  question=str(data.get("prompt") or ""))
     clear_partial(thread_id, root)
     body = text or "_(this turn was interrupted before any output was produced)_"
+    note = ("_(recovered after an interrupted session"
+            + (f"; its {kept} finished tool "
+               f"{'result is' if kept == 1 else 'results are'} kept, so "
+               "asking the agent to continue picks up from "
+               f"{'it' if kept == 1 else 'them'}" if kept else "") + ")_")
     return {"role": "assistant", "recovered": True,
-            "text": body + "\n\n_(recovered after an interrupted session)_"}
+            "text": body + "\n\n" + note}
 
 
 def _msg_to_plain(m) -> dict:
-    """A LangChain BaseMessage (or a dict) -> a plain ``{role, content}`` dict."""
+    """A LangChain BaseMessage (or a dict) -> a plain ``{role, content}``
+    dict. An AI reply keeps its ``tool_calls`` and a tool result its
+    ``tool_call_id`` (and name, and an error status): a turn that stopped
+    on an error keeps its tool calls and results in the history (BACKLOG
+    TA-19), and a replay needs every call matched to its result."""
     if isinstance(m, dict):
         return m
     role = {"human": "user", "ai": "assistant", "system": "system",
             "tool": "tool", "function": "tool"}.get(
                 getattr(m, "type", ""), "assistant")
-    return {"role": role, "content": getattr(m, "content", "")}
+    out = {"role": role, "content": getattr(m, "content", "")}
+    if role == "assistant":
+        calls = [{"name": c.get("name"), "args": c.get("args") or {},
+                  "id": c.get("id"), "type": "tool_call"}
+                 for c in (getattr(m, "tool_calls", None) or [])
+                 if isinstance(c, dict) and c.get("id") and c.get("name")]
+        if calls:
+            out["tool_calls"] = calls
+    elif role == "tool":
+        out["tool_call_id"] = getattr(m, "tool_call_id", "") or ""
+        if getattr(m, "name", None):
+            out["name"] = m.name
+        if getattr(m, "status", None) == "error":
+            out["status"] = "error"
+    return out
 
 
 def serialize_messages(messages: list) -> list:
@@ -2998,8 +3112,9 @@ def working_files_note(files_dir: str, transcript: Iterable[dict] = (),
     skipped = max(0, len(rows) - int(limit))
     rows = rows[-int(limit):] if skipped else rows
     head = ("[System note] Files already in this conversation's working "
-            "folder, from earlier turns. You see earlier turns only through "
-            "the answers you gave, not through their tool results, so this "
+            "folder, from earlier turns. You see earlier turns through the "
+            "answers you gave, not through their tool results (only a turn "
+            "that stopped on an error keeps its tool results), so this "
             "list is the record of what you already have. Use these files "
             "by these names -- every file tool looks a name up in the "
             "working folder -- and do not fetch them again; do not tell "

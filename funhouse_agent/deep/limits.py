@@ -140,10 +140,16 @@ class ModelCallBudgetMiddleware(ModelCallLimitMiddleware):
     # -- forced final turn ---------------------------------------------------
 
     def _is_final_budgeted_call(self, request) -> bool:
-        """True when the call about to be made is the LAST one in budget."""
+        """True when the call about to be made is the LAST one in budget.
+        A ``task`` helper's record notes it: a helper whose answer was
+        forced by its budget has its reading kept in a file
+        (:mod:`funhouse_agent.deep.keep_work`, BACKLOG TA-21)."""
         state = request.state or {}
         run_count = state.get("run_model_call_count", 0)
-        return self.run_limit is not None and run_count >= self.run_limit - 1
+        final = self.run_limit is not None and run_count >= self.run_limit - 1
+        if final:
+            _note_budget_reached()
+        return final
 
     def _force_final_answer(self, request):
         """Strip tools + append the summarize-now instruction."""
@@ -181,9 +187,19 @@ class ModelCallBudgetMiddleware(ModelCallLimitMiddleware):
         """
         result = super().before_model(state, runtime)
         if isinstance(result, dict) and result.get("jump_to") == "end":
+            _note_budget_reached()
             result = dict(result)
             result["messages"] = [AIMessage(content=self.exhausted_message)]
         return result
+
+
+def _note_budget_reached() -> None:
+    """Tell the running ``task`` helper's record that its budget ended it."""
+    try:
+        from funhouse_agent.deep.keep_work import note_budget_reached
+        note_budget_reached()
+    except Exception:  # noqa: BLE001 - a note never fails a call
+        pass
 
 
 __all__ = [

@@ -57,6 +57,7 @@ from funhouse_agent.deep.limits import (
 from funhouse_agent.deep.scratch_guard import ScratchFilesystemGuard
 from funhouse_agent.deep.unknown_tool import UnknownToolHint
 from funhouse_agent.deep.delivered_log import DeliveredToolResults
+from funhouse_agent.deep.keep_work import HelperRecorder, KeepWork
 from funhouse_agent.deep.tool_guards import (HideScratchFilesystem,
                                              OutputLimitGuard, ToolErrorGuard,
                                              auth_retry)
@@ -92,6 +93,16 @@ _REFERENCES_CONCISION = (
     "with the exact citation (reference + section/table/figure). Do NOT paste "
     "long chapter-text passages or restate full sections — a few sentences "
     "plus the citation is ideal."
+)
+
+#: Added to deepagents' stock general-purpose helper prompt (field session
+#: 2026-10-14, BACKLOG TA-21: two helpers that held extracted data returned
+#: apologies of 366 and 268 characters).
+HELPER_PARTIAL_RULE = (
+    "\n\nIf you cannot finish -- an error, a tool that refuses your data, "
+    "more to read than you can -- your final message still gives everything "
+    "you did gather: the data itself, in full, then what is missing and why. "
+    "Never answer with only an apology."
 )
 
 #: The consult's model-call budget, stated to it (live smoke wave 1, G5).
@@ -1310,6 +1321,10 @@ def build_deep_agent(
         # at the output limit is caught before anything acts on it (C5).
         extra_mw = [DeliveredToolResults(), ToolErrorGuard(),
                     ScratchFilesystemGuard()]
+        if "runnable" not in spec:
+            # What the helper reads and writes, recorded as it happens, so
+            # a helper that stops can hand it back as a file (TA-21).
+            extra_mw.insert(0, HelperRecorder())
         retry = auth_retry() if "runnable" not in spec else None
         if retry is not None:
             extra_mw.insert(0, retry)
@@ -1322,9 +1337,13 @@ def build_deep_agent(
     if (_GENERAL_PURPOSE_SPEC is not None
             and not any(s.get("name") == "general-purpose" for s in subagents)):
         subagents.append({**_GENERAL_PURPOSE_SPEC,
+                          "system_prompt": (
+                              _GENERAL_PURPOSE_SPEC.get("system_prompt", "")
+                              + HELPER_PARTIAL_RULE),
                           "middleware": [m for m in (auth_retry(),)
                                          if m is not None]
-                          + [DeliveredToolResults(),
+                          + [HelperRecorder(),
+                             DeliveredToolResults(),
                              ToolErrorGuard(),
                              ScratchFilesystemGuard()]
                           + ([UnknownToolHint(allowed_agents)]
@@ -1371,6 +1390,11 @@ def build_deep_agent(
     # A tool that raises is a tool error the model reads, not the end of the
     # turn (live smoke wave 2b, C3).
     middleware.append(ToolErrorGuard())
+    # Just inside it: a `task` helper that stops hands back what it read as
+    # a file, at most GEOTECH_MAX_HELPERS helpers run at once, and very
+    # large results are kept whole for a turn that errors (TA-19, TA-21,
+    # TA-22; field session 2026-10-14).
+    middleware.append(KeepWork())
     middleware.append(ScratchFilesystemGuard())
     if allowed_agents:
         middleware.append(UnknownToolHint(allowed_agents))
