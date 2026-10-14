@@ -289,6 +289,8 @@ class TestSlopeReportPackage:
         assert res["output_path"].endswith(".html")
         assert os.path.isfile(res["output_path"])
         os.remove(res["output_path"])
+        for t in res.get("tables", []):
+            os.remove(t["output_path"])
 
     def test_pdf_output_fitz_verified(self, tmp_path):
         pytest.importorskip("fitz")
@@ -687,9 +689,11 @@ class TestEdgeCases:
         assert os.path.basename(result["output_path"]).startswith("bearing_capacity_calc_")
         assert result["file_exists"] is True
         assert result["file_size_bytes"] > 0
-        # Clean up auto-generated file
-        if os.path.exists(result["output_path"]):
-            os.remove(result["output_path"])
+        # Clean up auto-generated file and its table CSVs
+        for path in [result["output_path"]] + [
+                t["output_path"] for t in result.get("tables", [])]:
+            if os.path.exists(path):
+                os.remove(path)
 
     def test_with_project_metadata(self, tmp_path):
         from funhouse_agent.adapters.calc_package import _generate_bearing_capacity_package
@@ -913,3 +917,124 @@ class TestRenderFigures:
         from calc_package import _IMPORT_MAP, list_supported_modules
         assert list_supported_modules() == list(_IMPORT_MAP)
         assert "pavement_design" in list_supported_modules()
+
+
+# ---------------------------------------------------------------------------
+# Calculation tables (GM-39): one CSV per table beside the package, each
+# write verified, the paths returned, the same tables printed in the package
+# ---------------------------------------------------------------------------
+
+class TestCalcTables:
+    LATERAL = {
+        "pile_length": 20.0, "pile_diameter": 0.6, "pile_E": 200e6,
+        "pile_thickness": 0.0127, "Vt": 150.0,
+        "soil_layers": [
+            {"top": 0, "bottom": 5, "py_model": "SoftClayMatlock", "c": 25,
+             "gamma": 8, "eps50": 0.02},
+            {"top": 5, "bottom": 20, "py_model": "SandAPI", "phi": 35,
+             "gamma": 10, "k": 22000}],
+    }
+
+    def test_package_returns_verified_csv_paths(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import (
+            _generate_lateral_pile_package)
+        res = _generate_lateral_pile_package(
+            {**self.LATERAL, "output_path": str(tmp_path / "lp.html")})
+        assert res["status"] == "success", res.get("error")
+        assert "tables_error" not in res
+        titles = [t["title"] for t in res["tables"]]
+        assert titles[:3] == ["Input parameters",
+                              "Pile response at each node",
+                              "p-y curves at the middle of each layer"]
+        for t in res["tables"]:
+            assert t["file_exists"] is True
+            assert t["output_path"].endswith(".csv")
+            assert os.path.dirname(t["output_path"]) == str(tmp_path)
+        assert res["tables"][1]["rows"] == 101
+        assert "CSV" in res["tables_note"]
+        with open(res["output_path"], encoding="utf-8") as fh:
+            html = fh.read()
+        assert "Calculation Tables" in html and "lp_t1_pile_response.csv" in html
+
+    def test_csv_values_are_the_analysis_tools_values(self, tmp_path):
+        import csv
+        from funhouse_agent.adapters.calc_package import (
+            _generate_lateral_pile_package)
+        res = _generate_lateral_pile_package(
+            {**self.LATERAL, "output_path": str(tmp_path / "lp.html")})
+        path = res["tables"][1]["output_path"]
+        with open(path, encoding="utf-8-sig", newline="") as fh:
+            rows = list(csv.reader(fh))
+        y_head_mm = float(rows[1][1]) * 1000
+        assert round(y_head_mm, 2) == res["y_top_mm"]
+        m = max(abs(float(r[3])) for r in rows[1:])
+        assert round(m, 1) == res["max_moment_kNm"]
+
+    def test_table_paths_are_captured_as_outputs(self, tmp_path):
+        """The app copies a tool's reported outputs into the conversation;
+        each CSV is reported under an ``output_path`` key."""
+        from funhouse_agent.adapters.calc_package import (
+            _generate_lateral_pile_package)
+        from webapp.output_capture import paths_in
+        res = _generate_lateral_pile_package(
+            {**self.LATERAL, "output_path": str(tmp_path / "lp.html")})
+        found = paths_in(json.dumps(res))
+        found = found[0] if isinstance(found, tuple) else found
+        for t in res["tables"]:
+            assert t["output_path"] in found
+
+    def test_a_table_that_fails_costs_the_tables_not_the_package(
+            self, tmp_path, monkeypatch):
+        import calc_package
+        from funhouse_agent.adapters.calc_package import (
+            _generate_bearing_capacity_package)
+
+        def boom(*a, **k):
+            raise RuntimeError("bad table")
+        monkeypatch.setattr(calc_package, "package_tables", boom)
+        res = _generate_bearing_capacity_package({
+            "width": 2.0, "unit_weight": 18.0, "friction_angle": 30.0,
+            "output_path": str(tmp_path / "bc.html")})
+        assert res["status"] == "success"
+        assert "bad table" in res["tables_error"]
+        assert "tables" not in res
+        assert [p.name for p in tmp_path.iterdir()] == ["bc.html"]
+
+    def test_render_figures_writes_no_tables(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import _render_figures
+        res = _render_figures({"package": "lateral_pile_package",
+                               **self.LATERAL, "output_dir": str(tmp_path)})
+        assert res["status"] == "success"
+        assert "tables" not in res
+        assert not [p for p in os.listdir(tmp_path) if p.endswith(".csv")]
+
+    def test_pile_group_6dof_package_runs_with_stiffness(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import (
+            _generate_pile_group_package)
+        res = _generate_pile_group_package({
+            "layout": "rectangular", "n_rows": 2, "n_cols": 3,
+            "spacing_x": 1.5, "spacing_y": 1.5, "axial_stiffness": 2e5,
+            "lateral_stiffness": 2e4, "Vz": 3000.0, "My": 600.0,
+            "Vx": 200.0, "method_6dof": True,
+            "output_path": str(tmp_path / "pg.html")})
+        assert res["status"] == "success", res.get("error")
+        titles = [t["title"] for t in res["tables"]]
+        assert "Pile-head displacements" in titles
+
+    def test_pile_group_6dof_without_stiffness_says_what_is_missing(
+            self, tmp_path):
+        from funhouse_agent.adapters.calc_package import (
+            _generate_pile_group_package)
+        with pytest.raises(ValueError, match="axial_stiffness"):
+            _generate_pile_group_package({
+                "layout": "rectangular", "n_rows": 2, "n_cols": 2,
+                "spacing_x": 1.5, "spacing_y": 1.5, "Vz": 1000.0,
+                "method_6dof": True,
+                "output_path": str(tmp_path / "pg.html")})
+
+    def test_catalog_says_tables_and_stays_under_its_cap(self):
+        from funhouse_agent.dispatch import list_agents
+        cat = list_agents()
+        assert "CSV" in json.dumps(cat["calc_package"]
+                                   if isinstance(cat, dict) else cat)
+        assert len(json.dumps(cat)) < 7500

@@ -113,8 +113,19 @@ def _prepare_item(item):
         ns.notes = escape_latex(getattr(item, "notes", ""))
         # Column spec for longtable
         ncols = len(item.headers)
+        ns.compact = False
         if itype == "input_table":
             ns.col_spec = r"p{0.35\textwidth} >{\raggedright}p{0.15\textwidth} >{\raggedleft}p{0.20\textwidth} p{0.15\textwidth}"
+        elif ncols >= _COMPACT_TABLE_COLS:
+            # A wide table (the calculation tables, the slice forces):
+            # wrapping columns that share the text width, in small type with
+            # 2 pt column padding (the template sets both), instead of
+            # natural-width "c" columns that run off the page.
+            frac = (1.0 - 0.0095 * ncols) / ncols * 0.97
+            ns.col_spec = " ".join(
+                [r">{\centering\arraybackslash}p{%.4f\textwidth}" % frac]
+                * ncols)
+            ns.compact = True
         else:
             ns.col_spec = " ".join(["c"] * ncols)
 
@@ -129,6 +140,10 @@ def _prepare_item(item):
         ns.text = escape_latex(str(item))
 
     return ns
+
+
+#: Column count from which a data table is set compact (see _prepare_item).
+_COMPACT_TABLE_COLS = 7
 
 
 def _prepare_sections(sections):

@@ -237,6 +237,23 @@ def _build_response(module: str, result, analysis, params: dict,
     fmt = params.get("format", "html")
     output_path = params.get("output_path") or _default_output_path(module, fmt)
 
+    # Calculation tables (GM-39): built here so each CSV is written with a
+    # verified save, like the package itself. A table that fails to build
+    # costs the tables, never the package.
+    from calc_package import package_tables
+    from calc_package.tables import csv_file_names
+    table_dir = os.path.dirname(os.path.abspath(output_path))
+    try:
+        calc_tables = package_tables(module, result, analysis)
+        table_error = None
+    except Exception as exc:                               # noqa: BLE001
+        calc_tables = []
+        table_error = (f"the calculation tables could not be built "
+                       f"({type(exc).__name__}: {exc}); the package has none")
+    table_names = csv_file_names(
+        calc_tables, os.path.splitext(os.path.basename(output_path))[0],
+        table_dir)
+
     render_report = {}
     content = generate_calc_package(
         module=module,
@@ -245,8 +262,11 @@ def _build_response(module: str, result, analysis, params: dict,
         output_path=output_path,
         format=fmt,
         render_report=render_report,
+        tables=calc_tables,
+        table_files=table_names,
         **meta,
     )
+    tables_out = _save_tables(calc_tables, table_names, table_dir)
 
     # Verify the write on the REAL filesystem so callers (LLM agents) never
     # need a separate ls/read to trust the save. Agent-side filesystem tools
@@ -289,9 +309,48 @@ def _build_response(module: str, result, analysis, params: dict,
         if rescue:
             response["rescue_path"] = rescue
             response["error"] += rescue_note(rescue)
+    if tables_out:
+        response["tables"] = tables_out
+        response["tables_note"] = _TABLES_NOTE
+        failed = [t["title"] for t in tables_out if not t["file_exists"]]
+        if failed:
+            table_error = ("these table CSVs did not save: "
+                           + "; ".join(failed))
+    if table_error:
+        response["tables_error"] = table_error
     if extra:
         response.update(extra)
     return response
+
+
+#: Said once beside the table list of every package response.
+_TABLES_NOTE = (
+    "Each calculation table is saved as a CSV beside the package (the input "
+    "echo is the *_inputs.csv) and printed in the package's Calculation "
+    "Tables section. They show as downloads under your reply; name them to "
+    "the user.")
+
+
+def _save_tables(tables, names, out_dir) -> list:
+    """Write each table's CSV with a verified save; one entry per table:
+    ``{title, output_path, rows, file_exists[, error, rescue_path]}``."""
+    from calc_package.tables import csv_bytes
+
+    out = []
+    for t, name in zip(tables, names):
+        path = os.path.join(out_dir, name)
+        saved = save_verified(path, csv_bytes(t))
+        entry = {
+            "title": t.title,
+            "output_path": saved.get("saved", os.path.abspath(path)),
+            "rows": t.n_rows,
+            "file_exists": bool(saved.get("file_exists")),
+        }
+        for key in ("error", "rescue_path"):
+            if saved.get(key):
+                entry[key] = saved[key]
+        out.append(entry)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1170,44 +1229,35 @@ def _generate_wave_equation_package(params: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _generate_pile_group_package(params: dict) -> dict:
-    from pile_group import (
-        GroupPile, create_rectangular_layout, GroupLoad,
-        analyze_vertical_group_simple, analyze_group_6dof,
-    )
+    from pile_group import analyze_vertical_group_simple, analyze_group_6dof
+    # The pile_group module's own layout and load readers, so the package
+    # takes the batter, stiffnesses and capacities its methods take (until
+    # 2026-10-14 it dropped the stiffnesses and method_6dof always failed).
+    from funhouse_agent.adapters.pile_group import _build_load, _build_piles
 
     if params.get("layout") == "rectangular":
         require_params(params, ["n_rows", "n_cols", "spacing_x", "spacing_y"],
                        method="pile_group_package (layout='rectangular')")
-        piles = create_rectangular_layout(
-            n_rows=params["n_rows"], n_cols=params["n_cols"],
-            spacing_x=params["spacing_x"], spacing_y=params["spacing_y"],
+    elif not params.get("piles"):
+        raise ValueError(
+            "pile_group_package: provide either layout='rectangular' with "
+            "n_rows/n_cols/spacing_x/spacing_y, or a 'piles' list of "
+            "{x, y} dicts."
         )
-    else:
-        if not params.get("piles"):
-            raise ValueError(
-                "pile_group_package: provide either layout='rectangular' with "
-                "n_rows/n_cols/spacing_x/spacing_y, or a 'piles' list of "
-                "{x, y} dicts."
-            )
-        piles = []
-        for pd in params["piles"]:
-            require_keys(pd, ["x", "y"], method="pile_group_package",
-                         item_label="piles[]")
-            piles.append(GroupPile(
-                x=pd["x"], y=pd["y"],
-                axial_capacity_compression=pd.get("axial_capacity_compression"),
-                axial_capacity_tension=pd.get("axial_capacity_tension"),
-                label=pd.get("label", ""),
-            ))
-
-    load = GroupLoad(
-        Vx=params.get("Vx", 0.0), Vy=params.get("Vy", 0.0),
-        Vz=params.get("Vz", 0.0),
-        Mx=params.get("Mx", 0.0), My=params.get("My", 0.0),
-        Mz=params.get("Mz", 0.0),
-    )
+    piles = _build_piles(params)
+    load = _build_load(params)
 
     if params.get("method_6dof", False):
+        missing = [p.label or f"#{i}" for i, p in enumerate(piles)
+                   if p.axial_stiffness is None]
+        if missing:
+            raise ValueError(
+                "pile_group_package (method_6dof): every pile needs an "
+                f"axial_stiffness (kN/m); missing on {missing[:6]}"
+                f"{' ...' if len(missing) > 6 else ''}. Give "
+                "'axial_stiffness' at the top level with layout='rectangular' "
+                "or on each piles[] entry, and 'lateral_stiffness' too when "
+                "vertical piles carry Vx/Vy.")
         result = analyze_group_6dof(piles=piles, load=load)
     else:
         result = analyze_vertical_group_simple(piles=piles, load=load)
@@ -1731,6 +1781,11 @@ _COMMON_RETURNS = {
                    "error names it.",
     "format": "Output format used.",
     "html_length": "Length of generated content.",
+    "tables": ("[{title, output_path, rows, file_exists}]: one CSV per "
+               "calculation table (per-node, per-layer, per-pile values; "
+               "the input echo is *_inputs.csv), saved beside the package, "
+               "which prints the same tables. Name them to the user."),
+    "tables_error": "Only when a table could not be built or saved.",
 }
 
 METHOD_INFO = {
@@ -1900,7 +1955,7 @@ METHOD_INFO = {
     },
     "lateral_pile_package": {
         "category": "Calculation Package",
-        "brief": "Run lateral pile analysis and generate LPILE-style calc package.",
+        "brief": "Run lateral pile analysis and generate LPILE-style calc package, with tables (CSV + printed) of y, slope, M, V, p and Es at every node and each layer's p-y curve.",
         "parameters": {
             "pile_length": {"type": "float", "required": True, "description": "Pile length (m)."},
             "pile_diameter": {"type": "float", "required": True, "description": "Pile diameter (m)."},
@@ -1978,7 +2033,7 @@ METHOD_INFO = {
     },
     "axial_pile_package": {
         "category": "Calculation Package",
-        "brief": "Run axial pile capacity analysis and generate calc package.",
+        "brief": "Run axial pile capacity analysis and generate APILE-style calc package, with tables (CSV + printed) of side resistance per layer, load transfer at the ultimate load and capacity against pile length.",
         "parameters": {
             "pile_area": {"type": "float", "required": True, "description": "Pile cross-section area (m2)."},
             "pile_perimeter": {"type": "float", "required": True, "description": "Pile perimeter (m)."},
@@ -2137,17 +2192,23 @@ METHOD_INFO = {
     },
     "pile_group_package": {
         "category": "Calculation Package",
-        "brief": "Run pile group analysis and generate calc package.",
+        "brief": "Run rigid-cap pile group analysis (CPGA stiffness method) and generate calc package; with method_6dof, tables (CSV + printed) of the force and displacement at every pile head.",
         "parameters": {
             "layout": {"type": "str", "required": False, "allowed_values": ["rectangular"], "description": "'rectangular' for auto-layout, or provide 'piles' list instead."},
             "n_rows": {"type": "int", "required": False, "description": "Rows — rectangular layout."},
             "n_cols": {"type": "int", "required": False, "description": "Columns — rectangular layout."},
             "spacing_x": {"type": "float", "required": False, "description": "X spacing (m) — rectangular."},
             "spacing_y": {"type": "float", "required": False, "description": "Y spacing (m) — rectangular."},
-            "piles": {"type": "array", "required": False, "description": "List of dicts: x, y, label — custom layout."},
+            "piles": {"type": "array", "required": False, "description": "List of dicts: x, y, label, plus optional batter_x/batter_y (deg), axial_stiffness/lateral_stiffness (kN/m), axial_capacity_compression/tension (kN) — custom layout."},
+            "method_6dof": {"type": "bool", "required": False, "default": False, "description": "True: 6-DOF rigid-cap analysis (batter, lateral load; needs axial_stiffness), with per-pile head forces and displacements. False: simplified vertical distribution."},
+            "axial_stiffness": {"type": "float", "required": False, "description": "Pile axial stiffness (kN/m) for every pile of a rectangular layout (6-DOF)."},
+            "lateral_stiffness": {"type": "float", "required": False, "description": "Pile lateral stiffness (kN/m), rectangular layout (6-DOF with Vx/Vy)."},
+            "Vx": {"type": "float", "required": False, "default": 0.0, "description": "Lateral load x (kN), 6-DOF only."},
+            "Vy": {"type": "float", "required": False, "default": 0.0, "description": "Lateral load y (kN), 6-DOF only."},
             "Vz": {"type": "float", "required": False, "default": 0.0, "description": "Vertical load (kN)."},
             "Mx": {"type": "float", "required": False, "default": 0.0, "description": "Moment about x (kN-m)."},
             "My": {"type": "float", "required": False, "default": 0.0, "description": "Moment about y (kN-m)."},
+            "Mz": {"type": "float", "required": False, "default": 0.0, "description": "Torsion (kN-m), 6-DOF only."},
             **_COMMON_PARAMS,
         },
         "returns": {**_COMMON_RETURNS, "n_piles": "Number of piles.", "group_efficiency": "Group efficiency."},

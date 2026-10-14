@@ -213,7 +213,9 @@ body {
     font-size: 9.5pt;
 }
 
-.data-table caption {
+/* A table's title sits in its own block ABOVE the table: the PDF engine
+   draws a table caption element below the table. */
+.table-title {
     font-weight: bold;
     font-size: 10pt;
     text-align: left;
@@ -242,6 +244,16 @@ body {
     font-style: italic;
     margin-top: -8px;
     margin-bottom: 12px;
+}
+
+/* Tables of seven or more columns (the calculation tables, the slice
+   forces) sit in a .wide-table block: smaller type and padding so they fit
+   the page width. (A plain descendant selector: the PDF engine's CSS parser
+   rejects :has().) */
+.wide-table .data-table th,
+.wide-table .data-table td {
+    padding: 2px 3px;
+    font-size: 7.5pt;
 }
 
 /* ---- Figures ---- */
@@ -413,10 +425,11 @@ CALC_PACKAGE_TEMPLATE = """<!DOCTYPE html>
     </div>
 
     {% elif itype == "table" %}
+    {% if item.title %}
+    <div class="table-title">{{ item.title }}</div>
+    {% endif %}
+    {% if item.headers|length >= 7 %}<div class="wide-table">{% endif %}
     <table class="data-table">
-        {% if item.title %}
-        <caption>{{ item.title }}</caption>
-        {% endif %}
         <thead>
             <tr>
                 {% for h in item.headers %}
@@ -434,6 +447,7 @@ CALC_PACKAGE_TEMPLATE = """<!DOCTYPE html>
             {% endfor %}
         </tbody>
     </table>
+    {% if item.headers|length >= 7 %}</div>{% endif %}
     {% if item.notes %}
     <div class="table-notes">{{ item.notes }}</div>
     {% endif %}

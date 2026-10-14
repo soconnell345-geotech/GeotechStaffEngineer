@@ -5,6 +5,10 @@ Results container for axial pile capacity analysis.
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, List
 
+#: Side-resistance method labels as GEC-12 names them.
+_METHOD_NAMES = {"nordlund": "Nordlund", "tomlinson": "Tomlinson α",
+                 "beta": "β"}
+
 
 @dataclass
 class AxialPileResult:
@@ -114,6 +118,99 @@ class AxialPileResult:
         if self.warnings:
             d["warnings"] = list(self.warnings)
         return d
+
+    def get_tables(self) -> list:
+        """APILE-style tables: side resistance per layer, the load in the
+        pile at the ultimate load (the load-transfer curve), and the
+        capacity summary (CSV only; the calc package prints it in its
+        Capacity section). Values are this result's own, in its units.
+
+        Returns
+        -------
+        list of geotech_common.tables.CalcTable
+        """
+        from geotech_common.tables import CalcTable
+
+        tables = []
+        layers = self.layer_breakdown or []
+        if layers:
+            rows, cum = [], 0.0
+            for lb in layers:
+                cum += lb["skin_friction_kN"]
+                rows.append([
+                    lb["depth_top_m"], lb["depth_bottom_m"], lb["soil_type"],
+                    _METHOD_NAMES.get(lb["method"], lb["method"]),
+                    lb["sigma_v_kPa"], lb.get("unit_side_resistance_kPa"),
+                    lb["skin_friction_kN"], cum,
+                ])
+            note = ("Side resistance of each soil layer along the shaft "
+                    "(GEC-12 static methods: Nordlund for cohesionless, "
+                    "Tomlinson α for cohesive, or β throughout); "
+                    "σ'v at the segment mid-depth; f_s = Q_s / "
+                    "(perimeter × segment length)")
+            inside = self.Q_skin - cum
+            has_inside = abs(inside) > 1e-6 * max(abs(self.Q_skin), 1.0)
+            if has_inside:
+                note += (f"; Q_s = {self.Q_skin:.1f} kN also includes "
+                         f"{inside:.1f} kN of side resistance inside the "
+                         "open pipe (unplugged case governs)")
+            tables.append(CalcTable(
+                title="Side resistance per layer",
+                columns=[("Top", "m", ".2f"), ("Bottom", "m", ".2f"),
+                         "Soil type", "Method",
+                         ("σ'v at mid-depth", "kPa", ".1f"),
+                         ("Unit side resistance f_s", "kPa", ".2f"),
+                         ("Side resistance Q_s", "kN", ".1f"),
+                         ("Cumulative Q_s", "kN", ".1f")],
+                rows=rows, note=note, name="side_resistance",
+            ))
+
+            # Load in the pile with the ultimate load at the head: Q_ult
+            # less the side resistance above each depth (APILE's load
+            # distribution at failure).
+            head = layers[0]["depth_top_m"]
+            load_rows = [[head, 0.0, self.Q_ultimate]]
+            cum = 0.0
+            for lb in layers:
+                cum += lb["skin_friction_kN"]
+                load_rows.append([lb["depth_bottom_m"], cum,
+                                  self.Q_ultimate - cum])
+            load_note = (f"Q(z) = Q_ult - Σ Q_s above z, with Q_ult = "
+                         f"{self.Q_ultimate:.1f} kN at the head; ")
+            load_note += (
+                f"at the toe it is the toe resistance Q_t = "
+                f"{self.Q_tip:.1f} kN plus the {inside:.1f} kN of side "
+                "resistance inside the open pipe" if has_inside else
+                f"at the toe it is the toe resistance Q_t = "
+                f"{self.Q_tip:.1f} kN")
+            tables.append(CalcTable(
+                title="Load transfer at the ultimate load",
+                columns=[("Depth z", "m", ".2f"),
+                         ("Side resistance above z", "kN", ".1f"),
+                         ("Axial load in pile Q", "kN", ".1f")],
+                rows=load_rows, note=load_note, name="load_transfer",
+            ))
+
+        summary = [
+            ["Side resistance", "Q_s", self.Q_skin, "kN"],
+            ["Toe resistance", "Q_t", self.Q_tip, "kN"],
+            ["Ultimate capacity", "Q_ult", self.Q_ultimate, "kN"],
+            ["Factor of safety", "FS", self.factor_of_safety, ""],
+            ["Allowable capacity", "Q_all", self.Q_allowable, "kN"],
+            ["Effective vertical stress at the toe", "σ'v,toe",
+             self.sigma_v_tip, "kPa"],
+        ]
+        if self.Q_uplift is not None:
+            summary.append(["Uplift capacity", "Q_up", self.Q_uplift, "kN"])
+        tables.append(CalcTable(
+            title="Capacity summary",
+            columns=["Quantity", "Symbol", "Value", "Unit"],
+            rows=summary,
+            note=f"Pile {self.pile_name}, embedded length "
+                 f"{self.pile_length:g} m, method '{self.method}'",
+            name="capacity_summary", printed=False,
+        ))
+        return tables
 
     def plot_load_transfer(self, ax=None, show=True, **kwargs):
         """Plot cumulative load transfer vs depth.

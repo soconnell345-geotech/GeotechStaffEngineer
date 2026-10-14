@@ -172,8 +172,16 @@ class AxialPileAnalysis:
                 "soil_type": layer.soil_type,
                 "description": layer.description,
                 "method": method_used,
-                "skin_friction_kN": round(Qs_layer, 1),
-                "sigma_v_kPa": round(sigma_v, 1),
+                # Unrounded, so the layers sum to Q_s exactly (the
+                # calculation tables, GM-39); every display formats them.
+                "skin_friction_kN": Qs_layer,
+                "sigma_v_kPa": sigma_v,
+                # Q_s,i / (perimeter x segment length): the unit side
+                # resistance averaged over the segment (exact for one
+                # segment; across a GWT split it is the average).
+                "unit_side_resistance_kPa": (
+                    Qs_layer / (self.pile.perimeter * (z_bottom - z_top))
+                    if self.pile.perimeter > 0 else 0.0),
             })
 
         # Outside skin friction (before any inside/plug friction is added)

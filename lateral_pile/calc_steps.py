@@ -257,6 +257,66 @@ def get_figures(result, analysis) -> List[FigureData]:
     return figures
 
 
+#: Points per p-y curve in the p-y curve table.
+PY_TABLE_POINTS = 21
+
+
+def get_tables(result, analysis) -> list:
+    """LPILE-style tables: the response at every node (the result's own
+    table), the p-y curve of each layer at its mid-depth, and the soil
+    layers with their p-y models (CSV only; the package prints the layer
+    table in its Soil Profile section).
+
+    The p-y curves are each layer model's own ``get_py_curve`` at the pile
+    diameter the solver used.
+    """
+    from geotech_common.tables import CalcTable
+
+    tables = list(result.get_tables())
+    b = analysis.pile.diameter
+
+    py_rows = []
+    for i, layer in enumerate(analysis.layers, 1):
+        model = layer.py_model
+        z_mid = 0.5 * (layer.top + layer.bottom)
+        try:
+            ys, ps = model.get_py_curve(z_mid, b, n_points=PY_TABLE_POINTS)
+        except Exception:                              # noqa: BLE001
+            continue
+        for y, p in zip(ys, ps):
+            py_rows.append([i, type(model).__name__, z_mid, float(y),
+                            float(p)])
+    if py_rows:
+        tables.append(CalcTable(
+            title="p-y curves at the middle of each layer",
+            columns=["Layer", "p-y model", ("Depth z", "m", ".2f"),
+                     ("Deflection y", "m"), ("Soil resistance p", "kN/m")],
+            rows=py_rows,
+            note=(f"Each layer's p-y curve evaluated at its mid-depth for a "
+                  f"pile diameter b = {b:g} m, {PY_TABLE_POINTS} points per "
+                  "curve, by the same p-y model the solver used"),
+            name="py_curves",
+        ))
+
+    layer_rows = []
+    for i, layer in enumerate(analysis.layers, 1):
+        model = layer.py_model
+        layer_rows.append([i, float(layer.top), float(layer.bottom),
+                           layer.description or type(model).__name__,
+                           type(model).__name__,
+                           _extract_model_params(model)])
+    if layer_rows:
+        tables.append(CalcTable(
+            title="Soil layers and p-y models",
+            columns=["Layer", ("Top", "m"), ("Bottom", "m"), "Description",
+                     "p-y model", "Key parameters"],
+            rows=layer_rows,
+            note="The soil layers as input, depths below the ground surface",
+            name="soil_layers", printed=False,
+        ))
+    return tables
+
+
 def _extract_model_params(model) -> str:
     """Extract key parameters from a p-y model as a summary string."""
     parts = []

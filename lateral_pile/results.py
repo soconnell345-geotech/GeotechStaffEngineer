@@ -192,6 +192,45 @@ class Results:
             d['ei_iterations'] = self.ei_iterations
         return d
 
+    def get_tables(self) -> list:
+        """The per-node table LPILE prints: depth, deflection, slope,
+        bending moment, shear, soil reaction and soil modulus at every node
+        of the finite-difference model (and the bending stiffness when the
+        cracked-section EI iteration ran). Values are this result's arrays,
+        in its units.
+
+        Returns
+        -------
+        list of geotech_common.tables.CalcTable
+        """
+        from geotech_common.tables import CalcTable
+
+        columns = [
+            ("Depth z", "m", ".3f"),
+            ("Deflection y", "m"),
+            ("Slope S", "rad"),
+            ("Bending moment M", "kN-m"),
+            ("Shear force V", "kN"),
+            ("Soil reaction p", "kN/m"),
+            ("Soil modulus Es", "kN/m²"),
+        ]
+        arrays = [self.z, self.deflection, self.slope, self.moment,
+                  self.shear, self.soil_reaction, self.Es]
+        if self.EI_profile is not None:
+            columns.append(("Bending stiffness EI", "kN-m²"))
+            arrays.append(self.EI_profile)
+        rows = [[float(a[i]) for a in arrays] for i in range(len(self.z))]
+        note = (f"Finite-difference solution of EI d⁴y/dz⁴ + "
+                f"Q d²y/dz² - p = 0 with nonlinear p-y springs "
+                f"(COM624P / LPILE formulation), {len(self.z)} nodes; "
+                "Es = p/y, the secant modulus of soil reaction")
+        if self.stickup > 0:
+            note += "; depths above grade (the stickup) are negative"
+        return [CalcTable(
+            title="Pile response at each node",
+            columns=columns, rows=rows, note=note, name="pile_response",
+        )]
+
     # ---- Plotting methods ----
 
     def plot_deflection(self, ax=None, show: bool = True, **kwargs):

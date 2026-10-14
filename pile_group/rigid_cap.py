@@ -113,6 +113,13 @@ class PileGroupResult:
         Maximum tension force in any pile (kN, positive = tension).
     max_utilization : float
         Maximum utilization ratio (demand/capacity).
+    pile_head_response : list of dict
+        6-DOF analysis only: per pile, the head displacements from the
+        rigid-cap kinematics (``ux_m``, ``uy_m``, settlement ``w_m``,
+        ``axial_displacement_m``) and the head force in the global axes
+        (``Fx_kN``, ``Fy_kN``, ``Fz_kN`` with z down as ``Vz``; the forces
+        sum to the applied loads), plus the unrounded ``axial_kN``. Not in
+        ``to_dict``; read by :meth:`get_tables`.
     """
     cap_displacements: Dict[str, float] = field(default_factory=dict)
     pile_forces: List[Dict[str, Any]] = field(default_factory=list)
@@ -120,6 +127,7 @@ class PileGroupResult:
     max_tension: float = 0.0
     max_utilization: float = 0.0
     n_piles: int = 0
+    pile_head_response: List[Dict[str, Any]] = field(default_factory=list)
 
     def summary(self) -> str:
         lines = [
@@ -198,6 +206,88 @@ class PileGroupResult:
             "max_utilization": round(self.max_utilization, 3),
             "pile_forces": self.pile_forces,
         }
+
+    def get_tables(self) -> list:
+        """GROUP-style tables: the force at each pile head, the pile-head
+        displacements (6-DOF analysis), and the cap displacements (CSV
+        only; the calc package prints them in its Load Distribution
+        section). Values are this result's own, in its units.
+
+        The pile-head force table is CSV-only for the simplified vertical
+        method, whose per-pile axial forces the package already prints.
+
+        Returns
+        -------
+        list of geotech_common.tables.CalcTable
+        """
+        from geotech_common.tables import CalcTable
+
+        tables = []
+        # pile_head_response runs in the same pile order as pile_forces
+        six_dof = len(self.pile_head_response) == len(self.pile_forces) > 0
+        if self.pile_forces:
+            columns = ["Pile", ("x", "m"), ("y", "m"),
+                       ("Axial force P", "kN")]
+            if six_dof:
+                columns += [("Head force Fx", "kN"), ("Head force Fy", "kN"),
+                            ("Head force Fz", "kN")]
+            columns.append("Utilization P/capacity")
+            rows = []
+            for i, pf in enumerate(self.pile_forces):
+                h = self.pile_head_response[i] if six_dof else None
+                row = [pf["label"], pf["x_m"], pf["y_m"],
+                       h["axial_kN"] if h else pf["axial_kN"]]
+                if six_dof:
+                    row += [h["Fx_kN"], h["Fy_kN"], h["Fz_kN"]] if h else \
+                        [None, None, None]
+                row.append(pf.get("utilization") or None)
+                rows.append(row)
+            note = ("Rigid-cap distribution (CPGA stiffness method, EM "
+                    "1110-2-2906 Ch. 4); P positive in compression")
+            if six_dof:
+                note += ("; Fx, Fy, Fz: the force each pile takes from the "
+                         "cap in the global axes, z down as Vz, summing to "
+                         "the applied Vx, Vy, Vz")
+            else:
+                note = ("Simplified elastic distribution P = Vz/n + "
+                        "My·x/Σx² - Mx·y/Σy²; "
+                        "P positive in compression")
+            tables.append(CalcTable(
+                title="Pile-head forces", columns=columns, rows=rows,
+                note=note, name="pile_head_forces", printed=six_dof,
+            ))
+        if six_dof:
+            tables.append(CalcTable(
+                title="Pile-head displacements",
+                columns=["Pile", ("Displacement ux", "m"),
+                         ("Displacement uy", "m"), ("Settlement w", "m"),
+                         ("Axial displacement δa", "m")],
+                rows=[[h["label"], h["ux_m"], h["uy_m"], h["w_m"],
+                       h["axial_displacement_m"]]
+                      for h in self.pile_head_response],
+                note=("From the cap displacements by the rigid-cap "
+                      "kinematics (ux = dx - rz·y, uy = dy + rz·x, "
+                      "w = dz - rx·y + ry·x); w positive down; "
+                      "δa along the pile axis, head toward toe"),
+                name="pile_head_displacements",
+            ))
+        if self.cap_displacements:
+            d = self.cap_displacements
+            tables.append(CalcTable(
+                title="Cap displacements",
+                columns=["Component", "Value", "Unit"],
+                rows=[["dx", d.get("dx", 0.0), "m"],
+                      ["dy", d.get("dy", 0.0), "m"],
+                      ["dz (settlement, positive down)", d.get("dz", 0.0),
+                       "m"],
+                      ["rx", d.get("rx", 0.0), "rad"],
+                      ["ry", d.get("ry", 0.0), "rad"],
+                      ["rz", d.get("rz", 0.0), "rad"]],
+                note="Rigid-cap displacements; rotations by the right-hand "
+                     "rule about the x, y and z (up) axes",
+                name="cap_displacements", printed=False,
+            ))
+        return tables
 
 
 def analyze_vertical_group_simple(
@@ -370,6 +460,7 @@ def analyze_group_6dof(
     # equilibrate the applied loads.
     K_group = np.zeros((6, 6))
     B_matrices = []
+    k3_matrices = []
 
     for pile in piles:
         ka = pile.axial_stiffness
@@ -407,6 +498,7 @@ def analyze_group_6dof(
             [0.0, 0.0, 1.0, -y, x, 0.0],
         ])
         B_matrices.append(B)
+        k3_matrices.append(k3)
 
         K_group += B.T @ k3 @ B
 
@@ -450,6 +542,7 @@ def analyze_group_6dof(
     # Back-calculate pile forces using the SAME kinematic matrix B as the
     # stiffness assembly (PG-2: self-consistent end-to-end).
     pile_forces = []
+    head_response = []
     max_comp = 0.0
     max_tens = 0.0
     max_util = 0.0
@@ -460,7 +553,11 @@ def analyze_group_6dof(
 
         # Pile head displacement components (ux, uy, settlement) from the
         # rigid-cap kinematics under the module sign convention.
-        dx_pile, dy_pile, dz_pile = B_matrices[i] @ U
+        u_pile = B_matrices[i] @ U
+        dx_pile, dy_pile, dz_pile = u_pile
+        # The head force in the global axes, as assembled into K (so the
+        # forces of all piles sum to the applied loads).
+        f_pile = k3_matrices[i] @ u_pile
 
         # Axial displacement along the pile axis (head toward tip; lz is
         # the downward component, conjugate to settlement-positive dz_pile)
@@ -488,6 +585,13 @@ def analyze_group_6dof(
             "axial_kN": round(float(axial_force), 1),
             "utilization": round(util, 3),
         })
+        head_response.append({
+            "label": pile.label or f"P{i+1}",
+            "ux_m": float(dx_pile), "uy_m": float(dy_pile),
+            "w_m": float(dz_pile), "axial_displacement_m": float(d_axial),
+            "Fx_kN": float(f_pile[0]), "Fy_kN": float(f_pile[1]),
+            "Fz_kN": float(f_pile[2]), "axial_kN": float(axial_force),
+        })
 
     cap_disp = {
         "dx": float(dx), "dy": float(dy), "dz": float(dz),
@@ -501,4 +605,5 @@ def analyze_group_6dof(
         max_tension=max_tens,
         max_utilization=max_util,
         n_piles=n,
+        pile_head_response=head_response,
     )

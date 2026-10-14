@@ -50,6 +50,9 @@ from calc_package.data_model import (
 from calc_package.renderer import render_html, save_html, figure_to_base64
 from calc_package.latex_renderer import render_latex, save_latex, save_pdf, render_pdf
 from calc_package.equation_converter import unicode_to_latex, escape_latex
+from calc_package.tables import (
+    csv_file_names, export_tables, input_table, module_tables, tables_section,
+)
 
 
 # Registry of supported modules — populated lazily on first use
@@ -99,6 +102,9 @@ def _ensure_registered(module_name: str) -> dict:
         "get_input_summary": calc_steps.get_input_summary,
         "get_calc_steps": calc_steps.get_calc_steps,
         "get_figures": calc_steps.get_figures,
+        # Optional (GM-39): tables that need the inputs as well as the
+        # result. Without it the result's own get_tables() is used.
+        "get_tables": getattr(calc_steps, "get_tables", None),
     }
     return _MODULE_REGISTRY[module_name]
 
@@ -106,6 +112,21 @@ def _ensure_registered(module_name: str) -> dict:
 def list_supported_modules() -> list:
     """Return list of module names that support calc package generation."""
     return list(_IMPORT_MAP)
+
+
+def package_tables(module: str, result, analysis=None) -> list:
+    """Every calculation table of a calc package, in order: the input echo
+    (CSV only; the package prints it as its first section), then the
+    module's own tables (:func:`calc_package.tables.module_tables`).
+
+    Each is a :class:`geotech_common.tables.CalcTable`."""
+    reg = _ensure_registered(module)
+    out = []
+    echo = input_table(reg["get_input_summary"](result, analysis))
+    if echo is not None:
+        out.append(echo)
+    out.extend(module_tables(reg, result, analysis))
+    return out
 
 
 def generate_calc_package(
@@ -123,6 +144,8 @@ def generate_calc_package(
     keep_tex: bool = False,
     compiler: str = "pdflatex",
     render_report: dict = None,
+    tables=True,
+    table_files: list = None,
 ) -> str:
     """Generate a Mathcad-style calculation package.
 
@@ -155,11 +178,23 @@ def generate_calc_package(
     compiler : str
         For ``format="pdf"``: LaTeX compiler (``"pdflatex"`` or ``"xelatex"``).
     render_report : dict, optional
-        For ``format="pdf"``: if a dict is passed, it is populated in place with
-        the :func:`~calc_package.latex_renderer.render_pdf` report
+        If a dict is passed, it is populated in place. For ``format="pdf"``
+        with the :func:`~calc_package.latex_renderer.render_pdf` report
         (``{"renderer": "pdflatex"|"pymupdf_story", "warnings": [...], ...}``)
-        so the caller can learn which engine produced the PDF. Ignored for
-        HTML/LaTeX.
+        so the caller can learn which engine produced the PDF. For every
+        format, when this call writes the table CSVs, ``"tables"``:
+        ``[{"title", "name", "path", "rows"}]``.
+    tables : bool or list of CalcTable
+        ``True`` (default): the module's calculation tables (backlog GM-39;
+        :func:`package_tables`) are printed in a "Calculation Tables"
+        section and, when ``output_path`` is given, each is saved beside the
+        package as a CSV (``<stem>_t1_<name>.csv`` ..., and the input echo
+        as ``<stem>_inputs.csv``). A list: these tables instead. ``False``:
+        no tables.
+    table_files : list of str, optional
+        With a ``tables`` list: the CSV file names the caller has already
+        written, parallel to the list. The package names them under each
+        table and writes no CSV itself.
 
     Returns
     -------
@@ -194,6 +229,30 @@ def generate_calc_package(
     figures = reg["get_figures"](result, analysis)
     if figures:
         sections.append(CalcSection(title="Figures", items=figures))
+
+    # Calculation tables (GM-39): printed here, and one CSV per table saved
+    # beside the package.
+    if tables is True:
+        echo = input_table(input_items)
+        calc_tables = ([echo] if echo is not None else []) + module_tables(
+            reg, result, analysis)
+    else:
+        calc_tables = list(tables or [])
+    csv_names = list(table_files or [])
+    if calc_tables and not csv_names and output_path:
+        import os
+        paths = export_tables(
+            tables=calc_tables,
+            out_dir=os.path.dirname(os.path.abspath(output_path)),
+            stem=os.path.splitext(os.path.basename(output_path))[0])
+        csv_names = [os.path.basename(p) for p in paths]
+        if render_report is not None:
+            render_report["tables"] = [
+                {"title": t.title, "name": t.name, "path": p,
+                 "rows": t.n_rows} for t, p in zip(calc_tables, paths)]
+    tables_part = tables_section(calc_tables, csv_names)
+    if tables_part is not None:
+        sections.append(tables_part)
 
     # Assemble
     data = CalcPackageData(

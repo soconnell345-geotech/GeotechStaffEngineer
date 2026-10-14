@@ -215,6 +215,9 @@ $\VAR{item.capacity_label_latex}$ = \VAR{item.capacity} \VAR{item.unit}%
 \vspace{2pt}
 \BLOCK{endif}
 
+\BLOCK{if item.compact}
+\begingroup\footnotesize\setlength{\tabcolsep}{2pt}
+\BLOCK{endif}
 \begin{longtable}{\VAR{item.col_spec}}
 \toprule
 \BLOCK{for h in item.headers}
@@ -228,6 +231,9 @@ $\VAR{item.capacity_label_latex}$ = \VAR{item.capacity} \VAR{item.unit}%
 \BLOCK{endfor}
 \bottomrule
 \end{longtable}
+\BLOCK{if item.compact}
+\endgroup
+\BLOCK{endif}
 \BLOCK{if item.notes}
 {\footnotesize\color{SubGray}\textit{\VAR{item.notes}}}
 \BLOCK{endif}

@@ -402,6 +402,71 @@ def get_figures(result, analysis) -> List[FigureData]:
     return figures
 
 
+#: Pile lengths in the capacity-against-length table.
+CAPACITY_TABLE_POINTS = 20
+
+
+def get_tables(result, analysis) -> list:
+    """APILE-style tables: the result's own (side resistance per layer,
+    load transfer at the ultimate load, capacity summary), the ultimate
+    capacity against pile length (``analysis.capacity_vs_depth``: the same
+    analysis re-run at each length), and the soil layers as input (CSV
+    only; the package prints them in its Soil Profile section)."""
+    from geotech_common.tables import CalcTable
+
+    tables = list(result.get_tables())
+
+    profile_depth = analysis.soil.total_thickness - analysis.head_depth
+    top = max(analysis.pile_length, profile_depth)
+    low = min(3.0, analysis.pile_length)
+    if top > low:
+        rows, warned = [], False
+        for r in analysis.capacity_vs_depth(
+                depth_min=low, depth_max=top,
+                n_points=CAPACITY_TABLE_POINTS):
+            rows.append([r["depth_m"], r["Q_skin_kN"], r["Q_tip_kN"],
+                         r["Q_ultimate_kN"]])
+            warned = warned or bool(r.get("warnings"))
+        if rows:
+            note = ("The same analysis re-run with the pile length set to "
+                    "each value (APILE's capacity against depth); FS is "
+                    "not applied")
+            if warned:
+                note += ("; some lengths carry the toe warnings the "
+                         "design length's result lists")
+            tables.append(CalcTable(
+                title="Ultimate capacity against pile length",
+                columns=[("Pile length L", "m", ".2f"),
+                         ("Side resistance Q_s", "kN", ".1f"),
+                         ("Toe resistance Q_t", "kN", ".1f"),
+                         ("Ultimate capacity Q_ult", "kN", ".1f")],
+                rows=rows, note=note, name="capacity_vs_length",
+            ))
+
+    layer_rows, depth = [], 0.0
+    for i, layer in enumerate(analysis.soil.layers, 1):
+        layer_rows.append([
+            i, depth, depth + layer.thickness, layer.soil_type,
+            layer.description, layer.unit_weight, layer.friction_angle,
+            layer.cohesion, layer.delta_phi_ratio])
+        depth += layer.thickness
+    if layer_rows:
+        tables.append(CalcTable(
+            title="Soil layers",
+            columns=["Layer", ("Top", "m"), ("Bottom", "m"), "Soil type",
+                     "Description", ("Unit weight γ", "kN/m³"),
+                     ("Friction angle φ", "deg"),
+                     ("Cohesion c_u", "kPa"), "δ/φ"],
+            rows=layer_rows,
+            note=("The soil layers as input, depths below the ground "
+                  f"surface; groundwater at "
+                  f"{analysis.soil.gwt_depth if analysis.soil.gwt_depth is not None else 'none given'}"
+                  + (" m" if analysis.soil.gwt_depth is not None else "")),
+            name="soil_layers", printed=False,
+        ))
+    return tables
+
+
 # -- Helper functions --------------------------------------------------------
 
 def _method_display_name(method: str) -> str:
