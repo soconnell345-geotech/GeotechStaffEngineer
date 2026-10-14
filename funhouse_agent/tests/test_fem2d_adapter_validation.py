@@ -28,6 +28,13 @@ class TestRequireChoice:
 class TestEnumValidationAtRegistry:
     """Each enum is rejected before the (expensive) analysis is invoked."""
 
+    def test_bad_wall_contact(self):
+        with pytest.raises(ValueError, match="wall_contact must be one of"):
+            R["fem2d_excavation"]({
+                "width": 10, "depth": 5, "wall_depth": 10,
+                "soil_layers": [{"bottom_elevation": -20}],
+                "wall_EI": 5e4, "wall_EA": 5e6, "wall_contact": "rough"})
+
     def test_bad_element_type(self):
         with pytest.raises(ValueError, match="element_type must be one of"):
             R["fem2d_slope_srm"]({
@@ -133,3 +140,24 @@ class TestPositiveDepthGuard:
         assert "error" in r
         assert "positive" in r["error"].lower()
         assert "srm_mesh_refinement_study" in r["error"]
+
+
+class TestStagedExcavationThroughTheRegistry:
+    """GM-71: the adapter passes lifts and wall_contact and returns the
+    stages (in-situ stresses, then lifts; strut installed stress-free)."""
+
+    def test_stages_and_strut(self):
+        out = R["fem2d_excavation"]({
+            "width": 10, "depth": 5, "wall_depth": 10,
+            "soil_layers": [{"name": "Clay", "bottom_elevation": -20,
+                             "E": 30000, "nu": 0.3, "gamma": 18, "c": 25,
+                             "phi": 20, "psi": 0}],
+            "wall_EI": 5e4, "wall_EA": 5e6, "nx": 16, "ny": 8,
+            "n_steps": 3, "lifts": [2.0],
+            "struts": [{"depth": 1.0, "stiffness": 5e4}]})
+        assert out["converged"]
+        assert [s["excavation_depth_m"] for s in out["excavation_stages"]]             == [2.0, 5.0]
+        assert out["strut_forces"][0]["installed_in_stage"] == 2
+        assert out["strut_forces"][0]["force_kN_per_m"] > 0
+        assert out["excavation_stages"][-1]["max_wall_ux_m"] > 0
+        assert any("K0" in n for n in out["notes"])

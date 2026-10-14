@@ -436,6 +436,13 @@ class FEMResult:
     # Strut results
     strut_forces: Optional[List[Dict]] = field(default=None, repr=False)
 
+    # Staged excavation (analyze_excavation, since 2026-10-14)
+    excavation_stages: Optional[List[Dict]] = field(default=None,
+                                                    repr=False)
+    wall_envelope: Optional[Dict[str, Any]] = None
+    notes: List[str] = field(default_factory=list)
+    staged: Optional[Any] = field(default=None, repr=False)
+
     # Raw arrays (not serialized to dict)
     nodes: Optional[np.ndarray] = field(default=None, repr=False)
     elements: Optional[np.ndarray] = field(default=None, repr=False)
@@ -485,6 +492,28 @@ class FEMResult:
                     f"    Depth {sf['depth_m']:.1f} m: "
                     f"F = {sf['force_kN_per_m']:.2f} kN/m "
                     f"(k = {sf['stiffness_kN_per_m']:.0f} kN/m/m)")
+        if self.excavation_stages:
+            lines.extend(["", "  Excavation stages (u_x > 0 toward the "
+                          "excavation):"])
+            for st in self.excavation_stages:
+                lines.append(
+                    f"    Stage {st['stage']}: {st['name']}: head u_x "
+                    f"{st['wall_head_ux_m'] * 1000:.1f} mm, M_max "
+                    f"{st['max_beam_moment_kNm_per_m']:.1f} kN*m/m, V_max "
+                    f"{st['max_beam_shear_kN_per_m']:.1f} kN/m"
+                    + ("" if st['converged'] else " (NOT CONVERGED)"))
+        if self.wall_envelope:
+            env = self.wall_envelope
+            lines.append(
+                f"    All stages: M_max "
+                f"{env['max_beam_moment_kNm_per_m']:.1f} kN*m/m "
+                f"({env['moment_stage']}), V_max "
+                f"{env['max_beam_shear_kN_per_m']:.1f} kN/m "
+                f"({env['shear_stage']})")
+        if self.notes:
+            lines.append("")
+            for n in self.notes:
+                lines.append(f"  NOTE: {n}")
         if self.warnings:
             lines.append("")
             for w in self.warnings:
@@ -522,6 +551,13 @@ class FEMResult:
                 d["beam_forces"] = [bf.to_dict() for bf in self.beam_forces]
         if self.strut_forces:
             d["strut_forces"] = self.strut_forces
+        if self.excavation_stages:
+            d["excavation_stages"] = [dict(st) for st in
+                                      self.excavation_stages]
+        if self.wall_envelope:
+            d["wall_envelope"] = dict(self.wall_envelope)
+        if self.notes:
+            d["notes"] = list(self.notes)
         return d
 
     def get_tables(self) -> list:
@@ -567,8 +603,35 @@ class FEMResult:
                 rows=[[s.get("depth_m"), s.get("stiffness_kN_per_m"),
                        s.get("force_kN_per_m"), s.get("node_id")]
                       for s in self.strut_forces],
-                note="F = k u_horizontal at each strut node, per metre run",
+                note=("F = k x the wall's horizontal movement since the "
+                      "strut was installed, per metre run (positive = the "
+                      "strut holds the wall back)"),
                 name="strut_forces", printed=False,
+            ))
+        if self.excavation_stages:
+            tables.append(CalcTable(
+                title="Excavation stages",
+                columns=["Stage", "Phase", ("Excavation depth", "m"),
+                         "Converged", ("Wall head u_x", "m"),
+                         ("Largest wall u_x", "m"),
+                         ("at depth", "m"),
+                         ("Largest wall moment", "kN-m/m"),
+                         ("Largest wall shear", "kN/m"),
+                         ("Strut forces", "kN/m")],
+                rows=[[st.get("stage"), st.get("name"),
+                       st.get("excavation_depth_m"), st.get("converged"),
+                       st.get("wall_head_ux_m"), st.get("max_wall_ux_m"),
+                       st.get("max_wall_ux_depth_m"),
+                       st.get("max_beam_moment_kNm_per_m"),
+                       st.get("max_beam_shear_kN_per_m"),
+                       ", ".join(f"{f:.1f}" for f in
+                                 st.get("strut_forces_kN_per_m") or [])
+                       or "-"]
+                      for st in self.excavation_stages],
+                note=("Staged excavation: movements from the end of the "
+                      "in-situ (K0) stage, u_x positive toward the "
+                      "excavation; wall forces at the end of each stage"),
+                name="excavation_stages",
             ))
         return tables
 
@@ -610,6 +673,14 @@ class PhaseResult:
         stage — the PLAXIS "reset displacements to zero" convention.
     The matching arrays are ``delta_displacements`` and
     ``displacements_since_reference``.
+
+    spring_forces : per active spring (``analyze_staged(springs=...)``):
+        k x its stretch since placement ('force_x_kN_per_m',
+        'force_y_kN_per_m'; positive = the node moved +x / +y relative to
+        ground or to ``node_b``), with 'placed_in_phase'.
+    settled_steps : load steps accepted at the iteration ceiling with the
+        displacements standing still (``settled_ratio``), each with its
+        residual ratio; ``final_residual`` is the last step's.
     """
     phase_name: str = "Phase"
     phase_index: int = 0
@@ -627,6 +698,11 @@ class PhaseResult:
     max_beam_moment_kNm_per_m: float = 0.0
     max_beam_shear_kN_per_m: float = 0.0
     beam_forces: Optional[List] = field(default=None, repr=False)
+    spring_forces: Optional[List[Dict[str, Any]]] = field(
+        default=None, repr=False)
+    settled_steps: Optional[List[Dict[str, Any]]] = field(
+        default=None, repr=False)
+    final_residual: Optional[float] = None
     delta_displacement: Optional[Dict[str, Any]] = None
     cumulative_displacement: Optional[Dict[str, Any]] = None
     displacement_since_reference: Optional[Dict[str, Any]] = None
@@ -704,6 +780,10 @@ class PhaseResult:
                 self.max_beam_shear_kN_per_m, 2)
             if self.beam_forces:
                 d["beam_forces"] = [bf.to_dict() for bf in self.beam_forces]
+        if self.spring_forces:
+            d["spring_forces"] = [dict(s) for s in self.spring_forces]
+        if self.settled_steps:
+            d["settled_steps"] = [dict(s) for s in self.settled_steps]
         return d
 
 

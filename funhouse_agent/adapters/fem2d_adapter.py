@@ -257,7 +257,8 @@ def _run_analyze_excavation(params: dict) -> dict:
     from fem2d import analyze_excavation
     _valid = ("width", "depth", "wall_depth", "soil_layers", "wall_EI",
               "wall_EA", "nx", "ny", "t", "n_steps", "gamma_w", "max_iter",
-              "tol", "gwt", "struts", "layer_polylines")
+              "tol", "gwt", "struts", "layer_polylines", "lifts",
+              "wall_contact")
     reject_unknown_params(params, _valid, method="fem2d_excavation")
     require_params(params, ["width", "depth", "wall_depth", "soil_layers",
                             "wall_EI", "wall_EA"],
@@ -277,7 +278,7 @@ def _run_analyze_excavation(params: dict) -> dict:
         t=params.get("t", 1.0),
         n_steps=params.get("n_steps", 10),
         gamma_w=params.get("gamma_w", 9.81),
-        max_iter=params.get("max_iter", 100),
+        max_iter=params.get("max_iter", 1000),
         tol=params.get("tol", 1e-5),
     )
     if "gwt" in params:
@@ -286,6 +287,12 @@ def _run_analyze_excavation(params: dict) -> dict:
         kwargs["struts"] = params["struts"]
     if "layer_polylines" in params:
         kwargs["layer_polylines"] = params["layer_polylines"]
+    if "lifts" in params:
+        kwargs["lifts"] = params["lifts"]
+    if "wall_contact" in params:
+        _require_choice(params["wall_contact"], ("smooth", "bonded"),
+                        name="wall_contact", method="fem2d_excavation")
+        kwargs["wall_contact"] = params["wall_contact"]
 
     result = analyze_excavation(**kwargs)
     return clean_result(result.to_dict())
@@ -585,23 +592,30 @@ METHOD_INFO = {
     },
     "fem2d_excavation": {
         "category": "FEM 2D",
-        "brief": "Braced excavation analysis with sheet pile wall (plane strain FEM).",
+        "brief": "Staged excavation in front of an embedded wall (plane strain FEM): in-situ K0 stresses, then lifts with struts installed as the excavation reaches them; half of a symmetric excavation.",
         "parameters": {
-            "width": {"type": "float", "required": True, "description": "Excavation width (m)."},
-            "depth": {"type": "float", "required": True, "description": "Excavation depth (m)."},
-            "wall_depth": {"type": "float", "required": True, "description": "Total wall depth below surface (m)."},
-            "soil_layers": {"type": "array", "required": True, "description": "Array of soil property dicts."},
+            "width": {"type": "float", "required": True, "description": "Full excavation width (m); the model is half of a symmetric excavation, its right boundary the centre line. For a one-sided cut give at least twice the passive zone in front of the wall."},
+            "depth": {"type": "float", "required": True, "description": "Final excavation depth (m)."},
+            "wall_depth": {"type": "float", "required": True, "description": "Wall tip depth below the ground (m); must exceed depth."},
+            "soil_layers": {"type": "array", "required": True, "description": "Array of soil property dicts (E, nu, c, phi, psi, gamma = total unit weight, bottom_elevation; optional K0, else Jaky 1 - sin phi')."},
             "wall_EI": {"type": "float", "required": True, "description": "Wall flexural stiffness (kN*m2/m)."},
             "wall_EA": {"type": "float", "required": True, "description": "Wall axial stiffness (kN/m)."},
-            "struts": {"type": "array", "required": False, "description": "Array of {depth, stiffness} for struts."},
-            "gwt": {"type": "float|array", "required": False, "description": "Groundwater table."},
-            "n_steps": {"type": "int", "required": False, "default": 10, "description": "Number of excavation steps."},
+            "struts": {"type": "array", "required": False, "description": "Array of {depth (m, above the final excavation level), stiffness (kN/m per m)}; each installed stress-free once the excavation reaches its level; no preload."},
+            "lifts": {"type": "array", "required": False, "description": "Excavation depths (m) at the end of each lift; default one lift to each strut level, then to depth."},
+            "wall_contact": {"type": "str", "required": False, "default": "smooth", "allowed_values": ["smooth", "bonded"], "description": "'smooth' (default): no wall friction (Rankine). 'bonded': the wall shares the soil's nodes and hangs the retained soil (thrust below active)."},
+            "gwt": {"type": "float|array", "required": False, "description": "Groundwater table, the same in every stage; above the excavation level the excavation is kept full of water (no dewatering)."},
+            "n_steps": {"type": "int", "required": False, "default": 10, "description": "Load steps in each stage."},
+            "max_iter": {"type": "int", "required": False, "default": 1000, "description": "Iteration ceiling per load step."},
             "layer_polylines": {"type": "dict", "required": False, "description": "{layer_name: [[x,y],...]} bottom-boundary polylines for non-horizontal layering."},
         },
         "returns": {
-            "max_displacement_m": "Maximum displacement.",
-            "max_beam_moment_kNm_per_m": "Maximum wall bending moment.",
-            "max_beam_shear_kN_per_m": "Maximum wall shear force.",
+            "max_displacement_m": "Largest movement since the in-situ stage.",
+            "max_beam_moment_kNm_per_m": "Largest wall bending moment at the end of the last stage only.",
+            "max_beam_shear_kN_per_m": "Largest wall shear force at the end of the last stage only.",
+            "wall_envelope": "Largest wall moment and shear over ALL stages, with the stage each occurs in: the values to design the wall for (an earlier lift, before a strut is installed, can govern).",
+            "strut_forces": "Per strut: force = stiffness x movement since installation (positive holds the wall back).",
+            "excavation_stages": "Per lift: wall head and largest wall u_x (positive toward the excavation), M_max, V_max, strut forces.",
+            "notes": "Method, K0 per layer, sign conventions.",
         },
     },
     "fem2d_seepage": {

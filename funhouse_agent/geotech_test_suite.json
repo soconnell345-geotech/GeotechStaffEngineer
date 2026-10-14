@@ -1359,16 +1359,16 @@
       "values": [
         {
           "name": "fos_finest",
-          "value": 1.531,
+          "value": 1.169,
           "rtol": 0.05
         },
         {
           "name": "fos_coarsest",
-          "value": 1.581,
+          "value": 1.181,
           "rtol": 0.05
         }
       ],
-      "source": "v5.4 worktree ground truth, 2026-07-07 (recomputed by the E11 offline test); exercises the srm_mesh_refinement_study fem2d utility (wraps fem2d_slope_srm)"
+      "source": "Re-pinned 2026-10-14 after the SRM failure-criterion fix (GM-05): limit equilibrium on the same slope gives 1.17 (Bishop 1.173, Spencer 1.171, slope_stability circular search); the 2026-07-07 values (1.531 / 1.581) were 30% high. Exercises the srm_mesh_refinement_study fem2d utility (wraps fem2d_slope_srm)"
     }
   },
   {

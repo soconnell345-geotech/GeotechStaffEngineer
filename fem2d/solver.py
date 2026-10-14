@@ -246,12 +246,20 @@ def build_nl_context(nodes, elements, material_props, gamma, bc_nodes,
                      t=1.0, beam_elements=None, rotation_dof_map=None,
                      pore_pressures=None, active_elements=None,
                      active_beams=None, surface_loads=None,
-                     strut_springs=None, n_gp=None):
+                     strut_springs=None, n_gp=None, extra_forces=None):
     """Precompute everything load- and mesh-dependent for nonlinear runs.
 
     The returned context can be reused across multiple `run_nl` calls with
     different strength parameters (SRM trials) — the elastic stiffness
     factorization is computed lazily once and shared.
+
+    ``strut_springs`` : list of (node_id, kx), (node_id, kx, ky) or
+    (node_id, kx, ky, node_b) — linear springs (kN/m per m run) from a node
+    to ground, or between two nodes when node_b is given (a tie). ``extra_forces`` : an
+    (2 * n_nodes,) nodal force vector added to the external load (e.g. the
+    water standing on free faces, ``porewater.standing_water_forces``).
+    The rotation DOF of a beam node that no ACTIVE beam touches is fixed
+    (an inactive beam has no stiffness to hold it).
     """
     from fem2d.assembly import assemble_gravity, assemble_surface_load
 
@@ -283,10 +291,16 @@ def build_nl_context(nodes, elements, material_props, gamma, bc_nodes,
         pp = np.asarray(pore_pressures, dtype=float)
         F_pp = _pore_pressure_force_gp(
             {**gp, 'w': w_act}, pp)
-        F_soil = F_soil + F_pp[:len(F_soil)]
+        # (nodes in no element, e.g. a wall's own nodes, get no entry)
+        n_pp = min(len(F_pp), len(F_soil))
+        F_soil = np.array(F_soil, dtype=float)
+        F_soil[:n_pp] += F_pp[:n_pp]
     if surface_loads:
         for edges, qx, qy in surface_loads:
             F_soil += assemble_surface_load(nodes, edges, qx, qy, t)
+    if extra_forces is not None:
+        ef = np.asarray(extra_forces, dtype=float)
+        F_soil = F_soil + ef[:len(F_soil)]
 
     F_ext = np.zeros(n_dof)
     F_ext[:2 * n_nodes] = F_soil
@@ -304,10 +318,24 @@ def build_nl_context(nodes, elements, material_props, gamma, bc_nodes,
             active_beams=active_beams)
     if strut_springs:
         rows, cols, vals = [], [], []
-        for node_id, s_k in strut_springs:
-            rows.append(2 * node_id)
-            cols.append(2 * node_id)
-            vals.append(s_k)
+        for spring in strut_springs:
+            node_id = int(spring[0])
+            kx = float(spring[1])
+            ky = float(spring[2]) if len(spring) > 2 else 0.0
+            node_b = spring[3] if len(spring) > 3 else None
+            for comp, k in ((0, kx), (1, ky)):
+                if not k:
+                    continue
+                da = 2 * node_id + comp
+                if node_b is None:          # spring to ground
+                    rows.append(da)
+                    cols.append(da)
+                    vals.append(k)
+                else:                       # spring between two nodes
+                    db = 2 * int(node_b) + comp
+                    rows.extend([da, da, db, db])
+                    cols.extend([da, db, da, db])
+                    vals.extend([k, -k, -k, k])
         K_struts = coo_matrix((vals, (rows, cols)),
                               shape=(n_dof, n_dof)).tocsr()
         K_lin = K_struts if K_lin is None else K_lin + K_struts
@@ -325,6 +353,19 @@ def build_nl_context(nodes, elements, material_props, gamma, bc_nodes,
     # Roller base: v = 0 (horizontal symmetry plane / smooth rigid base)
     for n in bc_nodes.get('roller_base', []):
         bc_dofs.add(2 * n + 1)
+    # Rotation DOFs that no active beam touches have no stiffness: fix them
+    # (a beam left out of a staged phase, GM-61).
+    if rotation_dof_map:
+        live_rot = set()
+        for idx, bm in enumerate(beam_elements or []):
+            if active_beams is not None and idx not in active_beams:
+                continue
+            for n in (bm.node_i, bm.node_j):
+                if n in rotation_dof_map:
+                    live_rot.add(rotation_dof_map[n])
+        for d in rotation_dof_map.values():
+            if d not in live_rot:
+                bc_dofs.add(d)
     # Floating DOFs (nodes not in any active element) — fix to zero
     if active_elements is not None:
         active_nodes = set(elements[act].ravel().tolist())
@@ -868,7 +909,9 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
                     method='elastic', reform_interval=1,
                     disp_tol=None, max_cutbacks=3, line_search=False,
                     n_gp=None, return_gp=False, _ctx=None,
-                    initial_stress_relaxation=False):
+                    initial_stress_relaxation=False, lin_offset=None,
+                    extra_forces=None, settled_ratio=None,
+                    settled_residual_cap=1e-2, return_info=False):
     """Solve a nonlinear (MC/HS) problem.
 
     Vectorized Gauss-point core with 4-component stress state and 3D
@@ -902,6 +945,18 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
         stress `sigma_init + Delta sigma` throughout, so the elasto-plastic
         unloading path is correct. Use symmetry BCs (`roller_left/right`
         for u=0, `roller_base` for v=0) plus a fixed or far-field boundary.
+    lin_offset : (n_dof,) array, optional — the force the linear members
+        (beams, springs) would carry at their placement displacement,
+        ``sum K_m u_placed``. Their internal force is then
+        ``K_lin u - lin_offset``: a member placed in a staged phase carries
+        only the movement after its placement (GM-61). None = zero.
+    extra_forces : (2 n_nodes,) array, optional — nodal forces added to the
+        external load (see build_nl_context).
+    settled_ratio, settled_residual_cap : accept a load step whose
+        displacements stand still at the iteration ceiling (see run_nl).
+        Default None: off.
+    return_info : bool — append run_nl's record (iterations, settled steps,
+        final residual) as a dict to the returned tuple.
 
     Returns
     -------
@@ -922,8 +977,11 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
             beam_elements=beam_elements, rotation_dof_map=rotation_dof_map,
             pore_pressures=pore_pressures, active_elements=active_elements,
             active_beams=active_beams, surface_loads=surface_loads,
-            strut_springs=strut_springs, n_gp=n_gp)
+            strut_springs=strut_springs, n_gp=n_gp,
+            extra_forces=extra_forces)
     ngp = ctx['gp']['n_gp']
+    if lin_offset is not None:
+        lin_offset = np.asarray(lin_offset, dtype=float)
     mats = ctx['mats']
 
     sig_gp0, eps_gp0 = _legacy_state_in(sigma_init, strain_init, mats,
@@ -943,8 +1001,10 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
         F_start = _internal_force(ctx, sig_start)
         if ctx['K_lin'] is not None:
             F_start = F_start + ctx['K_lin'] @ np.asarray(u_init, float)
+        if lin_offset is not None:
+            F_start = F_start - lin_offset
 
-    f_int_offset = None
+    f_int_offset = lin_offset
     if initial_stress_relaxation:
         if sigma_init is None:
             raise ValueError(
@@ -956,7 +1016,7 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
         F0 = _internal_force(ctx, sig_gp0)
         ctx = dict(ctx)
         ctx['F_ext'] = ctx['F_ext'] - F0
-        f_int_offset = F0
+        f_int_offset = F0 if lin_offset is None else F0 + lin_offset
 
     res = run_nl(ctx, n_steps=n_steps_actual, max_iter=max_iter, tol=tol,
                  u_init=u_init, sigma_gp_init=sig_gp0,
@@ -964,7 +1024,8 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
                  method=method, reform_interval=reform_interval,
                  disp_tol=disp_tol, max_cutbacks=max_cutbacks,
                  line_search=line_search, f_int_offset=f_int_offset,
-                 F_start=F_start)
+                 F_start=F_start, settled_ratio=settled_ratio,
+                 settled_residual_cap=settled_residual_cap)
 
     sig_gp = res['sigma_gp']
     eps_gp = res['eps_gp']
@@ -976,6 +1037,11 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
         out = out + (list(res['hs_state']),)
     if return_gp:
         out = out + (sig_gp, eps_gp)
+    if return_info:
+        out = out + ({'iterations': list(res['iterations']),
+                      'n_iter_total': res['n_iter_total'],
+                      'settled': list(res['settled']),
+                      'final_residual': res['final_residual']},)
     return out
 
 

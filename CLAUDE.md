@@ -176,7 +176,8 @@ Key conventions:
       b3ab88a); fem2d strength reduction no longer depends on the mesh
       (c21c8cc); SOE free earth says when there is no solution, Terzaghi
       bearing capacity (8e723d5); the anchored sheet-pile moment (7e8e273);
-      straight T6 excavation walls (429f62d);
+      straight T6 excavation walls (429f62d); a staged excavation that
+      unloads in lifts, pinned to the USS cantilever example (GM-71);
     - Ensoft-style calculation tables in 13 modules' calc packages (GM-39);
     - Document Review: markups keep correcting and return the found box,
       geotech tools off the page (077192c); turned lettering, cut lines,
@@ -184,12 +185,12 @@ Key conventions:
       planlens 89711ea (distinct sheets not duplicates; unreleased);
     - long turns: an errored turn keeps its work, a stopped helper returns a
       file, busy refusals retried, two helpers at once (6ffa347, 8cd38f4);
+      model requests give up after their time limit (86879e8);
       the record (4dee54a);
     - DIGGS writer and reader fixes (d81c1f8); shipped code free of field
       post names, with a guard (accfc92); CI's five months-old failures and
       the workflow (9152c66).
-    Open next: GM-71 (`fem2d.analyze_excavation` does not model an
-    excavation), INF-10, the Foundry brief that measures all of this
+    Open next: INF-10, the Foundry brief that measures all of this
     (EV-13, DR-05).
 
   Pickup: `HANDOFF.md` §0a-current, "Where things stand".

@@ -441,6 +441,107 @@ the base/toe — a genuine stress concentration at the fixed-boundary corner. It
 **reported, not smoothed away**; the near-zero-shear deep interior is capped
 (`cap`, default 10) rather than blown up.
 
+## 9. Staged excavation: cantilever sheet pile wall against the USS conventional method (GM-71, 2026-10-14)
+
+`analyze_excavation` was rebuilt on the staged path (DESIGN.md, "Staged
+excavation"). Before, it did not model an excavation: the wall head moved
+into the retained soil in every case.
+
+**Source.** USS Steel Sheet Piling Design Manual (United States Steel, July
+1984, updated and reprinted by FHWA), Design Examples, "Design of
+Cantilevered Sheet Pile Wall - Granular Soil", pp. 86-90: H = 14 ft, low
+water at the dredge line on both sides (effective weights, no net water),
+gamma = 115 pcf above the dredge line and gamma' = 65 pcf below, phi = 35
+deg, Ka = 0.27, Kp = 6.56 (delta/phi = -0.5, Fig. 5A). The conventional
+assumed pressure diagram and statics (p. 87) give D = 10.5 ft; D used 13.5
+ft ("increased by 20 to 40 %", +28.5 %, p. 88); zero shear y + x = 1.0 + 4.0
+ft below the dredge line; M_max = 26,000 ft-lb/ft (p. 89). The test's own
+implementation of the method (`fem2d/tests/test_excavation_staged.py`,
+`uss_cantilever`) reproduces it: D0 10.43 ft, Z 1.596 ft at D = 10.5 ft
+(printed 1.60), y 1.06 ft, x 4.00 ft, M_max 26,334 ft-lb/ft (+1.3 %: the
+manual rounds y and x to 1.0 and 4.0 ft).
+
+**What is compared.** The FEM wall is smooth (`wall_contact='smooth'`, no
+wall friction on either face), so the same method is applied with the
+Rankine coefficients for delta = 0, Ka = tan^2(27.5) = 0.271 (the manual's
+0.27) and Kp = tan^2(62.5) = 3.690, and the wall lengthened by the manual's
+own rule: D0 = 14.73 ft (4.49 m), D = 1.3 D0 = 5.84 m; zero shear 2.30 m
+below the dredge line (6.57 m deep); M_max = 33,804 ft-lb/ft = **150.4
+kN-m/m**; at the dredge line Ka gamma H^3 / 6 = 63.4 kN-m/m. FEM: SI, H =
+4.267 m, gamma 18.07 / 10.21 kN/m3, E 40 MPa, nu 0.3, c = 0, psi = 0,
+K0 = 1 - sin 35 = 0.426, PZ-27 (the section the example selects): EI =
+50,300 kN-m2/m (I = 184.2 in4/ft), EA = 3.36e6 kN/m; width 50 m (half-width
+25 m, twice the 11.2 m Rankine passive zone); one lift, 10 steps.
+
+| Mesh (T6 unless noted) | M_max (kN-m/m) | at depth (m) | M / 150.4 | M at dredge (kN-m/m) | K = 6M/(gamma H^3) | head u_x (mm) |
+|---|---|---|---|---|---|---|
+| 20 x 10 | 144.3 | 6.21 | 0.96 | 67.1 | 0.287 | 96.6 |
+| 30 x 15 (default) * | **155.1** | 6.46 | **1.03** | 65.5 | **0.280** | 97.9 |
+| 40 x 20 | 153.2 | 6.70 | 1.02 | 64.0 | 0.273 | 100.6 |
+| 45 x 22 | 152.6 | 6.70 | 1.01 | 63.8 | 0.273 | 99.0 |
+| 60 x 30 | not converged (below) | | | | | |
+| 30 x 15, E 20 MPa | 159.0 | 6.46 | 1.06 | 64.9 | 0.277 | 131.8 |
+| 30 x 15, E 80 MPa | 150.2 | 6.46 | 1.00 | 65.7 | 0.281 | 79.7 |
+| 30 x 15, `wall_contact='bonded'` | 65.7 | 5.00 | 0.44 | 41.7 | 0.178 | 26.4 |
+| 30 x 15, T3 | 37.5 | 5.73 | 0.25 | 10.4 | 0.045 | 20.5 |
+
+In the 30 x 15 run the soil next to the wall has sigma_x / sigma_y = 0.271
+to 0.272 over the retained height (Ka 0.271), the wall's axial force is
+zero (smooth), the in-situ stage moves nothing (< 1e-9 m), and the head
+moves 97.9 mm toward the excavation (Delta/H = 0.023).
+
+**Why they should agree, and the tolerance.** A cantilever is statically
+determinate once the pressures are known. Above the dredge line the
+retained side reaches the active state when the wall top has moved Delta/H =
+0.001-0.004 in sand (Caltrans Trenching and Shoring Manual, 2025, Chapter 4,
+p. 4-4, Table 4-1 "Mobilized Wall Movements", after Clough 1991: medium
+dense sand 0.002); here it moved 0.023, so the moment at the dredge line is
+fixed by statics at Ka gamma H^3 / 6 (FEM +3 %). Below it the conventional
+diagram takes the full net passive (Kp - Ka) down to the zero-shear point;
+the FEM, with the same Rankine limit in front of a smooth wall, mobilizes
+it near the dredge line and less deeper down, and the retained side below
+the dredge line is not everywhere at active, so its zero-shear point and
+moment differ by a few percent. Rowe's moment reduction (the manual's p. 32)
+is for anchored walls (free earth support) and does not apply. The tests
+assert M_max within 10 % of 150.4 kN-m/m at the zero-shear depth +/- 0.5 m,
+the mobilized K at the dredge line between Ka and K0 and within 10 % of Ka,
+sigma_x/sigma_y next to the wall within 5 % of Ka, and every wall node above
+the excavation level moving toward the excavation with the head the most and
+more than 0.002 H. The limit-equilibrium moment does not depend on the soil
+modulus; the FEM moment varies 6 % over a fourfold range of E.
+
+**The published wall itself.** With the manual's D = 13.5 ft and a smooth
+wall the excavation stage does not converge: with delta = 0 on both faces
+the same method needs D0 = 14.73 ft, so the wall is short of limiting
+equilibrium (the manual's Kp = 6.56 counts wall friction delta = -phi/2 on
+the passive side, which a smooth FEM wall does not have).
+
+**Wall-soil contact.** A bonded wall (shared nodes, the only option before)
+hangs the retained soil: its axial force reaches 1.5 times the horizontal
+thrust above the excavation level (no wall friction angle up to phi' allows
+more than tan phi' = 0.70), the thrust falls below active (K = 0.178) and
+the moment to 0.44 of the method's. Real sheet piles have delta between 0
+and about phi/2 (the manual's Table 4, p. 13: 17 deg for clean sand); that
+needs interface elements.
+
+**Convergence.** The 60 x 30 mesh does not converge within 1000
+constant-stiffness iterations a step: the residual stalls near 1e-2 with the
+active wedge still creeping about 3 mm per 1000 iterations; the tangent
+(Newton-Raphson, line search, cutbacks) does no better. 20 x 10 to 45 x 22
+converge with 1 to 6 of their 10 steps accepted at the ceiling with their
+displacements standing still (residual ratio 1.5e-5 to 1.9e-3, second-half
+movement 0.02 to 0.099 of the first half), the strength reduction's
+criterion; the moments agree within 2 % from 30 x 15 to 45 x 22.
+
+**Before (the one-solve model) and after, the default clay case** (c 25 kPa,
+phi 20, E 30 MPa, gamma 18; width 10, depth 5, wall 10 m, EI 50,000, EA 5e6,
+30 x 15 T6): head u_x -6.1 -> +6.7 mm, M_max 17.2 -> 27.6 kN-m/m, V_max
+28.0 -> 25.4 kN/m; with a strut at 1.5 m (k 50,000 kN/m/m) head -3.7 -> +0.8
+mm (largest wall u_x +5.0 mm below the strut), M_max 20.9 -> 35.7, V_max
+27.0 -> 33.7, strut force -37.6 -> +52.7 kN/m (now compression, counted from
+its installation after the first lift). Every case: DESIGN.md, "Staged
+excavation". Tests: `fem2d/tests/test_excavation_staged.py`.
+
 ## 6. Performance
 
 Wall-clock on the dev machine, single process, including mesh build and
@@ -515,7 +616,15 @@ the full suite (461 tests incl. slow SRM, 2026-10-14) runs in ~14 min.
 - **Staged construction**: `analyze_staged(max_iter=100)` is low for a
   plastic stage under the constant-stiffness iteration (a footing at 260
   kPa on c' 20 kPa, phi' 25 deg converged with 500 and not with 100);
-  pass a larger `max_iter` for plastic stages.
+  pass a larger `max_iter` for plastic stages. `analyze_excavation` uses
+  1000 and accepts steps whose displacements stand still (§9).
+- **Excavation walls** (§9): no interface elements, so the wall is either
+  smooth (default, delta = 0) or bonded (shares the soil's nodes and hangs
+  the retained soil); struts are linear springs without preload; one
+  groundwater table in every stage, an excavation below it kept full of
+  water (a dewatered excavation, with seepage under the wall, is not
+  modelled); very fine meshes (60 x 30 on the benchmark) may not converge;
+  T3 elements lock (a quarter to a half of the T6 moment).
 - **psi policy**: psi_red = min(psi, phi_red) during reduction (PLAXIS
   convention); GL99 used psi = 0 throughout.
 - **delta_max curves** include foundation settlement — compare to

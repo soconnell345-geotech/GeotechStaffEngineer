@@ -644,97 +644,303 @@ def create_wall_elements(nodes, x_wall, y_top, y_bottom, EA, EI,
     return beam_elements, list(node_ids)
 
 
+def _graded_coords(levels, n_target):
+    """Coordinates through every value in ``levels`` (sorted, distinct):
+    each interval divided evenly, at about the spacing
+    (levels[-1] - levels[0]) / n_target, and at least once."""
+    levels = np.asarray(levels, dtype=float)
+    h = (levels[-1] - levels[0]) / max(int(n_target), 1)
+    coords = [levels[0]]
+    for a, b in zip(levels[:-1], levels[1:]):
+        k = max(1, int(round((b - a) / h)))
+        coords.extend(np.linspace(a, b, k + 1)[1:])
+    return np.array(coords)
+
+
+def _layer_k0(sl):
+    """At-rest coefficient of a soil layer and where it came from: the
+    layer's own 'K0'; else Jaky's 1 - sin(phi') for a frictional layer;
+    else nu / (1 - nu), the ratio one-dimensional elastic loading gives."""
+    if sl.get('K0') is not None:
+        return float(sl['K0']), "given"
+    phi = float(sl.get('phi', 0.0) or 0.0)
+    if phi > 0:
+        return 1.0 - np.sin(np.radians(phi)), "Jaky, 1 - sin(phi')"
+    nu = float(sl.get('nu', 0.3))
+    return nu / (1.0 - nu), "nu / (1 - nu) (phi = 0)"
+
+
+def _geostatic_stresses(nodes, elements, soil_layers, layer_ids,
+                        layer_polylines, pp, t):
+    """In-situ (K0) stresses at every Gauss point, tension positive:
+    sigma_v' from the overburden of the soil layers (and any water ponded
+    on the ground) less the pore pressure; sigma_h' = sigma_z' = K0
+    sigma_v'; no shear. The layers are taken as the layer boundaries say
+    (horizontal at ``bottom_elevation``, or ``layer_polylines``); the
+    elements take the layer of their centroid, so where a boundary cuts an
+    element the field is slightly out of balance with the element weights,
+    which the in-situ stage settles."""
+    from fem2d.solver import _gp_precompute
+
+    gp = _gp_precompute(nodes, elements, t)
+    N = gp['N']
+    xe = nodes[elements]
+    xg = np.einsum('gi,ei->eg', N, xe[:, :, 0])
+    yg = np.einsum('gi,ei->eg', N, xe[:, :, 1])
+    n_l = len(soil_layers)
+    if layer_polylines:
+        bottoms = [
+            (lambda x, pl=np.asarray(p, dtype=float):
+             np.interp(x, pl[:, 0], pl[:, 1]))
+            for p in layer_polylines][:n_l - 1]
+    elif n_l > 1:
+        bottoms = [
+            (lambda x, b=float(sl['bottom_elevation']): np.full_like(x, b))
+            for sl in soil_layers[:n_l - 1]]
+    else:
+        bottoms = []
+    y_ground = float(np.max(nodes[:, 1]))
+    sv = np.zeros_like(xg)
+    top = np.full_like(xg, y_ground)
+    for i in range(len(bottoms) + 1):
+        bot = bottoms[i](xg) if i < len(bottoms) \
+            else np.full_like(xg, -np.inf)
+        g = float(soil_layers[min(i, n_l - 1)].get('gamma', 18))
+        sv += g * np.clip(top - np.maximum(bot, yg), 0.0, None)
+        top = np.minimum(top, bot)
+    p = np.zeros_like(xg)
+    p_top = np.zeros_like(xg)
+    if pp is not None:
+        pp = np.clip(np.asarray(pp, dtype=float), 0.0, None)
+        p = np.clip(np.einsum('gi,ei->eg', N, pp[elements]), 0.0, None)
+        top_nodes = np.where(np.abs(nodes[:, 1] - y_ground) < 1e-9)[0]
+        order = top_nodes[np.argsort(nodes[top_nodes, 0])]
+        p_top = np.interp(xg, nodes[order, 0], pp[order])
+    sv_eff = np.clip(sv + p_top - p, 0.0, None)
+    k0 = np.array([_layer_k0(soil_layers[min(int(lid), n_l - 1)])[0]
+                   for lid in layer_ids])
+    sig = np.zeros(xg.shape + (4,))
+    sig[:, :, 0] = -k0[:, None] * sv_eff
+    sig[:, :, 1] = -sv_eff
+    sig[:, :, 2] = -k0[:, None] * sv_eff
+    return sig
+
+
+# analyze_excavation accepts a load step that reaches the iteration ceiling
+# with its displacements standing still (largest nodal change over the
+# second half of the iterations < 0.1 of the first half) and a residual
+# ratio below 1e-2 or still falling: the criterion the strength reduction
+# uses (DESIGN.md, "Failure criterion"). In the active wedge behind a wall
+# the constant-stiffness iteration converges slowly (the wedge is at the
+# limit state and the wall's bending controls its movement) and stalls
+# between 3e-5 and 1e-2 on the meshes measured (DESIGN.md, GM-71).
+_EXC_SETTLED_RATIO = 0.1
+_EXC_SETTLED_CAP = 1e-2
+
+
 def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
                        wall_EA, nx=30, ny=15, t=1.0, n_steps=10,
                        gwt=None, gamma_w=9.81, struts=None,
-                       max_iter=100, tol=1e-5,
-                       layer_polylines=None, element_type='t6'):
-    """Analyze a braced excavation with a sheet pile wall.
+                       max_iter=1000, tol=1e-5,
+                       layer_polylines=None, element_type='t6',
+                       lifts=None, wall_contact='smooth'):
+    """Excavation in front of an embedded wall, staged (GM-71, 2026-10-14).
 
-    Creates a rectangular domain with a vertical wall on the left side
-    of an excavation. Excavation is modeled by removing gravity from
-    elements inside the excavated zone.
+    The model is half of a symmetric excavation, in plane strain: the wall
+    on x = 0, the retained soil to its left (to x = -2 wall_depth), the
+    excavation from the wall to its centre line at x = width / 2, which is
+    a line of symmetry (rollers); the base is fixed. A one-sided cut in
+    front of open ground is the limit of a wide excavation: give a width
+    of at least twice the passive zone in front of the wall.
+
+    Stages (``analyze_staged``):
+
+    0. In-situ stresses (K0 procedure): every element at sigma_v' from its
+       overburden (less the pore pressure) and sigma_h' = K0 sigma_v'
+       (each layer's 'K0', else Jaky's 1 - sin phi', else nu/(1-nu) for
+       phi = 0), no displacement; the stage settles any out-of-balance.
+       Displacements are reported from the end of this stage.
+    1..n. One stage per lift. The wall (beam elements on x = 0, from the
+       ground to -wall_depth) is wished in place at the start of the first
+       lift, stress-free. Each lift removes the elements between the
+       previous and the new excavation level; the forces they carried are
+       released onto the remaining mesh (the stage's out-of-balance load is
+       ramped over ``n_steps``). A strut is installed, stress-free, at the
+       start of the first lift after the excavation has reached its level,
+       so it carries only the movement after its installation.
+
+    Before 2026-10-14 this function switched off the self-weight of the
+    excavated elements and kept their stiffness, in one gravity solve; the
+    wall head moved into the retained soil and the wall forces were not
+    those of an excavation.
 
     Parameters
     ----------
-    width : float — excavation width (m).
-    depth : float — excavation depth (m).
-    wall_depth : float — total wall depth below surface (m).
-    soil_layers : list of dict — soil properties (same format as analyze_slope_srm).
+    width : float — full excavation width (m); the model spans half of it.
+    depth : float — final excavation depth below the ground (m).
+    wall_depth : float — wall tip depth below the ground (m), > depth.
+    soil_layers : list of dict — 'E', 'nu', 'c', 'phi', 'psi', 'gamma'
+        (total unit weight), 'bottom_elevation' when there is more than
+        one layer, optional 'K0' and the Hardening Soil keys.
     wall_EI : float — wall flexural stiffness (kN*m^2/m).
     wall_EA : float — wall axial stiffness (kN/m).
-    nx, ny : int — mesh density.
+    nx, ny : int — about this many elements across and down (the mesh has
+        a node column on the wall and a node row at every excavation level,
+        strut level and the wall tip).
     t : float — thickness.
-    n_steps : int — load steps.
-    gwt : float, (M,2) array, or (n_nodes,) array, optional
-        Groundwater table. See compute_pore_pressures() for formats.
-    gamma_w : float — unit weight of water (kN/m^3). Default 9.81.
-    struts : list of dict, optional
-        Horizontal strut supports. Each dict: {'depth': float (m below surface),
-        'stiffness': float (kN/m/m)}. Adds spring stiffness at wall nodes.
-    max_iter : int — maximum Newton-Raphson iterations per step.
-    tol : float — convergence tolerance.
+    n_steps : int — load steps in each stage.
+    gwt : float, (M,2) array, or (n_nodes,) array, optional — groundwater
+        table (compute_pore_pressures formats), the same in every stage.
+        Where it is above the excavation level the excavation is kept full
+        of water to it (no dewatering, no seepage; a warning says so).
+    gamma_w : float — unit weight of water (kN/m^3).
+    struts : list of dict, optional — {'depth': m below the ground (at or
+        above the excavation level, < depth), 'stiffness': kN/m per m run}.
+        A horizontal spring at the wall node nearest the depth (a strut, or
+        an anchor's axial stiffness); stiffness <= 0 is skipped. No preload.
+    max_iter : int — iteration ceiling per load step (default 1000 since
+        2026-10-14, was 100: the active wedge behind a wall in sand needs
+        several hundred constant-stiffness iterations a step). A step that
+        reaches it with its displacements standing still is accepted, as in
+        the strength reduction (see ``notes``).
+    tol : float — residual tolerance.
+    layer_polylines : list of (M,2) arrays, optional — layer bottoms.
+    element_type : 't6' (default) or 't3'.
+    lifts : list of float, optional — excavation depths (m) at the end of
+        each lift, increasing; the last is taken to ``depth``. Default: one
+        lift to each strut level, then to ``depth``. A stop is added at a
+        strut level that a lift would pass without stopping.
+    wall_contact : 'smooth' (default) or 'bonded'. 'smooth': the wall has
+        its own nodes, tied to the soil horizontally and, at its tip, also
+        vertically; the soil slides down or up the wall freely (no wall
+        friction, delta = 0: the Rankine active pressure the USS Steel Sheet
+        Piling Design Manual and Caltrans design methods use on the
+        retained side). 'bonded': the wall shares the soil's nodes (no
+        slip at all; before 2026-10-14 the only option). A bonded wall
+        hangs the retained soil: on the USS cantilever benchmark its axial
+        force reached 1.5 times the horizontal thrust above the excavation
+        level (more than any wall friction angle up to phi' allows) and the
+        thrust fell below the Coulomb active value with delta = phi'.
+        There are no interface elements yet (a wall friction delta between
+        0 and phi' needs them).
 
     Returns
     -------
-    FEMResult with beam force results and optional strut forces.
-    """
-    from fem2d.elements import BeamElement, beam2d_internal_forces
-    from fem2d.assembly import (
-        build_rotation_dof_map, beam_element_dofs,
-    )
-    from fem2d.results import BeamForceResult
+    FEMResult (analysis_type "excavation"), at the end of the last stage:
+        displacements and ``max_displacement_*`` — movement since the end of
+            the in-situ stage (the excavation's own movement; before
+            2026-10-14 the gravity movement of the one solve);
+        elements, stresses, strains — the soil left at the end (the
+            excavated elements are not in it); stresses are effective
+            (in-situ plus change);
+        beam_forces, max_beam_moment_kNm_per_m, max_beam_shear_kN_per_m —
+            the wall at the end of the last stage (``wall_envelope`` holds
+            the largest over all stages);
+        strut_forces — per strut: 'force_kN_per_m' = stiffness x the wall's
+            movement toward the excavation since installation (positive =
+            the strut holds the wall back; before 2026-10-14 it counted the
+            movement since the start), plus 'installed_in_stage';
+        excavation_stages — one row per lift (wall head and largest wall
+            movement, moment, shear, strut forces); notes; warnings;
+        staged — the StagedConstructionResult (not serialized).
 
-    # Domain: wall at x=0, excavation to the right [0, width]
-    # Extend left by 2*wall_depth, right by width + 2*wall_depth
+    Sign: x is positive from the retained soil toward the excavation, so a
+    wall moving toward the excavation has u_x > 0.
+    """
+    width = float(width)
+    depth = float(depth)
+    wall_depth = float(wall_depth)
+    if width <= 0:
+        raise ValueError(f"width must be > 0 m (got {width})")
+    if depth <= 0:
+        raise ValueError(f"depth must be > 0 m (got {depth})")
+    if wall_depth <= depth:
+        raise ValueError(
+            f"wall_depth ({wall_depth} m) must be greater than depth "
+            f"({depth} m): the wall has to reach below the excavation level")
+    if not soil_layers:
+        raise ValueError("soil_layers is empty")
+    if wall_contact not in ('smooth', 'bonded'):
+        raise ValueError(f"wall_contact must be 'smooth' or 'bonded' (got "
+                         f"{wall_contact!r})")
+
+    # Struts: (depth, stiffness, input index)
+    strut_defs = []
+    for j, s in enumerate(struts or []):
+        k = float(s['stiffness'])
+        d = float(s['depth'])
+        if k <= 0:
+            continue
+        if d < 0 or d >= depth - 1e-9:
+            raise ValueError(
+                f"struts[{j}]: depth {d} m must be at or below the ground "
+                f"and above the final excavation level ({depth} m); a strut "
+                f"is installed once the excavation has reached its level")
+        strut_defs.append((d, k, j))
+
+    # Lifts: excavation depth at the end of each stage
+    if lifts is None:
+        lift_depths = [depth]
+    else:
+        lift_depths = [float(d) for d in lifts]
+        if not lift_depths or lift_depths[0] <= 0 or any(
+                b <= a for a, b in zip(lift_depths[:-1], lift_depths[1:])):
+            raise ValueError(f"lifts must be increasing depths > 0 (got "
+                             f"{list(lifts)})")
+        if lift_depths[-1] > depth + 1e-9:
+            raise ValueError(f"lifts go below the excavation depth {depth} m")
+        if lift_depths[-1] < depth - 1e-9:
+            lift_depths.append(depth)
+        else:
+            lift_depths[-1] = depth
+    for d, _, _ in strut_defs:
+        # the first lift that reaches the strut level must not be the last
+        first = next(b for b in lift_depths if b >= d - 1e-9)
+        if abs(first - depth) < 1e-9 and d > 0:
+            lift_depths = sorted(set(lift_depths) | {d})
+
+    # Domain: the retained side as before; the excavation to its centre line
     x_left = -2.0 * wall_depth
-    x_right = width + 2.0 * wall_depth
+    x_right = 0.5 * width
     y_top = 0.0
     y_bottom = -max(wall_depth + depth, 2.0 * wall_depth)
-
-    nodes, elements = generate_rect_mesh(
-        x_left, x_right, y_bottom, y_top, nx, ny)
-    # Put a node column ON the wall line x = 0 (GM-70): with a uniform
-    # spacing x = 0 is a column only when 2*wall_depth/dx is a whole number,
-    # and otherwise the wall sat on the nearest column, up to dx/2 behind or
-    # in front of the excavation face. The column nearest 0 is moved onto
-    # it (before the T6 midside nodes are made, so they stay mid-edge).
-    nodes = np.array(nodes, dtype=float)
-    columns = np.unique(np.round(nodes[:, 0], 9))
-    x_near = columns[np.argmin(np.abs(columns))]
-    nodes[np.abs(nodes[:, 0] - x_near) < 1e-9, 0] = 0.0
-    # Likewise a node row at the wall tip y = -wall_depth, so the wall is
-    # as long as asked (it ended on the nearest row, up to dy/2 short or
-    # long). The top and bottom boundary rows are never moved.
-    rows = np.unique(np.round(nodes[:, 1], 9))
-    inner = rows[(rows > y_bottom + 1e-9) & (rows < y_top - 1e-9)]
-    if len(inner):
-        y_near = inner[np.argmin(np.abs(inner + wall_depth))]
-        nodes[np.abs(nodes[:, 1] - y_near) < 1e-9, 1] = -float(wall_depth)
+    h_y = (y_top - y_bottom) / max(int(ny), 1)
+    levels = sorted({y_top, y_bottom, -wall_depth}
+                    | {-d for d in lift_depths})
+    for d, _, _ in strut_defs:
+        if min(abs(-d - lv) for lv in levels) > 0.25 * h_y:
+            levels = sorted(set(levels) | {-d})
+    xs = _graded_coords([x_left, 0.0, x_right], nx)
+    ys = _graded_coords(levels, ny)
+    n_cx, n_cy = len(xs) - 1, len(ys) - 1
+    idx_nodes, elements = generate_rect_mesh(0.0, float(n_cx), 0.0,
+                                             float(n_cy), n_cx, n_cy)
+    ix = np.rint(idx_nodes[:, 0]).astype(int)
+    iy = np.rint(idx_nodes[:, 1]).astype(int)
+    nodes = np.column_stack([xs[ix], ys[iy]])
     if element_type == 't6':
         # Beams couple at corner AND midside nodes along the wall line
         # (each T6 edge contributes two beam segments).
         nodes, elements = convert_to_t6(nodes, elements)
     bc_nodes = detect_boundary_nodes(nodes)
+    n_elem = len(elements)
 
-    # Assign layers
+    # Layers and materials
     if layer_polylines:
         from fem2d.mesh import assign_layers_by_polylines
-        layer_ids = assign_layers_by_polylines(nodes, elements, layer_polylines)
+        layer_ids = assign_layers_by_polylines(nodes, elements,
+                                               layer_polylines)
     elif len(soil_layers) > 1:
         layer_bottoms = [sl['bottom_elevation'] for sl in soil_layers]
-        layer_ids = assign_layers_by_elevation(nodes, elements, layer_bottoms)
+        layer_ids = assign_layers_by_elevation(nodes, elements,
+                                               layer_bottoms)
     else:
-        layer_ids = np.zeros(len(elements), dtype=int)
-
-    # Build per-element material properties
+        layer_ids = np.zeros(n_elem, dtype=int)
+    layer_ids = np.minimum(layer_ids, len(soil_layers) - 1)
     material_props = []
-    gamma_arr = np.zeros(len(elements))
-    centroids = nodes[elements].mean(axis=1)
-
-    for e in range(len(elements)):
-        lid = min(layer_ids[e], len(soil_layers) - 1)
-        sl = soil_layers[lid]
+    gamma_arr = np.zeros(n_elem)
+    for e in range(n_elem):
+        sl = soil_layers[int(layer_ids[e])]
         mp = {
             'E': sl.get('E', 30000),
             'nu': sl.get('nu', 0.3),
@@ -743,121 +949,281 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
             'psi': sl.get('psi', 0),
             'gamma': sl.get('gamma', 18),
         }
-        # Copy HS params if present
         if sl.get('model') == 'hs':
             mp['model'] = 'hs'
             for key in ('E50_ref', 'Eur_ref', 'm', 'p_ref', 'R_f'):
                 mp[key] = sl[key]
         material_props.append(mp)
+        gamma_arr[e] = mp['gamma']
 
-        # Reduce gamma to zero inside excavation zone (right of wall, above depth)
-        cx, cy = centroids[e]
-        if cx > 0 and cy > -depth:
-            gamma_arr[e] = 0.0
-        else:
-            gamma_arr[e] = mp['gamma']
+    # Element groups: the retained soil, and one group per lift
+    centroids = nodes[elements].mean(axis=1)
+    lift_of = np.full(n_elem, -1)
+    prev = 0.0
+    for k, d in enumerate(lift_depths):
+        sel = ((centroids[:, 0] > 0.0) & (centroids[:, 1] > -d)
+               & (centroids[:, 1] < -prev) & (lift_of < 0))
+        lift_of[sel] = k
+        prev = d
+    groups = {'soil': [int(e) for e in np.where(lift_of < 0)[0]]}
+    for k in range(len(lift_depths)):
+        groups[f'lift_{k + 1}'] = [int(e) for e in np.where(lift_of == k)[0]]
+    all_groups = list(groups)
 
-    # Compute pore pressures if GWT specified
+    # The wall: one node column on x = 0 from the ground to the tip
+    spacing = float(min(np.min(np.diff(xs)), np.min(np.diff(ys))))
+    beam_elems, wall_nodes = create_wall_elements(
+        nodes, x_wall=0.0, y_top=0.0, y_bottom=-wall_depth,
+        EA=wall_EA, EI=wall_EI, tol=0.25 * spacing)
+    if not beam_elems:
+        raise RuntimeError("no wall nodes found on x = 0")
+    springs = []
+    zip_ties, wall_ties, right_ties = [], [], []    # spring indices
+    if wall_contact == 'smooth':
+        # Cut the soil along the wall above its tip: the elements right of
+        # the wall get their own copies of the column's nodes. In the
+        # in-situ stage the two faces are tied together (x and y), so the
+        # soil is whole; from the first lift the wall has its own nodes,
+        # tied to each face horizontally only (no wall friction) and to the
+        # soil at its tip in both directions, where it bears on the soil.
+        # A face tie on the excavation side goes with the soil above the
+        # excavation level.
+        col = list(wall_nodes)                  # top to tip
+        upper = col[:-1]
+        n0 = len(nodes)
+        right_ids = list(range(n0, n0 + len(upper)))
+        wall_ids = list(range(n0 + len(upper), n0 + len(upper) + len(col)))
+        nodes = np.vstack([nodes, nodes[upper], nodes[col]])
+        to_right = dict(zip(upper, right_ids))
+        cx = nodes[elements[:, :3]].mean(axis=1)[:, 0]
+        elements = np.array(elements)
+        for e in np.where(cx > 0.0)[0]:
+            elements[e] = [to_right.get(int(n), int(n)) for n in elements[e]]
+        to_wall = dict(zip(col, wall_ids))
+        for bm in beam_elems:
+            bm.node_i = to_wall[bm.node_i]
+            bm.node_j = to_wall[bm.node_j]
+        wall_nodes = wall_ids
+        h_min = min(float(np.hypot(*(nodes[b.node_j] - nodes[b.node_i])))
+                    for b in beam_elems)
+        e_max = max(float(sl.get('E', 30000)) for sl in soil_layers)
+        k_tie = 1e3 * max(e_max, float(wall_EA) / h_min,
+                          12.0 * float(wall_EI) / h_min ** 3)
+        for left, right in zip(upper, right_ids):
+            zip_ties.append(len(springs))
+            springs.append({'node': right, 'node_b': left, 'kx': k_tie,
+                            'ky': k_tie})
+        for w, left in zip(wall_ids, col):
+            wall_ties.append(len(springs))
+            springs.append({'node': w, 'node_b': left, 'kx': k_tie,
+                            'ky': k_tie if left == col[-1] else 0.0})
+        for w, right in zip(wall_ids, right_ids):
+            right_ties.append((len(springs), float(nodes[right, 1])))
+            springs.append({'node': w, 'node_b': right, 'kx': k_tie})
+    n_ties = len(springs)
+
+    # Struts as springs at the wall node nearest their level
+    for d, k, j in strut_defs:
+        nid = min(wall_nodes, key=lambda n: abs(nodes[n, 1] + d))
+        springs.append({'node': int(nid), 'kx': k})
+
     pp = None
     if gwt is not None:
         from fem2d.porewater import compute_pore_pressures
         pp = compute_pore_pressures(nodes, gwt, gamma_w)
 
-    # Create wall elements at x=0
-    # Tolerance scales with mesh spacing so coarse meshes still find wall nodes
-    dx_mesh = (x_right - x_left) / nx
-    wall_tol = max(dx_mesh * 0.6, 0.5)
-    beam_elems, wall_nodes = create_wall_elements(
-        nodes, x_wall=0.0, y_top=0.0, y_bottom=-wall_depth,
-        EA=wall_EA, EI=wall_EI, tol=wall_tol)
+    # Stages
+    phases = [ConstructionPhase(name="In-situ stresses (K0)",
+                                active_soil_groups=all_groups, gwt=gwt,
+                                n_steps=n_steps,
+                                active_spring_ids=list(zip_ties))]
+    installed = []
+    install_stage = {}
+    excavated = set()
+    reached = 0.0
+    for k, d in enumerate(lift_depths):
+        new = [i for i, (sd, _, _) in enumerate(strut_defs)
+               if i not in installed and sd <= reached + 1e-9]
+        for i in new:
+            installed.append(i)
+            install_stage[i] = k + 1
+        excavated.add(f'lift_{k + 1}')
+        name = f"Excavate to {d:.2f} m"
+        if new:
+            name += " (struts at " + ", ".join(
+                f"{strut_defs[i][0]:.2f}" for i in new) + " m installed)"
+        phases.append(ConstructionPhase(
+            name=name,
+            active_soil_groups=[g for g in all_groups if g not in excavated],
+            active_beam_ids=list(range(len(beam_elems))),
+            active_spring_ids=list(wall_ties)
+            + [i for i, y in right_ties if y <= -d + 1e-9]
+            + [n_ties + i for i in installed],
+            gwt=gwt, n_steps=n_steps))
+        reached = d
 
-    if not beam_elems:
-        # Fallback: no wall nodes found, run without beams
-        converged, u, stresses, strains = solve_nonlinear(
-            nodes, elements, material_props, gamma_arr, bc_nodes,
-            t=t, n_steps=n_steps, max_iter=max_iter, tol=tol,
-            pore_pressures=pp)
-        return _build_result(nodes, elements, u, stresses, strains,
-                             analysis_type="excavation")
-
-    # Build rotation DOF map and solve with beams
-    rotation_dof_map, n_dof_total = build_rotation_dof_map(
-        len(nodes), beam_elems)
-
-    # Build strut spring list: [(node_id, stiffness), ...]
-    strut_node_map = []
-    if struts:
-        for strut in struts:
-            s_depth = strut['depth']
-            s_k = strut['stiffness']
-            if s_k <= 0:
-                continue
-            # Find wall node closest to y = -s_depth on the wall line (x≈0)
-            target_y = -s_depth
-            best_node = None
-            best_dist = float('inf')
-            for nid in wall_nodes:
-                dist = abs(nodes[nid, 1] - target_y)
-                if dist < best_dist:
-                    best_dist = dist
-                    best_node = nid
-            if best_node is not None:
-                strut_node_map.append((best_node, s_k))
-
-    converged, u, stresses, strains = solve_nonlinear(
+    sig0 = _geostatic_stresses(nodes, elements, soil_layers, layer_ids,
+                               layer_polylines, pp, t)
+    staged = analyze_staged(
         nodes, elements, material_props, gamma_arr, bc_nodes,
-        t=t, n_steps=n_steps, max_iter=max_iter, tol=tol,
-        beam_elements=beam_elems, rotation_dof_map=rotation_dof_map,
-        pore_pressures=pp,
-        strut_springs=strut_node_map if strut_node_map else None)
+        element_groups=groups, phases=phases, beam_elements=beam_elems,
+        t=t, max_iter=max_iter, tol=tol, gamma_w=gamma_w,
+        reset_displacements_after=0, springs=springs,
+        initial_stresses=sig0, water_on_free_faces=True,
+        settled_ratio=_EXC_SETTLED_RATIO,
+        settled_residual_cap=_EXC_SETTLED_CAP)
 
-    result = _build_result(nodes, elements,
-                           u[:2 * len(nodes)],  # translational DOFs only
-                           stresses, strains,
+    # Result: the end of the last stage reached
+    last = staged.phases[-1]
+    n_n = len(nodes)
+    u_rep = np.asarray(last.displacements_since_reference, dtype=float)
+    n_lifts_done = len(staged.phases) - 1
+    # The result's mesh is the soil left at the end (the full mesh and every
+    # stage are in result.staged).
+    keep = np.where(~((lift_of >= 0) & (lift_of < n_lifts_done)))[0]
+    stresses = np.array(last.stresses, dtype=float)[keep]
+    strains = np.array(last.strains, dtype=float)[keep]
+    result = _build_result(nodes, np.asarray(elements)[keep],
+                           u_rep[:2 * n_n], stresses, strains,
                            analysis_type="excavation")
-    result.converged = converged
+    result.converged = bool(staged.converged
+                            and len(staged.phases) == len(phases))
+    result.staged = staged
 
-    # Extract beam forces
-    beam_force_results = []
-    for idx, beam in enumerate(beam_elems):
-        coords_ij = np.array([nodes[beam.node_i], nodes[beam.node_j]])
-        bdofs = beam_element_dofs(beam.node_i, beam.node_j, rotation_dof_map)
-        u_beam = u[bdofs]
-        forces = beam2d_internal_forces(coords_ij, beam.EA, beam.EI, u_beam)
-        beam_force_results.append(BeamForceResult(
-            element_index=idx,
-            node_i=beam.node_i, node_j=beam.node_j,
-            axial_i=forces['axial_i'], shear_i=forces['shear_i'],
-            moment_i=forces['moment_i'],
-            axial_j=forces['axial_j'], shear_j=forces['shear_j'],
-            moment_j=forces['moment_j'],
-            length=forces['length'],
-        ))
+    if last.beam_forces:
+        result.n_beam_elements = len(last.beam_forces)
+        result.beam_forces = last.beam_forces
+        result.max_beam_moment_kNm_per_m = last.max_beam_moment_kNm_per_m
+        result.max_beam_shear_kN_per_m = last.max_beam_shear_kN_per_m
 
-    result.n_beam_elements = len(beam_elems)
-    result.beam_forces = beam_force_results
-    if beam_force_results:
-        result.max_beam_moment_kNm_per_m = max(
-            max(abs(bf.moment_i), abs(bf.moment_j))
-            for bf in beam_force_results)
-        result.max_beam_shear_kN_per_m = max(
-            max(abs(bf.shear_i), abs(bf.shear_j))
-            for bf in beam_force_results)
-
-    # Extract strut forces: F = k * u_horizontal
-    if strut_node_map:
-        strut_force_results = []
-        for node_id, s_k in strut_node_map:
-            u_horiz = u[2 * node_id]  # horizontal DOF
-            force = s_k * u_horiz
-            strut_force_results.append({
-                'depth_m': float(-nodes[node_id, 1]),
-                'stiffness_kN_per_m': float(s_k),
-                'force_kN_per_m': float(force),
-                'node_id': int(node_id),
+    def _strut_rows(pr):
+        rows = []
+        for s in pr.spring_forces or []:
+            i = s['spring'] - n_ties
+            if i < 0:
+                continue                    # a wall-to-soil tie
+            rows.append({
+                'depth_m': float(-nodes[s['node_id'], 1]),
+                'stiffness_kN_per_m': float(strut_defs[i][1]),
+                'force_kN_per_m': float(s['force_x_kN_per_m']),
+                'node_id': int(s['node_id']),
+                'installed_in_stage': int(s['placed_in_phase']),
             })
-        result.strut_forces = strut_force_results
+        return rows
 
+    if strut_defs and _strut_rows(last):
+        result.strut_forces = _strut_rows(last)
+
+    # One row per excavation stage
+    wall_y = nodes[wall_nodes, 1]
+    stage_rows = []
+    env_m = env_v = None
+    for pr in staged.phases[1:]:
+        k = pr.phase_index - 1
+        us = np.asarray(pr.displacements_since_reference, dtype=float)
+        wux = us[2 * np.asarray(wall_nodes)]
+        i_max = int(np.argmax(np.abs(wux)))
+        row = {
+            'stage': pr.phase_index,
+            'name': pr.phase_name,
+            'excavation_depth_m': float(lift_depths[k]),
+            'converged': bool(pr.converged),
+            'struts_installed_m': [float(strut_defs[i][0]) for i in
+                                   install_stage if install_stage[i] == k + 1],
+            'wall_head_ux_m': float(wux[0]),
+            'max_wall_ux_m': float(wux[i_max]),
+            'max_wall_ux_depth_m': float(-wall_y[i_max]),
+            'max_beam_moment_kNm_per_m': float(pr.max_beam_moment_kNm_per_m),
+            'max_beam_shear_kN_per_m': float(pr.max_beam_shear_kN_per_m),
+            'strut_forces_kN_per_m': [r['force_kN_per_m']
+                                      for r in _strut_rows(pr)],
+            'settled_steps': len(pr.settled_steps or []),
+        }
+        stage_rows.append(row)
+        if env_m is None or row['max_beam_moment_kNm_per_m'] > env_m[0]:
+            env_m = (row['max_beam_moment_kNm_per_m'], row['name'])
+        if env_v is None or row['max_beam_shear_kN_per_m'] > env_v[0]:
+            env_v = (row['max_beam_shear_kN_per_m'], row['name'])
+    result.excavation_stages = stage_rows
+    if env_m is not None:
+        result.wall_envelope = {
+            'max_beam_moment_kNm_per_m': env_m[0], 'moment_stage': env_m[1],
+            'max_beam_shear_kN_per_m': env_v[0], 'shear_stage': env_v[1],
+        }
+
+    k0_txt = "; ".join(
+        f"{sl.get('name', f'layer {i + 1}')}: K0 = {_layer_k0(sl)[0]:.3f} "
+        f"({_layer_k0(sl)[1]})" for i, sl in enumerate(soil_layers))
+    result.notes = [
+        "Staged excavation: in-situ K0 stresses with no displacement, then "
+        f"{len(lift_depths)} lift(s) to "
+        + ", ".join(f"{d:.2f}" for d in lift_depths) + " m; each lift's "
+        "elements are removed and the forces they carried released onto "
+        "the remaining mesh. The wall is wished in place at the first lift "
+        "and each strut installed once the excavation reached its level, "
+        "both stress-free.",
+        f"In-situ stresses: {k0_txt}.",
+        "Displacements are measured from the end of the in-situ stage; "
+        "x is positive toward the excavation (u_x > 0 = the wall moves "
+        "toward the excavation).",
+        f"Half of a symmetric excavation {width:g} m wide: the right "
+        f"boundary at x = {x_right:g} m is its centre line (rollers). "
+        "The wall shares nodes with the soil on both sides (no interface "
+        "elements): fully rough, and the soil is not separated by it.",
+        "Strut force = stiffness x movement toward the excavation since "
+        "installation (positive = the strut holds the wall back); no "
+        "preload.",
+    ]
+    settled = [(p.phase_name, s) for p in staged.phases
+               for s in (p.settled_steps or [])]
+    if settled:
+        worst = max(s['residual'] for _, s in settled)
+        result.notes.append(
+            f"{len(settled)} load step(s) reached the iteration ceiling with "
+            "the displacements standing still and were accepted (largest "
+            f"residual ratio {worst:.1e}; tolerance {tol:g}): Gauss points "
+            "at the Mohr-Coulomb apex switching return region stall the "
+            "residual without moving the mesh.")
+    warnings = []
+    if not result.converged:
+        bad = next((p for p in staged.phases if not p.converged), None)
+        warnings.append(
+            f"Stage '{bad.phase_name if bad else phases[len(staged.phases)].name}' "
+            f"did not converge within {max_iter} iterations a step; the "
+            "results are those of the last stage reached. Try more n_steps "
+            "or a higher max_iter, or the excavation may not be stable.")
+    if pp is not None:
+        exc_nodes = np.where((nodes[:, 0] > 1e-9)
+                             & (np.abs(nodes[:, 1] + depth) < 1e-9))[0]
+        if len(exc_nodes) and float(np.max(pp[exc_nodes])) > 1e-6:
+            warnings.append(
+                "The groundwater table is above the excavation level: the "
+                "excavation is modelled kept full of water to the table "
+                "(water pressure on its faces, no dewatering, no seepage), "
+                "so the water pressures on the two sides of the wall "
+                "balance. A dewatered excavation also carries the net "
+                "water pressure; these wall forces do not include it.")
+    plastic = any(float(sl.get('c', 0) or 0) > 0
+                  or float(sl.get('phi', 0) or 0) > 0
+                  or sl.get('model') == 'hs' for sl in soil_layers)
+    if element_type != 't6' and plastic:
+        warnings.append(
+            "T3 (constant-strain) elements lock in plastic flow (DESIGN.md, "
+            "Element Types): on the cantilever benchmark (VALIDATION.md "
+            "section 9) T3 meshes gave a quarter (30 x 15) to a half "
+            "(60 x 30) of the T6 wall moment, with a retained-side thrust "
+            "below the active value. Use element_type='t6' for wall "
+            "forces.")
+    phi_max = max(float(sl.get('phi', 0) or 0) for sl in soil_layers)
+    passive = (wall_depth - depth) * np.tan(np.radians(45 + phi_max / 2))
+    if x_right < passive:
+        result.notes.append(
+            f"The excavation's half-width ({x_right:.1f} m) is less than "
+            f"the Rankine passive zone in front of the wall "
+            f"({passive:.1f} m): the centre line limits it, as it does in a "
+            "symmetric excavation this wide. For a one-sided cut give a "
+            "larger width.")
+    result.warnings = warnings
     return result
 
 
@@ -1322,6 +1688,9 @@ class ConstructionPhase:
         only: the solver's state is never altered. (Before 2026-10-09 it
         zeroed u in the solver, which then re-converged to the same total
         displacement, so it had no effect.)
+    active_spring_ids : list of int, optional — indices into
+        ``analyze_staged(springs=...)`` active in this phase (struts,
+        anchors, props as linear springs). None means no springs.
     """
     name: str = "Phase"
     active_soil_groups: List[str] = field(default_factory=list)
@@ -1330,6 +1699,7 @@ class ConstructionPhase:
     gwt: Any = None
     n_steps: int = 5
     reset_displacements: bool = False
+    active_spring_ids: Optional[List[int]] = None
 
 
 def assign_element_groups(nodes, elements, regions):
@@ -1411,17 +1781,57 @@ def _resolve_reset_stage(value, phase_names):
     return idx
 
 
+def _normalize_springs(springs, n_nodes):
+    """``springs`` -> list of (node, kx, ky, node_b). Each spring is a
+    dict ({'node' or 'node_id', 'kx' or 'stiffness', 'ky', 'node_b'}) or a
+    tuple (node, kx[, ky[, node_b]]), stiffness in kN/m per m run; node_b
+    None = a spring to ground, else a tie between the two nodes."""
+    out = []
+    for j, s in enumerate(springs or []):
+        if isinstance(s, dict):
+            node = s.get('node', s.get('node_id'))
+            kx = s.get('kx', s.get('stiffness', 0.0))
+            ky = s.get('ky', 0.0)
+            node_b = s.get('node_b')
+        else:
+            node, kx = s[0], s[1]
+            ky = s[2] if len(s) > 2 else 0.0
+            node_b = s[3] if len(s) > 3 else None
+        for nd in (node, node_b):
+            if nd is not None and not 0 <= int(nd) < n_nodes:
+                raise ValueError(f"springs[{j}]: node {nd!r} is not a mesh "
+                                 f"node")
+        if node is None:
+            raise ValueError(f"springs[{j}]: no node")
+        out.append((int(node), float(kx or 0.0), float(ky or 0.0),
+                    None if node_b is None else int(node_b)))
+    return out
+
+
 def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
                    element_groups, phases, beam_elements=None,
                    t=1.0, max_iter=100, tol=1e-5, gamma_w=9.81,
-                   reset_displacements_after=None):
+                   reset_displacements_after=None, springs=None,
+                   initial_stresses=None, water_on_free_faces=True,
+                   settled_ratio=None, settled_residual_cap=1e-2):
     """Staged construction analysis.
 
     Solves a sequence of construction phases. Each phase activates a
-    subset of soil element groups and (optionally) beam elements.
-    Displacements, stresses, and strains carry forward cumulatively
-    (per Gauss point). An element activated in a phase is placed
-    stress-free on the deformed mesh: its strain counts from activation.
+    subset of soil element groups and (optionally) beam elements and
+    springs. Displacements, stresses, and strains carry forward
+    cumulatively (per Gauss point). An element activated in a phase is
+    placed stress-free on the deformed mesh: its strain counts from
+    activation. A beam or spring activated in a phase is placed the same
+    way (since 2026-10-14, GM-61): it carries only the movement after its
+    placement. Before, a beam left out of a phase (``active_beam_ids=None``)
+    still had its stiffness in the solve and, once reported, its forces
+    counted every movement since the start of the analysis.
+
+    Removing elements releases the forces they carried onto the rest of the
+    mesh: a phase's out-of-balance load runs from the internal force of the
+    state it starts from (on this phase's active elements) to this phase's
+    load, so the excavated elements' stresses drop out and their weight
+    goes with them.
 
     Movements per stage (2026-10-09). Every phase reports its own movement
     (``delta_displacement``), the movement from the start of the analysis
@@ -1456,6 +1866,35 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
         the result carries a ``judgment`` record when that default changes
         the reported numbers materially. A phase's own
         ``reset_displacements=True`` also resets at its start.
+    springs : list, optional — linear springs (struts, anchors, props, or
+        ties between two nodes): dicts ``{'node': id, 'kx': kN/m/m,
+        'ky': kN/m/m, 'node_b': id or None}`` (also ``node_id`` /
+        ``stiffness``) or tuples ``(node, kx[, ky[, node_b]])``; without
+        ``node_b`` the spring goes to ground. A phase switches them on with
+        ``active_spring_ids``. Each phase reports ``spring_forces``: k
+        times the stretch since placement (positive when the node moved in
+        +x / +y relative to ground or to node_b; the spring pulls back).
+    initial_stresses : array, optional — the stress state at the start of
+        the first phase (effective, tension positive), per Gauss point
+        ``(n_elem, n_gp, 4)`` as [sxx, syy, szz, txy], or per element
+        ``(n_elem, 4)``. With it the first phase starts from these stresses
+        and zero displacement (a K0 procedure: generate them in equilibrium
+        with the first phase's load and the first phase only settles any
+        out-of-balance). Elements not active in the first phase get none.
+    water_on_free_faces : bool — in a phase with a groundwater table,
+        water stands against every free face of the active mesh where the
+        pore pressure is positive (``porewater.standing_water_forces``):
+        an excavation below the table is kept full of water to it. Default
+        True (since 2026-10-14). False reproduces the earlier load, in
+        which such a face carried the pore pressure outward unbalanced.
+    settled_ratio, settled_residual_cap : accept a load step that reaches
+        ``max_iter`` with its displacements standing still (the largest
+        nodal change over the second half of its iterations below
+        ``settled_ratio`` of the first half) and its residual ratio below
+        ``settled_residual_cap`` or still falling (``solver.run_nl``; the
+        stall of Gauss points switching at the Mohr-Coulomb apex). Default
+        None: off, every step must meet ``tol``. Accepted steps are listed
+        on each phase (``settled_steps``).
 
     Returns
     -------
@@ -1499,6 +1938,7 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
     if beam_elements:
         rotation_dof_map, n_dof_total = build_rotation_dof_map(
             n_nodes_count, beam_elements)
+    spring_list = _normalize_springs(springs, n_nodes_count)
 
     # Initialize cumulative state. The Gauss-point stress/strain arrays carry
     # between phases (element averages lose the T6 variation and the
@@ -1512,13 +1952,46 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
     prev_active = set()
     gp_cache = {}
 
-    def _kinematic_strain(u_vec):
-        """Strain B u at every Gauss point (n_e, n_gp, 3)."""
+    def _gp():
         if 'gp' not in gp_cache:
             from fem2d.solver import _gp_precompute
             gp_cache['gp'] = _gp_precompute(nodes, elements, t)
-        gp = gp_cache['gp']
+        return gp_cache['gp']
+
+    def _kinematic_strain(u_vec):
+        """Strain B u at every Gauss point (n_e, n_gp, 3)."""
+        gp = _gp()
         return np.einsum('egki,ei->egk', gp['B'], u_vec[gp['dofs']])
+
+    if initial_stresses is not None:
+        ngp = _gp()['n_gp']
+        s0 = np.asarray(initial_stresses, dtype=float)
+        if s0.ndim == 2 and s0.shape == (n_elem, 4):
+            s0 = np.repeat(s0[:, None, :], ngp, axis=1)
+        if s0.shape != (n_elem, ngp, 4):
+            raise ValueError(
+                f"initial_stresses has shape {s0.shape}; expected "
+                f"({n_elem}, {ngp}, 4) per Gauss point or ({n_elem}, 4) per "
+                f"element, as [sxx, syy, szz, txy] (tension positive)")
+        sig_gp = s0.copy()
+        eps_gp = np.zeros((n_elem, ngp, 3))
+        sigma = sig_gp[:, :, [0, 1, 3]].mean(axis=1)
+
+    # Members (beams, springs) placed stress-free: the displacement of their
+    # DOFs at placement, kept while they stay active (GM-61).
+    beam_placed = {}     # beam index -> (dofs, u at placement)
+    spring_placed = {}   # spring index -> (ux, uy) at placement
+    beam_K = {}
+
+    def _beam_dofs_K(idx):
+        if idx not in beam_K:
+            from fem2d.elements import beam2d_stiffness
+            bm = beam_elements[idx]
+            coords_ij = np.array([nodes[bm.node_i], nodes[bm.node_j]])
+            K_e, _, _ = beam2d_stiffness(coords_ij, bm.EA, bm.EI)
+            beam_K[idx] = (beam_element_dofs(bm.node_i, bm.node_j,
+                                             rotation_dof_map), K_e)
+        return beam_K[idx]
 
     def _active_node_mask(active_elems, active_bms):
         mask = np.zeros(n_nodes_count, dtype=bool)
@@ -1562,23 +2035,39 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
             if group_name in element_groups:
                 active_elems.update(element_groups[group_name])
 
-        # 2. Compute active beams
-        active_bms = None
-        if phase.active_beam_ids is not None:
-            active_bms = set(phase.active_beam_ids)
+        # 2. Compute active beams and springs (None = none in this phase;
+        #    before 2026-10-14 None reached the solver as "all beams").
+        active_bms = set()
+        if phase.active_beam_ids is not None and beam_elements:
+            active_bms = {int(i) for i in phase.active_beam_ids
+                          if 0 <= int(i) < len(beam_elements)}
+        active_spr = set()
+        if phase.active_spring_ids is not None:
+            active_spr = {int(i) for i in phase.active_spring_ids
+                          if 0 <= int(i) < len(spring_list)}
 
         # 3. Compute pore pressures if gwt provided
         pp = None
+        water = None
         if phase.gwt is not None:
-            from fem2d.porewater import compute_pore_pressures
+            from fem2d.porewater import (compute_pore_pressures,
+                                         standing_water_forces)
             pp = compute_pore_pressures(nodes, phase.gwt, gamma_w)
+            if water_on_free_faces and active_elems:
+                water = standing_water_forces(nodes, elements, pp,
+                                              active_elems, t)
 
         # 4. Elements activated in this phase are placed stress-free on the
         #    deformed mesh: zero stress, strain = B u now (so only movement
         #    after placement strains them), fresh HS state. Without this a
         #    fill's strain counted the movement its shared nodes made before
         #    it existed. (reset_displacements is reporting only — step 9.)
+        #    Elements of the first phase keep any initial_stresses.
         newly = sorted(active_elems - prev_active)
+        if pi == 0 and initial_stresses is not None:
+            idle = sorted(set(range(n_elem)) - active_elems)
+            sig_gp[idle] = 0.0
+            newly = []
         if newly and sig_gp is not None:
             sig_gp = np.array(sig_gp, dtype=float)
             eps_gp = np.array(eps_gp, dtype=float)
@@ -1588,13 +2077,48 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
                 elem_state[e] = None
         prev_active = set(active_elems)
 
+        # 4b. Beams and springs placed in this phase start from the current
+        #     displacement; ones no longer active are forgotten.
+        for idx in list(beam_placed):
+            if idx not in active_bms:
+                del beam_placed[idx]
+        for idx in sorted(active_bms - set(beam_placed)):
+            dofs, _ = _beam_dofs_K(idx)
+            beam_placed[idx] = (dofs, u[dofs].copy(), pi)
+        for j in list(spring_placed):
+            if j not in active_spr:
+                del spring_placed[j]
+        def _spring_stretch(j):
+            node, _, _, node_b = spring_list[j]
+            dx, dy = float(u[2 * node]), float(u[2 * node + 1])
+            if node_b is not None:
+                dx -= float(u[2 * node_b])
+                dy -= float(u[2 * node_b + 1])
+            return dx, dy
+
+        for j in sorted(active_spr - set(spring_placed)):
+            spring_placed[j] = _spring_stretch(j) + (pi,)
+        lin_offset = None
+        if beam_placed or spring_placed:
+            lin_offset = np.zeros(n_dof_total)
+            for idx, (dofs, u0, _) in beam_placed.items():
+                lin_offset[dofs] += beam_K[idx][1] @ u0
+            for j, (u0x, u0y, _) in spring_placed.items():
+                node, kx, ky, node_b = spring_list[j]
+                lin_offset[2 * node] += kx * u0x
+                lin_offset[2 * node + 1] += ky * u0y
+                if node_b is not None:
+                    lin_offset[2 * node_b] -= kx * u0x
+                    lin_offset[2 * node_b + 1] -= ky * u0y
+        phase_springs = [spring_list[j] for j in sorted(active_spr)]
+
         # 5. Handle empty active elements gracefully
         if len(active_elems) == 0:
             pr = PhaseResult(
                 phase_name=phase.name,
                 phase_index=pi,
                 n_active_elements=0,
-                n_active_beams=len(active_bms) if active_bms else 0,
+                n_active_beams=len(active_bms),
                 converged=True,
                 displacements=u[:2 * n_nodes_count].copy(),
                 stresses=sigma.copy(),
@@ -1619,12 +2143,18 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
             strain_init=eps_gp if eps_gp is not None else strain,
             state_init=elem_state,
             surface_loads=phase.surface_loads,
+            strut_springs=phase_springs or None,
             return_state=True,
             return_gp=True,
+            lin_offset=lin_offset,
+            extra_forces=water,
+            settled_ratio=settled_ratio,
+            settled_residual_cap=settled_residual_cap,
+            return_info=True,
         )
 
         (converged, u_new, sigma_new, strain_new, state_new,
-         sig_gp, eps_gp) = result
+         sig_gp, eps_gp, run_info) = result
 
         # 7. Update cumulative state
         u = u_new
@@ -1632,7 +2162,8 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
         strain = strain_new
         elem_state = state_new
 
-        # 8. Extract beam forces for active beams
+        # 8. Extract beam forces for active beams (from the movement since
+        #    each beam's placement)
         beam_force_results = []
         n_active_beams = 0
         if beam_elements and active_bms:
@@ -1644,9 +2175,8 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
                 beam = beam_elements[idx]
                 coords_ij = np.array([
                     nodes[beam.node_i], nodes[beam.node_j]])
-                bdofs = beam_element_dofs(
-                    beam.node_i, beam.node_j, rotation_dof_map)
-                u_beam = u[bdofs]
+                bdofs, u0, _ = beam_placed[idx]
+                u_beam = u[bdofs] - u0
                 forces = beam2d_internal_forces(
                     coords_ij, beam.EA, beam.EI, u_beam)
                 beam_force_results.append(BeamForceResult(
@@ -1699,6 +2229,26 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
             pr.max_beam_shear_kN_per_m = max(
                 max(abs(bf.shear_i), abs(bf.shear_j))
                 for bf in beam_force_results)
+        if spring_placed:
+            sf = []
+            for j in sorted(spring_placed):
+                node, kx, ky, node_b = spring_list[j]
+                u0x, u0y, placed_in = spring_placed[j]
+                sx, sy = _spring_stretch(j)
+                sf.append({
+                    'spring': j, 'node_id': int(node),
+                    'node_b': None if node_b is None else int(node_b),
+                    'x_m': float(nodes[node, 0]),
+                    'y_m': float(nodes[node, 1]),
+                    'kx_kN_per_m': kx, 'ky_kN_per_m': ky,
+                    'force_x_kN_per_m': kx * (sx - u0x),
+                    'force_y_kN_per_m': ky * (sy - u0y),
+                    'placed_in_phase': int(placed_in),
+                })
+            pr.spring_forces = sf
+
+        pr.settled_steps = list(run_info['settled'])
+        pr.final_residual = float(run_info['final_residual'])
 
         # Movements: this stage's own, cumulative, and since the reference.
         _stage_movements(pr, pi, u_trans.copy(),
@@ -1741,8 +2291,15 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
         "displacement_reference (settlement_m negative = down, heave_m "
         "positive = up, horizontal_m signed +x).",
         "An element activated in a stage is placed stress-free on the "
-        "deformed mesh; its nodes' movement counts from placement.",
+        "deformed mesh; its nodes' movement counts from placement. Beams "
+        "and springs likewise carry only the movement after their "
+        "placement.",
     ]
+    if water_on_free_faces and any(p.gwt is not None for p in phases):
+        notes.append(
+            "Water stands against every free face where the pore pressure "
+            "is positive (an excavation below the water table is kept full "
+            "of water to it; no dewatering or seepage is modelled).")
 
     return StagedConstructionResult(
         n_phases=len(phase_results),

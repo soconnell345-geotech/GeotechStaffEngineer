@@ -110,13 +110,133 @@ a stress concentration at the wall tip (18.9 against 14.2 kN-m/m on
 60 x 30) that refinement does not remove; quote the moment above the tip
 zone, or use T6.
 
-Observation, not changed: `analyze_excavation` models the excavation by
-switching OFF the self-weight of the excavated elements (they keep their
-stiffness) in a single gravity solve; there is no in-situ stress followed by
-unloading. The wall head therefore moves into the retained soil (u_x < 0
-above) in these cases, not toward the excavation, and the wall forces are
-not those of an excavation sequence; `analyze_staged` with an excavation
-phase is the closer model.
+Found underneath (GM-71, fixed the same day, next section): the excavation
+itself was not modelled. The numbers in the table above are those of the
+old one-solve model and are superseded.
+
+### Staged excavation (GM-71, 2026-10-14)
+
+Until 2026-10-14 `analyze_excavation` switched OFF the self-weight of the
+excavated elements (they kept their stiffness) in a single gravity solve:
+no in-situ stress, no unloading. The wall head moved INTO the retained soil
+(u_x < 0 in every test case) and the wall forces were not those of an
+excavation. It now runs on `analyze_staged`:
+
+1. **Model.** Half of a symmetric excavation in plane strain: the wall on
+   x = 0, the retained soil to x = -2 wall_depth, the excavation from the
+   wall to its centre line at x = width / 2 (rollers: a line of symmetry);
+   base fixed. `width` is the FULL excavation width (before, everything
+   right of the wall to x = width + 2 wall_depth was "excavated"). A
+   one-sided cut is the limit of a wide excavation; a note says when the
+   half-width is less than the Rankine passive zone in front of the wall.
+   The mesh is structured, with a node column on the wall and a node row at
+   the ground, every excavation level, every strut level (unless within a
+   quarter row of another level), the wall tip and the base; elsewhere the
+   spacing is about even.
+2. **Stage 0, in-situ stresses (K0 procedure).** Every Gauss point gets
+   sigma_v' = overburden of the layers above it (by the layer boundaries,
+   horizontal or `layer_polylines`, plus any water ponded on the ground)
+   less the pore pressure, and sigma_h' = sigma_z' = K0 sigma_v', no shear,
+   no displacement (`analyze_staged(initial_stresses=...)`). K0 is the
+   layer's own `K0`, else Jaky's 1 - sin phi' for a frictional layer, else
+   nu / (1 - nu) for phi = 0 (the ratio one-dimensional elastic loading
+   gives). The stage settles any out-of-balance (an element whose centroid
+   puts it in another layer than the boundary does); on level layered
+   ground it moves nothing (tested: < 1e-9 m). Displacements are reported
+   from the end of this stage.
+3. **Stages 1..n, one per lift.** A lift's elements are removed; the forces
+   they carried are released onto the remaining mesh: a stage's
+   out-of-balance load runs from the internal force of the state it starts
+   from (now without the removed elements) to the stage's load, over
+   `n_steps`. The wall is wished in place at the start of the first lift,
+   stress-free; a strut is installed, stress-free, at the start of the
+   first lift after the excavation has reached its level, so its force is
+   stiffness x the movement after installation (default lifts: one to each
+   strut level, then to the final depth; a stop is added at a strut level a
+   user's lift would pass). Struts are linear springs (a strut, or an
+   anchor's axial stiffness), no preload.
+4. **Wall-soil contact** (`wall_contact`). `'smooth'` (default): the soil is
+   cut along the wall above its tip (the elements right of the wall get
+   their own copies of the column's nodes); in stage 0 stiff ties join the
+   two faces, so the ground is whole; from the first lift the wall has its
+   own nodes, tied to each face horizontally only and to the soil at its
+   tip in both directions; a face tie on the excavation side goes with the
+   soil above the excavation level. No wall friction (delta = 0): the
+   Rankine active pressure the USS Steel Sheet Piling Design Manual and the
+   Caltrans Trenching and Shoring Manual use on the retained side.
+   `'bonded'`: the wall shares the soil's nodes (no slip; the only option
+   before). A bonded wall hangs the retained soil: on the cantilever
+   benchmark its axial force reached 1.5 times the horizontal thrust above
+   the excavation level (more than any wall friction angle up to phi'
+   allows) and the thrust fell to 0.18 gamma H^2/2 against Ka = 0.271
+   (moment 66 against 155 kN-m/m smooth); bonded, the clay cases of the
+   table below move the wall head back into the soil (-0.1 to -2.0 mm).
+   Wall friction between 0 and phi' needs
+   interface elements, which fem2d does not have.
+5. **Water.** One groundwater table in every stage. Where it is above a free
+   face (the excavation's faces, the ground) water stands against the face
+   (`porewater.standing_water_forces`, `analyze_staged(water_on_free_faces=
+   True)`): the excavation is kept full of water to the table, the water
+   pressures on the two faces of the wall balance, and a warning says a
+   dewatered excavation (which also carries the net water pressure) is not
+   modelled. Before, a free face below the table carried the pore pressure
+   outward with nothing to balance it.
+6. **Convergence.** The stages use the constant-stiffness iteration. The
+   active wedge behind a smooth wall is at its limit state and the wall's
+   bending controls how far it moves, so a step can take several hundred
+   iterations: `max_iter` defaults to 1000 (was 100), and a step that
+   reaches it with its displacements standing still (second-half movement
+   < 0.1 of the first half) and a residual ratio below 1e-2 or still
+   falling is accepted, the criterion the strength reduction uses (listed
+   in `notes`). On the benchmark the 20x10 to 45x22 meshes converge this
+   way; 60x30 does not (the residual stalls near 1e-2 with the active wedge
+   still creeping, 3 mm per 1000 iterations); Newton-Raphson with the
+   continuum tangent and line search did no better (step cutbacks). Use
+   the default mesh or up to about 45x22, or raise `max_iter` / `n_steps`.
+7. **Result** (an `FEMResult`, keys kept): `displacements` /
+   `max_displacement_*` since the end of the in-situ stage (meaning
+   changed: before, the movement of the one gravity solve);
+   `elements` / `stresses` the soil left at the end; `beam_forces`,
+   `max_beam_moment_kNm_per_m`, `max_beam_shear_kN_per_m` at the end of the
+   last stage (`wall_envelope` holds the largest over all stages);
+   `strut_forces` with `force_kN_per_m` = stiffness x movement since
+   installation (meaning changed: before, since the start) plus
+   `installed_in_stage`; new `excavation_stages` (wall head and largest
+   wall u_x, M_max, V_max, strut forces per lift), `notes`, and `staged`
+   (the StagedConstructionResult, not serialized). `get_tables()` adds the
+   printed "Excavation stages" table; the calc package adds an "Excavation
+   Stages" section. Sign: u_x > 0 toward the excavation; a strut force > 0
+   holds the wall back.
+8. **Elements.** T3 locks in plastic flow: on the benchmark a T3 mesh gave
+   a quarter (30x15) to a half (60x30) of the T6 moment, with a thrust below
+   the active value; the result warns. The clay cases, where little yields,
+   still agree within 5 % (`test_wall_line.py`).
+
+Benchmark: VALIDATION.md section 9 (USS Steel Sheet Piling Design Manual,
+cantilevered wall in granular soil, pp. 86-90).
+
+What moved (the cases of the GM-70 table, T6 unless noted; M, V in kN-m/m
+and kN/m, head u_x in mm, + toward the excavation; "before" is the GM-70
+"after" column, i.e. the one-solve model):
+
+| case | head u_x before -> after | M_max | V_max | strut |
+|---|---|---|---|---|
+| clay, 10 x 6, no strut | -6.8 -> +6.3 | 19.5 -> 30.1 | 11.7 -> 17.5 | |
+| same, strut at 1.5 m | -5.0 -> +0.8 | 28.3 -> 37.1 | 17.0 -> 26.9 | -36.6 -> +50.1 |
+| clay, width 6, wall 8, 10 x 6 | -3.0 -> +2.8 | 2.3 -> 2.4 | 1.7 -> 2.4 | |
+| sand, width 8, wall 10, 10 x 6 | -0.4 -> +9.8 | 3.7 -> 7.3 | 2.3 -> 5.7 | |
+| clay with water at -1 m, 12 x 8 | -2.7 -> +2.4 | 14.5 -> 6.5 | 9.6 -> 6.9 | |
+| two layers on a polyline, 8 x 8 | -1.0 -> +12.3 | 13.5 -> 27.8 | 11.7 -> 21.8 | |
+| clay, defaults 30 x 15 | -6.1 -> +6.7 | 17.2 -> 27.6 | 28.0 -> 25.4 | |
+| same, strut at 1.5 m (k 50,000) | -3.7 -> +0.8 | 20.9 -> 35.7 | 27.0 -> 33.7 | -37.6 -> +52.7 |
+| clay, defaults 30 x 15, T3 | -5.9 -> +6.2 | 19.5 -> 26.3 | 18.9 -> 15.5 | |
+
+(clay: c 25 kPa, phi 20, E 30 MPa, gamma 18; it stands 5 m unsupported, so
+these walls carry little. The water case is now an excavation kept full of
+water, so its wall load falls. The widths are now full excavation widths, so
+the domains are narrower than before. With a strut the head barely moves:
+the wall bows toward the excavation below the strut, largest u_x 5.0 mm on
+the 30 x 15 mesh.)
 
 ### Mesh Generation
 
@@ -421,9 +541,31 @@ forward between phases.
   B·u at activation, fresh HS state (since 2026-10-09; before, a fill's strain
   counted the movement its shared nodes had made before it existed, so the
   fill stage's movement was wrong by K_fill·u_prev)
-- Deactivated elements are simply skipped (no unloading of previous stress);
-  nodes left in no active element are fixed and excluded from the reported
-  movements
+- Deactivated elements are skipped: the stresses they carried drop out of
+  the starting internal force, so the stage's out-of-balance releases them
+  onto the remaining mesh (an excavation); nodes left in no active element
+  are fixed and excluded from the reported movements
+- Beams and springs activated in a phase are placed stress-free too (since
+  2026-10-14, GM-61): their force is K (u - u_placed), carried in the solve
+  as `K_lin u - lin_offset`. Before, a phase with `active_beam_ids=None`
+  reached the solver as "all beams" (the docstring said none), and a beam
+  reported in a later phase counted every movement since the start (186
+  kN/m axial and 9 kN-m/m in a stage that changed nothing). Rotation DOFs
+  that no active beam touches are fixed.
+- `springs` (struts, anchors, props to ground; or ties between two nodes
+  with `node_b`) switched on per phase with `active_spring_ids`; each phase
+  reports `spring_forces` (k x stretch since placement)
+- `initial_stresses` (per Gauss point or per element) start the first
+  phase from a given stress state with zero displacement: the K0
+  procedure `analyze_excavation` uses
+- `water_on_free_faces` (default True since 2026-10-14): in a phase with a
+  groundwater table, water stands against every free face of the active
+  mesh where the pore pressure is positive (`-p n` on the face); ponded
+  water on level ground then changes no effective stress (tested). Before,
+  such a face carried the pore pressure outward unbalanced
+- `settled_ratio` / `settled_residual_cap` (default off): accept a step
+  whose displacements stand still at the iteration ceiling, as the strength
+  reduction does; listed per phase in `settled_steps`
 
 **Movements per stage** (owner direction 2026-10-09: "construction phasing
 will determine output — output the delta movement per stage"). Each

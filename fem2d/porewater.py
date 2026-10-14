@@ -188,6 +188,102 @@ def pore_pressure_force(nodes, elements, nodal_pp, t=1.0,
     return F_pp
 
 
+# Element edges as local node indices (corner, [midside,] corner), in the
+# element's own (counter-clockwise) order.
+_EDGES = {
+    3: ((0, 1), (1, 2), (2, 0)),
+    4: ((0, 1), (1, 2), (2, 3), (3, 0)),
+    6: ((0, 3, 1), (1, 4, 2), (2, 5, 0)),
+}
+
+
+def free_edges(elements, active_elements=None):
+    """Boundary edges of the active part of a mesh.
+
+    An edge is free when exactly one active element has it. Returns a list
+    of (element index, edge as a tuple of global node ids in the element's
+    own order: (a, b) or (a, mid, b)).
+    """
+    elements = np.asarray(elements, dtype=int)
+    nen = elements.shape[1]
+    local = _EDGES[nen]
+    act = range(len(elements)) if active_elements is None \
+        else sorted(active_elements)
+    seen = {}
+    for e in act:
+        conn = elements[e]
+        for le in local:
+            edge = tuple(int(conn[i]) for i in le)
+            key = (min(edge[0], edge[-1]), max(edge[0], edge[-1]))
+            seen.setdefault(key, []).append((e, edge))
+    return [v[0] for v in seen.values() if len(v) == 1]
+
+
+def standing_water_forces(nodes, elements, nodal_pp, active_elements=None,
+                          t=1.0):
+    """Nodal forces of water standing on the free faces of a mesh.
+
+    Where the pore pressure on a free (unloaded) face of the active mesh is
+    positive, water stands against that face: an excavation below the water
+    table kept full of water to it, or water ponded on the ground. Its
+    pressure is a traction ``-p n`` on the face (n the outward normal).
+    Without it the pore-pressure load ``integral(B^T m p)`` pushes such a
+    face outward with nothing to balance it, as though the water had gone
+    and its pressure stayed. Faces held by supports (the fixed base, the
+    roller sides) get the same traction, which the supports take.
+
+    The pressure along a face is the same interpolation of the nodal pore
+    pressures that the pore-pressure load uses, integrated with a 3-point
+    Gauss rule (exact for a quadratic edge).
+
+    Parameters
+    ----------
+    nodes : (n_nodes, 2) array
+    elements : (n_elements, 3, 4 or 6) array
+    nodal_pp : (n_nodes,) array — pore pressures (kPa, positive).
+    active_elements : iterable of int, optional (None = all).
+    t : float — thickness.
+
+    Returns
+    -------
+    F : (2 * n_nodes,) nodal force vector.
+    """
+    nodes = np.asarray(nodes, dtype=float)
+    elements = np.asarray(elements, dtype=int)
+    pp = np.clip(np.asarray(nodal_pp, dtype=float), 0.0, None)
+    F = np.zeros(2 * len(nodes))
+    if not np.any(pp > 0):
+        return F
+    gs = 0.5 * (1.0 + np.array([-np.sqrt(0.6), 0.0, np.sqrt(0.6)]))
+    gw = np.array([5.0, 8.0, 5.0]) / 18.0
+    for e, edge in free_edges(elements, active_elements):
+        p_nodes = pp[list(edge)]
+        if not np.any(p_nodes > 0):
+            continue
+        a, b = edge[0], edge[-1]
+        d = nodes[b] - nodes[a]
+        L = float(np.hypot(*d))
+        if L <= 0:
+            continue
+        n = np.array([d[1], -d[0]]) / L      # outward for a CCW element
+        corners = nodes[elements[e][:3]]
+        area2 = ((corners[1, 0] - corners[0, 0]) * (corners[2, 1] - corners[0, 1])
+                 - (corners[2, 0] - corners[0, 0]) * (corners[1, 1] - corners[0, 1]))
+        if area2 < 0:
+            n = -n
+        for s, w in zip(gs, gw):
+            if len(edge) == 3:
+                N = np.array([(1 - s) * (1 - 2 * s), 4 * s * (1 - s),
+                              s * (2 * s - 1)])
+            else:
+                N = np.array([1 - s, s])
+            p = float(N @ p_nodes)
+            for k, node in enumerate(edge):
+                F[2 * node] -= w * L * t * N[k] * p * n[0]
+                F[2 * node + 1] -= w * L * t * N[k] * p * n[1]
+    return F
+
+
 # ===========================================================================
 # Phase 2: Steady-State Seepage Solver
 # ===========================================================================

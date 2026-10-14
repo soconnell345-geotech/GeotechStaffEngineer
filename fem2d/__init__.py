@@ -10,7 +10,8 @@ Capabilities:
 - Delaunay mesh generation with variable density
 - Gravity loading, surface loads, prescribed displacements
 - Strength Reduction Method (SRM) for slope stability FOS
-- Braced excavation analysis with sheet pile walls
+- Staged excavation in front of an embedded wall (K0 in-situ stresses,
+  lifts, struts installed as the excavation reaches them)
 - Pore water pressures and effective stress analysis
 - Steady-state seepage (Laplace equation, CST flow elements)
 - Coupled Biot consolidation (staggered scheme)
@@ -19,7 +20,7 @@ High-level API:
     analyze_gravity()        — elastic gravity loading of a soil column
     analyze_foundation()     — strip load on elastic half-space
     analyze_slope_srm()      — slope stability FOS via SRM
-    analyze_excavation()     — braced excavation with wall
+    analyze_excavation()     — staged excavation in front of a wall
     analyze_seepage()        — steady-state seepage analysis
     analyze_consolidation()  — coupled Biot consolidation
     analyze_staged()         — staged construction (multi-phase)

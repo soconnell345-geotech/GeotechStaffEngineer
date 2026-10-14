@@ -60,7 +60,7 @@ _ANALYSIS_LABEL = {
     'elastic': 'Linear elastic',
     'elastoplastic': 'Elastoplastic (Mohr-Coulomb)',
     'srm': 'Strength Reduction Method (SRM) slope stability',
-    'excavation': 'Braced excavation (beam-coupled)',
+    'excavation': 'Staged excavation (in-situ K0 stresses, then lifts)',
 }
 
 
@@ -173,6 +173,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     else:
         if result.analysis_type == "srm":
             sections.append(_srm_section(result, analysis))
+        if getattr(result, 'excavation_stages', None):
+            sections.append(_excavation_section(result))
         sections.append(_results_section(result))
         if result.beam_forces:
             sections.append(_beam_section(result))
@@ -240,13 +242,17 @@ def _model_section(result, analysis) -> CalcSection:
                   "plastic Mohr-Coulomb unless noted.",
         ))
 
+    excavation = getattr(result, 'analysis_type', None) == "excavation"
     items.append(CalcStep(
         title="Boundary Conditions",
         equation="Base: fixed (u = v = 0). Lateral boundaries: "
-                 "rollers (u = 0, v free)",
+                 "rollers (u = 0, v free)"
+                 + ("; the right boundary is the excavation's centre line "
+                    "(symmetry)" if excavation else ""),
         substitution="",
         result_name="BC scheme",
-        result_value="standard geotechnical box",
+        result_value=("half of a symmetric excavation" if excavation
+                      else "standard geotechnical box"),
         notes=analysis.get("loads_description", ""),
     ))
 
@@ -372,6 +378,48 @@ def _results_section(result) -> CalcSection:
         ))
 
     return CalcSection(title="Results", items=items)
+
+
+def _excavation_section(result) -> CalcSection:
+    """The construction sequence of ``analyze_excavation`` and the wall at
+    the end of every stage (rendered from the stored stage rows)."""
+    items = [CalcStep(
+        title="Construction Sequence",
+        equation="Stage 0: in-situ stresses σ'h = K0 σ'v, no displacement. "
+                 "Stages 1..n: the elements of each lift removed and the "
+                 "forces they carried released onto the remaining mesh; "
+                 "the wall wished in place at the first lift and each "
+                 "strut installed once the excavation reached its level, "
+                 "both stress-free",
+        substitution="",
+        result_name="Stages",
+        result_value=str(len(result.excavation_stages) + 1),
+        notes="Displacements are measured from the end of the in-situ "
+              "stage; u_x > 0 is toward the excavation.",
+    )]
+    rows = []
+    for st in result.excavation_stages:
+        rows.append([
+            str(st['stage']), st['name'],
+            f"{st['excavation_depth_m']:.2f}",
+            f"{st['wall_head_ux_m'] * 1000:.1f}",
+            f"{st['max_wall_ux_m'] * 1000:.1f} at "
+            f"{st['max_wall_ux_depth_m']:.2f}",
+            f"{st['max_beam_moment_kNm_per_m']:.1f}",
+            f"{st['max_beam_shear_kN_per_m']:.1f}",
+            ", ".join(f"{f:.1f}" for f in st['strut_forces_kN_per_m'])
+            or "-",
+            "yes" if st['converged'] else "NO",
+        ])
+    items.append(TableData(
+        title="Wall by Stage",
+        headers=["Stage", "Phase", "Depth (m)", "Head u_x (mm)",
+                 "Largest u_x (mm) at depth (m)", "M_max (kN·m/m)",
+                 "V_max (kN/m)", "Struts (kN/m)", "Converged"],
+        rows=rows,
+        notes=" ".join(getattr(result, 'notes', []) or []),
+    ))
+    return CalcSection(title="Excavation Stages", items=items)
 
 
 def _beam_section(result) -> CalcSection:
