@@ -270,6 +270,14 @@ def log_grid_description() -> str:
         "over numbered crops of them). pages are 0-based.")
 
 
+def log_grid_takes(param: str) -> bool:
+    """Whether the installed planlens' ``log_grid`` takes ``param``."""
+    from funhouse_agent import document_tools as dt
+    spec = dt._spec("log_grid") or {}
+    schema = spec.get("parameters") or spec.get("input_schema") or {}
+    return param in (schema.get("properties") or {})
+
+
 def run_log_grid(arguments: Dict[str, Any],
                  attachments: Optional[Dict[str, bytes]] = None,
                  engine: Any = None, *, max_chars: Optional[int] = None,
@@ -283,6 +291,11 @@ def run_log_grid(arguments: Dict[str, Any],
     args = {k: arguments[k] for k in ("handle", "pages", "pdf_pages", "rows",
                                       "offset")
             if arguments.get(k) not in (None, "")}
+    # row_detail (compact or full rows) arrived with the sample intervals
+    # (BACKLOG PL-24); an older planlens is not sent it.
+    if arguments.get("row_detail") not in (None, "") and \
+            log_grid_takes("row_detail"):
+        args["row_detail"] = arguments["row_detail"]
 
     def call(extra: Optional[Dict[str, Any]] = None) -> str:
         return dt.dispatch_document_tool("log_grid", {**args, **(extra or {})},
@@ -326,4 +339,4 @@ def run_log_grid(arguments: Dict[str, Any],
 
 
 __all__ = ["run_measure", "run_log_grid", "log_grid_description",
-           "MEASURE_DESCRIPTION"]
+           "log_grid_takes", "MEASURE_DESCRIPTION"]

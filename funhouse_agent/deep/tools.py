@@ -1537,9 +1537,11 @@ def make_vision_tools(
             reference_cap)
 
     def log_grid(handle: str, pages: Any = None, rows: bool = True,
-                 offset: int = 0, pdf_pages: Any = None) -> str:
+                 offset: int = 0, pdf_pages: Any = None,
+                 row_detail: str = "") -> str:
         """One boring or test-pit log as its grid (planlens' ``log_grid``;
-        the app reads a textless scan's depth labels itself)."""
+        the app reads a textless scan's depth labels itself). ``row_detail``
+        is compact (the default) or full."""
         from funhouse_agent.measure_tool import run_log_grid
         args: Dict[str, Any] = {"handle": handle, "rows": rows,
                                 "offset": offset}
@@ -1547,6 +1549,8 @@ def make_vision_tools(
             args["pages"] = pages
         if pdf_pages not in (None, ""):
             args["pdf_pages"] = pdf_pages
+        if row_detail not in (None, ""):
+            args["row_detail"] = row_detail
         return _truncate(
             run_log_grid(args, attachments, engine,
                          max_chars=_document_tools.budget_for_cap(reference_cap),

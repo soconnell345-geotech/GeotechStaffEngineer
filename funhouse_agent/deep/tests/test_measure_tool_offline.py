@@ -329,6 +329,65 @@ def test_log_grid_reads_a_textless_scan_s_labels(_capture_sheets, scan_log):
 
 
 # ---------------------------------------------------------------------------
+# Sample intervals and the whole log in one result (BACKLOG PL-24)
+# ---------------------------------------------------------------------------
+# Field session 2026-10-14: on vector logs whose samples are boxes drawn
+# against the depth scale, log_grid placed every row but gave no sample
+# interval, and 7 of 8 results stopped a few metres down the log.
+
+def _needs_samples():
+    if not document_tools.has_tool("log_grid") or \
+            "SAMPLES" not in document_tools.tool_description("log_grid"):
+        pytest.skip("installed planlens predates log_grid's samples")
+
+
+def test_the_app_s_log_grid_returns_sample_intervals_whole():
+    _needs_samples()
+    fx = build_log(LogVariant("app_boxes", raster=False, sample_boxes=True,
+                              label_anchor="centre"))
+    tools = _tools(None, fx.pdf)
+    handle = _call(tools["open_document"], source="log.pdf")["handle"]
+    out = _call(tools["log_grid"], handle=handle, pages="0")
+    assert out["n_samples"] == len(fx.samples)
+    for truth, s in zip(fx.samples, out["samples"]):
+        assert s["id"] == truth["id"] and s["pdf_page"] == 1
+        assert abs(s["top"] - truth["top"]) <= max(s["plus_minus"], 0.005)
+        assert abs(s["bottom"] - truth["bottom"]) <= max(s["plus_minus"],
+                                                         0.005)
+    assert "read from the log" in out["samples_note"]
+    assert out["rows_note"].startswith("all ")
+    assert "next_offset" not in out
+    # the rows come compact, by page, and the ledger reads the page from them
+    assert out["rows"][0]["page"] == 0 and out["rows"][0]["pdf_page"] == 1
+    full = _call(tools["log_grid"], handle=handle, pages="0",
+                 row_detail="full")
+    assert "bbox" in full["rows"][0]
+
+
+def test_row_detail_is_only_sent_to_a_planlens_that_takes_it(monkeypatch):
+    from funhouse_agent import measure_tool
+    sent = []
+    monkeypatch.setattr(document_tools, "dispatch_document_tool",
+                        lambda name, args, **kw: sent.append(dict(args))
+                        or json.dumps({"pages": [0]}))
+    monkeypatch.setattr(measure_tool, "log_grid_takes", lambda p: True)
+    measure_tool.run_log_grid({"handle": "h", "pages": "0",
+                               "row_detail": "full"})
+    monkeypatch.setattr(measure_tool, "log_grid_takes", lambda p: False)
+    measure_tool.run_log_grid({"handle": "h", "pages": "0",
+                               "row_detail": "full"})
+    assert sent[0]["row_detail"] == "full" and "row_detail" not in sent[1]
+
+
+def test_the_log_grid_description_says_a_scale_depth_is_read():
+    _needs_samples()
+    lg = {t.name: t for t in make_vision_tools(engine=None)}["log_grid"]
+    assert "SAMPLES" in lg.description
+    assert "drawn scale is read from the log" in lg.description
+    assert "rows_note" in lg.description
+
+
+# ---------------------------------------------------------------------------
 # The precision line (owner decision 7)
 # ---------------------------------------------------------------------------
 

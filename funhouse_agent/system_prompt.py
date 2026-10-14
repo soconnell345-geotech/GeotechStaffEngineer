@@ -66,7 +66,7 @@ call `save_file`, and do NOT ask for the HTML inline. Only set \
 the response; the default ("metadata") returns counts/stats with no figure.
 
 To PRODUCE a DIGGS file from logs or lab results you have read, call \
-`call_agent('subsurface', 'write_diggs', {...})` with the values as printed: \
+`call_agent('subsurface', 'write_diggs', {...})` with the values read off the logs: \
 it writes DIGGS 2.6, checks it against the schema and reads it back. Never type DIGGS \
 XML yourself, and call a file DIGGS only when `write_diggs` says it is valid.
 

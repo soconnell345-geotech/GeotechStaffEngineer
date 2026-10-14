@@ -421,3 +421,80 @@ class TestTheShapeOfThePass:
         assert depth_m(Quantity(value=1.0, unit="ft")) == pytest.approx(0.3048)
         assert depth_m(Quantity(value=1.0, unit="fathoms")) is None
         assert depth_m(None) is None
+
+
+
+# -- a log against itself (BACKLOG RI-28) ------------------------------------
+
+def _m(v):
+    return Quantity(value=v, unit="m")
+
+
+def _hole(spt=(), td=None, layers=(), water=(), samples=()):
+    from report_ingest.model import (
+        SPT, Investigation, Layer, Sample, WaterLevel,
+    )
+    return Investigation(
+        investigation_id="B-7", depth_unit="m", pages=[30, 31],
+        total_depth=_m(td) if td is not None else None,
+        layers=[Layer(top=_m(a), bottom=_m(b)) for a, b in layers],
+        samples=[Sample(sample_id=sid, top=_m(a), bottom=_m(b), kind="spt")
+                 for sid, a, b in samples],
+        spt=[SPT(**row) for row in spt],
+        water=[WaterLevel(depth=_m(d), when="at_completion") for d in water])
+
+
+def _reconciled(*holes):
+    from report_ingest.model import ReportRecord
+    return reconcile(ReportRecord(investigations=list(holes)))
+
+
+class TestALogAgainstItself:
+
+    def test_drives_that_fill_their_interval_raise_nothing(self):
+        rows = [{"depth_top": _m(t), "depth_bottom": _m(t + 0.45),
+                 "blows": [3, 4, 5], "increment": _m(0.15)}
+                for t in (1.05, 2.55, 4.05)]
+        record = _reconciled(_hole(rows, td=6.0, layers=[(0, 6.0)]))
+        assert record.qa == []
+
+    def test_a_refusal_s_distance_in_the_wrong_unit_is_a_conflict(self):
+        rows = [{"depth_top": _m(3.5), "depth_bottom": _m(3.65),
+                 "blows": ['60/15"'], "refusal": True}]
+        (entry,) = kinds_of(_reconciled(_hole(rows)), "conflict")
+        assert "0.381 m" in entry.detail and "0.150 m" in entry.detail
+        assert entry.pages == [30, 31]
+
+    def test_a_refusal_that_stops_short_of_its_interval_is_fine(self):
+        rows = [{"depth_top": _m(10.05), "depth_bottom": _m(10.5),
+                 "blows": [32, "50/5cm"], "increment": _m(0.15),
+                 "refusal": True}]
+        assert _reconciled(_hole(rows)).qa == []
+
+    def test_the_interval_comes_from_the_linked_sample_when_the_drive_has_none(
+            self):
+        rows = [{"depth_top": _m(1.0), "blows": [3, 4], "sample_id": "S-1",
+                 "increment": _m(0.15)}]
+        hole = _hole(rows, samples=[("S-1", 1.0, 1.45)])
+        (entry,) = kinds_of(_reconciled(hole), "conflict")
+        assert "sample S-1" in entry.detail
+
+    def test_a_drive_count_unlike_the_rest_of_the_log_is_named(self):
+        rows = [{"depth_top": _m(t), "blows": b}
+                for t, b in ((1.0, [1, 2, 3]), (2.5, [4, 5, 6]),
+                             (4.0, [7, 8]), (5.5, [9, 9, 9]))]
+        (entry,) = kinds_of(_reconciled(_hole(rows)), "count_mismatch")
+        assert "4.00 m" in entry.detail and "give 3" in entry.detail
+        # too few records to know the form: nothing
+        assert _reconciled(_hole(rows[2:])).qa == []
+
+    def test_depths_below_the_total_depth_are_one_entry_per_hole(self):
+        hole = _hole(td=20.1, layers=[(0, 12.0), (12.0, 21.1)],
+                     water=[20.5])
+        (entry,) = kinds_of(_reconciled(hole), "out_of_range")
+        assert "below its total depth of 20.10 m" in entry.detail
+        assert "layer 2 bottom 21.10 m" in entry.detail
+        assert "water (at_completion) 20.50 m" in entry.detail
+        # a header that rounds the total depth is not caught out
+        ok = _hole(td=20.0, layers=[(0, 20.04)])
+        assert _reconciled(ok).qa == []

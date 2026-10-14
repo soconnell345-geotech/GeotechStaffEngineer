@@ -1015,15 +1015,24 @@ METHOD_INFO = {
         "brief": "WRITE a DIGGS 2.6 file from boring/pit/sounding logs and lab results you have read (e.g. off a report's logs). Checks the file against the DIGGS schema and reads it back; never hand-write DIGGS XML.",
         "parameters": {
             "investigations": {"type": "array", "required": True, "description": (
-                "One object per boring, pit or sounding, numbers AS PRINTED on the log (never inferred). "
+                "One object per boring, pit or sounding, with the values read off its log. A number printed on the log "
+                "goes in as printed. A depth read off the log's own drawn depth scale (log_grid's samples, layers and rows, "
+                "or measure) is read from the log just as much as a printed one: write it, and note the reading in a prov "
+                "{page, method: 'grid', note: e.g. 'sample depths off the depth scale +/-0.01 m'} on the value or once in "
+                "the investigation's prov list. Never infer a value the log does not give, and "
+                "never hold back a record whose values you have: leave out only what could not be read, and name each thing "
+                "left out, and why, in your answer. "
                 "Keys: investigation_id; kind (boring|test_pit|cpt|dcp|hand_auger|well|other); depth_unit ('m'|'ft'); "
                 "x, y, coordinate_system; elevation {value, unit} (leave out any the source does not give: it is written as "
                 "unknown, never 0); total_depth {value, unit}; date_started, date_finished; "
                 "drilling {method, equipment, hammer_type, hammer_energy_ratio, sampler, contractor, logged_by}; "
                 "layers [{top {value, unit}, bottom {value, unit}, description, uscs}]; "
-                "samples [{sample_id, top, bottom, kind (spt|ring|shelby|bulk|grab|core|cuttings|other), recovery_percent, "
+                "samples [{sample_id (may be empty), top, bottom, kind (spt|ring|shelby|bulk|grab|core|cuttings|other), "
+                "recovery {value, unit} (a printed length), recovery_percent, rqd_percent, "
                 "water_content, fines_percent, liquid_limit, plastic_limit, uscs}]; "
-                "spt [{depth_top, depth_bottom, blows [per increment; a string for refusal, e.g. '50/10cm'], n (ONLY if printed; "
+                "spt [{depth_top, depth_bottom, blows [per increment; a string for refusal, e.g. '50/10cm'], "
+                "increment {value, unit} (the length each drive is counted over, as the form prints it, e.g. 15 cm; "
+                "6 in when left out), n (ONLY if printed; "
                 "a printed refusal such as '>50', 'R' or '50/5\"' may be given as n and is recorded as refusal: true with its text kept), "
                 "refusal, sample_id}]; "
                 "water [{depth {value, unit}, when (while_drilling|at_completion|after_hours|not_encountered|unknown), hours}] "
@@ -1051,9 +1060,10 @@ METHOD_INFO = {
             "schema_check": "{checked, valid, errors} against the DIGGS 2.6 XSD (bundled; runs on every host).",
             "read_back": "{equal, diffs}: the file parsed back and compared value by value with the data given.",
             "cross_checks": "{n, by_kind, entries}: the data joined up as report ingest does -- each lab test linked to its "
-                            "boring and sample, a summary table compared with the sheets, units without a conversion. Each "
-                            "entry gives what disagrees, both values and the pages; nothing is changed or resolved. Tell the "
-                            "user about every entry.",
+                            "boring and sample, a summary table compared with the sheets, units without a conversion, drives "
+                            "that do not add up to their sample's interval, a drive count unlike the log's other records, and "
+                            "any layer, sample, SPT or water depth below the total depth. Each entry gives what disagrees, "
+                            "both values and the pages; nothing is changed or resolved. Tell the user about every entry.",
             "written": "Counts written, and anything the writer had to leave out, assume (assumed; position_unknown) or record "
                        "differently from how it was given (normalised). Tell the user about each.",
         },

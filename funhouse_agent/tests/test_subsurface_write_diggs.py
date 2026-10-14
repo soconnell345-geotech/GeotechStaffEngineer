@@ -491,3 +491,121 @@ def test_plots_leave_out_what_they_cannot_place(tmp_path):
     assert depth["n_investigations"] == 2
     assert any(s.startswith("B-9: no ground elevation")
                for s in depth["skipped"])
+
+
+# -- RI-28 (field session 2026-10-14): depths off the drawn scale, and the
+# log checked against itself ---------------------------------------------
+# 54 of 60 SPT records were held back as "not printed" because each sample's
+# depths are a box drawn against the log's depth scale; a refusal printed
+# `60/15"` in a 0.15 m interval became a 0.381 m drive; a drive record lost a
+# drive; a boring's layers ran a metre under its total depth. The file
+# carried all of it with no cross-check entry (TRACE_REVIEW P3.2-P3.3).
+
+def _drives(*records, total=10.05):
+    """BORING with these driven records, each (top, bottom, blows, extra)."""
+    hole = json.loads(json.dumps(BORING))
+    hole["total_depth"] = _m(total)
+    hole["spt"] = []
+    for top, bottom, blows, *extra in records:
+        row = {"depth_top": _m(top), "depth_bottom": _m(bottom),
+               "blows": blows}
+        if extra:
+            row.update(extra[0])
+        hole["spt"].append(row)
+    return hole
+
+
+def _entries(res, kind):
+    return [e for e in res["cross_checks"]["entries"] if e["kind"] == kind]
+
+
+def test_the_description_says_a_depth_off_the_drawn_scale_is_read():
+    desc = json.dumps(_j(describe_method("subsurface", "write_diggs")))
+    assert "AS PRINTED on the log (never inferred)" not in desc
+    assert "drawn depth scale" in desc and "read from the log" in desc
+    assert "never hold back a record whose values you have" in desc
+    assert "name each thing left out" in desc
+    # the fields a log prints that had nowhere to go
+    for key in ("increment {value, unit}", "recovery {value, unit}",
+                "rqd_percent", "sample_id (may be empty)"):
+        assert key in desc, key
+    assert "below the total depth" in desc        # the cross-checks named
+
+
+def test_a_depth_read_off_the_scale_goes_in_with_its_reading(tmp_path):
+    """The reading is noted in a prov on the value (or the hole) and the
+    file is written and reads back like any other."""
+    hole = json.loads(json.dumps(BORING))
+    note = {"page": 21, "method": "grid",
+            "note": "sample depths off the depth scale +/-0.01 m"}
+    for s in hole["samples"]:
+        s["top"]["prov"] = dict(note)
+        s["bottom"]["prov"] = dict(note)
+    hole["prov"] = [dict(note)]
+    res = _call({"investigations": [hole],
+                 "output_path": str(tmp_path / "grid.xml")})
+    assert "error" not in res, res
+    assert res["read_back"]["equal"], res["read_back"]
+    assert res["cross_checks"]["n"] == 0, res["cross_checks"]
+
+
+def test_a_refusal_read_in_the_wrong_unit_is_reported_not_refused(tmp_path):
+    # printed 60/15" beside "SS 3.5 to 3.65 m"; written 60/15in = 0.381 m
+    hole = _drives((1.0, 1.45, [2, 1, 2]), (3.5, 3.65, ["60/15in"],
+                                            {"refusal": True}))
+    res = _call({"investigations": [hole],
+                 "output_path": str(tmp_path / "r.xml")})
+    assert res["file_exists"] is True and "error" not in res
+    (e,) = _entries(res, "conflict")
+    assert "3.50 m" in e["detail"] and "0.381 m" in e["detail"]
+    assert "0.150 m" in e["detail"]
+    assert "drives 0.381 m" in e["values"]
+    assert "cross-checks raised" in res["verdict"]
+    # given in the form's own unit it agrees
+    ok = _drives((1.0, 1.45, [2, 1, 2]), (3.5, 3.65, ["60/15cm"],
+                                          {"refusal": True}))
+    res = _call({"investigations": [ok],
+                 "output_path": str(tmp_path / "r2.xml")})
+    assert res["cross_checks"]["n"] == 0, res["cross_checks"]
+
+
+def test_a_dropped_drive_is_reported_by_sum_and_by_count(tmp_path):
+    # the form drives three 15 cm increments; one record gives two
+    hole = _drives((1.05, 1.50, [12, 14, 16]), (2.55, 3.0, [10, 17, 15]),
+                   (4.05, 4.50, [3, 4]), (5.55, 6.0, [20, 33, 39]))
+    for row in hole["spt"]:
+        row["increment"] = _m(0.15)
+    res = _call({"investigations": [hole],
+                 "output_path": str(tmp_path / "d.xml")})
+    (count,) = _entries(res, "count_mismatch")
+    assert "4.05 m" in count["detail"] and "give 3" in count["detail"]
+    (total,) = _entries(res, "conflict")
+    assert "0.300 m" in total["detail"] and "0.450 m" in total["detail"]
+
+
+def test_one_wrong_assumption_is_one_entry(tmp_path):
+    """Four records of four 20 cm drives each, all given as plain counts (6 in
+    assumed: 0.610 m) in 0.80 m intervals: one entry naming every depth."""
+    hole = _drives(*[(t, t + 0.80, [5, 6, 7, 8])
+                     for t in (1.0, 2.5, 4.0, 5.5)])
+    res = _call({"investigations": [hole],
+                 "output_path": str(tmp_path / "g.xml")})
+    (e,) = _entries(res, "conflict")
+    assert "4 driven records" in e["detail"]
+    assert "1.00, 2.50, 4.00, 5.50" in e["detail"]
+    assert "0.610 m" in e["detail"] and "0.800 m" in e["detail"]
+    assert "0.1524 m (6 in)" in e["detail"]
+
+
+def test_anything_below_the_total_depth_is_reported(tmp_path):
+    hole = json.loads(json.dumps(BORING))
+    hole["total_depth"] = _m(9.0)            # the layers run to 10.05 m
+    hole["water"] = [{"depth": _m(9.5), "when": "at_completion"}]
+    res = _call({"investigations": [hole],
+                 "output_path": str(tmp_path / "td.xml")})
+    assert res["file_exists"] is True
+    (e,) = _entries(res, "out_of_range")
+    assert "below its total depth of 9.00 m" in e["detail"]
+    assert "layer 2 bottom 10.05 m" in e["detail"]
+    assert "water (at_completion) 9.50 m" in e["detail"]
+    assert e["pages"] == [21, 22]

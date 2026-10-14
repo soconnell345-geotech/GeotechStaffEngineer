@@ -29,6 +29,11 @@ against the investigations the appendix actually yielded.
 Laboratory Tests" table; every value in it that also appears on a sheet is
 compared, and only the disagreements are recorded.
 
+**Checks each log against itself.** A driven record's drives must add up to
+its interval (read the way the DIGGS writer will write them), its number of
+drives must match the log's other complete records, and no layer, sample,
+driven record or water level may sit below the hole's total depth.
+
 **Says what was not read.** A page the labels called a boring log that ended
 up in no work item, a page whose text layer is unreliable and which no Azure
 Document Intelligence result covered, every ``unresolved`` line the readers
@@ -269,6 +274,8 @@ def reconcile(record: ReportRecord, *,
     _check_counts(record, qa)
     _check_dictionaries(record, qa)
     _cross_check_summary_table(record, qa)
+    _check_drives(record, qa)
+    _check_below_total_depth(record, qa)
     _check_units(record, qa)
     _check_pages(record, qa, labels, items, no_text_pages, di_pages)
     _carry_unresolved(qa, reader_unresolved)
@@ -666,6 +673,223 @@ def _sheets_for(row: Any, sheets: Sequence[LabTest]) -> List[LabTest]:
             continue
         out.append(sheet)
     return out
+
+
+# -- a log's own drives and depths ------------------------------------------
+#
+# Field session 2026-10-14 (BACKLOG RI-28): a refusal printed `60/15"` beside
+# its interval 3.5-3.65 m was retyped `60/15in` and written as a 0.381 m drive
+# inside a 0.15 m sample; a drive record lost a drive (3 / 3 / 4 given as
+# [3, 4]); a boring's layers ran to 21.1 m under a 20.1 m total depth. Each
+# was in the file with no cross-check entry. These look at one log against
+# itself, read the drives the way the DIGGS writer will write them, and say
+# what disagrees; they change nothing.
+
+#: Drives add up to their sample's interval within this many metres, or this
+#: fraction of the interval, whichever is larger: an 18 in drive (0.457 m)
+#: in a 1.05-1.50 m interval is 7 mm out and agrees, and so do three 15 cm
+#: drives under a remark that rounds their interval to "0 to 0.5 m", as
+#: many logs' remarks do. A dropped drive, or a
+#: refusal's distance read in the wrong unit, is a third of it or more.
+DRIVE_TOL_M = 0.025
+DRIVE_TOL_FRAC = 0.10
+#: A refusal's drives may fall short of its interval; they may run past it
+#: by no more than this (a `60/15"` read as inches in a 0.15 m sample runs
+#: 0.23 m past it).
+REFUSAL_TOL_M = 0.05
+REFUSAL_TOL_FRAC = 0.25
+
+#: A record needs this many complete drive records beside it, and this share
+#: of them agreeing, before their count is taken as the form's.
+DRIVE_COUNT_MIN_RECORDS = 3
+DRIVE_COUNT_SHARE = 0.6
+
+#: A depth this far below the total depth, in metres (or this fraction of
+#: it), is below it: a header rounds the total depth it prints.
+BELOW_TD_TOL_M = 0.05
+BELOW_TD_TOL_FRAC = 0.005
+
+
+def _record_pages(inv: Investigation, *provs: Any) -> List[int]:
+    pages = [p.page for p in provs if p is not None]
+    return sorted(set(pages)) or list(inv.pages)
+
+
+def _check_drives(record: ReportRecord, qa: List[QAEntry]) -> None:
+    """Each driven record's drives against its interval and its log's form."""
+    from report_ingest.diggs_writer import _drive_sets
+    for inv in record.investigations:
+        name = inv.investigation_id or "an exploration"
+        samples = {fold_id(s.sample_id): s for s in inv.samples
+                   if fold_id(s.sample_id)}
+        complete: List[Tuple[int, Any]] = []        # (drive count, record)
+        off: List[Dict[str, Any]] = []              # drives vs interval
+        for spt in inv.spt:
+            drives = _drive_sets(spt)
+            top = depth_m(spt.depth_top)
+            bottom = depth_m(spt.depth_bottom)
+            interval_from = "its own depths"
+            sample = samples.get(fold_id(spt.sample_id))
+            if bottom is None and sample is not None \
+                    and depth_m(sample.bottom) is not None:
+                top, bottom = depth_m(sample.top), depth_m(sample.bottom)
+                interval_from = f"sample {sample.sample_id}"
+            at = (f"{name} driven record at {top:.2f} m" if top is not None
+                  else f"{name} driven record")
+            if spt.sample_id:
+                at += f" ({spt.sample_id})"
+            pages = _record_pages(inv, spt.prov)
+            refusal = spt.refusal or any(isinstance(b, str) and "/" in b
+                                         for b in spt.blows)
+            whole = len(drives) == len(spt.blows) and bool(drives)
+            if whole and not refusal:
+                complete.append((len(drives), spt))
+            if top is None or bottom is None or not whole:
+                continue
+            interval = bottom - top
+            if interval <= 0:
+                qa.append(QAEntry(
+                    kind="out_of_range", where=f"{name}.spt",
+                    detail=f"{at}: its bottom ({bottom:.2f} m) is not below "
+                           f"its top",
+                    values=[f"{top:.2f} m", f"{bottom:.2f} m"], pages=pages))
+                continue
+            total = sum(pen for _count, pen in drives)
+            if refusal:
+                # A refusal stops short of its interval by definition, and
+                # its box is often drawn to the recovery or a round depth:
+                # only drives LONGER than the interval are wrong.
+                if total - interval <= max(REFUSAL_TOL_M,
+                                           REFUSAL_TOL_FRAC * interval):
+                    continue
+            elif abs(total - interval) <= max(DRIVE_TOL_M,
+                                              DRIVE_TOL_FRAC * interval):
+                continue
+            each = ", ".join(f"{str(b)!r} = {pen:.3f} m"
+                             for b, (_c, pen) in zip(spt.blows, drives))
+            assumed = ("" if spt.increment is not None
+                       or not any(isinstance(b, int) or str(b).isdigit()
+                                  for b in spt.blows)
+                       else "; no increment was given, so each plain count "
+                            "was taken as 0.1524 m (6 in)")
+            off.append({"at": at, "top": top, "bottom": bottom,
+                        "total": total, "interval": interval, "each": each,
+                        "assumed": assumed, "from": interval_from,
+                        "pages": pages})
+        _report_drive_sums(name, off, qa)
+        _check_drive_counts(inv, name, complete, qa)
+
+
+def _report_drive_sums(name: str, off: Sequence[Dict[str, Any]],
+                       qa: List[QAEntry]) -> None:
+    """One entry per disagreement; records of one hole that disagree the
+    same way (every drive taken at the same assumed length against the same
+    interval) are one entry naming each depth, so one wrong assumption does
+    not bury the rest of the list."""
+    groups: Dict[Tuple[float, float, str], List[Dict[str, Any]]] = {}
+    for f in off:
+        key = (round(f["total"], 3), round(f["interval"], 3), f["assumed"])
+        groups.setdefault(key, []).append(f)
+    for (total, interval, assumed), fs in groups.items():
+        pages = sorted({p for f in fs for p in f["pages"]})
+        fix = (" - a drive length is wrong (the increment the form counts "
+               "over, or the distance printed in a refusal) or the interval "
+               "is")
+        if len(fs) == 1:
+            f = fs[0]
+            qa.append(QAEntry(
+                kind="conflict", where=f"{name}.spt",
+                detail=f"{f['at']}: its drives add up to {total:.3f} m "
+                       f"({f['each']}{assumed}) but the interval "
+                       f"({f['from']}) is {interval:.3f} m" + fix,
+                values=[f"drives {total:.3f} m",
+                        f"interval {f['top']:.2f}-{f['bottom']:.2f} m"],
+                pages=pages))
+            continue
+        tops = ", ".join(f"{f['top']:.2f}" for f in fs[:12]) + (
+            ", ..." if len(fs) > 12 else "")
+        qa.append(QAEntry(
+            kind="conflict", where=f"{name}.spt",
+            detail=f"{name}: {len(fs)} driven records (at {tops} m) have "
+                   f"drives adding up to {total:.3f} m{assumed} against "
+                   f"intervals of {interval:.3f} m" + fix,
+            values=[f"drives {total:.3f} m", f"interval {interval:.3f} m",
+                    f"{len(fs)} records"],
+            pages=pages))
+
+
+def _check_drive_counts(inv: Investigation, name: str,
+                        complete: Sequence[Tuple[int, Any]],
+                        qa: List[QAEntry]) -> None:
+    """A complete drive record with a different number of drives from the
+    log's other complete records: one was dropped or added."""
+    if len(complete) < DRIVE_COUNT_MIN_RECORDS:
+        return
+    tally: Dict[int, int] = {}
+    for n, _spt in complete:
+        tally[n] = tally.get(n, 0) + 1
+    form, votes = max(tally.items(), key=lambda kv: (kv[1], kv[0]))
+    if votes < DRIVE_COUNT_SHARE * len(complete):
+        return
+    for n, spt in complete:
+        if n == form:
+            continue
+        top = depth_m(spt.depth_top)
+        at = (f"{name} driven record at {top:.2f} m" if top is not None
+              else f"{name} driven record")
+        if spt.sample_id:
+            at += f" ({spt.sample_id})"
+        qa.append(QAEntry(
+            kind="count_mismatch", where=f"{name}.spt",
+            detail=f"{at}: {n} drive(s) given ({list(spt.blows)}) where "
+                   f"{votes} of the log's {len(complete)} complete records "
+                   f"give {form} - a drive may have been dropped or added; "
+                   f"check the form",
+            values=[f"{n} drives", f"form {form}"],
+            pages=_record_pages(inv, spt.prov)))
+
+
+def _check_below_total_depth(record: ReportRecord,
+                             qa: List[QAEntry]) -> None:
+    """Any layer, sample, driven record or water level below the hole's own
+    total depth, said once per hole with every value."""
+    for inv in record.investigations:
+        td = depth_m(inv.total_depth)
+        if td is None:
+            continue
+        limit = td + max(BELOW_TD_TOL_M, BELOW_TD_TOL_FRAC * td)
+        name = inv.investigation_id or "an exploration"
+        found: List[str] = []
+        provs: List[Any] = []
+
+        def look(what: str, q: Optional[Quantity], prov: Any) -> None:
+            d = depth_m(q)
+            if d is not None and d > limit:
+                found.append(f"{what} {d:.2f} m")
+                provs.append(prov)
+
+        for i, ly in enumerate(inv.layers):
+            look(f"layer {i + 1} top", ly.top, ly.prov)
+            look(f"layer {i + 1} bottom", ly.bottom, ly.prov)
+        for s in inv.samples:
+            label = f"sample {s.sample_id}" if s.sample_id else "a sample"
+            look(f"{label} top", s.top, s.prov)
+            look(f"{label} bottom", s.bottom, s.prov)
+        for spt in inv.spt:
+            look("SPT top", spt.depth_top, spt.prov)
+            look("SPT bottom", spt.depth_bottom, spt.prov)
+        for w in inv.water:
+            look(f"water ({w.when})", w.depth, w.prov)
+        if not found:
+            continue
+        qa.append(QAEntry(
+            kind="out_of_range", where=f"{name}.total_depth",
+            detail=f"{name}: {len(found)} value(s) below its total depth of "
+                   f"{td:.2f} m: {', '.join(found[:8])}"
+                   + (", ..." if len(found) > 8 else "")
+                   + " - the total depth or these depths were given wrong",
+            values=[f"total depth {td:.2f} m"] + found[:8],
+            pages=_record_pages(inv, *provs)))
 
 
 # -- units, pages and what the readers could not settle ---------------------
