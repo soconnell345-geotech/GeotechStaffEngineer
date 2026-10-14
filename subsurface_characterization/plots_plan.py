@@ -10,6 +10,7 @@ plot_plan_view : XY scatter of investigation locations with labels
 
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 import numpy as np
@@ -20,6 +21,34 @@ from subsurface_characterization.plot_utils import (
     INVESTIGATION_MARKERS, INVESTIGATION_COLORS,
 )
 from subsurface_characterization.results import PlotResult
+
+
+_GRID = re.compile(r"UTM|zone|State\s*Plane", re.IGNORECASE)
+_GEOGRAPHIC = re.compile(
+    r"EPSG\D{0,3}(?:4326|4269|4258)\b|CRS\s*84|WGS\s*-?\s*84|NAD\s*-?\s*83"
+    r"|latitude|longitude|geographic", re.IGNORECASE)
+_EPSG = re.compile(r"EPSG\D{0,3}\d{4,6}", re.IGNORECASE)
+
+
+def axis_titles(coordinate_system: str):
+    """(x title, y title, note) for a plan in ``coordinate_system``.
+
+    Geographic (EPSG:4326, WGS 84, ...): x is longitude, y latitude, as
+    the app writes them (x first). A projected system (UTM, State Plane,
+    any other EPSG code): easting and northing. Anything else stated (a local drawing grid) or nothing: plain
+    x and y, and the note names the system, so a grid read off a plan sheet
+    is never labelled as eastings and northings (GM-76).
+    """
+    cs = (coordinate_system or "").strip()
+    if not cs:
+        return "x", "y", "coordinate system not stated"
+    if _GRID.search(cs):                  # a map grid, even "WGS 84 / UTM"
+        return f"Easting ({cs})", f"Northing ({cs})", ""
+    if _GEOGRAPHIC.search(cs):
+        return "Longitude (deg)", "Latitude (deg)", cs
+    if _EPSG.search(cs):                  # any other EPSG code: projected
+        return f"Easting ({cs})", f"Northing ({cs})", ""
+    return "x (local grid)", "y (local grid)", cs
 
 
 def plot_plan_view(
@@ -85,9 +114,14 @@ def plot_plan_view(
                 font=dict(size=10),
             )
 
+    x_title, y_title, note = axis_titles(site.coordinate_system or next(
+        (inv.coordinate_system for inv in placed if inv.coordinate_system),
+        ""))
+    if note:
+        title = f"{title}<br><sup>{note}</sup>"
     fig.update_layout(
-        xaxis=dict(title="X (Easting)", scaleanchor="y", scaleratio=1),
-        yaxis=dict(title="Y (Northing)"),
+        xaxis=dict(title=x_title, scaleanchor="y", scaleratio=1),
+        yaxis=dict(title=y_title),
     )
     apply_standard_layout(fig, title=title)
 

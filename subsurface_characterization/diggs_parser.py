@@ -147,9 +147,13 @@ def parse_diggs(
     n_measurements = sum(len(inv.measurements) for inv in investigations.values())
     n_lithology = sum(len(inv.lithology) for inv in investigations.values())
 
+    # The site's coordinate system: the one every placed exploration shares.
+    systems = {inv.coordinate_system for inv in investigations.values()
+               if inv.coordinate_system}
     site = SiteModel(
         project_name=project_name,
         investigations=list(investigations.values()),
+        coordinate_system=systems.pop() if len(systems) == 1 else "",
     )
 
     return DiggsParseResult(
@@ -284,6 +288,19 @@ def _parse_borehole(element: ET.Element, ns_map: dict, warnings: list) -> Invest
             x = y = elev = None
             warnings.append(f"Could not parse coordinates for {name}: {pos_text}")
 
+    # The coordinate system the position is given in (the point's srsName):
+    # a plot labels its axes from it (GM-76: a local drawing grid was drawn
+    # as "Easting / Northing").
+    # report_ingest's writer puts it on the gml:pos inside PointLocation;
+    # other writers put it on the point itself.
+    srs = ""
+    for path in (".//diggs:referencePoint//gml:pos",
+                 ".//diggs:referencePoint/*", ".//gml:Point", ".//gml:pos"):
+        node = _find(element, path, ns_map)
+        if node is not None and (node.get("srsName") or "").strip():
+            srs = node.get("srsName").strip()
+            break
+
     total_depth = _float_text(element, "diggs:totalMeasuredDepth", ns_map)
     if total_depth == 0.0:
         total_depth = _float_text(element, ".//diggs:totalDepth", ns_map)
@@ -302,6 +319,7 @@ def _parse_borehole(element: ET.Element, ns_map: dict, warnings: list) -> Invest
         y=y,
         elevation_m=elev,
         total_depth_m=total_depth,
+        coordinate_system=srs,
         lithology=lithology,
     )
 
