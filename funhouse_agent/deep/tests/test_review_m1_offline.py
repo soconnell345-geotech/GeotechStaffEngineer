@@ -557,18 +557,21 @@ def test_inline_analyze_image_of_a_file_is_shown_not_described(sheet_png):
     data, meta = inline_store.get(out["image_id"])
     assert data[:4] == b"\x89PNG" and "contact_sheet_1.png" in meta["label"]
     assert "look at it yourself" in out["note"]
-    # an upload named by its key keeps the vision call
+    # an upload named by its key keeps the vision call (and, since VIS-09,
+    # the image's view for zooming, never an image_id)
     with open(sheet_png, "rb") as fh:
         tool, eng = _analyze_image(True, {"photo.png": fh.read()})
     out = json.loads(tool.invoke({"attachment_key": "photo.png"}))
-    assert out == {"analysis": "seen"} and len(eng.prompts) == 1
+    assert out["analysis"] == "seen" and "image_id" not in out
+    assert out["view"][:2] == [0, 0] and len(eng.prompts) == 1
     # switch off: unchanged (the same read again in this conversation would
     # be served as a repeat, B6 — forget it so the call is made)
     from funhouse_agent.vision_tools import clear_repeat_reads
     clear_repeat_reads()
     tool, eng = _analyze_image(False)
     out = json.loads(tool.invoke({"attachment_key": sheet_png}))
-    assert out == {"analysis": "seen"} and len(eng.prompts) == 1
+    assert out["analysis"] == "seen" and "image_id" not in out
+    assert len(eng.prompts) == 1
 
 
 def test_inline_analyze_image_refuses_what_is_not_an_image(tmp_path):
@@ -612,8 +615,8 @@ def test_the_lean_agent_without_inline_still_describes_the_image(
     agent = build_deep_agent(_model([]), engine=eng, **_review_kwargs())
     tool = _tools_of(agent)["analyze_image"]
     assert "shown to you" not in tool.description
-    assert json.loads(tool.invoke({"attachment_key": sheet_png})) == \
-        {"analysis": "seen"}
+    out = json.loads(tool.invoke({"attachment_key": sheet_png}))
+    assert out["analysis"] == "seen" and "image_id" not in out
 
 
 def test_page_images_are_labelled_as_before():
@@ -908,14 +911,17 @@ def test_the_released_inline_arm_describes_image_files_by_a_vision_call(
         # the page tools DO go inline in that arm
         assert "shown to you" in _tools_of(agent)["analyze_pdf_page"
                                                   ].description
-    assert out == {"analysis": "seen"} and eng.prompts == ["which pages?"]
+    # a vision call answers the agent's prompt (with the image looks' shared
+    # location and reading sentences after it, VIS-09)
+    assert out["analysis"] == "seen" and "image_id" not in out
+    assert len(eng.prompts) == 1 and eng.prompts[0].startswith("which pages?")
     # overview alone does not show image files either
     with review_flags.switches({review_flags.AGENT_ENV: "lean",
                                 review_flags.OVERVIEW_ENV: "1"}):
         agent = build_deep_agent(_model([]), engine=eng, **_review_kwargs())
         out = json.loads(_tools_of(agent)["analyze_image"].invoke(
             {"attachment_key": sheet_png}))
-    assert out == {"analysis": "seen"}
+    assert out["analysis"] == "seen" and "image_id" not in out
 
 
 @pytest.mark.parametrize("keep,words", [(None, "among the newest 2 views"),

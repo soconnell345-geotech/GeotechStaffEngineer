@@ -52,6 +52,8 @@ from funhouse_agent.dispatch import (
     _selector_value_candidates,
 )
 from funhouse_agent.vision_tools import (
+    IMAGE_LOOK_NOTE,
+    IMAGE_ZOOM_NOTE,
     TURN_ARG_NOTE,
     dispatch_extended_tool as _dispatch_extended_tool,
     docx_available as _docx_available,
@@ -1002,7 +1004,9 @@ def make_vision_tools(
         # read_reference_figure / read_pdf_text are text-payload reads and
         # list_files can be a long directory dump: the content IS the answer,
         # so they get the larger reference budget.
-        if tool_name in ("analyze_pdf_page", "find_like"):
+        # analyze_image too: an image too large for one look is read in
+        # tiles (VIS-09), and the tiled result is held under its own budget.
+        if tool_name in ("analyze_pdf_page", "find_like", "analyze_image"):
             cap = (0 if max_result_chars <= 0
                    else max(DEFAULT_VISION_RESULT_CHARS, reference_cap))
         elif tool_name in ("read_reference_figure", "read_pdf_text",
@@ -1077,16 +1081,28 @@ def make_vision_tools(
         return _dispatch("read_text_file", args)
 
     def analyze_image(attachment_key: str,
-                      prompt: str = "Describe this image.") -> str:
+                      prompt: str = "Describe this image.",
+                      tiles: str = "auto",
+                      turn: Optional[int] = None) -> str:
         """Analyze an image using vision. Returns text description/analysis
         of the image content.
 
-        ``attachment_key`` is an attached image's key, an image file's name
-        in the working folder, or the name a tool returned for a scratch
-        image (``.scratch/...`` -- render_page_thumbnails' contact sheets,
-        find_like's sheets); ``prompt`` is what to extract or analyze.
+        ``attachment_key`` is an attached image's key (an upload, a pasted
+        screenshot), an image file's name in the working folder, or the name
+        a tool returned for a scratch image (``.scratch/...`` --
+        render_page_thumbnails' contact sheets, find_like's sheets);
+        ``prompt`` is what to extract or analyze. The result gives the
+        image's ``view`` (its own pixels) and 0-999 boxes, to zoom with
+        render_region. ``tiles``: ``"auto"`` (default) ALSO reads an image
+        larger than one look holds in overlapping close-up tiles; ``"off"``;
+        or N / ``"NxN"`` with N 2-4. ``turn``: 90, 180 or 270 sends it
+        turned that many degrees clockwise.
         """
         args = {"attachment_key": attachment_key, "prompt": prompt}
+        if tiles not in (None, "", "auto"):
+            args["tiles"] = tiles
+        if turn is not None:
+            args["turn"] = turn
         if inline_image_files:
             # An image FILE (a contact sheet) is shown to the main model like
             # the inline page tools' images; an upload keeps the vision call.
@@ -1202,7 +1218,10 @@ def make_vision_tools(
         method, which converts for you and saves a PNG instead). Optional
         ``marks`` = [[x, y, label], ...] draws numbered circles at points of
         interest so the question becomes "what is mark 1 pointing at?".
-        ``attachment_key`` is an attachment key or a real PDF path.
+        ``attachment_key`` is an attachment key or a real PDF path -- or an
+        IMAGE (an upload, a pasted screenshot): then ``bbox`` and ``view``
+        are in the image's own pixels, ``page`` is not used, and the zoom
+        is cut from the original at full resolution.
 
         To zoom on something an earlier vision result LOCATED, pass that
         result's ``view`` plus the 0-999 ``image_box`` its analysis gave
@@ -1670,11 +1689,11 @@ def make_vision_tools(
         ),
         "analyze_image": (
             analyze_image,
-            "Analyze an image using vision: an attached image (its key), an "
-            "image file in the working folder, or a scratch image a tool "
-            "returned by name (.scratch/... from render_page_thumbnails or "
-            "find_like). Returns text "
-            "description/analysis of the image content.",
+            "Analyze an image using vision: an attached image (its key: an "
+            "upload or a pasted screenshot), an image file in the working "
+            "folder, or a scratch image a tool returned by name (.scratch/... "
+            "from render_page_thumbnails or find_like). Returns text "
+            "description/analysis of the image content. " + IMAGE_LOOK_NOTE,
         ),
         "analyze_pdf_page": (
             analyze_pdf_page,
@@ -1711,7 +1730,8 @@ def make_vision_tools(
             "window is padded by that view's location error, so the thing "
             "is in it. reuse=true returns this conversation's kept zoom of "
             "the same region (saying what it was asked) instead of a new "
-            "look. " + TURN_ARG_NOTE + _PDF_PAGE_NOTE,
+            "look. " + IMAGE_ZOOM_NOTE + " " + TURN_ARG_NOTE
+            + _PDF_PAGE_NOTE,
         ),
         "read_reference_figure": (
             read_reference_figure,

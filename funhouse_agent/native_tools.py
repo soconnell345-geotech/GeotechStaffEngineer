@@ -13,7 +13,9 @@ from typing import Any, Callable, Dict, Optional
 from funhouse_agent.dispatch import (
     call_agent, describe_method, list_agents, list_methods,
 )
-from funhouse_agent.vision_tools import TURN_ARG_NOTE
+from funhouse_agent.vision_tools import (
+    IMAGE_LOOK_NOTE, IMAGE_ZOOM_NOTE, TURN_ARG_NOTE,
+)
 
 # ---------------------------------------------------------------------------
 # OpenAI tool schemas
@@ -205,7 +207,8 @@ OPENAI_TOOLS = [
             "description": (
                 "Analyze an attached image using vision. Returns text "
                 "description/analysis of the image content. attachment_key may "
-                "be an attachment key OR a real filesystem path."
+                "be an attachment key OR a real filesystem path. "
+                + IMAGE_LOOK_NOTE
             ),
             "parameters": {
                 "type": "object",
@@ -220,6 +223,20 @@ OPENAI_TOOLS = [
                             "What to extract or analyze from the image."
                         ),
                         "default": "Describe this image.",
+                    },
+                    "tiles": {
+                        "type": "string",
+                        "description": ("auto (default): also read in "
+                                        "overlapping tiles when the image is "
+                                        "larger than one look holds; off; or "
+                                        "N or NxN with N from 2 to 4."),
+                    },
+                    "turn": {
+                        "type": "integer",
+                        "enum": [0, 90, 180, 270],
+                        "description": ("Send the image turned this many "
+                                        "degrees clockwise (a picture taken "
+                                        "sideways)."),
                     },
                 },
                 "required": ["attachment_key"],
@@ -311,15 +328,15 @@ OPENAI_TOOLS = [
                 "points (top-left origin, y down; drawing_ir query "
                 "coordinates are bottom-left/y-up — y_pdf = page_height - "
                 "y_ir). Optional marks draw numbered circles at points of "
-                "interest."
+                "interest. " + IMAGE_ZOOM_NOTE
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "attachment_key": {
                         "type": "string",
-                        "description": ("Key of the attached PDF, or a real "
-                                        "PDF path."),
+                        "description": ("Key of the attached PDF or image, "
+                                        "or a real path."),
                     },
                     "page": {
                         "type": "integer",

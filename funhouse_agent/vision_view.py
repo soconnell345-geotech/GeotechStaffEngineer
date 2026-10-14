@@ -753,16 +753,17 @@ def boxes_to_grid(text: str, size: Optional[Sequence[int]],
 
 
 def boxes_note(counts: Dict[str, int], size: Sequence[int],
-               turn: int = 0) -> Optional[str]:
+               turn: int = 0, what: str = "page") -> Optional[str]:
     """What the agent is told about the boxes in an answer, or ``None`` when
-    it gave none."""
+    it gave none. ``what`` names the thing looked at (``page``, or
+    ``image`` for an image file)."""
     w, h = (int(v) for v in size)
     quarter = int(turn or 0) % 360
     if counts.get("converted"):
         left = counts.get("grid") or 0
         turned = (f" (sent turned {quarter} degrees clockwise; each box was "
-                  f"turned back, so it is on this view as the page shows it)"
-                  if quarter else "")
+                  f"turned back, so it is on this view as the {what} shows "
+                  f"it)" if quarter else "")
         return (f"the boxes in this analysis are on the 0-999 grid over this "
                 f"view's image, converted in code from the vision call's "
                 f"pixel boxes on the {w} x {h} px image it was sent{turned}: "
@@ -1317,25 +1318,28 @@ def turn_image(data: bytes, info: Dict[str, Any], turn: int
     return body, turned
 
 
-def turned_note(turn: int, source: Optional[str] = "text_layer") -> str:
+def turned_note(turn: int, source: Optional[str] = "text_layer",
+                what: str = "page") -> str:
     """What a result says about a view sent turned ``turn`` degrees, by
     where the turn came from (``render_view``'s ``info['turn_from']``, or
-    ``retry`` for a view read again after a first look found it turned)."""
+    ``retry`` for a view read again after a first look found it turned).
+    ``what`` names the thing looked at (``page``, or ``image`` for an image
+    file)."""
     quarter = int(turn or 0) % 360
     runs = _RUNS.get(quarter, "turned")
     why = {
         "asked": "as asked",
-        "remembered": (f"because earlier looks at this page found its "
+        "remembered": (f"because earlier looks at this {what} found its "
                        f"lettering running {runs}: the vision call read it "
                        f"upright"),
-        "retry": (f"because a first look, as the page shows it, found its "
+        "retry": (f"because a first look, as the {what} shows it, found its "
                   f"lettering running {runs}: this is a second reading, "
                   f"turned so the lettering read upright"),
     }.get(str(source), (f"because the page's text layer shows its lettering "
                         f"running {runs}: the vision call read it upright"))
     return (f"this view's image was sent turned {quarter} degrees clockwise, "
             f"{why}. Its boxes were turned back in code, so every image_box "
-            f"is on this view as the page shows it; words such as top or "
+            f"is on this view as the {what} shows it; words such as top or "
             f"left in the analysis describe the turned image.")
 
 

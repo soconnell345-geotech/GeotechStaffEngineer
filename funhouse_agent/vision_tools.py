@@ -111,7 +111,12 @@ use `analyze_pdf_page` on those.
 
 ### 7. analyze_image
 Analyze an attached image using vision. Returns text description/analysis.
-`attachment_key` is an attachment key OR a real filesystem path.
+`attachment_key` is an attachment key OR a real filesystem path. The result
+gives the image's `view` (in its own pixels) and 0-999 boxes on it: zoom on
+one with `render_region` (same `attachment_key`, `view` + `image_box`) to read
+small lettering. `tiles` = "auto" (default: an image larger than one look holds
+is ALSO read in overlapping tiles), "off", or N / "NxN" (N 2-4); `turn` = 90,
+180 or 270 sends it turned that many degrees clockwise.
 ```
 <tool_call>
 {"tool_name": "analyze_image", "attachment_key": "site_plan", "prompt": "Extract the cross-section geometry"}
@@ -146,6 +151,9 @@ locations as 0-999 boxes on that image: to zoom on one, pass `view` +
 `image_box` instead of `bbox`. `turn` = 90, 180 or 270 sends the zoom turned
 that many degrees clockwise (lettering running up the page reads upright at 90,
 down it at 270); boxes still come back on the view as the page shows it.
+`attachment_key` may also be an IMAGE (an upload, a pasted screenshot): `bbox`
+and `view` are then in the image's own pixels, and the zoom is cut from the
+original at full resolution.
 ```
 <tool_call>
 {"tool_name": "render_region", "attachment_key": "sheet.pdf", "page": 0, "bbox": [400, 180, 480, 240], "marks": [[440, 210, "1"]], "prompt": "What is mark 1 pointing at?"}
@@ -1851,22 +1859,33 @@ def ask_vision(engine, image, prompt, kind, where=None):
         return engine.analyze_image(image, prompt)
 
 
-def _overview_prompt(prompt, n) -> str:
+#: What a layout answer names, by what is being read: the parts it lists
+#: and the lettering large enough to quote.
+_LAYOUT_WORDS = {
+    "sheet": ("views, sections, plans, tables, note blocks, title block, "
+              "legend", "a title, a sheet number"),
+    "picture": ("windows, panels, tables, figures, blocks of text, legend",
+                "a title, a heading"),
+}
+
+
+def _overview_prompt(prompt, n, what: str = "sheet") -> str:
     """What the whole-page call is asked while ``n`` x ``n`` tiles read the
     page: the layout, and where the things asked about are -- not the small
     lettering, which the tiles read (E1). The agent's own prompt rides along
-    so the layout can point at what it asks about."""
+    so the layout can point at what it asks about. ``what`` is ``sheet`` (a
+    PDF page) or ``picture`` (an image file read in tiles)."""
+    parts, large = _LAYOUT_WORDS.get(what, _LAYOUT_WORDS["sheet"])
     return (
-        f"This image is the WHOLE sheet, shrunk to fit one image. Its small "
+        f"This image is the WHOLE {what}, shrunk to fit one image. Its small "
         f"lettering is being read separately, in {n}x{n} close-up tiles of "
-        f"the same sheet. From this view give only the LAYOUT, briefly: what "
-        f"the sheet is and which way it is turned; its parts (views, "
-        f"sections, plans, tables, note blocks, title block, legend) and "
-        f"where each sits; and where on the sheet the things asked about "
+        f"the same {what}. From this view give only the LAYOUT, briefly: what "
+        f"the {what} is and which way it is turned; its parts ({parts}) and "
+        f"where each sits; and where on the {what} the things asked about "
         f"below are. Quote only lettering large enough to read with "
-        f"confidence (a title, a sheet number); do not transcribe or answer "
+        f"confidence ({large}); do not transcribe or answer "
         f"from small text - the tiles do that.\n\n"
-        f"What is being asked of this sheet: {prompt}")
+        f"What is being asked of this {what}: {prompt}")
 
 
 # -- How a zoom or a page read whole answers (live smoke wave 3, F1) ----------
@@ -1996,24 +2015,80 @@ def _image_for_vision(data: bytes, name: str, engine=None):
     return buf.getvalue(), note
 
 
+def _open_image(data, name):
+    """``(picture, refusal)`` for an image file: the decoded
+    :class:`image_view.Picture`; or a JSON refusal for bytes that are not an
+    image (naming the tool that reads them) or a damaged GIF, TIFF or BMP;
+    or ``(None, None)`` where it cannot be decoded here but can be sent as
+    it is (Pillow missing, or a PNG, JPEG or WebP Pillow cannot read: the
+    file goes whole, as it always did, and the model's host decides)."""
+    data = bytes(data or b"")
+    kind = _image_kind(data)
+    if kind is None:
+        return None, json.dumps({"error": _not_an_image_message(
+            data, str(name or ""))})
+    try:
+        from funhouse_agent import image_view
+        return image_view.open_picture(data, kind), None
+    except ImportError:                          # pragma: no cover - env
+        return None, None
+    except ValueError as exc:
+        if kind in ("png", "jpeg", "webp"):
+            return None, None
+        return None, json.dumps({"error": (
+            f"'{os.path.basename(str(name))}' looks like a {kind.upper()} "
+            f"image but could not be read: {exc}")})
+
+
 def _dispatch_analyze_image(arguments, engine, attachments):
-    """Handle analyze_image tool call."""
+    """Handle analyze_image tool call (VIS-09: the image's own pixels are
+    the frame, and an image too large for one look is also read in tiles).
+
+    ``tiles`` as ``analyze_pdf_page`` takes it: ``"auto"`` (default) also
+    reads the image in overlapping tiles cut from the original when the
+    whole image reaches the model under
+    :data:`image_view.WHOLE_MIN_SCALE` of its size; ``"off"``; or N /
+    ``"NxN"``. ``turn`` (0/90/180/270) sends it, and its tiles, turned that
+    far clockwise. The result carries the image's ``view`` (``[0, 0, W,
+    H]``, its own pixels) and its boxes as 0-999 boxes on it, so
+    ``render_region(attachment_key=<this image>, view=, image_box=)`` zooms
+    on what it found. An image that fits goes as it is."""
     key = arguments.get("attachment_key", "")
     prompt = arguments.get("prompt", "Describe this image.")
+    tiles, tiles_note, tiles_error = _parse_tiles(arguments.get("tiles", "auto"))
+    if tiles_error:
+        return json.dumps({"error": tiles_error, "accepted": TILES_ACCEPTED})
+    turn_arg, turn_error = _parse_turn(arguments.get("turn"))
+    if turn_error:
+        return json.dumps({"error": turn_error, "accepted": TURN_ACCEPTED})
 
     try:
         image_data, src = _resolve_attachment_or_path(key, attachments)
     except FileNotFoundError as e:
         return json.dumps({"error": str(e)})
+
+    if arguments.get("_inline") and src == "path":
+        try:
+            shown, _note = _image_for_vision(image_data, key, engine)
+        except NotAnImage as e:
+            return json.dumps({"error": str(e)})
+        inline = _inline_image_file_result(shown, key)
+        if inline is not None:
+            return json.dumps(inline)
+
+    picture, refusal = _open_image(image_data, key)
+    if refusal is not None:
+        return refusal
+    if picture is not None:
+        return _repeat_or_read(
+            "analyze_image", image_data,
+            {"prompt": prompt, "tiles": tiles, "turn": turn_arg}, {}, engine,
+            lambda: _read_image(picture, image_data, prompt, tiles,
+                                tiles_note, turn_arg, engine))
     try:
         image_data, image_note = _image_for_vision(image_data, key, engine)
     except NotAnImage as e:
         return json.dumps({"error": str(e)})
-
-    if arguments.get("_inline") and src == "path":
-        inline = _inline_image_file_result(image_data, key)
-        if inline is not None:
-            return json.dumps(inline)
 
     def read():
         try:
@@ -2033,6 +2108,394 @@ def _dispatch_analyze_image(arguments, engine, attachments):
 
     return _repeat_or_read("analyze_image", image_data, {"prompt": prompt},
                            {}, engine, read)
+
+
+def _image_tile_count(tiles, picture, engine) -> int:
+    """Tiles per side for an image read (``tiles`` parsed by
+    :func:`_parse_tiles`): ``auto`` tiles only under the robust policy and
+    only an image that reaches the model shrunk
+    (:func:`image_view.tile_count`)."""
+    from funhouse_agent import image_view, vision_view
+    if tiles == "off":
+        return 1
+    if tiles == "auto":
+        if vision_view.policy() != "robust":
+            return 1
+        return image_view.tile_count(picture, engine)
+    return max(1, min(vision_view.MAX_TILES_PER_SIDE, int(tiles)))
+
+
+#: Said on a located item of an image look (``GEOTECH_VISION_STRUCTURED``).
+IMAGE_LOCATED_NOTE = (
+    "each located item's bbox is in this image's own pixels: pass it as "
+    "render_region's bbox, with attachment_key = this image, to zoom")
+IMAGE_LOCATED_WIDE_NOTE = (
+    "each located item's bbox is in this image's own pixels, read off a "
+    "view this large: zoom with render_region(bbox=<its zoom_bbox>), the "
+    "box padded by this view's location error, before relying on it")
+
+
+def _image_located(holder) -> None:
+    """A structured LOCATED list on an image look, said in the image's
+    frame: each ``page_bbox`` becomes ``bbox`` (the image's own pixels)."""
+    items = holder.get("located") if isinstance(holder, dict) else None
+    if not items:
+        return
+    wide = False
+    for it in items:
+        if isinstance(it, dict):
+            if "page_bbox" in it:
+                it["bbox"] = it.pop("page_bbox")
+            wide = wide or "zoom_bbox" in it
+    if "located_note" in holder:
+        holder["located_note"] = (IMAGE_LOCATED_WIDE_NOTE if wide
+                                  else IMAGE_LOCATED_NOTE)
+
+
+def _read_image(picture, data, prompt, tiles, tiles_note, turn_arg, engine):
+    """:func:`_dispatch_analyze_image` once the image is decoded: the whole
+    image (shrunk to fit when it must) and, when it reaches the model
+    shrunk, its tiles cut from the original, read together as a page and
+    its tiles are."""
+    from funhouse_agent import image_view, vision_view
+    allow_jpeg = getattr(engine, "accepts_jpeg", False)
+    start = _start_turn(turn_arg, data, 0)
+    frame = image_view.frame_of(picture)
+
+    def whole(turn=None):
+        if turn is not None:
+            return image_view.render(picture, None, engine, turn=turn,
+                                     turn_from="asked",
+                                     allow_jpeg=allow_jpeg)
+        return image_view.render(picture, None, engine, turn=start,
+                                 turn_from="remembered",
+                                 allow_jpeg=allow_jpeg)
+
+    try:
+        image_bytes, info = whole(turn_arg)
+    except Exception as exc:  # noqa: BLE001 - said, never raised
+        return json.dumps({"error": f"the image could not be prepared: "
+                                    f"{type(exc).__name__}: {exc}"})
+    n = _image_tile_count(tiles, picture, engine)
+    if n > 1 and not _has_ink(image_bytes):
+        n = 1
+        tiles_note = "; ".join(filter(None, [
+            tiles_note, "the image has no ink (it is blank), so it was not "
+                        "read in tiles"]))
+    kind = "overview" if n > 1 else "image"
+
+    def look_prompt(view_info, tag=False):
+        return _vision_prompt(
+            _overview_prompt(prompt, n, "picture") if n > 1 else prompt,
+            view_info["clip"], None, _sent_size(view_info),
+            turn=_sent_turn(view_info), tag=tag)
+
+    def look():
+        asked = _wants_turn_tag(turn_arg, info)
+        text = ask_vision(engine, image_bytes, look_prompt(info, asked), kind)
+        return _settle_turn(
+            engine, text, info, asked=asked, data=data, page=0, layer=frame,
+            render=lambda t: whole(t), prompt_for=look_prompt, kind=kind)
+
+    jobs = [look]
+    if n > 1:
+        jobs += _image_tile_jobs(picture, data, n, prompt, engine,
+                                 turn_arg=turn_arg, start_turn=start)
+    results = _run_together(jobs)
+    result, tile_rows = results[0], (results[1:] if n > 1 else None)
+    if not isinstance(result, _Failed):
+        result, info = result
+    if isinstance(result, _Failed):
+        exc = result.exc
+        if isinstance(exc, (NotImplementedError, AttributeError)):
+            return json.dumps({
+                "error": f"Vision not available on this engine: {exc}"})
+        if not tile_rows or all("error" in t for t in tile_rows):
+            return json.dumps({"error": _vision_error(exc)})
+    out = {"analysis": "" if isinstance(result, _Failed) else result,
+           **image_view.view_payload(info, picture, engine)}
+    if picture.note:
+        out["image_note"] = picture.note
+    if info.get("turn_retry_failed"):
+        out["turn_retry_failed"] = info["turn_retry_failed"]
+    if isinstance(result, _Failed):
+        out["overview_not_read"] = (
+            f"the whole-image view was NOT read ({_vision_error(result.exc)});"
+            f" the tiles below were read")
+    cut = (["the whole image"] if _is_cut_off(result) and n == 1 else []) + [
+        f"tile {t['tile']}" for t in tile_rows or ()
+        if isinstance(t, dict) and t.get("cut_off")]
+    if cut:
+        out["cut_off"] = f"{', '.join(cut)}: {CUT_OFF_NOTE}"
+    if n > 1 and _is_cut_off(result):
+        out["overview_cut"] = (
+            "the whole-image layout answer stopped at its output limit, so "
+            "it may be incomplete; the tiles below read the lettering")
+    _finish_answer(out, info, what="image")
+    _image_located(out)
+    if tiles_note:
+        out["tiles_note"] = tiles_note
+    scale = float(info.get("scale") or 1.0)
+    if n > 1:
+        out["tiles"] = tile_rows
+        failed = _tiles_not_read_note(tile_rows)
+        if failed:
+            out["tiles_not_read"] = failed
+        why = (f"the image is larger than the vision model reads in one look "
+               f"(the whole image went at {scale:.2f} of its size), so it was "
+               f"ALSO" if tiles == "auto" else "it was ALSO")
+        out["tiling"] = (
+            f"{why} read in {n}x{n} overlapping tiles cut from the original, "
+            f"each at about its own resolution. The whole-image 'analysis' "
+            f"was asked for the LAYOUT only (what is where); the tiles read "
+            f"the lettering, so take small lettering from a tile. Each tile's "
+            f"boxes are on that tile's own 0-999 grid: pass them with the "
+            f"TILE's view to zoom with render_region.")
+        shrunk = [t.get("sent_scale") for t in tile_rows
+                  if isinstance(t, dict) and t.get("sent_scale")]
+        if shrunk and min(shrunk) < image_view.WHOLE_MIN_SCALE:
+            out["tiling"] += (
+                f" Even so, the tiles went at {min(shrunk):.2f} of the "
+                f"image's size: for its finest lettering, zoom with "
+                f"render_region.")
+        turned = [t["tile"] for t in tile_rows
+                  if isinstance(t, dict) and t.get("turned")]
+        if turned:
+            out["tiles_turned"] = (
+                f"tile(s) {', '.join(turned)} were sent turned (degrees "
+                f"clockwise in each tile's 'turned') so their lettering read "
+                f"upright; their boxes were turned back, so each is on its "
+                f"tile's view as the image shows it")
+        _merge_found(out, "image")
+        if "reading_note" not in out:
+            hedge = next((vision_view.bracketed_note(t.get("analysis"))
+                          for t in out["tiles"]
+                          if vision_view.bracketed_note(t.get("analysis"))),
+                         None)
+            if hedge:
+                out["reading_note"] = hedge
+    elif scale < 1.0:
+        out["shrunk_note"] = (
+            f"the image was sent at {scale:.2f} of its own size, the most the "
+            f"vision model reads in one look: lettering only a few pixels "
+            f"tall may not have come through. Zoom with render_region on this "
+            f"view + an image_box; a zoom is cut from the original at full "
+            f"resolution.")
+    _fit_located(out, TILED_RESULT_CHARS)
+    if n > 1:
+        _fit_tiles(out)
+    return json.dumps(out)
+
+
+def _image_tile_jobs(picture, data, n, prompt, engine, turn_arg=None,
+                     start_turn=0):
+    """One job per tile of an ``n`` x ``n`` overlapping split of an image
+    file, in tile order: each cuts its tile from the original, sizes it to
+    the budget (:func:`image_view.render`, enlarged by whole times where the
+    budget holds it), reads it and returns its row (an ``error`` row, naming
+    why in plain words, when it could not). Turned as the agent asked
+    (``turn_arg``) or as the image is remembered (``start_turn``); with
+    GEOTECH_VISION_TURN_RETRY a tile found turned is read again upright."""
+    from funhouse_agent import image_view
+    boxes = image_view.tile_boxes(picture, n)
+    allow_jpeg = getattr(engine, "accepts_jpeg", False)
+    frame = image_view.frame_of(picture)
+
+    def one(k):
+        r, c = divmod(k, n)
+        try:
+            def render(turn=None, source="asked"):
+                return image_view.render(picture, boxes[k], engine,
+                                         enlarge=True, turn=turn,
+                                         turn_from=source,
+                                         allow_jpeg=allow_jpeg)
+
+            img, tinfo = (render(turn_arg) if turn_arg is not None
+                          else render(start_turn, "remembered"))
+            where = (f"This image is tile row {r + 1} of {n}, column {c + 1} "
+                     f"of {n} of a larger picture (tiles overlap slightly). "
+                     f"Report only what is IN this tile, briefly.")
+
+            def tile_prompt(view_info, tag=False):
+                return _vision_prompt(
+                    f"{prompt}\n\n{where}", view_info["clip"], None,
+                    _sent_size(view_info), turn=_sent_turn(view_info),
+                    tag=tag)
+
+            asked = _wants_turn_tag(turn_arg, tinfo)
+            text = ask_vision(engine, img, tile_prompt(tinfo, asked), "tile",
+                              where={"tile": f"r{r + 1}c{c + 1}"})
+            text, tinfo = _settle_turn(
+                engine, text, tinfo, asked=asked, data=data, page=0,
+                layer=frame, render=lambda t: render(t),
+                prompt_for=tile_prompt, kind="tile")
+            scale = float(tinfo.get("scale") or 1.0)
+            row = {"tile": f"r{r + 1}c{c + 1}",
+                   "view": [int(v) for v in tinfo["clip"]],
+                   "view_px": [tinfo["width_px"], tinfo["height_px"]],
+                   **({"sent_scale": round(scale, 3)} if scale != 1.0
+                      else {}),
+                   **({"turned": _sent_turn(tinfo)}
+                      if _sent_turn(tinfo) else {}),
+                   **({"turn_retry_failed": tinfo["turn_retry_failed"]}
+                      if tinfo.get("turn_retry_failed") else {}),
+                   "analysis": text,
+                   **({"cut_off": True} if _is_cut_off(text) else {})}
+            _finish_answer(row, tinfo, note=False, what="image")
+            row.pop("located_note", None)
+            _image_located(row)
+            return row
+        except Exception as exc:                  # one tile, not the image
+            return {"tile": f"r{r + 1}c{c + 1}", "view": list(boxes[k]),
+                    "error": _vision_error(exc)}
+
+    return [(lambda k=k: one(k)) for k in range(n * n)]
+
+
+def _render_image_region(arguments, engine, data, key, *, bbox, window,
+                         render_pad, padded, view, image_box, marks, prompt,
+                         turn_arg, pad_frac):
+    """``render_region`` on an IMAGE file (VIS-09): the window — ``bbox``,
+    or ``view`` + ``image_box`` padded by that view's location error, both
+    in the image's own pixels; the whole image when neither is given — is
+    cut from the ORIGINAL at full resolution, enlarged by whole times to
+    fill the vision budget (at most :data:`image_view.MAX_UPSCALE`), turned
+    when asked, and read as a page zoom is. ``page`` is not used."""
+    from funhouse_agent import image_view
+    picture, refusal = _open_image(data, key)
+    if refusal is not None:
+        return refusal
+    if picture is None:
+        return json.dumps({"error": "this image cannot be cut here (Pillow "
+                                    "is missing, or it could not be "
+                                    "decoded), so it cannot be zoomed: "
+                                    "analyze_image sends it whole"})
+    notes: Dict[str, Any] = {}
+    if arguments.get("dpi") is not None:
+        notes["dpi_note"] = ("dpi is not used for an image: the zoom is cut "
+                             "from the image's own pixels and sized to what "
+                             "the vision model reads")
+    if arguments.get("page") not in (None, "", 0, "0") or \
+            arguments.get("pdf_page") not in (None, "", 1, "1"):
+        notes["page_note"] = "an image has one page: page and pdf_page were " \
+                             "not used"
+    try:
+        crop, outside = image_view.zoom_box(picture, window, render_pad)
+    except (TypeError, ValueError) as e:
+        return json.dumps({
+            "error": f"bbox: {e}",
+            "hint": "on an image, bbox = [x0, y0, x1, y1] in the image's own "
+                    "pixels (top-left origin, y down)"})
+    if outside:
+        notes["outside_note"] = (
+            f"the box asked for lies outside this {picture.width} x "
+            f"{picture.height} px image on at least one axis, so the zoom "
+            f"spans the whole image along it: on an image, bbox and view are "
+            f"in its own pixels")
+
+    # reuse: a kept zoom of the window as asked (the kept zoom's own bbox,
+    # which the host's per-turn note offers back), or of the crop it would
+    # draw (known before drawing here, so a small box asked again matches
+    # its own padded crop).
+    reuse = _truthy(arguments.get("reuse")) and not arguments.get("_inline")
+    if reuse:
+        earlier = ((_earlier_zoom(data, 0, window) if window is not None
+                    else None) or _earlier_zoom(data, 0, crop))
+        if earlier is not None:
+            return _reused_zoom_result(earlier)
+    rkey = _repeat_key("render_region", data, {
+        "page": 0, "bbox": arguments.get("bbox"), "view": view,
+        "image_box": image_box, "pad_frac": pad_frac, "marks": marks,
+        "prompt": prompt, "turn": turn_arg}, arguments, engine)
+    hit = _repeat_hit(rkey, "render_region")
+    if hit is not None:
+        return hit
+
+    inline = bool(arguments.get("_inline"))
+    allow_jpeg = getattr(engine, "accepts_jpeg", False)
+    start = 0 if inline else _start_turn(turn_arg, data, 0)
+
+    def render(turn=None, source="asked"):
+        return image_view.render(picture, crop, engine, enlarge=True,
+                                 turn=turn, turn_from=source, marks=marks,
+                                 allow_jpeg=allow_jpeg)
+
+    try:
+        image_bytes, info = (render() if inline
+                             else render(turn_arg) if turn_arg is not None
+                             else render(start, "remembered"))
+    except Exception as e:  # noqa: BLE001 - said, never raised
+        return json.dumps({"error": f"the image could not be cut: "
+                                    f"{type(e).__name__}: {e}"})
+    clip = [int(v) for v in info["clip"]]
+    if inline:
+        # The main model looks itself (GEOTECH_VISION_INLINE): the crop is
+        # shown at its next call, labelled with its view on the image.
+        from funhouse_agent import inline_store
+        name = _document_name(key)
+        image_id = inline_store.put(image_bytes, {
+            "label": f"zoom on the image {name}, view {clip} in its own "
+                     f"pixels", "view": clip})
+        out = {"image_id": image_id, "bbox": bbox,
+               **image_view.view_payload(info, picture, engine),
+               "note": inline_note(), **notes}
+        out.pop("zoom_hint", None)
+        if turn_arg:
+            out["turn_note"] = ("turn is not used when you look at the image "
+                                "yourself: it is shown as the image shows it")
+        return json.dumps(out)
+
+    frame = image_view.frame_of(picture)
+
+    def prompt_for(view_info, tag=False):
+        return _vision_prompt(prompt, view_info["clip"], None,
+                              _sent_size(view_info),
+                              shape=_answer_shape("region"),
+                              turn=_sent_turn(view_info), tag=tag)
+
+    try:
+        asked = _wants_turn_tag(turn_arg, info)
+        result = ask_vision(engine, image_bytes, prompt_for(info, asked),
+                            "region")
+        result, info = _settle_turn(
+            engine, result, info, asked=asked, data=data, page=0, layer=frame,
+            render=lambda t: render(t), prompt_for=prompt_for, kind="region")
+        out = {"bbox": bbox, "analysis": result,
+               **image_view.view_payload(info, picture, engine)}
+        if picture.note:
+            out["image_note"] = picture.note
+        if info.get("turn_retry_failed"):
+            out["turn_retry_failed"] = info["turn_retry_failed"]
+        if _is_cut_off(result):
+            out["cut_off"] = CUT_OFF_NOTE
+        if padded is not None:
+            out["window_padding_px"] = padded
+            out["window_note"] = (
+                f"the window is the box padded by {padded[0]:g} x "
+                f"{padded[1]:g} px each side, the location error of the view "
+                f"the box was read off; if the thing is not in it, look again "
+                f"rather than concluding it is absent")
+        out.update(notes)
+        _finish_answer(out, info, what="image")
+        _image_located(out)
+        if padded is not None:
+            _say_how_far_from_the_aim(out, view, bbox, unit="px")
+        _fit_region(out)
+        raw = json.dumps(out)
+        _repeat_store(rkey, raw)
+        clip = [int(v) for v in info["clip"]]
+        _note_read("render_region", key, 0, clip, prompt)
+        _keep_reading(key, data, 0, ZOOM_VIEW, prompt, raw, region=clip)
+        if reuse:
+            out["reuse_note"] = NO_EARLIER_ZOOM
+            raw = json.dumps(out)
+        return raw
+    except (NotImplementedError, AttributeError) as e:
+        return json.dumps({
+            "error": f"Vision not available on this engine: {e}"
+        })
+    except Exception as e:
+        return json.dumps({"error": _vision_error(e)})
 
 
 def _dispatch_render_region(arguments, engine, attachments):
@@ -2067,6 +2530,11 @@ def _dispatch_render_region(arguments, engine, attachments):
     window rendered a quarter of the pixels the budget allowed — 45 of 106
     zooms in Foundry brief 4 (2026-10-07), at a median 4.2 px per point
     against 15-17 without, and the hedged readings that dropped two tags.
+
+    ``attachment_key`` may name an IMAGE file instead (an upload, a pasted
+    screenshot; VIS-09): ``bbox`` and ``view`` are then in the image's own
+    pixels, and the window is cut from the original image
+    (:func:`_render_image_region`).
     """
     from funhouse_agent import vision_view
 
@@ -2108,6 +2576,14 @@ def _dispatch_render_region(arguments, engine, attachments):
         pdf_bytes, _src = _resolve_attachment_or_path(key, attachments)
     except FileNotFoundError as e:
         return json.dumps({"error": str(e)})
+    if _image_kind(bytes(pdf_bytes[:16])) is not None:
+        # An image file -- an upload, a pasted screenshot (VIS-09): the same
+        # window, cut from the image's own pixels.
+        return _render_image_region(
+            arguments, engine, pdf_bytes, key, bbox=bbox, window=window,
+            render_pad=render_pad, padded=padded, view=view,
+            image_box=image_box, marks=marks, prompt=prompt,
+            turn_arg=turn_arg, pad_frac=pad_frac)
     page, refused = _checked_page(arguments, pdf_bytes)
     if refused is not None:
         return refused
@@ -2257,13 +2733,15 @@ def _widen_window(window, pad_frac, layer):
     return [round(v, 2) for v in wide], n
 
 
-def _say_how_far_from_the_aim(out, source_view, aim_box) -> None:
+def _say_how_far_from_the_aim(out, source_view, aim_box,
+                              unit: str = "pt") -> None:
     """For a zoom on ``view`` + ``image_box``: how far the answer's nearest
     box is from the box the zoom was aimed at, and a note when that is more
     than a box from the source view is off (:func:`vision_view.aim_tolerance`)
     — the window is padded widely enough to hold a neighbour too, and in
     Foundry brief 4 a window aimed at a look-alike was answered about a tag
-    98 pt away, which was then ringed twice."""
+    98 pt away, which was then ringed twice. ``unit`` is the view's (``pt``
+    on a page, ``px`` on an image file)."""
     from funhouse_agent import vision_view
     try:
         ax = (float(aim_box[0]) + float(aim_box[2])) / 2.0
@@ -2282,22 +2760,23 @@ def _say_how_far_from_the_aim(out, source_view, aim_box) -> None:
 
     label, near = min(found, key=lambda lb: dist(lb[1]))
     d = dist(near) ** 0.5
-    out["nearest_box_from_aim_pt"] = round(d, 1)
+    out[f"nearest_box_from_aim_{unit}"] = round(d, 1)
     if len(found) > 1:
         out["boxes_in_answer"] = len(found)
     if d > tol:
         out["aim_note"] = (
             f"the answer's nearest box{(' (' + label + ')') if label else ''} "
-            f"is {d:.0f} pt from the box this zoom was aimed at — more than a "
-            f"box from that view is off (~{tol:.0f} pt). The window can hold "
+            f"is {d:.0f} {unit} from the box this zoom was aimed at — more "
+            f"than a box from that view is off (~{tol:.0f} {unit}). The "
+            f"window can hold "
             f"a neighbour: this answer may be about a different thing than "
             f"the one you zoomed on. Check what it read before using it, or "
             f"zoom on a smaller box round your target.")
     elif len(found) > 1:
         out["aim_note"] = (
             f"the answer gives {len(found)} boxes; the one nearest the box "
-            f"this zoom was aimed at is {d:.0f} pt from it — make sure you "
-            f"use that one for the thing you zoomed on.")
+            f"this zoom was aimed at is {d:.0f} {unit} from it — make sure "
+            f"you use that one for the thing you zoomed on.")
 
 
 #: Two located things from the page and its tiles are one thing when their
@@ -2319,10 +2798,20 @@ def _codes(label: str) -> set:
             if len(c.strip("-")) >= 2}
 
 
-def _merge_found(out) -> None:
+#: How a merged ``found`` list names, for a page and for an image file: the
+#: whole look's source, each row's box key, and that box in words.
+_FOUND_WORDS = {
+    "page": ("page", "page_bbox", "page box"),
+    "image": ("image", "bbox", "box in the image's own pixels"),
+}
+
+
+def _merge_found(out, what: str = "page") -> None:
     """One list of the things the whole-page answer and its tiles located,
     each with its page box and where it was seen (``found``) — a thing seen
     ONLY in tiles marked ``tiles_only`` and named in ``found_note``.
+    ``what`` is ``image`` for an image file read in tiles: its rows carry a
+    ``bbox`` in the image's own pixels.
 
     Foundry brief 4 (2026-10-07): the whole-page answer missed the tag drawn
     turned 90 degrees; a tile found it; the result nested the tiles under the
@@ -2331,13 +2820,14 @@ def _merge_found(out) -> None:
     runs of three on one model, one on the other). The same happened to a
     note the page answer did not name."""
     from funhouse_agent import vision_view
+    whole, key, box_words = _FOUND_WORDS.get(what, _FOUND_WORDS["page"])
     page_view = out.get("view")
     if not page_view or not out.get("tiles"):
         return
     vx0, vy0, vx1, vy1 = (float(v) for v in page_view)
     reach = max(vision_view.MIN_LOCATION_ERROR_PT,
                 MERGE_FRAC * max(vx1 - vx0, vy1 - vy0))
-    entries = [("page", lab, box, (vx1 - vx0) * (vy1 - vy0))
+    entries = [(whole, lab, box, (vx1 - vx0) * (vy1 - vy0))
                for lab, box in vision_view.answer_boxes(
                    out.get("analysis") or "", page_view)]
     for t in out["tiles"]:
@@ -2373,32 +2863,33 @@ def _merge_found(out) -> None:
     rows = []
     for g in groups:
         row = {"what": g["what"] or "?",
-               "page_bbox": [round(v, 1) for v in g["box"]],
+               key: [round(v, 1) for v in g["box"]],
                "seen_in": g["seen_in"]}
-        if "page" not in g["seen_in"]:
+        if whole not in g["seen_in"]:
             row["tiles_only"] = True
         rows.append(row)
     only = [r for r in rows if r.get("tiles_only")]
     # The things only the tiles saw come first, so a cut list keeps them.
     kept = (only + [r for r in rows if not r.get("tiles_only")])[:MAX_MERGED]
-    out["found"] = sorted(kept, key=lambda r: (r["page_bbox"][1],
-                                               r["page_bbox"][0]))
+    out["found"] = sorted(kept, key=lambda r: (r[key][1], r[key][0]))
     if len(rows) > MAX_MERGED:
         out["found_cut"] = f"{len(rows) - MAX_MERGED} more not listed"
     if only:
-        named = "; ".join(f"{r['what']} at {r['page_bbox']} "
+        named = "; ".join(f"{r['what']} at {r[key]} "
                           f"({', '.join(r['seen_in'])})" for r in only[:12])
         out["found_note"] = (
             f"{len(only)} thing(s) were found ONLY in the tiles, not in the "
-            f"whole-page answer: {named}"
+            f"whole-{whole} answer: {named}"
             + (" …" if len(only) > 12 else "")
             + ". The tiles read small lettering larger — treat these as "
               "found, and zoom on each before relying on it. 'found' lists "
-              "every located thing with its page box and where it was seen.")
+              f"every located thing with its {box_words} and where it was "
+              f"seen.")
     else:
-        out["found_note"] = ("'found' lists every located thing with its "
-                             "page box and where it was seen (the page "
-                             "answer and the tiles agree on what is there).")
+        out["found_note"] = (f"'found' lists every located thing with its "
+                             f"{box_words} and where it was seen (the "
+                             f"{whole} answer and the tiles agree on what is "
+                             f"there).")
 
 
 def _lines_for_context(pdf_bytes, page):
@@ -2466,6 +2957,26 @@ TURN_ARG_NOTE = (
     "still come back on the view as the page shows it. A view whose text "
     "layer shows its lettering turned is turned without asking; turn=0 "
     "sends the page as it shows.")
+
+#: What ``render_region`` does with an image file (VIS-09), in the words
+#: every surface's description uses (one sentence, never a system prompt).
+IMAGE_ZOOM_NOTE = (
+    "attachment_key may also be an IMAGE - an upload, a pasted screenshot, a "
+    "photo: then bbox and view are in the image's own pixels (top-left "
+    "origin, y down), page is not used, and the zoom is cut from the "
+    "original at full resolution, so lettering too small in analyze_image's "
+    "look can be read.")
+
+#: What ``analyze_image`` returns and takes for zooming, tiles and turning
+#: (VIS-09), shared by every surface's description.
+IMAGE_LOOK_NOTE = (
+    "The result gives the image's view (in its own pixels) and 0-999 boxes "
+    "on it: zoom on one with render_region (attachment_key = the image, "
+    "view + image_box) to read small lettering. tiles: 'auto' (default: an "
+    "image larger than one look holds is ALSO read in overlapping close-up "
+    "tiles), 'off', or N or 'NxN' with N from 2 to 4. turn = 90, 180 or 270 "
+    "sends it turned that many degrees clockwise (a picture taken "
+    "sideways).")
 
 
 def _parse_turn(value):
@@ -2658,14 +3169,16 @@ def _split_located(out, clip, size=None, turn=0) -> None:
 
 
 def _finish_answer(out, info, note: bool = True,
-                   tagged_only: bool = False) -> None:
+                   tagged_only: bool = False, what: str = "page") -> None:
     """Turn a vision answer's locations into what the agent works with: the
     structured LOCATED list split off (when switched on), then every pixel
     box in the prose rewritten on the 0-999 grid of this view
     (:func:`vision_view.boxes_to_grid`), converted with the size SENT and,
     for an image sent turned, turned back to the view as the page shows it.
     ``note`` adds the line saying so (a tile's rows leave it to the page);
-    ``tagged_only`` (chart read-offs) converts only boxes tagged ``px=``."""
+    ``tagged_only`` (chart read-offs) converts only boxes tagged ``px=``;
+    ``what`` names the thing looked at in that line (``image`` for an image
+    file)."""
     from funhouse_agent import vision_view
     size, turn = _sent_size(info), _sent_turn(info)
     _split_located(out, info["clip"], size, turn)
@@ -2678,7 +3191,7 @@ def _finish_answer(out, info, note: bool = True,
     except Exception:  # noqa: BLE001 - an unconverted answer is still one
         return
     out["analysis"] = text
-    msg = vision_view.boxes_note(counts, size, turn) if note else None
+    msg = vision_view.boxes_note(counts, size, turn, what) if note else None
     if msg:
         out["boxes"] = msg
     hedge = vision_view.bracketed_note(text) if note and not tagged_only \
@@ -2910,6 +3423,9 @@ def _dispatch_analyze_pdf_page(arguments, engine, attachments):
         pdf_bytes, _src = _resolve_attachment_or_path(key, attachments)
     except FileNotFoundError as e:
         return json.dumps({"error": str(e)})
+    if _image_kind(bytes(pdf_bytes[:16])) is not None:
+        return _image_file_as_page(arguments, engine, attachments, pdf_bytes,
+                                   key, prompt, turn_arg)
     page, refused = _checked_page(arguments, pdf_bytes)
     if refused is not None:
         return refused
@@ -2946,6 +3462,44 @@ def _truthy(value) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in ("1", "true", "yes", "on")
     return bool(value)
+
+
+#: Said when analyze_pdf_page is given an image file (VIS-09).
+IMAGE_AS_PAGE_NOTE = (
+    "this is an image file, not a PDF: it was looked at as analyze_image "
+    "looks at one, so view and every box are in the image's own pixels "
+    "(page is not used)")
+
+
+def _image_file_as_page(arguments, engine, attachments, data, key, prompt,
+                        turn_arg) -> str:
+    """``analyze_pdf_page`` on an IMAGE file: looked at as ``analyze_image``
+    looks (its own pixels as the frame, tiles when it is large), or, for an
+    inline look, shown whole with its view in those pixels.
+
+    PyMuPDF opens a PNG as a one-page document in POINTS at 96 dpi (0.75 pt
+    a pixel), so a page look at a pasted screenshot gave a view in points
+    while ``render_region`` now cuts an image in its pixels: the two would
+    disagree by a quarter. Every look at an image is in its pixels."""
+    if arguments.get("_inline"):
+        raw = _render_image_region(
+            arguments, engine, data, key, bbox=None, window=None,
+            render_pad=0.0, padded=None, view=None, image_box=None,
+            marks=None, prompt=prompt, turn_arg=turn_arg, pad_frac=0.0)
+    else:
+        args = {"attachment_key": key, "prompt": prompt,
+                "tiles": arguments.get("tiles", "auto")}
+        if arguments.get("turn") is not None:
+            args["turn"] = arguments.get("turn")
+        raw = _dispatch_analyze_image(args, engine, attachments)
+    try:
+        out = json.loads(raw)
+    except ValueError:
+        return raw
+    if isinstance(out, dict) and "error" not in out:
+        out["image_file"] = IMAGE_AS_PAGE_NOTE
+        return json.dumps(out)
+    return raw
 
 
 def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,

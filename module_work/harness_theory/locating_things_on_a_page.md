@@ -208,6 +208,68 @@ Uncommitted for the lead's review; offline tests in
    the image it is shown), the markup check's crops, `sweep_pages` and the
    chart read-offs. These call `render_view` without `upright`.
 
+## What changed (2026-10-14, BACKLOG VIS-09: image files)
+
+Uncommitted for the lead's review; offline tests in
+`funhouse_agent/tests/test_vision_images.py`. Code in
+`funhouse_agent/image_view.py` (the raster twin of `render_view`) and
+`vision_tools._read_image` / `_render_image_region`.
+
+1. **The frame.** An image file (an upload, a pasted screenshot, a photo,
+   a scan saved as PNG/JPEG) is its own frame: `view` is a rect in pixels of
+   the ORIGINAL image as a viewer shows it (a photo's EXIF orientation
+   applied), top-left origin. `analyze_image`'s view is `[0, 0, W, H]`. The
+   vision call answers in pixels of the image SENT and the tool converts to
+   0-999 boxes on the view (`boxes_to_grid`), exactly as for a page;
+   `image_box_to_page` is units-free, so `view` + `image_box` gives the
+   original's pixels.
+2. **No new tool.** `render_region` takes the image as `attachment_key`:
+   `bbox`, `view` + `image_box` (padded by the source view's location
+   error, `zoom_pad`), `turn`, `reuse`, `marks` mean what they mean on a
+   page, in the image's pixels; `page` is not used. One sentence in each
+   surface's description (`vision_tools.IMAGE_ZOOM_NOTE`); `analyze_image`
+   gains `tiles` and `turn` (`IMAGE_LOOK_NOTE`). No system prompt names
+   either. Chosen over a sibling tool because every argument and its
+   semantics already existed; a second tool would repeat ~150 words of
+   description on four surfaces and ask the agent to choose.
+   `analyze_pdf_page` given an image file looks at it as `analyze_image`
+   does (`image_file` in the result says so): PyMuPDF opens a PNG as a page
+   in points at 96 dpi, and a view in points handed to the image zoom would
+   have landed at 0.75 of the spot.
+3. **Sizing.** Every crop is cut from the original (never from the shrunk
+   whole) and sized to the vision budget (`vision_view.budget`, held to the
+   host edge): shrunk when larger than the budget; for a zoom or a tile,
+   enlarged by WHOLE times (at most 4x) when the budget holds it. Measured
+   on 1-px bars a pixel apart (2026-10-14): 0 of 9 survive at 0.53x, 7 of 9
+   at 1.03x, 9 of 9 at 1x, 2x, 3x, 4x - a fractional enlargement blurs
+   one-pixel strokes, so it is never used. The whole image goes as the file
+   is when it fits.
+4. **Tiles.** `analyze_image(tiles="auto")` (robust policy) also reads an
+   image that reaches the model under 0.9 of its size in N x N overlapping
+   tiles cut from the original, N = ceil(1 / scale), at most 4 (a 2560 x
+   1440 screenshot 2 x 2, 3840 x 2160 2 x 2, a 4032 x 3024 photo 3 x 3).
+   The whole look is asked for the layout only; `found` merges the tiles'
+   boxes in the image's pixels (`bbox`, not `page_bbox`).
+5. **Before/after on one fixture** (3840 x 2160 screenshot; fine print in
+   the top-right corner; a stand-in host that shrinks over 2,048 px):
+   * before: one look at 2048 x 1152, the fine print unreadable, the result
+     `{"analysis"}` only, no frame to zoom by. `render_region` on the PNG did
+     not refuse: PyMuPDF opened it as a one-page document in POINTS at 96
+     dpi (0.75 pt a pixel), so a box in the image's pixels was clamped to a
+     2880 x 70 pt strip of the whole width, sent at 2016 x 50, unreadable.
+   * after: the whole look plus 2 x 2 tiles; tile r1c2 (2074 x 1167 px,
+     sent 2048 x 1152) reads the fine print; the whole look's mark box comes
+     back 2.2 px off in the original's pixels; a zoom on the look's own
+     `view` + `image_box` (padded window 623 x 296 px, sent 3x) reads it and
+     boxes it 0.3 px off; a zoom on the label's own `bbox` (sent 4x) reads it.
+6. **Not measured live.** No suite task uses an image file. The natural
+   first measure: the synthetic tag sheet rendered to a PNG at a
+   screenshot's size (about 3960 x 2560, no text layer), read through
+   `analyze_image` (auto tiles) and then `render_region` on each tag's
+   `view` + `image_box`, scored against `build_synthetic_tag_set()` truth
+   converted to pixels: tags read, and box error in pixels, whole look
+   against tiles against zooms - the same table as §5.2, for images.
+
 ---
 
 ## 1. The routes, end to end

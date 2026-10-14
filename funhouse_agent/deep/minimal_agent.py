@@ -91,7 +91,9 @@ DESCRIPTIONS = {
         "it - it is shown to you with your next step. Say where with view + "
         "image_box (the view of an image you saw and a box on a 0-999 grid "
         "over that image), or bbox = [x0, y0, x1, y1] in PDF points from the "
-        "top-left. A smaller box shows finer lettering. page is 0-based."),
+        "top-left. A smaller box shows finer lettering. page is 0-based. An "
+        "uploaded picture is zoomed the same way, with bbox and view in its "
+        "own pixels."),
     "analyze_image": (
         "Look at an uploaded picture (a screenshot, a photo): it is shown to "
         "you with your next step."),

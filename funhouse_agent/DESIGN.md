@@ -159,7 +159,11 @@ Beyond the 4 standard ReAct tools (`call_agent`, `list_methods`,
   Cheap first pass for text-based PDFs. Flags any page with no text layer
   ("no text layer — use analyze_pdf_page") so scanned pages fall through to
   vision. Accepts an attachment key OR a real path (`/tmp/...`, `/Volumes/...`).
-- `analyze_image` — analyze an attached image via vision
+- `analyze_image` — analyze an attached image via vision. Since VIS-09 the
+  image's own pixels are a frame like a page's: the result gives its `view`
+  and 0-999 boxes, an image too large for one look is also read in tiles cut
+  from the original, and `render_region` takes the image as
+  `attachment_key` to zoom (`funhouse_agent/image_view.py`)
 - `analyze_pdf_page` — render one PDF page and analyze it via vision (for
   scanned pages, figures, plotted cross-sections; heavier than `read_pdf_text`)
 - `read_reference_figure` — read a value off a reference chart/figure via vision

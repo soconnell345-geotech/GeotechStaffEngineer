@@ -59,7 +59,9 @@ from funhouse_agent.deep.tools import (
     _find_like_available,
     make_vision_tools,
 )
-from funhouse_agent.vision_tools import TURN_ARG_NOTE
+from funhouse_agent.vision_tools import (
+    IMAGE_LOOK_NOTE, IMAGE_ZOOM_NOTE, TURN_ARG_NOTE,
+)
 
 #: The page agent's tools, all built by ``make_vision_tools``.
 REVIEW_TOOLS = (
@@ -123,13 +125,14 @@ REVIEW_DESCRIPTIONS: Dict[str, str] = {
         "character, see what a note, markup or leader points at, or check a "
         "dimension before you quote it. Every zoom is kept for the "
         "conversation: reuse=true returns the kept zoom of the same region - "
-        "saying what it was asked - instead of a new look. " + TURN_ARG_NOTE
+        "saying what it was asked - instead of a new look. " + IMAGE_ZOOM_NOTE
+        + " " + TURN_ARG_NOTE
         + " page is 0-based; or give pdf_page, 1-based, as a PDF viewer "
         "shows."),
     "analyze_image": (
-        "Look at an image file - an uploaded picture, or a contact sheet "
-        "that render_page_thumbnails wrote (pass its path) - and answer your "
-        "prompt about it."),
+        "Look at an image file - an uploaded picture or pasted screenshot, "
+        "or a contact sheet that render_page_thumbnails wrote (pass its "
+        "path) - and answer your prompt about it. " + IMAGE_LOOK_NOTE),
     "save_file": (
         "Save text or data (CSV, JSON, Markdown, HTML) to a file. A bare "
         "name lands in the working folder and appears as a download card; "
@@ -168,14 +171,15 @@ INLINE_DESCRIPTIONS: Dict[str, str] = {
         "read_document(with_locations=true), search_document and "
         "document_markups give), or with an earlier view + a 0-999 image_box "
         "on its image. marks = [[x, y, label], ...] numbers spots on the "
-        "image. page is 0-based; or give pdf_page, 1-based, as a PDF viewer "
-        "shows."),
+        "image. " + IMAGE_ZOOM_NOTE + " page is 0-based; or give pdf_page, "
+        "1-based, as a PDF viewer shows."),
     "analyze_image": (
         "Look at an image. An image FILE - a contact sheet that "
         "render_page_thumbnails wrote (pass its path) - is shown to you "
         "yourself with your next step, and prompt is only a note of what "
-        "you are after; an uploaded picture (pass its name) is described by "
-        "a vision call that answers your prompt."),
+        "you are after; an uploaded picture or pasted screenshot (pass its "
+        "name) is described by a vision call that answers your prompt. "
+        + IMAGE_LOOK_NOTE),
 }
 
 #: Default model calls in one request before the last one must answer.
