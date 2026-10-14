@@ -53,9 +53,9 @@ DEFAULT_REVIEWER_MAX_MODEL_CALLS = DEFAULT_REFERENCES_MAX_MODEL_CALLS
 #: deepagents' scratch-filesystem tools a references consult has no use for:
 #: it never writes, and an empty scratch space answers nothing about the
 #: library. ``read_file`` is kept -- an evicted large tool result is read
-#: back with it.
+#: back with it. ``delete`` is deepagents 0.7.x's (BACKLOG INF-10).
 REFERENCE_HIDDEN_TOOLS = frozenset({"ls", "glob", "grep", "write_file",
-                                    "edit_file", "execute"})
+                                    "edit_file", "delete", "execute"})
 
 
 class HideTools(AgentMiddleware):

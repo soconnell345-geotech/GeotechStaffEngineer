@@ -189,7 +189,7 @@ REVIEW_PAGE_TOOLS = {"analyze_image", "analyze_pdf_page", "render_region",
 #: (hidden from this page's menu by HideScratchFilesystem); which of them a
 #: build has depends on the deepagents version.
 DEEPAGENTS_OWN = {"write_todos", "task", "ls", "read_file", "write_file",
-                  "edit_file", "glob", "grep", "execute"}
+                  "edit_file", "delete", "glob", "grep", "execute"}
 
 
 def test_default_page_offers_only_the_review_tools():

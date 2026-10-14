@@ -190,7 +190,7 @@ Key conventions:
     - DIGGS writer and reader fixes (d81c1f8); shipped code free of field
       post names, with a guard (accfc92); CI's five months-old failures and
       the workflow (9152c66).
-    Open next: INF-10, the Foundry brief that measures all of this
+    Open next: GM-77 (OpenSees site response), the Foundry brief that measures all of this
     (EV-13, DR-05).
 
   Pickup: `HANDOFF.md` §0a-current, "Where things stand".

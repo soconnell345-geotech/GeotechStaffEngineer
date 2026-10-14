@@ -323,8 +323,10 @@ class OutputLimitGuard(AgentMiddleware):
 
 #: deepagents' scratch-filesystem tools (and its shell), which see an empty
 #: in-memory space and answer "not found" about the user's real files.
+#: ``delete`` arrived with deepagents 0.7.x (BACKLOG INF-10: a fresh resolve
+#: put it on the review page's menu).
 SCRATCH_TOOLS = frozenset({"ls", "read_file", "write_file", "edit_file",
-                           "glob", "grep", "execute"})
+                           "delete", "glob", "grep", "execute"})
 
 #: The sections deepagents' filesystem middleware adds to the system prompt,
 #: about exactly those tools ("## Following Conventions" is its
@@ -352,9 +354,9 @@ def _hide_tools_base():
 
 class HideScratchFilesystem(_hide_tools_base()):
     """The Document Review page without deepagents' scratch filesystem:
-    ``ls``, ``read_file``, ``write_file``, ``edit_file``, ``glob``,
-    ``grep`` and ``execute`` are kept off the model's tool list, and their
-    section of the system prompt with them (live smoke wave 2b: F41's
+    ``ls``, ``read_file``, ``write_file``, ``edit_file``, ``delete``,
+    ``glob``, ``grep`` and ``execute`` are kept off the model's tool list,
+    and their section of the system prompt with them (live smoke wave 2b: F41's
     ``read_file('/Submittal Log.xlsx')`` answered "not found" for a file the
     conversation held, and an unknown-tool error listed them as if they
     were the page's tools). They stay registered, so a result deepagents
