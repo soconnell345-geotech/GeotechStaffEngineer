@@ -73,6 +73,10 @@ _PLANAR_DEPTH_SLICES = 10.0
 _PLANAR_SPLITS = (1, 2, 3)
 # The method the planar surfaces are scored with (see check_infinite_slope).
 PLANAR_METHOD = "janbu"
+# Note on a face whose reinforcement leaves no shallow planar slide able to
+# fail (the solver caps the FOS); such a face needs no infinite-slope warning.
+HELD_NOTE = ("every shallow planar slide is held by the reinforcement "
+             "crossing the face (FOS above the 999.9 cap)")
 
 # Surface-family labels (the references' names).
 CIRCULAR = "circular"
@@ -186,6 +190,7 @@ def search_toe_circles(geom: SlopeGeometry,
                        x_exit_range: Optional[Tuple[float, float]] = None,
                        x_range: Optional[Tuple[float, float]] = None,
                        y_range: Optional[Tuple[float, float]] = None,
+                       fos_fn=None,
                        ) -> Dict[str, Any]:
     """Critical circle through the toe of each slope face.
 
@@ -202,22 +207,29 @@ def search_toe_circles(geom: SlopeGeometry,
 
     ``x_entry_range`` / ``x_exit_range`` / ``x_range`` / ``y_range`` are
     CALLER-GIVEN constraints only (pass None for automatic ones).
+    ``fos_fn`` substitutes a per-surface FOS (`_compute_fos`'s hook, used
+    by `search_rapid_drawdown`); every circle is then scored with it and
+    there is no Bishop screen.
 
     Returns a dict: ``FOS`` (999.9 if none admissible), ``xc``, ``yc``,
     ``radius``, ``toe`` (x, z), ``n_evaluated``.
     """
     from slope_stability.search import _compute_fos, _check_entry_exit, _FOS_MAX
 
-    scan_method = "bishop" if method in _SCREENED_METHODS else method
+    scan_method = ("bishop" if method in _SCREENED_METHODS and fos_fn is None
+                   else method)
     faces = sorted(slope_faces(geom), key=lambda f: -f["height"])
     faces = faces[:_MAX_TOE_FACES]
     x_min, x_max = geom.x_range
     windows_given = x_entry_range is not None or x_exit_range is not None
     counter = [0]
+    # A caller-supplied per-surface solve (rapid drawdown: two or three GLE
+    # solves a surface, no cheap screen) gets a coarser scan.
+    n_t, u_tol, e_iter = (_N_T, 0.01, 12) if fos_fn is None else (7, 0.04, 6)
     u_lo = math.log(_T_RATIO_RANGE[0])
     u_hi = math.log(_T_RATIO_RANGE[1])
-    us = [u_lo + (u_hi - u_lo) * i / (_N_T - 1) for i in range(_N_T)]
-    u_step = (u_hi - u_lo) / (_N_T - 1)
+    us = [u_lo + (u_hi - u_lo) * i / (n_t - 1) for i in range(n_t)]
+    u_step = (u_hi - u_lo) / (n_t - 1)
 
     def circle_fos(xc, yc, r, fos_method):
         if not _centre_admissible(geom, xc, yc, x_range, y_range):
@@ -229,7 +241,8 @@ def search_toe_circles(geom: SlopeGeometry,
                 geom, slip, x_entry_range, x_exit_range):
             return _FOS_MAX
         counter[0] += 1
-        return _compute_fos(geom, slip, fos_method, n_slices, tol=tol)
+        return _compute_fos(geom, slip, fos_method, n_slices, tol=tol,
+                            fos_fn=fos_fn)
 
     def chord(toe, s, offset):
         """The chord from the toe to the ground point `offset` upslope."""
@@ -242,7 +255,20 @@ def search_toe_circles(geom: SlopeGeometry,
         if c < 1e-9:
             return None
         return {"toe": toe, "c": c, "mx": 0.5 * (xl + xr),
-                "mz": 0.5 * (zl + zr), "px": -dz / c, "pz": dx / c}
+                "mz": 0.5 * (zl + zr), "px": -dz / c, "pz": dx / c,
+                "xl": xl, "xr": xr}
+
+    def below_base(ch, xc, yc, r):
+        """True when the arc between the chord ends dips below the bottom of
+        the deepest layer. `build_slices` tolerates a tangential sliver or
+        two there, but a toe sitting ON a rigid base would let every toe
+        circle through it shed its toe slices that way and score low
+        (Slide2 #85: 0.83 against the base-tangent 0.91). The critical toe
+        circle can at most touch the base."""
+        x_low = min(max(xc, ch["xl"]), ch["xr"])
+        z_low = yc - math.sqrt(max(r * r - (x_low - xc) ** 2, 0.0))
+        base = min(L.bottom_at(x_low) for L in geom.soil_layers)
+        return z_low < base - 1e-6 * max(ch["c"], 1.0)
 
     def circ(ch, u):
         """Circle through both chord ends, its centre a distance
@@ -258,18 +284,21 @@ def search_toe_circles(geom: SlopeGeometry,
             return (_FOS_MAX, 0.0)
 
         def f(u):
-            return circle_fos(*circ(ch, u), fos_method)
+            xc, yc, r = circ(ch, u)
+            if below_base(ch, xc, yc, r):
+                return _FOS_MAX
+            return circle_fos(xc, yc, r, fos_method)
 
         if bracket is None:
             fs = [f(u) for u in us]
-            k = min(range(_N_T), key=lambda i: fs[i])
+            k = min(range(n_t), key=lambda i: fs[i])
             u_best, f_best = us[k], fs[k]
             if f_best >= _FOS_MAX:
                 return (f_best, u_best)
-            bracket = (us[max(k - 1, 0)], us[min(k + 1, _N_T - 1)])
+            bracket = (us[max(k - 1, 0)], us[min(k + 1, n_t - 1)])
         else:
             u_best, f_best = 0.5 * (bracket[0] + bracket[1]), _FOS_MAX
-        u_g, f_g, _ = _golden_min(f, bracket[0], bracket[1], tol=0.01)
+        u_g, f_g, _ = _golden_min(f, bracket[0], bracket[1], tol=u_tol)
         if f_g < f_best:
             u_best, f_best = u_g, f_g
         return (f_best, u_best)
@@ -304,7 +333,7 @@ def search_toe_circles(geom: SlopeGeometry,
             o_g, f_g, _ = _golden_min(
                 g, offsets[max(j - 1, 0)],
                 offsets[min(j + 1, len(offsets) - 1)],
-                tol=0.005 * size, max_iter=12)
+                tol=0.005 * size, max_iter=e_iter)
             fos, u, ch = cache[o_g]
             shortlist.append((fos, ch, u))
 
@@ -424,15 +453,17 @@ def check_infinite_slope(geom: SlopeGeometry,
                          tol: float = 1e-4,
                          x_entry_range: Optional[Tuple[float, float]] = None,
                          x_exit_range: Optional[Tuple[float, float]] = None,
+                         fos_fn=None,
                          ) -> Dict[str, Any]:
     """Shallow planar (infinite-slope) surfaces on every cohesionless face.
 
     For each run from `cohesionless_face_runs`, shallow planar surfaces
     parallel to the face (`_planar_surface`; over the whole run, each half
     and each third) are scored by the search's own `_compute_fos` -- so pore
-    pressure, ponded water, surcharge and seismic load are treated exactly
-    as for any other surface (and reinforcement is left out, as
-    `_compute_fos` leaves it out of every search surface).
+    pressure, ponded water, surcharge, seismic load and reinforcement are
+    treated exactly as for any other surface. (Reinforcement anchored at the
+    face crosses a shallow planar slide near its head, so supports such as
+    tiebacks keep this family from governing.)
 
     ``method`` defaults to Janbu's simplified method (`PLANAR_METHOD`). The
     infinite slope is a force-equilibrium result (Duncan, Wright & Brandon
@@ -453,7 +484,9 @@ def check_infinite_slope(geom: SlopeGeometry,
     (PolylineSlipSurface or None), ``checks`` (one dict per run, see
     `SearchResult.infinite_slope_checks`), ``n_evaluated``.
     """
-    from slope_stability.search import _compute_fos, _FOS_MAX
+    from slope_stability.search import (
+        _compute_fos, _FOS_MAX, trial_reinforcement,
+    )
 
     best_fos, best_slip = _FOS_MAX, None
     checks: List[Dict[str, Any]] = []
@@ -497,19 +530,24 @@ def check_infinite_slope(geom: SlopeGeometry,
         spans = [(lo_x + width * i / k, lo_x + width * (i + 1) / k)
                  for k in _PLANAR_SPLITS for i in range(k)]
         run_best, run_slip = _FOS_MAX, None
+        held = False
         for (a, b) in spans:
             slip = _planar_surface(geom, a, b, n_slices)
             if slip is None:
                 continue
             n_eval += 1
             fos = _compute_fos(geom, slip, method, n_slices, tol=tol,
-                               window_span=(b - a))
+                               window_span=(b - a), fos_fn=fos_fn)
             if fos < run_best:
                 run_best, run_slip = fos, slip
+            elif fos >= _FOS_MAX and trial_reinforcement(geom, slip):
+                held = True
         if run_best < _FOS_MAX:
             check["FOS"] = round(run_best, 4)
             if run_best < best_fos:
                 best_fos, best_slip = run_best, run_slip
+        elif held:
+            check["note"] = (HELD_NOTE)
         else:
             check["note"] = "no admissible shallow planar surface"
 
@@ -537,6 +575,26 @@ def _make_result(geom, slip, fos, method_label, n_slices) -> Optional[
     return SlopeStabilityResult(
         FOS=fos, method=method_label, x_entry=x_entry, x_exit=x_exit,
         n_slices=n, has_seismic=geom.kh > 0, kh=geom.kh, **kw)
+
+
+def _attach_reinforcement(geom, crit) -> None:
+    """List the reinforcement crossing the critical surface on the result,
+    in `analyze_slope`'s format, so a reinforced search says which elements
+    its FOS counted (the FOS itself already includes them: GM-53)."""
+    from slope_stability.search import trial_reinforcement
+    if crit is None:
+        return
+    slip = (CircularSlipSurface(crit.xc, crit.yc, crit.radius)
+            if crit.is_circular else PolylineSlipSurface(crit.slip_points))
+    try:
+        forces = trial_reinforcement(geom, slip)
+    except ValueError:
+        return
+    crit.reinforcements = [
+        {"kind": f.kind, "index": f.index,
+         "x_m": round(f.x, 3), "z_m": round(f.z, 3),
+         "T_kN_per_m": round(f.T, 2), "controlled_by": f.controlled_by}
+        for f in (forces or [])] or None
 
 
 def _near(a: float, b: float, tol: float) -> bool:
@@ -601,7 +659,8 @@ def apply_supplements(geom: SlopeGeometry,
                       windows_used=(None, None), windows_auto=(True, True),
                       grid_used=None, grid_auto=True,
                       toe_circles: bool = True,
-                      infinite_slope: bool = True) -> SearchResult:
+                      infinite_slope: bool = True,
+                      fos_fn=None) -> SearchResult:
     """Score the toe-circle and infinite-slope families and fold them into
     ``result`` (modified in place and returned).
 
@@ -609,8 +668,12 @@ def apply_supplements(geom: SlopeGeometry,
     CALLER-GIVEN constraints (None where the search chose its own).
     ``windows_used`` / ``grid_used`` are what the main search actually used,
     for the edge warnings. ``toe_circles`` applies to circular searches only.
+    ``fos_fn`` (the rapid-drawdown search's per-surface FOS) scores both
+    families when given; the planar surfaces are then labelled with
+    ``method`` instead of Janbu.
     """
     from slope_stability.search import _FOS_MAX
+    planar_method = PLANAR_METHOD if fos_fn is None else method
 
     main = result.critical
     candidates: Dict[str, float] = {}
@@ -625,7 +688,7 @@ def apply_supplements(geom: SlopeGeometry,
         toe = search_toe_circles(
             geom, method=method, n_slices=n_slices, tol=tol,
             x_entry_range=x_entry_range, x_exit_range=x_exit_range,
-            x_range=x_range, y_range=y_range)
+            x_range=x_range, y_range=y_range, fos_fn=fos_fn)
         result.n_surfaces_evaluated += toe["n_evaluated"]
         if toe["FOS"] < _FOS_MAX:
             candidates[TOE_CIRCLE] = round(toe["FOS"], 4)
@@ -640,15 +703,16 @@ def apply_supplements(geom: SlopeGeometry,
     planar = None
     if infinite_slope:
         planar = check_infinite_slope(
-            geom, method=PLANAR_METHOD, n_slices=n_slices, tol=tol,
-            x_entry_range=x_entry_range, x_exit_range=x_exit_range)
+            geom, method=planar_method, n_slices=n_slices, tol=tol,
+            x_entry_range=x_entry_range, x_exit_range=x_exit_range,
+            fos_fn=fos_fn)
         result.n_surfaces_evaluated += planar["n_evaluated"]
         result.infinite_slope_checks = planar["checks"]
         if planar["FOS"] < _FOS_MAX:
             candidates[INFINITE_SLOPE] = round(planar["FOS"], 4)
             if planar["FOS"] < best_fos:
                 r = _make_result(geom, planar["slip"], planar["FOS"],
-                                 PLANAR_METHOD.capitalize(), n_slices)
+                                 planar_method.capitalize(), n_slices)
                 if r is not None:
                     best_kind, best, best_fos = INFINITE_SLOPE, r, planar["FOS"]
 
@@ -680,14 +744,18 @@ def apply_supplements(geom: SlopeGeometry,
             f"face (infinite slope; tan(phi')/tan(beta) = "
             f"{run['FOS_dry_closed_form']:.3f} for a dry face). The reported "
             f"surface is a planar slide at a shallow depth with FOS "
-            f"{best_fos:.3f}, scored by force equilibrium (Janbu's simplified "
-            f"method, as the infinite slope is) whatever method the search "
-            f"used; the {main_text} minimum was {was}. Shallower slides tend "
+            f"{best_fos:.3f}, "
+            + ("scored by force equilibrium (Janbu's simplified method, as "
+               "the infinite slope is) whatever method the search used"
+               if fos_fn is None else
+               "scored with the search's own per-surface solve")
+            + f"; the {main_text} minimum was {was}. Shallower slides tend "
             f"to this value, so it does not depend on the search grid.")
 
     if planar is not None:
         for c in planar["checks"]:
-            if c["FOS"] is None and c["FOS_dry_closed_form"] < best_fos:
+            if (c["FOS"] is None and c["note"] != HELD_NOTE
+                    and c["FOS_dry_closed_form"] < best_fos):
                 warnings_out.append(
                     f"Cohesionless soil (c' = 0, phi' = {c['phi_deg']:g} deg) "
                     f"forms the slope face between x = {c['x_from']:.2f} and "
@@ -708,6 +776,7 @@ def apply_supplements(geom: SlopeGeometry,
         warnings_out.extend(_edge_warnings(
             geom, best, given, (False, False), None, grid_auto))
 
+    _attach_reinforcement(geom, best)
     result.critical = best
     result.governing_surface = best_kind if best is not None else ""
     result.candidates = candidates

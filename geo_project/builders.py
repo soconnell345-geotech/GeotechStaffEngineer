@@ -288,10 +288,9 @@ def run_analyses(project: Project) -> Dict[str, Any]:
                 "method": a.method,
                 "FOS": float(crit.FOS) if crit is not None else None,
                 "n_surfaces_evaluated": search.n_surfaces_evaluated,
-                "critical": (None if crit is None else {
-                    "xc": crit.xc, "yc": crit.yc, "radius": crit.radius,
-                    "x_entry": crit.x_entry, "x_exit": crit.x_exit,
-                }),
+                "critical": _critical_surface_dict(crit),
+                "governing_surface": search.governing_surface,
+                "warnings": list(search.warnings),
                 "_result": search,
             }
             if a.probabilistic is not None and crit is not None:
@@ -319,6 +318,23 @@ def run_analyses(project: Project) -> Dict[str, Any]:
                 "_result": result,
             }
     return out
+
+
+def _critical_surface_dict(crit) -> Optional[Dict[str, Any]]:
+    """JSON-safe critical surface: the circle for a circular one, the
+    polyline vertices for a noncircular one (a planar infinite-slope surface
+    is noncircular; it used to be recorded as xc = yc = R = 0)."""
+    if crit is None:
+        return None
+    d: Dict[str, Any] = {"x_entry": crit.x_entry, "x_exit": crit.x_exit}
+    if crit.is_circular:
+        d.update(surface_type="circular", xc=crit.xc, yc=crit.yc,
+                 radius=crit.radius)
+    else:
+        d.update(surface_type="noncircular",
+                 slip_points=[(float(x), float(z))
+                              for x, z in (crit.slip_points or [])])
+    return d
 
 
 def _run_probabilistic(geom, a: LEAnalysis, crit, variables) -> Dict[str, Any]:

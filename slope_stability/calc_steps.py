@@ -659,6 +659,18 @@ def _search_section(search) -> CalcSection:
         rows.append(["Entry / exit",
                      f"x = {crit.x_entry:.2f} m / "
                      f"x = {crit.x_exit:.2f} m"])
+        if crit.reinforcements:
+            rows.append(["Reinforcement crossing it",
+                         f"{len(crit.reinforcements)} element(s), "
+                         f"{sum(r['T_kN_per_m'] for r in crit.reinforcements):.1f}"
+                         f" kN/m"])
+    governing = getattr(search, "governing_surface", "")
+    if governing:
+        from slope_stability.search_supplements import describe_surface_kind
+        rows.append(["Governing surface", describe_surface_kind(governing)])
+        for kind, fos in getattr(search, "candidates", {}).items():
+            rows.append([f"  — minimum, {describe_surface_kind(kind)}",
+                         f"{fos:.3f}"])
     search_notes = ("The trial-surface map in the Figures section shows "
                     "every evaluated surface colored by FOS.")
     if n_rejected:
@@ -673,6 +685,31 @@ def _search_section(search) -> CalcSection:
         rows=rows,
         notes=search_notes,
     ))
+
+    checks = getattr(search, "infinite_slope_checks", None) or []
+    if checks:
+        items.append(TableData(
+            title="Infinite Slope Check (cohesionless faces)",
+            headers=["Face x range (m)", "Layer", "beta (deg)", "phi' (deg)",
+                     "tan(phi')/tan(beta), dry", "Shallow planar FOS"],
+            rows=[[f"{c['x_from']:.2f} - {c['x_to']:.2f}", c["layer"],
+                   f"{c['slope_angle_deg']:.1f}", f"{c['phi_deg']:g}",
+                   f"{c['FOS_dry_closed_form']:.3f}",
+                   (f"{c['FOS']:.3f}" if c["FOS"] is not None
+                    else f"not evaluated ({c['note']})")]
+                  for c in checks],
+            notes=("Where c' = 0 soil forms the slope face the critical "
+                   "failure tends to a shallow slide parallel to the face "
+                   "(infinite slope, Duncan, Wright & Brandon 2014)."),
+        ))
+
+    warnings_list = list(getattr(search, "warnings", None) or [])
+    if warnings_list:
+        items.append(TableData(
+            title="Search Warnings",
+            headers=["What the engineer must check"],
+            rows=[[w] for w in warnings_list],
+        ))
 
     if crit is not None and not crit.is_circular and crit.slip_points:
         items.append(TableData(

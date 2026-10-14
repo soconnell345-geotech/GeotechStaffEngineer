@@ -171,8 +171,52 @@ def _noncircular_axis_point(slices, geom) -> Optional[Tuple[float, float]]:
     return (0.5 * (x_lo + x_hi), z_top + 0.5 * span)
 
 
+def _has_reinforcement(geom) -> bool:
+    """True when the geometry carries any reinforcement that
+    `compute_reinforcement_forces` resolves (nails, anchors, geosynthetics,
+    stabilizing piles, or the legacy single horizontal force)."""
+    if (getattr(geom, "nails", None) or getattr(geom, "anchors", None)
+            or getattr(geom, "geosynthetics", None)
+            or getattr(geom, "stabilizing_piles", None)):
+        return True
+    return ((getattr(geom, "reinforcement_force", 0.0) or 0.0) > 0
+            and getattr(geom, "reinforcement_elevation", None) is not None)
+
+
+def trial_reinforcement(geom, slip):
+    """Reinforcement crossings on a trial surface, resolved exactly as
+    `analyze_slope` resolves them (`compute_reinforcement_forces` between the
+    surface's entry and exit), or None when there are none (GM-53: the
+    search used to score every trial surface without its reinforcement)."""
+    if not _has_reinforcement(geom):
+        return None
+    from slope_stability.reinforcement import compute_reinforcement_forces
+    x_entry, x_exit = slip.find_entry_exit(geom)
+    return compute_reinforcement_forces(geom, slip, x_entry, x_exit) or None
+
+
+def _reinforced_rigorous_fos(slices, slip, f_interslice: str, tol: float,
+                             reinf_forces) -> Optional[float]:
+    """Rigorous GLE FOS of a REINFORCED circular trial surface, or None when
+    the GLE does not converge. `spencer_fos` / `morgenstern_price_fos` fall
+    back to the legacy solver on non-convergence, and that solver ignores
+    reinforcement: in a search the unreinforced value of a heavily anchored
+    surface then wins (Slide2 #85, Spencer: 0.86 against Bishop 1.26). A
+    search rejects such a surface instead."""
+    from slope_stability.gle import gle_fos
+    try:
+        res = gle_fos(slices, slip, f_interslice=f_interslice,
+                      tol=min(tol, 1e-4) * 0.1, reinf_forces=reinf_forces)
+        if res.converged and 0.05 < res.fos < _FOS_MAX:
+            return res.fos
+    except (ValueError, ZeroDivisionError, OverflowError):
+        pass
+    return None
+
+
 def _rigorous_noncircular_fos(slices, slip, f_interslice: str,
-                              tol: float, geom=None) -> Optional[float]:
+                              tol: float, geom=None,
+                              reinf_forces=None) -> Optional[float]:
     """Rigorous GLE FOS for a noncircular surface, REQUIRING convergence.
 
     Returns None when the GLE does not converge, so the caller REJECTS the
@@ -203,7 +247,8 @@ def _rigorous_noncircular_fos(slices, slip, f_interslice: str,
     for axis_point in axes:
         try:
             res = gle_fos(slices, slip, f_interslice=f_interslice,
-                          tol=min(tol, 1e-4) * 0.1, axis_point=axis_point)
+                          tol=min(tol, 1e-4) * 0.1, axis_point=axis_point,
+                          reinf_forces=reinf_forces)
             if res.converged and 0.05 < res.fos < _FOS_MAX:
                 return res.fos
         except (ValueError, ZeroDivisionError, OverflowError):
@@ -233,12 +278,21 @@ def _compute_fos(geom: SlopeGeometry,
     (grid / entry-exit / random / DE) with the rapid-drawdown FOS substituted per
     surface instead of an ordinary drained/undrained solve. Default ``None``
     leaves the method dispatch byte-identical.
+
+    Reinforcement crossing the trial surface is resolved and applied exactly
+    as ``analyze_slope`` applies it (GM-53; ``trial_reinforcement``). A
+    reinforced circle scored by Spencer / M-P / GLE must converge in the
+    rigorous GLE (``_reinforced_rigorous_fos``): the legacy fallback ignores
+    reinforcement, so the surface is rejected instead.
     """
     try:
         slices = build_slices(geom, slip, n_slices)
         if len(slices) < 3:
             _bump(reject_stats, "geometry")
             return _FOS_MAX
+        # Reinforcement on THIS trial surface, as analyze_slope applies it
+        # (a caller-supplied fos_fn resolves its own).
+        reinf = trial_reinforcement(geom, slip) if fos_fn is None else None
 
         # Noncircular guard (SS-6): reject kinematically-degenerate trial
         # surfaces and REQUIRE the rigorous GLE to converge. This kills the
@@ -256,15 +310,16 @@ def _compute_fos(geom: SlopeGeometry,
                 fos = fos_fn(geom, slip)
             elif method in ("morgenstern_price", "gle"):
                 fos = _rigorous_noncircular_fos(slices, slip, "half_sine", tol,
-                                                geom)
+                                                geom, reinf_forces=reinf)
             elif method == "fellenius":
-                fos = fellenius_fos(slices, slip)
+                fos = fellenius_fos(slices, slip, reinf_forces=reinf)
             elif method == "janbu":
                 fos, _u, _f0 = janbu_fos(slices, slip,
-                                         tol=min(tol, 1e-4) * 0.1)
+                                         tol=min(tol, 1e-4) * 0.1,
+                                         reinf_forces=reinf)
             else:  # spencer / bishop-fallback / default
                 fos = _rigorous_noncircular_fos(slices, slip, "constant", tol,
-                                                geom)
+                                                geom, reinf_forces=reinf)
             if fos is None or fos < 0.05 or math.isnan(fos) or math.isinf(fos):
                 _bump(reject_stats, "nonconverged")
                 return _FOS_MAX
@@ -278,21 +333,26 @@ def _compute_fos(geom: SlopeGeometry,
         if fos_fn is not None:
             fos = fos_fn(geom, slip)
         elif method == "fellenius":
-            fos = fellenius_fos(slices, slip)
+            fos = fellenius_fos(slices, slip, reinf_forces=reinf)
         elif method == "bishop":
-            if not getattr(slip, 'is_circular', True):
-                # Bishop can't handle noncircular, fall back to Spencer
-                fos, _ = spencer_fos(slices, slip, tol=tol)
-            else:
-                fos = bishop_fos(slices, slip, tol=tol)
+            fos = bishop_fos(slices, slip, tol=tol, reinf_forces=reinf)
         elif method == "spencer":
-            fos, _ = spencer_fos(slices, slip, tol=tol)
+            if reinf:
+                fos = _reinforced_rigorous_fos(slices, slip, "constant", tol,
+                                               reinf)
+            else:
+                fos, _ = spencer_fos(slices, slip, tol=tol)
         elif method in ("morgenstern_price", "gle"):
-            fos, _ = morgenstern_price_fos(slices, slip, tol=tol)
+            if reinf:
+                fos = _reinforced_rigorous_fos(slices, slip, "half_sine", tol,
+                                               reinf)
+            else:
+                fos, _ = morgenstern_price_fos(slices, slip, tol=tol)
         elif method == "janbu":
-            fos, _, _ = janbu_fos(slices, slip, tol=min(tol, 1e-4) * 0.1)
+            fos, _, _ = janbu_fos(slices, slip, tol=min(tol, 1e-4) * 0.1,
+                                  reinf_forces=reinf)
         else:
-            fos = bishop_fos(slices, slip, tol=tol)
+            fos = bishop_fos(slices, slip, tol=tol, reinf_forces=reinf)
 
         # Guard against non-convergence producing negative or absurd values
         # FOS < 0.05 is physically meaningless and indicates numerical issues

@@ -66,10 +66,11 @@ _LAYER_KEY_HINTS = {
 }
 
 # Keys of the probabilistic `variables` specs and `correlations` dicts, as
-# slope_stability.probabilistic reads them.
-_VARIABLE_KEYS = ("mean", "std", "cov", "dist")
+# slope_stability.probabilistic reads them ('source' is the citation the
+# slope calc package prints beside a variable).
+_VARIABLE_KEYS = ("mean", "std", "cov", "dist", "source")
 _LAW_KEYS = ("law", "a", "b", "rho_ab", "datum_z", "z_ref", "su_min",
-             "layers")
+             "layers", "source")
 _LAW_PAIR_KEYS = ("mean", "std", "cov")
 _CORRELATION_KEYS = ("var1", "var2", "key1", "key2", "a", "b", "rho",
                      "rho_ab")
@@ -112,7 +113,7 @@ def check_nested_keys(item, valid, *, method: str, label: str,
         f"Valid keys: {sorted(valid)}.")
 
 
-def _check_variables(params: dict, *, method: str) -> None:
+def check_variable_specs(params: dict, *, method: str) -> None:
     """Key check for the probabilistic `variables` specs and the dict form
     of `correlations` (a misspelt 'dist' or 'rho' was silently ignored)."""
     variables = params.get("variables")
@@ -135,43 +136,51 @@ def _check_variables(params: dict, *, method: str) -> None:
                               label=f"correlations[{i}]")
 
 
+def build_soil_layer(d, i: int, *, method: str,
+                     required=("top_elevation", "bottom_elevation", "gamma"),
+                     ) -> SlopeSoilLayer:
+    """One SlopeSoilLayer from a layer dict: unknown keys refused (with a
+    did-you-mean), required keys checked, every field the layer supports
+    passed through. Shared by this adapter and the slope calc packages so
+    both read a layer the same way."""
+    name = d.get("name") if isinstance(d, dict) else None
+    check_nested_keys(
+        d, _LAYER_KEYS, method=method, hints=_LAYER_KEY_HINTS,
+        label=f"soil_layers[{i}]" + (f" ('{name}')" if name else ""))
+    require_keys(d, list(required), method=method, item_label="soil_layers[]")
+    strength_model = d.get("strength_model", "mohr_coulomb")
+    _check_choice(strength_model, _STRENGTH_MODELS,
+                  name="soil_layers[].strength_model", method=method)
+    bbp = d.get("bottom_boundary_points")
+    return SlopeSoilLayer(
+        name=d.get("name", f"layer_{i + 1}"), top_elevation=d["top_elevation"],
+        bottom_elevation=d["bottom_elevation"], gamma=d["gamma"],
+        gamma_sat=d.get("gamma_sat"), phi=d.get("phi", 0.0),
+        c_prime=d.get("c_prime", 0.0), cu=d.get("cu", 0.0),
+        analysis_mode=d.get("analysis_mode", "drained"),
+        ru=d.get("ru", 0.0),
+        bottom_boundary_points=[tuple(p) for p in bbp] if bbp else None,
+        strength_model=strength_model,
+        shansep_S=d.get("shansep_S", 0.22),
+        shansep_m=d.get("shansep_m", 0.8),
+        ocr=d.get("ocr", 1.0),
+        su_min=d.get("su_min", 0.0),
+        hb_sigci=d.get("hb_sigci", 0.0),
+        hb_gsi=d.get("hb_gsi", 50.0),
+        hb_mi=d.get("hb_mi", 10.0),
+        hb_D=d.get("hb_D", 0.0),
+        su_active=d.get("su_active", 0.0),
+        su_dss=d.get("su_dss", 0.0),
+        su_passive=d.get("su_passive", 0.0),
+        R_c=d.get("R_c", 0.0),
+        R_phi=d.get("R_phi"),
+    )
+
+
 def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
     require_params(params, ["surface_points", "soil_layers"], method=method)
-    soil_layers = []
-    for i, d in enumerate(params["soil_layers"]):
-        name = d.get("name") if isinstance(d, dict) else None
-        check_nested_keys(
-            d, _LAYER_KEYS, method=method, hints=_LAYER_KEY_HINTS,
-            label=f"soil_layers[{i}]" + (f" ('{name}')" if name else ""))
-        require_keys(d, ["top_elevation", "bottom_elevation", "gamma"],
-                     method=method, item_label="soil_layers[]")
-        strength_model = d.get("strength_model", "mohr_coulomb")
-        _check_choice(strength_model, _STRENGTH_MODELS,
-                      name="soil_layers[].strength_model", method=method)
-        bbp = d.get("bottom_boundary_points")
-        soil_layers.append(SlopeSoilLayer(
-            name=d.get("name", f"layer_{i + 1}"), top_elevation=d["top_elevation"],
-            bottom_elevation=d["bottom_elevation"], gamma=d["gamma"],
-            gamma_sat=d.get("gamma_sat"), phi=d.get("phi", 0.0),
-            c_prime=d.get("c_prime", 0.0), cu=d.get("cu", 0.0),
-            analysis_mode=d.get("analysis_mode", "drained"),
-            ru=d.get("ru", 0.0),
-            bottom_boundary_points=[tuple(p) for p in bbp] if bbp else None,
-            strength_model=strength_model,
-            shansep_S=d.get("shansep_S", 0.22),
-            shansep_m=d.get("shansep_m", 0.8),
-            ocr=d.get("ocr", 1.0),
-            su_min=d.get("su_min", 0.0),
-            hb_sigci=d.get("hb_sigci", 0.0),
-            hb_gsi=d.get("hb_gsi", 50.0),
-            hb_mi=d.get("hb_mi", 10.0),
-            hb_D=d.get("hb_D", 0.0),
-            su_active=d.get("su_active", 0.0),
-            su_dss=d.get("su_dss", 0.0),
-            su_passive=d.get("su_passive", 0.0),
-            R_c=d.get("R_c", 0.0),
-            R_phi=d.get("R_phi"),
-        ))
+    soil_layers = [build_soil_layer(d, i, method=method)
+                   for i, d in enumerate(params["soil_layers"])]
     surface_points = [tuple(pt) for pt in params["surface_points"]]
     gwt_points = [tuple(pt) for pt in params["gwt_points"]] if params.get("gwt_points") else None
     surcharge_x_range = tuple(params["surcharge_x_range"]) if params.get("surcharge_x_range") else None
@@ -367,7 +376,7 @@ def _run_fosm(params: dict) -> dict:
         method="fosm_fos")
     geom = _build_geometry(params, method="fosm_fos")
     require_params(params, ["variables"], method="fosm_fos")
-    _check_variables(params, method="fosm_fos")
+    check_variable_specs(params, method="fosm_fos")
     method = _check_choice(params.get("method", "bishop"), _METHODS,
                            name="method", method="fosm_fos")
     result = fosm_fos(
@@ -391,7 +400,7 @@ def _run_monte_carlo(params: dict) -> dict:
         method="monte_carlo_fos")
     geom = _build_geometry(params, method="monte_carlo_fos")
     require_params(params, ["variables"], method="monte_carlo_fos")
-    _check_variables(params, method="monte_carlo_fos")
+    check_variable_specs(params, method="monte_carlo_fos")
     method = _check_choice(params.get("method", "bishop"), _METHODS,
                            name="method", method="monte_carlo_fos")
     result = monte_carlo_fos(

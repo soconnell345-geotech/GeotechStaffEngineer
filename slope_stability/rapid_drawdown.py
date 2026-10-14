@@ -218,6 +218,12 @@ class RapidDrawdownSearchResult:
             lines.append(f"  Stage-1 (full) FOS:  {self.drawdown.stage1_fos:.3f}")
             lines.append(f"  Drained subst.:      "
                          f"{self.drawdown.n_drained_substituted}")
+        if self.search is not None and self.search.governing_surface:
+            from slope_stability.search_supplements import describe_surface_kind
+            lines.append(f"  Governing surface:   "
+                         f"{describe_surface_kind(self.search.governing_surface)}")
+            for w in self.search.warnings:
+                lines.append(f"  WARNING: {w}")
         lines.append("=" * 60)
         return "\n".join(lines)
 
@@ -399,6 +405,12 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
             raise ValueError("provide slip_surface or all of xc, yc, radius")
         slip = CircularSlipSurface(xc, yc, radius)
 
+    # Reinforcement crossings on this surface, resolved as analyze_slope does
+    # and applied at every stage (GM-53). None without reinforcement, which
+    # leaves every stage solve unchanged.
+    from slope_stability.search import trial_reinforcement
+    reinf = trial_reinforcement(geom, slip)
+
     # ── Stage 1: full-pool effective-stress analysis -> consolidation stresses
     if stage1_phreatic_points is not None:
         g_full = copy.deepcopy(geom)
@@ -408,7 +420,7 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
     warnings: List[str] = []
     sl1 = build_slices(g_full, slip, n_slices)
     res1 = gle_fos(sl1, slip, f_interslice=f_interslice,
-                   tol=min(tol, 1e-4) * 0.1)
+                   tol=min(tol, 1e-4) * 0.1, reinf_forces=reinf)
     stage1_converged = bool(res1.converged)
     if not res1.converged:
         warnings.append(
@@ -477,7 +489,7 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
     if method in _STAGE3_METHODS and stage3_effective_normal == "gle":
         try:
             res3d = gle_fos(sl3, slip, f_interslice=f_interslice,
-                            tol=min(tol, 1e-4) * 0.1)
+                            tol=min(tol, 1e-4) * 0.1, reinf_forces=reinf)
             if res3d.converged:
                 sig_post_gle = [
                     max(res3d.base_normal_eff[j] / sl3[j].base_length, 0.0)
@@ -518,7 +530,7 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
         s.pore_pressure = 0.0            # total-stress (phi=0): u does not act
 
     res3 = gle_fos(sl3, slip, f_interslice=f_interslice,
-                   tol=min(tol, 1e-4) * 0.1)
+                   tol=min(tol, 1e-4) * 0.1, reinf_forces=reinf)
     fos = res3.fos
     stage3_converged = bool(res3.converged)
     if not res3.converged:
@@ -555,7 +567,9 @@ def search_rapid_drawdown(geom: SlopeGeometry,
                           tol: float = 1e-4,
                           f_interslice: str = "constant",
                           stage1_phreatic_points: Optional[List] = None,
-                          stage3_effective_normal: str = "fellenius"
+                          stage3_effective_normal: str = "fellenius",
+                          toe_circles: bool = True,
+                          infinite_slope: bool = True,
                           ) -> RapidDrawdownSearchResult:
     """Find the critical slip surface UNDER RAPID-DRAWDOWN strengths.
 
@@ -604,6 +618,14 @@ def search_rapid_drawdown(geom: SlopeGeometry,
     stage3_effective_normal : str
         Stage-3 drained-substitution normal basis, 'fellenius' (default) or
         'gle'. See ``rapid_drawdown_fos``.
+    toe_circles, infinite_slope : bool
+        Also score circles through each slope toe (circular / entry_exit) and
+        shallow planar surfaces on faces of cohesionless soil, with the
+        drawdown FOS, and report the lowest -- as ``search_critical_surface``
+        does (GM-54; see ``search_supplements``). Caller-given ranges are
+        honoured; the automatic ones do not restrict these families. The
+        result's ``search`` carries ``governing_surface``, ``candidates`` and
+        ``warnings``. Default True.
 
     Returns
     -------
@@ -664,6 +686,11 @@ def search_rapid_drawdown(geom: SlopeGeometry,
             return _FOS_MAX
         return r.FOS
 
+    given = dict(x_entry_range=x_entry_range, x_exit_range=x_exit_range,
+                 x_range=x_range, y_range=y_range)
+    windows_auto = (x_entry_range is None, x_exit_range is None)
+    grid_auto = x_range is None and y_range is None
+
     # Auto entry/exit windows from the geometry (mirrors search_critical_surface).
     x_min_geo = geom.surface_points[0][0]
     x_max_geo = geom.surface_points[-1][0]
@@ -698,6 +725,20 @@ def search_rapid_drawdown(geom: SlopeGeometry,
             geom, x_entry_range, x_exit_range, n_points=max(n_points, 5),
             method="spencer", n_slices=n_slices, tol=tol, seed=seed,
             fos_fn=_dd_fos)
+
+    # Toe circles and shallow planar surfaces, scored with the drawdown FOS.
+    from slope_stability.search_supplements import (
+        apply_supplements, CIRCULAR, NONCIRCULAR,
+    )
+    circular = surface_type in ("circular", "entry_exit")
+    search = apply_supplements(
+        geom, search, search_kind=CIRCULAR if circular else NONCIRCULAR,
+        method="spencer", n_slices=n_slices, tol=tol,
+        windows_used=(x_entry_range, x_exit_range),
+        windows_auto=windows_auto,
+        grid_used=(x_range, y_range) if surface_type == "circular" else None,
+        grid_auto=grid_auto, toe_circles=toe_circles,
+        infinite_slope=infinite_slope, fos_fn=_dd_fos, **given)
 
     # Recompute the stage-level detail on the winning surface.
     dd = None

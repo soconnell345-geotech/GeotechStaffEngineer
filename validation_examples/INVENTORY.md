@@ -819,6 +819,17 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   (slope_stability/tests/test_search_supplements.py). The WITH-support value (Slide2
   Bishop 1.629, D&W 1.61) still needs the "global failure" windows the manual describes,
   and with them the result now warns that the infinite slope (0.942) may govern.
+- GM-53 (2026-10-14): the searches now score each trial surface WITH its
+  reinforcement (before, every search returned the unreinforced critical -- the
+  real reason the with-support values were "not reproduced"). #86 with its five
+  tiebacks, windows entry 0-4 / exit 30-75 ft: Bishop 1.612 / Spencer 1.606 / GLE
+  1.606 against Slide2 1.629 / 1.620 / 1.622 and D&W 1.61 -- REPRODUCED (-1 %);
+  pinned in slope_stability/tests/test_search_reinforcement.py. #85 (active):
+  GLE 1.581 against Slide2 GLE 1.575 -- reproduced; Bishop 1.304 against 1.531 --
+  not, a convention: the toe family finds a small toe circle centred 4 ft above
+  the support, and the module's Bishop counts the support only through its moment
+  about the centre. Without support #85 is now 0.882 (a base-tangent toe circle;
+  the grid's 0.912 missed it).
 
 ## V-051 Slide2 #51 — Zhu (2003) 4-layer seismic method comparison — N/A (source)
 - Source: Slide2 #51 (manual pp. 186-187); Zhu (2003).
@@ -847,6 +858,13 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   vs Slide2's narrow LK-Corps spread — on the moderate-φ' #98 dam our spacing matched to
   ~10% (V-048), so the wide spread is specific to this steep-φ' case. Not tuned. Tests:
   test_published_v052_drawdown_pilarcitos.py (2).
+- GM-54 (2026-10-14): the drawdown search now also scores toe circles and, on the
+  c'=0 face, shallow planar slides. On the 2H:1V representative face the shallow
+  slide governs DWW 0.860 / LK 1.017 (circles 1.098 / 1.105): the rapid-drawdown
+  infinite slope, about (γ'/γ)·tanφ'/tanβ, where DWW's stage-3 drained check fires
+  near the surface. The published values belong to the observed DEEP slide, so the
+  method-ordering test leaves the planar family out (`infinite_slope=False`); the
+  other Pilarcitos tests are unchanged (their minima stay circular).
 
 ## V-053 Slide2 #99 — Pumped-Storage Project Dam rapid drawdown — N/A (geometry)
 - Source: Slide2 Verification #99 (Tables 99.1/99.2); Duncan, Wright & Wong (1990);

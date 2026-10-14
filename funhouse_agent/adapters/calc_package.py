@@ -416,27 +416,21 @@ def _generate_lateral_pile_package(params: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _build_slope_geom(params: dict, method: str):
-    """Build a SlopeGeometry from flat params. Shared by the slope packages."""
-    from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
+    """Build a SlopeGeometry from flat params. Shared by the slope packages.
 
-    soil_layers = []
-    for ld in params["soil_layers"]:
-        require_keys(ld, ["name", "top_elevation", "bottom_elevation", "gamma"],
-                     method=method, item_label="soil_layers[]")
-        soil_layers.append(SlopeSoilLayer(
-            name=ld["name"],
-            top_elevation=ld["top_elevation"],
-            bottom_elevation=ld["bottom_elevation"],
-            gamma=ld["gamma"],
-            gamma_sat=ld.get("gamma_sat"),
-            phi=ld.get("phi", 0.0),
-            c_prime=ld.get("c_prime", 0.0),
-            cu=ld.get("cu", 0.0),
-            analysis_mode=ld.get("analysis_mode", "drained"),
-            bottom_boundary_points=(
-                [tuple(p) for p in ld["bottom_boundary_points"]]
-                if ld.get("bottom_boundary_points") else None),
-        ))
+    Each layer is read by the slope adapter's `build_soil_layer` (one source
+    of truth for the layer keys): an unknown key is refused with a
+    did-you-mean instead of being dropped (a layer given 'c' ran with
+    c' = 0), and ru, strength_model and every SHANSEP / Hoek-Brown /
+    anisotropic / R-envelope field pass through."""
+    from slope_stability.geometry import SlopeGeometry
+    from funhouse_agent.adapters.slope_stability import build_soil_layer
+
+    soil_layers = [
+        build_soil_layer(ld, i, method=method,
+                         required=("name", "top_elevation", "bottom_elevation",
+                                   "gamma"))
+        for i, ld in enumerate(params["soil_layers"])]
 
     surface_points = [tuple(p) for p in params["surface_points"]]
     gwt_points = None
@@ -521,6 +515,8 @@ def _generate_slope_report_package(params: dict) -> dict:
     )
 
     geom = _build_slope_geom(params, "slope_report_package")
+    from funhouse_agent.adapters.slope_stability import check_variable_specs
+    check_variable_specs(params, method="slope_report_package")
 
     method = params.get("method", "spencer")
     surface_type = params.get("surface_type", "circular")
@@ -598,15 +594,23 @@ def _generate_slope_report_package(params: dict) -> dict:
                 research_surface=params.get("research_surface", False),
                 **prob_surf)
 
+    extra = {
+        "FOS": round(result.FOS, 3),
+        "method": result.method,
+        "n_surfaces_evaluated": search.n_surfaces_evaluated,
+        "is_stable": result.FOS >= analysis_dict.get("FOS_required", 1.5),
+    }
+    # Which kind of surface governs and what the search could not be sure
+    # of -- also printed in the package's search section.
+    if search.governing_surface:
+        extra["governing_surface"] = search.governing_surface
+        extra["candidates"] = dict(search.candidates)
+    if search.warnings:
+        extra["warnings"] = list(search.warnings)
     return _build_response(
         "slope_stability", result, analysis_dict, params,
         analysis_type="Slope Stability Report",
-        extra={
-            "FOS": round(result.FOS, 3),
-            "method": result.method,
-            "n_surfaces_evaluated": search.n_surfaces_evaluated,
-            "is_stable": result.FOS >= analysis_dict.get("FOS_required", 1.5),
-        },
+        extra=extra,
     )
 
 
@@ -1953,7 +1957,7 @@ METHOD_INFO = {
             "FOS_required": {"type": "float", "required": False, "default": 1.5, "description": "Required factor of safety for the stability check."},
             **_COMMON_PARAMS,
         },
-        "returns": {**_COMMON_RETURNS, "FOS": "Critical factor of safety.", "method": "Method used.", "n_surfaces_evaluated": "Trial surfaces evaluated by the search.", "is_stable": "Whether FOS >= required."},
+        "returns": {**_COMMON_RETURNS, "FOS": "Critical factor of safety.", "method": "Method used.", "n_surfaces_evaluated": "Trial surfaces evaluated by the search.", "is_stable": "Whether FOS >= required.", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face).", "candidates": "Minimum FOS of each surface family tried.", "warnings": "What the search could not be sure of (also printed in the package). Report every one."},
     },
     "settlement_package": {
         "category": "Calculation Package",

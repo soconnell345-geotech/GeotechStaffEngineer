@@ -231,6 +231,56 @@ class TestSlopeReportPackage:
         assert "Reliability Index" in html      # FOSM beta
         assert "Random Variables" in html
 
+    def test_unknown_layer_key_refused(self, tmp_path):
+        """GM-55: a layer key the module does not read is refused with a
+        did-you-mean (before, 'c' was dropped and the layer ran with c'=0)."""
+        from funhouse_agent.adapters.calc_package import _generate_slope_report_package
+        layer = dict(self._SIMPLE["soil_layers"][0])
+        del layer["c_prime"]
+        layer["c"] = 10
+        with pytest.raises(ValueError, match=r"c -> c_prime or cu"):
+            _generate_slope_report_package({
+                **self._SIMPLE, "soil_layers": [layer],
+                "output_path": str(tmp_path / "x.html")})
+
+    def test_every_layer_field_passes_through(self):
+        """GM-55: ru, strength_model and the SHANSEP / Hoek-Brown /
+        anisotropic / R-envelope fields reach the layer (one key list, the
+        slope adapter's)."""
+        from funhouse_agent.adapters.calc_package import _build_slope_geom
+        geom = _build_slope_geom({
+            "surface_points": [[0, 10], [10, 10], [20, 5], [30, 5]],
+            "soil_layers": [
+                {"name": "A", "top_elevation": 10, "bottom_elevation": 5,
+                 "gamma": 18, "phi": 25, "c_prime": 10, "ru": 0.2,
+                 "R_c": 5, "R_phi": 15},
+                {"name": "B", "top_elevation": 5, "bottom_elevation": 0,
+                 "gamma": 17, "strength_model": "shansep", "shansep_S": 0.25,
+                 "shansep_m": 0.8, "ocr": 2.0, "su_min": 8},
+            ]}, "slope_report_package")
+        a, b = geom.soil_layers
+        assert (a.ru, a.R_c, a.R_phi) == (0.2, 5, 15)
+        assert (b.strength_model, b.shansep_S, b.ocr, b.su_min) == \
+            ("shansep", 0.25, 2.0, 8)
+
+    def test_report_shows_governing_surface_and_warnings(self, tmp_path):
+        """GM-55: a c' = 0 face -- the infinite slope governs; the response
+        and the package both say so, with the search's warnings."""
+        from funhouse_agent.adapters.calc_package import _generate_slope_report_package
+        layer = dict(self._SIMPLE["soil_layers"][0], c_prime=0.0)
+        out = str(tmp_path / "sand.html")
+        res = _generate_slope_report_package({
+            **self._SIMPLE, "soil_layers": [layer], "method": "spencer",
+            "output_path": out})
+        assert res["status"] == "success"
+        assert res["governing_surface"] == "infinite_slope"
+        assert res["FOS"] == pytest.approx(0.933, abs=0.01)  # tan25/tan26.57
+        assert any("infinite slope" in w for w in res["warnings"])
+        html = open(out, encoding="utf-8").read()
+        for text in ("Governing surface", "Infinite Slope Check",
+                     "Search Warnings"):
+            assert text in html, text
+
     def test_no_output_path_autogenerates(self):
         from funhouse_agent.adapters.calc_package import _generate_slope_report_package
         res = _generate_slope_report_package(

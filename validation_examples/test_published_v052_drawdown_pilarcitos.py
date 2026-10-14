@@ -64,23 +64,31 @@ def _pilarcitos(slope_hv=2.5):
             R_c=60 * PSF, R_phi=23.0)])
 
 
-def _search(slope_hv, method):
+def _search(slope_hv, method, infinite_slope=True):
     run = slope_hv * _HEIGHT
     return search_rapid_drawdown(
         _pilarcitos(slope_hv), 72 * FT, 37 * FT, method=method,
         surface_type="circular", nx=7, ny=6,
         x_range=(0.2 * run * FT, run * FT),
-        y_range=(80 * FT, 90 * FT + 2 * _HEIGHT * FT), n_slices=20).FOS
+        y_range=(80 * FT, 90 * FT + 2 * _HEIGHT * FT), n_slices=20,
+        infinite_slope=infinite_slope).FOS
 
 
 def test_v052_pilarcitos_method_ordering_is_slope_invariant():
     """The published three-method ordering Corps < DWW < LK (with DWW ~ LK, the
     stage-3 check barely firing) holds at every plausible upstream slope
-    (2:1, 2.5:1, 3:1) — i.e. it is a strength-rule signature, not geometry-tuned."""
+    (2:1, 2.5:1, 3:1) — i.e. it is a strength-rule signature, not geometry-tuned.
+
+    The published values belong to the observed DEEP upstream slide, so the
+    shallow planar family is left out here (GM-54). With it on, the 2:1 face's
+    shallow slide governs: DWW 0.860 / LK 1.017 against the circles' 1.098 /
+    1.105 -- the rapid-drawdown infinite slope, about (gamma'/gamma)
+    tan(phi')/tan(beta), where the stage-3 drained check fires near the
+    surface, a different mechanism from the one published."""
     for slope in (2.0, 2.5, 3.0):
-        corps = _search(slope, "corps_2stage")
-        lk = _search(slope, "lowe_karafiath")
-        dww = _search(slope, "duncan_3stage")
+        corps = _search(slope, "corps_2stage", infinite_slope=False)
+        lk = _search(slope, "lowe_karafiath", infinite_slope=False)
+        dww = _search(slope, "duncan_3stage", infinite_slope=False)
         assert corps < dww < lk                     # published Corps < DWW < LK
         assert dww == pytest.approx(lk, rel=0.05)   # DWW ~ LK (stage 3 barely fires)
 

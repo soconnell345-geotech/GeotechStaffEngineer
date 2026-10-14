@@ -232,6 +232,31 @@ def test_run_analyses_le_matches_direct_search():
     assert prob["beta_lognormal"] > 0
 
 
+def test_run_analyses_le_records_surface_kind():
+    """GM-55: the stored critical surface says its kind, and the entry
+    carries the search's governing_surface and warnings."""
+    r = run_analyses(_small_le_project())["LE-bishop"]
+    crit = r["critical"]
+    assert crit["surface_type"] == "circular" and crit["radius"] > 0
+    assert r["governing_surface"] in ("circular", "toe_circle",
+                                      "infinite_slope")
+    assert isinstance(r["warnings"], list)
+
+
+def test_critical_surface_dict_planar_not_zero_circle():
+    """GM-55: a planar (noncircular) critical surface is stored by its
+    vertices, not as xc = yc = R = 0."""
+    from geo_project.builders import _critical_surface_dict
+    from slope_stability.results import SlopeStabilityResult
+    pts = [(0.0, 0.1), (1.0, -0.4), (29.0, 22.6), (30.0, 24.1)]
+    d = _critical_surface_dict(SlopeStabilityResult(
+        FOS=0.94, slip_points=pts, x_entry=0.0, x_exit=30.0))
+    assert d["surface_type"] == "noncircular"
+    assert d["slip_points"] == pts
+    assert "xc" not in d and "radius" not in d
+    assert _critical_surface_dict(None) is None
+
+
 def test_run_analyses_refuses_invalid():
     p = _small_le_project()
     p.stratigraphy[0].material.phi = None

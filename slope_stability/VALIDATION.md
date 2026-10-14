@@ -267,6 +267,25 @@ F = tan phi' (cos b - kh sin b - ru/cos b)/(sin b + kh cos b):
 
 (The excess is Janbu's f0; 60 slices halve it.)
 
+### Reinforced searches (GM-53, 2026-10-14)
+Searches now score each trial surface WITH its reinforcement (before, every
+search returned the unreinforced critical).
+
+| Case | Method | Search now | Published | Note |
+|------|--------|-----------:|----------:|------|
+| Slide2 #86, five 800 lb/ft tiebacks, windows entry 0-4 / exit 30-75 ft | Bishop | 1.612 | 1.629 (D&W 1.61) | -1.0 %; crosses all five |
+| same | Spencer | 1.606 | 1.620 | -0.9 % |
+| same | GLE | 1.606 | 1.622 | -1.0 % |
+| Slide2 #85, one 9,000 lb/ft support, active, default ranges | GLE | 1.581 | 1.575 (D&W 1.51) | +0.4 % |
+| same | Bishop | 1.304 | 1.531 | small toe circle centred 4 ft above the support; Bishop counts the support only through its moment arm about the centre |
+| ACADS 1(a) + 200 kN/m geosynthetic at el 29 | Bishop | 1.123 | (no reference) | unreinforced 0.985; the critical now avoids the geosynthetic |
+
+V-043 (Slide2 #39 sand fill): the published reinforcement force is the force that
+raises the UNREINFORCED critical surface to FS 1.35 (single surface; pinned in
+test_published_v043_slope_reinforced.py). A reinforced search cannot reach 1.35
+with any basal force: surfaces in the sand fill above the reinforcement govern
+(entry/exit search 1.248 at 150 kN/m; infinite slope 1.259).
+
 V-032: Slide2's printed critical circle for #61 (-1.665, 9.968, R 10.106) gives
 Bishop 1.324 / Spencer 1.322 here and 1.3244 in an independent hand Bishop, 3.2 %
 below its printed 1.366, so the search's 1.315 toe circle is a genuine lower minimum

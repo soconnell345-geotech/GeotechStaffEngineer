@@ -156,17 +156,68 @@ reported a factor of safety that was too HIGH.
   about 450 Bishop evaluations per face (plus about 30 with the rigorous
   method when it is Spencer / M-P / GLE); the planar family six Janbu
   evaluations per outcrop.
-- **Not covered.** Reinforcement: `search._compute_fos` scores every
-  search surface WITHOUT nails / anchors / geosynthetics (only
-  `analyze_slope` computes `compute_reinforcement_forces`), so neither the
-  main search nor these families see reinforcement -- found 2026-10-14
-  (ACADS 1(a) + one 200 kN/m geosynthetic: search 0.990 = unreinforced,
-  `analyze_slope` on the same circle 1.713). `search_rapid_drawdown` builds
-  its own grid with the same automatic windows and does not run the
-  families. Planar sliding ON a
-  weak layer (not parallel to the face) is the noncircular / weak-layer
-  searches' job. SHANSEP clay with su_min = 0 also has a depth-free
-  infinite-slope FOS but is not treated as cohesionless here.
+- **Toe circles on a rigid base.** A toe circle may at most TOUCH the
+  bottom of the deepest layer. `build_slices` tolerates a below-base
+  sliver or two (SS-5); a toe sitting on a rigid base would let every toe
+  circle through it shed its toe slices that way and score low (Slide2 #85
+  without support: 0.83, against 0.88 for the base-tangent toe circle).
+- **Rapid drawdown (GM-54).** `search_rapid_drawdown` runs both families
+  with its own per-surface drawdown FOS (`fos_fn`), honouring the caller's
+  ranges, and its `search` carries `governing_surface` / `candidates` /
+  `warnings`. With a per-surface solve this costly there is no Bishop
+  screen; the toe scan is coarser instead (7 centre offsets, 6 golden steps
+  on the far end). The thin planar surfaces converge in the drawdown GLE: on
+  a free-draining c' = 0 shell drawn down from el 20 to 5 the planar FOS is
+  0.942 = tan 37 / 0.8, the closed form.
+- **Not covered.** Planar sliding ON a weak layer (not parallel to the
+  face) is the noncircular / weak-layer searches' job. SHANSEP clay with
+  su_min = 0 also has a depth-free infinite-slope FOS but is not treated
+  as cohesionless here.
+
+### Reinforcement in every search surface (GM-53)
+Until 2026-10-14 `search._compute_fos` scored every trial surface WITHOUT
+its reinforcement (only `analyze_slope` called
+`compute_reinforcement_forces`), so every search of a reinforced slope found
+the unreinforced critical surface and FOS (ACADS 1(a) with one 200 kN/m
+geosynthetic: search 0.990, `analyze_slope` on that circle 1.713).
+`_compute_fos` now resolves the crossings on each trial surface exactly as
+`analyze_slope` does (`search.trial_reinforcement`: `compute_reinforcement_
+forces` between the surface's entry and exit) and passes them to every method,
+circular and noncircular, so every search kind -- grid, entry/exit, random
+and DE noncircular, PSO, weak-layer, the toe-circle and infinite-slope
+families, and the fixed-surface FOSM / Monte Carlo through `_compute_fos` --
+scores the reinforced surface. `rapid_drawdown_fos` applies the crossings at
+every stage solve, so `search_rapid_drawdown` does too. The final critical
+result lists the crossings (`reinforcements`, as `analyze_slope` gives them).
+Unreinforced geometry: nothing is resolved and every solve is unchanged.
+
+- **A reinforced surface whose rigorous solve fails is rejected.**
+  `spencer_fos` / `morgenstern_price_fos` fall back to the legacy solver when
+  the GLE does not converge, and that solver IGNORES reinforcement (it warns).
+  In a search that let a heavily anchored surface score unreinforced and win
+  (Slide2 #85, Spencer: 0.86 against Bishop 1.26 on the same circle), so for a
+  reinforced circle `_compute_fos` requires the GLE to converge
+  (`_reinforced_rigorous_fos`) and otherwise rejects the surface. Single-surface
+  `analyze_slope` keeps its fallback and warning.
+- **Measured** (Slide2 verification manual; Duncan & Wright 2005):
+  - #86 (five 800 lb/ft tiebacks, "global failure" windows entry 0-4 ft, exit
+    30-75 ft): Bishop 1.612 / Spencer 1.606 / GLE 1.606 against Slide2 1.629 /
+    1.620 / 1.622 and D&W 1.61. Before: the unreinforced 0.942 (infinite
+    slope) or the deep circle.
+  - #85 (one 9,000 lb/ft support at mid-height, active): GLE 1.581 against
+    Slide2 GLE 1.575 (D&W 1.51). Bishop gives 1.304 on a small toe circle
+    centred 4 ft above the support: the module's Bishop counts reinforcement
+    only through its moment about the circle centre, and that arm is short;
+    Slide2's Bishop is 1.531 (on its own circle the module's Bishop is 1.564).
+    Use a rigorous method on anchored slopes.
+  - V-043 (Tandjiria geosynthetic at the fill base): the published force
+    (44-56 kN/m to raise the UNREINFORCED critical surface to 1.35) is a
+    single-surface quantity; a reinforced search cannot reach 1.35 with any
+    basal force, because the shallow sand-fill surfaces above the
+    reinforcement (infinite slope 1.259) govern.
+- **Runtime**: the crossing is resolved on every trial surface of a
+  reinforced slope -- Bishop searches +28 % to +41 %, Spencer +11 % (ACADS
+  1(a) + geosynthetic; #86 with tiebacks). Unreinforced searches unchanged.
 
 ## Critical Sign Conventions
 - **Driving moment**: uses `W*(x_mid - xc)/R` + `abs(driving)`, NOT `W*sin(alpha)`
