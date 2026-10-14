@@ -290,6 +290,45 @@ built on the driver, the app uses the key. Other options: `spark=spark` (if not
 auto-detected), `org_id=`/`cluster_id=` (override the proxy ids),
 `workspace_host=` (if the host can't be read from spark, so the URL prints).
 
+### With your own Prompter API key
+
+If you have a personal Prompter API key (the same kind of key the Tiny Apps
+testers get), hand it to the launcher in one call:
+
+```python
+import webapp.databricks_launcher as dl
+
+handle = dl.run_on_databricks(prompter_key=dict(
+    url="https://<host>/api/v1/chat/completions",
+    model="<deployment name>",
+    api_key=fh_secrets.get_secret("<secret name>"),
+))
+```
+
+That replaces the older cell (four `os.environ[...]` lines, `prompter=`,
+a hand-built `app_path=` and `models=`). The launcher gives the key to the
+app only (not to the notebook, and it never prints it), starts the same app
+the Tiny Apps testers get, puts that one model in the model picker, and the
+first printed line names the model really in use. Add `ca_bundle=` to the
+`dict` if your endpoint needs an internal certificate. If you already set the
+`PROMPTER_URL` / `PROMPTER_MODEL` / `PROMPTER_API_KEY` environment variables,
+`prompter_key=True` reads them.
+
+**If the notebook loses the app.** The app keeps running when the notebook's
+Python restarts, but `handle` is gone. Three helpers find it again (they work
+on the cluster, which runs Linux): `dl.running_apps()` lists every copy of
+the app running on the cluster, with its process number (pid), port, start
+time and log file; `dl.stop_running(pid)` stops one copy (`dl.stop_running()`
+stops them all); and `dl.diagnose(pid)` shows what a copy is doing right now:
+its network connections, what each of its threads is waiting for (a thread
+marked "WAITING FOR THE PROMPTER HOST TO ANSWER" is a model request still
+out; if it is still there a minute later, that request is stuck) and the end
+of its log. They never print your key. If you start the app again while a
+lost copy is still running, the launcher tells you so and how to stop it:
+normally the new copy takes the next free port, and if you asked for the
+port the old copy holds (`port=8501`), nothing new is started. Add
+`replace=True` to stop the old copy and start fresh in one go.
+
 ### Reference PDFs (reading values off design charts)
 
 Two agent tools open a published source PDF and look at the page:
@@ -380,7 +419,7 @@ CfA are in `tinyapps/TINYAPPS.md`, the plan of record; open work is in
 | `app.py` | Streamlit shell — a thin view over `core.py` (no logic). |
 | `core.py` | All logic: attachment staging, artifact capture, streaming, disclaimer, and conversation **persistence** (per-conversation dir under `GEOTECH_WEBAPP_DATA`: transcript / messages / attachments / artifacts / meta; list / resume / rename / delete-to-trash). Import-testable without streamlit. |
 | `engine_config.py` | Env-driven engine resolution (Anthropic key / Prompter hook / no-engine). |
-| `databricks_launcher.py` | One-cell Databricks launcher (`run_on_databricks`): reconstructs the Prompter engine on the driver and runs streamlit under the driver proxy (§3). |
+| `databricks_launcher.py` | One-cell Databricks launcher (`run_on_databricks`): reconstructs the Prompter engine on the driver (or takes a personal Prompter key, `prompter_key=`) and runs streamlit under the driver proxy; `running_apps` / `stop_running` / `diagnose` find, stop and inspect a copy the notebook has lost (§3). |
 | `turn_jobs.py` | Detached turn execution: the whole turn pipeline runs in a worker thread keyed by conversation, so a websocket death never kills an analysis; the page re-attaches. |
 | `activity_log.py` | Always-on per-turn archive `activity.jsonl` — every tool call (full args), tool result (capped 32 KB), model call (usage), primary AND sub-agents, attributed by `task` nesting. A LangChain callback handler on the run config. |
 | `feedback.py` | Feedback writer (`FEEDBACK.md` + `feedback.jsonl` in the conversation dir) behind the sidebar box and the agent's `record_feedback` tool. |

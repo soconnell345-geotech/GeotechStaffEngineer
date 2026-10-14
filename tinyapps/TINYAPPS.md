@@ -19,7 +19,10 @@ because the older version was still installed — a symptom to remember.)
 The owner is creating a VS Code venv on dosdev and installing from
 `packages.txt`, which is also the first test of the CfA fleet pins beside
 our tree. The Funhouse/Databricks app stays the fast tester and backup; both
-deployments share one PyPI package and one `webapp`.
+deployments share one PyPI package and one `webapp`. To try THIS app (the
+Prompter-key engine and the same two pages) on Funhouse with a personal key:
+`run_on_databricks(prompter_key=dict(url=..., model=..., api_key=...))`,
+`webapp/README.md` §3 "With your own Prompter API key".
 
 Sources, all local-only under `tinyapps/reference/` (gitignored — Department
 documents are never committed): `Data.State Tiny Apps User Guide v1.1`
