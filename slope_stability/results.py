@@ -376,6 +376,24 @@ class SearchResult:
         (degenerate geometry / non-converged rigorous GLE / jagged low-FOS
         artifact). Zero for circular searches. A majority-rejected search also
         emits a ``warnings.warn`` — see ``search._rejection_kwargs``.
+    governing_surface : str
+        Which kind of surface governs ``critical`` (set by
+        ``search_critical_surface``): 'circular' / 'noncircular' (the main
+        search), 'toe_circle' or 'infinite_slope' (shallow planar sliding
+        in cohesionless soil). See ``search_supplements``. Empty when the
+        search was called directly (grid_search etc.).
+    candidates : dict
+        Minimum FOS of each surface family tried, keyed as above.
+    warnings : list of str
+        Plain statements where the search cannot be sure of its answer
+        (a supplementary family undercut the main search, the critical
+        surface sits on the edge of the searched region, a cohesionless
+        face could not be checked).
+    infinite_slope_checks : list of dict
+        One entry per stretch of slope face where cohesionless soil is at
+        the surface: x range, slope angle beta, layer, phi', the dry
+        closed-form tan(phi')/tan(beta) and the FOS of the shallow planar
+        surfaces evaluated there (None if not evaluated, with a note).
     """
     critical: Optional[SlopeStabilityResult] = None
     n_surfaces_evaluated: int = 0
@@ -384,6 +402,10 @@ class SearchResult:
     n_rejected_geometry: int = 0
     n_rejected_nonconverged: int = 0
     n_rejected_jagged: int = 0
+    governing_surface: str = ""
+    candidates: Dict[str, float] = field(default_factory=dict)
+    warnings: List[str] = field(default_factory=list)
+    infinite_slope_checks: List[Dict[str, Any]] = field(default_factory=list)
 
     def summary(self) -> str:
         lines = [
@@ -407,6 +429,15 @@ class SearchResult:
                     f"  Critical surface:  Noncircular "
                     f"({len(self.critical.slip_points or [])} points)"
                 )
+        if self.governing_surface:
+            from slope_stability.search_supplements import describe_surface_kind
+            lines.append(f"  Governing surface: "
+                         f"{describe_surface_kind(self.governing_surface)}")
+            for kind, fos in self.candidates.items():
+                lines.append(f"    {describe_surface_kind(kind):<48s} "
+                             f"{fos:.3f}")
+        for w in self.warnings:
+            lines.append(f"  WARNING: {w}")
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
@@ -452,6 +483,14 @@ class SearchResult:
             }
         if self.critical:
             d["critical"] = self.critical.to_dict()
+        if self.governing_surface:
+            d["governing_surface"] = self.governing_surface
+            d["candidates"] = dict(self.candidates)
+        if self.infinite_slope_checks:
+            d["infinite_slope_checks"] = [dict(c) for c in
+                                          self.infinite_slope_checks]
+        if self.warnings:
+            d["warnings"] = list(self.warnings)
         return d
 
 

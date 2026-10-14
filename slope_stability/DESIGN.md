@@ -18,6 +18,7 @@ range constraints.
 - `slices.py` — Slice dataclass, build_slices() with multi-layer weight/pore pressure
 - `methods.py` — fellenius_fos(), bishop_fos(), spencer_fos() (circular + noncircular)
 - `search.py` — optimize_radius(), grid_search(), search_noncircular(), entry/exit filtering
+- `search_supplements.py` — toe-circle and infinite-slope (shallow planar) families scored after every `search_critical_surface` (GM-13, GM-14)
 - `analysis.py` — analyze_slope(), search_critical_surface() orchestrators
 - `results.py` — SliceData, SlopeStabilityResult, SearchResult
 - `nails.py` — SoilNail, NailContribution (kept but disconnected from analysis pipeline)
@@ -77,6 +78,96 @@ search_critical_surface(geom, surface_type="noncircular",
 - Uses Spencer's method for each trial
 - Returns best (minimum FOS) surface found
 
+### Supplementary families: toe circles and the infinite slope (GM-13, GM-14)
+`search_critical_surface` scores two more surface families after the main
+search, with the same method, and reports the lowest surface
+(`search_supplements.apply_supplements`). Both close cases where the search
+reported a factor of safety that was too HIGH.
+
+- **Why.** The automatic windows come from the MODEL extent, not the slope:
+  entry in the first 40 % of the width, exit in the last 40 %, circle
+  centres from 1 unit above the crest. A slope that does not sit in the
+  middle of its model is under-sampled. Steep phi = 0 slope, H = 5 m at
+  45 deg, su = 40, model starting at the toe (V-054): the critical toe
+  circle exits the crest at x = 7.1, inside the automatic exit window's
+  lower bound (15), and its centre (2.5, 4.0) is below the crest, under the
+  grid. Grid 2.78; true 2.287. And with c' = 0 the critical failure is not
+  a circle at all but the shallow planar slide parallel to the face, which
+  no circle of finite depth reaches: Slide2 #86 without its supports, grid
+  1.57 against tan 37 / tan 38.66 = 0.942.
+- **Toe circles** (Taylor 1937; Duncan, Wright & Brandon 2014): for each
+  slope face (`slope_faces`: maximal runs of segments steeper than 5 deg
+  rising the same way; a flat stretch ends a face, so each bench has its own
+  toe; the three tallest faces), circles through the toe and a second ground
+  point upslope. The second point is scanned at 0.15-4 times the face size,
+  densest near the toe; the centre along the chord's perpendicular bisector
+  from a near-semicircle to a flat arc; both refined by golden section.
+  Centres must lie above the ground at their own x. Spencer / M-P / GLE scan
+  with Bishop and re-optimize the best three circles with the method itself,
+  so the reported FOS is the method's own (Bishop and the rigorous methods
+  pick the same circles to about 1 %; this keeps the Spencer overhead near
+  zero). Circular and entry_exit searches only.
+- **Infinite slope (shallow planar, translational)** (Duncan, Wright &
+  Brandon 2014, Ch. 14; Skempton & DeLory 1957): wherever a drained
+  Mohr-Coulomb layer with c' = 0 and phi' > 0 is the material at the surface
+  of a face steeper than 5 deg (`cohesionless_face_runs`), planar polylines
+  parallel to the face (over the whole outcrop, each half and each third)
+  are scored by `_compute_fos`. Each is a tenth of a slice width deep, with
+  end ramps 0.15 of a slice width long, so the ramps end before the first
+  and last slices' midpoints and EVERY slice base is parallel to the face
+  (deeper surfaces whose ramps span a slice midpoint were mis-sliced: a
+  slice on a 45 deg ramp swung the FOS 5 % either side of the closed form).
+  They are REAL surfaces, so pore pressure, ponding, surcharge and kh act
+  on them as on any other. They are scored by **Janbu's simplified method
+  whatever method the search uses**: the infinite slope is a
+  force-equilibrium result (the interslice forces on a slice of an infinite
+  slope are equal and opposite), Janbu's force equilibrium with no
+  interslice shear reproduces it, and moment equilibrium says nothing on a
+  thin planar slide -- the rigorous GLE often finds no F_m = F_f crossing
+  there (the surface is rejected) and Spencer at 1 % depth ran 6 % above
+  the closed form on a 2:1 sand face. Measured against the closed form
+  F = tan phi' (cos b - kh sin b - ru / cos b) / (sin b + kh cos b), dry,
+  with ru 0.2, with kh 0.1-0.15, both face directions: +0.1 % to +0.4 %
+  (the Janbu f0 factor; 30 slices +0.2 %). The closed-form dry value is
+  reported beside each outcrop. Not evaluated where a tension crack is
+  modelled: the crack model strips the strength of the crest half of any
+  surface, which on a shallow slide is an artifact; the closed form is
+  still reported and compared. All search types.
+- **What the result says.** `SearchResult.governing_surface`
+  ('circular' / 'noncircular' / 'toe_circle' / 'infinite_slope'),
+  `candidates` (each family's minimum), `infinite_slope_checks` (one entry
+  per cohesionless outcrop: x range, beta, layer, phi', closed form, FOS or
+  the reason it was not evaluated), and `warnings`: a family undercut the
+  main search; the governing surface ends on the edge of a window or the
+  centre grid (a bound on the model edge is not a choice and is not
+  flagged); a cohesionless face where the dry infinite slope is below the
+  reported FOS but no planar surface could be scored (windows, crack). All
+  in `to_dict()` and `summary()`.
+- **Constraints.** Caller-given `x_entry_range` / `x_exit_range` /
+  `x_range` / `y_range` are honoured by both families (a planar slide's
+  left end must lie in the entry window and its right end in the exit
+  window). The automatic windows are a heuristic and do not restrict them.
+  `toe_circles=False` / `infinite_slope=False` switch either family off.
+- **Runtime** (ACADS 1(a), one process, best of two, measured twice on a
+  shared laptop): default circular Bishop 0.83 -> 0.94 s and 0.89 -> 1.00 s
+  (+12-13 %), default circular Spencer 20.9 -> 20.7 s and 20.9 -> 22.7 s
+  (0 to +8 %), entry_exit 12x12 Bishop +8-11 %, noncircular Spencer 300
+  trials unchanged (no cohesionless face). The toe family adds
+  about 450 Bishop evaluations per face (plus about 30 with the rigorous
+  method when it is Spencer / M-P / GLE); the planar family six Janbu
+  evaluations per outcrop.
+- **Not covered.** Reinforcement: `search._compute_fos` scores every
+  search surface WITHOUT nails / anchors / geosynthetics (only
+  `analyze_slope` computes `compute_reinforcement_forces`), so neither the
+  main search nor these families see reinforcement -- found 2026-10-14
+  (ACADS 1(a) + one 200 kN/m geosynthetic: search 0.990 = unreinforced,
+  `analyze_slope` on the same circle 1.713). `search_rapid_drawdown` builds
+  its own grid with the same automatic windows and does not run the
+  families. Planar sliding ON a
+  weak layer (not parallel to the face) is the noncircular / weak-layer
+  searches' job. SHANSEP clay with su_min = 0 also has a depth-free
+  infinite-slope FOS but is not treated as cohesionless here.
+
 ## Critical Sign Conventions
 - **Driving moment**: uses `W*(x_mid - xc)/R` + `abs(driving)`, NOT `W*sin(alpha)`
   directly, because `sin(alpha)` can be negative for L-to-R slopes
@@ -92,7 +183,11 @@ search_critical_surface(geom, surface_type="noncircular",
 - **Spencer noncircular**: uses interslice force marching (no moment arm).
   FOS is the value that makes the last interslice force = 0.
 - **For c'=0 (cohesionless)**: circular analysis overestimates FOS vs infinite
-  slope solution tan(phi)/tan(beta) — this is a well-known limitation
+  slope solution tan(phi)/tan(beta) — this is a well-known limitation. Since
+  GM-14 `search_critical_surface` scores shallow planar surfaces on every
+  cohesionless face and reports the infinite slope when it governs (see
+  "Supplementary families" above); a circle scored on its own
+  (`analyze_slope`) still carries the limitation.
 - **Coordinates**: elevation-based (x, z where z=elevation), NOT depth-based
 - **SlopeSoilLayer**: separate from geotech_common/SoilLayer (no adapter yet)
 - **Undrained**: phi=0, cu used. Bishop = Fellenius when phi=0 (m_alpha = cos(alpha))
@@ -123,10 +218,10 @@ search_critical_surface(geom, surface_type="noncircular",
   `validation_examples/` (179) suites pass byte-identically with the guard (no
   pinned FOS moved — the guard only ever rejects surfaces that previously
   produced a spurious value). See `tests/test_search_robustness.py`. (The
-  separate c'=0 shallow-toe-circle artifact — a circular search over-estimating
-  the critical for a c'=0 slope whose true minimum is the planar infinite slope —
-  is a judgement-based heuristic left for a future opt-in, NOT part of this
-  default-on rule.)
+  separate c'=0 case — a circular search over-estimating the critical for a
+  c'=0 slope whose true minimum is the planar infinite slope — is NOT part of
+  this rule; it is handled by the infinite-slope family, see "Supplementary
+  families" under Search Algorithms.)
 - **Noncircular degenerate-surface guard (SS-6, v5.3 B2)**: the random / weak-layer
   polyline generators can emit jagged zig-zag surfaces on which the rigorous GLE
   either fails to converge (the legacy Spencer fallback then returns a spurious
@@ -171,7 +266,8 @@ search_critical_surface(geom, surface_type="noncircular",
   → `InfiniteSlopeResult`. FOS = [c' + (γz cos²β − u)tanφ']/(γz sinβ cosβ);
   cohesionless dry reduces to tan φ'/tan β (depth-free), seepage-parallel at the
   surface to (γ'/γ)·that. Validated vs Slide2 #79 (1.44) / #81 (1.15). This is
-  the exact answer for the c'=0 circular-overestimate limitation noted above.
+  the exact answer for the c'=0 circular-overestimate limitation noted above;
+  the search reaches it through the infinite-slope family (GM-14).
 - **Rapid drawdown (v5.3 B2a)** — `rapid_drawdown.rapid_drawdown_fos(geom, from_el,
   to_el, xc/yc/radius, method='corps_2stage'|'lowe_karafiath'|'duncan_3stage')`
   → `RapidDrawdownResult`

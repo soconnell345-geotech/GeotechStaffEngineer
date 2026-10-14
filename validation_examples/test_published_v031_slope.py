@@ -144,11 +144,34 @@ def test_v032_baker_mohr_coulomb_spencer():
 
 
 def test_v032_baker_critical_search():
+    """The searched minimum is a toe circle through (0, 0) and the crest at
+    x = 7.34, Bishop 1.315 (GM-13 toe-circle family; the entry/exit grid
+    alone stopped at 1.320). Slide2's own printed critical circle
+    (-1.665, 9.968, R = 10.106, toe to (7.63, 6)) gives Bishop 1.324 /
+    Spencer 1.322 here -- and 1.324 in an independent hand Bishop -- not
+    the published 1.366, so the published value is not what the stated
+    inputs give on that circle (see `test_v032_slide2_printed_circle`). Ours
+    is 3.7 % below Slide2's 1.366 and 2.6 % below Baker's own M-C 1.35."""
     res = search_critical_surface(
         _v032_geom(), method="bishop", surface_type="entry_exit",
         nx=10, ny=10, n_slices=30, x_entry_range=(0.0, 6.0), x_exit_range=(6.0, 20.0))
     assert res.critical is not None
-    assert res.critical.FOS == pytest.approx(1.366, abs=0.05)
+    assert res.critical.FOS == pytest.approx(1.315, abs=0.01)      # ours
+    assert res.critical.FOS == pytest.approx(1.366, rel=0.045)     # Slide2
+    assert res.critical.FOS == pytest.approx(1.35, rel=0.03)       # Baker M-C
+
+
+def test_v032_slide2_printed_circle():
+    """Slide2 Fig 61.3 prints its critical circle as centre (-1.665, 9.968),
+    R = 10.106, FS 1.366. With c' = 6, phi' = 32, gamma = 18 that circle
+    gives Bishop 1.324 / Spencer 1.322 at any slice count (an independent
+    hand Bishop agrees, 1.3244), 3.2 % below the printed value. The PASS
+    above on `_V032_CIRCLE` uses a different circle that happens to give
+    1.365."""
+    slip = CircularSlipSurface(-1.665, 9.968, 10.106)
+    sl = build_slices(_v032_geom(), slip, 50)
+    assert bishop_fos(sl, slip) == pytest.approx(1.324, abs=0.002)
+    assert spencer_fos(sl, slip)[0] == pytest.approx(1.323, abs=0.003)
 
 
 # ════════════════════════════════════════════════════════════════════════════

@@ -474,7 +474,15 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   Spencer 1.468 / Baker nonlinear FS 1.48 — out of scope.)
 - Suggested tolerance: +/-1% on Spencer.
 - Confidence in extraction: high (labeled figure).
-- Notes: Spencer reproduces to <0.1% (PASS).
+- Notes: Spencer reproduces to <0.1% (PASS) on the circle (-1.3, 9.7, R 9.3).
+  CAUTION (2026-10-14, GM-13 review): that is NOT the circle Slide2 prints as its
+  critical (Fig 61.3: centre (-1.665, 9.968), R 10.106, toe to (7.63, 6), FS 1.366).
+  On Slide2's own circle the module gives Bishop 1.324 / Spencer 1.322 at any slice
+  count, and an independent hand Bishop gives 1.3244, so the published 1.366 is not
+  what the stated inputs give on that circle. The entry/exit search now finds a toe
+  circle (toe to (7.34, 6)) at Bishop 1.315 (it was 1.320 before the toe-circle
+  family); 3.7 % below Slide2, 2.6 % below Baker's M-C 1.35. Both pinned in
+  test_published_v031_slope.py.
 
 ## V-033 Slide2 #62 — Loukidis et al. (2003) ex 1, critical seismic coefficient
 - Source: Slide2 Verification #62 (manual pp. 216-218); Loukidis et al. (2003).
@@ -803,6 +811,14 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   circular search settles on a deep circle (1.549) not the true planar critical (0.94),
   which the tiebacks don't engage. Not tuned/pinned. Guard validated at
   tests/test_search_robustness.py; Anchor mechanic at V-043.
+- GM-14 (2026-10-14): #86 geometry re-read from the public manual (Fig 86.1: face
+  (0,0)-(30,24) ft, crest to (75,24), rock at el 0; c'=0, φ'=37°, γ=130 pcf). Without
+  supports the default search now reports the infinite slope — a shallow planar slide
+  parallel to the face, 0.942 = tan 37°/(24/30) — instead of the deep circle (1.566 on
+  today's default grid), with `governing_surface='infinite_slope'` and a plain warning
+  (slope_stability/tests/test_search_supplements.py). The WITH-support value (Slide2
+  Bishop 1.629, D&W 1.61) still needs the "global failure" windows the manual describes,
+  and with them the result now warns that the infinite slope (0.942) may govern.
 
 ## V-051 Slide2 #51 — Zhu (2003) 4-layer seismic method comparison — N/A (source)
 - Source: Slide2 #51 (manual pp. 186-187); Zhu (2003).
@@ -864,9 +880,12 @@ text extraction; problems whose geometry could not be reconstructed from the tex
     2.287 vs published 2.16 (FLAC 2.18; Taylor φ=0 ~2.2) — within ~5%. AND the
     anisotropic model with su_active=su_dss=su_passive reproduces the mohr_coulomb
     cu=40 FOS EXACTLY (structural isotropic identity). NOTE the auto centre-grid
-    SEARCH over-estimates (~2.74) because it under-samples the small toe circle — a
-    search-coverage limit, unrelated to the strength model (brute-force critical
-    used as the anchor surface).
+    search ALONE over-estimates (~2.78): the toe circle exits the crest inside the
+    automatic exit window's lower bound and its centre is below the automatic
+    centre grid — a search-coverage limit, unrelated to the strength model
+    (brute-force critical used as the anchor surface). FIXED by GM-13: the
+    toe-circle family in `search_critical_surface` now reports the toe circle,
+    2.286 (slope_stability/tests/test_search_supplements.py).
   * Bakklandet (DSS/A=0.63, P/A=0.35): the anisotropy reduces the FOS from the
     isotropic critical 2.287 to 1.850 on that circle (19%) / 1.796 on the anisotropic
     critical (21.5% critical-vs-critical), bracketing the published FEM ~24%

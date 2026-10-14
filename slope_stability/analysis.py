@@ -394,10 +394,23 @@ def search_critical_surface(
     n_trials: int = 500,
     n_points: int = 5,
     seed: Optional[int] = None,
+    toe_circles: bool = True,
+    infinite_slope: bool = True,
 ) -> SearchResult:
     """Search for the critical slip surface (minimum FOS).
 
     Auto-computes search bounds from slope geometry if not provided.
+
+    After the main search, two supplementary surface families are scored
+    with the same method and the lowest surface is reported (see
+    ``slope_stability.search_supplements``): circles through the toe of
+    each slope face (circular / entry_exit searches), and shallow planar
+    surfaces parallel to any face where cohesionless soil (c' = 0) is at
+    the surface — the infinite-slope mechanism. The result's
+    ``governing_surface`` says which kind governs, ``candidates`` gives each
+    family's minimum and ``warnings`` says where the search cannot be sure.
+    Caller-given windows and centre ranges are honoured; the automatic
+    ones do not restrict the supplementary families.
 
     Parameters
     ----------
@@ -430,11 +443,25 @@ def search_critical_surface(
         Number of polyline vertices for noncircular search. Default 5.
     seed : int, optional
         Random seed for noncircular search reproducibility.
+    toe_circles : bool
+        Score circles through the toe of each slope face (circular and
+        entry_exit searches). Default True.
+    infinite_slope : bool
+        Score shallow planar surfaces on faces of cohesionless soil.
+        Default True.
 
     Returns
     -------
     SearchResult
     """
+    from slope_stability.search_supplements import (
+        apply_supplements, CIRCULAR, NONCIRCULAR,
+    )
+    given = dict(x_entry_range=x_entry_range, x_exit_range=x_exit_range,
+                 x_range=x_range, y_range=y_range)
+    windows_auto = (x_entry_range is None, x_exit_range is None)
+    grid_auto = x_range is None and y_range is None
+
     # Auto-compute entry/exit ranges from slope geometry if not provided
     x_min_geo = geom.surface_points[0][0]
     x_max_geo = geom.surface_points[-1][0]
@@ -445,6 +472,57 @@ def search_critical_surface(
 
     noncirc_method = method if method != "bishop" else "spencer"
 
+    def _finish(result, search_kind, grid_used=None):
+        return apply_supplements(
+            geom, result, search_kind=search_kind, method=method,
+            n_slices=n_slices, tol=tol,
+            windows_used=(x_entry_range, x_exit_range),
+            windows_auto=windows_auto, grid_used=grid_used,
+            grid_auto=grid_auto, toe_circles=toe_circles,
+            infinite_slope=infinite_slope, **given)
+
+    if surface_type in ("noncircular", "noncircular_de", "pso", "weak_layer"):
+        result = _search_noncircular_kind(
+            geom, surface_type, x_entry_range, x_exit_range, nx, ny,
+            n_slices, tol, n_trials, n_points, seed, noncirc_method)
+        return _finish(result, NONCIRCULAR)
+
+    if surface_type == "entry_exit":
+        result = search_entry_exit(
+            geom,
+            x_entry_range=x_entry_range,
+            x_exit_range=x_exit_range,
+            n_entry=nx,
+            n_exit=ny,
+            method=method,
+            n_slices=n_slices,
+            tol=tol,
+        )
+        return _finish(result, CIRCULAR)
+
+    # Circular search
+    if x_range is None:
+        x_min = geom.surface_points[0][0]
+        x_max = geom.surface_points[-1][0]
+        x_range = (x_min, x_max)
+
+    if y_range is None:
+        z_min = min(z for _, z in geom.surface_points)
+        z_max = max(z for _, z in geom.surface_points)
+        slope_height = z_max - z_min
+        y_range = (z_max + 1.0, z_max + 2.0 * slope_height)
+
+    result = grid_search(geom, x_range, y_range, nx, ny, method, n_slices,
+                         tol=tol, x_entry_range=x_entry_range,
+                         x_exit_range=x_exit_range)
+
+    return _finish(result, CIRCULAR, grid_used=(x_range, y_range))
+
+
+def _search_noncircular_kind(geom, surface_type, x_entry_range, x_exit_range,
+                             nx, ny, n_slices, tol, n_trials, n_points, seed,
+                             noncirc_method) -> SearchResult:
+    """Dispatch the noncircular search types of `search_critical_surface`."""
     if surface_type == "noncircular":
         return search_noncircular(
             geom,
@@ -483,47 +561,17 @@ def search_critical_surface(
             seed=seed,
         )
 
-    if surface_type == "weak_layer":
-        return search_weak_layer_biased(
-            geom,
-            x_entry_range=x_entry_range,
-            x_exit_range=x_exit_range,
-            n_trials=n_trials,
-            n_points=n_points,
-            n_slices=n_slices,
-            tol=tol,
-            seed=seed,
-        )
-
-    if surface_type == "entry_exit":
-        return search_entry_exit(
-            geom,
-            x_entry_range=x_entry_range,
-            x_exit_range=x_exit_range,
-            n_entry=nx,
-            n_exit=ny,
-            method=method,
-            n_slices=n_slices,
-            tol=tol,
-        )
-
-    # Circular search
-    if x_range is None:
-        x_min = geom.surface_points[0][0]
-        x_max = geom.surface_points[-1][0]
-        x_range = (x_min, x_max)
-
-    if y_range is None:
-        z_min = min(z for _, z in geom.surface_points)
-        z_max = max(z for _, z in geom.surface_points)
-        slope_height = z_max - z_min
-        y_range = (z_max + 1.0, z_max + 2.0 * slope_height)
-
-    result = grid_search(geom, x_range, y_range, nx, ny, method, n_slices,
-                         tol=tol, x_entry_range=x_entry_range,
-                         x_exit_range=x_exit_range)
-
-    return result
+    # weak_layer
+    return search_weak_layer_biased(
+        geom,
+        x_entry_range=x_entry_range,
+        x_exit_range=x_exit_range,
+        n_trials=n_trials,
+        n_points=n_points,
+        n_slices=n_slices,
+        tol=tol,
+        seed=seed,
+    )
 
 
 def rapid_drawdown_fos(geom: SlopeGeometry,

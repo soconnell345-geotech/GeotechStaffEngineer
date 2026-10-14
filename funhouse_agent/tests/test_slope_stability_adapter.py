@@ -432,6 +432,90 @@ class TestErrors:
 
 
 # ----------------------------------------------------------------------------
+# Nested-dict keys are checked like top-level parameters. Before, a soil layer
+# read with .get silently dropped an unknown key: {"c": 10} ran with c' = 0.
+# ----------------------------------------------------------------------------
+
+def _layer(**over):
+    d = {"top_elevation": 20, "bottom_elevation": -15, "gamma": 18,
+         "gamma_sat": 20, "phi": 25}
+    d.update(over)
+    return d
+
+
+class TestNestedKeys:
+    @pytest.mark.parametrize("key", ["c", "cohesion", "C"])
+    def test_ambiguous_cohesion_key_names_both(self, key):
+        """'c' / 'cohesion' could be c' or cu: the error names both and
+        renames nothing."""
+        with pytest.raises(ValueError) as e:
+            METHOD_REGISTRY["analyze_slope"](_base(
+                soil_layers=[_layer(**{key: 10})]))
+        msg = str(e.value)
+        assert "soil_layers[0]" in msg and f"'{key}'" in msg
+        assert f"{key} -> c_prime or cu" in msg
+        assert "undrained" in msg and "Valid keys" in msg
+
+    def test_c_u_suggests_cu_and_names_the_layer(self):
+        with pytest.raises(ValueError,
+                           match=r"soil_layers\[1\] \('Clay'\).*c_u -> cu"):
+            METHOD_REGISTRY["analyze_slope"](_base(soil_layers=[
+                _layer(c_prime=5, top_elevation=20, bottom_elevation=5),
+                _layer(name="Clay", top_elevation=5, bottom_elevation=-15,
+                       analysis_mode="undrained", c_u=40)]))
+
+    def test_unknown_key_reported_before_missing_one(self):
+        """A misspelt required key gets the did-you-mean, not just
+        'missing gamma'."""
+        lay = _layer(unit_weight=18)
+        del lay["gamma"]
+        with pytest.raises(ValueError, match=r"unit_weight -> gamma"):
+            METHOD_REGISTRY["analyze_slope"](_base(soil_layers=[lay]))
+
+    def test_search_rejects_too(self):
+        with pytest.raises(ValueError, match=r"soil_layers\[0\].*'cohesion'"):
+            METHOD_REGISTRY["search_critical_surface"](_no_circle(_base(
+                soil_layers=[_layer(cohesion=5)], nx=3, ny=3)))
+
+    def test_valid_layers_still_run(self):
+        r = METHOD_REGISTRY["analyze_slope"](_base(soil_layers=[
+            _layer(name="Fill", c_prime=5, ru=0.1, strength_model="mohr_coulomb",
+                   bottom_boundary_points=[[0, -15], [70, -15]])]))
+        assert r["FOS"] > 0.5
+
+    def test_reinforcement_and_surcharge_items_checked(self):
+        cases = [
+            ("nails", {"x_head": 30, "z_head": 15, "length": 25,
+                       "fy_mpa": 420}, r"nails\[0\].*fy_mpa -> fy"),
+            ("anchors", {"x_head": 30, "z_head": 15, "length": 25,
+                         "T_allow": 100, "tension": 100},
+             r"anchors\[0\].*'tension'"),
+            ("geosynthetics", {"elevation": 12, "T_allow": 50, "Tallow": 50},
+             r"geosynthetics\[0\].*Tallow -> T_allow"),
+            ("stabilizing_piles", {"x": 35.0, "shear_capacity": 120.0,
+                                   "spacing_m": 2.0},
+             r"stabilizing_piles\[0\].*spacing_m -> spacing"),
+            ("surcharges", {"pressure": 40, "x_start": 30, "x_end": 45,
+                            "q": 40}, r"surcharges\[0\].*'q'"),
+        ]
+        for key, item, pattern in cases:
+            with pytest.raises(ValueError, match=pattern):
+                METHOD_REGISTRY["analyze_slope"](_base(**{key: [item]}))
+
+    def test_probabilistic_specs_checked(self):
+        with pytest.raises(ValueError, match=r"variables\['phi'\].*COV -> cov"):
+            METHOD_REGISTRY["fosm_fos"](_base(
+                soil_layers=[_layer(c_prime=5)],
+                variables={"phi": {"COV": 0.1}}))
+        with pytest.raises(ValueError, match=r"correlations\[0\].*'correlation'"):
+            METHOD_REGISTRY["fosm_fos"](_base(
+                soil_layers=[_layer(c_prime=5)],
+                variables={"phi": {"cov": 0.1}, "c_prime": {"cov": 0.2}},
+                correlations=[{"var1": "phi", "var2": "c_prime",
+                               "correlation": -0.5}]))
+
+
+# ----------------------------------------------------------------------------
 # v5.4 capabilities: pore-pressure grid, tension-crack side/model, rapid-drawdown
 # stage-3 normal option, and the rapid-drawdown critical-surface search
 # ----------------------------------------------------------------------------

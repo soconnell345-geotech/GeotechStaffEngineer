@@ -238,6 +238,40 @@ overlaps the mass (~1 slice). The move is small because the weak seam (c'=0, phi
 governs the FOS, as expected. Default (no `surcharges`) byte-identical to V-028. The
 crest 20->40 kPa ramp is represented as a uniform 30 kPa (its mean). NOT tuned.
 
+## B12 — Search: toe circles and the infinite slope (GM-13, GM-14, 2026-10-14)
+[`search_critical_surface` now scores circles through each slope toe and, on any
+face of c' = 0 soil, shallow planar surfaces parallel to the face, and reports
+the lowest (DESIGN.md "Supplementary families"). Tests:
+`tests/test_search_supplements.py`.]
+
+| Case | Before (search alone) | Now | True / published | Governs |
+|------|----------------------:|----:|-----------------:|---------|
+| V-054 isotropic: H 5 m, 45 deg, su 40, Bishop, 40 slices | 2.784 | 2.286 | 2.287 brute force (FLAC 2.18, Taylor ~2.2) | toe circle |
+| Slide2 #86 without supports: c'=0, phi' 37, 1.25H:1V, Bishop search | 1.566 | 0.942 | tan 37 / tan 38.66 = 0.942 | infinite slope |
+| ACADS 1(a) default circular grid, Bishop | 0.990 | 0.985 | 1.00 (Slide2 0.987) | toe circle |
+| V-032 (Slide2 #61) entry/exit 10x10, Bishop | 1.320 | 1.315 | Slide2 1.366 / Baker 1.35 (see below) | toe circle |
+| V-029 grid wiring check (6x6 grid, given windows) | 1.209 | 1.130 | (wiring test, 0.5-2.5) | toe circle |
+
+The planar surfaces are real LE surfaces scored by Janbu's simplified method (force
+equilibrium, as the infinite slope is). Against the closed form
+F = tan phi' (cos b - kh sin b - ru/cos b)/(sin b + kh cos b):
+
+| Face | Load | Planar (30 slices) | Closed form | Diff |
+|------|------|-------------------:|------------:|-----:|
+| #86, 1.25H:1V, phi' 37 | dry | 0.9443 | 0.9419 | +0.25 % |
+| #86 | ru 0.2 | 0.6346 | 0.6330 | +0.25 % |
+| #86, both face directions | kh 0.1 | 0.7722 | 0.7703 | +0.25 % |
+| D&W Ex 3, 2H:1V, phi' 40 | dry | 1.6816 | 1.6782 | +0.20 % |
+| D&W Ex 3, both directions | kh 0.15 | 1.1965 | 1.1941 | +0.20 % |
+| D&W Ex 4 sand, 3H:1V, phi' 38 | dry | 2.3474 | 2.3439 | +0.15 % |
+
+(The excess is Janbu's f0; 60 slices halve it.)
+
+V-032: Slide2's printed critical circle for #61 (-1.665, 9.968, R 10.106) gives
+Bishop 1.324 / Spencer 1.322 here and 1.3244 in an independent hand Bishop, 3.2 %
+below its printed 1.366, so the search's 1.315 toe circle is a genuine lower minimum
+for the stated inputs; the old <0.1 % PASS is on a different circle.
+
 ---
 
 ## Notes / known deviations

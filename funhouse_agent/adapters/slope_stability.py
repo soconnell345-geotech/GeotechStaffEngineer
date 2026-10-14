@@ -1,6 +1,10 @@
 """Slope stability adapter — flat dict → analyze_slope/search/probabilistic → dict."""
 
-from funhouse_agent.adapters import reject_unknown_params, require_keys, require_params
+import dataclasses
+
+from funhouse_agent.adapters import (
+    reject_unknown_params, require_keys, require_params, suggest_params,
+)
 from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
 from slope_stability.analysis import (
     analyze_slope, search_critical_surface, compare_methods_table,
@@ -39,10 +43,106 @@ def _check_choice(value, allowed, *, name: str, method: str):
     return value
 
 
+def _fields(cls) -> tuple:
+    """The keys a nested dict may carry: the dataclass's own fields, which
+    `_build_geometry` passes through one for one."""
+    return tuple(f.name for f in dataclasses.fields(cls))
+
+
+_LAYER_KEYS = _fields(SlopeSoilLayer)
+
+# Words for a layer's strength or weight that the generic near-miss matcher
+# cannot place. Suggestions only, never renamed: 'c' and 'cohesion' could be
+# the drained c' or the undrained cu, so both are named and the caller picks.
+_LAYER_KEY_HINTS = {
+    "c": ("c_prime", "cu"), "cohesion": ("c_prime", "cu"),
+    "ceff": ("c_prime",), "ceffective": ("c_prime",),
+    "effectivecohesion": ("c_prime",),
+    "su": ("cu",), "su0": ("cu",), "undrainedstrength": ("cu",),
+    "undrainedshearstrength": ("cu",),
+    "phiprime": ("phi",), "phieff": ("phi",), "frictionangle": ("phi",),
+    "unitweight": ("gamma",), "gammatotal": ("gamma",),
+    "top": ("top_elevation",), "bottom": ("bottom_elevation",),
+}
+
+# Keys of the probabilistic `variables` specs and `correlations` dicts, as
+# slope_stability.probabilistic reads them.
+_VARIABLE_KEYS = ("mean", "std", "cov", "dist")
+_LAW_KEYS = ("law", "a", "b", "rho_ab", "datum_z", "z_ref", "su_min",
+             "layers")
+_LAW_PAIR_KEYS = ("mean", "std", "cov")
+_CORRELATION_KEYS = ("var1", "var2", "key1", "key2", "a", "b", "rho",
+                     "rho_ab")
+
+
+def _norm_key(name) -> str:
+    return "".join(ch for ch in str(name).lower() if ch.isalnum())
+
+
+def check_nested_keys(item, valid, *, method: str, label: str,
+                      hints=None) -> None:
+    """Raise a clear ValueError when a nested dict (a soil layer, a nail, a
+    surcharge zone, ...) carries a key the module does not read.
+
+    Without this check the key was read with ``.get`` and silently left out:
+    a layer given ``c`` or ``cohesion`` for ``c_prime`` ran with c' = 0. The
+    message names the item, the unknown key(s), the closest valid key(s) as a
+    did-you-mean and the valid keys. Nothing is renamed.
+    """
+    if not isinstance(item, dict):
+        raise ValueError(f"{method}: {label} must be a dict of named values, "
+                         f"got {type(item).__name__} {item!r}.")
+    unknown = sorted(k for k in item if k not in valid)
+    if not unknown:
+        return
+    parts, both_strengths = [], False
+    for k in unknown:
+        near = list((hints or {}).get(_norm_key(k), ())) \
+            or suggest_params(k, valid)
+        if near:
+            parts.append(f"{k} -> {' or '.join(near)}")
+        if "c_prime" in near and "cu" in near:
+            both_strengths = True
+    hint = f" Did you mean: {'; '.join(parts)}?" if parts else ""
+    if both_strengths:
+        hint += (" (c_prime is the drained effective cohesion; cu is the "
+                 "undrained strength, used with analysis_mode='undrained'.)")
+    raise ValueError(
+        f"{method}: {label} has unknown key(s) {unknown}.{hint} "
+        f"Valid keys: {sorted(valid)}.")
+
+
+def _check_variables(params: dict, *, method: str) -> None:
+    """Key check for the probabilistic `variables` specs and the dict form
+    of `correlations` (a misspelt 'dist' or 'rho' was silently ignored)."""
+    variables = params.get("variables")
+    if isinstance(variables, dict):
+        for name, spec in variables.items():
+            if isinstance(spec, dict) and "law" in spec:
+                check_nested_keys(spec, _LAW_KEYS, method=method,
+                                  label=f"variables['{name}'] (a strength law)")
+                for sub in ("a", "b"):
+                    if isinstance(spec.get(sub), dict):
+                        check_nested_keys(
+                            spec[sub], _LAW_PAIR_KEYS, method=method,
+                            label=f"variables['{name}']['{sub}']")
+            else:
+                check_nested_keys(spec, _VARIABLE_KEYS, method=method,
+                                  label=f"variables['{name}']")
+    for i, c in enumerate(params.get("correlations") or []):
+        if isinstance(c, dict):
+            check_nested_keys(c, _CORRELATION_KEYS, method=method,
+                              label=f"correlations[{i}]")
+
+
 def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
     require_params(params, ["surface_points", "soil_layers"], method=method)
     soil_layers = []
     for i, d in enumerate(params["soil_layers"]):
+        name = d.get("name") if isinstance(d, dict) else None
+        check_nested_keys(
+            d, _LAYER_KEYS, method=method, hints=_LAYER_KEY_HINTS,
+            label=f"soil_layers[{i}]" + (f" ('{name}')" if name else ""))
         require_keys(d, ["top_elevation", "bottom_elevation", "gamma"],
                      method=method, item_label="soil_layers[]")
         strength_model = d.get("strength_model", "mohr_coulomb")
@@ -87,7 +187,9 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
     surcharges = None
     if params.get("surcharges"):
         surcharges = []
-        for z in params["surcharges"]:
+        for i, z in enumerate(params["surcharges"]):
+            check_nested_keys(z, ("pressure", "x_start", "x_end"),
+                              method=method, label=f"surcharges[{i}]")
             require_keys(z, ["pressure", "x_start", "x_end"], method=method,
                          item_label="surcharges[]")
             surcharges.append((z["pressure"], z["x_start"], z["x_end"]))
@@ -96,7 +198,9 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
     if params.get("nails"):
         from slope_stability.nails import SoilNail
         nails = []
-        for d in params["nails"]:
+        for i, d in enumerate(params["nails"]):
+            check_nested_keys(d, _fields(SoilNail), method=method,
+                              label=f"nails[{i}]")
             require_keys(d, ["x_head", "z_head", "length"], method=method,
                          item_label="nails[]")
             nails.append(SoilNail(
@@ -112,7 +216,9 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
     if params.get("anchors"):
         from slope_stability.reinforcement import Anchor
         anchors = []
-        for d in params["anchors"]:
+        for i, d in enumerate(params["anchors"]):
+            check_nested_keys(d, _fields(Anchor), method=method,
+                              label=f"anchors[{i}]")
             require_keys(d, ["x_head", "z_head", "length", "T_allow"],
                          method=method, item_label="anchors[]")
             anchors.append(Anchor(
@@ -124,7 +230,9 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
     if params.get("geosynthetics"):
         from slope_stability.reinforcement import Geosynthetic
         geosynthetics = []
-        for d in params["geosynthetics"]:
+        for i, d in enumerate(params["geosynthetics"]):
+            check_nested_keys(d, _fields(Geosynthetic), method=method,
+                              label=f"geosynthetics[{i}]")
             require_keys(d, ["elevation", "T_allow"], method=method,
                          item_label="geosynthetics[]")
             geosynthetics.append(Geosynthetic(
@@ -136,7 +244,9 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
     if params.get("stabilizing_piles"):
         from slope_stability.reinforcement import StabilizingPile
         stabilizing_piles = []
-        for d in params["stabilizing_piles"]:
+        for i, d in enumerate(params["stabilizing_piles"]):
+            check_nested_keys(d, _fields(StabilizingPile), method=method,
+                              label=f"stabilizing_piles[{i}]")
             require_keys(d, ["x"], method=method, item_label="stabilizing_piles[]")
             _check_choice(d.get("support_convention", "active"),
                           ["active", "passive"],
@@ -257,6 +367,7 @@ def _run_fosm(params: dict) -> dict:
         method="fosm_fos")
     geom = _build_geometry(params, method="fosm_fos")
     require_params(params, ["variables"], method="fosm_fos")
+    _check_variables(params, method="fosm_fos")
     method = _check_choice(params.get("method", "bishop"), _METHODS,
                            name="method", method="fosm_fos")
     result = fosm_fos(
@@ -280,6 +391,7 @@ def _run_monte_carlo(params: dict) -> dict:
         method="monte_carlo_fos")
     geom = _build_geometry(params, method="monte_carlo_fos")
     require_params(params, ["variables"], method="monte_carlo_fos")
+    _check_variables(params, method="monte_carlo_fos")
     method = _check_choice(params.get("method", "bishop"), _METHODS,
                            name="method", method="monte_carlo_fos")
     result = monte_carlo_fos(
@@ -646,7 +758,7 @@ METHOD_INFO = {
             "n_slices": {"type": "int", "required": False, "default": 30, "description": "Number of slices per trial."},
             "seed": {"type": "int", "required": False, "description": "Random seed for reproducible noncircular/PSO/DE searches."},
         },
-        "returns": {"critical": "Critical surface result (FOS, geometry).", "n_surfaces_evaluated": "Number of surfaces checked."},
+        "returns": {"critical": "Critical surface result (FOS, geometry).", "n_surfaces_evaluated": "Number of surfaces checked.", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face). Toe circles and shallow planar surfaces are always scored too, and the lowest is reported.", "candidates": "Minimum FOS of each surface family tried.", "infinite_slope_checks": "Each stretch of face where c'=0 soil is at the surface: slope angle, phi', tan(phi')/tan(beta), and the planar-surface FOS (or why it was not evaluated).", "warnings": "Where the search cannot be sure (a supplementary family undercut the main search; the critical surface sits on a window or grid edge; an unchecked cohesionless face). Report these to the user."},
     },
     "fosm_fos": {
         "category": "Slope Stability",

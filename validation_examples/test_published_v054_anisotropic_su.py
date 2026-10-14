@@ -14,9 +14,12 @@ anchors plus one honest N/A:
    FLAC lower bound). AND the anisotropic model with su_active=su_dss=su_passive
    reproduces the mohr_coulomb cu=40 FOS EXACTLY on the same surface (structural
    isotropic-reduction check).
-   (Note: the auto centre-grid SEARCH over-estimates here (~2.74) because it
-   under-samples the small toe circle — a search-coverage limit, unrelated to the
-   strength model; the critical circle above is the brute-force minimum.)
+   (Note: the auto centre-grid search alone over-estimates here (~2.78): the
+   toe circle exits the crest inside the automatic exit window's lower bound
+   and its centre is below the automatic centre grid. Since GM-13 the
+   toe-circle family in `search_critical_surface` finds it (2.286, pinned in
+   slope_stability/tests/test_search_supplements.py); the circle above is the
+   brute-force minimum.)
 
 2. BAKKLANDET natural slope (IOP EES 1523 (2025) 012038; NGI-ADP FEM). Anisotropy
    ratios DSS/A=0.63, P/A=0.35 dropped the reported factor of safety from 1.43
