@@ -50,6 +50,7 @@ from funhouse_agent.reviewer import CONSULTANT_FRAMING, REVIEWER_DEEP_PROMPT
 
 from funhouse_agent.deep.limits import (
     DEFAULT_REFERENCES_MAX_MODEL_CALLS,
+    DEFAULT_REVIEWER_MAX_MODEL_CALLS,
     HELPER_EXHAUSTED,
     HELPER_FINAL_NUDGE,
     REFERENCE_HIDDEN_TOOLS,
@@ -291,7 +292,9 @@ _REVIEWER_DESCRIPTION = (
     "parameter ranges, required factors of safety, and any missing code "
     "provisions against the published references (DM7, GECs, UFCs, FEMA). It "
     "returns a structured PASS / FLAG / REVISE review with citations; it does "
-    "not run computations itself."
+    "not run computations itself. It sees only what you write in its brief: "
+    "it cannot open documents, pages or files, so it cannot check extracted "
+    "values against a source."
 )
 
 
@@ -604,6 +607,7 @@ def build_reviewer_subagent(
     reference_result_chars: Optional[int] = None,
     extra_tools=None,
     extra_system_prompt: Optional[str] = None,
+    max_model_calls: Optional[int] = DEFAULT_REVIEWER_MAX_MODEL_CALLS,
 ) -> dict:
     """Build the ``reviewer`` sub-agent spec.
 
@@ -612,6 +616,9 @@ def build_reviewer_subagent(
 
     Parameters
     ----------
+    max_model_calls : int, optional
+        Per-delegation model-call budget; the last call answers from what
+        was gathered. ``None``/``0`` disables it.
     max_result_chars : int, optional
         Tool-result size cap forwarded to ``make_core_tools`` (default
         ``8000``), so the reviewer's reference lookups are bounded too.
@@ -632,12 +639,15 @@ def build_reviewer_subagent(
     system_prompt = REVIEWER_DEEP_PROMPT
     if extra_system_prompt:
         system_prompt = system_prompt + "\n\n" + extra_system_prompt
-    return {
+    spec = {
         "name": "reviewer",
         "description": _REVIEWER_DESCRIPTION,
         "system_prompt": system_prompt,
         "tools": tools,
     }
+    if max_model_calls:
+        spec["middleware"] = [ModelCallBudgetMiddleware(max_model_calls)]
+    return spec
 
 
 def build_primary_tools(

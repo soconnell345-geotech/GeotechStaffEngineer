@@ -506,6 +506,21 @@ def test_subagents_configured():
         assert "Unknown method" in ref_raw
 
 
+def test_reviewer_has_a_model_call_budget():
+    """The reviewer stops and answers after its budget (field session
+    2026-10-14: one delegation ran 2.5 hours without returning), and its
+    description says it cannot open a source to check values against."""
+    from funhouse_agent.deep.limits import (
+        DEFAULT_REVIEWER_MAX_MODEL_CALLS, ModelCallBudgetMiddleware)
+    rev = build_reviewer_subagent()
+    budgets = [m for m in rev.get("middleware", ())
+               if isinstance(m, ModelCallBudgetMiddleware)]
+    assert len(budgets) == 1
+    assert budgets[0].run_limit == DEFAULT_REVIEWER_MAX_MODEL_CALLS
+    assert "middleware" not in build_reviewer_subagent(max_model_calls=0)
+    assert "cannot open documents" in rev["description"]
+
+
 def test_reference_mode_off_omits_named_subagents():
     """reference_mode='off' omits our references + reviewer sub-agents.
 

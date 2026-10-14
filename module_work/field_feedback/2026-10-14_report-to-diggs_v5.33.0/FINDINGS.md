@@ -61,6 +61,10 @@ Dispositions (BACKLOG; all fixes on master, unreleased):
   - RI-27, DIGGS: not-encountered water, unknown positions as NaN / None,
     printed refusals written (d81c1f8);
   - RI-26, the error message for a printed ">50" (cc51fa7).
+  - TA-25, the continue turn ran over 3 hours, more than 2.5 of them
+    inside one `reviewer` delegation that never returned (the owner's
+    snapshots at 26 and 180 minutes end on the same line): the reviewer
+    had no model-call budget and was asked to check data it cannot open.
 - PLANNED, Next: RI-28, RI-30, PL-24, PL-25, VIS-24, VIS-25, EV-15, TA-24.
 - PLANNED, Later: RI-29 (report to DIGGS through `report_ingest`, after
   OWN-11), TA-23, EV-16.

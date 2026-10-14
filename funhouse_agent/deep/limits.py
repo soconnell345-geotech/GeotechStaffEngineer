@@ -44,6 +44,12 @@ from langchain_core.messages import AIMessage, HumanMessage
 #: 10 calls = up to 9 tool rounds + the final answer. Measure against 12.
 DEFAULT_REFERENCES_MAX_MODEL_CALLS = 10
 
+#: Default model-call budget per ``reviewer`` delegation. The reviewer had
+#: none: in a field session (2026-10-14, app 5.33.0) one delegation ran for
+#: over 2.5 hours without returning. Its work is reference lookups, so it
+#: gets the references consult's budget.
+DEFAULT_REVIEWER_MAX_MODEL_CALLS = DEFAULT_REFERENCES_MAX_MODEL_CALLS
+
 #: deepagents' scratch-filesystem tools a references consult has no use for:
 #: it never writes, and an empty scratch space answers nothing about the
 #: library. ``read_file`` is kept -- an evicted large tool result is read
