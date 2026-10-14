@@ -1120,7 +1120,8 @@ def _diggs_notes_to_qa(record: ReportRecord, notes: Any) -> None:
     # A layer written as a contact (no printed base) is the commonest note
     # and the least interesting, so it goes last and the five shown are the
     # ones a reviewer would act on.
-    said = sorted(list(notes.skipped) + list(notes.assumed),
+    said = sorted(list(notes.skipped) + list(notes.assumed)
+                  + list(getattr(notes, "normalised", [])),
                   key=lambda line: "no printed base" in line)
     if said:
         record.qa.append(QAEntry(

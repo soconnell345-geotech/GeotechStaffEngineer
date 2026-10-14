@@ -20,6 +20,7 @@ from typing import Optional, Dict, List
 
 from subsurface_characterization.site_model import (
     SiteModel, Investigation, PointMeasurement, LithologyInterval,
+    optional_float,
 )
 from subsurface_characterization.results import DiggsParseResult
 
@@ -261,8 +262,14 @@ def _parse_borehole(element: ET.Element, ns_map: dict, warnings: list) -> Invest
     gml_id = element.get(f"{{{_NS_GML}}}id", "")
     name = _text(element, "gml:name", ns_map) or gml_id
 
-    # Coordinates from referencePoint/gml:Point/gml:pos
-    x, y, elev = 0.0, 0.0, 0.0
+    # Coordinates from referencePoint/gml:Point/gml:pos. A coordinate the
+    # file does not give is None, NOT 0.0: DIGGS requires a reference point,
+    # so report_ingest's writer writes NaN for one nobody printed, and a
+    # reader that turned that (or a missing pos) into 0 would put the hole
+    # at the grid origin or at sea level as though that were data.
+    x: Optional[float] = None
+    y: Optional[float] = None
+    elev: Optional[float] = None
     pos_text = _text(element, ".//diggs:referencePoint/gml:Point/gml:pos", ns_map)
     if not pos_text:
         pos_text = _text(element, ".//gml:pos", ns_map)
@@ -270,10 +277,11 @@ def _parse_borehole(element: ET.Element, ns_map: dict, warnings: list) -> Invest
         parts = pos_text.split()
         try:
             if len(parts) >= 2:
-                x, y = float(parts[0]), float(parts[1])
+                x, y = optional_float(parts[0]), optional_float(parts[1])
             if len(parts) >= 3:
-                elev = float(parts[2])
+                elev = optional_float(parts[2])
         except ValueError:
+            x = y = elev = None
             warnings.append(f"Could not parse coordinates for {name}: {pos_text}")
 
     total_depth = _float_text(element, "diggs:totalMeasuredDepth", ns_map)

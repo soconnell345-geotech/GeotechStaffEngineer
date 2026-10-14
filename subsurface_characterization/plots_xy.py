@@ -24,6 +24,24 @@ from subsurface_characterization.plot_utils import (
 from subsurface_characterization.results import PlotResult
 
 
+def _off_axis(inv, use_elevation: bool, skipped: List[str]) -> bool:
+    """Has this investigation no place on the plot's vertical axis?
+
+    On an ELEVATION axis a value sits at ground elevation minus depth, so an
+    investigation whose ground elevation nobody gave cannot be drawn: it is
+    left out and named in ``skipped`` (once), never drawn as though the
+    ground were at 0. A depth axis needs no elevation and skips nothing.
+    """
+    if not use_elevation or inv.elevation_m is not None:
+        return False
+    note = (f"{inv.investigation_id}: no ground elevation given, so its "
+            f"values have no place on an elevation axis; left out "
+            f"(use_elevation=False plots them by depth)")
+    if note not in skipped:
+        skipped.append(note)
+    return True
+
+
 def plot_parameter_vs_depth(
     site: SiteModel,
     parameter: str,
@@ -70,11 +88,12 @@ def plot_parameter_vs_depth(
 
     n_points = 0
     inv_ids = set()
+    skipped: List[str] = []
 
     if color_by == "investigation":
         for i, inv in enumerate(site.investigations):
             meas = inv.get_measurements(parameter)
-            if not meas:
+            if not meas or _off_axis(inv, use_elevation, skipped):
                 continue
             inv_ids.add(inv.investigation_id)
             depths = [m.depth_m for m in meas]
@@ -104,6 +123,9 @@ def plot_parameter_vs_depth(
     elif color_by == "uscs":
         uscs_groups = {}  # uscs -> (depths, values, hover_texts)
         for inv in site.investigations:
+            if inv.get_measurements(parameter) and _off_axis(
+                    inv, use_elevation, skipped):
+                continue
             inv_ids.add(inv.investigation_id)
             for m in inv.get_measurements(parameter):
                 uscs = inv.uscs_at_depth(m.depth_m) or ""
@@ -137,6 +159,9 @@ def plot_parameter_vs_depth(
         all_x = []
         all_hover = []
         for inv in site.investigations:
+            if inv.get_measurements(parameter) and _off_axis(
+                    inv, use_elevation, skipped):
+                continue
             inv_ids.add(inv.investigation_id)
             for m in inv.get_measurements(parameter):
                 d = m.depth_m
@@ -171,7 +196,7 @@ def plot_parameter_vs_depth(
                     continue
                 trend_results.append(trend)
                 _add_trend_to_fig(fig, trend, site, parameter, use_elevation,
-                                  show_bands, band_sigma, label)
+                                  show_bands, band_sigma, label, skipped)
         else:
             all_data = site.all_measurements(parameter)
             depths = np.array([m.depth_m for _, m in all_data])
@@ -179,7 +204,7 @@ def plot_parameter_vs_depth(
             trend = compute_trend(depths, values, parameter=parameter)
             trend_results.append(trend)
             _add_trend_to_fig(fig, trend, site, parameter, use_elevation,
-                              show_bands, band_sigma, "Trend")
+                              show_bands, band_sigma, "Trend", skipped)
 
     y_label = "Elevation (m)" if use_elevation else "Depth (m)"
     fig.update_layout(
@@ -199,11 +224,12 @@ def plot_parameter_vs_depth(
         parameters=[parameter],
         figure=fig,
         trend_results=trend_results,
+        skipped=skipped,
     )
 
 
 def _add_trend_to_fig(fig, trend, site, parameter, use_elevation,
-                       show_bands, band_sigma, label):
+                       show_bands, band_sigma, label, skipped=None):
     """Add trendline and optional bands to figure."""
     go = get_plotly()
 
@@ -216,8 +242,18 @@ def _add_trend_to_fig(fig, trend, site, parameter, use_elevation,
     trend_vals = np.array([trend.predict(d) for d in d_range])
 
     if use_elevation:
-        # Use average elevation for trend (approximate)
-        avg_elev = np.mean([inv.elevation_m for inv in site.investigations])
+        # Use average elevation for trend (approximate), over the
+        # investigations whose ground elevation is KNOWN; with none known
+        # the line has no place on an elevation axis and is not drawn.
+        known = [inv.elevation_m for inv in site.investigations
+                 if inv.elevation_m is not None]
+        if not known:
+            if skipped is not None:
+                skipped.append(f"{label} line: no investigation has a ground "
+                               f"elevation, so it has no place on an "
+                               f"elevation axis; not drawn")
+            return
+        avg_elev = np.mean(known)
         y_range = avg_elev - d_range
     else:
         y_range = d_range
@@ -275,6 +311,7 @@ def plot_atterberg_limits(
 
     n_points = 0
     inv_ids = set()
+    skipped: List[str] = []
 
     for i, inv in enumerate(site.investigations):
         ll_meas = {m.depth_m: m.value for m in inv.get_measurements("LL_pct")}
@@ -283,6 +320,8 @@ def plot_atterberg_limits(
 
         common_depths = sorted(set(ll_meas.keys()) & set(pl_meas.keys()))
         if not common_depths:
+            continue
+        if _off_axis(inv, use_elevation, skipped):
             continue
 
         inv_ids.add(inv.investigation_id)
@@ -347,6 +386,7 @@ def plot_atterberg_limits(
         n_data_points=n_points,
         parameters=["LL_pct", "PL_pct", "wn_pct"],
         figure=fig,
+        skipped=skipped,
     )
 
 
@@ -393,11 +433,12 @@ def plot_multi_parameter(
 
     n_points = 0
     inv_ids = set()
+    skipped: List[str] = []
 
     for col, param in enumerate(parameters, 1):
         for i, inv in enumerate(site.investigations):
             meas = inv.get_measurements(param)
-            if not meas:
+            if not meas or _off_axis(inv, use_elevation, skipped):
                 continue
             inv_ids.add(inv.investigation_id)
             depths = [m.depth_m for m in meas]
@@ -446,4 +487,5 @@ def plot_multi_parameter(
         n_data_points=n_points,
         parameters=parameters,
         figure=fig,
+        skipped=skipped,
     )

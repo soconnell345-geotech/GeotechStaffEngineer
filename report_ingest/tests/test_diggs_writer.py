@@ -795,3 +795,222 @@ class TestAValuePrintedWithNoUnit:
         ok, diffs = diggs_roundtrip_gate(xml, [table],
                                          notes=DiggsWriteNotes())
         assert not ok and any("21.5" in d for d in diffs)
+
+
+# ---------------------------------------------------------------------------
+# RI-27: what the field session of 2026-10-14 taught
+# ---------------------------------------------------------------------------
+
+def _hole(**over) -> Investigation:
+    data = dict(investigation_id="B-1", depth_unit="m", total_depth=_m(12.0),
+                layers=[Layer(top=_m(0.0), bottom=_m(12.0),
+                              description="SILTY SAND", uscs="SM")])
+    data.update(over)
+    return Investigation(**data)
+
+
+def _read_back(xml: str):
+    from subsurface_characterization import parse_diggs
+    return {inv.investigation_id: inv
+            for inv in parse_diggs(content=xml).site.investigations}
+
+
+class TestAnUnknownPosition:
+    """33 of 40 explorations at elevation 0, one at the grid's origin: the
+    writer filled 0 and the reader defaulted to 0. DIGGS requires the
+    reference point, so the unknown is written as NaN, named, and read back
+    as None."""
+
+    def test_no_position_is_nan_named_and_unknown_on_the_way_back(self):
+        notes = []
+        xml = write_diggs([_hole()], notes=notes)
+        ok, errors = diggs_schema_gate(xml)
+        assert ok, errors[:3]
+        point = _root(xml).find(".//diggs:referencePoint/diggs:PointLocation",
+                                NS)
+        assert point.find("gml:pos", NS).text == "NaN NaN NaN"
+        assert "not given" in point.find("gml:description", NS).text
+        assert "NaN NaN NaN NaN NaN NaN" in xml        # the centre line too
+        assert notes[0].position_unknown == ["B-1"]
+        assert notes[0].assumed == [
+            "B-1: no x, y and elevation given; DIGGS requires a reference "
+            "point, so each is written as NaN (not a number) and reads back "
+            "as unknown, never as 0"]
+        back = _read_back(xml)["B-1"]
+        assert (back.x, back.y, back.elevation_m) == (None, None, None)
+        ok, diffs = diggs_roundtrip_gate(xml, [_hole()])
+        assert ok, diffs
+
+    def test_a_partial_position_keeps_what_was_given(self):
+        hole = _hole(x=500123.25, y=4100456.5, coordinate_system="EPSG:32611")
+        notes = []
+        xml = write_diggs([hole], notes=notes)
+        assert diggs_schema_gate(xml)[0] is True
+        assert "500123.25 4100456.5 NaN" in xml
+        assert notes[0].assumed[0].startswith("B-1: no elevation given")
+        back = _read_back(xml)["B-1"]
+        assert (back.x, back.y, back.elevation_m) == (500123.25, 4100456.5,
+                                                      None)
+        assert diggs_roundtrip_gate(xml, [hole])[0]
+
+    def test_an_elevation_in_an_unknown_unit_is_unknown_and_said(self):
+        hole = _hole(x=1.0, y=2.0, elevation=Quantity(value=880.0,
+                                                      unit="cubits"))
+        notes = []
+        xml = write_diggs([hole], notes=notes)
+        assert "1 2 NaN" in xml
+        assert any("ground elevation 880 'cubits'" in s
+                   for s in notes[0].skipped)
+        assert _read_back(xml)["B-1"].elevation_m is None
+
+    def test_a_given_zero_is_a_zero(self):
+        hole = _hole(x=0.0, y=0.0, elevation=_m(0.0))
+        notes = []
+        xml = write_diggs([hole], notes=notes)
+        assert notes[0].position_unknown == [] and notes[0].assumed == []
+        back = _read_back(xml)["B-1"]
+        assert (back.x, back.y, back.elevation_m) == (0.0, 0.0, 0.0)
+        assert diggs_roundtrip_gate(xml, [hole])[0]
+
+    def test_the_gate_refuses_a_number_where_none_went_in(self):
+        given = _hole(x=0.0, y=0.0, elevation=_m(0.0))
+        ok, diffs = diggs_roundtrip_gate(write_diggs([given]), [_hole()])
+        assert not ok
+        assert any("x came back as 0.0 although none was given" in d
+                   for d in diffs)
+        assert any("ground elevation came back as 0.0 m" in d for d in diffs)
+        # and the reverse: a position given that comes back unknown
+        ok, diffs = diggs_roundtrip_gate(write_diggs([_hole()]), [given])
+        assert not ok and any("came back as unknown" in d for d in diffs)
+
+    def test_a_hole_only_a_lab_sheet_names_is_said_once(self):
+        from report_ingest.model import AtterbergResult, LabTest
+        test = LabTest(kind="atterberg", investigation_id="SB-9",
+                       depth_top=_m(2.0),
+                       result=AtterbergResult(ll=40.0, pl=20.0, pi=20.0))
+        notes = []
+        xml = write_diggs([test], Project(name="R"), notes=notes)
+        assert diggs_schema_gate(xml)[0] is True
+        assert notes[0].synthesised and notes[0].position_unknown == []
+        assert notes[0].assumed == []
+        assert _read_back(xml)["SB-9"].elevation_m is None
+
+
+class TestGroundwaterNotEncountered:
+    """Every dry boring of 2026-10-14 read back with water at its bottom:
+    the agent gave 'not_encountered' with the hole's depth, the writer wrote
+    any row with a depth as a reading, and the gate compared depths only."""
+
+    def test_a_boring_with_a_depth_is_not_encountered(self):
+        hole = _hole(water=[WaterLevel(depth=_m(12.0),
+                                       when="not_encountered")])
+        notes = []
+        xml = write_diggs([hole], notes=notes)
+        assert diggs_schema_gate(xml)[0] is True
+        assert "<notEncountered>true</notEncountered>" in xml
+        assert "WaterStrikeReading" not in xml
+        assert notes[0].normalised == [
+            "B-1: groundwater 'not encountered' was given with a depth of "
+            "12 m; it is written as not encountered and that depth is NOT a "
+            "water level (the hole's total depth says how deep it was "
+            "explored)"]
+        back = _read_back(xml)["B-1"]
+        assert back.gwl_depth_m is None and back.gwl_not_encountered is True
+        assert diggs_roundtrip_gate(xml, [hole])[0]
+
+    def test_a_pit_says_it_in_a_remark_and_reads_back(self):
+        pit = _hole(investigation_id="TP-1", kind="test_pit",
+                    total_depth=_m(1.5),
+                    layers=[Layer(top=_m(0.0), bottom=_m(1.5),
+                                  description="FILL")],
+                    water=[WaterLevel(depth=_m(1.5),
+                                      when="not_encountered")])
+        notes = []
+        xml = write_diggs([pit], notes=notes)
+        assert diggs_schema_gate(xml)[0] is True
+        assert "water_depth" not in xml and "Water level" not in xml
+        contents = [e.text for e in _all(
+            _root(xml), ".//diggs:TrialPit/diggs:remark/diggs:Remark/"
+                        "diggs:content")]
+        assert contents == ["Groundwater not encountered."]
+        back = _read_back(xml)["TP-1"]
+        assert back.gwl_depth_m is None and back.gwl_not_encountered is True
+        assert diggs_roundtrip_gate(xml, [pit])[0]
+
+    def test_the_gate_compares_not_encountered(self):
+        dry = _hole(water=[WaterLevel(when="not_encountered")])
+        wet = _hole(water=[WaterLevel(depth=_m(3.0), when="while_drilling")])
+        # dry went in, wet came back
+        ok, diffs = diggs_roundtrip_gate(write_diggs([wet]), [dry])
+        assert not ok
+        assert any("came back where 'groundwater not encountered' went in"
+                   in d for d in diffs)
+        # wet went in, dry came back
+        ok, diffs = diggs_roundtrip_gate(write_diggs([dry]), [wet])
+        assert not ok and any("came back as nothing" in d for d in diffs)
+        # nothing went in, a level came back
+        ok, diffs = diggs_roundtrip_gate(write_diggs([wet]), [_hole()])
+        assert not ok and any("where no water level went in" in d
+                              for d in diffs)
+        # nothing went in, "not encountered" came back
+        ok, diffs = diggs_roundtrip_gate(write_diggs([dry]), [_hole()])
+        assert ok, diffs    # a flag with no level is not a level
+
+    def test_a_pit_remark_of_its_own_is_read_as_not_encountered(self):
+        """The reader's rule, from a file this writer did not make: a pit
+        remark that OPENS with the words. A sentence that only mentions
+        groundwater is not one."""
+        from subsurface_characterization.diggs26 import NOT_ENCOUNTERED_REMARK
+        pit = _hole(investigation_id="TP-2", kind="test_pit",
+                    remarks="Groundwater not encountered during excavation.")
+        assert _read_back(write_diggs([pit]))["TP-2"].gwl_not_encountered
+        other = _hole(investigation_id="TP-3", kind="test_pit",
+                      remarks="Check whether groundwater not encountered.")
+        assert not _read_back(write_diggs([other]))["TP-3"] \
+            .gwl_not_encountered
+        assert NOT_ENCOUNTERED_REMARK == "Groundwater not encountered"
+
+
+class TestAPrintedNThatIsNotANumber:
+    """A printed '>50' is the log's statement of a refusal. The record keeps
+    it in ``n_printed``; the file writes it as text under the N value."""
+
+    def test_it_is_written_as_text_and_comes_back(self):
+        from subsurface_characterization.diggs26 import (
+            parse_diggs26_result_sets,
+        )
+        hole = _hole(spt=[SPT(depth_top=_m(3.0), blows=[50, "-", ">50"],
+                              refusal=True, n_printed=">50"),
+                          SPT(depth_top=_m(4.5), refusal=True,
+                              n_printed="R")])
+        notes = []
+        xml = write_diggs([hole], notes=notes)
+        assert diggs_schema_gate(xml)[0] is True
+        assert notes[0].spt == 2
+        sets = {rs.depth_m: rs for rs in parse_diggs26_result_sets(
+            content=xml) if rs.procedure == "DrivenPenetrationTest"}
+        assert sets[3.0].values("blow_count") == [50.0]
+        assert sets[3.0].values("n_value") == [">50"]
+        assert sets[4.5].values("n_value") == ["R"]
+        types = {c["type"] for c in sets[4.5].columns}
+        assert types == {"string"}
+        back = _read_back(xml)["B-1"]
+        assert not back.get_measurements("N_spt")      # no N was invented
+        assert diggs_roundtrip_gate(xml, [hole])[0]
+
+    def test_the_gate_looks_for_the_printed_text(self):
+        hole = _hole(spt=[SPT(depth_top=_m(3.0), refusal=True,
+                              n_printed="R")])
+        xml = write_diggs([hole])
+        other = hole.model_copy(deep=True)
+        other.spt[0].n_printed = "Refusal"
+        ok, diffs = diggs_roundtrip_gate(xml, [other])
+        assert not ok and any("N printed as 'Refusal'" in d for d in diffs)
+
+    def test_a_record_with_nothing_to_write_is_said_not_dropped(self):
+        hole = _hole(spt=[SPT(depth_top=_m(3.0), blows=["WOH"])])
+        notes = []
+        xml = write_diggs([hole], notes=notes)
+        assert "DrivenPenetrationTest" not in xml
+        assert any("has no N, no drive this file can state" in s
+                   for s in notes[0].skipped)

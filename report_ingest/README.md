@@ -545,7 +545,7 @@ The element map, record field to DIGGS:
 | `Project` | `project/Project` (`gml:name`, `gml:identifier`) |
 | `Investigation` (boring) | `samplingFeature/Borehole` |
 | `Investigation` (test pit) | `samplingFeature/TrialPit` |
-| `x`, `y`, `elevation` | `referencePoint/PointLocation/gml:pos` |
+| `x`, `y`, `elevation` | `referencePoint/PointLocation/gml:pos`; one not given is `NaN` (DIGGS requires the point), with a `gml:description`, named in `assumed` and `position_unknown`; read back as None |
 | `total_depth` | `totalMeasuredDepth` (uom m) |
 | `date_started`, `date_finished` | `whenConstructed/TimeInterval` |
 | `drilling.method`, `.equipment` | `constructionMethod/BoreholeConstructionMethod` |
@@ -558,10 +558,12 @@ The element map, record field to DIGGS:
 | `Layer` | `observation/LithologySystem/lithologyObservation/LithologyObservation` |
 | `Layer.uscs`, `.description` | `Lithology/classificationCode`, `/lithDescription` |
 | `SPT.n` | `ResultSet` `propertyClass` **n_value** |
+| `SPT.n_printed` (a printed `>50`, `R`) | `ResultSet` `propertyClass` **n_value**, `typeData` string, as printed |
 | `SPT.blows` (no printed N) | `ResultSet` `propertyClass` **blow_count** |
 | `SPT.blows`, `.refusal` | `DrivenPenetrationTest/driveSet/DriveSet` (`blowCount`, `penetration`) |
 | `drilling.hammer_type`, `.hammer_energy_ratio` | `hammerType`, `hammerEfficiency` |
-| `WaterLevel` | `Borehole/waterStrike/WaterStrike` |
+| `WaterLevel` | `Borehole/waterStrike/WaterStrike`; a pit's reading is a `Test` of **water_depth** |
+| `WaterLevel` `not_encountered` | `WaterStrike/notEncountered` (borehole) or a remark "Groundwater not encountered." (pit), whatever depth came with it — never a reading |
 | `Sample.water_content` | **water_content_natural**, `WaterContentTest` |
 | `Sample.dry_unit_weight` | **dry_density**, `LabDensityTest` |
 | `Sample.liquid_limit`, `.plastic_limit`, `.plasticity_index` | **liquid_limit**, **plastic_limit**, **plasticity_index**, `AtterbergLimitsTest` |

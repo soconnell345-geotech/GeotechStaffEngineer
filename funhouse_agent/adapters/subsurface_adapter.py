@@ -5,6 +5,8 @@ subsequent plot calls can reference the parsed site by key instead of
 re-sending the entire data dict.
 """
 
+import re
+
 import numpy as np
 
 from funhouse_agent.adapters import (
@@ -94,11 +96,13 @@ def _run_parse_diggs(params: dict) -> dict:
         inv_summaries.append({
             "investigation_id": inv.investigation_id,
             "investigation_type": inv.investigation_type,
+            # None where the file gives no position: unknown, never 0.
             "x": inv.x,
             "y": inv.y,
             "elevation_m": inv.elevation_m,
             "total_depth_m": inv.total_depth_m,
             "gwl_depth_m": inv.gwl_depth_m,
+            "gwl_not_encountered": inv.gwl_not_encountered,
             "n_measurements": len(inv.measurements),
             "n_lithology": len(inv.lithology),
             "parameters": param_names,
@@ -370,14 +374,89 @@ def _validation_problems(exc, where: str) -> list:
                     and isinstance(given, str)):
                 # 2026-10-14 on Funhouse: an agent put a printed ">50" in n,
                 # was refused 17 times, and concluded refusal could not be
-                # written at all. Name the field that records it.
-                msg = (f"{msg} (got {given!r}). A printed '>50' or "
-                       "'50/5\"' is a refusal, not an N: set refusal: true, "
-                       "leave n out, and keep the printed drives in blows, "
-                       "e.g. blows: [20, 30, '50/5\"']")
+                # written at all. A printed refusal is now ACCEPTED as given
+                # (_normalise_printed_n); what still reaches here is text
+                # that is neither a whole number nor a refusal notation.
+                msg = (f"{msg} (got {given!r}). n is the printed N as a "
+                       "whole number. A printed refusal ('>50', '50+', "
+                       "'50/5\"', 'R', 'Refusal') is accepted in n and "
+                       "recorded as refusal: true with its text kept; "
+                       f"{given!r} is not one -- leave n out and keep what "
+                       "was printed in blows")
             out.append(f"{where}{loc}: {msg}")
     except Exception:                                  # noqa: BLE001
         out.append(f"{where}: {exc}")
+    return out
+
+
+#: How a log prints a refusal in its N column. One alternative per
+#: notation, the whole text anchored and case-blind, so a word that merely
+#: CONTAINS one of these ("WOH", "N/A", "twelve") is not taken for a refusal:
+#: ">50", ">= 50", "≥50"; "50+"; "50/5\"", "50/10cm", "100/0.1m", "50/3";
+#: "50 for 4in"; "R", "Ref", "Ref.", "Refusal", "Refused", "50R", "50 ref".
+_UNIT = r'(?:cm|mm|m|ft|in\.?|inch(?:es)?|"|\'\')'
+_REFUSAL_NOTATION = re.compile(
+    r"^(?:"
+    r"(?:>|>=|≥)\s*\d+"                                 # >50
+    r"|\d+\s*\+"                                        # 50+
+    rf"|\d+\s*/\s*\d*\.?\d+\s*{_UNIT}?"                 # 50/5"
+    rf"|\d+\s*(?:for|in)\s*\d*\.?\d+\s*{_UNIT}"         # 50 for 4in
+    r"|(?:\d+\s*)?(?:r|ref\.?|refusal|refused)"         # R, 50 ref
+    r")$", re.IGNORECASE)
+
+
+def _is_refusal_notation(text: str) -> bool:
+    """Is this printed N a refusal notation (and not some other word)?"""
+    return bool(_REFUSAL_NOTATION.match(str(text or "").strip()))
+
+
+def _normalise_printed_n(raw, where: str, normalised: list):
+    """A printed N that is not a whole number, recorded as the refusal it is.
+
+    2026-10-14 (RI-27): an agent gave a printed ">50" as ``n``, the record's
+    ``n`` is an integer, and one such row refused the WHOLE file -- 17 rows,
+    a set of 21 borings never written. A refusal notation in ``n`` is now
+    taken as given: ``n`` left empty, ``refusal: true``, the printed text in
+    ``n_printed``, and each row named in ``normalised`` so nothing changes
+    silently. Empty text in ``n`` is "not printed". Anything else (a
+    negative N, "WOH", a fraction) is left for validation to refuse by name.
+    Returns ``raw`` itself when nothing changed, else a changed copy.
+    """
+    if not isinstance(raw, dict) or not isinstance(raw.get("spt"), list):
+        return raw
+    name = str(raw.get("investigation_id") or where)
+    rows = list(raw["spt"])
+    changed = False
+    for k, row in enumerate(rows):
+        if not isinstance(row, dict) or not isinstance(row.get("n"), str):
+            continue
+        text = row["n"].strip()
+        depth = row.get("depth_top")
+        at = (f" at {depth.get('value')} {depth.get('unit', '')}".rstrip()
+              if isinstance(depth, dict) else "")
+        if not text:
+            row = {key: v for key, v in row.items() if key != "n"}
+            normalised.append(f"{name} spt[{k}]{at}: n was empty text; "
+                              f"read as no printed N")
+        elif text.isdigit() or not _is_refusal_notation(text):
+            continue            # a whole number, or for validation to refuse
+        else:
+            row = {key: v for key, v in row.items() if key != "n"}
+            was = row.get("refusal")
+            row["refusal"] = True
+            if not str(row.get("n_printed") or "").strip():
+                row["n_printed"] = text
+            normalised.append(
+                f"{name} spt[{k}]{at}: N printed as {text!r} is not a whole "
+                f"number; written as a refusal (refusal: true"
+                + ("" if was is True else ", which was not set")
+                + ") with the printed text kept and n left empty")
+        rows[k] = row
+        changed = True
+    if not changed:
+        return raw
+    out = dict(raw)
+    out["spt"] = rows
     return out
 
 
@@ -439,8 +518,10 @@ def _run_write_diggs(params: dict) -> dict:
 
     problems: list = []
     investigations = []
+    normalised: list = []
     for i, raw in enumerate(_as_list(params.get("investigations"),
                                      "investigations")):
+        raw = _normalise_printed_n(raw, f"investigations[{i}]", normalised)
         try:
             investigations.append(Investigation.model_validate(raw))
         except ValidationError as exc:
@@ -461,12 +542,16 @@ def _run_write_diggs(params: dict) -> dict:
         except ValidationError as exc:
             problems += _validation_problems(exc, "project")
     if problems:
-        return {"error": "the data does not fit the DIGGS record format; "
-                         "NO file was written",
-                "problems": problems[:25],
-                "n_problems": len(problems),
-                "hint": "fix the named fields (describe_method shows the "
-                        "format) and call write_diggs again"}
+        refused = {"error": "the data does not fit the DIGGS record format; "
+                            "NO file was written",
+                   "problems": problems[:25],
+                   "n_problems": len(problems),
+                   "hint": "fix the named fields (describe_method shows the "
+                           "format) and call write_diggs again with ALL the "
+                           "data -- nothing was kept from this call"}
+        if normalised:
+            refused["normalised"] = normalised[:10]
+        return refused
     if not investigations and not lab:
         return {"error": "nothing to write: no investigations and no lab "
                          "tests were given"}
@@ -534,6 +619,33 @@ def _run_write_diggs(params: dict) -> dict:
                     f"({', '.join(f'{n} {k}' for k, n in sorted(by_kind.items()))})"
                     " -- list each for the user with its values and pages; "
                     "nothing was changed")
+    written: dict = {}
+    if note is not None:
+        # What this layer normalised before the writer saw it goes first,
+        # beside what the writer itself wrote differently.
+        note.normalised[:0] = normalised
+        if note.position_unknown:
+            names = note.position_unknown
+            verdict += (
+                f". {len(names)} exploration(s) had no x, y and/or "
+                f"elevation given ({', '.join(names[:8])}"
+                + (", ..." if len(names) > 8 else "")
+                + "): DIGGS requires a position, so each unknown coordinate "
+                "is written as NaN and reads back as unknown, never 0 -- tell "
+                "the user which positions are missing (written.assumed)")
+        if note.normalised:
+            verdict += (
+                f". {len(note.normalised)} value(s) were recorded "
+                f"differently from how they were given (e.g. a printed '>50' "
+                f"as a refusal, 'not encountered' never as a water level) -- "
+                f"tell the user (written.normalised)")
+        for key, value in note.to_dict().items():
+            if isinstance(value, list):
+                written[key] = value[:10]
+                if len(value) > 10:
+                    written[f"n_{key}"] = len(value)
+            else:
+                written[key] = value
     return clean_result({
         "output_path": out,
         "file_exists": os.path.isfile(out),
@@ -549,9 +661,7 @@ def _run_write_diggs(params: dict) -> dict:
                          "errors": list(schema_errors)[:10]},
         "read_back": {"equal": bool(back_ok), "diffs": list(diffs)[:15],
                       "n_diffs": len(diffs)},
-        "written": ({k: (v[:10] if isinstance(v, list) else v)
-                     for k, v in note.to_dict().items()}
-                    if note is not None else {}),
+        "written": written,
     })
 
 
@@ -678,7 +788,9 @@ METHOD_INFO = {
             "n_measurements": "Total number of test measurements (SPT, Atterberg, etc).",
             "n_lithology_intervals": "Total lithology intervals.",
             "warnings": "Any parsing warnings.",
-            "investigations": "Per-investigation summary with available parameters.",
+            "investigations": "Per-investigation summary with available parameters. x, y or elevation_m is null when "
+                              "the file gives none (unknown, not 0); gwl_not_encountered is true when the file says "
+                              "groundwater was not encountered (gwl_depth_m is then null).",
         },
     },
     "load_site": {
@@ -905,13 +1017,17 @@ METHOD_INFO = {
             "investigations": {"type": "array", "required": True, "description": (
                 "One object per boring, pit or sounding, numbers AS PRINTED on the log (never inferred). "
                 "Keys: investigation_id; kind (boring|test_pit|cpt|dcp|hand_auger|well|other); depth_unit ('m'|'ft'); "
-                "x, y, coordinate_system; elevation {value, unit}; total_depth {value, unit}; date_started, date_finished; "
+                "x, y, coordinate_system; elevation {value, unit} (leave out any the source does not give: it is written as "
+                "unknown, never 0); total_depth {value, unit}; date_started, date_finished; "
                 "drilling {method, equipment, hammer_type, hammer_energy_ratio, sampler, contractor, logged_by}; "
                 "layers [{top {value, unit}, bottom {value, unit}, description, uscs}]; "
                 "samples [{sample_id, top, bottom, kind (spt|ring|shelby|bulk|grab|core|cuttings|other), recovery_percent, "
                 "water_content, fines_percent, liquid_limit, plastic_limit, uscs}]; "
-                "spt [{depth_top, depth_bottom, blows [per increment; a string for refusal, e.g. '50/10cm'], n (ONLY if printed), refusal, sample_id}]; "
-                "water [{depth {value, unit}, when (while_drilling|at_completion|after_hours|not_encountered|unknown), hours}]; "
+                "spt [{depth_top, depth_bottom, blows [per increment; a string for refusal, e.g. '50/10cm'], n (ONLY if printed; "
+                "a printed refusal such as '>50', 'R' or '50/5\"' may be given as n and is recorded as refusal: true with its text kept), "
+                "refusal, sample_id}]; "
+                "water [{depth {value, unit}, when (while_drilling|at_completion|after_hours|not_encountered|unknown), hours}] "
+                "(not_encountered: leave depth out -- it is never written as a water level); "
                 "remarks; pages (0-based PDF pages). Every depth or elevation is {value, unit}. Unknown keys are refused by name.")},
             "lab_tests": {"type": "array", "required": False, "description": (
                 "Lab results, one object per test on one specimen: kind (atterberg|gradation|compaction|cbr|moisture_content|density|"
@@ -938,7 +1054,8 @@ METHOD_INFO = {
                             "boring and sample, a summary table compared with the sheets, units without a conversion. Each "
                             "entry gives what disagrees, both values and the pages; nothing is changed or resolved. Tell the "
                             "user about every entry.",
-            "written": "Counts written, and anything the writer had to leave out or assume.",
+            "written": "Counts written, and anything the writer had to leave out, assume (assumed; position_unknown) or record "
+                       "differently from how it was given (normalised). Tell the user about each.",
         },
     },
     "validate_diggs_dictionary": {

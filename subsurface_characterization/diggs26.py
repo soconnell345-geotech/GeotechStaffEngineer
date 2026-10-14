@@ -46,7 +46,7 @@ __all__ = [
     "parse_diggs26_samples", "parse_diggs26_water",
     "parse_diggs26_soundings", "SOUNDING_PROCEDURES",
     "SOUNDING_DEPTH_CLASS", "SOUNDING_EXTRA_MAP",
-    "parse_diggs26_result_sets", "ResultSetRead",
+    "parse_diggs26_result_sets", "ResultSetRead", "NOT_ENCOUNTERED_REMARK",
 ]
 
 _NS_GML = "http://www.opengis.net/gml/3.2"
@@ -747,6 +747,15 @@ def parse_diggs26_water(root, ns_map, investigations, gml_id_map, warnings, *,
     after a day -- and DIGGS keeps them all. ``Investigation`` has one
     ``gwl_depth_m``, so the INITIAL strike is the one it gets; the rest stay
     in the file for a consumer that wants them.
+
+    GROUNDWATER NOT ENCOUNTERED is a fact of its own, not a missing level:
+    ``WaterStrike/notEncountered`` on a borehole, and -- because a TrialPit
+    has no ``waterStrike`` in 2.6 -- a pit remark that opens with
+    :data:`NOT_ENCOUNTERED_REMARK`, which is how
+    ``report_ingest.diggs_writer`` says it. Either sets
+    ``gwl_not_encountered`` and leaves ``gwl_depth_m`` None (RI-27: a writer
+    that wrote the hole's bottom as the "level" made every dry boring read
+    back with water at its base).
     """
     def find_text(element, path):
         return text(element, path, ns_map, "")
@@ -760,7 +769,12 @@ def parse_diggs26_water(root, ns_map, investigations, gml_id_map, warnings, *,
             inv = investigations[inv_id]
             if inv.gwl_depth_m is not None:
                 continue
+            none_found = False
             for strike in findall(element, ".//diggs:WaterStrike", ns_map):
+                if find_text(strike, "diggs:notEncountered").strip().lower() \
+                        in ("true", "1"):
+                    none_found = True
+                    continue
                 reading = find(strike, "diggs:initialWaterStrikeReading",
                                ns_map)
                 if reading is None:
@@ -771,3 +785,20 @@ def parse_diggs26_water(root, ns_map, investigations, gml_id_map, warnings, *,
                 if depths:
                     inv.gwl_depth_m = depths[0]
                     break
+            if inv.gwl_depth_m is None and feature == "diggs:TrialPit":
+                for content in findall(
+                        element, "diggs:remark/diggs:Remark/diggs:content",
+                        ns_map):
+                    said = (content.text or "").strip().lower()
+                    if said.startswith(NOT_ENCOUNTERED_REMARK.lower()):
+                        none_found = True
+                        break
+            if inv.gwl_depth_m is None and none_found:
+                inv.gwl_not_encountered = True
+
+
+#: How a pit's "groundwater not encountered" is said in a DIGGS 2.6 file. A
+#: ``TrialPit`` has no ``waterStrike`` (the Borehole's ``notEncountered``
+#: lives there), so ``report_ingest.diggs_writer`` writes it as a remark
+#: opening with these words, and :func:`parse_diggs26_water` reads it back.
+NOT_ENCOUNTERED_REMARK = "Groundwater not encountered"

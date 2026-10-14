@@ -29,6 +29,10 @@ class PlotResult:
         Plotly go.Figure object.
     trend_results : list
         TrendAnalysisResult objects if trends were computed.
+    skipped : list of str
+        What the plot left out and why -- an investigation with no x, y or
+        no ground elevation where the plot needs one is skipped, never drawn
+        at 0.
     """
 
     plot_type: str = ""
@@ -38,6 +42,7 @@ class PlotResult:
     parameters: List[str] = field(default_factory=list)
     figure: Any = None
     trend_results: list = field(default_factory=list)
+    skipped: List[str] = field(default_factory=list)
 
     def to_html(self, full_html: bool = True) -> str:
         """Export figure as self-contained HTML string."""
@@ -58,6 +63,8 @@ class PlotResult:
         ]
         if self.trend_results:
             lines.append(f"  Trends computed: {len(self.trend_results)}")
+        for line in self.skipped:
+            lines.append(f"  Skipped: {line}")
         lines.append("")
         return "\n".join(lines)
 
@@ -89,6 +96,8 @@ class PlotResult:
                 t.to_dict() if hasattr(t, "to_dict") else str(t)
                 for t in self.trend_results
             ]
+        if self.skipped:
+            d["skipped"] = list(self.skipped)
         return d
 
 

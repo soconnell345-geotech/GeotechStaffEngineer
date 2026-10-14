@@ -111,7 +111,9 @@ round-trip gate does about it:
 * A ``TrialPit`` has no ``waterStrike`` in 2.6 (it is the Borehole's alone),
   so a pit's water level is a ``Test`` whose one result is the dictionary's
   ``water_depth``, positioned at that depth. The app's reader takes it as the
-  pit's water level. A pit that found no water has no 2.6 element to say so.
+  pit's water level. A pit that found no water has no 2.6 element to say so,
+  so it is said in a remark (:data:`NOT_ENCOUNTERED_REMARK`), which the
+  app's reader takes as "not encountered".
 * A grading's D-value printed with NO unit is written in millimetres, the
   unit every laboratory prints them in and never writes into the column
   head (the lab scorer's and the tables floor's own rule); the assumption is
@@ -121,6 +123,29 @@ round-trip gate does about it:
   written as the kPa the property needs -- is left out, and named with its
   hole, depth and value in :attr:`DiggsWriteNotes.unwritten`; the gate does
   not look for exactly those.
+
+WHAT THE FIELD SESSION OF 2026-10-14 TAUGHT (RI-27), and what the gate does:
+
+* "GROUNDWATER NOT ENCOUNTERED" IS NEVER A WATER LEVEL. A ``not_encountered``
+  row is ``notEncountered`` on a borehole and the remark on a pit, whatever
+  depth came with it -- that depth is how far the hole was explored, which
+  its total depth already says. Written as a reading, every dry boring of
+  that session read back with water at its bottom, and the gate, which
+  compared depths only, passed it. The gate now compares "not encountered"
+  as well, and a level that comes back where none went in is a diff.
+* A POSITION NOBODY PRINTED IS NOT 0. DIGGS 2.6 requires a
+  ``referencePoint`` on every sampling feature, so it cannot be left out;
+  an unknown x, y or elevation is written as ``NaN`` -- a valid ``xs:double``
+  that no consumer can mistake for a place -- with a ``gml:description``
+  saying why, and named in :attr:`DiggsWriteNotes.assumed` and
+  :attr:`DiggsWriteNotes.position_unknown`. The app's reader returns None
+  for it. Filled with 0, 33 of that session's 40 explorations sat at sea
+  level and one at the grid's origin; the gate now says so if a position
+  comes back where none went in.
+* A PRINTED N THAT IS NOT A WHOLE NUMBER (``SPT.n_printed``: ``>50``, ``R``)
+  is written as the text it is, under the N value's own property with
+  ``typeData`` string -- the convention every ``<10`` on a lab sheet already
+  follows -- beside whatever drives the log printed.
 """
 
 from __future__ import annotations
@@ -138,12 +163,16 @@ from report_ingest.model import (
     ReportRecord, Sample, SPT, StrengthResult, SummaryRow,
     SummaryTableResult, WaterLevel, si_numbers,
 )
+# The remark a pit's "groundwater not encountered" is written as (a TrialPit
+# has no waterStrike in 2.6). ONE definition, the reader's, so the writer and
+# subsurface_characterization.diggs26 cannot drift apart.
+from subsurface_characterization.diggs26 import NOT_ENCOUNTERED_REMARK
 
 __all__ = [
     "write_diggs", "diggs_schema_gate", "diggs_roundtrip_gate",
     "DiggsWriteNotes", "NS", "PROPERTY_CLASS", "TOLERANCE",
     "LAB_PROCEDURE", "DICTIONARY_CODESPACE", "APP_CODESPACE",
-    "UOM_IN_FILE",
+    "UOM_IN_FILE", "NOT_ENCOUNTERED_REMARK",
 ]
 
 #: The namespaces a DIGGS 2.6 instance declares. ``diggs_geo`` is the one that
@@ -287,6 +316,18 @@ def _coord(value: float) -> str:
     return text or "0"
 
 
+#: What an UNKNOWN coordinate is written as. ``NaN`` is in the value space of
+#: ``xs:double`` (lower-case ``nan``, Python's spelling, is not), so the file
+#: validates, and no consumer can read it as a place -- where a 0 reads as
+#: the grid origin or sea level.
+_UNKNOWN_COORD = "NaN"
+
+
+def _coord_or_unknown(value: Optional[float]) -> str:
+    """A coordinate, or :data:`_UNKNOWN_COORD` when nobody gave one."""
+    return _UNKNOWN_COORD if value is None else _coord(value)
+
+
 def _si(q: Optional[Quantity]) -> Optional[Tuple[float, str]]:
     """``(value, SI unit)`` for a quantity, or None when it cannot convert."""
     if q is None:
@@ -295,6 +336,23 @@ def _si(q: Optional[Quantity]) -> Optional[Tuple[float, str]]:
     if converted is None:
         return None
     return converted.value, converted.unit
+
+
+def _water_readings(inv: Investigation) -> List[WaterLevel]:
+    """The rows that ARE water levels: a depth in a convertible unit, and
+    not "not encountered" -- whose depth, when one came with it, is how far
+    the hole was explored, never where water stood. One rule for the writer
+    and the round-trip gate."""
+    return [w for w in inv.water
+            if w.when != "not_encountered" and _si(w.depth) is not None]
+
+
+def _axes(names: Sequence[str]) -> str:
+    """``x``, ``x and y``, ``x, y and elevation``."""
+    names = list(names)
+    if len(names) <= 1:
+        return "".join(names)
+    return ", ".join(names[:-1]) + " and " + names[-1]
 
 
 @dataclass
@@ -358,8 +416,21 @@ class DiggsWriteNotes:
         default_factory=list)
     #: A unit the writer took from a convention of the trade rather than
     #: from the record, each named: a grading's D-value printed with no unit
-    #: is millimetres.
+    #: is millimetres. Also every position written as a PLACEHOLDER: DIGGS
+    #: requires a reference point, so an x, y or elevation nobody gave is
+    #: written as NaN and named here (RI-27).
     assumed: List[str] = field(default_factory=list)
+    #: Explorations whose reference point carries a NaN placeholder (no x,
+    #: y or elevation given), by name -- the count and the names a verdict
+    #: needs, beside the sentences in :attr:`assumed`. A hole that exists
+    #: only because a lab sheet named it is in :attr:`synthesised` instead.
+    position_unknown: List[str] = field(default_factory=list)
+    #: What was written differently from how it was given, each named: a
+    #: "not encountered" water row given with a depth is written as not
+    #: encountered, its depth not as a water level (RI-27). The dispatch
+    #: layer adds what it normalised before the writer saw it (a printed
+    #: ">50" given as an N becomes a refusal with its text kept).
+    normalised: List[str] = field(default_factory=list)
     #: Names two or more explorations in this file share. DIGGS keeps them
     #: apart by ``gml:id``; a reader that keys holes by NAME -- the app's own
     #: ``parse_diggs`` among them -- reads each such name as one hole.
@@ -382,6 +453,8 @@ class DiggsWriteNotes:
                 "left_out": [dict(row) for row in self.left_out],
                 "unwritten": [list(row) for row in self.unwritten],
                 "assumed": list(self.assumed),
+                "position_unknown": list(self.position_unknown),
+                "normalised": list(self.normalised),
                 "shared_names": list(self.shared_names),
                 "investigations": self.investigations, "layers": self.layers,
                 "samples": self.samples, "spt": self.spt, "water": self.water,
@@ -454,6 +527,10 @@ class _Writer:
         self._issued: set = set()
         self._left_out_ids = {inv.investigation_id.strip()
                               for inv in left_out if inv.investigation_id}
+        #: The holes a lab sheet named and no log describes, by object id:
+        #: their unknown position is said in ``synthesised``, not again in
+        #: ``assumed``.
+        self._synthesised: set = set()
         for inv in left_out:
             self.notes.left_out.append({
                 "investigation_id": inv.investigation_id,
@@ -488,9 +565,10 @@ class _Writer:
                 continue
             wanted[name] = depth.unit if depth is not None else ""
         for name, unit in wanted.items():
-            self.investigations.append(Investigation(
-                investigation_id=name, depth_unit=unit,
-                units_known=bool(unit)))
+            hole = Investigation(investigation_id=name, depth_unit=unit,
+                                 units_known=bool(unit))
+            self._synthesised.add(id(hole))
+            self.investigations.append(hole)
             self.notes.synthesised.append(
                 f"{name}: named by a laboratory sheet; its log is left out "
                 f"of this file (depths in an unknown unit), so it is written "
@@ -601,10 +679,23 @@ class _Writer:
         element = "TrialPit" if inv.kind == "test_pit" else "Borehole"
         depth = _si(inv.total_depth)
         elev = _si(inv.elevation)
-        z = elev[0] if elev else 0.0
-        x = inv.x if inv.x is not None else 0.0
-        y = inv.y if inv.y is not None else 0.0
-        bottom = z - (depth[0] if depth else 0.0)
+        if inv.elevation is not None and elev is None:
+            self.notes.skipped.append(
+                f"{inv.investigation_id}: ground elevation "
+                f"{inv.elevation.value:g} {inv.elevation.unit!r} -- unit not "
+                f"in the conversion table; written as unknown")
+        # An x, y or elevation nobody gave stays UNKNOWN: None here, NaN in
+        # the file. DIGGS requires the reference point, so it cannot be left
+        # out -- and a 0 would read as a real place (RI-27).
+        z: Optional[float] = elev[0] if elev else None
+        x, y = inv.x, inv.y
+        bottom = (None if z is None
+                  else z - (depth[0] if depth else 0.0))
+        missing = [axis for axis, value in (("x", x), ("y", y),
+                                            ("elevation", z))
+                   if value is None]
+        if missing:
+            self._position_placeholder(inv, missing)
 
         self.out("<samplingFeature>", 1)
         self.out(f"<{element} gml:id={quoteattr(gml_id)}>", 2)
@@ -616,6 +707,15 @@ class _Writer:
             self.out("<remark>", 3)
             self.out("<Remark>", 4)
             self.text_element("content", inv.remarks, 5)
+            self.out("</Remark>", 4)
+            self.out("</remark>", 3)
+        if element == "TrialPit" and self._none_encountered(inv):
+            # A TrialPit has no waterStrike, so the Borehole's
+            # notEncountered is not open to it; the remark is how 2.6 can
+            # say it, and the app's reader takes it back as such.
+            self.out("<remark>", 3)
+            self.out("<Remark>", 4)
+            self.text_element("content", f"{NOT_ENCOUNTERED_REMARK}.", 5)
             self.out("</Remark>", 4)
             self.out("</remark>", 3)
         self.out("<investigationTarget>Natural Ground</investigationTarget>", 3)
@@ -639,17 +739,24 @@ class _Writer:
             self.out("</locality>", 3)
         self.out("<referencePoint>", 3)
         self.out(f'<PointLocation gml:id={quoteattr(gml_id + "_rp")}>', 4)
+        if missing:
+            self.text_element(
+                "gml:description",
+                f"{_axes(missing)} not given in the source: written as NaN "
+                f"because DIGGS requires a reference point. Unknown, not "
+                f"zero.", 5)
         srs = (f' srsName={quoteattr(inv.coordinate_system)}'
                if inv.coordinate_system.strip() else "")
-        self.out(f'<gml:pos srsDimension="3"{srs}>'
-                 f'{_coord(x)} {_coord(y)} {_coord(z)}</gml:pos>', 5)
+        point = (f"{_coord_or_unknown(x)} {_coord_or_unknown(y)} "
+                 f"{_coord_or_unknown(z)}")
+        self.out(f'<gml:pos srsDimension="3"{srs}>{point}</gml:pos>', 5)
         self.out("</PointLocation>", 4)
         self.out("</referencePoint>", 3)
         self.out("<centerLine>", 3)
         self.out(f'<LinearExtent gml:id={quoteattr(gml_id + "_cl")}>', 4)
-        self.out(f'<gml:posList srsDimension="3">'
-                 f'{_coord(x)} {_coord(y)} {_coord(z)} '
-                 f'{_coord(x)} {_coord(y)} {_coord(bottom)}</gml:posList>', 5)
+        self.out(f'<gml:posList srsDimension="3">{point} '
+                 f'{_coord_or_unknown(x)} {_coord_or_unknown(y)} '
+                 f'{_coord_or_unknown(bottom)}</gml:posList>', 5)
         self.out("</LinearExtent>", 4)
         self.out("</centerLine>", 3)
         self.linear_referencing(gml_id)
@@ -668,6 +775,56 @@ class _Writer:
         self.out(f"</{element}>", 2)
         self.out("</samplingFeature>", 1)
         self.notes.investigations += 1
+
+    def _position_placeholder(self, inv: Investigation,
+                              missing: Sequence[str]) -> None:
+        """Say that this exploration's reference point holds a placeholder.
+
+        A hole a lab sheet named and no log describes is already said, in
+        full, in ``synthesised``; every other one is named here.
+        """
+        if id(inv) in self._synthesised:
+            return
+        name = inv.investigation_id or "an unnamed exploration"
+        self.notes.position_unknown.append(name)
+        one = len(missing) == 1
+        self.notes.assumed.append(
+            f"{name}: no {_axes(missing)} given; DIGGS requires a reference "
+            f"point, so {'it is' if one else 'each is'} written as NaN (not "
+            f"a number) and reads back as unknown, never as 0")
+
+    @staticmethod
+    def _none_encountered(inv: Investigation) -> bool:
+        """Did the log say NO groundwater, and give no water reading?
+
+        "Not encountered" is a finding of its own, never a level: a depth
+        that came with it is how far the hole was explored. When the log
+        ALSO gives a reading (dry while drilling, water the next day), the
+        reading is what DIGGS can carry -- 2.6's WaterStrike is either
+        ``notEncountered`` or readings, not both -- and the writer says so.
+        """
+        return (any(w.when == "not_encountered" for w in inv.water)
+                and not _water_readings(inv))
+
+    def _water_notes(self, inv: Investigation) -> None:
+        """Name every "not encountered" row whose depth is not written."""
+        readings = _water_readings(inv)
+        for water in inv.water:
+            if water.when != "not_encountered":
+                continue
+            if water.depth is not None:
+                self.notes.normalised.append(
+                    f"{inv.investigation_id}: groundwater 'not encountered' "
+                    f"was given with a depth of {water.depth.value:g} "
+                    f"{water.depth.unit}; it is written as not encountered "
+                    f"and that depth is NOT a water level (the hole's total "
+                    f"depth says how deep it was explored)")
+            if readings:
+                self.notes.skipped.append(
+                    f"{inv.investigation_id}: 'not encountered' sits beside "
+                    f"{len(readings)} water reading(s); DIGGS 2.6 holds one "
+                    f"or the other, so the reading(s) are written and the "
+                    f"'not encountered' is kept in the record")
 
     def linear_referencing(self, gml_id: str) -> None:
         """The hole's own 1-D system: what every depth below is measured in.
@@ -740,10 +897,13 @@ class _Writer:
 
         There is no ``WaterLevelObservation`` element in 2.6. A reading is a
         ``WaterStrikeReading`` whose ``waterLocation`` is a position along the
-        hole; a log that says none was encountered is ``notEncountered``.
+        hole; a log that says none was encountered is ``notEncountered`` --
+        WHATEVER depth came with it (RI-27: written as a reading, "not
+        encountered to 12 m" read back as water at 12 m).
         """
-        readings = [w for w in inv.water if _si(w.depth) is not None]
-        none_found = [w for w in inv.water if w.when == "not_encountered"]
+        self._water_notes(inv)
+        readings = _water_readings(inv)
+        none_found = self._none_encountered(inv)
         if not readings and not none_found:
             return
         self.out("<waterStrike>", 3)
@@ -984,16 +1144,20 @@ class _Writer:
         is the reading the round-trip gate compares.
 
         A pit that found NO water has no element to say so in 2.6 (the
-        Borehole's ``notEncountered`` lives in ``waterStrike`` too); it stays
-        in the record and the notes say so.
+        Borehole's ``notEncountered`` lives in ``waterStrike`` too), so it is
+        said in a remark (:meth:`sampling_feature`) and NEVER as a "Water
+        level" test, whatever depth came with it (RI-27: a pit "not
+        encountered" at 1.5 m read back with water at 1.5 m).
         """
+        self._water_notes(inv)
+        if self._none_encountered(inv):
+            self.notes.skipped.append(
+                f"{inv.investigation_id}: 'no water encountered' -- 2.6 has "
+                f"no element for it on a TrialPit; written as a remark "
+                f"({NOT_ENCOUNTERED_REMARK!r})")
+            self.notes.water += 1
         for n, water in enumerate(inv.water):
-            if water.depth is None:
-                if water.when == "not_encountered":
-                    self.notes.skipped.append(
-                        f"{inv.investigation_id}: 'no water encountered' -- "
-                        f"2.6 has no element for it on a TrialPit; kept in "
-                        f"the record")
+            if water.when == "not_encountered" or water.depth is None:
                 continue
             depth = _si(water.depth)
             if depth is None or depth[1] != "m":
@@ -1258,11 +1422,15 @@ class _Writer:
 
         ``values`` is ``(propertyName, propertyClass, value)``. All of them go
         in ONE ResultSet, so an Atterberg test writes its three limits as
-        three properties of one result rather than as three tests.
+        three properties of one result rather than as three tests. A value
+        that is text (a printed ">50") is typed ``string``.
         """
         self._result_table(
             test_id, gml_id, top, bottom,
-            [_Column(name, klass) for name, klass, _v in values],
+            [_Column(name, klass,
+                     type_data="string" if isinstance(value, str)
+                     else "double")
+             for name, klass, value in values],
             [[value for _n, _k, value in values]])
 
     def _result_table(self, test_id: str, gml_id: str, top: float,
@@ -1341,12 +1509,26 @@ class _Writer:
         # prints only the drives, the result carries the drives themselves
         # rather than an N this writer invented -- and the round-trip gate
         # then checks the drives, which is what the page actually says.
+        values: List[Tuple[str, str, Any]]
         if record.n is not None:
             values = [("N-Value", "n_value", float(record.n))]
         elif drives:
             values = [(f"Blow count {i + 1}", "blow_count", float(count))
                       for i, (count, _pen) in enumerate(drives)]
         else:
+            values = []
+        # A printed N that is not a whole number (">50", "R") is the log's
+        # own statement of a refusal. It is written AS PRINTED, as text under
+        # the N value's own property -- the way a lab sheet's "<10" is -- so
+        # a refusal row with no countable drive is still in the file.
+        printed = (record.n_printed or "").strip()
+        if printed:
+            values.append(("N-Value (as printed)", "n_value", printed))
+        if not values:
+            self.notes.skipped.append(
+                f"{inv.investigation_id}: driven record at {top[0]:.3f} m "
+                f"has no N, no drive this file can state and no printed N; "
+                f"not written (blows as given: {list(record.blows)!r})")
             return
         test_id = self.uid(f"spt_{_ncname(gml_id)}_{n}")
         self._test_open("SPT", test_id, gml_id)
@@ -2560,6 +2742,13 @@ def diggs_roundtrip_gate(xml: str, investigations: Any, *,
               for inv in parsed.site.investigations}
     unwritten = list(notes.unwritten)
     dt = TOLERANCE["depth_m"]
+    result_sets: List[Any] = []
+    if any((r.n_printed or "").strip()
+           for inv in investigations for r in inv.spt):
+        from subsurface_characterization.diggs26 import (
+            parse_diggs26_result_sets,
+        )
+        result_sets = parse_diggs26_result_sets(content=xml)
 
     for want, gid in zip(investigations, _hole_ids(investigations)):
         name = want.investigation_id
@@ -2582,6 +2771,7 @@ def diggs_roundtrip_gate(xml: str, investigations: Any, *,
         _compare_water(label, want, got, diffs, dt)
         _compare_measurements(label, want, got, diffs, dt,
                               unwritten=unwritten)
+        _compare_refusals(label, want, gid, result_sets, diffs, dt)
         _compare_soundings(label, want, got, diffs, dt)
     if lab:
         _compare_lab(xml, lab, diffs, unwritten=unwritten)
@@ -2793,15 +2983,25 @@ def _compare_lab(xml: str, lab: Sequence[LabTest],
 
 def _compare_header(name: str, want: Investigation, got: Any,
                     diffs: List[str]) -> None:
+    """Identity, position and depth. A position that went in UNKNOWN must
+    come back unknown: a number where none was given -- the 0, 0, 0 of
+    RI-27 -- is a diff, not a match."""
     dt = TOLERANCE["depth_m"]
-    if want.x is not None and not _close(got.x, want.x, 1e-6):
-        diffs.append(f"{name}: x came back {got.x} not {want.x}")
-    if want.y is not None and not _close(got.y, want.y, 1e-6):
-        diffs.append(f"{name}: y came back {got.y} not {want.y}")
-    elevation = _si_value(want.elevation)
-    if elevation is not None and not _close(got.elevation_m, elevation, dt):
-        diffs.append(f"{name}: ground elevation came back "
-                     f"{got.elevation_m} not {elevation:.4f} m")
+    for axis, wanted, back, tol, unit in (
+            ("x", want.x, got.x, 1e-6, ""),
+            ("y", want.y, got.y, 1e-6, ""),
+            ("ground elevation", _si_value(want.elevation), got.elevation_m,
+             dt, " m")):
+        if wanted is None:
+            if back is not None:
+                diffs.append(f"{name}: {axis} came back as {back}{unit} "
+                             f"although none was given")
+        elif back is None:
+            diffs.append(f"{name}: {axis} {wanted}{unit} came back as "
+                         f"unknown")
+        elif not _close(back, wanted, tol):
+            diffs.append(f"{name}: {axis} came back {back}{unit} not "
+                         f"{wanted}{unit}")
     total = _si_value(want.total_depth)
     if total is not None and not _close(got.total_depth_m, total, dt):
         diffs.append(f"{name}: total depth came back {got.total_depth_m} "
@@ -2840,19 +3040,67 @@ def _compare_layers(name: str, want: Investigation, got: Any,
 
 def _compare_water(name: str, want: Investigation, got: Any,
                    diffs: List[str], dt: float) -> None:
-    depths = [_si_value(w.depth) for w in want.water]
-    depths = [d for d in depths if d is not None]
-    if not depths:
+    """The water level AND whether water was found at all.
+
+    Until RI-27 this compared depths only, so "not encountered" given with
+    the hole's depth went in as a reading, came back as water at the bottom
+    of the hole, and "matched". A "not encountered" row is not a level
+    (:func:`_water_readings`); it must come back as ``gwl_not_encountered``
+    with no level, and a level that comes back where none went in is a diff.
+    """
+    depths = [_si_value(w.depth) for w in _water_readings(want)]
+    none_found = any(w.when == "not_encountered" for w in want.water)
+    flag = bool(getattr(got, "gwl_not_encountered", False))
+    if depths:
+        # parse_diggs keeps ONE water level per investigation. The first
+        # reading is the one written as the initial strike, so that is the
+        # one compared; the rest are in the file for a consumer that wants
+        # them.
+        if got.gwl_depth_m is None:
+            diffs.append(f"{name}: water level {depths[0]:.4f} m came back "
+                         f"as nothing")
+        elif not _close(got.gwl_depth_m, depths[0], dt):
+            diffs.append(f"{name}: water level came back {got.gwl_depth_m} "
+                         f"not {depths[0]:.4f} m")
+        if flag:
+            diffs.append(f"{name}: came back as 'groundwater not "
+                         f"encountered' although a water level went in")
         return
-    # parse_diggs keeps ONE water level per investigation. The first reading
-    # is the one written as the initial strike, so that is the one compared;
-    # the rest are in the file and are read by a consumer that wants them.
-    if got.gwl_depth_m is None:
-        diffs.append(f"{name}: water level {depths[0]:.4f} m came back as "
-                     f"nothing")
-    elif not _close(got.gwl_depth_m, depths[0], dt):
-        diffs.append(f"{name}: water level came back {got.gwl_depth_m} not "
-                     f"{depths[0]:.4f} m")
+    if got.gwl_depth_m is not None:
+        diffs.append(
+            f"{name}: a water level of {got.gwl_depth_m} m came back where "
+            + ("'groundwater not encountered'" if none_found
+               else "no water level") + " went in")
+    if none_found and not flag:
+        diffs.append(f"{name}: 'groundwater not encountered' did not come "
+                     f"back")
+
+
+def _compare_refusals(name: str, want: Investigation, gid: str,
+                      result_sets: Sequence[Any], diffs: List[str],
+                      dt: float) -> None:
+    """Every printed N that is not a whole number, as the text it is.
+
+    ``parse_diggs`` keeps numbers, so a ``>50`` written as text is invisible
+    to it; the result-set reader returns the table as written, and the
+    printed text must be in the driven test at that hole and depth.
+    """
+    for record in want.spt:
+        raw = (record.n_printed or "").strip()
+        top = _si_value(record.depth_top)
+        if not raw or top is None:
+            continue
+        printed = _cell(raw)          # as the writer writes a text cell
+        found = any(
+            rs.sampling_feature == gid
+            and rs.procedure == "DrivenPenetrationTest"
+            and rs.depth_m is not None and _close(rs.depth_m, top, dt)
+            and printed in [str(v) for v in rs.values("n_value")
+                            if v is not None]
+            for rs in result_sets)
+        if not found:
+            diffs.append(f"{name}: N printed as {printed!r} at {top:.3f} m "
+                         f"did not come back")
 
 
 #: What each channel of a sounding must come back as, and how close. The

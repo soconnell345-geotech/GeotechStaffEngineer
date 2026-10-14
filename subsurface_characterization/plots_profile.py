@@ -74,19 +74,35 @@ def plot_cross_section(
             n_investigations=len(investigation_ids), n_data_points=0, parameters=[],
         )
 
-    # Get investigations in order
+    # Get investigations in order. One with no plan position has no distance
+    # along the section, and one with no ground elevation has no place on an
+    # elevation axis: each is LEFT OUT and named in ``skipped``, never drawn
+    # as though it stood at 0.
     invs = []
+    skipped: List[str] = []
     for inv_id in investigation_ids:
         try:
-            invs.append(site.get_investigation(inv_id))
+            inv = site.get_investigation(inv_id)
         except KeyError:
             continue
+        if not inv.has_xy:
+            skipped.append(f"{inv.investigation_id}: no x, y given, so its "
+                           f"distance along the section is unknown; left out")
+            continue
+        if use_elevation and not inv.has_elevation:
+            skipped.append(f"{inv.investigation_id}: no ground elevation "
+                           f"given, so it has no place on an elevation axis; "
+                           f"left out (use_elevation=False draws it by "
+                           f"depth)")
+            continue
+        invs.append(inv)
 
     if len(invs) < 2:
         apply_standard_layout(fig, title=title)
         return PlotResult(
             plot_type="cross_section", title=title, figure=fig,
             n_investigations=len(invs), n_data_points=0, parameters=[],
+            skipped=skipped,
         )
 
     # Compute cumulative distances
@@ -224,6 +240,7 @@ def plot_cross_section(
         n_data_points=n_lith,
         parameters=parameters,
         figure=fig,
+        skipped=skipped,
     )
 
 

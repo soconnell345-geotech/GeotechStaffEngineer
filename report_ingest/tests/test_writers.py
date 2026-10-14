@@ -62,8 +62,14 @@ class TestWhatIsWritten:
         assert written.schema_ok is True
         assert written.roundtrip_ok is True
         verdicts = {e.where: e for e in record.qa if e.where.startswith("diggs")}
-        assert set(verdicts) == {"diggs.schema", "diggs.roundtrip"}
+        # RI-27: the fixture's logs print no x or y, so the file's reference
+        # points hold a NaN placeholder (DIGGS requires one), and the record
+        # says so in the writer's notes -- the only other entry there is.
+        assert set(verdicts) == {"diggs.schema", "diggs.roundtrip",
+                                 "diggs.notes"}
         assert all(e.kind == "note" for e in verdicts.values())
+        said = verdicts["diggs.notes"].values
+        assert said and all("written as NaN" in line for line in said)
 
     def test_writing_twice_leaves_one_verdict_not_two(self, record, tmp_path):
         write_outputs(record, tmp_path)

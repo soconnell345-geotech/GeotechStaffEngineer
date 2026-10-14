@@ -114,7 +114,17 @@ interpreted subsurface profiles.
 
 - Empty site model: plots return valid but empty figures
 - Missing USCS: classified as "Unknown" with gray color
-- Missing coordinates: default to (0, 0)
+- Missing coordinates or ground elevation: None, never 0 (a DIGGS `NaN`, a
+  missing `gml:pos`, a blank CSV cell). Plots leave such an investigation out
+  where they need the value (plan view and cross-section need x, y; an
+  elevation axis needs the elevation) and name it in `PlotResult.skipped`.
+  Until RI-27 (2026-10-14) they defaulted to (0, 0) and elevation 0, which
+  put unplaced holes at the grid origin and at sea level as though that were
+  data.
+- Groundwater not encountered: `Investigation.gwl_not_encountered` True and
+  `gwl_depth_m` None (DIGGS 2.6 `WaterStrike/notEncountered` on a borehole; a
+  pit remark opening "Groundwater not encountered", since a TrialPit has no
+  `waterStrike`). `gwl_depth_m` None alone means only "no reading".
 - Single investigation in cross-section: returns minimal plot
 - Parameter with no data: returns empty PlotResult
 - log-linear with zero values: masked out (log(0) undefined)

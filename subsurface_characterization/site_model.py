@@ -41,6 +41,24 @@ STANDARD_PARAMETERS = {
 }
 
 
+def optional_float(value: Any) -> Optional[float]:
+    """A coordinate or an elevation, or None when there is none.
+
+    Missing, blank, ``None`` and NaN are all "not given". NaN is what a DIGGS
+    file written by ``report_ingest.diggs_writer`` holds where a position was
+    not printed: DIGGS requires a reference point, so the writer writes
+    not-a-number rather than a zero that would read as a real place.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+    number = float(value)
+    return None if number != number else number
+
+
 # ---------------------------------------------------------------------------
 # PointMeasurement
 # ---------------------------------------------------------------------------
@@ -188,16 +206,19 @@ class Investigation:
         Unique identifier (e.g., 'B-1', 'CPT-3', 'TP-2').
     investigation_type : str
         'boring', 'cpt', 'test_pit', 'monitoring_well', or custom.
-    x : float
-        X coordinate (easting or longitude).
-    y : float
-        Y coordinate (northing or latitude).
-    elevation_m : float
-        Ground surface elevation (m).
+    x : float or None
+        X coordinate (easting or longitude); None when the source gives none.
+    y : float or None
+        Y coordinate (northing or latitude); None when the source gives none.
+    elevation_m : float or None
+        Ground surface elevation (m); None when the source gives none.
     total_depth_m : float
         Total depth of investigation (m).
     gwl_depth_m : float or None
         Groundwater level depth below ground surface (m).
+    gwl_not_encountered : bool
+        True when the source says groundwater was NOT encountered (then
+        ``gwl_depth_m`` is None). None alone means only "no reading".
     coordinate_system : str
         Coordinate reference system (e.g., 'EPSG:4326').
     date_started : str
@@ -210,15 +231,21 @@ class Investigation:
         Discrete measurements at depth.
     notes : str
         Additional notes.
+
+    A position nobody gave is None, never 0.0: a hole at elevation 0 or at
+    0, 0 reads as a real point (RI-27, 2026-10-14: 33 of 40 explorations
+    came back at elevation 0 from a file whose writer had filled 0 in).
+    Plots skip what they cannot place and say so.
     """
 
     investigation_id: str = ""
     investigation_type: str = "boring"
-    x: float = 0.0
-    y: float = 0.0
-    elevation_m: float = 0.0
+    x: Optional[float] = None
+    y: Optional[float] = None
+    elevation_m: Optional[float] = None
     total_depth_m: float = 0.0
     gwl_depth_m: Optional[float] = None
+    gwl_not_encountered: bool = False
     coordinate_system: str = ""
     date_started: str = ""
     drilling_method: str = ""
@@ -248,6 +275,16 @@ class Investigation:
     def available_parameters(self) -> List[str]:
         """Sorted list of unique parameter names in this investigation."""
         return sorted(set(m.parameter for m in self.measurements))
+
+    @property
+    def has_xy(self) -> bool:
+        """True when both plan coordinates are known."""
+        return self.x is not None and self.y is not None
+
+    @property
+    def has_elevation(self) -> bool:
+        """True when the ground elevation is known."""
+        return self.elevation_m is not None
 
     def depth_to_rock_m(self) -> Optional[float]:
         """Depth to first rock layer (m), or None if no rock found."""
@@ -340,9 +377,11 @@ class Investigation:
             "investigation_type": self.investigation_type,
             "x": self.x,
             "y": self.y,
-            "elevation_m": round(self.elevation_m, 3),
+            "elevation_m": (round(self.elevation_m, 3)
+                            if self.elevation_m is not None else None),
             "total_depth_m": round(self.total_depth_m, 3),
             "gwl_depth_m": round(self.gwl_depth_m, 3) if self.gwl_depth_m is not None else None,
+            "gwl_not_encountered": self.gwl_not_encountered,
             "coordinate_system": self.coordinate_system,
             "date_started": self.date_started,
             "drilling_method": self.drilling_method,
@@ -362,11 +401,12 @@ class Investigation:
         return cls(
             investigation_id=str(data.get("investigation_id", "")),
             investigation_type=str(data.get("investigation_type", "boring")),
-            x=float(data.get("x", 0)),
-            y=float(data.get("y", 0)),
-            elevation_m=float(data.get("elevation_m", 0)),
+            x=optional_float(data.get("x")),
+            y=optional_float(data.get("y")),
+            elevation_m=optional_float(data.get("elevation_m")),
             total_depth_m=float(data.get("total_depth_m", 0)),
             gwl_depth_m=float(data["gwl_depth_m"]) if data.get("gwl_depth_m") is not None else None,
+            gwl_not_encountered=bool(data.get("gwl_not_encountered", False)),
             coordinate_system=str(data.get("coordinate_system", "")),
             date_started=str(data.get("date_started", "")),
             drilling_method=str(data.get("drilling_method", "")),
@@ -377,7 +417,12 @@ class Investigation:
 
     def summary(self) -> str:
         """One-line text summary."""
-        gwl_str = f", GWL={self.gwl_depth_m:.1f}m" if self.gwl_depth_m is not None else ""
+        if self.gwl_depth_m is not None:
+            gwl_str = f", GWL={self.gwl_depth_m:.1f}m"
+        elif self.gwl_not_encountered:
+            gwl_str = ", GWL not encountered"
+        else:
+            gwl_str = ""
         params = ", ".join(self.available_parameters()) or "none"
         return (
             f"{self.investigation_id} ({self.investigation_type}): "
@@ -456,11 +501,14 @@ class SiteModel:
         return sorted(params)
 
     def bounding_box(self) -> Tuple[float, float, float, float]:
-        """(x_min, y_min, x_max, y_max) of all investigation locations."""
-        if not self.investigations:
+        """(x_min, y_min, x_max, y_max) of the investigations that HAVE a
+        plan position; (0, 0, 0, 0) when none has one. An investigation
+        with no x or y is left out rather than counted at the origin."""
+        placed = [inv for inv in self.investigations if inv.has_xy]
+        if not placed:
             return (0.0, 0.0, 0.0, 0.0)
-        xs = [inv.x for inv in self.investigations]
-        ys = [inv.y for inv in self.investigations]
+        xs = [inv.x for inv in placed]
+        ys = [inv.y for inv in placed]
         return (min(xs), min(ys), max(xs), max(ys))
 
     def to_dict(self) -> dict:

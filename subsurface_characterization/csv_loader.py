@@ -17,6 +17,7 @@ import numpy as np
 
 from subsurface_characterization.site_model import (
     SiteModel, Investigation, PointMeasurement, LithologyInterval,
+    optional_float,
 )
 
 
@@ -86,9 +87,10 @@ def load_site_from_csv(
         investigations[inv_id] = Investigation(
             investigation_id=inv_id,
             investigation_type=row.get("investigation_type", "boring"),
-            x=float(row.get("x", 0)),
-            y=float(row.get("y", 0)),
-            elevation_m=float(row.get("elevation_m", 0)),
+            # A blank or missing cell is "not given", never 0.
+            x=optional_float(row.get("x")),
+            y=optional_float(row.get("y")),
+            elevation_m=optional_float(row.get("elevation_m")),
             total_depth_m=float(row.get("total_depth_m", 0)),
             gwl_depth_m=float(row["gwl_depth_m"]) if row.get("gwl_depth_m") else None,
             drilling_method=row.get("drilling_method", ""),
@@ -196,8 +198,8 @@ def load_cpt_to_investigation(cpt_result) -> Investigation:
     return Investigation(
         investigation_id=cpt_result.alias or "CPT-unknown",
         investigation_type="cpt",
-        x=cpt_result.x if cpt_result.x is not None else 0.0,
-        y=cpt_result.y if cpt_result.y is not None else 0.0,
+        x=optional_float(cpt_result.x),
+        y=optional_float(cpt_result.y),
         total_depth_m=float(cpt_result.final_depth_m),
         gwl_depth_m=float(cpt_result.gwl_m) if cpt_result.gwl_m is not None else None,
         coordinate_system=cpt_result.srs_name or "",

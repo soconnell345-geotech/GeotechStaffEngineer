@@ -651,6 +651,14 @@ class SPT(BaseModel):
         default=None, ge=0,
         description="the N value the log PRINTS; None when it prints only "
                     "the drives")
+    #: The N column as printed when what it prints is not a whole number --
+    #: ``>50``, ``50+``, ``R``, ``Refusal``, ``50/5"``. ``n`` is then None and
+    #: ``refusal`` True: the text is the log's own statement of a refusal,
+    #: kept so the record and the DIGGS file say what the page said.
+    n_printed: str = Field(
+        default="",
+        description="the N as printed when it is not a whole number (e.g. "
+                    "'>50', 'R', 'Refusal'); n is then None and refusal true")
     refusal: bool = Field(
         default=False,
         description="the log records refusal at this depth (50 blows for "

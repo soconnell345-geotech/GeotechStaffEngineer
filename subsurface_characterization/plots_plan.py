@@ -61,13 +61,20 @@ def plot_plan_view(
             n_investigations=0, n_data_points=0, parameters=[],
         )
 
+    # An investigation with no plan position is LEFT OFF the map and named in
+    # ``skipped`` -- drawing it at 0, 0 would put it at the grid origin as
+    # though that were where it is.
+    placed = [inv for inv in site.investigations if inv.has_xy]
+    skipped = [f"{inv.investigation_id}: no x, y given; not placed on the "
+               f"plan" for inv in site.investigations if not inv.has_xy]
+
     if color_by == "parameter" and parameter_for_color:
-        _plot_by_parameter(fig, site, parameter_for_color, label_field, go)
+        _plot_by_parameter(fig, placed, parameter_for_color, label_field, go)
     else:
-        _plot_by_type(fig, site, label_field, go)
+        _plot_by_type(fig, placed, label_field, go)
 
     # Labels
-    for inv in site.investigations:
+    for inv in placed:
         label_text = _get_label(inv, label_field)
         if label_text:
             fig.add_annotation(
@@ -87,17 +94,23 @@ def plot_plan_view(
     return PlotResult(
         plot_type="plan_view",
         title=title,
-        n_investigations=len(site.investigations),
-        n_data_points=len(site.investigations),
+        n_investigations=len(placed),
+        n_data_points=len(placed),
         parameters=[parameter_for_color] if parameter_for_color else [],
         figure=fig,
+        skipped=skipped,
     )
 
 
-def _plot_by_type(fig, site, label_field, go):
+def _metres(value) -> str:
+    """A depth or an elevation for a hover label; 'unknown' when not given."""
+    return "unknown" if value is None else f"{value:.1f}m"
+
+
+def _plot_by_type(fig, invs, label_field, go):
     """Add traces colored by investigation type."""
     type_groups = {}
-    for inv in site.investigations:
+    for inv in invs:
         t = inv.investigation_type
         if t not in type_groups:
             type_groups[t] = []
@@ -124,7 +137,8 @@ def _plot_by_type(fig, site, label_field, go):
             f"ID: {inv.investigation_id}<br>"
             f"Type: {inv.investigation_type}<br>"
             f"Depth: {inv.total_depth_m:.1f}m<br>"
-            f"Elev: {inv.elevation_m:.1f}m<br>"
+            + ("GWL: not encountered<br>" if inv.gwl_not_encountered else "")
+            + f"Elev: {_metres(inv.elevation_m)}<br>"
             f"({inv.x:.1f}, {inv.y:.1f})"
             for inv in invs
         ]
@@ -140,11 +154,11 @@ def _plot_by_type(fig, site, label_field, go):
         ))
 
 
-def _plot_by_parameter(fig, site, parameter, label_field, go):
+def _plot_by_parameter(fig, invs, parameter, label_field, go):
     """Add traces colored by average parameter value."""
     xs, ys, avg_vals, hover_texts = [], [], [], []
 
-    for inv in site.investigations:
+    for inv in invs:
         meas = inv.get_measurements(parameter)
         avg = float(np.mean([m.value for m in meas])) if meas else 0.0
         xs.append(inv.x)
@@ -183,7 +197,9 @@ def _get_label(inv, label_field):
         dtr = inv.depth_to_rock_m()
         return f"DTR={dtr:.1f}m" if dtr is not None else ""
     elif label_field == "gwl":
-        return f"GWL={inv.gwl_depth_m:.1f}m" if inv.gwl_depth_m is not None else ""
+        if inv.gwl_depth_m is not None:
+            return f"GWL={inv.gwl_depth_m:.1f}m"
+        return "GWL not encountered" if inv.gwl_not_encountered else ""
     elif label_field == "fill_thickness":
         ft = inv.fill_thickness_m()
         return f"Fill={ft:.1f}m" if ft is not None else ""
