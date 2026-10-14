@@ -575,8 +575,16 @@ def create_wall_elements(nodes, x_wall, y_top, y_bottom, EA, EI,
                          weight_per_m=0.0, tol=0.5):
     """Create beam elements along a vertical wall line in the mesh.
 
-    Finds mesh nodes near x=x_wall between y_bottom and y_top, sorts by
-    elevation, and connects them with BeamElement objects.
+    Finds the column of mesh nodes nearest x=x_wall (within ``tol``)
+    between y_bottom and y_top, sorts it by elevation, and connects it with
+    BeamElement objects.
+
+    Only the NEAREST column is used (GM-70, 2026-10-14). Before, every node
+    within ``tol`` was taken; on a T6 mesh the midside nodes of horizontal
+    edges sit at x_wall +/- dx/2, inside the 0.6 dx tolerance
+    ``analyze_excavation`` passes, so the "wall" hopped between three node
+    columns (horizontal beam segments across the excavation face) and its
+    moments came out several times too large.
 
     Parameters
     ----------
@@ -603,6 +611,21 @@ def create_wall_elements(nodes, x_wall, y_top, y_bottom, EA, EI,
         (nodes[:, 1] <= y_top + tol)
     )
     node_ids = np.where(mask)[0]
+    if len(node_ids) < 2:
+        return [], []
+
+    # Keep only the column nearest the wall line (GM-70; see docstring),
+    # from the node nearest y_top to the node nearest y_bottom (``tol`` is
+    # a horizontal search radius; used vertically it let a T6 wall run up
+    # to tol past its tip).
+    dist = np.abs(nodes[node_ids, 0] - x_wall)
+    span = max(float(np.ptp(nodes[:, 0])), float(np.ptp(nodes[:, 1])), 1.0)
+    eps = 1e-9 * span
+    node_ids = node_ids[dist <= dist.min() + eps]
+    ys = nodes[node_ids, 1]
+    y_hi = ys[np.argmin(np.abs(ys - y_top))]
+    y_lo = ys[np.argmin(np.abs(ys - y_bottom))]
+    node_ids = node_ids[(ys <= y_hi + eps) & (ys >= y_lo - eps)]
     if len(node_ids) < 2:
         return [], []
 
@@ -671,6 +694,23 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
 
     nodes, elements = generate_rect_mesh(
         x_left, x_right, y_bottom, y_top, nx, ny)
+    # Put a node column ON the wall line x = 0 (GM-70): with a uniform
+    # spacing x = 0 is a column only when 2*wall_depth/dx is a whole number,
+    # and otherwise the wall sat on the nearest column, up to dx/2 behind or
+    # in front of the excavation face. The column nearest 0 is moved onto
+    # it (before the T6 midside nodes are made, so they stay mid-edge).
+    nodes = np.array(nodes, dtype=float)
+    columns = np.unique(np.round(nodes[:, 0], 9))
+    x_near = columns[np.argmin(np.abs(columns))]
+    nodes[np.abs(nodes[:, 0] - x_near) < 1e-9, 0] = 0.0
+    # Likewise a node row at the wall tip y = -wall_depth, so the wall is
+    # as long as asked (it ended on the nearest row, up to dy/2 short or
+    # long). The top and bottom boundary rows are never moved.
+    rows = np.unique(np.round(nodes[:, 1], 9))
+    inner = rows[(rows > y_bottom + 1e-9) & (rows < y_top - 1e-9)]
+    if len(inner):
+        y_near = inner[np.argmin(np.abs(inner + wall_depth))]
+        nodes[np.abs(nodes[:, 1] - y_near) < 1e-9, 1] = -float(wall_depth)
     if element_type == 't6':
         # Beams couple at corner AND midside nodes along the wall line
         # (each T6 edge contributes two beam segments).

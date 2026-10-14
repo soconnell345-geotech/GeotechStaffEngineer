@@ -72,6 +72,52 @@ size for soil-only problems.
 
 DOF layout: [u0, v0, u1, v1, ..., u_{n-1}, v_{n-1}, θ_i, θ_j, ...]
 
+### The excavation wall line (GM-70, fixed 2026-10-14)
+
+`create_wall_elements` builds the wall from ONE node column: the column
+nearest `x_wall` within `tol`, from the node nearest `y_top` to the node
+nearest `y_bottom`. Until 2026-10-14 it took every node within `tol`; on a
+T6 mesh the midside nodes of horizontal edges sit at x_wall ± dx/2, inside
+the 0.6 dx tolerance `analyze_excavation` passes, so the wall hopped
+between three node columns (horizontal beam segments across the excavation
+face), and where x = 0 was not a mesh column it straddled two. The y range
+used the same horizontal `tol`, so a T6 wall could run up to tol past its
+tip. `analyze_excavation` now also moves the node column nearest x = 0 onto
+x = 0 and the interior node row nearest the tip onto y = -wall_depth
+(before the T6 midside nodes are made), so the wall is where and as long as
+asked. The staged path takes its `beam_elements` by node id from the
+caller and never searched for them; it is unchanged.
+
+What moved (the test cases that run `analyze_excavation`; M, V in
+kN-m/m and kN/m, head deflection u_x in mm, + toward the excavation):
+
+| case | wall nodes x (m) | M_max | V_max | head u_x | strut |
+|---|---|---|---|---|---|
+| clay, 10 x 6 mesh, no strut | -2.5/0/2.5 -> 0 | 77.8 -> 19.5 | 59.1 -> 11.7 | -7.9 -> -6.8 | |
+| same, strut at 1.5 m | -2.5/0/2.5 -> 0 | 80.3 -> 28.3 | 62.2 -> 17.0 | -5.9 -> -5.0 | -67.0 -> -36.6 |
+| clay, width 6, wall 8, 10 x 6 | -0.8/1.1 -> 0 | 6.6 -> 2.3 | 6.4 -> 1.7 | -2.7 -> -3.0 | |
+| sand, width 8, wall 10, 10 x 6 | -0.8/1.6 -> 0 | 3.5 -> 3.7 | 2.7 -> 2.3 | -1.1 -> -0.4 | |
+| clay with water at -1 m, 12 x 8 | -0.58/0.96 -> 0 | 51.8 -> 14.5 | 63.4 -> 9.6 | -3.5 -> -2.7 | |
+| two layers on a polyline, 8 x 8 | -1.0/1.5 -> 0 | 58.3 -> 13.5 | 50.2 -> 11.7 | -1.9 -> -1.0 | |
+| clay, defaults 30 x 15, T6 | -0.83/0/0.83 -> 0 | 91.6 -> 17.2 | 158.0 -> 28.0 | -8.5 -> -6.1 | |
+| clay, defaults 30 x 15, T3 | 0 (wall 10.67 -> 10.0 m) | 21.5 -> 19.5 | 16.2 -> 18.9 | -5.5 -> -5.9 | |
+
+T3 against T6 after the fix (clay, wall 10 m, excavation 5 m): the head
+deflection agrees to 3.3 / 1.7 / 1.4 % on 30 x 15 / 45 x 22 / 60 x 30
+meshes and the largest moment above the excavation level to 19 / 10 /
+0.8 %. The whole-wall maximum does not converge together: on T3 it sits in
+a stress concentration at the wall tip (18.9 against 14.2 kN-m/m on
+60 x 30) that refinement does not remove; quote the moment above the tip
+zone, or use T6.
+
+Observation, not changed: `analyze_excavation` models the excavation by
+switching OFF the self-weight of the excavated elements (they keep their
+stiffness) in a single gravity solve; there is no in-situ stress followed by
+unloading. The wall head therefore moves into the retained soil (u_x < 0
+above) in these cases, not toward the excavation, and the wall forces are
+not those of an excavation sequence; `analyze_staged` with an excavation
+phase is the closer model.
+
 ### Mesh Generation
 
 Uses scipy.spatial.Delaunay with:
