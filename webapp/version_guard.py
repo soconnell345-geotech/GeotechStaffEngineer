@@ -21,13 +21,15 @@ from typing import List, Optional, Tuple
 #: package -> (min_supported, first_UNTESTED version). None min = don't check.
 #: Keep in lockstep with the pyproject caps + the last drift-gate run
 #: (2026-09: deepagents 0.7.11 / langchain 1.3.18 / langgraph 1.2.11 /
-#: streamlit 1.62 / openai 2.x all exercised offline).
+#: streamlit 1.62 / openai 2.x all exercised offline). Streamlit 1.65.0:
+#: the drift canary's deep + webapp gate on 2026-10-12 (no failure of its
+#: own), and the owner's Funhouse sessions of 2026-10-14 ran on it.
 TESTED_MAX_EXCLUSIVE = {
     "deepagents": ("0.6.8", "0.8"),
     "langchain": ("1.3", "1.4"),
     "langgraph": ("1.2", "1.3"),
     "openai": (None, "3"),
-    "streamlit": ("1.36", "1.63"),
+    "streamlit": ("1.36", "1.66"),
 }
 
 

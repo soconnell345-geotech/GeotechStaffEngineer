@@ -116,34 +116,28 @@
  "OWN-33": {
   "kind": "action",
   "ask_who": null,
-  "question": "Open claude.ai/code/routines, check whether the two scheduled routines have ever run, and retire or fix each.",
-  "why": "Both look unattended. The weekend references QC appears never to have run. The Monday drift canary is the early warning for library releases that break the agent, and raising the agent-library caps (INF-03) is meant to read its reports first.",
-  "background": "Weekend QC: compares the references' digitised text against the source PDFs and pushes fixes to qc/* branches; created 2026-06-02 on a Pro plan with an older Sonnet model. Evidence it never ran: qc_progress.json still says last_run: null, and the local refs checkout has no qc/* branches. Its audit cannot pass anyway until REF-05 (it demands section summaries; 853 errors over three GECs). Drift canary: Mondays 10:00 UTC; it force-upgrades the agent libraries in a scratch environment, runs the deep-agent and webapp tests, and reports DRIFT SAFE or DRIFT BREAKAGE. A session can disable a routine with /schedule; deleting one is done in the web page.",
+  "question": "Revoke the GitHub token saved inside the old weekend references QC routine, then delete that routine. The Monday drift canary works; keep it.",
+  "why": "Checked 2026-10-14. The weekend QC routine switched itself off on 2026-06-06 when it could not start, so it never ran; its saved settings still carry a GitHub personal access token in the repository address. Anyone who can read the routine can read the token. The drift canary has run every Monday since 2026-09-07 and writes a full report (and sends a phone notification).",
+  "background": "Weekend QC (geotech-references-qc): created 2026-06-02, auto-disabled 2026-06-06 ('provision failed'); qc_progress.json still says last_run: null. Its audit could not pass anyway until REF-05. Drift canary (geotech-drift-canary): Mondays 10:00 UTC; latest run 2026-10-12: 1,471 tests passed with streamlit 1.65.0 and with the agent libraries forced to their newest (deepagents 0.7.24, langchain 1.4.4, openai 3.29.0); its 5 failures were test-design issues fixed on master 2026-10-14 and a Python 3.11 artefact of its container. Its reports now feed INF-03 and INF-12.",
   "options": [
    {
-    "label": "Retire QC, keep canary",
-    "effect": "Delete the weekend QC. Keep the Monday canary, or have a session re-create it if it never ran, so INF-03 has its reports."
+    "label": "Revoke the token, delete the QC routine",
+    "effect": "The stored credential is useless; no unattended routine is left half-configured. The canary keeps running."
    },
    {
-    "label": "Fix both",
-    "effect": "A session fixes REF-05 first, then updates the QC routine's model and plan; the canary stays. Uses weekend usage on your Claude plan."
-   },
-   {
-    "label": "Retire both",
-    "effect": "No scheduled work. Library drift is then caught only when a session runs the suites on newer versions by hand."
+    "label": "Revoke the token, keep the QC routine off",
+    "effect": "Same safety; the routine stays as a record, disabled."
    }
   ],
-  "recommendation": "Retire the weekend QC: it never ran and its check cannot pass yet. Keep the drift canary if its reports exist; if it never ran either, have a session re-create it.",
-  "if_no_answer": "Nothing changes: the QC keeps not running, and the caps decision (INF-03) goes ahead without the canary's evidence.",
+  "recommendation": "Option 1. A session cannot revoke a GitHub token or delete a routine for you; both take a minute in the web pages.",
+  "if_no_answer": "The token stays valid inside a routine nobody uses.",
   "message_to_send": null,
   "steps": [
-   "Open claude.ai/code/routines and open each routine's run history.",
-   "Weekend references QC: note the date of its last run, if any.",
-   "Monday drift canary: open the latest run and note DRIFT SAFE or DRIFT BREAKAGE and the versions it lists.",
-   "Pick an option below and tell a session; it changes the routine and records the outcome."
+   "GitHub: Settings > Developer settings > Personal access tokens. Find the fine-grained token created about 2026-06-02 for geotech-references (the QC routine's) and revoke it. If unsure which, revoke any token you no longer use.",
+   "claude.ai/code/routines: open geotech-references-qc and delete it.",
+   "Tell a session it is done; it marks OWN-33 done."
   ],
   "unblocks": [
-   "INF-03",
    "REF-05"
   ],
   "sources": [
