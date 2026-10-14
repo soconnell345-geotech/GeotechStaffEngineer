@@ -201,6 +201,6 @@ class TestB6FemSRMCrossCheck:
         # on this mesh and on 72x24 alike since the 2026-10-14 fixes (the
         # mesher no longer fills the notch above the toe with soil, and a
         # stalled residual with still displacements is not read as
-        # failure; fem2d/VALIDATION.md section 0). The band is the usual
-        # LE-vs-FEM spread around the published FOS.
-        assert 0.93 <= res.FOS <= 1.12
+        # failure; fem2d/VALIDATION.md section 0). The band allows the
+        # usual few-percent LE-vs-FEM spread below the published FOS.
+        assert 0.93 <= res.FOS <= 1.00
