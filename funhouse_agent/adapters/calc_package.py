@@ -846,17 +846,18 @@ def _generate_downdrag_package(params: dict) -> dict:
         neutral_plane_method=params.get("neutral_plane_method", "auto"),
         toe_mobilization=params.get("toe_mobilization", 1.0),
         endo_bearing_condition=params.get("endo_bearing_condition"),
-        skin_friction_stress=params.get("skin_friction_stress", "initial"),
+        skin_friction_stress=params.get("skin_friction_stress", "final"),
     )
     result = analysis.compute()
 
     extra = {
         "neutral_plane_m": round(result.neutral_plane_depth, 2),
         "neutral_plane_method": result.neutral_plane_method,
+        "headline_method": result.headline_method,
         "neutral_plane_basis": result.neutral_plane_basis,
+        "methods_range": result.methods_range,
+        "skin_friction_stress": result.skin_friction_stress,
     }
-    if result.judgment is not None:
-        extra["judgment"] = result.judgment
     return _build_response(
         "downdrag", result, analysis, params,
         analysis_type="Downdrag",
@@ -2013,19 +2014,21 @@ METHOD_INFO = {
             "pile_unit_weight": {"type": "float", "required": False, "default": 78.5, "description": "Pile material unit weight (kN/m3); default is steel."},
             "structural_capacity": {"type": "float", "required": False, "description": "Factored structural resistance P_r (kN) for the UFC Eq 6-80 check."},
             "allowable_settlement": {"type": "float", "required": False, "description": "Allowable settlement (m) for the serviceability check."},
-            "Nt": {"type": "float", "required": False, "description": "Toe bearing capacity factor: R_toe = Nt x sigma'v(toe) x A_toe in cohesionless soil, Nt x cu x A_toe in cohesive. Give the MOBILIZED value -- the toe resistance actually developed at the pile's settlement -- not the ultimate. Omitted, Nt is the ULTIMATE value from the toe layer's phi (100-150 in dense sand; 9 in clay); then the load and resistance curves often do not cross and the neutral plane comes from settlement compatibility instead of force equilibrium (see neutral_plane_method). UFC 3-220-20 6-5.8.4.2: check 0 %, 50 % and 100 % toe mobilization."},
-            "neutral_plane_method": {"type": "string", "required": False, "default": "auto", "description": "Neutral-plane basis, as in downdrag.downdrag_analysis: 'auto' (UFC 3-220-20 6-7.4), 'force_equilibrium', 'settlement_compatibility', 'bearing_layer_top', 'pile_toe', 'endo'. The package tabulates every basis whatever is chosen.", "allowed_values": ["auto", "force_equilibrium", "settlement_compatibility", "bearing_layer_top", "pile_toe", "endo"]},
+            "Nt": {"type": "float", "required": False, "description": "Toe bearing capacity factor: R_toe = Nt x sigma'v(toe) x A_toe in cohesionless soil, Nt x cu x A_toe in cohesive. Give the MOBILIZED value -- the toe resistance actually developed at the pile's settlement -- not the ultimate. Omitted, Nt is the ULTIMATE value from the toe layer's phi (100-150 in dense sand; 9 in clay); then the load and resistance curves often do not cross, and the neutral plane comes instead from the mobilized toe resistance compatible with the toe penetration (UFC 3-220-20 6-5.8.4.3, Fig 6-19; see neutral_plane_method). UFC 3-220-20 6-5.8.4.2: check 0 %, 50 % and 100 % toe mobilization."},
+            "neutral_plane_method": {"type": "string", "required": False, "default": "auto", "description": "How the headline neutral plane is located, as in downdrag.downdrag_analysis: 'auto' (the UFC 3-220-20 6-7.4 procedure), 'force_equilibrium' (where the load curve meets the resistance curve at the chosen toe mobilization), 'settlement_compatibility' (the mobilized toe resistance compatible with the toe penetration, UFC Fig 6-19), 'bearing_layer_top', 'pile_toe', 'endo' (CGPR #56). The package tabulates every method whatever is chosen.", "allowed_values": ["auto", "force_equilibrium", "settlement_compatibility", "bearing_layer_top", "pile_toe", "endo"]},
             "toe_mobilization": {"type": "float", "required": False, "default": 1.0, "description": "Fraction (0-1) of the toe resistance for force equilibrium (UFC 6-5.8.4.2: 0, 0.5, 1)."},
-            "endo_bearing_condition": {"type": "string", "required": False, "description": "CGPR #56 Table 3.1 condition for the Endo basis.", "allowed_values": ["floating", "stiff_flexible", "end_bearing"]},
-            "skin_friction_stress": {"type": "string", "required": False, "default": "initial", "description": "'initial' or 'final' (UFC 6-7.4 step 2) effective stress for beta friction.", "allowed_values": ["initial", "final"]},
+            "endo_bearing_condition": {"type": "string", "required": False, "description": "CGPR #56 Table 3.1 condition for the Endo et al. (1969) method.", "allowed_values": ["floating", "stiff_flexible", "end_bearing"]},
+            "skin_friction_stress": {"type": "string", "required": False, "default": "final", "description": "Effective stress for beta friction and the toe in sand: 'final' (default; UFC 3-220-20 6-7.4 step 2, the profile that includes the stress change producing settlement; GEC-12 is silent) or 'initial' (before the fill or drawdown).", "allowed_values": ["final", "initial"]},
             **_COMMON_PARAMS,
         },
         "returns": {**_COMMON_RETURNS,
                     "neutral_plane_m": "Neutral plane depth (m).",
                     "neutral_plane_method": "'force_equilibrium', 'settlement_compatibility', 'bearing_layer_top', 'pile_toe', 'endo' or 'none' (see downdrag.downdrag_analysis).",
-                    "neutral_plane_basis": "One-sentence basis of the neutral plane, with its source; also printed in the package.",
-                    "judgment": "Present only when the cited bases differ materially: question, options, used, why. Report it; the engineer chooses.",
-                    "neutral_plane_comparison": "Every cited basis on the same inputs (also tabulated in the package).",
+                    "headline_method": "The row of neutral_plane_comparison the headline numbers come from, named as its reference names it.",
+                    "neutral_plane_basis": "One sentence saying how the headline neutral plane was located, with its source; also printed in the package.",
+                    "methods_range": "One sentence giving the spread of neutral planes and drag forces over the methods that apply. Report it; the engineer chooses.",
+                    "skin_friction_stress": "'final' or 'initial': the effective stress the friction and toe resistance used.",
+                    "neutral_plane_comparison": "Every method on the same inputs, each with its source (also tabulated in the package).",
                     "warnings": "What the engineer must know about the result; also printed in the package. Report every one.",
                     "dragload_kN": "Dragload (kN).",
                     "max_pile_load_kN": "Maximum pile load at the neutral plane (kN).",

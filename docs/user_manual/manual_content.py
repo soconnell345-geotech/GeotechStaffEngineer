@@ -516,11 +516,15 @@ MODULE_NARRATIVE: dict[str, dict] = {
         "problems": "Negative skin friction (downdrag) on a pile through settling ground: the neutral "
             "plane, the maximum axial load in the pile, and the drag load added to the structural load.",
         "methods": [
-            "**Fellenius neutral-plane** method &mdash; the load-vs-depth and resistance-vs-depth crossing "
-            "with negative skin friction fully mobilized above the neutral plane and toe mobilization.",
+            "**Neutral plane method** &mdash; every method the references give, side by side with its "
+            "neutral plane, drag force and settlement: the intersection of the load and resistance curves "
+            "at 100 / 50 / 0&nbsp;% toe mobilization (UFC 3-220-20 &sect;6-7.4, &sect;6-5.8.4.2; GEC-12 "
+            "&sect;7.3.6.1), the toe resistance compatible with the toe penetration (UFC &sect;6-5.8.4.3), "
+            "the neutral plane at the bearing layer or at the pile toe, and Endo et al. (1969). The headline "
+            "is UFC 3-220-20&rsquo;s &sect;6-7.4 procedure; skin friction on the final effective stress.",
             "Fill-induced downdrag, groundwater drawdown, and a maximum-load structural check.",
-            "References: Fellenius; UFC 3-220-20; validated against GEC-12 (V-004, NP/Q<sub>max</sub>/DF "
-            "within 1%).",
+            "References: UFC 3-220-20; FHWA GEC-12; Fellenius; CGPR #56; validated against GEC-12 (V-004, "
+            "NP/Q<sub>max</sub>/DF within 0.2%) and UFC App. B-5.5.",
         ],
         "limits": [
             "For an H-pile the box toe area must be passed as the pile area; the module&rsquo;s intrinsic "

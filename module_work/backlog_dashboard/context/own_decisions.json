@@ -64,6 +64,31 @@
    "git 4bf710c (unreleased)"
   ]
  },
+ "OWN-58": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Should the downdrag load curve include the pile's own weight, as the module does now, or leave it out, as UFC 3-220-20 and GEC-12 do?",
+  "why": "The pile's weight above the neutral plane adds to the drag force and the maximum load the module reports. UFC Fig 6-26, GEC-12 §7.3.6.1 and both worked examples draw the load curve as dead load plus negative skin friction only, so the module's numbers sit slightly above theirs.",
+  "background": "On test case DD-1 the pile weight adds 24 kN. On V-004 (GEC-12 Vol III example) the module gives NP 53.6 ft, maximum load 490 kips, drag force 289 kips with the weight in, and 54.0 ft, 486.6 kips, 285.6 kips with it out, against the published 54 ft, 486 kips, 285 kips. Either way the setting stays available (pile_unit_weight = 0 leaves it out). Two related defaults to settle at the same time: the downdrag tool assumes concrete (24 kN/m3) while its default stiffness is steel's, and the calc package assumes steel (78.5 kN/m3).",
+  "options": [
+   {
+    "label": "Leave it out by default, as the references do",
+    "effect": "Numbers match UFC, GEC-12 and the worked examples. The pile's weight can still be added with one setting."
+   },
+   {
+    "label": "Keep it in by default (today)",
+    "effect": "Drag force and maximum load include the pile's weight above the neutral plane: slightly higher than the references (24 kN on DD-1, 4 kips on V-004)."
+   }
+  ],
+  "recommendation": "Leave it out by default, to match the cited references and their worked examples, and state in every result whether the pile's weight is included.",
+  "if_no_answer": "The pile's weight stays in the load curve, and results sit slightly above the references' numbers.",
+  "message_to_send": null,
+  "unblocks": ["GM-50"],
+  "sources": [
+   "downdrag/DESIGN.md (comparison with CGPR #56, item 2; validation V-004)",
+   "validation_examples/RESULTS.md (V-004)"
+  ]
+ },
  "OWN-03": {
   "kind": "decision",
   "ask_who": null,

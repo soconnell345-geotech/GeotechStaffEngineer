@@ -43,24 +43,14 @@ detailed Phase-E history; this file supersedes it.
   - links behind the IIS proxy.
 
   First-hour check: `module_work/live_smoke/runs/w3-confirm-sonnet/REVIEW.md`.
-- **Owner's judgment pending:**
-  - downdrag settlement-compatibility basis: the neutral plane sits at the bearing-layer top for default inputs;
-  - fem2d settlements now exclude self-weight.
+- **Owner's answers, 2026-10-14** (BACKLOG "Done"): downdrag shows every neutral-plane method side by side in the references' own terms, with final effective stress by default (GEC-12 is silent; UFC 3-220-20 §6-7.4 step 2); fem2d measures construction movements from the end of stage 0.
 - **Spend left:** about $35 of API credit (the account limit is $100; the promo credit expires 2026-11-05). The owner's $20 is reserved for touch-up testing together.
 - **Master after 5.33.0: the next train, unreleased.** The owner: "that's stuff that can just roll into the next release".
-  - **a282d48, downdrag.** Every cited neutral-plane basis is an option (UFC 3-220-20 / DM 7.2, GEC-12, GEC-10, CGPR #56). The methods table, with sections and pages, is in `downdrag/DESIGN.md`. Every run reports the comparison and the basis used, plus a judgment block when the bases differ materially. UFC App. B-5.5 is reproduced.
-    - The owner's direction: "Downdrag has many methods and it should be open to multiple assumptions."
-    - Owner decisions open:
-      - keep the default `auto` (UFC's procedure, numbers unchanged), or report the comparison without picking;
-      - the materiality thresholds;
-      - `skin_friction_stress="final"` (UFC step 2) as the default?
-      - an older ~4 % quadrature mismatch.
+  - **a282d48, downdrag**, reworked 2026-10-14 after the owner's answer. Every cited neutral-plane method (UFC 3-220-20, GEC-12, CGPR #56) is computed on every run and tabulated side by side, each named as its reference names it and with its source; the methods table, with sections and pages, is in `downdrag/DESIGN.md`. The headline stays UFC's procedure; the spread over the methods is stated in one plain sentence. Default skin-friction stress is final effective stress. UFC App. B-5.5 and V-004 are reproduced.
+    - The owner's direction: "Downdrag has many methods and it should be open to multiple assumptions", and on 2026-10-14: "presenting all of them is fine".
   - **4bf710c, fem2d.** Per-stage delta, cumulative and since-reference movements (`reset_displacements_after`, default after the gravity stage). Phasing decides self-weight. Three latent staged-analysis bugs fixed.
     - The owner's direction: "Construction phasing will determine output."
-    - Owner decisions open:
-      - is stage 0 always the gravity stage?
-      - θ=0.5 ringing at drained boundaries;
-      - `analyze_staged` ignores `n_steps`.
+    - Stage 0 as the gravity stage: confirmed by the owner, 2026-10-14. Open: θ=0.5 ringing at drained boundaries (GM-07); `analyze_staged` ignores `n_steps` (GM-08).
   - **The references sub-agent.** The GSE main agent's `references` sub-agent was already wired to handle method and parameter calls (owner, 2026-10-09). Modules must not hide method choices; the plain `judgment` data in results makes a choice visible to it.
 
 **1. 5.32.1 RELEASED 2026-10-08 with planlens 0.12.0.** The owner said, the night of 2026-10-07: "Ok to release however you see best".
@@ -172,9 +162,7 @@ detailed Phase-E history; this file supersedes it.
     - vision: concurrent tiles, retries, fairness between conversations, an already-read note;
     - markups on rotated pages (needs the planlens release) and safe re-marking;
     - module fixes: the sheet-pile water table at 0 m, fem2d consolidation units and load-only transient, the downdrag neutral-plane basis, and others.
-  - **Owner's judgment needed:**
-    - downdrag: settlement-compatibility basis, which puts the neutral plane at the bearing-layer top for the default inputs;
-    - fem2d settlements now exclude self-weight.
+  - **Owner's judgment:** given 2026-10-14 (item 0 above).
   - **Before the testers arrive:** release (on the owner's word) planlens (rotated markups, `label_reads`) and the app, then deploy to Tiny Apps.
   - **2026-10-09, later: waves 2c and 3 and their fixes.**
     - Commits: 5dee6a6 (D1: concurrent testers crossed folders; context copied into the heartbeat pump, shared hosts fail closed), f4849a6 + a87d5a3 (D2–D7, E3, E7–E10), c05e56b (E1, E2, E4–E6).
@@ -209,7 +197,7 @@ about 60 of them were on the list that stood here ("Open to-dos (refreshed
 
 **Now (from 2026-10-14): core improvements while CfA sets up Tiny Apps** (details in BACKLOG §0). CfA says the SharePoint connection and the per-user Prompter keys (one per user) are a few weeks out, so the Tiny Apps production items (OWN-29, OWN-30, OWN-43–OWN-51, TA-03) moved to Next until they arrive.
 - **Agent work, in three tracks:**
-  - engineering answers that err on the unsafe side: GM-14, GM-13, GM-05, GM-06, GM-20, GM-08, GM-48 with GM-01 (downdrag as the owner asked), then GM-42 and GM-30;
+  - engineering answers that err on the unsafe side: GM-14, GM-13, GM-05, GM-06, GM-20, GM-08, then GM-42 and GM-30 (downdrag as the owner asked is done; OWN-58 asks about the pile's own weight);
   - Document Review accuracy: PL-07, VIS-01, VIS-04, VIS-05, DR-15–DR-17, DR-04, VIS-09;
   - release readiness: INF-10 and EV-13 with DR-05 (one Foundry suite run for the whole train); the post-name cleanup of the shipped code is done (BACKLOG "Done");
   - then the calculation tables, GM-39 (the next module train, owner 2026-10-14).

@@ -1,9 +1,11 @@
 """
 Downdrag (Negative Skin Friction) Analysis Module
 
-Implements the Fellenius unified method for pile downdrag analysis.
-Finds the neutral plane depth, computes dragload and settlement, and
-checks structural and geotechnical limit states.
+Implements the neutral plane method for pile downdrag analysis (UFC
+3-220-20 §6-7.4 and §6-5.8.4, FHWA GEC-12 §7.3.6.1, Fellenius 2004).
+Finds the neutral plane by every method the references give, side by side,
+computes drag load, drag force and settlement, and checks structural and
+geotechnical limit states.
 
 Supports fill placement and groundwater drawdown as settlement triggers.
 

@@ -149,7 +149,8 @@ Key conventions:
       coverage + checklist behind OFF switches);
     - engineering fixes: GEC-12 Fig 7-15 re-measured, the sheet-pile water
       table at 0 m, fem2d consolidation units and load-only transient, the
-      downdrag neutral-plane basis (owner's judgment pending).
+      downdrag neutral plane (on master since: every method side by side,
+      final effective stress by default; owner, 2026-10-14).
   - **Unverified live on GPT:** the rollout model's vision through the
     Prompter (testers get ONE GPT-5.6 Sol-or-higher deployment, owner
     2026-10-12; the app measures it on first use), GPT latency against the

@@ -234,7 +234,7 @@ class TestGroupAdapters:
         assert "error" in res and "location" in res["error"]
 
 
-# ── downdrag_analysis: neutral-plane options, comparison and judgment ─────
+# ── downdrag_analysis: every neutral-plane method side by side ───────────
 
 DD1 = {
     # The live-smoke DD-1 input: 8 m of consolidating clay over dense sand.
@@ -249,7 +249,7 @@ DD1 = {
 }
 
 FLOATING = {
-    # A friction pile floating in settling clay: every basis agrees.
+    # A friction pile floating in settling clay: the methods nearly agree.
     "pile_length": 20.0, "pile_diameter": 0.4, "Q_dead": 300.0,
     "layers": [
         {"thickness": 25.0, "soil_type": "cohesive", "unit_weight": 17.0,
@@ -259,26 +259,33 @@ FLOATING = {
 }
 
 
-class TestDowndragAnalysisNeutralPlaneBases:
-    def test_dd1_carries_judgment_ahead_of_the_profiles(self):
+class TestDowndragAnalysisMethodsTable:
+    def test_dd1_carries_every_method_ahead_of_the_profiles(self):
         res = _call("downdrag_analysis", dict(DD1))
         assert "error" not in res, res
-        j = res["judgment"]
-        assert set(j) == {"question", "options", "used", "why"}
-        assert j["used"] == "settlement_compatibility"
-        for o in j["options"]:
-            assert set(o) == {"name", "source", "assumptions", "applies",
-                              "result"}
+        assert "judgment" not in res
+        rows = res["neutral_plane_comparison"]
+        assert len(rows) == 7
+        used = [r for r in rows if r["used"]]
+        assert len(used) == 1
+        assert used[0]["method"] == "settlement_compatibility"
+        assert res["headline_method"] == used[0]["name"]
+        assert res["methods_range"].startswith(
+            "The methods give neutral planes from")
+        assert res["neutral_plane_basis"].startswith(
+            "UFC 3-220-20 §6-7.4 procedure")
+        assert res["skin_friction_stress"] == "final"
         keys = list(res)
-        assert keys.index("judgment") < keys.index("z_m")
-        assert keys.index("neutral_plane_comparison") < keys.index("z_m")
-        assert len(res["neutral_plane_comparison"]) == 7
+        for key in ("methods_range", "warnings",
+                    "neutral_plane_comparison"):
+            assert keys.index(key) < keys.index("z_m"), key
 
-    def test_clear_cut_case_has_no_judgment(self):
+    def test_spread_always_reported(self):
         res = _call("downdrag_analysis", dict(FLOATING))
         assert "error" not in res, res
         assert "judgment" not in res
         assert res["neutral_plane_comparison"]
+        assert res["methods_range"]
 
     def test_options_pass_through(self):
         res = _call("downdrag_analysis", dict(
@@ -292,10 +299,10 @@ class TestDowndragAnalysisNeutralPlaneBases:
         assert res["neutral_plane_method"] == "force_equilibrium"
         assert res["toe_mobilization"] == 0.0
 
-    def test_inapplicable_basis_is_an_error_with_the_reason(self):
+    def test_inapplicable_method_is_an_error_with_the_reason(self):
         res = _call("downdrag_analysis", dict(
             DD1, neutral_plane_method="force_equilibrium"))
-        assert "error" in res and "do not cross" in res["error"]
+        assert "error" in res and "do not intersect" in res["error"]
 
     def test_method_info_lists_the_options(self):
         info = describe_method("downdrag", "downdrag_analysis")
@@ -304,4 +311,11 @@ class TestDowndragAnalysisNeutralPlaneBases:
             "auto", "force_equilibrium", "settlement_compatibility",
             "bearing_layer_top", "pile_toe", "endo"]
         assert "toe_mobilization" in p
-        assert "judgment" in info["returns"]
+        assert p["skin_friction_stress"]["default"] == "final"
+        for key in ("methods_range", "headline_method", "drag_force_kN",
+                    "neutral_plane_comparison"):
+            assert key in info["returns"], key
+        assert "judgment" not in info["returns"]
+        text = str(info)
+        for word in ("materially", "materiality", "judgment"):
+            assert word not in text, word

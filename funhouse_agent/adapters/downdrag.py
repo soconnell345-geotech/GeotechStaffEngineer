@@ -70,7 +70,7 @@ def _run_downdrag_analysis(params):
         neutral_plane_method=params.get("neutral_plane_method", "auto"),
         toe_mobilization=params.get("toe_mobilization", 1.0),
         endo_bearing_condition=params.get("endo_bearing_condition"),
-        skin_friction_stress=params.get("skin_friction_stress", "initial"),
+        skin_friction_stress=params.get("skin_friction_stress", "final"),
     )
     return _basis_first(analysis.compute().to_dict())
 
@@ -78,14 +78,14 @@ def _run_downdrag_analysis(params):
 #: Result keys that say how far to trust the numbers; put ahead of the long
 #: depth profiles so a size-capped tool result can never cut them off.
 _BASIS_KEYS = ("neutral_plane_depth_m", "neutral_plane_method",
-               "neutral_plane_basis", "judgment", "warnings",
-               "neutral_plane_comparison")
+               "headline_method", "neutral_plane_basis", "methods_range",
+               "warnings", "neutral_plane_comparison")
 
 
 def _basis_first(d: dict) -> dict:
-    """The result with the neutral-plane basis and the warnings first (live
-    smoke G8: an untold toe default put the plane at the toe; the result
-    now states its basis, and the warnings must reach the model)."""
+    """The result with how the neutral plane was located, the spread of the
+    methods and the warnings first (live smoke G8: an untold toe default put
+    the plane at the toe; the warnings must reach the model)."""
     out = {k: d[k] for k in _BASIS_KEYS if k in d}
     out.update((k, v) for k, v in d.items() if k not in out)
     return clean_result(out)
@@ -341,7 +341,7 @@ METHOD_REGISTRY = {
 METHOD_INFO = {
     "downdrag_analysis": {
         "category": "Downdrag",
-        "brief": "Full downdrag (negative skin friction) analysis via Fellenius neutral plane; every cited neutral-plane basis compared.",
+        "brief": "Downdrag (negative skin friction), neutral plane method: every method's neutral plane and drag force side by side.",
         "parameters": {
             "pile_length": {"type": "float", "required": True, "description": "Pile length (m)."},
             "pile_diameter": {"type": "float", "required": True, "description": "Pile diameter (m)."},
@@ -355,29 +355,31 @@ METHOD_INFO = {
             "pile_perimeter": {"type": "float", "required": False, "description": "Pile perimeter (m). Computed from diameter if omitted."},
             "pile_area": {"type": "float", "required": False, "description": "Pile cross-section area (m2). Computed from diameter if omitted."},
             "structural_capacity": {"type": "float", "required": False, "description": "Pile structural capacity (kN) for the max-load check."},
-            "Nt": {"type": "float", "required": False, "description": "Toe bearing capacity factor: R_toe = Nt x sigma'v(toe) x A_toe in cohesionless soil, Nt x cu x A_toe in cohesive. Give the MOBILIZED value -- the toe resistance actually developed at the pile's settlement -- not the ultimate. Omitted, Nt is the ULTIMATE value from the toe layer's phi (100-150 in dense sand; 9 in clay); then the load and resistance curves often do not cross and the neutral plane comes from settlement compatibility instead of force equilibrium (see neutral_plane_method). UFC 3-220-20 6-5.8.4.2: check 0 %, 50 % and 100 % toe mobilization."},
+            "Nt": {"type": "float", "required": False, "description": "Toe bearing capacity factor: R_toe = Nt x sigma'v(toe) x A_toe in cohesionless soil, Nt x cu x A_toe in cohesive. Give the MOBILIZED value -- the toe resistance actually developed at the pile's settlement -- not the ultimate. Omitted, Nt is the ULTIMATE value from the toe layer's phi (100-150 in dense sand; 9 in clay); then the load and resistance curves often do not intersect and the neutral plane is where the pile and soil settle equally, the toe force compatible with the toe penetration (UFC 3-220-20 6-5.8.4.3; see neutral_plane_method). UFC 3-220-20 6-5.8.4.2: check 0 %, 50 % and 100 % toe mobilization."},
             "pile_unit_weight": {"type": "float", "required": False, "default": 24.0, "description": "Pile material unit weight (kN/m3) for the pile's own weight."},
             "n_sublayers": {"type": "int", "required": False, "default": 10, "description": "Sublayers per soil layer for the depth discretization."},
-            "neutral_plane_method": {"type": "string", "required": False, "default": "auto", "description": "Neutral-plane basis. 'auto' (default) = UFC 3-220-20 6-7.4: force equilibrium with the toe at toe_mobilization, else settlement compatibility (Fig 6-19) when the curves do not cross. 'force_equilibrium' (error if the curves do not cross); 'settlement_compatibility' (pile and soil settle equally, elastic-plastic toe); 'bearing_layer_top' (base of the settling soil, end-bearing pile, UFC 6-7.4 step 5); 'pile_toe' (whole shaft as drag, upper bound); 'endo' (CGPR #56 Table 3.1 fraction of length; needs endo_bearing_condition). All are evaluated and returned in neutral_plane_comparison whatever is chosen.", "allowed_values": ["auto", "force_equilibrium", "settlement_compatibility", "bearing_layer_top", "pile_toe", "endo"]},
-            "toe_mobilization": {"type": "float", "required": False, "default": 1.0, "description": "Fraction (0-1) of the toe resistance mobilized for force equilibrium. 1.0 = UFC 6-7.4 full mobilization (conservative for drag); 0.5 and 0 = the UFC 6-5.8.4.2 / GEC-12 7.3.6.1 brackets for settlement (always reported in the comparison)."},
-            "endo_bearing_condition": {"type": "string", "required": False, "description": "CGPR #56 Table 3.1 condition for the Endo basis.", "allowed_values": ["floating", "stiff_flexible", "end_bearing"]},
-            "skin_friction_stress": {"type": "string", "required": False, "default": "initial", "description": "Effective stress for beta-method skin friction and the sand toe: 'initial' (sigma'v0) or 'final' (sigma'v0 + fill/drawdown change, UFC 3-220-20 6-7.4 step 2).", "allowed_values": ["initial", "final"]},
+            "neutral_plane_method": {"type": "string", "required": False, "default": "auto", "description": "Which method gives the headline numbers; every method is evaluated and returned in neutral_plane_comparison whatever is chosen. 'auto' (default) = the UFC 3-220-20 6-7.4 procedure: the intersection of the load and resistance curves with the toe at toe_mobilization, or, when they do not intersect, where the pile and soil settle equally with the toe force compatible with the toe penetration (UFC 6-5.8.4.3, Fig 6-19). 'force_equilibrium' (the curves' intersection only; error if they do not intersect); 'settlement_compatibility' (pile and soil settle equally, toe force compatible with the toe penetration); 'bearing_layer_top' (top of the bearing layer, end-bearing pile, UFC 6-7.4 step 5); 'pile_toe' (whole shaft in negative skin friction, upper bound); 'endo' (Endo et al. 1969, CGPR #56 Table 3.1 fraction of the embedment; needs endo_bearing_condition).", "allowed_values": ["auto", "force_equilibrium", "settlement_compatibility", "bearing_layer_top", "pile_toe", "endo"]},
+            "toe_mobilization": {"type": "float", "required": False, "default": 1.0, "description": "Fraction (0-1) of the nominal toe resistance mobilized where the load and resistance curves intersect. 1.0 = UFC 6-7.4 step 3 full mobilization ('a conservative approach for evaluating the drag force'); 0.5 and 0 = the other UFC 6-5.8.4.2 / GEC-12 7.3.6.1 cases for settlement (all three always reported in the comparison)."},
+            "endo_bearing_condition": {"type": "string", "required": False, "description": "CGPR #56 Table 3.1 condition for Endo et al. (1969).", "allowed_values": ["floating", "stiff_flexible", "end_bearing"]},
+            "skin_friction_stress": {"type": "string", "required": False, "default": "final", "description": "Effective stress for beta-method skin friction and the sand toe: 'final' (default; sigma'v0 + fill/drawdown change, as UFC 3-220-20 6-7.4 step 2 requires) or 'initial' (sigma'v0).", "allowed_values": ["final", "initial"]},
         },
         "returns": {
-            "neutral_plane_depth_m": "Neutral plane depth (m).",
-            "neutral_plane_method": "How the plane was located: 'force_equilibrium', 'settlement_compatibility', 'bearing_layer_top', 'pile_toe', 'endo', or 'none' (dead load exceeds the total resistance: no neutral plane).",
-            "neutral_plane_basis": "One-sentence statement of that basis, with its source. Report it with the result.",
-            "judgment": "Present only when the cited bases differ materially for these inputs: {question, options [{name, source, assumptions, applies, result}], used, why}. A judgment call: report the options and which was used; the engineer chooses.",
-            "neutral_plane_comparison": "Every cited basis on the same inputs (force equilibrium at 100/50/0% toe, settlement compatibility, bearing-layer rule, pile-toe upper bound, Endo): neutral_plane_depth_m, dragload_kN, max_pile_load_kN, soil/pile settlement at the NP (mm), or applies=false with the reason.",
-            "warnings": "What the engineer must know about the result (e.g. curves that do not cross, the upper-bound drag, an overloaded pile, bases that differ). Report every one.",
-            "dragload_kN": "Drag load: negative skin friction above the neutral plane (kN).",
+            "neutral_plane_depth_m": "Neutral plane depth (m) of the headline method.",
+            "neutral_plane_method": "neutral_plane_method value of the headline method: 'force_equilibrium', 'settlement_compatibility', 'bearing_layer_top', 'pile_toe', 'endo', or 'none' (dead load exceeds the total resistance: no neutral plane).",
+            "headline_method": "Name of the headline method as its reference words it (e.g. 'Neutral plane at 100% toe mobilization').",
+            "neutral_plane_basis": "How the headline neutral plane was located, with its source (starts 'UFC 3-220-20 6-7.4 procedure' by default). Report it with the result.",
+            "methods_range": "One sentence giving the spread of neutral plane and drag force over the methods that apply. Report it.",
+            "neutral_plane_comparison": "Every method on the same inputs, one row each, named as its reference names it (neutral plane at 100/50/0% toe mobilization, toe resistance compatible with the toe penetration, neutral plane at the bearing layer, at the pile toe, Endo et al. 1969): source, assumptions, applies, used (the headline row), reason, neutral_plane_depth_m, max_pile_load_kN, dragload_kN, drag_force_kN, toe_force_kN, soil/pile settlement at the plane (mm), elastic_compression_above_np_mm, pile_settlement_mm (head). Present it as a table.",
+            "warnings": "What the engineer must know about the result (e.g. curves that do not intersect, the upper-bound drag, an overloaded pile). Report every one.",
+            "dragload_kN": "Drag load: negative skin friction above the neutral plane (kN; UFC 3-220-20 6-7.4 step 4).",
+            "drag_force_kN": "Drag force DF = Q_np - Q_dead (kN; UFC 3-220-20 Eq 6-80, GEC-12 Eq 7-70); includes the pile weight above the plane.",
             "max_pile_load_kN": "Maximum axial load, at the neutral plane (kN).",
             "toe_resistance_kN": "Toe resistance from Nt (kN; ultimate unless Nt was given as mobilized).",
-            "toe_force_mobilized_kN": "Toe force actually carried at the neutral plane (kN): the full toe resistance under force equilibrium, less under settlement compatibility.",
+            "toe_force_mobilized_kN": "Toe force actually carried at the neutral plane (kN): the full toe resistance where the curves intersect with the toe fully mobilized, less otherwise.",
             "positive_skin_friction_kN": "Positive shaft resistance below the neutral plane (kN).",
             "total_resistance_kN": "Toe + positive shaft resistance (kN).",
-            "pile_settlement_m": "Pile head settlement (m).",
-            "soil_settlement_at_np_m": "Soil settlement at the neutral plane (m).",
+            "pile_settlement_m": "Pile head settlement (m): settlement at the neutral plane + elastic compression above it (UFC 3-220-20 Fig 6-19).",
+            "soil_settlement_at_np_m": "Soil settlement at the neutral plane (m), from the original ground.",
             "geotechnical_ok": "Q_dead <= total resistance (when checked).",
             "structural_ok": "LRFD demand <= structural_capacity (when given).",
             "z_m": "Depth profile (m); with axial_load_kN, soil_settlement_mm and unit_skin_friction_kPa at the same depths.",

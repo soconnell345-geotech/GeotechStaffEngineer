@@ -10,44 +10,50 @@ additional compressive load. Common triggers:
 - **Groundwater drawdown**: Lowering the water table increases effective stress,
   causing consolidation.
 
-## Fellenius Unified Method (2004/2006)
+## The neutral plane (Fellenius 2004; UFC 3-220-20 §6-7.4)
 
 The analysis finds the **neutral plane** — the depth where pile settlement equals
 soil settlement. Above the NP, soil settles more than the pile, inducing downward
-friction (dragload). Below the NP, the pile settles more than the soil, and friction
-acts as resistance (positive skin friction).
+friction (negative skin friction; its sum is the drag load). Below the NP, the
+pile settles more than the soil, and friction acts as resistance (positive skin
+friction).
 
-### Force Equilibrium
+### Load and resistance curves
 
-Two force curves are constructed along the pile:
+Two force curves are constructed along the pile (UFC 3-220-20 §6-7.4 step 4,
+Fig 6-26; GEC-12 §7.3.6.1 step 4, Figs 7-57 to 7-59):
 
-1. **Load from top**: `Q_top(z) = Q_dead + W_pile(0→z) + ∫₀ᶻ fs·P·dz`
-   (dead load + pile weight + accumulated friction from surface)
+1. **Load curve** (UFC Curve B): `Q_top(z) = Q_dead + W_pile(0→z) + ∫₀ᶻ fs·P·dz`
+   (dead load + pile weight + negative skin friction from the head). UFC's and
+   GEC-12's curve has no pile weight; set `pile_unit_weight = 0` to match them.
 
-2. **Resistance from bottom**: `Q_bot(z) = Q_toe + ∫_L^z fs·P·dz`
-   (toe resistance + accumulated friction from tip upward)
+2. **Resistance curve** (UFC Curve A): `Q_bot(z) = Q_toe + ∫_z^L fs·P·dz`
+   (mobilized toe resistance + positive skin friction from the toe upward)
 
 The neutral plane is where `Q_top(z_np) = Q_bot(z_np)`. The maximum axial
-load in the pile occurs at this depth.
+load in the pile, Q_np, occurs at this depth; the drag force is
+`DF = Q_np - Q_dead` (UFC Eq 6-80, GEC-12 Eq 7-70).
 
-## Neutral-plane methods (survey, 2026-10-09)
+## Neutral-plane methods
 
-The owner: "Downdrag has many methods and it should be open to multiple
-assumptions. See DM 7.2 or the FHWA driven pile manual." This table lists what
-each reference in the repo actually states (checked against the source PDFs
-in `geotech-references/docs/`; page numbers are the printed ones). UFC
-3-220-20 = 16 Jan 2025 (DM 7.2); GEC-12 = FHWA-NHI-16-009 Vol I; GEC-10 =
-FHWA-NHI-18-024; CGPR #56 = Greenfield & Filz (2009), cited by section only
-(not public-domain, not in the repo).
+The owner (2026-10-09): "Downdrag has many methods and it should be open to
+multiple assumptions. See DM 7.2 or the FHWA driven pile manual." (2026-10-14):
+"I think presenting all of them is fine." Every method below is evaluated on
+the same inputs in every run and reported side by side (next section). Each is
+named as the reference words it; page numbers are the printed ones, checked
+against the source PDFs in `geotech-references/docs/`. UFC 3-220-20 = 16 Jan
+2025 (DM 7.2); GEC-12 = FHWA-NHI-16-009 Vol I (Vol III = its design example);
+GEC-10 = FHWA-NHI-18-024; CGPR #56 = Greenfield & Filz (2009), cited by section
+only (not public-domain, not in the repo).
 
-| Method (`neutral_plane_method`) | Source | Assumptions | When to use |
+| Method (row name; `neutral_plane_method`) | Source | Assumptions | When to use |
 |---|---|---|---|
-| **Force equilibrium, full mobilization** (`force_equilibrium`, `toe_mobilization=1`; first step of `auto`) | UFC §6-7.4 steps 3-5, Fig 6-26 (pp. 476-478); GEC-12 §7.3.5.7 (pp. 334-336, Fig 7-49) and §7.3.6.1 step 5, Fig 7-60 point A (p. 346); GEC-10 §10.6.2, Fig 10-20 (pp. 10-47/48, defers to GEC-12 §7.3.6.1); CGPR #56 §3.2.3 | Plane where Q_d + cumulative negative friction meets toe + cumulative positive friction; side and base fully mobilized; unfactored permanent load only, transient load excluded (UFC step 4) | Drag force for the STRUCTURAL strength limit state: UFC step 3 calls it "a conservative approach for evaluating the drag force". Not conservative for settlement (UFC §6-5.8.4.2) |
-| **Force equilibrium, partial toe: 0 / 50 / 100 %** (`toe_mobilization`; all three always in the comparison) | UFC §6-5.8.4.2 (p. 447) and App. B-5.5, Table B-28 (p. 640); GEC-12 §7.3.6.1 steps 2, 4, 5, Figs 7-55 to 7-60 (pp. 342-346) — FHWA's recommended downdrag method (Siegel et al. 2013) | Side fully mobilized (~0.1 in of movement), base at a fraction of nominal (full base needs 4-10 % of the width). Less base -> shallower plane, less drag, more settlement | SERVICE limit (settlement): bracket 0 / 50 / 100 %; if the conclusion does not change, stop; if it does, refine with t-z / q-z curves (UFC §6-5.8.4.2) |
-| **Settlement compatibility** (`settlement_compatibility`; second step of `auto`) | UFC §6-5.8.4.3, Fig 6-19 (pp. 449-450): pile and soil settle equally at the plane; the soil-minus-pile settlement at the toe is the toe penetration; a q-z curve makes the toe force compatible with that penetration (Fellenius 2021). GEC-12 §7.3.5.7 (p. 334). CGPR #56 §3.2.4 (PILENEG, elastic toe) | As implemented: elastic-perfectly-plastic toe, the elastic penetration from the equivalent-footing compression of the bearing stratum (UFC Eqs 6-49 to 6-54) standing in for a q-z curve; side fully mobilized (partly when the load at the plane is less than the friction below). Never below the full-mobilization crossing; if the soil still out-settles the elastic pile there, the toe yields and the plane IS that crossing | When the ultimate toe makes force equilibrium impossible (the curves do not cross: end-bearing piles); whenever the toe force should follow the toe movement |
-| **Bearing-layer rule** (`bearing_layer_top`) | UFC §6-7.4 step 5 (p. 477): the plane is "near the interface of the column and the bearing layer for an end-bearing column bearing in a stratum that is much stiffer than the compressible soil"; §6-5.7 (p. 438, Fellenius 2021: end-bearing -> large drag, small downdrag). CGPR #56 §3.2.2 (Poulos, Eq 3.7) caps the plane at the bearing-layer top | End-bearing pile; the toe below all the settling soil, in a much stiffer stratum. A rule, not an equilibrium (checked: the toe must be able to carry Q_np minus the friction below) | Estimate / check for end-bearing piles. Not for a floating pile (toe inside the settling soil) |
-| **Pile toe** (`pile_toe`; role "bound") | GEC-12 §7.3.5.7 (p. 336): Goudreault & Fellenius (1994) place the plane at the toe "for most cases" of GROUP settlement (piles below the plane reinforce the soil); CGPR #56 Table 3.1 "end bearing" = 1.0 L | The whole shaft as drag | Group-settlement simplification; for a single pile's drag it is the UPPER BOUND, never a silent default (G8) |
-| **Endo ratio** (`endo` + `endo_bearing_condition`) | CGPR #56 §3.2.1, Table 3.1 (Endo et al. 1969; Little 1994) | Plane at 0.67 / 0.75 / 1.0 of the embedment for floating / stiff-flexible bearing / end bearing piles through consolidating clay; drag = full friction above it; no settlement | Estimate / check level only |
+| **Neutral plane at 100% toe mobilization** (`force_equilibrium`, `toe_mobilization=1`; what `auto` uses when the curves intersect) | UFC §6-7.4 steps 3-5, Fig 6-26 (pp. 476-478); GEC-12 §7.3.5.7 (pp. 334-336, Fig 7-49) and §7.3.6.1 step 5, Fig 7-60 point A (p. 346); GEC-12 Vol III Fig D-33 (the name); GEC-10 §10.6.2, Fig 10-20 (pp. 10-47/48, defers to GEC-12 §7.3.6.1); CGPR #56 §3.2.3 | Intersection of the load and resistance curves; side and base fully mobilized; unfactored permanent load only, transient load excluded (UFC step 4) | Drag force for the STRUCTURAL strength limit state: UFC step 3 calls it "a conservative approach for evaluating the drag force"; GEC-12 Vol III Block 17: "the toe mobilization curve that should be used to check the pile section's structural strength". Not conservative for settlement (UFC §6-5.8.4.2) |
+| **Neutral plane at 50% / 0% toe mobilization** (`force_equilibrium` with `toe_mobilization`; all three always reported) | UFC §6-5.8.4.2 "Neutral Plane Method" (p. 447) and App. B-5.5, Table B-28 (p. 640); GEC-12 §7.3.6.1 "Recommended Approach for Downdrag" steps 2, 4, 5, Figs 7-55 to 7-60 (pp. 342-346; Siegel et al. 2013); GEC-12 Vol III Fig D-32 (the name) | Side fully mobilized (~0.1 in of movement), toe at a fraction of its nominal resistance (full toe needs 4-10 % of the width). Less toe -> shallower plane, less drag, more settlement | SERVICE limit (settlement): analyse 0 / 50 / 100 %; if the conclusion does not change, stop; if it does, refine with t-z / q-z curves (UFC §6-5.8.4.2) |
+| **Mobilized toe resistance compatible with the toe penetration** (`settlement_compatibility`; what `auto` uses when the curves do not intersect) | UFC §6-5.8.4.3, Fig 6-19 (pp. 449-450): pile and soil settle equally at the neutral plane; "the difference between the soil and pile settlement at the toe elevation is the pile penetration"; with a q-z curve, "an iterative process can be applied, as described by Fellenius (2021), so that the mobilized toe resistance used to locate the neutral plane is compatible with the pile toe penetration". CGPR #56 §3.2.4 (PILENEG, elastic toe) | As implemented: elastic-perfectly-plastic toe, the elastic penetration from the equivalent-footing compression of the bearing stratum (UFC Eqs 6-49 to 6-54) standing in for a q-z curve; side fully mobilized (partly when the load at the plane is less than the friction below). Never below the full-mobilization intersection; if the soil still out-settles the elastic pile there, the toe is pushed to its full resistance and the plane IS that intersection | When the ultimate toe makes an intersection impossible (end-bearing piles); whenever the toe force should follow the toe movement |
+| **Neutral plane at the bearing layer (end-bearing pile)** (`bearing_layer_top`) | UFC §6-7.4 step 5 (p. 477): "the neutral plane will be located near the interface of the column and the bearing layer for an end-bearing column bearing in a stratum that is much stiffer than the compressible soil"; §6-5.7 (p. 438, Fellenius 2021: end-bearing -> large drag force, small downdrag). CGPR #56 §3.2.2 (Poulos, Eq 3.7) caps the plane at the bearing-layer top | End-bearing pile; the toe below all the settling soil, in a much stiffer stratum. Set by that statement, not computed (checked: the toe must be able to carry Q_np minus the friction below) | Estimate / check for end-bearing piles. Not for a floating pile (toe inside the settling soil) |
+| **Neutral plane at the pile toe** (`pile_toe`) | GEC-12 §7.3.5.7 (p. 336): Goudreault & Fellenius (1994) recommend "locating the neutral plane at the pile toe" for "most cases" of GROUP settlement (piles below the plane reinforce the soil); CGPR #56 Table 3.1 "end bearing" = 1.0 L | The whole shaft in negative skin friction | Group-settlement simplification; for a single pile's drag it is the UPPER BOUND, never a silent default (G8) |
+| **Endo et al. (1969)** (`endo` + `endo_bearing_condition`) | CGPR #56 §3.2.1, Table 3.1 (Endo et al. 1969; Little 1994) | Plane at 0.67 / 0.75 / 1.0 of the embedment for floating / stiff-flexible bearing / end bearing piles through consolidating clay; drag load = full friction above it; the method itself gives no settlement (the module computes one for the plane, as for every row) | Estimate / check level only |
 
 Not found in the references, so not built:
 
@@ -68,106 +74,254 @@ Drag-load assumptions the references state:
 | Assumption | Source | In the module |
 |---|---|---|
 | Unit negative friction = the nominal side resistance (alpha / beta); higher alpha, beta conservative for drag, lower for resistance | UFC §6-7.4 steps 2-3 (pp. 476-477); GEC-10 §10.6.2 (p. 10-48, unit drag f_DN by the side-resistance methods); GEC-12 §7.3.6.1 step 2 | Yes; the engineer picks alpha / beta per layer |
-| Side resistance on the effective-stress profile that INCLUDES the settlement-causing change (Siegel et al. 2013) | UFC §6-7.4 step 2 (p. 476) | `skin_friction_stress="final"`; default `"initial"` (the module's basis before 2026-10-09) — owner's call |
+| Side and base resistance on the effective-stress profile that INCLUDES the settlement-causing change (Siegel et al. 2013) | UFC §6-7.4 step 2 (p. 476); GEC-12 §7.3.6.1 (p. 348) points the same way without a rule (next section) | Default since 2026-10-14: `skin_friction_stress="final"` (beta friction and the toe in sand); `"initial"` on request |
 | Transient load excluded from the head load (it reverses the friction while it acts) | UFC §6-7.4 step 4 (p. 477) | Yes (Q_dead only) |
 | Drag excluded from the geotechnical strength check, included in structural strength and in settlement | UFC Table 6-30 (p. 437); GEC-12 §7.3.6 (pp. 336-337); GEC-10 §10.6.1 (p. 10-46; notes AASHTO treats DD as a load in geotechnical strength) | Yes (UFC / FHWA) |
 | Load factor 1.10 on the drag force (1.25 on Q_d) | UFC Eq 6-80 (p. 478); GEC-12 Eq 7-70 (pp. 346-347: MnDOT 1.1, no AASHTO factor yet) | Yes |
 | Post-liquefaction drag = 50 % of the pre-earthquake beta side resistance in liquefied layers | GEC-10 §10.7 (p. 10-52) | Not implemented |
 
-### Options, comparison and the default
+## Effective stress for skin friction: final (owner, 2026-10-14)
+
+The owner: "For stress, see what FHWA GEC 12 says about initial vs final
+stress and go with that; if it's silent, use final stress like UFC."
+
+**FHWA GEC-12 (FHWA-NHI-16-009, Vol I).** §7.3.6.1 "Recommended Approach for
+Downdrag" never says "initial" or "final" effective stress. Step 1 (p. 342):
+"Assume soil consolidation and ground settlement will occur." Step 2: "Using an
+appropriate static analysis method for the pile type and subsurface conditions,
+determine the nominal shaft, mobilized toe, and total mobilized resistance as a
+function of pile penetration depth." The one statement on stress comes after
+step 7 (p. 348): "It should be noted that effective stress changes such as
+approach fill placement after pile driving will alter the plot of the permanent
+load plus cumulative shaft resistance. This will in turn alter the location of
+the neutral plane, the maximum compression force in the pile, the magnitude of
+the drag force, and calculated settlement due to downdrag." That says the
+shaft resistance in the analysis follows the stress change, but it is not a
+rule for which stress to use. The Vol III design example draws its neutral
+planes (Blocks 15 and 17) on the Table D-6 resistance, a DrivenPiles Nordlund
+analysis (§D.10.1), and does not say whether that analysis carries the
+embankment's stress. So GEC-12 is silent in the owner's sense.
+
+**UFC 3-220-20 (16 Jan 2025) §6-7.4 "Design for Drag Force", step 2
+(p. 476)**, checked against the PDF: "Keep in mind that lower unit side
+friction from lower α and β is conservative for resistance, while higher unit
+side friction from higher α and β is conservative for negative skin friction.
+When side friction is evaluated using an effective stress method, such as the
+Beta method, Seigel et al. (2013) demonstrate analytically that unit side
+friction increases due to the increases in vertical stress. Nominal side and
+base resistances should be evaluated considering the vertical effective stress
+profile that includes stress change(s) producing settlement." (UFC spells
+Siegel "Seigel" here.)
+
+**Default: `skin_friction_stress="final"`**: beta-method unit skin friction and
+the toe resistance in sand use sigma'v0 plus the fill / drawdown change, for
+every method in the table. Alpha (cu) friction and the toe in clay do not
+depend on it. `"initial"` stays available. Every result states which stress it
+used (`neutral_plane_basis`, the summary header, the calc package inputs).
+Numbers that move: only cases with beta layers or a sand toe under a stress
+change. V-004 (no fill) and UFC App. B-5.5 (all alpha, clay toe) do not move.
+DD-1: the 0 % toe mobilization plane goes from 9.49 m to 10.12 m, drag load
+192 to 244 kN; the pile-toe row's drag load 413 to 519 kN; the toe resistance
+2482 to 3236 kN; the headline plane (8.00 m, 151 kN, set by the clay) does
+not move.
+
+## Every method side by side; the headline
 
 `DowndragAnalysis(neutral_plane_method=..., toe_mobilization=...,
-endo_bearing_condition=..., skin_friction_stress=...)`. Whatever is chosen,
-every basis above is evaluated on the same inputs and returned in
-`neutral_plane_comparison` (one row each: name, method, role, source,
-assumptions, applies, reason; and when it applies the plane depth, drag load,
-load at the plane, toe force, and the soil and pile settlement AT the plane).
-Both settlements at the plane are measured from the soil at the toe level
-(soil: consolidation of the soil between the plane and the toe; pile: toe
-penetration + pile compression below the plane), so equal values mean the
-basis is settlement-compatible (UFC Fig 6-19). A basis that does not apply is
-marked with the reason (curves that do not cross, a floating pile for the
-bearing-layer rule, a toe that could not carry the drag a rule implies, a
-missing Endo condition, an overloaded pile). Choosing a basis that does not
-apply raises a ValueError with that reason — never a silent fallback.
+endo_bearing_condition=..., skin_friction_stress=...)`. Every method in the
+table above is evaluated on the same inputs in every run. The result carries
+them as a first-class table:
 
-**Default: `auto` = UFC 3-220-20's procedure, unchanged from G8.** UFC
-3-220-20 is the governing reference for DoD work and its §6-7.4 procedure is
-force equilibrium (full mobilization unless `toe_mobilization` is given),
-with settlement compatibility when the curves do not cross. The numbers V-004,
-the CGPR #56 cross-check and the live-smoke keys rest on do not move. The
-alternatives are always in the result, and when they differ materially the
-result also carries a `judgment` block and a warning saying so:
+- `neutral_plane_comparison` (and the summary's "Neutral Plane by Each
+  Method" table, and the calc package's table of the same name): one row per
+  method with `name` (as the reference words it), `method` (the
+  `neutral_plane_method` value), `toe_mobilization`, `source`, `assumptions`,
+  `applies`, `used` (the row that gives the headline), `reason` (why it does
+  not apply, or a note), and, when it applies, `neutral_plane_depth_m`,
+  `max_pile_load_kN` (Q_np), `dragload_kN` (negative skin friction above the
+  plane, UFC's "drag load", §6-7.4 step 4), `drag_force_kN` (DF = Q_np -
+  Q_dead, UFC Eq 6-80 / GEC-12 Eq 7-70; it includes the pile weight above the
+  plane when `pile_unit_weight` > 0), `toe_force_kN`,
+  `soil_settlement_at_np_mm` and `pile_settlement_at_np_mm` (both from the
+  original ground), `elastic_compression_above_np_mm` and
+  `pile_settlement_mm` (pile head; next section).
+- `methods_range`: one sentence, always, e.g. "The methods give neutral
+  planes from 8.00 m to 15.00 m and drag forces from 175 kN to 564 kN (4 of 7
+  methods apply)." No threshold decides whether it is shown.
+- A method that does not apply says why (curves that do not intersect, a
+  floating pile for the bearing-layer statement, a toe that could not carry
+  what a set plane asks of it, a missing Endo condition, an overloaded pile).
+  Asking for one as the headline raises a ValueError with that reason; never
+  a silent fallback.
+
+**Headline: `auto` = the UFC 3-220-20 §6-7.4 procedure** (the existing callers
+and the calc package read the headline fields: `neutral_plane_depth_m`,
+`dragload_kN`, `max_pile_load_kN`, ...). The neutral plane is the intersection
+of the load and resistance curves with the toe at `toe_mobilization` (default
+1.0: full mobilization, UFC step 3); when the curves do not intersect, the
+plane where the pile and the soil settle equally with the toe force compatible
+with the toe penetration (§6-5.8.4.3, Fig 6-19). `neutral_plane_basis` starts
+"UFC 3-220-20 §6-7.4 procedure: ..." and `headline_method` names the row. A
+caller who names a method gets that row as the headline, and
+`neutral_plane_basis` starts with its name and source.
+
+DD-1 (8 m of clay over dense sand, 0.4 m pile, 15 m, 40 kPa fill, Q_dead 0,
+final stress), the summary table:
 
 ```
-"judgment": {"question": "Which neutral-plane basis governs for this pile?",
-             "options": [{"name", "source", "assumptions", "applies", "result"}],
-             "used": "<row name>", "why": "<why, or that the caller chose it>"}
+  Method                                                  NP   Q_np   Drag   Drag   Pile
+                                                                      load  force  settl.
+                                                          (m)  (kN)   (kN)   (kN)   (mm)
+  Neutral plane at 100% toe mobilization               not applicable (3236 kN toe > 564 kN deliverable)
+  Neutral plane at 50% toe mobilization                not applicable (1618 kN toe > 564 kN deliverable)
+  Neutral plane at 0% toe mobilization                 10.12   275    244    275    0.1
+* Mobilized toe resistance compatible with the toe
+  penetration                                           8.00   175    151    175    0.1
+  Neutral plane at the bearing layer (end-bearing pile) 8.00   175    151    175    0.1
+  Neutral plane at the pile toe                        15.00   564    519    564    0.1
+  Endo et al. (1969)                                   not applicable (needs endo_bearing_condition)
+The methods give neutral planes from 8.00 m to 15.00 m and drag forces from 175 kN to 564 kN (4 of 7 methods apply).
 ```
 
-Material = among the applicable design bases plus the one used (the pile-toe
-bound and a compatibility row with no computed soil settlement do not count),
-neutral planes more than max(0.5 m, 5 % of L) apart, or drag loads more than
-max(10 kN, 10 % of the largest) apart (`NP_SPREAD_*`, `DRAG_SPREAD_*` in
-`analysis.py`). A clear-cut case (a friction pile floating in settling clay:
-every applicable basis within tolerance) carries no `judgment`.
+(The settlements are tiny because DD-1's sand has no modulus, so nothing is
+computed below the toe.)
 
-DD-1 (8 m of clay over dense sand, 0.4 m pile, 15 m, 40 kPa fill, Q_dead 0):
-full and 50 % toe — not applicable (the 2482 kN ultimate toe cannot be
-mobilized); 0 % toe 9.5 m / 191 kN; settlement compatibility 8.0 m / 151 kN
-(used); bearing-layer rule 8.0 m / 151 kN; pile toe (bound) 15.0 m / 409 kN;
-Endo needs a condition. Judgment emitted.
+### Settlement at the neutral plane and of the pile head
 
-Validation: UFC 3-220-20 App. B-5.5 Table B-28 (Example 5, PPC piles through
+UFC 3-220-20 Fig 6-19 and §6-5.8 item 6: the pile and the soil settle equally
+at the neutral plane; the pile head settles that much plus the elastic
+compression of the pile above the plane (Eq 6-45). Each row reports, from the
+original ground:
+
+- soil settlement at the plane = consolidation of the settling layers between
+  the plane and the toe (Eqs 6-53, 6-54) + the settlement of the soil below the
+  toe under the fill / drawdown alone (3 B' below the toe);
+- pile settlement at the plane = settlement under the toe (bearing-stratum
+  compression under the toe force and the fill / drawdown, Eqs 6-49 to 6-54)
+  + elastic compression of the pile between the plane and the toe; set equal
+  to the soil's when the toe is at its full resistance and the soil settles
+  more (the toe is pushed down with it);
+- pile head settlement = the larger of the two + the elastic compression above
+  the plane. A method that sets the plane where the soil settles more than the
+  pile can follow (a shallow plane) gets the soil's settlement there, so a
+  higher plane gives more settlement, as UFC §6-5.8.4.2 says.
+
+The headline `pile_settlement`, `soil_settlement_at_np` and
+`elastic_shortening` are the headline row's. **Changed 2026-10-14**: before,
+`pile_settlement` was the elastic shortening above the plane + the toe
+settlement only, which left out the soil compressing below the plane (the
+downdrag itself) and the pile compression below the plane, and
+`soil_settlement_at_np` was measured from the soil at the toe level. The
+floating pile of the tests (20 m in 25 m of settling clay, 300 kN): pile
+settlement 34.6 mm -> 313.9 mm (the soil at the plane settles 313.8 mm); UFC
+App. B-5.5 headline 1.98 mm -> 2.91 mm (adds 0.93 mm of pile compression below
+the plane and toe settlement). The settlement check (`settlement_ok`) used
+the larger of the old pile settlement and the toe-level soil settlement, so it
+moves less.
+
+## Validation
+
+**UFC 3-220-20 App. B-5.5, Table B-28** (Example 5, 12 in PPC piles through
 soft into stiff clay; `tests/test_downdrag.py::TestUFCAppendixB5NeutralPlane`).
-Published NP 48 / 50 / 52 ft below grade and Pmax 120 / 126 / 133 kips for 0 /
-50 / 100 % base mobilization; achieved 47.81 / 50.16 / 52.50 ft and 119.6 /
-126.1 / 132.9 kips (exact from the printed rates: 47.75 / 50.16 / 52.48 ft).
-The bearing-layer rule gives 48.0 ft, the base of the soft clay (B-5.7: "the
-position of the neutral plane is below the bottom of the soft clay"). GEC-12
-Fig 7-60 (p. 346) is graphical (curved shaft profile), so it is cited, not
-reproduced. The Endo ratios are as transcribed in `cgpr56.py`
+Published NP 48 / 50 / 52 ft below grade and Pmax 120 / 126 / 133 kips for
+0 / 50 / 100 % base mobilization; exact from the printed load-transfer rates
+47.75 / 50.16 / 52.48 ft and 119.5 / 126.3 / 133.0 kips.
+
+| Toe mobilization | Published | Exact from printed rates | Before 2026-10-14 | After |
+|---|---|---|---|---|
+| 0 % | 48 ft / 120 kips | 47.75 ft / 119.5 | 47.81 ft / 119.6 | 47.70 ft / 119.4 |
+| 50 % | 50 ft / 126 kips | 50.16 ft / 126.3 | 50.16 ft / 126.1 | 50.14 ft / 126.2 |
+| 100 % | 52 ft / 133 kips | 52.48 ft / 133.0 | 52.50 ft / 132.9 | 52.48 ft / 132.9 |
+
+All still match the published values (to 1 ft and 1 kip; the test pins 0.1 ft
+of the exact values). Before, the reported Pmax was 1.2-1.9 % above the toe +
+positive friction at the same plane (GM-01); now they are equal. The test
+enters the transition layer as alpha = 720/3000 (2.88 k/ft against the printed
+2.9), which is the remaining 0.05 ft at 0 %. The neutral plane at the bearing
+layer gives 48.0 ft, the base of the soft clay (B-5.7: "the position of the
+neutral plane is below the bottom of the soft clay"), with Q_np = 120.0 kips
+exactly. GEC-12 Fig 7-60 (p. 346) is graphical (curved shaft profile), so it
+is cited, not reproduced.
+
+**V-004, GEC-12 Vol III North Abutment, Block 17**
+(`validation_examples/test_published_v001_v005.py`; the published Table D-6
+shaft fed in through calibrated per-layer beta): published NP 54 ft below the
+pile head, Qmax 486 kips, DF 285 kips at 100 % toe mobilization. Before: NP
+53.30 ft, Qmax 487.2, DF 286.2 kips (pile weight in the load curve, as the
+test has it). After: 53.61 ft, 490.1, 289.1 kips with the pile weight in;
+54.00 ft, 486.6, 285.6 kips with it left out, as the example does (new test
+`test_v004_without_pile_weight_matches_published`). The calibration helper now
+integrates the shaft as the module does (its old node-sum matched the old drag
+rule, not the old plane search), and the calibrated shaft totals the
+published 344.1 kips.
+
+The Endo ratios are as transcribed in `cgpr56.py`
 (`ENDO_NEUTRAL_PLANE_RATIOS`); only the 0.75 ratio is exercised by a
-published example. Endo: CGPR #56 §3.4.2 worked example in `tests/test_cgpr56.py`,
-and the option cross-checked against `endo_method`.
+published example (CGPR #56 §3.4.2 in `tests/test_cgpr56.py`). The Endo row
+now equals `endo_method` on the module's own profile to rounding (2 % apart
+before).
 
-Known quadrature mismatch (pre-existing, not changed): the crossing sums
-friction with each segment's lower-node value, the reported drag and positive
-friction with its upper-node value; they differ by at most about
-max(fs) x perimeter x dz (~4 % on DD-1 at 0 % toe).
+## GM-01: one integral of one profile (fixed 2026-10-14)
 
-### How `auto` locates the neutral plane (`neutral_plane_method` in the result)
+Before: the plane search (`_find_neutral_plane`) summed each segment's
+friction with its DEEPER node's unit skin friction and interpolated the
+crossing linearly; the reported drag load (`_compute_dragload`) summed each
+segment with its SHALLOWER node's value; the positive friction
+(`_compute_positive_resistance`) used the shallower node and skipped the part
+segment between the plane and the next node; the rows' settlement and
+imposed-plane checks interpolated the node curves linearly (a third variant).
+With beta friction growing with depth, or a layer boundary inside a segment,
+these differ by up to max(fs) x perimeter x segment: DD-1 at 0 % toe reported
+Q_np 219.6 kN against 210.6 kN of positive friction below the same plane
+(4.3 %); UFC B-5.5 1.2-1.9 %.
 
-Every result states its basis (`neutral_plane_method`, `neutral_plane_basis`,
-`toe_force_mobilized_kN`, `warnings`). Source: UFC 3-220-20 Vol 2 (DM 7.2)
-Ch 6, §6-7.4 steps 3-5, §6-5.8.4.2 and Fig 6-19 (§6-5.8.4.3), as transcribed
-in `geotech_references/dm7_2/text/chapter06.json`.
+Now: every use goes through one integral, `_shaft_cumulative` / `_shaft_to`:
+the exact integral of the reported unit skin friction profile read as
+piecewise linear (the trapezoid rule on the nodes; a part segment integrated
+exactly with the interpolated value). The plane search solves the resulting
+quadratic inside the segment exactly, so at every intersection Q_np = mobilized
+toe + positive friction to rounding. The grid carries every layer boundary
+twice (the value above, then the value below: a repeated depth is a jump, as
+in a CGPR #56 profile) and the water-table depths once (the kink in beta
+friction), so the integral is exact for alpha layers (constant) and beta
+layers (linear between kinks). Pinned by `TestQuadratureConsistency` (every
+row's drag load against an independent integral of the reported profile; Q_np
+= toe + positive friction at every intersection; the boundary as a jump), the
+B-5.5 test, the Endo cross-check and the V-004 tests.
 
-1. **`force_equilibrium`** — the curves cross. Side and base resistance are
-   taken fully mobilized: UFC §6-7.4 step 3 calls this "a conservative
-   approach for evaluating the drag force". Unchanged from the original
-   implementation (V-004 and the CGPR #56 cross-check pin it). When the
-   crossing lies below the depth where the computed soil settlement falls to
-   the pile's, a warning says the friction in between is counted as drag,
-   and that full base mobilization is NOT conservative for settlement
-   (§6-5.8.4.2: check 0 %, 50 %, 100 % base mobilization via `Nt`).
-2. **`settlement_compatibility`** — the curves do NOT cross because the toe
+### How `auto` (the UFC 3-220-20 §6-7.4 procedure) locates the neutral plane
+
+Every result states how (`neutral_plane_method`, `headline_method`,
+`neutral_plane_basis`, `toe_force_mobilized_kN`, `warnings`). Source: UFC
+3-220-20 Ch 6, §6-7.4 steps 3-5, §6-5.8.4.2 and Fig 6-19 (§6-5.8.4.3), checked
+against the PDF.
+
+1. **`force_equilibrium`** ("Neutral plane at 100% toe mobilization") — the
+   load and resistance curves intersect. Side and base resistance are taken
+   fully mobilized: UFC §6-7.4 step 3 calls this "a conservative approach for
+   evaluating the drag force". When the intersection lies below the depth
+   where the computed soil settlement falls to the pile's, a warning says the
+   friction in between is counted as negative, and that full base
+   mobilization is NOT conservative for settlement (§6-5.8.4.2: check 0 %,
+   50 %, 100 %, all three in the table).
+2. **`settlement_compatibility`** ("Mobilized toe resistance compatible with
+   the toe penetration") — the curves do NOT intersect because the toe
    resistance exceeds everything the pile can carry to its toe
-   (`Q_dead + W + whole shaft as drag < R_toe`). This is the common case with
-   the default ULTIMATE toe (`Nt` from phi, 100-150 in dense sand): the base
-   cannot be fully mobilized, so force equilibrium alone does not place the
-   NP. It is placed where the soil and pile settle equally (Fig 6-19): soil
-   settlement (measured from the toe level) = toe penetration under the toe
-   force the pile actually delivers + elastic compression of the pile below
-   the NP. The toe carries `Q_np - positive friction below` (floored at 0,
-   in which case the friction below is only partly mobilized). For an
-   end-bearing pile in a stratum stiffer than the compressible soil this is
-   near the top of the bearing layer (§6-7.4 step 5); when the soil settles
-   more than the pile all the way to the toe, the NP is AT the toe and the
-   basis says "end-bearing". With no settling soil at all, there is no
-   negative skin friction: NP at the head, zero drag. The warning gives the
-   upper bound (NP at the toe, whole shaft as drag) and how to use force
-   equilibrium instead (give `Nt` for the MOBILIZED toe resistance).
+   (`Q_dead + W + the whole shaft in negative skin friction < R_toe`). This is
+   the common case with the default ULTIMATE toe (`Nt` from phi, 100-150 in
+   dense sand): the base cannot be fully mobilized. The plane is where the
+   soil and the pile settle equally (Fig 6-19): the soil settlement there =
+   the settlement under the toe force the pile actually delivers + the
+   elastic compression of the pile below the plane. The toe carries
+   `Q_np - positive friction below` (floored at 0, in which case the friction
+   below is only partly mobilized). For an end-bearing pile in a stratum
+   stiffer than the compressible soil this is near the top of the bearing
+   layer (§6-7.4 step 5); when the soil settles more than the pile all the way
+   to the toe, the plane is AT the toe and the text says "end-bearing". With
+   no settling soil at all there is no negative skin friction: plane at the
+   head, zero drag. The warning gives the upper bound (plane at the toe, the
+   whole shaft in negative skin friction) and how to intersect the curves
+   instead (give `Nt` or `toe_mobilization` for the MOBILIZED toe resistance).
 3. **`none`** — the dead load alone exceeds the total geotechnical resistance
    (toe + whole shaft). §6-7.4 step 5's limiting case: "there is no neutral
    plane". Reported at the head with zero drag, `geotechnical_ok = False`,
@@ -181,16 +335,6 @@ sand included, as drag (DD-1: 409 kN where the 8 m of settling clay can give
 Note on direction: more dead load moves the NP UP (UFC §6-7.4 step 5;
 `Q_dead + F(0->z) = R_toe + F(z->L)`). A test used to assert the opposite
 and passed only through the toe default.
-
-### Settlement Compatibility
-
-At the neutral plane:
-- **Soil settlement** = cumulative consolidation settlement from the settling
-  zone (accumulated from the bottom of the settling zone upward)
-- **Pile settlement** = elastic shortening above NP + settlement of the
-  bearing stratum below the pile tip
-
-These should be equal (or close) at the NP for full compatibility.
 
 ### Limit States
 
@@ -206,7 +350,8 @@ These should be equal (or close) at the NP for full compatibility.
    - `Q_dead ≤ positive_skin + Q_toe`
    - **Any method that applies dragload to the geotechnical ULS is incorrect.**
 
-3. **Settlement**: Pile settlement ≤ allowable settlement (serviceability).
+3. **Settlement**: Pile head settlement (settlement at the neutral plane +
+   elastic compression above it) ≤ allowable settlement (serviceability).
 
 ## Sign Conventions
 
@@ -226,8 +371,9 @@ These should be equal (or close) at the NP for full compatibility.
 
 ### Eq 6-45 — Elastic Compression of Pile
 `δe = ΔQ · Z / (Ap · Ep)`
-Implemented as `_compute_elastic_shortening()`. Integrates Q(z)/(A*E)
-from pile head to the neutral plane.
+Implemented as `_compression_above()` (head to the neutral plane, under the
+load curve) and inside `_pile_settlement_at()` (plane to toe). Integrates
+Q(z)/(A*E) segment by segment.
 
 ### Eq 6-49/6-50 — Equivalent Footing Dimensions
 `B' = B + z₂` and `L' = L + z₂`
@@ -295,15 +441,15 @@ The bearing stratum settlement below the pile tip uses:
 ## Edge Cases
 
 - **No settling layers** (or settling layers with no fill / drawdown to load
-  them): no consolidation settlement. If the curves still cross (a mobilized
-  `Nt`), force equilibrium places the NP as usual (V-004 runs this way);
-  otherwise there is no negative skin friction: NP at the head, zero drag,
-  stated in the basis.
-- **Neutral plane at pile toe**: only when the soil settles more than the
-  pile all the way down to the toe (end-bearing; basis says so), when the
-  curves cross exactly there, or when the caller asks for `pile_toe` (the
-  upper bound). Never as a silent default; always in the comparison as the
-  bound.
+  them): no consolidation settlement. If the curves still intersect (a
+  mobilized `Nt`), that intersection is the NP as usual (V-004 runs this
+  way); otherwise there is no negative skin friction: NP at the head, zero
+  drag, stated in `neutral_plane_basis`.
+- **Neutral plane at pile toe**: as the headline only when the soil settles
+  more than the pile all the way down to the toe (end-bearing; the text says
+  so), when the curves intersect exactly there, or when the caller asks for
+  `pile_toe` (the upper bound). Never as a silent default; always in the
+  table.
 - **Pile overloaded** (`Q_dead` > toe + whole shaft): no neutral plane
   (method `none`), zero drag, geotechnical check fails, warning.
 - **Soil settlement profile**: evaluated per sublayer at its MIDPOINT and
@@ -360,21 +506,22 @@ achieved-vs-published stated in each test docstring).
 
 ### `fellenius_method_cgpr56` vs the existing `DowndragAnalysis`
 
-Both implement the Fellenius neutral-plane force equilibrium (load curve vs
-resistance curve). Documented differences — the existing `DowndragAnalysis`
-behavior is unchanged:
+Both locate the neutral plane at the intersection of the load and resistance
+curves. Documented differences:
 
 1. **Inputs**: `DowndragAnalysis` builds unit skin friction from soil
    parameters (beta/alpha per layer) and effective stress; the CGPR #56
    function takes the fs-vs-depth profile directly (report convention).
-2. **Pile self-weight**: `DowndragAnalysis` includes it in the load curve
-   (UFC-consistent); the CGPR #56 / Hannigan et al. (1997) formulation
-   omits it. With pile weight zeroed and matched fs/toe inputs the two
-   implementations agree on the worked example within 1.5%
+   Both read the profile as piecewise linear, a repeated depth a jump.
+2. **Pile self-weight**: `DowndragAnalysis` includes it in the load curve;
+   UFC Fig 6-26, GEC-12 §7.3.6.1 and the CGPR #56 / Hannigan et al. (1997)
+   formulation omit it (set `pile_unit_weight = 0` to match them). With pile
+   weight zeroed and matched fs/toe inputs the two implementations agree on
+   the worked example within 1.5%
    (`tests/test_cgpr56.py::TestCrossCheckExistingFellenius`).
-3. **Settlement**: `DowndragAnalysis` reports settlement as elastic
-   shortening + toe-zone consolidation below the tip; CGPR #56 reports
-   free-field settlement at the neutral plane (with the pile/group load
-   spread 2:1 from an equivalent footing AT the neutral plane) + elastic
-   compression above it. These answer slightly different questions; the
-   CGPR #56 form matches the report's published example.
+3. **Settlement**: both report the settlement at the neutral plane + the
+   elastic compression above it. CGPR #56 spreads the pile / group load 2:1
+   from an equivalent footing AT the neutral plane; `DowndragAnalysis` takes
+   the free-field compression of the settling layers below the plane and
+   spreads the toe force only below the toe. The CGPR #56 form matches the
+   report's published example.

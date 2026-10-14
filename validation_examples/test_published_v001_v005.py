@@ -29,8 +29,11 @@ Summary of verdicts (details in each test docstring and RESULTS.md):
   example's DrivenPiles Tomlinson curve.
 - V-003 wave_equation drivability: N/A (scope) — no Delmag D36-52 in the hammer DB
   and the simplified diesel model can't reproduce a GRLWEAP diesel bearing graph.
-- V-004 downdrag neutral plane: PASS — the Fellenius NP construction reproduces
-  NP, Qmax, and drag force to <1% when fed the published Table D-6 shaft.
+- V-004 downdrag neutral plane: PASS — the neutral plane at 100% toe
+  mobilization reproduces NP, Qmax, and drag force to <2% when fed the
+  published Table D-6 shaft (the pile weight in the load curve is the
+  difference); with the pile weight left out, as the example does, to
+  0.0 ft / +0.1% / +0.2% (since GM-01, 2026-10-14).
 - V-005 Meyerhof (1976) pile-group SPT settlement: PASS — pile_group's new
   meyerhof_group_settlement (SI API, m/kN -> mm) reproduces the published
   1.04 in (50-ft case) to within +/-5%.
@@ -365,6 +368,14 @@ def _v004_calibrated_betas():
 
     Table D-6 shaft below the footing: 51.6 kips at D=20 ft (end L1), 209.8 at
     D=45 (end L2), 344.1 at D=60. Layer shares: L1=51.6, L2=158.2, L3=134.3.
+
+    The shaft is integrated the way the module integrates it (since GM-01,
+    2026-10-14): the reported unit skin friction read as piecewise linear
+    between the nodes, a repeated depth (a layer boundary) being a jump.
+    The layer boundaries are nodes, so the integral between them is the
+    trapezoid sum over the nodes in between. Before, this helper summed
+    each node's value over the segment below it, which matched the
+    module's old drag-load rule but not its old plane search.
     """
     pile_perim = 4.058 * FT
     tip_area_box = 1.0294 * FT * FT
@@ -384,10 +395,14 @@ def _v004_calibrated_betas():
                              pile_perimeter=pile_perim, pile_area=tip_area_box,
                              pile_unit_weight=20.0, Q_dead=201 * KIP, Nt=1.0)
         r = a.compute()
-        z = r.z
-        dz = z[1] - z[0]
-        mask = (z >= z0) & (z < z1)
-        return float(np.sum(r.unit_skin_friction[mask] * pile_perim * dz) / KIP)
+        z, fs = r.z, r.unit_skin_friction
+        tol = 1e-9
+        # Nodes from z0 (the node below it, when z0 is a boundary) to z1.
+        i0 = int(np.searchsorted(z, z0 - tol, side="left"))
+        if i0 + 1 < len(z) and abs(z[i0 + 1] - z0) < tol:
+            i0 += 1
+        i1 = int(np.searchsorted(z, z1 + tol, side="right"))
+        return float(np.trapezoid(fs[i0:i1], z[i0:i1]) * pile_perim / KIP)
 
     def calibrate(target, z0, z1, idx, fixed):
         lo, hi = 0.05, 2.0
@@ -439,6 +454,35 @@ def test_v004_neutral_plane_and_drag_force():
     assert NP_below_head_ft == pytest.approx(54.0, abs=3.0)   # +/-3 ft
     assert Qmax_kips == pytest.approx(486.0, rel=0.10)        # +/-10%
     assert DF_kips == pytest.approx(285.0, rel=0.10)          # +/-10%
+
+
+def test_v004_without_pile_weight_matches_published():
+    """PASS: with the pile weight left out of the load curve, as the
+    published Block 17 construction (and UFC 3-220-20 Fig 6-26) does, the
+    neutral plane at 100% toe mobilization gives NP 54.0 ft, Qmax 486.6
+    kips, DF 285.6 kips vs published 54 ft / 486 / 285 kips.
+
+    Achieved 2026-10-14 (GM-01): the plane search and the reported Qmax
+    integrate the same shaft profile the same way, and the calibration
+    integrates it as the module does. Before, the same inputs gave
+    NP 53.3 ft / Qmax 487.2 / DF 286.2 kips with the pile weight in.
+    """
+    build, b1, b2, b3 = _v004_calibrated_betas()
+    soil = build(b1, b2, b3)
+    tip_area_box = 1.0294 * FT * FT
+    L = 60 * FT
+    Nt = 428.1 * KIP / (soil.effective_stress_at_depth(L) * tip_area_box)
+    r = DowndragAnalysis(
+        soil=soil, pile_length=L, pile_diameter=0.3086,
+        pile_perimeter=4.058 * FT, pile_area=tip_area_box,
+        pile_unit_weight=0.0, Q_dead=201 * KIP, Nt=Nt).compute()
+    assert r.neutral_plane_depth / FT == pytest.approx(54.0, abs=0.5)
+    assert r.max_pile_load / KIP == pytest.approx(486.0, rel=0.005)
+    assert (r.max_pile_load - 201 * KIP) / KIP == pytest.approx(285.0,
+                                                                rel=0.005)
+    # Load curve = resistance curve at the plane (toe + positive shaft).
+    assert r.max_pile_load == pytest.approx(
+        r.toe_resistance + r.positive_skin_friction, rel=1e-9)
 
 
 # ── V-005 : Meyerhof (1976) pile-group SPT settlement (Block 15, Table D-23) ─

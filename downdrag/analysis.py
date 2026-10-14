@@ -1,17 +1,15 @@
 """
 Downdrag (negative skin friction) analysis using the neutral plane method.
 
-Implements the Fellenius unified method (2004/2006) for pile downdrag:
-1. Force equilibrium to find the neutral plane depth.
-2. Settlement compatibility (soil settlement = pile settlement at NP).
-3. Structural and geotechnical limit state checks.
-
-The neutral plane basis is a choice (``neutral_plane_method``): the cited
-bases (force equilibrium at 100 / 50 / 0 % toe mobilization, settlement
-compatibility, the bearing-layer rule for end-bearing piles, the pile toe,
-Endo) are all evaluated on the same inputs and returned side by side, with a
-``judgment`` block when they differ materially. See DESIGN.md
-"Neutral-plane methods" for the sources.
+Every method the references give for locating the neutral plane is
+evaluated on the same inputs and returned side by side (the
+``neutral_plane_comparison`` rows): the neutral plane at 100 / 50 / 0 % toe
+mobilization (UFC 3-220-20 §6-7.4 and §6-5.8.4.2; FHWA GEC-12 §7.3.6.1),
+the mobilized toe resistance made compatible with the toe penetration (UFC
+§6-5.8.4.3, Fig 6-19), the neutral plane at the bearing layer for an
+end-bearing pile (UFC §6-7.4 step 5), at the pile toe (GEC-12 §7.3.5.7) and
+Endo et al. (1969) (CGPR #56 §3.2.1). One of them gives the headline
+numbers: by default UFC 3-220-20's §6-7.4 procedure. See DESIGN.md.
 
 Supports fill placement and groundwater drawdown as settlement triggers.
 
@@ -48,42 +46,50 @@ NEUTRAL_PLANE_METHODS = (
 #: §7.3.6.1 step 4: 0 %, 50 % and 100 % of the nominal base resistance).
 COMPARISON_TOE_MOBILIZATIONS = (1.0, 0.5, 0.0)
 
-#: When the applicable bases differ by more than this, the result carries a
-#: ``judgment`` block: neutral planes more than max(0.5 m, 5 % of the pile
-#: length) apart, or drag loads more than max(10 kN, 10 % of the largest)
-#: apart.
-NP_SPREAD_ABS_M = 0.5
-NP_SPREAD_REL_LENGTH = 0.05
-DRAG_SPREAD_ABS_KN = 10.0
-DRAG_SPREAD_REL = 0.10
-
-#: Where each basis is stated (printed page numbers). UFC 3-220-20 =
+#: Where each method is stated (printed page numbers). UFC 3-220-20 =
 #: 16 Jan 2025 (DM 7.2); GEC-12 = FHWA-NHI-16-009 Vol I; CGPR #56 =
 #: Greenfield & Filz (2009), sections only (not public-domain, not in the
 #: repo).
 _SOURCE = {
     "fe_full": ("UFC 3-220-20 §6-7.4 steps 3-5, Fig 6-26 (pp. 476-478); "
-                "GEC-12 §7.3.6.1 steps 4-5, Fig 7-60 point A (pp. 343-346)"),
-    "fe_partial": ("UFC 3-220-20 §6-5.8.4.2 (p. 447) and App. B-5.5 Table "
-                   "B-28 (p. 640); GEC-12 §7.3.6.1 steps 2, 4-5, Figs "
-                   "7-59/7-60 (pp. 342-346); Siegel et al. (2013)"),
-    "sc": ("UFC 3-220-20 §6-5.8.4.3, Fig 6-19 (pp. 449-450); GEC-12 "
-           "§7.3.5.7 (p. 334); Fellenius (2004, 2021)"),
-    "blt": "UFC 3-220-20 §6-7.4 step 5 (p. 477) and §6-5.7 (p. 438)",
-    "toe": ("GEC-12 §7.3.5.7 (p. 336, after Goudreault & Fellenius 1994); "
-            "CGPR #56 Table 3.1 'end bearing'"),
-    "endo": "CGPR #56 §3.2.1, Table 3.1 (Endo et al. 1969; Little 1994)",
+                "FHWA GEC-12 §7.3.6.1 step 5, Fig 7-60 point A (p. 346)"),
+    "fe_partial": ("UFC 3-220-20 §6-5.8.4.2 (p. 447), App. B-5.5 Table "
+                   "B-28 (p. 640); FHWA GEC-12 §7.3.6.1 steps 2-5, Figs "
+                   "7-59 and 7-60 (pp. 342-346); Siegel et al. (2013)"),
+    "sc": ("UFC 3-220-20 §6-5.8.4.3, Fig 6-19 (pp. 449-450); "
+           "Fellenius (2021)"),
+    "blt": "UFC 3-220-20 §6-7.4 step 5 (p. 477); §6-5.7 (p. 438)",
+    "toe": ("FHWA GEC-12 §7.3.5.7 (p. 336; Goudreault and Fellenius "
+            "1994); CGPR #56 Table 3.1 'end bearing'"),
+    "endo": "CGPR #56 §3.2.1, Table 3.1 (Endo et al. 1969)",
 }
+
+#: The headline method when ``neutral_plane_method='auto'``.
+UFC_PROCEDURE = "UFC 3-220-20 §6-7.4 procedure"
 
 
 def _fe_name(mobilization: float) -> str:
-    """Comparison-row name of force equilibrium at a toe mobilization."""
-    return f"force_equilibrium, toe {round(mobilization * 100):d}%"
+    """Row name of the neutral plane at a toe mobilization (GEC-12 Vol III
+    Figs D-32 / D-33: "Neutral plane at 50% / 100% toe mobilization")."""
+    return f"Neutral plane at {round(mobilization * 100):d}% toe mobilization"
+
+
+_SC_NAME = "Mobilized toe resistance compatible with the toe penetration"
+_BLT_NAME = "Neutral plane at the bearing layer (end-bearing pile)"
+_TOE_NAME = "Neutral plane at the pile toe"
+
+
+def _endo_name(cond: Optional[str]) -> str:
+    if cond is None:
+        return "Endo et al. (1969)"
+    return (f"Endo et al. (1969), '{cond}' "
+            f"({ENDO_NEUTRAL_PLANE_RATIOS[cond]:g} L)")
 
 
 @dataclass
 class DowndragAnalysis:
-    """Downdrag analysis using the Fellenius unified neutral plane method.
+    """Downdrag analysis using the neutral plane method, every method side
+    by side.
 
     Parameters
     ----------
@@ -119,40 +125,48 @@ class DowndragAnalysis:
     n_sublayers : int
         Number of sublayers per soil layer for discretization. Default 10.
     neutral_plane_method : str
-        How the neutral plane is located (DESIGN.md "Neutral-plane
-        methods" gives the sources):
+        Which method gives the headline numbers (DESIGN.md "Neutral-plane
+        methods" gives the sources). Every method is evaluated and
+        returned in ``neutral_plane_comparison`` whatever is chosen.
 
-        - ``"auto"`` (default): UFC 3-220-20's procedure. Force
-          equilibrium (§6-7.4 steps 3-5) with the toe at
-          ``toe_mobilization`` of its resistance; when the curves do not
-          cross, settlement compatibility (Fig 6-19); no plane when the
-          dead load exceeds the nominal resistance.
-        - ``"force_equilibrium"``: force equilibrium only (raises when the
-          curves do not cross).
-        - ``"settlement_compatibility"``: pile and soil settle equally,
-          with an elastic-plastic toe (Fellenius unified method).
-        - ``"bearing_layer_top"``: at the base of the settling soil, for
-          an end-bearing pile (UFC §6-7.4 step 5).
-        - ``"pile_toe"``: at the toe, the whole shaft as drag (the upper
-          bound; GEC-12 §7.3.5.7 uses it for group settlement).
+        - ``"auto"`` (default): UFC 3-220-20's §6-7.4 procedure. The
+          neutral plane is where the load and resistance curves intersect
+          (steps 3-5), with the toe at ``toe_mobilization`` of its nominal
+          resistance; when they do not intersect, where the mobilized toe
+          resistance is compatible with the toe penetration (§6-5.8.4.3,
+          Fig 6-19); no neutral plane when the dead load exceeds the
+          nominal resistance (step 5).
+        - ``"force_equilibrium"``: where the load and resistance curves
+          intersect only (raises when they do not).
+        - ``"settlement_compatibility"``: where the pile and the soil
+          settle equally, the toe force compatible with the toe
+          penetration (UFC §6-5.8.4.3, Fig 6-19; Fellenius 2021).
+        - ``"bearing_layer_top"``: at the top of the bearing layer (the
+          base of the settling soil), for an end-bearing pile (UFC §6-7.4
+          step 5).
+        - ``"pile_toe"``: at the toe, the whole shaft in negative skin
+          friction (the upper bound on drag; GEC-12 §7.3.5.7 uses it for
+          group settlement).
         - ``"endo"``: at a fraction of the embedment (CGPR #56 Table 3.1);
           needs ``endo_bearing_condition``.
-
-        Whatever is chosen, every basis is evaluated and returned in
-        ``neutral_plane_comparison``.
     toe_mobilization : float
-        Fraction (0-1) of the toe resistance mobilized for force
-        equilibrium. Default 1.0 (UFC §6-7.4 step 3, full mobilization,
-        conservative for drag). 0.5 and 0.0 are the lower brackets of UFC
-        §6-5.8.4.2 / GEC-12 §7.3.6.1 (always reported in the comparison).
+        Fraction (0-1) of the nominal toe resistance mobilized where the
+        load and resistance curves are intersected. Default 1.0 (UFC
+        §6-7.4 step 3: "a conservative approach for evaluating the drag
+        force"). 0.5 and 0.0 are the other two cases of UFC §6-5.8.4.2 /
+        GEC-12 §7.3.6.1 (always reported in the comparison).
     endo_bearing_condition : str, optional
-        CGPR #56 Table 3.1 condition for the Endo basis: ``"floating"``,
-        ``"stiff_flexible"`` or ``"end_bearing"``.
+        CGPR #56 Table 3.1 condition for Endo et al. (1969):
+        ``"floating"``, ``"stiff_flexible"`` or ``"end_bearing"``.
     skin_friction_stress : str
-        Effective stress used for beta-method unit skin friction and the
-        cohesionless toe: ``"initial"`` (default, sigma'v0) or ``"final"``
-        (sigma'v0 + the fill / drawdown stress change, as UFC 3-220-20
-        §6-7.4 step 2 asks for the drag-force evaluation).
+        Effective stress for beta-method unit skin friction and the
+        cohesionless toe: ``"final"`` (default: sigma'v0 + the fill /
+        drawdown stress change) or ``"initial"`` (sigma'v0). UFC 3-220-20
+        §6-7.4 step 2: "Nominal side and base resistances should be
+        evaluated considering the vertical effective stress profile that
+        includes stress change(s) producing settlement." FHWA GEC-12
+        §7.3.6.1 states no rule in those words (DESIGN.md quotes what it
+        says).
 
     Examples
     --------
@@ -191,7 +205,7 @@ class DowndragAnalysis:
     neutral_plane_method: str = "auto"
     toe_mobilization: float = 1.0
     endo_bearing_condition: Optional[str] = None
-    skin_friction_stress: str = "initial"
+    skin_friction_stress: str = "final"
 
     def __post_init__(self):
         if self.pile_length <= 0:
@@ -248,12 +262,10 @@ class DowndragAnalysis:
     def compute(self) -> DowndragResult:
         """Run the downdrag analysis.
 
-        The neutral plane is located by ``neutral_plane_method`` (default
-        ``"auto"``: UFC 3-220-20's procedure). Every cited basis is also
-        evaluated on the same inputs and returned in
-        ``neutral_plane_comparison``; when the applicable bases differ
-        materially the result carries a ``judgment`` block saying which
-        one was used and why.
+        Every method in ``neutral_plane_comparison`` is evaluated on the
+        same inputs; the one ``neutral_plane_method`` names (default
+        ``"auto"``: UFC 3-220-20's §6-7.4 procedure) gives the headline
+        numbers, and ``methods_range`` states the spread of the others.
 
         Returns
         -------
@@ -264,11 +276,9 @@ class DowndragAnalysis:
         S = self._state()
         z_nodes, dz, fs = S["z"], S["dz"], S["fs"]
         R = S["R_toe"]
-        L = self.pile_length
         m = self.toe_mobilization
         req = self.neutral_plane_method
         rows = self._comparison_rows(S)
-        by_name = {r["name"]: r for r in rows}
         warning_list: List[str] = []
 
         if S["overloaded"]:
@@ -276,53 +286,55 @@ class DowndragAnalysis:
             # resistance: UFC 3-220-20 §6-7.4 step 5 limiting case, "there
             # is no neutral plane". The pile plunges, every part of the
             # shaft moves down relative to the soil, so no drag develops.
-            used_name = None
             np_method = "none"
             z_np = 0.0
             toe_force = R
             capacity = float(S["resist_full"][0])
             np_basis = (
                 "No neutral plane: the dead load exceeds the pile's nominal "
-                "geotechnical resistance (UFC 3-220-20 §6-7.4 step 5, the "
-                "limiting case). Reported at the pile head with zero drag.")
+                "geotechnical resistance, the limiting case of UFC 3-220-20 "
+                "§6-7.4 step 5. Reported at the pile head with zero drag.")
             warning_list.append(
                 f"NO NEUTRAL PLANE: Q_dead = {self.Q_dead:.1f} kN exceeds "
                 f"the total geotechnical resistance (toe + full shaft) = "
                 f"{capacity:.1f} kN. The pile is overloaded; a drag force "
                 f"is not meaningful. Increase the pile length or size.")
+            used = None
         else:
-            if req == "auto":
-                used_name = (_fe_name(m) if by_name[_fe_name(m)]["applies"]
-                             else "settlement_compatibility")
-            elif req == "force_equilibrium":
-                used_name = _fe_name(m)
-            elif req == "endo":
-                used_name = f"endo ({self.endo_bearing_condition})"
-            else:
-                used_name = req
-            row = by_name[used_name]
-            if not row["applies"]:
+            used = self._headline_row(rows)
+            if not used["applies"]:
                 raise ValueError(
                     f"neutral_plane_method='{req}' does not locate the "
-                    f"neutral plane for these inputs: {row['reason']} Use "
-                    f"neutral_plane_method='auto' or another basis.")
-            np_method = row["method"]
-            z_np = float(row["neutral_plane_depth_m"])
-            toe_force = float(row["toe_force_kN"])
-            np_basis = self._basis_text(S, row)
+                    f"neutral plane for these inputs ({used['name']}): "
+                    f"{used['reason']} Use neutral_plane_method='auto' or "
+                    f"another method.")
+            used["used"] = True
+            np_method = used["method"]
+            z_np = float(used["neutral_plane_depth_m"])
+            toe_force = float(used["toe_force_kN"])
+            np_basis = self._basis_text(S, used)
             self._basis_warnings(S, np_method, z_np, toe_force, warning_list)
         if self.skin_friction_stress == "final":
             np_basis += (
-                " Unit skin friction (beta layers) and the cohesionless toe "
-                "use the final effective stress, sigma'v0 + the fill / "
+                " Unit skin friction (beta layers) and the toe in sand use "
+                "the final effective stress, sigma'v0 plus the fill / "
                 "drawdown change (UFC 3-220-20 §6-7.4 step 2).")
+        else:
+            np_basis += (
+                " Unit skin friction (beta layers) and the toe in sand use "
+                "the initial effective stress sigma'v0 "
+                "(skin_friction_stress='initial'); UFC 3-220-20 §6-7.4 "
+                "step 2 uses the final stress.")
 
-        # Compute dragload and positive resistance
-        dragload = self._compute_dragload(z_nodes, dz, fs, z_np)
+        # Drag load and positive friction: the same integral of the same
+        # unit skin friction profile as the load and resistance curves
+        # (GM-01), so at an intersection Q_np = toe + positive friction.
+        F_L = float(S["F"][-1])
+        dragload = S["shaft_to"](z_np)
         pile_weight_to_np = self.pile_unit_weight * self.pile_area * z_np
         max_pile_load = self.Q_dead + dragload + pile_weight_to_np
 
-        positive_skin = self._compute_positive_resistance(z_nodes, dz, fs, z_np)
+        positive_skin = F_L - dragload
         total_resistance = positive_skin + R
 
         # Compute axial load distribution along pile
@@ -333,25 +345,23 @@ class DowndragAnalysis:
             axial_load = self._compute_axial_load_distribution(
                 z_nodes, dz, fs, R)
         else:
-            axial_load = self._axial_load_with_mobilized_toe(
-                z_nodes, S["drag_from_top"], S["resist_full"], R, z_np)
+            axial_load = self._axial_load_with_mobilized_toe(S, z_np)
 
-        # Compute pile settlement at neutral plane
-        elastic_short = self._compute_elastic_shortening(z_nodes, dz,
-                                                          axial_load, z_np)
         toe_settle = self._compute_toe_settlement(
             S["sigma_v0"][-1], S["delta_sigma"][-1], toe_force)
-        pile_settlement = elastic_short + toe_settle
-
-        # Settlement at the neutral plane from the soil profile
-        soil_settle_at_np = float(np.interp(z_np, z_nodes,
-                                            S["soil_settlement"]))
-
-        # Use the larger of pile settlement and soil settlement at NP
-        # as the controlling settlement (they should be close if compatible)
+        if used is None:
+            elastic_short = 0.0
+            pile_settlement = toe_settle
+            soil_settle_at_np = (float(S["soil_settlement"][0])
+                                 + S["s_fill_only"])
+        else:
+            # UFC 3-220-20 Fig 6-19 / §6-5.8 item 6: the pile head settles
+            # as much as the neutral plane plus the elastic compression of
+            # the pile above it.
+            elastic_short = used["elastic_compression_above_np_mm"] / 1000.0
+            pile_settlement = used["pile_settlement_mm"] / 1000.0
+            soil_settle_at_np = used["soil_settlement_at_np_mm"] / 1000.0
         settlement = max(pile_settlement, soil_settle_at_np)
-
-        judgment = self._judgment(rows, used_name, warning_list)
 
         # Limit state checks
 
@@ -396,7 +406,7 @@ class DowndragAnalysis:
             structural_demand=structural_demand,
             geotechnical_ok=geotechnical_ok,
             settlement_ok=settlement_ok,
-            pile_length=L,
+            pile_length=self.pile_length,
             pile_diameter=self.pile_diameter,
             neutral_plane_method=np_method,
             neutral_plane_basis=np_basis,
@@ -406,16 +416,39 @@ class DowndragAnalysis:
             toe_mobilization=m,
             skin_friction_stress=self.skin_friction_stress,
             neutral_plane_comparison=rows,
-            judgment=judgment,
+            methods_range=_methods_range(rows),
+            headline_method=(used["name"] if used is not None
+                             else "no neutral plane"),
         )
 
-    # ── Neutral-plane bases ───────────────────────────────────────────────
+    # ── Neutral-plane methods ─────────────────────────────────────────────
+
+    def _headline_row(self, rows: list) -> dict:
+        """The comparison row that gives the headline numbers."""
+        req = self.neutral_plane_method
+        m = self.toe_mobilization
+
+        def fe_row():
+            return next(r for r in rows
+                        if r["method"] == "force_equilibrium"
+                        and abs(r["toe_mobilization"] - m) < 1e-9)
+
+        if req == "auto":
+            row = fe_row()
+            if row["applies"]:
+                return row
+            return next(r for r in rows
+                        if r["method"] == "settlement_compatibility")
+        if req == "force_equilibrium":
+            return fe_row()
+        return next(r for r in rows if r["method"] == req)
 
     def _state(self) -> dict:
-        """Everything the neutral-plane bases share: the depth grid, unit
-        skin friction, the soil settlement profile, the load and resistance
-        curves (toe fully mobilized), the settlement mismatch, and the
-        planes force equilibrium and settlement compatibility give."""
+        """Everything the methods share: the depth grid, unit skin
+        friction and its running integral, the soil settlement profile,
+        the load and resistance curves (toe fully mobilized), the
+        settlement mismatch, and the planes the curves' intersection and
+        the toe-penetration compatibility give."""
         z_nodes, dz = self._discretize()
         sigma_v0 = np.array([
             self.soil.effective_stress_at_depth(z) for z in z_nodes
@@ -425,6 +458,13 @@ class DowndragAnalysis:
         sigma_fs = (sigma_v0 + delta_sigma
                     if self.skin_friction_stress == "final" else sigma_v0)
         fs = self._compute_skin_friction(z_nodes, sigma_fs)
+        # Shaft resistance from the head to each node (kN): one integral of
+        # the reported unit skin friction profile for every use (GM-01).
+        F = _shaft_cumulative(z_nodes, fs, self.pile_perimeter)
+
+        def shaft_to(z: float) -> float:
+            return _shaft_to(z, z_nodes, fs, F, self.pile_perimeter)
+
         # Soil settlement profile, measured from the toe level
         soil_settlement = self._compute_soil_settlement(
             z_nodes, dz, sigma_v0, delta_sigma)
@@ -438,14 +478,14 @@ class DowndragAnalysis:
         z_fe_m = (z_fe_full if m == 1.0 else
                   self._find_neutral_plane(z_nodes, dz, fs, m * R)[0])
 
-        # Settlement compatibility (UFC 3-220-20 Fig 6-19: pile and soil
-        # settle equally at the NP), evaluated at every node.
+        # Pile and soil settle equally at the NP (UFC 3-220-20 Fig 6-19),
+        # evaluated at every node.
         g, toe_force_at = self._settlement_mismatch(
             z_nodes, dz, drag_from_top, resist_full, R,
             soil_settlement, sigma_v0[-1], delta_sigma[-1])
         z_sc, sc_toe_yields = _compatible_plane(z_nodes, g, z_fe_full)
         return {
-            "z": z_nodes, "dz": dz, "fs": fs,
+            "z": z_nodes, "dz": dz, "fs": fs, "F": F, "shaft_to": shaft_to,
             "sigma_v0": sigma_v0, "delta_sigma": delta_sigma,
             "soil_settlement": soil_settlement,
             "R_toe": R,
@@ -462,16 +502,22 @@ class DowndragAnalysis:
                 sigma_v0[-1], delta_sigma[-1], 0.0),
         }
 
+    def _load_at(self, S: dict, z: float) -> float:
+        """Load curve at depth ``z``: Q_dead + pile weight + negative skin
+        friction from the head (kN)."""
+        return (self.Q_dead + self.pile_unit_weight * self.pile_area * z
+                + S["shaft_to"](z))
+
     def _pile_settlement_at(self, S: dict, z: float,
                             toe_force: float) -> float:
-        """Pile settlement at depth ``z`` with the neutral plane there,
-        measured like the soil profile (from the soil at the toe level):
-        toe penetration (bearing-stratum compression under the toe force,
-        less what the fill / drawdown alone causes) + elastic compression
-        of the pile between ``z`` and the toe (UFC 3-220-20 Fig 6-19)."""
+        """Settlement of the pile at depth ``z`` with the neutral plane
+        there: settlement of the soil under the toe (bearing-stratum
+        compression under the toe force and the fill / drawdown) + elastic
+        compression of the pile between ``z`` and the toe (UFC 3-220-20
+        Fig 6-19)."""
         zn, fb = S["z"], S["f_below"]
-        q_np = float(np.interp(z, zn, S["drag_from_top"]))
-        f_np = float(np.interp(z, zn, fb))
+        q_np = self._load_at(S, z)
+        f_np = float(S["F"][-1]) - S["shaft_to"](z)
         toe_raw = q_np - f_np
         # Positive friction below is only partly mobilized when it would
         # exceed the load at the plane (toe force then zero).
@@ -483,30 +529,49 @@ class DowndragAnalysis:
         AE = self.pile_area * self.pile_E
         compression = (float(np.trapezoid(q, zz)) / AE
                        if AE > 0 and len(zz) > 1 else 0.0)
-        penetration = max(0.0, self._compute_toe_settlement(
-            S["sigma_v0"][-1], S["delta_sigma"][-1], toe_force)
-            - S["s_fill_only"])
-        return penetration + compression
+        under_toe = max(S["s_fill_only"], self._compute_toe_settlement(
+            S["sigma_v0"][-1], S["delta_sigma"][-1], toe_force))
+        return under_toe + compression
+
+    def _compression_above(self, S: dict, z: float) -> float:
+        """Elastic compression of the pile from the head to depth ``z``
+        under the load curve (UFC 3-220-20 Eq 6-45, segment by segment)."""
+        AE = self.pile_area * self.pile_E
+        zn = S["z"]
+        above = zn < z
+        zz = np.append(zn[above], z)
+        if AE <= 0 or len(zz) < 2:
+            return 0.0
+        qq = np.append(S["drag_from_top"][above], self._load_at(S, z))
+        return float(np.trapezoid(qq, zz)) / AE
 
     def _plane_numbers(self, S: dict, z: float, toe_force: float) -> dict:
-        """Drag load, load at the plane and the soil / pile settlement at
-        the plane for a neutral plane at ``z`` carrying ``toe_force``."""
-        drag = self._compute_dragload(S["z"], S["dz"], S["fs"], z)
-        q_np = self.Q_dead + drag + self.pile_unit_weight * self.pile_area * z
-        s_soil = float(np.interp(z, S["z"], S["soil_settlement"]))
+        """Drag load, drag force, load at the plane, the soil and pile
+        settlement at the plane and the pile head settlement for a neutral
+        plane at ``z`` carrying ``toe_force``. Settlements are measured from
+        the original ground (the soil at the toe level settles by the
+        bearing-stratum compression under the fill / drawdown alone)."""
+        drag = S["shaft_to"](z)
+        q_np = self._load_at(S, z)
+        s_soil = (float(np.interp(z, S["z"], S["soil_settlement"]))
+                  + S["s_fill_only"])
         s_pile = self._pile_settlement_at(S, z, toe_force)
         R = S["R_toe"]
         if R > 0 and toe_force >= R * (1.0 - 1e-9) and s_soil > s_pile:
             # Toe at its full resistance: it yields and the pile goes down
             # with the soil (elastic-plastic toe).
             s_pile = s_soil
+        above = self._compression_above(S, z)
         return {
             "neutral_plane_depth_m": float(z),
-            "dragload_kN": float(drag),
             "max_pile_load_kN": float(q_np),
+            "dragload_kN": float(drag),
+            "drag_force_kN": float(q_np - self.Q_dead),
             "toe_force_kN": float(toe_force),
             "soil_settlement_at_np_mm": s_soil * 1000.0,
             "pile_settlement_at_np_mm": s_pile * 1000.0,
+            "elastic_compression_above_np_mm": above * 1000.0,
+            "pile_settlement_mm": (max(s_soil, s_pile) + above) * 1000.0,
         }
 
     def _settling_base_depth(self, S: dict) -> Optional[float]:
@@ -526,27 +591,33 @@ class DowndragAnalysis:
         return base
 
     def _comparison_rows(self, S: dict) -> list:
-        """Every cited neutral-plane basis on the same inputs.
+        """Every method on the same inputs, one row each.
 
-        Each row: name, method, toe_mobilization, role ('basis' = a design
-        basis; 'check' = settlement compatibility when no soil settlement
-        is computed; 'bound' = the pile-toe upper bound), source,
-        assumptions, applies, reason, and (when it applies) the plane
-        depth, drag load, load at the plane, toe force, and the soil and
-        pile settlement at the plane (both from the soil at the toe level).
+        Each row: name (as the cited reference words it), method (the
+        ``neutral_plane_method`` value), toe_mobilization, source,
+        assumptions, applies, used (True on the row that gives the
+        headline), reason (why it does not apply, or a note), and when it
+        applies: the neutral plane depth, the maximum load Q_np, the drag
+        load (negative skin friction above the plane), the drag force
+        Q_np - Q_dead (UFC Eq 6-80), the toe force, the soil and pile
+        settlement at the plane, the elastic compression above it and the
+        pile head settlement.
         """
         L = self.pile_length
         R = S["R_toe"]
+        F_L = float(S["F"][-1])
         rows = []
 
-        def row(name, method, role, source, assumptions, mob=None):
+        def row(name, method, source, assumptions, mob=None):
             r = {"name": name, "method": method, "toe_mobilization": mob,
-                 "role": role, "source": source,
-                 "assumptions": assumptions, "applies": False,
-                 "reason": "", "neutral_plane_depth_m": None,
-                 "dragload_kN": None, "max_pile_load_kN": None,
+                 "source": source, "assumptions": assumptions,
+                 "applies": False, "used": False, "reason": "",
+                 "neutral_plane_depth_m": None, "max_pile_load_kN": None,
+                 "dragload_kN": None, "drag_force_kN": None,
                  "toe_force_kN": None, "soil_settlement_at_np_mm": None,
-                 "pile_settlement_at_np_mm": None}
+                 "pile_settlement_at_np_mm": None,
+                 "elastic_compression_above_np_mm": None,
+                 "pile_settlement_mm": None}
             rows.append(r)
             return r
 
@@ -555,16 +626,17 @@ class DowndragAnalysis:
             r["applies"] = True
 
         def imposed(r, z, what):
-            """A plane set by a rule: check force equilibrium can hold."""
-            q_np = float(np.interp(z, S["z"], S["drag_from_top"]))
-            f_np = float(np.interp(z, S["z"], S["f_below"]))
+            """A plane set by a statement, not by equilibrium: check the
+            toe could carry what equilibrium then asks of it."""
+            q_np = self._load_at(S, z)
+            f_np = F_L - S["shaft_to"](z)
             toe_raw = q_np - f_np
             if toe_raw > R * (1.0 + 1e-6) + 1e-9:
                 r["reason"] = (
-                    f"with the plane {what} ({z:.2f} m) the toe would have "
-                    f"to carry {toe_raw:.0f} kN, more than its resistance "
-                    f"({R:.0f} kN): force equilibrium puts the plane "
-                    f"higher.")
+                    f"with the neutral plane {what} ({z:.2f} m) the toe "
+                    f"would have to carry {toe_raw:.0f} kN, more than its "
+                    f"resistance ({R:.0f} kN): the load and resistance "
+                    f"curves put the plane higher.")
                 return
             fill(r, z, float(min(max(toe_raw, 0.0), R)))
 
@@ -579,18 +651,21 @@ class DowndragAnalysis:
         for mob in mobs:
             pct = round(mob * 100)
             if mob == 1.0:
-                r = row(_fe_name(mob), "force_equilibrium", "basis",
+                r = row(_fe_name(mob), "force_equilibrium",
                         _SOURCE["fe_full"],
-                        "Side and base fully mobilized. Conservative for the "
-                        "drag force (structural limit state); not "
-                        "conservative for settlement (UFC §6-5.8.4.2).",
-                        mob)
+                        "Intersection of the load and resistance curves with "
+                        "side and base resistance fully mobilized: UFC "
+                        "§6-7.4 step 3 calls it 'a conservative approach for "
+                        "evaluating the drag force'; not conservative for "
+                        "settlement (§6-5.8.4.2).", mob)
             else:
-                r = row(_fe_name(mob), "force_equilibrium", "basis",
+                r = row(_fe_name(mob), "force_equilibrium",
                         _SOURCE["fe_partial"],
-                        f"Side fully mobilized, base at {pct}% of its "
-                        f"resistance: the 0/50/100% bracket for settlement "
-                        f"(Siegel et al. 2013).", mob)
+                        f"Intersection of the load and resistance curves, "
+                        f"side fully mobilized, toe at {pct}% of its nominal "
+                        f"resistance: UFC §6-5.8.4.2 and GEC-12 §7.3.6.1 "
+                        f"analyse 0%, 50% and 100% (Siegel et al. 2013).",
+                        mob)
             if S["overloaded"]:
                 r["reason"] = none_reason
                 continue
@@ -600,27 +675,28 @@ class DowndragAnalysis:
                 q0 = float(S["drag_from_top"][0])
                 if q0 > mob * R + f_total:
                     r["reason"] = (
-                        f"the curves do not cross: Q_dead ({q0:.0f} kN) "
+                        f"the curves do not intersect: Q_dead ({q0:.0f} kN) "
                         f"exceeds {pct}% of the toe resistance + the whole "
                         f"shaft ({mob * R + f_total:.0f} kN).")
                 else:
                     r["reason"] = (
-                        f"the curves do not cross: {pct}% of the toe "
+                        f"the curves do not intersect: {pct}% of the toe "
                         f"resistance ({mob * R:.0f} kN) exceeds all the pile "
                         f"can deliver to its toe "
-                        f"({float(S['drag_from_top'][-1]):.0f} kN, whole "
-                        f"shaft as drag).")
+                        f"({float(S['drag_from_top'][-1]):.0f} kN with the "
+                        f"whole shaft in negative skin friction).")
                 continue
             fill(r, z, mob * R)
 
-        # Settlement compatibility (Fellenius unified method)
+        # Pile and soil settle equally; toe force compatible with the toe
+        # penetration (UFC §6-5.8.4.3, Fig 6-19; Fellenius 2021)
         settles = S["any_soil_settles"]
-        r = row("settlement_compatibility", "settlement_compatibility",
-                "basis" if settles else "check", _SOURCE["sc"],
-                "Pile and soil settle equally at the plane (Fig 6-19). Toe "
-                "elastic-plastic: penetration from bearing-stratum "
-                "compression under the toe force (UFC Eqs 6-51 to 6-54), "
-                "capped at the toe resistance; side fully mobilized.")
+        r = row(_SC_NAME, "settlement_compatibility", _SOURCE["sc"],
+                "Pile and soil settle equally at the neutral plane (Fig "
+                "6-19). The toe force follows the toe penetration: "
+                "bearing-stratum compression under the toe force (UFC Eqs "
+                "6-51 to 6-54) standing in for a q-z curve, capped at the "
+                "toe resistance; side fully mobilized.")
         if S["overloaded"]:
             r["reason"] = none_reason
         else:
@@ -630,16 +706,18 @@ class DowndragAnalysis:
             fill(r, z, toe)
             if not settles:
                 r["reason"] = (
-                    "no soil settlement is computed (no loaded settling "
-                    "layer), so compatibility finds no drag; UFC §6-5.7 / "
-                    "FHWA (2016): the pile-soil stiffness contrast alone "
-                    "gives some drag force.")
+                    "no soil settles here (no settling layer loaded by fill "
+                    "or drawdown), so this gives no drag; UFC §6-5.7 (FHWA "
+                    "2016): the pile-soil stiffness contrast alone gives "
+                    "some drag force.")
 
-        # Bearing-layer rule for end-bearing piles
-        r = row("bearing_layer_top", "bearing_layer_top", "basis",
-                _SOURCE["blt"],
-                "End-bearing pile in a stratum much stiffer than the "
-                "compressible soil: plane at the base of the settling soil.")
+        # End-bearing pile: plane near the top of the bearing layer
+        r = row(_BLT_NAME, "bearing_layer_top", _SOURCE["blt"],
+                "UFC §6-7.4 step 5: 'the neutral plane will be located near "
+                "the interface of the column and the bearing layer for an "
+                "end-bearing column bearing in a stratum that is much "
+                "stiffer than the compressible soil'. Plane at the base of "
+                "the settling soil; set by that statement, not computed.")
         z_b = self._settling_base_depth(S)
         if S["overloaded"]:
             r["reason"] = none_reason
@@ -653,29 +731,30 @@ class DowndragAnalysis:
         else:
             imposed(r, z_b, "at the base of the settling soil")
 
-        # Pile toe: the upper bound
-        r = row("pile_toe", "pile_toe", "bound", _SOURCE["toe"],
-                "Upper bound: the whole shaft as drag. GEC-12 uses it for "
-                "group settlement, not for a single pile's drag.")
+        # Neutral plane at the pile toe: the upper bound on drag
+        r = row(_TOE_NAME, "pile_toe", _SOURCE["toe"],
+                "The whole shaft in negative skin friction: the upper bound "
+                "on the drag force for a single pile. GEC-12 §7.3.5.7 uses "
+                "the plane at the toe for group settlement.")
         if S["overloaded"]:
             r["reason"] = none_reason
         else:
             imposed(r, L, "at the toe")
 
-        # Endo (CGPR #56 Table 3.1)
+        # Endo et al. (1969), CGPR #56 Table 3.1
         cond = self.endo_bearing_condition
         if cond is None:
-            r = row("endo", "endo", "basis", _SOURCE["endo"],
-                    "Plane assumed at a fraction of the embedment; an "
-                    "estimate / check.")
+            r = row(_endo_name(None), "endo", _SOURCE["endo"],
+                    "Neutral plane assumed at a fraction of the embedment; "
+                    "an estimate.")
             r["reason"] = ("needs endo_bearing_condition ('floating', "
                            "'stiff_flexible' or 'end_bearing', CGPR #56 "
                            "Table 3.1).")
         else:
             ratio = ENDO_NEUTRAL_PLANE_RATIOS[cond]
-            r = row(f"endo ({cond})", "endo", "basis", _SOURCE["endo"],
-                    f"Plane assumed at {ratio:g} x the embedment "
-                    f"('{cond}'); an estimate / check, not computed.")
+            r = row(_endo_name(cond), "endo", _SOURCE["endo"],
+                    f"Neutral plane assumed at {ratio:g} x the embedment "
+                    f"('{cond}', Table 3.1); an estimate, not computed.")
             if S["overloaded"]:
                 r["reason"] = none_reason
             else:
@@ -683,98 +762,112 @@ class DowndragAnalysis:
         return rows
 
     def _basis_text(self, S: dict, row: dict) -> str:
-        """One-paragraph statement of the basis actually used."""
+        """How the headline neutral plane was located, in plain words."""
         L = self.pile_length
         method = row["method"]
         z_np = row["neutral_plane_depth_m"]
         m = row["toe_mobilization"]
+        if self.neutral_plane_method == "auto":
+            lead = f"{UFC_PROCEDURE}: "
+        else:
+            lead = (f"{row['name']} (neutral_plane_method="
+                    f"'{self.neutral_plane_method}', {row['source']}): ")
         if method == "force_equilibrium":
             if m == 1.0:
-                return (
-                    "Force equilibrium: the load curve (Q_dead + pile weight "
-                    "+ negative skin friction) meets the resistance curve "
-                    "(toe resistance + positive skin friction) at this "
-                    "depth, with side and base resistance fully mobilized "
-                    "(UFC 3-220-20 §6-7.4 steps 3-5; Fellenius 2004).")
-            return (
-                f"Force equilibrium with the toe at {round(m * 100)}% of its "
-                f"resistance (toe_mobilization = {m:g}): the load curve "
-                f"meets the resistance curve (mobilized toe + positive skin "
-                f"friction) at this depth (UFC 3-220-20 §6-5.8.4.2 and "
-                f"§6-7.4 steps 3-5; GEC-12 §7.3.6.1; Siegel et al. 2013).")
+                return lead + (
+                    "the neutral plane is where the load curve (Q_dead + "
+                    "pile weight + negative skin friction) meets the "
+                    "resistance curve (toe resistance + positive skin "
+                    "friction), with side and base resistance fully "
+                    "mobilized (UFC 3-220-20 §6-7.4 steps 3-5, Fig 6-26).")
+            return lead + (
+                f"the neutral plane is where the load curve meets the "
+                f"resistance curve with the toe at {round(m * 100)}% of its "
+                f"nominal resistance (toe_mobilization = {m:g}; UFC 3-220-20 "
+                f"§6-5.8.4.2; GEC-12 §7.3.6.1; Siegel et al. 2013).")
         if method == "settlement_compatibility":
+            if self.neutral_plane_method == "auto":
+                lead += (
+                    f"the load and resistance curves do not intersect with "
+                    f"the toe at {round(self.toe_mobilization * 100)}% of "
+                    f"its resistance, so ")
             if not S["any_soil_settles"]:
-                return (
-                    "Settlement compatibility: no soil settles (no settling "
-                    "layer, or no fill / drawdown to load it), so the pile "
-                    "settles at least as much as the soil everywhere and no "
-                    "negative skin friction develops. Neutral plane at the "
-                    "pile head, zero drag.")
+                return lead + (
+                    "the neutral plane is where the pile and the soil settle "
+                    "equally (UFC 3-220-20 §6-5.8.4.3, Fig 6-19). Here no "
+                    "soil settles (no settling layer, or no fill or drawdown "
+                    "to load it): the pile settles at least as much as the "
+                    "soil everywhere and no negative skin friction develops. "
+                    "Neutral plane at the pile head, zero drag.")
             if S["sc_toe_yields"]:
-                return (
-                    "Settlement compatibility: down to the force-equilibrium "
-                    "crossing the soil settles more than the pile would on "
-                    "an elastic toe, so the toe yields at its full "
-                    "resistance and the plane is the force-equilibrium plane "
-                    "(UFC 3-220-20 §6-5.8.4.3 and Fig 6-19; Fellenius "
-                    "2021).")
+                return lead + (
+                    "the neutral plane is where the pile and the soil settle "
+                    "equally (UFC 3-220-20 §6-5.8.4.3, Fig 6-19; Fellenius "
+                    "2021). Down to the intersection of the curves with the "
+                    "toe fully mobilized the soil settles more than the pile "
+                    "would on an elastic toe, so the toe is pushed to its "
+                    "full resistance and the neutral plane is that "
+                    "intersection.")
             if z_np >= L - 1e-9:
-                return (
-                    "Settlement compatibility, end-bearing case: the soil "
+                return lead + (
+                    "the neutral plane is where the pile and the soil settle "
+                    "equally (UFC 3-220-20 §6-5.8.4.3, Fig 6-19). The soil "
                     "settles more than the pile all the way down to the toe, "
-                    "so the neutral plane is at the pile toe (UFC 3-220-20 "
-                    "§6-7.4 step 5; Fellenius 2004).")
-            return (
-                "Settlement compatibility: the depth where the computed "
-                "soil settlement equals the pile settlement (UFC 3-220-20 "
-                "Fig 6-19). For an end-bearing pile in a stratum stiffer "
-                "than the compressible soil this falls near the top of "
-                "the bearing layer (UFC 3-220-20 §6-7.4 step 5).")
+                    "so the neutral plane is at the pile toe (an end-bearing "
+                    "pile, §6-7.4 step 5).")
+            return lead + (
+                "the neutral plane is where the pile and the soil settle "
+                "equally, with the toe force the pile delivers there "
+                "compatible with the toe penetration it causes (UFC "
+                "3-220-20 §6-5.8.4.3, Fig 6-19; Fellenius 2021). For an "
+                "end-bearing pile in a stratum stiffer than the "
+                "compressible soil this is near the top of the bearing "
+                "layer (§6-7.4 step 5).")
         if method == "bearing_layer_top":
-            return (
-                "Bearing-layer rule: neutral plane at the base of the "
-                "settling soil (the top of the bearing stratum), for an "
-                "end-bearing pile in a stratum much stiffer than the "
-                "compressible soil (UFC 3-220-20 §6-7.4 step 5). Not a "
-                "computed equilibrium.")
+            return lead + (
+                "neutral plane at the base of the settling soil (the top of "
+                "the bearing stratum), where UFC 3-220-20 §6-7.4 step 5 puts "
+                "it for an end-bearing pile in a stratum much stiffer than "
+                "the compressible soil. Set by that statement, not computed "
+                "from the load and resistance curves.")
         if method == "pile_toe":
-            return (
-                "Neutral plane at the pile toe, the whole shaft as drag: the "
-                "upper bound on drag (chosen by the caller). GEC-12 §7.3.5.7 "
-                "places the plane at the toe for GROUP settlement "
-                "(Goudreault & Fellenius 1994).")
+            return lead + (
+                "neutral plane at the pile toe, the whole shaft in negative "
+                "skin friction: the upper bound on the drag force. GEC-12 "
+                "§7.3.5.7 places the neutral plane at the toe for group "
+                "settlement (Goudreault and Fellenius 1994).")
         cond = self.endo_bearing_condition
-        return (
-            f"Endo method: neutral plane assumed at "
-            f"{ENDO_NEUTRAL_PLANE_RATIOS[cond]:g} x the embedment for a "
-            f"'{cond}' pile (CGPR #56 §3.2.1, Table 3.1). An estimate / "
-            f"check, not a computed plane.")
+        return lead + (
+            f"neutral plane assumed at {ENDO_NEUTRAL_PLANE_RATIOS[cond]:g} x "
+            f"the embedment for a '{cond}' pile (CGPR #56 §3.2.1, Table 3.1, "
+            f"Endo et al. 1969). An estimate, not computed.")
 
     def _basis_warnings(self, S: dict, np_method: str, z_np: float,
                         toe_force: float, warning_list: list) -> None:
-        """The warnings that go with the basis used."""
+        """The warnings that go with the headline method."""
         z_se = S["z_se"]
         R = S["R_toe"]
         m = self.toe_mobilization
         if np_method == "force_equilibrium":
             if S["any_soil_settles"] and z_np > z_se + 1e-6:
                 warning_list.append(
-                    f"The force-equilibrium neutral plane ({z_np:.2f} m) "
-                    f"lies below {z_se:.2f} m, where the computed soil "
-                    f"settlement falls to the pile's; the friction between "
-                    f"them is counted as drag although that soil settles "
-                    f"less than the pile. With full mobilization that is "
-                    f"UFC 3-220-20 §6-7.4's conservative assumption for "
-                    f"drag force. For settlement, full base mobilization is "
-                    f"not conservative (§6-5.8.4.2): see the 50% and 0% "
-                    f"toe rows of the comparison (toe_mobilization).")
+                    f"The neutral plane where the load and resistance curves "
+                    f"intersect ({z_np:.2f} m) lies below {z_se:.2f} m, "
+                    f"where the computed soil settlement falls to the "
+                    f"pile's; the friction between them is counted as "
+                    f"negative although that soil settles less than the "
+                    f"pile. With full mobilization that is UFC 3-220-20 "
+                    f"§6-7.4's conservative assumption for the drag force. "
+                    f"For settlement, full base mobilization is not "
+                    f"conservative (§6-5.8.4.2): see the 50% and 0% toe "
+                    f"mobilization rows (toe_mobilization).")
         elif (np_method == "settlement_compatibility"
               and S["z_fe_m"] is None):
             q0 = float(S["drag_from_top"][0])
             f_total = float(S["f_below"][0])
             delivered = float(S["drag_from_top"][-1])
             L = self.pile_length
-            upper = self._compute_dragload(S["z"], S["dz"], S["fs"], L)
+            upper = S["shaft_to"](L)
             if q0 > m * R + f_total:
                 cause = (
                     f"with toe_mobilization = {m:g} the dead load "
@@ -786,80 +879,19 @@ class DowndragAnalysis:
                     f"the toe resistance ({m * R:.1f} kN, ultimate unless "
                     f"Nt was given as a mobilized value) exceeds everything "
                     f"the pile can carry to its toe ({delivered:.1f} kN "
-                    f"with the whole shaft in drag), so full base "
-                    f"mobilization is impossible")
+                    f"with the whole shaft in negative skin friction), so "
+                    f"full base mobilization is impossible")
             warning_list.append(
-                f"The load and resistance curves do not intersect: {cause}, "
-                f"and force equilibrium does not locate the neutral plane. "
-                f"It is placed by settlement compatibility at {z_np:.2f} m, "
-                f"with a toe force of {toe_force:.1f} kN. Upper bound if the "
-                f"soil settled relative to the pile down to the toe: neutral "
-                f"plane at the toe, drag {upper:.1f} kN. To use force "
-                f"equilibrium instead, give toe_mobilization or Nt for the "
-                f"MOBILIZED toe resistance (UFC 3-220-20 §6-5.8.4.2: try "
-                f"0%, 50%, 100%).")
-
-    def _judgment(self, rows: list, used_name: Optional[str],
-                  warning_list: list) -> Optional[dict]:
-        """A ``judgment`` block when the applicable bases differ materially
-        (the design bases plus the one used; the pile-toe bound and a
-        compatibility 'check' row do not count), else None."""
-        if used_name is None:
-            return None
-        considered = [r for r in rows if r["applies"]
-                      and (r["role"] == "basis" or r["name"] == used_name)]
-        if len(considered) < 2:
-            return None
-        nps = [r["neutral_plane_depth_m"] for r in considered]
-        drags = [r["dragload_kN"] for r in considered]
-        np_tol = max(NP_SPREAD_ABS_M, NP_SPREAD_REL_LENGTH * self.pile_length)
-        drag_tol = max(DRAG_SPREAD_ABS_KN, DRAG_SPREAD_REL * max(drags))
-        if (max(nps) - min(nps) <= np_tol
-                and max(drags) - min(drags) <= drag_tol):
-            return None
-        req = self.neutral_plane_method
-        if req == "auto":
-            why = (
-                "Default: UFC 3-220-20, the governing reference for DoD "
-                "work. Its §6-7.4 procedure locates the plane by force "
-                "equilibrium (side and base fully mobilized unless "
-                "toe_mobilization is given; conservative for drag, not for "
-                "settlement) and, when the curves do not cross, by "
-                "settlement compatibility (Fig 6-19). The bases differ "
-                "materially here: choose one (neutral_plane_method, "
-                "toe_mobilization).")
-        else:
-            why = (f"Chosen by the caller (neutral_plane_method='{req}'). "
-                   f"The bases differ materially here.")
-        options = []
-        for r in rows:
-            if r["applies"]:
-                result = (
-                    f"NP {r['neutral_plane_depth_m']:.2f} m, drag "
-                    f"{r['dragload_kN']:.0f} kN (Q_np "
-                    f"{r['max_pile_load_kN']:.0f} kN); settlement at NP soil "
-                    f"{r['soil_settlement_at_np_mm']:.1f} / pile "
-                    f"{r['pile_settlement_at_np_mm']:.1f} mm")
-                if r["role"] != "basis":
-                    result += f" ({r['role']})"
-            else:
-                result = "not applicable: " + r["reason"]
-            options.append({"name": r["name"], "source": r["source"],
-                            "assumptions": r["assumptions"],
-                            "applies": bool(r["applies"]), "result": result})
-        warning_list.append(
-            f"The neutral-plane bases differ materially for these inputs "
-            f"(plane {min(nps):.2f}-{max(nps):.2f} m, drag "
-            f"{min(drags):.0f}-{max(drags):.0f} kN): the basis is the "
-            f"engineer's choice (see 'judgment' and the comparison). UFC "
-            f"3-220-20 §6-5.8.4.2: if the conclusion depends on the toe "
-            f"mobilization, refine with t-z / q-z curves.")
-        return {
-            "question": "Which neutral-plane basis governs for this pile?",
-            "options": options,
-            "used": used_name,
-            "why": why,
-        }
+                f"The load and resistance curves do not intersect: {cause}. "
+                f"The neutral plane is placed where the pile and the soil "
+                f"settle equally, with the toe force compatible with the toe "
+                f"penetration (UFC 3-220-20 §6-5.8.4.3, Fig 6-19): "
+                f"{z_np:.2f} m, toe force {toe_force:.1f} kN. Upper bound "
+                f"if the soil settled relative to the pile down to the toe: "
+                f"neutral plane at the toe, drag load {upper:.1f} kN. To "
+                f"intersect the curves instead, give toe_mobilization or Nt "
+                f"for the MOBILIZED toe resistance (UFC 3-220-20 "
+                f"§6-5.8.4.2: try 0%, 50%, 100%).")
 
     # ── Private helper methods ────────────────────────────────────────────
 
@@ -869,18 +901,56 @@ class DowndragAnalysis:
         Returns
         -------
         z_nodes : numpy.ndarray
-            Depth array from 0 to pile_length.
+            Depth array from 0 to pile_length. Each layer boundary inside
+            the pile appears twice (the unit skin friction jumps there: the
+            first node carries the value above, the second the value below,
+            as a repeated depth encodes a jump in a CGPR #56 profile), and
+            each water-table depth once (the effective stress has a kink
+            there), so the trapezoid integral of the piecewise-linear
+            profile is exact for alpha and beta layers (GM-01).
         dz : float
-            Sublayer thickness.
+            Nominal node spacing (the grid is uniform between those
+            depths).
         """
+        L = self.pile_length
         total_nodes = max(
-            int(self.pile_length / 0.25),  # ~0.25 m spacing
+            int(L / 0.25),  # ~0.25 m spacing
             self.n_sublayers * len(self.soil.layers),
             50,
         )
-        z_nodes = np.linspace(0, self.pile_length, total_nodes + 1)
+        z_nodes = np.linspace(0, L, total_nodes + 1)
         dz = z_nodes[1] - z_nodes[0]
+        tol = 1e-9 * max(L, 1.0)
+        bounds, top = [], 0.0
+        for layer in self.soil.layers:
+            top += layer.thickness
+            if tol < top < L - tol:
+                bounds.append(top)
+        kinks = []
+        for zw in (self.soil.gwt_depth,
+                   self.soil.gwt_depth + self.gw_drawdown):
+            if (tol < zw < L - tol
+                    and all(abs(zw - b) > tol for b in bounds + kinks)):
+                kinks.append(zw)
+        special = bounds + kinks
+        if special:
+            keep = [z for z in z_nodes
+                    if all(abs(z - s) > tol for s in special)]
+            z_nodes = np.array(sorted(keep + kinks + bounds + bounds))
         return z_nodes, dz
+
+    @staticmethod
+    def _lookup_depths(z_nodes: np.ndarray) -> np.ndarray:
+        """Depth at which each node picks its layer: at a repeated depth (a
+        layer boundary) the first node takes the layer above, the second
+        the layer below."""
+        look = np.array(z_nodes, dtype=float)
+        eps = 1e-9 * max(float(z_nodes[-1]), 1.0)
+        for i in range(len(z_nodes) - 1):
+            if z_nodes[i + 1] == z_nodes[i]:
+                look[i] -= eps
+                look[i + 1] += eps
+        return look
 
     def _compute_skin_friction(self, z_nodes: np.ndarray,
                                 sigma_v: np.ndarray) -> np.ndarray:
@@ -899,7 +969,7 @@ class DowndragAnalysis:
             Unit skin friction fs (kPa) at each node.
         """
         fs = np.zeros(len(z_nodes))
-        for i, z in enumerate(z_nodes):
+        for i, z in enumerate(self._lookup_depths(z_nodes)):
             try:
                 layer = self.soil.layer_at_depth(z)
             except ValueError:
@@ -1056,35 +1126,45 @@ class DowndragAnalysis:
             Cumulative load from top at each node.
         resist_from_tip : numpy.ndarray
             Cumulative resistance from tip at each node.
+
+        Notes
+        -----
+        Both curves integrate the piecewise-linear unit skin friction
+        profile ``fs`` exactly (``_shaft_cumulative``), and the crossing
+        inside a segment is the exact root of that integral, so the drag
+        load and positive friction reported at the plane balance the curves
+        to rounding (GM-01; before 2026-10-14 the curves summed each
+        segment with its lower node's friction and the drag load with its
+        upper node's, ~4 % apart on DD-1 at 0 % toe).
         """
-        n = len(z_nodes)
         perimeter = self.pile_perimeter
-        pile_weight_per_m = self.pile_unit_weight * self.pile_area
+        w = self.pile_unit_weight * self.pile_area
+        F = _shaft_cumulative(z_nodes, fs, perimeter)
 
-        # Cumulative load from the top (dead load + pile weight + negative friction)
-        drag_from_top = np.zeros(n)
-        drag_from_top[0] = self.Q_dead
-        for i in range(1, n):
-            drag_from_top[i] = (drag_from_top[i - 1]
-                                + pile_weight_per_m * dz
-                                + fs[i] * perimeter * dz)
+        # Load from the top (dead load + pile weight + negative friction)
+        # and resistance from the tip (toe + positive friction upward)
+        drag_from_top = self.Q_dead + w * z_nodes + F
+        resist_from_tip = toe_resistance + F[-1] - F
 
-        # Cumulative resistance from the tip (toe + positive friction upward)
-        resist_from_tip = np.zeros(n)
-        resist_from_tip[-1] = toe_resistance
-        for i in range(n - 2, -1, -1):
-            resist_from_tip[i] = (resist_from_tip[i + 1]
-                                  + fs[i + 1] * perimeter * dz)
-
-        # Find crossing point: where drag_from_top = resist_from_tip
         diff = drag_from_top - resist_from_tip
         z_np = None  # no crossing unless found below
-
-        for i in range(n - 1):
+        for i in range(len(z_nodes) - 1):
             if diff[i] <= 0 and diff[i + 1] > 0:
-                # Linear interpolation for crossing
-                frac = abs(diff[i]) / (abs(diff[i]) + abs(diff[i + 1]))
-                z_np = z_nodes[i] + frac * dz
+                # diff(z_i + t) = diff_i + w t + 2 P (fs_i t + s t^2 / 2):
+                # quadratic in t inside the segment; take its root.
+                h = z_nodes[i + 1] - z_nodes[i]
+                a = perimeter * (fs[i + 1] - fs[i]) / h
+                b = w + 2.0 * perimeter * fs[i]
+                c = float(diff[i])
+                disc = max(b * b - 4.0 * a * c, 0.0)
+                den = b + math.sqrt(disc)
+                if c == 0.0:
+                    t = 0.0
+                elif den > 0.0:
+                    t = -2.0 * c / den
+                else:
+                    t = -c / (diff[i + 1] - c) * h
+                z_np = float(z_nodes[i] + min(max(t, 0.0), h))
                 break
         if z_np is None and diff[-1] == 0.0:
             z_np = float(z_nodes[-1])  # curves meet exactly at the toe
@@ -1136,7 +1216,7 @@ class DowndragAnalysis:
             else:
                 k = q_np / f_below[j]
             q = q_np - k * (f_below[j] - f_below[j:])
-            compression = (float(np.sum(0.5 * (q[:-1] + q[1:]))) * dz / AE
+            compression = (float(np.trapezoid(q, z_nodes[j:])) / AE
                            if AE > 0 and n - j > 1 else 0.0)
             penetration = max(0.0, self._compute_toe_settlement(
                 sigma_v_tip, delta_sigma_tip, float(toe_force[j]))
@@ -1144,10 +1224,7 @@ class DowndragAnalysis:
             g[j] = soil_settlement[j] - (penetration + compression)
         return g, toe_force
 
-    def _axial_load_with_mobilized_toe(self, z_nodes: np.ndarray,
-                                       drag_from_top: np.ndarray,
-                                       resist_from_tip: np.ndarray,
-                                       toe_resistance: float,
+    def _axial_load_with_mobilized_toe(self, S: dict,
                                        z_np: float) -> np.ndarray:
         """Axial load when the toe is not fully mobilized.
 
@@ -1156,78 +1233,30 @@ class DowndragAnalysis:
         delivers. When the full positive friction below the NP exceeds the
         load at the NP, the friction is scaled so the toe force is zero.
         """
-        f_below = resist_from_tip - toe_resistance
-        q_np = float(np.interp(z_np, z_nodes, drag_from_top))
-        f_np = float(np.interp(z_np, z_nodes, f_below))
+        z_nodes, f_below = S["z"], S["f_below"]
+        q_np = self._load_at(S, z_np)
+        f_np = float(S["F"][-1]) - S["shaft_to"](z_np)
         k = 1.0 if (q_np >= f_np or f_np <= 0) else q_np / f_np
         below = q_np - k * (f_np - f_below)
-        q = np.where(z_nodes <= z_np, drag_from_top, below)
+        q = np.where(z_nodes <= z_np, S["drag_from_top"], below)
         return np.maximum(q, 0.0)
 
     def _compute_dragload(self, z_nodes: np.ndarray, dz: float,
                            fs: np.ndarray, z_np: float) -> float:
-        """Compute negative skin friction (dragload) above neutral plane.
-
-        Parameters
-        ----------
-        z_nodes : numpy.ndarray
-            Depth array.
-        dz : float
-            Sublayer thickness.
-        fs : numpy.ndarray
-            Unit skin friction at each node (kPa).
-        z_np : float
-            Neutral plane depth (m).
-
-        Returns
-        -------
-        float
-            Dragload (kN), positive value.
-        """
-        dragload = 0.0
-        for i in range(len(z_nodes)):
-            if z_nodes[i] >= z_np:
-                break
-            # Partial sublayer at NP boundary
-            z_top = z_nodes[i]
-            z_bot = min(z_nodes[i] + dz, z_np)
-            thickness = z_bot - z_top
-            if thickness > 0:
-                dragload += fs[i] * self.pile_perimeter * thickness
-        return dragload
+        """Negative skin friction above the neutral plane (kN): the
+        integral of the piecewise-linear ``fs`` profile from the head to
+        ``z_np`` times the perimeter (the same integral as the load
+        curve)."""
+        F = _shaft_cumulative(z_nodes, fs, self.pile_perimeter)
+        return _shaft_to(z_np, z_nodes, fs, F, self.pile_perimeter)
 
     def _compute_positive_resistance(self, z_nodes: np.ndarray, dz: float,
                                       fs: np.ndarray, z_np: float) -> float:
-        """Compute positive skin friction below neutral plane.
-
-        Parameters
-        ----------
-        z_nodes : numpy.ndarray
-            Depth array.
-        dz : float
-            Sublayer thickness.
-        fs : numpy.ndarray
-            Unit skin friction at each node (kPa).
-        z_np : float
-            Neutral plane depth (m).
-
-        Returns
-        -------
-        float
-            Positive shaft resistance (kN).
-        """
-        positive = 0.0
-        for i in range(len(z_nodes)):
-            if z_nodes[i] < z_np:
-                continue
-            z_top = max(z_nodes[i], z_np)
-            z_bot = z_nodes[i] + dz
-            if z_bot > self.pile_length:
-                z_bot = self.pile_length
-            thickness = z_bot - z_top
-            if thickness > 0:
-                positive += fs[i] * self.pile_perimeter * thickness
-        return positive
+        """Positive shaft resistance below the neutral plane (kN): the same
+        integral from ``z_np`` to the toe."""
+        F = _shaft_cumulative(z_nodes, fs, self.pile_perimeter)
+        return float(F[-1]) - _shaft_to(z_np, z_nodes, fs, F,
+                                        self.pile_perimeter)
 
     def _compute_toe_resistance(self, sigma_v_tip: float) -> float:
         """Compute toe bearing resistance.
@@ -1290,76 +1319,13 @@ class DowndragAnalysis:
         numpy.ndarray
             Axial load Q(z) at each node (kN).
         """
-        n = len(z_nodes)
-        Q = np.zeros(n)
-        pile_weight_per_m = self.pile_unit_weight * self.pile_area
-
-        # We build the load distribution from equilibrium:
-        # Above NP: friction adds load (negative skin friction)
-        # Below NP: friction removes load (positive resistance)
-        # The crossing is the neutral plane (max load).
-        # Simple approach: use the from-top accumulation (drag_from_top)
-        Q[0] = self.Q_dead
-        for i in range(1, n):
-            Q[i] = Q[i - 1] + pile_weight_per_m * dz + fs[i] * self.pile_perimeter * dz
-
-        # However, below the NP the friction should be subtracting.
-        # The _find_neutral_plane method already found the NP.
-        # Re-do: build from both ends and use the minimum envelope.
-        Q_from_top = np.zeros(n)
-        Q_from_top[0] = self.Q_dead
-        for i in range(1, n):
-            Q_from_top[i] = (Q_from_top[i - 1]
-                             + pile_weight_per_m * dz
-                             + fs[i] * self.pile_perimeter * dz)
-
-        Q_from_bot = np.zeros(n)
-        Q_from_bot[-1] = toe_resistance
-        for i in range(n - 2, -1, -1):
-            Q_from_bot[i] = (Q_from_bot[i + 1]
-                             + fs[i + 1] * self.pile_perimeter * dz)
-
-        # The actual axial load is the minimum of both curves at each depth
-        # (above NP: from_top governs; below NP: from_bot governs)
-        Q = np.minimum(Q_from_top, Q_from_bot)
-        return Q
-
-    def _compute_elastic_shortening(self, z_nodes: np.ndarray, dz: float,
-                                     axial_load: np.ndarray,
-                                     z_np: float) -> float:
-        """Compute elastic shortening of the pile above the neutral plane.
-
-        Parameters
-        ----------
-        z_nodes : numpy.ndarray
-            Depth array.
-        dz : float
-            Sublayer thickness.
-        axial_load : numpy.ndarray
-            Axial load distribution Q(z) (kN).
-        z_np : float
-            Neutral plane depth (m).
-
-        Returns
-        -------
-        float
-            Elastic shortening (m).
-        """
-        AE = self.pile_area * self.pile_E
-        if AE <= 0:
-            return 0.0
-
-        shortening = 0.0
-        for i in range(len(z_nodes) - 1):
-            if z_nodes[i] >= z_np:
-                break
-            # Average load in this segment
-            Q_avg = 0.5 * (axial_load[i] + axial_load[i + 1])
-            seg_len = min(z_nodes[i + 1], z_np) - z_nodes[i]
-            if seg_len > 0:
-                shortening += Q_avg * seg_len / AE
-
-        return shortening
+        # Above the NP friction adds load (negative skin friction), below it
+        # friction removes load: the axial load is the lower of the load
+        # curve from the head and the resistance curve from the toe (the
+        # same curves, and the same integral, as the NP search).
+        _, Q_from_top, Q_from_bot = self._find_neutral_plane(
+            z_nodes, dz, fs, toe_resistance)
+        return np.minimum(Q_from_top, Q_from_bot)
 
     def _compute_toe_settlement(self, sigma_v_tip: float,
                                  delta_sigma_tip: float,
@@ -1441,6 +1407,49 @@ class DowndragAnalysis:
 
 # ── Module-level helper functions ─────────────────────────────────────────
 
+def _shaft_cumulative(z_nodes: np.ndarray, fs: np.ndarray,
+                      perimeter: float) -> np.ndarray:
+    """Shaft resistance from the head to each node (kN): the exact integral
+    of the piecewise-linear unit skin friction profile through the nodal
+    values (the trapezoid rule), times the perimeter. The drag load, the
+    positive friction and both curves of the neutral plane search all use
+    this one integral."""
+    seg = 0.5 * (fs[:-1] + fs[1:]) * np.diff(z_nodes) * perimeter
+    return np.concatenate(([0.0], np.cumsum(seg)))
+
+
+def _shaft_to(z: float, z_nodes: np.ndarray, fs: np.ndarray,
+              F: np.ndarray, perimeter: float) -> float:
+    """Shaft resistance from the head to depth ``z`` (kN), exact for the
+    piecewise-linear profile, consistent with ``_shaft_cumulative``."""
+    if z <= z_nodes[0]:
+        return 0.0
+    if z >= z_nodes[-1]:
+        return float(F[-1])
+    i = int(np.searchsorted(z_nodes, z, side="right")) - 1
+    h = z_nodes[i + 1] - z_nodes[i]
+    t = z - z_nodes[i]
+    f_z = fs[i] + (fs[i + 1] - fs[i]) * t / h
+    return float(F[i] + 0.5 * (fs[i] + f_z) * t * perimeter)
+
+
+def _methods_range(rows: list) -> str:
+    """One plain sentence: the spread of the neutral plane and the drag
+    force over every method that applies."""
+    ok = [r for r in rows if r["applies"]]
+    if not ok:
+        return ("No method gives a neutral plane: the dead load exceeds the "
+                "nominal geotechnical resistance.")
+    nps = [r["neutral_plane_depth_m"] for r in ok]
+    dfs = [r["drag_force_kN"] for r in ok]
+    if len(ok) == 1:
+        return (f"Only one of the {len(rows)} methods applies: neutral plane "
+                f"{nps[0]:.2f} m, drag force {dfs[0]:.0f} kN.")
+    return (f"The methods give neutral planes from {min(nps):.2f} m to "
+            f"{max(nps):.2f} m and drag forces from {min(dfs):.0f} kN to "
+            f"{max(dfs):.0f} kN ({len(ok)} of {len(rows)} methods apply).")
+
+
 def _deepest_positive_crossing(z_nodes: np.ndarray, g: np.ndarray) -> float:
     """Deepest depth at which ``g`` (soil minus pile settlement) is > 0.
 
@@ -1461,11 +1470,12 @@ def _deepest_positive_crossing(z_nodes: np.ndarray, g: np.ndarray) -> float:
 
 def _compatible_plane(z_nodes: np.ndarray, g: np.ndarray,
                       z_fe: Optional[float]):
-    """Settlement-compatible neutral plane with an elastic-plastic toe.
+    """Neutral plane where pile and soil settle equally, with an
+    elastic-plastic toe (UFC 3-220-20 Fig 6-19).
 
     ``g`` is soil minus pile settlement for a trial plane at each node,
     with the toe elastic (``_settlement_mismatch``). Below the
-    force-equilibrium crossing ``z_fe`` (toe fully mobilized) equilibrium
+    intersection of the curves ``z_fe`` (toe fully mobilized) equilibrium
     is impossible, so the plane is never deeper than ``z_fe``; if the soil
     still settles more than the elastic pile there, the toe yields at its
     full resistance and the plane IS ``z_fe`` (Fellenius 2021, the

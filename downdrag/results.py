@@ -37,13 +37,16 @@ class DowndragResult:
     total_resistance : float
         Total resistance below NP = positive_skin + toe (kN).
     pile_settlement : float
-        Pile settlement at neutral plane (m).
+        Pile head settlement (m): the settlement at the neutral plane plus
+        the elastic compression of the pile above it (UFC 3-220-20 Fig
+        6-19, §6-5.8 item 6).
     elastic_shortening : float
         Elastic shortening of pile above NP (m).
     toe_settlement : float
         Settlement of bearing stratum below pile tip (m).
     soil_settlement_at_np : float
-        Soil settlement at the neutral plane depth (m).
+        Soil settlement at the neutral plane depth (m), from the original
+        ground.
     z : numpy.ndarray
         Depth array along pile (m).
     axial_load : numpy.ndarray
@@ -66,34 +69,41 @@ class DowndragResult:
     pile_diameter : float
         Pile diameter (m).
     neutral_plane_method : str
-        How the neutral plane was located: ``"force_equilibrium"`` (the
-        load and resistance curves cross), ``"settlement_compatibility"``
-        (placed where soil and pile settle equally; the default when the
-        curves do not cross), ``"bearing_layer_top"``, ``"pile_toe"``,
-        ``"endo"`` (rules, chosen by the caller) or ``"none"`` (the dead
-        load exceeds the total resistance).
+        The ``neutral_plane_method`` value of the method that gave the
+        headline: ``"force_equilibrium"`` (the load and resistance curves
+        intersect), ``"settlement_compatibility"`` (pile and soil settle
+        equally, toe force compatible with the toe penetration; what
+        ``auto`` uses when the curves do not intersect),
+        ``"bearing_layer_top"``, ``"pile_toe"``, ``"endo"`` (chosen by the
+        caller) or ``"none"`` (the dead load exceeds the total
+        resistance).
     neutral_plane_basis : str
-        One-sentence statement of that basis, with its source.
+        How the headline neutral plane was located, with its source.
     toe_force_mobilized : float or None
         Toe force carried at the neutral plane (kN): the full toe
-        resistance under force equilibrium, less when the toe is not
-        fully mobilized.
+        resistance where the curves intersect with the toe fully
+        mobilized, less when it is not.
     warnings : list of str
         Anything the engineer must know about the result.
     neutral_plane_requested : str
         The ``neutral_plane_method`` asked for (``"auto"`` by default).
     toe_mobilization : float
-        Fraction of the toe resistance used for force equilibrium.
+        Fraction of the toe resistance used where the curves intersect.
     skin_friction_stress : str
-        ``"initial"`` or ``"final"`` effective stress for beta friction.
+        ``"final"`` (default) or ``"initial"`` effective stress for beta
+        friction and the toe in sand.
     neutral_plane_comparison : list of dict
-        Every cited neutral-plane basis on the same inputs: name, method,
-        role, source, assumptions, applies, reason, and (when it applies)
-        the plane depth, drag load, load at the plane, toe force, and soil
-        and pile settlement at the plane (from the soil at the toe level).
-    judgment : dict or None
-        Present when the applicable bases differ materially: question,
-        options (name, source, assumptions, applies, result), used, why.
+        Every method on the same inputs, one row each: name (as the cited
+        reference words it), method, toe_mobilization, source,
+        assumptions, applies, used, reason, and (when it applies) the
+        neutral plane depth, Q_np, drag load, drag force, toe force, soil
+        and pile settlement at the plane, elastic compression above it and
+        the pile head settlement.
+    methods_range : str
+        One sentence: the spread of the neutral plane and the drag force
+        over the methods that apply.
+    headline_method : str
+        Name of the row that gave the headline numbers.
     """
     neutral_plane_depth: float
     dragload: float
@@ -123,9 +133,17 @@ class DowndragResult:
     warnings: list = field(default_factory=list)
     neutral_plane_requested: str = "auto"
     toe_mobilization: float = 1.0
-    skin_friction_stress: str = "initial"
+    skin_friction_stress: str = "final"
     neutral_plane_comparison: list = field(default_factory=list)
-    judgment: Optional[dict] = None
+    methods_range: str = ""
+    headline_method: str = ""
+
+    @property
+    def drag_force(self) -> float:
+        """Drag force DF = Q_np - Q_dead (kN), as UFC 3-220-20 Eq 6-80 and
+        FHWA GEC-12 Eq 7-70 define it (here it also carries the pile weight
+        above the neutral plane)."""
+        return self.max_pile_load - self.Q_dead
 
     def comparison_rows(self) -> list:
         """The comparison rows rounded for display / JSON."""
@@ -133,30 +151,82 @@ class DowndragResult:
         for r in self.neutral_plane_comparison:
             row = dict(r)
             for key, nd in (("neutral_plane_depth_m", 3),
-                            ("dragload_kN", 1), ("max_pile_load_kN", 1),
-                            ("toe_force_kN", 1),
+                            ("max_pile_load_kN", 1), ("dragload_kN", 1),
+                            ("drag_force_kN", 1), ("toe_force_kN", 1),
                             ("soil_settlement_at_np_mm", 2),
-                            ("pile_settlement_at_np_mm", 2)):
+                            ("pile_settlement_at_np_mm", 2),
+                            ("elastic_compression_above_np_mm", 2),
+                            ("pile_settlement_mm", 2)):
                 if row.get(key) is not None:
                     row[key] = round(float(row[key]), nd)
             out.append(row)
         return out
 
+    def methods_table(self) -> list:
+        """The methods side by side as text lines (name and numbers on one
+        line, the source indented on the next)."""
+        if not self.neutral_plane_comparison:
+            return []
+        lines = [
+            f"  {'Method':<62}{'NP':>7}{'Q_np':>8}{'Drag':>8}{'Drag':>8}"
+            f"{'Pile':>9}",
+            f"  {'':<62}{'':>7}{'':>8}{'load':>8}{'force':>8}{'settl.':>9}",
+            f"  {'':<62}{'(m)':>7}{'(kN)':>8}{'(kN)':>8}{'(kN)':>8}"
+            f"{'(mm)':>9}",
+        ]
+        for r in self.neutral_plane_comparison:
+            mark = "* " if r.get("used") else "  "
+            if r["applies"]:
+                lines.append(
+                    f"{mark}{r['name']:<62}{r['neutral_plane_depth_m']:>7.2f}"
+                    f"{r['max_pile_load_kN']:>8.0f}{r['dragload_kN']:>8.0f}"
+                    f"{r['drag_force_kN']:>8.0f}"
+                    f"{r['pile_settlement_mm']:>9.1f}")
+                if r.get("reason"):
+                    lines.append(f"      Note: {r['reason']}")
+            else:
+                lines.append(f"{mark}{r['name']:<62}  not applicable")
+                lines.append(f"      {r['reason']}")
+            lines.append(f"      {r['source']}")
+        if any(r.get("used") for r in self.neutral_plane_comparison):
+            lines.append("* gives the headline numbers below.")
+        return lines
+
     def summary(self) -> str:
         """Return a text summary of key results."""
+        stress = ("final (sigma'v0 + fill / drawdown change; UFC 3-220-20 "
+                  "§6-7.4 step 2)" if self.skin_friction_stress == "final"
+                  else "initial (sigma'v0)")
         lines = [
-            "Downdrag Analysis Results (Fellenius Unified Method)",
-            "=" * 52,
+            "Downdrag Analysis Results (neutral plane method)",
+            "=" * 48,
             f"Pile length:            {self.pile_length:.2f} m",
             f"Pile diameter:          {self.pile_diameter:.3f} m",
             f"Dead load (Q_dead):     {self.Q_dead:.1f} kN",
+            f"Effective stress for skin friction: {stress}",
+        ]
+        table = self.methods_table()
+        if table:
+            lines += ["", "--- Neutral Plane by Each Method (same inputs) ---",
+                      *table]
+            if self.methods_range:
+                lines += ["", self.methods_range]
+            lines.append(
+                "Drag load = negative skin friction above the neutral plane "
+                "(UFC 3-220-20 §6-7.4 step 4). Drag force = Q_np - Q_dead "
+                "(UFC Eq 6-80, GEC-12 Eq 7-70); here it includes the pile "
+                "weight above the plane. Pile settlement = settlement at "
+                "the neutral plane + elastic compression above it (UFC Fig "
+                "6-19).")
+        headline = self.headline_method or self.neutral_plane_method
+        lines += [
             "",
-            "--- Neutral Plane ---",
+            f"--- Headline: {headline} ---",
             f"Neutral plane depth:    {self.neutral_plane_depth:.2f} m",
-            f"  Basis:                {self.neutral_plane_method}",
-            f"Dragload:               {self.dragload:.1f} kN",
+            f"Drag load:              {self.dragload:.1f} kN",
             f"Pile weight to NP:      {self.pile_weight_to_np:.1f} kN",
             f"Max pile load at NP:    {self.max_pile_load:.1f} kN",
+            f"Drag force (Q_np - Q_dead): {self.drag_force:.1f} kN",
             "",
             "--- Resistance Below NP ---",
             f"Positive skin friction: {self.positive_skin_friction:.1f} kN",
@@ -166,8 +236,9 @@ class DowndragResult:
             f"Total resistance:       {self.total_resistance:.1f} kN",
             "",
             "--- Settlement ---",
-            f"Pile settlement:        {self.pile_settlement * 1000:.2f} mm",
-            f"  Elastic shortening:   {self.elastic_shortening * 1000:.2f} mm",
+            f"Pile head settlement:   {self.pile_settlement * 1000:.2f} mm",
+            f"  Elastic shortening above NP: "
+            f"{self.elastic_shortening * 1000:.2f} mm",
             f"  Toe settlement:       {self.toe_settlement * 1000:.2f} mm",
             f"Soil settlement at NP:  {self.soil_settlement_at_np * 1000:.2f} mm",
         ]
@@ -192,30 +263,10 @@ class DowndragResult:
                 lines.append(f"Settlement:             {status}")
 
         if self.neutral_plane_basis:
-            lines += ["", "--- Neutral Plane Basis ---",
-                      f"Requested: {self.neutral_plane_requested}",
+            lines += ["", "--- How the Headline Neutral Plane Was Located ---",
+                      f"Requested: neutral_plane_method="
+                      f"'{self.neutral_plane_requested}'",
                       self.neutral_plane_basis]
-        if self.neutral_plane_comparison:
-            lines += ["", "--- Neutral-Plane Bases Compared ---",
-                      f"{'Basis':<30}{'NP (m)':>8}{'Drag (kN)':>11}"
-                      f"{'s_soil/s_pile at NP (mm)':>27}"]
-            for r in self.neutral_plane_comparison:
-                if r["applies"]:
-                    tag = "" if r["role"] == "basis" else f" [{r['role']}]"
-                    lines.append(
-                        f"{r['name'] + tag:<30}"
-                        f"{r['neutral_plane_depth_m']:>8.2f}"
-                        f"{r['dragload_kN']:>11.1f}"
-                        f"{r['soil_settlement_at_np_mm']:>15.1f} / "
-                        f"{r['pile_settlement_at_np_mm']:<9.1f}")
-                else:
-                    lines.append(f"{r['name']:<30}  not applicable: "
-                                 f"{r['reason']}")
-        if self.judgment:
-            lines += ["", "--- Judgment ---",
-                      self.judgment["question"],
-                      f"Used: {self.judgment['used']}. "
-                      f"{self.judgment['why']}"]
         if self.warnings:
             lines += ["", "--- Warnings ---"]
             lines += [f"* {w}" for w in self.warnings]
@@ -227,8 +278,12 @@ class DowndragResult:
         d = {
             'neutral_plane_depth_m': self.neutral_plane_depth,
             'neutral_plane_method': self.neutral_plane_method,
+            'headline_method': self.headline_method,
             'neutral_plane_basis': self.neutral_plane_basis,
+            'methods_range': self.methods_range,
+            'neutral_plane_comparison': self.comparison_rows(),
             'dragload_kN': self.dragload,
+            'drag_force_kN': self.drag_force,
             'max_pile_load_kN': self.max_pile_load,
             'Q_dead_kN': self.Q_dead,
             'pile_weight_to_np_kN': self.pile_weight_to_np,
@@ -259,9 +314,6 @@ class DowndragResult:
         d['neutral_plane_requested'] = self.neutral_plane_requested
         d['toe_mobilization'] = self.toe_mobilization
         d['skin_friction_stress'] = self.skin_friction_stress
-        d['neutral_plane_comparison'] = self.comparison_rows()
-        if self.judgment is not None:
-            d['judgment'] = self.judgment
         return d
 
     def plot_axial_load(self, ax=None, show=True, **kwargs):

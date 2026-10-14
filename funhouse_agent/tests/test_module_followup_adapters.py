@@ -376,18 +376,20 @@ class TestDowndragBasis:
         r = call_agent("downdrag", "downdrag_analysis",
                        dict(_DD1, layers=_DD1_LAYERS))
         assert r["neutral_plane_method"] == "settlement_compatibility"
-        assert r["neutral_plane_basis"].startswith("Settlement compatibility")
+        assert r["neutral_plane_basis"].startswith(
+            "UFC 3-220-20 §6-7.4 procedure")
         assert r["warnings"] and "do not intersect" in r["warnings"][0]
         keys = list(r)
-        # 2026-10-09: the judgment block (DD-1's bases differ materially)
-        # and the comparison of every basis lead with the basis.
-        assert keys[:6] == ["neutral_plane_depth_m", "neutral_plane_method",
-                            "neutral_plane_basis", "judgment", "warnings",
+        # 2026-10-14 (GM-48): how the plane was located, the spread over
+        # every method, the warnings and the methods table lead.
+        assert keys[:7] == ["neutral_plane_depth_m", "neutral_plane_method",
+                            "headline_method", "neutral_plane_basis",
+                            "methods_range", "warnings",
                             "neutral_plane_comparison"]
         # Ahead of the depth profiles, so a size-capped result keeps them.
         assert keys.index("warnings") < keys.index("z_m")
         _assert_documented("downdrag", "downdrag_analysis", r,
-                           conditional=("structural_ok", "judgment"))
+                           conditional=("structural_ok",))
 
     def test_mobilized_nt_gives_force_equilibrium(self):
         r = call_agent("downdrag", "downdrag_analysis",
@@ -404,7 +406,8 @@ class TestDowndragBasis:
         assert r["neutral_plane_basis"]
         assert r["warnings"]
         html = out.read_text(encoding="utf-8")
-        assert "Neutral Plane Basis and Warnings" in html
+        assert "How It Was Located, and Warnings" in html
+        assert "Neutral Plane by Each Method" in html
         assert "WARNING: The load and resistance curves" in html
 
     def test_calc_package_takes_settling_sand_modulus(self, tmp_path):

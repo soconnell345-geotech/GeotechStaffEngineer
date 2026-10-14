@@ -2,12 +2,13 @@
 Calculation package steps for downdrag (negative skin friction) analysis.
 
 Provides input summaries, step-by-step equation output, and figures
-for Mathcad-style calc package generation using the Fellenius unified
-neutral plane method.
+for Mathcad-style calc package generation using the neutral plane method,
+with every method the references give tabulated side by side.
 
 References:
+    UFC 3-220-20 (2025) — Chapter 6, §6-5.8.4, §6-7.4, Eqs 6-45 to 6-54, 6-80
+    FHWA GEC-12 (2016) — §7.3.5.7, §7.3.6.1
     Fellenius, B.H. (2004/2006) — Unified design of piled foundations
-    UFC 3-220-20 (2025) — Chapter 6, Eqs 6-51 through 6-53, 6-80
     AASHTO LRFD Bridge Design Specifications, Section 10.7.3.7
 """
 
@@ -21,7 +22,7 @@ from calc_package.data_model import (
 )
 from calc_package.renderer import figure_to_base64
 
-DISPLAY_NAME = "Downdrag Analysis (Fellenius Unified Method)"
+DISPLAY_NAME = "Downdrag Analysis (Neutral Plane Method)"
 
 REFERENCES = [
     'Fellenius, B.H. (2006). "Results of static loading tests on driven '
@@ -99,21 +100,27 @@ def get_input_summary(result, analysis) -> List[InputItem]:
         items.append(InputItem("N_t", "Toe bearing factor (user)",
                                f"{analysis.Nt:.1f}", ""))
 
-    # The neutral-plane basis is a choice: say which was asked for.
+    # Which method gives the headline numbers: say which was asked for.
     method = getattr(analysis, "neutral_plane_method", "auto")
-    items.append(InputItem("NP basis", "Neutral-plane method requested",
-                           method, ""))
+    items.append(InputItem(
+        "NP method", "Neutral-plane method for the headline numbers",
+        "auto (UFC 3-220-20 §6-7.4 procedure)" if method == "auto"
+        else method, ""))
     mob = getattr(analysis, "toe_mobilization", 1.0)
-    items.append(InputItem("m_toe", "Toe mobilization for force equilibrium",
+    items.append(InputItem("m_toe", "Toe mobilization where the load and "
+                           "resistance curves intersect",
                            f"{mob * 100:.0f}", "%"))
     if getattr(analysis, "endo_bearing_condition", None):
         items.append(InputItem("Endo", "Endo bearing condition (CGPR #56 "
                                "Table 3.1)",
                                analysis.endo_bearing_condition, ""))
-    if getattr(analysis, "skin_friction_stress", "initial") == "final":
-        items.append(InputItem("σ'_fs", "Effective stress for skin "
-                               "friction", "final (σ'v0 + Δσ)",
-                               ""))
+    if getattr(analysis, "skin_friction_stress", "final") == "final":
+        stress = ("final (σ'v0 + Δσ), UFC 3-220-20 §6-7.4 "
+                  "step 2")
+    else:
+        stress = "initial (σ'v0)"
+    items.append(InputItem("σ'_fs", "Effective stress for skin "
+                           "friction and the toe in sand", stress, ""))
 
     return items
 
@@ -180,69 +187,73 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     np_basis = getattr(r, "neutral_plane_basis", "")
     np_warnings = list(getattr(r, "warnings", []) or [])
     if np_method == "settlement_compatibility":
-        np_title = "Settlement Compatibility (Neutral Plane)"
+        np_title = "Neutral Plane: Pile and Soil Settle Equally"
         np_equation = (
             "Load and resistance curves do not intersect "
-            "(R_toe > Q_dead + W_pile + whole shaft as drag).\n"
-            "At the neutral plane depth z_np: s_soil(z_np) = s_pile(z_np)"
+            "(R_toe > Q_dead + W_pile + the whole shaft in negative skin "
+            "friction).\n"
+            "At the neutral plane depth z_np: s_soil(z_np) = s_pile(z_np), "
+            "the toe force compatible with the toe penetration"
         )
         np_substitution = (
-            "Soil settlement profile = pile settlement (toe penetration "
-            "under the toe force delivered + pile compression below z_np)"
+            "Soil settlement profile = pile settlement (settlement under "
+            "the toe force delivered + pile compression below z_np)"
         )
-        np_reference = "UFC 3-220-20 Fig 6-19 and \u00a76-7.4 step 5"
+        np_reference = ("UFC 3-220-20 \u00a76-5.8.4.3, Fig 6-19 (Fellenius "
+                        "2021); \u00a76-7.4 step 5")
     elif np_method == "none":
         np_title = "Neutral Plane: None (pile overloaded)"
         np_equation = "Q_dead > R_toe + R_shaft(0\u2192L)"
         np_substitution = "Dead load exceeds the nominal geotechnical resistance"
         np_reference = "UFC 3-220-20 \u00a76-7.4 step 5 (limiting case)"
     elif np_method == "bearing_layer_top":
-        np_title = "Neutral Plane: Base of the Settling Soil (rule)"
+        np_title = "Neutral Plane at the Bearing Layer (end-bearing pile)"
         np_equation = "z_np = depth to the base of the settling soil"
         np_substitution = ("End-bearing pile in a stratum much stiffer than "
                            "the compressible soil")
         np_reference = "UFC 3-220-20 \u00a76-7.4 step 5"
     elif np_method == "pile_toe":
-        np_title = "Neutral Plane: Pile Toe (upper bound)"
-        np_equation = "z_np = L (whole shaft as drag)"
-        np_substitution = "Upper bound on the drag load"
+        np_title = "Neutral Plane at the Pile Toe (upper bound on drag)"
+        np_equation = ("z_np = L (the whole shaft in negative skin "
+                       "friction)")
+        np_substitution = "Upper bound on the drag force"
         np_reference = ("GEC-12 \u00a77.3.5.7 (group settlement; "
-                        "Goudreault & Fellenius 1994)")
+                        "Goudreault and Fellenius 1994)")
     elif np_method == "endo":
-        np_title = "Neutral Plane: Endo Ratio (assumed)"
+        np_title = "Neutral Plane: Endo et al. (1969), assumed"
         np_equation = "z_np = ratio \u00d7 L  (CGPR #56 Table 3.1)"
         np_substitution = (f"Bearing condition: "
                            f"{getattr(analysis, 'endo_bearing_condition', '')}")
         np_reference = "CGPR #56 \u00a73.2.1 (Endo et al. 1969)"
     else:
-        np_title = "Force Equilibrium (Neutral Plane)"
+        np_title = "Neutral Plane: Intersection of the Load and Resistance Curves"
         np_equation = (
             "At the neutral plane depth z_np:\n"
-            "Q_dead + W_pile(0\u2192z_np) + Dragload(0\u2192z_np) "
-            "= R_toe + R_shaft(z_np\u2192L)"
+            "Q_dead + W_pile(0\u2192z_np) + Q_n(0\u2192z_np) "
+            "= R_toe + R_s(z_np\u2192L)"
         )
         np_substitution = (
-            f"Load from top at NP = Resistance from tip at NP\n"
-            f"Q_dead + pile weight + neg. friction = toe + pos. friction"
+            f"Load curve at NP = resistance curve at NP\n"
+            f"Q_dead + pile weight + negative skin friction = toe + "
+            f"positive skin friction"
         )
-        np_reference = ("Fellenius (2004), unified neutral plane method; "
-                        "UFC 3-220-20 \u00a76-7.4 steps 3-5")
+        np_reference = "UFC 3-220-20 \u00a76-7.4 steps 3-5, Fig 6-26"
         mob = getattr(r, "toe_mobilization", 1.0)
         if mob < 1.0:
             np_substitution += (
                 f"\nToe at {mob * 100:.0f}% of R_toe "
                 f"({mob * r.toe_resistance:.1f} kN)")
             np_reference += ("; \u00a76-5.8.4.2 and GEC-12 \u00a77.3.6.1 "
-                             "(partial toe mobilization)")
+                             "(toe resistance partly mobilized)")
     np_notes = (
         f"NP at {r.neutral_plane_depth:.2f} m "
         f"({r.neutral_plane_depth / r.pile_length * 100:.0f}% of pile length)"
     )
     if np_basis:
-        np_notes += f". Basis: {np_basis}"
+        np_notes += f". {np_basis}"
     if np_warnings:
-        np_notes += (f"\n{len(np_warnings)} warning(s): see 'Neutral Plane "
-                     f"Basis and Warnings'.")
+        np_notes += (f"\n{len(np_warnings)} warning(s): see 'Neutral Plane: "
+                     f"How It Was Located, and Warnings'.")
     np_items.append(CalcStep(
         title=np_title,
         equation=np_equation,
@@ -254,7 +265,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         notes=np_notes,
     ))
 
-    # Every cited basis on the same inputs (the basis is a choice).
+    # Every method on the same inputs, as a first-class table.
     comparison = comparison_table(r)
     if comparison is not None:
         np_items.append(comparison)
@@ -270,10 +281,12 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
              f"{analysis.pile_unit_weight:.1f} \u00d7 "
              f"{analysis.pile_area:.6f} \u00d7 "
              f"{r.neutral_plane_depth:.2f}"],
-            ["Dragload", f"{r.dragload:.1f}",
-             "Negative skin friction above NP"],
+            ["Drag load", f"{r.dragload:.1f}",
+             "Negative skin friction above NP (UFC §6-7.4 step 4)"],
             ["Max pile load", f"{r.max_pile_load:.1f}",
-             "Q_dead + pile weight + dragload"],
+             "Q_dead + pile weight + drag load"],
+            ["Drag force", f"{r.max_pile_load - r.Q_dead:.1f}",
+             "Q_np - Q_dead (UFC Eq 6-80; GEC-12 Eq 7-70)"],
         ],
     ))
 
@@ -287,21 +300,22 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         result_name="Q_np",
         result_value=f"{r.max_pile_load:.1f}",
         result_unit="kN",
-        reference="Fellenius (2004); UFC 3-220-20, Eq. 6-80",
+        reference="UFC 3-220-20 §6-7.4 step 5, Eq. 6-80",
     ))
 
     sections.append(CalcSection(
-        title="Neutral Plane Location & Dragload", items=np_items
+        title="Neutral Plane Location and Drag Force", items=np_items
     ))
 
-    # ── Basis and warnings, stated in full where a reviewer reads them ──
-    # (live smoke G8: the result states its neutral-plane basis and its
-    # warnings; the package must carry them as prominently as the numbers,
-    # not only inside one step's notes.)
+    # ── How the plane was located and the warnings, stated in full ──
+    # (live smoke G8: the result states how its neutral plane was located
+    # and its warnings; the package must carry them as prominently as the
+    # numbers, not only inside one step's notes.)
     basis_items = basis_and_warnings(r)
     if basis_items:
         sections.append(CalcSection(
-            title="Neutral Plane Basis and Warnings", items=basis_items
+            title="Neutral Plane: How It Was Located, and Warnings",
+            items=basis_items
         ))
 
     # ── Section 3: Resistance Below NP ─────────────────────────────
@@ -368,22 +382,11 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     ))
 
     settle_items.append(CalcStep(
-        title="Pile Settlement at Neutral Plane",
-        equation="\u03b4_pile = \u03b4_e + \u03b4_toe",
-        substitution=(
-            f"\u03b4_pile = {r.elastic_shortening * 1000:.2f} "
-            f"+ {r.toe_settlement * 1000:.2f}"
-        ),
-        result_name="\u03b4_pile",
-        result_value=f"{r.pile_settlement * 1000:.2f}",
-        result_unit="mm",
-    ))
-
-    settle_items.append(CalcStep(
         title="Soil Settlement at Neutral Plane",
         equation=(
-            "S_soil(z_np) = cumulative 1-D consolidation settlement\n"
-            "from settling layers, accumulated bottom-up."
+            "S_soil(z_np) = 1-D consolidation of the settling layers between "
+            "z_np and the toe\n+ settlement of the soil below the toe under "
+            "the fill / drawdown."
         ),
         substitution="Interpolated from soil settlement profile at z_np",
         result_name="S_soil(z_np)",
@@ -392,22 +395,48 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         reference="UFC 3-220-20, Eq. 6-53 (clay), Eq. 6-54 (sand)",
     ))
 
+    used = next((row for row in
+                 getattr(r, "neutral_plane_comparison", []) or []
+                 if row.get("used")), None)
+    s_pile_np = (used["pile_settlement_at_np_mm"] if used is not None
+                 else r.toe_settlement * 1000)
+    s_np = max(s_pile_np, r.soil_settlement_at_np * 1000)
+    settle_items.append(CalcStep(
+        title="Pile Head Settlement",
+        equation=(
+            "\u03b4_head = s(z_np) + \u03b4_e,  s(z_np) = larger of "
+            "S_soil(z_np) and the pile settlement at z_np\n"
+            "(\u03b4_toe + elastic compression of the pile below z_np)"
+        ),
+        substitution=(
+            f"\u03b4_head = max({r.soil_settlement_at_np * 1000:.2f}, "
+            f"{s_pile_np:.2f}) + {r.elastic_shortening * 1000:.2f}"
+        ),
+        result_name="\u03b4_head",
+        result_value=f"{r.pile_settlement * 1000:.2f}",
+        result_unit="mm",
+        reference="UFC 3-220-20 Fig 6-19 and \u00a76-5.8 item 6",
+    ))
+
     settle_items.append(TableData(
         title="Settlement Summary",
         headers=["Component", "Value (mm)", "Description"],
         rows=[
             ["Elastic shortening", f"{r.elastic_shortening * 1000:.2f}",
-             "Pile compression above NP"],
+             "Pile compression above NP (\u03b4_e)"],
             ["Toe settlement", f"{r.toe_settlement * 1000:.2f}",
-             "Bearing stratum compression below tip"],
-            ["Pile settlement", f"{r.pile_settlement * 1000:.2f}",
-             "\u03b4_e + \u03b4_toe"],
+             "Bearing stratum compression below tip (\u03b4_toe)"],
             ["Soil settlement at NP", f"{r.soil_settlement_at_np * 1000:.2f}",
-             "From consolidation of settling layers"],
+             "Settling layers below NP + soil below the toe"],
+            ["Settlement at NP", f"{s_np:.2f}",
+             "Larger of the soil and pile settlement at NP"],
+            ["Pile head settlement", f"{r.pile_settlement * 1000:.2f}",
+             "Settlement at NP + \u03b4_e"],
         ],
         notes=(
-            "Settlement compatibility: pile and soil settlements should be "
-            "approximately equal at the neutral plane."
+            "UFC 3-220-20 Fig 6-19: the pile and the soil settle equally at "
+            "the neutral plane; the pile head settles that much plus the "
+            "elastic compression of the pile above it."
         ),
     ))
 
@@ -495,70 +524,43 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     return sections
 
 
-_METHOD_LABELS = {
-    "force_equilibrium": "force equilibrium (load and resistance curves "
-                         "cross)",
-    "settlement_compatibility": "settlement compatibility (soil and pile "
-                                "settle equally)",
-    "bearing_layer_top": "the bearing-layer rule (plane at the base of the "
-                         "settling soil)",
-    "pile_toe": "the pile toe (upper bound: whole shaft as drag)",
-    "endo": "the Endo ratio (plane assumed at a fraction of the embedment)",
-    "none": "none (the pile is overloaded; no neutral plane)",
-}
-
-
 def comparison_table(result):
-    """TableData of every cited neutral-plane basis on the same inputs, or
-    None when the result carries no comparison (built before 2026-10-09).
-    Settlements at the NP are measured from the soil at the toe level."""
+    """TableData of every method on the same inputs, or None when the
+    result carries none (built before 2026-10-09)."""
     rows = list(getattr(result, "neutral_plane_comparison", []) or [])
     if not rows:
         return None
-    method = getattr(result, "neutral_plane_method", "")
-    mob = getattr(result, "toe_mobilization", 1.0)
-
-    def is_used(row):
-        if not row["applies"] or row["method"] != method:
-            return False
-        if method == "force_equilibrium":
-            return abs((row["toe_mobilization"] or 0.0) - mob) < 1e-9
-        return True
-
     table_rows = []
     for row in rows:
-        name = row["name"]
-        if is_used(row):
-            name += " (used)"
+        name = row["name"] + (" (headline)" if row.get("used") else "")
         if row["applies"]:
-            note = "" if row["role"] == "basis" else row["role"]
-            if row.get("reason"):
-                note = (note + ": " if note else "") + row["reason"]
             table_rows.append([
-                name, row["source"], "Yes",
+                name, row["source"],
                 f"{row['neutral_plane_depth_m']:.2f}",
-                f"{row['dragload_kN']:.1f}",
                 f"{row['max_pile_load_kN']:.1f}",
-                f"{row['soil_settlement_at_np_mm']:.1f} / "
-                f"{row['pile_settlement_at_np_mm']:.1f}",
-                note or row["assumptions"],
+                f"{row['dragload_kN']:.1f}",
+                f"{row['drag_force_kN']:.1f}",
+                f"{row['pile_settlement_mm']:.1f}",
+                row.get("reason") or row["assumptions"],
             ])
         else:
-            table_rows.append([name, row["source"], "No", "-", "-", "-",
-                               "-", row["reason"]])
+            table_rows.append([name, row["source"], "-", "-", "-", "-",
+                               "-", "Not applicable: " + row["reason"]])
+    spread = getattr(result, "methods_range", "") or ""
     return TableData(
-        title="Neutral-Plane Bases Compared (same inputs)",
-        headers=["Basis", "Source", "Applies", "z_np (m)", "Drag (kN)",
-                 "Q_np (kN)", "s_soil / s_pile at NP (mm)",
-                 "Assumptions / reason"],
+        title="Neutral Plane by Each Method (same inputs)",
+        headers=["Method", "Reference", "z_np (m)", "Q_np (kN)",
+                 "Drag load (kN)", "Drag force (kN)",
+                 "Pile settlement (mm)", "Assumptions / notes"],
         rows=table_rows,
         notes=(
-            "The neutral-plane basis is the engineer's choice; the result "
-            "uses the requested method (default: UFC 3-220-20 §6-7.4). "
-            "Settlements at the NP are measured from the soil at the toe "
-            "level: soil = consolidation of the soil between the NP and "
-            "the toe; pile = toe penetration + pile compression below the "
-            "NP. Equal values = settlement-compatible."),
+            (spread + " " if spread else "")
+            + "Drag load = negative skin friction above the neutral plane "
+            "(UFC 3-220-20 §6-7.4 step 4). Drag force = Q_np - Q_dead "
+            "(UFC Eq 6-80; GEC-12 Eq 7-70); here it includes the pile weight "
+            "above the plane. Pile settlement = settlement at the neutral "
+            "plane + elastic compression of the pile above it (UFC Fig "
+            "6-19)."),
     )
 
 
@@ -574,18 +576,17 @@ def basis_and_warnings(result) -> list:
     items = []
     requested = getattr(result, "neutral_plane_requested", None)
     if requested:
-        items.append(f"Neutral-plane method requested: {requested}.")
-    if method:
-        items.append("Neutral plane located by: "
-                     + _METHOD_LABELS.get(method, method) + ".")
+        what = (" (UFC 3-220-20 §6-7.4 procedure)"
+                if requested == "auto" else "")
+        items.append(f"Neutral-plane method requested: {requested}{what}.")
+    headline = getattr(result, "headline_method", "") or ""
+    if headline:
+        items.append(f"Headline numbers from: {headline}.")
     if basis:
-        items.append("Basis: " + basis)
-    judgment = getattr(result, "judgment", None)
-    if judgment:
-        items.append(
-            f"JUDGMENT REQUIRED: {judgment['question']} Used: "
-            f"{judgment['used']}. {judgment['why']} The options are "
-            f"tabulated under 'Neutral-Plane Bases Compared'.")
+        items.append("How it was located: " + basis)
+    spread = getattr(result, "methods_range", "") or ""
+    if spread:
+        items.append(spread + " See 'Neutral Plane by Each Method'.")
     toe = getattr(result, "toe_force_mobilized", None)
     if toe is not None and method == "settlement_compatibility":
         items.append(
