@@ -135,6 +135,19 @@ Then the primary's own next call was refused (#2694), and the turn ended.
      - DIGGS gates.
    - It is not reachable from the page (OWN-11), and on this route its engine
      cannot run (RI-03). It also has no plan-location step (RI-24).
+10. **The continue turn (Part 2) confirms TA-19 and finds two writer bugs.**
+    - It rebuilt the inventory and the grid from nothing. It marked the 2019
+      and 1987 logs "pending", although the first turn's primary had held
+      both transcriptions.
+    - Its grid is right: right-handed, median 0.3 m off the vector symbols,
+      every ID on the same symbol as turn 1.
+    - Its file (40 explorations, no SPT) says groundwater was found at the
+      bottom of every hole that found none. The writer writes a
+      `not_encountered` row that has a depth as a strike.
+    - It also puts 33 explorations at elevation 0. Both pass the verdict
+      "valid … reads back equal".
+    - It called the `reviewer` for the first time on record, to check data
+      against a report the reviewer cannot open.
 
 ---
 
@@ -624,10 +637,220 @@ The pattern fits a **tokens-per-minute** limit on the deployment. With
 
 ---
 
+## Part 2. The continue turn
+
+**Source.**
+- The owner then typed "Are you able to continue?". This part is read from
+  the app's progress list for that second turn:
+  `raw/conversation/continue_turn_details.txt` (114 lines; long tool results
+  cut with "[+N chars]").
+- It was taken at 25 min 52 s, while the turn was still running.
+- "Line N" below is a line of that file.
+- There is no activity log for this turn yet. So what a helper did inside its
+  `task`, and the reviewer's answer, are not in it.
+
+### P2.1 It started again from nothing (TA-19, confirmed)
+
+**The step list:**
+1. A new five-item todo list beginning "Inventory Volume 1 investigation
+   datasets".
+2. `open_document`.
+3. `read_text_file` of `TP-1_2026.diggs.xml`, the one file the first turn
+   left; the per-turn files note pointed at it.
+4. `parse_diggs` on it. It reads back x 0.0, y 0.0, elevation 0.0.
+5. A `task` to redo the inventory.
+6. A new look at page 24, including a `render_region(..., reuse=True)` "to
+   recover the prior zoom reading". Whether a kept reading was reused is not
+   shown.
+7. Two more `task` helpers: the 2026 logs and the grid.
+
+**What it lost.**
+- The first turn's primary *had* the 2019 transcription (H5, 50,529
+  characters) and the 1987 one (H6, 10,918 characters) in its context.
+- A turn that ends on an error saves only an error stub. So the second turn
+  started without them, and wrote all four 2019 borings and all four 1987
+  borings as "detailed log transcription pending".
+- It also rebuilt the grid.
+- Persisting the first turn's tool results (TA-19), or helpers writing their
+  data to files (TA-21), would have handed it eight transcribed borings and a
+  grid.
+
+### P2.2 The second file: `..._DIGGS_development_v1.xml`
+
+**What was written.** `write_diggs` (progress list line 109) wrote 40
+investigations, 39 layers, 0 SPT, 0 samples, 8 water rows and 1 test. The
+verdict was "valid DIGGS 2.6: it passed the schema and reads back equal";
+`assumed: []`.
+
+| group | in the file |
+|---|---|
+| 2026 borings (EGB-2, LBA-1–LBA-6) | header, layers, water; **SPT and samples left out** ("SPT held for depth QA") |
+| EB-1, EB-3, EB-4 | location and a total depth of 4 m only |
+| TP-1 | location, date, remarks, water; **no strata again** |
+| 2019 (LB-1–LB-4), 1987 (12, 13, 14, 20), 2024 (21 P-series) | **location only** ("transcription pending") |
+
+**Checked against the pages.** The 2026 headers agree: 14 of 14 values
+(ground elevation and completion depth on 7 logs, PDF 28–41). The defects are
+elsewhere:
+
+1. **Groundwater "found" at the bottom of every hole that found none.** This
+   is a writer bug, reproduced.
+   - **What the agent passed.** All 8 water rows, for the seven 2026 borings
+     and TP-1, are `when: not_encountered` with `depth` equal to the total
+     depth (e.g. LBA-1: 12 m).
+     - The logs print NE for first, completion and 24-hour readings. The
+       report says groundwater was not encountered in any boring.
+     - Passing the depth is the agent's reading of "not encountered to
+       12 m". Nothing in the tool description says to leave the depth out.
+   - **What the writer does.** `water_strikes` treats any row with a depth as
+     a reading, whatever its `when`
+     (`report_ingest/diggs_writer.py:745-760`: `readings = [w for w in
+     inv.water if _si(w.depth) is not None]`). Only a row with no depth
+     becomes `<notEncountered>true</notEncountered>`.
+     - So each boring got an `initialWaterStrikeReading` at its bottom.
+     - The pit got a "Water level" `Test` at 1.5 m (`pit_water`,
+       `diggs_writer.py:990-1011`). That is the file's "1 test".
+   - **What reading it back gives.** `parse_diggs` turns these into
+     `gwl_depth_m` = total depth for all eight (line 113). The 2.6 reader
+     takes the initial strike reading (`subsurface_characterization/diggs26.py:742-770`).
+   - **Why nothing caught it.** The round-trip gate compares the depth and
+     not `when`, so it passed.
+   - **Reproduced** with `_run_write_diggs` on four synthetic holes:
+     - not encountered with a depth: a strike at that depth, `gwl` 12.0;
+     - not encountered without a depth: `notEncountered`, `gwl` None;
+     - a pit not encountered at 1.5 m: `gwl` 1.5.
+     - The verdict was "valid … reads back equal" and `assumed: []` every
+       time.
+   - **What DIGGS can say.** It can say "not encountered" for a borehole:
+     `WaterStrike` is a choice between `notEncountered` and the readings
+     (2.6 `Kernel.xsd:8836-8844`). A `TrialPit` has no `waterStrike` at all.
+     The depth explored is already the hole's total depth.
+   - **The fix.**
+     - **Writer:** a `not_encountered` row is never a reading. It is
+       `notEncountered` for a borehole, and the existing "kept in the record"
+       note for a pit.
+     - **Gate:** compares `when`.
+     - **Description:** says to leave the depth out when water was not
+       encountered.
+     - **Reader:** has no field for "not encountered" (`gwl_depth_m` None
+       either way). A `groundwater: not encountered` flag would let plots
+       and summaries say it.
+2. **Elevation 0 and position 0, 0 where none was given.** This is a writer
+   default, read back as data.
+   - 33 of the 40 explorations have no elevation: EB-1/3/4, TP-1, the
+     2019, 1987 and 2024 sets. Each is written at elevation 0, about 880 m
+     below its neighbours. `parse_diggs` reports `elevation_m: 0.0` (EB-1,
+     line 113).
+   - LB-1's log prints its elevation (876.14). The second turn did not have
+     it.
+   - 1987-B20 has no x, y. It was written at 0, 0, which in this file is
+     the grid's own origin: a real-looking point at the corner of the
+     drawing frame.
+   - **Why the writer must write something.** DIGGS 2.6 requires a
+     `referencePoint` on every sampling feature (`Kernel.xsd:1215`,
+     `minOccurs="1"`).
+   - **Why the reader cannot tell.** The writer fills 0.0
+     (`diggs_writer.py:604-646`). The reader also defaults to 0.0 when no
+     position is found (`subsurface_characterization/diggs_parser.py:264-277`),
+     and the site model's `x`, `y` and `elevation_m` are plain floats
+     defaulting to 0.0 (`site_model.py:217-219`).
+   - **The fix.** The writer marks a placeholder position as unknown (a
+     named property, or an `srsName` that says so) and lists it in
+     `written.assumed`. The reader returns None for a marked or missing
+     position; plots skip unknown points. Same item as RI-27 (a); note that
+     "leave it out" is not open for `referencePoint`.
+3. **Depths that are not measured.**
+   - EB-1/3/4 carry `total_depth` 4 m. That comes from the legend of a plan
+     titled as the *proposed* investigation ("EB; 4m"), not from a log; the
+     report has no log for them.
+   - It is written as `totalMeasuredDepth`.
+4. **A layer below the bottom of the hole passes silently.**
+   - LBA-2's header prints 20.1 m and its last page "End of boring at
+     21.1 m". The agent kept both and said so in the remarks.
+   - The layers run to 21.1 m against a total depth of 20.1 m. The writer's
+     cross-checks found 0 entries.
+   - A layer, sample or SPT deeper than the total depth is a cheap, general
+     check.
+5. **Renamed IDs.** The 1987 borings are written as `1987-B12` and so on;
+   the log prints `12`. A program prefix helps uniqueness, but the printed ID
+   should stay findable (as the name, with the prefix in the id).
+6. **No SPT, and the verdict is still "valid".** The agent said why in each
+   remark, which is honest. The file the owner has holds no blow count at
+   all.
+
+### P2.3 The grid, second attempt: right
+
+**How it is defined.** The origin is the lower-left corner of Figure 2's
+drawing frame, (34.8, 757.5) pt. +X runs to page-right and +Y to page-up, so
+the grid is right-handed and page-aligned, not north-up. The scale is
+1:1500, 0.52917 m per point. It is built from "PDF symbol centres".
+
+**Checked against the vector symbols** (each point's page position recovered
+from its x, y):
+- **Accuracy.** 38 points matched a symbol of their program's size: median
+  **0.6 pt (0.3 m)** off, one over 3 pt (P9-4, 5.1 pt = 2.7 m).
+- **TP-1's diamond:** 0.7 pt off.
+- **Agreement with turn 1.** For all 38, the symbol each ID was given is the
+  same symbol turn 1's points lie nearest. Two independent readings agree on
+  every label-to-symbol pairing.
+- **By eye.** Twelve were checked on a render, all on the right symbol:
+  LBA-1, P9-2, 12, TP-1, 13, LB-1, LB-2, LB-3, P9-3, P9-4, P8-1 and P8-2
+  (`raw/notes/img/turn2_check.png`).
+- **1987-B20.** Left unplaced, rightly: boring 20 is not plotted.
+
+**Two things to say about it:**
+- The coordinate-system text does not give the north direction (153°
+  clockwise from +X on the page). A reader could take +Y for north.
+- How the helper got symbol centres this exact is not in the progress list.
+  The turn-1 helper read labels from vision prose. Unless the method is a
+  tool, the next run may do either (PL-25).
+
+### P2.4 The reviewer was called, for a job it cannot do
+
+**The call.** After writing and re-reading the file, the primary delegated
+to `reviewer` (line 112): "QA/QC the DIGGS contents against the report". It
+is the first use on record; GM-43 counted 0 of 106 in the evaluation.
+
+**What the reviewer is:**
+- **Description:** it checks "methodology, parameter ranges, required
+  factors of safety, and any missing code provisions against the published
+  references" (`funhouse_agent/deep/agent.py:273-279`).
+- **Tools:** reference lookups only (`build_reviewer_subagent`,
+  `deep/agent.py:587-625`). It cannot open the report, the page images or the
+  DIGGS file.
+- **So:** it can only judge what the primary pasted into its brief. Its
+  answer was not in the progress list.
+
+**What data QA needs.** Checking transcribed values against pages takes a
+helper with the document tools, or a deterministic comparison with the
+`log_grid` floor, which is report ingest's merge rule.
+
+---
+
 ## 8. Lessons and recommended actions
 
 Each action is general (no rule fitted to this report). Tiers are suggestions
 for the lead; "extends" names the BACKLOG item it grows, where one exists.
+
+**Where they are filed** (FINDINGS.md, BACKLOG):
+
+| action | BACKLOG |
+|---|---|
+| A1 | TA-20 |
+| A2 | TA-21 |
+| A3 | TA-22 |
+| A4 | EV-14 |
+| A5 | RI-27 |
+| A6 | RI-28 |
+| A7 | PL-24 |
+| A8 | PL-25 |
+| A9 | VIS-24 |
+| A10 | VIS-25 |
+| A11 | EV-15 |
+| A12 | RI-29 |
+| A13, A14 | TA-23 |
+
+Part 2's actions (B1–B5) follow the first table.
 
 | # | what | why (evidence) | where | tier | extends |
 |---|---|---|---|---|---|
@@ -645,6 +868,16 @@ for the lead; "extends" names the BACKLOG item it grows, where one exists.
 | A12 | **Report → DIGGS through the pipeline** once it is reachable: the chat agent plans and asks; `report_ingest` reads every page (items saved, resumable, serial, floors, gates); a merge of a record and its bound children into one DIGGS file on request; A8 for locations | §7 | `report_ingest/subagent.py`, `report_ingest/writers.py` | Later [owner] | OWN-11, RI-03, RI-24 |
 | A13 | **The primary is not blocked by its slowest helper:** with A3's queue, a failed helper frees its place at once, and the primary hears of the failure when it happens (or helpers run as background jobs the primary checks) | H3 failed at t 856; the primary could react only at t 3,006, 36 minutes later | `deep/agent.py` (the `task` tool) | Later | GM-45 |
 | A14 | **Divide document work by pages, not by groups,** so shared pages are read once: one pass over the lab appendix, then a link by printed ID | the lab pages were read by up to three helpers (33 duplicate looks); the 2026 grids ran three times | covered by A12; meanwhile a note in the `task` description | Later | GM-45 |
+
+**From Part 2 (the continue turn):**
+
+| # | what | why (evidence) | where | tier | extends |
+|---|---|---|---|---|---|
+| B1 | **"Not encountered" is never written as a water level.** Writer: a `not_encountered` row is `notEncountered` on a borehole whatever its depth, and the existing note on a pit. Round-trip gate: compares `when` as well as depth. Description: leave the depth out when no water was found. Reader: a "groundwater not encountered" flag beside `gwl_depth_m` | all 8 water rows of the second file read back as groundwater at the bottom of the hole (`gwl_depth_m` = total depth), against logs that print NE; the verdict said "reads back equal"; reproduced on synthetic holes | `report_ingest/diggs_writer.py:738-763` (`water_strikes`), `:974-1011` (`pit_water`), the round-trip gate's `_compare_water` (`diggs_writer.py:2841-2856`); `funhouse_agent/adapters/subsurface_adapter.py:913`; `subsurface_characterization/diggs26.py:742-770`, `site_model.py` | Now | RI-27 |
+| B2 | **An unknown position stays unknown end to end.** DIGGS requires `referencePoint`, so the writer marks a placeholder as unknown and says so in `written.assumed` and the verdict. The reader returns None for a marked or missing x, y or elevation (`Investigation.x/y/elevation_m` become Optional), and plots skip such points | 33 of 40 explorations at elevation 0 and one at the grid's origin in the second file; TP-1 at 0, 0, 0 in the first; `parse_diggs` reports them as 0.0 data | `diggs_writer.py:604-646`; `subsurface_characterization/diggs_parser.py:264-277`; `site_model.py:217-219`; the plan and section plots | Now | RI-27 |
+| B3 | **`write_diggs` cross-checks depth against depth:** a layer, sample, SPT or water reading below the total depth is an entry. A total depth that comes from a legend or a plan rather than a log is flagged by the description as not a measured depth | LBA-2's layers run to 21.1 m against a total depth of 20.1 m with 0 cross-check entries; EB-1/3/4 got the proposed plan's 4 m as `totalMeasuredDepth` | the cross-checks in `subsurface_adapter._run_write_diggs` / `report_ingest/reconciler.py`; the description at `subsurface_adapter.py:913` | Next | RI-28 |
+| B4 | **Keep the printed ID findable:** when the agent prefixes an ID for uniqueness (`1987-B12`), the printed `12` stays as the name. Also, the coordinate-system text of a page-aligned grid states where north is | the second file renamed every 1987 boring; its grid says "+Y page-up" with no north direction (north is 153° from +X) | `write_diggs` description; PL-25's transform tool writes the north direction into the CRS text | Later | RI-28, PL-25 |
+| B5 | **Data QA needs eyes on the page.** The `reviewer` was invoked for the first time on record, to check DIGGS contents against the report, but it has reference lookups only. Either route "check these values against the page" to a document-reading helper, or compare against the deterministic `log_grid` floor in code, and let the suite say which | Part 2 §P2.4; GM-43 (0/106 before) | `funhouse_agent/deep/agent.py:273-279, 587-625`; report ingest's floor merge (`report_ingest/floor.py`) | Later | GM-43 |
 
 **What is not an action.**
 - **The download.** It took 182 s for 26.8 MB. It is the host's speed, and
