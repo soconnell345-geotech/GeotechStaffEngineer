@@ -29,7 +29,7 @@ After any change to this file, rebuild and republish the Backlog Desk (`module_w
 - CLAUDE.md and HANDOFF still point here.
 
 **Key:**
-- **Tiers:** **Now** = this week / the Tiny Apps tester deploy. **Next** = the next train. **Later**. **Parked** = the owner decided to wait.
+- **Tiers:** **Now** = the current focus, named in §0. **Next** = the next train. **Later**. **Parked** = the owner decided to wait.
 - **[owner]** = needs the owner: a decision, an action, data, or CfA.
 - *was:* = the item's id in an older list: HANDOFF `A1`–`E6`, or "Where things stand" `0`–`3e`. That old text is in git history at 414525a.
 - **Short names:**
@@ -43,27 +43,28 @@ After any change to this file, rebuild and republish the Backlog Desk (`module_w
   - smoke reviews = `module_work/live_smoke/runs/<wave>/REVIEW.md` (gitignored)
 - **Last full sweep:** 2026-10-12 (app master 414525a, planlens f92541d = v0.13.0, refs c53e587 = v1.4.1).
 
-## 0. This week: the Tiny Apps tester deploy
+## 0. Now (from 2026-10-14): core improvements while CfA sets up Tiny Apps
 
-The Document Review page goes to other testers on Tiny Apps; it is the primary focus.
+CfA says the SharePoint connection and the per-user Prompter keys are a few weeks out (owner, 2026-10-14). Until they arrive, Now is core work on the app itself. The Tiny Apps production items (OWN-29, OWN-30, OWN-43–OWN-51, TA-03) wait in Next and come back when CfA delivers.
 
-- **Owner's steps:** OWN-29 (install 5.33.0, dosdev round) → OWN-43–OWN-51 (the CfA questions, one meeting) → OWN-30 (first-hour check) → OWN-31 (checklist session).
+- **Engineering answers that err on the unsafe side** (geotech page; each gets a warning in the result first, then the fix): GM-14 (sand slopes: the circle search misses the planar failure, 1.55 vs 0.94), GM-13 (small toe circles, +20 %), GM-05 (coarse-mesh SRM), GM-06 (undrained locking), GM-20 (free-earth returns a depth with no root), GM-08 (staged analysis ignores `n_steps`), GM-01 (with the downdrag defaults). Then GM-42 (catalog headroom, needed before any new method) and GM-30 (Terzaghi factors).
+- **Document Review accuracy** (testers' page; general fixes, no single-example rules): PL-07 (distinct sheets flagged as duplicates), VIS-01 (turned lettering read upright), VIS-04 (a zoom that cuts text lines), VIS-05 (boxes on sideways sheets), DR-15–DR-17 (markups), DR-04 (geotech tools still on the page), VIS-09 (zoom for pasted screenshots and image uploads).
+- **Release readiness:** INF-11 (post and project names out of the shipped code; the PyPI audit is OWN-57), INF-10 (module suites on a fresh resolve, since the next release admits pandas 3), EV-13 with DR-05 (one Foundry suite run that measures this train, tonight's default-page changes and the lean build).
+- **Owner:** OWN-55 (when to release), OWN-01 and OWN-02 (the downdrag and fem2d defaults, before that release), OWN-10 (are calculation tables the next module train?), OWN-31 (the checklist session).
 - **Rollout model (owner, 2026-10-12):** testers get ONE deployment, GPT-5.6 Sol or higher, for every call; not the pilot's `tinyapp-gpt-medium` (GPT-5.1, 768 px). The app measures whatever answers on first use (`funhouse_agent/vision_probe.py`), and planlens maps `gpt-5.6` to `openai-high` / `openai-original`. Sol has run the suite at full resolution on Foundry (5.32.0rc3; B5 39/42).
-- **Owner decisions wanted this week:** OWN-55 (a release before or during tester week: 5.33.0 cannot install beside CfA's pandas 3.0.2 pin, and master carries tonight's fixes). The downdrag and fem2d defaults (OWN-01, OWN-02) are wanted before the next release.
-- **Agent work for testers:** all done on master 2026-10-12 (see Done; unreleased until OWN-55). Left: TA-03 (what only live GPT shows, read in the first hour), EV-13 (the next suite run covers tonight's default-page changes) and INF-11 (post and project names out of the shipped code before the next release; the PyPI audit is OWN-57).
 
 ## 1. Owner: decisions and actions
 
 ### Decisions
 
-- **OWN-01** [Next] [owner] **Downdrag defaults**: keep `auto` (UFC 3-220-20, today's numbers) or report the comparison without picking; the materiality thresholds (plane max(0.5 m, 5 % L), drag max(10 kN, 10 %)); `skin_friction_stress="final"` as default; the settlement-compatibility basis that puts the neutral plane at the bearing-layer top. Commit a282d48. *Src:* `downdrag/DESIGN.md`; *was:* H E1, 0, 3e
-- **OWN-02** [Next] [owner] **fem2d staged movements**: is stage 0 always the gravity stage (`reset_displacements_after` default)? Settlements now exclude self-weight; confirm. Commit 4bf710c. *Src:* `fem2d/DESIGN.md:322-335`; *was:* H E1, 0
+- **OWN-01** [Now] [owner] **Downdrag defaults**: keep `auto` (UFC 3-220-20, today's numbers) or report the comparison without picking; the materiality thresholds (plane max(0.5 m, 5 % L), drag max(10 kN, 10 %)); `skin_friction_stress="final"` as default; the settlement-compatibility basis that puts the neutral plane at the bearing-layer top. Commit a282d48. *Src:* `downdrag/DESIGN.md`; *was:* H E1, 0, 3e
+- **OWN-02** [Now] [owner] **fem2d staged movements**: is stage 0 always the gravity stage (`reset_displacements_after` default)? Settlements now exclude self-weight; confirm. Commit 4bf710c. *Src:* `fem2d/DESIGN.md:322-335`; *was:* H E1, 0
 - **OWN-05** [Next] [owner] **Pick uses for the promo API credit before it expires 2026-11-05** (~$35 left, $20 reserved for touch-up together): EV-03, waves after EV-04/EV-05, a cross-family overfitting check, Batch API probes. *was:* H 0, 3c
 - **OWN-06** [Next] [owner] **Decide the OFF review switches** (table in §2): measure, flip or retire each. The M1 exit step "flip winning switches to defaults" never ran. *Src:* RA:206-213; *was:* H C10, 8a(vii)
 - **OWN-07** [Next] [owner] **The seven DRAFT narrative conventions** in `report_ingest/narrative_glossary.py`. *was:* H B4
 - **OWN-08** [Next] [owner] **Define `structureCount`; does `figureCount` include appendix figures?** *was:* H B5
 - **OWN-09** [Later] [owner] **Report-ingest `label_policy` / `review_mode`**: unsettled (rules win in sample, the vote by 2 of 60 blind pages, the review lost 1.5 points); needs more blind hand labels or R39 (OWN-39). *was:* H B6
-- **OWN-10** [Next] [owner] **Are the Ensoft-style calculation tables (GM-39) still the next module train?** Named "the next train" 2026-09-11, never started.
+- **OWN-10** [Now] [owner] **Are the Ensoft-style calculation tables (GM-39) still the next module train?** Named "the next train" 2026-09-11, never started.
 - **OWN-11** [Later] [owner] **Report ingest on the geotech page**: measure on one run, then an opt-in switch; RI-01–RI-03 first. *was:* H 8a(i)
 - **OWN-12** [Later] [owner] **ASCE 7 and Youd et al. (2001) licensing.** Public routes exist: GEC-5 Fig 5-20 (Youd CPT charts), FEMA P-2082 / UFC 3-301-01 (ASCE 7-22 site classes), USGS design maps (OWN-53). *was:* H 8a(ii)
 - **OWN-13** [Later] [owner] **Ito–Matsui stabilizing-pile force as its own method?** (eval SPL-3). *was:* H B8
@@ -85,8 +86,8 @@ The Document Review page goes to other testers on Tiny Apps; it is the primary f
 
 ### Actions and data
 
-- **OWN-29** [Now] [owner] **Install 5.33.0** when Nexus delivers it (wheels in `../foundry_handoff/` otherwise, planlens first), then the dosdev round (`tinyapps/TINYAPPS.md`). *was:* H A1 **packages.txt (2026-10-12):** its pandas==3.0.2 pin is commented out, because 5.33.0's python-ags4 caps pandas below 3 (TA-02, in Done); restore it with the release that makes python-ags4 optional (OWN-55).
-- **OWN-30** [Now] [owner] **First-hour check on Tiny Apps** (two people, orientation time, note + PDF, SharePoint link, Word title, `vision_model` / `budget` / `cut_off`; steps in `live_smoke/runs/w3-confirm-sonnet/REVIEW.md`). Feeds TA-03. *was:* H 3e GO 3
+- **OWN-29** [Next] [owner] **Install 5.33.0** when Nexus delivers it (wheels in `../foundry_handoff/` otherwise, planlens first), then the dosdev round (`tinyapps/TINYAPPS.md`). *was:* H A1 **packages.txt (2026-10-12):** its pandas==3.0.2 pin is commented out, because 5.33.0's python-ags4 caps pandas below 3 (TA-02, in Done); restore it with the release that makes python-ags4 optional (OWN-55). **2026-10-14:** back to Next (§0); the dosdev round goes on as time allows, and what it turns up goes into §4.
+- **OWN-30** [Next] [owner] **First-hour check on Tiny Apps** (two people, orientation time, note + PDF, SharePoint link, Word title, `vision_model` / `budget` / `cut_off`; steps in `live_smoke/runs/w3-confirm-sonnet/REVIEW.md`). Feeds TA-03. *was:* H 3e GO 3
 - **OWN-31** [Now] [owner] **The checklist session**: `funhouse_agent/report_review_checklist.json` as a plain list, markup in chat or Word, transferred keeping each `id`. *was:* H 8a(vi), 3d
 - **OWN-32** [Next] [owner] **LTQ check 5 on Funhouse** (SharePoint links, remembered files, past conversations) when the budget renews; cheap model, short PDF. *was:* H A2
 - **OWN-33** [Next] [owner] **Check the scheduled routines** at claude.ai/code/routines: the weekend refs QC routine (appears never to have run: `qc_progress.json` `last_run: null`, no `qc/*` branches, an old Sonnet on a Pro plan) and the Monday drift canary. Fix or retire (REF-05, INF-03).
@@ -100,21 +101,21 @@ The Document Review page goes to other testers on Tiny Apps; it is the primary f
 - **OWN-41** [Later] [owner] **The owner's own reports as worked-example exemplars** (Phase 2, local-only `GEOTECH_EXAMPLES_DIR`). *Src:* FI:127-136
 - **OWN-42** [Later] [owner] **Funhouse admin**: send or drop the drafted 401 admin note; `funhouse-*` aliases price at $0.00 in the pricing table. *Src:* H:2142-2144
 
-- **OWN-55** [Now] [owner] **Release before or during tester week?** Master after 5.33.0 carries the review-page fixes (DR-01-DR-03, DR-14), the 401 message and retry (TA-01), the local `.env` fix (TA-17), python-ags4 as an extra so the app installs beside CfA's pandas 3.0.2 pin (TA-02), and the downdrag/fem2d train (OWN-01, OWN-02 open). Released 5.33.0 cannot install beside that pin. Nothing is released without your word. *Src:* commits ae50842, da28a69, 0562ddf, a229090
+- **OWN-55** [Now] [owner] **When to cut the next release (5.34.0)?** Testers are a few weeks out (CfA, 2026-10-14), so no date forces it; the Now train in §0 adds to it. Master after 5.33.0 carries the review-page fixes (DR-01-DR-03, DR-14), the 401 message and retry (TA-01), the local `.env` fix (TA-17), python-ags4 as an extra so the app installs beside CfA's pandas 3.0.2 pin (TA-02), and the downdrag/fem2d train (OWN-01, OWN-02 open). Released 5.33.0 cannot install beside that pin. Nothing is released without your word. *Src:* commits ae50842, da28a69, 0562ddf, a229090
 - **OWN-56** [Later] [owner] **Department addresses in the public app repo's git history**: your work address (prompter_metering DIAGNOSIS), CfA support mailboxes, the SharePoint host and site name, the published-app domains. Current files are scrubbed (24b46df); history keeps them. Purge (rewrite + force-push) or accept? Pairs with OWN-26.
 - **OWN-57** [Next] [owner] **What the published PyPI files carry** (audit 2026-10-13 of all 248 files of the account's four projects; scan read every wheel and sdist in memory). No Department email in any of them; the only address is the author Gmail. App 5.10.0-5.33.0 (39 versions) carry the Department SharePoint tenant and team-site address in two `webapp/` docstrings. App 5.12.0 onward carry field-session post and project names in code comments, and `report_ingest` the embassy answer vocabulary (OWN-25). `geotech-report-extraction` (all 12 versions) describes an embassy report format and names a post in its test data. Funhouse, Prompter, SharePoint, CfA, Tiny Apps and Key Vault appear throughout the app as integration code. planlens and geotech-references hold no Department specifics. PyPI files cannot be edited: accept, or delete releases (permanent; breaks installs pinned to them; the Nexus mirror and public mirrors keep their copies). Pairs with OWN-56, INF-11.
 
 ### CfA and Funhouse questions
 
-- **OWN-43** [Now] [owner] **Per-tester Prompter keys** (Key Vault `PROMPTER-API-KEY--<TESTER>`); `PROMPTER_SHARED_KEY_FALLBACK=1` until all exist. *was:* H A1, 0
-- **OWN-44** [Now] [owner] **SharePoint app registration** (four `GRAPH-*` / `SHAREPOINT-SITE-URL` values, `Sites.Selected`); reference PDFs reach Tiny Apps only this way (REF-20). *was:* H A1, 0
-- **OWN-45** [Now] [owner] **The published address** for `corsAllowedOrigins`. *was:* H A1, 0
-- **OWN-46** [Now] [owner] **Confirm the identity header** ("Signed in as <name>"). *was:* H A1, 0
-- **OWN-47** [Now] [owner] **An image-capable Prompter deployment** (make-or-break): now the GPT-5.6 Sol-or-higher deployment testers will get (owner, 2026-10-12). *was:* H 3e GO 2
-- **OWN-48** [Now] [owner] **Does the App Service enforce FIPS?** Assume yes: OpenCV cannot load there, so OCR and the raster drawing leg are unavailable; `find_like` still works on its numpy backend (planlens 0.12+). *was:* H A3
-- **OWN-49** [Now] [owner] **Questions that fell off A1**: does the gateway pass streaming; Nexus install vs vendoring and the fleet pins CfA expects of our tree; the shared VM's resource envelope (fem2d meshes, Monte Carlo). *Src:* `tinyapps/TINYAPPS.md:236-253` **Fleet pins (TA-02, 2026-10-12):** our tree cannot install beside pandas==3.0.2 until the release after 5.33.0; ask whether a pandas 2.x from the mirror is acceptable meanwhile.
-- **OWN-50** [Now] [owner] **What does the Prompter return when a key's budget is spent** (status and body)? The D2 classifier is built on guesses (TA-06).
-- **OWN-51** [Now] [owner] **Is the pilot Prompter key the sanctioned, metered route?** (the Funhouse SDK Terms say direct Azure AI calls bypass metering).
+- **OWN-43** [Next] [owner] **Per-tester Prompter keys** (Key Vault `PROMPTER-API-KEY--<TESTER>`); `PROMPTER_SHARED_KEY_FALLBACK=1` until all exist. **CfA, 2026-10-14:** each user gets their own key, in a few weeks. *was:* H A1, 0
+- **OWN-44** [Next] [owner] **SharePoint app registration** (four `GRAPH-*` / `SHAREPOINT-SITE-URL` values, `Sites.Selected`); reference PDFs reach Tiny Apps only this way (REF-20). **CfA, 2026-10-14:** the SharePoint connection is a few weeks out. *was:* H A1, 0
+- **OWN-45** [Next] [owner] **The published address** for `corsAllowedOrigins`. *was:* H A1, 0
+- **OWN-46** [Next] [owner] **Confirm the identity header** ("Signed in as <name>"). *was:* H A1, 0
+- **OWN-47** [Next] [owner] **An image-capable Prompter deployment** (make-or-break): now the GPT-5.6 Sol-or-higher deployment testers will get (owner, 2026-10-12). *was:* H 3e GO 2
+- **OWN-48** [Next] [owner] **Does the App Service enforce FIPS?** Assume yes: OpenCV cannot load there, so OCR and the raster drawing leg are unavailable; `find_like` still works on its numpy backend (planlens 0.12+). *was:* H A3
+- **OWN-49** [Next] [owner] **Questions that fell off A1**: does the gateway pass streaming; Nexus install vs vendoring and the fleet pins CfA expects of our tree; the shared VM's resource envelope (fem2d meshes, Monte Carlo). *Src:* `tinyapps/TINYAPPS.md:236-253` **Fleet pins (TA-02, 2026-10-12):** our tree cannot install beside pandas==3.0.2 until the release after 5.33.0; ask whether a pandas 2.x from the mirror is acceptable meanwhile.
+- **OWN-50** [Next] [owner] **What does the Prompter return when a key's budget is spent** (status and body)? The D2 classifier is built on guesses (TA-06).
+- **OWN-51** [Next] [owner] **Is the pilot Prompter key the sanctioned, metered route?** (the Funhouse SDK Terms say direct Azure AI calls bypass metering).
 - **OWN-52** [Next] [owner] **Process questions**: whether the Department SharePoint tenant is inside the pilot's data boundary (a DT CAB item); approval-path status (MOU → GHE → SIA → CAB → PCR); a monthly CfA check-in with telemetry noted in `TINYAPPS.md`. *Src:* `TINYAPPS.md:91-94, 242-253`
 - **OWN-53** [Later] [owner] **Tiny Apps API-first egress** for the keyless USGS design-maps services (ASCE 7 values without licensing). *Src:* FI:343-355
 - **OWN-54** [Later] [owner] **Funhouse questions**: an in-enclave MCP host (PL-15, LT-06); vendored model weights through Nexus (VIS-11); who reconciles the org skill that names a `geotechnical_engineering_query` tool. *Src:* FI:250-255, 398-414
@@ -125,8 +126,8 @@ The Document Review page goes to other testers on Tiny Apps; it is the primary f
 
 Testers get the legacy deepagents build (`GEOTECH_REVIEW_AGENT` unset); the plan's Phase-1 fixes exist only behind `lean`, OFF.
 
-- **DR-04** [Next] **The default page still offers `read_reference_figure` / `view_worked_example_source`** (`make_vision_tools` called without `include`, `deep/agent.py` ~665) and deepagents' coding prompt (~7.7K chars). *Src:* HT `document_review.md:122`
-- **DR-05** [Next] **Re-measure `GEOTECH_REVIEW_AGENT=lean`** at full resolution and on GPT after 5.32–5.33 (last 34/35, Sol, 768 px); until lean or legacy wins, DR-01–DR-04 stay on the legacy build. *Src:* RH:35, 239
+- **DR-04** [Now] **The default page still offers `read_reference_figure` / `view_worked_example_source`** (`make_vision_tools` called without `include`, `deep/agent.py` ~665) and deepagents' coding prompt (~7.7K chars). *Src:* HT `document_review.md:122`
+- **DR-05** [Now] **Re-measure `GEOTECH_REVIEW_AGENT=lean`** at full resolution and on GPT after 5.32–5.33 (last 34/35, Sol, 768 px); until lean or legacy wins, DR-01–DR-04 stay on the legacy build. *Src:* RH:35, 239
 
 ### Review architecture (M2–M4 and the owner's questions)
 
@@ -167,9 +168,9 @@ All OFF unless marked. Decisions: OWN-06.
 
 ### Markups and checks
 
-- **DR-15** [Next] **GPT-5.4 stops after two rejected markups**: tell it to keep correcting until confirmed, up to N tries. *Src:* check1 TRACE_REVIEW C6
-- **DR-16** [Next] **Return the corrected box**, not only "misplaced" (the crop look already finds the thing; `markup_check.py:775-778`). *Src:* HT `locating_things_on_a_page.md:1326-1329`
-- **DR-17** [Next] **B4: the duplicate-mark note should say a duplicate may hide an unmarked thing** (`planlens/tools/toolkit.py:926-933`). *Src:* B5 `TRACE_REVIEW_B_AEFG.md:250-270`
+- **DR-15** [Now] **GPT-5.4 stops after two rejected markups**: tell it to keep correcting until confirmed, up to N tries. *Src:* check1 TRACE_REVIEW C6
+- **DR-16** [Now] **Return the corrected box**, not only "misplaced" (the crop look already finds the thing; `markup_check.py:775-778`). *Src:* HT `locating_things_on_a_page.md:1326-1329`
+- **DR-17** [Now] **B4: the duplicate-mark note should say a duplicate may hide an unmarked thing** (`planlens/tools/toolkit.py:926-933`). *Src:* B5 `TRACE_REVIEW_B_AEFG.md:250-270`
 - **DR-18** [Later] **A rotated mark's label should follow the text under it** (F7/B8; 83a77f4 only suggests `label_reads`). *was:* H 3e "rotated labels"
 - **DR-19** [Later] **DXF viewing**: render a DXF to PDF so the vision tools can look at it. *Src:* w2b REVIEW:124, 176-180
 
@@ -190,15 +191,15 @@ All OFF unless marked. Decisions: OWN-06.
 
 ## 3. Vision
 
-- **VIS-01** [Next] **R: render turned or sideways lettering upright** (6 of 15 turned look-alikes misread vs 0 of 11 upright). *was:* H E3
+- **VIS-01** [Now] **R: render turned or sideways lettering upright** (6 of 15 turned look-alikes misread vs 0 of 11 upright). *was:* H E3
 - **VIS-02** [Next] **`found` B1 / B2**: judge region vs text line by aspect; carry the text read (`vision_view.py:775, 804`). *was:* H E3
 - **VIS-03** [Next] **Notes MK1 / MK2 / MK3 / MK5**: `aim_note` false alarms; `found_note` noise; say when looks disagree or a zoom is coarser than the tiles. *was:* H E3
-- **VIS-04** [Next] **MK4: a zoom that cuts text lines invents the rest**; one general sentence: say "cut". *Src:* B5 `TRACE_REVIEW_suite_meck.md:264-271`
-- **VIS-05** [Next] **MK6: boxes stay in the image as sent when the drawing is sideways** (one answer ~300 pt off). *Src:* `TRACE_REVIEW_suite_meck.md:275-279`
+- **VIS-04** [Now] **MK4: a zoom that cuts text lines invents the rest**; one general sentence: say "cut". *Src:* B5 `TRACE_REVIEW_suite_meck.md:264-271`
+- **VIS-05** [Now] **MK6: boxes stay in the image as sent when the drawing is sideways** (one answer ~300 pt off). *Src:* `TRACE_REVIEW_suite_meck.md:275-279`
 - **VIS-06** [Next] **E4: `code_reading` should flag a READ input outside the fitted axis** (110 tsf at φ 28° on a 30–45° axis; `funhouse_agent/chart_reading.py`). *Src:* `TRACE_REVIEW_B_AEFG.md:495-499`
 - **VIS-07** [Next] **Zoom latency 30–50 s (F1)**: A/B a reasoning setting on vision calls on GPT; a ~4k zoom cap (still 8k). *Src:* w3 REVIEW:220; *was:* H E3, 3e
 - **VIS-08** [Next] **GPT-5.4 reads log depths by eye (M1)**: lead the `measure` / `log_grid` descriptions with the reviewer's questions; measure ×3 per wording. *Src:* `TRACE_REVIEW_new_tasks.md:402-426`; *was:* H E5
-- **VIS-09** [Next] **A crop/zoom tool for raster uploads and pasted screenshots.** *Src:* FI "VISION HARNESS BENCHMARK"; *was:* H C9
+- **VIS-09** [Now] **A crop/zoom tool for raster uploads and pasted screenshots.** *Src:* FI "VISION HARNESS BENCHMARK"; *was:* H C9
 - **VIS-10** [Next] **Per-figure crop boxes in the reference catalogs (P7)**: whole-page renders blind `find_scales` on two-figure pages, so `code_reading` never measured Fig 7-15. Find each box once at build time. *Src:* FI:540-543; B5 TRACE_REVIEW:82
 - **VIS-11** [Next] [owner] **Free OCR on FIPS hosts**: only paid DI works where the app runs (RapidOCR imports OpenCV, which aborts). First a child-process probe of `onnxruntime` under FIPS, then approval of vendored weights (OWN-54). Merges Tier-2 engines and PL-21. *Src:* FI:384-386, 489-494
 - **VIS-12** [Later] **MK7: offer `measure` / `log_grid` only when a scale or log page exists** (~930 tokens a call). *Src:* `TRACE_REVIEW_suite_meck.md:61-67`
@@ -214,7 +215,7 @@ All OFF unless marked. Decisions: OWN-06.
 
 ## 4. Tiny Apps, Funhouse/Databricks and hosting
 
-- **TA-03** [Now] **What only live GPT can show**: the rollout model's vision (no `GEOTECH_VISION_BUDGET` / `GEOTECH_CHART_BUDGET` lines; diagnostics should name GPT-5.6 Sol or higher at `openai-high`, charts at `openai-original`, and the host's edge; a half-size sheet answered from the text layer); spend per turn against each tester's budget, since full-size images cost several times gpt-5.1's 768 px (OWN-50), latency vs caps, budget and rate-limit responses, separate keys, links behind IIS, `reuse=true`. *was:* H E5, 0, 3e
+- **TA-03** [Next] **What only live GPT can show**: the rollout model's vision (no `GEOTECH_VISION_BUDGET` / `GEOTECH_CHART_BUDGET` lines; diagnostics should name GPT-5.6 Sol or higher at `openai-high`, charts at `openai-original`, and the host's edge; a half-size sheet answered from the text layer); spend per turn against each tester's budget, since full-size images cost several times gpt-5.1's 768 px (OWN-50), latency vs caps, budget and rate-limit responses, separate keys, links behind IIS, `reuse=true`. *was:* H E5, 0, 3e
 - **TA-18** [Later] **The 401 retry reuses the client's pooled connection** (TA-01's retry, 0562ddf): if a refusal survives the retry live, rebuild the model client for the retry (the 2026-09-09 hypothesis was a stale NTLM connection). *Src:* HANDOFF 2026-09-09 field feedback
 - **TA-04** [Next] **Not verified live**: the D2 budget message; busy retries; restore after restart; the Excel writer; two testers saving at once (H12); `annotate_dxf` in real CAD; D3 (harness copies the old sidebar). *was:* H E6
 - **TA-05** [Next] **An SDK-free spend line in the sidebar** for testers on a $50/month key (`webapp/budget_panel.py` is SDK-only). *Src:* H:681-683
@@ -238,7 +239,7 @@ All OFF unless marked. Decisions: OWN-06.
 - **PL-04** [Next] **`log_grid` N7 / N8**: multi-log header fields; table row rules read as strata. *was:* H E3
 - **PL-05** [Next] **N14: `measure`'s `to` across a second zoom.** *was:* H E3
 - **PL-06** [Next] **C4 public API**: `ReviewToolkit.forget(path)`, atomic save in `write_markups`, stable markup ids (positional today, `annotations.py:194`). *was:* H E3
-- **PL-07** [Next] **Distinct stroke-drawn sheets are flagged as duplicates** (22 of 24; `document/document.py:436-441`), inviting skipped pages. *Src:* HT `document_review.md:335-341`
+- **PL-07** [Now] **Distinct stroke-drawn sheets are flagged as duplicates** (22 of 24; `document/document.py:436-441`), inviting skipped pages. *Src:* HT `document_review.md:335-341`
 - **PL-08** [Later] **`log_grid` blind gaps**: index values 8/17 (plotted column), header fields 33/54, sheets with no depth unit, one zero-scoring log unexamined. *Src:* `planlens/document/DESIGN.md:1286-1310`
 - **PL-09** [Later] **Reading gaps**: multi-column / visual reading order; tables spanning pages; captions on non-figure pages. *Src:* DESIGN.md:71-72, 1318-1327
 - **PL-10** [Later] **Page roles**: `dcp_log` on scans (0.54); no pressuremeter, vane or dilatometer roles. *Src:* DESIGN.md:977-980
@@ -287,24 +288,24 @@ Parked at 5.25.0; every number since is GPT-5.4 on Foundry. Code items were conf
 ## 7. Geotech analysis modules
 
 ### Downdrag
-- **GM-01** [Next] **~4 % quadrature mismatch** between the crossing search and the reported drag. *was:* H E2
+- **GM-01** [Now] **~4 % quadrature mismatch** between the crossing search and the reported drag. *was:* H E2
 - **GM-02** [Next] **Endo ratios unverified.** CGPR #56 IS on disk in a downdrag field session's gitignored `raw/` (2026-09-04): verify locally, commit nothing (not public domain). *was:* H E2
 - **GM-03** [Next] **Post-liquefaction drag (GEC-10 §10.7)** not implemented; pair with a liquefaction worked-example anchor (NCHRP downdrag Appendix G CPT example). *was:* H E2
 - **GM-04** [Later] **Downdrag limits**: Poulos / PILENEG outside the comparison; single pile, ultimate consolidation only; β shaft far below Nordlund in dense gravel (V-004); β = 0.3 default uncited. *Src:* `downdrag/DESIGN.md:61-64, 317-325`
 
 ### fem2d
-- **GM-05** [Next] **SRM failure detection depends on the mesh**: stall FOS drops with refinement (0.934 → 0.80); wave 1 got 1.80 on 40x20 vs 1.13 finer with `warnings: []`. Coarse meshes overpredict (unconservative): warn in the result, then a remedy; `nr_method` / `nr_fallback` unvalidated. *Src:* `fem2d/UPGRADE_PLAN.md:272-289`
-- **GM-06** [Next] **Undrained locking near ν = 0.5**: B-bar / reduced integration or 15-node triangles (GL99 Ex4 +19–26 % at ν = 0.49, unconservative). *Src:* `fem2d/VALIDATION.md:62-71`
+- **GM-05** [Now] **SRM failure detection depends on the mesh**: stall FOS drops with refinement (0.934 → 0.80); wave 1 got 1.80 on 40x20 vs 1.13 finer with `warnings: []`. Coarse meshes overpredict (unconservative): warn in the result, then a remedy; `nr_method` / `nr_fallback` unvalidated. *Src:* `fem2d/UPGRADE_PLAN.md:272-289`
+- **GM-06** [Now] **Undrained locking near ν = 0.5**: B-bar / reduced integration or 15-node triangles (GL99 Ex4 +19–26 % at ν = 0.49, unconservative). *Src:* `fem2d/VALIDATION.md:62-71`
 - **GM-07** [Next] **θ = 0.5 rings ±5 kPa at drained boundaries.** *was:* H E2
-- **GM-08** [Next] **`analyze_staged` ignores `n_steps`** (matters for plastic stages). *was:* H E2
+- **GM-08** [Now] **`analyze_staged` ignores `n_steps`** (matters for plastic stages). *was:* H E2
 - **GM-09** [Next] **Consolidation fill under water is refused.** *was:* H E2
 - **GM-10** [Later] **fem2d backlog**: structured slope mesher (toe slivers); GL99 Ex3 / Ex5; Q8; flag cohesionless chatter; T6 seepage / Biot; HS σzz elastic in SRM; SHANSEP / Hoek-Brown pre-linearised; `analyze_cavity` / `analyze_tunnel`. *Src:* `fem2d/UPGRADE_PLAN.md:158-248`
 - **GM-11** [Later] **`analyze_footing_capacity` ignores side surcharge / embedment** (`fem2d/analysis.py:225-227`).
 - **GM-12** [Later] **Slow rigorous searches and SRM runtimes** (G18; a module item, not a reference one). *was:* H E2
 
 ### slope_stability
-- **GM-13** [Next] **Small-toe-circle under-sampling**: 2.74 vs a true 2.287 on a steep φ = 0 toe circle (+20 %, unconservative). Only plan commit f2827d9 exists. *Src:* `module_work/V5.4_PLAN.md:316-320`
-- **GM-14** [Next] **c′ = 0: the circular search misses the planar critical** (#86: 1.549 vs 0.94, unconservative); `infinite_slope_fos` is unused by the search. *Src:* `slope_stability/DESIGN.md:126-129`
+- **GM-13** [Now] **Small-toe-circle under-sampling**: 2.74 vs a true 2.287 on a steep φ = 0 toe circle (+20 %, unconservative). Only plan commit f2827d9 exists. *Src:* `module_work/V5.4_PLAN.md:316-320`
+- **GM-14** [Now] **c′ = 0: the circular search misses the planar critical** (#86: 1.549 vs 0.94, unconservative); `infinite_slope_fos` is unused by the search. *Src:* `slope_stability/DESIGN.md:126-129`
 - **GM-15** [Next] **Steep-φ′ Kc rapid-drawdown overshoot ~22 %** (Lowe-Karafiath, DWW; V-052b, φ′ = 45, a failed case). *Src:* `V5.4_PLAN.md:325-332`
 - **GM-16** [Next] **Five method descriptions exceed the 8,000-char result cap.** *Src:* HT `geotech_agent.md`; *was:* H C11
 - **GM-17** [Next] **Jibson (2007) caveat** in Newmark docs and results (≥82 % unconservative bias over 42 dams). *Src:* `wiki_verification/TIER_A_LEDGER.md:89-92`
@@ -312,7 +313,7 @@ Parked at 5.25.0; every number since is GPT-5.4 on Foundry. Code items were conf
 - **GM-19** [Later] **Methods never built**: Janbu rigorous, Sarma, Barton-Bandis, a liquefied strength, a curved envelope, Hassiotis / Kumar & Hall piles. *Src:* `slope_stability/IMPROVEMENT_PLAN.md:170-176`
 
 ### SOE and sheet pile
-- **GM-20** [Next] **`soe/free_earth.py` returns a value when no root is found**; return null plus a warning (G16). *was:* H E2
+- **GM-20** [Now] **`soe/free_earth.py` returns a value when no root is found**; return null plus a warning (G16). *was:* H E2
 - **GM-21** [Next] **Caquot-Kerisel Kp0 and R(δ/φ) verified only at φ = 30°**; they drive every passive result; cross-read the DM7.2 Kp chart in the catalog. *Src:* `soe/DESIGN.md:190-200`
 - **GM-22** [Later] **Ground-anchor design has no benchmark** (GEC-4 Table 4 nominal; a GEC-4-vs-PTI exhibit planned). *Src:* `soe/DESIGN.md:202-212`
 - **GM-23** [Later] **SOE "Future Work"**: ACI 318 secant / diaphragm walls; wale and strut connections; beam-spring SSI; lagging; rakers and corners; seismic apparent pressure. *Src:* `soe/DESIGN.md:214-222`
@@ -326,7 +327,7 @@ Parked at 5.25.0; every number since is GPT-5.4 on Foundry. Code items were conf
 - **GM-29** [Later] **wave_equation**: no real diesel ram cycle or GRLWEAP helmet data (V-003 blow count −60 %); quake / damping defaults unchecked vs GEC-12 Table 12-3. *Src:* `wave_equation/DESIGN.md:12-20`
 
 ### Shallow foundations, settlement, ground improvement
-- **GM-30** [Next] **Terzaghi bearing-capacity factors are missing** ("testers ask for Terzaghi often"; a memo shipped with N-gamma blank). *Src:* w1-flows REVIEW:213-217
+- **GM-30** [Now] **Terzaghi bearing-capacity factors are missing** ("testers ask for Terzaghi often"; a memo shipped with N-gamma blank). *Src:* w1-flows REVIEW:213-217
 - **GM-31** [Later] **Ergonomics**: moist / saturated γ about the GWT (Das #4); Highter-Anders (Das #5); the FHWA Schmertmann variant; GEC-6 Fig 5-19 / T6-1 cross-read; vibro spacing unsourced; RAP upper zone (OWN-21). *Src:* `TIER_A_LEDGER.md:110, 133-148`
 
 ### Earth retention and seismic
@@ -344,7 +345,7 @@ Parked at 5.25.0; every number since is GPT-5.4 on Foundry. Code items were conf
 - **GM-39** [Next] [owner] **Ensoft-style calculation TABLES**: `calc_package.export_tables`, a `get_tables()` per module, CSV + HTML (per-depth p-y, per-slice, per-layer, iteration histories). The owner's 2026-09-11 "next train", never started (OWN-10). *Src:* FI:292-298
 - **GM-40** [Next] **Specialists cannot draw or report**: foundations, earth-retention, slope-fem and seismic scopes exclude `calc_package` and `profile_figure` (`funhouse_agent/dispatch.py:122-178`); no SharePoint or email tools either. *Src:* FI:303-304
 - **GM-41** [Next] **`soe` and `reliability` have no calc package**, so SOE reports are bespoke `html_to_pdf` (behind the 2026-09-15 "numbers gone" failure). *Src:* `calc_package/__init__.py`
-- **GM-42** [Next] **The `list_agents` catalog is at 7,988 of 8,000 chars**: the next brief fails five tests; rebalance first. *Src:* H:1978-1979
+- **GM-42** [Now] **The `list_agents` catalog is at 7,988 of 8,000 chars**: the next brief fails five tests; rebalance first. *Src:* H:1978-1979
 - **GM-43** [Later] **The geotech `reviewer` sub-agent is never invoked (0/106)**; `CONSULTANT_FRAMING` ends with a dangling "Question: " (`reviewer.py:274`). *Src:* HT `geotech_agent.md:168-170, 315-358`
 - **GM-44** [Later] **Playbooks**: standard multi-step workflows as data. *Src:* FI:138-149
 - **GM-45** [Later] **Document work on the geotech page is token-heavy** (~2.25 M tokens in five turns): measure; turn the SOE re-run's agent errors (wrong stratum in basal heave; a real match dismissed) into suite tasks. *Src:* an SOE re-run session (2026-09-15) FINDINGS:319-352
@@ -387,7 +388,7 @@ Parked at 5.25.0; every number since is GPT-5.4 on Foundry. Code items were conf
 - **EV-10** [Later] **CI mock-eval subset** in GitHub Actions. *Src:* FI:286-288
 - **EV-11** [Later] **Open eval questions**: what the references sub-agent did inside consults; numbers traceable to no `call_agent`; per-call overhead; a pinpoint citation spot check. *Src:* HT `geotech_agent.md:335-349`
 - **EV-12** [Later] **Read `module_work/harness_theory/` open questions before changing a harness.** *was:* H "Open questions"
-- **EV-13** [Next] **The next suite run measures tonight's default-page changes** (2026-10-12): the 40-call budget whose last call answers (DR-03; GEOTECH_REVIEW_MAX_MODEL_CALLS=off restores the old cap), the helper with the reading rules (DR-02), the zoom tool's wording (DR-01) and the markup check against the printed thing (DR-14), against brief 5's baseline (Sol 39/42). Read every run in full. *Src:* ae50842, da28a69
+- **EV-13** [Now] **The next suite run measures tonight's default-page changes** (2026-10-12): the 40-call budget whose last call answers (DR-03; GEOTECH_REVIEW_MAX_MODEL_CALLS=off restores the old cap), the helper with the reading rules (DR-02), the zoom tool's wording (DR-01) and the markup check against the printed thing (DR-14), against brief 5's baseline (Sol 39/42). Read every run in full. *Src:* ae50842, da28a69
 
 ## 10. Infrastructure, releases, dependencies, repo hygiene
 
@@ -400,7 +401,7 @@ Parked at 5.25.0; every number since is GPT-5.4 on Foundry. Code items were conf
 - **INF-07** [Later] **Is master CI green?** ("should self-heal … (VERIFY)", H:2585).
 - **INF-08** [Later] [owner] **Leftovers**: gitignored `build/`; old release worktrees and `.claude/worktrees/agent-*`; branches app `hotfix/5.12.1-structural-extra`, planlens `fix/advice-names-no-missing-tools` (shipped as 0d9787b), refs `origin/feature/reference-query-expansion` (merged). OWN-27.
 - **INF-09** [Later] **Rebuild the private Harness Map** (outside the repos; last built 2026-09-29).
-- **INF-10** [Next] **Run the geotech module suites on a fresh resolve** (numpy 2.5.4, plotly 7.1.0, deepagents 0.7.13, langchain 1.3.18 on 2026-10-12): TA-02 ran only what pandas and Streamlit reach. Recipe: WSL Ubuntu, `~/.local/bin/uv`, Python 3.12, repo on PYTHONPATH, GIT_OPTIONAL_LOCKS=0 (Smart App Control blocks fresh DLLs on Windows). Also `report_ingest/tests/test_cluster_scoring.py::test_a_workspace_out_dir_runs_rather_than_raising` assumes `/Workspace` can be created (fails on Linux as a non-root user).
+- **INF-10** [Now] **Run the geotech module suites on a fresh resolve** (numpy 2.5.4, plotly 7.1.0, deepagents 0.7.13, langchain 1.3.18 on 2026-10-12): TA-02 ran only what pandas and Streamlit reach. Recipe: WSL Ubuntu, `~/.local/bin/uv`, Python 3.12, repo on PYTHONPATH, GIT_OPTIONAL_LOCKS=0 (Smart App Control blocks fresh DLLs on Windows). Also `report_ingest/tests/test_cluster_scoring.py::test_a_workspace_out_dir_runs_rather_than_raising` assumes `/Workspace` can be created (fails on Linux as a non-root user).
 - **INF-11** [Now] **Take field-session post and project names out of the shipped code before the next release** (OWN-57, OWN-55): comments in `webapp/core.py`, `webapp/output_capture.py`, `webapp/activity_log.py`, `funhouse_agent/deep/agent.py`, `funhouse_agent/deep/scratch_guard.py`, `funhouse_agent/error_text.py`, `funhouse_agent/adapters/calc_package.py`, `funhouse_agent/vision_view.py`, `soe/free_earth.py` (and `soe/DESIGN.md`, not shipped). The "Department's ..." remarks in `funhouse_agent/deep/prompt.py`, `webapp/graph_sharepoint.py` and `webapp/tinyapps_engine.py` too, if OWN-57 says so. Then a guard test over the wheel's packages.
 
 ## 11. Long-term programs and parked ideas

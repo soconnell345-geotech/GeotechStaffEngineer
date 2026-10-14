@@ -390,7 +390,7 @@
   "why": "Each tester's own key gives them their own AI budget, and the list of keys becomes the pilot's access list. Without per-tester keys, testers either share one $50-a-month key (fallback on) or are all politely refused (fallback off, the default).",
   "background": "<TESTER> is the sign-in DOMAIN\\user in upper case, with each run of characters other than letters and digits turned into one hyphen: CORP\\jdoe becomes PROMPTER-API-KEY--CORP-JDOE. Optional PROMPTER-MODEL--<TESTER> and PROMPTER-URL--<TESTER> if a key serves another deployment. Alternative: one JSON secret, PROMPTER-KEYS. Fallback: app setting PROMPTER_SHARED_KEY_FALLBACK=1 (or Key Vault secret PROMPTER-SHARED-KEY-FALLBACK). A tester without a key sees a polite message naming their exact secret, so the easiest way to get each name is to have the tester open the app once. A new secret works at the tester's next new conversation; a rotated key needs an app restart. No key is ever logged or shown.",
   "options": [],
-  "recommendation": "Ask for both: per-tester keys, plus the fallback on until the last key exists, then off. Have each tester open the app once to see their exact secret name.",
+  "recommendation": "CfA confirmed on 2026-10-14 that each user gets their own key, in a few weeks. Still ask what budget each key carries and whether all are on the same deployment, and have each tester open the app once to see their exact secret name.",
   "if_no_answer": "With the fallback off (the default) every tester is refused; with it on, all testers share one key and one $50 monthly budget.",
   "message_to_send": "Per-tester AI keys: could you create one Prompter key per tester and store each in our Key Vault as PROMPTER-API-KEY--<TESTER>? <TESTER> is the sign-in DOMAIN\\user in upper case with other characters turned into hyphens, e.g. CORP\\jdoe becomes PROMPTER-API-KEY--CORP-JDOE. I will send the tester list. Until all keys exist, please set the app setting PROMPTER_SHARED_KEY_FALLBACK=1. What budget does each key carry, and is each on the same model deployment?",
   "steps": null,
@@ -411,7 +411,7 @@
   "why": "Without it, testers on Tiny Apps get no SharePoint at all: no conversation copies on the team site, no 'save it to SharePoint and send me the link', and no reference PDFs, so charts in the design manuals cannot be read (REF-20). Conversations still save on the App Service itself.",
   "background": "The app reads GRAPH-TENANT-ID, GRAPH-CLIENT-ID, GRAPH-CLIENT-SECRET and SHAREPOINT-SITE-URL (Key Vault spelling; app settings use underscores). It signs in as the app with client credentials on Microsoft's public Graph endpoints, because the Department's SharePoint is commercial-side; uploads show the app's name in SharePoint's audit trail. It lists, searches, downloads, uploads and creates folders, so the grant must allow writing. The base folder is the app setting GEOTECH_SHAREPOINT_ROOT, read from the environment only, not Key Vault; default 'Shared Documents/GeotechStaffEngineer'. Reference PDFs are looked for in its primary_references subfolder, so point it at the folder the Funhouse app uses. Whether the tenant is inside the pilot boundary is OWN-52.",
   "options": [],
-  "recommendation": "Ask now: it is the one item that turns on SharePoint links, the conversation copies and chart reading for testers. Send the exact base-folder path you use on Funhouse with the request.",
+  "recommendation": "CfA said on 2026-10-14 the SharePoint connection is a few weeks out. When they set it up, send the exact base-folder path you use on Funhouse, so testers' copies and the reference PDFs land in the same place.",
   "if_no_answer": "Testers work without SharePoint: no shareable links, no copies on the team site, and no chart read-off from the design manuals.",
   "message_to_send": "SharePoint: could you set up the Entra app registration for our team site, with Sites.Selected and write access to that one site, and put four values in our Key Vault: GRAPH-TENANT-ID, GRAPH-CLIENT-ID, GRAPH-CLIENT-SECRET and SHAREPOINT-SITE-URL? Please also add the app setting GEOTECH_SHAREPOINT_ROOT, set to our existing base folder on that site (I will send the path). The app uses it to keep conversation copies and to fetch reference PDFs.",
   "steps": null,
@@ -634,25 +634,25 @@
  "OWN-55": {
   "kind": "decision",
   "ask_who": null,
-  "question": "Cut a release (5.34.0) before or during tester week, so testers get tonight's fixes and the app installs beside CfA's pandas 3.0.2 pin?",
-  "why": "The released 5.33.0 cannot install beside the pandas 3.0.2 pin in packages.txt, and tonight's review-page and Tiny Apps fixes reach testers only in a release.",
-  "background": "Master after 5.33.0 holds: the default review page's zoom wording, a reading helper with the review rules, and a 40-call budget whose last call answers instead of erroring (DR-01 to DR-03); the markup check measured against the printed thing (DR-14); a plain message and one retry when a key is refused (TA-01); .env settings working on dosdev (TA-17); python-ags4 as an optional extra, so pip resolves beside pandas 3.0.2 (TA-02); and the downdrag and fem2d train, whose defaults (OWN-01, OWN-02) are still open. Offline tests pass on Windows and on CfA's pins in Linux. None of it has run on the suite with a real model yet (EV-13). Nexus delivers a release a day or two after PyPI.",
+  "question": "When should the next release (5.34.0) go out, now that testers are a few weeks away?",
+  "why": "CfA says the SharePoint connection and the per-user keys are a few weeks out (2026-10-14), so no tester date forces a release this week. One release at the right moment carries everything, including the install fix for CfA's pandas 3.0.2 pin.",
+  "background": "Master after 5.33.0 holds: the default review page's zoom wording, a reading helper with the review rules, and a 40-call budget whose last call answers instead of erroring (DR-01 to DR-03); the markup check measured against the printed thing (DR-14); a plain message and one retry when a key is refused (TA-01); .env settings working on dosdev (TA-17); python-ags4 as an optional extra, so pip resolves beside pandas 3.0.2 (TA-02); and the downdrag and fem2d train, whose defaults (OWN-01, OWN-02) are still open. The Now train (BACKLOG §0) adds engineering-answer fixes and Document Review accuracy fixes. On dosdev, 5.33.0 installs today if pandas is left unpinned (pip takes a 2.x version). Nothing on master has run on the suite with a real model yet (EV-13). Nexus delivers a release a day or two after PyPI.",
   "options": [
    {
-    "label": "Release after one suite run",
-    "effect": "Run EV-13 on Foundry first (about a day), then the release gate and PyPI. Testers start on 5.33.0 with pandas left unpinned."
+    "label": "At the end of the Now train",
+    "effect": "Finish the Now items (about one to two weeks), one Foundry suite run over all of it (EV-13), then the release gate and PyPI. It lands well before testers arrive."
    },
    {
-    "label": "Release now",
-    "effect": "The full release gate (about 14,600 tests in foreground batches), then PyPI; Nexus has it in a day or two. The suite measures it afterwards."
+    "label": "Release now, and again after the train",
+    "effect": "dosdev gets the pandas 3 fix this week; a second release follows the train. Two installs to check instead of one."
    },
    {
-    "label": "Hold to the next train",
-    "effect": "Testers use 5.33.0 with the pandas pin commented out; tonight's fixes wait."
+    "label": "Hold until CfA delivers",
+    "effect": "Release only when the SharePoint connection and keys are ready; dosdev stays on 5.33.0 with pandas unpinned."
    }
   ],
-  "recommendation": "Release after one suite run if Foundry is free this week; otherwise release now. The changes act only on long turns, refused keys and markups, and the pinned deploy needs the install fix either way.",
-  "if_no_answer": "Testers run 5.33.0 with pandas unpinned in packages.txt; nothing on master reaches them.",
+  "recommendation": "At the end of the Now train: one release, measured once on the suite, in place before testers arrive. dosdev works meanwhile with pandas unpinned.",
+  "if_no_answer": "The train continues on master; nothing is released without your word.",
   "message_to_send": null,
   "steps": null,
   "unblocks": [

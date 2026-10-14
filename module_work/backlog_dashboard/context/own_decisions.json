@@ -281,7 +281,7 @@
   "options": [
    {
     "label": "Yes, the next module train",
-    "effect": "Starts after the Tiny Apps deploy settles; touches every calc package and the calc prompt."
+    "effect": "Starts in the weeks before testers arrive (CfA's pieces are a few weeks out); touches every calc package and the calc prompt."
    },
    {
     "label": "Yes, but after GM-40 and GM-41",
