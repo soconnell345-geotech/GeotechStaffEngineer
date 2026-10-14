@@ -193,7 +193,16 @@ class SpendLedger:
             tmp = self.path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as fh:
                 json.dump(self.data, fh, indent=1)
-            os.replace(tmp, self.path)
+            # OneDrive briefly locks a file it is syncing: 3 saves of wave
+            # w4 failed "Access is denied" (2026-10-14). Retry a few times.
+            for attempt in range(6):
+                try:
+                    os.replace(tmp, self.path)
+                    break
+                except PermissionError:
+                    if attempt == 5:
+                        raise
+                    time.sleep(0.25 * (attempt + 1))
 
     @property
     def cumulative(self) -> float:
@@ -355,19 +364,25 @@ class SpendMeter(BaseCallbackHandler):
             t0 = self._starts.pop(str(run_id), None)
             rec = {"ts": time.time(), "scenario": self.scenario,
                    "model": self.model_id, "usage_source": source,
+                   "run_id": str(run_id),
                    "seconds": round(time.time() - t0, 2) if t0 else None}
             priced = cost_of(self.model_id, usage, self.prices)
             if priced is None:
                 rec.update(usd=0.0, unmetered=True)
-                self.ledger.add_unmetered(self.wave)
             else:
                 rec.update(usd=priced["usd"], tokens=priced["tokens"],
                            unmetered=False)
+            # The call is listed BEFORE the ledger is saved: a failed save
+            # used to drop it from the list (the report's per-scenario
+            # totals ran low while the ledger itself had counted it).
+            with self._lock:
+                self.calls.append(rec)
+            if priced is None:
+                self.ledger.add_unmetered(self.wave)
+            else:
                 self.ledger.add(self.wave, priced["usd"], {
                     k: v for k, v in priced["tokens"].items()
                     if k != "cache_split"}, self.scenario)
-            with self._lock:
-                self.calls.append(rec)
         except Exception as exc:  # noqa: BLE001 - accounting never fails a call
             self.accounting_errors.append(f"{type(exc).__name__}: {exc}")
 
