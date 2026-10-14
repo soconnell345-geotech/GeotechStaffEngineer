@@ -205,6 +205,12 @@ def test_result_reports_the_stages(cantilever):
     assert d["wall_envelope"]["max_beam_moment_kNm_per_m"] == pytest.approx(
         r.max_beam_moment_kNm_per_m)
     assert any("K0 = 0.426" in n for n in d["notes"])
+    # The notes name the wall contact actually modelled (live smoke
+    # 2026-10-14, F51: they said "shares nodes ... fully rough" for the
+    # default smooth wall, and the agent called its answer unconservative).
+    contact = [n for n in d["notes"] if "wall_contact=" in n]
+    assert len(contact) == 1 and "smooth wall" in contact[0]
+    assert "shares nodes" not in contact[0]
     assert "Excavation stages" in r.summary()
     tables = {t.name: t for t in r.get_tables()}
     t = tables["excavation_stages"]
@@ -228,6 +234,8 @@ def test_bonded_wall_hangs_the_retained_soil():
     assert n_max > math.tan(math.radians(35.0)) * thrust
     k_mob = 6.0 * _moment_at_dredge(r) / (115 * PCF * H ** 3)
     assert k_mob < KA
+    assert any("shares nodes" in n and "wall_contact='bonded'" in n
+               for n in r.notes)
 
 
 # ---------------------------------------------------------------------------

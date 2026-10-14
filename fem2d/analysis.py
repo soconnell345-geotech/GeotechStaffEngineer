@@ -1168,8 +1168,15 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
         "toward the excavation).",
         f"Half of a symmetric excavation {width:g} m wide: the right "
         f"boundary at x = {x_right:g} m is its centre line (rollers). "
-        "The wall shares nodes with the soil on both sides (no interface "
-        "elements): fully rough, and the soil is not separated by it.",
+        + ("The soil is cut along the wall and the wall is tied to each "
+           "face horizontally only (both directions at its tip): a smooth "
+           "wall, no wall friction (delta = 0), the Rankine assumption "
+           "(wall_contact='smooth')."
+           if wall_contact == 'smooth' else
+           "The wall shares nodes with the soil on both sides (no "
+           "interface elements): fully rough, the soil is not separated by "
+           "it, and the wall hangs the retained soil "
+           "(wall_contact='bonded')."),
         "Strut force = stiffness x movement toward the excavation since "
         "installation (positive = the strut holds the wall back); no "
         "preload.",
