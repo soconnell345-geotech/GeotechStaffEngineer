@@ -263,6 +263,33 @@ and afterwards `os.environ.pop("GEOTECH_VISION_PATCH_ALIGN")`.
 **Send:** both printed outputs and both saved JSON files
 (`location_remeasure_*.json`).
 
+## Check 9 — Screenshots and photos: zoom and tiles on an image file (next release; about 10 model calls, no agent)
+
+**Why.** Until 2026-10-14 an uploaded or pasted image was seen whole, once:
+fine print on a large screenshot could not be read and nothing came back to
+zoom by (BACKLOG VIS-09, done offline). `render_region` now zooms on an
+image and `analyze_image` reads it in tiles, every crop cut from the
+original. Offline, a 3840 x 2160 screenshot's fine print was read on a tile
+(box 2.2 px off) and on a zoom (0.3 px off). Whether the live model reads
+it the same is what this check shows.
+
+**Where.** The rollout model (GPT-5.6 Sol or higher), on Funhouse or Foundry.
+
+**How.** A direct cell like §5.2 of
+`module_work/harness_theory/locating_things_on_a_page.md`: render the
+synthetic tag sheet (`planlens.testing`, `build_synthetic_tag_set()`) to a
+PNG of about 3960 x 2560 (no text layer); read it with
+`analyze_image(tiles="auto")` (expect 2 x 2 tiles on Funhouse); then
+`render_region` on each tag's `view` + `image_box`. Score against the
+fixture's truth in pixels.
+
+**What to read.** Tags read right, and box error in pixels, for the whole
+look, the tiles and the zooms; calls and tokens. If the zooms read every
+tag within a few pixels, the image path works live, and a private extra
+suite task can follow (EV-15).
+
+**Send:** the printed output and the saved JSON.
+
 ## Check 8 — Visual scales: label crops, `measure`, the chart's second reading, report ingest (next release; on Foundry as part of brief 5)
 
 **Why.** W3's app side (`module_work/VISUAL_SCALES_DESIGN.md` §12) has only
