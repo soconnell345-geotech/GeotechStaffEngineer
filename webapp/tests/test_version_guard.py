@@ -2,16 +2,21 @@
 
 import webapp.version_guard as vg
 
+#: Every guarded package inside its tested range. Each test changes ONE
+#: package against this, so the versions actually installed (CI resolves
+#: the newest streamlit, for one) cannot add a second warning.
+OK = {"deepagents": "0.7.11", "langchain": "1.3.18",
+      "langgraph": "1.2.11", "openai": "2.52.0", "streamlit": "1.62.0"}
+
 
 def test_within_range_is_quiet():
-    ok = {"deepagents": "0.7.11", "langchain": "1.3.18",
-          "langgraph": "1.2.11", "openai": "2.52.0", "streamlit": "1.62.0"}
-    assert vg.check_versions(overrides=ok) == []
-    assert vg.drift_summary(overrides=ok) == "agent-stack versions: OK"
+    assert set(OK) >= set(vg.TESTED_MAX_EXCLUSIVE)
+    assert vg.check_versions(overrides=OK) == []
+    assert vg.drift_summary(overrides=OK) == "agent-stack versions: OK"
 
 
 def test_newer_than_tested_warns():
-    warnings = vg.check_versions(overrides={"deepagents": "0.8.1"})
+    warnings = vg.check_versions(overrides={**OK, "deepagents": "0.8.1"})
     assert len(warnings) == 1
     assert "deepagents 0.8.1" in warnings[0] and "NEWER" in warnings[0]
     # The message teaches the fix, not just the fact.
@@ -19,17 +24,17 @@ def test_newer_than_tested_warns():
 
 
 def test_openai_major_bump_warns():
-    warnings = vg.check_versions(overrides={"openai": "3.6.0"})
+    warnings = vg.check_versions(overrides={**OK, "openai": "3.6.0"})
     assert len(warnings) == 1 and "openai 3.6.0" in warnings[0]
 
 
 def test_older_than_floor_warns():
-    warnings = vg.check_versions(overrides={"deepagents": "0.5.3"})
+    warnings = vg.check_versions(overrides={**OK, "deepagents": "0.5.3"})
     assert len(warnings) == 1 and "OLDER" in warnings[0]
 
 
 def test_missing_package_is_skipped():
-    assert vg.check_versions(overrides={"deepagents": None}) == []
+    assert vg.check_versions(overrides={**OK, "deepagents": None}) == []
 
 
 def test_suffix_versions_parse():

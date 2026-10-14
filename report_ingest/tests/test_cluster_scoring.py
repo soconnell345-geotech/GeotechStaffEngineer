@@ -104,8 +104,14 @@ def test_an_ordinary_out_dir_says_nothing(plain):
     assert cs.out_dir_note(Path(plain)) is None
 
 
-def test_a_workspace_out_dir_runs_rather_than_raising(tmp_path, capsys):
-    """And the note is printed where the owner will see it."""
+def test_a_workspace_out_dir_runs_rather_than_raising(tmp_path, capsys,
+                                                       monkeypatch):
+    """And the note is printed where the owner will see it.
+
+    Folder creation is stubbed: a real ``/Workspace`` cannot be created by
+    a normal user on Linux (CI failed on that for months), and on Windows
+    the call made a stray ``C:\\Workspace`` folder."""
+    monkeypatch.setattr(cs.Path, "mkdir", lambda self, *a, **k: None)
     with pytest.raises(FileNotFoundError):     # no reports; it got past the
         cs.score_on_cluster(                   # guard, which is the point
             reports_dir=tmp_path / "nothing", out_dir="/Workspace/x/out",
