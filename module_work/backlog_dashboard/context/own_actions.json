@@ -715,10 +715,16 @@
     "effect": "Removes the older extraction package (superseded by report_ingest) and its post name from PyPI. Same mirror caveat."
    }
   ],
-  "recommendation": "Accept for now and keep the next release clean (INF-11). Revisit deletion with OWN-56 after tester week: deleting 5.33.0 now would break the tester install, and mirrors already hold copies.",
+  "recommendation": "Accept the app releases and keep the next release clean (INF-11, including the 'the Department's ...' remarks). Delete the old geotech-report-extraction project: nothing of ours installs it (report_ingest replaced it), its GitHub repo is not public, and it is the one place that names a post and an embassy report format. Revisit deleting app releases with OWN-56 once testers are on the next release; deleting 5.33.0 now would break the dosdev install.",
   "if_no_answer": "INF-11 goes ahead before the next release; nothing on PyPI is deleted.",
   "message_to_send": null,
-  "steps": null,
+  "steps": [
+   "Only if you choose to delete the old extraction project. Deletion is permanent and only you can do it.",
+   "Sign in at pypi.org and open 'Your projects'.",
+   "Next to geotech-report-extraction, choose Manage, then Settings.",
+   "Under 'Delete project', type the project name to confirm, then delete.",
+   "Record it on this card; Claude notes it in the backlog."
+  ],
   "unblocks": [
    "INF-11"
   ],
