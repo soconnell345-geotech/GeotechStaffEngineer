@@ -243,6 +243,13 @@ def _patch_tool_calls():
         return None
 
 
+def _busy_retry():
+    """A busy model is waited for on a ladder, not the end of the agent
+    (BACKLOG TA-20; :mod:`funhouse_agent.deep.busy_retry`)."""
+    from funhouse_agent.deep.busy_retry import AgentBusyRetry
+    return AgentBusyRetry()
+
+
 def _summarizer(model):
     """A summarizer for long conversations (the one deepagents added for the
     legacy agent), at the same trigger the rest of the app uses."""
@@ -291,6 +298,7 @@ def make_reader_tool(model, reader_tools: list,
                     OutputLimitGuard, ToolErrorGuard, auth_retry)
                 mw = [m for m in (
                     _patch_tool_calls(),
+                    _busy_retry(),
                     auth_retry(),
                     ToolErrorGuard(),
                     ModelCallBudgetMiddleware(budget,
@@ -433,6 +441,7 @@ def build_review_agent(model, *, engine=None,
                                                  ToolErrorGuard, auth_retry)
     middleware: List[Any] = [m for m in (
         _patch_tool_calls(),
+        _busy_retry(),
         auth_retry(),
         ToolErrorGuard(),
         TodoListMiddleware(system_prompt=TODO_PROMPT,

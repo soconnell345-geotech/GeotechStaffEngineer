@@ -101,11 +101,17 @@ DEFAULT_MAX_CHARS = 32_000
 #: Name of the deepagents delegation tool whose nesting defines sub-agents.
 TASK_TOOL = "task"
 
-#: App events written as they come (``funhouse_agent.deep.keep_work``):
-#: ``helper_kept`` (a stopped helper's work went to a file: ``path``,
-#: ``why``), ``helper_queued`` (a helper waited ``queued_s`` for a place
-#: under the cap of helpers at once).
-APP_EVENTS = frozenset({"helper_kept", "helper_queued"})
+#: App events written as they come: ``helper_kept`` (a stopped helper's
+#: work went to a file: ``path``, ``why``) and ``helper_queued`` (a helper
+#: waited ``queued_s`` for a place under the cap of helpers at once;
+#: ``funhouse_agent.deep.keep_work``); ``model_busy`` (an agent's model
+#: call was refused as busy and is asked again after ``wait_s``: the
+#: ``kind``, HTTP ``status``, ``retry_after_s``, any ``x-ratelimit-*``
+#: ``headers``, ``attempt`` of ``tries``; ``funhouse_agent.deep.
+#: busy_retry``); ``pacer_wait`` (a call waited ``waited_s`` for room under
+#: the tokens-a-minute pacer; ``funhouse_agent.deep.pacing``).
+APP_EVENTS = frozenset({"helper_kept", "helper_queued", "model_busy",
+                        "pacer_wait"})
 
 PRIMARY = "primary"
 

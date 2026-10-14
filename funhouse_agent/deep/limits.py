@@ -98,6 +98,40 @@ BUDGET_EXHAUSTED_MESSAGE = (
 )
 
 
+#: The model-call budget of a ``general-purpose`` helper on the geotech page
+#: (field session 2026-10-14, BACKLOG TA-22: helpers ran with none; the
+#: longest made about 20 calls). The last budgeted call answers from what
+#: the helper has, and the helper's reading is kept in a file
+#: (:mod:`funhouse_agent.deep.keep_work`). ``0`` or ``off`` = no budget.
+HELPER_MAX_MODEL_CALLS_ENV = "GEOTECH_HELPER_MAX_MODEL_CALLS"
+DEFAULT_HELPER_MAX_MODEL_CALLS = 30
+
+HELPER_FINAL_NUDGE = (
+    "[Model-call budget reached] This is your FINAL turn: no more tool "
+    "calls are available. Answer now from what you have gathered: the data "
+    "itself, in full (every value you extracted, as structured as you can), "
+    "then what you did not get to and why."
+)
+
+HELPER_EXHAUSTED = (
+    "The helper reached its model-call budget before it could write an "
+    "answer. Give the rest of the job to a new helper with a narrower brief "
+    "(fewer pages or items)."
+)
+
+
+def helper_max_model_calls() -> int:
+    """The general-purpose helper's budget (``0`` = none)."""
+    import os
+    raw = (os.environ.get(HELPER_MAX_MODEL_CALLS_ENV) or "").strip().lower()
+    if raw in ("off", "none", "no", "false"):
+        return 0
+    try:
+        return max(0, int(raw)) if raw else DEFAULT_HELPER_MAX_MODEL_CALLS
+    except ValueError:
+        return DEFAULT_HELPER_MAX_MODEL_CALLS
+
+
 class ModelCallBudgetMiddleware(ModelCallLimitMiddleware):
     """A per-run model-call budget that ends with an answer, not an error.
 
@@ -204,6 +238,11 @@ def _note_budget_reached() -> None:
 
 __all__ = [
     "ModelCallBudgetMiddleware",
+    "helper_max_model_calls",
+    "HELPER_MAX_MODEL_CALLS_ENV",
+    "DEFAULT_HELPER_MAX_MODEL_CALLS",
+    "HELPER_FINAL_NUDGE",
+    "HELPER_EXHAUSTED",
     "HideTools",
     "REFERENCE_HIDDEN_TOOLS",
     "DEFAULT_REFERENCES_MAX_MODEL_CALLS",

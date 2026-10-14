@@ -444,6 +444,26 @@ def _invoke_once(model, messages, timeout: Optional[float]):
     return box["value"]
 
 
+def _pace(model, messages):
+    """``(pacer, ticket)`` after waiting for room on ``model``'s key, or
+    ``(None, None)`` with pacing off. Never raises."""
+    try:
+        from funhouse_agent.deep.pacing import estimate_tokens, pace
+        return pace(model, estimate_tokens(messages), what="vision")
+    except Exception:  # noqa: BLE001 - pacing never fails a call
+        return None, None
+
+
+def _settle(pacer, ticket, response) -> None:
+    if pacer is None:
+        return
+    try:
+        from funhouse_agent.deep.pacing import usage_tokens
+        pacer.settle(ticket, usage_tokens(response))
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def invoke_side_call(model, messages):
     """One vision side call: :func:`_invoke_once` under the side-call limit
     (:func:`call_timeout_s`), asked once more if it times out, and asked
@@ -458,8 +478,14 @@ def invoke_side_call(model, messages):
     busy = 0
     tries = busy_tries()
     while True:
+        # Room on this key under the token pacer, when one is set
+        # (funhouse_agent.deep.pacing; BACKLOG TA-22): waited for before
+        # the slot, so a paced call holds none.
+        pacer, ticket = _pace(model, messages)
         try:
-            return _invoke_once(model, messages, timeout)
+            response = _invoke_once(model, messages, timeout)
+            _settle(pacer, ticket, response)
+            return response
         except VisionCallTimeout:
             timeouts += 1
             if timeouts > TIMEOUT_RETRIES:

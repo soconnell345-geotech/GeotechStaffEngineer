@@ -1922,6 +1922,14 @@ def friendly_turn_error(exc: BaseException, kept: Optional[str] = None) -> str:
     else:
         lead = (f"The AI service had a temporary problem ({kind}), so this "
                 f"turn stopped — not a fault in your request.")
+    # How long the agents' busy ladder kept asking (BACKLOG TA-20).
+    tried = getattr(exc, "geotech_busy", None)
+    if isinstance(tried, dict) and int(tried.get("tries") or 0) > 1:
+        secs = float(tried.get("waited_s") or 0)
+        span = (f"{secs / 60:.0f} minutes" if secs >= 90
+                else f"{secs:.0f} seconds")
+        lead += (f" The app asked {int(tried['tries'])} times over {span} "
+                 f"before stopping ({tried.get('why') or 'no answer'}).")
     return f"{lead} {kept}\n\n(Details: {detail})"
 
 

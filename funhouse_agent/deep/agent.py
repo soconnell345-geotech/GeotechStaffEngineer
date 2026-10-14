@@ -50,10 +50,14 @@ from funhouse_agent.reviewer import CONSULTANT_FRAMING, REVIEWER_DEEP_PROMPT
 
 from funhouse_agent.deep.limits import (
     DEFAULT_REFERENCES_MAX_MODEL_CALLS,
+    HELPER_EXHAUSTED,
+    HELPER_FINAL_NUDGE,
     REFERENCE_HIDDEN_TOOLS,
     HideTools,
     ModelCallBudgetMiddleware,
+    helper_max_model_calls,
 )
+from funhouse_agent.deep.busy_retry import AgentBusyRetry
 from funhouse_agent.deep.scratch_guard import ScratchFilesystemGuard
 from funhouse_agent.deep.unknown_tool import UnknownToolHint
 from funhouse_agent.deep.delivered_log import DeliveredToolResults
@@ -1328,6 +1332,10 @@ def build_deep_agent(
         retry = auth_retry() if "runnable" not in spec else None
         if retry is not None:
             extra_mw.insert(0, retry)
+        if "runnable" not in spec:
+            # A busy model is waited for on a ladder, not the end of the
+            # helper (TA-20; field session 2026-10-14).
+            extra_mw.insert(0, AgentBusyRetry())
         scope = _call_scope.get(spec.get("name"))
         if scope and "runnable" not in spec:
             extra_mw.append(UnknownToolHint(scope))
@@ -1336,12 +1344,22 @@ def build_deep_agent(
         spec["middleware"] = list(spec.get("middleware") or []) + extra_mw
     if (_GENERAL_PURPOSE_SPEC is not None
             and not any(s.get("name") == "general-purpose" for s in subagents)):
+        # A model-call budget whose last call answers from what the helper
+        # has (TA-22): the field session's helpers ran with none.
+        _gp_budget = helper_max_model_calls()
         subagents.append({**_GENERAL_PURPOSE_SPEC,
                           "system_prompt": (
                               _GENERAL_PURPOSE_SPEC.get("system_prompt", "")
                               + HELPER_PARTIAL_RULE),
-                          "middleware": [m for m in (auth_retry(),)
-                                         if m is not None]
+                          "middleware": ([ModelCallBudgetMiddleware(
+                                              _gp_budget,
+                                              final_turn_nudge=(
+                                                  HELPER_FINAL_NUDGE),
+                                              exhausted_message=(
+                                                  HELPER_EXHAUSTED))]
+                                         if _gp_budget else [])
+                          + [AgentBusyRetry()]
+                          + [m for m in (auth_retry(),) if m is not None]
                           + [HelperRecorder(),
                              DeliveredToolResults(),
                              ToolErrorGuard(),
@@ -1379,6 +1397,11 @@ def build_deep_agent(
                 keep=summarization_keep,
             )
         )
+    # A busy model (rate limit, overload) is waited for on a ladder --
+    # retry-after, else 15/30/60/120 s -- within a bound per turn, never a
+    # spent budget (TA-20; field session 2026-10-14: one refusal ended a
+    # 51-minute turn).
+    middleware.append(AgentBusyRetry())
     # A model call refused at sign-in (a 401) is asked once more before the
     # turn ends on it (BACKLOG TA-01; field session 2026-09-09).
     retry = auth_retry()

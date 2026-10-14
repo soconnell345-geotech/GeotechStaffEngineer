@@ -37,7 +37,7 @@ from typing import Any, Callable, Dict, List, Optional
 from funhouse_agent.deep.limits import ModelCallBudgetMiddleware
 from funhouse_agent.deep.review_agent import (
     EXHAUSTED, FINAL_NUDGE, READER_EXHAUSTED, READER_MAX_MODEL_CALLS,
-    READER_NUDGE, _final_text, _patch_tool_calls, _summarizer,
+    READER_NUDGE, _busy_retry, _final_text, _patch_tool_calls, _summarizer,
     max_model_calls,
 )
 from funhouse_agent.deep.tools import DEFAULT_MAX_RESULT_CHARS, make_vision_tools
@@ -205,6 +205,7 @@ def _helper_tool(model, engine, helper_tools: list,
                 from funhouse_agent.deep.tool_guards import auth_retry
                 mw = [m for m in (
                     _patch_tool_calls(),
+                    _busy_retry(),
                     auth_retry(),
                     InlineImageMiddleware(engine=engine),
                     ModelCallBudgetMiddleware(
@@ -266,6 +267,7 @@ def build_minimal_agent(model, *, engine=None,
     from funhouse_agent.deep.tool_guards import auth_retry
     middleware: List[Any] = [m for m in (
         _patch_tool_calls(),
+        _busy_retry(),
         auth_retry(),
         _summarizer(model),
         InlineImageMiddleware(engine=engine),
