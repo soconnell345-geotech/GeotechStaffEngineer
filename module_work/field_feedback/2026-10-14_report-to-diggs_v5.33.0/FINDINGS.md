@@ -70,6 +70,11 @@ Dispositions (BACKLOG; all fixes on master, unreleased):
   - TA-25, the reviewer had no model-call budget and was asked to check
     data it cannot open; its description now says so.
 - PLANNED, Next: RI-28, RI-30, PL-24, PL-25, VIS-24, VIS-25, EV-15, TA-24.
+- PLANNED, Later: RI-29 (report to DIGGS through `report_ingest`, after
+  OWN-11), TA-23, EV-16.
+- Live checks (only a real run shows them): whether the gateway honours
+  token-use reporting and what its 429s carry; GPT replayed on its own
+  earlier tool calls after an errored turn.
 
 ## Turn 3, the retry (owner, 2026-10-14; references off)
 
@@ -81,8 +86,3 @@ borings were withheld ("sample depths must be graphically digitized"),
 though helpers called `log_grid` 13 times and `measure` once; the 1987
 borings are placeholders. Its plan view labels a drawing grid Easting /
 Northing (GM-76). Read in full: TRACE_REVIEW.md, Part 3.
-- PLANNED, Later: RI-29 (report to DIGGS through `report_ingest`, after
-  OWN-11), TA-23, EV-16.
-- Live checks (only a real run shows them): whether the gateway honours
-  token-use reporting and what its 429s carry; GPT replayed on its own
-  earlier tool calls after an errored turn.
