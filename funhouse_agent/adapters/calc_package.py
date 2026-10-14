@@ -1973,7 +1973,7 @@ METHOD_INFO = {
     },
     "slope_stability_package": {
         "category": "Calculation Package",
-        "brief": "Run slope stability analysis and generate calc package with cross-section plot.",
+        "brief": "Run slope stability analysis and generate calc package with cross-section plot, and tables (CSV) of the stresses on the slip surface, the forces on every slice, FOS by method and the line of thrust.",
         "parameters": {
             "surface_points": {"type": "array", "required": True, "description": "List of [x, z] ground surface coordinates."},
             "soil_layers": {"type": "array", "required": True, "description": "List of dicts: name, top_elevation, bottom_elevation, gamma, phi, c_prime (or cu + analysis_mode)."},
@@ -1990,7 +1990,7 @@ METHOD_INFO = {
     },
     "slope_report_package": {
         "category": "Calculation Package",
-        "brief": "One-call slope stability REPORT for a critical-surface SEARCH: input echo, search story (surfaces tried + rejection diagnostics + critical surface/FOS), FOS-by-method table, slice-force + interslice/thrust-line figures, reinforcement summary, and a probabilistic annex (FOSM/Monte Carlo) when 'variables' is supplied. No fixed circle needed — the search finds the critical surface.",
+        "brief": "One-call slope stability REPORT for a critical-surface SEARCH: input echo, search story (surfaces tried + rejection diagnostics + critical surface/FOS), FOS-by-method table, slice-force + interslice/thrust-line figures, reinforcement summary, a probabilistic annex (FOSM/Monte Carlo) when 'variables' is supplied, and CSV tables (every slice, every trial surface). No fixed circle needed — the search finds the critical surface.",
         "parameters": {
             "surface_points": {"type": "array", "required": True, "description": "List of [x, z] ground surface coordinates."},
             "soil_layers": {"type": "array", "required": True, "description": "List of dicts: name, top_elevation, bottom_elevation, gamma, phi, c_prime (or cu + analysis_mode). Optional 'bottom_boundary_points' ([[x,z],...]) defines a non-horizontal layer base (e.g. a weak seam)."},
@@ -2062,7 +2062,7 @@ METHOD_INFO = {
     },
     "downdrag_package": {
         "category": "Calculation Package",
-        "brief": "Run downdrag analysis and generate calc package.",
+        "brief": "Run downdrag analysis and generate calc package, with tables (CSV + printed) of axial load, unit skin friction and soil settlement along the pile, and every neutral-plane method side by side (CSV).",
         "parameters": {
             "pile_length": {"type": "float", "required": True, "description": "Pile length (m)."},
             "pile_diameter": {"type": "float", "required": True, "description": "Pile diameter (m)."},
@@ -2215,7 +2215,7 @@ METHOD_INFO = {
     },
     "sheet_pile_package": {
         "category": "Calculation Package",
-        "brief": "Run sheet pile wall analysis and generate calc package; a cantilever wall adds a table (CSV + printed) of pressure, shear and moment along the wall.",
+        "brief": "Run sheet pile wall analysis and generate calc package, with a table (CSV + printed) of pressure, shear and moment along the wall.",
         "parameters": {
             "excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."},
             "soil_layers": {"type": "array", "required": True, "description": "List of dicts: thickness, unit_weight, friction_angle, cohesion."},

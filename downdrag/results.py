@@ -316,6 +316,94 @@ class DowndragResult:
         d['skin_friction_stress'] = self.skin_friction_stress
         return d
 
+    def get_tables(self) -> list:
+        """The load, unit skin friction and soil settlement at every depth
+        of the pile (printed), and as CSV only (the calc package prints its
+        own versions) the neutral plane by each method and the result
+        summary. Values are this result's own, in its units.
+
+        Returns
+        -------
+        list of geotech_common.tables.CalcTable
+        """
+        from geotech_common.tables import CalcTable
+
+        tables = []
+        if len(self.z):
+            tables.append(CalcTable(
+                title="Load, skin friction and settlement along the pile",
+                columns=[("Depth z", "m", ".2f"),
+                         ("Axial load in pile Q", "kN", ".1f"),
+                         ("Unit skin friction f_s", "kPa", ".2f"),
+                         ("Soil settlement", "m")],
+                rows=[[float(self.z[i]), float(self.axial_load[i]),
+                       float(self.unit_skin_friction[i]),
+                       float(self.soil_settlement_profile[i])]
+                      for i in range(len(self.z))],
+                note=(f"Headline: {self.headline_method or self.neutral_plane_method}"
+                      f", neutral plane at {self.neutral_plane_depth:.2f} m "
+                      f"with Q_np = {self.max_pile_load:.1f} kN (computed at "
+                      "the plane itself, which may fall between the "
+                      "tabulated depths); f_s is the magnitude, acting "
+                      "downward (negative skin friction) above the neutral "
+                      "plane and upward below it; the soil settlement is "
+                      f"from the original ground; f_s from "
+                      f"{self.skin_friction_stress} effective stress"),
+                name="load_and_settlement",
+            ))
+        cmp_rows = self.neutral_plane_comparison or []
+        if cmp_rows:
+            tables.append(CalcTable(
+                title="Neutral plane by each method",
+                columns=["Method", "Reference", "Applies", "Headline",
+                         ("Neutral plane depth z_np", "m"),
+                         ("Maximum load Q_np", "kN"), ("Drag load", "kN"),
+                         ("Drag force Q_np - Q_dead", "kN"),
+                         ("Toe force", "kN"),
+                         ("Soil settlement at the plane", "mm"),
+                         ("Pile head settlement", "mm"), "Notes"],
+                rows=[[r["name"], r["source"], r["applies"], r["used"],
+                       r.get("neutral_plane_depth_m"),
+                       r.get("max_pile_load_kN"), r.get("dragload_kN"),
+                       r.get("drag_force_kN"), r.get("toe_force_kN"),
+                       r.get("soil_settlement_at_np_mm"),
+                       r.get("pile_settlement_mm"),
+                       r.get("reason") or r.get("assumptions", "")]
+                      for r in cmp_rows],
+                note=(self.methods_range or
+                      "Every neutral-plane method on the same inputs"),
+                name="neutral_plane_methods", printed=False,
+            ))
+        tables.append(CalcTable(
+            title="Downdrag summary",
+            columns=["Quantity", "Symbol", "Value", "Unit"],
+            rows=[
+                ["Neutral plane depth", "z_np", self.neutral_plane_depth,
+                 "m"],
+                ["Dead load at the head", "Q_dead", self.Q_dead, "kN"],
+                ["Drag load (negative skin friction above the plane)",
+                 "Q_n", self.dragload, "kN"],
+                ["Pile weight above the plane", "W_np",
+                 self.pile_weight_to_np, "kN"],
+                ["Maximum load in the pile", "Q_np", self.max_pile_load,
+                 "kN"],
+                ["Drag force", "Q_np - Q_dead", self.drag_force, "kN"],
+                ["Positive shaft resistance below the plane", "R_s",
+                 self.positive_skin_friction, "kN"],
+                ["Toe resistance", "R_t", self.toe_resistance, "kN"],
+                ["Toe force at the plane", "Q_t",
+                 self.toe_force_mobilized, "kN"],
+                ["Pile head settlement", "s_head", self.pile_settlement, "m"],
+                ["Elastic shortening above the plane", "δ",
+                 self.elastic_shortening, "m"],
+                ["Soil settlement at the plane", "s_np",
+                 self.soil_settlement_at_np, "m"],
+            ],
+            note=self.neutral_plane_basis or "",
+            name="downdrag_summary", printed=False,
+        ))
+        return tables
+
     def plot_axial_load(self, ax=None, show=True, **kwargs):
         """Plot axial load Q(z) vs depth with neutral plane.
 

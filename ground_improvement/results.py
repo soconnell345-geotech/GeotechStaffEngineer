@@ -216,6 +216,32 @@ class WickDrainResult:
             ]
         return d
 
+    def get_tables(self) -> list:
+        """The combined degree of consolidation against time, as this
+        result holds it.
+
+        Returns
+        -------
+        list of geotech_common.tables.CalcTable
+        """
+        from geotech_common.tables import CalcTable
+
+        if not self.time_settlement_curve:
+            return []
+        return [CalcTable(
+            title="Degree of consolidation against time",
+            columns=[("Time t", "years"),
+                     ("Combined degree of consolidation U", "%", ".1f")],
+            rows=[[t, u] for t, u in self.time_settlement_curve],
+            note=(f"Radial (Barron/Hansbo, F(n) = {self.F_n:.3f}, n = "
+                  f"{self.spacing_ratio_n:.1f}) with vertical drainage "
+                  "combined as 1 - U = (1 - Ur)(1 - Uv); drains at "
+                  f"{self.drain_spacing_m:g} m, {self.pattern}; ch = "
+                  f"{self.ch_m2_per_year:g}, cv = {self.cv_m2_per_year:g} "
+                  "m²/year"),
+            name="consolidation_vs_time",
+        )]
+
 
 @dataclass
 class SurchargeResult:
@@ -319,6 +345,31 @@ class SurchargeResult:
                 for t, s in self.time_settlement_curve
             ]
         return d
+
+    def get_tables(self) -> list:
+        """The settlement under the surcharge against time, as this result
+        holds it.
+
+        Returns
+        -------
+        list of geotech_common.tables.CalcTable
+        """
+        from geotech_common.tables import CalcTable
+
+        if not self.time_settlement_curve:
+            return []
+        drains = (" with wick drains" if self.uses_wick_drains
+                  else ", vertical drainage only")
+        return [CalcTable(
+            title="Settlement under the surcharge against time",
+            columns=[("Time t", "years"), ("Settlement S", "mm", ".1f")],
+            rows=[[t, s] for t, s in self.time_settlement_curve],
+            note=(f"Surcharge {self.surcharge_kPa:g} kPa{drains}; "
+                  f"ultimate settlement {self.settlement_ultimate_mm:.1f} "
+                  f"mm; target U = {self.target_U_percent:g} % reached at "
+                  f"{self.time_to_target_years:.3f} years"),
+            name="settlement_vs_time",
+        )]
 
 
 @dataclass

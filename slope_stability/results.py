@@ -354,6 +354,156 @@ class SlopeStabilityResult:
             ]
         return d
 
+    def get_tables(self) -> list:
+        """SLIDE-style tables for this slip surface: the stresses along it
+        (printed), and as CSV only (the calc package prints its own
+        versions): every slice quantity, the factor of safety by method,
+        the slip surface, the line of thrust and the reinforcement forces.
+        Values are this result's own, unrounded, per metre of slope.
+
+        Returns
+        -------
+        list of geotech_common.tables.CalcTable
+        """
+        from geotech_common.tables import CalcTable
+
+        tables = []
+        sd = self.slice_data or []
+        if sd:
+            rigorous = sd[0].E_left_kN is not None
+            dist, cum = [], 0.0
+            for s in sd:
+                cum += s.base_length
+                dist.append(cum - s.base_length / 2.0)
+            tables.append(CalcTable(
+                title="Stresses on the slip surface",
+                columns=["Slice", ("x at mid-slice", "m", ".2f"),
+                         ("Distance along the surface", "m", ".2f"),
+                         ("Base angle α", "deg", ".1f"),
+                         ("Effective normal stress σ'n", "kPa", ".2f"),
+                         ("Mobilized shear stress τ_mob", "kPa", ".2f"),
+                         ("Shear strength τ_f", "kPa", ".2f")],
+                rows=[[i, s.x_mid, d, s.alpha_deg, s.normal_stress_kPa,
+                       s.shear_stress_kPa, s.shear_resistance_kPa]
+                      for i, (s, d) in enumerate(zip(sd, dist), 1)],
+                note=(f"{self.method}, FOS = {self.FOS:.3f}; σ'n = N'/l, "
+                      "τ_mob = S_mob/l, τ_f the shear strength "
+                      "available on the base; distance measured along the "
+                      "slip surface from its upslope end"),
+                name="slip_surface_stresses",
+            ))
+            columns = ["Slice", ("x at mid-slice", "m"), ("Ground surface z",
+                       "m"), ("Slip surface z", "m"), ("Width b", "m"),
+                       ("Height h", "m"), ("Base angle α", "deg"),
+                       ("Weight W", "kN/m"), ("Pore pressure u", "kPa"),
+                       ("Cohesion c", "kPa"), ("Friction angle φ", "deg"),
+                       ("Base length l", "m"),
+                       ("Effective normal stress σ'n", "kPa"),
+                       ("Mobilized shear stress τ_mob", "kPa"),
+                       ("Shear strength τ_f", "kPa"),
+                       ("Effective normal force N'", "kN/m"),
+                       ("Mobilized shear force S_mob", "kN/m"),
+                       ("Pore-water force U = u l", "kN/m")]
+            if rigorous:
+                columns += [("Interslice normal force E left", "kN/m"),
+                            ("Interslice normal force E right", "kN/m"),
+                            ("Interslice shear force X left", "kN/m"),
+                            ("Interslice shear force X right", "kN/m")]
+            columns.append("In tension crack")
+            rows = []
+            for i, s in enumerate(sd, 1):
+                row = [i, s.x_mid, s.z_top, s.z_base, s.width, s.height,
+                       s.alpha_deg, s.weight, s.pore_pressure, s.c, s.phi,
+                       s.base_length, s.normal_stress_kPa, s.shear_stress_kPa,
+                       s.shear_resistance_kPa, s.N_eff_kN, s.S_mob_kN,
+                       s.U_base_kN]
+                if rigorous:
+                    row += [s.E_left_kN, s.E_right_kN, s.X_left_kN,
+                            s.X_right_kN]
+                row.append(s.in_tension_crack)
+                rows.append(row)
+            tables.append(CalcTable(
+                title="Forces on each slice",
+                columns=columns, rows=rows,
+                note=(f"{self.method}, FOS = {self.FOS:.3f}, "
+                      f"{len(sd)} slices; " +
+                      ("N', S_mob, E and X from the converged rigorous GLE "
+                       "solution" if rigorous else
+                       "N' and S_mob from the Fellenius decomposition (the "
+                       "method does not resolve interslice forces)")),
+                name="slice_forces", printed=False,
+            ))
+
+        by_method = [
+            ("Ordinary method of slices (Fellenius)", self.FOS_fellenius, ""),
+            ("Bishop simplified", self.FOS_bishop, ""),
+            ("Janbu simplified, uncorrected", self.FOS_janbu_uncorrected,
+             ""),
+            ("Janbu simplified, corrected", self.FOS_janbu,
+             f"f0 = {self.janbu_f0:.3f}" if self.janbu_f0 else ""),
+            ("Spencer", self.FOS_spencer,
+             f"θ = {self.theta_spencer:.2f} deg"
+             if self.theta_spencer is not None else ""),
+            ("Morgenstern-Price", self.FOS_morgenstern_price,
+             f"λ = {self.lambda_mp:.3f}"
+             if self.lambda_mp is not None else ""),
+        ]
+        rows = [[name, fos, extra] for name, fos, extra in by_method
+                if fos is not None]
+        if rows:
+            tables.append(CalcTable(
+                title="Factor of safety by method",
+                columns=["Method", ("FOS", "", ".3f"),
+                         "Interslice force parameter"],
+                rows=rows,
+                note=f"The same slip surface; the headline is {self.method}",
+                name="fos_by_method", printed=False,
+            ))
+
+        if self.slip_points:
+            tables.append(CalcTable(
+                title="Slip surface",
+                columns=["Point", ("x", "m"), ("z", "m")],
+                rows=[[i, x, z] for i, (x, z) in
+                      enumerate(self.slip_points, 1)],
+                note="The noncircular slip surface's vertices",
+                name="slip_surface", printed=False,
+            ))
+        elif self.is_circular:
+            tables.append(CalcTable(
+                title="Slip surface",
+                columns=[("Centre x", "m"), ("Centre z", "m"),
+                         ("Radius R", "m"), ("Entry x", "m"),
+                         ("Exit x", "m")],
+                rows=[[self.xc, self.yc, self.radius, self.x_entry,
+                       self.x_exit]],
+                note="The circular slip surface",
+                name="slip_surface", printed=False,
+            ))
+        if self.thrust_line:
+            tables.append(CalcTable(
+                title="Line of thrust",
+                columns=[("x", "m"), ("z", "m")],
+                rows=[[x, z] for x, z in self.thrust_line],
+                note=("Where the interslice normal force E acts on each "
+                      "slice boundary (rigorous GLE solution)"),
+                name="thrust_line", printed=False,
+            ))
+        if self.reinforcements:
+            tables.append(CalcTable(
+                title="Reinforcement forces",
+                columns=["Type", "Element", ("Crossing x", "m"),
+                         ("Crossing z", "m"), ("Force T", "kN/m"),
+                         "Controlled by"],
+                rows=[[r.get("kind"), r.get("index"), r.get("x_m"),
+                       r.get("z_m"), r.get("T_kN_per_m"),
+                       r.get("controlled_by")] for r in self.reinforcements],
+                note=("Mobilized force of each element where it crosses "
+                      "this slip surface"),
+                name="reinforcement_forces", printed=False,
+            ))
+        return tables
+
 
 @dataclass
 class SearchResult:
@@ -492,6 +642,47 @@ class SearchResult:
         if self.warnings:
             d["warnings"] = list(self.warnings)
         return d
+
+    def get_tables(self) -> list:
+        """The search record, CSV only: every trial surface scored (its
+        centre, or the midpoint of a noncircular surface, the radius and
+        the FOS, as the search stored them), and the lowest FOS of each
+        surface family tried.
+
+        Returns
+        -------
+        list of geotech_common.tables.CalcTable
+        """
+        from geotech_common.tables import CalcTable
+
+        tables = []
+        if self.grid_fos:
+            tables.append(CalcTable(
+                title="Trial surfaces",
+                columns=["Trial", ("Centre or midpoint x", "m"),
+                         ("Centre or midpoint z", "m"),
+                         ("Radius R (0 = noncircular)", "m"), ("FOS", "")],
+                rows=[[i, g.get("xc"), g.get("yc"), g.get("R"),
+                       g.get("FOS")]
+                      for i, g in enumerate(self.grid_fos, 1)],
+                note=(f"{self.n_surfaces_evaluated} surfaces evaluated, in "
+                      "the order the search scored them (values as the "
+                      "search rounded them)"),
+                name="trial_surfaces", printed=False,
+            ))
+        if self.candidates:
+            from slope_stability.search_supplements import (
+                describe_surface_kind)
+            tables.append(CalcTable(
+                title="Lowest FOS of each surface family",
+                columns=["Surface family", ("FOS", "", ".3f"), "Governs"],
+                rows=[[describe_surface_kind(k), fos,
+                       k == self.governing_surface]
+                      for k, fos in self.candidates.items()],
+                note="The families the search tried and the minimum of each",
+                name="surface_families", printed=False,
+            ))
+        return tables
 
 
 @dataclass

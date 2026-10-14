@@ -671,6 +671,39 @@ def get_figures(result, analysis) -> List[FigureData]:
     return figures
 
 
+def get_tables(result, analysis) -> list:
+    """The result's own tables (load, skin friction and settlement along
+    the pile; the neutral plane by each method and the summary as CSV) and
+    the soil layers as input (CSV only)."""
+    from geotech_common.tables import CalcTable
+
+    tables = list(result.get_tables())
+    soil = getattr(analysis, "soil", None)
+    rows, depth = [], 0.0
+    for i, layer in enumerate(getattr(soil, "layers", None) or [], 1):
+        rows.append([i, depth, depth + layer.thickness, layer.soil_type,
+                     layer.description, layer.unit_weight, layer.cu,
+                     layer.phi, layer.settling, layer.Cc, layer.Cr,
+                     layer.e0, layer.sigma_p])
+        depth += layer.thickness
+    if rows:
+        gwt = getattr(soil, "gwt_depth", None)
+        tables.append(CalcTable(
+            title="Soil layers",
+            columns=["Layer", ("Top", "m"), ("Bottom", "m"), "Soil type",
+                     "Description", ("Unit weight γ", "kN/m³"),
+                     ("Undrained shear strength c_u", "kPa"),
+                     ("Friction angle φ", "deg"), "Settling", "Cc",
+                     "Cr", "e0", ("σ'p", "kPa")],
+            rows=rows,
+            note=("The soil layers as input, depths below the ground "
+                  "surface; groundwater at "
+                  + (f"{gwt:g} m" if gwt is not None else "none given")),
+            name="soil_layers", printed=False,
+        ))
+    return tables
+
+
 # ── Private helper functions ──────────────────────────────────────────────
 
 def _settlement_source_description(analysis) -> str:

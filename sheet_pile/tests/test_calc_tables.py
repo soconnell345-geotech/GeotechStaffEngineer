@@ -54,11 +54,20 @@ def test_summary_and_layer_echo_are_csv_only(cantilever):
     assert not tables["soil_layers"].printed
 
 
-def test_anchored_wall_has_no_per_depth_table_yet():
+def test_anchored_wall_per_depth_table_holds_its_results():
     r = analyze_anchored(excavation_depth=6.0, anchor_depth=1.5,
                          soil_layers=LAYERS)
-    names = [t.name for t in get_tables(r, {"soil_layers": LAYERS})]
-    assert names == ["soil_layers"]
+    tables = _by_name(get_tables(r, {"soil_layers": LAYERS}))
+    assert set(tables) == {"wall_pressures", "design_summary", "soil_layers"}
+    t = tables["wall_pressures"]
+    m = np.array(t.column("Bending moment M"))
+    i = int(np.argmax(np.abs(m)))
+    assert abs(m[i]) == r.max_moment
+    assert t.column("Depth z")[i] == r.max_moment_depth
+    summary = dict(zip(tables["design_summary"].column("Symbol"),
+                       tables["design_summary"].column("Value")))
+    assert summary["T"] == r.anchor_force
+    assert "profile" not in r.to_dict()
 
 
 def test_to_dict_is_unchanged(cantilever):

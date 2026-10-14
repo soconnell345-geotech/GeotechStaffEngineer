@@ -921,3 +921,22 @@ def get_figures(result, analysis) -> List[FigureData]:
              f"pf = {fosm.pf_lognormal:.2%}.", 75)
 
     return figures
+
+
+# ---------------------------------------------------------------------------
+# Calculation tables (GM-39)
+# ---------------------------------------------------------------------------
+
+def get_tables(result, analysis) -> list:
+    """The critical surface's tables (``result.get_tables()``: the stresses
+    along it, and as CSV the forces on every slice, the FOS by method, the
+    surface, the line of thrust and the reinforcement forces) and, for a
+    search, its record (``search.get_tables()``: every trial surface and
+    the lowest FOS of each family), CSV only."""
+    from geotech_common.tables import tables_from
+
+    tables = tables_from(result)
+    search = analysis.get("search") if isinstance(analysis, dict) else None
+    if search is not None:
+        tables.extend(tables_from(search))
+    return tables

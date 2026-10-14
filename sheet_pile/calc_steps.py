@@ -534,13 +534,9 @@ def get_figures(result, analysis) -> List[FigureData]:
 
 
 def get_tables(result, analysis) -> list:
-    """The result's own tables (a cantilever wall's pressure, shear and
-    moment along the wall, and its design summary) and the soil layers as
-    input (CSV only).
-
-    An anchored wall gives no per-depth table yet: its moment integration
-    applies the anchor reaction from the top of the wall (reported to the
-    lead 2026-10-14), and the table would print that."""
+    """The result's own tables (the pressure, shear and moment along the
+    wall, cantilever or anchored, and the design summary) and the soil
+    layers as input (CSV only)."""
     from geotech_common.tables import CalcTable, tables_from
 
     tables = tables_from(result)
@@ -573,12 +569,23 @@ def _compute_pressures(result, analysis, n_points=200):
     """Compute active and passive pressure arrays along the wall.
 
     Returns (depths, p_active, p_passive, p_net) arrays.
+
+    A result that carries its own integration points (``profile``) is drawn
+    from them, so the figure shows the numbers the result and its table
+    hold (net water added to the side it pushes from).
     """
     import numpy as np
     from sheet_pile.cantilever import (
         _get_soil_at_depth, _cumulative_stress, _effective_gamma, _compute_Ka_Kp,
     )
     from geotech_common.water import GAMMA_W
+
+    profile = getattr(result, "profile", None)
+    if profile:
+        p = np.array(profile, dtype=float)
+        water = p[:, 3]
+        return (p[:, 0], p[:, 1] + np.maximum(water, 0.0),
+                p[:, 2] + np.maximum(-water, 0.0), p[:, 4])
 
     H = analysis.get("excavation_depth", result.excavation_depth)
     layers = analysis.get("soil_layers", [])
@@ -675,7 +682,8 @@ def _plot_pressure_diagram(result, analysis):
     ax2.axvline(x=0, color='black', linewidth=0.5)
     ax2.set_xlabel('Net Pressure (kPa)', fontsize=10)
     ax2.set_title('Net Pressure Diagram', fontsize=11, fontweight='bold')
-    ax2.invert_yaxis()
+    # no second invert_yaxis: the axes share y, and inverting both turned
+    # the wall upside down (depth 0 at the bottom) until 2026-10-14
     ax2.legend(fontsize=8, loc='lower left')
     ax2.grid(True, alpha=0.3)
     ax2.tick_params(labelsize=9)
@@ -702,7 +710,12 @@ def _plot_shear_moment(result, analysis):
     shear = np.zeros(n)
     moment = np.zeros(n)
 
-    if wall_type == "anchored" and hasattr(result, "anchor_force"):
+    profile = getattr(result, "profile", None)
+    if profile:
+        # the result's own shear and moment (the anchor at its depth)
+        p = np.array(profile, dtype=float)
+        shear, moment = p[:, 5], p[:, 6]
+    elif wall_type == "anchored" and hasattr(result, "anchor_force"):
         # Anchor reaction at the anchor depth
         anchor_depth = result.anchor_depth
         anchor_idx = np.searchsorted(depths, anchor_depth)
@@ -762,7 +775,7 @@ def _plot_shear_moment(result, analysis):
 
     ax2.set_xlabel('Bending Moment (kN\u00b7m/m)', fontsize=10)
     ax2.set_title('Bending Moment Diagram', fontsize=11, fontweight='bold')
-    ax2.invert_yaxis()
+    # the axes share y: ax1 already inverted it (see the pressure diagram)
     ax2.grid(True, alpha=0.3)
     ax2.tick_params(labelsize=9)
 

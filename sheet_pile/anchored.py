@@ -14,7 +14,7 @@ References:
 
 import math
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional
 
 import numpy as np
@@ -38,6 +38,66 @@ class AnchoredWallResult:
     anchor_depth: float = 0.0
     excavation_depth: float = 0.0
     FOS_passive: float = 1.5
+    #: The shear/moment integration's own points, top to toe: [z, p_a,
+    #: p_p/FOS, net water pressure, net pressure p, shear V, moment M]
+    #: (kPa, kN/m, kN-m/m), with T applied at the anchor. Not in to_dict;
+    #: read by get_tables.
+    profile: List[list] = field(default_factory=list, repr=False)
+
+    def get_tables(self) -> list:
+        """The pressure diagram along the wall with the shear and bending
+        moment integrated from it (the anchor reaction at its depth), and
+        the design summary (CSV only; the calc package prints it). Values
+        are this result's own, per metre of wall.
+
+        Returns
+        -------
+        list of geotech_common.tables.CalcTable
+        """
+        from geotech_common.tables import CalcTable
+
+        tables = []
+        if self.profile:
+            tables.append(CalcTable(
+                title="Pressure, shear and moment along the wall",
+                columns=[("Depth z", "m", ".3f"),
+                         ("Active pressure p_a", "kPa", ".2f"),
+                         ("Passive pressure p_p/FOS", "kPa", ".2f"),
+                         ("Net water pressure", "kPa", ".2f"),
+                         ("Net pressure p", "kPa", ".2f"),
+                         ("Shear V", "kN/m", ".2f"),
+                         ("Bending moment M", "kN-m/m", ".2f")],
+                rows=[list(r) for r in self.profile],
+                note=(f"Free earth support, wall {self.total_wall_length:.2f}"
+                      f" m long, excavation {self.excavation_depth:.2f} m, "
+                      f"anchor at {self.anchor_depth:.2f} m carrying T = "
+                      f"{self.anchor_force:.1f} kN/m; passive divided by "
+                      f"FOS = {self.FOS_passive:g}; V and M integrated from "
+                      f"the top at the midpoint of each of "
+                      f"{len(self.profile)} steps; the maximum |M| is "
+                      f"{self.max_moment:.1f} kN-m/m at "
+                      f"{self.max_moment_depth:.2f} m"),
+                name="wall_pressures",
+            ))
+        tables.append(CalcTable(
+            title="Wall design summary",
+            columns=["Quantity", "Symbol", "Value", "Unit"],
+            rows=[
+                ["Excavation depth", "H", self.excavation_depth, "m"],
+                ["Anchor depth", "a", self.anchor_depth, "m"],
+                ["Embedment", "D", self.embedment_depth, "m"],
+                ["Total wall length", "H + D", self.total_wall_length, "m"],
+                ["Factor of safety on passive", "FOS", self.FOS_passive, ""],
+                ["Anchor force", "T", self.anchor_force, "kN/m"],
+                ["Maximum bending moment", "M_max", self.max_moment,
+                 "kN-m/m"],
+                ["Depth of maximum moment", "z_Mmax", self.max_moment_depth,
+                 "m"],
+            ],
+            note="Anchored sheet pile wall, free earth support",
+            name="design_summary", printed=False,
+        ))
+        return tables
 
     def summary(self) -> str:
         lines = [
@@ -235,31 +295,56 @@ def analyze_anchored(
     anchor_force = total_active_force - total_passive_force
     anchor_force = max(anchor_force, 0)
 
-    # Max moment (between anchor and excavation base, approximately)
+    # Shear and moment down the whole wall from the same pressures, with the
+    # anchor reaction T applied AT the anchor depth (GM-69). Until 2026-10-14
+    # the shear started at -T at the top of the wall, which made every moment
+    # below the anchor too large by T x anchor_depth, and the pressures below
+    # the excavation level were left out. Midpoint pressures, as above; the
+    # reaction enters the step that contains the anchor at its own depth.
+    profile = []
     max_moment = 0.0
     max_moment_depth = 0.0
-    shear = -anchor_force  # anchor provides upward reaction in moment sense
+    shear = 0.0
     moment = 0.0
+    anchored = False
 
     for i in range(n_points):
         z = (i + 0.5) * dz
+        z_end = (i + 1) * dz
         layer = _get_soil_at_depth(z, soil_layers)
         Ka, Kp = _compute_Ka_Kp(layer.friction_angle, pressure_method, layer.wall_friction_deg)
 
-        net_p = 0.0
+        pp_reduced = 0.0
+        water = 0.0
         if z <= H:
             sigma_v = surcharge + _cumulative_stress(z, soil_layers, gwt_depth_active, gamma_w)
             pa = Ka * sigma_v - 2 * layer.cohesion * math.sqrt(Ka)
             pa = max(pa, 0)
-            net_p = pa
             if gwt_depth_active is not None and z > gwt_depth_active:
-                net_p += gamma_w * (z - gwt_depth_active)
+                water = gamma_w * (z - gwt_depth_active)
+        else:
+            z_below = z - H
+            sigma_v_a = surcharge + _cumulative_stress(z, soil_layers, gwt_depth_active, gamma_w)
+            pa = Ka * sigma_v_a - 2 * layer.cohesion * math.sqrt(Ka)
+            pa = max(pa, 0)
+            sigma_v_p = _cumulative_stress_passive(z_below, H, soil_layers, gwt_depth_passive, gamma_w)
+            pp = Kp * sigma_v_p + 2 * layer.cohesion * math.sqrt(Kp)
+            pp_reduced = pp / FOS_passive
+            u_a = gamma_w * max(0, z - (1e10 if gwt_depth_active is None else gwt_depth_active))
+            u_p = gamma_w * max(0, z_below - max(0, (1e10 if gwt_depth_passive is None else gwt_depth_passive) - H))
+            water = u_a - u_p
+        net_p = pa - pp_reduced + water
 
         shear += net_p * dz
         moment += shear * dz
-        if abs(moment) > abs(max_moment) and z <= H:
+        if not anchored and z_end >= anchor_depth:
+            shear -= anchor_force
+            moment -= anchor_force * (z_end - anchor_depth)
+            anchored = True
+        if abs(moment) > abs(max_moment):
             max_moment = abs(moment)
             max_moment_depth = z
+        profile.append([z, pa, pp_reduced, water, net_p, shear, moment])
 
     return AnchoredWallResult(
         embedment_depth=D_design,
@@ -270,4 +355,5 @@ def analyze_anchored(
         anchor_depth=anchor_depth,
         excavation_depth=H,
         FOS_passive=FOS_passive,
+        profile=profile,
     )

@@ -311,6 +311,76 @@ class ConsolidationResult:
             d["notes"] = list(self.notes)
         return d
 
+    def get_tables(self) -> list:
+        """The surface settlement and the degree of consolidation at every
+        time step, as this result holds them (time in seconds, settlement
+        signed, negative = down, from the reference stage).
+
+        Returns
+        -------
+        list of geotech_common.tables.CalcTable
+        """
+        from geotech_common.tables import CalcTable
+
+        if self.times is None or self.settlements is None:
+            return []
+        times = np.asarray(self.times, dtype=float)
+        sett = np.asarray(self.settlements, dtype=float)
+        u_hist = (np.asarray(self.degree_of_consolidation_history,
+                             dtype=float)
+                  if self.degree_of_consolidation_history is not None
+                  else None)
+        rows = [[float(times[i]), float(sett[i]),
+                 float(u_hist[i]) if u_hist is not None
+                 and i < len(u_hist) else None]
+                for i in range(min(len(times), len(sett)))]
+        ref = (self.displacement_reference or {}).get("measured_from", "")
+        return [CalcTable(
+            title="Settlement and consolidation against time",
+            columns=[("Time t", "s"), ("Surface settlement", "m"),
+                     ("Average degree of consolidation U", "", ".3f")],
+            rows=rows,
+            note=(f"Coupled Biot consolidation ({self.scheme or 'fem2d'}); "
+                  "settlement signed (negative = down)"
+                  + (f", measured from {ref}" if ref else "")),
+            name="consolidation_vs_time",
+        )]
+
+
+def _beam_force_table(beam_forces, nodes, title, name, stage=None,
+                      printed=True):
+    """Beam element forces with the coordinates of each end (from the mesh
+    nodes the result carries), one row per element (per stage when the
+    rows come from several stages: ``stage`` gives the label per row)."""
+    from geotech_common.tables import CalcTable
+
+    pts = np.asarray(nodes, dtype=float) if nodes is not None else None
+
+    def xy(i):
+        if pts is None or i >= len(pts):
+            return [None, None]
+        return [float(pts[i, 0]), float(pts[i, 1])]
+
+    columns = [("Element", ""), ("x i", "m"), ("y i", "m"), ("x j", "m"),
+               ("y j", "m"), ("Axial force N i", "kN/m"),
+               ("Shear force V i", "kN/m"), ("Bending moment M i", "kN-m/m"),
+               ("Axial force N j", "kN/m"), ("Shear force V j", "kN/m"),
+               ("Bending moment M j", "kN-m/m")]
+    if stage is not None:
+        columns = ["Stage"] + columns
+    rows = []
+    for k, bf in enumerate(beam_forces):
+        row = ([stage[k]] if stage is not None else []) + [
+            bf.element_index + 1] + xy(bf.node_i) + xy(bf.node_j) + [
+            bf.axial_i, bf.shear_i, bf.moment_i,
+            bf.axial_j, bf.shear_j, bf.moment_j]
+        rows.append(row)
+    return CalcTable(
+        title=title, columns=columns, rows=rows,
+        note=("Euler-Bernoulli beam elements coupled to the soil mesh, "
+              "forces per metre run at each end node i and j (y up)"),
+        name=name, printed=printed)
+
 
 @dataclass
 class FEMResult:
@@ -453,6 +523,54 @@ class FEMResult:
         if self.strut_forces:
             d["strut_forces"] = self.strut_forces
         return d
+
+    def get_tables(self) -> list:
+        """PLAXIS-style tables: the beam (wall) element forces with their
+        positions (printed), and as CSV only (the calc package prints its
+        own versions) the strength-reduction trials and the strut forces.
+        Values are this result's own.
+
+        Returns
+        -------
+        list of geotech_common.tables.CalcTable
+        """
+        from geotech_common.tables import CalcTable
+
+        tables = []
+        if self.beam_forces:
+            tables.append(_beam_force_table(
+                self.beam_forces, self.nodes, "Beam element forces",
+                "beam_forces"))
+        if self.srf_history:
+            tables.append(CalcTable(
+                title="Strength reduction trials",
+                columns=[("SRF", "", ".3f"), ("Maximum displacement", "m"),
+                         ("Dimensionless displacement Eδ/(γH²)",
+                          ""), "Converged", "Failed", "Iterations",
+                         "Settled at the iteration ceiling",
+                         ("Final residual", "")],
+                rows=[[h.get("srf"), h.get("max_disp_m"),
+                       h.get("dimensionless_disp"), h.get("converged"),
+                       h.get("failed"), h.get("n_iter"), h.get("settled"),
+                       h.get("final_residual")]
+                      for h in self.srf_history],
+                note=(f"Griffiths & Lane (1999) strength reduction; "
+                      f"FOS = {self.FOS if self.FOS is not None else 'n/a'}"
+                      "; trials in the order run"),
+                name="srf_trials", printed=False,
+            ))
+        if self.strut_forces:
+            tables.append(CalcTable(
+                title="Strut forces",
+                columns=[("Depth", "m"), ("Stiffness", "kN/m/m"),
+                         ("Force", "kN/m"), "Node"],
+                rows=[[s.get("depth_m"), s.get("stiffness_kN_per_m"),
+                       s.get("force_kN_per_m"), s.get("node_id")]
+                      for s in self.strut_forces],
+                note="F = k u_horizontal at each strut node, per metre run",
+                name="strut_forces", printed=False,
+            ))
+        return tables
 
 
 @dataclass
@@ -678,3 +796,63 @@ class StagedConstructionResult:
         if self.notes:
             d["notes"] = list(self.notes)
         return d
+
+    def get_tables(self) -> list:
+        """PLAXIS-style tables: the movements of every stage (this stage's
+        own, cumulative, and since the reference stage; printed) and, as
+        CSV, the beam element forces of every stage. Values are this
+        result's own (y up: a negative settlement is downward).
+
+        Returns
+        -------
+        list of geotech_common.tables.CalcTable
+        """
+        from geotech_common.tables import CalcTable
+
+        def m(d, key):
+            return d.get(key) if d else None
+
+        rows = []
+        for p in self.phases:
+            dd, cd = p.delta_displacement, p.cumulative_displacement
+            sd = p.displacement_since_reference
+            rows.append([
+                p.phase_index + 1, p.phase_name, p.converged,
+                m(dd, "settlement_m"), m(dd, "heave_m"),
+                m(dd, "horizontal_m"), m(dd, "total_m"),
+                m(cd, "settlement_m"), m(cd, "horizontal_m"),
+                m(cd, "total_m"),
+                m(sd, "settlement_m"), m(sd, "total_m")])
+        tables = []
+        if rows:
+            ref = (self.displacement_reference or {}).get(
+                "measured_from", "the start of the analysis")
+            tables.append(CalcTable(
+                title="Movements by stage",
+                columns=["Stage", "Phase", "Converged",
+                         ("This stage: settlement", "m"),
+                         ("This stage: heave", "m"),
+                         ("This stage: horizontal", "m"),
+                         ("This stage: largest |u|", "m"),
+                         ("Cumulative settlement", "m"),
+                         ("Cumulative horizontal", "m"),
+                         ("Cumulative largest |u|", "m"),
+                         ("Settlement since reference", "m"),
+                         ("Largest |u| since reference", "m")],
+                rows=rows,
+                note=("Extremes over each stage's active nodes "
+                      "(settlement = most negative vertical movement, "
+                      "heave = most positive, horizontal = largest "
+                      f"magnitude, signed); the reference is {ref}"),
+                name="stage_movements",
+            ))
+        beams, labels = [], []
+        for p in self.phases:
+            for bf in p.beam_forces or []:
+                beams.append(bf)
+                labels.append(p.phase_index + 1)
+        if beams:
+            tables.append(_beam_force_table(
+                beams, self.nodes, "Beam element forces by stage",
+                "beam_forces_by_stage", stage=labels, printed=False))
+        return tables
