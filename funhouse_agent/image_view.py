@@ -341,6 +341,74 @@ def _draw_marks(im, marks: Sequence, origin: Tuple[int, int],
     return im
 
 
+#: The longest page side, in points, every PDF viewer opens (Acrobat's
+#: limit, 200 inches). An image longer than this in pixels goes on its page
+#: at less than one point a pixel (:func:`page_scale`).
+MAX_PAGE_PT = 14400.0
+
+
+def shown_size(data: bytes) -> Optional[Tuple[int, int]]:
+    """``(width, height)`` of an image file as a viewer shows it (its EXIF
+    orientation applied), read from its header without decoding it;
+    ``None`` when Pillow cannot read it."""
+    try:
+        from PIL import Image
+        im = Image.open(io.BytesIO(bytes(data)))
+        w, h = (int(v) for v in im.size)
+        try:
+            orientation = int(im.getexif().get(_EXIF_ORIENTATION) or 1)
+        except Exception:  # noqa: BLE001 - no EXIF is upright
+            orientation = 1
+    except Exception:  # noqa: BLE001 - not readable here
+        return None
+    return (h, w) if orientation in (5, 6, 7, 8) else (w, h)
+
+
+def page_scale(picture: Picture) -> float:
+    """Points a pixel on the page :func:`as_pdf` makes of ``picture``: one,
+    unless the image is longer than :data:`MAX_PAGE_PT` pixels."""
+    side = max(picture.width, picture.height)
+    return 1.0 if side <= MAX_PAGE_PT else MAX_PAGE_PT / float(side)
+
+
+def as_pdf(picture: Picture) -> bytes:
+    """A one-page PDF of the image as a viewer shows it (EXIF orientation
+    applied), its page the image at :func:`page_scale` points a pixel --
+    one point a pixel, so a position in the image's own pixels is the same
+    number on the page (BACKLOG VIS-26).
+
+    PyMuPDF opens an image file as a page sized by the resolution the file
+    declares: none declared is 96 dpi, 0.75 pt a pixel; a 300 dpi scan is
+    0.24 pt a pixel. A box in the image's pixels put on that page lands at
+    that fraction of the spot, or off the page (live wave w4, F39: a ring
+    for a phone photo drawn past the page's right edge, twice). The image
+    goes in as the file's own bytes when it can (a PNG or JPEG that is not
+    turned), else re-encoded upright: a JPEG photo as JPEG, anything else as
+    PNG."""
+    import fitz
+    s = page_scale(picture)
+    if picture.as_is and picture.kind in ("png", "jpeg"):
+        stream = picture.data
+    else:
+        buf = io.BytesIO()
+        im = picture.image
+        if picture.kind == "jpeg":
+            if im.mode not in ("L", "RGB"):
+                im = im.convert("RGB")
+            im.save(buf, format="JPEG", quality=95)
+        else:
+            im.save(buf, format="PNG")
+        stream = buf.getvalue()
+    doc = fitz.open()
+    try:
+        page = doc.new_page(width=picture.width * s,
+                            height=picture.height * s)
+        page.insert_image(page.rect, stream=stream, keep_proportion=False)
+        return doc.tobytes(garbage=1, deflate=True)
+    finally:
+        doc.close()
+
+
 #: Said on every image look about the frame its boxes are in.
 FRAME_NOTE = ("view, bbox and every box converted from an image_box are in "
               "this image's own pixels (top-left origin, x right, y down); "
@@ -398,4 +466,5 @@ def frame_of(picture: Picture):
 __all__ = ["MAX_UPSCALE", "WHOLE_MIN_SCALE", "MIN_WINDOW_PX", "JPEG_QUALITY",
            "Picture", "open_picture", "sent_size", "whole_scale",
            "tile_count", "tile_boxes", "whole_box", "zoom_box", "render",
+           "MAX_PAGE_PT", "shown_size", "page_scale", "as_pdf",
            "FRAME_NOTE", "precision_note", "view_payload", "frame_of"]

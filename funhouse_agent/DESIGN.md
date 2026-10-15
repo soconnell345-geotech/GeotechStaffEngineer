@@ -163,7 +163,13 @@ Beyond the 4 standard ReAct tools (`call_agent`, `list_methods`,
   image's own pixels are a frame like a page's: the result gives its `view`
   and 0-999 boxes, an image too large for one look is also read in tiles cut
   from the original, and `render_region` takes the image as
-  `attachment_key` to zoom (`funhouse_agent/image_view.py`)
+  `attachment_key` to zoom (`funhouse_agent/image_view.py`). Since VIS-26
+  `annotate_document` and `find_like` take an image in the same pixels:
+  PyMuPDF opens an image as a page sized by the dpi the file declares (0.75
+  pt a pixel with none), so the app puts the image on its own page at one
+  point a pixel (`image_view.as_pdf`) for a new marked copy and for the
+  search, converts a mark exactly to whatever copy it goes on, and refuses
+  a mark centred off the image (or off a PDF's page)
 - `analyze_pdf_page` — render one PDF page and analyze it via vision (for
   scanned pages, figures, plotted cross-sections; heavier than `read_pdf_text`)
 - `read_reference_figure` — read a value off a reference chart/figure via vision

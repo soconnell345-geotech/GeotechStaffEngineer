@@ -169,7 +169,8 @@ def find_like(pdf, page: int, bbox: Sequence[float], engine, *,
               include_legend: bool = False,
               threshold: Optional[float] = None,
               save_dir: Optional[str] = None,
-              save_prefix: str = "find_like") -> Dict[str, Any]:
+              save_prefix: str = "find_like",
+              dpi: Optional[float] = None) -> Dict[str, Any]:
     """Search, verify and report — see the module docstring.
 
     ``pdf`` is PDF bytes or a path; ``bbox`` the example's box in PDF points
@@ -177,7 +178,9 @@ def find_like(pdf, page: int, bbox: Sequence[float], engine, *,
     (e.g. ``"GCE"``) — with it, candidates are confirmed or rejected; without
     it, they are grouped by what they read. ``engine`` reads the contact
     sheets (``analyze_image``); ``None`` skips verification and returns the
-    unverified candidates.
+    unverified candidates. ``dpi`` is the search resolution (planlens'
+    default when ``None``): an image put on a page at one point a pixel is
+    searched at 72, its own pixels (BACKLOG VIS-26).
     """
     from planlens.document import Document
     from funhouse_agent import vision_view
@@ -188,6 +191,8 @@ def find_like(pdf, page: int, bbox: Sequence[float], engine, *,
            else Document(filepath=str(pdf)))
     try:
         kw = {"threshold": threshold} if threshold else {}
+        if dpi:
+            kw["dpi"] = float(dpi)
         res = doc.find_like(int(page), bbox, pages, **kw)
         hits = res["hits"]
         flooded = flooded_pages(hits)

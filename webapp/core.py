@@ -159,6 +159,16 @@ def stage_uploads(attachments: dict, temp_dir: str,
     return out
 
 
+#: File name endings of the image files the looking tools take as images.
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif",
+                    ".tiff", ".webp")
+
+
+def is_image_name(name) -> bool:
+    """Whether a file name is an image file's (by its ending)."""
+    return os.path.splitext(str(name or ""))[1].lower() in IMAGE_EXTENSIONS
+
+
 def attachment_note(atts: List[Attachment], review: bool = False) -> str:
     """Build the system-style note telling the agent about staged attachments —
     the attachment key (for analyze_image / analyze_pdf_page / read_pdf_text)
@@ -185,6 +195,15 @@ def attachment_note(atts: List[Attachment], review: bool = False) -> str:
     if lean:
         lines = ["[System note] The user attached files, available to you as:"]
         for a in atts:
+            if is_image_name(a.key):
+                # A screenshot or photo is looked at, not opened as a
+                # document (BACKLOG VIS-26).
+                lines.append(f"- '{a.key}': an image; look at it with "
+                             f"analyze_image(attachment_key='{a.key}') and "
+                             f"zoom with render_region on the same name "
+                             f"(it is a file of that name in the working "
+                             f"folder).")
+                continue
             lines.append(f"- '{a.key}': open it with open_document(source="
                          f"'{a.key}'); the page and region tools take the same "
                          f"name (it is a file of that name in the working "
@@ -3140,6 +3159,16 @@ def reads_note(folder: Optional[str]) -> str:
     for name in order:
         d = docs[name]
         bits = []
+        if is_image_name(name):
+            # An image has no pages: "p. 1" read as a page of a document
+            # (BACKLOG VIS-26).
+            if d["whole"]:
+                bits.append("looked at whole")
+            if d["zoom"]:
+                bits.append("zoomed on (boxes in its own pixels)")
+            if bits:
+                parts.append(f"'{name}' (an image): " + "; ".join(bits))
+            continue
         if d["whole"]:
             bits.append(f"whole page p. {_page_list(sorted(d['whole']))}")
         if d["tiled"]:
@@ -3191,11 +3220,15 @@ def readings_note(folder: Optional[str]) -> str:
             asked = asked[:57].rstrip() + "..."
         view = r.get("view") or "page"
         region = r.get("region")
+        image = is_image_name(name)
         if view == "zoom" and isinstance(region, list) and len(region) == 4:
             # the box to pass back for this zoom (live smoke wave 3, F6)
             view = "zoom bbox=[" + ", ".join(f"{float(v):g}"
-                                             for v in region) + "]"
-        items.append(f"'{name}' p. {page} ({view}, asked \"{asked}\")")
+                                             for v in region) + "]" + \
+                (" px" if image else "")
+        # An image has no pages to name (BACKLOG VIS-26).
+        where = f"'{name}' (image)" if image else f"'{name}' p. {page}"
+        items.append(f"{where} ({view}, asked \"{asked}\")")
     if not items:
         return ""
     head = (" Readings already taken and kept (newest first; "

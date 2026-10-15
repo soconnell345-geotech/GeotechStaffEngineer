@@ -557,6 +557,8 @@ def dispatch_document_tool(name: str, arguments: Dict[str, Any],
         finally:
             _LOCK_WAIT.reset(lock_token)
             _report_lock_wait(name, tally[0])
+        if name == "open_document":
+            out = _image_coordinates(out, arguments.get("source"))
     except Exception as exc:  # noqa: BLE001 - a tool error, never the turn's
         from funhouse_agent.error_text import tool_error_json
         return _with_range_hint(tool_error_json(name, exc), one_based)
@@ -578,6 +580,45 @@ def dispatch_document_tool(name: str, arguments: Dict[str, Any],
     if opened_note:
         out = _with_note(out, "opened", opened_note, limit)
     return out
+
+
+#: ``open_document``'s ``coordinates`` for an IMAGE (BACKLOG VIS-26): it
+#: said "PDF points", and a model that took a look's pixels as those points
+#: drew a ring off a phone photo's page twice (live wave w4, F39).
+IMAGE_COORDINATES = (
+    "this image's own pixels ({w} x {h} px), top-left origin, y down: what "
+    "its looks give and what render_region, find_like and annotate_document "
+    "take on it; page 0 is the image")
+
+
+def _image_coordinates(out: str, source: Any) -> str:
+    """``open_document``'s result with its ``coordinates`` said in the
+    image's own pixels when the document is an image file; as it came
+    otherwise. Runs while the call's attachments are set."""
+    if not isinstance(out, str) or '"image"' not in out:
+        return out
+    try:
+        data = json.loads(out)
+    except ValueError:
+        return out
+    if not isinstance(data, dict) or data.get("kind") != "image" \
+            or "coordinates" not in data:
+        return out
+    try:
+        resolved = _resolve(str(source or ""))
+        if isinstance(resolved, (bytes, bytearray)):
+            raw = bytes(resolved)
+        else:
+            with open(resolved, "rb") as fh:
+                raw = fh.read()
+        from funhouse_agent.image_view import shown_size
+        size = shown_size(raw)
+    except Exception:  # noqa: BLE001 - the line stays as planlens wrote it
+        size = None
+    if not size:
+        return out
+    data["coordinates"] = IMAGE_COORDINATES.format(w=size[0], h=size[1])
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
 
 
 def _one_based_pages(arguments: Dict[str, Any]):
@@ -1694,17 +1735,25 @@ def _handle_path(handle: str) -> Optional[str]:
 
 
 def write_marked_copy(handle: str, markups: Optional[list], output_path: str,
-                      append: bool, author: str, call, remove=None
-                      ) -> Dict[str, Any]:
+                      append: bool, author: str, call, remove=None,
+                      image=None) -> Dict[str, Any]:
     """Write ``annotate_document``'s marked copy safely (see the section
     comment): to a temporary file, then swapped in. ``call(args) -> str`` runs
     planlens' annotate_document (the host's dispatch). ``remove`` takes marks
     out of an existing marked copy first, so ``remove`` + ``markups``
     replaces one mark and keeps the rest. Returns the result dict, its
-    ``output_path`` the final file's absolute path."""
+    ``output_path`` the final file's absolute path.
+
+    ``image`` is ``(bytes, name)`` when the document is an IMAGE file
+    (:func:`image_of`): the marks' positions are then in its own pixels, a
+    new copy's page is the image at one point a pixel, and the result
+    carries a private ``_image_frame`` that :func:`image_frame_result`
+    turns into its ``frame`` note once the check has read the copy. A mark
+    centred off the image -- or, for a PDF, off its page -- is refused
+    before anything is written (BACKLOG VIS-26)."""
     try:
         return _write_marked_copy(handle, markups, output_path, append,
-                                  author, call, remove)
+                                  author, call, remove, image)
     except MarkedCopyNotWritten as exc:
         return {"error": str(exc), "hint": WRITE_FAILED_HINT}
 
@@ -1727,6 +1776,247 @@ def markups_with_pages(markups) -> tuple:
             m["page"] = page
         out.append(m)
     return out, None
+
+
+# --- marks on an image, and marks off the page (BACKLOG VIS-26) -------------
+#
+# Live wave w4 (2026-10-14, F39): on a phone photo the first ring was drawn
+# off the page twice. Every look at an image is in its own pixels (VIS-09),
+# but planlens opens an image as a page in points at the resolution the file
+# declares (0.75 pt a pixel with none), so the ring went to three quarters
+# of x -- past the right edge. Now a mark on an image is taken in the
+# image's pixels and put on a copy whose page is the image at one point a
+# pixel (``image_view.as_pdf``), converted exactly to whatever copy it goes
+# on; and a mark whose centre is off the image (or off a PDF's page) is
+# refused, naming the size, before anything is written.
+
+#: Fields of a markup that give a position, by shape (a nested ``anchor``
+#: object may hold them too, as planlens reads it).
+_BOX_FIELDS = ("bbox", "box", "page_bbox", "view")
+_POINT_FIELDS = ("point", "points_at")
+
+
+def image_of(handle: str, attachments: Optional[Dict[str, bytes]] = None):
+    """``(bytes, name)`` of the IMAGE file a document handle -- or a file
+    name or attachment key given as one -- was opened from; ``None`` for a
+    PDF, or when its source cannot be read."""
+    src = str(handle or "").strip()
+    if looks_like_handle(src):
+        src = handle_source(src) or ""
+    if not src:
+        return None
+    try:
+        resolved = resolve_document_source(src, attachments)
+    except Exception:  # noqa: BLE001 - not a source: planlens says so itself
+        return None
+    from funhouse_agent.vision_tools import _image_kind
+    if isinstance(resolved, (bytes, bytearray)):
+        data = bytes(resolved)
+        if _image_kind(data[:16]) is None:
+            return None
+    else:
+        try:
+            with open(resolved, "rb") as fh:
+                if _image_kind(fh.read(16)) is None:
+                    return None
+                fh.seek(0)
+                data = fh.read()
+        except OSError:
+            return None
+    return data, os.path.basename(str(src).replace("\\", "/"))
+
+
+def _nums(value, n: int):
+    try:
+        out = [float(v) for v in value]
+    except (TypeError, ValueError):
+        return None
+    return out if len(out) == n else None
+
+
+def mark_position(markup: Dict[str, Any]):
+    """The box a markup is placed by, in the frame it was given in --
+    ``view`` + ``image_box``, a box, a point (as a zero-size box) or a
+    callout's ``points_at`` -- or ``None`` (a quote, a reply, or values that
+    are not numbers: planlens says what is wrong with those)."""
+    if not isinstance(markup, dict):
+        return None
+    m = dict(markup)
+    if isinstance(m.get("anchor"), dict):
+        m = {**m["anchor"], **{k: v for k, v in m.items() if k != "anchor"}}
+    if str(m.get("kind") or "").lower() == "callout" and \
+            _nums(m.get("points_at"), 2):
+        x, y = _nums(m["points_at"], 2)
+        return [x, y, x, y]
+    view, image_box = _nums(m.get("view"), 4), _nums(m.get("image_box"), 4)
+    if view and image_box:
+        from funhouse_agent.vision_view import image_box_to_page
+        try:
+            return list(image_box_to_page(view, image_box))
+        except ValueError:
+            return None
+    for name in ("bbox", "box", "page_bbox"):
+        box = _nums(m.get(name), 4)
+        if box:
+            return box
+    for name in _POINT_FIELDS:
+        pt = _nums(m.get(name), 2)
+        if pt:
+            return [pt[0], pt[1], pt[0], pt[1]]
+    return None
+
+
+def marks_off_the_page(markups, page_size, unit: str, what: str
+                       ) -> Optional[Dict[str, Any]]:
+    """The refusal for marks whose position (:func:`mark_position`) is
+    centred off their page, or ``None``. ``page_size(page) -> (w, h)`` in
+    the frame the marks are given in (``None`` for a page it cannot say)."""
+    from funhouse_agent.vision_tools import off_image_note
+    bad = []
+    for i, m in enumerate(list(markups or [])):
+        where = mark_position(m)
+        if where is None:
+            continue
+        try:
+            page = int(m.get("page", 0))
+        except (TypeError, ValueError):
+            continue
+        size = page_size(page)
+        if not size:
+            continue
+        why = off_image_note(where, size[0], size[1], unit, what)
+        if why:
+            kind = m.get("kind") or "mark"
+            bad.append(f"markup {i} ({kind}"
+                       + (f", page {page}" if what == "page" else "")
+                       + f") is {why}")
+    if not bad:
+        return None
+    if what == "image":
+        hint = ("on an image, bbox, point and view are in its own pixels "
+                "(top-left origin, y down), as analyze_image and "
+                "render_region on it give them; nothing was written")
+    else:
+        hint = ("positions are PDF points on the page as displayed "
+                "(top-left origin, y down), as read_document and a look's "
+                "view + image_box give them; nothing was written")
+    return {"error": f"{len(bad)} mark(s) would fall off the {what}: "
+                     + "; ".join(bad[:10]), "hint": hint}
+
+
+def _scaled_markup(markup, sx: float, sy: float):
+    """``markup`` with every position (a nested ``anchor`` too) multiplied
+    by ``sx`` across and ``sy`` down; ``image_box`` stays as it is (a 0-999
+    box on its view). Values that are not numbers are left for planlens to
+    refuse."""
+    if not isinstance(markup, dict) or (sx == 1.0 and sy == 1.0):
+        return markup
+
+    def scale(d):
+        out = dict(d)
+        for name in _BOX_FIELDS:
+            box = _nums(out.get(name), 4)
+            if box:
+                out[name] = [box[0] * sx, box[1] * sy, box[2] * sx,
+                             box[3] * sy]
+        for name in _POINT_FIELDS:
+            pt = _nums(out.get(name), 2)
+            if pt:
+                out[name] = [pt[0] * sx, pt[1] * sy]
+        return out
+
+    out = scale(markup)
+    if isinstance(out.get("anchor"), dict):
+        out["anchor"] = scale(out["anchor"])
+    return out
+
+
+def _page_size_pt(pdf_path: str):
+    """``(w, h)`` of page 0 of the PDF at ``pdf_path`` as displayed."""
+    import fitz
+    with fitz.open(pdf_path) as doc:
+        rect = doc[0].rect
+        return float(rect.width), float(rect.height)
+
+
+def _pdf_page_sizes(handle: str):
+    """``page -> (w, h)`` as displayed, in points, of the document a handle
+    stands for (``None`` for a page it does not have, or when it is not
+    open and does not open)."""
+    entry = None
+    try:
+        entry = document_entry(handle) if looks_like_handle(handle) else None
+        if entry is None:
+            entry = open_document_entry(handle)
+    except Exception:  # noqa: BLE001 - planlens says what is wrong itself
+        entry = None
+    fz = getattr(getattr(entry, "doc", None), "_doc", None)
+
+    def size(page: int):
+        if fz is None:
+            return None
+        try:
+            with entry.lock:
+                if not 0 <= page < fz.page_count:
+                    return None
+                rect = fz[page].rect
+                return float(rect.width), float(rect.height)
+        except Exception:  # noqa: BLE001 - nothing to say about it
+            return None
+
+    return size
+
+
+#: The result's ``frame`` for marks put on an image, by whether the copy's
+#: page is the image at one point a pixel.
+IMAGE_FRAME_NOTE = (
+    "bbox, point and view were taken in this image's own pixels ({w} x {h} "
+    "px, top-left origin, y down), as its looks give them; the marked copy "
+    "is a PDF whose page is the image at one point a pixel, so every box on "
+    "it -- this result's, the check's, a look at the copy -- is in those "
+    "same pixels")
+IMAGE_FRAME_SCALED_NOTE = (
+    "bbox, point and view were taken in this image's own pixels ({w} x {h} "
+    "px, top-left origin, y down), as its looks give them; the marked "
+    "copy's page is the image at {s:.4g} pt a pixel, so this result's boxes "
+    "are converted back to the image's pixels, but a look at the copy "
+    "itself gives its points (the image's pixels x {s:.4g})")
+
+
+def image_frame_result(result: Dict[str, Any]) -> None:
+    """Finish an image's annotate result, in place: its boxes -- the written
+    rows' and the check's -- back in the image's own pixels when the copy's
+    page is not the image at one point a pixel, and the ``frame`` note.
+    Takes the private ``_image_frame`` :func:`write_marked_copy` left."""
+    frame = result.pop("_image_frame", None) if isinstance(result, dict) \
+        else None
+    if not frame:
+        return
+    (w, h), (sx, sy) = frame["image_px"], frame["scale"]
+    same = abs(sx - 1.0) < 1e-6 and abs(sy - 1.0) < 1e-6
+    if not same:
+        def back(values):
+            n = _nums(values, len(values)) if isinstance(
+                values, (list, tuple)) else None
+            if not n or len(n) not in (2, 4):
+                return values
+            f = [sx, sy] * (len(n) // 2)
+            return [round(v / k, 1) for v, k in zip(n, f)]
+
+        for row in result.get("written") or ():
+            if isinstance(row, dict):
+                for name in ("bbox", "target", "label_bbox", "points_at"):
+                    if row.get(name) is not None:
+                        row[name] = back(row[name])
+        check = result.get("check")
+        for row in (check.get("misplaced") or ()) if isinstance(
+                check, dict) else ():
+            if isinstance(row, dict):
+                for name in ("bbox", "found_bbox"):
+                    if row.get(name) is not None:
+                        row[name] = back(row[name])
+    result["frame"] = (IMAGE_FRAME_NOTE.format(w=w, h=h) if same else
+                       IMAGE_FRAME_SCALED_NOTE.format(w=w, h=h, s=sx))
 
 
 def _nothing_written(result: Dict[str, Any], final: str, existed: bool,
@@ -1753,18 +2043,37 @@ def _nothing_written(result: Dict[str, Any], final: str, existed: bool,
 
 
 def _write_marked_copy(handle, markups, output_path, append, author, call,
-                       remove) -> Dict[str, Any]:
+                       remove, image=None) -> Dict[str, Any]:
     """:func:`write_marked_copy`; a file-system failure raises
     :class:`MarkedCopyNotWritten` (D5)."""
     import shutil
     marks, problem = markups_with_pages(markups)
     if problem is not None:
         return problem
+    picture = None
+    if image is not None:
+        from funhouse_agent.vision_tools import _open_image
+        picture, refusal = _open_image(image[0], image[1])
+        if refusal is not None:
+            return json.loads(refusal)
+        if picture is None:
+            return {"error": ("this image could not be decoded here (Pillow "
+                              "is missing, or the file is damaged), so marks "
+                              "cannot be placed in its pixels")}
+        off = marks_off_the_page(
+            marks, lambda p: ((picture.width, picture.height) if p == 0
+                              else None), "px", "image")
+    else:
+        off = marks_off_the_page(marks, _pdf_page_sizes(handle), "pt",
+                                 "page") if marks else None
+    if off is not None:
+        return off
     final = markup_output_path(output_path, handle)
     existed = os.path.isfile(final)
     tmp = _temp_beside(final)
     try:
         removed = refused = None
+        fresh_image = False
         if remove:
             if not existed:
                 return {"error": (
@@ -1798,11 +2107,37 @@ def _write_marked_copy(handle, markups, output_path, append, author, call,
                              "or delete one mark, pass remove=[its id] (and "
                              "the new mark in markups) with output_path = "
                              "this copy")}
+            if picture is not None and marks:
+                # A new copy of an image: its page is the image at one point
+                # a pixel, written here and marked by planlens as an existing
+                # copy (VIS-26), not planlens' own page at the file's dpi.
+                from funhouse_agent.image_view import as_pdf
+                try:
+                    with open(tmp, "wb") as fh:
+                        fh.write(as_pdf(picture))
+                except OSError as exc:
+                    raise _write_failure(tmp, exc) from exc
+                fresh_image = True
+        frame = None
+        if picture is not None and marks:
+            # The copy's own page decides the conversion: the new page above,
+            # or an existing copy's (made earlier, maybe at another scale).
+            try:
+                cw, ch = _page_size_pt(tmp)
+            except Exception as exc:  # noqa: BLE001 - said, never guessed
+                return {"error": (f"the marked copy to add to could not be "
+                                  f"read: {type(exc).__name__}: {exc}"),
+                        "hint": ("rebuild it from the image with "
+                                 "append=false")}
+            sx, sy = cw / picture.width, ch / picture.height
+            marks = [_scaled_markup(m, sx, sy) for m in marks]
+            frame = {"image_px": [picture.width, picture.height],
+                     "scale": [sx, sy]}
         if marks:
             raw = call({"handle": handle, "output_path": tmp,
                         "markups": marks, "author": author,
                         # onto the temporary copy when there is one
-                        "append": bool(remove or append)})
+                        "append": bool(remove or append or fresh_image)})
             try:
                 result = json.loads(raw)
             except (TypeError, ValueError):
@@ -1840,6 +2175,8 @@ def _write_marked_copy(handle, markups, output_path, append, author, call,
             raise _write_failure(final, exc) from exc
         result["output_path"] = written
         result["appended_to_existing"] = bool(existed and (append or remove))
+        if frame is not None:
+            result["_image_frame"] = frame
         if moved:
             result["saved_elsewhere"] = moved
         if removed is not None:

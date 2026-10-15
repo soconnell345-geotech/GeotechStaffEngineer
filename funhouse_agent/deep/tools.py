@@ -52,7 +52,9 @@ from funhouse_agent.dispatch import (
     _selector_value_candidates,
 )
 from funhouse_agent.vision_tools import (
+    IMAGE_FIND_NOTE,
     IMAGE_LOOK_NOTE,
+    IMAGE_MARKUP_NOTE,
     IMAGE_ZOOM_NOTE,
     KEPT_READINGS_DESCRIPTION,
     TURN_ARG_NOTE,
@@ -874,7 +876,7 @@ _DOCUMENT_TOOL_NOTES = {
         "holds: the marks this call added and those kept from before, by "
         "author — the document's own markups are always kept. A markup may "
         "give pdf_page (1-based, as a PDF viewer shows) instead of page "
-        "(0-based)."),
+        "(0-based). " + IMAGE_MARKUP_NOTE),
 }
 
 
@@ -1495,10 +1497,13 @@ def make_vision_tools(
             except Exception:  # noqa: BLE001 - the remover's own matching stands
                 refused_here = []
         try:
+            # An IMAGE's marks are in its own pixels, as its looks give them
+            # (VIS-26); None for a PDF.
+            image = _document_tools.image_of(handle, attachments)
             result = _document_tools.write_marked_copy(
                 handle, markups, output_path, append, signer,
                 lambda args: _dispatch("annotate_document", args),
-                remove=remove)
+                remove=remove, image=image)
         except Exception as exc:  # noqa: BLE001 - a tool error, not the turn's
             return json.dumps(hide_working_folder(
                 tool_error("annotate_document", exc)))
@@ -1528,6 +1533,9 @@ def make_vision_tools(
                                   + error_line(exc)}
             if block is not None:
                 result["check"] = block
+        # An image's marks were taken in its own pixels: the frame said, and
+        # any box on a copy at another scale given back in pixels (VIS-26).
+        _document_tools.image_frame_result(result)
         return json.dumps(hide_working_folder(result))
 
     def measure(source: str, page: Optional[int] = None, kind: str = "line",
@@ -1740,7 +1748,7 @@ def make_vision_tools(
             "vision. Returns instances by page, callouts (with where each "
             "leader points) apart from legend entries, and uncertain reads. "
             "page / pages count from 0; pdf_page / pdf_pages are the same "
-            "1-based, as a PDF viewer shows.",
+            "1-based, as a PDF viewer shows. " + IMAGE_FIND_NOTE,
         ),
         "render_region": (
             render_region,

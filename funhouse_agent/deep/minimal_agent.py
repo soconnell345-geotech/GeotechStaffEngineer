@@ -41,6 +41,7 @@ from funhouse_agent.deep.review_agent import (
     max_model_calls,
 )
 from funhouse_agent.deep.tools import DEFAULT_MAX_RESULT_CHARS, make_vision_tools
+from funhouse_agent.vision_tools import IMAGE_MARKUP_NOTE
 
 MINIMAL_PROMPT = """\
 You review documents for people who design and build things: drawing sets,
@@ -94,9 +95,13 @@ DESCRIPTIONS = {
         "top-left. A smaller box shows finer lettering. page is 0-based. An "
         "uploaded picture is zoomed the same way, with bbox and view in its "
         "own pixels."),
+    # An upload is not shown to the model itself: inline_image_files covers
+    # image FILES by path only, so a vision call answers the prompt
+    # (BACKLOG VIS-26).
     "analyze_image": (
-        "Look at an uploaded picture (a screenshot, a photo): it is shown to "
-        "you with your next step."),
+        "Look at an uploaded picture (a screenshot, a photo): a vision call "
+        "answers your prompt about it, and the result gives its view in its "
+        "own pixels, to zoom on with render_region."),
     "write_docx": (
         "Write a Word (.docx) document from Markdown - a memo, a comment "
         "log, a summary. A bare file name lands in the working folder."),
@@ -115,7 +120,8 @@ MARK_UP_DESCRIPTION = (
     "text drawn beside a box or circle), and WHERE: view + image_box from "
     "the render_region where you saw the thing}. output_path = a bare file name. Each "
     "box or circle is checked on the marked copy and the result says which "
-    "are misplaced; redo those (append=false) before handing the file over.")
+    "are misplaced; redo those (append=false) before handing the file over. "
+    + IMAGE_MARKUP_NOTE)
 
 
 def _looking_tools(engine, attachments, save_fn, markup_author,

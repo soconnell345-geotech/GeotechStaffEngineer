@@ -605,3 +605,350 @@ def test_the_tools_take_the_new_arguments_end_to_end():
     out = json.loads(tools["render_region"].invoke(
         {"attachment_key": "shot.png", "bbox": list(MARK), "prompt": "?"}))
     assert _err(out["view"], _grid(out["analysis"], "MARK"), MARK) <= 1
+
+
+# =================================================================================
+# VIS-26: marks and find_like on an image, in the image's own pixels
+# =================================================================================
+#
+# Live wave w4 (2026-10-14, F39): on a phone photo the first ring was drawn
+# off the page twice. Every look at an image is in its own pixels (above),
+# but annotate_document and find_like took the image as planlens opens it:
+# a page in points at the resolution the file declares (0.75 pt a pixel
+# with none, 0.24 pt a pixel at 300 dpi), so a box in pixels named another
+# spot - past the right edge of a 1387 px photo's 1040 pt page.
+
+#: The dark note line on the synthetic photo, in the pixels a viewer shows.
+NOTE = (430, 60, 470, 300)
+PHOTO_SHOWN = (560, 720)                 # width, height as a viewer shows it
+
+
+def _photo(fmt="JPEG", exif_turn=True, **save):
+    """A phone photo of a sheet: grey paper with one dark note line,
+    stored landscape with EXIF orientation 6 (shown 560 x 720)."""
+    w, h = PHOTO_SHOWN
+    shown = np.full((h, w, 3), 232, np.uint8)
+    x0, y0, x1, y1 = NOTE
+    shown[y0:y1, x0:x1] = 25
+    stored = np.ascontiguousarray(np.rot90(shown, k=1)) if exif_turn \
+        else shown
+    im = Image.fromarray(stored)
+    buf = io.BytesIO()
+    if exif_turn:
+        exif = im.getexif()
+        exif[0x0112] = 6                     # shown turned 90 clockwise
+        save["exif"] = exif.tobytes()
+    im.save(buf, format=fmt, **save)
+    return buf.getvalue()
+
+
+class SeesInk(Reader):
+    """The markup check's stand-in: ink in the middle of the crop means the
+    mark is on something (red, the mark itself, is not ink). Any other look
+    is answered as :class:`Reader`, plus the dark thing's box as TAG."""
+
+    def analyze_image(self, image_bytes, prompt=""):
+        a = _pixels(image_bytes)
+        dark = a.max(axis=2) < 90
+        if '"encloses"' in prompt:
+            self.prompts.append(prompt)
+            self.images.append(bytes(image_bytes))
+            h, w = dark.shape
+            mid = dark[int(h * .3):int(h * .7), int(w * .3):int(w * .7)]
+            seen = int(mid.sum()) > 3
+            return json.dumps({"encloses": seen,
+                               "inside": "note 1" if seen else "nothing",
+                               "sure": True})
+        text = super().analyze_image(image_bytes, prompt)
+        if dark.any():
+            b = _box(dark)
+            text += f"\nTAG px=[{b[0]}, {b[1]}, {b[2]}, {b[3]}]"
+        return text
+
+
+def _needs_annotate():
+    from funhouse_agent import document_tools
+    if not document_tools.has_tool("annotate_document"):
+        pytest.skip("the installed planlens has no annotate_document")
+
+
+def _review_tools(engine, attachments, tmp_path, monkeypatch):
+    from funhouse_agent.deep.tools import make_vision_tools
+    pytest.importorskip("fitz")
+    _needs_annotate()
+    monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
+    return {t.name: t for t in make_vision_tools(
+        engine=engine, attachments=attachments)}
+
+
+def _annotate(tools, source, markups, out_name="marked.pdf", **args):
+    handle = json.loads(tools["open_document"].invoke(
+        {"source": source}))["handle"]
+    return json.loads(tools["annotate_document"].invoke(
+        {"handle": handle, "output_path": out_name, "markups": markups,
+         **args}))
+
+
+def _copy_page(path):
+    """``(page size, red-ink box)`` of a marked copy, the page rendered at
+    one pixel a point."""
+    import fitz
+    with fitz.open(path) as doc:
+        page = doc[0]
+        size = (round(page.rect.width, 2), round(page.rect.height, 2))
+        pix = page.get_pixmap(dpi=72)
+        a = np.frombuffer(pix.samples, np.uint8).reshape(
+            pix.height, pix.width, pix.n)[:, :, :3]
+    red = (a[:, :, 0] > 150) & (a[:, :, 1] < 90) & (a[:, :, 2] < 90)
+    return size, (_box(red) if red.any() else None)
+
+
+def _round(box):
+    return [round(v) for v in box]
+
+
+def test_a_ring_on_a_phone_photo_lands_on_the_thing_in_its_own_pixels(
+        tmp_path, monkeypatch):
+    """F39 rebuilt: a JPEG turned by its EXIF tag, a ring given in the
+    pixels its looks report. Before, the copy's page was 0.75 pt a pixel and
+    the ring went to three quarters of x; now the page is the image at one
+    point a pixel, so the ring is round the thing and the check confirms
+    it."""
+    engine = SeesInk()
+    tools = _review_tools(engine, {"IMG_0912.jpg": _photo()}, tmp_path,
+                          monkeypatch)
+    opened = json.loads(tools["open_document"].invoke(
+        {"source": "IMG_0912.jpg"}))
+    assert opened["kind"] == "image"
+    assert "own pixels (560 x 720 px)" in opened["coordinates"]
+    out = _annotate(tools, "IMG_0912.jpg", [
+        {"kind": "circle", "page": 0, "comment": "confirm the strength",
+         "target": "note 1", "bbox": list(NOTE)}], append=False)
+    assert "error" not in out, out
+    ring = out["written"][0]["bbox"]
+    assert ring[0] <= NOTE[0] and ring[1] <= NOTE[1] \
+        and ring[2] >= NOTE[2] and ring[3] >= NOTE[3]
+    assert ring[2] - ring[0] < 2 * (NOTE[2] - NOTE[0])   # round it, close
+    assert out["check"]["confirmed"] == 1 and not out["check"]["misplaced"]
+    assert "own pixels (560 x 720 px" in out["frame"]
+    assert "one point a pixel" in out["frame"]
+    # the copy itself: its page is the photo as shown, the ring drawn
+    # round the dark line
+    size, red = _copy_page(tmp_path / "marked.pdf")
+    assert size == (560.0, 720.0)
+    assert red[0] <= NOTE[0] and red[2] >= NOTE[2]
+    assert red[1] <= NOTE[1] and red[3] >= NOTE[3]
+
+
+def test_a_mark_from_a_zoom_on_the_image_uses_its_view_and_image_box(
+        tmp_path, monkeypatch):
+    """The way a look hands a place on: render_region's view (pixels) and
+    the thing's 0-999 image_box on it, put on a 300 dpi scan whose planlens
+    page would be 0.24 pt a pixel."""
+    engine = SeesInk()
+    scan = _photo(fmt="PNG", exif_turn=False, dpi=(300, 300))
+    tools = _review_tools(engine, {"scan.png": scan}, tmp_path, monkeypatch)
+    zoom = json.loads(tools["render_region"].invoke(
+        {"attachment_key": "scan.png", "bbox": [380, 20, 520, 340],
+         "prompt": "find the note"}))
+    box = _grid(zoom["analysis"], "TAG")
+    assert _err(zoom["view"], box, NOTE) <= 2
+    out = _annotate(tools, "scan.png", [
+        {"kind": "box", "page": 0, "comment": "confirm", "target": "note 1",
+         "view": zoom["view"], "image_box": box}], out_name="scan_marked.pdf")
+    assert "error" not in out, out
+    drawn = out["written"][0]["bbox"]
+    assert max(abs(drawn[i] - NOTE[i]) for i in range(4)) <= 3
+    assert out["check"]["confirmed"] == 1
+    size, red = _copy_page(tmp_path / "scan_marked.pdf")
+    assert size == (560.0, 720.0)
+    assert max(abs(red[i] - NOTE[i]) for i in range(4)) <= 4
+
+
+def test_a_mark_off_the_image_is_refused_naming_its_size(tmp_path,
+                                                          monkeypatch):
+    engine = SeesInk()
+    tools = _review_tools(engine, {"IMG_0912.jpg": _photo()}, tmp_path,
+                          monkeypatch)
+    out = _annotate(tools, "IMG_0912.jpg", [
+        {"kind": "circle", "page": 0, "comment": "here", "target": "x",
+         "bbox": [600, 100, 640, 300]},
+        {"kind": "note", "page": 0, "comment": "fine", "point": [50, 50]}])
+    assert "560 x 720 px image" in out["error"]
+    assert "markup 0 (circle)" in out["error"]
+    assert "markup 1" not in out["error"]
+    assert "own pixels" in out["hint"] and "nothing was written" in out["hint"]
+    assert not (tmp_path / "marked.pdf").exists()
+    assert engine.prompts == []                      # nothing was checked
+
+
+def test_a_mark_off_a_pdf_page_is_refused_too(tmp_path, monkeypatch):
+    import fitz
+    doc = fitz.open()
+    doc.new_page(width=612, height=792).insert_text((72, 72), "GENERAL NOTES")
+    pdf = doc.tobytes()
+    doc.close()
+    tools = _review_tools(SeesInk(), {"sheet.pdf": pdf}, tmp_path,
+                          monkeypatch)
+    out = _annotate(tools, "sheet.pdf", [
+        {"kind": "box", "page": 0, "comment": "?", "bbox": [700, 50, 760, 90]}])
+    assert "612 x 792 pt page" in out["error"]
+    assert "PDF points" in out["hint"]
+    out = _annotate(tools, "sheet.pdf", [
+        {"kind": "box", "page": 0, "comment": "notes",
+         "bbox": [70, 58, 200, 76]}], check=False)
+    assert out["n_written"] == 1 and "frame" not in out
+
+
+def test_marks_added_to_a_copy_at_another_scale_are_converted_exactly(
+        tmp_path, monkeypatch):
+    """A copy made before this fix (planlens' page, 0.75 pt a pixel) still
+    takes new marks in the image's pixels: converted to its page, and the
+    result's boxes given back in pixels."""
+    import fitz
+    photo = _photo(fmt="PNG", exif_turn=False)
+    with fitz.open(stream=photo) as img:
+        old = fitz.open("pdf", img.convert_to_pdf())
+    assert round(old[0].rect.width, 2) == 420.0          # 560 px at 0.75
+    old.save(str(tmp_path / "old_marked.pdf"))
+    old.close()
+    engine = SeesInk()
+    tools = _review_tools(engine, {"photo.png": photo}, tmp_path, monkeypatch)
+    out = _annotate(tools, "photo.png", [
+        {"kind": "box", "page": 0, "comment": "confirm", "target": "note 1",
+         "bbox": list(NOTE)}], out_name="old_marked.pdf", append=True)
+    assert "error" not in out, out
+    assert out["appended_to_existing"] is True
+    assert max(abs(out["written"][0]["bbox"][i] - NOTE[i])
+               for i in range(4)) <= 1.5
+    assert "0.75 pt a pixel" in out["frame"]
+    assert out["check"]["confirmed"] == 1
+    size, red = _copy_page(tmp_path / "old_marked.pdf")
+    assert size == (420.0, 540.0)
+    assert max(abs(red[i] - NOTE[i] * 0.75) for i in range(4)) <= 2
+
+
+def _tags(fmt="PNG", exif_turn=False, **save):
+    """A screenshot holding three copies of one tag (a 30 x 24 px E-like
+    glyph), stored landscape with EXIF 6 when ``exif_turn``; returns
+    ``(bytes, the copies' boxes as a viewer shows the image)``."""
+    w, h = 900, 600
+    a = np.full((h, w), 255, np.uint8)
+    spots = [(100, 80), (450, 260), (760, 500)]
+    for x, y in spots:
+        a[y:y + 24, x:x + 3] = 0
+        for dy in (0, 10, 21):
+            a[y + dy:y + dy + 3, x:x + 14] = 0
+        a[y + 6:y + 18, x + 20:x + 30] = 0
+    stored = np.ascontiguousarray(np.rot90(a, k=1)) if exif_turn else a
+    im = Image.fromarray(stored)
+    if exif_turn:
+        exif = im.getexif()
+        exif[0x0112] = 6
+        save["exif"] = exif.tobytes()
+    buf = io.BytesIO()
+    im.save(buf, format=fmt, **save)
+    return buf.getvalue(), [[x, y, x + 30, y + 24] for x, y in spots]
+
+
+class ReadsEveryCell:
+    """Reads every numbered cell of find_like's contact sheets as E9."""
+
+    def __init__(self):
+        self.images = []
+
+    def analyze_image(self, image_bytes, prompt=""):
+        self.images.append(bytes(image_bytes))
+        return "\n".join(f"#{i} | E9 | other" for i in range(1, 21))
+
+
+@pytest.mark.parametrize("fmt, exif_turn, save", [
+    ("PNG", False, {"dpi": (300, 300)}),       # planlens: 0.24 pt a pixel
+    ("PNG", False, {}),                         # planlens: 0.75 pt a pixel
+    ("JPEG", True, {"quality": 95}),            # a photo turned by EXIF
+])
+def test_find_like_on_an_image_works_in_its_own_pixels(fmt, exif_turn, save):
+    pytest.importorskip("planlens.document.findlike")
+    shot, truth = _tags(fmt, exif_turn, **save)
+    name = "tags.png" if fmt == "PNG" else "tags.jpg"
+    out = json.loads(dispatch_extended_tool(
+        "find_like", {"attachment_key": name, "bbox": truth[0],
+                      "text": "E9"}, ReadsEveryCell(), {name: shot}))
+    assert "error" not in out, out
+    assert out["instances"] == 3
+    found = sorted(f["bbox"] for f in out["found"])
+    for got, want in zip(found, sorted(truth)):
+        assert max(abs(got[i] - want[i]) for i in range(4)) <= 2
+    assert _round(out["example"]["bbox"]) == truth[0]
+    assert out["example"]["height_px"] == 24.0
+    assert "height_pt" not in out["example"]
+    assert "900 x 600 px image's own pixels" in out["frame"]
+
+
+def test_find_like_on_an_image_takes_a_view_and_refuses_a_box_off_it():
+    pytest.importorskip("planlens.document.findlike")
+    shot, truth = _tags()
+    view = [0, 0, 900, 600]                      # a whole-image look's view
+    grid = [v / s * 999 for v, s in zip(truth[1], (900, 600, 900, 600))]
+    out = json.loads(dispatch_extended_tool(
+        "find_like", {"attachment_key": "tags.png", "view": view,
+                      "image_box": grid, "text": "E9", "page": 3},
+        ReadsEveryCell(), {"tags.png": shot}))
+    assert out["instances"] == 3 and "not used" in out["page_note"]
+    out = json.loads(dispatch_extended_tool(
+        "find_like", {"attachment_key": "tags.png",
+                      "bbox": [1200, 700, 1230, 724], "text": "E9"},
+        ReadsEveryCell(), {"tags.png": shot}))
+    assert "900 x 600 px image" in out["error"]
+    assert "own pixels" in out["hint"]
+
+
+def test_the_image_frame_is_said_in_the_tools_own_descriptions_only():
+    from funhouse_agent.deep import prompt as deep_prompt
+    from funhouse_agent.deep.minimal_agent import (
+        DESCRIPTIONS as MINIMAL, MARK_UP_DESCRIPTION, MINIMAL_PROMPT)
+    from funhouse_agent.deep.tools import make_vision_tools
+    from funhouse_agent.native_tools import OPENAI_TOOLS
+    find, mark = vision_tools.IMAGE_FIND_NOTE, vision_tools.IMAGE_MARKUP_NOTE
+    tools = {t.name: t for t in make_vision_tools(engine=None)}
+    if "find_like" in tools:
+        assert find in tools["find_like"].description
+    if "annotate_document" in tools:
+        assert mark in tools["annotate_document"].description
+    assert mark in MARK_UP_DESCRIPTION
+    schemas = {t["function"]["name"]: t["function"] for t in OPENAI_TOOLS}
+    assert find in schemas["find_like"]["description"]
+    # the minimal arm no longer says an upload is shown to the model
+    assert "shown to you" not in MINIMAL["analyze_image"]
+    for text in (deep_prompt.DOCUMENT_REVIEW_PROMPT,
+                 deep_prompt.DOCUMENT_REVIEW_PROMPT_LEAN,
+                 deep_prompt.build_domain_prompt(), MINIMAL_PROMPT):
+        assert find not in text and mark not in text
+
+
+def test_the_lean_attachment_note_sends_a_screenshot_to_analyze_image(
+        tmp_path, monkeypatch):
+    from webapp import core
+    monkeypatch.setenv(review_flags.AGENT_ENV, "lean")
+    note = core.attachment_note([
+        core.Attachment(key="pasted_20261014.png",
+                        path=str(tmp_path / "p.png"), size=1),
+        core.Attachment(key="set.pdf", path=str(tmp_path / "s.pdf"), size=1)],
+        review=True)
+    shot_line, pdf_line = note.splitlines()[1:]
+    assert "analyze_image(attachment_key='pasted_20261014.png')" in shot_line
+    assert "open_document" not in shot_line
+    assert "open_document(source='set.pdf')" in pdf_line
+
+
+def test_the_turn_note_names_an_image_zoom_without_a_page(tmp_path):
+    from funhouse_agent import _fileio
+    from webapp import core
+    work = tmp_path / "c" / "files"
+    work.mkdir(parents=True)
+    with _fileio.working_dir_bound(str(work)):
+        _zoom(Reader(), _screenshot(label=None), bbox=list(MARK))
+    note = core.reads_note(str(work))
+    assert "'shot.png' (an image): zoomed on" in note
+    assert "'shot.png' (image) (zoom bbox=[" in note and "] px," in note
+    assert "'shot.png': " not in note and "shot.png' p. 1" not in note

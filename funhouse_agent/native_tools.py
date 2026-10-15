@@ -14,7 +14,7 @@ from funhouse_agent.dispatch import (
     call_agent, describe_method, list_agents, list_methods,
 )
 from funhouse_agent.vision_tools import (
-    IMAGE_LOOK_NOTE, IMAGE_ZOOM_NOTE, TURN_ARG_NOTE,
+    IMAGE_FIND_NOTE, IMAGE_LOOK_NOTE, IMAGE_ZOOM_NOTE, TURN_ARG_NOTE,
 )
 
 # ---------------------------------------------------------------------------
@@ -295,7 +295,7 @@ OPENAI_TOOLS = [
                 "copy is legible, then pass its bbox (PDF points) and the "
                 "text it reads. Every candidate is verified by vision; "
                 "returns instances by page, callouts apart from legend "
-                "entries, and uncertain reads."
+                "entries, and uncertain reads. " + IMAGE_FIND_NOTE
             ),
             "parameters": {
                 "type": "object",
