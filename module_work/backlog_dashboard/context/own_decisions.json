@@ -145,6 +145,7 @@
   "kind": "decision",
   "ask_who": null,
   "question": "How should the remaining ~$35 of promotional API credit be spent before it expires on 2026-11-05?",
+  "multi": true,
   "why": "Unused credit is lost on 2026-11-05. It is the only way to run the app's real turn path with Claude standing in for GPT, so it buys plumbing checks that Funhouse tokens and Foundry runs cannot cover cheaply.",
   "background": "Of the $100 credit, $80 went to smoke testing and $44.59 of that is spent (ledger, 2026-10-09), so about $35 is left; your $20 is reserved for touch-up testing together. Past waves cost $0.55-1.20 on Haiku and $6.46 (10 flows) to $15.00 (14 flows) on Sonnet. Candidates: EV-03, the markup check on Sonnet (under $1) and a Haiku smoke of the next release candidate; more waves after the harness fixes (EV-04); prompt caching (EV-05, not yet on) would cut repeat cost. A cross-family overfitting check and Batch API probes (half price, slow) are listed but not described in any other document. The gpt-5.1 rehearsal wave (EV-01) was dropped on 2026-10-12: testers get GPT-5.6 Sol, which Foundry has already measured at full resolution.",
   "options": [
@@ -237,22 +238,32 @@
   "question": "What counts as a structure for structureCount, and does figureCount include figures in appendices?",
   "why": "Both are scored against your answer keys. The reader got structureCount right on only 3 of 8 reports and tends to over-count; figureCount was wrong on 4 of 8 in an earlier run. Without your definition nobody can tell whether the reader or the rule is wrong.",
   "background": "Both fields come from your standing query schema. The narrative reader answers structureCount from the report text; the only rule is the DRAFT 'count 0 when the report says none'. figureCount is counted in code from figure captions and given to the reader as a fact; the reader answers from the report's own list of figures and any disagreement is recorded. Run 7 (September): figureCount, structureCount and structureList each wrong on 4 of 8. Foundry run 2 (2026-10-07): structureCount 3/8, structureList 3/7 with one invented. RI-08 notes figureCount could come from the page labels instead.",
-  "options": [
+  "parts": [
    {
-    "label": "structureCount = items in structureList",
-    "effect": "The two fields always agree; the definition of a structure lives in structureList (each structure the report gives recommendations for)."
+    "label": "structureCount",
+    "options": [
+     {
+      "label": "Items in structureList",
+      "effect": "The two fields always agree; the definition of a structure lives in structureList (each structure the report gives recommendations for)."
+     },
+     {
+      "label": "Another definition (state it in the notes)",
+      "effect": "For example only new buildings, or every named facility; written as a CONFIRMED rule and applied on the next run."
+     }
+    ]
    },
    {
-    "label": "Another structure definition (state it)",
-    "effect": "For example only new buildings, or every named facility; written as a CONFIRMED rule and applied on the next run."
-   },
-   {
-    "label": "figureCount includes appendix figures",
-    "effect": "Counts every captioned figure, main body and appendices alike."
-   },
-   {
-    "label": "figureCount: main-body figures only",
-    "effect": "Counts the figures in the report's own list of figures; appendix plates and logs are left out."
+    "label": "figureCount",
+    "options": [
+     {
+      "label": "Includes appendix figures",
+      "effect": "Counts every captioned figure, main body and appendices alike."
+     },
+     {
+      "label": "Main-body figures only",
+      "effect": "Counts the figures in the report's own list of figures; appendix plates and logs are left out."
+     }
+    ]
    }
   ],
   "recommendation": "Tell us the rule you used when writing the answer keys; matching it is the point. If you had none, option 1 keeps the two structure fields consistent.",
@@ -601,6 +612,7 @@
   "kind": "decision",
   "ask_who": null,
   "question": "Add opt-in switches so three modules can match published examples, or keep the current defensible defaults?",
+  "multi": true,
   "why": "Three validation cases differ from published examples by convention, not error. Anyone comparing the app with those references will see the gaps, up to 2x on drilled-shaft base resistance, and may distrust the module unless the basis is stated or selectable.",
   "background": "(1) V-008b drilled shaft: the module applies GEC-10's large-diameter base reduction (1.27/Db, a factor of 0.521 in the example); the example does not, so base resistance can differ up to 2x. The module is conservative. (2) V-021 bearing capacity: compute() is 17.6 % above the GEC-6 example because it applies Vesic depth factors (dq 1.10-1.20; the example uses 1.0) and its water-table model gives no reduction; the example's closed form is matched to 4 figures when assembled its way. The module is less conservative here. (3) V-002 driven pile: Tomlinson alpha about 0.42 in stiff clay (su about 1.9 ksf) vs 0.76 in the example; shaft 18-22 % low, conservative.",
   "options": [
@@ -783,6 +795,7 @@
   "kind": "decision",
   "ask_who": null,
   "question": "The public app repo's field-feedback folder names include place names: make the repo private, or scrub the names?",
+  "multi": true,
   "why": "Three of the seven tracked field-feedback folders are named after a project's location, and those names also appear in at least 22 tracked files and at least 12 commit messages. Anyone browsing the public GitHub repo can see where the office works.",
   "background": "Flagged 2026-09-16 (REPORT_INGEST_PLAN item 8): CLAUDE.md then called the repo private, but GitHub reports it public, as are planlens and geotech-references. Newer field sessions keep client material in gitignored raw/ folders and use IDs, so new work is clean. Scrubbing renames the folders and edits current files, but old commits keep the names unless history is rewritten and force-pushed. Going private hides everything at once; PyPI releases and the Nexus install path do not depend on GitHub. Costs of private: reviewers need invitations (a Department reviewer has read the public repo, LT-03) and GitHub Actions minutes become limited.",
   "options": [

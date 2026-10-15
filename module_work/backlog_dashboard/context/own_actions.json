@@ -352,18 +352,36 @@
   "question": "Send or drop the drafted Funhouse admin note about September's one-off 401, and report that their pricing table may price funhouse-* models at $0?",
   "why": "The 401 note asks the admins to check a gateway setting behind one failed model call on 2026-09-09; no recurrence is on record, and Funhouse is now the backup host. The pricing gap matters more: usage priced at $0.00 under-reports spend against the budget.",
   "background": "The draft (ADMIN_NOTE.md in the 2026-09-09 field-feedback folder) asks two things: whether the SDK supports key-based Prompter sign-in, and whether the proxy's IIS read-ahead limit is at its default. A second call on the same credentials succeeded seconds later. The app still has no sign-in-specific message or retry on that path (TA-01 covers the Tiny Apps side). Pricing: Funhouse's pricing table matches model names exactly and lists no funhouse-* aliases, so app usage may be metered at $0.00. The metering check (OWN-36) shows whether that actually happens.",
-  "options": [
+  "parts": [
    {
-    "label": "Drop 401 note; pricing after OWN-36",
-    "effect": "No admin time on a month-old one-off. If OWN-36 shows rows at $0.00, send the admins a two-line note naming the exact model strings."
+    "label": "The 401 note",
+    "options": [
+     {
+      "label": "Drop it unless the 401 recurs",
+      "effect": "No admin time on a month-old one-off."
+     },
+     {
+      "label": "Send it now",
+      "effect": "The admins check a month-old gateway log for one failed call."
+     }
+    ]
    },
    {
-    "label": "Send both now",
-    "effect": "The admins check a month-old gateway log, and hear about pricing before we have seen a $0.00 row ourselves."
-   },
-   {
-    "label": "Drop both",
-    "effect": "No admin contact. If the pricing gap is real, Funhouse under-reports this app's spend."
+    "label": "The pricing note",
+    "options": [
+     {
+      "label": "Send it if OWN-36 shows $0.00 rows",
+      "effect": "A two-line note naming the exact model strings, once we have seen a $0.00 row ourselves."
+     },
+     {
+      "label": "Send it now",
+      "effect": "The admins hear about pricing before we have seen a $0.00 row."
+     },
+     {
+      "label": "Drop it",
+      "effect": "If the pricing gap is real, Funhouse under-reports this app's spend."
+     }
+    ]
    }
   ],
   "recommendation": "Drop the 401 note unless it recurs. Run OWN-36 first; if it shows $0.00 rows, send the admins a short pricing note with the exact model names.",
@@ -663,6 +681,7 @@
   "kind": "decision",
   "ask_who": null,
   "question": "Purge Department addresses from the public app repo's git history, or accept that old commits keep them?",
+  "multi": true,
   "why": "Your rule is no Department emails or hostnames in the public repos. The current files are clean (24b46df), but older commits on GitHub still show them, including your own work address.",
   "background": "Found 2026-10-12: your work address in a metering diagnosis note, the CfA support mailboxes, the Department SharePoint host and team-site name, the published-app domains in the Tiny Apps run.sh, and a service-account domain in tests. A purge means rewriting the app repo's history and force-pushing; clones and forks keep their copies. Files already on PyPI cannot be changed; what they carry is OWN-57. planlens and the references repo are clean.",
   "options": [

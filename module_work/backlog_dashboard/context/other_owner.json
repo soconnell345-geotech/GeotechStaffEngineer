@@ -188,12 +188,14 @@
     "question": "Which sheet-pile and support-of-excavation options to add: a soldier-pile mode, a balanced-water input, a cited basis for braced bottom-span load?",
     "why": "Three published cases need workarounds or fall outside the module. Your rule is that where references give several methods, the module offers them as cited options rather than one silent basis.",
     "background": "Soldier piles (V-012, Caltrans): active pressure on the 2-ft hole, passive on an arching width 0.08·φ·b = 5.6 ft, and a simplified toe-moment cubic; published D 14.73 ft, Mmax 379.7 kip-ft. The module's continuous per-metre solver cannot do this; scope is OWN-21. Braced walls: the bottom span's load goes wholly to the lowest support (conservative for that support); the free-earth load from below is already reported alongside. Balanced water (Das waterfront bulkhead): matched D within 3.3 % and anchor force within 3 % only by entering the effective unit weight by hand, an undocumented workaround.",
+    "multi": true,
     "options": [
-      {"label": "Braced-load option plus balanced water", "effect": "Small: expose the bottom-span basis (tributary or free-earth) as a named, cited choice with both results, and add a balanced-water input. Soldier piles wait on OWN-21."},
-      {"label": "All three, including soldier piles", "effect": "Adds the Caltrans simplified soldier-pile method pinned to V-012. Larger; worth it only if soldier-pile excavation support is in scope."},
+      {"label": "Braced walls: the bottom-span basis as a cited choice", "effect": "Small: tributary or free-earth load on the lowest support, named and cited, with both results shown."},
+      {"label": "A balanced-water input", "effect": "Small: water on both sides of the wall entered directly, instead of the effective unit weight typed in by hand."},
+      {"label": "A soldier-pile mode", "effect": "Larger: the Caltrans simplified soldier-pile method, pinned to V-012. Worth it only if soldier-pile excavation support is in scope (OWN-21)."},
       {"label": "None for now", "effect": "Keep the water workaround documented; current results stand, conservative on the lowest braced support."}
     ],
-    "recommendation": "Braced-load option plus balanced water in the next module train; decide soldier piles with OWN-21.",
+    "recommendation": "The first two in the next module train; decide soldier piles with OWN-21.",
     "if_no_answer": "Stays Later; braced support loads stay conservative and the water workaround stays manual.",
     "message_to_send": null,
     "steps": null,
@@ -421,6 +423,7 @@
     "kind": "decision",
     "ask_who": null,
     "question": "Is your private reference wiki ready to connect as a retrieval layer for the agents, or does it stay parked?",
+    "multi": true,
     "why": "You parked this on 2026-07-13 because the wiki needed more work. It would let agents cite primary sources not in the public library, but that library is private and largely copyrighted, so it cannot ride in the public repo or wheel.",
     "background": "The wiki (an index of about 7,300 records over roughly 8,000 PDFs) was used once already, in July, for a verification campaign: it found 2 real defects (the lateral-pile cyclic sand tables and the rapid-drawdown Kf) and confirmed 6 items against primary sources with no discrepancy. The plan was a retrieval layer beside geotech-references, upgrading audit items to primary-source-backed. Open: where it would live so the cluster or Tiny Apps could reach it, and what licence terms allow.",
     "options": [

@@ -407,11 +407,20 @@ function cardBody(i) {
   const cur = draft || r;
   const st = cur.status || "open";
   const opts = c.options || [];
+  // A card asks one question (options; "multi" = tick any that apply) or
+  // several ("parts", each with its own options and its own answer).
+  const parts = c.parts && c.parts.length ? c.parts
+    : (opts.length ? [{ label: "", options: opts, multi: !!c.multi }] : []);
+  const picked = partPicks(cur, parts);
   const left = [];
   if (!c.question) left.push(`<p class="small">No card written for this item yet; the backlog line is below.</p>`);
   if (c.why) left.push(`<h3>Why it matters</h3><p>${md(c.why)}</p>`);
   if (c.background) left.push(`<h3>Background</h3><p>${md(c.background)}</p>`);
-  if (opts.length) left.push(`<h3>Options</h3><div class="opts">${opts.map(o => `<div class="opt"><b>${md(o.label)}</b><span>${md(o.effect)}</span></div>`).join("")}</div>`);
+  parts.forEach(p => {
+    const head = p.label ? `Options: ${md(p.label)}` : "Options";
+    const note = p.multi ? ` <span class="small">(tick any that apply)</span>` : "";
+    left.push(`<h3>${head}${note}</h3><div class="opts">${p.options.map(o => `<div class="opt"><b>${md(o.label)}</b><span>${md(o.effect || "")}</span></div>`).join("")}</div>`);
+  });
   if (c.recommendation) left.push(`<div class="rec"><b>Claude recommends:</b> ${md(c.recommendation)}</div>`);
   if (c.steps && c.steps.length) left.push(`<h3>Steps</h3><ol class="steps">${c.steps.map(s => `<li>${md(s)}</li>`).join("")}</ol>`);
   if (c.message_to_send) left.push(`<h3>Message you can send${c.ask_who ? " to " + esc(c.ask_who) : ""}</h3><pre class="msg" id="msg-${i.id}">${esc(c.message_to_send)}</pre><div class="row" style="margin-bottom:12px"><button class="btn ghost" type="button" data-copy="${i.id}">Copy message</button><span class="savestate" id="copy-${i.id}"></span></div>`);
@@ -425,7 +434,12 @@ function cardBody(i) {
     <form class="answer" data-form="${i.id}" autocomplete="off">
       <h3>Your answer</h3>
       <div class="statuses" role="radiogroup" aria-label="Status">${STATUSES.map(([v, l]) => `<label><input type="radio" name="st-${i.id}" value="${v}" ${st === v ? "checked" : ""}> ${l}</label>`).join("")}</div>
-      ${opts.length ? `<div class="choices" role="radiogroup" aria-label="Choice"><span class="flabel">Your choice</span>${opts.map((o, k) => `<label><input type="radio" name="ch-${i.id}" value="${esc(o.label)}" ${cur.choice === o.label ? "checked" : ""}> ${esc(o.label)}</label>`).join("")}<label><input type="radio" name="ch-${i.id}" value="Other (see notes)" ${cur.choice === "Other (see notes)" ? "checked" : ""}> Other (see notes)</label></div>` : ""}
+      ${parts.map((p, k) => {
+        const type = p.multi ? "checkbox" : "radio";
+        const title = (p.label ? esc(p.label) : "Your choice") + (p.multi ? " (any that apply)" : "");
+        const box = lab => `<label><input type="${type}" name="ch-${i.id}-${k}" value="${esc(lab)}" ${picked[k].includes(lab) ? "checked" : ""}> ${esc(lab)}</label>`;
+        return `<div class="choices" role="${p.multi ? "group" : "radiogroup"}" aria-label="${title}"><span class="flabel">${title}</span>${p.options.map(o => box(o.label)).join("")}${box("Other (see notes)")}</div>`;
+      }).join("")}
       <label class="flabel" for="notes-${i.id}">Notes, answer or what they said</label>
       <textarea id="notes-${i.id}" name="notes" placeholder="${c.kind === "ask" ? "Paste their reply, or note when you asked." : "Your decision and any conditions."}">${esc(cur.notes || "")}</textarea>
       <div class="row"><button class="btn" type="submit" ${canSave ? "" : "disabled"}>Save answer</button><span class="savestate" id="save-${i.id}">${esc(savedLine)}</span></div>
@@ -566,11 +580,33 @@ function rerenderKeepingFocus(id) {
   }, 180);
 }
 
+/* The answer's ticks, part by part: from "parts" (several questions), from
+   "choices" (one question, several ticks) or from the plain "choice" string
+   older answers carry. */
+function partPicks(cur, parts) {
+  return parts.map(p => {
+    if (cur.parts && p.label) return (cur.parts[p.label] || []).slice();
+    if (parts.length === 1 && Array.isArray(cur.choices)) return cur.choices.slice();
+    return parts.length === 1 && cur.choice ? [cur.choice] : [];
+  });
+}
 function readForm(form) {
   const id = form.dataset.form;
   const st = form.querySelector(`input[name="st-${id}"]:checked`);
-  const ch = form.querySelector(`input[name="ch-${id}"]:checked`);
-  return { status: st ? st.value : "open", choice: ch ? ch.value : "", notes: form.querySelector("textarea").value.trim() };
+  const c = cards[id] || {};
+  const groups = [...form.querySelectorAll(".choices")];
+  const ticks = groups.map((g, k) => [...g.querySelectorAll(`input[name="ch-${id}-${k}"]:checked`)].map(x => x.value));
+  const out = { status: st ? st.value : "open", notes: form.querySelector("textarea").value.trim() };
+  if (c.parts && c.parts.length) {
+    // one answer per part; "choice" keeps a readable line for the closed list
+    out.parts = {};
+    c.parts.forEach((p, k) => { out.parts[p.label] = ticks[k] || []; });
+    out.choice = c.parts.map((p, k) => (ticks[k] || []).length ? `${p.label}: ${ticks[k].join("; ")}` : "").filter(Boolean).join(" | ");
+  } else {
+    out.choices = ticks[0] || [];
+    out.choice = out.choices.join("; ");
+  }
+  return out;
 }
 function saveDraft(form) {
   const id = form.dataset.form;

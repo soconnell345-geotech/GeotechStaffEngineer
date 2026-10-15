@@ -16,7 +16,7 @@ Open work lives in `BACKLOG.md`. This page only displays it and collects the own
 
 - `build.py` reads `../../BACKLOG.md` and `context/*.json`, and writes `out/backlog_desk.html` (gitignored).
 - `template.html` is the page: its styles and script.
-- `context/*.json` holds one card per `[owner]` item, keyed by backlog ID: `kind`, `ask_who`, `question`, `why`, `background`, `options`, `recommendation`, `if_no_answer`, `message_to_send`, `steps`, `unblocks`, `sources`.
+- `context/*.json` holds one card per `[owner]` item, keyed by backlog ID: `kind`, `ask_who`, `question`, `why`, `background`, `options`, `recommendation`, `if_no_answer`, `message_to_send`, `steps`, `unblocks`, `sources`. Two optional keys (owner, 2026-10-15: "you need to allow for multiple answers on some of these"): `multi: true` turns the options into tick-boxes (any that apply), and `parts: [{label, options, multi}]` in place of `options` gives a card several questions, each with its own answer (OWN-08: structureCount and figureCount).
   - The repo is PUBLIC. Cards hold no client or project names, hostnames, emails or report content.
   - Every `[owner]` item needs a card; `webapp/tests/test_backlog.py` checks this.
 
@@ -32,7 +32,7 @@ Omit `capabilities` on a republish so the stored `{db, user}` declaration carrie
 
 ## Reading the owner's answers (start of every session)
 
-Answers are documents in the collection `responses`, with doc id = backlog ID. Each holds `status`, `choice`, `notes` and `updatedAt`, plus a copy of the `tier` and `question`.
+Answers are documents in the collection `responses`, with doc id = backlog ID. Each holds `status`, `choice`, `notes` and `updatedAt`, plus a copy of the `tier` and `question`. `choice` is always a readable line: one option; several ticks joined with "; " (the list itself in `choices`); or, on a card with `parts`, "label: ticks | label: ticks" (the answers themselves in `parts`, a map from each part's label to its ticks). Rows saved before 2026-10-15 have `choice` only.
 - Status is one of `open`, `waiting`, `answered`, `deferred` or `wontdo`.
 
 Read them with the `ArtifactData` tool: `action: "list"`, `collection: "responses"`. Then, for each answer not yet folded in:
