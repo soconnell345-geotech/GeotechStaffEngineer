@@ -62,7 +62,7 @@ CfA says the SharePoint connection and the per-user Prompter keys are a few week
 
 ### Decisions
 
-- **OWN-05** [Next] [owner] **Pick uses for the promo API credit before it expires 2026-11-05** (about $29 left of the $80 after waves w4–w6 on 2026-10-14/15; $20 reserved for touch-up together): EV-03, waves after EV-04/EV-05, a cross-family overfitting check, Batch API probes. *was:* H 0, 3c
+- **OWN-05** [Next] [owner] **Pick uses for the promo API credit before it expires 2026-11-05** (about $27.58 left of the $80 after waves w4–w7b on 2026-10-14/15; $20 reserved for touch-up together): EV-03, waves after EV-04/EV-05, a cross-family overfitting check, Batch API probes. *was:* H 0, 3c
 - **OWN-06** [Next] [owner] **Decide the OFF review switches** (table in §2): measure, flip or retire each. The M1 exit step "flip winning switches to defaults" never ran. *Src:* RA:206-213; *was:* H C10, 8a(vii)
 - **OWN-07** [Next] [owner] **The seven DRAFT narrative conventions** in `report_ingest/narrative_glossary.py`. *was:* H B4
 - **OWN-08** [Next] [owner] **Define `structureCount`; does `figureCount` include appendix figures?** *was:* H B5
