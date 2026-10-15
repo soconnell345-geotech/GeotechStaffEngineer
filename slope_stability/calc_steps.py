@@ -39,6 +39,7 @@ from calc_package.data_model import (
     InputItem, CalcStep, CheckItem, FigureData, CalcSection, TableData,
 )
 from calc_package.renderer import figure_to_base64
+from slope_stability.results import fos_text
 
 DISPLAY_NAME = "Slope Stability Analysis"
 
@@ -157,6 +158,15 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     sections.append(_slip_surface_section(result))
     sections.append(_method_section(result, analysis))
 
+    surface_warnings = list(getattr(result, "warnings", None) or [])
+    if surface_warnings:
+        # What the engineer must check on this surface (GM-81)
+        sections.append(CalcSection(title="Warnings", items=[TableData(
+            title="Warnings on the Analyzed Surface",
+            headers=["What the engineer must check"],
+            rows=[[w] for w in surface_warnings],
+        )]))
+
     reinf = _reinforcement_section(result, geom)
     if reinf is not None:
         sections.append(reinf)
@@ -178,6 +188,12 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
 
     # Stability check
     FOS_required = analysis.get("FOS_required", 1.5)
+    if result.FOS is None:
+        sections.append(CalcSection(title="Stability Check", items=[
+            f"No stability check: {result.method} finds no equilibrium "
+            f"solution on this surface, so there is no factor of safety to "
+            f"set against FOS_required = {FOS_required:g} (see Warnings)."]))
+        return sections
     sections.append(CalcSection(title="Stability Check", items=[
         CheckItem(
             description="Slope stability adequacy",
@@ -363,11 +379,12 @@ def _method_section(result, analysis) -> CalcSection:
             ),
             substitution="",
             result_name="FOS",
-            result_value=f"{result.FOS:.3f}",
+            result_value=fos_text(result.FOS),
             reference="Spencer (1967)",
-            notes="Solved with the rigorous GLE engine (interslice "
-                  "force distribution and line of thrust reported "
-                  "below).",
+            notes=_rigorous_note(
+                result, "Solved with the rigorous GLE engine (interslice "
+                        "force distribution and line of thrust reported "
+                        "below)."),
         ))
         if result.theta_spencer is not None:
             items.append(CalcStep(
@@ -391,10 +408,11 @@ def _method_section(result, analysis) -> CalcSection:
             ),
             substitution="",
             result_name="FOS",
-            result_value=f"{result.FOS:.3f}",
+            result_value=fos_text(result.FOS),
             reference="Morgenstern & Price (1965)",
-            notes="Complete equilibrium: both force and moment "
-                  "equations satisfied at the reported λ.",
+            notes=_rigorous_note(
+                result, "Complete equilibrium: both force and moment "
+                        "equations satisfied at the reported λ."),
         ))
         if result.lambda_mp is not None:
             items.append(CalcStep(
@@ -448,6 +466,18 @@ def _method_section(result, analysis) -> CalcSection:
 
     return CalcSection(title="Analysis Method & Factor of Safety",
                        items=items)
+
+
+def _rigorous_note(result, solved_note: str) -> str:
+    """The Spencer / M-P step's note: the solved one, or what stands in
+    when the method has no equilibrium solution on the surface (GM-81)."""
+    if getattr(result, "method_solved", True):
+        return solved_note
+    if result.FOS is None:
+        return ("No equilibrium solution on this surface, so no factor of "
+                "safety (see Warnings).")
+    return (f"No converged rigorous GLE solution on this surface: the value "
+            f"shown is the {result.produced_by}'s (see Warnings).")
 
 
 def _reinforcement_section(result, geom):
@@ -532,16 +562,27 @@ def _comparison_section(result, analysis):
               if result.janbu_f0 else "")
         rows.append(["Janbu simplified (corrected)",
                      f"{result.FOS_janbu:.3f}", f0])
+    unsolved = getattr(result, "methods_without_solution", None) or []
+
+    def _legacy(name, det):
+        # No converged rigorous solution: the legacy solver's value (GM-81)
+        if name not in unsolved:
+            return det
+        return (det + "; " if det else "") + \
+            "legacy approximate solver, no converged solution"
+
     if result.FOS_spencer is not None:
         det = (f"θ = {result.theta_spencer:.2f} deg"
                if result.theta_spencer is not None else "")
-        rows.append(["Spencer", f"{result.FOS_spencer:.3f}", det])
+        rows.append(["Spencer", f"{result.FOS_spencer:.3f}",
+                     _legacy("Spencer", det)])
     if result.FOS_morgenstern_price is not None:
         det = (f"λ = {result.lambda_mp:.3f}"
                if result.lambda_mp is not None else "")
         f_name = analysis.get("f_interslice", "half_sine")
         rows.append([f"Morgenstern-Price ({f_name})",
-                     f"{result.FOS_morgenstern_price:.3f}", det])
+                     f"{result.FOS_morgenstern_price:.3f}",
+                     _legacy("Morgenstern-Price", det)])
 
     if len(rows) < 2:
         return None
@@ -603,6 +644,10 @@ def _slice_table_section(result) -> CalcSection:
     if has_interslice:
         note += (" N', S_mob, E and X from the converged rigorous GLE "
                  "state. (tc) = slice in tension crack zone.")
+    elif not getattr(result, "method_solved", True):
+        note += (" N' and S_mob from the Fellenius decomposition "
+                 "(the method has no converged solution on this surface). "
+                 "(tc) = slice in tension crack zone.")
     else:
         note += (" N' and S_mob from the Fellenius decomposition "
                  "(method does not resolve interslice forces). "
@@ -877,7 +922,7 @@ def get_figures(result, analysis) -> List[FigureData]:
                                            fos_required=fos_req),
          "Slope Cross-Section",
          f"Slope cross-section with analyzed slip surface. "
-         f"FOS = {result.FOS:.3f} ({result.method} method). "
+         f"FOS = {fos_text(result.FOS)} ({result.method} method). "
          f"Entry x = {result.x_entry:.1f} m, "
          f"exit x = {result.x_exit:.1f} m.")
 

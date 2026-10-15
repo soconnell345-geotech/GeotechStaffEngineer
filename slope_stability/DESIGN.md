@@ -204,7 +204,7 @@ Unreinforced geometry: nothing is resolved and every solve is unchanged.
   (Slide2 #85, Spencer: 0.86 against Bishop 1.26 on the same circle), so for a
   reinforced circle `_compute_fos` requires the GLE to converge
   (`_reinforced_rigorous_fos`) and otherwise rejects the surface. Single-surface
-  `analyze_slope` keeps its fallback and warning.
+  `analyze_slope` now reports no FOS there (GM-81, below).
 - **Measured** (Slide2 verification manual; Duncan & Wright 2005):
   - #86 (five 800 lb/ft tiebacks, "global failure" windows entry 0-4 ft, exit
     30-75 ft): Bishop 1.612 / Spencer 1.606 / GLE 1.606 against Slide2 1.629 /
@@ -362,6 +362,56 @@ lagged state on the circle (15, 39.667, R 29.661), reported as converged,
 missed a slice's horizontal equilibrium by up to 199 lb/ft. Runtime of the
 #85 default searches (once each, shared laptop): Spencer 40 -> 37 s, GLE
 62 -> 32 s; #86 unchanged (Bishop 1.612, Spencer 1.606, GLE 1.606).
+
+### A single surface: warnings, and no silent fallback (GM-81, 2026-10-15)
+`analyze_slope` results (`SlopeStabilityResult`) now carry what the searches
+said only about their governing surface, and say when the method asked for
+has no solution:
+
+- **`warnings`** (in `to_dict()` when there are any, `summary()`, the calc
+  package's "Warnings" section): a reverse-curvature circle closed by a
+  crack, with its depth (the text the search gives its critical circle,
+  `search_supplements._reverse_curvature_warning`; with
+  `reverse_curvature='discard'` the given circle is still evaluated and
+  the note says so); supports crossing a Bishop / OMS circle with a short
+  arm, with Spencer's FOS on the circle or that it has none
+  (`_support_arm_warning`); a rigorous method with no solution; Bishop
+  asked for on a noncircular surface (analysed with Spencer, as before).
+- **`method_solved`** False when Spencer / Morgenstern-Price / GLE finds no
+  equilibrium solution on the surface (the GLE does not converge; the
+  reason, e.g. "no lambda from -1.5 to 1.5 gives moment and force factors
+  of safety that agree", is in the warning). **`method_used`** names what
+  produced `FOS`: the method itself, the "legacy approximate ... solver",
+  or None. **`methods_without_solution`** lists the rigorous FOS fields
+  (headline or `compare_methods`) that hold no converged solution.
+- **What `FOS` holds when there is no solution** (decided here):
+  - *Supports cross the surface: `FOS` is None* (to_dict null,
+    `is_stable` None; the calc package prints no stability check). The
+    legacy approximate solver ignores supports, so its value is that of
+    the slope WITHOUT them: on #85's anchored toe circle 0.891 for a
+    surface Bishop puts at 1.304. Before GM-81 that number came back as
+    the Spencer FOS with only a Python warning. It is not returned at all.
+  - *No support crosses it: `FOS` is the legacy approximate solver's
+    value, labelled* (`method_solved` False, `method_used`, the warning
+    giving theta or lambda). That solver answers the same slope; on a
+    phi = 0 circle with theta = 0 it gives Bishop's value, which every
+    method satisfying moment equilibrium gives there. Values are unchanged
+    from before: `methods.solve_rigorous` makes the same solves as
+    `spencer_fos` / `morgenstern_price_fos`.
+  The same rule applies to the `compare_methods` Spencer / M-P values.
+- **Searches** never consume `analyze_slope`; they score with
+  `search._compute_fos`, which rejects a reinforced circle and any
+  noncircular surface with no GLE solution (GM-53, SS-6) and passes over
+  such toe circles in the rigorous re-scoring (GM-60). A circle no support
+  crosses is still scored by the legacy solver when the GLE fails (#85
+  without its support: every circle, see below), so when the governing
+  circle is one of those the search labels it
+  (`_legacy_critical_warning`: `critical.method_solved` False, a warning).
+- **Found on the way.** Without supports the GLE keeps the old lambda
+  search (GM-60 made only the supported one robust), and on #85's clay
+  without its support it finds no solution on any circle tried (a 6 x 6
+  Spencer search called the legacy solver 415 times); the legacy value is
+  Bishop's there. Not changed here.
 
 ## Critical Sign Conventions
 - **Driving moment**: uses `W*(x_mid - xc)/R` + `abs(driving)`, NOT `W*sin(alpha)`

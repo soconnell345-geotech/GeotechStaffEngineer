@@ -55,6 +55,12 @@ def _fos_color(fos, vmin, vmax):
     return f'rgb({r},{g},40)'
 
 
+def _fos_str(fos):
+    """An LE factor of safety for a label; None when the method found no
+    equilibrium solution on the surface (slope_stability GM-81)."""
+    return "no solution" if fos is None else f"{fos:.3f}"
+
+
 def slope_interactive_figure(result, geom, search=None):
     """Build the interactive LE figure (plotly Figure).
 
@@ -166,7 +172,7 @@ def slope_interactive_figure(result, geom, search=None):
             np.maximum(result.radius**2 - dx**2, 0.0))
     fig.add_trace(go.Scatter(
         x=cx, y=cz, mode='lines',
-        name=f'Slip surface (FOS = {result.FOS:.3f})',
+        name=f'Slip surface (FOS = {_fos_str(result.FOS)})',
         line=dict(color='#cc0000', width=3.5),
         hovertemplate='x = %{x:.2f} m<br>z = %{y:.2f} m'
                       '<extra>Slip surface</extra>'))
@@ -232,7 +238,7 @@ def slope_interactive_figure(result, geom, search=None):
     fig.update_layout(
         title=dict(
             text=f"Slope Stability — {result.method}, "
-                 f"FOS = {result.FOS:.3f}",
+                 f"FOS = {_fos_str(result.FOS)}",
             font=dict(size=16)),
         xaxis=dict(title='Distance (m)'),
         yaxis=dict(title='Elevation (m)', scaleanchor='x',

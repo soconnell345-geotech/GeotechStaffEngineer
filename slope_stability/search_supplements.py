@@ -608,24 +608,34 @@ def _attach_reinforcement(geom, crit) -> None:
         for f in (forces or [])] or None
 
 
-def _reverse_curvature_warning(geom, crit) -> Optional[str]:
-    """Say so when the governing circle is a reverse-curvature surface
-    closed by a crack (``CircularSlipSurface.reverse_curvature_crack``)."""
+def _reverse_curvature_warning(geom, crit, in_search: bool = True
+                               ) -> Optional[str]:
+    """Say so when the governing circle (``in_search``) or the circle given
+    to ``analyze_slope`` is a reverse-curvature surface closed by a crack
+    (``CircularSlipSurface.reverse_curvature_crack``)."""
     if crit is None or not crit.is_circular or crit.radius <= 0:
         return None
     crack = CircularSlipSurface(crit.xc, crit.yc, crit.radius) \
         .reverse_curvature_crack(geom, crit.x_entry, crit.x_exit)
     if crack is None:
         return None
-    return (f"The critical circle's centre (z = {crit.yc:.2f}) lies below the "
+    if in_search:
+        whose = "The critical circle's"
+        other = ("reverse_curvature='discard' drops such circles from the "
+                 "search (Slide2's other choice).")
+    else:
+        whose = "The circle's"
+        other = ("Slide2's other choice is to discard such circles: "
+                 "reverse_curvature='discard' does so in a search; a circle "
+                 "given to analyze_slope is evaluated either way.")
+    return (f"{whose} centre (z = {crit.yc:.2f}) lies below the "
             f"ground where the circle ends (x = {crack['x']:.2f}, ground "
             f"z = {crack['z_ground']:.2f}): the circle would turn back above "
             f"its own centre there, so the surface is closed by a vertical, "
             f"dry crack {crack['depth']:.2f} m deep that carries no shear. "
             f"Slide2 calls this a reverse-curvature surface and closes it the "
             f"same way by default; its factor of safety depends on that crack "
-            f"being able to open. reverse_curvature='discard' drops such "
-            f"circles from the search (Slide2's other choice).")
+            f"being able to open. {other}")
 
 
 # Below this share of their force acting through the moment about the centre
@@ -636,7 +646,8 @@ _SHORT_ARM_SHARE = 0.5
 
 
 def _support_arm_warning(geom, crit, method: str, n_slices: int,
-                         tol: float) -> Optional[str]:
+                         tol: float, spencer_fn=None,
+                         in_search: bool = True) -> Optional[str]:
     """Warn when supports cross a Bishop / Fellenius critical circle close
     to the level of its centre, so the method counts little of them.
 
@@ -646,7 +657,11 @@ def _support_arm_warning(geom, crit, method: str, n_slices: int,
     through its moment about the centre (its component along the slip
     surface times R) and its vertical component. The warning gives the
     share counted and what Spencer, which satisfies all three, finds on the
-    same circle."""
+    same circle.
+
+    ``spencer_fn`` (``analyze_slope``, ``in_search=False``) gives Spencer's
+    FOS on the circle, or None for no solution; by default the search's own
+    `_compute_fos` scores it."""
     if (crit is None or not crit.is_circular
             or method not in ("bishop", "fellenius")):
         return None
@@ -674,7 +689,11 @@ def _support_arm_warning(geom, crit, method: str, n_slices: int,
     if share >= _SHORT_ARM_SHARE:
         return None
     arm = m_sum / t_sum
-    spencer = _compute_fos(geom, slip, "spencer", n_slices, tol=tol)
+    if spencer_fn is None:
+        spencer = _compute_fos(geom, slip, "spencer", n_slices, tol=tol)
+    else:
+        spencer = spencer_fn()
+        spencer = _FOS_MAX if spencer is None else spencer
     if spencer < _FOS_MAX:
         rigorous = (f"Spencer's method, which satisfies all three, gives "
                     f"{spencer:.3f} on this circle")
@@ -684,14 +703,55 @@ def _support_arm_warning(geom, crit, method: str, n_slices: int,
                     "moment and force factors of safety that agree)")
     name = "Bishop's simplified method" if method == "bishop" else \
         "The Ordinary Method of Slices"
+    which = "the critical circle" if in_search else "this circle"
     return (f"{name} counts a support through its moment about the circle "
             f"centre (and its vertical component), not through horizontal "
             f"force equilibrium, which it does not satisfy (Wright & Duncan "
-            f"1991). The {len(forces)} support(s) crossing the critical "
-            f"circle ({t_sum:.1f} kN/m) act with an average arm of "
+            f"1991). The {len(forces)} support(s) crossing {which} "
+            f"({t_sum:.1f} kN/m) act with an average arm of "
             f"{arm:.2f} m about its centre on a {slip.radius:.2f} m radius: "
             f"{100 * share:.0f} % of their force counts. {rigorous}. Check "
             f"the slope with method='spencer' or 'gle'.")
+
+
+def _legacy_critical_warning(geom, crit, method: str, n_slices: int,
+                             tol: float) -> Optional[str]:
+    """Label a critical circle a rigorous search scored with the legacy
+    approximate solver (GM-81).
+
+    `_compute_fos` requires the GLE to converge on a noncircular surface
+    and on a circle supports cross, and rejects the surface otherwise; on
+    a circle no support crosses it takes `spencer_fos` /
+    `morgenstern_price_fos`, which fall back to the legacy approximate
+    solver. When the governing circle is one of those, its result says so
+    (``method_solved`` False, ``method_used``) and so does the search."""
+    if crit is None or not crit.is_circular or method not in _SCREENED_METHODS:
+        return None
+    from slope_stability.search import trial_reinforcement
+    from slope_stability.slices import build_slices
+    from slope_stability.methods import solve_rigorous
+    slip = CircularSlipSurface(crit.xc, crit.yc, crit.radius)
+    try:
+        if trial_reinforcement(geom, slip):
+            return None              # the search required convergence
+        slices = build_slices(geom, slip, n_slices)
+    except ValueError:
+        return None
+    spencer = method == "spencer"
+    sol = solve_rigorous(slices, slip, "constant" if spencer else "half_sine",
+                         tol)
+    if sol.solved:
+        return None
+    name = "Spencer" if spencer else "Morgenstern-Price"
+    crit.method_solved = False
+    crit.method_used = f"legacy approximate {name} solver"
+    crit.methods_without_solution = [name]
+    phrase = "Spencer's method" if spencer else "The Morgenstern-Price method"
+    return (f"{phrase} finds no equilibrium solution on the critical circle: "
+            f"{sol.reason}. The search scores a circle no support crosses "
+            f"with the legacy approximate solver when that happens, so the "
+            f"FOS reported, {crit.FOS:.3f}, is that solver's value, not a "
+            f"converged {name} solution.")
 
 
 def _near(a: float, b: float, tol: float) -> bool:
@@ -881,6 +941,10 @@ def apply_supplements(geom: SlopeGeometry,
             warnings_out.append(w)
         if fos_fn is None:
             w = _support_arm_warning(geom, best, method, n_slices, tol)
+            if w:
+                warnings_out.append(w)
+            # A circle scored by the legacy approximate solver (GM-81)
+            w = _legacy_critical_warning(geom, best, method, n_slices, tol)
             if w:
                 warnings_out.append(w)
 

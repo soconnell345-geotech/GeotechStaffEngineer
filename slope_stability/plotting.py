@@ -25,6 +25,8 @@ circular arcs from stored (xc, yc, R) triples.
 import math
 from typing import Optional
 
+from slope_stability.results import fos_text
+
 import numpy as np
 
 # Engineering-report palette (muted earth tones, SLOPE/W-like)
@@ -242,7 +244,7 @@ def plot_cross_section(result, geom, show_slices=True,
     # Slip surface
     sxs, szs = _slip_polyline(result, geom)
     ax.plot(sxs, szs, '-', color=_CRIT_COLOR, linewidth=2.4, zorder=7,
-            label=f'Slip surface (FOS = {result.FOS:.3f})')
+            label=f'Slip surface (FOS = {fos_text(result.FOS)})')
 
     # entry/exit markers
     for x_pt, mk, lbl in ((result.x_entry, 'v', 'Entry'),
@@ -296,14 +298,18 @@ def plot_cross_section(result, geom, show_slices=True,
 
     # FOS annotation box
     req = fos_required if fos_required is not None else 1.5
-    ok = result.FOS >= req
+    ok = result.FOS is not None and result.FOS >= req
     color = '#16a34a' if ok else '#dc2626'
-    lines = [f"FOS = {result.FOS:.3f}  ({result.method})"]
+    lines = [f"FOS = {fos_text(result.FOS)}  ({result.method})"]
     if result.theta_spencer is not None:
         lines.append(f"theta = {result.theta_spencer:.1f} deg")
     if result.lambda_mp is not None:
         lines.append(f"lambda = {result.lambda_mp:.3f}")
-    lines.append(f"[{'STABLE' if ok else 'UNSTABLE'} vs FOS_req = {req:g}]")
+    if result.FOS is None:
+        lines.append("[no equilibrium solution - see warnings]")
+    else:
+        lines.append(
+            f"[{'STABLE' if ok else 'UNSTABLE'} vs FOS_req = {req:g}]")
     ax.text(0.02, 0.98, "\n".join(lines), transform=ax.transAxes,
             fontsize=9.5, fontweight='bold', va='top', color=color,
             bbox=dict(boxstyle='round,pad=0.4', facecolor='white',
@@ -454,7 +460,7 @@ def plot_slice_forces(result, figsize=(9.5, 5)):
     ax.set_xlabel('Slice midpoint x (m)', fontsize=10)
     ax.set_ylabel('Force (kN/m)', fontsize=10)
     ax.set_title(
-        f'Slice Forces - {result.method}, FOS = {result.FOS:.3f} '
+        f'Slice Forces - {result.method}, FOS = {fos_text(result.FOS)} '
         f'({result.n_slices} slices)',
         fontsize=12, fontweight='bold')
     ax.grid(True, alpha=0.25)
@@ -511,7 +517,7 @@ def plot_interslice_forces(result, geom=None, figsize=(9.5, 7)):
     if result.lambda_mp is not None:
         note.append(f'lambda = {result.lambda_mp:.3f}')
     ax1.set_title(
-        f'Interslice Forces - {result.method}, FOS = {result.FOS:.3f}'
+        f'Interslice Forces - {result.method}, FOS = {fos_text(result.FOS)}'
         + (f'  ({", ".join(note)})' if note else ''),
         fontsize=12, fontweight='bold')
     ax1.set_ylabel('Force (kN/m)', fontsize=10)

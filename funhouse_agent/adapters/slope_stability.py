@@ -648,7 +648,7 @@ METHOD_INFO = {
             "include_slice_data": {"type": "bool", "required": False, "default": False, "description": "Include the per-slice force table (W, N', S_mob, u*l, alpha; interslice E/X and line of thrust for rigorous methods)."},
             "compare_methods": {"type": "bool", "required": False, "default": False, "description": "Also report FOS for every method on this surface."},
         },
-        "returns": {"FOS": "Factor of safety.", "method": "Method used.", "lambda_mp": "Interslice scaling (M-P/GLE).", "theta_spencer_deg": "Spencer interslice angle.", "FOS_janbu_corrected": "Janbu f0-corrected FOS.", "slice_data": "Per-slice force table (include_slice_data=true).", "thrust_line": "Line of thrust [[x,z],...] (rigorous methods + include_slice_data)."},
+        "returns": {"FOS": "Factor of safety; null when the method finds no equilibrium solution on this surface with supports crossing it (see warnings).", "method": "Method requested.", "method_solved": "False when Spencer/Morgenstern-Price/GLE finds no equilibrium solution on this surface. Then FOS is null (supports cross it: the legacy approximate solver ignores them) or the legacy approximate solver's value (no supports), named by method_used. Never report such a FOS as the method's own.", "method_used": "What produced FOS: the method itself, 'legacy approximate ... solver', or null.", "methods_without_solution": "Rigorous methods (incl. compare_methods values) with no converged solution here.", "warnings": "What the engineer must check on this surface: no equilibrium solution, a reverse-curvature circle closed by a crack (with its depth), supports Bishop/OMS count little of (with Spencer's FOS on the circle). Report these to the user.", "lambda_mp": "Interslice scaling (M-P/GLE).", "theta_spencer_deg": "Spencer interslice angle.", "FOS_janbu_corrected": "Janbu f0-corrected FOS.", "slice_data": "Per-slice force table (include_slice_data=true).", "thrust_line": "Line of thrust [[x,z],...] (rigorous methods + include_slice_data)."},
     },
     "compare_methods_table": {
         "category": "Slope Stability",
@@ -659,7 +659,7 @@ METHOD_INFO = {
             "f_interslice": {"type": "str", "required": False, "default": "half_sine", "allowed_values": _F_INTERSLICE, "description": "Interslice function for the Morgenstern-Price row."},
             "n_slices": {"type": "int", "required": False, "default": 30, "description": "Number of slices."},
         },
-        "returns": {"rows": "[{method, FOS, detail}, ...] per method.", "surface": "Surface description.", "summary": "Formatted text table."},
+        "returns": {"rows": "[{method, FOS, detail}, ...] per method (a method with no equilibrium solution on the surface is left out, or marked 'legacy approximate solver' in detail).", "surface": "Surface description.", "summary": "Formatted text table.", "warnings": "What the engineer must check on this surface (present when there is any). Report these to the user."},
     },
     "infinite_slope_fos": {
         "category": "Slope Stability",
@@ -781,7 +781,7 @@ METHOD_INFO = {
             "n_slices": {"type": "int", "required": False, "default": 30, "description": "Number of slices per trial."},
             "seed": {"type": "int", "required": False, "description": "Random seed for reproducible noncircular/PSO/DE searches."},
         },
-        "returns": {"critical": "Critical surface result (FOS, geometry).", "n_surfaces_evaluated": "Number of surfaces checked.", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face). Toe circles and shallow planar surfaces are always scored too, and the lowest is reported.", "candidates": "Minimum FOS of each surface family tried.", "infinite_slope_checks": "Each stretch of face where c'=0 soil is at the surface: slope angle, phi', tan(phi')/tan(beta), and the planar-surface FOS (or why it was not evaluated).", "warnings": "Where the search cannot be sure (a supplementary family undercut the main search; the critical surface sits on a window or grid edge; an unchecked cohesionless face). Report these to the user."},
+        "returns": {"critical": "Critical surface result (FOS, geometry; method_solved false when it was scored by the legacy approximate solver).", "n_surfaces_evaluated": "Number of surfaces checked.", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face). Toe circles and shallow planar surfaces are always scored too, and the lowest is reported.", "candidates": "Minimum FOS of each surface family tried.", "infinite_slope_checks": "Each stretch of face where c'=0 soil is at the surface: slope angle, phi', tan(phi')/tan(beta), and the planar-surface FOS (or why it was not evaluated).", "warnings": "Where the search cannot be sure (a supplementary family undercut the main search; the critical surface sits on a window or grid edge; an unchecked cohesionless face). Report these to the user."},
     },
     "fosm_fos": {
         "category": "Slope Stability",

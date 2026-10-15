@@ -29,6 +29,7 @@ Ledger: module_work/wiki_verification/le_method_originals.md.
 
 import math
 import warnings
+from dataclasses import dataclass
 from typing import List, Tuple, Optional
 
 from slope_stability.slices import Slice
@@ -880,3 +881,112 @@ def morgenstern_price_fos(slices: List[Slice],
     legacy_f = f_interslice if f_interslice in _MP_FUNCTIONS else "half_sine"
     return morgenstern_price_fos_legacy(slices, slip, f_interslice=legacy_f,
                                         tol=tol, max_iter=max_iter)
+
+
+# ---------------------------------------------------------------------------
+# One surface, no silent fallback (GM-81)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class RigorousSolution:
+    """Spencer / Morgenstern-Price / GLE on one slip surface, saying
+    whether the method's own (rigorous GLE) solution was found.
+
+    fos : float or None
+        The GLE factor of safety; when it does not converge, the legacy
+        approximate solver's value on a surface no support crosses, else
+        None (that solver ignores supports, so its value would be the
+        slope without them).
+    param : float or None
+        theta in degrees (Spencer) or lambda (Morgenstern-Price / GLE) of
+        ``fos``.
+    gle : GLEResult or None
+        The converged GLE state (per-slice and interslice forces).
+    solved : bool
+        The GLE converged: the method's own solution.
+    legacy : bool
+        ``fos`` is the legacy approximate solver's value.
+    reason : str
+        Why the GLE has no solution, in plain words ('' when solved).
+    """
+    fos: Optional[float]
+    param: Optional[float]
+    gle: Optional[object]
+    solved: bool
+    legacy: bool
+    reason: str = ""
+
+
+def _gle_failure_reason(res, err) -> str:
+    """Plain words for why ``gle_fos`` gave no solution."""
+    if err is not None:
+        return f"the solution stopped with an error ({err})"
+    if res is None:
+        return "no solution"
+    for w in res.warnings:
+        if w.startswith("no F_m = F_f crossing"):
+            return ("no lambda from -1.5 to 1.5 gives moment and force "
+                    "factors of safety that agree")
+        if w.startswith("no equilibrium state at any lambda"):
+            return "no lambda from -1.5 to 1.5 gives an equilibrium state"
+        if w.startswith("F_m - F_f residual"):
+            # gle_fos: "F_m - F_f residual {:.2e} at lambda={:.3f}"
+            parts = w.replace("=", " ").split()
+            try:
+                gap, lam = float(parts[4]), float(parts[-1])
+            except (IndexError, ValueError):
+                return ("the moment and force factors of safety do not "
+                        f"agree at any lambda found ({w})")
+            return ("the moment and force factors of safety still differ by "
+                    f"{gap:.3g} at the closest lambda found ({lam:.3f})")
+    if res.converged:
+        return f"no usable factor of safety (F = {res.fos:.4g})"
+    if res.fos >= _FOS_MAX:
+        return ("no equilibrium state at lambda = 0, where the search for "
+                "lambda starts")
+    return "the solution does not converge"
+
+
+def solve_rigorous(slices: List[Slice],
+                   slip,
+                   f_interslice: str = "constant",
+                   tol: float = 1e-4,
+                   reinf_forces=None,
+                   max_iter: int = 100) -> RigorousSolution:
+    """Spencer (``f_interslice='constant'``) or Morgenstern-Price / GLE on
+    one surface, reporting whether the method's own solution was found.
+
+    The same solves as ``spencer_fos`` / ``morgenstern_price_fos`` (the GLE,
+    then the legacy approximate solver), with the same values, except that
+    nothing falls back silently: when the GLE does not converge the result
+    says so and why, and with supports crossing the surface it gives no
+    value at all (the legacy solver ignores them). ``analyze_slope`` uses it
+    (GM-81).
+    """
+    from slope_stability.gle import gle_fos
+
+    spencer = f_interslice == "constant"
+    res, err = None, None
+    try:
+        res = gle_fos(slices, slip, f_interslice=f_interslice,
+                      tol=min(tol, 1e-4) * 0.1, reinf_forces=reinf_forces)
+    except (ValueError, ZeroDivisionError, OverflowError) as exc:
+        err = exc
+    if res is not None and res.converged and 0.0 < res.fos < _FOS_MAX:
+        param = math.degrees(math.atan(res.lam)) if spencer else res.lam
+        return RigorousSolution(fos=res.fos, param=param, gle=res,
+                                solved=True, legacy=False)
+    reason = _gle_failure_reason(res, err)
+    if reinf_forces:
+        return RigorousSolution(fos=None, param=None, gle=None, solved=False,
+                                legacy=False, reason=reason)
+    if spencer:
+        fos, param = spencer_fos_legacy(slices, slip, tol=tol,
+                                        max_iter=max_iter)
+    else:
+        legacy_f = (f_interslice if f_interslice in _MP_FUNCTIONS
+                    else "half_sine")
+        fos, param = morgenstern_price_fos_legacy(
+            slices, slip, f_interslice=legacy_f, tol=tol, max_iter=max_iter)
+    return RigorousSolution(fos=fos, param=param, gle=None, solved=False,
+                            legacy=True, reason=reason)

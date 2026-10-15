@@ -288,6 +288,56 @@ class TestFigures:
         assert [f.title for f in figs] == ["Slope Cross-Section"]
 
 
+class TestWarningsAndNoSolution:
+    """GM-81: the surface's warnings in the package, and a method with no
+    equilibrium solution (FOS None) rendered as such, not as a number."""
+
+    @staticmethod
+    def _slide85():
+        return SlopeGeometry(
+            surface_points=[(15, 10), (25, 30), (57, 30)],
+            soil_layers=[SlopeSoilLayer("Clay", top_elevation=30,
+                                        bottom_elevation=10, gamma=98.0,
+                                        cu=350.0, analysis_mode="undrained")],
+            anchors=[Anchor(x_head=20.0, z_head=20.0, length=37.0,
+                            T_allow=9000.0, inclination=0.0)])
+
+    def test_no_solution_sections(self):
+        g = self._slide85()
+        res = analyze_slope(g, xc=15.012, yc=24.112, radius=14.112,
+                            method="spencer", include_slice_data=True)
+        assert res.FOS is None
+        sections = cs.get_calc_steps(res, {"geom": g})
+        warn = _flat_text(_section(sections, "Warnings"))
+        assert "finds no equilibrium solution" in warn
+        assert "reverse-curvature" in warn
+        method = _flat_text(_section(sections,
+                                     "Analysis Method & Factor of Safety"))
+        assert "no solution" in method
+        check = _section(sections, "Stability Check")
+        assert not any(isinstance(i, CheckItem) for i in check.items)
+        assert "No stability check" in _flat_text(check)
+        assert "no converged solution" in _flat_text(
+            _section(sections, "Slice Force Table"))
+
+    def test_no_solution_package_renders(self):
+        pytest.importorskip("matplotlib")
+        pytest.importorskip("jinja2")
+        from calc_package import generate_calc_package
+        g = self._slide85()
+        res = analyze_slope(g, xc=15.012, yc=24.112, radius=14.112,
+                            method="spencer", include_slice_data=True)
+        html = generate_calc_package("slope_stability", res, {"geom": g},
+                                     project_name="Test", engineer="Test")
+        assert "finds no equilibrium solution" in html
+        assert "no solution" in html
+
+    def test_no_warnings_section_when_none(self, spencer_result, geom):
+        assert spencer_result.warnings == []
+        assert "Warnings" not in _titles(
+            cs.get_calc_steps(spencer_result, {"geom": geom}))
+
+
 class TestEndToEnd:
     def test_html_package(self, geom, spencer_result):
         pytest.importorskip("matplotlib")

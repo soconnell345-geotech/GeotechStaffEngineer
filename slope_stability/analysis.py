@@ -17,6 +17,7 @@ from slope_stability.slip_surface import CircularSlipSurface
 from slope_stability.slices import build_slices, compute_slice_forces
 from slope_stability.methods import (
     fellenius_fos, bishop_fos, spencer_fos, morgenstern_price_fos,
+    solve_rigorous,
 )
 from slope_stability.gle import janbu_fos
 from slope_stability.search import (
@@ -77,6 +78,20 @@ def analyze_slope(geom: SlopeGeometry,
     Returns
     -------
     SlopeStabilityResult
+        ``warnings`` says what the engineer must check on this surface
+        (GM-81): a reverse-curvature circle closed by a crack, with the
+        crack's depth; supports crossing a Bishop / OMS circle with a short
+        arm, with Spencer's FOS on the circle; a method with no solution.
+
+    No silent fallback (GM-81). When Spencer / Morgenstern-Price / GLE
+    finds no equilibrium solution on the surface (the rigorous GLE does not
+    converge), ``method_solved`` is False and ``warnings`` says why. With
+    supports crossing the surface ``FOS`` is None: the legacy approximate
+    solver ignores supports, so its value would be the slope without them.
+    With none, ``FOS`` is the legacy approximate solver's value, labelled
+    by ``method_used`` and the warning. A compare_methods value with no
+    solution is treated the same way and named in
+    ``methods_without_solution``.
     """
     # Build slip surface from either explicit object or xc/yc/radius
     if slip_surface is not None:
@@ -104,9 +119,19 @@ def analyze_slope(geom: SlopeGeometry,
     r_radius = slip.radius if is_circular else 0.0
     r_slip_points = None if is_circular else list(slip.points)
 
+    # Statements the engineer must check on this surface (GM-81)
+    warnings_out = []
+    no_solution = []       # rigorous methods whose FOS field is not solved
+    method_solved = True
+    method_used = ""       # "" = the method itself
+
     # For noncircular, force Spencer (Bishop doesn't work)
     if not is_circular and method == "bishop":
         method = "spencer"
+        warnings_out.append(
+            "Bishop's simplified method takes moments about the centre of a "
+            "circle; this noncircular surface is analysed with Spencer's "
+            "method instead.")
 
     # Primary FOS
     gle_result = None      # rich GLE state for rigorous methods
@@ -117,6 +142,8 @@ def analyze_slope(geom: SlopeGeometry,
     fos_janbu = None
     fos_janbu_uncorr = None
     f0_janbu = None
+    spencer_sol = None     # RigorousSolution of Spencer, once solved
+    mp_sol = None          # ... and of Morgenstern-Price / GLE
     if method == "fellenius":
         fos = fellenius_fos(slices, slip, reinf_forces=reinf_forces)
         method_name = "Fellenius"
@@ -129,27 +156,30 @@ def analyze_slope(geom: SlopeGeometry,
         f0_janbu = f0
         method_name = "Janbu"
     elif method == "spencer":
-        gle_result = _try_gle(slices, slip, "constant", tol, reinf_forces)
-        if gle_result is not None:
-            fos = gle_result.fos
-            theta = math.degrees(math.atan(gle_result.lam))
-        else:
-            fos, theta = spencer_fos(slices, slip, tol=tol,
-                                     reinf_forces=reinf_forces)
-        fos_spencer = fos
-        theta_spencer = theta
         method_name = "Spencer"
+        spencer_sol = solve_rigorous(slices, slip, "constant", tol,
+                                     reinf_forces)
+        fos, theta_spencer = spencer_sol.fos, spencer_sol.param
+        fos_spencer = fos
+        gle_result = _rich_state(spencer_sol)
+        if not spencer_sol.solved:
+            method_solved = False
+            method_used = _fallback_label(spencer_sol, "Spencer")
+            no_solution.append("Spencer")
+            warnings_out.append(_no_solution_warning(
+                method_name, spencer_sol, reinf_forces))
     elif method in ("morgenstern_price", "gle"):
-        gle_result = _try_gle(slices, slip, f_interslice, tol, reinf_forces)
-        if gle_result is not None:
-            fos, lam = gle_result.fos, gle_result.lam
-        else:
-            fos, lam = morgenstern_price_fos(
-                slices, slip, f_interslice=f_interslice, tol=tol,
-                reinf_forces=reinf_forces)
-        fos_mp = fos
-        lambda_mp = lam
         method_name = ("GLE" if method == "gle" else "Morgenstern-Price")
+        mp_sol = solve_rigorous(slices, slip, f_interslice, tol, reinf_forces)
+        fos, lambda_mp = mp_sol.fos, mp_sol.param
+        fos_mp = fos
+        gle_result = _rich_state(mp_sol)
+        if not mp_sol.solved:
+            method_solved = False
+            method_used = _fallback_label(mp_sol, "Morgenstern-Price")
+            no_solution.append("Morgenstern-Price")
+            warnings_out.append(_no_solution_warning(
+                method_name, mp_sol, reinf_forces))
     else:
         fos = bishop_fos(slices, slip, tol=tol, reinf_forces=reinf_forces)
         method_name = "Bishop"
@@ -163,15 +193,24 @@ def analyze_slope(geom: SlopeGeometry,
         if is_circular:
             fos_bishop = bishop_fos(slices, slip, tol=tol,
                                     reinf_forces=reinf_forces)
-        if fos_spencer is None:
-            fos_sp, theta = spencer_fos(slices, slip, tol=tol,
-                                        reinf_forces=reinf_forces)
-            fos_spencer = fos_sp
-            theta_spencer = theta
-        if fos_mp is None:
-            fos_mp, lambda_mp = morgenstern_price_fos(
-                slices, slip, f_interslice=f_interslice, tol=tol,
-                reinf_forces=reinf_forces)
+        if spencer_sol is None:
+            spencer_sol = solve_rigorous(slices, slip, "constant", tol,
+                                         reinf_forces)
+            fos_spencer, theta_spencer = spencer_sol.fos, spencer_sol.param
+            if not spencer_sol.solved:
+                no_solution.append("Spencer")
+                warnings_out.append(_no_solution_warning(
+                    "Spencer", spencer_sol, reinf_forces,
+                    field="FOS_spencer"))
+        if mp_sol is None:
+            mp_sol = solve_rigorous(slices, slip, f_interslice, tol,
+                                    reinf_forces)
+            fos_mp, lambda_mp = mp_sol.fos, mp_sol.param
+            if not mp_sol.solved:
+                no_solution.append("Morgenstern-Price")
+                warnings_out.append(_no_solution_warning(
+                    "Morgenstern-Price", mp_sol, reinf_forces,
+                    field="FOS_morgenstern_price"))
         if fos_janbu is None:
             fos_janbu, fos_janbu_uncorr, f0_janbu = janbu_fos(
                 slices, slip, tol=min(tol, 1e-4) * 0.1,
@@ -244,9 +283,13 @@ def analyze_slope(geom: SlopeGeometry,
                     tz = min(max(tz, lo), hi)
                 thrust_line.append((bx, tz))
 
-    return SlopeStabilityResult(
+    result = SlopeStabilityResult(
         FOS=fos,
         method=method_name,
+        method_solved=method_solved,
+        method_used=method_used,
+        methods_without_solution=no_solution,
+        warnings=warnings_out,
         xc=r_xc,
         yc=r_yc,
         radius=r_radius,
@@ -280,23 +323,83 @@ def analyze_slope(geom: SlopeGeometry,
         tension_crack_water_depth=geom.tension_crack_water_depth,
     )
 
+    # What the searches say about their governing circle, said about this
+    # one too (GM-59, GM-81): a reverse-curvature circle closed by a crack,
+    # and supports Bishop / the OMS count little of.
+    if is_circular:
+        from slope_stability.search_supplements import (
+            _reverse_curvature_warning, _support_arm_warning,
+        )
+        w = _reverse_curvature_warning(geom, result, in_search=False)
+        if w:
+            result.warnings.append(w)
+        if reinf_forces and method in ("bishop", "fellenius"):
+            def _spencer_here():
+                sol = spencer_sol or solve_rigorous(
+                    slices, slip, "constant", tol, reinf_forces)
+                return sol.fos if sol.solved else None
+            w = _support_arm_warning(geom, result, method, n_slices, tol,
+                                     spencer_fn=_spencer_here,
+                                     in_search=False)
+            if w:
+                result.warnings.append(w)
+    return result
 
-def _try_gle(slices, slip, f_interslice, tol, reinf_forces):
-    """Run the rigorous GLE engine; return the GLEResult or None.
 
-    Mirrors the convergence acceptance used by the spencer_fos /
-    morgenstern_price_fos wrappers so analyze_slope can keep the rich
-    per-slice state (interslice E/X, thrust line) without solving twice.
-    """
-    from slope_stability.gle import gle_fos
-    try:
-        res = gle_fos(slices, slip, f_interslice=f_interslice,
-                      tol=min(tol, 1e-4) * 0.1, reinf_forces=reinf_forces)
-        if res.converged and 0.0 < res.fos < 900.0:
-            return res
-    except (ValueError, ZeroDivisionError, OverflowError):
-        pass
+# Plain names of the rigorous methods, for the warnings.
+_METHOD_PHRASE = {
+    "Spencer": "Spencer's method",
+    "Morgenstern-Price": "The Morgenstern-Price method",
+    "GLE": "The GLE (Morgenstern-Price) method",
+}
+
+
+def _rich_state(sol):
+    """The converged GLE state analyze_slope reports per slice (interslice
+    E / X, line of thrust), or None."""
+    if sol.gle is not None and sol.gle.fos < 900.0:
+        return sol.gle
     return None
+
+
+def _fallback_label(sol, name: str):
+    """``method_used`` when the method has no solution: the legacy
+    approximate solver that stood in, or None (nothing did)."""
+    return f"legacy approximate {name} solver" if sol.legacy else None
+
+
+def _no_solution_warning(method_name: str, sol, reinf_forces,
+                         field: str = "") -> str:
+    """The plain statement that a rigorous method found no equilibrium
+    solution on this surface, and what the result reports instead (GM-81).
+    ``field`` names the compare_methods field it concerns ('' = the
+    headline FOS)."""
+    phrase = _METHOD_PHRASE.get(method_name, method_name)
+    if field:
+        phrase += " (method comparison)"
+    head = (f"{phrase} finds no equilibrium solution on this surface: "
+            f"{sol.reason}.")
+    key = field or "FOS"
+    if sol.legacy:
+        # (a rounding-level negative is printed as 0)
+        par = (f"theta = {sol.param if abs(sol.param) >= 0.005 else 0.0:.2f}"
+               f" deg" if method_name == "Spencer" else
+               f"lambda = {sol.param if abs(sol.param) >= 5e-4 else 0.0:.3f}")
+        tail = (f" {key} = {sol.fos:.3f} is the legacy approximate solver's "
+                f"value ({par}), not a converged {method_name} solution")
+        if not field:
+            tail += " (method_solved is false)"
+        return head + tail + "."
+    n = len(reinf_forces or [])
+    t = sum(f.T for f in (reinf_forces or []))
+    what = f"{field} is not" if field else "No factor of safety is"
+    tail = (f" {what} reported: the legacy approximate solver ignores the "
+            f"{n} support(s) crossing the surface ({t:.1f} kN/m), so its "
+            f"value would be that of the slope without them.")
+    if not field:
+        tail += (" Analyse another surface, or search for the critical "
+                 "surface (a search passes over surfaces with no solution).")
+    return head + tail
 
 
 def compare_methods_table(geom: SlopeGeometry,
@@ -355,16 +458,27 @@ def compare_methods_table(geom: SlopeGeometry,
                      "FOS": round(res.FOS_janbu, 4),
                      "detail": f"f0={res.janbu_f0:.3f}"
                      if res.janbu_f0 else ""})
+    def _legacy(name, detail):
+        # A rigorous method with no converged solution here (GM-81)
+        if name not in res.methods_without_solution:
+            return detail
+        return ((detail + "; ") if detail else "") + \
+            "legacy approximate solver, no converged solution"
+
     if res.FOS_spencer is not None:
         rows.append({"method": "Spencer",
                      "FOS": round(res.FOS_spencer, 4),
-                     "detail": f"theta={res.theta_spencer:.2f} deg"
-                     if res.theta_spencer is not None else ""})
+                     "detail": _legacy("Spencer",
+                                       f"theta={res.theta_spencer:.2f} deg"
+                                       if res.theta_spencer is not None
+                                       else "")})
     if res.FOS_morgenstern_price is not None:
         rows.append({"method": f"Morgenstern-Price ({f_interslice})",
                      "FOS": round(res.FOS_morgenstern_price, 4),
-                     "detail": f"lambda={res.lambda_mp:.3f}"
-                     if res.lambda_mp is not None else ""})
+                     "detail": _legacy("Morgenstern-Price",
+                                       f"lambda={res.lambda_mp:.3f}"
+                                       if res.lambda_mp is not None
+                                       else "")})
 
     surface = {"type": "circular" if res.is_circular else "noncircular",
                "xc": res.xc, "yc": res.yc, "radius": res.radius,
@@ -375,9 +489,14 @@ def compare_methods_table(geom: SlopeGeometry,
              "-" * 52]
     for r in rows:
         lines.append(f"  {r['method']:<34s} {r['FOS']:>7.3f}  {r['detail']}")
+    for w in res.warnings:
+        lines.append(f"  WARNING: {w}")
     summary = "\n".join(lines)
 
-    return {"rows": rows, "surface": surface, "summary": summary}
+    out = {"rows": rows, "surface": surface, "summary": summary}
+    if res.warnings:
+        out["warnings"] = list(res.warnings)
+    return out
 
 
 def search_critical_surface(

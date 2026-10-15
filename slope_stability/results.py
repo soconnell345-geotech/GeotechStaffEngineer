@@ -12,6 +12,12 @@ from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, List, Tuple
 
 
+def fos_text(fos: Optional[float], fmt: str = ".3f") -> str:
+    """A factor of safety for display: the number, or 'no solution' when
+    the method found no equilibrium solution (FOS None, GM-81)."""
+    return "no solution" if fos is None else format(fos, fmt)
+
+
 @dataclass
 class SliceData:
     """Per-slice data for detailed output and plotting.
@@ -122,10 +128,31 @@ class SlopeStabilityResult:
 
     Attributes
     ----------
-    FOS : float
-        Factor of safety.
+    FOS : float or None
+        Factor of safety. None when the method finds no equilibrium
+        solution on the surface and nothing may stand in for it (supports
+        cross the surface: the legacy approximate solver ignores them).
+        See ``method_solved`` and ``warnings``.
     method : str
         Analysis method ('Fellenius', 'Bishop', 'Spencer', 'Morgenstern-Price').
+    method_solved : bool
+        False when the method (Spencer / Morgenstern-Price / GLE) finds no
+        equilibrium solution on this surface: its rigorous GLE solution
+        does not converge (GM-81).
+    method_used : str or None
+        What produced ``FOS``: '' (default) for the method itself; the
+        legacy approximate solver's name when it stood in (a surface no
+        support crosses); None when nothing did (``FOS`` is None).
+    methods_without_solution : list of str
+        The rigorous methods ('Spencer', 'Morgenstern-Price') whose FOS
+        field on this result holds no converged solution (the headline or a
+        compare_methods value): the legacy approximate solver's value, or
+        None.
+    warnings : list of str
+        Plain statements of what the engineer must check on this surface: a
+        method with no equilibrium solution, a reverse-curvature circle
+        closed by a crack, supports a Bishop / Ordinary Method of Slices
+        circle counts little of (GM-59, GM-81).
     xc : float
         Circle center x-coordinate (m). 0 for noncircular.
     yc : float
@@ -192,6 +219,10 @@ class SlopeStabilityResult:
     slip_points: Optional[List[Tuple[float, float]]] = None
     tension_crack_depth: float = 0.0
     tension_crack_water_depth: float = 0.0
+    method_solved: bool = True
+    method_used: Optional[str] = ""
+    methods_without_solution: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
 
     @property
     def is_circular(self) -> bool:
@@ -199,9 +230,31 @@ class SlopeStabilityResult:
         return self.radius > 0
 
     @property
-    def is_stable(self) -> bool:
-        """True if FOS >= 1.0."""
+    def is_stable(self) -> Optional[bool]:
+        """True if FOS >= 1.0; None when there is no FOS."""
+        if self.FOS is None:
+            return None
         return self.FOS >= 1.0
+
+    @property
+    def produced_by(self) -> Optional[str]:
+        """What produced ``FOS`` (``method_used``, or ``method`` itself)."""
+        if self.method_used == "":
+            return self.method
+        return self.method_used
+
+    def _fos_line(self) -> str:
+        if self.FOS is None:
+            return (f"none: {self.method} finds no equilibrium solution "
+                    f"on this surface (see WARNING)")
+        if not self.method_solved:
+            return (f"{self.FOS:.3f}  from the {self.produced_by}; "
+                    f"{self.method} has no solution here (see WARNING)")
+        return f"{self.FOS:.3f}"
+
+    def _no_solution_mark(self, method: str) -> str:
+        return ("  (legacy approximate solver, no solution)"
+                if method in self.methods_without_solution else "")
 
     def summary(self) -> str:
         lines = [
@@ -210,7 +263,7 @@ class SlopeStabilityResult:
             "=" * 60,
             "",
             f"  Method:           {self.method}",
-            f"  Factor of Safety: {self.FOS:.3f}",
+            f"  Factor of Safety: {self._fos_line()}",
             "",
         ]
         if self.is_circular:
@@ -242,11 +295,13 @@ class SlopeStabilityResult:
         if self.FOS_bishop is not None and self.method != "Bishop":
             lines.append(f"  FOS (Bishop):     {self.FOS_bishop:.3f}")
         if self.FOS_spencer is not None and self.method != "Spencer":
-            lines.append(f"  FOS (Spencer):    {self.FOS_spencer:.3f}")
+            lines.append(f"  FOS (Spencer):    {self.FOS_spencer:.3f}"
+                         + self._no_solution_mark("Spencer"))
         if self.theta_spencer is not None:
             lines.append(f"  Spencer theta:    {self.theta_spencer:.2f} deg")
         if self.FOS_morgenstern_price is not None and self.method != "Morgenstern-Price":
-            lines.append(f"  FOS (M-P):        {self.FOS_morgenstern_price:.3f}")
+            lines.append(f"  FOS (M-P):        {self.FOS_morgenstern_price:.3f}"
+                         + self._no_solution_mark("Morgenstern-Price"))
         if self.lambda_mp is not None:
             lines.append(f"  M-P lambda:       {self.lambda_mp:.3f}")
         if self.FOS_janbu is not None and self.method != "Janbu":
@@ -254,6 +309,8 @@ class SlopeStabilityResult:
         if self.FOS_janbu_uncorrected is not None:
             lines.append(f"  FOS (Janbu unc.): {self.FOS_janbu_uncorrected:.3f}"
                          + (f"  (f0={self.janbu_f0:.3f})" if self.janbu_f0 else ""))
+        for w in self.warnings:
+            lines.append(f"  WARNING: {w}")
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
@@ -294,7 +351,7 @@ class SlopeStabilityResult:
                 label="$\\tau_{avail}$ (shear resistance)")
 
         ax.legend(fontsize=9)
-        setup_engineering_plot(ax, f"Contact Stresses Along Slip Surface (FOS={self.FOS:.3f})",
+        setup_engineering_plot(ax, f"Contact Stresses Along Slip Surface (FOS={fos_text(self.FOS)})",
                               "Distance Along Slip Surface (m)", "Stress (kPa)")
         if show:
             plt.tight_layout()
@@ -303,9 +360,11 @@ class SlopeStabilityResult:
 
     def to_dict(self) -> Dict[str, Any]:
         d = {
-            "FOS": round(self.FOS, 4),
+            "FOS": round(self.FOS, 4) if self.FOS is not None else None,
             "is_stable": self.is_stable,
             "method": self.method,
+            "method_solved": self.method_solved,
+            "method_used": self.produced_by,
             "surface_type": "circular" if self.is_circular else "noncircular",
             "xc_m": round(self.xc, 2),
             "yc_m": round(self.yc, 2),
@@ -352,6 +411,10 @@ class SlopeStabilityResult:
             d["thrust_line"] = [
                 (round(x, 3), round(z, 3)) for x, z in self.thrust_line
             ]
+        if self.methods_without_solution:
+            d["methods_without_solution"] = list(self.methods_without_solution)
+        if self.warnings:
+            d["warnings"] = list(self.warnings)
         return d
 
     def get_tables(self) -> list:
@@ -386,7 +449,7 @@ class SlopeStabilityResult:
                 rows=[[i, s.x_mid, d, s.alpha_deg, s.normal_stress_kPa,
                        s.shear_stress_kPa, s.shear_resistance_kPa]
                       for i, (s, d) in enumerate(zip(sd, dist), 1)],
-                note=(f"{self.method}, FOS = {self.FOS:.3f}; σ'n = N'/l, "
+                note=(f"{self.method}, FOS = {fos_text(self.FOS)}; σ'n = N'/l, "
                       "τ_mob = S_mob/l, τ_f the shear strength "
                       "available on the base; distance measured along the "
                       "slip surface from its upslope end"),
@@ -425,12 +488,15 @@ class SlopeStabilityResult:
             tables.append(CalcTable(
                 title="Forces on each slice",
                 columns=columns, rows=rows,
-                note=(f"{self.method}, FOS = {self.FOS:.3f}, "
+                note=(f"{self.method}, FOS = {fos_text(self.FOS)}, "
                       f"{len(sd)} slices; " +
                       ("N', S_mob, E and X from the converged rigorous GLE "
                        "solution" if rigorous else
-                       "N' and S_mob from the Fellenius decomposition (the "
-                       "method does not resolve interslice forces)")),
+                       "N' and S_mob from the Fellenius decomposition (" +
+                       ("the method has no converged solution on this "
+                        "surface" if not self.method_solved else
+                        "the method does not resolve interslice forces")
+                       + ")")),
                 name="slice_forces", printed=False,
             ))
 
@@ -448,8 +514,10 @@ class SlopeStabilityResult:
              f"λ = {self.lambda_mp:.3f}"
              if self.lambda_mp is not None else ""),
         ]
-        rows = [[name, fos, extra] for name, fos, extra in by_method
-                if fos is not None]
+        rows = [[name, fos, extra + ("; " if extra else "")
+                 + "legacy approximate solver: no converged solution"
+                 if name in self.methods_without_solution else extra]
+                for name, fos, extra in by_method if fos is not None]
         if rows:
             tables.append(CalcTable(
                 title="Factor of safety by method",
@@ -538,7 +606,9 @@ class SearchResult:
         Plain statements where the search cannot be sure of its answer
         (a supplementary family undercut the main search, the critical
         surface sits on the edge of the searched region, a cohesionless
-        face could not be checked).
+        face could not be checked, the governing circle is closed by a
+        reverse-curvature crack, has supports Bishop counts little of, or
+        was scored by the legacy approximate solver).
     infinite_slope_checks : list of dict
         One entry per stretch of slope face where cohesionless soil is at
         the surface: x range, slope angle beta, layer, phi', the dry

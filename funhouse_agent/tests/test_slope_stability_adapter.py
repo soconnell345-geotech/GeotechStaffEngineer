@@ -257,6 +257,70 @@ class TestReinforcement:
 
 
 # ----------------------------------------------------------------------------
+# GM-81: warnings and the solved flag on a single surface
+# ----------------------------------------------------------------------------
+
+def _slide85(**over):
+    """Slide2 #85 (D&W Fig 6.34): c = 350 psf clay on a rigid base, one
+    9,000 lb/ft support at mid-height; its reverse-curvature toe circle."""
+    p = {
+        "surface_points": [[15, 10], [25, 30], [57, 30]],
+        "soil_layers": [{"top_elevation": 30, "bottom_elevation": 10,
+                         "gamma": 98.0, "cu": 350.0,
+                         "analysis_mode": "undrained"}],
+        "anchors": [{"x_head": 20.0, "z_head": 20.0, "length": 37.0,
+                     "T_allow": 9000.0, "inclination": 0.0}],
+        "xc": 15.012, "yc": 24.112, "radius": 14.112,
+    }
+    p.update(over)
+    return p
+
+
+class TestSingleSurfaceWarnings:
+    def test_no_solution_passes_through(self):
+        """Spencer finds no equilibrium solution on the anchored circle: FOS
+        null (before GM-81: 0.891, the slope without its support),
+        method_solved false, and warnings say why."""
+        r = METHOD_REGISTRY["analyze_slope"](_slide85(method="spencer"))
+        assert r["FOS"] is None and r["is_stable"] is None
+        assert r["method"] == "Spencer"
+        assert r["method_solved"] is False and r["method_used"] is None
+        assert r["methods_without_solution"] == ["Spencer"]
+        assert any("finds no equilibrium solution" in w
+                   for w in r["warnings"])
+
+    def test_bishop_warnings_pass_through(self):
+        r = METHOD_REGISTRY["analyze_slope"](_slide85(method="bishop"))
+        assert r["FOS"] == pytest.approx(1.304, abs=0.002)
+        assert r["method_solved"] is True and r["method_used"] == "Bishop"
+        text = " ".join(r["warnings"])
+        assert "reverse-curvature" in text and "5.89 m deep" in text
+        assert "29 % of their force counts" in text
+
+    def test_normal_case_has_no_warnings(self):
+        r = METHOD_REGISTRY["analyze_slope"](_base(method="spencer"))
+        assert r["method_solved"] is True and r["method_used"] == "Spencer"
+        assert "warnings" not in r and r["FOS"] > 0
+
+    def test_compare_methods_table_passes_warnings(self):
+        p = {k: v for k, v in _slide85().items() if k != "method"}
+        tab = METHOD_REGISTRY["compare_methods_table"](p)
+        assert [row["method"] for row in tab["rows"]][:2] == [
+            "Fellenius (OMS)", "Bishop simplified"]
+        assert not any(row["method"].startswith("Spencer")
+                       for row in tab["rows"])
+        assert any("(method comparison) finds no equilibrium solution" in w
+                   for w in tab["warnings"])
+
+    def test_returns_description_names_the_fields(self):
+        ret = METHOD_INFO["analyze_slope"]["returns"]
+        for key in ("warnings", "method_solved", "method_used",
+                    "methods_without_solution"):
+            assert key in ret
+        assert "warnings" in METHOD_INFO["compare_methods_table"]["returns"]
+
+
+# ----------------------------------------------------------------------------
 # Strength models + ponded water
 # ----------------------------------------------------------------------------
 
