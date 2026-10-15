@@ -910,7 +910,10 @@ text extraction; problems whose geometry could not be reconstructed from the tex
 - Verdict: **PASS (isotropic anchor + exact isotropic reduction) / CONVENTION
   (Bakklandet anisotropy magnitude).**
   * Isotropic sanity (H=5 m, 45° slope, γ=20, su=40): critical toe circle Bishop
-    2.287 vs published 2.16 (FLAC 2.18; Taylor φ=0 ~2.2) — within ~5%. AND the
+    2.287 vs published 2.16 (FLAC 2.18; Taylor φ=0 ~2.2) — within ~5%. Most of
+    that gap is the model, not the method: the profile starts at the toe, so no
+    circle may pass below it; with the ground carried on level beyond the toe
+    the search gives 2.237 (GM-63's profile-end check; GM-88). AND the
     anisotropic model with su_active=su_dss=su_passive reproduces the mohr_coulomb
     cu=40 FOS EXACTLY (structural isotropic identity). NOTE the auto centre-grid
     search ALONE over-estimates (~2.78): the toe circle exits the crest inside the

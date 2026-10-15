@@ -274,6 +274,84 @@ _SRM_UNDRAINED_PHI_DEG = 1.0
 # behind the crest and 1.2-1.4 times it beyond the toe (Fig. 6-15, nH).
 # Side boundaries closer than this many times that depth cut it (GM-63).
 _SRM_DEEP_MARGIN_FACTOR = 1.5
+# The default model carries the level ground this many times that depth
+# each side: where the FOS stops changing (Duncan Ex 1 at D = 3: 0.8, 1.5,
+# 2 and 2.5 times give 0.645, 0.660, 0.668, 0.668; VALIDATION.md §11; GM-88).
+_SRM_DEEP_DEFAULT_MARGIN_FACTOR = 2.0
+# An undrained (phi = 0) layer below this Poisson's ratio gets a warning:
+# total-stress analysis takes nu near 0.5 (GM-88; VALIDATION.md §11).
+_SRM_UNDRAINED_MIN_NU = 0.45
+
+
+def _level_ground(surf):
+    """The level ground at each end of a profile: (left, right) lengths, or
+    None for a flat profile."""
+    surf = np.asarray(surf, dtype=float)
+    z = surf[:, 1]
+    if np.ptp(z) <= 0:
+        return None
+    tol_z = 1e-6 * float(np.ptp(z))
+    off_left = np.where(np.abs(z - z[0]) > tol_z)[0]
+    off_right = np.where(np.abs(z - z[-1]) > tol_z)[0]
+    return (float(surf[off_left[0] - 1, 0] - surf[0, 0]),
+            float(surf[-1, 0] - surf[off_right[-1] + 1, 0]))
+
+
+def _deep_undrained_margins(surf, soil_layers, z_toe, z_base, base_side):
+    """Default side margins over a deep undrained foundation (GM-88).
+
+    With undrained (phi = 0) soil below the toe, the critical circle passes
+    below the toe, tangent to the firm base, and reaches 1.2-1.8 times the
+    depth of that soil below the toe either side (Taylor 1948; FHWA
+    NHI-06-088 Figs. 6-14, 6-15). Returns ``(left, right, depth)``, the
+    margins that carry the profile's level ground to
+    ``_SRM_DEEP_DEFAULT_MARGIN_FACTOR`` times that depth each side (never
+    less than ``base_side``), or None when no undrained soil lies below the
+    toe or the margins need not change. Elevation layers only: the last
+    layer continues to the mesh base, as ``assign_layers_by_elevation``
+    assigns it."""
+    level = _level_ground(surf)
+    if level is None:
+        return None
+    top = float(np.asarray(surf, dtype=float)[:, 1].max())
+    lowest = None
+    for i, sl in enumerate(soil_layers):
+        bottom = (z_base if i == len(soil_layers) - 1
+                  else max(float(sl.get('bottom_elevation', z_base)), z_base))
+        if (sl.get('phi', 0.0) < _SRM_UNDRAINED_PHI_DEG and bottom < z_toe
+                and top > bottom):
+            lowest = bottom if lowest is None else min(lowest, bottom)
+        top = min(top, bottom)
+    if lowest is None:
+        return None
+    depth = z_toe - lowest
+    need = _SRM_DEEP_DEFAULT_MARGIN_FACTOR * depth
+    left = max(base_side, need - level[0])
+    right = max(base_side, need - level[1])
+    if left <= base_side + 1e-9 and right <= base_side + 1e-9:
+        return None
+    return left, right, depth
+
+
+def _undrained_nu_warnings(soil_layers):
+    """An undrained (phi = 0) layer with a drained-looking Poisson's ratio."""
+    out = []
+    for sl in soil_layers:
+        nu = sl.get('nu', 0.3)
+        if (sl.get('phi', 0.0) < _SRM_UNDRAINED_PHI_DEG
+                and sl.get('c', 0.0) > 0 and nu < _SRM_UNDRAINED_MIN_NU):
+            k0 = nu / (1.0 - nu)
+            out.append(
+                f"Layer {sl.get('name', '?')!r} is undrained (phi = 0) with "
+                f"Poisson's ratio {nu:g}. A total-stress (undrained) analysis "
+                "takes nu near 0.5: use 0.49. With less, the gravity stresses "
+                f"under level ground (K0 = nu/(1 - nu) = {k0:.2f}) exceed the "
+                "reduced strength at depth, that soil yields at every trial, "
+                "and on a fine mesh a trial that would settle can stop at "
+                "max_iter and count as failure, so the factor of safety reads "
+                "low (Duncan Ex 1 on 100x30: 0.627 at nu = 0.35, 0.662 at "
+                "0.49).")
+    return out
 
 
 def _element_size(corners):
@@ -480,12 +558,16 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
         0.662 at 0.49; VALIDATION.md section 11).
     depth : float, optional — depth below lowest surface. Default 2×H.
     nx, ny : int — mesh density.
-    x_extend : float, optional — extra flat margin added to BOTH sides
-        (0.3x each). Default max(0.5*H, depth, 5). Pass 0 when the
-        profile already includes adequate crest/toe margins
-        (recommended). Over undrained (phi = 0) soil the level ground
-        each side should reach about twice the depth of that soil below
-        the toe (Taylor's deep circle; the result warns when it does not).
+    x_extend : float or (left, right), optional — extra flat margin. A
+        number adds 0.3 times it to BOTH sides; a pair gives each side's
+        margin in metres. Default: 0.3 max(0.5*H, depth, 5) each side,
+        except over undrained (phi = 0) soil below the toe, where the level
+        ground is carried to twice the depth of that soil below the toe each
+        side (Taylor's deep circle reaches 1.2-1.8 times it; GM-88) and nx
+        grows with the width so the elements keep their size (a note says
+        so). Pass 0 when the profile already includes adequate crest/toe
+        margins. The result warns when the level ground each side is under
+        1.5 times that depth.
     srf_tol : float — SRF bisection tolerance.
     n_load_steps : int — gravity increments.
     t : float
@@ -531,6 +613,7 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
 
     if depth is None:
         depth = max(2.0 * H, 10.0)
+    notes = []
     if x_extend is None:
         # Depth-aware default: deep-seated mechanisms (weak foundation
         # layers) spread laterally about as far as the model is deep, so
@@ -539,16 +622,47 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
         # SRF). The old default (2x domain width) went the other way and
         # starved the slope face of elements at fixed nx, overpredicting
         # FOS by ~50%+ (verified against Bishop on a shared geometry).
-        # Only 0.3 x_extend goes on each side, though: 0.6 H at the default
-        # depth, short of a deep undrained circle, which reaches 1.2-1.8
-        # times the depth below the toe either side (Taylor's chart);
-        # _side_boundary_warnings says so (GM-63).
-        x_extend = max(0.5 * H, depth, 5.0)
+        # 0.3 x_extend goes on each side: 0.6 H at the default depth.
+        base = 0.3 * max(0.5 * H, depth, 5.0)
+        ext_left = ext_right = base
+        wide = (None if layer_polylines else _deep_undrained_margins(
+            surf, soil_layers, z_min_surf, z_min_surf - depth, base))
+        if wide is not None:
+            # Over a deep undrained foundation that is short of the deep
+            # circle, which reaches 1.2-1.8 times the depth below the toe
+            # either side (Taylor's chart; GM-63, GM-88): carry the level
+            # ground to twice that depth, with columns added so the
+            # elements keep their size.
+            ext_left, ext_right, soft_depth = wide
+            span = float(surf[:, 0].max() - surf[:, 0].min())
+            nx_was = nx
+            nx = int(math.ceil(nx * (span + ext_left + ext_right)
+                               / (span + 2.0 * base)))
+            level = _level_ground(surf)
+            notes.append(
+                f"Undrained (phi = 0) soil reaches {soft_depth:.1f} m below "
+                "the toe, so the model's level ground was carried to "
+                f"{level[0] + ext_left:.1f} m and {level[1] + ext_right:.1f} "
+                "m at the two ends (about twice that depth: the critical "
+                "circle over a deep undrained foundation passes below the "
+                "toe, tangent to the firm base, and reaches 1.2-1.8 times "
+                "that depth either side; Taylor 1948, FHWA NHI-06-088 Figs. "
+                f"6-14 and 6-15), with nx raised from {nx_was} to {nx} to "
+                "keep the element size. Pass x_extend to set the margins "
+                "yourself.")
+    elif isinstance(x_extend, (tuple, list)):
+        if len(x_extend) != 2:
+            raise ValueError("x_extend is a number or a (left, right) pair")
+        ext_left, ext_right = (float(v) for v in x_extend)
+        if ext_left < 0 or ext_right < 0:
+            raise ValueError("x_extend margins must not be negative")
+    else:
+        ext_left = ext_right = 0.3 * float(x_extend)
 
     # Generate mesh
     nodes, elements = generate_slope_mesh(
         surface_points, depth, nx, ny,
-        x_extend_left=x_extend * 0.3, x_extend_right=x_extend * 0.3)
+        x_extend_left=ext_left, x_extend_right=ext_right)
     if element_type == 't6':
         nodes, elements = convert_to_t6(nodes, elements)
     bc_nodes = detect_boundary_nodes(nodes)
@@ -610,6 +724,8 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
         nodes, elements, z_min_surf, H, srm_result, srf_range))
     result.warnings.extend(_side_boundary_warnings(
         nodes, elements, surf, z_min_surf, material_props))
+    result.warnings.extend(_undrained_nu_warnings(soil_layers))
+    result.notes.extend(notes)
     result.warnings.extend(_layer_warnings(
         nodes, elements, layer_ids, soil_layers, z_max_surf,
         float(nodes[:, 1].min()), elevation_layers=not layer_polylines))
@@ -620,7 +736,8 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
         nx2, ny2 = int(math.ceil(1.5 * nx)), int(math.ceil(1.5 * ny))
         fine = analyze_slope_srm(
             surface_points, soil_layers, depth=depth, nx=nx2, ny=ny2,
-            x_extend=x_extend, srf_tol=srf_tol, n_load_steps=n_load_steps,
+            x_extend=(ext_left, ext_right), srf_tol=srf_tol,
+            n_load_steps=n_load_steps,
             t=t, gwt=gwt, gamma_w=gamma_w, max_iter=max_iter, tol=tol,
             layer_polylines=layer_polylines, element_type=element_type,
             srm_field=srm_field, blowup_factor=blowup_factor,

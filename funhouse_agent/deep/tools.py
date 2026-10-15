@@ -241,8 +241,10 @@ _PLOT_APP_NOTE = (
     " In this app the chart appears as an INTERACTIVE card under your reply "
     "(zoom and hover); the PNG it also saves is the copy for a report "
     "(html_img_tag) or a Word document (![title](<output_path>) in "
-    "write_docx). Give output_path a bare file name, or leave it out. Never "
-    "draw a chart by hand as SVG or as text.")
+    "write_docx). The PNG and the chart are drawn from the same series, so "
+    "analyze_image on the PNG checks what the chat shows; look before you "
+    "call a figure done. Give output_path a bare file name, or leave it "
+    "out. Never draw a chart by hand as SVG, as text or as a .plotly.json.")
 
 
 def _plot_description() -> str:

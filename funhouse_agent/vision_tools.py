@@ -4913,13 +4913,48 @@ def _conversation_dxfs(attachments):
     return out
 
 
+#: Said when the agent writes a chart file by hand (field session
+#: 2026-10-15: the chat showed a hand-written chart while the report and the
+#: agent's own check used plot_data's PNG of a different figure).
+HAND_CHART_NOTE = (
+    "This chart was written by hand, so no PNG of the same figure exists: a "
+    "report or Word file uses a PNG, and nothing has looked at this chart. "
+    "Draw charts with plot_data instead (polygon outlines with fill, point "
+    "labels, hover text, marker shapes, equal_aspect for plans): it writes "
+    "the chart and its PNG from one spec, and analyze_image on that PNG "
+    "checks what the chat shows.")
+
+
+def _with_chart_note(arguments, out: str) -> str:
+    """``save_file``'s result, with :data:`HAND_CHART_NOTE` when it saved a
+    ``*.plotly.json`` (naming a PNG beside it that now differs)."""
+    path = str(arguments.get("path") or "")
+    if not path.lower().endswith(".plotly.json"):
+        return out
+    try:
+        result = json.loads(out)
+    except ValueError:
+        return out
+    if not isinstance(result, dict) or "error" in result:
+        return out
+    note = HAND_CHART_NOTE
+    saved = str(result.get("saved") or result.get("path") or path)
+    twin = saved[:-len(".plotly.json")] + ".png"
+    if os.path.isfile(twin):
+        note += (f" {os.path.basename(twin)} beside it is now a different "
+                 f"figure.")
+    result["chart_note"] = note
+    return json.dumps(result)
+
+
 def _dispatch_save_file_tool(arguments, attachments, save_fn):
     """``save_file`` as the agent calls it: a DXF that retypes one this
     conversation holds is refused (annotate_dxf writes notes on a copy),
     and any other DXF is read back by a CAD library before it is saved."""
     text = _dxf_save_text(arguments)
     if text is None:
-        return _dispatch_save_file(arguments, save_fn)
+        out = _dispatch_save_file(arguments, save_fn)
+        return _with_chart_note(arguments, out)
     mine = _dxf_entities(text)
     for name, other in _conversation_dxfs(attachments) if mine else ():
         theirs = _dxf_entities(other)

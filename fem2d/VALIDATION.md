@@ -719,6 +719,18 @@ slope_stability scores Taylor's D = 2 and D = 3 circles at 0.706 and 0.678
   the criterion itself (a trial at the ceiling with its residual still
   falling and a growth ratio just over 0.1) is a follow-up.
 
+**GM-88 (2026-10-15): the default model reaches the deep circle.** With no
+`x_extend` given and undrained soil below the toe (elevation layers), the
+level ground is carried to twice that soil's depth below the toe each side
+and nx grows with the width so the elements keep their size; the result's
+`notes` say so. This class's own model (1 H each side, default depth 2 H):
+0.648 → 0.660 at nu = 0.49 (30x15 becomes 58x15; about twice the run
+time, 16 s → 30 s at the default srf_tol 0.02). An undrained layer with nu below 0.45
+gets a warning asking for 0.49. Default runs over a deep undrained
+foundation now give a slightly HIGHER factor of safety than before (release
+note); every other default run is unchanged. `x_extend` also takes a
+`(left, right)` pair of margins in metres.
+
 Reproduction: `fem2d/tests/test_srm_duncan.py::TestSRMDuncanExample1`
 (the wide and the narrow model, slow) and
 `slope_stability/tests/test_duncan_verification.py::TestDuncanExample1`

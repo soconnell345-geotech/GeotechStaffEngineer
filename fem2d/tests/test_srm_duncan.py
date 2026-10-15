@@ -162,17 +162,37 @@ class TestSRMDuncanExample1:
 
     def test_deep_foundation_narrow_model_reads_low_and_warns(self):
         """GM-63. The trend test's model (1 H of level ground each side,
-        default depth 2 H and x_extend: rollers 19.5 m from the crest and
-        the toe) cuts Taylor's circle: 0.645 measured, about 3.5 % below
-        the 4 H-wide model, and the result says why."""
+        default depth 2 H and the pre-GM-88 default x_extend of 2 H:
+        rollers 19.5 m from the crest and the toe) cuts Taylor's circle:
+        0.645 measured, about 3.5 % below the 4 H-wide model, and the
+        result says why."""
         result = analyze_slope_srm(
             surface_points=self._surface(), soil_layers=[self._layer()],
-            nx=30, ny=15, srf_tol=0.01)
-        print(f"\n  Example 1, default model: SRM {result.FOS:.3f}")
+            nx=30, ny=15, srf_tol=0.01, x_extend=2 * self.H)
+        print(f"\n  Example 1, narrow model: SRM {result.FOS:.3f}")
         assert result.FOS < 0.97 * self.TAYLOR_D3
         w = [w for w in result.warnings if "rollers" in w]
         assert len(w) == 1
         assert "24.4 m below the toe" in w[0] and "Fig" in w[0]
+        assert not result.notes
+
+    def test_default_model_reaches_the_deep_circle(self):
+        """GM-88. Over undrained soil below the toe the default margins carry
+        the level ground to twice that soil's depth each side, with columns
+        added: the default model now gives the wide model's answer (0.660
+        on this mesh, against 0.648 on the old default), says what it did,
+        and needs no side-boundary warning."""
+        layer = dict(self._layer(), nu=0.49)
+        result = analyze_slope_srm(
+            surface_points=self._surface(), soil_layers=[layer],
+            nx=30, ny=15, srf_tol=0.01)
+        print(f"\n  Example 1, default model (GM-88): SRM {result.FOS:.3f}")
+        assert 0.96 * self.TAYLOR_D3 < result.FOS < self.TAYLOR_D3
+        assert not any("rollers" in w for w in result.warnings)
+        assert len(result.notes) == 1
+        note = result.notes[0]
+        assert "24.4 m below the toe" in note and "48.8 m" in note
+        assert "nx raised from 30 to 58" in note
 
     def test_srm_vs_bishop_trend_ex1(self):
         """SRM FOS increases when cohesion increases (same direction as LE)."""

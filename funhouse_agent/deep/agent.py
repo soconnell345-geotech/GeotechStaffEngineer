@@ -580,9 +580,12 @@ def build_calc_subagent(
         # keeping bulky OUTPUT out of the primary context, not blinding the
         # sub-agent to the job's inputs.
         # write_xlsx: a sweep or a results table as a spreadsheet (it is
-        # only built where openpyxl imports).
+        # only built where openpyxl imports). analyze_image: the helper that
+        # draws the figures can look at them (field session 2026-10-15: it
+        # tried read_file on its PNG, was refused, and the figure went out
+        # unseen).
         include={"save_file", "list_files", "read_pdf_text", "read_text_file",
-                 "write_xlsx"},
+                 "write_xlsx", "analyze_image"},
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
     ) + [make_calculate_tool()]

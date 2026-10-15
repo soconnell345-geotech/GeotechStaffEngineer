@@ -893,7 +893,8 @@ has no solution:
   model reduces to `mohr_coulomb` cu EXACTLY (isotropic identity). Adapter-exposed
   (`strength_model='anisotropic'` + `su_active`/`su_dss`/`su_passive`). Validated —
   RESULTS/INVENTORY V-054 and `test_published_v054_anisotropic_su.py`: isotropic
-  anchor FOS 2.29 vs published ~2.16–2.2 (Taylor/FLAC, H=5/45°/su=40); the Bakklandet
+  anchor FOS 2.29 vs published ~2.16–2.2 (Taylor/FLAC, H=5/45°/su=40), 2.237 with level
+  ground beyond the toe, where the model starts (GM-63); the Bakklandet
   ADP ratios (DSS/A=0.63, P/A=0.35) drop the FOS ~21% (critical-vs-critical),
   bracketing the published FEM 24% (1.43→1.09) — CONVENTION (FEM vs LEM). Refs: Lo
   (1965), Su & Liao (1999), Al-Karni & Al-Shamrani (2000) — anisotropy matters mainly
