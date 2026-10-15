@@ -56,8 +56,19 @@ All return `PlotResult` wrapping a `go.Figure`:
 | Parameter vs depth | `plot_parameter_vs_depth()` | Value | Depth/elevation |
 | Atterberg limits | `plot_atterberg_limits()` | Moisture % | Depth/elevation |
 | Multi-parameter | `plot_multi_parameter()` | Values | Depth (shared) |
-| Plan view | `plot_plan_view()` | Easting | Northing |
+| Plan view | `plot_plan_view()` | from the coordinate system (below) | from the coordinate system |
 | Cross-section | `plot_cross_section()` | Distance | Elevation/depth |
+
+**Plan-view axes (GM-76, 2026-10-14).** `Investigation.coordinate_system`
+holds the system each exploration's position is given in (the DIGGS
+`srsName`, on the `gml:pos` our writer emits or on the point), and
+`SiteModel.coordinate_system` the one they all share. `plots_plan.axis_titles`
+labels longitude / latitude for a geographic system (EPSG:4326, WGS 84, NAD
+83), easting / northing with the system named for a projected one (UTM,
+State Plane, any other EPSG code), and plain x / y with the system named
+under the title for a local grid or none stated. Before, every plan said
+Easting / Northing, so a grid read off a plan sheet looked like map
+coordinates.
 
 ## Units and Conventions
 
@@ -100,9 +111,19 @@ Custom parser using `xml.etree.ElementTree` (stdlib only):
 
 - Auto-detects 2.6 vs 2.5.a namespace from root element
 - Resolves `xlink:href="#gml_id"` references to associate tests with borings
-- Extracts: Project name, Borehole coords/depth, LithologyObservation,
+- Extracts (the flat dialect the parser was built against): Project name,
+  Borehole coords / depth / coordinate system, LithologyObservation,
   DrivenPenetrationTest (SPT), AtterbergLimitsTest, MoistureContent,
-  WaterLevelObservation
+  WaterLevelObservation, and the static cone, vane, consolidation, triaxial,
+  direct shear, unconfined compression, point load, specific gravity,
+  gradation, permeability, compaction, dynamic probe, pressuremeter and
+  dilatometer tests
+- `diggs26.py` then reads what a file written to the PUBLISHED 2.6 schema
+  puts elsewhere (test results in `ResultSet`s by property class, depths as
+  linear extents, lithology systems at the root, water as the borehole's
+  `waterStrike`, cone and dynamic-probe soundings, samples); it only appends,
+  so a file in either shape reads. This is the shape `report_ingest`'s
+  DIGGS writer (and the app's `write_diggs`) produces.
 
 ## Cross-Section Design Decision
 

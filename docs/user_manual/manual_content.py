@@ -370,6 +370,10 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "General bearing-capacity equation with N<sub>c</sub>, N<sub>q</sub>, N<sub>&gamma;</sub> "
             "by **Vesic**, **Meyerhof**, or **Hansen** (selectable); Vesic is the default and the AASHTO/"
             "GEC-6 factor set.",
+            "**Terzaghi** bearing capacity (general or local shear) with the UFC 3-220-20 Table 5-5 shape "
+            "factors and no depth or inclination factors (inclined loads and slopes are refused); "
+            "N<sub>&gamma;</sub> after Kumbhojkar (1993) as tabulated in Das by default, or Coduto et al. "
+            "(2016), the basis of UFC Table 5-2, each named in the result.",
             "Shape, depth, load-inclination, base-tilt, and ground-slope correction factors (Vesic form).",
             "Eccentric loading via the Meyerhof effective-area (B&prime;, L&prime;) reduction.",
             "Two-layer (strong-over-weak / weak-over-strong) bearing with load spread.",
@@ -544,7 +548,8 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "Free-earth-support solution for cantilever and anchored walls; layered active-pressure "
             "builder with hydrostatic water; embedment-increase factor and a FOS on passive resistance.",
             "References: Rankine; Coulomb; Caquot&ndash;Kerisel; NAVFAC DM7.2; validated against Caltrans "
-            "T&amp;S Ex 7-2 / 8-1 (V-025/V-013).",
+            "T&amp;S Ex 7-2 / 8-1 (V-025/V-013) and, for the anchored wall&rsquo;s maximum moment, the USS "
+            "Steel Sheet Piling Design Manual&rsquo;s Design Example No. 2 (within 1&nbsp;%).",
         ],
         "limits": [
             "<code>analyze_cantilever</code> is a continuous per-metre free-earth-support solver &mdash; "
@@ -571,6 +576,9 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "The single-anchor FHWA apparent-diagram embedment solver and a multi-anchor apparent-envelope "
             "helper are documented gaps; the primitives (K, p<sub>e</sub>, tributary loads, hinge "
             "moments) reproduce the worked examples (V-016).",
+            "Where no moment balance exists within six times the excavation depth, the free-earth "
+            "solution returns no embedment (and nothing computed from it) with a plain note, never a "
+            "depth without a solution.",
         ],
     },
 
@@ -623,8 +631,13 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "Methods of slices: **Ordinary/Fellenius**, **Bishop simplified (1955)**, **Janbu** "
             "(corrected), **Spencer (1967)**, **Morgenstern&ndash;Price**, and the rigorous **GLE** "
             "(Fredlund&ndash;Krahn) with interslice-force functions.",
-            "Critical-surface search: circular centre-grid, entry&ndash;exit arcs, random noncircular "
-            "polylines with differential-evolution / PSO refinement, and weak-layer search.",
+            "Critical-surface search: circular centre-grid with the best centres refined, entry&ndash;exit "
+            "arcs, random noncircular polylines with differential-evolution / PSO refinement, and "
+            "weak-layer search; then small circles through each face&rsquo;s toe and, wherever "
+            "c&prime;&nbsp;=&nbsp;0 soil forms a face, shallow planar surfaces parallel to it. Every trial "
+            "surface carries the reinforcement it crosses; the result names the governing surface, each "
+            "family&rsquo;s minimum and the reinforcement crossing it, and warns when the governing circle "
+            "ends at a profile end (the profile is then carried on level and the lower FOS reported).",
             "Advanced per-layer strength models (the layer <code>strength_model</code> selector): "
             "Mohr&ndash;Coulomb (default), **SHANSEP** undrained-strength-ratio "
             "(s<sub>u</sub> = S&middot;OCR<sup>m</sup>&middot;&sigma;&prime;<sub>v</sub>, with a "
@@ -633,7 +646,10 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "Reinforcement crossing the slip surface: **soil nails** (pullout + bar-tension capacity, "
             "FHWA GEC-7), **tieback anchors** (allowable tension when the bond zone crosses the "
             "surface), horizontal **geosynthetic** layers, and **Ito &amp; Matsui (1975)** stabilizing "
-            "piles; plus ponded water, tension cracks, and pseudo-static k<sub>h</sub>.",
+            "piles, applied in every method as Wright &amp; Duncan (1991) apply them: active (the default; "
+            "the support reduces the driving force) or passive (the support is added to the resisting "
+            "force and so divided by F); plus ponded water, tension cracks, and pseudo-static "
+            "k<sub>h</sub>.",
             "Seismic displacement (**Newmark** sliding block + **Jibson 2007** regression), **rapid "
             "drawdown** (USACE 2-stage / Duncan&ndash;Wright&ndash;Wong 3-stage), infinite-slope FOS, and "
             "**probabilistic FOS** (FOSM and Monte Carlo).",
@@ -647,6 +663,8 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "The tension crack is entry-side and keeps the cracked wedge as zero-strength driving soil "
             "with full hydrostatic thrust &mdash; a conservative convention vs mass-truncation codes "
             "(V-026).",
+            "When a rigorous method finds no solution on a surface that supports cross, the result gives "
+            "no FOS for that method and says so, rather than an unreinforced value.",
         ],
     },
 
@@ -660,8 +678,19 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "Euler&ndash;Bernoulli beams.",
             "Constitutive models: linear elastic, **Mohr&ndash;Coulomb** (3D-principal return mapping, "
             "non-associated flow), and **Hardening Soil** (Schanz, Vermeer &amp; Bonnier 1999).",
-            "**Strength-reduction method** for slope FOS (Griffiths &amp; Lane 1999); staged construction / "
-            "excavation; initial-stress relaxation for tunnels/cavities.",
+            "**Strength-reduction method** for slope FOS (Griffiths &amp; Lane 1999), within 2&nbsp;% "
+            "across meshes once four or more elements span the slope; staged construction, with movements reported per stage and counted "
+            "from the end of the in-situ stage; initial-stress relaxation for tunnels/cavities.",
+            "**Staged excavation** (<code>analyze_excavation</code>): half of a symmetric excavation, "
+            "in-situ stresses by K<sub>0</sub>, then one stage per lift that removes the soil and "
+            "releases the forces it carried; the wall is wished in place and each strut installed "
+            "stress-free when the dig reaches it. Below the water table the excavation is dewatered by "
+            "default, with steady seepage under the wall (<code>excavation_water</code>: "
+            "<code>'dewatered'</code>, or <code>'full'</code> / <code>'level'</code>); the result gives "
+            "each stage, the wall&rsquo;s largest moment and shear with their depths, the net water "
+            "pressure and the upward gradient in front of the wall. Benchmarked against the USS Steel "
+            "Sheet Piling Design Manual&rsquo;s cantilever in granular soil (M<sub>max</sub> within "
+            "3&nbsp;%).",
             "Steady/transient **seepage** and **Biot consolidation** (staggered, and a monolithic "
             "Taylor&ndash;Hood u&ndash;p scheme); PLAXIS-style calc-package plots.",
             "References: Griffiths &amp; Lane (1999); de Souza Neto et al. (2008); Clausen et al. (2006); "
@@ -672,7 +701,10 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "CST elements lock in plastic collapse (Prandtl N<sub>c</sub> overshoots) &mdash; use T6 for "
             "collapse/FOS work; CST is for elastic/seepage/Biot only.",
             "It is a research-grade solver, not a substitute for a commercial FE package under QA; a "
-            "far-field boundary must be placed far enough to avoid truncation error.",
+            "far-field boundary must be placed far enough to avoid truncation error. The strength "
+            "reduction warns when the mesh has too few elements across the slope, and when "
+            "&phi;&nbsp;=&nbsp;0 soil lies below the toe with level ground shorter than 1.5 times its "
+            "depth (a deep circle cannot form).",
         ],
     },
 
@@ -740,9 +772,12 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "ground response.",
         "methods": [
             "**PM4Sand** cyclic DSS element tests (stress path, pore-pressure generation).",
-            "One-dimensional nonlinear site response (soil column, base motion).",
-            "References: PM4Sand (Boulanger &amp; Ziotopoulou); the OpenSeesPy library. Requires the "
-            "<code>[opensees]</code> extra.",
+            "One-dimensional nonlinear site response (soil column, base motion), run in a separate "
+            "process with a time limit (<code>time_limit_s</code>, default 600&nbsp;s).",
+            "References: PM4Sand (Boulanger &amp; Ziotopoulou); the OpenSeesPy library. Site response is "
+            "checked against the OpenSees wiki&rsquo;s layered soil column (total stress, McGann &amp; "
+            "Arduino) and the OpenSeesPy effective-stress example, Kramer (1996) &sect;7.2&rsquo;s uniform "
+            "damped layer on elastic rock, and pyStrata. Requires the <code>[opensees]</code> extra.",
         ],
         "limits": [
             "A wrapper around OpenSeesPy &mdash; model fidelity and convergence follow OpenSees; a heavy "
@@ -826,9 +861,16 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "BRO-XML CPT, and AGS4 files, visualize parameters against depth, and compute trend "
             "statistics &mdash; the ingest side of characterization.",
         "methods": [
-            "**DIGGS** parser (20 test types) with Plotly parameter-vs-depth, Atterberg, and trend plots.",
+            "**DIGGS** parser (20 test types) with Plotly parameter-vs-depth, Atterberg, plan-view and "
+            "trend plots; the plan view labels its axes from the stated coordinate system.",
+            "**DIGGS 2.6 writer** (<code>write_diggs</code>) for logs and lab results read off a report: "
+            "records given inline or as saved JSON files, checked against the schema and read back, with "
+            "cross-checks (lab links, drives against sample intervals, readings below the hole&rsquo;s "
+            "depth) that never change a value; groundwater not encountered is never written as a level, "
+            "an unknown position is never written as 0, and a printed refusal is kept as one.",
             "Folded format adapters: **GEF/BRO-XML** CPT and borehole parsing (pygef), **AGS4** read/"
-            "validate (python-ags4), and **DIGGS** schema/dictionary validation (pydiggs).",
+            "validate (python-ags4; an optional extra from the release after 5.33.0), and **DIGGS** "
+            "schema/dictionary validation (pydiggs).",
             "References: the DIGGS, GEF, and AGS4 standards; pygef / python-ags4 / pydiggs. Requires the "
             "<code>[subsurface]</code> extra for the format adapters.",
         ],
@@ -950,6 +992,11 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "Jinja2-templated **HTML** and **LaTeX** calc packages for about a dozen analysis modules, "
             "with matplotlib figures and (optionally) Plotly interactive viewers; PDF where "
             "<code>pdflatex</code> is available.",
+            "**Calculation tables** in the style of Ensoft&rsquo;s output: a printed &ldquo;Calculation "
+            "Tables&rdquo; section and one CSV per table, units in the headers, for lateral and axial "
+            "piles, pile groups, drilled shafts, settlement, bearing capacity, sheet piles, slope "
+            "stability, downdrag, fem2d, liquefaction, the wave-equation bearing graph and ground "
+            "improvement.",
             "References: uses the <code>[calc]</code> extra (Jinja2), plus <code>[plot]</code> and "
             "<code>[interactive]</code> for figures.",
         ],

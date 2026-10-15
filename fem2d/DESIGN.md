@@ -207,7 +207,14 @@ excavation. It now runs on `analyze_staged`:
    installation (meaning changed: before, since the start) plus
    `installed_in_stage`; new `excavation_stages` (wall head and largest
    wall u_x, M_max, V_max, strut forces per lift), `notes`, and `staged`
-   (the StagedConstructionResult, not serialized). `get_tables()` adds the
+   (the StagedConstructionResult, not serialized). Since 2026-10-15
+   (GM-86) each stage row also gives the depth below the ground of its
+   peak moment and shear (`max_beam_moment_depth_m`,
+   `max_beam_shear_depth_m`), and `wall_envelope` gives `moment_depth_m` /
+   `shear_depth_m` with `moment_position` / `shear_position` (above, below
+   or at the excavation level of the stage the peak occurs in); the summary
+   prints the depths. A live run had placed a 3.8 m peak at about 8 m
+   because the result gave M_max but not where. `get_tables()` adds the
    printed "Excavation stages" table; the calc package adds an "Excavation
    Stages" section. Sign: u_x > 0 toward the excavation; a strut force > 0
    holds the wall back.
@@ -755,8 +762,8 @@ result = analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
 
 ```
 fem2d/
-  __init__.py          # Public API (58 exports)
-  elements.py          # CST, Q4, and beam element routines
+  __init__.py          # Public API (84 exports)
+  elements.py          # CST, T6, Q4, and beam element routines
   materials.py         # Elastic D, Mohr-Coulomb, Hardening Soil, Drucker-Prager
   mesh.py              # Delaunay mesh generation, boundary detection
   assembly.py          # Global assembly, BCs, beam DOF mapping, sparse solver
@@ -770,13 +777,21 @@ fem2d/
   results.py           # FEMResult, BeamForceResult, SeepageResult,
                        #   ConsolidationResult, PhaseResult,
                        #   StagedConstructionResult with summary()/to_dict()
+  calc_steps.py        # calc-package steps and figures
+  plotting.py          # PLAXIS-style plots
+  hs_correlations.py   # HS parameters from correlations (Brinkgreve et al. 2010)
   DESIGN.md
-  tests/
-    test_fem2d.py             # 89 core module tests
+  VALIDATION.md        # benchmarks (Griffiths & Lane, Prandtl, USS, GEC 4, Taylor)
+  tests/               # 528 tests in 24 files (2026-10-15), among them:
+    test_fem2d.py             # 92 core module tests
     test_cross_validation.py  # 15 cross-validation tests
     test_hs_beams.py          # 55 HS model + beam element tests
-    test_groundwater.py       # ~50 groundwater/seepage/consolidation tests
-    test_staged.py            # ~45 staged construction tests
+    test_groundwater.py       # 51 groundwater/seepage/consolidation tests
+    test_staged.py            # 45 staged construction tests
+    test_stage_movements.py   # 32 per-stage movement tests
+    test_srm_robustness.py    # 32 strength-reduction mesh / failure-criterion tests
+    test_excavation_staged.py # 28 staged-excavation tests (incl. the USS benchmark)
+    test_excavation_dewatered.py  # 26 seepage / dewatered-excavation tests
 ```
 
 ## References

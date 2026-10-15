@@ -178,7 +178,11 @@ Field notes from the first real publish (PDCS Sandbox, stateobo.palantirgov.com)
 ## Notes / current limits
 
 - Tool calling, streaming, and sub-agents ride the provider-compatible proxy
-  unchanged. Vision (attachment analysis, figure read-off) depends on the
+  unchanged. From the release after 5.33.0 each model request on the proxy
+  route gives up after 600 s (before, langchain set no limit), and the
+  agent's own busy ladder retries a timeout, a 429 or a 5xx on every route
+  (the provider's retry-after, else 15/30/60/120 s, 5 tries); the SDK
+  route (§3b) keeps its own retries as well. Vision (attachment analysis, figure read-off) depends on the
   enrollment's model supporting images through the proxy — try it, and prefer
   a multimodal RID for the default model.
 - Conversations persist under `GEOTECH_WEBAPP_DATA`; if the published app's

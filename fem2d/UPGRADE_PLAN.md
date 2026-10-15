@@ -194,7 +194,9 @@ Quadratic edge (3-node) traction: weights (1/6, 2/3, 1/6) x total edge load.
   update, module_work/slope-fem.md notes.
 
 Descope order if time runs out: 7 minimal; 6 only if profiling shows pain;
-Ex5 drawdown validation optional; T6 seepage not planned.
+Ex5 drawdown validation optional; T6 seepage not planned (later built for
+the dewatered excavation: `porewater.seepage_heads` on T3 / T6 / Q4, GM-73,
+2026-10-15).
 
 ---
 

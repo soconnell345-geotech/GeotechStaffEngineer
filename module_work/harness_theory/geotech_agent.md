@@ -85,6 +85,17 @@ Built by `build_domain_prompt` (`funhouse_agent/deep/prompt.py:224-261`) from
 2. **DIGGS workflow** (`system_prompt.py:48-65`). *Since 2026-10-07
    (`3d1cd44`, unreleased):* it points at `subsurface.write_diggs`, which
    writes schema-checked DIGGS 2.6, and forbids hand-typed DIGGS XML.
+   *Since 2026-10-14 (`89df4e6`, `76e8a56`, unreleased; BACKLOG RI-28,
+   RI-31):* the prompt asks for "the values read off the logs" (it said "as
+   printed", which kept depths read off a log's drawn scale out); the tool's
+   own description says such a depth is written with its reading noted, and
+   that a record with its values in hand is never held back. Records may
+   come from JSON files a helper saved (`investigations_file` /
+   `lab_tests_file`), so the primary need not retype them; the result's
+   `cross_checks` now also compare drives with the sample interval and the
+   log's form, and flag readings below the hole's depth. *Since 2026-10-15
+   (`08bd8d4`; EV-18):* a record citing pages no tool opened gets a
+   `page_not_read` cross-check.
 3. **"CRITICAL: Always Use Your Tools for Calculations"** — never compute,
    "not even simple ones" (`system_prompt.py:67-79`).
 4. **Tool discipline** — call `describe_method` before first use, use only
@@ -121,7 +132,12 @@ Built by `build_domain_prompt` (`funhouse_agent/deep/prompt.py:224-261`) from
   `read_text_file`, `analyze_image`, `analyze_pdf_page`, `render_region`,
   `find_like`, `read_reference_figure`, `view_worked_example_source`, the
   planlens document tools, `annotate_document`, `save_file`, `write_docx`.
-* **deepagents**: `write_todos`, six scratch-filesystem tools, `task`.
+* **deepagents**: `write_todos`, six scratch-filesystem tools (seven on
+  deepagents 0.7, which adds `delete`), `task`.
+* *Since 5.33.0:* `measure` and `log_grid` (visual scales); *since
+  2026-10-15 (`642bd36`, unreleased; TA-28):* `kept_readings`, the
+  conversation's kept page readings, read-only, for the primary and its
+  helpers.
 * **App only**: SharePoint tools, `email_file`, `record_feedback` when
   configured (`webapp/core.py:509-546`).
 
@@ -151,14 +167,18 @@ Built by `build_domain_prompt` (`funhouse_agent/deep/prompt.py:224-261`) from
   with the three closest names and the full list (`dispatch.py:735-806`,
   `482-732`). An adapter exception becomes `"<Type>: <message>"`
   (`dispatch.py:799-806`).
-* `task` — the sub-agent's final message, as the tool result.
+* `task` — the sub-agent's final message, as the tool result. *Since
+  2026-10-14 (`76e8a56`, unreleased; RI-31):* when the helper saved files,
+  a code-written note naming them follows ("never retype what it holds");
+  a helper that stopped returns the path of its `kept/helper_*.md` file and
+  a summary (TA-21).
 
 ### 3.4 Sub-agents (what they are shown)
 
 | Sub-agent | Prompt | Tools | Budget |
 |---|---|---|---|
-| `references` | `CONSULTANT_FRAMING` ("REFERENCE LIBRARIAN … CITE … only references your tools returned … never infer chart values from memory … Do NOT perform engineering calculations") + a concision rule (`reviewer.py:260-271`; `deep/agent.py:82-87, 315-342`) | dispatch tools scoped to the 33 reference modules (cap 16,000 for reference text) + `read_reference_figure` | 8 model calls, last one forced to answer |
-| `reviewer` | `REVIEWER_DEEP_PROMPT`: PASS / FLAG / REVISE review against the references (`reviewer.py:100-131`; `deep/agent.py:549-587`) | reference dispatch tools | none |
+| `references` | `CONSULTANT_FRAMING` ("REFERENCE LIBRARIAN … CITE … only references your tools returned … never infer chart values from memory … Do NOT perform engineering calculations") + a concision rule (`reviewer.py:260-271`; `deep/agent.py:82-87, 315-342`) | dispatch tools scoped to the 33 reference modules (cap 16,000 for reference text) + `read_reference_figure` | 8 model calls, last one forced to answer (10 since `3195ede`, released in 5.33.0) |
+| `reviewer` | `REVIEWER_DEEP_PROMPT`: PASS / FLAG / REVISE review against the references (`reviewer.py:100-131`; `deep/agent.py:549-587`). Since 2026-10-14 (`95b6388`; TA-25) its description says to use it only after a draft answer that involved calculations, and that it sees only its brief and cannot open documents, pages or files | reference dispatch tools | none; since 2026-10-14 10 calls (`DEFAULT_REVIEWER_MAX_MODEL_CALLS`), the last one answering from what it has |
 | `calc` (app only) | `_CALC_PREAMBLE` + `_CALC_FRAMING`: run the numbers, build the deliverable with figures, save everything, never write placeholders (`deep/agent.py:379-456`) | analysis dispatch tools + `save_file`, `list_files`, `read_pdf_text`, `read_text_file` | 16 |
 | `general-purpose` | deepagents' stock prompt (short; none of the domain rules), plus since 2026-10-14 one line: return the data gathered and what is missing, never only an apology | the primary's tools | none; since 2026-10-14 (8cd38f4) 30 calls (`GEOTECH_HELPER_MAX_MODEL_CALLS`), the last one hands over the data; at most 2 helpers at once (`GEOTECH_MAX_HELPERS`); a helper that stops keeps its reading in `kept/helper_*.md` (`shared_machinery.md` §5.4) |
 

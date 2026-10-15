@@ -1,11 +1,14 @@
 # Tiny Apps — plan of record and working notes
 
-**Status (2026-10-12): 5.33.0 RELEASED (2026-10-09, with per-tester
-Prompter keys); testers arrive the week of 2026-10-12; the owner meets CfA
-this week for the Prompter and SharePoint values (BACKLOG OWN-43 to
-OWN-51).** Testers get ONE GPT-5.6 Sol-or-higher deployment (owner,
+**Status (2026-10-15): 5.33.0 RELEASED (2026-10-09, with per-tester
+Prompter keys). On 2026-10-14 CfA said the SharePoint connection and the
+per-user Prompter keys are a few weeks out, so the testers wait and the
+production items wait with them (BACKLOG §0; OWN-43 to OWN-51). Meanwhile
+master carries core improvements, and the owner holds the next release
+(OWN-55).** Testers get ONE GPT-5.6 Sol-or-higher deployment (owner,
 2026-10-12); the app measures it on first use. `packages.txt` cannot pin
-pandas 3.0.2 beside 5.33.0 (python-ags4 caps pandas below 3; see the file).
+pandas 3.0.2 beside 5.33.0 (python-ags4 caps pandas below 3; see the file);
+the next release can (master a229090).
 Earlier status (2026-09-23): 5.26.0 released and booted on dosdev. The pilot was awarded
 2026-09-03; the owner has GitHub Enterprise access and the **dosdev**
 development environment (a virtual desktop, Python 3.11.9, VS Code, push to
@@ -213,7 +216,16 @@ From the next release:
   folder;
 - the agents' own model calls wait out busy refusals (retry-after, else
   15/30/60/120 s);
-- at most two helpers run at once.
+- at most two helpers run at once;
+- every model request has a time limit: 180 s on the Prompter key route
+  (CfA's own figure; `webapp/tinyapps_engine.REQUEST_TIMEOUT_S`). Before,
+  langchain gave the SDK no limit at all, and one request the gateway never
+  answered held a helper for over 3.5 hours. A request that times out is
+  retried like a busy refusal (BACKLOG TA-26; whether the gateway can hold a
+  request unanswered is on the CfA list, OWN-50);
+- an interrupted turn's new files get download cards and are named to the
+  next turn, and helpers can list the page readings earlier turns kept
+  (`kept_readings`; on the Document Review page only behind a switch, OFF).
 
 Settings (environment or app settings, not Key Vault; all optional, listed
 in `wrapper_repo/.env.example`):

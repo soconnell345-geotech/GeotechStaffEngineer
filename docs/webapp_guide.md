@@ -54,6 +54,11 @@ analysis code of its own — it's UI and glue over the shipped modules.
   turn, sub-agents included, goes to `activity.jsonl` in the conversation
   folder regardless of the "Show turn details" toggle (which only controls the
   on-screen summary).
+- **Long turns survive errors** (from the release after 5.33.0) — a turn that
+  ends on an error or a rate limit keeps its tool results, so asking the
+  agent to continue picks up where it stopped; busy refusals are waited out,
+  and every model request has a time limit. Details: "Long turns, errors and
+  rate limits" in `webapp/README.md`.
 - **Prominent professional-use disclaimer** at the top of every session.
 
 ---

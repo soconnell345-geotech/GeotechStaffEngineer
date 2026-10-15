@@ -155,7 +155,7 @@ Thirty analysis modules grouped by discipline, plus the shared layers. Native mo
 | **foundations** | `bearing_capacity` · `settlement` | Shallow footing capacity (Vesic/Meyerhof/Hansen, two-layer); consolidation + immediate settlement |
 | **deep foundations** | `axial_pile` · `lateral_pile` · `pile_group` · `drilled_shaft` · `wave_equation` · `downdrag` | Driven & bored pile capacity, p-y lateral analysis, rigid-cap groups, Smith wave-equation drivability, neutral-plane downdrag |
 | **earth retention** | `sheet_pile` · `soe` · `retaining_walls` · `ground_improvement` | Cantilever/anchored walls, support-of-excavation, cantilever & MSE walls, aggregate piers / wick drains / vibro |
-| **slope · FEM · CAD** | `slope_stability` · `fem2d` · `dxf_import` · `dxf_export` · `planlens.pdf` | Rigorous limit-equilibrium (GLE/M-P, Bishop/Spencer/Janbu) + probabilistic FOS; 2D plane-strain FEM with strength reduction; geometry I/O |
+| **slope · FEM · CAD** | `slope_stability` · `fem2d` · `dxf_import` · `dxf_export` · `planlens.pdf` | Rigorous limit-equilibrium (GLE/M-P, Bishop/Spencer/Janbu) + probabilistic FOS; 2D plane-strain FEM with strength reduction, staged construction and staged excavation; geometry I/O |
 | **document review** | [`planlens`](https://pypi.org/project/planlens/) (separate package, installed as a dependency) | Any PDF or image as review-ready data for the agent: a page map and the document's structure (from the pages' own headers, footers and printed numbering), text with exact locations, tables, the review markups (who said what, where it points), AutoCAD hidden text, contact sheets; plus drawing geometry and annotation constructs (leaders, dimensions, callouts). The agent looks at every page a question covers and uses the text as supporting evidence. |
 | **seismic** | `seismic_geotech` · `opensees_agent` · `pystrata_agent` · `liquepy_agent` · `seismic_signals_agent` | Site class, M-O pressures, liquefaction triggering (B&I-2014 / NCEER), 1D site response, ground-motion processing |
 | **structural** | `section_props_agent` · `concrete_props_agent` · `pynite_agent` | Cross-section properties (exact polygon integration + closed-form torsion), RC section capacity/cracked properties (ACI strain compatibility), elastic frame + continuous-beam analysis |
@@ -188,7 +188,7 @@ An agent that confidently returns a wrong bearing capacity is worse than useless
 
 - **One unit system, one I/O shape** — everything is SI; every `analyze_*()` returns a dataclass with `.summary()` (human/agent reading) and `.to_dict()` (machine/JSON).
 - **Validated against the literature** — flagship modules carry a `VALIDATION.md` with worked checks: `slope_stability` vs Fredlund & Krahn 1977 / ACADS / Duncan; `fem2d` vs Griffiths & Lane and the Prandtl solution (~2%); lateral pile vs a COM624P oracle suite.
-- **Tests as a safety net** — each module ships a pytest suite sized to its risk (e.g. `slope_stability` 384, `fem2d` 353, `geotech_common` 288; the reference library alone 3,529). Changes regress against textbook answers.
+- **Tests as a safety net** — each module ships a pytest suite sized to its risk (e.g. `slope_stability` 539, `fem2d` 528, `geotech_common` 328; the reference library alone 5,833). Changes regress against textbook answers.
 - **A reviewer in the loop** — the agent can run a second, reference-scoped pass that checks methodology, parameter ranges, and required safety factors against the standards.
 
 ---
@@ -244,21 +244,12 @@ At every altitude it's the *same* validated method underneath. The deterministic
 
 ## Optional extras
 
-| Extra | Libraries |
-|-------|-----------|
-| `plot` | matplotlib |
-| `calc` | jinja2 |
-| `opensees` | openseespy |
-| `pystrata` | pystrata |
-| `seismic-signals` | eqsig, pyrotd |
-| `liquepy` | liquepy |
-| `gstools` | gstools |
-| `salib` | SALib |
-| `pystra` | pystra |
-| `subsurface` | pygef, python-ags4, pydiggs (subsurface_characterization format adapters) |
-| `pygef` / `ags4` / `pydiggs` | aliases for the individual format-adapter libraries |
-| `dxf` | ezdxf |
-| `full` | All of the above |
+A plain `pip install geotech-staff-engineer` brings every analysis backend (matplotlib, jinja2, openseespy, pystrata, eqsig, pyrotd, liquepy, gstools, SALib, pystra, pygef, ezdxf, PyNiteFEA), the deep agent and the webapp. The older extra names (`plot`, `calc`, `opensees`, `pystrata`, `seismic-signals`, `liquepy`, `gstools`, `salib`, `pystra`, `pygef`, `dxf`, `deep`, `webapp`, `full` and others) are kept as empty aliases, so older install commands still work. Two extras add a library:
+
+| Extra | Adds | Why it is not in the plain install |
+|-------|------|------------------------------------|
+| `ags4` (also `subsurface`) | python-ags4: AGS4 read and validate in `subsurface_characterization` | every release of python-ags4 caps pandas below 3.0 |
+| `pydiggs` | pydiggs: DIGGS dictionary validation | it pulls in sphinx, which upgrades packages a running notebook kernel depends on; the DIGGS 2.6 schema check is bundled and runs without it |
 
 ## Unified liquefaction
 

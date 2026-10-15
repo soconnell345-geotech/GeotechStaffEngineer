@@ -15,7 +15,12 @@ step-by-step computation, engineering checks (pass/fail), and figures.
 - `template.py` — HTML/CSS template as Python string (no external files)
 - `docx_renderer.py` — markdown -> Word (.docx) for prose the agent composed
   (see "Word output" below); nothing to do with the packages themselves
-- `__init__.py` — `generate_calc_package()` entry point + lazy module registry
+- `tables.py` — calculation tables (GM-39): one CSV per table and the printed
+  "Calculation Tables" section (see "Calculation tables" below)
+- `latex_renderer.py`, `latex_template.py`, `latex_compiler.py` — the LaTeX / PDF
+  output (`format="latex"` / `"pdf"`)
+- `__init__.py` — `generate_calc_package()` entry point + lazy module registry,
+  `package_tables()`
 
 ### Per-Module (module_name/calc_steps.py)
 Each supported module provides:
@@ -26,6 +31,7 @@ REFERENCES = ["Citation 1", "Citation 2"]
 def get_input_summary(result, analysis) -> list[InputItem]
 def get_calc_steps(result, analysis) -> list[CalcStep] or list[CalcSection]
 def get_figures(result, analysis) -> list[FigureData]
+def get_tables(result, analysis) -> list[CalcTable]   # optional (GM-39)
 ```
 
 ### Rendering Pipeline
@@ -63,6 +69,32 @@ know nothing about figure mode — which is what makes "all 15 for free" true. P
 multi-analysis narrative, anything with no canned template) can carry the
 module's figures — before this they were reachable only inside a whole canned
 package (owner feedback 2026-09-11).
+
+## Calculation tables (`tables.py`, GM-39, 2026-10-14)
+
+Engineers using LPILE, APILE, GROUP or SLIDE get, beside the answer, the
+tables behind it; the owner asked for the same here. A module returns its
+tables as `geotech_common.tables.CalcTable` objects, from its result object's
+`get_tables()` or from its calc_steps' `get_tables(result, analysis)` when a
+table needs the inputs too (a p-y curve, capacity against length). The
+values are the module's own computed values, SI with the unit in each column
+heading, columns named as the references and the Ensoft manuals name them.
+
+`generate_calc_package(tables=True)` (the default) prints them in a
+"Calculation Tables" section (a long table thinned to 50 rows, with a note
+naming the CSV that holds every row) and, when `output_path` is given, saves
+one CSV per table beside the package (`<stem>_t1_<name>.csv` ..., and the
+input echo as `<stem>_inputs.csv`; `export_tables`). `tables=False` gives no
+tables; a list gives those tables instead. `package_tables(module, result,
+analysis)` returns them without building a package. A table that fails to
+build never costs the package (a warning, and `render_report["tables_error"]`).
+
+Modules with tables: lateral pile, axial pile, pile group, drilled shaft,
+settlement, bearing capacity, sheet pile (cantilever and anchored), slope
+stability (single surface and search), downdrag, fem2d (FEM, staged,
+excavation, consolidation), liquefaction (seismic_geotech), the wave-equation
+bearing graph, ground-improvement time curves. Retaining walls and pavement
+hold only scalars; the SOE package is BACKLOG GM-41.
 
 ## Word output (`docx_renderer.py`, 2026-09-21)
 

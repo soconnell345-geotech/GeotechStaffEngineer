@@ -8,9 +8,11 @@ answer so that review is a two-minute check against a list, not an
 investigation. **Read this BEFORE triaging an install log.**
 
 Last install log triaged line by line: **5.14.0, 2026-09-11** (clean). Installed
-and used on the cluster since: 5.20.0 (2026-09-18, the first scoring run) and
-5.32.0 (2026-10-07, live checks 1 and 4); neither log was pasted for triage.
-The current release is **5.33.0** (2026-10-09).
+and used on the cluster since: 5.20.0 (2026-09-18, the first scoring run),
+5.32.0 (2026-10-07, live checks 1 and 4) and 5.33.0 (2026-10-14, the
+owner's geotech-page sessions, on streamlit 1.65.0); no log was pasted for
+triage. The current release is **5.33.0** (2026-10-09); the next one is on
+master and held by the owner.
 
 ---
 
@@ -145,6 +147,17 @@ to call `write_todos` — every question failed with a recursion error.
 of sniffing version numbers. That self-corrects on deepagents versions that did
 not exist when the guard was written.
 
+**The ceiling was last run in full on 2026-10-14** (BACKLOG INF-10, in WSL):
+Python 3.12 with deepagents 0.7.13, langchain 1.3.18, streamlit 1.66.0,
+pandas 3.0.6, numpy 2.5.4, scipy 1.18.1, plotly 7.1.0 and openai 2.54.0 —
+about 15,360 tests passed over every package folder. Its one failure,
+deepagents 0.7's new `delete` scratch tool reaching the Document Review
+page's menu (and its reading helper and the references consult), is fixed
+on master by hiding it with the other scratch tools; the fix reaches the
+cluster with the next release. The sidebar's
+drift warning (`webapp/version_guard.py`) now treats streamlit below 1.67 as
+tested.
+
 **Red flag:** the agent answering every question with a recursion error right
 after an install. That means a new deepagents changed something the compiled-
 agent check doesn't cover. Everything else about version drift is expected.
@@ -162,7 +175,7 @@ verified:
 | `opencv-python-headless` (via `planlens`) | `>=4.8` — **no ceiling** | **5.0.0.93** | **Verified safe.** Full planlens suite run against OpenCV 5.0.0: 792 passed / 1 skipped on 2026-09-11, and again at planlens 0.13.0 on 2026-10-12, 1,658 passed / 2 skipped (Python 3.12, OpenCV 5.0.0.93, numpy 2.5.4: the TA-02 run on CfA's fleet pins). The cv2 surface we use is small and long-stable (`imdecode`, `cvtColor`, `Canny`, `HoughLinesP`, `HoughCircles`, `findContours`, `approxPolyDP`, `threshold`, `medianBlur`, `rotate`), and `findContours` is already unpacked version-agnostically (`found[0] if len(found)==2 else found[1]`). |
 | `rapidfuzz` (via `planlens`, new at 5.18.0) | `>=3.9` — **no ceiling** | **3.14.6** expected | **New at 5.18.0.** Arrives with planlens 0.4.0, which moved it into its core; it is not an app dependency. Cleared the Nexus probe 2026-09-16 at 3.14.6. MIT, and it pulls **no dependencies of its own** — a C++ extension with prebuilt wheels, so it cannot disturb the numpy or streamlit resolution. |
 | `numpy` | `>=2.0` | 2.4.6 | §4 |
-| `streamlit` | `>=1.39` | 1.63.0 | fine |
+| `streamlit` | `>=1.39` | 1.65.0 (2026-10-14) | fine; tested to 1.66.0, the drift warning's range is `<1.67` |
 | `openai` | `<3` | 2.54.0 | bounded |
 | agent stack | ranges `<0.8` / `<1.4` / `<1.3` | ceilings | §6 |
 
@@ -280,7 +293,7 @@ Stop and investigate only for these:
 | 5.20.3 | — | On PyPI 2026-09-18, same mirror lag. No dependency change: 5.20.2 plus the strict-schema fix in `report_ingest/engine.py` (pydantic's `default`/`minItems`/`maxItems` stripped from every structured-output schema; OpenAI refused the readers' schemas before any token was spent). Expect the 5.20.0 log exactly. Superseded by 5.20.4. |
 | 5.20.4 | — | On PyPI 2026-09-18, same mirror lag. No dependency change: 5.20.3 plus tuple-to-array in `strict_schema` (the readers' four-number bbox). Expect the 5.20.0 log exactly. Superseded by 5.20.5. |
 | 5.20.5 | — | On PyPI 2026-09-18, same mirror lag. No dependency change: 5.20.4 plus a wait-and-retry on the provider's rate limit (429) in `report_ingest/engine.py`. Expect the 5.20.0 log exactly. Superseded by 5.21.0. |
-| 5.33.0 | — | **RELEASED to PyPI 2026-10-09 (tag `v5.33.0`) with planlens 0.13.0 and geotech-references 1.4.1 — THIS IS THE VERSION TO INSTALL**, once the Nexus mirror delivers all three a day or two later. **Pins raised to `planlens>=0.13` and `geotech-references>=1.4.1`; no new third-party package** (python-docx and openpyxl were already installed; planlens 0.13.0 declares exactly what 0.12.0 did). Expect the 5.32.1 log with `geotech_staff_engineer-5.33.0`, `planlens-0.13.0` and `geotech_references-1.4.1`; `anthropic` must NOT appear. What changed, briefly: per-user isolation and per-tester Prompter keys for Tiny Apps; one final answer per turn; Word/Excel in and out; tool errors never end a turn; faster page reads; markups right on rotated sheets; the GEC-12 Fig 7-15 and sheet-pile water-table fixes (HANDOFF §0a-current). Replace this row when the cluster install is confirmed. |
+| 5.33.0 | 2026-10-14 | **Installed and used on the cluster** (the owner's geotech-page sessions of 2026-10-14, on streamlit 1.65.0; the install log was not pasted for triage). **RELEASED to PyPI 2026-10-09 (tag `v5.33.0`) with planlens 0.13.0 and geotech-references 1.4.1 — THIS IS THE VERSION TO INSTALL**, once the Nexus mirror delivers all three a day or two later. **Pins raised to `planlens>=0.13` and `geotech-references>=1.4.1`; no new third-party package** (python-docx and openpyxl were already installed; planlens 0.13.0 declares exactly what 0.12.0 did). Expect the 5.32.1 log with `geotech_staff_engineer-5.33.0`, `planlens-0.13.0` and `geotech_references-1.4.1`; `anthropic` must NOT appear. What changed, briefly: per-user isolation and per-tester Prompter keys for Tiny Apps; one final answer per turn; Word/Excel in and out; tool errors never end a turn; faster page reads; markups right on rotated sheets; the GEC-12 Fig 7-15 and sheet-pile water-table fixes (HANDOFF §0a-current). As master stands (2026-10-15), the next release adds no third-party package; `python-ags4` leaves the core dependencies for the `[ags4]` extra and `openpyxl` becomes direct (§8). |
 | 5.32.1 | — | **RELEASED to PyPI 2026-10-08 (tag `v5.32.1`) with planlens 0.12.0**, superseded by 5.33.0 (install 5.33.0), once the Nexus mirror delivers both a day or two later. **Pin raised to `planlens>=0.12`; no new third-party package** (planlens 0.12.0 declares exactly what 0.11.0 did). Expect the 5.32.0 log with `geotech_staff_engineer-5.32.1` and `planlens-0.12.0`; `anthropic` must NOT appear. New at runtime: `find_like` runs on a numpy matcher where OpenCV cannot load (Funhouse and Foundry are FIPS hosts), and the vision probe makes a fifth small call. Replace this row when the cluster install is confirmed. |
 | 5.32.0 | — | **RELEASED to PyPI 2026-10-04 (tag `v5.32.0`) with planlens 0.11.0**, superseded by 5.32.1 (install 5.32.1), once the Nexus mirror delivers both a day or two later. **Pin raised to `planlens>=0.11`; no new third-party package** (planlens 0.11.0 declares exactly what 0.10.1 did: numpy, ezdxf, PyMuPDF, opencv-python-headless, rapidfuzz). Expect the 5.31.0 log with `geotech_staff_engineer-5.32.0` and `planlens-0.11.0`; `anthropic` must NOT appear. New at runtime: the first `find_like` in a process test-loads OpenCV in a child Python process (a second or two). Release gate: see HANDOFF §0a-current. Replace this row when the cluster install is confirmed. |
 | 5.31.0 | — | **RELEASED to PyPI 2026-09-29 (tag `v5.31.0`)**, superseded by 5.32.0 (install 5.32.0), once the Nexus mirror delivers it a day or two later. **No dependency change and no new package**: pure Python in `funhouse_agent` and `webapp` (Document Review M1 behind switches, all OFF by default: findings, overview, geometry, the digest's free layer, which uses the stdlib `sqlite3`); planlens stays 0.10.1. Expect the 5.30.0 log with `geotech_staff_engineer-5.31.0`; `anthropic` must NOT appear. Release gate: see HANDOFF §0a-current. Replace this row when the cluster install is confirmed. |

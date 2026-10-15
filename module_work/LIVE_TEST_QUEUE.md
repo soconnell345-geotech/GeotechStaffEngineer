@@ -1,8 +1,9 @@
 # Live checks — what to run on Funhouse, and why
 
 > **This file is the RUNBOOK for live checks; the list of what is open is
-> `BACKLOG.md`** (OWN-32, EV-02, TA-03, TA-04). A new check is written up here
-> AND added to the backlog by ID.
+> `BACKLOG.md`** (OWN-32, EV-02, EV-13, EV-15, TA-03, TA-04, and the live
+> halves of VIS-26, TA-28, RI-31). A new check is written up here AND added
+> to the backlog by ID.
 
 **Why this list exists.** Some changes can only be confirmed with the real
 model on Funhouse: offline tests use stand-in models, and Foundry runs a
@@ -21,7 +22,10 @@ out for the month, so checks 6 and 3 ran on Foundry as brief 4 (see Done).
 Their instructions below stay as the Funhouse version, in case either needs
 repeating there.
 
-**Still to run on Funhouse: check 5 only, after 5.32.1 is released.** It
+**Still to run on Funhouse (2026-10-15):** check 5 (5.32.1 or later;
+BACKLOG OWN-32); and, once the release after 5.33.0 reaches the cluster
+(the owner holds it, OWN-55), check 9's extension and checks 10 and 11.
+Check 9's rollout-model part runs on Foundry as brief 6 part A. Check 5
 tests the Funhouse app's own SharePoint and sign-in connections, which
 Foundry does not have. It tests connections rather than the model, so run it
 on the cheaper model (`funhouse-gpt-medium` in the sidebar) with a short PDF
@@ -31,19 +35,20 @@ of 2–5 pages: about 50–150 thousand tokens in all.
 minutes; "small" was wrong before. One run of the circle task reads 160–360
 thousand input tokens, and check 6 runs it six times.
 
-Checks 1, 2 and 4 are done (see "Done").
+Checks 1, 2, 3, 4 and 6 are done, and check 9 on Claude (see "Done").
 
 ---
 
 ## Setup (once per release)
 
-5.32.1 and planlens 0.12.0 are on PyPI (2026-10-08); install them when
-they reach the Nexus mirror, a day or two after PyPI. Until then, use the
-wheels in `foundry_handoff/`.
+The latest release is 5.33.0 with planlens 0.13.0 (PyPI, 2026-10-09; on
+the cluster since 2026-10-14). Checks 9 (extension), 10 and 11 need the
+release after it, which is on master and not yet cut: the owner holds it
+(BACKLOG OWN-55). Use 5.33.0 for check 5.
 In a Funhouse notebook:
 
 ```python
-%pip install "geotech-staff-engineer==5.32.1"
+%pip install "geotech-staff-engineer==5.33.0"
 dbutils.library.restartPython()
 ```
 
@@ -52,16 +57,16 @@ Then, in a new cell, confirm the versions:
 ```python
 import importlib.metadata as md
 print(md.version("geotech-staff-engineer"), md.version("planlens"))
-# expect: 5.32.1 0.12.0
+# expect: 5.33.0 0.13.0
 ```
 
-If pip says it cannot find 5.32.1, the Nexus mirror has not caught up yet (it
-usually lags PyPI by a day or two). Either wait, or upload the two wheel
-files from `foundry_handoff/` to the cluster and install them directly,
+If pip says it cannot find a new release, the Nexus mirror has not caught up
+yet (it usually lags PyPI by a day or two). Either wait, or upload the two
+wheel files from `foundry_handoff/` to the cluster and install them directly,
 planlens first:
 
 ```python
-%pip install /path/to/planlens-0.12.0-py3-none-any.whl /path/to/geotech_staff_engineer-5.32.1-py3-none-any.whl
+%pip install /path/to/planlens-0.13.0-py3-none-any.whl /path/to/geotech_staff_engineer-5.33.0-py3-none-any.whl
 dbutils.library.restartPython()
 ```
 
@@ -263,7 +268,7 @@ and afterwards `os.environ.pop("GEOTECH_VISION_PATCH_ALIGN")`.
 **Send:** both printed outputs and both saved JSON files
 (`location_remeasure_*.json`).
 
-## Check 9 — Screenshots and photos: zoom and tiles on an image file (next release; about 10 model calls, no agent)
+## Check 9 — Screenshots and photos: zoom and tiles on an image file (run on Claude 2026-10-14; the rollout model in Foundry brief 6 part A; about 18 vision calls, no agent)
 
 **Why.** Until 2026-10-14 an uploaded or pasted image was seen whole, once:
 fine print on a large screenshot could not be read and nothing came back to
@@ -291,6 +296,70 @@ suite task can follow (EV-15).
 **Send:** the printed output and the saved JSON.
 
 **Run on Claude Sonnet, 2026-10-14** (`foundry_handoff/image_zoom_check_foundry.py`, $0.11): look and 2 x 2 tiles 27/28 tags read (6 with a box round the whole callout from one tile), 3 legend cells as strays; zooms 8/8 right, within 0.7 px, the turned tag and the QCE decoy included. The image path works live; the rollout model is measured in Foundry brief 6 part A.
+
+**Extension: marks and `find_like` on an image (BACKLOG VIS-26; in the app,
+the release after 5.33.0; one or two turns, roughly 50–150 thousand input
+tokens, an estimate).** Since 2026-10-15 a marked copy of an image is a PDF
+page the size of the image at 1 pt a pixel, and `find_like` searches an
+image in its own pixels. Claude, in live smoke wave w6 (2026-10-15), ringed
+the photo right the first time; this checks the rollout model. On either
+page:
+1. Upload a phone photo (a JPEG taken with the phone turned, so it carries an
+   EXIF rotation) and ask for a ring round one thing on it. **Pass:** the
+   ring is confirmed by the check the first time, and the marked PDF's page
+   is the photo's size in pixels, upright.
+2. Paste a screenshot that shows one tag several times and ask for every
+   copy (`find_like`). **Pass:** every copy found, boxes in the screenshot's
+   pixels.
+
+**Send:** the conversation folder.
+
+## Check 10 — Earlier turns' work reaches the next turn and its helpers (BACKLOG TA-28; the release after 5.33.0; geotech page; an estimate of 0.5–1.5 million input tokens)
+
+**Why.** In the 2026-10-14 field session an interrupted turn's DIGGS file
+was missing from the next turn's list, and the helpers looked again at 25
+pages earlier turns had already read. Now an interrupted turn's new files get
+download cards and are named in the next turn's files note, and a read-only
+tool, `kept_readings`, lists the conversation's kept page readings for the
+primary AND its helpers. Offline tests pass; only a live model shows whether
+helpers use it.
+
+**How.** On the geotech page, with a public report that has several boring
+logs:
+1. Ask for the logs as DIGGS. As soon as "Turn details" shows `write_diggs`
+   has written its file, stop the turn (or restart the app).
+2. Reopen the conversation and say "continue". **Pass:** the DIGGS file has
+   a download card, and the turn's note names it as the interrupted turn's.
+3. Ask a follow-up that needs the same pages again (another value off the
+   same logs), so the agent hands it to helpers. **Read:** how many
+   `kept_readings` calls against new looks at pages already read.
+
+**Send:** the conversation folder (`activity.jsonl` shows each
+`kept_readings` call and each look).
+
+## Check 11 — Helpers save records as files, and `write_diggs` reads them (BACKLOG RI-31, EV-15; the release after 5.33.0; geotech page; an estimate of 0.5–2 million input tokens)
+
+**Why.** In the field session the primary retyped 29 thousand characters of
+helper output into `write_diggs`, and four kinds of fault came in that way.
+Now `write_diggs` takes records from JSON files a helper saved
+(`investigations_file`, `lab_tests_file`), and a `task` result names the
+files its helper saved. A Claude smoke run on a 22-page synthetic report
+(wave w5) passed, but used no helpers, so this path has not run live.
+
+**How.** On the geotech page, with a LONGER public report whose boring logs
+are vector text (so `log_grid` can read them), ask for every boring as a
+DIGGS file.
+
+**Read:**
+- whether the primary briefs its helpers to save their records as files,
+  and passes them to `write_diggs` by name;
+- the characters the primary types into the `write_diggs` call, against the
+  field session's 29 thousand;
+- if a helper stops early, whether its saved file still reaches the primary
+  (BACKLOG TA-21, EV-15);
+- the `cross_checks` in the result.
+
+**Send:** the conversation folder.
 
 ## Check 8 — Visual scales: label crops, `measure`, the chart's second reading, report ingest (next release; on Foundry as part of brief 5)
 
@@ -394,6 +463,19 @@ questions, about 50-100 thousand tokens).
 two RESULTS.md (step 4). Every run is read in full.
 
 ## Done
+
+- **2026-10-14, check 9 on Claude Sonnet (about 18 calls, $0.11 of API
+  credit).** The look and its 2 x 2 tiles read 27 of 28 tags (6 with a
+  box round the whole callout); all 8 zooms read their tag within 0.7 px,
+  the turned tag and the QCE decoy included. The image path works live. Not
+  yet on the rollout model: Foundry brief 6 part A (drafted, BACKLOG EV-13).
+
+- **2026-10-08, check 8 (steps 1, 2 and 4) and check 7 on Foundry (brief 5,
+  5.33.0rc1).** Read in full in
+  `module_work/review_eval_results/2026-10-08_foundry_5.33.0rc1/`
+  (`TRACE_REVIEW_B_AEFG.md`: part A label crops, E the chart's second
+  reading, F patch alignment, G report ingest with visual scales off and
+  on). Check 8 step 3 and check 7's repeats are still open (BACKLOG EV-02).
 
 - **2026-10-07, checks 6 and 3 on Foundry (brief 4, 5.32.1rc3; GPT-5.4 and Sol).**
   - **The location fix held:** whole-page pixel boxes were a median 3.5–19 pt off on GPT-5.4 and 1–1.5 pt on Sol. Every ring was placed from a zoom.

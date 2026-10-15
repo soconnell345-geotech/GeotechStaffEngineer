@@ -668,12 +668,12 @@ slope_stability scores Taylor's D = 2 and D = 3 circles at 0.706 and 0.678
 
 | Model (D = 3 unless noted) | Limit equilibrium | SRM |
 |---|---|---|
-| Ground profile 1 H beyond crest and toe (trend test) | 0.727 default grid, 0.719 grid 20x20, 0.722 entry-exit: the circle runs from one end of the profile to the other | — |
+| Ground profile 1 H beyond crest and toe (trend test) | 0.727 default grid (0.726 since GM-87), 0.719 grid 20x20, 0.722 entry-exit: the circle runs from one end of the profile to the other | — |
 | Same, with the default x_extend (rollers 1.6 H out) | 0.697-0.705 on that outline | 0.641 (15x8, tol 0.05), 0.645 (30x15) |
 | Level ground 3 H each side | | 0.660 (44x15) |
-| Level ground 4 H each side | 0.676 (centre grid over the slope; entry-exit 0.676); 0.690 default grid | 0.668 (50x15), 0.660 (75x22), 0.662 (100x30, nu 0.49) |
+| Level ground 4 H each side | 0.676 (centre grid over the slope; entry-exit 0.676); 0.690 default grid, 0.676 since GM-87 | 0.668 (50x15), 0.660 (75x22), 0.662 (100x30, nu 0.49) |
 | Level ground 5 H each side | | 0.668 (60x15) |
-| D = 2, level ground 4 H each side | 0.705 (centre grid over the slope); 0.739 default grid | 0.699 (50x10) |
+| D = 2, level ground 4 H each side | 0.705 (centre grid over the slope); 0.739 default grid, 0.703 since GM-87 | 0.699 (50x10) |
 | D = 2, GL99 Ex 4's outline (1.2 H behind the crest, 2.4 H beyond the toe) | 1.486 (Ex 4) | 0.676 (= Ex 4's 1.419 scaled, §2) |
 | D = 2, 2 H behind the crest, 2.4 H beyond the toe | | 0.699 |
 
@@ -685,8 +685,10 @@ slope_stability scores Taylor's D = 2 and D = 3 circles at 0.706 and 0.678
   profile against circles on the ground carried on level past the end and
   warns, giving their FOS (Duncan Ex 1's profile: 0.681 against 0.727;
   slope_stability `_profile_end_warning`). The default centre grid spans
-  the whole profile, so on a long profile it is coarse: 0.690 and 0.739
-  above (a follow-up).
+  the whole profile, so on a long profile it was coarse: 0.690 and 0.739
+  above. Since GM-87 (2026-10-15) the search refines its lowest grid
+  centres and finds Taylor's circle: 0.676 at D = 3 and 0.703 at D = 2
+  (slope_stability DESIGN.md, "Local refinement of the centre grid").
 - **SRM, a little low (safe side).** The side boundaries are rollers, on
   which the soil slides without resistance. With them 1.6 H from the
   crest and the toe the mechanism runs down and up them: 0.645, 3.5 %

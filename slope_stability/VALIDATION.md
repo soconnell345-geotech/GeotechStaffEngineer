@@ -141,6 +141,10 @@ slivers a circular search would otherwise pick with a spurious low FOS).
 | #98 (approx geom) | DWW 3-stage (default) | 0.938 | 1.039 | -10% |
 | #98 (approx geom) | DWW 3-stage (`gle` stage-3) | 0.959 | 1.039 | -8% |
 
+(Since GM-87, 2026-10-15, the drawdown search also refines its lowest grid centre;
+#98 moved by up to 0.3 % further down, e.g. Corps 0.8370 -> 0.8341, B13. The pinned
+values above hold.)
+
 Wrapper MECHANICS are exact on the #95/#96 EXACT section (search min 0.90 <= the
 published specified-circle single-surface FOS; the stage detail recomputed on the
 winning surface reproduces the search FOS). #98's ~10% low minima are a geometry
@@ -173,8 +177,7 @@ equivalence, TIN exactness, search wiring). The published 1.498 is NOT pinned: t
 manual's Figure 10.2 flow-net grid + excavation extent are a figure that did not
 survive text extraction, so an exact referee match would require inventing them
 (forbidden). The ACADS-5-style run is a capability DEMONSTRATION, not a match.
-Follow-up for the lead: expose `pore_pressure_points` in the funhouse slope
-adapter (outside this task's edit scope).
+The funhouse slope adapter now takes `pore_pressure_points` too.
 
 ## B9 — Tension crack: exit-side + mass-truncation (v5.4 E4, validation_examples V-026 E4)
 [Slide2 Verification #2 = ACADS 1(b): ACADS #1 slope, c'=32/phi'=10/gamma=20,
@@ -300,6 +303,29 @@ V-032: Slide2's printed critical circle for #61 (-1.665, 9.968, R 10.106) gives
 Bishop 1.324 / Spencer 1.322 here and 1.3244 in an independent hand Bishop, 3.2 %
 below its printed 1.366, so the search's 1.315 toe circle is a genuine lower minimum
 for the stated inputs; the old <0.1 % PASS is on a different circle.
+
+## B13 — Search: local refinement of the centre grid (GM-87, 2026-10-15)
+[`search_critical_surface` and `search_rapid_drawdown` now refine the lowest centres
+of the grid by a compass search on the centre (`refine=True`, the default;
+`refine=False` gives the grid alone). DESIGN.md "Local refinement of the centre
+grid". Tests: `tests/test_duncan_verification.py`, `tests/test_search_robustness.py`,
+`tests/test_search_supplements.py`.]
+
+| Case | Grid alone | Refined (default) | Reference |
+|------|-----------:|------------------:|----------:|
+| Duncan Ex 1 (phi = 0), D = 2, 4 H / 5 H level ground each side, Bishop | 0.739 / 0.755 | 0.703 / 0.703 | Taylor 0.706 |
+| same, D = 3, 4 H / 5 H / 6 H | 0.690 / 0.696 / 0.703 | 0.676 | Taylor 0.679 |
+| Duncan Ex 1 on its own short profile (1 H each side) | 0.727 | 0.726 + the profile-end warning (GM-63) | |
+| Duncan Ex 4, sand over clay | 1.319 | 1.249 + the profile-end warning | |
+| ACADS 1(a), default Bishop, grid family | 0.990 | 0.988 (the toe circle 0.985 still governs) | 1.00 |
+| V-054 window-limited circle (toe circles off) | 2.784 | 2.770 (the toe circle 2.286 governs) | 2.287 |
+| #98 rapid drawdown, Corps / DWW / LK | 0.8370 / 0.9352 / 0.9632 | 0.8341 / 0.9349 / 0.9619 | 0.931 / 1.039 / 1.075 |
+| Pilarcitos true section, Corps | 0.7258 | 0.7236 | 0.823 |
+
+Every number that moved went down; no published-benchmark test needed a change
+(the V-041 / V-048 pins hold at their ±0.03). Spencer / M-P / GLE walk with Bishop
+and re-score with the method itself; a reinforced model walks with the method itself
+(Slide2 #85 anchored, Spencer: grid 1.581, refined 1.574).
 
 ---
 

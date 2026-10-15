@@ -647,6 +647,19 @@ A layer whose base the sheet never printed is written as a contact and named the
 same way — DIGGS can carry it, the app's `LithologyInterval` holds intervals
 only.
 
+**The app's tool over this writer** is `subsurface.write_diggs`
+(`funhouse_agent/adapters/subsurface_adapter.py`): the agent gives records
+inline or, since RI-31 (2026-10-14), as JSON files in the conversation's
+working folder (`investigations_file` / `lab_tests_file`, one file or a list;
+inline and file inputs combine, an `investigation_id` in two inputs is refused,
+and the result's `sources` lists each input), so a helper's saved records are
+never retyped. It runs this package's reconciler first and returns
+`cross_checks` (including RI-28's drive and depth checks above) and, since
+EV-18 (2026-10-15), a `page_not_read` entry for each record citing a page no
+tool opened in the conversation, with a `cited_pages` result; it never refuses
+on those. A printed refusal in `n` (`>50`, `50/5"`, `R`) becomes
+`refusal: true` with the printing kept (RI-26, RI-27).
+
 **The gate that matters is deterministic and needs no model.** All fifteen
 hand-truthed logs and all **thirty-one** hand-truthed laboratory sheets convert
 to records, write, validate and round-trip:
@@ -833,6 +846,7 @@ count is not corrected, the mismatch is recorded.
 | lab → ground | Finds the investigation the sheet NAMES and the sample at its depth, within 0.15 m and unit-aware, and writes the link into `linked_investigation_id` / `linked_sample_id`. The printed values are never touched. A sheet naming a hole this report does not carry is a QA entry, not a link. |
 | counts | `boringCount` / `testPitCount` / `cptCount` against the investigations read, and `boringDictionary` / `testPitDictionary` against the identifiers found, both ways: named-but-missing and found-but-unnamed. |
 | the summary table | Every value a row and a sheet both carry, compared in SI; only the disagreements are recorded. A value only one side carries is not a conflict, it is a column. |
+| each log against itself (RI-28, 2026-10-14) | A driven record's drives, read the way the DIGGS writer will write them, must add up to its interval (within 0.025 m or 10 %; a refusal may stop short but not run past it by more than 0.05 m or 25 %); its number of drives must match the log's other complete records (at least three, 60 % agreeing); no layer, sample, driven record or water level may sit below the hole's total depth. Each disagreement is a QA entry; nothing is changed. Found in a field session: a refusal's `60/15"` written as a 0.381 m drive in a 0.15 m sample, a dropped drive, layers to 21.1 m under a 20.1 m hole. |
 | units | Every quantity whose printed unit has no conversion, named once with its fields: stored as printed and absent from the SI view. |
 | pages | A page whose label says boring log that ended in no work item; a page with no reliable text and no Azure Document Intelligence result. |
 | the readers | Every `unresolved` line they returned, carried through as a QA entry. |

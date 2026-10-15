@@ -22,7 +22,7 @@ GeotechAgent
 ├── Two tool-calling modes (auto-detected from engine type):
 │   ├── Text-based ReAct  — <tool_call> XML parsing (ClaudeEngine, PrompterAPI.chat)
 │   └── Native tool calling — OpenAI `tools` parameter (NativeToolEngine)
-├── 50 adapter modules (36 analysis + 14 reference) bridging flat JSON → module APIs
+├── 69 adapter modules (36 analysis + 33 reference; `dispatch.ANALYSIS_MODULES` / `REFERENCE_MODULES`) bridging flat JSON → module APIs
 ├── Real-FS discovery (list_files) + PDF text extraction (read_pdf_text) + vision tools
 ├── Attachments dict for image/PDF data — accepts an attachment key OR a real path
 ├── Verified saves (write-then-read-back + /tmp rescue; Databricks /Workspace API)
@@ -66,7 +66,7 @@ Key properties:
   effect immediately, no library update needed.
 - **Auto-detected** — `GeotechAgent` checks for `engine.native_tool_calling`
   and switches to the native loop automatically.
-- **Same adapters** — dispatches to the same 50 adapter modules; only the
+- **Same adapters** — dispatches to the same 69 adapter modules; only the
   conversation format changes (OpenAI messages + `tool_calls` vs text XML).
 - **NotebookChat compatible** — `_on_tool_call` hook fires for each tool call.
 
@@ -119,20 +119,26 @@ Each adapter exports:
 
 Adapters are lazy-loaded: `dispatch.py` only imports an adapter when first called.
 
-### Subsurface Adapter (8 methods)
+### Subsurface Adapter (17 methods)
 
-`subsurface_adapter.py` provides DIGGS XML ingestion and all visualization:
+`subsurface_adapter.py` provides DIGGS XML ingestion and writing, the folded
+format adapters, and all visualization:
 
 | Method | Purpose |
 |--------|---------|
 | `parse_diggs` | Parse DIGGS 2.6/2.5.a XML → cached SiteModel, returns `site_key` + summary |
 | `load_site` | Load site from nested dict → cached SiteModel, returns `site_key` |
+| `write_diggs` | Write DIGGS 2.6 from logs and lab results the agent has read, checked against the bundled schema and read back. Records come inline or, since RI-31 (2026-10-14), from JSON files a helper saved in the conversation's working folder (`investigations_file` / `lab_tests_file`; an id in two inputs is refused). Returns `cross_checks` (lab links, summary tables against sheets, drives against the sample interval and the log's form, readings below the hole's total depth, records citing pages no tool opened) and never changes a value. Groundwater "not encountered" is never written as a reading, an unknown position is written as NaN, and a printed refusal (`>50`, `50/5"`) becomes a refusal row (RI-27) |
 | `plot_parameter_vs_depth` | Scatter plot of any parameter vs depth (Plotly) |
 | `plot_atterberg_limits` | LL-PL bracket plot with natural moisture overlay |
 | `plot_multi_parameter` | Side-by-side subplots with shared depth axis |
-| `plot_plan_view` | Map of investigation locations |
+| `plot_plan_view` | Map of investigation locations; since GM-76 the axes are labelled from the stated coordinate system (longitude / latitude, easting / northing, or plain x / y with the system named) |
 | `plot_cross_section` | Lithology column profile along a transect |
 | `compute_trend` | Linear/log-linear regression with R², COV |
+| `parse_cpt`, `parse_bore` | GEF or BRO-XML CPT and borehole files (pygef) |
+| `read_ags4`, `validate_ags4` | AGS4 files (python-ags4; from the release after 5.33.0 an optional extra, `[ags4]`) |
+| `validate_diggs_schema`, `validate_diggs_dictionary` | DIGGS XML against the schema (2.6 bundled; 2.5.a and the dictionary need pydiggs) |
+| `spt_correction`, `stress_dilatancy` | SPT N → N60 → (N1)60; Bolton (1986) dilatancy |
 
 All plot methods accept `site_key` (preferred, from cache) or `site_data` (dict).
 Pass **`output_path`** to SAVE the self-contained Plotly HTML to a real path
@@ -203,6 +209,69 @@ durable write through the authenticated Databricks workspace API
 verified write when `databricks-sdk` is not importable. The SDK stays an
 OPTIONAL dependency (preinstalled on Databricks runtimes, guarded everywhere); a
 custom `save_fn` is the caller's explicit backend and is never rerouted.
+
+## Deep agent: long turns, helpers and the record (on master after 5.33.0, unreleased)
+
+The deep agent (`funhouse_agent/deep/`) is described from the code in
+`module_work/harness_theory/` (`shared_machinery.md`: the loop, the limits,
+the eyes). What changed on master after 5.33.0, in short:
+
+- **An errored turn keeps its work** (`webapp/turn_record.py`, TA-19): every
+  reply and tool result is recorded as it arrives; on an error the record
+  becomes replayable history, so "continue" picks up from the tool results.
+  Very large results are kept whole in the conversation's `kept/` folder. An
+  interrupted turn's new files get download cards and are named in the next
+  turn's files note (TA-28).
+- **Helpers** (`deep/keep_work.py`, TA-21, TA-22): at most
+  `GEOTECH_MAX_HELPERS` (2) at once; a general-purpose helper has a 30-call
+  budget (`GEOTECH_HELPER_MAX_MODEL_CALLS`) whose last call hands over what
+  it gathered; a helper that stops writes what it read to
+  `kept/helper_*.md`; a `task` result whose helper saved files names them,
+  so the primary passes the file instead of retyping it (RI-31).
+- **The `reviewer` helper** (TA-25) has a 10-call budget
+  (`DEFAULT_REVIEWER_MAX_MODEL_CALLS`), its last call answering from what it
+  has; its description says to use it only after a draft answer that
+  involved calculations, and that it sees only its brief: it cannot open
+  documents, pages or files.
+- **Busy refusals** (`deep/busy_retry.py`, `AgentBusyRetry`, TA-20): every
+  agent model call retries a 429 / 529 / 5xx / overloaded / connection /
+  timeout refusal on the provider's retry-after or 15/30/60/120 s,
+  `GEOTECH_AGENT_BUSY_TRIES` (5) tries within `GEOTECH_BUSY_TURN_MAX_S`
+  (900 s) a turn. An optional per-key token pacer:
+  `GEOTECH_TOKENS_PER_MINUTE` (`deep/pacing.py`; unset = off).
+- **Request time limits** (TA-26): a model request gives up after 180 s on
+  the Prompter key route (`webapp/tinyapps_engine.REQUEST_TIMEOUT_S`) and
+  600 s on the Foundry proxy and Anthropic routes
+  (`webapp/engine_config.MODEL_REQUEST_TIMEOUT_S`); before, langchain handed
+  the SDK no limit at all. A timeout is then retried as busy.
+- **`kept_readings`** (`vision_tools.py`, TA-28): a read-only tool that lists
+  the conversation's kept page readings by reference and returns one whole
+  by page, as `reuse=true` does. On the geotech page for the primary and its
+  helpers; on the review page only with `GEOTECH_REVIEW_KEPT_READINGS` (OFF).
+- **Cited pages** (`cited_pages.py`, EV-18): after each turn the pages an
+  answer cites are checked against the pages any tool or helper read or
+  looked at, and a `cited_pages` event is recorded; `GEOTECH_CITED_PAGES`
+  (`note` / `retry`; OFF) acts on it. `write_diggs` always adds a
+  `page_not_read` cross-check for a record citing pages no tool opened, and
+  `record_finding` returns `pages_not_opened`.
+- **The review page** (DR-04, INF-10) no longer offers
+  `read_reference_figure` / `view_worked_example_source`, and deepagents
+  0.7's `delete` scratch tool is hidden there (and in the references
+  consult) with the other scratch tools.
+- **Vision** (VIS-01, VIS-04, VIS-05): an optional `turn` (0/90/180/270) on
+  `analyze_pdf_page` / `render_region`; boxes right on sideways sheets; a
+  zoom that cuts lines of lettering widens to take them in or says which
+  edge cuts them; the turned re-read behind `GEOTECH_VISION_TURN_RETRY`
+  (OFF). The markup check keeps the agent correcting through checks 1-3,
+  names unconfirmed marks at check 4, and returns `found_bbox` for a
+  misplaced mark (DR-15, DR-16).
+- **The record** (`activity.jsonl`, EV-14): token use on the Prompter route,
+  `task_id` and the brief on every event inside a helper, a refusal's status
+  and rate-limit headers, the engine and retry policy, queue times, and cut
+  payloads kept whole in `activity_full/`.
+
+Every switch and its default: `review_flags.py` and
+`module_work/REVIEW_HARNESS.md`.
 
 ## Notebook Chat (notebook.py, deep/notebook.py)
 

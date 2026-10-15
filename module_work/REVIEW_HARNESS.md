@@ -41,6 +41,8 @@ is what it was, except the unswitched fixes at the end.
 | `GEOTECH_REVIEW_OVERVIEW=1` (5.31) | contact sheets requested in the orientation above `GEOTECH_REVIEW_OVERVIEW_PAGES` (20); with inline too, shown to the agent | `webapp/profiles.py` |
 | `GEOTECH_REVIEW_GEOMETRY=1` (5.31) | (lean only) `drawing_callouts`, `drawing_dimensions`, `title_block`, `revision_clouds` from planlens.ir | `deep/geometry_tools.py` |
 | `GEOTECH_REVIEW_DIGEST=1` (5.31) | (lean only) the digest's free layer: `document_inventory`, `digest_search`, `digest_pages`, `digest_references` | `funhouse_agent/review_digest/`, `deep/digest_tools.py` |
+| `GEOTECH_COVERAGE=1` (5.33) | both pages, every build but the minimal one: a ledger of every page any tool or helper read or looked at (`coverage.json`), the `document_coverage` tool, and a once-only note when an extraction turn tries to finish with data pages unread. Arm `coverage` (default agent + switch) | `funhouse_agent/coverage.py` |
+| `GEOTECH_REVIEW_CHECKLIST=1` (5.33) | both pages: `report_checklist`, the report-review checklist (DRAFT) with the checks code can make run from the ledger and the data's cross-checks. Arm `checklist` (with coverage) | `funhouse_agent/report_checklist.py` |
 | `GEOTECH_VISION_TURN_RETRY=1` (master, 2026-10-14) | a look sent as the page shows it ends "TURNED: ..." when its lettering runs sideways, and that view is re-read once turned upright; a page found turned is remembered for later looks. Arm `turn_retry` (default agent + switch). The `turn` argument on the looks is unswitched (BACKLOG VIS-01) | `funhouse_agent/vision_tools.py`, `vision_view.py` |
 | `GEOTECH_REVIEW_KEPT_READINGS=1` (master, 2026-10-15) | the review page and its reading helper offer `kept_readings`: the conversation's kept page readings by reference, one whole by page, read-only; the geotech page has it unswitched (BACKLOG TA-28). Arm `kept_readings` (default agent + switch) | `funhouse_agent/vision_tools.py`, `deep/agent.py`, `deep/review_agent.py` |
 | `GEOTECH_CITED_PAGES=note` / `retry` (master, 2026-10-15) | after each turn the answer's cited pages are checked against the pages any tool or helper opened; `note` appends a note listing never-opened citations, `retry` tells the model once; unset = recorded only (`cited_pages` event). `write_diggs`'s `page_not_read` cross-check is unswitched (BACKLOG EV-18). Arms `cited_pages_note`, `cited_pages_retry` | `funhouse_agent/cited_pages.py`, `webapp/core.py` |
@@ -168,7 +170,9 @@ project. The review-harness items are its §2 (DR-nn) and §3 (VIS-nn); the
 
 The other review-harness items on the list: the look-alike /
 self-verification and box-carrying boundary found by
-`module_work/harness_theory/`; an image crop/zoom tool for raster uploads;
+`module_work/harness_theory/`; an image crop/zoom tool for raster uploads
+(done 2026-10-14: `render_region` and `analyze_image` tiles on an image file,
+BACKLOG VIS-09);
 then, as before, Phase 5 (rewrite the review prompt around the review method
 and drop every incident rule the suite does not need) and the candidates that
 must earn their place on the suite (a cross-reference resolver; revision

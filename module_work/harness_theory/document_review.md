@@ -65,6 +65,17 @@ Further switches (all OFF by default) add behaviour to the lean agent only:
 (`review_flags.py:177-195`); `sweep` = lean + text context + structured
 locations + `sweep_pages`.
 
+*Since then:* later switches act on the DEFAULT agent too, each OFF with an
+arm that compares straight against `baseline`: `GEOTECH_COVERAGE` and
+`GEOTECH_REVIEW_CHECKLIST` (5.33.0; arms `coverage`, `checklist`),
+`GEOTECH_VISION_TURN_RETRY` (2026-10-14; `turn_retry`),
+`GEOTECH_REVIEW_KEPT_READINGS` and `GEOTECH_CITED_PAGES` (2026-10-15;
+`kept_readings`, `cited_pages_note`, `cited_pages_retry`). The full list with
+defaults is the switch table in `module_work/REVIEW_HARNESS.md`. And since
+2026-10-12 (app `ae50842`, unreleased) the default ("legacy") build has the
+lean build's two safeguards: a 40-call budget whose last call answers, and a
+`task` helper with the reading rules (§3.2, §4.4).
+
 The page also does one thing no other page does: after an upload it sends an
 automatic **orientation turn** in the user's name ("give me a short
 orientation … do not review it yet", `profiles.py:37-46`), except when the
@@ -112,12 +123,14 @@ unreadable, split long sets among helpers, cite tool page + 1.
 
 | Tool group | Legacy | Lean (`sweep`) | Minimal |
 |---|---|---|---|
-| deepagents scratch FS (`ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`) | yes | — | — |
+| deepagents scratch FS (`ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`) | yes; hidden from the page's menu and prompt since 5.33.0 (live smoke wave 2b), and deepagents 0.7's `delete` with them since 2026-10-14 (INF-10) | — | — |
 | `write_todos` | yes (4,377-char schema) | yes (590) | — |
-| `task` | deepagents `general-purpose` (7,570) | `page_reader` (803) | `page_looker` (574) |
+| `task` | deepagents `general-purpose` (7,570); since 2026-10-12 (`ae50842`) re-declared with the review's reading rules, the read-only tools and a 14-call budget | `page_reader` (803) | `page_looker` (574) |
 | planlens reading tools (8) + `annotate_document` | yes | yes | `annotate_document` only, wrapped as `mark_up` |
 | `analyze_pdf_page`, `render_region`, `analyze_image` | side call | side call (inline with the switch) | inline |
 | (since 2026-10-14, d1bc722) `render_region` on an image file, `analyze_image(tiles, turn)`; `turn` on `analyze_pdf_page` / `render_region` | yes | yes | — (inline ignores `turn`) |
+| (since 2026-10-15, fde2df1) `annotate_document` and `find_like` on an image file, in the image's own pixels | yes | yes | `mark_up` too |
+| (since 2026-10-15, 642bd36) `kept_readings`: the conversation's kept page readings, read-only | only with `GEOTECH_REVIEW_KEPT_READINGS` (OFF), its helper too | same, `page_reader` too | — |
 | `find_like` | yes where OpenCV loads | same | — |
 | `read_pdf_text`, `read_text_file`, `list_files`, `save_file`, `write_docx` | yes | yes (no `read_pdf_text`) | `write_docx` only |
 | geotech-only `read_reference_figure`, `view_worked_example_source` | removed 2026-10-14 (077192c; they were inherited and could not work here) | — | — |
@@ -199,6 +212,13 @@ single turn (`runner.py:135-245`).
 | legacy | the model replies without tool calls | step cap 50 per turn → `GraphRecursionError` (scored as empty answer, "step cap") |
 | lean / minimal | same | 40 model calls → forced final answer without tools; step cap raised to 350 so the budget binds first |
 | `page_reader` / `page_looker` | the helper's last text | 14 model calls → forced "return what you have" |
+
+*Since 2026-10-12 (app `ae50842`, unreleased; BACKLOG DR-02, DR-03):* the
+legacy build ends like the lean one: 40 model calls
+(`GEOTECH_REVIEW_MAX_MODEL_CALLS`) and a forced final answer, with the step
+cap raised to fit; its `task` helper has the reading rules and 14 calls.
+`GEOTECH_REVIEW_MAX_MODEL_CALLS=off` restores the step cap alone. With
+`GEOTECH_COVERAGE` on, the coverage gate does that job instead.
 
 No step cap or budget fired in brief 3: the RESULTS tables show 0 errors and
 0 step caps in every arm (`brief3/out_sol_532/RESULTS_main.md`,
@@ -310,7 +330,12 @@ drawn closely round the thing (commit `4ea4bd0`, `markup_check.py:49-68`).
 *Since 2026-10-07 (unreleased):* that question was too strict on GPT-5.4,
 so the size is now measured instead (`cc697e6`). planlens also refuses a small
 mark read off a view wider than 300 pt (`08a1d53`); see the README,
-"Changed since this was written". One
+"Changed since this was written". *Since 2026-10-12/14 (`da28a69`,
+`077192c`, unreleased; BACKLOG DR-14 to DR-16):* the check measures a ring
+against the printed thing, not the comment; checks 1-3 of a marked copy say
+to keep correcting without asking, check 4 says to hand the file over naming
+every unconfirmed mark; and a misplaced ring or box whose look found the
+named thing carries `found_bbox` to re-mark with. One
 side call in this run took 904 s (t = 207 → 1,098 s): an infrastructure stall,
 not agent behaviour.
 

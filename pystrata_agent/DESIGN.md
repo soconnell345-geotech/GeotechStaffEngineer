@@ -42,6 +42,17 @@ pystrata_agent_foundry.py  # Foundry wrapper (project root)
    numerical accuracy. Controlled by `max_freq_hz` (default 25 Hz) and
    `wave_frac` (default 0.2 = λ/5).
 
+7. **Convergence tolerance is a FRACTION** (GM-78, 2026-10-14) —
+   `tolerance=0.01` means the iteration stops once no layer's shear modulus
+   or damping changes by more than 1 % between iterations. pystrata's own
+   tolerance is in percent, so the wrapper passes `tolerance * 100`. Until
+   2026-10-14 the fraction went through unchanged (a 0.01 % target), every
+   run used all `max_iterations` and was reported not converged.
+   `converged` is judged on the SIZE of the largest change
+   (`_max_abs_error_percent`): pystrata's `max_error` keeps its sign, so a
+   layer that stiffened could read as converged. The test profile now
+   converges in 6 iterations at 1 %.
+
 ## Supported Soil Models
 
 | Model | Class | Required Params | Optional |

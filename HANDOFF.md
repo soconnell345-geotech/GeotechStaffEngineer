@@ -1,14 +1,14 @@
 # HANDOFF — GeotechStaffEngineer (current state, read this first)
 
-**Last updated: 2026-10-14** (Now refreshed to core improvements; open work is in `BACKLOG.md`). This is the authoritative handoff for a fresh LLM
+**Last updated: 2026-10-15** (the 2026-10-14/15 train on master; Now is core improvements; open work is in `BACKLOG.md`). This is the authoritative handoff for a fresh LLM
 session (any model). The older `HANDOFF_2026-06-14.md` is kept only for the
 detailed Phase-E history; this file supersedes it.
 
 ---
 
-## 0a-current. PICKUP LIST (2026-10-09, supersedes everything below)
+## 0a-current. PICKUP LIST (2026-10-15, supersedes everything below)
 
-### Where things stand (2026-10-09)
+### Where things stand (5.33.0 released 2026-10-09; master through 2026-10-15)
 
 **0. 5.33.0 RELEASED 2026-10-09 with planlens 0.13.0 and geotech-references 1.4.1.** The owner's word, 2026-10-09: "go ahead and release when you're done".
 - **What it is for:** the Document Review page goes to OTHER testers on Tiny Apps.
@@ -36,7 +36,7 @@ detailed Phase-E history; this file supersedes it.
 
     The wheel was checked: `planlens>=0.13` and `geotech-references>=1.4.1`; the new modules are present; no `module_work`, `raw/` or `tinyapps/reference` files. The release wheels are in `../foundry_handoff/`.
 - **Unverified live on GPT:**
-  - vision on gpt-5.1 (768 px images);
+  - vision on the rollout model (one GPT-5.6 Sol-or-higher deployment, owner 2026-10-12; the app measures it on first use);
   - latency against the new per-kind caps;
   - real budget and rate-limit responses;
   - testers on separate keys;
@@ -44,7 +44,7 @@ detailed Phase-E history; this file supersedes it.
 
   First-hour check: `module_work/live_smoke/runs/w3-confirm-sonnet/REVIEW.md`.
 - **Owner's answers, 2026-10-14** (BACKLOG "Done"): downdrag shows every neutral-plane method side by side in the references' own terms, with final effective stress by default (GEC-12 is silent; UFC 3-220-20 §6-7.4 step 2); fem2d measures construction movements from the end of stage 0.
-- **Spend left:** about $35 of API credit (the account limit is $100; the promo credit expires 2026-11-05). The owner's $20 is reserved for touch-up testing together.
+- **Spend left:** about $29 of API credit for smoke work: the ledger (`module_work/live_smoke/spend_ledger.json`) stood at $50.75 on 2026-10-15 after waves w4–w6, against the account limit of $100; the promo credit expires 2026-11-05. The owner's $20 is reserved for touch-up testing together.
 - **Master after 5.33.0: the next train, unreleased.** The owner: "that's stuff that can just roll into the next release".
   - **a282d48, downdrag**, reworked 2026-10-14 after the owner's answer. Every cited neutral-plane method (UFC 3-220-20, GEC-12, CGPR #56) is computed on every run and tabulated side by side, each named as its reference names it and with its source; the methods table, with sections and pages, is in `downdrag/DESIGN.md`. The headline stays UFC's procedure; the spread over the methods is stated in one plain sentence. Default skin-friction stress is final effective stress. UFC App. B-5.5 and V-004 are reproduced.
     - The owner's direction: "Downdrag has many methods and it should be open to multiple assumptions", and on 2026-10-14: "presenting all of them is fine".
@@ -68,7 +68,7 @@ detailed Phase-E history; this file supersedes it.
   | geotech-references | 5,793 |
 
 - **The wheels are in `../foundry_handoff/`.** The owner installed the 5.32.1 wheel on Funhouse on 2026-10-08, before the tag, for real work and to reload an old geotech conversation. The Nexus mirror delivers PyPI a day or two later.
-- **Master** is now at version 5.32.1 with the same pin, carrying the next train.
+- **Master** was then at version 5.32.1 with the same pin, carrying the train released as 5.33.0.
 
 **What 5.32.1 carries**, all since 5.32.0:
 - **The markup check measures size** (cc697e6). Live check 1 on 2026-10-07 found 5.32.0's "drawn close" question rejecting correct circles on GPT-5.4.
@@ -84,7 +84,7 @@ detailed Phase-E history; this file supersedes it.
 - **Suite:** 37/37 on Sol, with no task changing outcome against run 4.
 - **Report-ingest narrative:** 83/85 %.
 
-**2. MASTER IS THE NEXT TRAIN (for 5.33). Unreleased; switches OFF.** Plan of record: `module_work/SCALES_COVERAGE_CROSSCHECKS.md`.
+**2. The 5.33 train as it stood on 2026-10-08 (released in 5.33.0; switches OFF).** Plan of record: `module_work/SCALES_COVERAGE_CROSSCHECKS.md`.
 - **W1** (499e1cf): the DIGGS 2.6 schema is bundled and checked with lxml on every host, so pydiggs is no longer needed.
 - **W2** (438430f): `write_diggs` runs report ingest's reconciler and returns `cross_checks`.
 - **W3, visual scales.**
@@ -163,7 +163,7 @@ detailed Phase-E history; this file supersedes it.
     - markups on rotated pages (needs the planlens release) and safe re-marking;
     - module fixes: the sheet-pile water table at 0 m, fem2d consolidation units and load-only transient, the downdrag neutral-plane basis, and others.
   - **Owner's judgment:** given 2026-10-14 (item 0 above).
-  - **Before the testers arrive:** release (on the owner's word) planlens (rotated markups, `label_reads`) and the app, then deploy to Tiny Apps.
+  - **Before the testers arrive:** release (on the owner's word) planlens (rotated markups, `label_reads`) and the app, then deploy to Tiny Apps. (Released 2026-10-09 as planlens 0.13.0 and app 5.33.0; the deploy waits on CfA.)
   - **2026-10-09, later: waves 2c and 3 and their fixes.**
     - Commits: 5dee6a6 (D1: concurrent testers crossed folders; context copied into the heartbeat pump, shared hosts fail closed), f4849a6 + a87d5a3 (D2–D7, E3, E7–E10), c05e56b (E1, E2, E4–E6).
     - **Wave 3 (final confirmation, 10 flows, Sonnet): GO, with no high findings.** Review: `runs/w3-confirm-sonnet/REVIEW.md`. Tiled whole-page reads are down to a median of 11.8 s (from 17.6 s), and the DXF note takes 8 s (from 179 s).
@@ -173,7 +173,7 @@ detailed Phase-E history; this file supersedes it.
     1. Release planlens (f679daf and later) first, then the app.
     2. The CfA items: image-capable Prompter values, SharePoint app registration, identity header, published origin.
     3. A first-hour check on Tiny Apps (steps in the wave 3 REVIEW.md).
-  - **Only live GPT on Tiny Apps can show:** vision on gpt-5.1 (768 px), GPT latency against the caps, the real budget and rate-limit responses, several testers on one key, and links behind the proxy.
+  - **Only live GPT on Tiny Apps can show:** vision on the rollout model (GPT-5.6 Sol or higher since 2026-10-12; gpt-5.1 at 768 px when this was written), GPT latency against the caps, the real budget and rate-limit responses, several testers on one key, and links behind the proxy.
 
 Machine note: heavy test suites must not overlap on the owner's laptop. Background runs were stopped twice for low memory on 2026-10-07/08.
 
@@ -202,9 +202,9 @@ about 60 of them were on the list that stood here ("Open to-dos (refreshed
   - Document Review: markups keep correcting and return the found box, geotech tools off the page, turned lettering, cut lines, sideways boxes, zoom and tiles on images; planlens: distinct sheets no longer called duplicates (reaches the app with PL-22);
   - long turns keep their work and wait out busy refusals; a model request gives up after its time limit (it waited 3.5+ hours on Funhouse); the record answers cost and cause; DIGGS writer and reader fixes;
   - CI: green again on 2026-10-15 for the first time in months (the five old failures, the workflow, and an OpenSees test that hung every run).
-  - 2026-10-14/15 continued: OpenSees site response fixed (seven defects, then two more found by pinning it to the OpenSees wiki's own example); fem2d excavations dewatered by default (larger wall forces below the water table: a release note); slope supports as Wright & Duncan apply them, GLE / Spencer with large anchor loads, and no silent unreinforced fallback; log depths read off the drawn scale (planlens, reaches the app with PL-22) and helpers' records handed to write_diggs as files; cited pages checked against pages read; earlier turns' files and page readings reach the helpers (`kept_readings`, switched OFF on the review page); the Funhouse launcher's Prompter-key cell and lost-app helpers; the drift canary's latest report is read at the start of every session (BACKLOG "How every session uses this file", INF-12); slope and fem2d model-width checks against Taylor's problem, and a slope search that finds the deep base circle; the excavation result gives the depth of its peak moment; marks and find_like on images in their own pixels (VIS-26).
+  - 2026-10-14/15 continued: OpenSees site response fixed (seven defects, then two more found by pinning it to the OpenSees wiki's own example); fem2d excavations dewatered by default (larger wall forces below the water table: a release note); slope supports as Wright & Duncan apply them, GLE / Spencer with large anchor loads, and no silent unreinforced fallback; log depths read off the drawn scale (planlens, reaches the app with PL-22) and helpers' records handed to write_diggs as files; cited pages checked against pages read; earlier turns' files and page readings reach the helpers (`kept_readings`, switched OFF on the review page); the Funhouse launcher's Prompter-key cell and lost-app helpers; the drift canary's latest report is read at the start of every session (BACKLOG "How every session uses this file", INF-12); slope and fem2d model-width checks against Taylor's problem, and a slope search that finds the deep base circle; the excavation result gives the depth of its peak moment; marks and find_like on images in their own pixels (VIS-26); the reviewer helper's model-call budget; pystrata equivalent-linear runs that converge; plan-view axes named from the stated coordinate system; a fresh resolve with pandas 3 passes, and streamlit is tested below 1.67.
   - The owner's 2026-10-14 field session (a report's borings to DIGGS on Funhouse) is filed and read in full: `module_work/field_feedback/2026-10-14_report-to-diggs_v5.33.0/`.
-- **Next:** EV-13 with DR-05 (the owner holds the wheels for now) (Foundry brief 6 and rc test wheels built off master, as for brief 5). Module follow-ups in Next: GM-72, GM-79, GM-81, GM-82, GM-88.
+- **Next:** EV-13 with DR-05: Foundry brief 6 is drafted (`../foundry_handoff/AI_FDE_BRIEF_6.md`: part A the image zoom check, `image_zoom_check_foundry.py`, on the rollout model; part C the suite with arms `baseline`, `lean`, `turn_retry`, and `kept_readings` as an optional arm). Its rc test wheels, built off master as for brief 5, are not built while the owner holds the release. Module follow-ups in Next: GM-72, GM-79, GM-81, GM-82, GM-88.
 - **Owner:** OWN-31 (the checklist session, perhaps next week), OWN-58 (downdrag: the pile's own weight in the load curve), OWN-33 (revoke the GitHub token saved in the old QC routine and delete it; the drift canary works, INF-12), OWN-59 (slope supports: driving or slack), OWN-60 (photos of Duncan & Wright §6.5.3 and ch. 8). Answered on the desk 2026-10-14 (BACKLOG "Done"): hold the release and use the Prompter key on Funhouse this month; downdrag shows every method, skin-friction stress per GEC-12; fem2d measures from the end of stage 0; calculation tables are the next module train; the old `geotech-report-extraction` project is deleted from PyPI.
 - **Rollout model (owner, 2026-10-12):** one GPT-5.6 Sol-or-higher deployment for every call, not gpt-5.1; the app measures it on first use. So the gpt-5.1 rehearsal wave is dropped, and the standards PDFs stay with a provenance note (BACKLOG "Done").
 - **Done on master 2026-10-12 (unreleased):** the default review page's zoom wording, reading helper and answering budget; the markup check against the printed thing; a plain message and one retry on a refused key; `.env` working on dosdev; the suites run on CfA's pins (WSL), which found the python-ags4 install conflict; the install guide and `TINYAPPS.md` current; Department addresses scrubbed from tracked files (history: OWN-56). Commits ae50842, da28a69, 0562ddf, a229090, 24b46df. On dosdev, 5.33.0 installs with pandas left unpinned (pip takes 2.x) until the next release.

@@ -156,7 +156,7 @@ Layered Soil Column" (McGann & Arduino; OpenSeesPy docs 14.4.2,
    0.5 g): ru = 1 - sigma'v / sigma'v0 picks up the column's vertical
    stress swings (+/-15-25 % there). ru is now 0 where an element has no
    pore water; below the water table the same swings remain in ru
-   (BACKLOG follow-up: take ru from the pore pressure instead).
+   (BACKLOG GM-79: take ru from the pore pressure instead).
 
 ## Validation (site response, GM-77)
 

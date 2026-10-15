@@ -210,7 +210,7 @@ Uncommitted for the lead's review; offline tests in
 
 ## What changed (2026-10-14, BACKLOG VIS-09: image files)
 
-Uncommitted for the lead's review; offline tests in
+Committed as app `d1bc722` (unreleased); offline tests in
 `funhouse_agent/tests/test_vision_images.py`. Code in
 `funhouse_agent/image_view.py` (the raster twin of `render_view`) and
 `vision_tools._read_image` / `_render_image_region`.
@@ -262,13 +262,34 @@ Uncommitted for the lead's review; offline tests in
      back 2.2 px off in the original's pixels; a zoom on the look's own
      `view` + `image_box` (padded window 623 x 296 px, sent 3x) reads it and
      boxes it 0.3 px off; a zoom on the label's own `bbox` (sent 4x) reads it.
-6. **Not measured live.** No suite task uses an image file. The natural
-   first measure: the synthetic tag sheet rendered to a PNG at a
-   screenshot's size (about 3960 x 2560, no text layer), read through
-   `analyze_image` (auto tiles) and then `render_region` on each tag's
-   `view` + `image_box`, scored against `build_synthetic_tag_set()` truth
-   converted to pixels: tags read, and box error in pixels, whole look
-   against tiles against zooms - the same table as §5.2, for images.
+6. **Measured live once, on Claude.** No suite task uses an image file. The
+   measure is the synthetic tag sheet rendered to a PNG at a screenshot's
+   size (3978 x 2574, no text layer), read through `analyze_image` (auto
+   tiles) and then `render_region` on each tag's `view` + `image_box`,
+   scored against `build_synthetic_tag_set()` truth converted to pixels:
+   tags read, and box error in pixels, whole look against tiles against
+   zooms - the same table as §5.2, for images
+   (`foundry_handoff/image_zoom_check_foundry.py`, outside the repository;
+   `LIVE_TEST_QUEUE.md` check 9). On Claude Sonnet (2026-10-14, about 18
+   calls): the look and its 2 x 2 tiles read 27 of 28 tags, 6 of them with a
+   box round the whole callout; all 8 zooms read their tag, within 0.7 px,
+   the turned tag and the QCE decoy included. The rollout model is measured
+   in Foundry brief 6, part A (drafted; BACKLOG EV-13).
+7. **Marks and `find_like` on an image (2026-10-15, app `fde2df1`,
+   unreleased; BACKLOG VIS-26).** A live run drew a phone photo's ring off
+   the page twice: PyMuPDF opens an image as a page sized by the dpi the
+   file declares (0.75 pt a pixel with none), so the image's pixels were
+   taken as page points. Now a new marked copy of an image is a PDF whose
+   page is the image, upright, at 1 pt a pixel (`image_view.as_pdf`), so
+   marks, the check's `found_bbox` and later looks all speak the image's
+   pixels; an existing copy at another scale is converted exactly; a mark
+   centred off the image (or off a PDF's page) refuses the call, naming the
+   size. `find_like` searches an image at its own resolution with EXIF
+   applied and returns pixel boxes, and `open_document` on an image says its
+   coordinates are pixels. Rebuilt from the live photo: the ring that had
+   landed on the page edge went round the note and was confirmed first
+   time. What is left (`measure` and `log_grid` on an image still in page
+   points, the 300-unit view rule on the 1 pt a pixel copy) is VIS-26.
 
 ---
 

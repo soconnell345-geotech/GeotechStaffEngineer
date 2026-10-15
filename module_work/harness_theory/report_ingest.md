@@ -155,8 +155,8 @@ kind `unconverted`).
 | The MERGE: floor and model objects paired by depth (0.15 m; layers 0.30 m); both kept on disagreement; additions accepted; a correction accepted only with evidence (a box and a note) (`report_ingest/floor.py:1-120`; `report_ingest/log_floor.py:1083-1110, 1199-1440`) | — |
 | Refusals: a depth off the ruler; a calc result printed on no page (confidence 0.3); a narrative quote not on its page (confidence 0.3) | — |
 | Units: every number kept with the unit printed; SI computed on demand (`model.py:336-372`) | — |
-| Reconciliation: links, counts, summary-table cross-check; disagreements recorded, never resolved (`reconciler.py:1-43`) | — |
-| DIGGS mapping and its two gates: schema validation (when `pydiggs` is installed) and a read-back through the app's own DIGGS parser | — |
+| Reconciliation: links, counts, summary-table cross-check; disagreements recorded, never resolved (`reconciler.py:1-43`). *Since 2026-10-14 (app `89df4e6`, unreleased; BACKLOG RI-28):* also each drive record against its sample interval, a drive count against the log's other complete records, and any reading below the hole's own total depth; the app's `write_diggs` runs the same checks | — |
+| DIGGS mapping and its two gates: schema validation (when `pydiggs` is installed; since 5.33.0 against the bundled 2.6 schema with lxml on every host) and a read-back through the app's own DIGGS parser | — |
 
 ---
 

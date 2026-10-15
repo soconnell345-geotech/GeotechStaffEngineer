@@ -63,6 +63,11 @@ installed locally):
    `tool_token_limit_before_evict` × 4 characters (20,000 tokens × 4 = 80,000
    characters in the local version, `deepagents/middleware/filesystem.py:704,1814`)
    is written to `/large_tool_results/<id>` and replaced by a preview.
+   *Since deepagents 0.7.x* there is also a `delete` tool (and `execute`,
+   which fails safely here). The review page and the references consult
+   hide the scratch tools; `delete` joined them on 2026-10-14 (app
+   `6388489`, BACKLOG INF-10). The geotech page keeps them, behind the
+   guard described below.
 3. **SubAgent** — the `task` tool, which hands a self-contained job to a named
    sub-agent (or to deepagents' own `general-purpose` helper).
 4. **Summarization** — compacts the conversation when it nears the model's
@@ -181,6 +186,19 @@ only its answer text, as above. The cause was a 51-minute field session lost
 to one rate-limit refusal
 (`module_work/field_feedback/2026-10-14_report-to-diggs_v5.33.0/`).
 
+*Since 2026-10-15 (app `642bd36`, unreleased; BACKLOG TA-28):* the files an
+interrupted turn wrote to `files/` are attached to the recovered entry (so
+they get download cards), and the next turn's files note names them as that
+turn's ("interrupted before it answered", "stopped on an error"). Page
+readings were already kept per conversation (`page_readings.json`; `reuse=true`
+on a look returns one); the new read-only tool `kept_readings` lists them by
+reference (page, kind of look, what it was asked, length, a one-line summary)
+and returns one whole by page, so a HELPER, which never sees the turn's note,
+can find what earlier turns read. It is on the geotech page for the primary
+and its helpers, and on the review page only behind
+`GEOTECH_REVIEW_KEPT_READINGS` (OFF). When to use it is said only in its own
+description.
+
 The geotech evaluation goes further: each question is its own fresh
 `agent.invoke` with no history at all (`eval_harness.py:963-1015`). Questions
 that are written as follow-ups ("Repeat the lateral analysis of the 0.5 m
@@ -221,6 +239,15 @@ keeps:
 - payloads cut in the log kept whole in `activity_full/`;
 - vision events labelled with kind, page, tile, image size and their tool;
 - `helper_queued`, `helper_kept`, `pacer_wait`.
+
+*Since 2026-10-15 (app `08bd8d4`, unreleased; BACKLOG EV-18):* after each
+turn a `cited_pages` event lists the pages the answer cites that no tool or
+helper read or looked at in the conversation
+(`funhouse_agent/cited_pages.py`, built from this same record: the activity
+log of the primary and its helpers across turns, the coverage ledger,
+`reads.json`, `page_readings.json`). It is always recorded; with
+`GEOTECH_CITED_PAGES=note` the answer gets a note listing them, with `retry`
+the model is told once before the answer goes out (OFF by default).
 
 ---
 
@@ -265,6 +292,16 @@ Budgets in force:
 | lean / minimal review agent | 40 per request (`GEOTECH_REVIEW_MAX_MODEL_CALLS`) | `review_agent.py:159, 205-211` |
 | `page_reader` / `page_looker` helper | 14 per job | `review_agent.py:162` |
 | Geotech primary, legacy review primary, `reviewer`, `general-purpose` | **none** | — |
+
+*Since then (all on master after 5.33.0 unless named):*
+
+| Agent | Budget now | Since |
+|---|---|---|
+| `references` sub-agent | 10 calls per consult (`DEFAULT_REFERENCES_MAX_MODEL_CALLS`) | `3195ede`, released in 5.33.0 |
+| legacy (default) review primary | 40 per request (`GEOTECH_REVIEW_MAX_MODEL_CALLS`; `off` = none); its `task` helper is re-declared with the review's reading rules, the read-only tools and 14 calls | `ae50842`, 2026-10-12 (BACKLOG DR-02, DR-03) |
+| `general-purpose` helper (geotech page) | 30 (`GEOTECH_HELPER_MAX_MODEL_CALLS`; `0` / `off` = none); the last call hands over the data gathered | `8cd38f4`, 2026-10-14 (TA-22) |
+| `reviewer` | 10 (`DEFAULT_REVIEWER_MAX_MODEL_CALLS`), the last call answering from what it has | `95b6388`, 2026-10-14 (TA-25) |
+| Geotech primary | still **none** (the step cap, §4.3) | — |
 
 ### 4.3 Step caps (ungraceful)
 
@@ -421,9 +458,11 @@ TA-21, TA-22):*
   the primary gets the path (`funhouse_agent/deep/keep_work.py`).
 - **Busy refusals:** `AgentBusyRetry` (`deep/busy_retry.py`), the outermost
   model-call middleware on the primary and every sub-agent, retries a 429 /
-  529 / 5xx / overloaded / connection refusal on the provider's retry-after
-  or 15/30/60/120 s, 5 tries, within a 900 s per-turn bound; a spent budget
-  is raised at once. Vision side calls keep their own shorter ladder (3 tries
+  529 / 5xx / overloaded / connection / timeout refusal on the provider's
+  retry-after or 15/30/60/120 s, 5 tries (`GEOTECH_AGENT_BUSY_TRIES`),
+  within a 900 s per-turn bound (`GEOTECH_BUSY_TURN_MAX_S`); a spent budget
+  is raised at once. Since 2026-10-14 a request that gets no answer times
+  out and joins this ladder (TA-26, §6). Vision side calls keep their own shorter ladder (3 tries
   at 2 s and 4 s; BACKLOG TA-24).
 - **Tokens per minute:** an optional per-key pacer over agent and vision
   calls (`deep/pacing.py`, `GEOTECH_TOKENS_PER_MINUTE`, off until the
@@ -456,6 +495,18 @@ afterwards (commit `3ef5e98`).
 `PrompterChatModel` sends `temperature=0.0` by default, omits it when set to
 `None`, and renames `max_tokens` to `max_completion_tokens` on a model that
 rejects it (`databricks_bridge.py:257-336, 640-660`).
+
+*Since 2026-10-14 (app `86879e8`, unreleased; BACKLOG TA-26):* every model
+request has a time limit that applies. langchain-openai and
+langchain-anthropic hand their SDK client `timeout=None` (no limit) unless
+told otherwise, and the OpenAI client passes its own timeout on every
+request, so the Prompter route's httpx limit never applied: in the
+2026-10-14 field session one request the gateway never answered held a
+helper for over 3.5 hours. Now the Prompter key route's `ChatOpenAI` carries
+180 s (`webapp/tinyapps_engine.REQUEST_TIMEOUT_S`; that session's 989
+answered calls took 106 s at most) and the Foundry proxy and Anthropic routes
+600 s (`webapp/engine_config.MODEL_REQUEST_TIMEOUT_S`, the SDKs' own
+default). A timeout is retried as busy (§5.4).
 
 ---
 

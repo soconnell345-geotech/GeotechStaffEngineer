@@ -9,7 +9,7 @@
   - `slope_stability/IMPROVEMENT_PLAN.md` — existing manual roadmap (HYRCAN/SSAP comparison); read before deep work.
 - Agent adapter: `funhouse_agent/adapters/<module>.py`.
 - Standards/theory: DM7.1 (slopes); Duncan & Wright (limit equilibrium); SRM/FEM theory in module DESIGN.md.
-- Test one module: `.venv/Scripts/python.exe -m pytest <module>/ -v` (slope_stability has 169 + 17 skipped).
+- Test one module: `.venv/Scripts/python.exe -m pytest <module>/ -v` (2026-10-15: slope_stability collects 539, fem2d 528).
 
 ## Backlog
 - ◐ **slope_stability** (pilot): Phase 0 — `method`/`surface_type` allowed_values;

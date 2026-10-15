@@ -166,6 +166,39 @@ token usage, for the main agent **and** the `calc` / `references` sub-agents
 details" box only controls the on-screen per-turn summary (`trace.jsonl`).
 `activity.jsonl` is what to read when a session went wrong.
 
+On master since 2026-10-14/15 (the release after 5.33.0) it also answers
+cost, cause and who did what: token use on the Prompter key route; the
+helper's id and brief on every event from inside a `task` helper; a refused
+call's status, retry-after and rate-limit headers, and each busy-retry wait
+(`model_busy`); the engine and retry policy on `turn_start` and in
+`meta.json` (never a key or an address); queue times for vision and document
+locks; payloads cut in the log kept whole in `activity_full/`; and after
+each turn a `cited_pages` event naming any page the answer cites that no
+tool or helper opened.
+
+### Long turns, errors and rate limits
+
+On master since 2026-10-14 (the release after 5.33.0):
+- **A turn that ends on an error keeps its work.** Every reply and tool
+  result is recorded as it arrives (`partial_messages.json`); on an error,
+  or when the app is restarted mid-turn, that record becomes the
+  conversation's history, so "continue" picks up from the tool results.
+  Very large results are kept whole in the conversation's `kept/` folder,
+  and a helper that stops writes what it read there (`kept/helper_*.md`).
+  An interrupted turn's new files get download cards.
+- **Busy refusals are waited out** (429, overloaded, 5xx, a dropped
+  connection, a timeout): the provider's retry-after, else 15/30/60/120 s,
+  5 tries, at most 900 s a turn.
+- **Every model request has a time limit:** 180 s on the Prompter key
+  route, 600 s on the Foundry proxy and Anthropic routes.
+- **At most two helpers run at once**, and a general-purpose helper has a
+  30-call budget whose last call hands over what it gathered.
+
+The settings (`GEOTECH_MAX_HELPERS`, `GEOTECH_HELPER_MAX_MODEL_CALLS`,
+`GEOTECH_AGENT_BUSY_TRIES`, `GEOTECH_BUSY_TURN_MAX_S`,
+`GEOTECH_TOKENS_PER_MINUTE`, `GEOTECH_PROMPTER_STREAM_USAGE`) are listed in
+`tinyapps/wrapper_repo/.env.example`; the defaults suit most runs.
+
 ### Feedback — yours and the agent's
 
 The sidebar **Feedback** box saves a note with the conversation
@@ -421,6 +454,8 @@ CfA are in `tinyapps/TINYAPPS.md`, the plan of record; open work is in
 | `engine_config.py` | Env-driven engine resolution (Anthropic key / Prompter hook / no-engine). |
 | `databricks_launcher.py` | One-cell Databricks launcher (`run_on_databricks`): reconstructs the Prompter engine on the driver (or takes a personal Prompter key, `prompter_key=`) and runs streamlit under the driver proxy; `running_apps` / `stop_running` / `diagnose` find, stop and inspect a copy the notebook has lost (§3). |
 | `turn_jobs.py` | Detached turn execution: the whole turn pipeline runs in a worker thread keyed by conversation, so a websocket death never kills an analysis; the page re-attaches. |
+| `turn_record.py` | Records every reply and tool result of a turn as it arrives (checkpointed to `partial_messages.json`), so a turn that errors or is killed becomes replayable history instead of an error stub. |
+| `http_trace.py` | An httpx hook (Prompter key route) that lists every HTTP try inside a model call in `activity.jsonl` (status, retry-after, rate-limit headers; never the body). |
 | `activity_log.py` | Always-on per-turn archive `activity.jsonl` — every tool call (full args), tool result (capped 32 KB), model call (usage), primary AND sub-agents, attributed by `task` nesting. A LangChain callback handler on the run config. |
 | `feedback.py` | Feedback writer (`FEEDBACK.md` + `feedback.jsonl` in the conversation dir) behind the sidebar box and the agent's `record_feedback` tool. |
 | `sharepoint_store.py` | Permanent storage: mirror a conversation dir to SharePoint after each turn (incremental manifest), list mirrored conversations, restore one back. |

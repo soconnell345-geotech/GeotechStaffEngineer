@@ -261,7 +261,7 @@ may lag it. `hvsrpy`/`swprocess` were removed in 5.12.)
 |------|---------|
 | `list_files` | Browse a REAL directory (read-only) — name, type, size, mtime per entry; the discovery tool for finding files and save destinations |
 | `read_pdf_text` | Extract a PDF's text layer (PyMuPDF, no vision); flags scanned pages |
-| `analyze_image` | Analyze an attached image via engine vision |
+| `analyze_image` | Analyze an attached image via engine vision (the deep agent, from the release after 5.33.0: a large image is also read in tiles cut from the original, and `render_region` zooms on an image in its own pixels) |
 | `analyze_pdf_page` | Render a PDF page and analyze it (scanned pages, figures) |
 | `read_reference_figure` | Render a digitized reference chart and read a value off it via vision |
 | `save_file` | Save content to a file (text or base64 binary), **write-verified** |
@@ -293,9 +293,14 @@ planlens 0.5.0 adds a ninth toolkit tool, `document_roles` — what each page of
 a report IS, the work items its pages make, the document's printed outline and
 a per-page ledger — and planlens 0.6.0 (the pin floor since 5.20.0) adds a
 tenth, `log_grid`, which returns one boring log as columns, a fitted depth
-ruler, every cell placed at a depth, its layers and its header fields. Neither
-is on this app's tool surface directly. They are what the `report_ingest`
-sub-agent reads.
+ruler, every cell placed at a depth, its layers and its header fields.
+`document_roles` is not on this app's tool surface directly; it is what the
+`report_ingest` sub-agent reads. `log_grid` is, since 5.33.0, an agent tool
+of its own on the geotech page and the Document Review page (with
+`measure`). With the planlens release after 0.13.0 it also reads each
+sample's interval off the boxes drawn across the sample columns and returns
+compact rows by default, so a whole log fits one result (`row_detail`;
+feature-detected, so an older planlens is not sent it).
 
 
 The policy the prompts state (since 5.32, the owner's direction): a question

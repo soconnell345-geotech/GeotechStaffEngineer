@@ -1,9 +1,11 @@
 # slope_stability — Limit Equilibrium Slope Stability
 
 ## Purpose
-Circular and noncircular slip surface analysis using three methods of slices
-(Fellenius, Bishop, Spencer) with critical surface search and entry/exit
-range constraints.
+Circular and noncircular slip surface analysis by the methods of slices
+(Fellenius / OMS, Bishop's simplified, Janbu, and the rigorous Spencer,
+Morgenstern-Price and GLE in `gle.py`) with critical surface search,
+entry/exit range constraints, and nails, anchors, geosynthetics and
+stabilizing piles in every method (`reinforcement.py`).
 
 ## References
 - Fellenius (1927) — Ordinary Method of Slices
@@ -16,21 +18,25 @@ range constraints.
   safety using the Morgenstern-Price method, Can. Geotech. J. 42, 272-278
 - Rocscience Slide2 help — Active/Passive Force Application; Grid Search
   (reverse curvature)
-- FHWA GEC-7, Lazarte et al. (2003) — Soil nail walls (nails.py, currently disconnected)
+- FHWA GEC-7, Lazarte et al. (2003) — Soil nail walls (nails.py)
 
 ## Files
 - `geometry.py` — SlopeSoilLayer (elevation-based), SlopeGeometry (polyline surface/GWT)
 - `slip_surface.py` — CircularSlipSurface (center + radius), PolylineSlipSurface (polyline points)
 - `slices.py` — Slice dataclass, build_slices() with multi-layer weight/pore pressure
-- `methods.py` — fellenius_fos(), bishop_fos(), spencer_fos() (circular + noncircular)
+- `methods.py` — fellenius_fos(), bishop_fos(), spencer_fos() / morgenstern_price_fos() (wrappers of the rigorous `gle.gle_fos`; the `*_legacy` approximate forms are the fallback), solve_rigorous()
+- `gle.py` — the rigorous general limit equilibrium (Fredlund & Krahn 1977; supports by the slice-by-slice march of Zhu et al. 2005, GM-60) and janbu_fos()
+- `reinforcement.py` — nails, anchors, geosynthetics and stabilizing piles as forces at the base of the slice each crosses, in every method (GM-53, GM-59)
 - `search.py` — optimize_radius(), grid_search() (with the local refinement of its lowest centres, GM-87), search_noncircular(), entry/exit filtering
 - `search_supplements.py` — toe-circle and infinite-slope (shallow planar) families scored after every `search_critical_surface` (GM-13, GM-14)
 - `analysis.py` — analyze_slope(), search_critical_surface() orchestrators
 - `results.py` — SliceData, SlopeStabilityResult, SearchResult
-- `nails.py` — SoilNail, NailContribution (kept but disconnected from analysis pipeline)
-- `tests/test_slope_stability.py` — 83 tests (core + entry/exit limits + noncircular search)
+- `nails.py` — SoilNail, NailContribution (nails reach the FOS through `reinforcement.py`)
+- `tests/` — 539 tests in 26 files (collected 2026-10-15), among them:
+- `tests/test_slope_stability.py` — 91 tests (core + entry/exit limits + noncircular search)
 - `tests/test_duncan_verification.py` — 28 tests (Duncan §7.6-7.7 verification examples; Ex 1 against Taylor's chart, GM-63, and the default search on long profiles, GM-87)
-- `tests/test_nails.py` — 38 tests + 16 skipped (nail intersection/pullout/capacity)
+- `tests/test_nails.py` — 38 tests + 16 skipped (nail intersection/pullout/capacity; the skipped ones test the old nail path, replaced by `reinforcement.py`)
+- `tests/test_reinforcement.py`, `tests/test_search_reinforcement.py` — 22 + 33 tests (supports in each method; supports in searches, GM-53, GM-54, GM-59, GM-60)
 
 ## Public API
 ```python
@@ -64,7 +70,8 @@ search_critical_surface(geom, surface_type="noncircular",
 - Defined by polyline points [(x1,z1), (x2,z2), ...]
 - x-coordinates must be monotonically increasing
 - Entry = first point, exit = last point (or intersection with ground)
-- Spencer only (force-marching approach, no moment arm needed)
+- Spencer, Morgenstern-Price / GLE and Janbu (`gle.py`); Bishop asked for on a
+  noncircular surface is analysed with Spencer, and the result says so (GM-81)
 - `slip_elevation_at(x)` — linear interpolation between points
 - `tangent_angle_at(x)` — angle of segment containing x
 - Both classes share `is_circular` property for dispatch
@@ -497,10 +504,16 @@ has no solution:
   (reduces to Bishop when theta=0)
 
 ## Key Technical Notes
-- **Spencer = Bishop for circular surfaces**: sin(alpha) = (x-xc)/R identity
-  makes moment and force driving identical, forcing theta=0
-- **Spencer noncircular**: uses interslice force marching (no moment arm).
-  FOS is the value that makes the last interslice force = 0.
+- **Spencer = Bishop for circular surfaces (the legacy approximate solver
+  only)**: in `spencer_fos_legacy` the sin(alpha) = (x-xc)/R identity makes
+  moment and force driving identical, forcing theta=0. The rigorous Spencer
+  (`gle.py`, the default) does not; on a circle it differs from Bishop where
+  phi > 0 (e.g. Slide2 #86 with tiebacks: Bishop 1.612, Spencer 1.606) and
+  equals it for phi = 0
+- **Spencer noncircular (the legacy solver)**: uses interslice force marching
+  (no moment arm). FOS is the value that makes the last interslice force = 0.
+  The rigorous GLE (the default) satisfies moment equilibrium as well, about
+  its own moment axis.
 - **For c'=0 (cohesionless)**: circular analysis overestimates FOS vs infinite
   slope solution tan(phi)/tan(beta) — this is a well-known limitation. Since
   GM-14 `search_critical_surface` scores shallow planar surfaces on every
@@ -508,7 +521,9 @@ has no solution:
   "Supplementary families" above); a circle scored on its own
   (`analyze_slope`) still carries the limitation.
 - **Coordinates**: elevation-based (x, z where z=elevation), NOT depth-based
-- **SlopeSoilLayer**: separate from geotech_common/SoilLayer (no adapter yet)
+- **SlopeSoilLayer**: separate from geotech_common/SoilLayer;
+  `SoilProfile.to_slope_stability_input()` maps a SoilProfile to
+  SlopeSoilLayer dicts
 - **Undrained**: phi=0, cu used. Bishop = Fellenius when phi=0 (m_alpha = cos(alpha))
 - **FOS convergence guard**: in `_compute_fos` (search.py), FOS < 0.05 is treated
   as non-convergence and returns FOS_MAX (999). Prevents negative/absurd FOS from
@@ -772,15 +787,21 @@ has no solution:
     VALIDATION.md B9 / RESULTS V-026.
 - **Empty-space slices**: slices where the slip surface is below all soil layers
   are skipped (zero weight, no contribution)
-- **Nails disconnected**: `nails.py` is importable but not called from the analysis
-  pipeline. Nail fields removed from `SlopeStabilityResult`. Can be re-enabled later.
-- **Spencer / Morgenstern-Price are APPROXIMATE (SS-1)**: both use a shifted
+- **Nails**: `SlopeGeometry.nails` (`nails.SoilNail`) reach every method
+  through `reinforcement.py`, with anchors, geosynthetics and stabilizing
+  piles (see "Support forces in each method" above). The old nail path in
+  `nails.py`'s own FOS integration is not used; its tests stay skipped.
+- **The legacy Spencer / Morgenstern-Price are APPROXIMATE (SS-1)**:
+  `spencer_fos_legacy` / `morgenstern_price_fos_legacy` use a shifted
   m_alpha = cos(alpha−theta) + sin(alpha−theta)·tanφ/F formulation (with
   theta = const for Spencer, atan(λ·f(x)) for M-P) and a force-equilibrium
   driving term W·(sinα + cosα·tanθ), iterated until FOS_moment = FOS_force.
   This is an engineering approximation, NOT the textbook-exact GLE
-  interslice-force recursion. Validated against the Duncan, Wright & Brandon
-  examples (below) — treat results as Spencer/M-P-class accuracy, not exact.
+  interslice-force recursion. `spencer_fos` / `morgenstern_price_fos` (the
+  defaults) wrap the rigorous `gle.gle_fos`; the legacy forms are only the
+  fallback where the GLE finds no solution, and since GM-81 the result says
+  so (`method_solved`, `method_used`), or gives no FOS where supports cross
+  the surface (the legacy forms ignore supports).
 - **Bishop numerator clamp (SS-2, v5.1)**: the frictional term uses
   max(W − u·b, 0)·tanφ so artesian/perched pore pressure (u·b > W) cannot
   contribute negative resistance; consistent with the Fellenius
