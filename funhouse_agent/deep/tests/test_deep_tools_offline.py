@@ -229,9 +229,10 @@ def test_vision_tools_build_and_error_without_engine():
     # notes on a DXF copy, where ezdxf imports (wave 2c, E4)
     from funhouse_agent.deep.tools import _dxf_notes_available
     out_names |= {"annotate_dxf"} if _dxf_notes_available() else set()
+    # the conversation's kept page readings, for helpers too (TA-28)
     assert names == {"list_files", "read_pdf_text", "read_text_file",
                      "analyze_image",
-                     "analyze_pdf_page", "render_region",
+                     "analyze_pdf_page", "render_region", "kept_readings",
                      "read_reference_figure",
                      "view_worked_example_source", "save_file"} \
         | document_names | docx_names | like_names | out_names

@@ -141,7 +141,10 @@ def test_switch_off_builds_the_page_exactly_as_before():
     a = build_deep_agent(_model([]), **kw)
     b = build_deep_agent(_model([]), **legacy)
     # The page's own build leaves out only the two geotech-only tools (DR-04).
-    assert set(_tools_of(b)) - set(_tools_of(a)) == set(GEOTECH_ONLY_TOOLS)
+    # kept_readings (TA-28) is the geotech page's; on the review page it
+    # waits behind GEOTECH_REVIEW_KEPT_READINGS.
+    assert set(_tools_of(b)) - set(_tools_of(a)) == (
+        set(GEOTECH_ONLY_TOOLS) | {"kept_readings"})
     assert set(_tools_of(a)) <= set(_tools_of(b))
     assert not hasattr(a, "geotech_review_agent")
 

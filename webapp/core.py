@@ -2486,15 +2486,22 @@ def checkpoint_partial(thread_id: str, text: str,
     try:
         p = partial_path(thread_id, root)
         prompt = ""
+        started = None
         try:
             with open(p, encoding="utf-8") as fh:
-                prompt = (_json.load(fh) or {}).get("prompt", "")
-        except (OSError, ValueError):
+                data = _json.load(fh) or {}
+            prompt = data.get("prompt", "")
+            # When the turn began: an interrupted turn's files are the ones
+            # written since (recover_partial; BACKLOG TA-28).
+            started = data.get("started")
+        except (OSError, ValueError, AttributeError):
             pass
         os.makedirs(conversation_dir(thread_id, root), exist_ok=True)
+        rec = {"prompt": prompt, "text": text, "updated": _time.time()}
+        if started is not None:
+            rec["started"] = started
         with open(p, "w", encoding="utf-8") as fh:
-            _json.dump({"prompt": prompt, "text": text,
-                        "updated": _time.time()}, fh, ensure_ascii=False)
+            _json.dump(rec, fh, ensure_ascii=False)
     except OSError:
         pass
 
@@ -2609,6 +2616,14 @@ def recover_partial(thread_id: str, root: Optional[str] = None) -> Optional[dict
                     clear_partial(thread_id, root)
                     return None
                 break
+    # The files the turn saved before it stopped (a DIGGS file, a helper's
+    # records) become its cards, and the next turn's note names them as the
+    # turn's own (BACKLOG TA-28). Taken BEFORE the fold below, which writes
+    # the turn's largest results to kept/ and is not the turn's own work.
+    try:
+        files = interrupted_turn_files(thread_id, data.get("started"), root)
+    except Exception:  # noqa: BLE001 - recovery never blocks the open
+        files = []
     # The turn's tool calls and results so far go into the history, so a
     # "continue" picks up from them (BACKLOG TA-19).
     kept = _fold_partial_messages(thread_id, root,
@@ -2619,9 +2634,55 @@ def recover_partial(thread_id: str, root: Optional[str] = None) -> Optional[dict
             + (f"; its {kept} finished tool "
                f"{'result is' if kept == 1 else 'results are'} kept, so "
                "asking the agent to continue picks up from "
-               f"{'it' if kept == 1 else 'them'}" if kept else "") + ")_")
-    return {"role": "assistant", "recovered": True,
-            "text": body + "\n\n" + note}
+               f"{'it' if kept == 1 else 'them'}" if kept else "")
+            + (f"; the {len(files)} "
+               f"{'file' if len(files) == 1 else 'files'} it saved before "
+               "it stopped " + ("is" if len(files) == 1 else "are")
+               + " below" if files else "") + ")_")
+    entry = {"role": "assistant", "recovered": True,
+             "text": body + "\n\n" + note}
+    if files:
+        entry["artifacts"] = files
+    return entry
+
+
+def interrupted_turn_files(thread_id: str, started,
+                           root: Optional[str] = None) -> List[str]:
+    """The files a turn the process never finished wrote in the
+    conversation's working folder, oldest first: modified since the turn
+    ``started`` (epoch seconds, :func:`begin_partial`), outside the cache and
+    scratch folders, no part file, and neither an upload nor a SharePoint
+    download (the turn note names those as inputs). ``[]`` when the start
+    is not known.
+
+    Field session 2026-10-14: turn 2 wrote a DIGGS file with a better grid
+    and was then killed mid-turn; the recovered entry named no files, so
+    turn 3's note of the conversation's files left it out and turn 3 built
+    a third grid while the better one sat in the folder (BACKLOG TA-28)."""
+    try:
+        t0 = float(started)
+    except (TypeError, ValueError):
+        return []
+    fd = conversation_files_dir(thread_id, root)
+    conv = conversation_dir(thread_id, root)
+
+    def key(p) -> str:
+        return os.path.normcase(os.path.abspath(str(p)))
+
+    inputs = {key(os.path.join(fd, k)) for k in _attachment_keys(conv)}
+    inputs |= {key(d["local"]) for d in load_downloads(conv)}
+    found = []
+    for p in snapshot_dir(fd):
+        if is_cache_path(p, fd) or str(p).lower().endswith(
+                IN_FLIGHT_SUFFIXES) or key(p) in inputs:
+            continue
+        try:
+            mtime = os.path.getmtime(p)
+        except OSError:
+            continue
+        if mtime >= t0 - 1.0:              # a coarse file clock's slack
+            found.append((mtime, p))
+    return [p for _, p in sorted(found)]
 
 
 def _msg_to_plain(m) -> dict:
@@ -2802,6 +2863,14 @@ DOWNLOADS_LEDGER = "downloads.json"
 
 #: How many files the per-turn note names (the newest ones).
 WORKING_FILES_NOTE_MAX = 30
+
+#: ... plus at most this many of the folder's OTHER files -- the ones no
+#: upload, answer or download names (BACKLOG TA-28) -- the newest.
+UNNAMED_FILES_NOTE_MAX = 10
+
+#: Where a stopped turn's largest results and a stopped helper's work are
+#: kept in the working folder (``webapp.turn_record.KEPT_DIR``).
+KEPT_FOLDER = "kept"
 
 
 def load_downloads(conv_dir: str) -> List[dict]:
@@ -3070,9 +3139,14 @@ def working_files_note(files_dir: str, transcript: Iterable[dict] = (),
     the downloads ledger (SharePoint files fetched to read, with where they
     came from), and the transcript (each turn's produced files, and the files
     a turn fetched -- which also covers conversations from before the ledger).
-    Only files that still exist are named. A file whose path or name appears
-    in ``exclude_text`` -- this turn's own attachment note -- is left out, so
-    a fresh upload is not announced twice."""
+    A file of a turn that never answered (interrupted, or stopped on an
+    error) says so. Then every OTHER file in the folder, at most
+    :data:`UNNAMED_FILES_NOTE_MAX` of them, newest last, with what it likely
+    is (BACKLOG TA-28: an interrupted turn's DIGGS file was in the folder and
+    not in the note, so the next turn rebuilt it). Cache and scratch folders
+    are never listed. Only files that still exist are named. A file whose
+    path or name appears in ``exclude_text`` -- this turn's own attachment
+    note -- is left out, so a fresh upload is not announced twice."""
     fd = os.path.abspath(files_dir)
     conv = os.path.dirname(fd)
     found: Dict[str, dict] = {}
@@ -3098,6 +3172,13 @@ def working_files_note(files_dir: str, transcript: Iterable[dict] = (),
         if role == "user":
             turn += 1
         elif role == "assistant":
+            # A turn that never answered: no answer of the model's names
+            # its files, so the note says why (BACKLOG TA-28).
+            stopped = ("that turn was interrupted before it answered, so no "
+                       "answer of yours names this file"
+                       if entry.get("recovered") else
+                       "that turn stopped on an error" if entry.get("error")
+                       else "")
             for name in entry.get("inputs") or ():
                 add(os.path.join(fd, str(name)), origin="fetched to read",
                     turn=turn)
@@ -3114,11 +3195,35 @@ def working_files_note(files_dir: str, transcript: Iterable[dict] = (),
                         note="the interactive chart shown to the user; "
                              f"its picture is '{_note_name(picture, fd)}'")
                 else:
-                    add(path, origin="you produced it", turn=turn)
+                    add(path, origin="you produced it", turn=turn,
+                        stopped=stopped)
     for d in load_downloads(conv):
         add(d["local"], origin="fetched to read", remote=d.get("remote"))
+    # Every other file in the folder (BACKLOG TA-28): what a turn saved
+    # before it was interrupted in an older record, a stopped helper's kept
+    # work, a file restored without its turn. Newest last.
+    unnamed = []
+    for p in snapshot_dir(fd):
+        ap = os.path.abspath(p)
+        if ap in found or str(p).lower().endswith(IN_FLIGHT_SUFFIXES):
+            continue
+        try:
+            unnamed.append((os.path.getmtime(ap), ap))
+        except OSError:
+            continue
+    for _, ap in sorted(unnamed):
+        rel = _note_name(ap, fd)
+        if rel.startswith(KEPT_FOLDER + "/helper_"):
+            origin = "what a helper that stopped had gathered, kept"
+        elif rel.startswith(KEPT_FOLDER + "/"):
+            origin = "a tool result kept whole from a turn that stopped"
+        else:
+            origin = ("in the folder, though no answer of yours names it "
+                      "(saved by a turn that was interrupted, or by a "
+                      "helper)")
+        add(ap, origin=origin, unnamed=True)
 
-    rows = []
+    rows, extra_rows = [], []
     excl = str(exclude_text or "")
     for ap in order:
         if not os.path.isfile(ap) or is_cache_path(ap, fd):
@@ -3130,19 +3235,28 @@ def working_files_note(files_dir: str, transcript: Iterable[dict] = (),
         if info.get("remote"):
             where = f" from SharePoint '{info['remote']}'"
         when = f" in turn {info['turn']}" if info.get("turn") else ""
+        if info.get("stopped") and when:
+            when += f" ({info['stopped']})"
         what = f" -- {info['note']}" if info.get("note") else ""
         try:
             size = f"{os.path.getsize(ap):,} bytes"
         except OSError:
             size = "size unknown"
-        rows.append(f"- '{_note_name(ap, fd)}' ({size}): "
-                    f"{info.get('origin', 'in the folder')}{where}{when}"
-                    f"{what}")
+        (extra_rows if info.get("unnamed") else rows).append(
+            f"- '{_note_name(ap, fd)}' ({size}): "
+            f"{info.get('origin', 'in the folder')}{where}{when}{what}")
     looked = reads_note(reads_folder or files_dir)
-    if not rows and not looked:
+    if not rows and not extra_rows and not looked:
         return ""
     skipped = max(0, len(rows) - int(limit))
     rows = rows[-int(limit):] if skipped else rows
+    # The folder's other files never push out the named ones: at most
+    # UNNAMED_FILES_NOTE_MAX of them, the newest.
+    more = max(0, len(extra_rows) - UNNAMED_FILES_NOTE_MAX)
+    if more:
+        extra_rows = extra_rows[-UNNAMED_FILES_NOTE_MAX:]
+        skipped += more
+    rows = rows + extra_rows
     head = ("[System note] Files already in this conversation's working "
             "folder, from earlier turns. You see earlier turns through the "
             "answers you gave, not through their tool results (only a turn "

@@ -42,6 +42,7 @@ is what it was, except the unswitched fixes at the end.
 | `GEOTECH_REVIEW_GEOMETRY=1` (5.31) | (lean only) `drawing_callouts`, `drawing_dimensions`, `title_block`, `revision_clouds` from planlens.ir | `deep/geometry_tools.py` |
 | `GEOTECH_REVIEW_DIGEST=1` (5.31) | (lean only) the digest's free layer: `document_inventory`, `digest_search`, `digest_pages`, `digest_references` | `funhouse_agent/review_digest/`, `deep/digest_tools.py` |
 | `GEOTECH_VISION_TURN_RETRY=1` (master, 2026-10-14) | a look sent as the page shows it ends "TURNED: ..." when its lettering runs sideways, and that view is re-read once turned upright; a page found turned is remembered for later looks. Arm `turn_retry` (default agent + switch). The `turn` argument on the looks is unswitched (BACKLOG VIS-01) | `funhouse_agent/vision_tools.py`, `vision_view.py` |
+| `GEOTECH_REVIEW_KEPT_READINGS=1` (master, 2026-10-15) | the review page and its reading helper offer `kept_readings`: the conversation's kept page readings by reference, one whole by page, read-only; the geotech page has it unswitched (BACKLOG TA-28). Arm `kept_readings` (default agent + switch) | `funhouse_agent/vision_tools.py`, `deep/agent.py`, `deep/review_agent.py` |
 
 Grounded's text-layer half is belt-and-suspenders next to the resolution
 fixes (image budget, tiling, zoom, "read the text layer first") and adds

@@ -1154,8 +1154,11 @@ def build_deep_agent(
                                else None),
     )
     if review_page:
-        tools = [t for t in tools
-                 if getattr(t, "name", None) not in GEOTECH_ONLY_TOOLS]
+        from funhouse_agent import review_flags as _rf
+        # kept_readings (TA-28) waits for the suite on the testers' page.
+        _drop = GEOTECH_ONLY_TOOLS + (
+            () if _rf.kept_readings_on_review_page() else ("kept_readings",))
+        tools = [t for t in tools if getattr(t, "name", None) not in _drop]
     if extra_tools:
         tools = list(tools) + list(extra_tools)
 

@@ -302,6 +302,8 @@ def dispatch_extended_tool(
     elif tool_name == "annotate_dxf":
         return _dispatch_annotate_dxf(arguments, attachments,
                                       save_fn or _default_save_fn)
+    elif tool_name == "kept_readings":
+        return dispatch_kept_readings(arguments)
     else:
         return json.dumps({"error": f"Unknown extended tool: {tool_name}"})
 
@@ -1773,6 +1775,295 @@ def _reused_zoom_result(entry) -> str:
     out["reused"] = REUSED_ZOOM_NOTE.format(
         region=entry.get("region") or out.get("view"),
         prompt=str(entry.get("prompt") or "")[:200])
+    return json.dumps(out)
+
+
+# -- The kept readings, by reference, for every agent (BACKLOG TA-28) ---------
+#
+# Field session 2026-10-14, turn 3: the helpers looked again at 25 pages that
+# turns 1 and 2 had already looked at. The turn's note named the 80 kept
+# readings, but only the primary sees that note; a helper knows only the few
+# lines it is briefed with, and no helper passed ``reuse=true``. One helper's
+# tiles read SPT tables that matched turn 1's transcription row for row.
+# ``kept_readings`` lets any agent with the looking tools see which readings
+# the conversation keeps -- by reference: the page, the kind of look, what it
+# was asked, its length and a short summary -- and have one back whole by
+# page, the same result ``reuse=true`` returns. It only reads the record:
+# nothing is looked at and nothing is changed.
+
+#: Characters of a kept reading's summary in the list ...
+KEPT_SUMMARY_CHARS = 140
+#: ... and of what it was asked.
+KEPT_ASKED_CHARS = 80
+#: Readings listed per call; ``offset`` pages through the rest.
+KEPT_LIST_MAX = 25
+
+#: How to have one reading back, said with every list.
+KEPT_READINGS_HOW = (
+    "kept_readings(document=<name>, pdf_page=N) returns that page's reading "
+    "whole (kind='zoom' with its bbox for a zoom), the same result "
+    "analyze_pdf_page(..., reuse=true) gives: use it when what it was asked "
+    "covers what you need, and look again only when it does not.")
+
+#: What ``kind`` may be (empty = any).
+KEPT_KINDS = ("page", "tiles", "zoom")
+
+#: The tool's own description (the deep agent's ``kept_readings``): the only
+#: place that says when to use it -- no prompt does (owner's rule: a tool's
+#: special behaviour lives in its own description).
+KEPT_READINGS_DESCRIPTION = (
+    "The page readings this conversation keeps: every look by "
+    "analyze_pdf_page or render_region, in this turn or an earlier one, by "
+    "you or by a helper (helpers have this tool too). Read-only: nothing is "
+    "looked at. Without pdf_page it lists them by reference -- per document, "
+    "each page's kind of look (page, page+tiles, zoom with its bbox), what "
+    "it was asked, its length and a one-line summary; narrow it with "
+    "document, pdf_pages ('28-43, 50') and kind ('page', 'tiles' or "
+    "'zoom'); offset pages on. With document and pdf_page it returns that "
+    "page's reading whole (kind='zoom' and bbox for a zoom), as "
+    "analyze_pdf_page(..., reuse=true) does. Check here before looking at "
+    "pages of a document: use a kept reading when what it was asked covers "
+    "what you need, and look again only when it does not. Pages are "
+    "1-based, as a PDF viewer shows.")
+
+
+def _reading_words(entry) -> str:
+    """A kept reading's words: the whole-page answer, then each tile's."""
+    raw = entry.get("result")
+    try:
+        out = json.loads(raw)
+    except (TypeError, ValueError):
+        return str(raw or "")
+    if not isinstance(out, dict):
+        return str(raw or "")
+    parts = [out.get("analysis")] + [
+        t.get("analysis") for t in out.get("tiles") or ()
+        if isinstance(t, dict)]
+    return "\n\n".join(p for p in parts if isinstance(p, str) and p.strip())
+
+
+def _gist(text, room: int) -> str:
+    """``text`` on one line, cut at a word to at most ``room`` characters."""
+    s = " ".join(str(text or "").split())
+    if len(s) <= room:
+        return s
+    cut = s[:room - 3].rsplit(" ", 1)[0]
+    return (cut or s[:room - 3]) + "..."
+
+
+def _kept_kind_ok(entry, kind: str) -> bool:
+    view = str(entry.get("view") or "page")
+    if not kind:
+        return True
+    if kind == "zoom":
+        return view == ZOOM_VIEW
+    if kind == "tiles":
+        return "tiles" in view
+    return view != ZOOM_VIEW                       # "page": any whole-page look
+
+
+def _kept_ref(entry, with_summary: bool = True) -> Dict[str, Any]:
+    """One kept reading by reference (no result)."""
+    ref: Dict[str, Any] = {"pdf_page": entry.get("pdf_page"),
+                           "kind": str(entry.get("view") or "page")}
+    if entry.get("view") == ZOOM_VIEW and isinstance(entry.get("region"),
+                                                      list):
+        ref["bbox"] = entry["region"]
+    ref["asked"] = _gist(entry.get("prompt"), KEPT_ASKED_CHARS)
+    if with_summary:
+        words = _reading_words(entry)
+        ref["chars"] = len(words)
+        ref["summary"] = _gist(words, KEPT_SUMMARY_CHARS)
+    return ref
+
+
+def _kept_pages(readings) -> Dict[str, str]:
+    """``{document: "12-20, 24"}``: the pages each document has readings
+    of."""
+    pages: Dict[str, set] = {}
+    for r in readings:
+        pages.setdefault(str(r.get("document") or ""), set()).add(
+            r["pdf_page"])
+    return {d: _page_ranges(sorted(p)) for d, p in pages.items()}
+
+
+def _page_ranges(pages) -> str:
+    """``[1, 2, 3, 5]`` -> ``"1-3, 5"``."""
+    out, i = [], 0
+    while i < len(pages):
+        j = i
+        while j + 1 < len(pages) and pages[j + 1] == pages[j] + 1:
+            j += 1
+        out.append(str(pages[i]) if i == j else f"{pages[i]}-{pages[j]}")
+        i = j + 1
+    return ", ".join(out)
+
+
+def _match_document(wanted: str, documents) -> Optional[str]:
+    """The kept document ``wanted`` names -- its file name, a handle or a
+    path to it, any case; or the one name it is part of -- else ``None``."""
+    w = _document_name(wanted).lower()
+    exact = [d for d in documents if d.lower() == w]
+    if exact:
+        return exact[0]
+    part = [d for d in documents if w and w in d.lower()]
+    return part[0] if len(part) == 1 else None
+
+
+def _wanted_pdf_pages(spec):
+    """1-based pages from an int, a list or ``"28-43, 50"``:
+    ``(set, None)``, ``(None, None)`` for none given, or
+    ``(None, error)``."""
+    if spec in (None, "", [], ()):
+        return None, None
+    from funhouse_agent.page_numbers import pdf_pages_to_pages
+    zero, problem = pdf_pages_to_pages(spec)
+    if problem is not None:
+        return None, problem
+    out: set = set()
+    if isinstance(zero, int):
+        out.add(zero + 1)
+    elif isinstance(zero, list):
+        out.update(p + 1 for p in zero)
+    else:
+        for part in str(zero).split(","):
+            a, _, b = part.partition("-")
+            lo = int(a)
+            hi = int(b) if b else lo
+            out.update(range(lo + 1, min(hi, lo + 10_000) + 2))
+    return out, None
+
+
+def dispatch_kept_readings(arguments: Dict[str, Any], folder=None) -> str:
+    """The ``kept_readings`` tool (BACKLOG TA-28): the page readings this
+    conversation keeps (:func:`_keep_reading`), by reference, or one of them
+    whole. ``folder`` is the conversation's working folder (``None`` = the
+    one bound in this context).
+
+    With no ``pdf_page``: the readings, filtered by ``document``,
+    ``pdf_pages`` and ``kind``, per document -- each one's page, kind of look
+    (``page``, ``page+tiles NxN`` or ``zoom`` with its ``bbox``), what it was
+    asked, its length and a short summary -- at most :data:`KEPT_LIST_MAX`
+    a call (``offset`` pages on), with the pages each document has readings
+    of. With ``pdf_page``: that page's newest reading of the ``kind`` asked
+    (a whole-page one by default; ``bbox`` picks a zoom), the same result
+    ``analyze_pdf_page`` / ``render_region`` with ``reuse=true`` give, and
+    the page's other kept readings by reference."""
+    args = dict(arguments or {})
+    kind = str(args.get("kind") or "").strip().lower()
+    if kind and kind not in KEPT_KINDS:
+        return json.dumps({"error": f"kind {kind!r} is not one of "
+                                    f"{', '.join(KEPT_KINDS)}",
+                           "hint": "leave kind out for any kind of look"})
+    readings = [r for r in _all_readings(folder)
+                if isinstance(r.get("pdf_page"), int) and r.get("result")]
+    if not readings:
+        return json.dumps({
+            "kept": 0,
+            "note": ("no page readings are kept in this conversation yet: "
+                     "every look with analyze_pdf_page or render_region is "
+                     "kept here, for later turns and for helpers")})
+    documents = list(dict.fromkeys(str(r.get("document") or "")
+                                   for r in readings))
+    wanted = str(args.get("document") or "").strip()
+    if wanted:
+        name = _match_document(wanted, documents)
+        if name is None:
+            return json.dumps({
+                "error": f"no readings of '{wanted}' are kept",
+                "pages_with_readings": _kept_pages(readings),
+                "hint": "document is a name listed in pages_with_readings"})
+        readings = [r for r in readings if r.get("document") == name]
+    if args.get("pdf_page") not in (None, ""):
+        return _one_kept_reading(readings, args.get("pdf_page"), kind,
+                                 args.get("bbox"), bool(wanted))
+    pages, problem = _wanted_pdf_pages(args.get("pdf_pages"))
+    if problem is not None:
+        return json.dumps(problem)
+    rows = [r for r in readings
+            if (pages is None or r["pdf_page"] in pages)
+            and _kept_kind_ok(r, kind)]
+    rank = {d: i for i, d in enumerate(documents)}
+    rows.sort(key=lambda r: (rank.get(str(r.get("document") or ""), 0),
+                             r["pdf_page"],
+                             r.get("view") == ZOOM_VIEW,
+                             r.get("when") or 0))
+    try:
+        offset = max(0, int(args.get("offset") or 0))
+    except (TypeError, ValueError):
+        offset = 0
+    shown = rows[offset:offset + KEPT_LIST_MAX]
+    listed: Dict[str, list] = {}
+    for r in shown:
+        listed.setdefault(str(r.get("document") or ""), []).append(
+            _kept_ref(r))
+    out: Dict[str, Any] = {
+        "kept": len(rows),
+        "pages_with_readings": _kept_pages(rows),
+        "readings": listed,
+    }
+    if shown:
+        out["showing"] = (f"{offset + 1}-{offset + len(shown)} of "
+                          f"{len(rows)}")
+    if offset + len(shown) < len(rows):
+        out["next_offset"] = offset + len(shown)
+    out["how"] = KEPT_READINGS_HOW
+    return json.dumps(out)
+
+
+def _one_kept_reading(readings, page, kind: str, bbox,
+                      document_given: bool) -> str:
+    """One page's kept reading whole (see :func:`dispatch_kept_readings`)."""
+    try:
+        page = int(page)
+    except (TypeError, ValueError):
+        return json.dumps({"error": f"pdf_page {page!r} is not a page "
+                                    "number",
+                           "hint": "pdf_page is 1-based, as a viewer shows"})
+    mine = [r for r in readings if r["pdf_page"] == page]
+    docs = list(dict.fromkeys(str(r.get("document") or "") for r in mine))
+    if len(docs) > 1 and not document_given:
+        return json.dumps({
+            "error": f"p. {page} has readings in {len(docs)} documents",
+            "documents": docs,
+            "hint": "say which with document"})
+    if not mine:
+        return json.dumps({
+            "error": f"no reading of p. {page} is kept",
+            "pages_with_readings": _kept_pages(readings),
+            "hint": "look at the page with analyze_pdf_page; every look is "
+                    "kept here"})
+    if bbox is not None or kind == "zoom":
+        pool = [r for r in mine if r.get("view") == ZOOM_VIEW
+                and (bbox is None or _zoom_matches(r.get("region"), bbox))]
+    else:
+        pool = [r for r in mine if _kept_kind_ok(r, kind or "page")]
+    if not pool:
+        what = ("zoom" if bbox is not None or kind == "zoom"
+                else "tiled reading" if kind == "tiles"
+                else "whole-page reading")
+        return json.dumps({
+            "error": f"no kept {what} of p. {page} matches",
+            "kept_for_this_page": [_kept_ref(r, with_summary=False)
+                                   for r in mine],
+            "hint": "ask for one of these (kind, and bbox for a zoom), or "
+                    "look again"})
+    pick = pool[-1]                              # kept oldest first
+    zoom = pick.get("view") == ZOOM_VIEW
+    raw = _reused_zoom_result(pick) if zoom else _reused_result(pick)
+    try:
+        out = json.loads(raw)
+    except (TypeError, ValueError):
+        return raw
+    if not isinstance(out, dict):
+        return raw
+    head = {"document": pick.get("document"), "pdf_page": page,
+            "kind": str(pick.get("view") or "page")}
+    out = {**head, **{k: v for k, v in out.items() if k not in head}}
+    others = [_kept_ref(r, with_summary=False) for r in mine
+              if r is not pick]
+    if others:
+        out["also_kept_for_this_page"] = others
     return json.dumps(out)
 
 

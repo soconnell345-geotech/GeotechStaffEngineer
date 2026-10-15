@@ -54,6 +54,7 @@ from funhouse_agent.dispatch import (
 from funhouse_agent.vision_tools import (
     IMAGE_LOOK_NOTE,
     IMAGE_ZOOM_NOTE,
+    KEPT_READINGS_DESCRIPTION,
     TURN_ARG_NOTE,
     dispatch_extended_tool as _dispatch_extended_tool,
     docx_available as _docx_available,
@@ -963,6 +964,9 @@ def make_vision_tools(
             "list_files", "read_pdf_text", "read_text_file", "analyze_image",
             "analyze_pdf_page", "render_region", "read_reference_figure",
             "view_worked_example_source", "save_file",
+            # The conversation's kept page readings, for every agent with
+            # the looking tools -- helpers too (BACKLOG TA-28).
+            "kept_readings",
         }
         # Whole-document review tools (planlens.tools), when the installed
         # planlens has them — never advertised to the model otherwise.
@@ -1006,7 +1010,10 @@ def make_vision_tools(
         # so they get the larger reference budget.
         # analyze_image too: an image too large for one look is read in
         # tiles (VIS-09), and the tiled result is held under its own budget.
-        if tool_name in ("analyze_pdf_page", "find_like", "analyze_image"):
+        # kept_readings returns one page's reading whole on request, under
+        # the same budget as the look that made it (BACKLOG TA-28).
+        if tool_name in ("analyze_pdf_page", "find_like", "analyze_image",
+                         "kept_readings"):
             cap = (0 if max_result_chars <= 0
                    else max(DEFAULT_VISION_RESULT_CHARS, reference_cap))
         elif tool_name in ("read_reference_figure", "read_pdf_text",
@@ -1260,6 +1267,20 @@ def make_vision_tools(
         if inline_images:
             args["_inline"] = True
         return _dispatch("render_region", args)
+
+    def kept_readings(document: str = "", pdf_page: Optional[int] = None,
+                      pdf_pages: Any = None, kind: str = "",
+                      bbox: Optional[list] = None, offset: int = 0) -> str:
+        """The page readings this conversation keeps (see
+        ``vision_tools.KEPT_READINGS_DESCRIPTION``): by reference without
+        ``pdf_page``, one page's reading whole with it. Read-only."""
+        args: Dict[str, Any] = {}
+        for k, v in (("document", document or None), ("pdf_page", pdf_page),
+                     ("pdf_pages", pdf_pages), ("kind", kind or None),
+                     ("bbox", bbox), ("offset", offset or None)):
+            if v not in (None, "", [], ()):
+                args[k] = v
+        return _dispatch("kept_readings", args)
 
     def read_reference_figure(
         reference: str,
@@ -1737,6 +1758,7 @@ def make_vision_tools(
             "look. " + IMAGE_ZOOM_NOTE + " " + TURN_ARG_NOTE
             + _PDF_PAGE_NOTE,
         ),
+        "kept_readings": (kept_readings, KEPT_READINGS_DESCRIPTION),
         "read_reference_figure": (
             read_reference_figure,
             "Render a digitized reference figure (e.g. a DM7 design chart) "

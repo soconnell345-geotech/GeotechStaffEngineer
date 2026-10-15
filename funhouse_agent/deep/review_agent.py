@@ -80,6 +80,11 @@ REVIEW_TOOLS = (
     "annotate_dxf",
 )
 
+#: The conversation's kept page readings (TA-28): read-only, so the
+#: reading helper gets it too; offered only with the switch
+#: (``review_flags.kept_readings_on_review_page``).
+KEPT_READINGS_TOOL = "kept_readings"
+
 #: The reading helper's tools: nothing that writes a file or a markup.
 READER_TOOLS = tuple(t for t in REVIEW_TOOLS
                      if t not in ("annotate_document", "write_docx",
@@ -390,8 +395,10 @@ def build_review_agent(model, *, engine=None,
             inline_images=inline_images,
             inline_image_files=inline_image_files)
 
-    tools = tools_for(REVIEW_TOOLS, inline, inline_files)
-    reader_tools = tools_for(READER_TOOLS, False, False)
+    kept = ((KEPT_READINGS_TOOL,)
+            if review_flags.kept_readings_on_review_page() else ())
+    tools = tools_for(REVIEW_TOOLS + kept, inline, inline_files)
+    reader_tools = tools_for(READER_TOOLS + kept, False, False)
     if review_flags.geometry():
         # Read-only, so the reading helper gets them too.
         from funhouse_agent.deep.geometry_tools import make_geometry_tools

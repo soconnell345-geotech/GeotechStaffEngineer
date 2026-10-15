@@ -674,6 +674,8 @@ def test_arms_are_the_old_ones_plus_overview():
         # VIS-01 turned lettering, pinned in funhouse_agent/tests/
         # test_vision_turned.py
         "turn_retry": {A.VISION_TURN_RETRY_ENV: "1"},
+        # TA-28 kept readings on the review page
+        "kept_readings": {A.KEPT_READINGS_ENV: "1"},
     }
 
 

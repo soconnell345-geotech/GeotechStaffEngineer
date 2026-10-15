@@ -112,11 +112,12 @@ DIGEST_ENV = "GEOTECH_REVIEW_DIGEST"
 COVERAGE_ENV = "GEOTECH_COVERAGE"
 CHECKLIST_ENV = "GEOTECH_REVIEW_CHECKLIST"
 VISION_TURN_RETRY_ENV = "GEOTECH_VISION_TURN_RETRY"
+KEPT_READINGS_ENV = "GEOTECH_REVIEW_KEPT_READINGS"
 
 ALL_ENVS = (AGENT_ENV, VISION_TEXT_ENV, VISION_STRUCTURED_ENV,
             VISION_INLINE_ENV, SWEEP_ENV, FINDINGS_ENV, OVERVIEW_ENV,
             GEOMETRY_ENV, DIGEST_ENV, COVERAGE_ENV, CHECKLIST_ENV,
-            VISION_TURN_RETRY_ENV)
+            VISION_TURN_RETRY_ENV, KEPT_READINGS_ENV)
 
 #: Not a switch but the overview's setting: above this many pages in the
 #: new uploads (all of them together) the orientation asks for contact sheets.
@@ -203,6 +204,14 @@ def checklist() -> bool:
     return _on(CHECKLIST_ENV)
 
 
+def kept_readings_on_review_page() -> bool:
+    """Whether the Document Review page offers ``kept_readings`` (the
+    conversation's kept page readings, TA-28). The geotech page always
+    does; on the testers' page it waits for the suite (arm
+    ``kept_readings``)."""
+    return _on(KEPT_READINGS_ENV)
+
+
 def vision_turn_retry() -> bool:
     """Whether a look whose lettering is found turned is read again upright,
     and a page found turned is sent turned (both pages)."""
@@ -248,6 +257,9 @@ ARMS: Dict[str, Dict[str, str]] = {
     # Turned lettering read again upright (VIS-01, 2026-10-14). On the
     # DEFAULT agent, so it compares straight against `baseline`.
     "turn_retry": {VISION_TURN_RETRY_ENV: "1"},
+    # The kept page readings as a tool on the review page (TA-28,
+    # 2026-10-15). On the DEFAULT agent, so it compares against `baseline`.
+    "kept_readings": {KEPT_READINGS_ENV: "1"},
 }
 
 
