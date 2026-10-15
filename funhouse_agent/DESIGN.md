@@ -285,6 +285,39 @@ the eyes). What changed on master after 5.33.0, in short:
   (`figure_examples`, from `profile_figure/figure_examples.py`), `plot_data`,
   `analyze_image`, `calculate` and a 14-call budget; both pages, not the
   lean review agent.
+- **Plotting code in a locked box** (GM-98; 2026-10-15; `plot_box/`):
+  behind `GEOTECH_PLOT_CODE` (OFF; arms `plot_code`,
+  `figure_helper_plot_code`) the figure helper and the `calc` helper get
+  `plot_code`, which runs matplotlib or Plotly code the model writes in a
+  fresh Python process (`python -I -B plot_box/child.py`). The layers, in
+  order: a static check of the code (imports only from numpy, pandas,
+  matplotlib, mpl_toolkits, plotly, scipy and the standard maths and text
+  modules; no `eval` / `exec` / `getattr`, no dunder attributes, no
+  library's own `os` or `sys` handed on by name), run in the parent too so
+  a refused script starts no process; a scrubbed environment (no key,
+  token or app setting reaches the child); OS limits (Linux `resource`:
+  address space, CPU time, file size, open files, no new processes;
+  Windows: a job object with a memory and CPU-time ceiling and one
+  process); the libraries the code names imported and drawn with once;
+  then a PEP 578 audit hook, bound to immutable defaults and with no off
+  switch, over the code AND the libraries it calls: reads only in the
+  conversation folder, the installed libraries and font / time zone
+  files; writes only in the conversation folder and only figure, chart and
+  data files (no overwriting a file that was there before, except an image
+  or chart being redrawn; at most 40 files); no process, socket, `ctypes`,
+  registry, pickle or database. The code gets `data`, `save_figure`,
+  `save_chart` and the plan furniture (`scale_bar`, `north_arrow`,
+  `nice_length` from `geotech_common/plan_furniture.py`); a figure left
+  open is saved. Limits: 600 s unless the call asks for more, up to 3,600 s
+  (`GEOTECH_PLOT_CODE_SECONDS`, `GEOTECH_PLOT_CODE_MAX_SECONDS`; the owner:
+  "I want it to cook"), 2,048 MB (`GEOTECH_PLOT_CODE_MEMORY_MB`), two at
+  once per process (`GEOTECH_PLOT_CODE_AT_ONCE`). While it runs the app's
+  "Working..." label reads "drawing with code: 2m 10s so far, stops at
+  10m 00s" (`funhouse_agent/progress_notes.py`, carried on the heartbeat).
+  Measured against an escape battery on Windows and Linux
+  (`funhouse_agent/tests/test_plot_box.py`). Left as it is: a Python
+  sandbox is not a kernel one; on Linux a kernel layer (Landlock or
+  namespaces) could be added under the hook (BACKLOG INF-16).
 - **`calculate`** (`deep/calculate_tool.py`, GM-94; 2026-10-15): a variable
   may be a list of numbers, used through count, sum, mean, median, std
   (sample), min, max, `percentile(L, p)`, `count_above(L, v)` and

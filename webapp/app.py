@@ -330,7 +330,10 @@ def _follow_turn_job(job) -> None:
             kind = item.get("kind")
             if kind == "heartbeat":
                 _m, _s = divmod(int(item.get("elapsed_s", 0)), 60)
-                status.update(label=f"Working… {_m}m {_s:02d}s (long step)")
+                _note = item.get("note")
+                status.update(label=(f"Working… {_m}m {_s:02d}s ({_note})"
+                                     if _note else
+                                     f"Working… {_m}m {_s:02d}s (long step)"))
             elif kind == "token":
                 answer += item.get("text", "")
                 answer_box.markdown(answer)

@@ -501,6 +501,14 @@ _CALC_FRAMING = (
     "truly is not there, name what you looked for and where."
 )
 
+#: Added to the calc helper's prompt when ``plot_code`` is offered.
+_CALC_PLOT_CODE = (
+    "\nA FIGURE NONE OF THESE DRAW (a wall with its pressure diagrams, "
+    "panels sharing a depth axis, a section with layers filled): write it "
+    "with plot_code (see its description), look at the PNG with "
+    "analyze_image and redraw until it is right, then paste its "
+    "html_img_tag.")
+
 #: Appended to the PRIMARY agent's system prompt when the calc sub-agent is on,
 #: nudging it to delegate tool-heavy calc rather than run those tools inline.
 _CALC_DELEGATION_NUDGE = (
@@ -589,11 +597,18 @@ def build_calc_subagent(
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
     ) + [make_calculate_tool()]
-    if extra_tools:
-        tools = list(tools) + list(extra_tools)
     # NOT CONSULTANT_FRAMING: that is the references sub-agent's librarian
     # preamble ("Do NOT perform engineering calculations"). See _CALC_PREAMBLE.
     system_prompt = _CALC_PREAMBLE + _CALC_FRAMING
+    # Plotting code in the locked box, behind GEOTECH_PLOT_CODE (GM-98; the
+    # owner on calc packages' figures, 2026-10-15).
+    from funhouse_agent.deep.figure_helper import _plot_code_tool
+    plot_code = _plot_code_tool()
+    if plot_code is not None:
+        tools = list(tools) + [plot_code]
+        system_prompt = system_prompt + _CALC_PLOT_CODE
+    if extra_tools:
+        tools = list(tools) + list(extra_tools)
     if extra_system_prompt:
         system_prompt = system_prompt + "\n\n" + extra_system_prompt
     spec = {

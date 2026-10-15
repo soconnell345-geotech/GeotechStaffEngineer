@@ -993,6 +993,27 @@ def test_heartbeat_emitted_during_silence():
     assert all(o["elapsed_s"] >= 0 for o in hbs)
 
 
+def test_heartbeat_carries_a_long_tools_note(tmp_path):
+    """GM-98: a tool running for minutes (the plotting box) leaves a line
+    for the label, kept per conversation folder."""
+    import time as _t
+    from funhouse_agent import progress_notes
+    from funhouse_agent._fileio import working_dir_bound
+
+    def slow_gen():
+        progress_notes.set_note("drawing with code: 0m 10s so far")
+        _t.sleep(0.25)
+        progress_notes.clear_note()
+        yield {"kind": "turn_done", "answer": "", "turn_tokens": 1}
+
+    with working_dir_bound(str(tmp_path)):
+        out = list(core.with_heartbeat(slow_gen(), interval_s=0.05))
+    notes = [o.get("note") for o in out if o["kind"] == "heartbeat"]
+    assert "drawing with code: 0m 10s so far" in notes
+    # another conversation's folder sees nothing
+    assert progress_notes.note_for(str(tmp_path / "other")) is None
+
+
 def test_heartbeat_reraises_generator_exception():
     def bad_gen():
         yield {"kind": "token", "text": "x"}

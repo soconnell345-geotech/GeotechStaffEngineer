@@ -302,6 +302,7 @@ Budgets in force:
 | `general-purpose` helper (geotech page) | 30 (`GEOTECH_HELPER_MAX_MODEL_CALLS`; `0` / `off` = none); the last call hands over the data gathered | `8cd38f4`, 2026-10-14 (TA-22) |
 | `reviewer` | 10 (`DEFAULT_REVIEWER_MAX_MODEL_CALLS`), the last call answering from what it has | `95b6388`, 2026-10-14 (TA-25) |
 | `figure` helper (only with `GEOTECH_FIGURE_HELPER`, OFF; both pages, not lean) | 14 (`DEFAULT_FIGURE_MAX_MODEL_CALLS`): brief, example, draw, look, at most two redraws, answer | `1f87ea5`, 2026-10-15 (GM-92) |
+| `plot_code` (only with `GEOTECH_PLOT_CODE`, OFF; the figure and `calc` helpers) | no model calls of its own; a run's time limit is 600 s unless the call asks for up to 3,600 s (`GEOTECH_PLOT_CODE_SECONDS` / `_MAX_SECONDS`), 2,048 MB, two runs at once per process | 2026-10-15 (GM-98) |
 | Geotech primary | still **none** (the step cap, §4.3) | — |
 
 ### 4.3 Step caps (ungraceful)

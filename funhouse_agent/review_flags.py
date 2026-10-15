@@ -104,6 +104,17 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     checklist (after Tufte) and worked examples, looks at the PNG and
     redraws (owner's choice, 2026-10-15, OWN-61 option B). Both pages; not
     the lean review agent (BACKLOG GM-92).
+``GEOTECH_PLOT_CODE``
+    ``1`` offers ``plot_code`` to the figure helper and the ``calc`` helper:
+    matplotlib or Plotly code the model writes, run in a locked box (its own
+    process, no network, files only in the conversation folder, imports
+    limited to the plotting and number libraries, a memory ceiling and a
+    generous time limit; :mod:`funhouse_agent.plot_box`). The owner,
+    2026-10-15: "I've been frustrated by the calc packages' lack of
+    creative figures... This would solve it." Settings (cleared with the
+    switches): ``GEOTECH_PLOT_CODE_SECONDS``, ``GEOTECH_PLOT_CODE_MAX_SECONDS``,
+    ``GEOTECH_PLOT_CODE_MEMORY_MB``, ``GEOTECH_PLOT_CODE_AT_ONCE``. Both
+    pages (BACKLOG GM-98).
 ``GEOTECH_CITED_PAGES``
     What the app does when an answer cites pages that no tool or helper read
     or looked at in the conversation (:mod:`funhouse_agent.cited_pages`; the
@@ -136,12 +147,13 @@ VISION_TURN_RETRY_ENV = "GEOTECH_VISION_TURN_RETRY"
 KEPT_READINGS_ENV = "GEOTECH_REVIEW_KEPT_READINGS"
 CITED_PAGES_ENV = "GEOTECH_CITED_PAGES"
 FIGURE_HELPER_ENV = "GEOTECH_FIGURE_HELPER"
+PLOT_CODE_ENV = "GEOTECH_PLOT_CODE"
 
 ALL_ENVS = (AGENT_ENV, VISION_TEXT_ENV, VISION_STRUCTURED_ENV,
             VISION_INLINE_ENV, SWEEP_ENV, FINDINGS_ENV, OVERVIEW_ENV,
             GEOMETRY_ENV, DIGEST_ENV, COVERAGE_ENV, CHECKLIST_ENV,
             VISION_TURN_RETRY_ENV, KEPT_READINGS_ENV, CITED_PAGES_ENV,
-            FIGURE_HELPER_ENV)
+            FIGURE_HELPER_ENV, PLOT_CODE_ENV)
 
 #: Not a switch but the overview's setting: above this many pages in the
 #: new uploads (all of them together) the orientation asks for contact sheets.
@@ -156,7 +168,9 @@ DEFAULT_OVERVIEW_PAGES = 20
 #: nothing.
 SETTINGS_ENVS = (OVERVIEW_PAGES_ENV, "GEOTECH_REVIEW_SHAPE1_PAGES",
                  "GEOTECH_VISION_INLINE_KEEP",
-                 "GEOTECH_REVIEW_MAX_MODEL_CALLS")
+                 "GEOTECH_REVIEW_MAX_MODEL_CALLS",
+                 "GEOTECH_PLOT_CODE_SECONDS", "GEOTECH_PLOT_CODE_MAX_SECONDS",
+                 "GEOTECH_PLOT_CODE_MEMORY_MB", "GEOTECH_PLOT_CODE_AT_ONCE")
 
 _ON = ("1", "true", "yes", "on")
 
@@ -247,6 +261,12 @@ def figure_helper() -> bool:
     return _on(FIGURE_HELPER_ENV)
 
 
+def plot_code() -> bool:
+    """Whether the figure and ``calc`` helpers get ``plot_code``, the locked
+    box for plotting code (both pages)."""
+    return _on(PLOT_CODE_ENV)
+
+
 def cited_pages() -> str:
     """What an answer citing pages no tool opened gets: ``"off"`` (the
     default: recorded only), ``"note"`` (a note appended) or ``"retry"``
@@ -307,6 +327,10 @@ ARMS: Dict[str, Dict[str, str]] = {
     "cited_pages_retry": {CITED_PAGES_ENV: "retry"},
     # The figure helper (GM-92, 2026-10-15). On the DEFAULT agent.
     "figure_helper": {FIGURE_HELPER_ENV: "1"},
+    # Plotting code in a locked box (GM-98, 2026-10-15), for the calc
+    # helper alone and with the figure helper. On the DEFAULT agent.
+    "plot_code": {PLOT_CODE_ENV: "1"},
+    "figure_helper_plot_code": {FIGURE_HELPER_ENV: "1", PLOT_CODE_ENV: "1"},
 }
 
 
@@ -346,12 +370,13 @@ __all__ = ["AGENT_ENV", "VISION_TEXT_ENV", "VISION_STRUCTURED_ENV",
            "VISION_INLINE_ENV", "SWEEP_ENV", "FINDINGS_ENV", "OVERVIEW_ENV",
            "GEOMETRY_ENV", "DIGEST_ENV", "COVERAGE_ENV", "CHECKLIST_ENV",
            "VISION_TURN_RETRY_ENV", "KEPT_READINGS_ENV", "CITED_PAGES_ENV",
-           "FIGURE_HELPER_ENV",
+           "FIGURE_HELPER_ENV", "PLOT_CODE_ENV",
            "OVERVIEW_PAGES_ENV",
            "DEFAULT_OVERVIEW_PAGES", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
            "lean_agent",
            "vision_text_context", "vision_structured", "vision_inline",
            "sweep", "findings", "overview", "geometry", "digest",
            "coverage", "checklist", "vision_turn_retry",
-           "kept_readings_on_review_page", "figure_helper", "cited_pages",
+           "kept_readings_on_review_page", "figure_helper", "plot_code",
+           "cited_pages",
            "overview_pages", "switches", "describe"]

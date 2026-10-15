@@ -198,6 +198,25 @@ def make_figure_examples_tool() -> StructuredTool:
             "Adapt the nearest one; never copy its made-up numbers.")))
 
 
+#: Added to the helper's way of working when ``plot_code`` is offered.
+PLOT_CODE_STEP = (
+    "\ng. When plot_data cannot draw what the brief needs, write the figure "
+    "as matplotlib code with plot_code (its description says what the "
+    "box allows) and apply the same checklist: look at the PNG it saved "
+    "and redraw.")
+
+
+def _plot_code_tool():
+    """``plot_code`` when its switch is on and the box can run here."""
+    from funhouse_agent import review_flags
+    if not review_flags.plot_code():
+        return None
+    from funhouse_agent import plot_box
+    if not plot_box.available():
+        return None
+    return plot_box.make_plot_code_tool()
+
+
 def build_figure_subagent(
     engine=None,
     attachments=None,
@@ -225,9 +244,13 @@ def build_figure_subagent(
         return None
     tools = list(tools) + [make_figure_examples_tool(),
                            make_calculate_tool()]
+    prompt = FIGURE_HELPER_PROMPT
+    plot_code = _plot_code_tool()
+    if plot_code is not None:
+        tools.append(plot_code)
+        prompt = prompt + PLOT_CODE_STEP
     if extra_tools:
         tools = tools + list(extra_tools)
-    prompt = FIGURE_HELPER_PROMPT
     if extra_system_prompt:
         prompt = prompt + "\n\n" + extra_system_prompt
     spec = {"name": FIGURE_HELPER_NAME,
@@ -240,6 +263,6 @@ def build_figure_subagent(
 
 
 __all__ = ["FIGURE_CHECKLIST", "FIGURE_HELPER_DESCRIPTION",
-           "FIGURE_HELPER_NAME", "FIGURE_HELPER_PROMPT",
+           "FIGURE_HELPER_NAME", "FIGURE_HELPER_PROMPT", "PLOT_CODE_STEP",
            "DEFAULT_FIGURE_MAX_MODEL_CALLS", "build_figure_subagent",
            "make_figure_examples_tool"]

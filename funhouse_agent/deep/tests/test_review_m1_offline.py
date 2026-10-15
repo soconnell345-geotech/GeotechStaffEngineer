@@ -683,6 +683,11 @@ def test_arms_are_the_old_ones_plus_overview():
         # GM-92 the figure helper, pinned in
         # funhouse_agent/deep/tests/test_figure_helper.py
         "figure_helper": {A.FIGURE_HELPER_ENV: "1"},
+        # GM-98 plotting code in a locked box, pinned in
+        # funhouse_agent/tests/test_plot_box.py
+        "plot_code": {A.PLOT_CODE_ENV: "1"},
+        "figure_helper_plot_code": {A.FIGURE_HELPER_ENV: "1",
+                                    A.PLOT_CODE_ENV: "1"},
     }
 
 
@@ -1020,9 +1025,10 @@ def test_an_arm_clears_the_switch_settings_it_does_not_name(monkeypatch):
     """Item 13: an arm is exactly what it says - settings included."""
     from funhouse_agent.deep.review_agent import MAX_MODEL_CALLS_ENV
     from funhouse_agent.review_digest.build import SHAPE1_PAGES_ENV
+    from funhouse_agent.plot_box import SETTINGS_ENVS as PLOT_CODE_SETTINGS
     assert set(review_flags.SETTINGS_ENVS) == {
         review_flags.OVERVIEW_PAGES_ENV, SHAPE1_PAGES_ENV,
-        inline_store.KEEP_ENV, MAX_MODEL_CALLS_ENV}
+        inline_store.KEEP_ENV, MAX_MODEL_CALLS_ENV} | set(PLOT_CODE_SETTINGS)
     assert not set(review_flags.SETTINGS_ENVS) & set(review_flags.ALL_ENVS)
     mine = {review_flags.OVERVIEW_PAGES_ENV: "5", SHAPE1_PAGES_ENV: "3",
             inline_store.KEEP_ENV: "1", MAX_MODEL_CALLS_ENV: "9"}

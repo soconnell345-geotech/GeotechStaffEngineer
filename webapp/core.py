@@ -1033,13 +1033,24 @@ def with_heartbeat(gen, interval_s: Optional[float] = None):
     import contextvars as _contextvars
     _threading.Thread(target=_contextvars.copy_context().run, args=(_pump,),
                       daemon=True, name="geotech-turn-pump").start()
+    # A long tool's own line for the label ("drawing with code: 2m 10s so
+    # far"), kept per conversation folder (funhouse_agent.progress_notes).
+    try:
+        from funhouse_agent import progress_notes as _notes
+        note_key = _notes.current_key()
+    except Exception:                                  # noqa: BLE001
+        _notes, note_key = None, ""
     t0 = _time.monotonic()
     while True:
         try:
             kind, payload = q.get(timeout=interval)
         except _queue.Empty:
-            yield {"kind": "heartbeat",
-                   "elapsed_s": round(_time.monotonic() - t0, 1)}
+            beat = {"kind": "heartbeat",
+                    "elapsed_s": round(_time.monotonic() - t0, 1)}
+            note = _notes.note_for(note_key) if _notes is not None else None
+            if note:
+                beat["note"] = note
+            yield beat
             continue
         if kind == "item":
             yield payload
