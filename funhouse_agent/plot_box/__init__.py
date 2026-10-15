@@ -232,6 +232,14 @@ def run_plot_code(code: str, data: Any = None, name: str = "",
         return {"status": "error",
                 "error": f"no conversation folder to draw in: {exc}"}
 
+    from funhouse_agent.drawing_wait import drawing
+    # A look at a figure in this folder waits until the box has written it
+    # (live wave w8: a draw and a look in the same step read the old PNG).
+    with drawing(root):
+        return _run_in_box(code, data_json, name, root, limit, cfg, notes)
+
+
+def _run_in_box(code, data_json, name, root, limit, cfg, notes):
     from funhouse_agent import progress_notes
     key = progress_notes.current_key()
     slots = _slots(cfg["at_once"])
@@ -344,9 +352,27 @@ def run_plot_code(code: str, data: Any = None, name: str = "",
                 child[k][-3000:]
     if child.get("refused"):
         res["refused"] = child["refused"]
+    if child.get("layout"):
+        # measured from the drawing itself, not from a look
+        res["layout_check"] = child["layout"]
     if child.get("auto_saved"):
         notes.append("figures left open were saved as "
                      + ", ".join(child["auto_saved"]))
+    if child:
+        # kept for the record: whether the OS limits were in force, and how
+        # the time split between starting the box and drawing
+        res["box"] = {"limits_applied": child.get("limits_applied") or {},
+                      "run_seconds": child.get("run_seconds"),
+                      "start_seconds": (round(seconds - child["run_seconds"],
+                                              1)
+                                        if isinstance(child.get(
+                                            "run_seconds"), (int, float))
+                                        else None)}
+        if child.get("preload_failed"):
+            res["box"]["preload_failed"] = child["preload_failed"]
+        if not child.get("limits_applied"):
+            notes.append("no OS memory or CPU limit could be set on this "
+                         "host; only the app's time limit held")
     if timed_out:
         res["status"] = "error"
         res["error"] = (
@@ -373,12 +399,20 @@ def run_plot_code(code: str, data: Any = None, name: str = "",
                             "open and it is saved for you).")
     if images:
         res["next"] = (
-            "LOOK at each PNG with analyze_image and check it against what "
-            "the figure must show (labels on the data, units, scale, nothing "
-            "overlapping); fix the code and call plot_code again with the "
-            "same name to redraw. Paste html_img_tag into report HTML. A "
-            "chart with the same name as a PNG is what the chat shows in its "
-            "place.")
+            "LOOK at each PNG with analyze_image, in a step after this one, "
+            "and check it against what the figure must show (labels on the "
+            "data, units, scale, nothing overlapping); fix what layout_check "
+            "lists too; then call plot_code again with the same name to "
+            "redraw. Paste html_img_tag into report HTML.")
+    if charts:
+        # live wave w8: the chart the chat showed had lost lines the PNG had,
+        # and no look had checked it
+        notes.append(
+            "The chat shows each chart in place of the PNG with the same "
+            "name, and a look at the PNG does not check the chart. Save a "
+            "chart only when an interactive chart is wanted, drawn from the "
+            "same numbers; Plotly leaves out lines and shaded bands added to "
+            "a subplot that has no data.")
     if notes:
         res["notes"] = notes
     return res
@@ -400,9 +434,11 @@ def plot_code_description(cfg: Optional[Dict[str, int]] = None) -> str:
         "there, nothing else; no network. In the code: `data` is the JSON "
         "object you pass as data; save_figure(fig, name) saves a matplotlib "
         "figure as <name>.png (.svg or .pdf by the name's extension) and "
-        "returns the file name; save_chart(fig, name) saves a Plotly figure "
-        "as the chat's interactive chart <name>.plotly.json, shown in place "
-        "of the PNG with the same name (so draw both from the same numbers); "
+        "returns the file name (a PNG at most 2,048 px on its long side); "
+        "only when an interactive chart is wanted, save_chart(fig, name) "
+        "saves a Plotly figure as the chat's chart <name>.plotly.json, shown "
+        "in place of the PNG with the same name and NOT checked by a look at "
+        "the PNG (so draw both from the same numbers); "
         "scale_bar(ax, x0, y, length, height, units) and north_arrow(ax, "
         "(x, y), north_deg) draw the app's plan furniture; a figure left "
         "open is saved as <name>.png. Draw as for a report: every number "
@@ -413,7 +449,9 @@ def plot_code_description(cfg: Optional[Dict[str, int]] = None) -> str:
         f"{cfg['seconds']} s unless you ask for more, up to "
         f"{cfg['max_seconds']} s for a heavy figure; memory up to "
         f"{cfg['memory_mb']} MB. Returns the saved files (each PNG with its "
-        "html_img_tag for report HTML), anything the code printed, and on a "
+        "html_img_tag for report HTML), layout_check (lettering that overlaps "
+        "other lettering, or that a plotted line runs through, measured from "
+        "the drawing), anything the code printed, and on a "
         "failure the error with your code's line. Then look at the PNG with "
         "analyze_image and redraw until it is right.")
 

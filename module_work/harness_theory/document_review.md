@@ -72,8 +72,8 @@ arm that compares straight against `baseline`: `GEOTECH_COVERAGE` and
 `GEOTECH_REVIEW_KEPT_READINGS` and `GEOTECH_CITED_PAGES` (2026-10-15;
 `kept_readings`, `cited_pages_note`, `cited_pages_retry`),
 `GEOTECH_FIGURE_HELPER` (2026-10-15; `figure_helper`; the default agent on
-both pages, not the lean one), `GEOTECH_PLOT_CODE` (2026-10-15; `plot_code`,
-`figure_helper_plot_code`; `plot_code` for the figure and `calc` helpers). The full list with
+both pages, not the lean one), `GEOTECH_PLOT_CODE` (2026-10-15; `plot_code`;
+`plot_code` for the figure and `calc` helpers, and the figure helper with it). The full list with
 defaults is the switch table in `module_work/REVIEW_HARNESS.md`. And since
 2026-10-12 (app `ae50842`, unreleased) the default ("legacy") build has the
 lean build's two safeguards: a 40-call budget whose last call answers, and a

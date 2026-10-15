@@ -105,7 +105,9 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     redraws (owner's choice, 2026-10-15, OWN-61 option B). Both pages; not
     the lean review agent (BACKLOG GM-92).
 ``GEOTECH_PLOT_CODE``
-    ``1`` offers ``plot_code`` to the figure helper and the ``calc`` helper:
+    ``1`` offers ``plot_code`` to the figure helper and the ``calc`` helper,
+    and brings the figure helper with it (live wave w8: without a helper
+    to hand figures to, the main agent never reached the box):
     matplotlib or Plotly code the model writes, run in a locked box (its own
     process, no network, files only in the conversation folder, imports
     limited to the plotting and number libraries, a memory ceiling and a
@@ -263,7 +265,7 @@ def figure_helper() -> bool:
 
 def plot_code() -> bool:
     """Whether the figure and ``calc`` helpers get ``plot_code``, the locked
-    box for plotting code (both pages)."""
+    box for plotting code, and the figure helper is built (both pages)."""
     return _on(PLOT_CODE_ENV)
 
 
@@ -327,10 +329,9 @@ ARMS: Dict[str, Dict[str, str]] = {
     "cited_pages_retry": {CITED_PAGES_ENV: "retry"},
     # The figure helper (GM-92, 2026-10-15). On the DEFAULT agent.
     "figure_helper": {FIGURE_HELPER_ENV: "1"},
-    # Plotting code in a locked box (GM-98, 2026-10-15), for the calc
-    # helper alone and with the figure helper. On the DEFAULT agent.
+    # Plotting code in a locked box (GM-98, 2026-10-15) for the figure and
+    # calc helpers; it brings the figure helper. On the DEFAULT agent.
     "plot_code": {PLOT_CODE_ENV: "1"},
-    "figure_helper_plot_code": {FIGURE_HELPER_ENV: "1", PLOT_CODE_ENV: "1"},
 }
 
 

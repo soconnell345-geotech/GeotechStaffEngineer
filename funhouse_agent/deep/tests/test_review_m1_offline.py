@@ -686,8 +686,6 @@ def test_arms_are_the_old_ones_plus_overview():
         # GM-98 plotting code in a locked box, pinned in
         # funhouse_agent/tests/test_plot_box.py
         "plot_code": {A.PLOT_CODE_ENV: "1"},
-        "figure_helper_plot_code": {A.FIGURE_HELPER_ENV: "1",
-                                    A.PLOT_CODE_ENV: "1"},
     }
 
 

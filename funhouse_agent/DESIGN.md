@@ -286,8 +286,8 @@ the eyes). What changed on master after 5.33.0, in short:
   `analyze_image`, `calculate` and a 14-call budget; both pages, not the
   lean review agent.
 - **Plotting code in a locked box** (GM-98; 2026-10-15; `plot_box/`):
-  behind `GEOTECH_PLOT_CODE` (OFF; arms `plot_code`,
-  `figure_helper_plot_code`) the figure helper and the `calc` helper get
+  behind `GEOTECH_PLOT_CODE` (OFF; arm `plot_code`; it brings the figure
+  helper with it) the figure helper and the `calc` helper get
   `plot_code`, which runs matplotlib or Plotly code the model writes in a
   fresh Python process (`python -I -B plot_box/child.py`). The layers, in
   order: a static check of the code (imports only from numpy, pandas,

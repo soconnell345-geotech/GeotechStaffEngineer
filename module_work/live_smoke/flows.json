@@ -684,6 +684,28 @@
     {"say": "Make two figures for the report from these results. (1) Fraction of the footprint above the excavation level for five covariance cases - Exp 15 m: upper contact 0.42, persistent contact 0.16; Exp 30 m: 0.53, 0.14; Exp 60 m: 0.42, 0.21; Sph 30 m: 0.49, 0.21; Gau 30 m: 0.44, 0.21 - with our best estimate 0.16 marked. (2) Settlement of the embankment centre over time, no drains vs wick drains at 1.5 m, days 1, 3, 10, 30, 60, 100, 200, 400, 1000: no drains 5, 14, 40, 90, 150, 210, 300, 360, 395 mm; wick drains 12, 45, 130, 260, 340, 375, 392, 398, 400 mm; filling finished at day 60."}
    ],
    "expect": {"tools_any": ["task", "plot_data"]}
+  },
+  {
+   "id": "F54-geotech-figure-settlement-profile",
+   "title": "Geotech page: a settlement profile with side-by-side stress panels (figure helper + plot_code ON, GM-98)",
+   "page": "geotech",
+   "cost": "light",
+   "env": {"GEOTECH_FIGURE_HELPER": "1", "GEOTECH_PLOT_CODE": "1"},
+   "steps": [
+    {"say": "Make the settlement profile figure for our report. Soil: 0 to 2 m sandy fill (unit weight 19 kN/m3), 2 to 9 m soft clay (16.5 kN/m3), 9 to 15 m dense sand (20 kN/m3); water table at 2 m depth. Oedometer tests in the clay gave preconsolidation pressures of 62 kPa at 3.0 m, 70 kPa at 4.5 m, 76 kPa at 6.0 m, 88 kPa at 7.5 m and 95 kPa at 8.5 m. The new fill adds 60 kPa at the surface, 58 at 3 m, 54 at 6 m, 49 at 9 m, 44 at 12 m and 40 at 15 m. I want the soil column on the left, then panels sharing one depth axis: initial vertical effective stress, the preconsolidation pressures as test points, and the added stress, so I can see where the clay is overconsolidated and where the final stress passes the preconsolidation pressure. Depth in metres down, stresses in kPa."}
+   ],
+   "expect": {"tools_any": ["task", "plot_code"]}
+  },
+  {
+   "id": "F55-geotech-calc-wall-figure",
+   "title": "Geotech page: a wall drawn to scale with its pressure diagrams in a calc PDF (plot_code ON for the calc helper, GM-98)",
+   "page": "geotech",
+   "cost": "light",
+   "env": {"GEOTECH_PLOT_CODE": "1"},
+   "steps": [
+    {"say": "Make a short calc PDF for the report on our cantilever retaining wall: retained height 4.0 m, stem 0.35 m thick, base 2.8 m wide and 0.5 m thick with a 0.7 m toe; backfill level with the top of the wall, unit weight 19 kN/m3, friction angle 32 degrees, no water, 10 kPa surcharge on the backfill. Use Rankine active pressure. Include a figure of the wall drawn to scale with the active earth pressure and the surcharge pressure drawn beside it as separate diagrams, each resultant and its height above the base marked."}
+   ],
+   "expect": {"tools_any": ["task", "plot_code"]}
   }
  ]
 }

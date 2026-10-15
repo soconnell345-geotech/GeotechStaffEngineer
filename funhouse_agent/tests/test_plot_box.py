@@ -283,6 +283,112 @@ def test_the_tool_describes_the_box_and_refuses_unknown_arguments():
     assert "colour" in str(out)
 
 
+def test_a_png_fits_one_look(folders):
+    """Live wave w8: 200 dpi saved 2538 x 1546 px and every look tiled."""
+    mine, _ = folders
+    r = _run("import matplotlib.pyplot as plt\n"
+             "fig, ax = plt.subplots(figsize=(14, 9)); ax.plot([1, 2])\n"
+             "save_figure(fig, 'wide')", mine)
+    assert r["status"] == "success", r
+    assert max(r["images"][0]["width_px"], r["images"][0]["height_px"]) \
+        <= 2100
+
+
+def test_the_layout_check_measures_what_a_look_can_miss(folders):
+    """Live wave w8: a tile cleared a label the water-table line ran
+    through. The box measures it from the drawing."""
+    mine, _ = folders
+    code = ("import matplotlib.pyplot as plt\nfig, ax = plt.subplots()\n"
+            "ax.plot([0, 10], [0, 10])\n"
+            "ax.axhline(5, label='water table')\n"
+            "ax.text(5, 5, 'on the line', ha='center', va='center')\n"
+            "ax.text(2, 8, 'first label'); ax.text(2.1, 8.05, 'second label')\n"
+            "save_figure(fig, 'crowded')")
+    r = _run(code, mine)
+    assert r["status"] == "success", r
+    (check,) = r["layout_check"]
+    assert check["file"] == "crowded.png"
+    assert ["first label", "second label"] in check["text_overlaps"]
+    assert any(t == "on the line" for t, _ in check["text_on_a_line"])
+    assert "layout_check" in r["next"]
+
+
+def test_a_clean_figure_has_no_layout_notes(folders):
+    mine, _ = folders
+    r = _run("import matplotlib.pyplot as plt\nfig, ax = plt.subplots()\n"
+             "ax.plot([0, 1], [0, 1])\nax.set_xlabel('x (m)')\n"
+             "save_figure(fig, 'clean')", mine)
+    assert r["status"] == "success" and "layout_check" not in r
+
+
+def test_the_result_keeps_the_boxs_own_record(folders):
+    mine, _ = folders
+    r = _run("import matplotlib.pyplot as plt\nplt.plot([1])", mine)
+    box = r["box"]
+    assert box["limits_applied"], "no OS limit was applied on this host"
+    assert box["run_seconds"] is not None and box["start_seconds"] >= 0
+
+
+def test_a_chart_is_said_to_go_unchecked(folders):
+    mine, _ = folders
+    r = _run("import plotly.graph_objects as go\n"
+             "save_chart(go.Figure(go.Scatter(x=[1], y=[2])), 'c')", mine)
+    assert r["status"] == "success"
+    assert any("does not check the chart" in n for n in r["notes"])
+
+
+def test_a_look_waits_for_a_drawing_in_its_folder(tmp_path):
+    import threading
+    import time
+    from funhouse_agent import drawing_wait
+    started = threading.Event()
+
+    def draw():
+        with drawing_wait.drawing(str(tmp_path)):
+            started.set()
+            time.sleep(0.4)
+
+    t = threading.Thread(target=draw)
+    t.start()
+    started.wait(2)
+    assert drawing_wait.drawing_in(str(tmp_path))
+    assert not drawing_wait.drawing_in(str(tmp_path / "other"))
+    waited = drawing_wait.wait_until_drawn(str(tmp_path), timeout=5)
+    t.join()
+    assert waited >= 0.2 and not drawing_wait.drawing_in(str(tmp_path))
+
+
+def test_plot_code_marks_its_folder_while_it_draws(folders, monkeypatch):
+    from funhouse_agent import drawing_wait
+    mine, _ = folders
+    seen = []
+    real = drawing_wait.drawing
+
+    def spy(folder):
+        seen.append(folder)
+        return real(folder)
+    monkeypatch.setattr(drawing_wait, "drawing", spy)
+    _run("import matplotlib.pyplot as plt\nplt.plot([1])", mine)
+    assert seen and os.path.samefile(seen[0], mine)
+
+
+def test_plot_data_says_when_one_figure_is_redrawn_again(tmp_path):
+    """Live wave w8 (F55): five versions of one figure (wall.png,
+    wall2.png, ...) and then the turn ran out of steps."""
+    from funhouse_agent._fileio import working_dir_bound
+    from funhouse_agent.deep.tools import make_vision_tools
+    (tool,) = make_vision_tools(include={"plot_data"})
+    series = [{"x": [0, 1], "y": [0, 1], "label": "a"}]
+    with working_dir_bound(str(tmp_path)):
+        outs = [json.loads(tool.invoke({"series": series,
+                                        "output_path": name}))
+                for name in ("wall_figure.png", "wall_figure2.png",
+                             "wall_figure_v3.png")]
+    assert "redraw_note" not in outs[0] and "redraw_note" not in outs[1]
+    assert "drawn 3 times" in outs[2]["redraw_note"]
+    assert "plot_code" in outs[2]["redraw_note"]
+
+
 def test_off_by_default_then_offered_to_both_helpers(monkeypatch):
     from funhouse_agent.deep.agent import build_calc_subagent
     from funhouse_agent.deep.figure_helper import (PLOT_CODE_STEP,

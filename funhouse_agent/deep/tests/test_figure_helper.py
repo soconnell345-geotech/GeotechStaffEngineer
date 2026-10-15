@@ -145,6 +145,21 @@ def test_off_by_default(monkeypatch):
         review_flags.FIGURE_HELPER_ENV: "1"}
 
 
+def test_plot_code_brings_the_helper_and_says_so(monkeypatch):
+    """Live wave w8 (F55): with plot_code on the calc helper only, the main
+    agent drew a wall with plot_data five times and ran out of steps. The
+    plot_code switch brings the figure helper, whose description (what the
+    main agent reads) says it draws in code what plot_data cannot."""
+    monkeypatch.delenv(review_flags.FIGURE_HELPER_ENV, raising=False)
+    monkeypatch.setenv(review_flags.PLOT_CODE_ENV, "1")
+    specs = {s["name"]: s for s in _captured_subagents(
+        monkeypatch, enable_calc_subagent=True)}
+    fig = specs[FIGURE_HELPER_NAME]
+    assert "plot_code" in {t.name for t in fig["tools"]}
+    assert "draws in code (plot_code)" in fig["description"]
+    assert "plot_code" in specs["calc"]["description"]
+
+
 def test_the_switch_adds_it_with_the_guards(monkeypatch):
     monkeypatch.setenv(review_flags.FIGURE_HELPER_ENV, "1")
     specs = _captured_subagents(monkeypatch)

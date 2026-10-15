@@ -607,6 +607,73 @@ def _safe_stem(name, default: str) -> str:
     return stem[:80]
 
 
+#: The longest side of a saved PNG: what one look at an image takes whole
+#: (live wave w8: 200 dpi saved 2538 x 1546 px, and every look was tiled).
+MAX_PX = 2048
+
+
+def _dpi_for(fig, dpi) -> int:
+    """``dpi``, lowered so the figure's longest side stays within
+    :data:`MAX_PX` pixels."""
+    w, h = fig.get_size_inches()
+    return max(40, min(int(dpi), int(MAX_PX / max(w, h, 1e-6))))
+
+
+def _layout_check(fig, fname: str) -> dict:
+    """Text the reader cannot read cleanly, measured from the drawing (not
+    from a look): lettering that overlaps other lettering, and lettering
+    inside a plot that a plotted line runs through. Up to eight of each."""
+    from matplotlib.text import Text
+    from matplotlib.lines import Line2D
+    out = {"file": fname}
+    try:
+        fig.canvas.draw()
+        r = fig.canvas.get_renderer()
+    except Exception:                                      # noqa: BLE001
+        return out
+    texts = []
+    for t in fig.findobj(Text):
+        s = t.get_text().strip() if t.get_visible() else ""
+        if not s:
+            continue
+        try:
+            bb = t.get_window_extent(r)
+        except Exception:                                  # noqa: BLE001
+            continue
+        if bb.width > 1 and bb.height > 1:
+            texts.append((s[:40], bb, t))
+    overlaps = []
+    for i in range(len(texts)):
+        for j in range(i + 1, len(texts)):
+            a, b = texts[i][1], texts[j][1]
+            if (min(a.x1, b.x1) - max(a.x0, b.x0) > 1
+                    and min(a.y1, b.y1) - max(a.y0, b.y0) > 1):
+                overlaps.append([texts[i][0], texts[j][0]])
+    crossed = []
+    for ax in fig.get_axes():
+        grid = set(ax.get_xgridlines()) | set(ax.get_ygridlines())
+        lines = [ln for ln in ax.get_lines()
+                 if ln not in grid and ln.get_visible()
+                 and ln.get_linestyle() not in ("None", "none", "", " ")]
+        for s, bb, t in texts:
+            if not ax.bbox.contains(bb.x0, bb.y0) \
+                    or not ax.bbox.contains(bb.x1, bb.y1):
+                continue
+            for ln in lines:
+                try:
+                    path = ln.get_transform().transform_path(ln.get_path())
+                    if path.intersects_bbox(bb, filled=False):
+                        crossed.append([s, str(ln.get_label())[:40]])
+                        break
+                except Exception:                          # noqa: BLE001
+                    continue
+    if overlaps:
+        out["text_overlaps"] = overlaps[:8]
+    if crossed:
+        out["text_on_a_line"] = crossed[:8]
+    return out
+
+
 def _format_error(exc: BaseException) -> str:
     import traceback
     here = os.path.normcase(os.path.abspath(__file__))
@@ -738,6 +805,7 @@ def main() -> int:
                               _read_roots(_norm(root)),
                               int(limits.get("max_files", 40)))
     saved_names = []
+    checks = []
 
     def save_figure(fig=None, name=None, dpi=200):
         """Save a matplotlib figure in the conversation folder; returns its
@@ -747,8 +815,9 @@ def main() -> int:
         ext = os.path.splitext(str(name or ""))[1].lower()
         fname = base + (ext if ext in (".png", ".svg", ".pdf", ".jpg",
                                        ".jpeg") else ".png")
-        fig.savefig(fname, dpi=int(dpi), bbox_inches="tight")
+        fig.savefig(fname, dpi=_dpi_for(fig, dpi), bbox_inches="tight")
         saved_names.append(fname)
+        checks.append(_layout_check(fig, fname))
         return fname
 
     def save_chart(fig, name=None):
@@ -796,8 +865,11 @@ def main() -> int:
         if nums and not wrote_image:
             for k, num in enumerate(nums, 1):
                 fname = stem + (".png" if len(nums) == 1 else f"_{k}.png")
-                plt.figure(num).savefig(fname, dpi=200, bbox_inches="tight")
+                fig = plt.figure(num)
+                fig.savefig(fname, dpi=_dpi_for(fig, 200),
+                            bbox_inches="tight")
                 auto.append(fname)
+                checks.append(_layout_check(fig, fname))
         plt.close("all")
     except BaseException as exc:                           # noqa: BLE001
         result.setdefault("error", f"saving the open figures failed: "
@@ -815,6 +887,7 @@ def main() -> int:
         "seconds": round(time.monotonic() - t0, 2),
         "limits_applied": applied,
         "preload_failed": failed,
+        "layout": [c for c in checks if len(c) > 1],
     })
     report(result)
     return 0

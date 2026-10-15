@@ -603,17 +603,22 @@ def build_calc_subagent(
     # Plotting code in the locked box, behind GEOTECH_PLOT_CODE (GM-98; the
     # owner on calc packages' figures, 2026-10-15).
     from funhouse_agent.deep.figure_helper import _plot_code_tool
+    description = _CALC_DESCRIPTION
     plot_code = _plot_code_tool()
     if plot_code is not None:
         tools = list(tools) + [plot_code]
         system_prompt = system_prompt + _CALC_PLOT_CODE
+        description = description + (
+            " It draws the package's figures too, in code (plot_code) where "
+            "plot_data cannot: a wall or pile to scale with its diagrams "
+            "beside it, panels sharing one depth axis.")
     if extra_tools:
         tools = list(tools) + list(extra_tools)
     if extra_system_prompt:
         system_prompt = system_prompt + "\n\n" + extra_system_prompt
     spec = {
         "name": "calc",
-        "description": _CALC_DESCRIPTION,
+        "description": description,
         "system_prompt": system_prompt,
         "tools": tools,
     }
@@ -1278,9 +1283,13 @@ def build_deep_agent(
             )
         )
     from funhouse_agent import review_flags as _flags
-    if _flags.figure_helper():
+    if _flags.figure_helper() or _flags.plot_code():
         # The figure helper (OWN-61 option B, GM-92): draws, looks, redraws
         # to a checklist; behind GEOTECH_FIGURE_HELPER until measured.
+        # GEOTECH_PLOT_CODE brings it too: plotting code needs a helper the
+        # main agent hands figures to (live wave w8, F55: without one the
+        # main agent drew a wall with plot_data five times and ran out of
+        # steps).
         from funhouse_agent.deep.figure_helper import build_figure_subagent
         _fig = build_figure_subagent(
             engine=engine, attachments=attachments, save_fn=save_fn,

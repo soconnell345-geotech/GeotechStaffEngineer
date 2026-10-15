@@ -244,7 +244,13 @@ _PLOT_APP_NOTE = (
     "write_docx). The PNG and the chart are drawn from the same series, so "
     "analyze_image on the PNG checks what the chat shows; look before you "
     "call a figure done. Give output_path a bare file name, or leave it "
-    "out. Never draw a chart by hand as SVG, as text or as a .plotly.json.")
+    "out, and redraw under the same name. Never draw a chart by hand as SVG, "
+    "as text or as a .plotly.json. What it draws: x/y series, filled "
+    "outlines and named points (a name is placed where it stands clear of "
+    "the data, near the point, not exactly on it). It cannot draw a "
+    "structure to scale with diagrams beside it, or several panels sharing "
+    "one axis. plan_view is for plans only (it adds a north arrow and a "
+    "scale bar), never for a section.")
 
 
 def _plot_description() -> str:
@@ -998,6 +1004,8 @@ def make_vision_tools(
                                            reference_result_chars)
     # Resolved once per build: the newer tools depend on the installed planlens.
     document_names = set(_document_tools.document_tool_names())
+    # plot_data draws per figure name, for the redraw note.
+    draws: Dict[str, int] = {}
 
     def _dispatch(tool_name: str, arguments: dict) -> str:
         if tool_name in document_names:
@@ -1120,7 +1128,32 @@ def make_vision_tools(
             # An image FILE (a contact sheet) is shown to the main model like
             # the inline page tools' images; an upload keeps the vision call.
             args["_inline"] = True
+        _wait_for_drawing(attachment_key)
         return _dispatch("analyze_image", args)
+
+    def _wait_for_drawing(name) -> None:
+        """A look at a figure file waits while a drawing tool is writing in
+        the conversation folder (live wave w8: a draw and a look issued in
+        the same step read the PNG from before the redraw)."""
+        if not isinstance(name, str) or name in attachments or not \
+                name.lower().endswith((".png", ".jpg", ".jpeg", ".gif",
+                                       ".webp", ".svg")):
+            return
+        try:
+            from funhouse_agent._fileio import host_output_dir
+            from funhouse_agent.drawing_wait import (drawing_in,
+                                                     wait_until_drawn)
+            folder = host_output_dir()
+        except Exception:                              # noqa: BLE001
+            return
+        if not folder:
+            return
+        if not drawing_in(folder):
+            # a draw issued in the same step may not have started yet
+            import time as _time
+            _time.sleep(0.5)
+        if drawing_in(folder):
+            wait_until_drawn(folder)
 
     def analyze_pdf_page(
         attachment_key: str,
@@ -1655,11 +1688,34 @@ def make_vision_tools(
                      ("xlim", xlim), ("ylim", ylim), ("north_deg", north_deg)):
             if v is not None:
                 params[k] = v
-        return _truncate(json.dumps(
-            _call_agent(agent_name="profile_figure", method="plot_data",
-                        parameters=params, attachments=attachments,
-                        allowed_agents=None),
-            default=str), max_result_chars)
+        from funhouse_agent.drawing_wait import drawing
+        try:
+            from funhouse_agent._fileio import host_output_dir
+            folder = host_output_dir()
+        except Exception:                              # noqa: BLE001
+            folder = None
+        with drawing(folder):
+            result = _call_agent(agent_name="profile_figure",
+                                 method="plot_data", parameters=params,
+                                 attachments=attachments, allowed_agents=None)
+        # one figure's versions share a name: plan.png, plan2.png, plan_v3
+        import re as _re
+        key = os.path.splitext(os.path.basename(
+            str(output_path or "").strip().lower()))[0]
+        key = _re.sub(r"[_\- ]*(v|rev|version)?[_\- ]*\d+$", "", key)
+        if key and isinstance(result, dict):
+            draws[key] = draws.get(key, 0) + 1
+            if draws[key] >= 3:
+                # live wave w8 (F55): five redraws of a wall drawn as x/y
+                # series, then the turn ran out of steps
+                result["redraw_note"] = (
+                    f"This figure has now been drawn {draws[key]} times. If "
+                    "plot_data cannot draw what it needs (a structure to "
+                    "scale with diagrams beside it, panels sharing one axis), "
+                    "draw it with plot_code where you have it, or hand it to "
+                    "the figure helper where there is one; otherwise say "
+                    "what it cannot show rather than drawing it again.")
+        return _truncate(json.dumps(result, default=str), max_result_chars)
 
     def write_xlsx(path: str, sheets: Optional[list] = None,
                    markdown: str = "") -> str:

@@ -121,9 +121,10 @@ FIGURE_HELPER_PROMPT = (
     "d. LOOK: analyze_image on the PNG it saved, asking specific questions "
     "from the checklist (is every series and point the brief named visible? "
     "do any labels overlap each other or the data? are the axis titles and "
-    "units there? is the plan to scale? is the quoted value marked?). The "
-    "PNG and the chat's interactive chart are drawn from the same spec, so "
-    "this checks what the user sees.\n"
+    "units there? is the plan to scale? is the quoted value marked?). Look "
+    "in a step AFTER the draw, never beside it. plot_data draws its PNG "
+    "and the chat's interactive chart from one spec, so this checks what "
+    "the user sees.\n"
     "e. Fix what the look found and redraw; look again. At most two "
     "redraws: then hand back the best one and name what you could not fix "
     "(and why: a tool limit, missing data).\n"
@@ -203,7 +204,19 @@ PLOT_CODE_STEP = (
     "\ng. When plot_data cannot draw what the brief needs, write the figure "
     "as matplotlib code with plot_code (its description says what the "
     "box allows) and apply the same checklist: look at the PNG it saved "
-    "and redraw.")
+    "and redraw. Save a Plotly chart too only when the brief asks for an "
+    "interactive chart: the chat shows it in place of the PNG, and your "
+    "looks do not check it.")
+
+#: Added to the helper's description (what the delegating agent reads) when
+#: ``plot_code`` is offered: live wave w8 (F55) drew a wall and its pressure
+#: diagrams with plot_data five times and ran out of steps, never knowing a
+#: helper could draw it in code.
+PLOT_CODE_DESCRIPTION_NOTE = (
+    " It also draws in code (plot_code) what plot_data cannot: a wall or "
+    "pile drawn to scale with its pressure or load diagrams beside it, "
+    "panels sharing one depth axis, a section with its layers filled, "
+    "contours.")
 
 
 def _plot_code_tool():
@@ -245,16 +258,18 @@ def build_figure_subagent(
     tools = list(tools) + [make_figure_examples_tool(),
                            make_calculate_tool()]
     prompt = FIGURE_HELPER_PROMPT
+    description = FIGURE_HELPER_DESCRIPTION
     plot_code = _plot_code_tool()
     if plot_code is not None:
         tools.append(plot_code)
         prompt = prompt + PLOT_CODE_STEP
+        description = description + PLOT_CODE_DESCRIPTION_NOTE
     if extra_tools:
         tools = tools + list(extra_tools)
     if extra_system_prompt:
         prompt = prompt + "\n\n" + extra_system_prompt
     spec = {"name": FIGURE_HELPER_NAME,
-            "description": FIGURE_HELPER_DESCRIPTION,
+            "description": description,
             "system_prompt": prompt,
             "tools": tools}
     if max_model_calls:
@@ -264,5 +279,6 @@ def build_figure_subagent(
 
 __all__ = ["FIGURE_CHECKLIST", "FIGURE_HELPER_DESCRIPTION",
            "FIGURE_HELPER_NAME", "FIGURE_HELPER_PROMPT", "PLOT_CODE_STEP",
+           "PLOT_CODE_DESCRIPTION_NOTE",
            "DEFAULT_FIGURE_MAX_MODEL_CALLS", "build_figure_subagent",
            "make_figure_examples_tool"]
