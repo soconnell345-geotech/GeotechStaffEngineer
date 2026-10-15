@@ -542,6 +542,95 @@ mm (largest wall u_x +5.0 mm below the strut), M_max 20.9 -> 35.7, V_max
 its installation after the first lift). Every case: DESIGN.md, "Staged
 excavation". Tests: `fem2d/tests/test_excavation_staged.py`.
 
+## 10. Dewatered excavation: water pressures with seepage under the wall (GM-73, 2026-10-15)
+
+Before 2026-10-15 an excavation below the water table was kept full of
+water to the table (no net water pressure on the wall). The default is now
+`excavation_water='dewatered'`: the water inside lowered to the excavation
+level at each lift, the table held outside, the pore pressures from the
+steady-state seepage under the wall (DESIGN.md, "Dewatered excavation").
+
+**Sources.**
+(a) FHWA GEC 4, Ground Anchors and Anchored Systems (FHWA-IF-99-015, 1999),
+section 5.2.9 "Water Pressures", pp. 62-63: Figure 31 (flow net for a
+retaining wall, after CIRIA 1984), Figure 32 (gross and net water
+pressures). H = excavation depth, d = embedment, j = depth to the table,
+i = depth of the water inside below the excavation level. With the head
+"dissipated uniformly along the shortest potential flowpath (2d+H-i-j)
+which runs down the back of the wall and up the front": pore pressure at
+the tip U_f = 2(d+H-j)(d-i)/(2d+H-i-j) gamma_w (Eq. 15); largest net
+pressure, at the water level inside, U_c = (H+i-j) 2(d-i)/(2d+H-i-j)
+gamma_w (Eq. 16); with no seepage U_n = (H+i-j) gamma_w (Eq. 17).
+(b) USS Steel Sheet Piling Design Manual (1984), p. 17, Figure 12 (after
+Terzaghi): the unbalanced water pressure from a flow net, or the trapezoid
+reaching 62.5 H_u pcf (gamma_w H_u, = Eq. 17) at the lower water level.
+(c) The closed-form solution for a sheet pile driven s into a pervious
+layer T thick on an impervious base, water on both sides (conformal
+mapping; derived in the test, `sheet_pile_head`).
+
+**The seepage solver against the closed form** (c): s = 5 m, T = 10 m,
+120 x 40 T6, the domain 6T each side. Head on the upstream face as a
+fraction of the head difference:
+
+| depth | closed form | FEM | uniform head loss (as GEC 4) |
+|---|---|---|---|
+| s/4 | 0.9241 | 0.9228 | 0.875 |
+| s/2 | 0.8416 | 0.8387 | 0.750 |
+| 3s/4 | 0.7396 | 0.7341 | 0.625 |
+| tip | 0.5 | 0.5000 | 0.5 |
+
+Tolerance 1 % of the head difference: the FEM converges as h^(1/2) only at
+the two corners where the flow turns (the top of the pile, the tip). The
+uniform-loss assumption is below the flow net by 0.05 to 0.11 of the head
+difference behind the wall: the water enters over the whole upstream
+ground and loses its head near the tip.
+
+**The benchmark** (a), (b): a sheet pile wall propped at 1 m and 4 m (k =
+1e5 kN/m/m), H = 6 m, d = 6 m, sand (phi' 35 deg, c' 0, E 40 MPa, gamma
+20 kN/m3, K0 = 1 - sin phi'), PZ-27 (EI 50,300 kN-m2/m, EA 3.36e6 kN/m),
+table at the ground (j = 0), water inside at the excavation level (i = 0),
+width 60 m. GEC 4: U_f = 78.48 kPa, U_c = 39.24 kPa, U_n = 58.86 kPa.
+
+| mesh (T6) | U_f (kPa) | U_c (kPa) | head at tip (m) | upward gradient in front | M_max full -> dewatered (kN-m/m) | V_max | struts (kN/m) |
+|---|---|---|---|---|---|---|---|
+| 20 x 10 | 83.40 | 47.31 | -3.50 | 0.417 | 11.4 -> 102.2 | 12.2 -> 92.2 | 17.0, 25.5 -> 116.3, 194.7 |
+| 30 x 15 (default) | 83.48 | 47.45 | -3.49 | 0.418 | 12.0 -> 107.2 | 13.7 -> 94.4 | 18.0, 27.9 -> 112.6, 207.2 |
+| 40 x 20 | 83.46 | 47.50 | -3.49 | 0.418 | 12.7 -> 108.0 | 15.2 -> 103.0 | 18.8, 28.4 -> 115.4, 209.7 |
+| 45 x 22 | 83.48 | 47.52 | -3.49 | 0.418 | 12.6 -> 108.9 | 15.2 -> 105.4 | 19.0, 28.6 -> 115.3, 212.1 |
+| flow net, domain 96 m each way | 84.04 | 47.56 | | | | | |
+
+FEM against GEC 4: U_f +6.4 %, U_c +21 % (and 19 % below U_n). The
+critical gradient is 1.04 (gamma 20). The dewatered stages accept 2 to 8
+load steps at the iteration ceiling with the displacements standing still
+(section 9, "Convergence").
+
+**Tolerance and why.** GEC 4's Eqs. 15-16 simplify the flow net of its
+Figure 31 by losing the head uniformly along the wall; the closed form above
+shows the flow net keeps more of the head behind the wall. So the test
+asserts U_c strictly between Eq. 16 and Eq. 17 (no head lost at all, the
+USS trapezoid's value at the lower water level), U_f above Eq. 15 by less
+than 10 %, the pore pressures greater than hydrostatic in front of the
+wall and less than hydrostatic behind it at every wall node (GEC 4 p. 62),
+the net pressure zero at the tip and largest at the excavation level, and
+the model's domain (retained side and base two wall depths from the wall,
+the far side impervious) within 2 % of the flow net in a domain eight times
+larger. Two consistency checks: the water inside held at the table gives
+the `'full'` answer to 1e-4 (smooth and bonded walls), and a wall cut off
+into a layer a million times less permeable gives the no-seepage net
+pressure gamma_w H within 1 %.
+
+**Before and after, the default clay case** (c 25 kPa, phi 20, E 30 MPa,
+gamma 18; width 10, depth 5, wall 10 m, EI 50,000, EA 5e6, 30 x 15 T6),
+water table at the ground; "before" = `'full'`, which gives the GM-71
+numbers exactly: cantilever head u_x 3.0 -> 11.1 mm, M_max 12.5 -> 33.7
+kN-m/m, V_max 11.7 -> 31.6 kN/m; with a strut at 1.5 m (k 50,000 kN/m/m)
+head 0.4 -> 1.9 mm, M_max 16.2 -> 45.9, V_max 15.2 -> 47.9, strut 23.7 ->
+80.8 kN/m; at the tip u 98.1 -> 75.3 kPa, total head 0.00 -> -2.32 m; net
+water pressure at the excavation level 0 -> 41.9 kPa (49.1 with no
+seepage; the centre line 5 m from the wall confines the flow in front, so
+it is closer to the no-seepage value than in the wide benchmark). Tests:
+`fem2d/tests/test_excavation_dewatered.py`.
+
 ## 6. Performance
 
 Wall-clock on the dev machine, single process, including mesh build and
@@ -620,11 +709,15 @@ the full suite (461 tests incl. slow SRM, 2026-10-14) runs in ~14 min.
   1000 and accepts steps whose displacements stand still (§9).
 - **Excavation walls** (§9): no interface elements, so the wall is either
   smooth (default, delta = 0) or bonded (shares the soil's nodes and hangs
-  the retained soil); struts are linear springs without preload; one
-  groundwater table in every stage, an excavation below it kept full of
-  water (a dewatered excavation, with seepage under the wall, is not
-  modelled); very fine meshes (60 x 30 on the benchmark) may not converge;
-  T3 elements lock (a quarter to a half of the T6 moment).
+  the retained soil); struts are linear springs without preload; very fine
+  meshes (60 x 30 on the benchmark) may not converge; T3 elements lock (a
+  quarter to a half of the T6 moment).
+- **Water in an excavation** (§10): the table outside is one elevation, held
+  at its level on the retained side (no drawdown behind the wall); the
+  seepage is steady (drained, long-term) and confined below the table;
+  lowering the water below the excavation level (wells) is not modelled;
+  a sloping table or per-node heads above the excavation level only with
+  `excavation_water='full'`; permeability is isotropic per layer.
 - **psi policy**: psi_red = min(psi, phi_red) during reduction (PLAXIS
   convention); GL99 used psi = 0 throughout.
 - **delta_max curves** include foundation settlement — compare to

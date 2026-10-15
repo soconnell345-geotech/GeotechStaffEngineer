@@ -35,6 +35,15 @@ class TestEnumValidationAtRegistry:
                 "soil_layers": [{"bottom_elevation": -20}],
                 "wall_EI": 5e4, "wall_EA": 5e6, "wall_contact": "rough"})
 
+    def test_bad_excavation_water(self):
+        with pytest.raises(ValueError,
+                           match="excavation_water must be one of"):
+            R["fem2d_excavation"]({
+                "width": 10, "depth": 5, "wall_depth": 10,
+                "soil_layers": [{"bottom_elevation": -20}],
+                "wall_EI": 5e4, "wall_EA": 5e6, "gwt": 0.0,
+                "excavation_water": "pumped"})
+
     def test_bad_element_type(self):
         with pytest.raises(ValueError, match="element_type must be one of"):
             R["fem2d_slope_srm"]({
@@ -161,3 +170,32 @@ class TestStagedExcavationThroughTheRegistry:
         assert out["strut_forces"][0]["force_kN_per_m"] > 0
         assert out["excavation_stages"][-1]["max_wall_ux_m"] > 0
         assert any("K0" in n for n in out["notes"])
+
+    def test_water_condition_passes_through(self):
+        """GM-73: excavation_water and water_level_inside reach the
+        analysis; the default is a dewatered excavation, which carries the
+        net water pressure ('full' balances it)."""
+        base = {
+            "width": 10, "depth": 5, "wall_depth": 10,
+            "soil_layers": [{"name": "Clay", "bottom_elevation": -20,
+                             "E": 30000, "nu": 0.3, "gamma": 18, "c": 25,
+                             "phi": 20, "psi": 0}],
+            "wall_EI": 5e4, "wall_EA": 5e6, "nx": 12, "ny": 6,
+            "n_steps": 3, "gwt": 0.0}
+        dew = R["fem2d_excavation"](dict(base))
+        full = R["fem2d_excavation"](dict(base, excavation_water="full"))
+        level = R["fem2d_excavation"](dict(base, excavation_water="level",
+                                           water_level_inside=2.5))
+        assert dew["excavation_water"] == "dewatered"
+        assert full["excavation_water"] == "full"
+        net = [o["excavation_stages"][-1][
+            "net_water_pressure_at_excavation_level_kPa"]
+            for o in (dew, level, full)]
+        assert net[0] > net[1] > 0 and abs(net[2]) < 1e-9
+        assert level["excavation_stages"][-1]["water_inside_depth_m"] == \
+            pytest.approx(2.5)
+        assert dew["max_beam_moment_kNm_per_m"] > \
+            full["max_beam_moment_kNm_per_m"]
+        assert dew["wall_water_pressures"][-1]["net_kPa"] == \
+            pytest.approx(0.0, abs=1e-9)
+        assert any("UFC 3-220-20" in n for n in dew["notes"])

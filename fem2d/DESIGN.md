@@ -173,14 +173,18 @@ excavation. It now runs on `analyze_staged`:
    table below move the wall head back into the soil (-0.1 to -2.0 mm).
    Wall friction between 0 and phi' needs
    interface elements, which fem2d does not have.
-5. **Water.** One groundwater table in every stage. Where it is above a free
-   face (the excavation's faces, the ground) water stands against the face
-   (`porewater.standing_water_forces`, `analyze_staged(water_on_free_faces=
-   True)`): the excavation is kept full of water to the table, the water
-   pressures on the two faces of the wall balance, and a warning says a
-   dewatered excavation (which also carries the net water pressure) is not
-   modelled. Before, a free face below the table carried the pore pressure
-   outward with nothing to balance it.
+5. **Water** (`excavation_water`, GM-73, 2026-10-15; section "Dewatered
+   excavation" below). The table `gwt` is the in-situ table and is held
+   outside the excavation. Inside, where the table is above the excavation
+   level: `'dewatered'` (the default since 2026-10-15) lowers the water to
+   the excavation level at each lift, with steady-state seepage under the
+   wall's tip, and the wall carries the net water pressure; `'full'` keeps
+   the excavation full of water to the table (the only model before): water
+   stands against every free face (`porewater.standing_water_forces`,
+   `analyze_staged(water_on_free_faces=True)`), the water pressures on the
+   two faces of the wall balance, and a warning says so; `'level'` lowers
+   it to `water_level_inside`. Before 2026-10-14 a free face below the table
+   carried the pore pressure outward with nothing to balance it.
 6. **Convergence.** The stages use the constant-stiffness iteration. The
    active wedge behind a smooth wall is at its limit state and the wall's
    bending controls how far it moves, so a step can take several hundred
@@ -237,6 +241,101 @@ water, so its wall load falls. The widths are now full excavation widths, so
 the domains are narrower than before. With a strut the head barely moves:
 the wall bows toward the excavation below the strut, largest u_x 5.0 mm on
 the 30 x 15 mesh.)
+
+Since GM-73 (2026-10-15) the water case is `excavation_water='full'` (the
+default is now `'dewatered'`), and a water table given as one elevation gets
+a node row whatever the water condition; with that row the case gives head
+u_x +2.4 mm, M_max 7.0, V_max 5.7 (`'full'`) and +4.1 mm, 13.2, 11.2, net
+water pressure 18.5 kPa at the excavation level (`'dewatered'`).
+
+### Dewatered excavation (GM-73, 2026-10-15)
+
+Until 2026-10-15 `analyze_excavation` kept an excavation below the water
+table full of water to the table: the water pressures on the wall's two
+faces balanced, so the wall carried no net water pressure. A dewatered
+excavation, the usual construction case, carries it, with seepage under
+the wall's tip, and loads the wall more; the answer was on the unsafe side
+for that case. `excavation_water` now chooses:
+
+| value | inside the excavation | basis |
+|---|---|---|
+| `'dewatered'` (default) | water lowered to the excavation level at each lift, steady seepage under the tip | UFC 3-220-20 (2025) "Groundwater Control", p. 97: excavations below the groundwater table require groundwater control; Caltrans T&S Manual (2025) Example 7-2 (Figure 7-29, pp. 7-33 to 7-34): the shoring loaded with the full hydrostatic water pressure on the retained side down to the excavation line; FHWA GEC 4 (1999) section 5.2.9, pp. 62-63 and EM 1110-2-2504 (1994) para 4-5b, p. 4-6: the pore pressures of seepage beneath the wall from a flow net (or line of creep, fragments, finite elements) |
+| `'full'` | kept full to the table, no seepage (the model before) | an excavation dug in the wet, e.g. a cofferdam before its seal course is placed and it is dewatered (Caltrans T&S Manual 2025, section 10-4.01, p. 10-24) |
+| `'level'` | lowered to `water_level_inside` (or to the excavation level while the excavation is above it); water stands on the floor and against the wall's face | partial dewatering, e.g. the Caltrans cofferdam sequence (p. 10-24: dewater to a level to place the first bracing) |
+
+The default is `'dewatered'` because the references treat the dewatered
+excavation as the design case; the result's notes say which condition was
+modelled and why, and give the net water pressure beside the no-seepage
+value and GEC 4's simplified one. Neglecting seepage altogether (the
+unbalanced hydrostatic pressure over the whole embedment, EM 1110-2-2504
+para 4-5a, GEC 4 Eq. 17) is the case of a wall cut off into an impervious
+layer: give the layers hydraulic conductivities `k` (every layer or none;
+only the ratios matter) with a small one below the tip.
+
+**Pore pressures per lift.** For each lift `porewater.seepage_heads` solves
+the steady-state Laplace equation on the active soil (T6 or T3 elements
+with their own shape functions; `solve_seepage` takes CST only):
+
+- the soil is cut along the wall above its tip (as for the smooth wall; a
+  bonded wall is then tied to both faces in both directions), so the wall
+  is impermeable and the two faces have their own pore pressures;
+- total head = the table elevation at every retained-side node at or above
+  the table (the table held at its level outside; nodes above it carry no
+  pore pressure); head = the water level inside on the excavation's floor;
+  the far side of the retained soil, the base of the model and the centre
+  line are impervious. A node row is put at the table and at the water
+  level inside;
+- the water inside goes down with the lifts: at each lift it is at the
+  excavation level ('dewatered') or at max(water_level_inside, the
+  excavation level) ('level'), never above the table; a lift above the
+  table has hydrostatic pore pressures from the table.
+
+The heads go to `analyze_staged` as the phase's per-node `gwt`; the change of
+pore pressure from the in-situ stage is part of each lift's out-of-balance
+load (drained, steady state). Water stands on every free face where the
+pore pressure is positive (the floor, under 'level'), except the faces that
+line the wall (`analyze_staged(wall_face_nodes=...)`): there the pore
+pressure pushes the face against the wall, so the wall carries it. Water
+standing in the excavation above its floor ('level', 'full' through this
+path) pushes the wall's own nodes (`ConstructionPhase.nodal_forces`,
+`_free_water_on_wall`, the same edge rule). With the water inside held at
+the table the path gives the 'full' answer to 1e-4 (tested, smooth and
+bonded).
+
+**Why the far side is impervious.** With the head held on the retained
+ground only, the model's domain (retained soil and base two wall depths
+from the wall) gives the flow net of a domain eight times larger within
+1 % (tested); holding the head on the far side as well let water in
+sideways and raised the net pressure 3 %.
+
+**Results.** Each stage row adds the water inside (depth), the pore
+pressure and total head at the wall's tip (datum the ground), the net water
+pressure on the wall at the excavation level, the upward hydraulic gradient
+in front of the wall (tip to excavation level, along the wall) and the
+critical gradient (gamma - gamma_w)/gamma_w of the soil there; a warning
+when the gradient reaches it (quick condition, heave and piping: Caltrans
+T&S Manual 2025 section 10-4, p. 10-21; UFC 3-220-10 (2026) section
+6-5.2.2, p. 312 asks for 1.5 to 2 against heave). `wall_water_pressures`
+lists both faces and the net at the end. Tables: "Water on the wall by
+stage" (printed) and "Water pressures on the wall" (CSV); the calc package
+adds "Water on the Wall by Stage".
+
+**Steady state.** Steady seepage is the drained, long-term state; in a soil
+of low permeability the pore pressures during construction lag behind it
+(the staged analysis is drained), as the notes say.
+
+Benchmark: VALIDATION.md section 10 (GEC 4 section 5.2.9, a closed-form
+seepage solution). Before and after, the default clay case of the table
+above with the water table at the ground (30 x 15, T6; "before" = today's
+`'full'`, which reproduces the GM-71 numbers exactly):
+
+| case | head u_x (mm) | M_max (kN-m/m) | V_max (kN/m) | strut (kN/m) | tip: u (kPa), head (m) | net water at excavation level (kPa) |
+|---|---|---|---|---|---|---|
+| cantilever, full -> dewatered | 3.0 -> 11.1 | 12.5 -> 33.7 | 11.7 -> 31.6 | | 98.1, 0.00 -> 75.3, -2.32 | 0 -> 41.9 |
+| strut at 1.5 m, full -> dewatered | 0.4 -> 1.9 | 16.2 -> 45.9 | 15.2 -> 47.9 | 23.7 -> 80.8 | 98.1, 0.00 -> 75.3, -2.32 | 0 -> 41.9 |
+
+(width 10 m, so the flow up in front of the wall is confined by the centre
+line 5 m away; with no seepage the net pressure would be 49.1 kPa.)
 
 ### Mesh Generation
 
@@ -393,6 +492,16 @@ Boundary conditions:
 Post-processing:
 - Pore pressures from head: u = γ_w·(h − z), clipped ≥ 0
 - Darcy velocity via CST gradient operator
+
+`seepage_heads` (GM-73, 2026-10-15) solves the same equation on any element
+type (T3, T6, Q4, with the element's own shape functions: H_e = Σ_gp w k
+G^T G), on the active part of a mesh, with prescribed heads eliminated
+rather than penalised; unprescribed boundaries are impervious, so a cut in
+the mesh is an impermeable wall. Tested against the closed-form solution
+for a sheet pile in a layer on an impervious base (conformal mapping;
+`fem2d/tests/test_excavation_dewatered.py`) and against `solve_seepage` on a
+CST mesh. The dewatered excavation uses it (section "Dewatered
+excavation").
 
 ### Coupled Biot Consolidation
 
@@ -562,7 +671,12 @@ forward between phases.
   groundwater table, water stands against every free face of the active
   mesh where the pore pressure is positive (`-p n` on the face); ponded
   water on level ground then changes no effective stress (tested). Before,
-  such a face carried the pore pressure outward unbalanced
+  such a face carried the pore pressure outward unbalanced. A phase's
+  `gwt` may be per-node total heads (e.g. from `seepage_heads`)
+- `wall_face_nodes` (GM-73): soil faces lining an impermeable wall get no
+  standing water; their pore pressure pushes them against the wall, which
+  carries it. `ConstructionPhase.nodal_forces` adds a load no element face
+  carries (water in an excavation against the wall)
 - `settled_ratio` / `settled_residual_cap` (default off): accept a step
   whose displacements stand still at the iteration ceiling, as the strength
   reduction does; listed per phase in `settled_steps`

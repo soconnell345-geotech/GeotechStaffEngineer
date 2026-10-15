@@ -726,6 +726,123 @@ def _geostatic_stresses(nodes, elements, soil_layers, layer_ids,
     return sig
 
 
+def _face_node_at(nodes, face, y):
+    """The node of a wall face (a list of node ids) nearest elevation y."""
+    return min(face, key=lambda n: abs(float(nodes[n, 1]) - y))
+
+
+def _free_water_on_wall(nodes, wall_nodes, z_water, z_floor, gamma_w,
+                        quadratic, t=1.0):
+    """Nodal forces (2 n_nodes,) of water standing in an excavation against
+    the wall's face, between its floor (z_floor) and the water level
+    (z_water): pressure gamma_w (z_water - y), pushing the wall toward the
+    retained soil (-x). No soil element carries this face (GM-73). The
+    wall's nodes (top to tip) are taken in T6 edges (corner, midside,
+    corner) when ``quadratic``, else in pairs, with the 3-point Gauss rule
+    of ``porewater.standing_water_forces``."""
+    F = np.zeros(2 * len(nodes))
+    step = 2 if quadratic else 1
+    gs = 0.5 * (1.0 + np.array([-np.sqrt(0.6), 0.0, np.sqrt(0.6)]))
+    gw = np.array([5.0, 8.0, 5.0]) / 18.0
+    for i in range(0, len(wall_nodes) - step, step):
+        edge = [int(n) for n in wall_nodes[i:i + step + 1]]
+        ys = nodes[edge, 1]
+        if ys.min() < z_floor - 1e-9:
+            continue                    # below the floor: soil, not water
+        L = float(abs(ys[0] - ys[-1]))
+        for s, w in zip(gs, gw):
+            if quadratic:
+                N = np.array([(1 - s) * (1 - 2 * s), 4 * s * (1 - s),
+                              s * (2 * s - 1)])
+            else:
+                N = np.array([1 - s, s])
+            p = gamma_w * max(z_water - float(N @ ys), 0.0)
+            for kk, node in enumerate(edge):
+                F[2 * node] -= w * L * t * N[kk] * p
+    return F
+
+
+def _excavation_water_notes(mode, seep, z_w, w_in, row, d_last, wall_depth,
+                            gamma_w, homogeneous):
+    """The notes ``analyze_excavation`` gives on the water (GM-73): the
+    condition modelled and its basis, and the water on the wall at the end
+    of the last stage beside the hand methods."""
+    tip = (f"pore pressure at the wall's tip "
+           f"{row['tip_pore_pressure_kPa']:.1f} kPa (total head "
+           f"{row['tip_head_m']:.2f} m, datum the ground)")
+    if not seep:
+        if row['water_inside_depth_m'] is None:
+            first = (f"Water: the water table is below the excavation level, "
+                     f"so no water stands in the excavation and none seeps "
+                     f"under the wall (excavation_water={mode!r} does not "
+                     f"arise).")
+        else:
+            first = (
+                "Water: excavation_water='full': the excavation kept full "
+                "of water to the table in every lift (no dewatering, no "
+                "seepage): an excavation dug in the wet. The default, "
+                "'dewatered', lowers the water inside to the excavation "
+                "level, the construction case (UFC 3-220-20, 2025, p. 97: an "
+                "excavation below the groundwater table requires "
+                "groundwater control).")
+        return [first, f"At the end of the last stage: {tip}."]
+    inside = ("lowered to the excavation level at each lift (pumped from "
+              "the excavation)" if mode == 'dewatered' else
+              f"lowered to {w_in:.2f} m below the ground (to the excavation "
+              f"level while the excavation is above it)")
+    notes = [
+        f"Water: excavation_water={mode!r}: the water table held at "
+        f"{-z_w:.2f} m depth on the retained side and the water inside "
+        f"{inside}; steady-state seepage under the wall's tip in each lift "
+        "(the wall impermeable; the far side, the base of the model and its "
+        "centre line impervious), so the wall carries the net water "
+        "pressure. The construction case: an excavation below the "
+        "groundwater table requires groundwater control (UFC 3-220-20, "
+        "2025, p. 97); the Caltrans T&S Manual (2025, Example 7-2, Figure "
+        "7-29, pp. 7-33 to 7-34) loads the shoring with the full "
+        "hydrostatic water pressure on the retained side down to the "
+        "excavation line; FHWA GEC 4 (1999) section 5.2.9 (pp. 62-63) and "
+        "EM 1110-2-2504 (1994) para 4-5 (p. 4-6) take the pore pressures of "
+        "seepage beneath the wall from a flow net. excavation_water='full' "
+        "keeps the excavation full of water to the table (dug in the wet).",
+        "Steady seepage is the drained, long-term state: in a soil of low "
+        "permeability the pore pressures during construction lag behind it "
+        "(the staged analysis is drained). Neglecting seepage, the "
+        "unbalanced hydrostatic pressure acts over the whole embedment "
+        "(EM 1110-2-2504 para 4-5a; GEC 4 Eq. 17): the case of a wall cut "
+        "off into an impervious layer, which a layer with a small 'k' "
+        "models.",
+    ]
+    z_in = -row['water_inside_depth_m']
+    H = float(d_last)
+    d = float(wall_depth) - H
+    j = -float(z_w)
+    u_n = gamma_w * (z_w - z_in)
+    txt = (f"At the end of the last stage (excavation {H:.2f} m deep): "
+           f"{tip}; net water pressure on the wall at the excavation level "
+           f"{row['net_water_pressure_at_excavation_level_kPa']:.1f} kPa, "
+           f"against {u_n:.1f} kPa with no seepage (gamma_w times the "
+           f"difference in water level)")
+    if homogeneous and abs(z_in + H) < 1e-9:
+        u_f = 2 * (d + H - j) * d / (2 * d + H - j) * gamma_w
+        u_c = (H - j) * 2 * d / (2 * d + H - j) * gamma_w
+        txt += (f"; GEC 4 Eqs. 15-16 (the head lost uniformly along the "
+                f"shortest flow path, down the back of the wall and up the "
+                f"front) give {u_f:.1f} kPa at the tip and {u_c:.1f} kPa net "
+                f"at the excavation level")
+    notes.append(txt + ".")
+    notes.append(
+        f"Upward hydraulic gradient in front of the wall, from its tip to "
+        f"the excavation level: {row['upward_gradient_in_front']:.2f}, "
+        f"against the critical gradient gamma'/gamma_w = "
+        f"{row['critical_gradient']:.2f} (at the critical gradient the soil "
+        f"in front is quick: piping and heave; Caltrans T&S Manual 2025, "
+        f"section 10-4, p. 10-21; USS Steel Sheet Piling Design Manual, "
+        f"pp. 64-65; UFC 3-220-10, 2026, section 6-5.2.2, p. 312, asks for "
+        f"a factor of safety of 1.5 to 2 against heave).")
+    return notes
+
+
 # analyze_excavation accepts a load step that reaches the iteration ceiling
 # with its displacements standing still (largest nodal change over the
 # second half of the iterations < 0.1 of the first half) and a residual
@@ -743,7 +860,9 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
                        gwt=None, gamma_w=9.81, struts=None,
                        max_iter=1000, tol=1e-5,
                        layer_polylines=None, element_type='t6',
-                       lifts=None, wall_contact='smooth'):
+                       lifts=None, wall_contact='smooth',
+                       excavation_water='dewatered',
+                       water_level_inside=None):
     """Excavation in front of an embedded wall, staged (GM-71, 2026-10-14).
 
     The model is half of a symmetric excavation, in plane strain: the wall
@@ -781,7 +900,10 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
     wall_depth : float — wall tip depth below the ground (m), > depth.
     soil_layers : list of dict — 'E', 'nu', 'c', 'phi', 'psi', 'gamma'
         (total unit weight), 'bottom_elevation' when there is more than
-        one layer, optional 'K0' and the Hardening Soil keys.
+        one layer, optional 'K0' and the Hardening Soil keys, and optional
+        'k' (hydraulic conductivity, m/s) for the seepage of a dewatered
+        excavation: the heads depend only on the ratios between layers
+        (default: every layer the same).
     wall_EI : float — wall flexural stiffness (kN*m^2/m).
     wall_EA : float — wall axial stiffness (kN/m).
     nx, ny : int — about this many elements across and down (the mesh has
@@ -790,10 +912,54 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
     t : float — thickness.
     n_steps : int — load steps in each stage.
     gwt : float, (M,2) array, or (n_nodes,) array, optional — groundwater
-        table (compute_pore_pressures formats), the same in every stage.
-        Where it is above the excavation level the excavation is kept full
-        of water to it (no dewatering, no seepage; a warning says so).
+        table (compute_pore_pressures formats): the in-situ water table,
+        kept outside the excavation in every stage. What happens inside the
+        excavation where it is above the excavation level is
+        ``excavation_water``; 'dewatered' and 'level' need it as one
+        elevation (m, at or below the ground, 0).
     gamma_w : float — unit weight of water (kN/m^3).
+    excavation_water : 'dewatered' (default), 'full' or 'level' — the
+        water inside the excavation where the table is above the
+        excavation level (GM-73, 2026-10-15; before, always 'full'):
+
+        'dewatered': the water inside is lowered to the excavation level
+            at each lift (pumped from the excavation), the table held
+            outside; steady-state seepage under the wall's tip (the
+            ``porewater.seepage_heads`` solution of each lift; the wall
+            impermeable; the table held at its level on the retained side,
+            the head at the water level inside on the excavation's floor;
+            the far side, the base and the centre line impervious). The wall
+            carries the net water pressure. The construction case: an
+            excavation below the groundwater table requires groundwater
+            control (UFC 3-220-20, 2025, "Groundwater Control", p. 97);
+            the Caltrans Trenching and Shoring Manual (2025) loads the
+            shoring with the full hydrostatic water pressure on the retained
+            side down to the excavation line (Example 7-2, Figure 7-29,
+            pp. 7-33 to 7-34); FHWA GEC 4 (1999)
+            section 5.2.9, pp. 62-63, gives the pore pressures of seepage
+            beneath the wall (Figures 31-32, Eqs. 15-16) and the net
+            pressure with no seepage (Eq. 17); EM 1110-2-2504 (1994)
+            para 4-5, p. 4-6: a seepage analysis (flow net, line of creep,
+            method of fragments, or finite elements) or, neglecting
+            seepage, the unbalanced hydrostatic pressure over the whole
+            embedment. The no-seepage case is a wall cut off into an
+            impervious layer: give that layer a small 'k'.
+        'full': the excavation kept full of water to the table (no
+            dewatering, no seepage): the water pressures on the two faces of
+            the wall balance; a warning says so. An excavation dug in the
+            wet (e.g. a cofferdam before its seal course is placed and it is
+            dewatered; Caltrans T&S Manual 2025, section 10-4.01, p. 10-24).
+        'level': the water inside lowered to ``water_level_inside`` (m
+            below the ground), or to the excavation level while the
+            excavation is above it; seepage as for 'dewatered', with the
+            water standing in the excavation on its floor and on the wall's
+            face.
+    water_level_inside : float, optional — for 'level': depth (m below
+        the ground) of the water inside the excavation, at or below the
+        table and at or above ``depth`` (lowering it below the excavation
+        level takes wells, which are not modelled). The cofferdam sequence
+        of the Caltrans T&S Manual (2025, p. 10-24) dewaters to a level to
+        place the first bracing, then excavates.
     struts : list of dict, optional — {'depth': m below the ground (at or
         above the excavation level, < depth), 'stiffness': kN/m per m run}.
         A horizontal spring at the wall node nearest the depth (a strut, or
@@ -841,8 +1007,20 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
             the strut holds the wall back; before 2026-10-14 it counted the
             movement since the start), plus 'installed_in_stage';
         excavation_stages — one row per lift (wall head and largest wall
-            movement, moment, shear, strut forces); notes; warnings;
+            movement, moment, shear, strut forces; with a water table also
+            the water inside, the pore pressure and total head at the
+            wall's tip, the net water pressure on the wall at the
+            excavation level, the upward hydraulic gradient in front of the
+            wall and the critical gradient); notes; warnings;
+        excavation_water — the water condition modelled;
+        wall_water_pressures — with a water table: the pore pressure on
+            each face of the wall and the net (retained minus excavation
+            side, positive pushing toward the excavation) at the end of
+            the last stage, per wall node;
         staged — the StagedConstructionResult (not serialized).
+
+    Heads are total heads with the ground (y = 0) as datum: h = y +
+    u / gamma_w.
 
     Sign: x is positive from the retained soil toward the excavation, so a
     wall moving toward the excavation has u_x > 0.
@@ -863,6 +1041,44 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
     if wall_contact not in ('smooth', 'bonded'):
         raise ValueError(f"wall_contact must be 'smooth' or 'bonded' (got "
                          f"{wall_contact!r})")
+    if excavation_water not in ('dewatered', 'full', 'level'):
+        raise ValueError(f"excavation_water must be 'dewatered', 'full' or "
+                         f"'level' (got {excavation_water!r})")
+    if excavation_water == 'level':
+        if water_level_inside is None:
+            raise ValueError("excavation_water='level' needs "
+                             "water_level_inside (m below the ground)")
+        water_level_inside = float(water_level_inside)
+        if not 0.0 <= water_level_inside <= depth + 1e-9:
+            raise ValueError(
+                f"water_level_inside ({water_level_inside} m) must be "
+                f"between the ground (0) and the excavation depth "
+                f"({depth} m): lowering the water below the excavation "
+                f"level takes wells, which are not modelled")
+    elif water_level_inside is not None:
+        raise ValueError("water_level_inside is used only with "
+                         "excavation_water='level'")
+    # The water table outside, as one elevation, where the water inside is
+    # lowered ('dewatered', 'level'); z_w = None: no seepage model needed.
+    z_w = None
+    if gwt is not None and excavation_water != 'full' \
+            and np.ndim(gwt) == 0:
+        z_w = float(gwt)
+        if z_w > 1e-9:
+            raise ValueError(
+                f"gwt = {z_w} m is above the ground: with "
+                f"excavation_water={excavation_water!r} the wall would have "
+                f"to retain free water above the ground; give gwt <= 0 or "
+                f"excavation_water='full'")
+        if z_w <= -depth + 1e-9:
+            z_w = None                 # the table is below the excavation
+        elif excavation_water == 'level' \
+                and water_level_inside < -z_w - 1e-9:
+            raise ValueError(
+                f"water_level_inside ({water_level_inside} m) is above the "
+                f"water table outside ({-z_w} m deep): the water inside "
+                f"would flow out")
+    seep = z_w is not None
 
     # Struts: (depth, stiffness, input index)
     strut_defs = []
@@ -910,6 +1126,18 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
     for d, _, _ in strut_defs:
         if min(abs(-d - lv) for lv in levels) > 0.25 * h_y:
             levels = sorted(set(levels) | {-d})
+    # A node row at a water table given as one elevation (held there on the
+    # retained side of a dewatered excavation; the same mesh whatever
+    # excavation_water, since 2026-10-15) and at the water level inside.
+    new_levels = []
+    if gwt is not None and np.ndim(gwt) == 0 \
+            and y_bottom < float(gwt) < y_top:
+        new_levels.append(float(gwt))
+    if seep and excavation_water == 'level':
+        new_levels.append(-water_level_inside)
+    for lv_new in new_levels:
+        if min(abs(lv_new - lv) for lv in levels) > 0.25 * h_y:
+            levels = sorted(set(levels) | {lv_new})
     xs = _graded_coords([x_left, 0.0, x_right], nx)
     ys = _graded_coords(levels, ny)
     n_cx, n_cy = len(xs) - 1, len(ys) - 1
@@ -979,7 +1207,13 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
         raise RuntimeError("no wall nodes found on x = 0")
     springs = []
     zip_ties, wall_ties, right_ties = [], [], []    # spring indices
-    if wall_contact == 'smooth':
+    # A dewatered excavation needs the soil cut along the wall whatever the
+    # contact: the pore pressure differs on the wall's two faces, and the
+    # cut makes the wall impermeable to the seepage (GM-73). A bonded wall
+    # is then tied to both faces in both directions (no slip).
+    cut = wall_contact == 'smooth' or seep
+    col, right_ids = list(wall_nodes), []
+    if cut:
         # Cut the soil along the wall above its tip: the elements right of
         # the wall get their own copies of the column's nodes. In the
         # in-situ stage the two faces are tied together (x and y), so the
@@ -988,6 +1222,7 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
         # soil at its tip in both directions, where it bears on the soil.
         # A face tie on the excavation side goes with the soil above the
         # excavation level.
+        ky_face = 'bonded' == wall_contact
         col = list(wall_nodes)                  # top to tip
         upper = col[:-1]
         n0 = len(nodes)
@@ -1016,10 +1251,12 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
         for w, left in zip(wall_ids, col):
             wall_ties.append(len(springs))
             springs.append({'node': w, 'node_b': left, 'kx': k_tie,
-                            'ky': k_tie if left == col[-1] else 0.0})
+                            'ky': k_tie if (left == col[-1] or ky_face)
+                            else 0.0})
         for w, right in zip(wall_ids, right_ids):
             right_ties.append((len(springs), float(nodes[right, 1])))
-            springs.append({'node': w, 'node_b': right, 'kx': k_tie})
+            springs.append({'node': w, 'node_b': right, 'kx': k_tie,
+                            'ky': k_tie if ky_face else 0.0})
     n_ties = len(springs)
 
     # Struts as springs at the wall node nearest their level
@@ -1027,16 +1264,73 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
         nid = min(wall_nodes, key=lambda n: abs(nodes[n, 1] + d))
         springs.append({'node': int(nid), 'kx': k})
 
+    from fem2d.porewater import compute_pore_pressures, seepage_heads
     pp = None
     if gwt is not None:
-        from fem2d.porewater import compute_pore_pressures
         pp = compute_pore_pressures(nodes, gwt, gamma_w)
+    exc_floor = np.where((nodes[:, 0] > 1e-9)
+                         & (np.abs(nodes[:, 1] + depth) < 1e-9))[0]
+    if gwt is not None and excavation_water != 'full' and not seep \
+            and np.ndim(gwt) != 0 and len(exc_floor) \
+            and float(np.max(pp[exc_floor])) > 1e-6:
+        raise ValueError(
+            f"excavation_water={excavation_water!r} needs gwt as one "
+            f"elevation (the water table held outside the excavation); a "
+            f"sloping table or per-node heads above the excavation level "
+            f"can only be modelled with excavation_water='full'")
+
+    # The wall's two faces, top to tip (the same nodes where the soil is
+    # not cut), and the nodes of the soil on either side.
+    left_face = list(col)
+    right_face = (list(right_ids) + [col[-1]]) if cut else list(col)
+    cxe = nodes[np.asarray(elements)[:, :3]].mean(axis=1)[:, 0]
+    retained_nodes = (set(np.unique(np.asarray(elements)[cxe < 0]).tolist())
+                      - set(np.unique(np.asarray(elements)[cxe > 0]).tolist()))
+    k_given = [sl.get('k') for sl in soil_layers]
+    if any(v is not None for v in k_given):
+        if any(v is None for v in k_given) or any(float(v) <= 0
+                                                  for v in k_given):
+            raise ValueError("soil_layers: give a hydraulic conductivity "
+                             "'k' > 0 (m/s) for every layer, or for none")
+    k_elem = np.array([float(soil_layers[int(lid)].get('k') or 1.0)
+                       for lid in layer_ids])
+    quad_wall = element_type == 't6' and len(wall_nodes) % 2 == 1
+
+    def _lift_water(d_k, active):
+        """Phase gwt, the water level inside (elevation, None when no water
+        stands at or above the excavation level) and the nodal forces of
+        free water on the wall, for the lift that ends at depth d_k."""
+        b = -d_k
+        if not seep or z_w <= b + 1e-9:
+            if gwt is None:
+                return None, None, None
+            p_k = compute_pore_pressures(nodes, gwt, gamma_w)
+            u_b = float(p_k[_face_node_at(nodes, right_face, b)])
+            return gwt, (b + u_b / gamma_w if u_b > 1e-9 else None), None
+        z_in = b if excavation_water == 'dewatered' \
+            else min(z_w, max(-water_level_inside, b))
+        bcs = {n: z_w for n in retained_nodes if nodes[n, 1] >= z_w - 1e-9}
+        for n in exc_nodes_all:
+            if abs(nodes[n, 1] - b) < 1e-9:
+                bcs[n] = z_in
+        head = seepage_heads(nodes, elements, k_elem, bcs,
+                             active_elements=active, t=t)
+        head = np.where(np.isnan(head), nodes[:, 1], head)
+        nf = None
+        if z_in > b + 1e-9:
+            nf = _free_water_on_wall(nodes, wall_nodes, z_in, b, gamma_w,
+                                     quad_wall, t)
+        return head, z_in, nf
+
+    exc_nodes_all = sorted(set(np.unique(
+        np.asarray(elements)[cxe > 0]).tolist()))
 
     # Stages
     phases = [ConstructionPhase(name="In-situ stresses (K0)",
                                 active_soil_groups=all_groups, gwt=gwt,
                                 n_steps=n_steps,
                                 active_spring_ids=list(zip_ties))]
+    lift_z_in = []
     installed = []
     install_stage = {}
     excavated = set()
@@ -1052,14 +1346,18 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
         if new:
             name += " (struts at " + ", ".join(
                 f"{strut_defs[i][0]:.2f}" for i in new) + " m installed)"
+        active_groups = [g for g in all_groups if g not in excavated]
+        active = sorted(e for g in active_groups for e in groups[g])
+        gwt_k, z_in_k, nf_k = _lift_water(d, active)
+        lift_z_in.append(z_in_k)
         phases.append(ConstructionPhase(
             name=name,
-            active_soil_groups=[g for g in all_groups if g not in excavated],
+            active_soil_groups=active_groups,
             active_beam_ids=list(range(len(beam_elems))),
             active_spring_ids=list(wall_ties)
             + [i for i, y in right_ties if y <= -d + 1e-9]
             + [n_ties + i for i in installed],
-            gwt=gwt, n_steps=n_steps))
+            gwt=gwt_k, n_steps=n_steps, nodal_forces=nf_k))
         reached = d
 
     sig0 = _geostatic_stresses(nodes, elements, soil_layers, layer_ids,
@@ -1071,7 +1369,9 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
         reset_displacements_after=0, springs=springs,
         initial_stresses=sig0, water_on_free_faces=True,
         settled_ratio=_EXC_SETTLED_RATIO,
-        settled_residual_cap=_EXC_SETTLED_CAP)
+        settled_residual_cap=_EXC_SETTLED_CAP,
+        wall_face_nodes=(set(left_face) | set(right_face)) if seep
+        else None)
 
     # Result: the end of the last stage reached
     last = staged.phases[-1]
@@ -1114,6 +1414,26 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
     if strut_defs and _strut_rows(last):
         result.strut_forces = _strut_rows(last)
 
+    # Water on the wall in each lift: the pore pressure on its two faces,
+    # with the free water standing in the excavation above its floor.
+    x_first = float(np.min(xs[xs > 1e-9]))
+    cye = nodes[np.asarray(elements)[:, :3]].mean(axis=1)[:, 1]
+    tip = col[-1]
+    y_tip = float(nodes[tip, 1])
+
+    def _water_on_wall(k):
+        """(pore pressures, retained-face u, excavation-face u incl. the
+        free water, z_in) along the wall at the end of lift k."""
+        p_k = compute_pore_pressures(nodes, phases[k + 1].gwt, gamma_w)
+        z_in = lift_z_in[k]
+        b = -lift_depths[k]
+        u_l = np.array([p_k[n] for n in left_face])
+        u_r = np.array([p_k[n] if nodes[n, 1] <= b + 1e-9 else
+                        (gamma_w * max(z_in - nodes[n, 1], 0.0)
+                         if z_in is not None else 0.0)
+                        for n in right_face])
+        return p_k, u_l, u_r, z_in
+
     # One row per excavation stage
     wall_y = nodes[wall_nodes, 1]
     stage_rows = []
@@ -1139,6 +1459,27 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
                                       for r in _strut_rows(pr)],
             'settled_steps': len(pr.settled_steps or []),
         }
+        if gwt is not None:
+            p_k, u_l, u_r, z_in = _water_on_wall(k)
+            b = -lift_depths[k]
+            i_b = [abs(nodes[n, 1] - b) < 1e-9 for n in left_face].index(True)
+            u_tip = float(p_k[tip])
+            h_tip = y_tip + u_tip / gamma_w
+            h_front = b + float(u_r[i_b]) / gamma_w
+            front = ((cxe > 0) & (cxe < x_first) & (cye < b)
+                     & (cye > y_tip))
+            g_front = float(np.mean(gamma_arr[front])) if np.any(front) \
+                else float(np.mean(gamma_arr))
+            row.update({
+                'water_inside_depth_m': None if z_in is None
+                else 0.0 - z_in + 0.0,
+                'tip_pore_pressure_kPa': u_tip,
+                'tip_head_m': h_tip,
+                'net_water_pressure_at_excavation_level_kPa':
+                    float(u_l[i_b] - u_r[i_b]),
+                'upward_gradient_in_front': (h_tip - h_front) / (b - y_tip),
+                'critical_gradient': (g_front - gamma_w) / gamma_w,
+            })
         stage_rows.append(row)
         if env_m is None or row['max_beam_moment_kNm_per_m'] > env_m[0]:
             env_m = (row['max_beam_moment_kNm_per_m'], row['name'])
@@ -1173,6 +1514,11 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
            "wall, no wall friction (delta = 0), the Rankine assumption "
            "(wall_contact='smooth')."
            if wall_contact == 'smooth' else
+           "The soil is cut along the wall (the water pressure differs on "
+           "its two faces) and the wall is tied to each face in both "
+           "directions: fully rough, no slip (no interface elements), and "
+           "the wall hangs the retained soil (wall_contact='bonded')."
+           if cut else
            "The wall shares nodes with the soil on both sides (no "
            "interface elements): fully rough, the soil is not separated by "
            "it, and the wall hangs the retained soil "
@@ -1199,17 +1545,41 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
             f"did not converge within {max_iter} iterations a step; the "
             "results are those of the last stage reached. Try more n_steps "
             "or a higher max_iter, or the excavation may not be stable.")
-    if pp is not None:
-        exc_nodes = np.where((nodes[:, 0] > 1e-9)
-                             & (np.abs(nodes[:, 1] + depth) < 1e-9))[0]
-        if len(exc_nodes) and float(np.max(pp[exc_nodes])) > 1e-6:
+    result.excavation_water = excavation_water
+    if pp is not None and excavation_water == 'full':
+        if len(exc_floor) and float(np.max(pp[exc_floor])) > 1e-6:
             warnings.append(
-                "The groundwater table is above the excavation level: the "
-                "excavation is modelled kept full of water to the table "
-                "(water pressure on its faces, no dewatering, no seepage), "
-                "so the water pressures on the two sides of the wall "
-                "balance. A dewatered excavation also carries the net "
+                "The groundwater table is above the excavation level and "
+                "excavation_water='full': the excavation is modelled kept "
+                "full of water to the table (water pressure on its faces, no "
+                "dewatering, no seepage), so the water pressures on the two "
+                "sides of the wall balance. A dewatered excavation (the "
+                "default, excavation_water='dewatered') also carries the net "
                 "water pressure; these wall forces do not include it.")
+    if gwt is not None and stage_rows:
+        k_last = len(staged.phases) - 2
+        _, u_l, u_r, z_in = _water_on_wall(k_last)
+        result.wall_water_pressures = [
+            {'depth_m': float(0.0 - nodes[n, 1]) + 0.0,
+             'retained_side_kPa': float(a),
+             'excavation_side_kPa': float(c), 'net_kPa': float(a - c)}
+            for n, a, c in zip(left_face, u_l, u_r)]
+        result.notes.extend(_excavation_water_notes(
+            excavation_water, seep, z_w, water_level_inside,
+            stage_rows[k_last], lift_depths[k_last], wall_depth, gamma_w,
+            all(sl.get('k') is None for sl in soil_layers)
+            or len({float(sl['k']) for sl in soil_layers}) == 1))
+        for st in stage_rows:
+            if st['upward_gradient_in_front'] >= st['critical_gradient'] > 0:
+                warnings.append(
+                    f"Stage '{st['name']}': the upward hydraulic gradient in "
+                    f"front of the wall ({st['upward_gradient_in_front']:.2f}"
+                    f") reaches the critical gradient gamma'/gamma_w "
+                    f"({st['critical_gradient']:.2f}): the soil in front is "
+                    "quick (heave, piping) and its passive resistance is "
+                    "lost. Deepen the wall, lower the water outside, or "
+                    "keep water in the excavation.")
+                break
     plastic = any(float(sl.get('c', 0) or 0) > 0
                   or float(sl.get('phi', 0) or 0) > 0
                   or sl.get('model') == 'hs' for sl in soil_layers)
@@ -1698,6 +2068,10 @@ class ConstructionPhase:
     active_spring_ids : list of int, optional — indices into
         ``analyze_staged(springs=...)`` active in this phase (struts,
         anchors, props as linear springs). None means no springs.
+    nodal_forces : (2 n_nodes,) array, optional — nodal forces added to
+        this phase's load (kN/m per m run, x then y per node): a load no
+        element face carries, e.g. water standing in an excavation against
+        a wall's face (GM-73). None means none.
     """
     name: str = "Phase"
     active_soil_groups: List[str] = field(default_factory=list)
@@ -1707,6 +2081,7 @@ class ConstructionPhase:
     n_steps: int = 5
     reset_displacements: bool = False
     active_spring_ids: Optional[List[int]] = None
+    nodal_forces: Any = None
 
 
 def assign_element_groups(nodes, elements, regions):
@@ -1820,7 +2195,8 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
                    t=1.0, max_iter=100, tol=1e-5, gamma_w=9.81,
                    reset_displacements_after=None, springs=None,
                    initial_stresses=None, water_on_free_faces=True,
-                   settled_ratio=None, settled_residual_cap=1e-2):
+                   settled_ratio=None, settled_residual_cap=1e-2,
+                   wall_face_nodes=None):
     """Staged construction analysis.
 
     Solves a sequence of construction phases. Each phase activates a
@@ -1894,6 +2270,15 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
         an excavation below the table is kept full of water to it. Default
         True (since 2026-10-14). False reproduces the earlier load, in
         which such a face carried the pore pressure outward unbalanced.
+        A phase's ``gwt`` may be per-node total heads (an (n_nodes,)
+        array, e.g. from ``porewater.seepage_heads``): water then stands
+        on a free face to the head there.
+    wall_face_nodes : iterable of int, optional — nodes of soil faces that
+        line an impermeable wall (the soil cut along the wall, the wall on
+        its own nodes tied to the faces): no water stands on a face whose
+        nodes are all in this set, so its pore pressure pushes the face
+        against the wall and the wall carries the water pressure (GM-73,
+        2026-10-15). None: every free face (before).
     settled_ratio, settled_residual_cap : accept a load step that reaches
         ``max_iter`` with its displacements standing still (the largest
         nodal change over the second half of its iterations below
@@ -2062,7 +2447,15 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
             pp = compute_pore_pressures(nodes, phase.gwt, gamma_w)
             if water_on_free_faces and active_elems:
                 water = standing_water_forces(nodes, elements, pp,
-                                              active_elems, t)
+                                              active_elems, t,
+                                              exclude_nodes=wall_face_nodes)
+        if phase.nodal_forces is not None:
+            nf = np.asarray(phase.nodal_forces, dtype=float)
+            if nf.shape != (2 * n_nodes_count,):
+                raise ValueError(
+                    f"phase '{phase.name}': nodal_forces has shape "
+                    f"{nf.shape}; expected ({2 * n_nodes_count},)")
+            water = nf if water is None else water + nf
 
         # 4. Elements activated in this phase are placed stress-free on the
         #    deformed mesh: zero stress, strain = B u now (so only movement
@@ -2303,10 +2696,24 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
         "placement.",
     ]
     if water_on_free_faces and any(p.gwt is not None for p in phases):
-        notes.append(
-            "Water stands against every free face where the pore pressure "
-            "is positive (an excavation below the water table is kept full "
-            "of water to it; no dewatering or seepage is modelled).")
+        if any(np.ndim(p.gwt) == 1 and len(p.gwt) == n_nodes_count
+               for p in phases if p.gwt is not None):
+            notes.append(
+                "Water stands against every free face where the pore "
+                "pressure is positive, to the head the stage gives there "
+                "(per-node heads, e.g. from a seepage solution)"
+                + ("; not on the faces lining the wall, whose water "
+                   "pressure the wall carries." if wall_face_nodes is not None
+                   else "."))
+        else:
+            notes.append(
+                "Water stands against every free face where the pore "
+                "pressure is positive (an excavation below the water table "
+                "is kept full of water to it; no dewatering or seepage is "
+                "modelled)"
+                + ("; not on the faces lining the wall, whose water "
+                   "pressure the wall carries." if wall_face_nodes is not None
+                   else "."))
 
     return StagedConstructionResult(
         n_phases=len(phase_results),

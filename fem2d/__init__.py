@@ -85,7 +85,7 @@ from fem2d.porewater import (
     compute_pore_pressures, element_pore_pressures,
     effective_stress_correction, pore_pressure_force,
     cst_permeability_matrix, assemble_flow_system,
-    apply_head_bcs, solve_seepage, seepage_velocity,
+    apply_head_bcs, solve_seepage, seepage_velocity, seepage_heads,
     cst_coupling_matrix, cst_compressibility_matrix,
     assemble_coupling, assemble_compressibility,
     solve_consolidation,
@@ -134,7 +134,7 @@ __all__ = [
     'effective_stress_correction', 'pore_pressure_force',
     # Seepage
     'cst_permeability_matrix', 'assemble_flow_system',
-    'apply_head_bcs', 'solve_seepage', 'seepage_velocity',
+    'apply_head_bcs', 'solve_seepage', 'seepage_velocity', 'seepage_heads',
     # Consolidation
     'cst_coupling_matrix', 'cst_compressibility_matrix',
     'assemble_coupling', 'assemble_compressibility',

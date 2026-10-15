@@ -258,7 +258,7 @@ def _run_analyze_excavation(params: dict) -> dict:
     _valid = ("width", "depth", "wall_depth", "soil_layers", "wall_EI",
               "wall_EA", "nx", "ny", "t", "n_steps", "gamma_w", "max_iter",
               "tol", "gwt", "struts", "layer_polylines", "lifts",
-              "wall_contact")
+              "wall_contact", "excavation_water", "water_level_inside")
     reject_unknown_params(params, _valid, method="fem2d_excavation")
     require_params(params, ["width", "depth", "wall_depth", "soil_layers",
                             "wall_EI", "wall_EA"],
@@ -293,6 +293,13 @@ def _run_analyze_excavation(params: dict) -> dict:
         _require_choice(params["wall_contact"], ("smooth", "bonded"),
                         name="wall_contact", method="fem2d_excavation")
         kwargs["wall_contact"] = params["wall_contact"]
+    if "excavation_water" in params:
+        _require_choice(params["excavation_water"],
+                        ("dewatered", "full", "level"),
+                        name="excavation_water", method="fem2d_excavation")
+        kwargs["excavation_water"] = params["excavation_water"]
+    if params.get("water_level_inside") is not None:
+        kwargs["water_level_inside"] = params["water_level_inside"]
 
     result = analyze_excavation(**kwargs)
     return clean_result(result.to_dict())
@@ -597,13 +604,15 @@ METHOD_INFO = {
             "width": {"type": "float", "required": True, "description": "Full excavation width (m); the model is half of a symmetric excavation, its right boundary the centre line. For a one-sided cut give at least twice the passive zone in front of the wall."},
             "depth": {"type": "float", "required": True, "description": "Final excavation depth (m)."},
             "wall_depth": {"type": "float", "required": True, "description": "Wall tip depth below the ground (m); must exceed depth."},
-            "soil_layers": {"type": "array", "required": True, "description": "Array of soil property dicts (E, nu, c, phi, psi, gamma = total unit weight, bottom_elevation; optional K0, else Jaky 1 - sin phi')."},
+            "soil_layers": {"type": "array", "required": True, "description": "Array of soil property dicts (E, nu, c, phi, psi, gamma = total unit weight, bottom_elevation; optional K0, else Jaky 1 - sin phi'; optional k = hydraulic conductivity m/s for the seepage of a dewatered excavation, every layer or none: a small k below the tip models a wall cut off into an impervious layer)."},
             "wall_EI": {"type": "float", "required": True, "description": "Wall flexural stiffness (kN*m2/m)."},
             "wall_EA": {"type": "float", "required": True, "description": "Wall axial stiffness (kN/m)."},
             "struts": {"type": "array", "required": False, "description": "Array of {depth (m, above the final excavation level), stiffness (kN/m per m)}; each installed stress-free once the excavation reaches its level; no preload."},
             "lifts": {"type": "array", "required": False, "description": "Excavation depths (m) at the end of each lift; default one lift to each strut level, then to depth."},
             "wall_contact": {"type": "str", "required": False, "default": "smooth", "allowed_values": ["smooth", "bonded"], "description": "'smooth' (default): no wall friction (Rankine). 'bonded': the wall shares the soil's nodes and hangs the retained soil (thrust below active)."},
-            "gwt": {"type": "float|array", "required": False, "description": "Groundwater table, the same in every stage; above the excavation level the excavation is kept full of water (no dewatering)."},
+            "gwt": {"type": "float|array", "required": False, "description": "Groundwater table elevation (m, the ground is 0, negative below it): the in-situ table, held outside the excavation. What happens inside where it is above the excavation level is excavation_water."},
+            "excavation_water": {"type": "str", "required": False, "default": "dewatered", "allowed_values": ["dewatered", "full", "level"], "description": "Water inside the excavation where the table is above the excavation level. 'dewatered' (default, the construction case: UFC 3-220-20 p. 97, groundwater control below the table; Caltrans T&S Example 7-2): lowered to the excavation level at each lift, steady seepage under the wall's tip, the wall carries the net water pressure (GEC 4 sec. 5.2.9). 'full': kept full of water to the table (dug in the wet; the water on the two faces balances). 'level': lowered to water_level_inside."},
+            "water_level_inside": {"type": "float", "required": False, "description": "For excavation_water='level': depth (m below the ground) of the water inside the excavation, between the table and the excavation depth."},
             "n_steps": {"type": "int", "required": False, "default": 10, "description": "Load steps in each stage."},
             "max_iter": {"type": "int", "required": False, "default": 1000, "description": "Iteration ceiling per load step."},
             "layer_polylines": {"type": "dict", "required": False, "description": "{layer_name: [[x,y],...]} bottom-boundary polylines for non-horizontal layering."},
@@ -614,8 +623,10 @@ METHOD_INFO = {
             "max_beam_shear_kN_per_m": "Largest wall shear force at the end of the last stage only.",
             "wall_envelope": "Largest wall moment and shear over ALL stages, with the stage each occurs in: the values to design the wall for (an earlier lift, before a strut is installed, can govern).",
             "strut_forces": "Per strut: force = stiffness x movement since installation (positive holds the wall back).",
-            "excavation_stages": "Per lift: wall head and largest wall u_x (positive toward the excavation), M_max, V_max, strut forces.",
-            "notes": "Method, K0 per layer, sign conventions.",
+            "excavation_stages": "Per lift: wall head and largest wall u_x (positive toward the excavation), M_max, V_max, strut forces; with a water table also the water inside, the pore pressure and total head at the wall's tip, the net water pressure at the excavation level, the upward gradient in front of the wall and the critical gradient.",
+            "excavation_water": "The water condition modelled inside the excavation.",
+            "wall_water_pressures": "Pore pressure on each face of the wall and the net, per wall node, at the end of the last stage.",
+            "notes": "Method, K0 per layer, sign conventions; the water condition with its basis and the net water pressure beside the no-seepage and GEC 4 values.",
         },
     },
     "fem2d_seepage": {

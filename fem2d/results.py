@@ -442,6 +442,10 @@ class FEMResult:
     wall_envelope: Optional[Dict[str, Any]] = None
     notes: List[str] = field(default_factory=list)
     staged: Optional[Any] = field(default=None, repr=False)
+    # Water in a staged excavation (GM-73, 2026-10-15)
+    excavation_water: Optional[str] = None
+    wall_water_pressures: Optional[List[Dict]] = field(default=None,
+                                                       repr=False)
 
     # Raw arrays (not serialized to dict)
     nodes: Optional[np.ndarray] = field(default=None, repr=False)
@@ -502,6 +506,15 @@ class FEMResult:
                     f"{st['max_beam_moment_kNm_per_m']:.1f} kN*m/m, V_max "
                     f"{st['max_beam_shear_kN_per_m']:.1f} kN/m"
                     + ("" if st['converged'] else " (NOT CONVERGED)"))
+                if 'tip_pore_pressure_kPa' in st:
+                    lines.append(
+                        f"      water: u at the tip "
+                        f"{st['tip_pore_pressure_kPa']:.1f} kPa, net at the "
+                        f"excavation level "
+                        f"{st['net_water_pressure_at_excavation_level_kPa']:.1f}"
+                        f" kPa, upward gradient in front "
+                        f"{st['upward_gradient_in_front']:.2f} (critical "
+                        f"{st['critical_gradient']:.2f})")
         if self.wall_envelope:
             env = self.wall_envelope
             lines.append(
@@ -556,6 +569,11 @@ class FEMResult:
                                       self.excavation_stages]
         if self.wall_envelope:
             d["wall_envelope"] = dict(self.wall_envelope)
+        if self.excavation_water is not None:
+            d["excavation_water"] = self.excavation_water
+        if self.wall_water_pressures:
+            d["wall_water_pressures"] = [dict(r) for r in
+                                         self.wall_water_pressures]
         if self.notes:
             d["notes"] = list(self.notes)
         return d
@@ -632,6 +650,48 @@ class FEMResult:
                       "in-situ (K0) stage, u_x positive toward the "
                       "excavation; wall forces at the end of each stage"),
                 name="excavation_stages",
+            ))
+            if any('tip_pore_pressure_kPa' in st
+                   for st in self.excavation_stages):
+                tables.append(CalcTable(
+                    title="Water on the wall by stage",
+                    columns=["Stage", ("Excavation depth", "m"),
+                             ("Water inside, depth", "m"),
+                             ("Pore pressure at the tip", "kPa"),
+                             ("Total head at the tip", "m"),
+                             ("Net water pressure at the excavation level",
+                              "kPa"),
+                             ("Upward gradient in front", ""),
+                             ("Critical gradient", "")],
+                    rows=[[st.get("stage"), st.get("excavation_depth_m"),
+                           st.get("water_inside_depth_m"),
+                           st.get("tip_pore_pressure_kPa"),
+                           st.get("tip_head_m"),
+                           st.get("net_water_pressure_at_excavation_level_"
+                                  "kPa"),
+                           st.get("upward_gradient_in_front"),
+                           st.get("critical_gradient")]
+                          for st in self.excavation_stages],
+                    note=(f"excavation_water = {self.excavation_water!r}; "
+                          "total head h = y + u / gamma_w, datum the "
+                          "ground; net = retained side minus excavation "
+                          "side; gradient from the wall's tip up to the "
+                          "excavation level"),
+                    name="excavation_water",
+                ))
+        if self.wall_water_pressures:
+            tables.append(CalcTable(
+                title="Water pressures on the wall",
+                columns=[("Depth", "m"), ("Retained side", "kPa"),
+                         ("Excavation side", "kPa"), ("Net", "kPa")],
+                rows=[[r.get("depth_m"), r.get("retained_side_kPa"),
+                       r.get("excavation_side_kPa"), r.get("net_kPa")]
+                      for r in self.wall_water_pressures],
+                note=("End of the last stage; net = retained minus "
+                      "excavation side (positive pushes the wall toward "
+                      "the excavation); the excavation side includes the "
+                      "water standing in the excavation"),
+                name="wall_water_pressures", printed=False,
             ))
         return tables
 

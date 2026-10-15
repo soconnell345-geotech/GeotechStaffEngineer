@@ -220,7 +220,7 @@ def free_edges(elements, active_elements=None):
 
 
 def standing_water_forces(nodes, elements, nodal_pp, active_elements=None,
-                          t=1.0):
+                          t=1.0, exclude_nodes=None):
     """Nodal forces of water standing on the free faces of a mesh.
 
     Where the pore pressure on a free (unloaded) face of the active mesh is
@@ -243,6 +243,11 @@ def standing_water_forces(nodes, elements, nodal_pp, active_elements=None,
     nodal_pp : (n_nodes,) array — pore pressures (kPa, positive).
     active_elements : iterable of int, optional (None = all).
     t : float — thickness.
+    exclude_nodes : iterable of int, optional — a free edge whose nodes are
+        ALL in this set gets no water: a face against an impermeable wall
+        (the soil cut along a wall), where no water stands; the pore
+        pressure pushes the face against the wall, which carries it (GM-73,
+        2026-10-15).
 
     Returns
     -------
@@ -254,9 +259,13 @@ def standing_water_forces(nodes, elements, nodal_pp, active_elements=None,
     F = np.zeros(2 * len(nodes))
     if not np.any(pp > 0):
         return F
+    skip = set(int(n) for n in exclude_nodes) if exclude_nodes is not None \
+        else set()
     gs = 0.5 * (1.0 + np.array([-np.sqrt(0.6), 0.0, np.sqrt(0.6)]))
     gw = np.array([5.0, 8.0, 5.0]) / 18.0
     for e, edge in free_edges(elements, active_elements):
+        if skip and all(n in skip for n in edge):
+            continue
         p_nodes = pp[list(edge)]
         if not np.any(p_nodes > 0):
             continue
@@ -504,6 +513,75 @@ def solve_seepage(nodes, elements, k, head_bcs, t=1.0,
         'velocity': vel,
         'flow_rate': flow_rate,
     }
+
+
+def seepage_heads(nodes, elements, k, head_bcs, active_elements=None,
+                  t=1.0):
+    """Steady-state total heads on the active part of any mesh (GM-73).
+
+    The Laplace equation div(k grad h) = 0 of ``solve_seepage``, on T3, T6
+    or Q4 elements with their own shape functions (``solve_seepage`` takes
+    CST meshes only): H = sum over Gauss points of w k G^T G, G = [dN/dx;
+    dN/dy]. Boundaries with no prescribed head are impervious (no flow), so
+    a wall represented by a cut in the mesh (the elements on its two sides
+    do not share nodes) is impermeable. Prescribed heads are eliminated
+    from the system (no penalty).
+
+    Parameters
+    ----------
+    nodes : (n_nodes, 2) array
+    elements : (n_elements, nen) array — T3, T6 or Q4 connectivity.
+    k : float or (n_elements,) array — hydraulic conductivity (m/s,
+        isotropic). Only the ratios between elements change the heads.
+    head_bcs : dict {node: head} or list of (node, head) — total head (m,
+        elevation + pressure head) at nodes of the active mesh.
+    active_elements : iterable of int, optional (None = all).
+    t : float — thickness.
+
+    Returns
+    -------
+    head : (n_nodes,) array — NaN at nodes in no active element.
+    """
+    from fem2d.solver import _gp_precompute
+
+    nodes = np.asarray(nodes, dtype=float)
+    elements = np.asarray(elements, dtype=int)
+    act = np.arange(len(elements)) if active_elements is None \
+        else np.array(sorted(int(e) for e in active_elements), dtype=int)
+    head = np.full(len(nodes), np.nan)
+    if len(act) == 0:
+        return head
+    sub = elements[act]
+    gp = _gp_precompute(nodes, sub, t)
+    k_arr = np.asarray(k, dtype=float)
+    k_e = k_arr[act] if k_arr.ndim > 0 else np.full(len(act), float(k_arr))
+    dNx = gp['B'][:, :, 0, 0::2]                    # (n_e, n_gp, nen)
+    dNy = gp['B'][:, :, 1, 1::2]
+    He = (np.einsum('egi,egj,eg->eij', dNx, dNx, gp['w'])
+          + np.einsum('egi,egj,eg->eij', dNy, dNy, gp['w']))
+    He *= k_e[:, None, None]
+    nen = sub.shape[1]
+    rows = np.repeat(sub[:, :, None], nen, axis=2).ravel()
+    cols = np.repeat(sub[:, None, :], nen, axis=1).ravel()
+    n = len(nodes)
+    H = coo_matrix((He.ravel(), (rows, cols)), shape=(n, n)).tocsr()
+
+    live = np.unique(sub.ravel())
+    live_set = set(live.tolist())
+    bcs = {int(i): float(h) for i, h in (
+        head_bcs.items() if isinstance(head_bcs, dict) else head_bcs)}
+    fixed = np.array(sorted(i for i in bcs if i in live_set), dtype=int)
+    if len(fixed) == 0:
+        raise ValueError("seepage_heads: no prescribed head on the active "
+                         "mesh (the heads are undetermined)")
+    h_fixed = np.array([float(bcs[i]) for i in fixed])
+    free = np.setdiff1d(live, fixed)
+    head[fixed] = h_fixed
+    if len(free):
+        A = H[free][:, free].tocsc()
+        b = -H[free][:, fixed] @ h_fixed
+        head[free] = spsolve(A, b)
+    return head
 
 
 # ===========================================================================

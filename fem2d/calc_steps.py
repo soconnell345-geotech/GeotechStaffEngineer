@@ -419,6 +419,30 @@ def _excavation_section(result) -> CalcSection:
         rows=rows,
         notes=" ".join(getattr(result, 'notes', []) or []),
     ))
+    if any('tip_pore_pressure_kPa' in st for st in result.excavation_stages):
+        def _f(v, fmt):
+            return "-" if v is None else format(v, fmt)
+        items.append(TableData(
+            title="Water on the Wall by Stage",
+            headers=["Stage", "Depth (m)", "Water inside (m)",
+                     "u at tip (kPa)", "Head at tip (m)",
+                     "Net u at excavation level (kPa)",
+                     "Upward gradient in front", "Critical gradient"],
+            rows=[[str(st['stage']), f"{st['excavation_depth_m']:.2f}",
+                   _f(st['water_inside_depth_m'], ".2f"),
+                   f"{st['tip_pore_pressure_kPa']:.1f}",
+                   f"{st['tip_head_m']:.2f}",
+                   f"{st['net_water_pressure_at_excavation_level_kPa']:.1f}",
+                   f"{st['upward_gradient_in_front']:.2f}",
+                   f"{st['critical_gradient']:.2f}"]
+                  for st in result.excavation_stages],
+            notes=(f"excavation_water = "
+                   f"{getattr(result, 'excavation_water', None)!r}. Total "
+                   "head h = y + u/γw with the ground as datum; net = "
+                   "retained side minus excavation side; water inside = "
+                   "depth of the water standing in the excavation (- = "
+                   "none)."),
+        ))
     return CalcSection(title="Excavation Stages", items=items)
 
 

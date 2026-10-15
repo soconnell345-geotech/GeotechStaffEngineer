@@ -328,15 +328,25 @@ def test_bad_input_is_refused(kwargs, match):
 
 
 def test_water_above_the_excavation_level_is_said():
+    """excavation_water='full' (the only model before GM-73) says that the
+    water pressures on the wall balance; the default (dewatered, GM-73)
+    does not keep the excavation full."""
     r = analyze_excavation(
         width=10, depth=3, wall_depth=8, soil_layers=CLAY, wall_EI=50000,
-        wall_EA=5e6, nx=12, ny=8, n_steps=3, gwt=-1.0)
+        wall_EA=5e6, nx=12, ny=8, n_steps=3, gwt=-1.0,
+        excavation_water='full')
     assert r.converged
     assert any("full of water" in w for w in r.warnings)
     dry = analyze_excavation(
         width=10, depth=3, wall_depth=8, soil_layers=CLAY, wall_EI=50000,
-        wall_EA=5e6, nx=12, ny=8, n_steps=3, gwt=-4.0)
+        wall_EA=5e6, nx=12, ny=8, n_steps=3, gwt=-4.0,
+        excavation_water='full')
     assert not any("full of water" in w for w in dry.warnings)
+    dewatered = analyze_excavation(
+        width=10, depth=3, wall_depth=8, soil_layers=CLAY, wall_EI=50000,
+        wall_EA=5e6, nx=12, ny=8, n_steps=3, gwt=-1.0)
+    assert dewatered.excavation_water == 'dewatered'
+    assert not any("full of water" in w for w in dewatered.warnings)
 
 
 # ---------------------------------------------------------------------------
