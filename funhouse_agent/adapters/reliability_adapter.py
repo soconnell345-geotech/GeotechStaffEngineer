@@ -27,6 +27,14 @@ _MATH_FUNCS = {
                  "ceil", "floor", "radians", "degrees")
 }
 _MATH_FUNCS.update({"abs": abs, "min": min, "max": max})
+# The normal distribution (GM-94): erf/erfc, and the standard normal's CDF,
+# density and inverse CDF, e.g. the probability that a kriged value with
+# its kriging standard deviation exceeds a level.
+_STD_NORMAL = __import__("statistics").NormalDist()
+_MATH_FUNCS.update({"erf": math.erf, "erfc": math.erfc,
+                    "norm_cdf": _STD_NORMAL.cdf,
+                    "norm_pdf": _STD_NORMAL.pdf,
+                    "norm_ppf": _STD_NORMAL.inv_cdf})
 
 #: An integer power whose result would need more bits than this (2**1024 is
 #: about 1.8e308, the largest float) is refused BEFORE it is computed. Python
@@ -87,7 +95,7 @@ def _bound_powers(tree, var_names) -> str:
     return name
 
 
-def _compile_g(expr: str, var_names):
+def _compile_g(expr: str, var_names, extra_funcs=None):
     """Compile a limit-state/FOS expression string into g(values_dict).
 
     Same restricted-eval pattern as the pystra adapter: only the variable
@@ -103,7 +111,10 @@ def _compile_g(expr: str, var_names):
         raise ValueError(
             f"g_expression is too long ({len(str(expr)):,} characters; the "
             f"limit is {_MAX_EXPR_CHARS:,}).")
-    allowed = set(var_names) | set(_MATH_FUNCS)
+    funcs = dict(_MATH_FUNCS)
+    if extra_funcs:
+        funcs.update(extra_funcs)
+    allowed = set(var_names) | set(funcs)
     try:
         tree = ast.parse(expr, mode="eval")
     except SyntaxError as exc:
@@ -135,10 +146,10 @@ def _compile_g(expr: str, var_names):
                 f"{type(node).__name__}).")
         if isinstance(node, ast.Call):
             if node.keywords or not (isinstance(node.func, ast.Name)
-                                     and node.func.id in _MATH_FUNCS):
+                                     and node.func.id in funcs):
                 raise ValueError(
                     "g_expression function calls are limited to the "
-                    f"allowed math functions: {sorted(_MATH_FUNCS)}")
+                    f"allowed math functions: {sorted(funcs)}")
         if isinstance(node, ast.Constant) and \
                 not isinstance(node.value, (int, float)):
             raise ValueError(
@@ -147,7 +158,7 @@ def _compile_g(expr: str, var_names):
     pow_name = _bound_powers(tree, var_names)
     code = compile(tree, "<g_expression>", "eval")
     ns = {"__builtins__": {}}
-    ns.update(_MATH_FUNCS)
+    ns.update(funcs)
     ns[pow_name] = _bounded_pow
 
     def g(values):

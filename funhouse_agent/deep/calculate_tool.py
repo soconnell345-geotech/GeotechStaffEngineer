@@ -22,6 +22,7 @@ from __future__ import annotations
 import ast
 import json
 import math
+import statistics
 from typing import Any, Dict, Optional
 
 from langchain_core.tools import StructuredTool
@@ -34,9 +35,15 @@ CALCULATE_DESCRIPTION = (
     "yourself. 'expression' uses + - * / ** %, parentheses, pi and the "
     "functions sqrt log log10 exp sin cos tan "
     "asin acos atan atan2 sinh cosh tanh radians degrees ceil floor abs min "
-    "max (trigonometry in radians: tan(radians(phi))). 'variables' maps each "
-    "name in the expression to a number, e.g. {\"qt\": 1250, \"sigma_v0\": "
-    "95, \"Nkt\": 14}. Returns the value with the expression and inputs; "
+    "max (trigonometry in radians: tan(radians(phi))), erf erfc, and the "
+    "standard normal norm_cdf norm_pdf norm_ppf (e.g. the chance a value "
+    "with mean m and std s exceeds L: 1 - norm_cdf((L - m) / s)). "
+    "'variables' maps each name in the expression to a number, e.g. "
+    "{\"qt\": 1250, \"sigma_v0\": 95, \"Nkt\": 14}, or to a LIST of "
+    "numbers used through count sum mean median std (sample) min max "
+    "percentile(L, p) count_above(L, v) count_below(L, v), e.g. "
+    "count_above(z, 873.5) / count(z). Count, add up or average a list here, "
+    "never by eye. Returns the value with the expression and inputs; "
     "report all three. Where a module method computes the quantity "
     "(capacity, settlement, FOS...), call that method instead.")
 
@@ -61,6 +68,62 @@ def _constants_as_names(expression: str, values: Dict[str, float]) -> str:
     return ast.unparse(_ToName().visit(tree))
 
 
+#: The longest list a variable may hold.
+_MAX_LIST = 100_000
+
+
+def _numbers(value, fn: str) -> list:
+    if not isinstance(value, (list, tuple)):
+        raise TypeError(f"{fn}() takes a list variable")
+    if not value:
+        raise ValueError(f"{fn}() of an empty list")
+    return list(value)
+
+
+def _percentile(values, p):
+    """Linear-interpolation percentile (numpy's default), p in 0-100."""
+    xs = sorted(_numbers(values, "percentile"))
+    if not 0.0 <= p <= 100.0:
+        raise ValueError("percentile(L, p) takes p from 0 to 100")
+    pos = (len(xs) - 1) * p / 100.0
+    lo = math.floor(pos)
+    hi = min(lo + 1, len(xs) - 1)
+    return xs[lo] + (xs[hi] - xs[lo]) * (pos - lo)
+
+
+def _count_above(values, v):
+    return float(sum(1 for x in _numbers(values, "count_above") if x > v))
+
+
+def _count_below(values, v):
+    return float(sum(1 for x in _numbers(values, "count_below") if x < v))
+
+
+#: Functions over a list variable (GM-94: a field session's footprint
+#: fractions were counted by eye from a grid, 10 of 40 wrong).
+LIST_FUNCS = {
+    "count": lambda L: float(len(_numbers(L, "count"))),
+    "sum": lambda L: math.fsum(_numbers(L, "sum")),
+    "mean": lambda L: math.fsum(_numbers(L, "mean")) / len(L),
+    "median": lambda L: statistics.median(_numbers(L, "median")),
+    "std": lambda L: statistics.stdev(_numbers(L, "std")),
+    "percentile": _percentile,
+    "count_above": _count_above,
+    "count_below": _count_below,
+}
+
+
+def _echo(values: Dict[str, Any]) -> Dict[str, Any]:
+    """The inputs as echoed: a long list is summarised, not repeated."""
+    out = {}
+    for k, v in values.items():
+        if isinstance(v, list) and len(v) > 20:
+            out[k] = f"[{len(v)} values, {min(v):g} to {max(v):g}]"
+        else:
+            out[k] = v
+    return out
+
+
 def evaluate(expression: str, variables: Optional[Dict[str, Any]] = None
              ) -> Dict[str, Any]:
     """``{"value", "expression", "variables"}`` or ``{"error", ...}``."""
@@ -72,19 +135,28 @@ def evaluate(expression: str, variables: Optional[Dict[str, Any]] = None
                          f"characters; the limit is {_MAX_EXPR_CHARS:,})",
                 "expression": expr[:200] + "..."}
     raw = variables if isinstance(variables, dict) else {}
-    values: Dict[str, float] = {}
+    values: Dict[str, Any] = {}
     for name, v in raw.items():
         try:
-            values[str(name)] = float(v)
+            if isinstance(v, (list, tuple)):
+                if len(v) > _MAX_LIST:
+                    return {"error": f"variable '{name}' holds {len(v):,} "
+                                     f"values; the limit is {_MAX_LIST:,}",
+                            "expression": expr}
+                values[str(name)] = [float(x) for x in v]
+            else:
+                values[str(name)] = float(v)
         except (TypeError, ValueError):
-            return {"error": f"variable '{name}' is not a number ({v!r})",
+            return {"error": f"variable '{name}' is not a number or a list "
+                             f"of numbers ({str(v)[:80]!r})",
                     "expression": expr}
     if not expr:
         return {"error": "give 'expression', e.g. '(qt - sigma_v0) / Nkt' "
                          "with 'variables' {\"qt\": 1250, ...}"}
     try:
         bound = dict(values)
-        g = _compile_g(_constants_as_names(expr, bound), list(bound))
+        g = _compile_g(_constants_as_names(expr, bound), list(bound),
+                       extra_funcs=LIST_FUNCS)
         value = g(bound)
     except ValueError as exc:
         import re
@@ -96,7 +168,16 @@ def evaluate(expression: str, variables: Optional[Dict[str, Any]] = None
                 "expression": expr}
     except ZeroDivisionError:
         return {"error": "division by zero", "expression": expr,
-                "variables": values}
+                "variables": _echo(values)}
+    except TypeError as exc:
+        if any(isinstance(v, list) for v in values.values()):
+            return {"error": "a list variable goes into a list function "
+                             "(count, sum, mean, median, std, min, max, "
+                             "percentile(L, p), count_above(L, v), "
+                             "count_below(L, v)); arithmetic takes numbers "
+                             f"({exc})",
+                    "expression": expr}
+        return {"error": f"TypeError: {exc}", "expression": expr}
     except (OverflowError, ArithmeticError) as exc:
         return {"error": f"{type(exc).__name__}: {exc}", "expression": expr}
     except Exception as exc:                           # noqa: BLE001
@@ -106,17 +187,17 @@ def evaluate(expression: str, variables: Optional[Dict[str, Any]] = None
     elif isinstance(value, (int, float)):
         if isinstance(value, float) and not math.isfinite(value):
             return {"error": f"the result is not a finite number ({value})",
-                    "expression": expr, "variables": values}
+                    "expression": expr, "variables": _echo(values)}
         try:
             out = float(value)
         except OverflowError:                # an exact integer above 1e308
             return {"error": "the result is too large to be a number "
                              "(above about 1e308)",
-                    "expression": expr, "variables": values}
+                    "expression": expr, "variables": _echo(values)}
     else:
         return {"error": f"the expression did not give a number ({value!r})",
                 "expression": expr}
-    return {"value": out, "expression": expr, "variables": values}
+    return {"value": out, "expression": expr, "variables": _echo(values)}
 
 
 def make_calculate_tool() -> StructuredTool:
@@ -124,7 +205,7 @@ def make_calculate_tool() -> StructuredTool:
     from funhouse_agent.deep.strict_args import strict_tool
 
     def calculate(expression: str,
-                  variables: Optional[Dict[str, float]] = None) -> str:
+                  variables: Optional[Dict[str, Any]] = None) -> str:
         """Evaluate an arithmetic formula exactly."""
         return json.dumps(evaluate(expression, variables), default=str)
 
@@ -132,4 +213,5 @@ def make_calculate_tool() -> StructuredTool:
         calculate, name="calculate", description=CALCULATE_DESCRIPTION))
 
 
-__all__ = ["make_calculate_tool", "evaluate", "CALCULATE_DESCRIPTION"]
+__all__ = ["make_calculate_tool", "evaluate", "CALCULATE_DESCRIPTION",
+           "LIST_FUNCS"]

@@ -95,6 +95,6 @@ messages and the trace review's private tables).
    turn 11 counted against its own earlier reading without saying so; the
    helper that drew the figures had no way to look at them, and the agent
    checked a PNG of a different figure from the chart the owner saw.
-   Dispositions: GM-91 (done), GM-96, GM-94, GM-95 (done), TA-30–TA-32, VIS-27,
+   Dispositions: GM-91 (done), GM-96, GM-94 (done), GM-95 (done), TA-30–TA-32, VIS-27,
    EV-19; the crash, the chart theme and plot_data were already fixed
    (TA-29, GM-90).
