@@ -228,7 +228,12 @@ Key conventions:
       a figure helper with a Tufte-style checklist and worked examples
       (behind `GEOTECH_FIGURE_HELPER`, OFF; GM-92) and plans drawn as
       drawings (no axes, a scale bar, a north arrow from the source plan,
-      the property line; `plot_data(plan_view=True)`) (1f87ea5).
+      the property line; `plot_data(plan_view=True)`) (1f87ea5); plotting
+      code the model writes, run in a locked box for the figure and calc
+      helpers (`funhouse_agent/plot_box/`, behind `GEOTECH_PLOT_CODE`, OFF;
+      f0bc000); downdrag leaves the pile's own weight out of the load curve
+      by default, as UFC 3-220-20 and GEC-12 do (867b08b; release note: a
+      smaller drag force and Q_np by the pile's weight above the plane).
     Open next: Foundry brief 6, which measures all of this, is drafted
     (`../foundry_handoff/AI_FDE_BRIEF_6.md`); its rc wheels are not built
     while the owner holds the release (EV-13, DR-05).
