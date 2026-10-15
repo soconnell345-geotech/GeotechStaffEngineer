@@ -92,9 +92,17 @@ def fellenius_fos(slices: List[Slice],
     Notes
     -----
     Conservative: typically 10-60% lower than rigorous methods.
-    No iteration required. Used as initial guess for Bishop.
-    Reinforcement (reinf_forces) is applied with the ACTIVE convention:
-    unfactored T reduces the driving moment/force.
+    No iteration required (except with passive supports). Used as initial
+    guess for Bishop.
+
+    Supports (reinf_forces), circular surfaces: each acts at the base of the
+    slice it crosses — its component normal to that base adds to the slice's
+    normal force (so to its shear strength where phi > 0), and its signed
+    moment about the centre reduces the driving moment (ACTIVE, Method A)
+    or, divided by F with the soil strength, adds to the resisting moment
+    (PASSIVE, Method B). See ``slope_stability.reinforcement``.
+    Noncircular: the force projected on the base direction reduces the
+    driving force (active) or adds to the resistance (passive).
     """
     resisting = 0.0
     is_circular = getattr(slip, 'is_circular', True)
@@ -139,16 +147,41 @@ def fellenius_fos(slices: List[Slice],
     # Separated so seismic always increases driving regardless of slope direction.
     driving = abs(gravity_driving) + abs(seismic_driving) + abs(crack_water_driving)
 
+    passive_press = []   # (N' without them, tan phi, pressing) per slice
     if reinf_forces:
         from slope_stability.reinforcement import (
             moment_reduction, horizontal_reduction,
-            moment_resistance, horizontal_resistance,
+            moment_resistance, horizontal_resistance, slice_support_forces,
         )
         if is_circular:
+            # signed moments, positive where they resist the sliding sense
+            d_sign = 1.0 if gravity_driving >= 0 else -1.0
             driving -= moment_reduction(reinf_forces, slip.xc, slip.yc,
-                                        slip.radius)
+                                        slip.radius, d_sign=d_sign)
             resisting += moment_resistance(reinf_forces, slip.xc, slip.yc,
-                                           slip.radius)
+                                           slip.radius, d_sign=d_sign)
+            # Each support's component pressing the base of the slice it
+            # crosses (Fx sin(a) - Fz cos(a)) adds to that slice's normal
+            # force: unfactored (active), or / F (passive, below).
+            active_press = {}
+            for passive in (False, True):
+                for i, (fx, fz) in slice_support_forces(
+                        reinf_forces, slices, passive=passive,
+                        d_sign=d_sign).items():
+                    s = slices[i]
+                    tan_phi = math.tan(math.radians(s.phi))
+                    if tan_phi <= 0:
+                        continue
+                    press = fx * math.sin(s.alpha) - fz * math.cos(s.alpha)
+                    n0 = ((s.weight + s.surcharge_force) * math.cos(s.alpha)
+                          - s.pore_pressure * s.base_length)
+                    if passive:
+                        passive_press.append(
+                            (n0 + active_press.get(i, 0.0), tan_phi, press))
+                    else:
+                        active_press[i] = press
+                        resisting += (max(n0 + press, 0.0)
+                                      - max(n0, 0.0)) * tan_phi
         else:
             driving -= horizontal_reduction(reinf_forces, slices)
             resisting += horizontal_resistance(reinf_forces, slices)
@@ -156,7 +189,20 @@ def fellenius_fos(slices: List[Slice],
     if driving <= 0:
         return _FOS_MAX
 
-    return resisting / driving
+    if not passive_press:
+        return resisting / driving
+    # Passive supports press their slice bases with T / F: iterate on F.
+    fos = resisting / driving
+    for _ in range(100):
+        extra = sum((max(n0 + p / fos, 0.0) - max(n0, 0.0)) * tp
+                    for n0, tp, p in passive_press)
+        fos_new = (resisting + extra) / driving
+        if fos_new <= 0:
+            return _FOS_MAX
+        if abs(fos_new - fos) < 1e-9:
+            return fos_new
+        fos = fos_new
+    return fos
 
 
 def bishop_fos(slices: List[Slice],
@@ -207,6 +253,19 @@ def bishop_fos(slices: List[Slice],
     - Satisfies moment equilibrium and vertical force equilibrium
     - Most commonly used method in practice
     - Typically converges in 5-10 iterations
+
+    Supports (``reinf_forces``) act at the base of the slice they cross
+    (Wright & Duncan 1991): the signed moment about the centre (only the
+    support's component along the slip surface has one) and the VERTICAL
+    component in that slice's vertical equilibrium, W -> W - Fz in the
+    numerator, so it changes the base normal force and, where phi > 0, the
+    shear strength. ACTIVE supports (Method A) do so unfactored and their
+    moment reduces the driving moment; PASSIVE ones (Method B) act as T/F:
+    their moment is added to the resisting side and their vertical component
+    is divided by F. The horizontal component enters no equation Bishop's
+    method satisfies except the moment; a support crossing close to the
+    level of the centre therefore counts for little (see
+    ``slope_stability.reinforcement``).
     """
     if not getattr(slip, 'is_circular', True):
         raise ValueError(
@@ -237,21 +296,6 @@ def bishop_fos(slices: List[Slice],
     # Separated so seismic always increases driving regardless of slope direction
     driving = abs(gravity_driving) + abs(seismic_driving) + abs(crack_water_driving)
 
-    passive_resistance = 0.0
-    if reinf_forces:
-        from slope_stability.reinforcement import (
-            moment_reduction, moment_resistance,
-        )
-        driving -= moment_reduction(reinf_forces, slip.xc, slip.yc,
-                                    slip.radius)
-        # PASSIVE-convention forces add to the resisting side (FOS-independent
-        # external moment), not the driving side. Default (active) = 0.
-        passive_resistance = moment_resistance(reinf_forces, slip.xc, slip.yc,
-                                               slip.radius)
-
-    if driving <= 0:
-        return _FOS_MAX
-
     # Slope-direction sign (SS-4): m_alpha must be evaluated with the base
     # angle measured positive in the sliding direction. For crest-on-the-
     # left slopes (sliding left-to-right) the gravity moment sum is
@@ -260,14 +304,41 @@ def bishop_fos(slices: List[Slice],
     # Fredlund & Krahn 1977 benchmark).
     d_sign = 1.0 if gravity_driving >= 0 else -1.0
 
+    passive_resistance = 0.0
+    fz_a, fz_p = {}, {}
+    if reinf_forces:
+        from slope_stability.reinforcement import (
+            moment_reduction, moment_resistance, slice_support_forces,
+        )
+        # Signed moments about the centre, positive where they resist.
+        driving -= moment_reduction(reinf_forces, slip.xc, slip.yc,
+                                    slip.radius, d_sign=d_sign)
+        # PASSIVE-convention forces add to the resisting side (Method B),
+        # not the driving side. Default (active) = 0.
+        passive_resistance = moment_resistance(reinf_forces, slip.xc, slip.yc,
+                                               slip.radius, d_sign=d_sign)
+        # Vertical components, in the vertical equilibrium of the slice
+        # each support crosses (Wright & Duncan 1991).
+        fz_a = {i: fz for i, (_fx, fz) in slice_support_forces(
+            reinf_forces, slices, passive=False, d_sign=d_sign).items()}
+        fz_p = {i: fz for i, (_fx, fz) in slice_support_forces(
+            reinf_forces, slices, passive=True, d_sign=d_sign).items()}
+
+    if driving <= 0:
+        return _FOS_MAX
+
     fos = fos_initial
     for iteration in range(max_iter):
         resisting = 0.0
-        for s in slices:
+        for i, s in enumerate(slices):
             phi_rad = math.radians(s.phi)
             tan_phi = math.tan(phi_rad)
             W = s.weight + s.surcharge_force
             b = s.width
+            if i in fz_a:
+                W -= fz_a[i]                 # Fz up-positive
+            if i in fz_p:
+                W -= fz_p[i] / fos
 
             m_alpha = math.cos(s.alpha) + d_sign * math.sin(s.alpha) * tan_phi / fos
             if abs(m_alpha) < 1e-10:

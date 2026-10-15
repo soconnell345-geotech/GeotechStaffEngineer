@@ -10,6 +10,12 @@ range constraints.
 - Bishop (1955) — Geotechnique, Vol. 5, pp. 7-17
 - Spencer (1967) — Geotechnique, Vol. 17, pp. 11-26
 - Duncan, Wright & Brandon (2014) — Soil Strength and Slope Stability
+- Wright & Duncan (1991) — Limit equilibrium stability analyses for reinforced
+  slopes, Transportation Research Record 1330, 40-46 (support forces in each method)
+- Zhu, Lee, Qian & Chen (2005) — A concise algorithm for computing the factor of
+  safety using the Morgenstern-Price method, Can. Geotech. J. 42, 272-278
+- Rocscience Slide2 help — Active/Passive Force Application; Grid Search
+  (reverse curvature)
 - FHWA GEC-7, Lazarte et al. (2003) — Soil nail walls (nails.py, currently disconnected)
 
 ## Files
@@ -204,12 +210,9 @@ Unreinforced geometry: nothing is resolved and every solve is unchanged.
     30-75 ft): Bishop 1.612 / Spencer 1.606 / GLE 1.606 against Slide2 1.629 /
     1.620 / 1.622 and D&W 1.61. Before: the unreinforced 0.942 (infinite
     slope) or the deep circle.
-  - #85 (one 9,000 lb/ft support at mid-height, active): GLE 1.581 against
-    Slide2 GLE 1.575 (D&W 1.51). Bishop gives 1.304 on a small toe circle
-    centred 4 ft above the support: the module's Bishop counts reinforcement
-    only through its moment about the circle centre, and that arm is short;
-    Slide2's Bishop is 1.531 (on its own circle the module's Bishop is 1.564).
-    Use a rigorous method on anchored slopes.
+  - #85 (one 9,000 lb/ft support at mid-height, active): see "Support forces
+    in each method" below (GM-59, GM-60) for the current values and why the
+    Bishop search gives 1.304 by default.
   - V-043 (Tandjiria geosynthetic at the fill base): the published force
     (44-56 kN/m to raise the UNREINFORCED critical surface to 1.35) is a
     single-surface quantity; a reinforced search cannot reach 1.35 with any
@@ -218,6 +221,147 @@ Unreinforced geometry: nothing is resolved and every solve is unchanged.
 - **Runtime**: the crossing is resolved on every trial surface of a
   reinforced slope -- Bishop searches +28 % to +41 %, Spencer +11 % (ACADS
   1(a) + geosynthetic; #86 with tiebacks). Unreinforced searches unchanged.
+
+### Support forces in each method; active and passive (GM-59, 2026-10-14)
+**Where a support force acts.** Wright & Duncan (1991, TRR 1330 -- read in
+full) represent each reinforcement "as concentrated forces on the base of
+single slices" and include it in every equilibrium equation the procedure
+satisfies; Slide2 likewise applies "a force ... at the point of intersection
+of the slip surface with the support". So each nail / anchor / geosynthetic /
+pile force acts at the base of the slice it crosses:
+
+| Method | Moment about the centre | Vertical equilibrium of that slice | Horizontal equilibrium |
+|--------|------------------------|------------------------------------|------------------------|
+| Bishop's simplified | yes (signed) | yes: W -> W - Fz in the numerator, so the base normal and, where phi > 0, the strength change | not satisfied by the method |
+| Ordinary Method of Slices | yes (signed) | the component normal to the base adds to N | not satisfied |
+| Spencer / M-P / GLE / Janbu (`gle.py`) | exact | yes (base-normal equation) | yes (E march) |
+
+Wright & Duncan's conclusion 6: "In Bishop's simplified procedure, which
+satisfies vertical force equilibrium, the vertical components of the
+reinforcement forces should be included in the equations of vertical
+equilibrium" (they trace Low & Duncan's different results to leaving them
+out). Until GM-59 Bishop and the OMS counted only the moment, and its
+magnitude: an inclined support whose line of action passes on the far side
+of the centre counted as resisting. Now the moment is signed (the horizontal
+component taken as resisting, into the slope, as the GLE takes it) and the
+vertical / normal component enters the slice. On a circle only the force's
+component along the slip surface has a moment about the centre (the normal
+component passes through it), so a support crossing a steep part of the
+circle near the centre's level counts for little in Bishop's method -- that
+is the statics, and every method that satisfies moment equilibrium gives the
+same F on a phi = 0 circle (F_m does not depend on the interslice forces
+there).
+
+**Active or passive** (`support_convention` on `SoilNail`, `Anchor`,
+`Geosynthetic`, `StabilizingPile`; Duncan & Wright 2005 Ch. 8 Methods A/B;
+Slide2 "Active/Passive Force Application"):
+- `'active'` (**default**, Method A): F = soil resisting / (driving -
+  support). "The support force is NOT divided by the factor of safety ...
+  Only the soil strength is divided by the factor of safety. Hence the
+  support capacity input ... should be the ALLOWABLE support force" (Slide2).
+  "According to Duncan and Wright (2005), Method A is preferable, because the
+  soil strength and the reinforcement forces have different sources of
+  uncertainty, factoring them separately makes it possible to reflect these
+  differences." Tensioned tiebacks act on the mass before it moves.
+- `'passive'` (Method B): F = (soil resisting + support) / driving; "both
+  soil strength and support forces are divided by the factor of safety", so
+  the input is the ULTIMATE force. Here the force acts as T / F in every
+  equation above (its moment, its vertical and horizontal components).
+  Passive gives the lower F for the same force.
+Every method honours the choice (before GM-59 only Fellenius / Bishop, and
+only for piles; the GLE applied every support unfactored).
+
+**Reverse-curvature circles** (`SlopeGeometry.reverse_curvature`). A circle
+whose centre lies below the ground where it comes out rises past the
+centre's level and would turn back over itself. Slide2 calls these "reverse
+curvature" surfaces, which "cannot actually exist", and by default closes
+them with "a vertical tension crack where the slip surface begins to reverse
+direction (i.e. when the slip surface y-coordinate is equal to the slip
+center y-coordinate)", always dry; otherwise it discards them. The module has
+always done the former (`find_entry_exit` ends the circle where the arc is
+vertical, at the centre's level). Now: `'tension_crack'` (default, as
+Slide2 and as before) or `'discard'` (the searches drop such circles; a
+circle given to `analyze_slope` is still evaluated). A search whose
+governing circle is one says so in `warnings`, with the crack depth.
+
+**Bishop / OMS critical circle with supports at a short arm.** When the
+supports crossing a Bishop or OMS critical circle act with an average arm
+under half the radius (under half their force counted through the moment),
+the search warns, gives the share and what Spencer finds on the same circle
+(`search_supplements._support_arm_warning`).
+
+**Slide2 #85** (D&W 2005 Fig 6.34; c = 350 psf, phi = 0, 98 pcf, 20 ft face
+at 2V:1H on a rigid base, one 9,000 lb/ft support at mid-height):
+
+| | Module | Slide2 (circular) | D&W |
+|---|---:|---:|---:|
+| Active, on Slide2's printed GLE circle (15.446, 37.624, R 27.594): Bishop = Spencer = GLE | 1.564 | GLE 1.575 | 1.51 |
+| Active, Bishop search, default (reverse-curvature toe circle, 5.9 ft crack, arm 4.1 ft on R 14.1 ft) | 1.304 + warnings | 1.531 | 1.51 |
+| Active, Bishop search, `reverse_curvature='discard'` | 1.503 | 1.531 | 1.51 |
+| Active, Spencer search | 1.581 | 1.884 | |
+| Active, GLE search | 1.609 | 1.575 | |
+| Passive, Bishop on Slide2's active circle | 1.329 | | 1.32 |
+| Passive, Bishop search, default / `'discard'` | 1.208 / 1.305 | 1.324 | 1.32 |
+| Passive, Spencer search | 1.346 | 1.872 | |
+| Passive, GLE search | 1.379 | 1.378 | |
+
+The default Bishop search finds a lower F than Slide2 because it searches
+reverse-curvature toe circles (centre 6 ft below the crest), which Slide2
+would close the same way but its grid, placed above the slope, never
+generates; on that circle the support passes 4.1 ft below the centre and
+Spencer finds no lambda in -1.5 to 1.5 at which moment and force equilibrium
+give the same F. With such circles discarded the module reproduces D&W and
+Slide2. Slide2's Spencer (1.884 /
+1.872) is far above its own GLE: on a phi = 0 circle every converged
+moment-equilibrium method gives the same F, so its Spencer search must have
+found no solution on the lower circles; the module's Spencer converges there
+(GM-60) and gives values within the published spread.
+
+### GLE / Spencer with large point loads (GM-60, 2026-10-14)
+With a large support force the rigorous solver lost surfaces (Slide2 #85's
+own circle: Spencer and GLE fell back to the unreinforced legacy value 0.913;
+a search rejected it). Three causes, all in `gle.py`:
+1. **Starting value.** The fixed-point step F = resisting / driving was
+   abandoned when the driving term was <= 0 at the current estimate. With an
+   anchor the horizontal driving term is negative at a small trial F and
+   positive at the true one (the base normals grow with F through the
+   c*l*sin(alpha)/F term), so the step from the start F = 1.3 could not be
+   taken although the equation has a solution. With support forces the
+   state is now solved by the direct march below, F by a bracketed root
+   search (`_nearest_root`).
+2. **The lagged iteration.** For a fixed lambda the solver iterated
+   N -> F -> E -> X = lambda f E with X under-relaxed; with a concentrated
+   load at a slice base it swings between two states and diverges, and the
+   last state (returned after 80 steps) is not an equilibrium state: old
+   "converged" #85 answers had lambda 0.57 / 1.00 where the true crossing is
+   at 1.28 / beyond 1.5. With support forces present (lambda != 0) the state
+   is now found by the direct march (`_GLESystem._march`): for each slice,
+   vertical equilibrium (the base-normal equation) and horizontal
+   equilibrium with X_{i+1} = lambda f_{i+1} E_{i+1} are two linear equations
+   in N_i and E_{i+1}, solved slice by slice -- the Morgenstern-Price
+   recursion in the closed form of Zhu, Lee, Qian & Chen (2005, Can. Geotech.
+   J. 42: 272-278) -- and F_f is the F that closes the march (E_n = 0).
+3. **The lambda search.** A lambda with no equilibrium state ended the scan;
+   a bracket whose bisection did not close (F_f jumping between roots) was
+   reported as the answer; the bound +/-1.5 itself was never tried (15 steps
+   of 0.1 overshoot 1.5 by a rounding error); and no state at lambda = 0
+   meant no answer at all. With support forces: such lambdas are stepped
+   over, an unclosed bracket is passed over and the scan goes on, the bound
+   is tried, and the scan starts from the nearest lambda with a state.
+Without support forces nothing changes (the unreinforced path is
+byte-identical). The toe-circle family's rigorous re-scoring
+(`search_toe_circles`) now passes over a Bishop-shortlisted circle the
+rigorous method cannot solve and tries the next (up to 12), so anchored #85
+with Spencer finds toe circles again (1.584; before, none).
+
+Measured on #85's printed circle: Spencer 1.5641 at lambda 1.005 (theta 45
+deg), GLE half-sine 1.5641 at lambda 1.465, both equal to Bishop as they must
+be for phi = 0 (Slide2 GLE 1.575). Each slice's horizontal and vertical
+equilibrium closes to rounding (`test_search_reinforcement.py`); the old
+lagged state on the circle (15, 39.667, R 29.661), reported as converged,
+missed a slice's horizontal equilibrium by up to 199 lb/ft. Runtime of the
+#85 default searches (once each, shared laptop): Spencer 40 -> 37 s, GLE
+62 -> 32 s; #86 unchanged (Bishop 1.612, Spencer 1.606, GLE 1.606).
 
 ## Critical Sign Conventions
 - **Driving moment**: uses `W*(x_mid - xc)/R` + `abs(driving)`, NOT `W*sin(alpha)`
@@ -475,9 +619,10 @@ Unreinforced geometry: nothing is resolved and every solve is unchanged.
     a REDUCTION of the driving moment (Slide2 "Method A"); `'passive'` adds it to the
     RESISTING side instead (Slide2 "Method B"). Active gives a larger FOS gain for the
     same capacity (it shrinks the denominator), which slightly over-predicts vs a
-    passive pile; passive is the more conservative treatment. Only the circular moment
-    methods (Fellenius/Bishop) honour the convention — the rigorous GLE (Spencer/M-P)
-    applies the pile force as an external equilibrium force either way. On #54 the
+    passive pile; passive is the more conservative treatment. Until GM-59 only the
+    circular moment methods (Fellenius/Bishop) honoured the convention; now every
+    method does, and nails, anchors and geosynthetics take it too (see "Support
+    forces in each method" above). On #54 the
     passive option narrows the with-pile Bishop residual from +2.5% (active) to +0.8%
     vs the published 1.193 (VALIDATION.md B10 / RESULTS V-040-E6). Default 'active' is
     byte-identical. Implemented via `reinforcement.moment_resistance` /

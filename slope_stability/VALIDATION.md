@@ -267,17 +267,27 @@ F = tan phi' (cos b - kh sin b - ru/cos b)/(sin b + kh cos b):
 
 (The excess is Janbu's f0; 60 slices halve it.)
 
-### Reinforced searches (GM-53, 2026-10-14)
+### Reinforced searches (GM-53, GM-59, GM-60, 2026-10-14)
 Searches now score each trial surface WITH its reinforcement (before, every
-search returned the unreinforced critical).
+search returned the unreinforced critical). Since GM-59 each support acts at
+the base of the slice it crosses in every equation the method satisfies
+(Wright & Duncan 1991: Bishop counts its moment and its vertical component),
+active (Method A, default) or passive (Method B) in every method; since
+GM-60 Spencer / GLE solve a fixed-lambda state with support forces by the
+direct march. See DESIGN.md "Support forces in each method".
 
 | Case | Method | Search now | Published | Note |
 |------|--------|-----------:|----------:|------|
 | Slide2 #86, five 800 lb/ft tiebacks, windows entry 0-4 / exit 30-75 ft | Bishop | 1.612 | 1.629 (D&W 1.61) | -1.0 %; crosses all five |
 | same | Spencer | 1.606 | 1.620 | -0.9 % |
 | same | GLE | 1.606 | 1.622 | -1.0 % |
-| Slide2 #85, one 9,000 lb/ft support, active, default ranges | GLE | 1.581 | 1.575 (D&W 1.51) | +0.4 % |
-| same | Bishop | 1.304 | 1.531 | small toe circle centred 4 ft above the support; Bishop counts the support only through its moment arm about the centre |
+| Slide2 #85, one 9,000 lb/ft support, active, default ranges | GLE | 1.609 (GM-60; was 1.581 on a state not in equilibrium) | 1.575 (D&W 1.51) | +2.2 % |
+| same | Spencer | 1.581 (GM-60; was 1.605) | 1.884 | within the published spread 1.51-1.884 |
+| same | Bishop | 1.304 + warnings | 1.531 | reverse-curvature toe circle (centre 6 ft below the crest, 5.9 ft dry crack, as Slide2's default closes it); the support passes 4.1 ft below the centre, 29 % counted (GM-59) |
+| same, `reverse_curvature='discard'` | Bishop | 1.503 | 1.531 (D&W 1.51) | -1.8 % / -0.5 % |
+| same, on Slide2's printed GLE circle | Bishop = Spencer = GLE | 1.564 | GLE 1.575 | Spencer / GLE fell back to the unreinforced 0.913 before GM-60 |
+| Slide2 #85, passive (Method B) | Bishop, discard / default | 1.305 / 1.208 | 1.324 (D&W 1.32) | -1.4 % (discard) |
+| same | Spencer / GLE | 1.346 / 1.379 | 1.872 / 1.378 | GLE +0.1 % |
 | ACADS 1(a) + 200 kN/m geosynthetic at el 29 | Bishop | 1.123 | (no reference) | unreinforced 0.985; the critical now avoids the geosynthetic |
 
 V-043 (Slide2 #39 sand fill): the published reinforcement force is the force that

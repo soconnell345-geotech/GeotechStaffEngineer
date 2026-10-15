@@ -21,6 +21,7 @@ _STRENGTH_MODELS = ["mohr_coulomb", "shansep", "hoek_brown", "anisotropic"]
 _NEWMARK_POLARITY = ["downslope", "rectified"]
 _CRACK_SIDES = ["entry", "exit"]
 _CRACK_MODELS = ["strength", "truncation"]
+_REVERSE_CURVATURE = ["tension_crack", "discard"]
 
 
 # Top-level geometry params consumed by _build_geometry, and the trial-surface
@@ -31,7 +32,7 @@ _GEOM_PARAMS = (
     "kh", "nails", "anchors", "geosynthetics", "stabilizing_piles",
     "tension_crack_depth", "tension_crack_water_depth",
     "tension_crack_side", "tension_crack_model", "pore_pressure_points",
-    "surcharges",
+    "surcharges", "reverse_curvature",
 )
 _SURFACE_PARAMS = ("xc", "yc", "radius", "slip_points")
 
@@ -41,6 +42,13 @@ def _check_choice(value, allowed, *, name: str, method: str):
         raise ValueError(
             f"{method}: invalid {name} '{value}'. Allowed: {allowed}.")
     return value
+
+
+def _support_convention(d: dict, kind: str, method: str) -> str:
+    """A support's 'active' (default, Method A) or 'passive' (Method B)."""
+    return _check_choice(d.get("support_convention", "active"),
+                         ["active", "passive"],
+                         name=f"{kind}[].support_convention", method=method)
 
 
 def _fields(cls) -> tuple:
@@ -187,6 +195,9 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
     crack_side = _check_choice(params.get("tension_crack_side", "entry"),
                                _CRACK_SIDES, name="tension_crack_side",
                                method=method)
+    reverse_curvature = _check_choice(
+        params.get("reverse_curvature", "tension_crack"), _REVERSE_CURVATURE,
+        name="reverse_curvature", method=method)
     crack_model = _check_choice(params.get("tension_crack_model", "strength"),
                                 _CRACK_MODELS, name="tension_crack_model",
                                 method=method)
@@ -220,6 +231,7 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
                 fy=d.get("fy", 420.0),
                 bond_stress=d.get("bond_stress", 100.0),
                 spacing_h=d.get("spacing_h", 1.5),
+                support_convention=_support_convention(d, "nails", method),
             ))
     anchors = None
     if params.get("anchors"):
@@ -234,6 +246,7 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
                 x_head=d["x_head"], z_head=d["z_head"], length=d["length"],
                 T_allow=d["T_allow"],
                 inclination=d.get("inclination", 15.0),
+                support_convention=_support_convention(d, "anchors", method),
             ))
     geosynthetics = None
     if params.get("geosynthetics"):
@@ -247,6 +260,8 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
             geosynthetics.append(Geosynthetic(
                 elevation=d["elevation"], T_allow=d["T_allow"],
                 x_start=d.get("x_start"), x_end=d.get("x_end"),
+                support_convention=_support_convention(d, "geosynthetics",
+                                                       method),
             ))
 
     stabilizing_piles = None
@@ -257,10 +272,7 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
             check_nested_keys(d, _fields(StabilizingPile), method=method,
                               label=f"stabilizing_piles[{i}]")
             require_keys(d, ["x"], method=method, item_label="stabilizing_piles[]")
-            _check_choice(d.get("support_convention", "active"),
-                          ["active", "passive"],
-                          name="stabilizing_piles[].support_convention",
-                          method=method)
+            _support_convention(d, "stabilizing_piles", method)
             stabilizing_piles.append(StabilizingPile(
                 x=d["x"], shear_capacity=d.get("shear_capacity"),
                 spacing=d.get("spacing", 1.0), z_head=d.get("z_head"),
@@ -283,6 +295,7 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
         tension_crack_depth=params.get("tension_crack_depth", 0.0),
         tension_crack_water_depth=params.get("tension_crack_water_depth", 0.0),
         tension_crack_side=crack_side, tension_crack_model=crack_model,
+        reverse_curvature=reverse_curvature,
         pore_pressure_points=pore_pressure_points, surcharges=surcharges,
     )
 
@@ -597,11 +610,12 @@ _GEOMETRY_PARAMS = {
     "tension_crack_water_depth": {"type": "float", "required": False, "default": 0.0, "description": "Water depth in the tension crack (m)."},
     "tension_crack_side": {"type": "str", "required": False, "default": "entry", "allowed_values": _CRACK_SIDES, "description": "Which crest end the tension crack is on: 'entry' (default, low-x / slip-surface entry) or 'exit' (high-x). Put it on whichever side the crest is on; no need to mirror the slope."},
     "tension_crack_model": {"type": "str", "required": False, "default": "strength", "allowed_values": _CRACK_MODELS, "description": "Tension-crack mechanism: 'strength' (default) keeps the cracked wedge as zero-shear-strength driving soil; 'truncation' removes it from the sliding mass (mass ends at the vertical crack face, as Slide2/UTEXAS do). Truncation is less conservative."},
+    "reverse_curvature": {"type": "str", "required": False, "default": "tension_crack", "allowed_values": _REVERSE_CURVATURE, "description": "A circle whose centre is below the ground where it comes out would turn back above its centre (Slide2: reverse curvature). 'tension_crack' (default, as Slide2) closes it with a dry vertical crack; 'discard' drops such circles from searches."},
     "pore_pressure_points": {"type": "array", "required": False, "description": "Discrete pore-pressure field as [[x, z, u], ...] triples (u in kPa) -- a flow-net / TIN sampling. When given, the base pore pressure at each slice is interpolated from this field (linear on the Delaunay triangulation, nearest-node fallback outside the hull, suction clamped to 0), OVERRIDING the gwt_points piezometric line and per-layer ru. The ponded-water buttress still comes from gwt_points, so set BOTH for a reservoir over a flow-net field."},
-    "nails": {"type": "array", "required": False, "description": "Soil nails (per metre of slope run): [{x_head, z_head, length required; inclination deg below horizontal=15, bar_diameter mm=25, drill_hole_diameter mm=150, fy MPa=420, bond_stress kPa=100, spacing_h m=1.5}]. Capacity = min(pullout behind slip surface, bar tensile)/spacing_h (FHWA GEC-7)."},
-    "anchors": {"type": "array", "required": False, "description": "Tieback anchors: [{x_head, z_head, length, T_allow kN/m required; inclination=15}]. Full T_allow applied when the bond zone crosses the slip surface."},
-    "geosynthetics": {"type": "array", "required": False, "description": "Horizontal geosynthetic layers: [{elevation, T_allow kN/m required; x_start, x_end optional}]."},
-    "stabilizing_piles": {"type": "array", "required": False, "description": "Single-row stabilizing/micro piles crossing the slope (Ito & Matsui 1975 or a specified shear): [{x required; spacing m=1.0 (D1); z_head, z_toe optional}]. Set the resistance EITHER by shear_capacity (kN per pile; per-metre force = shear_capacity/spacing) OR ito_matsui=true with diameter (m; D2=spacing-diameter) and optional c/phi/gamma (default: soil layer) giving the Ito-Matsui plastic lateral force integrated from head to slip surface. force_direction 'horizontal' (default) or 'normal'. support_convention 'active' (default; the force reduces the driving moment, Slide2 Method A) or 'passive' (added to the resisting side, Method B; more conservative -- affects the circular moment methods Fellenius/Bishop). Stabilizing force at the slip crossing."},
+    "nails": {"type": "array", "required": False, "description": "Soil nails (per metre of slope run): [{x_head, z_head, length required; inclination deg below horizontal=15, bar_diameter mm=25, drill_hole_diameter mm=150, fy MPa=420, bond_stress kPa=100, spacing_h m=1.5, support_convention}]. Capacity = min(pullout behind slip surface, bar tensile)/spacing_h (FHWA GEC-7)."},
+    "anchors": {"type": "array", "required": False, "description": "Tieback anchors: [{x_head, z_head, length, T_allow kN/m required; inclination=15, support_convention}]. Full T_allow applied when the bond zone crosses the slip surface."},
+    "geosynthetics": {"type": "array", "required": False, "description": "Horizontal geosynthetic layers: [{elevation, T_allow kN/m required; x_start, x_end, support_convention optional}]. Every support (nails, anchors, geosynthetics, piles) acts at the base of the slice it crosses (Wright & Duncan 1991). support_convention: 'active' (default; Duncan & Wright Method A / Slide2 Active: the force is not divided by F and reduces the driving side -- give the ALLOWABLE force) or 'passive' (Method B / Slide2 Passive: divided by F with the soil strength -- give the ULTIMATE force; lower FOS for the same force). All methods."},
+    "stabilizing_piles": {"type": "array", "required": False, "description": "Single-row stabilizing/micro piles crossing the slope (Ito & Matsui 1975 or a specified shear): [{x required; spacing m=1.0 (D1); z_head, z_toe optional}]. Set the resistance EITHER by shear_capacity (kN per pile; per-metre force = shear_capacity/spacing) OR ito_matsui=true with diameter (m; D2=spacing-diameter) and optional c/phi/gamma (default: soil layer) giving the Ito-Matsui plastic lateral force integrated from head to slip surface. force_direction 'horizontal' (default) or 'normal'. support_convention 'active' (default) or 'passive' as for geosynthetics. Stabilizing force at the slip crossing."},
     "reinforcement_force": {"type": "float", "required": False, "default": 0.0, "description": "Single equivalent horizontal reinforcement force (kN/m). Simpler alternative to nails/anchors."},
     "reinforcement_elevation": {"type": "float", "required": False, "description": "Elevation of the equivalent reinforcement force (m)."},
 }

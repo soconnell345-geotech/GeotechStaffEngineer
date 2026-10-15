@@ -360,8 +360,20 @@ class SlopeGeometry:
     # models. The ponded-water buttress is still driven by ``gwt_points`` (set
     # both for a pool over a flow-net field). Default None = unchanged.
     pore_pressure_points: Optional[List[Tuple[float, float, float]]] = None
+    # Circles whose centre lies below the ground where they come out would
+    # turn back above their own centre ("reverse curvature" surfaces in
+    # Slide2, which "cannot actually exist"). 'tension_crack' (default, as
+    # Slide2's default "Create tension crack for reverse curvature", and as
+    # this module has always done) closes such a surface with a vertical,
+    # dry crack from the centre's level to the ground; 'discard' makes the
+    # searches drop them (Slide2's other choice). ``analyze_slope`` always
+    # evaluates a circle it is given. GM-59.
+    reverse_curvature: str = "tension_crack"
 
     def __post_init__(self):
+        if self.reverse_curvature not in ("tension_crack", "discard"):
+            raise ValueError("reverse_curvature must be 'tension_crack' or "
+                             f"'discard', got '{self.reverse_curvature}'")
         if len(self.surface_points) < 2:
             raise ValueError("Surface must have at least 2 points")
         xs = [p[0] for p in self.surface_points]

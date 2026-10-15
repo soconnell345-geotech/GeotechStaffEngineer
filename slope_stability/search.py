@@ -330,6 +330,13 @@ def _compute_fos(geom: SlopeGeometry,
                 return _FOS_MAX
             return fos
 
+        # A reverse-curvature circle (its centre below the ground where it
+        # comes out) is closed by a dry crack unless the geometry asks for
+        # such circles to be discarded (Slide2's two choices; GM-59).
+        if (getattr(geom, "reverse_curvature", "tension_crack") == "discard"
+                and slip.reverse_curvature_crack(geom) is not None):
+            return _FOS_MAX
+
         if fos_fn is not None:
             fos = fos_fn(geom, slip)
         elif method == "fellenius":

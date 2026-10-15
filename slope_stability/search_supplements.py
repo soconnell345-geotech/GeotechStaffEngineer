@@ -60,6 +60,10 @@ _MAX_TOE_FACES = 3
 # many of the best circles with the method itself.
 _SCREENED_METHODS = ("spencer", "morgenstern_price", "gle")
 _N_RESCORE = 3
+# A circle the rigorous method finds no solution on (large point loads:
+# GM-60) does not count toward _N_RESCORE; the next one down the Bishop
+# shortlist is tried instead, up to this many in all.
+_MAX_RESCORE_TRIES = 12
 
 # Infinite-slope family: shallow planar surfaces parallel to the face, at a
 # vertical depth of 1/_PLANAR_DEPTH_SLICES of a slice width. The short end
@@ -203,7 +207,9 @@ def search_toe_circles(geom: SlopeGeometry,
     Morgenstern-Price / GLE scan with Bishop (the same critical circles to
     about 1 % and some 30 times cheaper) and re-optimize the best
     ``_N_RESCORE`` circles with the method itself; the reported FOS is
-    always the method's own.
+    always the method's own. A circle on which the rigorous method has no
+    solution (a large support force can leave a small circle with none)
+    is passed over for the next one down the list.
 
     ``x_entry_range`` / ``x_exit_range`` / ``x_range`` / ``y_range`` are
     CALLER-GIVEN constraints only (pass None for automatic ones).
@@ -341,9 +347,13 @@ def search_toe_circles(geom: SlopeGeometry,
     shortlist.sort(key=lambda c: c[0])
     if scan_method != method:
         rescored = []
-        for _fos, ch, u in shortlist[:_N_RESCORE]:
+        n_ok = 0
+        for _fos, ch, u in shortlist[:_MAX_RESCORE_TRIES]:
             fos, u2 = chord_best(ch, method, (u - u_step, u + u_step))
             rescored.append((fos, ch, u2))
+            n_ok += fos < _FOS_MAX
+            if n_ok >= _N_RESCORE:
+                break
         shortlist = sorted(rescored, key=lambda c: c[0])
 
     best = {"FOS": _FOS_MAX, "xc": 0.0, "yc": 0.0, "radius": 0.0,
@@ -593,8 +603,95 @@ def _attach_reinforcement(geom, crit) -> None:
     crit.reinforcements = [
         {"kind": f.kind, "index": f.index,
          "x_m": round(f.x, 3), "z_m": round(f.z, 3),
-         "T_kN_per_m": round(f.T, 2), "controlled_by": f.controlled_by}
+         "T_kN_per_m": round(f.T, 2), "controlled_by": f.controlled_by,
+         "support_convention": "passive" if f.passive else "active"}
         for f in (forces or [])] or None
+
+
+def _reverse_curvature_warning(geom, crit) -> Optional[str]:
+    """Say so when the governing circle is a reverse-curvature surface
+    closed by a crack (``CircularSlipSurface.reverse_curvature_crack``)."""
+    if crit is None or not crit.is_circular or crit.radius <= 0:
+        return None
+    crack = CircularSlipSurface(crit.xc, crit.yc, crit.radius) \
+        .reverse_curvature_crack(geom, crit.x_entry, crit.x_exit)
+    if crack is None:
+        return None
+    return (f"The critical circle's centre (z = {crit.yc:.2f}) lies below the "
+            f"ground where the circle ends (x = {crack['x']:.2f}, ground "
+            f"z = {crack['z_ground']:.2f}): the circle would turn back above "
+            f"its own centre there, so the surface is closed by a vertical, "
+            f"dry crack {crack['depth']:.2f} m deep that carries no shear. "
+            f"Slide2 calls this a reverse-curvature surface and closes it the "
+            f"same way by default; its factor of safety depends on that crack "
+            f"being able to open. reverse_curvature='discard' drops such "
+            f"circles from the search (Slide2's other choice).")
+
+
+# Below this share of their force acting through the moment about the centre
+# (arm / R), the supports crossing a Bishop / Fellenius critical circle get a
+# warning: more of their force then lies in horizontal equilibrium, which
+# those methods do not satisfy, than in the moment they count (GM-59).
+_SHORT_ARM_SHARE = 0.5
+
+
+def _support_arm_warning(geom, crit, method: str, n_slices: int,
+                         tol: float) -> Optional[str]:
+    """Warn when supports cross a Bishop / Fellenius critical circle close
+    to the level of its centre, so the method counts little of them.
+
+    Bishop's simplified method satisfies moment equilibrium about the circle
+    centre and vertical force equilibrium of each slice, not horizontal
+    force equilibrium (Bishop 1955; Wright & Duncan 1991); a support counts
+    through its moment about the centre (its component along the slip
+    surface times R) and its vertical component. The warning gives the
+    share counted and what Spencer, which satisfies all three, finds on the
+    same circle."""
+    if (crit is None or not crit.is_circular
+            or method not in ("bishop", "fellenius")):
+        return None
+    from slope_stability.search import trial_reinforcement, _compute_fos, \
+        _FOS_MAX
+    from slope_stability.slices import build_slices
+    from slope_stability.reinforcement import support_moment
+    slip = CircularSlipSurface(crit.xc, crit.yc, crit.radius)
+    try:
+        forces = trial_reinforcement(geom, slip)
+        slices = build_slices(geom, slip, n_slices)
+    except ValueError:
+        return None
+    if not forces or not slices:
+        return None
+    grav = sum((s.weight + s.surcharge_force) * (s.x_mid - slip.xc)
+               for s in slices)
+    d_sign = 1.0 if grav >= 0 else -1.0
+    t_sum = sum(f.T for f in forces)
+    if t_sum <= 0:
+        return None
+    m_sum = sum(d_sign * support_moment(f, slip.xc, slip.yc, d_sign)
+                for f in forces)
+    share = m_sum / (slip.radius * t_sum)
+    if share >= _SHORT_ARM_SHARE:
+        return None
+    arm = m_sum / t_sum
+    spencer = _compute_fos(geom, slip, "spencer", n_slices, tol=tol)
+    if spencer < _FOS_MAX:
+        rigorous = (f"Spencer's method, which satisfies all three, gives "
+                    f"{spencer:.3f} on this circle")
+    else:
+        rigorous = ("Spencer's method, which satisfies all three, finds no "
+                    "equilibrium solution on this circle (no lambda gives "
+                    "moment and force factors of safety that agree)")
+    name = "Bishop's simplified method" if method == "bishop" else \
+        "The Ordinary Method of Slices"
+    return (f"{name} counts a support through its moment about the circle "
+            f"centre (and its vertical component), not through horizontal "
+            f"force equilibrium, which it does not satisfy (Wright & Duncan "
+            f"1991). The {len(forces)} support(s) crossing the critical "
+            f"circle ({t_sum:.1f} kN/m) act with an average arm of "
+            f"{arm:.2f} m about its centre on a {slip.radius:.2f} m radius: "
+            f"{100 * share:.0f} % of their force counts. {rigorous}. Check "
+            f"the slope with method='spencer' or 'gle'.")
 
 
 def _near(a: float, b: float, tol: float) -> bool:
@@ -775,6 +872,17 @@ def apply_supplements(geom: SlopeGeometry,
         given = (x_entry_range, x_exit_range)
         warnings_out.extend(_edge_warnings(
             geom, best, given, (False, False), None, grid_auto))
+
+    # The governing circle closed by a crack at its own centre's level, and
+    # supports a moment-only method counts little of (GM-59).
+    if best is not None and best_kind != INFINITE_SLOPE:
+        w = _reverse_curvature_warning(geom, best)
+        if w:
+            warnings_out.append(w)
+        if fos_fn is None:
+            w = _support_arm_warning(geom, best, method, n_slices, tol)
+            if w:
+                warnings_out.append(w)
 
     _attach_reinforcement(geom, best)
     result.critical = best

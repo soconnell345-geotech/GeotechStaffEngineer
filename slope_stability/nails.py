@@ -41,6 +41,13 @@ class SoilNail:
         Ultimate bond stress along grout-soil interface (kPa). Default 100.
     spacing_h : float
         Horizontal spacing between nails (m). Default 1.5.
+    support_convention : str
+        'active' (default; Duncan & Wright Method A, Slide2 "Active"): the
+        nail force is applied unfactored and reduces the driving side, so
+        give an ALLOWABLE capacity. 'passive' (Method B, Slide2 "Passive"):
+        the nail force is divided by the factor of safety like the soil
+        strength, so give an ULTIMATE capacity. See
+        ``slope_stability.reinforcement``.
     """
     x_head: float
     z_head: float
@@ -51,8 +58,12 @@ class SoilNail:
     fy: float = 420.0
     bond_stress: float = 100.0
     spacing_h: float = 1.5
+    support_convention: str = "active"
 
     def __post_init__(self):
+        if self.support_convention not in ("active", "passive"):
+            raise ValueError("support_convention must be 'active' or "
+                             f"'passive', got '{self.support_convention}'")
         if self.length <= 0:
             raise ValueError(f"Nail length must be positive, got {self.length}")
         if self.inclination < -90 or self.inclination > 90:

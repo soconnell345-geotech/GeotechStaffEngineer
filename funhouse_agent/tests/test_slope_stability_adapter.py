@@ -222,6 +222,39 @@ class TestReinforcement:
                 stabilizing_piles=[{"x": 35.0, "shear_capacity": 120.0,
                                     "support_convention": "bogus"}]))
 
+    @pytest.mark.parametrize("kind,item", [
+        ("anchors", {"x_head": 34.0, "z_head": 17.0, "length": 25.0,
+                     "T_allow": 150.0}),
+        ("nails", {"x_head": 30.0, "z_head": 15.0, "length": 22.0,
+                   "bond_stress": 120.0}),
+        ("geosynthetics", {"elevation": 12.0, "T_allow": 60.0}),
+    ])
+    @pytest.mark.parametrize("method", ["bishop", "spencer"])
+    def test_support_convention_on_every_support(self, kind, item, method):
+        """GM-59: nails, anchors and geosynthetics take support_convention
+        too (Duncan & Wright Method A / B), honoured by every method."""
+        fos = {}
+        for conv in ("active", "passive"):
+            fos[conv] = METHOD_REGISTRY["analyze_slope"](_base(
+                method=method,
+                **{kind: [dict(item, support_convention=conv)]}))["FOS"]
+        plain = METHOD_REGISTRY["analyze_slope"](_base(method=method))["FOS"]
+        assert plain < fos["passive"] < fos["active"]
+        with pytest.raises(ValueError, match=rf"{kind}\[\].support_convention"):
+            METHOD_REGISTRY["analyze_slope"](_base(
+                **{kind: [dict(item, support_convention="method_b")]}))
+
+    def test_reverse_curvature_option(self):
+        """GM-59: reverse_curvature='discard' reaches the geometry; a bad
+        value is refused."""
+        p = _no_circle(_base(method="bishop", nx=4, ny=4))
+        r = METHOD_REGISTRY["search_critical_surface"](
+            dict(p, reverse_curvature="discard"))
+        assert r["critical"]["FOS"] > 0.5
+        with pytest.raises(ValueError, match="reverse_curvature"):
+            METHOD_REGISTRY["search_critical_surface"](
+                dict(p, reverse_curvature="keep"))
+
 
 # ----------------------------------------------------------------------------
 # Strength models + ponded water

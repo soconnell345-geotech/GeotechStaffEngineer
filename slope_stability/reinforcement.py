@@ -7,11 +7,53 @@ contributes an allowable tension T (kN per metre of slope run) applied at
 the crossing point, directed along the element toward its anchorage
 (into the stable zone).
 
-Convention: ACTIVE (Method A): T is applied as an unfactored external
-force in the equilibrium equations — it reduces the driving moment/force
-rather than being added to the (strength-factored) resisting side. This
-matches the FHWA GEC-7 recommendation for allowable nail forces and
-Slide2's "Active" reinforcement convention.
+Where the force acts (Wright & Duncan 1991). Each support is a
+concentrated force applied at the base of the slice whose base it crosses
+(Slide2: "a force is applied at the point of intersection of the slip
+surface with the support"). It enters every equilibrium equation the method
+satisfies:
+
+* Bishop's simplified method: the moment about the circle centre, and the
+  VERTICAL component in that slice's vertical force equilibrium, so it
+  changes the base normal force and, where phi > 0, the shear strength.
+  The horizontal component enters no equation Bishop satisfies except the
+  moment. Wright & Duncan (1991), conclusion 6: "In Bishop's simplified
+  procedure, which satisfies vertical force equilibrium, the vertical
+  components of the reinforcement forces should be included in the
+  equations of vertical equilibrium."
+* Ordinary Method of Slices (Fellenius): the moment about the centre, and
+  the component normal to the slice base in that slice's normal force.
+* Spencer / Morgenstern-Price / GLE / Janbu (``gle.py``): the horizontal
+  component in that slice's horizontal equilibrium, the vertical component
+  in its vertical equilibrium, and the moment exactly.
+
+In the circular methods the moment is the signed moment of the force about
+the centre, with the horizontal component taken as resisting (into the
+slope) as the GLE takes it: an inclined support whose line of action passes
+on the far side of the centre adds to the driving moment, as it does in the
+GLE. On a circle that moment is the support's component along the slip
+surface times R, so a support crossing a steep part of the circle close to
+the level of the centre counts for little in Bishop's method (the warning
+in ``search_supplements._support_arm_warning``). Until 2026-10-14 the
+circular methods took the moment's magnitude, so such a support counted as
+stabilizing, and left the vertical component out of the base normal
+(GM-59).
+
+Active or passive (Duncan & Wright 2005, Ch. 8, Methods A and B; Slide2
+"Active/Passive Force Application"), per element (``support_convention``):
+
+* 'active' (DEFAULT, Method A): F = soil resisting / (driving - support).
+  The support force is NOT divided by the factor of safety, so the input is
+  the ALLOWABLE force. Duncan & Wright prefer it: "the soil strength and the
+  reinforcement forces have different sources of uncertainty, factoring them
+  separately makes it possible to reflect these differences" (as quoted by
+  Slide2). Tiebacks and pretensioned anchors act this way.
+* 'passive' (Method B): F = (soil resisting + support) / driving. "Both soil
+  strength and support forces are divided by the factor of safety", so the
+  input is the ULTIMATE force. Here the support force acts as T / F in every
+  equilibrium equation above (its moment, its vertical and its horizontal
+  component). Slide2: passive "will always give a lower Factor of Safety
+  than Active support" for the same force.
 
 Nail capacity per GEC-7: T = min(pullout, tensile) where
 pullout = bond_stress * pi * D_drillhole * L_behind (length beyond the
@@ -20,10 +62,15 @@ spacing to give per-metre-run values.
 
 References
 ----------
+Wright, S.G. & Duncan, J.M. (1991). "Limit equilibrium stability analyses
+    for reinforced slopes." Transportation Research Record 1330, 40-46.
+Duncan, J.M. & Wright, S.G. (2005); Duncan, Wright & Brandon (2014). Soil
+    Strength and Slope Stability, Ch. 8 (Methods A and B).
+Rocscience Slide2 help: "Active/Passive Force Application" and "Overview of
+    Support Implementation".
 Lazarte et al. (2003) — FHWA GEC-7: Soil Nail Walls (also in-house
     geotech-references/gec_7).
 Byrne et al. (1998) — FHWA-SA-96-069R Soil Nailing Manual.
-Rocscience Slide2 documentation — reinforcement conventions.
 """
 
 import math
@@ -31,6 +78,14 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 from slope_stability.nails import SoilNail
+
+SUPPORT_CONVENTIONS = ("active", "passive")
+
+
+def _check_convention(value: str) -> None:
+    if value not in SUPPORT_CONVENTIONS:
+        raise ValueError("support_convention must be 'active' or 'passive', "
+                         f"got '{value}'")
 
 
 @dataclass
@@ -48,15 +103,21 @@ class Geosynthetic:
         surface (standard simple treatment).
     x_start, x_end : float, optional
         Horizontal extent. Defaults to unbounded.
+    support_convention : str
+        'active' (default, Method A: the force reduces the driving side,
+        give the allowable force) or 'passive' (Method B: the force is
+        divided by the factor of safety, give the ultimate force).
     """
     elevation: float
     T_allow: float
     x_start: Optional[float] = None
     x_end: Optional[float] = None
+    support_convention: str = "active"
 
     def __post_init__(self):
         if self.T_allow <= 0:
             raise ValueError(f"T_allow must be positive, got {self.T_allow}")
+        _check_convention(self.support_convention)
 
 
 @dataclass
@@ -76,18 +137,25 @@ class Anchor:
         contributes full T_allow when it crosses the slip surface with
         its bond zone beyond it (no pullout model — use SoilNail for
         bond-controlled elements).
+    support_convention : str
+        'active' (default, Method A: the force reduces the driving side,
+        give the allowable force; a tensioned tieback acts on the mass
+        before it moves) or 'passive' (Method B: the force is divided by
+        the factor of safety, give the ultimate force).
     """
     x_head: float
     z_head: float
     length: float
     T_allow: float
     inclination: float = 15.0
+    support_convention: str = "active"
 
     def __post_init__(self):
         if self.length <= 0:
             raise ValueError(f"length must be positive, got {self.length}")
         if self.T_allow <= 0:
             raise ValueError(f"T_allow must be positive, got {self.T_allow}")
+        _check_convention(self.support_convention)
 
 
 @dataclass
@@ -132,15 +200,14 @@ class StabilizingPile:
         'horizontal' (default) or 'normal' (perpendicular to the slip surface
         at the crossing).
     support_convention : str
-        How the pile force enters the circular moment methods (Fellenius /
-        Bishop): 'active' (**default**) applies the unfactored force as a
-        REDUCTION of the driving moment (Slide2 "Method A"); 'passive' adds it to
-        the RESISTING side instead (Slide2 "Method B"). Active gives a larger FOS
-        gain for the same force (it shrinks the denominator); passive is the more
-        conservative treatment matching a pile mobilised only as the mass moves.
-        Only affects the circular moment methods; the rigorous GLE (Spencer /
-        Morgenstern-Price) applies the pile force as an external equilibrium force
-        either way. Default 'active' is byte-identical to earlier behaviour.
+        'active' (**default**, Duncan & Wright Method A, Slide2 "Active")
+        applies the unfactored force, reducing the driving side; 'passive'
+        (Method B, Slide2 "Passive") divides it by the factor of safety, on
+        the resisting side. Active gives a larger FOS gain for the same
+        force; passive is the more conservative treatment matching a pile
+        mobilised only as the mass moves. Every method honours it (since
+        GM-59; the rigorous GLE used to apply the pile force unfactored
+        either way).
     """
     x: float
     shear_capacity: Optional[float] = None
@@ -188,15 +255,16 @@ class ReinforcementForce:
         Unit direction of the force ON the sliding mass (toward the
         anchorage / stable zone).
     kind : str
-        'nail', 'anchor', or 'geosynthetic'.
+        'nail', 'anchor', 'geosynthetic' or 'pile'.
     index : int
         Index within its input list.
     controlled_by : str
-        'pullout', 'tensile', or 'allowable'.
+        'pullout', 'tensile', 'allowable', 'shear_capacity' or 'ito_matsui'.
     passive : bool
-        If True, the force is applied with the PASSIVE convention (added to the
-        resisting side of the circular moment methods) rather than the default
-        ACTIVE convention (reducing the driving side). Default False (active).
+        If True, the force is applied with the PASSIVE convention (Method B:
+        divided by the factor of safety, on the resisting side) rather than
+        the default ACTIVE convention (Method A: unfactored, reducing the
+        driving side). Default False (active).
     """
     x: float
     z: float
@@ -403,7 +471,8 @@ def compute_reinforcement_forces(geom, slip,
             T, ctrl = T_tens, "tensile"
         forces.append(ReinforcementForce(
             x=x_int, z=z_int, T=T, dir_x=dx, dir_z=dz,
-            kind="nail", index=i, controlled_by=ctrl))
+            kind="nail", index=i, controlled_by=ctrl,
+            passive=(nail.support_convention == "passive")))
 
     anchors = getattr(geom, "anchors", None) or []
     for i, a in enumerate(anchors):
@@ -417,7 +486,8 @@ def compute_reinforcement_forces(geom, slip,
             continue  # bond zone not beyond the surface
         forces.append(ReinforcementForce(
             x=x_int, z=z_int, T=a.T_allow, dir_x=dx, dir_z=dz,
-            kind="anchor", index=i, controlled_by="allowable"))
+            kind="anchor", index=i, controlled_by="allowable",
+            passive=(a.support_convention == "passive")))
 
     geos = list(getattr(geom, "geosynthetics", None) or [])
     # Legacy single horizontal reinforcement force on SlopeGeometry
@@ -472,7 +542,9 @@ def compute_reinforcement_forces(geom, slip,
             dir_x = 1.0
         forces.append(ReinforcementForce(
             x=crossing, z=g.elevation, T=g.T_allow, dir_x=dir_x, dir_z=0.0,
-            kind="geosynthetic", index=i, controlled_by="allowable"))
+            kind="geosynthetic", index=i, controlled_by="allowable",
+            passive=(getattr(g, "support_convention", "active")
+                     == "passive")))
 
     piles = getattr(geom, "stabilizing_piles", None) or []
     for i, p in enumerate(piles):
@@ -525,42 +597,116 @@ def compute_reinforcement_forces(geom, slip,
 
 
 # ---------------------------------------------------------------------------
-# Contributions for the classical methods (active convention)
+# Contributions for the classical methods (Fellenius, Bishop)
 # ---------------------------------------------------------------------------
 
-def _moment_arm_sum(forces, xc, yc, radius, *, passive: bool) -> float:
-    """Sum of T*d_perp/R over the forces matching the ``passive`` flag."""
+def support_components(f: ReinforcementForce,
+                       d_sign: float) -> Tuple[float, float]:
+    """(Fx, Fz) of a support force on the sliding mass, Fz up-positive.
+
+    The horizontal component is taken as resisting — pointing into the
+    slope, against the sliding — as the rigorous GLE takes it
+    (``gle._assign_reinforcement``); ``d_sign`` is +1 when the mass slides
+    toward -x (crest on the right), -1 when it slides toward +x. The
+    vertical component keeps its sign (a nail inclined downward pulls the
+    mass down onto its base)."""
+    return (d_sign * f.T * abs(f.dir_x), f.T * f.dir_z)
+
+
+def support_moment(f: ReinforcementForce, xc: float, yc: float,
+                   d_sign: float) -> float:
+    """Signed moment of a support force about (xc, yc), counter-clockwise
+    positive (kN*m per m): (x - xc)*Fz - (z - yc)*Fx, with the components of
+    ``support_components``.
+
+    On a circle only the force's component along the slip surface where it
+    crosses has a moment about the centre (the normal component passes
+    through it), so this is that component times R: a support crossing a
+    steep part of the circle, close to the level of the centre, has a short
+    arm and little moment."""
+    fx, fz = support_components(f, d_sign)
+    return (f.x - xc) * fz - (f.z - yc) * fx
+
+
+def _moment_arm_sum(forces, xc, yc, radius, *, passive: bool,
+                    d_sign: Optional[float] = None) -> float:
+    """Sum of the support moments / R over the forces matching ``passive``.
+
+    With ``d_sign`` (+1 when the mass turns clockwise about the centre, i.e.
+    the gravity moment sum of W*(x - xc) is positive; -1 otherwise) the
+    moment is SIGNED, positive where it resists the sliding: an inclined
+    support whose line of action passes on the far side of the centre adds
+    to the driving moment, as in the rigorous GLE. Without it (``None``) the
+    magnitude of the arm is taken, every support counted as resisting: the
+    form the circular methods used until GM-59."""
     total = 0.0
     for f in forces:
         if bool(f.passive) is not passive:
             continue
-        d_perp = abs((f.x - xc) * f.dir_z - (f.z - yc) * f.dir_x)
-        total += f.T * d_perp / radius
+        if d_sign is None:
+            d_perp = abs((f.x - xc) * f.dir_z - (f.z - yc) * f.dir_x)
+            total += f.T * d_perp / radius
+        else:
+            total += d_sign * support_moment(f, xc, yc, d_sign) / radius
     return total
 
 
 def moment_reduction(forces: List[ReinforcementForce],
-                     xc: float, yc: float, radius: float) -> float:
+                     xc: float, yc: float, radius: float,
+                     d_sign: Optional[float] = None) -> float:
     """Reduction of the (normalized) driving moment for circular methods.
 
-    Returns sum(T * d_perp) / R over the ACTIVE-convention forces — subtract from
-    the driving sum of Fellenius/Bishop (which is the driving moment divided by
-    R). The perpendicular arm is taken as a magnitude: reinforcement crossing the
-    surface is assumed stabilizing (standard practice). Passive-convention forces
-    are handled by ``moment_resistance`` instead (added to the resisting side).
+    Returns the moment of the ACTIVE-convention forces about the centre / R
+    — subtract from the driving sum of Fellenius/Bishop (which is the
+    driving moment divided by R). Pass ``d_sign`` (the sliding sense, see
+    ``_moment_arm_sum``) for the signed moment, as the methods do; without
+    it every force counts as resisting. Passive-convention forces are
+    handled by ``moment_resistance`` instead (added to the resisting side).
     """
-    return _moment_arm_sum(forces, xc, yc, radius, passive=False)
+    return _moment_arm_sum(forces, xc, yc, radius, passive=False,
+                           d_sign=d_sign)
 
 
 def moment_resistance(forces: List[ReinforcementForce],
-                      xc: float, yc: float, radius: float) -> float:
+                      xc: float, yc: float, radius: float,
+                      d_sign: Optional[float] = None) -> float:
     """Contribution of the PASSIVE-convention forces to the resisting moment.
 
-    Returns sum(T * d_perp) / R over the passive forces — ADD to the resisting
-    sum of Fellenius/Bishop (Slide2 "Method B"). Zero when no force is passive,
-    so the default (active) behaviour is byte-identical.
+    Returns their moment about the centre / R — ADD to the resisting sum of
+    Fellenius/Bishop (Method B: F = (resisting + support) / driving, so the
+    support is divided by F with the soil strength). Zero when no force is
+    passive.
     """
-    return _moment_arm_sum(forces, xc, yc, radius, passive=True)
+    return _moment_arm_sum(forces, xc, yc, radius, passive=True,
+                           d_sign=d_sign)
+
+
+def slice_index_at(slices, x: float) -> Optional[int]:
+    """Index of the slice whose base the crossing at ``x`` lies on (the
+    first one when it lies on a boundary, as ``gle`` assigns it), or None."""
+    for i, s in enumerate(slices):
+        if s.x_left <= x <= s.x_right:
+            return i
+    return None
+
+
+def slice_support_forces(forces: List[ReinforcementForce], slices, *,
+                         passive: bool, d_sign: float) -> dict:
+    """{slice index: (Fx, Fz)} — the support forces matching ``passive``
+    summed per slice whose base they cross (Wright & Duncan 1991: each is
+    a concentrated force on the base of that slice), as resolved by
+    ``support_components``. Fz is up-positive."""
+    out = {}
+    for f in forces:
+        if bool(f.passive) is not passive:
+            continue
+        i = slice_index_at(slices, f.x)
+        if i is None:
+            continue
+        cx, cz = support_components(f, d_sign)
+        fx, fz = out.get(i, (0.0, 0.0))
+        out[i] = (fx + cx, fz + cz)
+    return out
 
 
 def _base_angle_at(slices, x: float) -> float:

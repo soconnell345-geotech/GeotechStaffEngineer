@@ -267,6 +267,7 @@ def analyze_slope(geom: SlopeGeometry,
                 "x_m": round(f.x, 3), "z_m": round(f.z, 3),
                 "T_kN_per_m": round(f.T, 2),
                 "controlled_by": f.controlled_by,
+                "support_convention": "passive" if f.passive else "active",
             } for f in (reinf_forces or [])
         ] or None,
         n_slices=len(slices),

@@ -168,7 +168,8 @@ class _NSlice:
     """
     __slots__ = ("x_mid", "x_left", "x_right", "z_base", "z_centroid",
                  "alpha", "width", "length", "W", "u", "c", "tan_phi",
-                 "kW", "Fc", "z_crack", "rh", "rv_down", "Ph", "z_pond")
+                 "kW", "Fc", "z_crack", "rh", "rv_down", "Ph", "z_pond",
+                 "rh_p", "rv_p")
 
     def __init__(self, s: Slice, mirror: bool):
         sgn = -1.0 if mirror else 1.0
@@ -191,6 +192,10 @@ class _NSlice:
         self.z_pond = s.pond_z
         self.rh = 0.0       # reinforcement horizontal force (+ = resisting)
         self.rv_down = 0.0  # reinforcement vertical force (down positive)
+        # PASSIVE supports (Method B): the same two components, applied
+        # divided by the factor of safety (rh_p / F, rv_p / F).
+        self.rh_p = 0.0
+        self.rv_p = 0.0
 
 
 def _normalize(slices: List[Slice]) -> Tuple[List["_NSlice"], bool]:
@@ -263,6 +268,85 @@ def _solve3(A, B):
 
 
 # ---------------------------------------------------------------------------
+# Scalar root finding (GM-60)
+# ---------------------------------------------------------------------------
+
+def _refine_root(fun, a, fa, b, fb, max_iter: int = 100) -> Optional[float]:
+    """Root of ``fun`` inside the bracket [a, b] (fa * fb <= 0) by the
+    Illinois variant of regula falsi; bisection where ``fun`` has no value."""
+    if fa == 0.0:
+        return a
+    if fb == 0.0:
+        return b
+    c = b
+    for _ in range(max_iter):
+        c = b - fb * (b - a) / (fb - fa)
+        if not (min(a, b) < c < max(a, b)):
+            c = 0.5 * (a + b)
+        fc = fun(c)
+        if fc is None:
+            c = 0.5 * (a + b)
+            fc = fun(c)
+            if fc is None:
+                return None
+        if fc == 0.0:
+            return c
+        if fc * fb < 0:
+            a, fa = b, fb
+        else:
+            fa *= 0.5
+        b, fb = c, fc
+        if abs(b - a) < 1e-12 * max(1.0, abs(b)):
+            return b
+    return c
+
+
+def _nearest_root(fun, x0: float, lo: float = 0.02, hi: float = 100.0,
+                  factor: float = 1.15, accept=None) -> Optional[float]:
+    """The root of ``fun`` (None where it has no value) in [lo, hi] nearest
+    ``x0`` on a log scale, or None.
+
+    Steps outward from ``x0`` by ``factor`` on both sides, alternately, and
+    refines the first sign change met on each side; ``accept(root)`` can
+    reject a root (the search on that side then goes on). Stops as soon as
+    a root is found closer than anything left unexplored on the other side.
+    """
+    x0 = min(max(x0, lo), hi)
+    f0 = fun(x0)
+    if f0 == 0.0 and (accept is None or accept(x0)):
+        return x0
+    sides = {+1: [x0, f0, True], -1: [x0, f0, True]}   # last x, f, live
+    found = {}
+    while any(s[2] for s in sides.values()):
+        for d in (+1, -1):
+            st = sides[d]
+            if not st[2]:
+                continue
+            xa, fa = st[0], st[1]
+            x = xa * factor if d > 0 else xa / factor
+            if x > hi * (1 + 1e-12) or x < lo / (1 + 1e-12):
+                st[2] = False
+                continue
+            fx = fun(x)
+            if fa is not None and fx is not None and fa * fx <= 0:
+                r = _refine_root(fun, xa, fa, x, fx)
+                if r is not None and (accept is None or accept(r)):
+                    found[d] = r
+                    st[2] = False
+            st[0], st[1] = x, fx
+        if found:
+            # a root on one side: stop once the other side has looked as
+            # far out (log scale) as that root
+            dist = min(abs(math.log(r / x0)) for r in found.values())
+            for d, st in sides.items():
+                if st[2] and abs(math.log(st[0] / x0)) >= dist:
+                    st[2] = False
+    if not found:
+        return None
+    return min(found.values(), key=lambda r: abs(math.log(r / x0)))
+
+
+# ---------------------------------------------------------------------------
 # Core solver
 # ---------------------------------------------------------------------------
 
@@ -271,10 +355,11 @@ class _GLESystem:
 
     def __init__(self, ns: List["_NSlice"], axis: Tuple[float, float],
                  f_name: str, tol: float,
-                 reinf: Optional[List[Tuple[float, float, float, float]]] = None):
-        # reinf: list of (x_n, z, Tx_n, Tz) point forces in the normalized
-        # frame (Tx_n positive = resisting, Tz up-positive), already
-        # assigned to slices as rh / rv_down by the caller.
+                 reinf: Optional[List[Tuple[float, ...]]] = None):
+        # reinf: list of (x_n, z, Tx_n, Tz[, passive]) point forces in the
+        # normalized frame (Tx_n positive = resisting, Tz up-positive),
+        # already assigned to slices as rh / rv_down (active) or rh_p / rv_p
+        # (passive) by the caller. A passive force acts divided by F.
         self.ns = ns
         self.x0, self.y0 = axis
         self.tol = tol
@@ -314,10 +399,25 @@ class _GLESystem:
                 # signed horizontal pond thrust: M_z = -(z - y0) * Fx
                 m_ext -= s.Ph * (s.z_pond - self.y0)
         # Reinforcement point forces enter the global moment and force
-        # balances exactly (active convention: unfactored, reduces driving)
+        # balances exactly. ACTIVE (Method A): unfactored, they reduce the
+        # driving side. PASSIVE (Method B): the same moment and horizontal
+        # force divided by F, kept apart here (m_p, tx_p) and applied in
+        # solve_for_lambda.
+        self.m_p = 0.0
+        self.tx_p = 0.0
+        self.point_loads = bool(reinf)
+        tx_active = 0.0
         if reinf:
-            for (rx, rz, tx, tz) in reinf:
-                m_ext += (rx - self.x0) * tz - (rz - self.y0) * tx
+            for t in reinf:
+                rx, rz, tx, tz = t[:4]
+                passive = len(t) > 4 and bool(t[4])
+                m = (rx - self.x0) * tz - (rz - self.y0) * tx
+                if passive:
+                    self.m_p += m
+                    self.tx_p += tx
+                else:
+                    m_ext += m
+                    tx_active += tx
         self.moment_driving = -m_ext
 
         # Horizontal external driving forces (for F_f denominator);
@@ -325,7 +425,7 @@ class _GLESystem:
         self.force_driving_ext = (sum(s.kW for s in ns)
                                   + sum(s.Fc for s in ns)
                                   - sum(s.Ph for s in ns)
-                                  - (sum(t[2] for t in reinf) if reinf else 0.0))
+                                  - tx_active)
 
     # -- N for one slice ----------------------------------------------------
 
@@ -344,7 +444,62 @@ class _GLESystem:
         num = (s.W + s.rv_down - dV
                - (s.c * s.length - s.u * s.length * s.tan_phi)
                * math.sin(s.alpha) / F)
+        if s.rv_p:
+            num += s.rv_p / F
         return num / m_alpha
+
+    # -- the two factor-of-safety equations for a fixed interslice state ---
+
+    def _moment_terms(self, F: float, V: List[float]):
+        """(resisting, driving) of moment equilibrium at trial F."""
+        resist_m = 0.0
+        normal_m_term = 0.0
+        for i, s in enumerate(self.ns):
+            N = self._normal(s, F, V[i] - V[i + 1])
+            resist_m += self.arm_S[i] * (
+                s.c * s.length + max(N - s.u * s.length, 0.0) * s.tan_phi)
+            normal_m_term += N * self.arm_N[i]
+        den_m = self.moment_driving - normal_m_term
+        if self.m_p:
+            den_m -= self.m_p / F
+        return resist_m, den_m
+
+    def _force_terms(self, F: float, V: List[float]):
+        """(resisting, driving, base normals) of horizontal force
+        equilibrium at trial F."""
+        resist_f = 0.0
+        den_f = self.force_driving_ext
+        if self.tx_p:
+            den_f -= self.tx_p / F
+        N_f = []
+        for i, s in enumerate(self.ns):
+            N = self._normal(s, F, V[i] - V[i + 1])
+            N_f.append(N)
+            resist_f += (s.c * s.length
+                         + max(N - s.u * s.length, 0.0) * s.tan_phi) \
+                * math.cos(s.alpha)
+            den_f += N * math.sin(s.alpha)
+        return resist_f, den_f, N_f
+
+    @staticmethod
+    def _root_of(terms, F_near: float) -> Optional[float]:
+        """The factor of safety F > 0 solving F = resisting(F) / driving(F)
+        with driving(F) > 0, nearest ``F_near``, or None.
+
+        Used when a fixed-point step meets a driving term <= 0 at the
+        current estimate. With a large support force (an anchor) the driving
+        term is negative at a small trial F and positive at the true one:
+        the base normals, and so the horizontal thrust they give, grow
+        with F (the c*l*sin(alpha)/F term of the normal-force equation), so
+        the step from a low start cannot be taken although the equation has
+        a solution (GM-60). A bracketed root of g(F) = F*driving - resisting
+        over 0.02 <= F <= 100 finds it."""
+        def g(F):
+            res, den = terms(F)[:2]
+            return F * den - res
+
+        return _nearest_root(g, F_near,
+                             accept=lambda F: terms(F)[1] > 1e-9)
 
     # -- F_m and F_f for given interslice shear state ------------------------
 
@@ -354,7 +509,16 @@ class _GLESystem:
         """Iterate {N, E, V, F_m, F_f} to convergence for fixed lambda.
 
         Returns (F_m, F_f, E, V, N_list_force) or None on failure.
+
+        With support forces crossing the surface (concentrated loads at the
+        slice bases) and lambda != 0, the state is solved by the direct
+        march instead (``_solve_marched``): the lagged iteration below swings
+        between two states there and its last state is not an equilibrium
+        state (GM-60). With support forces it is also the fallback whenever
+        the lagged iteration fails. Without them the iteration is as it was.
         """
+        if self.point_loads and lam != 0.0:
+            return self._solve_marched(lam, f0)
         ns = self.ns
         n = len(ns)
         E = [0.0] * (n + 1)
@@ -363,33 +527,20 @@ class _GLESystem:
 
         for it in range(max_iter):
             # --- moment equilibrium with current V state
-            resist_m = 0.0
-            normal_m_term = 0.0
-            for i, s in enumerate(ns):
-                dV = V[i] - V[i + 1]
-                N = self._normal(s, Fm, dV)
-                resist_m += self.arm_S[i] * (
-                    s.c * s.length + max(N - s.u * s.length, 0.0) * s.tan_phi)
-                normal_m_term += N * self.arm_N[i]
-            den_m = self.moment_driving - normal_m_term
+            resist_m, den_m = self._moment_terms(Fm, V)
             if den_m <= 1e-9:
-                return None
+                # No fixed-point step from this estimate. With support
+                # forces, solve the equations by the direct march instead
+                # (GM-60); without them, as before, no state.
+                return (self._solve_marched(lam, f0) if self.point_loads
+                        else None)
             Fm_new = resist_m / den_m
 
             # --- force equilibrium with current V state
-            resist_f = 0.0
-            den_f = self.force_driving_ext
-            N_f = []
-            for i, s in enumerate(ns):
-                dV = V[i] - V[i + 1]
-                N = self._normal(s, Ff, dV)
-                N_f.append(N)
-                resist_f += (s.c * s.length
-                             + max(N - s.u * s.length, 0.0) * s.tan_phi) \
-                    * math.cos(s.alpha)
-                den_f += N * math.sin(s.alpha)
+            resist_f, den_f, N_f = self._force_terms(Ff, V)
             if den_f <= 1e-9:
-                return None
+                return (self._solve_marched(lam, f0) if self.point_loads
+                        else None)
             Ff_new = resist_f / den_f
 
             # --- march interslice normals E with force-equilibrium state
@@ -399,6 +550,8 @@ class _GLESystem:
                 E[i + 1] = (E[i] - N_f[i] * math.sin(s.alpha)
                             + Sm * math.cos(s.alpha) - s.kW - s.Fc + s.rh
                             + s.Ph)
+                if s.rh_p:
+                    E[i + 1] += s.rh_p / Ff_new
             # E at the far boundary closes to ~0 when Ff is exact; do not
             # force it — the ratio form of Ff enforces global closure.
 
@@ -415,7 +568,103 @@ class _GLESystem:
                 return (Fm_new, Ff_new, E, V, N_f)
             Fm, Ff = Fm_new, Ff_new
 
-        # Did not fully converge — return last state flagged by caller
+        # The lagged iteration did not settle (with a large point load it
+        # can swing between two states, GM-60): with support forces solve by
+        # the direct march; failing that, return the last state, flagged by
+        # the caller.
+        if self.point_loads:
+            marched = self._solve_marched(lam, f0)
+            if marched is not None:
+                return marched
+        return (Fm, Ff, E, V, N_f)
+
+    # -- direct solution for a fixed lambda (GM-60) ---------------------------
+
+    def _march(self, lam: float, F: float):
+        """March the slices once at trial F with X = lam * f(x) * E applied
+        in each slice's own equations (no lag between E and X).
+
+        For slice i, with E_i and X_i known and X_{i+1} = lam f_{i+1}
+        E_{i+1}, vertical equilibrium (the base-normal equation of
+        ``_normal``) and horizontal equilibrium (the E march) are two linear
+        equations in N_i and E_{i+1}, solved directly. This is the
+        Morgenstern-Price recursion (Morgenstern & Price 1965; the closed
+        form of Zhu, Lee, Qian & Chen 2005); it needs no under-relaxation,
+        so a large point load cannot set the iteration swinging.
+
+        Returns (E, V, N) or None when a slice's equations are singular.
+        """
+        ns = self.ns
+        n = len(ns)
+        E = [0.0] * (n + 1)
+        V = [0.0] * (n + 1)
+        N_list = []
+        for i, s in enumerate(ns):
+            sa, ca = math.sin(s.alpha), math.cos(s.alpha)
+            lf = lam * self.fb[i + 1] if i + 1 < n else 0.0
+            rv = s.rv_down + (s.rv_p / F if s.rv_p else 0.0)
+            rh = s.rh + (s.rh_p / F if s.rh_p else 0.0)
+            K = s.c * s.length - s.u * s.length * s.tan_phi
+            m_alpha = ca + sa * s.tan_phi / F
+            if abs(m_alpha) < 0.05:
+                m_alpha = math.copysign(0.05, m_alpha)
+            # vertical: N*m_alpha - lf*E' = W + rv - X_i - K sin(a)/F
+            r0 = s.W + rv - V[i] - K * sa / F
+            ext = -s.kW - s.Fc + rh + s.Ph
+            # horizontal: E' = a*N + b0, with N' >= 0 assumed first
+            a = -sa + s.tan_phi * ca / F
+            b0 = E[i] + K * ca / F + ext
+            det = m_alpha - lf * a
+            if abs(det) < 1e-9:
+                return None
+            N = (r0 + lf * b0) / det
+            if N - s.u * s.length < 0.0 and s.tan_phi > 0.0:
+                # no friction on a base in tension (as the E march does)
+                a = -sa
+                b0 = E[i] + s.c * s.length * ca / F + ext
+                det = m_alpha - lf * a
+                if abs(det) < 1e-9:
+                    return None
+                N = (r0 + lf * b0) / det
+            E[i + 1] = a * N + b0
+            V[i + 1] = lf * E[i + 1]
+            N_list.append(N)
+        V[n] = 0.0
+        return E, V, N_list
+
+    def _solve_marched(self, lam: float, f0: float):
+        """(F_m, F_f, E, V, N) for a fixed lambda by the direct march, or
+        None when the equations have no solution with F > 0.
+
+        F_f is the F that closes the march (E_n = 0, horizontal
+        equilibrium of the whole mass), found by bracketing over F; F_m is
+        then the moment-equilibrium F with that interslice state."""
+        def residual(F):
+            out = self._march(lam, F)
+            return None if out is None else out[0][-1]
+
+        Ff = _nearest_root(residual, max(f0, 0.2))
+        if Ff is None:
+            return None
+        out = self._march(lam, Ff)
+        if out is None:
+            return None
+        E, V, N_f = out
+
+        # moment equilibrium with this interslice state
+        Fm = max(f0, 0.2)
+        for _ in range(200):
+            resist_m, den_m = self._moment_terms(Fm, V)
+            if den_m <= 1e-9:
+                Fm = self._root_of(lambda F: self._moment_terms(F, V), Fm)
+                if Fm is None:
+                    return None
+                break
+            Fm_new = resist_m / den_m
+            if abs(Fm_new - Fm) < 0.1 * self.tol:
+                Fm = Fm_new
+                break
+            Fm = Fm_new
         return (Fm, Ff, E, V, N_f)
 
 
@@ -423,8 +672,14 @@ def _assign_reinforcement(ns, reinf_forces, mirrored):
     """Map reinforcement crossings into the normalized frame and assign
     horizontal/vertical components to the containing slices.
 
-    Returns the list of (x_n, z, Tx_n, Tz_up) tuples for the system-level
-    moment/force balances, or None.
+    Each force acts at the base of the slice it crosses (Wright & Duncan
+    1991): its horizontal component in that slice's force equilibrium (the
+    E march), its vertical component in that slice's vertical equilibrium
+    (the base normal, so the shear strength), and its moment exactly. A
+    PASSIVE force (``passive=True``, Method B) is applied divided by F.
+
+    Returns the list of (x_n, z, Tx_n, Tz_up, passive) tuples for the
+    system-level moment/force balances, or None.
     """
     if not reinf_forces:
         return None
@@ -434,6 +689,7 @@ def _assign_reinforcement(ns, reinf_forces, mirrored):
         x_n = sgn * f.x
         tx_n = sgn * f.dir_x * f.T
         tz = f.dir_z * f.T  # up-positive
+        passive = bool(getattr(f, "passive", False))
         # In the normalized frame the resisting direction is +x; a
         # reinforcement resists by construction, but guard the sign for
         # odd geometries by taking the stabilizing magnitude.
@@ -441,10 +697,14 @@ def _assign_reinforcement(ns, reinf_forces, mirrored):
             tx_n = abs(tx_n)
         for s in ns:
             if s.x_left <= x_n <= s.x_right:
-                s.rh += tx_n
-                s.rv_down += -tz
+                if passive:
+                    s.rh_p += tx_n
+                    s.rv_p += -tz
+                else:
+                    s.rh += tx_n
+                    s.rv_down += -tz
                 break
-        out.append((x_n, f.z, tx_n, tz))
+        out.append((x_n, f.z, tx_n, tz, passive))
     return out
 
 
@@ -480,11 +740,13 @@ def gle_fos(slices: List[Slice],
         Bracketing range for lambda. Default (-1.5, 1.5).
     reinf_forces : list of ReinforcementForce, optional
         Resolved reinforcement crossings (see
-        slope_stability.reinforcement). Applied as unfactored external
-        point forces at the slip-surface crossings: exact moment via
-        cross products, horizontal component in each slice force
-        equilibrium, vertical component in the base-normal equation
-        (active convention).
+        slope_stability.reinforcement). Applied as external point forces
+        at the base of the slice each crosses: exact moment via cross
+        products, horizontal component in that slice's force equilibrium,
+        vertical component in its base-normal equation. Active forces
+        (Method A) unfactored; passive ones (Method B) divided by F.
+        With support forces present a fixed-lambda state is solved by the
+        direct march (``_GLESystem._march``), not the lagged iteration.
 
     Returns
     -------
@@ -516,12 +778,40 @@ def gle_fos(slices: List[Slice],
 
     # Initial estimate from lambda = 0 (Bishop / Janbu values, free of charge)
     st0 = sys_.solve_for_lambda(0.0)
-    if st0 is None:
+    lo_b, hi_b = lambda_bounds
+    lam0 = 0.0
+    # With support forces (concentrated loads at slice bases) the lambda
+    # search below is made robust (GM-60); without them it is as it was.
+    robust = sys_.point_loads
+    if st0 is None and not robust:
         result.fos = _FOS_MAX
         return result
+    if st0 is None:
+        # No equilibrium state at lambda = 0 (e.g. a large support force
+        # leaves no horizontal thrust with horizontal interslice forces).
+        # Start the bracket from the nearest lambda that has one instead of
+        # giving up (GM-60).
+        for k in range(1, 16):
+            for lam_s in (0.1 * k, -0.1 * k):
+                if lo_b <= lam_s <= hi_b:
+                    st0 = sys_.solve_for_lambda(lam_s)
+                    if st0 is not None:
+                        lam0 = lam_s
+                        break
+            if st0 is not None:
+                break
+        if st0 is None:
+            result.fos = _FOS_MAX
+            result.warnings.append(
+                "no equilibrium state at any lambda in range")
+            return result
+        result.warnings.append(
+            f"no equilibrium state at lambda = 0; bracket started from "
+            f"lambda = {lam0:+.1f}")
     Fm0, Ff0, _, _, _ = st0
-    result.bishop_fos = Fm0
-    result.janbu_fos = Ff0
+    if lam0 == 0.0:
+        result.bishop_fos = Fm0
+        result.janbu_fos = Ff0
     f_est = Fm0
 
     def g(lam, f_start):
@@ -530,78 +820,86 @@ def gle_fos(slices: List[Slice],
             return None
         return st
 
-    # Bracket the root of g(lam) = Fm - Ff starting from 0
-    lo_b, hi_b = lambda_bounds
-    lam_a, ga_state = 0.0, st0
+    # Bracket the root of g(lam) = Fm - Ff starting from lam0. With support
+    # forces a lambda with no equilibrium state is stepped over, not taken
+    # as the end of the range: with large point loads the states can be
+    # broken up (GM-60).
     ga = Fm0 - Ff0
-    bracket = None
-    step = 0.1 if ga >= 0 else -0.1
-    lam_try = 0.0
-    prev_lam, prev_g, prev_state = lam_a, ga, ga_state
-    for _ in range(40):
-        lam_try += step
-        if lam_try > hi_b or lam_try < lo_b:
-            break
-        st = g(lam_try, f_est)
-        if st is None:
-            break
-        gt = st[0] - st[1]
-        f_est = 0.5 * (st[0] + st[1])
-        if prev_g * gt <= 0:
-            bracket = (prev_lam, lam_try, prev_g, gt, st)
-            break
-        prev_lam, prev_g, prev_state = lam_try, gt, st
+    first = 1.0 if ga >= 0 else -1.0
+    conv_tol = max(50 * tol, 1e-3)
 
-    if bracket is None and ga != 0:
-        # try the other direction
-        step = -step
-        lam_try = 0.0
-        prev_lam, prev_g = 0.0, ga
+    def bisect(bracket):
+        """Bisection on a bracket (robust; g is cheap). Returns
+        (lambda*, state)."""
+        nonlocal f_est
+        a, b, ga_, gb_, st_b = bracket
+        st_best = st_b
+        for _ in range(60):
+            mid = 0.5 * (a + b)
+            st = g(mid, f_est)
+            if st is None:
+                break
+            gm = st[0] - st[1]
+            f_est = 0.5 * (st[0] + st[1])
+            st_best = st
+            if abs(gm) < tol or (b - a) < 1e-6:
+                a = b = mid
+                break
+            if ga_ * gm <= 0:
+                b, gb_ = mid, gm
+            else:
+                a, ga_ = mid, gm
+        return 0.5 * (a + b), st_best
+
+    # Scan from lam0 in the likelier direction first, then the other. With
+    # support forces a bracket whose bisection does not close (F_m - F_f
+    # jumps instead of crossing, as it can when a large point load gives
+    # F_f more than one root) is passed over and the scan goes on (GM-60);
+    # the bound itself is tried too (fifteen steps of 0.1 overshoot 1.5 by
+    # a rounding error). Without them the first bracket is taken, as before.
+    found = None            # (lambda*, state) of a closed crossing
+    fallback = None         # the least-bad unclosed one
+    b_tol = 1e-9 if robust else 0.0
+    for direction in ((first, -first) if ga != 0 else (first,)):
+        step = 0.1 * direction
+        lam_try = lam0
+        prev_lam, prev_g = lam0, ga
         for _ in range(40):
             lam_try += step
-            if lam_try > hi_b or lam_try < lo_b:
+            if lam_try > hi_b + b_tol or lam_try < lo_b - b_tol:
                 break
             st = g(lam_try, f_est)
             if st is None:
+                if robust:
+                    continue
                 break
             gt = st[0] - st[1]
             f_est = 0.5 * (st[0] + st[1])
             if prev_g * gt <= 0:
-                bracket = (prev_lam, lam_try, prev_g, gt, st)
-                break
+                lam_c, st_c = bisect((prev_lam, lam_try, prev_g, gt, st))
+                if abs(st_c[0] - st_c[1]) < conv_tol or not robust:
+                    found = (lam_c, st_c)
+                    break
+                if fallback is None or (abs(st_c[0] - st_c[1])
+                                        < abs(fallback[1][0]
+                                              - fallback[1][1])):
+                    fallback = (lam_c, st_c)
             prev_lam, prev_g = lam_try, gt
+        if found is not None:
+            break
 
-    if bracket is None:
-        # No crossing found in range — report lambda=0 moment solution,
+    if found is None and fallback is None:
+        # No crossing found in range — report the starting moment solution,
         # flagged as not converged (caller may fall back to legacy).
         result.fos = Fm0
         result.fos_moment = Fm0
         result.fos_force = Ff0
-        result.lam = 0.0
+        result.lam = lam0
         result.converged = False
         result.warnings.append("no F_m = F_f crossing found in lambda range")
         return result
 
-    a, b, ga_, gb_, st_b = bracket
-    # Bisection (robust; g is cheap)
-    st_best = st_b
-    for _ in range(60):
-        mid = 0.5 * (a + b)
-        st = g(mid, f_est)
-        if st is None:
-            break
-        gm = st[0] - st[1]
-        f_est = 0.5 * (st[0] + st[1])
-        st_best = st
-        if abs(gm) < tol or (b - a) < 1e-6:
-            a = b = mid
-            break
-        if ga_ * gm <= 0:
-            b, gb_ = mid, gm
-        else:
-            a, ga_ = mid, gm
-    lam_star = 0.5 * (a + b)
-
+    lam_star, st_best = found if found is not None else fallback
     Fm, Ff, E, V, N_f = st_best
     result.fos = 0.5 * (Fm + Ff)
     result.fos_moment = Fm

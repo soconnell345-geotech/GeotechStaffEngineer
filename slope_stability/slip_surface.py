@@ -154,6 +154,36 @@ class CircularSlipSurface:
         # Use first and last crossings
         return (crossings[0], crossings[-1])
 
+    def reverse_curvature_crack(self, geom: SlopeGeometry,
+                                x_entry: Optional[float] = None,
+                                x_exit: Optional[float] = None):
+        """The crack closing a "reverse curvature" circle, or None.
+
+        Where the circle's centre lies below the ground at an end of the
+        surface, the circle would rise past the centre's level and turn back
+        over itself (Slide2's "reverse curvature" surface). Vertical slices
+        follow it only up to the centre's level, where the arc is vertical
+        and ``find_entry_exit`` ends it, so the surface is closed by a
+        vertical crack from there to the ground, dry and without shear —
+        as Slide2's default "Create tension crack for reverse curvature"
+        closes it. Returns {'x', 'z_ground', 'depth'} or None.
+        """
+        if x_entry is None or x_exit is None:
+            try:
+                x_entry, x_exit = self.find_entry_exit(geom)
+            except ValueError:
+                return None
+        tol = 1e-3 * self.radius
+        for x_end, x_side in ((x_exit, self.xc + self.radius),
+                              (x_entry, self.xc - self.radius)):
+            if abs(x_end - x_side) > tol:
+                continue
+            z_g = geom.ground_elevation_at(x_end)
+            depth = z_g - self.yc
+            if depth > tol:
+                return {"x": x_end, "z_ground": z_g, "depth": depth}
+        return None
+
 
 @dataclass
 class PolylineSlipSurface:

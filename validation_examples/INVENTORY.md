@@ -830,6 +830,21 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   the support, and the module's Bishop counts the support only through its moment
   about the centre. Without support #85 is now 0.882 (a base-tangent toe circle;
   the grid's 0.912 missed it).
+- GM-59 / GM-60 (2026-10-14): the 1.304 is not the support model but the surface.
+  On a phi = 0 circle every method that satisfies moment equilibrium gives the
+  same F, and Wright & Duncan (1991, TRR 1330) count a support in Bishop through
+  its moment and its vertical component, as the module now does (vertical
+  component added to the slice's vertical equilibrium; zero for this horizontal
+  support). The 1.304 circle is a reverse-curvature toe circle (centre 6 ft below
+  the crest, closed by a 5.9 ft dry crack), which Slide2 closes the same way by
+  default but its grid never generates; the search now says so and how little of
+  the support Bishop counts there (29 %). With `reverse_curvature='discard'`
+  (Slide2's other choice): Bishop 1.503 active / 1.305 passive against Slide2
+  1.531 / 1.324 and D&W 1.51 / 1.32 -- REPRODUCED. On Slide2's printed circle
+  Bishop = Spencer = GLE = 1.564 (Slide2 GLE 1.575); Spencer and GLE used to fall
+  back to the unreinforced 0.913 there. Searches: active Spencer 1.581 / GLE 1.609
+  (Slide2 1.884 / 1.575), passive Spencer 1.346 / GLE 1.379 (Slide2 1.872 /
+  1.378). Pinned in slope_stability/tests/test_search_reinforcement.py.
 
 ## V-051 Slide2 #51 — Zhu (2003) 4-layer seismic method comparison — N/A (source)
 - Source: Slide2 #51 (manual pp. 186-187); Zhu (2003).
