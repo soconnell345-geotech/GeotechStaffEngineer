@@ -423,64 +423,67 @@ def _v004_calibrated_betas():
     return build, b1, b2, b3
 
 
-def test_v004_neutral_plane_and_drag_force():
-    """PASS: the Fellenius neutral-plane construction reproduces the published
-    NP, max axial force, and drag force.
-
-    HP12x74 driven 60 ft below the footing; sustained load Q = 201 kips; toe
-    fully mobilized at 428.1 kips. Published: NP 54 ft below pile head (6 ft
-    above the toe), Qmax = 486 kips, DF = 285 kips.
-    """
-    build, b1, b2, b3 = _v004_calibrated_betas()
-    soil = build(b1, b2, b3)
-    tip_area_box = 1.0294 * FT * FT
-    pile_perim = 4.058 * FT
-    L = 60 * FT
-
-    # Nt set so the toe is fully mobilized at 428.1 kips (100% toe mobilization)
-    sigma_v_tip = soil.effective_stress_at_depth(L)
-    Nt = 428.1 * KIP / (sigma_v_tip * tip_area_box)
-
-    r = DowndragAnalysis(
-        soil=soil, pile_length=L, pile_diameter=0.3086,
-        pile_perimeter=pile_perim, pile_area=tip_area_box,
-        pile_unit_weight=20.0, Q_dead=201 * KIP, Nt=Nt).compute()
-
-    NP_below_head_ft = r.neutral_plane_depth / FT     # z=0 is the pile head
-    Qmax_kips = r.max_pile_load / KIP
-    DF_kips = (r.max_pile_load - 201 * KIP) / KIP
-
-    assert r.toe_resistance / KIP == pytest.approx(428.1, rel=0.01)
-    assert NP_below_head_ft == pytest.approx(54.0, abs=3.0)   # +/-3 ft
-    assert Qmax_kips == pytest.approx(486.0, rel=0.10)        # +/-10%
-    assert DF_kips == pytest.approx(285.0, rel=0.10)          # +/-10%
-
-
-def test_v004_without_pile_weight_matches_published():
-    """PASS: with the pile weight left out of the load curve, as the
-    published Block 17 construction (and UFC 3-220-20 Fig 6-26) does, the
-    neutral plane at 100% toe mobilization gives NP 54.0 ft, Qmax 486.6
-    kips, DF 285.6 kips vs published 54 ft / 486 / 285 kips.
-
-    Achieved 2026-10-14 (GM-01): the plane search and the reported Qmax
-    integrate the same shaft profile the same way, and the calibration
-    integrates it as the module does. Before, the same inputs gave
-    NP 53.3 ft / Qmax 487.2 / DF 286.2 kips with the pile weight in.
-    """
+def _v004_run(**kw):
+    """HP12x74 driven 60 ft below the footing; sustained load Q = 201
+    kips; Nt set so the toe is fully mobilized at 428.1 kips (100% toe
+    mobilization)."""
     build, b1, b2, b3 = _v004_calibrated_betas()
     soil = build(b1, b2, b3)
     tip_area_box = 1.0294 * FT * FT
     L = 60 * FT
     Nt = 428.1 * KIP / (soil.effective_stress_at_depth(L) * tip_area_box)
-    r = DowndragAnalysis(
+    return DowndragAnalysis(
         soil=soil, pile_length=L, pile_diameter=0.3086,
         pile_perimeter=4.058 * FT, pile_area=tip_area_box,
-        pile_unit_weight=0.0, Q_dead=201 * KIP, Nt=Nt).compute()
-    assert r.neutral_plane_depth / FT == pytest.approx(54.0, abs=0.5)
-    assert r.max_pile_load / KIP == pytest.approx(486.0, rel=0.005)
-    assert (r.max_pile_load - 201 * KIP) / KIP == pytest.approx(285.0,
-                                                                rel=0.005)
+        pile_unit_weight=20.0, Q_dead=201 * KIP, Nt=Nt, **kw).compute()
+
+
+def test_v004_neutral_plane_and_drag_force():
+    """PASS: the Fellenius neutral-plane construction, with the pile's own
+    weight left out of the load curve by default as the published Block 17
+    construction (and UFC 3-220-20 Fig 6-26, GEC-12 §7.3.6.1) does,
+    reproduces the published NP, max axial force and drag force: NP 54.0
+    ft, Qmax 486.6 kips, DF 285.6 kips vs published 54 ft below the pile
+    head (6 ft above the toe) / 486 / 285 kips.
+
+    Achieved 2026-10-14 (GM-01) with the weight zeroed; the default since
+    2026-10-15 (owner, OWN-58). The unit weight given (20 kN/m3) is not
+    used unless include_pile_weight=True. Before GM-01 the same inputs
+    gave NP 53.3 ft / Qmax 487.2 / DF 286.2 kips with the pile weight in.
+    """
+    r = _v004_run()
+    assert r.include_pile_weight is False
+    assert r.pile_weight_to_np == 0.0
+    NP_below_head_ft = r.neutral_plane_depth / FT     # z=0 is the pile head
+    Qmax_kips = r.max_pile_load / KIP
+    DF_kips = (r.max_pile_load - 201 * KIP) / KIP
+
+    assert r.toe_resistance / KIP == pytest.approx(428.1, rel=0.01)
+    assert NP_below_head_ft == pytest.approx(54.00, abs=0.01)
+    assert Qmax_kips == pytest.approx(486.6, abs=0.05)
+    assert DF_kips == pytest.approx(285.6, abs=0.05)
+    assert NP_below_head_ft == pytest.approx(54.0, abs=0.5)   # published
+    assert Qmax_kips == pytest.approx(486.0, rel=0.005)
+    assert DF_kips == pytest.approx(285.0, rel=0.005)
     # Load curve = resistance curve at the plane (toe + positive shaft).
+    assert r.max_pile_load == pytest.approx(
+        r.toe_resistance + r.positive_skin_friction, rel=1e-9)
+
+
+def test_v004_with_pile_weight_included():
+    """PASS: include_pile_weight=True keeps the old basis (the pile's own
+    weight in the load curve, 20 kN/m3 x the box area) and reproduces the
+    numbers the module gave before 2026-10-15: NP 53.61 ft, Qmax 490.1,
+    DF 289.1 kips (published 54 / 486 / 285: -0.4 ft, +0.8 %, +1.4 %)."""
+    r = _v004_run(include_pile_weight=True)
+    assert r.include_pile_weight is True
+    assert r.pile_weight_to_np / KIP == pytest.approx(7.03, abs=0.01)
+    assert r.neutral_plane_depth / FT == pytest.approx(53.61, abs=0.01)
+    assert r.max_pile_load / KIP == pytest.approx(490.1, abs=0.05)
+    assert (r.max_pile_load - 201 * KIP) / KIP == pytest.approx(289.1,
+                                                                abs=0.05)
+    assert r.neutral_plane_depth / FT == pytest.approx(54.0, abs=3.0)
+    assert r.max_pile_load / KIP == pytest.approx(486.0, rel=0.10)
     assert r.max_pile_load == pytest.approx(
         r.toe_resistance + r.positive_skin_friction, rel=1e-9)
 

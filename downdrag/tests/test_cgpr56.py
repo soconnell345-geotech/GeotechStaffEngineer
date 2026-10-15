@@ -579,13 +579,13 @@ class TestMethodComparison:
 class TestCrossCheckExistingFellenius:
     """Our pre-existing DowndragAnalysis implements the Fellenius unified
     neutral-plane equilibrium (load curve vs resistance curve) like the
-    CGPR #56 formulation, but with two documented differences: it builds
-    the skin friction from soil parameters (beta/alpha) rather than a
-    user-supplied profile, and it includes the pile self-weight in the
-    load curve. With the report's fs profile injected via thin cohesive
-    layers (alpha = 1, cu = fs), pile weight zeroed, and the toe pinned to
-    the report's 355.6 kips, both implementations must find the same
-    neutral plane and drag load.
+    CGPR #56 formulation, but builds the skin friction from soil
+    parameters (beta/alpha) rather than a user-supplied profile. Like the
+    report, it leaves the pile self-weight out of the load curve by default
+    (include_pile_weight=False, since 2026-10-15). With the report's fs
+    profile injected via thin cohesive layers (alpha = 1, cu = fs) and the
+    toe pinned to the report's 355.6 kips, both implementations must find
+    the same neutral plane and drag load.
     """
 
     def test_neutral_plane_and_dragload_match(self):
@@ -616,8 +616,7 @@ class TestCrossCheckExistingFellenius:
             pile_perimeter=PERIMETER * FT,
             pile_area=area_m2,
             pile_E=PILE_E * 47.88026,        # ksf -> kPa
-            pile_unit_weight=0.0,            # report ignores pile weight
-            Q_dead=Q_STATIC * KIP,
+            Q_dead=Q_STATIC * KIP,           # pile weight left out (default)
             Nt=Nt,
         )
         result = analysis.compute()

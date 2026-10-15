@@ -106,8 +106,15 @@ class DowndragAnalysis:
     pile_E : float
         Pile Young's modulus (kPa). Default 200e6 (steel).
     pile_unit_weight : float
-        Pile material unit weight (kN/m^3). Default 24.0 (concrete).
-        For steel pipe piles, use ~78.5 * (area_ratio).
+        Pile material unit weight (kN/m^3), times ``pile_area`` for the
+        pile's own weight per metre. Default 78.5 (steel, as ``pile_E``;
+        concrete is about 24). For an H or pipe pile give ``pile_area`` as
+        the steel area. Used only when ``include_pile_weight`` is True.
+    include_pile_weight : bool
+        Whether the load curve carries the pile's own weight above each
+        depth. Default False: left out, as UFC 3-220-20 Fig 6-26 and FHWA
+        GEC-12 §7.3.6.1 (and both their worked examples) do (owner,
+        2026-10-15). True adds it to Q_np and the drag force.
     Q_dead : float
         Dead load at pile head (kN). Only dead load causes downdrag.
     structural_capacity : float, optional
@@ -193,7 +200,7 @@ class DowndragAnalysis:
     pile_perimeter: Optional[float] = None
     pile_area: Optional[float] = None
     pile_E: float = 200e6
-    pile_unit_weight: float = 24.0
+    pile_unit_weight: float = 78.5
     Q_dead: float = 0.0
     structural_capacity: Optional[float] = None
     allowable_settlement: Optional[float] = None
@@ -206,6 +213,7 @@ class DowndragAnalysis:
     toe_mobilization: float = 1.0
     endo_bearing_condition: Optional[str] = None
     skin_friction_stress: str = "final"
+    include_pile_weight: bool = False
 
     def __post_init__(self):
         if self.pile_length <= 0:
@@ -258,6 +266,32 @@ class DowndragAnalysis:
             raise ValueError(
                 f"skin_friction_stress must be 'initial' or 'final', got "
                 f"'{self.skin_friction_stress}'")
+        if not isinstance(self.include_pile_weight, (bool, np.bool_)):
+            raise ValueError(
+                f"include_pile_weight must be True or False, got "
+                f"{self.include_pile_weight!r}")
+        self.include_pile_weight = bool(self.include_pile_weight)
+
+    def _weight_per_m(self) -> float:
+        """The pile's own weight per metre in the load curve (kN/m): zero
+        unless ``include_pile_weight``."""
+        if not self.include_pile_weight:
+            return 0.0
+        return self.pile_unit_weight * self.pile_area
+
+    def _pile_weight_basis(self) -> str:
+        """One plain sentence: whether the load curve carries the pile's own
+        weight, and what the references do."""
+        if not self.include_pile_weight:
+            return ("The pile's own weight is left out of the load curve, as "
+                    "UFC 3-220-20 Fig 6-26 and FHWA GEC-12 §7.3.6.1 do "
+                    "(include_pile_weight=False).")
+        return (f"The pile's own weight is included in the load curve "
+                f"(include_pile_weight=True: {self.pile_unit_weight:g} kN/m³ "
+                f"x {self.pile_area:.4g} m² = {self._weight_per_m():.3g} "
+                f"kN/m), so Q_np and the drag force carry the weight of the "
+                f"pile above the neutral plane; UFC 3-220-20 Fig 6-26 and "
+                f"FHWA GEC-12 §7.3.6.1 leave it out.")
 
     def compute(self) -> DowndragResult:
         """Run the downdrag analysis.
@@ -325,13 +359,14 @@ class DowndragAnalysis:
                 "the initial effective stress sigma'v0 "
                 "(skin_friction_stress='initial'); UFC 3-220-20 §6-7.4 "
                 "step 2 uses the final stress.")
+        np_basis += " " + self._pile_weight_basis()
 
         # Drag load and positive friction: the same integral of the same
         # unit skin friction profile as the load and resistance curves
         # (GM-01), so at an intersection Q_np = toe + positive friction.
         F_L = float(S["F"][-1])
         dragload = S["shaft_to"](z_np)
-        pile_weight_to_np = self.pile_unit_weight * self.pile_area * z_np
+        pile_weight_to_np = self._weight_per_m() * z_np
         max_pile_load = self.Q_dead + dragload + pile_weight_to_np
 
         positive_skin = F_L - dragload
@@ -371,7 +406,8 @@ class DowndragAnalysis:
         structural_ok = None
         structural_demand = None
         if self.structural_capacity is not None:
-            drag_force = max_pile_load - self.Q_dead  # dragload + pile weight
+            # dragload (+ pile weight when include_pile_weight)
+            drag_force = max_pile_load - self.Q_dead
             structural_demand = 1.25 * self.Q_dead + 1.10 * drag_force
             structural_ok = bool(structural_demand <= self.structural_capacity)
 
@@ -415,6 +451,7 @@ class DowndragAnalysis:
             neutral_plane_requested=req,
             toe_mobilization=m,
             skin_friction_stress=self.skin_friction_stress,
+            include_pile_weight=self.include_pile_weight,
             neutral_plane_comparison=rows,
             methods_range=_methods_range(rows),
             headline_method=(used["name"] if used is not None
@@ -503,10 +540,10 @@ class DowndragAnalysis:
         }
 
     def _load_at(self, S: dict, z: float) -> float:
-        """Load curve at depth ``z``: Q_dead + pile weight + negative skin
-        friction from the head (kN)."""
-        return (self.Q_dead + self.pile_unit_weight * self.pile_area * z
-                + S["shaft_to"](z))
+        """Load curve at depth ``z``: Q_dead (+ pile weight when
+        ``include_pile_weight``) + negative skin friction from the head
+        (kN)."""
+        return self.Q_dead + self._weight_per_m() * z + S["shaft_to"](z)
 
     def _pile_settlement_at(self, S: dict, z: float,
                             toe_force: float) -> float:
@@ -774,12 +811,14 @@ class DowndragAnalysis:
                     f"'{self.neutral_plane_method}', {row['source']}): ")
         if method == "force_equilibrium":
             if m == 1.0:
+                weight = (" + pile weight" if self.include_pile_weight
+                          else "")
                 return lead + (
-                    "the neutral plane is where the load curve (Q_dead + "
-                    "pile weight + negative skin friction) meets the "
-                    "resistance curve (toe resistance + positive skin "
-                    "friction), with side and base resistance fully "
-                    "mobilized (UFC 3-220-20 §6-7.4 steps 3-5, Fig 6-26).")
+                    f"the neutral plane is where the load curve (Q_dead"
+                    f"{weight} + negative skin friction) meets the "
+                    f"resistance curve (toe resistance + positive skin "
+                    f"friction), with side and base resistance fully "
+                    f"mobilized (UFC 3-220-20 §6-7.4 steps 3-5, Fig 6-26).")
             return lead + (
                 f"the neutral plane is where the load curve meets the "
                 f"resistance curve with the toe at {round(m * 100)}% of its "
@@ -1100,8 +1139,9 @@ class DowndragAnalysis:
         """Find neutral plane depth by force equilibrium.
 
         The neutral plane is where the cumulative load from the top
-        (dead load + pile weight + dragload) equals the cumulative
-        resistance from the bottom (toe + positive friction).
+        (dead load + dragload, + the pile weight when
+        ``include_pile_weight``) equals the cumulative resistance from the
+        bottom (toe + positive friction).
 
         Parameters
         ----------
@@ -1138,11 +1178,12 @@ class DowndragAnalysis:
         upper node's, ~4 % apart on DD-1 at 0 % toe).
         """
         perimeter = self.pile_perimeter
-        w = self.pile_unit_weight * self.pile_area
+        w = self._weight_per_m()
         F = _shaft_cumulative(z_nodes, fs, perimeter)
 
-        # Load from the top (dead load + pile weight + negative friction)
-        # and resistance from the tip (toe + positive friction upward)
+        # Load from the top (dead load + pile weight when included +
+        # negative friction) and resistance from the tip (toe + positive
+        # friction upward)
         drag_from_top = self.Q_dead + w * z_nodes + F
         resist_from_tip = toe_resistance + F[-1] - F
 
@@ -1298,7 +1339,8 @@ class DowndragAnalysis:
                                           toe_resistance: float) -> np.ndarray:
         """Compute axial load distribution along the pile.
 
-        Above NP: load increases (dead load + weight + dragload).
+        Above NP: load increases (dead load + dragload, + weight when
+        ``include_pile_weight``).
         Below NP: load decreases (positive friction removes load).
         This uses the force-from-top approach, which naturally produces
         the correct distribution.

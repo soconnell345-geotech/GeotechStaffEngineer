@@ -23,9 +23,10 @@ friction).
 Two force curves are constructed along the pile (UFC 3-220-20 §6-7.4 step 4,
 Fig 6-26; GEC-12 §7.3.6.1 step 4, Figs 7-57 to 7-59):
 
-1. **Load curve** (UFC Curve B): `Q_top(z) = Q_dead + W_pile(0→z) + ∫₀ᶻ fs·P·dz`
-   (dead load + pile weight + negative skin friction from the head). UFC's and
-   GEC-12's curve has no pile weight; set `pile_unit_weight = 0` to match them.
+1. **Load curve** (UFC Curve B): `Q_top(z) = Q_dead + ∫₀ᶻ fs·P·dz`
+   (dead load + negative skin friction from the head). The pile's own weight
+   is left out, as UFC's and GEC-12's curves leave it out (next section);
+   `include_pile_weight=True` adds `W_pile(0→z)`.
 
 2. **Resistance curve** (UFC Curve A): `Q_bot(z) = Q_toe + ∫_z^L fs·P·dz`
    (mobilized toe resistance + positive skin friction from the toe upward)
@@ -33,6 +34,57 @@ Fig 6-26; GEC-12 §7.3.6.1 step 4, Figs 7-57 to 7-59):
 The neutral plane is where `Q_top(z_np) = Q_bot(z_np)`. The maximum axial
 load in the pile, Q_np, occurs at this depth; the drag force is
 `DF = Q_np - Q_dead` (UFC Eq 6-80, GEC-12 Eq 7-70).
+
+### The pile's own weight: left out by default (owner, 2026-10-15)
+
+The owner's decision (OWN-58): "Leave it out by default, as the references
+do." UFC 3-220-20 §6-7.4 step 4 (checked against the text): "The load curve
+(Curve B in Figure 6-26) is created by plotting the unfactored permanent load
+on the element at the top of the element and adding the cumulative negative
+skin resistance (drag load) as a function of depth". GEC-12 §7.3.6.1 step 4
+(p. 344, checked against the PDF): "Add the unfactored permanent load to the
+accumulated shaft resistance versus depth" (Fig 7-58, "unfactored permanent
+load plus cumulative shaft resistance vs depth"). Neither adds the pile's
+weight, nor do the worked examples (UFC App. B-5.5, GEC-12 Vol III Block 17)
+or CGPR #56 §3.2.3 (Hannigan et al. 1997). Before 2026-10-15 the module put
+the pile's weight in the load curve.
+
+- `include_pile_weight=False` (default): the load curve, Q_np and the drag
+  force carry no pile weight; `pile_weight_to_np` is 0.
+- `include_pile_weight=True`: the weight of the pile above each depth,
+  `pile_unit_weight x pile_area x z`, joins the load curve, so it moves the
+  neutral plane up a little and adds to Q_np, the drag force and the UFC Eq
+  6-80 demand.
+
+Every result says which: a sentence at the end of `neutral_plane_basis`
+("The pile's own weight is left out of the load curve, as UFC 3-220-20 Fig
+6-26 and FHWA GEC-12 §7.3.6.1 do (include_pile_weight=False)."),
+`include_pile_weight` and `pile_weight_basis` in `to_dict()`, a "Pile's own
+weight" line at the head of `summary()`, and in the calc package an input
+row, the force-components table and the Q_np equation.
+
+Numbers that move (the weight left out vs in, at the old 24 kN/m³):
+
+| Case | Weight left out (default) | Weight in (before) |
+|---|---|---|
+| DD-1 headline (plane at 8.00 m) | Q_np = DF = 150.8 kN | 174.9 kN (+24.1) |
+| DD-1, 0 % toe mobilization row | 10.43 m, Q_np 259.5 kN | 10.12 m, 274.7 kN |
+| DD-1, plane at the pile toe | Q_np 518.9 kN | 564.2 kN |
+| V-004 (published 54 ft / 486 / 285 kips) | 54.00 ft, 486.6, 285.6 kips | 53.61 ft, 490.1, 289.1 kips (20 kN/m³) |
+
+The UFC App. B-5.5 test enters no pile weight (`pile_unit_weight = 0`) and
+does not move.
+
+**Unit weight default (GM-50).** The module has no pile-material input. Its
+stiffness default `pile_E = 200e6` kPa is steel, the calc package defaulted
+the unit weight to steel (78.5 kN/m³) and the tool to concrete (24). The
+default is now steel everywhere (`DowndragAnalysis`, the
+`downdrag_analysis` tool, `downdrag_package`), the same material as the
+stiffness; the parameter descriptions say so and give concrete's ~24. It is
+used only when the weight is included. It multiplies `pile_area`, which
+defaults to the solid circle, so for an H or pipe pile give `pile_area` as
+the steel area (the calc package takes no `pile_area`: give an equivalent
+unit weight there).
 
 ## Neutral-plane methods
 
@@ -120,10 +172,10 @@ depend on it. `"initial"` stays available. Every result states which stress it
 used (`neutral_plane_basis`, the summary header, the calc package inputs).
 Numbers that move: only cases with beta layers or a sand toe under a stress
 change. V-004 (no fill) and UFC App. B-5.5 (all alpha, clay toe) do not move.
-DD-1: the 0 % toe mobilization plane goes from 9.49 m to 10.12 m, drag load
-192 to 244 kN; the pile-toe row's drag load 413 to 519 kN; the toe resistance
-2482 to 3236 kN; the headline plane (8.00 m, 151 kN, set by the clay) does
-not move.
+DD-1 (the pile weight then in the load curve): the 0 % toe mobilization plane
+goes from 9.49 m to 10.12 m, drag load 192 to 244 kN; the pile-toe row's drag
+load 413 to 519 kN; the toe resistance 2482 to 3236 kN; the headline plane
+(8.00 m, 151 kN, set by the clay) does not move.
 
 ## Every method side by side; the headline
 
@@ -141,12 +193,12 @@ them as a first-class table:
   `max_pile_load_kN` (Q_np), `dragload_kN` (negative skin friction above the
   plane, UFC's "drag load", §6-7.4 step 4), `drag_force_kN` (DF = Q_np -
   Q_dead, UFC Eq 6-80 / GEC-12 Eq 7-70; it includes the pile weight above the
-  plane when `pile_unit_weight` > 0), `toe_force_kN`,
+  plane only when `include_pile_weight=True`), `toe_force_kN`,
   `soil_settlement_at_np_mm` and `pile_settlement_at_np_mm` (both from the
   original ground), `elastic_compression_above_np_mm` and
   `pile_settlement_mm` (pile head; next section).
 - `methods_range`: one sentence, always, e.g. "The methods give neutral
-  planes from 8.00 m to 15.00 m and drag forces from 175 kN to 564 kN (4 of 7
+  planes from 8.00 m to 15.00 m and drag forces from 151 kN to 519 kN (4 of 7
   methods apply)." No threshold decides whether it is shown.
 - A method that does not apply says why (curves that do not intersect, a
   floating pile for the bearing-layer statement, a toe that could not carry
@@ -166,22 +218,26 @@ caller who names a method gets that row as the headline, and
 `neutral_plane_basis` starts with its name and source.
 
 DD-1 (8 m of clay over dense sand, 0.4 m pile, 15 m, 40 kPa fill, Q_dead 0,
-final stress), the summary table:
+final stress, the pile's own weight left out), the summary table:
 
 ```
   Method                                                  NP   Q_np   Drag   Drag   Pile
                                                                       load  force  settl.
                                                           (m)  (kN)   (kN)   (kN)   (mm)
-  Neutral plane at 100% toe mobilization               not applicable (3236 kN toe > 564 kN deliverable)
-  Neutral plane at 50% toe mobilization                not applicable (1618 kN toe > 564 kN deliverable)
-  Neutral plane at 0% toe mobilization                 10.12   275    244    275    0.1
+  Neutral plane at 100% toe mobilization               not applicable (3236 kN toe > 519 kN deliverable)
+  Neutral plane at 50% toe mobilization                not applicable (1618 kN toe > 519 kN deliverable)
+  Neutral plane at 0% toe mobilization                 10.43   259    259    259    0.1
 * Mobilized toe resistance compatible with the toe
-  penetration                                           8.00   175    151    175    0.1
-  Neutral plane at the bearing layer (end-bearing pile) 8.00   175    151    175    0.1
-  Neutral plane at the pile toe                        15.00   564    519    564    0.1
+  penetration                                           8.00   151    151    151    0.0
+  Neutral plane at the bearing layer (end-bearing pile) 8.00   151    151    151    0.0
+  Neutral plane at the pile toe                        15.00   519    519    519    0.1
   Endo et al. (1969)                                   not applicable (needs endo_bearing_condition)
-The methods give neutral planes from 8.00 m to 15.00 m and drag forces from 175 kN to 564 kN (4 of 7 methods apply).
+The methods give neutral planes from 8.00 m to 15.00 m and drag forces from 151 kN to 519 kN (4 of 7 methods apply).
 ```
+
+With Q_dead = 0 and the weight left out, Q_np = drag force = drag load in
+every row. With `include_pile_weight=True` (24 kN/m³) the rows were 10.12 m /
+275 / 244 / 275, 8.00 m / 175 / 151 / 175 and 15.00 m / 564 / 519 / 564.
 
 (The settlements are tiny because DD-1's sand has no modulus, so nothing is
 computed below the toe.)
@@ -246,14 +302,15 @@ is cited, not reproduced.
 **V-004, GEC-12 Vol III North Abutment, Block 17**
 (`validation_examples/test_published_v001_v005.py`; the published Table D-6
 shaft fed in through calibrated per-layer beta): published NP 54 ft below the
-pile head, Qmax 486 kips, DF 285 kips at 100 % toe mobilization. Before: NP
-53.30 ft, Qmax 487.2, DF 286.2 kips (pile weight in the load curve, as the
-test has it). After: 53.61 ft, 490.1, 289.1 kips with the pile weight in;
-54.00 ft, 486.6, 285.6 kips with it left out, as the example does (new test
-`test_v004_without_pile_weight_matches_published`). The calibration helper now
-integrates the shaft as the module does (its old node-sum matched the old drag
-rule, not the old plane search), and the calibrated shaft totals the
-published 344.1 kips.
+pile head, Qmax 486 kips, DF 285 kips at 100 % toe mobilization. Before
+GM-01: NP 53.30 ft, Qmax 487.2, DF 286.2 kips (pile weight in the load
+curve). Since GM-01 (2026-10-14): 54.00 ft, 486.6, 285.6 kips with the pile
+weight left out, as the example does, and the default since 2026-10-15
+(`test_v004_neutral_plane_and_drag_force`); 53.61 ft, 490.1, 289.1 kips with
+`include_pile_weight=True` (`test_v004_with_pile_weight_included`). The
+calibration helper integrates the shaft as the module does (its old node-sum
+matched the old drag rule, not the old plane search), and the calibrated
+shaft totals the published 344.1 kips.
 
 The Endo ratios are as transcribed in `cgpr56.py`
 (`ENDO_NEUTRAL_PLANE_RATIOS`); only the 0.75 ratio is exercised by a
@@ -307,7 +364,8 @@ against the PDF.
 2. **`settlement_compatibility`** ("Mobilized toe resistance compatible with
    the toe penetration") — the curves do NOT intersect because the toe
    resistance exceeds everything the pile can carry to its toe
-   (`Q_dead + W + the whole shaft in negative skin friction < R_toe`). This is
+   (`Q_dead + the whole shaft in negative skin friction < R_toe`, + W when
+   `include_pile_weight=True`). This is
    the common case with the default ULTIMATE toe (`Nt` from phi, 100-150 in
    dense sand): the base cannot be fully mobilized. The plane is where the
    soil and the pile settle equally (Fig 6-19): the soil settlement there =
@@ -409,9 +467,10 @@ and `nu_s` (Poisson's ratio) on the soil layer.
 ### Eq 6-80 — Structural Drag Force Check (LRFD)
 `1.25·Q_d + 1.10·(Q_np - Q_d) ≤ P_r`
 Factored demand vs factored structural resistance. The drag force
-component `(Q_np - Q_d)` includes both dragload and pile self-weight
-to the neutral plane. The result reports `structural_demand` (the left
-side of this equation) for transparency.
+component `(Q_np - Q_d)` is the drag load, plus the pile self-weight to
+the neutral plane only when `include_pile_weight=True`. The result
+reports `structural_demand` (the left side of this equation) for
+transparency.
 
 ## Consolidation Settlement (Traditional Form)
 
@@ -513,11 +572,11 @@ curves. Documented differences:
    parameters (beta/alpha per layer) and effective stress; the CGPR #56
    function takes the fs-vs-depth profile directly (report convention).
    Both read the profile as piecewise linear, a repeated depth a jump.
-2. **Pile self-weight**: `DowndragAnalysis` includes it in the load curve;
-   UFC Fig 6-26, GEC-12 §7.3.6.1 and the CGPR #56 / Hannigan et al. (1997)
-   formulation omit it (set `pile_unit_weight = 0` to match them). With pile
-   weight zeroed and matched fs/toe inputs the two implementations agree on
-   the worked example within 1.5%
+2. **Pile self-weight**: UFC Fig 6-26, GEC-12 §7.3.6.1 and the CGPR #56 /
+   Hannigan et al. (1997) formulation omit it, and so does
+   `DowndragAnalysis` by default since 2026-10-15
+   (`include_pile_weight=True` adds it). With matched fs/toe inputs the two
+   implementations agree on the worked example within 1.5%
    (`tests/test_cgpr56.py::TestCrossCheckExistingFellenius`).
 3. **Settlement**: both report the settlement at the neutral plane + the
    elastic compression above it. CGPR #56 spreads the pile / group load 2:1

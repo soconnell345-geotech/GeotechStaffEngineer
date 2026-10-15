@@ -409,6 +409,18 @@ class TestDowndragBasis:
         assert "How It Was Located, and Warnings" in html
         assert "Neutral Plane by Each Method" in html
         assert "WARNING: The load and resistance curves" in html
+        # The pile's own weight: left out by default, said in the package
+        # (owner, 2026-10-15, OWN-58).
+        assert r["include_pile_weight"] is False
+        assert r["pile_weight_basis"].startswith(
+            "Pile's own weight left out of the load curve")
+        assert "left out of the load curve, as UFC 3-220-20 Fig 6-26" in html
+        r = call_agent("calc_package", "downdrag_package", dict(
+            _DD1, soil_layers=_DD1_LAYERS, pile_E=200e6,
+            include_pile_weight=True, output_path=str(out)))
+        assert r.get("status") == "success", r
+        assert r["include_pile_weight"] is True
+        assert "Pile weight to NP" in out.read_text(encoding="utf-8")
 
     def test_calc_package_takes_settling_sand_modulus(self, tmp_path):
         """Layer keys match downdrag_analysis: a settling cohesionless layer

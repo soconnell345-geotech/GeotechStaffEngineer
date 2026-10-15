@@ -1625,6 +1625,142 @@ class TestPileHeadSettlement:
         assert s[0] < s[1] < s[2]
 
 
+class TestPileOwnWeight:
+    """The pile's own weight is left out of the load curve by default, as
+    UFC 3-220-20 Fig 6-26 and FHWA GEC-12 §7.3.6.1 (and both their worked
+    examples) do (owner, 2026-10-15, OWN-58); include_pile_weight=True adds
+    it. GM-50: the unit weight defaults to steel, as pile_E does."""
+
+    REFS = "UFC 3-220-20 Fig 6-26 and FHWA GEC-12 §7.3.6.1"
+
+    def test_default_leaves_the_weight_out(self):
+        """DD-1: Q_np = the drag load of the 8 m of clay, without the
+        +24.1 kN of pile weight it carried before 2026-10-15 (174.9 kN)."""
+        assert DowndragAnalysis.__dataclass_fields__[
+            "include_pile_weight"].default is False
+        r = _dd1().compute()
+        assert r.include_pile_weight is False
+        assert r.pile_weight_to_np == 0.0
+        assert r.max_pile_load == pytest.approx(150.78, abs=0.01)
+        assert r.max_pile_load == pytest.approx(r.dragload, rel=1e-12)
+        assert r.drag_force == pytest.approx(r.dragload, rel=1e-12)
+        fe0 = _row(r, "force_equilibrium", 0.0)    # before: 10.12 m, 274.7
+        assert fe0["neutral_plane_depth_m"] == pytest.approx(10.432,
+                                                             abs=0.001)
+        assert fe0["max_pile_load_kN"] == pytest.approx(259.46, abs=0.01)
+        toe = _row(r, "pile_toe")                  # before: 564.2 kN
+        assert toe["max_pile_load_kN"] == pytest.approx(518.92, abs=0.01)
+        for row in r.neutral_plane_comparison:
+            if row["applies"]:
+                assert row["max_pile_load_kN"] == pytest.approx(
+                    row["dragload_kN"], rel=1e-12)
+
+    def test_every_output_says_which_basis(self):
+        r = _dd1().compute()
+        assert (f"The pile's own weight is left out of the load curve, as "
+                f"{self.REFS} do (include_pile_weight=False).") in (
+                    r.neutral_plane_basis)
+        d = r.to_dict()
+        assert d["include_pile_weight"] is False
+        assert d["pile_weight_basis"] == (
+            f"Pile's own weight left out of the load curve, as {self.REFS} "
+            f"do")
+        assert self.REFS in d["neutral_plane_basis"]
+        text = r.summary()
+        assert (f"Pile's own weight: left out of the load curve, as "
+                f"{self.REFS} do") in text
+        assert "includes the pile weight" not in text
+        assert "pile weight +" not in r.neutral_plane_basis
+
+    def test_weight_included_reproduces_the_old_numbers(self):
+        """include_pile_weight=True with the old concrete default (24
+        kN/m3) gives DD-1 exactly as before 2026-10-15."""
+        r = _dd1(include_pile_weight=True, pile_unit_weight=24.0).compute()
+        area = math.pi / 4.0 * 0.4 ** 2
+        assert r.include_pile_weight is True
+        assert r.pile_weight_to_np == pytest.approx(
+            24.0 * area * r.neutral_plane_depth, rel=1e-12)
+        assert r.pile_weight_to_np == pytest.approx(24.12, abs=0.01)
+        assert r.max_pile_load == pytest.approx(174.90, abs=0.01)
+        assert r.max_pile_load == pytest.approx(
+            r.dragload + r.pile_weight_to_np, rel=1e-12)
+        fe0 = _row(r, "force_equilibrium", 0.0)
+        assert fe0["neutral_plane_depth_m"] == pytest.approx(10.117,
+                                                             abs=0.001)
+        assert fe0["max_pile_load_kN"] == pytest.approx(274.71, abs=0.01)
+        assert _row(r, "pile_toe")["max_pile_load_kN"] == pytest.approx(
+            564.15, abs=0.01)
+        assert "included in the load curve" in r.neutral_plane_basis
+        d = r.to_dict()
+        assert d["include_pile_weight"] is True
+        assert d["pile_weight_basis"].startswith(
+            "Pile's own weight included in the load curve")
+        assert self.REFS in d["pile_weight_basis"]
+        assert "here it includes the pile weight above the plane" in (
+            r.summary())
+
+    def test_structural_demand_follows_the_basis(self):
+        """UFC Eq 6-80 on the drag force Q_np - Q_dead: no pile weight in
+        it by default."""
+        out = _dd1(Q_dead=300.0, structural_capacity=5000.0).compute()
+        assert out.structural_demand == pytest.approx(
+            1.25 * 300.0 + 1.10 * out.dragload, rel=1e-12)
+        inn = _dd1(Q_dead=300.0, structural_capacity=5000.0,
+                   include_pile_weight=True).compute()
+        assert inn.structural_demand == pytest.approx(
+            1.25 * 300.0 + 1.10 * (inn.dragload + inn.pile_weight_to_np),
+            rel=1e-12)
+        assert inn.structural_demand > out.structural_demand
+
+    def test_unit_weight_default_is_steel_like_pile_E(self):
+        """GM-50: pile_E defaults to steel (200 GPa) and so does the unit
+        weight now (78.5 kN/m3; it was 24, concrete), the calc package's
+        default too. It is not used unless the weight is included."""
+        fields = DowndragAnalysis.__dataclass_fields__
+        assert fields["pile_E"].default == 200e6
+        assert fields["pile_unit_weight"].default == 78.5
+        assert (_dd1(pile_unit_weight=24.0).compute().max_pile_load
+                == _dd1().compute().max_pile_load)
+        r = _dd1(include_pile_weight=True).compute()
+        assert r.pile_weight_to_np == pytest.approx(
+            78.5 * math.pi / 4.0 * 0.4 ** 2 * r.neutral_plane_depth,
+            rel=1e-12)
+
+    def test_include_pile_weight_must_be_true_or_false(self):
+        with pytest.raises(ValueError, match="include_pile_weight"):
+            _dd1(include_pile_weight="yes")
+
+    def test_calc_package_states_the_basis(self):
+        from downdrag.calc_steps import get_calc_steps, get_input_summary
+        for include in (False, True):
+            a = _dd1(include_pile_weight=include)
+            r = a.compute()
+            inputs = {i.name: i.value for i in get_input_summary(r, a)}
+            items = [it for s in get_calc_steps(r, a) for it in s.items]
+            methods = next(it for it in items if getattr(it, "title", "")
+                           == "Neutral Plane by Each Method (same inputs)")
+            forces = next(it for it in items if getattr(it, "title", "")
+                          == "Force Components at the Neutral Plane")
+            q_np = next(it for it in items if getattr(it, "title", "")
+                        == "Maximum Axial Load at Neutral Plane")
+            names = [row[0] for row in forces.rows]
+            if include:
+                assert inputs["W_pile"].startswith(
+                    "included in the load curve")
+                assert "γ_pile" in inputs
+                assert "Pile weight to NP" in names
+                assert "W_pile" in q_np.equation
+                assert "includes the pile weight" in methods.notes
+            else:
+                assert inputs["W_pile"] == (
+                    "left out of the load curve, as UFC 3-220-20 Fig 6-26 "
+                    "and GEC-12 §7.3.6.1 do")
+                assert "γ_pile" not in inputs
+                assert "Pile weight to NP" not in names
+                assert q_np.equation == "Q_np = Q_dead + Q_nf"
+                assert "pile's own weight is left out" in methods.notes
+
+
 class TestCalcPackageMethodsTable:
     """The calc package tabulates every method and says how the headline
     neutral plane was located."""

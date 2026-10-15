@@ -66,8 +66,18 @@ def get_input_summary(result, analysis) -> List[InputItem]:
         InputItem("A_p", "Pile cross-sectional area",
                   f"{analysis.pile_area:.6f}", "m\u00b2"),
         InputItem("E", "Pile Young's modulus", f"{analysis.pile_E:.0f}", "kPa"),
-        InputItem("\u03b3_pile", "Pile unit weight",
-                  f"{analysis.pile_unit_weight:.1f}", "kN/m\u00b3"),
+    ]
+    if getattr(analysis, "include_pile_weight", False):
+        items.append(InputItem("\u03b3_pile", "Pile unit weight",
+                               f"{analysis.pile_unit_weight:.1f}",
+                               "kN/m\u00b3"))
+        weight = ("included in the load curve; UFC 3-220-20 Fig 6-26 and "
+                  "GEC-12 \u00a77.3.6.1 leave it out")
+    else:
+        weight = ("left out of the load curve, as UFC 3-220-20 Fig 6-26 "
+                  "and GEC-12 \u00a77.3.6.1 do")
+    items += [
+        InputItem("W_pile", "Pile's own weight", weight, ""),
         InputItem("Q_dead", "Dead load at pile head",
                   f"{analysis.Q_dead:.1f}", "kN"),
     ]
@@ -186,11 +196,13 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     np_method = getattr(r, "neutral_plane_method", "force_equilibrium")
     np_basis = getattr(r, "neutral_plane_basis", "")
     np_warnings = list(getattr(r, "warnings", []) or [])
+    with_weight = bool(getattr(r, "include_pile_weight", False))
+    w_term = " + W_pile" if with_weight else ""
     if np_method == "settlement_compatibility":
         np_title = "Neutral Plane: Pile and Soil Settle Equally"
         np_equation = (
             "Load and resistance curves do not intersect "
-            "(R_toe > Q_dead + W_pile + the whole shaft in negative skin "
+            f"(R_toe > Q_dead{w_term} + the whole shaft in negative skin "
             "friction).\n"
             "At the neutral plane depth z_np: s_soil(z_np) = s_pile(z_np), "
             "the toe force compatible with the toe penetration"
@@ -229,13 +241,14 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         np_title = "Neutral Plane: Intersection of the Load and Resistance Curves"
         np_equation = (
             "At the neutral plane depth z_np:\n"
-            "Q_dead + W_pile(0\u2192z_np) + Q_n(0\u2192z_np) "
-            "= R_toe + R_s(z_np\u2192L)"
+            + ("Q_dead + W_pile(0\u2192z_np) + Q_n(0\u2192z_np) "
+               if with_weight else "Q_dead + Q_n(0\u2192z_np) ")
+            + "= R_toe + R_s(z_np\u2192L)"
         )
         np_substitution = (
             f"Load curve at NP = resistance curve at NP\n"
-            f"Q_dead + pile weight + negative skin friction = toe + "
-            f"positive skin friction"
+            f"Q_dead{' + pile weight' if with_weight else ''} + negative "
+            f"skin friction = toe + positive skin friction"
         )
         np_reference = "UFC 3-220-20 \u00a76-7.4 steps 3-5, Fig 6-26"
         mob = getattr(r, "toe_mobilization", 1.0)
@@ -271,31 +284,37 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         np_items.append(comparison)
 
     # Load components at NP
+    rows = [["Q_dead", f"{r.Q_dead:.1f}", "Applied dead load at pile head"]]
+    if with_weight:
+        rows.append(["Pile weight to NP", f"{r.pile_weight_to_np:.1f}",
+                     f"\u03b3_pile \u00d7 A_p \u00d7 z_np = "
+                     f"{analysis.pile_unit_weight:.1f} \u00d7 "
+                     f"{analysis.pile_area:.6f} \u00d7 "
+                     f"{r.neutral_plane_depth:.2f}"])
+    rows += [
+        ["Drag load", f"{r.dragload:.1f}",
+         "Negative skin friction above NP (UFC §6-7.4 step 4)"],
+        ["Max pile load", f"{r.max_pile_load:.1f}",
+         "Q_dead + pile weight + drag load" if with_weight
+         else "Q_dead + drag load (the pile's own weight left out, as UFC "
+              "3-220-20 Fig 6-26 and GEC-12 §7.3.6.1 do)"],
+        ["Drag force", f"{r.max_pile_load - r.Q_dead:.1f}",
+         "Q_np - Q_dead (UFC Eq 6-80; GEC-12 Eq 7-70)"],
+    ]
     np_items.append(TableData(
         title="Force Components at the Neutral Plane",
         headers=["Component", "Value (kN)", "Description"],
-        rows=[
-            ["Q_dead", f"{r.Q_dead:.1f}", "Applied dead load at pile head"],
-            ["Pile weight to NP", f"{r.pile_weight_to_np:.1f}",
-             f"\u03b3_pile \u00d7 A_p \u00d7 z_np = "
-             f"{analysis.pile_unit_weight:.1f} \u00d7 "
-             f"{analysis.pile_area:.6f} \u00d7 "
-             f"{r.neutral_plane_depth:.2f}"],
-            ["Drag load", f"{r.dragload:.1f}",
-             "Negative skin friction above NP (UFC §6-7.4 step 4)"],
-            ["Max pile load", f"{r.max_pile_load:.1f}",
-             "Q_dead + pile weight + drag load"],
-            ["Drag force", f"{r.max_pile_load - r.Q_dead:.1f}",
-             "Q_np - Q_dead (UFC Eq 6-80; GEC-12 Eq 7-70)"],
-        ],
+        rows=rows,
     ))
 
     np_items.append(CalcStep(
         title="Maximum Axial Load at Neutral Plane",
-        equation="Q_np = Q_dead + W_pile(0\u2192z_np) + Q_nf",
+        equation=("Q_np = Q_dead + W_pile(0\u2192z_np) + Q_nf" if with_weight
+                  else "Q_np = Q_dead + Q_nf"),
         substitution=(
             f"Q_np = {r.Q_dead:.1f} + {r.pile_weight_to_np:.1f} "
-            f"+ {r.dragload:.1f}"
+            f"+ {r.dragload:.1f}" if with_weight else
+            f"Q_np = {r.Q_dead:.1f} + {r.dragload:.1f}"
         ),
         result_name="Q_np",
         result_value=f"{r.max_pile_load:.1f}",
@@ -553,14 +572,7 @@ def comparison_table(result):
                  "Drag load (kN)", "Drag force (kN)",
                  "Pile settlement (mm)", "Assumptions / notes"],
         rows=table_rows,
-        notes=(
-            (spread + " " if spread else "")
-            + "Drag load = negative skin friction above the neutral plane "
-            "(UFC 3-220-20 §6-7.4 step 4). Drag force = Q_np - Q_dead "
-            "(UFC Eq 6-80; GEC-12 Eq 7-70); here it includes the pile weight "
-            "above the plane. Pile settlement = settlement at the neutral "
-            "plane + elastic compression of the pile above it (UFC Fig "
-            "6-19)."),
+        notes=(spread + " " if spread else "") + result.drag_force_note(),
     )
 
 

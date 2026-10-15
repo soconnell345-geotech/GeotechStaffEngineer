@@ -760,7 +760,8 @@ def fellenius_method_cgpr56(
     R(z) = qb*Ab + P*int_z^L fs dz (Eq 3.10), both with fully mobilized
     skin and toe resistance. Note this formulation, following Hannigan et
     al. (1997), does NOT include the pile self-weight in the load curve
-    (unlike this package's ``DowndragAnalysis``).
+    (nor does this package's ``DowndragAnalysis`` by default; its
+    ``include_pile_weight=True`` adds it).
 
     Settlement (steps 6-8): pile head settlement = soil settlement at the
     neutral plane + elastic compression above it, where the soil settlement

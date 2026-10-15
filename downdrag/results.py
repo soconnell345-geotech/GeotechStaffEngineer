@@ -29,7 +29,8 @@ class DowndragResult:
     Q_dead : float
         Applied dead load at pile head (kN).
     pile_weight_to_np : float
-        Pile self-weight from head to neutral plane (kN).
+        Pile self-weight from head to neutral plane in the load curve (kN):
+        zero unless ``include_pile_weight``.
     positive_skin_friction : float
         Positive shaft resistance below neutral plane (kN).
     toe_resistance : float
@@ -92,6 +93,11 @@ class DowndragResult:
     skin_friction_stress : str
         ``"final"`` (default) or ``"initial"`` effective stress for beta
         friction and the toe in sand.
+    include_pile_weight : bool
+        False (default): the pile's own weight is left out of the load
+        curve, as UFC 3-220-20 Fig 6-26 and FHWA GEC-12 §7.3.6.1 do. True:
+        Q_np and the drag force carry the weight of the pile above the
+        neutral plane.
     neutral_plane_comparison : list of dict
         Every method on the same inputs, one row each: name (as the cited
         reference words it), method, toe_mobilization, source,
@@ -137,13 +143,44 @@ class DowndragResult:
     neutral_plane_comparison: list = field(default_factory=list)
     methods_range: str = ""
     headline_method: str = ""
+    include_pile_weight: bool = False
 
     @property
     def drag_force(self) -> float:
         """Drag force DF = Q_np - Q_dead (kN), as UFC 3-220-20 Eq 6-80 and
-        FHWA GEC-12 Eq 7-70 define it (here it also carries the pile weight
-        above the neutral plane)."""
+        FHWA GEC-12 Eq 7-70 define it (it also carries the pile weight
+        above the neutral plane when ``include_pile_weight``)."""
         return self.max_pile_load - self.Q_dead
+
+    @property
+    def pile_weight_text(self) -> str:
+        """Whether the load curve carries the pile's own weight, in plain
+        words naming the references."""
+        if self.include_pile_weight:
+            return ("included in the load curve (include_pile_weight=True); "
+                    "UFC 3-220-20 Fig 6-26 and FHWA GEC-12 §7.3.6.1 leave it "
+                    "out")
+        return ("left out of the load curve, as UFC 3-220-20 Fig 6-26 and "
+                "FHWA GEC-12 §7.3.6.1 do")
+
+    @property
+    def pile_weight_basis(self) -> str:
+        """``pile_weight_text`` as a sentence: "Pile's own weight left out
+        of the load curve, as ..."."""
+        return "Pile's own weight " + self.pile_weight_text
+
+    def drag_force_note(self) -> str:
+        """The sentence defining the drag load, the drag force and the pile
+        settlement under every methods table."""
+        weight = ("here it includes the pile weight above the plane"
+                  if self.include_pile_weight else
+                  "the pile's own weight is left out, as UFC Fig 6-26 and "
+                  "GEC-12 §7.3.6.1 do")
+        return ("Drag load = negative skin friction above the neutral plane "
+                "(UFC 3-220-20 §6-7.4 step 4). Drag force = Q_np - Q_dead "
+                f"(UFC Eq 6-80, GEC-12 Eq 7-70); {weight}. Pile settlement "
+                "= settlement at the neutral plane + elastic compression "
+                "above it (UFC Fig 6-19).")
 
     def comparison_rows(self) -> list:
         """The comparison rows rounded for display / JSON."""
@@ -204,6 +241,7 @@ class DowndragResult:
             f"Pile diameter:          {self.pile_diameter:.3f} m",
             f"Dead load (Q_dead):     {self.Q_dead:.1f} kN",
             f"Effective stress for skin friction: {stress}",
+            f"Pile's own weight: {self.pile_weight_text}",
         ]
         table = self.methods_table()
         if table:
@@ -211,13 +249,7 @@ class DowndragResult:
                       *table]
             if self.methods_range:
                 lines += ["", self.methods_range]
-            lines.append(
-                "Drag load = negative skin friction above the neutral plane "
-                "(UFC 3-220-20 §6-7.4 step 4). Drag force = Q_np - Q_dead "
-                "(UFC Eq 6-80, GEC-12 Eq 7-70); here it includes the pile "
-                "weight above the plane. Pile settlement = settlement at "
-                "the neutral plane + elastic compression above it (UFC Fig "
-                "6-19).")
+            lines.append(self.drag_force_note())
         headline = self.headline_method or self.neutral_plane_method
         lines += [
             "",
@@ -314,6 +346,8 @@ class DowndragResult:
         d['neutral_plane_requested'] = self.neutral_plane_requested
         d['toe_mobilization'] = self.toe_mobilization
         d['skin_friction_stress'] = self.skin_friction_stress
+        d['include_pile_weight'] = self.include_pile_weight
+        d['pile_weight_basis'] = self.pile_weight_basis
         return d
 
     def get_tables(self) -> list:

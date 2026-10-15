@@ -277,7 +277,7 @@ class TestDowndragAnalysisMethodsTable:
         assert res["skin_friction_stress"] == "final"
         keys = list(res)
         for key in ("methods_range", "warnings",
-                    "neutral_plane_comparison"):
+                    "neutral_plane_comparison", "pile_weight_basis"):
             assert keys.index(key) < keys.index("z_m"), key
 
     def test_spread_always_reported(self):
@@ -298,6 +298,46 @@ class TestDowndragAnalysisMethodsTable:
             toe_mobilization=0.0))
         assert res["neutral_plane_method"] == "force_equilibrium"
         assert res["toe_mobilization"] == 0.0
+
+    def test_pile_weight_left_out_by_default_and_optional(self):
+        """Owner, 2026-10-15 (OWN-58): the load curve leaves the pile's own
+        weight out by default, as UFC 3-220-20 Fig 6-26 and FHWA GEC-12
+        §7.3.6.1 do; include_pile_weight=true adds it (DD-1: +24.1 kN at
+        24 kN/m3, the old numbers)."""
+        res = _call("downdrag_analysis", dict(DD1))
+        assert "error" not in res, res
+        assert res["include_pile_weight"] is False
+        assert res["pile_weight_to_np_kN"] == 0.0
+        assert res["max_pile_load_kN"] == pytest.approx(150.78, abs=0.01)
+        assert res["pile_weight_basis"] == (
+            "Pile's own weight left out of the load curve, as UFC 3-220-20 "
+            "Fig 6-26 and FHWA GEC-12 §7.3.6.1 do")
+        assert "include_pile_weight=False" in res["neutral_plane_basis"]
+        res = _call("downdrag_analysis", dict(
+            DD1, include_pile_weight=True, pile_unit_weight=24.0))
+        assert "error" not in res, res
+        assert res["include_pile_weight"] is True
+        assert res["pile_weight_to_np_kN"] == pytest.approx(24.12, abs=0.01)
+        assert res["max_pile_load_kN"] == pytest.approx(174.90, abs=0.01)
+        assert res["pile_weight_basis"].startswith(
+            "Pile's own weight included in the load curve")
+
+    def test_pile_unit_weight_default_matches_the_calc_package(self):
+        """GM-50: one default material for the pile's unit weight across
+        the tool and the calc package: steel, as the pile_E default."""
+        tool = describe_method("downdrag", "downdrag_analysis")["parameters"]
+        pkg = describe_method("calc_package", "downdrag_package")[
+            "parameters"]
+        assert tool["pile_unit_weight"]["default"] == 78.5
+        assert pkg["pile_unit_weight"]["default"] == 78.5
+        assert tool["pile_E"]["default"] == 200e6
+        for p in (tool, pkg):
+            assert "steel" in p["pile_unit_weight"]["description"]
+            assert "include_pile_weight" in p["pile_unit_weight"][
+                "description"]
+            assert p["include_pile_weight"]["default"] is False
+            assert "UFC 3-220-20 Fig 6-26" in p["include_pile_weight"][
+                "description"]
 
     def test_inapplicable_method_is_an_error_with_the_reason(self):
         res = _call("downdrag_analysis", dict(

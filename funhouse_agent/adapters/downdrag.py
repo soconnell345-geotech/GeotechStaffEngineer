@@ -20,7 +20,7 @@ _VALID_PARAMS = (
     "pile_area", "pile_E", "pile_unit_weight", "Q_dead", "structural_capacity",
     "fill_thickness", "fill_unit_weight", "gw_drawdown", "Nt", "n_sublayers",
     "neutral_plane_method", "toe_mobilization", "endo_bearing_condition",
-    "skin_friction_stress",
+    "skin_friction_stress", "include_pile_weight",
 )
 
 
@@ -63,7 +63,8 @@ def _run_downdrag_analysis(params):
     analysis = DowndragAnalysis(
         soil=soil, pile_length=params["pile_length"], pile_diameter=params["pile_diameter"],
         pile_perimeter=params.get("pile_perimeter"), pile_area=params.get("pile_area"),
-        pile_E=params.get("pile_E", 200e6), pile_unit_weight=params.get("pile_unit_weight", 24.0),
+        pile_E=params.get("pile_E", 200e6), pile_unit_weight=params.get("pile_unit_weight", 78.5),
+        include_pile_weight=params.get("include_pile_weight", False),
         Q_dead=params.get("Q_dead", 0.0), structural_capacity=params.get("structural_capacity"),
         fill_thickness=params.get("fill_thickness", 0.0), fill_unit_weight=params.get("fill_unit_weight", 19.0),
         gw_drawdown=params.get("gw_drawdown", 0.0), Nt=params.get("Nt"), n_sublayers=params.get("n_sublayers", 10),
@@ -79,7 +80,7 @@ def _run_downdrag_analysis(params):
 #: depth profiles so a size-capped tool result can never cut them off.
 _BASIS_KEYS = ("neutral_plane_depth_m", "neutral_plane_method",
                "headline_method", "neutral_plane_basis", "methods_range",
-               "warnings", "neutral_plane_comparison")
+               "warnings", "neutral_plane_comparison", "pile_weight_basis")
 
 
 def _basis_first(d: dict) -> dict:
@@ -356,7 +357,8 @@ METHOD_INFO = {
             "pile_area": {"type": "float", "required": False, "description": "Pile cross-section area (m2). Computed from diameter if omitted."},
             "structural_capacity": {"type": "float", "required": False, "description": "Pile structural capacity (kN) for the max-load check."},
             "Nt": {"type": "float", "required": False, "description": "Toe bearing capacity factor: R_toe = Nt x sigma'v(toe) x A_toe in cohesionless soil, Nt x cu x A_toe in cohesive. Give the MOBILIZED value -- the toe resistance actually developed at the pile's settlement -- not the ultimate. Omitted, Nt is the ULTIMATE value from the toe layer's phi (100-150 in dense sand; 9 in clay); then the load and resistance curves often do not intersect and the neutral plane is where the pile and soil settle equally, the toe force compatible with the toe penetration (UFC 3-220-20 6-5.8.4.3; see neutral_plane_method). UFC 3-220-20 6-5.8.4.2: check 0 %, 50 % and 100 % toe mobilization."},
-            "pile_unit_weight": {"type": "float", "required": False, "default": 24.0, "description": "Pile material unit weight (kN/m3) for the pile's own weight."},
+            "pile_unit_weight": {"type": "float", "required": False, "default": 78.5, "description": "Pile material unit weight (kN/m3), times pile_area for the pile's own weight; used only when include_pile_weight is true. Default 78.5 = steel, the same material as the pile_E default (concrete is about 24). For an H or pipe pile give pile_area as the steel area (pile_area defaults to the solid circle)."},
+            "include_pile_weight": {"type": "bool", "required": False, "default": False, "description": "Whether the load curve carries the pile's own weight. Default false: left out, as UFC 3-220-20 Fig 6-26 and FHWA GEC-12 7.3.6.1 (and their worked examples) do. True adds the weight of the pile above the neutral plane to Q_np and the drag force."},
             "n_sublayers": {"type": "int", "required": False, "default": 10, "description": "Sublayers per soil layer for the depth discretization."},
             "neutral_plane_method": {"type": "string", "required": False, "default": "auto", "description": "Which method gives the headline numbers; every method is evaluated and returned in neutral_plane_comparison whatever is chosen. 'auto' (default) = the UFC 3-220-20 6-7.4 procedure: the intersection of the load and resistance curves with the toe at toe_mobilization, or, when they do not intersect, where the pile and soil settle equally with the toe force compatible with the toe penetration (UFC 6-5.8.4.3, Fig 6-19). 'force_equilibrium' (the curves' intersection only; error if they do not intersect); 'settlement_compatibility' (pile and soil settle equally, toe force compatible with the toe penetration); 'bearing_layer_top' (top of the bearing layer, end-bearing pile, UFC 6-7.4 step 5); 'pile_toe' (whole shaft in negative skin friction, upper bound); 'endo' (Endo et al. 1969, CGPR #56 Table 3.1 fraction of the embedment; needs endo_bearing_condition).", "allowed_values": ["auto", "force_equilibrium", "settlement_compatibility", "bearing_layer_top", "pile_toe", "endo"]},
             "toe_mobilization": {"type": "float", "required": False, "default": 1.0, "description": "Fraction (0-1) of the nominal toe resistance mobilized where the load and resistance curves intersect. 1.0 = UFC 6-7.4 step 3 full mobilization ('a conservative approach for evaluating the drag force'); 0.5 and 0 = the other UFC 6-5.8.4.2 / GEC-12 7.3.6.1 cases for settlement (all three always reported in the comparison)."},
@@ -372,7 +374,9 @@ METHOD_INFO = {
             "neutral_plane_comparison": "Every method on the same inputs, one row each, named as its reference names it (neutral plane at 100/50/0% toe mobilization, toe resistance compatible with the toe penetration, neutral plane at the bearing layer, at the pile toe, Endo et al. 1969): source, assumptions, applies, used (the headline row), reason, neutral_plane_depth_m, max_pile_load_kN, dragload_kN, drag_force_kN, toe_force_kN, soil/pile settlement at the plane (mm), elastic_compression_above_np_mm, pile_settlement_mm (head). Present it as a table.",
             "warnings": "What the engineer must know about the result (e.g. curves that do not intersect, the upper-bound drag, an overloaded pile). Report every one.",
             "dragload_kN": "Drag load: negative skin friction above the neutral plane (kN; UFC 3-220-20 6-7.4 step 4).",
-            "drag_force_kN": "Drag force DF = Q_np - Q_dead (kN; UFC 3-220-20 Eq 6-80, GEC-12 Eq 7-70); includes the pile weight above the plane.",
+            "drag_force_kN": "Drag force DF = Q_np - Q_dead (kN; UFC 3-220-20 Eq 6-80, GEC-12 Eq 7-70); includes the pile weight above the plane only when include_pile_weight is true.",
+            "include_pile_weight": "Whether the load curve carried the pile's own weight (false by default, as UFC 3-220-20 Fig 6-26 and GEC-12 7.3.6.1).",
+            "pile_weight_basis": "One sentence saying whether the pile's own weight is in the load curve, naming the references. Report it.",
             "max_pile_load_kN": "Maximum axial load, at the neutral plane (kN).",
             "toe_resistance_kN": "Toe resistance from Nt (kN; ultimate unless Nt was given as mobilized).",
             "toe_force_mobilized_kN": "Toe force actually carried at the neutral plane (kN): the full toe resistance where the curves intersect with the toe fully mobilized, less otherwise.",
