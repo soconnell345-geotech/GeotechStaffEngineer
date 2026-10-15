@@ -56,9 +56,25 @@ ch. V; Chilès & Delfiner 2012, *Geostatistics*, §7.3.1). Draw an unconditional
 Gaussian realization S of the covariance model at the cells AND the
 observations, krige the residual (observation − S there, with simulated
 measurement error), and add it: `z = S + K(z_obs − S_obs − e)`. For a Gaussian
-field this is an exact draw from the conditional distribution — mean = the
-kriged surface, pointwise variance = the kriging variance, and the right
+field this draws the conditional distribution the chosen model implies — mean
+= the kriged surface, pointwise variance = the kriging variance, and the right
 covariance between cells, which is what decides the spread of a total.
+
+**What "right" and "exact" mean here.** Relative to the ASSUMED model only:
+a Gaussian field with the chosen covariance, mean and the observations used.
+None of that is known about the ground, and those choices usually move the
+answer more than the method does, so run cases. Given the assumptions,
+"conditioned on the observations" has one meaning: of all the fields the
+model can produce, only those that pass through the observations.
+`tests/test_conditioning_by_definition.py` draws that with no kriging at all
+(plain numpy: unconditioned fields, keeping those within 0.1 standard
+deviation of every observation) and sets the spread of a total over a
+footprint against both methods and the textbook Gaussian-conditioning
+formula. Measured (3 observations, 12 cells, exponential, variance 4,
+len_scale 15 m): by definition 145–149, formula 144, `kriging_residual` 142,
+`CondSRF` 178. A larger run (3 observations, 120 cells, 159 million fields,
+4,000 kept): by definition 579, formula 587, `kriging_residual` 581,
+`CondSRF` 802. Both methods get the mean right.
 
 - The kriging weights K come from GSTools' own `Krige` of the chosen type
   (kriging is linear in the data, so kriging each unit vector gives the
@@ -77,11 +93,11 @@ covariance between cells, which is what decides the spread of a total.
 sqrt(kriging variance / variance), plus the nugget as white noise per cell.
 It honours the data and the pointwise kriging variance, but the correlation
 between two points is the UNconditioned one. Measured here: two cells 5 m
-either side of a datum, exponential model, len_scale 10 m — exact conditional
-covariance 0 (the datum screens), `kriging_residual` 0.006, `CondSRF` 0.33.
-On a 60 × 50 m footprint with seven borings the volume std came out 1.8×
-(exponential) to 2.5× (Gaussian) the exact one and the P90 26 % higher, at the
-same mean. It is also 100–200× slower (randomization method per realization;
+either side of a datum, exponential model, len_scale 10 m — the model's
+conditional covariance 0 (the datum screens), `kriging_residual` 0.006,
+`CondSRF` 0.33. On a 60 × 50 m footprint with seven borings the volume std
+came out 1.8× (exponential) to 2.5× (Gaussian) the model's own and the P90
+26 % higher, at the same mean. It is also 100–200× slower (randomization method per realization;
 models without an analytic spectral inverse — Spherical, Matern, Stable, … —
 sample their spectra by MCMC, ~0.1–0.2 s each). Offered to reproduce a GSTools
 CondSRF notebook; a run projected over 600 s is refused with the options. The

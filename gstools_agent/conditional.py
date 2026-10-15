@@ -19,11 +19,14 @@ Two ways to condition, offered with their basis (``simulation_method``):
     *Geostatistics*, s. 7.3.1). An unconditional realization ``S`` is drawn
     with the covariance model, its values at the observations are kriged, and
     the realization is ``S + K(z - S_obs)`` -- the kriged data plus the
-    realization's own kriging error. For a Gaussian field this is an exact
-    draw from the conditional distribution: the right mean (the kriged
-    surface), the right pointwise variance (the kriging variance) AND the
-    right covariance between points, which is what decides the spread of a
-    total. The kriging weights come from GSTools' own ``Krige`` (the same
+    realization's own kriging error. For a Gaussian field this draws the
+    conditional distribution the chosen model implies: the right mean (the
+    kriged surface), the right pointwise variance (the kriging variance) AND
+    the right covariance between points, which is what decides the spread of
+    a total. "Right" is relative to the assumed model (Gaussian, its
+    covariance, the observations used), never a claim about the ground;
+    ``tests/test_conditioning_by_definition.py`` checks it against keeping
+    only the unconditioned fields that pass through the observations. The kriging weights come from GSTools' own ``Krige`` (the same
     kriging type); the unconditional field is drawn by factoring the model
     covariance over the cells (Cholesky; Davis 1987), exact for any GSTools
     model and fast for the cell counts allowed here.
@@ -658,7 +661,8 @@ def analyze_conditional_simulation(
                      "with the nugget added as white noise per cell. Its "
                      "correlation between points is the unconditioned one, "
                      "so the spread of a total can be overstated; "
-                     "kriging_residual draws the exact conditional field.")
+                     "kriging_residual draws the conditional field the "
+                     "model implies.")
 
     # -- accumulate -------------------------------------------------------------
     lev_all = sorted({lv for r in regs for lv in r["levels"]})
@@ -934,10 +938,15 @@ def analyze_conditional_simulation(
             "Gaussian field S + kriging of (observations - S at the "
             "observations), with the kriging weights from GSTools' "
             f"{kriging_type} Krige and S drawn by Cholesky factoring of the "
-            f"{model_type} covariance over the cells. Exact conditional "
-            "distribution for a Gaussian field: mean = kriged surface, "
-            "pointwise variance = kriging variance, and the right "
-            "correlation between cells.")
+            f"{model_type} covariance over the cells. It draws the "
+            "distribution the chosen model implies: mean = kriged surface, "
+            "pointwise variance = kriging variance, and the conditional "
+            "correlation between cells (checked in the tests against "
+            "keeping only the unconditioned fields that pass through the "
+            "observations). The model itself (a Gaussian field, its "
+            "covariance, which observations count) is an assumption and "
+            "usually moves the answer more than the method does: run "
+            "cases.")
     else:
         method_text = (
             "GSTools CondSRF (Mueller et al. 2022, GMD 15, 3161): kriged "

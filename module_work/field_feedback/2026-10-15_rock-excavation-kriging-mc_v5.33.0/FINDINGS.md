@@ -78,7 +78,11 @@ messages and the trace review's private tables).
    (`conditional_simulation` by conditioning by kriging, kriging region
    totals and grids to files; follow-ups GM-96). GSTools' own `CondSRF`,
    which the owner's notebook used, gets the mean right but overstates the
-   spread of a total (checked against an exact case: 787 against 521).
+   spread of a total for the same assumed model: keeping only unconditioned
+   fields that pass through the observations gives 579, the default 581,
+   CondSRF 802 (the owner asked how we know; the check is now a test). The
+   model itself (Gaussian, covariance, which borings count) remains an
+   assumption that usually matters more.
 5. **The owner's question on figures.** Answered on the before-and-after page
    (https://claude.ai/artifact/TcPujcvMF19HZQXtPVAmMj): the app's agent cannot
    run code and had one plotting tool that drew lines and dots; the chat's
