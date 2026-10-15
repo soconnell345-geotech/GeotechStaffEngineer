@@ -875,14 +875,28 @@ PIMY_ARG_NAMES = (
 
 
 class _FakeOps:
-    """Stands in for openseespy.opensees and records every call."""
+    """Stands in for openseespy.opensees and records every call.
 
-    def __init__(self, fail_dynamic=False, fail_gravity=False):
+    ``fail_first`` names algorithms whose FIRST dynamic step attempt
+    fails (each once); ``fail_first_full_step`` fails every algorithm on
+    the first full dynamic step (dt = 0.01), so it is taken in substeps.
+    """
+
+    def __init__(self, fail_dynamic=False, fail_gravity=False,
+                 fail_first=(), fail_first_full_step=False):
         self.calls = []
         self.time = 0.0
         self.shaking = False
         self.fail_dynamic = fail_dynamic
         self.fail_gravity = fail_gravity
+        self.fail_first = set(fail_first)
+        self.fail_first_full_step = fail_first_full_step
+        self.full_steps_tried = 0
+        self.algo = None
+
+    def algorithm(self, *args):
+        self.calls.append(("algorithm", args))
+        self.algo = args[0]
 
     def analyze(self, n, dt):
         self.calls.append(("analyze", (n, dt)))
@@ -891,6 +905,13 @@ class _FakeOps:
         if (gravity and self.fail_gravity) or (
                 not gravity and self.fail_dynamic):
             return -3
+        if not gravity and self.algo in self.fail_first:
+            self.fail_first.discard(self.algo)
+            return -3
+        if not gravity and self.fail_first_full_step and dt == 0.01:
+            self.full_steps_tried += 1
+            if self.full_steps_tried <= 3:  # Newton, Krylov, modified
+                return -3
         self.time += n * dt
         return 0
 
@@ -1091,6 +1112,88 @@ class TestSiteResponseModelWiring:
         with pytest.raises(RuntimeError, match="gravity stage did not"):
             _build_fake([SAND33], fail_gravity=True)
 
+    @pytest.mark.parametrize("linear_elastic", [False, True])
+    def test_gravity_at_1_m_per_s_then_each_layers_permeability(
+            self, linear_elastic):
+        """GM-85: gravity at the shaking permeability failed at the first
+        elastoplastic step on finer sand meshes. As the OpenSees effective
+        stress example: every element at 1 m/s through gravity, then each
+        element's own permeability (sand 1e-4, clay 1e-7 m/s) set through
+        element parameters, after the last gravity step and before the
+        clock reset."""
+        sand = dict(SAND33, thickness=10.0)
+        ops, _ = _build_fake([sand, CLAY60], linear_elastic=linear_elastic)
+        elements = [a for a in ops.named("element") if a[0] == "SSPquadUP"]
+        assert len(elements) == 4
+        # SSPquadUP tag n1 n2 n3 n4 mat t fBulk fDen perm1 perm2 ...
+        assert all(a[10] == 1.0 and a[11] == 1.0 for a in elements)
+        params = {a[0]: a[1:] for a in ops.named("parameter")}
+        set_to = {}
+        for tag, value in ops.named("updateParameter"):
+            kind, ele, name = params[tag]
+            assert kind == "element"
+            set_to[(ele, name)] = value
+        # built from the base: elements 1-2 clay, 3-4 sand
+        expected = {1: 1.0e-7, 2: 1.0e-7, 3: 1.0e-4, 4: 1.0e-4}
+        assert set_to == {(e, n): k for e, k in expected.items()
+                          for n in ("hPerm", "vPerm")}
+        last_gravity = ops.index("analyze", lambda a: a[1] >= 1.0,
+                                 last=True)
+        first_update = ops.index("updateParameter")
+        last_update = ops.index("updateParameter", last=True)
+        reset = ops.index("setTime")
+        assert last_gravity < first_update <= last_update < reset
+
+    def test_dynamic_stage_is_newton_at_the_examples_test(self):
+        """GM-84: KrylovNewton at NormDispIncr 1e-3 m accepted unconverged
+        steps on small elements; the dynamic stage now starts on Newton
+        (McGann & Arduino's total stress example) at the same test."""
+        ops, _ = _build_fake([SAND33])
+        reset = ops.index("setTime")
+        algos = [a for i, (n, a) in enumerate(ops.calls)
+                 if n == "algorithm" and i > reset]
+        tests = [a for i, (n, a) in enumerate(ops.calls)
+                 if n == "test" and i > reset]
+        assert algos == [("Newton",)]
+        assert tests == [("NormDispIncr", 1.0e-3, 35, 0)]
+
+    def test_a_step_newton_cannot_take_falls_back_then_newton_returns(self):
+        """Newton, then KrylovNewton, then modified Newton, the fallbacks
+        at a test 100 times tighter (1e-5 m: linear convergence passes a
+        loose test early); Newton and its test restored for the next
+        step."""
+        ops, r = _build_fake([SAND33],
+                             fail_first=("Newton", "KrylovNewton"))
+        first_dyn = ops.index("analyze", lambda a: a[1] < 1.0)
+        seq = [(n, a) for n, a in ops.calls[first_dyn:]
+               if n in ("analyze", "algorithm", "test")][:10]
+        assert seq == [
+            ("analyze", (1, 0.01)),                      # Newton: fails
+            ("test", ("NormDispIncr", 1.0e-5, 50, 0)),
+            ("algorithm", ("KrylovNewton",)),
+            ("analyze", (1, 0.01)),                      # fails
+            ("test", ("NormDispIncr", 1.0e-5, 50, 0)),
+            ("algorithm", ("ModifiedNewton",)),
+            ("analyze", (1, 0.01)),                      # converges
+            ("test", ("NormDispIncr", 1.0e-3, 35, 0)),
+            ("algorithm", ("Newton",)),
+            ("analyze", (1, 0.01)),                      # next step
+        ]
+        assert len(r.surface_accel_g) == 50
+
+    def test_a_step_no_algorithm_can_take_is_taken_in_substeps(self):
+        """Every algorithm fails the whole step: ten substeps of dt/10 to
+        the same time, each tried with the algorithms in turn, and the
+        record still lines up with the input."""
+        ops, r = _build_fake([SAND33], fail_first_full_step=True)
+        dyn = [a[1] for a in ops.named("analyze") if a[1] < 1.0]
+        assert dyn[:3] == [0.01, 0.01, 0.01]
+        subs = [dt for dt in dyn if dt < 0.01]
+        assert all(dt <= 0.001 + 1e-15 for dt in subs)
+        assert sum(subs) == pytest.approx(0.01, abs=1e-12)
+        assert len([dt for dt in dyn if dt == 0.01]) == 3 + 48
+        assert len(r.surface_accel_g) == 50
+
     def test_surface_record_lines_up_with_the_input(self):
         acc = 0.1 * np.sin(np.linspace(0.0, 6.0, 50))
         _, r = _build_fake([SAND33], accel=acc)
@@ -1273,9 +1376,11 @@ class TestSiteResponseBenchmarks:
     @requires_opensees
     def test_gravity_stresses_match_hand_calculation(self):
         """Sand over clay over sand, water at the sand/clay boundary:
-        vertical effective stress after the gravity stages within 1 % of
+        vertical effective stress after the gravity stages within 0.1 % of
         the weight of the layers above less hydrostatic pore pressure
-        (measured within 0.05 %). Before GM-77 it was 10,000 times."""
+        (measured within 0.0003 % with gravity at 1 m/s, GM-85; 0.04 %
+        when gravity ran at the shaking permeability, the pore pressures
+        not quite settled). Before GM-77 it was 10,000 times."""
         from opensees_agent.site_response import (
             analyze_site_response, _sigma_v_eff)
         layers = [
@@ -1292,7 +1397,32 @@ class TestSiteResponseBenchmarks:
                                   time_limit_s=TEST_TIME_LIMIT_S)
         hand = np.array([_sigma_v_eff(layers, d, 5.0) for d in r.depths])
         np.testing.assert_allclose(r.initial_sigma_v_eff_kPa, hand,
-                                   rtol=0.01)
+                                   rtol=0.001)
+
+    @requires_opensees
+    @pytest.mark.parametrize("gwt_depth, n_elem", [(0.0, 40), (2.0, 20)])
+    def test_finer_sand_meshes_finish_gravity(self, gwt_depth, n_elem):
+        """GM-85: 20 m of sand at 0.5 m elements, and with water 2 m down
+        at 1 m elements, failed at the first elastoplastic gravity step
+        while gravity ran at the shaking permeability (1e-4 m/s). Gravity
+        at 1 m/s, then 1e-4 for the shaking (the OpenSees effective stress
+        example's procedure): sigma'v within 0.1 % of the hand value
+        (measured within 0.0005 %), and the sand liquefies at 0.30 g as
+        the 4-element column does (max ru 1.0 and 0.996; the 4-element
+        column left at 1 m/s for the shaking stays drained, max ru 0.22)."""
+        from opensees_agent.site_response import (
+            analyze_site_response, _sigma_v_eff)
+        r = analyze_site_response([SAND33], motion="synthetic_pulse",
+                                  gwt_depth=gwt_depth,
+                                  n_elem_per_layer=n_elem,
+                                  time_limit_s=TEST_TIME_LIMIT_S)
+        hand = np.array([_sigma_v_eff([SAND33], d, gwt_depth)
+                         for d in r.depths])
+        np.testing.assert_allclose(r.initial_sigma_v_eff_kPa, hand,
+                                   rtol=0.001)
+        assert np.all(np.isfinite(r.surface_accel_g))
+        assert r.pga_surface_g > 0.1 * r.pga_input_g
+        assert np.max(r.max_pore_pressure_ratio) > 0.9
 
     def _clay_run(self, pga, linear_elastic=False):
         from opensees_agent.site_response import analyze_site_response
@@ -1317,7 +1447,7 @@ class TestSiteResponseBenchmarks:
     def test_nonlinear_against_equivalent_linear(self):
         """Clay H = 15 m, Vs 150 m/s, su 60 kPa, synthetic pulse. Measured
         amplification (nonlinear / EQL with the same hyperbolic backbone):
-        0.05 g 2.79 / 3.17 (max strain about 0.1 %), 0.30 g 0.97 / 1.40
+        0.05 g 2.78 / 3.17 (max strain about 0.1 %), 0.30 g 0.96 / 1.40
         (about 0.5 %). Pinned: within 20 % at 0.05 g; at 0.30 g the
         nonlinear column amplifies less than EQL (its stress is capped at
         su) and less than half what it does at 0.01 g."""

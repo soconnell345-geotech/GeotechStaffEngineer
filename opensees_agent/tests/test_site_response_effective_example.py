@@ -23,22 +23,20 @@ one second of shaking.
 
 What to expect, and why:
 
-* The module cannot run this column today: its elastoplastic gravity
-  stage fails at the first step. The module runs gravity at the shaking
-  permeability (1e-4 m/s); the example runs it at 1 m/s and then sets
-  1e-4 m/s through element parameters. Sand columns with elements of
-  about 1-2 m and less fail the same way (GM-83 report). Pinned as a
-  strict expected failure.
-* With the example's gravity procedure (measured by intercepting the
-  module's OpenSees calls), against the port with the inputs the module
-  cannot set as the example does set as the module sets them (bulk
-  moduli, the fluid's bulk modulus, the dense layer's contraction and
-  dilation constants, level ground, the Rayleigh band): spectral
-  accelerations from 0.1 to 1.5 s within 6.2 % (pinned at 10 %: the
-  elements differ, 4-node SSPquadUP against 9-node 9_4_QuadUP), and peak
-  r_u at 3, 7 and 16 m 0.36 / 0.89 / 0.98 against 0.38 / 0.91 / 0.97
-  (pinned within 0.1). PGA is not compared: in liquefying sand it is a
-  dilation spike (0.29 g against 0.55 g) that depends on the element.
+* Until GM-85 the module could not run this column: its elastoplastic
+  gravity stage failed at the first step, because it ran gravity at the
+  shaking permeability (1e-4 m/s). It now follows the example: gravity at
+  1 m/s, then 1e-4 m/s set through element parameters. Sand columns with
+  elements of about 2 m and less failed the same way.
+* Against the port with the inputs the module cannot set as the example
+  does set as the module sets them (bulk moduli, the fluid's bulk
+  modulus, the dense layer's contraction and dilation constants, level
+  ground, the Rayleigh band): spectral accelerations from 0.1 to 1.5 s
+  within 6.2 % (measured -6.2 to +4.5 %; pinned at 10 %: the elements
+  differ, 4-node SSPquadUP against 9-node 9_4_QuadUP), and peak r_u at
+  3, 7 and 16 m 0.36 / 0.89 / 0.98 against 0.38 / 0.91 / 0.97 (pinned
+  within 0.1). PGA is not compared: in liquefying sand it is a dilation
+  spike (0.29 g against 0.55 g) that depends on the element.
 * Against the port as written the dense layer is the difference: the
   module gives every sand the Dr = 40 % contraction constants, so its
   dense layer liquefies (r_u 0.98 at 16 m against 0.56); Sa from 0.1 to
@@ -116,17 +114,11 @@ class TestAgainstTheOpenSeesPyEffectiveExample:
         assert np.all(np.isfinite(r["surface_accel_g"]))
 
     @requires_opensees
-    @pytest.mark.xfail(
-        strict=True, raises=RuntimeError,
-        reason="GM-83: the module's elastoplastic gravity stage fails on "
-               "this column (it runs gravity at the shaking permeability; "
-               "the example at 1 m/s)")
     def test_module_matches_the_port_it_can_express(self):
         """Sa from 0.1 to 1.5 s within 10 % of the port with the module's
-        inputs (measured -6.2 to +3.8 % with the example's gravity
-        procedure), and peak r_u at 3, 7 and 16 m within 0.1 (measured
-        0.36 / 0.89 / 0.98 against 0.38 / 0.91 / 0.97). Today the gravity
-        stage raises."""
+        inputs (measured -6.2 to +4.5 %), and peak r_u at 3, 7 and 16 m
+        within 0.1 (measured 0.36 / 0.89 / 0.98 against 0.38 / 0.91 /
+        0.97). Until GM-85 the gravity stage raised."""
         from opensees_agent.site_response import analyze_site_response
         accel, dt = wiki.load_record()
         inputs, _ = eff.closest_api_inputs()

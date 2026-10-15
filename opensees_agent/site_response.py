@@ -13,8 +13,12 @@ The model follows the OpenSees example "Effective Stress Site Response
 Analysis of a Layered Soil Column" (McGann & Arduino, University of
 Washington; OpenSeesPy docs section 14.4.2, freeFieldEffective.py):
 gravity as element body forces, an elastic then an elastoplastic gravity
-stage, the clock set back to zero, then the motion as a force history on
-the base dashpot.
+stage at a permeability of 1 m/s, each layer's own permeability set
+through element parameters, the clock set back to zero, then the motion
+as a force history on the base dashpot. The dynamic stage runs Newton, as
+the authors' total stress example does ("Site Response Analysis of a
+Layered Soil Column (Total Stress Analysis)"), with KrylovNewton and
+modified Newton as fallbacks.
 
 References:
     Lysmer, J. & Kuhlemeyer, R.L. (1969). "Finite Dynamic Model for
@@ -61,6 +65,34 @@ DEFAULT_TIME_LIMIT_S = 600.0
 _GRAVITY_DT_S = 500.0
 _GRAVITY_ELASTIC_STEPS = 10
 _GRAVITY_PLASTIC_STEPS = 40
+
+# Permeability (m/s) of every element during the gravity stages. As in the
+# OpenSees effective stress example (freeFieldEffective.py: "permeabilities
+# 1.0 m/s for the gravity analysis", then each layer's own value set
+# through element parameters before the shaking). Gravity run at the
+# shaking permeability (1e-4 m/s) failed at the first elastoplastic step
+# on sand columns with elements of about 2 m and less (GM-85). The update
+# sets the same quantity the element takes (checked: updating to the
+# constructor's own value changes nothing, to machine zero).
+_GRAVITY_PERMEABILITY = 1.0
+
+# Dynamic stage (GM-84). Full Newton, as McGann & Arduino's total stress
+# example: it converges quadratically, so once a correction is under the
+# examples' 1 mm test the step is in balance whatever the element size.
+# KrylovNewton (the effective stress example's choice) and modified Newton
+# converge linearly, slowly while the soil yields, so the same 1 mm test
+# passed them with the step still out of balance on small elements (1 mm
+# is 0.4 % shear strain on a 0.25 m element; Sa off by up to -35 %, GM-83).
+# They are kept as fallbacks with a test 100 times tighter, at which
+# KrylovNewton gives the converged answer on 0.25 m elements.
+_DYNAMIC_TEST = ("NormDispIncr", 1.0e-3, 35, 0)
+_FALLBACK_TEST = ("NormDispIncr", 1.0e-5, 50, 0)
+_DYNAMIC_ALGORITHMS = (
+    ("Newton", _DYNAMIC_TEST),
+    ("KrylovNewton", _FALLBACK_TEST),
+    ("ModifiedNewton", _FALLBACK_TEST),
+)
+_DYNAMIC_SUBSTEPS = 10
 
 
 # ===========================================================================
@@ -209,9 +241,10 @@ def analyze_site_response(
     time_limit_s : float or None
         Wall-clock limit (s). The analysis runs in a child process that
         is stopped at this limit with a RuntimeError, because a stuck
-        OpenSees step cannot be interrupted any other way (a 30-element
-        column through 4,000 steps takes about 7 s). None runs it in this
-        process with no limit. Default 600.
+        OpenSees step cannot be interrupted any other way (the OpenSees
+        wiki example's 160-element column through 4,000 steps takes
+        about 9 s). None runs it in this process with no limit. Default
+        600.
 
     Returns
     -------
@@ -483,7 +516,6 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
             n3 = right_node(ei + 1)
             n4 = left_node(ei + 1)
 
-            perm_val = perms[layer_idx_local]
             e_val = e_inits[layer_idx_local]
 
             # Gravity is the element body force: SSPquadUP takes the
@@ -494,14 +526,16 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
             # buoyant below the water table. (Until GM-77 the weight was
             # nodal loads on a Linear time series, factor = time, so at
             # t = 10,000 s the column carried 10,000 times its weight.)
+            # Permeability: 1 m/s for the gravity stages, the layer's own
+            # value set after them (step 8; GM-85).
             ops.element('SSPquadUP', elem_tag,
                         n1, n2, n3, n4,
                         mat_tags[layer_idx_local],
                         1.0,       # thickness (plane strain)
                         2.2e6,     # fluid bulk modulus (water, kPa)
                         1.0,       # fluid mass density (Mg/m3)
-                        perm_val,  # horizontal permeability
-                        perm_val,  # vertical permeability
+                        _GRAVITY_PERMEABILITY,  # horizontal permeability
+                        _GRAVITY_PERMEABILITY,  # vertical permeability
                         e_val,     # void ratio
                         1.0e-5,    # alpha (pressure stabilization)
                         0.0,       # b1: horizontal gravity component
@@ -556,6 +590,13 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
         for mt in mat_tags:
             ops.updateMaterialStage('-material', mt, '-stage', 1)
         _gravity_stage(ops, _GRAVITY_PLASTIC_STEPS, "elastoplastic")
+
+    # Each element's own permeability for the shaking (sand 1e-4, clay
+    # 1e-7 m/s), set through element parameters as the OpenSees effective
+    # stress example does after its gravity stages (GM-85). Without it the
+    # column would shake drained (ru about 0.2 where it liquefies).
+    _set_shaking_permeability(
+        ops, [perms[i] for i in elem_mat_idx])
 
     # Set the clock back to zero: the gravity stages end at t = 25,000 s
     # (or 5,000 s), and the input motion's force history starts at
@@ -617,12 +658,14 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
     ops.rayleigh(a0_ray, a1_ray, 0.0, 0.0)
 
     # ------------------------------------------------------------------
-    # 12. Dynamic analysis
+    # 12. Dynamic analysis: Newton, with KrylovNewton and modified Newton
+    #     as fallbacks at a tighter test (see _DYNAMIC_ALGORITHMS; GM-84)
     # ------------------------------------------------------------------
     ops.wipeAnalysis()
     ops.constraints('Penalty', 1.0e14, 1.0e14)
-    ops.test('NormDispIncr', 1.0e-3, 35, 0)
-    ops.algorithm('KrylovNewton')
+    first_algorithm, first_test = _DYNAMIC_ALGORITHMS[0]
+    ops.test(*first_test)
+    ops.algorithm(first_algorithm)
     ops.numberer('RCM')
     ops.system('ProfileSPD')
     ops.integrator('Newmark', 0.5, 0.25)
@@ -638,18 +681,14 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
 
     for step in range(1, n_steps):
         t_target = step * dt_motion
-        ok = ops.analyze(1, dt_motion)
+        ok = _dynamic_step(ops, dt_motion)
         if ok != 0:
-            # Fallback: ModifiedNewton
-            ops.algorithm('ModifiedNewton')
-            ok = ops.analyze(1, dt_motion)
-            ops.algorithm('KrylovNewton')
-        if ok != 0:
-            # Fallback: substeps up to the same target time
-            n_sub = 10
+            # Fallback: substeps up to the same target time, each tried
+            # with every algorithm in turn
             while ops.getTime() < t_target - 1.0e-9 * dt_motion:
-                dt_sub = min(dt_motion / n_sub, t_target - ops.getTime())
-                ok = ops.analyze(1, dt_sub)
+                dt_sub = min(dt_motion / _DYNAMIC_SUBSTEPS,
+                             t_target - ops.getTime())
+                ok = _dynamic_step(ops, dt_sub)
                 if ok != 0:
                     break
         if ok != 0:
@@ -658,9 +697,10 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
             raise RuntimeError(
                 f"The dynamic analysis did not converge at t = "
                 f"{ops.getTime():.3f} s (step {step} of {n_steps - 1}, "
-                f"after Krylov-Newton, modified Newton and 10 substeps). "
-                f"The soil may have failed or liquefied under this motion; "
-                f"try more elements per layer or a weaker motion.")
+                f"after Newton, Krylov-Newton and modified Newton, then "
+                f"{_DYNAMIC_SUBSTEPS} substeps). The soil may have failed "
+                f"or liquefied under this motion; try more elements per "
+                f"layer or a weaker motion.")
 
         # Surface acceleration
         a_surf = ops.nodeAccel(surface_node, 1)
@@ -749,6 +789,41 @@ def _gravity_stage(ops, n_steps, stage):
                 f"with these properties: check su (clay) and phi (sand) "
                 f"against the layers' stresses, or use more elements per "
                 f"layer.")
+
+
+def _set_shaking_permeability(ops, perm_by_element, first_tag=10001):
+    """Set each SSPquadUP element's permeability (m/s) for the shaking.
+
+    ``perm_by_element[k]`` is element k + 1's. As the OpenSees effective
+    stress example does after gravity: one parameter per element and
+    direction ('hPerm', 'vPerm'), then updateParameter.
+    """
+    tag = first_tag
+    for e, perm in enumerate(perm_by_element):
+        for name in ('hPerm', 'vPerm'):
+            ops.parameter(tag, 'element', e + 1, name)
+            ops.updateParameter(tag, perm)
+            tag += 1
+
+
+def _dynamic_step(ops, dt):
+    """One dynamic step of ``dt``: Newton first, then each fallback with
+    its own test (_DYNAMIC_ALGORITHMS). Newton and its test are restored
+    after a fallback. Returns 0 when a step converged, else the last
+    nonzero code from ops.analyze."""
+    ok = -1
+    for k, (algorithm, test) in enumerate(_DYNAMIC_ALGORITHMS):
+        if k > 0:
+            ops.test(*test)
+            ops.algorithm(algorithm)
+        ok = ops.analyze(1, dt)
+        if ok == 0:
+            break
+    if k > 0:
+        first_algorithm, first_test = _DYNAMIC_ALGORITHMS[0]
+        ops.test(*first_test)
+        ops.algorithm(first_algorithm)
+    return ok
 
 
 # ===========================================================================

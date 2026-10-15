@@ -36,18 +36,17 @@ What to expect, and why (measured on the 20 s record):
 * Nonlinear, against the port with the three inputs set as the module
   sets them: the same model (on this column the Tcl's quad, an SSPquad
   and the module's dry SSPquadUP give the same motion to 1e-12), so it
-  should agree to a few per cent. It does not today: the module's
-  dynamic stage (KrylovNewton, NormDispIncr 1e-3 m) accepts unconverged
-  steps when elements are small (here 0.25 m, where 1 mm is 0.4 % strain),
-  which adds high-frequency noise and takes 9-35 % off Sa from 0.1 to
-  1.5 s. With Newton, as the Tcl uses, the module matches the port to
-  0.1 % everywhere. Pinned as a strict expected failure until fixed.
-* Nonlinear, against the port as written: within 25 % from 0.3 to 1.5 s.
-  Poisson's ratio 0 (the Tcl) against 0.495 (the module's clay) moves Sa
-  at 0.64-1.5 s by 7-12 % with converged steps; the solver defect moves
-  it 10-17 % the other way today, and scatters it. PGA comes out higher in
-  the module (+23 % with converged steps, +29 to +38 % today): its column
-  is less damped at high frequency, where a nonlinear column's peaks live.
+  should agree to a few per cent, and it does: amplification within
+  0.1 % from 0.1 to 1.5 s, PGA -0.1 %. Until GM-84 it did not: the
+  dynamic stage ran KrylovNewton at NormDispIncr 1e-3 m, which accepted
+  unconverged steps when elements are small (here 0.25 m, where 1 mm is
+  0.4 % strain), adding high-frequency noise and taking 9-35 % off Sa
+  from 0.1 to 1.5 s. It now runs Newton, as the Tcl does.
+* Nonlinear, against the port as written: within 15 % from 0.3 to 1.5 s
+  (measured -2.6 to +11.7 %): Poisson's ratio 0 (the Tcl) against 0.495
+  (the module's clay) moves Sa at 0.64-1.5 s by 7-12 %. PGA comes out
+  higher in the module (+23 %): its column is less damped at high
+  frequency, where a nonlinear column's peaks live.
 """
 
 import functools
@@ -198,34 +197,30 @@ class TestAgainstTheOpenSeesWikiExample:
 
     @requires_opensees
     def test_nonlinear_column_against_the_port_as_written(self):
-        """Amplification within 25 % from 0.3 to 1.5 s (measured -9.8 to
-        -15.3 % today; -2.6 to +11.7 % with converged steps, the positive
-        side from Poisson's ratio); PGA higher, by under 50 % (measured
-        +29 % today, +23 % with converged steps: less damping above
-        8 Hz). Loose because today's unconverged steps scatter: the
-        unrounded full record gave -17 % at 1.0 s and PGA +38 %."""
+        """Amplification within 15 % from 0.3 to 1.5 s (measured -2.6 to
+        +11.7 %, the positive side from Poisson's ratio); PGA higher, by
+        10 to 35 % (measured +23 %: less damping above 8 Hz). Until GM-84
+        the unconverged steps scattered it (-9.8 to -15.3 %, PGA +29 %;
+        -17 % at 1.0 s and PGA +38 % on the unrounded full record), so
+        this was pinned at 25 % and PGA under +50 %."""
         got = _ours(False)
         ref = REFERENCE["as_written"]
-        _assert_spectrum(got["amplification"], ref["amplification"], 0.25,
+        _assert_spectrum(got["amplification"], ref["amplification"], 0.15,
                          "amplification", periods=(0.3, 0.4, 0.5, 0.64,
                                                    1.0, 1.5))
-        assert 1.0 < got["pga_g"] / ref["pga_g"] < 1.5
+        assert 1.10 < got["pga_g"] / ref["pga_g"] < 1.35
 
     @requires_opensees
-    @pytest.mark.xfail(
-        strict=True, raises=AssertionError,
-        reason="GM-83: the dynamic stage (KrylovNewton, NormDispIncr "
-               "1e-3 m) accepts unconverged steps on 0.25 m elements; "
-               "with Newton the module matches the port to 0.1 %")
     def test_nonlinear_column_matches_the_port_it_can_express(self):
         """Against the port with Poisson's ratio 0.495, Rayleigh damping
         at the site frequency and five times it (0.41 %) and peak shear
         strain 0.1, as the module sets them: the same model, so
         amplification within 3 % from 0.1 to 1.5 s and PGA within 5 %.
-        Measured with the module's dynamic algorithm switched to Newton:
-        within 0.1 % everywhere; with KrylovNewton at 1e-5 instead,
-        amplification within 0.5 % and PGA -4 % (a peak is one spike).
-        Today: PGA +5 %, amplification -35 to -9 %."""
+        Measured (Newton, GM-84): amplification within 0.1 %, PGA -0.1 %.
+        Both solved to a 100 times tighter test (Newton or KrylovNewton
+        at 1e-5 m) move amplification by under 0.6 % and PGA by -4 to
+        -5 % (a peak is one spike). Before GM-84 (KrylovNewton at 1e-3 m):
+        PGA +5 %, amplification -35 to -9 %."""
         got = _ours(False)
         ref = REFERENCE["api_expressible"]
         assert got["pga_g"] == pytest.approx(ref["pga_g"], rel=0.05)

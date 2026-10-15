@@ -85,9 +85,12 @@ Layered Soil Column" (McGann & Arduino; OpenSeesPy docs 14.4.2,
 - Water table: nodes at or above gwt_depth have pp fixed at 0, so the water
   table sits at the deepest node at or above gwt_depth (exact on a node).
 - Analysis phases: (1) gravity elastic 10 steps of 500 s, (2) elastoplastic
-  40 steps of 500 s (skipped when `linear_elastic=True`), (3) clock set back
-  to 0 (`setTime(0.0)`), (4) dynamic Newmark (0.5, 0.25) with Rayleigh
-  damping
+  40 steps of 500 s (skipped when `linear_elastic=True`), both with every
+  element's permeability at 1 m/s, (3) each element's own permeability
+  (sand 1e-4, clay 1e-7 m/s) set through element parameters (`parameter
+  ... 'element' tag 'hPerm' / 'vPerm'`, `updateParameter`), as the
+  effective stress example does (GM-85), (4) clock set back to 0
+  (`setTime(0.0)`), (5) dynamic Newmark (0.5, 0.25) with Rayleigh damping
 - Lysmer-Kuhlemeyer dashpot at base: `Viscous` uniaxial material with
   c = rho_bedrock * Vs_bedrock * area (zeroLength element)
 - Loading: the motion is a ROCK OUTCROP motion; force = c_dashpot *
@@ -97,10 +100,19 @@ Layered Soil Column" (McGann & Arduino; OpenSeesPy docs 14.4.2,
 - Mesh: layers reversed bottom-to-top, n_elem_per_layer elements per layer,
   left/right node columns with equalDOF periodic BCs
 - Rayleigh damping: f1 = Vs_avg/(4*H) (the site frequency), f2 = 5*f1
-- Convergence fallback: KrylovNewton → ModifiedNewton → substeps of dt/10
-  to the same target time; if all fail, RuntimeError naming the time (a
-  failed step is never skipped silently). A failed gravity step is also a
-  RuntimeError.
+- Dynamic solver (GM-84): Newton at NormDispIncr 1e-3 m, 35 iterations
+  (the total stress example's algorithm, the examples' test); a step
+  Newton cannot take goes to KrylovNewton, then ModifiedNewton, each at
+  NormDispIncr 1e-5 m, 50 iterations, and Newton is restored for the next
+  step; a step none of them takes goes in 10 substeps of dt/10 to the
+  same target time, each through the same three; if a substep fails all
+  three, RuntimeError naming the time (a failed step is never skipped
+  silently). A failed gravity step is also a RuntimeError. Why the
+  fallbacks get a tighter test: Newton converges quadratically, so once a
+  correction is under 1 mm the step is in balance whatever the element
+  size; KrylovNewton and modified Newton converge linearly, slowly while
+  the soil yields, and the 1 mm test passed them out of balance on small
+  elements (defect A below).
 - Time limit: the model runs in a child Python process (`time_limit_s`,
   default 600 s; None = in process). openseespy holds the GIL inside
   `ops.analyze`, so a stuck step would freeze every thread of the caller
@@ -156,8 +168,8 @@ Run in WSL (openseespy 3.8.0, Python 3.12); tests in
 | Column with the rock's impedance, no damping, synthetic pulse | Outcrop motion reproduced, F = 1 | amplification 1.0006 (4 and 10 elements) |
 | Uniform layer H 20 m, Vs 200, rho 1.9 on rock 760 / 2.4, xi 2 %, steady sine, 10 elements | Kramer (1996) Sec. 7.2 closed form with the Rayleigh xi(f) | 0.5 f1: 1.361 vs 1.376 (-1.1 %); f1 = 2.5 Hz: 4.178 vs 4.169 (+0.2 %); 2 f1: 0.989 vs 0.989; 3 f1: 3.488 vs 3.543 (-1.6 %) |
 | Same column, synthetic pulse, linear elastic | pystrata linear elastic (frequency domain, constant 2 %) | PGA 0.749 vs 0.758 g (-1.3 %); Sa 0.1-1.0 s within 3.3 % |
-| Sand/clay/sand, water at 5 m | Hand sigma'v | within 0.05 % |
-| Clay H 15, Vs 150, su 60, synthetic pulse, nonlinear | pystrata EQL with the same hyperbolic backbone (gamma_ref = su/Gmax, Masing damping + 2 %) | amplification 0.01 g: 2.62 vs 2.88; 0.05 g: 2.79 vs 3.17; 0.10 g: 1.92 vs 2.58; 0.30 g: 0.97 vs 1.40 (linear elastic 2.81) |
+| Sand/clay/sand, water at 5 m | Hand sigma'v | within 0.0003 % (0.04 % with gravity at the shaking permeability, before GM-85) |
+| Clay H 15, Vs 150, su 60, synthetic pulse, nonlinear | pystrata EQL with the same hyperbolic backbone (gamma_ref = su/Gmax, Masing damping + 2 %) | amplification 0.01 g: 2.62 vs 2.88; 0.05 g: 2.78 vs 3.17; 0.10 g: 1.91 vs 2.58; 0.30 g: 0.96 vs 1.40 (linear elastic 2.81; before GM-84 2.62 / 2.79 / 1.92 / 0.97) |
 
 Why nonlinear and EQL part as strain grows: EQL applies one
 strain-compatible modulus and damping to the whole record and has no shear
@@ -227,18 +239,19 @@ On this column the Tcl's `quad`, an `SSPquad` and the module's dry
 | Module, linear elastic | 0.811 | 1.109 | 1.896 | 1.788 | 2.596 | 2.118 | 0.741 | 0.499 | 0.278 |
 | Port as written | 0.353 | 0.952 | 0.762 | 1.096 | 1.376 | 0.799 | 0.388 | 0.419 | 0.364 |
 | Port, module's inputs | 0.433 | 0.940 | 0.748 | 1.071 | 1.362 | 0.778 | 0.429 | 0.468 | 0.388 |
-| Module today | 0.455 | 0.610 | 0.619 | 0.978 | 1.236 | 0.711 | 0.336 | 0.355 | 0.329 |
-| Module, dynamic stage on Newton (probe) | 0.433 | 0.941 | 0.748 | 1.071 | 1.362 | 0.778 | 0.429 | 0.468 | 0.388 |
+| Module before GM-84 (KrylovNewton, 1e-3 m) | 0.455 | 0.610 | 0.619 | 0.978 | 1.236 | 0.711 | 0.336 | 0.355 | 0.329 |
+| Module since GM-84 (Newton) | 0.433 | 0.941 | 0.748 | 1.071 | 1.362 | 0.778 | 0.429 | 0.468 | 0.388 |
 
 Pinned: linear within 3 % (measured -0.1 to +2.0 % from 0.1 to 1.5 s;
 PGA +2.7 %, within 5 %: the module's Rayleigh curve is less damped above
-about 8 Hz); nonlinear against the port as written within 25 % from 0.3 to
-1.5 s (Poisson's ratio alone moves 0.64-1.5 s by 7-12 %; today's
-unconverged steps scatter it by about 5 %), PGA higher by under 50 %
-(+23 % converged, +29 to +38 % today); nonlinear against the port with the
-module's inputs, amplification within
-3 % and PGA within 5 % -- a strict expected failure until defect A is
-fixed (today -35 to -9 %; with Newton within 0.1 % everywhere).
+about 8 Hz); nonlinear against the port as written within 15 % from 0.3 to
+1.5 s (measured -2.6 to +11.7 %; Poisson's ratio alone moves 0.64-1.5 s by
+7-12 %), PGA higher by 10 to 35 % (measured +23 %); nonlinear against the
+port with the module's inputs, amplification within 3 % and PGA within
+5 % (measured within 0.1 % and -0.1 %). Before GM-84 the last was a strict
+expected failure (-35 to -9 %, PGA +5 %), and the as-written pins were
+25 % and PGA under +50 % because the unconverged steps scattered them
+(-9.8 to -15.3 %, PGA +29 to +38 %).
 
 **Effective stress column.** Fifteen 2 m sublayers of four 0.5 m elements
 (the module puts the same number of elements in every layer), each Vs set
@@ -254,22 +267,23 @@ ones for every sand).
 |---|---|---|---|---|---|---|---|---|---|---|
 | Port as written (2 % slope) | 0.356 | 0.832 | 0.562 | 0.680 | 0.790 | 0.753 | 0.618 | 0.325 | 0.311 | 0.43 / 0.97 / 0.56 |
 | Port, module's inputs, level | 0.545 | 0.917 | 0.506 | 0.657 | 0.733 | 0.605 | 0.579 | 0.323 | 0.303 | 0.38 / 0.91 / 0.97 |
-| Module today | gravity stage fails (defect B) | | | | | | | | | |
-| Module, gravity at 1 m/s then 1e-4 (probe) | 0.289 | 0.951 | 0.492 | 0.641 | 0.715 | 0.568 | 0.556 | 0.324 | 0.302 | 0.36 / 0.89 / 0.98 |
+| Module before GM-85 | gravity stage fails (defect B) | | | | | | | | | |
+| Module, gravity at 1 m/s then 1e-4, KrylovNewton (GM-83 probe) | 0.289 | 0.951 | 0.492 | 0.641 | 0.715 | 0.568 | 0.556 | 0.324 | 0.302 | 0.36 / 0.89 / 0.98 |
+| Module since GM-84 and GM-85 | 0.291 | 0.958 | 0.494 | 0.641 | 0.715 | 0.568 | 0.556 | 0.324 | 0.302 | 0.36 / 0.89 / 0.98 |
 
-Pinned as a strict expected failure until defect B is fixed: Sa within
-10 % of the port with the module's inputs (measured -6.2 to +3.8 %; the
-elements differ) and peak r_u within 0.1. PGA is not compared: in
-liquefying sand it is a dilation spike that depends on the element. Against
-the port as written the dense layer is the difference (the module's
-liquefies: r_u 0.98 at 16 m against 0.56).
+Pinned (a strict expected failure until GM-85): Sa within 10 % of the
+port with the module's inputs (measured -6.2 to +4.5 %; the elements
+differ) and peak r_u within 0.1. PGA is not compared: in liquefying sand
+it is a dilation spike that depends on the element. Against the port as
+written the dense layer is the difference (the module's liquefies: r_u
+0.98 at 16 m against 0.56).
 
 "Probe" rows: the module's own model code run with one OpenSees call
-changed by intercepting it in a scratch script; the module is unchanged.
+changed by intercepting it in a scratch script, before the fix.
 
-**Defect A: the dynamic stage accepts unconverged steps on small
-elements.** KrylovNewton with NormDispIncr 1e-3 m (as the effective stress
-example has it). 1 mm is 0.4 % strain on a 0.25 m element, and
+**Defect A (fixed, GM-84): the dynamic stage accepted unconverged steps
+on small elements.** KrylovNewton with NormDispIncr 1e-3 m (as the
+effective stress example has it). 1 mm is 0.4 % strain on a 0.25 m element, and
 KrylovNewton (modified Newton on the step's first tangent) makes small
 corrections while the soil yields, so the test passes with the residual
 still large: high-frequency noise and lost mid-period response. Evidence:
@@ -285,19 +299,97 @@ the existing tests' coarse meshes Newton changes results by under 1 %
 0.30 g unchanged). Candidate fix: Newton in the dynamic stage (as the
 total stress example), KrylovNewton and ModifiedNewton as fallbacks, or
 KrylovNewton at 1e-5; either gives the converged answer (about +30 % run
-time on the 160-element column). Not applied (GM-83 reported it first).
+time on the 160-element column). GM-83 reported it; GM-84 applied the
+first (below).
 
-**Defect B: the elastoplastic gravity stage fails on finer sand meshes.**
+**Defect B (fixed, GM-85): the elastoplastic gravity stage failed on finer
+sand meshes.**
 Failing at the first plastic gravity step: SAND33 (20 m) at 40 elements
 (0.5 m); with water 2 m down at 20 elements (1 m); 30 m of loose sand at
 15 elements (2 m); two 10 m sands at 10 elements each; the effective
-example's column. The module runs gravity at the shaking permeability
+example's column. The module ran gravity at the shaking permeability
 (1e-4 m/s); the example runs gravity at 1 m/s and then sets 1e-4 m/s
 through element parameters (`parameter ... hPerm / vPerm`, which SSPquadUP
 takes: without that update the column stays drained, r_u about 0.2). With
 1 or 1e-2 m/s during gravity every case above finishes; 200 iterations
 instead of 35 rescue the 20 m sand but not the effective column. Candidate
-fix: the example's procedure. Not applied.
+fix: the example's procedure. GM-85 applied it (below).
+
+## GM-84 and GM-85 (2026-10-15): the fixes, measured
+
+What changed in `site_response.py`:
+
+- **GM-85, gravity:** every SSPquadUP element is built with permeability
+  1 m/s; after the gravity stages each element's own value (sand 1e-4,
+  clay 1e-7 m/s) is set with `parameter <tag> element <ele> hPerm|vPerm`
+  and `updateParameter`, before the clock reset: the effective stress
+  example's procedure. Checked that the update sets the quantity the
+  element's constructor takes: updating an element built at 1e-4 to 1e-4
+  changes the surface motion by 0 (to machine zero), and 1 m/s through
+  gravity then 1e-4 gives the 1e-4-throughout motion within 1.3e-3 g
+  (PGA 0.1496 against 0.1499 g; sigma'v0 0.2 % lower, now equal to the
+  hand value) on 20 m of sand at 4 elements; without the update the
+  column shakes drained (max ru 0.22 against 1.0, PGA doubled).
+- **GM-84, dynamic stage:** Newton at NormDispIncr 1e-3 m (35
+  iterations), then KrylovNewton and modified Newton at 1e-5 m (50), then
+  10 substeps through the same three, else an error naming the time.
+
+Why Newton rather than a tolerance scaled to the element size: on the
+wiki column KrylovNewton at 1e-5 m gives the converged answer too
+(amplification within 0.4 % of the port, PGA -4.3 %, 8.5 s against
+Newton's 8.7 s), but the right test would then depend on the element size
+and on a norm that mixes metres with kPa of pore pressure and grows with
+the number of nodes. Newton converges quadratically, so the examples' 1 mm
+test leaves it in balance on 0.25 m elements as on 5 m ones, and it is the
+algorithm of the authors' total stress example, which the module now
+matches to 0.1 %. Solved to a 100 times tighter test (Newton or
+KrylovNewton at 1e-5 m) the wiki column moves by under 0.6 % in
+amplification and -4 to -5 % in PGA (one spike).
+
+The fallbacks, forced (Newton never needed one in any run below):
+
+| Wiki column (160 elements) unless named | Steps not taken by the first algorithm | Amplification vs the port, 0.1-1.5 s | PGA vs the port |
+|---|---|---|---|
+| Newton, 1e-3 m (the module) | 0 of 3,999 | -0.0 to +0.1 % | -0.1 % |
+| Newton, 1e-5 m | 0 | +0.0 to +0.6 % | -4.7 % |
+| KrylovNewton, 1e-5 m, alone | 0 | +0.0 to +0.4 % | -4.3 % |
+| Modified Newton, 1e-5 m, alone | 205 (substeps) | -3.2 to +0.2 % | -20 % |
+| Modified Newton, 1e-7 m, 400 iterations, alone | 298 (substeps) | -3.3 to -0.1 % | -21 % |
+| Newton, 1 step in 20 forced into substeps | 199 (substeps) | -0.4 to +0.1 % | -6.0 % |
+| Effective column: Newton allowed 2 iterations | 328 (all taken by KrylovNewton at 1e-5) | within 0.15 points of all-Newton | the same |
+
+So a step a fallback accepts is in balance; what moves the PGA is the
+substeps (dt/10 integrates the peak differently from dt), which modified
+Newton needs on about 5 % of this column's steps. Hence modified Newton
+last and substeps after it.
+
+Before and after, run in WSL (openseespy 3.8.0, Python 3.12), the model
+only (`time_limit_s=None`):
+
+| Column | Before | After | Run time (s), before -> after |
+|---|---|---|---|
+| Wiki column, 160 elements of 0.25 m, nonlinear | amplification -35 to -9 % vs the port, PGA +5 %, max strain 1.40 % | within 0.1 %, PGA -0.1 %, max strain 0.45 % | 7.57 -> 8.72 |
+| Wiki column, linear elastic | PGA 0.811 g | 0.811 g (same to 1e-9) | 6.10 -> 7.13 |
+| Effective example's column, 60 elements of 0.5 m | elastoplastic gravity fails | Sa -6.2 to +4.5 % vs the port, r_u 0.36 / 0.89 / 0.98 | fails at 0.17 -> 5.07 |
+| 20 m sand at 40 elements, water at the surface | gravity fails | PGA amplification 0.513, max ru 1.0, sigma'v0 within 0.0005 % | fails -> 4.05 |
+| 20 m sand at 20 elements, water 2 m down | gravity fails | 0.666, max ru 0.996, within 0.0004 % | fails -> 1.81 |
+| 30 m loose sand (Vs 150, phi 30) at 15 elements | gravity fails | 0.417, max ru 1.0 | fails -> 1.36 |
+| Two 10 m sands at 10 elements each | gravity fails | 0.452, max ru 1.0 | fails -> 2.15 |
+| Uniform sand 20 m, 4 elements, 0.30 g (PGA amplification / max ru) | 0.4995 / 1.00 | 0.4987 / 1.00 | 0.54 -> 0.59 |
+| Uniform clay 15 m, 3 elements | 0.9813 | 0.9818 | 0.36 -> 0.38 |
+| Sand / clay / sand, 2 elements a layer, water 2 m | 0.5039 | 0.5038 | 0.63 -> 0.67 |
+| Rock-impedance column, 4 elements | 1.0006 | 1.0006 | 0.35 -> 0.37 |
+| Kramer column, 10 elements, sine at 0.5 / 1 / 2 / 3 f1 | 1.361 / 4.178 / 0.989 / 3.488 | the same to 1e-8 | 0.56-0.59 -> 0.61-0.66 |
+| pystrata linear column, 10 elements | PGA 0.7486 g | 0.7486 g | 0.47 -> 0.52 |
+| Sand / clay / sand, water 5 m: sigma'v0 against the hand value | 0.036 % | 0.0003 % | 0.45 -> 0.48 |
+| Clay 15 m, 6 elements, 0.01 / 0.05 / 0.10 / 0.30 g | 2.618 / 2.790 / 1.919 / 0.967 | 2.617 / 2.785 / 1.914 / 0.959 | 0.41-0.43 -> 0.44-0.46 |
+| Sand over clay, water 2 m / dry | 0.5084 / 0.7036 | 0.5082 / 0.7038 | 0.68 / 0.39 -> 0.73 / 0.41 |
+| Dry sand 20 m, 0.30 g, 4 / 10 elements | 1.756 / 1.831 | 1.756 / 1.817 | 0.55 / 0.94 -> 0.56 / 0.99 |
+
+Newton costs 2-17 % more time than KrylovNewton, the most on the
+160-element column (less than GM-83's +30 % estimate). The `opensees_agent` suite in WSL: 125 passed and 2 expected
+failures in 77 s before; 134 passed in 86 s after (the two markers off,
+seven tests added).
 
 ## Ground Motions
 
@@ -321,6 +413,6 @@ base64 numpy arrays.
   site response run in the tests has a time limit, so a stuck step fails
   instead of hanging CI.
 - **The OpenSees examples** (GM-83): ports of the two McGann & Arduino
-  examples as test helpers, the stored record and the ports' numbers; two
-  strict expected failures mark defects A and B above, so fixing either
-  fails its test until the marker comes off.
+  examples as test helpers, the stored record and the ports' numbers. The
+  two tests that were strict expected failures for defects A and B pass
+  since GM-84 and GM-85 and pin the fixes.

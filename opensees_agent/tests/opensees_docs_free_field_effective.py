@@ -401,9 +401,11 @@ def closest_api_inputs():
     is the example's Rayleigh ratio at the module's site frequency
     (0.40 % at 1.77 Hz). What it cannot set is listed under
     ``run_free_field_effective(module_inputs=True)``, plus the slope (the
-    module's column is level), the element (4-node SSPquadUP against
-    9-node 9_4_QuadUP) and the gravity permeability (the example runs
-    gravity at 1 m/s, the module at 1e-4).
+    module's column is level) and the element (4-node SSPquadUP against
+    9-node 9_4_QuadUP). The gravity procedure is the example's since
+    GM-85 (1 m/s through gravity, then 1e-4 m/s through element
+    parameters); until then the module ran gravity at 1e-4 m/s and its
+    elastoplastic gravity stage failed on this column.
     """
     from opensees_agent.site_response import _sigma_v_eff
     from opensees_agent.tests.opensees_wiki_free_field import rayleigh_ratio
