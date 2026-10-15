@@ -212,7 +212,12 @@ _COND_VALID = (
     "len_scale", "nugget", "fit_variogram", "kriging_type",
     "measurement_error", "anis", "angle_deg", "cell_size", "margin",
     "quantity", "n_realizations", "seed", "simulation_method", "bounds",
-    "bounds_mode", "report_values", "figures", "output_prefix")
+    "bounds_mode", "report_values", "figures", "output_prefix",
+    "value_name", "value_unit", "north_deg")
+
+#: Figure settings, not simulation inputs.
+_COND_FIGURE_ONLY = ("figures", "output_prefix", "value_name", "value_unit",
+                     "north_deg")
 
 #: GSTools' own name for the measurement error, and common spellings.
 _COND_ALIASES = {"cond_err": "measurement_error",
@@ -231,8 +236,7 @@ def _run_conditional_simulation(params: dict) -> dict:
     require_params(params, ["x", "y", "values", "regions"],
                    method="conditional_simulation", valid=_COND_VALID)
     kw = {k: params[k] for k in _COND_VALID
-          if params.get(k) is not None
-          and k not in ("figures", "output_prefix")}
+          if params.get(k) is not None and k not in _COND_FIGURE_ONLY}
     result = analyze_conditional_simulation(**kw)
     d = result.to_dict()
 
@@ -262,9 +266,16 @@ def _run_conditional_simulation(params: dict) -> dict:
     d["files"] = files
 
     if params.get("figures", True):
+        import functools
         from gstools_agent.conditional_figures import (
             exceedance_figure, probability_map_figure,
         )
+        named = {"value_name": params.get("value_name"),
+                 "value_unit": params.get("value_unit") or ""}
+        exceedance_figure = functools.partial(exceedance_figure, **named)
+        probability_map_figure = functools.partial(
+            probability_map_figure, north_deg=params.get("north_deg"),
+            **named)
         figs = []
         for kind, fn, what in (
                 ("exceedance", exceedance_figure,
@@ -276,6 +287,8 @@ def _run_conditional_simulation(params: dict) -> dict:
                  "named observations")):
             try:
                 png, pfig, _meta = fn(result)
+                if isinstance(_meta, dict) and _meta.get("north_note"):
+                    d.setdefault("notes", []).append(_meta["north_note"])
             except Exception as exc:                       # noqa: BLE001
                 d.setdefault("warnings", []).append(
                     f"The {kind} figure could not be drawn: {exc}")
@@ -463,6 +476,9 @@ METHOD_INFO = {
             "report_values": {"type": "array", "required": False, "description": "Totals for the exceedance table P(V > v); default round values per region and level."},
             "figures": {"type": "bool", "required": False, "default": True, "description": "Draw the exceedance curve and the probability map (PNG + interactive)."},
             "output_prefix": {"type": "str", "required": False, "description": "File name stem for the CSVs and figures (default conditional_sim_<time>)."},
+            "value_name": {"type": "str", "required": False, "description": "What the values are, in the logs' words (e.g. 'top of hard rock elevation'); names the figures. Give it."},
+            "value_unit": {"type": "str", "required": False, "description": "Unit of the values and the levels (e.g. 'm')."},
+            "north_deg": {"type": "float", "required": False, "description": "North on the map, degrees clockwise from up, as the source plan shows it; up when not given."},
         },
         "returns": {
             "results": ("Per region and level: polygon_area, cell_area_sum, volume_above / area_above (or _below) "

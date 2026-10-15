@@ -1262,6 +1262,19 @@ def build_deep_agent(
                                                   calc_extra_system_prompt),
             )
         )
+    from funhouse_agent import review_flags as _flags
+    if _flags.figure_helper():
+        # The figure helper (OWN-61 option B, GM-92): draws, looks, redraws
+        # to a checklist; behind GEOTECH_FIGURE_HELPER until measured.
+        from funhouse_agent.deep.figure_helper import build_figure_subagent
+        _fig = build_figure_subagent(
+            engine=engine, attachments=attachments, save_fn=save_fn,
+            max_result_chars=max_result_chars,
+            reference_result_chars=reference_result_chars,
+            extra_tools=subagent_extra_tools,
+            extra_system_prompt=subagent_extra_system_prompt)
+        if _fig is not None:
+            subagents.append(_fig)
     if ingest_tools:
         # A CompiledSubAgent: its own small graph, no model of its own, and a
         # compact structured_response as the tool result. Attached only when

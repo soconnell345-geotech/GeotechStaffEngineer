@@ -87,7 +87,7 @@ messages and the trace review's private tables).
    (https://claude.ai/artifact/TcPujcvMF19HZQXtPVAmMj): the app's agent cannot
    run code and had one plotting tool that drew lines and dots; the chat's
    theme hid its text; nothing told it the conventions. The owner's choice of
-   next step: OWN-61, GM-92.
+   next step: OWN-61, answered the same day: B, the figure helper (GM-92).
 6. **The full read** of every record: `TRACE_REVIEW.md` (Opus subagent; private
    tables and the script run in `raw/notes/`). In short: the wrapper really
    lacked a conditional simulation and the agent was right to say so, but its

@@ -144,7 +144,10 @@ def test_legend_default_matches_the_png_rule():
     labelled_ref = render_data_plot(
         [{"x": [1, 2], "y": [1, 2]}],
         hlines=[{"value": 1.5, "label": "allowable"}]).figure
-    assert labelled_ref.layout.showlegend is True   # labelled reference line
+    # a reference line is named on the line itself (2026-10-15: labels on
+    # the data, not in a legend), so one series still needs no legend
+    assert labelled_ref.layout.showlegend is False
+    assert [a.text for a in labelled_ref.layout.annotations] == ["allowable"]
     forced_off = render_data_plot(SERIES, legend=False).figure
     assert forced_off.layout.showlegend is False
 

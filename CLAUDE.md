@@ -222,7 +222,10 @@ Key conventions:
       higher FOS and about twice the run time for those runs only); the
       conditional simulation the app could not run, by conditioning by
       kriging (GM-91; GSTools' CondSRF overstates the spread of totals and
-      stays an option).
+      stays an option); a figure helper with a Tufte-style checklist and
+      worked examples (behind `GEOTECH_FIGURE_HELPER`, OFF; GM-92) and plans
+      drawn as drawings (no axes, a scale bar, a north arrow from the source
+      plan, the property line; `plot_data(plan_view=True)`).
     Open next: Foundry brief 6, which measures all of this, is drafted
     (`../foundry_handoff/AI_FDE_BRIEF_6.md`); its rc wheels are not built
     while the owner holds the release (EV-13, DR-05).

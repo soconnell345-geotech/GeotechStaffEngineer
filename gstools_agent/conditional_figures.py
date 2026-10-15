@@ -104,13 +104,20 @@ def exceedance_curves(result, max_curves=MAX_CURVES):
     return out
 
 
-def exceedance_figure(result, dpi=150, width_in=7.0, height_in=4.8):
+def _what(value_name):
+    """What z is, in words (owner, 2026-10-15: "need to define z")."""
+    return (str(value_name).strip() if value_name else "") or "value"
+
+
+def exceedance_figure(result, dpi=150, width_in=7.0, height_in=4.8,
+                      value_name=None, value_unit=""):
     """Exceedance curve P(V > v) per region/level, P50 and P90 marked.
 
     Returns ``(png_bytes, plotly_figure_or_None, n_curves_drawn)``."""
     q = result.quantity
     curves = exceedance_curves(result)
-    xlabel = f"Volume {q} the level, v (m³)"
+    xlabel = (f"Volume where the {_what(value_name)} is {q} the level, "
+              f"v (m³)")
     ylabel = "Probability of exceedance, P(V > v)"
     title = (f"Exceedance curve of the volume {q} the level "
              f"({result.n_kept:,} realizations)")
@@ -233,21 +240,40 @@ def probability_map_arrays(result, region=None, level=None):
 
 
 def probability_map_figure(result, region=None, level=None, dpi=150,
-                           width_in=7.0):
-    """Plan map of P(z > level) (or < for 'below') over the simulated cells,
-    drawn to scale, with the region outlines, the named observations and the
-    bounds. Returns ``(png_bytes, plotly_figure_or_None, meta)``."""
+                           width_in=7.0, value_name=None, value_unit="",
+                           north_deg=None):
+    """Plan map of the probability that the value (``value_name``: what z
+    is, e.g. 'top of hard rock elevation') is above (or below) the level at
+    each simulated cell, drawn as a plan (owner, 2026-10-15): to scale, no
+    axes or grid, a scale bar and a north arrow (``north_deg`` clockwise
+    from up, as the source plan shows it; up when not given), with the
+    region outlines, the named observations and the bounds. Returns
+    ``(png_bytes, plotly_figure_or_None, meta)``."""
+    from geotech_common import plan_furniture as pf
+
     a = probability_map_arrays(result, region, level)
+    word = "above" if result.quantity == "above" else "below"
     rel = ">" if result.quantity == "above" else "<"
-    ctitle = f"P(z {rel} {a['level']:g})"
-    title = (f"Probability that z {rel} {a['level']:g} "
-             f"({a['region']}, {result.n_kept:,} realizations)")
-    xlabel, ylabel = "x (m)", "y (m)"
+    what = _what(value_name)
+    lev = f"{a['level']:g}" + (f" {value_unit}" if value_unit else "")
+    ctitle = "Probability"
+    hover_p = f"P({what} {rel} {lev})"
+    title = (f"Probability that the {what} is {word} {lev}\n"
+             f"{a['region']}, {result.n_kept:,} realizations")
+    xlabel, ylabel = "", ""
     names = list(result.obs_names)
     ox, oy, ov = result.obs_x, result.obs_y, result.obs_values
     m = a["obs_mask"]
 
     (x0, x1), (y0, y1) = a["xlim"], a["ylim"]
+    # a band below the map for the scale bar and the north arrow
+    span_y = y1 - y0
+    y0 = y0 - 0.2 * span_y
+    length = pf.nice_length(x1 - x0)
+    bar_y = a["ylim"][0] - 0.11 * span_y
+    bar_x = x1 - 0.12 * (x1 - x0) - length
+    arrow_xy = (x1 - 0.05 * (x1 - x0), a["ylim"][0] - 0.12 * span_y)
+    angle, north_note = pf.north_or_default(north_deg)
     aspect = (y1 - y0) / max(x1 - x0, 1e-9)
     height_in = min(max(5.2 * aspect + 2.0, 4.0), 10.0)
     fig = _new_figure(width_in, height_in, dpi)
@@ -268,7 +294,7 @@ def probability_map_figure(result, region=None, level=None, dpi=150,
         ax.plot(poly[:, 0], poly[:, 1], color=_OUTLINES[k % len(_OUTLINES)],
                 lw=2.0 if g["name"] == a["region"] else 1.3,
                 ls="-" if g["name"] == a["region"] else "--",
-                label=f"Region: {g['name']}")
+                label=g["name"])
     ax.scatter(ox[m], oy[m], marker="^", s=55, color=_OBS,
                edgecolors="white", linewidths=0.8, zorder=5,
                label="Observations")
@@ -289,10 +315,14 @@ def probability_map_figure(result, region=None, level=None, dpi=150,
     ax.set_xlim(x0, x1)
     ax.set_ylim(y0, y1)
     ax.set_aspect("equal")                        # 1 m across = 1 m up
-    ax.grid(True, color="white", lw=0.6)
-    sub = (f"\n{a['n_obs_off']} observation(s) beyond the map"
+    ax.set_autoscale_on(False)
+    pf.mpl_scale_bar(ax, bar_x, bar_y, length, 0.014 * span_y, "m",
+                     fontsize=7.5, text_color=_TEXT)
+    pf.mpl_north_arrow(ax, arrow_xy, angle)
+    ax.set_axis_off()                 # a plan: the scale bar gives the scale
+    sub = (f", {a['n_obs_off']} observation(s) beyond the map"
            if a["n_obs_off"] else "")
-    _style_axes(ax, title + sub, xlabel, ylabel)
+    ax.set_title(title + sub, color=_TEXT, fontsize=11, loc="left")
     cb = fig.colorbar(im, ax=ax, shrink=0.85, pad=0.02)
     cb.set_label(ctitle, color=_TEXT)
     cb.ax.tick_params(colors=_TEXT)
@@ -317,7 +347,7 @@ def probability_map_figure(result, region=None, level=None, dpi=150,
                 colorscale="YlOrRd", zmin=0.0, zmax=1.0, colorbar=cbar,
                 name=ctitle, showscale=True,
                 hovertemplate=("x %{x:.1f} m<br>y %{y:.1f} m<br>"
-                               + ctitle + " %{z:.2f}<extra></extra>")))
+                               + hover_p + " %{z:.2f}<extra></extra>")))
         else:
             pfig.add_trace(go.Scattergl(
                 x=a["cells_x"].tolist(), y=a["cells_y"].tolist(),
@@ -326,14 +356,14 @@ def probability_map_figure(result, region=None, level=None, dpi=150,
                         "colorscale": "YlOrRd", "cmin": 0.0, "cmax": 1.0,
                         "symbol": "square", "size": 4, "colorbar": cbar},
                 hovertemplate=("x %{x:.1f} m<br>y %{y:.1f} m<br>"
-                               + ctitle + " %{marker.color:.2f}"
+                               + hover_p + " %{marker.color:.2f}"
                                "<extra></extra>")))
         for k, g in enumerate(result.regions_geom):
             poly = np.vstack([g["polygon"], g["polygon"][:1]])
             main = g["name"] == a["region"]
             pfig.add_trace(go.Scatter(
                 x=poly[:, 0].tolist(), y=poly[:, 1].tolist(), mode="lines",
-                name=f"Region: {g['name']}", hoverinfo="name",
+                name=g["name"], hoverinfo="name",
                 line={"color": _OUTLINES[k % len(_OUTLINES)],
                       "width": 2.5 if main else 1.6,
                       "dash": "solid" if main else "dash"}))
@@ -365,11 +395,17 @@ def probability_map_figure(result, region=None, level=None, dpi=150,
                     + f"<br>x {b['x']:g} m, y {b['y']:g} m"
                     for b in a["bounds"]],
                 hoverinfo="text"))
-        _plotly_layout(pfig, title, xlabel, ylabel)
-        pfig.update_layout(plot_bgcolor=_MAP_BG)
-        pfig.update_xaxes(range=list(a["xlim"]), showgrid=False)
-        pfig.update_yaxes(range=list(a["ylim"]), showgrid=False,
+        _plotly_layout(pfig, title.replace("\n", "<br>") + sub, xlabel,
+                       ylabel)
+        pfig.update_layout(plot_bgcolor="white",
+                           title={"x": 0.0, "xanchor": "left"})
+        pfig.update_xaxes(range=[x0, x1], visible=False)
+        pfig.update_yaxes(range=[y0, y1], visible=False,
                           scaleanchor="x", scaleratio=1)
+        pf.plotly_scale_bar(pfig, bar_x, bar_y, length, 0.014 * span_y, "m",
+                            text_color=_TEXT)
+        pf.plotly_north_arrow(pfig, arrow_xy, angle)
     meta = {"region": a["region"], "level": a["level"],
-            "observations_beyond_map": a["n_obs_off"]}
+            "observations_beyond_map": a["n_obs_off"],
+            "value_name": what, "north_note": north_note}
     return png, pfig, meta

@@ -134,7 +134,10 @@ class AppEnv:
         from live_smoke import fake_sharepoint as fsp
         for d in (self.data_root, self.cwd, self.store_dir):
             os.makedirs(d, exist_ok=True)
-        self._saved_env = {k: os.environ.get(k) for k in _MANAGED_ENV}
+        # a flow's own switches (extra_env) are restored too: they leaked
+        # into the next flow before (w7-figures, 2026-10-15)
+        self._saved_env = {k: os.environ.get(k)
+                           for k in set(_MANAGED_ENV) | set(self.extra_env)}
         for k in _MANAGED_ENV:
             os.environ.pop(k, None)
         env = {

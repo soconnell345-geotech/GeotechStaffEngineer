@@ -53,6 +53,9 @@ MARKERS = {
 DASHES = {"solid": ("-", "solid"), "dash": ("--", "dash"),
           "dot": (":", "dot"), "dashdot": ("-.", "dashdot")}
 
+#: Hatch patterns for a polygon's fill (matplotlib and Plotly share them).
+HATCHES = ("/", "\\", "x", "-", "|", "+", ".")
+
 #: Where the legend goes. ``auto`` = outside the plot for a drawing to scale
 #: (where the data fill the frame), inside otherwise.
 LEGEND_POSITIONS = ("auto", "inside", "outside", "below")
@@ -72,6 +75,10 @@ _GRID_WIDTH = 0.7
 _TEXT_COLOR = "#222222"     #: titles, labels, point names: dark on white
 _LABEL_SIZE = 7.5           #: point-name font size (points)
 _FILL_OPACITY = 0.2         #: default polygon fill opacity
+#: plan_view: the margins, as fractions of the site's height, below it (the
+#: scale bar and its caption) and above it (the north arrow)
+_PLAN_BAND_BELOW = 0.26
+_PLAN_BAND_ABOVE = 0.05
 #: matplotlib sizes markers in POINTS, Plotly in PIXELS. At the PNG's default
 #: 150 dpi one point is ~2 px, so the interactive chart reads like the image.
 _PT_TO_PX = 2.0
@@ -133,6 +140,7 @@ class DataPlotResult:
     warnings: List[str] = field(default_factory=list)
     figure: object = None
     equal_aspect: bool = False
+    plan_view: bool = False
 
     def summary(self) -> str:
         parts = [f"'{self.title}'" if self.title else "data plot",
@@ -141,7 +149,9 @@ class DataPlotResult:
             parts.append(f"{s['label']} ({s['n']} pts)")
         if self.depth_axis:
             parts.append("depth axis (down)")
-        if self.equal_aspect:
+        if self.plan_view:
+            parts.append("plan view (scale bar, no axes)")
+        elif self.equal_aspect:
             parts.append("drawn to scale (1:1)")
         return ", ".join(parts)
 
@@ -151,6 +161,7 @@ class DataPlotResult:
             "title": self.title, "xlabel": self.xlabel, "ylabel": self.ylabel,
             "depth_axis": self.depth_axis,
             "equal_aspect": self.equal_aspect,
+            "plan_view": self.plan_view,
             "width_px": self.width_px, "height_px": self.height_px,
             "warnings": list(self.warnings),
         }
@@ -231,6 +242,16 @@ def _clean_series(raw, idx: int, warnings: list) -> dict:
     if dash not in DASHES:
         raise ValueError(f"series[{idx}] line_dash '{dash}' not in "
                          f"{sorted(DASHES)}")
+    hatch = raw.get("hatch")
+    if hatch is not None:
+        hatch = str(hatch)
+        if hatch not in HATCHES:
+            raise ValueError(f"series[{idx}] hatch '{hatch}' not in "
+                             f"{list(HATCHES)}")
+        if style != "polygon":
+            warnings.append(f"series[{idx}]: 'hatch' applies to style "
+                            "'polygon' only; ignored")
+            hatch = None
     fill = raw.get("fill")
     if fill is not None and not isinstance(fill, (bool, str)):
         raise ValueError(f"series[{idx}] 'fill' is a colour or true/false")
@@ -271,6 +292,7 @@ def _clean_series(raw, idx: int, warnings: list) -> dict:
             "line_dash": dash,
             "line_width": _num("line_width", _LINE_WIDTH, 0.2, 8.0),
             "fill": fill,
+            "hatch": hatch,
             "fill_opacity": _num("fill_opacity", _FILL_OPACITY, 0.0, 1.0),
             "labels": out_labels,
             "hover": out_hover,
@@ -339,7 +361,10 @@ def build_data_plot_figure(cleaned_series, *, title: str = "",
                            grid: bool = True,
                            legend: Optional[bool] = None,
                            equal_aspect: bool = False, xlim=None, ylim=None,
-                           legend_position: Optional[str] = None):
+                           legend_position: Optional[str] = None,
+                           plan_view: bool = False,
+                           north_deg: Optional[float] = None,
+                           scale_units: str = "m"):
     """Build the interactive Plotly twin of :func:`render_data_plot`'s PNG.
 
     ``cleaned_series`` is what :func:`_clean_series` produced for the
@@ -406,6 +431,12 @@ def build_data_plot_figure(cleaned_series, *, title: str = "",
             fill_color = color if s["fill"] is True else s["fill"]
             trace.fill = "toself"
             trace.fillcolor = _rgba(fill_color, s["fill_opacity"])
+        if style == "polygon" and s["hatch"]:
+            trace.fill = "toself"
+            if not s["fill"]:
+                trace.fillcolor = "rgba(0,0,0,0)"
+            trace.fillpattern = {"shape": s["hatch"], "fgcolor": color,
+                                 "solidity": 0.15}
         if has_text:
             trace.text = list(s["labels"])
             trace.textposition = (list(s["label_spots"]) if s["label_spots"]
@@ -417,27 +448,31 @@ def build_data_plot_figure(cleaned_series, *, title: str = "",
             trace.hoverinfo = "text"
         fig.add_trace(trace)
 
-    any_ref_label = False
     for spec in (hlines or []):
         v, lab = _ref(spec)
         pos = _axis_coord(v, logy)
         if pos is not None:
             fig.add_hline(y=pos, line_color=_REF_COLOR, line_width=_REF_WIDTH,
                           line_dash="dash",
-                          **({"annotation_text": lab} if lab else {}))
-        any_ref_label = any_ref_label or bool(lab)
+                          **({"annotation_text": lab,
+                              "annotation_font": {"size": 10,
+                                                  "color": _REF_COLOR}}
+                             if lab else {}))
     for spec in (vlines or []):
         v, lab = _ref(spec)
         pos = _axis_coord(v, logx)
         if pos is not None:
             fig.add_vline(x=pos, line_color=_REF_COLOR, line_width=_REF_WIDTH,
                           line_dash="dot",
-                          **({"annotation_text": lab} if lab else {}))
-        any_ref_label = any_ref_label or bool(lab)
+                          **({"annotation_text": lab,
+                              "annotation_font": {"size": 10,
+                                                  "color": _REF_COLOR}}
+                             if lab else {}))
 
+    # A reference line is named on the line itself (both renderings), so
+    # the legend is for the series only.
     shown = [s for s in cleaned_series if s["in_legend"]]
-    show_legend = (legend if legend is not None
-                   else (len(shown) > 1 or any_ref_label))
+    show_legend = (legend if legend is not None else len(shown) > 1)
     position = _resolve_legend_position(legend_position, equal_aspect)
     legend_kw = {"font": {"size": 11, "color": _TEXT_COLOR}}
     if position == "below":
@@ -481,10 +516,83 @@ def build_data_plot_figure(cleaned_series, *, title: str = "",
         fig.update_xaxes(side="top")
     elif yl and not logy:
         fig.update_yaxes(range=list(yl))
-    if equal_aspect:
+    if equal_aspect or plan_view:
         # one unit up as long as one unit across: a plan or a section to scale
         fig.update_yaxes(scaleanchor="x", scaleratio=1)
+    if plan_view:
+        # a drawing, not a chart: no axes or grid; a scale bar and north
+        fig.update_xaxes(visible=False)
+        fig.update_yaxes(visible=False)
+        if title:
+            fig.update_layout(title={"x": 0.0, "xanchor": "left"})
+        _plotly_plan_furniture(fig, cleaned_series, scale_units, north_deg,
+                               xlabel)
     return fig
+
+
+from geotech_common.plan_furniture import nice_length as _nice_length
+
+
+def _plan_layout(cleaned) -> dict:
+    """Where plan_view's furniture goes, in data units, for both renderings:
+    a band below the site holds the scale bar and, at its right, the north
+    arrow (drafting practice keeps them together); the coordinate system is
+    named under them. Nothing is drawn on the site itself."""
+    xs = [x for s in cleaned for x in s["x"]]
+    ys = [y for s in cleaned for y in s["y"]]
+    x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+    dx, dy = (x1 - x0) or 1.0, (y1 - y0) or 1.0
+    length = _nice_length(dx)
+    bar_end = x1 - 0.09 * dx
+    return {"xlim": (x0 - 0.04 * dx, x1 + 0.04 * dx),
+            "ylim": (y0 - _PLAN_BAND_BELOW * dy, y1 + _PLAN_BAND_ABOVE * dy),
+            "length": length, "bx": bar_end - length,
+            "by": y0 - 0.12 * dy, "h": 0.014 * dy,
+            "arrow": (x1 - 0.02 * dx, y0 - 0.15 * dy),
+            "caption_xy": (x1, y0 - 0.12 * dy)}
+
+
+def _draw_plan_furniture(ax, cleaned, units, north_deg, caption):
+    """The scale bar, the north arrow beside it and the coordinate system
+    under them, in a band below the site
+    (:mod:`geotech_common.plan_furniture`). Returns the text artists, so
+    point names keep clear of them."""
+    from geotech_common import plan_furniture as pf
+
+    lay = _plan_layout(cleaned)
+    ax.set_autoscale_on(False)
+    ax.set_xlim(*lay["xlim"])
+    ax.set_ylim(*lay["ylim"])
+    texts = pf.mpl_scale_bar(ax, lay["bx"], lay["by"], lay["length"],
+                             lay["h"], units, fontsize=_LABEL_SIZE,
+                             text_color=_TEXT_COLOR)
+    if caption:
+        texts.append(ax.annotate(
+            caption, lay["caption_xy"], xytext=(0, -6),
+            textcoords="offset points", ha="right", va="top",
+            fontsize=_LABEL_SIZE - 0.5, color="#555555", zorder=7))
+    angle, _note = pf.north_or_default(north_deg)
+    texts += pf.mpl_north_arrow(ax, lay["arrow"], angle)
+    return texts
+
+
+def _plotly_plan_furniture(fig, cleaned, units, north_deg, caption):
+    """The Plotly twin's scale bar, north arrow and caption (same layout)."""
+    from geotech_common import plan_furniture as pf
+
+    lay = _plan_layout(cleaned)
+    fig.update_xaxes(range=list(lay["xlim"]))
+    fig.update_yaxes(range=list(lay["ylim"]))
+    pf.plotly_scale_bar(fig, lay["bx"], lay["by"], lay["length"], lay["h"],
+                        units, text_color=_TEXT_COLOR)
+    if caption:
+        cx, cy = lay["caption_xy"]
+        fig.add_annotation(x=cx, y=cy, xref="x", yref="y", text=caption,
+                           showarrow=False, yanchor="top", yshift=-8,
+                           xanchor="right",
+                           font={"size": 9, "color": "#555555"})
+    angle, _note = pf.north_or_default(north_deg)
+    pf.plotly_north_arrow(fig, lay["arrow"], angle)
 
 
 def _axis_coord(value: float, log_axis: bool):
@@ -502,13 +610,16 @@ def _axis_coord(value: float, log_axis: bool):
     return math.log10(value)
 
 
-def _scale_height(cleaned, width_in: float, legend_out: bool) -> float:
+def _scale_height(cleaned, width_in: float, legend_out: bool,
+                  plan_view: bool = False) -> float:
     """A figure height for a drawing to scale: the data's own proportions in
     the space the axes get, so a long site is not drawn in a square box."""
     xs = [v for s in cleaned for v in s["x"]]
     ys = [v for s in cleaned for v in s["y"]]
     span_x = (max(xs) - min(xs)) or 1.0
     span_y = (max(ys) - min(ys)) or 1.0
+    if plan_view:
+        span_y *= 1.0 + _PLAN_BAND_BELOW + _PLAN_BAND_ABOVE
     axes_w = max(width_in - 1.3 - (1.9 if legend_out else 0.0), 2.0)
     return min(max(axes_w * span_y / span_x + 1.2, 3.0), 10.0)
 
@@ -519,24 +630,38 @@ def _overlap(a, b) -> float:
     return w * h if (w > 0 and h > 0) else 0.0
 
 
-def _place_point_names(fig, ax, drawn) -> int:
+def _place_point_names(fig, ax, drawn, fixed_texts=()) -> int:
     """Write each point's name beside it where it covers the fewest other
-    names and points (eight spots tried in turn), and record the spot so the
-    interactive twin puts the name in the same place. ``drawn`` is
-    ``[(series, xs_plotted)]``. Returns how many names were written."""
+    names, points and reference-line labels, and stays inside the plot frame
+    (eight spots tried in turn), and record the spot so the interactive twin
+    puts the name in the same place. ``drawn`` is ``[(series,
+    xs_plotted)]``. Returns how many names were written."""
     from matplotlib.transforms import Bbox
 
     fig.canvas.draw()                       # settle limits (equal aspect)
     renderer = fig.canvas.get_renderer()
     to_px = ax.transData.transform
+    frame = ax.get_window_extent(renderer)
     pad = 3.0
-    taken = []
+    taken = [t.get_window_extent(renderer) for t in fixed_texts]
     for s, xs in drawn:                     # every point is an obstacle
         size_px = _marker_size(s) * fig.dpi / 72.0
         for x, y in zip(xs, s["y"]):
             px, py = to_px((x, y))
             taken.append(Bbox([[px - size_px, py - size_px],
                                [px + size_px, py + size_px]]))
+        if s["style"] == "markers":
+            continue
+        # ... and so is every line, sampled every few pixels along it
+        pts = [to_px((x, y)) for x, y in zip(xs, s["y"])]
+        half = max(s["line_width"] * fig.dpi / 72.0, 1.5)
+        for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+            n = int(min(max(math.hypot(x1 - x0, y1 - y0) / 6.0, 1), 200))
+            for k in range(n + 1):
+                cx = x0 + (x1 - x0) * k / n
+                cy = y0 + (y1 - y0) * k / n
+                taken.append(Bbox([[cx - half, cy - half],
+                                   [cx + half, cy + half]]))
     written = 0
     for s, xs in drawn:
         if not s["labels"]:
@@ -556,6 +681,10 @@ def _place_point_names(fig, ax, drawn) -> int:
                 bb = Bbox([[bb.x0 - pad, bb.y0 - pad],
                            [bb.x1 + pad, bb.y1 + pad]])
                 cost = sum(_overlap(bb, o) for o in taken)
+                # a name outside the plot frame runs into the axis numbers
+                # or off the figure: costlier than touching another name
+                area = (bb.x1 - bb.x0) * (bb.y1 - bb.y0)
+                cost += 3.0 * (area - _overlap(bb, frame))
                 if best is None or cost < best[0]:
                     if best is not None:
                         best[1].remove()
@@ -579,8 +708,10 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
                      width_in: float = 6.5, height_in: Optional[float] = None,
                      interactive: bool = True, equal_aspect: bool = False,
                      xlim=None, ylim=None,
-                     legend_position: Optional[str] = None
-                     ) -> DataPlotResult:
+                     legend_position: Optional[str] = None,
+                     plan_view: bool = False,
+                     north_deg: Optional[float] = None,
+                     scale_units: str = "m") -> DataPlotResult:
     """Render ``series`` to a PNG (and its interactive twin).
 
     Each series is ``{x, y, label, style, color}`` plus, optionally,
@@ -597,10 +728,19 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
     section to scale) and, unless ``height_in`` is given, sizes the figure to
     the data's own proportions. ``hlines`` / ``vlines`` are
     ``[{"value": v, "label": "..."}]`` reference lines (a water table, an
-    allowable value, a design load). ``legend`` defaults to "when more than
-    one series or any labelled reference line"; ``legend_position`` is
+    allowable value, a design load), each label written on its line.
+    ``legend`` defaults to "when more than one series is in it";
+    ``legend_position`` is
     ``auto`` (outside a drawing to scale, inside otherwise), ``inside``,
     ``outside`` or ``below``.
+
+    ``plan_view=True`` draws a plan as a drawing, not a chart (owner,
+    2026-10-15): drawn to scale, no axes, axis numbers or grid, a scale bar
+    in ``scale_units`` with the x label (the coordinate system) under it, and
+    a north arrow when ``north_deg`` gives the direction of north on the page
+    (degrees clockwise from straight up, as the plan the data came from
+    or the project's other plans show it; drawn straight up, with a note,
+    when not given).
 
     ``interactive=True`` (the default) also builds the Plotly twin of the same
     figure on ``result.figure`` — what the chat renders as a real zoom/hover
@@ -617,6 +757,18 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
     warnings: List[str] = []
     cleaned = [_clean_series(s, i, warnings) for i, s in enumerate(series)]
     categories = _categories(cleaned)
+    plan_view = bool(plan_view)
+    if plan_view and (categories is not None or logx or logy
+                      or depth_axis):
+        warnings.append("plan_view ignored: a plan needs numeric x and y "
+                        "on linear axes")
+        plan_view = False
+    if plan_view:
+        equal_aspect, grid = True, False
+        from geotech_common.plan_furniture import north_or_default
+        _angle, north_note = north_or_default(north_deg)
+        if north_note:
+            warnings.append(north_note)
     equal_aspect = bool(equal_aspect)
     if equal_aspect and categories is not None:
         warnings.append("equal_aspect ignored: x names cases, not a length")
@@ -627,13 +779,11 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
     xl, yl = _limits(xlim, "xlim"), _limits(ylim, "ylim")
     position = _resolve_legend_position(legend_position, equal_aspect)
     shown = [s for s in cleaned if s["in_legend"]]
-    ref_labels = any(_ref(r)[1]
-                     for r in list(hlines or []) + list(vlines or []))
-    show_legend = (legend if legend is not None
-                   else (len(shown) > 1 or ref_labels))
+    show_legend = (legend if legend is not None else len(shown) > 1)
     if height_in is None:
         height_in = (_scale_height(cleaned, float(width_in),
-                                   show_legend and position == "outside")
+                                   show_legend and position == "outside",
+                                   plan_view)
                      if equal_aspect else 4.5)
 
     fig, ax = plt.subplots(figsize=(float(width_in), float(height_in)))
@@ -666,20 +816,42 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
                 fill_color = color if s["fill"] is True else s["fill"]
                 ax.fill(xs, s["y"], facecolor=fill_color,
                         alpha=s["fill_opacity"], edgecolor="none", zorder=1)
+            if s["hatch"]:
+                # the hatch takes the outline's colour (a zone drawn over
+                # what lies under it, as on a drawing); the legend shows a
+                # hatched swatch, not a line
+                ax.fill(xs, s["y"], facecolor="none", edgecolor=color,
+                        hatch=s["hatch"] * 3, linewidth=0.8, zorder=1.5,
+                        label=kw["label"])
+                kw["label"] = "_nolegend_"
             kw["zorder"] = 2
             ax.plot(xs, s["y"], linestyle=dash, **kw)
         else:
             ax.plot(xs, s["y"], linestyle=dash, **mk, **kw)
         drawn.append((s, xs))
 
+    # Reference lines are named on the line itself (labels on the data,
+    # not in a legend the reader has to match).
+    ref_texts = []
     for spec in (hlines or []):
         v, lab = _ref(spec)
         ax.axhline(v, color=_REF_COLOR, linestyle="--", linewidth=_REF_WIDTH,
-                   label=lab or "_nolegend_")
+                   label="_nolegend_")
+        if lab:
+            ref_texts.append(ax.annotate(
+                lab, xy=(1.0, v), xycoords=("axes fraction", "data"),
+                xytext=(-3, 2), textcoords="offset points", ha="right",
+                va="bottom", fontsize=_LABEL_SIZE, color=_REF_COLOR,
+                zorder=5))
     for spec in (vlines or []):
         v, lab = _ref(spec)
         ax.axvline(v, color=_REF_COLOR, linestyle=":", linewidth=_REF_WIDTH,
-                   label=lab or "_nolegend_")
+                   label="_nolegend_")
+        if lab:
+            ref_texts.append(ax.annotate(
+                lab, xy=(v, 1.0), xycoords=("data", "axes fraction"),
+                xytext=(3, -3), textcoords="offset points", ha="left",
+                va="top", fontsize=_LABEL_SIZE, color=_REF_COLOR, zorder=5))
 
     if categories is not None:
         ax.set_xticks(range(len(categories)))
@@ -688,10 +860,15 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
                            ha="right" if long_names else "center",
                            fontsize=8.5)
         ax.set_xlim(-0.5, len(categories) - 0.5)
+    if logx or logy:
+        from matplotlib.ticker import FuncFormatter
+        plain = FuncFormatter(lambda v, _pos: f"{v:g}")   # 1, 10, 100
     if logx:
         ax.set_xscale("log")
+        ax.xaxis.set_major_formatter(plain)
     if logy:
         ax.set_yscale("log")
+        ax.yaxis.set_major_formatter(plain)
     if xl:
         ax.set_xlim(*xl)
     if yl:
@@ -709,25 +886,38 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
     for side in ("top", "right"):
         if not (depth_axis and side == "top"):
             ax.spines[side].set_visible(False)
-    ax.set_xlabel(xlabel, fontsize=10, color=_TEXT_COLOR)
-    ax.set_ylabel(ylabel, fontsize=10, color=_TEXT_COLOR)
+    if plan_view:
+        ax.set_axis_off()               # the scale bar carries the scale
+    else:
+        ax.set_xlabel(xlabel, fontsize=10, color=_TEXT_COLOR)
+        ax.set_ylabel(ylabel, fontsize=10, color=_TEXT_COLOR)
     if title:
         ax.set_title(title, fontsize=11.5, fontweight="bold", pad=10,
-                     color=_TEXT_COLOR)
+                     color=_TEXT_COLOR,
+                     loc="left" if plan_view else "center")
     if show_legend:
         if position == "outside":
             ax.legend(fontsize=8.5, frameon=False, loc="upper left",
                       bbox_to_anchor=(1.02, 1.0), borderaxespad=0.0)
-        elif position == "below":
-            ax.legend(fontsize=8.5, frameon=False, loc="upper center",
-                      bbox_to_anchor=(0.5, -0.14),
-                      ncol=min(3, max(1, len(shown))))
-        else:
+        elif position == "inside":
             ax.legend(fontsize=8.5, frameon=True, framealpha=0.85,
                       edgecolor="none")
     fig.tight_layout()
+    if show_legend and position == "below":
+        # Under everything the x axis takes up (slanted case names, the
+        # axis title), not at a fixed offset that the labels can run into.
+        fig.canvas.draw()
+        bottom = ax.get_tightbbox(fig.canvas.get_renderer()).y0
+        y_axes = ax.transAxes.inverted().transform((0.0, bottom))[1]
+        ax.legend(fontsize=8.5, frameon=False, loc="upper center",
+                  bbox_to_anchor=(0.5, y_axes - 0.02),
+                  ncol=min(3, max(1, len(shown))))
+    if plan_view:
+        fig.canvas.draw()               # settle the limits (equal aspect)
+        ref_texts += _draw_plan_furniture(ax, cleaned, scale_units,
+                                          north_deg, xlabel)
     if any(s["labels"] for s in cleaned):
-        _place_point_names(fig, ax, drawn)
+        _place_point_names(fig, ax, drawn, ref_texts)
 
     png = figure_to_png(fig, dpi=int(dpi))
     w_px, h_px = int(fig.get_size_inches()[0] * dpi), \
@@ -750,7 +940,8 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
                 logx=bool(logx), logy=bool(logy), hlines=hlines,
                 vlines=vlines, grid=bool(grid), legend=legend,
                 equal_aspect=equal_aspect, xlim=xlim, ylim=ylim,
-                legend_position=legend_position)
+                legend_position=legend_position, plan_view=plan_view,
+                north_deg=north_deg, scale_units=scale_units)
         except Exception as exc:                        # noqa: BLE001
             warnings.append("interactive chart not built "
                             f"({type(exc).__name__}: {exc}); the PNG is fine")
@@ -772,7 +963,7 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
         png_bytes=png, width_px=w_px, height_px=h_px,
         title=title or "", xlabel=xlabel or "", ylabel=ylabel or "",
         depth_axis=bool(depth_axis), warnings=warnings, figure=figure,
-        equal_aspect=equal_aspect)
+        equal_aspect=equal_aspect, plan_view=plan_view)
 
 
 def _ref(spec) -> tuple:
@@ -785,4 +976,4 @@ def _ref(spec) -> tuple:
 
 
 __all__ = ["render_data_plot", "build_data_plot_figure", "DataPlotResult",
-           "STYLES", "MARKERS", "DASHES", "LEGEND_POSITIONS"]
+           "STYLES", "MARKERS", "DASHES", "HATCHES", "LEGEND_POSITIONS"]

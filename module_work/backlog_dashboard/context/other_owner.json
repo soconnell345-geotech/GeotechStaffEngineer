@@ -469,5 +469,36 @@
     "steps": null,
     "unblocks": [],
     "sources": ["HANDOFF_2026-06-14.md (2d calc-viz, 2e model-setup agent)", "docs/CALC_VIZ_PLAN.md (scope, line 6)", "BACKLOG.md (OWN-22, GM-37)"]
+  },
+  "GM-92": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Should the figure helper be on by default, now that it is built and measured?",
+    "why": "You chose it (option B). With today's plotting fixes the agent alone already draws decent figures; the helper looks at each figure and fixes what it sees, at 2 to 4 times the cost per figure.",
+    "background": "Live check 2026-10-15 (Claude Sonnet standing in, $1.68 for six runs): the helper fixed a label crossing the footprint, a label struck through by a reference line and a cut-off axis title; it took about 1.5 minutes a figure; once it copied a coined 'Easting/Northing' from its brief (the checklist now forbids that). Switch: GEOTECH_FIGURE_HELPER. The figures page: https://claude.ai/artifact/TcPujcvMF19HZQXtPVAmMj",
+    "options": [
+      {
+        "label": "Keep it off for now",
+        "effect": "The agent draws with plot_data and its improved description; turn the helper on per session when a report's figures matter."
+      },
+      {
+        "label": "On for the geotech page",
+        "effect": "Every figure on the geotech page goes through the helper (2-4x the figure cost); the testers' review page stays as it is."
+      },
+      {
+        "label": "On everywhere",
+        "effect": "Both pages use it; most expensive."
+      }
+    ],
+    "recommendation": "Keep it off until a few real report figures come back; then decide.",
+    "if_no_answer": "It stays off; switch it on with GEOTECH_FIGURE_HELPER=1 when wanted.",
+    "message_to_send": null,
+    "unblocks": [
+      "GM-92"
+    ],
+    "sources": [
+      "BACKLOG.md (GM-92)",
+      "funhouse_agent/deep/figure_helper.py"
+    ]
   }
 }

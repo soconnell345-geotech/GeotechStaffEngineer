@@ -98,6 +98,12 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     reference and returned whole by document and page, read-only. The
     geotech page always offers it; on the review page it waits for the
     suite (arm ``kept_readings``; BACKLOG TA-28).
+``GEOTECH_FIGURE_HELPER``
+    ``1`` adds the ``figure`` helper (:mod:`funhouse_agent.deep.figure_helper`)
+    to the agent: it draws a figure with ``plot_data`` from a figure
+    checklist (after Tufte) and worked examples, looks at the PNG and
+    redraws (owner's choice, 2026-10-15, OWN-61 option B). Both pages; not
+    the lean review agent (BACKLOG GM-92).
 ``GEOTECH_CITED_PAGES``
     What the app does when an answer cites pages that no tool or helper read
     or looked at in the conversation (:mod:`funhouse_agent.cited_pages`; the
@@ -129,11 +135,13 @@ CHECKLIST_ENV = "GEOTECH_REVIEW_CHECKLIST"
 VISION_TURN_RETRY_ENV = "GEOTECH_VISION_TURN_RETRY"
 KEPT_READINGS_ENV = "GEOTECH_REVIEW_KEPT_READINGS"
 CITED_PAGES_ENV = "GEOTECH_CITED_PAGES"
+FIGURE_HELPER_ENV = "GEOTECH_FIGURE_HELPER"
 
 ALL_ENVS = (AGENT_ENV, VISION_TEXT_ENV, VISION_STRUCTURED_ENV,
             VISION_INLINE_ENV, SWEEP_ENV, FINDINGS_ENV, OVERVIEW_ENV,
             GEOMETRY_ENV, DIGEST_ENV, COVERAGE_ENV, CHECKLIST_ENV,
-            VISION_TURN_RETRY_ENV, KEPT_READINGS_ENV, CITED_PAGES_ENV)
+            VISION_TURN_RETRY_ENV, KEPT_READINGS_ENV, CITED_PAGES_ENV,
+            FIGURE_HELPER_ENV)
 
 #: Not a switch but the overview's setting: above this many pages in the
 #: new uploads (all of them together) the orientation asks for contact sheets.
@@ -234,6 +242,11 @@ def vision_turn_retry() -> bool:
     return _on(VISION_TURN_RETRY_ENV)
 
 
+def figure_helper() -> bool:
+    """Whether the agent gets the ``figure`` helper (both pages)."""
+    return _on(FIGURE_HELPER_ENV)
+
+
 def cited_pages() -> str:
     """What an answer citing pages no tool opened gets: ``"off"`` (the
     default: recorded only), ``"note"`` (a note appended) or ``"retry"``
@@ -292,6 +305,8 @@ ARMS: Dict[str, Dict[str, str]] = {
     # or the model told once. On the DEFAULT agent, against `baseline`.
     "cited_pages_note": {CITED_PAGES_ENV: "note"},
     "cited_pages_retry": {CITED_PAGES_ENV: "retry"},
+    # The figure helper (GM-92, 2026-10-15). On the DEFAULT agent.
+    "figure_helper": {FIGURE_HELPER_ENV: "1"},
 }
 
 
@@ -331,11 +346,12 @@ __all__ = ["AGENT_ENV", "VISION_TEXT_ENV", "VISION_STRUCTURED_ENV",
            "VISION_INLINE_ENV", "SWEEP_ENV", "FINDINGS_ENV", "OVERVIEW_ENV",
            "GEOMETRY_ENV", "DIGEST_ENV", "COVERAGE_ENV", "CHECKLIST_ENV",
            "VISION_TURN_RETRY_ENV", "KEPT_READINGS_ENV", "CITED_PAGES_ENV",
+           "FIGURE_HELPER_ENV",
            "OVERVIEW_PAGES_ENV",
            "DEFAULT_OVERVIEW_PAGES", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
            "lean_agent",
            "vision_text_context", "vision_structured", "vision_inline",
            "sweep", "findings", "overview", "geometry", "digest",
            "coverage", "checklist", "vision_turn_retry",
-           "kept_readings_on_review_page", "cited_pages",
+           "kept_readings_on_review_page", "figure_helper", "cited_pages",
            "overview_pages", "switches", "describe"]

@@ -680,6 +680,9 @@ def test_arms_are_the_old_ones_plus_overview():
         # funhouse_agent/tests/test_cited_pages.py
         "cited_pages_note": {A.CITED_PAGES_ENV: "note"},
         "cited_pages_retry": {A.CITED_PAGES_ENV: "retry"},
+        # GM-92 the figure helper, pinned in
+        # funhouse_agent/deep/tests/test_figure_helper.py
+        "figure_helper": {A.FIGURE_HELPER_ENV: "1"},
     }
 
 

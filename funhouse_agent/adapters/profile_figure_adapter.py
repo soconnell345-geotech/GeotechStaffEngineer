@@ -108,7 +108,7 @@ _VALID_PLOT = {
     "series", "title", "xlabel", "ylabel", "depth_axis", "logx", "logy",
     "hlines", "vlines", "grid", "legend", "output_path", "dpi", "width_in",
     "height_in", "include_base64", "interactive", "equal_aspect", "xlim",
-    "ylim", "legend_position",
+    "ylim", "legend_position", "plan_view", "north_deg", "scale_units",
 }
 
 
@@ -154,6 +154,9 @@ def _run_plot_data(params: dict) -> dict:
         xlim=params.get("xlim"),
         ylim=params.get("ylim"),
         legend_position=params.get("legend_position"),
+        plan_view=bool(params.get("plan_view", False)),
+        north_deg=params.get("north_deg"),
+        scale_units=str(params.get("scale_units") or "m"),
     )
     saved = save_verified(output_path, result.png_bytes)
     abs_path = saved.get("saved", os.path.abspath(output_path))
@@ -345,7 +348,9 @@ METHOD_INFO = {
                     "'<br>' breaks a line), 'in_legend' (false hides it). "
                     "Style 'polygon' closes the outline (a footprint, a site "
                     "boundary, a zone); 'fill': true or a colour, "
-                    "'fill_opacity' (default 0.2). x given as names (cases, "
+                    "'fill_opacity' (default 0.2), 'hatch' ('/', '\\', "
+                    "'x', '-', '|', '+', '.') to mark a zone over what lies "
+                    "under it. x given as names (cases, "
                     "scenarios, borings) puts them along the x axis in "
                     "order: draw separate cases with style 'markers', since "
                     "a line between unrelated cases shows a trend that is "
@@ -360,6 +365,24 @@ METHOD_INFO = {
                     "drawn to scale (x and y both lengths in the same unit). "
                     "The figure takes the data's own proportions and the "
                     "legend moves outside the map.")},
+            "plan_view": {
+                "type": "bool", "required": False, "default": False,
+                "description": (
+                    "Draw a site plan as a drawing, not a chart: to scale, "
+                    "no axes, axis numbers or grid, a scale bar with xlabel "
+                    "(name the coordinate system there) under it, and a "
+                    "north arrow from north_deg. Use it for a plan of a "
+                    "site, compound or property; draw the property line as "
+                    "a polygon with line_dash 'dashdot'.")},
+            "north_deg": {
+                "type": "float", "required": False,
+                "description": (
+                    "Direction of north on the page, degrees clockwise from "
+                    "straight up, as the plan the data came from (or the "
+                    "project's other plans) shows it. Not given: drawn "
+                    "straight up, and the result says so.")},
+            "scale_units": {"type": "str", "required": False, "default": "m",
+                            "description": "Units written on the scale bar."},
             "xlim": {"type": "array", "required": False,
                      "description": "[min, max] of the x axis (else fitted)."},
             "ylim": {"type": "array", "required": False,

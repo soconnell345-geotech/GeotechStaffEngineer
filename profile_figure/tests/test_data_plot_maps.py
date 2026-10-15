@@ -250,3 +250,104 @@ def test_the_interactive_chart_brings_its_own_colours():
     assert lay.font.color == "#222222"
     assert lay.title.font.color == "#222222"
     assert lay.xaxis.tickfont.color == "#222222"
+
+
+# ---------------------------------------------------------------------------
+# A plan drawn as a drawing (owner, 2026-10-15: "There isn't much use to the
+# grid lines or the multiple axis number... a typical plot with a scale bar
+# ... a property line and north arrow any time we do a plan view")
+# ---------------------------------------------------------------------------
+
+PROPERTY = {"x": [20, 255, 255, 20], "y": [25, 25, 175, 175],
+            "label": "Property line", "style": "polygon",
+            "line_dash": "dashdot"}
+
+
+def test_plan_view_is_a_drawing_not_a_chart():
+    res = render_data_plot([PROPERTY, FOOTPRINT, POINTS], plan_view=True,
+                           north_deg=20, xlabel="Local site grid, metres",
+                           title="Plan")
+    assert res.plan_view and res.equal_aspect
+    assert not res.warnings
+    lay = res.figure.layout
+    assert lay.xaxis.visible is False and lay.yaxis.visible is False
+    assert lay.yaxis.scaleanchor == "x"
+    texts = [a.text for a in lay.annotations]
+    assert "N" in texts                                   # the north arrow
+    assert any(t.endswith(" m") for t in texts)           # the scale bar
+    assert "Local site grid, metres" in texts             # its caption
+    assert len(lay.shapes) == 4                           # the bar's segments
+    assert "plan view" in res.summary()
+    # drawing-sheet practice: the title sits at the left
+    assert lay.title.x == 0.0 and lay.title.xanchor == "left"
+
+
+def test_the_scale_bar_names_its_ends_only():
+    """'0' and the length with its unit: a middle number crowded the end
+    label on a short bar ('1020 m', live wave w7b)."""
+    lay = render_data_plot([FOOTPRINT, POINTS], plan_view=True,
+                           north_deg=0).figure.layout
+    bar_text = [a.text for a in lay.annotations
+                if not a.showarrow and a.text not in ("N",)]
+    assert bar_text == ["0", "100 m"]
+
+
+def test_the_north_arrow_points_where_it_is_told():
+    import math
+    for deg in (0, 20, 90):
+        lay = render_data_plot([FOOTPRINT], plan_view=True,
+                               north_deg=deg).figure.layout
+        arrow = [a for a in lay.annotations if a.showarrow][0]
+        # Plotly: the tail sits (ax, ay) px from the head, y downward
+        tx, ty = -arrow.ax, arrow.ay            # head minus tail, y upward
+        assert math.degrees(math.atan2(tx, ty)) % 360 == pytest.approx(
+            deg % 360, abs=1e-6)
+
+
+def test_no_north_given_drawn_up_and_said():
+    """Owner, 2026-10-15: follow the plan the data came from (or the
+    project's other plans); if none shows north, default to up."""
+    res = render_data_plot([FOOTPRINT], plan_view=True)
+    arrow = [a for a in res.figure.layout.annotations if a.showarrow]
+    assert len(arrow) == 1
+    assert arrow[0].ax == pytest.approx(0.0, abs=1e-9)    # straight up
+    assert arrow[0].ay > 0
+    assert any("North drawn straight up" in w for w in res.warnings)
+
+
+def test_the_scale_bar_is_a_round_length():
+    from profile_figure.data_plot import _nice_length
+    # the largest 1, 2 or 5 x 10^k within a third of the width
+    assert _nice_length(235.0) == 50.0
+    assert _nice_length(41.0) == 10.0
+    assert _nice_length(1200.0) == 200.0
+    assert _nice_length(3.0) == 1.0
+    assert _nice_length(1.4) == 0.2
+
+
+def test_the_furniture_stays_off_the_site():
+    """The scale bar sits in a margin below everything drawn."""
+    res = render_data_plot([PROPERTY, FOOTPRINT], plan_view=True,
+                           north_deg=0)
+    bar_tops = [max(s.y0, s.y1) for s in res.figure.layout.shapes]
+    assert max(bar_tops) < min(PROPERTY["y"])
+
+
+def test_a_zone_can_be_hatched():
+    zone = dict(FOOTPRINT, label="Zone", hatch="/", color="#c0504d",
+                fill=False)
+    res = render_data_plot([zone], plan_view=True, north_deg=0)
+    tr = res.figure.data[0]
+    assert tr.fill == "toself" and tr.fillpattern.shape == "/"
+    assert tr.fillcolor == "rgba(0,0,0,0)"          # hatch only, no tint
+    with pytest.raises(ValueError, match="hatch"):
+        render_data_plot([dict(zone, hatch="zigzag")])
+    res = render_data_plot([{"x": [1, 2], "y": [1, 2], "hatch": "/"}])
+    assert any("'hatch' applies to style 'polygon'" in w
+               for w in res.warnings)
+
+
+def test_plan_view_refused_where_it_makes_no_sense():
+    res = render_data_plot([{"x": ["a", "b"], "y": [1, 2]}], plan_view=True)
+    assert res.plan_view is False
+    assert any("plan_view ignored" in w for w in res.warnings)
