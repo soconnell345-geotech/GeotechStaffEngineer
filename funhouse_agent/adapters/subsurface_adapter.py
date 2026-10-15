@@ -823,6 +823,20 @@ def _run_write_diggs(params: dict) -> dict:
         cross_error = None
     except Exception as exc:                           # noqa: BLE001
         cross, cross_error = [], f"{type(exc).__name__}: {exc}"
+    # Every page a record cites, against the pages this conversation read or
+    # looked at (BACKLOG EV-18: field session 2026-10-14, four page lists
+    # were even splits of a section, not pages anything had read). One entry
+    # per record citing a page nothing opened; never a refusal.
+    try:
+        from funhouse_agent.cited_pages import record_entries
+        page_entries, pages_check = record_entries(
+            {"investigations": investigations, "lab_tests": lab},
+            document=params.get("document_id"))
+    except Exception as exc:                           # noqa: BLE001
+        page_entries, pages_check = [], {
+            "checked": False,
+            "why": f"the check could not run ({type(exc).__name__})"}
+    cross = page_entries + cross
 
     notes: list = []
     xml = write_diggs(record, project,
@@ -917,7 +931,11 @@ def _run_write_diggs(params: dict) -> dict:
                          if cross_error is None
                          else {"error": f"the cross-checks could not run "
                                         f"({cross_error}); the file is "
-                                        f"unaffected"}),
+                                        f"unaffected",
+                               **({"n": len(cross), "by_kind": by_kind,
+                                   "entries": cross[:20]} if cross else {})}),
+        **({"cited_pages": pages_check}
+           if pages_check.get("why") != "no record cites a page" else {}),
         "schema_check": {"checked": checked, "valid": bool(schema_ok),
                          "errors": list(schema_errors)[:10]},
         "read_back": {"equal": bool(back_ok), "diffs": list(diffs)[:15],
@@ -1298,7 +1316,8 @@ METHOD_INFO = {
                 "refusal, sample_id}]; "
                 "water [{depth {value, unit}, when (while_drilling|at_completion|after_hours|not_encountered|unknown), hours}] "
                 "(not_encountered: leave depth out -- it is never written as a water level); "
-                "remarks; pages (0-based PDF pages). Every depth or elevation is {value, unit}. Unknown keys are refused by name.")},
+                "remarks; pages (0-based PDF pages the values were read from; none for a record no page gave, such as a "
+                "placeholder). Every depth or elevation is {value, unit}. Unknown keys are refused by name.")},
             "lab_tests": {"type": "array", "required": False, "description": (
                 "Lab results, one object per test on one specimen: kind (atterberg|gradation|compaction|cbr|moisture_content|density|"
                 "chemical|specific_gravity|unconfined|unconfined_rock|direct_shear|triaxial|swell_consolidation|permeability|"
@@ -1330,9 +1349,13 @@ METHOD_INFO = {
             "read_back": "{equal, diffs}: the file parsed back and compared value by value with the data given.",
             "cross_checks": "{n, by_kind, entries}: the data joined up as report ingest does -- each lab test linked to its "
                             "boring and sample, a summary table compared with the sheets, units without a conversion, drives "
-                            "that do not add up to their sample's interval, a drive count unlike the log's other records, and "
-                            "any layer, sample, SPT or water depth below the total depth. Each entry gives what disagrees, "
-                            "both values and the pages; nothing is changed or resolved. Tell the user about every entry.",
+                            "that do not add up to their sample's interval, a drive count unlike the log's other records, "
+                            "any layer, sample, SPT or water depth below the total depth, and (page_not_read) any page a record "
+                            "cites, in pages or a prov, that no tool or helper read or looked at in this conversation. Each entry "
+                            "gives what disagrees, both values and the pages; nothing is changed or resolved. Tell the user "
+                            "about every entry.",
+            "cited_pages": "{checked, pages_cited, not_read}: the records' pages against the pages read in this "
+                           "conversation, or why they could not be checked.",
             "written": "Counts written, and anything the writer had to leave out, assume (assumed; position_unknown) or record "
                        "differently from how it was given (normalised). Tell the user about each.",
             "sources": "When a file was given: each input (inline or the file) with the investigation_ids it gave.",

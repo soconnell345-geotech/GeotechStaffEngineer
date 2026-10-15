@@ -60,7 +60,9 @@ RECORD_DESCRIPTION = (
     "rests on as quote, or a bbox in PDF points for a spot on a drawing "
     "(sheet or printed_page too when the page shows one). Each quote is "
     "checked against its page and its review markups; a finding whose quotes "
-    "are not there is kept at low confidence - re-check it. A finding that "
+    "are not there is kept at low confidence - re-check it. A cited page "
+    "that no tool or helper read or looked at in this conversation is named "
+    "in pages_not_opened. A finding that "
     "turns out wrong is corrected with update_finding (status='rejected' to "
     "withdraw it), not recorded again.")
 
@@ -274,6 +276,26 @@ def _ledger_error(exc: OSError) -> str:
                        "hint": "try again in a moment; nothing was lost"})
 
 
+def _note_unopened(finding: Finding, out: Dict[str, Any]) -> None:
+    """Name each page the finding cites that no tool or helper read or
+    looked at in this conversation (BACKLOG EV-18; the app's own record,
+    :mod:`funhouse_agent.cited_pages`). Nothing is said where there is no
+    such record."""
+    try:
+        from funhouse_agent.cited_pages import unopened_citations
+        unopened = unopened_citations(
+            (c.document, c.page) for c in finding.citations)
+    except Exception:  # noqa: BLE001 - never the finding
+        return
+    if unopened:
+        out["pages_not_opened"] = [
+            f"{u['document']} PDF page {u['pdf_page']}" for u in unopened]
+        out["page_check"] = ("no tool or helper read or looked at these "
+                             "cited pages in this conversation: look at "
+                             "them before you report this, or cite the page "
+                             "it was read from")
+
+
 def _check_result(finding: Finding, out: Dict[str, Any]) -> Dict[str, Any]:
     if finding.quote_note:
         out["quote_check"] = finding.quote_note
@@ -328,6 +350,7 @@ def make_findings_tools(attachments: Optional[Dict[str, bytes]] = None,
         out: Dict[str, Any] = {"recorded": finding.id,
                                "confidence": finding.confidence,
                                "quote_verified": finding.quote_verified}
+        _note_unopened(finding, out)
         return json.dumps(_check_result(finding, out))
 
     def update_finding(id: str, status: Optional[str] = None,

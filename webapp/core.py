@@ -1030,6 +1030,62 @@ def with_heartbeat(gen, interval_s: Optional[float] = None):
             raise payload
 
 
+def _turn_page_check(callbacks):
+    """The check of the pages this turn's answer cites against the pages
+    any tool or helper opened in the conversation (:mod:`funhouse_agent.
+    cited_pages`, BACKLOG EV-18), or ``None`` where it cannot be had. Its
+    record is the folder of the turn's activity log (the ``ActivityLogger``
+    among ``callbacks``), and its result is kept in that log."""
+    try:
+        from funhouse_agent.cited_pages import TurnPageCheck
+        logger = next((cb for cb in callbacks or ()
+                       if hasattr(cb, "conv_dir")
+                       and hasattr(cb, "on_custom_event")), None)
+        log = None
+        if logger is not None:
+            def log(data, _logger=logger):
+                _logger.on_custom_event("cited_pages", data, run_id=None)
+        return TurnPageCheck(record_folder=getattr(logger, "conv_dir", None),
+                             log=log)
+    except Exception:  # noqa: BLE001 - the turn runs without it
+        return None
+
+
+def _page_record_bound(page_check):
+    """Binds the conversation's record folder for the turn's tools (the
+    cited-page check in ``write_diggs`` reads it), or a no-op."""
+    import contextlib
+    folder = getattr(page_check, "record_folder", None)
+    if not folder:
+        return contextlib.nullcontext()
+    try:
+        from funhouse_agent.cited_pages import record_bound
+        return record_bound(folder)
+    except Exception:  # noqa: BLE001
+        return contextlib.nullcontext()
+
+
+def _checked_answer(page_check, answer: str) -> str:
+    """``answer`` after the turn's page check (recorded; noted per
+    ``GEOTECH_CITED_PAGES``)."""
+    if page_check is None:
+        return answer
+    try:
+        return page_check.finish(answer)
+    except Exception:  # noqa: BLE001 - never the answer
+        return answer
+
+
+def _history_after(run_state, added, work_messages, pass_text) -> list:
+    """The run's messages after a pass, for the next pass to go on from:
+    the graph's own state, else what the updates added, else the reply."""
+    if run_state is not None:
+        return list(run_state)
+    if added:
+        return list(work_messages) + added
+    return list(work_messages) + [{"role": "assistant", "content": pass_text}]
+
+
 def _turn_scope():
     """The scope one turn's agents share (:mod:`funhouse_agent.deep.
     keep_work`), or a no-op where it cannot be imported."""
@@ -1091,6 +1147,14 @@ def stream_turn(agent, messages: list, thread_id: str,
     note is the answer (or, if the model gave nothing after it, the reply
     held back).
 
+    The pages the answer cites are checked against the pages any tool or
+    helper opened in the conversation (:func:`_turn_page_check`; BACKLOG
+    EV-18) and the result kept in the activity log. With
+    ``GEOTECH_CITED_PAGES=retry`` an answer citing pages no tool opened is
+    held back once and the model told, and the reply after that note is the
+    answer, as with the coverage gate; with ``note`` (and after a retry that
+    still cites such pages) a note is appended to the answer.
+
     Reuses the PURE ``_format_update`` parser and ``_sum_callback_tokens`` from
     ``funhouse_agent.deep.notebook`` so the stream contract is shared with the
     notebook UI. The whole stream runs under a usage-metadata callback; if that
@@ -1130,11 +1194,14 @@ def stream_turn(agent, messages: list, thread_id: str,
         cb_ctx = get_usage_metadata_callback()
     except Exception:
         cb_ctx = None
+    page_check = _turn_page_check(callbacks)
 
     def _run_passes(run_config):
         # One or more graph invocations: the extra passes are the bounded
-        # auto-continue for replies that end on a stated-but-unperformed step.
+        # auto-continue for replies that end on a stated-but-unperformed step,
+        # and the page check's one pass (GEOTECH_CITED_PAGES=retry).
         nonlocal work_messages, continuations, saw_tool
+        page_redo = False
         while True:
             pass_parts: List[str] = []
             held_back: Optional[str] = None
@@ -1213,25 +1280,45 @@ def stream_turn(agent, messages: list, thread_id: str,
             # ONE answer, however many passes: a continuation's reply takes
             # the place of the step its predecessor announced, never a
             # second copy of the answer (merge_continuation).
-            answer_parts[:] = [merge_continuation("".join(answer_parts),
-                                                  pass_text)
-                               if continuations else pass_text]
+            if page_redo:
+                # The reply after the page check's note replaces the one held
+                # back, whole (or that one stands, if it gave nothing).
+                page_redo = False
+                if pass_text.strip():
+                    answer_parts[:] = [pass_text]
+            else:
+                answer_parts[:] = [merge_continuation("".join(answer_parts),
+                                                      pass_text)
+                                   if continuations else pass_text]
             if (continuations < MAX_AUTO_CONTINUES
                     and ends_mid_task(pass_text, saw_tool)):
                 continuations += 1
-                if run_state is not None:
-                    history = list(run_state)
-                elif added:
-                    history = list(work_messages) + added
-                else:
-                    history = list(work_messages) + [
-                        {"role": "assistant", "content": pass_text}]
+                history = _history_after(run_state, added, work_messages,
+                                         pass_text)
                 work_messages = history + [
                     {"role": "user", "content": CONTINUE_NUDGE}]
                 yield {"kind": "tool_call",
                        "text": (f"auto-continue {continuations}/"
                                 f"{MAX_AUTO_CONTINUES}: finishing the stated "
                                 "next step")}
+                continue
+            # Pages the answer cites that no tool opened: told once, before
+            # it goes out (GEOTECH_CITED_PAGES=retry; EV-18).
+            note = None
+            if page_check is not None:
+                try:
+                    note = page_check.feedback("".join(answer_parts))
+                except Exception:  # noqa: BLE001 - never the turn
+                    note = None
+            if note:
+                page_redo = True
+                history = _history_after(run_state, added, work_messages,
+                                         pass_text)
+                work_messages = history + [{"role": "user", "content": note}]
+                from funhouse_agent.cited_pages import RETRY_STATUS
+                yield {"kind": "tool_call", "text": RETRY_STATUS}
+                if pass_text.strip():
+                    yield {"kind": "token", "text": "\n\n"}
                 continue
             return
 
@@ -1242,7 +1329,7 @@ def stream_turn(agent, messages: list, thread_id: str,
         # pass's) on the error, for the host to show labelled as cut short
         # instead of the raw stream (turn_jobs, failed_turn_text).
         try:
-            with _turn_scope() as scope:
+            with _turn_scope() as scope, _page_record_bound(page_check):
                 if record is not None:
                     try:
                         record.scope = scope
@@ -1264,7 +1351,8 @@ def stream_turn(agent, messages: list, thread_id: str,
             run_config["callbacks"] = extra_cbs
         for entry in _passes_noting_reply(run_config):
             yield entry
-        yield {"kind": "turn_done", "answer": "".join(answer_parts),
+        yield {"kind": "turn_done",
+               "answer": _checked_answer(page_check, "".join(answer_parts)),
                "turn_tokens": 0}
         return
 
@@ -1274,7 +1362,8 @@ def stream_turn(agent, messages: list, thread_id: str,
         for entry in _passes_noting_reply(run_config):
             yield entry
         turn_tokens = _sum_callback_tokens(dict(cb.usage_metadata))
-    yield {"kind": "turn_done", "answer": "".join(answer_parts),
+    yield {"kind": "turn_done",
+           "answer": _checked_answer(page_check, "".join(answer_parts)),
            "turn_tokens": turn_tokens}
 
 

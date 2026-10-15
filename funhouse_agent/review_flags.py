@@ -92,6 +92,15 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     turned from the start. Both pages; page and region looks and tiles
     (BACKLOG VIS-01: the sheets Sol misread sideways in Foundry brief 5 have
     no text layer to say which way their lettering runs).
+``GEOTECH_CITED_PAGES``
+    What the app does when an answer cites pages that no tool or helper read
+    or looked at in the conversation (:mod:`funhouse_agent.cited_pages`; the
+    check itself always runs and is kept in ``activity.jsonl`` as a
+    ``cited_pages`` event). ``note`` (or ``1``) appends a short note to the
+    answer listing them; ``retry`` tells the model once, before the answer
+    goes out, and the answer it writes after that note is the one delivered
+    (with the note appended if it still cites such pages). Off: the answer is
+    left as the model wrote it. Both pages (BACKLOG EV-18).
 """
 
 from __future__ import annotations
@@ -113,11 +122,12 @@ COVERAGE_ENV = "GEOTECH_COVERAGE"
 CHECKLIST_ENV = "GEOTECH_REVIEW_CHECKLIST"
 VISION_TURN_RETRY_ENV = "GEOTECH_VISION_TURN_RETRY"
 KEPT_READINGS_ENV = "GEOTECH_REVIEW_KEPT_READINGS"
+CITED_PAGES_ENV = "GEOTECH_CITED_PAGES"
 
 ALL_ENVS = (AGENT_ENV, VISION_TEXT_ENV, VISION_STRUCTURED_ENV,
             VISION_INLINE_ENV, SWEEP_ENV, FINDINGS_ENV, OVERVIEW_ENV,
             GEOMETRY_ENV, DIGEST_ENV, COVERAGE_ENV, CHECKLIST_ENV,
-            VISION_TURN_RETRY_ENV, KEPT_READINGS_ENV)
+            VISION_TURN_RETRY_ENV, KEPT_READINGS_ENV, CITED_PAGES_ENV)
 
 #: Not a switch but the overview's setting: above this many pages in the
 #: new uploads (all of them together) the orientation asks for contact sheets.
@@ -218,6 +228,18 @@ def vision_turn_retry() -> bool:
     return _on(VISION_TURN_RETRY_ENV)
 
 
+def cited_pages() -> str:
+    """What an answer citing pages no tool opened gets: ``"off"`` (the
+    default: recorded only), ``"note"`` (a note appended) or ``"retry"``
+    (the model told once, then a note if still needed); both pages."""
+    value = str(os.environ.get(CITED_PAGES_ENV, "")).strip().lower()
+    if value == "retry":
+        return "retry"
+    if value == "note" or value in _ON:
+        return "note"
+    return "off"
+
+
 def overview_pages() -> int:
     """The page count above which the orientation asks for contact sheets
     (``GEOTECH_REVIEW_OVERVIEW_PAGES``, default 20)."""
@@ -260,6 +282,10 @@ ARMS: Dict[str, Dict[str, str]] = {
     # The kept page readings as a tool on the review page (TA-28,
     # 2026-10-15). On the DEFAULT agent, so it compares against `baseline`.
     "kept_readings": {KEPT_READINGS_ENV: "1"},
+    # Cited pages no tool opened (EV-18, 2026-10-15): a note on the answer,
+    # or the model told once. On the DEFAULT agent, against `baseline`.
+    "cited_pages_note": {CITED_PAGES_ENV: "note"},
+    "cited_pages_retry": {CITED_PAGES_ENV: "retry"},
 }
 
 
@@ -298,10 +324,10 @@ def describe() -> str:
 __all__ = ["AGENT_ENV", "VISION_TEXT_ENV", "VISION_STRUCTURED_ENV",
            "VISION_INLINE_ENV", "SWEEP_ENV", "FINDINGS_ENV", "OVERVIEW_ENV",
            "GEOMETRY_ENV", "DIGEST_ENV", "COVERAGE_ENV", "CHECKLIST_ENV",
-           "VISION_TURN_RETRY_ENV", "OVERVIEW_PAGES_ENV",
+           "VISION_TURN_RETRY_ENV", "CITED_PAGES_ENV", "OVERVIEW_PAGES_ENV",
            "DEFAULT_OVERVIEW_PAGES", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
            "lean_agent",
            "vision_text_context", "vision_structured", "vision_inline",
            "sweep", "findings", "overview", "geometry", "digest",
-           "coverage", "checklist", "vision_turn_retry", "overview_pages",
-           "switches", "describe"]
+           "coverage", "checklist", "vision_turn_retry", "cited_pages",
+           "overview_pages", "switches", "describe"]

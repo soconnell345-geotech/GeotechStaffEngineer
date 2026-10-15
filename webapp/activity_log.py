@@ -31,7 +31,9 @@ Record shape (one JSON object per line)::
 ``event`` is one of ``turn_start``, ``tool_start``, ``tool_end``,
 ``tool_error``, ``model_start``, ``model_end``, ``model_error``,
 ``turn_end``, ``coverage_gate`` (the note the coverage gate gave the
-model, with ``GEOTECH_COVERAGE`` on), and -- since 2026-10-09 (live smoke
+model, with ``GEOTECH_COVERAGE`` on), the app events of
+:data:`APP_EVENTS` (``cited_pages``: the answer's page citations checked
+against the pages opened), and -- since 2026-10-09 (live smoke
 wave 1, G11) -- ``tool_delivered`` (what the model RECEIVED from a tool call,
 when the agent's middleware changed the tool's own output) and
 ``tool_refused`` (a call no tool ran: an unknown tool name, an
@@ -109,9 +111,13 @@ TASK_TOOL = "task"
 #: ``kind``, HTTP ``status``, ``retry_after_s``, any ``x-ratelimit-*``
 #: ``headers``, ``attempt`` of ``tries``; ``funhouse_agent.deep.
 #: busy_retry``); ``pacer_wait`` (a call waited ``waited_s`` for room under
-#: the tokens-a-minute pacer; ``funhouse_agent.deep.pacing``).
+#: the tokens-a-minute pacer; ``funhouse_agent.deep.pacing``);
+#: ``cited_pages`` (the pages the turn's answer cites, checked against the
+#: pages any tool or helper opened in the conversation: ``never_opened``,
+#: ``partly_opened``... and what was done, ``action``; ``funhouse_agent.
+#: cited_pages``, BACKLOG EV-18).
 APP_EVENTS = frozenset({"helper_kept", "helper_queued", "model_busy",
-                        "pacer_wait"})
+                        "pacer_wait", "cited_pages"})
 
 PRIMARY = "primary"
 
