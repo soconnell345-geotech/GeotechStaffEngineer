@@ -253,8 +253,9 @@ def _plot_description() -> str:
         info = METHOD_INFO["plot_data"]
         params = info.get("parameters") or {}
         lines = [str(info.get("brief") or "").strip()]
-        for key in ("series", "xlabel", "ylabel", "depth_axis", "logx",
-                    "hlines", "vlines", "legend", "interactive"):
+        for key in ("series", "equal_aspect", "xlabel", "ylabel",
+                    "depth_axis", "logx", "hlines", "vlines", "xlim", "ylim",
+                    "legend", "legend_position", "interactive"):
             desc = (params.get(key) or {}).get("description")
             if desc:
                 lines.append(f"{key}: {desc}")
@@ -1633,14 +1634,19 @@ def make_vision_tools(
                   hlines: Optional[list] = None,
                   vlines: Optional[list] = None,
                   legend: Optional[bool] = None, output_path: str = "",
-                  interactive: bool = True) -> str:
+                  interactive: bool = True, equal_aspect: bool = False,
+                  xlim: Optional[list] = None, ylim: Optional[list] = None,
+                  legend_position: str = "auto") -> str:
         """Plot x/y data (the ``profile_figure`` module's ``plot_data``)."""
         params: Dict[str, Any] = {
             "series": series, "title": title, "xlabel": xlabel,
             "ylabel": ylabel, "depth_axis": depth_axis, "logx": logx,
-            "logy": logy, "interactive": interactive}
+            "logy": logy, "interactive": interactive,
+            "equal_aspect": equal_aspect,
+            "legend_position": legend_position or "auto"}
         for k, v in (("hlines", hlines), ("vlines", vlines),
-                     ("legend", legend), ("output_path", output_path or None)):
+                     ("legend", legend), ("output_path", output_path or None),
+                     ("xlim", xlim), ("ylim", ylim)):
             if v is not None:
                 params[k] = v
         return _truncate(json.dumps(

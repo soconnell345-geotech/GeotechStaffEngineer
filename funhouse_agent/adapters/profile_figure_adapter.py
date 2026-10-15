@@ -107,7 +107,8 @@ def _run_subsurface_profile(params: dict) -> dict:
 _VALID_PLOT = {
     "series", "title", "xlabel", "ylabel", "depth_axis", "logx", "logy",
     "hlines", "vlines", "grid", "legend", "output_path", "dpi", "width_in",
-    "height_in", "include_base64", "interactive",
+    "height_in", "include_base64", "interactive", "equal_aspect", "xlim",
+    "ylim", "legend_position",
 }
 
 
@@ -147,8 +148,12 @@ def _run_plot_data(params: dict) -> dict:
         legend=params.get("legend"),
         dpi=params.get("dpi", 150),
         width_in=params.get("width_in", 6.5),
-        height_in=params.get("height_in", 4.5),
+        height_in=params.get("height_in"),
         interactive=bool(params.get("interactive", True)),
+        equal_aspect=bool(params.get("equal_aspect", False)),
+        xlim=params.get("xlim"),
+        ylim=params.get("ylim"),
+        legend_position=params.get("legend_position"),
     )
     saved = save_verified(output_path, result.png_bytes)
     abs_path = saved.get("saved", os.path.abspath(output_path))
@@ -318,17 +323,52 @@ METHOD_INFO = {
         "category": "Figure",
         "brief": ("Generic data plot: one or more x/y series — SPT or CPT vs "
                   "depth, settlement vs time, load vs displacement, a "
-                  "parameter sweep or method comparison. Shows in chat as an "
+                  "parameter sweep or method comparison, the cases of a "
+                  "sensitivity study, a plan view of borings and a "
+                  "footprint drawn to scale. Shows in chat as an "
                   "INTERACTIVE chart (zoom/hover) and saves a PNG for "
                   "reports, with an <img> tag ready to paste."),
         "parameters": {
             "series": {
                 "type": "array", "required": True,
-                "description": ("[{'x': [...], 'y': [...], 'label': str, "
-                                "optional 'style': 'both'|'line'|'markers'|"
-                                "'step', optional 'color'}]. x and y are equal-"
-                                "length numeric lists."),
+                "description": (
+                    "[{'x': [...], 'y': [...], 'label': str, optional "
+                    "'style': 'both'|'line'|'markers'|'step'|'polygon', "
+                    "'color'}]. x and y are equal-length lists. Optional per "
+                    "series: 'marker' (circle, square, triangle, "
+                    "triangle-down, diamond, x, cross, star, hexagon), "
+                    "'marker_size' (points), 'marker_edge' (outline colour), "
+                    "'marker_open' (hollow), 'line_dash' (solid, dash, dot, "
+                    "dashdot), 'line_width', 'labels' (one name per point, "
+                    "written beside it, '' to skip one), 'hover' (one text "
+                    "per point, shown on hover in the interactive chart; "
+                    "'<br>' breaks a line), 'in_legend' (false hides it). "
+                    "Style 'polygon' closes the outline (a footprint, a site "
+                    "boundary, a zone); 'fill': true or a colour, "
+                    "'fill_opacity' (default 0.2). x given as names (cases, "
+                    "scenarios, borings) puts them along the x axis in "
+                    "order: draw separate cases with style 'markers', since "
+                    "a line between unrelated cases shows a trend that is "
+                    "not there. Name points on the figure with 'labels' "
+                    "rather than a legend entry each."),
             },
+            "equal_aspect": {
+                "type": "bool", "required": False, "default": False,
+                "description": (
+                    "Draw one unit across as long as one unit up: set it "
+                    "for every plan view, site map, footprint or section "
+                    "drawn to scale (x and y both lengths in the same unit). "
+                    "The figure takes the data's own proportions and the "
+                    "legend moves outside the map.")},
+            "xlim": {"type": "array", "required": False,
+                     "description": "[min, max] of the x axis (else fitted)."},
+            "ylim": {"type": "array", "required": False,
+                     "description": "[min, max] of the y axis (else fitted)."},
+            "legend_position": {
+                "type": "str", "required": False, "default": "auto",
+                "allowed_values": ["auto", "inside", "outside", "below"],
+                "description": ("Where the legend goes; auto = outside a "
+                                "drawing to scale, inside otherwise.")},
             "title": {"type": "str", "required": False, "default": "",
                       "description": "Figure title."},
             "xlabel": {"type": "str", "required": False, "default": "",
@@ -371,8 +411,10 @@ METHOD_INFO = {
                     "description": "Raster resolution."},
             "width_in": {"type": "float", "required": False, "default": 6.5,
                          "description": "Figure width (inches)."},
-            "height_in": {"type": "float", "required": False, "default": 4.5,
-                          "description": "Figure height (inches)."},
+            "height_in": {"type": "float", "required": False,
+                          "description": ("Figure height (inches). Default "
+                                          "4.5, or the data's proportions "
+                                          "with equal_aspect.")},
             "include_base64": {
                 "type": "bool", "required": False, "default": False,
                 "description": ("Also return the PNG as base64 — VERY large; "
@@ -387,7 +429,8 @@ METHOD_INFO = {
             "file_size_bytes": "Size of the saved PNG.",
             "width_px": "Rendered width in pixels.",
             "height_px": "Rendered height in pixels.",
-            "series": "Each series as drawn: label, n points, x/y ranges.",
+            "series": ("Each series as drawn: label, n points, x/y ranges "
+                       "(x_categories when x named cases), points_named."),
             "summary": "Human-readable description of the figure.",
             "html_img_tag": ("Ready-to-paste <img> tag referencing the saved "
                              "PNG — drop it straight into report HTML for "

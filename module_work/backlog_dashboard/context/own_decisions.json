@@ -907,5 +907,36 @@
    "BACKLOG.md (OWN-59, GM-59)",
    "slope_stability/DESIGN.md \"Support forces in each method\""
   ]
+ },
+ "OWN-61": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "How should the app's figures improve beyond today's plotting fixes: grow the one plotting tool, add a figure helper that drafts, looks and revises, or let the agent write plotting code in a locked box?",
+  "why": "In the 2026-10-15 session the app's plans were not drawn to scale, footprints and boring names could not be shown, and you asked why Claude Code draws so much better. Claude Code writes its own plotting code and looks at the result; the app's agent can only call one plotting tool, and until today it drew lines and dots only.",
+  "background": "Done today (master, unreleased; GM-90, TA-29): plans and sections at 1:1 scale, filled outlines, point names placed clear of each other, hover text, marker shapes, named cases as dots, legend off the map, and the chat card drawing charts in their own colours (the dark theme was hiding titles and axis labels). Before-and-after page: https://claude.ai/artifact/TcPujcvMF19HZQXtPVAmMj. On Tufte: the book itself cannot go into the model (copyright); a one-page checklist in our own words naming his principles (data-ink, chartjunk, small multiples, labels on the data) beside engineering conventions can.",
+  "options": [
+   {
+    "label": "A: keep growing the plotting tool",
+    "effect": "Add the figures you make most (exceedance curves, profiles, tornado charts, probability maps) as tool options. Safe and cheap; limited to what is built in."
+   },
+   {
+    "label": "B: a figure helper (recommended next)",
+    "effect": "A small helper with its own figure checklist draws, looks at the PNG and redraws, two or three times at most, behind an OFF switch until the suite shows it helps. About 3 to 6 extra model calls a figure."
+   },
+   {
+    "label": "C: plotting code in a locked box",
+    "effect": "The agent writes matplotlib or Plotly code that runs with no network, no files outside the conversation and a time limit. Closest to Claude Code; it is code execution on a shared host, so the Tiny Apps team must agree first."
+   }
+  ],
+  "recommendation": "A now (done), then B behind an OFF switch; C only if A and B fall short and the Tiny Apps team allows it.",
+  "if_no_answer": "Keep growing the plotting tool (A) as figure needs come up.",
+  "message_to_send": null,
+  "unblocks": [
+   "GM-92"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-61, GM-90, GM-92)",
+   "module_work/field_feedback/2026-10-15_rock-excavation-kriging-mc_v5.33.0/FINDINGS.md"
+  ]
  }
 }

@@ -1100,10 +1100,15 @@ _KIND_ICON = {"plotly": "📈", "html": "📄", "pdf": "📕", "png": "🖼️",
               "text": "📄", "other": "📎"}
 
 
-def _render_artifact_card(path: str) -> None:
+def _render_artifact_card(path: str, slot: str = "") -> None:
     """Render one artifact as a card: name/size/type + download + inline preview
     (HTML in a sandboxed iframe inside an expander, PDF via base64 data-URI
-    iframe, images inline). Big files are download-only."""
+    iframe, images inline). Big files are download-only.
+
+    ``slot`` names where the card stands (transcript entry and position). A
+    file rewritten in a later turn is carded in both turns, so a key made of
+    the path alone repeats and Streamlit stops the page
+    (StreamlitDuplicateElementKey; field session 2026-10-15)."""
     card = core.describe_artifact(path)
     if not card.exists:
         # Fail soft: the file is gone (e.g. produced in an external working
@@ -1127,7 +1132,7 @@ def _render_artifact_card(path: str) -> None:
         dl_name = os.path.basename(dl_path)
         st.download_button("Download", data=data, file_name=dl_name,
                            mime=_mime_for(dl_name),
-                           key=f"dlcard_{path}")
+                           key=f"dlcard_{slot}_{path}")
         if card.kind == "plotly":
             # Native interactive chart from a *.plotly.json sidecar. plotly is
             # imported lazily/guarded so the app still runs without it (then the
@@ -1136,7 +1141,13 @@ def _render_artifact_card(path: str) -> None:
             try:
                 import plotly.io as pio
                 fig = pio.from_json(core.read_text(path))
-                st.plotly_chart(fig, use_container_width=True)
+                # theme=None: the chart is drawn in its own colours, as its
+                # PNG twin and the report copy are. Streamlit's theme
+                # recoloured the text for the dark page and left titles, axis
+                # labels and legends unreadable on the chart's light paper
+                # (field session 2026-10-15).
+                st.plotly_chart(fig, use_container_width=True, theme=None,
+                                key=f"chart_{slot}_{path}")
             except Exception:
                 st.caption("(could not render Plotly figure inline — "
                            "download above)")
@@ -1168,7 +1179,7 @@ def _render_artifact_card(path: str) -> None:
 # Transcript
 # ---------------------------------------------------------------------------
 
-for entry in ss.transcript:
+for _entry_no, entry in enumerate(ss.transcript):
     role = entry.get("role")
     text = entry.get("text", "")
     if role == "attach":
@@ -1182,8 +1193,8 @@ for entry in ss.transcript:
             # rerun (the "flashing error" seen live on Foundry).
             if entry.get("error"):
                 st.error(entry["error"])
-            for _path in entry.get("artifacts", []):
-                _render_artifact_card(_path)
+            for _card_no, _path in enumerate(entry.get("artifacts", [])):
+                _render_artifact_card(_path, slot=f"{_entry_no}.{_card_no}")
             if entry.get("inputs"):
                 # Fetched to read, not produced (field feedback N8).
                 st.caption("Read from SharePoint: " + ", ".join(entry["inputs"]))
