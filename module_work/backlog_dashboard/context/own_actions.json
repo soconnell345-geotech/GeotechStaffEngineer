@@ -726,5 +726,27 @@
    "BACKLOG.md (OWN-56, OWN-57, INF-11)",
    "PyPI JSON API and every published file, 2026-10-13"
   ]
+ },
+ "OWN-60": {
+  "kind": "action",
+  "ask_who": null,
+  "question": "Photograph Duncan, Wright & Brandon (2014), Soil Strength and Slope Stability, section 6.5.3 and chapter 8 (reinforced slopes), and put the photos with the other excerpts.",
+  "why": "The slope module's 'passive' support option (Slide2's Method B) now divides the whole support force by the factor of safety, as the Slide2 help words it. Duncan & Wright's own text, which the module cites, could not be read: the excerpts on hand are chapter 7 only. The photos settle how Method B treats the support's component normal to the slip surface.",
+  "background": "docs/Duncan Book Excerpts.zip holds chapter 7. The book is not public: the photos stay local (git ignores docs/Duncan*) and are never committed.",
+  "options": [],
+  "recommendation": "Phone photos of the pages are enough; a session reads them and pins the module to the text.",
+  "if_no_answer": "Method B stays as the Slide2 help describes it.",
+  "message_to_send": null,
+  "steps": [
+   "Photograph section 6.5.3 and chapter 8 of the 2014 edition.",
+   "Put the photos in a folder named docs/Duncan_2014/ in the GeotechStaffEngineer folder (git ignores every docs/Duncan* path, so they never reach the public repo).",
+   "Tell a session they are there."
+  ],
+  "unblocks": [
+   "GM-59"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-60, GM-59)"
+  ]
  }
 }

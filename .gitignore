@@ -37,3 +37,6 @@ module_work/live_smoke/spend_ledger.json
 
 # Backlog Desk build output (rebuilt by module_work/backlog_dashboard/build.py)
 module_work/backlog_dashboard/out/
+
+# Copyrighted book excerpts (photos of pages), local only (BACKLOG OWN-60)
+docs/Duncan*

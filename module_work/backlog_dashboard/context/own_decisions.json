@@ -83,7 +83,9 @@
   "recommendation": "Leave it out by default, to match the cited references and their worked examples, and state in every result whether the pile's weight is included.",
   "if_no_answer": "The pile's weight stays in the load curve, and results sit slightly above the references' numbers.",
   "message_to_send": null,
-  "unblocks": ["GM-50"],
+  "unblocks": [
+   "GM-50"
+  ],
   "sources": [
    "downdrag/DESIGN.md (comparison with CGPR #56, item 2; validation V-004)",
    "validation_examples/RESULTS.md (V-004)"
@@ -873,6 +875,37 @@
   "sources": [
    "BACKLOG.md (REF-04 to REF-06, OWN-33)",
    "git geotech-references 7fb6fe8 (diff against merge base 829b897)"
+  ]
+ },
+ "OWN-59": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "In a slope analysis, when an anchor, nail or geosynthetic would pull the sliding mass toward failure rather than hold it back, should it count as a driving force, or as slack (no force)?",
+  "why": "Since 2026-10-14 every method counts a support's moment with its sign, as the GLE already did, so such a support is counted as driving. A tension element cannot push; in reality it would go slack and carry nothing. Counting it as driving gives a lower (more conservative) factor of safety than the element can cause.",
+  "background": "It arises only where a support crosses the slip surface at an angle that makes its pull assist sliding, for example a steep nail near the crest of a deep circle. Piles (which can push) are not part of this question. The references read so far (Wright & Duncan 1991; the Slide2 help) do not say how a destabilising pull is treated.",
+  "options": [
+   {
+    "label": "Slack: no force",
+    "effect": "A tension element whose pull would assist sliding is left out for that surface, and the result says which ones were. Matches what the element can carry."
+   },
+   {
+    "label": "Count as driving (now)",
+    "effect": "Keeps the current, more conservative result; a support can lower the factor of safety below the unreinforced value on some surfaces."
+   },
+   {
+    "label": "Offer both",
+    "effect": "An option on the analysis with a cited default; the result names which was used."
+   }
+  ],
+  "recommendation": "Slack, for tension elements (nails, anchors, geosynthetics), with the result naming each support left out; piles unchanged.",
+  "if_no_answer": "Supports keep counting with their sign (conservative).",
+  "message_to_send": null,
+  "unblocks": [
+   "GM-59"
+  ],
+  "sources": [
+   "BACKLOG.md (OWN-59, GM-59)",
+   "slope_stability/DESIGN.md \"Support forces in each method\""
   ]
  }
 }
