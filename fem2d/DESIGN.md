@@ -431,11 +431,15 @@ slope spanned by fewer than 4 elements from toe to crest (the coarsest
 mesh measured, 3 elements, was +2.7 % against a fine mesh); a soil layer
 with no elements, or thinner than its elements (elements take the layer of
 their centroid, so a thin weak seam is lost or becomes a jagged band); a
-search range that did not bracket failure. `mesh_check=True` also runs a
-mesh 1.5x finer each way, reports both (`result.mesh_check`) and warns when
-they differ by more than 5 %. Poisson's ratio 0.5 is refused.
+search range that did not bracket failure; a cohesionless dry face (c' at
+most 0.5 kPa) whose FOS came out above tan φ'/tan β, the infinite-slope
+value, which the warning quotes; side boundaries inside the deep circle of
+an undrained foundation, and an undrained layer with ν below 0.45 (both
+below). `mesh_check=True` also runs a mesh 1.5x finer each way, reports both
+(`result.mesh_check`) and warns when they differ by more than 5 %. Poisson's
+ratio 0.5 is refused. What the model did by default is in `result.notes`.
 
-**Side boundaries over a deep undrained foundation (GM-63, 2026-10-15).**
+**Side boundaries over a deep undrained foundation (GM-63, GM-88, 2026-10-15).**
 The side boundaries are rollers, on which the soil slides without
 resistance. Over undrained (phi = 0) soil Taylor's critical circle passes
 below the toe, tangent to the firm base, and reaches about 1.5-1.8 times
@@ -443,14 +447,32 @@ the depth of that soil below the toe behind the crest and 1.2-1.4 times it
 beyond the toe (FHWA NHI-06-088 Figs. 6-14, 6-15, after Taylor 1948). A
 model narrower than that fails along the rollers and reads low; the result
 warns when the level ground on either side is under 1.5 times that depth,
-and asks for twice it. Duncan Ex 1 at D = 3: 0.645 with the default
+and asks for twice it. Duncan Ex 1 at D = 3: 0.645 with the old default
 x_extend (0.6 H added each side) against 0.668 with 4 H each side and
 Taylor's 0.679 (VALIDATION.md §11, where limit equilibrium on the same
-short profile reads 0.72 because no circle may pass its ends). Undrained
-layers should carry nu = 0.49: at nu = 0.35 gravity yields the soil at
-depth at every trial, and on the finest mesh tried (100x30) the 1000
-iterations read a trial that settles at 4100 as failure (0.627 against
-0.662).
+short profile reads 0.72 because no circle may pass its ends).
+
+So since GM-88, with no `x_extend` given and undrained soil below the toe
+(elevation layers; a model built from `layer_polylines` keeps the old
+default), the default model carries the level ground at each end to twice
+the depth of that soil below the toe (measured to the bottom of the lowest
+undrained layer; the last layer runs to the mesh base), never less than the
+old margin, and raises nx with the width so the elements keep their size;
+`result.notes` says so, with both lengths and both nx. Duncan Ex 1's own
+model (1 H each side, depth 2 H): 0.648 → 0.660 at nu = 0.49,
+30x15 becoming 58x15, about twice the run time (16 s → 30 s). Release note:
+default runs over a deep undrained foundation give a slightly higher
+factor of safety than before and take about twice as long; every other
+default run is unchanged. `x_extend` is a number (0.3 times it added each
+side) or a `(left, right)` pair of margins in metres; `mesh_check` reuses
+the margins of the first run.
+
+Undrained layers should carry nu = 0.49, and an undrained layer (phi = 0,
+c > 0) with nu below 0.45 gets a warning asking for it: at nu = 0.35
+gravity yields the soil at depth at every trial (with K0 = nu/(1 - nu) =
+0.54 the gravity stresses exceed the reduced strength), and on the finest mesh tried (100x30) the
+1000 iterations read a trial that settles at 4100 as failure (0.627
+against 0.662).
 
 **Volumetric locking (GM-06, 2026-10-14).** The T6 / 3-point FOS does not
 lock as ν → 0.5: Griffiths & Lane Ex 4 (undrained, D = 2) gives 1.419 at
@@ -782,7 +804,7 @@ fem2d/
   hs_correlations.py   # HS parameters from correlations (Brinkgreve et al. 2010)
   DESIGN.md
   VALIDATION.md        # benchmarks (Griffiths & Lane, Prandtl, USS, GEC 4, Taylor)
-  tests/               # 528 tests in 24 files (2026-10-15), among them:
+  tests/               # 535 tests in 25 files (2026-10-15), among them:
     test_fem2d.py             # 92 core module tests
     test_cross_validation.py  # 15 cross-validation tests
     test_hs_beams.py          # 55 HS model + beam element tests

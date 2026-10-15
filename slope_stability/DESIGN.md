@@ -923,7 +923,9 @@ circle enters 1.76 H behind the crest and comes out 1.19 H beyond the toe
 circles 0.706 / 0.678. The test's profile ends 1 H beyond the crest and
 the toe, so no circle the search may try reaches them: 0.727 at D = 2 and
 at D = 3 (0.719 on a 20x20 grid, 0.722 entry-exit), where fem2d's SRM,
-whose rollers stand 1.6 H out, read 0.648 (fem2d VALIDATION.md §11). On a
+whose rollers stood 1.6 H out, read 0.648 (fem2d VALIDATION.md §11; 0.660
+since GM-88, whose default model carries the level ground to twice the
+depth of clay below the toe each side). On a
 profile with 4 H of level ground each side and the centre grid over the
 slope, the search gives 0.705 (D = 2) and 0.676 (D = 3).
 

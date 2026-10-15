@@ -149,7 +149,8 @@ kriging and conditional simulation live in `gstools_agent`.
 - **Exact Nataf correlation correction**: see above; pystra or future
   increment.
 - **Random-field FEM / 2-D spatial simulation**: `gstools_agent` (SRF,
-  kriging) + `fem2d`; a coupled random-field-FEM driver is the natural next
+  kriging, conditional simulation of a mapped property with totals over plan
+  regions) + `fem2d`; a coupled random-field-FEM driver is the natural next
   increment.
 - **System reliability** (multiple failure modes, series/parallel bounds)
   and **LRFD resistance-factor calibration** (beta_T → phi factors): next

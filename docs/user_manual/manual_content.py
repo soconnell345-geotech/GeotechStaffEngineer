@@ -167,7 +167,7 @@ MODULE_TITLES = {
     "pystrata": "Equivalent-linear site response (pyStrata)",
     "seismic_signals": "Ground-motion signal processing",
     "subsurface": "Subsurface data I/O (DIGGS / GEF / AGS4)",
-    "gstools": "Geostatistics (kriging &amp; random fields)",
+    "gstools": "Geostatistics (kriging, random fields &amp; conditional simulation)",
     "reliability": "Reliability engine",
     "salib": "Global sensitivity analysis (SALib)",
     "pystra": "Structural reliability (pystra)",
@@ -704,7 +704,11 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "far-field boundary must be placed far enough to avoid truncation error. The strength "
             "reduction warns when the mesh has too few elements across the slope, and when "
             "&phi;&nbsp;=&nbsp;0 soil lies below the toe with level ground shorter than 1.5 times its "
-            "depth (a deep circle cannot form).",
+            "depth (a deep circle cannot form). By default over such soil the model carries the level "
+            "ground to twice that depth each side, so Taylor&rsquo;s deep circle can form (a slightly "
+            "higher FOS than before and about twice the run time for those runs); "
+            "<code>x_extend</code> sets the margins, one number or a (left, right) pair. An undrained "
+            "layer with Poisson&rsquo;s ratio below 0.45 is warned: use 0.49.",
         ],
     },
 
@@ -882,14 +886,32 @@ MODULE_NARRATIVE: dict[str, dict] = {
 
     "gstools": {
         "problems": "Geostatistics for spatially variable ground: fit a variogram to scattered data, krige "
-            "a property between borings, and generate correlated random fields for spatial-variability "
-            "studies.",
+            "a property between borings, generate correlated random fields for spatial-variability "
+            "studies, and find the probability that a TOTAL over a footprint exceeds a value &mdash; "
+            "the volume of rock above an excavation level, the area where soft soil runs below a level "
+            "&mdash; by conditional simulation.",
         "methods": [
-            "Variogram estimation and model fitting; ordinary/simple **kriging**; conditional and "
-            "unconditional **random-field** generation, wrapping **GSTools**.",
+            "Variogram estimation and model fitting; ordinary/simple/universal **kriging** (the "
+            "smoothed best estimate between points, with the kriged surface&rsquo;s totals over plan "
+            "polygons and Gaussian pointwise expectations; a large grid goes to a CSV); unconditional "
+            "**random-field** generation, wrapping **GSTools**.",
+            "**Conditional simulation**: many realizations that honour the observations, by "
+            "conditioning by kriging (Journel &amp; Huijbregts 1978; Chil&egrave;s &amp; Delfiner 2012 "
+            "&sect;7.3.1), each integrated over plan polygons and levels on the same realizations: "
+            "mean, percentiles, the chance of any encounter, an exceedance table with standard errors, "
+            "a convergence table, CSV files, an exceedance curve and a plan map of P(z &gt; level). "
+            "GSTools&rsquo; CondSRF is offered to reproduce a CondSRF notebook; it spreads totals too "
+            "widely, so it is not the default.",
             "References: the GSTools library (Müller et al.). Requires the <code>[gstools]</code> extra.",
         ],
-        "limits": [],
+        "limits": [
+            "The spread is what the chosen model implies: a Gaussian, stationary field with the "
+            "covariance model, variance and length scale given (or computed from the data and "
+            "echoed). With few borings these cannot be checked against the data and usually move "
+            "the answer more than the method does &mdash; run cases.",
+            "Plan view (2D) only; inequality data (a boring that ended above rock) by rejection "
+            "sampling.",
+        ],
     },
 
 
@@ -1214,7 +1236,7 @@ def _ch2_install(ctx):
         "pystrata": "equivalent-linear 1D site response",
         "seismic-signals": "eqsig + pyrotd ground-motion processing",
         "liquepy": "Boulanger &amp; Idriss liquepy triggering",
-        "gstools": "geostatistical kriging and random fields",
+        "gstools": "geostatistical kriging, random fields and conditional simulation",
         "salib": "Sobol / Morris sensitivity analysis",
             "pystra": "structural FORM/SORM/Monte-Carlo reliability",
         "subsurface": "GEF/BRO-XML, AGS4, and DIGGS data I/O",

@@ -159,9 +159,9 @@ Thirty analysis modules grouped by discipline, plus the shared layers. Native mo
 | **document review** | [`planlens`](https://pypi.org/project/planlens/) (separate package, installed as a dependency) | Any PDF or image as review-ready data for the agent: a page map and the document's structure (from the pages' own headers, footers and printed numbering), text with exact locations, tables, the review markups (who said what, where it points), AutoCAD hidden text, contact sheets; plus drawing geometry and annotation constructs (leaders, dimensions, callouts). The agent looks at every page a question covers and uses the text as supporting evidence. |
 | **seismic** | `seismic_geotech` · `opensees_agent` · `pystrata_agent` · `liquepy_agent` · `seismic_signals_agent` | Site class, M-O pressures, liquefaction triggering (B&I-2014 / NCEER), 1D site response, ground-motion processing |
 | **structural** | `section_props_agent` · `concrete_props_agent` · `pynite_agent` | Cross-section properties (exact polygon integration + closed-form torsion), RC section capacity/cracked properties (ACI strain compatibility), elastic frame + continuous-beam analysis |
-| **characterization** | `subsurface_characterization` · `gstools_agent` | DIGGS/GEF/AGS4 data I/O + plots, geostatistical kriging/random fields |
+| **characterization** | `subsurface_characterization` · `gstools_agent` | DIGGS/GEF/AGS4 data I/O + plots; geostatistics: kriging, random fields, and conditional simulation (realizations that honour the borings, for the probability of a total over a footprint, such as a volume of rock above a level) |
 | **variability** | `reliability` · `salib_agent` · `pystra_agent` | FOSM/PEM/MC/FORM + COV database + spatial averaging; Sobol/Morris sensitivity; structural FORM/SORM/MC |
-| **shared / setup** | `geotech_common` · `geo_project` · `calc_package` | SoilProfile spine + checks + adapters + plots; staged human-gated model setup; calculation-package report generation |
+| **shared / setup** | `geotech_common` · `geo_project` · `calc_package` · `profile_figure` | SoilProfile spine + checks + adapters + plots; staged human-gated model setup; calculation-package report generation; report figures (subsurface schematics, and `plot_data`: charts with an interactive twin, plans and sections to scale, a plan drawn as a drawing with a scale bar and north arrow) |
 | **references** | `geotech-references` (21) | Digitized tables/figures/equations + searchable chapter text from DM7, FHWA GEC series, UFC, FHWA standards |
 
 ### Library wrapper agents
@@ -174,7 +174,7 @@ Each wraps a third-party geotechnical library behind a dict-based API for LLM to
 | `pystrata_agent` | pystrata | 1D equivalent-linear site response |
 | `seismic_signals_agent` | eqsig + pyrotd | Earthquake signal processing |
 | `liquepy_agent` | liquepy | Boulanger & Idriss (2014) liquefaction triggering — CPT (LPI/LSN/LDI) and SPT |
-| `gstools_agent` | gstools | Geostatistical kriging and random fields |
+| `gstools_agent` | gstools | Geostatistical kriging, random fields and conditional simulation |
 | `salib_agent` | SALib | Sobol and Morris sensitivity analysis |
 | `pystra_agent` | pystra | FORM/SORM/Monte Carlo reliability |
 
@@ -188,7 +188,7 @@ An agent that confidently returns a wrong bearing capacity is worse than useless
 
 - **One unit system, one I/O shape** — everything is SI; every `analyze_*()` returns a dataclass with `.summary()` (human/agent reading) and `.to_dict()` (machine/JSON).
 - **Validated against the literature** — flagship modules carry a `VALIDATION.md` with worked checks: `slope_stability` vs Fredlund & Krahn 1977 / ACADS / Duncan; `fem2d` vs Griffiths & Lane and the Prandtl solution (~2%); lateral pile vs a COM624P oracle suite.
-- **Tests as a safety net** — each module ships a pytest suite sized to its risk (e.g. `slope_stability` 539, `fem2d` 528, `geotech_common` 328; the reference library alone 5,833). Changes regress against textbook answers.
+- **Tests as a safety net** — each module ships a pytest suite sized to its risk (e.g. `slope_stability` 539, `fem2d` 535, `geotech_common` 331; the reference library alone 5,833). Changes regress against textbook answers.
 - **A reviewer in the loop** — the agent can run a second, reference-scoped pass that checks methodology, parameter ranges, and required safety factors against the standards.
 
 ---

@@ -301,6 +301,7 @@ Budgets in force:
 | legacy (default) review primary | 40 per request (`GEOTECH_REVIEW_MAX_MODEL_CALLS`; `off` = none); its `task` helper is re-declared with the review's reading rules, the read-only tools and 14 calls | `ae50842`, 2026-10-12 (BACKLOG DR-02, DR-03) |
 | `general-purpose` helper (geotech page) | 30 (`GEOTECH_HELPER_MAX_MODEL_CALLS`; `0` / `off` = none); the last call hands over the data gathered | `8cd38f4`, 2026-10-14 (TA-22) |
 | `reviewer` | 10 (`DEFAULT_REVIEWER_MAX_MODEL_CALLS`), the last call answering from what it has | `95b6388`, 2026-10-14 (TA-25) |
+| `figure` helper (only with `GEOTECH_FIGURE_HELPER`, OFF; both pages, not lean) | 14 (`DEFAULT_FIGURE_MAX_MODEL_CALLS`): brief, example, draw, look, at most two redraws, answer | `1f87ea5`, 2026-10-15 (GM-92) |
 | Geotech primary | still **none** (the step cap, §4.3) | — |
 
 ### 4.3 Step caps (ungraceful)

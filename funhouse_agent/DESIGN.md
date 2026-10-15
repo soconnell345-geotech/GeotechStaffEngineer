@@ -269,6 +269,30 @@ the eyes). What changed on master after 5.33.0, in short:
   `task_id` and the brief on every event inside a helper, a refusal's status
   and rate-limit headers, the engine and retry policy, queue times, and cut
   payloads kept whole in `activity_full/`.
+- **Figures** (GM-90, GM-95, GM-92; 2026-10-15): `plot_data` draws plans
+  and sections to scale (`equal_aspect`), a plan as a drawing (`plan_view`:
+  no axes, a scale bar, a north arrow from `north_deg` or up with a note),
+  filled and hatched outlines, named points placed clear of each other,
+  hover text, separate cases as markers along x, `xlim` / `ylim` and
+  `legend_position` (`profile_figure/data_plot.py`); its description says
+  its PNG and chart are one figure. The `calc` helper, which draws the
+  deliverable's figures, gets `analyze_image` to look at them. `save_file`
+  adds a `chart_note` when it writes a `*.plotly.json` by hand
+  (`vision_tools.HAND_CHART_NOTE`): no PNG of that figure exists, and a PNG
+  beside it is now a different figure. Behind `GEOTECH_FIGURE_HELPER` (OFF;
+  arm `figure_helper`): a `figure` helper (`deep/figure_helper.py`) with an
+  eleven-item figure checklist after Tufte, six worked examples
+  (`figure_examples`, from `profile_figure/figure_examples.py`), `plot_data`,
+  `analyze_image`, `calculate` and a 14-call budget; both pages, not the
+  lean review agent.
+- **`calculate`** (`deep/calculate_tool.py`, GM-94; 2026-10-15): a variable
+  may be a list of numbers, used through count, sum, mean, median, std
+  (sample), min, max, `percentile(L, p)`, `count_above(L, v)` and
+  `count_below(L, v)`; a list in arithmetic is refused with a plain message
+  and a long list is summarised in the echo. erf, erfc and the standard
+  normal's norm_cdf / norm_pdf / norm_ppf join the shared math list
+  (`adapters/reliability_adapter._MATH_FUNCS`), so `reliability`'s
+  expressions have them too.
 
 Every switch and its default: `review_flags.py` and
 `module_work/REVIEW_HARNESS.md`.

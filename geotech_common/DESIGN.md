@@ -10,10 +10,11 @@ Three components shared across all modules:
 - `soil_profile.py` — SoilLayer (30+ fields), GroundwaterCondition, SoilProfile, SoilProfileBuilder
 - `engineering_checks.py` — 9 check functions (bearing, settlement, pile, lateral, sheet, wave_eq, group, selection, consistency)
 - `tables.py` — `CalcTable`, the calculation tables a result returns from `get_tables()` (GM-39, 2026-10-14; written as CSVs and printed by `calc_package`)
+- `plan_furniture.py` — the scale bar (four black and white segments, a round 1, 2 or 5 × 10^k length, named at its ends) and north arrow (`north_deg` clockwise from up; straight up with a note when not given) of a plan drawn as a drawing, in matplotlib and Plotly; shared by `profile_figure.plot_data(plan_view=True)` and the `gstools` probability map so the plans read alike (2026-10-15)
 - `tests/test_soil_profile.py` — 82 tests (9 test classes)
 - `tests/test_engineering_checks.py` — 93 tests
 - `tests/test_adapters.py` — 84 tests (incl. integration round-trips)
-- `tests/test_tables.py` — 29 tests; `test_plot_methods.py` 24, `test_soil_properties.py` 16
+- `tests/test_tables.py` — 29 tests; `test_plot_methods.py` 24, `test_soil_properties.py` 16, `test_plan_furniture.py` 3
 
 ## SoilProfile Adapters (11 methods)
 Each returns plain dicts (no circular imports):
@@ -35,7 +36,7 @@ Each returns plain dicts (no circular imports):
 - fill_missing_from_correlations() tracks estimated vs measured via _estimated_fields
 - Correlations: N60->phi (Peck), N60->cu (Terzaghi-Peck), LL->Cc, Cc->Cr, cu->eps50
 - SoilProfileBuilder: from SPT boring log, CPT data, or simple dict table
-- 328 tests in all (collected 2026-10-15)
+- 331 tests in all (collected 2026-10-15)
 
 ## Correlation provenance
 The empirical correlations in `soil_properties.py` are **approximate,

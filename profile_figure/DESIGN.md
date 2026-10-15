@@ -58,6 +58,8 @@ count in `test_reviewers.py` with it (2026-09-05 decision).
 | `plotting.py` | Drawing; house palette; `build_profile_figure` → `(fig, ax)`. |
 | `profile.py` | `render_profile_figure` — resolve, draw, PNG (file + base64). |
 | `results.py` | `ProfileFigureResult` (resolved geometry + image + `summary()`). |
+| `data_plot.py` | `plot_data`: `render_data_plot` (PNG) + `build_data_plot_figure` (its Plotly twin); see below. |
+| `figure_examples.py` | Six worked `plot_data` calls on made-up data, for the figure helper; see below. |
 
 `build_profile_figure` is exported so a module can drop the section into a
 bigger figure or a calc package; `render_profile_figure` closes its own figure
@@ -82,15 +84,69 @@ Second method, same module, same contract (PNG on the real disk + an
 `html_img_tag`), from the owner's 2026-09-11 feedback that calc packages lacked
 "plots of data". `profile_figure/data_plot.py::render_data_plot` draws one or
 more `{x, y, label, style, color}` series with matplotlib: `depth_axis=True`
-inverts y and puts the x axis on top (boring-log convention), `logx`/`logy`,
-`hlines`/`vlines` as labelled reference lines (a water table, an allowable
-value). It knows no analysis and does no unit conversion — the caller labels
+inverts y and puts the x axis on top (boring-log convention), `logx`/`logy`
+(ticks written 1, 10, 100), `hlines`/`vlines` as reference lines (a water
+table, an allowable value), each named on the line itself and kept out of
+the legend. It knows no analysis and does no unit conversion — the caller labels
 the axes WITH units. Non-finite points are dropped with a warning; unequal
 `x`/`y` lengths, an empty series and an unknown style are errors that name the
 series index. It exists because the agent has no code-execution tool: without
 it, SPT-vs-depth or settlement-vs-time in a bespoke report was impossible.
 It lives here rather than in a new module because the agent catalog is within
 ~35 characters of its 8,000-char budget — a method costs less than a module.
+
+The same cleaned series also build an interactive Plotly twin
+(`build_data_plot_figure`, on `result.figure`; 5.18.0), which the adapter
+writes beside the PNG as `<name>.plotly.json` and the chat shows; the PNG
+stays the report copy. `interactive=False` skips it, and a failure to build
+it is a warning that never costs the PNG. The twin sets its own white paper
+and dark text, so a dark page theme cannot hide its title or axis labels.
+
+**Plans, named points and cases (2026-10-15)**, from the owner's field session
+that day (tests: `tests/test_data_plot_maps.py`):
+
+- **Per series:** `marker` (circle, square, triangle, triangle-down, diamond,
+  x, cross, star, hexagon), `marker_size` (points), `marker_edge`,
+  `marker_open` (hollow), `line_dash` (solid, dash, dot, dashdot),
+  `line_width`, `in_legend`. Style `polygon` closes an outline (a footprint,
+  a site boundary, a zone) with an optional `fill` (true or a colour),
+  `fill_opacity` and `hatch`; outlines are drawn under the points and lines.
+- **`labels`** names each point beside it (`""` skips one): each name goes
+  in whichever of eight spots round its point covers least of the other
+  names, the points, the lines and the reference-line names, and stays inside
+  the plot frame; the Plotly twin puts it in the same spot. **`hover`** is one
+  text per point, shown on hover in the chat. Both need one entry per point,
+  and a dropped point drops its name.
+- **x given as names** (cases, scenarios, borings) puts them along x in the
+  order first seen; every series uses names or every series numbers.
+- **`equal_aspect`** draws one unit across as long as one unit up (a plan, a
+  map, a section to scale) in a figure of the data's own proportions unless
+  `height_in` is given; it is ignored, with a warning, on cases or a log axis.
+  **`xlim`/`ylim`**; **`legend_position`** `auto` (outside a drawing to scale,
+  inside otherwise), `inside`, `outside` or `below` (under whatever the x
+  axis takes up, slanted case names included).
+- **`plan_view`** draws a plan as a drawing, not a chart (the owner, after
+  Tufte: "don't use unnecessary ink"): to scale, with no axes, axis numbers, grid or
+  frame, and the title at the left. In a band below the site sit a scale bar
+  of four black and white segments (a round 1, 2 or 5 × 10^k length, at most
+  a third of the width, named only at its ends, in `scale_units`) with
+  `xlabel`, the coordinate system, under it, and beside it a north arrow at
+  `north_deg` (degrees clockwise from up, as the plan the data came from or
+  the project's other plans show it), or straight up with a warning saying so
+  when none is given. Nothing is drawn on the site itself. It is ignored, with
+  a warning, on named cases, log axes or a depth axis. The scale bar and
+  arrow are `geotech_common/plan_furniture.py`, which the gstools probability
+  map shares, so the plans read alike.
+
+**Worked examples** (`figure_examples.py`, the owner's option B of
+2026-10-15): six complete `plot_data` calls on made-up data, each with what
+it shows and why it is drawn that way: `plan_borings`, `depth_profile`,
+`cases`, `time_settlement`, `load_settlement` and `exceedance`. The figure
+helper (`funhouse_agent/deep/figure_helper.py`, behind
+`GEOTECH_FIGURE_HELPER`, OFF by default) fetches one by name through its
+`figure_examples` tool, a near name matched by shared words and then by
+spelling, and adapts it; `render_examples(out_dir)` draws them all. Every
+number in the file is invented.
 
 ## Deliberate non-goals
 

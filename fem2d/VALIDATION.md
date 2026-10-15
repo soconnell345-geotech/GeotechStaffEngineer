@@ -669,7 +669,7 @@ slope_stability scores Taylor's D = 2 and D = 3 circles at 0.706 and 0.678
 | Model (D = 3 unless noted) | Limit equilibrium | SRM |
 |---|---|---|
 | Ground profile 1 H beyond crest and toe (trend test) | 0.727 default grid (0.726 since GM-87), 0.719 grid 20x20, 0.722 entry-exit: the circle runs from one end of the profile to the other | — |
-| Same, with the default x_extend (rollers 1.6 H out) | 0.697-0.705 on that outline | 0.641 (15x8, tol 0.05), 0.645 (30x15) |
+| Same, with the default x_extend before GM-88 (rollers 1.6 H out) | 0.697-0.705 on that outline | 0.641 (15x8, tol 0.05), 0.645 (30x15) |
 | Level ground 3 H each side | | 0.660 (44x15) |
 | Level ground 4 H each side | 0.676 (centre grid over the slope; entry-exit 0.676); 0.690 default grid, 0.676 since GM-87 | 0.668 (50x15), 0.660 (75x22), 0.662 (100x30, nu 0.49) |
 | Level ground 5 H each side | | 0.668 (60x15) |
@@ -815,13 +815,16 @@ the full suite (461 tests incl. slow SRM, 2026-10-14) runs in ~14 min.
   shorter than about twice the depth of clay below the toe cuts Taylor's
   deep circle and reads low (Duncan Ex 1, D = 3: 0.645 against 0.668;
   GL99 Ex 4's outline 3.5 % below Taylor). The result warns below 1.5
-  times that depth. The default x_extend adds only 0.3 x_extend each
-  side, 0.6 H at the default depth.
+  times that depth. Since GM-88 the default model (no `x_extend`,
+  elevation layers) carries the level ground to twice that depth each
+  side and says so in its notes; a given `x_extend` or a model built from
+  `layer_polylines` is not widened.
 - **Undrained layers at nu well below 0.5 on fine meshes** (§11): gravity
   yields the soil at depth under level ground at every trial; the
   iterations then converge slowly and the iteration ceiling can read a
   trial that would settle as failure (Duncan Ex 1, 100x30: 0.627 at
-  nu = 0.35, 0.662 at 0.49). Use nu = 0.49 for undrained layers.
+  nu = 0.35, 0.662 at 0.49). Use nu = 0.49 for undrained layers; the
+  result warns on an undrained layer below 0.45 (GM-88).
 - **Staged construction**: `analyze_staged(max_iter=100)` is low for a
   plastic stage under the constant-stiffness iteration (a footing at 260
   kPa on c' 20 kPa, phi' 25 deg converged with 500 and not with 100);

@@ -418,8 +418,8 @@ METHOD_INFO = {
                      "description": "Draw a light grid."},
             "legend": {"type": "bool", "required": False,
                        "description": ("Show the legend. Default: when more "
-                                       "than one series or a labelled "
-                                       "reference line.")},
+                                       "than one series is in it (reference "
+                                       "lines are named on the line).")},
             "output_path": {"type": "str", "required": False,
                             "description": ("PNG path. A bare filename lands in "
                                             "the working folder. "

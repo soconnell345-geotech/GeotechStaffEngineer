@@ -2,7 +2,7 @@
 
 > **This file is the RUNBOOK for live checks; the list of what is open is
 > `BACKLOG.md`** (OWN-32, EV-02, EV-13, EV-15, TA-03, TA-04, and the live
-> halves of VIS-26, TA-28, RI-31). A new check is written up here AND added
+> halves of VIS-26, TA-28, RI-31, GM-96). A new check is written up here AND added
 > to the backlog by ID.
 
 **Why this list exists.** Some changes can only be confirmed with the real
@@ -24,7 +24,7 @@ repeating there.
 
 **Still to run on Funhouse (2026-10-15):** check 5 (5.32.1 or later;
 BACKLOG OWN-32); and, once the release after 5.33.0 reaches the cluster
-(the owner holds it, OWN-55), check 9's extension and checks 10 and 11.
+(the owner holds it, OWN-55), check 9's extension and checks 10, 11 and 12.
 Check 9's rollout-model part runs on Foundry as brief 6 part A. Check 5
 tests the Funhouse app's own SharePoint and sign-in connections, which
 Foundry does not have. It tests connections rather than the model, so run it
@@ -358,6 +358,40 @@ DIGGS file.
 - if a helper stops early, whether its saved file still reaches the primary
   (BACKLOG TA-21, EV-15);
 - the `cross_checks` in the result.
+
+**Send:** the conversation folder.
+
+## Check 12 — Rock under a footprint, asked again: the conditional simulation, `calculate` on lists, and the figures (BACKLOG GM-96, with GM-91, GM-94, GM-95, GM-90; the release after 5.33.0; geotech page; a rough estimate of 0.5–1.5 million input tokens)
+
+**Why.** The 2026-10-15 field session
+(`module_work/field_feedback/2026-10-15_rock-excavation-kriging-mc_v5.33.0/`)
+asked for the probability of exceedance of the rock-excavation volume under
+a footprint and could not get it: there was no conditional simulation, the
+footprint fractions were counted by eye from a kriged grid (10 of 40
+wrong), the plans were not to scale, and the helper that drew the figures
+never looked at them. All four are built and pass offline; only the real
+model shows whether it reaches for them.
+
+**How.** On the geotech page, ask the session's question again with the
+same borings and footprint (your raw notes hold them): the rock surface
+kriged from the borings, then the probability that the rock volume above
+the excavation level under the footprint exceeds a few values, then a plan
+and an exceedance curve for the report. Decide beforehand which borings
+count (BACKLOG GM-96: your own call) and say so in the question.
+
+**Read:**
+- whether the agent calls `gstools.conditional_simulation` (not kriging
+  alone, and not `reliability.monte_carlo` on a single number) and quotes
+  its spread as what the chosen model implies, with the model named;
+- any count, fraction or average over a list goes through `calculate`, not
+  by eye;
+- the plan is drawn to scale as a drawing (`plot_data` with `plan_view`:
+  a scale bar, a north arrow at the source plan's angle or, with none
+  given, straight up with a note in the result saying so, the footprint
+  outlined, the borings named), and `analyze_image` is called on
+  each figure before it is called done;
+- no `*.plotly.json` written by hand (a `chart_note` in a `save_file`
+  result means one was).
 
 **Send:** the conversation folder.
 

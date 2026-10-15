@@ -226,7 +226,7 @@ may lag it. `hvsrpy`/`swprocess` were removed in 5.12.)
 
 | Module | Description |
 |--------|-------------|
-| `profile_figure` | Figures for any report (PNG + ready `html_img_tag`): `subsurface_profile` layered schematic (strata, water table, fill/surcharge, pile/shaft/footing/wall overlay, callouts) and `plot_data` generic x/y or depth data plot (SPT/CPT vs depth, settlement vs time, sweeps) — `plot_data` shows in chat as an INTERACTIVE chart (a `.plotly.json` sidecar beside the image; `interactive: false` opts out) while the PNG remains the copy embedded in reports |
+| `profile_figure` | Figures for any report (PNG + ready `html_img_tag`): `subsurface_profile` layered schematic (strata, water table, fill/surcharge, pile/shaft/footing/wall overlay, callouts) and `plot_data` generic x/y or depth data plot (SPT/CPT vs depth, settlement vs time, sweeps) — `plot_data` shows in chat as an INTERACTIVE chart (a `.plotly.json` sidecar beside the image; `interactive: false` opts out) while the PNG remains the copy embedded in reports; both are drawn from one spec, so `analyze_image` on the PNG checks what the chat shows. From the release after 5.33.0 `plot_data` also draws plans and sections to scale (`equal_aspect`), a site plan as a drawing (`plan_view`: no axes or grid, a scale bar, a north arrow from `north_deg`, or straight up with a note), outlines with fill or hatch (style `polygon`), marker shapes, named points (`labels`), hover text, separate cases as markers along x, `xlim` / `ylim` and `legend_position`; reference lines are named on the line |
 | `fem2d` | 2D plane-strain FEM (gravity, foundation, slope SRM, excavation, seepage, consolidation) |
 | `subsurface` | Subsurface data I/O — DIGGS parse + Plotly viz (parameter vs depth, Atterberg, trends) + folded format adapters: GEF/BRO-XML CPT/borehole parse (pygef), AGS4 read/validate (python-ags4), DIGGS schema/dictionary validation (pydiggs) |
 
@@ -234,7 +234,7 @@ may lag it. `hvsrpy`/`swprocess` were removed in 5.12.)
 
 | Module | Description |
 |--------|-------------|
-| `gstools` | Geostatistical kriging, variogram fitting, and random field generation |
+| `gstools` | Geostatistical kriging (with `regions`: the kriged surface's totals over plan polygons and Gaussian pointwise expectations; a large grid goes to a CSV), variogram fitting, random field generation, and, from the release after 5.33.0, `conditional_simulation`: realizations that honour the observations, each integrated over plan polygons and levels, for the probability of a TOTAL (volume or area above or below a level, any encounter), with an exceedance curve and a plan map of P(z > level). Its spread is what the chosen model implies; the model itself (covariance, variance, length scale) is an assumption that usually matters more, so run cases |
 
 #### Geotech-References (14)
 
@@ -264,7 +264,8 @@ may lag it. `hvsrpy`/`swprocess` were removed in 5.12.)
 | `analyze_image` | Analyze an attached image via engine vision (the deep agent, from the release after 5.33.0: a large image is also read in tiles cut from the original, and `render_region` zooms on an image in its own pixels) |
 | `analyze_pdf_page` | Render a PDF page and analyze it (scanned pages, figures) |
 | `read_reference_figure` | Render a digitized reference chart and read a value off it via vision |
-| `save_file` | Save content to a file (text or base64 binary), **write-verified** |
+| `save_file` | Save content to a file (text or base64 binary), **write-verified**; a `*.plotly.json` written by hand gets a `chart_note` (no PNG of that figure exists; draw charts with `plot_data`) |
+| `calculate` | (deep agent, since 5.33.0) Evaluate a formula on given numbers and report the value with the expression and inputs; from the release after 5.33.0 a variable may be a list (count, sum, mean, median, std, min, max, `percentile(L, p)`, `count_above(L, v)`, `count_below(L, v)`), and erf, erfc, `norm_cdf`, `norm_pdf`, `norm_ppf` are available |
 
 ### Document review tools (planlens, 5.20.0 — deep agent's primary surface)
 

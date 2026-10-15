@@ -215,17 +215,20 @@ Key conventions:
       (`module_work/field_feedback/2026-10-15_rock-excavation-kriging-mc_v5.33.0/`):
       the crash that ended it and chart text unreadable in the chat
       (c21c3b2, TA-29); plans drawn to scale with filled outlines, named
-      points, hover and named cases in `plot_data` (GM-90); the drawing
-      helper can look at its figures and a hand-written chart is flagged
-      (GM-95); fem2d strength reduction over deep undrained soil reaches
-      Taylor's deep circle by default (GM-88; release note: a slightly
-      higher FOS and about twice the run time for those runs only); the
-      conditional simulation the app could not run, by conditioning by
-      kriging (GM-91; GSTools' CondSRF overstates the spread of totals and
-      stays an option); a figure helper with a Tufte-style checklist and
-      worked examples (behind `GEOTECH_FIGURE_HELPER`, OFF; GM-92) and plans
-      drawn as drawings (no axes, a scale bar, a north arrow from the source
-      plan, the property line; `plot_data(plan_view=True)`).
+      points, hover and named cases in `plot_data` (c21c3b2, GM-90); the
+      drawing helper can look at its figures and a hand-written chart is
+      flagged (ad114e9, GM-95); fem2d strength reduction over deep undrained
+      soil reaches Taylor's deep circle by default (ad114e9, GM-88; release
+      note: a slightly higher FOS and about twice the run time for those
+      runs only); the conditional simulation the app could not run, by
+      conditioning by kriging (d86308b, GM-91; GSTools' CondSRF overstates
+      the spread of totals and stays an option), checked against
+      conditioning by its definition (55410b5); `calculate` counts, adds up
+      and averages lists and has the normal distribution (c43e96f, GM-94);
+      a figure helper with a Tufte-style checklist and worked examples
+      (behind `GEOTECH_FIGURE_HELPER`, OFF; GM-92) and plans drawn as
+      drawings (no axes, a scale bar, a north arrow from the source plan,
+      the property line; `plot_data(plan_view=True)`) (1f87ea5).
     Open next: Foundry brief 6, which measures all of this, is drafted
     (`../foundry_handoff/AI_FDE_BRIEF_6.md`); its rc wheels are not built
     while the owner holds the release (EV-13, DR-05).
@@ -1909,12 +1912,12 @@ suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save
 | slope_stability | 539 | Rigorous GLE/M-P (Fredlund-Krahn) + Bishop/Janbu/Spencer/OMS, entry-exit + DE noncircular search, nails/anchors/geosynthetics, SHANSEP/Hoek-Brown, ponded water, probabilistic FOS (FOSM/MC), SLOPE/W-grade plots; supports per Wright & Duncan; the search adds toe circles, planar sand-slope surfaces and a refinement of its best centres; validated vs F&K-1977/ACADS/Duncan/Slide2 (VALIDATION.md) |
 | reliability | 176 | Probabilistic geotech engines (FOSM/PEM/Monte Carlo/native FORM), published COV knowledge base (Duncan 2000/TC304/Phoon-Kulhawy), Vanmarcke spatial averaging, bearing/pile/slope wrappers |
 | downdrag | 136 | Neutral plane and downdrag: every cited method (UFC 3-220-20, GEC-12, CGPR #56) side by side, UFC's procedure as the headline |
-| geotech_common | 328 | SoilProfile + checks + adapters + plots + the calculation-table layer (`tables.py`) |
+| geotech_common | 331 | SoilProfile + checks + adapters + plots + the calculation-table layer (`tables.py`) + the plan furniture (`plan_furniture.py`: the scale bar and north arrow shared by `plot_data(plan_view=True)` and the gstools probability map) |
 | opensees_agent | 134 | PM4Sand cyclic DSS, 1D site response (pinned to the OpenSees wiki's total-stress and the OpenSeesPy docs' effective-stress examples) |
 | pystrata_agent | 63 | 1D EQL site response (SHAKE-type, Darendeli/Menq/custom) |
 | seismic_signals | 84 | Earthquake signal processing (eqsig/pyrotd) |
 | liquepy_agent | 80 | Boulanger & Idriss (2014) liquefaction triggering — CPT (LPI/LSN/LDI) + SPT |
-| gstools_agent | 139 | Geostatistics (GSTools): kriging (the mean surface; region totals + Gaussian pointwise expectations), variogram fitting, unconditioned random fields, and conditional simulation — realizations that honour the borings, integrated over plan polygons for probabilities of totals (volume above/below a level, area, any encounter), CSVs + figures |
+| gstools_agent | 140 | Geostatistics (GSTools): kriging (the mean surface; region totals + Gaussian pointwise expectations), variogram fitting, unconditioned random fields, and conditional simulation — realizations that honour the borings, integrated over plan polygons for probabilities of totals (volume above/below a level, area, any encounter), CSVs + figures |
 | salib_agent | 43 | Sobol & Morris sensitivity analysis (KEPT by owner ruling 2026-09-22 — it was never retired) |
 | pystra_agent | 43 | FORM/SORM/Monte Carlo structural reliability analysis (KEPT by owner ruling 2026-09-22; `reliability/` has its own native FORM/MC, pystra adds SORM) |
 | section_props_agent | 70 | Cross-section properties, native (A, I, Z, S, J, warping; steel shapes + polygons, mm units; exact Green's-theorem integration + closed-form torsion) |
@@ -1925,7 +1928,7 @@ suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save
 | dxf_export | 37 | DXF export for cross-section geometry (surface, boundaries, GWT, nails, annotations) |
 | pdf_import → `planlens.pdf` | (planlens) | HISTORICAL PATH. The PDF cross-section importer ships in the separate `planlens` package since 2026-09-04 (`planlens.pdf`; app-side bridge `dxf_import/pdf_bridge.py`). |
 | drawing_ir → `planlens.ir` + `planlens.document` + `planlens.tools` | (planlens, 1,307 tests at 0.6.0) | HISTORICAL PATH. The drawing IR (DXF / vector-PDF / raster ingest, slice queries, leader / dimension / title-block / bubble / cloud finders, `render_region`) is `planlens.ir`; since planlens 0.3.0 the WHOLE-DOCUMENT layer (`planlens.document`: page map + structure, located text, tables, review markups, hidden CAD text, Azure DI text source) and the LLM tool layer (`planlens.tools`) sit beside it. See "Document review & drawing geometry (planlens)" below. |
-| fem2d | 528 | 2D plane-strain FEM (T6 default + CST/Q4/beam, 3D-principal MC return, HS, GL99 SRM, seepage, consolidation, staged construction, staged excavation in lifts (dewatered by default, seepage under the wall), PLAXIS-style calc-package plots); validated vs Griffiths-Lane/Prandtl/USS cantilever/GEC 4 (VALIDATION.md) |
+| fem2d | 535 | 2D plane-strain FEM (T6 default + CST/Q4/beam, 3D-principal MC return, HS, GL99 SRM (over deep undrained soil the default model reaches Taylor's deep circle), seepage, consolidation, staged construction, staged excavation in lifts (dewatered by default, seepage under the wall), PLAXIS-style calc-package plots); validated vs Griffiths-Lane/Prandtl/USS cantilever/GEC 4 (VALIDATION.md) |
 | geo_project | 91 | Canonical Project document for staged, human-gated LE/FEM model setup (schema+validators, builders, templates, DXF/PDF/vision ingest w/ provenance quarantine, echo-back renderer) |
 | report_ingest | 1402 | One geotechnical report PDF → one organised, cited record and its four exports. Document triage and label review over planlens' page roles; three readers (boring/test-pit log, laboratory sheet, narrative against the owner's two standing query schemas, every answer cited); a reconciler that links lab tests to the ground and RECORDS disagreements rather than settling them; writers for `report.record.json`, a summary page, a WikiLLM library page + a SQLite index of many reports, and DIGGS 2.6 with both gates. `graph.ingest_report` is the deterministic, resumable loop. Since the second unreleased train on master a REPORT BOUND INSIDE A REPORT is its OWN record (`bound.py`): the union of triage's `bound_together` and the record's own `appended_report` runs, floor four pages, goes round the same loop into `out_dir/bound/<id>/` with `ReportRecord.bound_documents` on the parent and `ReportRecord.parent` on the child, its own library row carrying a new `parent` column -- so an earlier firm's borings are that firm's and the parent's counts are the parent's (`ingest_bound=False` restores the old listed-and-skipped behaviour). And since the first unreleased train its PAGE LABELS ARE A VOTE (`label_vote.py`): planlens' rules, one vision pass over the pages as pictures on the cheap tier (~$0.05 a report) and the printed form where a private fingerprint file is in force are combined under `label_policy` (default `structural`; `rules` reproduces the old single-voter path), `review_mode="disagreements"` gives the ~$0.45 label review ONLY the pages they split on plus two either side on a budget of `max(20, 0.5 x split pages)`, every page's label in the record carries its confidence, its voters and an `agreed` flag, and a split the review did not settle is a `label_disagreement` QA entry. The same combiner is what the `vote` stage scores, so a policy cannot mean two things. `run_folder` drives the loop over a folder; `subagent` puts it on the app as one `CompiledSubAgent` + one `report_ingest` tool, **OFF by default** (`build_deep_agent(enable_report_ingest=True)`) and feature-detected on the installed planlens. Engine-agnostic (`PrompterEngine` counts, `ClaudeEngine` is for development); `cluster_scoring.score_on_cluster(stages=("labels","logs","lab","calc","narrative","vision_labels","vote","ingest"), truth_dir=…, sharepoint=fh_sp_client)` is the owner's notebook cell; `truth_dir` is ONE root holding `logs/`, `lab/`, `calc/` and `narrative/` so one folder is uploaded rather than four paths kept in step, and `sharepoint=`/`durable_dir=` (5.22.0, `mirror.py`) copy every run file somewhere a cluster restart cannot reach and restore a wiped `out_dir` at the start. The seventh stage is `ingest` (5.23.0): the whole graph per report into `out_dir/ingest/<ID>/` with the DIGGS file gated, a saved label run reused, and the record scored against the hand truth — the whole-pipeline score; Since the calculation train a quarter of the corpus's pages stopped being skipped: `calc_reader.py` reads one run of `calculation` pages into one `Calculation` -- the kind it works out from a controlled list, the program and version as printed, the method, the subject, the labelled values it was given and the ones it worked out -- on a deterministic floor of (label, value) pairs, one model call, and three gates (a result printed on no page drops to confidence 0.3, a kind outside the list becomes `other`, a unit with no conversion is kept as printed and listed). DIGGS ignores calculations by design; the record, the summary's Calculations section and the library page carry them. Cluster stage `calc`. Since 5.24.0 a log is also matched against the printed FORM it came off
 (`log_templates.py`): a page's footer stamp, title-block labels and column
@@ -1942,9 +1945,9 @@ logs, a quote gate that downgrades an answer whose quote is not on the page it
 cites, and a lenient scoring view of the four free-text fields printed beside
 the strict one. And since 5.23.0 the log and lab readers VOTE: the grid / the tables are the first voter and the floor (`floor.py`, `log_floor.py`, `lab_floor.py`), the model may add, correct with evidence, never drop, and every split is a `disagreement` QA entry with both values and confidences. The sixth stage is `vote` (5.22.0, `vote.py`): NO model — the rules, the vision labels and the review set against each other and against the hand labels, giving the agreement rate, a per-label trust table learned in sample only, three combining policies scored beside the voters, and the accuracy a targeted review of the disagreements would need. The fifth stage is the 5.20.0 EXPERIMENT: `vision_labels.py` sends each page as a picture to GPT-4.1 on the cheap tier with structured output, scored against the same hand labels by the same scorer as the rules and the review — one call a page, one a six-page contact sheet, or (5.21.0) one per window of 36 stamped full-size pages with contact sheets of the WHOLE report beside them (`vision_mode="document"`), which is capped by the endpoint's measured 50-image-per-request limit rather than by its context window. `report_ingest/README.md`, plan in `module_work/REPORT_INGEST_PLAN.md` |
 
-Other components: geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions + DM7 figure catalogs, 5,833 tests), foundry_test_harness (122 tests), calc_package (177 tests), funhouse_agent (3,147 tests).
+Other components: geotech-references submodule (382 DM7 + 95 GEC/micropile + 10 FEMA + 9 NOAA + 35 UFC functions + DM7 figure catalogs, 5,833 tests), foundry_test_harness (122 tests), calc_package (177 tests), profile_figure (82 tests: the subsurface schematic and `plot_data`, a rendering module like calc_package), funhouse_agent (3,167 tests).
 
-Test counts above: `pytest <folder> --collect-only -q` on the Windows `.venv`, 2026-10-15 (master 7df09c1), skips included.
+Test counts above: `pytest <folder> --collect-only -q` on the Windows `.venv`, 2026-10-15 (master 7df09c1; geotech_common, gstools_agent, fem2d, profile_figure and funhouse_agent recounted at 0bb5f1b), skips included.
 
 ## Foundry Test Harness
 
@@ -2046,9 +2049,9 @@ app-side wiring). Design notes: `planlens/document/DESIGN.md`,
 | `document_tools.py` | The whole-document review tools (planlens `ReviewToolkit` bridge, 5.16.0): `open_document`, `document_structure`, `document_page_map`, `read_document`, `search_document`, `document_markups`, `render_page_thumbnails`, and, when the installed planlens serves them, `find_quantities`, `annotate_document`, `measure`, `log_grid` (`document_tool_names()`) — attachments via contextvar, one toolkit per conversation, look cues naming the app's vision tools |
 | `notebook.py` | `NotebookChat` — ipywidgets chat interface for Jupyter/Databricks |
 | `adapters/` | analysis-module adapters + 16 reference adapters bridging flat JSON → module APIs (the former pygef/ags4/pydiggs adapters were folded into `subsurface_adapter`) |
-| `deep/` | The deepagents agent the app runs since 5.0 (`build_deep_agent`, helpers, budgets, busy retries, kept turns, `kept_readings`); `funhouse_agent/DESIGN.md` describes it, including what changed after 5.33.0 |
+| `deep/` | The deepagents agent the app runs since 5.0 (`build_deep_agent`, helpers, budgets, busy retries, kept turns, `kept_readings`, `calculate`; the `figure` helper in `figure_helper.py`, behind `GEOTECH_FIGURE_HELPER`, OFF); `funhouse_agent/DESIGN.md` describes it, including what changed after 5.33.0 |
 | `cited_pages.py` | Pages an answer or a DIGGS file cites, checked against the pages a tool actually opened (EV-18; the answer note is behind `GEOTECH_CITED_PAGES`, OFF) |
-| `tests/` | 2,007 tests collected 2026-10-15, and 3,147 across all of `funhouse_agent/` (mock engines, no API key needed) |
+| `tests/` | 2,011 tests collected 2026-10-15 (0bb5f1b), and 3,167 across all of `funhouse_agent/` (mock engines, no API key needed) |
 
 Usage:
 ```python

@@ -127,7 +127,14 @@ cards keep working when you reopen the chat later — even after an app restart 
 an upgrade. Artifact links are stored **relative** to that `files/` dir, so the
 whole data root can be moved or copied to another machine and the cards still
 resolve. If a file is later deleted, its card degrades to a small "file no
-longer available" note rather than breaking the page.
+longer available" note rather than breaking the page. A chart
+(`*.plotly.json`) shows as an interactive card drawn in the figure's own
+colours, as its PNG is (since 2026-10-15, the release after 5.33.0:
+Streamlit's theme had recoloured the text for the dark page, and titles and
+axis labels vanished on the chart's light paper), and a file
+rewritten in a later turn gets a card in each turn without stopping the page
+(before, the replayed conversation stopped with a duplicate-key error and
+could not go on; BACKLOG TA-29).
 
 The sidebar **Working folder** setting (per conversation) is where the agent's
 saves default. It starts at the conversation's `files/` dir — the durable

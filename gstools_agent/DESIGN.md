@@ -39,14 +39,34 @@ gstools_agent/
   tests/
     test_gstools_agent.py
     test_conditional_simulation.py
+    test_conditioning_by_definition.py
 ```
 
 The adapter (`funhouse_agent/adapters/gstools_adapter.py`) writes every array
 to the conversation's working folder (`_fileio.resolve_output_path` /
 `save_verified`, figures with a `.plotly.json` twin via
 `write_plotly_sidecar`) and returns paths plus small statistics. A kriging grid
-over 2,500 points goes to `<prefix>_grid.csv` instead of inline arrays;
-`KrigingResult.to_dict()` itself is unchanged for library callers.
+over 2,500 points goes to `<prefix>_grid.csv` instead of inline arrays, and
+kriging with `regions` writes `<prefix>_regions.csv` (a row per cell, region
+and level);
+`KrigingResult.to_dict()` itself is unchanged for library callers. A
+conditional simulation writes `<prefix>_realizations.csv`,
+`<prefix>_probability.csv` and `<prefix>_kriging.csv`.
+
+**Figures** (`figures=True`, the default, for a conditional simulation): the
+exceedance curve P(V > v) per region and level (up to 12 curves, P50 and P90
+marked and named) and a map of the probability that the value is above
+(below) the level in each cell, with the region outlines, the named
+observations and the bounds. The map is drawn as a plan (owner, 2026-10-15):
+to scale, with no axes or grid, the title at the left, and the scale bar and
+north arrow of `geotech_common/plan_furniture.py`, which
+`profile_figure.plot_data(plan_view=True)` shares. `north_deg` (degrees
+clockwise from up, as the source plan shows it) turns the arrow; without it
+the arrow points up and the result's `notes` say so. `value_name` (what the
+values are, in the logs' words, e.g. "top of hard rock elevation") names z
+in the exceedance curve's axis label and in the map's title and hover text,
+with `value_unit` after the level on the map; without it the figures say
+"value".
 
 ## Conditional simulation: the method and its basis
 
@@ -81,8 +101,8 @@ len_scale 15 m): by definition 145–149, formula 144, `kriging_residual` 142,
   weights).
 - S is drawn by Cholesky factoring the model covariance over the points
   (Davis 1987, the "LU" method), using GSTools' `covariance` on its
-  `isometrize`d positions (anisotropy included). It is exact for every GSTools
-  model and fast at the allowed size: 1,000 realizations over ~750–3,000
+  `isometrize`d positions (anisotropy included). The draw has exactly the
+  model's covariance for every GSTools model and is fast at the allowed size: 1,000 realizations over ~750–3,000
   cells take 0.1–1 s. A diagonal jitter (smallest of 1e-10…1e-3 × variance
   that factors) handles numerically singular smooth models; above 1e-6 it is
   reported. The cell cap (`MAX_SIM_CELLS` = 5,000; the matrix is n² doubles)
@@ -143,8 +163,9 @@ the fraction of realizations violating it (each realization is evaluated
 exactly at the bound's point). `bounds_mode="reject"` keeps only realizations
 satisfying every bound, drawing more up to 10 × `n_realizations`, and reports
 the acceptance rate (warning below 10 %). This is REJECTION SAMPLING, not
-inequality kriging: correct for the kept set in the limit, slow and possibly
-unrepresentative when the bounds sit in the tail of the model.
+inequality kriging: in the limit the kept set is what the chosen model
+implies given the bounds; it is slow, and possibly unrepresentative when the
+bounds sit in the tail of the model.
 
 **Data-dependent defaults** are computed at run time from the observations of
 THIS call and echoed in `defaults_from_data` with their basis (variance = the

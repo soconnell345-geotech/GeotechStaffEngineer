@@ -33,6 +33,7 @@ flowchart TB
     P -->|task: reviewer| RV{{reviewer sub-agent}}
     P -->|"task: calc, app only"| C{{calc sub-agent<br/>budget 16 calls}}
     P -->|task: general-purpose| G{{general-purpose helper}}
+    P -.->|"task: figure, switch OFF (2026-10-15)"| F{{figure helper<br/>budget 14 calls}}
     P -->|vision + file tools| VF["read_pdf_text, analyze_pdf_page, render_region,<br/>read_reference_figure, document tools, save_file, write_docx"]
     P --> A[answer + saved files]
 ```
@@ -134,10 +135,23 @@ Built by `build_domain_prompt` (`funhouse_agent/deep/prompt.py:224-261`) from
   planlens document tools, `annotate_document`, `save_file`, `write_docx`.
 * **deepagents**: `write_todos`, six scratch-filesystem tools (seven on
   deepagents 0.7, which adds `delete`), `task`.
-* *Since 5.33.0:* `measure` and `log_grid` (visual scales); *since
-  2026-10-15 (`642bd36`, unreleased; TA-28):* `kept_readings`, the
-  conversation's kept page readings, read-only, for the primary and its
-  helpers.
+* *Since 5.33.0:* `measure` and `log_grid` (visual scales); `plot_data`
+  and `write_xlsx` (each built only where its library imports); and
+  `calculate`, arithmetic on given numbers, for the primary and the
+  `references` and `calc` helpers. *Since 2026-10-15 (`642bd36`,
+  unreleased; TA-28):* `kept_readings`, the conversation's kept page
+  readings, read-only, for the primary and its helpers.
+* *Since 2026-10-15 (unreleased):* `calculate` also takes list variables
+  through count, sum, mean, median, std, min, max, percentile, count_above
+  and count_below, and has erf, erfc and the standard normal's norm_cdf /
+  norm_pdf / norm_ppf (`c43e96f`; GM-94: a field session's footprint
+  fractions were counted by eye, 10 of 40 wrong). `plot_data` draws plans
+  and sections to scale, a plan as a drawing (`plan_view`), filled
+  outlines, named points and separate cases as markers, and its
+  description says its PNG and chart are one figure (`c21c3b2`,
+  `1f87ea5`; GM-90). `save_file` adds a `chart_note` when it writes a
+  `*.plotly.json` by hand: no PNG of that figure exists (`ad114e9`;
+  GM-95).
 * **App only**: SharePoint tools, `email_file`, `record_feedback` when
   configured (`webapp/core.py:509-546`).
 
@@ -179,7 +193,8 @@ Built by `build_domain_prompt` (`funhouse_agent/deep/prompt.py:224-261`) from
 |---|---|---|---|
 | `references` | `CONSULTANT_FRAMING` ("REFERENCE LIBRARIAN … CITE … only references your tools returned … never infer chart values from memory … Do NOT perform engineering calculations") + a concision rule (`reviewer.py:260-271`; `deep/agent.py:82-87, 315-342`) | dispatch tools scoped to the 33 reference modules (cap 16,000 for reference text) + `read_reference_figure` | 8 model calls, last one forced to answer (10 since `3195ede`, released in 5.33.0) |
 | `reviewer` | `REVIEWER_DEEP_PROMPT`: PASS / FLAG / REVISE review against the references (`reviewer.py:100-131`; `deep/agent.py:549-587`). Since 2026-10-14 (`95b6388`; TA-25) its description says to use it only after a draft answer that involved calculations, and that it sees only its brief and cannot open documents, pages or files | reference dispatch tools | none; since 2026-10-14 10 calls (`DEFAULT_REVIEWER_MAX_MODEL_CALLS`), the last one answering from what it has |
-| `calc` (app only) | `_CALC_PREAMBLE` + `_CALC_FRAMING`: run the numbers, build the deliverable with figures, save everything, never write placeholders (`deep/agent.py:379-456`) | analysis dispatch tools + `save_file`, `list_files`, `read_pdf_text`, `read_text_file` | 16 |
+| `calc` (app only) | `_CALC_PREAMBLE` + `_CALC_FRAMING`: run the numbers, build the deliverable with figures, save everything, never write placeholders (`deep/agent.py:379-456`) | analysis dispatch tools + `save_file`, `list_files`, `read_pdf_text`, `read_text_file`; since 5.33.0 the reference modules' equation, table and chart functions, `write_xlsx` and `calculate`; since 2026-10-15 (`ad114e9`; GM-95) `analyze_image`, to look at the figures it draws (it draws them with `plot_data` through `call_agent`) | 16 |
+| `figure` (behind `GEOTECH_FIGURE_HELPER`, OFF; since 2026-10-15, `1f87ea5`; GM-92) | `FIGURE_HELPER_PROMPT` (`deep/figure_helper.py`): an eleven-item figure checklist in our own words naming Tufte's principles (data-ink, chartjunk, small multiples, labels on the data) beside drawing conventions (plans to scale, depth down, units and coordinate system named, cases as markers, the quoted value marked, no coined labels); work from the nearest worked example, draw, LOOK at the PNG, at most two redraws; never invent a number | `plot_data`, `analyze_image`, `list_files`, `read_text_file`, `figure_examples` (six worked examples on made-up data, `profile_figure/figure_examples.py`), `calculate` | 14 calls |
 | `general-purpose` | deepagents' stock prompt (short; none of the domain rules), plus since 2026-10-14 one line: return the data gathered and what is missing, never only an apology | the primary's tools | none; since 2026-10-14 (8cd38f4) 30 calls (`GEOTECH_HELPER_MAX_MODEL_CALLS`), the last one hands over the data; at most 2 helpers at once (`GEOTECH_MAX_HELPERS`); a helper that stops keeps its reading in `kept/helper_*.md` (`shared_machinery.md` §5.4) |
 
 Each sub-agent sees ONLY the `description` the primary writes in the `task`
