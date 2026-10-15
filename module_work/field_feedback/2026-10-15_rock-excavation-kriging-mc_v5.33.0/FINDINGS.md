@@ -74,11 +74,27 @@ messages and the trace review's private tables).
    position; the tool's description says when to use each).
 4. **No joint-field Monte Carlo.** The agent was right about the wrapper:
    `gstools_agent` offered deterministic kriging and an unconditioned random
-   field only, and kriging returned its whole grid as JSON. BUILDING, GM-91
-   (`conditional_simulation` and kriging grids to files).
+   field only, and kriging returned its whole grid as JSON. DONE, GM-91
+   (`conditional_simulation` by conditioning by kriging, kriging region
+   totals and grids to files; follow-ups GM-96). GSTools' own `CondSRF`,
+   which the owner's notebook used, gets the mean right but overstates the
+   spread of a total (checked against an exact case: 787 against 521).
 5. **The owner's question on figures.** Answered on the before-and-after page
    (https://claude.ai/artifact/TcPujcvMF19HZQXtPVAmMj): the app's agent cannot
    run code and had one plotting tool that drew lines and dots; the chat's
    theme hid its text; nothing told it the conventions. The owner's choice of
    next step: OWN-61, GM-92.
-6. **The full read** of every record: `TRACE_REVIEW.md` (Opus subagent).
+6. **The full read** of every record: `TRACE_REVIEW.md` (Opus subagent; private
+   tables and the script run in `raw/notes/`). In short: the wrapper really
+   lacked a conditional simulation and the agent was right to say so, but its
+   turn-8 "I was wrong" was itself wrong about this app; kriging's description
+   hid the grid it returned, so the moved result went unread; the turn-4
+   fractions were counted by eye (10 of 40 wrong); the engine script runs
+   locally and its answer turns on one boring inside the footprint (counted as
+   hard rock: about zero volume; left out: a mean of 217 m³, P90 603 m³), which
+   turn 11 counted against its own earlier reading without saying so; the
+   helper that drew the figures had no way to look at them, and the agent
+   checked a PNG of a different figure from the chart the owner saw.
+   Dispositions: GM-91 (done), GM-96, GM-94, GM-95 (done), TA-30–TA-32, VIS-27,
+   EV-19; the crash, the chart theme and plot_data were already fixed
+   (TA-29, GM-90).

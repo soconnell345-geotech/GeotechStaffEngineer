@@ -72,8 +72,17 @@ def analyze_kriging(
     len_scale=None,
     nugget=0.0,
     fit_variogram=True,
+    regions=None,
+    cell_size=None,
+    quantity="above",
+    margin=None,
 ) -> KrigingResult:
     """Krige soil property values onto a regular grid.
+
+    Kriging gives ONE smoothed best estimate (the mean surface). It
+    understates the spread of the field and cannot give the probability of a
+    total over an area; for that use
+    :func:`gstools_agent.analyze_conditional_simulation`.
 
     Parameters
     ----------
@@ -99,6 +108,17 @@ def analyze_kriging(
         Nugget variance. Default 0.
     fit_variogram : bool
         If True, fit variogram model to data. Default True.
+    regions : list of dict or None
+        ``{name, polygon: [[x, y], ...], level}`` (level one number or a
+        list): the kriged surface's volume and area above (or below) each
+        level over the cells whose centre is inside the polygon.
+    cell_size : float or None
+        Cell size (m) of the region lattice (separate from the output grid);
+        None = the smallest round size giving at most ~3,000 cells.
+    quantity : str
+        'above' (default) or 'below' the level.
+    margin : float or None
+        Lattice margin around the regions (m).
 
     Returns
     -------
@@ -132,19 +152,30 @@ def analyze_kriging(
 
     gs = import_gstools()
 
-    # Build covariance model
+    # Build covariance model. Data-dependent defaults are computed here, from
+    # THIS call's observations, and echoed in the notes.
+    warnings = []
+    notes = []
     model_cls = getattr(gs, model_type)
+    role = ("the starting value for the fit" if fit_variogram else "used")
     if variance is None:
         variance = float(np.var(val_arr))
+        notes.append(f"variance not given: the sample variance of the "
+                     f"{len(val_arr)} observations ({variance:.4g}) is {role}.")
     if len_scale is None:
         # Initial guess: 1/3 of data extent
         extent = max(x_arr.max() - x_arr.min(), y_arr.max() - y_arr.min())
         len_scale = extent / 3.0
+        notes.append(f"len_scale not given: one third of the data extent "
+                     f"({len_scale:.4g} m) is {role}.")
+    if fit_variogram:
+        notes.append("fit_variogram=true: variance, len_scale and nugget "
+                     "are fitted to the empirical variogram; values given "
+                     "for them are only starting guesses (the fitted values "
+                     "are reported).")
 
     model = model_cls(dim=2, var=variance, len_scale=len_scale, nugget=nugget)
 
-    warnings = []
-    notes = []
     # Fit variogram if requested (same data-based lag classes and the same
     # refusal / degeneracy checks as analyze_variogram — live smoke GS-1).
     if fit_variogram:
@@ -180,6 +211,12 @@ def analyze_kriging(
     grid_y = np.linspace(grid_y_min, grid_y_max, n_grid_y)
     field, krige_var = krig.structured([grid_x, grid_y])
 
+    region_rows = region_cells = None
+    if regions is not None:
+        region_rows, region_cells = _region_totals(
+            krig, model, regions, cell_size, quantity, margin, x_arr, y_arr,
+            notes)
+
     return KrigingResult(
         n_data=len(x_arr),
         n_grid_x=n_grid_x,
@@ -195,4 +232,89 @@ def analyze_kriging(
         grid_y=grid_y,
         warnings=warnings or None,
         notes=notes or None,
+        regions=region_rows,
+        region_cells=region_cells,
+        quantity=quantity,
     )
+
+
+#: Most lattice cells inside the regions for the kriged-surface totals.
+_MAX_REGION_CELLS = 200000
+
+
+def _region_totals(krig, model, regions, cell_size, quantity, margin,
+                   x_obs, y_obs, notes):
+    """Volume / area of the KRIGED surface above (below) each region level."""
+    from gstools_agent.regions import (
+        QUANTITIES, auto_cell_size, build_lattice, integrate, parse_regions,
+        pointwise_gaussian, region_geometry, region_masks,
+    )
+    if quantity not in QUANTITIES:
+        raise ValueError(f"quantity must be one of {QUANTITIES}, got "
+                         f"'{quantity}'")
+    regs = parse_regions(regions, method="kriging")
+    cell = auto_cell_size(regs) if cell_size is None else float(cell_size)
+    if not cell > 0:
+        raise ValueError("cell_size must be > 0 (m)")
+    lat = build_lattice(regs, cell, margin)
+    if lat["nx"] * lat["ny"] > 50 * _MAX_REGION_CELLS:
+        raise ValueError(f"cell_size {cell:g} m makes a {lat['nx']} x "
+                         f"{lat['ny']} lattice over the regions; use a larger "
+                         f"cell_size.")
+    masks = region_masks(regs, lat["px"], lat["py"], cell)
+    union = np.zeros(lat["nx"] * lat["ny"], dtype=bool)
+    for m in masks:
+        union |= m
+    n_cells = int(union.sum())
+    if n_cells > _MAX_REGION_CELLS:
+        raise ValueError(f"{n_cells:,} cells of {cell:g} m lie inside the "
+                         f"regions (limit {_MAX_REGION_CELLS:,}); use a "
+                         f"larger cell_size.")
+    for reg, m in zip(regs, masks):
+        if not m.any():
+            raise ValueError(f"region '{reg['name']}' holds no cell centre "
+                             f"at cell_size {cell:g} m; use a smaller "
+                             f"cell_size.")
+    px, py = lat["px"][union], lat["py"][union]
+    zc, vc = krig([px, py], mesh_type="unstructured", store=False)
+    zc = np.asarray(zc, dtype=float)
+    sd = np.sqrt(np.clip(np.asarray(vc, dtype=float) - float(model.nugget),
+                         0.0, None))
+    cmask = [m[union] for m in masks]
+    area = cell * cell
+    geom = region_geometry(regs, cmask, area, x_obs, y_obs)
+    q = quantity
+    rows, cell_rows = [], []
+    for reg, m, g in zip(regs, cmask, geom):
+        vol, ar = integrate(zc[m], reg["levels"], area, quantity)
+        for li, lv in enumerate(reg["levels"]):
+            p, e = pointwise_gaussian(zc[m], sd[m], lv, quantity)
+            rows.append({
+                "region": reg["name"], "level": float(lv),
+                "polygon_area": g["polygon_area"],
+                "cell_area_sum": g["cell_area_sum"],
+                "n_cells": g["n_cells"], "cell_size": cell,
+                f"volume_{q}": float(vol[li]),
+                f"area_{q}": float(ar[li]),
+                f"expected_volume_{q}": float(e.sum() * area),
+                f"expected_area_{q}": float(p.sum() * area),
+                f"mean_cell_probability_{q}": float(p.mean()),
+                f"max_cell_probability_{q}": float(p.max()),
+                "mean_kriged_value": float(zc[m].mean()),
+                "max_kriging_std": float(sd[m].max()),
+                "nearest_observation_to_centroid": g[
+                    "nearest_observation_distance"],
+            })
+            cell_rows.append((reg["name"], float(lv), px[m], py[m], zc[m],
+                              sd[m], p))
+    notes.append(
+        f"regions: volume_{q} and area_{q} are totals of the KRIGED (mean) "
+        f"surface -- one smoothed estimate, no spread. expected_volume_{q} "
+        f"and expected_area_{q} add, cell by cell, the Gaussian expectation "
+        f"from the kriging mean and variance (sigma phi(d) + (mu - level) "
+        f"Phi(d), d = (mu - level) / sigma; and P = Phi(d)), so they are the "
+        f"EXPECTED totals and mean_cell_probability_{q} is the expected "
+        f"fraction of the area {q} the level. These are pointwise "
+        f"expectations: the probability that a TOTAL exceeds a value (a P90 "
+        f"volume, the chance of any rock) needs conditional_simulation.")
+    return rows, cell_rows

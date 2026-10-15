@@ -211,6 +211,18 @@ Key conventions:
       from the stated coordinate system (b566fbb); a fresh resolve with
       pandas 3 passes and streamlit is tested below 1.67 (6388489, a4b7051);
       class-scoped fixtures ready for pytest 10 (408756a).
+    - 2026-10-15, from the owner's kriging and Monte Carlo session
+      (`module_work/field_feedback/2026-10-15_rock-excavation-kriging-mc_v5.33.0/`):
+      the crash that ended it and chart text unreadable in the chat
+      (c21c3b2, TA-29); plans drawn to scale with filled outlines, named
+      points, hover and named cases in `plot_data` (GM-90); the drawing
+      helper can look at its figures and a hand-written chart is flagged
+      (GM-95); fem2d strength reduction over deep undrained soil reaches
+      Taylor's deep circle by default (GM-88; release note: a slightly
+      higher FOS and about twice the run time for those runs only); the
+      conditional simulation the app could not run, by conditioning by
+      kriging (GM-91; GSTools' CondSRF overstates the spread of totals and
+      stays an option).
     Open next: Foundry brief 6, which measures all of this, is drafted
     (`../foundry_handoff/AI_FDE_BRIEF_6.md`); its rc wheels are not built
     while the owner holds the release (EV-13, DR-05).
@@ -1899,7 +1911,7 @@ suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save
 | pystrata_agent | 63 | 1D EQL site response (SHAKE-type, Darendeli/Menq/custom) |
 | seismic_signals | 84 | Earthquake signal processing (eqsig/pyrotd) |
 | liquepy_agent | 80 | Boulanger & Idriss (2014) liquefaction triggering — CPT (LPI/LSN/LDI) + SPT |
-| gstools_agent | 75 | Geostatistical kriging, variogram fitting, random fields |
+| gstools_agent | 139 | Geostatistics (GSTools): kriging (the mean surface; region totals + Gaussian pointwise expectations), variogram fitting, unconditioned random fields, and conditional simulation — realizations that honour the borings, integrated over plan polygons for probabilities of totals (volume above/below a level, area, any encounter), CSVs + figures |
 | salib_agent | 43 | Sobol & Morris sensitivity analysis (KEPT by owner ruling 2026-09-22 — it was never retired) |
 | pystra_agent | 43 | FORM/SORM/Monte Carlo structural reliability analysis (KEPT by owner ruling 2026-09-22; `reliability/` has its own native FORM/MC, pystra adds SORM) |
 | section_props_agent | 70 | Cross-section properties, native (A, I, Z, S, J, warping; steel shapes + polygons, mm units; exact Green's-theorem integration + closed-form torsion) |

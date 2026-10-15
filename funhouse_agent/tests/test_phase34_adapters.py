@@ -2,7 +2,7 @@
 
 Covers:
 - fem2d_adapter (7 methods, no external dep)
-- gstools_adapter (3 methods, has_gstools guard)
+- gstools_adapter (4 methods, has_gstools guard)
 - subsurface_adapter (16 methods: 8 native + 6 folded format adapters + 2 correlations)
 
 Each adapter gets:
@@ -125,7 +125,7 @@ class TestGstoolsMethodInfo:
 
     def test_method_count(self):
         from funhouse_agent.adapters.gstools_adapter import METHOD_INFO
-        assert len(METHOD_INFO) == 3
+        assert len(METHOD_INFO) == 4
 
 
 class TestGstoolsDispatch:
@@ -139,7 +139,8 @@ class TestGstoolsDispatch:
         assert "kriging" in all_methods
         assert "variogram" in all_methods
         assert "random_field" in all_methods
-        assert len(all_methods) == 3
+        assert "conditional_simulation" in all_methods
+        assert len(all_methods) == 4
 
     def test_describe_method_kriging(self):
         from funhouse_agent.dispatch import describe_method

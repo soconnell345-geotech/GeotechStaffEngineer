@@ -410,7 +410,7 @@ MODULE_REGISTRY = {
     },
     "gstools": {
         "adapter": "funhouse_agent.adapters.gstools_adapter",
-        "brief": "Geostatistics: kriging, variogram fitting, random fields",
+        "brief": "Geostatistics: kriging (mean surface), variograms, random fields; conditional simulation for P(volume/area over a footprint)",
     },
     "section_props": {
         "adapter": "funhouse_agent.adapters.section_props_adapter",

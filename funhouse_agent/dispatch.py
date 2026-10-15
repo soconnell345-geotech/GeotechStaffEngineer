@@ -716,6 +716,15 @@ _METHOD_ALIASES = {
     ("gstools", "fit_variogram"): "variogram",
     # ordinary_kriging / discover_dxf — names guessed in the 2026-07-05 eval run.
     ("gstools", "ordinary_kriging"): "kriging",
+    # GSTools' own class name for a conditioned field (an engineer's
+    # notebook used it, 2026-10-15) and the plain-language guesses.
+    ("gstools", "condsrf"): ("conditional_simulation",
+                             {"simulation_method": "condsrf"}),
+    ("gstools", "cond_srf"): ("conditional_simulation",
+                              {"simulation_method": "condsrf"}),
+    ("gstools", "conditioned_random_field"): "conditional_simulation",
+    ("gstools", "conditional_random_field"): "conditional_simulation",
+    ("gstools", "conditional_srf"): "conditional_simulation",
     ("dxf_import", "discover_dxf"): "discover_layers",
     # subsurface_characterization is the single data-I/O home; the former
     # pygef/ags4/pydiggs modules are folded in as format-adapter methods.

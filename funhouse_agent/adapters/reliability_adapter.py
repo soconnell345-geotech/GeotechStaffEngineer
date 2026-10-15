@@ -390,7 +390,10 @@ METHOD_INFO = {
         "brief": "Monte Carlo simulation: seeded numpy sampling (optional "
                  "Latin Hypercube), correlation via Cholesky in normal "
                  "space, empirical pf with 95% CI + convergence trace, "
-                 "histogram, lognormal-fit beta.",
+                 "histogram, lognormal-fit beta. Its variables are "
+                 "scalars; for a property that varies across a site and "
+                 "must honour borings (e.g. a rock surface under a "
+                 "footprint), use gstools.conditional_simulation.",
         "parameters": {
             **_VARIABLES_PARAM,
             "n": {"type": "int", "required": False, "default": 10000,
