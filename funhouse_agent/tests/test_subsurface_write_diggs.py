@@ -609,3 +609,296 @@ def test_anything_below_the_total_depth_is_reported(tmp_path):
     assert "layer 2 bottom 10.05 m" in e["detail"]
     assert "water (at_completion) 9.50 m" in e["detail"]
     assert e["pages"] == [21, 22]
+
+
+# -- RI-31 (field session 2026-10-14, turn 3): records handed over as FILES -
+# Helpers typed their records into their replies and the primary retyped
+# 29,000 characters of them into write_diggs; a blow count, a bottom depth, a
+# printed 60/15" and one exploration's coordinates went wrong on the way
+# (TRACE_REVIEW P3.3, P3.6). A helper now saves its records as a JSON file and
+# write_diggs reads the file, confined to the conversation's working folder.
+
+from funhouse_agent._fileio import working_dir_bound  # noqa: E402
+
+
+def _hole(iid, **kw):
+    hole = json.loads(json.dumps(BORING))
+    hole["investigation_id"] = iid
+    hole.update(kw)
+    return hole
+
+
+def _save(folder, name, data):
+    path = folder / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(data if isinstance(data, str) else json.dumps(data),
+                    encoding="utf-8")
+    return path
+
+
+def test_records_from_files_are_written_as_inline_ones_are(tmp_path):
+    _save(tmp_path, "logs.json", [BORING])
+    _save(tmp_path, "lab.json", LAB)
+    with working_dir_bound(str(tmp_path)):
+        res = _call({"investigations_file": "logs.json",
+                     "lab_tests_file": "lab.json",
+                     "output_path": "f.diggs.xml"})
+        inline = _call({"investigations": [BORING], "lab_tests": LAB,
+                        "output_path": "i.diggs.xml"})
+    assert "error" not in res, res
+    assert res["read_back"]["equal"], res["read_back"]
+    if res["schema_check"]["checked"]:
+        assert res["schema_check"]["valid"], res["schema_check"]
+    assert res["written"] == inline["written"]
+    assert res["cross_checks"]["n"] == inline["cross_checks"]["n"] == 0
+    assert res["sources"] == [
+        {"from": "logs.json", "investigations": ["B-1"], "lab_tests": 0},
+        {"from": "lab.json", "investigations": [], "lab_tests": 2}]
+    assert "sources" not in inline            # inline-only: as before
+    assert (tmp_path / "f.diggs.xml").is_file()
+
+
+def test_files_and_inline_combine_and_each_source_is_named(tmp_path):
+    _save(tmp_path, "helper_a.json", [_hole("B-2", x=10.0, y=0.0)])
+    _save(tmp_path, "sub/helper_b.json", {"investigations": [
+        _hole("B-3", x=20.0, y=0.0), _hole("B-4", x=30.0, y=0.0)]})
+    with working_dir_bound(str(tmp_path)):
+        res = _call({"investigations": [_hole("B-1", x=0.0, y=0.0)],
+                     # a list of files, as models send it: JSON text
+                     "investigations_file":
+                         '["helper_a.json", "sub/helper_b.json"]',
+                     "output_path": "all.xml"})
+    assert "error" not in res, res
+    assert res["written"]["investigations"] == 4
+    assert res["read_back"]["equal"], res["read_back"]
+    assert {s["from"]: s["investigations"] for s in res["sources"]} == {
+        "inline": ["B-1"], "helper_a.json": ["B-2"],
+        "sub/helper_b.json": ["B-3", "B-4"]}
+    back = _back(tmp_path / "all.xml")
+    assert sorted(back) == ["B-1", "B-2", "B-3", "B-4"]
+
+
+@pytest.mark.parametrize("differ", [False, True])
+def test_one_exploration_in_two_inputs_is_refused_naming_both(tmp_path,
+                                                              differ):
+    other = _hole("B-1", x=5.0) if differ else BORING
+    _save(tmp_path, "dup.json", [_hole("B-2"), other])
+    with working_dir_bound(str(tmp_path)):
+        res = _call({"investigations": [BORING],
+                     "investigations_file": "dup.json",
+                     "output_path": "d.xml"})
+    assert "NO file was written" in res["error"], res
+    assert not (tmp_path / "d.xml").exists()
+    (line,) = [p for p in res["problems"] if "'B-1'" in p]
+    assert "investigations[0]" in line
+    assert "'dup.json' investigations[1]" in line
+    assert ("the records differ" if differ
+            else "the same record each time") in line
+    assert "give it once" in res["hint"]
+
+
+def test_two_files_with_one_exploration_are_refused(tmp_path):
+    _save(tmp_path, "a.json", [BORING])
+    _save(tmp_path, "b.json", [BORING])
+    with working_dir_bound(str(tmp_path)):
+        res = _call({"investigations_file": ["a.json", "b.json"],
+                     "output_path": "ab.xml"})
+    assert "NO file was written" in res["error"]
+    assert any("'a.json' investigations[0]" in p
+               and "'b.json' investigations[0]" in p
+               for p in res["problems"]), res["problems"]
+
+
+def test_a_files_records_get_the_same_key_checks(tmp_path):
+    bad = dict(BORING)
+    bad["layers"] = [{"top": 0.0, "description": "no unit"}]
+    bad["colour"] = "brown"
+    _save(tmp_path, "bad.json", [bad])
+    with working_dir_bound(str(tmp_path)):
+        res = _call({"investigations_file": "bad.json",
+                     "output_path": "bad.xml"})
+    assert "NO file was written" in res["error"]
+    assert not (tmp_path / "bad.xml").exists()
+    text = " ".join(res["problems"])
+    assert "'bad.json' investigations[0].colour" in text
+    assert "'bad.json' investigations[0].layers[0].top" in text
+    assert "save it again with save_file" in res["hint"]
+
+
+def test_a_file_outside_the_conversation_is_never_read(tmp_path):
+    conv, elsewhere = tmp_path / "conv", tmp_path / "other"
+    _save(conv, "mine.json", [BORING])
+    outside = _save(elsewhere, "theirs.json", [_hole("X-1")])
+    for name in (str(outside), "../other/theirs.json"):
+        with working_dir_bound(str(conv)):
+            res = _call({"investigations_file": name,
+                         "output_path": "o.xml"})
+        assert "NO file was written" in res["error"], res
+        assert "outside this conversation's files" in res["problems"][0]
+        assert "mine.json" in res["problems"][0]      # what is here, by name
+    assert not (conv / "o.xml").exists()
+
+
+def test_a_missing_file_names_the_files_here(tmp_path):
+    _save(tmp_path, "logs_2026.json", [BORING])
+    with working_dir_bound(str(tmp_path)):
+        res = _call({"investigations_file": "logs.json",
+                     "output_path": "m.xml"})
+    (line,) = res["problems"]
+    assert "no file 'logs.json'" in line and "logs_2026.json" in line
+    assert "save it with save_file" in line
+
+
+def test_wrapped_and_fenced_files_are_read(tmp_path):
+    _save(tmp_path, "fenced.json",
+          "```json\n" + json.dumps([_hole("B-5")], indent=1) + "\n```\n")
+    _save(tmp_path, "one.json", _hole("B-6"))           # a single object
+    with working_dir_bound(str(tmp_path)):
+        res = _call({"investigations_file": ["fenced.json", "one.json"],
+                     "output_path": "w.xml"})
+    assert "error" not in res, res
+    assert [s["investigations"] for s in res["sources"]] == [["B-5"],
+                                                             ["B-6"]]
+
+
+def test_a_file_holding_lab_tests_too_is_read_for_both_or_refused(tmp_path):
+    _save(tmp_path, "both.json", {"investigations": [BORING],
+                                  "lab_tests": LAB})
+    with working_dir_bound(str(tmp_path)):
+        half = _call({"investigations_file": "both.json",
+                      "output_path": "h.xml"})
+        whole = _call({"investigations_file": "both.json",
+                       "lab_tests_file": "both.json",
+                       "output_path": "b.xml"})
+    assert "NO file was written" in half["error"]
+    assert "also holds 'lab_tests'" in half["problems"][0]
+    assert "give the file as lab_tests_file too" in half["problems"][0]
+    assert "error" not in whole, whole
+    assert whole["written"]["lab_tests"] == 2
+    assert whole["sources"] == [{"from": "both.json",
+                                 "investigations": ["B-1"], "lab_tests": 2}]
+
+
+def test_files_that_cannot_be_used_are_named(tmp_path):
+    _save(tmp_path, "notes.md", "# What a helper read\nB-1 | 3.0 m | N=17")
+    _save(tmp_path, "odd.json", {"investigations": [BORING], "meta": 1})
+    _save(tmp_path, "logs.json", [BORING])
+    with working_dir_bound(str(tmp_path)):
+        res = _call({"investigations_file": ["notes.md", "odd.json",
+                                             "logs.json", "logs.json"],
+                     "output_path": "u.xml"})
+    assert "NO file was written" in res["error"]
+    text = " ".join(res["problems"])
+    assert "'notes.md': not valid JSON" in text
+    assert "'odd.json': unknown key(s) ['meta']" in text
+    assert "'logs.json' is named twice" in text
+    assert not (tmp_path / "u.xml").exists()
+
+
+def test_no_records_at_all_names_both_ways_to_give_them():
+    res = _call({"output_path": "/tmp/none.xml"})
+    assert "investigations_file" in res["error"]
+    assert "'investigations'" in res["error"]
+
+
+def test_the_description_says_how_a_helper_hands_records_over():
+    desc = _j(describe_method("subsurface", "write_diggs"))
+    text = json.dumps(desc)
+    assert len(text) < 8000
+    assert desc["parameters"]["investigations"]["required"] is False
+    hand = desc["parameters"]["investigations_file"]["description"]
+    assert "save_file" in hand and "never retype" in hand
+    assert "name the file in its reply" in hand
+    assert "lab_tests_file" in desc["parameters"]
+    assert "sources" in desc["returns"]
+
+
+def test_a_helpers_saved_files_are_named_to_the_primary():
+    """The helper side in code: whatever its reply says, the files it saved
+    reach the primary by name (keep_work.saved_note) -- and a stopped
+    helper's summary names them too."""
+    from funhouse_agent.deep import keep_work
+    rec = keep_work.HelperRecord("t1", "general-purpose", "B-1 to JSON")
+    rec.add_result("save_file", "c1", json.dumps({"saved": "b1.json",
+                                                  "file_exists": True}))
+    rec.add_result("save_file", "c2", json.dumps({"error": "disk full",
+                                                  "saved": "no.json"}))
+    rec.add_result("read_document", "c3", "x" * 100)
+    assert keep_work.saved_files(rec) == ["b1.json"]
+    assert "Files it saved: b1.json." in keep_work.summary_paragraph(
+        rec, "it stopped")
+    note = keep_work.saved_note(["b1.json"])
+    assert "'b1.json'" in note and "investigations_file" in note
+
+
+def test_a_helpers_file_reaches_write_diggs_through_the_agent(tmp_path):
+    """End to end through a real compiled deep agent: the helper saves its
+    records with save_file and answers in one line that names no file; the
+    task result names the file (in code); the primary passes that name to
+    write_diggs, which writes checked DIGGS from it."""
+    pytest.importorskip("deepagents")
+    import re
+
+    from langchain_core.language_models.chat_models import BaseChatModel
+    from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+    from langchain_core.outputs import ChatGeneration, ChatResult
+
+    from funhouse_agent.deep.agent import build_deep_agent
+
+    class Relay(BaseChatModel):
+        @property
+        def _llm_type(self):
+            return "relay"
+
+        def bind_tools(self, tools, **kw):
+            return self
+
+        def _generate(self, messages, stop=None, run_manager=None, **kw):
+            first = next(m.content for m in messages
+                         if isinstance(m, HumanMessage))
+            step = sum(1 for m in messages if isinstance(m, AIMessage))
+            if first.startswith("PRIMARY"):
+                if step == 0:
+                    reply = AIMessage(content="", tool_calls=[{
+                        "name": "task", "id": "task_0",
+                        "args": {"description": "HELPER: B-1 as a JSON file",
+                                 "subagent_type": "general-purpose"}}])
+                elif step == 1:
+                    told = [m for m in messages if isinstance(m, ToolMessage)
+                            ][-1].content
+                    name = re.search(r"saved, in the working folder: '([^']+)'",
+                                     told).group(1)
+                    reply = AIMessage(content="", tool_calls=[{
+                        "name": "call_agent", "id": "w1",
+                        "args": {"agent_name": "subsurface",
+                                 "method": "write_diggs",
+                                 "parameters": {
+                                     "investigations_file": name,
+                                     "output_path": "site.diggs.xml"}}}])
+                else:
+                    reply = AIMessage(content="Done.")
+            elif step == 0:
+                reply = AIMessage(content="", tool_calls=[{
+                    "name": "save_file", "id": "s1",
+                    "args": {"path": "b1_records.json",
+                             "content": json.dumps([BORING])}}])
+            else:
+                reply = AIMessage(content="Saved the records.")
+            return ChatResult(generations=[ChatGeneration(message=reply)])
+
+    agent = build_deep_agent(model=Relay(), reference_mode="off")
+    with working_dir_bound(str(tmp_path)):
+        state = agent.invoke({"messages": [{"role": "user",
+                                            "content": "PRIMARY go"}]},
+                             config={"recursion_limit": 40})
+    results = [m for m in state["messages"] if isinstance(m, ToolMessage)]
+    task = next(m for m in results if m.tool_call_id == "task_0")
+    assert task.content.startswith("Saved the records.")
+    assert "'b1_records.json'" in task.content
+    wrote = json.loads(next(m for m in results
+                            if m.tool_call_id == "w1").content)
+    assert "error" not in wrote, wrote
+    assert wrote["read_back"]["equal"], wrote["read_back"]
+    assert wrote["sources"] == [{"from": "b1_records.json",
+                                 "investigations": ["B-1"], "lab_tests": 0}]
+    assert (tmp_path / "site.diggs.xml").is_file()

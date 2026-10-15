@@ -29,7 +29,8 @@ helper did:
   (:func:`max_helpers`; BACKLOG TA-22).
 
 Nothing here changes a tool's result except a ``task`` result that kept a
-file, and nothing here ever fails a call.
+file or whose helper saved files (their names are added, BACKLOG RI-31), and
+nothing here ever fails a call.
 """
 
 from __future__ import annotations
@@ -365,6 +366,39 @@ def _pages_named(rec: HelperRecord) -> str:
     return ", ".join(shown) + (f" and {more} more" if more else "")
 
 
+def saved_files(rec: HelperRecord) -> List[str]:
+    """The files the helper saved, as their results name them (each tool
+    result that reports a ``saved`` file without an error), in order."""
+    out: List[str] = []
+    for s in rec.steps:
+        if s["kind"] != "result" or s.get("status") == "error":
+            continue
+        text = s.get("text") or ""
+        if '"saved"' not in text:
+            continue
+        try:
+            data = json.loads(text)
+        except ValueError:
+            continue
+        name = data.get("saved") if isinstance(data, dict) else None
+        if isinstance(name, str) and name and not data.get("error") \
+                and name not in out:
+            out.append(name)
+    return out
+
+
+def saved_note(names: List[str]) -> str:
+    """What the primary is told about the files a helper saved (BACKLOG
+    RI-31: the primary retyped a helper's 29,000 characters of records)."""
+    shown = ", ".join(f"'{n}'" for n in names[:10])
+    more = len(names) - 10
+    return (f"[Files this helper saved, in the working folder: {shown}"
+            + (f" and {more} more" if more > 0 else "")
+            + ". Give a file to the next tool by its name (write_diggs reads "
+            "records from investigations_file / lab_tests_file) -- never "
+            "retype what it holds.]")
+
+
 def summary_paragraph(rec: HelperRecord, why: str) -> str:
     """One paragraph, made in code, of what a stopped helper did."""
     calls = Counter()
@@ -393,6 +427,11 @@ def summary_paragraph(rec: HelperRecord, why: str) -> str:
     pages = _pages_named(rec)
     if pages:
         parts.append(f"Pages its calls named: {pages}.")
+    files = saved_files(rec)
+    if files:
+        parts.append("Files it saved: " + ", ".join(files[:10])
+                     + (f" and {len(files) - 10} more" if len(files) > 10
+                        else "") + ".")
     parts.append(f"It had read {rec.read_chars:,} characters of tool results"
                  + (f"; its largest call ({biggest[1]}) carried "
                     f"{biggest[0]:,} characters of arguments, which are kept "
@@ -706,7 +745,10 @@ class KeepWork(AgentMiddleware):
         answer = "\n".join(_text(m.content) for m in msgs)
         why = gave_up(rec, answer)
         if why is None:
-            return result
+            # A helper that saved files: their names reach the primary in
+            # code, whether or not its reply named them (RI-31).
+            files = saved_files(rec)
+            return _with_note(result, saved_note(files)) if files else result
         path = write_helper_file(rec, why, answer)
         if not path:
             return result
@@ -810,6 +852,7 @@ def _with_note(result, note: str):
 __all__ = ["TurnScope", "turn_scope", "current_turn", "HelperRecord",
            "current_helper", "HelperRecorder", "KeepWork",
            "note_budget_reached", "gave_up", "summary_paragraph",
+           "saved_files", "saved_note",
            "helper_file_text", "write_helper_file", "kept_note",
            "kept_folder", "max_helpers", "KEPT_DIR", "KEEP_ON_GIVE_UP",
            "KEEP_MIN_READ_CHARS", "SHORT_ANSWER_CHARS",

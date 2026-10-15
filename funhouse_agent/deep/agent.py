@@ -102,11 +102,13 @@ _REFERENCES_CONCISION = (
 
 #: Added to deepagents' stock general-purpose helper prompt (field session
 #: 2026-10-14, BACKLOG TA-21: two helpers that held extracted data returned
-#: apologies of 366 and 268 characters).
+#: apologies of 366 and 268 characters; RI-31: data saved to a file is named,
+#: not typed out again).
 HELPER_PARTIAL_RULE = (
     "\n\nIf you cannot finish -- an error, a tool that refuses your data, "
     "more to read than you can -- your final message still gives everything "
-    "you did gather: the data itself, in full, then what is missing and why. "
+    "you did gather: the data itself, in full (or, for data you saved with "
+    "save_file, the file's name), then what is missing and why. "
     "Never answer with only an apology."
 )
 

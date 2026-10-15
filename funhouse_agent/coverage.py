@@ -810,6 +810,24 @@ class CoverageLedger:
         for k in ("investigations", "lab_tests"):
             if k not in params and isinstance(args.get(k), list):
                 params[k] = args[k]
+        for k in ("investigations_file", "lab_tests_file"):
+            if k not in params and args.get(k):
+                params[k] = args[k]
+        # Records given as files (RI-31) count as the inline ones do.
+        try:
+            from funhouse_agent.adapters.subsurface_adapter import (
+                records_from_files)
+            for group, objs in records_from_files(params).items():
+                inline = params.get(group)
+                if isinstance(inline, str):
+                    try:
+                        inline = json.loads(inline)
+                    except ValueError:
+                        inline = None
+                params[group] = (list(inline) if isinstance(inline, list)
+                                 else []) + objs
+        except Exception:  # noqa: BLE001 - never fail a tool call
+            pass
         cited: List[int] = []
         rows = 0
         uncited: List[str] = []

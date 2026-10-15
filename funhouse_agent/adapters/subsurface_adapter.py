@@ -476,6 +476,175 @@ def _as_list(value, name: str) -> list:
     return value
 
 
+# -- Records handed over as FILES (BACKLOG RI-31) ---------------------------
+# Field session 2026-10-14, turn 3: helpers typed their boring-log records
+# into their replies and the primary retyped 29,000 characters of them into
+# write_diggs. A blow count was dropped, a printed 60/15" became 60/15in and
+# one exploration got another's coordinates on the way. A helper now saves
+# its records as a JSON file (save_file) and write_diggs reads that file, so
+# the values reach the writer as the helper wrote them.
+
+#: Each inline argument and the argument that gives the same objects as files.
+_RECORD_FILE_ARGS = (("investigations", "investigations_file"),
+                     ("lab_tests", "lab_tests_file"))
+
+#: A records file larger than this is refused rather than read.
+_RECORDS_FILE_MAX_BYTES = 20 * 1024 * 1024
+
+#: A file saved as one fenced block (```json ... ```) is read inside the fence.
+_FENCED = re.compile(r"^\s*```[A-Za-z]*[ \t]*\r?\n(.*?)\r?\n\s*```\s*$",
+                     re.DOTALL)
+
+
+def _file_names(value, arg: str) -> list:
+    """The names a ``*_file`` argument gives: one name, a list of names, or
+    such a list written as JSON text."""
+    import json
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        if not text.startswith("["):
+            return [text]
+        try:
+            value = json.loads(text)
+        except ValueError:
+            value = None
+    if isinstance(value, (list, tuple)) and all(
+            isinstance(v, str) and v.strip() for v in value):
+        return [v.strip() for v in value]
+    raise ValueError(f"{arg}: give a file name, or a list of file names")
+
+
+def _inside_folder(path: str, folder: str) -> bool:
+    """``path`` is in ``folder``, links and ``..`` resolved."""
+    import os
+    try:
+        p = os.path.normcase(os.path.realpath(path))
+        f = os.path.normcase(os.path.realpath(folder))
+        return os.path.commonpath([p, f]) == f
+    except (ValueError, OSError):             # another drive (Windows)
+        return False
+
+
+def _records_file_path(name: str):
+    """``(path, shown)``: the file a records-file argument names, and the
+    name a result gives it.
+
+    With a working folder bound (the app), only a file IN that folder is
+    read -- a bare name, a sub-path such as ``kept/x.json``, or an absolute
+    path inside it -- never one outside it, as the file tools resolve a
+    conversation's files. With none (a library caller), the path as given,
+    else the name in the default output folder.
+    """
+    import os
+    from funhouse_agent._fileio import find_in_working_folder, host_output_dir
+    p = os.path.expanduser(str(name).strip())
+    folder = host_output_dir()
+    if folder:
+        from funhouse_agent.vision_tools import files_here_text
+        cand = os.path.abspath(p if os.path.isabs(p)
+                               else os.path.join(folder, p))
+        if not _inside_folder(cand, folder):
+            raise FileNotFoundError(
+                f"'{name}' is outside this conversation's files; records "
+                f"files are read from its working folder only. Files here: "
+                f"{files_here_text()}")
+        if not os.path.isfile(cand):
+            raise FileNotFoundError(
+                f"no file '{name}' in this conversation's files (a file made "
+                f"with write_file is in scratch space, which this cannot "
+                f"read: save it with save_file). Files here: "
+                f"{files_here_text()}")
+        rel = os.path.relpath(cand, os.path.abspath(folder))
+        return cand, rel.replace(os.sep, "/")
+    if os.path.isfile(p):
+        return os.path.abspath(p), str(name)
+    found = find_in_working_folder(p)
+    if found:
+        return found, str(name)
+    raise FileNotFoundError(f"no file '{name}'")
+
+
+def _records_in_file(path: str, shown: str, group: str, arg: str,
+                     also_other: bool):
+    """``(objects, problems)``: what a records file holds for ``group``.
+
+    The file holds a list of the objects ``group`` takes, one such object,
+    or ``{group: [...]}``. Such a wrapper may also hold the OTHER group's
+    list only when the same file is given for that group too
+    (``also_other``), so nothing in a file is left out unread.
+    """
+    import json
+    import os
+    other = "lab_tests" if group == "investigations" else "investigations"
+    size = os.path.getsize(path)
+    if size > _RECORDS_FILE_MAX_BYTES:
+        return [], [f"'{shown}': {size / 1e6:.1f} MB, too large to read"]
+    with open(path, "rb") as fh:
+        text = fh.read().decode("utf-8-sig", errors="replace")
+    fenced = _FENCED.match(text)
+    if fenced:
+        text = fenced.group(1)
+    try:
+        data = json.loads(text)
+    except ValueError as exc:
+        return [], [f"'{shown}': not valid JSON ({exc}); {arg} takes a JSON "
+                    f"file of the objects '{group}' takes"]
+    problems: list = []
+    if isinstance(data, dict) and (group in data or other in data):
+        extra = sorted(str(k) for k in data if k not in (group, other))
+        if extra:
+            problems.append(
+                f"'{shown}': unknown key(s) {extra} at the top of the file; a "
+                f"records file holds a list of objects, or "
+                f"{{\"{group}\": [...]}}")
+        if group not in data:
+            if not also_other:
+                problems.append(f"'{shown}' holds '{other}', not '{group}': "
+                                f"give it as {other}_file")
+            return [], problems
+        if data.get(other) not in (None, [], {}) and not also_other:
+            problems.append(
+                f"'{shown}' also holds '{other}', which {arg} does not read: "
+                f"give the file as {other}_file too, so nothing in it is "
+                f"left out")
+        data = data[group]
+    if data is None:
+        data = []
+    if isinstance(data, dict):
+        data = [data]
+    if not isinstance(data, list):
+        problems.append(f"'{shown}': holds {type(data).__name__}, not a list "
+                        f"of '{group}' objects")
+        return [], problems
+    return data, problems
+
+
+def records_from_files(params: dict) -> dict:
+    """``{"investigations": [...], "lab_tests": [...]}``: the raw objects
+    the ``*_file`` arguments of a ``write_diggs`` call name, best effort (a
+    file that cannot be read is left out). For the coverage record, which
+    marks the pages the written data cite."""
+    out: dict = {}
+    if not isinstance(params, dict):
+        return out
+    for group, arg in _RECORD_FILE_ARGS:
+        try:
+            names = _file_names(params.get(arg), arg)
+        except ValueError:
+            continue
+        for name in names:
+            try:
+                path, shown = _records_file_path(name)
+                objs, _ = _records_in_file(path, shown, group, arg, True)
+            except Exception:                          # noqa: BLE001
+                continue
+            out.setdefault(group, []).extend(o for o in objs
+                                             if isinstance(o, dict))
+    return out
+
+
 def _diggs_default_name(investigations, project=None) -> str:
     """A DIGGS file name made from what it holds: the investigation ids
     (``B-1.diggs.xml``, ``B-1_B-2.diggs.xml``, ``B-1_to_B-12.diggs.xml``),
@@ -510,28 +679,91 @@ def _run_write_diggs(params: dict) -> dict:
     )
     from report_ingest.model import Investigation, LabTest, Project
 
-    _valid = ("investigations", "lab_tests", "project", "output_path",
-              "document_id")
+    _valid = ("investigations", "lab_tests", "investigations_file",
+              "lab_tests_file", "project", "output_path", "document_id")
     reject_unknown_params(params, _valid, method="write_diggs")
-    require_params(params, ["investigations"],
-                   method="write_diggs", valid=_valid)
+    if all(params.get(k) is None for k in ("investigations",
+                                           "investigations_file",
+                                           "lab_tests", "lab_tests_file")):
+        raise ValueError(
+            "write_diggs: missing required parameter(s): give the records "
+            "inline as 'investigations' (and 'lab_tests'), or as JSON files "
+            "in the working folder with 'investigations_file' (and "
+            f"'lab_tests_file'). Valid parameters: {sorted(_valid)}.")
 
     problems: list = []
+    unread: list = []          # files that could not be read or used
     investigations = []
     normalised: list = []
-    for i, raw in enumerate(_as_list(params.get("investigations"),
-                                     "investigations")):
-        raw = _normalise_printed_n(raw, f"investigations[{i}]", normalised)
-        try:
-            investigations.append(Investigation.model_validate(raw))
-        except ValidationError as exc:
-            problems += _validation_problems(exc, f"investigations[{i}]")
     lab = []
-    for i, raw in enumerate(_as_list(params.get("lab_tests"), "lab_tests")):
-        try:
-            lab.append(LabTest.model_validate(raw))
-        except ValidationError as exc:
-            problems += _validation_problems(exc, f"lab_tests[{i}]")
+    # Where each record came from: label -> {investigations, lab_tests}.
+    sources: dict = {}
+    origin: list = []          # (label, where, Investigation)
+
+    def _take(group, raws, label, where_of):
+        src = sources.setdefault(label, {"investigations": [],
+                                         "lab_tests": 0})
+        for i, raw in enumerate(raws):
+            where = where_of(i)
+            try:
+                if group == "investigations":
+                    raw = _normalise_printed_n(raw, where, normalised)
+                    inv = Investigation.model_validate(raw)
+                    investigations.append(inv)
+                    origin.append((label, where, inv))
+                    src["investigations"].append(inv.investigation_id)
+                else:
+                    lab.append(LabTest.model_validate(raw))
+                    src["lab_tests"] += 1
+            except ValidationError as exc:
+                problems.extend(_validation_problems(exc, where))
+
+    # The files each *_file argument names, resolved before any is read, so
+    # a file given for both groups is read for both.
+    files: dict = {}
+    for group, arg in _RECORD_FILE_ARGS:
+        files[group] = []
+        for name in _file_names(params.get(arg), arg):
+            try:
+                path, shown = _records_file_path(name)
+            except OSError as exc:
+                unread.append(f"{arg}: {exc}")
+                continue
+            if any(path == p for p, _ in files[group]):
+                unread.append(f"{arg}: '{shown}' is named twice; its records "
+                              f"would be written twice")
+                continue
+            files[group].append((path, shown))
+    for group, arg in _RECORD_FILE_ARGS:
+        _take(group, _as_list(params.get(group), group), "inline",
+              lambda i, g=group: f"{g}[{i}]")
+        other = "lab_tests" if group == "investigations" else "investigations"
+        for path, shown in files[group]:
+            try:
+                objs, bad = _records_in_file(
+                    path, shown, group, arg,
+                    any(path == p for p, _ in files[other]))
+            except OSError as exc:
+                objs, bad = [], [f"'{shown}' could not be read: {exc}"]
+            unread.extend(bad)
+            _take(group, objs, shown,
+                  lambda i, s=shown, g=group: f"'{s}' {g}[{i}]")
+    # One exploration in two inputs is refused, never merged or doubled.
+    by_id: dict = {}
+    for label, where, inv in origin:
+        key = str(inv.investigation_id or "").strip()
+        if key:
+            by_id.setdefault(key, []).append((label, where, inv))
+    for key, rows in by_id.items():
+        if len({label for label, _, _ in rows}) < 2:
+            continue
+        first = rows[0][2].model_dump()
+        same = all(r[2].model_dump() == first for r in rows[1:])
+        unread.append(
+            f"investigation_id {key!r} is given in more than one input: "
+            + ", ".join(where for _, where, _ in rows)
+            + (" (the same record each time)" if same
+               else " (the records differ)"))
     project = None
     if params.get("project"):
         raw = params["project"]
@@ -541,14 +773,30 @@ def _run_write_diggs(params: dict) -> dict:
             project = Project.model_validate(raw)
         except ValidationError as exc:
             problems += _validation_problems(exc, "project")
-    if problems:
-        refused = {"error": "the data does not fit the DIGGS record format; "
-                            "NO file was written",
+    given_files = any(files.values())
+    if problems or unread:
+        problems = unread + problems
+        refused = {"error": ("the data does not fit the DIGGS record format; "
+                             if not unread else
+                             "the records given could not all be used; ")
+                            + "NO file was written",
                    "problems": problems[:25],
                    "n_problems": len(problems),
                    "hint": "fix the named fields (describe_method shows the "
                            "format) and call write_diggs again with ALL the "
                            "data -- nothing was kept from this call"}
+        if given_files or unread:
+            refused["hint"] = (
+                "fix what is named -- in the named file (save it again with "
+                "save_file) or inline -- and call write_diggs again with ALL "
+                "the data, the same files included; nothing was kept from "
+                "this call")
+        if any("in more than one input" in u for u in unread):
+            refused["hint"] += (
+                ". An exploration in two inputs: give it once (two parts of "
+                "one log: merge them into one record first); two "
+                "explorations that print the same name: give both in one "
+                "list or file, where each is written apart")
         if normalised:
             refused["normalised"] = normalised[:10]
         return refused
@@ -646,11 +894,24 @@ def _run_write_diggs(params: dict) -> dict:
                     written[f"n_{key}"] = len(value)
             else:
                 written[key] = value
+    extra: dict = {}
+    if given_files:
+        # Which input each investigation came from (RI-31).
+        extra["sources"] = [
+            {"from": label,
+             "investigations": src["investigations"][:60],
+             **({"n_investigations": len(src["investigations"])}
+                if len(src["investigations"]) > 60 else {}),
+             "lab_tests": src["lab_tests"]}
+            for label, src in sources.items()
+            if src["investigations"] or src["lab_tests"]
+            or label != "inline"]
     return clean_result({
         "output_path": out,
         "file_exists": os.path.isfile(out),
         "file_size_bytes": os.path.getsize(out) if os.path.isfile(out) else 0,
         "verdict": verdict,
+        **extra,
         "cross_checks": ({"n": len(cross), "by_kind": by_kind,
                           "entries": cross[:20]}
                          if cross_error is None
@@ -1012,9 +1273,9 @@ METHOD_INFO = {
     },
     "write_diggs": {
         "category": "File Export",
-        "brief": "WRITE a DIGGS 2.6 file from boring/pit/sounding logs and lab results you have read (e.g. off a report's logs). Checks the file against the DIGGS schema and reads it back; never hand-write DIGGS XML.",
+        "brief": "WRITE a DIGGS 2.6 file from boring/pit/sounding logs and lab results you have read (e.g. off a report's logs), given inline or as JSON files a helper saved. Checks the file against the DIGGS schema and reads it back; never hand-write DIGGS XML.",
         "parameters": {
-            "investigations": {"type": "array", "required": True, "description": (
+            "investigations": {"type": "array", "required": False, "description": (
                 "One object per boring, pit or sounding, with the values read off its log. A number printed on the log "
                 "goes in as printed. A depth read off the log's own drawn depth scale (log_grid's samples, layers and rows, "
                 "or measure) is read from the log just as much as a printed one: write it, and note the reading in a prov "
@@ -1050,6 +1311,14 @@ METHOD_INFO = {
                 "summary_table with result {kind: summary_table, rows [{investigation_id, sample_id, depth_top, wc, ll, pl, pi, "
                 "gravel_percent, sand_percent, fines_percent, max_dry_density, optimum_wc, pH, sulfate, chloride}]}: it is "
                 "cross-checked against the individual sheets.")},
+            "investigations_file": {"type": "str|array", "required": False, "description": (
+                "The same objects as investigations, from a JSON file in this conversation's folder (a list of them, "
+                "or {investigations: [...]}), or a list of such files read in order. Records a helper extracts: brief it "
+                "to save them with save_file as such a file and to name the file in its reply, then pass the name here "
+                "-- never retype them. Checked as inline records are, each problem naming its file. Combines with "
+                "inline investigations; one investigation_id in two inputs is refused, naming both.")},
+            "lab_tests_file": {"type": "str|array", "required": False, "description": (
+                "The same for lab_tests: a JSON file (or files) of lab_tests objects, or {lab_tests: [...]}.")},
             "project": {"type": "dict", "required": False, "description": "{name, number, client, location, coordinate_system, elevation_datum} as printed."},
             "output_path": {"type": "str", "required": False, "description": "A file name for the .xml, e.g. 'site.diggs.xml'; omitted, it is named after the investigations (e.g. 'B-1_to_B-12.diggs.xml'). In the app it is written into this conversation's folder, whatever directory is given, and attached to the conversation."},
             "document_id": {"type": "str", "required": False, "description": "An identifier for the source document."},
@@ -1066,6 +1335,7 @@ METHOD_INFO = {
                             "both values and the pages; nothing is changed or resolved. Tell the user about every entry.",
             "written": "Counts written, and anything the writer had to leave out, assume (assumed; position_unknown) or record "
                        "differently from how it was given (normalised). Tell the user about each.",
+            "sources": "When a file was given: each input (inline or the file) with the investigation_ids it gave.",
         },
     },
     "validate_diggs_dictionary": {

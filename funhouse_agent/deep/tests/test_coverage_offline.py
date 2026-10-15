@@ -354,6 +354,26 @@ def test_write_diggs_data_given_at_the_top_level_is_read_too(att):
     assert ledger.outputs[-1]["pages_cited"] == "9"
 
 
+def test_write_diggs_records_given_as_files_count_too(att, tmp_path):
+    """RI-31: records a helper saved as a JSON file and handed to write_diggs
+    by name cite their pages as inline ones do."""
+    from funhouse_agent._fileio import working_dir_bound
+    (tmp_path / "logs.json").write_text(json.dumps(
+        [{"investigation_id": "B-1", "pages": [7, 8]}]), encoding="utf-8")
+    ledger = C.CoverageLedger(attachments=att)
+    _look(ledger, 9)
+    with working_dir_bound(str(tmp_path)):
+        ledger.record_call("call_agent", {
+            "agent_name": "subsurface", "method": "write_diggs",
+            "parameters": {"investigations": [{"investigation_id": "B-2",
+                                               "pages": [9]}],
+                           "investigations_file": "logs.json",
+                           "output_path": "x.xml"}},
+            json.dumps({"output_path": "x.xml"}))
+    assert ledger.outputs[-1]["rows"] == 2
+    assert ledger.outputs[-1]["pages_cited"] == "7-9"
+
+
 # ---------------------------------------------------------------------------
 # The middleware, the tools and the builds
 # ---------------------------------------------------------------------------
