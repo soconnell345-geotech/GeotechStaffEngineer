@@ -172,6 +172,133 @@ EQL with Darendeli (PI 0) or Menq curves — the PDMY02 default backbone
 (hyperbolic, peakShearStra 0.1) is far stiffer at 0.1-0.3 % strain than
 those laboratory curves; at 0.05 g the two are within 12-19 %.
 
+## Validation against the OpenSees examples (GM-83, 2026-10-15)
+
+Two examples by the authors of the recipe this module adapts, ported to
+openseespy as test helpers and run on the same record:
+
+1. **"Site Response Analysis of a Layered Soil Column (Total Stress
+   Analysis)"**, Christopher McGann and Pedro Arduino, University of
+   Washington (OpenSees wiki,
+   https://opensees.berkeley.edu/wiki/index.php/Site_Response_Analysis_of_a_Layered_Soil_Column_(Total_Stress_Analysis);
+   `freeFieldSingle.tcl`, whose header also names HyungSuk Shin and Peter
+   Mackenzie-Helnwein). 40 m of PressureIndependMultiYield soil (rho 1.7,
+   Vs 250, cohesion 95 kPa, Poisson's ratio 0) on rock 760 m/s / 2.4 Mg/m3,
+   160 `quad` elements of 0.25 m, 2 % Rayleigh at 0.2 and 20 Hz. Port:
+   `tests/opensees_wiki_free_field.py`. It reproduces the wiki's published
+   result: surface PGA 0.353 g at 4.43 s (Fig. 2: about 0.35 g near 4.5 s),
+   Sa(0.4 s) 1.38 g (Fig. 3: a peak of about 1.4 g near 0.4 s). The Tcl
+   does reset the clock (`setTime 0.0`) and its Path series starts at
+   t = 0.
+2. **"Effective Stress Site Response Analysis of a Layered Soil Column"**,
+   OpenSeesPy docs section 14.4.2 (`freeFieldEffective.py`,
+   https://openseespydoc.readthedocs.io/en/latest/src/freeFieldEffective.html),
+   converted to openseespy by Harsh Mistry (University of Manchester) from
+   the wiki example by McGann, Shin, Arduino and Mackenzie-Helnwein. 30 m
+   of PressureDependMultiYield02 sand (2 m dry crust, 8 m loose, 20 m
+   dense), water 2 m down, a 2 % slope, 60 nine-node `9_4_QuadUP` elements.
+   Port: `tests/opensees_docs_free_field_effective.py` (about 60 s a run).
+   It reproduces the wiki's published peak r_u: 0.43 / 0.97 / 0.56 at 3 /
+   7 / 16 m (the wiki's figure: about 0.42 / 0.97 / 0.55).
+
+The record: the first 20 s of the examples' Gilroy No. 1 east-west motion
+(`tests/data/gilroy1_ew_first20s_microg.txt`, 25.8 KB, micro-g; the full
+text record is 121 KB; 99.8 % of the Arias intensity; the header says how
+it was derived). Tests: `tests/test_site_response_wiki_example.py`,
+`tests/test_site_response_effective_example.py` (WSL, openseespy 3.8.0;
+the port's numbers are stored, so only the total stress port runs in the
+suite). Spectral accelerations are 5 %-damped, in g; the amplification
+spectrum (surface / input Sa) is pinned alongside.
+
+**Total stress column.** The module mapped as closely as its arguments
+allow: su = 2 x 95 / sqrt(3) (so cohesi is the Tcl's 95), 25 surfaces, 160
+elements, the water table at the base (a dry column), damping 0.41 % (the
+example's Rayleigh ratio at the site frequency 1.56 Hz). It cannot set
+Poisson's ratio (its clay is 0.495, the Tcl's 0), the Rayleigh frequencies
+(it uses f1 and 5 f1) or the peak shear strain (0.1 against 0.05); "port,
+module's inputs" is the port with those three set as the module sets them.
+On this column the Tcl's `quad`, an `SSPquad` and the module's dry
+`SSPquadUP` give the same motion to 1e-12.
+
+| Run | PGA | 0.1 s | 0.2 | 0.3 | 0.4 | 0.5 | 0.64 | 1.0 | 1.5 |
+|---|---|---|---|---|---|---|---|---|---|
+| Input | 0.473 | 1.067 | 0.973 | 1.411 | 1.984 | 1.198 | 0.411 | 0.310 | 0.222 |
+| Port, linear elastic | 0.789 | 1.089 | 1.859 | 1.779 | 2.595 | 2.115 | 0.740 | 0.498 | 0.278 |
+| Module, linear elastic | 0.811 | 1.109 | 1.896 | 1.788 | 2.596 | 2.118 | 0.741 | 0.499 | 0.278 |
+| Port as written | 0.353 | 0.952 | 0.762 | 1.096 | 1.376 | 0.799 | 0.388 | 0.419 | 0.364 |
+| Port, module's inputs | 0.433 | 0.940 | 0.748 | 1.071 | 1.362 | 0.778 | 0.429 | 0.468 | 0.388 |
+| Module today | 0.455 | 0.610 | 0.619 | 0.978 | 1.236 | 0.711 | 0.336 | 0.355 | 0.329 |
+| Module, dynamic stage on Newton (probe) | 0.433 | 0.941 | 0.748 | 1.071 | 1.362 | 0.778 | 0.429 | 0.468 | 0.388 |
+
+Pinned: linear within 3 % (measured -0.1 to +2.0 % from 0.1 to 1.5 s;
+PGA +2.7 %, within 5 %: the module's Rayleigh curve is less damped above
+about 8 Hz); nonlinear against the port as written within 25 % from 0.3 to
+1.5 s (Poisson's ratio alone moves 0.64-1.5 s by 7-12 %; today's
+unconverged steps scatter it by about 5 %), PGA higher by under 50 %
+(+23 % converged, +29 to +38 % today); nonlinear against the port with the
+module's inputs, amplification within
+3 % and PGA within 5 % -- a strict expected failure until defect A is
+fixed (today -35 to -9 %; with Newton within 0.1 % everywhere).
+
+**Effective stress column.** Fifteen 2 m sublayers of four 0.5 m elements
+(the module puts the same number of elements in every layer), each Vs set
+so rho Vs^2 at the module's reference pressure equals the example's
+Gr (p/101)^0.5; water 2 m, rock 700 / 2.5, permeability 1e-4 m/s; damping
+0.40 % (the example's ratio at the module's site frequency 1.77 Hz). Not
+settable: the slope, the element, bulk moduli (the module's drained nu 0.3),
+the fluid's bulk modulus (2.2e6 against 6.88e6 / 5.06e6 kPa), and the dense
+layer's contraction and dilation constants (the module uses the Dr = 40 %
+ones for every sand).
+
+| Run | PGA | 0.1 s | 0.2 | 0.3 | 0.4 | 0.5 | 0.64 | 1.0 | 1.5 | peak r_u 3 / 7 / 16 m |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Port as written (2 % slope) | 0.356 | 0.832 | 0.562 | 0.680 | 0.790 | 0.753 | 0.618 | 0.325 | 0.311 | 0.43 / 0.97 / 0.56 |
+| Port, module's inputs, level | 0.545 | 0.917 | 0.506 | 0.657 | 0.733 | 0.605 | 0.579 | 0.323 | 0.303 | 0.38 / 0.91 / 0.97 |
+| Module today | gravity stage fails (defect B) | | | | | | | | | |
+| Module, gravity at 1 m/s then 1e-4 (probe) | 0.289 | 0.951 | 0.492 | 0.641 | 0.715 | 0.568 | 0.556 | 0.324 | 0.302 | 0.36 / 0.89 / 0.98 |
+
+Pinned as a strict expected failure until defect B is fixed: Sa within
+10 % of the port with the module's inputs (measured -6.2 to +3.8 %; the
+elements differ) and peak r_u within 0.1. PGA is not compared: in
+liquefying sand it is a dilation spike that depends on the element. Against
+the port as written the dense layer is the difference (the module's
+liquefies: r_u 0.98 at 16 m against 0.56).
+
+"Probe" rows: the module's own model code run with one OpenSees call
+changed by intercepting it in a scratch script; the module is unchanged.
+
+**Defect A: the dynamic stage accepts unconverged steps on small
+elements.** KrylovNewton with NormDispIncr 1e-3 m (as the effective stress
+example has it). 1 mm is 0.4 % strain on a 0.25 m element, and
+KrylovNewton (modified Newton on the step's first tangent) makes small
+corrections while the soil yields, so the test passes with the residual
+still large: high-frequency noise and lost mid-period response. Evidence:
+the total stress port (with the module's damping band) with only its
+algorithm switched from Newton to KrylovNewton: PGA +56 %, Sa(0.4 s)
+-27 %, Sa(1.0 s) -30 %, the share of motion above 15 Hz 0.28 -> 0.65; the
+port at 1e-5 is unchanged, and Penalty + KrylovNewton at 1e-5 returns the
+converged answer; rounding the input by 5e-7 g moved the module's PGA 6 %
+and Sa(0.1 s) 27 %. By element size (the same column): 5, 2.5 and 1 m
+within 2 % from 0.1 s up; 0.5 m Sa(0.1 s) -23 %; 0.25 m -10 to -35 %. On
+the existing tests' coarse meshes Newton changes results by under 1 %
+(clay 0.05 g amplification 2.790 -> 2.785, 0.30 g 0.967 -> 0.959; sand
+0.30 g unchanged). Candidate fix: Newton in the dynamic stage (as the
+total stress example), KrylovNewton and ModifiedNewton as fallbacks, or
+KrylovNewton at 1e-5; either gives the converged answer (about +30 % run
+time on the 160-element column). Not applied (GM-83 reported it first).
+
+**Defect B: the elastoplastic gravity stage fails on finer sand meshes.**
+Failing at the first plastic gravity step: SAND33 (20 m) at 40 elements
+(0.5 m); with water 2 m down at 20 elements (1 m); 30 m of loose sand at
+15 elements (2 m); two 10 m sands at 10 elements each; the effective
+example's column. The module runs gravity at the shaking permeability
+(1e-4 m/s); the example runs gravity at 1 m/s and then sets 1e-4 m/s
+through element parameters (`parameter ... hPerm / vPerm`, which SSPquadUP
+takes: without that update the column stays drained, r_u about 0.2). With
+1 or 1e-2 m/s during gravity every case above finishes; 200 iterations
+instead of 35 rescue the 20 m sand but not the effective column. Candidate
+fix: the example's procedure. Not applied.
+
 ## Ground Motions
 
 Built-in synthetic motions are provided for testing.  Custom motions can
@@ -193,3 +320,7 @@ base64 numpy arrays.
   openseespy DLL, so run them in WSL or rely on CI (BACKLOG INF-13). Every
   site response run in the tests has a time limit, so a stuck step fails
   instead of hanging CI.
+- **The OpenSees examples** (GM-83): ports of the two McGann & Arduino
+  examples as test helpers, the stored record and the ports' numbers; two
+  strict expected failures mark defects A and B above, so fixing either
+  fails its test until the marker comes off.

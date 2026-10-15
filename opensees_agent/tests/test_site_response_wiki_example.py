@@ -1,0 +1,233 @@
+"""
+GM-83: analyze_site_response against the OpenSees wiki's own example.
+
+The example: "Site Response Analysis of a Layered Soil Column (Total Stress
+Analysis)", prepared by Christopher McGann and Pedro Arduino, University of
+Washington,
+https://opensees.berkeley.edu/wiki/index.php/Site_Response_Analysis_of_a_Layered_Soil_Column_(Total_Stress_Analysis)
+-- a 40 m layer of PressureIndependMultiYield soil (rho 1.7 Mg/m3, Vs
+250 m/s, cohesion 95 kPa) on rock (760 m/s, 2.4 Mg/m3) through a
+Lysmer-Kuhlemeyer dashpot, shaken by the Gilroy No. 1 east-west record
+applied as a force c * v(t) (Joyner & Chen 1975). It is the total stress
+sibling of the effective stress example our module's recipe comes from.
+
+``opensees_wiki_free_field.py`` ports the example's freeFieldSingle.tcl
+line for line (a test helper, with notes on what the Tcl does); the input
+motion is the first 20 s of the example's GilroyNo1EW.out, stored in
+``data/`` in micro-g (the file's header says how it was derived). The
+port reproduces the example's published result: surface PGA 0.353 g at
+4.43 s against the wiki's Figure 2 (about 0.35 g near 4.5 s), Sa(0.4 s)
+1.38 g against its Figure 3 (a peak of about 1.4 g near 0.4 s).
+
+REFERENCE holds the port's numbers (openseespy 3.8.0, Python 3.12, WSL,
+2026-10-15; regenerate with ``opensees_wiki_free_field.reference_numbers``):
+5 %-damped spectral accelerations at PERIODS_S and the amplification
+spectrum (surface / input Sa), three ways: as written, linear elastic,
+and with the three inputs analyze_site_response cannot set as the Tcl does
+(Poisson's ratio, the Rayleigh frequencies, the peak shear strain) set as
+the module sets them.
+
+What to expect, and why (measured on the 20 s record):
+
+* Linear elastic, damping matched at the site frequency (0.41 %): the
+  same column, so within 3 % from 0.1 to 1.5 s (measured -0.1 to +2.0 %)
+  and PGA within 5 % (+2.7 %). What is left is the Rayleigh curve: the
+  module's is less damped above about 8 Hz than the Tcl's 2 % at 20 Hz.
+* Nonlinear, against the port with the three inputs set as the module
+  sets them: the same model (on this column the Tcl's quad, an SSPquad
+  and the module's dry SSPquadUP give the same motion to 1e-12), so it
+  should agree to a few per cent. It does not today: the module's
+  dynamic stage (KrylovNewton, NormDispIncr 1e-3 m) accepts unconverged
+  steps when elements are small (here 0.25 m, where 1 mm is 0.4 % strain),
+  which adds high-frequency noise and takes 9-35 % off Sa from 0.1 to
+  1.5 s. With Newton, as the Tcl uses, the module matches the port to
+  0.1 % everywhere. Pinned as a strict expected failure until fixed.
+* Nonlinear, against the port as written: within 25 % from 0.3 to 1.5 s.
+  Poisson's ratio 0 (the Tcl) against 0.495 (the module's clay) moves Sa
+  at 0.64-1.5 s by 7-12 % with converged steps; the solver defect moves
+  it 10-17 % the other way today, and scatters it. PGA comes out higher in
+  the module (+23 % with converged steps, +29 to +38 % today): its column
+  is less damped at high frequency, where a nonlinear column's peaks live.
+"""
+
+import functools
+
+import numpy as np
+import pytest
+
+from opensees_agent.opensees_utils import has_opensees
+from opensees_agent.tests import opensees_wiki_free_field as wiki
+
+requires_opensees = pytest.mark.skipif(
+    not has_opensees(), reason="openseespy not installed")
+
+# Each run here takes 7-15 s; a stuck solver step fails instead of hanging
+TEST_TIME_LIMIT_S = 300.0
+
+# The port's numbers on the stored record (see the module docstring).
+# sa_g / amplification are at wiki.PERIODS_S = 0.1, 0.2, 0.3, 0.4, 0.5,
+# 0.64 (the site period), 1.0, 1.5 s.
+REFERENCE = {
+    "input_sa_g": [1.0674, 0.9735, 1.4109, 1.9844, 1.1985, 0.4107, 0.3103,
+                   0.2217],
+    "as_written": {
+        "pga_g": 0.3528, "pga_time_s": 4.430,
+        "sa_g": [0.9518, 0.7619, 1.0962, 1.3759, 0.7990, 0.3881, 0.4192,
+                 0.3644],
+        "amplification": [0.8917, 0.7826, 0.7769, 0.6934, 0.6666, 0.9450,
+                          1.3511, 1.6433]},
+    "linear": {
+        "pga_g": 0.7895, "pga_time_s": 4.300,
+        "sa_g": [1.0888, 1.8589, 1.7792, 2.5955, 2.1152, 0.7399, 0.4983,
+                 0.2781],
+        "amplification": [1.0200, 1.9095, 1.2610, 1.3079, 1.7650, 1.8015,
+                          1.6059, 1.2542]},
+    "api_expressible": {
+        "pga_g": 0.4331, "pga_time_s": 4.525,
+        "sa_g": [0.9402, 0.7484, 1.0711, 1.3619, 0.7779, 0.4294, 0.4681,
+                 0.3885],
+        "amplification": [0.8809, 0.7688, 0.7592, 0.6863, 0.6491, 1.0456,
+                          1.5085, 1.7520]},
+}
+
+
+@functools.lru_cache(maxsize=None)
+def _ours(linear_elastic):
+    """analyze_site_response on the example's column (one run per kind)."""
+    from opensees_agent.site_response import analyze_site_response
+    accel, dt = wiki.load_record()
+    r = analyze_site_response(accel_history=accel, dt=dt,
+                              linear_elastic=linear_elastic,
+                              time_limit_s=TEST_TIME_LIMIT_S,
+                              **wiki.closest_api_inputs())
+    return wiki.summarize(r.surface_accel_g, accel, dt)
+
+
+def _assert_spectrum(got, ref, rel, what, periods=wiki.PERIODS_S):
+    for T, g, e in zip(wiki.PERIODS_S, got, ref):
+        if T in periods:
+            assert g == pytest.approx(e, rel=rel), f"{what} at T = {T} s"
+
+
+# ===========================================================================
+# Tier 1: the stored record and the damping mapping (no openseespy)
+# ===========================================================================
+
+class TestStoredRecord:
+
+    def test_record_is_the_examples_first_20_s(self):
+        """4,000 values at 0.005 s; the peak 0.473148 g at 4.225 s, as in
+        the example's GilroyNo1EW.out."""
+        accel, dt = wiki.load_record()
+        assert dt == 0.005
+        assert len(accel) == 4000
+        k = int(np.argmax(np.abs(accel)))
+        assert abs(accel[k]) == pytest.approx(0.473148, abs=1e-6)
+        assert k * dt == pytest.approx(4.225)
+        assert accel[0] == pytest.approx(-0.002252, abs=1e-6)
+
+    def test_velocity_matches_the_examples_velocity_file(self):
+        """processMotion.m's rule (a * 9.81, cumtrapz from 0, times dt)
+        on the stored values: the first, the peak and the 20 s values of
+        the example's velocityHistory.out."""
+        accel, dt = wiki.load_record()
+        v = wiki.velocity_from_acceleration(accel, dt)
+        assert v[0] == 0.0
+        assert v[1] == pytest.approx(-1.2591160e-04, abs=2e-9)
+        assert np.max(np.abs(v)) == pytest.approx(0.3386837, abs=2e-6)
+
+    def test_input_spectrum(self):
+        """The input's 5 %-damped Sa at PERIODS_S, the denominators of
+        REFERENCE's amplification spectra."""
+        accel, dt = wiki.load_record()
+        s = wiki.summarize(accel, accel, dt)
+        _assert_spectrum(s["sa_g"], REFERENCE["input_sa_g"], 1e-3,
+                         "input Sa")
+        assert s["amplification"] == pytest.approx([1.0] * 8)
+
+    def test_the_examples_damping_at_the_site_frequency(self):
+        """2 % Rayleigh at 0.2 and 20 Hz is 0.41 % at the column's site
+        frequency (1.5625 Hz), the ratio the module is given."""
+        assert wiki.SITE_FREQUENCY_HZ == pytest.approx(1.5625)
+        assert wiki.rayleigh_ratio(wiki.SITE_FREQUENCY_HZ) == pytest.approx(
+            0.004082, abs=1e-6)
+        assert wiki.rayleigh_ratio(20.0) == pytest.approx(0.02, rel=1e-6)
+        inputs = wiki.closest_api_inputs()
+        assert inputs["damping"] == pytest.approx(0.004082, abs=1e-6)
+        # the module's cohesi = sqrt(3)/2 * su lands on the Tcl's 95 kPa
+        su = inputs["layers"][0]["su"]
+        assert np.sqrt(3.0) / 2.0 * su == pytest.approx(95.0)
+
+
+# ===========================================================================
+# Tier 2: the port and the module (openseespy)
+# ===========================================================================
+
+class TestAgainstTheOpenSeesWikiExample:
+
+    @requires_opensees
+    def test_port_reproduces_the_published_example(self):
+        """The port, as written, on the stored record: the wiki's Figure 2
+        (surface PGA about 0.35 g near 4.5 s) and Figure 3 (Sa peak about
+        1.4 g near 0.4 s), and REFERENCE within 1 %."""
+        accel, dt = wiki.load_record()
+        r = wiki.run_free_field_single(
+            wiki.velocity_from_acceleration(accel, dt), motion_dt=dt)
+        assert r["numEleY"] == 160 and r["dT"] == 0.005
+        s = wiki.summarize(r["surface_accel_g"], accel, dt)
+        assert s["pga_g"] == pytest.approx(0.35, abs=0.02)
+        assert s["pga_time_s"] == pytest.approx(4.45, abs=0.1)
+        assert s["sa_g"][wiki.PERIODS_S.index(0.4)] == pytest.approx(
+            1.4, abs=0.1)
+        ref = REFERENCE["as_written"]
+        assert s["pga_g"] == pytest.approx(ref["pga_g"], rel=0.01)
+        _assert_spectrum(s["sa_g"], ref["sa_g"], 0.01, "Sa")
+
+    @requires_opensees
+    def test_linear_column_matches_the_port(self):
+        """Linear elastic (no updateMaterialStage in the port,
+        linear_elastic=True in the module), damping matched at the site
+        frequency: amplification within 3 % from 0.1 to 1.5 s (measured
+        -0.1 to +2.0 %), PGA within 5 % (measured +2.7 %; the module's
+        Rayleigh curve is less damped above about 8 Hz)."""
+        got = _ours(True)
+        ref = REFERENCE["linear"]
+        assert got["pga_g"] == pytest.approx(ref["pga_g"], rel=0.05)
+        _assert_spectrum(got["amplification"], ref["amplification"], 0.03,
+                         "amplification")
+
+    @requires_opensees
+    def test_nonlinear_column_against_the_port_as_written(self):
+        """Amplification within 25 % from 0.3 to 1.5 s (measured -9.8 to
+        -15.3 % today; -2.6 to +11.7 % with converged steps, the positive
+        side from Poisson's ratio); PGA higher, by under 50 % (measured
+        +29 % today, +23 % with converged steps: less damping above
+        8 Hz). Loose because today's unconverged steps scatter: the
+        unrounded full record gave -17 % at 1.0 s and PGA +38 %."""
+        got = _ours(False)
+        ref = REFERENCE["as_written"]
+        _assert_spectrum(got["amplification"], ref["amplification"], 0.25,
+                         "amplification", periods=(0.3, 0.4, 0.5, 0.64,
+                                                   1.0, 1.5))
+        assert 1.0 < got["pga_g"] / ref["pga_g"] < 1.5
+
+    @requires_opensees
+    @pytest.mark.xfail(
+        strict=True, raises=AssertionError,
+        reason="GM-83: the dynamic stage (KrylovNewton, NormDispIncr "
+               "1e-3 m) accepts unconverged steps on 0.25 m elements; "
+               "with Newton the module matches the port to 0.1 %")
+    def test_nonlinear_column_matches_the_port_it_can_express(self):
+        """Against the port with Poisson's ratio 0.495, Rayleigh damping
+        at the site frequency and five times it (0.41 %) and peak shear
+        strain 0.1, as the module sets them: the same model, so
+        amplification within 3 % from 0.1 to 1.5 s and PGA within 5 %.
+        Measured with the module's dynamic algorithm switched to Newton:
+        within 0.1 % everywhere; with KrylovNewton at 1e-5 instead,
+        amplification within 0.5 % and PGA -4 % (a peak is one spike).
+        Today: PGA +5 %, amplification -35 to -9 %."""
+        got = _ours(False)
+        ref = REFERENCE["api_expressible"]
+        assert got["pga_g"] == pytest.approx(ref["pga_g"], rel=0.05)
+        _assert_spectrum(got["amplification"], ref["amplification"], 0.03,
+                         "amplification")
