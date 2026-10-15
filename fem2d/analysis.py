@@ -1516,6 +1516,18 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
 
     # One row per excavation stage
     wall_y = nodes[wall_nodes, 1]
+
+    def _peak_depth(pr, which):
+        """Depth below the ground (m) of the wall's largest |moment| or
+        |shear| in a stage, from its beam forces (GM-86: the agent was
+        left to infer it and placed a 3.8 m peak at 8 m)."""
+        best = None
+        for bf in (pr.beam_forces or []):
+            for node, val in ((bf.node_i, getattr(bf, which + '_i')),
+                              (bf.node_j, getattr(bf, which + '_j'))):
+                if best is None or abs(val) > best[0]:
+                    best = (abs(val), node)
+        return None if best is None else float(-nodes[best[1], 1])
     stage_rows = []
     env_m = env_v = None
     for pr in staged.phases[1:]:
@@ -1534,7 +1546,9 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
             'max_wall_ux_m': float(wux[i_max]),
             'max_wall_ux_depth_m': float(-wall_y[i_max]),
             'max_beam_moment_kNm_per_m': float(pr.max_beam_moment_kNm_per_m),
+            'max_beam_moment_depth_m': _peak_depth(pr, 'moment'),
             'max_beam_shear_kN_per_m': float(pr.max_beam_shear_kN_per_m),
+            'max_beam_shear_depth_m': _peak_depth(pr, 'shear'),
             'strut_forces_kN_per_m': [r['force_kN_per_m']
                                       for r in _strut_rows(pr)],
             'settled_steps': len(pr.settled_steps or []),
@@ -1562,14 +1576,29 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
             })
         stage_rows.append(row)
         if env_m is None or row['max_beam_moment_kNm_per_m'] > env_m[0]:
-            env_m = (row['max_beam_moment_kNm_per_m'], row['name'])
+            env_m = (row['max_beam_moment_kNm_per_m'], row['name'],
+                     row['max_beam_moment_depth_m'],
+                     row['excavation_depth_m'])
         if env_v is None or row['max_beam_shear_kN_per_m'] > env_v[0]:
-            env_v = (row['max_beam_shear_kN_per_m'], row['name'])
+            env_v = (row['max_beam_shear_kN_per_m'], row['name'],
+                     row['max_beam_shear_depth_m'],
+                     row['excavation_depth_m'])
     result.excavation_stages = stage_rows
+
+    def _side(depth, dig):
+        if depth is None:
+            return None
+        return ('above the excavation level' if depth < dig - 1e-6 else
+                'below the excavation level' if depth > dig + 1e-6 else
+                'at the excavation level')
     if env_m is not None:
         result.wall_envelope = {
             'max_beam_moment_kNm_per_m': env_m[0], 'moment_stage': env_m[1],
+            'moment_depth_m': env_m[2],
+            'moment_position': _side(env_m[2], env_m[3]),
             'max_beam_shear_kN_per_m': env_v[0], 'shear_stage': env_v[1],
+            'shear_depth_m': env_v[2],
+            'shear_position': _side(env_v[2], env_v[3]),
         }
 
     k0_txt = "; ".join(

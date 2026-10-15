@@ -519,10 +519,14 @@ class FEMResult:
             env = self.wall_envelope
             lines.append(
                 f"    All stages: M_max "
-                f"{env['max_beam_moment_kNm_per_m']:.1f} kN*m/m "
-                f"({env['moment_stage']}), V_max "
-                f"{env['max_beam_shear_kN_per_m']:.1f} kN/m "
-                f"({env['shear_stage']})")
+                f"{env['max_beam_moment_kNm_per_m']:.1f} kN*m/m"
+                + (f" at {env['moment_depth_m']:.2f} m depth"
+                   if env.get('moment_depth_m') is not None else "")
+                + f" ({env['moment_stage']}), V_max "
+                f"{env['max_beam_shear_kN_per_m']:.1f} kN/m"
+                + (f" at {env['shear_depth_m']:.2f} m depth"
+                   if env.get('shear_depth_m') is not None else "")
+                + f" ({env['shear_stage']})")
         if self.notes:
             lines.append("")
             for n in self.notes:

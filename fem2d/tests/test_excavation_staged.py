@@ -438,3 +438,22 @@ def test_standing_water_is_minus_p_n():
     top = np.abs(nodes[:, 1]) < 1e-9
     assert F[1::2][top].sum() == pytest.approx(-10.0 * 2.0)
     assert abs(F[0::2].sum()) < 1e-9
+
+
+def test_the_envelope_says_where_the_peaks_are(propped):
+    """GM-86: the result gives the depth of the largest moment and shear
+    (live wave w6 placed a 3.8 m peak at 8 m when it had to infer it)."""
+    env = propped.wall_envelope
+    for key in ("moment", "shear"):
+        z = env[f"{key}_depth_m"]
+        assert z is not None and 0.0 <= z <= 10.0 + 1e-6
+        assert env[f"{key}_position"] in (
+            "above the excavation level", "below the excavation level",
+            "at the excavation level")
+    # the moment's depth is the depth of the beam node carrying it
+    best = max([(abs(b.moment_i), b.node_i) for b in propped.beam_forces]
+               + [(abs(b.moment_j), b.node_j) for b in propped.beam_forces])
+    assert abs(best[0] - env["max_beam_moment_kNm_per_m"]) < 1e-6
+    for row in propped.excavation_stages:
+        assert row["max_beam_moment_depth_m"] is not None
+    assert "m depth" in propped.summary()

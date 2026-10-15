@@ -621,7 +621,7 @@ METHOD_INFO = {
             "max_displacement_m": "Largest movement since the in-situ stage.",
             "max_beam_moment_kNm_per_m": "Largest wall bending moment at the end of the last stage only.",
             "max_beam_shear_kN_per_m": "Largest wall shear force at the end of the last stage only.",
-            "wall_envelope": "Largest wall moment and shear over ALL stages, with the stage each occurs in: the values to design the wall for (an earlier lift, before a strut is installed, can govern).",
+            "wall_envelope": "Largest wall moment and shear over ALL stages, with the stage each occurs in, its depth below the ground (moment_depth_m, shear_depth_m) and whether that is above or below the excavation level: the values to design the wall for (an earlier lift, before a strut is installed, can govern). Quote these depths; do not infer them.",
             "strut_forces": "Per strut: force = stiffness x movement since installation (positive holds the wall back).",
             "excavation_stages": "Per lift: wall head and largest wall u_x (positive toward the excavation), M_max, V_max, strut forces; with a water table also the water inside, the pore pressure and total head at the wall's tip, the net water pressure at the excavation level, the upward gradient in front of the wall and the critical gradient.",
             "excavation_water": "The water condition modelled inside the excavation.",
