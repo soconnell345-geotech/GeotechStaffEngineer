@@ -570,6 +570,7 @@ def search_rapid_drawdown(geom: SlopeGeometry,
                           stage3_effective_normal: str = "fellenius",
                           toe_circles: bool = True,
                           infinite_slope: bool = True,
+                          refine: bool = True,
                           ) -> RapidDrawdownSearchResult:
     """Find the critical slip surface UNDER RAPID-DRAWDOWN strengths.
 
@@ -626,6 +627,11 @@ def search_rapid_drawdown(geom: SlopeGeometry,
         honoured; the automatic ones do not restrict these families. The
         result's ``search`` carries ``governing_surface``, ``candidates`` and
         ``warnings``. Default True.
+    refine : bool
+        Refine the lowest centre of the circular grid by a local compass
+        search on the centre (GM-87; ``search.grid_search``). With a
+        per-surface solve this costly only the lowest grid centre is
+        refined, three step halvings, at most 12 centres. Default True.
 
     Returns
     -------
@@ -710,7 +716,7 @@ def search_rapid_drawdown(geom: SlopeGeometry,
         search = grid_search(
             geom, x_range, y_range, nx, ny, method="spencer",
             n_slices=n_slices, tol=tol, x_entry_range=x_entry_range,
-            x_exit_range=x_exit_range, fos_fn=_dd_fos)
+            x_exit_range=x_exit_range, fos_fn=_dd_fos, refine=refine)
     elif surface_type == "entry_exit":
         search = search_entry_exit(
             geom, x_entry_range, x_exit_range, n_entry=nx, n_exit=ny,

@@ -23,13 +23,13 @@ range constraints.
 - `slip_surface.py` — CircularSlipSurface (center + radius), PolylineSlipSurface (polyline points)
 - `slices.py` — Slice dataclass, build_slices() with multi-layer weight/pore pressure
 - `methods.py` — fellenius_fos(), bishop_fos(), spencer_fos() (circular + noncircular)
-- `search.py` — optimize_radius(), grid_search(), search_noncircular(), entry/exit filtering
+- `search.py` — optimize_radius(), grid_search() (with the local refinement of its lowest centres, GM-87), search_noncircular(), entry/exit filtering
 - `search_supplements.py` — toe-circle and infinite-slope (shallow planar) families scored after every `search_critical_surface` (GM-13, GM-14)
 - `analysis.py` — analyze_slope(), search_critical_surface() orchestrators
 - `results.py` — SliceData, SlopeStabilityResult, SearchResult
 - `nails.py` — SoilNail, NailContribution (kept but disconnected from analysis pipeline)
 - `tests/test_slope_stability.py` — 83 tests (core + entry/exit limits + noncircular search)
-- `tests/test_duncan_verification.py` — 22 tests (Duncan §7.6-7.7 verification examples; Ex 1 against Taylor's chart, GM-63)
+- `tests/test_duncan_verification.py` — 28 tests (Duncan §7.6-7.7 verification examples; Ex 1 against Taylor's chart, GM-63, and the default search on long profiles, GM-87)
 - `tests/test_nails.py` — 38 tests + 16 skipped (nail intersection/pullout/capacity)
 
 ## Public API
@@ -74,8 +74,82 @@ search_critical_surface(geom, surface_type="noncircular",
 ### Circular Grid Search
 - `grid_search(geom, x_range, y_range, nx, ny, method, ...)` — evaluates nx*ny circle centers
 - `optimize_radius(geom, xc, yc, method, ...)` — golden-section radius optimization at each center
+  (each step reuses the FOS of the interior radius it keeps, since 2026-10-15: same result,
+  about a quarter fewer solves)
 - Optional `x_entry_range` / `x_exit_range` — reject surfaces whose entry/exit fall outside bounds
 - FOS guard: surfaces with FOS < 0.05 are rejected as numerical artifacts
+- `search_critical_surface` and `search_rapid_drawdown` then refine the lowest grid centres
+  (`grid_search(refine=True)`, GM-87; next section). `grid_search` called directly does not.
+
+### Local refinement of the centre grid (GM-87, 2026-10-15)
+A grid of centres finds the critical circle only to within its spacing, and the
+automatic grid spans the whole profile, so on a long profile it is coarse.
+Duncan Ex 1 (2:1 slope, su/(gamma H) = 0.120) drawn with 4 H of level ground
+each side has its 10 x 10 centres 1.1 H apart in x; Taylor's critical circle
+(FHWA NHI-06-088 Fig. 6-15, after Taylor 1948) has its centre 1.0 H in front of
+the crest, between two of them, and the grid read 0.739 against 0.705 at D = 2
+(0.755 with 5 H each side). The radius was never the problem: at every centre
+`optimize_radius` already found the circle tangent to the firm base.
+
+- **What.** After the grid, its local minima (no lower point among the eight
+  around them; at most three, those within 10 % of the lowest grid FOS) are each
+  refined by a compass (pattern) search on the centre (`search._refine_centre`):
+  the four centres half a grid step away in x and in y are scored, each with its
+  own optimised radius exactly as on the grid; the walk moves to any lower one and
+  halves the steps when none is lower, down to a sixteenth of the grid spacing
+  (at most 40 centres a start). It stays inside the grid's own centre ranges, so
+  caller-given ranges are honoured and the grid-edge warning still means what it
+  says.
+- **Why a refinement, not a family of circles tangent to the base.** Slide2 and
+  others offer circles tangent to each layer boundary ("tangent" surfaces) as a way
+  to choose radii. Here the radius was already tangent to the firm base at every
+  centre (the base at -1.00 H in every run); what was missing was the centre, and a
+  tangent family still needs a centre grid. A local search on the centre is
+  general: it serves any slope, not only one with a firm base.
+- **Rigorous methods.** Spencer / Morgenstern-Price / GLE walk with Bishop (the same
+  critical circles to about 1 % and some 30 times cheaper, as the toe-circle family
+  does) and re-optimise the radius at each walk's end with the method itself; the
+  method's own FOS decides. Measured against a walk with Spencer itself on nine
+  models: the same FOS to four decimals on eight, at +2 to +23 % run time instead of
+  +40 to +225 %. Not where supports are modelled: Bishop counts a support only
+  through its moment about the centre (GM-59) and the two methods' critical circles
+  part (Slide2 #85, anchored: the Bishop walk found nothing below Spencer's grid
+  minimum 1.581, Spencer's own walk 1.574), so a reinforced model walks with the
+  method itself.
+- **On the base.** `build_slices` drops up to max(2, 3 % of n_slices) below-base END
+  slices as tangential slivers (SS-5). Where the toe sits on a rigid base (Slide2 #85
+  without its support) a circle whose lowest point is a few millimetres under the
+  base just beyond the toe sheds its two toe slices and scores low: 0.867 on a circle
+  refused at 90 slices, against the base-tangent toe circle's 0.883. The walk found
+  such circles, so it keeps to circles that at most touch the base
+  (`search._dips_below_base`, the same test as `build_slices` with no tolerance), as
+  the toe-circle family does. The grid itself is unchanged.
+- **Rapid drawdown** (`search_rapid_drawdown`, its own per-surface solve): the lowest
+  grid centre only, three step halvings, at most 12 centres.
+- **Off switch.** `search_critical_surface(refine=False)` /
+  `search_rapid_drawdown(refine=False)` give the grid alone.
+- **Taylor on long profiles** (Bishop, 30 slices, default search): D = 2, 4 H and 5 H
+  each side: 0.739 / 0.755 -> 0.703 / 0.703 (Taylor 0.706); D = 3: 4 H / 5 H / 6 H:
+  0.690 / 0.696 / 0.703 -> 0.676 (Taylor 0.679); the centre 1.00 H in front of the
+  crest, the circle tangent to the firm base, no warning. Spencer gives the same.
+- **What moved** (every move is down; none of the published benchmarks' tests needed
+  a change): a coarse 4 x 4 re-search in the Monte Carlo test 1.372 -> 1.253 (the
+  default grid and a 30 x 30 grid give 1.252 / 1.254); Duncan Ex 4 sand over clay
+  1.319 -> 1.249 (both circles cut by the left end of the profile, the GM-63 warning
+  on both); a 3 x 3 grid on the calc-package slope 1.471 -> 1.454 (30 x 30: 1.453;
+  the refined circle exits 1.9 m from the automatic exit window's start, so that
+  edge warning now fires); the window-limited toe-geometry circle 2.784 -> 2.770;
+  ACADS 1(a) default Bishop 0.990 -> 0.988 on the grid (the toe circle 0.985 still
+  governs). Rapid drawdown: #98 Corps 0.8370 -> 0.8341, DWW 0.9352 -> 0.9349, LK
+  0.9632 -> 0.9619 (published 0.931 / 1.039 / 1.075; ours were already about 10 % low
+  on the approximate recovered geometry, and move up to 0.3 % further); Pilarcitos
+  true section Corps 0.7258 -> 0.7236 (published 0.823), and on the 2:1 / 2.5:1 / 3:1
+  sections LK and DWW 0.4-0.6 % lower, toward the published ~1.05.
+- **Runtime** (one process, shared laptop, noisy): default circular Bishop +0.2 to
+  +0.4 s (ACADS 1(a) 0.93 -> 1.16 s, Duncan Ex 1 4 H 1.0 -> 1.3 s); default Spencer
+  ACADS 1(a) 14.0 -> 13.0 s and Duncan Ex 1 4 H 9.5 -> 7.6 s (the golden-section
+  reuse in `optimize_radius` more than pays for the walk); rapid-drawdown circular
+  searches +4 to +6 s (#98 Corps 8.5 -> 12.2 s, Pilarcitos 18.5 -> 19.4 s).
 
 ### Noncircular Random Search
 - `search_noncircular(geom, n_trials, n_points, x_entry_range, x_exit_range, ...)` — random polylines
@@ -841,6 +915,18 @@ search warns and gives its FOS (Duncan Ex 1's profile: 0.709 at D = 2,
 0.681 at D = 3, against 0.727). The steep phi = 0 toe circle of GM-13 /
 V-054 (H 5 m at 45 deg, clay to 10 m below the toe, the profile starting
 at the toe) gets it too: 2.237 against 2.286, toward the published 2.16-2.2
-(FLAC, Taylor). Not checked: noncircular surfaces. The default centre grid
-spans the whole profile, so on a long profile it is coarse (D = 2, 4 H
-each side: 0.739 against 0.705; a follow-up of GM-63).
+(FLAC, Taylor).
+
+**GM-87 (2026-10-15).** The default centre grid spans the whole profile,
+so on a long profile it was coarse (D = 2, 4 H each side: 0.739 against
+0.705). Its lowest centres are now refined (see "Local refinement of the
+centre grid" above): the default search gives 0.703 at D = 2 (4 H and 5 H
+each side) and 0.676 at D = 3 (4 H, 5 H, 6 H), Taylor's circle; on this
+class's own short profile 0.726, still with the profile-end warning. A
+noncircular governing surface that ends near an end of the profile is now
+checked too: circles about the circle through its two ends and its lowest
+point, scored with the method that scored it (Spencer when Bishop was asked
+for). On the V-054 model a random noncircular search enters at the toe at
+3.863 and the check gives 2.215 past the left end. A noncircular mechanism
+that would itself carry on past the end (along a weak layer, say) is still
+not checked.

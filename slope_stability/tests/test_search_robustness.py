@@ -221,3 +221,56 @@ def test_search_returns_base_admissible_critical_surface():
     assert 0.0 < c.FOS < _FOS_MAX
     # lowest arc point at/above the deepest layer bottom (el 10)
     assert c.yc - c.radius >= 10.0 - 0.25
+
+
+# ---------------------------------------------------------------------------
+# GM-87: the local refinement of the centre grid. It may only lower the
+# grid's minimum, it stays inside the grid's centre ranges, and it keeps to
+# circles that at most touch the base: build_slices drops up to
+# max(2, 3 % of n_slices) below-base END slices as tangential slivers, and
+# where the toe sits on the rigid base a circle dipping just under it sheds
+# its toe slices and scores low. Without that rule the walk found such a
+# circle on this model (0.265, refused at 90 slices).
+# ---------------------------------------------------------------------------
+
+_THIN_BOX = ((15.0, 57.0), (31.0, 70.0))      # profile width x (crest+1, +2H)
+
+
+def test_dips_below_base():
+    """A circle tangent to the base inside the slip mass is admissible. One
+    whose lowest point is 8 mm under the base just beyond the toe (as the
+    walk without the rule found) loses two toe slices at 30 slices, scores
+    0.265 against 0.278, and is refused at 90 slices."""
+    from slope_stability.search import _dips_below_base
+    geom = _thin_base_geom()
+    touch = CircularSlipSurface(22.0, 32.0, 22.0)       # lowest point el 10
+    assert not _dips_below_base(geom, touch, 30)
+    assert len(build_slices(geom, touch, 90)) == 90
+    shed = CircularSlipSurface(15.88, 10.0 + 28.06 - 0.008, 28.06)
+    assert _dips_below_base(geom, shed, 30)
+    assert len(build_slices(geom, shed, 30)) == 28      # slivers dropped
+    assert _compute_fos(geom, shed, "bishop", 30) == pytest.approx(0.265,
+                                                                   abs=0.002)
+    with pytest.raises(ValueError, match="below the bottom of the deepest"):
+        build_slices(geom, shed, 90)
+
+
+@pytest.mark.parametrize("nx", [4, 10])
+def test_refinement_lowers_the_grid_on_admissible_circles(nx):
+    """The refined grid is below the grid's own minimum (0.281 / 0.278) and
+    its circle builds at 90 slices too: 0.278, not the 0.265 sliver
+    circle."""
+    from slope_stability.search import grid_search
+    geom = _thin_base_geom()
+    plain = grid_search(geom, *_THIN_BOX, nx=nx, ny=nx, method="bishop")
+    ref = grid_search(geom, *_THIN_BOX, nx=nx, ny=nx, method="bishop",
+                      refine=True)
+    c = ref.critical
+    assert c.FOS < plain.critical.FOS
+    assert c.FOS == pytest.approx(0.278, abs=0.002)
+    assert len(build_slices(geom, CircularSlipSurface(c.xc, c.yc, c.radius),
+                            90)) == 90
+    (x_lo, x_hi), (y_lo, y_hi) = _THIN_BOX
+    assert x_lo <= c.xc <= x_hi and y_lo <= c.yc <= y_hi
+    assert ref.n_surfaces_evaluated > plain.n_surfaces_evaluated
+    assert len(plain.grid_fos) == nx * nx

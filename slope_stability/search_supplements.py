@@ -35,13 +35,14 @@ honoured; the automatic windows are a heuristic and do not restrict the
 supplementary families.
 
 No trial surface can pass the end of the ground profile, so a governing
-circle near an end is also checked against circles about the same centre
-on the ground carried on level past the end (`_profile_end_warning`, GM-63).
-Duncan Ex 1 (12.2 m 2:1 slope in clay, su 28.7 kPa, 24.4 m of clay below
-the toe) drawn with 12.2 m of level ground beyond the crest and the toe:
-the search gives 0.727 from one end of the profile to the other, while
-Taylor's critical circle (FHWA NHI-06-088 Fig. 6-15, D = 3) enters 3.2 H
-behind the crest and comes out 2.7 H beyond the toe at 0.679.
+surface near an end is also checked against circles about nearby centres
+on the ground carried on level past the end (`_profile_end_warning`, GM-63;
+noncircular surfaces since GM-87). Duncan Ex 1 (12.2 m 2:1 slope in clay,
+su 28.7 kPa, 24.4 m of clay below the toe) drawn with 12.2 m of level
+ground beyond the crest and the toe: the search gives 0.727 (0.726 with the
+refined grid) from one end of the profile to the other, while Taylor's
+critical circle (FHWA NHI-06-088 Fig. 6-15, D = 3) enters 3.2 H behind the
+crest and comes out 2.7 H beyond the toe at 0.679.
 """
 
 import dataclasses
@@ -831,24 +832,56 @@ def _extended_profile(geom: SlopeGeometry, length: float) -> SlopeGeometry:
     return dataclasses.replace(geom, surface_points=pts)
 
 
+def _circle_through(p1, p2, p3) -> Optional[Tuple[float, float, float]]:
+    """(xc, yc, R) of the circle through three points, None if collinear."""
+    (x1, y1), (x2, y2), (x3, y3) = p1, p2, p3
+    d = 2.0 * (x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2))
+    if abs(d) < 1e-9 * max(1.0, (x3 - x1) ** 2):
+        return None
+    s1, s2, s3 = x1 * x1 + y1 * y1, x2 * x2 + y2 * y2, x3 * x3 + y3 * y3
+    xc = (s1 * (y2 - y3) + s2 * (y3 - y1) + s3 * (y1 - y2)) / d
+    yc = (s1 * (x3 - x2) + s2 * (x1 - x3) + s3 * (x2 - x1)) / d
+    return xc, yc, math.hypot(x1 - xc, y1 - yc)
+
+
 def _profile_end_warning(geom, crit, method: str, n_slices: int, tol: float,
                          fos_fn=None) -> Optional[str]:
-    """Warning when the governing circle is held back by the end of the
-    ground profile (GM-63).
+    """Warning when the governing surface is held back by the end of the
+    ground profile (GM-63; noncircular surfaces since GM-87).
 
     No trial surface can enter or come out past the end of the profile, so
-    a circle that would is never tried. When the governing circle ends near
-    an end, circles about nine centres around its own (spacing a quarter of
-    its radius) are scored on the same model with the ground carried on
-    level past both ends; the warning is given only when one of them crosses
-    an end of the original profile and is at least 1 % lower. Rigorous
-    methods are scanned with Bishop and the best circle re-scored with the
-    method itself. A rapid-drawdown search (``fos_fn``) is scored with its
-    own FOS about its own centre only, as each of its surfaces costs a
-    multi-stage solve.
+    a surface that would is never tried. When the governing surface ends
+    near an end, circles about nine centres around its own (spacing a
+    quarter of its radius) are scored on the same model with the ground
+    carried on level past both ends; the warning is given only when one of
+    them crosses an end of the original profile and is at least 1 % lower.
+    A noncircular surface is given the centre and radius of the circle
+    through its two ends and its lowest point, and the circles are scored
+    with the method that scored it (Spencer when Bishop was asked for, as
+    `search_critical_surface` does); a noncircular mechanism that would
+    carry on past the end (along a weak layer, say) is not itself checked.
+    Rigorous methods are scanned with Bishop and the best circle re-scored
+    with the method itself. A rapid-drawdown search (``fos_fn``) is scored
+    with its own FOS about its own centre only, as each of its surfaces
+    costs a multi-stage solve.
     """
     from slope_stability.search import optimize_radius, _compute_fos, _FOS_MAX
-    if crit is None or not getattr(crit, "is_circular", False):
+    if crit is None:
+        return None
+    if getattr(crit, "is_circular", False):
+        xc0, yc0, r0 = crit.xc, crit.yc, crit.radius
+        what = "circle"
+    elif crit.slip_points and len(crit.slip_points) >= 3:
+        pts = list(crit.slip_points)
+        fit = _circle_through(pts[0], min(pts[1:-1], key=lambda p: p[1]),
+                              pts[-1])
+        if fit is None:
+            return None
+        xc0, yc0, r0 = fit
+        what = "surface"
+        if method == "bishop":
+            method = "spencer"
+    else:
         return None
     x_min, x_max = geom.x_range
     width = max(x_max - x_min, 1e-9)
@@ -859,12 +892,12 @@ def _profile_end_warning(geom, crit, method: str, n_slices: int, tol: float,
     scan = method
     if fos_fn is None and method.lower() not in ("bishop", "fellenius"):
         scan = "bishop"
-    step = 0.25 * crit.radius
+    step = 0.25 * r0
     offsets = ((0, 0),) if fos_fn is not None else \
         tuple((i, j) for i in (-1, 0, 1) for j in (-1, 0, 1))
     best = None
     for i, j in offsets:
-        xc, yc = crit.xc + i * step, crit.yc + j * step
+        xc, yc = xc0 + i * step, yc0 + j * step
         r, f = optimize_radius(ext, xc, yc, method=scan,
                                n_slices=n_slices, tol=tol, fos_fn=fos_fn)
         if f < _FOS_MAX and (best is None or f < best[0]):
@@ -892,7 +925,7 @@ def _profile_end_warning(geom, crit, method: str, n_slices: int, tol: float,
     if f > (1.0 - _PROFILE_END_DROP) * crit.FOS:
         return None
     return (
-        f"The critical circle ends near the end of the ground surface given "
+        f"The critical {what} ends near the end of the ground surface given "
         f"(x = {x_min:.2f} to {x_max:.2f}), and no trial surface can pass "
         f"the end of the profile. With the ground carried on level past "
         f"{' and '.join(past)}, a circle crossing it gives FOS {f:.3f} "

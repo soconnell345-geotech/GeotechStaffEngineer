@@ -16,6 +16,7 @@ The infinite slope gives tan 37 / (24/30) = 0.942; the circular search gave
 """
 
 import math
+import re
 
 import pytest
 
@@ -90,15 +91,42 @@ def test_toe_circle_mirrored_slope():
 
 
 def test_toe_circles_off_reproduces_old_search():
-    """toe_circles=False is the previous behaviour, with an edge warning: the
-    window-limited circle exits on the lower edge of the automatic exit
-    window."""
+    """toe_circles=False with refine=False is the previous behaviour, with an
+    edge warning: the window-limited circle exits on the lower edge of the
+    automatic exit window. The refined grid (the default since GM-87) finds
+    a slightly lower circle on the same edge, still far above the toe
+    circle (2.287)."""
+    old = search_critical_surface(_toe_geom(), method="bishop", n_slices=40,
+                                  toe_circles=False, refine=False)
+    assert old.critical.FOS == pytest.approx(2.784, abs=0.01)
+    assert old.governing_surface == CIRCULAR
+    assert any("edge of the automatic x_exit_range" in w
+               for w in old.warnings)
     res = search_critical_surface(_toe_geom(), method="bishop", n_slices=40,
                                   toe_circles=False)
-    assert res.critical.FOS == pytest.approx(2.784, abs=0.01)
+    assert 2.7 < res.critical.FOS < old.critical.FOS
     assert res.governing_surface == CIRCULAR
     assert any("edge of the automatic x_exit_range" in w
                for w in res.warnings)
+
+
+def test_profile_end_check_covers_noncircular_surfaces():
+    """GM-87: a noncircular critical surface that ends at an end of the
+    profile is checked as a circle is (GM-63): circles about the circle
+    through its ends and its lowest point, on the ground carried on level
+    past the end. This model starts at the toe; a random noncircular search
+    enters there at 3.863, and a circle past the left end gives 2.215
+    (Spencer; the profile-end circle of the circular search is 2.237)."""
+    res = search_critical_surface(_toe_geom(), method="spencer",
+                                  surface_type="noncircular", seed=1,
+                                  n_trials=300)
+    assert res.governing_surface == NONCIRCULAR
+    w = [w for w in res.warnings if "end of the ground surface" in w]
+    assert len(w) == 1
+    assert w[0].startswith("The critical surface ends near")
+    f = float(re.search(r"gives FOS ([0-9.]+)", w[0]).group(1))
+    assert f < 0.99 * res.critical.FOS
+    assert f == pytest.approx(2.215, abs=0.03)
 
 
 def test_toe_circles_honour_given_windows():

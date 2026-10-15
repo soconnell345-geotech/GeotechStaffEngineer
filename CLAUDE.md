@@ -202,7 +202,9 @@ Key conventions:
       pages checked (08bd8d4); earlier turns' work reaches the helpers
       (642bd36); model request time limits (86879e8); the launcher's
       Prompter-key option and lost-app helpers (ca0795e); CI green on master
-      for the first time in months (INF-07).
+      for the first time in months (INF-07); slope model-width checks and a
+      search that finds Taylor's deep circle (014ef09, GM-87); images marked
+      in their own pixels (fde2df1); the excavation peak's depth (706da6c).
     Open next: the Foundry brief that measures all of this
     (EV-13, DR-05; the owner holds the wheels).
 

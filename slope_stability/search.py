@@ -402,10 +402,13 @@ def optimize_radius(geom: SlopeGeometry,
                     x_entry_range: Optional[Tuple[float, float]] = None,
                     x_exit_range: Optional[Tuple[float, float]] = None,
                     fos_fn: Optional[Callable] = None,
+                    admissible: Optional[Callable] = None,
                     ) -> Tuple[float, float]:
     """Find the radius that minimizes FOS for a given circle center.
 
     Uses a coarse scan followed by golden-section refinement.
+    ``admissible(slip)`` (optional) rejects a trial circle before it is
+    scored, as the entry/exit windows do.
 
     Parameters
     ----------
@@ -464,34 +467,42 @@ def optimize_radius(geom: SlopeGeometry,
         # Entry/exit range check
         if not _check_entry_exit(geom, slip, x_entry_range, x_exit_range):
             continue
+        if admissible is not None and not admissible(slip):
+            continue
 
         fos = _compute_fos(geom, slip, method, n_slices, tol=tol, fos_fn=fos_fn)
         if fos < best_fos:
             best_fos = fos
             best_r = r
 
-    # Golden-section refinement around best_r
+    # Golden-section refinement around best_r. Each step's new interior
+    # point is the previous step's other one (golden ** 2 = 1 - golden), so
+    # its FOS is taken from `scored` instead of being solved again (GM-87:
+    # the same brackets and result, about 14 fewer solves per centre).
     golden = (math.sqrt(5) - 1) / 2
     margin = (r_max - r_min) / n_radii
     a = max(r_min, best_r - 2 * margin)
     b = min(r_max, best_r + 2 * margin)
+    scored = {}
+
+    def fos_at(r):
+        key = round(r, 9)
+        if key not in scored:
+            slip = CircularSlipSurface(xc, yc, r)
+            ok = _check_entry_exit(geom, slip, x_entry_range, x_exit_range)
+            if ok and admissible is not None:
+                ok = admissible(slip)
+            scored[key] = _compute_fos(geom, slip, method, n_slices, tol=tol,
+                                       fos_fn=fos_fn) if ok else _FOS_MAX
+        return scored[key]
 
     for _ in range(20):
         if b - a < 0.01:
             break
         r1 = b - golden * (b - a)
         r2 = a + golden * (b - a)
-
-        slip1 = CircularSlipSurface(xc, yc, r1)
-        slip2 = CircularSlipSurface(xc, yc, r2)
-
-        ok1 = _check_entry_exit(geom, slip1, x_entry_range, x_exit_range)
-        ok2 = _check_entry_exit(geom, slip2, x_entry_range, x_exit_range)
-
-        f1 = _compute_fos(geom, slip1, method, n_slices, tol=tol,
-                          fos_fn=fos_fn) if ok1 else _FOS_MAX
-        f2 = _compute_fos(geom, slip2, method, n_slices, tol=tol,
-                          fos_fn=fos_fn) if ok2 else _FOS_MAX
+        f1 = fos_at(r1)
+        f2 = fos_at(r2)
 
         if f1 < f2:
             b = r2
@@ -507,6 +518,143 @@ def optimize_radius(geom: SlopeGeometry,
     return (best_r, best_fos)
 
 
+# ── Local refinement of the centre grid (GM-87) ──────────────────────────
+#
+# A grid of centres finds the critical circle only to within its spacing.
+# The automatic grid spans the whole profile, so on a long profile it is
+# coarse: Duncan Ex 1 (2:1 slope in clay, firm base H below the toe) drawn
+# with 4 H of level ground each side has its 10 x 10 centres 1.1 H apart in
+# x, and the best of them gave 0.739 where Taylor's critical circle (FHWA
+# NHI-06-088 Fig. 6-15, after Taylor 1948), whose centre falls between two
+# of them, gives 0.705. The radius was never the problem: at each centre
+# `optimize_radius` already finds the circle tangent to the firm base. So
+# the grid's lowest centres are refined by a compass (pattern) search on the
+# centre: from the grid point, the four centres half a grid step away in x
+# and in y are scored (each with its own optimised radius, exactly as on the
+# grid); the search moves to any lower one, and halves the step when none
+# is lower, down to a sixteenth of the grid spacing. It stays inside the
+# grid's own centre ranges, so caller-given ranges are honoured.
+_REFINE_LEVELS = 4            # steps of 1/2, 1/4, 1/8 and 1/16 of the grid spacing
+_REFINE_STARTS = 3            # grid minima refined, at most ...
+_REFINE_WITHIN = 0.10         # ... those within 10 % of the lowest grid FOS
+_REFINE_MAX_CENTRES = 40      # centres scored from one start, at most
+# Spencer / Morgenstern-Price / GLE walk with Bishop (the same critical
+# circles to about 1 % and some 30 times cheaper, as the toe-circle family
+# does) and re-optimise the radius at each walk's end with the method
+# itself; the method's own FOS decides. Not where supports are modelled:
+# Bishop counts a support only through its moment about the centre (GM-59),
+# and the two methods' critical circles part (Slide2 #85, anchored: the
+# Bishop walk found nothing below Spencer's grid minimum 1.581, Spencer's
+# own walk 1.574), so a reinforced model walks with the method itself.
+_REFINE_SCREENED = ("spencer", "morgenstern_price", "gle")
+_REFINE_SCREEN = True
+# A caller-supplied per-surface solve (rapid drawdown: two or three GLE
+# solves a surface) refines its lowest grid centre only, three levels, at
+# most 12 centres.
+_REFINE_FOS_FN = (1, 3, 12)          # (starts, levels, centres per start)
+
+
+def _dips_below_base(geom: SlopeGeometry, slip, n_slices: int) -> bool:
+    """True when a slice of the trial surface would have its base below the
+    deepest soil layer.
+
+    `build_slices` refuses a surface with such a slice inside the slip mass,
+    but drops up to ``max(2, 3 % of n_slices)`` of them at its ends as
+    tangential slivers (SS-5). Where the toe sits on the base (Slide2 #85) a
+    circle dipping just under the base then sheds its toe slices and scores
+    low: #85 without its support, Spencer 0.867 on a circle refused at 90
+    slices, against 0.883 for the base-tangent toe circle. The refinement
+    walk keeps to circles that at most touch the base, as the toe-circle
+    family does.
+    """
+    if getattr(slip, "is_circular", False):
+        # No layer bottom anywhere is higher than this, so a circle whose
+        # lowest point is not below it cannot dip under the base.
+        top_of_base = min(
+            max(z for _, z in L.bottom_boundary_points)
+            if L.bottom_boundary_points else L.bottom_elevation
+            for L in geom.soil_layers)
+        if slip.yc - slip.radius >= top_of_base:
+            return False
+    try:
+        x_en, x_ex = slip.find_entry_exit(geom)
+    except ValueError:
+        return False                  # _compute_fos rejects it anyway
+    dx = (x_ex - x_en) / n_slices
+    for i in range(n_slices):
+        x = x_en + (i + 0.5) * dx
+        z = slip.slip_elevation_at(x)
+        if z is None or geom.ground_elevation_at(x) - z <= 0:
+            continue
+        if (geom.layer_at_point(x, z) is None
+                and z < min(L.bottom_at(x) for L in geom.soil_layers)):
+            return True
+    return False
+
+
+def _grid_minima(fos, nx: int, ny: int) -> List[Tuple[float, int, int]]:
+    """(FOS, ix, iy) of the grid's local minima, lowest first: grid points
+    with no lower point among the eight around them, a minimum next to a
+    lower one being the same valley and left out."""
+    found = []
+    for ix in range(nx):
+        for iy in range(ny):
+            f = fos[ix][iy]
+            if f >= _FOS_MAX:
+                continue
+            if all(f <= fos[jx][jy]
+                   for jx in range(max(ix - 1, 0), min(ix + 2, nx))
+                   for jy in range(max(iy - 1, 0), min(iy + 2, ny))):
+                found.append((f, ix, iy))
+    found.sort()
+    out = []
+    for f, ix, iy in found:
+        if not any(abs(ix - jx) <= 1 and abs(iy - jy) <= 1
+                   for _, jx, jy in out):
+            out.append((f, ix, iy))
+    return out
+
+
+def _refine_centre(score, start, steps, bounds,
+                   max_centres: int = _REFINE_MAX_CENTRES,
+                   levels: int = _REFINE_LEVELS):
+    """Compass search on the circle centre from ``start`` = (FOS, xc, yc, R).
+
+    ``score(xc, yc)`` gives (R, FOS) of the centre's best circle. The four
+    centres ``steps`` = (hx, hy) away are tried, the last direction that
+    lowered the FOS first; the search moves to the first lower one and
+    halves the steps when none is lower (``levels`` levels). Centres are
+    kept inside ``bounds`` = ((x_lo, x_hi), (y_lo, y_hi)). Returns the
+    lowest (FOS, xc, yc, R) found.
+    """
+    (x_lo, x_hi), (y_lo, y_hi) = bounds
+    hx, hy = steps
+    best = start
+    dirs = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+    n = 0
+    for _ in range(levels):
+        moved = True
+        while moved:
+            moved = False
+            for k, (dx, dy) in enumerate(dirs):
+                xc = min(max(best[1] + dx * hx, x_lo), x_hi)
+                yc = min(max(best[2] + dy * hy, y_lo), y_hi)
+                if xc == best[1] and yc == best[2]:
+                    continue
+                if n >= max_centres:
+                    return best
+                n += 1
+                r, f = score(xc, yc)
+                if f < best[0]:
+                    best = (f, xc, yc, r)
+                    dirs.insert(0, dirs.pop(k))
+                    moved = True
+                    break
+        hx *= 0.5
+        hy *= 0.5
+    return best
+
+
 def grid_search(geom: SlopeGeometry,
                 x_range: Tuple[float, float],
                 y_range: Tuple[float, float],
@@ -518,8 +666,16 @@ def grid_search(geom: SlopeGeometry,
                 x_entry_range: Optional[Tuple[float, float]] = None,
                 x_exit_range: Optional[Tuple[float, float]] = None,
                 fos_fn: Optional[Callable] = None,
+                refine: bool = False,
                 ) -> SearchResult:
     """Grid search for the critical circular slip surface.
+
+    With ``refine`` the grid's lowest centres are then refined by a local
+    compass search on the centre (GM-87; see ``_refine_centre``), inside the
+    same centre ranges and entry/exit windows, on circles that at most touch
+    the bottom of the deepest layer (``_dips_below_base``); the centres it
+    scores are added to ``n_surfaces_evaluated``, and those scored with the
+    method itself to ``grid_fos``.
 
     Parameters
     ----------
@@ -541,6 +697,9 @@ def grid_search(geom: SlopeGeometry,
         Allowed entry x-coordinate range.
     x_exit_range : (float, float), optional
         Allowed exit x-coordinate range.
+    refine : bool
+        Refine the lowest grid centres locally (GM-87). Default False here;
+        ``search_critical_surface`` turns it on.
 
     Returns
     -------
@@ -555,31 +714,98 @@ def grid_search(geom: SlopeGeometry,
 
     x_lo, x_hi = x_range
     y_lo, y_hi = y_range
+    lattice = [[(_FOS_MAX, 0.0, 0.0, 0.0)] * ny for _ in range(nx)]
+
+    def score(xc, yc):
+        nonlocal n_evaluated
+        r_opt, fos_opt = optimize_radius(
+            geom, xc, yc, method=method, n_slices=n_slices, tol=tol,
+            x_entry_range=x_entry_range, x_exit_range=x_exit_range,
+            fos_fn=fos_fn,
+        )
+        n_evaluated += 1
+        grid_fos.append({
+            "xc": round(xc, 2),
+            "yc": round(yc, 2),
+            "R": round(r_opt, 2),
+            "FOS": round(fos_opt, 4),
+        })
+        return r_opt, fos_opt
 
     for ix in range(nx):
         xc = x_lo + (x_hi - x_lo) * ix / max(nx - 1, 1) if nx > 1 else (x_lo + x_hi) / 2
         for iy in range(ny):
             yc = y_lo + (y_hi - y_lo) * iy / max(ny - 1, 1) if ny > 1 else (y_lo + y_hi) / 2
 
-            r_opt, fos_opt = optimize_radius(
-                geom, xc, yc, method=method, n_slices=n_slices, tol=tol,
-                x_entry_range=x_entry_range, x_exit_range=x_exit_range,
-                fos_fn=fos_fn,
-            )
-            n_evaluated += 1
-
-            grid_fos.append({
-                "xc": round(xc, 2),
-                "yc": round(yc, 2),
-                "R": round(r_opt, 2),
-                "FOS": round(fos_opt, 4),
-            })
+            r_opt, fos_opt = score(xc, yc)
+            lattice[ix][iy] = (fos_opt, xc, yc, r_opt)
 
             if fos_opt < best_fos:
                 best_fos = fos_opt
                 best_xc = xc
                 best_yc = yc
                 best_r = r_opt
+
+    # Local refinement of the lowest grid centres (GM-87)
+    if refine and best_fos < _FOS_MAX:
+        steps = ((x_hi - x_lo) / max(nx - 1, 1) / 2.0,
+                 (y_hi - y_lo) / max(ny - 1, 1) / 2.0)
+        bounds = ((min(x_lo, x_hi), max(x_lo, x_hi)),
+                  (min(y_lo, y_hi), max(y_lo, y_hi)))
+        screen = (_REFINE_SCREEN and fos_fn is None
+                  and method in _REFINE_SCREENED
+                  and not _has_reinforcement(geom))
+        if fos_fn is None:
+            n_starts, levels, max_centres = (_REFINE_STARTS, _REFINE_LEVELS,
+                                             _REFINE_MAX_CENTRES)
+        else:
+            n_starts, levels, max_centres = _REFINE_FOS_FN
+
+        def admissible(slip):
+            return not _dips_below_base(geom, slip, n_slices)
+
+        def strict(xc, yc, m):
+            """(R, FOS) of the centre's best circle that at most touches
+            the base, scored with method ``m``; the method's own scores
+            go into grid_fos."""
+            nonlocal n_evaluated
+            n_evaluated += 1
+            r_opt, fos_opt = optimize_radius(
+                geom, xc, yc, method=m, n_slices=n_slices, tol=tol,
+                x_entry_range=x_entry_range, x_exit_range=x_exit_range,
+                fos_fn=fos_fn, admissible=admissible)
+            if m == method:
+                grid_fos.append({"xc": round(xc, 2), "yc": round(yc, 2),
+                                 "R": round(r_opt, 2),
+                                 "FOS": round(fos_opt, 4)})
+            return r_opt, fos_opt
+
+        walk_method = "bishop" if screen else method
+        seen = {}
+
+        def walk_score(xc, yc):
+            key = (round(xc, 6), round(yc, 6))
+            if key not in seen:
+                seen[key] = strict(xc, yc, walk_method)
+            return seen[key]
+
+        minima = _grid_minima([[p[0] for p in col] for col in lattice],
+                              nx, ny)
+        grid_best = best_fos
+        for f0, ix, iy in minima[:n_starts]:
+            if f0 > (1.0 + _REFINE_WITHIN) * grid_best:
+                break
+            _, x0, y0, _ = lattice[ix][iy]
+            r0, fs = walk_score(x0, y0)
+            f, xc, yc, r = _refine_centre(walk_score, (fs, x0, y0, r0), steps,
+                                          bounds, max_centres=max_centres,
+                                          levels=levels)
+            if screen:
+                if (xc, yc) == (x0, y0):
+                    continue
+                r, f = strict(xc, yc, method)
+            if f < best_fos:
+                best_fos, best_xc, best_yc, best_r = f, xc, yc, r
 
     # Build result for the critical surface
     critical = None

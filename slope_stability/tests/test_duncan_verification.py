@@ -15,6 +15,7 @@ References:
     Table 7.2: Comparison of factors of safety from different programs
 """
 
+import dataclasses
 import math
 import pytest
 
@@ -153,17 +154,22 @@ class TestDuncanExample1:
     # behind the crest and coming out 1.19 H beyond the toe (Taylor's nH).
     # ------------------------------------------------------------------
     TAYLOR_D2 = 0.706
+    TAYLOR_D3 = 0.679      # the clay 2 H below the toe (GM-63)
 
-    def _long_geom(self, flat):
+    def _long_geom(self, flat, depth_factor=2):
         """This class's model with `flat` x H of level ground beyond the
-        crest and beyond the toe (the class's own profile has 1 H)."""
+        crest and beyond the toe (the class's own profile has 1 H), the firm
+        base (depth_factor - 1) H below the toe."""
         g = self._geom()
         H = _ft_to_m(40)
         crest_x = flat * H
         toe_x = crest_x + 2 * H
         surface = [(0, H), (crest_x, H), (toe_x, 0), (toe_x + flat * H, 0)]
+        layers = [dataclasses.replace(
+            L, bottom_elevation=-(depth_factor - 1) * H)
+            for L in g.soil_layers]
         return SlopeGeometry(surface_points=surface,
-                             soil_layers=g.soil_layers), crest_x, toe_x
+                             soil_layers=layers), crest_x, toe_x
 
     def test_taylor_critical_circle(self):
         """Taylor's critical circle for D = 2 scored by Bishop and Spencer:
@@ -194,6 +200,42 @@ class TestDuncanExample1:
         assert c.yc - c.radius == pytest.approx(-H, abs=0.1)
         assert not any("end of the ground surface" in w
                        for w in result.warnings)
+
+    @pytest.mark.parametrize("flat, depth_factor, taylor", [
+        (4.0, 2, TAYLOR_D2), (5.0, 2, TAYLOR_D2),
+        (4.0, 3, TAYLOR_D3), (5.0, 3, TAYLOR_D3)])
+    def test_default_search_finds_taylor_circle(self, flat, depth_factor,
+                                                taylor):
+        """GM-87: the DEFAULT search on a long profile -- centre grid over
+        the whole profile, then refined -- finds Taylor's deep circle tangent
+        to the firm base (Bishop, 30 slices: 0.703 at D = 2, 0.676 at D = 3).
+        The grid alone, its centres 1.1-1.3 H apart, read 0.739 / 0.755 at
+        D = 2 and 0.690 / 0.696 at D = 3."""
+        H = _ft_to_m(40)
+        g, crest_x, _ = self._long_geom(flat, depth_factor)
+        result = search_critical_surface(g, method="bishop")
+        c = result.critical
+        assert result.governing_surface == "circular"
+        assert c.FOS == pytest.approx(taylor, rel=0.01)
+        assert c.yc - c.radius == pytest.approx(-(depth_factor - 1) * H,
+                                                abs=0.1)
+        assert not result.warnings
+        if depth_factor == 2:      # Taylor's centre: 1.0 H in front of the crest
+            assert c.xc - crest_x == pytest.approx(H, abs=0.1 * H)
+
+    def test_unrefined_grid_misses_taylor_circle(self):
+        """refine=False is the grid alone: 0.739 at D = 2 on 4 H each side,
+        +5 % against Taylor -- the unsafe-side reading GM-87 fixed."""
+        g, _, _ = self._long_geom(4.0)
+        result = search_critical_surface(g, method="bishop", refine=False)
+        assert result.critical.FOS > 1.04 * self.TAYLOR_D2
+
+    def test_spencer_default_search_finds_taylor_circle(self):
+        """The rigorous methods refine with a Bishop walk and re-score with
+        the method itself: Spencer gives the same circle (phi = 0)."""
+        g, _, _ = self._long_geom(4.0)
+        result = search_critical_surface(g, method="spencer")
+        assert result.critical.FOS == pytest.approx(self.TAYLOR_D2, rel=0.01)
 
     def test_short_profile_reads_high_and_warns(self):
         """This class's profile ends 1 H beyond the crest and the toe, short

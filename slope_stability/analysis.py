@@ -516,10 +516,17 @@ def search_critical_surface(
     seed: Optional[int] = None,
     toe_circles: bool = True,
     infinite_slope: bool = True,
+    refine: bool = True,
 ) -> SearchResult:
     """Search for the critical slip surface (minimum FOS).
 
     Auto-computes search bounds from slope geometry if not provided.
+
+    A circular (centre-grid) search then refines its lowest grid centres by
+    a local compass search on the centre, each centre with its own optimised
+    radius, inside the same centre ranges (GM-87): the automatic grid spans
+    the whole profile, so on a long profile its spacing alone can miss the
+    critical circle by several per cent.
 
     After the main search, two supplementary surface families are scored
     with the same method and the lowest surface is reported (see
@@ -569,6 +576,9 @@ def search_critical_surface(
     infinite_slope : bool
         Score shallow planar surfaces on faces of cohesionless soil.
         Default True.
+    refine : bool
+        Refine the lowest centres of the circular grid by a local compass
+        search on the centre (circular only). Default True.
 
     Returns
     -------
@@ -634,7 +644,7 @@ def search_critical_surface(
 
     result = grid_search(geom, x_range, y_range, nx, ny, method, n_slices,
                          tol=tol, x_entry_range=x_entry_range,
-                         x_exit_range=x_exit_range)
+                         x_exit_range=x_exit_range, refine=refine)
 
     return _finish(result, CIRCULAR, grid_used=(x_range, y_range))
 
