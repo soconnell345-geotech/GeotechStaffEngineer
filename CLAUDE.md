@@ -192,8 +192,19 @@ Key conventions:
     - DIGGS writer and reader fixes (d81c1f8); shipped code free of field
       post names, with a guard (accfc92); CI's five months-old failures and
       the workflow (9152c66).
+    - 2026-10-14/15 continued: OpenSees site response converged and pinned
+      to the OpenSees wiki's and docs' own examples (43be40e, 20c11b8,
+      72a2781); fem2d excavation dewatered by default with seepage under
+      the wall (743d40d); slope supports per Wright & Duncan, GLE with large
+      point loads, no silent fallback on a single surface (729c511,
+      5fc997e); log depths read off the drawn scale and records handed to
+      write_diggs as files (planlens 14dac18, 89df4e6, 76e8a56); cited
+      pages checked (08bd8d4); earlier turns' work reaches the helpers
+      (642bd36); model request time limits (86879e8); the launcher's
+      Prompter-key option and lost-app helpers (ca0795e); CI green on master
+      for the first time in months (INF-07).
     Open next: the Foundry brief that measures all of this
-    (EV-13, DR-05).
+    (EV-13, DR-05; the owner holds the wheels).
 
   Pickup: `HANDOFF.md` §0a-current, "Where things stand".
 - **5.32.1 RELEASED 2026-10-08 (tag `v5.32.1`, branch `release/5.32.1`,
