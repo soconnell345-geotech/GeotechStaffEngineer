@@ -141,6 +141,73 @@ class TestDuncanExample1:
         except ValueError:
             pytest.skip("Circle does not intersect slope")
 
+    # ------------------------------------------------------------------
+    # Taylor's chart (GM-63). This model's firm base is H below the toe,
+    # depth factor D = 2. Taylor (1948), FHWA NHI-06-088 Fig. 6-15 (p. 6-28):
+    # for phi = 0 and beta = 26.6 deg the critical circle passes below the
+    # toe, tangent to the firm base, with stability number cd/(gamma H)
+    # about 0.170 at D = 2 (0.166 at 22.5 deg, 0.172 at 30 deg). Here
+    # cu/(gamma H) = 0.1200, so F = 0.1200 / 0.170 = 0.706. An independent
+    # optimisation of phi = 0 circles gives N = 0.1700 with the centre
+    # 1.0 H in front of the crest and 1.91 H above the toe, entering 1.76 H
+    # behind the crest and coming out 1.19 H beyond the toe (Taylor's nH).
+    # ------------------------------------------------------------------
+    TAYLOR_D2 = 0.706
+
+    def _long_geom(self, flat):
+        """This class's model with `flat` x H of level ground beyond the
+        crest and beyond the toe (the class's own profile has 1 H)."""
+        g = self._geom()
+        H = _ft_to_m(40)
+        crest_x = flat * H
+        toe_x = crest_x + 2 * H
+        surface = [(0, H), (crest_x, H), (toe_x, 0), (toe_x + flat * H, 0)]
+        return SlopeGeometry(surface_points=surface,
+                             soil_layers=g.soil_layers), crest_x, toe_x
+
+    def test_taylor_critical_circle(self):
+        """Taylor's critical circle for D = 2 scored by Bishop and Spencer:
+        0.706, the chart's value (phi = 0: every method gives the circle's
+        exact moment-equilibrium FOS)."""
+        H = _ft_to_m(40)
+        g, crest_x, _ = self._long_geom(3.0)
+        yc = 1.908 * H
+        slip = CircularSlipSurface(xc=crest_x + 1.0 * H, yc=yc,
+                                   radius=yc + H - 1e-6)
+        slices = build_slices(g, slip, 60)
+        assert bishop_fos(slices, slip) == pytest.approx(self.TAYLOR_D2,
+                                                         rel=0.005)
+        assert spencer_fos(slices, slip)[0] == pytest.approx(
+            self.TAYLOR_D2, rel=0.005)
+
+    def test_search_finds_base_circle_on_long_profile(self):
+        """With 4 H of level ground each side and the centre grid over the
+        slope, the search finds Taylor's circle tangent to the firm base
+        (0.705 measured) and gives no profile-end warning."""
+        H = _ft_to_m(40)
+        g, crest_x, toe_x = self._long_geom(4.0)
+        result = search_critical_surface(
+            g, x_range=(crest_x, toe_x), y_range=(H + 1, 4 * H),
+            method="bishop")
+        c = result.critical
+        assert c.FOS == pytest.approx(self.TAYLOR_D2, rel=0.01)
+        assert c.yc - c.radius == pytest.approx(-H, abs=0.1)
+        assert not any("end of the ground surface" in w
+                       for w in result.warnings)
+
+    def test_short_profile_reads_high_and_warns(self):
+        """This class's profile ends 1 H beyond the crest and the toe, short
+        of Taylor's circle (1.76 H behind the crest, 1.19 H beyond the toe):
+        the best circle that fits runs end to end at 0.727 (+3 % against
+        0.706; with the clay 2 H deep, D = 3, the same profile gives 0.727
+        against Taylor's 0.679). The search says the profile's end held the
+        circle back and gives the lower FOS of a circle past the end."""
+        result = search_critical_surface(self._geom(), method="bishop")
+        assert result.critical.FOS > 1.02 * self.TAYLOR_D2
+        w = [w for w in result.warnings if "end of the ground surface" in w]
+        assert len(w) == 1
+        assert "Fig. 6-15" in w[0]
+
 
 # ============================================================================
 # Example 2: Cohesionless Slope (c'=0, phi only)

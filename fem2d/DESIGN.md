@@ -428,6 +428,23 @@ search range that did not bracket failure. `mesh_check=True` also runs a
 mesh 1.5x finer each way, reports both (`result.mesh_check`) and warns when
 they differ by more than 5 %. Poisson's ratio 0.5 is refused.
 
+**Side boundaries over a deep undrained foundation (GM-63, 2026-10-15).**
+The side boundaries are rollers, on which the soil slides without
+resistance. Over undrained (phi = 0) soil Taylor's critical circle passes
+below the toe, tangent to the firm base, and reaches about 1.5-1.8 times
+the depth of that soil below the toe behind the crest and 1.2-1.4 times it
+beyond the toe (FHWA NHI-06-088 Figs. 6-14, 6-15, after Taylor 1948). A
+model narrower than that fails along the rollers and reads low; the result
+warns when the level ground on either side is under 1.5 times that depth,
+and asks for twice it. Duncan Ex 1 at D = 3: 0.645 with the default
+x_extend (0.6 H added each side) against 0.668 with 4 H each side and
+Taylor's 0.679 (VALIDATION.md §11, where limit equilibrium on the same
+short profile reads 0.72 because no circle may pass its ends). Undrained
+layers should carry nu = 0.49: at nu = 0.35 gravity yields the soil at
+depth at every trial, and on the finest mesh tried (100x30) the 1000
+iterations read a trial that settles at 4100 as failure (0.627 against
+0.662).
+
 **Volumetric locking (GM-06, 2026-10-14).** The T6 / 3-point FOS does not
 lock as ν → 0.5: Griffiths & Lane Ex 4 (undrained, D = 2) gives 1.419 at
 ν = 0.30, 0.49, 0.495, 0.499 and 0.4999 alike (published 1.47; limit

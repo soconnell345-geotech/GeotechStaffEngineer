@@ -158,7 +158,10 @@ as collapse while the deep foundation yields under gravity at nu = 0.30
 A B-bar (mean-dilatation T6/P0) variant was measured as the planned remedy
 and gave 1.33 here (Prandtl Nc 4.52 against 5.14): not adopted
 (UPGRADE_PLAN.md). (* the test asserts the two agree and lie within
-1.38-1.52.)
+1.38-1.52.) Most of the -3.5 % is the model's width (§11, GM-63): Taylor's
+D = 2 circle enters 1.76 H behind the crest, the model has 1.2 H, and the
+side rollers let the soil slide freely; with 2 H the same slope reads 1 %
+below Taylor (Duncan Ex 1 at D = 2, scaled).
 
 ## 3. Prandtl bearing capacity — the element-quality centerpiece
 
@@ -631,6 +634,95 @@ seepage; the centre line 5 m from the wall confines the flow in front, so
 it is closer to the no-seepage value than in the wide benchmark). Tests:
 `fem2d/tests/test_excavation_dewatered.py`.
 
+## 11. Duncan Ex 1 over a deep foundation: SRM, limit equilibrium and Taylor's chart (GM-63, 2026-10-15)
+
+Duncan, Wright & Brandon Ex 1: 2:1 slope (26.6 deg), H = 12.19 m, phi = 0,
+su = 28.73 kPa, gamma = 19.64 kN/m3, so su/(gamma H) = 0.1200. The trend
+test's model (`test_srm_duncan.py`) has 1 H of level ground beyond the
+crest and the toe and the default depth, 2 H below the toe (depth factor
+D = 3). It gave SRM 0.648 on every mesh against limit equilibrium 0.719 /
+0.722 (circle grid 20x20 / entry-exit), a 10 % gap.
+
+**The reference.** Taylor's chart for phi = 0 (FHWA NHI-06-088 Figs. 6-14
+and 6-15, pp. 6-27/6-28, after Taylor 1948): on slopes flatter than 53 deg
+the critical circle passes below the toe, tangent to the firm base, and
+comes out nH beyond the toe. An independent optimisation of phi = 0 circles
+(the exact moment-equilibrium FOS of each circle; no slices) reproduces the
+chart: N = cd/(gamma H) = 0.1724 at 30 deg and 0.1659 at 22.5 deg for D = 2
+(chart about 0.172 and 0.166), 0.1803 at D = 6 (the D = infinity line,
+0.181). For this slope:
+
+| D | N | F = 0.1200 / N | enters behind crest | n (beyond toe) |
+|---|---|---|---|---|
+| 1 (base at the toe) | 0.1237 | 0.970 | 0.75 H | — |
+| 1.1 (base 1.2 m below) | 0.1359 | 0.883 | 0.8 H | — |
+| 2 | 0.1700 | 0.706 | 1.76 H | 1.19 |
+| 3 | 0.1768 | 0.679 | 3.18 H | 2.69 |
+| infinity | 0.181 | 0.663 | | |
+
+slope_stability scores Taylor's D = 2 and D = 3 circles at 0.706 and 0.678
+(Bishop = Spencer for phi = 0). D = 2 is GL99 Ex 4's case: Taylor 1.47 =
+0.25 / 0.170.
+
+**Neither solver is off; both models are narrower than Taylor's circle.**
+
+| Model (D = 3 unless noted) | Limit equilibrium | SRM |
+|---|---|---|
+| Ground profile 1 H beyond crest and toe (trend test) | 0.727 default grid, 0.719 grid 20x20, 0.722 entry-exit: the circle runs from one end of the profile to the other | — |
+| Same, with the default x_extend (rollers 1.6 H out) | 0.697-0.705 on that outline | 0.641 (15x8, tol 0.05), 0.645 (30x15) |
+| Level ground 3 H each side | | 0.660 (44x15) |
+| Level ground 4 H each side | 0.676 (centre grid over the slope; entry-exit 0.676); 0.690 default grid | 0.668 (50x15), 0.660 (75x22), 0.662 (100x30, nu 0.49) |
+| Level ground 5 H each side | | 0.668 (60x15) |
+| D = 2, level ground 4 H each side | 0.705 (centre grid over the slope); 0.739 default grid | 0.699 (50x10) |
+| D = 2, GL99 Ex 4's outline (1.2 H behind the crest, 2.4 H beyond the toe) | 1.486 (Ex 4) | 0.676 (= Ex 4's 1.419 scaled, §2) |
+| D = 2, 2 H behind the crest, 2.4 H beyond the toe | | 0.699 |
+
+- **Limit equilibrium, too high (unsafe side).** No trial surface can pass
+  the end of the ground profile, and Taylor's circle needs 3.2 H behind
+  the crest and 2.7 H beyond the toe; the best circle within 1 H is
+  0.72-0.73. On a long profile the search finds the circle (0.676). Since
+  GM-63 the search checks a governing circle that ends near an end of the
+  profile against circles on the ground carried on level past the end and
+  warns, giving their FOS (Duncan Ex 1's profile: 0.681 against 0.727;
+  slope_stability `_profile_end_warning`). The default centre grid spans
+  the whole profile, so on a long profile it is coarse: 0.690 and 0.739
+  above (a follow-up).
+- **SRM, a little low (safe side).** The side boundaries are rollers, on
+  which the soil slides without resistance. With them 1.6 H from the
+  crest and the toe the mechanism runs down and up them: 0.645, 3.5 %
+  below the wide model. The FOS stops changing once the level ground
+  each side is about twice the depth of clay below the toe (D = 3: 0.8,
+  1.5, 2 and 2.5 times give 0.645, 0.660, 0.668, 0.668; D = 2: 1.2 times
+  behind the crest reads 3.3 % low, 2 times not at all). The result now
+  warns when either side is under 1.5 times that depth over undrained
+  soil (`_side_boundary_warnings`). GL99 Ex 4 (§2, 1.419 against 1.47) is
+  the same case: its 1.2 H behind the crest cuts Taylor's D = 2 circle,
+  which enters 1.76 H back.
+- **SRM below Taylor's circle on the wide model** (0.660-0.668 against
+  0.679, 1.6-2.8 %). For phi = 0 a circle is a rigid rotation, so Taylor's
+  value is an upper bound; the finite-element mechanism is not a circle.
+  The same holds at D = infinity, where Taylor's 0.181 is 1/5.52, the
+  circular-arc bearing capacity factor, against Prandtl's 2 + pi = 5.14
+  (§3). Not a defect.
+- **Failure criterion.** 1000 against 4000 iterations per load step on the
+  4 H model (50x15): 0.668 both (GL99 Ex 1: 1.334 against 1.328 at 5000).
+  On the finest mesh at nu = 0.35 it is not enough: 100x30 gave 0.627, but
+  a trial at SRF 0.645 given 5000 iterations settles (residual 3.3e-2 →
+  1.2e-3, growth ratio 0.096 at 4100). Under level ground the gravity
+  stresses (K0 = nu/(1 - nu) = 0.54) exceed the reduced undrained
+  strength below about 10 m, so that soil yields at every trial and the
+  iterations converge slowly. At nu = 0.49 (the undrained value) the
+  model gives 0.660 / 0.660 / 0.662 on 50x15 / 75x22 / 100x30. The
+  `analyze_slope_srm` docstring asks for nu = 0.49 on undrained layers;
+  the criterion itself (a trial at the ceiling with its residual still
+  falling and a growth ratio just over 0.1) is a follow-up.
+
+Reproduction: `fem2d/tests/test_srm_duncan.py::TestSRMDuncanExample1`
+(the wide and the narrow model, slow) and
+`slope_stability/tests/test_duncan_verification.py::TestDuncanExample1`
+(Taylor's circle, the search on a long profile, the warning on the short
+one).
+
 ## 6. Performance
 
 Wall-clock on the dev machine, single process, including mesh build and
@@ -697,11 +789,25 @@ the full suite (461 tests incl. slow SRM, 2026-10-14) runs in ~14 min.
   30x15 / 45x24 against 1.68 (2.475 on 15x8 before). The result warns
   and quotes tan phi' / tan beta when the surface soil has c' <= 0.5 kPa
   and the slope is dry.
-- **Over a firm base**: an undrained slope with a firm layer just below
-  the toe fails along the base, not on a circle. Compare with a
-  non-circular limit-equilibrium search: Duncan Ex 1 (cu 28.7 kPa, 12.2 m
-  2:1, base 1.2 m below the toe): SRM 0.883 = Spencer non-circular 0.883;
-  circles 0.969 (published circles 0.95-1.08).
+- **Over a firm base**: an undrained slope fails on Taylor's circle
+  tangent to the firm base, which runs along it. Duncan Ex 1 (cu 28.7 kPa,
+  12.2 m 2:1, base 1.2 m below the toe): SRM 0.883 = slope_stability's
+  circles 0.883 = Spencer non-circular 0.883 = Taylor's circle at
+  D = 1.1 (0.883). (Recorded here before as "circles 0.969": that is
+  the circle with the base at the toe, D = 1, 0.970; published circles
+  0.95-1.08.)
+- **Side boundaries over a deep undrained foundation** (§11): the rollers
+  let the soil slide freely, so a model whose level ground each side is
+  shorter than about twice the depth of clay below the toe cuts Taylor's
+  deep circle and reads low (Duncan Ex 1, D = 3: 0.645 against 0.668;
+  GL99 Ex 4's outline 3.5 % below Taylor). The result warns below 1.5
+  times that depth. The default x_extend adds only 0.3 x_extend each
+  side, 0.6 H at the default depth.
+- **Undrained layers at nu well below 0.5 on fine meshes** (§11): gravity
+  yields the soil at depth under level ground at every trial; the
+  iterations then converge slowly and the iteration ceiling can read a
+  trial that would settle as failure (Duncan Ex 1, 100x30: 0.627 at
+  nu = 0.35, 0.662 at 0.49). Use nu = 0.49 for undrained layers.
 - **Staged construction**: `analyze_staged(max_iter=100)` is low for a
   plastic stage under the constant-stiffness iteration (a footing at 260
   kPa on c' 20 kPa, phi' 25 deg converged with 500 and not with 100);

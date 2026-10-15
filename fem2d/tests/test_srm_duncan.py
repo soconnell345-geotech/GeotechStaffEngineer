@@ -65,15 +65,32 @@ class TestSRMDuncanExample1:
 
     SRM reduces c only (phi=0), so this is the ideal SRM test case.
 
-    The published values are circles over a firm base at the toe
-    (slope_stability's circle search with the base 1.2 m below the toe:
-    0.969). Over such a base the critical surface is NOT a circle: it runs
-    along the base, and the non-circular search (Spencer, entry-exit) gives
-    0.883 — the SRM value. With the default 2H-deep foundation used by the
-    trend test the circle search gives 0.719 and the SRM 0.648 on every
-    mesh from 15x8 to 45x24. Before 2026-10-14 this test compared the
-    deep model with the shallow-base publication and passed only because
-    the slope mesher's soil-filled notch propped the slope.
+    The firm base sets the answer: Taylor's chart (FHWA NHI-06-088
+    Figs. 6-14 and 6-15, after Taylor 1948) has the critical circle below
+    the toe, tangent to the firm base, and cu/(gamma H) = 0.1200 gives
+    0.970 with the base at the toe (D = 1, the published circles'
+    case), 0.883 with it 1.2 m below (D = 1.1), 0.706 at D = 2 and 0.679
+    at D = 3 (independent optimisation of phi = 0 circles, which
+    reproduces the chart's 22.5 and 30 deg curves; slope_stability scores
+    those circles 0.706 / 0.678). With the base 1.2 m below the toe the
+    SRM, slope_stability's circle search and its non-circular search all
+    give 0.883.
+
+    GM-63 (2026-10-15): with the default 2H-deep foundation (D = 3) the
+    trend test's model gave SRM 0.648 against limit equilibrium 0.719 /
+    0.722. Neither solver is off; each model is narrower than Taylor's
+    circle, which enters 3.2 H behind the crest and comes out 2.7 H
+    beyond the toe. The ground profile ends 1 H out, so no circle the
+    limit-equilibrium search may try reaches it (0.72-0.73, too high;
+    the search now says so). The SRM's side boundaries sit 1.6 H out
+    (default x_extend), rollers on which the soil slides freely (0.645,
+    low; the result now says so). With 4 H of level ground each side:
+    SRM 0.668 (0.660 on finer meshes), limit equilibrium 0.676, Taylor
+    0.679. The SRM stays a little below the circle, which for phi = 0 is
+    an upper bound (fem2d/VALIDATION.md section 11). Before 2026-10-14
+    this test compared the deep model with the shallow-base publication
+    and passed only because the slope mesher's soil-filled notch propped
+    the slope.
     """
 
     H = _ft_to_m(40)  # 12.19 m
@@ -100,19 +117,62 @@ class TestSRMDuncanExample1:
         }
 
     def test_undrained_clay_fos_range(self):
-        """Firm base 1.2 m below the toe: SRM within 3 % of the
-        non-circular limit-equilibrium value 0.883, below the circles."""
+        """Firm base 1.2 m below the toe: SRM within 3 % of 0.883, the
+        value of Taylor's circle tangent to the base and of
+        slope_stability's circle and non-circular searches, and below the
+        0.970 of the circles with the base at the toe."""
         layer = dict(self._layer(), bottom_elevation=-1.2)
         result = analyze_slope_srm(
             surface_points=self._surface(), soil_layers=[layer],
             depth=1.2, x_extend=0.0, nx=32, ny=12, srf_tol=0.02)
 
         print(f"\n  Example 1 (undrained clay): SRM FOS = {result.FOS:.3f}")
-        print("  Non-circular LE 0.883; circles 0.969; published circles "
-              "Fellenius 0.95-1.02, Bishop 1.00-1.08")
+        print("  LE circles and non-circular 0.883 (Taylor D = 1.1); base at "
+              "the toe 0.970; published circles Fellenius 0.95-1.02, "
+              "Bishop 1.00-1.08")
         assert result.FOS is not None, "SRM did not produce a FOS"
         assert abs(result.FOS - 0.883) / 0.883 < 0.03
         assert result.FOS < 0.969
+        # 12.2 m of level ground each side is 10 times the 1.2 m of clay
+        # below the toe: no side-boundary warning
+        assert not any("rollers" in w for w in result.warnings)
+
+    # Taylor's chart for this slope at D = 3 (24.4 m of clay below the
+    # toe): FHWA NHI-06-088 Fig. 6-15 cd/(gamma H) ~0.177 between the 22.5
+    # and 30 deg curves; independent phi = 0 circle optimisation 0.1768,
+    # so F = 0.1200 / 0.1768 = 0.679 (GM-63).
+    TAYLOR_D3 = 0.679
+
+    def test_deep_foundation_wide_model_vs_taylor(self):
+        """GM-63. D = 3 with 4 H of level ground each side (Taylor's circle
+        enters 3.2 H behind the crest, comes out 2.7 H beyond the toe): the
+        SRM sits just below Taylor's circle, an upper bound for phi = 0
+        (0.668 measured on 50x15, 0.660 on 75x22; slope_stability's search
+        over the same profile 0.676), and gives no side-boundary warning."""
+        H = self.H
+        surf = [(0, H), (4 * H, H), (6 * H, 0), (10 * H, 0)]
+        layer = dict(self._layer(), bottom_elevation=-2 * H)
+        result = analyze_slope_srm(
+            surface_points=surf, soil_layers=[layer], depth=2 * H,
+            x_extend=0.0, nx=50, ny=15, srf_tol=0.01)
+        print(f"\n  Example 1, D = 3, 4H each side: SRM {result.FOS:.3f} "
+              f"(Taylor {self.TAYLOR_D3})")
+        assert 0.96 * self.TAYLOR_D3 < result.FOS < self.TAYLOR_D3
+        assert not any("rollers" in w for w in result.warnings)
+
+    def test_deep_foundation_narrow_model_reads_low_and_warns(self):
+        """GM-63. The trend test's model (1 H of level ground each side,
+        default depth 2 H and x_extend: rollers 19.5 m from the crest and
+        the toe) cuts Taylor's circle: 0.645 measured, about 3.5 % below
+        the 4 H-wide model, and the result says why."""
+        result = analyze_slope_srm(
+            surface_points=self._surface(), soil_layers=[self._layer()],
+            nx=30, ny=15, srf_tol=0.01)
+        print(f"\n  Example 1, default model: SRM {result.FOS:.3f}")
+        assert result.FOS < 0.97 * self.TAYLOR_D3
+        w = [w for w in result.warnings if "rollers" in w]
+        assert len(w) == 1
+        assert "24.4 m below the toe" in w[0] and "Fig" in w[0]
 
     def test_srm_vs_bishop_trend_ex1(self):
         """SRM FOS increases when cohesion increases (same direction as LE)."""

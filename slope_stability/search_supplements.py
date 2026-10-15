@@ -33,8 +33,18 @@ every cohesionless face, and `warnings` say plainly where the search cannot
 be sure. Explicit (caller-given) entry/exit windows and centre ranges are
 honoured; the automatic windows are a heuristic and do not restrict the
 supplementary families.
+
+No trial surface can pass the end of the ground profile, so a governing
+circle near an end is also checked against circles about the same centre
+on the ground carried on level past the end (`_profile_end_warning`, GM-63).
+Duncan Ex 1 (12.2 m 2:1 slope in clay, su 28.7 kPa, 24.4 m of clay below
+the toe) drawn with 12.2 m of level ground beyond the crest and the toe:
+the search gives 0.727 from one end of the profile to the other, while
+Taylor's critical circle (FHWA NHI-06-088 Fig. 6-15, D = 3) enters 3.2 H
+behind the crest and comes out 2.7 H beyond the toe at 0.679.
 """
 
+import dataclasses
 import math
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -804,6 +814,96 @@ def _edge_warnings(geom, crit, windows, windows_auto, grid, grid_auto,
     return out
 
 
+# A governing circle whose entry or exit lies within this fraction of the
+# model width of an end of the ground profile is checked against circles
+# that carry on past the end (GM-63) ...
+_PROFILE_END_NEAR = 0.1
+# ... and the warning needs one at least this much lower.
+_PROFILE_END_DROP = 0.01
+
+
+def _extended_profile(geom: SlopeGeometry, length: float) -> SlopeGeometry:
+    """The same model with the ground carried on level for ``length`` past
+    each end of the surface profile."""
+    pts = list(geom.surface_points)
+    pts = ([(pts[0][0] - length, pts[0][1])] + pts
+           + [(pts[-1][0] + length, pts[-1][1])])
+    return dataclasses.replace(geom, surface_points=pts)
+
+
+def _profile_end_warning(geom, crit, method: str, n_slices: int, tol: float,
+                         fos_fn=None) -> Optional[str]:
+    """Warning when the governing circle is held back by the end of the
+    ground profile (GM-63).
+
+    No trial surface can enter or come out past the end of the profile, so
+    a circle that would is never tried. When the governing circle ends near
+    an end, circles about nine centres around its own (spacing a quarter of
+    its radius) are scored on the same model with the ground carried on
+    level past both ends; the warning is given only when one of them crosses
+    an end of the original profile and is at least 1 % lower. Rigorous
+    methods are scanned with Bishop and the best circle re-scored with the
+    method itself. A rapid-drawdown search (``fos_fn``) is scored with its
+    own FOS about its own centre only, as each of its surfaces costs a
+    multi-stage solve.
+    """
+    from slope_stability.search import optimize_radius, _compute_fos, _FOS_MAX
+    if crit is None or not getattr(crit, "is_circular", False):
+        return None
+    x_min, x_max = geom.x_range
+    width = max(x_max - x_min, 1e-9)
+    if (crit.x_entry - x_min > _PROFILE_END_NEAR * width
+            and x_max - crit.x_exit > _PROFILE_END_NEAR * width):
+        return None
+    ext = _extended_profile(geom, width)
+    scan = method
+    if fos_fn is None and method.lower() not in ("bishop", "fellenius"):
+        scan = "bishop"
+    step = 0.25 * crit.radius
+    offsets = ((0, 0),) if fos_fn is not None else \
+        tuple((i, j) for i in (-1, 0, 1) for j in (-1, 0, 1))
+    best = None
+    for i, j in offsets:
+        xc, yc = crit.xc + i * step, crit.yc + j * step
+        r, f = optimize_radius(ext, xc, yc, method=scan,
+                               n_slices=n_slices, tol=tol, fos_fn=fos_fn)
+        if f < _FOS_MAX and (best is None or f < best[0]):
+            best = (f, xc, yc, r)
+    if best is None:
+        return None
+    f, xc, yc, r = best
+    slip = CircularSlipSurface(xc, yc, r)
+    try:
+        x_in, x_out = slip.find_entry_exit(ext)
+    except ValueError:
+        return None
+    eps = 1e-6 * width
+    past = []
+    if x_in < x_min - eps:
+        past.append(f"the left end (x = {x_min:.2f})")
+    if x_out > x_max + eps:
+        past.append(f"the right end (x = {x_max:.2f})")
+    if not past:
+        return None
+    if scan != method:
+        f = _compute_fos(ext, slip, method, n_slices, tol=tol)
+        if f >= _FOS_MAX:
+            return None
+    if f > (1.0 - _PROFILE_END_DROP) * crit.FOS:
+        return None
+    return (
+        f"The critical circle ends near the end of the ground surface given "
+        f"(x = {x_min:.2f} to {x_max:.2f}), and no trial surface can pass "
+        f"the end of the profile. With the ground carried on level past "
+        f"{' and '.join(past)}, a circle crossing it gives FOS {f:.3f} "
+        f"against the reported {crit.FOS:.3f}. If the ground continues "
+        f"beyond the profile, extend it and search again. Undrained "
+        f"(phi = 0) slopes over a deep foundation reach farthest: the "
+        f"critical circle passes below the toe, tangent to the firm base, "
+        f"and comes out about 1.2 to 1.4 times the foundation's depth below "
+        f"the toe beyond it (Taylor's nH; FHWA NHI-06-088 Fig. 6-15).")
+
+
 def apply_supplements(geom: SlopeGeometry,
                       result: SearchResult,
                       *,
@@ -932,6 +1032,13 @@ def apply_supplements(geom: SlopeGeometry,
         given = (x_entry_range, x_exit_range)
         warnings_out.extend(_edge_warnings(
             geom, best, given, (False, False), None, grid_auto))
+
+    # A governing circle held back by the end of the ground profile (GM-63)
+    if best is not None and best_kind != INFINITE_SLOPE:
+        w = _profile_end_warning(geom, best, method, n_slices, tol,
+                                 fos_fn=fos_fn)
+        if w:
+            warnings_out.append(w)
 
     # The governing circle closed by a crack at its own centre's level, and
     # supports a moment-only method counts little of (GM-59).

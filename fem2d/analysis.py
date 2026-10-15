@@ -266,6 +266,14 @@ _SRM_MESH_CHECK_TOL_PCT = 5.0
 # larger c' makes a thin slide parallel to the face stronger than
 # tan(phi')/tan(beta)).
 _COHESIONLESS_C_KPA = 0.5
+# Undrained (phi = 0) soil below the toe: Taylor's chart has the critical
+# circle passing below the toe, tangent to the firm base, for phi_d = 0 on
+# slopes flatter than 53 deg (FHWA NHI-06-088 Fig. 6-14, Case 2) ...
+_SRM_UNDRAINED_PHI_DEG = 1.0
+# ... reaching about 1.5-1.8 times the depth of that soil below the toe
+# behind the crest and 1.2-1.4 times it beyond the toe (Fig. 6-15, nH).
+# Side boundaries closer than this many times that depth cut it (GM-63).
+_SRM_DEEP_MARGIN_FACTOR = 1.5
 
 
 def _element_size(corners):
@@ -354,6 +362,63 @@ def _cohesionless_face_warnings(surf, soil_layers, fos):
         f"{f_inf:.2f}."]
 
 
+def _side_boundary_warnings(nodes, elements, surf, z_toe, material_props):
+    """Undrained (phi = 0) soil below the toe with the side boundaries
+    inside the deep critical circle (GM-63).
+
+    Over a deep undrained foundation the critical circle passes below the
+    toe, tangent to the firm base (Taylor 1948; FHWA NHI-06-088 Figs. 6-14,
+    6-15): for a 2:1 slope it enters 1.76 / 1.59 times the depth of the clay
+    below the toe behind the crest and comes out 1.19 / 1.35 times it beyond
+    the toe at D = 2 / 3 (Taylor's nH). The side boundaries are rollers, on
+    which the soil slides without resistance, so a model narrower than that
+    fails along them: Duncan Ex 1 (12.2 m 2:1 slope, su 28.7 kPa, 24.4 m of
+    clay below the toe) 0.645 with 19.5 m beyond the crest and the toe
+    (0.8 times the depth), 0.660 with 1.5 times, 0.668 with 2 and 2.5 times
+    (Taylor's circle 0.679); at D = 2, 1.2 times behind the crest reads
+    3.3 % low and 2 times not at all (VALIDATION.md section 11).
+    """
+    corners = nodes[np.asarray(elements)[:, :3]]
+    cy = corners[:, :, 1].mean(axis=1)
+    phi = np.array([mp.get('phi', 0.0) for mp in material_props], float)
+    soft = (phi < _SRM_UNDRAINED_PHI_DEG) & (cy < z_toe)
+    if not np.any(soft):
+        return []
+    depth = z_toe - float(corners[soft][:, :, 1].min())
+    surf = np.asarray(surf, dtype=float)
+    z = surf[:, 1]
+    if depth <= 0 or np.ptp(z) <= 0:
+        return []
+    tol_z = 1e-6 * float(np.ptp(z))
+    off_left = np.where(np.abs(z - z[0]) > tol_z)[0]
+    off_right = np.where(np.abs(z - z[-1]) > tol_z)[0]
+    # the level ground at each end of the profile, plus any x_extend margin
+    left = float(surf[off_left[0] - 1, 0] - nodes[:, 0].min())
+    right = float(nodes[:, 0].max() - surf[off_right[-1] + 1, 0])
+    need = _SRM_DEEP_MARGIN_FACTOR * depth
+    if min(left, right) >= need:
+        return []
+    if z[0] > z[-1]:
+        sides = f"{left:.1f} m behind the crest and {right:.1f} m beyond the toe"
+    elif z[0] < z[-1]:
+        sides = f"{left:.1f} m beyond the toe and {right:.1f} m behind the crest"
+    else:
+        sides = f"{left:.1f} m on the left and {right:.1f} m on the right"
+    return [
+        f"Undrained (phi = 0) soil reaches {depth:.1f} m below the toe, but "
+        f"the model's level ground extends only {sides}. Over a deep "
+        "undrained foundation the critical circle passes below the toe, "
+        "tangent to the firm base (Taylor 1948; FHWA NHI-06-088 Figs. 6-14 "
+        "and 6-15): it enters about 1.5 to 1.8 times that depth behind the "
+        "crest and comes out 1.2 to 1.4 times it beyond the toe (Taylor's "
+        "nH). The side boundaries are rollers, on which the soil slides "
+        "without resistance, so where they cut that circle the factor of "
+        "safety comes out low (Duncan Ex 1, 24.4 m of clay below the toe: "
+        "0.645 with 19.5 m each side, 0.668 with 48.8 m; Taylor's circle "
+        f"0.679). Extend the level ground to about {2.0 * depth:.0f} m each "
+        "side (twice the depth below the toe) with x_extend or the profile."]
+
+
 def _srm_warnings(nodes, elements, z_toe, H, srm_result, srf_range):
     """Plain-language warnings for a strength-reduction result."""
     warnings = []
@@ -406,13 +471,21 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
     surface_points : list of (x, z) tuples — ground surface profile.
     soil_layers : list of dict — soil properties, each with:
         'name', 'bottom_elevation', 'E', 'nu', 'c', 'phi',
-        'psi' (optional, default 0), 'gamma'.
+        'psi' (optional, default 0), 'gamma'. For an undrained (phi = 0)
+        layer use nu = 0.49: with less, under level ground the gravity
+        stresses (K0 = nu/(1 - nu)) exceed the reduced strength at depth,
+        that soil yields at every trial and the iterations converge slowly;
+        on a fine mesh a trial that would settle can then reach max_iter
+        and count as failure (Duncan Ex 1, 100x30: 0.627 at nu = 0.35,
+        0.662 at 0.49; VALIDATION.md section 11).
     depth : float, optional — depth below lowest surface. Default 2×H.
     nx, ny : int — mesh density.
     x_extend : float, optional — extra flat margin added to BOTH sides
         (0.3x each). Default max(0.5*H, depth, 5). Pass 0 when the
         profile already includes adequate crest/toe margins
-        (recommended).
+        (recommended). Over undrained (phi = 0) soil the level ground
+        each side should reach about twice the depth of that soil below
+        the toe (Taylor's deep circle; the result warns when it does not).
     srf_tol : float — SRF bisection tolerance.
     n_load_steps : int — gravity increments.
     t : float
@@ -439,7 +512,8 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
     FEMResult with FOS, srf_history, srf_curve, fos_basis, warnings
     (plain-language: a slope covered by too few elements, a soil layer
     with no elements or thinner than its elements, a cohesionless dry face
-    whose FOS came out above tan(phi')/tan(beta), a search range that did
+    whose FOS came out above tan(phi')/tan(beta), side boundaries inside
+    the deep circle of an undrained foundation, a search range that did
     not bracket failure, a finer mesh that disagrees) and, with
     mesh_check, ``mesh_check``.
     """
@@ -465,6 +539,10 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
         # SRF). The old default (2x domain width) went the other way and
         # starved the slope face of elements at fixed nx, overpredicting
         # FOS by ~50%+ (verified against Bishop on a shared geometry).
+        # Only 0.3 x_extend goes on each side, though: 0.6 H at the default
+        # depth, short of a deep undrained circle, which reaches 1.2-1.8
+        # times the depth below the toe either side (Taylor's chart);
+        # _side_boundary_warnings says so (GM-63).
         x_extend = max(0.5 * H, depth, 5.0)
 
     # Generate mesh
@@ -530,6 +608,8 @@ def analyze_slope_srm(surface_points, soil_layers, depth=None,
     result.plastic_points = srm_result.get('plastic_gp')
     result.warnings.extend(_srm_warnings(
         nodes, elements, z_min_surf, H, srm_result, srf_range))
+    result.warnings.extend(_side_boundary_warnings(
+        nodes, elements, surf, z_min_surf, material_props))
     result.warnings.extend(_layer_warnings(
         nodes, elements, layer_ids, soil_layers, z_max_surf,
         float(nodes[:, 1].min()), elevation_layers=not layer_polylines))

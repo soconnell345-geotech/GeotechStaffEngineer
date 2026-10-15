@@ -29,7 +29,7 @@ range constraints.
 - `results.py` — SliceData, SlopeStabilityResult, SearchResult
 - `nails.py` — SoilNail, NailContribution (kept but disconnected from analysis pipeline)
 - `tests/test_slope_stability.py` — 83 tests (core + entry/exit limits + noncircular search)
-- `tests/test_duncan_verification.py` — 19 tests (Duncan §7.6-7.7 verification examples)
+- `tests/test_duncan_verification.py` — 22 tests (Duncan §7.6-7.7 verification examples; Ex 1 against Taylor's chart, GM-63)
 - `tests/test_nails.py` — 38 tests + 16 skipped (nail intersection/pullout/capacity)
 
 ## Public API
@@ -816,3 +816,31 @@ has no solution:
 
 All dimensions converted from imperial (ft/psf/pcf) to SI (m/kPa/kN/m³).
 Example 5 skipped (curved Mohr-Coulomb envelope not supported).
+
+**Ex 1 against Taylor's chart (GM-63, 2026-10-15).** For phi = 0 the
+critical circle passes below the toe, tangent to the firm base (FHWA
+NHI-06-088 Figs. 6-14 and 6-15, after Taylor 1948). su/(gamma H) = 0.1200
+gives 0.970 with the base at the toe (D = 1), 0.883 with it 1.2 m below,
+0.706 at D = 2 (this test's model) and 0.679 at D = 3; Taylor's D = 2
+circle enters 1.76 H behind the crest and comes out 1.19 H beyond the toe
+(nH), the D = 3 circle 3.18 H and 2.69 H. Bishop and Spencer score those
+circles 0.706 / 0.678. The test's profile ends 1 H beyond the crest and
+the toe, so no circle the search may try reaches them: 0.727 at D = 2 and
+at D = 3 (0.719 on a 20x20 grid, 0.722 entry-exit), where fem2d's SRM,
+whose rollers stand 1.6 H out, read 0.648 (fem2d VALIDATION.md §11). On a
+profile with 4 H of level ground each side and the centre grid over the
+slope, the search gives 0.705 (D = 2) and 0.676 (D = 3).
+
+Since then a governing circle that ends within a tenth of the model width
+of an end of the profile is checked against circles about nine nearby
+centres on the ground carried on level past the ends
+(`search_supplements._profile_end_warning`; Bishop scan, then the
+method's own FOS; a rapid-drawdown search scores its own centre only, with
+its own FOS); when one that crosses an end is at least 1 % lower the
+search warns and gives its FOS (Duncan Ex 1's profile: 0.709 at D = 2,
+0.681 at D = 3, against 0.727). The steep phi = 0 toe circle of GM-13 /
+V-054 (H 5 m at 45 deg, clay to 10 m below the toe, the profile starting
+at the toe) gets it too: 2.237 against 2.286, toward the published 2.16-2.2
+(FLAC, Taylor). Not checked: noncircular surfaces. The default centre grid
+spans the whole profile, so on a long profile it is coarse (D = 2, 4 H
+each side: 0.739 against 0.705; a follow-up of GM-63).
