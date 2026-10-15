@@ -92,6 +92,12 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     turned from the start. Both pages; page and region looks and tiles
     (BACKLOG VIS-01: the sheets Sol misread sideways in Foundry brief 5 have
     no text layer to say which way their lettering runs).
+``GEOTECH_REVIEW_KEPT_READINGS``
+    ``1`` offers ``kept_readings`` on the Document Review page (and to its
+    reading helper): the conversation's kept page readings, listed by
+    reference and returned whole by document and page, read-only. The
+    geotech page always offers it; on the review page it waits for the
+    suite (arm ``kept_readings``; BACKLOG TA-28).
 ``GEOTECH_CITED_PAGES``
     What the app does when an answer cites pages that no tool or helper read
     or looked at in the conversation (:mod:`funhouse_agent.cited_pages`; the
@@ -324,10 +330,12 @@ def describe() -> str:
 __all__ = ["AGENT_ENV", "VISION_TEXT_ENV", "VISION_STRUCTURED_ENV",
            "VISION_INLINE_ENV", "SWEEP_ENV", "FINDINGS_ENV", "OVERVIEW_ENV",
            "GEOMETRY_ENV", "DIGEST_ENV", "COVERAGE_ENV", "CHECKLIST_ENV",
-           "VISION_TURN_RETRY_ENV", "CITED_PAGES_ENV", "OVERVIEW_PAGES_ENV",
+           "VISION_TURN_RETRY_ENV", "KEPT_READINGS_ENV", "CITED_PAGES_ENV",
+           "OVERVIEW_PAGES_ENV",
            "DEFAULT_OVERVIEW_PAGES", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
            "lean_agent",
            "vision_text_context", "vision_structured", "vision_inline",
            "sweep", "findings", "overview", "geometry", "digest",
-           "coverage", "checklist", "vision_turn_retry", "cited_pages",
+           "coverage", "checklist", "vision_turn_retry",
+           "kept_readings_on_review_page", "cited_pages",
            "overview_pages", "switches", "describe"]

@@ -79,7 +79,7 @@ what the documents describe only where a switch is on, or where noted.
 | Who decides the next step | **the model** (tool-calling loop) | **the model** (tool-calling loop) | **Python** (a fixed sequence); models are called for bounded jobs inside it |
 | Built on | deepagents / LangChain `build_deep_agent` | the same builder (default), or a lean/minimal LangChain agent behind a switch | its own engine layer (`report_ingest/engine.py`), planlens, no agent framework |
 | Where it runs | web app, geotech page | web app, Document Review page (the default page) | notebook cell `score_on_cluster`, or as a sub-agent of the geotech agent (off by default) |
-| Its evaluation | `funhouse_agent/deep/eval_harness.py` (106 questions) | `funhouse_agent/review_eval/` (37 tasks, switchable arms) | `report_ingest/cluster_scoring.py` (stages against hand truth) |
+| Its evaluation | `funhouse_agent/deep/eval_harness.py` (106 questions) | `funhouse_agent/review_eval/` (42 tasks, switchable arms) | `report_ingest/cluster_scoring.py` (stages against hand truth) |
 | Recorded evidence | `b2all/geotech_eval/` | `brief3/out_sol_532/` + `module_work/review_eval_results/` | `b2all/stage_b…e/` |
 | Document | `geotech_agent.md` | `document_review.md` | `report_ingest.md` |
 

@@ -371,7 +371,7 @@ class TestMultipleNails:
 # TestFOSWithNails — 8 tests
 # ============================================================================
 
-@pytest.mark.skip(reason="Nail integration with FOS methods disconnected — nails set aside for overhaul")
+@pytest.mark.skip(reason="Targets the removed nails-only API (nail_contributions=); supports now act in every method per Wright & Duncan (BACKLOG GM-59), tested in test_reinforcement.py and test_search_reinforcement.py")
 class TestFOSWithNails:
     """Test that nails increase the factor of safety."""
 
@@ -566,7 +566,7 @@ class TestForceComponents:
 # TestAnalyzeSlope Integration — 6 tests
 # ============================================================================
 
-@pytest.mark.skip(reason="Nail integration with analyze_slope disconnected — nails set aside for overhaul")
+@pytest.mark.skip(reason="Targets the removed nails-only result fields (n_nails_active); supports now act in every method per Wright & Duncan (BACKLOG GM-59), tested in test_reinforcement.py and test_search_reinforcement.py")
 class TestAnalyzeSlopeWithNails:
     """Integration tests: analyze_slope and search with nails."""
 

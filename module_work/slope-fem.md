@@ -11,7 +11,7 @@
 - Standards/theory: DM7.1 (slopes); Duncan & Wright (limit equilibrium); SRM/FEM theory in module DESIGN.md.
 - Test one module: `.venv/Scripts/python.exe -m pytest <module>/ -v` (2026-10-15: slope_stability collects 539, fem2d 528).
 
-## Backlog
+## Early items (June 2026; history, not a to-do list)
 - ◐ **slope_stability** (pilot): Phase 0 — `method`/`surface_type` allowed_values;
   `analyze_slope` brief now steers to `search_critical_surface` when no trial circle is
   known; clarified `analysis_mode` (drained/undrained). Live tests: guessed
@@ -19,9 +19,10 @@
   does not intersect the ground surface" from guessed centers/radii. System-prompt nudge
   + adapter steer should route to search_critical_surface; **verify SS-1..SS-3 after triage.**
 - ☑ Extend `allowed_values` to fem2d adapter (fem-modern branch: fem2d_slope_srm element_type/srm_field/n_gp + new outputs).
-- ☐ Consider whether `analyze_slope` should auto-fallback to a search when given an
-  invalid circle (design decision — discuss with lead; this is a real-behavior change).
-- ☐ Per-module real issues — populate from `geotech_test_suite_results.json` triage (fem2d had 2 errors).
+- ☒ Auto-fallback from an invalid circle to a search: not built. The adapter steers to
+  `search_critical_surface` instead, and the owner's rule since then is no silent
+  fallback (GM-81).
+- ☒ Triage of the June suite run: done in the v5.1 module-fix round (`module_work/BOARD.md`).
 
 ## Progress log
 - 2026-06-11 (fem-modern branch): fem2d modernization phases 3-7 — SRM
