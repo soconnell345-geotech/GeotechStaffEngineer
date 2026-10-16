@@ -760,7 +760,13 @@ def make_core_tools(
         if isinstance(result, dict) and "available_methods" in result:
             return fit_method_choices(result, max_result_chars, agent_name,
                                       result.get("closest") or ())
-        return fit_method_doc(result, max_result_chars)
+        # A method's own documentation is a reference read: it gets the
+        # reference budget, so the eight methods whose docs run past 8,000
+        # characters (six slope methods, downdrag's two) keep their prose
+        # (BACKLOG GM-16). 0 = no limit.
+        doc_cap = (0 if max_result_chars <= 0
+                   else max(max_result_chars, reference_cap or 0))
+        return fit_method_doc(result, doc_cap)
 
     def call_agent(
         agent_name: str,

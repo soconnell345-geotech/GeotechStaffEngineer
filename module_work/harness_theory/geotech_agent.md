@@ -163,13 +163,12 @@ Built by `build_domain_prompt` (`funhouse_agent/deep/prompt.py:224-261`) from
   (`dispatch.py:329-397`); e.g. 4,792 characters for `slope_stability`.
 * `describe_method` — the adapter's `METHOD_INFO` entry: category, brief,
   parameters (type, required, description, `allowed_values`) and returns
-  (`dispatch.py:399-413`). Median 1,471 characters over 185 analysis methods;
-  **five `slope_stability` entries exceed the 8,000-character cap** and reach
-  the model truncated with the "search narrower" marker:
-  `rapid_drawdown_fos` 9,078, `search_rapid_drawdown` 9,280,
-  `monte_carlo_fos` 8,648, `fosm_fos` 8,472, `analyze_slope` 8,051 (measured
-  on the 5.31.0 adapter, unchanged at HEAD). There is no narrower way to
-  describe one method, so the nudge has nothing to point at.
+  (`dispatch.py:399-413`). Median 1,471 characters over 185 analysis methods.
+  A doc longer than the cap was cut mid-JSON until live smoke wave 1 (G1:
+  `fit_method_doc` keeps every parameter and shortens the prose); since
+  2026-10-15 (GM-16) a method's doc gets the reference budget (16,000), so the
+  eight entries over 8,000 characters (six `slope_stability` methods, up to
+  10,019 for `search_rapid_drawdown`, and downdrag's two) come back whole.
 * `call_agent` — the module's result, `dataclass.to_dict()` as JSON, **not
   capped** (`tools.py:198-216, 499-539`); a strip-footing bearing-capacity
   call returns 584 characters with 30 keys (q_ultimate_kPa, Nc, Nq, …).

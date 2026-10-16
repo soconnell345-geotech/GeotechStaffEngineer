@@ -22,7 +22,9 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 
 from funhouse_agent import dispatch
 from funhouse_agent.adapters import MODULE_REGISTRY
-from funhouse_agent.deep.tools import DEFAULT_MAX_RESULT_CHARS, make_core_tools
+from funhouse_agent.deep.tools import (DEFAULT_MAX_RESULT_CHARS,
+                                       DEFAULT_REFERENCE_RESULT_CHARS,
+                                       make_core_tools)
 from funhouse_agent.dispatch import ANALYSIS_MODULES, REFERENCE_MODULES
 
 
@@ -54,19 +56,22 @@ def test_every_method_doc_fits_whole_and_lists_every_parameter():
                 if isinstance(spec, dict) and "allowed_values" in spec:
                     assert doc["parameters"][name]["allowed_values"] == \
                         spec["allowed_values"], (module, method, name)
-            if len(out) > DEFAULT_MAX_RESULT_CHARS:
+            # a method's doc gets the reference budget (GM-16)
+            if len(out) > DEFAULT_REFERENCE_RESULT_CHARS:
                 over.append((module, method, len(out)))
     assert not over, f"docs over the cap even as a skeleton: {over}"
 
 
 def test_the_rapid_drawdown_tail_parameter_is_visible():
     """RDD-3: the 1,078 characters cut from rapid_drawdown_fos held the
-    parameter the model then had to guess."""
+    parameter the model then had to guess. Since GM-16 a method's doc gets
+    the reference budget, so it comes back whole, prose and all."""
     out = _tools()["describe_method"].invoke(
         {"agent_name": "slope_stability", "method": "rapid_drawdown_fos"})
     doc = json.loads(out)
     assert "stage3_effective_normal" in doc["parameters"]
-    assert "_shortened" in doc and len(out) <= DEFAULT_MAX_RESULT_CHARS
+    assert "_shortened" not in doc
+    assert DEFAULT_MAX_RESULT_CHARS < len(out) <= DEFAULT_REFERENCE_RESULT_CHARS
 
 
 def test_a_huge_method_list_is_fitted_by_category():
