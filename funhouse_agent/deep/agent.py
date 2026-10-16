@@ -63,6 +63,7 @@ from funhouse_agent.deep.scratch_guard import ScratchFilesystemGuard
 from funhouse_agent.deep.unknown_tool import UnknownToolHint
 from funhouse_agent.deep.delivered_log import DeliveredToolResults
 from funhouse_agent.deep.keep_work import HelperRecorder, KeepWork
+from funhouse_agent.deep.result_map import LargeResultKeyMap
 from funhouse_agent.deep.tool_guards import (HideScratchFilesystem,
                                              OutputLimitGuard, ToolErrorGuard,
                                              auth_retry)
@@ -1379,7 +1380,7 @@ def build_deep_agent(
         # end of the turn (wave 2b, C3); OutputLimitGuard last: a reply cut
         # at the output limit is caught before anything acts on it (C5).
         extra_mw = [DeliveredToolResults(), ToolErrorGuard(),
-                    ScratchFilesystemGuard()]
+                    LargeResultKeyMap(), ScratchFilesystemGuard()]
         if "runnable" not in spec:
             # What the helper reads and writes, recorded as it happens, so
             # a helper that stops can hand it back as a file (TA-21).
@@ -1418,6 +1419,7 @@ def build_deep_agent(
                           + [HelperRecorder(),
                              DeliveredToolResults(),
                              ToolErrorGuard(),
+                             LargeResultKeyMap(),
                              ScratchFilesystemGuard()]
                           + ([UnknownToolHint(allowed_agents)]
                              if allowed_agents else [])
@@ -1468,6 +1470,9 @@ def build_deep_agent(
     # A tool that raises is a tool error the model reads, not the end of the
     # turn (live smoke wave 2b, C3).
     middleware.append(ToolErrorGuard())
+    # A large JSON result opens with a map of its keys, so the preview of
+    # one moved to scratch says where each key is (TA-30).
+    middleware.append(LargeResultKeyMap())
     # Just inside it: a `task` helper that stops hands back what it read as
     # a file, at most GEOTECH_MAX_HELPERS helpers run at once, and very
     # large results are kept whole for a turn that errors (TA-19, TA-21,
