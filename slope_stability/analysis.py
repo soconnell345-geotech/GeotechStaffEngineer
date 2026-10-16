@@ -593,7 +593,7 @@ def search_critical_surface(
     SearchResult
     """
     from slope_stability.search_supplements import (
-        apply_supplements, CIRCULAR, NONCIRCULAR,
+        apply_supplements, search_choices, CIRCULAR, NONCIRCULAR,
     )
     from slope_stability.search_ranges import resolve_ranges
     given = dict(x_entry_range=x_entry_range, x_exit_range=x_exit_range,
@@ -609,13 +609,24 @@ def search_critical_surface(
     noncirc_method = method if method != "bishop" else "spencer"
 
     def _finish(result, search_kind, grid_used=None):
-        return apply_supplements(
+        result = apply_supplements(
             geom, result, search_kind=search_kind, method=method,
             n_slices=n_slices, tol=tol,
             windows_used=(x_entry_range, x_exit_range),
             windows_auto=windows_auto, grid_used=grid_used,
             grid_auto=grid_auto, toe_circles=toe_circles,
             infinite_slope=infinite_slope, auto_ranges=auto, **given)
+        # What the search chose (GM-115): PSO and the weak-layer search
+        # score with Spencer whatever is named, a noncircular search with
+        # Spencer for Bishop.
+        scored = ("spencer" if surface_type in ("pso", "weak_layer")
+                  else noncirc_method if search_kind == NONCIRCULAR
+                  else method)
+        result.choices = search_choices(
+            result, surface_type=surface_type, method=method,
+            scored_with=scored, toe_circles=toe_circles,
+            infinite_slope=infinite_slope)
+        return result
 
     if surface_type in ("noncircular", "noncircular_de", "pso", "weak_layer"):
         result = _search_noncircular_kind(

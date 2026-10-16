@@ -217,7 +217,8 @@ def evaluate_liquefaction(
     -------
     list of dict
         Per-layer results with keys: depth_m, N160, N160cs, FC_pct,
-        sigma_v_kPa, sigma_v_eff_kPa, CSR, CRR, FOS_liq, liquefiable.
+        sigma_v_kPa, sigma_v_eff_kPa, rd, MSF (the factors inside CSR),
+        CSR, CRR, FOS_liq, liquefiable.
 
     Notes
     -----
@@ -270,6 +271,10 @@ def evaluate_liquefaction(
             "FC_pct": round(FC, 1),
             "sigma_v_kPa": round(sigma_v, 1),
             "sigma_v_eff_kPa": round(sigma_v_eff, 1),
+            # The factors inside CSR, as compute_CSR applies them (GM-115:
+            # an agent had to say "not reported by the tool").
+            "rd": round(stress_reduction_rd(z), 4),
+            "MSF": round(_msf_applied(M), 3),
             "CSR": round(CSR, 4),
             "CRR": round(CRR, 4),
             "FOS_liq": round(FOS, 3),
@@ -277,3 +282,36 @@ def evaluate_liquefaction(
         })
 
     return results
+
+
+def _msf_applied(M: float) -> float:
+    """The MSF ``compute_CSR`` divides by (1 at M 7.5)."""
+    return magnitude_scaling_factor(M) if abs(M - 7.5) > 0.01 else 1.0
+
+
+def liquefaction_choices(layer_results: List[Dict[str, Any]],
+                         M: float = 7.5) -> list:
+    """What :func:`evaluate_liquefaction` chose (GM-115), as a result's
+    ``choices`` (``geotech_common.choices``): the procedure and its rd and
+    MSF (their values are in each layer result), the overburden correction
+    it leaves out, and the dense-soil cap where a layer reached it."""
+    from geotech_common.choices import GIVEN, MODULE, choice
+    out = [
+        choice("triggering procedure",
+               "NCEER / Youd et al. (2001) SPT simplified procedure", GIVEN,
+               "rd by Liao & Whitman (1986); MSF = 10^2.24 / M^2.56 = "
+               f"{_msf_applied(M):.3f} at M {M:g}; fines by Youd et al. "
+               "(2001); rd and MSF are listed for each layer "
+               "(layer_results)"),
+        choice("overburden correction K_sigma", "not applied (1.0)", MODULE,
+               "CRR is the clean-sand curve with no K_sigma; Youd et al. "
+               "(2001) reduce CRR by K_sigma where sigma'v > 100 kPa"),
+    ]
+    dense = [r["depth_m"] for r in layer_results if r.get("N160cs", 0) >= 30]
+    if dense:
+        out.append(choice(
+            "CRR where (N1)60cs >= 30", "2.0 (too dense to liquefy)", MODULE,
+            "clean granular soil this dense is taken as non-liquefiable "
+            "(Youd et al. 2001); depths "
+            + ", ".join(f"{d:g}" for d in dense) + " m"))
+    return out

@@ -52,6 +52,7 @@ from calc_package.latex_renderer import render_latex, save_latex, save_pdf, rend
 from calc_package.equation_converter import unicode_to_latex, escape_latex
 from calc_package.tables import (
     csv_file_names, export_tables, input_table, module_tables, tables_section,
+    choices_section,
 )
 
 
@@ -215,6 +216,11 @@ def generate_calc_package(
     input_items = reg["get_input_summary"](result, analysis)
     if input_items:
         sections.append(CalcSection(title="Input Parameters", items=input_items))
+
+    # What the analysis chose (GM-115): beside the inputs, before the steps.
+    choices_part = choices_section(result, analysis)
+    if choices_part is not None:
+        sections.append(choices_part)
 
     # Section 2+: Calculation Steps (may return multiple sections)
     calc_sections = reg["get_calc_steps"](result, analysis)

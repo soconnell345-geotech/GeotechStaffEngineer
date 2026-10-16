@@ -64,6 +64,8 @@ class CPTLiquefactionResult:
         Post-liquefaction shear strain (decimal).
     relative_density : ndarray
         Estimated relative density (decimal, 0-1).
+    choices : list of dict
+        What the evaluation chose (GM-115, ``geotech_common.choices``).
     """
 
     # Scalars
@@ -91,6 +93,7 @@ class CPTLiquefactionResult:
     volumetric_strain: np.ndarray = field(default_factory=lambda: np.array([]))
     shear_strain: np.ndarray = field(default_factory=lambda: np.array([]))
     relative_density: np.ndarray = field(default_factory=lambda: np.array([]))
+    choices: list = field(default_factory=list)
 
     def summary(self) -> str:
         """One-line summary of results."""
@@ -103,7 +106,7 @@ class CPTLiquefactionResult:
 
     def to_dict(self) -> dict:
         """Return JSON-serializable dict of scalar results."""
-        return {
+        d = {
             "n_points": self.n_points,
             "gwl_m": round(self.gwl_m, 2),
             "pga_g": round(self.pga_g, 3),
@@ -115,6 +118,9 @@ class CPTLiquefactionResult:
             "min_fos": round(self.min_fos, 3),
             "max_settlement_mm": round(self.max_settlement_mm, 1),
         }
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
+        return d
 
     # ------------------------------------------------------------------
     # Plot methods
@@ -249,6 +255,11 @@ class SPTLiquefactionResult:
         Factor of safety against liquefaction (CRR/CSR).
     liquefiable : ndarray
         Boolean per layer (FoS < 1.0).
+    rd, msf, k_sigma : ndarray
+        The stress reduction factor inside CSR, and the magnitude scaling
+        factor and overburden correction inside CRR, per layer (GM-115).
+    choices : list of dict
+        What the evaluation chose (``geotech_common.choices``).
     """
 
     # Scalars
@@ -270,6 +281,10 @@ class SPTLiquefactionResult:
     crr: np.ndarray = field(default_factory=lambda: np.array([]))
     factor_of_safety: np.ndarray = field(default_factory=lambda: np.array([]))
     liquefiable: np.ndarray = field(default_factory=lambda: np.array([], dtype=bool))
+    rd: np.ndarray = field(default_factory=lambda: np.array([]))
+    msf: np.ndarray = field(default_factory=lambda: np.array([]))
+    k_sigma: np.ndarray = field(default_factory=lambda: np.array([]))
+    choices: list = field(default_factory=list)
 
     def summary(self) -> str:
         """One-line summary of results."""
@@ -282,25 +297,34 @@ class SPTLiquefactionResult:
 
     def layer_results(self) -> list:
         """Per-layer results as a list of JSON-safe dicts."""
+        factors = (len(self.rd) == len(self.msf) == len(self.k_sigma)
+                   == self.n_layers)
         out = []
         for i in range(self.n_layers):
-            out.append({
+            row = {
                 "depth_m": round(float(self.depth[i]), 2),
                 "N1_60": round(float(self.n1_60[i]), 1),
                 "N1_60cs": round(float(self.n1_60cs[i]), 1),
                 "FC_pct": round(float(self.fines_content[i]), 1),
                 "sigma_v_kPa": round(float(self.sigma_v[i]), 1),
                 "sigma_v_eff_kPa": round(float(self.sigma_veff[i]), 1),
+            }
+            if factors:
+                row.update({"rd": round(float(self.rd[i]), 4),
+                            "MSF": round(float(self.msf[i]), 3),
+                            "K_sigma": round(float(self.k_sigma[i]), 3)})
+            row.update({
                 "CSR": round(float(self.csr[i]), 4),
                 "CRR": round(float(self.crr[i]), 4),
                 "FOS_liq": round(float(self.factor_of_safety[i]), 3),
                 "liquefiable": bool(self.liquefiable[i]),
             })
+            out.append(row)
         return out
 
     def to_dict(self) -> dict:
         """Return JSON-serializable dict of scalar + per-layer results."""
-        return {
+        d = {
             "method": "bi2014",
             "input_type": "SPT",
             "n_layers": self.n_layers,
@@ -311,6 +335,9 @@ class SPTLiquefactionResult:
             "n_liquefiable": self.n_liquefiable,
             "layer_results": self.layer_results(),
         }
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
+        return d
 
 
 @dataclass

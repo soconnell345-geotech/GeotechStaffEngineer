@@ -58,6 +58,9 @@ class Results:
     stickup : float
         Above-ground free length (m) included in the model. 0 when the
         head load is applied at the ground surface.
+    choices : list of dict
+        What the analysis used (GM-115, ``geotech_common.choices``): the
+        p-y model of each layer with its source, and the loading.
     """
     z: np.ndarray
     deflection: np.ndarray
@@ -76,6 +79,7 @@ class Results:
     EI_profile: Optional[np.ndarray] = field(default=None, repr=False)
     ei_iterations: int = 0
     stickup: float = 0.0
+    choices: list = field(default_factory=list)
 
     @property
     def y_top(self) -> float:
@@ -165,6 +169,8 @@ class Results:
                 EI_min = float(np.min(self.EI_profile))
                 EI_max = float(np.max(self.EI_profile))
                 lines.append(f"EI range:             {EI_min:.0f} - {EI_max:.0f} kN-m^2")
+        from geotech_common.choices import choices_lines
+        lines.extend(choices_lines(self.choices, indent=""))
         return "\n".join(lines)
 
     def to_dict(self) -> dict:
@@ -190,6 +196,8 @@ class Results:
         if self.EI_profile is not None:
             d['EI_profile_kNm2'] = self.EI_profile.tolist()
             d['ei_iterations'] = self.ei_iterations
+        if self.choices:
+            d['choices'] = [dict(c) for c in self.choices]
         return d
 
     def get_tables(self) -> list:

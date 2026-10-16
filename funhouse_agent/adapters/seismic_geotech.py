@@ -2,8 +2,8 @@
 
 from funhouse_agent.adapters import reject_unknown_params, require_params
 from seismic_geotech.site_class import compute_vs30, compute_n_bar, compute_su_bar, classify_site, site_coefficients
-from seismic_geotech.mononobe_okabe import mononobe_okabe_KAE, mononobe_okabe_KPE, seismic_earth_pressure
-from seismic_geotech.liquefaction import evaluate_liquefaction, CRR_from_N160cs, compute_CSR, stress_reduction_rd, magnitude_scaling_factor, fines_correction
+from seismic_geotech.mononobe_okabe import mononobe_okabe_KAE, mononobe_okabe_KPE, seismic_earth_pressure, earth_pressure_choices, mo_no_solution_warning
+from seismic_geotech.liquefaction import evaluate_liquefaction, CRR_from_N160cs, compute_CSR, stress_reduction_rd, magnitude_scaling_factor, fines_correction, liquefaction_choices
 from seismic_geotech.residual_strength import post_liquefaction_strength
 from seismic_geotech.dynamic_properties import (
     gmax_from_vs, gmax_cpt_sand_rix_stokoe, gmax_cpt_clay_mayne_rix,
@@ -69,9 +69,16 @@ def _run_seismic_earth_pressure(params: dict) -> dict:
         result["KPE"] = round(mononobe_okabe_KPE(phi, delta, kh, kv, beta, i), 4)
     gamma = params.get("gamma")
     H = params.get("H")
-    if gamma is not None and H is not None:
+    forces = gamma is not None and H is not None
+    if forces:
         result.update(seismic_earth_pressure(gamma, H, KAE, KA))
     result.update({"phi_deg": phi, "delta_deg": round(delta, 1), "kh": kh, "kv": kv})
+    result["choices"] = earth_pressure_choices(
+        phi, kh, kv=params.get("kv"), delta_deg=params.get("delta"),
+        i_deg=i, ka="rankine", forces=forces)
+    note = mo_no_solution_warning(phi, kh, kv, i)
+    if note:
+        result["warnings"] = [note]
     return result
 
 
@@ -90,7 +97,8 @@ def _run_liquefaction_evaluation(params: dict) -> dict:
     )
     n_liq = sum(1 for r in results if r.get("liquefiable", False))
     min_fos = min((r["FOS_liq"] for r in results), default=99.9)
-    return {"layer_results": results, "n_liquefiable": n_liq, "min_FOS_liq": round(min_fos, 3), "magnitude": params.get("magnitude", 7.5)}
+    return {"layer_results": results, "n_liquefiable": n_liq, "min_FOS_liq": round(min_fos, 3), "magnitude": params.get("magnitude", 7.5),
+            "choices": liquefaction_choices(results, params.get("magnitude", 7.5))}
 
 
 def _run_residual_strength(params: dict) -> dict:

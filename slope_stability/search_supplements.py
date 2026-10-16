@@ -1205,6 +1205,107 @@ def apply_supplements(geom: SlopeGeometry,
     return result
 
 
+#: The main search of each ``surface_type`` (search_critical_surface), as a
+#: result's ``choices`` names it.
+SEARCH_TEXT = {
+    "circular": "circular, centre grid",
+    "entry_exit": "circular, entry and exit windows",
+    "noncircular": "noncircular, random polylines",
+    "noncircular_de": "noncircular, differential evolution",
+    "pso": "noncircular, particle swarm",
+    "weak_layer": "noncircular, drawn toward the weakest layers",
+}
+
+#: How to ask for a surface family a search did not try.
+_TRY_FAMILY = {
+    CIRCULAR: "a circular search (surface_type 'circular')",
+    NONCIRCULAR: "a noncircular search (surface_type 'noncircular_de')",
+    TOE_CIRCLE: "a circular search",
+    INFINITE_SLOPE: "a search with it (infinite_slope=True)",
+}
+
+#: Each surface family and each automatic range in plain words.
+_FAMILY_TEXT = {CIRCULAR: "circular", NONCIRCULAR: "noncircular",
+                TOE_CIRCLE: "toe circle", INFINITE_SLOPE: "infinite slope"}
+_RANGE_TEXT = {"x_entry_range": "entry window", "x_exit_range": "exit window",
+               "x_range": "centre x range", "y_range": "centre height range"}
+
+
+def search_choices(result: SearchResult, *, surface_type: str,
+                   method: Optional[str] = None,
+                   scored_with: Optional[str] = None,
+                   toe_circles: bool = True, infinite_slope: bool = True,
+                   surface_types=tuple(SEARCH_TEXT)) -> List[Dict[str, Any]]:
+    """What a critical-surface search chose (GM-115), as its ``choices``
+    (``geotech_common.choices``): the search, the method it scored with
+    (when one was named), the surface families it tried with those it did
+    not, and how its ranges were set. The ranges, the governing surface's
+    place and a refused lower surface are not repeated: the entry points at
+    ``search_ranges``, ``governing_location`` and ``refused_lowest``."""
+    from geotech_common.choices import GIVEN, MODULE, choice, how_given
+    out = [choice(
+        "search",
+        f"{SEARCH_TEXT.get(surface_type, surface_type)} ('{surface_type}')",
+        how_given(surface_type, "circular"), "",
+        [f"{SEARCH_TEXT.get(t, t)} ('{t}')" for t in surface_types
+         if t != surface_type])]
+    if method is not None:
+        used = scored_with or method
+        if used.lower() != method.lower():
+            why = ("Bishop's simplified method is for circles; noncircular "
+                   "surfaces are scored with Spencer"
+                   if method.lower() == "bishop" else
+                   f"this search scores with {used} whatever method is named")
+            out.append(choice("FOS method of the search", used, MODULE, why))
+        else:
+            out.append(choice("FOS method of the search", used,
+                              how_given(method, "bishop")))
+    kind = CIRCULAR if surface_type in ("circular", "entry_exit") \
+        else NONCIRCULAR
+    tried = [kind]
+    if toe_circles and kind == CIRCULAR:
+        tried.append(TOE_CIRCLE)
+    if infinite_slope:
+        tried.append(INFINITE_SLOPE)
+    missed = [k for k in (CIRCULAR, NONCIRCULAR, TOE_CIRCLE, INFINITE_SLOPE)
+              if k not in tried]
+    out.append(choice(
+        "surface families tried",
+        ", ".join(_FAMILY_TEXT[k] for k in tried), MODULE,
+        "the lowest FOS of each is reported (candidates), and the one that "
+        "governs (governing_surface)"
+        + ("; the infinite slope only where c' = 0 soil forms the face"
+           if INFINITE_SLOPE in tried else ""),
+        [f"not tried: {_FAMILY_TEXT[k]}, by {_TRY_FAMILY[k]}"
+         for k in missed]))
+    sr = result.search_ranges or {}
+    auto = list(sr.get("automatic") or [])
+    where = "the result says where the reported surface lies " \
+            "(governing_location)"
+    if result.refused_lowest:
+        where += " and gives a lower surface that did not hold " \
+                 "(refused_lowest)"
+    if auto:
+        given = [n for n in ("x_entry_range", "x_exit_range", "x_range",
+                             "y_range") if n in sr and n not in auto]
+        basis = ("from the slope's toe, crest, height and depth to the "
+                 "base (FHWA NHI-06-088 Figs. 6-16, 6-19)"
+                 if sr.get("basis") == "slope" else str(sr.get("basis", "")))
+        out.append(choice(
+            "search ranges",
+            ", ".join(_RANGE_TEXT.get(n, n) for n in auto)
+            + (" set by the module; given: "
+               + ", ".join(_RANGE_TEXT.get(n, n) for n in given)
+               if given else ""), MODULE,
+            f"{basis}; the ranges used are in the result (search_ranges); "
+            f"{where}",
+            ["entry and exit windows given, for a failure in part of the "
+             "slope (x_entry_range, x_exit_range)"]))
+    elif sr:
+        out.append(choice("search ranges", "given", GIVEN, where))
+    return out
+
+
 def _surface_of(crit):
     """The slip surface of a result, or None."""
     if getattr(crit, "is_circular", False) and crit.radius > 0:

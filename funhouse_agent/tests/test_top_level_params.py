@@ -408,6 +408,14 @@ class TestUnusedValuesPass:
         zero = D.call_agent("retaining_walls", method,
                             {**given, "backfill_slope": 0.0})
         assert "error" not in zero, zero
+        # The same result; only defaults_used (GM-115) says that one call
+        # left backfill_slope out.
+        level_used, zero_used = level.pop("defaults_used"), \
+            zero.pop("defaults_used")
+        assert level_used["backfill_slope"] == 0.0
+        assert "backfill_slope" not in zero_used
+        assert {k: v for k, v in level_used.items()
+                if k != "backfill_slope"} == zero_used
         assert zero == level
         sloped = D.call_agent("retaining_walls", method,
                               {**given, "backfill_slope": 15})

@@ -635,6 +635,12 @@ class SearchResult:
         one slicing only; `search._solution_fails`): ``FOS``, ``reason``,
         ``x_entry`` / ``x_exit`` and ``points``. A warning says so when it
         is below the reported FOS. None when nothing was refused.
+    choices : list of dict
+        What the search chose (GM-115, ``geotech_common.choices``;
+        ``search_supplements.search_choices``): the search, the method it
+        scored with, the surface families it tried and those it did not,
+        and how its ranges were set (pointing at ``search_ranges``,
+        ``governing_location`` and ``refused_lowest``).
     """
     critical: Optional[SlopeStabilityResult] = None
     n_surfaces_evaluated: int = 0
@@ -650,6 +656,7 @@ class SearchResult:
     search_ranges: Dict[str, Any] = field(default_factory=dict)
     governing_location: Dict[str, Any] = field(default_factory=dict)
     refused_lowest: Optional[Dict[str, Any]] = None
+    choices: List[Dict[str, Any]] = field(default_factory=list)
 
     def summary(self) -> str:
         lines = [
@@ -696,6 +703,8 @@ class SearchResult:
                 end = "left" if key == "entry_lo" else "right"
                 lines.append(f"    cut at the {end} end of the profile "
                              f"(the slope's reach: x = {x:.2f})")
+        from geotech_common.choices import choices_lines
+        lines.extend(choices_lines(self.choices))
         for w in self.warnings:
             lines.append(f"  WARNING: {w}")
         lines.extend(["", "=" * 60])
@@ -755,6 +764,8 @@ class SearchResult:
             d["governing_location"] = dict(self.governing_location)
         if self.refused_lowest:
             d["refused_lowest"] = dict(self.refused_lowest)
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
         if self.warnings:
             d["warnings"] = list(self.warnings)
         return d

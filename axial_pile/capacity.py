@@ -28,6 +28,15 @@ from axial_pile.beta_method import (
 )
 from axial_pile.results import AxialPileResult
 
+#: Side-resistance method names in a result's ``choices`` (plain text: the
+#: agent reads them as JSON).
+_METHOD_TEXT = {"nordlund": "Nordlund", "tomlinson": "Tomlinson alpha",
+                "beta": "beta method"}
+
+#: GEC-12 Sec. 7.2.1.3.1 (Step 8): the vertical effective stress at the
+#: toe used for the Nordlund toe resistance is limited to 3 ksf (kPa).
+_TOE_STRESS_LIMIT = 3.0 * 47.880259
+
 
 @dataclass
 class AxialPileAnalysis:
@@ -142,6 +151,7 @@ class AxialPileAnalysis:
         """
         total_Qs = 0.0
         layer_results = []
+        shaft_layers = []
         current_depth = 0.0
         tip_depth = self._tip_depth
 
@@ -165,6 +175,7 @@ class AxialPileAnalysis:
                 layer, z_top, z_bottom, self.pile.perimeter
             )
 
+            shaft_layers.append(layer)
             total_Qs += Qs_layer
             layer_results.append({
                 "depth_top_m": round(z_top, 2),
@@ -215,8 +226,9 @@ class AxialPileAnalysis:
         else:
             Qt = end_bearing_cohesive(tip_layer.cohesion, self.pile.tip_area)
 
-        # Open-ended pipe pile plugging analysis (GEC-12 Section 7.2.1.4)
+        # Open-ended pipe pile plugging analysis (GEC-12 Sec. 7.10.7)
         # Governing capacity = lesser of plugged and unplugged
+        plug_case = None
         if not self.pile.closed_end and self.pile.tip_area_plugged is not None:
             Qt_unplugged = Qt  # already computed with annulus tip area
 
@@ -246,10 +258,12 @@ class AxialPileAnalysis:
             if Q_plugged <= Q_unplugged:
                 Q_ultimate = Q_plugged
                 Qt = Qt_plugged
+                plug_case = "plugged"
             else:
                 Q_ultimate = Q_unplugged
                 Qt = Qt_unplugged
                 total_Qs = total_Qs + Qs_inside
+                plug_case = "unplugged"
         else:
             Q_ultimate = total_Qs + Qt
 
@@ -278,7 +292,121 @@ class AxialPileAnalysis:
             layer_breakdown=layer_results,
             sigma_v_tip=sigma_v_tip,
             warnings=notes,
+            choices=self._choices(layer_results, shaft_layers, tip_layer,
+                                  plug_case, sigma_v_tip),
         )
+
+    def _choices(self, layer_results, shaft_layers, tip_layer,
+                 plug_case, sigma_v_tip) -> List[dict]:
+        """What this analysis chose (GM-115): the side and toe resistance
+        methods (``method="auto"`` resolves them by soil type), an open
+        pipe's governing case, Nordlund's delta/phi, the beta method's
+        fallback phi' for clay and the uplift fraction."""
+        from geotech_common.choices import (
+            GIVEN, MODULE, choice, how_given,
+        )
+        # Citations are to the printed GEC-12 (FHWA-NHI-16-009, 2016).
+        out = []
+        beta = self.method == "beta"
+        auto_text = "Nordlund / Tomlinson alpha by soil type (method 'auto')"
+        beta_text = ("the beta method in every layer, GEC-12 Sec. 7.2.1.3.4 "
+                     "(method 'beta')")
+        if beta:
+            out.append(choice(
+                "side resistance method", "beta method, every layer",
+                GIVEN, "fs = beta sigma'v (GEC-12 Eq. 7-19), beta = (1 - sin "
+                "phi') tan phi' (Fellenius 1991)", [auto_text]))
+        else:
+            # Contiguous runs of one method, top to bottom.
+            runs = []
+            for lb in layer_results:
+                name = _METHOD_TEXT.get(lb["method"], lb["method"])
+                if runs and runs[-1][0] == name:
+                    runs[-1][2] = lb["depth_bottom_m"]
+                else:
+                    runs.append([name, lb["depth_top_m"],
+                                 lb["depth_bottom_m"]])
+            out.append(choice(
+                "side resistance method",
+                "; ".join(f"{n} {a:g}-{b:g} m" for n, a, b in runs), MODULE,
+                "'auto' by soil type: Nordlund in cohesionless soil (GEC-12 "
+                "Sec. 7.2.1.3.1), the alpha method with Tomlinson's adhesion "
+                "in cohesive soil (Sec. 7.2.1.3.2)", [beta_text]))
+        if beta:
+            toe, basis, how = ("Nt sigma'v (beta method)",
+                               "GEC-12 Eq. 7-20; Nt from phi' within the "
+                               "ranges of GEC-12 Table 7-9", GIVEN)
+            alts = [auto_text]
+        elif tip_layer.soil_type == "cohesionless":
+            toe, basis, how = ("alpha_t N'q sigma'v, at most q_L",
+                               "cohesionless toe layer: GEC-12 Eq. 7-9, "
+                               "alpha_t and N'q Fig. 7-16, q_L Fig. 7-15",
+                               MODULE)
+            alts = ["Nt sigma'v (method 'beta')"]
+        else:
+            toe, basis, how = ("9 su", "cohesive toe layer: GEC-12 Eq. 7-11 "
+                               "(Nc = 9)", MODULE)
+            alts = ["Nt sigma'v (method 'beta')"]
+        out.append(choice("toe resistance method", toe, how, basis, alts))
+        if (not beta and tip_layer.soil_type == "cohesionless"
+                and sigma_v_tip > _TOE_STRESS_LIMIT):
+            out.append(choice(
+                "sigma'v at the toe", f"{sigma_v_tip:.1f} kPa, not limited",
+                MODULE, "GEC-12 Sec. 7.2.1.3.1 (Step 8) limits sigma'p to "
+                "3 ksf (144 kPa) for the Nordlund toe; this module does not, "
+                "and caps the toe at q_L (Fig. 7-15) only",
+                ["sigma'p limited to 3 ksf"]))
+        if plug_case:
+            cases = ["plugged (full toe area)",
+                     "unplugged (steel annulus toe plus side resistance "
+                     "inside the pipe)"]
+            chosen = cases[0] if plug_case == "plugged" else cases[1]
+            out.append(choice(
+                "open-ended pipe", chosen, MODULE,
+                "the lesser of the two governs (GEC-12 Sec. 7.10.7, Eqs. "
+                "7-88/7-89); here the inside unit side resistance equals the "
+                "outside (GEC-12: typically 1/3 to 1/2 of it) and the soil "
+                "plug weight Wp is not subtracted from the unplugged case "
+                "(Eq. 7-89 subtracts it)", cases))
+        sand = [l for l in shaft_layers if l.soil_type == "cohesionless"]
+        if sand and not beta:
+            ratios = sorted({l.delta_phi_ratio for l in sand
+                             if l.delta_phi_ratio is not None})
+            by_material = any(l.delta_phi_ratio is None for l in sand)
+            material = ("concrete" if "concrete" in self.pile.pile_type
+                        else "steel")
+            parts = [f"{r:g}" for r in ratios]
+            if by_material:
+                from axial_pile.nordlund import delta_from_phi
+                parts.append(f"{delta_from_phi(1.0, material):g} "
+                             f"({material} pile)")
+            out.append(choice(
+                "Nordlund delta/phi", ", ".join(parts),
+                MODULE if not ratios else GIVEN,
+                "by pile material, a simplification of GEC-12 Fig. 7-9, "
+                "which gives delta/phi by pile type and displaced volume"
+                if not ratios else "given for the layers (delta_phi_ratio)"))
+        clay_no_phi = beta and any(
+            l.soil_type != "cohesionless" and not l.friction_angle
+            for l in list(shaft_layers) + [tip_layer])
+        if clay_no_phi:
+            out.append(choice(
+                "phi' of cohesive layers given no friction angle (beta "
+                "method)",
+                f"{self.cohesive_phi:g} deg",
+                how_given(self.cohesive_phi, 25.0),
+                "within the clay range 25-30 deg of GEC-12 Table 7-9"))
+        if self.include_uplift:
+            out.append(choice(
+                "uplift capacity",
+                f"{self.uplift_skin_fraction:g} x outside side resistance"
+                + (" + pile weight" if self.pile_weight is not None else ""),
+                how_given(self.uplift_skin_fraction, 0.75),
+                "a rule of thumb, not from a reference; GEC-12 Sec. 7.2.3.1 "
+                "(Eq. 7-38) takes the whole shaft resistance with an uplift "
+                "resistance factor; side resistance inside an open pipe is "
+                "left out"))
+        return out
 
     def _layer_skin_friction(self, layer: AxialSoilLayer, z_top: float,
                              z_bottom: float, perimeter: float

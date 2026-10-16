@@ -157,6 +157,9 @@ def analyze_spt_liquefaction(
     csr = np.zeros(n)
     crr = np.zeros(n)
     fos = np.zeros(n)
+    rd_arr = np.zeros(n)
+    msf_arr = np.zeros(n)
+    k_sigma_arr = np.zeros(n)
 
     for i in range(n):
         z = depth[i]
@@ -186,6 +189,7 @@ def analyze_spt_liquefaction(
         msf = bi2014_spt_msf(m_w, ncs)
         k_sigma = float(bi.calc_k_sigma_w_n1_60cs(sve, ncs, pa=p_a))
         crr[i] = crr_m7p5 * msf * k_sigma
+        rd_arr[i], msf_arr[i], k_sigma_arr[i] = rd, msf, k_sigma
 
         fos[i] = crr[i] / csr[i] if csr[i] > 0 else 99.9
 
@@ -210,4 +214,29 @@ def analyze_spt_liquefaction(
         crr=crr,
         factor_of_safety=fos,
         liquefiable=liquefiable,
+        rd=rd_arr,
+        msf=msf_arr,
+        k_sigma=k_sigma_arr,
+        choices=spt_choices(c_0),
     )
+
+
+def spt_choices(c_0: float = 2.8) -> list:
+    """What :func:`analyze_spt_liquefaction` chose (GM-115), as a result's
+    ``choices`` (``geotech_common.choices``)."""
+    from geotech_common.choices import GIVEN, MODULE, choice, how_given
+    return [
+        choice("triggering procedure",
+               "Boulanger & Idriss (2014) SPT", GIVEN,
+               "rd Eq. 2.14a, MSF Eqs. 2.20/2.21, K_sigma Eq. 2.16a, fines "
+               "Eq. 2.23; rd, MSF and K_sigma are listed for each layer "
+               "(layer_results)"),
+        choice("CRR curve C0", f"{c_0:g}", how_given(c_0, 2.8),
+               "2.8: B&I (2014)'s deterministic curve; a smaller C0 gives "
+               "a higher CRR"),
+        choice("total vertical stress", "gamma x depth, each depth's own "
+               "gamma", MODULE,
+               "the unit weight given at a depth applies over the whole "
+               "depth above it; layers above with another unit weight are "
+               "not summed"),
+    ]

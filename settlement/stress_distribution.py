@@ -275,3 +275,35 @@ def stress_at_depth(q: float, B: float, L: float, z: float,
         raise ValueError(
             f"Unknown method '{method}'. Options: '2:1', 'boussinesq', 'westergaard'"
         )
+
+
+#: Each stress-distribution method as a result's ``choices`` names it, with
+#: its source (GM-115).
+_STRESS_TEXT = {
+    "2:1": ("2:1 (2V:1H spread, the average over the spread area)",
+            "FHWA NHI-06-088 Sec. 2.4.2, Fig. 2-10; GEC-6 Fig. 5-12"),
+    "boussinesq": ("Boussinesq, below the footing centre",
+                   "elastic half-space; four corner rectangles by Newmark's "
+                   "chart (GEC-6 Fig. 5-11)"),
+    "westergaard": ("Westergaard, below the footing centre",
+                    "Westergaard (1938): alternating rigid and elastic "
+                    "layers, as in varved clay"),
+}
+
+
+_STRESS_NAME = {"2:1": "2:1", "boussinesq": "Boussinesq",
+                "westergaard": "Westergaard"}
+
+
+def stress_method_choice(method: str = "2:1") -> dict:
+    """The stress-increase method as an entry of a result's ``choices``
+    (``geotech_common.choices``): ``how`` is "default" for the default
+    "2:1", "given" for another."""
+    from geotech_common.choices import choice, how_given
+    key = method.lower().replace(" ", "")
+    key = "2:1" if key == "2to1" else key
+    chosen, basis = _STRESS_TEXT.get(key, (method, ""))
+    return choice("stress increase with depth", chosen,
+                  how_given(key, "2:1"), basis,
+                  [f"{_STRESS_NAME[k]} (stress_method '{k}')"
+                   for k in _STRESS_TEXT if k != key])

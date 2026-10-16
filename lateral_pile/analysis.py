@@ -24,6 +24,79 @@ from lateral_pile.solver import solve_lateral_pile
 from lateral_pile.results import Results
 
 
+#: Each p-y model's source, as its class docstring cites it, for a result's
+#: ``choices`` (GM-115), and the models offered for the same ground.
+_PY_SOURCE = {
+    "SoftClayMatlock": "Matlock (1970), OTC 1204, soft clay",
+    "StiffClayBelowWT": "Reese, Cox & Koop (1975), OTC 2312, stiff clay "
+                        "below the water table",
+    "StiffClayAboveWT": "Welch & Reese (1972), Report 89-10, stiff clay "
+                        "above the water table",
+    "SoftClayJeanjean": "Jeanjean (2009), OTC-20158-MS, soft clay",
+    "SandReese": "Reese, Cox & Koop (1974), OTC 2080, sand",
+    "SandAPI": "API RP2A-WSD (2000) / O'Neill & Murchison (1983), sand",
+    "WeakRock": "Reese (1997), JGGE 123(11), weak rock",
+    "SandLiquefied": "Rollins et al. (2005), liquefied sand",
+}
+_PY_FAMILIES = (
+    ("SoftClayMatlock", "StiffClayBelowWT", "StiffClayAboveWT",
+     "SoftClayJeanjean"),
+    ("SandReese", "SandAPI"),
+    ("WeakRock",),
+)
+
+
+def _field_default(obj, name):
+    """The dataclass default of ``obj.name``, or None."""
+    import dataclasses
+    for f in dataclasses.fields(obj) if dataclasses.is_dataclass(obj) else ():
+        if f.name == name:
+            return f.default
+    return None
+
+
+def py_choices(layers) -> list:
+    """What a lateral analysis used (GM-115): each layer's p-y model with
+    its source and any option left at its default, and the loading (static
+    or cyclic) over the layers."""
+    from geotech_common.choices import DEFAULT, GIVEN, choice, how_given
+    out, loading, all_default = [], [], True
+    for layer in layers:
+        model = layer.py_model
+        name = type(model).__name__
+        notes = []
+        for opt in ("J", "construction", "RQD", "gamma_r"):
+            if hasattr(model, opt):
+                value = getattr(model, opt)
+                if how_given(value, _field_default(model, opt)) == DEFAULT:
+                    notes.append(f"{opt} = {value:g}" if isinstance(
+                        value, (int, float)) else f"{opt} {value}")
+        basis = _PY_SOURCE.get(name, "")
+        if notes:
+            basis += "; default " + ", ".join(notes)
+        family = next((f for f in _PY_FAMILIES if name in f), ())
+        out.append(choice(f"p-y curves {layer.top:g}-{layer.bottom:g} m",
+                          name, GIVEN, basis, family))
+        load = getattr(model, "loading", None)
+        if load is not None:
+            if how_given(load, _field_default(model, "loading")) != DEFAULT:
+                all_default = False
+            if loading and loading[-1][0] == load:
+                loading[-1][2] = layer.bottom
+            else:
+                loading.append([load, layer.top, layer.bottom])
+    if loading:
+        one = loading[0][0] if len(loading) == 1 else None
+        chosen = (f"{one}, every layer" if one else
+                  "; ".join(f"{l} {a:g}-{b:g} m" for l, a, b in loading))
+        out.append(choice(
+            "loading", chosen, DEFAULT if all_default else GIVEN,
+            "each model's static or cyclic p-y curve (COM624P, "
+            "FHWA-SA-91-048)",
+            [x for x in ("static", "cyclic") if one and x != one]))
+    return out
+
+
 class LateralPileAnalysis:
     """Lateral pile analysis using p-y curve method.
 
@@ -180,6 +253,7 @@ class LateralPileAnalysis:
                 pile_diameter=self.pile.diameter,
                 Vt=Vt, Mt=Mt, Q=Q,
                 stickup=stickup,
+                choices=py_choices(self.layers),
             )
 
         # Cracked-EI outer iteration loop for RC sections
@@ -256,6 +330,7 @@ class LateralPileAnalysis:
             EI_profile=EI_values,
             ei_iterations=ei_iter,
             stickup=stickup,
+            choices=py_choices(self.layers),
         )
 
     def _make_py_function(self, z: float):

@@ -41,6 +41,11 @@ class AxialPileResult:
     warnings : list of str
         Things the user must be told about the result, e.g. a toe friction
         angle outside the chart the toe limit is read from.
+    choices : list of dict
+        What the analysis chose (GM-115, ``geotech_common.choices``): the
+        side and toe resistance methods ``method="auto"`` resolved to by
+        soil type, an open pipe's plugged or unplugged case, Nordlund's
+        delta/phi.
     """
     Q_ultimate: float = 0.0
     Q_skin: float = 0.0
@@ -54,6 +59,7 @@ class AxialPileResult:
     layer_breakdown: Optional[List[Dict[str, Any]]] = None
     sigma_v_tip: float = 0.0
     warnings: List[str] = field(default_factory=list)
+    choices: List[Dict[str, Any]] = field(default_factory=list)
 
     def summary(self) -> str:
         """Return a formatted summary string."""
@@ -88,6 +94,9 @@ class AxialPileResult:
                     f"({layer['soil_type']}, {layer['method']})"
                 )
 
+        from geotech_common.choices import choices_lines
+        lines.extend(choices_lines(self.choices))
+
         if self.warnings:
             lines.extend(["", "  Warnings:"])
             lines.extend(f"    - {w}" for w in self.warnings)
@@ -117,6 +126,8 @@ class AxialPileResult:
             d["Q_uplift_kN"] = round(self.Q_uplift, 1)
         if self.warnings:
             d["warnings"] = list(self.warnings)
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
         return d
 
     def get_tables(self) -> list:

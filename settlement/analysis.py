@@ -192,7 +192,102 @@ class SettlementAnalysis:
             result.t50_years = time_for_consolidation(50.0, self.cv, Hdr)
             result.t90_years = time_for_consolidation(90.0, self.cv, Hdr)
 
+        result.choices = self._choices(result)
+        result.warnings = self._warnings(result)
         return result
+
+    def _choices(self, result: SettlementResult) -> list:
+        """What this analysis chose (GM-115, ``geotech_common.choices``):
+        the immediate-settlement method and its influence factor, the
+        stress increase under the footing, the drainage path and the start
+        of secondary compression."""
+        from geotech_common.choices import (
+            DEFAULT, GIVEN, MODULE, choice, how_given,
+        )
+        from settlement.stress_distribution import stress_method_choice
+        out = []
+        how = how_given(self.immediate_method, "elastic")
+        if self.q_net > 0 and self.immediate_method == "elastic":
+            if self.Es_immediate is None or self.Es_immediate <= 0:
+                out.append(choice(
+                    "immediate settlement", "not computed: no Es given",
+                    MODULE, "", ["the elastic method with Es given (Es)",
+                                 "Schmertmann (immediate_method "
+                                 "'schmertmann')"]))
+            else:
+                Iw = self.Iw_immediate
+                given_iw = Iw is not None
+                if not given_iw:
+                    Iw = elastic_influence_factor(self.footing_shape,
+                                                  self.L, self.B)
+                out.append(choice(
+                    "immediate settlement", f"elastic, Iw = {Iw:.3g}"
+                    + ("" if given_iw else " (flexible footing, centre)"),
+                    how, "Se = q B (1 - nu^2) Iw / Es on an elastic half "
+                    "space"
+                    + ("" if given_iw else "; Iw is the shape factor Cd at "
+                       "the centre of a flexible area (GEC-6 Table 5-12)"),
+                    ["Schmertmann (immediate_method 'schmertmann')"]))
+        elif self.q_net > 0 and self.immediate_method == "schmertmann":
+            out.append(choice(
+                "immediate settlement",
+                "Schmertmann (1978)" if self.schmertmann_layers else
+                "not computed: no schmertmann_layers given", how,
+                (f"creep factor C2 for {self.time_years_schmertmann:g} years"
+                 if self.time_years_schmertmann > 0 else
+                 "no creep factor (time_years_schmertmann = 0)"),
+                ["elastic (immediate_method 'elastic')"]))
+        if self.consolidation_layers and self.q_net > 0:
+            out.append(stress_method_choice(self.stress_method))
+        # Hdr is used only with a cv (the time curve and t95).
+        if self.cv is not None and self.consolidation_layers:
+            Hdr = self._get_Hdr()
+            if self.Hdr is not None:
+                out.append(choice("drainage path", f"Hdr = {Hdr:g} m",
+                                  GIVEN))
+            else:
+                H = sum(l.thickness for l in self.consolidation_layers)
+                out.append(choice(
+                    "drainage path",
+                    f"Hdr = {Hdr:g} m ({self.drainage} drainage of "
+                    f"{H:g} m)", MODULE,
+                    "the consolidating layers taken as one layer; a "
+                    "module does not look for a drainage layer inside them",
+                    ["a drainage path given (Hdr)",
+                     "single drainage (drainage 'single')"
+                     if self.drainage == "double" else
+                     "double drainage (drainage 'double')"]))
+        if result.secondary:
+            if self.cv is not None:
+                Hdr = self._get_Hdr()
+                t1 = time_for_consolidation(95.0, self.cv, Hdr)
+                out.append(choice(
+                    "end of primary consolidation t1",
+                    f"{t1:.3g} years (t95 from cv)", MODULE,
+                    "secondary settlement from t1 to t1 + t_secondary"))
+            else:
+                out.append(choice(
+                    "end of primary consolidation t1", "1 year (assumed)",
+                    DEFAULT, "no cv given; Ss scales with log10(t2/t1)",
+                    ["t95 from a given cv (cv)"]))
+            out.append(choice(
+                "void ratio e0 for secondary compression",
+                f"{self.e0_secondary:g}",
+                how_given(self.e0_secondary, 1.0),
+                "Ss = C_alpha / (1 + e0) H log10(t2/t1); the consolidation "
+                "layers' own e0 is not used", ["e0 given (e0_secondary)"]))
+        return out
+
+    def _warnings(self, result: SettlementResult) -> list:
+        """What the user must be told about the result (GM-115)."""
+        out = []
+        if result.secondary and self.cv is None:
+            out.append(
+                "Secondary settlement starts at an assumed t1 = 1 year (the "
+                "end of primary consolidation): no cv was given, and this "
+                "placeholder is arbitrary. Ss scales with log10(t2/t1); give "
+                "cv to have t1 worked out as t95.")
+        return out
 
     def _compute_immediate(self) -> float:
         """Compute immediate settlement."""

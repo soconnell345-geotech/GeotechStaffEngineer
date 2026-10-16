@@ -287,6 +287,18 @@ the eyes). What changed on master after 5.33.0, in short:
   signs); written marks with no comment are named in `empty_comments`;
   `search_document` says when `min_score` came without `fuzzy`
   (`min_score_unused`).
+- **What a result chose** (GM-115; 2026-10-16; no switch, results only):
+  `call_agent` adds `defaults_used` to a successful dict result, the
+  declared parameters (METHOD_INFO, GM-110) the call left out with the
+  default each took; a name given under a spelling the method reads
+  (`parameter_aliases`) counts as given, a default of None is left out, and
+  an error, a list or a string result is returned as it was. The module
+  results carry `choices` (`geotech_common/choices.py`): what `method="auto"`
+  resolved to, each p-y model's source, the stress method, the M-O basis,
+  the liquefaction procedure with rd and MSF per layer, the slope search's
+  families tried and not tried. The liquefaction tool marks its procedure
+  "default" or "given" and names the other; the axial adapter marks its
+  own delta/phi default. Prompts and tool descriptions are unchanged.
 - **Vision** (VIS-01, VIS-04, VIS-05): an optional `turn` (0/90/180/270) on
   `analyze_pdf_page` / `render_region`; boxes right on sideways sheets; a
   zoom that cuts lines of lettering widens to take them in or says which

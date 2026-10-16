@@ -774,6 +774,13 @@ def search_rapid_drawdown(geom: SlopeGeometry,
         grid_auto=grid_auto, toe_circles=toe_circles,
         infinite_slope=infinite_slope, fos_fn=_dd_fos, auto_ranges=auto,
         **given)
+    # What the search chose (GM-115); every trial is the drawdown solve.
+    from slope_stability.search_supplements import search_choices
+    search.choices = search_choices(
+        search, surface_type=surface_type, toe_circles=toe_circles,
+        infinite_slope=infinite_slope,
+        surface_types=("circular", "entry_exit", "noncircular",
+                       "noncircular_de"))
 
     # Recompute the stage-level detail on the winning surface.
     dd = None

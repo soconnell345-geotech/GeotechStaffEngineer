@@ -88,7 +88,18 @@ def _run_axial_pile_capacity(params):
                                   uplift_skin_fraction=params.get("uplift_skin_fraction", 0.75),
                                   pile_weight=params.get("pile_weight"),
                                   head_depth=params.get("head_depth", 0.0))
-    return analysis.compute().to_dict()
+    out = analysis.compute().to_dict()
+    # _build_soil_profile gives a layer with no delta_phi_ratio 0.75, so the
+    # module reads it as given; say it is this tool's default (GM-115).
+    if not any("delta_phi_ratio" in l for l in params["layers"]):
+        for c in out.get("choices", []):
+            if c["what"] == "Nordlund delta/phi":
+                c["how"] = "default"
+                c["basis"] = ("this tool's default; GEC-12 Fig. 7-9 gives "
+                              "delta/phi by pile type and displaced volume")
+                c["alternatives"] = ["delta/phi given for a layer "
+                                     "(delta_phi_ratio)"]
+    return out
 
 
 def _run_capacity_vs_depth(params):

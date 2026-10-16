@@ -165,7 +165,7 @@ def _run_cpt_bi2014(params: dict) -> dict:
     out = clean_result(result.to_dict())
     out["method"] = "bi2014"
     out["input_type"] = "CPT"
-    return out
+    return _routed(out, params, [])
 
 
 def _run_spt_bi2014(params: dict) -> dict:
@@ -183,7 +183,8 @@ def _run_spt_bi2014(params: dict) -> dict:
         m_w=_first(params, "m_w", "magnitude", "M", default=7.5),
         c_0=params.get("c_0", 2.8),
     )
-    return clean_result(result.to_dict())
+    return _routed(clean_result(result.to_dict()), params,
+                   ["NCEER / Youd et al. 2001 (method 'nceer2001')"])
 
 
 def _run_spt_nceer2001(params: dict) -> dict:
@@ -202,17 +203,33 @@ def _run_spt_nceer2001(params: dict) -> dict:
     )
     n_liq = sum(1 for r in layer_results if r.get("liquefiable"))
     min_fos = min((r["FOS_liq"] for r in layer_results), default=99.9)
-    return clean_result({
+    from seismic_geotech.liquefaction import liquefaction_choices
+    m_w = _first(params, "m_w", "magnitude", "M", default=7.5)
+    return _routed(clean_result({
         "method": "nceer2001",
         "input_type": "SPT",
         "n_layers": len(layer_results),
         "gwt_depth_m": round(float(_first(params, "gwt_depth", "gwl")), 2),
         "amax_g": round(float(_first(params, "amax_g", "pga", "amax")), 3),
-        "m_w": round(float(_first(params, "m_w", "magnitude", "M", default=7.5)), 1),
+        "m_w": round(float(m_w), 1),
         "min_fos": round(min_fos, 3),
         "n_liquefiable": n_liq,
         "layer_results": layer_results,
-    })
+        "choices": liquefaction_choices(layer_results, m_w),
+    }), params, ["Boulanger & Idriss 2014, the default (method 'bi2014')"])
+
+
+def _routed(out: dict, params: dict, alternatives: list) -> dict:
+    """The routed procedure as this tool chose it (GM-115): the first of
+    the result's ``choices`` is "given" when the call named a method, else
+    "default", with the procedures this tool also offers."""
+    first = (out.get("choices") or [None])[0]
+    if first is not None and first.get("what") == "triggering procedure":
+        first["how"] = "given" if params.get("method") is not None \
+            else "default"
+        if alternatives:
+            first["alternatives"] = list(alternatives)
+    return out
 
 
 def _run_liquefaction_analysis(params: dict) -> dict:

@@ -234,4 +234,25 @@ def analyze_cpt_liquefaction(
         volumetric_strain=vol_strain,
         shear_strain=shear_strain,
         relative_density=dr,
+        choices=cpt_choices(i_c_limit, cfc),
     )
+
+
+def cpt_choices(i_c_limit: float = 2.6, cfc: float = 0.0) -> list:
+    """What :func:`analyze_cpt_liquefaction` chose (GM-115), as a result's
+    ``choices`` (``geotech_common.choices``)."""
+    from geotech_common.choices import GIVEN, MODULE, choice, how_given
+    return [
+        choice("triggering procedure",
+               "Boulanger & Idriss (2014) CPT (liquepy run_bi2014)", GIVEN,
+               f"rd, MSF and K_sigma per B&I (2014); fines content from Ic "
+               f"with C_FC = {cfc:g}"),
+        choice("points counted as liquefiable",
+               f"below the water table with Ic < {i_c_limit:g}",
+               how_given(i_c_limit, 2.6),
+               "the minimum FS is taken over these points (min_fos)"),
+        choice("post-triggering strains",
+               "volumetric Zhang et al. (2002), shear Zhang et al. (2004)",
+               MODULE, "LSN and the settlement from the volumetric strain, "
+               "LDI from the shear strain"),
+    ]

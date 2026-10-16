@@ -1130,6 +1130,7 @@ def call_agent(
     from funhouse_agent._fileio import hide_working_folder
     if not isinstance(parameters, dict):
         parameters = {}
+    given = set(parameters)
     try:
         _check_parameter_names(mod, method, parameters)
         if "attachment_key" in parameters:
@@ -1148,9 +1149,54 @@ def call_agent(
             result = dict(result)
             result["output_note"] = _output_note(named, parameters)
         result = _citations_checked(agent_name, method, parameters, result)
+        result = _with_defaults_used(mod, method, given, result)
         return hide_working_folder(result)
     except Exception as e:
         return hide_working_folder({"error": f"{type(e).__name__}: {e}"})
+
+
+#: A calc package's header and file format: not engineering choices, so
+#: never listed in ``defaults_used``.
+_PACKAGE_HEADER_PARAMS = frozenset({
+    "project_name", "project_number", "engineer", "checker", "company",
+    "date", "format"})
+
+
+def _defaults_used(mod, method: str, given) -> dict:
+    """The declared parameters of ``method`` that a call did not give, with
+    the default each took (BACKLOG GM-115): name -> default, from the
+    method's METHOD_INFO ``parameters`` (GM-110). A parameter given under
+    another spelling it reads (``parameter_aliases``) counts as given. Left
+    out: a declared default of None (worked out by the method) or "" (an
+    empty field), and a calc package's header and format."""
+    info = mod.METHOD_INFO.get(method)
+    declared = info.get("parameters") if isinstance(info, dict) else None
+    if not isinstance(declared, dict):
+        return {}
+    aliases = info.get("parameter_aliases") or {}
+    named = set(given) | {aliases[k] for k in given if k in aliases}
+    if str(getattr(mod, "__name__", "")).endswith("calc_package"):
+        named |= _PACKAGE_HEADER_PARAMS
+    return {name: spec["default"] for name, spec in declared.items()
+            if isinstance(spec, dict) and spec.get("default") is not None
+            and spec.get("default") != "" and name not in named}
+
+
+def _with_defaults_used(mod, method: str, given, result):
+    """``result`` with ``defaults_used`` (:func:`_defaults_used`) added when
+    the call left a declared default in force: the agent then knows which
+    values it never chose. A result that is not a dict, is an error, or
+    already says what it used is returned unchanged."""
+    if not isinstance(result, dict) or "error" in result \
+            or "defaults_used" in result:
+        return result
+    try:
+        used = _defaults_used(mod, method, given)
+    except Exception:  # noqa: BLE001 - never the method's result
+        return result
+    if not used:
+        return result
+    return {**result, "defaults_used": used}
 
 
 def _citations_checked(agent_name: str, method: str, parameters: dict,

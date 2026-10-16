@@ -200,6 +200,36 @@ def tables_section(tables: Sequence[CalcTable],
     return CalcSection(title="Calculation Tables", items=items)
 
 
+def package_choices(result, analysis=None) -> list:
+    """What the analysis chose (GM-115): the result's own ``choices``, or,
+    for a package built on a search (the slope report), the search's."""
+    from geotech_common.choices import choices_from
+    own = choices_from(result)
+    if own or not isinstance(analysis, dict):
+        return own
+    return choices_from(analysis.get("search"))
+
+
+def choices_section(result, analysis=None) -> Optional[CalcSection]:
+    """The calc package's "Method Choices" section (GM-115), or ``None``
+    when the result reports no choices: each choice the analysis made,
+    what was used, whether it was given, a default or the module's own
+    choice, its basis and the other options. The engineer of record
+    accepts or changes each one."""
+    from geotech_common.choices import choice_rows
+    rows = choice_rows(package_choices(result, analysis))
+    if not rows:
+        return None
+    intro = ("The choices this analysis made. \"Given\": in the inputs. "
+             "\"Default\": the module's default value. \"Module's "
+             "choice\": the module decided, by the rule in the basis. Each "
+             "is the engineer's to accept or change.")
+    return CalcSection(title="Method Choices", items=[intro, TableData(
+        title="Choices made",
+        headers=["Choice", "Used", "How", "Basis", "Other options"],
+        rows=rows)])
+
+
 __all__ = ["MAX_PRINTED_ROWS", "INPUTS_NAME", "input_table", "module_tables",
            "csv_file_names", "export_tables", "csv_bytes", "to_table_data",
-           "tables_section"]
+           "tables_section", "package_choices", "choices_section"]

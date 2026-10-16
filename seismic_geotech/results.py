@@ -112,6 +112,12 @@ class SeismicEarthPressureResult:
         Horizontal seismic coefficient.
     kv : float
         Vertical seismic coefficient.
+    choices : list of dict
+        What the calculation chose (GM-115, ``geotech_common.choices``;
+        ``mononobe_okabe.earth_pressure_choices``).
+    warnings : list of str
+        What the user must be told, e.g. that the M-O equation has no
+        solution (``mononobe_okabe.mo_no_solution_warning``).
     """
     KAE: float = 0.0
     KPE: float = 0.0
@@ -123,6 +129,8 @@ class SeismicEarthPressureResult:
     delta: float = 0.0
     kh: float = 0.0
     kv: float = 0.0
+    choices: List[Dict[str, Any]] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
 
     def summary(self) -> str:
         lines = [
@@ -140,13 +148,17 @@ class SeismicEarthPressureResult:
             f"  PA  (static):     {self.PA_static:>10.2f} kN/m",
             f"  delta-PAE:        {self.delta_PAE:>10.2f} kN/m",
             f"  Applied at:       {self.height_of_application:.2f} m above base",
-            "",
-            "=" * 60,
         ]
+        from geotech_common.choices import choices_lines
+        lines.extend(choices_lines(self.choices))
+        if self.warnings:
+            lines.extend(["", "  Warnings:"])
+            lines.extend(f"    - {w}" for w in self.warnings)
+        lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "KAE": round(self.KAE, 4),
             "KPE": round(self.KPE, 4),
             "PAE_total_kN_per_m": round(self.PAE_total, 2),
@@ -158,6 +170,11 @@ class SeismicEarthPressureResult:
             "kh": self.kh,
             "kv": self.kv,
         }
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
+        if self.warnings:
+            d["warnings"] = list(self.warnings)
+        return d
 
 
 @dataclass
@@ -174,11 +191,15 @@ class LiquefactionResult:
         Earthquake magnitude.
     gwt_depth : float
         Groundwater depth (m).
+    choices : list of dict
+        What the evaluation chose (GM-115, ``geotech_common.choices``;
+        ``liquefaction.liquefaction_choices``).
     """
     layer_results: List[Dict[str, Any]] = field(default_factory=list)
     amax_g: float = 0.0
     magnitude: float = 7.5
     gwt_depth: float = 0.0
+    choices: List[Dict[str, Any]] = field(default_factory=list)
 
     @property
     def n_liquefiable(self) -> int:
@@ -223,11 +244,13 @@ class LiquefactionResult:
         ])
         if self.critical_depth is not None:
             lines.append(f"  Critical depth: {self.critical_depth:.1f} m")
+        from geotech_common.choices import choices_lines
+        lines.extend(choices_lines(self.choices))
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "amax_g": self.amax_g,
             "magnitude": self.magnitude,
             "gwt_depth_m": self.gwt_depth,
@@ -236,6 +259,9 @@ class LiquefactionResult:
             "critical_depth_m": self.critical_depth,
             "layer_results": self.layer_results,
         }
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
+        return d
 
     def get_tables(self) -> list:
         """The triggering evaluation at every depth: (N1)60, fines,
@@ -250,16 +276,22 @@ class LiquefactionResult:
 
         if not self.layer_results:
             return []
+        # rd and MSF since GM-115; a result built before has none.
+        factors = all("rd" in r and "MSF" in r for r in self.layer_results)
+        columns = [("Depth z", "m", ".2f"), "(N1)60", "(N1)60cs",
+                   ("Fines content FC", "%"), ("σv", "kPa"),
+                   ("σ'v", "kPa")]
+        if factors:
+            columns += [("rd", "", ".4f"), ("MSF", "", ".3f")]
+        columns += [("CSR (M 7.5)", "", ".4f"), ("CRR (M 7.5)", "", ".4f"),
+                    ("FS_liq", "", ".3f"), "Liquefiable"]
         return [CalcTable(
             title="Liquefaction triggering at each depth",
-            columns=[("Depth z", "m", ".2f"), "(N1)60", "(N1)60cs",
-                     ("Fines content FC", "%"), ("σv", "kPa"),
-                     ("σ'v", "kPa"), ("CSR (M 7.5)", "", ".4f"),
-                     ("CRR (M 7.5)", "", ".4f"), ("FS_liq", "", ".3f"),
-                     "Liquefiable"],
+            columns=columns,
             rows=[[r["depth_m"], r["N160"], r["N160cs"], r["FC_pct"],
-                   r["sigma_v_kPa"], r["sigma_v_eff_kPa"], r["CSR"],
-                   r["CRR"], r["FOS_liq"], r["liquefiable"]]
+                   r["sigma_v_kPa"], r["sigma_v_eff_kPa"]]
+                  + ([r["rd"], r["MSF"]] if factors else [])
+                  + [r["CSR"], r["CRR"], r["FOS_liq"], r["liquefiable"]]
                   for r in self.layer_results],
             note=(f"NCEER / Youd et al. (2001) SPT simplified procedure: "
                   f"CSR = 0.65 (amax/g)(σv/σ'v) rd / MSF with "

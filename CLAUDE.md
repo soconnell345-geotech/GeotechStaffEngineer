@@ -252,7 +252,9 @@ Key conventions:
       note); `annotate_document` keeps its own signature; the agent
       states its judgment calls behind GEOTECH_JUDGMENT_CALLS (OFF);
       the slope search's ranges from the slope's own geometry, with
-      what it covered and refused in the result;
+      what it covered and refused in the result; each module's result
+      lists its choices (method, given or default, basis, alternatives)
+      and tool results the defaults used;
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done".
     Open next: Foundry brief 6, which measures all of this, is drafted

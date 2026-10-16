@@ -36,6 +36,13 @@ class SettlementResult:
         Drainage path length used for the time curve (m).
     t50_years, t90_years : float, optional
         Times to 50 % and 90 % average degree of consolidation (years).
+    choices : list of dict
+        What the analysis chose (GM-115, ``geotech_common.choices``): the
+        immediate-settlement method, the stress distribution under the
+        footing, the drainage path and the start of secondary compression.
+    warnings : list of str
+        What the user must be told, e.g. that secondary settlement starts
+        at an assumed t1 of 1 year.
     """
     immediate: float = 0.0
     consolidation: float = 0.0
@@ -50,6 +57,8 @@ class SettlementResult:
     Hdr: Optional[float] = None
     t50_years: Optional[float] = None
     t90_years: Optional[float] = None
+    choices: List[Dict[str, Any]] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
 
     def summary(self) -> str:
         """Return a formatted summary string.
@@ -88,6 +97,11 @@ class SettlementResult:
                     f"OCR={layer.get('OCR', 1.0):.1f}"
                 )
 
+        from geotech_common.choices import choices_lines
+        lines.extend(choices_lines(self.choices))
+        if self.warnings:
+            lines.extend(["", "  Warnings:"])
+            lines.extend(f"    - {w}" for w in self.warnings)
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
@@ -138,6 +152,10 @@ class SettlementResult:
                 "settlement_mm = immediate + U(t) x primary consolidation "
                 "(Terzaghi 1-D average degree of consolidation, time from "
                 "load application; secondary compression not included)")
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
+        if self.warnings:
+            d["warnings"] = list(self.warnings)
         return d
 
     def time_curve_rows(self) -> List[list]:

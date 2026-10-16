@@ -123,7 +123,12 @@ def _run_consolidation_settlement(params: dict) -> dict:
             S_total += Sc
             layer_results.append({"depth_m": layer.depth_to_center, "settlement_mm": round(Sc * 1000, 3), "delta_sigma_kPa": round(ds, 2)})
 
-    return {"consolidation_settlement_m": round(S_total, 6), "consolidation_settlement_mm": round(S_total * 1000, 2), "layer_breakdown": layer_results}
+    out = {"consolidation_settlement_m": round(S_total, 6), "consolidation_settlement_mm": round(S_total * 1000, 2), "layer_breakdown": layer_results}
+    if delta_sigmas is None:
+        # The stress increase was worked out here, by a method (GM-115).
+        from settlement.stress_distribution import stress_method_choice
+        out["choices"] = [stress_method_choice(method)]
+    return out
 
 
 def _run_hough_settlement(params: dict) -> dict:

@@ -1044,6 +1044,11 @@ def _generate_seismic_package(params: dict) -> dict:
             gamma=params["gamma"], H=params["H"], KAE=KAE,
             KA=params.get("KA", 0.333),
         )
+        from seismic_geotech.mononobe_okabe import (
+            earth_pressure_choices, mo_no_solution_warning,
+        )
+        no_solution = mo_no_solution_warning(params["phi"], params["kh"],
+                                             params.get("kv", 0.0))
         result = SeismicEarthPressureResult(
             KAE=KAE, KPE=0.0,
             PAE_total=result_dict["PAE_total_kN_per_m"],
@@ -1053,6 +1058,13 @@ def _generate_seismic_package(params: dict) -> dict:
             phi=params["phi"],
             delta=params.get("delta", params["phi"] * 2 / 3),
             kh=params["kh"], kv=params.get("kv", 0.0),
+            choices=earth_pressure_choices(
+                params["phi"], params["kh"], kv=params.get("kv"),
+                delta_deg=params.get("delta"),
+                ka=params.get("KA", 0.333),
+                ka_how="given" if "KA" in params else "default",
+                forces=True),
+            warnings=[no_solution] if no_solution else [],
         )
 
     elif analysis_type == "liquefaction":
@@ -1068,11 +1080,13 @@ def _generate_seismic_package(params: dict) -> dict:
             gwt_depth=params["gwt_depth"],
             M=params.get("M", 7.5),
         )
+        from seismic_geotech.liquefaction import liquefaction_choices
         result = LiquefactionResult(
             layer_results=layer_results,
             amax_g=params["amax_g"],
             magnitude=params.get("M", 7.5),
             gwt_depth=params["gwt_depth"],
+            choices=liquefaction_choices(layer_results, params.get("M", 7.5)),
         )
     else:
         raise ValueError(
@@ -1080,10 +1094,13 @@ def _generate_seismic_package(params: dict) -> dict:
             "['site_classification', 'seismic_earth_pressure', 'liquefaction']."
         )
 
+    extra = {"seismic_analysis_type": analysis_type}
+    if getattr(result, "warnings", None):
+        extra["warnings"] = list(result.warnings)
     return _build_response(
         "seismic_geotech", result, analysis_dict, params,
         analysis_type="Seismic Geotechnical",
-        extra={"seismic_analysis_type": analysis_type},
+        extra=extra,
     )
 
 

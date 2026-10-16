@@ -1,0 +1,148 @@
+"""
+What a module chose: the ``choices`` a result reports (backlog GM-115).
+
+The owner, 2026-10-16: "make sure the agent is communicating its
+engineering judgements to the user. User's judgement is the one that
+matters." A result that picked a method by soil type, applied a default or
+searched automatically has made choices the user never saw. A module's
+result carries them as a ``choices`` list, one entry per choice:
+
+* ``what``: the quantity or method ("side resistance method");
+* ``chosen``: what was used ("Nordlund, 0-10 m");
+* ``how``: ``"given"`` (in the inputs), ``"default"`` (the module's default
+  value) or ``"module"`` (the module decided, e.g. ``method="auto"``
+  resolved by soil type);
+* ``basis``: the reason, cited in the reference's own terms, where one
+  exists;
+* ``alternatives``: the other options the module offers.
+
+``basis`` and ``alternatives`` are left out when there is none: the agent
+reads every tool result, so the list stays short. The text is plain words;
+an input or result key the agent may need follows in brackets
+("Boussinesq (stress_method 'boussinesq')"), and a printed table leaves
+those brackets out (:func:`plain`).
+
+A module cannot tell a default it applied from the same value given
+explicitly: :func:`how_given` calls a value equal to the default
+``"default"``. The agent layer adds ``defaults_used`` to a result (the
+declared parameters a call left out), which says which were left out.
+
+Pure data; no third-party import.
+"""
+
+import re
+from typing import Any, Iterable, List, Optional
+
+GIVEN = "given"
+DEFAULT = "default"
+MODULE = "module"
+HOW = (GIVEN, DEFAULT, MODULE)
+
+#: How each ``how`` reads in a summary or a calc package.
+HOW_TEXT = {GIVEN: "given", DEFAULT: "default", MODULE: "module's choice"}
+
+
+def _plain(value: Any) -> Any:
+    """A numpy scalar as a plain Python value; anything else unchanged."""
+    if value is None or type(value) in (str, bool, int, float):
+        return value
+    item = getattr(value, "item", None)
+    if callable(item):
+        try:
+            return item()
+        except (TypeError, ValueError):
+            pass
+    return value
+
+
+def choice(what: str, chosen: Any, how: str, basis: str = "",
+           alternatives: Iterable = ()) -> dict:
+    """One entry of a result's ``choices`` list.
+
+    Parameters
+    ----------
+    what : str
+        The quantity or method chosen, as the references name it.
+    chosen : str, number or bool
+        What was used.
+    how : str
+        ``"given"``, ``"default"`` or ``"module"``.
+    basis : str, optional
+        The reason, with its reference where one governs.
+    alternatives : iterable of str, optional
+        The other options the module offers.
+    """
+    if how not in HOW:
+        raise ValueError(f"how must be one of {HOW}, got {how!r}")
+    entry = {"what": what, "chosen": _plain(chosen), "how": how}
+    if basis:
+        entry["basis"] = basis
+    alts = [a for a in (alternatives or ()) if a != chosen]
+    if alts:
+        entry["alternatives"] = alts
+    return entry
+
+
+def how_given(value: Any, default: Any) -> str:
+    """``"default"`` when ``value`` equals the module's ``default``, else
+    ``"given"``."""
+    try:
+        same = value == default
+        same = bool(same)
+    except (TypeError, ValueError):
+        same = False
+    return DEFAULT if same else GIVEN
+
+
+def choices_lines(choices: Optional[List[dict]],
+                  indent: str = "  ") -> List[str]:
+    """The short "Choices" section of a ``summary()``: one line per entry,
+    ``what: chosen (how)``; nothing when there are no choices."""
+    if not choices:
+        return []
+    lines = ["", f"{indent}Choices:"]
+    for c in choices:
+        lines.append(f"{indent}  - {plain(c['what'])}: {plain(c['chosen'])} "
+                     f"({HOW_TEXT.get(c['how'], c['how'])})")
+    return lines
+
+
+def choices_from(obj: Any) -> List[dict]:
+    """The ``choices`` of a result object or a result dict; ``[]`` when
+    there are none."""
+    if isinstance(obj, dict):
+        out = obj.get("choices")
+    else:
+        out = getattr(obj, "choices", None)
+    return list(out) if isinstance(out, (list, tuple)) else []
+
+
+#: A bracket that only names inputs or result keys for the agent
+#: ("(stress_method 'boussinesq')", "(layer_results)", "(Hdr)"): a printed
+#: table leaves it out, so the engineer reads plain words.
+_CODE_ITEM = (r"(?:[A-Za-z0-9]*_[A-Za-z0-9_]*(?:\s*=\s*\w+|\s+'[^']*')?"
+              r"|[A-Za-z]\w*\s+'[^']*'|'[^']*'|Hdr|cv|KA|Es|candidates)")
+_CODE_BRACKET = re.compile(rf"\s*\((?:{_CODE_ITEM})(?:,\s*(?:{_CODE_ITEM}))*\)")
+
+
+def plain(text: Any) -> str:
+    """``text`` with the brackets that only name inputs or result keys
+    taken out, for a printed table."""
+    return _CODE_BRACKET.sub("", str(text))
+
+
+def choice_rows(choices: Optional[List[dict]]) -> List[list]:
+    """Rows of a printed table of ``choices``: what, chosen, how, basis and
+    the alternatives joined by "; ", in plain words (:func:`plain`)."""
+    rows = []
+    for c in choices or []:
+        rows.append([plain(c.get("what", "")), plain(c.get("chosen", "")),
+                     HOW_TEXT.get(c.get("how"), str(c.get("how", ""))),
+                     plain(c.get("basis", "")),
+                     "; ".join(plain(a) for a in c.get("alternatives") or [])])
+    return rows
+
+
+__all__ = ["GIVEN", "DEFAULT", "MODULE", "HOW", "HOW_TEXT", "choice",
+           "how_given", "choices_lines", "choices_from", "plain",
+           "choice_rows"]

@@ -227,3 +227,105 @@ def seismic_earth_pressure(gamma: float, H: float,
         "delta_PAE_kN_per_m": round(delta_PAE, 2),
         "height_of_application_m": round(0.6 * H, 2),
     }
+
+
+def earth_pressure_choices(phi_deg: float, kh: float, kv: float = None,
+                           delta_deg: float = None, i_deg: float = 0.0,
+                           ka=None, ka_how: str = "module",
+                           forces: bool = False) -> list:
+    """What a seismic earth pressure calculation chose (GM-115), as a
+    result's ``choices`` (``geotech_common.choices``).
+
+    Parameters
+    ----------
+    phi_deg, kh, i_deg : float
+        As given to :func:`mononobe_okabe_KAE`.
+    kv, delta_deg : float or None
+        As given; None when the call left them to their defaults (kv = 0,
+        delta = 2/3 phi).
+    ka : None, "rankine" or float
+        The static coefficient behind PA and delta-PAE: None when none was
+        used, "rankine" for tan^2(45 - phi/2), or the value used (with
+        ``ka_how`` "given" or "default").
+    forces : bool
+        Whether the forces (PAE, PA, delta-PAE and its height) were worked
+        out.
+    """
+    from geotech_common.choices import DEFAULT, GIVEN, MODULE, choice
+    out = []
+    if mo_no_solution(phi_deg, kh, kv or 0.0, i_deg):
+        out.append(choice(
+            "KAE", "Ka + 0.75 kh (Seed & Whitman 1970), Rankine Ka", MODULE,
+            "the M-O equation has no solution at this kh and backfill "
+            "slope (phi - theta - i < 0; GEC-11 Vol I Sec. 7.1.1): the "
+            "backfill itself is not stable at this seismic coefficient; this "
+            "estimate leaves out the backfill slope i, the wall batter, kv "
+            "and the wall friction delta, so it can understate KAE badly here",
+            ["Coulomb's trial wedge or the Culmann method",
+             "a slope stability analysis (GEC-11 Vol I Sec. 7.1.1)"]))
+    else:
+        out.append(choice(
+            "KAE", "Mononobe-Okabe", MODULE,
+            "pseudo-static wedge, inertia toward the wall (UFC 3-220-20 "
+            "Eq. 4-15; GEC-11 Vol I Eq. 7-6)"))
+    out.append(choice("kh", kh, GIVEN,
+                      "as given; not worked out from the PGA here"))
+    out.append(choice("kv", kv or 0.0, DEFAULT if kv is None else GIVEN))
+    if delta_deg is None:
+        out.append(choice("wall friction delta",
+                          f"{2.0 / 3.0 * phi_deg:.1f} deg (2/3 phi)",
+                          DEFAULT))
+    else:
+        out.append(choice("wall friction delta", f"{delta_deg:g} deg",
+                          GIVEN))
+    if ka == "rankine":
+        ka_r = math.tan(math.pi / 4 - math.radians(phi_deg) / 2) ** 2
+        out.append(choice(
+            "static KA", f"Rankine, {ka_r:.4f}", MODULE,
+            "vertical wall, level backfill, no wall friction; with a "
+            "sloping backfill or a batter UFC 3-220-20 Sec. 4-4.4.1 takes KA "
+            "from the same slope and batter",
+            ["KA from the same backfill slope, batter and wall friction"]))
+    elif ka is not None and ka_how == DEFAULT:
+        out.append(choice(
+            "static KA", f"{ka:g} assumed (Rankine Ka for phi 30 deg)",
+            DEFAULT, f"not computed from phi ({phi_deg:g} deg here)",
+            ["KA given (KA)"]))
+    elif ka is not None:
+        out.append(choice("static KA", f"{ka:g}", ka_how))
+    if forces:
+        out.append(choice(
+            "height of delta-PAE", "0.6 H above the base", MODULE,
+            "Seed & Whitman (1970); UFC 3-220-20 Sec. 4-4.4.1 (level "
+            "backfill, walls under 20 ft)",
+            ["PAE at h/2 (GEC-11 Vol I Sec. 7.1.1, MSE walls)"]))
+    return out
+
+
+def mo_no_solution(phi_deg: float, kh: float, kv: float = 0.0,
+                   i_deg: float = 0.0) -> bool:
+    """Whether the M-O equation has no solution: phi - theta - i < 0, with
+    theta = atan(kh / (1 - kv)) (GEC-11 Vol I Sec. 7.1.1)."""
+    theta = math.atan(kh / (1.0 - kv))
+    return math.radians(phi_deg) - theta - math.radians(i_deg) < 0
+
+
+def mo_no_solution_warning(phi_deg: float, kh: float, kv: float = 0.0,
+                           i_deg: float = 0.0):
+    """The warning a result carries when :func:`mononobe_okabe_KAE` fell
+    back to Ka + 0.75 kh (M-O has no solution), or None."""
+    if not mo_no_solution(phi_deg, kh, kv, i_deg):
+        return None
+    theta = math.degrees(math.atan(kh / (1.0 - kv)))
+    return (
+        f"The Mononobe-Okabe equation has no solution here: phi - theta - i "
+        f"= {phi_deg:g} - {theta:.1f} - {i_deg:g} = "
+        f"{phi_deg - theta - i_deg:.1f} deg < 0 (theta = atan(kh / (1 - "
+        f"kv))). At this seismic coefficient the backfill itself is not "
+        f"stable (GEC-11 Vol I Sec. 7.1.1: at i = phi - theta an unstable "
+        f"slope condition occurs). KAE is the Seed & Whitman "
+        f"estimate Ka + 0.75 kh with Rankine Ka, which leaves out the "
+        f"backfill slope i, the wall batter, kv and the wall friction delta, "
+        f"so it can understate KAE badly here. Use Coulomb's trial "
+        f"wedge (or the Culmann method) or a slope stability analysis, as "
+        f"GEC-11 Vol I Sec. 7.1.1 recommends.")
