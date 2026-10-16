@@ -97,10 +97,25 @@ class NewmarkResult:
     def displacement_cm(self) -> float:
         return self.displacement * 100.0
 
+    def regression_range_cm(self) -> Optional[tuple]:
+        """For a regression estimate: the displacement one standard
+        deviation either side of the median (``sigma_log10``), in cm."""
+        if self.sigma_log10 is None or self.displacement <= 0:
+            return None
+        f = 10.0 ** self.sigma_log10
+        return (self.displacement_cm / f, self.displacement_cm * f)
+
     def summary(self) -> str:
-        return (f"Newmark displacement ({self.method}): "
+        line = (f"Newmark displacement ({self.method}): "
                 f"{self.displacement_cm:.3f} cm  (ky={self.ky:g}"
                 + (f", amax={self.amax:g}g" if self.amax else "") + ")")
+        rng = self.regression_range_cm()
+        if rng:
+            line += (f"\n  A regression median: one standard deviation "
+                     f"({self.sigma_log10:.3f} log10 units, Jibson 2007) "
+                     f"either side is {rng[0]:.3f} to {rng[1]:.3f} cm; a "
+                     f"screening estimate, not a site-specific analysis.")
+        return line
 
     def to_dict(self) -> Dict[str, Any]:
         d = {
@@ -115,6 +130,18 @@ class NewmarkResult:
             d["polarity"] = self.polarity
         else:
             d["amax_g"] = round(self.amax, 5)
+        rng = self.regression_range_cm()
+        if rng:
+            # GM-17: a regression's median alone reads as more certain than
+            # it is (Jibson 2007 gives the dispersion with the equation)
+            d["sigma_log10"] = self.sigma_log10
+            d["displacement_cm_minus_1sigma"] = round(rng[0], 3)
+            d["displacement_cm_plus_1sigma"] = round(rng[1], 3)
+            d["note"] = ("Median of a regression (Jibson 2007, Eq. 6): one "
+                         "standard deviation is a factor of "
+                         f"{10.0 ** self.sigma_log10:.1f} either way. A "
+                         "screening estimate; integrate a record "
+                         "(newmark_displacement) for a site-specific value.")
         return d
 
 

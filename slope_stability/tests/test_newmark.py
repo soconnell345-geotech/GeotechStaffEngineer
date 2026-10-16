@@ -254,3 +254,19 @@ def test_bray_travasarou_input_validation():
         bray_travasarou_2007(ky=0.14, ts=0.4, sa_1p5ts=0.0, magnitude=7.2)
     with pytest.raises(ValueError):
         bray_travasarou_2007(ky=0.14, ts=-0.1, sa_1p5ts=0.48, magnitude=7.2)
+
+
+def test_jibson_reports_its_dispersion_not_the_median_alone():
+    """GM-17: a regression median read as more certain than it is."""
+    from slope_stability import newmark_jibson2007
+    r = newmark_jibson2007(0.1, 0.4)
+    d = r.to_dict()
+    f = 10 ** 0.510
+    assert d["displacement_cm_minus_1sigma"] == pytest.approx(
+        r.displacement_cm / f, abs=1e-3)
+    assert d["displacement_cm_plus_1sigma"] == pytest.approx(
+        r.displacement_cm * f, abs=1e-3)
+    assert "screening estimate" in d["note"] and "Jibson 2007" in r.summary()
+    # integration results carry no regression range
+    from slope_stability.newmark import NewmarkResult
+    assert NewmarkResult(displacement=0.01).regression_range_cm() is None

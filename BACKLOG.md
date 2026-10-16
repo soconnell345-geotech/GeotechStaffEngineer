@@ -341,7 +341,7 @@ Parked at 5.25.0; every number since is GPT-5.4 on Foundry. Code items were conf
 - **GM-58** [Next] **Survey every adapter for nested dicts read with `.get`** (the slope adapter silently dropped a misspelt layer cohesion until GM-52); reuse `check_nested_keys`.
 - **GM-15** [Next] **Steep-φ′ Kc rapid-drawdown overshoot ~22 %** (Lowe-Karafiath, DWW; V-052b, φ′ = 45, a failed case). *Src:* `V5.4_PLAN.md:325-332`
 - **GM-16** [Next] **Five method descriptions exceed the 8,000-char result cap.** *Src:* HT `geotech_agent.md`; *was:* H C11
-- **GM-17** [Next] **Jibson (2007) caveat** in Newmark docs and results (≥82 % unconservative bias over 42 dams). *Src:* `wiki_verification/TIER_A_LEDGER.md:89-92`
+- **GM-17** [Later] **Jibson (2007) caveat, the rest**: since 2026-10-15 a `jibson2007` result gives its one-standard-deviation range (a factor of 3.2 either way, Jibson's own 0.510 log10 units) and says it is a screening estimate. Left: the finding that it was unconservative in at least 82 % of 42 dam cases comes from an error-analysis paper in the owner's private library; cite it in the Newmark docs and results once its full reference is read from the paper. *Src:* `wiki_verification/TIER_A_LEDGER.md:89-92`
 - **GM-18** [Later] **Slope residuals**: single-anchor with-support FOS (#85); degenerate free Spencer on ponded geometry (V-044); clay-crest water crack (V-043); Slide2 #33 (unclear); no cos²β seepage (conservative); the drawdown search hotspot; DXF slip export (unclear). *Src:* `validation_examples/INVENTORY.md:716-805`
 - **GM-19** [Later] **Methods never built**: Janbu rigorous, Sarma, Barton-Bandis, a liquefied strength, a curved envelope, Hassiotis / Kumar & Hall piles. *Src:* `slope_stability/IMPROVEMENT_PLAN.md:170-176`
 
