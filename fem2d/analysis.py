@@ -2418,7 +2418,7 @@ def _normalize_springs(springs, n_nodes):
 
 def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
                    element_groups, phases, beam_elements=None,
-                   t=1.0, max_iter=100, tol=1e-5, gamma_w=9.81,
+                   t=1.0, max_iter=500, tol=1e-5, gamma_w=9.81,
                    reset_displacements_after=None, springs=None,
                    initial_stresses=None, water_on_free_faces=True,
                    settled_ratio=None, settled_residual_cap=1e-2,
@@ -2461,7 +2461,10 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
     phases : list of ConstructionPhase
     beam_elements : list of BeamElement, optional
     t : float — thickness.
-    max_iter : int — max NR iterations per step.
+    max_iter : int — max NR iterations per step. Default 500 (100 until
+        2026-10-15, GM-62): a plastic stage such as a 260 kPa footing
+        converges in about 500 and not in 100; a step that converges sooner
+        stops sooner, so only hard steps take longer.
     tol : float — convergence tolerance.
     gamma_w : float — unit weight of water.
     reset_displacements_after : int, str or None — the stage at whose END

@@ -419,7 +419,7 @@ def _run_analyze_staged(params: dict) -> dict:
         element_groups=element_groups,
         phases=phases,
         t=params.get("t", 1.0),
-        max_iter=params.get("max_iter", 100),
+        max_iter=params.get("max_iter", 500),
         tol=params.get("tol", 1e-5),
         gamma_w=params.get("gamma_w", 9.81),
         reset_displacements_after=params.get("reset_displacements_after"),
