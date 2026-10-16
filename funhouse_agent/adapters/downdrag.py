@@ -21,6 +21,7 @@ _VALID_PARAMS = (
     "fill_thickness", "fill_unit_weight", "gw_drawdown", "Nt", "n_sublayers",
     "neutral_plane_method", "toe_mobilization", "endo_bearing_condition",
     "skin_friction_stress", "include_pile_weight",
+    "influence_depth_criterion",
 )
 
 
@@ -72,6 +73,8 @@ def _run_downdrag_analysis(params):
         toe_mobilization=params.get("toe_mobilization", 1.0),
         endo_bearing_condition=params.get("endo_bearing_condition"),
         skin_friction_stress=params.get("skin_friction_stress", "final"),
+        influence_depth_criterion=params.get("influence_depth_criterion",
+                                             "bearing_stress"),
     )
     return _basis_first(analysis.compute().to_dict())
 
@@ -80,7 +83,8 @@ def _run_downdrag_analysis(params):
 #: depth profiles so a size-capped tool result can never cut them off.
 _BASIS_KEYS = ("neutral_plane_depth_m", "neutral_plane_method",
                "headline_method", "neutral_plane_basis", "methods_range",
-               "warnings", "neutral_plane_comparison", "pile_weight_basis")
+               "warnings", "neutral_plane_comparison", "pile_weight_basis",
+               "below_toe")
 
 
 def _basis_first(d: dict) -> dict:
@@ -364,6 +368,7 @@ METHOD_INFO = {
             "toe_mobilization": {"type": "float", "required": False, "default": 1.0, "description": "Fraction (0-1) of the nominal toe resistance mobilized where the load and resistance curves intersect. 1.0 = UFC 6-7.4 step 3 full mobilization ('a conservative approach for evaluating the drag force'); 0.5 and 0 = the other UFC 6-5.8.4.2 / GEC-12 7.3.6.1 cases for settlement (all three always reported in the comparison)."},
             "endo_bearing_condition": {"type": "string", "required": False, "description": "CGPR #56 Table 3.1 condition for Endo et al. (1969).", "allowed_values": ["floating", "stiff_flexible", "end_bearing"]},
             "skin_friction_stress": {"type": "string", "required": False, "default": "final", "description": "Effective stress for beta-method skin friction and the sand toe: 'final' (default; sigma'v0 + fill/drawdown change, as UFC 3-220-20 6-7.4 step 2 requires) or 'initial' (sigma'v0).", "allowed_values": ["final", "initial"]},
+            "influence_depth_criterion": {"type": "string", "required": False, "default": "bearing_stress", "description": "How deep below the toe the toe load is counted in the settlement (toe force spread 2V:1H from an equivalent footing as wide as the pile): to where its stress increase falls below 'bearing_stress' (default) = 10% of the bearing stress of the equivalent footing (UFC 3-220-20 6-5.8.4.3; 2.16 pile widths for a single pile) or 'effective_stress' = 10% of the existing vertical effective stress (FHWA GEC-12 7.3.5.3; deeper for a loaded toe in soft soil). Either way the fill / drawdown, which does not decay with depth, compresses the settling layers below the toe down to the bottom of the soil profile; give the profile down to the base of the compressible soil.", "allowed_values": ["bearing_stress", "effective_stress"]},
         },
         "returns": {
             "neutral_plane_depth_m": "Neutral plane depth (m) of the headline method.",
@@ -383,6 +388,7 @@ METHOD_INFO = {
             "positive_skin_friction_kN": "Positive shaft resistance below the neutral plane (kN).",
             "total_resistance_kN": "Toe + positive shaft resistance (kN).",
             "pile_settlement_m": "Pile head settlement (m): settlement at the neutral plane + elastic compression above it (UFC 3-220-20 Fig 6-19).",
+            "below_toe": "How deep the settlement below the toe was counted and why it stopped: the toe load to toe_load_counted_to_m (toe_load_stopped_by 'criterion', 'profile_end' or 'no_toe_load'), the fill / drawdown to fill_counted_to_m (the bottom of the soil profile), the settlement of each (mm), what the other influence_depth_criterion gives (other_criterion), and basis, one paragraph saying it. Report the basis.",
             "soil_settlement_at_np_m": "Soil settlement at the neutral plane (m), from the original ground.",
             "geotechnical_ok": "Q_dead <= total resistance (when checked).",
             "structural_ok": "LRFD demand <= structural_capacity (when given).",

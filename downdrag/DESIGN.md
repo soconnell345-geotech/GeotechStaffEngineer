@@ -239,8 +239,8 @@ With Q_dead = 0 and the weight left out, Q_np = drag force = drag load in
 every row. With `include_pile_weight=True` (24 kN/m³) the rows were 10.12 m /
 275 / 244 / 275, 8.00 m / 175 / 151 / 175 and 15.00 m / 564 / 519 / 564.
 
-(The settlements are tiny because DD-1's sand has no modulus, so nothing is
-computed below the toe.)
+(The settlements are tiny because DD-1's profile ends at the toe and its sand
+has no modulus, so nothing is computed below the toe; a warning says so.)
 
 ### Settlement at the neutral plane and of the pile head
 
@@ -250,11 +250,13 @@ compression of the pile above the plane (Eq 6-45). Each row reports, from the
 original ground:
 
 - soil settlement at the plane = consolidation of the settling layers between
-  the plane and the toe (Eqs 6-53, 6-54) + the settlement of the soil below the
-  toe under the fill / drawdown alone (3 B' below the toe);
-- pile settlement at the plane = settlement under the toe (bearing-stratum
-  compression under the toe force and the fill / drawdown, Eqs 6-49 to 6-54)
-  + elastic compression of the pile between the plane and the toe; set equal
+  the plane and the toe (Eqs 6-53, 6-54) + the settlement of the settling
+  layers below the toe under the fill / drawdown alone, down to the bottom of
+  the soil profile ("Settlement below the toe", below);
+- pile settlement at the plane = settlement under the toe (that, plus the
+  compression under the toe force down to the depth the references give,
+  Eqs 6-49 to 6-54) + elastic compression of the pile between the plane and
+  the toe; set equal
   to the soil's when the toe is at its full resistance and the soil settles
   more (the toe is pushed down with it);
 - pile head settlement = the larger of the two + the elastic compression above
@@ -439,13 +441,13 @@ For a single pile, B' = L' = pile diameter. Used in toe settlement.
 
 ### Eq 6-51 — 2V:1H Stress Distribution
 `Δσz = Q / ((B' + z')(L' + z'))`
-Used in `_compute_toe_settlement()` to distribute pile tip load into
-the bearing stratum. The stress decreases with depth below the tip
-as the loaded area spreads.
+Used in `_toe_load_compression()` to spread the toe force below the toe.
+The stress decreases with depth below the toe as the loaded area spreads.
 
-### Eq 6-52 — Stress Change at Neutral Plane
+### Eq 6-52 — Stress Change below the Equivalent Footing
 `Δσz = Q/((B'+z')(L'+z')) + Δσz,other`
-Combined pile load stress + fill/GW stress at each depth.
+The toe force's stress + the fill / drawdown stress at each depth below the
+toe ("Settlement below the toe").
 
 ### Eq 6-53 — Settlement of Clay (Modified Compression Indices)
 Uses C_εc (modified compression index) and C_εr (modified recompression
@@ -482,20 +484,118 @@ Also supports the standard e-log(p) method (Cc/Cr/e0/σ'v0/σ'p):
 
 These are internally converted to modified indices for computation.
 
-## Toe Settlement — Equivalent Footing Approach
+## Settlement below the toe (GM-49, 2026-10-15)
 
-The bearing stratum settlement below the pile tip uses:
+The settlement of the soil below the toe has two parts: what the fill /
+drawdown alone compresses there (the soil at the toe level settles that much,
+pile or no pile), and what the toe force compresses on top of it (the toe's
+penetration relative to that soil).
 
-1. Equivalent footing: B' = L' = pile_diameter (single pile)
-2. Influence zone: 3·B' below pile tip, discretized into sublayers
-3. 2V:1H stress distribution (Eq 6-51) from pile tip load
-4. Additional stress from fill/GW drawdown at each depth
-5. Settlement via Eq 6-53 (clay) or Eq 6-54 (sand) for each sublayer
+**What the references say.** UFC 3-220-20 (16 Jan 2025), §6-5.8.4.2, p. 448:
+"For a single element, the dimensions of the footing are equal to the width
+of the element." and "The change in total vertical stress at a particular
+depth, z, due to the applied load, Q, and any other sources of stress change,
+∆σz,other, is estimated by: [Eq 6-52] ... The additional settlement due to
+∆σz,other is the downdrag component of foundation settlement." §6-5.8.4.3,
+p. 449: "Highly compressible deposits may extend a significant depth below
+the base of the foundation elements. At some depth, the change in vertical
+stress caused by the applied load becomes sufficiently small to ignore the
+soil compression. This depth is typically selected where the change in
+stress is less than 10% of the bearing stress of the equivalent footing."
+and, on Fig 6-19: "Below the neutral plane, the soil settlement is due to the
+stress changes from the applied foundation load and stress changes from
+other sources."
+
+FHWA GEC-12 Vol I (FHWA-NHI-16-009), §7.3.5.3 "Group Settlement in Cohesive
+Soils", step 1c, p. 324: "Determine the stress distribution to soil layers
+below the equivalent footing up to the depth at which the stress increase
+from the equivalent footing is less than 10% of existing vertical effective
+stress at that depth." and p. 325: "The depth at which the stress increase
+is less than 10% will provide the total thickness of cohesive soil layer or
+layers to be used in performing settlement computations." §7.3.5.5 "Group
+Settlement in Layered Soils", step 1c (pp. 327-328), says the same.
+
+So the two references state different fractions: UFC 10 % of the BEARING
+STRESS of the equivalent footing, GEC-12 10 % of the EXISTING VERTICAL
+EFFECTIVE STRESS. (The backlog item, GM-49, gave GEC-12's rule as UFC's.)
+Both apply the rule to the stress from the foundation load (UFC "caused by
+the applied load", GEC-12 "from the equivalent footing"); neither cuts off
+the fill's stress, which for a wide fill does not decay with depth.
+
+**What the module does.**
+
+1. The toe force is spread 2V:1H (Eq 6-52) from an equivalent footing
+   B' = L' = the pile width at the toe, and counted down to where its stress
+   increase falls below 10 % of (`influence_depth_criterion`):
+   - `"bearing_stress"` (default): the bearing stress of the equivalent
+     footing, UFC §6-5.8.4.3. (B'+z')(L'+z') = 10 B'L', so z' =
+     (sqrt(10) - 1) B' = 2.16 B' whatever the load;
+   - `"effective_stress"`: the existing vertical effective stress at that
+     depth, GEC-12 §7.3.5.3; Q/(B'+z')² = 0.1 σ'v0, deeper for a loaded toe
+     in soft soil (5.40 m against 0.86 m for 503 kN on a 0.4 m pile in sand).
+
+   UFC is the default because the module's headline procedure is UFC's and
+   §6-5.8.4.3 is the section that sets the equivalent footing below the
+   neutral plane; GEC-12's rule is the option (owner's rule: cited options,
+   never one silent basis). The other criterion's depth and settlement are
+   always reported beside it (`below_toe["other_criterion"]`).
+2. In each sublayer of that zone the toe load adds the compression under the
+   toe load + the fill / drawdown less the compression under the fill /
+   drawdown alone (it acts on the stress the fill leaves). Any layer with a
+   compressibility counts (C_ec for clay, E_s for sand), settling or not.
+   C_ec and C_er are derived from Cc, Cr and e0 for every clay (before
+   2026-10-15 only for a settling layer, so a non-settling bearing clay given
+   Cc and e0 counted nothing under the toe load). A clay given C_ec and
+   sigma_p must also give C_er (or Cc, Cr and e0): Eq 6-53 needs the
+   recompression index where sigma_p exceeds sigma'v0, and the module has no
+   default for it, so the layer refuses it with a ValueError naming C_er.
+3. The fill / drawdown stress (Δσz,other, `_compute_stress_change` at each
+   depth: constant for a fill, γw x drawdown below the lowered water table)
+   compresses the settling layers below the toe down to the bottom of the
+   soil profile; no depth criterion cuts it off. A layer not marked
+   `settling` is not settled by the fill below the toe, as along the shaft
+   (`settling` means "settles due to fill placement or GW drawdown"). So give
+   the profile down to the base of the compressible soil.
+4. Settlement by Eq 6-53 (clay) or Eq 6-54 (sand). Sublayers break at layer
+   boundaries and water-table depths, at most 0.25 m thick; in the toe zone
+   0.1 x (B' + z') thick near the toe, where the stress falls fast (0.2 %
+   from the closed form for elastic sand; the old uniform grid was 0.9 %).
+
+`below_toe` (to_dict, summary "Settlement Below the Toe", the calc package's
+toe-settlement step) says how deep each part was counted and why it stopped:
+the toe load at the criterion, at the bottom of the profile (above the
+criterion depth), or not at all (no toe load); the fill / drawdown at the
+bottom of the profile. The GM-51 warning about soil with no compressibility
+checks where a load acts: the same toe-load zone when the toe carries load
+(and says how far to extend a profile that stops short of it), and with a
+fill or drawdown everything from the toe to the bottom of the profile ("below
+15.00 m (not in the soil profile)" when the profile ends at the toe). With
+no toe load and no fill or drawdown it does not warn.
+
+**Before (to 2026-10-15)**: both parts were cut off 3 B' below the toe, and
+a non-settling layer with a modulus was compressed by the fill there. Deep
+compressible soil below a floating pile's toe was left out.
+
+| Case | Before | After |
+|---|---|---|
+| DD-1 (profile ends at the toe) | NP 8.00 m, toe 0.00 mm, head 0.05 mm | unchanged |
+| V-004 (no fill, no modulus below the toe) | NP 54.00 ft, Qmax 486.6, DF 285.6 kips; toe 0 mm | unchanged |
+| UFC App. B-5.5 (stiff clay below the toe has no Cc) | 47.70 / 50.14 / 52.48 ft; head 2.91 mm | unchanged |
+| Floating pile (20 m in 25 m of settling clay, 2 m fill, 300 kN) | toe 34.4 mm, soil at NP 305.3, head 305.4 mm | toe 81.3, soil at NP 353.8, head 353.9 mm (NP 6.47 m unchanged) |
+| Deep clay (toe 15 m into soft clay to 30 m, 60 kPa fill, 300 kN) | toe 58.6 mm, head 540.8 mm | toe 400.9, head 885.0 mm (NP 3.30 m unchanged) |
+| Toe in sand with E_s, no fill (503 kN on 0.4 m) | toe 13.88 mm (3 B') | 12.75 mm (2.16 B', UFC); 17.36 mm with GEC-12's criterion (5.40 m) |
+
+The neutral planes do not move in these cases: the fill's compression below
+the toe moves the soil and the pile alike, and the toe penetration changes
+only with the toe-load zone. Pinned by
+`tests/test_downdrag.py::TestSettlementBelowTheToe`.
 
 ## Stress Changes from Loading
 
-- **Fill placement**: `Δσ = γ_fill · H_fill` (uniform, 1-D assumption for extensive fill)
-- **GW drawdown**: `Δσ = γ_w · drawdown` (for depths between old and new GWT)
+- **Fill placement**: `Δσ = γ_fill · H_fill` (uniform, 1-D assumption for
+  extensive fill; the same at every depth, below the toe too)
+- **GW drawdown**: `Δσ = γ_w · (z - old GWT)` between the old and new GWT,
+  `γ_w · drawdown` below the new GWT (the same at every depth)
 
 ## Edge Cases
 
@@ -537,7 +637,8 @@ The bearing stratum settlement below the pile tip uses:
 3. AASHTO LRFD Bridge Design Specifications, 9th Ed., Section 10.7.3.7.
 4. UFC 3-220-20, 16 Jan 2025, Chapter 6, Eqs 6-45, 6-49–6-54, 6-80.
 5. FHWA GEC-12 (FHWA-NHI-16-009), Chapter 7 (Beta method); §7.3.5.7 and
-   §7.3.6.1 (neutral plane, 0/50/100 % toe mobilization).
+   §7.3.6.1 (neutral plane, 0/50/100 % toe mobilization); §7.3.5.3 and
+   §7.3.5.5 step 1c (how deep below the equivalent footing to count).
 6. Briaud, J.-L. & Tucker, L.M. (1997). "Design and construction guidelines
    for downdrag on uncoated and bitumen-coated piles." NCHRP Report 393.
 7. FHWA GEC-10 (FHWA-NHI-18-024), §10.6 (downdrag; defers to GEC-12

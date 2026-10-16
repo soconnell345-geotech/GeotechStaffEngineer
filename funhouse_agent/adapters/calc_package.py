@@ -916,6 +916,8 @@ def _generate_downdrag_package(params: dict) -> dict:
         toe_mobilization=params.get("toe_mobilization", 1.0),
         endo_bearing_condition=params.get("endo_bearing_condition"),
         skin_friction_stress=params.get("skin_friction_stress", "final"),
+        influence_depth_criterion=params.get("influence_depth_criterion",
+                                             "bearing_stress"),
     )
     result = analysis.compute()
 
@@ -928,6 +930,7 @@ def _generate_downdrag_package(params: dict) -> dict:
         "skin_friction_stress": result.skin_friction_stress,
         "include_pile_weight": result.include_pile_weight,
         "pile_weight_basis": result.pile_weight_basis,
+        "below_toe_basis": result.below_toe.get("basis", ""),
     }
     return _build_response(
         "downdrag", result, analysis, params,
@@ -2148,6 +2151,7 @@ METHOD_INFO = {
             "toe_mobilization": {"type": "float", "required": False, "default": 1.0, "description": "Fraction (0-1) of the toe resistance for force equilibrium (UFC 6-5.8.4.2: 0, 0.5, 1)."},
             "endo_bearing_condition": {"type": "string", "required": False, "description": "CGPR #56 Table 3.1 condition for the Endo et al. (1969) method.", "allowed_values": ["floating", "stiff_flexible", "end_bearing"]},
             "skin_friction_stress": {"type": "string", "required": False, "default": "final", "description": "Effective stress for beta friction and the toe in sand: 'final' (default; UFC 3-220-20 6-7.4 step 2, the profile that includes the stress change producing settlement; GEC-12 is silent) or 'initial' (before the fill or drawdown).", "allowed_values": ["final", "initial"]},
+            "influence_depth_criterion": {"type": "string", "required": False, "default": "bearing_stress", "description": "How deep below the toe the toe load is counted, as in downdrag.downdrag_analysis: to where its stress increase falls below 'bearing_stress' (default) = 10% of the bearing stress of the equivalent footing (UFC 3-220-20 6-5.8.4.3) or 'effective_stress' = 10% of the existing vertical effective stress (FHWA GEC-12 7.3.5.3). The fill / drawdown compresses the settling layers below the toe down to the bottom of the soil profile either way.", "allowed_values": ["bearing_stress", "effective_stress"]},
             **_COMMON_PARAMS,
         },
         "returns": {**_COMMON_RETURNS,
@@ -2159,6 +2163,7 @@ METHOD_INFO = {
                     "skin_friction_stress": "'final' or 'initial': the effective stress the friction and toe resistance used.",
                     "include_pile_weight": "Whether the load curve carried the pile's own weight (false by default).",
                     "pile_weight_basis": "One sentence saying whether the pile's own weight is in the load curve, naming the references; also printed in the package.",
+                    "below_toe_basis": "How deep the settlement below the toe was counted and why it stopped (the toe load per influence_depth_criterion, the fill / drawdown to the bottom of the soil profile); also printed in the package.",
                     "neutral_plane_comparison": "Every method on the same inputs, each with its source (also tabulated in the package).",
                     "warnings": "What the engineer must know about the result; also printed in the package. Report every one.",
                     "dragload_kN": "Dragload (kN).",

@@ -951,5 +951,36 @@
    "BACKLOG.md (OWN-61, GM-90, GM-92)",
    "module_work/field_feedback/2026-10-15_rock-excavation-kriging-mc_v5.33.0/FINDINGS.md"
   ]
+ },
+ "OWN-62": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Below a pile's toe, how deep should downdrag count the settlement caused by the pile's own load: UFC 3-220-20's rule or GEC-12's?",
+  "why": "The module used to count a fixed 3 pile widths below the toe, which neither reference says. It now follows the references, and they give different depths.",
+  "background": "UFC 3-220-20 (2025) §6-5.8.4.3, p. 449: the depth \"is typically selected where the change in stress is less than 10% of the bearing stress of the equivalent footing\" (for a single pile, about 2.2 pile widths below the toe). GEC-12 Vol I §7.3.5.3 step 1c, p. 324: \"less than 10% of existing vertical effective stress at that depth\" (deeper; in a sand example 5.4 m against UFC's 0.9 m, toe settlement 17.4 mm against 12.7 mm). Neither rule cuts off the fill: settlement from a fill or drawdown below the toe is counted to the bottom of the soil profile either way. Every result shows what both rules give.",
+  "options": [
+   {
+    "label": "UFC: 10 % of the bearing stress (current default)",
+    "effect": "Matches the rest of the downdrag module, which follows UFC's procedure as the headline. Shallower toe zone."
+   },
+   {
+    "label": "GEC-12: 10 % of the effective stress",
+    "effect": "Deeper toe zone, more toe settlement; the more conservative choice for a single pile."
+   },
+   {
+    "label": "Keep both, but warn when they differ by more than a set amount",
+    "effect": "UFC stays the default; the result flags cases where the choice matters."
+   }
+  ],
+  "recommendation": "Keep UFC as the default, as the module's headline method, with GEC-12's depth shown beside it in every result.",
+  "if_no_answer": "UFC stays the default; both depths stay in every result.",
+  "message_to_send": null,
+  "unblocks": [
+   "GM-49 (done) default choice"
+  ],
+  "sources": [
+   "downdrag/DESIGN.md, \"Settlement below the toe\"",
+   "geotech-references/docs/ufc_3_220_20_2025.pdf p. 449; GEC-12 Vol I p. 324"
+  ]
  }
 }

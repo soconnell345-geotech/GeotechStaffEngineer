@@ -48,9 +48,13 @@ class DowndragSoilLayer:
         Override alpha coefficient for cohesive skin friction.
         If None, defaults to 1.0 (conservative for soft clay).
     Cc : float
-        Compression index. Required if settling=True and cohesive.
+        Compression index. Required if settling=True and cohesive. Given
+        with e0 on any clay, C_ec and C_er are derived from them, settling
+        or not: below the pile toe the toe load compresses any clay with a
+        compressibility (``settling`` decides only whether the fill /
+        drawdown does).
     Cr : float
-        Recompression index. Required if settling=True and cohesive.
+        Recompression index (C_er = Cr/(1+e0); 0 if not given).
     e0 : float
         Initial void ratio. Required if settling=True and cohesive.
     C_ec : float, optional
@@ -58,7 +62,8 @@ class DowndragSoilLayer:
         Used in UFC Eq 6-53.
     C_er : float, optional
         Modified recompression index = Cr/(1+e0). If provided, overrides Cr/e0.
-        Used in UFC Eq 6-53.
+        Used in UFC Eq 6-53. Required with C_ec when sigma_p is given (the
+        clay is then overconsolidated where sigma_p exceeds sigma'v0).
     sigma_p : float, optional
         Preconsolidation pressure (kPa). If None, layer is normally consolidated.
     E_s : float, optional
@@ -112,6 +117,31 @@ class DowndragSoilLayer:
             raise ValueError(
                 f"Cohesive layer must have cu > 0, got {self.cu}"
             )
+        if self.soil_type == "cohesive":
+            # The modified indices whenever Cc and e0 are given, settling or
+            # not: below the pile toe the toe load compresses any clay with
+            # a compressibility; ``settling`` only says whether the fill /
+            # drawdown compresses the layer (GM-49).
+            has_traditional = self.Cc > 0 and self.e0 > 0
+            if self.Cr < 0:
+                raise ValueError(
+                    f"Cr must be non-negative, got {self.Cr}"
+                )
+            if self.C_ec is None and has_traditional:
+                self.C_ec = self.Cc / (1.0 + self.e0)
+            if self.C_er is None and has_traditional:
+                self.C_er = self.Cr / (1.0 + self.e0)
+            if (self.C_ec is not None and self.C_er is None
+                    and self.sigma_p is not None):
+                # sigma_p makes the clay overconsolidated where it exceeds
+                # sigma'v0, and UFC Eq 6-53 then needs the recompression
+                # index; there is no default for it.
+                raise ValueError(
+                    f"A cohesive layer with C_ec and sigma_p "
+                    f"({self.sigma_p:g} kPa) needs the recompression index "
+                    f"too: give C_er (= Cr/(1+e0)), or Cc, Cr and e0 "
+                    f"(UFC 3-220-20 Eq 6-53)"
+                    + (f" [{self.description}]" if self.description else ""))
         if self.settling:
             if self.soil_type == "cohesive":
                 # Cohesive: need Cc/e0 or C_ec/C_er
@@ -122,15 +152,6 @@ class DowndragSoilLayer:
                         "Cohesive settling layer must have (Cc > 0 and e0 > 0)"
                         " or C_ec > 0"
                     )
-                if self.Cr < 0:
-                    raise ValueError(
-                        f"Cr must be non-negative, got {self.Cr}"
-                    )
-                # Derive modified indices from traditional if not provided
-                if self.C_ec is None and has_traditional:
-                    self.C_ec = self.Cc / (1.0 + self.e0)
-                if self.C_er is None and has_traditional:
-                    self.C_er = self.Cr / (1.0 + self.e0)
             else:
                 # Cohesionless: need E_s for elastic settlement (Eq 6-54)
                 if self.E_s is None or self.E_s <= 0:

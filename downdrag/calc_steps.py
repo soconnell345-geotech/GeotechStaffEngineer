@@ -131,6 +131,14 @@ def get_input_summary(result, analysis) -> List[InputItem]:
         stress = "initial (σ'v0)"
     items.append(InputItem("σ'_fs", "Effective stress for skin "
                            "friction and the toe in sand", stress, ""))
+    crit = getattr(analysis, "influence_depth_criterion", "bearing_stress")
+    items.append(InputItem(
+        "z_toe", "Toe load counted below the toe to where its stress "
+        "increase falls below",
+        "10% of the bearing stress of the equivalent footing (UFC "
+        "3-220-20 §6-5.8.4.3)" if crit == "bearing_stress" else
+        "10% of the existing vertical effective stress (FHWA GEC-12 "
+        "§7.3.5.3)", ""))
 
     return items
 
@@ -387,17 +395,49 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         result_unit="mm",
     ))
 
+    bt = getattr(r, "below_toe", None) or {}
+    if bt:
+        stop = {
+            "criterion": "where its stress increase falls below "
+                         + bt["criterion"],
+            "profile_end": "the bottom of the soil profile (above where "
+                           "its stress increase would fall below "
+                           + bt["criterion"] + ")",
+            "no_toe_load": "the toe carries no load",
+        }[bt["toe_load_stopped_by"]]
+        fill_to = bt.get("fill_counted_to_m")
+        sub = (
+            f"B' = L' = {analysis.pile_diameter:.3f} m, Q_toe = "
+            f"{bt['toe_force_kN']:.1f} kN, q = Q_toe/(B'L') = "
+            f"{bt['bearing_stress_kPa']:.0f} kPa\n"
+            f"Toe load counted to {bt['toe_load_counted_to_m']:.2f} m: "
+            f"{stop}\n"
+            + (f"Fill / drawdown counted to {fill_to:.2f} m (the bottom "
+               f"of the soil profile): {bt['fill_settlement_mm']:.2f} mm"
+               if fill_to is not None else "No fill or drawdown")
+            + f"; toe load: {bt['toe_load_compression_mm']:.2f} mm")
+    else:
+        sub = f"B' = {analysis.pile_diameter:.3f} m"
     settle_items.append(CalcStep(
-        title="Toe Settlement (bearing stratum compression)",
+        title="Toe Settlement (soil below the toe)",
         equation=(
-            "Equivalent footing B' = D, influence depth = 3\u00d7D.\n"
-            "2V:1H stress distribution below pile tip (UFC Eq 6-51)."
+            "\u0394\u03c3(z') = Q_toe/((B'+z')(L'+z')) + \u0394\u03c3_fill "
+            "(UFC Eq 6-52), equivalent footing B' = L' = D at the toe.\n"
+            "Toe load counted down to where its stress increase falls "
+            "below 10% of the bearing stress of the equivalent footing "
+            "(UFC \u00a76-5.8.4.3) or, as an option, of the existing "
+            "vertical effective stress (GEC-12 \u00a77.3.5.3);\n"
+            "the fill / drawdown, which does not decay with depth, "
+            "compresses the settling layers down to the bottom of the "
+            "soil profile."
         ),
-        substitution=f"B' = {analysis.pile_diameter:.3f} m",
+        substitution=sub,
         result_name="\u03b4_toe",
         result_value=f"{r.toe_settlement * 1000:.2f}",
         result_unit="mm",
-        reference="UFC 3-220-20, Eqs 6-49 through 6-51",
+        reference=("UFC 3-220-20 Eqs 6-49 to 6-54, \u00a76-5.8.4.3 (p. 449); "
+                   "FHWA GEC-12 \u00a77.3.5.3 step 1c (p. 324)"),
+        notes=bt.get("basis", ""),
     ))
 
     settle_items.append(CalcStep(
@@ -444,7 +484,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             ["Elastic shortening", f"{r.elastic_shortening * 1000:.2f}",
              "Pile compression above NP (\u03b4_e)"],
             ["Toe settlement", f"{r.toe_settlement * 1000:.2f}",
-             "Bearing stratum compression below tip (\u03b4_toe)"],
+             "Soil below the toe: fill / drawdown and toe load "
+             "(\u03b4_toe)"],
             ["Soil settlement at NP", f"{r.soil_settlement_at_np * 1000:.2f}",
              "Settling layers below NP + soil below the toe"],
             ["Settlement at NP", f"{s_np:.2f}",

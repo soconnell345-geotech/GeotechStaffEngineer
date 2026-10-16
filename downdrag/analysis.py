@@ -21,7 +21,10 @@ References
 - Fellenius, B.H. (2004). "Unified design of piled foundations with emphasis
   on settlement analysis." ASCE GSP 125.
 - AASHTO LRFD Bridge Design Specifications, Section 10.7.3.7.
-- UFC 3-220-20, 16 Jan 2025, Chapter 6, Eqs 6-51 through 6-53, 6-80.
+- UFC 3-220-20, 16 Jan 2025, Chapter 6, Eqs 6-49 through 6-54, 6-80;
+  §6-5.8.4.3 (how deep below the toe the toe load is counted).
+- FHWA GEC-12 (FHWA-NHI-16-009) Vol I, §7.3.5.3 step 1c (the same, by the
+  effective stress).
 """
 
 import math
@@ -66,6 +69,28 @@ _SOURCE = {
 
 #: The headline method when ``neutral_plane_method='auto'``.
 UFC_PROCEDURE = "UFC 3-220-20 §6-7.4 procedure"
+
+#: Accepted values of ``DowndragAnalysis.influence_depth_criterion``: how
+#: deep below the toe the toe load is counted (DESIGN.md "Settlement below
+#: the toe").
+INFLUENCE_DEPTH_CRITERIA = ("bearing_stress", "effective_stress")
+
+#: Both references stop counting the toe load where its stress increase
+#: falls below 10 % of a stress: UFC 3-220-20 §6-5.8.4.3 (p. 449) "of the
+#: bearing stress of the equivalent footing", FHWA GEC-12 §7.3.5.3 step 1c
+#: (p. 324) "of existing vertical effective stress at that depth".
+INFLUENCE_STRESS_FRACTION = 0.10
+
+#: Each criterion in the reference's words, and where it is stated.
+_INFLUENCE = {
+    "bearing_stress": ("10% of the bearing stress of the equivalent footing",
+                       "UFC 3-220-20 §6-5.8.4.3, p. 449"),
+    "effective_stress": ("10% of the existing vertical effective stress",
+                         "FHWA GEC-12 §7.3.5.3 step 1c, p. 324"),
+}
+
+#: Thickest sublayer below the toe (m), as along the shaft.
+_SUBLAYER = 0.25
 
 
 def _fe_name(mobilization: float) -> str:
@@ -174,6 +199,24 @@ class DowndragAnalysis:
         includes stress change(s) producing settlement." FHWA GEC-12
         §7.3.6.1 states no rule in those words (DESIGN.md quotes what it
         says).
+    influence_depth_criterion : str
+        How deep below the toe the toe load is counted in the settlement
+        (the toe force spread 2V:1H from an equivalent footing as wide as
+        the pile, UFC 3-220-20 Eq 6-52): down to where its stress increase
+        falls below
+
+        - ``"bearing_stress"`` (default): "10% of the bearing stress of
+          the equivalent footing" (UFC 3-220-20 §6-5.8.4.3, p. 449); for a
+          single pile (sqrt(10) - 1) = 2.16 pile widths below the toe;
+        - ``"effective_stress"``: "10% of existing vertical effective
+          stress at that depth" (FHWA GEC-12 §7.3.5.3 step 1c, p. 324);
+          deeper for a loaded toe in soft soil.
+
+        Either way the fill / drawdown stress increase, which does not
+        decay with depth, compresses the settling layers below the toe down
+        to the bottom of the soil profile. The result's ``below_toe`` says
+        how deep each was counted, why it stopped, and what the other
+        criterion gives.
 
     Examples
     --------
@@ -214,6 +257,7 @@ class DowndragAnalysis:
     endo_bearing_condition: Optional[str] = None
     skin_friction_stress: str = "final"
     include_pile_weight: bool = False
+    influence_depth_criterion: str = "bearing_stress"
 
     def __post_init__(self):
         if self.pile_length <= 0:
@@ -271,6 +315,12 @@ class DowndragAnalysis:
                 f"include_pile_weight must be True or False, got "
                 f"{self.include_pile_weight!r}")
         self.include_pile_weight = bool(self.include_pile_weight)
+        if self.influence_depth_criterion not in INFLUENCE_DEPTH_CRITERIA:
+            raise ValueError(
+                f"influence_depth_criterion must be one of "
+                f"{list(INFLUENCE_DEPTH_CRITERIA)} ('bearing_stress': UFC "
+                f"3-220-20 §6-5.8.4.3; 'effective_stress': FHWA GEC-12 "
+                f"§7.3.5.3), got '{self.influence_depth_criterion}'")
 
     def _weight_per_m(self) -> float:
         """The pile's own weight per metre in the load curve (kN/m): zero
@@ -382,22 +432,39 @@ class DowndragAnalysis:
         else:
             axial_load = self._axial_load_with_mobilized_toe(S, z_np)
 
-        toe_settle = self._compute_toe_settlement(
-            S["sigma_v0"][-1], S["delta_sigma"][-1], toe_force)
-        unrated = self._unrated_below_toe()
+        toe_load_s = self._toe_load_compression(toe_force)
+        toe_settle = S["s_fill_only"] + toe_load_s
+        below_toe = self._below_toe_info(toe_force, S["s_fill_only"],
+                                         toe_load_s)
+        unrated = self._unrated_below_toe(toe_force)
         if unrated:
             # GM-51: with no compressibility given, the soil below the toe
             # adds nothing, and the pile settlement reads as if it were rigid
-            spans = "; ".join(f"{a:.2f}-{b:.2f} m ({kind})"
-                              for a, b, kind in unrated)
-            warning_list.append(
+            spans = "; ".join(
+                f"{a:.2f}-{b:.2f} m ({kind})" if b is not None
+                else f"below {a:.2f} m ({kind})" for a, b, kind in unrated)
+            text = (
                 "The soil below the pile toe has no compressibility in this "
                 f"model ({spans}), so its settlement counts as zero (here "
-                f"{toe_settle * 1000:.1f} mm below the toe in all). Extend "
-                "the profile at least 3 pile diameters below the toe and "
-                "give Cc and e0 (or C_ec) for clay, or E_s for sand, to "
-                "include it (UFC 3-220-20 Eqs 6-49 to 6-51, the equivalent "
-                "footing at the toe).")
+                f"{toe_settle * 1000:.1f} mm below the toe in all).")
+            z_q = self._toe_load_depth(toe_force) if toe_force > 0 else 0.0
+            if z_q > 0:
+                what, src = _INFLUENCE[self.influence_depth_criterion]
+                text += (
+                    f" The toe load counts down to "
+                    f"{self.pile_length + z_q:.2f} m, where its stress "
+                    f"increase falls below {what} ({src}): extend the "
+                    f"profile at least that deep.")
+            if self.fill_thickness > 0 or self.gw_drawdown > 0:
+                text += (
+                    " The fill / drawdown stress increase does not decay "
+                    "with depth: give the profile down to the base of the "
+                    "compressible soil.")
+            warning_list.append(
+                text + " Give Cc and e0 (or C_ec) for clay, or E_s for "
+                "sand, to include it, and mark a layer settling if the "
+                "fill / drawdown compresses it (UFC 3-220-20 Eqs 6-49 to "
+                "6-54, the equivalent footing at the toe).")
         if used is None:
             elastic_short = 0.0
             pile_settlement = toe_settle
@@ -470,6 +537,8 @@ class DowndragAnalysis:
             methods_range=_methods_range(rows),
             headline_method=(used["name"] if used is not None
                              else "no neutral plane"),
+            influence_depth_criterion=self.influence_depth_criterion,
+            below_toe=below_toe,
         )
 
     # ── Neutral-plane methods ─────────────────────────────────────────────
@@ -532,8 +601,7 @@ class DowndragAnalysis:
         # Pile and soil settle equally at the NP (UFC 3-220-20 Fig 6-19),
         # evaluated at every node.
         g, toe_force_at = self._settlement_mismatch(
-            z_nodes, dz, drag_from_top, resist_full, R,
-            soil_settlement, sigma_v0[-1], delta_sigma[-1])
+            z_nodes, dz, drag_from_top, resist_full, R, soil_settlement)
         z_sc, sc_toe_yields = _compatible_plane(z_nodes, g, z_fe_full)
         return {
             "z": z_nodes, "dz": dz, "fs": fs, "F": F, "shaft_to": shaft_to,
@@ -549,8 +617,7 @@ class DowndragAnalysis:
             "z_se": _deepest_positive_crossing(z_nodes, g),
             "z_sc": z_sc, "sc_toe_yields": sc_toe_yields,
             "any_soil_settles": bool(np.any(soil_settlement > 0)),
-            "s_fill_only": self._compute_toe_settlement(
-                sigma_v0[-1], delta_sigma[-1], 0.0),
+            "s_fill_only": self._fill_settlement_below_toe(),
         }
 
     def _load_at(self, S: dict, z: float) -> float:
@@ -580,8 +647,7 @@ class DowndragAnalysis:
         AE = self.pile_area * self.pile_E
         compression = (float(np.trapezoid(q, zz)) / AE
                        if AE > 0 and len(zz) > 1 else 0.0)
-        under_toe = max(S["s_fill_only"], self._compute_toe_settlement(
-            S["sigma_v0"][-1], S["delta_sigma"][-1], toe_force))
+        under_toe = S["s_fill_only"] + self._toe_load_compression(toe_force)
         return under_toe + compression
 
     def _compression_above(self, S: dict, z: float) -> float:
@@ -1230,8 +1296,7 @@ class DowndragAnalysis:
                              drag_from_top: np.ndarray,
                              resist_from_tip: np.ndarray,
                              toe_resistance: float,
-                             soil_settlement: np.ndarray,
-                             sigma_v_tip: float, delta_sigma_tip: float):
+                             soil_settlement: np.ndarray):
         """Soil minus pile settlement with the neutral plane at each node.
 
         For a trial neutral plane at node j the pile carries
@@ -1240,9 +1305,10 @@ class DowndragAnalysis:
         never less than zero (when the full positive friction below would
         exceed Q_np, it is only partly mobilized). The pile settlement
         relative to the soil at the toe level is the toe penetration (the
-        bearing-stratum settlement under the toe force, minus what the
-        fill / drawdown alone causes there) plus the elastic compression
-        of the pile between the trial NP and the toe. The soil settlement
+        compression of the soil below the toe under the toe force, on top
+        of what the fill / drawdown alone causes there:
+        ``_toe_load_compression``) plus the elastic compression of the
+        pile between the trial NP and the toe. The soil settlement
         profile is already measured from the toe level (it accumulates
         from the bottom up), so the two compare directly (UFC 3-220-20
         Fig 6-19 and §6-5.8.4.3: equal settlement at the neutral plane).
@@ -1261,8 +1327,6 @@ class DowndragAnalysis:
         q_toe_raw = drag_from_top - f_below
         toe_force = np.clip(q_toe_raw, 0.0, toe_resistance)
 
-        s_fill_only = self._compute_toe_settlement(
-            sigma_v_tip, delta_sigma_tip, 0.0)
         g = np.zeros(n)
         for j in range(n):
             q_np = drag_from_top[j]
@@ -1273,9 +1337,7 @@ class DowndragAnalysis:
             q = q_np - k * (f_below[j] - f_below[j:])
             compression = (float(np.trapezoid(q, z_nodes[j:])) / AE
                            if AE > 0 and n - j > 1 else 0.0)
-            penetration = max(0.0, self._compute_toe_settlement(
-                sigma_v_tip, delta_sigma_tip, float(toe_force[j]))
-                - s_fill_only)
+            penetration = self._toe_load_compression(float(toe_force[j]))
             g[j] = soil_settlement[j] - (penetration + compression)
         return g, toe_force
 
@@ -1383,13 +1445,292 @@ class DowndragAnalysis:
             z_nodes, dz, fs, toe_resistance)
         return np.minimum(Q_from_top, Q_from_bot)
 
-    def _unrated_below_toe(self) -> List[tuple]:
-        """``(top, bottom, soil type)`` of the soil within the toe's
-        influence zone (3 B' below the tip, as
-        :meth:`_compute_toe_settlement`) that has no compressibility: clay
-        without C_ec (or Cc and e0), sand without E_s."""
+    # ── Settlement below the toe (GM-49) ──────────────────────────────────
+
+    def _toe_load_depth(self, toe_force: float,
+                        criterion: Optional[str] = None) -> float:
+        """Depth below the toe (m) down to which the toe load is counted:
+        where its stress increase, the toe force spread 2V:1H from an
+        equivalent footing B' = L' = the pile width at the toe (UFC
+        3-220-20 Eq 6-52), falls below 10 % of
+
+        - ``"bearing_stress"``: the bearing stress of the equivalent
+          footing (UFC 3-220-20 §6-5.8.4.3, p. 449). It does not depend on
+          the load: (B' + z')(L' + z') = 10 B'L', so z' = (sqrt(10) - 1) B'
+          for a square footing;
+        - ``"effective_stress"``: the existing vertical effective stress at
+          that depth (FHWA GEC-12 §7.3.5.3 step 1c, p. 324); zero when the
+          toe carries no load.
+
+        Below the bottom of the profile sigma'v0 is continued with the
+        deepest layer's unit weight, only to say how far a profile that
+        stops short should go.
+        """
+        crit = criterion or self.influence_depth_criterion
+        B = L = self.pile_diameter
+        f = INFLUENCE_STRESS_FRACTION
+        if crit == "bearing_stress":
+            s = B + L
+            return 0.5 * (-s + math.sqrt(s * s + 4.0 * B * L * (1.0 / f - 1.0)))
+        if toe_force <= 0:
+            return 0.0
         z0 = self.pile_length
-        z1 = z0 + 3.0 * self.pile_diameter
+
+        def excess(dz):
+            return (toe_force / ((B + dz) * (L + dz))
+                    - f * self._sigma_v0_below(z0 + dz))
+
+        if excess(0.0) <= 0:
+            return 0.0
+        lo, hi = 0.0, B
+        while excess(hi) > 0 and hi < 1e4:
+            lo, hi = hi, 2.0 * hi
+        for _ in range(60):
+            mid = 0.5 * (lo + hi)
+            if excess(mid) > 0:
+                lo = mid
+            else:
+                hi = mid
+        return 0.5 * (lo + hi)
+
+    def _sigma_v0_below(self, z: float) -> float:
+        """Initial effective vertical stress (kPa) at depth ``z``; below the
+        bottom of the profile, continued with the deepest layer's unit
+        weight (submerged below the water table)."""
+        bottom = self.soil.total_depth
+        if z <= bottom:
+            return self.soil.effective_stress_at_depth(z)
+        gamma = self.soil.layers[-1].unit_weight
+        dry = max(0.0, min(z, self.soil.gwt_depth) - bottom)
+        wet = (z - bottom) - dry
+        return (self.soil.effective_stress_at_depth(bottom) + gamma * dry
+                + (gamma - self.soil.gamma_w) * wet)
+
+    def _below_toe_sublayers(self, z_bot: float, graded: bool) -> list:
+        """``(thickness, layer, sigma'v0, fill / drawdown stress change,
+        depth below the toe)`` at the midpoint of each sublayer from the
+        toe to ``z_bot`` (within the profile). Sublayers break at every
+        layer boundary and water-table depth and are at most 0.25 m thick;
+        ``graded`` makes them 0.1 x (B' + z') thick near the toe, where the
+        toe load's stress falls fast."""
+        z_top = self.pile_length
+        z_bot = min(z_bot, self.soil.total_depth)
+        if z_bot <= z_top + 1e-9:
+            return []
+        breaks = {z_top, z_bot}
+        top = 0.0
+        for layer in self.soil.layers:
+            top += layer.thickness
+            if z_top < top < z_bot:
+                breaks.add(top)
+        for zw in (self.soil.gwt_depth,
+                   self.soil.gwt_depth + self.gw_drawdown):
+            if z_top < zw < z_bot:
+                breaks.add(zw)
+        breaks = sorted(breaks)
+        edges = [breaks[0]]
+        for a, b in zip(breaks[:-1], breaks[1:]):
+            if not graded:
+                n = max(int(math.ceil((b - a) / _SUBLAYER - 1e-9)), 1)
+                edges += list(np.linspace(a, b, n + 1)[1:])
+                continue
+            z = a
+            while b - z > 1e-9:
+                h = min(_SUBLAYER, 0.1 * (self.pile_diameter + z - z_top))
+                z = b if b - (z + h) < 0.5 * h else z + h
+                edges.append(z)
+        edges = np.array(edges)
+        z_mid = 0.5 * (edges[:-1] + edges[1:])
+        ds_other = self._compute_stress_change(z_mid)
+        out = []
+        for zm, h, dso in zip(z_mid, np.diff(edges), ds_other):
+            layer = self.soil.layer_at_depth(zm)
+            out.append((float(h), layer,
+                        self.soil.effective_stress_at_depth(zm),
+                        float(dso), float(zm - z_top)))
+        return out
+
+    @staticmethod
+    def _compression(layer, H: float, sigma_v0: float,
+                     delta_sigma: float) -> float:
+        """Compression of a sublayer (m): UFC Eq 6-53 for clay with C_ec,
+        Eq 6-54 for sand with E_s, zero for soil with no compressibility."""
+        if delta_sigma <= 0 or sigma_v0 <= 0:
+            return 0.0
+        if layer.soil_type == "cohesive":
+            if layer.C_ec is None:
+                return 0.0
+            sigma_p = (layer.sigma_p if layer.sigma_p is not None
+                       else sigma_v0)
+            return _settlement_clay(H=H, C_ec=layer.C_ec, C_er=layer.C_er,
+                                    sigma_v0=sigma_v0, sigma_p=sigma_p,
+                                    delta_sigma=delta_sigma)
+        if layer.E_s is not None and layer.E_s > 0:
+            return _settlement_sand_elastic(H=H, nu_s=layer.nu_s,
+                                            E_s=layer.E_s,
+                                            delta_sigma=delta_sigma)
+        return 0.0
+
+    def _fill_settlement_below_toe(self) -> float:
+        """Settlement of the soil below the toe under the fill / drawdown
+        alone (m): the settling layers from the toe to the bottom of the
+        soil profile. A wide fill's stress increase (and a drawdown's,
+        below the lowered water table) does not decay with depth (UFC
+        3-220-20 Eq 6-52, the Δσz,other term; the 10 % rules of UFC
+        §6-5.8.4.3 and GEC-12 §7.3.5.3 are for the foundation load), so no
+        depth criterion cuts it off. A layer not marked ``settling`` does
+        not settle under the fill here, as along the shaft."""
+        total = 0.0
+        for h, layer, sv0, dso, _ in self._below_toe_sublayers(
+                self.soil.total_depth, graded=False):
+            if layer.settling:
+                total += self._compression(layer, h, sv0, dso)
+        return total
+
+    def _toe_load_compression(self, toe_force: float,
+                              criterion: Optional[str] = None) -> float:
+        """Compression of the soil below the toe under the toe load (m),
+        the toe penetration relative to the soil at the toe level: the toe
+        force spread 2V:1H from an equivalent footing B' = L' = the pile
+        width at the toe (UFC 3-220-20 Eqs 6-49 to 6-52; "for a single
+        element, the dimensions of the footing are equal to the width of
+        the element", §6-5.8.4.2), counted down to ``_toe_load_depth`` or
+        the bottom of the profile. Each sublayer adds its compression under
+        the toe load + the fill / drawdown less that under the fill /
+        drawdown alone: the toe load acts on the stress the fill leaves."""
+        if toe_force <= 0:
+            return 0.0
+        z_end = self.pile_length + self._toe_load_depth(toe_force, criterion)
+        B = self.pile_diameter
+        total = 0.0
+        for h, layer, sv0, dso, dz in self._below_toe_sublayers(
+                z_end, graded=True):
+            dq = toe_force / ((B + dz) * (B + dz))
+            total += (self._compression(layer, h, sv0, dq + dso)
+                      - self._compression(layer, h, sv0, dso))
+        return max(total, 0.0)
+
+    def _below_toe_info(self, toe_force: float, s_fill: float,
+                        s_toe: float) -> dict:
+        """How deep the settlement below the toe was counted and why it
+        stopped (the result's ``below_toe``), with what the other criterion
+        gives for the same toe force."""
+        L = float(self.pile_length)
+        bottom = float(self.soil.total_depth)
+        B = float(self.pile_diameter)
+        crit = self.influence_depth_criterion
+        what, src = _INFLUENCE[crit]
+        z_q = self._toe_load_depth(toe_force) if toe_force > 0 else 0.0
+        if toe_force <= 0:
+            stop, toe_to = "no_toe_load", L
+        elif bottom < L + z_q - 1e-9:
+            stop, toe_to = "profile_end", max(bottom, L)
+        else:
+            stop, toe_to = "criterion", L + z_q
+        stress_change = self.fill_thickness > 0 or self.gw_drawdown > 0
+        settling_below = any(
+            layer.settling for _, layer, _, _, _ in
+            self._below_toe_sublayers(bottom, graded=False))
+        fill_to = max(bottom, L) if stress_change else None
+
+        if stop == "no_toe_load":
+            toe_text = (f"Below the toe ({L:.2f} m) the toe carries no load, "
+                        f"so only the fill / drawdown can compress the soil "
+                        f"there.")
+        else:
+            head = (f"Below the toe ({L:.2f} m) the toe force "
+                    f"({toe_force:.1f} kN) is spread 2V:1H from an "
+                    f"equivalent footing {B:.2f} m square at the toe (UFC "
+                    f"3-220-20 Eqs 6-49 to 6-52)")
+            if stop == "criterion":
+                toe_text = (f"{head} and counted {z_q:.2f} m below the toe, "
+                            f"to {toe_to:.2f} m, where its stress increase "
+                            f"falls below {what} ({src}).")
+            elif bottom <= L + 1e-9:
+                toe_text = (f"{head}, but the soil profile ends at the toe, "
+                            f"above {L + z_q:.2f} m, where its stress "
+                            f"increase would fall below {what} ({src}): "
+                            f"nothing below the toe is counted.")
+            else:
+                toe_text = (f"{head} and counted to the bottom of the soil "
+                            f"profile, {bottom:.2f} m, above {L + z_q:.2f} m, "
+                            f"where its stress increase would fall below "
+                            f"{what} ({src}).")
+        if not stress_change:
+            fill_text = ("There is no fill or drawdown, so nothing else "
+                         "compresses the soil below the toe.")
+        elif bottom <= L + 1e-9:
+            fill_text = ("The fill / drawdown stress increase does not "
+                         "decay with depth, but the soil profile ends at "
+                         "the toe, so nothing below it is counted.")
+        elif not settling_below:
+            fill_text = (f"The fill / drawdown stress increase does not "
+                         f"decay with depth, but no layer between the toe "
+                         f"and the bottom of the soil profile ({bottom:.2f} "
+                         f"m) is marked settling, so it adds no settlement "
+                         f"there.")
+        else:
+            fill_text = (f"The fill / drawdown stress increase does not "
+                         f"decay with depth, so the settling layers below "
+                         f"the toe are counted down to the bottom of the "
+                         f"soil profile, {bottom:.2f} m: "
+                         f"{s_fill * 1000:.1f} mm under the fill / drawdown "
+                         f"alone.")
+        other = next(c for c in INFLUENCE_DEPTH_CRITERIA if c != crit)
+        o_what, o_src = _INFLUENCE[other]
+        o_depth = (self._toe_load_depth(toe_force, other)
+                   if toe_force > 0 else 0.0)
+        o_toe = self._toe_load_compression(toe_force, other)
+        other_text = ""
+        if toe_force > 0:
+            other_text = (
+                f" With {o_what} instead ({o_src}; influence_depth_criterion"
+                f"='{other}') the toe force is counted {o_depth:.2f} m below "
+                f"the toe: ")
+            if abs(o_toe - s_toe) < 5e-5:
+                other_text += (f"the same settlement below the toe, "
+                               f"{(s_fill + s_toe) * 1000:.1f} mm.")
+            else:
+                other_text += (f"settlement below the toe "
+                               f"{(s_fill + o_toe) * 1000:.1f} mm against "
+                               f"{(s_fill + s_toe) * 1000:.1f} mm.")
+        return {
+            "influence_depth_criterion": crit,
+            "criterion": f"{what} ({src})",
+            "equivalent_footing_width_m": B,
+            "toe_force_kN": float(toe_force),
+            "bearing_stress_kPa": float(toe_force) / (B * B),
+            "toe_load_depth_below_toe_m": z_q,
+            "toe_load_counted_to_m": toe_to,
+            "toe_load_stopped_by": stop,
+            "fill_counted_to_m": fill_to,
+            "fill_settlement_mm": s_fill * 1000.0,
+            "toe_load_compression_mm": s_toe * 1000.0,
+            "settlement_below_toe_mm": (s_fill + s_toe) * 1000.0,
+            "depth_m": max(toe_to, fill_to if fill_to is not None else L),
+            "other_criterion": {
+                "influence_depth_criterion": other,
+                "criterion": f"{o_what} ({o_src})",
+                "toe_load_depth_below_toe_m": o_depth,
+                "settlement_below_toe_mm": (s_fill + o_toe) * 1000.0,
+            },
+            "basis": f"{toe_text} {fill_text}{other_text}",
+        }
+
+    def _unrated_below_toe(self, toe_force: float) -> List[tuple]:
+        """``(top, bottom, soil type)`` of the soil below the toe that has
+        no compressibility (clay without C_ec or Cc and e0, sand without
+        E_s) where a load acts on it: the toe load's zone (from the toe to
+        ``_toe_load_depth``, as :meth:`_toe_load_compression`) when the toe
+        carries load, and with a fill or drawdown everything down to the
+        bottom of the profile (its stress increase does not decay with
+        depth). ``bottom`` is None when the profile ends at the toe and only
+        the fill / drawdown reaches below it."""
+        z0 = float(self.pile_length)
+        z_toe = (z0 + self._toe_load_depth(toe_force) if toe_force > 0
+                 else z0)
+        fill = self.fill_thickness > 0 or self.gw_drawdown > 0
+        z1 = max(z_toe, self.soil.total_depth if fill else z0)
         out = []
         top = 0.0
         for layer in self.soil.layers:
@@ -1404,86 +1745,13 @@ class DowndragAnalysis:
                     out.append((a, b, layer.soil_type))
             top = bottom
         if top < z1 - 1e-9:
-            # the profile stops above the bottom of the influence zone
+            # the profile stops above the bottom of the toe load's zone
             out.append((max(top, z0), z1, "not in the soil profile"))
+        elif fill and top <= z0 + 1e-9:
+            # nothing below the toe at all, and the fill / drawdown reaches
+            # whatever is there
+            out.append((z0, None, "not in the soil profile"))
         return out
-
-    def _compute_toe_settlement(self, sigma_v_tip: float,
-                                 delta_sigma_tip: float,
-                                 toe_resistance: float) -> float:
-        """Estimate settlement of the bearing stratum below the pile tip.
-
-        Uses the equivalent footing concept (UFC Eqs 6-49/6-50) with
-        2V:1H stress distribution (Eq 6-51) into the bearing stratum.
-        The equivalent footing width B' = pile_diameter (single pile).
-        Settlement is computed for sublayers within an influence zone
-        of 3*B' below the pile tip.
-
-        Parameters
-        ----------
-        sigma_v_tip : float
-            Effective stress at pile tip (kPa).
-        delta_sigma_tip : float
-            Stress change at pile tip from fill/GW (kPa).
-        toe_resistance : float
-            Toe bearing resistance (kN) for stress distribution below tip.
-
-        Returns
-        -------
-        float
-            Estimated toe settlement (m).
-        """
-        # Equivalent footing dimensions (single pile: B' = L' = diameter)
-        B_prime = self.pile_diameter
-        L_prime = self.pile_diameter
-
-        # Influence zone: 3*B' below pile tip
-        influence_depth = 3.0 * B_prime
-        n_sub = max(int(influence_depth / 0.25), 10)
-        dz_sub = influence_depth / n_sub
-
-        total_settle = 0.0
-        for j in range(n_sub):
-            z_below_tip = (j + 0.5) * dz_sub  # midpoint depth below tip
-            z_abs = self.pile_length + z_below_tip
-
-            # Get the layer at this depth
-            try:
-                layer = self.soil.layer_at_depth(z_abs)
-            except ValueError:
-                break
-
-            # Stress change from pile load using 2V:1H (Eq 6-51)
-            denom = (B_prime + z_below_tip) * (L_prime + z_below_tip)
-            delta_sigma_pile = toe_resistance / denom if denom > 0 else 0.0
-
-            # Additional stress from fill/GW at this depth
-            delta_sigma_total = delta_sigma_pile + delta_sigma_tip
-
-            if delta_sigma_total <= 0:
-                continue
-
-            # Effective stress at this depth
-            sigma_v0 = self.soil.effective_stress_at_depth(z_abs)
-            if sigma_v0 <= 0:
-                continue
-
-            if layer.soil_type == "cohesive" and layer.C_ec is not None:
-                sigma_p = (layer.sigma_p
-                           if layer.sigma_p is not None else sigma_v0)
-                total_settle += _settlement_clay(
-                    H=dz_sub, C_ec=layer.C_ec, C_er=layer.C_er,
-                    sigma_v0=sigma_v0, sigma_p=sigma_p,
-                    delta_sigma=delta_sigma_total,
-                )
-            elif (layer.soil_type == "cohesionless"
-                  and layer.E_s is not None and layer.E_s > 0):
-                total_settle += _settlement_sand_elastic(
-                    H=dz_sub, nu_s=layer.nu_s, E_s=layer.E_s,
-                    delta_sigma=delta_sigma_total,
-                )
-
-        return total_settle
 
 
 # ── Module-level helper functions ─────────────────────────────────────────
@@ -1632,12 +1900,17 @@ def _settlement_clay(H: float, C_ec: float, C_er: float,
 
     if is_NC:
         return C_ec * H * math.log10(sigma_final / sigma_v0)
-    elif sigma_final <= sigma_p:
+    if C_er is None:
+        raise ValueError(
+            f"sigma_p ({sigma_p:g} kPa) makes this clay overconsolidated at "
+            f"sigma'v0 = {sigma_v0:g} kPa, and UFC Eq 6-53 then needs the "
+            f"recompression index: give C_er (= Cr/(1+e0)), or Cc, Cr and "
+            f"e0")
+    if sigma_final <= sigma_p:
         return C_er * H * math.log10(sigma_final / sigma_v0)
-    else:
-        Sc_oc = C_er * H * math.log10(sigma_p / sigma_v0)
-        Sc_nc = C_ec * H * math.log10(sigma_final / sigma_p)
-        return Sc_oc + Sc_nc
+    Sc_oc = C_er * H * math.log10(sigma_p / sigma_v0)
+    Sc_nc = C_ec * H * math.log10(sigma_final / sigma_p)
+    return Sc_oc + Sc_nc
 
 
 def _settlement_sand_elastic(H: float, nu_s: float, E_s: float,

@@ -44,7 +44,10 @@ class DowndragResult:
     elastic_shortening : float
         Elastic shortening of pile above NP (m).
     toe_settlement : float
-        Settlement of bearing stratum below pile tip (m).
+        Settlement of the soil below the pile toe (m) at the headline toe
+        force: the settling layers under the fill / drawdown down to the
+        bottom of the soil profile, plus the toe load's compression down to
+        the ``influence_depth_criterion`` depth (``below_toe``).
     soil_settlement_at_np : float
         Soil settlement at the neutral plane depth (m), from the original
         ground.
@@ -110,6 +113,21 @@ class DowndragResult:
         over the methods that apply.
     headline_method : str
         Name of the row that gave the headline numbers.
+    influence_depth_criterion : str
+        ``"bearing_stress"`` (UFC 3-220-20 §6-5.8.4.3, default) or
+        ``"effective_stress"`` (FHWA GEC-12 §7.3.5.3): where the toe load
+        stops being counted below the toe.
+    below_toe : dict
+        How deep the settlement below the toe was counted and why it
+        stopped: the criterion, the toe force and the equivalent footing's
+        bearing stress, ``toe_load_depth_below_toe_m``,
+        ``toe_load_counted_to_m`` and ``toe_load_stopped_by``
+        (``"criterion"``, ``"profile_end"`` or ``"no_toe_load"``),
+        ``fill_counted_to_m`` (the bottom of the soil profile; None with
+        no fill or drawdown), the settlement under the fill / drawdown and
+        under the toe load (mm), ``depth_m`` (the deepest point counted),
+        ``other_criterion`` (the same with the other criterion) and
+        ``basis`` (one paragraph saying all of it).
     """
     neutral_plane_depth: float
     dragload: float
@@ -144,6 +162,8 @@ class DowndragResult:
     methods_range: str = ""
     headline_method: str = ""
     include_pile_weight: bool = False
+    influence_depth_criterion: str = "bearing_stress"
+    below_toe: dict = field(default_factory=dict)
 
     @property
     def drag_force(self) -> float:
@@ -181,6 +201,21 @@ class DowndragResult:
                 f"(UFC Eq 6-80, GEC-12 Eq 7-70); {weight}. Pile settlement "
                 "= settlement at the neutral plane + elastic compression "
                 "above it (UFC Fig 6-19).")
+
+    def below_toe_rounded(self) -> dict:
+        """``below_toe`` rounded for display / JSON."""
+        def rnd(d):
+            out = {}
+            for k, v in d.items():
+                if isinstance(v, dict):
+                    out[k] = rnd(v)
+                elif isinstance(v, float):
+                    out[k] = round(v, 2 if k.endswith(("_mm", "_kN", "_kPa"))
+                                   else 3)
+                else:
+                    out[k] = v
+            return out
+        return rnd(self.below_toe)
 
     def comparison_rows(self) -> list:
         """The comparison rows rounded for display / JSON."""
@@ -272,8 +307,13 @@ class DowndragResult:
             f"  Elastic shortening above NP: "
             f"{self.elastic_shortening * 1000:.2f} mm",
             f"  Toe settlement:       {self.toe_settlement * 1000:.2f} mm",
+            *([f"  Counted below the toe to {self.below_toe['depth_m']:.2f} m"]
+              if self.below_toe else []),
             f"Soil settlement at NP:  {self.soil_settlement_at_np * 1000:.2f} mm",
         ]
+        if self.below_toe.get("basis"):
+            lines += ["", "--- Settlement Below the Toe ---",
+                      self.below_toe["basis"]]
 
         if any(x is not None for x in [self.structural_ok,
                                          self.geotechnical_ok,
@@ -326,6 +366,7 @@ class DowndragResult:
             'pile_settlement_m': self.pile_settlement,
             'elastic_shortening_m': self.elastic_shortening,
             'toe_settlement_m': self.toe_settlement,
+            'below_toe': self.below_toe_rounded(),
             'soil_settlement_at_np_m': self.soil_settlement_at_np,
             'pile_length_m': self.pile_length,
             'pile_diameter_m': self.pile_diameter,
@@ -348,6 +389,7 @@ class DowndragResult:
         d['skin_friction_stress'] = self.skin_friction_stress
         d['include_pile_weight'] = self.include_pile_weight
         d['pile_weight_basis'] = self.pile_weight_basis
+        d['influence_depth_criterion'] = self.influence_depth_criterion
         return d
 
     def get_tables(self) -> list:

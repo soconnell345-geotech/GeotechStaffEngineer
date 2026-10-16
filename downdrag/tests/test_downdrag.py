@@ -1823,8 +1823,323 @@ class TestNothingSettlesBelowTheToe:
         assert w and "cohesionless" in w[0]
 
     def test_no_warning_when_the_soil_below_is_rated(self):
-        r = self._run([self.CLAY, dict(thickness=12, soil_type="cohesionless",
-                                       unit_weight=19, phi=38, beta=0.3,
-                                       E_s=60000)])
+        sand = dict(thickness=12, soil_type="cohesionless", unit_weight=19,
+                    phi=38, beta=0.3, E_s=60000)
+        r = self._run([self.CLAY, sand])
+        assert not [x for x in r.warnings if "below the pile toe" in x]
+        # GM-49: the toe carries no load here and the sand is not marked
+        # settling, so nothing below the toe settles (as along the shaft);
+        # marked settling, the fill compresses it down to the profile's
+        # bottom.
+        assert r.toe_force_mobilized == pytest.approx(0.0, abs=1e-6)
+        assert r.toe_settlement == 0.0
+        r = self._run([self.CLAY, dict(sand, settling=True)])
         assert not [x for x in r.warnings if "below the pile toe" in x]
         assert r.toe_settlement > 0
+        assert r.below_toe["fill_counted_to_m"] == pytest.approx(20.0)
+
+
+class TestSettlementBelowTheToe:
+    """GM-49: how deep the settlement below the toe is counted. UFC
+    3-220-20 §6-5.8.4.3 (p. 449): the toe load to where "the change in
+    stress is less than 10% of the bearing stress of the equivalent
+    footing" (the default); FHWA GEC-12 §7.3.5.3 step 1c (p. 324): to where
+    it "is less than 10% of existing vertical effective stress at that
+    depth" (``influence_depth_criterion='effective_stress'``). A wide fill's
+    stress increase does not decay with depth, so the settling layers below
+    the toe count down to the bottom of the soil profile. Before, both were
+    cut off 3 B' below the toe."""
+
+    ELASTIC = (1.3 * 0.4) / 0.7      # (1+nu)(1-2nu)/(1-nu), nu = 0.3
+
+    @staticmethod
+    def _deep_clay(**kw):
+        """15 m pile, 0.4 m, toe in 26 m of soft settling clay that goes on
+        15 m below the toe; 60 kPa of fill."""
+        soil = DowndragSoilProfile(layers=[
+            DowndragSoilLayer(thickness=4.0, soil_type="cohesionless",
+                              unit_weight=19.0, phi=30.0),
+            DowndragSoilLayer(thickness=26.0, soil_type="cohesive",
+                              unit_weight=16.0, cu=25.0, alpha=1.0,
+                              settling=True, Cc=0.4, e0=1.2),
+        ], gwt_depth=1.0)
+        args = dict(soil=soil, pile_length=15.0, pile_diameter=0.4,
+                    fill_thickness=3.0, fill_unit_weight=20.0, Q_dead=300.0)
+        args.update(kw)
+        return DowndragAnalysis(**args)
+
+    @staticmethod
+    def _sand_below(sand_thickness=10.0, **kw):
+        """Toe 2 m into sand with a modulus; no fill; the curves intersect
+        with the toe fully mobilized, so the toe force is the toe
+        resistance."""
+        soil = DowndragSoilProfile(layers=[
+            DowndragSoilLayer(thickness=10.0, soil_type="cohesive",
+                              unit_weight=17.0, cu=30.0, alpha=0.5),
+            DowndragSoilLayer(thickness=sand_thickness,
+                              soil_type="cohesionless", unit_weight=19.0,
+                              phi=36.0, E_s=50000.0),
+        ], gwt_depth=1.0)
+        args = dict(soil=soil, pile_length=12.0, pile_diameter=0.4,
+                    Q_dead=400.0, Nt=40.0)
+        args.update(kw)
+        return DowndragAnalysis(**args)
+
+    @staticmethod
+    def _clay_integral(soil, z0, z1, C_ec, ds, n=6000):
+        """Independent NC clay compression (Eq 6-53) from z0 to z1 under
+        ``ds(depth)`` with a fine midpoint rule."""
+        z = np.linspace(z0, z1, n + 1)
+        zm = 0.5 * (z[1:] + z[:-1])
+        sv = np.array([soil.effective_stress_at_depth(x) for x in zm])
+        return float(np.sum(C_ec * np.diff(z)
+                            * np.log10((sv + ds(zm)) / sv)))
+
+    def test_deep_clay_below_the_toe_counts_under_a_wide_fill(self):
+        """Before: toe settlement 58.6 mm, pile head 540.8 mm (3 B' = 1.2 m
+        of the 15 m of clay below the toe). After: 400.9 mm and 885.0 mm."""
+        a = self._deep_clay()
+        r = a.compute()
+        bt = r.below_toe
+        assert bt["fill_counted_to_m"] == pytest.approx(30.0)
+        assert bt["depth_m"] == pytest.approx(30.0)
+        assert bt["toe_load_stopped_by"] == "criterion"
+        C_ec = 0.4 / 2.2
+        fill = self._clay_integral(a.soil, 15.0, 30.0, C_ec,
+                                   lambda z: np.full_like(z, 60.0))
+        assert bt["fill_settlement_mm"] == pytest.approx(fill * 1000,
+                                                         rel=2e-3)
+        # what the old 3 B' cut-off counted of it
+        old = self._clay_integral(a.soil, 15.0, 16.2, C_ec,
+                                  lambda z: np.full_like(z, 60.0))
+        assert bt["fill_settlement_mm"] > 8 * old * 1000
+        # the toe load on top of the fill, to (sqrt(10) - 1) B' (UFC)
+        Q, B = r.toe_force_mobilized, 0.4
+        zq = (math.sqrt(10.0) - 1.0) * B
+        toe = (self._clay_integral(
+                   a.soil, 15.0, 15.0 + zq, C_ec,
+                   lambda z: 60.0 + Q / (B + z - 15.0) ** 2)
+               - self._clay_integral(a.soil, 15.0, 15.0 + zq, C_ec,
+                                     lambda z: np.full_like(z, 60.0)))
+        assert bt["toe_load_compression_mm"] == pytest.approx(toe * 1000,
+                                                              rel=5e-3)
+        assert r.toe_settlement == pytest.approx(
+            (bt["fill_settlement_mm"] + bt["toe_load_compression_mm"])
+            / 1000, rel=1e-9)
+        assert r.toe_settlement * 1000 == pytest.approx(400.9, abs=0.2)
+        assert r.pile_settlement * 1000 == pytest.approx(885.0, abs=0.2)
+        # the soil at the plane settles by the clay below the toe too
+        s_np = float(np.interp(r.neutral_plane_depth, r.z,
+                               r.soil_settlement_profile))
+        assert r.soil_settlement_at_np == pytest.approx(
+            s_np + bt["fill_settlement_mm"] / 1000, rel=1e-9)
+        assert "bottom of the soil profile, 30.00 m" in bt["basis"]
+        assert "does not decay with depth" in bt["basis"]
+
+    def test_drawdown_below_the_toe_counts_to_the_bottom_too(self):
+        """Below the lowered water table a drawdown's stress increase is
+        the same at every depth (gamma_w x drawdown)."""
+        a = self._deep_clay(fill_thickness=0.0, gw_drawdown=2.0)
+        r = a.compute()
+        fill = self._clay_integral(a.soil, 15.0, 30.0, 0.4 / 2.2,
+                                   lambda z: np.full_like(z, 9.81 * 2.0))
+        assert r.below_toe["fill_counted_to_m"] == pytest.approx(30.0)
+        assert r.below_toe["fill_settlement_mm"] == pytest.approx(
+            fill * 1000, rel=2e-3)
+
+    def test_toe_load_to_10_percent_of_the_bearing_stress(self):
+        """UFC 3-220-20 §6-5.8.4.3: elastic sand, no fill. The 2V:1H stress
+        integrates in closed form: Q c / E_s (1/B' - 1/(sqrt(10) B')).
+        Before (3 B'): 13.88 mm; after 12.75 mm."""
+        r = self._sand_below().compute()
+        bt = r.below_toe
+        Q, B = r.toe_force_mobilized, 0.4
+        assert Q == pytest.approx(r.toe_resistance)
+        assert bt["toe_load_depth_below_toe_m"] == pytest.approx(
+            (math.sqrt(10.0) - 1.0) * B, abs=1e-3)
+        assert bt["toe_load_stopped_by"] == "criterion"
+        assert bt["fill_counted_to_m"] is None
+        exact = Q * self.ELASTIC / 50000.0 * (1 / B - 1 / (math.sqrt(10) * B))
+        assert r.toe_settlement == pytest.approx(exact, rel=5e-3)
+        assert r.toe_settlement * 1000 == pytest.approx(12.75, abs=0.01)
+        assert "10% of the bearing stress of the equivalent footing" in (
+            bt["basis"])
+
+    def test_toe_load_to_10_percent_of_the_effective_stress(self):
+        """FHWA GEC-12 §7.3.5.3 step 1c as the option: the toe load goes
+        down to where Q / (B' + z')^2 = 0.1 sigma'v0, here 5.40 m."""
+        a = self._sand_below(influence_depth_criterion="effective_stress")
+        r = a.compute()
+        bt = r.below_toe
+        Q, B = r.toe_force_mobilized, 0.4
+        zq = bt["toe_load_depth_below_toe_m"]
+        assert zq == pytest.approx(5.397, abs=0.001)
+        assert Q / (B + zq) ** 2 == pytest.approx(
+            0.1 * a.soil.effective_stress_at_depth(12.0 + zq), rel=1e-3)
+        exact = Q * self.ELASTIC / 50000.0 * (1 / B - 1 / (B + zq))
+        assert r.toe_settlement == pytest.approx(exact, rel=5e-3)
+        assert r.influence_depth_criterion == "effective_stress"
+        assert "GEC-12 §7.3.5.3" in bt["criterion"]
+        # the default run reports the same as its other criterion
+        d = self._sand_below().compute().below_toe["other_criterion"]
+        assert d["influence_depth_criterion"] == "effective_stress"
+        assert d["toe_load_depth_below_toe_m"] == pytest.approx(zq)
+        assert d["settlement_below_toe_mm"] == pytest.approx(
+            r.toe_settlement * 1000, abs=0.01)
+
+    def test_compressible_soil_inside_the_zone_is_unchanged(self):
+        """A 0.5 m sand lens under the toe, nothing compressible below it,
+        no fill: every compressible soil lies inside the zone under either
+        criterion, so the depth rule changes nothing. Closed form for the
+        lens alone: Q c / E_s (1/B' - 1/(B' + 0.5))."""
+        soil = DowndragSoilProfile(layers=[
+            DowndragSoilLayer(thickness=12.0, soil_type="cohesive",
+                              unit_weight=17.0, cu=30.0, alpha=0.5),
+            DowndragSoilLayer(thickness=0.5, soil_type="cohesionless",
+                              unit_weight=19.0, phi=34.0, E_s=10000.0),
+            DowndragSoilLayer(thickness=7.5, soil_type="cohesionless",
+                              unit_weight=20.0, phi=40.0),
+        ], gwt_depth=1.0)
+        s = []
+        for crit in ("bearing_stress", "effective_stress"):
+            r = DowndragAnalysis(soil=soil, pile_length=12.0,
+                                 pile_diameter=0.4, Q_dead=100.0,
+                                 influence_depth_criterion=crit).compute()
+            assert r.neutral_plane_method == "force_equilibrium"
+            assert r.below_toe["toe_load_depth_below_toe_m"] > 0.5
+            Q, B = r.toe_force_mobilized, 0.4
+            exact = Q * self.ELASTIC / 10000.0 * (1 / B - 1 / (B + 0.5))
+            assert r.toe_settlement == pytest.approx(exact, rel=5e-3)
+            s.append(r.toe_settlement)
+        assert s[0] == pytest.approx(s[1], rel=1e-9)
+
+    def test_profile_ending_above_the_criterion_depth(self):
+        """The profile stops at 14 m; GEC-12's criterion would go to
+        17.40 m: counted to the profile's bottom, and the warning says how
+        far to extend it."""
+        r = self._sand_below(sand_thickness=4.0,
+                             influence_depth_criterion="effective_stress"
+                             ).compute()
+        bt = r.below_toe
+        assert bt["toe_load_stopped_by"] == "profile_end"
+        assert bt["toe_load_counted_to_m"] == pytest.approx(14.0)
+        w = [x for x in r.warnings if "below the pile toe" in x]
+        assert w and "not in the soil profile" in w[0]
+        assert "17.40 m" in w[0] and "GEC-12 §7.3.5.3" in w[0]
+
+    def test_a_layer_not_marked_settling_is_not_settled_by_the_fill(self):
+        """As along the shaft: the fill compresses only the settling layers
+        below the toe; the toe load compresses any layer with a modulus."""
+        r = self._sand_below(fill_thickness=2.0).compute()
+        bt = r.below_toe
+        assert bt["fill_counted_to_m"] == pytest.approx(20.0)
+        assert bt["fill_settlement_mm"] == 0.0
+        assert bt["toe_load_compression_mm"] > 0
+        assert "is marked settling" in bt["basis"]
+
+    def test_reported_in_dict_summary_and_rejected_when_unknown(self):
+        r = self._deep_clay().compute()
+        d = r.to_dict()
+        assert d["influence_depth_criterion"] == "bearing_stress"
+        assert d["below_toe"]["depth_m"] == pytest.approx(30.0)
+        assert "UFC 3-220-20 §6-5.8.4.3" in d["below_toe"]["basis"]
+        text = r.summary()
+        assert "Settlement Below the Toe" in text
+        assert "Counted below the toe to 30.00 m" in text
+        with pytest.raises(ValueError, match="influence_depth_criterion"):
+            self._deep_clay(influence_depth_criterion="3B")
+
+
+class TestBelowTheToeFollowUps:
+    """GM-49 review follow-ups: a non-settling clay given Cc and e0 is
+    compressed by the toe load; a missing recompression index is named; no
+    toe-zone warning when the toe carries no load."""
+
+    @staticmethod
+    def _bearing_clay(stiff_kw, **kw):
+        """Toe 2 m into stiff clay that is not marked settling; 2 m fill."""
+        soil = DowndragSoilProfile(layers=[
+            DowndragSoilLayer(thickness=10.0, soil_type="cohesive",
+                              unit_weight=17.0, cu=30.0, alpha=0.5,
+                              settling=True, Cc=0.3, e0=1.0),
+            DowndragSoilLayer(thickness=15.0, soil_type="cohesive",
+                              unit_weight=19.0, cu=80.0, alpha=0.5,
+                              **stiff_kw),
+        ], gwt_depth=1.0)
+        args = dict(soil=soil, pile_length=12.0, pile_diameter=0.4,
+                    fill_thickness=2.0, Q_dead=300.0)
+        args.update(kw)
+        return soil, DowndragAnalysis(**args).compute()
+
+    def test_non_settling_clay_with_cc_and_e0_is_compressed_by_the_toe(self):
+        soil, r = self._bearing_clay(dict(Cc=0.2, e0=0.8))
+        stiff = soil.layers[1]
+        assert stiff.settling is False
+        assert stiff.C_ec == pytest.approx(0.2 / 1.8)
+        assert stiff.C_er == 0.0
+        assert r.toe_force_mobilized > 0
+        bt = r.below_toe
+        assert bt["toe_load_compression_mm"] > 0
+        # not settling: the fill does not compress it, below the toe or on
+        # the shaft
+        assert bt["fill_settlement_mm"] == 0.0
+        assert not [w for w in r.warnings if "below the pile toe" in w]
+        _, r0 = self._bearing_clay({})
+        assert r0.below_toe["toe_load_compression_mm"] == 0.0
+        assert [w for w in r0.warnings if "below the pile toe" in w]
+        assert np.array_equal(r.soil_settlement_profile,
+                              r0.soil_settlement_profile)
+        assert r.neutral_plane_depth == r0.neutral_plane_depth
+
+    def test_missing_recompression_index_is_named(self):
+        with pytest.raises(ValueError, match="C_er"):
+            DowndragSoilLayer(thickness=5.0, soil_type="cohesive",
+                              unit_weight=18.0, cu=50.0, C_ec=0.2,
+                              sigma_p=150.0)
+        with pytest.raises(ValueError, match="C_er"):
+            DowndragSoilLayer(thickness=5.0, soil_type="cohesive",
+                              unit_weight=18.0, cu=50.0, C_ec=0.2,
+                              sigma_p=150.0, settling=True)
+        # normally consolidated (no sigma_p): C_er is never used
+        DowndragSoilLayer(thickness=5.0, soil_type="cohesive",
+                          unit_weight=18.0, cu=50.0, C_ec=0.2)
+        # Cc, e0 and sigma_p with no Cr: C_er = Cr/(1+e0) = 0, as before
+        lay = DowndragSoilLayer(thickness=5.0, soil_type="cohesive",
+                                unit_weight=18.0, cu=50.0, Cc=0.3, e0=1.0,
+                                sigma_p=150.0)
+        assert lay.C_er == 0.0
+        # the equation itself, called directly
+        with pytest.raises(ValueError, match="C_er"):
+            _settlement_clay(H=1.0, C_ec=0.2, C_er=None, sigma_v0=50.0,
+                             sigma_p=100.0, delta_sigma=30.0)
+        assert _settlement_clay(
+            H=1.0, C_ec=0.2, C_er=None, sigma_v0=50.0, sigma_p=50.0,
+            delta_sigma=30.0) == pytest.approx(0.2 * math.log10(80 / 50))
+
+    @staticmethod
+    def _no_toe_load(**kw):
+        """DD-1-like, Q_dead 0: the toe carries no load."""
+        soil = DowndragSoilProfile(layers=[
+            DowndragSoilLayer(thickness=8.0, soil_type="cohesive",
+                              unit_weight=17.0, cu=30.0, alpha=0.5,
+                              settling=True, Cc=0.25, e0=0.9),
+            DowndragSoilLayer(thickness=12.0, soil_type="cohesionless",
+                              unit_weight=19.0, phi=38.0, beta=0.3),
+        ], gwt_depth=1.0)
+        args = dict(soil=soil, pile_length=15.0, pile_diameter=0.4,
+                    Q_dead=0.0)
+        args.update(kw)
+        return DowndragAnalysis(**args).compute()
+
+    def test_no_toe_zone_warning_without_a_toe_load(self):
+        r = self._no_toe_load()
+        assert r.toe_force_mobilized == pytest.approx(0.0, abs=1e-9)
+        assert not [w for w in r.warnings if "below the pile toe" in w]
+
+    def test_fill_on_unrated_soil_below_the_toe_still_warns(self):
+        r = self._no_toe_load(fill_thickness=2.0)
+        assert r.toe_force_mobilized == pytest.approx(0.0, abs=1e-6)
+        w = [x for x in r.warnings if "below the pile toe" in x]
+        assert w and "15.00-20.00 m (cohesionless)" in w[0]
+        assert "does not decay with depth" in w[0]
+        assert "toe load counts down" not in w[0]

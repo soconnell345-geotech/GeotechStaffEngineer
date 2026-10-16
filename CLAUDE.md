@@ -241,7 +241,11 @@ Key conventions:
       below-toe warning; no placeholder FOS as a number; large results
       with a key map; the step cap in plain words (an answer from what
       was gathered behind GEOTECH_STEP_CAP_ANSWER, OFF); staged FEM at 500
-      iterations a step (release note); see BACKLOG "Done".
+      iterations a step (release note); documents a deliverable cites
+      that nothing looked up, checked behind GEOTECH_CITED_DOCUMENTS
+      (OFF; ae53adb); downdrag counts settlement below the toe by UFC's
+      10 % of the bearing stress, GEC-12's rule as the option (release
+      note; OWN-62 asks which is the default); see BACKLOG "Done".
     Open next: Foundry brief 6, which measures all of this, is drafted
     (`../foundry_handoff/AI_FDE_BRIEF_6.md`); its rc wheels are not built
     while the owner holds the release (EV-13, DR-05).

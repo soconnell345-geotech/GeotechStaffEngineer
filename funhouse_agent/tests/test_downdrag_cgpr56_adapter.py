@@ -359,3 +359,38 @@ class TestDowndragAnalysisMethodsTable:
         text = str(info)
         for word in ("materially", "materiality", "judgment"):
             assert word not in text, word
+
+
+class TestDowndragBelowTheToe:
+    """GM-49: the settlement below the toe goes as deep as the references
+    say, and the tool says how deep and why it stopped."""
+
+    def test_below_toe_reported_ahead_of_the_profiles(self):
+        res = _call("downdrag_analysis", dict(FLOATING))
+        assert "error" not in res, res
+        bt = res["below_toe"]
+        # the settling clay below the toe counts to the profile's bottom
+        assert bt["fill_counted_to_m"] == pytest.approx(25.0)
+        assert bt["toe_load_stopped_by"] == "criterion"
+        assert "UFC 3-220-20 §6-5.8.4.3" in bt["basis"]
+        assert res["influence_depth_criterion"] == "bearing_stress"
+        keys = list(res)
+        assert keys.index("below_toe") < keys.index("z_m")
+
+    def test_criterion_passes_through_and_is_documented(self):
+        res = _call("downdrag_analysis", dict(
+            FLOATING, influence_depth_criterion="effective_stress"))
+        assert "error" not in res, res
+        assert res["influence_depth_criterion"] == "effective_stress"
+        assert "GEC-12 §7.3.5.3" in res["below_toe"]["criterion"]
+        for agent, method in (("downdrag", "downdrag_analysis"),
+                              ("calc_package", "downdrag_package")):
+            p = describe_method(agent, method)["parameters"]
+            c = p["influence_depth_criterion"]
+            assert c["default"] == "bearing_stress", (agent, method)
+            assert c["allowed_values"] == ["bearing_stress",
+                                           "effective_stress"]
+            assert "UFC 3-220-20 6-5.8.4.3" in c["description"]
+            assert "GEC-12 7.3.5.3" in c["description"]
+        assert "below_toe" in describe_method(
+            "downdrag", "downdrag_analysis")["returns"]
