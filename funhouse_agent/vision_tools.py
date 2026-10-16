@@ -2539,7 +2539,9 @@ def _read_image(picture, data, prompt, tiles, tiles_note, turn_arg, engine):
             f"{why} read in {n}x{n} overlapping tiles cut from the original, "
             f"each at about its own resolution. The whole-image 'analysis' "
             f"was asked for the LAYOUT only (what is where); the tiles read "
-            f"the lettering, so take small lettering from a tile. Each tile's "
+            f"the lettering, so take small lettering from a tile, and how "
+            f"things sit together (what overlaps or touches what) from the "
+            f"whole image. Each tile's "
             f"boxes are on that tile's own 0-999 grid: pass them with the "
             f"TILE's view to zoom with render_region.")
         shrunk = [t.get("sent_scale") for t in tile_rows
@@ -3931,7 +3933,9 @@ def _read_pdf_page(pdf_bytes, page, prompt, tiles, tiles_note, arguments,
             f"{why} read in {n}x{n} overlapping tiles (each at the same "
             f"image size, lettering {n}x larger). The whole-page 'analysis' "
             f"was asked for the LAYOUT only (what is where); the tiles read "
-            f"the lettering, so take small lettering from a tile. Each "
+            f"the lettering, so take small lettering from a tile, and how "
+            f"things sit together (what overlaps or touches what) from the "
+            f"whole page. Each "
             f"tile's boxes are on that "
             f"tile's own 0-999 grid: pass them with the TILE's view, to zoom "
             f"with render_region or, once the thing is legible in a view of "

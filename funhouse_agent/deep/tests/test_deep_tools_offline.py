@@ -598,3 +598,26 @@ def test_calc_subagent_budget_default():
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+
+
+def test_a_look_names_no_zoom_tool_the_agent_lacks(monkeypatch):
+    """VIS-28 (live wave w8): the figure and calc helpers were told to zoom
+    with render_region, which neither has."""
+    import json as _json
+    import funhouse_agent.deep.tools as T
+    canned = _json.dumps({
+        "analysis": "a label", "view": [0, 0, 100, 100],
+        "zoom_hint": "to zoom ... call render_region(...)",
+        "tiling": ("read in 2x2 tiles. Each tile's boxes are on that tile's "
+                   "own 0-999 grid: pass them with the TILE's view to zoom "
+                   "with render_region. More text.")})
+    monkeypatch.setattr(T, "_dispatch_extended_tool", lambda **k: canned)
+    (look,) = T.make_vision_tools(include={"analyze_image"})
+    out = _json.loads(look.invoke({"attachment_key": "x.txt"}))
+    assert "zoom_hint" not in out and "render_region" not in out["tiling"]
+    assert out["zoom_note"] == T.NO_ZOOM_NOTE
+    tools = {t.name: t for t in T.make_vision_tools(
+        include={"analyze_image", "render_region"})}
+    kept = _json.loads(tools["analyze_image"].invoke({"attachment_key":
+                                                      "x.txt"}))
+    assert "zoom_hint" in kept and "zoom_note" not in kept

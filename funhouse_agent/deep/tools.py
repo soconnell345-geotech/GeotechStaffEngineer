@@ -236,6 +236,36 @@ ANNOTATE_DXF_DESCRIPTION = (
     "never retype a DXF with save_file.")
 
 
+#: Said in place of the zoom hint where ``render_region`` is not offered
+#: (live wave w8: the figure and calc helpers were told to zoom with a tool
+#: they did not have; BACKLOG VIS-28).
+NO_ZOOM_NOTE = ("render_region is not offered here: for a closer read, ask "
+                "again with tiles='3x3' (or '4x4') and a narrower prompt.")
+
+
+def _without_zoom_tool(raw):
+    """A vision result for an agent without ``render_region``: no zoom
+    hint naming it."""
+    import re
+    try:
+        out = json.loads(raw)
+    except (TypeError, ValueError):
+        return raw
+    if not isinstance(out, dict):
+        return raw
+    changed = out.pop("zoom_hint", None) is not None
+    tiling = out.get("tiling")
+    if isinstance(tiling, str) and "render_region" in tiling:
+        out["tiling"] = re.sub(
+            r"\s*Each tile's boxes are on that tile's own 0-999 grid:[^.]*\.",
+            "", tiling)
+        changed = True
+    if not changed:
+        return raw
+    out["zoom_note"] = NO_ZOOM_NOTE
+    return json.dumps(out, ensure_ascii=False)
+
+
 #: What the app adds to the module's own description of ``plot_data``.
 _PLOT_APP_NOTE = (
     " In this app the chart appears as an INTERACTIVE card under your reply "
@@ -1036,16 +1066,17 @@ def make_vision_tools(
             cap = reference_cap
         else:
             cap = max_result_chars
-        return _truncate(
-            _dispatch_extended_tool(
-                tool_name=tool_name,
-                arguments=arguments,
-                engine=engine,
-                attachments=attachments,
-                save_fn=save_fn,
-            ),
-            cap,
+        raw = _dispatch_extended_tool(
+            tool_name=tool_name,
+            arguments=arguments,
+            engine=engine,
+            attachments=attachments,
+            save_fn=save_fn,
         )
+        if tool_name in ("analyze_image", "analyze_pdf_page") \
+                and "render_region" not in include:
+            raw = _without_zoom_tool(raw)
+        return _truncate(raw, cap)
 
     def list_files(path: str = ".", max_entries: int = 200,
                    depth: int = 0) -> str:

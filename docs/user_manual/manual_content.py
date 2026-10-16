@@ -902,7 +902,7 @@ MODULE_NARRATIVE: dict[str, dict] = {
             "a convergence table, CSV files, an exceedance curve and a plan map of P(z &gt; level). "
             "GSTools&rsquo; CondSRF is offered to reproduce a CondSRF notebook; it spreads totals too "
             "widely, so it is not the default.",
-            "References: the GSTools library (Müller et al.). Requires the <code>[gstools]</code> extra.",
+            "References: the GSTools library (Müller et al.). Installed with the app (no extra needed).",
         ],
         "limits": [
             "The spread is what the chosen model implies: a Gaussian, stationary field with the "

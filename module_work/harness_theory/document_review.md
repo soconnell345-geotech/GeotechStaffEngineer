@@ -137,7 +137,7 @@ unreadable, split long sets among helpers, cite tool page + 1.
 | (since 5.33.0) `plot_data`, `write_xlsx` (each where its library imports), `calculate` | all three | `plot_data`, `write_xlsx` (not `page_reader`) | — |
 | (since 2026-10-15, 1f87ea5) `task` → the `figure` helper: draws with `plot_data` to a figure checklist, looks and redraws | only with `GEOTECH_FIGURE_HELPER` (OFF) | — (not wired) | — |
 | (since 2026-10-15) the figure helper's and `calc` helper's `plot_code`: matplotlib code run in a locked box (`funhouse_agent/plot_box/`) | only with `GEOTECH_PLOT_CODE` (OFF) | — (not wired) | — |
-| `find_like` | yes where OpenCV loads | same | — |
+| `find_like` | yes (without OpenCV too since 5.32.1, on FIPS hosts) | same | — |
 | `read_pdf_text`, `read_text_file`, `list_files`, `save_file`, `write_docx` | yes | yes (no `read_pdf_text`) | `write_docx` only |
 | geotech-only `read_reference_figure`, `view_worked_example_source` | removed 2026-10-14 (077192c; they were inherited and could not work here) | — | — |
 | `sweep_pages` | — | yes | — |

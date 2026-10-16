@@ -25,7 +25,8 @@ analysis code of its own — it's UI and glue over the shipped modules.
   documents put the file in SharePoint and ask the agent to fetch it by name —
   see "Large files" in `webapp/README.md`.
 - **Download artifacts** — when the agent produces a calc package (HTML), a DXF,
-  or a plot, it appears as a download button in the sidebar.
+  or a plot, it appears as a card under the reply, with a download button
+  (a chart as an interactive chart, a figure as an image).
 - **Model picker** — a sidebar **Model** selector: Opus 4.8 (deepest reasoning,
   default), Sonnet 5 (fast + capable), Haiku 4.5 (quick questions). Switch to a
   cheaper/faster model any time — the choice applies to the current conversation
