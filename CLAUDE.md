@@ -245,7 +245,14 @@ Key conventions:
       that nothing looked up, checked behind GEOTECH_CITED_DOCUMENTS
       (OFF; ae53adb); downdrag counts settlement below the toe by UFC's
       10 % of the bearing stress, GEC-12's rule as the option (release
-      note; OWN-62 asks which is the default); see BACKLOG "Done".
+      note; OWN-62 asks which is the default). 2026-10-16: wave w9's
+      figure fixes; every tool refuses a misspelt input name, nested
+      or top-level, with a did-you-mean; MSE walls with a sloping or
+      broken backslope per GEC-11 (traffic out of pullout, release
+      note); `annotate_document` keeps its own signature; the agent
+      states its judgment calls behind GEOTECH_JUDGMENT_CALLS (OFF);
+      the release notes to carry are listed in HANDOFF §0a-current;
+      see BACKLOG "Done".
     Open next: Foundry brief 6, which measures all of this, is drafted
     (`../foundry_handoff/AI_FDE_BRIEF_6.md`); its rc wheels are not built
     while the owner holds the release (EV-13, DR-05).
