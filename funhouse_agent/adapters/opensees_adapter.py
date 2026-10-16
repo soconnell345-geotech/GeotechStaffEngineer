@@ -1,6 +1,44 @@
 """OpenSees adapter — PM4Sand DSS, 1D site response."""
 
-from funhouse_agent.adapters import mark_required, clean_result, require_params
+from funhouse_agent.adapters import (
+    check_nested_keys, mark_required, clean_result, require_params,
+)
+
+# Keys every site-response layer may carry, and each material_type's own
+# keys: what opensees_agent reads. Anything else was read with .get and a
+# default and silently left out, e.g. a sand layer's 'k0' ran at Jaky's
+# 1 - sin(phi) (GM-58).
+_LAYER_COMMON_KEYS = ("thickness", "Vs", "density", "material_type",
+                      "n_surf", "e_init")
+_MATERIAL_KEYS = {
+    "sand": ("phi", "K0", "PTAng"),
+    "clay": ("su",),
+}
+# Words the near-miss matcher cannot place; only the keys the layer's own
+# material reads are offered. Suggestions only, never renamed.
+_LAYER_KEY_HINTS = {
+    "rho": ("density",), "mass_density": ("density",),
+    "cu": ("su",), "cohesion": ("su",), "c": ("su",),
+    "frictionangle": ("phi",), "phaseangle": ("PTAng",),
+    "phasetransformationangle": ("PTAng",), "e": ("e_init",),
+    "e0": ("e_init",), "voidratio": ("e_init",), "type": ("material_type",),
+    "soiltype": ("material_type",), "h": ("thickness",),
+}
+
+
+def _check_layers(layers):
+    """Refuse a key a site-response layer's material does not read
+    (GM-58). A layer with no material_type, or one the module does not
+    know, is left to the module's own check, which names the materials."""
+    for i, layer in enumerate(layers if isinstance(layers, list) else []):
+        mat = layer.get("material_type") if isinstance(layer, dict) else None
+        own = _MATERIAL_KEYS.get(str(mat).lower().strip())
+        if own is None:
+            continue
+        check_nested_keys(layer, _LAYER_COMMON_KEYS + own,
+                          method="site_response_1d",
+                          label=f"layers[{i}] ({mat})",
+                          hints=_LAYER_KEY_HINTS)
 
 
 def _check_opensees():
@@ -59,6 +97,7 @@ def _run_site_response_1d(params: dict) -> dict:
     from opensees_agent import analyze_site_response
 
     require_params(params, ["layers"], method="site_response_1d")
+    _check_layers(params["layers"])
     result = analyze_site_response(
         layers=params["layers"],
         motion=params.get("motion"),

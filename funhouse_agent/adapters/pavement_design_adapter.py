@@ -7,8 +7,48 @@ SI. NOTE (calc-package convention): results echo every defaulted /
 midpoint-selected coefficient in 'notes' so reports can state the basis.
 """
 
-from funhouse_agent.adapters import (apply_aliases, clean_result,
-                                     reject_unknown_params, require_params)
+from funhouse_agent.adapters import (apply_aliases, check_nested_list,
+                                     clean_result, reject_unknown_params,
+                                     require_params)
+
+# Keys of the nested dicts the pavement_design module reads (GM-58). A
+# layer's unknown key was a bare TypeError naming no layer; a seasonal
+# period's misspelt 'esb_psi' silently fell back to the section's Esb. A
+# season may carry a name of its own (it is not read).
+_LAYER_KEYS = ("layer_type", "modulus_psi", "ucs_7day_psi",
+               "marshall_stability_lb", "a", "m", "drainage_quality",
+               "pct_saturation_time", "thickness_in", "min_thickness_in")
+_SEASON_KEYS = ("mr_psi", "esb_psi", "name", "season", "month", "period",
+                "label")
+_AXLE_KEYS = ("axle_config", "load_kips", "daily_count")
+_TRUCK_KEYS = ("description", "daily_count", "truck_factor")
+_UFC_VEHICLE_KEYS = ("vehicle", "name", "design_passes")
+# Words the near-miss matcher cannot place. Suggestions only, never renamed.
+_ITEM_KEY_HINTS = {
+    "type": ("layer_type",), "mr": ("modulus_psi", "mr_psi"),
+    "modulus": ("modulus_psi",), "e": ("modulus_psi",),
+    "thickness": ("thickness_in",), "d": ("thickness_in",),
+    "esb": ("esb_psi",), "load": ("load_kips",), "axle": ("axle_config",),
+    "count": ("daily_count",), "adt": ("daily_count",),
+    "tf": ("truck_factor",), "passes": ("design_passes",),
+}
+
+
+def check_items(p: dict, *, method: str, vehicles=_TRUCK_KEYS) -> None:
+    """Refuse an unknown key in the layers, the composite-k seasons, the
+    axle groups and the vehicles (``vehicles``: the keys of the method's
+    own vehicle dicts). Shared with the pavement calc package."""
+    hints = _ITEM_KEY_HINTS
+    check_nested_list(p.get("layers"), _LAYER_KEYS, method=method,
+                      label="layers", hints=hints)
+    if isinstance(p.get("composite_k"), dict):
+        check_nested_list(p["composite_k"].get("seasonal"), _SEASON_KEYS,
+                          method=method, label="composite_k.seasonal",
+                          hints=hints)
+    check_nested_list(p.get("axle_groups"), _AXLE_KEYS, method=method,
+                      label="axle_groups", hints=hints)
+    check_nested_list(p.get("vehicles"), vehicles, method=method,
+                      label="vehicles", hints=hints)
 
 _FLEX_ALIASES = {
     "esals": "w18", "design_esals": "w18", "w_18": "w18",
@@ -33,6 +73,7 @@ def _run_flexible(params: dict) -> dict:
                           aliases=_FLEX_ALIASES)
     require_params(p, ["w18", "layers"], method="flexible_pavement_design",
                    valid=_FLEX_VALID)
+    check_items(p, method="flexible_pavement_design")
     res = design_flexible_pavement(**p)
     return clean_result(res.to_dict())
 
@@ -64,6 +105,7 @@ def _run_rigid(params: dict) -> dict:
                           aliases=_RIGID_ALIASES)
     require_params(p, ["w18", "sc_psi", "ec_psi"],
                    method="rigid_pavement_design", valid=_RIGID_VALID)
+    check_items(p, method="rigid_pavement_design")
     res = design_rigid_pavement(**p)
     return clean_result(res.to_dict())
 
@@ -89,6 +131,7 @@ def _run_traffic(params: dict) -> dict:
     p = apply_aliases(params, _TRAFFIC_ALIASES)
     reject_unknown_params(p, _TRAFFIC_VALID, method="design_traffic_esals",
                           aliases=_TRAFFIC_ALIASES)
+    check_items(p, method="design_traffic_esals")
     res = compute_design_esals(**p)
     return clean_result(res.to_dict())
 
@@ -205,6 +248,7 @@ def _run_mixed_ufc(params: dict) -> dict:
     reject_unknown_params(p, _MIXED_VALID, method="mixed_traffic_ufc")
     require_params(p, ["vehicles", "representative_cbr"],
                    method="mixed_traffic_ufc", valid=_MIXED_VALID)
+    check_items(p, method="mixed_traffic_ufc", vehicles=_UFC_VEHICLE_KEYS)
     return clean_result(ufc_mixed_traffic(**p))
 
 

@@ -18,7 +18,8 @@ is there for the rare caller that does.
 import os
 from datetime import datetime
 
-from funhouse_agent.adapters import (apply_aliases, reject_unknown_params,
+from funhouse_agent.adapters import (apply_aliases, check_nested_keys,
+                                     check_nested_list, reject_unknown_params,
                                      require_params, write_plotly_sidecar)
 from funhouse_agent._fileio import (default_output_dir, resolve_output_path,
                                     save_verified)
@@ -35,12 +36,59 @@ def _default_output_path() -> str:
     return os.path.join(default_output_dir(), f"subsurface_profile_{ts}.png")
 
 
+# Keys of the nested dicts profile_figure reads with .get. Anything else
+# was silently left out (GM-58): a series' 'name' left the legend reading
+# 'Series 1' and a reference line's 'text' drew it unnamed. The layers and
+# fill are left open: an analysis' own layer dicts (unit_weight, phi, ...)
+# draw as they are.
+_SURCHARGE_KEYS = ("pressure", "label")
+_FOUNDATION_KEYS = ("type", "head_elevation", "head_depth", "tip_elevation",
+                    "tip_depth", "length", "embedded_length", "thickness",
+                    "diameter", "width", "size", "label")
+_ANNOTATION_KEYS = ("elevation", "depth", "text", "label", "side")
+_SERIES_KEYS = ("x", "y", "label", "style", "color", "marker", "marker_size",
+                "marker_edge", "marker_open", "line_dash", "line_width",
+                "fill", "hatch", "fill_opacity", "labels", "hover",
+                "in_legend")
+_REF_LINE_KEYS = ("value", "label")
+# Words the near-miss matcher cannot place. Suggestions only, never renamed.
+_KEY_HINTS = {
+    "name": ("label",), "legend": ("label", "in_legend"),
+    "showlegend": ("in_legend",), "mode": ("style",), "kind": ("style",),
+    "dash": ("line_dash",), "linestyle": ("line_dash",),
+    "ls": ("line_dash",), "lw": ("line_width",), "width": ("line_width",),
+    "size": ("marker_size",), "ms": ("marker_size",),
+    "opacity": ("fill_opacity",), "alpha": ("fill_opacity",),
+    "colour": ("color",), "text": ("labels", "label"),
+    "pointlabels": ("labels",), "hovertext": ("hover",),
+    "q": ("pressure",), "elev": ("elevation",), "z": ("elevation",),
+    "note": ("text",), "position": ("side",), "y": ("value",),
+    "x": ("value",), "diam": ("diameter",), "b": ("width",),
+    "tip": ("tip_elevation", "tip_depth"),
+    "head": ("head_elevation", "head_depth"),
+    # a foundation's top is its head, never its tip (the spelling is close)
+    "top": ("head_elevation", "head_depth"),
+    "topelevation": ("head_elevation",), "topelevationm": ("head_elevation",),
+    "topdepth": ("head_depth",), "topdepthm": ("head_depth",),
+    "elevation": ("head_elevation", "tip_elevation"),
+}
+
+
 def _run_subsurface_profile(params: dict) -> dict:
     from profile_figure import render_profile_figure
 
     reject_unknown_params(params, _VALID, method="subsurface_profile")
     require_params(params, ["layers"], method="subsurface_profile",
                    valid=_VALID)
+    for key, valid in (("surcharge", _SURCHARGE_KEYS),
+                       ("foundation", _FOUNDATION_KEYS)):
+        if isinstance(params.get(key), dict):
+            check_nested_keys(params[key], valid,
+                              method="subsurface_profile", label=key,
+                              hints=_KEY_HINTS)
+    check_nested_list(params.get("annotations"), _ANNOTATION_KEYS,
+                      method="subsurface_profile", label="annotations",
+                      hints=_KEY_HINTS)
 
     output_path = params.get("output_path") or _default_output_path()
     output_path = resolve_output_path(str(output_path))
@@ -129,6 +177,14 @@ def _run_plot_data(params: dict) -> dict:
     params = apply_aliases(params, _PLOT_ALIASES)
     reject_unknown_params(params, _VALID_PLOT, method="plot_data")
     require_params(params, ["series"], method="plot_data", valid=_VALID_PLOT)
+    check_nested_list(params["series"], _SERIES_KEYS, method="plot_data",
+                      label="series", hints=_KEY_HINTS)
+    for key in ("hlines", "vlines"):           # a bare number is a line too
+        lines = params.get(key)
+        for i, spec in enumerate(lines if isinstance(lines, list) else []):
+            if isinstance(spec, dict):
+                check_nested_keys(spec, _REF_LINE_KEYS, method="plot_data",
+                                  label=f"{key}[{i}]", hints=_KEY_HINTS)
 
     output_path = params.get("output_path") or _default_plot_path()
     output_path = resolve_output_path(str(output_path))

@@ -1,7 +1,8 @@
 """Sheet pile adapter — cantilever and anchored wall analysis."""
 
 from funhouse_agent.adapters import (
-    apply_aliases, reject_unknown_params, require_keys, require_params,
+    apply_aliases, check_nested_list, field_keys, reject_unknown_params,
+    require_keys, require_params,
 )
 from sheet_pile.cantilever import WallSoilLayer, analyze_cantilever
 from sheet_pile.anchored import analyze_anchored
@@ -10,14 +11,23 @@ from sheet_pile.anchored import analyze_anchored
 _LAYER_ALIASES = {"gamma": "unit_weight", "phi": "friction_angle",
                   "c": "cohesion", "cu": "cohesion",
                   "delta": "wall_friction_deg", "wall_friction": "wall_friction_deg"}
+# Keys a layer dict may carry: WallSoilLayer's fields and the aliases above.
+# Anything else was read with .get and silently left out, e.g. 'phi_deg' ran
+# the layer at the 30 degree default (GM-58).
+_LAYER_KEYS = field_keys(WallSoilLayer) + tuple(_LAYER_ALIASES)
 
 
-def _build_soil_layers(params, *, method):
-    require_params(params, ["layers"], method=method)
+def _build_soil_layers(params, *, method, key="layers"):
+    """The WallSoilLayers of ``params[key]``: unknown keys refused, the
+    aliases above accepted. Shared with the sheet-pile calc package (its
+    ``soil_layers``), so both read a layer the same way."""
+    require_params(params, [key], method=method)
+    check_nested_list(params[key], _LAYER_KEYS, method=method, label=key)
     layers = []
-    for l in params["layers"]:
+    for l in params[key]:
         l = apply_aliases(l, _LAYER_ALIASES)
-        require_keys(l, ["thickness", "unit_weight"], method=method)
+        require_keys(l, ["thickness", "unit_weight"], method=method,
+                     item_label=f"{key}[]")
         layers.append(WallSoilLayer(
             thickness=l["thickness"], unit_weight=l["unit_weight"],
             friction_angle=l.get("friction_angle", 30.0), cohesion=l.get("cohesion", 0.0),

@@ -22,8 +22,9 @@ import os
 import re
 from datetime import datetime
 
-from funhouse_agent.adapters import (apply_aliases, require_keys,
-                                     require_params, reject_unknown_params)
+from funhouse_agent.adapters import (apply_aliases, check_nested_list,
+                                     require_keys, require_params,
+                                     reject_unknown_params)
 from funhouse_agent._fileio import (
     default_output_dir, find_in_working_folder, rescue_note, rescue_write,
     resolve_output_path, save_verified, workspace_write_hint,
@@ -414,7 +415,9 @@ def _generate_lateral_pile_package(params: dict) -> dict:
     # so both tools accept identical layer dicts and fail with the same
     # actionable messages (model names, required keys) instead of raw
     # KeyError/TypeError.
-    from funhouse_agent.adapters.lateral_pile import _build_py_model
+    from funhouse_agent.adapters.lateral_pile import (
+        _build_py_model, check_py_layers,
+    )
 
     require_params(
         params, ["pile_length", "pile_diameter", "pile_E", "soil_layers"],
@@ -433,7 +436,7 @@ def _generate_lateral_pile_package(params: dict) -> dict:
         moment_of_inertia=params.get("moment_of_inertia"),
     )
 
-    layers = []
+    layers, dicts = [], []
     for ld in params["soil_layers"]:
         d = dict(ld)
         # The analysis tool calls this key 'model'; accept both spellings.
@@ -445,6 +448,10 @@ def _generate_lateral_pile_package(params: dict) -> dict:
                 "'py_model' (p-y model name; 'model' also accepted) "
                 f"(got keys {sorted(ld.keys())})."
             )
+        dicts.append(d)
+    check_py_layers(dicts, method="lateral_pile_package",
+                    label="soil_layers")
+    for d in dicts:
         require_keys(d, ["top", "bottom"], method="lateral_pile_package",
                      item_label="soil_layers[]")
         layers.append(SoilLayer(
@@ -681,6 +688,18 @@ def _generate_slope_report_package(params: dict) -> dict:
 def _generate_settlement_package(params: dict) -> dict:
     from settlement import SettlementAnalysis, ConsolidationLayer, SchmertmannLayer
 
+    from funhouse_agent.adapters.settlement import (
+        _CONSOLIDATION_KEY_HINTS, _CONSOLIDATION_KEYS,
+        _SCHMERTMANN_KEY_HINTS, _SCHMERTMANN_KEYS,
+    )
+    check_nested_list(params.get("consolidation_layers"),
+                      _CONSOLIDATION_KEYS, method="settlement_package",
+                      label="consolidation_layers",
+                      hints=_CONSOLIDATION_KEY_HINTS)
+    check_nested_list(params.get("schmertmann_layers"), _SCHMERTMANN_KEYS,
+                      method="settlement_package", label="schmertmann_layers",
+                      hints=_SCHMERTMANN_KEY_HINTS)
+
     consol_layers = None
     if params.get("consolidation_layers"):
         consol_layers = []
@@ -768,6 +787,14 @@ def _generate_axial_pile_package(params: dict) -> dict:
         depth=params.get("pile_depth"),
     )
 
+    from funhouse_agent.adapters.axial_pile import (
+        _LAYER_KEY_HINTS, _LAYER_KEYS,
+    )
+    # The analysis tool's layer keys, all read below; anything else was
+    # silently left out (GM-58).
+    check_nested_list(params["soil_layers"], _LAYER_KEYS,
+                      method="axial_pile_package", label="soil_layers",
+                      hints=_LAYER_KEY_HINTS)
     layers = []
     for ld in params["soil_layers"]:
         require_keys(ld, ["soil_type", "thickness", "unit_weight"],
@@ -779,6 +806,9 @@ def _generate_axial_pile_package(params: dict) -> dict:
             friction_angle=ld.get("friction_angle", 0.0),
             cohesion=ld.get("cohesion", 0.0),
             delta_phi_ratio=ld.get("delta_phi_ratio"),
+            # the end-bearing phi, as the analysis tool reads it ('toe_phi'
+            # its alias); unset, the toe uses friction_angle
+            toe_friction_angle=ld.get("toe_friction_angle", ld.get("toe_phi")),
             description=ld.get("description", ""),
         ))
     soil = AxialSoilProfile(layers=layers, gwt_depth=params.get("gwt_depth"))
@@ -823,6 +853,23 @@ def _generate_drilled_shaft_package(params: dict) -> dict:
         concrete_fc=params.get("concrete_fc", 28000.0),
     )
 
+    from funhouse_agent.adapters.drilled_shaft import _LAYER_KEY_HINTS
+    # The keys read below; anything else was silently left out (GM-58). The
+    # package runs the default methods only, so the rational-beta inputs
+    # are refused with a note saying where they are read, never offered as
+    # N60 (a different quantity).
+    rational = ("N1_60", "N160", "sigma_v_ref", "sigma_v_preload", "OCR")
+    note = ("(This package runs the default beta method, beta_method="
+            "'depth'; N1_60 / N160, sigma_v_ref / sigma_v_preload and OCR "
+            "are read by drilled_shaft.drilled_shaft_capacity with "
+            "beta_method='rational'.)")
+    check_nested_list(params["soil_layers"],
+                      ("soil_type", "thickness", "unit_weight", "cu", "phi",
+                       "N60", "qu", "RQD", "description"),
+                      method="drilled_shaft_package", label="soil_layers",
+                      hints={**_LAYER_KEY_HINTS, "n160": (),
+                             "sigmavref": (), "sigmavpreload": (), "ocr": ()},
+                      notes={(k,): note for k in rational})
     layers = []
     for ld in params["soil_layers"]:
         require_keys(ld, ["soil_type", "thickness", "unit_weight"],
@@ -868,6 +915,14 @@ def _generate_downdrag_package(params: dict) -> dict:
     require_params(params, ["pile_length", "pile_diameter", "pile_E", "Q_dead",
                             "soil_layers"],
                    method="downdrag_package")
+    # The analysis tool's layer keys (DowndragSoilLayer's fields); anything
+    # else was silently left out (GM-58).
+    from funhouse_agent.adapters.downdrag import (
+        _LAYER_KEY_HINTS, _LAYER_KEY_NOTES, _LAYER_KEYS,
+    )
+    check_nested_list(params["soil_layers"], _LAYER_KEYS,
+                      method="downdrag_package", label="soil_layers",
+                      hints=_LAYER_KEY_HINTS, notes=_LAYER_KEY_NOTES)
 
     layers = []
     for ld in params["soil_layers"]:
@@ -1303,7 +1358,7 @@ def _generate_pile_group_package(params: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _generate_sheet_pile_package(params: dict) -> dict:
-    from sheet_pile import WallSoilLayer, analyze_cantilever, analyze_anchored
+    from sheet_pile import analyze_cantilever, analyze_anchored
 
     require_params(params, ["excavation_depth", "soil_layers"],
                    method="sheet_pile_package")
@@ -1311,17 +1366,12 @@ def _generate_sheet_pile_package(params: dict) -> dict:
         require_params(params, ["anchor_depth"],
                        method="sheet_pile_package (wall_type='anchored')")
 
-    layers = []
-    for ld in params["soil_layers"]:
-        require_keys(ld, ["thickness", "unit_weight"],
-                     method="sheet_pile_package", item_label="soil_layers[]")
-        layers.append(WallSoilLayer(
-            thickness=ld["thickness"],
-            unit_weight=ld["unit_weight"],
-            friction_angle=ld.get("friction_angle", 30.0),
-            cohesion=ld.get("cohesion", 0.0),
-            description=ld.get("description", ""),
-        ))
+    # The analysis tool's own layer reader: the same keys and aliases
+    # (phi, gamma, c, delta, ...), unknown keys refused (GM-58), and the
+    # wall friction passed through for pressure_method='coulomb'.
+    from funhouse_agent.adapters.sheet_pile import _build_soil_layers
+    layers = _build_soil_layers(params, method="sheet_pile_package",
+                                key="soil_layers")
 
     wall_type = params.get("wall_type", "cantilever")
     analysis_dict = dict(params)
@@ -1672,7 +1722,8 @@ def _generate_pavement_design_package(params: dict) -> dict:
     ``pavement_type`` keeps its Table 2.6 meaning (JCP/JRCP vs CRCP).
     """
     from funhouse_agent.adapters.pavement_design_adapter import (
-        _FLEX_ALIASES, _FLEX_VALID, _RIGID_ALIASES, _RIGID_VALID)
+        _FLEX_ALIASES, _FLEX_VALID, _RIGID_ALIASES, _RIGID_VALID,
+        check_items)
     from pavement_design import (design_flexible_pavement,
                                  design_rigid_pavement)
 
@@ -1745,6 +1796,7 @@ def _generate_pavement_design_package(params: dict) -> dict:
                               aliases=_FLEX_ALIASES)
         require_params(p, ["w18", "layers"],
                        method="pavement_design_package", valid=_FLEX_VALID)
+        check_items(p, method="pavement_design_package (flexible)")
         result = design_flexible_pavement(**p)
         extra = {
             "sn_required": result.sn_required,
@@ -1762,6 +1814,7 @@ def _generate_pavement_design_package(params: dict) -> dict:
                               aliases=_RIGID_ALIASES)
         require_params(p, ["w18", "sc_psi", "ec_psi"],
                        method="pavement_design_package", valid=_RIGID_VALID)
+        check_items(p, method="pavement_design_package (rigid)")
         result = design_rigid_pavement(**p)
         extra = {
             "d_required_in": result.d_required_in,
@@ -2107,7 +2160,7 @@ METHOD_INFO = {
             "pile_tip_area": {"type": "float", "required": True, "description": "Pile tip area (m2)."},
             "pile_width": {"type": "float", "required": True, "description": "Pile width/diameter (m)."},
             "pile_length": {"type": "float", "required": True, "description": "Embedded pile length (m)."},
-            "soil_layers": {"type": "array", "required": True, "description": "List of dicts: soil_type, thickness, unit_weight, friction_angle, cohesion."},
+            "soil_layers": {"type": "array", "required": True, "description": "List of dicts: soil_type, thickness, unit_weight, friction_angle, cohesion; optional delta_phi_ratio, toe_friction_angle (alias toe_phi; the end-bearing phi), description. Same layer keys as axial_pile.axial_pile_capacity."},
             "factor_of_safety": {"type": "float", "required": False, "default": 2.5, "description": "Factor of safety."},
             "method": {"type": "str", "required": False, "default": "auto", "allowed_values": ["auto", "beta"], "description": "auto = Nordlund (sand) / Tomlinson (clay); beta = effective-stress method."},
             **_COMMON_PARAMS,
@@ -2292,7 +2345,7 @@ METHOD_INFO = {
         "brief": "Run sheet pile wall analysis and generate calc package, with a table (CSV + printed) of pressure, shear and moment along the wall.",
         "parameters": {
             "excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."},
-            "soil_layers": {"type": "array", "required": True, "description": "List of dicts: thickness, unit_weight, friction_angle, cohesion."},
+            "soil_layers": {"type": "array", "required": True, "description": "List of dicts: thickness, unit_weight, friction_angle, cohesion; optional wall_friction_deg (used with pressure_method='coulomb'), description. Same layer dicts and aliases (gamma, phi, c, cu, delta, wall_friction) as sheet_pile.cantilever_wall."},
             "wall_type": {"type": "str", "required": False, "default": "cantilever", "allowed_values": ["cantilever", "anchored"], "description": "Wall type."},
             "anchor_depth": {"type": "float", "required": False, "description": "Anchor depth (m) — anchored walls."},
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."},

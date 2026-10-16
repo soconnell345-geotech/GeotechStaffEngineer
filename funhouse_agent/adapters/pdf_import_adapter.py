@@ -178,8 +178,13 @@ def _dxf_result_from_params(params, method):
 
 def _run_build_slope_geometry(params):
     from dxf_import.converter import SoilPropertyAssignment, build_slope_geometry
+    from funhouse_agent.adapters.dxf_import_adapter import (
+        check_soil_properties,
+    )
 
     dxf_result = _dxf_result_from_params(params, "build_slope_geometry")
+    check_soil_properties(params.get("soil_properties"), "slope",
+                          method="build_slope_geometry")
     soil_props = [
         SoilPropertyAssignment(
             name=sp.get("name", ""), gamma=sp.get("gamma", 18.0),
@@ -205,8 +210,13 @@ def _run_build_slope_geometry(params):
 
 def _run_build_fem_inputs(params):
     from dxf_import.converter import FEMSoilPropertyAssignment, build_fem_inputs
+    from funhouse_agent.adapters.dxf_import_adapter import (
+        check_soil_properties,
+    )
 
     dxf_result = _dxf_result_from_params(params, "build_fem_inputs")
+    check_soil_properties(params.get("soil_properties"), "fem",
+                          method="build_fem_inputs")
     soil_props = [
         FEMSoilPropertyAssignment(
             name=sp.get("name", ""), gamma=sp.get("gamma", 18.0),

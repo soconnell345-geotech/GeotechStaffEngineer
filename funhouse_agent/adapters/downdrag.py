@@ -9,10 +9,39 @@ from downdrag import (
     downdrag_method_comparison,
 )
 from funhouse_agent.adapters import (
-    clean_result, reject_unknown_params, require_keys, require_params,
+    check_nested_keys, check_nested_list, clean_result, field_keys,
+    reject_unknown_params, require_keys, require_params,
 )
 
 _SOIL_TYPES = ("cohesionless", "cohesive")
+
+# Keys a layers[] dict may carry: DowndragSoilLayer's fields. Anything else
+# was read with .get and a default and silently left out (GM-58): a settling
+# clay's 'pc' ran it normally consolidated and 'Es' left a settling sand
+# without its modulus.
+_LAYER_KEYS = field_keys(DowndragSoilLayer)
+# The CGPR #56 Fellenius recompute's 'consolidation' dict and its layers, as
+# downdrag.cgpr56.consolidation_settlement_profile reads them (C_ec and p_c
+# with .get: a misspelt one ran the layer as overconsolidated throughout).
+_CONSOLIDATION_KEYS = ("layers", "p0_profile", "dp_profile",
+                       "sublayer_thickness")
+_CONSOLIDATION_LAYER_KEYS = ("z_top", "z_bot", "C_er", "C_ec", "p_c")
+# Words the near-miss matcher cannot place; only keys valid for the item are
+# offered. Suggestions only, never renamed.
+_LAYER_KEY_HINTS = {
+    "frictionangle": ("phi",), "c": ("cu",), "cohesion": ("cu",),
+    "su": ("cu",), "gamma": ("unit_weight",),
+    "pc": ("sigma_p", "p_c"), "preconsolidation": ("sigma_p", "p_c"),
+    "sigmap": ("p_c",), "cr": ("Cr", "C_er"), "cc": ("Cc", "C_ec"),
+    "modulus": ("E_s",), "nu": ("nu_s",), "poisson": ("nu_s",),
+    "settles": ("settling",), "top": ("z_top",), "bottom": ("z_bot",),
+}
+_LAYER_KEY_NOTES = {
+    ("C_er",): ("(C_er is the modified recompression index Cr/(1+e0), not "
+                "Cr itself.)"),
+    ("C_ec",): ("(C_ec is the modified compression index Cc/(1+e0), not "
+                "Cc itself.)"),
+}
 
 # Every top-level parameter _run_downdrag_analysis consumes.
 _VALID_PARAMS = (
@@ -39,6 +68,9 @@ def _run_downdrag_analysis(params):
     reject_unknown_params(params, _VALID_PARAMS, method="downdrag_analysis")
     require_params(params, ["layers", "pile_length", "pile_diameter"],
                    method="downdrag_analysis", valid=_VALID_PARAMS)
+    check_nested_list(params["layers"], _LAYER_KEYS,
+                      method="downdrag_analysis", label="layers",
+                      hints=_LAYER_KEY_HINTS, notes=_LAYER_KEY_NOTES)
     layers = []
     for i, l in enumerate(params["layers"]):
         require_keys(l, ["thickness", "soil_type", "unit_weight"], method="downdrag_analysis")
@@ -122,8 +154,13 @@ def _consolidation(params, method):
     cons = params.get("consolidation")
     if cons is None:
         return None
+    check_nested_keys(cons, _CONSOLIDATION_KEYS, method=method,
+                      label="consolidation", hints=_LAYER_KEY_HINTS)
     require_keys(cons, ["layers", "p0_profile", "dp_profile"], method=method,
                  item_label="consolidation")
+    check_nested_list(cons["layers"], _CONSOLIDATION_LAYER_KEYS,
+                      method=method, label="consolidation.layers",
+                      hints=_LAYER_KEY_HINTS, notes=_LAYER_KEY_NOTES)
     for lay in cons["layers"]:
         require_keys(lay, ["z_top", "z_bot", "C_er"], method=method,
                      item_label="consolidation layers[]")

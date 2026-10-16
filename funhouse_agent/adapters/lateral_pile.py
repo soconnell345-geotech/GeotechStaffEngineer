@@ -1,6 +1,8 @@
 """Lateral pile adapter — COM624P, 8 p-y models, FD solver."""
 
-from funhouse_agent.adapters import require_keys, require_params, reject_unknown_params
+from funhouse_agent.adapters import (
+    check_nested_keys, require_keys, require_params, reject_unknown_params,
+)
 from lateral_pile import (
     Pile, ReinforcedConcreteSection, rebar_diameter, SoilLayer,
     LateralPileAnalysis, composite_section_ei,
@@ -26,6 +28,43 @@ _PY_REQUIRED = {
     "SandAPI": ("phi", "gamma", "k"),
     "WeakRock": ("qu", "Er"),
 }
+
+
+# The optional keys each p-y model reads beyond its required ones (all read
+# with .get and a default), and the keys every layer dict may carry.
+_PY_OPTIONAL = {
+    "SoftClayMatlock": ("J",), "StiffClayBelowWT": (),
+    "StiffClayAboveWT": ("J",), "SoftClayJeanjean": ("J",),
+    "SandReese": ("construction",), "SandAPI": (),
+    "WeakRock": ("gamma_r", "RQD"),
+}
+_LAYER_COMMON_KEYS = ("top", "bottom", "model", "description", "loading")
+# Words the near-miss matcher cannot place; only the keys the layer's own
+# model reads are offered. Suggestions only, never renamed.
+_PY_KEY_HINTS = {
+    "cu": ("c", "su"), "su": ("c",), "c": ("su",), "cohesion": ("c", "su"),
+    "frictionangle": ("phi",), "unitweight": ("gamma",),
+    "e50": ("eps50",), "epsilon50": ("eps50",),
+    "subgrademodulus": ("k", "ks"), "g0": ("Gmax",), "erm": ("Er",),
+    "ucs": ("qu",), "gamma": ("gamma_r",),
+}
+
+
+def check_py_layers(layers, *, method, label="layers",
+                    common=_LAYER_COMMON_KEYS):
+    """Refuse a key a p-y layer's model does not read (GM-58): every such
+    key was read with .get and silently left out, so 'Loading': 'cyclic'
+    ran static and a weak-rock layer's 'rqd' ran at RQD 100. A layer whose
+    model is missing or unknown is left to _build_py_model, which names the
+    models."""
+    for i, d in enumerate(layers or []):
+        model = d.get("model") if isinstance(d, dict) else None
+        if model not in _PY_MODELS:
+            continue
+        valid = (tuple(common) + _PY_REQUIRED[model] + _PY_OPTIONAL[model])
+        check_nested_keys(d, valid, method=method,
+                          label=f"{label}[{i}] ({model})",
+                          hints=_PY_KEY_HINTS)
 
 
 def _build_py_model(d):
@@ -97,6 +136,7 @@ def _run_lateral_pile_analysis(params):
                           method="lateral_pile_analysis")
     pile = _build_pile(params)
     require_params(params, ["layers"], method="lateral_pile_analysis")
+    check_py_layers(params["layers"], method="lateral_pile_analysis")
     for l in params["layers"]:
         require_keys(l, ["top", "bottom", "model"], method="lateral_pile_analysis")
     layers = [SoilLayer(top=l["top"], bottom=l["bottom"], py_model=_build_py_model(l),
@@ -115,6 +155,12 @@ def _run_lateral_pile_analysis(params):
 
 
 def _run_get_py_curve(params):
+    model = params.get("model")
+    if model in _PY_MODELS:
+        reject_unknown_params(
+            params, ("model", "loading", "z", "pile_diameter", "n_points")
+            + _PY_REQUIRED[model] + _PY_OPTIONAL[model],
+            method="get_py_curve")
     py_model = _build_py_model(params)
     z = params.get("z", 5.0)
     b = params.get("pile_diameter", 0.6)

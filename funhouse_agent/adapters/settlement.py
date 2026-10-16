@@ -1,7 +1,8 @@
 """Settlement adapter — flat dict → settlement functions → dict."""
 
 from funhouse_agent.adapters import (
-    apply_aliases, reject_unknown_params, require_keys, require_params,
+    apply_aliases, check_nested_list, field_keys, reject_unknown_params,
+    require_keys, require_params,
 )
 from settlement.immediate import elastic_settlement, SchmertmannLayer, schmertmann_settlement
 from settlement.consolidation import (
@@ -10,6 +11,27 @@ from settlement.consolidation import (
 from settlement.hough import HoughLayer, hough_settlement
 from settlement.stress_distribution import stress_at_depth
 from settlement.analysis import SettlementAnalysis
+
+# Keys each layer dict may carry: the dataclass fields it builds (Hough also
+# its aliases below). Anything else was read with .get and silently left
+# out, e.g. a consolidation layer's 'pc' ran it as normally consolidated
+# with sigma_p unset (GM-58).
+_SCHMERTMANN_KEYS = field_keys(SchmertmannLayer)
+_CONSOLIDATION_KEYS = field_keys(ConsolidationLayer)
+_HOUGH_ALIASES = {"C": "C_prime", "Cprime": "C_prime",
+                  "sigma_vo": "sigma_v0",
+                  "depth_to_mid": "depth_to_center",
+                  "depth_mid": "depth_to_center"}
+_HOUGH_KEYS = field_keys(HoughLayer) + tuple(_HOUGH_ALIASES)
+# Words the near-miss matcher cannot place. Suggestions only, never renamed.
+_CONSOLIDATION_KEY_HINTS = {
+    "pc": ("sigma_p",), "preconsolidation": ("sigma_p",),
+    "preconsolidationpressure": ("sigma_p",),
+    "pastpressure": ("sigma_p",), "sigmac": ("sigma_p",),
+    "e": ("e0",),
+}
+_SCHMERTMANN_KEY_HINTS = {"e": ("Es",), "modulus": ("Es",),
+                          "top": ("depth_top",), "bottom": ("depth_bottom",)}
 
 
 def _run_elastic_settlement(params: dict) -> dict:
@@ -33,6 +55,9 @@ def _run_schmertmann_settlement(params: dict) -> dict:
                  "time_years", "gamma_soil"),
         method="schmertmann_settlement")
     require_params(params, ["q_net", "B", "layers"], method="schmertmann_settlement")
+    check_nested_list(params["layers"], _SCHMERTMANN_KEYS,
+                      method="schmertmann_settlement", label="layers",
+                      hints=_SCHMERTMANN_KEY_HINTS)
     for l in params["layers"]:
         require_keys(l, ["depth_top", "depth_bottom", "Es"], method="schmertmann_settlement")
     layers = [SchmertmannLayer(depth_top=l["depth_top"], depth_bottom=l["depth_bottom"], Es=l["Es"]) for l in params["layers"]]
@@ -52,6 +77,9 @@ def _run_consolidation_settlement(params: dict) -> dict:
                  "stress_method"),
         method="consolidation_settlement")
     require_params(params, ["layers"], method="consolidation_settlement")
+    check_nested_list(params["layers"], _CONSOLIDATION_KEYS,
+                      method="consolidation_settlement", label="layers",
+                      hints=_CONSOLIDATION_KEY_HINTS)
     for l in params["layers"]:
         require_keys(l, ["thickness", "depth_to_center", "e0", "Cc", "Cr", "sigma_v0"],
                      method="consolidation_settlement")
@@ -96,12 +124,11 @@ def _run_hough_settlement(params: dict) -> dict:
         method="hough_settlement")
     require_params(params, ["q_net", "B", "layers"], method="hough_settlement",
                    valid=["q_net", "B", "L", "layers"])
+    check_nested_list(params["layers"], _HOUGH_KEYS,
+                      method="hough_settlement", label="layers")
     layers = []
     for l in params["layers"]:
-        l = apply_aliases(l, {"C": "C_prime", "Cprime": "C_prime",
-                              "sigma_vo": "sigma_v0",
-                              "depth_to_mid": "depth_to_center",
-                              "depth_mid": "depth_to_center"})
+        l = apply_aliases(l, _HOUGH_ALIASES)
         require_keys(l, ["thickness", "depth_to_center", "sigma_v0", "C_prime"],
                      method="hough_settlement")
         layers.append(HoughLayer(
@@ -132,6 +159,15 @@ def _run_combined_settlement(params: dict) -> dict:
         method="combined_settlement_analysis")
     require_params(params, ["q_applied", "B"], method="combined_settlement_analysis")
     consol_layers = None
+    check_nested_list(params.get("consolidation_layers"),
+                      _CONSOLIDATION_KEYS,
+                      method="combined_settlement_analysis",
+                      label="consolidation_layers",
+                      hints=_CONSOLIDATION_KEY_HINTS)
+    check_nested_list(params.get("schmertmann_layers"), _SCHMERTMANN_KEYS,
+                      method="combined_settlement_analysis",
+                      label="schmertmann_layers",
+                      hints=_SCHMERTMANN_KEY_HINTS)
     if "consolidation_layers" in params:
         consol_layers = []
         for l in params["consolidation_layers"]:

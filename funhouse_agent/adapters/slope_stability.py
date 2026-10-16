@@ -1,9 +1,11 @@
 """Slope stability adapter — flat dict → analyze_slope/search/probabilistic → dict."""
 
-import dataclasses
-
+# check_nested_keys lived here until GM-58 moved it to
+# funhouse_agent.adapters for every adapter; imported here so older imports
+# of it from this module keep working.
 from funhouse_agent.adapters import (
-    reject_unknown_params, require_keys, require_params, suggest_params,
+    check_nested_keys, field_keys, reject_unknown_params, require_keys,
+    require_params,
 )
 from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
 from slope_stability.analysis import (
@@ -51,13 +53,9 @@ def _support_convention(d: dict, kind: str, method: str) -> str:
                          name=f"{kind}[].support_convention", method=method)
 
 
-def _fields(cls) -> tuple:
-    """The keys a nested dict may carry: the dataclass's own fields, which
-    `_build_geometry` passes through one for one."""
-    return tuple(f.name for f in dataclasses.fields(cls))
-
-
-_LAYER_KEYS = _fields(SlopeSoilLayer)
+# The keys a nested dict may carry: the dataclass's own fields, which
+# `_build_geometry` passes through one for one.
+_LAYER_KEYS = field_keys(SlopeSoilLayer)
 
 # Words for a layer's strength or weight that the generic near-miss matcher
 # cannot place. Suggestions only, never renamed: 'c' and 'cohesion' could be
@@ -73,6 +71,13 @@ _LAYER_KEY_HINTS = {
     "top": ("top_elevation",), "bottom": ("bottom_elevation",),
 }
 
+# Said when a did-you-mean offers both strengths ('c', 'cohesion').
+_LAYER_KEY_NOTES = {
+    ("c_prime", "cu"): ("(c_prime is the drained effective cohesion; cu is "
+                        "the undrained strength, used with "
+                        "analysis_mode='undrained'.)"),
+}
+
 # Keys of the probabilistic `variables` specs and `correlations` dicts, as
 # slope_stability.probabilistic reads them ('source' is the citation the
 # slope calc package prints beside a variable).
@@ -82,43 +87,6 @@ _LAW_KEYS = ("law", "a", "b", "rho_ab", "datum_z", "z_ref", "su_min",
 _LAW_PAIR_KEYS = ("mean", "std", "cov")
 _CORRELATION_KEYS = ("var1", "var2", "key1", "key2", "a", "b", "rho",
                      "rho_ab")
-
-
-def _norm_key(name) -> str:
-    return "".join(ch for ch in str(name).lower() if ch.isalnum())
-
-
-def check_nested_keys(item, valid, *, method: str, label: str,
-                      hints=None) -> None:
-    """Raise a clear ValueError when a nested dict (a soil layer, a nail, a
-    surcharge zone, ...) carries a key the module does not read.
-
-    Without this check the key was read with ``.get`` and silently left out:
-    a layer given ``c`` or ``cohesion`` for ``c_prime`` ran with c' = 0. The
-    message names the item, the unknown key(s), the closest valid key(s) as a
-    did-you-mean and the valid keys. Nothing is renamed.
-    """
-    if not isinstance(item, dict):
-        raise ValueError(f"{method}: {label} must be a dict of named values, "
-                         f"got {type(item).__name__} {item!r}.")
-    unknown = sorted(k for k in item if k not in valid)
-    if not unknown:
-        return
-    parts, both_strengths = [], False
-    for k in unknown:
-        near = list((hints or {}).get(_norm_key(k), ())) \
-            or suggest_params(k, valid)
-        if near:
-            parts.append(f"{k} -> {' or '.join(near)}")
-        if "c_prime" in near and "cu" in near:
-            both_strengths = True
-    hint = f" Did you mean: {'; '.join(parts)}?" if parts else ""
-    if both_strengths:
-        hint += (" (c_prime is the drained effective cohesion; cu is the "
-                 "undrained strength, used with analysis_mode='undrained'.)")
-    raise ValueError(
-        f"{method}: {label} has unknown key(s) {unknown}.{hint} "
-        f"Valid keys: {sorted(valid)}.")
 
 
 def check_variable_specs(params: dict, *, method: str) -> None:
@@ -154,6 +122,7 @@ def build_soil_layer(d, i: int, *, method: str,
     name = d.get("name") if isinstance(d, dict) else None
     check_nested_keys(
         d, _LAYER_KEYS, method=method, hints=_LAYER_KEY_HINTS,
+        notes=_LAYER_KEY_NOTES,
         label=f"soil_layers[{i}]" + (f" ('{name}')" if name else ""))
     require_keys(d, list(required), method=method, item_label="soil_layers[]")
     strength_model = d.get("strength_model", "mohr_coulomb")
@@ -219,7 +188,7 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
         from slope_stability.nails import SoilNail
         nails = []
         for i, d in enumerate(params["nails"]):
-            check_nested_keys(d, _fields(SoilNail), method=method,
+            check_nested_keys(d, field_keys(SoilNail), method=method,
                               label=f"nails[{i}]")
             require_keys(d, ["x_head", "z_head", "length"], method=method,
                          item_label="nails[]")
@@ -238,7 +207,7 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
         from slope_stability.reinforcement import Anchor
         anchors = []
         for i, d in enumerate(params["anchors"]):
-            check_nested_keys(d, _fields(Anchor), method=method,
+            check_nested_keys(d, field_keys(Anchor), method=method,
                               label=f"anchors[{i}]")
             require_keys(d, ["x_head", "z_head", "length", "T_allow"],
                          method=method, item_label="anchors[]")
@@ -253,7 +222,7 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
         from slope_stability.reinforcement import Geosynthetic
         geosynthetics = []
         for i, d in enumerate(params["geosynthetics"]):
-            check_nested_keys(d, _fields(Geosynthetic), method=method,
+            check_nested_keys(d, field_keys(Geosynthetic), method=method,
                               label=f"geosynthetics[{i}]")
             require_keys(d, ["elevation", "T_allow"], method=method,
                          item_label="geosynthetics[]")
@@ -269,7 +238,7 @@ def _build_geometry(params: dict, *, method: str) -> SlopeGeometry:
         from slope_stability.reinforcement import StabilizingPile
         stabilizing_piles = []
         for i, d in enumerate(params["stabilizing_piles"]):
-            check_nested_keys(d, _fields(StabilizingPile), method=method,
+            check_nested_keys(d, field_keys(StabilizingPile), method=method,
                               label=f"stabilizing_piles[{i}]")
             require_keys(d, ["x"], method=method, item_label="stabilizing_piles[]")
             _support_convention(d, "stabilizing_piles", method)

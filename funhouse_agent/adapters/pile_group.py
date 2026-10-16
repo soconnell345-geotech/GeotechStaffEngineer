@@ -1,7 +1,8 @@
 """Pile group adapter — rigid cap analysis, 6-DOF, efficiency."""
 
 from funhouse_agent.adapters import (
-    apply_aliases, reject_unknown_params, require_keys, require_params,
+    apply_aliases, check_nested_list, field_keys, reject_unknown_params,
+    require_keys, require_params,
 )
 from pile_group import (
     GroupPile, create_rectangular_layout, converse_labarre,
@@ -9,6 +10,19 @@ from pile_group import (
     analyze_vertical_group_simple, analyze_group_6dof,
     meyerhof_group_settlement,
 )
+
+
+# Keys a piles[] dict may carry: GroupPile's fields. Anything else was read
+# with .get and silently left out, e.g. 'batter' ran the pile vertical
+# (GM-58).
+_PILE_KEYS = field_keys(GroupPile)
+# Words the near-miss matcher cannot place. Suggestions only, never renamed.
+_PILE_KEY_HINTS = {
+    "batter": ("batter_x", "batter_y"), "ka": ("axial_stiffness",),
+    "kl": ("lateral_stiffness",), "kaxial": ("axial_stiffness",),
+    "klateral": ("lateral_stiffness",), "name": ("label",),
+    "id": ("label",), "capacity": ("axial_capacity_compression",),
+}
 
 
 def _build_piles(params):
@@ -33,6 +47,8 @@ def _build_piles(params):
                 p.axial_capacity_tension = params["axial_capacity_tension"]
         return piles
     elif "piles" in params:
+        check_nested_list(params["piles"], _PILE_KEYS, method="pile_group",
+                          label="piles", hints=_PILE_KEY_HINTS)
         for pd in params["piles"]:
             require_keys(pd, ["x", "y"], method="pile_group", item_label="piles[]")
         return [GroupPile(

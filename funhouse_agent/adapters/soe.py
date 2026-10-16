@@ -1,6 +1,9 @@
 """Support of excavation adapter — braced/cantilever, stability, anchors."""
 
-from funhouse_agent.adapters import reject_unknown_params, require_keys, require_params
+from funhouse_agent.adapters import (
+    check_nested_list, field_keys, reject_unknown_params, require_keys,
+    require_params,
+)
 from soe import (
     ExcavationGeometry, SOEWallLayer, SupportLevel,
     select_apparent_pressure, analyze_braced_excavation, analyze_cantilever_excavation,
@@ -9,6 +12,23 @@ from soe import (
     check_basal_heave_caltrans, check_bottom_blowout, check_piping,
     design_ground_anchor, fhwa_apparent_pressure_anchored_wall,
 )
+
+
+# Keys a layer / support dict may carry: the dataclass fields they build.
+# Anything else was read with .get and silently left out, e.g. a layer's
+# 'phi' ran at the 30 degree default (GM-58).
+_LAYER_KEYS = field_keys(SOEWallLayer)
+_SUPPORT_KEYS = field_keys(SupportLevel)
+# Words the near-miss matcher cannot place. Suggestions only, never renamed.
+_LAYER_KEY_HINTS = {
+    "phi": ("friction_angle",), "phiprime": ("friction_angle",),
+    "c": ("cohesion",), "cu": ("cohesion",), "su": ("cohesion",),
+    "gamma": ("unit_weight",),
+}
+_SUPPORT_KEY_HINTS = {
+    "type": ("support_type",), "angle": ("angle_deg",),
+    "inclination": ("angle_deg",), "preload": ("preload_kN_per_m",),
+}
 
 
 def _soil_type(layer, H):
@@ -25,6 +45,8 @@ def _soil_type(layer, H):
 
 def _build_layers(params, *, method):
     require_params(params, ["layers"], method=method)
+    check_nested_list(params["layers"], _LAYER_KEYS, method=method,
+                      label="layers", hints=_LAYER_KEY_HINTS)
     H = params.get("excavation_depth", 0.0) or 0.0
     layers = []
     for l in params["layers"]:
@@ -41,6 +63,8 @@ def _build_geometry(params, *, method):
     require_params(params, ["excavation_depth"], method=method)
     layers = _build_layers(params, method=method)
     supports = []
+    check_nested_list(params.get("supports"), _SUPPORT_KEYS, method=method,
+                      label="supports", hints=_SUPPORT_KEY_HINTS)
     for s in params.get("supports", []):
         require_keys(s, ["depth"], method=method, item_label="supports[]")
         supports.append(SupportLevel(

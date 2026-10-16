@@ -1,12 +1,36 @@
 """PyNite adapter — flat dict -> pynite_agent -> dict."""
 
 from funhouse_agent.adapters import (
-    clean_result, reject_unknown_params, require_params,
+    check_nested_list, clean_result, reject_unknown_params, require_params,
 )
 
 _ERR = "PyNiteFEA is not installed. Install with: pip install PyNiteFEA"
 
 _SUPPORT_TYPES = ["fixed", "pinned", "roller_y", "roller_x", "free"]
+
+# Keys each nested dict may carry: what pynite_agent reads from it. Anything
+# else was read with .get and a default and silently left out, e.g. a
+# support's 'DY': true left the node free and a member's 'poisson' ran at
+# nu = 0.3 (GM-58).
+_NESTED_KEYS = {
+    "nodes": ("name", "x", "y", "z"),
+    "members": ("name", "i", "j", "E", "nu", "G", "A", "Iz", "Iy", "J",
+                "rho"),
+    "supports": ("node", "type", "dx", "dy", "dz", "rx", "ry", "rz"),
+    "nodal_loads": ("node", "direction", "value"),
+    "member_dist_loads": ("member", "direction", "w", "w1", "w2", "x1",
+                          "x2"),
+    "member_point_loads": ("member", "direction", "value", "x"),
+}
+_POINT_LOAD_KEYS = ("span", "x", "P")
+# Words the near-miss matcher cannot place. Suggestions only, never renamed.
+_KEY_HINTS = {
+    "i": ("Iz",), "inertia": ("Iz",), "ix": ("Iz",), "area": ("A",),
+    "node_i": ("i",), "nodei": ("i",), "start": ("i",), "end": ("j",),
+    "nodej": ("j",), "dir": ("direction",), "load": ("value", "P"),
+    "p": ("value",), "force": ("value", "P"), "q": ("w",), "udl": ("w",),
+    "support": ("type",), "fixity": ("type",), "position": ("x",),
+}
 
 
 def _run_frame(params: dict) -> dict:
@@ -20,6 +44,9 @@ def _run_frame(params: dict) -> dict:
         method="frame_analysis")
     require_params(params, ["nodes", "members", "supports"],
                    method="frame_analysis")
+    for key, valid in _NESTED_KEYS.items():
+        check_nested_list(params.get(key), valid, method="frame_analysis",
+                          label=key, hints=_KEY_HINTS)
     result = analyze_frame(
         nodes=params["nodes"], members=params["members"],
         supports=params["supports"],
@@ -42,6 +69,9 @@ def _run_continuous_beam(params: dict) -> dict:
         method="continuous_beam")
     require_params(params, ["span_lengths", "E", "I"],
                    method="continuous_beam")
+    check_nested_list(params.get("point_loads"), _POINT_LOAD_KEYS,
+                      method="continuous_beam", label="point_loads",
+                      hints=_KEY_HINTS)
     result = analyze_continuous_beam(
         span_lengths_m=params["span_lengths"],
         E_kPa=params["E"], I_m4=params["I"],

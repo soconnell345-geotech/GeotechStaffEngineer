@@ -203,6 +203,79 @@ class TestNailedPipeline:
         assert fos_nails >= fos_plain
 
 
+class TestAgentAdapterPipeline:
+    """The agent's own path, with no mocks: dxf_import.parse_geometry ->
+    dxf_import.build_slope_geometry -> slope_stability.analyze_slope, each
+    through call_agent. build_slope_geometry raised AttributeError
+    ('SlopeGeometry' has no to_dict) on every real run until GM-58; only
+    mocked tests had called it."""
+
+    def _build(self, dxf_path, mapping, props, **extra):
+        from funhouse_agent.dispatch import call_agent
+        parsed = call_agent("dxf_import", "parse_geometry",
+                            {"file_path": dxf_path, "layer_mapping": mapping})
+        assert "error" not in parsed, parsed
+        geom = call_agent("dxf_import", "build_slope_geometry",
+                          dict({"parse_result": parsed,
+                                "soil_properties": props}, **extra))
+        assert "error" not in geom, geom
+        return geom
+
+    def test_result_runs_analyze_slope_as_the_direct_pipeline_does(
+            self, simple_slope_dxf):
+        from funhouse_agent.dispatch import call_agent
+        geom = self._build(
+            simple_slope_dxf,
+            {"surface": "GROUND_SURFACE",
+             "soil_boundaries": {"CLAY_BOTTOM": "Clay"},
+             "water_table": "WATER_TABLE"},
+            [{"name": "Surface", "gamma": 18.0, "phi": 30.0, "c_prime": 5.0},
+             {"name": "Clay", "gamma": 19.0, "phi": 25.0, "c_prime": 10.0}])
+        assert [l["name"] for l in geom["soil_layers"]] == ["Surface", "Clay"]
+        assert geom["soil_layers"][1]["c_prime"] == 10.0
+        assert geom["surface_points"][0] == [0.0, 10.0]
+        assert geom["gwt_points"]
+        assert "nails" not in geom
+
+        r = call_agent("slope_stability", "analyze_slope",
+                       dict(geom, xc=15.0, yc=18.0, radius=12.0,
+                            method="bishop"))
+        assert "error" not in r, r
+
+        # the same FOS as the library pipeline on the same drawing
+        parse = parse_dxf_geometry(
+            filepath=simple_slope_dxf,
+            layer_mapping=LayerMapping(
+                surface="GROUND_SURFACE",
+                soil_boundaries={"CLAY_BOTTOM": "Clay"},
+                water_table="WATER_TABLE"))
+        direct = analyze_slope(
+            build_slope_geometry(parse, [
+                SoilPropertyAssignment(name="Surface", gamma=18.0, phi=30.0,
+                                       c_prime=5.0),
+                SoilPropertyAssignment(name="Clay", gamma=19.0, phi=25.0,
+                                       c_prime=10.0)]),
+            xc=15.0, yc=18.0, radius=12.0, method="bishop")
+        assert r["FOS"] == pytest.approx(direct.FOS, abs=1e-4)  # rounded
+
+    def test_nails_come_back_as_slope_nails(self, nailed_slope_dxf):
+        from funhouse_agent.dispatch import call_agent
+        geom = self._build(
+            nailed_slope_dxf,
+            {"surface": "SURFACE",
+             "soil_boundaries": {"SOIL_BOUNDARY": "Clay"},
+             "nails": "NAILS"},
+            [{"name": "Surface", "gamma": 18.0, "phi": 30.0, "c_prime": 5.0},
+             {"name": "Clay", "gamma": 19.0, "phi": 25.0, "c_prime": 10.0}],
+            nail_defaults={"fy": 500.0})
+        assert len(geom["nails"]) == 3
+        assert all(n["fy"] == 500.0 for n in geom["nails"])
+        r = call_agent("slope_stability", "analyze_slope",
+                       dict(geom, xc=12.0, yc=14.0, radius=10.0,
+                            method="bishop"))
+        assert "error" not in r, r
+
+
 class TestDwgError:
     """Test DWG file rejection."""
 

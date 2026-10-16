@@ -1,7 +1,8 @@
 """Drilled shaft adapter — GEC-10 alpha/beta/rock socket capacity + LRFD."""
 
 from funhouse_agent.adapters import (
-    apply_aliases, reject_unknown_params, require_keys, require_params,
+    apply_aliases, check_nested_list, field_keys, reject_unknown_params,
+    require_keys, require_params,
 )
 from drilled_shaft import DrillShaft, ShaftSoilLayer, ShaftSoilProfile, DrillShaftAnalysis
 from drilled_shaft.lrfd import apply_lrfd, RESISTANCE_FACTORS
@@ -16,6 +17,16 @@ _SOIL_PARAMS = ("layers", "gwt_depth")
 _RATIONAL_PARAMS = ("beta_method", "alpha_method", "su_test_type", "pa")
 # 'length' is a common guess for the shaft length.
 _SHAFT_ALIASES = {"length": "shaft_length", "pile_length": "shaft_length"}
+
+# Keys a layer dict may carry: ShaftSoilLayer's fields plus the aliases read
+# for the rational-beta inputs. Anything else was read with .get and silently
+# left out, e.g. 'friction_angle' ran the layer with phi = 0 (GM-58).
+_LAYER_KEYS = field_keys(ShaftSoilLayer, "N160", "sigma_v_preload")
+# Words the near-miss matcher cannot place. Suggestions only, never renamed.
+_LAYER_KEY_HINTS = {
+    "frictionangle": ("phi",), "c": ("cu",), "cohesion": ("cu",),
+    "su": ("cu",), "gamma": ("unit_weight",),
+}
 
 
 def _build_shaft(params):
@@ -32,6 +43,8 @@ def _build_shaft(params):
 
 def _build_soil_profile(params):
     require_params(params, ["layers"], method="drilled_shaft")
+    check_nested_list(params["layers"], _LAYER_KEYS, method="drilled_shaft",
+                      label="layers", hints=_LAYER_KEY_HINTS)
     layers = []
     for l in params["layers"]:
         require_keys(l, ["thickness", "soil_type", "unit_weight"],

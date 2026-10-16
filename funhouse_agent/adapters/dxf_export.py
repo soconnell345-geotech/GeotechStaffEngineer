@@ -3,11 +3,31 @@
 import base64
 import os
 
-from funhouse_agent.adapters import reject_unknown_params, require_params
+from funhouse_agent.adapters import (
+    check_nested_list, reject_unknown_params, require_params,
+)
 
 # Geometry params shared by both export methods.
 _GEOMETRY_PARAMS = ("surface_points", "boundary_profiles", "gwt_points",
                     "nail_lines", "text_annotations", "units")
+
+# Keys of the nail_lines / text_annotations dicts, as dxf_export writes them
+# (plus the 'layer' dxf_import's parse_geometry gives each annotation, so a
+# parsed section exports as it came). An annotation's other keys were read
+# with .get and silently left out: one placed by 'z' (the section's own name
+# for elevation) landed at y = 0 (GM-58).
+_NAIL_KEYS = ("x_head", "z_head", "x_tip", "z_tip")
+_TEXT_KEYS = ("text", "x", "y", "height", "layer")
+_KEY_HINTS = {"z": ("y",), "label": ("text",), "size": ("height",),
+              "textheight": ("height",)}
+
+
+def _check_items(params, method):
+    check_nested_list(params.get("nail_lines"), _NAIL_KEYS, method=method,
+                      label="nail_lines", hints=_KEY_HINTS)
+    check_nested_list(params.get("text_annotations"), _TEXT_KEYS,
+                      method=method, label="text_annotations",
+                      hints=_KEY_HINTS)
 
 
 def _run_export_geometry_to_dxf(params):
@@ -17,6 +37,7 @@ def _run_export_geometry_to_dxf(params):
                           method="export_geometry_to_dxf")
     require_params(params, ["output_path"], method="export_geometry_to_dxf",
                    valid=_GEOMETRY_PARAMS + ("output_path",))
+    _check_items(params, "export_geometry_to_dxf")
     params = dict(params)  # pops below must not mutate the caller's dict
     output_path = params.pop("output_path")
 
@@ -86,6 +107,7 @@ def _run_export_to_dxf_bytes(params):
 
     reject_unknown_params(params, _GEOMETRY_PARAMS,
                           method="export_to_dxf_bytes")
+    _check_items(params, "export_to_dxf_bytes")
     params = dict(params)
 
     # Convert geometry inputs same as above

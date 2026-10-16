@@ -3,14 +3,53 @@
 import numpy as np
 
 from funhouse_agent.adapters import (
-    clean_result, reject_unknown_params, require_keys, require_params,
+    check_nested_list, clean_result, reject_unknown_params, require_keys,
+    require_params,
 )
 
 
+# Keys a soil_layers[] dict may carry: what fem2d reads from it (and the
+# top_elevation and model that dxf_import's build_fem_inputs writes into
+# each layer). Anything else was read with .get and a module default and
+# silently left out: a layer's 'cohesion' ran with c = 0, 'unit_weight' at
+# gamma = 18 and 'E_kPa' at E = 30000 (GM-58).
+_LAYER_KEYS = ("name", "top_elevation", "bottom_elevation", "E", "nu", "c",
+               "phi", "psi", "gamma", "model")
+_HS_KEYS = ("E50_ref", "Eur_ref", "m", "p_ref", "R_f")
+_EXCAVATION_LAYER_KEYS = _LAYER_KEYS + ("K0", "k") + _HS_KEYS
+_CONSOLIDATION_LAYER_KEYS = _LAYER_KEYS + ("fill",)
+# fem2d_staged's nested items, as the adapter and analyze_staged read them.
+_MATERIAL_KEYS = ("name", "E", "nu", "c", "phi", "psi", "model") + _HS_KEYS
+_PHASE_KEYS = ("name", "active_soil_groups", "active_beam_ids",
+               "surface_loads", "gwt", "n_steps", "reset_displacements")
+_BEAM_KEYS = ("node_i", "node_j", "EA", "EI", "weight_per_m")
+_STRUT_KEYS = ("depth", "stiffness")
+# Words the near-miss matcher cannot place. Suggestions only, never renamed.
+_LAYER_KEY_HINTS = {
+    "cohesion": ("c",), "cprime": ("c",), "cu": ("c",), "su": ("c",),
+    "frictionangle": ("phi",), "phiprime": ("phi",),
+    "dilation": ("psi",), "dilationangle": ("psi",),
+    "unitweight": ("gamma",), "poisson": ("nu",), "poissonsratio": ("nu",),
+    "modulus": ("E",), "youngsmodulus": ("E",), "es": ("E",),
+    "top": ("top_elevation",), "bottom": ("bottom_elevation",),
+    "permeability": ("k",), "hydraulicconductivity": ("k",),
+    "groups": ("active_soil_groups",), "activegroups": ("active_soil_groups",),
+    "loads": ("surface_loads",), "beams": ("active_beam_ids",),
+    "steps": ("n_steps",), "nsteps": ("n_steps",), "k": ("stiffness",),
+    "weight": ("weight_per_m",),
+}
+_LAYER_KEY_NOTES = {
+    ("c",): ("(fem2d has one cohesion, c: for an undrained layer give the "
+             "undrained strength as c with phi = 0.)"),
+}
 
-def _require_layer_elevations(soil_layers, *, method):
+
+def _require_layer_elevations(soil_layers, *, method, valid=_LAYER_KEYS):
     """fem2d builds strata from each layer's bottom_elevation; everything else
-    (E, nu, c, phi, psi, gamma) has module defaults."""
+    (E, nu, c, phi, psi, gamma) has module defaults, so an unknown key is
+    refused first (``valid``: the keys this analysis reads)."""
+    check_nested_list(soil_layers, valid, method=method, label="soil_layers",
+                      hints=_LAYER_KEY_HINTS, notes=_LAYER_KEY_NOTES)
     for sl in soil_layers:
         require_keys(sl, ["bottom_elevation"], method=method,
                      item_label="soil_layers[]")
@@ -263,7 +302,11 @@ def _run_analyze_excavation(params: dict) -> dict:
     require_params(params, ["width", "depth", "wall_depth", "soil_layers",
                             "wall_EI", "wall_EA"],
                    method="fem2d_excavation", valid=_valid)
-    _require_layer_elevations(params["soil_layers"], method="fem2d_excavation")
+    _require_layer_elevations(params["soil_layers"], method="fem2d_excavation",
+                              valid=_EXCAVATION_LAYER_KEYS)
+    check_nested_list(params.get("struts"), _STRUT_KEYS,
+                      method="fem2d_excavation", label="struts",
+                      hints=_LAYER_KEY_HINTS)
     _require_positive(params.get("depth"), name="depth",
                       method="fem2d_excavation")
     kwargs = dict(
@@ -338,7 +381,9 @@ def _run_analyze_consolidation(params: dict) -> dict:
     require_params(params, ["width", "depth", "soil_layers", "k", "load_q",
                             "time_points"],
                    method="fem2d_consolidation", valid=_valid)
-    _require_layer_elevations(params["soil_layers"], method="fem2d_consolidation")
+    _require_layer_elevations(params["soil_layers"],
+                              method="fem2d_consolidation",
+                              valid=_CONSOLIDATION_LAYER_KEYS)
     _require_positive(params.get("depth"), name="depth",
                       method="fem2d_consolidation")
     scheme = params.get("consolidation_scheme", "staggered")
@@ -383,6 +428,14 @@ def _run_analyze_staged(params: dict) -> dict:
     require_params(params, ["nodes", "elements", "material_props", "gamma",
                             "element_groups", "phases"],
                    method="fem2d_staged", valid=_valid)
+    check_nested_list(params["material_props"], _MATERIAL_KEYS,
+                      method="fem2d_staged", label="material_props",
+                      hints=_LAYER_KEY_HINTS, notes=_LAYER_KEY_NOTES)
+    check_nested_list(params["phases"], _PHASE_KEYS, method="fem2d_staged",
+                      label="phases", hints=_LAYER_KEY_HINTS)
+    check_nested_list(params.get("beam_elements"), _BEAM_KEYS,
+                      method="fem2d_staged", label="beam_elements",
+                      hints=_LAYER_KEY_HINTS)
     nodes = np.array(params["nodes"])
     elements = np.array(params["elements"])
     material_props = params["material_props"]

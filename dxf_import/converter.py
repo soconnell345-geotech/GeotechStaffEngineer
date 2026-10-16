@@ -286,7 +286,9 @@ def build_fem_inputs(
     dict with keys:
         'surface_points' : list of (x, z) tuples — ground surface profile.
         'soil_layers' : list of dicts — each with name, top_elevation,
-            bottom_elevation, E, nu, c, phi, psi, gamma, model, hs_params.
+            bottom_elevation, E, nu, c, phi, psi, gamma, model and, for an
+            HS layer, its hs_params keys (E50_ref, Eur_ref, m, p_ref, R_f)
+            written flat into the layer, as fem2d reads them.
         'gwt' : (M, 2) numpy array or None — GWT polyline for fem2d.
         'boundary_polylines' : list of (M, 2) numpy arrays — for
             assign_layers_by_polylines().
@@ -410,5 +412,8 @@ def _fem_layer_dict(
         "model": sp.model,
     }
     if sp.hs_params:
-        d["hs_params"] = dict(sp.hs_params)
+        # fem2d reads an HS layer's E50_ref, Eur_ref, m, p_ref and R_f from
+        # the layer itself; a nested 'hs_params' was never read (GM-58). A
+        # key already set above (phi, c, nu, ...) keeps its value.
+        d.update({k: v for k, v in sp.hs_params.items() if k not in d})
     return d

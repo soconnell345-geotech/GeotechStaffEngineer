@@ -137,6 +137,88 @@ def suggest_params(unknown: str, valid, n: int = 2) -> list:
     return near[:n]
 
 
+#: The same normalised form, for the nested-key check's ``hints`` lookup.
+_norm_key = _param_key
+
+
+def field_keys(cls, *extra) -> tuple:
+    """The keys a nested dict built into dataclass ``cls`` may carry: its
+    init fields, which the adapter passes through one for one, plus
+    ``extra`` (aliases the adapter also reads)."""
+    import dataclasses
+    return tuple(f.name for f in dataclasses.fields(cls) if f.init) + extra
+
+
+def check_nested_keys(item, valid, *, method: str, label: str,
+                      hints=None, notes=None) -> None:
+    """Raise a clear ValueError when a nested dict (a soil layer, a nail, a
+    pile, a load, ...) carries a key the module does not read.
+
+    Without this check the key was read with ``.get`` and silently left out:
+    a slope layer given ``c`` or ``cohesion`` for ``c_prime`` ran with
+    c' = 0 (GM-52). The message names the item, the unknown key(s), the
+    closest valid key(s) as a did-you-mean and the valid keys. Nothing is
+    renamed.
+
+    ``hints`` maps a normalised key ('cohesion') to the key(s) it may mean,
+    for words the near-miss matcher cannot place; only those in ``valid``
+    are offered, so one table can serve items of several kinds (when none
+    is, the near-miss matcher is asked). An EMPTY tuple offers nothing: for
+    a key whose spelling is close to a different quantity's ('N1_60' is not
+    'N60'). ``notes`` maps a tuple of keys to a sentence added when every
+    one of them is offered as a did-you-mean or was given and refused (to
+    tell two meanings of one word apart, or say where a refused key IS
+    read).
+    """
+    if not isinstance(item, dict):
+        raise ValueError(f"{method}: {label} must be a dict of named values, "
+                         f"got {type(item).__name__} {item!r}.")
+    unknown = sorted((k for k in item if k not in valid), key=str)
+    if not unknown:
+        return
+    parts, offered = [], set()
+    for k in unknown:
+        hinted = (hints or {}).get(_norm_key(k))
+        if hinted is None:
+            near = suggest_params(k, valid)
+        else:
+            near = [h for h in hinted if h in valid]
+            if hinted and not near:
+                near = suggest_params(k, valid)
+        if near:
+            parts.append(f"{k} -> {' or '.join(near)}")
+            offered.update(near)
+    hint = f" Did you mean: {'; '.join(parts)}?" if parts else ""
+    involved = offered | set(unknown)
+    said = []
+    for keys, sentence in (notes or {}).items():
+        if set(keys) <= involved and sentence not in said:
+            said.append(sentence)
+            hint += f" {sentence}"
+    raise ValueError(
+        f"{method}: {label} has unknown key(s) {unknown}.{hint} "
+        f"Valid keys: {sorted(valid)}.")
+
+
+def check_nested_list(items, valid, *, method: str, label: str,
+                      hints=None, notes=None) -> None:
+    """:func:`check_nested_keys` on every dict of a list parameter
+    (``layers``, ``piles``, ``supports``, ...), each named by its index and,
+    when it has one, its name or description: ``layers[2] ('Clay')``. A
+    value that is not a list is left to the caller's own checks."""
+    if not isinstance(items, (list, tuple)):
+        return
+    for i, item in enumerate(items):
+        name = None
+        if isinstance(item, dict):
+            name = item.get("name") or item.get("description") \
+                or item.get("label")
+        tag = f" ('{str(name)[:40]}')" if name else ""
+        check_nested_keys(item, valid, method=method,
+                          label=f"{label}[{i}]{tag}", hints=hints,
+                          notes=notes)
+
+
 def reject_unknown_params(params: dict, valid, *, method: str, aliases=()):
     """Raise a clear ValueError naming unknown keys and listing valid ones.
 

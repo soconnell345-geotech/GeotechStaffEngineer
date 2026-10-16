@@ -3,7 +3,8 @@
 from axial_pile import PileSection, make_pipe_pile, make_concrete_pile, make_h_pile
 from axial_pile import AxialSoilLayer, AxialSoilProfile, AxialPileAnalysis
 from funhouse_agent.adapters import (
-    apply_aliases, reject_unknown_params, require_keys, require_params,
+    apply_aliases, check_nested_list, field_keys, reject_unknown_params,
+    require_keys, require_params,
 )
 
 _PILE_TYPES = ("pipe_closed", "pipe_open", "concrete_square", "concrete_circular", "h_pile")
@@ -12,6 +13,16 @@ _PILE_TYPES = ("pipe_closed", "pipe_open", "concrete_square", "concrete_circular
 _PILE_PARAMS = ("pile_type", "diameter", "wall_thickness", "width",
                 "thickness", "designation", "E")
 _SOIL_PARAMS = ("layers", "gwt_depth")
+
+# Keys a layer dict may carry: AxialSoilLayer's fields plus the 'toe_phi'
+# alias. Anything else was read with .get and silently left out (GM-58).
+_LAYER_KEYS = field_keys(AxialSoilLayer, "toe_phi")
+# Words the near-miss matcher cannot place. Suggestions only, never renamed.
+_LAYER_KEY_HINTS = {
+    "phi": ("friction_angle",), "phiprime": ("friction_angle",),
+    "c": ("cohesion",), "cu": ("cohesion",), "su": ("cohesion",),
+    "gamma": ("unit_weight",),
+}
 
 
 def _build_pile(params):
@@ -41,6 +52,8 @@ def _build_pile(params):
 
 def _build_soil_profile(params, *, method):
     require_params(params, ["layers"], method=method)
+    check_nested_list(params["layers"], _LAYER_KEYS, method=method,
+                      label="layers", hints=_LAYER_KEY_HINTS)
     layers = []
     for l in params["layers"]:
         require_keys(l, ["thickness", "unit_weight"], method=method)

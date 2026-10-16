@@ -243,8 +243,10 @@ class TestSubsurfaceCalls:
             "investigation_id": "BH-1",
             "x": 0,
             "y": 0,
+            # 'depth_m', not 'depth': the old 'depth' was silently read as
+            # 0 m until site_data's keys were checked (GM-58).
             "measurements": [
-                {"depth": 1, "parameter": "N_spt", "value": 10},
+                {"depth_m": 1, "parameter": "N_spt", "value": 10},
             ],
         }],
     }

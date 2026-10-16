@@ -610,28 +610,24 @@ class TestDxfImportCalls:
                 })
                 assert len(result["surface_points"]) == 2
 
-    def test_build_slope_geometry_mocked(self):
-        """Mock dxf_import.build_slope_geometry to test adapter wiring."""
-        mock_result = MagicMock()
-        mock_result.to_dict.return_value = {
-            "surface_points": [[0, 10], [20, 5]],
-            "soil_layers": [{"name": "Clay", "gamma": 18}],
-            "gwt_points": None,
-        }
-        with patch("dxf_import.build_slope_geometry", return_value=mock_result):
-            with patch("dxf_import.SoilPropertyAssignment") as mock_spa:
-                mock_spa.return_value = MagicMock()
-                from funhouse_agent.dispatch import call_agent
-                result = call_agent("dxf_import", "build_slope_geometry", {
-                    "parse_result": {
-                        "surface_points": [[0, 10], [20, 5]],
-                        "boundary_profiles": {"Clay": [[0, 5], [20, 0]]},
-                    },
-                    "soil_properties": [
-                        {"name": "Clay", "gamma": 18, "phi": 25, "c_prime": 10},
-                    ],
-                })
-                assert result["soil_layers"][0]["name"] == "Clay"
+    def test_build_slope_geometry_unmocked(self):
+        """The real build (no mocks): the mocked version faked a to_dict that
+        SlopeGeometry never had, and the real call raised AttributeError
+        (GM-58). The result is slope_stability's own soil_layers."""
+        from funhouse_agent.dispatch import call_agent
+        result = call_agent("dxf_import", "build_slope_geometry", {
+            "parse_result": {
+                "surface_points": [[0, 10], [20, 5]],
+                "boundary_profiles": {"Clay": [[0, 5], [20, 0]]},
+            },
+            "soil_properties": [
+                {"name": "Clay", "gamma": 18, "phi": 25, "c_prime": 10},
+            ],
+        })
+        assert "error" not in result, result
+        assert result["soil_layers"][0]["name"] == "Clay"
+        assert result["soil_layers"][0]["c_prime"] == 10
+        assert result["surface_points"] == [[0.0, 10.0], [20.0, 5.0]]
 
     def test_build_fem_inputs_mocked(self):
         """Mock dxf_import.build_fem_inputs to test adapter wiring."""

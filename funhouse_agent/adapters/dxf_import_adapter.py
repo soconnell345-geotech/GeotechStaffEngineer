@@ -1,8 +1,75 @@
 """DXF import adapter — discover layers, parse geometry, build slope/FEM inputs."""
 
 from funhouse_agent.adapters import (
-    clean_result, reject_unknown_params, require_params,
+    check_nested_keys, check_nested_list, clean_result,
+    reject_unknown_params, require_params,
 )
+
+# The keys this adapter reads from each nested dict: the LayerMapping
+# fields, the nail_defaults build_slope_geometry reads (SoilNail's own
+# names), and the soil_properties of a slope (SoilPropertyAssignment) and of
+# an FEM model (FEMSoilPropertyAssignment). Anything else was read with .get
+# and a default and silently left out (GM-58).
+_MAPPING_KEYS = ("surface", "soil_boundaries", "water_table", "nails",
+                 "annotations")
+_NAIL_DEFAULT_KEYS = ("inclination", "bar_diameter", "drill_hole_diameter",
+                      "fy", "bond_stress", "spacing_h")
+_SOIL_PROPERTY_KEYS = {
+    "slope": ("name", "gamma", "gamma_sat", "phi", "c_prime", "cu",
+              "analysis_mode"),
+    "fem": ("name", "gamma", "phi", "c", "E", "nu", "psi", "model",
+            "hs_params"),
+}
+
+
+def _slope_params(geom) -> dict:
+    """A SlopeGeometry as the slope_stability adapter's own parameters
+    (surface_points, soil_layers, gwt_points and any nails), so the result is
+    the next call's input: build_slope_geometry's own docstring says the
+    geometry is "ready for analyze_slope() or search_critical_surface()".
+    SlopeGeometry has no to_dict, so this adapter raised AttributeError on
+    every real run; only mocked tests had called it."""
+    import dataclasses
+
+    def _pts(points):
+        return [[float(x), float(z)] for x, z in points]
+
+    layers = []
+    for lyr in geom.soil_layers:
+        d = {"name": lyr.name, "top_elevation": lyr.top_elevation,
+             "bottom_elevation": lyr.bottom_elevation, "gamma": lyr.gamma,
+             "phi": lyr.phi, "c_prime": lyr.c_prime, "cu": lyr.cu,
+             "analysis_mode": lyr.analysis_mode}
+        if lyr.gamma_sat is not None:
+            d["gamma_sat"] = lyr.gamma_sat
+        if lyr.bottom_boundary_points:
+            d["bottom_boundary_points"] = _pts(lyr.bottom_boundary_points)
+        layers.append(d)
+    out = {"surface_points": _pts(geom.surface_points),
+           "soil_layers": layers,
+           "gwt_points": _pts(geom.gwt_points) if geom.gwt_points else None}
+    if geom.nails:
+        out["nails"] = [dataclasses.asdict(n) for n in geom.nails]
+    return out
+
+
+def check_soil_properties(items, kind, *, method):
+    """Refuse a soil_properties[] key a ``kind`` ('slope' or 'fem')
+    assignment does not take (GM-58): every one was read with .get and a
+    default, so a slope layer's 'c' ran with c' = 0 and an FEM layer's
+    'unit_weight' at gamma = 18. The did-you-means are the slope and fem2d
+    adapters' own. Shared with the pdf_import adapter, which builds the same
+    assignments."""
+    if kind == "slope":
+        from funhouse_agent.adapters.slope_stability import (
+            _LAYER_KEY_HINTS as hints, _LAYER_KEY_NOTES as notes,
+        )
+    else:
+        from funhouse_agent.adapters.fem2d_adapter import (
+            _LAYER_KEY_HINTS as hints, _LAYER_KEY_NOTES as notes,
+        )
+    check_nested_list(items, _SOIL_PROPERTY_KEYS[kind], method=method,
+                      label="soil_properties", hints=hints, notes=notes)
 
 
 def _run_discover_layers(params):
@@ -30,6 +97,13 @@ def _run_parse_dxf_geometry(params):
 
     # Build LayerMapping from flat dict params
     mapping_dict = params.get("layer_mapping", {})
+    check_nested_keys(mapping_dict, _MAPPING_KEYS,
+                      method="parse_geometry", label="layer_mapping",
+                      hints={"water": ("water_table",), "gwt": ("water_table",),
+                             "groundwater": ("water_table",),
+                             "ground": ("surface",),
+                             "boundaries": ("soil_boundaries",),
+                             "text": ("annotations",)})
     mapping = LayerMapping(
         surface=mapping_dict.get("surface", ""),
         soil_boundaries=mapping_dict.get("soil_boundaries", {}),
@@ -89,6 +163,12 @@ def _run_build_slope_geometry(params):
     )
 
     # Build SoilPropertyAssignment list
+    check_soil_properties(params.get("soil_properties"), "slope",
+                          method="build_slope_geometry")
+    if params.get("nail_defaults") is not None:
+        check_nested_keys(params["nail_defaults"], _NAIL_DEFAULT_KEYS,
+                          method="build_slope_geometry",
+                          label="nail_defaults")
     soil_props = []
     for sp_dict in params.get("soil_properties", []):
         soil_props.append(SoilPropertyAssignment(
@@ -108,7 +188,7 @@ def _run_build_slope_geometry(params):
         soil_properties=soil_props,
         nail_defaults=nail_defaults,
     )
-    return clean_result(geom.to_dict())
+    return clean_result(_slope_params(geom))
 
 
 def _run_build_fem_inputs(params):
@@ -150,6 +230,8 @@ def _run_build_fem_inputs(params):
     )
 
     # Build FEMSoilPropertyAssignment list
+    check_soil_properties(params.get("soil_properties"), "fem",
+                          method="build_fem_inputs")
     soil_props = []
     for sp_dict in params.get("soil_properties", []):
         soil_props.append(FEMSoilPropertyAssignment(
@@ -218,9 +300,10 @@ METHOD_INFO = {
             "nail_defaults": {"type": "dict", "required": False, "description": "Default nail params: {bar_diameter, drill_hole_diameter, fy, bond_stress, spacing_h}."},
         },
         "returns": {
-            "surface_points": "Ground surface profile.",
-            "soil_layers": "Assembled soil layers with geometry and properties.",
-            "gwt_points": "GWT profile or null.",
+            "surface_points": "Ground surface profile [[x, z], ...].",
+            "soil_layers": "Assembled soil layers with geometry and properties, as slope_stability's soil_layers.",
+            "gwt_points": "GWT profile [[x, z], ...] or null.",
+            "nails": "Soil nails from the DXF nail lines, as slope_stability's nails (only when there are any). The whole result is slope_stability.analyze_slope / search_critical_surface input.",
         },
     },
     "build_fem_inputs": {

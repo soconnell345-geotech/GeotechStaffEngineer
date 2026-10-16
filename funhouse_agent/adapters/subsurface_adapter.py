@@ -10,7 +10,8 @@ import re
 import numpy as np
 
 from funhouse_agent.adapters import (
-    clean_result, figure_output_format, require_params, save_html_output,
+    check_nested_keys, check_nested_list, clean_result, figure_output_format,
+    require_params, save_html_output,
 )
 
 
@@ -45,6 +46,57 @@ def _require_file_or_content(params: dict, *, method: str):
 # consumed by any plot method that receives site_key instead of site_data.
 _site_cache: dict = {}
 
+# Keys of a site_data dict at each level: what SiteModel.from_dict reads,
+# plus the counts and lists its own to_dict adds (so a site handed back
+# loads as it came). Anything else was read with .get and a default and
+# silently left out: a measurement's 'depth' put it at 0 m and a boring's
+# 'gwl_depth' dropped its water level (GM-58).
+_SITE_KEYS = ("project_name", "investigations", "coordinate_system", "datum",
+              "notes", "n_investigations", "available_parameters")
+_INVESTIGATION_KEYS = (
+    "investigation_id", "investigation_type", "x", "y", "elevation_m",
+    "total_depth_m", "gwl_depth_m", "gwl_not_encountered",
+    "coordinate_system", "date_started", "drilling_method", "lithology",
+    "measurements", "notes", "n_lithology", "n_measurements",
+    "available_parameters")
+_LITHOLOGY_KEYS = ("top_depth_m", "bottom_depth_m", "description", "uscs",
+                   "color", "moisture", "consistency_density", "thickness_m")
+_MEASUREMENT_KEYS = ("depth_m", "parameter", "value", "source", "test_type",
+                     "sample_id", "notes")
+# Words the near-miss matcher cannot place. Suggestions only, never renamed.
+_SITE_KEY_HINTS = {
+    "id": ("investigation_id",), "name": ("investigation_id",
+                                          "project_name"),
+    "boring_id": ("investigation_id",), "type": ("investigation_type",),
+    "elevation": ("elevation_m",), "depth": ("depth_m", "total_depth_m"),
+    "gwl": ("gwl_depth_m",), "gwt": ("gwl_depth_m",),
+    "top": ("top_depth_m",), "bottom": ("bottom_depth_m",),
+    "borings": ("investigations",), "layers": ("lithology",),
+    "samples": ("measurements",), "tests": ("measurements",),
+    "param": ("parameter",),
+}
+
+
+def _check_site_data(site_data, *, method: str) -> None:
+    """Refuse a site_data key SiteModel.from_dict does not read, at every
+    level (GM-58)."""
+    if not isinstance(site_data, dict):
+        return
+    check_nested_keys(site_data, _SITE_KEYS, method=method,
+                      label="site_data", hints=_SITE_KEY_HINTS)
+    invs = site_data.get("investigations") or []
+    check_nested_list(invs, _INVESTIGATION_KEYS, method=method,
+                      label="site_data.investigations",
+                      hints=_SITE_KEY_HINTS)
+    for i, inv in enumerate(invs if isinstance(invs, list) else []):
+        where = f"site_data.investigations[{i}]"
+        check_nested_list(inv.get("lithology"), _LITHOLOGY_KEYS,
+                          method=method, label=f"{where}.lithology",
+                          hints=_SITE_KEY_HINTS)
+        check_nested_list(inv.get("measurements"), _MEASUREMENT_KEYS,
+                          method=method, label=f"{where}.measurements",
+                          hints=_SITE_KEY_HINTS)
+
 
 def _resolve_site(params: dict):
     """Return a SiteModel from either site_key (cached) or site_data (dict)."""
@@ -62,6 +114,7 @@ def _resolve_site(params: dict):
 
     site_data = params.get("site_data")
     if site_data:
+        _check_site_data(site_data, method="subsurface")
         return load_site_from_dict(site_data)
 
     raise ValueError("Provide either 'site_key' (from parse_diggs/load_site) or 'site_data' dict.")
@@ -122,6 +175,7 @@ def _run_parse_diggs(params: dict) -> dict:
 def _run_load_site(params: dict) -> dict:
     from subsurface_characterization import load_site_from_dict
     require_params(params, ["site_data"], method="load_site")
+    _check_site_data(params["site_data"], method="load_site")
     site = load_site_from_dict(params["site_data"])
 
     # Cache the SiteModel

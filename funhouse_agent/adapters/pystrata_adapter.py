@@ -1,6 +1,45 @@
 """pyStrata adapter — equivalent-linear and linear 1D site response."""
 
-from funhouse_agent.adapters import clean_result, require_params
+from funhouse_agent.adapters import (
+    check_nested_keys, clean_result, require_params,
+)
+
+# Keys every layer dict may carry, and each soil_model's own keys: what
+# pystrata_agent reads. Anything else was read with .get and a default and
+# silently left out, e.g. a Darendeli layer's 'OCR' ran at ocr = 1 and a
+# 'damping' on it was never used (GM-58).
+_LAYER_COMMON_KEYS = ("thickness", "Vs", "unit_wt", "soil_model")
+_MODEL_KEYS = {
+    "darendeli": ("plas_index", "ocr", "stress_mean"),
+    "menq": ("uniformity_coeff", "diam_mean", "stress_mean"),
+    "linear": ("damping",),
+    "custom": ("strains", "mod_reduc", "damping_values"),
+}
+# Words the near-miss matcher cannot place; only the keys the layer's own
+# model reads are offered. Suggestions only, never renamed.
+_LAYER_KEY_HINTS = {
+    "pi": ("plas_index",), "plasticityindex": ("plas_index",),
+    "gamma": ("unit_wt",), "unitweight": ("unit_wt",),
+    "model": ("soil_model",), "cu": ("uniformity_coeff",),
+    "confiningpressure": ("stress_mean",),
+    "meaneffectivestress": ("stress_mean",),
+    "d50": ("diam_mean",), "xi": ("damping",), "dampingratio": ("damping",),
+    "h": ("thickness",),
+}
+
+
+def _check_layers(layers, *, method):
+    """Refuse a key a layer's soil_model does not read (GM-58). A layer
+    with no soil_model, or one the module does not know, is left to its
+    own check, which names the models."""
+    for i, layer in enumerate(layers if isinstance(layers, list) else []):
+        model = layer.get("soil_model") if isinstance(layer, dict) else None
+        own = _MODEL_KEYS.get(str(model).lower().strip())
+        if own is None:
+            continue
+        check_nested_keys(layer, _LAYER_COMMON_KEYS + own, method=method,
+                          label=f"layers[{i}] ({model})",
+                          hints=_LAYER_KEY_HINTS)
 
 
 def _check_pystrata():
@@ -17,6 +56,7 @@ def _run_eql_site_response(params: dict) -> dict:
     from pystrata_agent import analyze_eql_site_response
 
     require_params(params, ["layers"], method="eql_site_response")
+    _check_layers(params["layers"], method="eql_site_response")
     result = analyze_eql_site_response(
         layers=params["layers"],
         motion=params.get("motion"),
@@ -37,6 +77,7 @@ def _run_linear_site_response(params: dict) -> dict:
     from pystrata_agent import analyze_linear_site_response
 
     require_params(params, ["layers"], method="linear_site_response")
+    _check_layers(params["layers"], method="linear_site_response")
     result = analyze_linear_site_response(
         layers=params["layers"],
         motion=params.get("motion"),

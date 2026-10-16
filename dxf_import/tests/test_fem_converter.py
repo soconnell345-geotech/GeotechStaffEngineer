@@ -249,8 +249,32 @@ class TestBuildFEMInputsHSModel:
         result = build_fem_inputs(parse, props)
         clay_layer = result["soil_layers"][1]
         assert clay_layer["model"] == "hs"
-        assert clay_layer["hs_params"]["E50_ref"] == 25000
-        assert clay_layer["hs_params"]["m"] == 0.5
+        # flat in the layer, as fem2d reads them (GM-58)
+        assert clay_layer["E50_ref"] == 25000
+        assert clay_layer["m"] == 0.5
+        assert "hs_params" not in clay_layer
+
+    def test_hs_layer_passes_fem2d_excavation_key_check(self):
+        """dxf_import's FEM output with an HS layer is fem2d input: every
+        key is one fem2d_excavation reads (the nested hs_params was refused,
+        and before the key check it was a KeyError on E50_ref)."""
+        from funhouse_agent.adapters.fem2d_adapter import (
+            _EXCAVATION_LAYER_KEYS, _require_layer_elevations,
+        )
+        parse = DxfParseResult(
+            surface_points=[(0, 0), (20, 0)],
+            boundary_profiles={"Clay": [(0, -6), (20, -6)]},
+        )
+        hs = {"E50_ref": 25000, "Eur_ref": 75000, "m": 0.5,
+              "p_ref": 100, "R_f": 0.9}
+        props = [
+            FEMSoilPropertyAssignment(name="Surface", phi=30, E=40000),
+            FEMSoilPropertyAssignment(name="Clay", model="hs", phi=28, c=5,
+                                      hs_params=hs),
+        ]
+        layers = build_fem_inputs(parse, props)["soil_layers"]
+        _require_layer_elevations(layers, method="fem2d_excavation",
+                                  valid=_EXCAVATION_LAYER_KEYS)
 
     def test_mc_no_hs_params(self):
         parse = DxfParseResult(
