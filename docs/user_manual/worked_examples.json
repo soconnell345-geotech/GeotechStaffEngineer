@@ -1510,8 +1510,7 @@
         }
       ],
       "surcharge": 12.0,
-      "gwt_depth": 10.0,
-      "excavation_width": 12.0
+      "gwt_depth": 10.0
     },
     "result": {
       "excavation_depth_m": 8.0,

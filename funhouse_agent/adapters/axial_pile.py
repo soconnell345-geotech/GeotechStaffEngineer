@@ -3,8 +3,8 @@
 from axial_pile import PileSection, make_pipe_pile, make_concrete_pile, make_h_pile
 from axial_pile import AxialSoilLayer, AxialSoilProfile, AxialPileAnalysis
 from funhouse_agent.adapters import (
-    apply_aliases, check_nested_list, field_keys, reject_unknown_params,
-    require_keys, require_params,
+    apply_aliases, check_nested_list, declare_aliases, field_keys,
+    reject_unknown_params, require_keys, require_params,
 )
 
 _PILE_TYPES = ("pipe_closed", "pipe_open", "concrete_square", "concrete_circular", "h_pile")
@@ -156,6 +156,11 @@ METHOD_INFO = {
         "brief": "Capacity vs depth curve for pile length optimization.",
         "parameters": {
             "pile_type": {"type": "str", "required": True, "allowed_values": ["pipe_closed", "pipe_open", "concrete_square", "concrete_circular", "h_pile"], "description": "Pile type (see axial_pile_capacity for geometry params per type)."},
+            "diameter": {"type": "float", "required": False, "description": "Pile diameter (m) for pipe piles."},
+            "wall_thickness": {"type": "float", "required": False, "description": "Pipe wall thickness (m)."},
+            "width": {"type": "float", "required": False, "description": "Side dimension (m) for concrete piles."},
+            "designation": {"type": "str", "required": False, "description": "H-pile designation (e.g., 'HP14x117')."},
+            "E": {"type": "float", "required": False, "description": "Pile elastic modulus (kPa). Defaults: steel 200e6, concrete 25e6."},
             "layers": {"type": "array", "required": True, "description": "Soil layers; each soil_type must be 'cohesionless' or 'cohesive'. Optional per-layer toe_friction_angle (separate end-bearing phi) supported."},
             "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m)."},
             "head_depth": {"type": "float", "required": False, "default": 0.0, "description": "Depth of the pile head below the ground surface (m). Default 0 = head at the ground surface (see axial_pile_capacity)."},
@@ -176,7 +181,12 @@ METHOD_INFO = {
             "wall_thickness": {"type": "float", "required": False, "description": "Pipe wall thickness (m)."},
             "width": {"type": "float", "required": False, "description": "Side dimension (m) for concrete piles."},
             "designation": {"type": "str", "required": False, "description": "H-pile designation (e.g., 'HP14x117')."},
+            "E": {"type": "float", "required": False, "description": "Pile elastic modulus (kPa). Defaults: steel 200e6, concrete 25e6."},
         },
         "returns": {"name": "Pile section name.", "area_m2": "Cross-sectional area.", "perimeter_m": "Perimeter.", "tip_area_m2": "Tip area.", "width_m": "Width."},
     },
 }
+
+# The pile geometry's other spellings _build_pile reads (GM-110).
+declare_aliases(METHOD_INFO, {
+    m: {"thickness": "wall_thickness"} for m in METHOD_INFO})

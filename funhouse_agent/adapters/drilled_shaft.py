@@ -1,8 +1,8 @@
 """Drilled shaft adapter — GEC-10 alpha/beta/rock socket capacity + LRFD."""
 
 from funhouse_agent.adapters import (
-    apply_aliases, check_nested_list, field_keys, reject_unknown_params,
-    require_keys, require_params,
+    apply_aliases, check_nested_list, declare_aliases, field_keys,
+    reject_unknown_params, require_keys, require_params,
 )
 from drilled_shaft import DrillShaft, ShaftSoilLayer, ShaftSoilProfile, DrillShaftAnalysis
 from drilled_shaft.lrfd import apply_lrfd, RESISTANCE_FACTORS
@@ -211,3 +211,7 @@ METHOD_INFO = {
         "returns": {"resistance_factors": "Dict of component → phi factor."},
     },
 }
+
+declare_aliases(METHOD_INFO, {
+    m: _SHAFT_ALIASES for m in ("drilled_shaft_capacity", "capacity_vs_depth",
+                                "lrfd_capacity")})

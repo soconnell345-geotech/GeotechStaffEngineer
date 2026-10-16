@@ -7,7 +7,9 @@ the dispatch calls, published answer, and report-writing notes. See
 """
 
 from funhouse_agent import worked_examples as _we
-from funhouse_agent.adapters import apply_aliases, require_params
+from funhouse_agent.adapters import (
+    apply_aliases, declare_aliases, require_params,
+)
 
 #: Search-box names for the free-text topic, and the module-filter names.
 _FIND_ALIASES = {
@@ -84,3 +86,5 @@ METHOD_INFO = {
         },
     },
 }
+
+declare_aliases(METHOD_INFO, {"find_worked_examples": _FIND_ALIASES})

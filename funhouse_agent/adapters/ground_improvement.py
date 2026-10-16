@@ -4,7 +4,8 @@ import inspect
 import math
 
 from funhouse_agent.adapters import (
-    apply_aliases, clean_result, reject_unknown_params, require_params,
+    apply_aliases, clean_result, declare_aliases, reject_unknown_params,
+    require_params,
 )
 from ground_improvement import (
     analyze_aggregate_piers, analyze_wick_drains, design_drain_spacing,
@@ -165,6 +166,7 @@ METHOD_INFO = {
             "pattern": _PATTERN,
             "smear_ratio": {"type": "float", "required": False, "default": 2.0, "description": "Smear zone ratio ds/dw."},
             "kh_ks_ratio": {"type": "float", "required": False, "default": 2.0, "description": "Permeability ratio kh/ks."},
+            "n_time_points": {"type": "int", "required": False, "default": 50, "description": "Points in the time-settlement curve."},
         },
         "returns": {"U_total_percent": "Total degree of consolidation (%)."},
     },
@@ -179,6 +181,9 @@ METHOD_INFO = {
             "Hdr": {"type": "float", "required": True, "description": "Vertical drainage path (m)."},
             "dw": {"type": "float", "required": False, "default": 0.066, "description": "Equivalent drain diameter (m)."},
             "pattern": _PATTERN,
+            "smear_ratio": {"type": "float", "required": False, "default": 2.0, "description": "Smear zone ratio ds/dw."},
+            "kh_ks_ratio": {"type": "float", "required": False, "default": 2.0, "description": "Permeability ratio kh/ks."},
+            "spacing_range": {"type": "array", "required": False, "default": [1.0, 3.5], "description": "Spacing search range [min, max] (m)."},
         },
         "returns": {"spacing_m": "Designed drain spacing.", "U_total_percent": "Consolidation achieved at target time."},
     },
@@ -194,7 +199,11 @@ METHOD_INFO = {
             "ch": {"type": "float", "required": False, "description": "Horizontal coefficient of consolidation (m2/yr). Give with drain_spacing to include wick drains."},
             "drain_spacing": {"type": "float", "required": False, "description": "Wick drain spacing (m), if drains are used."},
             "pattern": _PATTERN,
+            "dw": {"type": "float", "required": False, "default": 0.066, "description": "Equivalent drain diameter (m), with drains."},
+            "smear_ratio": {"type": "float", "required": False, "default": 2.0, "description": "Smear zone ratio ds/dw, with drains."},
+            "kh_ks_ratio": {"type": "float", "required": False, "default": 2.0, "description": "Permeability ratio kh/ks, with drains."},
             "sigma_v0": {"type": "float", "required": False, "default": 0.0, "description": "Current effective stress at layer center (kPa)."},
+            "n_time_points": {"type": "int", "required": False, "default": 50, "description": "Points in the time-settlement curve."},
         },
         "returns": {"time_to_target_years": "Time to achieve target consolidation."},
     },
@@ -221,10 +230,24 @@ METHOD_INFO = {
             "thickness_m": {"type": "float", "required": False, "default": 0.0, "description": "Thickness of the compressible/treatable layer (m)."},
             "depth_to_top_m": {"type": "float", "required": False, "default": 0.0, "description": "Depth to top of the treatable layer (m)."},
             "required_bearing_kPa": {"type": "float", "required": False, "default": 0.0, "description": "Required bearing capacity (kPa). 0 = not a bearing problem."},
+            "current_bearing_kPa": {"type": "float", "required": False, "default": 0.0, "description": "Current (unimproved) bearing capacity (kPa)."},
             "predicted_settlement_mm": {"type": "float", "required": False, "default": 0.0, "description": "Predicted settlement without improvement (mm)."},
             "allowable_settlement_mm": {"type": "float", "required": False, "default": 50.0, "description": "Allowable settlement limit (mm)."},
             "time_constraint_months": {"type": "float", "required": False, "default": 0.0, "description": "Time available (months). 0 = no constraint."},
+            "cv_m2_per_year": {"type": "float", "required": False, "description": "Vertical coefficient of consolidation (m2/yr)."},
+            "Hdr_m": {"type": "float", "required": False, "description": "Vertical drainage path length (m)."},
+            "gwt_depth_m": {"type": "float", "required": False, "description": "Depth to groundwater (m)."},
         },
         "returns": {"recommended_methods": "List of feasible methods.", "is_feasible": "Overall feasibility."},
     },
 }
+
+declare_aliases(METHOD_INFO, {
+    "aggregate_piers": _AGG_ALIASES,
+    "wick_drains": _WICK_ALIASES,
+    "design_drain_spacing": _DESIGN_ALIASES,
+    "surcharge_preloading": _SURCHARGE_ALIASES,
+    "vibro_compaction": _VIBRO_ALIASES,
+    "feasibility": _FEAS_ALIASES,
+    "priebe_improvement_factor": _PRIEBE_ALIASES,
+})

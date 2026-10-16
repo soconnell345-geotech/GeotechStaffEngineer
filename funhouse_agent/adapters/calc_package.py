@@ -23,8 +23,8 @@ import re
 from datetime import datetime
 
 from funhouse_agent.adapters import (apply_aliases, check_nested_list,
-                                     require_keys, require_params,
-                                     reject_unknown_params)
+                                     declare_aliases, require_keys,
+                                     require_params, reject_unknown_params)
 from funhouse_agent._fileio import (
     default_output_dir, find_in_working_folder, rescue_note, rescue_write,
     resolve_output_path, save_verified, workspace_write_hint,
@@ -1319,6 +1319,16 @@ def _generate_pile_group_package(params: dict) -> dict:
             "n_rows/n_cols/spacing_x/spacing_y, or a 'piles' list of "
             "{x, y} dicts."
         )
+    # The simplified vertical distribution carries no lateral load or
+    # torsion; refused rather than dropped with only a Python warning
+    # (GM-110).
+    lateral = [k for k in ("Vx", "Vy", "Mz") if params.get(k)]
+    if lateral and not params.get("method_6dof", False):
+        raise ValueError(
+            f"pile_group_package: {lateral} given without method_6dof. The "
+            "simplified vertical distribution carries only Vz, Mx and My; "
+            "set method_6dof=true (with axial_stiffness, and "
+            "lateral_stiffness for Vx/Vy) to carry them.")
     piles = _build_piles(params)
     load = _build_load(params)
 
@@ -1950,6 +1960,9 @@ METHOD_INFO = {
                                        "drainage_quality, ...)."},
             **_COMMON_PARAMS,
         },
+        # The handler checks the parameters of the design_type it runs, so
+        # dispatch leaves them to it (GM-110).
+        "open_parameters": True,
         "returns": {**_COMMON_RETURNS,
                     "extra": "sn_required/sn_provided + layer thicknesses "
                              "(flexible) or d_required_in/d_provided_in + "
@@ -1972,19 +1985,22 @@ METHOD_INFO = {
                                         "'axial_pile_package', "
                                         "'settlement_package'. Any *_package "
                                         "method of this module except "
-                                        "html_to_pdf.")},
+                                        "html_to_pdf. PLUS every input the "
+                                        "named package takes, beside it — "
+                                        "describe_method('calc_package', "
+                                        "'<package>') lists them. The "
+                                        "analysis runs exactly as the "
+                                        "package would.")},
             "output_dir": {"type": "str", "required": False,
                            "description": ("Folder for the PNGs (one per "
                                            "figure). Defaults to the working "
                                            "folder.")},
             "name_prefix": {"type": "str", "required": False,
                             "description": "File-name prefix (default: module)."},
-            "...": {"type": "any", "required": False,
-                    "description": ("PLUS every input the named package "
-                                    "takes — describe_method('calc_package', "
-                                    "'<package>') lists them. The analysis "
-                                    "runs exactly as the package would.")},
         },
+        # Dispatch also accepts the named package's parameters (GM-110).
+        "parameters_of": "package",
+        "parameter_aliases": {"method": "package"},
         "returns": {
             "status": "success or error.",
             "n_figures": "How many figures were saved.",
@@ -2069,6 +2085,12 @@ METHOD_INFO = {
             "factor_method": {"type": "str", "required": False, "default": "vesic", "allowed_values": ["vesic", "meyerhof", "terzaghi"], "description": "Correction-factor method; 'terzaghi' = Terzaghi (1943) factors and shape coefficients."},
             "failure_mode": {"type": "str", "required": False, "default": "general", "allowed_values": ["general", "local"], "description": "factor_method='terzaghi' only: 'local' = Terzaghi's local-shear reduction."},
             "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m)."},
+            "base_tilt": {"type": "float", "required": False, "default": 0.0, "description": "Base tilt angle (degrees)."},
+            "eccentricity_B": {"type": "float", "required": False, "default": 0.0, "description": "Load eccentricity along B (m)."},
+            "eccentricity_L": {"type": "float", "required": False, "default": 0.0, "description": "Load eccentricity along L (m)."},
+            "load_inclination": {"type": "float", "required": False, "default": 0.0, "description": "Load inclination from vertical (degrees)."},
+            "ground_slope": {"type": "float", "required": False, "default": 0.0, "description": "Ground slope angle (degrees)."},
+            "vertical_load": {"type": "float", "required": False, "default": 0.0, "description": "Applied vertical load (kN) for inclination factors."},
             **_COMMON_PARAMS,
         },
         "returns": {**_COMMON_RETURNS, "q_ultimate_kPa": "Ultimate bearing capacity.", "q_allowable_kPa": "Allowable bearing capacity."},
@@ -2104,6 +2126,9 @@ METHOD_INFO = {
             "n_slices": {"type": "int", "required": False, "default": 30, "description": "Number of slices."},
             "gwt_points": {"type": "array", "required": False, "description": "List of [x, z] GWT coordinates."},
             "kh": {"type": "float", "required": False, "default": 0.0, "description": "Seismic coefficient."},
+            "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."},
+            "compare_methods": {"type": "bool", "required": False, "default": False, "description": "Also compute the FOS by the other methods."},
+            "FOS_required": {"type": "float", "required": False, "default": 1.5, "description": "Required factor of safety for the stability check."},
             **_COMMON_PARAMS,
         },
         "returns": {**_COMMON_RETURNS, "FOS": "Factor of safety.", "method": "Method used.", "is_stable": "Whether FOS >= required."},
@@ -2132,7 +2157,11 @@ METHOD_INFO = {
             "monte_carlo": {"type": "bool", "required": False, "default": False, "description": "If True (and 'variables' given), also run a Monte Carlo simulation on the critical surface for the annex."},
             "n": {"type": "int", "required": False, "default": 1000, "description": "Monte Carlo realizations (when monte_carlo=True)."},
             "research_surface": {"type": "bool", "required": False, "default": False, "description": "Monte Carlo: re-search the critical surface each realization (slower) instead of holding it fixed."},
+            "fosm": {"type": "bool", "required": False, "default": True, "description": "With 'variables': run the FOSM annex."},
             "FOS_required": {"type": "float", "required": False, "default": 1.5, "description": "Required factor of safety for the stability check."},
+            "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."},
+            "tol": {"type": "float", "required": False, "default": 1e-4, "description": "Convergence tolerance for the iterative methods."},
+            "f_interslice": {"type": "str", "required": False, "default": "half_sine", "description": "Interslice force function for the rigorous re-analysis of the critical surface."},
             **_COMMON_PARAMS,
         },
         "returns": {**_COMMON_RETURNS, "FOS": "Critical factor of safety.", "method": "Method used.", "n_surfaces_evaluated": "Trial surfaces evaluated by the search.", "is_stable": "Whether FOS >= required.", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face).", "candidates": "Minimum FOS of each surface family tried.", "warnings": "What the search could not be sure of (also printed in the package). Report every one."},
@@ -2147,6 +2176,18 @@ METHOD_INFO = {
             "Es_immediate": {"type": "float", "required": False, "description": "Elastic modulus for immediate settlement (kPa)."},
             "consolidation_layers": {"type": "array", "required": False, "description": "List of dicts: thickness, depth_to_center, e0, Cc, Cr, sigma_v0, sigma_p."},
             "schmertmann_layers": {"type": "array", "required": False, "description": "List of dicts: depth_top, depth_bottom, Es."},
+            "q_overburden": {"type": "float", "required": False, "default": 0.0, "description": "Overburden pressure at footing base (kPa)."},
+            "footing_shape": {"type": "str", "required": False, "default": "square", "allowed_values": ["square", "rectangular", "strip"], "description": "Footing shape."},
+            "stress_method": {"type": "str", "required": False, "default": "2:1", "allowed_values": ["2:1", "boussinesq", "westergaard"], "description": "Stress distribution method."},
+            "immediate_method": {"type": "str", "required": False, "default": "elastic", "allowed_values": ["elastic", "schmertmann"], "description": "Immediate settlement method."},
+            "nu": {"type": "float", "required": False, "default": 0.3, "description": "Poisson's ratio for immediate settlement."},
+            "time_years_schmertmann": {"type": "float", "required": False, "default": 0.0, "description": "Creep time for Schmertmann immediate method (years)."},
+            "cv": {"type": "float", "required": False, "description": "Coefficient of consolidation (m2/yr), for the time curve."},
+            "Hdr": {"type": "float", "required": False, "description": "Drainage path length (m) for the time curve."},
+            "drainage": {"type": "str", "required": False, "default": "double", "allowed_values": ["single", "double"], "description": "Drainage condition for time rate."},
+            "C_alpha": {"type": "float", "required": False, "description": "Secondary compression index. Enables secondary settlement."},
+            "e0_secondary": {"type": "float", "required": False, "default": 1.0, "description": "Void ratio for secondary settlement."},
+            "t_secondary": {"type": "float", "required": False, "default": 0.0, "description": "Time for secondary settlement (years)."},
             **_COMMON_PARAMS,
         },
         "returns": {**_COMMON_RETURNS, "total_settlement_mm": "Total settlement.", "immediate_mm": "Immediate.", "consolidation_mm": "Consolidation."},
@@ -2163,6 +2204,10 @@ METHOD_INFO = {
             "soil_layers": {"type": "array", "required": True, "description": "List of dicts: soil_type, thickness, unit_weight, friction_angle, cohesion; optional delta_phi_ratio, toe_friction_angle (alias toe_phi; the end-bearing phi), description. Same layer keys as axial_pile.axial_pile_capacity."},
             "factor_of_safety": {"type": "float", "required": False, "default": 2.5, "description": "Factor of safety."},
             "method": {"type": "str", "required": False, "default": "auto", "allowed_values": ["auto", "beta"], "description": "auto = Nordlund (sand) / Tomlinson (clay); beta = effective-stress method."},
+            "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m)."},
+            "pile_name": {"type": "str", "required": False, "default": "Custom Pile", "description": "Section designation for the report."},
+            "pile_type": {"type": "str", "required": False, "default": "h_pile", "allowed_values": ["h_pile", "pipe_open", "pipe_closed", "concrete", "timber"], "description": "Pile type."},
+            "pile_depth": {"type": "float", "required": False, "description": "Section depth (m): an H-pile's nominal depth; a round pile's equals pile_width."},
             **_COMMON_PARAMS,
         },
         "returns": {**_COMMON_RETURNS, "Q_ultimate_kN": "Ultimate capacity.", "Q_allowable_kN": "Allowable capacity."},
@@ -2176,6 +2221,11 @@ METHOD_INFO = {
             "soil_layers": {"type": "array", "required": True, "description": "List of dicts: soil_type, thickness, unit_weight, cu, phi, N60, qu, RQD."},
             "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m)."},
             "factor_of_safety": {"type": "float", "required": False, "default": 2.5, "description": "Factor of safety."},
+            "socket_diameter": {"type": "float", "required": False, "description": "Rock socket diameter if different from the shaft's (m)."},
+            "socket_length": {"type": "float", "required": False, "default": 0.0, "description": "Rock socket length (m)."},
+            "bell_diameter": {"type": "float", "required": False, "description": "Bell (underream) diameter at the base (m)."},
+            "casing_depth": {"type": "float", "required": False, "default": 0.0, "description": "Depth of permanent casing (m); no side resistance over it."},
+            "concrete_fc": {"type": "float", "required": False, "default": 28000.0, "description": "Concrete f'c (kPa)."},
             **_COMMON_PARAMS,
         },
         "returns": {**_COMMON_RETURNS, "Q_ultimate_kN": "Ultimate capacity.", "Q_allowable_kN": "Allowable capacity."},
@@ -2235,7 +2285,18 @@ METHOD_INFO = {
             "kh": {"type": "float", "required": False, "description": "Horizontal seismic coefficient — earth pressure."},
             "gamma": {"type": "float", "required": False, "description": "Unit weight (kN/m3) — earth pressure."},
             "H": {"type": "float", "required": False, "description": "Wall height (m) — earth pressure."},
+            "n_bar": {"type": "float", "required": False, "description": "Average SPT N — site classification (instead of vs30)."},
+            "su_bar": {"type": "float", "required": False, "description": "Average undrained shear strength (kPa) — site classification (instead of vs30)."},
+            "delta": {"type": "float", "required": False, "description": "Wall friction angle (deg) — earth pressure. Default 2/3 phi."},
+            "kv": {"type": "float", "required": False, "default": 0.0, "description": "Vertical seismic coefficient — earth pressure."},
+            "KA": {"type": "float", "required": False, "default": 0.333, "description": "Static active coefficient — earth pressure."},
             "amax_g": {"type": "float", "required": False, "description": "Peak ground acceleration (g) — liquefaction."},
+            "layer_depths": {"type": "array", "required": False, "description": "Layer mid-depths (m) — liquefaction."},
+            "layer_N160": {"type": "array", "required": False, "description": "(N1)60 per layer — liquefaction."},
+            "layer_FC": {"type": "array", "required": False, "description": "Fines content (%) per layer — liquefaction."},
+            "layer_gamma": {"type": "array", "required": False, "description": "Total unit weight (kN/m3) per layer — liquefaction."},
+            "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m) — liquefaction."},
+            "M": {"type": "float", "required": False, "default": 7.5, "description": "Earthquake magnitude — liquefaction."},
             **_COMMON_PARAMS,
         },
         "returns": {**_COMMON_RETURNS, "seismic_analysis_type": "Which sub-analysis was performed."},
@@ -2296,7 +2357,12 @@ METHOD_INFO = {
             "fines_content": {"type": "float", "required": False, "description": "Fines content (%) — vibro feasibility."},
             "initial_N_spt": {"type": "float", "required": False, "description": "Pre-improvement (N1)60 — vibro (alias: N1_before)."},
             "target_N_spt": {"type": "float", "required": False, "default": 25.0, "description": "Target (N1)60 — vibro."},
+            "D50": {"type": "float", "required": False, "description": "Median grain size (mm) — vibro."},
             "pattern": {"type": "str", "required": False, "default": "triangular", "allowed_values": ["triangular", "square"], "description": "Element pattern — piers/drains/vibro."},
+            "dw": {"type": "float", "required": False, "default": 0.066, "description": "Equivalent drain diameter (m) — wick drains, surcharge with drains."},
+            "smear_ratio": {"type": "float", "required": False, "default": 2.0, "description": "Smear zone ratio ds/dw — wick drains, surcharge with drains."},
+            "kh_ks_ratio": {"type": "float", "required": False, "default": 2.0, "description": "Permeability ratio kh/ks — wick drains, surcharge with drains."},
+            "sigma_v0": {"type": "float", "required": False, "default": 0.0, "description": "Current effective stress at layer center (kPa) — surcharge."},
             **_COMMON_PARAMS,
         },
         "returns": {**_COMMON_RETURNS, "method": "Ground improvement method used."},
@@ -2313,6 +2379,17 @@ METHOD_INFO = {
             "pile_area": {"type": "float", "required": True, "description": "Pile cross-section area (m2)."},
             "pile_E": {"type": "float", "required": True, "description": "Pile elastic modulus (Pa)."},
             "skin_fraction": {"type": "float", "required": False, "default": 0.5, "description": "Fraction of resistance from skin."},
+            "cushion_stiffness": {"type": "float", "required": False, "description": "Cushion stiffness (kN/m), instead of cushion_area/thickness/E."},
+            "cushion_cor": {"type": "float", "required": False, "default": 0.8, "description": "Cushion coefficient of restitution."},
+            "segment_length": {"type": "float", "required": False, "default": 1.0, "description": "Pile segment length (m)."},
+            "pile_unit_weight": {"type": "float", "required": False, "default": 78.5, "description": "Pile material unit weight (kN/m3)."},
+            "quake_side": {"type": "float", "required": False, "default": 0.0025, "description": "Side quake (m)."},
+            "quake_toe": {"type": "float", "required": False, "default": 0.0025, "description": "Toe quake (m)."},
+            "damping_side": {"type": "float", "required": False, "default": 0.16, "description": "Side Smith damping (s/m)."},
+            "damping_toe": {"type": "float", "required": False, "default": 0.5, "description": "Toe Smith damping (s/m)."},
+            "R_min": {"type": "float", "required": False, "default": 200.0, "description": "Min resistance (kN)."},
+            "R_max": {"type": "float", "required": False, "default": 2000.0, "description": "Max resistance (kN)."},
+            "R_step": {"type": "float", "required": False, "default": 200.0, "description": "Resistance increment (kN)."},
             **_COMMON_PARAMS,
         },
         "returns": {**_COMMON_RETURNS, "n_points": "Number of bearing graph points."},
@@ -2326,18 +2403,25 @@ METHOD_INFO = {
             "n_cols": {"type": "int", "required": False, "description": "Columns — rectangular layout."},
             "spacing_x": {"type": "float", "required": False, "description": "X spacing (m) — rectangular."},
             "spacing_y": {"type": "float", "required": False, "description": "Y spacing (m) — rectangular."},
+            "pile_diameter": {"type": "float", "required": False, "description": "Pile diameter/width (m), printed with the layout."},
+            "axial_capacity_compression": {"type": "float", "required": False, "description": "Per-pile compression capacity (kN) — rectangular layout."},
+            "axial_capacity_tension": {"type": "float", "required": False, "description": "Per-pile tension capacity (kN) — rectangular layout."},
             "piles": {"type": "array", "required": False, "description": "List of dicts: x, y, label, plus optional batter_x/batter_y (deg), axial_stiffness/lateral_stiffness (kN/m), axial_capacity_compression/tension (kN) — custom layout."},
             "method_6dof": {"type": "bool", "required": False, "default": False, "description": "True: 6-DOF rigid-cap analysis (batter, lateral load; needs axial_stiffness), with per-pile head forces and displacements. False: simplified vertical distribution."},
             "axial_stiffness": {"type": "float", "required": False, "description": "Pile axial stiffness (kN/m) for every pile of a rectangular layout (6-DOF)."},
             "lateral_stiffness": {"type": "float", "required": False, "description": "Pile lateral stiffness (kN/m), rectangular layout (6-DOF with Vx/Vy)."},
-            "Vx": {"type": "float", "required": False, "default": 0.0, "description": "Lateral load x (kN), 6-DOF only."},
-            "Vy": {"type": "float", "required": False, "default": 0.0, "description": "Lateral load y (kN), 6-DOF only."},
+            "Vx": {"type": "float", "required": False, "default": 0.0, "description": "Lateral load x (kN), 6-DOF only: refused without method_6dof."},
+            "Vy": {"type": "float", "required": False, "default": 0.0, "description": "Lateral load y (kN), 6-DOF only: refused without method_6dof."},
             "Vz": {"type": "float", "required": False, "default": 0.0, "description": "Vertical load (kN)."},
             "Mx": {"type": "float", "required": False, "default": 0.0, "description": "Moment about x (kN-m)."},
             "My": {"type": "float", "required": False, "default": 0.0, "description": "Moment about y (kN-m)."},
-            "Mz": {"type": "float", "required": False, "default": 0.0, "description": "Torsion (kN-m), 6-DOF only."},
+            "Mz": {"type": "float", "required": False, "default": 0.0, "description": "Torsion (kN-m), 6-DOF only: refused without method_6dof."},
             **_COMMON_PARAMS,
         },
+        # A rectangular layout needs spacing_x and spacing_y (GM-110).
+        "refused_parameters": {"spacing": (
+            "with layout='rectangular' the package takes spacing_x and "
+            "spacing_y (the same value twice for a square grid)")},
         "returns": {**_COMMON_RETURNS, "n_piles": "Number of piles.", "group_efficiency": "Group efficiency."},
     },
     "sheet_pile_package": {
@@ -2351,8 +2435,16 @@ METHOD_INFO = {
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."},
             "FOS_passive": {"type": "float", "required": False, "default": 1.5, "description": "FOS on passive resistance."},
             "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb"], "description": "Earth pressure theory."},
+            "gwt_depth_active": {"type": "float", "required": False, "description": "Groundwater depth on the retained side (m)."},
+            "gwt_depth_passive": {"type": "float", "required": False, "description": "Groundwater depth on the excavation side (m)."},
             **_COMMON_PARAMS,
         },
         "returns": {**_COMMON_RETURNS, "embedment_m": "Required embedment.", "max_moment_kNm_per_m": "Max moment."},
     },
 }
+
+# The older names the ground improvement package still reads (GM-110).
+declare_aliases(METHOD_INFO, {"ground_improvement_package": {
+    "diameter": "column_diameter", "E_pier": "E_column",
+    "surcharge": "surcharge_kPa", "target_consolidation": "target_U",
+    "N1_before": "initial_N_spt", "N1_target": "target_N_spt"}})

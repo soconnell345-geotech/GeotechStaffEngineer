@@ -1,7 +1,8 @@
 """Concrete properties adapter — flat dict -> concrete_props_agent -> dict."""
 
 from funhouse_agent.adapters import (
-    apply_aliases, clean_result, reject_unknown_params, require_params,
+    apply_aliases, clean_result, declare_aliases, reject_unknown_params,
+    require_params,
 )
 
 #: The unit-suffixed names analyze_rc_rectangle itself uses (b_mm, fc_MPa,
@@ -71,3 +72,5 @@ METHOD_INFO = {
         },
     },
 }
+
+declare_aliases(METHOD_INFO, {"rc_rectangular_section": _RC_ALIASES})

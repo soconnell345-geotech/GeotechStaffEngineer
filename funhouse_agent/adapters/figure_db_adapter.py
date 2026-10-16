@@ -15,9 +15,14 @@ tool.
 
 from __future__ import annotations
 
+from funhouse_agent.adapters import declare_aliases
 from funhouse_agent.adapters._reference_common import (
     extract_method_info, make_wrapper,
 )
+
+#: Names models guess for figure_search's result cap; its catch-all reads
+#: these as ``limit`` and nothing else.
+_LIMIT_ALIASES = ("top_k", "k", "n", "max_results", "top", "num_results")
 
 
 def _build():
@@ -56,7 +61,7 @@ def _build():
         """
         # Models commonly guess a different name for the result cap; accept the
         # usual ones rather than hard-failing the call on an unknown kwarg.
-        for alt in ("top_k", "k", "n", "max_results", "top", "num_results"):
+        for alt in _LIMIT_ALIASES:
             if kwargs.get(alt):
                 try:
                     limit = int(kwargs[alt])
@@ -128,6 +133,11 @@ def _build():
         info[name] = extract_method_info(
             fn, "Figure DB (FTS5)", "geotech_references figure catalogs"
         )
+    # figure_search's catch-all reads only the result-cap names above, so
+    # dispatch checks it against its parameters and these (GM-110).
+    info["figure_search"].pop("open_parameters", None)
+    declare_aliases(info, {"figure_search": dict.fromkeys(_LIMIT_ALIASES,
+                                                          "limit")})
     return registry, info
 
 

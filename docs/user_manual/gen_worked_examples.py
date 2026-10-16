@@ -59,7 +59,7 @@ EXAMPLES = [
         layers=[dict(thickness=20.0, unit_weight=18.0, friction_angle=30.0, cohesion=5.0)],
         supports=[dict(depth=2.0, support_type="strut", spacing=4.0),
                   dict(depth=5.0, support_type="strut", spacing=4.0)],
-        surcharge=12.0, gwt_depth=10.0, excavation_width=12.0)),
+        surcharge=12.0, gwt_depth=10.0)),
     ("retaining_walls", "cantilever_wall", dict(
         wall_height=6.0, gamma_backfill=18.0, phi_backfill=32.0, surcharge=12.0, q_allowable=250.0)),
     ("ground_improvement", "aggregate_piers", dict(

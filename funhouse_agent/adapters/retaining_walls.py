@@ -1,6 +1,9 @@
 """Retaining walls adapter — cantilever + MSE wall analysis + earth pressure coefficients."""
 
-from funhouse_agent.adapters import apply_aliases, reject_unknown_params, require_params
+from funhouse_agent.adapters import (
+    apply_aliases, declare_aliases, reject_unknown_params, require_params,
+    without_unused,
+)
 from retaining_walls import earth_pressure as _ep
 from retaining_walls.geometry import CantileverWallGeometry, MSEWallGeometry
 from retaining_walls.cantilever import analyze_cantilever_wall
@@ -154,11 +157,14 @@ def _run_cantilever_wall(params):
 
 
 def _run_mse_wall(params):
-    params = apply_aliases(params, _MSE_ALIASES)
+    params = without_unused(apply_aliases(params, _MSE_ALIASES),
+                            METHOD_INFO["mse_wall"]["refused_parameters"])
+    # No backfill_slope: the MSE analysis computes a level-backfill Rankine
+    # Ka and never read it, so it is refused, not dropped (GM-110).
     reject_unknown_params(
         params,
         ("wall_height", "reinforcement_length", "reinforcement_spacing",
-         "backfill_slope", "surcharge", "gamma_backfill", "phi_backfill",
+         "surcharge", "gamma_backfill", "phi_backfill",
          "reinforcement_name", "reinforcement_type",
          "reinforcement_Tallowable", "reinforcement_width",
          "reinforcement_Fy", "reinforcement_thickness",
@@ -171,7 +177,6 @@ def _run_mse_wall(params):
         wall_height=params["wall_height"],
         reinforcement_length=params.get("reinforcement_length"),
         reinforcement_spacing=params.get("reinforcement_spacing", 0.60),
-        backfill_slope=params.get("backfill_slope", 0.0),
         surcharge=params.get("surcharge", 0.0),
     )
     reinforcement = _build_reinforcement(params)
@@ -189,11 +194,16 @@ def _run_mse_wall(params):
 def _run_mse_lrfd_external_stability(params):
     """AASHTO/GEC-11 LRFD external-stability CDR set (sliding / eccentricity /
     bearing) under Strength I (max + min) and Service I combinations."""
-    params = apply_aliases(params, _MSE_ALIASES)
+    params = without_unused(
+        apply_aliases(params, _MSE_ALIASES),
+        METHOD_INFO["mse_lrfd_external_stability"]["refused_parameters"])
+    # No backfill_slope or reinforcement_spacing: the LRFD check is for a
+    # level backfill and reads neither, so they are refused, not dropped
+    # (GM-110).
     reject_unknown_params(
         params,
-        ("wall_height", "reinforcement_length", "reinforcement_spacing",
-         "backfill_slope", "surcharge", "gamma_backfill", "phi_backfill",
+        ("wall_height", "reinforcement_length", "surcharge",
+         "gamma_backfill", "phi_backfill",
          "phi_foundation", "phi_retained", "gamma_retained", "live_load",
          "bearing_resistance_strength", "bearing_resistance_service",
          "c_foundation", "gamma_EV_max", "gamma_EV_min", "gamma_EH_max",
@@ -204,8 +214,6 @@ def _run_mse_lrfd_external_stability(params):
     geom = MSEWallGeometry(
         wall_height=params["wall_height"],
         reinforcement_length=params.get("reinforcement_length"),
-        reinforcement_spacing=params.get("reinforcement_spacing", 0.60),
-        backfill_slope=params.get("backfill_slope", 0.0),
         surcharge=params.get("surcharge", 0.0),
     )
     # Only forward load/resistance factors the caller actually set (so the
@@ -229,14 +237,17 @@ def _run_mse_lrfd_external_stability(params):
     return result
 
 
+_K_ALIASES = {"phi": "phi_deg", "friction_angle": "phi_deg",
+              "phi_backfill": "phi_deg",
+              "delta": "delta_deg", "wall_friction": "delta_deg",
+              "beta": "beta_deg", "backfill_slope": "beta_deg",
+              "slope_angle": "beta_deg",
+              "alpha": "alpha_deg", "wall_angle": "alpha_deg"}
+
+
 def _run_earth_pressure_coefficient(params):
     """Thin wrapper over retaining_walls.earth_pressure Ka/Kp/K0 functions."""
-    p = apply_aliases(params, {"phi": "phi_deg", "friction_angle": "phi_deg",
-                               "phi_backfill": "phi_deg",
-                               "delta": "delta_deg", "wall_friction": "delta_deg",
-                               "beta": "beta_deg", "backfill_slope": "beta_deg",
-                               "slope_angle": "beta_deg",
-                               "alpha": "alpha_deg", "wall_angle": "alpha_deg"})
+    p = apply_aliases(params, _K_ALIASES)
     reject_unknown_params(
         p, ("phi_deg", "theory", "state", "delta_deg", "beta_deg", "alpha_deg"),
         method="earth_pressure_coefficient")
@@ -366,7 +377,6 @@ METHOD_INFO = {
             "reinforcement_thickness": {"type": "float", "required": False, "default": 0.0, "description": "Strip thickness (m) for a strip; transverse-bar diameter t (m) for a steel bar mat / welded grid (the t in F* = 20 t/St)."},
             "reinforcement_transverse_spacing": {"type": "float", "required": False, "default": 0.0, "description": "Transverse-bar (grid) spacing St (m) for a steel bar mat / welded grid (the St in F* = 20 t/St). Used only for bar_mat/welded_grid/metallic_grid."},
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surcharge (kPa)."},
-            "backfill_slope": {"type": "float", "required": False, "default": 0.0, "description": "Backfill slope angle (degrees)."},
             "gamma_foundation": {"type": "float", "required": False, "description": "Foundation soil unit weight (kN/m3)."},
             "phi_foundation": {"type": "float", "required": False, "description": "Foundation soil friction angle (deg)."},
             "c_foundation": {"type": "float", "required": False, "default": 0.0, "description": "Foundation soil cohesion (kPa)."},
@@ -407,3 +417,24 @@ METHOD_INFO = {
         "returns": {"reinforcement_types": "Dict of available reinforcement types."},
     },
 }
+
+declare_aliases(METHOD_INFO, {
+    "cantilever_wall": _WALL_ALIASES,
+    "mse_wall": _MSE_ALIASES,
+    "mse_lrfd_external_stability": _MSE_ALIASES,
+    "earth_pressure_coefficient": _K_ALIASES,
+})
+
+# Names the MSE methods do not take, with the reason dispatch gives (GM-110).
+# A slope of 0 is the level backfill the check computes, so it passes.
+_LEVEL_BACKFILL_ONLY = {
+    "reason": ("this check assumes a level backfill (Rankine Ka); a sloping "
+               "backfill (GEC-11 §4.4.4) is not supported yet"),
+    "accepts": [0]}
+METHOD_INFO["mse_wall"]["refused_parameters"] = {
+    "backfill_slope": _LEVEL_BACKFILL_ONLY}
+METHOD_INFO["mse_lrfd_external_stability"]["refused_parameters"] = {
+    "backfill_slope": _LEVEL_BACKFILL_ONLY,
+    "reinforcement_spacing": (
+        "external stability does not depend on it; mse_wall's internal "
+        "checks use it")}

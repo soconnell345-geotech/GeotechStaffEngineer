@@ -13,6 +13,7 @@ Tools:
 import json
 import difflib
 import importlib
+import inspect
 import os
 import re
 from typing import Optional
@@ -969,6 +970,93 @@ def _available_hint(mod, agent_name: str, method: str) -> str:
             "them by category")
 
 
+#: Parameters call_agent itself reads before the method sees them.
+_DISPATCH_PARAMS = ("attachment_key",)
+
+
+def _takes_catch_all(func) -> bool:
+    """Whether ``func`` takes ``**kwargs`` (so its signature refuses no
+    name)."""
+    try:
+        return any(p.kind is inspect.Parameter.VAR_KEYWORD
+                   for p in inspect.signature(func).parameters.values())
+    except (TypeError, ValueError):
+        return False
+
+
+def _check_parameter_names(mod, method: str, parameters: dict) -> None:
+    """Refuse a top-level parameter ``method`` does not take (BACKLOG
+    GM-110): the ValueError names the unknown key(s), a did-you-mean and
+    the valid parameters, as ``reject_unknown_params`` does inside the
+    adapters. Without it a misspelt name ('phi_deg' for 'phi') was read by
+    nobody and the run used the default. Nothing is renamed.
+
+    The method's METHOD_INFO is the list: its ``parameters``, plus the
+    other spellings it reads (``parameter_aliases``, alias -> parameter)
+    and, with ``parameters_of`` naming one of its parameters, the
+    parameters of the method that one names (``render_figures`` takes a
+    package's inputs). A name in ``refused_parameters`` (name -> reason, or
+    ``{"reason", "accepts": [values]}``) is one the method deliberately
+    does not take; it is refused with that reason instead of a
+    did-you-mean, unless its value is one the entry accepts as "not used".
+    Not checked here: a method without documented
+    parameters, one marked ``open_parameters``, and a reference wrapper
+    (``func(**params)``) without a ``**kwargs`` catch-all, whose own
+    signature refuses an unknown name. A wrapper WITH a catch-all is
+    checked here, against its named parameters plus what the catch-all
+    reads (``_reference_common.extract_method_info``).
+    """
+    info = mod.METHOD_INFO.get(method)
+    if not isinstance(info, dict) or info.get("open_parameters"):
+        return
+    declared = info.get("parameters")
+    if not isinstance(declared, dict):
+        return
+    wrapped = getattr(mod.METHOD_REGISTRY.get(method), "__wrapped__", None)
+    if wrapped is not None and not _takes_catch_all(wrapped):
+        return
+    valid = set(declared)
+    aliases = dict(info.get("parameter_aliases") or {})
+    refused = dict(info.get("refused_parameters") or {})
+    of = info.get("parameters_of")
+    if of:
+        names = [of] + [a for a, c in aliases.items() if c == of]
+        target = next((parameters[n] for n in names
+                       if isinstance(parameters.get(n), str)), None)
+        other = mod.METHOD_INFO.get(target) if target else None
+        # No such method: the handler says what to name. An open one
+        # checks its own.
+        if (not isinstance(other, dict) or target == method
+                or other.get("open_parameters")):
+            return
+        valid |= set(other.get("parameters") or {})
+        aliases.update(other.get("parameter_aliases") or {})
+        refused = {**(other.get("refused_parameters") or {}), **refused}
+    from funhouse_agent.adapters import (
+        accepted_as_unused, refused_reason, reject_unknown_params,
+    )
+    # A name the method deliberately does not take is refused with its
+    # reason, never with a near-miss guess at a different quantity; a value
+    # its entry accepts as "not used" (a slope of 0) passes.
+    hits = sorted(k for k, v in parameters.items() if k in refused
+                  and not accepted_as_unused(refused[k], v))
+    rest = {k: v for k, v in parameters.items() if k not in refused}
+    try:
+        reject_unknown_params(rest, valid, method=method,
+                              aliases=tuple(aliases) + _DISPATCH_PARAMS)
+    except ValueError as exc:
+        if not hits:
+            raise
+        also = f" Also: {exc}"
+    else:
+        also = ""
+    if hits:
+        raise ValueError(
+            f"{method} does not take {hits}: "
+            + "; ".join(f"{k}: {refused_reason(refused[k])}" for k in hits)
+            + "." + also)
+
+
 def call_agent(
     agent_name: str,
     method: str,
@@ -1043,6 +1131,7 @@ def call_agent(
     if not isinstance(parameters, dict):
         parameters = {}
     try:
+        _check_parameter_names(mod, method, parameters)
         if "attachment_key" in parameters:
             parameters = _resolve_attachment(
                 parameters, attachments, _method_params(mod, method))

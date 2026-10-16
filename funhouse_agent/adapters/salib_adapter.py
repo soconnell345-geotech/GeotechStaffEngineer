@@ -13,8 +13,8 @@ import math
 import time
 
 from funhouse_agent.adapters import (
-    apply_aliases, clean_result, mark_required, reject_unknown_params,
-    require_params,
+    apply_aliases, clean_result, declare_aliases, mark_required,
+    reject_unknown_params, require_params,
 )
 
 
@@ -43,6 +43,8 @@ _MODEL_SPEC_KEYS = ("agent_name", "method", "parameters", "variable_map",
 
 _TIME_BUDGET_DEFAULT_S = 120.0
 _TIME_BUDGET_MAX_S = 600.0
+
+_ONE_CALL_ALIASES = {"g_expression": "expression", "model_spec": "model"}
 
 _ONE_CALL_COMMON = ("var_names", "bounds", "expression", "model", "seed",
                     "max_evaluations", "time_budget_s")
@@ -246,8 +248,7 @@ def _one_call(params: dict, method: str, extra_valid) -> dict:
     if not has_salib():
         return {"error": "SALib is not installed. Install via: pip install SALib"}
 
-    params = apply_aliases(params, {"g_expression": "expression",
-                                    "model_spec": "model"})
+    params = apply_aliases(params, _ONE_CALL_ALIASES)
     valid = _ONE_CALL_COMMON + tuple(extra_valid)
     reject_unknown_params(params, valid, method=method)
     require_params(params, ["var_names", "bounds"], method=method,
@@ -698,3 +699,5 @@ mark_required(METHOD_INFO, {
     "morris_sample": ["var_names", "bounds"],
     "morris_analyze": ["var_names", "bounds", "X", "Y"],
 })
+declare_aliases(METHOD_INFO, {"sobol_analysis": _ONE_CALL_ALIASES,
+                              "morris_analysis": _ONE_CALL_ALIASES})

@@ -156,6 +156,9 @@ _HAMMER_CUSHION_DOC = {
     "ram_weight": {"type": "float", "required": False, "description": "Custom hammer ram weight (kN) — used with stroke when hammer_name is omitted."},
     "stroke": {"type": "float", "required": False, "description": "Custom hammer stroke (m)."},
     "efficiency": {"type": "float", "required": False, "default": 0.67, "description": "Custom hammer efficiency."},
+    "hammer_custom_name": {"type": "str", "required": False, "default": "Custom", "description": "Custom hammer label."},
+    "hammer_type": {"type": "str", "required": False, "default": "single_acting", "allowed_values": ["single_acting", "diesel", "hydraulic"], "description": "Custom hammer type."},
+    "segment_length": {"type": "float", "required": False, "default": 1.0, "description": "Pile segment length (m)."},
     "cushion_stiffness": {"type": "float", "required": False, "description": "Cushion stiffness (kN/m). Or give cushion_area + cushion_thickness + cushion_E. Default cushion used if omitted."},
     "cushion_area": {"type": "float", "required": False, "description": "Cushion area (m2) — with cushion_thickness and cushion_E."},
     "cushion_thickness": {"type": "float", "required": False, "description": "Cushion thickness (m)."},
@@ -164,6 +167,14 @@ _HAMMER_CUSHION_DOC = {
     "pile_E": {"type": "float", "required": False, "default": 200e6, "description": "Pile elastic modulus (kPa). Default is steel."},
     "pile_unit_weight": {"type": "float", "required": False, "default": 78.5, "description": "Pile material unit weight (kN/m3)."},
     "helmet_weight": {"type": "float", "required": False, "default": 5.0, "description": "Helmet weight (kN)."},
+}
+
+# Smith soil constants (single blow and bearing graph).
+_SOIL_DOC = {
+    "quake_side": {"type": "float", "required": False, "default": 0.0025, "description": "Side quake (m)."},
+    "quake_toe": {"type": "float", "required": False, "default": 0.0025, "description": "Toe quake (m)."},
+    "damping_side": {"type": "float", "required": False, "default": 0.16, "description": "Side Smith damping (s/m)."},
+    "damping_toe": {"type": "float", "required": False, "default": 0.50, "description": "Toe Smith damping (s/m)."},
 }
 
 METHOD_INFO = {
@@ -177,8 +188,10 @@ METHOD_INFO = {
             "R_total": {"type": "float", "required": True, "description": "Total soil resistance (kN). Alias: R_ultimate."},
             "skin_fraction": {"type": "float", "required": False, "default": 0.5, "description": "Skin friction fraction."},
             "damping_model": {"type": "str", "required": False, "default": "smith", "allowed_values": ["smith", "smith_viscous"], "description": "Smith damping form: 'smith' (R_static-proportional) or 'smith_viscous' (R_ultimate-proportional)."},
+            **_SOIL_DOC,
             **_HAMMER_CUSHION_DOC,
         },
+        "parameter_aliases": {"R_ultimate": "R_total"},
         "returns": {
             "permanent_set_mm": "Pile penetration per blow (mm).",
             "blow_count_per_m": "Blows per meter.",
@@ -198,6 +211,7 @@ METHOD_INFO = {
             "R_step": {"type": "float", "required": False, "default": 200.0, "description": "Resistance increment (kN)."},
             "skin_fraction": {"type": "float", "required": False, "default": 0.5, "description": "Skin friction fraction."},
             "damping_model": {"type": "str", "required": False, "default": "smith", "allowed_values": ["smith", "smith_viscous"], "description": "Smith damping form: 'smith' (R_static-proportional) or 'smith_viscous' (R_ultimate-proportional)."},
+            **_SOIL_DOC,
             **_HAMMER_CUSHION_DOC,
         },
         "returns": {"blow_counts_per_m": "Blow counts.", "max_pile_force_kN": "Max driving stress."},

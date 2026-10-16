@@ -21,8 +21,8 @@ import os
 from datetime import datetime
 
 from funhouse_agent.adapters import (
-    apply_aliases, clean_result, reject_unknown_params, require_params,
-    write_plotly_sidecar,
+    apply_aliases, clean_result, declare_aliases, reject_unknown_params,
+    require_params, write_plotly_sidecar,
 )
 
 _MODEL_TYPES = ["Gaussian", "Exponential", "Matern", "Spherical", "Linear",
@@ -501,3 +501,5 @@ METHOD_INFO = {
         },
     },
 }
+
+declare_aliases(METHOD_INFO, {"conditional_simulation": _COND_ALIASES})

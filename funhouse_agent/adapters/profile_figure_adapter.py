@@ -19,8 +19,9 @@ import os
 from datetime import datetime
 
 from funhouse_agent.adapters import (apply_aliases, check_nested_keys,
-                                     check_nested_list, reject_unknown_params,
-                                     require_params, write_plotly_sidecar)
+                                     check_nested_list, declare_aliases,
+                                     reject_unknown_params, require_params,
+                                     write_plotly_sidecar)
 from funhouse_agent._fileio import (default_output_dir, resolve_output_path,
                                     save_verified)
 
@@ -539,3 +540,5 @@ METHOD_INFO = {
         },
     },
 }
+
+declare_aliases(METHOD_INFO, {"plot_data": _PLOT_ALIASES})

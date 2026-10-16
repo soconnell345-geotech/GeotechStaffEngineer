@@ -1,8 +1,8 @@
 """Settlement adapter — flat dict → settlement functions → dict."""
 
 from funhouse_agent.adapters import (
-    apply_aliases, check_nested_list, field_keys, reject_unknown_params,
-    require_keys, require_params,
+    apply_aliases, check_nested_list, declare_aliases, field_keys,
+    reject_unknown_params, require_keys, require_params,
 )
 from settlement.immediate import elastic_settlement, SchmertmannLayer, schmertmann_settlement
 from settlement.consolidation import (
@@ -34,8 +34,18 @@ _SCHMERTMANN_KEY_HINTS = {"e": ("Es",), "modulus": ("Es",),
                           "top": ("depth_top",), "bottom": ("depth_bottom",)}
 
 
+#: Other names for the net bearing pressure, and the combined analysis's.
+_Q_ALIASES = {"q": "q_net", "q_applied": "q_net", "pressure": "q_net"}
+_COMBINED_ALIASES = {
+    "q_net": "q_applied", "q": "q_applied",
+    # the footing's own descriptive names (2026-10 Foundry eval, SE-4)
+    "foundation_pressure": "q_applied", "foundation_width": "B",
+    "foundation_length": "L",
+}
+
+
 def _run_elastic_settlement(params: dict) -> dict:
-    params = apply_aliases(params, {"q": "q_net", "q_applied": "q_net", "pressure": "q_net"})
+    params = apply_aliases(params, _Q_ALIASES)
     reject_unknown_params(params, ("q_net", "B", "Es", "nu", "Iw", "shape"),
                           method="elastic_settlement")
     require_params(params, ["q_net", "B", "Es"], method="elastic_settlement",
@@ -49,7 +59,7 @@ def _run_elastic_settlement(params: dict) -> dict:
 
 
 def _run_schmertmann_settlement(params: dict) -> dict:
-    params = apply_aliases(params, {"q": "q_net", "q_applied": "q_net"})
+    params = apply_aliases(params, _Q_ALIASES)
     reject_unknown_params(
         params, ("q_net", "q_overburden", "B", "L", "layers", "shape",
                  "time_years", "gamma_soil"),
@@ -117,8 +127,7 @@ def _run_consolidation_settlement(params: dict) -> dict:
 
 
 def _run_hough_settlement(params: dict) -> dict:
-    params = apply_aliases(params, {"q": "q_net", "q_applied": "q_net",
-                                    "pressure": "q_net"})
+    params = apply_aliases(params, _Q_ALIASES)
     reject_unknown_params(
         params, ("q_net", "B", "L", "layers"),
         method="hough_settlement")
@@ -144,12 +153,7 @@ def _run_hough_settlement(params: dict) -> dict:
 
 
 def _run_combined_settlement(params: dict) -> dict:
-    params = apply_aliases(params, {
-        "q_net": "q_applied", "q": "q_applied",
-        # the footing's own descriptive names (2026-10 Foundry eval, SE-4)
-        "foundation_pressure": "q_applied", "foundation_width": "B",
-        "foundation_length": "L",
-    })
+    params = apply_aliases(params, _COMBINED_ALIASES)
     reject_unknown_params(
         params, ("q_applied", "q_overburden", "B", "L", "shape",
                  "immediate_method", "Es", "nu", "schmertmann_layers",
@@ -237,6 +241,7 @@ METHOD_INFO = {
         "parameters": {
             "q_net": {"type": "float", "required": True, "description": "Net bearing pressure (kPa)."},
             "B": {"type": "float", "required": True, "description": "Footing width (m)."},
+            "L": {"type": "float", "required": False, "description": "Footing length (m). Default B."},
             "layers": {"type": "array", "required": True, "description": "Array of {depth_top, depth_bottom, Es} dicts."},
             "q_overburden": {"type": "float", "required": False, "default": 0.0, "description": "Overburden pressure at footing base (kPa)."},
             "shape": {"type": "str", "required": False, "default": "square", "allowed_values": ["square", "rectangular", "strip"], "description": "Footing shape."},
@@ -310,3 +315,10 @@ METHOD_INFO = {
         },
     },
 }
+
+declare_aliases(METHOD_INFO, {
+    "elastic_settlement": _Q_ALIASES,
+    "schmertmann_settlement": _Q_ALIASES,
+    "hough_settlement": _Q_ALIASES,
+    "combined_settlement_analysis": _COMBINED_ALIASES,
+})

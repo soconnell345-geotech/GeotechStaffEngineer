@@ -5,8 +5,10 @@ from geotech_references subpackages, with optional text retrieval.  This module
 provides a factory so each adapter is ~15 lines.
 """
 
+import ast
 import inspect
 import re
+import textwrap
 import typing
 
 import numpy as np
@@ -53,8 +55,35 @@ def param_type_str(annotation) -> str:
     return s
 
 
+def catch_all_is_read(func) -> bool:
+    """Whether ``func``'s ``**kwargs`` catch-all is read in its body.
+
+    A catch-all its body never reads takes nothing, so the named parameters
+    are the whole list and dispatch can refuse any other name (BACKLOG
+    GM-110: DM7's ``plot_figure_5_16(tv=0.5)`` drew no query point and
+    said nothing). One that is read, or whose source cannot be read, may
+    take anything. False for a function with no catch-all.
+    """
+    name = next((p.name for p in inspect.signature(func).parameters.values()
+                 if p.kind is inspect.Parameter.VAR_KEYWORD), None)
+    if name is None:
+        return False
+    try:
+        tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
+        body = tree.body[0].body
+    except (OSError, TypeError, SyntaxError, IndexError, AttributeError):
+        return True
+    return any(isinstance(node, ast.Name) and node.id == name
+               for stmt in body for node in ast.walk(stmt))
+
+
 def extract_method_info(func, category: str, reference: str) -> dict:
-    """Build a METHOD_INFO entry from a function's signature + docstring."""
+    """Build a METHOD_INFO entry from a function's signature + docstring.
+
+    A function whose ``**kwargs`` catch-all is read is marked
+    ``open_parameters`` (dispatch cannot tell what it takes) until its
+    adapter declares what it reads; one whose catch-all is never read is
+    checked by dispatch against its named parameters (GM-110)."""
     doc = inspect.getdoc(func) or ""
 
     # Brief: first paragraph
@@ -120,6 +149,8 @@ def extract_method_info(func, category: str, reference: str) -> dict:
     ret_ann = sig.return_annotation
     if ret_ann is not inspect.Parameter.empty:
         info["returns"] = param_type_str(ret_ann)
+    if catch_all_is_read(func):
+        info["open_parameters"] = True
     return info
 
 

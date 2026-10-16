@@ -264,6 +264,49 @@ def mark_required(method_info: dict, required: dict) -> dict:
     return method_info
 
 
+def refused_reason(spec) -> str:
+    """The reason of a ``refused_parameters`` entry: a string, or
+    ``{"reason": ..., "accepts": [values]}``."""
+    return spec if isinstance(spec, str) else str(spec.get("reason", ""))
+
+
+def accepted_as_unused(spec, value) -> bool:
+    """Whether a refused name's value is one its entry ``accepts`` because
+    it means "not used" (a level backfill's slope of 0), so it passes
+    silently instead of costing a retry."""
+    if not isinstance(spec, dict) or isinstance(value, (list, dict)):
+        return False
+    return any(value == v and type(value) is not bool
+               for v in spec.get("accepts", ()))
+
+
+def without_unused(params: dict, refused: dict) -> dict:
+    """``params`` without the refused names given a value their entry
+    accepts as "not used" (GM-110); the rest is left to the checks."""
+    drop = [k for k, v in params.items()
+            if k in refused and accepted_as_unused(refused[k], v)]
+    if not drop:
+        return params
+    return {k: v for k, v in params.items() if k not in drop}
+
+
+def declare_aliases(method_info: dict, aliases: dict) -> dict:
+    """Record, per method, the other spellings of its parameters the
+    adapter reads (``{method: {alias: parameter}}``) as the method's
+    ``parameter_aliases``. Dispatch refuses a top-level key that is neither
+    a parameter nor one of these (BACKLOG GM-110), so an alias the adapter
+    maps must be declared here. An alias of something the method does not
+    take is left out (one alias table often serves several methods), so it
+    is refused by name. Returns ``method_info``."""
+    for method, table in aliases.items():
+        info = method_info[method]
+        params = info.get("parameters") or {}
+        own = info.setdefault("parameter_aliases", {})
+        own.update({a: c for a, c in table.items()
+                    if a != c and a not in params and c in params})
+    return method_info
+
+
 def figure_output_format(params: dict, default: str = "metadata") -> str:
     """Resolve a plot method's ``output_format``, honoring ``output_path``.
 

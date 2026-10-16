@@ -8,8 +8,8 @@ midpoint-selected coefficient in 'notes' so reports can state the basis.
 """
 
 from funhouse_agent.adapters import (apply_aliases, check_nested_list,
-                                     clean_result, reject_unknown_params,
-                                     require_params)
+                                     clean_result, declare_aliases,
+                                     reject_unknown_params, require_params)
 
 # Keys of the nested dicts the pavement_design module reads (GM-58). A
 # layer's unknown key was a bare TypeError naming no layer; a seasonal
@@ -136,12 +136,15 @@ def _run_traffic(params: dict) -> dict:
     return clean_result(res.to_dict())
 
 
+_MR_ALIASES = {"seasonal_mr_psi": "monthly_mr_psi",
+               "mr_values": "monthly_mr_psi"}
+
+
 def _run_effective_mr(params: dict) -> dict:
     from geotech_references.aashto_1993.equations import \
         effective_roadbed_resilient_modulus
 
-    p = apply_aliases(params, {"seasonal_mr_psi": "monthly_mr_psi",
-                               "mr_values": "monthly_mr_psi"})
+    p = apply_aliases(params, _MR_ALIASES)
     reject_unknown_params(p, ("monthly_mr_psi",),
                           method="effective_subgrade_modulus")
     require_params(p, ["monthly_mr_psi"], method="effective_subgrade_modulus",
@@ -238,13 +241,14 @@ def _run_compare(params: dict) -> dict:
 
 
 _MIXED_VALID = ("vehicles", "representative_cbr")
+_MIXED_ALIASES = {"rep_cbr": "representative_cbr",
+                  "cbr": "representative_cbr"}
 
 
 def _run_mixed_ufc(params: dict) -> dict:
     from pavement_design import ufc_mixed_traffic
 
-    p = apply_aliases(params, {"rep_cbr": "representative_cbr",
-                               "cbr": "representative_cbr"})
+    p = apply_aliases(params, _MIXED_ALIASES)
     reject_unknown_params(p, _MIXED_VALID, method="mixed_traffic_ufc")
     require_params(p, ["vehicles", "representative_cbr"],
                    method="mixed_traffic_ufc", valid=_MIXED_VALID)
@@ -525,6 +529,11 @@ METHOD_INFO = {
                                      "-> Ch 19 reduced-subgrade-strength "
                                      "frost check; governing section "
                                      "reported."},
+            "thickness_increment_in": {"type": "number", "required": False,
+                                       "default": 0.5,
+                                       "description": "Round layer "
+                                                      "thicknesses up to "
+                                                      "this increment (in)."},
         },
         "returns": {"section": "layers + total (in)",
                     "frost_section": "when frost-susceptible",
@@ -550,6 +559,11 @@ METHOD_INFO = {
             "stabilized_foundation": {"type": "object", "required": False,
                                       "description": "{ef_psi, hs_in} -> "
                                                      "Eq 13-1 reduction."},
+            "thickness_increment_in": {"type": "number", "required": False,
+                                       "default": 0.5,
+                                       "description": "Round the slab up "
+                                                      "to this increment "
+                                                      "(in)."},
         },
         "returns": {"hd_required_in": "F-1 solve",
                     "slab_provided_in": "rounded design slab"},
@@ -577,6 +591,8 @@ METHOD_INFO = {
                                 "description": "AASHTO-side reliability."},
             "so": {"type": "number", "required": False, "default": 0.45,
                    "description": "AASHTO overall standard deviation."},
+            "pt": {"type": "number", "required": False, "default": 2.5,
+                   "description": "AASHTO terminal serviceability."},
             "cbr_base": {"type": "number", "required": False, "default": 80,
                          "description": "Base CBR (both sides; AASHTO EBS "
                                         "derived unless ebs_psi given)."},
@@ -647,6 +663,10 @@ METHOD_INFO = {
                                           "required": False, "default": 20,
                                           "description": "Cap / default "
                                                          "trial seed."},
+            "initial_trial_yr": {"type": "number", "required": False,
+                                 "description": "First trial performance "
+                                                "period (yr); default 0.9 x "
+                                                "the cap."},
             "sn": {"type": "number", "required": False,
                    "description": "Flexible: as-built structural number."},
             "mr_psi": {"type": "number", "required": False,
@@ -679,3 +699,15 @@ METHOD_INFO = {
                     "converged": "bool"},
     },
 }
+
+declare_aliases(METHOD_INFO, {
+    "flexible_pavement_design": _FLEX_ALIASES,
+    "rigid_pavement_design": _RIGID_ALIASES,
+    "design_traffic_esals": _TRAFFIC_ALIASES,
+    "effective_subgrade_modulus": _MR_ALIASES,
+    "performance_period": _PERF_ALIASES,
+    "flexible_pavement_design_ufc": _UFC_ALIASES,
+    "rigid_pavement_design_ufc": _UFC_ALIASES,
+    "compare_pavement_methods": _UFC_ALIASES,
+    "mixed_traffic_ufc": _MIXED_ALIASES,
+})

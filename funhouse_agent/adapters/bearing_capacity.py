@@ -1,7 +1,7 @@
 """Bearing capacity adapter — flat dict → BearingCapacityAnalysis → dict."""
 
-from funhouse_agent.adapters import (apply_aliases, reject_unknown_params,
-                                     require_params)
+from funhouse_agent.adapters import (apply_aliases, declare_aliases,
+                                     reject_unknown_params, require_params)
 from bearing_capacity.footing import Footing
 from bearing_capacity.soil_profile import SoilLayer, BearingSoilProfile
 from bearing_capacity.capacity import BearingCapacityAnalysis
@@ -164,6 +164,8 @@ METHOD_INFO = {
             "layer2_friction_angle": {"type": "float", "required": False, "description": "Second layer phi (degrees)."},
             "layer2_unit_weight": {"type": "float", "required": False, "description": "Second layer gamma (kN/m3). Triggers 2-layer analysis."},
             "layer1_thickness": {"type": "float", "required": False, "description": "First layer thickness (m) for 2-layer."},
+            "layer1_description": {"type": "str", "required": False, "description": "First layer label for the result."},
+            "layer2_description": {"type": "str", "required": False, "description": "Second layer label for the result."},
             "factor_of_safety": {"type": "float", "required": False, "default": 3.0, "description": "Factor of safety."},
             "factor_method": {"type": "str", "required": False, "default": "vesic", "allowed_values": ["vesic", "meyerhof", "terzaghi"], "description": "Shape/depth/inclination-factor method. Hansen applies to N-gamma only: use ngamma_method='hansen'. 'terzaghi' = Terzaghi (1943): his Nc, Nq, N-gamma and shape coefficients (1.3cNc; 0.4/0.3 gamma B Ngamma square/circular), no depth or inclination factors; not for inclined loads, slopes or tilted bases (UFC 3-220-20 Table 5-3)."},
             "ngamma_method": {"type": "str", "required": False, "default": "vesic", "allowed_values": ["vesic", "meyerhof", "hansen", "kumbhojkar", "coduto"], "description": "Ngamma factor method (may differ from factor_method). With factor_method='terzaghi' (Terzaghi gave N-gamma only as a chart): 'kumbhojkar' (default; Kumbhojkar 1993 as tabulated in Das) or 'coduto' (Coduto et al. 2016 approximation, UFC 3-220-20 Table 5-2); the result reports the other beside it."},
@@ -195,3 +197,6 @@ METHOD_INFO = {
         "returns": {"Nc": "Cohesion factor.", "Nq": "Overburden factor.", "Ngamma": "Unit weight factor."},
     },
 }
+
+declare_aliases(METHOD_INFO, {
+    "bearing_capacity_analysis": _ANALYSIS_ALIASES})

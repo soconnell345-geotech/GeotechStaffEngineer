@@ -1,7 +1,8 @@
 """Lateral pile adapter — COM624P, 8 p-y models, FD solver."""
 
 from funhouse_agent.adapters import (
-    check_nested_keys, require_keys, require_params, reject_unknown_params,
+    check_nested_keys, declare_aliases, require_keys, require_params,
+    reject_unknown_params,
 )
 from lateral_pile import (
     Pile, ReinforcedConcreteSection, rebar_diameter, SoilLayer,
@@ -240,6 +241,9 @@ METHOD_INFO = {
             "head_condition": {"type": "str", "required": False, "default": "free", "allowed_values": ["free", "fixed"], "description": "Pile head condition."},
             "Q": {"type": "float", "required": False, "default": 0.0, "description": "Axial load at pile top (kN), for P-delta."},
             "stickup": {"type": "float", "required": False, "default": 0.0, "description": "Above-ground free length (m): head loads/BCs act at the top of the stickup; no soil resistance over it. pile_length stays the EMBEDDED length. Alias: free_length."},
+            "n_elements": {"type": "int", "required": False, "default": 100, "description": "Finite-difference elements along the pile."},
+            "tolerance": {"type": "float", "required": False, "default": 1e-5, "description": "Convergence tolerance on deflection (m)."},
+            "max_iterations": {"type": "int", "required": False, "default": 100, "description": "Most p-y iterations."},
         },
         "returns": {"max_deflection_m": "Maximum deflection (m).", "y_top_m": "Deflection at loaded head (m).", "max_moment_kNm": "Maximum bending moment.", "max_moment_depth_m": "Depth of max moment (m)."},
     },
@@ -259,6 +263,13 @@ METHOD_INFO = {
             "construction": {"type": "str", "required": False, "default": "simplified", "allowed_values": ["simplified", "reese1974"], "description": "SandReese curve construction. 'simplified' (default): initial linear + 1/3-power parabola anchored at ultimate. 'reese1974': the full four-segment Reese (1974) curve (linear -> parabola -> straight m-segment -> plateau) with the A/B chart coefficients and the m-point (pm=B*pu at ym=b/60, pu=A*pu at yu=3b/80)."},
             "qu": {"type": "float", "required": False, "description": "UCS (kPa). For WeakRock."},
             "Er": {"type": "float", "required": False, "description": "Rock mass modulus (kPa). For WeakRock."},
+            "loading": {"type": "str", "required": False, "default": "static", "allowed_values": ["static", "cyclic"], "description": "Loading type."},
+            "ks": {"type": "float", "required": False, "description": "Subgrade modulus (kN/m3). For StiffClayBelowWT."},
+            "su": {"type": "float", "required": False, "description": "Undrained shear strength (kPa). For SoftClayJeanjean."},
+            "Gmax": {"type": "float", "required": False, "description": "Small-strain shear modulus (kPa). For SoftClayJeanjean."},
+            "J": {"type": "float", "required": False, "default": 0.5, "description": "Matlock J factor. For SoftClayMatlock, StiffClayAboveWT, SoftClayJeanjean."},
+            "gamma_r": {"type": "float", "required": False, "default": 22.0, "description": "Rock unit weight (kN/m3). For WeakRock."},
+            "RQD": {"type": "float", "required": False, "default": 100.0, "description": "Rock quality designation (%). For WeakRock."},
         },
         "returns": {"y_m": "Deflection array (m).", "p_kN_per_m": "Soil resistance array (kN/m)."},
     },
@@ -284,3 +295,6 @@ METHOD_INFO = {
         "returns": {"EI_kNm2": "Composite flexural rigidity (kN-m^2).", "EA_kN": "Composite axial rigidity (kN).", "E_ref_kPa": "Reference modulus for the transformed properties.", "inertia_transformed_m4": "Equivalent moment of inertia at E_ref (pass as moment_of_inertia with pile_E=E_ref).", "area_transformed_m2": "Transformed area at E_ref.", "components": "Per-material EI/EA breakdown."},
     },
 }
+
+declare_aliases(METHOD_INFO, {
+    "lateral_pile_analysis": {"free_length": "stickup"}})

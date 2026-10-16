@@ -1,6 +1,8 @@
 """liquepy adapter — CPT-based liquefaction triggering and field correlations."""
 
-from funhouse_agent.adapters import mark_required, apply_aliases, clean_result, require_params
+from funhouse_agent.adapters import (
+    mark_required, apply_aliases, clean_result, declare_aliases, require_params,
+)
 
 
 def _check_liquepy():
@@ -36,13 +38,17 @@ def _run_cpt_liquefaction(params: dict) -> dict:
     return clean_result(result.to_dict())
 
 
+#: The common alternative spellings spt_liquefaction accepts.
+_SPT_ALIASES = {"n1_60": "N160", "fc": "FC", "pga": "amax_g",
+                "gwl": "gwt_depth"}
+
+
 def _run_spt_liquefaction(params: dict) -> dict:
     _check_liquepy()
     from liquepy_agent import analyze_spt_liquefaction
 
     # Accept the common alternative spellings before validating.
-    p = apply_aliases(params, {"n1_60": "N160", "fc": "FC", "pga": "amax_g",
-                               "gwl": "gwt_depth"})
+    p = apply_aliases(params, _SPT_ALIASES)
     require_params(p, ["depth", "N160", "FC", "gamma", "amax_g", "gwt_depth"],
                    method="spt_liquefaction",
                    valid=["depth", "N160", "FC", "gamma", "amax_g",
@@ -168,3 +174,4 @@ mark_required(METHOD_INFO, {
                          "gwt_depth"],
     "field_correlations": ["depth", "q_c", "f_s"],
 })
+declare_aliases(METHOD_INFO, {"spt_liquefaction": _SPT_ALIASES})

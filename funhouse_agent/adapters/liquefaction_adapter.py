@@ -28,7 +28,7 @@ B&I-2014 path therefore lives in ``liquepy_agent.analyze_spt_liquefaction``,
 which composes liquepy's tested B&I-2014 building blocks (CRR/rd/CSR/K_sigma).
 """
 
-from funhouse_agent.adapters import clean_result
+from funhouse_agent.adapters import clean_result, declare_aliases
 
 
 _CPT_KEYS = ("q_c", "qc", "f_s", "fs", "u_2", "u2")
@@ -299,6 +299,30 @@ METHOD_INFO = {
                            "description": (
                                "Optional override if both/neither CPT and SPT "
                                "keys are present.")},
+            # CPT (liquepy) options
+            "a_ratio": {"type": "float", "required": False, "default": 0.8,
+                        "description": "Cone area ratio (CPT)."},
+            "i_c_limit": {"type": "float", "required": False, "default": 2.6,
+                          "description": "I_c limit for liquefiable material (CPT)."},
+            "cfc": {"type": "float", "required": False, "default": 0.0,
+                    "description": "Fines content correction factor (CPT)."},
+            "unit_wt_method": {"type": "str", "required": False,
+                               "default": "robertson2009",
+                               "allowed_values": ["robertson2009", "void_ratio"],
+                               "description": "Unit weight method (CPT)."},
+            "gamma_predrill": {"type": "float", "required": False, "default": 17.0,
+                               "description": "Unit weight above the pre-drill depth (kN/m3) (CPT)."},
+            "s_g": {"type": "float", "required": False, "default": 2.65,
+                    "description": "Specific gravity of solids (CPT)."},
+            "p_a": {"type": "float", "required": False, "default": 101.0,
+                    "description": "Atmospheric pressure (kPa) (CPT)."},
+            # SPT options
+            "c_0": {"type": "float", "required": False, "default": 2.8,
+                    "description": "B&I-2014 SPT CRR curve parameter: 2.8 = "
+                                   "16th percentile / deterministic, 2.6 = median."},
+            "gamma_w": {"type": "float", "required": False, "default": 9.81,
+                        "description": "Unit weight of water (kN/m3) "
+                                       "(method='nceer2001')."},
         },
         "returns": {
             "input_type": "Detected input type ('CPT' or 'SPT').",
@@ -312,3 +336,11 @@ METHOD_INFO = {
         },
     },
 }
+
+# The other names the routes read with _first (GM-110).
+declare_aliases(METHOD_INFO, {"liquefaction_analysis": {
+    "depths": "depth", "qc": "q_c", "fs": "f_s", "u2": "u_2",
+    "n160": "N160", "N1_60": "N160", "n1_60": "N160", "N": "N160",
+    "n_values": "N160", "fc": "FC", "fines": "FC", "unit_weight": "gamma",
+    "amax": "amax_g", "magnitude": "m_w", "M": "m_w",
+}})

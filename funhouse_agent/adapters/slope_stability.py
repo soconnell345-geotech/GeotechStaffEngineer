@@ -782,3 +782,12 @@ METHOD_INFO = {
         "returns": {"pf": "Probability of failure (FOS < 1).", "FOS_mean": "Mean FOS.", "FOS_std": "Std of FOS.", "beta_lognormal": "Lognormal reliability index from the sample moments.", "histogram_bins": "Histogram bin edges.", "histogram_counts": "Histogram counts."},
     },
 }
+
+# The solver tolerance these methods pass on (accepted, and now documented,
+# since dispatch refuses an undocumented name: GM-110).
+for _m in ("analyze_slope", "compare_methods_table", "rapid_drawdown_fos",
+           "search_rapid_drawdown", "yield_acceleration",
+           "search_critical_surface", "fosm_fos", "monte_carlo_fos"):
+    METHOD_INFO[_m]["parameters"]["tol"] = {
+        "type": "float", "required": False, "default": 1e-4,
+        "description": "Convergence tolerance for the iterative methods."}

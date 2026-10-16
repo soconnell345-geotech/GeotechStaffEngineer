@@ -1,8 +1,8 @@
 """Pile group adapter — rigid cap analysis, 6-DOF, efficiency."""
 
 from funhouse_agent.adapters import (
-    apply_aliases, check_nested_list, field_keys, reject_unknown_params,
-    require_keys, require_params,
+    apply_aliases, check_nested_list, declare_aliases, field_keys,
+    reject_unknown_params, require_keys, require_params, without_unused,
 )
 from pile_group import (
     GroupPile, create_rectangular_layout, converse_labarre,
@@ -73,8 +73,17 @@ _GROUP_VALID_PARAMS = (
 )
 
 
+#: What the simple method ignores: it carries no lateral load or torsion and
+#: uses no pile stiffness (GM-110), so these are refused rather than dropped.
+_SIMPLE_IGNORES = ("Vx", "Vy", "Mz", "axial_stiffness", "lateral_stiffness")
+
+
 def _run_pile_group_simple(params):
-    reject_unknown_params(params, _GROUP_VALID_PARAMS, method="pile_group_simple")
+    params = without_unused(
+        params, METHOD_INFO["pile_group_simple"]["refused_parameters"])
+    reject_unknown_params(
+        params, [k for k in _GROUP_VALID_PARAMS if k not in _SIMPLE_IGNORES],
+        method="pile_group_simple")
     return analyze_vertical_group_simple(_build_piles(params), _build_load(params)).to_dict()
 
 
@@ -208,6 +217,8 @@ METHOD_INFO = {
             "Mx": {"type": "float", "required": False, "description": "Moment about x (kN-m)."},
             "My": {"type": "float", "required": False, "description": "Moment about y (kN-m)."},
             "Mz": {"type": "float", "required": False, "description": "Torsion about z (kN-m)."},
+            "axial_capacity_compression": {"type": "float", "required": False, "description": "Per-pile compression capacity (kN) for utilization checks (rectangular layout)."},
+            "axial_capacity_tension": {"type": "float", "required": False, "description": "Per-pile tension capacity (kN) (rectangular layout)."},
         },
         "returns": {"pile_forces": "Per-pile forces.", "cap_displacement": "Cap displacement."},
     },
@@ -219,6 +230,8 @@ METHOD_INFO = {
             "n_cols": {"type": "int", "required": True, "description": "Number of columns."},
             "pile_diameter": {"type": "float", "required": True, "description": "Pile diameter (m)."},
             "spacing": {"type": "float", "required": True, "description": "Center-to-center spacing (m)."},
+            "spacing_x": {"type": "float", "required": False, "description": "X spacing (m) for block failure, if it differs from spacing."},
+            "spacing_y": {"type": "float", "required": False, "description": "Y spacing (m) for block failure, if it differs from spacing."},
             "pile_length": {"type": "float", "required": False, "description": "Pile length (m). With cu, also computes block failure capacity."},
             "cu": {"type": "float", "required": False, "description": "Undrained shear strength (kPa) for block failure."},
             "row_position": {"type": "int", "required": False, "description": "Row number (1 = lead) — returns the lateral p-multiplier."},
@@ -240,3 +253,17 @@ METHOD_INFO = {
         "returns": {"settlement_mm": "Group settlement (mm).", "settlement_in": "Group settlement (inches).", "influence_factor": "Embedment factor If.", "pf_kPa": "Net foundation pressure used (kPa)."},
     },
 }
+
+declare_aliases(METHOD_INFO, {"meyerhof_group_settlement": _MEYERHOF_ALIASES})
+
+# What pile_group_simple ignores, refused with the reason (GM-110), so a
+# lateral load is never dropped without a word; a 0 carries none and passes.
+_LATERAL = {
+    "reason": ("pile_group_simple distributes only Vz, Mx and My; lateral "
+               "loads (Vx, Vy) and torsion (Mz) need pile_group_6dof"),
+    "accepts": [0]}
+_STIFFNESS = ("pile_group_simple assumes a rigid cap on equal piles and "
+              "uses no pile stiffness; pile_group_6dof takes it")
+METHOD_INFO["pile_group_simple"]["refused_parameters"] = {
+    "Vx": _LATERAL, "Vy": _LATERAL, "Mz": _LATERAL,
+    "axial_stiffness": _STIFFNESS, "lateral_stiffness": _STIFFNESS}
