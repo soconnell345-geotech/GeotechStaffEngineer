@@ -1499,7 +1499,13 @@ class SoilProfile:
         Parameters
         ----------
         wall_height : float
-            Retained height of the wall (m).
+            The wall's total height H (m), as the retaining_walls module
+            takes it: from the underside of the base slab to the top of the
+            stem (H = base thickness + stem height; GM-100). It is used here
+            as the depth below the ground surface behind the wall: the soil
+            above it is averaged as the backfill, the layer at it is the
+            foundation soil. A wall retaining 4.0 m on a 0.5 m footing is
+            4.5.
         surcharge : float, optional
             Uniform surcharge on backfill (kPa). Default 0.
 
