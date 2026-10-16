@@ -327,6 +327,91 @@ Every number that moved went down; no published-benchmark test needed a change
 and re-score with the method itself; a reinforced model walks with the method itself
 (Slide2 #85 anchored, Spencer: grid 1.581, refined 1.574).
 
+## B14 — Search: ranges set from the slope (GM-57, 2026-10-16)
+[Ranges the caller does not give are set from the slope's toe, crest, height H and
+depth to the base d, not from the model's width (DESIGN.md "Automatic search
+ranges"; `search_ranges.py`). Tests: `tests/test_search_ranges.py`,
+`tests/test_slope_stability.py::TestPublishedBenchmarks`.]
+
+The same slope drawn narrow and wide (Bishop, default search):
+
+| Model | Before (windows from the model width) | Now | Reference |
+|-------|-------------------------------------:|----:|----------:|
+| c-phi 2:1 (c' 10, phi' 25), circle search alone, 2 H each side | 1.645 | 1.645 | toe circle 1.645 |
+| same, 10 H each side | no admissible circle | 1.655 | |
+| same, 0.5 H behind the crest / 6 H in front of the toe, and the reverse | 3.160 / 3.198 | 1.647 / 1.651 | |
+| soft foundation (Taylor D = 3), 4 H or 12 H each side | 0.676 / 0.676 (+ a warning at 12 H) | 0.676 / 0.676 | Taylor 0.679 |
+| same, 4 H one side and 12 H the other (both ways) | 0.782 (a toe circle) | 0.676 | Taylor 0.679 |
+
+What moved in the suites (every published-benchmark test still passes):
+
+| Case | Before | Now | Note |
+|------|-------:|----:|------|
+| Slide2 #85 one support, `reverse_curvature='discard'`, Bishop, active / passive | 1.503 / 1.305 (toe circle) | 1.485 / 1.302 | a circle tangent to the base entering just above the toe, out at x = 39.2, beyond the old exit window's start (40.2); at 240 slices it gives 1.511 / 1.318 against D&W 1.51 / 1.32, where the old toe circle gives 1.557 / 1.338 |
+| ACADS 1(a) + 200 kN/m geosynthetic at el 29 | 1.115 | 1.105 | the circle above the geosynthetic, entering 0.41 of the way up the face |
+| V-054 (steep phi = 0 from the toe), circle search alone, grid / refined | 2.784 / 2.770 | 2.360 / 2.344 | the toe circle 2.286 still governs (its centre is below the crest) |
+| Duncan Ex 1 on its own short profile | 0.726 | 0.720 + the profile-end warning | Taylor 0.706 needs a longer profile |
+| Slide2 #86 without supports, default search | 0.944 (planar) | 0.942 (a circle 0.4 ft long) | the closed form 0.942; the circle search now reaches the infinite slope itself and the result says that is what it is (the planar surfaces, Janbu, 0.944) |
+| same, circle search alone | 1.550 | 0.942 | |
+| Duncan Ex 2 / Ex 4 sand (c' = 0) | 1.6816 / 2.3474 (planar) | 1.6782 / 2.3442 (shallow circles) | closed forms 1.678 / 2.344 |
+| calc package, c' = 0 sand slope, Spencer | 0.936 (planar) | 0.933 (a shallow circle) | said to be the infinite-slope mechanism; closed form 0.933 |
+| V-041 #95/#96 drawdown wrapper | 0.902 | 0.895 | pin 0.902 +- 0.03 |
+| c' = 0 shell under drawdown, families off, 4 x 4 | 1.487 | 0.944 | closed form 0.942 |
+| WE-SLOPE-5 (Pilarcitos 2.5:1, given centre grid), Corps / LK / DWW | 0.787 / 1.353 / 1.349 (recorded) | 0.787 / 1.344 / 1.233 | LK: a 4 m circle on the face, said to be the infinite-slope mechanism; DWW: the drawdown planar slide governs (since GM-54) |
+| V-042 entry/exit 10 x 10 | 1.325 | 1.332 | UP: the 10 x 10 points over wider windows (20 x 20: 1.326); published 1.334 / 1.340 |
+| V-043 random noncircular, 2000 trials, seeds 1-5 | 1.172 / 1.208 / 1.199 / 1.217 / 1.247 | 1.194 / 1.270 / 1.183 / 1.195 / 1.149 | seed-dependent; the test now takes the median (1.194, published 1.188 / 1.192) and checks no draw goes below differential evolution (seed 1: 0.717 before, a spurious solver state, now refused (below); now 1.092) |
+| 10 m 1:1 cut, 4 m weak soil over rock, default search | 5.25 | 4.82 | stays high: the critical circle (0.885, 4.6 m long in the weak layer) lies above the rock's outcrop, which the default windows do not reach; directed (entry 25.5-28, exit 29-40) 0.895 on the default grid, 0.889 on 20 x 20, 0.888 by entry / exit; `governing_location` names the layers the governing surface crosses (rock, weak) |
+| Pilarcitos true section, drawdown, automatic windows: Corps / LK / DWW | 0.726 / 1.279 / 1.266 | 0.718 / 1.075 / 1.075 | LK / DWW: the rapid-drawdown infinite slope, a sliver of a circle about an inch deep on the lower face at (gamma'/gamma) tan(phi')/tan(beta) = 1.075, reported as that mechanism (the planar family's own drawdown solve fails on that face); not the observed deep slide, so the other V-052 tests give the deep slide's windows (the old automatic ones) and are unchanged |
+
+### Rapid drawdown: the Fellenius normal under the remaining pool
+The fully automatic DWW search of the true Pilarcitos section reported 0.052 on a
+toe circle wholly under the remaining pool: the stage-3 Fellenius normal counted
+the pond's pressure on a slice base in full and its weight only at cos^2(alpha),
+clamped sigma' to zero on all 20 slices, and the drained substitution left no
+strength (2.048 with the rigorous 'gle' normal). With the pond taken out of both
+terms (a pond changes no effective stress; FHWA NHI-06-088 p. 6-13) that circle
+gives 1.57 and the automatic search 1.074, on a small circle above the pool,
+as Lowe-Karafiath. No published drawdown benchmark moved (V-037, V-038, V-041 #98,
+V-048, V-052: same values); the default stays 'fellenius'.
+
+### Rigorous noncircular solutions must hold
+Searches now keep a new best noncircular surface only if its Spencer / GLE
+solution holds about a second moment axis and with one slice more or twice as
+many (DESIGN.md "Rigorous noncircular solutions must hold"). Three surfaces the
+searches had reported as critical were solver artefacts: 13 m deep in sandstone
+under a weak clay (0.90 at HEAD, 1.06 mid-GM-57; no Spencer solution by
+`analyze_slope`, Fellenius 21.7), V-043's DE seed 1 (0.717; 1.55-1.90 at other
+slice counts) and a surface diving at 75 deg into rock (0.731; no solution at 29,
+31 or 60 slices). The lowest refused surface is kept in
+`SearchResult.refused_lowest` and, when it is below the reported FOS or nothing
+held, a warning says so with its FOS, where it lies and why. Tests:
+`tests/test_search_robustness.py`.
+
+### Taylor's phi = 0 benchmark (`test_taylor_undrained_nc`)
+The test compared a 1:1 (45 deg) slope, H = 8 m, cu = 50 kPa, gamma 18, with
+1.92 = cu x 5.52 / (gamma H), and a fine grid read 2.039 (now 2.055 on the test's
+own centre box, toe circle). Two things, neither a search gap:
+
+- **The chart value.** 1/5.52 = 0.181 is Taylor's limit for an unlimited depth
+  (FHWA NHI-06-088 Fig. 6-15, after Taylor 1948: the curves for beta < 53 deg
+  rise to 0.181). This model's clay ends at a firm base 10 m below the toe,
+  D = 18/8 = 2.25, where the 45 deg curve reads about 0.1785: F = 0.347 / 0.1785
+  = 1.945, the circle tangent to the base and out about 2 H beyond the toe
+  (n = 2). An independent optimisation of phi = 0 circles tangent to the base
+  (200 slices) gives N = 0.1783, F = 1.947, out 1.96 H beyond the toe and in
+  2.45 H behind the crest.
+- **The model.** Its profile ended 0.6 H behind the crest and 1.5 H beyond the
+  toe, so no circle it holds reaches Taylor's (the best: a toe circle closed by
+  a crack, 1.970 by default; 2.04-2.06 on the old centre box). The profile-end
+  check gives a circle past the end at 1.928.
+
+The test now draws 4 H of level ground each side: the default search gives 1.935
+at 30 slices (0.6 % below the converged 1.947, the slicing's own bias, on the safe
+side, as Duncan Ex 1's 0.703 against 0.706), tangent to the base, out 1.8 H
+beyond the toe, no warning. The old short profile is kept as a second test, which
+must read high and warn. (phi = 0: Bishop, Spencer and the ordinary method give
+the same F on a circle, so the method is not a factor.)
+
 ---
 
 ## Notes / known deviations

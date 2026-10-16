@@ -520,7 +520,15 @@ def search_critical_surface(
 ) -> SearchResult:
     """Search for the critical slip surface (minimum FOS).
 
-    Auto-computes search bounds from slope geometry if not provided.
+    Ranges not given are set from the slope itself, not from the model's
+    width (GM-57, ``slope_stability.search_ranges``): the toe and crest of
+    its faces, its height H and the depth to the base below the toe. The
+    end of a surface on the toe side lies from the reach beyond the toe
+    to the face's mid-length, the end on the crest side from there to the
+    reach behind the crest; circle centres span those windows, from 0.1 H
+    to max(2 H, depth to base) above the ground. A range the model's end
+    cuts short is recorded in ``search_ranges`` and, where the governing
+    surface ends there, in ``warnings``.
 
     A circular (centre-grid) search then refines its lowest grid centres by
     a local compass search on the centre, each centre with its own optimised
@@ -587,18 +595,16 @@ def search_critical_surface(
     from slope_stability.search_supplements import (
         apply_supplements, CIRCULAR, NONCIRCULAR,
     )
+    from slope_stability.search_ranges import resolve_ranges
     given = dict(x_entry_range=x_entry_range, x_exit_range=x_exit_range,
                  x_range=x_range, y_range=y_range)
     windows_auto = (x_entry_range is None, x_exit_range is None)
     grid_auto = x_range is None and y_range is None
 
-    # Auto-compute entry/exit ranges from slope geometry if not provided
-    x_min_geo = geom.surface_points[0][0]
-    x_max_geo = geom.surface_points[-1][0]
-    if x_entry_range is None:
-        x_entry_range = (x_min_geo, x_min_geo + (x_max_geo - x_min_geo) * 0.4)
-    if x_exit_range is None:
-        x_exit_range = (x_min_geo + (x_max_geo - x_min_geo) * 0.6, x_max_geo)
+    # Ranges the caller left out are set from the slope itself: its toe,
+    # crest, height and the depth to the base (GM-57, search_ranges.py).
+    x_entry_range, x_exit_range, x_range, y_range, auto = resolve_ranges(
+        geom, x_entry_range, x_exit_range, x_range, y_range)
 
     noncirc_method = method if method != "bishop" else "spencer"
 
@@ -609,7 +615,7 @@ def search_critical_surface(
             windows_used=(x_entry_range, x_exit_range),
             windows_auto=windows_auto, grid_used=grid_used,
             grid_auto=grid_auto, toe_circles=toe_circles,
-            infinite_slope=infinite_slope, **given)
+            infinite_slope=infinite_slope, auto_ranges=auto, **given)
 
     if surface_type in ("noncircular", "noncircular_de", "pso", "weak_layer"):
         result = _search_noncircular_kind(
@@ -631,17 +637,6 @@ def search_critical_surface(
         return _finish(result, CIRCULAR)
 
     # Circular search
-    if x_range is None:
-        x_min = geom.surface_points[0][0]
-        x_max = geom.surface_points[-1][0]
-        x_range = (x_min, x_max)
-
-    if y_range is None:
-        z_min = min(z for _, z in geom.surface_points)
-        z_max = max(z for _, z in geom.surface_points)
-        slope_height = z_max - z_min
-        y_range = (z_max + 1.0, z_max + 2.0 * slope_height)
-
     result = grid_search(geom, x_range, y_range, nx, ny, method, n_slices,
                          tol=tol, x_entry_range=x_entry_range,
                          x_exit_range=x_exit_range, refine=refine)

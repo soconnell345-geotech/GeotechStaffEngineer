@@ -1,19 +1,20 @@
 """
 Supplementary trial-surface families for the critical-surface search.
 
-The centre-grid and entry/exit searches sample circles inside windows set
-from the MODEL extent (entry in the first 40 % of the model width, exit in
-the last 40 %, centres at least 1 unit above the crest). Two failure
+The centre-grid and entry/exit searches sample circles inside windows
+that were set from the MODEL extent until GM-57 (entry in the first 40 % of
+the model width, exit in the last 40 %, centres at least 1 unit above the
+crest) and are now set from the slope (`search_ranges.py`). Two failure
 mechanisms fall outside that sampling on ordinary slopes and the search then
 reports a factor of safety that is too HIGH (BACKLOG GM-13, GM-14):
 
 1. **Toe circles** (Taylor 1937; Duncan, Wright & Brandon 2014, Ch. 6-7).
    A circle through the toe of the slope whose other end is close above it.
-   On a steep slope in a short model the critical toe circle exits on the
+   On a steep slope in a short model the critical toe circle exited on the
    crest well inside the automatic exit window's lower bound, and its centre
    lies below the crest, under the bottom of the automatic centre grid.
-   Steep phi = 0 slope, H = 5 m at 45 deg, su = 40 kPa: grid 2.78 against a
-   true toe circle of 2.287.
+   Steep phi = 0 slope, H = 5 m at 45 deg, su = 40 kPa: grid 2.78 (2.344
+   with the ranges from the slope) against a true toe circle of 2.287.
 
 2. **Infinite slope / shallow planar (translational) sliding** in
    cohesionless soil (Duncan, Wright & Brandon 2014, Ch. 14; Skempton &
@@ -52,6 +53,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
 from slope_stability.slip_surface import CircularSlipSurface, PolylineSlipSurface
 from slope_stability.results import SearchResult, SlopeStabilityResult
+from geotech_common.water import GAMMA_W as _GAMMA_W
 
 # A ground-surface segment flatter than this is not a slope face.
 _MIN_FACE_DEG = 5.0
@@ -399,8 +401,8 @@ def cohesionless_face_runs(geom: SlopeGeometry,
 
     Each run is a dict: ``x_from``, ``x_to``, ``slope_angle_deg`` (beta,
     positive), ``gradient`` (dz/dx of the segment), ``layer`` (name),
-    ``phi_deg``. A face crossing several layers gives one run per
-    cohesionless outcrop.
+    ``phi_deg``, ``gamma_sat``. A face crossing several layers gives one
+    run per cohesionless outcrop.
     """
     pts = geom.surface_points
     x_min, x_max = geom.x_range
@@ -425,7 +427,8 @@ def cohesionless_face_runs(geom: SlopeGeometry,
                     runs.append(cur)
                 cur = {"x_from": xa, "x_to": xb, "slope_angle_deg": beta,
                        "gradient": m, "layer": layer.name,
-                       "phi_deg": layer.phi, "_layer": layer}
+                       "phi_deg": layer.phi, "gamma_sat": layer.gamma_sat,
+                       "_layer": layer}
             elif cur is not None:
                 runs.append(cur)
                 cur = None
@@ -516,11 +519,14 @@ def check_infinite_slope(geom: SlopeGeometry,
         beta = run["slope_angle_deg"]
         closed = (math.tan(math.radians(run["phi_deg"]))
                   / math.tan(math.radians(beta)))
+        gsat = run["gamma_sat"]
+        seep = closed * max(gsat - _GAMMA_W, 0.0) / gsat if gsat > 0 else 0.0
         check = {
             "x_from": round(run["x_from"], 3), "x_to": round(run["x_to"], 3),
             "slope_angle_deg": round(beta, 3), "layer": run["layer"],
             "phi_deg": run["phi_deg"],
             "FOS_dry_closed_form": round(closed, 4),
+            "FOS_seepage_closed_form": round(seep, 4),
             "FOS": None, "note": "",
         }
         checks.append(check)
@@ -821,6 +827,61 @@ def _edge_warnings(geom, crit, windows, windows_auto, grid, grid_auto,
 _PROFILE_END_NEAR = 0.1
 # ... and the warning needs one at least this much lower.
 _PROFILE_END_DROP = 0.01
+# A governing surface within this fraction of what the infinite slope gives
+# (the planar family's FOS or a closed form), no deeper than this fraction of
+# its length and lying on the cohesionless face, is itself the shallow slide
+# on a c' = 0 face, and is said so.
+_PLANAR_TIE = 0.02
+_SHALLOW_RATIO = 0.05
+
+
+def _depth_ratio(geom: SlopeGeometry, crit) -> float:
+    """Greatest vertical depth of a result's surface below the ground,
+    as a fraction of its horizontal length (inf when it cannot be told)."""
+    span = crit.x_exit - crit.x_entry
+    slip = _surface_of(crit)
+    if span <= 0 or slip is None:
+        return math.inf
+    deepest = 0.0
+    for i in range(1, 100):
+        x = crit.x_entry + span * i / 100.0
+        z = slip.slip_elevation_at(x)
+        if z is not None:
+            deepest = max(deepest, geom.ground_elevation_at(x) - z)
+    return deepest / span
+
+
+def _infinite_slope_match(checks, crit, fos: float):
+    """(run, text) when ``crit`` lies on a cohesionless face run and its FOS
+    is within ``_PLANAR_TIE`` of what the infinite slope gives there: the
+    planar surfaces' FOS, or the closed form for a dry face, tan(phi') /
+    tan(beta), or for seepage parallel to the face with the water at the
+    surface, (gamma'/gamma) tan(phi') / tan(beta) (Duncan, Wright & Brandon
+    2014, Ch. 14; `infinite_slope_fos`) -- the saturated face a rapid
+    drawdown leaves, where the planar family's own drawdown solve can fail
+    (Pilarcitos: a circle 9 ft long and an inch deep at 1.075 against 1.076).
+    None when nothing matches."""
+    for c in checks:
+        if not (crit.x_entry >= c["x_from"] - 1e-6
+                and crit.x_exit <= c["x_to"] + 1e-6):
+            continue
+        refs = []
+        if c["FOS"] is not None:
+            refs.append((c["FOS"], f"the planar surfaces parallel to the "
+                                   f"face score {c['FOS']:.3f}"))
+        refs.append((c["FOS_dry_closed_form"],
+                     f"tan(phi')/tan(beta) = {c['FOS_dry_closed_form']:.3f} "
+                     f"for a dry face"))
+        seep = c.get("FOS_seepage_closed_form")
+        if seep:
+            refs.append((seep, f"(gamma'/gamma) tan(phi')/tan(beta) = "
+                               f"{seep:.3f} for a face saturated to the "
+                               f"surface with seepage parallel to it (as "
+                               f"after a rapid drawdown)"))
+        for value, text in refs:
+            if value > 0 and abs(value - fos) <= _PLANAR_TIE * value:
+                return c, text
+    return None
 
 
 def _extended_profile(geom: SlopeGeometry, length: float) -> SlopeGeometry:
@@ -950,17 +1011,19 @@ def apply_supplements(geom: SlopeGeometry,
                       grid_used=None, grid_auto=True,
                       toe_circles: bool = True,
                       infinite_slope: bool = True,
-                      fos_fn=None) -> SearchResult:
+                      fos_fn=None, auto_ranges=None) -> SearchResult:
     """Score the toe-circle and infinite-slope families and fold them into
     ``result`` (modified in place and returned).
 
     ``x_entry_range`` / ``x_exit_range`` / ``x_range`` / ``y_range`` are the
     CALLER-GIVEN constraints (None where the search chose its own).
     ``windows_used`` / ``grid_used`` are what the main search actually used,
-    for the edge warnings. ``toe_circles`` applies to circular searches only.
-    ``fos_fn`` (the rapid-drawdown search's per-surface FOS) scores both
-    families when given; the planar surfaces are then labelled with
-    ``method`` instead of Janbu.
+    for the edge warnings and ``result.search_ranges``; ``auto_ranges`` (a
+    `search_ranges.AutoRanges`) says how the automatic ones were set and
+    where the model's end cut them. ``toe_circles`` applies to circular
+    searches only. ``fos_fn`` (the rapid-drawdown search's per-surface FOS)
+    scores both families when given; the planar surfaces are then labelled
+    with ``method`` instead of Janbu.
     """
     from slope_stability.search import _FOS_MAX
     planar_method = PLANAR_METHOD if fos_fn is None else method
@@ -1009,6 +1072,7 @@ def apply_supplements(geom: SlopeGeometry,
 
     main_fos = main.FOS if main is not None else None
     main_text = describe_surface_kind(search_kind)
+    infinite_slope_found = False
     if best_kind == TOE_CIRCLE:
         xt, zt = toe["toe"]
         other = (best.x_exit if abs(best.x_entry - xt) <= abs(best.x_exit - xt)
@@ -1042,6 +1106,25 @@ def apply_supplements(geom: SlopeGeometry,
                "scored with the search's own per-surface solve")
             + f"; the {main_text} minimum was {was}. Shallower slides tend "
             f"to this value, so it does not depend on the search grid.")
+    elif (planar is not None and best is not None
+          and _depth_ratio(geom, best) <= _SHALLOW_RATIO):
+        # The governing surface may itself be the shallow slide on a c' = 0
+        # face (GM-57: the windows set from the slope let the main search
+        # reach it). Only a slide that is shallow for its length, lies on
+        # the cohesionless face and scores what that mechanism gives is
+        # called so (a deep circle can score about the same and is not).
+        match = _infinite_slope_match(planar["checks"], best, best_fos)
+        if match is not None:
+            run, ref = match
+            infinite_slope_found = True
+            warnings_out.append(
+                f"The governing surface (FOS {best_fos:.3f}) is a shallow "
+                f"slide on the face of cohesionless soil (c' = 0, phi' = "
+                f"{run['phi_deg']:g} deg) between x = {run['x_from']:.2f} "
+                f"and {run['x_to']:.2f} (beta = "
+                f"{run['slope_angle_deg']:.1f} deg): the infinite slope "
+                f"mechanism; {ref}. Shallower slides tend to this value, "
+                f"so it does not depend on the search grid.")
 
     if planar is not None:
         for c in planar["checks"]:
@@ -1057,7 +1140,9 @@ def apply_supplements(geom: SlopeGeometry,
                     f"evaluated there ({c['note']}). The infinite slope may "
                     f"govern.")
 
-    if best_kind in (CIRCULAR, NONCIRCULAR):
+    # (A main-search surface that is the infinite-slope mechanism gets no
+    # edge warning: shallower slides only tend to the same value.)
+    if best_kind in (CIRCULAR, NONCIRCULAR) and not infinite_slope_found:
         warnings_out.extend(_edge_warnings(
             geom, best, windows_used, windows_auto,
             grid_used if search_kind == CIRCULAR else None, grid_auto))
@@ -1067,10 +1152,28 @@ def apply_supplements(geom: SlopeGeometry,
         warnings_out.extend(_edge_warnings(
             geom, best, given, (False, False), None, grid_auto))
 
-    # A governing circle held back by the end of the ground profile (GM-63)
+    # The lowest surface the search found but refused, its solution not
+    # holding (GM-57 review): say so, so the user can judge.
+    ref = getattr(result, "refused_lowest", None)
+    if ref is not None and (best is None or ref["FOS"] < best_fos):
+        tail = ("The reported surface is the lowest that held."
+                if best is not None else
+                "No other surface held, so none is reported.")
+        warnings_out.append(
+            f"The lowest surface found, FOS {ref['FOS']:.3f} (x = "
+            f"{ref['x_entry']:.2f} to {ref['x_exit']:.2f}), did not hold: "
+            f"{ref['reason']}, so it is not an equilibrium solution of the "
+            f"surface and is not reported. {tail}")
+
+    # A governing circle held back by the end of the ground profile (GM-63);
+    # failing a lower circle past the end, a main-search surface that ends
+    # where the model's end cut an automatic range short (GM-57)
     if best is not None and best_kind != INFINITE_SLOPE:
         w = _profile_end_warning(geom, best, method, n_slices, tol,
                                  fos_fn=fos_fn)
+        if not w and best_kind in (CIRCULAR, NONCIRCULAR):
+            w = _clipped_range_warning(geom, best, windows_used,
+                                       windows_auto, auto_ranges)
         if w:
             warnings_out.append(w)
 
@@ -1094,4 +1197,132 @@ def apply_supplements(geom: SlopeGeometry,
     result.governing_surface = best_kind if best is not None else ""
     result.candidates = candidates
     result.warnings = warnings_out
+    result.search_ranges = _ranges_record(
+        windows_used, grid_used if search_kind == CIRCULAR else None,
+        dict(x_entry_range=x_entry_range, x_exit_range=x_exit_range,
+             x_range=x_range, y_range=y_range), auto_ranges)
+    result.governing_location = _locate(geom, best)
     return result
+
+
+def _surface_of(crit):
+    """The slip surface of a result, or None."""
+    if getattr(crit, "is_circular", False) and crit.radius > 0:
+        return CircularSlipSurface(crit.xc, crit.yc, crit.radius)
+    if crit.slip_points and len(crit.slip_points) >= 2:
+        return PolylineSlipSurface(points=list(crit.slip_points))
+    return None
+
+
+def _locate(geom: SlopeGeometry, crit, n: int = 60) -> Dict[str, Any]:
+    """Where the governing surface lies (``SearchResult.governing_location``):
+    its ends, its lowest point, its greatest depth below the ground (what
+    tells a sliver from a slide), the layers along its base in order, and its
+    position against the slope's toe and crest (the tallest face group, in
+    multiples of its height H), so the engineer or the agent can judge what
+    the search covered. Empty when there is no surface."""
+    from slope_stability.search_ranges import face_groups
+    if crit is None:
+        return {}
+    slip = _surface_of(crit)
+    if slip is None:
+        return {}
+    x0, x1 = crit.x_entry, crit.x_exit
+    layers: List[str] = []
+    z_low = math.inf
+    depth = 0.0
+    for i in range(n + 1):
+        x = x0 + (x1 - x0) * i / n
+        z = slip.slip_elevation_at(x)
+        if z is None:
+            continue
+        z_low = min(z_low, z)
+        depth = max(depth, geom.ground_elevation_at(x) - z)
+        if i in (0, n):
+            continue                  # the ends are on the ground surface
+        lay = geom.layer_at_point(x, z)
+        if lay is None:
+            if z >= min(L.bottom_at(x) for L in geom.soil_layers):
+                continue
+            name = "below the deepest layer"
+        else:
+            name = lay.name
+        if not layers or layers[-1] != name:
+            layers.append(name)
+    out: Dict[str, Any] = {"x_entry": round(x0, 3), "x_exit": round(x1, 3),
+                           "z_lowest": round(z_low, 3),
+                           "depth": round(depth, 3), "layers": layers}
+    groups = face_groups(geom)
+    if groups and math.isfinite(z_low):
+        g = max(groups, key=lambda g: g["height"])
+        (xt, zt), (xk, _) = g["toe"], g["crest"]
+        s, h = g["rises"], g["height"]
+        toe_end, crest_end = (x0, x1) if s > 0 else (x1, x0)
+        out["slope"] = {
+            "toe": [round(xt, 3), round(zt, 3)],
+            "crest": [round(xk, 3), round(g["crest"][1], 3)],
+            "height": round(h, 3),
+            # + beyond the toe (away from the face), - up the face
+            "toe_side_end_beyond_toe_H": round(s * (xt - toe_end) / h, 3),
+            # + behind the crest, - down the face
+            "crest_side_end_behind_crest_H": round(s * (crest_end - xk) / h,
+                                                   3),
+            "lowest_below_toe_H": round((zt - z_low) / h, 3),
+        }
+    return out
+
+
+def _ranges_record(windows, grid, given, auto) -> Dict[str, Any]:
+    """The ranges the main search used, which of them it set itself, and
+    how (``SearchResult.search_ranges``)."""
+    r = lambda v: [round(v[0], 3), round(v[1], 3)]   # noqa: E731
+    rec: Dict[str, Any] = {}
+    if windows[0] is not None:
+        rec["x_entry_range"] = r(windows[0])
+    if windows[1] is not None:
+        rec["x_exit_range"] = r(windows[1])
+    if grid is not None:
+        rec["x_range"], rec["y_range"] = r(grid[0]), r(grid[1])
+    names = ("x_entry_range", "x_exit_range") + (
+        ("x_range", "y_range") if grid is not None else ())
+    rec["automatic"] = [n for n in names if given.get(n) is None]
+    if auto is not None and rec["automatic"]:
+        rec.update(auto.to_dict())
+    return rec
+
+
+def _clipped_range_warning(geom, crit, windows, windows_auto,
+                           auto) -> Optional[str]:
+    """Warning when the governing surface ends at an end of the ground
+    profile that cut an automatic window short (GM-57): the slope's own
+    reach (its height and the depth to the base below the toe) runs past
+    the model. Given only when the GM-63 check found no circle at least
+    1 % lower on the ground carried on level past the end, so it says
+    what that check does not cover."""
+    if crit is None or auto is None or not auto.clipped:
+        return None
+    x_min, x_max = geom.x_range
+    width = max(x_max - x_min, 1e-9)
+    hits = []
+    for key, end_x, i, edge in (("entry_lo", crit.x_entry, 0, x_min),
+                                ("exit_hi", crit.x_exit, 1, x_max)):
+        rng = windows[i]
+        if key not in auto.clipped or not windows_auto[i] or rng is None:
+            continue
+        tol = max(0.1 * abs(rng[1] - rng[0]), 0.02 * width)
+        if _near(end_x, edge, tol):
+            hits.append((end_x, edge, auto.clipped[key]))
+    if not hits:
+        return None
+    s = max(auto.slopes, key=lambda g: g["height"])
+    parts = [f"x = {end_x:.2f}, near the end of the ground surface at "
+             f"x = {edge:.2f} (the slope's reach runs to x = {want:.2f})"
+             for end_x, edge, want in hits]
+    return (
+        f"The critical surface ends at {' and '.join(parts)}: the model "
+        f"ends before the automatic entry / exit range would (a slope "
+        f"{s['height']:.2f} high with its base {s['depth_to_base']:.2f} "
+        f"below the toe), so no surface past the end was tried. Circles on "
+        f"the ground carried on level past the end are no lower; if the "
+        f"ground beyond the profile rises, falls or is a different soil, "
+        f"extend the profile and search again.")

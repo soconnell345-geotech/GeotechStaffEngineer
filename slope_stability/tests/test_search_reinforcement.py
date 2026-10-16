@@ -183,15 +183,18 @@ def _shell():
 
 
 def test_rapid_drawdown_search_runs_the_families():
+    """The circle search alone reaches a shallow circle on the face at the
+    closed form, 0.944 (above 1.3 with windows from the model width, before
+    GM-57); with the families on, a toe circle governs."""
     kw = dict(method="corps_2stage", surface_type="circular", nx=4, ny=4,
               n_slices=20)
     off = search_rapid_drawdown(_shell(), 20.0, 5.0, toe_circles=False,
                                 infinite_slope=False, **kw)
+    closed = math.tan(math.radians(37.0)) / 0.8
     assert off.search.governing_surface == CIRCULAR
-    assert off.FOS > 1.3
+    assert off.FOS == pytest.approx(closed, rel=0.005)
     on = search_rapid_drawdown(_shell(), 20.0, 5.0, **kw)
     cand = on.search.candidates
-    closed = math.tan(math.radians(37.0)) / 0.8
     assert cand[INFINITE_SLOPE] == pytest.approx(closed, rel=0.005)
     assert on.FOS <= cand[INFINITE_SLOPE] + 1e-9
     assert on.search.governing_surface in (TOE_CIRCLE, INFINITE_SLOPE)
@@ -284,22 +287,29 @@ def test_slide85_bishop_search_reverse_curvature_and_short_arm():
     Slide2's default closes such circles); the support passes 4.1 ft below
     its centre, so Bishop counts 29 % of it. The result says both, and that
     Spencer has no solution there. Discarding reverse-curvature circles
-    (Slide2's other choice) gives 1.503 active / 1.305 passive against D&W
-    1.51 / 1.32 and Slide2 1.531 / 1.324."""
+    (Slide2's other choice) gives 1.485 active / 1.302 passive at 30 slices
+    on a circle tangent to the base that enters the face just above the toe
+    (centre (17.3, 32.0), R 22, out at x = 39.2); the same circle at 240
+    slices gives 1.511 / 1.318 against D&W 1.51 / 1.32 (Slide2 1.531 /
+    1.324). Before GM-57 the automatic exit window, from x = 40.2, kept the
+    search off it, and the toe circle that governed, 1.503 / 1.305 at 30
+    slices, comes to 1.557 / 1.338 at 240."""
     res = search_critical_surface(_slide85c(), method="bishop")
     assert res.critical.FOS == pytest.approx(1.304, abs=0.005)
     text = " ".join(res.warnings)
     assert "reverse-curvature" in text and "5.89 m deep" in text
     assert "29 % of their force counts" in text
     assert "finds no equilibrium solution" in text
-    for convention, fos, dw in (("active", 1.503, 1.51),
-                                ("passive", 1.305, 1.32)):
-        r = search_critical_surface(
-            _slide85c(convention, reverse_curvature="discard"),
-            method="bishop")
-        assert r.critical.FOS == pytest.approx(fos, abs=0.005)
-        assert r.critical.FOS == pytest.approx(dw, rel=0.015)
-        assert r.critical.yc >= 30.0                 # centre above the crest
+    for convention, fos, dw in (("active", 1.485, 1.51),
+                                ("passive", 1.302, 1.32)):
+        g = _slide85c(convention, reverse_curvature="discard")
+        r = search_critical_surface(g, method="bishop")
+        c = r.critical
+        assert c.FOS == pytest.approx(fos, abs=0.005)
+        assert c.yc >= 30.0                          # centre above the crest
+        fine = analyze_slope(g, method="bishop", n_slices=240, xc=c.xc,
+                             yc=c.yc, radius=c.radius).FOS
+        assert fine == pytest.approx(dw, rel=0.005)
         assert not any("reverse-curvature" in w for w in r.warnings)
 
 

@@ -120,7 +120,8 @@ def test_reject_stats_counts_geometry():
     stats = _new_reject_stats()
     sliver = PolylineSlipSurface(points=[(50.0, 28.0), (52.0, 25.0), (54.0, 28.0)])
     assert _compute_fos(geom, sliver, "spencer", 30, reject_stats=stats) == _FOS_MAX
-    assert stats == {"geometry": 1, "nonconverged": 0, "jagged": 0}
+    assert stats == {"geometry": 1, "nonconverged": 0, "jagged": 0,
+                     "refused": None}
 
 
 def test_reject_stats_counts_degenerate_jagged():
@@ -274,3 +275,143 @@ def test_refinement_lowers_the_grid_on_admissible_circles(nx):
     assert x_lo <= c.xc <= x_hi and y_lo <= c.yc <= y_hi
     assert ref.n_surfaces_evaluated > plain.n_surfaces_evaluated
     assert len(plain.grid_fos) == nx * nx
+
+
+# ---------------------------------------------------------------------------
+# A "converged" rigorous state that is not an equilibrium solution (GM-57
+# review / GM-116): the searches keep a new best noncircular surface only if
+# its solution holds about a second moment axis and with one slice more.
+# ---------------------------------------------------------------------------
+
+def _cut_weak_clay_over_sandstone():
+    """A 10 m 1:1 cut: 3.5 m of weak clay over sandstone."""
+    return SlopeGeometry(
+        surface_points=[(0, 0), (20, 0), (30, 10), (60, 10)],
+        soil_layers=[
+            SlopeSoilLayer(name="residual clay", top_elevation=10,
+                           bottom_elevation=6.5, gamma=18.5, c_prime=3,
+                           phi=22),
+            SlopeSoilLayer(name="sandstone", top_elevation=6.5,
+                           bottom_elevation=-20, gamma=23, c_prime=200,
+                           phi=40)])
+
+
+def _v043_sand():
+    return SlopeGeometry(
+        surface_points=[(0, 9), (10, 9), (20, 3), (30, 3)],
+        soil_layers=[
+            SlopeSoilLayer(name="fill", top_elevation=9, bottom_elevation=3.0,
+                           c_prime=0.0, phi=37.0, gamma=17.0, gamma_sat=17.0),
+            SlopeSoilLayer(name="softclay", top_elevation=3,
+                           bottom_elevation=0.0, c_prime=20.0, phi=0.0,
+                           gamma=20.0, gamma_sat=20.0, cu=20.0,
+                           analysis_mode="undrained")])
+
+
+def _weak_over_rock():
+    return SlopeGeometry(
+        surface_points=[(0, 0), (20, 0), (30, 10), (60, 10)],
+        soil_layers=[
+            SlopeSoilLayer("weak", top_elevation=10, bottom_elevation=6,
+                           gamma=18, phi=26, c_prime=2),
+            SlopeSoilLayer("rock", top_elevation=6, bottom_elevation=-10,
+                           gamma=21, phi=40, c_prime=150)])
+
+
+# Three surfaces searches reported as critical, each with a rigorous state
+# GLE called converged at 30 slices, none an equilibrium solution:
+_SPURIOUS = [
+    # 13 m deep in the sandstone: 1.056 about gle's least-squares axis only
+    # (Fellenius 21.7, Spencer by analyze_slope: no solution).
+    (_cut_weak_clay_over_sandstone,
+     [(18.031825345654877, 0.0), (25.918399678269633, -10.16448190701636),
+      (33.80470085301144, -11.176172259294903),
+      (41.692487049717926, -13.264717299624271),
+      (49.57783909564785, 10.0)], 1.0563),
+    # V-043's sand fill, DE seed 1 before GM-57: 0.717 at lambda -0.35 about
+    # the pinned axis only; 29 / 31 slices give 1.90 / 1.55 at lambda +0.2.
+    (_v043_sand,
+     [(7.600990431562794, 9.0), (10.527033462319487, 2.6023385922059274),
+      (13.453076493076178, 0.4049644518072615),
+      (16.37911952383287, 0.7327078388145667),
+      (19.305162554589565, 3.4169024672462616)], 0.7172),
+    # diving at 75 deg into rock: 0.731 / 0.738 about two axes at 30 slices,
+    # no solution at 29, 31 or 60 (Janbu 0.42, Fellenius 8.5).
+    (_weak_over_rock,
+     [(26.98652054187706, 6.986520541877059),
+      (28.276212349877795, 2.092917772552611),
+      (29.56590415787853, -3.734401082000133),
+      (30.855595965879267, -2.0470654447606655),
+      (32.14528777388, 1.2942698853560426),
+      (33.43497958188074, 4.128710153451413),
+      (34.72467138988147, 10.0)], 0.7308),
+]
+
+
+@pytest.mark.parametrize("make, pts, spurious, why", [
+    (m, p, f, w) for (m, p, f), w in zip(_SPURIOUS, (
+        "one moment axis only", "one moment axis only",
+        "at 30 slices only, not at 31 or 60"))])
+def test_spurious_rigorous_state_is_not_kept(make, pts, spurious, why):
+    geom = make()
+    slip = PolylineSlipSurface(points=pts)
+    assert _compute_fos(geom, slip, "spencer", 30) == pytest.approx(
+        spurious, abs=1e-3)                    # what the scorer alone gives
+    stats = _new_reject_stats()
+    assert _compute_fos(geom, slip, "spencer", 30, reject_stats=stats,
+                        confirm_below=float("inf")) == _FOS_MAX
+    ref = stats["refused"]                     # kept, to be reported
+    assert ref["FOS"] == pytest.approx(spurious, abs=1e-3)
+    assert why in ref["reason"]
+    assert ref["x_entry"] == pytest.approx(pts[0][0], abs=1e-3)
+
+
+def test_valid_noncircular_solution_is_kept():
+    """A surface whose solution holds about every axis and with one slice
+    more keeps its FOS when confirmed."""
+    geom = _v043_sand()
+    slip = PolylineSlipSurface(points=[(4.8, 9.0), (9.22, 2.04),
+                                       (13.64, 0.37), (18.05, 0.23),
+                                       (22.47, geom.ground_elevation_at(22.47))])
+    plain = _compute_fos(geom, slip, "spencer", 30)
+    assert plain < 2.0
+    assert _compute_fos(geom, slip, "spencer", 30,
+                        confirm_below=float("inf")) == pytest.approx(plain)
+
+
+@pytest.mark.parametrize("seed", [1, 2])
+def test_noncircular_search_reports_a_reproducible_surface(seed):
+    """GM-116 review: on the weak clay over sandstone the random noncircular
+    search reported FS 0.90 (1.06 later) on the spurious deep surface above.
+    Now the surface it reports is one analyze_slope solves with Spencer to
+    the same FOS."""
+    from slope_stability.analysis import analyze_slope, search_critical_surface
+    geom = _cut_weak_clay_over_sandstone()
+    res = search_critical_surface(geom, method="spencer",
+                                  surface_type="noncircular", seed=seed,
+                                  n_trials=200)
+    c = res.critical
+    again = analyze_slope(geom, slip_surface=PolylineSlipSurface(
+        points=list(c.slip_points)), method="spencer", n_slices=30)
+    assert again.method_solved
+    assert again.FOS == pytest.approx(c.FOS, rel=1e-3)
+
+
+def test_a_refused_lowest_surface_is_reported():
+    """GM-57 re-review: when the check refuses the lowest surface a search
+    found, the result says so (FOS, where, why) instead of only counting
+    it. Directed DE on the weak layer over rock: every surface it reaches
+    below the rock outcrop solves about one moment axis only; none holds,
+    so no surface is reported, and the warning says why."""
+    from slope_stability.analysis import search_critical_surface
+    res = search_critical_surface(_weak_over_rock(), method="spencer",
+                                  surface_type="noncircular_de", seed=1,
+                                  x_entry_range=(25.5, 28.0),
+                                  x_exit_range=(29.0, 40.0))
+    ref = res.refused_lowest
+    assert ref is not None and "one moment axis only" in ref["reason"]
+    assert res.critical is None
+    w = [w for w in res.warnings if w.startswith("The lowest surface found")]
+    assert len(w) == 1 and "No other surface held" in w[0]
+    assert res.to_dict()["refused_lowest"]["FOS"] == ref["FOS"]
+

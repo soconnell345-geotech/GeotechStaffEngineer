@@ -66,8 +66,10 @@ def test_brute_force_toe_circle_value():
 
 
 def test_search_finds_toe_circle():
-    """GM-13: the default search now reports the toe circle (~2.287), not
-    the window-limited grid circle (~2.78), and says so."""
+    """GM-13: the default search reports the toe circle (~2.287) and says
+    so. Its centre is below the crest, under any centre grid; the grid's
+    own minimum, 2.78 while the windows were fractions of the model width,
+    is 2.344 with ranges set from the slope (GM-57)."""
     res = search_critical_surface(_toe_geom(), method="bishop", n_slices=40)
     c = res.critical
     assert c.FOS == pytest.approx(2.287, abs=0.02)
@@ -76,7 +78,7 @@ def test_search_finds_toe_circle():
     assert c.is_circular
     assert c.x_entry == pytest.approx(0.0, abs=0.05)       # through the toe
     assert c.x_exit == pytest.approx(7.1, abs=0.6)
-    assert res.candidates[CIRCULAR] > 2.7                  # the old answer
+    assert res.candidates[CIRCULAR] == pytest.approx(2.344, abs=0.01)
     assert res.candidates[TOE_CIRCLE] == pytest.approx(c.FOS, abs=1e-4)
     assert any("toe circle governs" in w for w in res.warnings)
 
@@ -91,23 +93,32 @@ def test_toe_circle_mirrored_slope():
 
 
 def test_toe_circles_off_reproduces_old_search():
-    """toe_circles=False with refine=False is the previous behaviour, with an
-    edge warning: the window-limited circle exits on the lower edge of the
-    automatic exit window. The refined grid (the default since GM-87) finds
-    a slightly lower circle on the same edge, still far above the toe
-    circle (2.287)."""
+    """toe_circles=False with refine=False is the grid alone. With windows
+    set as fractions of the model width it read 2.784, its circle cut off
+    on the lower edge of the automatic exit window (15, against the toe
+    circle's crest end at 7.1); with the windows set from the slope
+    (GM-57: the end on the crest side may lie anywhere from the face's
+    mid-length) the grid reads 2.360 and the refined grid (the default
+    since GM-87) 2.344, still above the toe circle (2.287), whose centre
+    lies below the crest. The given old windows reproduce the old grid."""
     old = search_critical_surface(_toe_geom(), method="bishop", n_slices=40,
-                                  toe_circles=False, refine=False)
+                                  toe_circles=False, refine=False,
+                                  x_entry_range=(0.0, 10.0),
+                                  x_exit_range=(15.0, 25.0),
+                                  x_range=(0.0, 25.0), y_range=(6.0, 15.0))
     assert old.critical.FOS == pytest.approx(2.784, abs=0.01)
     assert old.governing_surface == CIRCULAR
-    assert any("edge of the automatic x_exit_range" in w
-               for w in old.warnings)
+    assert any("edge of the given x_exit_range" in w for w in old.warnings)
+    grid = search_critical_surface(_toe_geom(), method="bishop", n_slices=40,
+                                   toe_circles=False, refine=False)
+    assert grid.critical.FOS == pytest.approx(2.360, abs=0.01)
     res = search_critical_surface(_toe_geom(), method="bishop", n_slices=40,
                                   toe_circles=False)
-    assert 2.7 < res.critical.FOS < old.critical.FOS
+    assert 2.287 < res.critical.FOS <= grid.critical.FOS
+    assert res.critical.FOS == pytest.approx(2.344, abs=0.01)
     assert res.governing_surface == CIRCULAR
-    assert any("edge of the automatic x_exit_range" in w
-               for w in res.warnings)
+    assert not any("x_exit_range" in w for w in res.warnings)
+    assert res.search_ranges["x_exit_range"] == [2.5, 25.0]
 
 
 def test_profile_end_check_covers_noncircular_surfaces():
@@ -115,8 +126,10 @@ def test_profile_end_check_covers_noncircular_surfaces():
     profile is checked as a circle is (GM-63): circles about the circle
     through its ends and its lowest point, on the ground carried on level
     past the end. This model starts at the toe; a random noncircular search
-    enters there at 3.863, and a circle past the left end gives 2.215
-    (Spencer; the profile-end circle of the circular search is 2.237)."""
+    enters there at 4.82 (3.86 with windows set from the model width, before
+    GM-57: the random surfaces are drawn inside the windows), and a circle
+    past the left end gives 2.252 (Spencer; the profile-end circle of the
+    circular search is 2.237)."""
     res = search_critical_surface(_toe_geom(), method="spencer",
                                   surface_type="noncircular", seed=1,
                                   n_trials=300)
@@ -126,7 +139,7 @@ def test_profile_end_check_covers_noncircular_surfaces():
     assert w[0].startswith("The critical surface ends near")
     f = float(re.search(r"gives FOS ([0-9.]+)", w[0]).group(1))
     assert f < 0.99 * res.critical.FOS
-    assert f == pytest.approx(2.215, abs=0.03)
+    assert f == pytest.approx(2.252, abs=0.03)
 
 
 def test_toe_circles_honour_given_windows():
@@ -168,26 +181,46 @@ def test_toe_search_respects_centre_ranges():
 
 def test_search_finds_infinite_slope_86():
     """GM-14: Slide2 #86 without supports -- the default search reports the
-    shallow planar slide at tan(phi')/tan(beta) = 0.942, not ~1.57."""
+    shallow slide at tan(phi')/tan(beta) = 0.942. The circle search's own
+    minimum was ~1.57 with windows from the model width; with windows from
+    the slope (GM-57: a circle across the face's mid-length) it reaches a
+    tiny shallow circle at the closed form itself, 0.9420, against 0.9443
+    for the planar surfaces (Janbu's f0, +0.25 %). It governs, and the
+    result says it is the infinite-slope mechanism (and gives no window-edge
+    warning: shallower slides only tend to the same value)."""
     res = search_critical_surface(_fill_geom(), method="bishop")
     c = res.critical
-    assert c.FOS == pytest.approx(_TAN_RATIO_86, abs=0.01)
-    assert res.governing_surface == INFINITE_SLOPE
-    assert not c.is_circular and len(c.slip_points) == 4
-    assert c.method == "Janbu"           # force equilibrium, as the closed form
-    assert res.candidates[CIRCULAR] > 1.5        # the old answer
+    assert c.FOS == pytest.approx(_TAN_RATIO_86, abs=0.002)
+    assert res.governing_surface in (INFINITE_SLOPE, CIRCULAR)
+    assert res.candidates[CIRCULAR] == pytest.approx(_TAN_RATIO_86, abs=0.002)
+    assert res.candidates[INFINITE_SLOPE] == pytest.approx(0.9443, abs=0.001)
+    assert any("infinite slope" in w for w in res.warnings)
+    assert not any("edge of the automatic" in w for w in res.warnings)
     chk = res.infinite_slope_checks
     assert len(chk) == 1
     assert chk[0]["layer"] == "fill"
     assert chk[0]["slope_angle_deg"] == pytest.approx(38.66, abs=0.01)
     assert chk[0]["FOS_dry_closed_form"] == pytest.approx(_TAN_RATIO_86,
                                                           abs=1e-4)
-    assert any("infinite slope" in w for w in res.warnings)
     d = res.to_dict()
-    assert d["governing_surface"] == INFINITE_SLOPE
-    assert d["critical"]["surface_type"] == "noncircular"
+    assert d["governing_surface"] == res.governing_surface
     assert d["infinite_slope_checks"][0]["FOS"] == pytest.approx(
-        c.FOS, abs=1e-3)
+        res.candidates[INFINITE_SLOPE], abs=1e-3)
+
+
+def test_planar_family_alone_on_86_is_janbu():
+    """With the circles kept off the face (windows that make a circle
+    span it), the planar family governs on its own, scored by force
+    equilibrium as the closed form is."""
+    res = search_critical_surface(_fill_geom(), method="bishop",
+                                  x_entry_range=(0.0, 5.0),
+                                  x_exit_range=(30.0, 75.0))
+    c = res.critical
+    assert res.governing_surface == INFINITE_SLOPE
+    assert not c.is_circular and len(c.slip_points) == 4
+    assert c.method == "Janbu"
+    assert c.FOS == pytest.approx(_TAN_RATIO_86, abs=0.01)
+    assert res.to_dict()["critical"]["surface_type"] == "noncircular"
 
 
 def _closed_form(beta_deg, phi_deg, kh=0.0, ru=0.0):
@@ -255,11 +288,15 @@ def test_infinite_slope_excluded_by_windows_is_warned():
 
 def test_infinite_slope_off_and_cohesive_soil():
     """infinite_slope=False skips the family; a c' > 0 face has no
-    cohesionless run at all."""
+    cohesionless run at all. The circle search alone reaches a tiny shallow
+    circle at the closed form; with the planar family off nothing says it
+    is the infinite slope, and the window-edge warnings stand."""
     res = search_critical_surface(_fill_geom(), method="bishop",
                                   infinite_slope=False, toe_circles=False)
     assert res.governing_surface == CIRCULAR
-    assert res.critical.FOS > 1.5
+    assert res.critical.FOS == pytest.approx(_TAN_RATIO_86, abs=0.002)
+    assert any("edge of the automatic x_entry_range" in w
+               for w in res.warnings)
     g = _fill_geom()
     g.soil_layers[0].c_prime = 5.0
     assert cohesionless_face_runs(g) == []

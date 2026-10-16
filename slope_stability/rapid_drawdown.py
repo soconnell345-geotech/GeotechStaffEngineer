@@ -270,6 +270,29 @@ def _pool_geometry(geom: SlopeGeometry, water_elevation: float) -> SlopeGeometry
     return g
 
 
+def _fellenius_effective_normal(s) -> float:
+    """Fellenius / OMS estimate of the effective normal stress on a slice
+    base, W cos(alpha) / l - u, with the free water ponded on the ground
+    above the slice taken out of both terms.
+
+    Ponded water is a hydrostatic load: it raises the total normal stress
+    and the pore pressure on the base by the same amount and changes no
+    effective stress (FHWA NHI-06-088 p. 6-13: total weights with the
+    boundary water forces, or submerged weights, give the same result).
+    The OMS estimate leaves out the slice's side forces, which carry that
+    balance, so with the pond's weight in W and its head in u it counted
+    the pond's pressure in full on the base but its weight only at
+    cos^2(alpha). Under a deep pool on an inclined base sigma' came out
+    negative and was clamped to zero, and the stage-3 drained substitution
+    then gave no strength at all: the true Pilarcitos section drawn down,
+    a toe circle under the remaining pool, DWW 0.052 (2.048 with the
+    rigorous 'gle' normal). Without a pond the value is the historical one.
+    """
+    q = s.pond_force / s.width if s.width > 0 else 0.0
+    return max((s.weight - s.pond_force) * math.cos(s.alpha) / s.base_length
+               - (s.pore_pressure - q), 0.0)
+
+
 def _base_layer(geom: SlopeGeometry, s):
     lay = geom.layer_at_point(s.x_mid, s.z_base)
     return lay if lay is not None else geom.soil_layers[-1]
@@ -386,8 +409,10 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
         stage 3).
 
         * ``'fellenius'`` (**default**) — the Fellenius / OMS per-slice estimate
-          ``sigma'_post = W*cos(alpha)/l - u`` on the drawn-down geometry. This is
-          the historical behaviour and is preserved byte-for-byte as the default.
+          ``sigma'_post = W*cos(alpha)/l - u`` on the drawn-down geometry, with
+          water ponded above a slice taken out of both W and u (a pond changes
+          no effective stress; see ``_fellenius_effective_normal``). Without a
+          pond it is the historical value, byte-for-byte.
         * ``'gle'`` — the RIGOROUS effective normal from a GLE solve of the
           drawn-down slope with the drained strengths (the same
           ``base_normal_eff`` basis stage 1 uses for ``sigma'_fc``). The Fellenius
@@ -443,8 +468,7 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
             "consolidation stresses fell back to a Fellenius effective-normal "
             "estimate.")
         # fall back to a Fellenius effective-normal estimate if GLE stalls
-        sigma_fc = [max(s.weight * math.cos(s.alpha) / s.base_length
-                        - s.pore_pressure, 0.0) for s in sl1]
+        sigma_fc = [_fellenius_effective_normal(s) for s in sl1]
         tau_fc = [abs(s.weight * math.sin(s.alpha)) / s.base_length for s in sl1]
         stage1_fos = res1.fos
     else:
@@ -534,8 +558,7 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
             if sig_post_gle is not None:
                 sig_post = sig_post_gle[j]
             else:
-                sig_post = max(s.weight * math.cos(s.alpha) / s.base_length
-                               - s.pore_pressure, 0.0)
+                sig_post = _fellenius_effective_normal(s)
             s_drained_post = lay.c_prime + sig_post * math.tan(math.radians(lay.phi))
             if s_drained_post < s_und:
                 s_und = s_drained_post
@@ -712,22 +735,12 @@ def search_rapid_drawdown(geom: SlopeGeometry,
     windows_auto = (x_entry_range is None, x_exit_range is None)
     grid_auto = x_range is None and y_range is None
 
-    # Auto entry/exit windows from the geometry (mirrors search_critical_surface).
-    x_min_geo = geom.surface_points[0][0]
-    x_max_geo = geom.surface_points[-1][0]
-    if x_entry_range is None:
-        x_entry_range = (x_min_geo, x_min_geo + (x_max_geo - x_min_geo) * 0.4)
-    if x_exit_range is None:
-        x_exit_range = (x_min_geo + (x_max_geo - x_min_geo) * 0.6, x_max_geo)
+    # Ranges not given are set from the slope (as search_critical_surface).
+    from slope_stability.search_ranges import resolve_ranges
+    x_entry_range, x_exit_range, x_range, y_range, auto = resolve_ranges(
+        geom, x_entry_range, x_exit_range, x_range, y_range)
 
     if surface_type == "circular":
-        if x_range is None:
-            x_range = (x_min_geo, x_max_geo)
-        if y_range is None:
-            z_min = min(z for _, z in geom.surface_points)
-            z_max = max(z for _, z in geom.surface_points)
-            slope_h = z_max - z_min
-            y_range = (z_max + 1.0, z_max + 2.0 * slope_h)
         search = grid_search(
             geom, x_range, y_range, nx, ny, method="spencer",
             n_slices=n_slices, tol=tol, x_entry_range=x_entry_range,
@@ -759,7 +772,8 @@ def search_rapid_drawdown(geom: SlopeGeometry,
         windows_auto=windows_auto,
         grid_used=(x_range, y_range) if surface_type == "circular" else None,
         grid_auto=grid_auto, toe_circles=toe_circles,
-        infinite_slope=infinite_slope, fos_fn=_dd_fos, **given)
+        infinite_slope=infinite_slope, fos_fn=_dd_fos, auto_ranges=auto,
+        **given)
 
     # Recompute the stage-level detail on the winning surface.
     dd = None

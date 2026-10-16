@@ -27,13 +27,15 @@ stabilizing piles in every method (`reinforcement.py`).
 - `methods.py` — fellenius_fos(), bishop_fos(), spencer_fos() / morgenstern_price_fos() (wrappers of the rigorous `gle.gle_fos`; the `*_legacy` approximate forms are the fallback), solve_rigorous()
 - `gle.py` — the rigorous general limit equilibrium (Fredlund & Krahn 1977; supports by the slice-by-slice march of Zhu et al. 2005, GM-60) and janbu_fos()
 - `reinforcement.py` — nails, anchors, geosynthetics and stabilizing piles as forces at the base of the slice each crosses, in every method (GM-53, GM-59)
-- `search.py` — optimize_radius(), grid_search() (with the local refinement of its lowest centres, GM-87), search_noncircular(), entry/exit filtering
+- `search.py` — optimize_radius(), grid_search() (with the local refinement of its lowest centres, GM-87), search_noncircular(), entry/exit filtering; a rigorous noncircular solution must hold about a second axis and slicing (`_solution_fails`, GM-57 review)
 - `search_supplements.py` — toe-circle and infinite-slope (shallow planar) families scored after every `search_critical_surface` (GM-13, GM-14)
+- `search_ranges.py` — the automatic entry / exit windows and centre ranges, set from the slope's toe, crest, height and depth to the base (GM-57)
 - `analysis.py` — analyze_slope(), search_critical_surface() orchestrators
 - `results.py` — SliceData, SlopeStabilityResult, SearchResult
 - `nails.py` — SoilNail, NailContribution (nails reach the FOS through `reinforcement.py`)
-- `tests/` — 539 tests in 26 files (collected 2026-10-15), among them:
-- `tests/test_slope_stability.py` — 91 tests (core + entry/exit limits + noncircular search)
+- `tests/` — 574 tests in 27 files (collected 2026-10-16), among them:
+- `tests/test_slope_stability.py` — 92 tests (core + entry/exit limits + noncircular search; Taylor's phi = 0 chart, GM-57)
+- `tests/test_search_ranges.py` — 23 tests (the automatic ranges; a directed search and what the result says it covered; the same slope drawn narrow and wide, GM-57)
 - `tests/test_duncan_verification.py` — 28 tests (Duncan §7.6-7.7 verification examples; Ex 1 against Taylor's chart, GM-63, and the default search on long profiles, GM-87)
 - `tests/test_nails.py` — 38 tests + 16 skipped (nail intersection/pullout/capacity; the skipped ones test the old nail path, replaced by `reinforcement.py`)
 - `tests/test_reinforcement.py`, `tests/test_search_reinforcement.py` — 22 + 33 tests (supports in each method; supports in searches, GM-53, GM-54, GM-59, GM-60)
@@ -158,6 +160,129 @@ the crest, between two of them, and the grid read 0.739 against 0.705 at D = 2
   reuse in `optimize_radius` more than pays for the walk); rapid-drawdown circular
   searches +4 to +6 s (#98 Corps 8.5 -> 12.2 s, Pilarcitos 18.5 -> 19.4 s).
 
+### Automatic search ranges (GM-57, 2026-10-16)
+Ranges the caller does not give are set from the slope, not from the width of
+the model (`search_ranges.py`; `search_critical_surface` and
+`search_rapid_drawdown`). Before, they were fractions of the profile (entry in
+the first 40 %, exit in the last 40 %, centres over the whole profile from
+1 unit above the highest ground to 2 H above it), so the answer depended on how
+the model was drawn: an off-centre slope had its critical surface cut off by a
+window, and a model drawn wide put the split between the windows out on the
+level ground (only large circles admissible) and spread the grid thin.
+
+- **The slope.** The faces of the ground (`slope_faces`) grouped by the way
+  they rise; each group's lowest toe, highest crest and height H. A group less
+  than a third as tall as the tallest is left out; an embankment, a dam or a
+  cut gives two groups and their windows are joined.
+- **Depth to the base** d, from the toe to the bottom of the deepest layer:
+  Taylor's firm base (FHWA NHI-06-088 Fig. 6-15, after Taylor 1948; depth
+  factor D = 1 + d/H) and Janbu's d = D/H (Fig. 6-16). The model base, not a
+  firm layer above it: a firm layer only shortens the circle, so the base
+  gives the wider range.
+- **Centre heights** from 0.1 H to max(2 H, d) above the highest ground over
+  the centre range. Janbu's charts (FHWA NHI-06-088 Figs. 6-16 and 6-19) put
+  the critical centre 1.35-3 H above the toe for depth factors up to 3;
+  midpoint circles rise with d.
+- **Reach**, the deepest circle the grid holds (tangent to the base from a
+  centre at the grid's top, Y above the toe): sqrt(d (2Y + d)) beyond the toe
+  (a 2 % of H slack when the base is at the toe: nothing comes out beyond it)
+  and sqrt((Y + d)^2 - (Y - H)^2) behind the crest. Taylor's critical circles,
+  from independent phi = 0 optimisations, stay inside with room to spare:
+
+  | Case (Taylor) | Out beyond the toe | In behind the crest |
+  |---|---|---|
+  | 2:1, D = 2 | 1.19 H (reach 2.65 H) | 1.76 H (3.46 H) |
+  | 2:1, D = 3 | 2.69 H (4.0 H) | 3.2 H (4.58 H) |
+  | 1:1, D = 2.25 | 1.96 H (3.01 H) | 2.45 H (3.75 H) |
+
+- **Windows.** The end on a group's toe side lies from the toe's reach to the
+  face's mid-length; the end on the crest side from the mid-length to the
+  crest's reach. The centre grid spans the windows (a circle's centre lies
+  between its ends), so its spacing follows the slope. Caller-given windows
+  widen an automatic centre range to cover them. A split nearer the toe and
+  the crest (the middle third) was tried and rejected: it hid the circle
+  above the geosynthetic in reinforced ACADS 1(a) (1.105 became 1.267, the
+  unsafe side).
+- **No least length.** A tiny circle straddling the mid-length of a c' = 0
+  face is admitted, and it IS the answer there: shallower slides tend to the
+  infinite slope, tan(phi')/tan(beta) (Slide2 #86 without supports: a circle
+  0.4 ft long at 0.9420, the closed form 0.9419, against 0.9443 for the
+  planar surfaces with Janbu's f0). It governs, and the result says it is the
+  infinite-slope mechanism (the planar-tie note, with no window-edge
+  warnings, as shallower slides only tend to the same value). A least length
+  of H/2 was tried in review and dropped: it was a rule the search added,
+  and it also hid a 4.6 m circle in a 4 m weak layer over rock.
+- **Not a judgment about the ground.** The automatic ranges serve the slope as
+  a whole. A failure confined to part of the face -- a weak layer above the
+  toe, a slide above the water outside the slope (FHWA NHI-06-088 p. 6-38) --
+  is the engineer's or the agent's call to search for, by giving the windows;
+  the search does not detect such layers itself (the owner's ruling,
+  2026-10-16). On a 10 m 1:1 cut with 4 m of weak soil over rock the default
+  search reads 4.82 (5.25 before GM-57) where the circle in the weak layer
+  gives 0.885 (a 20 x 20 search with both windows over the whole profile);
+  directed (entry 25.5-28, exit 29-40) it finds 0.895 on the default grid,
+  0.889 on 20 x 20, 0.888 by entry / exit.
+- **The model's ends.** A range the end of the profile cuts is recorded
+  (`SearchResult.search_ranges["clipped"]`: where the slope called for it);
+  when the governing surface ends at such a cut and the GM-63 check finds no
+  lower circle on level ground past the end, a warning says the model is
+  shorter than the slope's reach.
+- **Reported, so the coverage can be judged.** `SearchResult.search_ranges`:
+  the ranges used, which were automatic, the slopes they came from with toe,
+  crest, H, d and both reaches, and the cuts. `SearchResult.governing_location`:
+  the governing surface's ends, lowest point, greatest depth below the
+  ground (what tells a sliver from a slide), the layers along its base in
+  order, and its ends and depth against the slope's toe and crest in
+  multiples of H. `SearchResult.refused_lowest` (below): the lowest surface
+  the search refused. All in `to_dict()` and `summary()`. Level ground (no
+  face) keeps the old fractions.
+- **What moved** (VALIDATION.md B14): every published benchmark still passes;
+  the critical FOS fell wherever a window had held the search off a surface
+  (soft foundation drawn off-centre 0.782 -> 0.676, Taylor 0.679; Slide2 #85
+  discard 1.503 -> 1.485, a circle that converges to D&W's 1.51 where the old
+  toe circle converges to 1.557), and on c' = 0 faces the circle search now
+  reaches the infinite slope itself (Duncan Ex 2 / Ex 4 1.6816 / 2.3474 ->
+  1.6782 / 2.3442, the closed forms 1.678 / 2.344). Rose: an entry/exit
+  search's 10 x 10 points over the wider windows (V-042 1.325 -> 1.332, toward
+  the published 1.334 / 1.340) and random noncircular searches with few
+  trials, whose draws now fall on the face too (seed-dependent both ways).
+  The Pilarcitos rapid-drawdown tests give the deep slide's windows: the
+  automatic ones find the rapid-drawdown infinite slope, a sliver of a
+  circle about an inch deep on the face above the remaining pool at
+  (gamma'/gamma) tan(phi')/tan(beta) = 1.075 (Lowe-Karafiath / DWW, true
+  section), reported as that mechanism and pinned in its own test;
+  whether the published values belong to a deep slide cannot be checked from
+  the reference library.
+- **Runtime**: unchanged for models drawn about 1-2 H each side; a wide model's
+  grid is now denser over the slope, at the same number of centres.
+
+### Rigorous noncircular solutions must hold (GM-57 review, GM-116)
+A noncircular surface scored by Spencer / Morgenstern-Price / GLE is kept as a
+search's new best only if its solution holds about a second moment axis (two of
+gle's least-squares axis, the pinned axis and the pinned axis raised by the
+span agree within 2 %) and with one slice more or twice as many (a converged
+solution within 50 %): `search._solution_fails`, run through
+`_compute_fos(confirm_below=best so far)` by the random, weak-layer, PSO and
+DE searches. A refused surface is not only counted
+(`n_rejected_nonconverged`): the lowest one is kept in
+`SearchResult.refused_lowest` (FOS, where, why: "solved about one moment axis
+only" / "at 30 slices only, not at 31 or 60"), and when it is below the
+reported FOS, or nothing held, a warning says so ("The lowest surface found,
+FOS X (x = a to b), did not hold: ..."), so the user can judge what the search
+covered. Spencer and GLE satisfy force and moment equilibrium, so their
+solution does not depend on the moment axis; a state that "converges" about
+one axis or at one slice count is a solver artefact, and the searches had been
+reporting such states as critical:
+
+| Surface | Reported | What held |
+|---|---:|---|
+| 10 m 1:1 cut, 3.5 m weak clay over sandstone, random search: a surface 13 m deep in the sandstone | 0.90 (HEAD) / 1.06 | about gle's least-squares axis only; analyze_slope's Spencer: no solution; Fellenius 21.7 |
+| V-043 sand fill, DE seed 1 | 0.717 (HEAD) | about the pinned axis only, at lambda -0.35; 29 / 31 slices give 1.90 / 1.55 at lambda +0.2 |
+| 4 m weak layer over rock, directed DE: a surface diving at 75 deg into the rock | 0.731 | about two axes at 30 slices; none at 29, 31 or 60 (Janbu 0.42, Fellenius 8.5) |
+
+The check runs only when a surface would become the best (a few times a
+search). A surface that fails is counted with the non-converged rejections.
+
 ### Noncircular Random Search
 - `search_noncircular(geom, n_trials, n_points, x_entry_range, x_exit_range, ...)` — random polylines
 - Generates random polyline surfaces between entry and exit x-ranges
@@ -171,17 +296,30 @@ search, with the same method, and reports the lowest surface
 (`search_supplements.apply_supplements`). Both close cases where the search
 reported a factor of safety that was too HIGH.
 
-- **Why.** The automatic windows come from the MODEL extent, not the slope:
-  entry in the first 40 % of the width, exit in the last 40 %, circle
-  centres from 1 unit above the crest. A slope that does not sit in the
-  middle of its model is under-sampled. Steep phi = 0 slope, H = 5 m at
+- **Why.** Until GM-57 the automatic windows came from the MODEL extent,
+  not the slope: entry in the first 40 % of the width, exit in the last
+  40 %, circle centres from 1 unit above the crest. A slope that does not
+  sit in the middle of its model was under-sampled. Steep phi = 0 slope, H = 5 m at
   45 deg, su = 40, model starting at the toe (V-054): the critical toe
   circle exits the crest at x = 7.1, inside the automatic exit window's
   lower bound (15), and its centre (2.5, 4.0) is below the crest, under the
-  grid. Grid 2.78; true 2.287. And with c' = 0 the critical failure is not
-  a circle at all but the shallow planar slide parallel to the face, which
-  no circle of finite depth reaches: Slide2 #86 without its supports, grid
-  1.57 against tan 37 / tan 38.66 = 0.942.
+  grid. Grid 2.78; true 2.287 (with the ranges set from the slope, GM-57,
+  the grid reads 2.344: the toe circle's centre is still below it). And
+  with c' = 0 the critical failure is not a circle at all but the shallow
+  planar slide parallel to the face, which no circle of finite depth
+  reaches: Slide2 #86 without its supports, grid 1.57 (0.974 since GM-57)
+  against tan 37 / tan 38.66 = 0.942. Where a circle wins (the main search
+  can now reach the shallow slide), lies on the cohesionless face, is
+  shallow (its deepest point within a twentieth of its length) and comes
+  within 2 % of what the infinite slope gives there -- the planar surfaces'
+  FOS, tan(phi')/tan(beta) for a dry face, or (gamma'/gamma) tan(phi') /
+  tan(beta) for a face saturated to the surface with seepage parallel to it
+  (Duncan, Wright & Brandon 2014, Ch. 14; `infinite_slope_fos`), the
+  saturated face a rapid drawdown leaves, where the planar family's own
+  drawdown solve can fail -- the result says it is the infinite-slope
+  mechanism and gives no window-edge warnings; a deep circle scoring about
+  the same is not called that. `infinite_slope_checks` carry both closed
+  forms (`FOS_dry_closed_form`, `FOS_seepage_closed_form`).
 - **Toe circles** (Taylor 1937; Duncan, Wright & Brandon 2014): for each
   slope face (`slope_faces`: maximal runs of segments steeper than 5 deg
   rising the same way; a flat stretch ends a face, so each bench has its own
@@ -676,6 +814,26 @@ has no solution:
     representative-flow-net + LE-N'-at-FOS sensitivity that shows as the +0.6% Corps
     residual). **Default is `'fellenius'` (byte-identical to before);** the refinement
     is opt-in. Only the 3-stage has a stage 3, so the 2-stage is untouched.
+    The default is the Ordinary Method of Slices estimate of the normal, as
+    FHWA NHI-06-088 sets the method out (pp. 6-12 to 6-13: the side forces
+    ignored, the uplift at the base taken off the total weight);
+    'gle' takes the normal from a rigorous equilibrium solution, the basis
+    stage 1 uses, and comes closer to Duncan, Wright & Wong (1990)'s published
+    3-stage values (#96: 1.31 / 1.37 against 1.443; 'fellenius' 1.235 /
+    1.273). The default stays 'fellenius' by the owner's ruling.
+  * **The Fellenius normal under the remaining pool (GM-57 review).** Water
+    ponded above a slice raises its total normal stress and its pore pressure
+    equally (FHWA NHI-06-088 p. 6-13: total weights with the boundary water
+    forces, or submerged weights, give the same result), but the per-slice
+    `W·cosα/l − u` counted the pond's pressure on the base in full and its
+    weight only at cos²α. Under a deep pool on an inclined base σ'_post went
+    negative, was clamped to zero, and the drained substitution left no
+    strength: the true Pilarcitos section searched fully automatically gave
+    DWW 0.052 on a toe circle wholly under the remaining pool (2.048 with
+    'gle'). `_fellenius_effective_normal` takes the pond out of both W and u:
+    that circle now gives 1.57; slices with no pond are byte-identical. (The
+    stage-1 fallback, used when the full-pool GLE fails, uses the same
+    estimate.) The default stays `'fellenius'` (the owner's ruling).
 - **Rapid-drawdown critical-surface search (v5.4 E1)** — `rapid_drawdown.
   search_rapid_drawdown(geom, from_el, to_el, method=…, surface_type='circular'|
   'entry_exit'|'noncircular'|'noncircular_de', …)` → `RapidDrawdownSearchResult`

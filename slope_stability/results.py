@@ -614,6 +614,27 @@ class SearchResult:
         the surface: x range, slope angle beta, layer, phi', the dry
         closed-form tan(phi')/tan(beta) and the FOS of the shallow planar
         surfaces evaluated there (None if not evaluated, with a note).
+    search_ranges : dict
+        The entry / exit windows and centre ranges the main search used
+        (x_entry_range, x_exit_range, and x_range / y_range for a centre
+        grid), ``automatic`` naming those it set itself, and for those how
+        (GM-57, ``search_ranges.py``): ``basis``, the ``slopes`` they were
+        set from (toe, crest, height, depth to the base, reach beyond the
+        toe and behind the crest) and ``clipped`` (a bound the model's end
+        cut short: where the slope called for it).
+    governing_location : dict
+        Where the governing surface lies (GM-57): ``x_entry`` / ``x_exit``,
+        ``z_lowest``, the ``layers`` along its base in order, and ``slope``:
+        the tallest face's toe, crest and height H, and the surface's ends
+        and lowest point against them in multiples of H, and its greatest
+        ``depth`` below the ground.
+        With ``search_ranges`` it says what the search covered.
+    refused_lowest : dict or None
+        The lowest noncircular surface a search refused because its
+        rigorous solution did not hold (about one moment axis only, or at
+        one slicing only; `search._solution_fails`): ``FOS``, ``reason``,
+        ``x_entry`` / ``x_exit`` and ``points``. A warning says so when it
+        is below the reported FOS. None when nothing was refused.
     """
     critical: Optional[SlopeStabilityResult] = None
     n_surfaces_evaluated: int = 0
@@ -626,6 +647,9 @@ class SearchResult:
     candidates: Dict[str, float] = field(default_factory=dict)
     warnings: List[str] = field(default_factory=list)
     infinite_slope_checks: List[Dict[str, Any]] = field(default_factory=list)
+    search_ranges: Dict[str, Any] = field(default_factory=dict)
+    governing_location: Dict[str, Any] = field(default_factory=dict)
+    refused_lowest: Optional[Dict[str, Any]] = None
 
     def summary(self) -> str:
         lines = [
@@ -656,6 +680,22 @@ class SearchResult:
             for kind, fos in self.candidates.items():
                 lines.append(f"    {describe_surface_kind(kind):<48s} "
                              f"{fos:.3f}")
+        gl = self.governing_location
+        if gl.get("layers"):
+            lines.append(f"  Governing surface: x {gl['x_entry']:.2f} to "
+                         f"{gl['x_exit']:.2f}, lowest z {gl['z_lowest']:.2f}, "
+                         f"at most {gl.get('depth', 0.0):.2f} deep, "
+                         f"through {', '.join(gl['layers'])}")
+        sr = self.search_ranges
+        if sr.get("automatic"):
+            ranges = ", ".join(
+                f"{n} {sr[n][0]:.2f} to {sr[n][1]:.2f}"
+                for n in sr["automatic"] if n in sr)
+            lines.append(f"  Automatic ranges:  {ranges}")
+            for key, x in sr.get("clipped", {}).items():
+                end = "left" if key == "entry_lo" else "right"
+                lines.append(f"    cut at the {end} end of the profile "
+                             f"(the slope's reach: x = {x:.2f})")
         for w in self.warnings:
             lines.append(f"  WARNING: {w}")
         lines.extend(["", "=" * 60])
@@ -709,6 +749,12 @@ class SearchResult:
         if self.infinite_slope_checks:
             d["infinite_slope_checks"] = [dict(c) for c in
                                           self.infinite_slope_checks]
+        if self.search_ranges:
+            d["search_ranges"] = dict(self.search_ranges)
+        if self.governing_location:
+            d["governing_location"] = dict(self.governing_location)
+        if self.refused_lowest:
+            d["refused_lowest"] = dict(self.refused_lowest)
         if self.warnings:
             d["warnings"] = list(self.warnings)
         return d

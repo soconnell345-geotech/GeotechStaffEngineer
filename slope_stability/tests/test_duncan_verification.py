@@ -224,11 +224,20 @@ class TestDuncanExample1:
             assert c.xc - crest_x == pytest.approx(H, abs=0.1 * H)
 
     def test_unrefined_grid_misses_taylor_circle(self):
-        """refine=False is the grid alone: 0.739 at D = 2 on 4 H each side,
-        +5 % against Taylor -- the unsafe-side reading GM-87 fixed."""
+        """refine=False is the grid alone. Over the whole profile (the
+        automatic grid before GM-57, centres 1.1 H apart) it read 0.739 at
+        D = 2 on 4 H each side, +5 % against Taylor -- the unsafe-side
+        reading GM-87 fixed. With the ranges set from the slope (GM-57) the
+        same 10 x 10 grid spans the slope's own reach and reads 0.703."""
+        H = _ft_to_m(40)
         g, _, _ = self._long_geom(4.0)
-        result = search_critical_surface(g, method="bishop", refine=False)
+        x_end = g.surface_points[-1][0]
+        result = search_critical_surface(
+            g, method="bishop", refine=False, x_range=(0.0, x_end),
+            y_range=(H + 1.0, 3.0 * H))
         assert result.critical.FOS > 1.04 * self.TAYLOR_D2
+        result = search_critical_surface(g, method="bishop", refine=False)
+        assert result.critical.FOS == pytest.approx(self.TAYLOR_D2, rel=0.01)
 
     def test_spencer_default_search_finds_taylor_circle(self):
         """The rigorous methods refine with a Bishop walk and re-score with
@@ -240,12 +249,13 @@ class TestDuncanExample1:
     def test_short_profile_reads_high_and_warns(self):
         """This class's profile ends 1 H beyond the crest and the toe, short
         of Taylor's circle (1.76 H behind the crest, 1.19 H beyond the toe):
-        the best circle that fits runs end to end at 0.727 (+3 % against
-        0.706; with the clay 2 H deep, D = 3, the same profile gives 0.727
-        against Taylor's 0.679). The search says the profile's end held the
-        circle back and gives the lower FOS of a circle past the end."""
+        the best circle that fits runs end to end at 0.720 (0.727 before
+        GM-57; +2 % against 0.706; with the clay 2 H deep, D = 3, the same
+        profile gave 0.727 against Taylor's 0.679). The search says the
+        profile's end held the circle back and gives the lower FOS of a
+        circle past the end."""
         result = search_critical_surface(self._geom(), method="bishop")
-        assert result.critical.FOS > 1.02 * self.TAYLOR_D2
+        assert result.critical.FOS > 1.015 * self.TAYLOR_D2
         w = [w for w in result.warnings if "end of the ground surface" in w]
         assert len(w) == 1
         assert "Fig. 6-15" in w[0]

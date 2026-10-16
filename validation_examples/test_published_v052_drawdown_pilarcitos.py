@@ -42,6 +42,8 @@ VERDICT: **CONVENTION (ordering validated; magnitudes geometry/phi'-limited).**
 See INVENTORY.md (#97), RESULTS.md (V-052), and V-048 (#98 Lowe-Karafiath).
 """
 
+import math
+
 import pytest
 
 from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
@@ -64,14 +66,49 @@ def _pilarcitos(slope_hv=2.5):
             R_c=60 * PSF, R_phi=23.0)])
 
 
+def _deep_windows(geom):
+    """Entry / exit windows for a DEEP upstream slide: one end in the lower
+    40 % of the section, the other in the upper 40 % (the automatic windows
+    before GM-57). These tests compare with the published values on that
+    slide, as they did before GM-57.
+
+    The windows the search now sets from the slope (GM-57) also take
+    circles that come out on the face, and under drawdown the
+    Lowe-Karafiath / DWW search then finds the rapid-drawdown infinite
+    slope: a sliver of a circle on the lower face, about an inch deep, at
+    (gamma'/gamma) tan(phi')/tan(beta) = 1.075 (true section; deep slide
+    1.279 / 1.266) and 1.076 on the 2:1 section; Corps stays on a deep
+    circle, 0.718 (0.726). That answer is pinned in
+    test_v052b_automatic_windows_find_the_circle_above_the_pool. (A DWW
+    0.955 on the 2:1 section, seen while GM-57 was built, was the stage-3
+    Fellenius normal under the remaining pool, which counted the pond's
+    pressure on a slice base in full and its weight at cos^2(alpha); with
+    the pond taken out of both terms (rapid_drawdown.
+    _fellenius_effective_normal) DWW ~ LK again. The default stage-3 normal
+    stays 'fellenius', the owner's ruling.)
+
+    Whether the published 0.82 / 1.05 / 1.05 belong to a deep slide cannot
+    be checked from the reference library (geotech-references): neither the
+    Slide2 verification manual (#97) nor the DWW 1990 paper is in it, and
+    what the repo records of them (validation_examples/INVENTORY.md, the
+    wiki-verification ledger) gives the factors of safety and the section,
+    not the surface they belong to. The deep windows keep these tests what
+    they were."""
+    x0, x1 = geom.x_range
+    w = x1 - x0
+    return dict(x_entry_range=(x0, x0 + 0.4 * w),
+                x_exit_range=(x0 + 0.6 * w, x1))
+
+
 def _search(slope_hv, method, infinite_slope=True):
     run = slope_hv * _HEIGHT
+    geom = _pilarcitos(slope_hv)
     return search_rapid_drawdown(
-        _pilarcitos(slope_hv), 72 * FT, 37 * FT, method=method,
+        geom, 72 * FT, 37 * FT, method=method,
         surface_type="circular", nx=7, ny=6,
         x_range=(0.2 * run * FT, run * FT),
         y_range=(80 * FT, 90 * FT + 2 * _HEIGHT * FT), n_slices=20,
-        infinite_slope=infinite_slope).FOS
+        infinite_slope=infinite_slope, **_deep_windows(geom)).FOS
 
 
 def test_v052_pilarcitos_method_ordering_is_slope_invariant():
@@ -125,10 +162,47 @@ def _pilarcitos_true():
 
 
 def _search_true(method):
+    geom = _pilarcitos_true()
     return search_rapid_drawdown(
-        _pilarcitos_true(), 72 * FT, 37 * FT, method=method,
+        geom, 72 * FT, 37 * FT, method=method,
         surface_type="circular", nx=7, ny=6,
-        x_range=(10.0, 54.0), y_range=(24.5, 75.0), n_slices=20).FOS
+        x_range=(10.0, 54.0), y_range=(24.5, 75.0), n_slices=20,
+        **_deep_windows(geom)).FOS
+
+
+def test_v052b_automatic_windows_find_the_circle_above_the_pool():
+    """GM-57: with the windows set from the slope (the test's own centre
+    grid) the Lowe-Karafiath and DWW searches of the true section govern on
+    the rapid-drawdown infinite slope: a sliver of a circle on the lower 2:1
+    face, about an inch deep, at (gamma'/gamma) tan(phi')/tan(beta) = 1.075
+    (the same anywhere on the face above the pool; Corps = LK = DWW there),
+    reported as that mechanism and with no window-edge warning. Corps stays
+    on a deep circle (85 ft long, entering below the remaining pool) at
+    0.718. (Before the pond fix to the Fellenius normal a fully automatic
+    DWW search read 0.052 on a toe circle under the pool.)
+    """
+    geom = _pilarcitos_true()
+    gamma = 135 * PCF
+    closed = (gamma - 9.81) / gamma * math.tan(math.radians(45.0)) / 0.5
+    out = {}
+    for method in ("corps_2stage", "lowe_karafiath", "duncan_3stage"):
+        out[method] = search_rapid_drawdown(
+            geom, 72 * FT, 37 * FT, method=method, surface_type="circular",
+            nx=7, ny=6, x_range=(10.0, 54.0), y_range=(24.5, 75.0),
+            n_slices=20)
+    corps = out["corps_2stage"]
+    c = corps.search.critical
+    assert corps.FOS == pytest.approx(0.72, abs=0.01)
+    assert (c.x_exit - c.x_entry) / FT > 80.0                 # deep
+    assert corps.search.governing_location["depth"] > 1.0
+    for method in ("lowe_karafiath", "duncan_3stage"):
+        r = out[method]
+        s = r.search
+        assert r.FOS == pytest.approx(closed, rel=0.005)
+        assert s.governing_location["depth"] < 0.1             # a sliver
+        assert any("infinite slope mechanism" in w and "rapid drawdown" in w
+                   for w in s.warnings)
+        assert not any("edge of the" in w for w in s.warnings)
 
 
 def test_v052b_true_geometry_failure_and_ordering():

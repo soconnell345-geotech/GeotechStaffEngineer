@@ -21,8 +21,11 @@ Published (Table 36.2):
 The RI comparison is the headline. This example needed the additive `ru`
 probabilistic variable (added with F1/F2 alongside `gamma_sat`).
 
-VERDICT: PASS. The searched Bishop critical circle gives FOS 1.325 (-0.7% vs
-Hassan-Wolff 1.334, -1.1% vs Slide 1.340). The FOSM COV_F 0.1225 REPRODUCES
+VERDICT: PASS. The entry/exit search gives a Bishop critical FOS of 1.332
+(-0.2% vs Hassan-Wolff 1.334, -0.6% vs Slide 1.340) with its windows set from
+the slope (GM-57); with windows from the model width it gave 1.325 (-0.7% /
+-1.1%) on the circle pinned below, which the reliability tests use (F = 1.325
+there; a 20 x 20 entry/exit search gives 1.326). The FOSM COV_F 0.1225 REPRODUCES
 Hassan-Wolff's implied FOS-COV: the module's lognormal_beta evaluated at the
 published deterministic FOS (1.334) gives RI 2.30, within 1.6% of Hassan-Wolff's
 2.336 (and the module's own F=1.325 -> RI 2.244 is within ~4%). FOSM ~= MC. The

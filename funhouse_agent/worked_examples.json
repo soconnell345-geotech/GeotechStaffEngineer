@@ -1368,11 +1368,11 @@
   ],
   "published_result": "Slide2 Bishop: deterministic-minimum FOS 1.340, RI_LN 2.482 (overall-slope FOS 1.350, RI 2.393). Hassan & Wolff (1999): FOS 1.334, RI_LN 2.336.",
   "computed_result": {
-   "search_critical_FOS": 1.3249,
-   "search_xc": 4.37,
-   "search_yc": 19.59,
-   "search_radius": 14.59,
-   "n_surfaces_evaluated": 3810,
+   "search_critical_FOS": 1.3317,
+   "search_xc": 3.45,
+   "search_yc": 20.26,
+   "search_radius": 15.26,
+   "n_surfaces_evaluated": 4053,
    "fosm_COV_F": 0.1225,
    "fosm_beta_lognormal": 2.244,
    "fosm_pf_lognormal": 0.0124,
@@ -1385,9 +1385,9 @@
    "mc_FOS_mean": 1.3351,
    "mc_cov": 0.1224,
    "mc_beta_lognormal": 2.257,
-   "tolerance": "Searched Bishop FOS 1.325 within 0.7% of Hassan-Wolff 1.334 and 1.1% of Slide2 1.340. Module RI_LN 2.244 within ~4% of Hassan-Wolff 2.336; the FOSM COV_F 0.1225 evaluated at the published FOS 1.334 gives RI 2.30, within 1.6%. Monte Carlo confirms FOSM (COV 0.1224 vs 0.1225)."
+   "tolerance": "Searched Bishop FOS 1.332 within 0.2% of Hassan-Wolff 1.334 and 0.6% of Slide2 1.340 (entry/exit 10 x 10 over windows set from the slope, GM-57; 1.325 before, on the circle the reliability calls below fix, where F = 1.325). Module RI_LN 2.244 on that circle within ~4% of Hassan-Wolff 2.336; the FOSM COV_F 0.1225 evaluated at the published FOS 1.334 gives RI 2.30, within 1.6%. Monte Carlo confirms FOSM (COV 0.1224 vs 0.1225)."
   },
-  "report_notes": "The report should tell the search story: search strategy (entry-exit circular grid), number of surfaces evaluated (3,810), seed for reproducibility, and the critical circle's center/radius/entry-exit — with a figure of the critical surface and FOS contours. The reliability annex then fixes that surface and presents COV_F, RI (state the lognormal-FOS assumption explicitly), Pf, and the variance breakdown showing the design is c'-dominated (~70%) — which directs any site-investigation spend toward cohesion. Cross-validate FOSM with Monte Carlo and, when comparing to published RIs, note whether they are on the deterministic-minimum or overall-slope surface.",
+  "report_notes": "The report should tell the search story: search strategy (entry-exit circular grid), number of surfaces evaluated (4,053), seed for reproducibility, and the critical circle's center/radius/entry-exit — with a figure of the critical surface and FOS contours. The reliability annex then fixes that surface and presents COV_F, RI (state the lognormal-FOS assumption explicitly), Pf, and the variance breakdown showing the design is c'-dominated (~70%) — which directs any site-investigation spend toward cohesion. Cross-validate FOSM with Monte Carlo and, when comparing to published RIs, note whether they are on the deterministic-minimum or overall-slope surface.",
   "provenance": "validation_examples/test_published_v042_slope_probabilistic.py::test_v042_deterministic_bishop_fos, test_v042_fosm_reliability_index_matches_hassan_wolff, test_v042_monte_carlo_agrees_with_fosm"
  },
  {
@@ -1694,10 +1694,10 @@
   "published_result": "Slide2 #97: Corps 2-stage FOS 0.823, Lowe-Karafiath 1.047, Duncan-Wright-Wong 3-stage 1.043 (Duncan, Wright & Wong 1990: 0.82 / 1.05 / 1.05). The dam actually failed on the upstream slope during the 1969 drawdown.",
   "computed_result": {
    "corps_2stage_FOS": 0.7866,
-   "lowe_karafiath_FOS": 1.3526,
-   "duncan_3stage_FOS": 1.349,
-   "n_surfaces_per_search": 42,
-   "tolerance": "Corps 2-stage 0.787 lands near the published 0.823 (within ~0.05) and BELOW 1.0, reproducing the observed failure on the representative section. The three-method ordering Corps < DWW <= LK (with DWW ~= LK, the stage-3 drained check barely firing) matches the published signature and is slope-invariant. LK/DWW magnitudes overshoot the published ~1.05 (~1.35 here) for two documented, un-tuned reasons: the upstream slope geometry is assumed (not published), and the very steep published phi' = 45 deg inflates the Kc-interpolated strength gain (Kf = 5.83); on the moderate-phi' Slide2 #98 dam the same code matched published spacing to ~10%."
+   "lowe_karafiath_FOS": 1.344,
+   "duncan_3stage_FOS": 1.2328,
+   "n_surfaces_per_search": 84,
+   "tolerance": "Corps 2-stage 0.787 lands near the published 0.823 (within ~0.05) and BELOW 1.0, reproducing the observed failure on the representative section; its critical circle is deep. Lowe-Karafiath and DWW govern on shallow surfaces of the c' = 0 face here: LK on a 4 m circle at the face's mid-length (1.344, reported as the infinite-slope mechanism; the planar surfaces 1.360), DWW on the shallow planar slide (1.233, its stage-3 drained check firing near the surface; GM-54). The published values describe the observed deep slide: on deep circles (entry / exit windows over the lower and upper 40 % of the section, V-052) the ordering Corps < DWW <= LK with DWW ~= LK holds and is slope-invariant, and LK / DWW overshoot the published ~1.05 (~1.35) for two documented, un-tuned reasons: the upstream slope geometry is assumed (not published), and the very steep published phi' = 45 deg inflates the Kc-interpolated strength gain (Kf = 5.83); on the moderate-phi' Slide2 #98 dam the same code matched published spacing to ~10%."
   },
   "report_notes": "A rapid-drawdown report must state the staged method basis (Corps 2-stage min(R, effective) envelope vs Kc-interpolated Lowe-Karafiath vs DWW 3-stage with drained substitution) and present all three as a method-comparison table, since they can span FS < 1 to FS > 1 on the same section — the Corps method is the conservative screening value. Document the drawdown range, the stage-1 phreatic assumption (flat full-pool here, the conservative no-through-seepage bound), the R-envelope source, and the search story (center-grid extent, surfaces evaluated, critical circle). When geometry is reconstructed rather than published, say so explicitly and demonstrate which conclusions are geometry-invariant (the method ordering) versus geometry-dependent (the magnitudes); a case history that failed in service should be shown to be predicted unstable by the design method.",
   "provenance": "validation_examples/test_published_v052_drawdown_pilarcitos.py::test_v052_pilarcitos_method_ordering_is_slope_invariant, test_v052_pilarcitos_corps_reproduces_failure"

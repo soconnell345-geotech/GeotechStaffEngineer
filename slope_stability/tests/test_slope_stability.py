@@ -583,35 +583,60 @@ class TestValidation:
 
 
 # ============================================================================
-# TestPublishedBenchmarks — 3 tests
+# TestPublishedBenchmarks — 4 tests
 # ============================================================================
 
 class TestPublishedBenchmarks:
     """Validation against known published solutions."""
 
-    def test_taylor_undrained_nc(self):
-        """Undrained clay slope: FOS ≈ cu*Nc / (gamma*H).
+    # Taylor's chart for phi = 0 (FHWA NHI-06-088 Fig. 6-15, p. 6-28, after
+    # Taylor 1948), GM-57. 1:1 slope (45 deg), H = 8 m, cu = 50 kPa, gamma
+    # 18: cu/(gamma H) = 0.347. The clay goes down to a firm base 10 m below
+    # the toe, so the depth factor is D = 18/8 = 2.25; the chart's 45 deg
+    # curve gives a stability number of about 0.1785 there (0.170 at D = 1,
+    # 0.180 near D = 3), F = 0.347 / 0.1785 = 1.945, the critical circle
+    # tangent to the base and coming out about 2 H beyond the toe (n = 2).
+    # An independent optimisation of phi = 0 circles tangent to the base
+    # (200 slices) gives N = 0.1783, F = 1.947, the centre over the middle
+    # of the face 1.80 H above the toe, in 2.45 H behind the crest and out
+    # 1.96 H beyond the toe. The 1.92 this test used to quote, cu x 5.52 /
+    # (gamma H), is the chart's limit for an unlimited depth (D -> infinity,
+    # 1/5.52 = 0.181), not this model's.
+    TAYLOR_45_D225 = 1.947
 
-        For beta=45° (1:1 slope) and deep circle, Taylor's Nc ≈ 5.52.
-        H=8m, cu=50, gamma=18: FOS_theory = 50*5.52/(18*8) = 1.92
-
-        We compute critical FOS and check it's in the right ballpark.
-        Since our search may not find the exact Taylor circle,
-        we check that the minimum FOS is within 20% of 1.92.
-        """
+    @staticmethod
+    def _taylor_45(behind, front):
         clay = SlopeSoilLayer("Clay", top_elevation=8.0, bottom_elevation=-10.0,
                               gamma=18.0, cu=50.0, analysis_mode="undrained")
-        # 1:1 slope (45 deg): 8m rise over 8m run
-        surface = [(0, 8), (5, 8), (13, 0), (25, 0)]
-        geom = SlopeGeometry(surface_points=surface, soil_layers=[clay])
+        surface = [(0, 8), (behind, 8), (behind + 8, 0),
+                   (behind + 8 + front, 0)]
+        return SlopeGeometry(surface_points=surface, soil_layers=[clay])
 
-        # Search for critical surface
-        result = search_critical_surface(geom, x_range=(5, 16), y_range=(10, 22),
-                                         nx=8, ny=8)
-        fos_theory = 50.0 * 5.52 / (18.0 * 8.0)  # = 1.917
-        assert result.critical is not None
-        # Within 30% of Taylor chart (our circle search is approximate)
-        assert abs(result.critical.FOS - fos_theory) / fos_theory < 0.30
+    def test_taylor_undrained_nc(self):
+        """With 4 H of level ground beyond the crest and the toe, the default
+        search finds Taylor's base circle: 1.935 at 30 slices, 0.6 % below
+        the converged 1.947 (the slicing's own bias, as on Duncan Ex 1),
+        tangent to the base, out 1.8 H beyond the toe, no warning."""
+        result = search_critical_surface(self._taylor_45(32.0, 32.0))
+        c = result.critical
+        assert result.governing_surface == "circular"
+        assert c.FOS == pytest.approx(self.TAYLOR_45_D225, rel=0.01)
+        assert c.FOS <= self.TAYLOR_45_D225
+        assert c.yc - c.radius == pytest.approx(-10.0, abs=0.05)
+        assert (c.x_exit - 40.0) / 8.0 == pytest.approx(1.9, abs=0.2)
+        assert not result.warnings
+
+    def test_taylor_short_profile_reads_high_and_warns(self):
+        """The profile this test used to draw ends 0.6 H behind the crest and
+        1.5 H beyond the toe, short of Taylor's circle: no circle it holds
+        reaches 1.947 (the best, a toe circle closed by a crack, 1.970; a
+        fine grid on the old centre box, 2.04-2.06). The search says the
+        profile's end held it back, with a lower circle past the end, and
+        records that both automatic windows were cut by the model."""
+        result = search_critical_surface(self._taylor_45(5.0, 12.0))
+        assert result.critical.FOS > self.TAYLOR_45_D225
+        assert any("end of the ground surface" in w for w in result.warnings)
+        assert set(result.search_ranges["clipped"]) == {"entry_lo", "exit_hi"}
 
     def test_bishop_fellenius_ratio(self):
         """Bishop/Fellenius ratio is typically 1.05-1.30 for c-phi soils.

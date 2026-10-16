@@ -251,6 +251,8 @@ Key conventions:
       broken backslope per GEC-11 (traffic out of pullout, release
       note); `annotate_document` keeps its own signature; the agent
       states its judgment calls behind GEOTECH_JUDGMENT_CALLS (OFF);
+      the slope search's ranges from the slope's own geometry, with
+      what it covered and refused in the result;
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done".
     Open next: Foundry brief 6, which measures all of this, is drafted

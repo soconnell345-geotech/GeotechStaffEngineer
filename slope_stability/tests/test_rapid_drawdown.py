@@ -193,3 +193,74 @@ def test_a_search_with_no_surface_reports_no_fos():
     d = r.to_dict()
     assert d["FOS"] is None and d["no_surface_found"] is True
     assert "999.9" not in r.summary() and "no admissible surface" in r.summary()
+
+
+# ---------------------------------------------------------------------------
+# The stage-3 Fellenius normal under the remaining pool (GM-57 review)
+# ---------------------------------------------------------------------------
+
+def _pilarcitos_true():
+    """Pilarcitos' true upstream section (V-052b): 2:1 for the lower 58 ft,
+    3:1 to the crest; c' = 0, phi' = 45, R-envelope 60 psf / 23 deg."""
+    face = [(0, 0), (116, 58), (176, 78), (260, 78)]
+    return SlopeGeometry(
+        surface_points=[(x * FT, z * FT) for x, z in face],
+        soil_layers=[SlopeSoilLayer(
+            name="fill", top_elevation=78 * FT, bottom_elevation=-8 * FT,
+            gamma=135 * PCF, phi=45.0, c_prime=0.0,
+            R_c=60 * PSF, R_phi=23.0)])
+
+
+def test_pond_changes_no_fellenius_effective_normal():
+    """Water ponded above a slice raises its total normal stress and its pore
+    pressure equally, so the stage-3 Fellenius estimate of the effective
+    normal is the same with 5 m of pond as with the water at the ground."""
+    from slope_stability.rapid_drawdown import (
+        _fellenius_effective_normal, _pool_geometry)
+    from slope_stability.slices import build_slices
+    from slope_stability.slip_surface import CircularSlipSurface
+    g = SlopeGeometry(
+        surface_points=[(0.0, 0.0), (30.0, 10.0), (50.0, 10.0)],
+        soil_layers=[SlopeSoilLayer(name="s", top_elevation=10.0,
+                                    bottom_elevation=-10.0, gamma=20.0,
+                                    phi=30.0, c_prime=0.0)])
+    slip = CircularSlipSurface(10.0, 25.0, 25.0)
+    wet = build_slices(_pool_geometry(g, 5.0), slip, 30)
+    assert sum(s.pond_force > 0.0 for s in wet) >= 5
+    for s in wet:
+        if s.pond_force <= 0.0:
+            continue
+        dry_top = dict(vars(s))
+        q = s.pond_force / s.width
+        dry_top.update(weight=s.weight - s.pond_force, pond_force=0.0,
+                       pore_pressure=s.pore_pressure - q)
+        bare = type(s)(**dry_top)
+        assert _fellenius_effective_normal(s) == pytest.approx(
+            _fellenius_effective_normal(bare), abs=1e-9)
+        assert _fellenius_effective_normal(s) > 0.0
+
+
+def test_dww_toe_circle_under_the_remaining_pool():
+    """GM-57 review: the fully automatic DWW search of the true Pilarcitos
+    section reported 0.052 on a toe circle wholly under the remaining pool.
+    The Fellenius stage-3 normal counted the pond's pressure on the base in
+    full but its weight only at cos^2(alpha); sigma' clamped to zero on all
+    20 slices and the drained substitution left no strength. With the pond
+    taken out of both terms the circle gives 1.57 (2.048 with the rigorous
+    'gle' normal); the Corps and Lowe-Karafiath values, which have no stage
+    3, do not change."""
+    g = _pilarcitos_true()
+    circle = dict(xc=-5.613427617517621, yc=31.343655235035243,
+                  radius=31.84231877926432)
+    fel = rapid_drawdown_fos(g, 72 * FT, 37 * FT, method="duncan_3stage",
+                             n_slices=20, **circle)
+    gle = rapid_drawdown_fos(g, 72 * FT, 37 * FT, method="duncan_3stage",
+                             n_slices=20, stage3_effective_normal="gle",
+                             **circle)
+    assert fel.FOS == pytest.approx(1.57, abs=0.01)       # was 0.052
+    assert gle.FOS == pytest.approx(2.048, abs=0.01)
+    assert fel.FOS <= gle.FOS                             # Fellenius stays the
+    lk = rapid_drawdown_fos(g, 72 * FT, 37 * FT,          # conservative basis
+                            method="lowe_karafiath", n_slices=20, **circle)
+    assert fel.FOS <= lk.FOS + 1e-9
+

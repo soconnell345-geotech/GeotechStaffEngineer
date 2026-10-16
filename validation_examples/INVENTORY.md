@@ -715,7 +715,9 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   Bishop; variables normal; FOS lognormal.
 - Published (Table 36.2): Slide Bishop det-min FOS 1.340 (RI_LN 2.482) / overall 1.350
   (2.393); Hassan-Wolff 1.334 (2.336).
-- Verdict: **PASS.** Searched Bishop critical FOS 1.325 (−0.7% vs H-W). FOSM COV_F
+- Verdict: **PASS.** Searched Bishop critical FOS 1.332 (−0.2% vs H-W; entry/exit
+  10 x 10 with the windows set from the slope, GM-57; 1.325, −0.7%, before, on the
+  circle the reliability tests pin, where F = 1.325). FOSM COV_F
   0.1225 reproduces H-W's implied FOS-COV: lognormal_beta at the published FOS 1.334 →
   RI 2.30 (within 1.6% of 2.336); module's own F=1.325 → RI 2.244 (~4%). FOSM≈MC.
   c'-dominated variance (~70%). Needed the additive `ru` probabilistic variable.

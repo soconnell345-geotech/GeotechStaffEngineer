@@ -265,7 +265,9 @@ class TestSlopeReportPackage:
 
     def test_report_shows_governing_surface_and_warnings(self, tmp_path):
         """GM-55: a c' = 0 face -- the infinite slope governs; the response
-        and the package both say so, with the search's warnings."""
+        and the package both say so, with the search's warnings. Since GM-57
+        the circle search can reach the shallow slide itself (0.9355 against
+        the planar surfaces' 0.936), and then says it is that mechanism."""
         from funhouse_agent.adapters.calc_package import _generate_slope_report_package
         layer = dict(self._SIMPLE["soil_layers"][0], c_prime=0.0)
         out = str(tmp_path / "sand.html")
@@ -273,7 +275,7 @@ class TestSlopeReportPackage:
             **self._SIMPLE, "soil_layers": [layer], "method": "spencer",
             "output_path": out})
         assert res["status"] == "success"
-        assert res["governing_surface"] == "infinite_slope"
+        assert res["governing_surface"] in ("infinite_slope", "circular")
         assert res["FOS"] == pytest.approx(0.933, abs=0.01)  # tan25/tan26.57
         assert any("infinite slope" in w for w in res["warnings"])
         html = open(out, encoding="utf-8").read()
