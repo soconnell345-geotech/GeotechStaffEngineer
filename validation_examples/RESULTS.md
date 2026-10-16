@@ -37,6 +37,9 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
 | V-010 | retaining_walls MSE internal built-in curves (bar-mat branch) | `Kr_Ka_ratio`(0,"metallic_grid")=2.5; `F_star_metallic`(0,…,"metallic_grid",t/St)=20·t/St=1.246; F*(L4)=0.955 | bar mat: Kr/Ka(0)=2.5; F*(0)=1.246; F*(L4)=0.955 | ≤0.5% | **PASS** (v5.2 Q4) | The steel-bar-mat / welded-grid curves are now BUILT INTO `Kr_Ka_ratio`/`F_star_metallic` (reinforcement_type "bar_mat"/"welded_grid"/"metallic_grid"): Kr/Ka 2.5→1.2 over 0–20 ft and F* 20(t/St)→10(t/St) over 0–20 ft. `check_internal_stability` auto-selects them for a `metallic_grid` reinforcement (e.g. `WELDED_WIRE_GRID_W11`), so the high-level internal path matches a bar-mat wall directly. The ribbed-STRIP default (1.7→1.2; 2.0→tanφ) is byte-identical/unchanged. Closes the former coverage gap. |
 | V-011 | seismic_geotech Mononobe-Okabe KAE (**regression anchor**) | **KAE = 0.4782** | KAE = 0.4785 | −0.06% | **PASS** | φ=30, δ=30, kh=kmax=0.206, kv=0, vertical wall, level backfill. δ=φ=30 with kv=0 is the case the battered-wall M-O fix targeted; the corrected sign/degrees/kv handling gives KAE within ±0.06% (tolerance ±2%). No bug; value pinned to catch a future M-O regression. |
 | V-011 | seismic_geotech M-O seismic sliding chain | PAE=19.65, PIR=6.09, THF=24.64, V=67.52, R=38.98, CDR=1.58 k/ft | PAE=19.65, PIR=6.09, THF=24.64, V=67.52, R=38.98, CDR=1.58 | <0.5% | **PASS** | Full GEC-11 E7 Step-8 chain built on the module KAE: PAE=0.5γh²KAE; THF=PAE·cos30+PIR+0.5·qLS·H·KAE; V=W+PAE·sin30; R=V·tan30; CDR=R/THF. Reproduces the example to <0.5%. |
+| V-056 | retaining_walls MSE, sloping backfill (GEC-11 E3, 2H:1V slope that continues), `check_external_stability_lrfd` | Kaf 0.5367; sliding 1.349/1.598/1.074; eL 2.90/2.34/3.81 ft; σv 10.19/6.83/7.16/9.02 ksf; bearing CDR 1.03/1.54/1.047/1.164 | Kaf 0.537; sliding 1.35/1.60/1.07; eL 2.90/2.35/3.81; σv 10.19/6.83/7.16/9.02; CDR 1.03/1.54/1.05/1.16 | ≤0.01 | **PASS** (GM-112, high-level) | Built for GM-112 (2026-10-16): Coulomb Kab with δ = β (GEC-11 Eqs 4-2/4-3), FT = ½·Kab·γ·h² on h = H + L·tanβ (Eq 4-7), FT cosβ driving and FT sinβ resisting with the same EH factor (Eqs 4-11/4-13/4-16/4-21), V2 the slope fill over the zone. Values: Str I max / min / Service / critical. The ASD path gives the Service I column (e 2.61 ft, σv 7.16 ksf). |
+| V-056 | retaining_walls MSE internal under the slope (E3 Level 4, Z = 8.75 ft) | σH 0.99 ksf (×1.35); Kr 0.419; La 10.60, Le 13.42, Zp 17.39 ft; F* 1.420 | σH 0.99 ksf; Kr 0.419; La 10.59, Le 13.41, Zp-ave 17.40 ft; F* 1.420 | ≤0.1% | **PASS** | Seq = ½(0.7H)tanβ added to σv for Tmax (Fig 4-11, Eq 4-29), Ka at β = 0; H1 = 35.29 ft for the inextensible active zone (Fig 4-9a); σv = γr·Zp for pullout, traffic left out (Fig 4-15, p 4-49, Fig E3-5). The strip Kr/Ka and F* reach their deep values at 20 ft as E3's do (before the GM-112 review at 6.0 m: F* 1.411, −0.6 %). |
+| V-057 | retaining_walls MSE, broken backslope + traffic behind the crest (GEC-11 E1) | I 12.68°, Kab 0.3604; sliding 1.119; e 3.80 ft; eB 2.77 ft; σV-F 6.56 ksf, CDR 1.601 | I 12.7°, Kab 0.360; CDR 1.12; e 3.80; eB 2.77; σV-F 6.55 ksf, CDR 1.60 | ≤0.2% | **PASS** (GM-112, high-level) | `broken_backslope_height` = S = 9 ft: Kab with β = δ = I = atan(S/2H) (Fig 4-4), h = H + min(L·tanβ, S) (p 4-20); traffic F2 = Kab·q·h inclined at I with the LL factor. E1 counts FV2 as sliding and eccentricity resistance: pinned with `traffic_vertical_resists=True`. The default follows Vol I p 4-22 (resisting loads only if permanent): sliding 1.10, e 4.01 ft, bearing unchanged (hand-checked from E1's loads). Seq 3.50 ft (E1 3.51 with β rounded to 26.6°). |
 | V-025 | sheet_pile earth-pressure builder (layered Ka + water) | Ka1=0.249, Ka2=0.333; σ pts 129.5/173.2/377.8/644.2 psf, u=1248; FTOTAL=24,611 lb/ft | Ka1=0.249, Ka2=0.333; 129.48/173.16/377.76/644.16/1248; FTOTAL=24,610.9 | 0.00% | **PASS** | `rankine_Ka` + `active_pressure` reproduce every stress ordinate at the Ka-discontinuity (4-ft boundary, same overburden × Ka1 vs Ka2) and the layered-moist/submerged + hydrostatic water blocks. Total driving force exact to 0.00% with source-rounded Ka (≈359 kN/m). |
 | V-012 | sheet_pile cantilever Ka/Kp (soldier pile) | Ka=0.271, Kp=3.69 | Ka=0.271, Kp=3.69 | exact | **PASS** (primitive) | `rankine_Ka`/`rankine_Kp`(φ=35) match the published coefficients exactly. |
 | V-012 | soldier-pile arching / simplified toe-moment | (not in module; hand: f=2.8, fb=5.6 ft, D0=12.27, D=14.73 ft, Y=6.0, Mmax=379.7 kip-ft, Vmax=137.7 kips) | D0=12.27, D=14.73, Y=6.0, Mmax=379.7, Vmax=137.7 | <0.1% (hand) | N/A (scope) | `analyze_cantilever` is a CONTINUOUS per-metre free-earth-support solver — no soldier-pile effective-width/arching (active on 2-ft hole width, passive on f·b=0.08φ·b=5.6 ft) and no simplified toe-moment cubic. The published Simplified row is reproduced by hand on the module Ka/Kp to document the method. |
@@ -209,7 +212,7 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
   built in (v5.2 Q4 — gap CLOSED).** `Tmax_at_level` and `pullout_resistance(C=2)`
   reproduce the Table E4-7.4 bar-mat Tmax/σH/Pr to ≤3%. The module's built-in
   `Kr_Ka_ratio` and `F_star_metallic` now carry BOTH the **ribbed-metallic-STRIP**
-  curves (Kr/Ka 1.7→1.2; F* 2.0→tanφ over 0–6 m) AND the **steel-bar-mat / welded-grid**
+  curves (Kr/Ka 1.7→1.2; F* 2.0→tanφ over 0–20 ft, 0–6.0 m until 2026-10-16) AND the **steel-bar-mat / welded-grid**
   curves (Kr/Ka 2.5→1.2; F* 20(t/St)→10(t/St) over 0–20 ft), selected by
   `reinforcement_type` ("bar_mat"/"welded_grid"/"metallic_grid"). The grid F*
   needs t (transverse-bar diameter) and St (transverse spacing) — taken from the
@@ -218,11 +221,20 @@ Tests live in `validation_examples/test_published_v###.py`, runnable offline:
   `check_internal_stability` auto-selects them for a `metallic_grid` reinforcement,
   so the high-level internal path now matches a bar-mat wall directly — no
   hand-fed coefficients. The ribbed-STRIP default path is byte-identical/unchanged.
-  Depth datum: the bar-mat Kr/Ka and F* tapers cap at Z = 20 ft (= 6.096 m),
-  distinct from the 6.0 m strip cap (both handled in the branch).
+  Depth datum: the bar-mat Kr/Ka and F* tapers cap at Z = 20 ft (= 6.096 m);
+  since the GM-112 review (2026-10-16) the strip tapers do too (GEC-11 Fig.
+  4-10, Eq. 3-5), where they capped at 6.0 m before.
 - **Unit note for MSE per-length quantities.** Forces convert k/ft ↔ kN/m by
   14.594; moments-per-length convert k-ft/ft ↔ kN-m/m by 1.356/0.3048 = 4.4488
   (a kip-ft of moment per ft of wall). The tests carry both constants explicitly.
+- **V-056 / V-057 (GM-112, 2026-10-16): the sloping backfill is built and both
+  GEC-11 sloping examples reproduce through the high-level path.** Until then
+  the MSE checks computed a level-backfill Rankine Ka only. E3 (a 2H:1V slope
+  that continues, steel strips) and E1 (a broken backslope with traffic behind
+  the crest, geogrid) are pinned in
+  `test_published_v056_v057_gec11_slope.py`; the method and page references
+  are in `retaining_walls/DESIGN.md` "MSE walls with a sloping backfill". Level
+  backfill results are byte-identical (V-009..V-010 unchanged).
 
 ### Batch V-012..V-025 (Caltrans T&S + GEC-4 SOE / sheet-pile) — owner notes
 

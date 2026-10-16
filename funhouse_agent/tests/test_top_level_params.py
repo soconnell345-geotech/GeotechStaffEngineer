@@ -344,12 +344,10 @@ class TestReferenceCatchAll:
     ("pile_group", "pile_group_simple",
      {"n_rows": 2, "n_cols": 2, "spacing": 1.5, "Vz": 1000,
       "axial_stiffness": 1e5}, "axial_stiffness", "pile_group_6dof"),
-    ("retaining_walls", "mse_wall",
-     {"wall_height": 6, "gamma_backfill": 19, "phi_backfill": 34,
-      "backfill_slope": 26.6}, "backfill_slope", "assumes a level backfill"),
     ("retaining_walls", "mse_lrfd_external_stability",
      {"wall_height": 6, "gamma_backfill": 19, "phi_backfill": 34,
-      "backfill_slope": 15}, "backfill_slope", "GEC-11 §4.4.4"),
+      "reinforcement_spacing": 0.6}, "reinforcement_spacing",
+     "external stability does not depend on it"),
     ("soe", "cantilever_excavation",
      {"excavation_depth": 3, "layers": [], "excavation_width": 10},
      "excavation_width", "check_basal_heave"),
@@ -393,9 +391,10 @@ def test_refused_names_are_never_declared():
 
 
 class TestUnusedValuesPass:
-    """A refused name's "not used" value passes silently: a slope of 0 is
-    the level backfill the MSE checks compute, a lateral load of 0 is none.
-    Any other value is refused with the reason; the stiffnesses take none."""
+    """A refused name's "not used" value passes silently: a lateral load of
+    0 is none. Any other value is refused with the reason; the stiffnesses
+    take none. (The MSE backfill slope was refused this way until GM-112
+    built the sloping backfill; a slope of 0 is still the level result.)"""
 
     _MSE = {"wall_height": 6, "gamma_backfill": 19, "phi_backfill": 34}
     _GROUP = {"n_rows": 2, "n_cols": 2, "spacing": 1.5, "Vz": 1000}
@@ -410,9 +409,11 @@ class TestUnusedValuesPass:
                             {**given, "backfill_slope": 0.0})
         assert "error" not in zero, zero
         assert zero == level
-        err = _error("retaining_walls", method,
-                     {**given, "backfill_slope": 0.5})
-        assert f"{method} does not take ['backfill_slope']" in err
+        sloped = D.call_agent("retaining_walls", method,
+                              {**given, "backfill_slope": 15})
+        assert "error" not in sloped, sloped
+        assert sloped["backslope"]["backfill_slope_deg"] == 15
+        assert "backslope" not in level
 
     def test_zero_lateral_load_runs_on_the_simple_method(self):
         base = D.call_agent("pile_group", "pile_group_simple", self._GROUP)
@@ -440,11 +441,16 @@ class TestUnusedValuesPass:
         assert not adapters.accepted_as_unused("reason only", 0)
 
 
-def test_mse_wall_no_longer_advertises_a_slope():
+def test_mse_methods_declare_the_slope_they_compute():
+    """GM-112: both MSE methods take a sloping backfill and say how."""
     from funhouse_agent.adapters.retaining_walls import METHOD_INFO
-    info = METHOD_INFO["mse_wall"]
-    assert "backfill_slope" not in info["parameters"]
-    assert "slope" not in info["brief"].lower()
+    for method in ("mse_wall", "mse_lrfd_external_stability"):
+        info = METHOD_INFO[method]
+        spec = info["parameters"]["backfill_slope"]
+        assert "degrees from horizontal" in spec["description"]
+        assert "GEC-11" in spec["description"]
+        assert "broken_backslope_height" in info["parameters"]
+        assert "backfill_slope" not in (info.get("refused_parameters") or {})
 
 
 def test_braced_excavation_no_longer_advertises_a_width():

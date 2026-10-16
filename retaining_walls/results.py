@@ -315,6 +315,11 @@ class MSEWallResult:
         Meyerhof bearing pressure W / (L - 2e) (kPa).
     FOS_sliding_required, FOS_overturning_required : float
         The required factors of safety (GEC-11: 1.5 and 2.0).
+    backslope : dict or None
+        With a sloping backfill, the GEC-11 basis used: Kab, the pressure
+        plane height h, the thrust F_T and its components, the slope fill
+        weight V2, and S_eq / sigma_2 / H1 for internal stability. None for
+        a level backfill.
     """
     FOS_sliding: float = 0.0
     FOS_overturning: float = 0.0
@@ -335,6 +340,7 @@ class MSEWallResult:
     sigma_v: Optional[float] = None
     FOS_sliding_required: float = 1.5
     FOS_overturning_required: float = 2.0
+    backslope: Optional[Dict[str, Any]] = None
 
     @property
     def n_levels(self) -> int:
@@ -431,6 +437,19 @@ class MSEWallResult:
             "",
             f"  Wall height:       {self.wall_height:.2f} m",
             f"  Reinforcement L:   {self.reinforcement_length:.2f} m",
+        ]
+        if self.backslope is not None:
+            b = self.backslope
+            crest = b.get("broken_backslope_height_m")
+            lines.extend([
+                f"  Backfill slope:    {b['backfill_slope_deg']:.1f} deg"
+                + (f" (broken backslope, crest {crest:.2f} m above the top)"
+                   if crest else ""),
+                f"  Kab = {b['Kab']:.4f} (delta = "
+                f"{b['interface_angle_deg']:.1f} deg), h = {b['h_m']:.2f} m, "
+                f"F_T = {b['FT_kN_per_m']:.1f} kN/m",
+            ])
+        lines.extend([
             "",
             "  EXTERNAL STABILITY:",
             f"    Sliding:     FOS = {self.FOS_sliding:.2f}"
@@ -438,7 +457,7 @@ class MSEWallResult:
             f"    Overturning: FOS = {self.FOS_overturning:.2f}"
             f"{_check(self.passes_overturning)}",
             f"    Bearing:     {bearing}",
-        ]
+        ])
         if self.sigma_v is not None:
             lines.append(f"    sigma_v:     {self.sigma_v:.1f} kPa")
         lines.extend([
@@ -490,4 +509,6 @@ class MSEWallResult:
         }
         if self.external_lrfd is not None:
             d["external_lrfd"] = self.external_lrfd
+        if self.backslope is not None:
+            d["backslope"] = self.backslope
         return d

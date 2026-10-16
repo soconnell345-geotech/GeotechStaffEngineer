@@ -13,7 +13,8 @@ mechanically stabilized earth (MSE) walls per GEC-11.
 - `geometry.py` — CantileverWallGeometry (auto-sizing), MSEWallGeometry
 - `earth_pressure.py` — reuses sheet_pile Ka/Kp + resultant force computation
 - `cantilever.py` — sliding, overturning, bearing, eccentricity checks
-- `mse.py` — Kr/Ka ratio, Tmax, pullout, F*, external + internal stability
+- `mse.py` — Kr/Ka ratio, Tmax, pullout, F*, external + internal stability,
+  level or sloping backfill (`backslope_geometry`, `backslope_loads`)
 - `reinforcement.py` — Reinforcement dataclass + built-in products
 - `results.py` — CantileverWallResult, MSEWallResult
 
@@ -112,6 +113,164 @@ internal) and `checks_not_run`; `to_dict()` puts them first, and the
 "Failed checks: ..." and "Not checked: ...". In live wave w8 a wall failed
 sliding (FOS 1.17 < 1.5) and the user never learnt it.
 
+## MSE walls with a sloping backfill (GM-112, 2026-10-16)
+
+Until GM-112 both MSE checks computed a level-backfill Rankine Ka only, and
+`mse_wall` accepted `backfill_slope` and gave the same answer at 0 and 26.6
+degrees (GM-110 then refused it). `MSEWallGeometry.backfill_slope` (beta,
+degrees from horizontal, rising away from the face) and
+`broken_backslope_height` (S, the height of the slope crest above the top of
+the wall) now drive the GEC-11 method in `check_external_stability`,
+`check_external_stability_lrfd` and `check_internal_stability`. With beta = 0
+every result is byte-identical to before (checked on 868 level outputs:
+module, adapter, summaries).
+
+**Source.** FHWA GEC-11 Vol I, FHWA-NHI-10-024 (`geotech-references/docs/GEC
+11 Vol 1.pdf`), read from the PDF; page = printed page (PDF page).
+
+External loads (`backslope_loads`):
+
+- Eq. 4-2 / 4-3, p. 4-15 (PDF 157), "Vertical Wall and a Surcharge Slope":
+  Kab = sin²(θ + φ'b) / [Γ sin²θ sin(θ − δ)],
+  Γ = [1 + √( sin(φ'b + δ) sin(φ'b − β) / (sin(θ − δ) sin(θ + β)) )]²,
+  "δ = Angle of friction between retained backfill and reinforced soil, set
+  equal to β", "θ = 90° for vertical, or near (< 10°) vertical, wall". This
+  is the repo's `coulomb_Ka(phi, delta, alpha=θ, beta)` with δ = β. "Note
+  that the earth pressure force, (FT) in Figure 4-3, is oriented at the same
+  angle as the backslope, β, as it is assumed that δ = β."
+- Broken backslope, same page: "computed using Equations 4-2 and 4-3, with
+  the design β angle and the interface angle δ both set equal to I, as
+  defined in Figure 4-4". Fig. 4-4, p. 4-14 (PDF 156): I is the angle from
+  the top of the wall to the ground surface 2H behind the face, so
+  I = atan(min(S, 2H tanβ) / 2H) (Example E1: I = arctan(9/40) = 12.7°).
+- Eq. 4-7, p. 4-20 (PDF 162): FT = ½ Kab γb h², "h = total height of wall,
+  H, and slope at the back of the reinforced zone = H + L tan β". "For a
+  broken backslope (see Figure 4-4), h - H should not exceed the height of
+  the upper crest ... use (H + S) if (L tanβ) > S."
+- Figs. 4-3 (p. 4-13, PDF 155) and 4-8 (p. 4-25, PDF 167): V1 = γr H L at
+  L/2; V2 = γr L (h − H) / 2 at 2L/3 from the face (L/6 behind the centre);
+  FT at h/3. The module takes V2 as the reinforced-fill weight of the slope
+  fill over the zone (γr, as the figures do); FT uses the retained fill
+  (`phi_retained`, `gamma_retained`, defaulting to the reinforced fill).
+
+Checks:
+
+- Sliding, p. 4-21 (PDF 163): Eq. 4-10 FH = FT cos β; Eq. 4-11
+  Pd = γEH FT cos β; Eq. 4-13 Rr = [γEV (V1 + V2) + γEH (FT sin β)] × μ.
+- Eccentricity, Eq. 4-16, p. 4-23 (PDF 165):
+  e = [γEH-MAX FT cosβ (h/3) − γEH-MAX FT sinβ (L/2) − γEV-MIN V2 (L/6)] /
+  [γEV-MIN V1 + γEV-MIN V2 + γEH-MAX FT sinβ] (moments about the centre; the
+  module sums them about the toe, the same thing).
+- Bearing, Eq. 4-21, p. 4-28 (PDF 170):
+  qV-F = [γEV-MAX V1 + γEV-MAX V2 + γEH-MAX FT sinβ] / (L − 2eB), and "(L −
+  2eB) is set equal to L when the value of eccentricity is negative". The
+  sloping paths apply that rule; the level paths are unchanged (their e is
+  never negative).
+- LRFD combinations as for the level wall (Strength I max, Strength I min,
+  the critical EV-min / EH-max one, Service I), with FT's two components
+  carrying the same EH factor, "to maintain consistency between the total
+  inclined lateral force and its components" (Vol II Example E3, notes to
+  Tables E3-6.1 to E3-6.3). The ASD check (`check_external_stability`,
+  `mse_wall`) is the same statics unfactored: FOS_sliding = (V1 + V2 + FT
+  sinβ) tan δb / FT cosβ, FOS_overturning = resisting / overturning moments
+  about the toe, σv over L − 2e.
+
+Internal stability (`check_internal_stability`):
+
+- Eq. 4-25, p. 4-36 (PDF 178): Kr from Ka = tan²(45 − φ'r/2), "assuming no
+  wall friction and a β angle equal to zero" — Ka is not changed by the
+  slope. Same page: "The value of Seq should not exceed the slope height for
+  broken back sloping fills. A reinforcement length of 0.7H is used to
+  compute the sloping backfill stress, σ2".
+- Fig. 4-11, p. 4-38 (PDF 180): Seq = (½) 0.7H tan β, σ2 = S γr; Eq. 4-29,
+  p. 4-42 (PDF 184): σH = Kr [γr (Z + Seq) γEV-MAX] (unfactored here).
+- Fig. 4-9(a), p. 4-34 (PDF 176), inextensible: H1 = H + tanβ × 0.3H /
+  (1 − 0.3 tanβ); La = 0.3 H1 over the upper H1/2 (measured from the top of
+  H1), tapering to the toe below. For a broken backslope the rise H1 − H is
+  not more than S. Fig. 4-9(b), extensible, vertical face: ψ = 45 + φ/2, La
+  unchanged.
+- Fig. 4-15, p. 4-50 (PDF 192): σV-PO = γr Zp; Vol II Fig. E3-5 (p. E3-12,
+  PDF 284): "Use average Zp over the resistance zone ... Zp-ave = Z +
+  0.5 tanβ (La + L)". The module averages the surface rise over the
+  resistant zone (the same for a slope that continues; for a broken
+  backslope the rise is capped at S).
+
+**Traffic is left out of pullout, level backfill too (GM-112 review,
+2026-10-16).** GEC-11 p. 4-49 (PDF 191) defines the pullout σv as "the
+unfactored vertical stress at the reinforcement level in the resistant
+zone, including distributed dead load surcharges, neglecting traffic
+loads"; p. 4-51 (PDF 193) and AASHTO C11.10.6.2.1 say the same. The
+module's one surcharge, `MSEWallGeometry.surcharge`, is the live load (the
+LRFD check factors it with γLL; there is no separate dead-load surcharge),
+so `check_internal_stability` keeps it in Tmax (Eq. 4-30) and no longer
+adds it to the pullout σv. Before, it did, on the unsafe side: on a 6 m wall
+(L 5 m, Sv 0.6 m, γ 19, φ 34°, geogrid UX1600) with q = 12 kPa, the top
+level's (z = 0.3 m) pullout resistance is 10.15 kN/m (FOS 3.38), where it
+was 31.50 (FOS 10.49); at z = 5.7 m 473.8 where it was 526.3.
+`pullout_resistance`'s `q_surcharge` remains, for a dead-load surcharge.
+
+**The traffic thrust's vertical component is an option.** Behind a broken
+backslope the traffic gives F2 = Kab q h at h/2, inclined at I (Example
+E1). Whether F2 sin I resists sliding and eccentricity is where GEC-11
+differs from itself: the general text includes "External loads that
+increase sliding resistance ... only if those loads are permanent" (Vol I
+p. 4-22, PDF 164), while Example E1 counts it with the LL factor (Vol II pp.
+E1-7 to E1-9, PDF 249-251). `traffic_vertical_resists` (default False,
+the general text; True, Example E1) chooses, on `check_external_stability`,
+`check_external_stability_lrfd`, `analyze_mse_wall` and both adapter
+methods; bearing counts it either way, since "the bearing check applies
+live load above both the reinforced zone and the retained backfill" (p.
+4-26, PDF 168). The result's `backslope.traffic_basis` says which was used,
+with the page.
+
+What is refused, with the reason (ValueError, surfaced by dispatch):
+
+- a slope steeper than the retained fill's friction angle: sin(φ − β) < 0
+  under the root of Eq. 4-3, so Kab has no real value, and the fill slope
+  does not stand (at β = φ, Γ = 1 and the check runs);
+- a surcharge on a slope that continues: GEC-11 gives that case "and no
+  surcharges" (§4.4.6.b, p. 4-23). Traffic behind the crest of a broken
+  backslope is taken as Example E1 does, with the option above;
+- the MSE calculation steps (`calc_steps._calc_steps_mse`) refuse a sloping
+  backfill: they re-derive a level backfill (and there is no MSE calc
+  package on the agent surface).
+
+Beyond the cases GEC-11 draws (the module's extension, stated here): a
+broken-backslope crest inside the reinforced length L. V2 is then the actual
+fill over the zone (the triangle to the crest and the level part behind it,
+at its centroid), and the traffic over the level part is Vs = q (L − x_crest)
+— excluded from the sliding and eccentricity resistance and included in
+bearing, as the level wall treats its live load (Fig. 4-2) — and counts in
+Tmax (not in pullout) as the level wall's surcharge does. As the crest height
+goes to zero every result tends to the level wall with its surcharge
+(tested). A battered face (10° or more) is still not covered.
+
+**Worked examples reproduced** (V-056 / V-057,
+`validation_examples/test_published_v056_v057_gec11_slope.py`), FHWA GEC-11
+Vol II (FHWA-NHI-10-025) Appendix E:
+
+| Example E3, 2H:1V slope that continues | published | module |
+|---|---|---|
+| Kaf | 0.537 | 0.5367 |
+| sliding CDR, Str I max / min / critical | 1.35 / 1.60 / 1.07 | 1.349 / 1.598 / 1.074 |
+| eL, Str I max / min / critical (ft) | 2.90 / 2.35 / 3.81 | 2.90 / 2.34 / 3.81 |
+| σv, Str I max / min / Service / critical (ksf) | 10.19 / 6.83 / 7.16 / 9.02 | 10.19 / 6.83 / 7.16 / 9.02 |
+| bearing CDR, Str I max / Service / critical | 1.03 / 1.05 / 1.16 | 1.03 / 1.047 / 1.164 |
+| Level 4 (Z = 8.75 ft): σH, La, Le, Zp-ave | 0.99 ksf, 10.59, 13.41, 17.40 ft | 0.99, 10.60, 13.42, 17.39 |
+
+| Example E1, broken backslope (S = 9 ft) + traffic | published | module |
+|---|---|---|
+| I, Kab | 12.7°, 0.360 | 12.68°, 0.3604 |
+| sliding CDR (critical) | 1.12 | 1.119 |
+| e (critical), eB (Str I max) (ft) | 3.80, 2.77 | 3.80, 2.77 |
+| σV-F, CDR | 6.55 ksf, 1.60 | 6.56, 1.601 |
+| the default (FV2 not resisting, Vol I p. 4-22): sliding CDR, e | — (by hand from E1's loads: 1.10, 4.01 ft) | 1.101, 4.01 ft |
+
+The E1 rows above are with E1's choice, `traffic_vertical_resists=True`.
+
+The ASD path is the same statics with every factor 1.0: on E3 it gives the
+Service I column (e 2.61 ft, σv 7.16 ksf).
+
 ## Key Notes
 - CantileverWallGeometry auto-sizes stem thickness, toe/heel from wall height
 - Cantilever checks decompose the active thrust per the chosen method (RW-1):
@@ -125,7 +284,11 @@ sliding (FOS 1.17 < 1.5) and the user never learnt it.
   `Kr_Ka_ratio`/`F_star_metallic` carry three inextensible/extensible curve
   families, selected by `reinforcement_type` (Q4):
   - ribbed metallic STRIP ("metallic"/"metallic_strip", DEFAULT): Kr/Ka 1.7→1.2
-    over 0–6 m; F* 2.0→tan(φ) over 0–6 m (GEC-11 Fig. 4-10/4-11).
+    over 0–20 ft (6.096 m); F* 2.0→tan(φ) over 0–20 ft (GEC-11 Fig. 4-10, p.
+    4-37, drawn at "20 ft" for strips and bar mats alike; Eq. 3-5, p. 3-20,
+    "F* = tan φ at a depth of 20 ft (6 m) and below"). Until GM-112's review
+    (2026-10-16) the strip curves ran over 0–6.0 m, the rounded metric value;
+    on GEC-11 Example E3 that left F* 0.6 % low.
   - steel bar-mat / welded-grid ("bar_mat"/"welded_grid"/"metallic_grid"):
     Kr/Ka 2.5→1.2 over 0–20 ft (6.096 m); F* 20(t/St)→10(t/St) over 0–20 ft,
     where t = transverse-bar diameter and St = transverse-bar spacing
@@ -134,8 +297,8 @@ sliding (FOS 1.17 < 1.5) and the user never learnt it.
     grid lacks that geometry F* falls back to the strip curve.
   - geosynthetic ("geosynthetic"): Kr/Ka 1.0; F* 0.67·tan(φ).
   `check_internal_stability` auto-selects the bar-mat curves for a
-  `metallic_grid` reinforcement (e.g. `WELDED_WIRE_GRID_W11`). The strip default
-  is byte-identical to the pre-Q4 behavior.
+  `metallic_grid` reinforcement (e.g. `WELDED_WIRE_GRID_W11`). Q4 left the
+  strip default unchanged.
   - **Source basis (built-in reinforcement products).** The product constants
     (the `WELDED_WIRE_GRID_W11` grid geometry, the 75x4 mm ribbed-strip
     `T_allowable`, etc.) are **representative values typical of the reinforcement

@@ -954,6 +954,47 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   Tests: test_published_v055_aashto1993_pavement.py (3) +
   pavement_design/tests/test_pavement_design.py (module suite).
 
+## V-056 GEC-11 Example E3 — MSE wall with a sloping backfill (2H:1V, continuing)
+- Source: GEC-11 Vol 2 (FHWA-NHI-10-025), Appendix E, Example E3 (PDF pp.
+  273-292, printed E3-1 to E3-20), read from `geotech-references/docs/GEC 11
+  VOL 2.pdf`.
+- Target: `retaining_walls` MSE external (LRFD and ASD) and internal
+  stability with `MSEWallGeometry(backfill_slope=...)` (GM-112).
+- Inputs: He 28 ft + 2 ft embedment, H = 30 ft; L = 0.8H = 24 ft; 2H:1V
+  slope continuing (β = 26.56°), h = 42.00 ft; reinforced φr 34°, retained
+  φf 30°, foundation φfd 30°, all γ = 125 pcf; ribbed steel strips at Z =
+  1.25, 3.75, ... 28.75 ft; bearing resistances 10.50 ksf (strength), 7.50
+  ksf (service); EV 1.35/1.00, EH 1.50/0.90.
+- Published answer: Kaf = 0.537 (Γ = 1.563, p. E3-4); V1 90.00, V2 18.00,
+  FTV 26.48, FTH 52.95 k/ft (Tables E3-4.3/4.4); sliding CDR 1.35 / 1.60 /
+  critical 1.07 (Table E3-6.1); eL 2.90 / 2.35 / critical 3.81 ft (Table
+  E3-6.2); σv 10.19 / 6.83 / Service 7.16 / critical 9.02 ksf, CDR 1.03 /
+  1.54 / 1.05 / 1.16 (Table E3-6.3); Level 4 (Z = 8.75 ft) σH 0.99 ksf,
+  Tmax 12.37 k per 5-ft panel, H1 35.29 ft, La 10.59, Le 13.41, Zp-ave
+  17.40 ft, F* 1.420 (Steps 7.3, 7.5).
+- Verdict: **PASS** (RESULTS.md). Tests:
+  test_published_v056_v057_gec11_slope.py.
+
+## V-057 GEC-11 Example E1 — MSE wall with a broken backslope and traffic
+- Source: GEC-11 Vol 2, Appendix E, Example E1 (PDF pp. 243-262, printed
+  E1-1 to E1-20).
+- Target: `retaining_walls` MSE external LRFD with
+  `MSEWallGeometry(backfill_slope=..., broken_backslope_height=...,
+  surcharge=...)` (GM-112).
+- Inputs: He 18 ft + 2 ft, H = 20 ft; L = 0.9H = 18 ft; 2H:1V slope 9 ft
+  high, crest at the end of the reinforcement; traffic heq 2 ft (q = 250
+  psf) on the level ground behind the crest; φr 34°, φb 30°, φf 30°, all γ
+  = 125 pcf; factored bearing resistance 10.50 ksf.
+- Published answer: I = arctan(9/40) = 12.7°, h = 29 ft, Kab = 0.360 (Γ =
+  2.133); F1 18.92, FH1 18.46, FV1 4.16, F2 2.61, FH2 2.55, FV2 0.57, V1
+  45.00, V2 10.12 k/ft; sliding Pd 32.15, Rr 36.0 k/ft, CDR 1.12; e = 3.80
+  ft (≤ L/4 = 4.50); eB = 2.77 ft, σV-F = 6.55 ksf, CDR 1.60; Seq = 3.51 ft.
+  E1 counts FV2 (traffic) as sliding and eccentricity resistance; Vol I p.
+  4-22 counts resisting loads only if permanent. Pinned with E1's choice
+  (`traffic_vertical_resists=True`); the default's numbers sit beside it.
+- Verdict: **PASS** (RESULTS.md). Tests:
+  test_published_v056_v057_gec11_slope.py.
+
 ## Slide2 #50 / #30 / #31 / #32 — reinforced (multi-material) — SKIPPED (complexity)
 - **#50** (SNAILZ, 2 materials, predefined surface): 14 geotextile rows each with a
   distinct bond strength/length modelled as bond-controlled soil nails; figure-only

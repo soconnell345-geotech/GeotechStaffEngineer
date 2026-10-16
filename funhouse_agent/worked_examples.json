@@ -340,12 +340,81 @@
   "provenance": "validation_examples/test_published_v009_v011.py::test_v009_lrfd_external_stability_high_level_path, test_v009_sliding_CDR_lrfd, test_v009_eccentricity_lrfd, test_v009_bearing_lrfd",
   "source_doc": "GEC 11 VOL 2.pdf",
   "source_pdf_pages": [
-   285,
-   286,
-   287,
-   288
+   297,
+   299,
+   300,
+   301
   ],
-  "source_pages_estimated": true
+  "source_pages_estimated": false
+ },
+ {
+  "id": "WE-MSE-2",
+  "title": "MSE wall with a sloping backfill (LRFD) — FHWA GEC-11 Appendix E, Example E3",
+  "domain": "retaining_walls",
+  "keywords": [
+   "MSE wall",
+   "mechanically stabilized earth",
+   "sloping backfill",
+   "backslope",
+   "sloping surcharge",
+   "external stability",
+   "LRFD",
+   "sliding CDR",
+   "eccentricity",
+   "bearing",
+   "Coulomb",
+   "GEC-11",
+   "steel strip",
+   "segmental panel"
+  ],
+  "source": "FHWA GEC-11, 'Design and Construction of Mechanically Stabilized Earth Walls and Reinforced Soil Slopes', Vol 2 (FHWA-NHI-10-025), Appendix E, Example E3 (Tables E3-4.3, E3-4.4, E3-6.1, E3-6.2, E3-6.3).",
+  "problem": "A segmental precast-panel MSE wall with ribbed steel strips has exposed height 28 ft plus 2 ft embedment, design height H = 30 ft (9.144 m), and reinforcement length L = 0.8H = 24 ft (7.315 m). A 2H:1V backfill slope (beta = 26.56 deg) rises from the top of the face and continues, so the pressure plane at the back of the reinforced zone is h = H + L tan(beta) = 42 ft. Reinforced fill: phi = 34 deg; retained fill: phi = 30 deg; foundation: phi = 30 deg; all gamma = 125 pcf (19.636 kN/m3). Factored bearing resistance 10.50 ksf (502.7 kPa) at the strength limit and 7.50 ksf (359.1 kPa) at service. Check external stability (sliding, limiting eccentricity, bearing) per AASHTO/GEC-11 LRFD Strength I (max and min) and Service I, with the Coulomb Kab for the sloping backfill (delta = beta) and the thrust F_T inclined at beta.",
+  "dispatch_calls": [
+   {
+    "module": "retaining_walls",
+    "method": "mse_lrfd_external_stability",
+    "params": {
+     "wall_height": 9.144,
+     "reinforcement_length": 7.3152,
+     "gamma_backfill": 19.636,
+     "phi_backfill": 34.0,
+     "phi_foundation": 30.0,
+     "phi_retained": 30.0,
+     "gamma_retained": 19.636,
+     "backfill_slope": 26.5651,
+     "bearing_resistance_strength": 502.7,
+     "bearing_resistance_service": 359.1
+    }
+   }
+  ],
+  "published_result": "Kaf = 0.537 (Gamma = 1.563). Unfactored: V1 = 90.00, V2 = 18.00, FTV = 26.48, FTH = 52.95 k/ft. Sliding CDRs: Strength I max = 1.35, Strength I min = 1.60, critical max/min = 1.07 (governs). Eccentricity: eL = 2.90 ft (Strength I max), 3.81 ft (critical) vs L/4 = 6.00 ft. Bearing: Strength I max sigma_v = 10.19 ksf, B' = 18.20 ft, CDR = 1.03; Service I sigma_v = 7.16 ksf, CDR 1.05; critical sigma_v = 9.02 ksf, CDR 1.16. All checks pass; CDR near 1.0, so shorter reinforcement is not recommended.",
+  "computed_result": {
+   "Kab": 0.5367,
+   "sliding_CDR_strength_max": 1.349,
+   "sliding_CDR_strength_min": 1.598,
+   "sliding_CDR_critical_governing": 1.074,
+   "eccentricity_eL_strength_max_m": 0.8838,
+   "eccentricity_eL_critical_m": 1.162,
+   "eccentricity_limit_m": 1.8288,
+   "bearing_sigma_v_strength_max_kPa": 487.96,
+   "bearing_CDR_strength": 1.03,
+   "bearing_sigma_v_service_kPa": 342.93,
+   "bearing_CDR_service": 1.047,
+   "bearing_sigma_v_critical_kPa": 431.84,
+   "all_checks_pass": true,
+   "unit_check": "eL 0.8838 m = 2.90 ft; eL_critical 1.162 m = 3.81 ft; e_limit 1.8288 m = 6.00 ft; sigma_v 487.96 kPa = 10.19 ksf; service 342.93 kPa = 7.16 ksf; critical 431.84 kPa = 9.02 ksf; FT_H 772.3 kN/m = 52.92 k/ft (pub 52.95 with Kaf rounded to 0.537)"
+  },
+  "report_notes": "A good report states the sloping-backfill basis first: the Coulomb Kab with delta = beta (GEC-11 Eqs 4-2/4-3, vertical wall theta = 90 deg), the pressure plane h = H + L tan(beta) and the thrust F_T = 1/2 Kab gamma h^2 inclined at beta (Eq 4-7), then tabulates the unfactored loads (V1, the slope fill V2 at 2L/3, F_T's horizontal and vertical components) with moment arms about the toe. Show each load combination: F_T cos(beta) drives and F_T sin(beta) resists with the SAME EH factor (the critical max/min combination uses EV 1.00 on V1 + V2 and EH 1.50 on both components). Report CDRs, not ASD factors of safety. A surcharge on a slope that continues is not part of this case; traffic behind a broken backslope is GEC-11 Example E1 (broken_backslope_height).",
+  "provenance": "validation_examples/test_published_v056_v057_gec11_slope.py::test_v056_kaf_and_unfactored_loads, test_v056_sliding_cdr, test_v056_eccentricity, test_v056_bearing",
+  "source_doc": "GEC 11 VOL 2.pdf",
+  "source_pdf_pages": [
+   276,
+   278,
+   280,
+   281,
+   283
+  ],
+  "source_pages_estimated": false
  },
  {
   "id": "WE-SOE-1",

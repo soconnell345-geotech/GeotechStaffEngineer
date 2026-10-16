@@ -110,21 +110,43 @@ class MSEWallGeometry:
         Vertical spacing between reinforcement levels Sv (m).
         Default 0.60.
     backfill_slope : float, optional
-        Slope of backfill above wall (degrees). Default 0.
+        Slope of the backfill surface above the wall, beta (degrees from
+        horizontal), rising away from the face. Default 0 (level).
     surcharge : float, optional
-        Uniform surcharge (kPa). Default 0.
+        Uniform surcharge (kPa). Default 0. With a sloping backfill it is
+        taken only with ``broken_backslope_height``: traffic on the level
+        ground behind the crest (GEC-11 Example E1).
+    broken_backslope_height : float, optional
+        For a broken backslope (GEC-11 Fig. 4-4): the height S of the slope
+        crest above the top of the wall (m), with level ground behind it.
+        Default None: the slope continues (GEC-11 Fig. 4-3).
     """
     wall_height: float
     reinforcement_length: Optional[float] = None
     reinforcement_spacing: float = 0.60
     backfill_slope: float = 0.0
     surcharge: float = 0.0
+    broken_backslope_height: Optional[float] = None
 
     def __post_init__(self):
         if self.wall_height <= 0:
             raise ValueError(f"Wall height must be positive, got {self.wall_height}")
         if self.reinforcement_spacing <= 0:
             raise ValueError(f"Spacing must be positive, got {self.reinforcement_spacing}")
+        if not 0 <= self.backfill_slope < 90:
+            raise ValueError(
+                f"backfill_slope must be from 0 to below 90 degrees, rising "
+                f"away from the wall face; got {self.backfill_slope}")
+        if self.broken_backslope_height is not None:
+            if self.broken_backslope_height <= 0:
+                raise ValueError(
+                    "broken_backslope_height (the height of the slope crest "
+                    "above the top of the wall) must be positive, got "
+                    f"{self.broken_backslope_height}")
+            if self.backfill_slope <= 0:
+                raise ValueError(
+                    "broken_backslope_height needs a backfill_slope: it is "
+                    "the height of the crest of that slope")
 
         if self.reinforcement_length is None:
             self.reinforcement_length = round(max(0.7 * self.wall_height, 2.5), 2)

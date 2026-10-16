@@ -764,6 +764,14 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
 
     if phi_f is None:
         phi_f = phi
+    if geom.backfill_slope > 0:
+        # The steps below re-derive a level backfill (Rankine Ka); printing
+        # them beside a sloping-backfill result would contradict it (GM-112).
+        raise ValueError(
+            "MSE calculation steps cover a level backfill only; the analysis "
+            "result itself (mse_wall / analyze_mse_wall) handles a sloping "
+            "backfill per GEC-11 Section 4.4.4 and reports its basis in "
+            "'backslope'.")
 
     sections = []
     H = geom.wall_height
@@ -966,7 +974,7 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
                  if r_type == "Metallic"
                  else "Kr/Ka = 1.0 for geosynthetic reinforcement",
         substitution=(
-            "Metallic: Kr/Ka = 1.7 at z=0 to 1.2 at z\u22656m"
+            "Metallic: Kr/Ka = 1.7 at z=0 to 1.2 at z\u226520 ft (6.096 m)"
             if r_type == "Metallic"
             else "Geosynthetic: Kr/Ka = 1.0 (constant)"
         ),

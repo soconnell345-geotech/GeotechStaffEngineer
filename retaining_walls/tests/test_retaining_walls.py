@@ -256,12 +256,13 @@ class TestMSEKrAndFstar:
         assert abs(Kr_Ka_ratio(0, "metallic") - 1.7) < 0.001
 
     def test_Kr_Ka_metallic_deep(self):
-        assert abs(Kr_Ka_ratio(6, "metallic") - 1.2) < 0.001
+        """1.2 from 20 ft (6.096 m) down (GEC-11 Fig. 4-10)."""
+        assert abs(Kr_Ka_ratio(6.096, "metallic") - 1.2) < 0.001
         assert abs(Kr_Ka_ratio(10, "metallic") - 1.2) < 0.001
 
     def test_Kr_Ka_metallic_mid(self):
-        """At z=3m: 1.7 - 0.5/6*3 = 1.45."""
-        assert abs(Kr_Ka_ratio(3, "metallic") - 1.45) < 0.01
+        """At z=3m: 1.7 - 0.5/6.096*3 = 1.454."""
+        assert abs(Kr_Ka_ratio(3, "metallic") - 1.454) < 0.001
 
     def test_Kr_Ka_geosynthetic(self):
         assert Kr_Ka_ratio(0, "geosynthetic") == 1.0
@@ -271,9 +272,10 @@ class TestMSEKrAndFstar:
         assert abs(F_star_metallic(0) - 2.0) < 0.001
 
     def test_Fstar_deep(self):
-        """At z>=6m, F* = tan(phi) for ribbed metallic strips (GEC-11 Fig 4-11)."""
+        """At z>=20 ft (6.096 m), F* = tan(phi) for ribbed metallic strips
+        (GEC-11 Eq. 3-5)."""
         F_deep = math.tan(math.radians(34))
-        assert abs(F_star_metallic(6) - F_deep) < 0.001
+        assert abs(F_star_metallic(6.096) - F_deep) < 0.001
 
 
 # ================================================================
@@ -659,12 +661,12 @@ class TestPulloutCoverageRatio:
 # ================================================================
 class TestFstarAtDepth:
     def test_deep_equals_tan_phi(self):
-        """At z>=6m, F* = tan(phi_backfill), not 0.67*tan(34)."""
+        """At z>=20 ft (6.096 m), F* = tan(phi_backfill), not 0.67*tan(34)."""
         for phi in [28.0, 30.0, 34.0, 38.0, 40.0]:
-            F_deep = F_star_metallic(6.0, phi)
+            F_deep = F_star_metallic(6.096, phi)
             expected = math.tan(math.radians(phi))
             assert abs(F_deep - expected) < 0.001, (
-                f"F*(z=6, phi={phi}) = {F_deep}, expected tan({phi}) = {expected}"
+                f"F*(z=6.096, phi={phi}) = {F_deep}, expected tan({phi}) = {expected}"
             )
 
     def test_deep_not_067_factor(self):
@@ -681,10 +683,10 @@ class TestFstarAtDepth:
         assert abs(F_star_metallic(0, 40.0) - 2.0) < 0.001
 
     def test_interpolation_midpoint(self):
-        """At z=3m, F* should be halfway between 2.0 and tan(phi)."""
+        """At z=3m, F* is linear between 2.0 at 0 and tan(phi) at 6.096 m."""
         phi = 34.0
         F_deep = math.tan(math.radians(phi))
-        expected_mid = 2.0 - (2.0 - F_deep) / 6.0 * 3.0
+        expected_mid = 2.0 - (2.0 - F_deep) / 6.096 * 3.0
         actual = F_star_metallic(3.0, phi)
         assert abs(actual - expected_mid) < 0.001
 
@@ -1021,24 +1023,27 @@ class TestBarMatCurves:
 
     # -- default-preserving: ribbed strip unchanged ------------------------
     def test_strip_default_unchanged(self):
-        """The default (ribbed-strip) curves are byte-identical to before:
-        Kr/Ka 1.7 -> 1.2 over 6 m; F* 2.0 -> tan(phi) over 6 m."""
+        """The default (ribbed-strip) curves: Kr/Ka 1.7 -> 1.2 over 20 ft
+        (6.096 m); F* 2.0 -> tan(phi) over 20 ft (GEC-11 Fig. 4-10, Eq. 3-5;
+        6.0 m before the GM-112 review, 2026-10-16)."""
+        Z20 = 20.0 * 0.3048
+
         def kr_old(z):
             if z <= 0:
                 return 1.7
-            if z >= 6.0:
+            if z >= Z20:
                 return 1.2
-            return 1.7 - (0.5 / 6.0) * z
+            return 1.7 - (0.5 / Z20) * z
 
         def f_old(z, phi):
             fs, fd = 2.0, math.tan(math.radians(phi))
             if z <= 0:
                 return fs
-            if z >= 6.0:
+            if z >= Z20:
                 return fd
-            return fs - (fs - fd) / 6.0 * z
+            return fs - (fs - fd) / Z20 * z
 
-        for z in [0.0, 1.0, 2.5, 3.0, 5.9, 6.0, 8.0]:
+        for z in [0.0, 1.0, 2.5, 3.0, 5.9, 6.0, 6.096, 8.0]:
             assert Kr_Ka_ratio(z) == kr_old(z)
             assert Kr_Ka_ratio(z, "metallic") == kr_old(z)
             for phi in (28.0, 30.0, 34.0, 40.0):

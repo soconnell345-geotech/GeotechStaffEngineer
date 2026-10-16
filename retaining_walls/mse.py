@@ -16,6 +16,12 @@ References:
     Both citations below are correct — they name the two volumes, not a typo.
     AASHTO LRFD Section 11.10
 
+    Sloping backfill and broken backslope (GM-112): GEC-11 Vol I §4.4.4
+    (Eqs. 4-2, 4-3, 4-7; Figs. 4-3, 4-4), §4.4.6 (Eqs. 4-10 to 4-21; Fig.
+    4-8) and §4.4.7 (Eq. 4-29; Figs. 4-9a, 4-11, 4-15), reproduced against
+    Vol II Examples E3 (a slope that continues) and E1 (a broken backslope);
+    see DESIGN.md.
+
     Source basis (Kr/K0 ratio and F* pullout curves): DIGITIZED from GEC-11
     Figs 4-10/4-11/E4-5 (also AASHTO Fig. 11.10.6.2.1-3). Authoring-time in-hand
     status not recorded, but the curves are anchored by the GEC-11 Example E4
@@ -25,10 +31,12 @@ References:
 """
 
 import math
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from retaining_walls.geometry import MSEWallGeometry
-from retaining_walls.earth_pressure import rankine_Ka, horizontal_force_active
+from retaining_walls.earth_pressure import (
+    rankine_Ka, coulomb_Ka, horizontal_force_active,
+)
 from retaining_walls.reinforcement import Reinforcement
 from retaining_walls.results import MSEWallResult
 
@@ -44,7 +52,8 @@ def Kr_Ka_ratio(z: float, reinforcement_type: str = "metallic") -> float:
     Two inextensible (metallic) lateral-stress-ratio curves, plus geosynthetic:
 
     - ribbed metallic STRIP ("metallic" / "metallic_strip", DEFAULT):
-      1.7 at z=0 -> 1.2 at z>=6 m, constant below (GEC-11 Fig. 4-10).
+      1.7 at z=0 -> 1.2 at z>=20 ft (6.096 m), constant below (GEC-11 Fig.
+      4-10, p. 4-37; the text, p. 4-35, says "20 ft (6 m)").
     - steel bar-mat / welded-grid ("bar_mat" / "welded_grid" /
       "metallic_grid"): 2.5 at z=0 -> 1.2 at z>=20 ft (6.096 m), constant below
       (GEC-11 Fig. E4-5 / AASHTO Fig. 11.10.6.2.1-3).
@@ -80,13 +89,14 @@ def Kr_Ka_ratio(z: float, reinforcement_type: str = "metallic") -> float:
         else:
             return 2.5 - (2.5 - 1.2) / _Z20_FT_M * z
 
-    # Ribbed metallic strip (default): linear 1.7 at z=0 to 1.2 at z=6m
+    # Ribbed metallic strip (default): linear 1.7 at z=0 to 1.2 at z=20 ft
+    # (6.096 m), as GEC-11 Fig. 4-10 draws it for strips and bar mats alike
     if z <= 0:
         return 1.7
-    elif z >= 6.0:
+    elif z >= _Z20_FT_M:
         return 1.2
     else:
-        return 1.7 - (0.5 / 6.0) * z
+        return 1.7 - (0.5 / _Z20_FT_M) * z
 
 
 def F_star_metallic(z: float, phi_backfill: float = 34.0,
@@ -97,7 +107,9 @@ def F_star_metallic(z: float, phi_backfill: float = 34.0,
     Two curves per GEC-11 Figure 4-11 / E4-5:
 
     - ribbed metallic STRIP ("metallic" / "metallic_strip", DEFAULT):
-      F* = 2.0 at z=0 -> tan(phi) at z>=6 m (linear interpolation).
+      F* = 2.0 at z=0 -> tan(phi) at z>=20 ft (6.096 m), linear between
+      (GEC-11 Eqs. 3-4/3-5, p. 3-20: "tan phi at a depth of 20 ft (6 m) and
+      below").
     - steel bar-mat / welded-grid ("bar_mat" / "welded_grid" /
       "metallic_grid"): F* = 20·(t/St) at z=0 -> 10·(t/St) at z>=20 ft
       (6.096 m), where t = transverse-bar diameter and St = transverse-bar
@@ -141,15 +153,16 @@ def F_star_metallic(z: float, phi_backfill: float = 34.0,
             return F_deep + (_Z20_FT_M - z) * (F_surface - F_deep) / _Z20_FT_M
 
     F_star_surface = 2.0
-    # At depth >= 6m, F* = tan(phi) for ribbed metallic strips (GEC-11 Fig 4-11)
+    # At depth >= 20 ft (6.096 m), F* = tan(phi) for ribbed metallic strips
+    # (GEC-11 Eq. 3-5)
     F_star_deep = math.tan(math.radians(phi_backfill))
 
     if z <= 0:
         return F_star_surface
-    elif z >= 6.0:
+    elif z >= _Z20_FT_M:
         return F_star_deep
     else:
-        return F_star_surface - (F_star_surface - F_star_deep) / 6.0 * z
+        return F_star_surface - (F_star_surface - F_star_deep) / _Z20_FT_M * z
 
 
 def Tmax_at_level(z: float, gamma_backfill: float, Ka: float,
@@ -211,7 +224,8 @@ def pullout_resistance(z: float, gamma_backfill: float,
         Overall reinforcement surface area geometry factor.
         C=2 for strips/grids (top and bottom surface). Default 2.
     q_surcharge : float, optional
-        Surcharge (kPa). Default 0.
+        Distributed dead-load surcharge (kPa). Default 0. Traffic loads are
+        left out of pullout (GEC-11 p. 4-49).
     Rc : float, optional
         Coverage ratio (b/Sh for strips, 1.0 for continuous grids).
         Default 1.0.
@@ -223,6 +237,232 @@ def pullout_resistance(z: float, gamma_backfill: float,
     """
     sigma_v = gamma_backfill * z + q_surcharge
     return F_star * alpha_pullout * sigma_v * Le * C * Rc
+
+
+# ---------------------------------------------------------------------------
+# Sloping backfill (GEC-11 Vol I, FHWA-NHI-10-024, §4.4.4, §4.4.6, §4.4.7)
+# ---------------------------------------------------------------------------
+
+def _rise_integral(x: float, tan_b: float, S: Optional[float]) -> float:
+    """Area under the slope surface above the top of the wall from the face
+    to x (m2/m): the rise is x tan(beta), not more than S."""
+    if S is None or x * tan_b <= S:
+        return 0.5 * tan_b * x * x
+    x_c = S / tan_b
+    return 0.5 * S * x_c + S * (x - x_c)
+
+
+def _rise_first_moment(x: float, tan_b: float, S: Optional[float]) -> float:
+    """First moment about the face of the area under the slope surface from
+    the face to x (m3/m)."""
+    if S is None or x * tan_b <= S:
+        return tan_b * x ** 3 / 3.0
+    x_c = S / tan_b
+    return S * x_c ** 2 / 3.0 + 0.5 * S * (x * x - x_c * x_c)
+
+
+def backslope_geometry(geom: MSEWallGeometry) -> Dict[str, Any]:
+    """Geometry of the backfill slope above an MSE wall, per GEC-11 Vol I.
+
+    The slope rises at ``geom.backfill_slope`` (beta) from the top of the
+    face. It either continues (GEC-11 Fig. 4-3) or is a broken backslope
+    whose crest is ``geom.broken_backslope_height`` (S) above the top of the
+    wall with level ground behind it (Fig. 4-4). With a level backfill every
+    quantity reduces to the level case (h = H, V2 = 0, level_length = L,
+    S_eq = 0, H1 = H).
+
+    Returns
+    -------
+    dict
+        beta_deg : the slope beta (deg).
+        I_deg : the angle used for Kab and as the interface angle delta.
+            For a slope that continues delta = beta (p. 4-15); for a broken
+            backslope beta = delta = I, the angle from the top of the wall
+            to the ground surface 2H behind the face (p. 4-15, Fig. 4-4).
+        h : height of the pressure plane at the back of the reinforced zone,
+            H + L tan(beta) (Eq. 4-7), and not more than H + S for a broken
+            backslope (p. 4-20).
+        S : the broken backslope height, or None.
+        crest_x : distance of the slope crest from the face (m), or None.
+        V2_area, V2_arm : area (m2/m) of the slope fill over the reinforced
+            zone and the distance of its centroid from the face (the
+            triangle of Figs. 4-3/4-4, arm 2L/3; a crest inside L adds the
+            level part behind it).
+        level_length : length of level ground over the reinforced zone (L
+            for a level backfill; L - crest_x behind a crest inside L).
+        S_eq : the equivalent uniform height of the sloping surcharge for
+            internal stability, (1/2)(0.7H) tan(beta), not more than S
+            (Fig. 4-11, p. 4-36).
+        H1 : height of the zone of maximum stress for inextensible
+            reinforcement, H + tan(beta) 0.3H / (1 - 0.3 tan(beta)) (Fig.
+            4-9a); the rise not more than S.
+    """
+    H = geom.wall_height
+    L = geom.reinforcement_length
+    beta = geom.backfill_slope
+    S = geom.broken_backslope_height
+    if beta <= 0:
+        return {"beta_deg": 0.0, "I_deg": 0.0, "h": H, "S": None,
+                "crest_x": None, "V2_area": 0.0, "V2_arm": 2.0 * L / 3.0,
+                "level_length": L, "S_eq": 0.0, "H1": H}
+    t = math.tan(math.radians(beta))
+
+    def rise(x):
+        return x * t if S is None else min(x * t, S)
+
+    I_deg = (beta if S is None
+             else math.degrees(math.atan(rise(2.0 * H) / (2.0 * H))))
+    area = _rise_integral(L, t, S)
+    crest_x = None if S is None else S / t
+    level_length = 0.0 if crest_x is None else max(L - crest_x, 0.0)
+    if level_length < 1e-9 * L:          # a crest at the back of the zone
+        level_length = 0.0
+    S_eq = 0.5 * 0.7 * H * t
+    dH = t * 0.3 * H / (1.0 - 0.3 * t)
+    if S is not None:
+        S_eq = min(S_eq, S)
+        dH = min(dH, S)
+    return {
+        "beta_deg": beta, "I_deg": I_deg, "h": H + rise(L), "S": S,
+        "crest_x": crest_x, "V2_area": area,
+        "V2_arm": _rise_first_moment(L, t, S) / area,
+        "level_length": level_length, "S_eq": S_eq, "H1": H + dH,
+    }
+
+
+def _mean_rise(a: float, b: float, geom: MSEWallGeometry) -> float:
+    """Mean rise of the slope surface above the top of the wall between a
+    and b from the face (m)."""
+    if geom.backfill_slope <= 0 or b <= a:
+        return 0.0
+    t = math.tan(math.radians(geom.backfill_slope))
+    S = geom.broken_backslope_height
+    return (_rise_integral(b, t, S) - _rise_integral(a, t, S)) / (b - a)
+
+
+def _check_backslope(geom: MSEWallGeometry, phi_retained: Optional[float],
+                     q: float) -> None:
+    """Refuse, with the reason, what the sloping-backfill check does not
+    cover: a slope steeper than the retained fill's friction angle, and a
+    surcharge on a slope that continues."""
+    beta = geom.backfill_slope
+    if phi_retained is not None and beta > phi_retained:
+        raise ValueError(
+            f"backfill_slope {beta:g} deg is steeper than the friction angle "
+            f"of the fill behind the reinforced zone, {phi_retained:g} deg: "
+            "sin(phi - beta) < 0 under the root in GEC-11 Eq. 4-3, so the "
+            "Coulomb Kab has no real value, and a fill slope steeper than "
+            "its friction angle does not stand.")
+    if q > 0 and geom.broken_backslope_height is None:
+        raise ValueError(
+            "a surcharge on a backfill slope that continues is not covered: "
+            "GEC-11 gives the sloping-backfill case with no surcharge "
+            "(Section 4.4.6.b, Eq. 4-16). For traffic on level ground behind "
+            "the crest of a broken backslope, give broken_backslope_height, "
+            "the height of the crest above the top of the wall (GEC-11 "
+            "Example E1).")
+
+
+def backslope_loads(geom: MSEWallGeometry, gamma_backfill: float,
+                    phi_retained: float, gamma_retained: float,
+                    q: float = 0.0) -> Dict[str, Any]:
+    """Unfactored external loads on an MSE wall with a sloping backfill.
+
+    Per GEC-11 Vol I (FHWA-NHI-10-024) §4.4.4 and Figs. 4-3, 4-4 and 4-8,
+    as worked in Vol II Examples E3 (a slope that continues) and E1 (a broken
+    backslope with traffic behind the crest). Per unit length of wall, with
+    the moment arms about the toe of the reinforced zone (Point A).
+
+    * Kab: Coulomb, Eqs. 4-2/4-3, vertical wall (theta = 90 deg), with the
+      slope and the interface angle both I (I = beta for a slope that
+      continues).
+    * F_T = 1/2 Kab gamma_b h^2 (Eq. 4-7), on the vertical plane at the back
+      of the reinforced zone, inclined at I: F_TH = F_T cos I at h/3 (Eq.
+      4-10), F_TV = F_T sin I at L.
+    * V1 = gamma_r H L at L/2; V2 = gamma_r times the slope fill over the
+      reinforced zone, at its centroid (2L/3 for the triangle,
+      V2 = gamma_r L (h - H) / 2).
+    * q (broken backslope only): F2 = Kab q h at h/2, inclined at I
+      (Example E1); Vs = q over any level ground on the reinforced zone.
+
+    Raises ValueError for a slope steeper than ``phi_retained`` (at beta =
+    phi Eq. 4-3 gives Gamma = 1) and for a surcharge on a slope that
+    continues.
+    """
+    _check_backslope(geom, phi_retained, q)
+    H = geom.wall_height
+    L = geom.reinforcement_length
+    bs = backslope_geometry(geom)
+    I_deg, h = bs["I_deg"], bs["h"]
+    Kab = coulomb_Ka(phi_retained, I_deg, 90.0, I_deg)
+    c, s = math.cos(math.radians(I_deg)), math.sin(math.radians(I_deg))
+    FT = 0.5 * Kab * gamma_retained * h ** 2
+    F2 = Kab * q * h
+    V1 = gamma_backfill * H * L
+    V2 = gamma_backfill * bs["V2_area"]
+    Vs = q * bs["level_length"]
+    return {
+        "geometry": bs, "Kab": Kab, "I_deg": I_deg, "h": h,
+        "V1": V1, "MV1": V1 * L / 2.0,
+        "V2": V2, "MV2": V2 * bs["V2_arm"],
+        "Vs": Vs, "MVs": Vs * (L - bs["level_length"] / 2.0),
+        "FT": FT, "FTH": FT * c, "FTV": FT * s,
+        "MFTH": FT * c * h / 3.0, "MFTV": FT * s * L,
+        "F2": F2, "F2H": F2 * c, "F2V": F2 * s,
+        "MF2H": F2 * c * h / 2.0, "MF2V": F2 * s * L,
+    }
+
+
+_TRAFFIC_VERTICAL_BASIS = {
+    False: ("The traffic thrust's vertical component F2 sin(I) is not "
+            "counted in the sliding or eccentricity resistance: GEC-11 Vol I "
+            "p. 4-22 includes external loads that increase sliding "
+            "resistance 'only if those loads are permanent'. Bearing counts "
+            "it (p. 4-26: the bearing check applies the live load above "
+            "both the reinforced zone and the retained backfill). GEC-11 "
+            "Example E1 (Vol II pp. E1-7 to E1-9) counts it in all three: "
+            "traffic_vertical_resists=true."),
+    True: ("The traffic thrust's vertical component F2 sin(I) is counted in "
+           "the sliding and eccentricity resistance (LL factor), as GEC-11 "
+           "Example E1 does (Vol II pp. E1-7 to E1-9). The general text "
+           "counts loads that increase sliding resistance 'only if those "
+           "loads are permanent' (Vol I p. 4-22): "
+           "traffic_vertical_resists=false."),
+}
+
+
+def _backslope_summary(ld: Dict[str, Any],
+                       traffic_vertical_resists: bool = False
+                       ) -> Dict[str, Any]:
+    """The sloping-backfill basis a result reports (SI, rounded)."""
+    bs = ld["geometry"]
+    out = {
+        "backfill_slope_deg": bs["beta_deg"],
+        "broken_backslope_height_m": bs["S"],
+        "crest_from_face_m": (None if bs["crest_x"] is None
+                              else round(bs["crest_x"], 3)),
+        "interface_angle_deg": round(ld["I_deg"], 3),
+        "Kab": round(ld["Kab"], 4),
+        "h_m": round(ld["h"], 3),
+        "FT_kN_per_m": round(ld["FT"], 3),
+        "FT_horizontal_kN_per_m": round(ld["FTH"], 3),
+        "FT_vertical_kN_per_m": round(ld["FTV"], 3),
+        "V2_kN_per_m": round(ld["V2"], 3),
+        "V2_arm_from_face_m": round(bs["V2_arm"], 3),
+        "basis": (
+            "GEC-11 (FHWA-NHI-10-024) Section 4.4.4: Coulomb Kab (Eqs. 4-2, "
+            "4-3) with delta = beta (= I, Fig. 4-4, for a broken backslope); "
+            "F_T = 1/2 Kab gamma_b h^2 (Eq. 4-7) on h = H + L tan(beta) "
+            "(not more than H + S), inclined at delta; the slope fill over "
+            "the reinforced zone, V2, added to the weight (Figs. 4-3, 4-8)"),
+    }
+    if ld["F2"] > 0:
+        out["F2_kN_per_m"] = round(ld["F2"], 3)
+        out["Vs_kN_per_m"] = round(ld["Vs"], 3)
+        out["traffic_vertical_resists"] = bool(traffic_vertical_resists)
+        out["traffic_basis"] = _TRAFFIC_VERTICAL_BASIS[
+            bool(traffic_vertical_resists)]
+    return out
 
 
 def check_internal_stability(
@@ -253,12 +493,36 @@ def check_internal_stability(
     Returns
     -------
     list of dict
-        Per-level results.
+        Per-level results. With a sloping backfill each level also gives
+        ``Zp_m``, the depth below the slope surface used for pullout.
+
+    Notes
+    -----
+    A sloping backfill (``geom.backfill_slope`` > 0) follows GEC-11 Vol I:
+    Ka stays the level-backfill Rankine value (Eq. 4-25, beta = 0); the slope
+    adds sigma_2 = S_eq gamma_r to the vertical stress for Tmax, S_eq =
+    (1/2)(0.7H) tan(beta) (Fig. 4-11, Eq. 4-29); the zone of maximum stress
+    for inextensible reinforcement is 0.3 H1 from the face over the upper
+    H1/2 (Fig. 4-9a); pullout uses sigma_v = gamma_r Zp, Zp the depth below
+    the slope surface averaged over the resistant zone (Fig. 4-15; Example
+    E3, Fig. E3-5). A surcharge counts only where level ground lies over the
+    reinforced zone (behind the crest of a broken backslope).
+
+    The surcharge (``geom.surcharge``, the live load) is in Tmax and not in
+    the pullout resistance: pullout sigma_v is taken "neglecting traffic
+    loads" (GEC-11 p. 4-49; p. 4-51; AASHTO C11.10.6.2.1).
     """
     Ka = rankine_Ka(phi_backfill)
     H = geom.wall_height
     L = geom.reinforcement_length
     Sv = geom.reinforcement_spacing
+    sloping = geom.backfill_slope > 0
+    if sloping:
+        _check_backslope(geom, None, geom.surcharge)
+        bs = backslope_geometry(geom)
+        sigma_2 = gamma_backfill * bs["S_eq"]             # Fig. 4-11
+        q_int = geom.surcharge if bs["level_length"] > 0 else 0.0
+        H1 = bs["H1"]                                     # Fig. 4-9a
     # Select the depth-variation curve family by reinforcement type:
     #  - steel bar mat / welded grid -> bar-mat curves (Kr/Ka 2.5->1.2,
     #    F* 20(t/St)->10(t/St))
@@ -278,8 +542,12 @@ def check_internal_stability(
         # Kr/Ka ratio
         kr_ka = Kr_Ka_ratio(z, r_type)
 
-        # Tmax at this level
-        T = Tmax_at_level(z, gamma_backfill, Ka, kr_ka, Sv, geom.surcharge)
+        # Tmax at this level (a sloping backfill adds sigma_2, Eq. 4-29)
+        if sloping:
+            T = Tmax_at_level(z, gamma_backfill, Ka, kr_ka, Sv,
+                              q_int + sigma_2)
+        else:
+            T = Tmax_at_level(z, gamma_backfill, Ka, kr_ka, Sv, geom.surcharge)
 
         # Effective length Le = total length - active zone length La.
         # GEC-11 / AASHTO Fig. 11.10.6.3.1-1: the failure surface depends
@@ -289,9 +557,13 @@ def check_internal_stability(
         #    wall, then tapering linearly to the toe:
         #       La = 0.3*H        for z <= H/2
         #       La = 0.6*(H - z)  for z >  H/2
+        #    Under a sloping backfill H becomes H1 (GEC-11 Fig. 4-9a): the
+        #    upper H1/2 at 0.3*H1, the lower H1/2 tapering to the toe.
         #  - Extensible (geosynthetic): Rankine wedge at 45+phi/2:
         #       La = (H - z)*tan(45 - phi/2)
-        if reinforcement.is_metallic:
+        if reinforcement.is_metallic and sloping:
+            La = 0.3 * H1 if (H - z) >= H1 / 2.0 else 0.6 * (H - z)
+        elif reinforcement.is_metallic:
             La = 0.3 * H if z <= H / 2.0 else 0.6 * (H - z)
         else:
             La = (H - z) * math.tan(math.radians(45 - phi_backfill / 2))
@@ -308,11 +580,24 @@ def check_internal_stability(
         else:
             F_star = 0.67 * math.tan(math.radians(phi_backfill))
 
-        Pr = pullout_resistance(
-            z, gamma_backfill, Le, F_star,
-            q_surcharge=geom.surcharge,
-            Rc=reinforcement.coverage_ratio,
-        )
+        # Pullout sigma_v is "the unfactored vertical stress at the
+        # reinforcement level in the resistant zone, including distributed
+        # dead load surcharges, neglecting traffic loads" (GEC-11 p. 4-49).
+        # geom.surcharge is the live load (the LRFD check factors it with
+        # gamma_LL), so it is in Tmax above and not in pullout here.
+        if sloping:
+            # sigma_v = gamma_r Zp, Zp below the slope surface averaged over
+            # the resistant zone (GEC-11 Fig. 4-15, Fig. E3-5)
+            Zp = z + _mean_rise(max(L - Le, 0.0), L, geom)
+            Pr = pullout_resistance(
+                Zp, gamma_backfill, Le, F_star,
+                Rc=reinforcement.coverage_ratio,
+            )
+        else:
+            Pr = pullout_resistance(
+                z, gamma_backfill, Le, F_star,
+                Rc=reinforcement.coverage_ratio,
+            )
 
         # FOS checks
         FOS_po = Pr / T if T > 0 else 99.9
@@ -320,7 +605,7 @@ def check_internal_stability(
 
         passes = (FOS_po >= FOS_pullout) and (FOS_ru >= FOS_rupture)
 
-        results.append({
+        level = {
             "depth_m": round(z, 2),
             "Tmax_kN_per_m": round(T, 2),
             "Pr_kN_per_m": round(Pr, 2),
@@ -332,7 +617,10 @@ def check_internal_stability(
             "FOS_rupture": round(FOS_ru, 3),
             "Tallowable_kN_per_m": reinforcement.Tallowable,
             "passes": passes,
-        })
+        }
+        if sloping:
+            level["Zp_m"] = round(Zp, 2)
+        results.append(level)
 
     return results
 
@@ -349,6 +637,7 @@ def check_external_stability(
     FOS_overturning_req: float = 2.0,
     phi_retained: float = None,
     gamma_retained: float = None,
+    traffic_vertical_resists: bool = False,
 ) -> Dict[str, Any]:
     """Check external stability of MSE wall as rigid block.
 
@@ -378,6 +667,13 @@ def check_external_stability(
         Retained soil friction angle (degrees). If None, uses phi_backfill.
     gamma_retained : float, optional
         Retained soil unit weight (kN/m³). If None, uses gamma_backfill.
+    traffic_vertical_resists : bool, optional
+        Broken backslope with traffic behind the crest only: count the
+        traffic thrust's vertical component F2 sin(I) as sliding and
+        overturning resistance, as GEC-11 Example E1 does. Default False:
+        GEC-11 Vol I p. 4-22 counts loads that increase sliding resistance
+        "only if those loads are permanent". It is counted in bearing
+        either way (p. 4-26).
 
     Returns
     -------
@@ -386,7 +682,20 @@ def check_external_stability(
         passes_overturning / passes_bearing, bearing_checked, sigma_v_kPa,
         eccentricity_m, and ``passes``: True only when every check was run
         and passed, False when one failed, None when none failed but the
-        bearing check was not run (GM-100).
+        bearing check was not run (GM-100). With a sloping backfill also
+        ``backslope``: the GEC-11 basis (Kab, h, F_T and its components, V2).
+
+    Notes
+    -----
+    A sloping backfill (``geom.backfill_slope`` > 0, GEC-11 Vol I §4.4.4)
+    takes the Coulomb Kab with delta = beta and the thrust F_T on the plane
+    of height h = H + L tan(beta) at the back of the reinforced zone,
+    inclined at beta (Eqs. 4-2, 4-3, 4-7; ``backslope_loads``). Its
+    horizontal component drives sliding and overturning (Eq. 4-10); its
+    vertical component, at the back of the zone, and the slope fill over
+    the zone, V2, resist them and load the base (Eqs. 4-13, 4-16, 4-21),
+    unfactored here. A negative eccentricity leaves the full width L
+    (GEC-11 p. 4-28).
     """
     H = geom.wall_height
     L = geom.reinforcement_length
@@ -395,13 +704,36 @@ def check_external_stability(
     phi_ext = phi_retained if phi_retained is not None else phi_backfill
     gamma_ext = gamma_retained if gamma_retained is not None else gamma_backfill
 
-    Ka = rankine_Ka(phi_ext)
+    backslope = None
+    if geom.backfill_slope > 0:
+        ld = backslope_loads(geom, gamma_backfill, phi_ext, gamma_ext,
+                             geom.surcharge)
+        backslope = _backslope_summary(ld, traffic_vertical_resists)
+        # Weight on the base, the surcharge over the zone counted as in the
+        # level case, plus the thrust's vertical component at the back. The
+        # traffic thrust's vertical component resists sliding and overturning
+        # only by choice (Example E1; not by p. 4-22); bearing takes it.
+        f2v = 1.0 if traffic_vertical_resists else 0.0
+        W = (ld["V1"] + ld["V2"] + ld["Vs"] + ld["FTV"]
+             + f2v * ld["F2V"])
+        Pa = ld["FTH"] + ld["F2H"]                   # horizontal driving force
+        M_stab = (ld["MV1"] + ld["MV2"] + ld["MVs"] + ld["MFTV"]
+                  + f2v * ld["MF2V"])
+        M_over = ld["MFTH"] + ld["MF2H"]
+        W_bearing = W + (1.0 - f2v) * ld["F2V"]
+        M_bearing = M_stab + (1.0 - f2v) * ld["MF2V"]
+    else:
+        Ka = rankine_Ka(phi_ext)
 
-    # Active force from retained soil behind reinforced zone
-    Pa, z_Pa = horizontal_force_active(gamma_ext, H, Ka, q=geom.surcharge)
+        # Active force from retained soil behind reinforced zone
+        Pa, z_Pa = horizontal_force_active(gamma_ext, H, Ka, q=geom.surcharge)
 
-    # Weight of reinforced block (uses reinforced fill properties)
-    W = gamma_backfill * H * L + geom.surcharge * L
+        # Weight of reinforced block (uses reinforced fill properties)
+        W = gamma_backfill * H * L + geom.surcharge * L
+
+        M_stab = W * L / 2.0
+        M_over = Pa * z_Pa
+        W_bearing, M_bearing = W, M_stab
 
     # Sliding: soil-on-soil interface, use min(phi_backfill, phi_foundation)
     # per GEC-11 Section 4.3 (no 2/3 reduction for soil-on-soil)
@@ -411,19 +743,18 @@ def check_external_stability(
     FOS_sliding = R_sliding / Pa if Pa > 0 else 99.9
 
     # Overturning about toe
-    M_stab = W * L / 2.0
-    M_over = Pa * z_Pa
     FOS_overturning = M_stab / M_over if M_over > 0 else 99.9
 
     # Bearing — Meyerhof uniform pressure over the effective width
     # (AASHTO 11.10.5.4 / GEC-11 Eq. 4-13): sigma_v = W / (L - 2e).
     # This replaces the trapezoidal q_toe = (W/L)(1 + 6e/L) convention,
-    # which is not the AASHTO/GEC-11 MSE convention (RW-3).
-    x_R = (M_stab - M_over) / W if W > 0 else L / 2.0
+    # which is not the AASHTO/GEC-11 MSE convention (RW-3). A negative e
+    # (resultant behind the centre) leaves L - 2e = L (GEC-11 p. 4-28).
+    x_R = (M_bearing - M_over) / W_bearing if W_bearing > 0 else L / 2.0
     e = L / 2.0 - x_R
-    L_eff = L - 2.0 * abs(e)
+    L_eff = L - 2.0 * max(e, 0.0)
     if L_eff > 0:
-        sigma_v = W / L_eff
+        sigma_v = W_bearing / L_eff
     else:
         sigma_v = 1.0e6  # resultant off the base — bearing effectively fails
 
@@ -446,7 +777,7 @@ def check_external_stability(
     else:
         passes = True
 
-    return {
+    out = {
         "FOS_sliding": round(FOS_sliding, 3),
         "FOS_overturning": round(FOS_overturning, 3),
         "FOS_bearing": None if FOS_bearing is None else round(FOS_bearing, 3),
@@ -462,6 +793,9 @@ def check_external_stability(
         "eccentricity_m": round(e, 3),
         "passes": passes,
     }
+    if backslope is not None:
+        out["backslope"] = backslope
+    return out
 
 
 def check_external_stability_lrfd(
@@ -483,6 +817,7 @@ def check_external_stability_lrfd(
     gamma_LL: float = 1.75,
     phi_sliding: float = 1.0,
     ecc_limit_ratio: float = 0.25,
+    traffic_vertical_resists: bool = False,
 ) -> Dict[str, Any]:
     """AASHTO/GEC-11 LRFD external stability for an MSE wall (rigid block).
 
@@ -542,6 +877,13 @@ def check_external_stability_lrfd(
     ecc_limit_ratio : float, optional
         Limiting-eccentricity ratio e_max/L. Default 0.25 (L/4, MSE on soil;
         use 1/6 for foundations on rock).
+    traffic_vertical_resists : bool, optional
+        Broken backslope with traffic behind the crest only: count the
+        traffic thrust's vertical component F2 sin(I) as sliding and
+        eccentricity resistance (LL factor), as GEC-11 Example E1 does
+        (Vol II pp. E1-7 to E1-9). Default False: GEC-11 Vol I p. 4-22
+        counts external loads that increase sliding resistance "only if
+        those loads are permanent". Bearing counts it either way (p. 4-26).
 
     Returns
     -------
@@ -555,13 +897,35 @@ def check_external_stability_lrfd(
         (GM-100). ``checks_failed`` and ``checks_not_run`` name them;
         ``bearing.passes`` is None when neither ran; the overall ``passes`` is
         True only when every check ran and passed, False when one failed,
-        None when none failed but one was not run.
+        None when none failed but one was not run. With a sloping backfill
+        also ``backslope`` (the GEC-11 basis: Kab, h, F_T, V2).
+
+    Notes
+    -----
+    A sloping backfill (``geom.backfill_slope`` > 0) follows GEC-11 Vol I
+    §4.4.6 as worked in Vol II Examples E3 and E1 (``backslope_loads``): the
+    thrust F_T (Eq. 4-7) is an EH load, its horizontal component driving
+    (Eq. 4-11) and its vertical component resisting at the back of the zone
+    with the same EH factor (Eq. 4-13, Eq. 4-16), "to maintain consistency
+    between the total inclined lateral force and its components" (Example
+    E3, Tables E3-6.1 to E3-6.3); the slope fill V2 is an EV load. Traffic
+    behind the crest of a broken backslope gives F2 = Kab q h, inclined at
+    I, with the LL factor (Example E1); whether its vertical component also
+    resists sliding and eccentricity is ``traffic_vertical_resists``. A
+    negative bearing eccentricity leaves L' = L (p. 4-28).
     """
     H = geom.wall_height
     L = geom.reinforcement_length
     phi_ext = phi_retained if phi_retained is not None else phi_backfill
     gamma_ext = gamma_retained if gamma_retained is not None else gamma_backfill
     q = geom.surcharge if live_load is None else live_load
+    if geom.backfill_slope > 0:
+        return _external_lrfd_sloping(
+            geom, gamma_backfill, phi_backfill, phi_foundation, phi_ext,
+            gamma_ext, q, bearing_resistance_strength,
+            bearing_resistance_service, c_foundation, gamma_EV_max,
+            gamma_EV_min, gamma_EH_max, gamma_EH_min, gamma_LL, phi_sliding,
+            ecc_limit_ratio, traffic_vertical_resists)
     Ka = rankine_Ka(phi_ext)
 
     # Unfactored load components about the toe (Point A). Vertical loads V*
@@ -588,7 +952,6 @@ def check_external_stability_lrfd(
     cdr_slide_max = _sliding_cdr(gamma_EV_max, gamma_EH_max)   # all-max
     cdr_slide_min = _sliding_cdr(gamma_EV_min, gamma_EH_min)   # all-min
     cdr_slide_crit = _sliding_cdr(gamma_EV_min, gamma_EH_max)  # min V, max H
-    cdr_slide_gov = min(cdr_slide_max, cdr_slide_min, cdr_slide_crit)
 
     # --- Limiting eccentricity (LL excluded from resistance) ---------------
     MOA = gamma_EH_max * MF1 + gamma_LL * MF2   # max overturning about toe
@@ -601,7 +964,6 @@ def check_external_stability_lrfd(
     eL_max = _eL(gamma_EV_max)     # Strength I max (EV=1.35)
     eL_crit = _eL(gamma_EV_min)    # min-vertical (EV=1.00): largest eccentricity
     e_limit = ecc_limit_ratio * L
-    eL_gov = max(eL_max, eL_crit)
 
     # --- Bearing (LL included; min-vertical combo uses gamma_EV_min on all
     #     vertical gravity loads) ---------------------------------------------
@@ -625,6 +987,108 @@ def check_external_stability_lrfd(
     eL_s = L / 2.0 - a_s
     Bp_s = L - 2.0 * eL_s
     sig_svc = (SV_s / Bp_s) if Bp_s > 0 else 1.0e6
+
+    return _lrfd_result(
+        cdr_slide_max, cdr_slide_min, cdr_slide_crit, eL_max, eL_crit,
+        e_limit, sig_str, eL_bear, Bp_str, sig_crit, sig_svc,
+        bearing_resistance_strength, bearing_resistance_service,
+        {"V1": round(V1, 3), "Vs": round(Vs, 3),
+         "F1": round(F1, 3), "F2": round(F2, 3),
+         "Ka_retained": round(Ka, 4)},
+        {"EV_max": gamma_EV_max, "EV_min": gamma_EV_min,
+         "EH_max": gamma_EH_max, "EH_min": gamma_EH_min,
+         "LL": gamma_LL, "phi_sliding": phi_sliding,
+         "ecc_limit_ratio": ecc_limit_ratio})
+
+
+def _external_lrfd_sloping(
+    geom, gamma_backfill, phi_backfill, phi_foundation, phi_ext, gamma_ext,
+    q, bearing_resistance_strength, bearing_resistance_service, c_foundation,
+    gamma_EV_max, gamma_EV_min, gamma_EH_max, gamma_EH_min, gamma_LL,
+    phi_sliding, ecc_limit_ratio, traffic_vertical_resists=False,
+) -> Dict[str, Any]:
+    """``check_external_stability_lrfd`` with a sloping backfill (GEC-11 Vol
+    I §4.4.6; Vol II Examples E3 and E1). Same combinations and result as the
+    level case: Strength I max (EV max, EH max), Strength I min (EV min, EH
+    min), the critical min-vertical one (EV min, EH max) and Service I."""
+    L = geom.reinforcement_length
+    ld = backslope_loads(geom, gamma_backfill, phi_ext, gamma_ext, q)
+    V12 = ld["V1"] + ld["V2"]                       # EV
+    M12 = ld["MV1"] + ld["MV2"]
+    tan_d = math.tan(math.radians(min(phi_backfill, phi_foundation)))
+    ca = (2.0 / 3.0) * c_foundation
+    # The traffic thrust's vertical component F2V resists sliding and
+    # eccentricity only by choice: Example E1 counts it; the general text
+    # counts resisting loads "only if those loads are permanent" (p. 4-22).
+    # Bearing takes it either way (p. 4-26).
+    ll_v = gamma_LL if traffic_vertical_resists else 0.0
+
+    # Sliding (Eqs. 4-11, 4-13): F_TH drives and F_TV resists with the same
+    # EH factor; the traffic thrust F2H drives with the LL factor (Example
+    # E1); live load over the reinforced zone (Vs) excluded.
+    def _sliding_cdr(ev, eh):
+        demand = eh * ld["FTH"] + gamma_LL * ld["F2H"]
+        resist = phi_sliding * (
+            (ev * V12 + eh * ld["FTV"] + ll_v * ld["F2V"]) * tan_d
+            + ca * L)
+        return (resist / demand) if demand > 0 else 99.9
+
+    # Resultant on the base about the toe (Eq. 4-16, Eqs. 4-19 to 4-21);
+    # ll / ll_vert = the factors on F2H / F2V, vs = the factor on the live
+    # load over the zone (0 = excluded).
+    def _base(ev, eh, ll, ll_vert, vs):
+        SV = (ev * V12 + eh * ld["FTV"] + ll_vert * ld["F2V"]
+              + vs * ld["Vs"])
+        MR = (ev * M12 + eh * ld["MFTV"] + ll_vert * ld["MF2V"]
+              + vs * ld["MVs"])
+        MO = eh * ld["MFTH"] + ll * ld["MF2H"]
+        eL = L / 2.0 - (MR - MO) / SV
+        Bp = L - 2.0 * max(eL, 0.0)             # L' = L when e < 0 (p. 4-28)
+        sigma = (SV / Bp) if Bp > 0 else 1.0e6
+        return sigma, eL, Bp
+
+    cdr_slide_max = _sliding_cdr(gamma_EV_max, gamma_EH_max)
+    cdr_slide_min = _sliding_cdr(gamma_EV_min, gamma_EH_min)
+    cdr_slide_crit = _sliding_cdr(gamma_EV_min, gamma_EH_max)
+    eL_max = _base(gamma_EV_max, gamma_EH_max, gamma_LL, ll_v, 0.0)[1]
+    eL_crit = _base(gamma_EV_min, gamma_EH_max, gamma_LL, ll_v, 0.0)[1]
+    sig_str, eL_bear, Bp_str = _base(gamma_EV_max, gamma_EH_max, gamma_LL,
+                                     gamma_LL, gamma_LL)
+    sig_crit = _base(gamma_EV_min, gamma_EH_max, gamma_LL, gamma_LL,
+                     gamma_EV_min)[0]
+    sig_svc = _base(1.0, 1.0, 1.0, 1.0, 1.0)[0]
+
+    unfactored = {
+        "V1": round(ld["V1"], 3), "V2": round(ld["V2"], 3),
+        "Vs": round(ld["Vs"], 3),
+        "FT": round(ld["FT"], 3), "FT_H": round(ld["FTH"], 3),
+        "FT_V": round(ld["FTV"], 3),
+        "F2": round(ld["F2"], 3), "F2_H": round(ld["F2H"], 3),
+        "F2_V": round(ld["F2V"], 3),
+        "Ka_retained": round(ld["Kab"], 4),
+    }
+    out = _lrfd_result(
+        cdr_slide_max, cdr_slide_min, cdr_slide_crit, eL_max, eL_crit,
+        ecc_limit_ratio * L, sig_str, eL_bear, Bp_str, sig_crit, sig_svc,
+        bearing_resistance_strength, bearing_resistance_service, unfactored,
+        {"EV_max": gamma_EV_max, "EV_min": gamma_EV_min,
+         "EH_max": gamma_EH_max, "EH_min": gamma_EH_min,
+         "LL": gamma_LL, "phi_sliding": phi_sliding,
+         "ecc_limit_ratio": ecc_limit_ratio})
+    out["backslope"] = _backslope_summary(ld, traffic_vertical_resists)
+    return out
+
+
+def _lrfd_result(
+    cdr_slide_max, cdr_slide_min, cdr_slide_crit, eL_max, eL_crit, e_limit,
+    sig_str, eL_bear, Bp_str, sig_crit, sig_svc,
+    bearing_resistance_strength, bearing_resistance_service,
+    unfactored, load_factors,
+) -> Dict[str, Any]:
+    """The LRFD external-stability result from its CDRs, eccentricities and
+    bearing stresses (shared by the level and sloping-backfill cases)."""
+    cdr_slide_gov = min(cdr_slide_max, cdr_slide_min, cdr_slide_crit)
+    eL_gov = max(eL_max, eL_crit)
 
     def _cdr(resistance, demand):
         if resistance is None or demand <= 0:
@@ -691,17 +1155,8 @@ def check_external_stability_lrfd(
         "passes": passes,
         "checks_failed": checks_failed,
         "checks_not_run": checks_not_run,
-        "unfactored_kN_m": {
-            "V1": round(V1, 3), "Vs": round(Vs, 3),
-            "F1": round(F1, 3), "F2": round(F2, 3),
-            "Ka_retained": round(Ka, 4),
-        },
-        "load_factors": {
-            "EV_max": gamma_EV_max, "EV_min": gamma_EV_min,
-            "EH_max": gamma_EH_max, "EH_min": gamma_EH_min,
-            "LL": gamma_LL, "phi_sliding": phi_sliding,
-            "ecc_limit_ratio": ecc_limit_ratio,
-        },
+        "unfactored_kN_m": unfactored,
+        "load_factors": load_factors,
     }
 
 
@@ -720,6 +1175,7 @@ def analyze_mse_wall(
     bearing_resistance_strength: float = None,
     bearing_resistance_service: float = None,
     live_load: float = None,
+    traffic_vertical_resists: bool = False,
 ) -> MSEWallResult:
     """Run complete MSE wall analysis.
 
@@ -755,10 +1211,18 @@ def analyze_mse_wall(
         bearing CDRs (only used when lrfd_external=True).
     live_load : float, optional
         Live-load surcharge (kPa) for the LRFD path. Default: geom.surcharge.
+    traffic_vertical_resists : bool, optional
+        Broken backslope with traffic behind the crest only: count the
+        traffic thrust's vertical component as sliding and eccentricity /
+        overturning resistance, as GEC-11 Example E1 does. Default False
+        (GEC-11 Vol I p. 4-22); see ``check_external_stability_lrfd``.
 
     Returns
     -------
     MSEWallResult
+        With a sloping backfill (``geom.backfill_slope`` > 0, optionally a
+        broken backslope) ``result.backslope`` carries the GEC-11 basis;
+        see ``check_external_stability`` and ``check_internal_stability``.
     """
     if gamma_foundation is None:
         gamma_foundation = gamma_backfill
@@ -770,6 +1234,7 @@ def analyze_mse_wall(
         gamma_foundation, phi_foundation, c_foundation,
         q_allowable, phi_retained=phi_retained,
         gamma_retained=gamma_retained,
+        traffic_vertical_resists=traffic_vertical_resists,
     )
 
     internal = check_internal_stability(
@@ -777,6 +1242,16 @@ def analyze_mse_wall(
     )
 
     all_pass_internal = all(r["passes"] for r in internal)
+
+    # The sloping-backfill basis, external (Kab, h, F_T, V2) and internal
+    # (S_eq, sigma_2, H1), when the backfill slopes (GEC-11 §4.4.4, §4.4.7)
+    backslope = external.get("backslope")
+    if backslope is not None:
+        bs = backslope_geometry(geom)
+        backslope = dict(backslope,
+                         S_eq_m=round(bs["S_eq"], 3),
+                         sigma_2_kPa=round(gamma_backfill * bs["S_eq"], 2),
+                         H1_m=round(bs["H1"], 3))
 
     external_lrfd = None
     if lrfd_external:
@@ -786,6 +1261,7 @@ def analyze_mse_wall(
             live_load=live_load, c_foundation=c_foundation,
             bearing_resistance_strength=bearing_resistance_strength,
             bearing_resistance_service=bearing_resistance_service,
+            traffic_vertical_resists=traffic_vertical_resists,
         )
 
     return MSEWallResult(
@@ -803,4 +1279,5 @@ def analyze_mse_wall(
         wall_height=geom.wall_height,
         reinforcement_length=geom.reinforcement_length,
         external_lrfd=external_lrfd,
+        backslope=backslope,
     )

@@ -157,19 +157,18 @@ def _run_cantilever_wall(params):
 
 
 def _run_mse_wall(params):
-    params = without_unused(apply_aliases(params, _MSE_ALIASES),
-                            METHOD_INFO["mse_wall"]["refused_parameters"])
-    # No backfill_slope: the MSE analysis computes a level-backfill Rankine
-    # Ka and never read it, so it is refused, not dropped (GM-110).
+    params = apply_aliases(params, _MSE_ALIASES)
     reject_unknown_params(
         params,
         ("wall_height", "reinforcement_length", "reinforcement_spacing",
-         "surcharge", "gamma_backfill", "phi_backfill",
+         "surcharge", "backfill_slope", "broken_backslope_height",
+         "gamma_backfill", "phi_backfill",
          "reinforcement_name", "reinforcement_type",
          "reinforcement_Tallowable", "reinforcement_width",
          "reinforcement_Fy", "reinforcement_thickness",
          "reinforcement_transverse_spacing", "gamma_foundation",
-         "phi_foundation", "c_foundation", "q_allowable"),
+         "phi_foundation", "c_foundation", "q_allowable",
+         "phi_retained", "gamma_retained", "traffic_vertical_resists"),
         method="mse_wall")
     require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
                    method="mse_wall")
@@ -178,6 +177,8 @@ def _run_mse_wall(params):
         reinforcement_length=params.get("reinforcement_length"),
         reinforcement_spacing=params.get("reinforcement_spacing", 0.60),
         surcharge=params.get("surcharge", 0.0),
+        backfill_slope=params.get("backfill_slope", 0.0),
+        broken_backslope_height=params.get("broken_backslope_height"),
     )
     reinforcement = _build_reinforcement(params)
     result = analyze_mse_wall(
@@ -185,6 +186,10 @@ def _run_mse_wall(params):
         reinforcement=reinforcement, gamma_foundation=params.get("gamma_foundation"),
         phi_foundation=params.get("phi_foundation"), c_foundation=params.get("c_foundation", 0.0),
         q_allowable=params.get("q_allowable"),
+        phi_retained=params.get("phi_retained"),
+        gamma_retained=params.get("gamma_retained"),
+        traffic_vertical_resists=bool(
+            params.get("traffic_vertical_resists", False)),
     )
     output = result.to_dict()
     output["reinforcement_name"] = reinforcement.name
@@ -197,17 +202,18 @@ def _run_mse_lrfd_external_stability(params):
     params = without_unused(
         apply_aliases(params, _MSE_ALIASES),
         METHOD_INFO["mse_lrfd_external_stability"]["refused_parameters"])
-    # No backfill_slope or reinforcement_spacing: the LRFD check is for a
-    # level backfill and reads neither, so they are refused, not dropped
-    # (GM-110).
+    # No reinforcement_spacing: external stability does not read it, so it
+    # is refused, not dropped (GM-110).
     reject_unknown_params(
         params,
         ("wall_height", "reinforcement_length", "surcharge",
+         "backfill_slope", "broken_backslope_height",
          "gamma_backfill", "phi_backfill",
          "phi_foundation", "phi_retained", "gamma_retained", "live_load",
          "bearing_resistance_strength", "bearing_resistance_service",
          "c_foundation", "gamma_EV_max", "gamma_EV_min", "gamma_EH_max",
-         "gamma_EH_min", "gamma_LL", "phi_sliding", "ecc_limit_ratio"),
+         "gamma_EH_min", "gamma_LL", "phi_sliding", "ecc_limit_ratio",
+         "traffic_vertical_resists"),
         method="mse_lrfd_external_stability")
     require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
                    method="mse_lrfd_external_stability")
@@ -215,6 +221,8 @@ def _run_mse_lrfd_external_stability(params):
         wall_height=params["wall_height"],
         reinforcement_length=params.get("reinforcement_length"),
         surcharge=params.get("surcharge", 0.0),
+        backfill_slope=params.get("backfill_slope", 0.0),
+        broken_backslope_height=params.get("broken_backslope_height"),
     )
     # Only forward load/resistance factors the caller actually set (so the
     # GEC-11 defaults live in one place — the module function).
@@ -231,6 +239,8 @@ def _run_mse_lrfd_external_stability(params):
         c_foundation=params.get("c_foundation", 0.0),
         bearing_resistance_strength=params.get("bearing_resistance_strength"),
         bearing_resistance_service=params.get("bearing_resistance_service"),
+        traffic_vertical_resists=bool(
+            params.get("traffic_vertical_resists", False)),
         **factors,
     )
     result["reinforcement_length_m"] = geom.reinforcement_length
@@ -362,7 +372,7 @@ METHOD_INFO = {
     },
     "mse_wall": {
         "category": "MSE Wall",
-        "brief": "MSE wall external + internal stability analysis (GEC-11).",
+        "brief": "MSE wall external + internal stability analysis (GEC-11), level or sloping backfill (incl. a broken backslope).",
         "parameters": {
             "wall_height": {"type": "float", "required": True, "description": "Design wall height H (m): the height of the reinforced soil mass, incl. embedment (GEC-11)."},
             "gamma_backfill": {"type": "float", "required": True, "description": "Backfill unit weight (kN/m3)."},
@@ -376,23 +386,31 @@ METHOD_INFO = {
             "reinforcement_Fy": {"type": "float", "required": False, "default": 0.0, "description": "Custom steel yield strength (MPa)."},
             "reinforcement_thickness": {"type": "float", "required": False, "default": 0.0, "description": "Strip thickness (m) for a strip; transverse-bar diameter t (m) for a steel bar mat / welded grid (the t in F* = 20 t/St)."},
             "reinforcement_transverse_spacing": {"type": "float", "required": False, "default": 0.0, "description": "Transverse-bar (grid) spacing St (m) for a steel bar mat / welded grid (the St in F* = 20 t/St). Used only for bar_mat/welded_grid/metallic_grid."},
-            "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surcharge (kPa)."},
+            "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Live-load (traffic) surcharge (kPa), e.g. heq*gamma. Internally it is in Tmax and not in the pullout resistance, which GEC-11 takes 'neglecting traffic loads' (p. 4-49). With a sloping backfill it is taken only with broken_backslope_height, as traffic on the level ground behind the crest; refused on a slope that continues."},
+            "backfill_slope": {"type": "float", "required": False, "default": 0.0, "description": "Slope of the backfill surface above the wall, beta (degrees from horizontal), rising away from the face; 0 = level. GEC-11 Section 4.4.4: Coulomb Kab with the interface angle delta = beta (Eqs. 4-2/4-3); thrust F_T = 1/2*Kab*gamma_retained*h^2 on h = H + L*tan(beta), inclined at beta (Eq. 4-7); the slope fill over the reinforced zone is added to the weight; internally the slope adds S_eq = 1/2*(0.7H)*tan(beta) of fill (Fig. 4-11). Must not be steeper than phi_retained."},
+            "phi_retained": {"type": "float", "required": False, "description": "Friction angle (deg) of the retained fill behind the reinforced zone, for the external thrust. Defaults to phi_backfill."},
+            "gamma_retained": {"type": "float", "required": False, "description": "Unit weight (kN/m3) of the retained fill behind the reinforced zone. Defaults to gamma_backfill."},
+            "broken_backslope_height": {"type": "float", "required": False, "description": "For a broken backslope (GEC-11 Fig. 4-4): the height S (m) of the slope crest above the top of the wall, with level ground behind it. Omit for a slope that continues. Kab and the thrust inclination then use I, the angle from the top of the wall to the ground 2H behind the face, and h = H + min(L*tan(beta), S)."},
+            "traffic_vertical_resists": {"type": "bool", "required": False, "default": False, "description": "Broken backslope with traffic (surcharge) behind the crest only: count the traffic thrust's vertical component F2*sin(I) as sliding and eccentricity resistance, as GEC-11 Example E1 does (Vol II pp. E1-7 to E1-9). Default false: the GEC-11 text counts loads that increase sliding resistance 'only if those loads are permanent' (Vol I p. 4-22). Bearing counts it either way (p. 4-26). The result's backslope.traffic_basis says which was used."},
             "gamma_foundation": {"type": "float", "required": False, "description": "Foundation soil unit weight (kN/m3)."},
             "phi_foundation": {"type": "float", "required": False, "description": "Foundation soil friction angle (deg)."},
             "c_foundation": {"type": "float", "required": False, "default": 0.0, "description": "Foundation soil cohesion (kPa)."},
             "q_allowable": {"type": "float", "required": False, "description": "Allowable bearing pressure (kPa). Without it the external bearing check is NOT RUN (FOS_bearing null, checks_not_run lists 'bearing'); sigma_v is still reported."},
         },
-        "returns": {"verdict": "The result in plain words: failed checks first, then those not checked. Report it to the user.", "checks_failed": "Checks run and failed: sliding, overturning, bearing, internal (pullout or rupture at some level).", "checks_not_run": "Checks not run ('bearing' when no q_allowable).", "all_checks_pass": "true only when every check ran and passed; false when one failed; null when none failed but a check was not run.", "FOS_sliding": "Sliding FOS.", "FOS_overturning": "Overturning FOS.", "FOS_bearing": "Bearing FOS q_allowable / sigma_v; null when not checked.", "passes_external": "true / false, or null when nothing failed but bearing was not checked."},
+        "returns": {"verdict": "The result in plain words: failed checks first, then those not checked. Report it to the user.", "checks_failed": "Checks run and failed: sliding, overturning, bearing, internal (pullout or rupture at some level).", "checks_not_run": "Checks not run ('bearing' when no q_allowable).", "all_checks_pass": "true only when every check ran and passed; false when one failed; null when none failed but a check was not run.", "FOS_sliding": "Sliding FOS.", "FOS_overturning": "Overturning FOS.", "FOS_bearing": "Bearing FOS q_allowable / sigma_v; null when not checked.", "passes_external": "true / false, or null when nothing failed but bearing was not checked.", "backslope": "With a sloping backfill only: the GEC-11 basis used (Kab, interface angle, h, F_T and its components, the slope fill weight V2; S_eq, sigma_2 and H1 for internal stability). Each internal level then also gives Zp_m, the depth below the slope used for pullout."},
     },
     "mse_lrfd_external_stability": {
         "category": "MSE Wall",
-        "brief": "MSE wall external stability by AASHTO/GEC-11 LRFD: sliding / eccentricity / bearing capacity:demand ratios (CDRs) under Strength I (max+min) and Service I. Distinct from mse_wall, which reports ASD factors of safety.",
+        "brief": "MSE wall external stability by AASHTO/GEC-11 LRFD: sliding / eccentricity / bearing capacity:demand ratios (CDRs) under Strength I (max+min) and Service I, level or sloping backfill. Distinct from mse_wall, which reports ASD factors of safety.",
         "parameters": {
             "wall_height": {"type": "float", "required": True, "description": "Design wall height H (m), incl. embedment. Alias: height."},
             "gamma_backfill": {"type": "float", "required": True, "description": "Reinforced fill unit weight (kN/m3). Alias: gamma."},
             "phi_backfill": {"type": "float", "required": True, "description": "Reinforced fill friction angle (deg). Alias: phi."},
             "reinforcement_length": {"type": "float", "required": False, "description": "Reinforcement length L (m). Auto-sized (0.7H) if omitted."},
-            "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Live-load surcharge q (kPa) over the mass (e.g. heq*gamma). Used as the LL unless live_load overrides."},
+            "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Live-load surcharge q (kPa) over the mass (e.g. heq*gamma). Used as the LL unless live_load overrides. With a broken backslope it is traffic on the level ground behind the crest (thrust Kab*q*h, inclined at I; GEC-11 Example E1); refused on a slope that continues."},
+            "backfill_slope": {"type": "float", "required": False, "default": 0.0, "description": "Slope of the backfill surface above the wall, beta (degrees from horizontal), rising away from the face; 0 = level. GEC-11 Section 4.4.6 (Examples E3, E1): Coulomb Kab with delta = beta; F_T = 1/2*Kab*gamma_retained*h^2 on h = H + L*tan(beta) (Eq. 4-7), inclined at beta; F_T*cos(beta) drives and F_T*sin(beta) resists, both EH-factored (Eqs. 4-11, 4-13, 4-16, 4-21); the slope fill over the zone (V2) is an EV load. Must not be steeper than phi_retained."},
+            "broken_backslope_height": {"type": "float", "required": False, "description": "For a broken backslope (GEC-11 Fig. 4-4): the height S (m) of the slope crest above the top of the wall, with level ground behind it. Omit for a slope that continues. Kab and the thrust inclination then use I, the angle from the top of the wall to the ground 2H behind the face, and h = H + min(L*tan(beta), S)."},
+            "traffic_vertical_resists": {"type": "bool", "required": False, "default": False, "description": "Broken backslope with traffic (surcharge) behind the crest only: count the traffic thrust's vertical component F2*sin(I) as sliding and eccentricity resistance, as GEC-11 Example E1 does (Vol II pp. E1-7 to E1-9). Default false: the GEC-11 text counts loads that increase sliding resistance 'only if those loads are permanent' (Vol I p. 4-22). Bearing counts it either way (p. 4-26). The result's backslope.traffic_basis says which was used."},
             "phi_foundation": {"type": "float", "required": False, "description": "Foundation friction angle (deg); the sliding interface uses min(phi_backfill, phi_foundation). Defaults to phi_backfill."},
             "phi_retained": {"type": "float", "required": False, "description": "Retained (behind-mass) fill friction angle (deg) for the external active thrust. Defaults to phi_backfill."},
             "gamma_retained": {"type": "float", "required": False, "description": "Retained fill unit weight (kN/m3). Defaults to gamma_backfill."},
@@ -408,7 +426,7 @@ METHOD_INFO = {
             "phi_sliding": {"type": "float", "required": False, "default": 1.0, "description": "Sliding resistance factor (AASHTO 11.10.5.3)."},
             "ecc_limit_ratio": {"type": "float", "required": False, "default": 0.25, "description": "Limiting-eccentricity ratio e_max/L (0.25 = L/4 for MSE on soil; use 1/6 on rock)."},
         },
-        "returns": {"sliding": "Sliding CDRs (strength max/min, critical, governing).", "eccentricity": "eL (strength max, critical) vs e_limit.", "bearing": "sigma_v (strength/critical/service) + bearing CDRs; checked false and passes null when no bearing resistance was given.", "passes": "true only when every check ran and passed; false when one failed; null when none failed but one was not run.", "checks_failed": "Checks that failed. Report every one.", "checks_not_run": "Checks not run for want of a bearing resistance: 'bearing (Strength I)', 'bearing (Service I)'. Say so."},
+        "returns": {"sliding": "Sliding CDRs (strength max/min, critical, governing).", "eccentricity": "eL (strength max, critical) vs e_limit.", "bearing": "sigma_v (strength/critical/service) + bearing CDRs; checked false and passes null when no bearing resistance was given.", "passes": "true only when every check ran and passed; false when one failed; null when none failed but one was not run.", "checks_failed": "Checks that failed. Report every one.", "checks_not_run": "Checks not run for want of a bearing resistance: 'bearing (Strength I)', 'bearing (Service I)'. Say so.", "backslope": "With a sloping backfill only: the GEC-11 basis used (Kab, interface angle, h, F_T and its components, the slope fill weight V2)."},
     },
     "list_reinforcement": {
         "category": "MSE Wall",
@@ -426,15 +444,10 @@ declare_aliases(METHOD_INFO, {
 })
 
 # Names the MSE methods do not take, with the reason dispatch gives (GM-110).
-# A slope of 0 is the level backfill the check computes, so it passes.
-_LEVEL_BACKFILL_ONLY = {
-    "reason": ("this check assumes a level backfill (Rankine Ka); a sloping "
-               "backfill (GEC-11 §4.4.4) is not supported yet"),
-    "accepts": [0]}
-METHOD_INFO["mse_wall"]["refused_parameters"] = {
-    "backfill_slope": _LEVEL_BACKFILL_ONLY}
+# A sloping backfill is taken since GM-112; what it does not cover (a slope
+# steeper than phi, a surcharge on a slope that continues) is refused by
+# the module with its reason.
 METHOD_INFO["mse_lrfd_external_stability"]["refused_parameters"] = {
-    "backfill_slope": _LEVEL_BACKFILL_ONLY,
     "reinforcement_spacing": (
         "external stability does not depend on it; mse_wall's internal "
         "checks use it")}
