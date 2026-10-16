@@ -26,7 +26,7 @@ return a clear error if no engine was wired.
 
 import json
 import os
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from langchain_core.tools import StructuredTool
 
@@ -292,9 +292,9 @@ def _plot_description() -> str:
         params = info.get("parameters") or {}
         lines = [str(info.get("brief") or "").strip()]
         for key in ("series", "plan_view", "north_deg", "equal_aspect",
-                    "xlabel", "ylabel", "depth_axis", "logx", "hlines",
-                    "vlines", "xlim", "ylim", "legend", "legend_position",
-                    "interactive"):
+                    "xlabel", "ylabel", "depth_axis", "x_on_top", "logx",
+                    "hlines", "vlines", "xlim", "ylim", "legend",
+                    "legend_position", "interactive"):
             desc = (params.get(key) or {}).get("description")
             if desc:
                 lines.append(f"{key}: {desc}")
@@ -955,8 +955,14 @@ def make_vision_tools(
     description_overrides: Optional[Dict[str, str]] = None,
     inline_images: bool = False,
     inline_image_files: bool = False,
+    plot_data_replaces: bool = False,
 ) -> list:
     """Build the vision / file-output tools as LangChain tools.
+
+    ``plot_data_replaces`` gives ``plot_data`` a ``replaces`` argument that
+    retires a draft drawn earlier in the turn under another name (the figure
+    helper's copy, behind its switch; live wave w9 left a rejected draft's
+    card beside the final figure).
 
     ``description_overrides`` replaces a tool's model-facing description by
     name — the lean Document Review agent describes its tools for the page it
@@ -1714,7 +1720,7 @@ def make_vision_tools(
                   xlim: Optional[list] = None, ylim: Optional[list] = None,
                   legend_position: str = "auto", plan_view: bool = False,
                   north_deg: Optional[float] = None,
-                  scale_units: str = "m") -> str:
+                  scale_units: str = "m", x_on_top: bool = False) -> str:
         """Plot x/y data (the ``profile_figure`` module's ``plot_data``)."""
         params: Dict[str, Any] = {
             "series": series, "title": title, "xlabel": xlabel,
@@ -1722,7 +1728,8 @@ def make_vision_tools(
             "logy": logy, "interactive": interactive,
             "equal_aspect": equal_aspect,
             "legend_position": legend_position or "auto",
-            "plan_view": plan_view, "scale_units": scale_units or "m"}
+            "plan_view": plan_view, "scale_units": scale_units or "m",
+            "x_on_top": bool(x_on_top)}
         for k, v in (("hlines", hlines), ("vlines", vlines),
                      ("legend", legend), ("output_path", output_path or None),
                      ("xlim", xlim), ("ylim", ylim), ("north_deg", north_deg)):
@@ -1755,6 +1762,19 @@ def make_vision_tools(
                     "draw it with plot_code where you have it, or hand it to "
                     "the figure helper where there is one; otherwise say "
                     "what it cannot show rather than drawing it again.")
+        from funhouse_agent import review_flags as _rf
+        if (isinstance(result, dict) and result.get("status") == "success"
+                and (_rf.figure_helper() or _rf.plot_code())):
+            # Inside a helper, draws are counted across plot_data and
+            # plot_code and across file names (live wave w9: six draws
+            # against a cap of three, two of them here); behind the figure
+            # switches.
+            from funhouse_agent import plot_box as _box
+            before = _box.draws_so_far()
+            if before is not None:
+                result["draw"] = before + 1
+                if before + 1 >= _box.DRAW_CAP:
+                    result["redraw_note"] = _box.draw_cap_note(before + 1)
         return _truncate(json.dumps(result, default=str), max_result_chars)
 
     def write_xlsx(path: str, sheets: Optional[list] = None,
@@ -1926,13 +1946,63 @@ def make_vision_tools(
     tools = []
     for name, (fn, desc) in _builders.items():
         if name in include:
+            tool = StructuredTool.from_function(
+                fn, name=name, description=overrides.get(name, desc))
+            if name == "plot_data" and plot_data_replaces:
+                tool = _plot_data_retiring(tool)
             # An unknown argument (analyze_pdf_page(pages=12)) is refused by
             # name rather than dropped (brief 5, N3).
-            tools.append(strict_tool(
-                StructuredTool.from_function(
-                    fn, name=name, description=overrides.get(name, desc))
-            ))
+            tools.append(strict_tool(tool))
     return tools
+
+
+#: Added to plot_data's description where it takes ``replaces``.
+PLOT_DATA_REPLACES_NOTE = (
+    " replaces: file names of drafts this turn drew under another name (a "
+    "picture or chart, or the name without its extension), removed once "
+    "this figure is drawn, so the chat shows only the final figure.")
+
+
+def _plot_data_retiring(tool):
+    """``plot_data`` that also takes ``replaces``: the drafts a renamed
+    redraw retires (:func:`funhouse_agent.plot_box.retire_drafts`), removed
+    only when the new figure was drawn."""
+    from pydantic import create_model
+    schema = create_model(
+        tool.args_schema.__name__, __base__=tool.args_schema,
+        replaces=(Optional[List[str]], Field(
+            default=None, description=PLOT_DATA_REPLACES_NOTE.strip())))
+    inner = tool.func
+
+    def plot_data(**kwargs) -> str:
+        replaces = kwargs.pop("replaces", None)
+        out = inner(**kwargs)
+        if not replaces:
+            return out
+        from funhouse_agent import plot_box
+        try:
+            res = json.loads(out)
+        except (TypeError, ValueError):
+            res = None
+        if not isinstance(res, dict):
+            # cut short (or not JSON): the draw cannot be confirmed, so
+            # nothing is removed, and the result says so
+            return (str(out) + "\n" + json.dumps({
+                "replaces": "nothing was retired: this result was cut "
+                            "short, so the draw could not be confirmed; "
+                            "name the drafts again on the next draw"}))
+        if res.get("status") != "success":
+            res["replaces"] = "nothing was retired, because this draw failed"
+            return json.dumps(res, default=str)
+        res.update(plot_box.retire_drafts(
+            replaces, keep=[res.get("output_path"),
+                            res.get("plotly_json_path")]))
+        return json.dumps(res, default=str)
+
+    return StructuredTool(name=tool.name,
+                          description=tool.description
+                          + PLOT_DATA_REPLACES_NOTE,
+                          args_schema=schema, func=plot_data)
 
 
 __all__ = [

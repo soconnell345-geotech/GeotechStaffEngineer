@@ -109,6 +109,7 @@ _VALID_PLOT = {
     "hlines", "vlines", "grid", "legend", "output_path", "dpi", "width_in",
     "height_in", "include_base64", "interactive", "equal_aspect", "xlim",
     "ylim", "legend_position", "plan_view", "north_deg", "scale_units",
+    "x_on_top",
 }
 
 
@@ -157,6 +158,7 @@ def _run_plot_data(params: dict) -> dict:
         plan_view=bool(params.get("plan_view", False)),
         north_deg=params.get("north_deg"),
         scale_units=str(params.get("scale_units") or "m"),
+        x_on_top=bool(params.get("x_on_top", False)),
     )
     saved = save_verified(output_path, result.png_bytes)
     abs_path = saved.get("saved", os.path.abspath(output_path))
@@ -385,9 +387,20 @@ METHOD_INFO = {
             "scale_units": {"type": "str", "required": False, "default": "m",
                             "description": "Units written on the scale bar."},
             "xlim": {"type": "array", "required": False,
-                     "description": "[min, max] of the x axis (else fitted)."},
+                     "description": ("[start, end] of the x axis, kept in the "
+                                     "order given: [100, 0.001] runs it from "
+                                     "high to low (on a log axis too). Else "
+                                     "fitted.")},
             "ylim": {"type": "array", "required": False,
-                     "description": "[min, max] of the y axis (else fitted)."},
+                     "description": ("[start, end] of the y axis, kept in the "
+                                     "order given (with depth_axis, y runs "
+                                     "downward whatever the order). Else "
+                                     "fitted.")},
+            "x_on_top": {"type": "bool", "required": False, "default": False,
+                         "description": ("Put the x axis along the top, as a "
+                                         "boring log reads, on a profile "
+                                         "against elevation (depth_axis does "
+                                         "this by itself).")},
             "legend_position": {
                 "type": "str", "required": False, "default": "auto",
                 "allowed_values": ["auto", "inside", "outside", "below"],

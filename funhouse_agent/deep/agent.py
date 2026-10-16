@@ -508,8 +508,8 @@ _CALC_PLOT_CODE = (
     "panels sharing an elevation axis, a section with layers filled): "
     "write it "
     "with plot_code (see its description), look at the PNG with "
-    "analyze_image and redraw until it is right, then paste its "
-    "html_img_tag.")
+    "analyze_image (what it shows against the data, then the lettering), "
+    "redraw at most twice, then paste its html_img_tag.")
 
 #: Appended to the PRIMARY agent's system prompt when the calc sub-agent is on,
 #: nudging it to delegate tool-heavy calc rather than run those tools inline.
@@ -1285,6 +1285,7 @@ def build_deep_agent(
             )
         )
     from funhouse_agent import review_flags as _flags
+    figure_tasks = None
     if _flags.figure_helper() or _flags.plot_code():
         # The figure helper (OWN-61 option B, GM-92): draws, looks, redraws
         # to a checklist; behind GEOTECH_FIGURE_HELPER until measured.
@@ -1292,7 +1293,9 @@ def build_deep_agent(
         # main agent hands figures to (live wave w8, F55: without one the
         # main agent drew a wall with plot_data five times and ran out of
         # steps).
-        from funhouse_agent.deep.figure_helper import build_figure_subagent
+        from funhouse_agent.deep.figure_helper import (FIGURE_PRIMARY_NOTE,
+                                                       FigureTasks,
+                                                       build_figure_subagent)
         _fig = build_figure_subagent(
             engine=engine, attachments=attachments, save_fn=save_fn,
             max_result_chars=max_result_chars,
@@ -1301,6 +1304,14 @@ def build_deep_agent(
             extra_system_prompt=subagent_extra_system_prompt)
         if _fig is not None:
             subagents.append(_fig)
+            # The main agent hands figures to it and does not look again
+            # at what it looked at; each brief carries the nearest worked
+            # example and each result what the helper's looks found (live
+            # wave w9, GM-107).
+            system_prompt = system_prompt + "\n\n" + FIGURE_PRIMARY_NOTE
+            figure_tasks = FigureTasks(with_code=any(
+                getattr(t, "name", None) == "plot_code"
+                for t in _fig["tools"]))
     if ingest_tools:
         # A CompiledSubAgent: its own small graph, no model of its own, and a
         # compact structured_response as the tool result. Attached only when
@@ -1479,6 +1490,9 @@ def build_deep_agent(
     # large results are kept whole for a turn that errors (TA-19, TA-21,
     # TA-22; field session 2026-10-14).
     middleware.append(KeepWork())
+    if figure_tasks is not None:
+        # Inside KeepWork, whose record of the figure helper it reads.
+        middleware.append(figure_tasks)
     middleware.append(ScratchFilesystemGuard())
     if allowed_agents:
         middleware.append(UnknownToolHint(allowed_agents))

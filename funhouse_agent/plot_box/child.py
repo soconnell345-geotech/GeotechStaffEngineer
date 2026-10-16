@@ -609,9 +609,21 @@ def _safe_stem(name, default: str) -> str:
     return stem[:80]
 
 
-#: The longest side of a saved PNG: what one look at an image takes whole
-#: (live wave w8: 200 dpi saved 2538 x 1546 px, and every look was tiled).
+#: The longest side of the copy a look reads: what one look at an image
+#: takes whole (live wave w8: 200 dpi saved 2538 x 1546 px, and every look
+#: was tiled).
 MAX_PX = 2048
+#: The longest side, and the highest dpi, of the copy for a report.
+MAX_REPORT_PX = 6000
+MAX_REPORT_DPI = 600
+#: Where the look copy of a figure larger than :data:`MAX_PX` goes: the
+#: conversation's tool scratch folder (no download card, not mirrored).
+LOOK_DIR = ".scratch"
+#: The width a figure is printed at when the call names none: a report
+#: page's text width (8.5 in less two 1 in margins).
+DEFAULT_PRINT_WIDTH_IN = 6.5
+#: The smallest lettering a printed figure should carry (points).
+MIN_PRINT_PT = 7.0
 
 
 def _dpi_for(fig, dpi) -> int:
@@ -619,6 +631,15 @@ def _dpi_for(fig, dpi) -> int:
     :data:`MAX_PX` pixels."""
     w, h = fig.get_size_inches()
     return max(40, min(int(dpi), int(MAX_PX / max(w, h, 1e-6))))
+
+
+def _report_dpi(fig, dpi) -> int:
+    """``dpi`` for the report copy (live wave w9: the look's 2,048 px cap
+    also capped the deliverable), within :data:`MAX_REPORT_PX` and
+    :data:`MAX_REPORT_DPI`."""
+    w, h = fig.get_size_inches()
+    return max(40, min(int(dpi), MAX_REPORT_DPI,
+                       int(MAX_REPORT_PX / max(w, h, 1e-6))))
 
 
 def _hidden_tick_labels(fig) -> set:
@@ -638,21 +659,11 @@ def _hidden_tick_labels(fig) -> set:
     return hidden
 
 
-def _layout_check(fig, fname: str) -> dict:
-    """Lettering the reader cannot read cleanly, measured from the drawing
-    (not from a look): lettering that overlaps other lettering or runs into
-    it on one line (a gap under 2 px: "200" against "0" reads "2000"), and
-    lettering that a
-    plotted line, a shape's edge or an axes frame runs through. Only
-    lettering that is drawn counts, and an annotation is measured by its
-    text, not its leader. Up to eight of each; a look decides."""
+def _drawn_texts(fig, renderer) -> list:
+    """``[(text, window box, artist)]`` for the lettering that is drawn:
+    visible, not empty, not a tick label outside the view; an annotation
+    measured by its text, not its leader."""
     from matplotlib.text import Annotation, Text
-    out = {"file": fname}
-    try:
-        fig.canvas.draw()
-        r = fig.canvas.get_renderer()
-    except Exception:                                      # noqa: BLE001
-        return out
     hidden = _hidden_tick_labels(fig)
     texts = []
     for t in fig.findobj(Text):
@@ -661,12 +672,61 @@ def _layout_check(fig, fname: str) -> dict:
             continue
         try:
             # an Annotation's own extent takes in its leader line
-            bb = (Text.get_window_extent(t, r) if isinstance(t, Annotation)
-                  else t.get_window_extent(r))
+            bb = (Text.get_window_extent(t, renderer)
+                  if isinstance(t, Annotation)
+                  else t.get_window_extent(renderer))
         except Exception:                                  # noqa: BLE001
             continue
         if bb.width > 1 and bb.height > 1:
             texts.append((" ".join(s.split())[:40], bb, t))
+    return texts
+
+
+def _lettering(fig, fname: str, print_width_in: float) -> dict:
+    """The lettering's size as printed ``print_width_in`` wide (live wave
+    w9: figures drawn 9.5-11 in wide printed at 4.6-5.6 pt on a report
+    page, and nothing measured it): the smallest size, the width the figure
+    was saved at, and how many texts print under :data:`MIN_PRINT_PT`."""
+    try:
+        fig.canvas.draw()
+        r = fig.canvas.get_renderer()
+        texts = _drawn_texts(fig, r)
+        if not texts:
+            return {}
+        import matplotlib
+        pad = float(matplotlib.rcParams.get("savefig.pad_inches", 0.1))
+        # the width the figure is saved at (bbox_inches="tight"), inches
+        saved_w = fig.get_tightbbox(r).width + 2 * pad
+        scale = float(print_width_in) / max(saved_w, 1e-6)
+        sizes = [float(t.get_fontsize()) * scale for _s, _bb, t in texts]
+    except Exception:                                      # noqa: BLE001
+        return {}
+    smallest = min(sizes)
+    under = sum(1 for s in sizes if s < MIN_PRINT_PT - 0.05)
+    return {"file": fname, "smallest_pt": round(smallest, 1),
+            "print_width_in": float(print_width_in),
+            "saved_width_in": round(saved_w, 2),
+            "texts_under_7_pt": under,
+            "says": (f"{smallest:.1f} pt at {float(print_width_in):g} in "
+                     f"wide (saved {saved_w:.1f} in wide; {under} of "
+                     f"{len(sizes)} texts under {MIN_PRINT_PT:g} pt)")}
+
+
+def _layout_check(fig, fname: str) -> dict:
+    """Lettering the reader cannot read cleanly, measured from the drawing
+    (not from a look): lettering that overlaps other lettering or runs into
+    it on one line (a gap under 2 px: "200" against "0" reads "2000"), and
+    lettering that a
+    plotted line, a shape's edge or an axes frame runs through. Only
+    lettering that is drawn counts, and an annotation is measured by its
+    text, not its leader. Up to eight of each; a look decides."""
+    out = {"file": fname}
+    try:
+        fig.canvas.draw()
+        r = fig.canvas.get_renderer()
+    except Exception:                                      # noqa: BLE001
+        return out
+    texts = _drawn_texts(fig, r)
     touching = []
     for i in range(len(texts)):
         for j in range(i + 1, len(texts)):
@@ -852,6 +912,31 @@ def main() -> int:
                               int(limits.get("max_files", 40)))
     saved_names = []
     checks = []
+    letters = []
+    look_copies = {}
+    try:
+        print_w = float(payload.get("print_width_in")
+                        or DEFAULT_PRINT_WIDTH_IN)
+    except (TypeError, ValueError):
+        print_w = DEFAULT_PRINT_WIDTH_IN
+
+    def _save(fig, fname, dpi):
+        """``fname`` for the report at ``dpi``; for a picture larger than a
+        look takes whole, a copy that size in :data:`LOOK_DIR` for looks."""
+        look_copies.pop(fname, None)
+        if os.path.splitext(fname)[1].lower() in (".png", ".jpg", ".jpeg"):
+            fig.savefig(fname, dpi=_report_dpi(fig, dpi), bbox_inches="tight")
+            look_dpi = _dpi_for(fig, dpi)
+            if look_dpi < _report_dpi(fig, dpi):
+                os.makedirs(LOOK_DIR, exist_ok=True)
+                look = LOOK_DIR + "/" + os.path.splitext(fname)[0] \
+                    + "_look.png"
+                fig.savefig(look, dpi=look_dpi, bbox_inches="tight")
+                look_copies[fname] = look
+        else:
+            fig.savefig(fname, dpi=_dpi_for(fig, dpi), bbox_inches="tight")
+        checks.append(_layout_check(fig, fname))
+        letters.append(_lettering(fig, fname, print_w))
 
     def save_figure(fig=None, name=None, dpi=200):
         """Save a matplotlib figure in the conversation folder; returns its
@@ -861,9 +946,8 @@ def main() -> int:
         ext = os.path.splitext(str(name or ""))[1].lower()
         fname = base + (ext if ext in (".png", ".svg", ".pdf", ".jpg",
                                        ".jpeg") else ".png")
-        fig.savefig(fname, dpi=_dpi_for(fig, dpi), bbox_inches="tight")
+        _save(fig, fname, dpi)
         saved_names.append(fname)
-        checks.append(_layout_check(fig, fname))
         return fname
 
     def save_chart(fig, name=None):
@@ -913,11 +997,8 @@ def main() -> int:
         if nums and not wrote_image and result["ok"]:
             for k, num in enumerate(nums, 1):
                 fname = stem + (".png" if len(nums) == 1 else f"_{k}.png")
-                fig = plt.figure(num)
-                fig.savefig(fname, dpi=_dpi_for(fig, 200),
-                            bbox_inches="tight")
+                _save(plt.figure(num), fname, 200)
                 auto.append(fname)
-                checks.append(_layout_check(fig, fname))
         plt.close("all")
     except BaseException as exc:                           # noqa: BLE001
         result.setdefault("error", f"saving the open figures failed: "
@@ -936,6 +1017,8 @@ def main() -> int:
         "limits_applied": applied,
         "preload_failed": failed,
         "layout": [c for c in checks if len(c) > 1],
+        "lettering": [c for c in letters if c],
+        "look_copies": look_copies,
     })
     report(result)
     return 0

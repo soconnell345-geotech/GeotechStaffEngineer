@@ -24,6 +24,13 @@ So the helper has:
   budget of a few redraws;
 - read access to the working folder for data the brief points at.
 
+On the main agent, :class:`FigureTasks` attaches the nearest worked example
+to each brief and adds to the helper's result, from its record, what it
+drew and what each of its looks found; :data:`FIGURE_PRIMARY_NOTE` tells the
+main agent to hand figures to the helper and not to look again at what it
+looked at (live wave w9, ``module_work/live_smoke/runs/w9-figures/
+TRACE_REVIEW.md`` §2.6, §2.9).
+
 It is OFF until switched on (``GEOTECH_FIGURE_HELPER=1``; owner rule: new
 agent behaviour waits behind a switch until it is measured).
 """
@@ -31,9 +38,15 @@ agent behaviour waits behind a switch until it is measured).
 from __future__ import annotations
 
 import json
+import re
 from typing import Optional
 
 from langchain_core.tools import StructuredTool
+
+try:
+    from langchain.agents.middleware import AgentMiddleware
+except ImportError:  # pragma: no cover - older layout
+    from langchain.agents.middleware.types import AgentMiddleware
 
 #: Model calls a figure job may take: brief, example, draw, look, redraw,
 #: look, redraw, look, answer, with a little slack.
@@ -50,10 +63,16 @@ FIGURE_HELPER_DESCRIPTION = (
     "test, an exceedance curve. Give it the numbers (or the name of a file "
     "in the working folder that holds them), what the figure must show and "
     "for whom, the units, the coordinate system of any plan, and any value "
-    "the text will quote (a design value, P90, the governing case). It "
-    "draws with plot_data, LOOKS at the result and redraws until it passes "
-    "a figure checklist, then returns the PNG and chart file names and one "
-    "line on what the figure shows. It never makes up data.")
+    "the text will quote (a design value, P90, the governing case). Leave "
+    "the styling to it: it applies its own figure checklist (names on the "
+    "data rather than a legend, the project's own words, readings joined "
+    "only as the data allow), and nothing the brief does not give goes on "
+    "the figure, so give no test standard, classification or citation the "
+    "user did not supply. It draws with plot_data, LOOKS at the result "
+    "(what it shows against the data, then the lettering) and redraws at "
+    "most twice, then returns the PNG and chart file names and one line on "
+    "what the figure shows; the result also lists, from the record, what "
+    "each of its looks found. It never makes up data.")
 
 #: The checklist, in our own words (Tufte's terms named, not his text).
 FIGURE_CHECKLIST = """\
@@ -100,7 +119,9 @@ against the PNG you drew, not against what you meant to draw.
    profile, one test, one curve). Separate tests are points; a line
    through them is a profile someone assumed, named as one (preconsolidation
    stress: test points when plotting the data, a line for an assumed
-   design profile; the figure says which).
+   design profile; the figure says which). Readings (a value at each date
+   or depth) are joined by straight lines or shown as points, never by a
+   stair or step unless the data is a step.
 7. Small multiples. Several borings, cases or sections compared: the same
    axes, the same scale and limits, the same colours for the same thing.
 8. Colour and shape with meaning. One colour per group, the same group the
@@ -110,7 +131,11 @@ against the PNG you drew, not against what you meant to draw.
    case, a capacity: a labelled point or reference line on the figure.
 10. The project's own words. Name every group, line and zone as the logs,
    the report and the references name it (top of weathered rock, refusal,
-   SPT N60); never coin a label for the figure.
+   SPT N60); never coin a label for the figure. Nothing goes on the figure
+   that the brief or the files do not give: no test standard,
+   classification, boundary or citation added from memory; a line or zone
+   from a standard is drawn from the values the brief gives and named as
+   the brief names its source.
 11. Readable at report size. No overlapping text; names inside the frame;
    the legend outside a map; hover text in the interactive chart for what
    the figure cannot show (a boring's depth to rock).
@@ -125,21 +150,35 @@ FIGURE_HELPER_PROMPT = (
     "which units and coordinate system, which value the text quotes. If the "
     "data are in a file, read it (list_files, read_text_file). Use only "
     "numbers from the brief or the files: never invent, round off or fill "
-    "in a value; if something the figure needs is missing, say so.\n"
+    "in a value; if something the figure needs is missing, say so. The "
+    "brief supplies the data and the purpose; the checklist governs the "
+    "styling: where the brief asks for styling the checklist rules out (a "
+    "legend for named lines, a stair through readings, a label in words "
+    "of its own), follow the checklist and say so in your reply.\n"
     "b. Call figure_examples to see the worked examples, take the nearest "
     "one (figure_examples(name=...)) and adapt its plot_data call: it shows "
-    "the checklist applied.\n"
+    "the checklist applied. When the brief ends with a worked example "
+    "attached, start from that one.\n"
     "c. Draw with plot_data. Give output_path a short descriptive file name.\n"
-    "d. LOOK: analyze_image on the PNG it saved, asking specific questions "
-    "from the checklist (is every series and point the brief named visible? "
-    "do any labels overlap each other or the data? are the axis titles and "
-    "units there? is the plan to scale? is the quoted value marked?). Look "
-    "in a step AFTER the draw, never beside it. plot_data draws its PNG "
-    "and the chat's interactive chart from one spec, so this checks what "
-    "the user sees.\n"
+    "d. LOOK: analyze_image on the PNG it saved, in a step AFTER the draw, "
+    "never beside it. Ask first what the figure SHOWS, against the data you "
+    "drew it from: have the look read two or three plotted values and the "
+    "axis ranges and units back off the figure, and compare them here with "
+    "the data; is anything drawn that the data do not give (a stair or a "
+    "smoothed curve between readings, an extrapolation, a line, zone or "
+    "label not in the brief or the files)? are the names the brief's own "
+    "words? does a legend repeat names already on the data? is every "
+    "series and point the brief named there, and the quoted value marked? "
+    "Then the lettering: do labels overlap each other or the data, are the "
+    "axis titles and units there, is a plan to scale? plot_data draws its "
+    "PNG and the chat's interactive chart from one spec, so this checks "
+    "what the user sees.\n"
     "e. Fix what the look found and redraw; look again. At most two "
-    "redraws: then hand back the best one and name what you could not fix "
-    "(and why: a tool limit, missing data).\n"
+    "redraws, three draws in all whatever the tool or file name: then hand "
+    "back the best one and name what you could not fix (and why: a tool "
+    "limit, missing data). Redraw under the same name; a draft drawn under "
+    "another name is retired with replaces=[its file name] on the next "
+    "draw, so the chat shows only the final figure.\n"
     "f. Use calculate for any number you derive (a percentile, a fraction, "
     "a unit conversion) and for counting or averaging a list; never by "
     "eye.\n\n"
@@ -245,8 +284,10 @@ PLOT_CODE_STEP = (
     "\ng. When plot_data cannot draw what the brief needs, write the figure "
     "as matplotlib code with plot_code (its description says what the "
     "box allows; figure_examples lists worked plot_code scripts to start "
-    "from) and apply the same checklist: look at the PNG it saved "
-    "and redraw. Save a Plotly chart too only when the brief asks for an "
+    "from) and apply the same checklist: look at the PNG it saved (its "
+    "look_file when it has one), as in d, and redraw within the same cap; "
+    "a plot_data draft under another name goes with replaces=. Save a "
+    "Plotly chart too only when the brief asks for an "
     "interactive chart: the chat shows it in place of the PNG, and your "
     "looks do not check it.")
 
@@ -294,6 +335,7 @@ def build_figure_subagent(
                  "read_text_file"},
         max_result_chars=max_result_chars or DEFAULT_MAX_RESULT_CHARS,
         reference_result_chars=reference_result_chars,
+        plot_data_replaces=True,
     )
     if not any(t.name == "plot_data" for t in tools):
         return None
@@ -320,8 +362,275 @@ def build_figure_subagent(
     return spec
 
 
+# ---------------------------------------------------------------------------
+# On the main agent: the worked example goes with the brief, the looks come
+# back with the result
+# ---------------------------------------------------------------------------
+
+#: What the main agent is told when the figure helper is on (live wave w9:
+#: the main agent drew drafts itself, prescribed styling the checklist rules
+#: out, put a standard nobody gave into a figure, and looked again at
+#: figures the helper had looked at, twice telling the user something false).
+FIGURE_PRIMARY_NOTE = (
+    "FIGURES: a `figure` helper is available (task with subagent_type "
+    "'figure'). Hand it every figure the user will see or a report will "
+    "carry, rather than drawing a draft yourself first. Give it the data "
+    "(or the file that holds them), what the figure must show and for whom, "
+    "the units, and any value the text will quote. Leave the styling to its "
+    "checklist (do not prescribe a legend, a step line or labels of your "
+    "own), and put nothing in the brief that the user did not give: a test "
+    "standard, classification or citation the figure needs comes from the "
+    "references, cited as found there, or stays off the figure. Its result "
+    "lists, from the record, what it drew and what each of its looks found: "
+    "do not look again at a figure it has looked at. Look again only to "
+    "judge an item its reply leaves open, and when your look disagrees with "
+    "its looks, ask the helper (it has the code) rather than tell the user.")
+
+#: Words that say nothing about which figure a brief wants.
+_STOP_WORDS = frozenset(
+    "a an and are as at be by can each for from has have in into is it its "
+    "may not of on one or so than that the their them then there these "
+    "this those to two use used using vs versus was were what when where "
+    "which while with without your you plot plots figure figures draw "
+    "drawn drawing show shows shown report data value values line lines "
+    "name named label labels axis axes result results".split())
+
+
+def _words(text) -> set:
+    """The telling words of ``text``: lower case, no stop words, a plural
+    read as its singular."""
+    out = set()
+    for w in re.findall(r"[a-z][a-z0-9]+", str(text or "").lower()):
+        if w in _STOP_WORDS:
+            continue
+        if len(w) > 4 and w.endswith("s") and not w.endswith("ss"):
+            w = w[:-1]
+        out.add(w)
+    return out
+
+
+def nearest_example(brief: str, with_code: bool = False) -> Optional[str]:
+    """The worked example nearest a brief (live wave w9: the helper called
+    figure_examples in none of five flows). An example is a candidate when
+    the brief has every word of its name as a whole word (``time_settlement``:
+    time and settlement) and, for a name of ONE word (a word as common in a
+    brief as ``cases``), at least two more words of what it shows; the
+    candidate sharing the most telling words wins, a word of its name or
+    what it shows counting twice one of its reasons. ``None`` when there is
+    no candidate: a figure no example is like gets none."""
+    from profile_figure.figure_examples import CODE_EXAMPLES, EXAMPLES
+    want = _words(brief)
+    best, best_score = None, 0
+    for name in _example_names(with_code):
+        ex = EXAMPLES.get(name) or CODE_EXAMPLES[name]
+        named = _words(name.replace("_", " "))
+        shown = len(want & (_words(ex["shows"]) - named))
+        if not named or not named <= want:
+            continue
+        if len(named) < 2 and shown < 2:
+            continue
+        head = len(named) + shown
+        score = 2 * head + len(want & _words(" ".join(ex["why"])))
+        if score > best_score:
+            best, best_score = name, score
+    return best
+
+
+#: How an attached example opens; also how a brief that has one is known.
+EXAMPLE_HEADING = "WORKED EXAMPLE ATTACHED"
+
+
+def brief_with_example(brief: str, with_code: bool = False) -> str:
+    """``brief`` with the nearest worked example's reasons after it (what it
+    shows and why it is drawn that way, not its made-up numbers); the brief
+    unchanged when no example is near or one is attached already."""
+    if not isinstance(brief, str) or EXAMPLE_HEADING in brief:
+        return brief
+    name = nearest_example(brief, with_code)
+    if name is None:
+        return brief
+    from profile_figure.figure_examples import example
+    ex = example(name)
+    lines = [brief.rstrip(), "",
+             f"{EXAMPLE_HEADING} (the nearest to this brief, picked in "
+             f"code): '{name}', a {_KINDS[ex['kind']]}. It shows: "
+             f"{ex['shows']} Why it is drawn that way:"]
+    lines += [f"- {why}" for why in ex["why"]]
+    lines.append(f"figure_examples(name='{name}') returns it in full. "
+                 "Adapt how it is drawn, never its made-up numbers; the "
+                 "brief says what to draw.")
+    return "\n".join(lines)
+
+
+#: The longest part of one look's answer the record repeats.
+LOOK_EXCERPT_CHARS = 320
+#: The most looks the record lists (the latest).
+MAX_LOOKS_LISTED = 8
+
+
+def _json_of(text):
+    try:
+        out = json.loads(text)
+    except (TypeError, ValueError):
+        return None
+    return out if isinstance(out, dict) else None
+
+
+def _base(name) -> str:
+    return str(name or "").replace("\\", "/").rsplit("/", 1)[-1]
+
+
+def _drawn_files(tool: str, text: str):
+    """``(files, look copies)`` a successful draw names: the figure files
+    by their base names, and each look copy's base name -> its figure."""
+    res = _json_of(text) or {}
+    files, looks = [], {}
+    if tool == "plot_code":
+        for entry in res.get("images") or []:
+            if isinstance(entry, dict) and entry.get("file"):
+                files.append(_base(entry["file"]))
+                if entry.get("look_file"):
+                    looks[_base(entry["look_file"])] = _base(entry["file"])
+    else:
+        if res.get("output_path"):
+            files.append(_base(res["output_path"]))
+    return files, looks
+
+
+def _look_answer(text: str) -> str:
+    res = _json_of(text)
+    if res is None:
+        found = str(text or "")
+    elif res.get("error"):
+        found = f"(the look failed: {res['error']})"
+    else:
+        found = res.get("analysis")
+        if found is None:
+            found = text
+        elif not isinstance(found, str):
+            found = json.dumps(found, ensure_ascii=False, default=str)
+    found = " ".join(str(found).split())
+    if len(found) > LOOK_EXCERPT_CHARS:
+        found = found[:LOOK_EXCERPT_CHARS].rstrip() + " ..."
+    return found
+
+
+def looks_report(rec) -> str:
+    """What the figure helper drew and what each of its looks found,
+    written in code from its record (:class:`~funhouse_agent.deep.keep_work.
+    HelperRecord`): the main agent does not see a helper's steps, and in
+    live wave w9 it looked again at figures the helper had looked at up to
+    six times. Empty when the helper neither drew nor looked."""
+    from funhouse_agent.plot_box import DRAW_TOOLS, drew_figure
+    if rec is None:
+        return ""
+    calls = {}
+    for step in list(rec.steps):
+        if step.get("kind") == "model":
+            for c in step.get("calls") or []:
+                calls[c.get("id")] = c.get("args") or {}
+    draws, looks, look_copy = [], [], {}
+    last_draw, last_look = {}, {}
+    by_tool = {}
+    for step in list(rec.steps):
+        if step.get("kind") != "result":
+            continue
+        name, text = step.get("name"), step.get("text") or ""
+        if name in DRAW_TOOLS:
+            if step.get("status") == "error" or not drew_figure(text):
+                continue
+            files, copies = _drawn_files(name, text)
+            look_copy.update(copies)
+            draws.append(files)
+            by_tool[name] = by_tool.get(name, 0) + 1
+            for f in files:
+                last_draw[f] = len(draws)
+        elif name == "analyze_image":
+            args = calls.get(step.get("id")) or {}
+            target = _base(args.get("attachment_key"))
+            figure = look_copy.get(target, target)
+            looks.append((figure, len(draws), _look_answer(text)))
+            last_look[figure] = len(draws)
+    if not draws and not looks:
+        return ""
+    tools = ", ".join(f"{k} {v}" for k, v in sorted(by_tool.items()))
+    lines = [f"FIGURE HELPER RECORD (written in code from what the helper "
+             f"did): it drew {len(draws)} time(s)"
+             + (f" ({tools})" if tools else "")
+             + f" and looked {len(looks)} time(s)."]
+    shown = looks[-MAX_LOOKS_LISTED:]
+    first = len(looks) - len(shown)
+    for k, (figure, after, found) in enumerate(shown, first + 1):
+        lines.append(f"- look {k} at {figure or '(no file named)'}"
+                     + (f", after draw {after}" if after else "")
+                     + f": {found}")
+    unseen = [f for f, n in last_draw.items() if last_look.get(f, -1) < n]
+    if unseen:
+        lines.append("Not looked at since its last draw: "
+                     + ", ".join(unseen) + ".")
+    if looks:
+        lines.append("Do not look again at what these looks read; look "
+                     "only to judge an item the reply leaves open.")
+    return "\n".join(lines)
+
+
+class FigureTasks(AgentMiddleware):
+    """On the main agent, when the figure helper is on: each ``task`` for
+    the figure helper carries the nearest worked example
+    (:func:`brief_with_example`), and its result ends with
+    :func:`looks_report`. Put it just inside
+    :class:`~funhouse_agent.deep.keep_work.KeepWork`, whose record of the
+    helper it reads."""
+
+    def __init__(self, with_code: bool = False):
+        super().__init__()
+        self.with_code = bool(with_code)
+
+    @staticmethod
+    def _is_figure(request) -> bool:
+        call = getattr(request, "tool_call", None) or {}
+        args = call.get("args")
+        return (call.get("name") == "task" and isinstance(args, dict)
+                and args.get("subagent_type") == FIGURE_HELPER_NAME)
+
+    def _briefed(self, request):
+        call = request.tool_call
+        args = call["args"]
+        brief = brief_with_example(args.get("description"), self.with_code)
+        if brief == args.get("description"):
+            return request
+        try:
+            return request.override(tool_call={
+                **call, "args": {**args, "description": brief}})
+        except Exception:                                  # noqa: BLE001
+            return request
+
+    @staticmethod
+    def _reported(result):
+        from funhouse_agent.deep.keep_work import _with_note, current_helper
+        rec = current_helper()
+        if rec is None or rec.subagent != FIGURE_HELPER_NAME:
+            return result
+        try:
+            note = looks_report(rec)
+        except Exception:                                  # noqa: BLE001
+            note = ""
+        return _with_note(result, note) if note else result
+
+    def wrap_tool_call(self, request, handler):
+        if not self._is_figure(request):
+            return handler(request)
+        return self._reported(handler(self._briefed(request)))
+
+    async def awrap_tool_call(self, request, handler):
+        if not self._is_figure(request):
+            return await handler(request)
+        return self._reported(await handler(self._briefed(request)))
+
+
 __all__ = ["FIGURE_CHECKLIST", "FIGURE_HELPER_DESCRIPTION",
            "FIGURE_HELPER_NAME", "FIGURE_HELPER_PROMPT", "PLOT_CODE_STEP",
-           "PLOT_CODE_DESCRIPTION_NOTE",
+           "PLOT_CODE_DESCRIPTION_NOTE", "FIGURE_PRIMARY_NOTE",
            "DEFAULT_FIGURE_MAX_MODEL_CALLS", "build_figure_subagent",
-           "make_figure_examples_tool"]
+           "make_figure_examples_tool", "nearest_example",
+           "brief_with_example", "looks_report", "FigureTasks"]

@@ -118,6 +118,12 @@ class DataPlotResult:
         True when the y axis was inverted (depth increasing downward).
     equal_aspect : bool
         True when one unit across was drawn as long as one unit up.
+    x_on_top : bool
+        True when the x axis was drawn along the top (``depth_axis`` or
+        ``x_on_top``).
+    reversed_axes : list of str
+        The axes drawn running from high to low because ``xlim`` / ``ylim``
+        gave them that way (``["x"]``); empty otherwise.
     warnings : list of str
         Non-fatal notes (a dropped non-finite point, an empty label).
     figure : plotly Figure or None
@@ -141,6 +147,8 @@ class DataPlotResult:
     figure: object = None
     equal_aspect: bool = False
     plan_view: bool = False
+    x_on_top: bool = False
+    reversed_axes: List[str] = field(default_factory=list)
 
     def summary(self) -> str:
         parts = [f"'{self.title}'" if self.title else "data plot",
@@ -149,6 +157,11 @@ class DataPlotResult:
             parts.append(f"{s['label']} ({s['n']} pts)")
         if self.depth_axis:
             parts.append("depth axis (down)")
+        elif self.x_on_top:
+            parts.append("x axis along the top")
+        for axis in self.reversed_axes:
+            parts.append(f"{axis} axis runs high to low, as {axis}lim gives "
+                         "it")
         if self.plan_view:
             parts.append("plan view (scale bar, no axes)")
         elif self.equal_aspect:
@@ -162,6 +175,8 @@ class DataPlotResult:
             "depth_axis": self.depth_axis,
             "equal_aspect": self.equal_aspect,
             "plan_view": self.plan_view,
+            "x_on_top": self.x_on_top,
+            "reversed_axes": list(self.reversed_axes),
             "width_px": self.width_px, "height_px": self.height_px,
             "warnings": list(self.warnings),
         }
@@ -343,15 +358,48 @@ def _resolve_legend_position(position: Optional[str],
 
 
 def _limits(spec, what: str) -> Optional[tuple]:
+    """``[start, end]`` of an axis, in the order given: ``[100, 0.001]``
+    draws the axis running high to low (live wave w9: a range given that
+    way was sorted without a word and the axis came out the other way)."""
     if spec is None:
         return None
     try:
         lo, hi = (float(v) for v in spec)
     except (TypeError, ValueError):
-        raise ValueError(f"{what} must be [min, max]")
+        raise ValueError(f"{what} must be [start, end]: two numbers, either "
+                         "way round (high to low runs the axis that way)")
     if not (math.isfinite(lo) and math.isfinite(hi)) or lo == hi:
         raise ValueError(f"{what} must be two different finite numbers")
-    return (min(lo, hi), max(lo, hi))
+    return (lo, hi)
+
+
+def _axis_limits(xlim, ylim, logx: bool, logy: bool, depth_axis: bool,
+                 warnings: Optional[list] = None) -> tuple:
+    """``(xl, yl, reversed_axes)`` as both renderings draw them: each range
+    in its given order, except that ``depth_axis`` sets the direction of y
+    itself; a range a log axis cannot take (zero or below) is left out with
+    a warning."""
+    xl, yl = _limits(xlim, "xlim"), _limits(ylim, "ylim")
+    for name, lim, log in (("xlim", xl, logx), ("ylim", yl, logy)):
+        if lim and log and min(lim) <= 0:
+            if warnings is not None:
+                warnings.append(f"{name} ignored: a log axis needs limits "
+                                "above zero")
+            if name == "xlim":
+                xl = None
+            else:
+                yl = None
+    if yl and depth_axis:
+        yl = (min(yl), max(yl))
+    reversed_axes = [axis for axis, lim in (("x", xl), ("y", yl))
+                     if lim and lim[0] > lim[1]]
+    return xl, yl, reversed_axes
+
+
+def _plotly_range(lim, log: bool) -> list:
+    """A Plotly axis range: on a log axis Plotly takes log10 of the values;
+    a range high to low draws the axis that way."""
+    return [math.log10(v) for v in lim] if log else list(lim)
 
 
 def build_data_plot_figure(cleaned_series, *, title: str = "",
@@ -364,7 +412,7 @@ def build_data_plot_figure(cleaned_series, *, title: str = "",
                            legend_position: Optional[str] = None,
                            plan_view: bool = False,
                            north_deg: Optional[float] = None,
-                           scale_units: str = "m"):
+                           scale_units: str = "m", x_on_top: bool = False):
     """Build the interactive Plotly twin of :func:`render_data_plot`'s PNG.
 
     ``cleaned_series`` is what :func:`_clean_series` produced for the
@@ -377,7 +425,9 @@ def build_data_plot_figure(cleaned_series, *, title: str = "",
     ``docs/CALC_VIZ_PLAN.md`` ground rule (no plotting import at module load).
 
     Semantics mirror the matplotlib figure: ``depth_axis`` reverses the y axis
-    and moves the x axis to the top, ``logx``/``logy`` set log axes, the
+    and moves the x axis to the top (``x_on_top`` moves it alone), ``xlim`` /
+    ``ylim`` keep the order given (high to low reverses the axis, on a log
+    axis too), ``logx``/``logy`` set log axes, the
     styles map to lines / markers / lines+markers / step (``line_shape="hv"``,
     matplotlib's ``where="post"``) / a closed outline (``fill="toself"``),
     ``equal_aspect`` ties the y scale to the x scale, and reference lines are
@@ -505,17 +555,20 @@ def build_data_plot_figure(cleaned_series, *, title: str = "",
         fig.update_xaxes(type="log")
     if logy:
         fig.update_yaxes(type="log")
-    xl, yl = _limits(xlim, "xlim"), _limits(ylim, "ylim")
-    if xl and not logx:
-        fig.update_xaxes(range=list(xl))
+    xl, yl, _rev = _axis_limits(xlim, ylim, logx, logy, depth_axis)
+    if xl:
+        fig.update_xaxes(range=_plotly_range(xl, logx))
     if depth_axis:                          # boring-log convention, as the PNG
-        if yl and not logy:
-            fig.update_yaxes(range=[yl[1], yl[0]])
+        if yl:
+            fig.update_yaxes(range=_plotly_range((yl[1], yl[0]), logy))
         else:
             fig.update_yaxes(autorange="reversed")
         fig.update_xaxes(side="top")
-    elif yl and not logy:
-        fig.update_yaxes(range=list(yl))
+    else:
+        if yl:
+            fig.update_yaxes(range=_plotly_range(yl, logy))
+        if x_on_top:
+            fig.update_xaxes(side="top")
     if equal_aspect or plan_view:
         # one unit up as long as one unit across: a plan or a section to scale
         fig.update_yaxes(scaleanchor="x", scaleratio=1)
@@ -711,7 +764,8 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
                      legend_position: Optional[str] = None,
                      plan_view: bool = False,
                      north_deg: Optional[float] = None,
-                     scale_units: str = "m") -> DataPlotResult:
+                     scale_units: str = "m",
+                     x_on_top: bool = False) -> DataPlotResult:
     """Render ``series`` to a PNG (and its interactive twin).
 
     Each series is ``{x, y, label, style, color}`` plus, optionally,
@@ -723,7 +777,12 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
     scenarios) puts the cases along the x axis in the order first seen.
 
     ``depth_axis=True`` inverts the y axis (depth increases downward) and puts
-    the x axis at the top — the boring-log convention. ``equal_aspect=True``
+    the x axis at the top — the boring-log convention. ``x_on_top=True`` puts
+    the x axis at the top alone: a profile against elevation read like a
+    boring log (BACKLOG GM-106). ``xlim`` / ``ylim`` are ``[start, end]`` in
+    the order given: ``[100, 0.001]`` runs the axis from high to low, on a
+    log axis too (with ``depth_axis`` the direction of y is its own), and
+    the result's ``reversed_axes`` and summary say so. ``equal_aspect=True``
     draws one unit across as long as one unit up (a plan view, a map, a
     section to scale) and, unless ``height_in`` is given, sizes the figure to
     the data's own proportions. ``hlines`` / ``vlines`` are
@@ -776,7 +835,9 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
     if equal_aspect and (logx or logy):
         warnings.append("equal_aspect ignored on a log axis")
         equal_aspect = False
-    xl, yl = _limits(xlim, "xlim"), _limits(ylim, "ylim")
+    xl, yl, reversed_axes = _axis_limits(xlim, ylim, logx, logy,
+                                         bool(depth_axis), warnings)
+    x_on_top = bool(x_on_top) and not plan_view
     position = _resolve_legend_position(legend_position, equal_aspect)
     shown = [s for s in cleaned if s["in_legend"]]
     show_legend = (legend if legend is not None else len(shown) > 1)
@@ -878,13 +939,14 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
                       else "datalim")
     if depth_axis:
         ax.invert_yaxis()
+    if depth_axis or x_on_top:
         ax.xaxis.set_ticks_position("top")
         ax.xaxis.set_label_position("top")
     if grid:
         ax.grid(True, color=_GRID_COLOR, linewidth=_GRID_WIDTH)
         ax.set_axisbelow(True)
     for side in ("top", "right"):
-        if not (depth_axis and side == "top"):
+        if not ((depth_axis or x_on_top) and side == "top"):
             ax.spines[side].set_visible(False)
     if plan_view:
         ax.set_axis_off()               # the scale bar carries the scale
@@ -941,7 +1003,8 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
                 vlines=vlines, grid=bool(grid), legend=legend,
                 equal_aspect=equal_aspect, xlim=xlim, ylim=ylim,
                 legend_position=legend_position, plan_view=plan_view,
-                north_deg=north_deg, scale_units=scale_units)
+                north_deg=north_deg, scale_units=scale_units,
+                x_on_top=x_on_top)
         except Exception as exc:                        # noqa: BLE001
             warnings.append("interactive chart not built "
                             f"({type(exc).__name__}: {exc}); the PNG is fine")
@@ -963,7 +1026,9 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
         png_bytes=png, width_px=w_px, height_px=h_px,
         title=title or "", xlabel=xlabel or "", ylabel=ylabel or "",
         depth_axis=bool(depth_axis), warnings=warnings, figure=figure,
-        equal_aspect=equal_aspect, plan_view=plan_view)
+        equal_aspect=equal_aspect, plan_view=plan_view,
+        x_on_top=bool(depth_axis) or x_on_top,
+        reversed_axes=reversed_axes)
 
 
 def _ref(spec) -> tuple:

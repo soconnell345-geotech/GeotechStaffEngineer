@@ -122,7 +122,15 @@ that day (tests: `tests/test_data_plot_maps.py`):
 - **`equal_aspect`** draws one unit across as long as one unit up (a plan, a
   map, a section to scale) in a figure of the data's own proportions unless
   `height_in` is given; it is ignored, with a warning, on cases or a log axis.
-  **`xlim`/`ylim`**; **`legend_position`** `auto` (outside a drawing to scale,
+  **`xlim`/`ylim`** are `[start, end]` in the order given: `[100, 0.001]`
+  runs the axis from high to low, on a log axis too, in the PNG and the
+  Plotly twin, and the result's `reversed_axes` and summary say so (live wave
+  w9: a reversed range was sorted without a word; the twin ignored `xlim` on
+  a log axis); with `depth_axis` y runs downward whatever the order, and a log
+  range at or below zero is left out with a warning (tests:
+  `tests/test_data_plot_axes.py`). **`x_on_top`** puts the x axis along the
+  top alone, as a boring log reads, on a profile against elevation (BACKLOG
+  GM-106). **`legend_position`** `auto` (outside a drawing to scale,
   inside otherwise), `inside`, `outside` or `below` (under whatever the x
   axis takes up, slanted case names included).
 - **`plan_view`** draws a plan as a drawing, not a chart (the owner, after

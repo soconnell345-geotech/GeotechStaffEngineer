@@ -48,9 +48,10 @@ import sys
 import tempfile
 import threading
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from funhouse_agent.plot_box.child import (ALLOWED_IMPORTS, check_code,
+                                           DEFAULT_PRINT_WIDTH_IN,
                                            MAX_CODE_CHARS)
 
 CHILD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "child.py")
@@ -75,6 +76,25 @@ NOTE_EVERY_S = 10.0
 MIN_SECONDS = 10.0
 
 _IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".svg", ".pdf", ".gif", ".webp")
+#: An interactive chart beside a picture of the same name.
+CHART_SUFFIX = ".plotly.json"
+
+#: Tools whose calls draw a figure: drawn figures are counted across them,
+#: and across file names, within one helper run (live wave w9: a helper drew
+#: six times -- two with plot_data, four with plot_code under a new name --
+#: past a cap of three that nothing counted).
+DRAW_TOOLS = ("plot_code", "plot_data")
+#: The draw from which a result asks for the best version to be handed
+#: back: a first draw and at most two redraws.
+DRAW_CAP = 3
+
+#: What ``replaces`` may remove: pictures and charts of a figure, never data
+#: or documents.
+RETIRE_EXTS = (CHART_SUFFIX, ".png", ".jpg", ".jpeg", ".svg", ".gif",
+               ".webp")
+#: The files of one figure that go with a named draft (its picture and its
+#: interactive chart).
+_FIGURE_TWINS = (".png", ".jpg", ".jpeg", CHART_SUFFIX)
 
 
 def _int_env(name: str, default: int, low: int) -> int:
@@ -189,11 +209,240 @@ def _minutes(s: float) -> str:
     return f"{m}m {sec:02d}s"
 
 
+# ---------------------------------------------------------------------------
+# draws counted across one helper run
+# ---------------------------------------------------------------------------
+
+#: The helper whose draws are capped: the figure helper draws ONE figure a
+#: run, while the calc helper draws a package's several figures and a
+#: general helper whatever it is asked (``deep.figure_helper.
+#: FIGURE_HELPER_NAME``; named here so this module imports nothing heavy).
+CAPPED_HELPER = "figure"
+
+
+def drew_figure(text) -> bool:
+    """Whether a drawing tool's result says it drew."""
+    try:
+        out = json.loads(text)
+    except (TypeError, ValueError):
+        return '"status": "success"' in str(text or "")[:400]
+    return isinstance(out, dict) and out.get("status") == "success"
+
+
+def _current_helper():
+    try:
+        from funhouse_agent.deep.keep_work import current_helper
+    except Exception:                                      # noqa: BLE001
+        return None
+    return current_helper()
+
+
+def draws_so_far() -> Optional[int]:
+    """Figures the running FIGURE helper has drawn so far, by any drawing
+    tool (:data:`DRAW_TOOLS`) under any file name; ``None`` anywhere else
+    (the main agent, another helper, a library call): only a run that draws
+    one figure is capped."""
+    rec = _current_helper()
+    if rec is None or getattr(rec, "subagent", None) != CAPPED_HELPER:
+        return None
+    return sum(1 for s in list(rec.steps)
+               if s.get("kind") == "result" and s.get("name") in DRAW_TOOLS
+               and s.get("status") != "error"
+               and drew_figure(s.get("text")))
+
+
+def draw_cap_note(n: int) -> str:
+    """What a draw at or past :data:`DRAW_CAP` says."""
+    return (f"This is draw {n} in this helper run (plot_code and plot_data "
+            "draws count together, under any file name): look at it once if "
+            "no look has read it, then hand back the best version and name "
+            "what is left. Do not draw again.")
+
+
+# ---------------------------------------------------------------------------
+# drafts retired by a renamed redraw
+# ---------------------------------------------------------------------------
+
+def _within(path: str, base: str) -> bool:
+    p, b = os.path.normcase(path), os.path.normcase(base.rstrip(os.sep))
+    return p.startswith(b + os.sep)
+
+
+def _drafts_since() -> Optional[float]:
+    """The time a file must be newer than to count as a draft of this
+    work: the start of the turn, else of the running helper (a host that
+    opens no turn scope, such as the eval harness); ``None`` when neither is
+    known, and then nothing is removed."""
+    try:
+        from funhouse_agent.deep.keep_work import current_turn
+    except Exception:                                      # noqa: BLE001
+        return None
+    scope = current_turn()
+    if scope is not None:
+        return scope.started
+    rec = _current_helper()
+    started = getattr(rec, "started", None)
+    return float(started) if isinstance(started, (int, float)) else None
+
+
+def retire_drafts(names, root: Optional[str] = None, keep=(),
+                  since: Optional[float] = None) -> Dict[str, Any]:
+    """Remove the drafts a renamed redraw replaces, so the chat shows only
+    the final figure (live wave w9: a draft the helper called superseded
+    kept its card beside the final figure).
+
+    ``names`` are file names in the working folder ``root`` (default: the
+    conversation's): a picture or a chart (with its twin of the other kind
+    beside it), or a name without its extension (every picture and chart of
+    that name). Refused, each with the reason: a path outside ``root``, a
+    file that is not a picture or a chart, the figure just drawn (``keep``),
+    and a file older than ``since`` (default: the start of this turn, else
+    of the running helper; a draft an earlier turn drew stays with that
+    turn's answer, and an upload is never a draft). With no such time at
+    all, nothing is removed. Returns ``{"retired": [...], "not_retired":
+    [{"name", "why"}]}``, either key left out when empty; ``{}`` when no
+    names were given.
+    """
+    if names in (None, "", [], ()):
+        return {}
+    if isinstance(names, str):
+        names = [names]
+    if not isinstance(names, (list, tuple)):
+        return {"not_retired": [{"name": str(names),
+                                 "why": "replaces takes a list of file "
+                                        "names"}]}
+    if not root:
+        try:
+            from funhouse_agent._fileio import host_output_dir
+            root = host_output_dir()
+        except Exception:                                  # noqa: BLE001
+            root = None
+    if not root:
+        return {"not_retired": [{"name": str(n), "why": "no working folder"}
+                                for n in names]}
+    base = os.path.realpath(root)
+    if since is None:
+        since = _drafts_since()
+    if since is None:
+        return {"not_retired": [{"name": str(n),
+                                 "why": "no turn or helper run to tell this "
+                                        "work's drafts from older files; "
+                                        "nothing was removed"}
+                                for n in names]}
+    kept = {os.path.normcase(os.path.realpath(
+        k if os.path.isabs(k) else os.path.join(base, k)))
+        for k in keep or () if k}
+    retired, refused, seen = [], [], set()
+
+    def rel(p):
+        return os.path.relpath(p, base).replace(os.sep, "/")
+
+    for raw in list(names)[:20]:
+        name = str(raw or "").strip()
+        if not name:
+            continue
+        cand = os.path.realpath(name if os.path.isabs(name)
+                                else os.path.join(base, name))
+        if not _within(cand, base):
+            refused.append({"name": name,
+                            "why": "outside the working folder; nothing "
+                                   "outside it is removed"})
+            continue
+        low = cand.lower()
+        ext = next((e for e in RETIRE_EXTS if low.endswith(e)), None)
+        if ext is None and os.path.splitext(cand)[1] \
+                and not os.path.isfile(cand + ".png"):
+            refused.append({"name": name,
+                            "why": "not a picture or chart of a figure; "
+                                   "only figure drafts are removed"})
+            continue
+        stem = cand[:-len(ext)] if ext else cand
+        twins = _FIGURE_TWINS if ext else RETIRE_EXTS
+        files = [cand] if ext and os.path.isfile(cand) else []
+        files += [stem + e for e in twins
+                  if os.path.isfile(stem + e) and stem + e != cand]
+        if not files:
+            refused.append({"name": name,
+                            "why": "no such figure in the working folder"})
+            continue
+        for f in files:
+            key = os.path.normcase(f)
+            if key in seen:
+                continue
+            seen.add(key)
+            if key in kept:
+                refused.append({"name": rel(f),
+                                "why": "the figure this call drew"})
+                continue
+            try:
+                if os.path.getmtime(f) < since:
+                    refused.append({"name": rel(f),
+                                    "why": "drawn before this turn; it "
+                                           "stays with that turn's answer"})
+                    continue
+                os.remove(f)
+                retired.append(rel(f))
+            except OSError as exc:
+                refused.append({"name": rel(f),
+                                "why": f"could not be removed: {exc}"})
+    out: Dict[str, Any] = {}
+    if retired:
+        out["retired"] = retired
+    if refused:
+        out["not_retired"] = refused
+    return out
+
+
+def _settle_charts(images: list, made: set, root: str) -> list:
+    """After a draw: a chart an EARLIER draw left under a picture's name is
+    removed, so the chat shows the new picture (live wave w9: a plot_data
+    draft's chart stood in for the redrawn PNG); a chart drawn in the same
+    run as its picture is dated with it, so the chat shows the chart the
+    code chose to save. A chart is removed only when it is newer than the
+    start of the turn (else of the running helper); with neither known,
+    none is. Returns the notes to give."""
+    notes = []
+    since = _drafts_since()
+    for entry in images:
+        rel = entry["file"]
+        stem, ext = os.path.splitext(rel)
+        if ext.lower() not in (".png", ".jpg", ".jpeg"):
+            continue
+        chart_rel = stem + CHART_SUFFIX
+        chart = os.path.join(root, chart_rel)
+        if not os.path.isfile(chart):
+            continue
+        try:
+            pic_ns = os.stat(entry["output_path"]).st_mtime_ns
+            st = os.stat(chart)
+            if chart_rel in made:
+                if st.st_mtime_ns < pic_ns:
+                    os.utime(chart, ns=(st.st_atime_ns, pic_ns))
+                continue
+            if since is None or st.st_mtime < since:
+                continue        # an earlier turn's chart stays with it
+            os.remove(chart)
+        except OSError:
+            continue
+        notes.append(f"removed {chart_rel.replace(os.sep, '/')}, the "
+                     "interactive chart an earlier draw left under this "
+                     "name: the chat shows this PNG now")
+    return notes
+
+
 def run_plot_code(code: str, data: Any = None, name: str = "",
                   time_limit_s: Optional[float] = None,
-                  root: Optional[str] = None) -> Dict[str, Any]:
+                  root: Optional[str] = None, replaces=None,
+                  print_width_in: Optional[float] = None,
+                  draw: Optional[int] = None) -> Dict[str, Any]:
     """Run plotting ``code`` in the locked box; the files it made and how
     it went, as a JSON-ready dict (never raises for the code's own faults).
+
+    ``replaces``: drafts a successful draw retires (:func:`retire_drafts`).
+    ``print_width_in``: the width the figure is printed at, for the
+    lettering's printed size (default 6.5 in). ``draw``: this draw's number
+    in the running helper (:func:`draws_so_far` + 1), which decides whether
+    the result invites a redraw.
     """
     problems = check_code(code)
     if problems:
@@ -231,15 +480,60 @@ def run_plot_code(code: str, data: Any = None, name: str = "",
     except Exception as exc:                               # noqa: BLE001
         return {"status": "error",
                 "error": f"no conversation folder to draw in: {exc}"}
+    try:
+        width = float(print_width_in) if print_width_in not in (None, "",
+                                                                0) else None
+    except (TypeError, ValueError):
+        width = None
+    if width is not None and not 1.0 <= width <= 60.0:
+        notes.append(f"print_width_in {print_width_in} is not a page width; "
+                     f"measured at {DEFAULT_PRINT_WIDTH_IN:g} in")
+        width = None
+    extra = {"replaces": replaces, "draw": draw,
+             "print_width_in": width or DEFAULT_PRINT_WIDTH_IN}
 
     from funhouse_agent.drawing_wait import drawing
     # A look at a figure in this folder waits until the box has written it
     # (live wave w8: a draw and a look in the same step read the old PNG).
     with drawing(root):
-        return _run_in_box(code, data_json, name, root, limit, cfg, notes)
+        return _run_in_box(code, data_json, name, root, limit, cfg, notes,
+                           extra)
 
 
-def _run_in_box(code, data_json, name, root, limit, cfg, notes):
+def _next_step(draw: Optional[int], lettering: list) -> str:
+    """What a successful draw asks for next: a LOOK that checks what the
+    figure shows against the data before the lettering (live wave w9: 13 of
+    13 look prompts asked about lettering only, and figures that misdrew
+    passed), and a redraw only within the cap."""
+    look = (
+        "LOOK at each figure with analyze_image (its look_file when it has "
+        "one), in a step after this one. Ask first what it SHOWS, against the "
+        "data you drew it from: have the look read two or three plotted "
+        "values and the axis ranges back off the figure, and compare them "
+        "here with the data; is anything drawn that the data do not give (a "
+        "stair or a smoothed curve between readings, an extrapolation, a "
+        "line, zone or label that is not in the brief or the files)? are the "
+        "names the source's own words? does a legend repeat names already on "
+        "the data? Then the lettering: overlaps, what layout_check lists "
+        "(boxes measured from the drawing; the look decides), units, scale")
+    small = [c for c in lettering if c.get("texts_under_7_pt")]
+    if small:
+        look += (", and lettering that prints under 7 pt (" + "; ".join(
+            f"{c['file']}: {c['says']}" for c in small) + "): enlarge it or "
+            "draw the figure at the width it is printed")
+    look += ". "
+    if draw is not None and draw >= DRAW_CAP:
+        return look + draw_cap_note(draw)
+    redraw = ("Redraw only to fix what the look found, under the same name "
+              "(a draft under another name is retired with replaces=), at "
+              "most twice in all")
+    if draw is not None:
+        redraw += f" (this was draw {draw} of at most {DRAW_CAP})"
+    return look + redraw + ". Paste html_img_tag into report HTML."
+
+
+def _run_in_box(code, data_json, name, root, limit, cfg, notes, extra=None):
+    extra = extra or {}
     from funhouse_agent import progress_notes
     key = progress_notes.current_key()
     slots = _slots(cfg["at_once"])
@@ -258,6 +552,7 @@ def _run_in_box(code, data_json, name, root, limit, cfg, notes):
         payload = json.dumps({
             "code": code, "data": json.loads(data_json),
             "name": name or "", "root": root, "tmp": tmp, "marker": marker,
+            "print_width_in": extra.get("print_width_in"),
             "sys_path": [p for p in sys.path if p and os.path.isdir(p)],
             "limits": {"memory_mb": cfg["memory_mb"],
                        "cpu_s": int(limit) + 60, "fsize_mb": 200,
@@ -318,6 +613,8 @@ def _run_in_box(code, data_json, name, root, limit, cfg, notes):
     res: Dict[str, Any] = {"seconds": seconds, "time_limit_s": int(limit),
                            "memory_mb": cfg["memory_mb"]}
     images, charts, others = [], [], []
+    looks = child.get("look_copies") if isinstance(
+        child.get("look_copies"), dict) else {}
     for rel in made:
         path = os.path.join(root, rel)
         low = rel.lower()
@@ -337,6 +634,15 @@ def _run_in_box(code, data_json, name, root, limit, cfg, notes):
             size = _png_size(path) if low.endswith(".png") else None
             if size:
                 entry["width_px"], entry["height_px"] = size
+            look = looks.get(rel.replace(os.sep, "/")) or looks.get(rel)
+            if isinstance(look, str) and os.path.isfile(
+                    os.path.join(root, look)):
+                # the report copy is at the dpi asked; a look reads this
+                # one, which one look takes whole (live wave w9)
+                entry["look_file"] = look
+                look_size = _png_size(os.path.join(root, look))
+                if look_size:
+                    entry["look_px"] = list(look_size)
             images.append(entry)
         else:
             others.append({"file": rel, "output_path": path})
@@ -355,6 +661,11 @@ def _run_in_box(code, data_json, name, root, limit, cfg, notes):
     if child.get("layout"):
         # measured from the drawing itself, not from a look
         res["layout_check"] = child["layout"]
+    lettering = [c for c in child.get("lettering") or []
+                 if isinstance(c, dict) and c.get("says")]
+    if lettering:
+        # the lettering's size as printed (live wave w9: 4.6-5.6 pt)
+        res["lettering"] = lettering
     if child.get("auto_saved"):
         notes.append("figures left open were saved as "
                      + ", ".join(child["auto_saved"]))
@@ -400,18 +711,26 @@ def _run_in_box(code, data_json, name, root, limit, cfg, notes):
     if res.get("status") == "error":
         # nothing to look at yet: fix the error first (live wave w8b)
         res.pop("layout_check", None)
+        res.pop("lettering", None)
         if images:
             notes.append("the run failed: any image it saved before the "
                          "error is a partial drawing; fix the error and draw "
                          "again before looking")
-    elif images:
-        res["next"] = (
-            "LOOK at each PNG with analyze_image, in a step after this one, "
-            "and check it against what the figure must show (labels on the "
-            "data, units, scale, nothing overlapping), and at what "
-            "layout_check lists (boxes around lettering, measured: the look "
-            "decides); then call plot_code again with the same name to "
-            "redraw. Paste html_img_tag into report HTML.")
+        if extra.get("replaces"):
+            notes.append("replaces: nothing was retired, because this draw "
+                         "failed")
+    else:
+        notes.extend(_settle_charts(images, set(made), root))
+        if extra.get("replaces"):
+            gone = retire_drafts(extra["replaces"], root=root,
+                                 keep=[i["output_path"] for i in images]
+                                 + [c["output_path"] for c in charts])
+            res.update(gone)
+        if images:
+            draw = extra.get("draw")
+            if draw is not None:
+                res["draw"] = draw
+            res["next"] = _next_step(draw, lettering)
     if charts:
         # live wave w8: the chart the chat showed had lost lines the PNG had,
         # and no look had checked it
@@ -442,12 +761,15 @@ def plot_code_description(cfg: Optional[Dict[str, int]] = None) -> str:
         "Excel through pandas) and writes figure, chart and data files "
         "there, nothing else; no network. In the code: `data` is the JSON "
         "object you pass as data; save_figure(fig, name) saves a matplotlib "
-        "figure as <name>.png (.svg or .pdf by the name's extension) and "
-        "returns the file name (a PNG at most 2,048 px on its long side); "
+        "figure as <name>.png (.svg or .pdf by the name's extension) at the "
+        "dpi asked (200 unless save_figure(..., dpi=) says) and returns the "
+        "file name; a PNG over 2,048 px on its long side also gets a copy "
+        "that size for looks (look_file); "
         "only when an interactive chart is wanted, save_chart(fig, name) "
         "saves a Plotly figure as the chat's chart <name>.plotly.json, shown "
         "in place of the PNG with the same name and NOT checked by a look at "
-        "the PNG (so draw both from the same numbers); "
+        "the PNG (so draw both from the same numbers); a chart an earlier "
+        "draw left under a PNG's name is removed when the PNG is redrawn; "
         "scale_bar(ax, x0, y, length, height, units) and north_arrow(ax, "
         "(x, y), north_deg) draw the app's plan furniture; a figure left "
         "open is saved as <name>.png. Draw as for a report: every number "
@@ -461,19 +783,28 @@ def plot_code_description(cfg: Optional[Dict[str, int]] = None) -> str:
         "profile as a line named as one, a plan as a drawing (no axes or "
         "grid; a scale bar and a north arrow), no decorative ink; arrows "
         "point the way the force or load acts; dimensions carry their "
-        "units; lettering "
+        "units; readings joined by straight lines or shown as points, never "
+        "a stair unless the quantity itself steps; nothing on the figure "
+        "that the data or the files do not give (no test standard, "
+        "classification or citation added from memory); lettering "
         "at least 7 pt at the size the figure is printed; to clear a label, "
         "move the label, never the drawing. Look after each draw, and redraw "
-        "at most twice: then hand back the best and say what is left. "
-        "time_limit_s: "
+        "a figure at most twice (its drafts by plot_code and plot_data, "
+        "under any name, count together): then hand back the best and say "
+        "what is left. "
+        "replaces: file names of drafts this turn drew under another name "
+        "(a picture or chart, or the name without its extension), removed "
+        "once this draw succeeds, so the chat shows only the final figure. "
+        "print_width_in: the width the figure is printed at (6.5 in unless "
+        "given), for the lettering's printed size. time_limit_s: "
         f"{cfg['seconds']} s unless you ask for more, up to "
         f"{cfg['max_seconds']} s for a heavy figure; memory up to "
         f"{cfg['memory_mb']} MB. Returns the saved files (each PNG with its "
         "html_img_tag for report HTML), layout_check (lettering that overlaps "
         "other lettering, or that a plotted line runs through, measured from "
-        "the drawing), anything the code printed, and on a "
-        "failure the error with your code's line. Then look at the PNG with "
-        "analyze_image and redraw until it is right.")
+        "the drawing), lettering (its smallest size as printed, e.g. '5.6 pt "
+        "at 6.5 in'), anything the code printed, and on a failure the error "
+        "with your code's line; next says what to look at.")
 
 
 def make_plot_code_tool():
@@ -482,11 +813,15 @@ def make_plot_code_tool():
     from funhouse_agent.deep.strict_args import strict_tool
 
     def plot_code(code: str, data: Optional[dict] = None, name: str = "",
-                  time_limit_s: Optional[int] = None) -> str:
+                  time_limit_s: Optional[int] = None,
+                  replaces: Optional[List[str]] = None,
+                  print_width_in: Optional[float] = None) -> str:
         """Run plotting code in the locked box (see the description)."""
-        return json.dumps(run_plot_code(code, data=data, name=name,
-                                        time_limit_s=time_limit_s),
-                          default=str)
+        before = draws_so_far()
+        return json.dumps(run_plot_code(
+            code, data=data, name=name, time_limit_s=time_limit_s,
+            replaces=replaces, print_width_in=print_width_in,
+            draw=None if before is None else before + 1), default=str)
 
     return strict_tool(StructuredTool.from_function(
         plot_code, name="plot_code", description=plot_code_description()))
@@ -494,4 +829,6 @@ def make_plot_code_tool():
 
 __all__ = ["run_plot_code", "make_plot_code_tool", "plot_code_description",
            "available", "settings", "check_code", "ALLOWED_IMPORTS",
-           "MAX_CODE_CHARS", "SETTINGS_ENVS"]
+           "MAX_CODE_CHARS", "SETTINGS_ENVS", "retire_drafts",
+           "draws_so_far", "draw_cap_note", "drew_figure", "DRAW_TOOLS",
+           "DRAW_CAP", "CAPPED_HELPER"]

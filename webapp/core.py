@@ -457,6 +457,34 @@ def _superseded_by_plotly(path: str, stems: set) -> bool:
     return os.path.splitext(low)[0] in stems
 
 
+#: A figure's files: a figure file the turn wrote and then removed (a draft
+#: a drawing tool retired) gets no card.
+_FIGURE_FILE_EXTS = (PLOTLY_SIDECAR_SUFFIX,) + _SUPERSEDED_IMAGE_EXTS + (
+    ".svg", ".gif", ".webp")
+
+
+def _mtime_ns(path: str) -> Optional[int]:
+    try:
+        return os.stat(path).st_mtime_ns
+    except (OSError, TypeError, ValueError):
+        return None
+
+
+def _removed_figure(path: str) -> bool:
+    """A figure file that is gone from a folder that is still there: a
+    draft removed later in the same turn."""
+    p = str(path)
+    if not p.lower().endswith(_FIGURE_FILE_EXTS) or os.path.exists(p):
+        return False
+    return os.path.isdir(os.path.dirname(p) or ".")
+
+
+def _newer(a: str, b: str) -> bool:
+    """Whether file ``a`` was written after file ``b`` (both on disk)."""
+    ta, tb = _mtime_ns(a), _mtime_ns(b)
+    return ta is not None and tb is not None and ta > tb
+
+
 def collect_turn_artifacts(save_new: Iterable[str],
                            dir_new: Iterable[str]) -> List[str]:
     """Associate a turn's artifacts: the union of the paths the save_fn recorded
@@ -467,7 +495,11 @@ def collect_turn_artifacts(save_new: Iterable[str],
     (or JPG, or the self-contained HTML copy) of the SAME figure is dropped
     from this list, so the chat shows the interactive chart rather than a
     chart and a picture of it; the card's Download serves the PNG
-    (:func:`plotly_download_twin`). Only the
+    (:func:`plotly_download_twin`). The NEWER of the two is the figure
+    (live wave w9: a PNG redrawn in code after a ``plot_data`` draft was
+    hidden behind the draft's chart): a picture written after its sidecar
+    takes the card and the sidecar is dropped. A figure file removed later
+    in the turn (a draft a drawing tool retired) gets no card. Only the
     CARD list is filtered — the caller's own artifact list still carries the
     image, so the SharePoint mirror, the sidebar downloads and ``html_to_pdf``
     are untouched."""
@@ -477,10 +509,32 @@ def collect_turn_artifacts(save_new: Iterable[str],
         if p not in seen:
             seen.add(p)
             out.append(p)
+    out = [p for p in out if not _removed_figure(p)]
     stems = _plotly_sidecar_stems(out)
     if not stems:
         return out
-    return [p for p in out if not _superseded_by_plotly(p, stems)]
+    cards: List[str] = []
+    for p in out:
+        low = str(p).lower()
+        if low.endswith(PLOTLY_SIDECAR_SUFFIX):
+            picture = plotly_picture_twin(p)
+            if picture is not None and _newer(picture, p):
+                # the picture was drawn after the chart: it is the figure
+                if picture not in out and picture not in cards:
+                    cards.append(picture)
+                continue
+            cards.append(p)
+        elif _superseded_by_plotly(p, stems):
+            # an HTML copy always goes with its chart; a picture only when
+            # the chart is the newer
+            sidecar = os.path.splitext(str(p))[0] + PLOTLY_SIDECAR_SUFFIX
+            twin = next((q for q in out
+                         if str(q).lower() == sidecar.lower()), sidecar)
+            if low.endswith(_SUPERSEDED_IMAGE_EXTS) and _newer(p, twin):
+                cards.append(p)
+        else:
+            cards.append(p)
+    return cards
 
 
 #: Cache and scratch folders tools keep in the working folder: their files are

@@ -239,6 +239,47 @@ def test_collect_turn_artifacts_hides_the_png_of_an_interactive_figure():
         ["/t/sub/plot.png", "/t/plot.plotly.json"]
 
 
+def _dated(path, text, seconds_ago):
+    import time
+    path.write_text(text)
+    t = time.time() - seconds_ago
+    os.utime(path, (t, t))
+    return str(path)
+
+
+def test_the_newer_of_a_chart_and_its_picture_is_the_card(tmp_path):
+    """Live wave w9 (GM-107 fix 1): a figure redrawn in code after a
+    plot_data draft was hidden behind the draft's chart, so the user was
+    shown the rejected draft. The newer file is the figure."""
+    png = _dated(tmp_path / "gsd.png", "png", 10)
+    chart = _dated(tmp_path / "gsd.plotly.json", "{}", 60)
+    assert core.collect_turn_artifacts([chart, png], []) == [png]
+    # the picture newer but not in the list: it takes the chart's card
+    assert core.collect_turn_artifacts([chart], []) == [png]
+    # the chart newer (plot_data writes the PNG, then the chart): the chart
+    os.utime(chart, None)
+    assert core.collect_turn_artifacts([png, chart], []) == [chart]
+    # written in the same instant: the chart, as before
+    st = os.stat(png)
+    os.utime(chart, ns=(st.st_atime_ns, st.st_mtime_ns))
+    assert core.collect_turn_artifacts([png, chart], []) == [chart]
+
+
+def test_an_html_copy_still_goes_with_its_chart(tmp_path):
+    html = _dated(tmp_path / "p.html", "<html/>", 1)
+    chart = _dated(tmp_path / "p.plotly.json", "{}", 60)
+    assert core.collect_turn_artifacts([chart, html], []) == [chart]
+
+
+def test_a_figure_removed_in_the_turn_gets_no_card(tmp_path):
+    """A draft retired with replaces= is gone by the end of the turn."""
+    final = _dated(tmp_path / "final.png", "png", 1)
+    gone = [str(tmp_path / "draft.png"), str(tmp_path / "draft.plotly.json")]
+    other = str(tmp_path / "notes.txt")          # not a figure: kept
+    assert core.collect_turn_artifacts(gone + [final, other], []) == \
+        [final, other]
+
+
 # ---------------------------------------------------------------------------
 # Disclaimer
 # ---------------------------------------------------------------------------

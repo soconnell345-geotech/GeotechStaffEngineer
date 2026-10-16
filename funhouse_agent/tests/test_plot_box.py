@@ -291,14 +291,18 @@ def test_the_tool_describes_the_box_and_refuses_unknown_arguments():
 
 
 def test_a_png_fits_one_look(folders):
-    """Live wave w8: 200 dpi saved 2538 x 1546 px and every look tiled."""
+    """Live wave w8: 200 dpi saved 2538 x 1546 px and every look tiled. Since
+    wave w9 the report copy keeps the dpi asked and the look reads a copy
+    that one look takes whole."""
     mine, _ = folders
     r = _run("import matplotlib.pyplot as plt\n"
              "fig, ax = plt.subplots(figsize=(14, 9)); ax.plot([1, 2])\n"
              "save_figure(fig, 'wide')", mine)
     assert r["status"] == "success", r
-    assert max(r["images"][0]["width_px"], r["images"][0]["height_px"]) \
-        <= 2100
+    (img,) = r["images"]
+    assert max(img["look_px"]) <= 2100
+    assert (mine / img["look_file"]).is_file()
+    assert "its look_file" in r["next"]
 
 
 def test_the_layout_check_measures_what_a_look_can_miss(folders):

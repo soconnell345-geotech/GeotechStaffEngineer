@@ -340,6 +340,33 @@ the eyes). What changed on master after 5.33.0, in short:
   (`funhouse_agent/tests/test_plot_box.py`). Left as it is: a Python
   sandbox is not a kernel one; on Linux a kernel layer (Landlock or
   namespaces) could be added under the hook (BACKLOG INF-16).
+- **Figures after live wave w9** (GM-107; 2026-10-16;
+  `module_work/live_smoke/runs/w9-figures/TRACE_REVIEW.md`). Unswitched: the
+  chat's card for a figure is the NEWER of its picture and its chart
+  (`webapp/core.collect_turn_artifacts`), and a figure file removed during
+  the turn gets no card; `plot_data`'s `xlim` / `ylim` keep the order given
+  and `x_on_top` puts the x axis along the top. Behind the figure switches:
+  a `plot_code` draw removes a chart an earlier draw this turn left under
+  its PNG's name; `replaces=` on `plot_code` and the figure helper's
+  `plot_data` retires drafts this turn drew under another name (figure files
+  in the working folder only, newer than the start of the turn, else of the
+  running helper, and nothing at all with neither; `plot_box.retire_drafts`);
+  draws are counted across `plot_code` and `plot_data` and across names
+  within one FIGURE helper run (`plot_box.draws_so_far`, from the helper's
+  record; the calc helper draws a package's several figures and is not
+  capped), the third asking for the best version to be handed back; a
+  draw's `next` asks the look what the
+  figure shows against the data before the lettering; the box reports the
+  lettering's printed size (`lettering`: "5.6 pt at 6.5 in";
+  `print_width_in`) and saves the report PNG at the dpi asked, with a
+  2,048 px copy in `.scratch/` for looks (`look_file`). On the main agent
+  (`figure_helper.FigureTasks`, inside `KeepWork`): each figure brief carries
+  the nearest worked example (`nearest_example`: every word of its name in
+  the brief), and the helper's result ends with what it drew and what each
+  look found, written in code from its record (`looks_report`); the main
+  prompt names the helper and says not to look again at what it looked at
+  (`FIGURE_PRIMARY_NOTE`). Tests: `funhouse_agent/tests/
+  test_plot_box_drafts.py`, `deep/tests/test_figure_runs.py`.
 - **The step cap** (TA-33; 2026-10-16): the message for a turn that runs
   out of steps is plain words (no LangGraph error name, no documentation
   link; the raw text goes to the activity log). Behind

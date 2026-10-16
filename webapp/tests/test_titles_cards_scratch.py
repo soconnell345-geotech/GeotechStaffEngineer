@@ -201,10 +201,24 @@ def test_a_chart_card_downloads_the_png_and_stands_for_the_html(tmp_path):
         str(tmp_path / "pressures.png")
     assert core.plotly_download_twin(str(tmp_path / "x.pdf")) == \
         str(tmp_path / "x.pdf")
-    cards = core.collect_turn_artifacts(
-        [], [str(tmp_path / "pressures.html"), str(side),
-             str(tmp_path / "pressures.png"), str(tmp_path / "report.html")])
+    # Written together (plot_data writes the PNG, then the chart): the chart
+    # card stands for the PNG and the HTML. The times are set, not left to
+    # the clock: since GM-107 the newer of the two is the figure.
+    png = tmp_path / "pressures.png"
+    html = tmp_path / "pressures.html"
+    t = time.time() - 60
+    for f in (side, png, html):
+        os.utime(f, (t, t))                      # a tie goes to the chart
+    found = [str(html), str(side), str(png), str(tmp_path / "report.html")]
+    cards = core.collect_turn_artifacts([], found)
     assert cards == [str(side), str(tmp_path / "report.html")]
+    os.utime(side, (t + 5, t + 5))               # the chart newer: the chart
+    assert core.collect_turn_artifacts([], found) == cards
+    # a PNG drawn after the chart (a redraw in code) is the figure; the HTML
+    # copy still goes with the chart
+    os.utime(png, (t + 10, t + 10))
+    assert core.collect_turn_artifacts([], found) == \
+        [str(png), str(tmp_path / "report.html")]
 
 
 # ---------------------------------------------------------------------------
