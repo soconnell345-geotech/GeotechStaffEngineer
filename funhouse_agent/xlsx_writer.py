@@ -237,6 +237,10 @@ def _wrap_and_fit(ws, width_of: Dict[int, float], Alignment) -> int:
     return n_wrapped
 
 
+#: The keys a sheet entry may carry ("title" is read as "name").
+_SHEET_KEYS = frozenset({"name", "rows", "columns", "header"})
+
+
 def build_workbook(sheets: Optional[List[Dict[str, Any]]] = None,
                    markdown: str = "",
                    header: bool = True) -> Tuple[bytes, List[Dict[str, Any]],
@@ -256,10 +260,28 @@ def build_workbook(sheets: Optional[List[Dict[str, Any]]] = None,
     from openpyxl.utils import get_column_letter
 
     specs: List[Dict[str, Any]] = []
+    early: List[str] = []
     for i, spec in enumerate(sheets or []):
         if isinstance(spec, dict):
+            # A key the writer does not read is refused by name rather than
+            # the sheet being dropped without a word (field session
+            # 2026-10-15, TA-32). "title" is read as the name and "columns"
+            # as the header row above "rows", as models write them.
+            spec = dict(spec)
+            if "title" in spec and "name" not in spec:
+                spec["name"] = spec.pop("title")
+            unknown = sorted(set(spec) - _SHEET_KEYS)
+            if unknown:
+                raise ValueError(
+                    f"sheet {i + 1} has keys the writer does not read: "
+                    f"{', '.join(unknown)}; a sheet is {{name, rows: "
+                    "[[header...], [row...], ...] or [{column: value}, ...], "
+                    "columns (optional header row), header (bool)}")
+            rows = _rows_of(spec.get("rows"))
+            if spec.get("columns"):
+                rows = [list(spec["columns"])] + rows
             specs.append({"name": spec.get("name") or f"Sheet{i + 1}",
-                          "rows": _rows_of(spec.get("rows")),
+                          "rows": rows,
                           "header": bool(spec.get("header", header))})
         else:                                  # a bare list of rows
             specs.append({"name": f"Sheet{i + 1}", "rows": _rows_of(spec),
@@ -267,6 +289,10 @@ def build_workbook(sheets: Optional[List[Dict[str, Any]]] = None,
     for table in tables_from_markdown(markdown):
         specs.append({"name": table["name"], "rows": table["rows"],
                       "header": header})
+    for s in specs:
+        if not s["rows"]:
+            early.append(f"sheet '{s['name']}' had no rows and was not "
+                         "written")
     specs = [s for s in specs if s["rows"]]
     if not specs:
         raise ValueError(
@@ -277,7 +303,7 @@ def build_workbook(sheets: Optional[List[Dict[str, Any]]] = None,
     wb = Workbook()
     wb.remove(wb.active)
     summary: List[Dict[str, Any]] = []
-    warnings: List[str] = []
+    warnings: List[str] = list(early)
     names: List[str] = []
     for spec in specs:
         name = sheet_name(spec["name"], names)

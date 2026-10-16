@@ -263,3 +263,25 @@ def test_the_unknown_tool_error_gains_the_hint_in_a_real_agent(work):
     text = tool_msgs[0].content
     assert "is not a valid tool" in text
     assert "call_agent(agent_name='subsurface', method='write_diggs'" in text
+
+
+def test_a_sheet_with_keys_the_writer_does_not_read_is_refused():
+    """TA-32 (field session 2026-10-15): a sheet entry with an unknown key
+    was dropped without a word; now the call is refused by name."""
+    import pytest as _pytest
+    with _pytest.raises(ValueError, match="data"):
+        xlsx_writer.build_workbook(sheets=[{"name": "Kriging",
+                                            "data": [[1, 2]]}])
+
+
+def test_a_sheet_title_and_columns_are_read_and_an_empty_sheet_is_said():
+    import io as _io
+    from openpyxl import load_workbook
+    data, summary, warnings = xlsx_writer.build_workbook(sheets=[
+        {"title": "Volumes", "columns": ["Case", "m3"],
+         "rows": [["P50", 12.0], ["P90", 18.0]]},
+        {"name": "Empty", "rows": []}])
+    ws = load_workbook(_io.BytesIO(data))["Volumes"]
+    assert [c.value for c in ws[1]] == ["Case", "m3"]
+    assert ws["A3"].value == "P90"
+    assert any("Empty" in w and "not written" in w for w in warnings)
