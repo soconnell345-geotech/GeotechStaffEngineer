@@ -313,7 +313,6 @@ Parked at 5.25.0; every number since is GPT-5.4 on Foundry. Code items were conf
 - **GM-02** [Next] **Endo ratios unverified.** CGPR #56 IS on disk in a downdrag field session's gitignored `raw/` (2026-09-04): verify locally, commit nothing (not public domain). *was:* H E2
 - **GM-03** [Next] **Post-liquefaction drag (GEC-10 §10.7)** not implemented; pair with a liquefaction worked-example anchor (NCHRP downdrag Appendix G CPT example). *was:* H E2
 - **GM-49** [Next] **Settlement below a floating pile's toe is counted only within 3B' of the toe**: deep compressible soil below is under-counted. UFC goes down until the stress increase falls below 10 % of the effective stress, and a fill's stress increase does not decay with depth. *Src:* `downdrag/DESIGN.md` (settlement); GM-48 report 2026-10-14
-- **GM-51** [Next] **No warning when nothing settles below the toe**: without a soil modulus on the bearing layer the settlement below the toe is about zero (DD-1: 0.1 mm), and the result says nothing.
 - **GM-04** [Later] **Downdrag limits**: Poulos / PILENEG outside the comparison; single pile, ultimate consolidation only; β shaft far below Nordlund in dense gravel (V-004); β = 0.3 default uncited. *Src:* `downdrag/DESIGN.md:61-64, 317-325`
 
 ### fem2d
@@ -487,6 +486,7 @@ Long items kept in their own sections: DR-08–DR-13, GM-39, VIS-11, VIS-20, TA-
 
 Older docs still list these as open. Delete this section at the next sweep.
 
+- **GM-51** (no warning when nothing settles below the toe): downdrag warns when the soil in the toe's influence zone (3 pile diameters below the tip, the equivalent footing of UFC 3-220-20 Eqs 6-49 to 6-51) has no compressibility (clay without Cc/e0 or C_ec, sand without E_s) or is not in the profile at all, naming the spans and the settlement it counted (DD-1: the profile ends at the toe).
 - **TA-32** (`write_xlsx` dropped a sheet with an unknown key without a word): a sheet entry's unknown keys are refused by name; `title` is read as the name and `columns` as the header row; a sheet with no rows is named in the warnings; the tool description says so (field session 2026-10-15).
 - **VIS-28** (a look named a zoom tool the caller lacked): where `render_region` is not offered (the figure and calc helpers), a look's result carries no zoom hint naming it, and the tiling note drops the zoom sentence; a `zoom_note` says to ask again with finer tiles. Tiled looks now say to take small lettering from a tile and how things sit together (what overlaps or touches what) from the whole image (live wave w8).
 - **GM-99** (`downdrag_package` took no `pile_area` or `pile_perimeter`): it now passes both through to the analysis, so a steel H or pipe pile's skin friction, A x E compression and own weight are its own, not a solid circle's; the package and the analysis tool agree for the same section (test).

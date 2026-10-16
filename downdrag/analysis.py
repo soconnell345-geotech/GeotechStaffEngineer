@@ -384,6 +384,20 @@ class DowndragAnalysis:
 
         toe_settle = self._compute_toe_settlement(
             S["sigma_v0"][-1], S["delta_sigma"][-1], toe_force)
+        unrated = self._unrated_below_toe()
+        if unrated:
+            # GM-51: with no compressibility given, the soil below the toe
+            # adds nothing, and the pile settlement reads as if it were rigid
+            spans = "; ".join(f"{a:.2f}-{b:.2f} m ({kind})"
+                              for a, b, kind in unrated)
+            warning_list.append(
+                "The soil below the pile toe has no compressibility in this "
+                f"model ({spans}), so its settlement counts as zero (here "
+                f"{toe_settle * 1000:.1f} mm below the toe in all). Extend "
+                "the profile at least 3 pile diameters below the toe and "
+                "give Cc and e0 (or C_ec) for clay, or E_s for sand, to "
+                "include it (UFC 3-220-20 Eqs 6-49 to 6-51, the equivalent "
+                "footing at the toe).")
         if used is None:
             elastic_short = 0.0
             pile_settlement = toe_settle
@@ -1368,6 +1382,31 @@ class DowndragAnalysis:
         _, Q_from_top, Q_from_bot = self._find_neutral_plane(
             z_nodes, dz, fs, toe_resistance)
         return np.minimum(Q_from_top, Q_from_bot)
+
+    def _unrated_below_toe(self) -> List[tuple]:
+        """``(top, bottom, soil type)`` of the soil within the toe's
+        influence zone (3 B' below the tip, as
+        :meth:`_compute_toe_settlement`) that has no compressibility: clay
+        without C_ec (or Cc and e0), sand without E_s."""
+        z0 = self.pile_length
+        z1 = z0 + 3.0 * self.pile_diameter
+        out = []
+        top = 0.0
+        for layer in self.soil.layers:
+            bottom = top + layer.thickness
+            a, b = max(top, z0), min(bottom, z1)
+            if b > a:
+                if layer.soil_type == "cohesive":
+                    rated = layer.C_ec is not None and layer.C_ec > 0
+                else:
+                    rated = layer.E_s is not None and layer.E_s > 0
+                if not rated:
+                    out.append((a, b, layer.soil_type))
+            top = bottom
+        if top < z1 - 1e-9:
+            # the profile stops above the bottom of the influence zone
+            out.append((max(top, z0), z1, "not in the soil profile"))
+        return out
 
     def _compute_toe_settlement(self, sigma_v_tip: float,
                                  delta_sigma_tip: float,

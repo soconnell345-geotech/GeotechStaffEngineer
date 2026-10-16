@@ -1793,3 +1793,38 @@ class TestCalcPackageMethodsTable:
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
+
+
+class TestNothingSettlesBelowTheToe:
+    """GM-51: with no compressible soil below the toe in the model, the pile
+    settles as if the toe stood on rock, and the result now says so."""
+
+    def _run(self, layers):
+        from downdrag import (DowndragAnalysis, DowndragSoilLayer,
+                              DowndragSoilProfile)
+        soil = DowndragSoilProfile(layers=[DowndragSoilLayer(**ld)
+                                           for ld in layers], gwt_depth=1.0)
+        return DowndragAnalysis(pile_length=15, pile_diameter=0.4, soil=soil,
+                                fill_thickness=2.0, Q_dead=0.0).compute()
+
+    CLAY = dict(thickness=8, soil_type="cohesive", unit_weight=17, cu=30,
+                alpha=0.5, settling=True, Cc=0.25, e0=0.9)
+
+    def test_a_profile_ending_at_the_toe_is_named(self):
+        r = self._run([self.CLAY, dict(thickness=7, soil_type="cohesionless",
+                                       unit_weight=19, phi=38, beta=0.3)])
+        w = [x for x in r.warnings if "below the pile toe" in x]
+        assert w and "not in the soil profile" in w[0]
+
+    def test_sand_below_the_toe_without_a_modulus_is_named(self):
+        r = self._run([self.CLAY, dict(thickness=12, soil_type="cohesionless",
+                                       unit_weight=19, phi=38, beta=0.3)])
+        w = [x for x in r.warnings if "below the pile toe" in x]
+        assert w and "cohesionless" in w[0]
+
+    def test_no_warning_when_the_soil_below_is_rated(self):
+        r = self._run([self.CLAY, dict(thickness=12, soil_type="cohesionless",
+                                       unit_weight=19, phi=38, beta=0.3,
+                                       E_s=60000)])
+        assert not [x for x in r.warnings if "below the pile toe" in x]
+        assert r.toe_settlement > 0
