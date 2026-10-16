@@ -313,6 +313,75 @@ def test_the_layout_check_measures_what_a_look_can_miss(folders):
     assert "layout_check" in r["next"]
 
 
+def _layout(mine, body, name="lay"):
+    r = _run("import matplotlib.pyplot as plt\n"
+             "from matplotlib.patches import Rectangle\n" + body
+             + f"\nsave_figure(fig, {name!r})", mine)
+    assert r["status"] == "success", r
+    return (r.get("layout_check") or [{}])[0]
+
+
+def test_layout_ignores_tick_labels_that_are_never_drawn(folders):
+    """Live wave w8b: a "100" beyond a panel's limits was reported against
+    the next panel's "0"; matplotlib keeps that label but never draws it."""
+    mine, _ = folders
+    chk = _layout(mine, (
+        "fig, (a, b) = plt.subplots(1, 2, figsize=(4, 3))\n"
+        "fig.subplots_adjust(wspace=0)\n"
+        "a.set_xticks([0, 50, 100]); a.set_xlim(0, 60)\n"
+        "b.set_xlim(0, 60); b.set_yticks([])\n"))
+    pairs = chk.get("text_overlaps", [])
+    assert not any("100" in p for p in pairs), pairs
+
+
+def test_layout_measures_an_annotation_by_its_text(folders):
+    """Live wave w8b: an annotation's box took in its leader line."""
+    mine, _ = folders
+    chk = _layout(mine, (
+        "fig, ax = plt.subplots(); ax.set_xlim(0, 2); ax.set_ylim(0, 1)\n"
+        "ax.annotate('stem 0.35', xy=(1, 0.1), xytext=(1, 0.85), ha='center',"
+        " arrowprops={'arrowstyle': '-'})\n"
+        "ax.text(1.05, 0.4, 'toe 0.70')\n"))
+    assert not chk.get("text_overlaps"), chk
+
+
+def test_layout_counts_labels_that_touch(folders):
+    """Live wave w8b: "200" against "0" with no gap reads "2000"."""
+    mine, _ = folders
+    chk = _layout(mine, (
+        "fig, ax = plt.subplots(); ax.set_xlim(0, 10); ax.set_ylim(0, 10)\n"
+        "ax.text(5, 5, '200', ha='right'); ax.text(5, 5, '0', ha='left')\n"))
+    assert ["200", "0"] in chk.get("text_overlaps", []), chk
+
+
+def test_layout_finds_an_edge_or_frame_through_lettering(folders):
+    """Live wave w8b: a pressure diagram's edge and the axes frame ran
+    through labels the check passed."""
+    mine, _ = folders
+    chk = _layout(mine, (
+        "fig, ax = plt.subplots(); ax.set_xlim(0, 10); ax.set_ylim(0, 10)\n"
+        "ax.add_patch(Rectangle((1, 1), 4, 4, facecolor='0.9',"
+        " edgecolor='k'))\n"
+        "ax.text(5, 3, 'across the edge', ha='center')\n"
+        "ax.text(3, 2, 'inside', ha='center', fontsize=6)\n"
+        "ax.text(0, 8, 'on the frame', ha='center')\n"))
+    crossed = {t: what for t, what in chk.get("text_on_a_line", [])}
+    assert "across the edge" in crossed and "inside" not in crossed, chk
+    assert "frame" in crossed.get("on the frame", ""), chk
+
+
+def test_a_failed_run_saves_nothing_and_asks_for_no_look(folders):
+    """Live wave w8b: a failed run said LOOK and saved its half-drawn
+    figure under the name the good one would carry."""
+    mine, _ = folders
+    r = _run("import matplotlib.pyplot as plt\nplt.plot([1, 2])\n"
+             "raise ValueError('x and y must be the same length')",
+             mine, name="half")
+    assert r["status"] == "error" and "same length" in r["error"]
+    assert "next" not in r and "layout_check" not in r
+    assert not (mine / "half.png").exists()
+
+
 def test_a_clean_figure_has_no_layout_notes(folders):
     mine, _ = folders
     r = _run("import matplotlib.pyplot as plt\nfig, ax = plt.subplots()\n"

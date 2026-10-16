@@ -294,9 +294,11 @@ def _preload(modules: list) -> list:
         try:
             importlib.import_module(name)
         except Exception:                                  # noqa: BLE001
-            # ``from scipy import stats`` names an attribute, not always a
-            # module; the code's own import says what went wrong.
-            failed.append(name)
+            # ``from matplotlib.patches import Polygon`` names a class, not a
+            # module: no failure. Anything else, the code's own import says.
+            parent, _, last = name.rpartition(".")
+            if not (parent and hasattr(sys.modules.get(parent), last)):
+                failed.append(name)
     # Read once now, not under the guard: the system's MIME table (in /etc
     # on Linux; openpyxl asks for it when pandas reads an Excel file) ...
     import mimetypes
@@ -619,56 +621,100 @@ def _dpi_for(fig, dpi) -> int:
     return max(40, min(int(dpi), int(MAX_PX / max(w, h, 1e-6))))
 
 
+def _hidden_tick_labels(fig) -> set:
+    """Tick labels matplotlib keeps but never draws: those of ticks outside
+    the axis's view limits (live wave w8b: a phantom "100" beyond a panel's
+    right edge was reported against the next panel's "0")."""
+    hidden = set()
+    for ax in fig.get_axes():
+        for axis in (ax.xaxis, ax.yaxis):
+            lo, hi = sorted(axis.get_view_interval())
+            tol = 1e-9 * max(abs(hi - lo), 1e-12)
+            for tick in axis.get_major_ticks() + axis.get_minor_ticks():
+                loc = tick.get_loc()
+                if loc is None or not (lo - tol <= loc <= hi + tol):
+                    hidden.add(id(tick.label1))
+                    hidden.add(id(tick.label2))
+    return hidden
+
+
 def _layout_check(fig, fname: str) -> dict:
-    """Text the reader cannot read cleanly, measured from the drawing (not
-    from a look): lettering that overlaps other lettering, and lettering
-    inside a plot that a plotted line runs through. Up to eight of each."""
-    from matplotlib.text import Text
-    from matplotlib.lines import Line2D
+    """Lettering the reader cannot read cleanly, measured from the drawing
+    (not from a look): lettering that overlaps other lettering or runs into
+    it on one line (a gap under 2 px: "200" against "0" reads "2000"), and
+    lettering that a
+    plotted line, a shape's edge or an axes frame runs through. Only
+    lettering that is drawn counts, and an annotation is measured by its
+    text, not its leader. Up to eight of each; a look decides."""
+    from matplotlib.text import Annotation, Text
     out = {"file": fname}
     try:
         fig.canvas.draw()
         r = fig.canvas.get_renderer()
     except Exception:                                      # noqa: BLE001
         return out
+    hidden = _hidden_tick_labels(fig)
     texts = []
     for t in fig.findobj(Text):
         s = t.get_text().strip() if t.get_visible() else ""
-        if not s:
+        if not s or id(t) in hidden:
             continue
         try:
-            bb = t.get_window_extent(r)
+            # an Annotation's own extent takes in its leader line
+            bb = (Text.get_window_extent(t, r) if isinstance(t, Annotation)
+                  else t.get_window_extent(r))
         except Exception:                                  # noqa: BLE001
             continue
         if bb.width > 1 and bb.height > 1:
-            texts.append((s[:40], bb, t))
-    overlaps = []
+            texts.append((" ".join(s.split())[:40], bb, t))
+    touching = []
     for i in range(len(texts)):
         for j in range(i + 1, len(texts)):
             a, b = texts[i][1], texts[j][1]
-            if (min(a.x1, b.x1) - max(a.x0, b.x0) > 1
-                    and min(a.y1, b.y1) - max(a.y0, b.y0) > 1):
-                overlaps.append([texts[i][0], texts[j][0]])
+            ox = min(a.x1, b.x1) - max(a.x0, b.x0)
+            oy = min(a.y1, b.y1) - max(a.y0, b.y0)
+            # overlapping, or on one line with under 2 px between them (read
+            # as one word); labels that only meet at a corner or across a
+            # line gap (the 0 of each axis at the origin) are left alone
+            if ox > -2 and oy > 0:
+                touching.append([texts[i][0], texts[j][0]])
     crossed = []
+
+    def visible_edge(artist) -> bool:
+        try:
+            if not artist.get_visible() or artist.get_linewidth() <= 0:
+                return False
+            ec = artist.get_edgecolor()
+            return ec is not None and len(ec) == 4 and ec[3] > 0
+        except Exception:                                  # noqa: BLE001
+            return False
+
     for ax in fig.get_axes():
         grid = set(ax.get_xgridlines()) | set(ax.get_ygridlines())
-        lines = [ln for ln in ax.get_lines()
-                 if ln not in grid and ln.get_visible()
-                 and ln.get_linestyle() not in ("None", "none", "", " ")]
+        strokes = [(ln, str(ln.get_label())) for ln in ax.get_lines()
+                   if ln not in grid and ln.get_visible()
+                   and ln.get_linestyle() not in ("None", "none", "", " ")]
+        strokes += [(pa, "an outline") for pa in ax.patches
+                    if visible_edge(pa)]
+        strokes += [(sp, f"the {name} frame line")
+                    for name, sp in ax.spines.items() if visible_edge(sp)]
         for s, bb, t in texts:
-            if not ax.bbox.contains(bb.x0, bb.y0) \
-                    or not ax.bbox.contains(bb.x1, bb.y1):
+            if not bb.overlaps(ax.bbox):
                 continue
-            for ln in lines:
+            for artist, what in strokes:
+                if artist is t:
+                    continue
                 try:
-                    path = ln.get_transform().transform_path(ln.get_path())
+                    path = artist.get_transform().transform_path(
+                        artist.get_path())
                     if path.intersects_bbox(bb, filled=False):
-                        crossed.append([s, str(ln.get_label())[:40]])
+                        label = what if not what.startswith("_") else "a line"
+                        crossed.append([s, label[:40]])
                         break
                 except Exception:                          # noqa: BLE001
                     continue
-    if overlaps:
-        out["text_overlaps"] = overlaps[:8]
+    if touching:
+        out["text_overlaps"] = touching[:8]
     if crossed:
         out["text_on_a_line"] = crossed[:8]
     return out
@@ -855,14 +901,16 @@ def main() -> int:
     run_s = time.monotonic() - t_run
 
     # Figures the code drew but did not save: saved for it, when it saved
-    # no image itself (a script that saved its own chose what to keep).
+    # no image itself (a script that saved its own chose what to keep) and
+    # ran to the end (live wave w8b: a half-drawn figure from a failed run
+    # was saved over the name a good one would carry).
     auto = []
     wrote_image = any(os.path.splitext(p)[1].lower()
                       in (".png", ".jpg", ".jpeg", ".svg", ".pdf")
                       for p in record["written"])
     try:
         nums = list(plt.get_fignums())
-        if nums and not wrote_image:
+        if nums and not wrote_image and result["ok"]:
             for k, num in enumerate(nums, 1):
                 fname = stem + (".png" if len(nums) == 1 else f"_{k}.png")
                 fig = plt.figure(num)

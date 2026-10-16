@@ -397,12 +397,20 @@ def _run_in_box(code, data_json, name, root, limit, cfg, notes):
             res["error"] = ("The code ran but saved no figure: call "
                             "save_figure(fig, name) (or leave the figure "
                             "open and it is saved for you).")
-    if images:
+    if res.get("status") == "error":
+        # nothing to look at yet: fix the error first (live wave w8b)
+        res.pop("layout_check", None)
+        if images:
+            notes.append("the run failed: any image it saved before the "
+                         "error is a partial drawing; fix the error and draw "
+                         "again before looking")
+    elif images:
         res["next"] = (
             "LOOK at each PNG with analyze_image, in a step after this one, "
             "and check it against what the figure must show (labels on the "
-            "data, units, scale, nothing overlapping); fix what layout_check "
-            "lists too; then call plot_code again with the same name to "
+            "data, units, scale, nothing overlapping), and at what "
+            "layout_check lists (boxes around lettering, measured: the look "
+            "decides); then call plot_code again with the same name to "
             "redraw. Paste html_img_tag into report HTML.")
     if charts:
         # live wave w8: the chart the chat showed had lost lines the PNG had,
@@ -445,7 +453,12 @@ def plot_code_description(cfg: Optional[Dict[str, int]] = None) -> str:
         "from the data or the files (never made up), labels on the data, "
         "units on every axis, sections to scale (ax.set_aspect('equal')), "
         "depth increasing downward, a plan as a drawing (no axes or grid; a "
-        "scale bar and a north arrow), no decorative ink. time_limit_s: "
+        "scale bar and a north arrow), no decorative ink; arrows point the "
+        "way the force or load acts; dimensions carry their units; lettering "
+        "at least 7 pt at the size the figure is printed; to clear a label, "
+        "move the label, never the drawing. Look after each draw, and redraw "
+        "at most twice: then hand back the best and say what is left. "
+        "time_limit_s: "
         f"{cfg['seconds']} s unless you ask for more, up to "
         f"{cfg['max_seconds']} s for a heavy figure; memory up to "
         f"{cfg['memory_mb']} MB. Returns the saved files (each PNG with its "
