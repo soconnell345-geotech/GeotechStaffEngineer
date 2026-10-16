@@ -1899,7 +1899,9 @@ def make_vision_tools(
             save_file,
             "Save raw text or data to a file. Returns the saved file path. "
             "For formatted calculation documents, use the calc_package module "
-            "via call_agent instead.",
+            "via call_agent instead. Saving code (a script, a notebook cell) "
+            "does not run it: say a saved script was not run here, never "
+            "that it was checked.",
         ),
         **({"write_docx": (
             write_docx,
