@@ -433,6 +433,119 @@ def test_upload_beside_the_mirrored_copy_is_flagged(tmp_path):
     assert "upload_link_dead" not in c and "upload_not_in_library" not in c
 
 
+class _Sess:
+    def __init__(self, turns):
+        self.turns = turns
+
+
+def test_answer_names_read_the_last_answer():
+    """EV-26: a flow lists what its final answer must name (a phrase, a
+    regex, or {name, any}); each one missing is a finding."""
+    flow = {"expect": {"answer_names": [
+        "factor of safety",
+        {"name": "the search", "any": ["non-?circular", r"\bblock\b"]},
+        {"name": "what would change it", "any": ["would change"]},
+        "judge?ment calls", "[unclosed"]}}
+    early = {"final": "nothing here", "t_end": 1.0}
+    last = {"final": "Factor of safety 0.9 on a non‑circular surface. "
+                     "Judgement calls: a wetter clay [unclosed bracket.",
+            "t_end": 2.0}
+    found = det.detect_expectations(flow, [_Sess([last]), _Sess([early])])
+    assert [f["code"] for f in found] == ["expected_answer_name_missing"]
+    assert found[0]["severity"] == "info"
+    assert "what would change it" in found[0]["message"]
+    assert found[0]["evidence"]["looked_for"] == ["would change"]
+    # an empty answer misses every name, and says it was empty
+    found = det.detect_expectations(flow, [_Sess([{"final": "",
+                                                   "t_end": 3.0}])])
+    assert len(found) == 5
+    assert all("(the answer is empty)" in f["message"] for f in found)
+    # no answer_names: nothing new
+    assert det.detect_expectations({"expect": {}}, [_Sess([last])]) == []
+
+
+def test_judgment_call_flows_run_both_arms():
+    """EV-25's flow runs with GEOTECH_JUDGMENT_CALLS off and on, with the
+    same question and the same checks (the ON arm also looks for the
+    list)."""
+    from live_smoke import runner
+    flows = {f["id"]: f for f in runner.load_flows()}
+    off = flows["F61-geotech-slope-weak-layer"]
+    on = flows["F61j-geotech-slope-weak-layer"]
+    assert "GEOTECH_JUDGMENT_CALLS" not in (off.get("env") or {})
+    assert on["env"] == {"GEOTECH_JUDGMENT_CALLS": "1"}
+    assert off["steps"] == on["steps"] and off["page"] == on["page"] == \
+        "geotech"
+    names_off = off["expect"]["answer_names"]
+    assert on["expect"]["answer_names"][:len(names_off)] == names_off
+    for f in (off, on):
+        for item in f["expect"]["answer_names"]:
+            for p in item["any"]:
+                re.compile(p)
+
+
+#: Seven phrasings of an answer to F61 and what each should be found to
+#: leave out (the GM-116 review; four were mis-scored by the first regexes).
+_F61_ANSWERS = [
+    ("The automatic circular search gives FS = 6.3, but it misses the weak "
+     "clay. A non‑circular (block) surface along the base of the "
+     "residual clay gives FS ≈ 0.9 (Spencer). A rise in groundwater "
+     "would lower it further.\n\nJudgment calls\n- Search type: noncircular "
+     "...", set()),
+    ("Bishop's method with a slip-circle search returns 6.3 for deep circles "
+     "through the sandstone. The critical mechanism is a shallow "
+     "translational slide confined to the residual clay on the upper face: "
+     "FS = 0.7. Confidence: low; the result is heavily influenced by the "
+     "assumed c′ of the clay.", {"list"}),
+    ("Critical surface: a wedge daylighting on the face at the "
+     "clay–sandstone contact (el. 6.5); FS = 0.93. A circular search "
+     "alone would report 6.3. Lower φ′ in the residual clay would "
+     "make it worse. One judgment call: I used Spencer.", set()),
+    ("For the 10 m high 1H:1V cut (crest 10 m above the toe), Bishop's "
+     "circular search gives FS = 6.3, with the critical circle passing "
+     "through the toe. The slope is stable. If the groundwater rose the "
+     "factor of safety would drop.", {"weak", "list"}),
+    ("A noncircular search (Spencer) gives FS = 0.94 on a surface within the "
+     "weak clay layer. The FS hinges on the clay's strength.",
+     {"circular", "list"}),
+    ("The deep-seated circle through the rock gives 6.3, but a shallow "
+     "failure in the clay cap governs at FS 0.94. If the residual clay is "
+     "weaker still, FS falls below 0.9.", {"list"}),
+    ("Circular search: FS = 6.3. The sandstone outcrops on the lower face "
+     "and the rock surface is at el. 6.5. No further comment.",
+     {"weak", "change", "list"}),
+]
+
+
+@pytest.mark.parametrize("answer, missing", _F61_ANSWERS)
+def test_f61_answer_names_score_seven_phrasings(answer, missing):
+    from live_smoke import runner
+    flow = {f["id"]: f for f in runner.load_flows()}[
+        "F61j-geotech-slope-weak-layer"]
+    key = {"the circular search": "circular",
+           "a surface in or along the weak layer": "weak",
+           "what would change the answer": "change",
+           'a "Judgment calls" list': "list"}
+    found = det.detect_expectations(
+        {"expect": {"answer_names": flow["expect"]["answer_names"]}},
+        [_Sess([{"final": answer, "t_end": 1.0}])])
+    got = {key[f["message"].replace("the final answer does not name ", "")]
+           for f in found}
+    assert got == missing
+
+
+def test_f61_change_names_phi_written_as_a_symbol():
+    from live_smoke import runner
+    flow = {f["id"]: f for f in runner.load_flows()}[
+        "F61-geotech-slope-weak-layer"]
+    found = det.detect_expectations({"expect": {
+        "answer_names": flow["expect"]["answer_names"]}}, [_Sess([{
+            "final": "A circular search gives 6.3; a block along the base "
+                     "of the clay 0.9. If φ′ is lower, so is FS.",
+            "t_end": 1.0}])])
+    assert found == []
+
+
 def test_recovered_tool_error_is_low_and_meter_gap_is_flagged(tmp_path):
     conv, files = _conv(tmp_path)
     acts = [{"event": "tool_end", "name": "call_agent",

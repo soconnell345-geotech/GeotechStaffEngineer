@@ -147,6 +147,19 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     also tells the model once, before the answer goes out, and the answer it
     writes after that note is the one delivered. Off: answers and results
     are left as they are. Both pages (BACKLOG EV-21; live wave w8b, F55).
+``GEOTECH_JUDGMENT_CALLS``
+    ``1`` tells the geotech agent that the engineering judgment is the
+    user's: an answer that rests on a judgment call (a method, a value the
+    user did not give, drained or undrained, which stratum governs, search
+    or mesh settings, how ambiguous data was read) ends with a short
+    "Judgment calls" list, each with its reason and reference, the
+    alternative set aside and what would change the answer. The ``calc``
+    helper's reply lists the calls it made, and the references helper
+    returns a reference's several methods or values as cited options. The
+    owner, 2026-10-16: "make sure the agent is communicating its
+    engineering judgements to the user. User's judgement is the one that
+    matters." The geotech page only: the Document Review page has its own
+    prompt and the figure helper is unchanged (BACKLOG GM-116, EV-26).
 """
 
 from __future__ import annotations
@@ -173,13 +186,14 @@ CITED_DOCUMENTS_ENV = "GEOTECH_CITED_DOCUMENTS"
 FIGURE_HELPER_ENV = "GEOTECH_FIGURE_HELPER"
 PLOT_CODE_ENV = "GEOTECH_PLOT_CODE"
 STEP_CAP_ANSWER_ENV = "GEOTECH_STEP_CAP_ANSWER"
+JUDGMENT_CALLS_ENV = "GEOTECH_JUDGMENT_CALLS"
 
 ALL_ENVS = (AGENT_ENV, VISION_TEXT_ENV, VISION_STRUCTURED_ENV,
             VISION_INLINE_ENV, SWEEP_ENV, FINDINGS_ENV, OVERVIEW_ENV,
             GEOMETRY_ENV, DIGEST_ENV, COVERAGE_ENV, CHECKLIST_ENV,
             VISION_TURN_RETRY_ENV, KEPT_READINGS_ENV, CITED_PAGES_ENV,
             FIGURE_HELPER_ENV, PLOT_CODE_ENV, STEP_CAP_ANSWER_ENV,
-            CITED_DOCUMENTS_ENV)
+            CITED_DOCUMENTS_ENV, JUDGMENT_CALLS_ENV)
 
 #: Not a switch but the overview's setting: above this many pages in the
 #: new uploads (all of them together) the orientation asks for contact sheets.
@@ -299,6 +313,13 @@ def plot_code() -> bool:
     return _on(PLOT_CODE_ENV)
 
 
+def judgment_calls() -> bool:
+    """Whether the geotech agent ends an answer with its judgment calls, the
+    ``calc`` helper reports the calls it made and the references helper
+    returns a reference's several methods or values as cited options."""
+    return _on(JUDGMENT_CALLS_ENV)
+
+
 def cited_pages() -> str:
     """What an answer citing pages no tool opened gets: ``"off"`` (the
     default: recorded only), ``"note"`` (a note appended) or ``"retry"``
@@ -383,6 +404,10 @@ ARMS: Dict[str, Dict[str, str]] = {
     # On the DEFAULT agent, against `baseline`.
     "cited_documents_note": {CITED_DOCUMENTS_ENV: "note"},
     "cited_documents_retry": {CITED_DOCUMENTS_ENV: "retry"},
+    # Judgment calls put in front of the user (GM-116, 2026-10-16). On the
+    # DEFAULT agent. The geotech page only: on the review page's tasks this
+    # arm builds the same agent as `baseline`.
+    "judgment_calls": {JUDGMENT_CALLS_ENV: "1"},
 }
 
 
@@ -423,7 +448,7 @@ __all__ = ["AGENT_ENV", "VISION_TEXT_ENV", "VISION_STRUCTURED_ENV",
            "GEOMETRY_ENV", "DIGEST_ENV", "COVERAGE_ENV", "CHECKLIST_ENV",
            "VISION_TURN_RETRY_ENV", "KEPT_READINGS_ENV", "CITED_PAGES_ENV",
            "FIGURE_HELPER_ENV", "PLOT_CODE_ENV", "STEP_CAP_ANSWER_ENV",
-           "CITED_DOCUMENTS_ENV",
+           "CITED_DOCUMENTS_ENV", "JUDGMENT_CALLS_ENV",
            "OVERVIEW_PAGES_ENV",
            "DEFAULT_OVERVIEW_PAGES", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
            "lean_agent",
@@ -431,6 +456,6 @@ __all__ = ["AGENT_ENV", "VISION_TEXT_ENV", "VISION_STRUCTURED_ENV",
            "sweep", "findings", "overview", "geometry", "digest",
            "coverage", "checklist", "vision_turn_retry",
            "kept_readings_on_review_page", "figure_helper", "plot_code",
-           "step_cap_answer",
+           "step_cap_answer", "judgment_calls",
            "cited_pages", "cited_documents",
            "overview_pages", "switches", "describe"]

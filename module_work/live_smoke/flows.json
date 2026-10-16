@@ -1,5 +1,5 @@
 {
- "about": "Multi-turn Tiny Apps tester scenarios for the live smoke harness (module_work/live_smoke/run.py flow). PUBLIC documents only: Review-suite document ids (Mecklenburg County standard details, UFC manuals, the app's sample calc packages, planlens synthetic fixtures), {\"file\": ...} from geotech-references/docs (FHWA/UFC only), {\"sample\": ...} from funhouse_agent/eval_samples, {\"render\": ...} screenshots cut from those, {\"doc\": <ref>, \"name\": ...} any of those renamed, {\"make\": {\"kind\": ...}} files generated in docs.py (a stamped sheet set C-1..C-10, an invented spec section as PDF or DOCX that contradicts some sheets, a submittal-log XLSX, a DXF plan, a JPEG phone photo, a scan, a sideways sheet, a blank PDF, planlens' synthetic report). Every flow runs as a Tiny Apps user (IIS header identity LIVESMOKE\\tester) unless it names another; SharePoint is the local fake library. Step keys: upload | paste (+say) | say | say + together_with ({\"as\", \"say\"} or a list: sent at the same moment, in threads; those sessions must have acted before) | new_conversation | open (\"previous\" or an index) | restart | restore; \"as\" picks a session. An upload of a type the app's uploader does not take (core.ACCEPTED_UPLOAD_TYPES, e.g. .docx/.xlsx) is refused before the app sees it, as Streamlit refuses it. 'cost' is a rough tier for --max-cost; 'expect' is soft (whether the flow exercised the plumbing it was written for), never a pass/fail.",
+ "about": "Multi-turn Tiny Apps tester scenarios for the live smoke harness (module_work/live_smoke/run.py flow). PUBLIC documents only: Review-suite document ids (Mecklenburg County standard details, UFC manuals, the app's sample calc packages, planlens synthetic fixtures), {\"file\": ...} from geotech-references/docs (FHWA/UFC only), {\"sample\": ...} from funhouse_agent/eval_samples, {\"render\": ...} screenshots cut from those, {\"doc\": <ref>, \"name\": ...} any of those renamed, {\"make\": {\"kind\": ...}} files generated in docs.py (a stamped sheet set C-1..C-10, an invented spec section as PDF or DOCX that contradicts some sheets, a submittal-log XLSX, a DXF plan, a JPEG phone photo, a scan, a sideways sheet, a blank PDF, planlens' synthetic report). Every flow runs as a Tiny Apps user (IIS header identity LIVESMOKE\\tester) unless it names another; SharePoint is the local fake library. Step keys: upload | paste (+say) | say | say + together_with ({\"as\", \"say\"} or a list: sent at the same moment, in threads; those sessions must have acted before) | new_conversation | open (\"previous\" or an index) | restart | restore; \"as\" picks a session. An upload of a type the app's uploader does not take (core.ACCEPTED_UPLOAD_TYPES, e.g. .docx/.xlsx) is refused before the app sees it, as Streamlit refuses it. 'cost' is a rough tier for --max-cost; 'expect' is soft (whether the flow exercised the plumbing it was written for), never a pass/fail: 'tools_any', 'artifact_ext', and 'answer_names' (phrases or case-insensitive regexes, or {\"name\", \"any\": [...]}, that the flow's final answer must contain; EV-26). 'env' sets switches for the flow; a pair of flows that differ only in a switch (F52/F52h, F61/F61j) runs both arms in one wave.",
  "flows": [
   {
    "id": "F01-review-orient-scale",
@@ -761,6 +761,42 @@
     {"say": "Plot the embankment's settlement-plate readings for the report, with the fill height in a panel above sharing the time axis. Days since the start of filling: 0, 10, 20, 30, 45, 60, 90, 120, 180. Fill height (m): 0, 1.0, 2.0, 3.0, 4.0, 4.0, 4.0, 4.0, 4.0. Settlement (mm): SP-1 0, 12, 30, 55, 90, 118, 150, 172, 185; SP-2 0, 8, 22, 40, 66, 85, 108, 124, 133."}
    ],
    "expect": {"tools_any": ["task", "plot_code", "plot_data"]}
+  },
+  {
+   "id": "F61-geotech-slope-weak-layer",
+   "title": "Geotech page: a cut slope with a thin weak layer over rock - does the answer name its search choice and what would change it? (judgment calls OFF, EV-25/EV-26; with GM-57's search the default circle already finds about 0.94 in the clay, so this flow measures whether the answer NAMES its choices, not whether the agent overrides the default)",
+   "page": "geotech",
+   "cost": "light",
+   "steps": [
+    {"say": "What's the factor of safety of this cut slope? Section in metres (x, elevation): ground surface (0, 0), (20, 0), (30, 10), (60, 10), so a 10 m high cut at 1H:1V with level ground in front of the toe and behind the crest. The top 3.5 m, from el. 10 down to el. 6.5, is a weak residual clay: unit weight 18.5 kN/m3, c' = 3 kPa, phi' = 22 degrees. Below el. 6.5 is sandstone: unit weight 23 kN/m3, c' = 200 kPa, phi' = 40 degrees. No groundwater."}
+   ],
+   "expect": {
+    "tools_any": ["slope_stability"],
+    "answer_names": [
+     {"name": "the circular search", "any": ["(?<!non)(?<!non-)(?<!non )circular", "circles?\\b"]},
+     {"name": "a surface in or along the weak layer", "any": ["non-?circular", "\\bblock\\b", "\\bwedge\\b", "planar", "translational", "along the (base of the |top of the |weak |residual )?(layer|clay|contact|interface|rock|sandstone)", "(within|confined to|inside) the (weak |residual |upper )?(layer|clay)", "shallow (slide|slip|surface|failure|circle|mechanism)", "daylight\\w* (on|at|in) the (face|slope)"]},
+     {"name": "what would change the answer", "any": ["would change", "would (make|lower|raise|reduce|increase|drop|fall|govern)", "sensitiv", "(influenced|controlled|governed|driven) by", "hinges on", "if (the )?(residual |weak )?(groundwater|water|clay|strength|c'|phi|φ|ϕ|layer)", "depends (heavily |strongly |mainly )?on", "chang(e|es|ing) the (answer|result|factor of safety|fs|fos)"]}
+    ]
+   }
+  },
+  {
+   "id": "F61j-geotech-slope-weak-layer",
+   "title": "Geotech page: a cut slope with a thin weak layer over rock - does the answer name its search choice and what would change it? (judgment calls ON, GM-116, EV-25/EV-26; with GM-57's search the default circle already finds about 0.94 in the clay, so this flow measures whether the answer NAMES its choices, not whether the agent overrides the default)",
+   "page": "geotech",
+   "cost": "light",
+   "env": {"GEOTECH_JUDGMENT_CALLS": "1"},
+   "steps": [
+    {"say": "What's the factor of safety of this cut slope? Section in metres (x, elevation): ground surface (0, 0), (20, 0), (30, 10), (60, 10), so a 10 m high cut at 1H:1V with level ground in front of the toe and behind the crest. The top 3.5 m, from el. 10 down to el. 6.5, is a weak residual clay: unit weight 18.5 kN/m3, c' = 3 kPa, phi' = 22 degrees. Below el. 6.5 is sandstone: unit weight 23 kN/m3, c' = 200 kPa, phi' = 40 degrees. No groundwater."}
+   ],
+   "expect": {
+    "tools_any": ["slope_stability"],
+    "answer_names": [
+     {"name": "the circular search", "any": ["(?<!non)(?<!non-)(?<!non )circular", "circles?\\b"]},
+     {"name": "a surface in or along the weak layer", "any": ["non-?circular", "\\bblock\\b", "\\bwedge\\b", "planar", "translational", "along the (base of the |top of the |weak |residual )?(layer|clay|contact|interface|rock|sandstone)", "(within|confined to|inside) the (weak |residual |upper )?(layer|clay)", "shallow (slide|slip|surface|failure|circle|mechanism)", "daylight\\w* (on|at|in) the (face|slope)"]},
+     {"name": "what would change the answer", "any": ["would change", "would (make|lower|raise|reduce|increase|drop|fall|govern)", "sensitiv", "(influenced|controlled|governed|driven) by", "hinges on", "if (the )?(residual |weak )?(groundwater|water|clay|strength|c'|phi|φ|ϕ|layer)", "depends (heavily |strongly |mainly )?on", "chang(e|es|ing) the (answer|result|factor of safety|fs|fos)"]},
+     {"name": "a \"Judgment calls\" list", "any": ["judge?ment calls?"]}
+    ]
+   }
   }
  ]
 }

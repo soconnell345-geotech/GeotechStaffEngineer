@@ -79,6 +79,7 @@ from funhouse_agent.deep.prompt import (
     REPORT_INGEST_NUDGE,
     REPORT_LIBRARY_NUDGE,
     build_domain_prompt,
+    judgment_calls_section,
 )
 from funhouse_agent.deep.setup_agent import build_setup_subagent
 from funhouse_agent.deep.tools import (
@@ -99,6 +100,16 @@ _REFERENCES_CONCISION = (
     "with the exact citation (reference + section/table/figure). Do NOT paste "
     "long chapter-text passages or restate full sections — a few sentences "
     "plus the citation is ideal."
+)
+
+#: Added after the concision rule with ``GEOTECH_JUDGMENT_CALLS`` on (BACKLOG
+#: GM-116): one value where the references give several hides a choice that
+#: is the user's to make.
+_REFERENCES_OPTIONS = (
+    "\n\nWhere the references give more than one method or value for the "
+    "question, return each as a cited option with when it applies, and say "
+    "which fits the question as asked; the choice is the user's. Otherwise "
+    "return only what was asked."
 )
 
 #: Added to deepagents' stock general-purpose helper prompt (field session
@@ -364,6 +375,9 @@ def build_references_subagent(
     if extra_tools:
         tools = list(tools) + list(extra_tools)
     system_prompt = CONSULTANT_FRAMING + _REFERENCES_CONCISION
+    from funhouse_agent import review_flags as _flags
+    if _flags.judgment_calls():
+        system_prompt += _REFERENCES_OPTIONS
     if max_model_calls:
         system_prompt += _REFERENCES_BUDGET.format(n=int(max_model_calls))
     if extra_system_prompt:
@@ -511,6 +525,19 @@ _CALC_PLOT_CODE = (
     "analyze_image (what it shows against the data, then the lettering), "
     "redraw at most twice, then paste its html_img_tag.")
 
+#: Added to the calc helper's prompt with ``GEOTECH_JUDGMENT_CALLS`` on
+#: (BACKLOG GM-116): its compact reply left out the choices it made, so the
+#: main agent had none to relay.
+_CALC_JUDGMENT_CALLS = (
+    "\nJUDGMENT CALLS: the engineering judgment is the user's, and the "
+    "delegating agent puts your choices in front of them. End your reply "
+    "with a short \"Judgment calls\" list of every choice the delegation did "
+    "not make for you -- a method or analysis type, a parameter value, "
+    "factor of safety or load factor, drained or undrained, which stratum "
+    "governs, search or mesh settings, how you read ambiguous data -- each "
+    "giving what you chose, why (with its reference where one applies), the "
+    "alternative you set aside and what would change the result.")
+
 #: Appended to the PRIMARY agent's system prompt when the calc sub-agent is on,
 #: nudging it to delegate tool-heavy calc rather than run those tools inline.
 _CALC_DELEGATION_NUDGE = (
@@ -614,6 +641,9 @@ def build_calc_subagent(
             " It draws the package's figures too, in code (plot_code) where "
             "plot_data cannot: a wall or pile to scale with its diagrams "
             "beside it, panels sharing one elevation axis.")
+    from funhouse_agent import review_flags as _flags
+    if _flags.judgment_calls():
+        system_prompt = system_prompt + _CALC_JUDGMENT_CALLS
     if extra_tools:
         tools = list(tools) + list(extra_tools)
     if extra_system_prompt:
@@ -1193,6 +1223,13 @@ def build_deep_agent(
     if system_prompt is None:
         system_prompt = build_domain_prompt(allowed_agents,
                                             memory_enabled=enable_memory)
+        from funhouse_agent import review_flags as _flags
+        if _flags.judgment_calls() and not review_page:
+            # The judgment calls put in front of the user (GM-116), behind
+            # GEOTECH_JUDGMENT_CALLS until measured. The geotech prompt
+            # only: a page that brings its own prompt is unchanged.
+            system_prompt += "\n\n" + judgment_calls_section(
+                references=reference_mode != "off")
     if extra_system_prompt:
         # Appended AFTER the domain prompt (mirrors GeotechAgent.system_prompt_extra)
         # so a caller can re-cast the agent — e.g. the seismic reviewer's review-mode

@@ -122,6 +122,21 @@ Built by `build_domain_prompt` (`funhouse_agent/deep/prompt.py:224-261`) from
 8. deepagents' sections (`shared_machinery.md` §2.1), ending with the `task`
    spawner text listing the sub-agents and "Whenever possible, parallelize".
 
+*Behind `GEOTECH_JUDGMENT_CALLS` (OFF; GM-116, 2026-10-16):* a "Judgment
+Calls" section follows "Working Style" (`deep/prompt.judgment_calls_section`,
+963 characters): the engineering judgment is the user's; make each call as an
+experienced engineer would and give the answer, then end with a short
+"Judgment calls" list (the choice, why with its reference, the alternative
+set aside, what would change the answer, a number only from a tool run), and
+no list when the answer rests on no call. The `calc` helper ends its reply
+with its own calls; the references helper returns a reference's several
+methods or values as cited options and says which fits the question. Before
+it, the only general line was "always comment on confidence" (item 1); a
+survey of 17 recorded runs found assumed inputs stated well and other choices
+(factors of safety, a search grid, a method, the stratum a check ran on)
+silent or in passing, and the librarian consulted in 4 of 77 calc runs.
+Measured by live-smoke flows F61 / F61j (EV-25, EV-26).
+
 ### 3.2 Tools (32 in both configurations; about 38 thousand characters of schema)
 
 * **Dispatch** (`funhouse_agent/deep/tools.py:397-581`): `list_agents`,

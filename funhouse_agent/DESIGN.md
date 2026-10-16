@@ -401,6 +401,28 @@ the eyes). What changed on master after 5.33.0, in short:
   normal's norm_cdf / norm_pdf / norm_ppf join the shared math list
   (`adapters/reliability_adapter._MATH_FUNCS`), so `reliability`'s
   expressions have them too.
+- **Judgment calls** (GM-116; 2026-10-16; the owner: "User's judgement is
+  the one that matters"). Behind `GEOTECH_JUDGMENT_CALLS` (OFF; arm
+  `judgment_calls`), on the geotech page only. The main prompt gets a
+  "Judgment Calls" section (`deep/prompt.judgment_calls_section`, 963
+  characters; 897 without the clause naming the `references` helper when
+  that helper is not built): make each call as an experienced engineer
+  would and give the answer, then end with a short "Judgment calls" list
+  (a method, and whether the default analysis suits the geometry and
+  loading; a value, factor of safety or load factor the user did not give,
+  assumed inputs among them; drained or undrained; which stratum governs;
+  search or mesh settings; how ambiguous data was read), each with its
+  reason and reference, the alternative set aside and what would change
+  the answer (a number only from a tool run); no list when there is no
+  call. The `calc` helper ends its reply with the calls it made
+  (`deep/agent._CALC_JUDGMENT_CALLS`); the references helper returns a
+  reference's several methods or values as cited options, says which fits
+  the question as asked, and leaves the choice to the user
+  (`_REFERENCES_OPTIONS`). The review page's prompt, the figure, reviewer
+  and general-purpose helpers and every tool description are unchanged,
+  and off the build is byte-for-byte as before
+  (`deep/tests/test_judgment_calls.py`). Measured by live-smoke flows
+  F61 / F61j and `expect.answer_names` (EV-25, EV-26).
 
 Every switch and its default: `review_flags.py` and
 `module_work/REVIEW_HARNESS.md`.

@@ -1146,7 +1146,10 @@ def detect_restore(session, mirrored_before: Optional[List[dict]] = None
 
 def detect_expectations(flow: dict, sessions) -> List[dict]:
     """The flow's soft expectations -- whether the scenario exercised the
-    plumbing it was written for (a model choice, so 'info')."""
+    plumbing it was written for (a model choice, so 'info'): ``tools_any``,
+    ``artifact_ext`` and ``answer_names``, the phrases or regexes the
+    flow's final answer must contain (BACKLOG EV-26: does the answer name
+    its judgment calls?)."""
     D = "i_expectations"
     exp = flow.get("expect") or {}
     out: List[dict] = []
@@ -1177,7 +1180,51 @@ def detect_expectations(flow: dict, sessions) -> List[dict]:
             out.append(finding(D, "expected_artifact_missing", "info",
                                f"no {ext} download card was produced "
                                f"(cards: {sorted(exts)})"))
+    names = exp.get("answer_names") or []
+    if names:
+        final = _final_answer(sessions)
+        for item in names:
+            label, patterns = _answer_name(item)
+            if not any(_search(p, final) for p in patterns):
+                out.append(finding(
+                    D, "expected_answer_name_missing", "info",
+                    f"the final answer does not name {label}"
+                    + ("" if final.strip() else " (the answer is empty)"),
+                    looked_for=patterns, answer_chars=len(final)))
     return out
+
+
+def _final_answer(sessions) -> str:
+    """The flow's final answer: the text of the last turn to finish, with
+    typographic dashes, primes and spaces made plain."""
+    turns = [t for s in sessions for t in s.turns]
+    if not turns:
+        return ""
+    last = max(turns, key=lambda t: t.get("t_end") or t.get("t_start") or 0)
+    text = str(last.get("final") or "")
+    for a, b in (("‐", "-"), ("‑", "-"), ("‒", "-"),
+                 ("–", "-"), ("—", "-"), ("′", "'"),
+                 ("’", "'"), (" ", " "), (" ", " ")):
+        text = text.replace(a, b)
+    return text
+
+
+def _answer_name(item) -> Tuple[str, List[str]]:
+    """An ``expect.answer_names`` entry: a phrase or regex, or
+    ``{"name": what it is, "any": [phrases or regexes]}``."""
+    if isinstance(item, dict):
+        pats = [str(p) for p in item.get("any") or [] if str(p)]
+        return str(item.get("name") or " or ".join(pats)), pats
+    return repr(str(item)), [str(item)]
+
+
+def _search(pattern: str, text: str) -> bool:
+    """Case-insensitive regex search; a pattern that is not a valid regex
+    is matched as plain text."""
+    try:
+        return re.search(pattern, text, re.IGNORECASE) is not None
+    except re.error:
+        return pattern.lower() in text.lower()
 
 
 def severity_counts(findings: Iterable[dict]) -> Dict[str, int]:

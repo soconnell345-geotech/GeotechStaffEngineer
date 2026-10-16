@@ -220,6 +220,41 @@ REPORT_LIBRARY_NUDGE = (
 )
 
 
+#: Appended to the geotech agent's prompt with ``GEOTECH_JUDGMENT_CALLS`` on
+#: (BACKLOG GM-116; the owner, 2026-10-16: "User's judgement is the one that
+#: matters"). A survey of 17 recorded runs found assumed inputs stated well
+#: and every other choice -- a factor of safety, a search grid, a method, the
+#: stratum a check was run on -- silent or in passing; the librarian was
+#: consulted in 4 of 77 calc runs. Kept general on purpose: no example from
+#: those runs. ``{reference}`` names the references helper where it is built.
+_JUDGMENT_CALLS_SECTION = """\
+## Judgment Calls
+
+The engineering judgment is the user's. Make each call as an experienced
+engineer would and give your answer; then put every call in front of them,
+to accept or override. A judgment call is a choice the answer rests on that
+the user did not make: the method or analysis type, including whether the
+default analysis suits the geometry and loading; a parameter value, factor
+of safety or load factor they did not give (inputs you assumed go in this
+list, not a second one); drained or undrained, which stratum governs, search
+or mesh settings; how you read ambiguous data. An answer that rests on one
+ends with a short "Judgment calls" list, your helpers' calls included, each
+giving what was chosen; why, with its reference where one applies{reference};
+the alternative set aside; and what would change the answer (a number only
+from a tool run). An answer that rests on none needs no list."""
+
+_JUDGMENT_CALLS_REFERENCES = (
+    " (ask the\n`references` helper when a reference governs the choice)")
+
+
+def judgment_calls_section(references: bool = True) -> str:
+    """The judgment-calls block for the geotech agent's prompt
+    (``GEOTECH_JUDGMENT_CALLS``); ``references`` says whether the references
+    helper is built, so the block names it only where it exists."""
+    return _JUDGMENT_CALLS_SECTION.format(
+        reference=_JUDGMENT_CALLS_REFERENCES if references else "")
+
+
 def build_domain_prompt(allowed_agents=None, *, memory_enabled: bool = False) -> str:
     """Return the domain system prompt with the ReAct XML sections stripped.
 
@@ -449,4 +484,4 @@ def build_document_review_prompt(*, memory_enabled: bool = False,
 __all__ = ["build_domain_prompt", "build_document_review_prompt",
            "DOCUMENT_REVIEW_PROMPT", "DOCUMENT_REVIEW_PROMPT_LEAN",
            "DOCUMENT_REVIEW_READER_PROMPT", "REPORT_INGEST_NUDGE",
-           "REPORT_LIBRARY_NUDGE"]
+           "REPORT_LIBRARY_NUDGE", "judgment_calls_section"]

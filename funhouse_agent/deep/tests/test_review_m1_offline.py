@@ -692,6 +692,9 @@ def test_arms_are_the_old_ones_plus_overview():
         # funhouse_agent/tests/test_cited_documents.py
         "cited_documents_note": {A.CITED_DOCUMENTS_ENV: "note"},
         "cited_documents_retry": {A.CITED_DOCUMENTS_ENV: "retry"},
+        # GM-116 judgment calls, pinned in
+        # funhouse_agent/deep/tests/test_judgment_calls.py
+        "judgment_calls": {A.JUDGMENT_CALLS_ENV: "1"},
     }
 
 
