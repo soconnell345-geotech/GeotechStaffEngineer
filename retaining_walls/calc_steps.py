@@ -462,30 +462,68 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
     # ── Section 3: Sliding Check ───────────────────────────────
     slide_items = []
 
-    delta_b = 2.0 / 3.0 * phi_f
-    ca = 2.0 / 3.0 * c_f
+    # The base interface and passive resistance the analysis USED (GM-103:
+    # the package printed (2/3)phi and no passive even when delta_base,
+    # base_adhesion or include_passive set them otherwise). The module's own
+    # check_sliding gives the numbers, so the printout cannot drift from it.
+    delta_base_in = _get(analysis, "delta_base")
+    adhesion_in = _get(analysis, "base_adhesion")
+    passive_in = bool(_get(analysis, "include_passive", False))
+    try:
+        from retaining_walls.cantilever import check_sliding
+        used = check_sliding(
+            geom, gamma, phi, c, phi_f, c_f, gamma_c, FOS_s_req, method,
+            passive_in, _get(analysis, "gamma_foundation"),
+            delta_base=delta_base_in, base_adhesion=adhesion_in)
+        delta_b = float(used["delta_base_deg"])
+        ca = float(used["base_adhesion_kPa"])
+        Pp = float(used["Pp_kN_per_m"])
+    except Exception:                                      # noqa: BLE001
+        delta_b = (float(delta_base_in) if delta_base_in is not None
+                   else 2.0 / 3.0 * phi_f)
+        ca = (float(adhesion_in) if adhesion_in is not None
+              else 2.0 / 3.0 * c_f)
+        Pp = 0.0
 
-    slide_items.append(CalcStep(
-        title="Base Friction Angle",
-        equation="\u03b4_b = (2/3) \u00d7 \u03c6_foundation",
-        substitution=f"\u03b4_b = (2/3) \u00d7 {phi_f:.1f}\u00b0",
-        result_name="\u03b4_b",
-        result_value=f"{delta_b:.2f}",
-        result_unit="deg",
-        reference="Das Ch. 13; typically 1/2 to 2/3 of \u03c6",
-    ))
+    if delta_base_in is not None:
+        slide_items.append(CalcStep(
+            title="Base Friction Angle",
+            equation="\u03b4_b given directly (no 2/3 factor)",
+            substitution=f"\u03b4_b = {delta_b:.2f}\u00b0",
+            result_name="\u03b4_b",
+            result_value=f"{delta_b:.2f}",
+            result_unit="deg",
+            reference="input delta_base",
+        ))
+    else:
+        slide_items.append(CalcStep(
+            title="Base Friction Angle",
+            equation="\u03b4_b = (2/3) \u00d7 \u03c6_foundation",
+            substitution=f"\u03b4_b = (2/3) \u00d7 {phi_f:.1f}\u00b0",
+            result_name="\u03b4_b",
+            result_value=f"{delta_b:.2f}",
+            result_unit="deg",
+            reference="Das Ch. 13; typically 1/2 to 2/3 of \u03c6",
+        ))
 
-    R_sliding = total_W * math.tan(math.radians(delta_b)) + ca * B
+    R_sliding = total_W * math.tan(math.radians(delta_b)) + ca * B + Pp
     slide_items.append(CalcStep(
         title="Resisting Force (Sliding)",
-        equation="R = V \u00d7 tan(\u03b4_b) + c_a \u00d7 B",
+        equation=("R = V \u00d7 tan(\u03b4_b) + c_a \u00d7 B"
+                  + (" + P_p" if Pp > 0 else "")),
         substitution=(
             f"R = {total_W:.1f} \u00d7 tan({delta_b:.2f}\u00b0)"
             + (f" + {ca:.1f} \u00d7 {B:.2f}" if ca > 0 else "")
+            + (f" + {Pp:.1f}" if Pp > 0 else "")
         ),
         result_name="R",
         result_value=f"{R_sliding:.1f}",
         result_unit="kN/m",
+        notes=("c_a given directly (no 2/3 factor). " if adhesion_in
+               is not None else "")
+              + ("P_p: Rankine passive resistance in front of the base"
+                 + (" and shear key" if getattr(geom, "has_shear_key", False)
+                    else "") + "." if Pp > 0 else ""),
     ))
 
     if result.FOS_sliding is None:

@@ -1410,3 +1410,24 @@ class TestMSELRFDBearingNotChecked:
         assert "bearing (Service I)" in r["checks_failed"]
         assert r["bearing"]["passes"] is False
         assert r["passes"] is False
+
+
+def test_a_resultant_beyond_the_middle_third_on_the_heel_side_bears_under_the_heel(
+        monkeypatch):
+    """GM-103: the triangular pressure was drawn from the toe whichever side
+    the resultant fell; on the heel side it sits under the heel. (Rare with
+    a real wall: the weights are placed near the heel to reach it.)"""
+    import retaining_walls.cantilever as cw
+    geom = cw.CantileverWallGeometry(wall_height=3.0, base_width=4.0,
+                                     toe_length=0.2, stem_thickness_top=0.3,
+                                     stem_thickness_base=0.3,
+                                     base_thickness=0.4)
+    monkeypatch.setattr(cw, "_compute_wall_weights",
+                        lambda g, gb, gc: [(500.0, 3.9)])
+    r = cw.check_bearing(geom, gamma_backfill=18.0, phi_backfill=45.0,
+                         q_allowable=2000.0)
+    assert r["eccentricity_m"] < -geom.base_width / 6.0
+    assert r["q_toe_kPa"] == 0 and r["q_heel_kPa"] > 0
+    x_res = geom.base_width / 2.0 - r["eccentricity_m"]
+    assert r["q_heel_kPa"] == pytest.approx(
+        2 * 500.0 / (3 * (geom.base_width - x_res)), rel=0.02)

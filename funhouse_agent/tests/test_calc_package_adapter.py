@@ -512,6 +512,28 @@ class TestRetainingWallPackage:
         assert "FOS_sliding" in result
         assert os.path.exists(outfile)
 
+    def test_cantilever_sliding_prints_the_basis_used(self, tmp_path):
+        """GM-103: the sliding section printed (2/3)phi and no passive
+        resistance even when delta_base / include_passive were given; it now
+        prints the values the analysis used, so R / P_h is the FOS shown."""
+        import re
+        from funhouse_agent.adapters.calc_package import _generate_retaining_wall_package
+        outfile = str(tmp_path / "rw_basis.html")
+        result = _generate_retaining_wall_package({
+            "wall_height": 4.5, "base_width": 2.8, "toe_length": 0.7,
+            "stem_thickness_top": 0.35, "stem_thickness_base": 0.35,
+            "base_thickness": 0.5, "gamma_backfill": 19.0,
+            "phi_backfill": 32.0, "delta_base": 25.0,
+            "include_passive": True, "output_path": outfile,
+        })
+        assert result["status"] == "success"
+        html = open(outfile, encoding="utf-8").read()
+        assert "given directly" in html
+        m = re.search(r"FOS_sliding = ([0-9.]+) / ([0-9.]+)", html)
+        assert m, "the sliding substitution is printed"
+        assert float(m.group(1)) / float(m.group(2)) == \
+            pytest.approx(result["FOS_sliding"], abs=0.02)
+
     def test_cantilever_verdict_and_bearing_not_checked(self, tmp_path):
         """GM-100: the package's response carries the verdict; with no
         q_allowable the bearing check is said to be not run, in the response

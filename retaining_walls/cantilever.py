@@ -425,12 +425,18 @@ def check_bearing(geom: CantileverWallGeometry,
     if in_middle_third:
         q_toe = V / B * (1.0 + 6.0 * eccentricity / B)
         q_heel = V / B * (1.0 - 6.0 * eccentricity / B)
-    else:
-        # Resultant outside middle third: triangular distribution
-        # Effective width = 3 * x_resultant (toe side only)
+    elif eccentricity > 0:
+        # Resultant outside the middle third on the toe side: triangular
+        # distribution under the toe, width 3 x (distance from the toe)
         B_eff = 3.0 * x_resultant
         q_toe = 2.0 * V / B_eff if B_eff > 0 else 0.0
         q_heel = 0.0
+    else:
+        # ... on the heel side: the triangle sits under the heel (GM-103;
+        # it was drawn from the toe), width 3 x (distance from the heel)
+        B_eff = 3.0 * (B - x_resultant)
+        q_heel = 2.0 * V / B_eff if B_eff > 0 else 0.0
+        q_toe = 0.0
 
     # Bearing check (GM-100). Without q_allowable it is NOT RUN: no FOS and
     # no verdict, never a placeholder reported as a pass. The demand is the
