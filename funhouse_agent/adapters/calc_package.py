@@ -1530,6 +1530,40 @@ def _unembeddable_error(findings: list) -> str:
             + _EMBED_FIX)
 
 
+def _pdf_layout(path: str, max_pages: int = 20) -> dict:
+    """``{"pages", "page_contents"}`` read back from a written PDF: per page,
+    its first line of text, how many characters and images it holds, and a
+    note on a page with nothing on it. ``{}`` when it cannot be read."""
+    try:
+        import fitz                                        # PyMuPDF
+        doc = fitz.open(path)
+    except Exception:                                      # noqa: BLE001
+        return {}
+    try:
+        rows = []
+        for i, page in enumerate(doc):
+            if i >= max_pages:
+                break
+            text = page.get_text("text") or ""
+            lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+            n_img = len(page.get_images(full=True))
+            row = {"page": i + 1, "first_line": (lines[0][:80] if lines
+                                                 else ""),
+                   "chars": len(text.strip()), "images": n_img}
+            if not lines and not n_img:
+                row["note"] = "nothing on this page"
+            rows.append(row)
+        out = {"pages": doc.page_count, "page_contents": rows}
+        if doc.page_count > max_pages:
+            out["page_contents_note"] = (f"first {max_pages} of "
+                                         f"{doc.page_count} pages")
+        return out
+    except Exception:                                      # noqa: BLE001
+        return {}
+    finally:
+        doc.close()
+
+
 def _generate_html_to_pdf(params: dict) -> dict:
     from calc_package.latex_renderer import save_html_pdf_story
 
@@ -1600,6 +1634,13 @@ def _generate_html_to_pdf(params: dict) -> dict:
     if inlined:
         response["images_embedded"] = len(inlined)
         response["embedded_images"] = [item["path"] for item in inlined]
+    if file_exists and problem is None:
+        # What landed on each page, read back from the PDF (GM-101: the
+        # calc helper could not see the PDF it built, and spent three
+        # delegations finding out what was in it).
+        layout = _pdf_layout(abs_path)
+        if layout:
+            response.update(layout)
     if findings:  # only reachable with allow_unembeddable=true
         response["unembeddable"] = findings[:12]
         response["renderer_warnings"] = [
@@ -1946,6 +1987,12 @@ METHOD_INFO = {
             "file_size_bytes": "Size of the saved PDF.",
             "renderer": "'story' (pure-Python PyMuPDF engine).",
             "images_embedded": "How many local image files were inlined into the PDF.",
+            "pages": "How many pages the PDF has.",
+            "page_contents": "What landed on each page, read back from the PDF: "
+                             "its first line of text, characters and images "
+                             "(a page with nothing on it says so). Check a "
+                             "figure landed where the report needs it from "
+                             "this, without opening the PDF.",
             "unembeddable": "On error (or with allow_unembeddable=true): each figure "
                             "reference that cannot be embedded, and why.",
         },

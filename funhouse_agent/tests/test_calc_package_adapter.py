@@ -875,6 +875,12 @@ class TestRenderFigures:
             "html": f"<html><body><h1>Bespoke</h1>{tags}</body></html>",
             "output_path": str(tmp_path / "bespoke.pdf")})
         assert pdf["status"] == "success", pdf.get("error")
+        # GM-101: what landed on each page, read back from the PDF
+        assert pdf["pages"] >= 1
+        first = pdf["page_contents"][0]
+        assert first["first_line"].startswith("Bespoke")
+        assert sum(p["images"] for p in pdf["page_contents"]) == \
+            len(res["figures"])
 
     def test_slope_package_yields_section_figures(self, tmp_path):
         """The richest figure set in the library (section, trial-surface map,
