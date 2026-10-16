@@ -594,3 +594,13 @@ class TestMononobeOkabeWhitmanAnchor:
         assert PA == pytest.approx(8892, abs=10)     # printed 8892 lb/ft
         assert dPAE == pytest.approx(4088, abs=10)   # printed 4088 lb/ft
         assert KAE == pytest.approx(0.3956, abs=0.001)
+
+
+def test_no_shaking_is_refused_not_a_placeholder_fos():
+    """GM-104: with amax_g = 0 the result was FOS 99.9 at every depth."""
+    import pytest as _pytest
+    from seismic_geotech.liquefaction import evaluate_liquefaction
+    with _pytest.raises(ValueError, match="amax_g must be positive"):
+        evaluate_liquefaction(layer_depths=[2.0, 4.0], layer_N160=[10, 12],
+                              layer_FC=[5, 5], layer_gamma=[18, 18],
+                              gwt_depth=1.0, amax_g=0.0)

@@ -228,6 +228,11 @@ def evaluate_liquefaction(
     """
     if any(z2 <= z1 for z1, z2 in zip(layer_depths, layer_depths[1:])):
         raise ValueError("layer_depths must be in strictly increasing order")
+    if amax_g is None or amax_g <= 0:
+        # With no shaking there is nothing to trigger; the FOS was a 99.9
+        # placeholder (GM-104), as liquepy_agent already refuses.
+        raise ValueError(f"amax_g must be positive (peak ground acceleration "
+                         f"in g), got {amax_g}")
 
     results = []
 
