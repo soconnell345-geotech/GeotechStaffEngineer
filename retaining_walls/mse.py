@@ -367,7 +367,9 @@ def check_external_stability(
     c_foundation : float, optional
         Foundation cohesion (kPa). Default 0.
     q_allowable : float, optional
-        Allowable bearing (kPa). Default None.
+        Allowable bearing (kPa). Default None: the bearing check is NOT RUN
+        (FOS_bearing and passes_bearing are None, bearing_checked False);
+        sigma_v is still reported.
     FOS_sliding_req : float, optional
         Required sliding FOS. Default 1.5.
     FOS_overturning_req : float, optional
@@ -380,6 +382,11 @@ def check_external_stability(
     Returns
     -------
     dict
+        FOS_sliding / FOS_overturning / FOS_bearing, passes_sliding /
+        passes_overturning / passes_bearing, bearing_checked, sigma_v_kPa,
+        eccentricity_m, and ``passes``: True only when every check was run
+        and passed, False when one failed, None when none failed but the
+        bearing check was not run (GM-100).
     """
     H = geom.wall_height
     L = geom.reinforcement_length
@@ -420,18 +427,33 @@ def check_external_stability(
     else:
         sigma_v = 1.0e6  # resultant off the base — bearing effectively fails
 
-    FOS_bearing = q_allowable / sigma_v if (q_allowable and sigma_v > 0) else 99.9
+    # Bearing check (GM-100): without q_allowable it is NOT RUN, never a
+    # placeholder FOS reported as a pass.
+    if q_allowable is None:
+        FOS_bearing = None
+        passes_bearing = None
+    else:
+        FOS_bearing = q_allowable / sigma_v
+        passes_bearing = FOS_bearing >= 1.0
 
-    passes = (
-        FOS_sliding >= FOS_sliding_req
-        and FOS_overturning >= FOS_overturning_req
-        and (FOS_bearing >= 1.0 if q_allowable else True)
-    )
+    passes_sliding = FOS_sliding >= FOS_sliding_req
+    passes_overturning = FOS_overturning >= FOS_overturning_req
+    if not (passes_sliding and passes_overturning
+            and passes_bearing is not False):
+        passes = False
+    elif passes_bearing is None:
+        passes = None       # nothing failed, but bearing was not checked
+    else:
+        passes = True
 
     return {
         "FOS_sliding": round(FOS_sliding, 3),
         "FOS_overturning": round(FOS_overturning, 3),
-        "FOS_bearing": round(FOS_bearing, 3),
+        "FOS_bearing": None if FOS_bearing is None else round(FOS_bearing, 3),
+        "passes_sliding": passes_sliding,
+        "passes_overturning": passes_overturning,
+        "passes_bearing": passes_bearing,
+        "bearing_checked": q_allowable is not None,
         # Meyerhof uniform bearing pressure over effective width L - 2e
         # (key name kept for backward compatibility)
         "q_toe_kPa": round(sigma_v, 1),
@@ -526,7 +548,14 @@ def check_external_stability_lrfd(
     dict
         Nested {sliding, eccentricity, bearing} CDR/eL/sigma_v results (SI:
         kN/m, kN-m/m, kPa, m), plus the unfactored load components and the load
-        factors used. All ratios are capacity:demand (>=1.0 passes).
+        factors used. All ratios are capacity:demand (>=1.0 passes). The
+        bearing checks run only against a resistance given: without
+        ``bearing_resistance_strength`` the Strength I bearing check is not
+        run, without ``bearing_resistance_service`` the Service I one is not
+        (GM-100). ``checks_failed`` and ``checks_not_run`` name them;
+        ``bearing.passes`` is None when neither ran; the overall ``passes`` is
+        True only when every check ran and passed, False when one failed,
+        None when none failed but one was not run.
     """
     H = geom.wall_height
     L = geom.reinforcement_length
@@ -608,11 +637,28 @@ def check_external_stability_lrfd(
     bear_cdrs = [c for c in (cdr_bear_str, cdr_bear_crit) if c is not None]
     cdr_bear_gov = min(bear_cdrs) if bear_cdrs else None
 
-    passes = (
-        cdr_slide_gov >= 1.0
-        and eL_gov <= e_limit
-        and (cdr_bear_gov is None or cdr_bear_gov >= 1.0)
-    )
+    # Each check is run, or not run for want of its resistance (GM-100); a
+    # check not run is never counted as a pass. Service I bearing counts
+    # when its resistance is given (every load combination must pass).
+    checks = {
+        "sliding": cdr_slide_gov >= 1.0,
+        "eccentricity": eL_gov <= e_limit,
+        "bearing (Strength I)": (None if cdr_bear_gov is None
+                                 else cdr_bear_gov >= 1.0),
+        "bearing (Service I)": (None if cdr_bear_svc is None
+                                else cdr_bear_svc >= 1.0),
+    }
+    checks_failed = [k for k, v in checks.items() if v is False]
+    checks_not_run = [k for k, v in checks.items() if v is None]
+    if checks_failed:
+        passes = False
+    elif checks_not_run:
+        passes = None
+    else:
+        passes = True
+    bearing_ran = [v for k, v in checks.items()
+                   if k.startswith("bearing") and v is not None]
+    bearing_passes = all(bearing_ran) if bearing_ran else None
 
     return {
         "sliding": {
@@ -639,9 +685,12 @@ def check_external_stability_lrfd(
             "CDR_critical": round(cdr_bear_crit, 3) if cdr_bear_crit else None,
             "CDR_service": round(cdr_bear_svc, 3) if cdr_bear_svc else None,
             "CDR_governing": round(cdr_bear_gov, 3) if cdr_bear_gov else None,
-            "passes": (cdr_bear_gov is None or cdr_bear_gov >= 1.0),
+            "checked": bool(bearing_ran),
+            "passes": bearing_passes,
         },
         "passes": passes,
+        "checks_failed": checks_failed,
+        "checks_not_run": checks_not_run,
         "unfactored_kN_m": {
             "V1": round(V1, 3), "Vs": round(Vs, 3),
             "F1": round(F1, 3), "F2": round(F2, 3),
@@ -691,7 +740,8 @@ def analyze_mse_wall(
     c_foundation : float, optional
         Foundation cohesion (kPa). Default 0.
     q_allowable : float, optional
-        Allowable bearing pressure (kPa). Default None.
+        Allowable bearing pressure (kPa). Default None: the bearing check is
+        NOT RUN and the result says so (``checks_not_run``), never a pass.
     phi_retained : float, optional
         Retained soil friction angle (degrees). If None, uses phi_backfill.
     gamma_retained : float, optional
@@ -743,6 +793,11 @@ def analyze_mse_wall(
         FOS_overturning=external["FOS_overturning"],
         FOS_bearing=external["FOS_bearing"],
         passes_external=external["passes"],
+        passes_sliding=external["passes_sliding"],
+        passes_overturning=external["passes_overturning"],
+        passes_bearing=external["passes_bearing"],
+        q_allowable=q_allowable,
+        sigma_v=external["sigma_v_kPa"],
         internal_results=internal,
         all_pass_internal=all_pass_internal,
         wall_height=geom.wall_height,

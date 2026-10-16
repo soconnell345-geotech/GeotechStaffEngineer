@@ -1074,9 +1074,19 @@ def _generate_retaining_wall_package(params: dict) -> dict:
             base_adhesion=params.get("base_adhesion"),
         )
         analysis_dict["geom"] = geom
+
+        def _r2(x):
+            return None if x is None else round(x, 2)
+
+        # The verdict travels with the package (GM-100): a failed check or a
+        # check not run must reach the user, not only the file.
         extra = {
-            "FOS_sliding": round(result.FOS_sliding, 2),
-            "FOS_overturning": round(result.FOS_overturning, 2),
+            "verdict": result.verdict,
+            "checks_failed": result.checks_failed,
+            "checks_not_run": result.checks_not_run,
+            "FOS_sliding": _r2(result.FOS_sliding),
+            "FOS_overturning": _r2(result.FOS_overturning),
+            "FOS_bearing": _r2(result.FOS_bearing),
         }
     else:
         raise ValueError("MSE wall calc package not yet implemented")
@@ -2129,7 +2139,7 @@ METHOD_INFO = {
         "category": "Calculation Package",
         "brief": "Run retaining wall analysis and generate calc package.",
         "parameters": {
-            "wall_height": {"type": "float", "required": True, "description": "Wall height H (m)."},
+            "wall_height": {"type": "float", "required": True, "description": "TOTAL wall height H (m), from the UNDERSIDE of the base slab to the top of the stem (= base_thickness + stem height); add base_thickness to a height retained above the top of the footing."},
             "gamma_backfill": {"type": "float", "required": True, "description": "Backfill unit weight (kN/m3)."},
             "phi_backfill": {"type": "float", "required": True, "description": "Backfill friction angle (deg)."},
             "wall_type": {"type": "str", "required": False, "default": "cantilever", "allowed_values": ["cantilever"], "description": "Wall type (MSE not yet supported)."},
@@ -2149,14 +2159,14 @@ METHOD_INFO = {
             "base_adhesion": {"type": "float", "required": False, "description": "Base adhesion ca (kPa), used DIRECTLY (no 2/3 factor; 0 = no adhesion)."},
             "include_passive": {"type": "bool", "required": False, "default": False, "description": "Include passive resistance in the sliding check."},
             "gamma_foundation": {"type": "float", "required": False, "description": "Foundation unit weight (kN/m3) for passive. Defaults to gamma_backfill."},
-            "q_allowable": {"type": "float", "required": False, "description": "Allowable bearing pressure (kPa) for the bearing check."},
+            "q_allowable": {"type": "float", "required": False, "description": "Allowable bearing pressure (kPa) for the bearing check. Without it the bearing check is NOT RUN and the package says 'not checked'."},
             "gamma_concrete": {"type": "float", "required": False, "default": 24.0, "description": "Concrete unit weight (kN/m3)."},
             "FOS_sliding": {"type": "float", "required": False, "default": 1.5, "description": "Required sliding FOS."},
             "FOS_overturning": {"type": "float", "required": False, "default": 2.0, "description": "Required overturning FOS."},
             "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb"], "description": "Earth pressure theory."},
             **_COMMON_PARAMS,
         },
-        "returns": {**_COMMON_RETURNS, "FOS_sliding": "Sliding FOS.", "FOS_overturning": "Overturning FOS."},
+        "returns": {**_COMMON_RETURNS, "verdict": "The result in plain words: failed checks first, then not checked. Report it to the user.", "checks_failed": "Checks that failed (sliding, overturning, bearing, eccentricity). Report every one.", "checks_not_run": "Checks not run ('bearing' without q_allowable).", "FOS_sliding": "Sliding FOS (null: no driving force).", "FOS_overturning": "Overturning FOS (null: no driving force).", "FOS_bearing": "Bearing FOS (null: not checked)."},
     },
     "ground_improvement_package": {
         "category": "Calculation Package",

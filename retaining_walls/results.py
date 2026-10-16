@@ -1,9 +1,23 @@
 """
 Results containers for retaining wall analysis.
+
+A check that was not run is never reported as a pass (GM-100): its FOS and
+its pass flag are None, ``checks_not_run`` names it, and the summary says
+"not checked". A check with no driving force (zero active thrust) passes,
+with its FOS None and the words "no driving force" instead of a number.
 """
 
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, List
+
+#: Said wherever the cantilever bearing check was not run.
+BEARING_NOT_CHECKED = ("not checked (no q_allowable given); the bearing "
+                       "pressures q_toe / q_heel and the middle-third check "
+                       "are still reported")
+
+
+def _round(value, ndigits):
+    return None if value is None else round(value, ndigits)
 
 
 @dataclass
@@ -12,77 +26,217 @@ class CantileverWallResult:
 
     Attributes
     ----------
-    FOS_sliding : float
-        Factor of safety against sliding.
-    FOS_overturning : float
-        Factor of safety against overturning.
-    FOS_bearing : float
-        Factor of safety against bearing failure (q_allowable/q_toe).
+    FOS_sliding : float or None
+        Factor of safety against sliding. None when there is no driving
+        force (the active thrust is zero): the check passes.
+    FOS_overturning : float or None
+        Factor of safety against overturning. None when there is no
+        overturning moment (zero active thrust): the check passes.
+    FOS_bearing : float or None
+        q_allowable / the larger of q_toe and q_heel. None when the bearing
+        check was NOT RUN (no q_allowable given).
     passes_sliding : bool
         True if FOS_sliding >= required (typically 1.5).
     passes_overturning : bool
         True if FOS_overturning >= required (typically 2.0).
-    passes_bearing : bool
-        True if bearing is adequate.
+    passes_bearing : bool or None
+        True if the larger edge pressure is within q_allowable. None when
+        the bearing check was not run.
     q_toe : float
-        Maximum bearing pressure at toe (kPa).
+        Bearing pressure at the toe (kPa).
     q_heel : float
-        Bearing pressure at heel (kPa).
+        Bearing pressure at the heel (kPa).
     eccentricity : float
         Eccentricity of resultant from center of base (m).
     in_middle_third : bool
-        True if resultant is within middle third of base.
+        True if resultant is within middle third of base (e <= B/6), the
+        module's eccentricity check.
     wall_height : float
-        Wall height (m).
+        Total wall height H (m), from the underside of the base slab to the
+        top of the stem.
     base_width : float
         Base width (m).
+    FOS_sliding_required, FOS_overturning_required : float
+        The required factors of safety the checks were run against.
+    q_allowable : float or None
+        The allowable bearing pressure given (kPa), or None.
     """
-    FOS_sliding: float = 0.0
-    FOS_overturning: float = 0.0
-    FOS_bearing: float = 0.0
+    FOS_sliding: Optional[float] = 0.0
+    FOS_overturning: Optional[float] = 0.0
+    FOS_bearing: Optional[float] = None
     passes_sliding: bool = False
     passes_overturning: bool = False
-    passes_bearing: bool = False
+    passes_bearing: Optional[bool] = None
     q_toe: float = 0.0
     q_heel: float = 0.0
     eccentricity: float = 0.0
     in_middle_third: bool = False
     wall_height: float = 0.0
     base_width: float = 0.0
+    FOS_sliding_required: float = 1.5
+    FOS_overturning_required: float = 2.0
+    q_allowable: Optional[float] = None
+
+    @property
+    def bearing_checked(self) -> bool:
+        """True when the bearing check was run (a q_allowable was given)."""
+        return self.FOS_bearing is not None
+
+    @property
+    def checks_failed(self) -> List[str]:
+        """The checks that were run and FAILED: 'sliding', 'overturning',
+        'bearing', 'eccentricity' (resultant outside the middle third)."""
+        failed = []
+        if self.passes_sliding is False:
+            failed.append("sliding")
+        if self.passes_overturning is False:
+            failed.append("overturning")
+        if self.bearing_checked and self.passes_bearing is False:
+            failed.append("bearing")
+        if not self.in_middle_third:
+            failed.append("eccentricity")
+        return failed
+
+    @property
+    def checks_not_run(self) -> List[str]:
+        """The checks that were NOT run: 'bearing' when no q_allowable."""
+        return [] if self.bearing_checked else ["bearing"]
+
+    @property
+    def all_checks_pass(self) -> Optional[bool]:
+        """True only when every check was run and passed; False when any
+        check failed; None when none failed but a check was not run."""
+        if self.checks_failed:
+            return False
+        if self.checks_not_run:
+            return None
+        return True
+
+    def _check_words(self, name: str) -> str:
+        """One check in plain words, with its numbers."""
+        if name == "sliding":
+            if self.FOS_sliding is None:
+                return "sliding (no driving force: the active thrust is zero)"
+            rel = ">=" if self.passes_sliding else "<"
+            return (f"sliding (FOS {self.FOS_sliding:.2f} {rel} "
+                    f"{self.FOS_sliding_required:.2f} required)")
+        if name == "overturning":
+            if self.FOS_overturning is None:
+                return ("overturning (no driving force: the active thrust "
+                        "is zero)")
+            rel = ">=" if self.passes_overturning else "<"
+            return (f"overturning (FOS {self.FOS_overturning:.2f} {rel} "
+                    f"{self.FOS_overturning_required:.2f} required)")
+        if name == "bearing":
+            if not self.bearing_checked:
+                return "bearing (no q_allowable given)"
+            q_max = max(self.q_toe, self.q_heel)
+            if self.q_allowable is not None and q_max > 0:
+                rel = "<=" if self.passes_bearing else ">"
+                return (f"bearing (q_max {q_max:.1f} kPa {rel} q_allowable "
+                        f"{self.q_allowable:.1f} kPa, FOS "
+                        f"{self.FOS_bearing:.2f})")
+            if self.q_allowable is not None:
+                return "bearing (the resultant falls outside the base)"
+            return f"bearing (FOS {self.FOS_bearing:.2f})"
+        # eccentricity
+        b6 = self.base_width / 6.0
+        rel = "<=" if self.in_middle_third else ">"
+        where = "within" if self.in_middle_third else "outside"
+        return (f"eccentricity (resultant {where} the middle third: "
+                f"e = {abs(self.eccentricity):.3f} m {rel} B/6 = {b6:.3f} m)")
+
+    @property
+    def verdict(self) -> str:
+        """The result in plain words: failed checks first, with their
+        numbers, then those that pass and those not run."""
+        names = ("sliding", "overturning", "bearing", "eccentricity")
+        failed = self.checks_failed
+        not_run = self.checks_not_run
+        passed = [n for n in names if n not in failed and n not in not_run]
+        parts = []
+        if failed:
+            parts.append("FAILS: " + "; ".join(
+                self._check_words(n) for n in failed) + ".")
+        else:
+            parts.append("No check failed.")
+        if passed:
+            parts.append("Passes: " + "; ".join(
+                self._check_words(n) for n in passed) + ".")
+        if not_run:
+            parts.append("Not checked: " + "; ".join(
+                self._check_words(n) for n in not_run) + ".")
+        return " ".join(parts)
 
     def summary(self) -> str:
         def _status(passes):
             return "OK" if passes else "FAIL"
 
+        if self.FOS_sliding is None:
+            sliding = "no driving force (the active thrust is zero)  [OK]"
+        else:
+            sliding = (f"FOS = {self.FOS_sliding:.2f}  "
+                       f"[{_status(self.passes_sliding)}]  "
+                       f"(required {self.FOS_sliding_required:.2f})")
+        if self.FOS_overturning is None:
+            overturning = "no driving force (the active thrust is zero)  [OK]"
+        else:
+            overturning = (f"FOS = {self.FOS_overturning:.2f}  "
+                           f"[{_status(self.passes_overturning)}]  "
+                           f"(required {self.FOS_overturning_required:.2f})")
+        if not self.bearing_checked:
+            bearing = BEARING_NOT_CHECKED
+        else:
+            bearing = (f"FOS = {self.FOS_bearing:.2f}  "
+                       f"[{_status(self.passes_bearing)}]")
+            q_max = max(self.q_toe, self.q_heel)
+            if self.q_allowable is not None and q_max > 0:
+                bearing += (f"  (q_allowable {self.q_allowable:.1f} kPa / "
+                            f"q_max {q_max:.1f} kPa)")
+            elif self.q_allowable is not None:
+                bearing += "  (the resultant falls outside the base)"
+        failed = self.checks_failed
         lines = [
             "=" * 60,
             "  CANTILEVER RETAINING WALL RESULTS",
             "=" * 60,
             "",
-            f"  Wall height:  {self.wall_height:.2f} m",
+            f"  Wall height:  {self.wall_height:.2f} m "
+            "(underside of base to top of stem)",
             f"  Base width:   {self.base_width:.2f} m",
             "",
-            f"  Sliding:      FOS = {self.FOS_sliding:.2f}  [{_status(self.passes_sliding)}]",
-            f"  Overturning:  FOS = {self.FOS_overturning:.2f}  [{_status(self.passes_overturning)}]",
-            f"  Bearing:      FOS = {self.FOS_bearing:.2f}  [{_status(self.passes_bearing)}]",
+            f"  Sliding:      {sliding}",
+            f"  Overturning:  {overturning}",
+            f"  Bearing:      {bearing}",
             "",
             f"  q_toe  = {self.q_toe:.1f} kPa",
             f"  q_heel = {self.q_heel:.1f} kPa",
             f"  Eccentricity = {self.eccentricity:.3f} m"
             f"  ({'middle third' if self.in_middle_third else 'OUTSIDE middle third'})",
             "",
-            "=" * 60,
+            "  Failed checks: " + (", ".join(failed) if failed else "none"),
         ]
+        if self.checks_not_run:
+            lines.append("  Not checked:   " + ", ".join(self.checks_not_run))
+        lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "FOS_sliding": round(self.FOS_sliding, 3),
-            "FOS_overturning": round(self.FOS_overturning, 3),
-            "FOS_bearing": round(self.FOS_bearing, 3),
+            "verdict": self.verdict,
+            "checks_failed": self.checks_failed,
+            "checks_not_run": self.checks_not_run,
+            "all_checks_pass": self.all_checks_pass,
+            "FOS_sliding": _round(self.FOS_sliding, 3),
+            "FOS_overturning": _round(self.FOS_overturning, 3),
+            "FOS_bearing": _round(self.FOS_bearing, 3),
+            "FOS_sliding_required": self.FOS_sliding_required,
+            "FOS_overturning_required": self.FOS_overturning_required,
             "passes_sliding": self.passes_sliding,
             "passes_overturning": self.passes_overturning,
             "passes_bearing": self.passes_bearing,
+            "bearing_checked": self.bearing_checked,
+            "q_allowable_kPa": self.q_allowable,
             "q_toe_kPa": round(self.q_toe, 1),
             "q_heel_kPa": round(self.q_heel, 1),
             "eccentricity_m": round(self.eccentricity, 3),
@@ -92,7 +246,9 @@ class CantileverWallResult:
         }
 
     def plot_stability_summary(self, ax=None, show=True):
-        """Plot FOS bar chart for sliding, overturning, and bearing.
+        """Plot FOS bar chart for sliding, overturning, and bearing. A check
+        with no FOS (not run, or no driving force) gets no bar, only its
+        words.
 
         Returns
         -------
@@ -106,12 +262,14 @@ class CantileverWallResult:
         values = [self.FOS_sliding, self.FOS_overturning, self.FOS_bearing]
         passes = [self.passes_sliding, self.passes_overturning,
                   self.passes_bearing]
+        words = ["no driving force", "no driving force", "not checked"]
         colors = ['green' if p else 'red' for p in passes]
-        bars = ax.bar(labels, values, color=colors, alpha=0.7,
-                      edgecolor='black')
-        for bar, val in zip(bars, values):
+        bars = ax.bar(labels, [0.0 if v is None else v for v in values],
+                      color=colors, alpha=0.7, edgecolor='black')
+        for bar, val, word in zip(bars, values, words):
             ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.05,
-                    f'{val:.2f}', ha='center', va='bottom', fontsize=10)
+                    word if val is None else f'{val:.2f}',
+                    ha='center', va='bottom', fontsize=10)
         ax.axhline(y=1.0, color='red', linestyle='--', linewidth=1,
                    label='FOS = 1.0')
         setup_engineering_plot(ax, "Retaining Wall Stability",
@@ -133,10 +291,12 @@ class MSEWallResult:
         External FOS against sliding.
     FOS_overturning : float
         External FOS against overturning.
-    FOS_bearing : float
-        External FOS against bearing failure.
-    passes_external : bool
-        True if all external checks pass.
+    FOS_bearing : float or None
+        External FOS against bearing failure (q_allowable / sigma_v). None
+        when the bearing check was NOT RUN (no q_allowable given).
+    passes_external : bool or None
+        True only when every external check was run and passed; False when
+        one failed; None when none failed but bearing was not checked.
     internal_results : list of dict
         Per-level internal stability check results.
     all_pass_internal : bool
@@ -145,11 +305,21 @@ class MSEWallResult:
         Wall height (m).
     reinforcement_length : float
         Reinforcement length (m).
+    passes_sliding, passes_overturning : bool or None
+        Each external check's verdict (None when not recorded).
+    passes_bearing : bool or None
+        None when the bearing check was not run.
+    q_allowable : float or None
+        The allowable bearing pressure given (kPa), or None.
+    sigma_v : float or None
+        Meyerhof bearing pressure W / (L - 2e) (kPa).
+    FOS_sliding_required, FOS_overturning_required : float
+        The required factors of safety (GEC-11: 1.5 and 2.0).
     """
     FOS_sliding: float = 0.0
     FOS_overturning: float = 0.0
-    FOS_bearing: float = 0.0
-    passes_external: bool = False
+    FOS_bearing: Optional[float] = None
+    passes_external: Optional[bool] = False
     internal_results: List[Dict[str, Any]] = field(default_factory=list)
     all_pass_internal: bool = False
     wall_height: float = 0.0
@@ -158,15 +328,102 @@ class MSEWallResult:
     # check_external_stability_lrfd); populated only when analyze_mse_wall is
     # called with lrfd_external=True. None -> the ASD FOS path only.
     external_lrfd: Optional[Dict[str, Any]] = None
+    passes_sliding: Optional[bool] = None
+    passes_overturning: Optional[bool] = None
+    passes_bearing: Optional[bool] = None
+    q_allowable: Optional[float] = None
+    sigma_v: Optional[float] = None
+    FOS_sliding_required: float = 1.5
+    FOS_overturning_required: float = 2.0
 
     @property
     def n_levels(self) -> int:
         return len(self.internal_results)
 
+    @property
+    def bearing_checked(self) -> bool:
+        """True when the external bearing check was run (q_allowable given)."""
+        return self.FOS_bearing is not None
+
+    @property
+    def failed_levels(self) -> List[float]:
+        """Depths (m) of the reinforcement levels that fail internally."""
+        return [r.get("depth_m") for r in self.internal_results
+                if not r.get("passes", False)]
+
+    @property
+    def checks_failed(self) -> List[str]:
+        """The checks that were run and FAILED: 'sliding', 'overturning',
+        'bearing', 'internal' (pullout or rupture at some level)."""
+        failed = []
+        if self.passes_sliding is False:
+            failed.append("sliding")
+        if self.passes_overturning is False:
+            failed.append("overturning")
+        if self.bearing_checked and self.passes_bearing is False:
+            failed.append("bearing")
+        if (self.passes_external is False
+                and self.passes_sliding is None
+                and self.passes_overturning is None):
+            failed.append("external")   # per-check verdicts not recorded
+        if self.failed_levels:
+            failed.append("internal")
+        return failed
+
+    @property
+    def checks_not_run(self) -> List[str]:
+        """The checks that were NOT run: 'bearing' when no q_allowable."""
+        return [] if self.bearing_checked else ["bearing"]
+
+    @property
+    def all_checks_pass(self) -> Optional[bool]:
+        """True only when every check was run and passed; False when any
+        check failed; None when none failed but a check was not run."""
+        if self.checks_failed:
+            return False
+        if self.checks_not_run:
+            return None
+        return True
+
+    @property
+    def verdict(self) -> str:
+        """The result in plain words: failed checks first, then not run."""
+        words = {
+            "sliding": (f"sliding (FOS {self.FOS_sliding:.2f}, "
+                        f"{self.FOS_sliding_required:.2f} required)"),
+            "overturning": (f"overturning (FOS {self.FOS_overturning:.2f}, "
+                            f"{self.FOS_overturning_required:.2f} required)"),
+            "bearing": ("bearing (no q_allowable given)"
+                        if not self.bearing_checked
+                        else f"bearing (FOS {self.FOS_bearing:.2f})"),
+            "external": "external stability",
+            "internal": ("internal stability (pullout or rupture at z = "
+                         + ", ".join(f"{z:.2f}" for z in self.failed_levels)
+                         + " m)"),
+        }
+        failed = self.checks_failed
+        parts = [("FAILS: " + "; ".join(words[n] for n in failed) + ".")
+                 if failed else "No check failed."]
+        if self.checks_not_run:
+            parts.append("Not checked: " + "; ".join(
+                words[n] for n in self.checks_not_run) + ".")
+        return " ".join(parts)
+
     def summary(self) -> str:
         def _status(passes):
+            if passes is None:
+                return "NOT ALL CHECKED"
             return "OK" if passes else "FAIL"
 
+        def _check(passes):
+            return "" if passes is None else f"  [{'OK' if passes else 'FAIL'}]"
+
+        if self.bearing_checked:
+            bearing = (f"FOS = {self.FOS_bearing:.2f}"
+                       f"{_check(self.passes_bearing)}")
+        else:
+            bearing = ("not checked (no q_allowable given); sigma_v is "
+                       "still reported")
         lines = [
             "=" * 60,
             "  MSE WALL RESULTS",
@@ -176,13 +433,19 @@ class MSEWallResult:
             f"  Reinforcement L:   {self.reinforcement_length:.2f} m",
             "",
             "  EXTERNAL STABILITY:",
-            f"    Sliding:     FOS = {self.FOS_sliding:.2f}",
-            f"    Overturning: FOS = {self.FOS_overturning:.2f}",
-            f"    Bearing:     FOS = {self.FOS_bearing:.2f}",
+            f"    Sliding:     FOS = {self.FOS_sliding:.2f}"
+            f"{_check(self.passes_sliding)}",
+            f"    Overturning: FOS = {self.FOS_overturning:.2f}"
+            f"{_check(self.passes_overturning)}",
+            f"    Bearing:     {bearing}",
+        ]
+        if self.sigma_v is not None:
+            lines.append(f"    sigma_v:     {self.sigma_v:.1f} kPa")
+        lines.extend([
             f"    External:    [{_status(self.passes_external)}]",
             "",
             f"  INTERNAL STABILITY ({self.n_levels} levels):",
-        ]
+        ])
 
         for r in self.internal_results:
             status = "OK" if r.get("passes", False) else "FAIL"
@@ -192,18 +455,32 @@ class MSEWallResult:
                 f"FOS_po={r['FOS_pullout']:.2f}  [{status}]"
             )
 
+        failed = self.checks_failed
         lines.extend([
             f"    Internal:    [{_status(self.all_pass_internal)}]",
             "",
-            "=" * 60,
+            "  Failed checks: " + (", ".join(failed) if failed else "none"),
         ])
+        if self.checks_not_run:
+            lines.append("  Not checked:   " + ", ".join(self.checks_not_run))
+        lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
     def to_dict(self) -> Dict[str, Any]:
         d = {
+            "verdict": self.verdict,
+            "checks_failed": self.checks_failed,
+            "checks_not_run": self.checks_not_run,
+            "all_checks_pass": self.all_checks_pass,
             "FOS_sliding": round(self.FOS_sliding, 3),
             "FOS_overturning": round(self.FOS_overturning, 3),
-            "FOS_bearing": round(self.FOS_bearing, 3),
+            "FOS_bearing": _round(self.FOS_bearing, 3),
+            "passes_sliding": self.passes_sliding,
+            "passes_overturning": self.passes_overturning,
+            "passes_bearing": self.passes_bearing,
+            "bearing_checked": self.bearing_checked,
+            "q_allowable_kPa": self.q_allowable,
+            "sigma_v_kPa": self.sigma_v,
             "passes_external": self.passes_external,
             "all_pass_internal": self.all_pass_internal,
             "n_levels": self.n_levels,

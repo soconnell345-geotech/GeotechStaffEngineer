@@ -55,6 +55,63 @@ Two external-stability paths are available; both are default-preserving.
     sliding 1.85/2.08/1.37, eL 2.87/3.87 ft (< L/4 = 4.50), bearing σ_v 6.70 ksf
     / CDR 1.57, Service σ_v 4.66 ksf — all reproduced through the high-level path.
 
+## Wall height, checks not run and failed checks (GM-100, 2026-10-15)
+
+**Wall height.** `CantileverWallGeometry.wall_height` is the TOTAL height H,
+from the underside of the base slab (footing) to the top of the stem:
+H = base_thickness + stem height. The backfill surface meets the stem at its
+top, and the active thrust acts on the vertical plane through the back of the
+heel over H (plus the rise of a sloping backfill over the heel). A wall that
+retains 4.0 m above the top of a 0.5 m footing is H = 4.5 m. The adapter's
+`wall_height` description says this, and its `geometry` block returns the
+stem height, base thickness, toe and heel actually analysed. (In live wave
+w8 a model read "H" as the retained height, and a figure labelled the 4.5 m
+pressure diagram against a 4.0 m retained height.)
+
+**A check that was not run is never reported as a pass.** The cantilever
+bearing check compares the larger edge pressure, max(q_toe, q_heel), with
+the allowable bearing pressure `q_allowable`. Before this fix, with no
+`q_allowable` the module returned `FOS_bearing` 99.9 and `passes_bearing`
+True and the calc package printed "OK" for a check it never made. Now:
+
+- `FOS_bearing` and `passes_bearing` are None, `bearing_checked` is False,
+  and `checks_not_run` is `["bearing"]`;
+- `summary()` says "Bearing: not checked (no q_allowable given); the bearing
+  pressures q_toe / q_heel and the middle-third check are still reported";
+- the calc package says "NOT CHECKED" in the input echo, the bearing section
+  and the summary table;
+- `all_checks_pass` is True only when every check ran and passed, False when
+  one failed, and None when none failed but one was not run.
+
+The MSE wall does the same for its external bearing check
+(`passes_external` is None when sliding and overturning pass but bearing was
+not checked), and the LRFD external check lists `bearing (Strength I)` /
+`bearing (Service I)` in `checks_not_run` when their resistances are not
+given. When a Service I bearing resistance IS given, its CDR now counts in
+`bearing.passes` and the overall `passes` (every load combination must pass);
+before, a Service I CDR below 1 was reported but never failed anything.
+
+**The demand is the larger edge pressure.** The bearing FOS used to be
+q_allowable / q_toe. When the resultant lies on the heel side of the centre
+the larger pressure is under the heel, so the check now uses
+max(q_toe, q_heel). When the resultant falls outside the base (the wall tips
+over the toe; q_toe and q_heel both print 0) the bearing check fails
+(FOS 0) instead of returning the old 99.9.
+
+**No driving force is not a number.** When the active thrust is zero (backfill
+cohesion cancels it) nothing pushes or tips the wall: sliding and overturning
+pass, their FOS is None, and the result says "no driving force (the active
+thrust is zero)" instead of a 99.9.
+
+**Failed checks are named where the agent reads the result.** Every result
+carries `verdict` (the failed checks first, with their numbers, then those
+that pass, then those not checked), `checks_failed` (sliding, overturning,
+bearing, eccentricity = resultant outside the middle third; for MSE also
+internal) and `checks_not_run`; `to_dict()` puts them first, and the
+`retaining_wall_package` response carries them too. `summary()` ends with
+"Failed checks: ..." and "Not checked: ...". In live wave w8 a wall failed
+sliding (FOS 1.17 < 1.5) and the user never learnt it.
+
 ## Key Notes
 - CantileverWallGeometry auto-sizes stem thickness, toe/heel from wall height
 - Cantilever checks decompose the active thrust per the chosen method (RW-1):

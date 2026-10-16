@@ -1171,3 +1171,242 @@ class TestBaseInterfaceOverrides:
                                         delta_base=22.0)
         assert r_fix.FOS_sliding > r_trap.FOS_sliding
         assert r_fix.FOS_sliding == pytest.approx(1.42, abs=0.01)
+
+
+# ================================================================
+# GM-100: a check that was not run is never reported as a pass, and a
+# failed check is named where the agent reads the result.
+# ================================================================
+def _w8_wall():
+    """The live wave-w8 wall (F55): 4.0 m stem on a 0.50 m base, so
+    H = 4.5 m from the underside of the base; it fails sliding (1.17)."""
+    return CantileverWallGeometry(
+        wall_height=4.5, base_width=2.8, toe_length=0.7,
+        stem_thickness_top=0.35, stem_thickness_base=0.35,
+        base_thickness=0.5, surcharge=10.0)
+
+
+def _good_wall():
+    return CantileverWallGeometry(
+        wall_height=5.0, base_width=3.5, toe_length=0.5,
+        stem_thickness_base=0.5, base_thickness=0.5)
+
+
+class TestBearingNotChecked:
+    def test_check_bearing_without_q_allowable_is_not_run(self):
+        r = check_bearing(_good_wall(), 18.0, 30.0)
+        assert r["FOS_bearing"] is None
+        assert r["passes"] is None
+        assert r["bearing_checked"] is False
+        # the pressures and the middle-third check are still reported
+        assert r["q_toe_kPa"] > 0 and r["q_heel_kPa"] >= 0
+        assert r["in_middle_third"] is True
+
+    def test_result_fields(self):
+        r = analyze_cantilever_wall(_good_wall(), 18.0, 30.0,
+                                    phi_foundation=34.0)
+        assert r.FOS_bearing is None
+        assert r.passes_bearing is None
+        assert r.bearing_checked is False
+        assert r.checks_not_run == ["bearing"]
+        assert r.checks_failed == []
+        # nothing failed, but not everything was checked: not "all pass"
+        assert r.all_checks_pass is None
+        assert "Not checked: bearing (no q_allowable given)" in r.verdict
+        assert r.verdict.startswith("No check failed.")
+
+    def test_to_dict_is_json_safe_and_says_not_checked(self):
+        import json
+        d = analyze_cantilever_wall(_good_wall(), 18.0, 30.0).to_dict()
+        json.dumps(d, allow_nan=False)
+        assert d["FOS_bearing"] is None
+        assert d["passes_bearing"] is None
+        assert d["bearing_checked"] is False
+        assert d["checks_not_run"] == ["bearing"]
+        assert d["all_checks_pass"] is not True
+        assert 99.9 not in d.values()
+
+    def test_summary_says_not_checked(self):
+        s = analyze_cantilever_wall(_good_wall(), 18.0, 30.0).summary()
+        assert ("Bearing:      not checked (no q_allowable given); the "
+                "bearing pressures q_toe / q_heel and the middle-third check "
+                "are still reported") in s
+        assert "Not checked:   bearing" in s
+        assert "99.9" not in s
+
+    def test_checked_when_q_allowable_given(self):
+        r = analyze_cantilever_wall(_good_wall(), 18.0, 30.0,
+                                    phi_foundation=34.0, q_allowable=300.0)
+        assert r.bearing_checked is True
+        assert r.checks_not_run == []
+        assert r.FOS_bearing == pytest.approx(
+            300.0 / max(r.q_toe, r.q_heel), abs=0.01)
+        assert r.passes_bearing is True
+        assert r.all_checks_pass is True
+        assert "Not checked" not in r.summary()
+
+    def test_bearing_uses_the_larger_edge_pressure(self):
+        """A resultant on the heel side of the centre puts the larger
+        pressure under the heel; the check compares THAT with q_allowable."""
+        r = analyze_cantilever_wall(
+            CantileverWallGeometry(wall_height=4.0, base_width=3.0),
+            18.0, 30.0, c_backfill=40.0, q_allowable=200.0)
+        assert r.q_heel > r.q_toe
+        assert r.FOS_bearing == pytest.approx(200.0 / r.q_heel, abs=0.01)
+
+    def test_resultant_outside_base_fails_bearing(self):
+        g = CantileverWallGeometry(
+            wall_height=6.0, base_width=1.2, toe_length=0.3,
+            stem_thickness_top=0.3, stem_thickness_base=0.3,
+            base_thickness=0.4, surcharge=30.0)
+        r = analyze_cantilever_wall(g, 19.0, 25.0, q_allowable=200.0)
+        assert r.FOS_overturning < 1.0
+        assert r.passes_bearing is False      # not a placeholder pass
+        assert "bearing" in r.checks_failed
+        assert "outside the base" in r.verdict
+
+
+class TestFailedChecksVisible:
+    def test_failed_sliding_named_everywhere(self):
+        r = analyze_cantilever_wall(_w8_wall(), 19.0, 32.0)
+        assert r.FOS_sliding == pytest.approx(1.17, abs=0.01)
+        assert r.checks_failed == ["sliding"]
+        assert r.all_checks_pass is False
+        assert r.verdict.startswith(
+            "FAILS: sliding (FOS 1.17 < 1.50 required).")
+        s = r.summary()
+        assert "Failed checks: sliding" in s
+        assert "[FAIL]  (required 1.50)" in s
+        d = r.to_dict()
+        assert list(d)[:3] == ["verdict", "checks_failed", "checks_not_run"]
+        assert d["checks_failed"] == ["sliding"]
+
+    def test_eccentricity_outside_middle_third_is_a_failed_check(self):
+        r = analyze_cantilever_wall(
+            CantileverWallGeometry(wall_height=6.0, base_width=2.5),
+            18.0, 30.0, q_allowable=300.0)
+        assert not r.in_middle_third
+        assert "eccentricity" in r.checks_failed
+        assert "outside the middle third" in r.verdict
+
+    def test_no_driving_force_passes_without_a_fake_number(self):
+        r = analyze_cantilever_wall(
+            CantileverWallGeometry(wall_height=4.0, base_width=3.0),
+            18.0, 30.0, c_backfill=40.0)
+        assert r.FOS_sliding is None and r.passes_sliding is True
+        assert r.FOS_overturning is None and r.passes_overturning is True
+        assert "sliding (no driving force" in r.verdict
+        assert "no driving force" in r.summary()
+        assert r.to_dict()["FOS_sliding"] is None
+        sl = check_sliding(
+            CantileverWallGeometry(wall_height=4.0, base_width=3.0),
+            18.0, 30.0, c_backfill=40.0)
+        assert sl["no_driving_force"] is True and sl["passes"] is True
+
+
+class TestCalcPackageBearingWording:
+    def _html(self, result, geom, **analysis):
+        from calc_package import generate_calc_package
+        a = {"wall_type": "cantilever", "geom": geom,
+             "gamma_backfill": 19.0, "phi_backfill": 32.0}
+        a.update(analysis)
+        return generate_calc_package("retaining_walls", result, a,
+                                     tables=False)
+
+    def test_not_checked_in_the_package(self):
+        g = _w8_wall()
+        r = analyze_cantilever_wall(g, 19.0, 32.0)
+        html = self._html(r, g)
+        assert "NOT CHECKED" in html
+        assert "bearing NOT CHECKED" in html          # the input echo
+        assert "99.9" not in html
+        assert "FAILS: sliding" in html                 # the verdict
+
+    def test_checked_bearing_in_the_package(self):
+        g = _w8_wall()
+        r = analyze_cantilever_wall(g, 19.0, 32.0, q_allowable=150.0)
+        html = self._html(r, g, q_allowable=150.0)
+        assert "FOS_bearing = q_allowable / q_max" in html
+        assert "NOT CHECKED" not in html
+
+    def test_mse_package_bearing_not_checked(self):
+        from calc_package import generate_calc_package
+        geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6)
+        r = analyze_mse_wall(geom, 18.0, 34.0, RIBBED_STEEL_STRIP_75x4)
+        html = generate_calc_package(
+            "retaining_walls", r,
+            {"wall_type": "mse", "geom": geom, "gamma_backfill": 18.0,
+             "phi_backfill": 34.0, "reinforcement": RIBBED_STEEL_STRIP_75x4},
+            tables=False)
+        assert "Bearing capacity: NOT CHECKED" in html
+        assert "bearing NOT CHECKED" in html
+        assert "99.9" not in html
+
+
+class TestMSEBearingNotChecked:
+    def test_external_without_q_allowable(self):
+        geom = MSEWallGeometry(wall_height=6.0)
+        ext = check_external_stability(geom, 18.0, 34.0, 19.0, 30.0)
+        assert ext["FOS_bearing"] is None
+        assert ext["passes_bearing"] is None
+        assert ext["bearing_checked"] is False
+        assert ext["passes_sliding"] and ext["passes_overturning"]
+        assert ext["passes"] is None            # not "all external pass"
+
+    def test_result_and_summary(self):
+        import json
+        geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6)
+        r = analyze_mse_wall(geom, 18.0, 34.0, RIBBED_STEEL_STRIP_75x4)
+        assert r.FOS_bearing is None and r.bearing_checked is False
+        assert r.checks_not_run == ["bearing"]
+        assert r.all_checks_pass is not True
+        assert r.passes_external is not True
+        s = r.summary()
+        assert "Bearing:     not checked (no q_allowable given)" in s
+        assert "99.9" not in s
+        d = r.to_dict()
+        json.dumps(d, allow_nan=False)
+        assert d["FOS_bearing"] is None
+        assert "Not checked: bearing" in d["verdict"]
+
+    def test_checked_with_q_allowable(self):
+        geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6)
+        r = analyze_mse_wall(geom, 18.0, 34.0, RIBBED_STEEL_STRIP_75x4,
+                             q_allowable=400.0)
+        assert r.bearing_checked is True
+        assert r.FOS_bearing == pytest.approx(400.0 / r.sigma_v, abs=0.01)
+        assert r.checks_not_run == []
+
+    def test_failed_bearing_named(self):
+        geom = MSEWallGeometry(wall_height=6.0, reinforcement_spacing=0.6)
+        r = analyze_mse_wall(geom, 18.0, 34.0, RIBBED_STEEL_STRIP_75x4,
+                             q_allowable=50.0)
+        assert r.passes_bearing is False
+        assert "bearing" in r.checks_failed
+        assert r.passes_external is False
+        assert r.verdict.startswith("FAILS:")
+
+
+class TestMSELRFDBearingNotChecked:
+    def _geom(self):
+        return MSEWallGeometry(wall_height=7.0, surcharge=12.0)
+
+    def test_no_bearing_resistance_is_not_run(self):
+        from retaining_walls.mse import check_external_stability_lrfd
+        r = check_external_stability_lrfd(self._geom(), 19.0, 34.0, 30.0)
+        assert r["bearing"]["checked"] is False
+        assert r["bearing"]["passes"] is None
+        assert r["checks_not_run"] == ["bearing (Strength I)",
+                                       "bearing (Service I)"]
+        assert r["passes"] is not True
+
+    def test_service_bearing_counts_when_given(self):
+        from retaining_walls.mse import check_external_stability_lrfd
+        r = check_external_stability_lrfd(
+            self._geom(), 19.0, 34.0, 30.0,
+            bearing_resistance_strength=1000.0,
+            bearing_resistance_service=50.0)
+        assert r["bearing"]["CDR_service"] < 1.0
+        assert "bearing (Service I)" in r["checks_failed"]
+        assert r["bearing"]["passes"] is False
+        assert r["passes"] is False

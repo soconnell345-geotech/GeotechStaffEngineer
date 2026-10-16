@@ -117,7 +117,19 @@ def _run_cantilever_wall(params):
         base_adhesion=params.get("base_adhesion"),
     )
     output = result.to_dict()
-    output["geometry"] = {"wall_height_m": geom.wall_height, "base_width_m": geom.base_width}
+    # The geometry actually analysed, auto-sized parts included, with the
+    # height's datum named (GM-100: a model read H as the retained height).
+    output["geometry"] = {
+        "wall_height_m": geom.wall_height,
+        "wall_height_basis": "underside of the base slab to the top of the stem",
+        "stem_height_m": round(geom.stem_height, 3),
+        "base_thickness_m": geom.base_thickness,
+        "base_width_m": geom.base_width,
+        "toe_length_m": geom.toe_length,
+        "heel_length_m": round(geom.heel_length, 3),
+        "stem_thickness_top_m": geom.stem_thickness_top,
+        "stem_thickness_base_m": geom.stem_thickness_base,
+    }
     # Surface the sliding-interface values actually used, so the caller can
     # verify the basis instead of guessing (owner wall session 2026-07-14).
     from retaining_walls.cantilever import check_sliding as _cs
@@ -295,9 +307,9 @@ METHOD_REGISTRY = {
 METHOD_INFO = {
     "cantilever_wall": {
         "category": "Cantilever Wall",
-        "brief": "Full cantilever retaining wall stability analysis (sliding, overturning, bearing).",
+        "brief": "Full cantilever retaining wall stability analysis (sliding, overturning, eccentricity, bearing).",
         "parameters": {
-            "wall_height": {"type": "float", "required": True, "description": "Wall height (m)."},
+            "wall_height": {"type": "float", "required": True, "description": "TOTAL wall height H (m), measured from the UNDERSIDE of the base slab (footing) to the top of the stem: H = base_thickness + stem height. The active thrust acts over H on the vertical plane through the back of the heel. If you know the height retained above the top of the footing, add base_thickness (4.0 m retained on a 0.5 m footing is wall_height 4.5)."},
             "gamma_backfill": {"type": "float", "required": True, "description": "Backfill unit weight (kN/m3)."},
             "phi_backfill": {"type": "float", "required": True, "description": "Backfill friction angle (degrees)."},
             "base_width": {"type": "float", "required": False, "description": "Base width (m). Auto-sized if omitted."},
@@ -316,13 +328,13 @@ METHOD_INFO = {
             "base_adhesion": {"type": "float", "required": False, "description": "Base adhesion ca (kPa), used DIRECTLY with NO 2/3 factor (0 = no adhesion). Overrides the (2/3)*c_foundation default."},
             "include_passive": {"type": "bool", "required": False, "default": False, "description": "Include passive resistance in front of the wall (on key_depth if has_shear_key, else on base_thickness) in the sliding check."},
             "gamma_foundation": {"type": "float", "required": False, "description": "Foundation soil unit weight (kN/m3) for passive resistance. Defaults to gamma_backfill."},
-            "q_allowable": {"type": "float", "required": False, "description": "Allowable bearing pressure (kPa) for the bearing check."},
+            "q_allowable": {"type": "float", "required": False, "description": "Allowable bearing pressure (kPa) for the bearing check. Without it the bearing check is NOT RUN: FOS_bearing and passes_bearing are null and checks_not_run lists 'bearing' (q_toe / q_heel are still reported)."},
             "gamma_concrete": {"type": "float", "required": False, "default": 24.0, "description": "Concrete unit weight (kN/m3)."},
             "FOS_sliding_required": {"type": "float", "required": False, "default": 1.5, "description": "Required sliding FOS."},
             "FOS_overturning_required": {"type": "float", "required": False, "default": 2.0, "description": "Required overturning FOS."},
             "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb"], "description": "Earth pressure theory."},
         },
-        "returns": {"FOS_sliding": "Factor of safety against sliding.", "FOS_overturning": "Factor of safety against overturning.", "sliding_basis": "The sliding-check basis actually used: delta_base_deg, base_adhesion_kPa, driving/resisting forces, Pa and its vertical component + inclination — verify these match your intended assumptions."},
+        "returns": {"verdict": "The result in plain words: the FAILED checks first with their numbers, then those that pass, then those not checked. Report it to the user, failures first.", "checks_failed": "Checks that were run and failed: sliding, overturning, bearing, eccentricity (resultant outside the middle third). Never leave one out of the answer.", "checks_not_run": "Checks not run ('bearing' when no q_allowable was given). Say so; never call the wall adequate in bearing.", "all_checks_pass": "true only when every check ran and passed; false when one failed; null when none failed but a check was not run.", "FOS_sliding": "Factor of safety against sliding (null when there is no driving force: the check passes).", "FOS_overturning": "Factor of safety against overturning (null when there is no driving force).", "FOS_bearing": "q_allowable / the larger of q_toe and q_heel; null when the bearing check was not run.", "q_toe_kPa": "Bearing pressure at the toe.", "q_heel_kPa": "Bearing pressure at the heel.", "geometry": "The geometry analysed, auto-sized parts included; wall_height is from the underside of the base to the top of the stem.", "sliding_basis": "The sliding-check basis actually used: delta_base_deg, base_adhesion_kPa, driving/resisting forces, Pa and its vertical component + inclination — verify these match your intended assumptions."},
     },
     "earth_pressure_coefficient": {
         "category": "Earth Pressure",
@@ -341,7 +353,7 @@ METHOD_INFO = {
         "category": "MSE Wall",
         "brief": "MSE wall external + internal stability analysis (GEC-11).",
         "parameters": {
-            "wall_height": {"type": "float", "required": True, "description": "Wall height (m)."},
+            "wall_height": {"type": "float", "required": True, "description": "Design wall height H (m): the height of the reinforced soil mass, incl. embedment (GEC-11)."},
             "gamma_backfill": {"type": "float", "required": True, "description": "Backfill unit weight (kN/m3)."},
             "phi_backfill": {"type": "float", "required": True, "description": "Backfill friction angle (degrees)."},
             "reinforcement_name": {"type": "str", "required": False, "description": "Built-in reinforcement name (use list_reinforcement to see options), or omit and define a custom reinforcement via reinforcement_type + reinforcement_Tallowable."},
@@ -358,9 +370,9 @@ METHOD_INFO = {
             "gamma_foundation": {"type": "float", "required": False, "description": "Foundation soil unit weight (kN/m3)."},
             "phi_foundation": {"type": "float", "required": False, "description": "Foundation soil friction angle (deg)."},
             "c_foundation": {"type": "float", "required": False, "default": 0.0, "description": "Foundation soil cohesion (kPa)."},
-            "q_allowable": {"type": "float", "required": False, "description": "Allowable bearing pressure (kPa)."},
+            "q_allowable": {"type": "float", "required": False, "description": "Allowable bearing pressure (kPa). Without it the external bearing check is NOT RUN (FOS_bearing null, checks_not_run lists 'bearing'); sigma_v is still reported."},
         },
-        "returns": {"FOS_sliding": "Sliding FOS.", "FOS_overturning": "Overturning FOS.", "FOS_bearing": "Bearing FOS."},
+        "returns": {"verdict": "The result in plain words: failed checks first, then those not checked. Report it to the user.", "checks_failed": "Checks run and failed: sliding, overturning, bearing, internal (pullout or rupture at some level).", "checks_not_run": "Checks not run ('bearing' when no q_allowable).", "all_checks_pass": "true only when every check ran and passed; false when one failed; null when none failed but a check was not run.", "FOS_sliding": "Sliding FOS.", "FOS_overturning": "Overturning FOS.", "FOS_bearing": "Bearing FOS q_allowable / sigma_v; null when not checked.", "passes_external": "true / false, or null when nothing failed but bearing was not checked."},
     },
     "mse_lrfd_external_stability": {
         "category": "MSE Wall",
@@ -386,7 +398,7 @@ METHOD_INFO = {
             "phi_sliding": {"type": "float", "required": False, "default": 1.0, "description": "Sliding resistance factor (AASHTO 11.10.5.3)."},
             "ecc_limit_ratio": {"type": "float", "required": False, "default": 0.25, "description": "Limiting-eccentricity ratio e_max/L (0.25 = L/4 for MSE on soil; use 1/6 on rock)."},
         },
-        "returns": {"sliding": "Sliding CDRs (strength max/min, critical, governing).", "eccentricity": "eL (strength max, critical) vs e_limit.", "bearing": "sigma_v (strength/critical/service) + bearing CDRs."},
+        "returns": {"sliding": "Sliding CDRs (strength max/min, critical, governing).", "eccentricity": "eL (strength max, critical) vs e_limit.", "bearing": "sigma_v (strength/critical/service) + bearing CDRs; checked false and passes null when no bearing resistance was given.", "passes": "true only when every check ran and passed; false when one failed; null when none failed but one was not run.", "checks_failed": "Checks that failed. Report every one.", "checks_not_run": "Checks not run for want of a bearing resistance: 'bearing (Strength I)', 'bearing (Service I)'. Say so."},
     },
     "list_reinforcement": {
         "category": "MSE Wall",

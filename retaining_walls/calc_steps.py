@@ -119,7 +119,10 @@ def _input_summary_cantilever(result, analysis) -> List[InputItem]:
 
     items = [
         InputItem("Type", "Wall type", "Cantilever", ""),
-        InputItem("H", "Wall height", f"{geom.wall_height:.2f}", "m"),
+        InputItem("H", "Wall height (underside of base to top of stem)",
+                  f"{geom.wall_height:.2f}", "m"),
+        InputItem("h_stem", "Stem height (H - base thickness)",
+                  f"{geom.stem_height:.2f}", "m"),
         InputItem("B", "Base width", f"{geom.base_width:.2f}", "m"),
         InputItem("t_toe", "Toe length", f"{geom.toe_length:.2f}", "m"),
         InputItem("t_heel", "Heel length", f"{geom.heel_length:.2f}", "m"),
@@ -148,6 +151,9 @@ def _input_summary_cantilever(result, analysis) -> List[InputItem]:
         items.append(InputItem("c_foundation", "Foundation cohesion", f"{c_f:.1f}", "kPa"))
     if q_all is not None:
         items.append(InputItem("q_all", "Allowable bearing pressure", f"{q_all:.1f}", "kPa"))
+    else:
+        items.append(InputItem("q_all", "Allowable bearing pressure",
+                               "not given: bearing NOT CHECKED", ""))
 
     items.extend([
         InputItem("Method", "Earth pressure theory", method.capitalize(), ""),
@@ -482,25 +488,32 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
         result_unit="kN/m",
     ))
 
-    slide_items.append(CalcStep(
-        title="Factor of Safety Against Sliding",
-        equation="FOS_sliding = R / P_h",
-        substitution=f"FOS_sliding = {R_sliding:.1f} / {Ph:.1f}",
-        result_name="FOS_sliding",
-        result_value=f"{result.FOS_sliding:.3f}",
-        reference="AASHTO 11.6.3 (min 1.5)",
-        notes=("P_h = P_a × cos(δ) — horizontal thrust component."
-               if delta_incl > 0 else ""),
-    ))
+    if result.FOS_sliding is None:
+        # No driving force (GM-100): say so, never a placeholder FOS.
+        slide_items.append(
+            "Sliding: no driving force — the active thrust P_h is zero, "
+            "so nothing pushes the wall. The check passes; there is no "
+            "finite factor of safety to report.")
+    else:
+        slide_items.append(CalcStep(
+            title="Factor of Safety Against Sliding",
+            equation="FOS_sliding = R / P_h",
+            substitution=f"FOS_sliding = {R_sliding:.1f} / {Ph:.1f}",
+            result_name="FOS_sliding",
+            result_value=f"{result.FOS_sliding:.3f}",
+            reference="AASHTO 11.6.3 (min 1.5)",
+            notes=("P_h = P_a × cos(δ) — horizontal thrust component."
+                   if delta_incl > 0 else ""),
+        ))
 
-    slide_items.append(CheckItem(
-        description="Sliding stability",
-        demand=FOS_s_req,
-        demand_label="FOS_required",
-        capacity=result.FOS_sliding,
-        capacity_label="FOS_sliding",
-        passes=result.passes_sliding,
-    ))
+        slide_items.append(CheckItem(
+            description="Sliding stability",
+            demand=FOS_s_req,
+            demand_label="FOS_required",
+            capacity=result.FOS_sliding,
+            capacity_label="FOS_sliding",
+            passes=result.passes_sliding,
+        ))
 
     sections.append(CalcSection(title="Sliding Stability Check", items=slide_items))
 
@@ -538,23 +551,29 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
         result_unit="kN\u00b7m/m",
     ))
 
-    ot_items.append(CalcStep(
-        title="Factor of Safety Against Overturning",
-        equation="FOS_ot = M_stab / M_ot",
-        substitution=f"FOS_ot = {M_stab:.1f} / {M_over:.1f}",
-        result_name="FOS_ot",
-        result_value=f"{result.FOS_overturning:.3f}",
-        reference="AASHTO 11.6.3 (min 2.0)",
-    ))
+    if result.FOS_overturning is None:
+        ot_items.append(
+            "Overturning: no driving force — the overturning moment "
+            "M_ot is zero. The check passes; there is no finite factor of "
+            "safety to report.")
+    else:
+        ot_items.append(CalcStep(
+            title="Factor of Safety Against Overturning",
+            equation="FOS_ot = M_stab / M_ot",
+            substitution=f"FOS_ot = {M_stab:.1f} / {M_over:.1f}",
+            result_name="FOS_ot",
+            result_value=f"{result.FOS_overturning:.3f}",
+            reference="AASHTO 11.6.3 (min 2.0)",
+        ))
 
-    ot_items.append(CheckItem(
-        description="Overturning stability",
-        demand=FOS_o_req,
-        demand_label="FOS_required",
-        capacity=result.FOS_overturning,
-        capacity_label="FOS_overturning",
-        passes=result.passes_overturning,
-    ))
+        ot_items.append(CheckItem(
+            description="Overturning stability",
+            demand=FOS_o_req,
+            demand_label="FOS_required",
+            capacity=result.FOS_overturning,
+            capacity_label="FOS_overturning",
+            passes=result.passes_overturning,
+        ))
 
     sections.append(CalcSection(title="Overturning Stability Check", items=ot_items))
 
@@ -615,24 +634,40 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
             notes="q_heel = 0 kPa (resultant outside middle third).",
         ))
 
-    if q_all is not None:
+    # Bearing check (GM-100): run only against a given q_allowable, on the
+    # larger edge pressure; otherwise say plainly that it was not run.
+    q_max = max(result.q_toe, result.q_heel)
+    if q_all is None or result.FOS_bearing is None:
+        brg_items.append(
+            "Bearing capacity: NOT CHECKED — no allowable bearing "
+            "pressure (q_allowable) was given. The bearing pressures q_toe "
+            "and q_heel and the middle-third check above are reported; "
+            "compare the larger of q_toe and q_heel with the foundation's "
+            "allowable bearing pressure.")
+    elif q_max > 0:
         brg_items.append(CalcStep(
             title="Factor of Safety Against Bearing Failure",
-            equation="FOS_bearing = q_allowable / q_toe",
-            substitution=f"FOS_bearing = {q_all:.1f} / {result.q_toe:.1f}",
+            equation="FOS_bearing = q_allowable / q_max,  "
+                     "q_max = max(q_toe, q_heel)",
+            substitution=f"FOS_bearing = {q_all:.1f} / {q_max:.1f}",
             result_name="FOS_bearing",
             result_value=f"{result.FOS_bearing:.3f}",
             reference="AASHTO 11.6.3",
         ))
         brg_items.append(CheckItem(
             description="Bearing capacity adequacy",
-            demand=result.q_toe,
-            demand_label="q_toe",
+            demand=q_max,
+            demand_label="q_max",
             capacity=q_all,
             capacity_label="q_allowable",
             unit="kPa",
-            passes=result.passes_bearing,
+            passes=bool(result.passes_bearing),
         ))
+    else:
+        brg_items.append(
+            "Bearing capacity: FAILS — the resultant falls outside the "
+            "base, so no bearing pressure can balance it (the wall tips "
+            "over the toe).")
 
     sections.append(CalcSection(
         title="Bearing Pressure & Eccentricity", items=brg_items
@@ -641,17 +676,27 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
     # ── Section 6: Summary ─────────────────────────────────────
     summary_items = []
 
+    def _fos_row(name, fos, required, passes):
+        if fos is None:
+            return [name, "\u2014", required, "OK (no driving force)"]
+        return [name, f"{fos:.3f}", required, "OK" if passes else "FAIL"]
+
+    if result.FOS_bearing is None:
+        bearing_row = ["Bearing", "\u2014", "N/A", "NOT CHECKED"]
+    else:
+        bearing_row = _fos_row("Bearing", result.FOS_bearing, "1.0",
+                               result.passes_bearing)
     summary_table = TableData(
         title="Stability Check Summary",
         headers=["Check", "FOS Computed", "FOS Required", "Status"],
         rows=[
-            ["Sliding", f"{result.FOS_sliding:.3f}", f"{FOS_s_req:.1f}",
-             "OK" if result.passes_sliding else "FAIL"],
-            ["Overturning", f"{result.FOS_overturning:.3f}", f"{FOS_o_req:.1f}",
-             "OK" if result.passes_overturning else "FAIL"],
-            ["Bearing", f"{result.FOS_bearing:.3f}",
-             "1.0" if q_all else "N/A",
-             "OK" if result.passes_bearing else "FAIL"],
+            _fos_row("Sliding", result.FOS_sliding, f"{FOS_s_req:.1f}",
+                     result.passes_sliding),
+            _fos_row("Overturning", result.FOS_overturning,
+                     f"{FOS_o_req:.1f}", result.passes_overturning),
+            bearing_row,
+            ["Eccentricity (middle third)", "\u2014", "e \u2264 B/6",
+             "OK" if result.in_middle_third else "FAIL"],
         ],
     )
     summary_items.append(summary_table)
@@ -661,6 +706,8 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
         f"Eccentricity: e = {result.eccentricity:.3f} m "
         f"(B/6 = {B / 6:.3f} m) \u2014 {eccentricity_status}."
     )
+    # The verdict in plain words: failed checks first, then not checked.
+    summary_items.append(f"Result: {result.verdict}")
 
     sections.append(CalcSection(title="Stability Summary", items=summary_items))
 
@@ -813,37 +860,57 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         reference="AASHTO 11.10.5.4; GEC-11",
     ))
 
-    if q_all is not None:
+    bearing_checked = q_all is not None and result.FOS_bearing is not None
+    if bearing_checked:
         ext_items.append(CalcStep(
             title="Factor of Safety Against Bearing",
-            equation="FOS_bearing = q_allowable / q_toe",
+            equation="FOS_bearing = q_allowable / σ_v",
             substitution=f"FOS_bearing = {q_all:.1f} / {q_toe:.1f}",
             result_name="FOS_bearing",
             result_value=f"{result.FOS_bearing:.3f}",
         ))
+    else:
+        # GM-100: a bearing check not run is said, never counted as a pass.
+        ext_items.append(
+            "Bearing capacity: NOT CHECKED — no allowable bearing "
+            "pressure (q_allowable) was given. The bearing pressure σ_v "
+            "above is reported; compare it with the foundation's allowable "
+            "bearing pressure.")
 
-    # External stability summary
+    # External stability summary: only the checks that were run
+    fos_s_req = result.FOS_sliding_required
+    fos_o_req = result.FOS_overturning_required
+    pass_s = result.FOS_sliding >= fos_s_req
+    pass_o = result.FOS_overturning >= fos_o_req
+    run_fos = [result.FOS_sliding, result.FOS_overturning]
+    run_pass = [pass_s, pass_o]
+    if bearing_checked:
+        run_fos.append(result.FOS_bearing)
+        run_pass.append(result.FOS_bearing >= 1.0)
     ext_items.append(CheckItem(
-        description="External stability (sliding, overturning, bearing)",
+        description=("External stability (sliding, overturning, bearing)"
+                     if bearing_checked else
+                     "External stability (sliding, overturning; bearing "
+                     "NOT CHECKED)"),
         demand=1.0,
         demand_label="Required",
-        capacity=min(result.FOS_sliding, result.FOS_overturning,
-                     result.FOS_bearing if q_all else 99.9),
+        capacity=min(run_fos),
         capacity_label="Min FOS",
-        passes=result.passes_external,
+        passes=all(run_pass),
     ))
 
     ext_summary = TableData(
         title="External Stability Summary",
         headers=["Check", "FOS", "Required", "Status"],
         rows=[
-            ["Sliding", f"{result.FOS_sliding:.3f}", "1.5",
-             "OK" if result.FOS_sliding >= 1.5 else "FAIL"],
-            ["Overturning", f"{result.FOS_overturning:.3f}", "2.0",
-             "OK" if result.FOS_overturning >= 2.0 else "FAIL"],
-            ["Bearing", f"{result.FOS_bearing:.3f}",
-             "1.0" if q_all else "N/A",
-             "OK" if (result.FOS_bearing >= 1.0 if q_all else True) else "FAIL"],
+            ["Sliding", f"{result.FOS_sliding:.3f}", f"{fos_s_req:.1f}",
+             "OK" if pass_s else "FAIL"],
+            ["Overturning", f"{result.FOS_overturning:.3f}",
+             f"{fos_o_req:.1f}", "OK" if pass_o else "FAIL"],
+            (["Bearing", f"{result.FOS_bearing:.3f}", "1.0",
+              "OK" if result.FOS_bearing >= 1.0 else "FAIL"]
+             if bearing_checked else
+             ["Bearing", "—", "N/A", "NOT CHECKED"]),
         ],
     )
     ext_items.append(ext_summary)
@@ -941,16 +1008,27 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
     # ── Section 4: Overall Summary ─────────────────────────────
     summary_items = []
 
-    overall_pass = result.passes_external and result.all_pass_internal
+    def _status(passes):
+        if passes is None:
+            return "NOT ALL CHECKED (bearing not checked)"
+        return "OK" if passes else "FAIL"
+
+    if result.passes_external is False or not result.all_pass_internal:
+        overall_pass = False
+    elif result.passes_external is None:
+        overall_pass = None
+    else:
+        overall_pass = True
     summary_items.append(TableData(
         title="Overall MSE Wall Assessment",
         headers=["Category", "Status"],
         rows=[
-            ["External Stability", "OK" if result.passes_external else "FAIL"],
-            ["Internal Stability", "OK" if result.all_pass_internal else "FAIL"],
-            ["Overall", "OK" if overall_pass else "FAIL"],
+            ["External Stability", _status(result.passes_external)],
+            ["Internal Stability", _status(result.all_pass_internal)],
+            ["Overall", _status(overall_pass)],
         ],
     ))
+    summary_items.append(f"Result: {result.verdict}")
 
     sections.append(CalcSection(title="Overall Assessment", items=summary_items))
 
@@ -1210,11 +1288,14 @@ def _plot_cantilever_section(result, analysis):
             fontsize=9, va='center',
             bbox=dict(boxstyle='round,pad=0.3', facecolor='#fffde7', alpha=0.9))
 
-    # FOS annotation box
+    # FOS annotation box (a check with no FOS says why, GM-100)
+    def _fos_text(fos, word):
+        return word if fos is None else f"{fos:.2f}"
+
     status_items = [
-        f"FOS_slide = {result.FOS_sliding:.2f}",
-        f"FOS_OT    = {result.FOS_overturning:.2f}",
-        f"FOS_brg   = {result.FOS_bearing:.2f}",
+        f"FOS_slide = {_fos_text(result.FOS_sliding, 'no driving force')}",
+        f"FOS_OT    = {_fos_text(result.FOS_overturning, 'no driving force')}",
+        f"FOS_brg   = {_fos_text(result.FOS_bearing, 'not checked')}",
     ]
     ax.text(0.02, 0.98, '\n'.join(status_items),
             transform=ax.transAxes, fontsize=9,

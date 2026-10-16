@@ -1,8 +1,21 @@
 """
 Cantilever retaining wall external stability analysis.
 
-Checks sliding, overturning, and bearing capacity for a cantilever
-(or gravity) retaining wall with Rankine or Coulomb earth pressures.
+Checks sliding, overturning, eccentricity (middle third) and bearing for a
+cantilever (or gravity) retaining wall with Rankine or Coulomb earth
+pressures.
+
+Wall height H (``CantileverWallGeometry.wall_height``) is the TOTAL height,
+measured from the underside of the base slab (footing) to the top of the
+stem: H = base_thickness + stem height. The backfill surface meets the stem
+at its top, and the active thrust acts on the vertical plane through the back
+of the heel over H (plus the rise of a sloping backfill over the heel). A
+wall that retains 4.0 m above the top of a 0.5 m footing is H = 4.5 m.
+
+The bearing check needs an allowable bearing pressure ``q_allowable``.
+Without one it is NOT RUN: ``FOS_bearing`` and ``passes_bearing`` are None
+and the result says "not checked"; the bearing pressures q_toe / q_heel and
+the middle-third check are still reported.
 
 All units are SI: kN, kPa, kN/m³, degrees, meters.
 
@@ -197,7 +210,10 @@ def check_sliding(geom: CantileverWallGeometry,
     dict
         FOS_sliding, driving_force, resisting_force, Pp_kN_per_m, passes,
         plus the interface values actually used (delta_base_deg,
-        base_adhesion_kPa).
+        base_adhesion_kPa). With no driving force (the active thrust is
+        zero, e.g. cancelled by backfill cohesion) nothing pushes the wall:
+        ``passes`` is True, ``no_driving_force`` is True and ``FOS_sliding``
+        is None rather than a placeholder number.
     """
     if phi_foundation is None:
         phi_foundation = phi_backfill
@@ -244,10 +260,14 @@ def check_sliding(geom: CantileverWallGeometry,
 
     driving = Ph
 
-    FOS = resisting / driving if driving > 0 else 99.9
+    # No driving force: nothing pushes the wall, so it cannot slide. Report
+    # that, not a placeholder FOS (GM-100).
+    no_driving_force = driving <= 0
+    FOS = None if no_driving_force else resisting / driving
 
     return {
-        "FOS_sliding": round(FOS, 3),
+        "FOS_sliding": None if FOS is None else round(FOS, 3),
+        "no_driving_force": no_driving_force,
         "driving_force_kN_per_m": round(driving, 1),
         "resisting_force_kN_per_m": round(resisting, 1),
         "Pp_kN_per_m": round(Pp, 1),
@@ -256,7 +276,7 @@ def check_sliding(geom: CantileverWallGeometry,
         "thrust_inclination_deg": round(delta_deg, 2),
         "delta_base_deg": round(delta_b, 2),
         "base_adhesion_kPa": round(ca, 2),
-        "passes": FOS >= FOS_required,
+        "passes": True if FOS is None else FOS >= FOS_required,
     }
 
 
@@ -291,6 +311,8 @@ def check_overturning(geom: CantileverWallGeometry,
     -------
     dict
         FOS_overturning, stabilizing_moment, overturning_moment, passes.
+        With no overturning moment (zero active thrust) ``passes`` is True,
+        ``no_driving_force`` is True and ``FOS_overturning`` is None.
     """
     B = geom.base_width
 
@@ -317,16 +339,19 @@ def check_overturning(geom: CantileverWallGeometry,
     # heel, x = B from toe) -> stabilizing moment
     M_stabilizing += Pv * B
 
-    FOS = M_stabilizing / M_overturning if M_overturning > 0 else 99.9
+    # No overturning moment: nothing tips the wall (GM-100, as for sliding).
+    no_driving_force = M_overturning <= 0
+    FOS = None if no_driving_force else M_stabilizing / M_overturning
 
     return {
-        "FOS_overturning": round(FOS, 3),
+        "FOS_overturning": None if FOS is None else round(FOS, 3),
+        "no_driving_force": no_driving_force,
         "stabilizing_moment_kNm_per_m": round(M_stabilizing, 1),
         "overturning_moment_kNm_per_m": round(M_overturning, 1),
         "Pa_kN_per_m": round(Pa, 1),
         "Pa_vertical_kN_per_m": round(Pv, 1),
         "thrust_inclination_deg": round(delta_deg, 2),
-        "passes": FOS >= FOS_required,
+        "passes": True if FOS is None else FOS >= FOS_required,
     }
 
 
@@ -349,7 +374,9 @@ def check_bearing(geom: CantileverWallGeometry,
     c_backfill : float, optional
         Backfill cohesion (kPa). Default 0.
     q_allowable : float, optional
-        Allowable bearing pressure (kPa). If None, only eccentricity checked.
+        Allowable bearing pressure (kPa). If None, the bearing check is NOT
+        RUN (FOS_bearing and passes are None, bearing_checked is False); the
+        bearing pressures and the middle-third check are still computed.
     gamma_concrete : float, optional
         Concrete unit weight (kN/m³). Default 24.
     pressure_method : str, optional
@@ -358,7 +385,9 @@ def check_bearing(geom: CantileverWallGeometry,
     Returns
     -------
     dict
-        q_toe, q_heel, eccentricity, in_middle_third, FOS_bearing.
+        q_toe, q_heel, eccentricity, in_middle_third, FOS_bearing
+        (= q_allowable / the larger of q_toe and q_heel), bearing_checked,
+        passes (None when not checked).
     """
     B = geom.base_width
 
@@ -403,14 +432,31 @@ def check_bearing(geom: CantileverWallGeometry,
         q_toe = 2.0 * V / B_eff if B_eff > 0 else 0.0
         q_heel = 0.0
 
-    FOS_bearing = q_allowable / q_toe if (q_allowable and q_toe > 0) else 99.9
+    # Bearing check (GM-100). Without q_allowable it is NOT RUN: no FOS and
+    # no verdict, never a placeholder reported as a pass. The demand is the
+    # larger edge pressure (a resultant on the heel side of the centre puts
+    # it under the heel).
+    q_max = max(q_toe, q_heel)
+    if q_allowable is None:
+        FOS_bearing = None
+        passes = None
+    elif q_max > 0:
+        FOS_bearing = q_allowable / q_max
+        passes = FOS_bearing >= 1.0
+    else:
+        # The resultant falls outside the base (x_resultant <= 0): no
+        # bearing pressure balances it and the wall tips over the toe.
+        FOS_bearing = 0.0
+        passes = False
 
     return {
         "q_toe_kPa": round(q_toe, 1),
         "q_heel_kPa": round(q_heel, 1),
         "eccentricity_m": round(eccentricity, 3),
         "in_middle_third": in_middle_third,
-        "FOS_bearing": round(FOS_bearing, 3),
+        "FOS_bearing": None if FOS_bearing is None else round(FOS_bearing, 3),
+        "bearing_checked": q_allowable is not None,
+        "passes": passes,
         "Pa_kN_per_m": round(Pa, 1),
         "Pa_vertical_kN_per_m": round(Pv, 1),
         "thrust_inclination_deg": round(delta_deg, 2),
@@ -449,7 +495,11 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
     c_foundation : float, optional
         Foundation cohesion (kPa). Default 0.
     q_allowable : float, optional
-        Allowable bearing pressure (kPa).
+        Allowable bearing pressure (kPa). Without it the bearing check is
+        NOT RUN: the result's FOS_bearing and passes_bearing are None, its
+        ``checks_not_run`` lists "bearing" and its summary says "not
+        checked". q_toe / q_heel and the middle-third check are reported
+        either way.
     gamma_concrete : float, optional
         Concrete unit weight (kN/m³). Default 24.
     FOS_sliding : float, optional
@@ -496,11 +546,14 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
         FOS_bearing=bearing["FOS_bearing"],
         passes_sliding=sliding["passes"],
         passes_overturning=overturning["passes"],
-        passes_bearing=bearing.get("FOS_bearing", 0) >= 1.0 if q_allowable else True,
+        passes_bearing=bearing["passes"],
         q_toe=bearing["q_toe_kPa"],
         q_heel=bearing["q_heel_kPa"],
         eccentricity=bearing["eccentricity_m"],
         in_middle_third=bearing["in_middle_third"],
         wall_height=geom.wall_height,
         base_width=geom.base_width,
+        FOS_sliding_required=FOS_sliding,
+        FOS_overturning_required=FOS_overturning,
+        q_allowable=q_allowable,
     )

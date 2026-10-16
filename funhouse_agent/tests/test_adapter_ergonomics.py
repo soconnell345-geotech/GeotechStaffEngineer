@@ -970,6 +970,74 @@ class TestWallSlidingBasis:
         assert out["FOS_sliding"] == pytest.approx(1.42, abs=0.01)
 
 
+class TestWallChecksReported:
+    """GM-100 (live wave w8): with no q_allowable the adapter said
+    FOS_bearing 99.9 / passes_bearing true, and the failed sliding check
+    (FOS 1.17) never reached the user."""
+
+    W8 = {"wall_height": 4.5, "base_width": 2.8, "toe_length": 0.7,
+          "stem_thickness_top": 0.35, "stem_thickness_base": 0.35,
+          "base_thickness": 0.5, "surcharge": 10.0,
+          "gamma_backfill": 19.0, "phi_backfill": 32.0}
+
+    def test_bearing_not_checked_and_sliding_failure_named(self):
+        import json
+        from funhouse_agent.dispatch import call_agent
+        out = call_agent("retaining_walls", "cantilever_wall", dict(self.W8))
+        json.dumps(out, allow_nan=False)
+        assert out["FOS_bearing"] is None
+        assert out["passes_bearing"] is None
+        assert out["bearing_checked"] is False
+        assert out["checks_not_run"] == ["bearing"]
+        assert out["checks_failed"] == ["sliding"]
+        assert out["all_checks_pass"] is False
+        assert out["verdict"].startswith("FAILS: sliding (FOS 1.17")
+        assert "Not checked: bearing" in out["verdict"]
+        # the verdict is the first thing the agent reads
+        assert next(iter(out)) == "verdict"
+
+    def test_geometry_names_the_height_datum(self):
+        from funhouse_agent.adapters.retaining_walls import _run_cantilever_wall
+        g = _run_cantilever_wall(dict(self.W8))["geometry"]
+        assert g["wall_height_m"] == 4.5
+        assert g["stem_height_m"] == pytest.approx(4.0)
+        assert g["base_thickness_m"] == 0.5
+        assert "underside of the base" in g["wall_height_basis"]
+
+    def test_wall_height_description_names_the_datum(self):
+        from funhouse_agent.adapters.retaining_walls import METHOD_INFO
+        from funhouse_agent.adapters.calc_package import METHOD_INFO as CP
+        for desc in (METHOD_INFO["cantilever_wall"]["parameters"]
+                     ["wall_height"]["description"],
+                     CP["retaining_wall_package"]["parameters"]
+                     ["wall_height"]["description"]):
+            assert "UNDERSIDE of the base" in desc
+            assert "top of the stem" in desc
+        q = METHOD_INFO["cantilever_wall"]["parameters"]["q_allowable"]
+        assert "NOT RUN" in q["description"]
+
+    def test_bearing_checked_with_q_allowable(self):
+        from funhouse_agent.dispatch import call_agent
+        out = call_agent("retaining_walls", "cantilever_wall",
+                         dict(self.W8, q_allowable=150.0))
+        assert out["bearing_checked"] is True
+        assert out["passes_bearing"] is True
+        assert out["checks_not_run"] == []
+        assert out["FOS_bearing"] == pytest.approx(
+            150.0 / max(out["q_toe_kPa"], out["q_heel_kPa"]), abs=0.01)
+
+    def test_mse_wall_bearing_not_checked(self):
+        from funhouse_agent.dispatch import call_agent
+        out = call_agent("retaining_walls", "mse_wall",
+                         {"wall_height": 6.0, "gamma_backfill": 18.0,
+                          "phi_backfill": 34.0,
+                          "reinforcement_name": "ribbed_steel_strip_75x4"})
+        assert out["FOS_bearing"] is None
+        assert out["checks_not_run"] == ["bearing"]
+        assert out["passes_external"] is None
+        assert out["all_checks_pass"] is None
+
+
 # ============================================================================
 # Das-sweep ergonomics (2026-08) — Schmertmann gamma_soil exposure
 # ============================================================================

@@ -21,8 +21,13 @@ class CantileverWallGeometry:
     Parameters
     ----------
     wall_height : float
-        Total retained height H (m), measured from base of footing
-        to top of stem.
+        Total wall height H (m), measured from the UNDERSIDE of the base
+        slab (footing) to the top of the stem: H = base_thickness + stem
+        height. The backfill surface meets the stem at its top, and the
+        active thrust acts on the vertical plane through the back of the
+        heel over H (plus the rise of a sloping backfill over the heel,
+        ``H_active``). A wall retaining 4.0 m above the top of a 0.5 m
+        thick footing is H = 4.5 m.
     base_width : float, optional
         Base slab width B (m). If None, auto-sized to ~0.6*H.
     toe_length : float, optional

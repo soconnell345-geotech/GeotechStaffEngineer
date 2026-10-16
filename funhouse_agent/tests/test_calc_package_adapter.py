@@ -512,6 +512,28 @@ class TestRetainingWallPackage:
         assert "FOS_sliding" in result
         assert os.path.exists(outfile)
 
+    def test_cantilever_verdict_and_bearing_not_checked(self, tmp_path):
+        """GM-100: the package's response carries the verdict; with no
+        q_allowable the bearing check is said to be not run, in the response
+        and in the package, never 99.9 / OK."""
+        from funhouse_agent.adapters.calc_package import _generate_retaining_wall_package
+        outfile = str(tmp_path / "rw.html")
+        result = _generate_retaining_wall_package({
+            "wall_height": 4.5, "base_width": 2.8, "toe_length": 0.7,
+            "stem_thickness_top": 0.35, "stem_thickness_base": 0.35,
+            "base_thickness": 0.5, "surcharge": 10.0,
+            "gamma_backfill": 19.0, "phi_backfill": 32.0,
+            "output_path": outfile,
+        })
+        assert result["checks_failed"] == ["sliding"]
+        assert result["checks_not_run"] == ["bearing"]
+        assert result["FOS_bearing"] is None
+        assert result["verdict"].startswith("FAILS: sliding")
+        with open(outfile, encoding="utf-8") as fh:
+            html = fh.read()
+        assert "NOT CHECKED" in html
+        assert "99.9" not in html
+
 
 class TestGroundImprovementPackage:
     def test_wick_drains(self, tmp_path):
