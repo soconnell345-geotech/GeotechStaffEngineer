@@ -476,32 +476,38 @@
   "GM-92": {
     "kind": "decision",
     "ask_who": null,
-    "question": "Should the figure helper be on by default, now that it is built and measured?",
-    "why": "You chose it (option B). With today's plotting fixes the agent alone already draws decent figures; the helper looks at each figure and fixes what it sees, at 2 to 4 times the cost per figure.",
-    "background": "Live check 2026-10-15 (Claude Sonnet standing in, $1.68 for six runs): the helper fixed a label crossing the footprint, a label struck through by a reference line and a cut-off axis title; it took about 1.5 minutes a figure; once it copied a coined 'Easting/Northing' from its brief (the checklist now forbids that). Switch: GEOTECH_FIGURE_HELPER. The figures page: https://claude.ai/artifact/TcPujcvMF19HZQXtPVAmMj",
+    "question": "Should the figure helper and plotting code (the locked box) be on by default, now that both are built and measured?",
+    "multi": false,
+    "why": "You chose the figure helper (option B) and approved plotting code in a locked box (option C). With both on, the app draws figures it could not before, such as a wall to scale with its pressure diagrams or a settlement profile with panels sharing one depth axis, at 2 to 4 times the cost per figure.",
+    "background": "Figure helper alone, live check 2026-10-15 (Claude Sonnet standing in, $1.68): it fixed real flaws (a label across the footprint, a label struck through by a line, a cut-off axis title) at about 1.5 minutes a figure. Plotting code (switch GEOTECH_PLOT_CODE, which brings the helper), waves w8 and w8b ($2.75): the first run showed the main agent could not reach the box; after the fixes a settlement profile and a cantilever wall in a two-page calc PDF came out with every number right, about 1 second a run in the box, nothing wrongly refused. Still open: the calc helper cannot see the PDF it builds (GM-101); a citation the agent made up reached a PDF (EV-21, unrelated to the box but found here). The figures page shows both figures: https://claude.ai/artifact/TcPujcvMF19HZQXtPVAmMj",
     "options": [
       {
-        "label": "Keep it off for now",
-        "effect": "The agent draws with plot_data and its improved description; turn the helper on per session when a report's figures matter."
+        "label": "Keep both off for now",
+        "effect": "The agent draws with plot_data; switch them on per session when a report's figures matter."
       },
       {
-        "label": "On for the geotech page",
-        "effect": "Every figure on the geotech page goes through the helper (2-4x the figure cost); the testers' review page stays as it is."
+        "label": "Both on for the geotech page",
+        "effect": "Figures on the geotech page go through the helper, which can also draw in code; the testers' review page stays as it is."
       },
       {
-        "label": "On everywhere",
-        "effect": "Both pages use it; most expensive."
+        "label": "Figure helper only, geotech page",
+        "effect": "The helper checks and redraws plot_data figures; no plotting code."
+      },
+      {
+        "label": "Both on everywhere",
+        "effect": "Both pages; most expensive, and the review page's testers get it too."
       }
     ],
-    "recommendation": "Keep it off until a few real report figures come back; then decide.",
-    "if_no_answer": "It stays off; switch it on with GEOTECH_FIGURE_HELPER=1 when wanted.",
+    "recommendation": "Both on for the geotech page once GM-101 is fixed and one more wave with figures the tool descriptions do not name comes back clean; keep the testers' page as it is.",
+    "if_no_answer": "Both stay off; switch them on with GEOTECH_PLOT_CODE=1 (which brings the helper) when wanted.",
     "message_to_send": null,
     "unblocks": [
       "GM-92"
     ],
     "sources": [
-      "BACKLOG.md (GM-92)",
-      "funhouse_agent/deep/figure_helper.py"
+      "BACKLOG.md (GM-92, GM-98 in Done, GM-101, EV-21)",
+      "funhouse_agent/deep/figure_helper.py",
+      "funhouse_agent/plot_box/"
     ]
   }
 }
