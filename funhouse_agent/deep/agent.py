@@ -1551,6 +1551,21 @@ def build_deep_agent(
         # The chat model, so a host can record which client served a turn
         # (BACKLOG EV-14; webapp.core.engine_record).
         agent.geotech_model = model
+        # What this build offers, for the turn's record: the tools the
+        # model is shown, its helpers and the switches on (EV-20; wave w8:
+        # whether plot_code was offered had to be read from the code).
+        try:
+            _offered = sorted(agent.nodes["tools"].bound.tools_by_name)
+        except Exception:                              # noqa: BLE001
+            _offered = sorted(getattr(t, "name", str(t)) for t in tools)
+        from funhouse_agent import review_flags as _rf
+        agent.geotech_build = {
+            "tools": _offered,
+            "helpers": [str(s.get("name")) for s in subagents
+                        if isinstance(s, dict)],
+            "switches": _rf.describe(),
+            "prompt_chars": len(system_prompt or ""),
+        }
         if page_budget:
             # The host's step cap is raised to fit the budget, so the budget,
             # not a GraphRecursionError, ends a long request (webapp

@@ -1389,8 +1389,18 @@ def stream_turn(agent, messages: list, thread_id: str,
     with cb_ctx as cb:
         run_config = dict(config)
         run_config["callbacks"] = [cb] + extra_cbs
-        for entry in _passes_noting_reply(run_config):
-            yield entry
+        try:
+            for entry in _passes_noting_reply(run_config):
+                yield entry
+        except BaseException as exc:
+            # A turn that errors still used tokens: the record keeps them
+            # (live wave w8: turn_end said 0 after about 1.04 M; EV-20).
+            try:
+                exc.geotech_turn_tokens = _sum_callback_tokens(
+                    dict(cb.usage_metadata))
+            except Exception:  # noqa: BLE001 - never mask the error
+                pass
+            raise
         turn_tokens = _sum_callback_tokens(dict(cb.usage_metadata))
     yield {"kind": "turn_done",
            "answer": _checked_answer(page_check, "".join(answer_parts)),
@@ -2454,6 +2464,10 @@ def engine_record(agent) -> dict:
         from funhouse_agent.deep.busy_retry import engine_facts, retry_policy
         out = engine_facts(getattr(agent, "geotech_model", None))
         out["policy"] = retry_policy()
+        build = getattr(agent, "geotech_build", None)
+        if isinstance(build, dict) and build:
+            # the tools, helpers and switches the turn ran with (EV-20)
+            out["build"] = build
         return out
     except Exception:  # noqa: BLE001 - a record, never the turn
         return {}

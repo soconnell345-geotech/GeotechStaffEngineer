@@ -244,6 +244,8 @@ def _run_turn_job(job: TurnJob, agent, messages: list, thread_id: str,
                 final = item.get("answer", "")
                 turn_tokens = item.get("turn_tokens", 0)
     except Exception as exc:                      # noqa: BLE001
+        # The tokens a failed turn used (EV-20), counted up to the error.
+        turn_tokens = getattr(exc, "geotech_turn_tokens", turn_tokens) or 0
         # What the turn had done: its tool calls and results, in an order a
         # replay accepts, the largest moved to kept/ (TA-19).
         if record is not None:

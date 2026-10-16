@@ -1038,3 +1038,28 @@ def test_heartbeat_interval_env_override(monkeypatch):
     assert core.heartbeat_interval() == core.HEARTBEAT_INTERVAL_S
     monkeypatch.delenv("GEOTECH_HEARTBEAT_S")
     assert core.heartbeat_interval() == core.HEARTBEAT_INTERVAL_S
+
+
+def test_a_turn_that_errors_keeps_its_token_count():
+    """EV-20 (live wave w8): turn_end said 0 tokens for a turn that used
+    about 1.04 M before it hit the step cap."""
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, LLMResult
+
+    class _Failing:
+        def stream(self, inp, config=None, stream_mode=None):
+            msg = AIMessage(content="x", usage_metadata={
+                "input_tokens": 1000, "output_tokens": 234,
+                "total_tokens": 1234},
+                response_metadata={"model_name": "m"})
+            for cb in (config or {}).get("callbacks") or []:
+                if hasattr(cb, "on_llm_end"):
+                    cb.on_llm_end(LLMResult(generations=[[ChatGeneration(
+                        message=msg)]]), run_id=None)
+            yield ("messages", (_Msg("partial "), {"langgraph_node": "model"}))
+            raise RuntimeError("Recursion limit of 50 reached")
+
+    with pytest.raises(RuntimeError) as err:
+        list(core.stream_turn(_Failing(), [{"role": "user",
+                                            "content": "hi"}], "tid"))
+    assert err.value.geotech_turn_tokens == 1234

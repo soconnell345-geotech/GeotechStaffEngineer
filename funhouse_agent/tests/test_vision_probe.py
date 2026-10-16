@@ -309,3 +309,21 @@ def test_the_measured_host_edge_caps_renders_even_when_the_owner_lifts_the_cap(
 ])
 def test_host_edge_from_probe(square, wide, edge):
     assert vision_probe.host_edge_from_probe(square, wide) == edge
+
+
+def test_the_probe_calls_are_labelled_in_the_record():
+    """EV-20 (live wave w8): the probe's four calls read as the helper's
+    own; they now run inside a side-call label of kind 'probe'."""
+    from langchain_core.messages import AIMessage
+    from funhouse_agent import vision_probe
+    from funhouse_agent.deep.vision_engine import current_side_call
+    seen = []
+
+    class _Model:
+        def invoke(self, messages):
+            seen.append(current_side_call())
+            return AIMessage(content="OK.")
+
+    vision_probe._call(_Model(), [{"type": "text", "text": "hi"}])
+    assert seen == [{"kind": "probe"}]
+    assert current_side_call() is None

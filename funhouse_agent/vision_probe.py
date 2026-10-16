@@ -173,7 +173,18 @@ def _blank_png(side: int, height: Optional[int] = None) -> str:
 
 def _call(model, content):
     from langchain_core.messages import HumanMessage
-    msg = model.invoke([HumanMessage(content=content)])
+    try:
+        from funhouse_agent.deep.vision_engine import side_call
+    except Exception:                                      # noqa: BLE001
+        side_call = None
+    if side_call is None:
+        msg = model.invoke([HumanMessage(content=content)])
+    else:
+        # Labelled in the record as the probe, not as the tool or helper
+        # that triggered it (live wave w8: four "OK." replies read as the
+        # figure helper's own calls; EV-20).
+        with side_call(kind="probe"):
+            msg = model.invoke([HumanMessage(content=content)])
     usage = getattr(msg, "usage_metadata", None) or {}
     meta = getattr(msg, "response_metadata", None) or {}
     answered = meta.get("model_name") or meta.get("model")
