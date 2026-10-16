@@ -1095,15 +1095,58 @@ def _page_record_bound(page_check):
         return contextlib.nullcontext()
 
 
-def _checked_answer(page_check, answer: str) -> str:
-    """``answer`` after the turn's page check (recorded; noted per
-    ``GEOTECH_CITED_PAGES``)."""
-    if page_check is None:
-        return answer
+def _turn_citation_check(callbacks, messages):
+    """The check of the published documents this turn's answer cites
+    against what the conversation looked up (:mod:`funhouse_agent.
+    cited_documents`, BACKLOG EV-21), or ``None`` where it cannot be had.
+    Its record is the folder of the turn's activity log, the user's own
+    words are the user messages in ``messages``, and its result is kept in
+    that log."""
     try:
-        return page_check.finish(answer)
-    except Exception:  # noqa: BLE001 - never the answer
-        return answer
+        from funhouse_agent.cited_documents import (RECORD_EVENT,
+                                                    TurnCitationCheck,
+                                                    user_texts)
+        logger = next((cb for cb in callbacks or ()
+                       if hasattr(cb, "conv_dir")
+                       and hasattr(cb, "on_custom_event")), None)
+        log = None
+        if logger is not None:
+            def log(data, _logger=logger):
+                _logger.on_custom_event(RECORD_EVENT, data, run_id=None)
+        return TurnCitationCheck(
+            record_folder=getattr(logger, "conv_dir", None),
+            user_words=user_texts(messages), log=log)
+    except Exception:  # noqa: BLE001 - the turn runs without it
+        return None
+
+
+def _citation_words_bound(citation_check):
+    """Binds the user's own words for the turn's tools (a writer's
+    citation check reads them), or a no-op."""
+    import contextlib
+    try:
+        return citation_check.bound()
+    except Exception:  # noqa: BLE001
+        return contextlib.nullcontext()
+
+
+def _checked_answer(page_check, answer: str, citation_check=None) -> str:
+    """``answer`` after the turn's page and citation checks (recorded;
+    noted per ``GEOTECH_CITED_PAGES`` / ``GEOTECH_CITED_DOCUMENTS``). Each
+    check reads the answer as the model wrote it, never the other's note."""
+    head = str(answer or "").rstrip()
+    notes = []
+    for check in (page_check, citation_check):
+        if check is None:
+            continue
+        try:
+            noted = check.finish(answer)
+        except Exception:  # noqa: BLE001 - never the answer
+            continue
+        if isinstance(noted, str) and noted != answer \
+                and noted.startswith(head):
+            notes.append(noted[len(head):])
+    return head + "".join(notes) if notes else answer
 
 
 def _history_after(run_state, added, work_messages, pass_text) -> list:
@@ -1183,7 +1226,12 @@ def stream_turn(agent, messages: list, thread_id: str,
     ``GEOTECH_CITED_PAGES=retry`` an answer citing pages no tool opened is
     held back once and the model told, and the reply after that note is the
     answer, as with the coverage gate; with ``note`` (and after a retry that
-    still cites such pages) a note is appended to the answer.
+    still cites such pages) a note is appended to the answer. The published
+    documents it cites (a GEC, AASHTO LRFD, an author and year) are checked
+    the same way against what the conversation looked up and what the user
+    said (:func:`_turn_citation_check`; BACKLOG EV-21), behind
+    ``GEOTECH_CITED_DOCUMENTS``; when both checks tell the model, they do it
+    in one note.
 
     Reuses the PURE ``_format_update`` parser and ``_sum_callback_tokens`` from
     ``funhouse_agent.deep.notebook`` so the stream contract is shared with the
@@ -1225,6 +1273,7 @@ def stream_turn(agent, messages: list, thread_id: str,
     except Exception:
         cb_ctx = None
     page_check = _turn_page_check(callbacks)
+    citation_check = _turn_citation_check(callbacks, messages)
 
     def _run_passes(run_config):
         # One or more graph invocations: the extra passes are the bounded
@@ -1332,21 +1381,32 @@ def stream_turn(agent, messages: list, thread_id: str,
                                 f"{MAX_AUTO_CONTINUES}: finishing the stated "
                                 "next step")}
                 continue
-            # Pages the answer cites that no tool opened: told once, before
-            # it goes out (GEOTECH_CITED_PAGES=retry; EV-18).
-            note = None
-            if page_check is not None:
+            # Pages the answer cites that no tool opened, and documents it
+            # cites that nothing looked up: each told once, before it goes
+            # out, in one note (GEOTECH_CITED_PAGES / GEOTECH_CITED_DOCUMENTS
+            # =retry; EV-18, EV-21).
+            told = []
+            for check in (page_check, citation_check):
+                if check is None:
+                    continue
                 try:
-                    note = page_check.feedback("".join(answer_parts))
+                    said = check.feedback("".join(answer_parts))
                 except Exception:  # noqa: BLE001 - never the turn
-                    note = None
-            if note:
+                    said = None
+                if said:
+                    told.append((check, said))
+            if told:
                 page_redo = True
                 history = _history_after(run_state, added, work_messages,
                                          pass_text)
-                work_messages = history + [{"role": "user", "content": note}]
+                work_messages = history + [{
+                    "role": "user",
+                    "content": "\n\n".join(said for _c, said in told)}]
                 from funhouse_agent.cited_pages import RETRY_STATUS
-                yield {"kind": "tool_call", "text": RETRY_STATUS}
+                for check, _said in told:
+                    yield {"kind": "tool_call",
+                           "text": getattr(check, "retry_status", None)
+                           or RETRY_STATUS}
                 if pass_text.strip():
                     yield {"kind": "token", "text": "\n\n"}
                 continue
@@ -1359,7 +1419,8 @@ def stream_turn(agent, messages: list, thread_id: str,
         # pass's) on the error, for the host to show labelled as cut short
         # instead of the raw stream (turn_jobs, failed_turn_text).
         try:
-            with _turn_scope() as scope, _page_record_bound(page_check):
+            with _turn_scope() as scope, _page_record_bound(page_check), \
+                    _citation_words_bound(citation_check):
                 if record is not None:
                     try:
                         record.scope = scope
@@ -1382,7 +1443,8 @@ def stream_turn(agent, messages: list, thread_id: str,
         for entry in _passes_noting_reply(run_config):
             yield entry
         yield {"kind": "turn_done",
-               "answer": _checked_answer(page_check, "".join(answer_parts)),
+               "answer": _checked_answer(page_check, "".join(answer_parts),
+                                         citation_check),
                "turn_tokens": 0}
         return
 
@@ -1403,7 +1465,8 @@ def stream_turn(agent, messages: list, thread_id: str,
             raise
         turn_tokens = _sum_callback_tokens(dict(cb.usage_metadata))
     yield {"kind": "turn_done",
-           "answer": _checked_answer(page_check, "".join(answer_parts)),
+           "answer": _checked_answer(page_check, "".join(answer_parts),
+                                     citation_check),
            "turn_tokens": turn_tokens}
 
 
@@ -1963,6 +2026,57 @@ def budget_exhausted(exc: BaseException):
         return None
 
 
+def is_step_cap(exc: BaseException) -> bool:
+    """Whether a turn stopped at the graph's step cap (LangGraph's
+    ``GraphRecursionError``)."""
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return "recursion" in text and "limit" in text
+
+
+#: What the last call is told when a turn has hit its step cap
+#: (``GEOTECH_STEP_CAP_ANSWER``; TA-33).
+STEP_CAP_NUDGE = (
+    "This turn has reached its step limit, so no more tools can run. Do not "
+    "call any tool. Answer now from what was gathered above: what was "
+    "asked; what was done and found, with the numbers and the names of any "
+    "files saved; what was NOT finished or checked; and what to ask for "
+    "next to finish it. Say plainly that the turn stopped at its step "
+    "limit. Never invent a result that was not gathered.")
+#: Each tool result is cut to this many characters for that call.
+STEP_CAP_RESULT_CHARS = 4000
+
+
+def answer_at_step_cap(agent, question: Any,
+                       turn_messages: List[dict]) -> Optional[str]:
+    """One last model call, with no tools, that answers from what a turn
+    gathered before it hit its step cap (TA-33; live wave w8, F55: the user
+    got a raw error and five chart cards, no answer). ``turn_messages`` are
+    the turn's own replies and tool results (``webapp.turn_record``);
+    ``None`` when there is no model or nothing was gathered."""
+    model = getattr(agent, "geotech_model", None)
+    if model is None or not turn_messages:
+        return None
+    msgs: List[dict] = []
+    q = question.get("content") if isinstance(question, dict) else question
+    if q:
+        msgs.append({"role": "user", "content": str(q)})
+    for m in turn_messages:
+        m = dict(m)
+        if m.get("role") == "tool" and isinstance(m.get("content"), str) \
+                and len(m["content"]) > STEP_CAP_RESULT_CHARS:
+            m["content"] = (m["content"][:STEP_CAP_RESULT_CHARS]
+                            + " ...[cut for the step-limit answer]")
+        msgs.append(m)
+    msgs.append({"role": "user", "content": STEP_CAP_NUDGE})
+    reply = model.invoke(msgs)
+    text = getattr(reply, "content", reply)
+    if isinstance(text, list):
+        text = "".join(b.get("text", "") if isinstance(b, dict) else str(b)
+                       for b in text)
+    text = str(text or "").strip()
+    return text or None
+
+
 def friendly_turn_error(exc: BaseException, kept: Optional[str] = None) -> str:
     """Turn-failure text for the transcript: the raw error plus, for known
     cases, plain-language advice (owner ask 2026-08: a raw GraphRecursionError
@@ -2014,12 +2128,15 @@ def friendly_turn_error(exc: BaseException, kept: Optional[str] = None) -> str:
     except Exception:  # noqa: BLE001 - the error is shown either way
         pass
     low = text.lower()
-    if "recursion" in low and "limit" in low:
-        return (text + "\n\nThe agent ran out of its per-turn step budget "
-                "before finishing. For document-heavy or multi-part requests, "
-                "raise 'Primary step cap (recursion limit)' under Behavior > "
-                "Advanced caps in the sidebar (e.g. 50-100) and re-ask — "
-                "or split the request across turns; "
+    if is_step_cap(exc):
+        # Plain words only (live wave w8, TA-33: the user got LangGraph's
+        # error name and a LangChain documentation link); the raw text is in
+        # the activity log.
+        return ("The agent ran out of its steps for this turn before it "
+                "finished. For document-heavy or multi-part requests, raise "
+                "'Primary step cap (recursion limit)' under Behavior > "
+                "Advanced caps in the sidebar (e.g. 50-100) and re-ask, or "
+                "split the request across turns; "
                 + (kept if kept else "work done so far (downloads, saved "
                    "files) is kept."))
     kind = _busy_kind(exc)

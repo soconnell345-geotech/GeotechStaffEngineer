@@ -284,7 +284,11 @@ the eyes). What changed on master after 5.33.0, in short:
   eleven-item figure checklist after Tufte, six worked examples
   (`figure_examples`, from `profile_figure/figure_examples.py`), `plot_data`,
   `analyze_image`, `calculate` and a 14-call budget; both pages, not the
-  lean review agent.
+  lean review agent. The checklist, `plot_data`'s `depth_axis` and
+  `plot_code`'s description carry the owner's conventions (GM-97): elevation
+  up a profile by default, kPa and kN, test points against an assumed
+  design line, the wall drawn; with `plot_code` the examples tool also lists
+  three worked `plot_code` scripts and says which kind each example is.
 - **Plotting code in a locked box** (GM-98; 2026-10-15; `plot_box/`):
   behind `GEOTECH_PLOT_CODE` (OFF; arm `plot_code`; it brings the figure
   helper with it) the figure helper and the `calc` helper get
@@ -318,6 +322,21 @@ the eyes). What changed on master after 5.33.0, in short:
   (`funhouse_agent/tests/test_plot_box.py`). Left as it is: a Python
   sandbox is not a kernel one; on Linux a kernel layer (Landlock or
   namespaces) could be added under the hook (BACKLOG INF-16).
+- **The step cap** (TA-33; 2026-10-16): the message for a turn that runs
+  out of steps is plain words (no LangGraph error name, no documentation
+  link; the raw text goes to the activity log). Behind
+  `GEOTECH_STEP_CAP_ANSWER` (OFF; arm `step_cap_answer`) such a turn
+  answers from what it gathered instead: one last model call with no
+  tools over the turn's own replies and tool results (each cut to 4,000
+  characters), told to say what was found, what was not finished and
+  that it stopped at its step limit (`webapp/core.answer_at_step_cap`).
+- **Large results and the record** (TA-30, EV-20; 2026-10-15/16): a JSON
+  result of 60,000 characters or more opens with a map of its keys (the
+  line each starts on, what it holds), so the preview deepagents shows of
+  a result moved to scratch says where each key is
+  (`deep/result_map.py`); each turn's engine record lists the tools,
+  helpers and switches it ran with; an errored turn keeps its token
+  count; the vision probe's calls are labelled `probe`.
 - **`calculate`** (`deep/calculate_tool.py`, GM-94; 2026-10-15): a variable
   may be a list of numbers, used through count, sum, mean, median, std
   (sample), min, max, `percentile(L, p)`, `count_above(L, v)` and

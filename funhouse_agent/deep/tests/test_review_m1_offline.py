@@ -686,6 +686,12 @@ def test_arms_are_the_old_ones_plus_overview():
         # GM-98 plotting code in a locked box, pinned in
         # funhouse_agent/tests/test_plot_box.py
         "plot_code": {A.PLOT_CODE_ENV: "1"},
+        # TA-33 an answer at the step cap, pinned in webapp/tests/test_core.py
+        "step_cap_answer": {A.STEP_CAP_ANSWER_ENV: "1"},
+        # EV-21 cited documents nothing looked up, pinned in
+        # funhouse_agent/tests/test_cited_documents.py
+        "cited_documents_note": {A.CITED_DOCUMENTS_ENV: "note"},
+        "cited_documents_retry": {A.CITED_DOCUMENTS_ENV: "retry"},
     }
 
 

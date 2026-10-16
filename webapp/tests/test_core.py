@@ -756,8 +756,9 @@ def test_friendly_turn_error_translates_recursion():
     err = core.friendly_turn_error(
         FakeRecursion("Recursion limit of 25 reached without hitting a stop "
                       "condition."))
-    assert "Recursion limit of 25" in err            # raw error preserved
-    assert "Advanced caps" in err and "step budget" in err
+    # plain words only since TA-33; the raw error goes to the activity log
+    assert "Recursion limit of 25" not in err
+    assert "Advanced caps" in err and "ran out of its steps" in err
     plain = core.friendly_turn_error(ValueError("boom"))
     assert plain == "ValueError: boom"               # others untouched
 
@@ -1063,3 +1064,43 @@ def test_a_turn_that_errors_keeps_its_token_count():
         list(core.stream_turn(_Failing(), [{"role": "user",
                                             "content": "hi"}], "tid"))
     assert err.value.geotech_turn_tokens == 1234
+
+
+def test_the_step_cap_message_is_plain_words():
+    """TA-33 (live wave w8): the user got LangGraph's error name and a
+    LangChain documentation link."""
+    exc = RuntimeError("Recursion limit of 50 reached without hitting a stop "
+                       "condition. For troubleshooting, visit: "
+                       "https://docs.langchain.com/oss/python/langgraph/errors")
+    assert core.is_step_cap(exc)
+    text = core.friendly_turn_error(exc)
+    assert "ran out of its steps" in text
+    assert "http" not in text and "Recursion limit" not in text
+
+
+def test_a_turn_at_the_step_cap_answers_from_what_it_gathered():
+    """TA-33: one last call with no tools; tool results cut for it."""
+    seen = {}
+
+    class _Model:
+        def invoke(self, msgs):
+            seen["msgs"] = msgs
+            class R:
+                content = "Ka = 0.307; the PDF was not finished."
+            return R()
+
+    class _Agent:
+        geotech_model = _Model()
+
+    turn = [{"role": "assistant", "content": "",
+             "tool_calls": [{"name": "call_agent", "args": {}, "id": "t1",
+                             "type": "tool_call"}]},
+            {"role": "tool", "content": "x" * 10000, "tool_call_id": "t1"}]
+    out = core.answer_at_step_cap(_Agent(), {"role": "user",
+                                             "content": "the wall"}, turn)
+    assert out.startswith("Ka = 0.307")
+    msgs = seen["msgs"]
+    assert msgs[0]["content"] == "the wall"
+    assert msgs[-1]["content"] == core.STEP_CAP_NUDGE
+    assert len(msgs[2]["content"]) < 5000
+    assert core.answer_at_step_cap(object(), "q", turn) is None

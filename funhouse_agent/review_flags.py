@@ -117,6 +117,12 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     switches): ``GEOTECH_PLOT_CODE_SECONDS``, ``GEOTECH_PLOT_CODE_MAX_SECONDS``,
     ``GEOTECH_PLOT_CODE_MEMORY_MB``, ``GEOTECH_PLOT_CODE_AT_ONCE``. Both
     pages (BACKLOG GM-98).
+``GEOTECH_STEP_CAP_ANSWER``
+    ``1``: a turn that reaches its step cap (LangGraph's recursion limit)
+    answers from what it gathered, in one last model call with no tools
+    (``webapp.core.answer_at_step_cap``), instead of ending on an error; the
+    raw error goes to the activity log. Both pages (BACKLOG TA-33; live wave
+    w8 F55 ended on a raw GraphRecursionError and five chart cards).
 ``GEOTECH_CITED_PAGES``
     What the app does when an answer cites pages that no tool or helper read
     or looked at in the conversation (:mod:`funhouse_agent.cited_pages`; the
@@ -126,6 +132,21 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     goes out, and the answer it writes after that note is the one delivered
     (with the note appended if it still cites such pages). Off: the answer is
     left as the model wrote it. Both pages (BACKLOG EV-18).
+``GEOTECH_CITED_DOCUMENTS``
+    What the app does when an answer or a deliverable cites a published
+    document (a GEC, AASHTO LRFD, a UFC, an ASTM standard...) or an author
+    and year that nothing in the conversation looked up: no references
+    result, no document opened, no worked example, no calculation's own
+    result and none of the user's own messages names it
+    (:mod:`funhouse_agent.cited_documents`; the answer's check always runs
+    and is kept in ``activity.jsonl`` as a ``cited_documents`` event).
+    ``note`` (or ``1``) appends a short note to the answer naming them, and
+    a calc package, Word file, text report or markup note written with such
+    a citation gets ``cited_not_looked_up`` and one plain line in its tool
+    result (the file is written all the same); ``retry`` does the same and
+    also tells the model once, before the answer goes out, and the answer it
+    writes after that note is the one delivered. Off: answers and results
+    are left as they are. Both pages (BACKLOG EV-21; live wave w8b, F55).
 """
 
 from __future__ import annotations
@@ -148,14 +169,17 @@ CHECKLIST_ENV = "GEOTECH_REVIEW_CHECKLIST"
 VISION_TURN_RETRY_ENV = "GEOTECH_VISION_TURN_RETRY"
 KEPT_READINGS_ENV = "GEOTECH_REVIEW_KEPT_READINGS"
 CITED_PAGES_ENV = "GEOTECH_CITED_PAGES"
+CITED_DOCUMENTS_ENV = "GEOTECH_CITED_DOCUMENTS"
 FIGURE_HELPER_ENV = "GEOTECH_FIGURE_HELPER"
 PLOT_CODE_ENV = "GEOTECH_PLOT_CODE"
+STEP_CAP_ANSWER_ENV = "GEOTECH_STEP_CAP_ANSWER"
 
 ALL_ENVS = (AGENT_ENV, VISION_TEXT_ENV, VISION_STRUCTURED_ENV,
             VISION_INLINE_ENV, SWEEP_ENV, FINDINGS_ENV, OVERVIEW_ENV,
             GEOMETRY_ENV, DIGEST_ENV, COVERAGE_ENV, CHECKLIST_ENV,
             VISION_TURN_RETRY_ENV, KEPT_READINGS_ENV, CITED_PAGES_ENV,
-            FIGURE_HELPER_ENV, PLOT_CODE_ENV)
+            FIGURE_HELPER_ENV, PLOT_CODE_ENV, STEP_CAP_ANSWER_ENV,
+            CITED_DOCUMENTS_ENV)
 
 #: Not a switch but the overview's setting: above this many pages in the
 #: new uploads (all of them together) the orientation asks for contact sheets.
@@ -263,6 +287,12 @@ def figure_helper() -> bool:
     return _on(FIGURE_HELPER_ENV)
 
 
+def step_cap_answer() -> bool:
+    """Whether a turn stopped at its step cap answers from what it gathered
+    (one last call with no tools; both pages)."""
+    return _on(STEP_CAP_ANSWER_ENV)
+
+
 def plot_code() -> bool:
     """Whether the figure and ``calc`` helpers get ``plot_code``, the locked
     box for plotting code, and the figure helper is built (both pages)."""
@@ -274,6 +304,20 @@ def cited_pages() -> str:
     default: recorded only), ``"note"`` (a note appended) or ``"retry"``
     (the model told once, then a note if still needed); both pages."""
     value = str(os.environ.get(CITED_PAGES_ENV, "")).strip().lower()
+    if value == "retry":
+        return "retry"
+    if value == "note" or value in _ON:
+        return "note"
+    return "off"
+
+
+def cited_documents() -> str:
+    """What an answer or a deliverable citing a document nothing in the
+    conversation looked up gets: ``"off"`` (the default: the answer's check
+    recorded only), ``"note"`` (a note on the answer, a line in the
+    writer's result) or ``"retry"`` (as ``note``, and the model told once
+    before the answer goes out); both pages."""
+    value = str(os.environ.get(CITED_DOCUMENTS_ENV, "")).strip().lower()
     if value == "retry":
         return "retry"
     if value == "note" or value in _ON:
@@ -332,6 +376,13 @@ ARMS: Dict[str, Dict[str, str]] = {
     # Plotting code in a locked box (GM-98, 2026-10-15) for the figure and
     # calc helpers; it brings the figure helper. On the DEFAULT agent.
     "plot_code": {PLOT_CODE_ENV: "1"},
+    # A turn at its step cap answers from what it gathered (TA-33).
+    "step_cap_answer": {STEP_CAP_ANSWER_ENV: "1"},
+    # Cited documents nothing looked up (EV-21, 2026-10-15): a note on the
+    # answer and a line in a writer's result, or the model told once too.
+    # On the DEFAULT agent, against `baseline`.
+    "cited_documents_note": {CITED_DOCUMENTS_ENV: "note"},
+    "cited_documents_retry": {CITED_DOCUMENTS_ENV: "retry"},
 }
 
 
@@ -371,7 +422,8 @@ __all__ = ["AGENT_ENV", "VISION_TEXT_ENV", "VISION_STRUCTURED_ENV",
            "VISION_INLINE_ENV", "SWEEP_ENV", "FINDINGS_ENV", "OVERVIEW_ENV",
            "GEOMETRY_ENV", "DIGEST_ENV", "COVERAGE_ENV", "CHECKLIST_ENV",
            "VISION_TURN_RETRY_ENV", "KEPT_READINGS_ENV", "CITED_PAGES_ENV",
-           "FIGURE_HELPER_ENV", "PLOT_CODE_ENV",
+           "FIGURE_HELPER_ENV", "PLOT_CODE_ENV", "STEP_CAP_ANSWER_ENV",
+           "CITED_DOCUMENTS_ENV",
            "OVERVIEW_PAGES_ENV",
            "DEFAULT_OVERVIEW_PAGES", "ALL_ENVS", "SETTINGS_ENVS", "ARMS",
            "lean_agent",
@@ -379,5 +431,6 @@ __all__ = ["AGENT_ENV", "VISION_TEXT_ENV", "VISION_STRUCTURED_ENV",
            "sweep", "findings", "overview", "geometry", "digest",
            "coverage", "checklist", "vision_turn_retry",
            "kept_readings_on_review_page", "figure_helper", "plot_code",
-           "cited_pages",
+           "step_cap_answer",
+           "cited_pages", "cited_documents",
            "overview_pages", "switches", "describe"]

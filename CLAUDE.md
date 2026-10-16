@@ -234,6 +234,14 @@ Key conventions:
       f0bc000); downdrag leaves the pile's own weight out of the load curve
       by default, as UFC 3-220-20 and GEC-12 do (867b08b; release note: a
       smaller drag force and Q_np by the pile's weight above the plane).
+      The night of 2026-10-15/16 (owner asleep): plotting code measured
+      live twice (w8 / w8b) and fixed; wall checks not run say "not
+      checked" and failed checks come first, bearing on the larger edge
+      pressure (718cd62; release note); downdrag's steel section and
+      below-toe warning; no placeholder FOS as a number; large results
+      with a key map; the step cap in plain words (an answer from what
+      was gathered behind GEOTECH_STEP_CAP_ANSWER, OFF); staged FEM at 500
+      iterations a step (release note); see BACKLOG "Done".
     Open next: Foundry brief 6, which measures all of this, is drafted
     (`../foundry_handoff/AI_FDE_BRIEF_6.md`); its rc wheels are not built
     while the owner holds the release (EV-13, DR-05).
