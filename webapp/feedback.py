@@ -179,6 +179,10 @@ def make_record_feedback_tool(conv_dir: str,
         Use when the user comments on the app itself, when you LACK a tool
         or capability the task needs, or when a tool fails in a way you
         cannot work around. Call it once, briefly, then continue the task.
+        Before recording that you were wrong about what this app can do,
+        check this app's tool again (describe_method / list_methods): a
+        library having a function is not this app's tool offering it; say
+        which one the note is about.
 
         Parameters
         ----------
