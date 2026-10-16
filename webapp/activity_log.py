@@ -33,7 +33,8 @@ Record shape (one JSON object per line)::
 ``turn_end``, ``coverage_gate`` (the note the coverage gate gave the
 model, with ``GEOTECH_COVERAGE`` on), the app events of
 :data:`APP_EVENTS` (``cited_pages``: the answer's page citations checked
-against the pages opened), and -- since 2026-10-09 (live smoke
+against the pages opened; ``cited_documents``: the documents an answer or a
+writer cites, checked against what was looked up), and -- since 2026-10-09 (live smoke
 wave 1, G11) -- ``tool_delivered`` (what the model RECEIVED from a tool call,
 when the agent's middleware changed the tool's own output) and
 ``tool_refused`` (a call no tool ran: an unknown tool name, an
@@ -115,9 +116,13 @@ TASK_TOOL = "task"
 #: ``cited_pages`` (the pages the turn's answer cites, checked against the
 #: pages any tool or helper opened in the conversation: ``never_opened``,
 #: ``partly_opened``... and what was done, ``action``; ``funhouse_agent.
-#: cited_pages``, BACKLOG EV-18).
+#: cited_pages``, BACKLOG EV-18); ``cited_documents`` (the published
+#: documents the turn's answer, or a file a writer was given, cites,
+#: checked against what the conversation looked up: ``not_looked_up``,
+#: ``where`` (``answer`` or the writer), ``action``; ``funhouse_agent.
+#: cited_documents``, BACKLOG EV-21).
 APP_EVENTS = frozenset({"helper_kept", "helper_queued", "model_busy",
-                        "pacer_wait", "cited_pages"})
+                        "pacer_wait", "cited_pages", "cited_documents"})
 
 PRIMARY = "primary"
 

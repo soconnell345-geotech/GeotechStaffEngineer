@@ -1752,10 +1752,21 @@ def write_marked_copy(handle: str, markups: Optional[list], output_path: str,
     centred off the image -- or, for a PDF, off its page -- is refused
     before anything is written (BACKLOG VIS-26)."""
     try:
-        return _write_marked_copy(handle, markups, output_path, append,
-                                  author, call, remove, image)
+        result = _write_marked_copy(handle, markups, output_path, append,
+                                    author, call, remove, image)
     except MarkedCopyNotWritten as exc:
         return {"error": str(exc), "hint": WRITE_FAILED_HINT}
+    # The documents the notes cite, against what the conversation looked up
+    # (GEOTECH_CITED_DOCUMENTS; BACKLOG EV-21): a line in the result, the
+    # copy written either way. A quote or an anchor is the document's own
+    # text, not a note, and is not read.
+    try:
+        from funhouse_agent import cited_documents
+        return cited_documents.add_to_result(
+            result, cited_documents.deliverable_texts(list(markups or [])),
+            where="annotate_document")
+    except Exception:  # noqa: BLE001 - never the marked copy's result
+        return result
 
 
 def markups_with_pages(markups) -> tuple:

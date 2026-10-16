@@ -254,6 +254,24 @@ the eyes). What changed on master after 5.33.0, in short:
   (`note` / `retry`; OFF) acts on it. `write_diggs` always adds a
   `page_not_read` cross-check for a record citing pages no tool opened, and
   `record_finding` returns `pages_not_opened`.
+- **Cited documents** (`cited_documents.py`, EV-21; live wave w8b, where a
+  brief made up "GEC-11 / AASHTO LRFD 3.11.5" and the PDF and the answer
+  carried it as the user's): every published document an answer or a
+  deliverable cites (GEC-n and FHWA report numbers as one document, AASHTO
+  LRFD with its article, UFC / DM 7, EM, ASTM, ACI, ASCE 7, Caltrans, NCHRP,
+  EN 1997 ... and author-and-year works) is checked against what the
+  conversation's own record says was looked up: the user's messages, a
+  references result or a reference module called, a worked example, a
+  document opened (not one the conversation wrote), a calculation's own
+  result or method documentation; never a brief, a helper's hand-back or
+  the module catalog. An author the record names without that year (Rankine,
+  when the user asked for Rankine pressure) is `year_not_checked`, not
+  flagged. The answer's check is always a `cited_documents` event;
+  `GEOTECH_CITED_DOCUMENTS` (`note` / `retry`; OFF) notes the answer or
+  tells the model once (in one note with the page check), and adds
+  `cited_not_looked_up` and a `citation_note` to `html_to_pdf`, the
+  `*_package` methods, `write_docx`, a text `save_file` and
+  `annotate_document`; the file is always written.
 - **The review page** (DR-04, INF-10) no longer offers
   `read_reference_figure` / `view_worked_example_source`, and deepagents
   0.7's `delete` scratch tool is hidden there (and in the references

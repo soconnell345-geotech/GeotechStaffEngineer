@@ -1058,9 +1058,31 @@ def call_agent(
         if named and isinstance(result, dict) and "error" not in result:
             result = dict(result)
             result["output_note"] = _output_note(named, parameters)
+        result = _citations_checked(agent_name, method, parameters, result)
         return hide_working_folder(result)
     except Exception as e:
         return hide_working_folder({"error": f"{type(e).__name__}: {e}"})
+
+
+def _citations_checked(agent_name: str, method: str, parameters: dict,
+                       result):
+    """A calc package's result after the check of the documents cited in
+    the text the model GAVE it (``html_to_pdf``'s HTML, a ``*_package``'s
+    own words), never the package's template: with
+    ``GEOTECH_CITED_DOCUMENTS`` on, a citation nothing in the conversation
+    looked up adds ``cited_not_looked_up`` and a ``citation_note``; the
+    file is written either way (:mod:`funhouse_agent.cited_documents`,
+    BACKLOG EV-21)."""
+    if agent_name != "calc_package" or not (
+            method == "html_to_pdf" or str(method).endswith("_package")):
+        return result
+    try:
+        from funhouse_agent import cited_documents
+        return cited_documents.add_to_result(
+            result, cited_documents.deliverable_texts(parameters),
+            where=f"calc_package.{method}")
+    except Exception:  # noqa: BLE001 - never the writer's result
+        return result
 
 
 #: Parameters naming a file (``False``) or a folder of files (``True``) that a

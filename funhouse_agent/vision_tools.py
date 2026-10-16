@@ -295,10 +295,14 @@ def dispatch_extended_tool(
     elif tool_name == "view_worked_example_source":
         return _dispatch_view_worked_example(arguments, engine)
     elif tool_name == "save_file":
-        return _dispatch_save_file_tool(arguments, attachments,
-                                        save_fn or _default_save_fn)
+        return _citations_checked(
+            tool_name, arguments,
+            _dispatch_save_file_tool(arguments, attachments,
+                                     save_fn or _default_save_fn))
     elif tool_name == "write_docx":
-        return _dispatch_write_docx(arguments, save_fn or _default_save_fn)
+        return _citations_checked(
+            tool_name, arguments,
+            _dispatch_write_docx(arguments, save_fn or _default_save_fn))
     elif tool_name == "annotate_dxf":
         return _dispatch_annotate_dxf(arguments, attachments,
                                       save_fn or _default_save_fn)
@@ -306,6 +310,32 @@ def dispatch_extended_tool(
         return dispatch_kept_readings(arguments)
     else:
         return json.dumps({"error": f"Unknown extended tool: {tool_name}"})
+
+
+def _citations_checked(tool_name: str, arguments: Dict[str, Any],
+                       result: str) -> str:
+    """A Word file's or a text report's result after the check of the
+    documents its text cites (``write_docx``'s markdown and title; a
+    ``save_file`` report: .md, .html, .txt...; never a data file or a
+    base64 save): with ``GEOTECH_CITED_DOCUMENTS`` on, a citation nothing
+    in the conversation looked up adds ``cited_not_looked_up`` and a
+    ``citation_note``; the file is written either way
+    (:mod:`funhouse_agent.cited_documents`, BACKLOG EV-21)."""
+    try:
+        from funhouse_agent import cited_documents
+        if tool_name == "write_docx":
+            texts = [arguments.get("title"), arguments.get("markdown")]
+        else:
+            path = str(arguments.get("path") or "").lower()
+            if arguments.get("encoding", "text") != "text" or not \
+                    path.endswith(cited_documents.REPORT_EXTENSIONS):
+                return result
+            texts = [arguments.get("content")]
+        return cited_documents.add_to_result(
+            result, [t for t in texts if isinstance(t, str)],
+            where=tool_name)
+    except Exception:  # noqa: BLE001 - never the writer's result
+        return result
 
 
 # Keep old name as alias for backwards compatibility
