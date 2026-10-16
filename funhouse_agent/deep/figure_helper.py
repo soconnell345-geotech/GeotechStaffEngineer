@@ -13,10 +13,12 @@ So the helper has:
   principles of Tufte's *The Visual Display of Quantitative Information*
   (Graphics Press, 1983; 2nd ed. 2001) — data-ink, chartjunk, small
   multiples, labels on the data — beside the conventions of engineering
-  drawings and reports (plans to scale, depth downward, units and the
-  coordinate system named);
+  drawings and reports (plans to scale, elevation up a profile, kPa and
+  kN, units and the coordinate system named; the owner's conventions of
+  2026-10-15, BACKLOG GM-97);
 - worked EXAMPLES it can fetch and adapt (``figure_examples``, from
-  :mod:`profile_figure.figure_examples`);
+  :mod:`profile_figure.figure_examples`): ``plot_data`` calls, and when it
+  has ``plot_code``, matplotlib scripts for that box too;
 - ``plot_data`` to draw and ``analyze_image`` to LOOK at the PNG, which is
   the same figure the chat shows (both are drawn from one spec), with a
   budget of a few redraws;
@@ -42,8 +44,8 @@ FIGURE_HELPER_NAME = "figure"
 #: What the delegating agent is told (the task tool's list of helpers).
 FIGURE_HELPER_DESCRIPTION = (
     "The figure helper. Delegate every figure the user will see or a report "
-    "will carry: a plan of borings and a footprint, a depth profile (SPT, "
-    "CPT, su, water content against depth), results against a parameter, "
+    "will carry: a plan of borings and a footprint, a profile (SPT, CPT, "
+    "su, water content against elevation), results against a parameter, "
     "the cases of a sensitivity study, settlement against time, a load "
     "test, an exceedance curve. Give it the numbers (or the name of a file "
     "in the working folder that holds them), what the figure must show and "
@@ -77,18 +79,28 @@ against the PNG you drew, not against what you meant to draw.
    outline; a zone of interest hatched over what lies under it; faint
    grey for context; the coordinate system named under the scale bar
    (xlabel).
-   Depth and settlement
-   increase downward (depth_axis). An axis that compares magnitudes starts
-   at zero unless the variation is the point, and then says so. A log
-   scale only for a quantity spanning decades (time, cycles, stress).
-5. Name everything a reader needs. Every axis has its quantity and unit; a
+   A profile has ELEVATION on its vertical axis, rising upward: borings
+   start at different ground levels, so their depths do not line up.
+   Depth (downward, depth_axis) only when no elevations are given, and the
+   figure says so; never depth and elevation on two axes of one profile.
+   Settlement against time increases downward (depth_axis). A wall or pile
+   is drawn to scale with its diagrams beside it; the diagram alone only
+   when the structure is not known (the structural engineer designs it),
+   and the figure says so. An axis that compares magnitudes starts at zero
+   unless the variation is the point, and then says so. A log scale only
+   for a quantity spanning decades (time, cycles, stress).
+5. Name everything a reader needs. Every axis has its quantity and unit:
+   stresses and pressures in kPa, forces in kN (kN/m along a wall); a
    plan names its coordinate system (local grid, state plane, elevation
    datum): a local grid is x and y, never easting and northing (those name
    a projected system); the title says what and where in plain words.
 6. Lines mean continuity. Separate cases, scenarios or borings compared
    side by side are markers on a case axis (x as names), never joined by a
    line; a line joins values along ONE continuous thing (one boring's
-   profile, one test, one curve).
+   profile, one test, one curve). Separate tests are points; a line
+   through them is a profile someone assumed, named as one (preconsolidation
+   stress: test points when plotting the data, a line for an assumed
+   design profile; the figure says which).
 7. Small multiples. Several borings, cases or sections compared: the same
    axes, the same scale and limits, the same colours for the same thing.
 8. Colour and shape with meaning. One colour per group, the same group the
@@ -137,13 +149,28 @@ FIGURE_HELPER_PROMPT = (
 )
 
 
-def _closest_example(want: str) -> Optional[str]:
-    """The example ``want`` names: exact, then by shared words with the
-    example's name and what it shows, then by spelling."""
+#: How the list names each kind of example.
+_KINDS = {"plot_data": "plot_data call", "plot_code": "plot_code script"}
+
+
+def _example_names(with_code: bool = False) -> list:
+    """The examples offered: the plot_data calls, then the plot_code
+    scripts when the helper has plot_code."""
+    from profile_figure.figure_examples import (code_example_names,
+                                                example_names)
+    return example_names() + (code_example_names() if with_code else [])
+
+
+def _closest_example(want: str, with_code: bool = False) -> Optional[str]:
+    """The example ``want`` names among those offered: exact, then by
+    shared words with the example's name and what it shows, then by
+    spelling."""
     import difflib
     import re
-    from profile_figure.figure_examples import EXAMPLES, example_names
-    names = example_names()
+    from profile_figure.figure_examples import CODE_EXAMPLES, EXAMPLES
+    names = _example_names(with_code)
+    shows = {n: (EXAMPLES.get(n) or CODE_EXAMPLES[n])["shows"]
+             for n in names}
     key = want.lower().strip().replace(" ", "_").replace("-", "_")
     if key in names:
         return key
@@ -151,8 +178,7 @@ def _closest_example(want: str) -> Optional[str]:
                                                          "a", "and", "plot"}
     if words:
         def score(n):
-            text = set(re.findall(r"[a-z]+", (n + " " + EXAMPLES[n]["shows"])
-                                  .lower()))
+            text = set(re.findall(r"[a-z]+", (n + " " + shows[n]).lower()))
             return len(words & text)
         best = max(names, key=score)
         if score(best) > 0:
@@ -161,26 +187,35 @@ def _closest_example(want: str) -> Optional[str]:
     return close[0] if close else None
 
 
-def make_figure_examples_tool() -> StructuredTool:
-    """``figure_examples``: the list of worked examples, or one in full."""
+def make_figure_examples_tool(plot_code: bool = False) -> StructuredTool:
+    """``figure_examples``: the list of worked examples, or one in full.
+    With ``plot_code`` (the helper has that tool) the list also holds the
+    worked plot_code scripts."""
     from funhouse_agent.deep.strict_args import strict_tool
 
     def figure_examples(name: str = "") -> str:
         """List the worked figure examples, or return one in full."""
-        from profile_figure.figure_examples import (EXAMPLES, example,
-                                                    example_names)
+        from profile_figure.figure_examples import example
+        names = _example_names(plot_code)
         if not name:
+            listing = []
+            for n in names:
+                ex = example(n)
+                listing.append({"name": n, "kind": _KINDS[ex["kind"]],
+                                "shows": ex["shows"]})
             return json.dumps({
-                "examples": [{"name": n, "shows": EXAMPLES[n]["shows"]}
-                             for n in example_names()],
-                "next": "figure_examples(name=...) returns one: what it "
-                        "shows, why it is drawn that way, and its complete "
-                        "plot_data parameters to adapt."})
+                "examples": listing,
+                "next": ("figure_examples(name=...) returns one: what it "
+                         "shows, why it is drawn that way, and its complete "
+                         "plot_data parameters"
+                         + (", or its complete plot_code script and the "
+                            "data it reads," if plot_code else "")
+                         + " to adapt.")}, ensure_ascii=False)
         want = str(name).strip()
-        match = _closest_example(want)
+        match = _closest_example(want, plot_code)
         if match is None:
             return json.dumps({"error": f"no example '{want}'; there are "
-                                        f"{example_names()}"})
+                                        f"{names}"})
         ex = example(match)
         if match != want:
             # live wave w7 (2026-10-15): the helper guessed 'plan',
@@ -188,22 +223,29 @@ def make_figure_examples_tool() -> StructuredTool:
             ex["matched"] = f"'{want}' read as '{match}'"
         return json.dumps(ex, ensure_ascii=False)
 
+    description = (
+        "Worked examples of good engineering figures, each a complete "
+        "plot_data call on made-up data with why it is drawn that way: "
+        "a plan of borings and a footprint, an SPT profile against "
+        "elevation, sensitivity cases, settlement against time, a load "
+        "test, an exceedance curve. No name: the list. name=<example>: "
+        "that one in full. Adapt the nearest one; never copy its made-up "
+        "numbers.")
+    if plot_code:
+        description += (
+            " The list also holds complete plot_code scripts (matplotlib, "
+            "with the data each reads) for figures plot_data cannot draw; "
+            "each entry says which kind it is.")
     return strict_tool(StructuredTool.from_function(
-        figure_examples, name="figure_examples",
-        description=(
-            "Worked examples of good engineering figures, each a complete "
-            "plot_data call on made-up data with why it is drawn that way: "
-            "a plan of borings and a footprint, a depth profile, sensitivity "
-            "cases, settlement against time, a load test, an exceedance "
-            "curve. No name: the list. name=<example>: that one in full. "
-            "Adapt the nearest one; never copy its made-up numbers.")))
+        figure_examples, name="figure_examples", description=description))
 
 
 #: Added to the helper's way of working when ``plot_code`` is offered.
 PLOT_CODE_STEP = (
     "\ng. When plot_data cannot draw what the brief needs, write the figure "
     "as matplotlib code with plot_code (its description says what the "
-    "box allows) and apply the same checklist: look at the PNG it saved "
+    "box allows; figure_examples lists worked plot_code scripts to start "
+    "from) and apply the same checklist: look at the PNG it saved "
     "and redraw. Save a Plotly chart too only when the brief asks for an "
     "interactive chart: the chat shows it in place of the PNG, and your "
     "looks do not check it.")
@@ -215,7 +257,7 @@ PLOT_CODE_STEP = (
 PLOT_CODE_DESCRIPTION_NOTE = (
     " It also draws in code (plot_code) what plot_data cannot: a wall or "
     "pile drawn to scale with its pressure or load diagrams beside it, "
-    "panels sharing one depth axis, a section with its layers filled, "
+    "panels sharing one elevation axis, a section with its layers filled, "
     "contours.")
 
 
@@ -255,11 +297,12 @@ def build_figure_subagent(
     )
     if not any(t.name == "plot_data" for t in tools):
         return None
-    tools = list(tools) + [make_figure_examples_tool(),
-                           make_calculate_tool()]
+    plot_code = _plot_code_tool()
+    tools = list(tools) + [
+        make_figure_examples_tool(plot_code=plot_code is not None),
+        make_calculate_tool()]
     prompt = FIGURE_HELPER_PROMPT
     description = FIGURE_HELPER_DESCRIPTION
-    plot_code = _plot_code_tool()
     if plot_code is not None:
         tools.append(plot_code)
         prompt = prompt + PLOT_CODE_STEP

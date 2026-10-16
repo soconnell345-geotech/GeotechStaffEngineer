@@ -277,8 +277,15 @@ def test_the_tool_describes_the_box_and_refuses_unknown_arguments():
     tool = plot_box.make_plot_code_tool()
     assert tool.name == "plot_code"
     for words in ("LOCKED BOX", "save_figure", "save_chart", "scale_bar",
-                  "time_limit_s", "no network"):
-        assert words in tool.description
+                  "time_limit_s", "no network",
+                  # the owner's conventions (GM-97, 2026-10-15)
+                  "panels sharing one elevation axis",
+                  "a profile against elevation rising upward",
+                  "stresses in kPa, forces in kN",
+                  "a wall or pile drawn to scale with its diagrams",
+                  "test results as points"):
+        assert words in tool.description, words
+    assert "depth increasing downward" not in tool.description
     out = tool.invoke({"code": "x = 1", "colour": "red"})
     assert "colour" in str(out)
 

@@ -301,8 +301,10 @@ def _plot_description() -> str:
         return " ".join(lines) + _PLOT_APP_NOTE
     except Exception:                                  # noqa: BLE001
         return ("Plot one or more x/y data series (series: [{x: [...], y: "
-                "[...], label}]) -- SPT or CPT vs depth (depth_axis=true), "
-                "settlement vs time, a sweep, quantities from a document."
+                "[...], label}]) -- an SPT or CPT profile against elevation "
+                "(depth with depth_axis=true only when no elevations are "
+                "given), settlement vs time, a sweep, quantities from a "
+                "document."
                 + _PLOT_APP_NOTE)
 
 

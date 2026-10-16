@@ -59,7 +59,7 @@ count in `test_reviewers.py` with it (2026-09-05 decision).
 | `profile.py` | `render_profile_figure` — resolve, draw, PNG (file + base64). |
 | `results.py` | `ProfileFigureResult` (resolved geometry + image + `summary()`). |
 | `data_plot.py` | `plot_data`: `render_data_plot` (PNG) + `build_data_plot_figure` (its Plotly twin); see below. |
-| `figure_examples.py` | Six worked `plot_data` calls on made-up data, for the figure helper; see below. |
+| `figure_examples.py` | Worked examples on made-up data for the figure helper: six `plot_data` calls and three `plot_code` scripts; see below. |
 
 `build_profile_figure` is exported so a module can drop the section into a
 bigger figure or a calc package; `render_profile_figure` closes its own figure
@@ -139,14 +139,46 @@ that day (tests: `tests/test_data_plot_maps.py`):
   map shares, so the plans read alike.
 
 **Worked examples** (`figure_examples.py`, the owner's option B of
-2026-10-15): six complete `plot_data` calls on made-up data, each with what
-it shows and why it is drawn that way: `plan_borings`, `depth_profile`,
-`cases`, `time_settlement`, `load_settlement` and `exceedance`. The figure
-helper (`funhouse_agent/deep/figure_helper.py`, behind
-`GEOTECH_FIGURE_HELPER`, OFF by default) fetches one by name through its
-`figure_examples` tool, a near name matched by shared words and then by
+2026-10-15): six complete `plot_data` calls on made-up data (`EXAMPLES`),
+each with what it shows and why it is drawn that way: `plan_borings`,
+`spt_profile`, `cases`, `time_settlement`, `load_settlement` and
+`exceedance`. The figure helper (`funhouse_agent/deep/figure_helper.py`,
+behind `GEOTECH_FIGURE_HELPER`, OFF by default) fetches one by name through
+its `figure_examples` tool, a near name matched by shared words and then by
 spelling, and adapts it; `render_examples(out_dir)` draws them all. Every
 number in the file is invented.
+
+**The owner's conventions for profiles and design figures** (BACKLOG GM-97,
+2026-10-15) are in the examples and the helper's checklist: elevation on a
+profile's vertical axis by default ("most borings have a slightly different
+ground surface elevation"), depth only when no elevations are given, never
+both on one profile; "kPa and kN (everywhere!)"; preconsolidation stress as
+test points when plotting the data and a line when it is an assumed design
+profile, the figure saying which; the wall drawn by default, its pressure
+diagram alone only when the wall's configuration is not known.
+`spt_profile` (formerly `depth_profile`; "depth profile" still finds it) is
+three borings with different ground levels against elevation, each test's
+depth kept in its hover text.
+
+**Code examples** (`CODE_EXAMPLES`, GM-97): figures `plot_data` cannot draw,
+each a complete matplotlib script for `plot_code`'s locked box with the
+`data` it reads, what it shows and why: `wall_pressures` (a cantilever wall
+to scale with its active earth, surcharge and water pressure diagrams beside
+it on one elevation axis and one kPa scale, each resultant in kN/m at its
+elevation; the "why" says how to draw the diagrams alone),
+`settlement_stress_profile` (the soil column and its fill, then the initial
+vertical effective stress, the preconsolidation stress from consolidation
+tests, the stress increase and the final stress against the preconsolidation
+stress;
+the script draws an assumed design line too when the data gives one) and
+`pile_design_profile` (the soil column with the pile, then unit shaft
+resistance, the axial resistance down the pile and the axial load with the
+neutral plane where the load curve meets the resistance curve). The numbers
+are made up but consistent (Rankine pressures, effective stresses, the
+plane where the two curves cross). `example(name)` returns either kind with
+its `kind`; the helper lists the code examples only when it has
+`plot_code`. The tests draw each through the real box and require an empty
+layout check (`funhouse_agent/deep/tests/test_figure_helper.py`).
 
 ## Deliberate non-goals
 

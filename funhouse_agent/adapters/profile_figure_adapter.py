@@ -324,9 +324,10 @@ METHOD_INFO = {
     },
     "plot_data": {
         "category": "Figure",
-        "brief": ("Generic data plot: one or more x/y series — SPT or CPT vs "
-                  "depth, settlement vs time, load vs displacement, a "
-                  "parameter sweep or method comparison, the cases of a "
+        "brief": ("Generic data plot: one or more x/y series — an SPT or "
+                  "CPT profile against elevation, settlement vs time, load "
+                  "vs displacement, a parameter sweep or method "
+                  "comparison, the cases of a "
                   "sensitivity study, a plan view of borings and a "
                   "footprint drawn to scale. Shows in chat as an "
                   "INTERACTIVE chart (zoom/hover) and saves a PNG for "
@@ -399,10 +400,14 @@ METHOD_INFO = {
             "ylabel": {"type": "str", "required": False, "default": "",
                        "description": "Y-axis label WITH units."},
             "depth_axis": {"type": "bool", "required": False, "default": False,
-                           "description": ("True for a depth profile: y "
-                                           "increases DOWNWARD and the x axis "
-                                           "sits at the top (boring-log "
-                                           "convention).")},
+                           "description": (
+                               "A profile has elevation on y by default "
+                               "(leave this false, y = elevations): borings "
+                               "start at different ground levels. True when "
+                               "y is depth (only when no elevations are "
+                               "given; say so in ylabel) or settlement: y "
+                               "increases DOWNWARD and the x axis sits at "
+                               "the top (boring-log convention).")},
             "logx": {"type": "bool", "required": False, "default": False,
                      "description": "Log-scale x axis."},
             "logy": {"type": "bool", "required": False, "default": False,

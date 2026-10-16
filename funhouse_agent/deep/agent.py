@@ -505,7 +505,8 @@ _CALC_FRAMING = (
 #: Added to the calc helper's prompt when ``plot_code`` is offered.
 _CALC_PLOT_CODE = (
     "\nA FIGURE NONE OF THESE DRAW (a wall with its pressure diagrams, "
-    "panels sharing a depth axis, a section with layers filled): write it "
+    "panels sharing an elevation axis, a section with layers filled): "
+    "write it "
     "with plot_code (see its description), look at the PNG with "
     "analyze_image and redraw until it is right, then paste its "
     "html_img_tag.")
@@ -612,7 +613,7 @@ def build_calc_subagent(
         description = description + (
             " It draws the package's figures too, in code (plot_code) where "
             "plot_data cannot: a wall or pile to scale with its diagrams "
-            "beside it, panels sharing one depth axis.")
+            "beside it, panels sharing one elevation axis.")
     if extra_tools:
         tools = list(tools) + list(extra_tools)
     if extra_system_prompt:
