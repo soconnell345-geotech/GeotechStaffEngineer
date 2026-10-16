@@ -967,7 +967,8 @@ def apply_supplements(geom: SlopeGeometry,
 
     main = result.critical
     candidates: Dict[str, float] = {}
-    if main is not None:
+    if main is not None and main.FOS < _FOS_MAX:
+        # the solver's 999.9 marker is not an FOS (GM-104)
         candidates[search_kind] = round(main.FOS, 4)
     best_kind, best = search_kind, main
     best_fos = main.FOS if main is not None else _FOS_MAX

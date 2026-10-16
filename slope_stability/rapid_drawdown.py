@@ -192,6 +192,13 @@ class RapidDrawdownSearchResult:
         """The critical ``SlopeStabilityResult`` (or None)."""
         return self.search.critical if self.search is not None else None
 
+    @property
+    def no_surface_found(self) -> bool:
+        """True when the search found no admissible surface: ``FOS`` then
+        holds the solver's 999.9 marker, which is not a factor of safety and
+        is never reported as one (BACKLOG GM-104)."""
+        return self.critical is None
+
     def summary(self) -> str:
         crit = self.critical
         lines = [
@@ -201,7 +208,10 @@ class RapidDrawdownSearchResult:
             f"  Drawdown:            el {self.drawdown_from:g} -> {self.drawdown_to:g}",
             f"  Surface type:        {self.surface_type}",
             f"  Surfaces evaluated:  {self.n_surfaces_evaluated}",
-            f"  MINIMUM FOS:         {self.FOS:.3f}",
+            (f"  MINIMUM FOS:         {self.FOS:.3f}"
+             if not self.no_surface_found else
+             "  MINIMUM FOS:         none: no admissible surface was found "
+             "in the search ranges (widen them, or check the geometry)"),
         ]
         if crit is not None:
             if crit.is_circular:
@@ -229,13 +239,18 @@ class RapidDrawdownSearchResult:
 
     def to_dict(self) -> Dict[str, Any]:
         d = {
-            "FOS": round(self.FOS, 4),
+            "FOS": None if self.no_surface_found else round(self.FOS, 4),
             "method": self.method,
             "surface_type": self.surface_type,
             "drawdown_from": self.drawdown_from,
             "drawdown_to": self.drawdown_to,
             "n_surfaces_evaluated": self.n_surfaces_evaluated,
         }
+        if self.no_surface_found:
+            d["no_surface_found"] = True
+            d["note"] = ("No admissible slip surface was found in the search "
+                         "ranges, so there is no factor of safety to report; "
+                         "widen the entry/exit ranges or check the geometry.")
         if self.search is not None:
             d["search"] = self.search.to_dict()
         if self.drawdown is not None:

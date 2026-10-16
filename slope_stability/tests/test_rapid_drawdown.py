@@ -182,3 +182,14 @@ def test_G8_conservative_direction_on_c_prime_soil():
     s7 = s_R + w7 * (s_D - s_R)
     s8 = s_R + w8 * (s_D - s_R)
     assert s_R < s8 < s7 < s_D
+
+
+def test_a_search_with_no_surface_reports_no_fos():
+    """GM-104: the solver's 999.9 marker was reported as the FOS when the
+    search found no admissible surface."""
+    from slope_stability.rapid_drawdown import RapidDrawdownSearchResult
+    r = RapidDrawdownSearchResult(FOS=999.9, method="duncan", search=None)
+    assert r.no_surface_found
+    d = r.to_dict()
+    assert d["FOS"] is None and d["no_surface_found"] is True
+    assert "999.9" not in r.summary() and "no admissible surface" in r.summary()
