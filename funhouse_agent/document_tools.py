@@ -59,6 +59,7 @@ the development checkout.
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import re
@@ -342,6 +343,62 @@ def search_supports_fuzzy() -> bool:
         return False
     schema = spec.get("parameters") or spec.get("input_schema") or {}
     return "fuzzy" in (schema.get("properties") or {})
+
+
+#: A markup's fields this app takes beside planlens' own: ``pdf_page`` is
+#: turned into ``page`` here (:func:`markups_with_pages`).
+APP_MARKUP_FIELDS = {
+    "pdf_page": {"type": "integer", "minimum": 1,
+                 "description": "1-based, instead of page."},
+}
+
+#: planlens' markup fields this app does not offer: it signs every comment
+#: itself (:func:`markups_signed_by_app`).
+WITHHELD_MARKUP_FIELDS = ("author",)
+
+#: The markup fields shown with planlens' description of them. The others'
+#: descriptions repeat the tool's own (view + image_box, target, quote,
+#: reply_to, page ...), so they are shown by name and type only.
+DESCRIBED_MARKUP_FIELDS = ("kind", "bbox", "points_at", "min_score",
+                           "pdf_page")
+
+
+def annotate_markups_schema() -> Optional[Dict[str, Any]]:
+    """``annotate_document``'s ``markups`` as the model is shown it: the
+    installed planlens' own item schema (its fields, kinds and words, read
+    off its spec rather than copied here, so it cannot drift), with this
+    app's ``pdf_page``, without ``author`` (the app signs), described only
+    where the tool's description does not already say it
+    (:data:`DESCRIBED_MARKUP_FIELDS`) and closed to any other key. ``None``
+    when the spec has no item schema (an older planlens): the model is
+    then shown a list, as before.
+
+    It is what the model is SHOWN; nothing checks a call against it. The
+    tool's own check takes any list, so the names planlens forgives
+    (``color``/``colour`` dropped with a note, ``box``/``page_bbox`` read
+    as ``bbox``, a nested ``anchor``, a kind's other name) still reach it
+    (BACKLOG DR-32: the model was shown an array of anything)."""
+    spec = _spec("annotate_document") or {}
+    schema = spec.get("parameters") or spec.get("input_schema") or {}
+    prop = (schema.get("properties") or {}).get("markups")
+    items = prop.get("items") if isinstance(prop, dict) else None
+    if not isinstance(items, dict) or \
+            not isinstance(items.get("properties"), dict):
+        return None
+    out = copy.deepcopy(prop)
+    items = out["items"]
+    fields = items["properties"]
+    for name in WITHHELD_MARKUP_FIELDS:
+        fields.pop(name, None)
+    fields.update(copy.deepcopy(APP_MARKUP_FIELDS))
+    for name, field in fields.items():
+        if name not in DESCRIBED_MARKUP_FIELDS and isinstance(field, dict):
+            field.pop("description", None)
+    # page or pdf_page: neither alone is required.
+    items["required"] = [r for r in items.get("required") or ()
+                         if r != "page" and r in fields]
+    items["additionalProperties"] = False
+    return out
 
 
 def markup_author() -> str:
@@ -1633,6 +1690,43 @@ def _is_label(doc, xref) -> bool:
     return kind == "name" and str(val).lstrip("/") == "Group"
 
 
+#: The keys a ``remove`` entry written as an object may hold.
+REMOVE_ENTRY_KEYS = ("id", "text")
+
+#: Words a ``remove`` object's key may be meant as, for the did-you-mean.
+_REMOVE_KEY_HINTS = {
+    "markupid": ("id",), "markup": ("id",), "mark": ("id",),
+    "markid": ("id",), "annotationid": ("id",),
+    "comment": ("text",), "label": ("text",), "words": ("text",),
+    "says": ("text",), "quote": ("text",),
+}
+
+
+def remove_problem(remove) -> Optional[Dict[str, Any]]:
+    """The refusal for a ``remove`` entry written as an object with a key
+    other than ``id`` / ``text``, or ``None``. Such an entry used to be
+    skipped without a word (``remove=[{"markup_id": ...}]`` removed nothing
+    and said nothing; BACKLOG DR-32), so it is refused, naming the valid
+    keys and the one most likely meant, before anything is written."""
+    from funhouse_agent.adapters import check_nested_keys
+    entries = ([remove] if isinstance(remove, (str, dict))
+               else list(remove or []))
+    for i, raw in enumerate(entries):
+        if not isinstance(raw, dict):
+            continue
+        try:
+            check_nested_keys(raw, REMOVE_ENTRY_KEYS,
+                              method="annotate_document",
+                              label=f"remove[{i}]", hints=_REMOVE_KEY_HINTS)
+        except ValueError as exc:
+            return {"error": str(exc), "hint": (
+                "a remove entry is a markup id as document_markups lists it "
+                "('p0.m1') or words from its comment or label, given as a "
+                "string (or as {\"id\": ...} / {\"text\": ...}); nothing "
+                "was removed or written")}
+    return None
+
+
 def remove_markups(pdf: bytes, remove, signer: str):
     """``(new_pdf_bytes, removed, not_removed)``: the marks named in
     ``remove`` taken out of a marked copy, each with its label and any
@@ -1787,6 +1881,72 @@ def markups_with_pages(markups) -> tuple:
             m["page"] = page
         out.append(m)
     return out, None
+
+
+#: Said for a markup that named its own author (BACKLOG DR-32).
+AUTHOR_IGNORED_NOTE = ("'author' is not a markup field in this app and was "
+                       "ignored: the app signs every comment itself")
+
+
+def markups_signed_by_app(markups) -> tuple:
+    """``(markups, adjusted)``: each markup without an ``author`` of its
+    own, and a row ``{"index", "notes"}`` (planlens' ``adjusted`` shape)
+    for each one that had one. planlens lets a markup's ``author`` replace
+    the signature for that mark, and one recorded call signed 28 marks "AI
+    draft review" that way; in this app the signature is always the app's
+    (brief 5), so the field is dropped with a note rather than refused."""
+    out, adjusted = [], []
+    for i, m in enumerate(list(markups or [])):
+        if isinstance(m, dict) and "author" in m:
+            m = {k: v for k, v in m.items() if k != "author"}
+            adjusted.append({"index": i, "notes": [AUTHOR_IGNORED_NOTE]})
+        out.append(m)
+    return out, adjusted
+
+
+def _merge_adjusted(result: Dict[str, Any], rows) -> None:
+    """Add ``rows`` (``{"index", "notes"}``) to ``result["adjusted"]``,
+    beside planlens' own notes for the same markup."""
+    if not rows:
+        return
+    have = [r for r in (result.get("adjusted") or ()) if isinstance(r, dict)]
+    by_index = {r.get("index"): r for r in have}
+    for row in rows:
+        old = by_index.get(row["index"])
+        if old is None:
+            have.append(row)
+        else:
+            old["notes"] = list(old.get("notes") or ()) + row["notes"]
+    result["adjusted"] = sorted(have, key=lambda r: (
+        (0, r["index"], "") if isinstance(r.get("index"), int)
+        else (1, 0, str(r.get("index")))))
+
+
+def empty_comments_note(markups, result: Dict[str, Any]) -> Optional[str]:
+    """A line for a result whose WRITTEN marks include some with no
+    comment, or ``None``. planlens' spec says the comment is required but
+    writes an empty note without one; seven circle marks of one Foundry
+    task went out that way (BACKLOG DR-32). They are said, not refused."""
+    skipped = {r.get("index") for r in (result.get("skipped") or ())
+               if isinstance(r, dict)}
+    empty = [i for i, m in enumerate(list(markups or []))
+             if isinstance(m, dict) and i not in skipped
+             and not str(m.get("comment") or "").strip()]
+    if not empty:
+        return None
+    which = ", ".join(str(i) for i in empty[:12]) + (
+        ", ..." if len(empty) > 12 else "")
+    said = (f"markup {which} has no comment, so it was" if len(empty) == 1
+            else f"markups {which} have no comment, so each was")
+    note = (f"{said} written as a mark with an empty note. Give each its "
+            "comment: remove=[its id] and the mark again with one, or write "
+            "the copy again with append=false.")
+    if "skipped_truncated_after" in result:
+        # planlens cut its skipped list to fit: a mark named here may be
+        # one of the skipped rows it left out.
+        note += (" The skipped list was cut short, so some of these may "
+                 "have been skipped rather than written.")
+    return note
 
 
 # --- marks on an image, and marks off the page (BACKLOG VIS-26) -------------
@@ -2061,6 +2221,11 @@ def _write_marked_copy(handle, markups, output_path, append, author, call,
     marks, problem = markups_with_pages(markups)
     if problem is not None:
         return problem
+    problem = remove_problem(remove)
+    if problem is not None:
+        return problem
+    # The app signs every mark (brief 5); a markup's own author is dropped.
+    marks, unsigned = markups_signed_by_app(marks)
     picture = None
     if image is not None:
         from funhouse_agent.vision_tools import _open_image
@@ -2186,6 +2351,10 @@ def _write_marked_copy(handle, markups, output_path, append, author, call,
             raise _write_failure(final, exc) from exc
         result["output_path"] = written
         result["appended_to_existing"] = bool(existed and (append or remove))
+        _merge_adjusted(result, unsigned)
+        empty = empty_comments_note(marks, result)
+        if empty:
+            result["empty_comments"] = empty
         if frame is not None:
             result["_image_frame"] = frame
         if moved:

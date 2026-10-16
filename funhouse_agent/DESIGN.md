@@ -276,6 +276,17 @@ the eyes). What changed on master after 5.33.0, in short:
   `read_reference_figure` / `view_worked_example_source`, and deepagents
   0.7's `delete` scratch tool is hidden there (and in the references
   consult) with the other scratch tools.
+- **Misspelt keys, the app's side** (DR-32; 2026-10-16): `annotate_document`
+  shows the model planlens' own markup fields, read off the installed spec
+  (`document_tools.annotate_markups_schema`: `pdf_page` added, `author`
+  withheld, closed to other keys), where it showed an array of anything.
+  Nothing checks a call against that schema, so `color`, `box`, a nested
+  `anchor` and a kind's other name still reach planlens, which forgives
+  them. A `remove` object with a key other than `id`/`text` is refused with
+  a did-you-mean; a markup's own `author` is dropped with a note (the app
+  signs); written marks with no comment are named in `empty_comments`;
+  `search_document` says when `min_score` came without `fuzzy`
+  (`min_score_unused`).
 - **Vision** (VIS-01, VIS-04, VIS-05): an optional `turn` (0/90/180/270) on
   `analyze_pdf_page` / `render_region`; boxes right on sideways sheets; a
   zoom that cuts lines of lettering widens to take them in or says which

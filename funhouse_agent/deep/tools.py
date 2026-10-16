@@ -26,7 +26,7 @@ return a clear error if no engine was wired.
 
 import json
 import os
-from typing import Any, Callable, Dict, List, Optional
+from typing import Annotated, Any, Callable, Dict, List, Optional
 
 from langchain_core.tools import StructuredTool
 
@@ -34,7 +34,8 @@ from funhouse_agent import document_tools as _document_tools
 from funhouse_agent.deep.fit_results import (fit_catalog, fit_method_choices,
                                              fit_method_doc, fit_method_list)
 from funhouse_agent.deep.strict_args import strict_tool, strict_tools
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import (BaseModel, ConfigDict, Field, WithJsonSchema,
+                      create_model)
 
 from funhouse_agent.dispatch import (
     REFERENCE_MODULES,
@@ -263,6 +264,26 @@ def _without_zoom_tool(raw):
     if not changed:
         return raw
     out["zoom_note"] = NO_ZOOM_NOTE
+    return json.dumps(out, ensure_ascii=False)
+
+
+#: Said by search_document given min_score without fuzzy, which planlens
+#: drops without a word (BACKLOG DR-32).
+MIN_SCORE_UNUSED_NOTE = ("min_score was not used: it is the lowest score of "
+                         "a fuzzy match, and this search was exact "
+                         "(fuzzy=false)")
+
+
+def _json_with(raw, **keys):
+    """A JSON tool result with ``keys`` added; an error, or a result that
+    is not a JSON object (cut short), is left as it is."""
+    try:
+        out = json.loads(raw)
+    except (TypeError, ValueError):
+        return raw
+    if not isinstance(out, dict) or "error" in out:
+        return raw
+    out.update(keys)
     return json.dumps(out, ensure_ascii=False)
 
 
@@ -944,6 +965,52 @@ def _app_document_description(name: str) -> str:
             + _DOCUMENT_TOOL_NOTES.get(name, ""))
 
 
+def _document_tool_schemas(name: str) -> Dict[str, Dict[str, Any]]:
+    """Arguments of a document tool shown to the model with a schema of
+    their own rather than the one read off the function (BACKLOG DR-32):
+    ``annotate_document``'s ``markups`` with planlens' markup fields (it
+    was an array of anything) and ``remove`` as strings; ``search_document``'s
+    ``min_score`` with planlens' default, 80, though the function's is
+    ``None`` so a score given without ``fuzzy`` can be said."""
+    if name == "annotate_document":
+        shown = {"remove": {"type": "array", "items": {"type": "string"}}}
+        item = _document_tools.annotate_markups_schema()
+        if item is not None:
+            shown["markups"] = item
+        return shown
+    if name == "search_document":
+        return {"min_score": {"type": "integer", "default": 80}}
+    return {}
+
+
+def _shown_as(tool, shown: Dict[str, Dict[str, Any]]):
+    """``tool`` with the JSON schema the model is shown for some arguments
+    replaced (``{name: schema}``). What a call is checked against is
+    unchanged (a list stays any list), so nothing the tool takes today is
+    refused. A schema with its own ``default`` is shown with it, not the
+    function's."""
+    base = tool.args_schema
+    if not shown or not (isinstance(base, type)
+                         and issubclass(base, BaseModel)):
+        return tool
+    fields = {}
+    for name, schema in shown.items():
+        info = base.model_fields.get(name)
+        if info is None:
+            continue
+        default = info.default
+        # A default_factory keeps pydantic from writing the function's
+        # default over the schema's own.
+        fields[name] = (Annotated[info.annotation, WithJsonSchema(schema)],
+                        Field(default_factory=lambda d=default: d)
+                        if "default" in schema else default)
+    if not fields:
+        return tool
+    model = create_model(base.__name__, __base__=base,
+                         __module__=base.__module__, **fields)
+    return tool.model_copy(update={"args_schema": model})
+
+
 def make_vision_tools(
     engine=None,
     attachments: Optional[Dict[str, bytes]] = None,
@@ -1472,10 +1539,13 @@ def make_vision_tools(
                         regex: bool = False, case_sensitive: bool = False,
                         include_markups: bool = True,
                         max_hits: int = 100, fuzzy: bool = False,
-                        min_score: int = 80, pdf_pages: Any = None) -> str:
+                        min_score: Optional[int] = None,
+                        pdf_pages: Any = None) -> str:
         """Find text, hidden CAD text and markup comments. ``fuzzy=True``
         matches approximately (score 0-100, best first) for text read
-        optically or plotted as strokes; ``min_score`` defaults to 80."""
+        optically or plotted as strokes; ``min_score`` defaults to 80
+        (planlens' own; the model is shown 80). Given without ``fuzzy`` it
+        is not used, and the result says so (BACKLOG DR-32)."""
         if fuzzy and not _document_tools.search_supports_fuzzy():
             return json.dumps({
                 "error": "the installed planlens does not support fuzzy "
@@ -1490,8 +1560,12 @@ def make_vision_tools(
             args["pages"] = pages
         if fuzzy:
             args["fuzzy"] = True
-            args["min_score"] = min_score
-        return _dispatch("search_document", _with_pdf_pages(args, pdf_pages))
+            if min_score is not None:
+                args["min_score"] = min_score
+        raw = _dispatch("search_document", _with_pdf_pages(args, pdf_pages))
+        if min_score is not None and not fuzzy:
+            raw = _json_with(raw, min_score_unused=MIN_SCORE_UNUSED_NOTE)
+        return raw
 
     def find_quantities(handle: str, pages: Any = None, kinds: Any = None,
                         units: Any = None, include_markups: bool = True,
@@ -1557,6 +1631,10 @@ def make_vision_tools(
         # A markup may give pdf_page (1-based) instead of page (live smoke
         # 2c); converted once, so the check reads the same pages.
         markups, problem = _document_tools.markups_with_pages(markups)
+        if problem is None:
+            # A remove object with a key other than id/text is refused here,
+            # before its words are matched (BACKLOG DR-32).
+            problem = _document_tools.remove_problem(remove)
         if problem is not None:
             return json.dumps(problem)
         signer = markup_author or _document_tools.markup_author()
@@ -1950,6 +2028,8 @@ def make_vision_tools(
                 fn, name=name, description=overrides.get(name, desc))
             if name == "plot_data" and plot_data_replaces:
                 tool = _plot_data_retiring(tool)
+            if name in document_names:
+                tool = _shown_as(tool, _document_tool_schemas(name))
             # An unknown argument (analyze_pdf_page(pages=12)) is refused by
             # name rather than dropped (brief 5, N3).
             tools.append(strict_tool(tool))
