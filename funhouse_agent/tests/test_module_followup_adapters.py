@@ -422,6 +422,25 @@ class TestDowndragBasis:
         assert r["include_pile_weight"] is True
         assert "Pile weight to NP" in out.read_text(encoding="utf-8")
 
+    def test_calc_package_takes_a_steel_section(self, tmp_path):
+        """GM-99: the package took no pile_area or pile_perimeter, so an H
+        pile's skin friction and A x E were a solid circle's. Now it gives
+        what the analysis tool gives for the same section."""
+        section = dict(pile_area=0.0141, pile_perimeter=1.8)
+        r = call_agent("calc_package", "downdrag_package", dict(
+            _DD1, soil_layers=_DD1_LAYERS, pile_E=200e6,
+            output_path=str(tmp_path / "h.html"), **section))
+        assert r.get("status") == "success", r
+        a = call_agent("downdrag", "downdrag_analysis", dict(
+            _DD1, layers=_DD1_LAYERS, pile_E=200e6, **section))
+        assert r["neutral_plane_m"] == pytest.approx(
+            a["neutral_plane_depth_m"], abs=0.01)
+        assert r["dragload_kN"] == pytest.approx(a["dragload_kN"], rel=1e-3)
+        solid = call_agent("calc_package", "downdrag_package", dict(
+            _DD1, soil_layers=_DD1_LAYERS, pile_E=200e6,
+            output_path=str(tmp_path / "s.html")))
+        assert solid["neutral_plane_m"] != r["neutral_plane_m"]
+
     def test_calc_package_takes_settling_sand_modulus(self, tmp_path):
         """Layer keys match downdrag_analysis: a settling cohesionless layer
         needs E_s, which the package used to drop."""

@@ -897,6 +897,10 @@ def _generate_downdrag_package(params: dict) -> dict:
     analysis = DowndragAnalysis(
         pile_length=params["pile_length"],
         pile_diameter=params["pile_diameter"],
+        # an H or pipe pile's own steel area and perimeter (GM-99); the
+        # solid circle of pile_diameter when not given
+        pile_perimeter=params.get("pile_perimeter"),
+        pile_area=params.get("pile_area"),
         pile_E=params["pile_E"],
         pile_unit_weight=params.get("pile_unit_weight", 78.5),
         include_pile_weight=params.get("include_pile_weight", False),
@@ -2076,7 +2080,9 @@ METHOD_INFO = {
             "fill_thickness": {"type": "float", "required": False, "default": 0.0, "description": "Fill thickness causing downdrag (m)."},
             "fill_unit_weight": {"type": "float", "required": False, "default": 20.0, "description": "Fill unit weight (kN/m3)."},
             "gw_drawdown": {"type": "float", "required": False, "default": 0.0, "description": "Groundwater drawdown (m)."},
-            "pile_unit_weight": {"type": "float", "required": False, "default": 78.5, "description": "Pile material unit weight (kN/m3), times the pile area for the pile's own weight; used only when include_pile_weight is true. Default 78.5 = steel, as in downdrag.downdrag_analysis (concrete is about 24). This package takes the area as the solid circle of pile_diameter, so for an H or pipe pile give 78.5 x steel area / solid circle area."},
+            "pile_perimeter": {"type": "float", "required": False, "description": "Pile perimeter for skin friction (m). Default: the circle of pile_diameter (pi x D); give it for an H pile or any non-circular section."},
+            "pile_area": {"type": "float", "required": False, "description": "Pile cross-section area (m2) for the pile's elastic compression (A x E) and, when include_pile_weight is true, its own weight. Default: the solid circle of pile_diameter; for a steel H or pipe pile give the steel area."},
+            "pile_unit_weight": {"type": "float", "required": False, "default": 78.5, "description": "Pile material unit weight (kN/m3), times pile_area for the pile's own weight; used only when include_pile_weight is true. Default 78.5 = steel, as in downdrag.downdrag_analysis (concrete is about 24)."},
             "include_pile_weight": {"type": "bool", "required": False, "default": False, "description": "Whether the load curve carries the pile's own weight. Default false: left out, as UFC 3-220-20 Fig 6-26 and FHWA GEC-12 7.3.6.1 do. True adds the weight of the pile above the neutral plane to Q_np and the drag force."},
             "structural_capacity": {"type": "float", "required": False, "description": "Factored structural resistance P_r (kN) for the UFC Eq 6-80 check."},
             "allowable_settlement": {"type": "float", "required": False, "description": "Allowable settlement (m) for the serviceability check."},
