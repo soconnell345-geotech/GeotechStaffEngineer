@@ -706,6 +706,61 @@
     {"say": "Make a short calc PDF for the report on our cantilever retaining wall: retained height 4.0 m, stem 0.35 m thick, base 2.8 m wide and 0.5 m thick with a 0.7 m toe; backfill level with the top of the wall, unit weight 19 kN/m3, friction angle 32 degrees, no water, 10 kPa surcharge on the backfill. Use Rankine active pressure. Include a figure of the wall drawn to scale with the active earth pressure and the surcharge pressure drawn beside it as separate diagrams, each resultant and its height above the base marked."}
    ],
    "expect": {"tools_any": ["task", "plot_code"]}
+  },
+  {
+   "id": "F56-geotech-figure-grain-size",
+   "title": "Geotech page: grain-size distribution curves for a lab appendix (plot_code ON; a figure the tools do not name)",
+   "page": "geotech",
+   "cost": "light",
+   "env": {"GEOTECH_PLOT_CODE": "1"},
+   "steps": [
+    {"say": "Plot the grain-size distribution curves for the report's lab appendix. Percent finer by weight at sieve sizes 75, 37.5, 19, 9.5, 4.75, 2.0, 0.85, 0.425, 0.25, 0.15 and 0.075 mm, then hydrometer at 0.03, 0.01, 0.005 and 0.002 mm. B-1 S-3 (3.0 m): 100, 100, 98, 94, 88, 80, 71, 60, 48, 35, 22, 15, 10, 7, 5. B-2 S-2 (1.5 m): 100, 95, 85, 74, 62, 51, 42, 33, 26, 19, 12 (no hydrometer). B-3 S-5 (6.0 m): 100, 100, 100, 100, 100, 99, 98, 97, 96, 94, 88, 72, 50, 38, 26."}
+   ],
+   "expect": {"tools_any": ["task", "plot_code", "plot_data"]}
+  },
+  {
+   "id": "F57-geotech-figure-plasticity-chart",
+   "title": "Geotech page: a plasticity chart of Atterberg limits (plot_code ON; a figure the tools do not name)",
+   "page": "geotech",
+   "cost": "light",
+   "env": {"GEOTECH_PLOT_CODE": "1"},
+   "steps": [
+    {"say": "Plot our Atterberg limits on a plasticity chart for the report: B-1 S-4 LL 38, PI 18; B-1 S-6 LL 55, PI 31; B-2 S-3 LL 46, PI 14; B-3 S-2 LL 29, PI 9; B-3 S-5 LL 62, PI 38; B-4 S-1 LL 24, PI 5."}
+   ],
+   "expect": {"tools_any": ["task", "plot_code", "plot_data"]}
+  },
+  {
+   "id": "F58-geotech-figure-subsurface-profile",
+   "title": "Geotech page: a subsurface profile through four borings at different ground elevations (plot_code ON; a figure the tools do not name)",
+   "page": "geotech",
+   "cost": "light",
+   "env": {"GEOTECH_PLOT_CODE": "1"},
+   "steps": [
+    {"say": "Draw a subsurface profile along the line B-1 to B-4 for the report. Station along the line and ground surface elevation: B-1 at 0 m, el. 102.4 m; B-2 at 35 m, el. 101.1; B-3 at 70 m, el. 99.8; B-4 at 110 m, el. 98.6. Strata (bottom elevations): B-1 fill to 100.9, soft lean clay (CL) to 95.4, medium dense silty sand (SM) to 89.4, end of boring; B-2 fill to 100.1, CL to 94.6, SM to 88.1; B-3 CL to 93.8 (no fill), SM to 87.8; B-4 CL to 92.9, SM to 86.6. Groundwater measured at el. 99.6 (B-1), 99.3 (B-2), 98.9 (B-3) and 98.2 (B-4). SPT N60 at sample elevations: B-1 101.6: 12, 100.1: 4, 98.6: 3, 97.1: 5, 95.6: 4, 94.1: 18, 92.6: 22, 91.1: 25, 89.6: 27; B-2 100.5: 10, 99.0: 3, 97.5: 4, 96.0: 4, 94.5: 16, 93.0: 21, 91.5: 24, 90.0: 26, 88.5: 30; B-3 99.2: 5, 97.7: 3, 96.2: 4, 94.7: 5, 93.2: 17, 91.7: 20, 90.2: 23, 88.7: 28; B-4 98.0: 6, 96.5: 4, 95.0: 3, 93.5: 5, 92.0: 15, 90.5: 19, 89.0: 24, 87.5: 27."}
+   ],
+   "expect": {"tools_any": ["task", "plot_code", "plot_data"]}
+  },
+  {
+   "id": "F59-geotech-figure-mohr-circles",
+   "title": "Geotech page: triaxial Mohr circles with the failure envelope (plot_code ON; a figure the tools do not name)",
+   "page": "geotech",
+   "cost": "light",
+   "env": {"GEOTECH_PLOT_CODE": "1"},
+   "steps": [
+    {"say": "Plot the consolidated-undrained triaxial results for sample B-2 S-4 for the report: Mohr circles in effective stress at failure and the failure envelope, with the effective friction angle and cohesion from a fit to the three specimens. At failure: sigma'3 = 50, 100 and 200 kPa; sigma'1 = 165, 310 and 590 kPa."}
+   ],
+   "expect": {"tools_any": ["task", "plot_code", "plot_data"]}
+  },
+  {
+   "id": "F60-geotech-figure-settlement-monitoring",
+   "title": "Geotech page: settlement-plate readings with the fill history above (plot_code ON; a figure the tools do not name)",
+   "page": "geotech",
+   "cost": "light",
+   "env": {"GEOTECH_PLOT_CODE": "1"},
+   "steps": [
+    {"say": "Plot the embankment's settlement-plate readings for the report, with the fill height in a panel above sharing the time axis. Days since the start of filling: 0, 10, 20, 30, 45, 60, 90, 120, 180. Fill height (m): 0, 1.0, 2.0, 3.0, 4.0, 4.0, 4.0, 4.0, 4.0. Settlement (mm): SP-1 0, 12, 30, 55, 90, 118, 150, 172, 185; SP-2 0, 8, 22, 40, 66, 85, 108, 124, 133."}
+   ],
+   "expect": {"tools_any": ["task", "plot_code", "plot_data"]}
   }
  ]
 }
