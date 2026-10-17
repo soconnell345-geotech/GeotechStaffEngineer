@@ -799,7 +799,8 @@ class TestPointwiseExpectation:
         from funhouse_agent.adapters.gstools_adapter import METHOD_INFO
         from funhouse_agent.dispatch import call_agent
         monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
-        documented = set(METHOD_INFO["kriging"]["returns"])
+        # call_agent adds ``defaults_used`` to every result (GM-115)
+        documented = set(METHOD_INFO["kriging"]["returns"]) | {"defaults_used"}
         base = dict(x=BX, y=BY, values=BZ, variance=50.0, len_scale=5.0)
         for extra in (dict(n_grid_x=5, n_grid_y=5),
                       dict(n_grid_x=60, n_grid_y=60,
