@@ -789,7 +789,10 @@ def _solution_fails(geom, slip, f_interslice: str, tol: float,
     slices only (0.73, with Janbu 0.42 and Fellenius 8.5). So: two of the
     three axes agree within ``_AXIS_AGREE``, and with one slice more or
     twice as many some axis still converges, within ``_SLICE_AGREE`` of the
-    FOS.
+    FOS. All three came from even slices that took one segment's angle
+    across a corner; sliced at its corners (GM-131) none has such a state
+    (two have no solution, V-043's solves at 1.715 at any count), and the
+    check stays as the guard.
     """
     here = _converged_about(slices, slip, f_interslice, tol, geom,
                             reinf_forces)

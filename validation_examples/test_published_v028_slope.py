@@ -3,7 +3,8 @@
 V-028  Slide2 #9 = ACADS 4 weak-seam noncircular (referee 0.78) — RE-VALIDATED
        after the weak-layer search degenerate-surface fix (SS-6). Previously the
        search returned spurious ~0.05-0.18 surfaces; it now finds a sane
-       seam-following surface at Spencer ~0.79 (+1.5% vs the referee 0.78).
+       seam-following surface at Spencer ~0.81 (+3.6% vs the referee 0.78;
+       0.79 on even slices across its corners before GM-131).
 
 See validation_examples/INVENTORY.md (V-028) and RESULTS.md.
 """
@@ -57,25 +58,27 @@ _V028_SURFACE = [(41.987, 28.0), (49.095, 26.656), (56.203, 28.249),
 
 def test_v028_weak_seam_pinned_surface_matches_referee():
     """PASS: on the weak-layer search's seam-following critical surface, the
-    module's Spencer FOS = 0.792 -- within +1.5% of the referee 0.78 (and above
-    Slide2's no-optimization 0.760 / optimized 0.707 band). GLE 0.786, Janbu
-    0.804. The surface follows the weak seam (c=0, phi=10) with the inclined
-    piezometric surface active."""
+    module's Spencer FOS = 0.808 -- within +3.6% of the referee 0.78 (and above
+    Slide2's no-optimization 0.760 / optimized 0.707 band). GLE 0.802, Janbu
+    0.819. The surface follows the weak seam (c=0, phi=10) with the inclined
+    piezometric surface active. Sliced at its corners (GM-131) it reads 0.808
+    on 30 to 1,600 slices; the 0.792 pinned before was even slices across its
+    corners on 50 (0.830 on 51, 0.806 to 0.815 on 100 to 1,600)."""
     geom = _v028_geom()
     slip = PolylineSlipSurface(points=_V028_SURFACE)
     sl = build_slices(geom, slip, 50)
     fs, _ = spencer_fos(sl, slip)
     fg = gle_fos(sl, slip, f_interslice="half_sine").fos
     fj, _u, _f0 = janbu_fos(sl, slip)
-    assert fs == pytest.approx(0.792, abs=0.02)          # ours
+    assert fs == pytest.approx(0.808, abs=0.005)         # ours
     assert fs == pytest.approx(0.78, rel=0.05)           # referee 0.78
-    assert fg == pytest.approx(0.786, abs=0.03)
-    assert fj == pytest.approx(0.804, abs=0.03)
+    assert fg == pytest.approx(0.802, abs=0.005)
+    assert fj == pytest.approx(0.819, abs=0.005)
 
 
 def test_v028_weak_layer_search_is_sane_after_fix():
     """REGRESSION for the SS-6 fix: the weak-layer noncircular search now returns
-    a sane seam-following critical (~0.79), NOT the pre-fix degenerate spurious
+    a sane seam-following critical (~0.81), NOT the pre-fix degenerate spurious
     ~0.05-0.18 surface. Robust across the slice count that used to break it."""
     geom = _v028_geom()
     for n_slices in (30, 40):

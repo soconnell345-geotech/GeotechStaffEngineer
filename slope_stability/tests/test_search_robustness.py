@@ -327,7 +327,10 @@ def _weak_over_rock():
 
 
 # Three surfaces searches reported as critical, each with a rigorous state
-# GLE called converged at 30 slices, none an equilibrium solution:
+# GLE called converged at 30 slices, none an equilibrium solution. Each was
+# an artefact of even slices that took one segment's angle across a corner
+# (GM-131); sliced at their corners, two have no solution and V-043's has
+# one at 1.715 on any count:
 _SPURIOUS = [
     # 13 m deep in the sandstone: 1.056 about gle's least-squares axis only
     # (Fellenius 21.7, Spencer by analyze_slope: no solution).
@@ -356,30 +359,48 @@ _SPURIOUS = [
 ]
 
 
-@pytest.mark.parametrize("make, pts, spurious, why", [
-    (m, p, f, w) for (m, p, f), w in zip(_SPURIOUS, (
-        "one moment axis only", "one moment axis only",
-        "at 30 slices only, not at 31 or 60"))])
-def test_spurious_rigorous_state_is_not_kept(make, pts, spurious, why):
-    """Each also has m_alpha < 0.2 on a slice, so since GM-127 a search
-    leaves it out before its solution is checked (Slide2's -112); with that
-    check off, the solution check refuses it and keeps it to report."""
+@pytest.mark.parametrize("make, pts, spurious", _SPURIOUS)
+def test_spurious_rigorous_states_were_slicing_artefacts(make, pts, spurious):
+    """GM-131: with a slice boundary at every corner, none of the three
+    surfaces has a state at one slicing only. The weak clay over sandstone
+    and the dive into rock have no Spencer solution at 29, 30, 31 or 60
+    slices; V-043's sand fill solves at 1.715 at each, about every axis,
+    and is kept when confirmed."""
     geom = make()
     slip = PolylineSlipSurface(points=pts)
-    info = {}
-    assert _compute_fos(geom, slip, "spencer", 30, info=info) == _FOS_MAX
-    assert info["m_alpha_min"] < 0.2
-    assert _compute_fos(geom, slip, "spencer", 30,
-                        m_alpha_check=False) == pytest.approx(
-        spurious, abs=1e-3)                    # what the scorer alone gives
-    stats = _new_reject_stats()
-    assert _compute_fos(geom, slip, "spencer", 30, reject_stats=stats,
-                        confirm_below=float("inf"),
-                        m_alpha_check=False) == _FOS_MAX
-    ref = stats["refused"]                     # kept, to be reported
-    assert ref["FOS"] == pytest.approx(spurious, abs=1e-3)
-    assert why in ref["reason"]
-    assert ref["x_entry"] == pytest.approx(pts[0][0], abs=1e-3)
+    fos = [_compute_fos(geom, slip, "spencer", n, m_alpha_check=False)
+           for n in (29, 30, 31, 60)]
+    if make is _v043_sand:
+        assert fos == pytest.approx([1.715] * 4, abs=0.003)
+        stats = _new_reject_stats()
+        assert _compute_fos(geom, slip, "spencer", 30, reject_stats=stats,
+                            confirm_below=float("inf")) == fos[1]
+        assert stats.get("refused") is None
+    else:
+        assert fos == [_FOS_MAX] * 4
+    assert all(f > spurious for f in fos)
+
+
+def test_a_state_at_one_slicing_only_is_refused(monkeypatch):
+    """`_solution_fails`'s second test, a solution at one slicing only and
+    not at one slice more or twice as many. Since GM-131 no surface pinned
+    here has one (even slices across corners made them), so the solver
+    about each axis is stood in for."""
+    from slope_stability import search as search_mod
+    geom = _v043_sand()
+    slip = PolylineSlipSurface(points=_SPURIOUS[1][1])
+    slices = build_slices(geom, slip, 30)
+    counts = []
+
+    def solved_about(s, *args, **kwargs):
+        counts.append(len(s))
+        return [0.9, 0.9] if len(counts) == 1 else []
+
+    monkeypatch.setattr(search_mod, "_converged_about", solved_about)
+    why = search_mod._solution_fails(geom, slip, "constant", 1e-4, 30,
+                                     slices, 0.9)
+    assert why == "it solved at 30 slices only, not at 31 or 60"
+    assert counts == [30, 31, 60]
 
 
 def test_valid_noncircular_solution_is_kept():

@@ -5,10 +5,30 @@ Cuts the soil mass between the slip surface entry and exit into
 vertical slices and computes all geometric and force quantities
 for each slice.
 
+Where the slices are cut (GM-131). A circle is cut into ``n_slices``
+slices of equal width, each with the base angle of the circle at its
+midpoint. A noncircular (polyline) surface has a slice boundary at every
+corner of the surface, every break in the ground surface, and every point
+where the surface crosses a layer boundary or the water table (Slide2's
+"Slice at piezo-surface intersection"), so that the base of each slice is
+one straight segment in one material and its top one straight segment;
+the stretches between those boundaries share out about ``n_slices``
+slices in proportion to their width, at least one each, and each slice
+takes its base angle and base length from the chord between its two
+boundaries. Cut at an even spacing instead, a slice across a corner took
+one segment's angle for its whole weight, and a polyline's FOS jumped
+with the slice count (0.65 at 30 slices, 1.18 at 31, 0.97 with a boundary
+at every corner, on one Taylor surface).
+
 References:
     Duncan, Wright & Brandon (2014) — Chapter 6
+    Rocscience, Slide2 help: Advanced project settings ("Slice at
+    piezo-surface intersection"); Sarma non-vertical slice method
+    ("Slice boundaries will be located at each vertex of a failure
+    surface")
 """
 
+import bisect
 import math
 from dataclasses import dataclass
 from typing import List, Optional
@@ -42,7 +62,9 @@ class Slice:
     height : float
         Slice height h = z_top - z_base (m).
     alpha : float
-        Inclination of slice base to horizontal (radians).
+        Inclination of slice base to horizontal (radians): the circle's
+        at the slice midpoint, or the chord's between the slice's two
+        boundaries on a noncircular surface.
     base_length : float
         Length of slice base dl = width / cos(alpha) (m).
     weight : float
@@ -158,6 +180,116 @@ def compute_slice_forces(s: Slice) -> SliceForces:
     )
 
 
+# A break in the ground or a crossing closer than this fraction of the
+# surface's horizontal span to another boundary is merged into it: a layer
+# boundary through a corner, a ground break at a corner, rounding. A corner
+# of the surface is never merged away, however close: the slice across it
+# would take its chord across the corner (a 4 m step 1 mm wide at the entry
+# of a 38 m surface gave a 1.25 m slice at -74.5 deg and FOS 2.139 on 30
+# slices, 2.259 on 60, against 2.520 on both with the corner kept). (Slide2
+# refuses a surface whose average slice width is under 1e-4 of the soil
+# region's width, its error -106.)
+_BOUNDARY_MERGE = 1e-4
+
+# A corner this close (m) to the entry or exit is that end: find_entry_exit
+# bisects to 1e-6 m, so a vertex placed on the ground at an end comes back
+# a hair inside it.
+_END_MERGE = 1e-6
+
+
+def _crossings(f, xs: List[float], tol: float) -> List[float]:
+    """Where the piecewise-linear f, linear between the sorted ``xs``,
+    crosses zero strictly inside (xs[0], xs[-1]): each sign change between
+    neighbours by linear interpolation, and each interior x where |f| <=
+    ``tol`` (a surface running along a boundary gives its two ends)."""
+    vals = [f(x) for x in xs]
+    signs = [0 if v is None or abs(v) <= tol else (1 if v > 0 else -1)
+             for v in vals]
+    out = []
+    for i in range(len(xs) - 1):
+        if 0 < i and signs[i] == 0 and vals[i] is not None:
+            out.append(xs[i])
+        if signs[i] * signs[i + 1] < 0:
+            v0, v1 = vals[i], vals[i + 1]
+            out.append(xs[i] + (xs[i + 1] - xs[i]) * v0 / (v0 - v1))
+    return out
+
+
+def slice_boundaries(geom: SlopeGeometry, slip, n_slices: int,
+                     x_entry: Optional[float] = None,
+                     x_exit: Optional[float] = None) -> List[float]:
+    """The x of every slice boundary, entry to exit, as ``build_slices``
+    cuts them (GM-131; see the module docstring).
+
+    A circle: ``n_slices`` slices of equal width. A noncircular surface:
+    a boundary at each of its corners, each break in the ground surface,
+    and each crossing of a layer's top or bottom or of the water table,
+    strictly between the entry and the exit. Every corner is kept (one
+    within ``_END_MERGE`` of an end is that end); a ground break or a
+    crossing within ``_BOUNDARY_MERGE`` of the span of another boundary is
+    merged into it. The stretches between them
+    share out ``max(n_slices, stretches)`` slices in proportion to their
+    width, at least one each (each further slice goes to the stretch whose
+    slices are widest), and each stretch is cut evenly.
+    """
+    if x_entry is None or x_exit is None:
+        x_entry, x_exit = slip.find_entry_exit(geom)
+    if getattr(slip, "is_circular", True):
+        dx = (x_exit - x_entry) / n_slices
+        return [x_entry + i * dx for i in range(n_slices)] + [x_exit]
+
+    span = x_exit - x_entry
+    tol = _BOUNDARY_MERGE * span
+
+    def inside(xs):
+        return [x for x in xs if x_entry < x < x_exit]
+
+    pts = list(getattr(slip, "points", []) or [])
+    corners = inside(p[0] for p in pts)
+    ground = inside(p[0] for p in geom.surface_points)
+
+    def slip_z(x):
+        return slip.slip_elevation_at(x)
+
+    # Crossings of the layer boundaries and the water table: the surface
+    # and each boundary are linear between their vertices, so their
+    # difference is linear between the union of both sets of vertices.
+    lines = []
+    for layer in geom.soil_layers:
+        lines.append(([], layer.top_at))
+        bpts = layer.bottom_boundary_points
+        lines.append(([p[0] for p in bpts] if bpts else [], layer.bottom_at))
+    if geom.gwt_points:
+        lines.append(([p[0] for p in geom.gwt_points], geom.gwt_elevation_at))
+    crossings = []
+    for vxs, z_line in lines:
+        xs = sorted({x_entry, x_exit, *corners, *inside(vxs)})
+
+        def diff(x, z_line=z_line):
+            z = slip_z(x)
+            return None if z is None else z - z_line(x)
+
+        crossings += _crossings(diff, xs, 1e-9 * max(1.0, span))
+
+    bounds = sorted({x_entry, x_exit, *(
+        x for x in corners
+        if x - x_entry > _END_MERGE and x_exit - x > _END_MERGE)})
+    for x in sorted(set(ground + inside(crossings))):
+        i = bisect.bisect_left(bounds, x)
+        if (x - bounds[i - 1] >= tol and bounds[i] - x >= tol):
+            bounds.insert(i, x)
+
+    widths = [b - a for a, b in zip(bounds[:-1], bounds[1:])]
+    counts = [1] * len(widths)
+    for _ in range(n_slices - len(widths)):
+        k = max(range(len(widths)), key=lambda i: widths[i] / counts[i])
+        counts[k] += 1
+    out = [x_entry]
+    for a, b, c in zip(bounds[:-1], bounds[1:], counts):
+        out += [a + (b - a) * j / c for j in range(1, c)] + [b]
+    return out
+
+
 def build_slices(geom: SlopeGeometry,
                  slip,
                  n_slices: int = 30) -> List[Slice]:
@@ -171,7 +303,10 @@ def build_slices(geom: SlopeGeometry,
         Trial slip surface (duck-typed — must have slip_elevation_at,
         tangent_angle_at, and find_entry_exit methods).
     n_slices : int
-        Number of slices. Default 30.
+        Number of slices. Default 30. A circle is cut into exactly this
+        many; a noncircular surface into about this many, with a boundary
+        at every corner, ground break, layer crossing and water-table
+        crossing (``slice_boundaries``; GM-131).
 
     Returns
     -------
@@ -181,7 +316,18 @@ def build_slices(geom: SlopeGeometry,
         raise ValueError(f"Need at least 3 slices, got {n_slices}")
 
     x_entry, x_exit = slip.find_entry_exit(geom)
-    dx = (x_exit - x_entry) / n_slices
+    if getattr(slip, "is_circular", True):
+        # equal widths, the base angle of the circle at each midpoint
+        dx = (x_exit - x_entry) / n_slices
+        cuts = [(x_entry + i * dx, x_entry + i * dx + dx, dx)
+                for i in range(n_slices)]
+        chord = False
+    else:
+        # a boundary at every corner, ground break and crossing; the base
+        # angle and length of the chord between each slice's boundaries
+        xs = slice_boundaries(geom, slip, n_slices, x_entry, x_exit)
+        cuts = [(a, b, b - a) for a, b in zip(xs[:-1], xs[1:])]
+        chord = True
 
     # Discrete pore-pressure field (flow-net / TIN): build the interpolator once
     # per call for the hot path; None when the piezometric-line / ru model is used.
@@ -201,11 +347,8 @@ def build_slices(geom: SlopeGeometry,
 
     slices = []
     below_base_x = []   # x of slices whose base dips below ALL soil layers
-    for i in range(n_slices):
-        x_left = x_entry + i * dx
-        x_right = x_left + dx
+    for x_left, x_right, width in cuts:
         x_mid = (x_left + x_right) / 2.0
-        width = dx
 
         z_top = geom.ground_elevation_at(x_mid)
         z_base = slip.slip_elevation_at(x_mid)
@@ -227,11 +370,17 @@ def build_slices(geom: SlopeGeometry,
                 below_base_x.append(x_mid)
                 continue
 
-        alpha = slip.tangent_angle_at(x_mid)
-        cos_alpha = math.cos(alpha)
-        if abs(cos_alpha) < 1e-10:
-            cos_alpha = 1e-10
-        base_length = width / abs(cos_alpha)
+        z_l = slip.slip_elevation_at(x_left) if chord else None
+        z_r = slip.slip_elevation_at(x_right) if chord else None
+        if z_l is not None and z_r is not None:
+            alpha = math.atan2(z_r - z_l, width)
+            base_length = math.hypot(width, z_r - z_l)
+        else:
+            alpha = slip.tangent_angle_at(x_mid)
+            cos_alpha = math.cos(alpha)
+            if abs(cos_alpha) < 1e-10:
+                cos_alpha = 1e-10
+            base_length = width / abs(cos_alpha)
 
         # GWT at slice midpoint
         gwt_elev = geom.gwt_elevation_at(x_mid)
@@ -374,11 +523,11 @@ def build_slices(geom: SlopeGeometry,
         x_first = slices[0].x_mid
         x_last = slices[-1].x_mid
         interior = any(x_first < xb < x_last for xb in below_base_x)
-        sliver_tol = max(2, round(0.03 * n_slices))
+        sliver_tol = max(2, round(0.03 * len(cuts)))
         if interior or len(below_base_x) > sliver_tol:
             raise ValueError(
                 "Slip surface passes below the bottom of the deepest soil "
-                f"layer over {len(below_base_x)} of {n_slices} slices "
+                f"layer over {len(below_base_x)} of {len(cuts)} slices "
                 f"(max {sliver_tol} tangential slivers allowed). "
                 "Use a shallower trial surface or extend the soil layers."
             )

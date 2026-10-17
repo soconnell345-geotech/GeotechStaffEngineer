@@ -343,7 +343,7 @@ class TestSlopeReportPackage:
 
     def test_v028_weak_seam_report_matches_referee(self, tmp_path):
         """Validate the report against the V-028 (Slide2 #9 / ACADS 4) weak-seam
-        search: the critical Spencer FOS is ~0.792 (referee 0.78), and the
+        search: the critical Spencer FOS is ~0.808 (referee 0.78), and the
         report renders the search story with rejection diagnostics."""
         from funhouse_agent.adapters.calc_package import _generate_slope_report_package
         out = str(tmp_path / "v028.html")
@@ -367,10 +367,10 @@ class TestSlopeReportPackage:
             "output_path": out,
         })
         assert res["status"] == "success"
-        # module Spencer 0.792; referee 0.78 (+1.5%)
-        assert res["FOS"] == pytest.approx(0.792, abs=0.02)
+        # module Spencer 0.808; referee 0.78 (+3.6%); 0.792 before GM-131
+        assert res["FOS"] == pytest.approx(0.808, abs=0.005)
         assert res["FOS"] == pytest.approx(0.78, rel=0.05)
-        assert res["is_stable"] is False           # 0.79 < 1.5
+        assert res["is_stable"] is False           # 0.81 < 1.5
         html = open(out, encoding="utf-8").read()
         assert "Critical Surface Search" in html
         assert "rejected" in html.lower()          # rejection diagnostics

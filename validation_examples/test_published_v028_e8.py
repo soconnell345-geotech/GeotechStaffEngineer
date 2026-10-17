@@ -11,8 +11,9 @@ summed on top of the single ``surcharge``/``surcharge_x_range`` pair). No change
 slices/search -- both go through ``surcharge_at``.
 
 VERDICT: **PASS (capability built; small, seam-governed FOS movement).** On the
-V-028 weak-seam critical surface the two zones lower the Spencer FOS from 0.792 to
-0.788 (~0.4%) and GLE 0.786 -> 0.782 -- the crest-side zone (x=70-80, 11 slices on
+V-028 weak-seam critical surface the two zones lower the Spencer FOS from 0.808 to
+0.806 (~0.3%) and GLE 0.802 -> 0.799 (0.792 -> 0.788 and 0.786 -> 0.782 on even
+slices across the surface's corners, before GM-131) -- the crest-side zone (x=70-80, 11 slices on
 the sliding mass) adds driving weight; the bench zone (x=23-43) barely overlaps the
 mass (~1 slice). The movement is small because the weak seam (c'=0, phi'=10)
 governs the FOS, exactly as expected. Default (no ``surcharges``) is byte-identical
@@ -70,8 +71,8 @@ def _fos(surcharges=None):
 def test_v028e8_no_surcharge_matches_v028():
     """Default (no surcharges) reproduces the V-028 seam FOS byte-for-byte."""
     fs, fg = _fos()
-    assert fs == pytest.approx(0.792, abs=0.02)
-    assert fg == pytest.approx(0.786, abs=0.03)
+    assert fs == pytest.approx(0.808, abs=0.005)
+    assert fg == pytest.approx(0.802, abs=0.005)
 
 
 def test_v028e8_two_zones_lower_fos_slightly():
@@ -79,7 +80,7 @@ def test_v028e8_two_zones_lower_fos_slightly():
     adds driving weight); the weak seam still governs, so the move is small."""
     fs0, fg0 = _fos()
     fs2, fg2 = _fos(_ZONES)
-    assert fs2 == pytest.approx(0.788, abs=0.02)     # ours (pinned)
+    assert fs2 == pytest.approx(0.806, abs=0.005)    # ours (pinned)
     assert fs2 < fs0                                  # loads reduce the FOS
     assert fg2 < fg0
     # small movement (< 2%) -- seam-governed

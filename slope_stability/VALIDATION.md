@@ -41,17 +41,23 @@ Ours M-P lambda = 0.331; Spencer theta = 14.7 deg. Note: F&K's published
 
 ## B2 — F&K (1977) weak-layer composite surface
 [Slide2 Verification #22. Same surface; weak layer el. 15-16 ft (c'=0,
-phi'=10); composite surface = same circle clipped at z=15; 60 slices,
+phi'=10); composite surface = same circle clipped at z=15, an 82-point
+polyline; 60 slices asked for, 85 cut (a boundary at each corner, GM-131),
 moment axis at (120, 90). Published sources disagree in the 2nd decimal
 (weak-layer position sensitivity); gate 3% on F&K.]
 
 | Case      | Method            | F&K   | Slide2 | Ours  | vs F&K |
 |-----------|-------------------|------:|-------:|------:|-------:|
-| dry       | Ordinary          | 1.288 | 1.300  | 1.283 | -0.4%  |
-| dry       | Spencer           | 1.373 | 1.382  | 1.354 | -1.4%  |
-| dry       | Morgenstern-Price | 1.370 | 1.372  | 1.349 | -1.5%  |
-| ru = 0.25 | Spencer           | 1.118 | 1.124  | 1.109 | -0.8%  |
-| ru = 0.25 | Morgenstern-Price | 1.118 | —      | 1.102 | -1.4%  |
+| dry       | Ordinary          | 1.288 | 1.300  | 1.313 | +1.9%  |
+| dry       | Spencer           | 1.373 | 1.382  | 1.386 | +0.9%  |
+| dry       | Morgenstern-Price | 1.370 | 1.372  | 1.381 | +0.8%  |
+| ru = 0.25 | Spencer           | 1.118 | 1.124  | 1.138 | +1.8%  |
+| ru = 0.25 | Morgenstern-Price | 1.118 | —      | 1.132 | +1.3%  |
+
+Before GM-131 (60 even slices across the polyline's corners): 1.283 / 1.354 /
+1.349 / 1.109 / 1.102. On 960 slices or more the surface reads Spencer 1.389
+(dry) and 1.140 (ru 0.25) with either slicing, so the old values were the
+slicing's, not the method's.
 
 ## B3 — ACADS 1(a) critical-circle search
 [Giam & Donald 1989; Slide2 Verification #1. Surface (20,25)-(30,25)-
@@ -145,9 +151,10 @@ slivers a circular search would otherwise pick with a spurious low FOS).
 #98 moved by up to 0.3 % further down, e.g. Corps 0.8370 -> 0.8341, B13. The pinned
 values above hold.)
 
-Wrapper MECHANICS are exact on the #95/#96 EXACT section (search min 0.90 <= the
-published specified-circle single-surface FOS; the stage detail recomputed on the
-winning surface reproduces the search FOS). #98's ~10% low minima are a geometry
+Wrapper MECHANICS are exact on the #95/#96 EXACT section (the circles' least 0.90
+<= the published specified-circle single-surface FOS; the stage detail recomputed
+on the winning surface reproduces the search FOS; since GM-131 a shallow planar
+slide on the upper face governs at 0.783, against the infinite slope's 0.772, B15). #98's ~10% low minima are a geometry
 effect — the cross-section is only RECOVERED (flat-stacked layers, real pinch-outs
 simplified, riprap veneer omitted; INVENTORY #98), and two independent search
 types (grid + entry-exit) both land ~0.85 Corps, with the correct ordering
@@ -231,11 +238,14 @@ external equilibrium force. Default (active) byte-identical to V-040. NOT tuned.
 
 | V-028 pinned seam surface | Spencer | GLE |
 |---------------------------|--------:|----:|
-| no surcharge (V-028)      | 0.792   | 0.786 |
-| + 2 zones (bench + crest) | 0.788   | 0.782 |
+| no surcharge (V-028)      | 0.808   | 0.802 |
+| + 2 zones (bench + crest) | 0.806   | 0.799 |
+
+(Since GM-131, B15; before, on 50 even slices across the surface's corners:
+0.792 / 0.786 and 0.788 / 0.782.)
 
 VERDICT: **PASS — capability built, small seam-governed movement.** The two ACADS-4
-zones lower the FOS by ~0.4% (Spencer 0.792 -> 0.788): the crest-side zone (x 70-80,
+zones lower the FOS by ~0.3% (Spencer 0.808 -> 0.806): the crest-side zone (x 70-80,
 ~11 slices on the sliding mass) adds driving weight; the bench zone (x 23-43) barely
 overlaps the mass (~1 slice). The move is small because the weak seam (c'=0, phi'=10)
 governs the FOS, as expected. Default (no `surcharges`) byte-identical to V-028. The
@@ -261,14 +271,18 @@ F = tan phi' (cos b - kh sin b - ru/cos b)/(sin b + kh cos b):
 
 | Face | Load | Planar (30 slices) | Closed form | Diff |
 |------|------|-------------------:|------------:|-----:|
-| #86, 1.25H:1V, phi' 37 | dry | 0.9443 | 0.9419 | +0.25 % |
-| #86 | ru 0.2 | 0.6346 | 0.6330 | +0.25 % |
-| #86, both face directions | kh 0.1 | 0.7722 | 0.7703 | +0.25 % |
-| D&W Ex 3, 2H:1V, phi' 40 | dry | 1.6816 | 1.6782 | +0.20 % |
-| D&W Ex 3, both directions | kh 0.15 | 1.1965 | 1.1941 | +0.20 % |
-| D&W Ex 4 sand, 3H:1V, phi' 38 | dry | 2.3474 | 2.3439 | +0.15 % |
+| #86, 1.25H:1V, phi' 37 | dry | 0.9430 | 0.9419 | +0.11 % |
+| #86 | ru 0.2 | 0.6338 | 0.6330 | +0.13 % |
+| #86, both face directions | kh 0.1 | 0.7712 | 0.7703 | +0.12 % |
+| D&W Ex 3, 2H:1V, phi' 40 | dry | 1.6804 | 1.6782 | +0.13 % |
+| D&W Ex 3, both directions | kh 0.15 | 1.1959 | 1.1941 | +0.15 % |
+| D&W Ex 4 sand, 3H:1V, phi' 38 | dry | 2.3471 | 2.3439 | +0.14 % |
 
-(The excess is Janbu's f0; 60 slices halve it.)
+(The excess is Janbu's f0 and the end ramps, each a slice of its own since
+GM-131, about 0.75 / (20 n) of the slide's weight at each end. Before GM-131
+the surfaces were a tenth of a slice width deep with every slice base parallel
+to the face: 0.9443 / 0.6346 / 0.7722 / 1.6816 / 1.1965 / 2.3474, +0.15 to
++0.25 %.)
 
 ### Reinforced searches (GM-53, GM-59, GM-60, 2026-10-14)
 Searches now score each trial surface WITH its reinforcement (before, every
@@ -386,7 +400,10 @@ slice counts) and a surface diving at 75 deg into rock (0.731; no solution at 29
 31 or 60 slices). The lowest refused surface is kept in
 `SearchResult.refused_lowest` and, when it is below the reported FOS or nothing
 held, a warning says so with its FOS, where it lies and why. Tests:
-`tests/test_search_robustness.py`.
+`tests/test_search_robustness.py`. All three came from even slices across a
+corner; sliced at its corners (GM-131, B15) none has such a state (two have no
+solution; V-043's solves at 1.715 at any count), and the check stays as the
+guard.
 
 ### Taylor's phi = 0 benchmark (`test_taylor_undrained_nc`)
 The test compared a 1:1 (45 deg) slope, H = 8 m, cu = 50 kPa, gamma 18, with
@@ -413,6 +430,63 @@ beyond the toe, no warning. The old short profile is kept as a second test, whic
 must read high and warn. (phi = 0: Bishop, Spencer and the ordinary method give
 the same F on a circle, so the method is not a factor.)
 
+## B15 — Polyline slices cut at their corners (GM-131, 2026-10-17)
+[Duncan, Wright & Brandon (2014) Ch. 6; Slide2 help: "Slice at piezo-surface
+intersection", and its non-vertical slice method's "slice boundaries will be
+located at each vertex of a failure surface". `slices.slice_boundaries`;
+DESIGN.md "Where a noncircular surface is sliced". Tests:
+`tests/test_slice_boundaries.py`.]
+
+A noncircular surface now has a slice boundary at each of its corners, each
+break in the ground and each crossing of a layer boundary or the water table;
+the stretches between share out about `n_slices` slices in proportion to their
+width, and each slice takes its base angle and length from its chord. Circles
+are cut evenly, as before. Cut evenly, a slice across a corner took one
+segment's angle for its whole weight, and a fixed polyline could err either
+way with the slice count; a search's minimum picked out the low errors.
+
+| Surface | Before | After |
+|---|---:|---:|
+| Taylor D = 2 profile, a random search's seed-3 polyline, Spencer, 29 / 30 / 31 / 45 slices | 0.807 / 0.650 / 1.182 / 0.862 (29-45: 84 % spread) | 0.970 / 0.971 / 0.971 / 0.973 (0.29 %) |
+| Taylor D = 2, `noncircular_de` seed 1, Spencer (Taylor's circle 0.706) | 0.610 (-13.6 %) | 0.680 (-3.7 %; its surface 0.680 on 30 to 240 slices) |
+| Taylor D = 2, `noncircular` seeds 1 / 2 / 3 | 0.668 / 0.683 / 0.650 | 0.720 / 0.761 / 0.760 |
+
+Values with a published or recorded answer that moved (slope "not slow"
+suite, the 21 validation files that use slope_stability, `funhouse_agent -k
+slope`; every other value stayed within 1e-4):
+
+| Case | Before | After | Published | Why |
+|---|---:|---:|---:|---|
+| V-028 Slide2 #9 / ACADS 4 seam surface, Spencer / GLE / Janbu | 0.792 / 0.786 / 0.804 | 0.808 / 0.802 / 0.819 | referee 0.78; Slide2 no-optimization Spencer 0.760 | old: 50 even slices (0.830 on 51; 0.806-0.815 on 100 to 1,600); now 0.808 on 30 to 1,600 |
+| V-028 E8, both loads, Spencer / GLE (B11) | 0.788 / 0.782 | 0.806 / 0.799 | | the same |
+| V-028 weak-layer search, 30 / 40 slices | 0.792 / 0.820 | 0.808 / 0.808 | referee 0.78 | the same surface at both counts now |
+| V-028 `noncircular_de` seeds 1 / 2, 6 points, 30 slices, the seam windows (not pinned) | 0.715 / 0.738 | 0.715 / 0.714 | Slide2 optimized Spencer 0.707 | |
+| V-030 Duncan (2000) Lash surface, Spencer / GLE / Janbu | 1.190 / 1.192 / 1.182 | 1.218 / 1.220 / 1.207 | Slide2 1.157 / 1.160 / 1.168; Duncan 1.17 | old slicing 1.226 at 240 slices, 1.215 at 960, 1.218 at 3,840; the +5.3 % on Slide2 is not slicing |
+| B2 F&K weak layer, ordinary / Spencer / M-P / Spencer ru / M-P ru | 1.283 / 1.354 / 1.349 / 1.109 / 1.102 | 1.313 / 1.386 / 1.381 / 1.138 / 1.132 | F&K 1.288 / 1.373 / 1.370 / 1.118 / 1.118 | an 82-point polyline: 85 slices; 1.389 on 960 slices either way |
+| V-043 sand embankment, `noncircular_de` seeds 1-3 | 1.09-1.10 | 1.234 | Slide2 1.188, Tandjiria 1.192 | old DE surfaces dived into the soft clay and read 1.24-1.32 with one slice more; a KNOWN GAP now (GM-117): 1.234 is above our converged critical circle (1.213) and a 41-point polyline inscribed in it (1.2145) |
+| V-041 #95/#96 dam, Corps 2-stage search | 0.895 (circle) | 0.783 (planar slide) | infinite slope 0.772; specified circle 1.207 | the drawdown planar family solves stage 1 now (none did) |
+| WE-SLOPE-5 Pilarcitos, DWW search | 1.233 (planar) | 1.344 (4 m circle, as LK) | ~1.05 for the observed deep slide; infinite slope 1.343 | the old planar slide read 1.23 to 2.52 on other slice counts |
+| Infinite-slope family (B12) | +0.15 to +0.25 % | +0.11 to +0.15 % | closed form | a twentieth of a slice width deep, the end ramps slices of their own |
+
+Searches without a published answer moved both ways in the unit tests: the
+random, PSO and weak-layer-biased minima mostly rose (old minima were
+slicing errors: e.g. PSO 1.703 -> 1.735, weak-layer-biased two-layer 0.957
+-> 1.126, random 2.148 -> 2.527), others fell as the search took another
+path (DE on a weak layer 1.060 -> 1.004; a cut-short DE 10.27 -> 5.45).
+The three spurious rigorous states of "Rigorous noncircular solutions must
+hold" (B14) no longer occur: two surfaces have no solution at any count and
+V-043's solves at 1.715 at any count. The check stays as the guard.
+
+The w11 judgment-call geometry (3.5 m clay over sandstone; F61): the circle
+in the clay 0.9354 unchanged; `weak_layer` 7.523 -> 7.397; `noncircular`
+seed 1 7.811 -> 7.740; `noncircular_de` seed 1 7.021 -> 6.678. The DE given
+windows 20-30 / 28-60 (5 points, seed 3) reported 6.847; it now finds no
+surface that holds and says so (2,325 evaluated: 398 refused for geometry,
+1,774 not converged, 134 for m_alpha). The old surface reads 6.80 at any
+slice count now; the population takes another path. Its depth fractions
+reach the model base 30 m down, where about 1 surface in 300 has a solution
+(GM-117).
+
 ---
 
 ## Notes / known deviations
@@ -420,7 +494,9 @@ the same F on a circle, so the method is not a factor.)
 - Ordinary method with ru: formulation-sensitive (F&K 1.607 vs Slide2
   1.687 on B1 case 2); ours matches F&K's formulation.
 - B2 published values themselves disagree at the 1-2% level (F&K vs
-  Slide2 vs Zhu); ours sits 1-2% below F&K — within the documented gate.
+  Slide2 vs Zhu); ours sits 0.8-1.9% above F&K and 0.3-1.3% above Slide2
+  since GM-131 (1-2% below F&K before, on even slices across the composite
+  polyline's corners) — within the documented gate.
 - Fully-submerged slope: Bishop matches the buoyant-equivalent analysis
   to 0.1%, Spencer/M-P to ~0.02%; OMS has the textbook N' = W cos(a) - u l
   pathology (conservative), documented in test_water.py.

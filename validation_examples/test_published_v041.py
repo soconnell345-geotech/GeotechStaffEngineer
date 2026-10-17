@@ -42,12 +42,16 @@ See slope_stability/rapid_drawdown.py::search_rapid_drawdown, VALIDATION.md
 (V-041), and validation_examples/INVENTORY.md (#98).
 """
 
+import math
+
 import pytest
 
+from geotech_common.water import GAMMA_W
 from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
 from slope_stability.rapid_drawdown import (
     search_rapid_drawdown, rapid_drawdown_fos, RapidDrawdownSearchResult,
 )
+from slope_stability.search_supplements import CIRCULAR, INFINITE_SLOPE
 
 FT, PSF, PCF = 0.3048, 0.04788, 0.157087
 
@@ -97,10 +101,15 @@ def _search_98(method, stage3="fellenius"):
 # ── WRAPPER MECHANICS (exact #95/#96 geometry) ──────────────────────────────
 
 def test_v041_search_finds_min_at_or_below_specified_surface():
-    """A circular drawdown search on the EXACT #95/#96 section finds a minimum
-    (0.90) at or below the published specified circle's single-surface FOS
-    (1.207, flat-pool default), proving the drawdown strength is evaluated per
-    trial surface inside the search loop."""
+    """A circular drawdown search on the EXACT #95/#96 section finds circles
+    (least 0.90) at or below the published specified circle's single-surface
+    FOS (1.207, flat-pool default), proving the drawdown strength is
+    evaluated per trial surface inside the search loop. A shallow planar
+    slide on the upper face governs at 0.783, against Corps 2-stage's
+    infinite slope, (gamma' / gamma) tan(phi') / tan(beta) = 0.772. Before
+    GM-131 sliced a polyline at its corners, no planar surface solved the
+    full-pool stage, so that family dropped out of the search and the
+    circle (0.895) was reported."""
     r = search_rapid_drawdown(
         _dam_9596(), 110 * FT, 24 * FT, method="corps_2stage",
         surface_type="circular", nx=4, ny=3,
@@ -111,7 +120,12 @@ def test_v041_search_finds_min_at_or_below_specified_surface():
     assert isinstance(r, RapidDrawdownSearchResult)
     assert r.critical is not None
     assert single == pytest.approx(1.207, abs=0.02)      # V-037 single surface
-    assert r.FOS == pytest.approx(0.902, abs=0.03)       # ours (pinned)
+    assert r.search.candidates[CIRCULAR] == pytest.approx(0.902, abs=0.03)
+    gamma = 135 * PCF
+    closed = ((gamma - GAMMA_W) / gamma * math.tan(math.radians(30.0))
+              / ((110 - 73) / (312 - 220)))              # 0.772
+    assert r.search.governing_surface == INFINITE_SLOPE
+    assert r.FOS == pytest.approx(closed, rel=0.02)
     assert r.FOS <= single + 1e-6                        # search is >= as critical
     assert r.n_surfaces_evaluated > 0
 

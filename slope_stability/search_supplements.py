@@ -106,13 +106,18 @@ _MAX_RESCORE_TRIES = 12
 
 # Infinite-slope family: shallow planar surfaces parallel to the face, at a
 # vertical depth of 1/_PLANAR_DEPTH_SLICES of a slice width. The short end
-# ramps that close the surface to the ground then lie inside the first and
-# last slices, short of their midpoints, so every slice base is parallel to
-# the face. (Deeper surfaces with ramps a slice or more long are mis-sliced:
-# a slice whose midpoint lands on a 45 deg ramp swung Janbu 5 % either side
-# of the closed form.) The slide spans the whole outcrop, each half and
-# each third, so a face wet over part of its length is caught.
-_PLANAR_DEPTH_SLICES = 10.0
+# ramps that close the surface to the ground (1.5 times the depth long) are
+# slices of their own, since every corner of a polyline is a slice boundary
+# (GM-131), and they move the FOS off the closed form by about their share
+# of the slide's weight, 0.75 / (_PLANAR_DEPTH_SLICES * n_slices) each end:
+# at a tenth of a slice width deep a drawdown face read 0.7 % above the
+# closed form on 20 slices, at a twentieth 0.4 %. Thinner is not better
+# under a full pool: at a fortieth the stage-1 solve of a submerged face
+# drifts up, and Corps 2-stage read 2.8 % above its closed form, (gamma' /
+# gamma) tan(phi') / tan(beta), against 1.5 % at a twentieth. The slide
+# spans the whole outcrop, each half and each third, so a face wet over
+# part of its length is caught.
+_PLANAR_DEPTH_SLICES = 20.0
 _PLANAR_SPLITS = (1, 2, 3)
 # The method the planar surfaces are scored with (see check_infinite_slope).
 PLANAR_METHOD = "janbu"
@@ -618,11 +623,11 @@ def cohesionless_face_runs(geom: SlopeGeometry,
 def _planar_surface(geom: SlopeGeometry, xa: float, xb: float,
                     n_slices: int) -> Optional[PolylineSlipSurface]:
     """Planar slip surface parallel to the (single-segment) face between
-    ``xa`` and ``xb``, a tenth of a slice width deep, with short end ramps up
-    to the ground: the ramp at one end flatter than the face, at the other
-    steeper, so the surface stays concave. The ramps (0.15 of a slice
-    width) end before the first and last slices' midpoints, so every slice
-    base lies parallel to the face."""
+    ``xa`` and ``xb``, a twentieth of a slice width deep, with short end
+    ramps up to the ground: the ramp at one end flatter than the face, at
+    the other steeper, so the surface stays concave. Each ramp is a slice
+    of its own (GM-131) and every other slice base lies parallel to the
+    face."""
     if xb <= xa or n_slices < 1:
         return None
     dv = (xb - xa) / (n_slices * _PLANAR_DEPTH_SLICES)    # vertical depth
@@ -1032,21 +1037,18 @@ def _depth_ratio(geom: SlopeGeometry, crit) -> float:
 def _infinite_slope_match(checks, crit, fos: float):
     """(run, text) when ``crit`` lies on a cohesionless face run and its FOS
     is within ``_PLANAR_TIE`` of what the infinite slope gives there: the
-    planar surfaces' FOS, or the closed form for a dry face, tan(phi') /
-    tan(beta), or for seepage parallel to the face with the water at the
-    surface, (gamma'/gamma) tan(phi') / tan(beta) (Duncan, Wright & Brandon
-    2014, Ch. 14; `infinite_slope_fos`) -- the saturated face a rapid
-    drawdown leaves, where the planar family's own drawdown solve can fail
-    (Pilarcitos: a circle 9 ft long and an inch deep at 1.075 against 1.076).
-    None when nothing matches."""
+    closed form for a dry face, tan(phi') / tan(beta), or for seepage
+    parallel to the face with the water at the surface, (gamma'/gamma)
+    tan(phi') / tan(beta) (Duncan, Wright & Brandon 2014, Ch. 14;
+    `infinite_slope_fos`) -- the saturated face a rapid drawdown leaves
+    (Pilarcitos: a circle 9 ft long and an inch deep at 1.075 against
+    1.076) -- or else the planar surfaces' FOS. The closed form is named
+    first, as the value to check by hand. None when nothing matches."""
     for c in checks:
         if not (crit.x_entry >= c["x_from"] - 1e-6
                 and crit.x_exit <= c["x_to"] + 1e-6):
             continue
         refs = []
-        if c["FOS"] is not None:
-            refs.append((c["FOS"], f"the planar surfaces parallel to the "
-                                   f"face score {c['FOS']:.3f}"))
         refs.append((c["FOS_dry_closed_form"],
                      f"tan(phi')/tan(beta) = {c['FOS_dry_closed_form']:.3f} "
                      f"for a dry face"))
@@ -1056,6 +1058,9 @@ def _infinite_slope_match(checks, crit, fos: float):
                                f"{seep:.3f} for a face saturated to the "
                                f"surface with seepage parallel to it (as "
                                f"after a rapid drawdown)"))
+        if c["FOS"] is not None:
+            refs.append((c["FOS"], f"the planar surfaces parallel to the "
+                                   f"face score {c['FOS']:.3f}"))
         for value, text in refs:
             if value > 0 and abs(value - fos) <= _PLANAR_TIE * value:
                 return c, text

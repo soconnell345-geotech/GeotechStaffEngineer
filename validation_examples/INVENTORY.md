@@ -545,7 +545,10 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   finds a smooth seam-following critical surface at Spencer 0.792 -- within +1.5% of
   the referee 0.78 (GLE 0.786, Janbu 0.804), bracketed by Slide2's no-opt 0.760 and
   optimized 0.707. The optimized `noncircular_de` reaches ~0.69, matching Slide2's
-  optimized 0.707 / Slope-2000 0.6878. Two tests in
+  optimized 0.707 / Slope-2000 0.6878. (GM-131, 2026-10-17: sliced at its corners
+  the seam surface reads Spencer 0.808, +3.6% on the referee (GLE 0.802, Janbu
+  0.819), at any slice count; DE seeds 1 and 2 with 6 points, 30 slices and the
+  seam windows read 0.715 / 0.714, against 0.715 / 0.738 before.) Two tests in
   test_published_v035_slope.py (pinned surface + search regression). NOTE: the
   module still supports only ONE surcharge zone (problem has bench + crest — a
   separate B2 capability gap; the loads are secondary to the seam-governed FOS).
@@ -734,7 +737,8 @@ text extraction; problems whose geometry could not be reconstructed from the tex
 - Published: no-reinf Spencer sand circ 1.209/noncirc 1.188, clay circ 0.975/noncirc
   0.935; reinf force (FS=1.35) sand 44-45/56, clay 169-170/184-190 kN/m.
 - Verdict: **PASS (sand no-reinf)** / **CONVENTION (reinf force, clay crack).** Sand
-  no-reinf circular 1.180 (−2.4%), noncircular ~1.19 (~+0.2%). Geosynthetic force for
+  no-reinf circular 1.180 (−2.4%), noncircular ~1.19 (~+0.2%; DE 1.234, +3.8%,
+  since GM-131, above our converged circle 1.213: a known gap, GM-117). Geosynthetic force for
   FS=1.35 ~55 kN/m circ / ~50 noncirc — brackets published 44-56 but split inverted
   (surface-sensitive). Clay: without the unlabeled water crack 1.039 (+6.6% vs 0.975);
   full 2c/γ water column overshoots to ~0.27 — not reproduced, NOT tuned.

@@ -189,8 +189,9 @@ def test_search_finds_infinite_slope_86():
     shallow slide at tan(phi')/tan(beta) = 0.942. The circle search's own
     minimum was ~1.57 with windows from the model width; with windows from
     the slope (GM-57: a circle across the face's mid-length) it reaches a
-    tiny shallow circle at the closed form itself, 0.9420, against 0.9443
-    for the planar surfaces (Janbu's f0, +0.25 %). It governs, and the
+    tiny shallow circle at the closed form itself, 0.9420, against 0.9430
+    for the planar surfaces (Janbu's f0 and the end ramps, +0.11 %; 0.9443
+    at a tenth of a slice width deep, before GM-131). It governs, and the
     result says it is the infinite-slope mechanism (and gives no window-edge
     warning: shallower slides only tend to the same value)."""
     res = search_critical_surface(_fill_geom(), method="bishop")
@@ -198,7 +199,7 @@ def test_search_finds_infinite_slope_86():
     assert c.FOS == pytest.approx(_TAN_RATIO_86, abs=0.002)
     assert res.governing_surface in (INFINITE_SLOPE, CIRCULAR)
     assert res.candidates[CIRCULAR] == pytest.approx(_TAN_RATIO_86, abs=0.002)
-    assert res.candidates[INFINITE_SLOPE] == pytest.approx(0.9443, abs=0.001)
+    assert res.candidates[INFINITE_SLOPE] == pytest.approx(0.9430, abs=0.001)
     assert any("infinite slope" in w for w in res.warnings)
     assert not any("edge of the automatic" in w for w in res.warnings)
     chk = res.infinite_slope_checks

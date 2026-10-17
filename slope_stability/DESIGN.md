@@ -78,6 +78,9 @@ search_critical_surface(geom, surface_type="noncircular",
   noncircular surface is analysed with Spencer, and the result says so (GM-81)
 - `slip_elevation_at(x)` — linear interpolation between points
 - `tangent_angle_at(x)` — angle of segment containing x
+- Sliced at its corners, the ground's breaks and its layer and water-table
+  crossings, each slice's base angle and length from its chord (GM-131; "Where
+  a noncircular surface is sliced" below). A circle is cut evenly.
 - Both classes share `is_circular` property for dispatch
 
 ## Search Algorithms
@@ -208,8 +211,8 @@ level ground (only large circles admissible) and spread the grid thin.
 - **No least length.** A tiny circle straddling the mid-length of a c' = 0
   face is admitted, and it IS the answer there: shallower slides tend to the
   infinite slope, tan(phi')/tan(beta) (Slide2 #86 without supports: a circle
-  0.4 ft long at 0.9420, the closed form 0.9419, against 0.9443 for the
-  planar surfaces with Janbu's f0). It governs, and the result says it is the
+  0.4 ft long at 0.9420, the closed form 0.9419, against 0.9430 for the
+  planar surfaces with Janbu's f0 and their end ramps). It governs, and the result says it is the
   infinite-slope mechanism (the planar-tie note, with no window-edge
   warnings, as shallower slides only tend to the same value). A least length
   of H/2 was tried in review and dropped: it was a rule the search added,
@@ -284,6 +287,10 @@ reporting such states as critical:
 
 The check runs only when a surface would become the best (a few times a
 search). A surface that fails is counted with the non-converged rejections.
+All three states came from even slices that took one segment's angle across a
+corner: sliced at its corners (GM-131), none has such a state (two have no
+solution, V-043's solves at 1.715 at any count), and the check stays as the
+guard (`test_a_state_at_one_slicing_only_is_refused`).
 
 ### Noncircular Random Search
 - `search_noncircular(geom, n_trials, n_points, x_entry_range, x_exit_range, ...)` — random polylines
@@ -344,11 +351,15 @@ and `refused_lowest` only where the result has them (GM-125).
   Mohr-Coulomb layer with c' = 0 and phi' > 0 is the material at the surface
   of a face steeper than 5 deg (`cohesionless_face_runs`), planar polylines
   parallel to the face (over the whole outcrop, each half and each third)
-  are scored by `_compute_fos`. Each is a tenth of a slice width deep, with
-  end ramps 0.15 of a slice width long, so the ramps end before the first
-  and last slices' midpoints and EVERY slice base is parallel to the face
-  (deeper surfaces whose ramps span a slice midpoint were mis-sliced: a
-  slice on a 45 deg ramp swung the FOS 5 % either side of the closed form).
+  are scored by `_compute_fos`. Each is a twentieth of a slice width deep,
+  with end ramps 1.5 times the depth long; each ramp is a slice of its own
+  (GM-131) and every other slice base is parallel to the face. The ramps
+  move the FOS off the closed form by about their share of the slide's
+  weight, 0.75 / (20 n) at each end. (Before GM-131 sliced a polyline at
+  its corners, the surfaces were a tenth of a slice width deep with ramps
+  ending before the first and last slices' midpoints, since an even slice
+  across a ramp's corner swung the FOS 5 % either side of the closed form;
+  at a fortieth, the stage-1 solve of a face under a full pool drifts up.)
   They are REAL surfaces, so pore pressure, ponding, surcharge and kh act
   on them as on any other. They are scored by **Janbu's simplified method
   whatever method the search uses**: the infinite slope is a
@@ -359,8 +370,9 @@ and `refused_lowest` only where the result has them (GM-125).
   there (the surface is rejected) and Spencer at 1 % depth ran 6 % above
   the closed form on a 2:1 sand face. Measured against the closed form
   F = tan phi' (cos b - kh sin b - ru / cos b) / (sin b + kh cos b), dry,
-  with ru 0.2, with kh 0.1-0.15, both face directions: +0.1 % to +0.4 %
-  (the Janbu f0 factor; 30 slices +0.2 %). The closed-form dry value is
+  with ru 0.2, with kh 0.1-0.15, both face directions: +0.11 % to +0.15 %
+  on 30 slices (Janbu's f0 and the end ramps; VALIDATION.md B12). The
+  closed-form dry value is
   reported beside each outcrop. Not evaluated where a tension crack is
   modelled: the crack model strips the strength of the crest half of any
   surface, which on a shallow slide is an artifact; the closed form is
@@ -400,7 +412,14 @@ and `refused_lowest` only where the result has them (GM-125).
   screen; the toe scan is coarser instead (7 centre offsets, 6 golden steps
   on the far end). The thin planar surfaces converge in the drawdown GLE: on
   a free-draining c' = 0 shell drawn down from el 20 to 5 the planar FOS is
-  0.942 = tan 37 / 0.8, the closed form.
+  within 0.4 % of tan 37 / 0.8 = 0.942, the closed form. Under a full pool
+  they solve stage 1 since GM-131 (none did before): on the Slide2 #95/#96
+  dam the Corps 2-stage planar slide reads 0.783 against the infinite
+  slope's (gamma' / gamma) tan(phi') / tan(beta) = 0.772. On a face only
+  partly under the stage-1 pool the ramp slices can carry Spencer's stage 3
+  off the force balance (an upper third of the Pilarcitos face: 1.21
+  against 1.62 by force equilibrium alone); there it does not govern and
+  errs low.
 - **Not covered.** Planar sliding ON a weak layer (not parallel to the
   face) is the noncircular / weak-layer searches' job. SHANSEP clay with
   su_min = 0 also has a depth-free infinite-slope FOS but is not treated
@@ -1067,12 +1086,68 @@ The DE search given windows 20-30 / 28-60 (5 points, seed 3) reported 1.570
 on a surface 32 m deep through the sandstone with m_alpha -0.37 on 10 of
 its 40 slices; it now runs all 2,325 evaluations and reports 6.847 on a
 surface through the sandstone (entry x = 20.97, exit x = 39.06) with
-m_alpha >= 0.2, leaving 194 out for m_alpha. Its interior points sit at
+m_alpha >= 0.2, leaving 194 out for m_alpha (since GM-131 it finds no
+surface that holds and says so; "Where a noncircular surface is sliced"
+below). Its interior points sit at
 0.05 to 0.95 of the depth to the model's base at -30 m, so surfaces in the
 3.5 m of clay are a sliver of what it samples; the circular and entry_exit
 searches find the clay's 0.935. Run time: the check is one pass over a
 scored surface's slices; the ACADS Spencer entry/exit search took 45 s
 before and after, and the slope suites ran no slower.
+
+### Where a noncircular surface is sliced (GM-131, 2026-10-17)
+`slices.slice_boundaries(geom, slip, n_slices)` gives the x of every slice
+boundary, entry to exit, and `build_slices` cuts there.
+
+- **A circle**: `n_slices` slices of equal width, each with the circle's
+  angle at its midpoint. Unchanged.
+- **A polyline**: a boundary at each corner of the surface, each break in
+  the ground surface, and each crossing of a layer's top or bottom or of the
+  water table, strictly between entry and exit. Every corner is kept, however
+  close to another boundary (one within 1e-6 m of an end, find_entry_exit's
+  bisection tolerance, is that end): merged away, the slice across it took
+  its chord across the corner (a 4 m step 1 mm wide at the entry read 2.139
+  on 30 slices, 2.259 on 60, against 2.521 on both). A ground break or a
+  crossing within 1e-4 of the span of another boundary is merged into it.
+  The crossings are exact: the surface and each
+  boundary are straight between the union of their vertices, so the
+  difference changes sign once at most on each piece. The stretches between
+  boundaries share out `max(n_slices, stretches)` slices in proportion to
+  their width, at least one each (each further slice goes to the stretch
+  whose slices are widest), and each stretch is cut evenly. Each slice's
+  base angle and base length come from the chord between its two
+  boundaries, which IS the surface there, so the base of every slice is one
+  straight segment in one material under one straight piece of ground.
+- **References.** Duncan, Wright & Brandon (2014) Ch. 6 (each slice base in
+  one material, the surface straight across it); Slide2 help, "Slice at
+  piezo-surface intersection", and its non-vertical slice method ("slice
+  boundaries will be located at each vertex of a failure surface").
+- **Why.** Cut evenly, a slice across a corner took one segment's angle for
+  its whole weight. On Taylor's D = 2 profile one search's polyline read
+  0.650 on 30 slices, 0.807 on 29, 1.182 on 31 and 0.862 on 45, against
+  0.970-0.973 now on 29 to 45; a search's minimum picked out the low errors
+  (Taylor DE 0.610, -13.6 % on the 0.706 circle; now 0.680, -3.7 %, the
+  polyline's own freedom), and a fixed surface could err either way (V-030
+  1.190, now 1.218; the old slicing reaches 1.218 only at 3,840 slices).
+- **What a result says.** `n_slices` on a result is the number of slices
+  cut, which on a polyline can exceed the number asked for (an 82-point
+  polyline asked for 60: 85). Every consumer works from the slices
+  themselves (each method, m_alpha (GM-127), the slice tables, the
+  rapid-drawdown stage mapping by `x_mid`), so none assumes equal widths;
+  a surface below the ground in more than one stretch (GM-122) is refused
+  by `find_entry_exit` before any slicing; the section figure draws each
+  polyline boundary from the surface at the boundary rather than at the
+  slice's mid-base.
+- **The planar family** (infinite slope) is a polyline too: its end ramps
+  are slices of their own, a twentieth of a slice width deep (see
+  "Supplementary families").
+- **What moved**: VALIDATION.md B15 (every value with a published or
+  recorded answer, before and after). The w11 DE search given windows 20-30
+  / 28-60 (5 points, seed 3), which reported 6.847, finds no surface that
+  holds and says so (2,325 evaluated: 398 refused for geometry, 1,774 not
+  converged, 134 for m_alpha); the old surface reads 6.80 at any count.
+- **Not done.** A circle is not cut at layer or water-table crossings, and
+  surcharge-zone and tension-crack edges are not boundaries.
 
 ## Critical Sign Conventions
 - **Driving moment**: uses `W*(x_mid - xc)/R` + `abs(driving)`, NOT `W*sin(alpha)`
@@ -1123,7 +1198,8 @@ before and after, and the slope suites ran no slower.
   search discards it) when EITHER (1) a below-base gap is bracketed by surviving
   slices on both sides (the original interior-hole check), OR (2) the below-base
   span exceeds a small tangential-sliver tolerance `max(2, round(0.03·n_slices))`
-  (NEW). Trigger (2) closes a hole in trigger (1): a circle that plunges below a
+  (NEW; since GM-131, 3 % of the slices cut, which on a polyline may be more
+  than asked for). Trigger (2) closes a hole in trigger (1): a circle that plunges below a
   shallow rigid base right after entry and re-emerges only near the exit leaves a
   ONE-SIDED surviving fragment (all below-base x fall OUTSIDE
   `[slices[0], slices[-1]]`, so no bracketing pair exists), and the tiny

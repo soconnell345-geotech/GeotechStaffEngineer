@@ -182,7 +182,10 @@ def _fk_composite_surface(z_clip=15.0, n_arc=40):
 
 
 class TestFredlundKrahnWeakLayer:
-    """B2 composite circular surface."""
+    """B2 composite circular surface. Its 82-point polyline is sliced at
+    every corner (GM-131): 85 slices for the 60 asked for, Spencer 1.386
+    (1.389 on 960 slices or more, before and after; 1.354 on 60 even slices
+    before GM-131)."""
 
     def test_ordinary_dry(self):
         geom = _fk_weak_geom()

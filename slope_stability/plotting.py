@@ -226,6 +226,9 @@ def plot_cross_section(result, geom, show_slices=True,
 
     # Slices (under the slip surface line)
     if show_slices and result.slice_data:
+        if result.slip_points:
+            px, pz = (np.asarray(v, dtype=float)
+                      for v in zip(*result.slip_points))
         for s in result.slice_data:
             x_l = s.x_mid - s.width / 2.0
             x_r = s.x_mid + s.width / 2.0
@@ -234,6 +237,10 @@ def plot_cross_section(result, geom, show_slices=True,
                 if result.radius > 0:
                     zb = result.yc - math.sqrt(max(
                         result.radius**2 - (xb - result.xc)**2, 0.0))
+                elif result.slip_points:
+                    # the surface at the boundary, which is often a corner
+                    # (GM-131), not the slice's mid-base elevation
+                    zb = float(np.interp(xb, px, pz))
                 else:
                     zb = s.z_base
                 zt = geom.ground_elevation_at(xb)

@@ -284,22 +284,27 @@ def _v030_geom(nlayers=60):
 
 def test_v030_duncan_lash_deterministic_fos():
     """PASS: on Duncan's specified noncircular failure surface, the module's
-    rigorous FOS reproduces the Slide2/Duncan deterministic FOS (Spencer 1.157;
-    Duncan quote 1.17) to within ~3% -- Spencer 1.190, GLE 1.192, Janbu-corrected
-    1.182 -- with the linearly-increasing Bay-Mud undrained strength (su=100 psf
-    at el -20, +9.8 psf/ft) discretized into thin undrained sub-layers and the
-    ocean at el 0 (ponded-water buttress). The result is insensitive to the
-    near-surface su floor. Only OMS/Fellenius shows the usual submerged/noncircular
-    over-estimate (~1.44)."""
+    rigorous FOS is within ~5 % of the Slide2/Duncan deterministic FOS
+    (Spencer 1.157; Duncan quote 1.17) -- Spencer 1.218, GLE 1.220,
+    Janbu-corrected 1.207, the same at any slice count -- with the
+    linearly-increasing Bay-Mud undrained strength (su=100 psf at el -20,
+    +9.8 psf/ft) discretized into thin undrained sub-layers and the ocean at
+    el 0 (ponded-water buttress). Before GM-131 sliced the surface at its
+    corners and its sub-layer crossings, 60 even slices read Spencer 1.190
+    (1.226 on 240, 1.215 on 960, 1.218 on 3,840): the closer match was a
+    slicing artefact, and the 5 % left against Slide2 is not slicing. The
+    result is insensitive to the near-surface su floor and to the number of
+    sub-layers (240: 1.218). Only OMS/Fellenius shows the usual
+    submerged/noncircular over-estimate (~1.44)."""
     slip = PolylineSlipSurface(points=_V030_FAIL)
     sl = _build_slices(_v030_geom(), slip, 60)
     fs, _ = _spencer_fos(sl, slip)
     fg = _gle_fos(sl, slip, f_interslice="half_sine").fos
     fj, _u, _f0 = _janbu_fos(sl, slip)
-    assert fs == pytest.approx(1.190, abs=0.03)      # ours (Spencer)
-    assert fs == pytest.approx(1.157, rel=0.05)      # Slide2 Spencer
+    assert fs == pytest.approx(1.218, abs=0.005)     # ours (Spencer)
+    assert fs == pytest.approx(1.157, rel=0.06)      # Slide2 Spencer (+5.3 %)
     assert fs == pytest.approx(1.17, rel=0.05)       # Duncan (2000) quote
-    assert fg == pytest.approx(1.160, rel=0.05)      # Slide2 GLE
+    assert fg == pytest.approx(1.160, rel=0.06)      # Slide2 GLE (+5.2 %)
     assert fj == pytest.approx(1.168, rel=0.05)      # Slide2 Janbu-corrected
     # OMS/Fellenius is the known submerged-noncircular pathology (high)
     assert _fellenius_fos(sl, slip) > 1.35

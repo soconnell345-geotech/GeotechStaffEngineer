@@ -262,6 +262,8 @@ Key conventions:
       leave out surfaces with m_alpha < 0.2 on a slice with friction
       (Slide2's check; release note); `choices` and `defaults_used`
       true and complete (given vs default by the names a call gave);
+      a noncircular surface sliced at its corners and layer and
+      water-table crossings (release note);
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done".
     Open next: Foundry brief 6, which measures all of this, is drafted

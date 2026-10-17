@@ -17,7 +17,11 @@ Slide2 does.
 
 The w11 surface (wave w11, F61): a differential-evolution surface 32 m deep
 in sandstone under a 10 m cut, FOS 1.57 with m_alpha -0.37 on 10 of its 40
-slices, reported as critical before.
+slices, reported as critical before. Since GM-131 slices a polyline at its
+corners and where it crosses a layer, that surface has no Spencer solution
+at all (its 1.44-1.57 hung on where even slices fell on its corners), so a
+surface on Duncan Example 4 that comes up through the sand at 67 deg
+carries the warning's checks.
 """
 import math
 import types
@@ -43,6 +47,12 @@ FT, PCF, PSF = 0.3048, 0.157087464, 0.04788026
 
 _W11_PTS = [(28.578, 8.578), (33.145, 6.709), (37.712, -22.17),
             (42.279, -20.072), (46.846, 10.0)]
+
+# Duncan Example 4 (`_duncan_ex4`): a polyline that comes up to the ground
+# at 67 deg through the sand (phi' 38). Spencer solves it at 3.358 on 40
+# slices with m_alpha 0.18 on the last slice.
+_STEEP_EXIT_PTS = [(4.096, 6.096), (6.596, 2.929), (13.6, -1.133),
+                   (21.875, -0.533), (22.384, 0.667)]
 
 
 def _w11():
@@ -172,35 +182,53 @@ def test_vertical_cut_in_undrained_clay_against_taylor():
 
 
 # ---------------------------------------------------------------------------
-# a surface with negative m_alpha: left out of a search, warned on alone
+# a surface with m_alpha below 0.2: left out of a search, warned on alone
 # ---------------------------------------------------------------------------
 
-def test_w11_surface_is_left_out_of_a_search():
-    """`_compute_fos`, every search's scorer, leaves the w11 surface out;
-    with the check off (a fixed surface) it scores 1.57."""
-    geom = _w11()
-    slip = PolylineSlipSurface(points=_W11_PTS)
+def test_steep_exit_surface_is_left_out_of_a_search():
+    """`_compute_fos`, every search's scorer, leaves the surface out; with
+    the check off (a fixed surface) it scores 3.358."""
+    geom = _duncan_ex4()
+    slip = PolylineSlipSurface(points=_STEEP_EXIT_PTS)
     info = {}
     assert _compute_fos(geom, slip, "spencer", 40, info=info) == _FOS_MAX
-    assert info["m_alpha_min"] == pytest.approx(-0.372, abs=0.005)
+    assert info["m_alpha_min"] == pytest.approx(0.176, abs=0.005)
     assert _compute_fos(geom, slip, "spencer", 40,
-                        m_alpha_check=False) == pytest.approx(1.570,
+                        m_alpha_check=False) == pytest.approx(3.358,
                                                               abs=0.005)
 
 
-def test_w11_surface_given_to_analyze_slope_is_analysed_with_a_warning():
+def test_steep_exit_surface_given_to_analyze_slope_is_analysed_with_a_warning():
     """A single surface is analysed and said to be one a search leaves out:
-    where m_alpha is lowest, on how many slices, and why it matters."""
-    r = analyze_slope(_w11(), slip_surface=PolylineSlipSurface(
-        points=_W11_PTS), method="spencer", n_slices=40)
-    assert r.FOS == pytest.approx(1.570, abs=0.005)
+    where m_alpha is lowest and why it matters."""
+    r = analyze_slope(_duncan_ex4(), slip_surface=PolylineSlipSurface(
+        points=_STEEP_EXIT_PTS), method="spencer", n_slices=40)
+    assert r.method_solved
+    assert r.FOS == pytest.approx(3.358, abs=0.005)
     (w,) = [w for w in r.warnings if "m_alpha" in w]
-    assert "-0.37" in w and "10 of 40 slices" in w
-    assert "against the sliding" in w and "passive zone" in w
+    assert "is 0.18 on the slice" in w
+    assert "67 deg against the sliding" in w and "passive zone" in w
     assert "Whitman & Bailey 1967" in w and "error -112" in w
     assert "'Check malpha < 0.2' setting on" in w
     assert "given to analyze_slope, is analysed" in w
     assert "Rankine passive angle, 45 deg - phi'/2" in w
+
+
+def test_w11_surface_has_no_spencer_solution():
+    """GM-131: sliced at its corners and where it crosses into the
+    sandstone, the w11 surface has no Spencer solution at 30, 40, 41 or 60
+    slices (1.44-1.57 before, by where even slices fell on its corners).
+    analyze_slope says so, and its m_alpha warning counts the slices below
+    0.2 at the legacy solver's FOS."""
+    geom = _w11()
+    slip = PolylineSlipSurface(points=_W11_PTS)
+    for n in (30, 40, 41, 60):
+        assert _compute_fos(geom, slip, "spencer", n,
+                            m_alpha_check=False) == _FOS_MAX
+    r = analyze_slope(geom, slip_surface=slip, method="spencer", n_slices=40)
+    assert not r.method_solved
+    (w,) = [w for w in r.warnings if "m_alpha" in w]
+    assert "20 of 40 slices" in w and "81 deg against the sliding" in w
 
 
 def test_a_surface_with_m_alpha_above_the_limit_has_no_warning():
@@ -268,12 +296,16 @@ def test_w11_de_search_runs_its_whole_budget():
     """The w11 DE search (windows 20-30 / 28-60, 5 points, seed 3): surfaces
     left out for m_alpha are scored by how far m_alpha falls below 0.2,
     not a flat 999.9, so the evolution runs all 31 generations (2,325
-    surfaces) instead of stopping after about 8 (600). It reports 6.85 on
-    a surface through the sandstone with m_alpha >= 0.2, where it reported
-    1.570 at 32 m depth with m_alpha -0.37 before GM-127. The value itself
-    is not pinned: differential evolution's path differs across platforms
-    (6.85 on the dev laptop, 8.34 on CI), so the test pins what must hold
-    on any platform: far above the 0.935 circle in the clay, admissible."""
+    surfaces) instead of stopping after about 8 (600). Its depth fractions
+    reach the model base 30 m down, where about 1 surface in 300 has a
+    solution (GM-117). Before GM-127 it reported 1.570 at 32 m depth with
+    m_alpha -0.37; after it, 6.85 on a surface through the sandstone (6.80
+    at any slice count since GM-131); since GM-131 its path finds no
+    surface that holds, and it says so. The outcome is not pinned:
+    differential evolution's path differs across platforms (6.85 on the dev
+    laptop, 8.34 on CI), so the test pins what must hold on any platform:
+    the whole budget, the m_alpha refusals counted, and a surface, if one
+    is reported, far above the 0.935 circle in the clay and admissible."""
     geom = _w11()
     res = search_critical_surface(
         geom, surface_type="noncircular_de", method="spencer",
@@ -282,6 +314,10 @@ def test_w11_de_search_runs_its_whole_budget():
     assert res.n_surfaces_evaluated == 2325
     assert res.n_rejected_m_alpha > 0
     c = res.critical
+    if c is None:
+        assert any(w.startswith("No surface is reported")
+                   for w in res.warnings)
+        return
     assert c.FOS > 2.0
     slip = PolylineSlipSurface(points=list(c.slip_points))
     assert m_alpha_min(build_slices(geom, slip, 40), c.FOS, slip,
@@ -391,10 +427,10 @@ def test_twice_the_slices_keeps_the_reason():
 def test_fixed_surface_fosm_keeps_a_low_m_alpha_surface():
     """FOSM on one given surface is not a search: no realisation is left out
     for its m_alpha."""
-    res = fosm_fos(_w11(), {"phi:sandstone": {"mean": 40.0, "cov": 0.05}},
-                   slip_surface=PolylineSlipSurface(points=_W11_PTS),
+    res = fosm_fos(_duncan_ex4(), {"phi:Sand": {"mean": 38.0, "cov": 0.05}},
+                   slip_surface=PolylineSlipSurface(points=_STEEP_EXIT_PTS),
                    method="spencer", n_slices=40)
-    assert res.fos_mlv == pytest.approx(1.570, abs=0.005)
+    assert res.fos_mlv == pytest.approx(3.358, abs=0.005)
     assert res.fos_mlv < _FOS_MAX
 
 

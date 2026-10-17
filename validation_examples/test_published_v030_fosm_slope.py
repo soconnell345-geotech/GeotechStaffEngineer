@@ -18,7 +18,9 @@ simulated Pf: 13-18%.
 
 What the FOSM propagation shows (all HONEST, no tuning):
  (1) The law at its mean (a, b) REPRODUCES the discretized deterministic FOS
-     (Spencer 1.190) -- the law and the hand-built sub-layer cu profile agree.
+     (Spencer 1.218; 1.190 before GM-131 sliced the surface at its corners
+     and sub-layer crossings) -- the law and the hand-built sub-layer cu
+     profile agree.
  (2) Propagating the STATED input COVs (unit weight via gamma_sat + the
      su-gradient std 1.2 psf/ft) gives COV_F ~ 0.133 -> Pf ~ 11% (Pf ~ 13% at
      Duncan's F = 1.17), landing in the Slide2 per-method band (13-14% for
@@ -99,10 +101,10 @@ _SLIP = PolylineSlipSurface(points=_FAIL)
 def test_v030_fosm_law_at_means_reproduces_deterministic_fos():
     """The su law evaluated at its mean (a, b) recomputes the SAME sub-layer cu
     profile as the hand-built discretization, so FOSM's mean-value FOS equals the
-    deterministic Spencer FOS (1.190)."""
+    deterministic Spencer FOS (1.218)."""
     r = fosm_fos(_lash_geom(), {"bay_mud_su": _law()}, slip_surface=_SLIP,
                  method="spencer", n_slices=60)
-    assert r.fos_mlv == pytest.approx(1.190, abs=0.01)
+    assert r.fos_mlv == pytest.approx(1.218, abs=0.01)
 
 
 def test_v030_fosm_stated_input_covs_land_in_slide_band():
