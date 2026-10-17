@@ -19,7 +19,7 @@ paper IS in the owner's library; its record gives the real upstream face as a
 TWO-SLOPE section — 2H:1V for the lower 58 ft, then 3H:1V to the crest (paper
 p. 262 Fig. 3) — vs the uniform 2.5H:1V assumed historically (which sits
 between the two real inclinations; kept below for the slope-invariance test).
-V-052b now runs the TRUE section: Corps 0.726 (published 0.823; < 1.0, failure
+V-052b now runs the TRUE section: Corps 0.722 (published 0.823; < 1.0, failure
 reproduced), LK 1.279 / DWW 1.266 (published ~1.05) — the true geometry shrinks
 the LK/DWW overshoot from ~29% to ~22%, isolating the residual to the steep
 published phi'=45 Kc-interpolation gain documented below.
@@ -206,7 +206,7 @@ def test_v052b_automatic_windows_find_the_circle_above_the_pool():
 
 
 def test_v052b_true_geometry_failure_and_ordering():
-    """On the REAL two-slope section: Corps 2-stage = 0.726 — below 1.0
+    """On the REAL two-slope section: Corps 2-stage = 0.722 — below 1.0
     (failure reproduced) and within ~0.1 of the published 0.823; the ordering
     Corps < DWW <= LK holds. LK/DWW land ~1.27-1.28 vs published ~1.05: the
     true geometry SHRINKS the overshoot from ~29% (assumed 2.5:1 section) to
@@ -217,7 +217,7 @@ def test_v052b_true_geometry_failure_and_ordering():
     lk = _search_true("lowe_karafiath")
     dww = _search_true("duncan_3stage")
     assert corps < 1.0                              # the dam failed; so says Corps
-    assert corps == pytest.approx(0.823, abs=0.11)  # ours 0.726 vs published 0.823
+    assert corps == pytest.approx(0.823, abs=0.11)  # ours 0.722 vs published 0.823
     assert corps < dww <= lk + 1e-9                 # published ordering
     assert dww == pytest.approx(lk, rel=0.05)       # DWW ~ LK (stage 3 barely fires)
     # magnitudes recorded (regression-pinned loosely, NOT pinned to published):

@@ -6,7 +6,8 @@ that were set from the MODEL extent until GM-57 (entry in the first 40 % of
 the model width, exit in the last 40 %, centres at least 1 unit above the
 crest) and are now set from the slope (`search_ranges.py`). Two failure
 mechanisms fall outside that sampling on ordinary slopes and the search then
-reports a factor of safety that is too HIGH (BACKLOG GM-13, GM-14):
+reports a factor of safety that is too HIGH (BACKLOG GM-13, GM-14, and
+GM-122 for the third):
 
 1. **Toe circles** (Taylor 1937; Duncan, Wright & Brandon 2014, Ch. 6-7).
    A circle through the toe of the slope whose other end is close above it.
@@ -24,7 +25,24 @@ reports a factor of safety that is too HIGH (BACKLOG GM-13, GM-14):
    circle the grid tries is deeper and stronger. Slide2 #86 (c' = 0,
    phi' = 37 deg fill at 1.25H:1V, no supports): grid 1.57 against 0.942.
 
-`apply_supplements` scores the toe circles with the search's own limit
+3. **Circles passing above the toe** (FHWA NHI-06-088 p. 6-38: "If there
+   is a weak layer above the toe of the slope, a circle passing above the
+   toe of the slope may be more critical. Similarly, if there is water
+   outside the toe of the slope, a circle passing above the water may be
+   more critical"). The automatic windows meet at the middle of the face
+   and the main search's radii run from just below the highest ground to
+   the base, so a circle that comes out on the face is scored only if it
+   also crosses the middle of the face. Until GM-122 such circles were
+   reached as circles crossing the ground four times, scored across the
+   air in front of the toe (1.14 on the model below); those are now
+   refused, and this family starts circles on each face at 0.1 to 0.9 of
+   its height, refines the best start's height and scores them like the
+   toe circles. A 10 m face at 45 deg whose upper 3.5 m is c' = 3 kPa,
+   phi' = 22 deg over c' = 200 kPa, phi' = 40 deg: main search 6.33, toe
+   circle 6.31, circle passing above the toe 0.936 (Bishop; Spencer
+   0.935), from the face where the upper layer's base comes out.
+
+`apply_supplements` scores both circle families with the search's own limit
 equilibrium method and the planar surfaces by force equilibrium (Janbu's
 simplified method; the infinite slope is a force-equilibrium result, see
 `check_infinite_slope`), and folds them into the `SearchResult`: the lowest
@@ -69,8 +87,22 @@ _N_T = 10
 _GOLDEN = (math.sqrt(5.0) - 1.0) / 2.0
 # Only the tallest faces get a toe-circle family (runtime bound).
 _MAX_TOE_FACES = 3
+# Circles passing above the toe (GM-122 follow-up): the lower end on the
+# face at these fractions of its height above the toe, the other end
+# upslope as for the toe circle; the best start's height is then refined.
+# A caller-supplied per-surface solve (rapid drawdown, two or three GLE
+# solves a surface) gets two starts and no refinement of the height.
+_ABOVE_TOE_HEIGHTS = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)
+_ABOVE_TOE_HEIGHTS_FOS_FN = (0.35, 0.7)
+# Slide2 reports a surface whose m_alpha = cos(a) (1 + tan(a) tan(phi) / F)
+# falls below this on the final iteration as invalid (error -112). A circle
+# passing above the toe that comes out steeply on the face has such slices
+# at its lower end, where Bishop's method can give a spurious low FOS
+# (Duncan Ex 4 with 30 slices: 0.17 on a circle that reads 1.93 on 80).
+_M_ALPHA_MIN = 0.2
 # Rigorous methods scan the toe circles with Bishop, then re-optimize this
-# many of the best circles with the method itself.
+# many of the best circles with the method itself (Janbu too, in the circles
+# passing above the toe only: `search_toe_circles`).
 _SCREENED_METHODS = ("spencer", "morgenstern_price", "gle")
 _N_RESCORE = 3
 # A circle the rigorous method finds no solution on (large point loads:
@@ -99,12 +131,14 @@ HELD_NOTE = ("every shallow planar slide is held by the reinforcement "
 CIRCULAR = "circular"
 NONCIRCULAR = "noncircular"
 TOE_CIRCLE = "toe_circle"
+ABOVE_TOE = "circle_above_toe"
 INFINITE_SLOPE = "infinite_slope"
 
 _KIND_TEXT = {
     CIRCULAR: "circular (search)",
     NONCIRCULAR: "noncircular (search)",
     TOE_CIRCLE: "toe circle",
+    ABOVE_TOE: "circle passing above the toe",
     INFINITE_SLOPE: "infinite slope (shallow planar, translational)",
 }
 
@@ -177,6 +211,21 @@ def _centre_admissible(geom, xc, yc, x_range, y_range) -> bool:
     return True
 
 
+def _m_alpha_min(geom: SlopeGeometry, slip, fos: float,
+                 n_slices: int) -> float:
+    """The least m_alpha = cos(a) (1 + tan(a) tan(phi) / F) over the slices
+    of `slip` at Bishop's FOS `fos`, the base angle taken positive in the
+    sliding direction as ``methods.bishop_fos`` takes it."""
+    from slope_stability.slices import build_slices
+    slices = build_slices(geom, slip, n_slices)
+    moment = sum((s.weight + s.surcharge_force) * (s.x_mid - slip.xc)
+                 for s in slices)
+    d_sign = 1.0 if moment >= 0 else -1.0
+    return min((math.cos(s.alpha) + d_sign * math.sin(s.alpha)
+                * math.tan(math.radians(s.phi)) / fos for s in slices),
+               default=1.0)
+
+
 def _golden_min(f, a, b, tol, max_iter=30):
     """Golden-section minimum of a unimodal f on [a, b]: (x, f(x), n_calls)."""
     n = 0
@@ -208,8 +257,10 @@ def search_toe_circles(geom: SlopeGeometry,
                        x_range: Optional[Tuple[float, float]] = None,
                        y_range: Optional[Tuple[float, float]] = None,
                        fos_fn=None,
+                       above_toe: bool = True,
                        ) -> Dict[str, Any]:
-    """Critical circle through the toe of each slope face.
+    """Critical circle through the toe of each slope face, and critical
+    circle passing above it.
 
     For each face (the tallest ``_MAX_TOE_FACES``), circles pass through the
     toe and a second ground point upslope of it. That point is scanned at
@@ -230,18 +281,46 @@ def search_toe_circles(geom: SlopeGeometry,
     by `search_rapid_drawdown`); every circle is then scored with it and
     there is no Bishop screen.
 
+    With ``above_toe`` the same scan starts again from points on each face
+    at ``_ABOVE_TOE_HEIGHTS`` of its height above the toe: circles passing
+    above the toe, which come out on the face (FHWA NHI-06-088 p. 6-38:
+    "If there is a weak layer above the toe of the slope, a circle passing
+    above the toe of the slope may be more critical. Similarly, if there is
+    water outside the toe of the slope, a circle passing above the water
+    may be more critical"). The main search's windows ask a surface to
+    cross the middle of the face (`search_ranges`) and its radii are sized
+    from the base, so it does not reach them (GM-122 follow-up). The
+    family leaves out a circle with m_alpha < 0.2 on any slice under
+    Bishop or Janbu (Slide2's check, its error -112) and a circle with
+    reverse curvature, and Janbu scans it with Bishop as well: its steep
+    entries are where Janbu's solve falls with the slice count.
+
     Returns a dict: ``FOS`` (999.9 if none admissible), ``xc``, ``yc``,
-    ``radius``, ``toe`` (x, z), ``n_evaluated``.
+    ``radius``, ``toe`` (x, z), ``n_evaluated``; with ``above_toe``,
+    ``above_toe`` holds the critical circle passing above the toe (``FOS``,
+    ``xc``, ``yc``, ``radius``, ``start`` (x, z) on the face, ``height``,
+    its fraction of the face height above the toe, and ``face_toe``), and
+    ``faces`` the faces covered with the heights started from.
     """
     from slope_stability.search import _compute_fos, _check_entry_exit, _FOS_MAX
 
     scan_method = ("bishop" if method in _SCREENED_METHODS and fos_fn is None
                    else method)
+    # The circles passing above the toe are screened with Bishop for Janbu
+    # too: they can enter the face steeply, where Janbu's solve falls with
+    # the slice count or fails (Slide2 #85's clay face: Bishop and Spencer
+    # 1.22, Janbu 0.86 on 20 slices, 0.70 on 30, none on 40 or more).
+    family_scan = {TOE_CIRCLE: scan_method,
+                   ABOVE_TOE: ("bishop" if method in _SCREENED_METHODS
+                               + ("janbu",) and fos_fn is None else method)}
     faces = sorted(slope_faces(geom), key=lambda f: -f["height"])
     faces = faces[:_MAX_TOE_FACES]
     x_min, x_max = geom.x_range
     windows_given = x_entry_range is not None or x_exit_range is not None
     counter = [0]
+    # by method, the lowest FOS of a circle passing above the toe whose
+    # m_alpha was checked: only a lower one needs the check
+    checked_best = {}
     # A caller-supplied per-surface solve (rapid drawdown: two or three GLE
     # solves a surface, no cheap screen) gets a coarser scan.
     n_t, u_tol, e_iter = (_N_T, 0.01, 12) if fos_fn is None else (7, 0.04, 6)
@@ -250,7 +329,7 @@ def search_toe_circles(geom: SlopeGeometry,
     us = [u_lo + (u_hi - u_lo) * i / (n_t - 1) for i in range(n_t)]
     u_step = (u_hi - u_lo) / (n_t - 1)
 
-    def circle_fos(xc, yc, r, fos_method):
+    def circle_fos(xc, yc, r, fos_method, m_alpha_check=False):
         if not _centre_admissible(geom, xc, yc, x_range, y_range):
             return _FOS_MAX
         # A hair inside the toe so the arc crosses the ground just above
@@ -260,11 +339,19 @@ def search_toe_circles(geom: SlopeGeometry,
                 geom, slip, x_entry_range, x_exit_range):
             return _FOS_MAX
         counter[0] += 1
-        return _compute_fos(geom, slip, fos_method, n_slices, tol=tol,
-                            fos_fn=fos_fn)
+        fos = _compute_fos(geom, slip, fos_method, n_slices, tol=tol,
+                           fos_fn=fos_fn)
+        if (m_alpha_check and fos_fn is None
+                and fos_method in ("bishop", "janbu")
+                and fos < checked_best.get(fos_method, _FOS_MAX)):
+            if _m_alpha_min(geom, slip, fos, n_slices) < _M_ALPHA_MIN:
+                return _FOS_MAX
+            checked_best[fos_method] = fos
+        return fos
 
     def chord(toe, s, offset):
-        """The chord from the toe to the ground point `offset` upslope."""
+        """The chord from `toe` (the toe, or a point on the face above it)
+        to the ground point `offset` upslope."""
         xt, zt = toe
         xe = xt + s * offset
         ze = geom.ground_elevation_at(xe)
@@ -306,7 +393,10 @@ def search_toe_circles(geom: SlopeGeometry,
             xc, yc, r = circ(ch, u)
             if below_base(ch, xc, yc, r):
                 return _FOS_MAX
-            return circle_fos(xc, yc, r, fos_method)
+            if ch.get("above") and not passes_above_toe(ch, xc, yc, r):
+                return _FOS_MAX
+            return circle_fos(xc, yc, r, fos_method,
+                              m_alpha_check=bool(ch.get("above")))
 
         if bracket is None:
             fs = [f(u) for u in us]
@@ -322,60 +412,160 @@ def search_toe_circles(geom: SlopeGeometry,
             u_best, f_best = u_g, f_g
         return (f_best, u_best)
 
-    shortlist = []          # (fos with scan_method, chord, u)
+    def face_point(face, h):
+        """The point on the face `h` of its height above the toe (on a
+        vertical face, the point at that height)."""
+        (xt, zt), (xk, zk) = face["toe"], face["crest"]
+        z = zt + h * (zk - zt)
+        a, b = sorted((xt, xk))
+        for _ in range(60):
+            m = 0.5 * (a + b)
+            if (geom.ground_elevation_at(m) < z) == (xt < xk):
+                a = m
+            else:
+                b = m
+        return (0.5 * (a + b), z)
+
+    def passes_above_toe(ch, xc, yc, r):
+        """True when the circle's downslope end is the chord's start on the
+        face (one that comes out lower is a toe or base circle) and it is
+        not a reverse-curvature circle closed by a crack: the family's
+        circles keep their centre above the ground at both ends."""
+        slip = CircularSlipSurface(xc, yc, r * (1.0 - 1e-6))
+        try:
+            ends = slip.find_entry_exit(geom)
+        except ValueError:
+            return True     # scored as refused (and counted) by circle_fos
+        low = ends[0] if ch["s"] > 0 else ends[1]
+        return (abs(low - ch["toe"][0]) <= ch["tol"]
+                and slip.reverse_curvature_crack(geom, *ends) is None)
+
+    heights = ((_ABOVE_TOE_HEIGHTS if fos_fn is None
+                else _ABOVE_TOE_HEIGHTS_FOS_FN) if above_toe else ())
+    # (fos with the family's scan method, chord, u, height above the toe as
+    # a fraction of the face's): through the toe, and passing above it
+    shortlists = {TOE_CIRCLE: [], ABOVE_TOE: []}
+    covered = []
     for face in faces:
-        toe, s = face["toe"], face["rises"]
+        s = face["rises"]
         size = max(face["length"], face["height"])
         if size <= 0:
             continue
-        reach = abs((x_max if s > 0 else x_min) - toe[0])
-        offsets = sorted({min(size * f, reach) for f in _EXIT_FACTORS})
-        offsets = [o for o in offsets if o > 1e-6 * size]
-        if not offsets:
-            continue
+        covered.append({"toe": face["toe"], "crest": face["crest"],
+                        "height": face["height"]})
+        starts = [(TOE_CIRCLE, face["toe"], 0.0)] + [
+            (ABOVE_TOE, face_point(face, h), h) for h in heights]
 
-        coarse = []
-        for o in offsets:
-            ch = chord(toe, s, o)
-            fos, u = chord_best(ch, scan_method)
-            coarse.append((fos, ch, u))
-        shortlist.extend(coarse)
-        j = min(range(len(offsets)), key=lambda i: coarse[i][0])
-        if coarse[j][0] < _FOS_MAX and len(offsets) > 1:
+        def chord_at(family, start, o):
+            ch = chord(start, s, o)
+            if ch is not None and family == ABOVE_TOE:
+                ch.update(above=True, s=s, tol=0.005 * size,
+                          face_toe=face["toe"])
+            return ch
+
+        def offsets_from(start):
+            reach = abs((x_max if s > 0 else x_min) - start[0])
+            offsets = sorted({min(size * f, reach) for f in _EXIT_FACTORS})
+            return [o for o in offsets if o > 1e-6 * size]
+
+        # the coarse scan from every start; then, from the best start of
+        # each family on this face only, the start's height refined (golden
+        # section, the far end held where it is) and the far end refined
+        best_start = {}
+        for family, start, h in starts:
+            offsets = offsets_from(start)
+            if not offsets:
+                continue
+
+            coarse = []
+            for o in offsets:
+                ch = chord_at(family, start, o)
+                fos, u = chord_best(ch, family_scan[family])
+                coarse.append((fos, ch, u, h))
+            shortlists[family].extend(coarse)
+            j = min(range(len(offsets)), key=lambda i: coarse[i][0])
+            if (family not in best_start
+                    or coarse[j][0] < best_start[family][0]):
+                best_start[family] = (coarse[j][0], start, h, offsets, j)
+        above_best = best_start.get(ABOVE_TOE)
+        if (above_best is not None and above_best[0] < _FOS_MAX
+                and fos_fn is None):
+            f0, start, h, offsets, j = above_best
+            k = heights.index(h)
+            lo = heights[k - 1] if k > 0 else 0.0
+            hi = heights[k + 1] if k + 1 < len(heights) else 1.0
+            x_far = start[0] + s * offsets[j]
             cache = {}
 
-            def g(o):
-                ch = chord(toe, s, o)
-                cache[o] = chord_best(ch, scan_method) + (ch,)
-                return cache[o][0]
+            def g(hh):
+                st = face_point(face, hh)
+                ch = chord_at(ABOVE_TOE, st, abs(x_far - st[0]))
+                cache[hh] = chord_best(ch, family_scan[ABOVE_TOE]) + (ch,)
+                return cache[hh][0]
 
-            o_g, f_g, _ = _golden_min(
-                g, offsets[max(j - 1, 0)],
-                offsets[min(j + 1, len(offsets) - 1)],
-                tol=0.005 * size, max_iter=e_iter)
-            fos, u, ch = cache[o_g]
-            shortlist.append((fos, ch, u))
+            h_g, f_g, _ = _golden_min(g, lo, hi, tol=0.005, max_iter=e_iter)
+            fos, u, ch = cache[h_g]
+            if ch is not None and fos < f0:
+                shortlists[ABOVE_TOE].append((fos, ch, u, h_g))
+                start, h = ch["toe"], h_g
+                offsets = offsets_from(start)
+                j = min(range(len(offsets)),
+                        key=lambda i: abs(offsets[i] - abs(x_far - start[0])))
+                best_start[ABOVE_TOE] = (fos, start, h, offsets, j)
+        for family, (f0, start, h, offsets, j) in best_start.items():
+            if f0 < _FOS_MAX and len(offsets) > 1:
+                cache = {}
 
-    shortlist = [c for c in shortlist if c[0] < _FOS_MAX]
-    shortlist.sort(key=lambda c: c[0])
-    if scan_method != method:
-        rescored = []
-        n_ok = 0
-        for _fos, ch, u in shortlist[:_MAX_RESCORE_TRIES]:
-            fos, u2 = chord_best(ch, method, (u - u_step, u + u_step))
-            rescored.append((fos, ch, u2))
-            n_ok += fos < _FOS_MAX
-            if n_ok >= _N_RESCORE:
-                break
-        shortlist = sorted(rescored, key=lambda c: c[0])
+                def g(o):
+                    ch = chord_at(family, start, o)
+                    cache[o] = chord_best(ch, family_scan[family]) + (ch,)
+                    return cache[o][0]
+
+                o_g, f_g, _ = _golden_min(
+                    g, offsets[max(j - 1, 0)],
+                    offsets[min(j + 1, len(offsets) - 1)],
+                    tol=0.005 * size, max_iter=e_iter)
+                fos, u, ch = cache[o_g]
+                shortlists[family].append((fos, ch, u, h))
+
+    def ranked(family):
+        """The family's shortlist best first, the best re-optimized with the
+        method itself when it was scanned with Bishop."""
+        shortlist = [c for c in shortlists[family] if c[0] < _FOS_MAX]
+        shortlist.sort(key=lambda c: c[0])
+        if family_scan[family] != method:
+            rescored = []
+            n_ok = 0
+            for _fos, ch, u, h in shortlist[:_MAX_RESCORE_TRIES]:
+                fos, u2 = chord_best(ch, method, (u - u_step, u + u_step))
+                rescored.append((fos, ch, u2, h))
+                n_ok += fos < _FOS_MAX
+                if n_ok >= _N_RESCORE:
+                    break
+            shortlist = sorted(rescored, key=lambda c: c[0])
+        return shortlist
+
+    shortlist = ranked(TOE_CIRCLE)
+    above = ranked(ABOVE_TOE) if heights else []
 
     best = {"FOS": _FOS_MAX, "xc": 0.0, "yc": 0.0, "radius": 0.0,
             "toe": None, "n_evaluated": counter[0]}
     if shortlist and shortlist[0][0] < _FOS_MAX:
-        fos, ch, u = shortlist[0]
+        fos, ch, u, _h = shortlist[0]
         xc, yc, r = circ(ch, u)
         best.update(FOS=fos, xc=xc, yc=yc, radius=r * (1.0 - 1e-6),
                     toe=ch["toe"])
+    if heights:
+        best["faces"] = [dict(f, heights=list(heights)) for f in covered]
+        best["above_toe"] = {"FOS": _FOS_MAX}
+        if above and above[0][0] < _FOS_MAX:
+            fos, ch, u, h = above[0]
+            xc, yc, r = circ(ch, u)
+            best["above_toe"] = {"FOS": fos, "xc": xc, "yc": yc,
+                                 "radius": r * (1.0 - 1e-6),
+                                 "start": ch["toe"], "height": h,
+                                 "face_toe": ch["face_toe"]}
+    best["n_evaluated"] = counter[0]
     return best
 
 
@@ -1053,6 +1243,16 @@ def apply_supplements(geom: SlopeGeometry,
                     toe["FOS"], method.capitalize(), n_slices)
                 if r is not None:
                     best_kind, best, best_fos = TOE_CIRCLE, r, toe["FOS"]
+        above = toe.get("above_toe") or {}
+        if above.get("FOS", _FOS_MAX) < _FOS_MAX:
+            candidates[ABOVE_TOE] = round(above["FOS"], 4)
+            if above["FOS"] < best_fos:
+                r = _make_result(
+                    geom, CircularSlipSurface(above["xc"], above["yc"],
+                                              above["radius"]),
+                    above["FOS"], method.capitalize(), n_slices)
+                if r is not None:
+                    best_kind, best, best_fos = ABOVE_TOE, r, above["FOS"]
 
     planar = None
     if infinite_slope:
@@ -1086,6 +1286,30 @@ def apply_supplements(geom: SlopeGeometry,
             f"({was}). The main search's entry/exit windows, centre grid or "
             f"grid spacing kept it from this circle; the toe circle is "
             f"reported.")
+    elif best_kind == ABOVE_TOE:
+        above = toe["above_toe"]
+        xs, zs = above["start"]
+        other = (best.x_exit if abs(best.x_entry - xs) <= abs(best.x_exit - xs)
+                 else best.x_entry)
+        was = (f"{main_fos:.3f}" if main_fos is not None
+               else "no admissible surface")
+        # (the family keeps to caller-given windows, so a circle outside
+        # the windows used is outside an automatic one)
+        inside = all(w is None or w[0] - 1e-6 <= v <= w[1] + 1e-6
+                     for w, v in zip(windows_used,
+                                     (best.x_entry, best.x_exit)))
+        kept = ("its centre grid or radii missed this circle" if inside else
+                "the circle ends outside its automatic entry/exit windows, "
+                "which meet at the middle of the face")
+        xt, zt = above["face_toe"]
+        warnings_out.append(
+            f"A circle passing above the toe governs: the circle from the "
+            f"face at (x = {xs:.2f}, z = {zs:.2f}), {zs - zt:.2f} m above "
+            f"the toe at x = {xt:.2f}, to the ground at x = {other:.2f} "
+            f"gives FOS {best_fos:.3f}, below the {main_text} minimum "
+            f"({was}). The main search did not reach it: {kept}. "
+            f"The circle passing above the toe is reported (FHWA NHI-06-088 "
+            f"p. 6-38).")
     elif best_kind == INFINITE_SLOPE:
         run = min((c for c in planar["checks"] if c["FOS"] is not None),
                   key=lambda c: c["FOS"])
@@ -1146,7 +1370,7 @@ def apply_supplements(geom: SlopeGeometry,
         warnings_out.extend(_edge_warnings(
             geom, best, windows_used, windows_auto,
             grid_used if search_kind == CIRCULAR else None, grid_auto))
-    elif best_kind == TOE_CIRCLE:
+    elif best_kind in (TOE_CIRCLE, ABOVE_TOE):
         # Only the caller's own windows bound the toe-circle family.
         given = (x_entry_range, x_exit_range)
         warnings_out.extend(_edge_warnings(
@@ -1201,6 +1425,17 @@ def apply_supplements(geom: SlopeGeometry,
         windows_used, grid_used if search_kind == CIRCULAR else None,
         dict(x_entry_range=x_entry_range, x_exit_range=x_exit_range,
              x_range=x_range, y_range=y_range), auto_ranges)
+    if toe is not None and toe.get("faces"):
+        # What the toe-circle families covered: the faces, and the heights
+        # above each toe (fractions of the face height) their circles'
+        # lower ends started from; the best start's height is refined
+        # between its neighbours unless a per-surface solve was given
+        rr = lambda p: [round(p[0], 3), round(p[1], 3)]   # noqa: E731
+        result.search_ranges["faces_covered"] = [
+            {"toe": rr(f["toe"]), "crest": rr(f["crest"]),
+             "lower_end_heights_above_toe": [0.0] + f["heights"],
+             "height_refined": fos_fn is None}
+            for f in toe["faces"]]
     result.governing_location = _locate(geom, best)
     return result
 
@@ -1221,12 +1456,15 @@ _TRY_FAMILY = {
     CIRCULAR: "a circular search (surface_type 'circular')",
     NONCIRCULAR: "a noncircular search (surface_type 'noncircular_de')",
     TOE_CIRCLE: "a circular search",
+    ABOVE_TOE: "a circular search",
     INFINITE_SLOPE: "a search with it (infinite_slope=True)",
 }
 
 #: Each surface family and each automatic range in plain words.
 _FAMILY_TEXT = {CIRCULAR: "circular", NONCIRCULAR: "noncircular",
-                TOE_CIRCLE: "toe circle", INFINITE_SLOPE: "infinite slope"}
+                TOE_CIRCLE: "toe circle",
+                ABOVE_TOE: "circle passing above the toe",
+                INFINITE_SLOPE: "infinite slope"}
 _RANGE_TEXT = {"x_entry_range": "entry window", "x_exit_range": "exit window",
                "x_range": "centre x range", "y_range": "centre height range"}
 
@@ -1264,16 +1502,23 @@ def search_choices(result: SearchResult, *, surface_type: str,
         else NONCIRCULAR
     tried = [kind]
     if toe_circles and kind == CIRCULAR:
-        tried.append(TOE_CIRCLE)
+        tried += [TOE_CIRCLE, ABOVE_TOE]
     if infinite_slope:
         tried.append(INFINITE_SLOPE)
-    missed = [k for k in (CIRCULAR, NONCIRCULAR, TOE_CIRCLE, INFINITE_SLOPE)
+    missed = [k for k in (CIRCULAR, NONCIRCULAR, TOE_CIRCLE, ABOVE_TOE,
+                          INFINITE_SLOPE)
               if k not in tried]
     out.append(choice(
         "surface families tried",
         ", ".join(_FAMILY_TEXT[k] for k in tried), MODULE,
         "the lowest FOS of each is reported (candidates), and the one that "
         "governs (governing_surface)"
+        + ("; circles through each face's toe and passing above it, their "
+           "lower end on the face from the toe up (search_ranges, "
+           "faces_covered); the circles passing above the toe leave out "
+           "any with m_alpha < 0.2 on a slice (Slide2's check, error -112) "
+           "and any with reverse curvature"
+           if ABOVE_TOE in tried else "")
         + ("; the infinite slope only where c' = 0 soil forms the face"
            if INFINITE_SLOPE in tried else ""),
         [f"not tried: {_FAMILY_TEXT[k]}, by {_TRY_FAMILY[k]}"

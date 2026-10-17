@@ -213,26 +213,32 @@ def _weak_over_rock():
                            gamma=21, phi=40, c_prime=150)])
 
 
-def test_weak_layer_over_rock_undirected_reads_high_and_says_where():
-    """The automatic ranges are for the slope as a whole; the critical
-    circle here lies in the weak layer above the rock's outcrop, 4.6 m long
-    (0.885 from a 20 x 20 search with both windows over the whole profile),
-    which the default windows (ends either side of the face's mid-length)
-    do not reach: 4.82 (5.25 with windows from the model width). Seeing
-    that the geometry needs a directed search is the engineer's or the
-    agent's judgment; the result gives what it needs: the ranges used and
-    where the governing surface lies, through which layers."""
+def test_weak_layer_over_rock_default_search_covers_the_face():
+    """The automatic windows are for the slope as a whole (ends either side
+    of the face's mid-length), and the main search scores no circle that
+    ends on the face above it: 4.82 through the rock (5.25 with windows
+    from the model width). The critical circle lies in the weak layer above
+    the rock's outcrop, 4.7 m long: 0.885 from a 20 x 20 search with both
+    windows over the whole profile. The circles passing above the toe
+    (FHWA NHI-06-088 p. 6-38; GM-122) start on the face and find it by
+    default: 0.884 from where the rock meets the face. The result says
+    which family governs, what the families covered and where the surface
+    lies, through which layers."""
     res = search_critical_surface(_weak_over_rock(), method="bishop")
-    assert res.critical.FOS == pytest.approx(4.82, abs=0.05)
+    assert res.governing_surface == "circle_above_toe"
+    assert res.candidates["circular"] == pytest.approx(4.82, abs=0.05)
+    assert res.critical.FOS == pytest.approx(0.885, abs=0.005)
+    assert res.critical.x_entry == pytest.approx(26.0, abs=0.1)
     gl = res.governing_location
-    assert "rock" in gl["layers"]
+    assert gl["layers"] == ["weak"]
     assert gl["depth"] > 1.0                   # a slide, not a sliver
     assert gl["slope"]["toe"] == [20, 0] and gl["slope"]["height"] == 10
     assert gl["x_entry"] == pytest.approx(res.critical.x_entry, abs=1e-3)
     assert res.search_ranges["x_entry_range"] == [0, 25.0]
+    assert res.search_ranges["faces_covered"][0]["crest"] == [30, 10]
     d = res.to_dict()
     assert d["governing_location"] == gl
-    assert "through rock" in res.summary()
+    assert "through weak" in res.summary()
 
 
 @pytest.mark.parametrize("kw, tol", [

@@ -14,13 +14,17 @@ References:
     Borselli (2002) — SNIFF Random Search concept
 """
 
+import contextvars
+import functools
 import math
 import random
 import warnings
 from typing import List, Tuple, Optional, Dict, Any, Callable
 
 from slope_stability.geometry import SlopeGeometry
-from slope_stability.slip_surface import CircularSlipSurface, PolylineSlipSurface
+from slope_stability.slip_surface import (
+    CircularSlipSurface, PolylineSlipSurface, GroundCrossingError,
+)
 from slope_stability.slices import build_slices
 from slope_stability.methods import (
     fellenius_fos, bishop_fos, spencer_fos, morgenstern_price_fos,
@@ -30,6 +34,81 @@ from slope_stability.results import SearchResult, SlopeStabilityResult
 
 
 _FOS_MAX = 999.9
+
+
+# Trial surfaces refused because they leave the ground and come back into it
+# (GM-122, ``GroundCrossingError``): counted by `_compute_fos` and
+# `_check_entry_exit` into the tally of the search running in this context.
+_GROUND_REFUSALS: contextvars.ContextVar = contextvars.ContextVar(
+    "slope_ground_refusals", default=None)
+
+
+def _count_ground_refusal() -> None:
+    tally = _GROUND_REFUSALS.get()
+    if tally is not None:
+        tally[0] += 1
+
+
+def _counts_ground_refusals(fn):
+    """Count the trial surfaces a search refuses because they leave the
+    ground and come back into it (GM-122) and put the count on the
+    ``SearchResult`` it returns (or on that result's ``search``) as
+    ``n_rejected_ground_crossings``. A search run inside another adds its
+    count to the outer one, so the outermost result counts every refusal,
+    its supplementary families' included."""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        outer = _GROUND_REFUSALS.get()
+        tally = [0]
+        token = _GROUND_REFUSALS.set(tally)
+        try:
+            result = fn(*args, **kwargs)
+        finally:
+            _GROUND_REFUSALS.reset(token)
+            if outer is not None:
+                outer[0] += tally[0]
+        target = (result if isinstance(result, SearchResult)
+                  else getattr(result, "search", None))
+        if isinstance(target, SearchResult):
+            target.n_rejected_ground_crossings = tally[0]
+        return result
+    return wrapper
+
+
+def _ordered_windows(x_entry_range, x_exit_range):
+    """Entry / exit windows as the searches read them (GM-124).
+
+    A surface's entry is its low-x end and its exit its high-x end
+    (``find_entry_exit``), whichever way the slope faces. A window given
+    high bound first is read low bound first, and an entry window lying
+    wholly at or right of the exit window is swapped with it: as given, no
+    surface could start in one and end in the other, and the search scored
+    nothing and said nothing. Returns (x_entry_range, x_exit_range, note);
+    ``note`` says what was changed, for the result's warnings, else None.
+    """
+    def low_first(w):
+        return None if w is None else (min(w[0], w[1]), max(w[0], w[1]))
+
+    def text(w):
+        return f"x {w[0]:.2f} to {w[1]:.2f}"
+
+    entry, exit_ = low_first(x_entry_range), low_first(x_exit_range)
+    notes = []
+    for name, given, used in (("entry", x_entry_range, entry),
+                              ("exit", x_exit_range, exit_)):
+        if given is not None and given[0] > given[1]:
+            notes.append(f"The {name} window was given high bound first "
+                         f"({given[0]:g}, {given[1]:g}); it was read as "
+                         f"{text(used)}.")
+    if entry is not None and exit_ is not None and entry[0] >= exit_[1]:
+        notes.append(
+            f"The entry window ({text(entry)}) lies right of the exit window "
+            f"({text(exit_)}), so no surface could start in one and end in "
+            f"the other. Entry is the low-x end of a slip surface and exit "
+            f"the high-x end, whichever way the slope faces, so the windows "
+            f"were swapped: entry {text(exit_)}, exit {text(entry)}.")
+        entry, exit_ = exit_, entry
+    return entry, exit_, (" ".join(notes) or None)
 
 
 def _window_span(x_entry_range, x_exit_range) -> Optional[float]:
@@ -481,6 +560,10 @@ def _compute_fos(geom: SlopeGeometry,
         if fos is None or fos < 0.05 or math.isnan(fos) or math.isinf(fos):
             return _FOS_MAX
         return fos
+    except GroundCrossingError:
+        # not one sliding mass (GM-122): refused, and counted
+        _count_ground_refusal()
+        return _FOS_MAX
     except (ValueError, ZeroDivisionError, RuntimeError):
         return _FOS_MAX
 
@@ -494,6 +577,9 @@ def _check_entry_exit(geom, slip, x_entry_range, x_exit_range):
         return True
     try:
         x_entry, x_exit = slip.find_entry_exit(geom)
+    except GroundCrossingError:
+        _count_ground_refusal()        # not one sliding mass (GM-122)
+        return False
     except ValueError:
         return False
 
@@ -770,6 +856,7 @@ def _refine_centre(score, start, steps, bounds,
     return best
 
 
+@_counts_ground_refusals
 def grid_search(geom: SlopeGeometry,
                 x_range: Tuple[float, float],
                 y_range: Tuple[float, float],
@@ -820,6 +907,8 @@ def grid_search(geom: SlopeGeometry,
     -------
     SearchResult
     """
+    x_entry_range, x_exit_range, window_note = _ordered_windows(
+        x_entry_range, x_exit_range)
     best_fos = _FOS_MAX
     best_xc = 0.0
     best_yc = 0.0
@@ -948,9 +1037,11 @@ def grid_search(geom: SlopeGeometry,
         critical=critical,
         n_surfaces_evaluated=n_evaluated,
         grid_fos=grid_fos,
+        warnings=[window_note] if window_note else [],
     )
 
 
+@_counts_ground_refusals
 def search_noncircular(
     geom: SlopeGeometry,
     x_entry_range: Tuple[float, float],
@@ -1100,6 +1191,7 @@ def search_noncircular(
 
 # ── PSO Noncircular Search ────────────────────────────────────────────────
 
+@_counts_ground_refusals
 def search_pso(
     geom: SlopeGeometry,
     x_entry_range: Tuple[float, float],
@@ -1327,6 +1419,7 @@ def search_pso(
 
 # ── Weak-Layer Biased Search (SNIFF-inspired) ────────────────────────────
 
+@_counts_ground_refusals
 def search_weak_layer_biased(
     geom: SlopeGeometry,
     x_entry_range: Tuple[float, float],
@@ -1505,6 +1598,7 @@ def _weighted_choice(weights):
 
 # ── Entry/Exit Region Search ─────────────────────────────────────────────
 
+@_counts_ground_refusals
 def search_entry_exit(
     geom: SlopeGeometry,
     x_entry_range: Tuple[float, float],
@@ -1527,9 +1621,12 @@ def search_entry_exit(
     geom : SlopeGeometry
         Slope definition.
     x_entry_range : (float, float)
-        x-range where slip enters the ground (typically upslope).
+        x-range of the surface's entry, its low-x end: the end with the
+        smaller x, whichever way the slope faces (the toe side of a slope
+        that rises to the right, the crest side of one that falls to it).
     x_exit_range : (float, float)
-        x-range where slip exits the ground (typically at toe).
+        x-range of the surface's exit, its high-x end. Windows given the
+        other way round are swapped and ``warnings`` says so (GM-124).
     n_entry : int
         Number of trial entry points. Default 10.
     n_exit : int
@@ -1545,6 +1642,8 @@ def search_entry_exit(
     -------
     SearchResult
     """
+    x_entry_range, x_exit_range, window_note = _ordered_windows(
+        x_entry_range, x_exit_range)
     best_fos = _FOS_MAX
     best_xc = 0.0
     best_yc = 0.0
@@ -1678,15 +1777,24 @@ def search_entry_exit(
         except ValueError:
             pass
 
+    notes = [window_note] if window_note else []
+    if n_evaluated == 0:
+        notes.append(
+            f"No circle was scored: no entry point (x {x_entry_range[0]:.2f} "
+            f"to {x_entry_range[1]:.2f}) lies more than 1 m left of an exit "
+            f"point (x {x_exit_range[0]:.2f} to {x_exit_range[1]:.2f}). Entry "
+            f"is the low-x end of a slip surface and exit the high-x end.")
     return SearchResult(
         critical=critical,
         n_surfaces_evaluated=n_evaluated,
         grid_fos=grid_fos,
+        warnings=notes,
     )
 
 
 # ── Differential-Evolution Noncircular Refinement ───────────────────────
 
+@_counts_ground_refusals
 def search_de(
     geom: SlopeGeometry,
     x_entry_range: Tuple[float, float],

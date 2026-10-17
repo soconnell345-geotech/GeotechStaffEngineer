@@ -22,15 +22,17 @@ The RI comparison is the headline. This example needed the additive `ru`
 probabilistic variable (added with F1/F2 alongside `gamma_sat`).
 
 VERDICT: PASS. The entry/exit search gives a Bishop critical FOS of 1.332
-(-0.2% vs Hassan-Wolff 1.334, -0.6% vs Slide 1.340) with its windows set from
-the slope (GM-57); with windows from the model width it gave 1.325 (-0.7% /
--1.1%) on the circle pinned below, which the reliability tests use (F = 1.325
-there; a 20 x 20 entry/exit search gives 1.326). The FOSM COV_F 0.1225 REPRODUCES
-Hassan-Wolff's implied FOS-COV: the module's lognormal_beta evaluated at the
-published deterministic FOS (1.334) gives RI 2.30, within 1.6% of Hassan-Wolff's
-2.336 (and the module's own F=1.325 -> RI 2.244 is within ~4%). FOSM ~= MC. The
-variance is c'-dominated (~70%), then phi (~23%) -- physically sensible for a
-COV_c'=0.20 slope.
+(-0.1% vs Hassan-Wolff 1.334, -0.6% vs Slide 1.340) with its windows set from
+the slope (GM-57). The reliability tests use the circle pinned below (from an
+earlier search with windows from the model width): F = 1.336 on it (+0.2% /
+-0.3%). It passes 1.3 cm over the toe and dips 0.2 mm under the level ground
+in front of it; until GM-122 it was taken from that touch to its exit, the
+slice at the toe fell in the air and was dropped, and it read 1.325 (RI
+2.244). The FOSM COV_F 0.1228 REPRODUCES Hassan-Wolff's implied FOS-COV: the
+module's lognormal_beta evaluated at the published deterministic FOS (1.334)
+gives RI 2.29, within 1.8% of Hassan-Wolff's 2.336 (and the module's own
+F=1.336 -> RI 2.308 is within 1.2%). FOSM ~= MC. The variance is c'-dominated
+(~70%), then phi (~23%) -- physically sensible for a COV_c'=0.20 slope.
 """
 import pytest
 
@@ -69,10 +71,11 @@ def test_v042_fosm_reliability_index_matches_hassan_wolff():
     FOS-COV -- the module's lognormal RI at the published FOS matches 2.336."""
     fr = fosm_fos(_geom(), _VARS, xc=_XC, yc=_YC, radius=_R,
                   method="bishop", n_slices=30)
-    assert fr.fos_mlv == pytest.approx(1.325, abs=0.01)
-    assert fr.cov_f == pytest.approx(0.1225, abs=0.012)
-    # module's own reliability index (at its FOS 1.325)
-    assert fr.beta_lognormal == pytest.approx(2.244, abs=0.06)
+    assert fr.fos_mlv == pytest.approx(1.336, abs=0.01)
+    assert fr.cov_f == pytest.approx(0.1228, abs=0.012)
+    # module's own reliability index (at its FOS 1.336; 1.325 -> 2.244
+    # before GM-122, with the slice at the toe dropped)
+    assert fr.beta_lognormal == pytest.approx(2.308, abs=0.06)
     # evaluated at the PUBLISHED deterministic FOS -> reproduces Hassan-Wolff 2.336
     assert lognormal_beta(1.334, fr.cov_f) == pytest.approx(2.336, abs=0.10)
     # c'-dominated variance (COV_c' = 0.20 is the largest), then phi

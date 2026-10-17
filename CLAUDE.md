@@ -254,7 +254,9 @@ Key conventions:
       the slope search's ranges from the slope's own geometry, with
       what it covered and refused in the result; each module's result
       lists its choices (method, given or default, basis, alternatives)
-      and tool results the defaults used;
+      and tool results the defaults used. 2026-10-17: a slip surface
+      below the ground in more than one stretch refused, and circles
+      passing above the toe searched by default (release note);
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done".
     Open next: Foundry brief 6, which measures all of this, is drafted

@@ -79,6 +79,7 @@ from slope_stability.slip_surface import CircularSlipSurface, PolylineSlipSurfac
 from slope_stability.slices import build_slices
 from slope_stability.gle import gle_fos
 from slope_stability.results import SearchResult
+from slope_stability.search import _counts_ground_refusals, _ordered_windows
 
 
 _METHODS = ("corps_2stage", "duncan_3stage", "lowe_karafiath")
@@ -591,6 +592,7 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
     )
 
 
+@_counts_ground_refusals
 def search_rapid_drawdown(geom: SlopeGeometry,
                           drawdown_from_elevation: float,
                           drawdown_to_elevation: float,
@@ -647,7 +649,10 @@ def search_rapid_drawdown(geom: SlopeGeometry,
     nx, ny : int
         Grid resolution (circular) or entry/exit sampling (entry_exit). Default 10.
     x_entry_range, x_exit_range : (float, float), optional
-        Entry/exit x windows (auto from geometry if None).
+        Entry/exit x windows (auto from geometry if None). The entry is the
+        surface's low-x end and the exit its high-x end, whichever way the
+        slope faces; windows given the other way round are swapped and the
+        search's ``warnings`` says so (GM-124).
     n_trials, n_points, seed : int / int / int
         Random / DE noncircular controls (see ``search_noncircular``/``search_de``).
     n_slices, tol, f_interslice :
@@ -658,8 +663,8 @@ def search_rapid_drawdown(geom: SlopeGeometry,
         Stage-3 drained-substitution normal basis, 'fellenius' (default) or
         'gle'. See ``rapid_drawdown_fos``.
     toe_circles, infinite_slope : bool
-        Also score circles through each slope toe (circular / entry_exit) and
-        shallow planar surfaces on faces of cohesionless soil, with the
+        Also score circles through each slope toe and circles passing above
+        it (circular / entry_exit) and shallow planar surfaces on faces of cohesionless soil, with the
         drawdown FOS, and report the lowest -- as ``search_critical_surface``
         does (GM-54; see ``search_supplements``). Caller-given ranges are
         honoured; the automatic ones do not restrict these families. The
@@ -730,6 +735,8 @@ def search_rapid_drawdown(geom: SlopeGeometry,
             return _FOS_MAX
         return r.FOS
 
+    x_entry_range, x_exit_range, window_note = _ordered_windows(
+        x_entry_range, x_exit_range)
     given = dict(x_entry_range=x_entry_range, x_exit_range=x_exit_range,
                  x_range=x_range, y_range=y_range)
     windows_auto = (x_entry_range is None, x_exit_range is None)
@@ -781,6 +788,8 @@ def search_rapid_drawdown(geom: SlopeGeometry,
         infinite_slope=infinite_slope,
         surface_types=("circular", "entry_exit", "noncircular",
                        "noncircular_de"))
+    if window_note:
+        search.warnings.insert(0, window_note)
 
     # Recompute the stage-level detail on the winning surface.
     dd = None

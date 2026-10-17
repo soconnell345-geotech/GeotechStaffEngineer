@@ -29,7 +29,8 @@ def test_circular_search_names_what_it_did_not_try():
         "what": "FOS method of the search", "chosen": "bishop",
         "how": "default"}
     fam = c["surface families tried"]
-    assert fam["chosen"] == "circular, toe circle, infinite slope"
+    assert fam["chosen"] == ("circular, toe circle, circle passing above "
+                             "the toe, infinite slope")
     assert fam["alternatives"] == [
         "not tried: noncircular, by a noncircular search "
         "(surface_type 'noncircular_de')"]

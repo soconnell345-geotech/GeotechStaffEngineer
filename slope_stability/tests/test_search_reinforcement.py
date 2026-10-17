@@ -287,21 +287,23 @@ def test_slide85_bishop_search_reverse_curvature_and_short_arm():
     Slide2's default closes such circles); the support passes 4.1 ft below
     its centre, so Bishop counts 29 % of it. The result says both, and that
     Spencer has no solution there. Discarding reverse-curvature circles
-    (Slide2's other choice) gives 1.485 active / 1.302 passive at 30 slices
-    on a circle tangent to the base that enters the face just above the toe
-    (centre (17.3, 32.0), R 22, out at x = 39.2); the same circle at 240
-    slices gives 1.511 / 1.318 against D&W 1.51 / 1.32 (Slide2 1.531 /
-    1.324). Before GM-57 the automatic exit window, from x = 40.2, kept the
-    search off it, and the toe circle that governed, 1.503 / 1.305 at 30
-    slices, comes to 1.557 / 1.338 at 240."""
+    (Slide2's other choice) gives 1.467 active / 1.296 passive at 30 slices
+    on a circle tangent to the base that comes out on the face 0.24 / 0.12
+    above the toe (centre (18.2, 31.0), R 21.0, out at x = 39.2), found by
+    the circles passing above the toe (GM-122); the same circle at 240
+    slices gives 1.508 / 1.318 against D&W 1.51 / 1.32 (Slide2 1.531 /
+    1.324). The main search's own circle reads 1.485 / 1.302 at 30 slices
+    and 1.511 / 1.318 at 240. Before GM-57 the automatic exit window, from
+    x = 40.2, kept the search off it, and the toe circle that governed,
+    1.503 / 1.305 at 30 slices, comes to 1.557 / 1.338 at 240."""
     res = search_critical_surface(_slide85c(), method="bishop")
     assert res.critical.FOS == pytest.approx(1.304, abs=0.005)
     text = " ".join(res.warnings)
     assert "reverse-curvature" in text and "5.89 m deep" in text
     assert "29 % of their force counts" in text
     assert "finds no equilibrium solution" in text
-    for convention, fos, dw in (("active", 1.485, 1.51),
-                                ("passive", 1.302, 1.32)):
+    for convention, fos, dw in (("active", 1.467, 1.51),
+                                ("passive", 1.296, 1.32)):
         g = _slide85c(convention, reverse_curvature="discard")
         r = search_critical_surface(g, method="bishop")
         c = r.critical

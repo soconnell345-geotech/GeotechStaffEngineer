@@ -594,11 +594,21 @@ class SearchResult:
         (degenerate geometry / non-converged rigorous GLE / jagged low-FOS
         artifact). Zero for circular searches. A majority-rejected search also
         emits a ``warnings.warn`` — see ``search._rejection_kwargs``.
+    n_rejected_ground_crossings : int
+        Trial surfaces, circular or not, the search refused because they
+        are below the ground over more than one stretch: they leave the
+        ground and come back into it, so the soil above them is not one
+        sliding mass (GM-122, ``slip_surface.GroundCrossingError``). A
+        search that runs others (``search_critical_surface``) counts theirs
+        and its supplementary families' too.
     governing_surface : str
         Which kind of surface governs ``critical`` (set by
         ``search_critical_surface``): 'circular' / 'noncircular' (the main
-        search), 'toe_circle' or 'infinite_slope' (shallow planar sliding
-        in cohesionless soil). See ``search_supplements``. Empty when the
+        search), 'toe_circle', 'circle_above_toe' (a circle passing above
+        the toe, its lower end on the face) or 'infinite_slope' (shallow
+        planar sliding in cohesionless soil). See ``search_supplements``.
+        ``search_ranges['faces_covered']`` gives the faces the two circle
+        families started from. Empty when the
         search was called directly (grid_search etc.).
     candidates : dict
         Minimum FOS of each surface family tried, keyed as above.
@@ -649,6 +659,7 @@ class SearchResult:
     n_rejected_geometry: int = 0
     n_rejected_nonconverged: int = 0
     n_rejected_jagged: int = 0
+    n_rejected_ground_crossings: int = 0
     governing_surface: str = ""
     candidates: Dict[str, float] = field(default_factory=dict)
     warnings: List[str] = field(default_factory=list)
@@ -666,6 +677,10 @@ class SearchResult:
             "",
             f"  Surfaces evaluated: {self.n_surfaces_evaluated}",
         ]
+        if self.n_rejected_ground_crossings:
+            lines.append(f"  Refused, not one sliding mass (leave the ground "
+                         f"and come back into it): "
+                         f"{self.n_rejected_ground_crossings}")
         if self.critical:
             lines.append(f"  Minimum FOS:       {self.critical.FOS:.3f}")
             lines.append(f"  Method:            {self.critical.method}")
@@ -743,12 +758,13 @@ class SearchResult:
     def to_dict(self) -> Dict[str, Any]:
         d = {"n_surfaces_evaluated": self.n_surfaces_evaluated}
         n_rej = (self.n_rejected_geometry + self.n_rejected_nonconverged
-                 + self.n_rejected_jagged)
+                 + self.n_rejected_jagged + self.n_rejected_ground_crossings)
         if n_rej:
             d["n_rejected"] = {
                 "geometry": self.n_rejected_geometry,
                 "nonconverged": self.n_rejected_nonconverged,
                 "jagged": self.n_rejected_jagged,
+                "ground_crossings": self.n_rejected_ground_crossings,
             }
         if self.critical:
             d["critical"] = self.critical.to_dict()

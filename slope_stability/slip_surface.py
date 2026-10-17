@@ -11,6 +11,15 @@ duck-typed interface:
 - find_entry_exit(geom) -> (x_entry, x_exit)
 - is_circular -> bool
 
+A slip surface is the part of the trial surface below the ground surface,
+between where it enters the soil and where it leaves it: the base of ONE
+sliding mass. A trial surface that is below the ground over more than one
+stretch (it leaves the ground and comes back into it) bounds more than one
+mass, so ``find_entry_exit`` refuses it with ``GroundCrossingError`` rather
+than taking it from its first crossing to its last (GM-122; see DESIGN.md
+"One sliding mass"). A stretch that only touches the ground (its greatest
+depth under 1 % of the deepest stretch's) carries no mass and is left out.
+
 References:
     Duncan, Wright & Brandon (2014) — Chapters 6-7
     Spencer (1967) — Geotechnique, Vol. 17, pp. 11-26
@@ -21,6 +30,104 @@ from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
 
 from slope_stability.geometry import SlopeGeometry
+
+
+# A polyline within this of the ground (m) is on it: it neither starts nor
+# ends a stretch below the ground (its ends are usually placed on it).
+_ON_GROUND_TOL = 1e-6
+
+# A stretch below the ground whose greatest depth is under this fraction of
+# the deepest stretch's only touches the ground: it carries no mass and is
+# left out. A circle passing just over a toe dips a fraction of a millimetre
+# under the ground in front of it (0.2 mm under 4 m of slope in V-042).
+_TOUCH_FRACTION = 0.01
+
+
+def _stretches_below(samples, crossings, tol=_ON_GROUND_TOL):
+    """The stretches (x_from, x_to) where a surface is below the ground.
+
+    ``samples`` are (x, depth below the ground) in x order and
+    ``crossings`` the bisected crossings of the ground between them. A
+    stretch is a run of samples more than ``tol`` below the ground; a
+    sample within ``tol`` of the ground (a surface built through a point on
+    it, a toe it passes through) neither starts nor ends one. A stretch
+    starts and ends at its crossings, else at its last or first sample on
+    the ground. One below the ground at the first or last sample runs out
+    of the sampled range there and starts or ends at that sample.
+    """
+    stretches = []
+    run = None
+    last_end = -math.inf
+    for i, (x, depth) in enumerate(samples):
+        if depth > tol:
+            if run is None:
+                before = [c for c in crossings if last_end < c <= x]
+                start = (before[-1] if before
+                         else x if i == 0 else samples[i - 1][0])
+                run = [start, x]
+            run[1] = x
+        elif depth < -tol and run is not None:
+            after = [c for c in crossings if run[1] <= c <= x]
+            end = after[-1] if after else samples[i - 1][0]
+            stretches.append((run[0], end))
+            last_end = end
+            run = None
+    if run is not None:
+        x_last, depth_last = samples[-1]
+        after = [c for c in crossings if run[1] <= c <= x_last]
+        end = (x_last if depth_last > tol or not after else after[-1])
+        stretches.append((run[0], end))
+    return stretches
+
+
+def _masses(stretches, depth_at, xs_extra=()):
+    """The stretches below the ground that carry a mass (GM-122).
+
+    ``depth_at(x)`` is the depth of the surface below the ground at x. A
+    stretch whose greatest depth is under ``_TOUCH_FRACTION`` of the
+    deepest stretch's is a touch, not a mass, and is dropped. The depth is
+    read at 63 points across each stretch and at ``xs_extra`` inside it
+    (the ground's and a polyline's vertices).
+    """
+    depths = []
+    for a, b in stretches:
+        xs = [a + (b - a) * k / 64 for k in range(1, 64)]
+        xs += [x for x in xs_extra if a < x < b]
+        depths.append(max(depth_at(x) for x in xs))
+    deepest = max(depths)
+    return [tuple(s) for s, d in zip(stretches, depths)
+            if d >= _TOUCH_FRACTION * deepest]
+
+
+class GroundCrossingError(ValueError):
+    """A trial surface below the ground over more than one stretch (GM-122).
+
+    It leaves the ground and comes back into it, so the soil above it is
+    more than one sliding mass and the stretch in the air between them is
+    part of none. ``stretches`` lists the (x_from, x_to) stretches below
+    the ground. A ``ValueError``, so every caller that refuses an
+    inadmissible surface refuses this one; the searches also count it
+    (``SearchResult.n_rejected_ground_crossings``).
+    """
+
+    def __init__(self, what: str, stretches, x_ends, about: bool = False):
+        self.stretches = [(float(a), float(b)) for a, b in stretches]
+        x_min, x_max = x_ends
+        tol = 1e-6 * max(1.0, abs(x_max - x_min))
+
+        def at(x):
+            end = (abs(x - x_min) <= tol or abs(x - x_max) <= tol)
+            return f"{x:.2f}" + (" (the end of the profile)" if end else "")
+
+        where = ", ".join(f"x {at(a)} to {at(b)}" for a, b in self.stretches)
+        super().__init__(
+            f"{what} is below the ground surface over "
+            f"{len(self.stretches)} separate stretches "
+            f"({'about ' if about else ''}{where}): it leaves the ground and "
+            f"comes back into it, so the soil above it is more than one "
+            f"sliding mass. A slip surface enters the ground once and leaves "
+            f"it once; give a surface that bounds one of these masses (a "
+            f"circle through its two ends, or a polyline).")
 
 
 @dataclass
@@ -93,6 +200,10 @@ class CircularSlipSurface:
 
         Raises
         ------
+        GroundCrossingError
+            If the circle is below the ground over more than one stretch
+            (GM-122): it crosses the ground more than twice, or runs out of
+            the profile below the ground beside a stretch it closes.
         ValueError
             If circle does not intersect ground surface properly.
         """
@@ -124,10 +235,12 @@ class CircularSlipSurface:
         crossings = []
         x_prev = search_lo
         f_prev = f(x_prev)
+        samples = [(x_prev, f_prev)]
 
         for i in range(1, n_sample + 1):
             x_curr = search_lo + i * dx
             f_curr = f(x_curr)
+            samples.append((x_curr, f_curr))
             if f_prev * f_curr < 0:
                 # Sign change — bisect to find crossing
                 a, b = x_prev, x_curr
@@ -144,15 +257,41 @@ class CircularSlipSurface:
             x_prev = x_curr
             f_prev = f_curr
 
-        if len(crossings) < 2:
+        # One sliding mass (GM-122). The stretches below the ground run
+        # between crossings, and from the end of the profile where the
+        # circle is below the ground there. More than one: the circle leaves
+        # the ground and comes back into it (say it dips under the level
+        # ground in front of a toe, then rises through the air to the face),
+        # and taking it from its first crossing to its last made the stretch
+        # in the air slices and two masses one. A stretch that only touches
+        # the ground is left out (``_masses``).
+        stretches = _stretches_below(samples, crossings)
+        if len(stretches) > 1:
+            stretches = _masses(stretches, f,
+                                [p[0] for p in geom.surface_points])
+            if len(stretches) > 1:
+                raise GroundCrossingError(
+                    f"Circle (xc={self.xc:.2f}, yc={self.yc:.2f}, "
+                    f"R={self.radius:.2f})", stretches, (x_min, x_max))
+
+        # Its one stretch below the ground, from where it enters the ground
+        # to where it leaves it. Below the ground at an end of the profile,
+        # it does neither there: it runs out of the model.
+        runs_out = bool(stretches) and (
+            (samples[0][1] > _ON_GROUND_TOL
+             and stretches[0][0] == samples[0][0])
+            or (samples[-1][1] > _ON_GROUND_TOL
+                and stretches[0][1] == samples[-1][0]))
+        if not stretches or runs_out:
+            n = len([c for c in crossings
+                     if not stretches
+                     or stretches[0][0] <= c <= stretches[0][1]])
             raise ValueError(
                 f"Circle (xc={self.xc:.2f}, yc={self.yc:.2f}, R={self.radius:.2f}) "
                 f"does not intersect the ground surface at 2 points "
-                f"(found {len(crossings)} crossing(s))"
+                f"(found {n} crossing(s))"
             )
-
-        # Use first and last crossings
-        return (crossings[0], crossings[-1])
+        return stretches[0]
 
     def reverse_curvature_crack(self, geom: SlopeGeometry,
                                 x_entry: Optional[float] = None,
@@ -279,6 +418,13 @@ class PolylineSlipSurface:
         -------
         (x_entry, x_exit) : tuple of float
             x_entry < x_exit.
+
+        Raises
+        ------
+        GroundCrossingError
+            If the polyline is below the ground over more than one stretch
+            between its ends (GM-122): it rises into the air and comes back
+            into the ground.
         """
         pts = self.points
         x_entry = pts[0][0]
@@ -306,10 +452,12 @@ class PolylineSlipSurface:
         crossings = []
         x_prev = search_lo
         f_prev = f(x_prev)
+        samples = [(x_prev, f_prev)]
 
         for i in range(1, n_sample + 1):
             x_curr = search_lo + i * dx
             f_curr = f(x_curr)
+            samples.append((x_curr, f_curr))
             if f_prev * f_curr < 0:
                 a, b = x_prev, x_curr
                 for _ in range(50):
@@ -324,6 +472,35 @@ class PolylineSlipSurface:
                 crossings.append((a + b) / 2.0)
             x_prev = x_curr
             f_prev = f_curr
+
+        # One sliding mass (GM-122): below the ground over one stretch
+        # between its ends. A point on the ground (within _ON_GROUND_TOL)
+        # neither starts nor ends a stretch, and a stretch that only
+        # touches the ground is left out (``_masses``).
+        stretches = []
+        below = False
+        for x, fx in samples:
+            if fx > _ON_GROUND_TOL:
+                if not below:
+                    stretches.append([x, x])
+                    below = True
+                stretches[-1][1] = x
+            elif fx < -_ON_GROUND_TOL:
+                below = False
+        if len(stretches) > 1:
+            masses = _masses(
+                stretches, f,
+                [p[0] for p in geom.surface_points] + [p[0] for p in pts])
+            if len(masses) > 1:
+                raise GroundCrossingError(
+                    f"Polyline ({len(pts)} points, x {pts[0][0]:.2f} to "
+                    f"{pts[-1][0]:.2f})", masses, (x_min, x_max), about=True)
+            # the one mass: its own crossings, else the polyline's ends
+            lo, hi = masses[0]
+            left = [c for c in crossings if lo - dx <= c <= lo]
+            right = [c for c in crossings if hi <= c <= hi + dx]
+            return (left[-1] if left else x_entry,
+                    right[0] if right else x_exit)
 
         if len(crossings) >= 2:
             return (crossings[0], crossings[-1])

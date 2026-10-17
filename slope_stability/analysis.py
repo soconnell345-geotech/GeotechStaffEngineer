@@ -23,6 +23,7 @@ from slope_stability.gle import janbu_fos
 from slope_stability.search import (
     grid_search, search_noncircular,
     search_pso, search_weak_layer_biased, search_entry_exit, search_de,
+    _counts_ground_refusals, _ordered_windows,
 )
 from slope_stability.results import (
     SlopeStabilityResult, SliceData, SearchResult, InfiniteSlopeResult,
@@ -499,6 +500,7 @@ def compare_methods_table(geom: SlopeGeometry,
     return out
 
 
+@_counts_ground_refusals
 def search_critical_surface(
     geom: SlopeGeometry,
     x_range: Tuple[float, float] = None,
@@ -547,6 +549,11 @@ def search_critical_surface(
     Caller-given windows and centre ranges are honoured; the automatic
     ones do not restrict the supplementary families.
 
+    A trial surface below the ground over more than one stretch (it leaves
+    the ground and comes back into it) is not one sliding mass and is
+    refused (GM-122, ``slip_surface.GroundCrossingError``);
+    ``n_rejected_ground_crossings`` counts them, in every family.
+
     Parameters
     ----------
     geom : SlopeGeometry
@@ -569,9 +576,12 @@ def search_critical_surface(
         polylines), 'noncircular_de' (differential-evolution refinement
         seeded by a random search), 'pso', or 'weak_layer'.
     x_entry_range : (float, float), optional
-        Allowed entry x-coordinate range.
+        Allowed entry x-coordinate range. The entry is the surface's low-x
+        end, whichever way the slope faces.
     x_exit_range : (float, float), optional
-        Allowed exit x-coordinate range.
+        Allowed exit x-coordinate range: the surface's high-x end. Windows
+        given the other way round (the entry window wholly right of the
+        exit window) are swapped, and ``warnings`` says so (GM-124).
     n_trials : int
         Number of random trials for noncircular search. Default 500.
     n_points : int
@@ -579,7 +589,8 @@ def search_critical_surface(
     seed : int, optional
         Random seed for noncircular search reproducibility.
     toe_circles : bool
-        Score circles through the toe of each slope face (circular and
+        Score circles through the toe of each slope face and circles
+        passing above it, their lower end on the face (circular and
         entry_exit searches). Default True.
     infinite_slope : bool
         Score shallow planar surfaces on faces of cohesionless soil.
@@ -596,6 +607,10 @@ def search_critical_surface(
         apply_supplements, search_choices, CIRCULAR, NONCIRCULAR,
     )
     from slope_stability.search_ranges import resolve_ranges
+    # Entry is the low-x end, exit the high-x end: windows given the other
+    # way round are swapped, and the result says so (GM-124).
+    x_entry_range, x_exit_range, window_note = _ordered_windows(
+        x_entry_range, x_exit_range)
     given = dict(x_entry_range=x_entry_range, x_exit_range=x_exit_range,
                  x_range=x_range, y_range=y_range)
     windows_auto = (x_entry_range is None, x_exit_range is None)
@@ -626,6 +641,8 @@ def search_critical_surface(
             result, surface_type=surface_type, method=method,
             scored_with=scored, toe_circles=toe_circles,
             infinite_slope=infinite_slope)
+        if window_note:
+            result.warnings.insert(0, window_note)
         return result
 
     if surface_type in ("noncircular", "noncircular_de", "pso", "weak_layer"):

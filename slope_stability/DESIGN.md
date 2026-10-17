@@ -22,18 +22,19 @@ stabilizing piles in every method (`reinforcement.py`).
 
 ## Files
 - `geometry.py` — SlopeSoilLayer (elevation-based), SlopeGeometry (polyline surface/GWT)
-- `slip_surface.py` — CircularSlipSurface (center + radius), PolylineSlipSurface (polyline points)
+- `slip_surface.py` — CircularSlipSurface (center + radius), PolylineSlipSurface (polyline points); a surface below the ground over more than one stretch is refused (`GroundCrossingError`, GM-122)
 - `slices.py` — Slice dataclass, build_slices() with multi-layer weight/pore pressure
 - `methods.py` — fellenius_fos(), bishop_fos(), spencer_fos() / morgenstern_price_fos() (wrappers of the rigorous `gle.gle_fos`; the `*_legacy` approximate forms are the fallback), solve_rigorous()
 - `gle.py` — the rigorous general limit equilibrium (Fredlund & Krahn 1977; supports by the slice-by-slice march of Zhu et al. 2005, GM-60) and janbu_fos()
 - `reinforcement.py` — nails, anchors, geosynthetics and stabilizing piles as forces at the base of the slice each crosses, in every method (GM-53, GM-59)
 - `search.py` — optimize_radius(), grid_search() (with the local refinement of its lowest centres, GM-87), search_noncircular(), entry/exit filtering; a rigorous noncircular solution must hold about a second axis and slicing (`_solution_fails`, GM-57 review)
-- `search_supplements.py` — toe-circle and infinite-slope (shallow planar) families scored after every `search_critical_surface` (GM-13, GM-14)
+- `search_supplements.py` — toe-circle, circle-passing-above-the-toe and infinite-slope (shallow planar) families scored after every `search_critical_surface` (GM-13, GM-14, GM-122)
 - `search_ranges.py` — the automatic entry / exit windows and centre ranges, set from the slope's toe, crest, height and depth to the base (GM-57)
 - `analysis.py` — analyze_slope(), search_critical_surface() orchestrators
 - `results.py` — SliceData, SlopeStabilityResult, SearchResult
 - `nails.py` — SoilNail, NailContribution (nails reach the FOS through `reinforcement.py`)
-- `tests/` — 574 tests in 27 files (collected 2026-10-16), among them:
+- `tests/` — 598 tests in 29 files (collected 2026-10-17), among them:
+- `tests/test_ground_crossings.py` — 21 tests (one sliding mass per trial surface, the touch tolerance at its threshold, the refusals counted, the circles passing above the toe, GM-122; entry / exit windows given the wrong way round, GM-124)
 - `tests/test_slope_stability.py` — 92 tests (core + entry/exit limits + noncircular search; Taylor's phi = 0 chart, GM-57)
 - `tests/test_search_ranges.py` — 23 tests (the automatic ranges; a directed search and what the result says it covered; the same slope drawn narrow and wide, GM-57)
 - `tests/test_duncan_verification.py` — 28 tests (Duncan §7.6-7.7 verification examples; Ex 1 against Taylor's chart, GM-63, and the default search on long profiles, GM-87)
@@ -631,6 +632,178 @@ has no solution:
   without its support it finds no solution on any circle tried (a 6 x 6
   Spencer search called the legacy solver 415 times); the legacy value is
   Bishop's there. Not changed here.
+
+### One sliding mass per trial surface (GM-122, GM-124; 2026-10-16)
+**The rule.** Limit equilibrium takes the soil above the slip surface as one
+free body, divided into slices (Duncan, Wright & Brandon 2014, Ch. 6). A
+trial surface that is below the ground over more than one stretch leaves
+the ground and comes back into it: it bounds more than one mass, with air
+between them that belongs to neither. `find_entry_exit` refuses it with
+`GroundCrossingError` (a `ValueError`), circle or polyline. Slide2 does the
+same: "Each valid slip surface analyzed by Slide2 always has exactly two
+intersection points with the slope (ground surface)", and "More than two
+slip surface / slope intersections with no valid slip surface" is its
+error -105, a surface not analysed.
+
+**Before**, a circle was taken from its first crossing to its last. The
+slices in the air had no height and were dropped one by one, so the slice
+count, the reported entry and the layers along the surface were wrong. On
+the w10 geometry (F61: ground (0, 0), (20, 0), (30, 10), (60, 10); 3.5 m of
+residual clay over sandstone): the circle (10, 39.5) R 40 crosses the
+ground at x 3.70, 16.30, 21.06 and 37.01 and read Bishop 13.55 on 34 of 40
+slices (the face mass alone: Spencer 7.40); the default search's critical
+circle (0, 50) R 50.92 read 1.143 on 9 of 40 slices, with its entry named
+at x 9.64 in the level ground in front of the toe and sandstone along its
+base, while its slices lay on the face from x 26.55 to 31.51.
+
+**Why refuse rather than score one of the masses.** No reference says
+which of two masses a circle bounds is the surface to report, and picking
+one (say the one the model's end does not cut) makes the answer depend on
+the model's width. The circles and polylines that bound each mass alone are
+scored by the search anyway. This is the SS-5 precedent: a surface below
+the deepest layer once had its middle slices "silently dropped" and gave a
+"meaningless (often absurdly low) FOS"; it is refused instead.
+
+**Tolerances.**
+- A point within 1e-6 m of the ground neither starts nor ends a stretch: a
+  circle the toe-circle family builds through the toe, or an entry / exit
+  circle through its entry point, is on the ground there, whatever the
+  rounding.
+- A stretch whose greatest depth is under 1 % of the deepest stretch's only
+  touches the ground and is left out (`_TOUCH_FRACTION`). V-042's pinned
+  circle passes 1.3 cm over the toe and dips 0.2 mm under the ground in
+  front of it: it is now the face mass, x 5.01 to 18.22, every slice kept
+  (Bishop 1.336). Taken from the touch at x 4.30, the slice at the toe fell
+  in the air and was dropped (1.325). Published: Hassan & Wolff 1.334,
+  Slide2 1.340.
+- A circle below the ground at an end of the profile runs out of the model
+  and is refused, as it was before (`ValueError`, "does not intersect the
+  ground surface at 2 points").
+
+**Counted, not warned.** Every search counts its refusals:
+`SearchResult.n_rejected_ground_crossings`,
+`to_dict()["n_rejected"]["ground_crossings"]`, a line in `summary()`. A
+search run inside another adds its count to the outer one (a contextvar
+tally, `search._counts_ground_refusals`), so `search_critical_surface` and
+`search_rapid_drawdown` count their supplementary families' too. There is
+no warning: the default search on w10 refuses 35 of its circles, routinely.
+
+**Callers.** Everything builds slices through `find_entry_exit` and already
+refused a `ValueError`: `search._compute_fos` and `_check_entry_exit` (which
+count), `analyze_slope` (raises to its caller), rapid drawdown (through
+`_compute_fos`'s `fos_fn`), the supplements, the figures
+(`plotting._circle_arc`), the interactive calc package and Newmark.
+
+**What moved** (slope "not slow" suite and the slope validation examples,
+before and after): every published value the tests pin stayed put except
+V-042, which moved toward the published one: the pinned circle 1.325 ->
+1.336 (FOSM beta_LN 2.244 -> 2.308 against Hassan & Wolff's 2.336; Monte
+Carlo Pf 1.75 % -> 1.65 %), its entry / exit search 1.3317 -> 1.3324
+(before: a circle entering at x 3.33 in front of the toe, 26 of 30 slices).
+Two coarse test searches with no published value moved: a 4 x 4 grid
+1.0999 -> 1.0986 (before: 21 of 30 slices kept) and a 4 x 4 entry / exit
+search 1.2562 -> 1.2622 (before: a circle through the toe that runs out of
+the model's left end under the level ground, scored as the face mass
+because rounding put it a hair above the toe; now refused, as Slide2
+refuses "Two slip surface / slope intersections, but one or more slip
+surface / nonslope External Boundary", its error -103). Main-search minima
+before the supplements and the refinement moved by up to 0.002 (ACADS 1(a)
+entry / exit 0.9858 -> 0.9879; reported 0.9848 unchanged, published 1.00,
+Slide2 0.987). On w10 the default search then reported Bishop 6.346 (a
+toe circle) / Spencer 6.349, both through the toe, where it had reported
+1.142 / 1.142 on the circle above: the refusal uncovered a gap in what the
+search covers, below.
+
+**What the refusal uncovered: circles passing above the toe.** With the
+full defaults on w10 (F61: nx = ny = 10, 40 slices) the main search tries
+centres over x 0-60, z 11-50 (10 x 10) and at each 20 radii
+(`optimize_radius`: from 0.5 m below the highest ground to the distance to
+the profile's first point at the model base), then golden-section refines
+the best. Its automatic windows (GM-57) are entry x 0-25, exit x 25-60:
+they meet at the face's mid-length (x 25, z 5), so every circle they admit
+enters below z 5, in the sandstone; the clay comes out on the face above
+z 6.5. Of the 2,000 coarse circles, 139 lie in the windows (lowest Bishop
+6.92), 1,728 do not cross the ground twice, 12 are refused and 121 bound
+one mass but fall outside the windows, 117 of them with their lower end on
+the face above the middle; the lowest of those, 0.980 (centre (26.67,
+11.0), R 4.45, x 26.55-31.00), runs through the clay. The radii reach the
+face circles; the windows refuse them. Before GM-122 they passed only as
+circles that crossed the ground four times, taken from a first crossing in
+front of the toe.
+
+FHWA NHI-06-088 p. 6-38: "If there is a weak layer above the toe of the
+slope, a circle passing above the toe of the slope may be more critical.
+Similarly, if there is water outside the toe of the slope, a circle passing
+above the water may be more critical." The search now scores them as a
+supplementary family, `circle_above_toe`, run with the toe circles
+(`search_supplements.search_toe_circles`, `toe_circles=True`):
+- from points on each face at 0.1 to 0.9 of its height, each chord to the
+  ground upslope (the toe circles' far-end offsets) and each centre along
+  its bisector (u = ln(t/c), 0.02 to 4) is scanned with Bishop; the best
+  start's height is refined by golden section with the far end held, then
+  the far end; Spencer / M-P / GLE, and in this family Janbu too, re-score
+  the best three with the method itself. Janbu is screened here because
+  these circles can enter the face steeply, where Janbu's solve falls with
+  the slice count: on Slide2 #85's clay face without its support, scanned
+  with Janbu itself, the family reported 0.697 on a circle (entry about
+  67 deg) that Bishop and Spencer read 1.22 and Janbu 0.86 on 20 slices,
+  0.70 on 30 and none on 40 or more. Screened, it gives 1.033 (1.036 on
+  120 slices) and the toe circle's 1.024 governs, as before the family.
+  The main search and the toe circles keep scanning with Janbu itself;
+- a circle must come out at its start (one that comes out lower is a toe
+  or base circle), keep its centre above the ground at both ends (no
+  reverse-curvature circle closed by a crack) and keep m_alpha =
+  cos(a) (1 + tan(a) tan(phi) / F) >= 0.2 on every slice under Bishop or
+  Janbu, which Slide2 checks by default (error -112). The family leaves
+  out the circles that fail either check, and the "surface families
+  tried" entry of `choices` says so. Without the last two, Duncan Ex 4 read
+  0.17 on a reverse-curvature circle with negative m_alpha on its steep
+  slices (1.93 on 80 slices, Spencer 1.53), and Slide2 #85 0.865 on a
+  circle closed by a crack 8.45 deep, 42 % of the slope's height;
+- caller-given windows and centre ranges bound it; the automatic ones do
+  not;
+- with a per-surface solve (rapid drawdown) it starts at 0.35 and 0.7 of
+  the height and does not refine the height.
+
+A family rather than more radii or wider default windows: the radii
+already reach these circles and the windows refuse them, and widening the
+GM-57 windows changes every main search the tests pin. The family is
+bounded (about 2,000 Bishop solves a face), says when it governs (a
+warning naming the start, its height above the toe and what kept the main
+search off it) and reports what it covered: `candidates`,
+`governing_surface`, `search_ranges['faces_covered']` (each face's toe and
+crest, the heights its circles started from, whether the height was
+refined) and the "surface families tried" entry of `choices`. Nothing in it
+looks at the layers.
+
+On w10 (F61 settings) the default search now reports Bishop 0.936 /
+Spencer 0.935 / Janbu 0.938 on a circle from x 26.50 on the face (z 6.50, where the
+clay's base comes out) to 30.81, every slice base in the clay; main search
+6.349, toe circle 6.346. On the weak layer over rock of
+`test_search_ranges` (4 m over rock meeting the face 6 m up): 4.82 -> 0.884
+against 0.885 from a 20 x 20 search with both windows over the whole
+profile. Run time of a default search: Bishop about 1.5 -> 2.5 s on w10
+and on the pinned cases (ACADS 1(a), V-042, Duncan Ex 1 drawn long, Slide2
+#86); Spencer (10 to 21 s) about 1 s more, inside the run-to-run scatter;
+a rapid-drawdown search (V-048, #98, 6 x 5 grid) 14 -> 19 s. What moved with it (slope "not slow" suite and slope
+validation examples): Slide2 #85 with reverse-curvature circles discarded,
+1.485 -> 1.467 active and 1.302 -> 1.296 passive at 30 slices, a circle
+coming out 0.24 / 0.12 above the toe that reads 1.508 / 1.318 at 240
+slices against D&W 1.51 / 1.32 (Slide2 1.531 / 1.324); V-052b Corps
+0.724 -> 0.722 (published 0.823); two coarse test searches with no
+published value, 1.0986 -> 1.0789 and 1.2622 -> 1.2606. Every other pinned
+value stayed put.
+
+**GM-124: entry and exit windows.** The entry is the low-x end of a surface
+and the exit its high-x end, whichever way the slope faces
+(`find_entry_exit` returns them in that order). `search._ordered_windows`
+reads a window given high bound first low bound first, and swaps an entry
+window lying wholly at or right of the exit window, with a note at the head
+of `warnings`; `grid_search`, `search_entry_exit`, `search_critical_surface`
+and `search_rapid_drawdown` apply it. Given the other way round, no circle
+could start in one window and end in the other, and the entry / exit
+search returned nothing and said nothing (F61 [13], [14]); it now also
+says when it scored no circle at all.
 
 ## Critical Sign Conventions
 - **Driving moment**: uses `W*(x_mid - xc)/R` + `abs(driving)`, NOT `W*sin(alpha)`
