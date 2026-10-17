@@ -376,7 +376,7 @@ class _GLESystem:
 
         # Geometric moment arms about the axis point (cross products)
         self.arm_S = []   # shear  (resisting, positive)
-        self.arm_N = []   # normal (zero for a true circle about its centre)
+        self.arm_N = []   # normal (near zero on a circle (chord bases))
         for s in ns:
             dx = s.x_mid - self.x0
             dz = s.z_base - self.y0

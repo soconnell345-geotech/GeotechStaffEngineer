@@ -67,6 +67,9 @@ search_critical_surface(geom, surface_type="noncircular",
 ### Circular (CircularSlipSurface)
 - Defined by center (xc, yc) and radius
 - Entry/exit found by bisection against ground surface
+- Sliced at the ground's breaks, its layer, water-table and crack-base
+  crossings and the surcharge edges, each slice's base its chord (GM-134;
+  "Where a circle is sliced" below)
 - Works with all three methods (Fellenius, Bishop, Spencer)
 - Spencer reduces to Bishop for circular (theta=0)
 
@@ -80,7 +83,8 @@ search_critical_surface(geom, surface_type="noncircular",
 - `tangent_angle_at(x)` — angle of segment containing x
 - Sliced at its corners, the ground's breaks and its layer and water-table
   crossings, each slice's base angle and length from its chord (GM-131; "Where
-  a noncircular surface is sliced" below). A circle is cut evenly.
+  a noncircular surface is sliced" below), and at surcharge and crack
+  edges (GM-134). A circle gets the same boundaries less the corners.
 - Both classes share `is_circular` property for dispatch
 
 ## Search Algorithms
@@ -318,7 +322,9 @@ and `refused_lowest` only where the result has them (GM-125).
   circle exits the crest at x = 7.1, inside the automatic exit window's
   lower bound (15), and its centre (2.5, 4.0) is below the crest, under the
   grid. Grid 2.78; true 2.287 (with the ranges set from the slope, GM-57,
-  the grid reads 2.344: the toe circle's centre is still below it). And
+  the grid reads 2.344: the toe circle's centre is still below it; since
+  GM-134 the toe circle the search finds reads 2.346 and the grid 2.348,
+  the 2.287 having been a slicing error at the arc's vertical end). And
   with c' = 0 the critical failure is not a circle at all but the shallow
   planar slide parallel to the face, which no circle of finite depth
   reaches: Slide2 #86 without its supports, grid 1.57 (0.974 since GM-57)
@@ -457,7 +463,7 @@ Unreinforced geometry: nothing is resolved and every solve is unchanged.
     slope) or the deep circle.
   - #85 (one 9,000 lb/ft support at mid-height, active): see "Support forces
     in each method" below (GM-59, GM-60) for the current values and why the
-    Bishop search gives 1.304 by default.
+    Bishop search gives 1.372 by default (1.304 before GM-134).
   - V-043 (Tandjiria geosynthetic at the fill base): the published force
     (44-56 kN/m to raise the UNREINFORCED critical surface to 1.35) is a
     single-surface quantity; a reinforced search cannot reach 1.35 with any
@@ -540,14 +546,14 @@ at 2V:1H on a rigid base, one 9,000 lb/ft support at mid-height):
 
 | | Module | Slide2 (circular) | D&W |
 |---|---:|---:|---:|
-| Active, on Slide2's printed GLE circle (15.446, 37.624, R 27.594): Bishop = Spencer = GLE | 1.564 | GLE 1.575 | 1.51 |
-| Active, Bishop search, default (reverse-curvature toe circle, 5.9 ft crack, arm 4.1 ft on R 14.1 ft) | 1.304 + warnings | 1.531 | 1.51 |
-| Active, Bishop search, `reverse_curvature='discard'` (1.503 before GM-122, 1.467 before GM-127) | 1.432 | 1.531 | 1.51 |
-| Active, Bishop search, `'discard'`, `m_alpha_rule='every_slice'` | 1.467 | 1.531 | 1.51 |
-| Active, Spencer search | 1.542 | 1.884 | |
-| Active, GLE search | 1.584 | 1.575 | |
-| Passive, Bishop on Slide2's active circle | 1.329 | | 1.32 |
-| Passive, Bishop search, default / `'discard'` / `'discard'` with `'every_slice'` | 1.208 / 1.274 / 1.296 | 1.324 | 1.32 |
+| Active, on Slide2's printed GLE circle (15.446, 37.624, R 27.594): Bishop / Spencer / GLE (1.564 each before GM-134) | 1.566 / 1.565 / 1.566 | GLE 1.575 | 1.51 |
+| Active, Bishop search, default (reverse-curvature toe circle, 5.9 ft crack, arm 4.1 ft on R 14.1 ft; 1.304 before GM-134) | 1.372 + warnings | 1.531 | 1.51 |
+| Active, Bishop search, `reverse_curvature='discard'` (1.503 before GM-122, 1.467 before GM-127, 1.432 before GM-134) | 1.508 | 1.531 | 1.51 |
+| Active, Bishop search, `'discard'`, `m_alpha_rule='every_slice'` (1.467 before GM-134) | 1.511 | 1.531 | 1.51 |
+| Active, Spencer search (1.542 before GM-134) | 1.551 | 1.884 | |
+| Active, GLE search (1.584 before GM-134) | 1.573 | 1.575 | |
+| Passive, Bishop on Slide2's active circle | 1.330 | | 1.32 |
+| Passive, Bishop search, default / `'discard'` / `'discard'` with `'every_slice'` (1.208 / 1.274 / 1.296 before GM-134) | 1.254 / 1.316 / 1.316 | 1.324 | 1.32 |
 | Passive, Spencer search | 1.346 | 1.872 | |
 | Passive, GLE search | 1.379 | 1.378 | |
 
@@ -644,8 +650,9 @@ has no solution:
   - *Supports cross the surface: `FOS` is None* (to_dict null,
     `is_stable` None; the calc package prints no stability check). The
     legacy approximate solver ignores supports, so its value is that of
-    the slope WITHOUT them: on #85's anchored toe circle 0.891 for a
-    surface Bishop puts at 1.304. Before GM-81 that number came back as
+    the slope WITHOUT them: on #85's anchored toe circle 0.938 for a
+    surface Bishop puts at 1.372 (0.891 and 1.304 before GM-134). Before
+    GM-81 that number came back as
     the Spencer FOS with only a Python warning. It is not returned at all.
   - *No support crosses it: `FOS` is the legacy approximate solver's
     value, labelled* (`method_solved` False, `method_used`, the warning
@@ -1047,6 +1054,10 @@ as the slicing gets finer (Slide2 #85's 1.304 circle: 0.182 on 30 slices,
 1.304 to 1.325, its clay face without the support 0.882 to 0.897, GM-13
 2.286 to 2.316, Duncan Ex 4 Bishop 1.259 to 1.288 and Janbu 1.199 to 1.238,
 the vertical cut 0.801 to 0.813. The rapid-drawdown search does not do this.
+Those moves were mostly the circle's tangent slicing at its vertical end;
+since GM-134 each slice takes its chord ("Where a circle is sliced"): #85
+1.372 on 30 slices, 1.373 on 60; GM-13's toe circle 2.346 with no warning;
+Duncan Ex 4 Janbu 1.203 to 1.212; the vertical cut 0.842.
 
 **Reverse curvature in the toe families.** The circles through the toe
 follow the geometry's `reverse_curvature` (default: closed by a crack, as
@@ -1076,7 +1087,9 @@ examples, `funhouse_agent -k slope`; every other value stayed put):
 The governing values of Slide2 #85 (1.304 active, 1.208 passive, Spencer
 1.542, GLE 1.584), its clay face without the support (0.882), GM-13 (2.286),
 the thin-base model (0.2715) and the vertical cut (0.800) are those of
-184c3f3: every slice below 0.2 on them is phi = 0.
+184c3f3: every slice below 0.2 on them is phi = 0. (Since GM-134: #85
+1.372 / 1.254 / 1.551 / 1.573, its clay face 0.910, GM-13 2.346 and the
+vertical cut 0.842; VALIDATION.md B16.)
 
 The w11 geometry (ground (0,0), (20,0), (30,10), (60,10); 3.5 m of clay,
 c' = 3, phi' = 22, over sandstone c' = 200, phi' = 40; no water): Bishop
@@ -1100,7 +1113,7 @@ before and after, and the slope suites ran no slower.
 boundary, entry to exit, and `build_slices` cuts there.
 
 - **A circle**: `n_slices` slices of equal width, each with the circle's
-  angle at its midpoint. Unchanged.
+  angle at its midpoint (until GM-134, next section).
 - **A polyline**: a boundary at each corner of the surface, each break in
   the ground surface, and each crossing of a layer's top or bottom or of the
   water table, strictly between entry and exit. Every corner is kept, however
@@ -1146,8 +1159,75 @@ boundary, entry to exit, and `build_slices` cuts there.
   / 28-60 (5 points, seed 3), which reported 6.847, finds no surface that
   holds and says so (2,325 evaluated: 398 refused for geometry, 1,774 not
   converged, 134 for m_alpha); the old surface reads 6.80 at any count.
-- **Not done.** A circle is not cut at layer or water-table crossings, and
-  surcharge-zone and tension-crack edges are not boundaries.
+- **Not done here; done by GM-134** (next section): circles cut at layer
+  and water-table crossings, and surcharge-zone and tension-crack edges as
+  boundaries.
+
+### Where a circle is sliced; surcharge and crack edges (GM-134, 2026-10-17)
+- **Where.** `slices.slice_breaks` gives, for a circle as for a polyline,
+  each break in the ground surface, each crossing of a layer's top or
+  bottom, of the water table and of a tension crack's base on the crest
+  half of the surface (and the middle of the surface, where that half ends,
+  when the crack reaches it), and each edge of a surcharge zone; a polyline
+  adds its corners. A circle's crossings are the roots of the circle-line
+  quadratic on each straight piece of the line, on the lower arc. The
+  stretches share out the slices as GM-131's do. Before, a circle was cut
+  evenly, and neither kind was cut at a surcharge or crack edge: a slice
+  across a crossing took one material, pore pressure or load for its whole
+  base, and a fixed circle's FOS jumped with the count (V-043's circle
+  1.246 / 1.190 / 1.180 / 1.232 on 25 / 29 / 30 / 31 slices; 1.208-1.211 on
+  25 to 45 now, 1.213 on 3,840 either way, Slide2 1.209).
+- **The base of each slice is its chord**, on a circle as on a polyline:
+  alpha = atan2(z_right - z_left, b), base length = hypot(b, dz); the base
+  elevation stays on the arc at x_mid, so the weight is the area under the
+  arc. Why the chord and not the circle's tangent at the slice midpoint
+  (the rule before GM-134):
+  - The methods assume a straight base (Duncan, Wright & Brandon, Ch. 6).
+    On a circle the chord's perpendicular bisector passes through the
+    centre, so its normal force acts through the centre, as moment
+    equilibrium about the centre takes it. Bishop's driving moment,
+    W (x_mid - xc) / R, does not use alpha, and its resisting term
+    c' b / m_alpha is c' times b / cos(alpha), the chord's length. Slide2's
+    help takes "the mid-point of a slice base" for the moment arm and says
+    nothing more of the base angle.
+  - The tangent segments do not join. Where the arc turns vertical (a
+    circle closed at its vertical tangent, x = xc +/- R, by reverse
+    curvature; a vertical cut; a steep exit) the last slice's base,
+    b / cos(alpha), falls short of the arc by about a factor of the square
+    root of two however thin the slice, and the FOS converges only as one
+    over the square root of the count: one toe circle 4.7 % low at 30
+    slices and still 0.4 % at 3,840. The chord's error falls as one over
+    the count (within about 0.5 % at 30 slices; Janbu 0.9 %).
+  - Elsewhere the two agree within 0.3 % (V-043's circle at 30 slices:
+    tangent 0.11 % low, chord 0.26 % low).
+- **A circle cut off at its vertical tangent** ends where
+  `slip_elevation_at` says outside; `slices._boundary_elevation` gives the
+  centre's level there, so its last chord exists.
+- **Every consumer works from the slices**: each method, m_alpha (GM-127),
+  the slice tables, the figures, the calc steps, FOSM and Monte Carlo (each
+  sample calls `build_slices`). A surface below the ground in more than one
+  stretch is refused by `find_entry_exit` before any slicing (GM-122).
+  Rapid drawdown cuts both stages alike: each stage's water-table crossings
+  are boundaries in the other (`build_slices(extra_boundaries=)`), so the
+  stage-2 strengths map slice for slice. `search._dips_below_base` takes the
+  same boundaries; since a crossing of the deepest layer's bottom is a
+  boundary, a circle dipping under it is refused at every slice count
+  (before, one 8 mm under the base was scored on 30 slices and refused on
+  90).
+- **Side effects.** On a phi = 0 circle Spencer and the GLE now equal
+  Bishop to about 0.1 % rather than exactly, mainly because the shear on a
+  chord base acts at R cos(dtheta / 2) from the centre, not R (`gle.py`
+  takes the arms as they are); the normal's offset from the centre counts
+  for little (moving z_base to the chord's midpoint changes Spencer by
+  0.0006). Their searches on phi = 0 slopes take 20-25 % longer (more solver
+  iterations per surface and more surfaces in the centre refinement); the
+  slicing itself costs 0.03-0.05 ms more per surface, and Bishop searches
+  run as before. The toe circles that won on steep phi = 0 slopes (GM-13's
+  2.287) won partly by the tangent's error at their vertical end.
+- **What moved**: VALIDATION.md B16, every value with its old code's own
+  value on 3,840 slices.
+- **Not done.** The edge of ponded water (where the water table crosses
+  the ground) is not a slice boundary.
 
 ## Critical Sign Conventions
 - **Driving moment**: uses `W*(x_mid - xc)/R` + `abs(driving)`, NOT `W*sin(alpha)`
@@ -1622,7 +1702,8 @@ search warns and gives its FOS (Duncan Ex 1's profile: 0.709 at D = 2,
 0.681 at D = 3, against 0.727). The steep phi = 0 toe circle of GM-13 /
 V-054 (H 5 m at 45 deg, clay to 10 m below the toe, the profile starting
 at the toe) gets it too: 2.237 against 2.286, toward the published 2.16-2.2
-(FLAC, Taylor).
+(FLAC, Taylor). (Since GM-134: the toe circle the search finds 2.346, and
+with level ground 40 m past the toe a base circle 2.222.)
 
 **GM-87 (2026-10-15).** The default centre grid spans the whole profile,
 so on a long profile it was coarse (D = 2, 4 H each side: 0.739 against

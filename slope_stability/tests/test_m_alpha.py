@@ -36,7 +36,8 @@ from slope_stability.rapid_drawdown import rapid_drawdown_fos
 from slope_stability.results import SearchResult
 from slope_stability.search import _FOS_MAX, _compute_fos, search_de
 from slope_stability.search_supplements import (
-    finer_slices_warning, m_alpha_confirmation, m_alpha_none_warning,
+    finer_slices_warning, m_alpha_choice, m_alpha_confirmation,
+    m_alpha_none_warning,
 )
 from slope_stability.slices import build_slices
 from slope_stability.slip_surface import (
@@ -149,14 +150,17 @@ def test_phi_zero_slices_are_not_checked_by_default():
 
 def test_vertical_cut_in_undrained_clay_against_taylor():
     """Taylor's stability number for a vertical face, 3.83, gives F = 3.83
-    x 20 / (18 x 5) = 0.851. The default search finds 0.800 on a toe
-    circle closed by a crack, whose steep last slice has m_alpha = cos(a)
-    0.18 (phi = 0): not checked, so the circle stays. Checking every
-    slice, as Slide2 does, leaves it out and reads 0.933, 9.6 % above
-    Taylor on the unsafe side; the choice says which was used."""
+    x 20 / (18 x 5) = 0.851. The default search finds 0.842 on a toe
+    circle closed by a crack (0.843 on 960 slices), whose steep last slice
+    has m_alpha = cos(a) 0.13 (phi = 0): not checked, so the circle stays.
+    Checking every slice, as Slide2 does, leaves it out and reads 0.935,
+    9.9 % above Taylor on the unsafe side; the choice says which was used.
+    Before GM-134 the default read 0.800: the slice next to the crack took
+    the circle's angle at its midpoint, and its base, width / cos(a), fell
+    short of the arc rising to the vertical (0.839 on 3,840 slices)."""
     taylor = 3.83 * 20.0 / (18.0 * 5.0)
     res = search_critical_surface(_vertical_cut(), method="bishop")
-    assert res.critical.FOS == pytest.approx(0.800, abs=0.005)
+    assert res.critical.FOS == pytest.approx(0.842, abs=0.005)
     assert res.critical.FOS <= taylor
     assert res.n_rejected_m_alpha == 0
     (ch,) = [c for c in res.choices
@@ -165,7 +169,7 @@ def test_vertical_cut_in_undrained_clay_against_taylor():
     assert any("every_slice" in a for a in ch["alternatives"])
     every = search_critical_surface(_vertical_cut(), method="bishop",
                                     m_alpha_rule="every_slice")
-    assert every.critical.FOS == pytest.approx(0.933, abs=0.005)
+    assert every.critical.FOS == pytest.approx(0.935, abs=0.005)
     assert every.n_rejected_m_alpha > 0
     (ch,) = [c for c in every.choices
              if c["what"] == "slip surfaces left out for m_alpha"]
@@ -176,7 +180,7 @@ def test_vertical_cut_in_undrained_clay_against_taylor():
     assert not any("m_alpha" in w for w in one.warnings)
     one = analyze_slope(_vertical_cut(), method="bishop", xc=c.xc, yc=c.yc,
                         radius=c.radius, m_alpha_rule="every_slice")
-    assert any("is 0.18 on the slice" in w for w in one.warnings)
+    assert any("is 0.13 on the slice" in w for w in one.warnings)
     with pytest.raises(ValueError, match="m_alpha_rule"):
         search_critical_surface(_vertical_cut(), m_alpha_rule="all")
 
@@ -331,11 +335,13 @@ def test_w11_de_search_runs_its_whole_budget():
 def test_duncan_ex4_janbu_search_on_30_slices():
     """With Janbu the default search read Duncan Ex 4 at 1.076 on 30 slices
     on a circle whose steepest slice, in the sand, had m_alpha 0.007,
-    against 1.213 on 120 slices. That circle is left out now: 1.199 on 30
-    slices, 1.238 on 60 (+3.3 %, which a warning says). The count and the
-    two slicings are in the result."""
+    against 1.213 on 120 slices. That circle is left out now: 1.203 on 30
+    slices, 1.212 on 60 (+0.7 %, under the 1 % a warning needs). The count
+    and the two slicings are in the result. Before GM-134 it read 1.199
+    and 1.238 (+3.3 %, which a warning said): a slice across the sand's
+    base took one material."""
     res = search_critical_surface(_duncan_ex4(), method="janbu", n_slices=30)
-    assert res.critical.FOS == pytest.approx(1.199, abs=0.01)
+    assert res.critical.FOS == pytest.approx(1.203, abs=0.01)
     assert res.n_rejected_m_alpha > 0
     d = res.to_dict()
     assert d["n_rejected"]["m_alpha"] == res.n_rejected_m_alpha
@@ -346,8 +352,8 @@ def test_duncan_ex4_janbu_search_on_30_slices():
     assert "on 30 slices" in ch["basis"] and "on 60 slices" in ch["basis"]
     assert "phi' = 0 are not checked" in ch["basis"]
     assert "Left out, m_alpha < 0.2" in res.summary()
-    assert any(w.startswith("On 60 slices, twice the search's 30") and
-               "1.238" in w for w in res.warnings)
+    assert "on 60 slices, 1.212" in ch["basis"]
+    assert not any(w.startswith("On 60 slices") for w in res.warnings)
 
 
 def test_fellenius_search_says_nothing_is_left_out():
@@ -390,10 +396,16 @@ def test_finer_slices_warning_and_none_found_warning():
 
 
 def test_twice_the_slices_keeps_the_reason():
-    """Slide2 #85 with its support: on the circle a Spencer search finds,
-    Spencer has no solution on 60 slices, which is warned on. Taylor's
-    deep circle on 60 slices dips 1 slice under the base: the choice says
-    it is not admissible there, and nothing is warned of."""
+    """Slide2 #85 with its support: on the circle a Spencer search finds
+    (1.563 on 30 slices; 1.542 before GM-134, when the slice where the
+    circle comes out, near vertical, took its angle at its midpoint;
+    Bishop 1.568 on 1,920), Spencer has no solution on 60 slices, which
+    is warned on. A finer slicing that cannot be built is said in the
+    choice and not warned of. Taylor's deep circle was that case (on 60
+    slices one slice midpoint fell in a dip of millimetres under the
+    base); since GM-134 the base's crossings are slice boundaries, so a
+    circle under the base is refused at every count and the circle the
+    search keeps reads 0.705 on 30 slices and 0.706 on 60."""
     from slope_stability.reinforcement import Anchor
     s85 = SlopeGeometry(
         surface_points=[(15, 10), (25, 30), (57, 30)],
@@ -404,7 +416,7 @@ def test_twice_the_slices_keeps_the_reason():
     circle = types.SimpleNamespace(is_circular=True, xc=15.0, yc=32.0,
                                    radius=22.0)
     conf = m_alpha_confirmation(s85, circle, "spencer", 30)
-    assert conf["fos"] == pytest.approx(1.542, abs=0.002)
+    assert conf["fos"] == pytest.approx(1.563, abs=0.002)
     assert conf["fos_fine"] is None and conf["refused_fine"] == "no_solution"
     assert "finds no solution" in finer_slices_warning(conf)
     H = 40 * FT
@@ -415,9 +427,18 @@ def test_twice_the_slices_keeps_the_reason():
     res = search_critical_surface(taylor, method="bishop")
     (ch,) = [c for c in res.choices
              if c["what"] == "slip surfaces left out for m_alpha"]
-    assert "on 60 slices it is not admissible" in ch["basis"]
-    assert "below the bottom of the deepest soil layer" in ch["basis"]
+    assert ("on 30 slices the governing surface's FOS is 0.705; on 60 "
+            "slices, 0.706") in ch["basis"]
     assert not any("On 60 slices" in w for w in res.warnings)
+    conf = dict(n_slices=30, n_slices_fine=60, fos=0.705, m_alpha_min=None,
+                refused=None, why=None, fos_fine=None, m_alpha_min_fine=None,
+                refused_fine="geometry",
+                why_fine="Slip surface passes below the bottom of the "
+                         "deepest soil layer over 1 of 60 slices")
+    basis = m_alpha_choice(0, "bishop", conf)["basis"]
+    assert "on 60 slices it is not admissible" in basis
+    assert "below the bottom of the deepest soil layer" in basis
+    assert finer_slices_warning(conf) is None
 
 
 # ---------------------------------------------------------------------------

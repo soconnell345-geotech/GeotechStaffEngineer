@@ -1507,7 +1507,7 @@
      "geosynthetics": [
       {
        "elevation": 3.0,
-       "T_allow": 55.5
+       "T_allow": 40.9
       }
      ],
      "xc": 15.193905105454997,
@@ -1519,12 +1519,12 @@
   ],
   "published_result": "Unreinforced sand-fill Spencer FOS: 1.209 circular / 1.188 noncircular (Slide2); 1.219 / 1.192 (Tandjiria 2002). Geosynthetic force to reach FS = 1.35: 44-45 kN/m circular, 56 kN/m noncircular.",
   "computed_result": {
-   "unreinforced_FOS_spencer": 1.1798,
-   "required_T_kN_per_m": 55.5,
+   "unreinforced_FOS_spencer": 1.2096,
+   "required_T_kN_per_m": 40.9,
    "FOS_at_T": 1.3501,
    "x_entry_m": 5.33,
    "x_exit_m": 22.0,
-   "tolerance": "Unreinforced 1.180 within 2.4% of Slide2 1.209. The solved force 55.5 kN/m brackets the published 44-56 kN/m band; the reinforcement force is highly critical-surface-sensitive, so the circular/noncircular split differs from Slide2's (the manual itself attributes such spreads to search-method differences)."
+   "tolerance": "Unreinforced 1.210 within 0.1% of Slide2 1.209 (1.208-1.211 on 25 to 45 slices, 1.213 on 3,840). The solved force 40.9 kN/m is 7% below the published circular 44-45 kN/m; the reinforcement force is highly critical-surface-sensitive (the manual itself attributes such spreads to search-method differences)."
   },
   "report_notes": "The report should present the unreinforced baseline first (method, critical surface through the soft clay, FOS vs the 1.35 requirement), then the reinforcement design as a demand curve: FOS vs T_allow from the bisection, with the required force where it crosses the target. State the reinforcement model (active horizontal force at the fill-base elevation where the layer crosses the slip surface) and flag that required force is strongly critical-surface-dependent — re-search the critical surface WITH reinforcement as a check, since the reinforced critical surface can migrate. A sensitivity note on cu of the soft clay and on circular vs noncircular surfaces closes the loop against the published 44-56 kN/m spread.",
   "provenance": "validation_examples/test_published_v043_slope_reinforced.py::test_v043_sand_no_reinforcement_circular, test_v043_sand_reinforcement_force_brackets_published"

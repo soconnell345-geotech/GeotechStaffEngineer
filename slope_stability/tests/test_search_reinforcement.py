@@ -20,6 +20,7 @@ direct march and a robust lambda search. Pinned to Slide2 #85.
 """
 
 import math
+import re
 import warnings
 
 import pytest
@@ -124,7 +125,8 @@ def test_reinforced_rigorous_nonconvergence_is_rejected():
     spencer_fos falls back to the legacy solver, which ignores the
     reinforcement; a search must reject that surface, not score it
     unreinforced. (Slide2 #85 anchored toe circle: spencer_fos falls back
-    to 0.891, the unreinforced value; analyze_slope reports no FOS, GM-81.)"""
+    to 0.938, the unreinforced value (0.891 before GM-134); analyze_slope
+    reports no FOS, GM-81.)"""
     from slope_stability.methods import spencer_fos
     from slope_stability.slices import build_slices
     g = _slide85()
@@ -134,7 +136,7 @@ def test_reinforced_rigorous_nonconvergence_is_rejected():
         warnings.simplefilter("ignore")
         fallback, _ = spencer_fos(build_slices(g, slip, 30), slip,
                                   reinf_forces=forces)
-    assert fallback == pytest.approx(0.891, abs=0.01)
+    assert fallback == pytest.approx(0.938, abs=0.01)
     assert analyze_slope(g, method="spencer", slip_surface=slip).FOS is None
     assert _compute_fos(g, slip, "spencer", 30) == _FOS_MAX
     assert _compute_fos(g, slip, "bishop", 30) < _FOS_MAX
@@ -142,10 +144,16 @@ def test_reinforced_rigorous_nonconvergence_is_rejected():
 
 def test_toe_circles_stay_above_a_rigid_base():
     """A toe on the rigid base: every toe circle may at most touch the base
-    (build_slices tolerates a below-base sliver; the toe family does not)."""
-    out = search_toe_circles(_slide85(anchor=False), method="bishop")
+    (build_slices tolerates a below-base sliver; the toe family does not).
+    The arc's lowest point inside the sliding mass: the best circle, since
+    GM-134, is centred left of the toe and rises from it."""
+    g = _slide85(anchor=False)
+    out = search_toe_circles(g, method="bishop")
     assert out["FOS"] < _FOS_MAX
-    assert out["yc"] - out["radius"] >= 10.0 - 1e-4
+    slip = CircularSlipSurface(out["xc"], out["yc"], out["radius"])
+    x_en, x_ex = slip.find_entry_exit(g)
+    x_low = min(max(out["xc"], x_en), x_ex)
+    assert slip.slip_elevation_at(x_low) >= 10.0 - 1e-4
 
 
 def test_rapid_drawdown_counts_reinforcement():
@@ -231,13 +239,16 @@ def test_slide85_rigorous_methods_converge_on_slide2_circle():
     """GM-60 pin: Spencer and GLE now converge on Slide2's own #85 circle
     (before, both fell back to the unreinforced legacy value 0.913). With
     phi = 0 every method that satisfies moment equilibrium gives the same F
-    on a circle, so all three equal Bishop: 1.564 against Slide2 GLE 1.575
-    and D&W 1.51."""
+    on a circle, so all three equal Bishop: 1.566 (1.568 on 960 slices)
+    against Slide2 GLE 1.575 and D&W 1.51. Since GM-134 each slice's base
+    is its chord, whose normal passes a hair off the centre: the GLE takes
+    that arm and Bishop does not, so they agree within 0.1 % (exactly
+    before, at 1.564)."""
     vals = {m: analyze_slope(_slide85c(), method=m, **_SLIDE2_85_CIRCLE).FOS
             for m in ("bishop", "spencer", "gle")}
-    assert vals["bishop"] == pytest.approx(1.564, abs=0.002)
-    assert vals["spencer"] == pytest.approx(vals["bishop"], abs=1e-3)
-    assert vals["gle"] == pytest.approx(vals["bishop"], abs=1e-3)
+    assert vals["bishop"] == pytest.approx(1.566, abs=0.002)
+    assert vals["spencer"] == pytest.approx(vals["bishop"], rel=1e-3)
+    assert vals["gle"] == pytest.approx(vals["bishop"], rel=1e-3)
     for v in vals.values():
         assert 1.51 * 0.99 <= v <= 1.884         # the published spread
     assert vals["gle"] == pytest.approx(1.575, rel=0.01)
@@ -256,7 +267,7 @@ def test_slide85_gle_state_is_in_equilibrium_slice_by_slice():
     x_in, x_out = slip.find_entry_exit(g)
     slices = build_slices(g, slip, 30)
     forces = compute_reinforcement_forces(g, slip, x_in, x_out)
-    for f_name, lam in (("constant", 1.005), ("half_sine", 1.465)):
+    for f_name, lam in (("constant", 0.990), ("half_sine", 1.452)):
         r = gle_fos(slices, slip, f_interslice=f_name, reinf_forces=forces)
         assert r.converged
         assert r.lam == pytest.approx(lam, abs=0.01)
@@ -282,42 +293,44 @@ def test_slide85_passive_bishop_matches_published():
 
 
 def test_slide85_bishop_search_reverse_curvature_and_short_arm():
-    """The default Bishop search finds 1.304 on a reverse-curvature toe
-    circle (centre 6 ft below the crest, closed by a 5.9 ft dry crack, as
-    Slide2's default closes such circles); the support passes 4.1 ft below
-    its centre, so Bishop counts 29 % of it. The result says both, and that
-    Spencer has no solution there. Discarding reverse-curvature circles
-    (Slide2's other choice) gives 1.467 active / 1.296 passive at 30 slices
-    on a circle tangent to the base that comes out on the face 0.24 / 0.12
-    above the toe (centre (18.2, 31.0), R 21.0, out at x = 39.2), found by
-    the circles passing above the toe (GM-122); the same circle at 240
-    slices gives 1.508 / 1.318 against D&W 1.51 / 1.32 (Slide2 1.531 /
-    1.324). The main search's own circle reads 1.485 / 1.302 at 30 slices
-    and 1.511 / 1.318 at 240. Before GM-57 the automatic exit window, from
-    x = 40.2, kept the search off it, and the toe circle that governed,
-    1.503 / 1.305 at 30 slices, comes to 1.557 / 1.338 at 240.
+    """The default Bishop search finds 1.372 (1.374 on 960 slices) on a
+    reverse-curvature toe circle (centre 6 ft below the crest, closed by a
+    5.9 ft dry crack, as Slide2's default closes such circles); the support
+    passes 4.1 ft below its centre, so Bishop counts 29 % of it. The result
+    says both, and that Spencer has no solution there. Discarding
+    reverse-curvature circles (Slide2's other choice) gives 1.511 active /
+    1.316 passive at 30 slices and 1.514 / 1.318 at 240 on the same
+    circles, against D&W 1.51 / 1.32 (Slide2 1.531 / 1.324): active the
+    main search's circle (centre (17.3, 32.5), R 22.5), passive a circle
+    passing above the toe (GM-122; centre (17.0, 33.0), R 23.0). Before
+    GM-57 the automatic exit window, from x = 40.2, kept the search off
+    such circles.
 
     Those 'discard' values check m_alpha on every slice, as Slide2 does
-    (``m_alpha_rule='every_slice'``; the circles passing above the toe did
-    so from GM-122). By default slices with phi' = 0 are not checked
-    (GM-127), and that family keeps a circle centred at the crest's level
-    (centre (18.2, 30.0), R 20.0) whose last slice has m_alpha = cos(a)
-    0.195: 1.432 / 1.274 at 30 slices, 1.484 / 1.307 at 240."""
+    (``m_alpha_rule='every_slice'``). By default slices with phi' = 0 are
+    not checked (GM-127): 1.508 / 1.316 at 30 slices, 1.512 / 1.318 at 240.
+
+    Before GM-134 each slice of a circle took the circle's angle at its
+    midpoint, and the base of the slice where the arc turns vertical,
+    width / cos(a), fell short of the arc: the toe circle read 1.304 on 30
+    slices (1.325 on 60, 1.362 on 960), the 'discard' searches 1.467 /
+    1.296, and by default a circle centred at the crest's level whose last
+    slice had m_alpha 0.195 kept 1.432 / 1.274."""
     res = search_critical_surface(_slide85c(), method="bishop")
-    assert res.critical.FOS == pytest.approx(1.304, abs=0.005)
+    assert res.critical.FOS == pytest.approx(1.372, abs=0.005)
     text = " ".join(res.warnings)
     assert "reverse-curvature" in text and "5.89 m deep" in text
     assert "29 % of their force counts" in text
     assert "finds no equilibrium solution" in text
-    # its slices are phi = 0, so m_alpha (cos a, 0.18 on the last) is not
-    # checked; its FOS is 1.325 on 60 slices, and the search says so (GM-127)
+    # its slices are phi = 0, so m_alpha is not checked (GM-127); its FOS
+    # is 1.373 on 60 slices, within 1 %, so nothing is warned of
     assert res.n_rejected_m_alpha == 0
-    assert "On 60 slices, twice the search's 30" in text and "1.325" in text
+    assert "On 60 slices" not in text
     for convention, rule, fos, fine_fos in (
-            ("active", "every_slice", 1.467, 1.51),     # D&W 1.51
-            ("passive", "every_slice", 1.296, 1.32),    # D&W 1.32
-            ("active", "frictional", 1.432, 1.484),
-            ("passive", "frictional", 1.274, 1.307)):
+            ("active", "every_slice", 1.511, 1.51),     # D&W 1.51
+            ("passive", "every_slice", 1.316, 1.32),    # D&W 1.32
+            ("active", "frictional", 1.508, 1.512),
+            ("passive", "frictional", 1.316, 1.318)):
         g = _slide85c(convention, reverse_curvature="discard")
         r = search_critical_surface(g, method="bishop", m_alpha_rule=rule)
         c = r.critical
@@ -343,11 +356,11 @@ def test_slide85_toe_family_rescoring_finds_spencer_circles():
     """GM-60: with Spencer the toe-circle family scans with Bishop and
     re-scores the best circles; the best Bishop toe circles of anchored #85
     have no Spencer solution, so it now passes over them (before: nothing
-    found)."""
+    found). 1.564 (1.584 before GM-134)."""
     from slope_stability.search_supplements import search_toe_circles
     out = search_toe_circles(_slide85c(), method="spencer")
     assert out["FOS"] < _FOS_MAX
-    assert out["FOS"] == pytest.approx(1.584, abs=0.01)
+    assert out["FOS"] == pytest.approx(1.564, abs=0.01)
     assert 1.51 <= out["FOS"] <= 1.884               # the published spread
 
 
@@ -481,12 +494,12 @@ def test_no_solution_with_supports_reports_no_fos(method, label):
 
 
 def test_no_solution_in_compare_methods_is_left_out():
-    """compare_methods on the same circle: Bishop solves (1.304); Spencer and
+    """compare_methods on the same circle: Bishop solves (1.372); Spencer and
     Morgenstern-Price have no solution, so their fields stay None (before:
     the unreinforced legacy values), named in methods_without_solution."""
     r = analyze_slope(_slide85c(), method="bishop", compare_methods=True,
                       **_TOE_85)
-    assert r.FOS == pytest.approx(1.304, abs=0.002) and r.method_solved
+    assert r.FOS == pytest.approx(1.372, abs=0.002) and r.method_solved
     assert r.FOS_spencer is None and r.FOS_morgenstern_price is None
     assert r.methods_without_solution == ["Spencer", "Morgenstern-Price"]
     assert sum("(method comparison) finds no equilibrium solution" in w
@@ -497,8 +510,9 @@ def test_no_supports_labels_the_legacy_value():
     """Without supports the legacy approximate solver's value stands in, and
     is labelled: on #85's clay (phi = 0) the GLE finds no lambda where the
     moment and force factors of safety agree on Slide2's circle; the legacy
-    solver gives theta = 0, Bishop's value (as every moment-equilibrium
-    method gives on a phi = 0 circle)."""
+    solver gives theta = 0 (-0.01 deg since GM-134, each slice's base its
+    chord), Bishop's value (as every moment-equilibrium method gives on a
+    phi = 0 circle)."""
     from slope_stability.methods import spencer_fos
     from slope_stability.slices import build_slices
     g = _slide85(anchor=False)
@@ -514,18 +528,18 @@ def test_no_supports_labels_the_legacy_value():
     (w,) = r.warnings
     assert "finds no equilibrium solution on this surface" in w
     assert f"FOS = {r.FOS:.3f} is the legacy approximate solver's value" in w
-    assert "theta = 0.00 deg" in w
+    assert re.search(r"theta = -?0\.0[01] deg", w)
     assert r.to_dict()["method_used"] == "legacy approximate Spencer solver"
 
 
 def test_single_surface_reverse_curvature_and_short_arm():
     """The warnings a search gives its governing circle, now on the circle
-    itself: Bishop on the #85 toe circle (1.304) is closed by a 5.89 ft dry
+    itself: Bishop on the #85 toe circle (1.372) is closed by a 5.89 ft dry
     crack, and counts 29 % of the support; Spencer has no solution there.
     reverse_curvature='discard' does not stop analyze_slope evaluating it."""
     for geom_kw in ({}, {"reverse_curvature": "discard"}):
         r = analyze_slope(_slide85c(**geom_kw), method="bishop", **_TOE_85)
-        assert r.FOS == pytest.approx(1.304, abs=0.002)
+        assert r.FOS == pytest.approx(1.372, abs=0.002)
         assert r.method_solved and r.method_used == "" and r.produced_by == \
             "Bishop"
         rc, arm = r.warnings
@@ -583,9 +597,11 @@ def test_normal_case_unchanged(method):
 def test_search_labels_a_legacy_critical_circle():
     """A rigorous search scores a circle no support crosses with the legacy
     solver when the GLE has no solution (unchanged); the governing circle
-    now says so. #85 without its support, Spencer: every circle."""
+    now says so. #85 without its support, Spencer: every circle of the
+    main search (since GM-134 the best toe circle, centred left of the toe,
+    has a Spencer solution, 0.910, so the families are left off here)."""
     res = search_critical_surface(_slide85(anchor=False), method="spencer",
-                                  nx=4, ny=4)
+                                  nx=4, ny=4, toe_circles=False)
     c = res.critical
     assert c.method_solved is False
     assert c.method_used == "legacy approximate Spencer solver"

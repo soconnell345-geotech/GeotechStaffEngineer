@@ -59,40 +59,49 @@ def _fill_geom(mirror=False, ru=0.0):
 # ---------------------------------------------------------------------------
 
 def test_brute_force_toe_circle_value():
-    """The anchor: the toe circle (2.5, 4.0, R = 4.717) is Bishop 2.287."""
+    """The anchor: the toe circle (2.5, 4.0, R = 4.717), closed by a crack
+    where it turns vertical, is Bishop 2.379 on 40 slices (2.384 on
+    10,240). Before GM-134 it read 2.287: each slice took the circle's
+    angle at its midpoint, and the base of the last one, width / cos(a),
+    fell short of the arc rising to the vertical (2.378 on 10,240 slices,
+    the error falling as one over the square root of the count)."""
     f = analyze_slope(_toe_geom(), method="bishop", n_slices=40, xc=2.5,
                       yc=4.0, radius=math.hypot(2.5, 4.0)).FOS
-    assert f == pytest.approx(2.287, abs=0.002)
+    assert f == pytest.approx(2.379, abs=0.002)
 
 
 def test_search_finds_toe_circle():
-    """GM-13: the default search reports the toe circle (~2.287) and says
-    so. Its centre is below the crest, under any centre grid; the grid's
-    own minimum, 2.78 while the windows were fractions of the model width,
-    is 2.344 with ranges set from the slope (GM-57)."""
+    """GM-13: the default search reports the toe circle (2.346) and says
+    so; the grid's own minimum, 2.78 while the windows were fractions of
+    the model width, is 2.348 with ranges set from the slope (GM-57) and
+    its refinement. Before GM-134 the toe circle that governed was the
+    anchor's, centred below the crest and closed by a crack, at 2.287 (a
+    slicing error, see the anchor), and its FOS moved 1.3 % on twice the
+    slices (2.316), which the search said; now 2.348 on 80 slices."""
     res = search_critical_surface(_toe_geom(), method="bishop", n_slices=40)
     c = res.critical
-    assert c.FOS == pytest.approx(2.287, abs=0.02)
-    assert c.FOS <= 2.287 + 0.005
+    assert c.FOS == pytest.approx(2.346, abs=0.005)
+    anchor = analyze_slope(_toe_geom(), method="bishop", n_slices=40, xc=2.5,
+                           yc=4.0, radius=math.hypot(2.5, 4.0)).FOS
+    assert c.FOS < anchor - 0.02             # a lower toe circle than 2.379
     assert res.governing_surface == TOE_CIRCLE
     assert c.is_circular
     assert c.x_entry == pytest.approx(0.0, abs=0.05)       # through the toe
-    assert c.x_exit == pytest.approx(7.1, abs=0.6)
-    assert res.candidates[CIRCULAR] == pytest.approx(2.344, abs=0.01)
+    assert c.x_exit == pytest.approx(9.3, abs=0.6)
+    assert res.candidates[CIRCULAR] == pytest.approx(2.348, abs=0.01)
     assert res.candidates[TOE_CIRCLE] == pytest.approx(c.FOS, abs=1e-4)
     assert any("toe circle governs" in w for w in res.warnings)
     # m_alpha is not checked on its phi = 0 slices (GM-127); its FOS moves
-    # 1.3 % on twice the slices (2.316), and the search says so
+    # less than 1 % on twice the slices, so nothing is warned of
     assert res.n_rejected_m_alpha == 0
-    assert any(w.startswith("On 80 slices, twice the search's 40")
-               and "2.316" in w for w in res.warnings)
+    assert not any(w.startswith("On 80 slices") for w in res.warnings)
 
 
 def test_toe_circle_mirrored_slope():
     """Same slope falling toward +x: the same toe circle and FOS."""
     res = search_critical_surface(_toe_geom(mirror=True), method="bishop",
                                   n_slices=40)
-    assert res.critical.FOS == pytest.approx(2.287, abs=0.02)
+    assert res.critical.FOS == pytest.approx(2.346, abs=0.005)
     assert res.governing_surface == TOE_CIRCLE
     assert res.critical.x_exit == pytest.approx(0.0, abs=0.05)
 
@@ -104,8 +113,9 @@ def test_toe_circles_off_reproduces_old_search():
     circle's crest end at 7.1); with the windows set from the slope
     (GM-57: the end on the crest side may lie anywhere from the face's
     mid-length) the grid reads 2.360 and the refined grid (the default
-    since GM-87) 2.344, still above the toe circle (2.287), whose centre
-    lies below the crest. The given old windows reproduce the old grid."""
+    since GM-87) 2.348, still above the toe circle (2.346; 2.287 before
+    GM-134, a slicing error). The given old windows reproduce the old
+    grid."""
     old = search_critical_surface(_toe_geom(), method="bishop", n_slices=40,
                                   toe_circles=False, refine=False,
                                   x_entry_range=(0.0, 10.0),
@@ -119,8 +129,8 @@ def test_toe_circles_off_reproduces_old_search():
     assert grid.critical.FOS == pytest.approx(2.360, abs=0.01)
     res = search_critical_surface(_toe_geom(), method="bishop", n_slices=40,
                                   toe_circles=False)
-    assert 2.287 < res.critical.FOS <= grid.critical.FOS
-    assert res.critical.FOS == pytest.approx(2.344, abs=0.01)
+    assert 2.346 < res.critical.FOS <= grid.critical.FOS
+    assert res.critical.FOS == pytest.approx(2.348, abs=0.01)
     assert res.governing_surface == CIRCULAR
     assert not any("x_exit_range" in w for w in res.warnings)
     assert res.search_ranges["x_exit_range"] == [2.5, 25.0]

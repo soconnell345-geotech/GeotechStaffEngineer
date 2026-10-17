@@ -41,15 +41,17 @@ KEY FINDINGS (full write-up in RESULTS.md):
   Bishop/Spencer/GLE critical circle FOS ~ 1.686 (this stronger c'=32/phi'=10
   soil, vs ~1.00 for the c'=3/phi'=19.6 ACADS 1(a) sibling).
 
-- The module's DRY tension crack (zc=3.81 m, no water) gives Bishop 1.553 /
-  Spencer 1.555 / GLE 1.551 -- within ~3% of Slide2's *water*-filled crack
-  values (1.596/1.592/1.592). Mechanic: 4 crest slices (~5.2 m of the 34 m arc,
-  ~15%) lose base shear strength.
+- The module's DRY tension crack (zc=3.81 m, no water) gives Bishop 1.540 /
+  Spencer 1.543 / GLE 1.538 -- within ~3.5% of Slide2's *water*-filled crack
+  values (1.596/1.592/1.592). Mechanic: 5 crest slices (4.4 m of the 34 m arc,
+  ~13%) lose base shear strength. (Before GM-134 the crack's edge was not a
+  slice boundary: 4 slices, ~5.2 m, and 1.553 / 1.555 / 1.551 on 60 slices,
+  against 1.540 / 1.543 / 1.539 on 3,840.)
 
 - The module's WATER-filled tension crack adds the hydrostatic thrust
   F_w = 0.5*gamma_w*zc^2 = 71 kN/m at zc/3 above the crack base, dropping the
-  FOS on the pinned circle to Bishop 1.497 / Spencer 1.498 / GLE 1.494 -- ~6%
-  below Slide2's water-crack (1.596) and ~9% below the referee 1.65 (a free
+  FOS on the pinned circle to Bishop 1.485 / Spencer 1.486 / GLE 1.482 -- ~7%
+  below Slide2's water-crack (1.596) and ~10% below the referee 1.65 (a free
   critical-surface search that avoids degenerate slivers reaches ~1.465, ~8%
   below Slide2). VERDICT: CONVENTION. The module's water-filled tension crack is
   MORE CONSERVATIVE than Slide2's: it retains the cracked wedge as zero-strength
@@ -153,14 +155,15 @@ def test_v026_pinned_circle_nocrack():
 
 def test_v026_dry_crack_brackets_slide_water_crack():
     """DRY tension crack (zc=3.81 m, no water). The module zeros base shear on
-    the ~4 crest slices whose base is above the crack base (~15% of the arc),
-    giving Bishop 1.553 / Spencer 1.555 / GLE 1.551 -- WITHIN ~3% of Slide2's
+    the 5 crest slices whose base is above the crack base (~13% of the arc),
+    giving Bishop 1.540 / Spencer 1.543 / GLE 1.538 -- WITHIN ~3.5% of Slide2's
     published *water*-filled-crack values (1.596/1.592/1.592). This validates
-    the tension-crack strength-truncation mechanic against the manual."""
+    the tension-crack strength-truncation mechanic against the manual.
+    (1.553 / 1.555 / 1.551 before GM-134; see the module docstring.)"""
     fos = _v026_methods(_v026_geom(_V026_ZC, 0.0))
-    assert fos["bishop"] == pytest.approx(1.553, abs=0.02)
-    assert fos["spencer"] == pytest.approx(1.555, abs=0.02)
-    assert fos["gle"] == pytest.approx(1.551, abs=0.02)
+    assert fos["bishop"] == pytest.approx(1.540, abs=0.02)
+    assert fos["spencer"] == pytest.approx(1.543, abs=0.02)
+    assert fos["gle"] == pytest.approx(1.538, abs=0.02)
     # within ~3.5% of the Slide2 water-crack per-method values
     for m in ("bishop", "spencer", "gle"):
         assert abs(fos[m] - _V026_PUB[m]) / _V026_PUB[m] < 0.035
@@ -170,19 +173,20 @@ def test_v026_water_crack_is_conservative_vs_slide():
     """WATER-filled tension crack. On top of the dry-crack strength truncation
     the module adds the hydrostatic thrust F_w = 0.5*gamma_w*zc^2 = 71 kN/m at
     zc/3 above the crack base, dropping the FOS on the pinned circle to Bishop
-    1.497 / Spencer 1.498 / GLE 1.494. CONVENTION: this is ~6% below Slide2's
-    water-crack (1.596) and ~9% below the referee 1.65 -- the module's
+    1.485 / Spencer 1.486 / GLE 1.482 (1.497 / 1.498 / 1.494 before GM-134).
+    CONVENTION: this is ~7% below Slide2's
+    water-crack (1.596) and ~10% below the referee 1.65 -- the module's
     water-filled crack is MORE CONSERVATIVE (it keeps the cracked wedge as
     zero-strength driving soil and applies the full hydrostatic thrust; Slide2
     truncates the mass at the crack). Pinned; documents the convention, not
     tuned."""
     fos = _v026_methods(_v026_geom(_V026_ZC, _V026_ZC))
-    assert fos["bishop"] == pytest.approx(1.497, abs=0.02)
-    assert fos["spencer"] == pytest.approx(1.498, abs=0.02)
-    assert fos["gle"] == pytest.approx(1.494, abs=0.02)
-    # more conservative than Slide2 (documented convention, ~6% low)
+    assert fos["bishop"] == pytest.approx(1.485, abs=0.02)
+    assert fos["spencer"] == pytest.approx(1.486, abs=0.02)
+    assert fos["gle"] == pytest.approx(1.482, abs=0.02)
+    # more conservative than Slide2 (documented convention, ~7% low)
     assert fos["bishop"] < _V026_PUB["bishop"]
-    assert (_V026_PUB["bishop"] - fos["bishop"]) / _V026_PUB["bishop"] == pytest.approx(0.062, abs=0.03)
+    assert (_V026_PUB["bishop"] - fos["bishop"]) / _V026_PUB["bishop"] == pytest.approx(0.070, abs=0.03)
     # water crack lowers FOS vs dry crack (hydrostatic thrust drives)
     dry = _v026_methods(_v026_geom(_V026_ZC, 0.0))
     assert fos["bishop"] < dry["bishop"]
@@ -192,14 +196,17 @@ def test_v026_water_crack_is_conservative_vs_slide():
 
 
 def test_v026_water_thrust_and_cracked_arc_mechanics():
-    """Documents the tension-crack mechanics the FOS drop comes from: 4 crest
-    slices in the crack (~5.2 m of the ~34 m arc), and the single hydrostatic
-    crack-water force = 0.5*gamma_w*zc^2 ~ 71 kN/m applied at zc/3 above the
-    crack base (el 35 - zc = 31.19 m)."""
+    """Documents the tension-crack mechanics the FOS drop comes from: 5 crest
+    slices in the crack (4.4 m of the ~34 m arc; the crack's edge is a slice
+    boundary since GM-134, before which 4 slices took ~5.2 m), and the single
+    hydrostatic crack-water force = 0.5*gamma_w*zc^2 ~ 71 kN/m applied at zc/3
+    above the crack base (el 35 - zc = 31.19 m)."""
     slip = CircularSlipSurface(_V026_XC, _V026_YC, _V026_R)
     slices = build_slices(_v026_geom(_V026_ZC, _V026_ZC), slip, 60)
     n_crack = sum(1 for s in slices if s.in_tension_crack)
-    assert n_crack == 4
+    assert n_crack == 5
+    crack_arc = sum(s.base_length for s in slices if s.in_tension_crack)
+    assert crack_arc == pytest.approx(4.37, abs=0.02)
     cwf = [s.crack_water_force for s in slices if getattr(s, "crack_water_force", 0.0)]
     assert len(cwf) == 1
     assert cwf[0] == pytest.approx(0.5 * 9.81 * _V026_ZC ** 2, rel=0.02)  # ~71 kN/m

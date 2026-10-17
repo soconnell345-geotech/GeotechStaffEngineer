@@ -170,10 +170,18 @@ class TestSliceDiscretization:
         assert len(slices) == 30
 
     def test_slice_width_uniform(self):
-        """All slices have equal width."""
+        """Slices are of equal width on each side of the crest (x = 10),
+        which is a slice boundary (GM-134): 3 slices on the 2 m of crest
+        and 17 on the 14.4 m below it, each further slice going to the
+        stretch whose slices are widest."""
         slices = _build_test_slices(n=20)
-        widths = [s.width for s in slices]
-        assert all(abs(w - widths[0]) < 0.001 for w in widths)
+        assert any(abs(s.x_right - 10.0) < 1e-9 for s in slices)
+        for side in ([s for s in slices if s.x_mid < 10.0],
+                     [s for s in slices if s.x_mid > 10.0]):
+            assert len(side) > 1
+            assert all(abs(s.width - side[0].width) < 1e-9 for s in side)
+        assert [len([s for s in slices if s.x_mid < 10.0]),
+                len([s for s in slices if s.x_mid > 10.0])] == [3, 17]
 
     def test_slice_weight_positive(self):
         """All slice weights are positive (ground above slip surface)."""

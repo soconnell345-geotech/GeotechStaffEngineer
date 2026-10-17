@@ -76,7 +76,7 @@ from typing import Any, Dict, List, Optional
 
 from slope_stability.geometry import SlopeGeometry
 from slope_stability.slip_surface import CircularSlipSurface, PolylineSlipSurface
-from slope_stability.slices import build_slices
+from slope_stability.slices import build_slices, slice_breaks
 from slope_stability.gle import gle_fos
 from slope_stability.results import SearchResult
 from slope_stability.search import (
@@ -466,8 +466,15 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
         g_full.gwt_points = [tuple(p) for p in stage1_phreatic_points]
     else:
         g_full = _pool_geometry(geom, drawdown_from_elevation)
+    g_draw = _pool_geometry(geom, drawdown_to_elevation)
+    # One slicing for both stages (GM-134): each stage's water-table
+    # crossings are slice boundaries in the other too, so the stage-2
+    # strengths map slice for slice onto the drawn-down slices.
+    x_ends = slip.find_entry_exit(geom)
+    breaks_full = slice_breaks(g_full, slip, *x_ends)
+    breaks_draw = slice_breaks(g_draw, slip, *x_ends)
     warnings: List[str] = []
-    sl1 = build_slices(g_full, slip, n_slices)
+    sl1 = build_slices(g_full, slip, n_slices, extra_boundaries=breaks_draw)
     res1 = gle_fos(sl1, slip, f_interslice=f_interslice,
                    tol=min(tol, 1e-4) * 0.1, reinf_forces=reinf)
     stage1_converged = bool(res1.converged)
@@ -526,8 +533,7 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
 
     # ── Stage 3: drawn-down analysis with the undrained strengths (+ drained
     #    substitution for the 3-stage method).
-    g_draw = _pool_geometry(geom, drawdown_to_elevation)
-    sl3 = build_slices(g_draw, slip, n_slices)
+    sl3 = build_slices(g_draw, slip, n_slices, extra_boundaries=breaks_full)
 
     # Optional rigorous drawn-down effective normal for the stage-3 drained
     # substitution (see stage3_effective_normal). Solved with the DRAINED
@@ -550,8 +556,9 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
         except (ValueError, ZeroDivisionError, OverflowError):
             sig_post_gle = None
 
-    # slice count can differ if the pool changes which slivers survive; align by
-    # nearest x_mid so the stage-2 strengths map onto the stage-3 slices. sl1 is
+    # Both stages are cut at the same boundaries (GM-134), so this maps slice
+    # for slice; the nearest x_mid stays as the guard should a stage drop a
+    # sliver the other keeps. sl1 is
     # built left-to-right so its x_mid are ascending -> O(log n) bisect lookup
     # (bit-identical to the previous O(n) min-scan, tie rule included).
     sl1_xmid = [s1.x_mid for s1 in sl1]

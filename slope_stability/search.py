@@ -28,7 +28,7 @@ from slope_stability.geometry import SlopeGeometry
 from slope_stability.slip_surface import (
     CircularSlipSurface, PolylineSlipSurface, GroundCrossingError,
 )
-from slope_stability.slices import build_slices
+from slope_stability.slices import build_slices, slice_boundaries
 from slope_stability.methods import (
     fellenius_fos, bishop_fos, spencer_fos, morgenstern_price_fos,
     M_ALPHA_MIN, M_ALPHA_RULES, m_alpha_checked, m_alpha_min,
@@ -1227,9 +1227,11 @@ def _dips_below_base(geom: SlopeGeometry, slip, n_slices: int) -> bool:
         x_en, x_ex = slip.find_entry_exit(geom)
     except ValueError:
         return False                  # _compute_fos rejects it anyway
-    dx = (x_ex - x_en) / n_slices
-    for i in range(n_slices):
-        x = x_en + (i + 0.5) * dx
+    # the slices build_slices cuts (GM-134: a crossing of the base is one
+    # of their boundaries)
+    xs = slice_boundaries(geom, slip, n_slices, x_en, x_ex)
+    for a, b in zip(xs[:-1], xs[1:]):
+        x = 0.5 * (a + b)
         z = slip.slip_elevation_at(x)
         if z is None or geom.ground_elevation_at(x) - z <= 0:
             continue

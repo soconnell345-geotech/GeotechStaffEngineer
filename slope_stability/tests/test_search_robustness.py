@@ -248,8 +248,10 @@ _THIN_BOX = ((15.0, 57.0), (31.0, 70.0))      # profile width x (crest+1, +2H)
 def test_dips_below_base():
     """A circle tangent to the base inside the slip mass is admissible. One
     whose lowest point is 8 mm under the base just beyond the toe (as the
-    walk without the rule found) loses two toe slices at 30 slices, scores
-    0.265 against 0.278, and is refused at 90 slices."""
+    walk without the rule found) is refused at any slice count: since
+    GM-134 the base's crossings are slice boundaries, so the stretch under
+    the base is slices of its own. Before, it lost two toe slices at 30
+    slices and scored 0.265 against 0.278, and was refused at 90."""
     from slope_stability.search import _dips_below_base
     geom = _thin_base_geom()
     touch = CircularSlipSurface(22.0, 32.0, 22.0)       # lowest point el 10
@@ -257,11 +259,11 @@ def test_dips_below_base():
     assert len(build_slices(geom, touch, 90)) == 90
     shed = CircularSlipSurface(15.88, 10.0 + 28.06 - 0.008, 28.06)
     assert _dips_below_base(geom, shed, 30)
-    assert len(build_slices(geom, shed, 30)) == 28      # slivers dropped
-    assert _compute_fos(geom, shed, "bishop", 30) == pytest.approx(0.265,
-                                                                   abs=0.002)
-    with pytest.raises(ValueError, match="below the bottom of the deepest"):
-        build_slices(geom, shed, 90)
+    for n in (30, 90):
+        with pytest.raises(ValueError,
+                           match="below the bottom of the deepest"):
+            build_slices(geom, shed, n)
+    assert _compute_fos(geom, shed, "bishop", 30) == _FOS_MAX
 
 
 @pytest.mark.parametrize("nx", [4, 10])

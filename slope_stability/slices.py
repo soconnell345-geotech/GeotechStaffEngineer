@@ -5,27 +5,53 @@ Cuts the soil mass between the slip surface entry and exit into
 vertical slices and computes all geometric and force quantities
 for each slice.
 
-Where the slices are cut (GM-131). A circle is cut into ``n_slices``
-slices of equal width, each with the base angle of the circle at its
-midpoint. A noncircular (polyline) surface has a slice boundary at every
-corner of the surface, every break in the ground surface, and every point
-where the surface crosses a layer boundary or the water table (Slide2's
-"Slice at piezo-surface intersection"), so that the base of each slice is
-one straight segment in one material and its top one straight segment;
-the stretches between those boundaries share out about ``n_slices``
-slices in proportion to their width, at least one each, and each slice
-takes its base angle and base length from the chord between its two
-boundaries. Cut at an even spacing instead, a slice across a corner took
-one segment's angle for its whole weight, and a polyline's FOS jumped
-with the slice count (0.65 at 30 slices, 1.18 at 31, 0.97 with a boundary
-at every corner, on one Taylor surface).
+Where the slices are cut (GM-131, GM-134). Every slip surface has a slice
+boundary at every break in the ground surface, every point where it
+crosses a layer boundary or the water table (Slide2's "Slice at
+piezo-surface intersection"), each edge of a surcharge and the edge of a
+tension crack, and a noncircular (polyline) surface also at every corner,
+so that the base of each slice lies in one material, under one water
+table, and its top is one straight segment under one load. The stretches
+between those boundaries share out about ``n_slices`` slices in
+proportion to their width, at least one each.
+
+Each slice, on a circle as on a polyline, takes its base angle and base
+length from the chord between its two boundaries on the slip surface
+(on a polyline the chord IS the surface); its base elevation stays on
+the surface at its midpoint, so its weight is the area under the arc.
+On a circle the chord is the straight base the methods assume (Duncan,
+Wright & Brandon, Ch. 6): its perpendicular bisector passes through the
+centre, so the base normal force acts through the centre, and its length
+is the b / cos(alpha) that Bishop's c' b / m_alpha takes. Bishop's
+driving moment, W (x_mid - xc) / R, does not use alpha. The circle's
+tangent at each slice's midpoint, used before GM-134, gives segments
+that do not join: where the arc turns vertical (a circle closed at its
+vertical tangent, a reverse-curvature end, a vertical cut) the last
+slice's base, width / cos(alpha), falls short of the arc by about a
+factor of the square root of two however thin the slice is, and the FOS
+converged only as one over the square root of the count (4.7 % low at
+30 slices on one toe circle, 0.4 % at 3,840). The chord converges as one
+over the count. Elsewhere the two agree within about 0.3 %.
+
+Cut at an even spacing instead, a slice across a corner took one
+segment's angle for its whole weight, and a polyline's FOS jumped with
+the slice count (0.65 at 30 slices, 1.18 at 31, 0.97 with a boundary at
+every corner, on one Taylor surface); a circle's slice across a layer
+crossing took one material for its whole base (V-043's circle 1.246,
+1.190, 1.180 and 1.232 on 25, 29, 30 and 31 slices; with the boundaries
+1.208 to 1.211 on 25 to 45 slices, 1.213 on 3,840, Slide2 1.209). And a
+circle dipping under the deepest layer is refused at any count, since
+the base's crossings are boundaries too.
 
 References:
-    Duncan, Wright & Brandon (2014) — Chapter 6
-    Rocscience, Slide2 help: Advanced project settings ("Slice at
+    Duncan, Wright & Brandon (2014) — Chapter 6 (straight slice bases;
+    the normal force on a circle's base acts through its centre)
+    Rocscience, Slide2 help: slice data ("Slide2 uses the mid-point of a
+    slice base to calculate the length of the moment arm"); Advanced project settings ("Slice at
     piezo-surface intersection"); Sarma non-vertical slice method
     ("Slice boundaries will be located at each vertex of a failure
-    surface")
+    surface"); error -116, "Not enough slices to analyze the surface"
+    (more crossings of material boundaries than slices)
 """
 
 import bisect
@@ -62,11 +88,10 @@ class Slice:
     height : float
         Slice height h = z_top - z_base (m).
     alpha : float
-        Inclination of slice base to horizontal (radians): the circle's
-        at the slice midpoint, or the chord's between the slice's two
-        boundaries on a noncircular surface.
+        Inclination of slice base to horizontal (radians): the chord's
+        between the slice's two boundaries on the slip surface.
     base_length : float
-        Length of slice base dl = width / cos(alpha) (m).
+        Length of the slice base, that chord, dl = width / cos(alpha) (m).
     weight : float
         Total weight W of the slice (kN/m).
     pore_pressure : float
@@ -215,66 +240,150 @@ def _crossings(f, xs: List[float], tol: float) -> List[float]:
     return out
 
 
-def slice_boundaries(geom: SlopeGeometry, slip, n_slices: int,
-                     x_entry: Optional[float] = None,
-                     x_exit: Optional[float] = None) -> List[float]:
-    """The x of every slice boundary, entry to exit, as ``build_slices``
-    cuts them (GM-131; see the module docstring).
+def _circle_crossings(slip, xs: List[float], z_line) -> List[float]:
+    """Where the lower arc of the circle ``slip`` crosses ``z_line``, which
+    is straight between the sorted ``xs``: on each piece, the roots of the
+    circle-line quadratic in u = x - xc, (1 + m^2) u^2 + 2 m d u + d^2 -
+    R^2 = 0 with the line z - yc = d + m u, kept where the line lies below
+    the centre (the lower arc). A line that only touches the circle gives
+    its one point."""
+    xc, yc, r = slip.xc, slip.yc, slip.radius
+    out = []
+    for a, b in zip(xs[:-1], xs[1:]):
+        if b <= a:
+            continue
+        za, zb = z_line(a), z_line(b)
+        m = (zb - za) / (b - a)
+        d = za - yc + m * (xc - a)
+        k = 1.0 + m * m
+        disc = k * r * r - d * d
+        if disc < 0.0:
+            continue
+        sq = math.sqrt(disc)
+        for u in ((-m * d - sq) / k, (-m * d + sq) / k):
+            x = xc + u
+            if a <= x <= b and d + m * u <= 0.0:
+                out.append(x)
+    return out
 
-    A circle: ``n_slices`` slices of equal width. A noncircular surface:
-    a boundary at each of its corners, each break in the ground surface,
-    and each crossing of a layer's top or bottom or of the water table,
-    strictly between the entry and the exit. Every corner is kept (one
-    within ``_END_MERGE`` of an end is that end); a ground break or a
-    crossing within ``_BOUNDARY_MERGE`` of the span of another boundary is
-    merged into it. The stretches between them
-    share out ``max(n_slices, stretches)`` slices in proportion to their
-    width, at least one each (each further slice goes to the stretch whose
-    slices are widest), and each stretch is cut evenly.
-    """
-    if x_entry is None or x_exit is None:
-        x_entry, x_exit = slip.find_entry_exit(geom)
-    if getattr(slip, "is_circular", True):
-        dx = (x_exit - x_entry) / n_slices
-        return [x_entry + i * dx for i in range(n_slices)] + [x_exit]
 
+def _crack_base(geom: SlopeGeometry, x_entry: float,
+                x_exit: float) -> Optional[float]:
+    """Elevation of the tension crack's base at the crest end of the
+    surface (the entry, or the exit with ``tension_crack_side='exit'``),
+    or None without a crack. A slice on that half of the surface whose
+    base lies above it is in the crack (``build_slices``)."""
+    if geom.tension_crack_depth <= 0:
+        return None
+    x_crest = x_entry if geom.tension_crack_side == "entry" else x_exit
+    return geom.ground_elevation_at(x_crest) - geom.tension_crack_depth
+
+
+def _surcharge_edges(geom: SlopeGeometry) -> List[float]:
+    """The x of each end of each loaded surcharge zone."""
+    xs = []
+    if geom.surcharge > 0 and geom.surcharge_x_range is not None:
+        xs += [float(x) for x in geom.surcharge_x_range]
+    for p, x0, x1 in geom.surcharges or ():
+        if p > 0:
+            xs += [float(x0), float(x1)]
+    return xs
+
+
+def slice_breaks(geom: SlopeGeometry, slip, x_entry: float,
+                 x_exit: float) -> List[float]:
+    """The x, strictly between the entry and the exit, where a slice
+    boundary must fall besides a polyline's corners (GM-131, GM-134):
+    each break in the ground surface; each crossing of a layer's top or
+    bottom, of the water table and of the tension crack's base on the
+    crest half of the surface (with the middle of the surface, where that
+    half ends, when the crack reaches it); and each edge of a surcharge.
+    A polyline is straight between its corners, and each line here
+    between its vertices, so the crossings are exact; a circle's are the
+    roots of the circle-line quadratic on each straight piece."""
     span = x_exit - x_entry
-    tol = _BOUNDARY_MERGE * span
+    circular = getattr(slip, "is_circular", True)
 
     def inside(xs):
         return [x for x in xs if x_entry < x < x_exit]
 
-    pts = list(getattr(slip, "points", []) or [])
-    corners = inside(p[0] for p in pts)
-    ground = inside(p[0] for p in geom.surface_points)
+    corners = ([] if circular else
+               inside(p[0] for p in (getattr(slip, "points", []) or [])))
 
-    def slip_z(x):
-        return slip.slip_elevation_at(x)
-
-    # Crossings of the layer boundaries and the water table: the surface
-    # and each boundary are linear between their vertices, so their
-    # difference is linear between the union of both sets of vertices.
-    lines = []
-    for layer in geom.soil_layers:
-        lines.append(([], layer.top_at))
-        bpts = layer.bottom_boundary_points
-        lines.append(([p[0] for p in bpts] if bpts else [], layer.bottom_at))
-    if geom.gwt_points:
-        lines.append(([p[0] for p in geom.gwt_points], geom.gwt_elevation_at))
-    crossings = []
-    for vxs, z_line in lines:
+    def crossings_of(vxs, z_line):
         xs = sorted({x_entry, x_exit, *corners, *inside(vxs)})
+        if circular:
+            return _circle_crossings(slip, xs, z_line)
 
-        def diff(x, z_line=z_line):
-            z = slip_z(x)
+        def diff(x):
+            z = slip.slip_elevation_at(x)
             return None if z is None else z - z_line(x)
 
-        crossings += _crossings(diff, xs, 1e-9 * max(1.0, span))
+        return _crossings(diff, xs, 1e-9 * max(1.0, span))
+
+    out = inside(p[0] for p in geom.surface_points)
+    # Crossings of the layer boundaries and the water table: each is
+    # straight between its vertices (level beyond them).
+    for layer in geom.soil_layers:
+        out += crossings_of([], layer.top_at)
+        bpts = layer.bottom_boundary_points
+        out += crossings_of([p[0] for p in bpts] if bpts else [],
+                            layer.bottom_at)
+    if geom.gwt_points:
+        out += crossings_of([p[0] for p in geom.gwt_points],
+                            geom.gwt_elevation_at)
+    # The tension crack: slices on the crest half whose base is above its
+    # base are in it, so it ends where the surface crosses that level on
+    # the crest half, or at the middle of the surface.
+    z_crack = _crack_base(geom, x_entry, x_exit)
+    if z_crack is not None:
+        x_half = 0.5 * (x_entry + x_exit)
+        entry_side = geom.tension_crack_side == "entry"
+        out += [x for x in crossings_of([], lambda x: z_crack)
+                if (x <= x_half if entry_side else x >= x_half)]
+        z_half = slip.slip_elevation_at(x_half)
+        if z_half is not None and z_half >= z_crack:
+            out.append(x_half)
+    out += _surcharge_edges(geom)
+    return inside(out)
+
+
+def slice_boundaries(geom: SlopeGeometry, slip, n_slices: int,
+                     x_entry: Optional[float] = None,
+                     x_exit: Optional[float] = None,
+                     extra=()) -> List[float]:
+    """The x of every slice boundary, entry to exit, as ``build_slices``
+    cuts them (GM-131, GM-134; see the module docstring).
+
+    A boundary at each break in the ground surface, each crossing of a
+    layer's top or bottom, of the water table or of a tension crack's
+    base, and each surcharge edge (``slice_breaks``), at each corner of a
+    noncircular surface, and at each x in ``extra`` (the other stage's
+    breaks in a rapid drawdown, so both stages are cut alike), strictly
+    between the entry and the exit. Every corner is kept (one within
+    ``_END_MERGE`` of an end is that end); any other boundary within
+    ``_BOUNDARY_MERGE`` of the span of another is merged into it. The
+    stretches between them share out ``max(n_slices, stretches)`` slices
+    in proportion to their width, at least one each (each further slice
+    goes to the stretch whose slices are widest), and each stretch is cut
+    evenly; with no boundary inside, ``n_slices`` slices of equal width.
+    """
+    if x_entry is None or x_exit is None:
+        x_entry, x_exit = slip.find_entry_exit(geom)
+    span = x_exit - x_entry
+    tol = _BOUNDARY_MERGE * span
+
+    corners = []
+    if not getattr(slip, "is_circular", True):
+        corners = [p[0] for p in (getattr(slip, "points", []) or [])
+                   if x_entry < p[0] < x_exit]
+    breaks = slice_breaks(geom, slip, x_entry, x_exit)
+    breaks += [x for x in extra if x_entry < x < x_exit]
 
     bounds = sorted({x_entry, x_exit, *(
         x for x in corners
         if x - x_entry > _END_MERGE and x_exit - x > _END_MERGE)})
-    for x in sorted(set(ground + inside(crossings))):
+    for x in sorted(set(breaks)):
         i = bisect.bisect_left(bounds, x)
         if (x - bounds[i - 1] >= tol and bounds[i] - x >= tol):
             bounds.insert(i, x)
@@ -290,9 +399,22 @@ def slice_boundaries(geom: SlopeGeometry, slip, n_slices: int,
     return out
 
 
+def _boundary_elevation(slip, x: float) -> Optional[float]:
+    """The slip surface's elevation at a slice boundary. A circle cut off at
+    its vertical tangent (reverse curvature, x = xc +/- R) ends on the
+    circle at the centre's level, where ``slip_elevation_at`` says outside."""
+    z = slip.slip_elevation_at(x)
+    if z is None and getattr(slip, "is_circular", False):
+        r = slip.radius
+        if abs(abs(x - slip.xc) - r) <= 1e-9 * max(1.0, r):
+            z = slip.yc
+    return z
+
+
 def build_slices(geom: SlopeGeometry,
                  slip,
-                 n_slices: int = 30) -> List[Slice]:
+                 n_slices: int = 30,
+                 extra_boundaries=()) -> List[Slice]:
     """Discretize the sliding mass into vertical slices.
 
     Parameters
@@ -303,10 +425,14 @@ def build_slices(geom: SlopeGeometry,
         Trial slip surface (duck-typed — must have slip_elevation_at,
         tangent_angle_at, and find_entry_exit methods).
     n_slices : int
-        Number of slices. Default 30. A circle is cut into exactly this
-        many; a noncircular surface into about this many, with a boundary
-        at every corner, ground break, layer crossing and water-table
-        crossing (``slice_boundaries``; GM-131).
+        Number of slices. Default 30. The surface is cut with a boundary
+        at every ground break, layer crossing, water-table crossing,
+        surcharge edge and tension-crack edge, and every corner of a
+        noncircular surface (``slice_boundaries``; GM-131, GM-134), into
+        this many slices, or one per stretch between those boundaries
+        where there are more stretches.
+    extra_boundaries : sequence of float
+        Further x to cut at (``slice_boundaries``' ``extra``).
 
     Returns
     -------
@@ -316,18 +442,13 @@ def build_slices(geom: SlopeGeometry,
         raise ValueError(f"Need at least 3 slices, got {n_slices}")
 
     x_entry, x_exit = slip.find_entry_exit(geom)
-    if getattr(slip, "is_circular", True):
-        # equal widths, the base angle of the circle at each midpoint
-        dx = (x_exit - x_entry) / n_slices
-        cuts = [(x_entry + i * dx, x_entry + i * dx + dx, dx)
-                for i in range(n_slices)]
-        chord = False
-    else:
-        # a boundary at every corner, ground break and crossing; the base
-        # angle and length of the chord between each slice's boundaries
-        xs = slice_boundaries(geom, slip, n_slices, x_entry, x_exit)
-        cuts = [(a, b, b - a) for a, b in zip(xs[:-1], xs[1:])]
-        chord = True
+    # a boundary at every ground break, crossing, surcharge and crack edge
+    # (and every corner of a polyline); each slice takes the base angle and
+    # length of the chord between its boundaries, on a circle as on a
+    # polyline.
+    xs = slice_boundaries(geom, slip, n_slices, x_entry, x_exit,
+                          extra_boundaries)
+    cuts = [(a, b, b - a) for a, b in zip(xs[:-1], xs[1:])]
 
     # Discrete pore-pressure field (flow-net / TIN): build the interpolator once
     # per call for the hot path; None when the piezometric-line / ru model is used.
@@ -337,13 +458,10 @@ def build_slices(geom: SlopeGeometry,
     # Tension crack: compute the crack base elevation at the crest end of the
     # slip surface (entry = low-x by default, or exit = high-x). Only slices on
     # that half of the surface can be in the crack.
-    crack_base_elev = None
     x_midpoint = (x_entry + x_exit) / 2.0
     crack_side = geom.tension_crack_side
     crack_truncate = geom.tension_crack_model == "truncation"
-    if geom.tension_crack_depth > 0:
-        x_crest = x_entry if crack_side == "entry" else x_exit
-        crack_base_elev = geom.ground_elevation_at(x_crest) - geom.tension_crack_depth
+    crack_base_elev = _crack_base(geom, x_entry, x_exit)
 
     slices = []
     below_base_x = []   # x of slices whose base dips below ALL soil layers
@@ -370,8 +488,8 @@ def build_slices(geom: SlopeGeometry,
                 below_base_x.append(x_mid)
                 continue
 
-        z_l = slip.slip_elevation_at(x_left) if chord else None
-        z_r = slip.slip_elevation_at(x_right) if chord else None
+        z_l = _boundary_elevation(slip, x_left)
+        z_r = _boundary_elevation(slip, x_right)
         if z_l is not None and z_r is not None:
             alpha = math.atan2(z_r - z_l, width)
             base_length = math.hypot(width, z_r - z_l)

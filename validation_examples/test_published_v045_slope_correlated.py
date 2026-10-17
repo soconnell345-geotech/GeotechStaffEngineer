@@ -65,14 +65,16 @@ def _geom():
 def test_v045_feature_consumes_published_correlations():
     """FOSM accepts #34's published rho values (Table 34.1), surfaces the
     cross-term as corr(...) entries, and the correlation shifts COV_F off the
-    independent value."""
+    independent value. The circle's FOS is 3.482 on 30 slices, 3.484 on
+    3,840 (3.445 on 30 before GM-134 made the layer crossing a slice
+    boundary, COV_F 0.396 / 0.413 then)."""
     indep = fosm_fos(_geom(), _VARS, xc=_XC, yc=_YC, radius=_R,
                      method="bishop", n_slices=30)
     corr = fosm_fos(_geom(), _VARS, xc=_XC, yc=_YC, radius=_R,
                     method="bishop", n_slices=30, correlations=_CORR)
-    assert corr.fos_mlv == pytest.approx(3.445, abs=0.02)
-    assert indep.cov_f == pytest.approx(0.396, abs=0.02)
-    assert corr.cov_f == pytest.approx(0.413, abs=0.02)
+    assert corr.fos_mlv == pytest.approx(3.482, abs=0.02)
+    assert indep.cov_f == pytest.approx(0.387, abs=0.02)
+    assert corr.cov_f == pytest.approx(0.404, abs=0.02)
     assert corr.cov_f != pytest.approx(indep.cov_f, abs=1e-4)   # correlation matters
     pct = corr.variable_variance_pct
     assert "corr(c_prime:PhaseI,phi:PhaseI)" in pct

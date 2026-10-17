@@ -264,7 +264,9 @@ Key conventions:
       true and complete (given vs default by the names a call gave);
       a noncircular surface sliced at its corners and layer and
       water-table crossings (release note); liquefaction requires the
-      water table and PGA on every route (release note);
+      water table and PGA on every route (release note). 2026-10-18:
+      circles sliced at layer/water/surcharge/crack edges, each slice
+      on its chord (release note);
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done".
     Open next: Foundry brief 6, which measures all of this, is drafted

@@ -11,7 +11,8 @@ table (Duncan, Wright & Brandon 2014, Ch. 6; Slide2 puts a slice boundary
 at each vertex of a failure surface and at the piezometric surface); the
 stretches between share out about ``n_slices`` slices in proportion to
 their width, and each slice takes its base angle and length from the chord
-between its two boundaries. Circles are cut evenly, as before.
+between its two boundaries. Circles get the same boundaries, less the
+corners, and the same chords since GM-134 (`test_circle_slicing.py`).
 """
 import math
 
@@ -134,16 +135,40 @@ def test_stretches_share_the_slices_by_width():
                                           30.0, 32.0, 34.0, 38.0]
 
 
-def test_circles_are_cut_evenly():
+def test_a_circle_is_cut_at_the_ground_breaks_and_takes_its_chords():
+    """GM-134: the crest and toe of Taylor's D = 2 slope are slice
+    boundaries on a circle through them; each slice takes the angle and
+    length of the chord between its boundaries, as a polyline's does, and
+    its base elevation at its midpoint stays on the arc."""
     geom = _taylor_d2()
     slip = CircularSlipSurface(xc=5 * H, yc=1.908 * H,
                                radius=2.908 * H - 1e-6)
+    xs = slice_boundaries(geom, slip, 40)
+    assert any(abs(x - 4 * H) < 1e-9 for x in xs)
+    assert any(abs(x - 6 * H) < 1e-9 for x in xs)
     slices = build_slices(geom, slip, 40)
     assert len(slices) == 40
     w = [s.width for s in slices]
-    assert max(w) == pytest.approx(min(w))
-    for s in slices:
-        assert s.alpha == pytest.approx(slip.tangent_angle_at(s.x_mid))
+    assert max(w) < 1.2 * min(w)
+    for s, a, b in zip(slices, xs, xs[1:]):
+        dz = slip.slip_elevation_at(b) - slip.slip_elevation_at(a)
+        assert s.width == pytest.approx(b - a)
+        assert s.alpha == pytest.approx(math.atan2(dz, b - a))
+        assert s.base_length == pytest.approx(math.hypot(b - a, dz))
+        assert s.z_base == pytest.approx(slip.slip_elevation_at(s.x_mid))
+
+
+def test_a_circle_without_a_boundary_inside_is_cut_evenly():
+    """No ground break, crossing or edge between the ends: n_slices
+    slices of equal width."""
+    geom = SlopeGeometry(
+        surface_points=[(0, 20), (40, 0)],
+        soil_layers=[SlopeSoilLayer("clay", 20, -20, 19.0, c_prime=10,
+                                    phi=25)])
+    slip = CircularSlipSurface(xc=20.0, yc=25.0, radius=18.0)
+    w = [s.width for s in build_slices(geom, slip, 30)]
+    assert len(w) == 30
+    assert max(w) == pytest.approx(min(w), rel=1e-9)
 
 
 def test_fixed_polyline_fos_does_not_depend_on_the_slice_count():

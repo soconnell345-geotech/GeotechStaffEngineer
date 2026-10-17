@@ -33,6 +33,8 @@ supplementary family of their own (``search_supplements``): 0.936, from the
 face where the clay's base comes out.
 """
 
+import re
+
 import pytest
 
 from slope_stability.analysis import analyze_slope, search_critical_surface
@@ -199,14 +201,16 @@ def test_the_default_search_reports_one_mass_and_counts_refusals():
 def test_the_default_search_covers_circles_passing_above_the_toe():
     """The circle that governs w10 comes out on the face above the toe,
     where no circle the main search scores can (its automatic windows meet
-    at the middle of the face): 0.936, its lower end where the clay's base
+    at the middle of the face): 0.938, its lower end where the clay's base
     comes out (z 6.5), every slice base in the clay. The main search and
-    the toe circles give 6.33 and 6.31 through the sandstone."""
+    the toe circles give 6.44 through the sandstone (6.33 and 6.31 before
+    GM-134, when a slice across the clay's base took one material for its
+    whole base; 6.44 on 3,840 slices either way)."""
     g = _w10()
     r = search_critical_surface(g, method="bishop")
     c = r.critical
     assert r.governing_surface == "circle_above_toe"
-    assert c.FOS == pytest.approx(0.936, abs=0.01)
+    assert c.FOS == pytest.approx(0.938, abs=0.01)
     assert r.candidates["circular"] > 6.0
     assert r.candidates["toe_circle"] > 6.0
     assert 26.4 <= c.x_entry <= 26.7 and 30.0 <= c.x_exit <= 31.5
@@ -214,7 +218,7 @@ def test_the_default_search_covers_circles_passing_above_the_toe():
     assert {g.layer_at_point(s.x_mid, s.z_base).name
             for s in build_slices(g, slip, 30)} == {"Residual clay"}
     assert any(w.startswith("A circle passing above the toe governs")
-               and "6.50 m above the toe" in w
+               and re.search(r"6\.5\d m above the toe", w)
                and "which meet at the middle of the face" in w
                for w in r.warnings)
     # what was covered, in the result
@@ -247,8 +251,12 @@ def test_circles_passing_above_the_toe_are_not_degenerate():
 
     Slices with phi' = 0 are not checked by default (GM-127 review): there
     m_alpha = cos(a) does not change the FOS. Slide2 #85's steep clay face
-    without its support: 0.906 on a circle whose m_alpha is 0.19 on a phi =
-    0 slice, kept; checking every slice, as Slide2 does, gives 0.910."""
+    without its support: 0.911 on a circle whose least m_alpha, cos(a) on a
+    phi = 0 slice, is 0.37; checking every slice, as Slide2 does, gives
+    0.911 too. Before GM-134 the family kept a circle at 0.906 whose last
+    slice, near vertical, had m_alpha 0.19, and which reads 0.947 on 960
+    slices: the base of a slice at the circle's midpoint angle fell short
+    of the steep arc (0.910 checking every slice)."""
     H = 6.096
     g = SlopeGeometry(
         surface_points=[(0, H), (H, H), (4 * H, 0), (4 * H + 9.144, 0)],
@@ -259,20 +267,21 @@ def test_circles_passing_above_the_toe_are_not_degenerate():
         ])
     r = search_critical_surface(g, nx=8, ny=8)
     assert r.candidates["circle_above_toe"] > 1.2
-    assert r.critical.FOS == pytest.approx(r.candidates["circular"])
+    # candidates are rounded to 4 places
+    assert r.critical.FOS == pytest.approx(r.candidates["circular"], abs=5e-5)
     clay = _clay85()
     a = search_toe_circles(clay, method="bishop")["above_toe"]
     slip = CircularSlipSurface(a["xc"], a["yc"], a["radius"])
     slices = build_slices(clay, slip, 30)
     assert m_alpha_min(slices, a["FOS"], slip, "bishop") == 1.0
     assert m_alpha_min(slices, a["FOS"], slip, "bishop",
-                       "every_slice") == pytest.approx(0.19, abs=0.01)
+                       "every_slice") == pytest.approx(0.37, abs=0.01)
     assert slip.reverse_curvature_crack(clay) is None
-    assert a["FOS"] == pytest.approx(0.906, abs=0.003)
+    assert a["FOS"] == pytest.approx(0.911, abs=0.003)
     every = search_critical_surface(clay, method="bishop",
                                     m_alpha_rule="every_slice")
     assert every.candidates["circle_above_toe"] == pytest.approx(
-        0.910, abs=0.003)
+        0.911, abs=0.003)
 
 
 def test_janbu_screens_the_circles_passing_above_the_toe_with_bishop():

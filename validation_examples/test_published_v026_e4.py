@@ -8,7 +8,7 @@ WITH the water crack): Bishop 1.596, Spencer 1.592, GLE 1.592; referee 1.65 [Gia
 
 V-026 (test_published_v026_slope.py) had to (a) MIRROR the slope so the crest fell
 on the module's entry-side-only crack, and (b) record a CONVENTION verdict: the
-module's crack was ~6% MORE CONSERVATIVE than Slide2 (Bishop 1.497 vs 1.596)
+module's crack was ~7% MORE CONSERVATIVE than Slide2 (Bishop 1.485 vs 1.596)
 because it kept the cracked wedge as zero-strength DRIVING soil, whereas Slide2
 TRUNCATES the sliding mass at the crack. E4 closes both gaps:
 
@@ -20,10 +20,14 @@ TRUNCATES the sliding mass at the crack. E4 closes both gaps:
 VERDICT: **PASS (mass-truncation matches Slide2; exit-side symmetric).**
   * The exit-side crack on the un-mirrored slope reproduces the mirrored entry-
     side FOS to machine precision (the two are mirror images).
-  * The mass-truncation model gives Bishop 1.597 / Spencer 1.593 / GLE 1.594 --
-    matching Slide2's published water-crack 1.596 / 1.592 / 1.592 to <0.1%,
+  * The mass-truncation model gives Bishop 1.603 / Spencer 1.599 / GLE 1.600 --
+    matching Slide2's published water-crack 1.596 / 1.592 / 1.592 to 0.5%,
     resolving the V-026 CONVENTION residual (the module was conservative only
-    because it kept the driving wedge; Slide2 truncates it).
+    because it kept the driving wedge; Slide2 truncates it). Before GM-134 it
+    read 1.597 / 1.593 / 1.594 on 60 slices, within 0.1%, but the crack's
+    edge was not a slice boundary then and the same slicing reads 1.603 /
+    1.603 / 1.600 on 3,840 slices; the crack edge is a boundary now, and the
+    60-slice values are the converged ones.
   * The default (entry-side, strength model) is byte-identical to V-026.
 NOT tuned; the match falls out of the correct mass model.
 
@@ -81,12 +85,15 @@ def _methods(g, xc, yc, r):
 
 def test_v026e4_default_entry_strength_unchanged():
     """DEFAULT (entry side, strength model) reproduces the V-026 pinned water-
-    crack FOS byte-for-byte -- the E4 params are additive/default-preserving."""
+    crack FOS byte-for-byte -- the E4 params are additive/default-preserving.
+    1.485 / 1.486 / 1.482 on 5 crack slices since GM-134 (the crack's edge a
+    slice boundary); 1.497 / 1.498 / 1.494 on 4 before, against 1.485 / 1.490
+    / 1.483 on 3,840 slices."""
     f = _methods(_geom(_MIRROR, "entry", "strength", _ZC, _ZC), _MXC, _MYC, _MR)
-    assert f["bishop"] == pytest.approx(1.497, abs=0.01)
-    assert f["spencer"] == pytest.approx(1.498, abs=0.01)
-    assert f["gle"] == pytest.approx(1.494, abs=0.01)
-    assert f["n_crack"] == 4
+    assert f["bishop"] == pytest.approx(1.485, abs=0.01)
+    assert f["spencer"] == pytest.approx(1.486, abs=0.01)
+    assert f["gle"] == pytest.approx(1.482, abs=0.01)
+    assert f["n_crack"] == 5
 
 
 def test_v026e4_exit_side_crack_is_mirror_symmetric():
@@ -99,20 +106,21 @@ def test_v026e4_exit_side_crack_is_mirror_symmetric():
                       _OXC, _OYC, _OR)
     for m in ("bishop", "spencer", "gle"):
         assert f_exit[m] == pytest.approx(f_entry[m], abs=1e-6)
-    assert f_exit["n_crack"] == 4
+    assert f_exit["n_crack"] == 5
 
 
 def test_v026e4_mass_truncation_matches_slide2():
     """The mass-truncation model (cracked wedge REMOVED from the sliding mass)
-    reproduces Slide2's published water-crack FOS to <0.1% -- Bishop 1.597 vs
-    1.596, Spencer 1.593 vs 1.592, GLE 1.594 vs 1.592 -- resolving the V-026
-    CONVENTION residual. The truncation drops the cracked slices (n_crack 0,
-    fewer slices than the strength model's 60)."""
+    reproduces Slide2's published water-crack FOS to 0.5% -- Bishop 1.603 vs
+    1.596, Spencer 1.599 vs 1.592, GLE 1.600 vs 1.592 -- resolving the V-026
+    CONVENTION residual (1.597 / 1.593 / 1.594 before GM-134; see the module
+    docstring). The truncation drops the cracked slices (n_crack 0, fewer
+    slices than the strength model's 60)."""
     f = _methods(_geom(_MIRROR, "entry", "truncation", _ZC, _ZC),
                  _MXC, _MYC, _MR)
-    assert f["bishop"] == pytest.approx(1.597, abs=0.01)     # ours (pinned)
-    assert f["spencer"] == pytest.approx(1.593, abs=0.01)
-    assert f["gle"] == pytest.approx(1.594, abs=0.01)
+    assert f["bishop"] == pytest.approx(1.603, abs=0.01)     # ours (pinned)
+    assert f["spencer"] == pytest.approx(1.599, abs=0.01)
+    assert f["gle"] == pytest.approx(1.600, abs=0.01)
     # matches Slide2 published to well within 0.5%
     for m in ("bishop", "spencer", "gle"):
         assert abs(f[m] - _PUB[m]) / _PUB[m] < 0.005

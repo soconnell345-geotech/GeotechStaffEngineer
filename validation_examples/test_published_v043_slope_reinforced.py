@@ -19,20 +19,25 @@ Published (Slide2 / Tandjiria 2002):
                          sand circ 44/45, sand noncirc 56/56 kN/m.
 
 VERDICTS
-- SAND, no reinforcement: PASS (circular). Circular Spencer 1.180 (-2.4% vs
-  1.209). Clean without a crack -- the dry sand crack barely intersects the
-  critical surface. Noncircular: a KNOWN GAP (GM-117). Differential evolution
+- SAND, no reinforcement: PASS (circular). Circular Spencer 1.210 (+0.05% vs
+  1.209), 1.208-1.211 on 25 to 45 slices and 1.213 on 3,840. Before GM-134 it
+  was pinned at 1.180 (-2.4%), a 30-slice value: the circle's slices were cut
+  evenly, so one across the crossing of the fill's base took one material
+  (1.246, 1.190, 1.180, 1.232 on 25, 29, 30, 31 slices); the crossings are
+  slice boundaries now. Clean without a crack -- the dry sand crack barely
+  intersects the critical surface. Noncircular: a KNOWN GAP (GM-117). Differential evolution
   reaches 1.234 (+3.8% on 1.188), above our own converged critical circle
   (1.213 on 60 slices or more) and a 41-point polyline inscribed in it
   (1.2145): the search falls short of a surface it should reach or beat.
 - SAND, reinforcement force: CONVENTION. The force to reach FS=1.35 on the
-  module's own searched surface is ~55 kN/m (circular) / ~50 kN/m (noncircular) --
-  bracketing the published 44-56 kN/m band but with the circular/noncircular
-  split inverted, because the reinforcement force is highly critical-surface
-  sensitive and the search finds a slightly different surface (the manual itself
-  attributes such differences to search-method/surface differences).
+  module's own searched surface is 41 kN/m (circular; 40 on 240 slices) /
+  ~50 kN/m (noncircular), against the published 44-45 / 56 kN/m: the circular
+  7% below, the split the same way round. The reinforcement force is highly
+  critical-surface sensitive (the manual itself attributes such differences to
+  search-method/surface differences). Before GM-134 the circular force was
+  ~55 kN/m, from the 30-slice 1.180 above.
 - CLAY, no reinforcement: CONVENTION. Without the crack the module gives circular
-  1.039 (+6.6% vs 0.975); the published value includes a WATER-FILLED crest crack
+  1.041 (+6.8% vs 0.975); the published value includes a WATER-FILLED crest crack
   whose depth is NOT labeled in Fig 39.1 and to which the FS is very sensitive
   (a full 2c/gamma=2.06 m water column drives FS to ~0.27), so it is not
   reproduced -- not tuned to a fitted crack depth.
@@ -49,8 +54,11 @@ from slope_stability.slip_surface import CircularSlipSurface
 
 _SURFACE = [(0, 9), (10, 9), (20, 3), (30, 3)]
 # Spencer critical circles recovered by entry-exit search (seed=2), pinned.
+# The clay circle came 3.5 mm under the firm base at el 0; its radius is cut
+# to touch the base 0.1 mm above it, since a circle under the base is refused
+# at any slice count (GM-134).
 _SAND_CIRC = (15.193905105454997, 10.242328996634253, 9.938523884815131)
-_CLAY_CIRC = (15.027360761475776, 12.983131511749898, 12.986612150416436)
+_CLAY_CIRC = (15.027360761475776, 12.983131511749898, 12.983031511749898)
 
 
 def _geom(fill, T=None):
@@ -73,13 +81,14 @@ def _geom(fill, T=None):
 
 
 def test_v043_sand_no_reinforcement_circular():
-    """PASS: sand-fill embankment, no reinforcement, circular Spencer = 1.180
-    (Slide2 1.209 / Tandjiria 1.219, within ~2.5%)."""
+    """PASS: sand-fill embankment, no reinforcement, circular Spencer = 1.210
+    (Slide2 1.209 / Tandjiria 1.219, within 1%); 1.180 before GM-134, a
+    30-slice value (module docstring)."""
     xc, yc, r = _SAND_CIRC
     fos = analyze_slope(_geom("sand"), xc=xc, yc=yc, radius=r,
                         method="spencer").FOS
-    assert fos == pytest.approx(1.180, abs=0.01)
-    assert fos == pytest.approx(1.209, rel=0.04)
+    assert fos == pytest.approx(1.210, abs=0.003)
+    assert fos == pytest.approx(1.209, rel=0.01)
 
 
 @functools.lru_cache(maxsize=1)
@@ -130,8 +139,9 @@ def test_v043_sand_noncircular_reaches_the_published():
 
 def test_v043_sand_reinforcement_force_brackets_published():
     """CONVENTION: the geosynthetic force to raise the sand circular critical
-    surface to FS=1.35 is ~55 kN/m, bracketing the published 44-56 kN/m band
-    (critical-surface sensitive; see module note)."""
+    surface to FS=1.35 is 41 kN/m, 7% below the published circular 44-45
+    kN/m (critical-surface sensitive; see module note). ~55 kN/m before
+    GM-134."""
     xc, yc, r = _SAND_CIRC
     slip = CircularSlipSurface(xc=xc, yc=yc, radius=r)
     lo, hi = 0.0, 300.0
@@ -144,7 +154,8 @@ def test_v043_sand_reinforcement_force_brackets_published():
         else:
             hi = mid
     T = 0.5 * (lo + hi)
-    assert 40.0 <= T <= 65.0            # brackets published 44-56 kN/m
+    assert T == pytest.approx(40.9, abs=1.0)            # ours (pinned)
+    assert T == pytest.approx(44.0, rel=0.1)    # within 10% of published 44
     # the solved force does raise this surface to the target
     fs_at_T = analyze_slope(_geom("sand", T=T), slip_surface=slip,
                             method="spencer").FOS
@@ -153,10 +164,10 @@ def test_v043_sand_reinforcement_force_brackets_published():
 
 def test_v043_clay_no_reinforcement_no_crack_is_high():
     """CONVENTION: clay-fill embankment WITHOUT the (unlabeled) water-filled
-    crest crack gives circular Spencer 1.039 (+6.6% vs the published 0.975 that
+    crest crack gives circular Spencer 1.041 (+6.8% vs the published 0.975 that
     includes the crack). The FS is very crack-sensitive; not tuned."""
     xc, yc, r = _CLAY_CIRC
     fos = analyze_slope(_geom("clay"), xc=xc, yc=yc, radius=r,
                         method="spencer").FOS
-    assert fos == pytest.approx(1.039, abs=0.01)
+    assert fos == pytest.approx(1.041, abs=0.01)
     assert fos > 0.975                  # higher than the water-crack value

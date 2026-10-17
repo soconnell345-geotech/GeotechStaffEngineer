@@ -81,15 +81,17 @@ _V031_CIRCLE = (10.5, 60.3, 34.3)
 
 def test_v031_pockoski_duncan_circular_bishop_spencer():
     """PASS: the module reproduces Slide2 Table 57.3 (circular) Bishop 1.417 and
-    Spencer 1.422 for the Pockoski & Duncan test slope 3 to <0.6%. Exercises a
-    2-layer slope (sandy clay over a highly-plastic-clay band) with a water
-    table."""
+    Spencer 1.422 for the Pockoski & Duncan test slope 3 to <0.3% (1.421 /
+    1.425). Exercises a 2-layer slope (sandy clay over a highly-plastic-clay
+    band) with a water table. Before GM-134 made the circle's layer and
+    water-table crossings slice boundaries it read 1.411 / 1.415 on these 50
+    slices (GLE 1.398, now 1.409), and 1.399 to 1.446 on 25 to 45."""
     fos = _methods(_v031_geom(), *_V031_CIRCLE)
-    assert fos["bishop"] == pytest.approx(1.411, abs=0.02)     # ours
-    assert fos["spencer"] == pytest.approx(1.415, abs=0.02)    # ours
-    assert fos["bishop"] == pytest.approx(1.417, rel=0.01)     # Slide2 circular
-    assert fos["spencer"] == pytest.approx(1.422, rel=0.01)    # Slide2 circular
-    assert fos["gle"] == pytest.approx(1.398, abs=0.02)
+    assert fos["bishop"] == pytest.approx(1.421, abs=0.005)    # ours
+    assert fos["spencer"] == pytest.approx(1.425, abs=0.005)   # ours
+    assert fos["bishop"] == pytest.approx(1.417, rel=0.005)    # Slide2 circular
+    assert fos["spencer"] == pytest.approx(1.422, rel=0.005)   # Slide2 circular
+    assert fos["gle"] == pytest.approx(1.409, abs=0.005)
 
 
 def test_v031_critical_search_finds_circular():
@@ -105,10 +107,10 @@ def test_v031_critical_search_finds_circular():
 
 def test_v031_janbu_and_ordinary_are_method_conventions():
     """CONVENTION note: the module's Janbu (f0-CORRECTED, 1.374) runs above
-    Slide2's Janbu-SIMPLIFIED 1.263 (+8.8%), and the Ordinary/Fellenius (1.159)
+    Slide2's Janbu-SIMPLIFIED 1.263 (+8.8%), and the Ordinary/Fellenius (1.165)
     below Slide2's Ordinary 1.319 -- both are the usual method-definition /
     OMS-with-water pathologies, not surface disagreements (Bishop & Spencer,
-    the rigorous methods, match to <0.6%)."""
+    the rigorous methods, match to <0.3%)."""
     fos = _methods(_v031_geom(), *_V031_CIRCLE)
     assert fos["janbu"] > 1.263      # corrected > Slide simplified
     assert fos["fell"] < 1.319       # OMS-with-water is conservative

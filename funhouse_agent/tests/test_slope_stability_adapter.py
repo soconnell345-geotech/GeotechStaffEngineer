@@ -346,8 +346,10 @@ class TestSingleSurfaceWarnings:
                    for w in r["warnings"])
 
     def test_bishop_warnings_pass_through(self):
+        """Bishop 1.372 (1.304 before GM-134 cut circles at layer
+        crossings; 1.374 on 3,840 slices)."""
         r = METHOD_REGISTRY["analyze_slope"](_slide85(method="bishop"))
-        assert r["FOS"] == pytest.approx(1.304, abs=0.002)
+        assert r["FOS"] == pytest.approx(1.372, abs=0.002)
         assert r["method_solved"] is True and r["method_used"] == "Bishop"
         text = " ".join(r["warnings"])
         assert "reverse-curvature" in text and "5.89 m deep" in text

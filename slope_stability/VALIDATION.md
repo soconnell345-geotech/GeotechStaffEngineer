@@ -207,6 +207,10 @@ model — the cracked wedge REMOVED from the sliding mass, as Slide2 does — th
 published water-crack FOS is reproduced to <0.1%. The exit-side option removes the
 old need to mirror the slope (V-026 analysed the mirror image). Default (entry,
 strength) byte-identical to V-026. NOT tuned; the match falls out of the mass model.
+Since GM-134 (B16) the crack's edge is a slice boundary: strength 1.485 / 1.486 /
+1.482 (-7%), truncation 1.603 / 1.599 / 1.600 (+0.4%), on 60 slices; the old
+slicing reads the same on 3,840 (1.603 / 1.603 / 1.600 truncated), so the
+<0.1% match above was in part a 60-slice value.
 
 ## B10 — Stabilizing-pile passive support convention (v5.4 E6, validation_examples V-040 E6)
 [Slide2 Verification #54 (Yamagami 2000): homogeneous slope, single micro-pile row
@@ -259,7 +263,7 @@ the lowest (DESIGN.md "Supplementary families"). Tests:
 
 | Case | Before (search alone) | Now | True / published | Governs |
 |------|----------------------:|----:|-----------------:|---------|
-| V-054 isotropic: H 5 m, 45 deg, su 40, Bishop, 40 slices | 2.784 | 2.286 | 2.287 brute force (FLAC 2.18, Taylor ~2.2) | toe circle |
+| V-054 isotropic: H 5 m, 45 deg, su 40, Bishop, 40 slices | 2.784 | 2.286 | 2.287 brute force (FLAC 2.18, Taylor ~2.2) | toe circle (2.346 since GM-134, B16: 2.287 was a slicing error at the arc's vertical end) |
 | Slide2 #86 without supports: c'=0, phi' 37, 1.25H:1V, Bishop search | 1.566 | 0.942 | tan 37 / tan 38.66 = 0.942 | infinite slope |
 | ACADS 1(a) default circular grid, Bishop | 0.990 | 0.985 | 1.00 (Slide2 0.987) | toe circle |
 | V-032 (Slide2 #61) entry/exit 10x10, Bishop | 1.320 | 1.315 | Slide2 1.366 / Baker 1.35 (see below) | toe circle |
@@ -300,7 +304,7 @@ direct march. See DESIGN.md "Support forces in each method".
 | same | GLE | 1.606 | 1.622 | -1.0 % |
 | Slide2 #85, one 9,000 lb/ft support, active, default ranges | GLE | 1.584 (GM-60 and the searches since; 1.581 before GM-60, on a state not in equilibrium) | 1.575 (D&W 1.51) | +0.6 % |
 | same | Spencer | 1.542 (1.605 before GM-60); no solution on the same circle at 60 slices, which the search says (GM-127) | 1.884 | within the published spread 1.51-1.884 |
-| same | Bishop | 1.304 + warnings | 1.531 | reverse-curvature toe circle (centre 6 ft below the crest, 5.9 ft dry crack, as Slide2's default closes it); the support passes 4.1 ft below the centre, 29 % counted (GM-59). Its last slice has m_alpha = cos(a) 0.18 on phi = 0, which Slide2 refuses with its 'Check malpha < 0.2' setting on (error -112); phi = 0 slices are not checked by default, as m_alpha does not change the FOS there (GM-127). 1.325 at 60 slices, which the search says |
+| same | Bishop | 1.304 + warnings (1.372 since GM-134, B16) | 1.531 | reverse-curvature toe circle (centre 6 ft below the crest, 5.9 ft dry crack, as Slide2's default closes it); the support passes 4.1 ft below the centre, 29 % counted (GM-59). Its last slice has m_alpha = cos(a) 0.18 on phi = 0, which Slide2 refuses with its 'Check malpha < 0.2' setting on (error -112); phi = 0 slices are not checked by default, as m_alpha does not change the FOS there (GM-127). 1.325 at 60 slices, which the search says |
 | same, `reverse_curvature='discard'` | Bishop | 1.432 (1.503 before GM-122, 1.467 before GM-127) | 1.531 (D&W 1.51) | a circle passing above the toe centred at the crest's level, m_alpha 0.195 on its last (phi = 0) slice; 1.484 at 240 slices (-1.7 % on D&W) |
 | same, discard, `m_alpha_rule='every_slice'` | Bishop | 1.467 | 1.531 (D&W 1.51) | Slide2's check on every slice: a circle passing above the toe, 1.508 at 240 slices |
 | same, on Slide2's printed GLE circle | Bishop = Spencer = GLE | 1.564 | GLE 1.575 | Spencer / GLE fell back to the unreinforced 0.913 before GM-60 |
@@ -333,7 +337,7 @@ grid". Tests: `tests/test_duncan_verification.py`, `tests/test_search_robustness
 | Duncan Ex 1 on its own short profile (1 H each side) | 0.727 | 0.726 + the profile-end warning (GM-63) | |
 | Duncan Ex 4, sand over clay | 1.319 | 1.249 + the profile-end warning | |
 | ACADS 1(a), default Bishop, grid family | 0.990 | 0.988 (the toe circle 0.985 still governs) | 1.00 |
-| V-054 window-limited circle (toe circles off) | 2.784 | 2.770 (the toe circle 2.286 governs) | 2.287 |
+| V-054 window-limited circle (toe circles off) | 2.784 | 2.770 (the toe circle 2.286 governs; 2.346 since GM-134, B16) | 2.287 |
 | #98 rapid drawdown, Corps / DWW / LK | 0.8370 / 0.9352 / 0.9632 | 0.8341 / 0.9349 / 0.9619 | 0.931 / 1.039 / 1.075 |
 | Pilarcitos true section, Corps | 0.7258 | 0.7236 | 0.823 |
 
@@ -364,7 +368,7 @@ What moved in the suites (every published-benchmark test still passes):
 |------|-------:|----:|------|
 | Slide2 #85 one support, `reverse_curvature='discard'`, Bishop, active / passive | 1.503 / 1.305 (toe circle) | 1.485 / 1.302 | a circle tangent to the base entering just above the toe, out at x = 39.2, beyond the old exit window's start (40.2); at 240 slices it gives 1.511 / 1.318 against D&W 1.51 / 1.32, where the old toe circle gives 1.557 / 1.338 |
 | ACADS 1(a) + 200 kN/m geosynthetic at el 29 | 1.115 | 1.105 | the circle above the geosynthetic, entering 0.41 of the way up the face |
-| V-054 (steep phi = 0 from the toe), circle search alone, grid / refined | 2.784 / 2.770 | 2.360 / 2.344 | the toe circle 2.286 still governs (its centre is below the crest) |
+| V-054 (steep phi = 0 from the toe), circle search alone, grid / refined | 2.784 / 2.770 | 2.360 / 2.344 | the toe circle 2.286 still governs (its centre is below the crest); since GM-134 (B16) refined 2.348 against the toe circle 2.346 |
 | Duncan Ex 1 on its own short profile | 0.726 | 0.720 + the profile-end warning | Taylor 0.706 needs a longer profile |
 | Slide2 #86 without supports, default search | 0.944 (planar) | 0.942 (a circle 0.4 ft long) | the closed form 0.942; the circle search now reaches the infinite slope itself and the result says that is what it is (the planar surfaces, Janbu, 0.944) |
 | same, circle search alone | 1.550 | 0.942 | |
@@ -441,7 +445,7 @@ A noncircular surface now has a slice boundary at each of its corners, each
 break in the ground and each crossing of a layer boundary or the water table;
 the stretches between share out about `n_slices` slices in proportion to their
 width, and each slice takes its base angle and length from its chord. Circles
-are cut evenly, as before. Cut evenly, a slice across a corner took one
+were cut evenly until GM-134 (B16). Cut evenly, a slice across a corner took one
 segment's angle for its whole weight, and a fixed polyline could err either
 way with the slice count; a search's minimum picked out the low errors.
 
@@ -486,6 +490,81 @@ surface that holds and says so (2,325 evaluated: 398 refused for geometry,
 slice count now; the population takes another path. Its depth fractions
 reach the model base 30 m down, where about 1 surface in 300 has a solution
 (GM-117).
+
+---
+
+## B16 — Circles cut at layer, water, surcharge and crack edges; chord bases (GM-134, 2026-10-17)
+[Duncan, Wright & Brandon (2014) Ch. 6 (straight slice bases; the base
+normal of a circle through its centre); Slide2 help: "Slice at piezo-surface
+intersection", slice data ("Slide2 uses the mid-point of a slice base to
+calculate the length of the moment arm"), error -116. `slices.slice_breaks`,
+`slices.slice_boundaries`; DESIGN.md "Where a circle is sliced". Tests:
+`tests/test_circle_slicing.py`.]
+
+A circle now has a slice boundary at each break in the ground and each
+crossing of a layer boundary, the water table or a tension crack's base, and
+every surface (circle or polyline) one at each surcharge edge; each slice,
+circle or polyline, takes its base angle and length from the chord between
+its boundaries. Cut evenly, a circle's slice across a crossing took one
+material, pore pressure or load for its whole base, so a fixed circle's FOS
+jumped with the slice count. The tangent at each slice's midpoint (the old
+circle rule) leaves the last slice's base short of the arc where the arc
+turns vertical, and converges only as one over the square root of the count.
+
+Every move was checked against the OLD code at fine slicing (a worktree at
+972c937): of 69 distinct surfaces whose FOS moved in the slope suite and
+the validation examples, 66 moved toward the old code's own value on 3,840
+slices (error now median 0.09 %, at most 0.90 %; before median 1.76 %, at
+most 26.8 %); the other three are two surfaces, below.
+
+| Case (fixed surface unless "search") | Before | After | Old code, fine slicing | Published |
+|---|---:|---:|---:|---:|
+| V-043 sand fill, critical circle, Spencer, 30 slices | 1.180 (1.190-1.246 on 25-31) | 1.210 (1.208-1.211 on 25-45) | 1.213 on 960 and 3,840 | Slide2 1.209, Tandjiria 1.219 |
+| V-043 geosynthetic force to raise that circle to 1.35 | ~55 kN/m | 40.9 kN/m (39.8 on 240 slices) | | 44-45 (circular) |
+| V-043, T = 150 kN/m | 1.773 | 1.902 | 1.909 | |
+| V-031 Slide2 #57 (layers + water), Bishop / Spencer / GLE, 50 slices | 1.411 / 1.415 / 1.398 (1.399-1.446 on 25-45) | 1.421 / 1.425 / 1.409 (1.420-1.425) | Bishop 1.419, Spencer 1.425 on 480 | Slide2 1.417 / 1.422 |
+| V-031 Bishop search, 30 slices | 1.397 | 1.416 | | 1.42 |
+| V-026 ACADS 1(b), water-filled crack (strength model), B / S / GLE, 60 | 1.497 / 1.498 / 1.494 (4 crack slices) | 1.485 / 1.486 / 1.482 (5) | 1.485 / 1.490 / 1.483 on 3,840 | Slide2 (truncation) 1.596 / 1.592 / 1.592 |
+| V-026 dry crack, B / S / GLE | 1.553 / 1.555 / 1.551 | 1.540 / 1.543 / 1.538 | 1.540 / 1.543 / 1.539 | |
+| V-026 E4 mass truncation, B / S / GLE | 1.597 / 1.593 / 1.594 | 1.603 / 1.599 / 1.600 | 1.603 / 1.603 / 1.600 | Slide2 1.596 / 1.592 / 1.592 |
+| V-045 #34 correlated pair, FOSM mean (circle), 30 | 3.445 | 3.482 | 3.484 on 3,840 | (capability check) |
+| V-054 steep phi = 0 slope, toe circle (2.5, 4, 4.72), Bishop, 40 | 2.287 | 2.379 | 2.374 on 3,840, 2.378 on 10,240 | 2.16 (FLAC 2.18) |
+| V-054 the same with level ground past the toe, base circle (new pin) | | 2.222 | | 2.16 (FLAC 2.18) |
+| V-054 Bakklandet ratios on the toe circle / anisotropic critical | 1.850 / 1.796 | 1.942 / 1.886 | 1.937 / 1.881 on 3,840 | reduction ~24 % (now 18 % / 21 %) |
+| GM-13 steep slope, default search, 40 slices | 2.287 (toe circle) | 2.346 (another toe circle; grid 2.348) | | |
+| Slide2 #85 + support, Bishop on Slide2's GLE circle | 1.564 | 1.566 | | GLE 1.575 |
+| #85 + support, Bishop search, default (toe circle closed by a crack) | 1.304 (1.325 on 60) | 1.372 (1.373 on 60) | 1.362 on 960, 1.368 on 3,840 (new 1.374) | Slide2 1.531, D&W 1.51 |
+| #85, `reverse_curvature='discard'`, active, default / `'every_slice'` | 1.432 / 1.467 | 1.508 / 1.511 | 1.503-1.513 | D&W 1.51 |
+| #85, passive, Bishop search default / discard / discard + every_slice | 1.208 / 1.274 / 1.296 | 1.254 / 1.316 / 1.316 | 1.318-1.320 (discard) | D&W 1.32, Slide2 1.324 |
+| #85, Spencer / GLE default search | 1.542 / 1.584 | 1.551 / 1.573 | | Slide2 1.884 / 1.575 |
+| #85 clay face without the support, Bishop search | 0.882 | 0.910 | | |
+| Vertical cut (Taylor), Bishop search | 0.800 | 0.842 | 0.839 (new 0.843) | Taylor 0.851 |
+| Duncan Ex 4, Bishop / Fellenius / m_alpha-test circle | 1.249 / 1.260 / 1.259 | 1.271 / 1.250 / 1.288 | 1.270 / 1.253 / 1.287 | |
+| Duncan Ex 4, Janbu search | 1.199 | 1.203 (1.212 on 60) | | |
+| Two-layer clay over sandstone (w10), circles in the sandstone | 6.31-6.35 | 6.44-6.47 | 6.44-6.47 on 3,840 | |
+| Weak layer over rock, four circles | 0.884 / 0.885 / 0.895 / 0.889 | 1.051 / 1.157 / 1.124 / 1.150 | 1.051 / 1.159 / 1.122 / 1.150 | |
+| Entry/exit circle passing above the toe; reversed-window direct search | 0.968; 1.003 | 1.322; 1.282 | 1.322; 1.284 | |
+| Circles passing above the toe (clay over sandstone), Bishop; Janbu / Spencer | 0.936; 0.938 / 0.936 | 0.983; 0.990 / 0.997 | 0.982; 0.995 / 0.996 | |
+| Tension-crack Bishop cases | 1.944 / 1.916 | 1.961 / 1.933 | 1.9625 / 1.9343 | |
+| SHANSEP GLE; ten layers; ru multi-layer; calc-steps figure | 1.684; 2.707; 1.457; 1.454 | 1.694; 2.720; 1.445; 1.462 | 1.695; 2.719; 1.445; 1.462 | |
+| WE-SLOPE-4 (V-043 worked example): unreinforced; required T | 1.180; 55.5 kN/m | 1.210; 40.9 kN/m | | 1.209; 44-45 |
+
+Two moves went slightly the other way, both inside 0.5 %: a small circle
+in reversed search windows 1.199 -> 1.208 against 1.202 converged (the
+chord is 0.47 % above at 30 slices, the tangent was 0.27 % below), and a
+Janbu surface 1.224 -> 1.203 against 1.214 (0.9 % below against 0.8 %
+above). A circle under the deepest layer is now refused at every slice
+count (a slice boundary falls where it crosses the base); before, one 8 mm
+under it lost two toe slices at 30 slices and scored, and was refused at 90.
+On a phi = 0 circle Spencer and the GLE now equal Bishop to about 0.1 %
+rather than exactly: the chord's normal passes a hair off the centre and
+`gle.py` takes its arm as it is. Search times (default search, laptop, best
+of 2-4): Bishop 1.8-2.7 s before and after (-9 % to +14 %, the scatter);
+Spencer -15 % (V-031) and -5 % (V-043), but +22 % on the steep phi = 0
+slope and +25 % on #85 (17 -> 21 s; GLE 16 -> 20 s): 12 % more rigorous
+solves in the centre refinement and about 9 % more solver work each. The
+slicing itself costs 0.03-0.05 ms more per surface (0.17 s of a 47 s
+profiled search).
 
 ---
 

@@ -14,8 +14,10 @@ GM-122 for the third):
    On a steep slope in a short model the critical toe circle exited on the
    crest well inside the automatic exit window's lower bound, and its centre
    lies below the crest, under the bottom of the automatic centre grid.
-   Steep phi = 0 slope, H = 5 m at 45 deg, su = 40 kPa: grid 2.78 (2.344
-   with the ranges from the slope) against a true toe circle of 2.287.
+   Steep phi = 0 slope, H = 5 m at 45 deg, su = 40 kPa: grid 2.78 (2.348
+   with the ranges from the slope) against a toe circle of 2.346. (Before
+   GM-134 a toe circle closed where the arc turns vertical read 2.287 there,
+   a slicing error at that end; 2.379 now, 2.384 on 10,240 slices.)
 
 2. **Infinite slope / shallow planar (translational) sliding** in
    cohesionless soil (Duncan, Wright & Brandon 2014, Ch. 14; Skempton &

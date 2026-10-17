@@ -397,6 +397,7 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   1.593 / GLE 1.594 vs 1.596 / 1.592 / 1.592) — not tuned. Defaults
   ('entry', 'strength') unchanged; the strength model stays documented as the
   conservative convention. Tests: test_published_v026_e4.py (5).
+- GM-134 (2026-10-17): the tension crack's edge is a slice boundary. Water crack, strength model 1.485 / 1.486 / 1.482 on 60 slices (5 in the crack; 1.497 / 1.498 / 1.494 on 4 before); truncation 1.603 / 1.599 / 1.600, within 0.5 % of Slide2. The old slicing reads the same on 3,840 slices.
 
 ## V-029 Slide2 #10 = ACADS 5 — homogeneous slope, pore-pressure GRID + ponded water
 - Source: Slide2 Verification #10 (manual pp. 55-58); ACADS 5 [Giam & Donald 1989].
@@ -462,6 +463,7 @@ text extraction; problems whose geometry could not be reconstructed from the tex
 - Notes: Bishop/Spencer reproduce to <0.6% (PASS). Janbu (module f0-CORRECTED)
   runs above the Slide2 Janbu-SIMPLIFIED, and Ordinary/OMS-with-water below — usual
   method-definition conventions.
+- GM-134 (2026-10-17): the circle is cut at its layer and water-table crossings and each slice takes its chord: Bishop 1.421 / Spencer 1.425 on 50 slices (1.411 / 1.415 before), within 0.3 % of Slide2 1.417 / 1.422; 1.420-1.425 on 25 to 45 slices (1.399-1.446 before).
 
 ## V-032 Slide2 #61 — Baker (2003) example 3, homogeneous Mohr-Coulomb
 - Source: Slide2 Verification #61 (manual pp. 213-215); Baker (2003).
@@ -743,6 +745,7 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   (surface-sensitive). Clay: without the unlabeled water crack 1.039 (+6.6% vs 0.975);
   full 2c/γ water column overshoots to ~0.27 — not reproduced, NOT tuned.
 - Confidence: geometry + soil exact; crack depth + Slide2 critical surfaces absent.
+- GM-134 (2026-10-17): circular Spencer 1.210 on 30 slices, 1.208-1.211 on 25 to 45, 1.213 on 3,840 (Slide2 1.209); the pinned 1.180 was a 30-slice value of the even slicing. The force to reach 1.35 on that circle: 40.9 kN/m (published circular 44-45). The clay circle's radius is cut 0.1 mm to touch the base (it came 3.5 mm under it): 1.041.
 
 ## V-106 Slide2 #106 — Cai & Ugai (2000) Ito-Matsui pile — N/A (source)
 - Source: Slide2 Verification #106 (manual p. 334); Cai & Ugai (2000).
@@ -783,6 +786,7 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   is a rendered multi-material section with no labeled coords, a figure-only
   non-circular surface, omitted layers, and Slide-tuned γ (the manual's note).
   Tests: test_published_v045_slope_correlated.py (2).
+- GM-134 (2026-10-17): FOSM mean 3.482 (3.445 before; 3.484 on 3,840 slices either way); COV_F 0.387 / 0.404.
 
 ## V-046 Slide2 #33 — El-Ramly (2003) Syncrude dyke — N/A (geometry)
 - Source: Slide2 Verification #33 (manual pp. 130-131); El-Ramly et al (2003).
@@ -851,6 +855,7 @@ text extraction; problems whose geometry could not be reconstructed from the tex
   back to the unreinforced 0.913 there. Searches: active Spencer 1.581 / GLE 1.609
   (Slide2 1.884 / 1.575), passive Spencer 1.346 / GLE 1.379 (Slide2 1.872 /
   1.378). Pinned in slope_stability/tests/test_search_reinforcement.py.
+- GM-134 (2026-10-17): the 1.304 circle reads 1.372 (1.373 on 60 slices; the old slicing 1.368 on 3,840): its last slice's tangent base fell short of the arc where it turns vertical. With `reverse_curvature='discard'` 1.508 active / 1.316 passive against D&W 1.51 / 1.32.
 
 ## V-051 Slide2 #51 — Zhu (2003) 4-layer seismic method comparison — N/A (source)
 - Source: Slide2 #51 (manual pp. 186-187); Zhu (2003).
@@ -939,6 +944,7 @@ text extraction; problems whose geometry could not be reconstructed from the tex
     honest extraction. **N/A (source).** Recorded, not pinned.
   Tests: test_published_v054_anisotropic_su.py (4) + slope_stability/tests/
   test_strength_models.py::TestAnisotropicSu (5).
+- GM-134 (2026-10-17): the toe circle (2.5, 4, 4.72) reads 2.379 (2.287 was the tangent slicing's error at its vertical end; the old slicing reads 2.374 on 3,840 slices). The search's toe circle 2.346. With level ground 40 m past the toe a base circle gives 2.222, within 3 % of 2.16 (pinned). Bakklandet ratios: 1.942 on the toe circle, 1.886 on the anisotropic critical (20.7 % drop).
 
 ## V-055 AASHTO 1993 pavement design — Guide printed worked examples
 - Source: AASHTO Guide for Design of Pavement Structures (1993): Figure 3.1
