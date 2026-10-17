@@ -261,7 +261,7 @@ METHOD_INFO = {
             "gamma": {"type": "float", "required": False, "description": "Soil unit weight (kN/m3) for force calculation."},
             "H": {"type": "float", "required": False, "description": "Wall height (m) for force calculation."},
         },
-        "returns": {"KAE": "Active seismic coefficient.", "KA_static": "Static active coefficient."},
+        "returns": {"KAE": "Active seismic coefficient.", "KA_static": "Static active coefficient.", "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives."},
     },
     "liquefaction_evaluation": {
         "category": "Liquefaction",
@@ -275,7 +275,7 @@ METHOD_INFO = {
             "gwt_depth": {"type": "float", "required": True, "description": "Groundwater depth (m)."},
             "magnitude": {"type": "float", "required": False, "default": 7.5, "description": "Earthquake magnitude."},
         },
-        "returns": {"min_FOS_liq": "Minimum FOS against liquefaction.", "n_liquefiable": "Number of liquefiable layers."},
+        "returns": {"min_FOS_liq": "Minimum FOS against liquefaction.", "n_liquefiable": "Number of liquefiable layers.", "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives."},
     },
     "residual_strength": {
         "category": "Liquefaction",

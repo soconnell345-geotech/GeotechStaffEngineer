@@ -260,7 +260,8 @@ Key conventions:
       agent's slope searches stop at 180 s with a plain warning
       (library: no limit), and a Bishop screen is an option; searches
       leave out surfaces with m_alpha < 0.2 on a slice with friction
-      (Slide2's check; release note);
+      (Slide2's check; release note); `choices` and `defaults_used`
+      true and complete (given vs default by the names a call gave);
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done".
     Open next: Foundry brief 6, which measures all of this, is drafted

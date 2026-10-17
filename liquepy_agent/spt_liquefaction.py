@@ -231,7 +231,7 @@ def spt_choices(c_0: float = 2.8) -> list:
                "rd Eq. 2.14a, MSF Eqs. 2.20/2.21, K_sigma Eq. 2.16a, fines "
                "Eq. 2.23; rd, MSF and K_sigma are listed for each layer "
                "(layer_results)"),
-        choice("CRR curve C0", f"{c_0:g}", how_given(c_0, 2.8),
+        choice("CRR curve C0", f"{c_0:g}", how_given(c_0, 2.8, name="c_0"),
                "2.8: B&I (2014)'s deterministic curve; a smaller C0 gives "
                "a higher CRR"),
         choice("total vertical stress", "gamma x depth, each depth's own "

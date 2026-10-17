@@ -3,8 +3,8 @@
 from axial_pile import PileSection, make_pipe_pile, make_concrete_pile, make_h_pile
 from axial_pile import AxialSoilLayer, AxialSoilProfile, AxialPileAnalysis
 from funhouse_agent.adapters import (
-    apply_aliases, check_nested_list, declare_aliases, field_keys,
-    reject_unknown_params, require_keys, require_params,
+    apply_aliases, check_nested_list, declare_aliases, declare_applies_when,
+    field_keys, reject_unknown_params, require_keys, require_params,
 )
 
 _PILE_TYPES = ("pipe_closed", "pipe_open", "concrete_square", "concrete_circular", "h_pile")
@@ -160,7 +160,7 @@ METHOD_INFO = {
             "uplift_skin_fraction": {"type": "float", "required": False, "default": 0.75, "description": "Fraction of outside skin friction credited in uplift (with include_uplift)."},
             "pile_weight": {"type": "float", "required": False, "description": "Pile self-weight (kN) added to uplift capacity (with include_uplift)."},
         },
-        "returns": {"Q_ultimate_kN": "Ultimate capacity.", "Q_skin_kN": "Skin friction.", "Q_tip_kN": "Tip resistance.", "Q_allowable_kN": "Allowable capacity."},
+        "returns": {"Q_ultimate_kN": "Ultimate capacity.", "Q_skin_kN": "Skin friction.", "Q_tip_kN": "Tip resistance.", "Q_allowable_kN": "Allowable capacity.", "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives."},
     },
     "capacity_vs_depth": {
         "category": "Axial Pile",
@@ -201,3 +201,10 @@ METHOD_INFO = {
 # The pile geometry's other spellings _build_pile reads (GM-110).
 declare_aliases(METHOD_INFO, {
     m: {"thickness": "wall_thickness"} for m in METHOD_INFO})
+
+# When each default applies (GM-119): the fallback phi' of clay to the beta
+# method, the uplift fraction to an uplift run.
+declare_applies_when(METHOD_INFO, {"axial_pile_capacity": {
+    "cohesive_phi": {"method": ["beta"]},
+    "uplift_skin_fraction": {"include_uplift": [True]},
+}})

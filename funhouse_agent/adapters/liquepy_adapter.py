@@ -119,6 +119,7 @@ METHOD_INFO = {
             "LDI_m": "Lateral Displacement Index (m).",
             "n_liquefiable": "Number of liquefiable points.",
             "min_FOS": "Minimum factor of safety against liquefaction.",
+            "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives.",
         },
     },
     "spt_liquefaction": {
@@ -138,6 +139,7 @@ METHOD_INFO = {
             "min_fos": "Minimum factor of safety against liquefaction.",
             "n_liquefiable": "Number of liquefiable layers.",
             "layer_results": "Per-layer CSR/CRR/FoS/(N1)60cs.",
+            "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives.",
         },
     },
     "field_correlations": {

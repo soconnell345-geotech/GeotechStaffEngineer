@@ -296,7 +296,12 @@ search). A surface that fails is counted with the non-converged rejections.
 `search_critical_surface` scores two more surface families after the main
 search, with the same method, and reports the lowest surface
 (`search_supplements.apply_supplements`). Both close cases where the search
-reported a factor of safety that was too HIGH.
+reported a factor of safety that was too HIGH. `SearchResult.families_scored`
+lists the families that gave an admissible surface and
+`families_not_scored` why each other family run gave none (none held, the
+time budget, the windows given, no c' = 0 face); the "surface families
+scored" entry of `choices` says both, and points at `governing_location`
+and `refused_lowest` only where the result has them (GM-125).
 
 - **Why.** Until GM-57 the automatic windows came from the MODEL extent,
   not the slope: entry in the first 40 % of the width, exit in the last
@@ -788,7 +793,7 @@ warning naming the start, its height above the toe and what kept the main
 search off it) and reports what it covered: `candidates`,
 `governing_surface`, `search_ranges['faces_covered']` (each face's toe and
 crest, the heights its circles started from, whether the height was
-refined) and the "surface families tried" entry of `choices`. Nothing in it
+refined) and the "surface families scored" entry of `choices`. Nothing in it
 looks at the layers.
 
 On w10 (F61 settings) the default search now reports Bishop 0.936 /
@@ -898,6 +903,14 @@ times at 30 slices; at 60 slices Spencer 42-56, Morgenstern-Price 42-68 and
 GLE 41-72 times. A whole search costs less than the ratio where it already
 scans with Bishop (the refinement walk, GM-87; the toe-circle families,
 GM-13): the default centre grid 5-13 times, an entry/exit grid 28-46 times.
+The noncircular searches score with Spencer whatever method is named for
+Bishop (PSO and weak_layer always). Measured on the same four slopes at 30
+slices, at the tool's defaults (500 trials, 5 points), no budget, the
+supplementary families included (GM-129, 2026-10-17): `noncircular` 6.0-7.2 s,
+`weak_layer` 2.7-7.1 s, `noncircular_de` 9.9-11.8 s on three slopes and
+41.4 s on the live-run slope, where differential evolution scored 2,325
+surfaces (465 on the others). The live run of that slope on the host took
+141 s at 40 slices, inside the 180 s budget.
 
 **The Bishop screen** (`bishop_screen`, default off). For a circular or
 entry/exit search with Spencer, Morgenstern-Price or GLE, every centre or

@@ -206,7 +206,8 @@ class SettlementAnalysis:
         )
         from settlement.stress_distribution import stress_method_choice
         out = []
-        how = how_given(self.immediate_method, "elastic")
+        how = how_given(self.immediate_method, "elastic",
+                        name="immediate_method")
         if self.q_net > 0 and self.immediate_method == "elastic":
             if self.Es_immediate is None or self.Es_immediate <= 0:
                 out.append(choice(
@@ -273,7 +274,7 @@ class SettlementAnalysis:
             out.append(choice(
                 "void ratio e0 for secondary compression",
                 f"{self.e0_secondary:g}",
-                how_given(self.e0_secondary, 1.0),
+                how_given(self.e0_secondary, 1.0, name="e0_secondary"),
                 "Ss = C_alpha / (1 + e0) H log10(t2/t1); the consolidation "
                 "layers' own e0 is not used", ["e0 given (e0_secondary)"]))
         return out

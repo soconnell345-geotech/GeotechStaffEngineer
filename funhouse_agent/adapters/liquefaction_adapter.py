@@ -28,7 +28,9 @@ B&I-2014 path therefore lives in ``liquepy_agent.analyze_spt_liquefaction``,
 which composes liquepy's tested B&I-2014 building blocks (CRR/rd/CSR/K_sigma).
 """
 
-from funhouse_agent.adapters import clean_result, declare_aliases
+from funhouse_agent.adapters import (
+    clean_result, declare_aliases, declare_applies_when,
+)
 
 
 _CPT_KEYS = ("q_c", "qc", "f_s", "fs", "u_2", "u2")
@@ -350,6 +352,7 @@ METHOD_INFO = {
             "lpi": "Liquefaction Potential Index (CPT only).",
             "lsn": "Liquefaction Severity Number (CPT only).",
             "ldi_m": "Lateral Displacement Index in m (CPT only).",
+            "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives.",
         },
     },
 }
@@ -360,4 +363,17 @@ declare_aliases(METHOD_INFO, {"liquefaction_analysis": {
     "n160": "N160", "N1_60": "N160", "n1_60": "N160", "N": "N160",
     "n_values": "N160", "fc": "FC", "fines": "FC", "unit_weight": "gamma",
     "amax": "amax_g", "magnitude": "m_w", "M": "m_w",
+}})
+
+# When each default applies (GM-119): the CPT settings to a CPT, C0 to the
+# B&I SPT route, gamma_w to the NCEER route.
+_SPELLINGS = {m: [k for k, v in _METHOD_NORMALIZE.items() if v == m]
+              for m in ("bi2014", "nceer2001")}
+_CPT = {"q_c": "set", "input_type": [None, "cpt"]}
+declare_applies_when(METHOD_INFO, {"liquefaction_analysis": {
+    **{k: _CPT for k in ("a_ratio", "i_c_limit", "cfc", "unit_wt_method",
+                         "gamma_predrill", "s_g", "p_a")},
+    "c_0": {"N160": "set", "input_type": [None, "spt"],
+            "method": _SPELLINGS["bi2014"]},
+    "gamma_w": {"method": _SPELLINGS["nceer2001"]},
 }})

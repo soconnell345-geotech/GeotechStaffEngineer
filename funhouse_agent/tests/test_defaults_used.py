@@ -16,10 +16,11 @@ _PILE = {"pile_type": "pipe_closed", "diameter": 0.6, "wall_thickness": 0.012,
 
 def test_defaults_used_lists_what_the_call_left_out():
     r = D.call_agent("axial_pile", "axial_pile_capacity", dict(_PILE))
+    # cohesive_phi (beta only) and the uplift fraction (uplift only) are
+    # not used by this run, so not listed (GM-119)
     assert r["defaults_used"] == {
         "head_depth": 0.0, "factor_of_safety": 2.5, "method": "auto",
-        "include_uplift": False, "cohesive_phi": 25.0,
-        "uplift_skin_fraction": 0.75}
+        "include_uplift": False}
     r = D.call_agent("axial_pile", "axial_pile_capacity",
                      {**_PILE, "factor_of_safety": 3.0, "method": "auto"})
     assert "factor_of_safety" not in r["defaults_used"]
@@ -140,3 +141,235 @@ def test_seismic_earth_pressure_and_consolidation_report_their_choices():
                     "Cc": 0.3, "Cr": 0.05, "sigma_v0": 60.0}],
         "delta_sigma": 50})
     assert "choices" not in given      # the stress was given
+
+
+# ---------------------------------------------------------------------------
+# GM-118: a typed value equal to the default is "given"
+# ---------------------------------------------------------------------------
+
+_CLAY = [{"thickness": 4.0, "depth_to_center": 4.0, "e0": 0.9, "Cc": 0.3,
+          "Cr": 0.05, "sigma_v0": 60.0}]
+
+
+def test_a_typed_value_equal_to_the_default_is_given():
+    """The stress method typed as '2:1' (the default) is 'given', and not
+    in defaults_used; left out, it is 'default' and listed."""
+    typed = D.call_agent("settlement", "consolidation_settlement", {
+        "layers": _CLAY, "q_net": 100, "B": 2, "stress_method": "2:1"})
+    (c,) = typed["choices"]
+    assert c["what"] == "stress increase with depth" and c["how"] == "given"
+    assert "stress_method" not in typed.get("defaults_used", {})
+    left = D.call_agent("settlement", "consolidation_settlement", {
+        "layers": _CLAY, "q_net": 100, "B": 2})
+    assert left["choices"][0]["how"] == "default"
+    assert left["defaults_used"]["stress_method"] == "2:1"
+
+
+_BETA_CHOICE = "phi' of cohesive layers given no friction angle (beta method)"
+
+
+def test_axial_defaults_typed_at_their_values_are_given():
+    r = D.call_agent("axial_pile", "axial_pile_capacity", {
+        **_PILE, "method": "beta", "include_uplift": True,
+        "cohesive_phi": 25.0, "uplift_skin_fraction": 0.75})
+    by = {c["what"]: c for c in r["choices"]}
+    assert by[_BETA_CHOICE]["how"] == "given"
+    assert by["uplift capacity"]["how"] == "given"
+    assert not {"cohesive_phi", "uplift_skin_fraction"} & set(
+        r["defaults_used"])
+    left = D.call_agent("axial_pile", "axial_pile_capacity", {
+        **_PILE, "method": "beta", "include_uplift": True})
+    by = {c["what"]: c for c in left["choices"]}
+    assert by[_BETA_CHOICE]["how"] == "default"
+    assert by["uplift capacity"]["how"] == "default"
+    assert {"cohesive_phi", "uplift_skin_fraction"} <= set(
+        left["defaults_used"])
+
+
+# ---------------------------------------------------------------------------
+# GM-119: defaults_used lists only the defaults the run used
+# ---------------------------------------------------------------------------
+
+def _used(agent, method, params):
+    mod = D._load_adapter(agent)
+    return set(D._defaults_used(mod, method, set(params), params))
+
+
+def test_an_spt_run_lists_no_cpt_settings():
+    from funhouse_agent.adapters.liquefaction_adapter import METHOD_INFO
+    cpt_only = {"a_ratio", "i_c_limit", "cfc", "unit_wt_method",
+                "gamma_predrill", "s_g", "p_a"}
+    assert cpt_only <= set(METHOD_INFO["liquefaction_analysis"]["parameters"])
+    spt = _used("liquefaction", "liquefaction_analysis", _SPT)
+    assert not spt & cpt_only
+    assert "c_0" in spt and "gamma_w" not in spt         # B&I 2014 SPT
+    nceer = _used("liquefaction", "liquefaction_analysis",
+                  {**_SPT, "method": "nceer2001"})
+    assert "gamma_w" in nceer and "c_0" not in nceer
+    cpt = _used("liquefaction", "liquefaction_analysis",
+                {"depth": [1], "q_c": [5000], "f_s": [50], "gwl": 1.5,
+                 "pga": 0.3, "m_w": 7.5})
+    assert cpt_only <= cpt and not {"c_0", "gamma_w"} & cpt
+
+
+def test_the_seismic_package_lists_only_its_own_analysis():
+    mo = _used("calc_package", "seismic_package",
+               {"analysis_type": "seismic_earth_pressure", "phi": 30,
+                "kh": 0.15})
+    assert {"KA", "kv"} <= mo and "M" not in mo
+    liq = _used("calc_package", "seismic_package",
+                {"analysis_type": "liquefaction", "layers": []})
+    assert "M" in liq and not {"KA", "kv"} & liq
+
+
+def test_a_pipe_pile_lists_no_h_pile_or_filled_pipe_settings():
+    params = {"pile_type": "pipe", "pile_diameter": 0.6, "pile_length": 15,
+              "Vt": 50, "layers": []}
+    pipe = _used("lateral_pile", "lateral_pile_analysis", params)
+    assert not {"axis", "fc"} & pipe
+    assert "axis" in _used("lateral_pile", "lateral_pile_analysis",
+                           {**params, "pile_type": "h_pile"})
+    assert "fc" in _used("lateral_pile", "lateral_pile_analysis",
+                         {**params, "pile_type": "filled_pipe"})
+
+
+@pytest.mark.parametrize("surface_type, used, unused", [
+    ("circular", {"nx", "ny"}, {"n_trials", "n_points", "bishop_screen"}),
+    ("noncircular_de", {"n_points"}, {"nx", "ny", "n_trials",
+                                      "bishop_screen"}),
+    ("weak_layer", {"n_trials", "n_points"}, {"nx", "ny"}),
+])
+def test_a_slope_search_lists_only_its_own_settings(surface_type, used,
+                                                     unused):
+    base = {"surface_points": [], "soil_layers": []}
+    got = _used("slope_stability", "search_critical_surface",
+                {**base, "surface_type": surface_type})
+    assert used <= got and not unused & got
+    assert not {"tension_crack_water_depth", "tension_crack_side",
+                "tension_crack_model"} & got           # no crack
+    rigorous = _used("slope_stability", "search_critical_surface",
+                     {**base, "method": "spencer"})
+    assert "bishop_screen" in rigorous
+
+
+def test_a_default_a_module_reported_is_listed_whatever_its_condition():
+    """choices and defaults_used never contradict: a name how_given called
+    'default' is in defaults_used even where applies_when says no."""
+    class Mod:
+        METHOD_INFO = {"m": {"parameters": {
+            "a": {"default": 1, "applies_when": False},
+            "b": {"default": 2, "applies_when": False}}}}
+    assert D._defaults_used(Mod, "m", set(), {}) == {}
+    assert D._defaults_used(Mod, "m", set(), {}, reported={"a"}) == {"a": 1}
+
+
+def test_applies_reads_values_set_unset_and_any_of():
+    A = D.applies
+    assert A(None, {}) and A({}, {}) and not A(False, {})
+    assert A({"m": ["Beta"]}, {"m": "beta"})              # no case
+    assert not A({"m": ["beta"]}, {"m": "auto"})
+    assert A({"t": [None, "spt"]}, {})                    # not given
+    assert A({"q": "set"}, {"q": [1]}) and not A({"q": "set"}, {"q": []})
+    assert not A({"q": "set"}, {"q": 0}) and A({"q": "unset"}, {})
+    either = [{"m": ["gle"]}, {"c": [True]}]
+    assert A(either, {"c": True}) and not A(either, {"m": "bishop"})
+    assert A({"m": ["x"], "q": "set"}, {"m": "x", "q": 1})
+    assert not A({"m": ["x"], "q": "set"}, {"m": "x"})
+
+
+def test_describe_method_leaves_applies_when_out():
+    doc = D.describe_method("liquefaction", "liquefaction_analysis")
+    assert not any("applies_when" in spec
+                   for spec in doc["parameters"].values())
+    from funhouse_agent.adapters.liquefaction_adapter import METHOD_INFO
+    assert "applies_when" in METHOD_INFO["liquefaction_analysis"][
+        "parameters"]["a_ratio"]
+
+
+def test_a_condition_naming_no_parameter_fails_on_import():
+    from funhouse_agent.adapters import declare_applies_when
+    info = {"m": {"parameters": {"a": {"default": 1}, "b": {}}}}
+    with pytest.raises(KeyError, match="no parameter 'z'"):
+        declare_applies_when(info, {"m": {"z": False}})
+    with pytest.raises(KeyError, match="applies_when names no parameter"):
+        declare_applies_when(info, {"m": {"a": [{"b": "set"}, {"y": "set"}]}})
+    declare_applies_when(info, {"m": {"a": {"b": "set"}}})
+    assert info["m"]["parameters"]["a"]["applies_when"] == {"b": "set"}
+
+
+_TAGGED = ("axial_pile", "lateral_pile", "settlement", "liquefaction",
+           "calc_package", "slope_stability")
+
+
+def test_every_declared_condition_names_declared_parameters():
+    """Every applies_when names only its method's parameters, with values
+    the conditions understand."""
+    seen = 0
+    for agent in _TAGGED:
+        mod = D._load_adapter(agent)
+        for method, info in mod.METHOD_INFO.items():
+            params = info.get("parameters") or {}
+            for name, spec in params.items():
+                cond = spec.get("applies_when")
+                if cond is None or cond is False:
+                    continue
+                seen += 1
+                for c in (cond if isinstance(cond, list) else [cond]):
+                    for other, want in c.items():
+                        assert other in params, (agent, method, name, other)
+                        assert want in ("set", "unset") or isinstance(
+                            want, list), (agent, method, name, other)
+    assert seen > 40
+
+
+_SEARCHES = ("search_critical_surface", "search_rapid_drawdown",
+             "monte_carlo_fos")
+
+
+def _agree_on_worked_examples(monkeypatch, searches: bool) -> int:
+    """Run the worked examples' calls (the searches, or everything else)
+    and check each: every input a module called "default" is in
+    defaults_used, and no input the call named is. Returns the calls run."""
+    from contextlib import contextmanager
+    import geotech_common.choices as gc
+    from funhouse_agent import worked_examples as we
+    records = []
+    real = gc.call_inputs
+
+    @contextmanager
+    def spy(given, defaults=()):
+        with real(given, defaults) as inputs:
+            records.append(inputs)
+            yield inputs
+    monkeypatch.setattr(gc, "call_inputs", spy)
+    n = reported = 0
+    for entry in we.load_examples():
+        for call in entry["dispatch_calls"]:
+            if (call["method"] in _SEARCHES) != searches:
+                continue
+            records.clear()
+            r = D.call_agent(call["module"], call["method"],
+                             dict(call["params"]))
+            if not isinstance(r, dict) or "error" in r:
+                continue
+            used = set(r.get("defaults_used") or {})
+            (inputs,) = records
+            assert inputs.reported <= used, entry["id"]
+            assert not inputs.given & used, entry["id"]
+            reported += len(inputs.reported)
+            n += 1
+    # the searches name their method, kind, budget and m_alpha rule
+    assert reported or not searches, "no module answered by name"
+    return n
+
+
+def test_choices_and_defaults_used_agree_on_the_worked_examples(
+        monkeypatch):
+    """GM-118/119 on real calls, the searches apart (slow)."""
+    assert _agree_on_worked_examples(monkeypatch, searches=False) >= 30
+
+
+@pytest.mark.slow
+def test_choices_and_defaults_used_agree_on_the_worked_example_searches(
+        monkeypatch):
+    assert _agree_on_worked_examples(monkeypatch, searches=True) >= 5

@@ -865,7 +865,9 @@ def make_core_tools(
                 "Execute a geotechnical calculation. All method-specific "
                 "inputs (width, depth, friction_angle, unit_weight, etc.) "
                 "MUST go inside the 'parameters' object — never as top-level "
-                "arguments. All units are SI."
+                "arguments. All units are SI. A result's 'choices' say what "
+                "the module chose (given, default or module) and "
+                "'defaults_used' the declared defaults the run used."
             ),
             args_schema=_CallAgentArgs,
         ),

@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 
 from geotech_common.choices import (
-    DEFAULT, GIVEN, MODULE, choice, choice_rows, choices_from, choices_lines,
-    how_given, plain,
+    DEFAULT, GIVEN, MODULE, call_inputs, choice, choice_rows, choices_from,
+    choices_lines, how_given, plain,
 )
 
 
@@ -33,6 +33,20 @@ def test_how_given_compares_with_the_default():
     assert how_given(2.8, 2.8) == DEFAULT
     assert how_given("beta", "auto") == GIVEN
     assert how_given(np.array([1, 2]), 1) == GIVEN   # no truth value
+
+
+def test_inside_a_call_how_given_answers_by_the_inputs_named():
+    """GM-118: a typed value equal to the default is "given"; a declared
+    default the call left in force is "default" and recorded; a name the
+    call does not know, or no name, is compared by value."""
+    with call_inputs({"stress_method"}, {"e0_secondary"}) as inputs:
+        assert how_given("2:1", "2:1", name="stress_method") == GIVEN
+        assert how_given(1.0, 1.0, name="e0_secondary") == DEFAULT
+        assert how_given(0.5, 1.0, name="other") == GIVEN
+        assert how_given(1.0, 1.0) == DEFAULT
+    assert inputs.reported == {"e0_secondary"}
+    # outside a call: by value, as before
+    assert how_given("2:1", "2:1", name="stress_method") == DEFAULT
 
 
 def test_printed_text_leaves_out_the_keys_named_for_the_agent():

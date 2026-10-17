@@ -249,7 +249,7 @@ def cpt_choices(i_c_limit: float = 2.6, cfc: float = 0.0) -> list:
                f"with C_FC = {cfc:g}"),
         choice("points counted as liquefiable",
                f"below the water table with Ic < {i_c_limit:g}",
-               how_given(i_c_limit, 2.6),
+               how_given(i_c_limit, 2.6, name="i_c_limit"),
                "the minimum FS is taken over these points (min_fos)"),
         choice("post-triggering strains",
                "volumetric Zhang et al. (2002), shear Zhang et al. (2004)",

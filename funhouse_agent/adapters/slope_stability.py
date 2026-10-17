@@ -4,8 +4,8 @@
 # funhouse_agent.adapters for every adapter; imported here so older imports
 # of it from this module keep working.
 from funhouse_agent.adapters import (
-    check_nested_keys, field_keys, reject_unknown_params, require_keys,
-    require_params,
+    check_nested_keys, declare_applies_when, field_keys,
+    reject_unknown_params, require_keys, require_params,
 )
 from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
 from slope_stability.analysis import (
@@ -736,7 +736,7 @@ METHOD_INFO = {
             "stage3_effective_normal": {"type": "str", "required": False, "default": "fellenius", "allowed_values": _RD_STAGE3_NORMAL, "description": "3-stage stage-3 drained-substitution normal basis: 'fellenius' (default) or 'gle' (rigorous). See rapid_drawdown_fos."},
             "time_budget_s": {"type": "float", "required": False, "default": SEARCH_TIME_BUDGET_S, "description": "Time budget of the whole search in seconds (at most 600), as search_critical_surface: each trial is two or three GLE solves, so the main search scores coarse first and stops at 80 % of the budget, and search.warnings and search.search_ranges.time_budget say what was covered."},
         },
-        "returns": {"FOS": "Minimum drawdown factor of safety found.", "method": "Stage method used.", "surface_type": "Search strategy.", "n_surfaces_evaluated": "Number of surfaces checked.", "search": "Rich search result (critical surface geometry + diagnostics).", "drawdown_detail": "Stage-level detail on the winning surface (stage-1 FOS, drained substitutions)."},
+        "returns": {"FOS": "Minimum drawdown factor of safety found.", "method": "Stage method used.", "surface_type": "Search strategy.", "n_surfaces_evaluated": "Number of surfaces checked.", "search": "Rich search result (critical surface geometry + diagnostics), with search_ranges, governing_location, refused_lowest and choices as search_critical_surface returns them.", "drawdown_detail": "Stage-level detail on the winning surface (stage-1 FOS, drained substitutions)."},
     },
     "yield_acceleration": {
         "category": "Slope Stability",
@@ -789,7 +789,7 @@ METHOD_INFO = {
         "parameters": {
             **_GEOMETRY_PARAMS,
             "surface_type": {"type": "str", "required": False, "default": "circular", "allowed_values": _SURFACE_TYPES, "description": "Search strategy. 'entry_exit' grids circular arcs between entry/exit windows; 'noncircular_de' refines random polylines with scipy differential evolution."},
-            "method": {"type": "str", "required": False, "default": "bishop", "allowed_values": _METHODS, "description": "Limit-equilibrium method (noncircular searches use spencer when 'bishop' is requested). Cost per trial surface, measured on four pinned slopes: fellenius about the same as bishop, janbu about twice bishop, and spencer, morgenstern_price and gle each about 30 to 40 times bishop at 30 slices and 40 to 70 times at 60 slices. A whole search costs less than that ratio where it scans with Bishop (the centre grid's refinement, the toe circles): the default 10 x 10 centre grid took 2-3 s with bishop and 14-16 s with spencer, a 10 x 10 or 12 x 12 entry_exit grid 2 s and 60-70 s, a 30 x 30 entry_exit grid at 60 slices 21 s and 972 s (development laptop; the app's host up to twice as long). On the circles of these slopes bishop and spencer gave FOS within 0.3 % of each other. Which method to use is the engineer's call; bishop_screen keeps the method and scans with Bishop."},
+            "method": {"type": "str", "required": False, "default": "bishop", "allowed_values": _METHODS, "description": "Limit-equilibrium method (noncircular searches use spencer when 'bishop' is requested). Cost per trial surface, measured on four pinned slopes: fellenius about the same as bishop, janbu about twice bishop, and spencer, morgenstern_price and gle each about 30 to 40 times bishop at 30 slices and 40 to 70 times at 60 slices. A whole search costs less than that ratio where it scans with Bishop (the centre grid's refinement, the toe circles): the default 10 x 10 centre grid took 2-3 s with bishop and 14-16 s with spencer, a 10 x 10 or 12 x 12 entry_exit grid 2 s and 60-70 s, a 30 x 30 entry_exit grid at 60 slices 21 s and 972 s; the noncircular searches, scored with Spencer at their defaults (500 trials, 5 points), took 6-7 s (noncircular), 3-7 s (weak_layer) and 10-12 s (noncircular_de), 41 s where differential evolution scored 2,325 surfaces (development laptop; the app's host up to twice as long). On the circles of these slopes bishop and spencer gave FOS within 0.3 % of each other. Which method to use is the engineer's call; bishop_screen keeps the method and scans with Bishop."},
             "x_range": {"type": "array", "required": False, "description": "[xmin, xmax] for circle center search."},
             "y_range": {"type": "array", "required": False, "description": "[ymin, ymax] for circle center search."},
             "x_entry_range": {"type": "array", "required": False, "description": "[xmin, xmax] window for the slip surface's ENTRY: its low-x end, whichever way the slope faces (the toe side of a slope rising to the right, the crest side of one falling to the right)."},
@@ -804,7 +804,7 @@ METHOD_INFO = {
             "bishop_screen": {"type": "bool", "required": False, "default": False, "description": "circular and entry_exit searches with spencer / morgenstern_price / gle: score every centre or pair with Bishop's simplified method, then re-score the lowest (at least 10, every one within 5 % of the lowest, at most 30) with the method itself; the reported FOS is the method's own. On four pinned slopes it found the same surfaces and FOS as the unscreened search in 35-60 % of the time on the default centre grid, 15-30 % on 10 x 10 and 12 x 12 entry_exit grids and 3 % on a 30 x 30 entry_exit grid at 60 slices (33 s against 972 s). Not applied where supports are modelled; noncircular searches are not screened."},
             "m_alpha_rule": {"type": "str", "required": False, "default": "frictional", "allowed_values": ["frictional", "every_slice"], "description": "Which slices the m_alpha < 0.2 check looks at (every search leaves out a surface that fails it, as Slide2 does with its 'Check malpha < 0.2' setting on). 'frictional': slices with phi' > 0; on a phi' = 0 slice m_alpha = cos(a) does not change the FOS, so leaving such a surface out only raises the minimum. 'every_slice': every slice, as Slide2 checks."},
         },
-        "returns": {"critical": "Critical surface result (FOS, geometry; method_solved false when it was scored by the legacy approximate solver).", "n_surfaces_evaluated": "Number of surfaces checked.", "n_rejected": "Trial surfaces refused, by reason (present when any were): geometry, nonconverged, jagged, ground_crossings (below the ground over more than one stretch: they leave the ground and come back into it, so they bound more than one sliding mass), and m_alpha (m_alpha = cos(a)(1 + tan(a)tan(phi)/F) below 0.2 on a slice with phi' > 0, or any slice with m_alpha_rule 'every_slice', which Slide2 reports as invalid, its error -112; choices says how many and gives the governing surface's FOS on twice the slices).", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', 'circle_above_toe' (lower end on the face above the toe), or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face). Toe circles, circles passing above the toe and shallow planar surfaces are always scored too, and the lowest is reported.", "candidates": "Minimum FOS of each surface family tried.", "infinite_slope_checks": "Each stretch of face where c'=0 soil is at the surface: slope angle, phi', tan(phi')/tan(beta), and the planar-surface FOS (or why it was not evaluated).", "warnings": "Where the search cannot be sure (the time budget stopped it, first; a supplementary family undercut the main search; the critical surface sits on a window or grid edge; an unchecked cohesionless face). Report these to the user.", "search_ranges": "The entry/exit windows and centre ranges used, which were set automatically from the slope (its toe, crest, height, depth to the base) and where the model's end cut them: what the search covered; time_budget when the budget stopped the search (what was scored, of how many, the projected run time, what was not run).", "governing_location": "Where the governing surface lies: its ends, lowest point, greatest depth below the ground, the layers along its base, and its position against the slope's toe and crest in multiples of H.", "refused_lowest": "The lowest noncircular surface refused because its solution held about one moment axis or one slicing only (FOS, where, why); a warning says so when it is below the reported FOS."},
+        "returns": {"critical": "Critical surface result (FOS, geometry; method_solved false when it was scored by the legacy approximate solver).", "n_surfaces_evaluated": "Number of surfaces checked.", "n_rejected": "Trial surfaces refused, by reason (present when any were): geometry, nonconverged, jagged, ground_crossings (below the ground over more than one stretch: they leave the ground and come back into it, so they bound more than one sliding mass), and m_alpha (m_alpha = cos(a)(1 + tan(a)tan(phi)/F) below 0.2 on a slice with phi' > 0, or any slice with m_alpha_rule 'every_slice', which Slide2 reports as invalid, its error -112; choices says how many and gives the governing surface's FOS on twice the slices).", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', 'circle_above_toe' (lower end on the face above the toe), or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face). A circular or entry_exit search also scores toe circles and circles passing above the toe, and every search scores shallow planar surfaces where c'=0 soil forms the face; the lowest is reported.", "candidates": "Minimum FOS of each surface family scored.", "infinite_slope_checks": "Each stretch of face where c'=0 soil is at the surface: slope angle, phi', tan(phi')/tan(beta), and the planar-surface FOS (or why it was not evaluated).", "warnings": "Where the search cannot be sure (the time budget stopped it, first; a supplementary family undercut the main search; the critical surface sits on a window or grid edge; an unchecked cohesionless face). Report these to the user.", "search_ranges": "The entry/exit windows and centre ranges used, which were set automatically from the slope (its toe, crest, height, depth to the base) and where the model's end cut them: what the search covered; time_budget when the budget stopped the search (what was scored, of how many, the projected run time, what was not run).", "governing_location": "Where the governing surface lies: its ends, lowest point, greatest depth below the ground, the layers along its base, and its position against the slope's toe and crest in multiples of H.", "refused_lowest": "The lowest noncircular surface refused because its solution held about one moment axis or one slicing only (FOS, where, why); a warning says so when it is below the reported FOS.", "choices": "What the search chose and how (given, default or module), with basis and alternatives: the search and its method, the surface families scored (one it runs that scored none, and why), the search ranges, the m_alpha check, the time budget, any Bishop screen."},
     },
     "fosm_fos": {
         "category": "Slope Stability",
@@ -846,3 +846,61 @@ for _m in ("analyze_slope", "compare_methods_table", "rapid_drawdown_fos",
     METHOD_INFO[_m]["parameters"]["tol"] = {
         "type": "float", "required": False, "default": 1e-4,
         "description": "Convergence tolerance for the iterative methods."}
+
+# When each default applies (GM-119), so a result's defaults_used lists only
+# what the run used: the crack's water, side and model to a crack; reverse
+# curvature to circles; each search setting to the searches that read it
+# (nx and ny the centre grid, the entry/exit pairs and the swarm; n_trials
+# the random polylines, the swarm and the weak-layer search; n_points every
+# noncircular search; the Bishop screen circles with a rigorous method);
+# the M-P/GLE interslice function to those methods; the 3-stage normal to
+# the 3-stage method; a Monte Carlo search budget to re-searched surfaces.
+_CRACK = {"tension_crack_depth": "set"}
+_CIRCLE_GIVEN = {"xc": "set"}
+_SEARCH_CIRCLES = {"surface_type": ["circular", "entry_exit"]}
+_WATER = {"water_condition": ["seepage_parallel"]}
+
+
+def _crack_and(extra):
+    out = {k: _CRACK for k in ("tension_crack_water_depth",
+                               "tension_crack_side", "tension_crack_model")}
+    out.update(extra)
+    return out
+
+
+declare_applies_when(METHOD_INFO, {
+    "analyze_slope": _crack_and({
+        "reverse_curvature": _CIRCLE_GIVEN,
+        "f_interslice": [{"method": ["morgenstern_price", "gle"]},
+                         {"compare_methods": [True]}]}),
+    "compare_methods_table": _crack_and({
+        "reverse_curvature": _CIRCLE_GIVEN}),
+    "rapid_drawdown_fos": _crack_and({
+        "reverse_curvature": _CIRCLE_GIVEN,
+        "stage3_effective_normal": {"method": ["duncan_3stage"]}}),
+    "search_rapid_drawdown": _crack_and({
+        "reverse_curvature": _SEARCH_CIRCLES,
+        "nx": _SEARCH_CIRCLES, "ny": _SEARCH_CIRCLES,
+        "n_trials": {"surface_type": ["noncircular"]},
+        "n_points": {"surface_type": ["noncircular", "noncircular_de"]},
+        "stage3_effective_normal": {"method": ["duncan_3stage"]}}),
+    "yield_acceleration": _crack_and({
+        "reverse_curvature": _CIRCLE_GIVEN,
+        "kh": False}),           # the method finds kh; the given one is unused
+    "search_critical_surface": _crack_and({
+        "reverse_curvature": _SEARCH_CIRCLES,
+        "nx": {"surface_type": ["circular", "entry_exit", "pso"]},
+        "ny": {"surface_type": ["circular", "entry_exit", "pso"]},
+        "n_trials": {"surface_type": ["noncircular", "pso", "weak_layer"]},
+        "n_points": {"surface_type": ["noncircular", "noncircular_de", "pso",
+                                      "weak_layer"]},
+        "bishop_screen": {**_SEARCH_CIRCLES,
+                          "method": ["spencer", "morgenstern_price", "gle"]}}),
+    "fosm_fos": _crack_and({"reverse_curvature": _CIRCLE_GIVEN}),
+    "monte_carlo_fos": _crack_and({
+        "time_budget_s": {"research_surface": [True]}}),
+    "infinite_slope_fos": {
+        "depth": [{"c": "set"}, {**_WATER, "water_depth": "set"}],
+        "gamma_w": _WATER, "water_depth": _WATER,
+        "ru": {"water_condition": ["ru"]}},
+})

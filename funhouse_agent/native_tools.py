@@ -97,7 +97,10 @@ OPENAI_TOOLS = [
             "description": (
                 "Execute a geotechnical calculation. All method-specific "
                 "inputs (width, depth, phi, gamma, etc.) MUST go inside "
-                "the 'parameters' object — never as top-level arguments."
+                "the 'parameters' object — never as top-level arguments. "
+                "A result's 'choices' say what the module chose (given, "
+                "default or module) and 'defaults_used' the declared "
+                "defaults the run used."
             ),
             "parameters": {
                 "type": "object",

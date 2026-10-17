@@ -23,8 +23,9 @@ import re
 from datetime import datetime
 
 from funhouse_agent.adapters import (apply_aliases, check_nested_list,
-                                     declare_aliases, require_keys,
-                                     require_params, reject_unknown_params)
+                                     declare_aliases, declare_applies_when,
+                                     require_keys, require_params,
+                                     reject_unknown_params)
 from funhouse_agent._fileio import (
     default_output_dir, find_in_working_folder, rescue_note, rescue_write,
     resolve_output_path, save_verified, workspace_write_hint,
@@ -2474,3 +2475,36 @@ declare_aliases(METHOD_INFO, {"ground_improvement_package": {
     "diameter": "column_diameter", "E_pier": "E_column",
     "surcharge": "surcharge_kPa", "target_consolidation": "target_U",
     "N1_before": "initial_N_spt", "N1_target": "target_N_spt"}})
+
+# When each default applies (GM-119), as in the analysis tools: the seismic
+# package's settings to its own sub-analysis, the settlement package's to
+# its method and inputs, the slope report's to its kind of search and its
+# probabilistic annex.
+_CIRCLES_GRID = ["circular", "entry_exit", "pso"]
+_RANDOM_POLYLINES = ["noncircular", "pso", "weak_layer"]
+declare_applies_when(METHOD_INFO, {
+    "seismic_package": {
+        "kv": {"analysis_type": ["seismic_earth_pressure"]},
+        "KA": {"analysis_type": ["seismic_earth_pressure"]},
+        "M": {"analysis_type": ["liquefaction"]},
+    },
+    "settlement_package": {
+        "nu": {"immediate_method": ["elastic"], "Es_immediate": "set"},
+        "time_years_schmertmann": {"immediate_method": ["schmertmann"]},
+        "stress_method": {"consolidation_layers": "set"},
+        "drainage": {"cv": "set", "consolidation_layers": "set",
+                     "Hdr": "unset"},
+        "e0_secondary": {"C_alpha": "set", "t_secondary": "set"},
+        "t_secondary": {"C_alpha": "set"},
+    },
+    "slope_report_package": {
+        "nx": {"surface_type": _CIRCLES_GRID},
+        "ny": {"surface_type": _CIRCLES_GRID},
+        "n_trials": {"surface_type": _RANDOM_POLYLINES},
+        "n_points": {"surface_type": _RANDOM_POLYLINES + ["noncircular_de"]},
+        "fosm": {"variables": "set"},
+        "monte_carlo": {"variables": "set"},
+        "n": {"variables": "set", "monte_carlo": [True]},
+        "research_surface": {"variables": "set", "monte_carlo": [True]},
+    },
+})

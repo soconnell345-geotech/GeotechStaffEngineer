@@ -1,8 +1,8 @@
 """Lateral pile adapter — COM624P, 8 p-y models, FD solver."""
 
 from funhouse_agent.adapters import (
-    check_nested_keys, declare_aliases, require_keys, require_params,
-    reject_unknown_params,
+    check_nested_keys, declare_aliases, declare_applies_when, require_keys,
+    require_params, reject_unknown_params,
 )
 from lateral_pile import (
     Pile, ReinforcedConcreteSection, rebar_diameter, SoilLayer,
@@ -245,7 +245,7 @@ METHOD_INFO = {
             "tolerance": {"type": "float", "required": False, "default": 1e-5, "description": "Convergence tolerance on deflection (m)."},
             "max_iterations": {"type": "int", "required": False, "default": 100, "description": "Most p-y iterations."},
         },
-        "returns": {"max_deflection_m": "Maximum deflection (m).", "y_top_m": "Deflection at loaded head (m).", "max_moment_kNm": "Maximum bending moment.", "max_moment_depth_m": "Depth of max moment (m)."},
+        "returns": {"max_deflection_m": "Maximum deflection (m).", "y_top_m": "Deflection at loaded head (m).", "max_moment_kNm": "Maximum bending moment.", "max_moment_depth_m": "Depth of max moment (m).", "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives."},
     },
     "get_py_curve": {
         "category": "Lateral Pile",
@@ -298,3 +298,15 @@ METHOD_INFO = {
 
 declare_aliases(METHOD_INFO, {
     "lateral_pile_analysis": {"free_length": "stickup"}})
+
+# When each default applies (GM-119): the bending axis to an H-pile, f'c
+# to a filled pipe, the casing's modulus to a section with steel outside.
+declare_applies_when(METHOD_INFO, {
+    "lateral_pile_analysis": {
+        "axis": {"pile_type": ["h_pile"]},
+        "fc": {"pile_type": ["filled_pipe"]},
+    },
+    "composite_section_ei": {
+        "E_steel": {"section_type": ["filled_pipe", "cased_concrete"]},
+    },
+})

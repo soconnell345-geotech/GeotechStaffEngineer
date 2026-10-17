@@ -223,7 +223,7 @@ def test_the_default_search_covers_circles_passing_above_the_toe():
     assert face["lower_end_heights_above_toe"][0] == 0.0
     assert max(face["lower_end_heights_above_toe"]) == pytest.approx(0.9)
     fams = next(ch for ch in r.choices
-                if ch["what"] == "surface families tried")
+                if ch["what"] == "surface families scored")
     assert "circle passing above the toe" in fams["chosen"]
     assert "faces_covered" in fams["basis"]
     # every family leaves out m_alpha < 0.2 (GM-127): said once, for all
@@ -342,9 +342,11 @@ def test_circles_passing_above_the_toe_keep_to_given_windows():
     assert "circle_above_toe" not in off.candidates
     assert "faces_covered" not in off.search_ranges
     fams = next(ch for ch in off.choices
-                if ch["what"] == "surface families tried")
-    assert any("circle passing above the toe" in a
-               for a in fams["alternatives"])
+                if ch["what"] == "surface families scored")
+    # a circular search without them: tried by turning them on, not by "a
+    # circular search" (GM-125)
+    assert ("not tried: circle passing above the toe, by a search with "
+            "them (toe_circles=True)") in fams["alternatives"]
 
 
 def test_a_noncircular_search_counts_refused_polylines():

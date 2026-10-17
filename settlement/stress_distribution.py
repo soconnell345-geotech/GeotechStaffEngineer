@@ -304,6 +304,6 @@ def stress_method_choice(method: str = "2:1") -> dict:
     key = "2:1" if key == "2to1" else key
     chosen, basis = _STRESS_TEXT.get(key, (method, ""))
     return choice("stress increase with depth", chosen,
-                  how_given(key, "2:1"), basis,
+                  how_given(key, "2:1", name="stress_method"), basis,
                   [f"{_STRESS_NAME[k]} (stress_method '{k}')"
                    for k in _STRESS_TEXT if k != key])

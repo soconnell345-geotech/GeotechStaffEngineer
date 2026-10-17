@@ -422,7 +422,22 @@ def describe_method(agent_name: str, method: str, allowed_agents=None) -> dict:
                              f"module's text tool is '{text_tool}'. Showing "
                              "its docs."}
         return _unknown_method_error(mod, agent_name, method, allowed_agents)
-    return mod.METHOD_INFO[method]
+    return _documented(mod.METHOD_INFO[method])
+
+
+def _documented(info: dict) -> dict:
+    """A method's documentation as the model reads it: each parameter's
+    ``applies_when`` (GM-119, read by ``defaults_used``) is left out, the
+    descriptions saying the same in words."""
+    params = info.get("parameters")
+    if not isinstance(params, dict) or not any(
+            isinstance(s, dict) and "applies_when" in s
+            for s in params.values()):
+        return info
+    return {**info, "parameters": {
+        name: ({k: v for k, v in spec.items() if k != "applies_when"}
+               if isinstance(spec, dict) else spec)
+        for name, spec in params.items()}}
 
 
 def _unknown_method_error(mod, agent_name: str, method: str,
@@ -1138,8 +1153,14 @@ def call_agent(
                 parameters, attachments, _method_params(mod, method))
         parameters = _inputs_from_working_folder(parameters)
         parameters, named = _outputs_into_working_folder(parameters)
+        # The names this call gave, so a module's choices say "given" for a
+        # typed value equal to its default (GM-118).
+        given |= set(parameters)
+        from geotech_common.choices import call_inputs
         try:
-            result = mod.METHOD_REGISTRY[method](parameters)
+            with call_inputs(_given_names(mod, method, given),
+                             _left_out(mod, method, given)) as inputs:
+                result = mod.METHOD_REGISTRY[method](parameters)
         except TypeError as e:
             if not _SIGNATURE_ERROR.search(str(e)):
                 raise
@@ -1149,7 +1170,8 @@ def call_agent(
             result = dict(result)
             result["output_note"] = _output_note(named, parameters)
         result = _citations_checked(agent_name, method, parameters, result)
-        result = _with_defaults_used(mod, method, given, result)
+        result = _with_defaults_used(mod, method, given, result, parameters,
+                                     inputs.reported)
         return hide_working_folder(result)
     except Exception as e:
         return hide_working_folder({"error": f"{type(e).__name__}: {e}"})
@@ -1162,19 +1184,30 @@ _PACKAGE_HEADER_PARAMS = frozenset({
     "date", "format"})
 
 
-def _defaults_used(mod, method: str, given) -> dict:
-    """The declared parameters of ``method`` that a call did not give, with
-    the default each took (BACKLOG GM-115): name -> default, from the
-    method's METHOD_INFO ``parameters`` (GM-110). A parameter given under
-    another spelling it reads (``parameter_aliases``) counts as given. Left
-    out: a declared default of None (worked out by the method) or "" (an
-    empty field), and a calc package's header and format."""
+def _declared(mod, method: str):
+    """(declared parameters, parameter_aliases) of ``method``, or
+    ``({}, {})``."""
     info = mod.METHOD_INFO.get(method)
     declared = info.get("parameters") if isinstance(info, dict) else None
     if not isinstance(declared, dict):
-        return {}
-    aliases = info.get("parameter_aliases") or {}
-    named = set(given) | {aliases[k] for k in given if k in aliases}
+        return {}, {}
+    return declared, info.get("parameter_aliases") or {}
+
+
+def _given_names(mod, method: str, given) -> set:
+    """The parameter names a call gave, a name given under another spelling
+    the method reads (``parameter_aliases``) under its own name too."""
+    _, aliases = _declared(mod, method)
+    return set(given) | {aliases[k] for k in given if k in aliases}
+
+
+def _left_out(mod, method: str, given) -> dict:
+    """The declared defaults of ``method`` that a call left in force: name
+    -> default. Left out: a declared default of None (worked out by the
+    method) or "" (an empty field), and a calc package's header and
+    format."""
+    declared, _ = _declared(mod, method)
+    named = _given_names(mod, method, given)
     if str(getattr(mod, "__name__", "")).endswith("calc_package"):
         named |= _PACKAGE_HEADER_PARAMS
     return {name: spec["default"] for name, spec in declared.items()
@@ -1182,16 +1215,86 @@ def _defaults_used(mod, method: str, given) -> dict:
             and spec.get("default") != "" and name not in named}
 
 
-def _with_defaults_used(mod, method: str, given, result):
+#: What a parameter's ``applies_when`` may ask of another parameter (GM-119).
+_SET, _UNSET = "set", "unset"
+
+
+def _is_set(value) -> bool:
+    """A value in force that does something: not None, 0, False or empty."""
+    if value is None or value is False:
+        return False
+    if isinstance(value, (int, float)) and value == 0:
+        return False
+    if isinstance(value, (str, list, tuple, dict)) and not value:
+        return False
+    return True
+
+
+def applies(condition, values: dict) -> bool:
+    """Whether a parameter's default applies to a call (GM-119).
+
+    ``condition`` is the parameter's ``applies_when``: absent (None) or
+    ``{}``, always; False, never (the method takes the parameter and does
+    not use it); a list of such dicts, any one of them; else a dict, every
+    entry of which must hold, of another parameter's name to a list of
+    values its value in force is one of (strings compared without case;
+    None for "not given" where the parameter has no default), "set" (not
+    None, 0, False or empty) or "unset". ``values`` maps each parameter to
+    its value in force: the call's, else its declared default."""
+    if condition is None:
+        return True
+    if condition is False:
+        return False
+    if isinstance(condition, list):
+        return any(applies(c, values) for c in condition)
+    for name, want in condition.items():
+        value = values.get(name)
+        if want == _SET:
+            ok = _is_set(value)
+        elif want == _UNSET:
+            ok = not _is_set(value)
+        else:
+            fold = (lambda v: v.lower() if isinstance(v, str) else v)
+            ok = any(fold(value) == fold(w) for w in want)
+        if not ok:
+            return False
+    return True
+
+
+def _defaults_used(mod, method: str, given, parameters=None,
+                   reported=()) -> dict:
+    """The declared defaults a call left in force that apply to it, with
+    the default each took (BACKLOG GM-115, GM-119): name -> default, from
+    the method's METHOD_INFO ``parameters`` (GM-110). A parameter given
+    under another spelling it reads (``parameter_aliases``) counts as
+    given. A parameter whose ``applies_when`` (:func:`applies`) does not
+    hold for this call is left out, unless the module said it used the
+    default (``reported``, the names its ``choices`` called "default"), so
+    ``defaults_used`` and ``choices`` never contradict each other."""
+    left = _left_out(mod, method, given)
+    if not left:
+        return {}
+    declared, aliases = _declared(mod, method)
+    values = {name: spec.get("default") for name, spec in declared.items()
+              if isinstance(spec, dict)}
+    for key, value in (parameters or {}).items():
+        values[aliases.get(key, key)] = value
+    return {name: default for name, default in left.items()
+            if name in reported
+            or applies(declared[name].get("applies_when"), values)}
+
+
+def _with_defaults_used(mod, method: str, given, result, parameters=None,
+                        reported=()):
     """``result`` with ``defaults_used`` (:func:`_defaults_used`) added when
-    the call left a declared default in force: the agent then knows which
-    values it never chose. A result that is not a dict, is an error, or
-    already says what it used is returned unchanged."""
+    the call left a declared default in force that applies to it: the agent
+    then knows which values it never chose. A result that is not a dict, is
+    an error, or already says what it used is returned unchanged."""
     if not isinstance(result, dict) or "error" in result \
             or "defaults_used" in result:
         return result
     try:
-        used = _defaults_used(mod, method, given)
+        used = _defaults_used(mod, method, given, parameters, reported)
     except Exception:  # noqa: BLE001 - never the method's result
         return result
     if not used:

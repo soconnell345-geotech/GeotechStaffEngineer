@@ -1,8 +1,8 @@
 """Settlement adapter — flat dict → settlement functions → dict."""
 
 from funhouse_agent.adapters import (
-    apply_aliases, check_nested_list, declare_aliases, field_keys,
-    reject_unknown_params, require_keys, require_params,
+    apply_aliases, check_nested_list, declare_aliases, declare_applies_when,
+    field_keys, reject_unknown_params, require_keys, require_params,
 )
 from settlement.immediate import elastic_settlement, SchmertmannLayer, schmertmann_settlement
 from settlement.consolidation import (
@@ -267,7 +267,7 @@ METHOD_INFO = {
             "L": {"type": "float", "required": False, "description": "Footing length for stress distribution (m). Defaults to B."},
             "stress_method": {"type": "str", "required": False, "default": "2:1", "allowed_values": ["2:1", "boussinesq", "westergaard"], "description": "Stress distribution method."},
         },
-        "returns": {"consolidation_settlement_mm": "Total consolidation settlement in mm.", "layer_breakdown": "Per-layer results."},
+        "returns": {"consolidation_settlement_mm": "Total consolidation settlement in mm.", "layer_breakdown": "Per-layer results.", "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives."},
     },
     "hough_settlement": {
         "category": "Granular Settlement",
@@ -317,6 +317,7 @@ METHOD_INFO = {
             "cv_m2_per_year": "With cv: the coefficient of consolidation used (m2/year).",
             "Hdr_m": "With cv: the drainage path length used (m): Hdr if given, else the consolidating thickness / 2 (double drainage) or the whole thickness (single).",
             "time_settlement_basis": "With cv: one sentence stating how the time curve is computed.",
+            "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives.",
         },
     },
 }
@@ -326,4 +327,23 @@ declare_aliases(METHOD_INFO, {
     "schmertmann_settlement": _Q_ALIASES,
     "hough_settlement": _Q_ALIASES,
     "combined_settlement_analysis": _COMBINED_ALIASES,
+})
+
+# When each default applies (GM-119): the stress increase to a stress worked
+# out from the footing pressure, nu to the elastic method with a modulus,
+# the creep time to Schmertmann, the drainage to a time curve with no Hdr
+# given, the secondary settings to a run with C_alpha.
+declare_applies_when(METHOD_INFO, {
+    "consolidation_settlement": {
+        "stress_method": {"delta_sigma": "unset", "delta_sigmas": "unset"},
+    },
+    "combined_settlement_analysis": {
+        "nu": {"immediate_method": ["elastic"], "Es": "set"},
+        "time_years_schmertmann": {"immediate_method": ["schmertmann"]},
+        "stress_method": {"consolidation_layers": "set"},
+        "drainage": {"cv": "set", "consolidation_layers": "set",
+                     "Hdr": "unset"},
+        "e0_secondary": {"C_alpha": "set", "t_secondary": "set"},
+        "t_secondary": {"C_alpha": "set"},
+    },
 })

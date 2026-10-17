@@ -23,15 +23,23 @@ an input or result key the agent may need follows in brackets
 those brackets out (:func:`plain`).
 
 A module cannot tell a default it applied from the same value given
-explicitly: :func:`how_given` calls a value equal to the default
-``"default"``. The agent layer adds ``defaults_used`` to a result (the
-declared parameters a call left out), which says which were left out.
+explicitly, so the agent layer says which inputs a call named (GM-118):
+``call_agent`` runs the method inside :func:`call_inputs`, and
+:func:`how_given` with the input's ``name`` answers from that, so a typed
+value equal to the default is "given". Outside such a call, and for values
+nested inside an input (a layer's field), :func:`how_given` compares the
+value with the default. The agent layer also adds ``defaults_used`` to a
+result (the declared defaults a call left in force and that apply to it);
+a name :func:`how_given` called "default" is always among them, so the two
+never contradict each other.
 
 Pure data; no third-party import.
 """
 
 import re
-from typing import Any, Iterable, List, Optional
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any, FrozenSet, Iterable, Iterator, List, Optional, Set
 
 GIVEN = "given"
 DEFAULT = "default"
@@ -83,9 +91,53 @@ def choice(what: str, chosen: Any, how: str, basis: str = "",
     return entry
 
 
-def how_given(value: Any, default: Any) -> str:
-    """``"default"`` when ``value`` equals the module's ``default``, else
-    ``"given"``."""
+class CallInputs:
+    """The inputs of one ``call_agent`` call (GM-118): the names it gave
+    (``given``), the declared defaults it left in force (``defaults``), and
+    the names :func:`how_given` has called "default" so far
+    (``reported``)."""
+
+    __slots__ = ("given", "defaults", "reported")
+
+    def __init__(self, given: Iterable[str], defaults: Iterable[str]):
+        self.given: FrozenSet[str] = frozenset(given)
+        self.defaults: FrozenSet[str] = frozenset(defaults)
+        self.reported: Set[str] = set()
+
+
+_CALL: ContextVar[Optional[CallInputs]] = ContextVar(
+    "geotech_call_inputs", default=None)
+
+
+@contextmanager
+def call_inputs(given: Iterable[str],
+                defaults: Iterable[str] = ()) -> Iterator[CallInputs]:
+    """Run a method call with the names it was given and the declared
+    defaults it left in force known to :func:`how_given`; yields the
+    :class:`CallInputs`, whose ``reported`` the caller reads after."""
+    record = CallInputs(given, defaults)
+    token = _CALL.set(record)
+    try:
+        yield record
+    finally:
+        _CALL.reset(token)
+
+
+def how_given(value: Any, default: Any, name: Optional[str] = None) -> str:
+    """``"given"`` or ``"default"``: whether the input was given.
+
+    With ``name`` (the input as the tool declares it) inside
+    :func:`call_inputs`: ``"given"`` when the call named it, ``"default"``
+    when it left that declared default in force. Otherwise, and for a value
+    nested inside an input: ``"default"`` when ``value`` equals the
+    module's ``default``, else ``"given"``."""
+    record = _CALL.get()
+    if name is not None and record is not None:
+        if name in record.given:
+            return GIVEN
+        if name in record.defaults:
+            record.reported.add(name)
+            return DEFAULT
     try:
         same = value == default
         same = bool(same)
@@ -144,5 +196,5 @@ def choice_rows(choices: Optional[List[dict]]) -> List[list]:
 
 
 __all__ = ["GIVEN", "DEFAULT", "MODULE", "HOW", "HOW_TEXT", "choice",
-           "how_given", "choices_lines", "choices_from", "plain",
-           "choice_rows"]
+           "how_given", "call_inputs", "CallInputs", "choices_lines",
+           "choices_from", "plain", "choice_rows"]

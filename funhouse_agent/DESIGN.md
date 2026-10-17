@@ -298,7 +298,28 @@ the eyes). What changed on master after 5.33.0, in short:
   the liquefaction procedure with rd and MSF per layer, the slope search's
   families tried and not tried. The liquefaction tool marks its procedure
   "default" or "given" and names the other; the axial adapter marks its
-  own delta/phi default. Prompts and tool descriptions are unchanged.
+  own delta/phi default. Since 2026-10-17 the two are true and agree:
+  `call_agent` runs the method inside `geotech_common.choices.call_inputs`
+  with the names the call gave and the declared defaults it left in force,
+  and a module's `how_given(..., name=)` answers from them, so a typed value
+  equal to the default is "given" (GM-118; nested values, such as a
+  layer's field, are still compared by value). `defaults_used` lists only
+  the defaults the run used: a parameter's `applies_when` in METHOD_INFO
+  (`adapters.declare_applies_when`; a dict of other parameters' values,
+  "set" or "unset", a list of such dicts for "any", or False) says when it
+  is read, and `dispatch.applies` tests it on the call's values over the
+  declared defaults; any name `how_given` called "default" is listed
+  whatever its condition, so the two never contradict (GM-119).
+  `describe_method` leaves `applies_when` out. Tagged: liquefaction
+  (CPT-only keys, C0, gamma_w), lateral pile (axis, f'c, E_steel),
+  axial pile (cohesive_phi, the uplift fraction), settlement and the
+  settlement package, the seismic package (KA, kv, M), the slope report
+  package and the slope tools (crack water, reverse curvature, each search
+  setting, the Bishop screen, the interslice function, the 3-stage normal,
+  a Monte Carlo search budget, the infinite slope's water inputs; the kh
+  yield_acceleration finds itself). The choice-bearing methods name
+  `choices` in their returns, and `call_agent`'s description names both
+  (GM-125).
 - **Vision** (VIS-01, VIS-04, VIS-05): an optional `turn` (0/90/180/270) on
   `analyze_pdf_page` / `render_region`; boxes right on sideways sheets; a
   zoom that cuts lines of lettering widens to take them in or says which

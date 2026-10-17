@@ -657,10 +657,16 @@ class SearchResult:
     choices : list of dict
         What the search chose (GM-115, ``geotech_common.choices``;
         ``search_supplements.search_choices``): the search, the method it
-        scored with, the surface families it tried and those it did not,
+        scored with, the surface families it scored and those it did not,
         how its ranges were set (pointing at ``search_ranges``,
-        ``governing_location`` and ``refused_lowest``), its time budget
-        and any Bishop screen (GM-123).
+        ``governing_location`` and ``refused_lowest`` where the result has
+        them), its time budget and any Bishop screen (GM-123).
+    families_scored : list of str
+        The surface families that gave an admissible surface (those in
+        ``candidates``; GM-125): the main search's kind, ``toe_circle``,
+        ``circle_above_toe``, ``infinite_slope``. ``families_not_scored``
+        gives, for each other family the search ran, why it gave none.
+        Neither is in ``to_dict()``: ``choices`` says both.
     """
     critical: Optional[SlopeStabilityResult] = None
     n_surfaces_evaluated: int = 0
@@ -679,6 +685,8 @@ class SearchResult:
     governing_location: Dict[str, Any] = field(default_factory=dict)
     refused_lowest: Optional[Dict[str, Any]] = None
     choices: List[Dict[str, Any]] = field(default_factory=list)
+    families_scored: List[str] = field(default_factory=list)
+    families_not_scored: Dict[str, str] = field(default_factory=dict)
 
     def summary(self) -> str:
         lines = [

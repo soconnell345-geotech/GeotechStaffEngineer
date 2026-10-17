@@ -322,3 +322,39 @@ def test_cohesionless_runs_follow_the_outcrop():
     assert runs[0]["layer"] == "sand"
     assert runs[0]["x_from"] == pytest.approx(0.0, abs=0.01)
     assert runs[0]["x_to"] == pytest.approx(10.0, abs=0.5)
+
+
+# ---------------------------------------------------------------------------
+# GM-129: an entry/exit search is told its pairs, not a centre grid, missed
+# the circle that governs
+# ---------------------------------------------------------------------------
+
+def test_entry_exit_search_names_its_pairs_when_a_toe_circle_governs():
+    res = search_critical_surface(_toe_geom(), surface_type="entry_exit",
+                                  nx=4, ny=4, method="bishop", n_slices=40)
+    assert res.governing_surface == TOE_CIRCLE
+    (w,) = [w for w in res.warnings if "toe circle governs" in w]
+    assert ("entry/exit windows or the spacing of its entry/exit pairs "
+            "kept it from this circle") in w
+    assert "centre grid" not in w
+    grid = search_critical_surface(_toe_geom(), method="bishop", n_slices=40)
+    (w,) = [w for w in grid.warnings if "toe circle governs" in w]
+    assert "entry/exit windows, centre grid or grid spacing" in w
+
+
+def test_entry_exit_search_names_its_pairs_when_a_circle_above_toe_governs():
+    g = SlopeGeometry(
+        surface_points=[(0, 0), (20, 0), (30, 10), (60, 10)],
+        soil_layers=[
+            SlopeSoilLayer("Residual clay", 10, 6.5, 18.5, phi=22,
+                           c_prime=3),
+            SlopeSoilLayer("Sandstone", 6.5, -40, 23, phi=40, c_prime=200)])
+    res = search_critical_surface(g, surface_type="entry_exit", nx=4, ny=4,
+                                  method="bishop", x_entry_range=(0, 27),
+                                  x_exit_range=(27, 60))
+    assert res.governing_surface == "circle_above_toe"
+    (w,) = [w for w in res.warnings
+            if w.startswith("A circle passing above the toe governs")]
+    assert ("The main search did not reach it: its entry/exit pairs "
+            "missed this circle.") in w
+    assert "centre grid" not in w

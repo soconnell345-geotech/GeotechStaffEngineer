@@ -394,14 +394,15 @@ class AxialPileAnalysis:
                 "phi' of cohesive layers given no friction angle (beta "
                 "method)",
                 f"{self.cohesive_phi:g} deg",
-                how_given(self.cohesive_phi, 25.0),
+                how_given(self.cohesive_phi, 25.0, name="cohesive_phi"),
                 "within the clay range 25-30 deg of GEC-12 Table 7-9"))
         if self.include_uplift:
             out.append(choice(
                 "uplift capacity",
                 f"{self.uplift_skin_fraction:g} x outside side resistance"
                 + (" + pile weight" if self.pile_weight is not None else ""),
-                how_given(self.uplift_skin_fraction, 0.75),
+                how_given(self.uplift_skin_fraction, 0.75,
+                          name="uplift_skin_fraction"),
                 "a rule of thumb, not from a reference; GEC-12 Sec. 7.2.3.1 "
                 "(Eq. 7-38) takes the whole shaft resistance with an uplift "
                 "resistance factor; side resistance inside an open pipe is "

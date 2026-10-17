@@ -307,6 +307,31 @@ def declare_aliases(method_info: dict, aliases: dict) -> dict:
     return method_info
 
 
+def declare_applies_when(method_info: dict, table: dict) -> dict:
+    """Record when each parameter's default applies to a call
+    (``{method: {parameter: condition}}``, BACKLOG GM-119): the
+    parameter's ``applies_when``, which ``dispatch.applies`` reads, so a
+    result's ``defaults_used`` lists only the defaults the run used. A
+    condition maps other parameters to a list of values, "set" or "unset"
+    (a list of such maps: any one of them); False means the method never
+    uses it. The parameter's spec is copied first (one spec dict often
+    serves several methods). A name the method does not declare raises, so
+    a slip in the table fails on import. Returns ``method_info``."""
+    for method, conditions in table.items():
+        params = method_info[method]["parameters"]
+        for name, condition in conditions.items():
+            if name not in params:
+                raise KeyError(f"{method}: no parameter {name!r}")
+            alternatives = (condition if isinstance(condition, list)
+                            else [condition or {}])
+            for other in (k for c in alternatives for k in c):
+                if other not in params:
+                    raise KeyError(f"{method}.{name}: applies_when names "
+                                   f"no parameter {other!r}")
+            params[name] = {**params[name], "applies_when": condition}
+    return method_info
+
+
 def figure_output_format(params: dict, default: str = "metadata") -> str:
     """Resolve a plot method's ``output_format``, honoring ``output_path``.
 

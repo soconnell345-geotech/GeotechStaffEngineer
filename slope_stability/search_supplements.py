@@ -279,7 +279,8 @@ def search_toe_circles(geom: SlopeGeometry,
     value on a circle Slide2 would keep (GM-127; DESIGN.md).
 
     Returns a dict: ``FOS`` (999.9 if none admissible), ``xc``, ``yc``,
-    ``radius``, ``toe`` (x, z), ``n_evaluated``; with ``above_toe``,
+    ``radius``, ``toe`` (x, z), ``n_evaluated``, ``n_scored`` (the circles
+    scored by family, ``TOE_CIRCLE`` and ``ABOVE_TOE``); with ``above_toe``,
     ``above_toe`` holds the critical circle passing above the toe (``FOS``,
     ``xc``, ``yc``, ``radius``, ``start`` (x, z) on the face, ``height``,
     its fraction of the face height above the toe, and ``face_toe``), and
@@ -303,6 +304,8 @@ def search_toe_circles(geom: SlopeGeometry,
     x_min, x_max = geom.x_range
     windows_given = x_entry_range is not None or x_exit_range is not None
     counter = [0]
+    # circles scored, by family: what a result's choices say was tried
+    scored = {TOE_CIRCLE: 0, ABOVE_TOE: 0}
     # A caller-supplied per-surface solve (rapid drawdown: two or three GLE
     # solves a surface, no cheap screen) gets a coarser scan.
     n_t, u_tol, e_iter = (_N_T, 0.01, 12) if fos_fn is None else (7, 0.04, 6)
@@ -311,7 +314,7 @@ def search_toe_circles(geom: SlopeGeometry,
     us = [u_lo + (u_hi - u_lo) * i / (n_t - 1) for i in range(n_t)]
     u_step = (u_hi - u_lo) / (n_t - 1)
 
-    def circle_fos(xc, yc, r, fos_method):
+    def circle_fos(xc, yc, r, fos_method, family=TOE_CIRCLE):
         if _time_up():          # the search's time budget is spent (GM-123)
             _record_not_run("part of the toe-circle and circle-above-the-"
                             "toe families")
@@ -325,6 +328,7 @@ def search_toe_circles(geom: SlopeGeometry,
                 geom, slip, x_entry_range, x_exit_range):
             return _FOS_MAX
         counter[0] += 1
+        scored[family] += 1
         # (m_alpha < 0.2 on a slice: left out and counted there, GM-127)
         return _compute_fos(geom, slip, fos_method, n_slices, tol=tol,
                             fos_fn=fos_fn)
@@ -375,7 +379,8 @@ def search_toe_circles(geom: SlopeGeometry,
                 return _FOS_MAX
             if ch.get("above") and not passes_above_toe(ch, xc, yc, r):
                 return _FOS_MAX
-            return circle_fos(xc, yc, r, fos_method)
+            return circle_fos(xc, yc, r, fos_method,
+                              ABOVE_TOE if ch.get("above") else TOE_CIRCLE)
 
         if bracket is None:
             fs = [f(u) for u in us]
@@ -546,6 +551,7 @@ def search_toe_circles(geom: SlopeGeometry,
                                  "start": ch["toe"], "height": h,
                                  "face_toe": ch["face_toe"]}
     best["n_evaluated"] = counter[0]
+    best["n_scored"] = dict(scored)
     return best
 
 
@@ -1170,6 +1176,41 @@ def _profile_end_warning(geom, crit, method: str, n_slices: int, tol: float,
         f"the toe beyond it (Taylor's nH; FHWA NHI-06-088 Fig. 6-15).")
 
 
+def _families_scored(result: SearchResult, search_kind: str,
+                     candidates: Dict[str, float], n_main: int, toe, planar,
+                     *, windows_given: bool, time_up: bool) -> None:
+    """Set ``result.families_scored`` (the families run that gave an
+    admissible surface, the ones in ``candidates``) and
+    ``result.families_not_scored`` (each family run that gave none, and
+    why): what the search's choices say it scored (GM-125)."""
+    held_none = "none of the surfaces tried held"
+    why = {}
+    if search_kind not in candidates:
+        why[search_kind] = (held_none if n_main else
+                            "the time budget ran out first" if time_up
+                            else "no surface was tried")
+    if toe is not None:
+        tried = toe.get("n_scored") or {}
+        for family in (TOE_CIRCLE, ABOVE_TOE):
+            if family in candidates:
+                continue
+            why[family] = (held_none if tried.get(family) else
+                           "the time budget ran out first" if time_up else
+                           "none within the windows and ranges given"
+                           if windows_given else "none on this slope")
+    if planar is not None and INFINITE_SLOPE not in candidates:
+        why[INFINITE_SLOPE] = (
+            held_none if planar["n_evaluated"] else
+            "not evaluated on the faces of c' = 0 soil "
+            "(infinite_slope_checks)" if planar["checks"] else
+            "no face of c' = 0 soil")
+    runs = [search_kind] + ([TOE_CIRCLE, ABOVE_TOE] if toe is not None
+                            else []) + ([INFINITE_SLOPE] if planar is not None
+                                        else [])
+    result.families_scored = [k for k in runs if k not in why]
+    result.families_not_scored = why
+
+
 def apply_supplements(geom: SlopeGeometry,
                       result: SearchResult,
                       *,
@@ -1197,8 +1238,9 @@ def apply_supplements(geom: SlopeGeometry,
     scores both families when given; the planar surfaces are then labelled
     with ``method`` instead of Janbu.
     """
-    from slope_stability.search import _FOS_MAX
+    from slope_stability.search import _FOS_MAX, _time_up
     planar_method = PLANAR_METHOD if fos_fn is None else method
+    n_main = result.n_surfaces_evaluated
 
     main = result.critical
     candidates: Dict[str, float] = {}
@@ -1252,6 +1294,11 @@ def apply_supplements(geom: SlopeGeometry,
                 if r is not None:
                     best_kind, best, best_fos = INFINITE_SLOPE, r, planar["FOS"]
 
+    _families_scored(result, search_kind, candidates, n_main, toe, planar,
+                     windows_given=any(r is not None for r in (
+                         x_entry_range, x_exit_range, x_range, y_range)),
+                     time_up=_time_up())
+
     main_fos = main.FOS if main is not None else None
     main_text = describe_surface_kind(search_kind)
     infinite_slope_found = False
@@ -1265,9 +1312,11 @@ def apply_supplements(geom: SlopeGeometry,
             f"A toe circle governs: the circle through the toe at "
             f"(x = {xt:.2f}, z = {zt:.2f}) and the ground at x = {other:.2f} "
             f"gives FOS {best_fos:.3f}, below the {main_text} minimum "
-            f"({was}). The main search's entry/exit windows, centre grid or "
-            f"grid spacing kept it from this circle; the toe circle is "
-            f"reported.")
+            f"({was}). The main search's "
+            + ("entry/exit windows, centre grid or grid spacing"
+               if grid_used is not None else
+               "entry/exit windows or the spacing of its entry/exit pairs")
+            + " kept it from this circle; the toe circle is reported.")
     elif best_kind == ABOVE_TOE:
         above = toe["above_toe"]
         xs, zs = above["start"]
@@ -1280,7 +1329,9 @@ def apply_supplements(geom: SlopeGeometry,
         inside = all(w is None or w[0] - 1e-6 <= v <= w[1] + 1e-6
                      for w, v in zip(windows_used,
                                      (best.x_entry, best.x_exit)))
-        kept = ("its centre grid or radii missed this circle" if inside else
+        kept = (("its centre grid or radii missed this circle"
+                 if grid_used is not None else
+                 "its entry/exit pairs missed this circle") if inside else
                 "the circle ends outside its automatic entry/exit windows, "
                 "which meet at the middle of the face")
         xt, zt = above["face_toe"]
@@ -1561,7 +1612,7 @@ def m_alpha_choice(n_left_out: int, method: Optional[str],
     `methods.M_ALPHA_RULES`) and the governing surface on twice the
     slices."""
     from geotech_common.choices import choice, how_given
-    how = how_given(rule, "frictional")
+    how = how_given(rule, "frictional", name="m_alpha_rule")
     if (method or "").lower() == "fellenius":
         return choice(
             "slip surfaces left out for m_alpha", "none", how,
@@ -1685,10 +1736,13 @@ def search_choices(result: SearchResult, *, surface_type: str,
                    ) -> List[Dict[str, Any]]:
     """What a critical-surface search chose (GM-115), as its ``choices``
     (``geotech_common.choices``): the search, the method it scored with
-    (when one was named), the surface families it tried with those it did
-    not, and how its ranges were set. The ranges, the governing surface's
-    place and a refused lower surface are not repeated: the entry points at
-    ``search_ranges``, ``governing_location`` and ``refused_lowest``. With
+    (when one was named), the surface families that gave an admissible
+    surface (``result.families_scored``; a family it ran that gave none,
+    with why), those it does not try, and how its ranges were set. The ranges,
+    the governing surface's place and a refused lower surface are not
+    repeated: the entry points at ``search_ranges``, and at
+    ``governing_location`` and ``refused_lowest`` where the result has
+    them (GM-125). With
     ``budget`` (GM-123): the time budget, and the Bishop screen when it was
     applied (``screened``) or asked for and not applied
     (``screen_not_applied``, the reason). The surfaces left out for m_alpha
@@ -1698,7 +1752,7 @@ def search_choices(result: SearchResult, *, surface_type: str,
     out = [choice(
         "search",
         f"{SEARCH_TEXT.get(surface_type, surface_type)} ('{surface_type}')",
-        how_given(surface_type, "circular"), "",
+        how_given(surface_type, "circular", name="surface_type"), "",
         [f"{SEARCH_TEXT.get(t, t)} ('{t}')" for t in surface_types
          if t != surface_type])]
     if method is not None:
@@ -1711,7 +1765,8 @@ def search_choices(result: SearchResult, *, surface_type: str,
             out.append(choice("FOS method of the search", used, MODULE, why))
         else:
             out.append(choice("FOS method of the search", used,
-                              how_given(method, "bishop")))
+                              how_given(method, "bishop",
+                                        name="method")))
         if screened:
             basis = (f"every circle of the main search scored with Bishop's "
                      f"simplified method, the lowest re-scored with {used}: "
@@ -1733,35 +1788,48 @@ def search_choices(result: SearchResult, *, surface_type: str,
                 f"{screen_not_applied}"))
     kind = CIRCULAR if surface_type in ("circular", "entry_exit") \
         else NONCIRCULAR
-    tried = [kind]
+    # The families this search runs, and of those the ones it scored a
+    # surface of (apply_supplements, GM-125): a choice says only what the
+    # run did.
+    runs = [kind]
     if toe_circles and kind == CIRCULAR:
-        tried += [TOE_CIRCLE, ABOVE_TOE]
+        runs += [TOE_CIRCLE, ABOVE_TOE]
     if infinite_slope:
-        tried.append(INFINITE_SLOPE)
+        runs.append(INFINITE_SLOPE)
+    unscored = dict(getattr(result, "families_not_scored", None) or {})
+    tried = [k for k in runs if k not in unscored]
     missed = [k for k in (CIRCULAR, NONCIRCULAR, TOE_CIRCLE, ABOVE_TOE,
                           INFINITE_SLOPE)
-              if k not in tried]
+              if k not in runs]
     out.append(choice(
-        "surface families tried",
-        ", ".join(_FAMILY_TEXT[k] for k in tried), MODULE,
-        "the lowest FOS of each is reported (candidates), and the one that "
-        "governs (governing_surface)"
+        "surface families scored",
+        ", ".join(_FAMILY_TEXT[k] for k in tried) or "none", MODULE,
+        ("the lowest FOS of each is reported (candidates), and the one that "
+         "governs (governing_surface)" if tried else "no surface held")
         + ("; circles through each face's toe and passing above it, their "
            "lower end on the face from the toe up (search_ranges, "
            "faces_covered); the circles passing above the toe leave out "
            "any with reverse curvature"
            if ABOVE_TOE in tried else "")
-        + ("; the infinite slope only where c' = 0 soil forms the face"
-           if INFINITE_SLOPE in tried else ""),
-        [f"not tried: {_FAMILY_TEXT[k]}, by {_TRY_FAMILY[k]}"
+        + ("; the infinite slope where c' = 0 soil forms the face"
+           if INFINITE_SLOPE in tried else "")
+        + "".join(f"; {_FAMILY_TEXT[k]}: none scored, {unscored[k]}"
+                  for k in runs if k in unscored),
+        [f"not tried: {_FAMILY_TEXT[k]}, by "
+         + ("a search with them (toe_circles=True)"
+            if kind == CIRCULAR and k in (TOE_CIRCLE, ABOVE_TOE)
+            else _TRY_FAMILY[k])
          for k in missed]))
     sr = result.search_ranges or {}
     auto = list(sr.get("automatic") or [])
-    where = "the result says where the reported surface lies " \
-            "(governing_location)"
+    # Point only at the fields the result carries (GM-125).
+    where = ("the result says where the reported surface lies "
+             "(governing_location)" if result.governing_location
+             else "no surface is reported")
     if result.refused_lowest:
-        where += " and gives a lower surface that did not hold " \
-                 "(refused_lowest)"
+        where += (" and gives" if result.governing_location else
+                  "; the result gives") + \
+            " a lower surface that did not hold (refused_lowest)"
     if auto:
         given = [n for n in ("x_entry_range", "x_exit_range", "x_range",
                              "y_range") if n in sr and n not in auto]
@@ -1804,7 +1872,7 @@ def budget_choice(budget) -> Dict[str, Any]:
         basis = "the search finished inside it"
     return choice("time budget of the search",
                   "no limit" if secs is None else f"{secs:g} s",
-                  how_given(secs, None), basis,
+                  how_given(secs, None, name="time_budget_s"), basis,
                   ["another budget (time_budget_s)" if secs is not None
                    else "a time budget (time_budget_s)"])
 
