@@ -364,6 +364,84 @@ def bishop_fos(slices: List[Slice],
     return fos
 
 
+# ---------------------------------------------------------------------------
+# m_alpha on the slice bases (GM-127)
+# ---------------------------------------------------------------------------
+
+#: Slide2 reports a slip surface as invalid when m_alpha = cos(a) (1 + tan(a)
+#: tan(phi) / F) is below this on any slice on the final iteration (its
+#: error -112; the "Check malpha < 0.2" project setting). Its documentation
+#: (iteration parameters) gives the reason, after Whitman & Bailey (1967):
+#: below 0.2 on any slice the factor of safety may be incorrect or
+#: misleading, though it is not necessarily wrong.
+M_ALPHA_MIN = 0.2
+
+#: Which slices the check looks at. "frictional" (the default): the slices
+#: with phi' > 0. On a phi' = 0 slice m_alpha = cos(a) does not depend on F
+#: and the slice's shear strength is c l whatever its normal force (in
+#: Bishop's method c b / m_alpha = c l), so a small m_alpha there cannot
+#: make the FOS spurious, and leaving out a surface for it only raises the
+#: minimum: a vertical 5 m cut in undrained clay read 0.933 with every
+#: slice checked, against 0.800 and Taylor's 0.851 (GM-127 review).
+#: "every_slice": every slice, as Slide2 checks.
+M_ALPHA_RULES = ("frictional", "every_slice")
+
+
+def sliding_sign(slices: List[Slice], slip=None,
+                 method: str = "gle") -> float:
+    """+1 or -1: the sign that makes a base angle positive in the direction
+    of sliding, as each method takes it. Bishop's simplified method on a
+    circle takes the sign of the gravity moment about the centre, ponded
+    water included (`bishop_fos`); Janbu and the GLE behind Spencer,
+    Morgenstern-Price and GLE the sign of sum(W sin(a)) (`gle._normalize`).
+    On a circle the two agree unless a pond's thrust turns the moment."""
+    if method == "bishop" and getattr(slip, "is_circular", False):
+        drive = 0.0
+        for s in slices:
+            drive += (s.weight + s.surcharge_force) * (s.x_mid - slip.xc)
+            if s.pond_hforce != 0:
+                drive += s.pond_hforce * (s.pond_z - slip.yc)
+        return 1.0 if drive >= 0 else -1.0
+    drive = sum((s.weight + s.surcharge_force) * math.sin(s.alpha)
+                for s in slices)
+    return -1.0 if drive < 0 else 1.0
+
+
+def m_alpha_values(slices: List[Slice], fos: float, slip=None,
+                   method: str = "gle") -> List[float]:
+    """m_alpha = cos(a) + sin(a) tan(phi) / F of every slice at the factor
+    of safety ``fos``, the base angle a taken positive in the direction of
+    sliding (`sliding_sign`).
+
+    m_alpha is the denominator of the base normal force in Bishop's
+    simplified method (Bishop 1955, Eq. 12), in Janbu's simplified method
+    and in the GLE that gives Spencer, Morgenstern-Price and GLE here
+    (Fredlund & Krahn 1977; ``gle._GLESystem._normal``): pass each method's
+    own F (for Janbu the uncorrected F of its force equilibrium, before
+    f0). The Ordinary Method of Slices has none (its N is W cos(a)).
+    """
+    sign = sliding_sign(slices, slip, method)
+    f = fos if fos and fos > 0 else 1.0
+    return [math.cos(s.alpha)
+            + sign * math.sin(s.alpha) * math.tan(math.radians(s.phi)) / f
+            for s in slices]
+
+
+def m_alpha_checked(s: Slice, rule: str = "frictional") -> bool:
+    """True when the check looks at this slice under ``rule``
+    (`M_ALPHA_RULES`): every slice, or only those with phi' > 0."""
+    return rule == "every_slice" or s.phi > 1e-9
+
+
+def m_alpha_min(slices: List[Slice], fos: float, slip=None,
+                method: str = "gle", rule: str = "frictional") -> float:
+    """The least m_alpha over the slices the check looks at under ``rule``
+    (`m_alpha_values`, `m_alpha_checked`); 1.0 when there are none."""
+    vals = m_alpha_values(slices, fos, slip, method)
+    return min((m for s, m in zip(slices, vals) if m_alpha_checked(s, rule)),
+               default=1.0)
+
+
 def spencer_fos_legacy(slices: List[Slice],
                 slip,
                 tol: float = 1e-4,

@@ -131,7 +131,15 @@ def test_reject_stats_counts_degenerate_jagged():
     geom = _flat_geom()
     stats = _new_reject_stats()
     jag = PolylineSlipSurface(points=_JAGGED)
-    assert _compute_fos(geom, jag, "spencer", 40, reject_stats=stats) == _FOS_MAX
+    # since GM-127 its m_alpha < 0.2 leaves it out first (Slide2's -112)
+    info = {}
+    assert _compute_fos(geom, jag, "spencer", 40, reject_stats=stats,
+                        info=info) == _FOS_MAX
+    assert info["m_alpha_min"] < 0.2
+    assert stats["nonconverged"] + stats["jagged"] == 0
+    # with that check off, the other gates still refuse it
+    assert _compute_fos(geom, jag, "spencer", 40, reject_stats=stats,
+                        m_alpha_check=False) == _FOS_MAX
     assert stats["geometry"] == 0
     assert stats["nonconverged"] + stats["jagged"] == 1
 
@@ -353,13 +361,21 @@ _SPURIOUS = [
         "one moment axis only", "one moment axis only",
         "at 30 slices only, not at 31 or 60"))])
 def test_spurious_rigorous_state_is_not_kept(make, pts, spurious, why):
+    """Each also has m_alpha < 0.2 on a slice, so since GM-127 a search
+    leaves it out before its solution is checked (Slide2's -112); with that
+    check off, the solution check refuses it and keeps it to report."""
     geom = make()
     slip = PolylineSlipSurface(points=pts)
-    assert _compute_fos(geom, slip, "spencer", 30) == pytest.approx(
+    info = {}
+    assert _compute_fos(geom, slip, "spencer", 30, info=info) == _FOS_MAX
+    assert info["m_alpha_min"] < 0.2
+    assert _compute_fos(geom, slip, "spencer", 30,
+                        m_alpha_check=False) == pytest.approx(
         spurious, abs=1e-3)                    # what the scorer alone gives
     stats = _new_reject_stats()
     assert _compute_fos(geom, slip, "spencer", 30, reject_stats=stats,
-                        confirm_below=float("inf")) == _FOS_MAX
+                        confirm_below=float("inf"),
+                        m_alpha_check=False) == _FOS_MAX
     ref = stats["refused"]                     # kept, to be reported
     assert ref["FOS"] == pytest.approx(spurious, abs=1e-3)
     assert why in ref["reason"]
@@ -397,13 +413,18 @@ def test_noncircular_search_reports_a_reproducible_surface(seed):
     assert again.FOS == pytest.approx(c.FOS, rel=1e-3)
 
 
-def test_a_refused_lowest_surface_is_reported():
+def test_a_refused_lowest_surface_is_reported(monkeypatch):
     """GM-57 re-review: when the check refuses the lowest surface a search
     found, the result says so (FOS, where, why) instead of only counting
     it. Directed DE on the weak layer over rock: every surface it reaches
     below the rock outcrop solves about one moment axis only; none holds,
-    so no surface is reported, and the warning says why."""
+    so no surface is reported, and the warning says why. Those surfaces
+    also have m_alpha < 0.2, which since GM-127 leaves them out first
+    (`test_m_alpha.py` has that search as it runs); the solution check is
+    measured here with the m_alpha check off, as Slide2 allows."""
+    from slope_stability import search as search_mod
     from slope_stability.analysis import search_critical_surface
+    monkeypatch.setattr(search_mod, "M_ALPHA_MIN", -float("inf"))
     res = search_critical_surface(_weak_over_rock(), method="spencer",
                                   surface_type="noncircular_de", seed=1,
                                   x_entry_range=(25.5, 28.0),

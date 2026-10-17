@@ -80,8 +80,10 @@ from slope_stability.slices import build_slices
 from slope_stability.gle import gle_fos
 from slope_stability.results import SearchResult
 from slope_stability.search import (
-    _counts_ground_refusals, _ordered_windows,
+    _counts_refusals, _ordered_windows, _count_m_alpha_refusal,
+    m_alpha_rule_in_force,
 )
+from slope_stability.methods import M_ALPHA_MIN, m_alpha_min as _m_alpha_min
 
 
 _METHODS = ("corps_2stage", "duncan_3stage", "lowe_karafiath")
@@ -139,6 +141,10 @@ class RapidDrawdownResult:
     stage1_converged: bool = True
     stage3_converged: bool = True
     warnings: List[str] = field(default_factory=list)
+    #: The least m_alpha over the drawn-down slices at the drawdown FOS, with
+    #: each slice's own drawdown strength (GM-127; `methods.m_alpha_values`).
+    #: The search leaves out a surface below 0.2, as Slide2 does (-112).
+    m_alpha_min: float = 1.0
 
     def summary(self) -> str:
         return "\n".join([
@@ -578,6 +584,16 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
         warnings.append(
             "Stage 3 (drawn-down) GLE did not converge; the reported drawdown "
             "FOS is the last iterate and may be approximate.")
+    # m_alpha on the drawn-down slices at the drawdown FOS, each slice with
+    # the strength it was solved with (GM-127). A search leaves a surface
+    # below 0.2 out; on this given surface it is said.
+    m_min = _m_alpha_min(sl3, fos, slip, "gle", m_alpha_rule_in_force())
+    if m_min < M_ALPHA_MIN:
+        from slope_stability.analysis import m_alpha_statement
+        w = m_alpha_statement(sl3, slip, "spencer", fos,
+                              given="rapid_drawdown_fos")
+        if w:
+            warnings.append("Drawn-down stage: " + w)
 
     return RapidDrawdownResult(
         FOS=fos, method=method,
@@ -591,10 +607,11 @@ def rapid_drawdown_fos(geom: SlopeGeometry,
         stage1_converged=stage1_converged,
         stage3_converged=stage3_converged,
         warnings=warnings,
+        m_alpha_min=m_min,
     )
 
 
-@_counts_ground_refusals
+@_counts_refusals
 def search_rapid_drawdown(geom: SlopeGeometry,
                           drawdown_from_elevation: float,
                           drawdown_to_elevation: float,
@@ -743,6 +760,11 @@ def search_rapid_drawdown(geom: SlopeGeometry,
             return _FOS_MAX
         if r.stage1_fos < 0.5:
             return _FOS_MAX
+        # m_alpha < 0.2 on a drawn-down slice at the drawdown FOS: left out
+        # and counted, as every search does (GM-127; Slide2's -112)
+        if r.m_alpha_min < M_ALPHA_MIN:
+            _count_m_alpha_refusal()
+            return _FOS_MAX
         return r.FOS
 
     x_entry_range, x_exit_range, window_note = _ordered_windows(
@@ -836,7 +858,11 @@ def _drawdown_search(geom, surface_type, x_range, y_range, nx, ny,
         infinite_slope=infinite_slope, fos_fn=_dd_fos, auto_ranges=auto,
         **given)
     # What the search chose (GM-115); every trial is the drawdown solve.
+    # The surfaces left out for m_alpha < 0.2 on a drawn-down slice so far,
+    # the supplementary families' included (GM-127).
     from slope_stability.search_supplements import search_choices
+    from slope_stability.search import _m_alpha_refusals_so_far
+    search.n_rejected_m_alpha = _m_alpha_refusals_so_far()
     search.choices = search_choices(
         search, surface_type=surface_type, toe_circles=toe_circles,
         infinite_slope=infinite_slope,

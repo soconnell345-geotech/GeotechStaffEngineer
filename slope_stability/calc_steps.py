@@ -689,6 +689,11 @@ def _search_section(search) -> CalcSection:
             rows.append(["  — non-converged rigorous GLE", str(n_rej_nonconv)])
         if n_rej_jagged:
             rows.append(["  — jagged low-FOS artifact", str(n_rej_jagged)])
+    # Scored surfaces left out for m_alpha < 0.2 on a slice (GM-127)
+    n_rej_ma = getattr(search, "n_rejected_m_alpha", 0)
+    if n_rej_ma:
+        rows.append(["Trial surfaces left out, m_alpha < 0.2 on a slice",
+                     str(n_rej_ma)])
     if crit is not None:
         rows.append(["Method", crit.method])
         rows.append(["Minimum FOS", f"{crit.FOS:.3f}"])
@@ -724,6 +729,14 @@ def _search_section(search) -> CalcSection:
             "surfaces removed before scoring (they never compete for the "
             "minimum FOS); a search that rejects most of its trials is "
             "under-resolved for the geometry.")
+    if n_rej_ma:
+        search_notes += (
+            " m_alpha = cos(a) (1 + tan(a) tan(phi) / F) is the denominator "
+            "of the normal force on a slice base; below 0.2 on a slice the "
+            "FOS may be incorrect or misleading (Whitman & Bailey 1967), "
+            "and Slide2 reports such a surface as invalid (its error -112). "
+            "Slices with phi' = 0, where m_alpha = cos(a) does not change "
+            "the FOS, are not checked unless every slice is asked for.")
     items.append(TableData(
         title="Critical Surface Search Summary",
         headers=["Item", "Value"],

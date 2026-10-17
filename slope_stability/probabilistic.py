@@ -491,7 +491,10 @@ class MonteCarloResult:
 def _eval_fos(geom: SlopeGeometry, slip, method: str, n_slices: int,
               tol: float) -> float:
     from slope_stability.search import _compute_fos
-    return _compute_fos(geom, slip, method, n_slices, tol=tol)
+    # one given surface, not a search: no surface is left out for its
+    # m_alpha (GM-127), whatever a realization's strengths make of it
+    return _compute_fos(geom, slip, method, n_slices, tol=tol,
+                        m_alpha_check=False)
 
 
 def _resolve_surface(geom, xc, yc, radius, slip_surface):

@@ -284,12 +284,13 @@ direct march. See DESIGN.md "Support forces in each method".
 | Slide2 #86, five 800 lb/ft tiebacks, windows entry 0-4 / exit 30-75 ft | Bishop | 1.612 | 1.629 (D&W 1.61) | -1.0 %; crosses all five |
 | same | Spencer | 1.606 | 1.620 | -0.9 % |
 | same | GLE | 1.606 | 1.622 | -1.0 % |
-| Slide2 #85, one 9,000 lb/ft support, active, default ranges | GLE | 1.609 (GM-60; was 1.581 on a state not in equilibrium) | 1.575 (D&W 1.51) | +2.2 % |
-| same | Spencer | 1.581 (GM-60; was 1.605) | 1.884 | within the published spread 1.51-1.884 |
-| same | Bishop | 1.304 + warnings | 1.531 | reverse-curvature toe circle (centre 6 ft below the crest, 5.9 ft dry crack, as Slide2's default closes it); the support passes 4.1 ft below the centre, 29 % counted (GM-59) |
-| same, `reverse_curvature='discard'` | Bishop | 1.503 | 1.531 (D&W 1.51) | -1.8 % / -0.5 % |
+| Slide2 #85, one 9,000 lb/ft support, active, default ranges | GLE | 1.584 (GM-60 and the searches since; 1.581 before GM-60, on a state not in equilibrium) | 1.575 (D&W 1.51) | +0.6 % |
+| same | Spencer | 1.542 (1.605 before GM-60); no solution on the same circle at 60 slices, which the search says (GM-127) | 1.884 | within the published spread 1.51-1.884 |
+| same | Bishop | 1.304 + warnings | 1.531 | reverse-curvature toe circle (centre 6 ft below the crest, 5.9 ft dry crack, as Slide2's default closes it); the support passes 4.1 ft below the centre, 29 % counted (GM-59). Its last slice has m_alpha = cos(a) 0.18 on phi = 0, which Slide2 refuses with its 'Check malpha < 0.2' setting on (error -112); phi = 0 slices are not checked by default, as m_alpha does not change the FOS there (GM-127). 1.325 at 60 slices, which the search says |
+| same, `reverse_curvature='discard'` | Bishop | 1.432 (1.503 before GM-122, 1.467 before GM-127) | 1.531 (D&W 1.51) | a circle passing above the toe centred at the crest's level, m_alpha 0.195 on its last (phi = 0) slice; 1.484 at 240 slices (-1.7 % on D&W) |
+| same, discard, `m_alpha_rule='every_slice'` | Bishop | 1.467 | 1.531 (D&W 1.51) | Slide2's check on every slice: a circle passing above the toe, 1.508 at 240 slices |
 | same, on Slide2's printed GLE circle | Bishop = Spencer = GLE | 1.564 | GLE 1.575 | Spencer / GLE fell back to the unreinforced 0.913 before GM-60 |
-| Slide2 #85, passive (Method B) | Bishop, discard / default | 1.305 / 1.208 | 1.324 (D&W 1.32) | -1.4 % (discard) |
+| Slide2 #85, passive (Method B) | Bishop, discard / default | 1.274 / 1.208 (discard 1.305 before GM-122, 1.296 before GM-127) | 1.324 (D&W 1.32) | discard 1.307 at 240 slices (-1.0 %); with `m_alpha_rule='every_slice'` 1.296, 1.318 at 240 |
 | same | Spencer / GLE | 1.346 / 1.379 | 1.872 / 1.378 | GLE +0.1 % |
 | ACADS 1(a) + 200 kN/m geosynthetic at el 29 | Bishop | 1.123 | (no reference) | unreinforced 0.985; the critical now avoids the geosynthetic |
 

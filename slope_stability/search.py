@@ -17,6 +17,7 @@ References:
 import contextlib
 import contextvars
 import functools
+import inspect
 import math
 import random
 import time
@@ -30,51 +31,140 @@ from slope_stability.slip_surface import (
 from slope_stability.slices import build_slices
 from slope_stability.methods import (
     fellenius_fos, bishop_fos, spencer_fos, morgenstern_price_fos,
+    M_ALPHA_MIN, M_ALPHA_RULES, m_alpha_checked, m_alpha_min,
 )
 from slope_stability.gle import janbu_fos
 from slope_stability.results import SearchResult, SlopeStabilityResult
 
 
 _FOS_MAX = 999.9
+# The differential evolution's score for a surface left out for m_alpha
+# (GM-127): above any admissible FOS, below _FOS_MAX (`search_de`).
+_DE_REFUSED = 100.0
 
 
-# Trial surfaces refused because they leave the ground and come back into it
-# (GM-122, ``GroundCrossingError``): counted by `_compute_fos` and
-# `_check_entry_exit` into the tally of the search running in this context.
-_GROUND_REFUSALS: contextvars.ContextVar = contextvars.ContextVar(
-    "slope_ground_refusals", default=None)
+# Trial surfaces refused, counted into the tally of the search running in
+# this context: [0] those that leave the ground and come back into it
+# (GM-122, ``GroundCrossingError``; `_compute_fos` and `_check_entry_exit`),
+# [1] those with m_alpha < 0.2 on a slice (GM-127; `_compute_fos` and the
+# rapid-drawdown search's per-surface solve).
+_REFUSALS: contextvars.ContextVar = contextvars.ContextVar(
+    "slope_refusals", default=None)
 
 
 def _count_ground_refusal() -> None:
-    tally = _GROUND_REFUSALS.get()
+    tally = _REFUSALS.get()
     if tally is not None:
         tally[0] += 1
 
 
-def _counts_ground_refusals(fn):
+def _count_m_alpha_refusal() -> None:
+    tally = _REFUSALS.get()
+    if tally is not None:
+        tally[1] += 1
+
+
+def _m_alpha_refusals_so_far() -> int:
+    """The surfaces left out for m_alpha so far by the search running in
+    this context, the searches run inside it included (the count its
+    ``SearchResult`` gets when it returns)."""
+    tally = _REFUSALS.get()
+    return tally[1] if tally is not None else 0
+
+
+def _counts_refusals(fn):
     """Count the trial surfaces a search refuses because they leave the
-    ground and come back into it (GM-122) and put the count on the
-    ``SearchResult`` it returns (or on that result's ``search``) as
-    ``n_rejected_ground_crossings``. A search run inside another adds its
-    count to the outer one, so the outermost result counts every refusal,
-    its supplementary families' included."""
+    ground and come back into it (GM-122) or have m_alpha < 0.2 on a slice
+    (GM-127), and put the counts on the ``SearchResult`` it returns (or on
+    that result's ``search``) as ``n_rejected_ground_crossings`` and
+    ``n_rejected_m_alpha``. A search run inside another adds its counts to
+    the outer one, so the outermost result counts every refusal, its
+    supplementary families' included."""
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
-        outer = _GROUND_REFUSALS.get()
-        tally = [0]
-        token = _GROUND_REFUSALS.set(tally)
+        outer = _REFUSALS.get()
+        tally = [0, 0]
+        token = _REFUSALS.set(tally)
         try:
             result = fn(*args, **kwargs)
         finally:
-            _GROUND_REFUSALS.reset(token)
+            _REFUSALS.reset(token)
             if outer is not None:
                 outer[0] += tally[0]
+                outer[1] += tally[1]
         target = (result if isinstance(result, SearchResult)
                   else getattr(result, "search", None))
         if isinstance(target, SearchResult):
             target.n_rejected_ground_crossings = tally[0]
+            target.n_rejected_m_alpha = tally[1]
         return result
     return wrapper
+
+
+# Which slices the m_alpha check looks at (`methods.M_ALPHA_RULES`):
+# "frictional" (phi' > 0) unless the search running in this context was
+# given another rule (`_applies_m_alpha_rule`).
+_M_ALPHA_RULE: contextvars.ContextVar = contextvars.ContextVar(
+    "slope_m_alpha_rule", default="frictional")
+
+
+def m_alpha_rule_in_force() -> str:
+    """The m_alpha rule of the search or analysis running in this context."""
+    return _M_ALPHA_RULE.get()
+
+
+def _applies_m_alpha_rule(fn):
+    """Run ``fn`` with its ``m_alpha_rule`` argument in force for every
+    surface it scores, the searches run inside it included."""
+    sig = inspect.signature(fn)
+    default = sig.parameters["m_alpha_rule"].default
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        rule = sig.bind_partial(*args, **kwargs).arguments.get(
+            "m_alpha_rule", default)
+        if rule not in M_ALPHA_RULES:
+            raise ValueError(f"m_alpha_rule must be one of {M_ALPHA_RULES}, "
+                             f"not {rule!r}")
+        token = _M_ALPHA_RULE.set(rule)
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            _M_ALPHA_RULE.reset(token)
+    return wrapper
+
+
+def _m_alpha_least(slices, slip, method: str, fos: float,
+                   fos_janbu_uncorrected: Optional[float] = None
+                   ) -> Optional[float]:
+    """The least m_alpha over the slices of a surface scored by ``method``
+    at ``fos``, each method at its own F (`methods.m_alpha_values`; Janbu
+    at the uncorrected F of its force equilibrium), over the slices the
+    rule in force looks at (`methods.m_alpha_checked`); None for the
+    Ordinary Method of Slices, which has no m_alpha, or when the rule looks
+    at no slice of this surface (all phi' = 0). Below 0.2 Slide2 reports
+    the surface as invalid (its error -112) and a search leaves it out
+    (GM-127)."""
+    rule = _M_ALPHA_RULE.get()
+    if method == "fellenius" or not any(m_alpha_checked(s, rule)
+                                        for s in slices):
+        return None
+    if method == "janbu":
+        f = fos_janbu_uncorrected if fos_janbu_uncorrected else fos
+        return m_alpha_min(slices, f, slip, "janbu", rule)
+    return m_alpha_min(slices, fos, slip,
+                       "bishop" if method == "bishop" else "gle", rule)
+
+
+def _m_alpha_fails(slices, slip, method: str, fos: float,
+                   fos_janbu_uncorrected: Optional[float] = None,
+                   info: Optional[Dict[str, Any]] = None) -> bool:
+    """True when m_alpha < 0.2 on a slice (`_m_alpha_least`); the least
+    value goes into ``info['m_alpha_min']`` when ``info`` is given."""
+    least = _m_alpha_least(slices, slip, method, fos, fos_janbu_uncorrected)
+    if info is not None:
+        info["m_alpha_min"] = least
+    return least is not None and least < M_ALPHA_MIN
 
 
 # ── Time budget (GM-123) ─────────────────────────────────────────────────
@@ -726,8 +816,20 @@ def _compute_fos(geom: SlopeGeometry,
                  window_span: Optional[float] = None,
                  reject_stats: Optional[Dict[str, int]] = None,
                  fos_fn: Optional[Callable] = None,
-                 confirm_below: Optional[float] = None) -> float:
+                 confirm_below: Optional[float] = None,
+                 m_alpha_check: bool = True,
+                 info: Optional[Dict[str, Any]] = None) -> float:
     """Safely compute FOS, returning _FOS_MAX on any error.
+
+    ``m_alpha_check`` (GM-127): a surface with m_alpha = cos(a) (1 + tan(a)
+    tan(phi) / F) < 0.2 on any slice, at the method's own F, is left out
+    (_FOS_MAX) and counted (`_count_m_alpha_refusal`), as Slide2 reports
+    it invalid (its error -112), circular or not, under Bishop, Janbu,
+    Spencer, Morgenstern-Price or GLE (`_m_alpha_fails`). A caller scoring
+    one given surface, not searching, passes False (the probabilistic
+    analyses of a fixed surface). A ``fos_fn`` makes its own check.
+    ``info`` (optional dict) receives ``m_alpha_min``, the least m_alpha of
+    a scored surface (None for the OMS), whether or not it is checked.
 
     ``confirm_below``: a noncircular surface scored by Spencer /
     Morgenstern-Price / GLE at a FOS below this (a search's best so far) is
@@ -778,6 +880,8 @@ def _compute_fos(geom: SlopeGeometry,
                                            window_span):
                 _bump(reject_stats, "geometry")
                 return _FOS_MAX
+            fos_u = None            # Janbu's uncorrected F, for m_alpha
+            scored_by = method
             if fos_fn is not None:
                 fos = fos_fn(geom, slip)
             elif method in ("morgenstern_price", "gle"):
@@ -786,14 +890,22 @@ def _compute_fos(geom: SlopeGeometry,
             elif method == "fellenius":
                 fos = fellenius_fos(slices, slip, reinf_forces=reinf)
             elif method == "janbu":
-                fos, _u, _f0 = janbu_fos(slices, slip,
-                                         tol=min(tol, 1e-4) * 0.1,
-                                         reinf_forces=reinf)
+                fos, fos_u, _f0 = janbu_fos(slices, slip,
+                                            tol=min(tol, 1e-4) * 0.1,
+                                            reinf_forces=reinf)
             else:  # spencer / bishop-fallback / default
+                scored_by = "spencer"
                 fos = _rigorous_noncircular_fos(slices, slip, "constant", tol,
                                                 geom, reinf_forces=reinf)
             if fos is None or fos < 0.05 or math.isnan(fos) or math.isinf(fos):
                 _bump(reject_stats, "nonconverged")
+                return _FOS_MAX
+            if (fos_fn is None and fos < _FOS_MAX
+                    and (m_alpha_check or info is not None)
+                    and _m_alpha_fails(slices, slip, scored_by, fos, fos_u,
+                                       info)
+                    and m_alpha_check):
+                _count_m_alpha_refusal()        # Slide2's -112 (GM-127)
                 return _FOS_MAX
             if (confirm_below is not None and fos < confirm_below
                     and fos_fn is None
@@ -820,6 +932,8 @@ def _compute_fos(geom: SlopeGeometry,
                 and slip.reverse_curvature_crack(geom) is not None):
             return _FOS_MAX
 
+        fos_u = None                # Janbu's uncorrected F, for m_alpha
+        scored_by = method
         if fos_fn is not None:
             fos = fos_fn(geom, slip)
         elif method == "fellenius":
@@ -839,14 +953,21 @@ def _compute_fos(geom: SlopeGeometry,
             else:
                 fos, _ = morgenstern_price_fos(slices, slip, tol=tol)
         elif method == "janbu":
-            fos, _, _ = janbu_fos(slices, slip, tol=min(tol, 1e-4) * 0.1,
-                                  reinf_forces=reinf)
+            fos, fos_u, _ = janbu_fos(slices, slip, tol=min(tol, 1e-4) * 0.1,
+                                      reinf_forces=reinf)
         else:
+            scored_by = "bishop"
             fos = bishop_fos(slices, slip, tol=tol, reinf_forces=reinf)
 
         # Guard against non-convergence producing negative or absurd values
         # FOS < 0.05 is physically meaningless and indicates numerical issues
         if fos is None or fos < 0.05 or math.isnan(fos) or math.isinf(fos):
+            return _FOS_MAX
+        if (fos_fn is None and fos < _FOS_MAX
+                and (m_alpha_check or info is not None)
+                and _m_alpha_fails(slices, slip, scored_by, fos, fos_u, info)
+                and m_alpha_check):
+            _count_m_alpha_refusal()            # Slide2's -112 (GM-127)
             return _FOS_MAX
         return fos
     except GroundCrossingError:
@@ -1178,7 +1299,7 @@ def _refine_centre(score, start, steps, bounds,
     return best
 
 
-@_counts_ground_refusals
+@_counts_refusals
 def grid_search(geom: SlopeGeometry,
                 x_range: Tuple[float, float],
                 y_range: Tuple[float, float],
@@ -1424,7 +1545,7 @@ def grid_search(geom: SlopeGeometry,
     )
 
 
-@_counts_ground_refusals
+@_counts_refusals
 def search_noncircular(
     geom: SlopeGeometry,
     x_entry_range: Tuple[float, float],
@@ -1581,7 +1702,7 @@ def search_noncircular(
 
 # ── PSO Noncircular Search ────────────────────────────────────────────────
 
-@_counts_ground_refusals
+@_counts_refusals
 def search_pso(
     geom: SlopeGeometry,
     x_entry_range: Tuple[float, float],
@@ -1816,7 +1937,7 @@ def search_pso(
 
 # ── Weak-Layer Biased Search (SNIFF-inspired) ────────────────────────────
 
-@_counts_ground_refusals
+@_counts_refusals
 def search_weak_layer_biased(
     geom: SlopeGeometry,
     x_entry_range: Tuple[float, float],
@@ -2002,7 +2123,7 @@ def _weighted_choice(weights):
 
 # ── Entry/Exit Region Search ─────────────────────────────────────────────
 
-@_counts_ground_refusals
+@_counts_refusals
 def search_entry_exit(
     geom: SlopeGeometry,
     x_entry_range: Tuple[float, float],
@@ -2275,7 +2396,7 @@ def search_entry_exit(
 
 # ── Differential-Evolution Noncircular Refinement ───────────────────────
 
-@_counts_ground_refusals
+@_counts_refusals
 def search_de(
     geom: SlopeGeometry,
     x_entry_range: Tuple[float, float],
@@ -2373,10 +2494,19 @@ def search_de(
         slip = _to_slip(v)
         if slip is None:
             return _FOS_MAX
+        info: Dict[str, Any] = {}
         fos = _compute_fos(geom, slip, method, n_slices, tol=tol,
                            window_span=window_span, reject_stats=reject_stats,
-                           fos_fn=fos_fn, confirm_below=best_seen[0])
+                           fos_fn=fos_fn, confirm_below=best_seen[0],
+                           info=info)
         best_seen[0] = min(best_seen[0], fos)
+        m = info.get("m_alpha_min")
+        if fos >= _FOS_MAX and m is not None and m < M_ALPHA_MIN:
+            # Left out for m_alpha (GM-127): scored above every admissible
+            # surface but by how far m_alpha falls below 0.2, so the
+            # population still moves toward admissible surfaces instead of
+            # settling on a flat 999.9.
+            return min(_DE_REFUSED + 10.0 * (M_ALPHA_MIN - m), _FOS_MAX)
         # Convexity penalty: vertex above the chord of its neighbours
         pts = slip.points
         pen = 0.0
@@ -2458,7 +2588,7 @@ def search_de(
     best_fos = float(result.fun)
 
     critical = None
-    if best_slip is not None and best_fos < _FOS_MAX:
+    if best_slip is not None and best_fos < _DE_REFUSED:
         # objective may include penalty; recompute clean FOS
         clean = _compute_fos(geom, best_slip, method, n_slices, tol=tol,
                              window_span=window_span, fos_fn=fos_fn,
@@ -2480,15 +2610,22 @@ def search_de(
             )
         except ValueError:
             pass
-    if (critical is None and seed_crit is not None and _time_up()
+    notes = []
+    if (critical is None and seed_crit is not None
             and seed_crit.FOS < _FOS_MAX):
-        # Cut short by the time budget with no confirmed surface of its own:
-        # the random search's best that seeded it (GM-123).
+        # No confirmed surface of its own (cut short by the time budget,
+        # GM-123, or none held, GM-127): the random search's best that
+        # seeded it.
         critical = seed_crit
+        notes.append(
+            f"The differential evolution found no admissible surface of its "
+            f"own; the best surface of the random search that seeded it "
+            f"({n_seed_trials} trials) is reported, FOS {seed_crit.FOS:.3f}.")
 
     return SearchResult(
         critical=critical,
         n_surfaces_evaluated=n_evaluated,
         grid_fos=[],
+        warnings=notes,
         **_rejection_kwargs(reject_stats, n_evaluated),
     )

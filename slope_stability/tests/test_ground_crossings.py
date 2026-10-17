@@ -41,7 +41,8 @@ from slope_stability.rapid_drawdown import search_rapid_drawdown
 from slope_stability.search import (
     _ordered_windows, grid_search, search_entry_exit, search_weak_layer_biased,
 )
-from slope_stability.search_supplements import _m_alpha_min, search_toe_circles
+from slope_stability.methods import m_alpha_min
+from slope_stability.search_supplements import search_toe_circles
 from slope_stability.slices import build_slices
 from slope_stability.slip_surface import (
     _TOUCH_FRACTION, CircularSlipSurface, GroundCrossingError,
@@ -225,8 +226,10 @@ def test_the_default_search_covers_circles_passing_above_the_toe():
                 if ch["what"] == "surface families tried")
     assert "circle passing above the toe" in fams["chosen"]
     assert "faces_covered" in fams["basis"]
-    assert "m_alpha < 0.2" in fams["basis"]
-    assert "reverse curvature" in fams["basis"]
+    # every family leaves out m_alpha < 0.2 (GM-127): said once, for all
+    ma = next(ch for ch in r.choices
+              if ch["what"] == "slip surfaces left out for m_alpha")
+    assert "-112" in ma["basis"]
     d = r.to_dict()
     assert d["governing_surface"] == "circle_above_toe"
     assert "faces_covered" in d["search_ranges"]
@@ -236,13 +239,16 @@ def test_circles_passing_above_the_toe_are_not_degenerate():
     """The family keeps its centres above the ground at both ends (no
     reverse-curvature circle closed by a crack) and, like Slide2 (error
     -112), refuses a circle with m_alpha = cos(a) (1 + tan(a) tan(phi) / F)
-    below 0.2 on any slice, where Bishop's method can give a spurious low
-    FOS. Duncan Ex 4 (3:1, 6.1 m of sand over clay, su 23.9 kPa): a
-    reverse-curvature circle from the face with steep slices there read
-    0.17 on 30 slices and 1.93 on 80 (Spencer 1.53). Slide2 #85's steep
-    clay face without its support: 0.906 on a circle with m_alpha 0.19,
-    0.910 with the check. The family also leaves out reverse-curvature
-    circles."""
+    below 0.2 on a slice, where Bishop's method can give a spurious low
+    FOS (since GM-127 every family does, in `_compute_fos`, by one rule).
+    Duncan Ex 4 (3:1, 6.1 m of sand over clay, su 23.9 kPa): a
+    reverse-curvature circle from the face with steep slices in the sand
+    read 0.17 on 30 slices and 1.93 on 80 (Spencer 1.53).
+
+    Slices with phi' = 0 are not checked by default (GM-127 review): there
+    m_alpha = cos(a) does not change the FOS. Slide2 #85's steep clay face
+    without its support: 0.906 on a circle whose m_alpha is 0.19 on a phi =
+    0 slice, kept; checking every slice, as Slide2 does, gives 0.910."""
     H = 6.096
     g = SlopeGeometry(
         surface_points=[(0, H), (H, H), (4 * H, 0), (4 * H + 9.144, 0)],
@@ -257,9 +263,16 @@ def test_circles_passing_above_the_toe_are_not_degenerate():
     clay = _clay85()
     a = search_toe_circles(clay, method="bishop")["above_toe"]
     slip = CircularSlipSurface(a["xc"], a["yc"], a["radius"])
-    assert _m_alpha_min(clay, slip, a["FOS"], 30) >= 0.2
+    slices = build_slices(clay, slip, 30)
+    assert m_alpha_min(slices, a["FOS"], slip, "bishop") == 1.0
+    assert m_alpha_min(slices, a["FOS"], slip, "bishop",
+                       "every_slice") == pytest.approx(0.19, abs=0.01)
     assert slip.reverse_curvature_crack(clay) is None
-    assert a["FOS"] == pytest.approx(0.910, abs=0.003)
+    assert a["FOS"] == pytest.approx(0.906, abs=0.003)
+    every = search_critical_surface(clay, method="bishop",
+                                    m_alpha_rule="every_slice")
+    assert every.candidates["circle_above_toe"] == pytest.approx(
+        0.910, abs=0.003)
 
 
 def test_janbu_screens_the_circles_passing_above_the_toe_with_bishop():
@@ -269,7 +282,12 @@ def test_janbu_screens_the_circles_passing_above_the_toe_with_bishop():
     a circle Bishop and Spencer both read 1.22, Janbu 0.86 on 20 slices,
     0.70 on 30 and no solution on 40 or more. Janbu now scans the family
     with Bishop and re-scores the best three with Janbu: 1.033, 1.036 on
-    120 slices (the toe circle's 1.024 governs, as before the family)."""
+    120 slices (the toe circle's 1.024 governs, as before the family).
+    Since GM-127 m_alpha is not checked on phi = 0 slices by default, so
+    the Bishop scan ranks first circles centred at the crest's level with
+    a near-vertical last slice, on which Janbu has no solution: the family
+    reads 1.138 (1.142 on 120 slices), and 1.033 with
+    ``m_alpha_rule='every_slice'``."""
     clay = _clay85()
     r = search_critical_surface(clay, method="janbu")
     assert r.candidates["circle_above_toe"] >= 1.0
@@ -285,7 +303,8 @@ def test_janbu_screens_the_circles_passing_above_the_toe_with_bishop():
                          yc=a["yc"], radius=a["radius"]).FOS
     assert a["FOS"] == pytest.approx(fine, rel=0.02)
     slip = CircularSlipSurface(a["xc"], a["yc"], a["radius"])
-    assert _m_alpha_min(clay, slip, a["FOS"], 30) >= 0.2
+    assert m_alpha_min(build_slices(clay, slip, 30), a["FOS"], slip,
+                       "bishop") >= 0.2
 
 
 def test_janbu_and_spencer_find_the_circle_passing_above_the_toe():

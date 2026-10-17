@@ -17,14 +17,15 @@ from slope_stability.slip_surface import CircularSlipSurface
 from slope_stability.slices import build_slices, compute_slice_forces
 from slope_stability.methods import (
     fellenius_fos, bishop_fos, spencer_fos, morgenstern_price_fos,
-    solve_rigorous,
+    solve_rigorous, M_ALPHA_MIN, m_alpha_values, m_alpha_checked,
+    sliding_sign,
 )
 from slope_stability.gle import janbu_fos
 from slope_stability.search import (
     grid_search, search_noncircular,
     search_pso, search_weak_layer_biased, search_entry_exit, search_de,
-    _counts_ground_refusals, _ordered_windows,
-    search_budget,
+    _counts_refusals, _ordered_windows, _applies_m_alpha_rule,
+    m_alpha_rule_in_force, search_budget,
 )
 from slope_stability.results import (
     SlopeStabilityResult, SliceData, SearchResult, InfiniteSlopeResult,
@@ -42,6 +43,7 @@ def analyze_slope(geom: SlopeGeometry,
                   f_interslice: str = "half_sine",
                   include_slice_data: bool = False,
                   compare_methods: bool = False,
+                  m_alpha_rule: str = "frictional",
                   ) -> SlopeStabilityResult:
     """Run slope stability analysis for a specified slip surface.
 
@@ -76,6 +78,10 @@ def analyze_slope(geom: SlopeGeometry,
         If True, compute FOS for all four methods (Fellenius, Bishop,
         Spencer, Morgenstern-Price). For noncircular surfaces, Bishop
         is skipped (requires circular).
+    m_alpha_rule : str
+        Which slices the m_alpha < 0.2 warning looks at (GM-127):
+        'frictional' (default), those with phi' > 0; 'every_slice', every
+        slice, as Slide2 checks.
 
     Returns
     -------
@@ -83,7 +89,8 @@ def analyze_slope(geom: SlopeGeometry,
         ``warnings`` says what the engineer must check on this surface
         (GM-81): a reverse-curvature circle closed by a crack, with the
         crack's depth; supports crossing a Bishop / OMS circle with a short
-        arm, with Spencer's FOS on the circle; a method with no solution.
+        arm, with Spencer's FOS on the circle; a method with no solution;
+        m_alpha below 0.2 on a slice (GM-127).
 
     No silent fallback (GM-81). When Spencer / Morgenstern-Price / GLE
     finds no equilibrium solution on the surface (the rigorous GLE does not
@@ -325,6 +332,14 @@ def analyze_slope(geom: SlopeGeometry,
         tension_crack_water_depth=geom.tension_crack_water_depth,
     )
 
+    # m_alpha below 0.2 on a slice (GM-127): a search leaves such a surface
+    # out, as Slide2 does (its error -112); one given here is analysed, and
+    # the result says so.
+    w = m_alpha_statement(slices, slip, method, fos, fos_janbu_uncorr,
+                          rule=m_alpha_rule)
+    if w:
+        result.warnings.append(w)
+
     # What the searches say about their governing circle, said about this
     # one too (GM-59, GM-81): a reverse-curvature circle closed by a crack,
     # and supports Bishop / the OMS count little of.
@@ -362,6 +377,66 @@ def _rich_state(sol):
     if sol.gle is not None and sol.gle.fos < 900.0:
         return sol.gle
     return None
+
+
+def m_alpha_statement(slices, slip, method: str, fos,
+                      fos_janbu_uncorrected=None,
+                      given: Optional[str] = "analyze_slope",
+                      rule: Optional[str] = None,
+                      ) -> Optional[str]:
+    """Say so when m_alpha = cos(a) (1 + tan(a) tan(phi) / F) is below 0.2 on
+    a slice of this surface at the method's own F (GM-127), or None.
+
+    m_alpha is the denominator of the normal force on a slice base in
+    Bishop's simplified method, Janbu's simplified method and the GLE
+    behind Spencer, Morgenstern-Price and GLE (`methods.m_alpha_values`);
+    the Ordinary Method of Slices has none. Only the slices ``rule`` looks
+    at count (`methods.m_alpha_checked`; default the rule in force, which
+    leaves out slices with phi' = 0). Slide2 reports such a surface as
+    invalid (its error -112) and the searches leave it out; a surface
+    given to a single-surface analysis (``given``, its name) is analysed
+    and this says so.
+    """
+    if method == "fellenius" or fos is None or not (0.0 < fos < 900.0):
+        return None
+    rule = rule or m_alpha_rule_in_force()
+    which = ("gle" if method in ("spencer", "morgenstern_price", "gle")
+             else "janbu" if method == "janbu" else "bishop")
+    f = (fos_janbu_uncorrected if method == "janbu"
+         and fos_janbu_uncorrected else fos)
+    vals = m_alpha_values(slices, f, slip, which)
+    checked = [i for i, s in enumerate(slices) if m_alpha_checked(s, rule)]
+    low = [i for i in checked if vals[i] < M_ALPHA_MIN]
+    if not low:
+        return None
+    i = min(checked, key=vals.__getitem__)
+    s = slices[i]
+    passive = sliding_sign(slices, slip, which) * s.alpha < 0
+    where = (f"{vals[i]:.2f} on the slice at x = {s.x_mid:.2f} (base "
+             f"inclined {abs(math.degrees(s.alpha)):.0f} deg "
+             + ("against" if passive else "with")
+             + f" the sliding, phi = {s.phi:g} deg)")
+    if len(low) > 1:
+        where += f", and below 0.2 on {len(low)} of {len(vals)} slices"
+    if rule != "every_slice" and len(checked) < len(vals):
+        where += " (slices with phi = 0 are not checked)"
+    zone = ("there the surface comes up to the ground steeply in the "
+            "passive zone, where Slide2's documentation says such slices "
+            "usually are" if passive else
+            "there the base is nearly vertical where the surface enters")
+    what = (f"This surface, given to {given}, is analysed and its factor "
+            f"of safety reported; the searches leave such surfaces out."
+            if given else "A search leaves such surfaces out.")
+    return (f"m_alpha = cos(a) (1 + tan(a) tan(phi) / F), the denominator "
+            f"of the normal force on a slice base, is {where} at F = "
+            f"{f:.3f}: {zone}. Below 0.2 the factor of safety may be "
+            f"incorrect or misleading (Whitman & Bailey 1967), though not "
+            f"necessarily wrong; Slide2 reports such a surface as invalid "
+            f"with its 'Check malpha < 0.2' setting on (its error -112). "
+            f"{what} Finer slices lower m_alpha at a steep end rather than "
+            f"clear it; check a surface that comes out no steeper than the "
+            f"Rankine passive angle, 45 deg - phi'/2 (Duncan, Wright & "
+            f"Brandon 2014).")
 
 
 def _fallback_label(sol, name: str):
@@ -501,7 +576,8 @@ def compare_methods_table(geom: SlopeGeometry,
     return out
 
 
-@_counts_ground_refusals
+@_counts_refusals
+@_applies_m_alpha_rule
 def search_critical_surface(
     geom: SlopeGeometry,
     x_range: Tuple[float, float] = None,
@@ -522,6 +598,7 @@ def search_critical_surface(
     refine: bool = True,
     time_budget_s: Optional[float] = None,
     bishop_screen: bool = False,
+    m_alpha_rule: str = "frictional",
 ) -> SearchResult:
     """Search for the critical slip surface (minimum FOS).
 
@@ -622,6 +699,12 @@ def search_critical_surface(
         10, every one within 5 % of the screen's minimum, at most 30); the
         reported FOS is the method's own. Not applied where supports are
         modelled. Default False (GM-123).
+    m_alpha_rule : str
+        Every family leaves out a surface with m_alpha < 0.2 on a slice
+        (GM-127; Slide2's 'Check malpha < 0.2', error -112) and counts it
+        (``n_rejected_m_alpha``). 'frictional' (default): the slices with
+        phi' > 0, since on a phi' = 0 slice m_alpha = cos(a) does not
+        change the FOS; 'every_slice': every slice, as Slide2 checks.
 
     Returns
     -------
@@ -629,9 +712,10 @@ def search_critical_surface(
     """
     from slope_stability.search_supplements import (
         apply_supplements, search_choices, note_budget, CIRCULAR,
-        NONCIRCULAR,
+        NONCIRCULAR, m_alpha_confirmation, finer_slices_warning,
+        m_alpha_none_warning,
     )
-    from slope_stability.search import _screen_method
+    from slope_stability.search import _screen_method, _m_alpha_refusals_so_far
     from slope_stability.search_ranges import resolve_ranges
     # Entry is the low-x end, exit the high-x end: windows given the other
     # way round are swapped, and the result says so (GM-124).
@@ -682,11 +766,21 @@ def search_critical_surface(
         scored = ("spencer" if surface_type in ("pso", "weak_layer")
                   else noncirc_method if search_kind == NONCIRCULAR
                   else method)
+        # Surfaces left out for m_alpha < 0.2 so far, the supplementary
+        # families' included, and the governing surface on finer slices
+        # (GM-127).
+        result.n_rejected_m_alpha = _m_alpha_refusals_so_far()
+        confirm = m_alpha_confirmation(geom, result.critical, scored,
+                                       n_slices, tol)
         result.choices = search_choices(
             result, surface_type=surface_type, method=method,
             scored_with=scored, toe_circles=toe_circles,
             infinite_slope=infinite_slope, budget=budget,
-            screened=screened, screen_not_applied=screen_not_applied)
+            screened=screened, screen_not_applied=screen_not_applied,
+            m_alpha=confirm, m_alpha_rule=m_alpha_rule)
+        w = finer_slices_warning(confirm) or m_alpha_none_warning(result)
+        if w:
+            result.warnings.append(w)
         if window_note:
             result.warnings.insert(0, window_note)
         # A search cut short says so first (GM-123).

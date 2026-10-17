@@ -295,23 +295,37 @@ def test_slide85_bishop_search_reverse_curvature_and_short_arm():
     1.324). The main search's own circle reads 1.485 / 1.302 at 30 slices
     and 1.511 / 1.318 at 240. Before GM-57 the automatic exit window, from
     x = 40.2, kept the search off it, and the toe circle that governed,
-    1.503 / 1.305 at 30 slices, comes to 1.557 / 1.338 at 240."""
+    1.503 / 1.305 at 30 slices, comes to 1.557 / 1.338 at 240.
+
+    Those 'discard' values check m_alpha on every slice, as Slide2 does
+    (``m_alpha_rule='every_slice'``; the circles passing above the toe did
+    so from GM-122). By default slices with phi' = 0 are not checked
+    (GM-127), and that family keeps a circle centred at the crest's level
+    (centre (18.2, 30.0), R 20.0) whose last slice has m_alpha = cos(a)
+    0.195: 1.432 / 1.274 at 30 slices, 1.484 / 1.307 at 240."""
     res = search_critical_surface(_slide85c(), method="bishop")
     assert res.critical.FOS == pytest.approx(1.304, abs=0.005)
     text = " ".join(res.warnings)
     assert "reverse-curvature" in text and "5.89 m deep" in text
     assert "29 % of their force counts" in text
     assert "finds no equilibrium solution" in text
-    for convention, fos, dw in (("active", 1.467, 1.51),
-                                ("passive", 1.296, 1.32)):
+    # its slices are phi = 0, so m_alpha (cos a, 0.18 on the last) is not
+    # checked; its FOS is 1.325 on 60 slices, and the search says so (GM-127)
+    assert res.n_rejected_m_alpha == 0
+    assert "On 60 slices, twice the search's 30" in text and "1.325" in text
+    for convention, rule, fos, fine_fos in (
+            ("active", "every_slice", 1.467, 1.51),     # D&W 1.51
+            ("passive", "every_slice", 1.296, 1.32),    # D&W 1.32
+            ("active", "frictional", 1.432, 1.484),
+            ("passive", "frictional", 1.274, 1.307)):
         g = _slide85c(convention, reverse_curvature="discard")
-        r = search_critical_surface(g, method="bishop")
+        r = search_critical_surface(g, method="bishop", m_alpha_rule=rule)
         c = r.critical
         assert c.FOS == pytest.approx(fos, abs=0.005)
-        assert c.yc >= 30.0                          # centre above the crest
+        assert c.yc >= 30.0 - 0.02                   # centre above the crest
         fine = analyze_slope(g, method="bishop", n_slices=240, xc=c.xc,
                              yc=c.yc, radius=c.radius).FOS
-        assert fine == pytest.approx(dw, rel=0.005)
+        assert fine == pytest.approx(fine_fos, rel=0.005)
         assert not any("reverse-curvature" in w for w in r.warnings)
 
 

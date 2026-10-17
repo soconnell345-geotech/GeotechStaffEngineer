@@ -94,12 +94,6 @@ _MAX_TOE_FACES = 3
 # solves a surface) gets two starts and no refinement of the height.
 _ABOVE_TOE_HEIGHTS = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)
 _ABOVE_TOE_HEIGHTS_FOS_FN = (0.35, 0.7)
-# Slide2 reports a surface whose m_alpha = cos(a) (1 + tan(a) tan(phi) / F)
-# falls below this on the final iteration as invalid (error -112). A circle
-# passing above the toe that comes out steeply on the face has such slices
-# at its lower end, where Bishop's method can give a spurious low FOS
-# (Duncan Ex 4 with 30 slices: 0.17 on a circle that reads 1.93 on 80).
-_M_ALPHA_MIN = 0.2
 # Rigorous methods scan the toe circles with Bishop, then re-optimize this
 # many of the best circles with the method itself (Janbu too, in the circles
 # passing above the toe only: `search_toe_circles`).
@@ -211,21 +205,6 @@ def _centre_admissible(geom, xc, yc, x_range, y_range) -> bool:
     return True
 
 
-def _m_alpha_min(geom: SlopeGeometry, slip, fos: float,
-                 n_slices: int) -> float:
-    """The least m_alpha = cos(a) (1 + tan(a) tan(phi) / F) over the slices
-    of `slip` at Bishop's FOS `fos`, the base angle taken positive in the
-    sliding direction as ``methods.bishop_fos`` takes it."""
-    from slope_stability.slices import build_slices
-    slices = build_slices(geom, slip, n_slices)
-    moment = sum((s.weight + s.surcharge_force) * (s.x_mid - slip.xc)
-                 for s in slices)
-    d_sign = 1.0 if moment >= 0 else -1.0
-    return min((math.cos(s.alpha) + d_sign * math.sin(s.alpha)
-                * math.tan(math.radians(s.phi)) / fos for s in slices),
-               default=1.0)
-
-
 def _golden_min(f, a, b, tol, max_iter=30):
     """Golden-section minimum of a unimodal f on [a, b]: (x, f(x), n_calls)."""
     n = 0
@@ -289,11 +268,15 @@ def search_toe_circles(geom: SlopeGeometry,
     water outside the toe of the slope, a circle passing above the water
     may be more critical"). The main search's windows ask a surface to
     cross the middle of the face (`search_ranges`) and its radii are sized
-    from the base, so it does not reach them (GM-122 follow-up). The
-    family leaves out a circle with m_alpha < 0.2 on any slice under
-    Bishop or Janbu (Slide2's check, its error -112) and a circle with
-    reverse curvature, and Janbu scans it with Bishop as well: its steep
-    entries are where Janbu's solve falls with the slice count.
+    from the base, so it does not reach them (GM-122 follow-up). Janbu
+    scans it with Bishop as well: its steep entries are where Janbu's
+    solve falls with the slice count. Like every family, both leave out a
+    circle with m_alpha < 0.2 on a slice (`_compute_fos`; Slide2's check,
+    its error -112). The circles through the toe treat a reverse-curvature
+    circle as the geometry's ``reverse_curvature`` says, as the main search
+    does; the circles passing above the toe leave such circles out. Made
+    the same either way, a pinned case moved away from its published
+    value on a circle Slide2 would keep (GM-127; DESIGN.md).
 
     Returns a dict: ``FOS`` (999.9 if none admissible), ``xc``, ``yc``,
     ``radius``, ``toe`` (x, z), ``n_evaluated``; with ``above_toe``,
@@ -320,9 +303,6 @@ def search_toe_circles(geom: SlopeGeometry,
     x_min, x_max = geom.x_range
     windows_given = x_entry_range is not None or x_exit_range is not None
     counter = [0]
-    # by method, the lowest FOS of a circle passing above the toe whose
-    # m_alpha was checked: only a lower one needs the check
-    checked_best = {}
     # A caller-supplied per-surface solve (rapid drawdown: two or three GLE
     # solves a surface, no cheap screen) gets a coarser scan.
     n_t, u_tol, e_iter = (_N_T, 0.01, 12) if fos_fn is None else (7, 0.04, 6)
@@ -331,7 +311,7 @@ def search_toe_circles(geom: SlopeGeometry,
     us = [u_lo + (u_hi - u_lo) * i / (n_t - 1) for i in range(n_t)]
     u_step = (u_hi - u_lo) / (n_t - 1)
 
-    def circle_fos(xc, yc, r, fos_method, m_alpha_check=False):
+    def circle_fos(xc, yc, r, fos_method):
         if _time_up():          # the search's time budget is spent (GM-123)
             _record_not_run("part of the toe-circle and circle-above-the-"
                             "toe families")
@@ -345,15 +325,9 @@ def search_toe_circles(geom: SlopeGeometry,
                 geom, slip, x_entry_range, x_exit_range):
             return _FOS_MAX
         counter[0] += 1
-        fos = _compute_fos(geom, slip, fos_method, n_slices, tol=tol,
-                           fos_fn=fos_fn)
-        if (m_alpha_check and fos_fn is None
-                and fos_method in ("bishop", "janbu")
-                and fos < checked_best.get(fos_method, _FOS_MAX)):
-            if _m_alpha_min(geom, slip, fos, n_slices) < _M_ALPHA_MIN:
-                return _FOS_MAX
-            checked_best[fos_method] = fos
-        return fos
+        # (m_alpha < 0.2 on a slice: left out and counted there, GM-127)
+        return _compute_fos(geom, slip, fos_method, n_slices, tol=tol,
+                            fos_fn=fos_fn)
 
     def chord(toe, s, offset):
         """The chord from `toe` (the toe, or a point on the face above it)
@@ -401,8 +375,7 @@ def search_toe_circles(geom: SlopeGeometry,
                 return _FOS_MAX
             if ch.get("above") and not passes_above_toe(ch, xc, yc, r):
                 return _FOS_MAX
-            return circle_fos(xc, yc, r, fos_method,
-                              m_alpha_check=bool(ch.get("above")))
+            return circle_fos(xc, yc, r, fos_method)
 
         if bracket is None:
             fs = [f(u) for u in us]
@@ -436,7 +409,8 @@ def search_toe_circles(geom: SlopeGeometry,
         """True when the circle's downslope end is the chord's start on the
         face (one that comes out lower is a toe or base circle) and it is
         not a reverse-curvature circle closed by a crack: the family's
-        circles keep their centre above the ground at both ends."""
+        circles keep their centre above the ground at both ends (the
+        circles through the toe follow ``reverse_curvature``; GM-127)."""
         slip = CircularSlipSurface(xc, yc, r * (1.0 - 1e-6))
         try:
             ends = slip.find_entry_exit(geom)
@@ -903,7 +877,9 @@ def _support_arm_warning(geom, crit, method: str, n_slices: int,
         return None
     arm = m_sum / t_sum
     if spencer_fn is None:
-        spencer = _compute_fos(geom, slip, "spencer", n_slices, tol=tol)
+        # this circle's own Spencer value, not a search (GM-127)
+        spencer = _compute_fos(geom, slip, "spencer", n_slices, tol=tol,
+                               m_alpha_check=False)
     else:
         spencer = spencer_fn()
         spencer = _FOS_MAX if spencer is None else spencer
@@ -1525,6 +1501,178 @@ def note_budget(result: SearchResult, budget, *, method: str = "",
         "not_run": list(budget.not_run)}
 
 
+def m_alpha_confirmation(geom: SlopeGeometry, crit, method: str,
+                         n_slices: int, tol: float = 1e-4
+                         ) -> Optional[Dict[str, Any]]:
+    """The governing surface's FOS and least m_alpha at the search's slice
+    count and at twice that count (GM-127): two solves of one surface. The
+    check turns on the slices at the surface's steep end, and a FOS that
+    moves with the slicing is worth saying. ``refused_fine`` says why there
+    is no FOS on twice the slices: "geometry" (the finer slicing cannot be
+    built, ``why_fine`` gives the reason: a circle just touching the base
+    sheds slivers below it at one count and not the other) or "no_solution"
+    (the method does not converge there). None for the Ordinary Method of
+    Slices (no m_alpha) or no governing surface."""
+    from slope_stability.search import (
+        _compute_fos, _FOS_MAX, _new_reject_stats)
+    from slope_stability.slices import build_slices
+    if crit is None or method == "fellenius":
+        return None
+    if getattr(crit, "is_circular", False):
+        slip = CircularSlipSurface(crit.xc, crit.yc, crit.radius)
+    elif crit.slip_points and len(crit.slip_points) >= 2:
+        slip = PolylineSlipSurface(points=[tuple(p) for p in crit.slip_points])
+    else:
+        return None
+    out: Dict[str, Any] = {"n_slices": n_slices, "n_slices_fine": 2 * n_slices}
+    for key, n in (("", n_slices), ("_fine", 2 * n_slices)):
+        info: Dict[str, Any] = {}
+        refused = why = None
+        try:
+            if len(build_slices(geom, slip, n)) < 3:
+                refused, why = "geometry", "fewer than three slices"
+        except ValueError as exc:
+            refused, why = "geometry", str(exc)
+        f = _FOS_MAX
+        if refused is None:
+            stats = _new_reject_stats()
+            f = _compute_fos(geom, slip, method, n, tol=tol,
+                             m_alpha_check=False, info=info,
+                             reject_stats=stats)
+            if f >= _FOS_MAX:
+                refused = ("geometry" if stats["geometry"] or stats["jagged"]
+                           else "no_solution")
+        out["fos" + key] = None if f >= _FOS_MAX else f
+        out["m_alpha_min" + key] = info.get("m_alpha_min")
+        out["refused" + key] = refused
+        out["why" + key] = why
+    return out
+
+
+_SLIDE2_CHECK = ("Slide2 reports such a surface as invalid with its 'Check "
+                 "malpha < 0.2' setting on (its error -112)")
+
+
+def m_alpha_choice(n_left_out: int, method: Optional[str],
+                   confirm: Optional[Dict[str, Any]] = None,
+                   rule: str = "frictional") -> Dict[str, Any]:
+    """The ``choices`` entry for the surfaces a search left out for m_alpha
+    (GM-127), which slices it looked at (``rule``,
+    `methods.M_ALPHA_RULES`) and the governing surface on twice the
+    slices."""
+    from geotech_common.choices import choice, how_given
+    how = how_given(rule, "frictional")
+    if (method or "").lower() == "fellenius":
+        return choice(
+            "slip surfaces left out for m_alpha", "none", how,
+            "the Ordinary Method of Slices has no m_alpha (its base normal "
+            "force is W cos(a)), so no surface is left out for it")
+    where = ("any slice" if rule == "every_slice"
+             else "a slice with phi' > 0")
+    basis = ("m_alpha = cos(a) (1 + tan(a) tan(phi) / F), at the method's "
+             "own F, is the denominator of the normal force on a slice "
+             "base; below 0.2 the factor of safety may be incorrect or "
+             "misleading (Whitman & Bailey 1967), and " + _SLIDE2_CHECK
+             + ", circular or not")
+    if rule == "every_slice":
+        basis += "; every slice is checked, as Slide2 checks"
+    else:
+        basis += ("; slices with phi' = 0 are not checked: there m_alpha = "
+                  "cos(a) does not depend on F and the shear strength is "
+                  "c l whatever the normal force, so leaving such a surface "
+                  "out would only raise the minimum")
+    c = confirm or {}
+    if c.get("fos") is not None:
+        basis += (f"; on {c['n_slices']} slices the governing surface's FOS "
+                  f"is {c['fos']:.3f}"
+                  + (f" and its least m_alpha {c['m_alpha_min']:.2f}"
+                     if c.get("m_alpha_min") is not None else ""))
+        if c.get("fos_fine") is not None:
+            basis += (f"; on {c['n_slices_fine']} slices, {c['fos_fine']:.3f}"
+                      + (f" and {c['m_alpha_min_fine']:.2f}"
+                         if c.get("m_alpha_min_fine") is not None else ""))
+        elif c.get("refused_fine") == "geometry":
+            basis += (f"; on {c['n_slices_fine']} slices it is not "
+                      f"admissible ({c.get('why_fine') or 'its geometry'})")
+        else:
+            basis += (f"; on {c['n_slices_fine']} slices its method has no "
+                      f"solution")
+    alternatives = ["the FOS of one such surface, with a warning: "
+                    "analyze_slope on that surface"]
+    alternatives.append(
+        "slices with phi' > 0 only (m_alpha_rule='frictional', the default)"
+        if rule == "every_slice" else
+        "every slice, phi' = 0 ones included, as Slide2 checks "
+        "(m_alpha_rule='every_slice')")
+    return choice(
+        "slip surfaces left out for m_alpha",
+        (f"{n_left_out} left out, with m_alpha < 0.2 on {where}"
+         if n_left_out else f"none (m_alpha < 0.2 on {where} leaves a "
+                            f"surface out)"),
+        how, basis, alternatives)
+
+
+def finer_slices_warning(confirm: Optional[Dict[str, Any]]) -> Optional[str]:
+    """A warning when the governing surface's FOS moves by more than 1 % on
+    twice the slices, or its method has no solution there (GM-127), or
+    None. A finer slicing that cannot be built (a circle just touching the
+    base) says nothing about the FOS and is not warned of."""
+    c = confirm or {}
+    f1, f2 = c.get("fos"), c.get("fos_fine")
+    if f1 is None:
+        return None
+    n1, n2 = c["n_slices"], c["n_slices_fine"]
+    if f2 is None:
+        if c.get("refused_fine") != "no_solution":
+            return None
+        return (f"On {n2} slices, twice the search's {n1}, the governing "
+                f"surface's method finds no solution: its FOS of {f1:.3f} "
+                f"on {n1} slices depends on the slicing. Check it with "
+                f"analyze_slope at other slice counts, or with another "
+                f"method.")
+    move = (f2 - f1) / f1
+    if abs(move) <= 0.01:
+        return None
+    text = (f"On {n2} slices, twice the search's {n1}, the governing "
+            f"surface's FOS is {f2:.3f} against {f1:.3f} ("
+            f"{'+' if move > 0 else ''}{100 * move:.1f} %): it depends on "
+            f"the slicing there")
+    m2 = c.get("m_alpha_min_fine")
+    if m2 is not None and m2 < 0.2:
+        text += (f", and m_alpha falls to {m2:.2f} on a slice, so a search "
+                 f"on {n2} slices would leave it out (" + _SLIDE2_CHECK
+                 + "). A surface that comes out no steeper than the Rankine "
+                   "passive angle, 45 deg - phi'/2 (Duncan, Wright & "
+                   "Brandon 2014), avoids such slices.")
+    else:
+        text += (". Report it with that spread, or search again with more "
+                 "slices (n_slices).")
+    return text
+
+
+def m_alpha_none_warning(result: SearchResult) -> Optional[str]:
+    """When a search reports no surface and left some out for m_alpha < 0.2
+    (GM-127), say so, with what else it refused; else None."""
+    n = result.n_rejected_m_alpha
+    if result.critical is not None or not n:
+        return None
+    others = [f"{k} {what}" for k, what in (
+        (result.n_rejected_nonconverged, "had no converged solution"),
+        (result.n_rejected_geometry, "were not admissible slip surfaces"),
+        (result.n_rejected_ground_crossings,
+         "left the ground and came back into it")) if k]
+    return (f"No surface is reported: none of the trial surfaces held. {n} "
+            f"were left out because m_alpha = cos(a) (1 + tan(a) tan(phi) "
+            f"/ F) fell below 0.2 on a slice (Slide2's check, its error "
+            f"-112; such surfaces usually come up steeply through the "
+            f"passive zone)"
+            + ("; " + "; ".join(others) if others else "")
+            + ". Run a circular search (surface_type 'circular' or "
+              "'entry_exit'), widen the entry and exit windows, or analyse "
+              "a chosen surface with analyze_slope, which reports its FOS "
+              "with a warning.")
+
+
 def search_choices(result: SearchResult, *, surface_type: str,
                    method: Optional[str] = None,
                    scored_with: Optional[str] = None,
@@ -1532,6 +1680,8 @@ def search_choices(result: SearchResult, *, surface_type: str,
                    surface_types=tuple(SEARCH_TEXT), budget=None,
                    screened: bool = False,
                    screen_not_applied: Optional[str] = None,
+                   m_alpha: Optional[Dict[str, Any]] = None,
+                   m_alpha_rule: str = "frictional",
                    ) -> List[Dict[str, Any]]:
     """What a critical-surface search chose (GM-115), as its ``choices``
     (``geotech_common.choices``): the search, the method it scored with
@@ -1541,7 +1691,9 @@ def search_choices(result: SearchResult, *, surface_type: str,
     ``search_ranges``, ``governing_location`` and ``refused_lowest``. With
     ``budget`` (GM-123): the time budget, and the Bishop screen when it was
     applied (``screened``) or asked for and not applied
-    (``screen_not_applied``, the reason)."""
+    (``screen_not_applied``, the reason). The surfaces left out for m_alpha
+    < 0.2 (GM-127) under ``m_alpha_rule``, with the governing surface on
+    twice the slices (``m_alpha``, `m_alpha_confirmation`)."""
     from geotech_common.choices import GIVEN, MODULE, choice, how_given
     out = [choice(
         "search",
@@ -1597,8 +1749,7 @@ def search_choices(result: SearchResult, *, surface_type: str,
         + ("; circles through each face's toe and passing above it, their "
            "lower end on the face from the toe up (search_ranges, "
            "faces_covered); the circles passing above the toe leave out "
-           "any with m_alpha < 0.2 on a slice (Slide2's check, error -112) "
-           "and any with reverse curvature"
+           "any with reverse curvature"
            if ABOVE_TOE in tried else "")
         + ("; the infinite slope only where c' = 0 soil forms the face"
            if INFINITE_SLOPE in tried else ""),
@@ -1629,6 +1780,9 @@ def search_choices(result: SearchResult, *, surface_type: str,
              "slope (x_entry_range, x_exit_range)"]))
     elif sr:
         out.append(choice("search ranges", "given", GIVEN, where))
+    out.append(m_alpha_choice(result.n_rejected_m_alpha,
+                              scored_with or method, m_alpha,
+                              m_alpha_rule))
     if budget is not None:
         out.append(budget_choice(budget))
     return out

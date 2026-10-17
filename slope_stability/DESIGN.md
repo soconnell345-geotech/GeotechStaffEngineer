@@ -518,11 +518,12 @@ at 2V:1H on a rigid base, one 9,000 lb/ft support at mid-height):
 |---|---:|---:|---:|
 | Active, on Slide2's printed GLE circle (15.446, 37.624, R 27.594): Bishop = Spencer = GLE | 1.564 | GLE 1.575 | 1.51 |
 | Active, Bishop search, default (reverse-curvature toe circle, 5.9 ft crack, arm 4.1 ft on R 14.1 ft) | 1.304 + warnings | 1.531 | 1.51 |
-| Active, Bishop search, `reverse_curvature='discard'` | 1.503 | 1.531 | 1.51 |
-| Active, Spencer search | 1.581 | 1.884 | |
-| Active, GLE search | 1.609 | 1.575 | |
+| Active, Bishop search, `reverse_curvature='discard'` (1.503 before GM-122, 1.467 before GM-127) | 1.432 | 1.531 | 1.51 |
+| Active, Bishop search, `'discard'`, `m_alpha_rule='every_slice'` | 1.467 | 1.531 | 1.51 |
+| Active, Spencer search | 1.542 | 1.884 | |
+| Active, GLE search | 1.584 | 1.575 | |
 | Passive, Bishop on Slide2's active circle | 1.329 | | 1.32 |
-| Passive, Bishop search, default / `'discard'` | 1.208 / 1.305 | 1.324 | 1.32 |
+| Passive, Bishop search, default / `'discard'` / `'discard'` with `'every_slice'` | 1.208 / 1.274 / 1.296 | 1.324 | 1.32 |
 | Passive, Spencer search | 1.346 | 1.872 | |
 | Passive, GLE search | 1.379 | 1.378 | |
 
@@ -531,8 +532,16 @@ reverse-curvature toe circles (centre 6 ft below the crest), which Slide2
 would close the same way but its grid, placed above the slope, never
 generates; on that circle the support passes 4.1 ft below the centre and
 Spencer finds no lambda in -1.5 to 1.5 at which moment and force equilibrium
-give the same F. With such circles discarded the module reproduces D&W and
-Slide2. Slide2's Spencer (1.884 /
+give the same F. Its last slice has m_alpha = cos(a) 0.18 on 30 slices
+(phi = 0), which Slide2 refuses with its 'Check malpha < 0.2' setting on;
+the module does not check phi = 0 slices by default, since m_alpha does not
+change the FOS there (GM-127). With such circles discarded and every slice
+checked (`m_alpha_rule='every_slice'`), as Slide2 does, the module
+reproduces D&W and Slide2: 1.467 / 1.296 at 30 slices, 1.508 / 1.318 at
+240. With them discarded and the default rule, the circles passing above
+the toe keep one centred at the crest's level whose last slice has m_alpha
+0.195 / 0.191: 1.432 / 1.274 at 30 slices, 1.484 / 1.307 at 240 (-1.7 % /
+-1.0 % on D&W). Slide2's Spencer (1.884 /
 1.872) is far above its own GLE: on a phi = 0 circle every converged
 moment-equilibrium method gives the same F, so its Spencer search must have
 found no solution on the lower circles; the module's Spencer converges there
@@ -597,7 +606,9 @@ has no solution:
   the note says so); supports crossing a Bishop / OMS circle with a short
   arm, with Spencer's FOS on the circle or that it has none
   (`_support_arm_warning`); a rigorous method with no solution; Bishop
-  asked for on a noncircular surface (analysed with Spencer, as before).
+  asked for on a noncircular surface (analysed with Spencer, as before);
+  m_alpha below 0.2 on a slice with phi' > 0, or on any slice with
+  `m_alpha_rule='every_slice'` (GM-127, `analysis.m_alpha_statement`).
 - **`method_solved`** False when Spencer / Morgenstern-Price / GLE finds no
   equilibrium solution on the surface (the GLE does not converge; the
   reason, e.g. "no lambda from -1.5 to 1.5 gives moment and force factors
@@ -753,11 +764,14 @@ supplementary family, `circle_above_toe`, run with the toe circles
   The main search and the toe circles keep scanning with Janbu itself;
 - a circle must come out at its start (one that comes out lower is a toe
   or base circle), keep its centre above the ground at both ends (no
-  reverse-curvature circle closed by a crack) and keep m_alpha =
-  cos(a) (1 + tan(a) tan(phi) / F) >= 0.2 on every slice under Bishop or
-  Janbu, which Slide2 checks by default (error -112). The family leaves
-  out the circles that fail either check, and the "surface families
-  tried" entry of `choices` says so. Without the last two, Duncan Ex 4 read
+  reverse-curvature circle closed by a crack; the circles through the toe
+  follow `reverse_curvature`, see GM-127 below) and keep m_alpha =
+  cos(a) (1 + tan(a) tan(phi) / F) >= 0.2 on the slices the m_alpha rule
+  looks at (Slide2 checks every slice with its 'Check malpha < 0.2'
+  setting on, error -112; since GM-127 every family checks, in
+  `_compute_fos`, by default on the slices with phi' > 0). The family
+  leaves out the circles that fail either check, and `choices` says so.
+  Without the last two, Duncan Ex 4 read
   0.17 on a reverse-curvature circle with negative m_alpha on its steep
   slices (1.93 on 80 slices, Spencer 1.53), and Slide2 #85 0.865 on a
   circle closed by a crack 8.45 deep, 42 % of the slope's height;
@@ -910,6 +924,143 @@ reference prescribes screening a rigorous search with Bishop, and Bishop
 and the rigorous methods can rank circles differently where interslice
 forces matter.
 
+### m_alpha below 0.2: Slide2's check on every scored surface (GM-127, 2026-10-17)
+
+m_alpha = cos(a) + sin(a) tan(phi') / F, with the base angle a positive in
+the sliding direction, divides the normal force on a slice base in Bishop's
+simplified method (Bishop 1955), in Janbu's simplified method and in the GLE
+(Fredlund & Krahn 1977; `gle._GLESystem._normal`). Where it is small or
+negative the normal force grows without bound or turns negative, and the FOS
+may be incorrect or misleading (Whitman & Bailey 1967), though not
+necessarily wrong. Slide2 checks it on the final iteration and, with its
+'Check malpha < 0.2' setting on, reports a surface with m_alpha < 0.2 on
+any slice as invalid (its error -112); its documentation says such slices
+are usually steep ones in the passive zone. GM-122 applied the check to the
+circles passing above the toe; GM-127 applies it to every surface a search
+scores.
+
+**Which slices** (`m_alpha_rule`, `methods.m_alpha_checked`). By default
+('frictional') the slices with phi' > 0. On a phi' = 0 slice m_alpha =
+cos(a) does not depend on F, and in Bishop's sum the slice's resistance,
+c b / m_alpha, is c l whatever the normal force, so leaving such a surface
+out does not remove a spurious FOS: it only raises the minimum. A vertical
+5 m cut in undrained clay (cu 20 kPa, 18 kN/m3; `test_m_alpha`): the
+default search finds 0.800 on a toe circle closed by a crack whose last
+slice has m_alpha 0.18; checking every slice leaves it out and reads 0.933,
+against Taylor's 3.83 cu / (gamma H) = 0.851, 9.6 % on the unsafe side.
+'every_slice' checks every slice, as Slide2 does; `search_critical_surface`,
+`analyze_slope` and the agent's search tool take it as `m_alpha_rule`, the
+`choices` entry names the rule used (given or default) and offers the other,
+and inner searches (the drawdown search's stages) use the rule in force.
+
+**The rule per method** (`methods.m_alpha_values`, `search._m_alpha_least`):
+
+- Bishop: at Bishop's F, the base angle signed by the gravity moment about
+  the centre, as `bishop_fos` signs it.
+- Janbu (simplified): the same expression at Janbu's uncorrected F, the F
+  its normal forces are solved with (the correction factor multiplies
+  afterwards).
+- Spencer, Morgenstern-Price, GLE: the module solves all three with the GLE,
+  whose normal force has the same denominator at the method's own F, so the
+  method's own m_alpha IS the Bishop-form expression at the converged F.
+  The legacy Spencer solver's `cos(a - theta) + sin(a - theta) tan(phi')/F`
+  is its own fallback form and is not the check.
+- Ordinary Method of Slices: no m_alpha (the normal force is W cos a), so
+  nothing is checked, and `choices` says so.
+- Bishop asked for on a noncircular surface is solved with Spencer and
+  checked as Spencer.
+
+**Search against a single surface.** A search leaves the surface out (it
+scores 999.9 in `_compute_fos`) and counts it: every family (the centre grid
+and its refinement, entry/exit, the toe circles and the circles passing
+above the toe, noncircular random, PSO, DE and the directed weak-layer
+seeds, and the rapid-drawdown searches, on the drawn-down stage). The count
+is `SearchResult.n_rejected_m_alpha` (inner searches add to the outer one),
+`to_dict()["n_rejected"]["m_alpha"]`, a line in `summary()`, a row in the
+calc package, and the `choices` entry "slip surfaces left out for m_alpha"
+with its basis. When no surface holds, a warning gives each reason's count
+and suggests a circular or entry_exit search. The differential evolution's
+objective scores a refused surface 100 + 10 (0.2 - m_alpha) instead of a
+flat 999.9, so the evolution is led back toward admissible surfaces rather
+than stopping on a flat score (the w11 search below stopped after 600
+evaluations on the flat score and runs all 2,325 graded); when the
+evolution ends on no admissible surface of its own, the best surface of the
+random search that seeded it is reported, and a warning says so. A single
+surface given to `analyze_slope` or `rapid_drawdown_fos` is analysed and its
+FOS reported, with a warning: the least m_alpha and its slice, the base
+angle against or with the sliding, phi', how many slices, whether it is in
+the passive zone, the references, that a search would leave it out, and
+that finer slices lower m_alpha at a steep end rather than clear it: a
+surface that comes out no steeper than the Rankine passive angle, 45 deg -
+phi'/2 (Duncan, Wright & Brandon 2014), avoids such slices. FOSM / PEM /
+Monte Carlo on a fixed surface do not refuse it (`probabilistic._eval_fos`):
+they sample the surface the user chose, whose deterministic analysis carries
+the warning. The Spencer value in the support-arm warning is that circle's
+own.
+
+**Twice the slices.** After a search the governing surface is solved again
+at the search's slice count and at twice it (two solves,
+`search_supplements.m_alpha_confirmation`); `choices` gives both FOS and
+least m_alpha, or why there is none on twice the slices: the finer slicing
+cannot be built (Taylor's deep circle, tangent to the base, sheds a slice
+below it at 60) or the method has no solution there. A warning
+(`finer_slices_warning`) says when the FOS moves more than 1 % (with
+m_alpha too where it falls below 0.2 on the finer slicing), or when the
+method has no solution on the finer slicing (Slide2 #85 with its support,
+Spencer search: 1.542 on 30 slices, none on 60); a slicing that cannot be
+built says nothing about the FOS and is not warned of. On a phi = 0 circle
+closed by a crack at its vertical tangent the last slice's m_alpha falls
+as the slicing gets finer (Slide2 #85's 1.304 circle: 0.182 on 30 slices,
+0.129 on 60, 0.065 on 240). Moves above 1 % on the pinned cases: #85 Bishop
+1.304 to 1.325, its clay face without the support 0.882 to 0.897, GM-13
+2.286 to 2.316, Duncan Ex 4 Bishop 1.259 to 1.288 and Janbu 1.199 to 1.238,
+the vertical cut 0.801 to 0.813. The rapid-drawdown search does not do this.
+
+**Reverse curvature in the toe families.** The circles through the toe
+follow the geometry's `reverse_curvature` (default: closed by a crack, as
+Slide2's default does), as the main search does; the circles passing above
+the toe leave reverse-curvature circles out (GM-122). Made the same either
+way, a pinned case moved away from its published value: both families
+following `reverse_curvature` took Slide2 #85 with its support from 1.304
+to 0.866 on a circle passing above the toe closed by a crack at the crest
+(D&W 1.51, Slide2 1.531; measured with every slice checked); both leaving
+them out took the short Taylor profile from 1.970 to 2.015 (Taylor 1.947)
+by leaving out a toe circle closed by a 1.65 m crack whose least m_alpha is
+0.23, a circle Slide2 keeps. On a phi = 0 circle the slice at the crack has
+m_alpha = cos(a) near zero, which the default does not check;
+'every_slice' leaves such circles out of both families.
+
+**What moved against 184c3f3** (slope "not slow" suite, slope validation
+examples, `funhouse_agent -k slope`; every other value stayed put):
+
+| Case | Before | After | Published | Why |
+|---|---:|---:|---:|---|
+| Duncan Ex 4, Janbu search, 30 slices (`test_m_alpha`) | 1.076 | 1.199 | (Janbu 1.213 on 120 slices) | old circle's least m_alpha 0.007, in the sand: left out |
+| Slide2 #85 + support, Bishop, `'discard'`, active | 1.467 | 1.432 | 1.531 (D&W 1.51) | the circles passing above the toe no longer check phi = 0 slices: a circle with m_alpha 0.195 on its last slice is kept (`'every_slice'`: 1.467) |
+| same, passive | 1.296 | 1.274 | 1.324 (D&W 1.32) | the same (`'every_slice'`: 1.296) |
+| #85 clay face, no support: circles passing above the toe (not the governing family) | 0.910 | 0.906 | | the same, m_alpha 0.19 on a phi = 0 slice (`'every_slice'`: 0.910) |
+| same, Janbu search: circles passing above the toe (not the governing family; the toe circle's 1.024 governs, unchanged) | 1.033 | 1.138 | | the family's Bishop scan now ranks first circles centred at the crest's level with a near-vertical last slice, on which Janbu has no solution, and the re-scored shortlist ends on a different circle (1.142 on 120 slices; `'every_slice'`: 1.033) |
+
+The governing values of Slide2 #85 (1.304 active, 1.208 passive, Spencer
+1.542, GLE 1.584), its clay face without the support (0.882), GM-13 (2.286),
+the thin-base model (0.2715) and the vertical cut (0.800) are those of
+184c3f3: every slice below 0.2 on them is phi = 0.
+
+The w11 geometry (ground (0,0), (20,0), (30,10), (60,10); 3.5 m of clay,
+c' = 3, phi' = 22, over sandstone c' = 200, phi' = 40; no water): Bishop
+0.9359, Spencer 0.9354 (screened or not) unchanged, on the circle in the
+clay passing above the toe (least m_alpha 0.79; 49 trial circles left out).
+The DE search given windows 20-30 / 28-60 (5 points, seed 3) reported 1.570
+on a surface 32 m deep through the sandstone with m_alpha -0.37 on 10 of
+its 40 slices; it now runs all 2,325 evaluations and reports 6.847 on a
+surface through the sandstone (entry x = 20.97, exit x = 39.06) with
+m_alpha >= 0.2, leaving 194 out for m_alpha. Its interior points sit at
+0.05 to 0.95 of the depth to the model's base at -30 m, so surfaces in the
+3.5 m of clay are a sliver of what it samples; the circular and entry_exit
+searches find the clay's 0.935. Run time: the check is one pass over a
+scored surface's slices; the ACADS Spencer entry/exit search took 45 s
+before and after, and the slope suites ran no slower.
+
 ## Critical Sign Conventions
 - **Driving moment**: uses `W*(x_mid - xc)/R` + `abs(driving)`, NOT `W*sin(alpha)`
   directly, because `sin(alpha)` can be negative for L-to-R slopes
@@ -917,7 +1068,14 @@ forces matter.
   `driving = abs(gravity) + abs(seismic)` so seismic always increases
   driving regardless of slope direction (L-to-R vs R-to-L)
 - **Spencer m_alpha**: `cos(alpha - theta) + sin(alpha - theta)*tan(phi')/F`
-  (reduces to Bishop when theta=0)
+  (reduces to Bishop when theta=0); the legacy Spencer solver only
+- **m_alpha check** (GM-127, `methods.sliding_sign` / `m_alpha_values`):
+  `cos(a) + sin(a) tan(phi') / F` with a positive in the sliding direction:
+  for Bishop on a circle, the sign of the gravity moment about the centre
+  (pond forces included), as `bishop_fos` takes it; for Janbu and the GLE
+  family, the sign of sum (W + surcharge) sin(a), as `gle._normalize` takes
+  it; by default only slices with phi' > 0 are checked
+  (`methods.m_alpha_checked`)
 
 ## Key Technical Notes
 - **Spencer = Bishop for circular surfaces (the legacy approximate solver

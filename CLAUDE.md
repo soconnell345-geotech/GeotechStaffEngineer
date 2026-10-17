@@ -258,7 +258,9 @@ Key conventions:
       below the ground in more than one stretch refused, and circles
       passing above the toe searched by default (release note); the
       agent's slope searches stop at 180 s with a plain warning
-      (library: no limit), and a Bishop screen is an option;
+      (library: no limit), and a Bishop screen is an option; searches
+      leave out surfaces with m_alpha < 0.2 on a slice with friction
+      (Slide2's check; release note);
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done".
     Open next: Foundry brief 6, which measures all of this, is drafted

@@ -81,6 +81,11 @@ def test_search_finds_toe_circle():
     assert res.candidates[CIRCULAR] == pytest.approx(2.344, abs=0.01)
     assert res.candidates[TOE_CIRCLE] == pytest.approx(c.FOS, abs=1e-4)
     assert any("toe circle governs" in w for w in res.warnings)
+    # m_alpha is not checked on its phi = 0 slices (GM-127); its FOS moves
+    # 1.3 % on twice the slices (2.316), and the search says so
+    assert res.n_rejected_m_alpha == 0
+    assert any(w.startswith("On 80 slices, twice the search's 40")
+               and "2.316" in w for w in res.warnings)
 
 
 def test_toe_circle_mirrored_slope():

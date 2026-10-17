@@ -601,6 +601,11 @@ class SearchResult:
         sliding mass (GM-122, ``slip_surface.GroundCrossingError``). A
         search that runs others (``search_critical_surface``) counts theirs
         and its supplementary families' too.
+    n_rejected_m_alpha : int
+        Trial surfaces, circular or not, the search left out because m_alpha
+        = cos(a) (1 + tan(a) tan(phi) / F) fell below 0.2 on a slice at the
+        method's own F (GM-127; Slide2's check, its error -112). Counted as
+        ``n_rejected_ground_crossings`` is.
     governing_surface : str
         Which kind of surface governs ``critical`` (set by
         ``search_critical_surface``): 'circular' / 'noncircular' (the main
@@ -665,6 +670,7 @@ class SearchResult:
     n_rejected_nonconverged: int = 0
     n_rejected_jagged: int = 0
     n_rejected_ground_crossings: int = 0
+    n_rejected_m_alpha: int = 0
     governing_surface: str = ""
     candidates: Dict[str, float] = field(default_factory=dict)
     warnings: List[str] = field(default_factory=list)
@@ -686,6 +692,9 @@ class SearchResult:
             lines.append(f"  Refused, not one sliding mass (leave the ground "
                          f"and come back into it): "
                          f"{self.n_rejected_ground_crossings}")
+        if self.n_rejected_m_alpha:
+            lines.append(f"  Left out, m_alpha < 0.2 on a slice (Slide2's "
+                         f"check): {self.n_rejected_m_alpha}")
         if self.critical:
             lines.append(f"  Minimum FOS:       {self.critical.FOS:.3f}")
             lines.append(f"  Method:            {self.critical.method}")
@@ -763,13 +772,15 @@ class SearchResult:
     def to_dict(self) -> Dict[str, Any]:
         d = {"n_surfaces_evaluated": self.n_surfaces_evaluated}
         n_rej = (self.n_rejected_geometry + self.n_rejected_nonconverged
-                 + self.n_rejected_jagged + self.n_rejected_ground_crossings)
+                 + self.n_rejected_jagged + self.n_rejected_ground_crossings
+                 + self.n_rejected_m_alpha)
         if n_rej:
             d["n_rejected"] = {
                 "geometry": self.n_rejected_geometry,
                 "nonconverged": self.n_rejected_nonconverged,
                 "jagged": self.n_rejected_jagged,
                 "ground_crossings": self.n_rejected_ground_crossings,
+                "m_alpha": self.n_rejected_m_alpha,
             }
         if self.critical:
             d["critical"] = self.critical.to_dict()
