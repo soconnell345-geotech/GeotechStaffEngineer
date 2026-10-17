@@ -53,8 +53,39 @@ def test_cpt_choices():
         q_c=[3000 + 400 * i for i in range(20)],
         f_s=[30 + 2 * i for i in range(20)], gwl=1.5, pga=0.3, m_w=7.0,
         i_c_limit=2.4)
-    procedure, counted, strains = r.to_dict()["choices"]
+    procedure, water, c0, counted, strains = r.to_dict()["choices"]
     assert "B&I" in procedure["basis"] or "Boulanger" in procedure["chosen"]
+    # GM-133: the water table is required, and said as given, second
+    assert water == {**water, "what": "water table",
+                     "chosen": "1.5 m below the ground surface",
+                     "how": "given"}
+    assert "site input" in water["basis"] and "12-23" in water["basis"]
+    # the CRR curve the route does not take as an input, said
+    assert c0 == {**c0, "chosen": "2.8", "how": "module"}
     assert counted["chosen"] == "below the water table with Ic < 2.4"
     assert counted["how"] == "given"
     assert "Zhang" in strains["chosen"]
+
+
+@pytest.mark.parametrize("missing, reason", [
+    ("gwl", "gwl is required: the depth to the water table"),
+    ("pga", "pga is required: the peak ground acceleration")])
+def test_cpt_without_a_site_input_is_refused(missing, reason):
+    """GM-133: the water table (and the PGA) have no default; until
+    2026-10-17 a CPT run took 1.0 m (and 0.25 g) without saying so. The
+    refusal comes before liquepy is imported."""
+    from liquepy_agent import analyze_cpt_liquefaction
+    kw = {"gwl": 1.5, "pga": 0.3}
+    kw.pop(missing)
+    with pytest.raises(ValueError) as e:
+        analyze_cpt_liquefaction(depth=[1, 2], q_c=[3000, 3400],
+                                 f_s=[30, 32], **kw)
+    assert str(e.value).startswith(reason)
+    assert "no default" in str(e.value)
+
+
+def test_field_correlations_without_a_water_table_is_refused():
+    from liquepy_agent import analyze_field_correlations
+    with pytest.raises(ValueError, match=r"^gwl is required: .* site input"):
+        analyze_field_correlations(depth=[1, 2], q_c=[3000, 3400],
+                                   f_s=[30, 32])

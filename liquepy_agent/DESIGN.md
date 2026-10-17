@@ -39,6 +39,22 @@ liquepy_agent_foundry.py   # Foundry wrapper (project root)
 4. **All units SI/kPa** — consistent with project conventions. liquepy uses
    kPa natively for most functions (exception: Robertson 2009 Vs uses Pa).
 
+5. **Site inputs have no default** (BACKLOG GM-133, 2026-10-17). The water
+   table (`gwl`) and, for triggering, the peak ground acceleration (`pga`)
+   are required; a call without one is refused with the reason. Until then
+   `analyze_cpt_liquefaction` took 1.0 m and 0.25 g, and
+   `analyze_field_correlations` 1.0 m, without saying so (the unified
+   `liquefaction` tool did not even declare them). The water table sets
+   σ'v in CSR = 0.65 (σv/σ'v) amax rd (Youd et al. 2001; B&I 2014) and
+   which soil is saturated; GEC 5 (FHWA-NHI-16-072, p. 12-23) has the site
+   investigation "establish the location of the groundwater level", with
+   piezometers where it fluctuates; liquepy itself takes it with no
+   default (`field.CPT`, and `run_bi2014`'s "depth to ground water from
+   surface at time of earthquake"); and the SPT routes always required it.
+   A CPT result lists the water table among its `choices` as given, and
+   the CRR curve's C0 = 2.8 (liquepy's deterministic value, not an input
+   on this route) as the module's.
+
 ## Boulanger & Idriss (2014) Procedure
 
 The B&I 2014 CPT-based simplified procedure:

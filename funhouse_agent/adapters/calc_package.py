@@ -2322,7 +2322,7 @@ METHOD_INFO = {
             "layer_N160": {"type": "array", "required": False, "description": "(N1)60 per layer — liquefaction."},
             "layer_FC": {"type": "array", "required": False, "description": "Fines content (%) per layer — liquefaction."},
             "layer_gamma": {"type": "array", "required": False, "description": "Total unit weight (kN/m3) per layer — liquefaction."},
-            "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m) — liquefaction."},
+            "gwt_depth": {"type": "float", "required": False, "description": "Depth to the water table during the design earthquake (m) — liquefaction, where it is required: no default, it is a site input."},
             "M": {"type": "float", "required": False, "default": 7.5, "description": "Earthquake magnitude — liquefaction."},
             **_COMMON_PARAMS,
         },

@@ -153,8 +153,11 @@ def _run_cpt_bi2014(params: dict) -> dict:
         q_c=q_c,
         f_s=f_s,
         u_2=_first(params, "u_2", "u2"),
-        gwl=_first(params, "gwl", "gwt_depth", default=1.0),
-        pga=_first(params, "pga", "amax_g", default=0.25),
+        # Site inputs, required as on the SPT routes: until GM-133 a CPT
+        # run took a 1.0 m water table and a 0.25 g PGA without saying so.
+        gwl=_first(params, "gwl", "gwt_depth", required=True,
+                   label="gwt_depth"),
+        pga=_first(params, "pga", "amax_g", required=True, label="amax_g"),
         m_w=_first(params, "m_w", "magnitude", "M", default=7.5),
         a_ratio=params.get("a_ratio", 0.8),
         i_c_limit=params.get("i_c_limit", 2.6),
@@ -278,16 +281,21 @@ METHOD_INFO = {
                       "required_for": "SPT input",
                       "description": "REQUIRED for SPT input: total unit "
                                      "weight (kN/m3) per layer."},
-            "gwt_depth": {"type": "float", "required": False,
-                          "required_for": "SPT input",
-                          "description": "REQUIRED for SPT input: groundwater "
-                                         "depth (m below surface; alias "
-                                         "gwl). For CPT input, default 1.0."},
-            "amax_g": {"type": "float", "required": False,
-                       "required_for": "SPT input",
-                       "description": "REQUIRED for SPT input: peak ground "
-                                      "acceleration (g; alias pga). For CPT "
-                                      "input, default 0.25."},
+            # Required for CPT input too (GM-133: it took 1.0 m and 0.25 g).
+            "gwt_depth": {"type": "float", "required": True,
+                          "description": "REQUIRED: depth to the water table "
+                                         "during the design earthquake (m "
+                                         "below the ground surface; alias "
+                                         "gwl). No default: it sets the "
+                                         "effective stress and which soils "
+                                         "can liquefy, and the references "
+                                         "take the groundwater level as a "
+                                         "site input (GEC 5, p. 12-23)."},
+            "amax_g": {"type": "float", "required": True,
+                       "description": "REQUIRED: peak ground acceleration "
+                                      "(g) for the design earthquake (alias "
+                                      "pga). No default: it comes from the "
+                                      "site's seismic hazard."},
             # CPT inputs
             "q_c": {"type": "array", "required": False,
                     "required_for": "CPT input",
@@ -301,9 +309,13 @@ METHOD_INFO = {
             "u_2": {"type": "array", "required": False,
                     "description": "Pore pressure behind cone (kPa) (CPT, optional)."},
             "gwl": {"type": "float", "required": False,
-                    "description": "Groundwater level depth (m) (CPT)."},
+                    "description": "The water table depth (m) by its CPT "
+                                   "name: the same input as gwt_depth; give "
+                                   "one."},
             "pga": {"type": "float", "required": False,
-                    "description": "Peak ground acceleration (g) (CPT)."},
+                    "description": "Peak ground acceleration (g) by its CPT "
+                                   "name: the same input as amax_g; give "
+                                   "one."},
             # shared
             "m_w": {"type": "float", "required": False, "default": 7.5,
                     "description": "Moment magnitude (alias magnitude)."},

@@ -19,13 +19,15 @@ def _run_cpt_liquefaction(params: dict) -> dict:
     from liquepy_agent import analyze_cpt_liquefaction
 
     require_params(params, ["depth", "q_c", "f_s"], method="cpt_liquefaction")
+    # The water table and the PGA have no default; the module refuses
+    # either missing, saying why (GM-133).
     result = analyze_cpt_liquefaction(
         depth=params["depth"],
         q_c=params["q_c"],
         f_s=params["f_s"],
         u_2=params.get("u_2"),
-        gwl=params.get("gwl", 1.0),
-        pga=params.get("pga", 0.25),
+        gwl=params.get("gwl"),
+        pga=params.get("pga"),
         m_w=params.get("m_w", 7.5),
         a_ratio=params.get("a_ratio", 0.8),
         i_c_limit=params.get("i_c_limit", 2.6),
@@ -76,7 +78,7 @@ def _run_field_correlations(params: dict) -> dict:
         q_c=params["q_c"],
         f_s=params["f_s"],
         u_2=params.get("u_2"),
-        gwl=params.get("gwl", 1.0),
+        gwl=params.get("gwl"),
         a_ratio=params.get("a_ratio", 0.8),
         vs_method=params.get("vs_method", "mcgann2015"),
         i_c_limit=params.get("i_c_limit", 2.6),
@@ -86,6 +88,14 @@ def _run_field_correlations(params: dict) -> dict:
     )
     return clean_result(result.to_dict())
 
+
+#: The water table a liquefaction run needs (GM-133: 1.0 m was taken
+#: without saying so until 2026-10-17).
+_GWL_EARTHQUAKE = (
+    "Depth to the water table during the design earthquake (m below the "
+    "ground surface). No default: it sets the effective stress and which "
+    "soils can liquefy, and the references take the groundwater level as "
+    "a site input (GEC 5, p. 12-23).")
 
 METHOD_REGISTRY = {
     "cpt_liquefaction": _run_cpt_liquefaction,
@@ -102,8 +112,8 @@ METHOD_INFO = {
             "q_c": {"type": "array", "brief": "Cone tip resistance (kPa)."},
             "f_s": {"type": "array", "brief": "Sleeve friction (kPa)."},
             "u_2": {"type": "array", "brief": "Pore pressure behind cone tip (kPa). Default: zeros.", "default": None},
-            "gwl": {"type": "float", "brief": "Groundwater level depth (m below surface).", "default": 1.0},
-            "pga": {"type": "float", "brief": "Peak ground acceleration (g).", "default": 0.25},
+            "gwl": {"type": "float", "brief": _GWL_EARTHQUAKE},
+            "pga": {"type": "float", "brief": "Peak ground acceleration (g) for the design earthquake. No default: it comes from the site's seismic hazard."},
             "m_w": {"type": "float", "brief": "Moment magnitude.", "default": 7.5},
             "a_ratio": {"type": "float", "brief": "Cone area ratio.", "default": 0.8},
             "i_c_limit": {"type": "float", "brief": "Ic limit for liquefiable material.", "default": 2.6},
@@ -131,7 +141,7 @@ METHOD_INFO = {
             "FC": {"type": "array", "brief": "Fines content (%) per layer."},
             "gamma": {"type": "array", "brief": "Total unit weight (kN/m3) per layer."},
             "amax_g": {"type": "float", "brief": "Peak ground acceleration (g)."},
-            "gwt_depth": {"type": "float", "brief": "Groundwater table depth (m)."},
+            "gwt_depth": {"type": "float", "brief": _GWL_EARTHQUAKE},
             "m_w": {"type": "float", "brief": "Moment magnitude.", "default": 7.5},
             "c_0": {"type": "float", "brief": "CRR curve fit (2.8=16th pct, 2.6=median).", "default": 2.8},
         },
@@ -150,7 +160,7 @@ METHOD_INFO = {
             "q_c": {"type": "array", "brief": "Cone tip resistance (kPa)."},
             "f_s": {"type": "array", "brief": "Sleeve friction (kPa)."},
             "u_2": {"type": "array", "brief": "Pore pressure behind cone tip (kPa). Default: zeros.", "default": None},
-            "gwl": {"type": "float", "brief": "Groundwater level depth (m below surface).", "default": 1.0},
+            "gwl": {"type": "float", "brief": "Depth to the water table at the sounding (m below the ground surface). No default: it sets the effective stress that normalises the cone readings, and the groundwater level is a site input."},
             "a_ratio": {"type": "float", "brief": "Cone area ratio.", "default": 0.8},
             "vs_method": {"type": "str", "brief": "Vs correlation method.", "allowed_values": ["mcgann2015", "robertson2009", "andrus2007"], "default": "mcgann2015"},
             "i_c_limit": {"type": "float", "brief": "Ic limit for sand vs clay classification.", "default": 2.6},
@@ -171,9 +181,9 @@ METHOD_INFO = {
 # One METHOD_INFO style everywhere: explicit required flags matching the code
 # above (live smoke wave 1, G7).
 mark_required(METHOD_INFO, {
-    "cpt_liquefaction": ["depth", "q_c", "f_s"],
+    "cpt_liquefaction": ["depth", "q_c", "f_s", "gwl", "pga"],
     "spt_liquefaction": ["depth", "N160", "FC", "gamma", "amax_g",
                          "gwt_depth"],
-    "field_correlations": ["depth", "q_c", "f_s"],
+    "field_correlations": ["depth", "q_c", "f_s", "gwl"],
 })
 declare_aliases(METHOD_INFO, {"spt_liquefaction": _SPT_ALIASES})

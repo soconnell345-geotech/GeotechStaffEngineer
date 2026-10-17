@@ -13,6 +13,16 @@ from liquepy_agent.results import FieldCorrelationsResult
 
 _VS_METHODS = {"mcgann2015", "robertson2009", "andrus2007"}
 
+#: Why a run without a water table is refused (BACKLOG GM-133): until
+#: 2026-10-17 the module took 1.0 m without saying so.
+WATER_TABLE_REQUIRED = (
+    "gwl is required: the depth to the water table (m below the ground "
+    "surface) when the sounding was made. It sets the effective stress that "
+    "normalises the cone readings (Ic, Dr, su ratio), so there is no "
+    "default: the groundwater level is a site input. Give the level "
+    "measured at the sounding; if there is none, ask, or state the level "
+    "you assume and give it.")
+
 
 def _validate_correlation_inputs(depth, q_c, f_s, u_2, gwl, vs_method):
     """Validate field correlation inputs.
@@ -37,6 +47,8 @@ def _validate_correlation_inputs(depth, q_c, f_s, u_2, gwl, vs_method):
     if u_2 is not None and len(u_2) != n:
         raise ValueError(f"u_2 length ({len(u_2)}) must match depth length ({n})")
 
+    if gwl is None:
+        raise ValueError(WATER_TABLE_REQUIRED)
     if gwl < 0:
         raise ValueError(f"gwl must be >= 0, got {gwl}")
     if vs_method not in _VS_METHODS:
@@ -50,7 +62,7 @@ def analyze_field_correlations(
     q_c,
     f_s,
     u_2=None,
-    gwl=1.0,
+    gwl=None,
     a_ratio=0.8,
     vs_method="mcgann2015",
     i_c_limit=2.6,
@@ -73,8 +85,10 @@ def analyze_field_correlations(
         Sleeve friction (kPa).
     u_2 : array_like, optional
         Pore pressure behind cone tip (kPa). Default: zeros.
-    gwl : float, optional
-        Groundwater level depth (m below surface). Default: 1.0.
+    gwl : float
+        Depth to the water table at the sounding (m below surface).
+        Required: a site input, with no default
+        (:data:`WATER_TABLE_REQUIRED`; 1.0 m until 2026-10-17).
     a_ratio : float, optional
         Cone area ratio. Default: 0.8.
     vs_method : str, optional

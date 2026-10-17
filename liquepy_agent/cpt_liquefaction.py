@@ -10,6 +10,25 @@ import numpy as np
 from liquepy_agent.liquepy_utils import import_liquepy_trigger, import_liquepy_field
 from liquepy_agent.results import CPTLiquefactionResult
 
+#: Why a run without a water table is refused (BACKLOG GM-133): until
+#: 2026-10-17 the module took 1.0 m without saying so.
+WATER_TABLE_REQUIRED = (
+    "gwl is required: the depth to the water table (m below the ground "
+    "surface) during the design earthquake. It sets the effective stress in "
+    "CSR and which points are saturated and can liquefy, so there is no "
+    "default: the references take the groundwater level as a site input "
+    "(GEC 5, FHWA-NHI-16-072, p. 12-23: \"establish the location of the "
+    "groundwater level\"). Give the measured or design level; if the site "
+    "data give none, ask, or state the level you assume and give it.")
+
+#: Why a run without a peak ground acceleration is refused (GM-133).
+PGA_REQUIRED = (
+    "pga is required: the peak ground acceleration (g) at the ground "
+    "surface for the design earthquake. It sets CSR, so there is no "
+    "default; it comes from the site's seismic hazard. Give the design "
+    "value; if none is given, ask, or state the value you assume and give "
+    "it.")
+
 
 def _validate_cpt_inputs(depth, q_c, f_s, u_2, gwl, pga, m_w):
     """Validate CPT liquefaction analysis inputs.
@@ -34,6 +53,10 @@ def _validate_cpt_inputs(depth, q_c, f_s, u_2, gwl, pga, m_w):
     if u_2 is not None and len(u_2) != n:
         raise ValueError(f"u_2 length ({len(u_2)}) must match depth length ({n})")
 
+    if gwl is None:
+        raise ValueError(WATER_TABLE_REQUIRED)
+    if pga is None:
+        raise ValueError(PGA_REQUIRED)
     if gwl < 0:
         raise ValueError(f"gwl must be >= 0, got {gwl}")
     if pga <= 0:
@@ -78,8 +101,8 @@ def analyze_cpt_liquefaction(
     q_c,
     f_s,
     u_2=None,
-    gwl=1.0,
-    pga=0.25,
+    gwl=None,
+    pga=None,
     m_w=7.5,
     a_ratio=0.8,
     i_c_limit=2.6,
@@ -104,10 +127,13 @@ def analyze_cpt_liquefaction(
         Sleeve friction (kPa).
     u_2 : array_like, optional
         Pore pressure behind cone tip (kPa). Default: zeros.
-    gwl : float, optional
-        Groundwater level depth (m below surface). Default: 1.0.
-    pga : float, optional
-        Peak ground acceleration (g). Default: 0.25.
+    gwl : float
+        Depth to the water table during the design earthquake (m below
+        surface). Required: a site input, with no default
+        (:data:`WATER_TABLE_REQUIRED` says why; 1.0 m until 2026-10-17).
+    pga : float
+        Peak ground acceleration (g). Required (:data:`PGA_REQUIRED`;
+        0.25 until 2026-10-17).
     m_w : float, optional
         Moment magnitude. Default: 7.5.
     a_ratio : float, optional
@@ -234,19 +260,32 @@ def analyze_cpt_liquefaction(
         volumetric_strain=vol_strain,
         shear_strain=shear_strain,
         relative_density=dr,
-        choices=cpt_choices(i_c_limit, cfc),
+        choices=cpt_choices(i_c_limit, cfc, gwl),
     )
 
 
-def cpt_choices(i_c_limit: float = 2.6, cfc: float = 0.0) -> list:
+def cpt_choices(i_c_limit: float = 2.6, cfc: float = 0.0,
+                gwl: float = None) -> list:
     """What :func:`analyze_cpt_liquefaction` chose (GM-115), as a result's
-    ``choices`` (``geotech_common.choices``)."""
+    ``choices`` (``geotech_common.choices``); the water table second, as
+    given (GM-133: it is required)."""
     from geotech_common.choices import GIVEN, MODULE, choice, how_given
-    return [
+    out = [
         choice("triggering procedure",
                "Boulanger & Idriss (2014) CPT (liquepy run_bi2014)", GIVEN,
                f"rd, MSF and K_sigma per B&I (2014); fines content from Ic "
                f"with C_FC = {cfc:g}"),
+    ]
+    if gwl is not None:
+        out.append(choice(
+            "water table", f"{gwl:g} m below the ground surface", GIVEN,
+            "the depth to groundwater during the design earthquake; it "
+            "sets sigma'v in CSR and which points can liquefy. A site "
+            "input with no default (GEC 5, FHWA-NHI-16-072, p. 12-23)"))
+    return out + [
+        choice("CRR curve C0", "2.8", MODULE,
+               "B&I (2014)'s deterministic CPT curve, liquepy's value; this "
+               "route does not take C0"),
         choice("points counted as liquefiable",
                f"below the water table with Ic < {i_c_limit:g}",
                how_given(i_c_limit, 2.6, name="i_c_limit"),
