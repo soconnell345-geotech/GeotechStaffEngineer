@@ -251,8 +251,12 @@ def _probabilistic_variables(project: Project, spec) -> Dict[str, Dict]:
     return variables
 
 
-def run_analyses(project: Project) -> Dict[str, Any]:
+def run_analyses(project: Project,
+                 time_budget_s: Optional[float] = None) -> Dict[str, Any]:
     """Execute every analysis in ``project.analyses``.
+
+    ``time_budget_s`` is the time budget of each LE critical-surface search
+    (slope_stability, GM-123; None, the default, for no limit).
 
     Returns ``{analysis_name: {...}}``. LE entries carry the SearchResult's
     critical surface (FOS, method, xc/yc/R) plus optional 'probabilistic'
@@ -281,6 +285,7 @@ def run_analyses(project: Project) -> Dict[str, Any]:
                 n_trials=a.search.n_trials,
                 n_points=a.search.n_points,
                 seed=a.search.seed,
+                time_budget_s=time_budget_s,
             )
             crit = search.critical
             entry: Dict[str, Any] = {

@@ -200,6 +200,37 @@ class TestSlopeReportPackage:
         "n_slices": 16,
     }
 
+    @pytest.mark.parametrize("given, expected", [(None, 180.0), (30, 30.0)])
+    def test_search_has_the_agents_time_budget(self, given, expected,
+                                                monkeypatch, tmp_path):
+        """GM-123: the report's search gets the agent's budget, 180 s
+        unless given; the library alone has none."""
+        import slope_stability.analysis as analysis
+        from funhouse_agent.adapters.calc_package import _generate_slope_report_package
+        seen = {}
+
+        class _Seen(Exception):
+            pass
+
+        def fake(*a, **kw):
+            seen.update(kw)
+            raise _Seen
+
+        monkeypatch.setattr(analysis, "search_critical_surface", fake)
+        params = {**self._SIMPLE, "output_path": str(tmp_path / "r.html")}
+        if given is not None:
+            params["time_budget_s"] = given
+        with pytest.raises(_Seen):
+            _generate_slope_report_package(params)
+        assert seen["time_budget_s"] == expected
+
+    def test_search_budget_above_600_s_is_refused(self, tmp_path):
+        from funhouse_agent.adapters.calc_package import _generate_slope_report_package
+        with pytest.raises(ValueError, match="time_budget_s"):
+            _generate_slope_report_package(
+                {**self._SIMPLE, "time_budget_s": 900,
+                 "output_path": str(tmp_path / "r.html")})
+
     def test_basic_circular_search(self, tmp_path):
         from funhouse_agent.adapters.calc_package import _generate_slope_report_package
         out = str(tmp_path / "report.html")

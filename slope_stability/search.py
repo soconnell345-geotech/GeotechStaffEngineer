@@ -14,10 +14,12 @@ References:
     Borselli (2002) — SNIFF Random Search concept
 """
 
+import contextlib
 import contextvars
 import functools
 import math
 import random
+import time
 import warnings
 from typing import List, Tuple, Optional, Dict, Any, Callable
 
@@ -73,6 +75,293 @@ def _counts_ground_refusals(fn):
             target.n_rejected_ground_crossings = tally[0]
         return result
     return wrapper
+
+
+# ── Time budget (GM-123) ─────────────────────────────────────────────────
+#
+# A search had no bound on its run time. Each trial surface is a limit-
+# equilibrium solve, and Spencer / Morgenstern-Price / GLE cost some 30-40
+# times Bishop's simplified method a surface at 30 slices, 40-70 times at
+# 60. A 30 x 30 entry/exit grid with 60 slices scored with Spencer took
+# 957 s in a live run (Bishop 45 s, the same FOS; 972 s and 21 s on the
+# development laptop) and a second one ran past the 1,800 s turn, so the
+# user got no answer. `search_critical_surface` and `search_rapid_drawdown` now run
+# under a time budget:
+#
+# * the main search scores its centres or entry/exit pairs coarse first
+#   and, after each coarse level, around its lowest points down to every
+#   point (`_scan_grid`), so wherever it stops it has covered the whole
+#   grid at the spacing of the last level it finished and has looked
+#   closely where the FOS is lowest (a narrow valley between coarse points
+#   is found); the result is assembled in the grid's own order, so a
+#   search that finishes reports exactly what it did before;
+# * it stops at `_MAIN_SHARE` of the budget (a centre grid keeps
+#   `_REFINE_SHARE` of that for its refinement walk), the supplementary
+#   families (toe circles, circles passing above the toe) stop at the
+#   budget, and the cheap checks after them always run;
+# * the result keeps the best surface found and says what was scored, of
+#   how many, at what spacing, the run time projected for the whole search
+#   from the surfaces scored, and what was not run.
+#
+# The library searches have no budget unless given one (``time_budget_s``
+# None), so their results never depend on the machine's speed. The agent's
+# tools (the slope_stability and calc_package adapters, the project run)
+# give every search SEARCH_TIME_BUDGET_S unless the agent gives another.
+# That default, 180 s, lets the ordinary searches finish: the slowest
+# measured, 10 x 10 and 12 x 12 entry/exit grids scored with Spencer,
+# Morgenstern-Price or GLE at 30 slices (Slide2 #57 and the ACADS slope),
+# took 59-67 s on the development laptop. The app's host ran the 30 x 30
+# Spencer search about as fast (957 s against 972 s) and the Bishop one at
+# about half the speed (45 s against 21 s), so these stay inside the main
+# search's 144 s share there too. A search that would run far longer stops
+# at three minutes, which leaves the agent's 30-minute turn room for
+# several searches, its own calls and the answer.
+
+#: Time budget the agent's tools give a critical-surface search (s).
+SEARCH_TIME_BUDGET_S = 180.0
+#: The most the agent's tools let a search be given (s): a third of the
+#: agent's 30-minute turn, as the SALib tools allow.
+TIME_BUDGET_MAX_S = 600.0
+#: Share of the budget the main search may use; the supplementary families
+#: get the rest (they take a few seconds: they scan with Bishop).
+_MAIN_SHARE = 0.8
+#: Share of the main search's time a centre grid keeps for its refinement
+#: walk (GM-87), so a grid cut short is still refined.
+_REFINE_SHARE = 0.25
+#: After each coarse level the scan searches around this many of its lowest
+#: points, the step halving down to every point (`_scan_grid`).
+_ZOOM_BEST = 3
+
+_BUDGET: contextvars.ContextVar = contextvars.ContextVar(
+    "slope_search_budget", default=None)
+
+
+class SearchBudget:
+    """The time budget of one critical-surface search (GM-123).
+
+    ``seconds`` None means no limit (the run time is still recorded).
+    ``deadline`` is the stage's: `_MAIN_SHARE` of the budget while the main
+    search runs, the whole budget after `supplements`. Searches record what
+    they covered in ``stops`` (one entry per search cut short: ``stage``,
+    ``scored``, ``of``, ``unit``, ``covered``, ``not_covered``,
+    ``projected_s``) and ``not_run`` (steps skipped)."""
+
+    def __init__(self, seconds: Optional[float]):
+        self.seconds = None if seconds is None else float(seconds)
+        if self.seconds is not None and self.seconds <= 0:
+            raise ValueError(
+                f"time_budget_s must be positive or None, got {seconds}")
+        self.t0 = time.perf_counter()
+        self.deadline = (None if self.seconds is None
+                         else self.t0 + _MAIN_SHARE * self.seconds)
+        self.stops: List[Dict[str, Any]] = []
+        self.not_run: List[str] = []
+        #: The Bishop screen's re-score (`_record_screen`), when it ran.
+        self.screen: Optional[Dict[str, int]] = None
+
+    def supplements(self) -> None:
+        """The main search is done: the rest of the budget is the
+        supplementary families'."""
+        if self.seconds is not None:
+            self.deadline = self.t0 + self.seconds
+
+    def up(self) -> bool:
+        return (self.deadline is not None
+                and time.perf_counter() >= self.deadline)
+
+    def elapsed(self) -> float:
+        return time.perf_counter() - self.t0
+
+    @property
+    def stopped(self) -> bool:
+        return bool(self.stops or self.not_run)
+
+
+@contextlib.contextmanager
+def search_budget(seconds: Optional[float]):
+    """Run the searches inside under one `SearchBudget` (yielded)."""
+    budget = SearchBudget(seconds)
+    token = _BUDGET.set(budget)
+    try:
+        yield budget
+    finally:
+        _BUDGET.reset(token)
+
+
+def _time_up() -> bool:
+    """True when the running search's budget for this stage is spent
+    (never outside `search_budget`)."""
+    budget = _BUDGET.get()
+    return budget is not None and budget.up()
+
+
+def _record_stop(stage: str, scored: int, of: int, unit: str, t_start: float,
+                 covered: str = "", not_covered: str = "") -> None:
+    """Note in the running budget that ``stage`` stopped after ``scored`` of
+    ``of`` ``unit``, with the run time of the whole projected from the
+    ``scored`` ones (started at ``t_start``)."""
+    budget = _BUDGET.get()
+    if budget is None:
+        return
+    spent = time.perf_counter() - t_start
+    projected = spent / scored * of if scored else None
+    budget.stops.append({
+        "stage": stage, "scored": scored, "of": of, "unit": unit,
+        "covered": covered, "not_covered": not_covered,
+        "time_s": round(spent, 1),
+        "projected_s": None if projected is None else round(projected)})
+
+
+def _record_not_run(what: str) -> None:
+    budget = _BUDGET.get()
+    if budget is not None and what not in budget.not_run:
+        budget.not_run.append(what)
+
+
+def _record_screen(rescored: int, dropped: int) -> None:
+    """Note the Bishop screen's re-score: ``rescored`` points re-scored with
+    the method itself, ``dropped`` more within `_SCREEN_WITHIN` of the
+    screen's minimum left out by the cap `_SCREEN_MAX`."""
+    budget = _BUDGET.get()
+    if budget is not None:
+        budget.screen = {"rescored": rescored, "dropped": dropped}
+
+
+@contextlib.contextmanager
+def _stage_share(share: float):
+    """Inside, the running budget's deadline is ``share`` of the time left
+    to it; the rest is kept for what follows (a grid's refinement walk)."""
+    budget = _BUDGET.get()
+    if budget is None or budget.deadline is None or share >= 1.0:
+        yield
+        return
+    saved = budget.deadline
+    now = time.perf_counter()
+    budget.deadline = now + share * max(saved - now, 0.0)
+    try:
+        yield
+    finally:
+        budget.deadline = saved
+
+
+def _axis(n: int, s: int) -> List[int]:
+    """Every s-th index of an axis of n points, and the last one."""
+    return sorted(set(range(0, n, s)) | {n - 1})
+
+
+def _first_step(n_a: int, n_b: int) -> int:
+    """The coarsest spacing of `_scan_grid`: the largest power of two
+    leaving at least three intervals along the longer axis."""
+    s = 1
+    while 3 * 2 * s <= max(n_a, n_b) - 1:
+        s *= 2
+    return s
+
+
+class _ScanStop(Exception):
+    """The time budget stopped a `_scan_grid`."""
+
+
+def _scan_grid(n_a: int, n_b: int, score: Callable) -> Dict[str, Any]:
+    """Score every point (i, j) of an n_a x n_b grid once (GM-123).
+
+    Coarse first: every s-th index of each axis and the last one, s from
+    `_first_step`. After each finished level, around each of the
+    `_ZOOM_BEST` lowest points so far: the 3 x 3 neighbourhood at half
+    that step, moving to its lowest point until the centre is the lowest,
+    then the step halved again, down to 1. Then the next level, s halved,
+    down to every point. ``score(i, j)`` scores a point and returns its
+    FOS.
+
+    Under a time budget the scan stops once it has a surface (an FOS below
+    `_FOS_MAX`) and the deadline has passed. A scan that finishes has
+    scored every point once, so a result taken in the grid's own order
+    does not depend on this order. Returns ``done`` and ``total`` points,
+    ``first`` (the coarsest spacing), ``level`` (the spacing of the last
+    level finished, None if none) and ``beyond`` (points scored beyond that
+    level's lattice: around the lowest, and part of the next level).
+    """
+    fos: Dict[Tuple[int, int], float] = {}
+    lowest = [_FOS_MAX]
+
+    def visit(i, j):
+        if (i, j) in fos:
+            return
+        if lowest[0] < _FOS_MAX and _time_up():
+            raise _ScanStop
+        f = score(i, j)
+        fos[(i, j)] = f
+        lowest[0] = min(lowest[0], f)
+
+    def zoom(s):
+        ranked = sorted((f, k) for k, f in fos.items() if f < _FOS_MAX)
+        for _f, (ci, cj) in ranked[:_ZOOM_BEST]:
+            t = s // 2
+            while t >= 1:
+                while True:
+                    near = [(ci + di, cj + dj) for di in (-t, 0, t)
+                            for dj in (-t, 0, t)
+                            if 0 <= ci + di < n_a and 0 <= cj + dj < n_b]
+                    for i, j in near:
+                        visit(i, j)
+                    f_min, p_min = min((fos[q], q) for q in near)
+                    if f_min >= fos[(ci, cj)]:
+                        break
+                    ci, cj = p_min
+                t //= 2
+
+    first = _first_step(n_a, n_b)
+    level = None
+    try:
+        s = first
+        while True:
+            for i in _axis(n_a, s):
+                for j in _axis(n_b, s):
+                    visit(i, j)
+            level = s
+            if s == 1:
+                break
+            zoom(s)
+            s //= 2
+    except _ScanStop:
+        pass
+    lattice = (len(_axis(n_a, level)) * len(_axis(n_b, level))
+               if level else 0)
+    return {"done": len(fos), "total": n_a * n_b, "first": first,
+            "level": level, "beyond": len(fos) - lattice}
+
+
+def _ordinal(s: int) -> str:
+    return {1: "every", 2: "every 2nd", 3: "every 3rd"}.get(s, f"every {s}th")
+
+
+def _scan_coverage(sweep: Dict[str, Any], axes) -> Tuple[str, str]:
+    """(covered, not covered) in words for a `_scan_grid` stopped part way.
+    ``axes`` = ((name, lo, hi, n), (name, lo, hi, n))."""
+    def spacing(s):
+        parts = []
+        for name, lo, hi, n in axes:
+            step = abs(hi - lo) / max(n - 1, 1) * min(s, max(n - 1, 1))
+            parts.append(f"{name} {min(lo, hi):.2f} to {max(lo, hi):.2f} "
+                         f"{step:.2f} m apart")
+        return ", ".join(parts)
+
+    level, done, total = sweep["level"], sweep["done"], sweep["total"]
+    if level is not None:
+        covered = (f"{_ordinal(level)} point along each axis across the "
+                   f"whole range ({spacing(level)})")
+        if sweep["beyond"] > 0:
+            covered += (f", and {sweep['beyond']} more points closer "
+                        f"together, first around the lowest it found")
+    else:
+        first = sweep["first"]
+        n_first = (len(_axis(axes[0][3], first))
+                   * len(_axis(axes[1][3], first)))
+        covered = (f"{done} of the {n_first} points of the coarsest pass "
+                   f"({spacing(first)})")
+    not_covered = (f"{total - done} of the {total} points (all {total}: "
+                   f"{spacing(1)})")
+    return covered, not_covered
 
 
 def _ordered_windows(x_entry_range, x_exit_range):
@@ -754,6 +1043,39 @@ _REFINE_SCREEN = True
 # most 12 centres.
 _REFINE_FOS_FN = (1, 3, 12)          # (starts, levels, centres per start)
 
+# The Bishop screen of the main circular search (GM-123, an option,
+# ``bishop_screen``): every centre or entry/exit pair is scored with Bishop,
+# then the lowest of them are re-scored with the method itself, at least
+# _SCREEN_MIN and every one within _SCREEN_WITHIN of the screen's minimum,
+# at most _SCREEN_MAX; only those are reported. Not where supports are
+# modelled (as the refinement walk above).
+_SCREEN_MIN = 10
+_SCREEN_WITHIN = 0.05
+_SCREEN_MAX = 30
+
+
+def _screen_method(geom, method: str, fos_fn, bishop_screen: bool) -> str:
+    """The method the main circular search scans with: Bishop under
+    ``bishop_screen`` for Spencer / Morgenstern-Price / GLE (not with a
+    per-surface solve or with supports modelled), else the method."""
+    if (bishop_screen and fos_fn is None and method in _REFINE_SCREENED
+            and not _has_reinforcement(geom)):
+        return "bishop"
+    return method
+
+
+def _screen_shortlist(found: Dict[Any, tuple]) -> Tuple[List[Any], int]:
+    """Keys of the screened points to re-score with the method itself,
+    lowest screen FOS first (each value's first item is its FOS), and how
+    many more within `_SCREEN_WITHIN` of the minimum the cap left out."""
+    ranked = sorted((v[0], k) for k, v in found.items() if v[0] < _FOS_MAX)
+    if not ranked:
+        return [], 0
+    cut = (1.0 + _SCREEN_WITHIN) * ranked[0][0]
+    keep = [k for n, (f, k) in enumerate(ranked)
+            if n < _SCREEN_MIN or f <= cut]
+    return keep[:_SCREEN_MAX], max(len(keep) - _SCREEN_MAX, 0)
+
 
 def _dips_below_base(geom: SlopeGeometry, slip, n_slices: int) -> bool:
     """True when a slice of the trial surface would have its base below the
@@ -869,6 +1191,7 @@ def grid_search(geom: SlopeGeometry,
                 x_exit_range: Optional[Tuple[float, float]] = None,
                 fos_fn: Optional[Callable] = None,
                 refine: bool = False,
+                bishop_screen: bool = False,
                 ) -> SearchResult:
     """Grid search for the critical circular slip surface.
 
@@ -902,6 +1225,15 @@ def grid_search(geom: SlopeGeometry,
     refine : bool
         Refine the lowest grid centres locally (GM-87). Default False here;
         ``search_critical_surface`` turns it on.
+    bishop_screen : bool
+        Spencer / Morgenstern-Price / GLE only: score every centre with
+        Bishop's simplified method, then re-score the best centres with the
+        method itself (``_screen_shortlist``); only those are reported.
+        Default False (GM-123).
+
+    The centres are scored coarse first and, inside a `search_budget`, the
+    search stops at the budget's main-search share and records what it
+    covered (GM-123).
 
     Returns
     -------
@@ -920,38 +1252,84 @@ def grid_search(geom: SlopeGeometry,
     y_lo, y_hi = y_range
     lattice = [[(_FOS_MAX, 0.0, 0.0, 0.0)] * ny for _ in range(nx)]
 
-    def score(xc, yc):
+    # Coarse first, and around the lowest centres, under a time budget
+    # (GM-123); the grid's record and its best centre are then taken in the
+    # grid's own order, as before.
+    scan = _screen_method(geom, method, fos_fn, bishop_screen)
+    scored = [[False] * ny for _ in range(nx)]
+
+    def score(ix, iy):
         nonlocal n_evaluated
+        xc = x_lo + (x_hi - x_lo) * ix / max(nx - 1, 1) if nx > 1 else (x_lo + x_hi) / 2
+        yc = y_lo + (y_hi - y_lo) * iy / max(ny - 1, 1) if ny > 1 else (y_lo + y_hi) / 2
         r_opt, fos_opt = optimize_radius(
-            geom, xc, yc, method=method, n_slices=n_slices, tol=tol,
+            geom, xc, yc, method=scan, n_slices=n_slices, tol=tol,
             x_entry_range=x_entry_range, x_exit_range=x_exit_range,
             fos_fn=fos_fn,
         )
         n_evaluated += 1
-        grid_fos.append({
-            "xc": round(xc, 2),
-            "yc": round(yc, 2),
-            "R": round(r_opt, 2),
-            "FOS": round(fos_opt, 4),
-        })
-        return r_opt, fos_opt
+        lattice[ix][iy] = (fos_opt, xc, yc, r_opt)
+        scored[ix][iy] = True
+        return fos_opt
+
+    t_start = time.perf_counter()
+    with _stage_share(1.0 - _REFINE_SHARE if refine else 1.0):
+        sweep = _scan_grid(nx, ny, score)
+    if sweep["done"] < sweep["total"]:
+        covered, missed = _scan_coverage(
+            sweep, (("centre x", x_lo, x_hi, nx),
+                    ("centre height", y_lo, y_hi, ny)))
+        _record_stop("centre grid", sweep["done"], sweep["total"],
+                     "circle centres", t_start, covered, missed)
+
+    # Bishop screen (GM-123): the best centres re-scored with the method
+    # itself, their radius optimised again; only those can be reported.
+    rescored = None
+    if scan != method:
+        rescored = {}
+        found = {(ix, iy): lattice[ix][iy] for ix in range(nx)
+                 for iy in range(ny) if scored[ix][iy]}
+        # Run even past the time budget (at most _SCREEN_MAX centres): the
+        # reported FOS must be the method's own.
+        shortlist, dropped = _screen_shortlist(found)
+        _record_screen(len(shortlist), dropped)
+        for key in shortlist:
+            _f, xc, yc, _r = found[key]
+            r_opt, fos_opt = optimize_radius(
+                geom, xc, yc, method=method, n_slices=n_slices, tol=tol,
+                x_entry_range=x_entry_range, x_exit_range=x_exit_range)
+            n_evaluated += 1
+            rescored[key] = (fos_opt, xc, yc, r_opt)
 
     for ix in range(nx):
-        xc = x_lo + (x_hi - x_lo) * ix / max(nx - 1, 1) if nx > 1 else (x_lo + x_hi) / 2
         for iy in range(ny):
-            yc = y_lo + (y_hi - y_lo) * iy / max(ny - 1, 1) if ny > 1 else (y_lo + y_hi) / 2
-
-            r_opt, fos_opt = score(xc, yc)
-            lattice[ix][iy] = (fos_opt, xc, yc, r_opt)
-
+            if not scored[ix][iy]:
+                continue
+            fos_opt, xc, yc, r_opt = lattice[ix][iy]
+            entry = {
+                "xc": round(xc, 2),
+                "yc": round(yc, 2),
+                "R": round(r_opt, 2),
+                "FOS": round(fos_opt, 4),
+            }
+            if rescored is not None:
+                if (ix, iy) not in rescored:
+                    entry["method"] = scan      # a screen value only
+                    grid_fos.append(entry)
+                    continue
+                fos_opt, xc, yc, r_opt = rescored[(ix, iy)]
+                entry.update(R=round(r_opt, 2), FOS=round(fos_opt, 4))
+            grid_fos.append(entry)
             if fos_opt < best_fos:
                 best_fos = fos_opt
                 best_xc = xc
                 best_yc = yc
                 best_r = r_opt
 
+    if refine and best_fos < _FOS_MAX and _time_up():
+        _record_not_run("the refinement of the lowest grid centres")
     # Local refinement of the lowest grid centres (GM-87)
-    if refine and best_fos < _FOS_MAX:
+    if refine and best_fos < _FOS_MAX and not _time_up():
         steps = ((x_hi - x_lo) / max(nx - 1, 1) / 2.0,
                  (y_hi - y_lo) / max(ny - 1, 1) / 2.0)
         bounds = ((min(x_lo, x_hi), max(x_lo, x_hi)),
@@ -990,12 +1368,17 @@ def grid_search(geom: SlopeGeometry,
         def walk_score(xc, yc):
             key = (round(xc, 6), round(yc, 6))
             if key not in seen:
+                if _time_up():          # the walk ends where it is (GM-123)
+                    _record_not_run("part of the refinement of the lowest "
+                                    "grid centres")
+                    return (0.0, _FOS_MAX)
                 seen[key] = strict(xc, yc, walk_method)
             return seen[key]
 
         minima = _grid_minima([[p[0] for p in col] for col in lattice],
                               nx, ny)
-        grid_best = best_fos
+        # the lowest grid FOS (with a Bishop screen, the screen's)
+        grid_best = min(p[0] for col in lattice for p in col)
         for f0, ix, iy in minima[:n_starts]:
             if f0 > (1.0 + _REFINE_WITHIN) * grid_best:
                 break
@@ -1101,7 +1484,14 @@ def search_noncircular(
     trial_surfaces = []
     reject_stats = _new_reject_stats()
 
-    for _ in range(n_trials):
+    t_start = time.perf_counter()
+    for k in range(n_trials):
+        if best_fos < _FOS_MAX and _time_up():    # GM-123
+            _record_stop("random noncircular search", k, n_trials,
+                         "random trial surfaces", t_start,
+                         "the trials are random over both windows",
+                         f"{n_trials - k} trials")
+            break
         # Random entry and exit x-coordinates
         x_entry = random.uniform(x_lo_entry, x_hi_entry)
         x_exit = random.uniform(x_lo_exit, x_hi_exit)
@@ -1335,7 +1725,14 @@ def search_pso(
                            for px, pz in slip.points],
             })
 
+    t_start = time.perf_counter()
     for iteration in range(n_iterations):
+        if _time_up():                    # GM-123
+            _record_stop("particle swarm", iteration, n_iterations,
+                         "iterations", t_start,
+                         f"{n_particles} particles over both windows",
+                         f"{n_iterations - iteration} iterations")
+            break
         w_iter = w - (w - 0.4) * iteration / max(n_iterations - 1, 1)
 
         for i in range(n_particles):
@@ -1491,7 +1888,14 @@ def search_weak_layer_biased(
     grid_fos = []
     trial_surfaces = []
 
-    for _ in range(n_trials):
+    t_start = time.perf_counter()
+    for k in range(n_trials):
+        if best_fos < _FOS_MAX and _time_up():    # GM-123
+            _record_stop("weak-layer search", k, n_trials,
+                         "random trial surfaces", t_start,
+                         "the trials are random over both windows",
+                         f"{n_trials - k} trials")
+            break
         x_entry = random.uniform(*x_entry_range)
         x_exit = random.uniform(*x_exit_range)
         if x_exit <= x_entry + 1.0:
@@ -1609,6 +2013,7 @@ def search_entry_exit(
     n_slices: int = 30,
     tol: float = 1e-4,
     fos_fn: Optional[Callable] = None,
+    bishop_screen: bool = False,
 ) -> SearchResult:
     """Entry/exit region search for circular slip surfaces.
 
@@ -1637,6 +2042,15 @@ def search_entry_exit(
         Number of slices per analysis.
     tol : float
         FOS convergence tolerance.
+    bishop_screen : bool
+        Spencer / Morgenstern-Price / GLE only: score every pair with
+        Bishop's simplified method, then re-score the best pairs with the
+        method itself (``_screen_shortlist``); only those are reported.
+        Default False (GM-123).
+
+    The pairs are scored coarse first and, inside a `search_budget`, the
+    search stops at the budget's main-search share and records what it
+    covered (GM-123).
 
     Returns
     -------
@@ -1656,33 +2070,44 @@ def search_entry_exit(
     exit_xs = [x_exit_range[0] + (x_exit_range[1] - x_exit_range[0]) * i / max(n_exit - 1, 1)
                for i in range(n_exit)] if n_exit > 1 else [(x_exit_range[0] + x_exit_range[1]) / 2]
 
-    for x_en in entry_xs:
+    scan = _screen_method(geom, method, fos_fn, bishop_screen)
+    golden = (math.sqrt(5) - 1) / 2
+
+    def pair_best(x_en, x_ex, m, start=None):
+        """(FOS, xc, yc, R, t, margin) of the best circle (scored with
+        ``m``) through the ground at x_en and x_ex: the centre's offset t
+        up the chord's perpendicular bisector scanned, then refined by
+        golden section; or, from a ``start`` offset, that circle and golden
+        section within two scan steps of it. None when no circle joins the
+        two points."""
+        nonlocal n_evaluated
+        if x_ex <= x_en + 1.0:
+            return None
         z_en = geom.ground_elevation_at(x_en)
-        for x_ex in exit_xs:
-            if x_ex <= x_en + 1.0:
-                continue
-            z_ex = geom.ground_elevation_at(x_ex)
+        z_ex = geom.ground_elevation_at(x_ex)
 
-            # Circle center lies on perpendicular bisector of chord
-            mid_x = (x_en + x_ex) / 2.0
-            mid_z = (z_en + z_ex) / 2.0
-            dx = x_ex - x_en
-            dz = z_ex - z_en
-            chord_len = math.sqrt(dx**2 + dz**2)
-            if chord_len < 0.1:
-                continue
+        # Circle center lies on perpendicular bisector of chord
+        mid_x = (x_en + x_ex) / 2.0
+        mid_z = (z_en + z_ex) / 2.0
+        dx = x_ex - x_en
+        dz = z_ex - z_en
+        chord_len = math.sqrt(dx**2 + dz**2)
+        if chord_len < 0.1:
+            return None
 
-            perp_x = -dz / chord_len
-            perp_z = dx / chord_len
-            half_chord = chord_len / 2.0
+        perp_x = -dz / chord_len
+        perp_z = dx / chord_len
+        half_chord = chord_len / 2.0
 
-            t_min = 0.5
-            t_max = 3.0 * chord_len
-            n_t = 15
+        t_min = 0.5
+        t_max = 3.0 * chord_len
+        n_t = 15
+        margin = (t_max - t_min) / n_t
 
-            local_best_fos = _FOS_MAX
-            local_best_t = t_min
+        local_best_fos = _FOS_MAX
+        local_best_t = t_min
 
+        if start is None:
             for it in range(n_t):
                 t = t_min + (t_max - t_min) * it / max(n_t - 1, 1)
                 xc = mid_x + t * perp_x
@@ -1693,7 +2118,7 @@ def search_entry_exit(
                     continue
 
                 slip = CircularSlipSurface(xc, yc, r)
-                fos = _compute_fos(geom, slip, method, n_slices, tol=tol,
+                fos = _compute_fos(geom, slip, m, n_slices, tol=tol,
                                    fos_fn=fos_fn)
                 n_evaluated += 1
 
@@ -1702,56 +2127,112 @@ def search_entry_exit(
                     local_best_t = t
 
             # Golden-section refinement
-            margin = (t_max - t_min) / n_t
             a = max(t_min, local_best_t - 2 * margin)
             b = min(t_max, local_best_t + 2 * margin)
-            golden = (math.sqrt(5) - 1) / 2
+        else:
+            local_best_t = start
+            local_best_fos = _compute_fos(
+                geom, CircularSlipSurface(mid_x + start * perp_x,
+                                          mid_z + start * perp_z,
+                                          math.sqrt(half_chord**2
+                                                    + start**2)),
+                m, n_slices, tol=tol, fos_fn=fos_fn)
+            n_evaluated += 1
+            a = max(t_min, start - 2 * margin)
+            b = min(t_max, start + 2 * margin)
 
-            for _ in range(15):
-                if b - a < 0.05:
-                    break
-                t1 = b - golden * (b - a)
-                t2 = a + golden * (b - a)
+        for _ in range(15):
+            if b - a < 0.05:
+                break
+            t1 = b - golden * (b - a)
+            t2 = a + golden * (b - a)
 
-                xc1 = mid_x + t1 * perp_x
-                yc1 = mid_z + t1 * perp_z
-                r1 = math.sqrt(half_chord**2 + t1**2)
+            xc1 = mid_x + t1 * perp_x
+            yc1 = mid_z + t1 * perp_z
+            r1 = math.sqrt(half_chord**2 + t1**2)
 
-                xc2 = mid_x + t2 * perp_x
-                yc2 = mid_z + t2 * perp_z
-                r2 = math.sqrt(half_chord**2 + t2**2)
+            xc2 = mid_x + t2 * perp_x
+            yc2 = mid_z + t2 * perp_z
+            r2 = math.sqrt(half_chord**2 + t2**2)
 
-                f1 = _compute_fos(geom, CircularSlipSurface(xc1, yc1, r1),
-                                  method, n_slices, tol=tol, fos_fn=fos_fn)
-                f2 = _compute_fos(geom, CircularSlipSurface(xc2, yc2, r2),
-                                  method, n_slices, tol=tol, fos_fn=fos_fn)
-                n_evaluated += 2
+            f1 = _compute_fos(geom, CircularSlipSurface(xc1, yc1, r1),
+                              m, n_slices, tol=tol, fos_fn=fos_fn)
+            f2 = _compute_fos(geom, CircularSlipSurface(xc2, yc2, r2),
+                              m, n_slices, tol=tol, fos_fn=fos_fn)
+            n_evaluated += 2
 
-                if f1 < f2:
-                    b = t2
-                    if f1 < local_best_fos:
-                        local_best_fos = f1
-                        local_best_t = t1
-                else:
-                    a = t1
-                    if f2 < local_best_fos:
-                        local_best_fos = f2
-                        local_best_t = t2
+            if f1 < f2:
+                b = t2
+                if f1 < local_best_fos:
+                    local_best_fos = f1
+                    local_best_t = t1
+            else:
+                a = t1
+                if f2 < local_best_fos:
+                    local_best_fos = f2
+                    local_best_t = t2
 
-            t_final = local_best_t
-            xc_f = mid_x + t_final * perp_x
-            yc_f = mid_z + t_final * perp_z
-            r_f = math.sqrt(half_chord**2 + t_final**2)
+        t_final = local_best_t
+        return (local_best_fos, mid_x + t_final * perp_x,
+                mid_z + t_final * perp_z,
+                math.sqrt(half_chord**2 + t_final**2), t_final, margin)
 
-            grid_fos.append({
+    # Coarse first, and around the lowest pairs, under a time budget
+    # (GM-123); the record and the best pair are then taken in the
+    # windows' own order, as before.
+    found = {}
+
+    def score(i, j):
+        res = pair_best(entry_xs[i], exit_xs[j], scan)
+        if res is None:
+            return _FOS_MAX
+        found[(i, j)] = res
+        return res[0]
+
+    t_start = time.perf_counter()
+    sweep = _scan_grid(len(entry_xs), len(exit_xs), score)
+    if sweep["done"] < sweep["total"]:
+        covered, missed = _scan_coverage(
+            sweep,
+            (("entry x", x_entry_range[0], x_entry_range[1], len(entry_xs)),
+             ("exit x", x_exit_range[0], x_exit_range[1], len(exit_xs))))
+        _record_stop("entry/exit grid", sweep["done"], sweep["total"],
+                     "entry/exit pairs", t_start, covered, missed)
+
+    # Bishop screen (GM-123): the best pairs re-scored with the method
+    # itself, golden section about the screen's offset; only those can be
+    # reported.
+    rescored = found
+    if scan != method:
+        rescored = {}
+        # Run even past the time budget (at most _SCREEN_MAX pairs): the
+        # reported FOS must be the method's own.
+        shortlist, dropped = _screen_shortlist(found)
+        _record_screen(len(shortlist), dropped)
+        for key in shortlist:
+            t_b = found[key][4]
+            res = pair_best(entry_xs[key[0]], exit_xs[key[1]], method,
+                            start=t_b)
+            if res is not None:
+                rescored[key] = res
+
+    for i in range(len(entry_xs)):
+        for j in range(len(exit_xs)):
+            if (i, j) not in found:
+                continue
+            fos_, xc_f, yc_f, r_f, _t, _m = rescored.get((i, j), found[(i, j)])
+            entry = {
                 "xc": round(xc_f, 2),
                 "yc": round(yc_f, 2),
                 "R": round(r_f, 2),
-                "FOS": round(local_best_fos, 4),
-            })
+                "FOS": round(fos_, 4),
+            }
+            if (i, j) not in rescored:
+                entry["method"] = scan          # a screen value only
+            grid_fos.append(entry)
 
-            if local_best_fos < best_fos:
-                best_fos = local_best_fos
+            if (i, j) in rescored and fos_ < best_fos:
+                best_fos = fos_
                 best_xc = xc_f
                 best_yc = yc_f
                 best_r = r_f
@@ -1887,6 +2368,8 @@ def search_de(
     best_seen = [_FOS_MAX]
 
     def _objective(v):
+        if best_seen[0] < _FOS_MAX and _time_up():   # GM-123: stopped below
+            return _FOS_MAX
         slip = _to_slip(v)
         if slip is None:
             return _FOS_MAX
@@ -1908,6 +2391,7 @@ def search_de(
         return fos + pen
 
     # ---- seeding -----------------------------------------------------------
+    seed_crit = None
     if seed_surface is None and n_seed_trials > 0:
         seed_res = search_noncircular(
             geom, x_entry_range, x_exit_range, n_trials=n_seed_trials,
@@ -1915,6 +2399,7 @@ def search_de(
             method=method, fos_fn=fos_fn,
         )
         if seed_res.critical is not None and seed_res.critical.slip_points:
+            seed_crit = seed_res.critical
             seed_surface = PolylineSlipSurface(
                 points=seed_res.critical.slip_points)
 
@@ -1949,11 +2434,24 @@ def search_de(
         pop[0, :] = x0
         init = pop
 
+    generations = [0]
+
+    def _stop(*_args, **_kw):
+        """Stop the evolution at the time budget (GM-123)."""
+        generations[0] += 1
+        return _time_up()
+
+    t_start = time.perf_counter()
     result = differential_evolution(
         _objective, bounds, init=init, maxiter=maxiter,
         popsize=popsize, seed=seed, tol=1e-6, polish=False,
-        mutation=(0.4, 1.0), recombination=0.8,
+        mutation=(0.4, 1.0), recombination=0.8, callback=_stop,
     )
+    if _time_up() and generations[0] < maxiter:
+        _record_stop("differential evolution", generations[0], maxiter,
+                     "generations", t_start,
+                     "the population over both windows",
+                     f"{maxiter - generations[0]} generations")
 
     n_evaluated = int(result.nfev)
     best_slip = _to_slip(result.x)
@@ -1982,6 +2480,11 @@ def search_de(
             )
         except ValueError:
             pass
+    if (critical is None and seed_crit is not None and _time_up()
+            and seed_crit.FOS < _FOS_MAX):
+        # Cut short by the time budget with no confirmed surface of its own:
+        # the random search's best that seeded it (GM-123).
+        critical = seed_crit
 
     return SearchResult(
         critical=critical,

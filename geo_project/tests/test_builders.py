@@ -232,6 +232,16 @@ def test_run_analyses_le_matches_direct_search():
     assert prob["beta_lognormal"] > 0
 
 
+def test_run_analyses_gives_each_search_its_time_budget():
+    """GM-123: run_analyses passes ``time_budget_s`` to each LE search; a
+    search cut short says so first in its warnings. None by default."""
+    r = run_analyses(_small_le_project(), time_budget_s=1e-4)["LE-bishop"]
+    assert r["FOS"] is not None
+    assert r["warnings"][0].startswith("Cut short by its time budget")
+    r = run_analyses(_small_le_project())["LE-bishop"]
+    assert not any("time budget" in w for w in r["warnings"])
+
+
 def test_run_analyses_le_records_surface_kind():
     """GM-55: the stored critical surface says its kind, and the entry
     carries the search's governing_surface and warnings."""

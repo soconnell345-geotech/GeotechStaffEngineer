@@ -12,6 +12,7 @@ from slope_stability.analysis import (
     analyze_slope, search_critical_surface, compare_methods_table,
     infinite_slope_fos,
 )
+from slope_stability.search import SEARCH_TIME_BUDGET_S, TIME_BUDGET_MAX_S
 
 _METHODS = ["fellenius", "bishop", "janbu", "spencer", "morgenstern_price",
             "gle"]
@@ -37,6 +38,42 @@ _GEOM_PARAMS = (
     "surcharges", "reverse_curvature",
 )
 _SURFACE_PARAMS = ("xc", "yc", "radius", "slip_points")
+
+
+#: The most time a slope search may be given through the agent (GM-123): a
+#: third of the agent's 30-minute turn, as the SALib tools allow. A larger
+#: value is refused, not clipped, so the agent knows what it got.
+_TIME_BUDGET_MAX_S = TIME_BUDGET_MAX_S
+
+
+def _time_budget(params: dict, method: str) -> float:
+    """The search's ``time_budget_s`` (GM-123): `SEARCH_TIME_BUDGET_S` when
+    left out (the library itself has no budget unless given one), above 0
+    and at most `_TIME_BUDGET_MAX_S`. Used by every tool that runs a slope
+    search for the agent (this adapter, calc_package, the project run)."""
+    value = params.get("time_budget_s", SEARCH_TIME_BUDGET_S)
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{method}: time_budget_s must be a number of "
+                         f"seconds, got {value!r}.") from None
+    if not 0.0 < value <= _TIME_BUDGET_MAX_S:
+        raise ValueError(
+            f"{method}: time_budget_s must be above 0 and at most "
+            f"{_TIME_BUDGET_MAX_S:.0f} s (a third of the agent's 30-minute "
+            f"turn), got {value:g}.")
+    return value
+
+
+def budget_is_default(choices, params: dict) -> None:
+    """A search's time budget is the tool's default when the agent gave
+    none (GM-123): say so in its ``choices`` entry (the library sees the
+    tool's default as given)."""
+    if "time_budget_s" in params:
+        return
+    for c in choices or ():
+        if c.get("what") == "time budget of the search":
+            c["how"] = "default"
 
 
 def _check_choice(value, allowed, *, name: str, method: str):
@@ -324,7 +361,7 @@ def _run_search_critical_surface(params: dict) -> dict:
         _GEOM_PARAMS + (
             "surface_type", "method", "x_range", "y_range", "x_entry_range",
             "x_exit_range", "nx", "ny", "n_trials", "n_points", "n_slices",
-            "tol", "seed"),
+            "tol", "seed", "time_budget_s", "bishop_screen"),
         method="search_critical_surface")
     geom = _build_geometry(params, method="search_critical_surface")
     method = _check_choice(params.get("method", "bishop"), _METHODS,
@@ -345,7 +382,10 @@ def _run_search_critical_surface(params: dict) -> dict:
         x_entry_range=x_entry_range, x_exit_range=x_exit_range,
         n_trials=params.get("n_trials", 500), n_points=params.get("n_points", 5),
         seed=params.get("seed"),
+        time_budget_s=_time_budget(params, "search_critical_surface"),
+        bishop_screen=bool(params.get("bishop_screen", False)),
     )
+    budget_is_default(result.choices, params)
     return result.to_dict()
 
 
@@ -378,7 +418,7 @@ def _run_monte_carlo(params: dict) -> dict:
         params,
         _GEOM_PARAMS + _SURFACE_PARAMS + (
             "variables", "method", "n", "seed", "n_slices", "tol",
-            "research_surface", "correlations"),
+            "research_surface", "correlations", "time_budget_s"),
         method="monte_carlo_fos")
     geom = _build_geometry(params, method="monte_carlo_fos")
     require_params(params, ["variables"], method="monte_carlo_fos")
@@ -392,6 +432,9 @@ def _run_monte_carlo(params: dict) -> dict:
         method=method, n=params.get("n", 1000), seed=params.get("seed"),
         n_slices=params.get("n_slices", 30), tol=params.get("tol", 1e-4),
         research_surface=params.get("research_surface", False),
+        search_kwargs=({"time_budget_s": _time_budget(params,
+                                                      "monte_carlo_fos")}
+                       if params.get("research_surface") else None),
         correlations=params.get("correlations"),
     )
     return result.to_dict()
@@ -463,7 +506,7 @@ def _run_search_rapid_drawdown(params: dict) -> dict:
             "surface_type", "x_range", "y_range", "x_entry_range",
             "x_exit_range", "nx", "ny", "n_trials", "n_points", "seed",
             "n_slices", "tol", "f_interslice", "stage1_phreatic_points",
-            "stage3_effective_normal"),
+            "stage3_effective_normal", "time_budget_s"),
         method="search_rapid_drawdown")
     geom = _build_geometry(params, method="search_rapid_drawdown")
     require_params(params, ["drawdown_from_elevation", "drawdown_to_elevation"],
@@ -493,7 +536,10 @@ def _run_search_rapid_drawdown(params: dict) -> dict:
         tol=params.get("tol", 1e-4), f_interslice=f_int,
         stage1_phreatic_points=params.get("stage1_phreatic_points"),
         stage3_effective_normal=stage3,
+        time_budget_s=_time_budget(params, "search_rapid_drawdown"),
     )
+    if result.search is not None:
+        budget_is_default(result.search.choices, params)
     return result.to_dict()
 
 
@@ -684,6 +730,7 @@ METHOD_INFO = {
             "f_interslice": {"type": "str", "required": False, "default": "constant", "allowed_values": _F_INTERSLICE, "description": "GLE interslice function ('constant' = Spencer)."},
             "stage1_phreatic_points": {"type": "array", "required": False, "description": "Optional steady-seepage stage-1 phreatic surface [[x,z],...] (see rapid_drawdown_fos)."},
             "stage3_effective_normal": {"type": "str", "required": False, "default": "fellenius", "allowed_values": _RD_STAGE3_NORMAL, "description": "3-stage stage-3 drained-substitution normal basis: 'fellenius' (default) or 'gle' (rigorous). See rapid_drawdown_fos."},
+            "time_budget_s": {"type": "float", "required": False, "default": SEARCH_TIME_BUDGET_S, "description": "Time budget of the whole search in seconds (at most 600), as search_critical_surface: each trial is two or three GLE solves, so the main search scores coarse first and stops at 80 % of the budget, and search.warnings and search.search_ranges.time_budget say what was covered."},
         },
         "returns": {"FOS": "Minimum drawdown factor of safety found.", "method": "Stage method used.", "surface_type": "Search strategy.", "n_surfaces_evaluated": "Number of surfaces checked.", "search": "Rich search result (critical surface geometry + diagnostics).", "drawdown_detail": "Stage-level detail on the winning surface (stage-1 FOS, drained substitutions)."},
     },
@@ -738,7 +785,7 @@ METHOD_INFO = {
         "parameters": {
             **_GEOMETRY_PARAMS,
             "surface_type": {"type": "str", "required": False, "default": "circular", "allowed_values": _SURFACE_TYPES, "description": "Search strategy. 'entry_exit' grids circular arcs between entry/exit windows; 'noncircular_de' refines random polylines with scipy differential evolution."},
-            "method": {"type": "str", "required": False, "default": "bishop", "allowed_values": _METHODS, "description": "Limit-equilibrium method (noncircular searches use spencer when 'bishop' is requested)."},
+            "method": {"type": "str", "required": False, "default": "bishop", "allowed_values": _METHODS, "description": "Limit-equilibrium method (noncircular searches use spencer when 'bishop' is requested). Cost per trial surface, measured on four pinned slopes: fellenius about the same as bishop, janbu about twice bishop, and spencer, morgenstern_price and gle each about 30 to 40 times bishop at 30 slices and 40 to 70 times at 60 slices. A whole search costs less than that ratio where it scans with Bishop (the centre grid's refinement, the toe circles): the default 10 x 10 centre grid took 2-3 s with bishop and 14-16 s with spencer, a 10 x 10 or 12 x 12 entry_exit grid 2 s and 60-70 s, a 30 x 30 entry_exit grid at 60 slices 21 s and 972 s (development laptop; the app's host up to twice as long). On the circles of these slopes bishop and spencer gave FOS within 0.3 % of each other. Which method to use is the engineer's call; bishop_screen keeps the method and scans with Bishop."},
             "x_range": {"type": "array", "required": False, "description": "[xmin, xmax] for circle center search."},
             "y_range": {"type": "array", "required": False, "description": "[ymin, ymax] for circle center search."},
             "x_entry_range": {"type": "array", "required": False, "description": "[xmin, xmax] window for the slip surface's ENTRY: its low-x end, whichever way the slope faces (the toe side of a slope rising to the right, the crest side of one falling to the right)."},
@@ -749,8 +796,10 @@ METHOD_INFO = {
             "n_points": {"type": "int", "required": False, "default": 5, "description": "Polyline vertices for noncircular searches."},
             "n_slices": {"type": "int", "required": False, "default": 30, "description": "Number of slices per trial."},
             "seed": {"type": "int", "required": False, "description": "Random seed for reproducible noncircular/PSO/DE searches."},
+            "time_budget_s": {"type": "float", "required": False, "default": SEARCH_TIME_BUDGET_S, "description": "Time budget of the whole search in seconds (at most 600). The main search scores its centres or entry/exit pairs coarse first and stops at 80 % of the budget; the result is then the lowest surface found, and warnings and search_ranges.time_budget say what was scored of how many, at what spacing, the run time projected for the whole search, and what was not run. Raise it for a long search you mean to wait for."},
+            "bishop_screen": {"type": "bool", "required": False, "default": False, "description": "circular and entry_exit searches with spencer / morgenstern_price / gle: score every centre or pair with Bishop's simplified method, then re-score the lowest (at least 10, every one within 5 % of the lowest, at most 30) with the method itself; the reported FOS is the method's own. On four pinned slopes it found the same surfaces and FOS as the unscreened search in 35-60 % of the time on the default centre grid, 15-30 % on 10 x 10 and 12 x 12 entry_exit grids and 3 % on a 30 x 30 entry_exit grid at 60 slices (33 s against 972 s). Not applied where supports are modelled; noncircular searches are not screened."},
         },
-        "returns": {"critical": "Critical surface result (FOS, geometry; method_solved false when it was scored by the legacy approximate solver).", "n_surfaces_evaluated": "Number of surfaces checked.", "n_rejected": "Trial surfaces refused, by reason (present when any were): geometry, nonconverged, jagged, and ground_crossings (below the ground over more than one stretch: they leave the ground and come back into it, so they bound more than one sliding mass).", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', 'circle_above_toe' (lower end on the face above the toe), or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face). Toe circles, circles passing above the toe and shallow planar surfaces are always scored too, and the lowest is reported.", "candidates": "Minimum FOS of each surface family tried.", "infinite_slope_checks": "Each stretch of face where c'=0 soil is at the surface: slope angle, phi', tan(phi')/tan(beta), and the planar-surface FOS (or why it was not evaluated).", "warnings": "Where the search cannot be sure (a supplementary family undercut the main search; the critical surface sits on a window or grid edge; an unchecked cohesionless face). Report these to the user.", "search_ranges": "The entry/exit windows and centre ranges used, which were set automatically from the slope (its toe, crest, height, depth to the base) and where the model's end cut them: what the search covered.", "governing_location": "Where the governing surface lies: its ends, lowest point, greatest depth below the ground, the layers along its base, and its position against the slope's toe and crest in multiples of H.", "refused_lowest": "The lowest noncircular surface refused because its solution held about one moment axis or one slicing only (FOS, where, why); a warning says so when it is below the reported FOS."},
+        "returns": {"critical": "Critical surface result (FOS, geometry; method_solved false when it was scored by the legacy approximate solver).", "n_surfaces_evaluated": "Number of surfaces checked.", "n_rejected": "Trial surfaces refused, by reason (present when any were): geometry, nonconverged, jagged, and ground_crossings (below the ground over more than one stretch: they leave the ground and come back into it, so they bound more than one sliding mass).", "governing_surface": "Kind of surface that governs: 'circular' / 'noncircular' (the main search), 'toe_circle', 'circle_above_toe' (lower end on the face above the toe), or 'infinite_slope' (shallow planar sliding where c'=0 soil forms the face). Toe circles, circles passing above the toe and shallow planar surfaces are always scored too, and the lowest is reported.", "candidates": "Minimum FOS of each surface family tried.", "infinite_slope_checks": "Each stretch of face where c'=0 soil is at the surface: slope angle, phi', tan(phi')/tan(beta), and the planar-surface FOS (or why it was not evaluated).", "warnings": "Where the search cannot be sure (the time budget stopped it, first; a supplementary family undercut the main search; the critical surface sits on a window or grid edge; an unchecked cohesionless face). Report these to the user.", "search_ranges": "The entry/exit windows and centre ranges used, which were set automatically from the slope (its toe, crest, height, depth to the base) and where the model's end cut them: what the search covered; time_budget when the budget stopped the search (what was scored, of how many, the projected run time, what was not run).", "governing_location": "Where the governing surface lies: its ends, lowest point, greatest depth below the ground, the layers along its base, and its position against the slope's toe and crest in multiples of H.", "refused_lowest": "The lowest noncircular surface refused because its solution held about one moment axis or one slicing only (FOS, where, why); a warning says so when it is below the reported FOS."},
     },
     "fosm_fos": {
         "category": "Slope Stability",
@@ -776,6 +825,7 @@ METHOD_INFO = {
             "n": {"type": "int", "required": False, "default": 1000, "description": "Number of realizations."},
             "seed": {"type": "int", "required": False, "description": "Random seed for reproducibility."},
             "research_surface": {"type": "bool", "required": False, "default": False, "description": "Re-search the critical surface for every realization (slow; default keeps the surface fixed, standard practice)."},
+            "time_budget_s": {"type": "float", "required": False, "default": SEARCH_TIME_BUDGET_S, "description": "With research_surface: the time budget of EACH realization's search, in seconds (at most 600), as search_critical_surface. It is per search, not for the run: n realizations may take up to n times it, so keep n small."},
             "n_slices": {"type": "int", "required": False, "default": 30, "description": "Number of slices."},
             **_CORRELATIONS_PARAM,
         },

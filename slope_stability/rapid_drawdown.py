@@ -79,7 +79,9 @@ from slope_stability.slip_surface import CircularSlipSurface, PolylineSlipSurfac
 from slope_stability.slices import build_slices
 from slope_stability.gle import gle_fos
 from slope_stability.results import SearchResult
-from slope_stability.search import _counts_ground_refusals, _ordered_windows
+from slope_stability.search import (
+    _counts_ground_refusals, _ordered_windows,
+)
 
 
 _METHODS = ("corps_2stage", "duncan_3stage", "lowe_karafiath")
@@ -611,6 +613,7 @@ def search_rapid_drawdown(geom: SlopeGeometry,
                           toe_circles: bool = True,
                           infinite_slope: bool = True,
                           refine: bool = True,
+                          time_budget_s: Optional[float] = None,
                           ) -> RapidDrawdownSearchResult:
     """Find the critical slip surface UNDER RAPID-DRAWDOWN strengths.
 
@@ -675,6 +678,12 @@ def search_rapid_drawdown(geom: SlopeGeometry,
         search on the centre (GM-87; ``search.grid_search``). With a
         per-surface solve this costly only the lowest grid centre is
         refined, three step halvings, at most 12 centres. Default True.
+    time_budget_s : float or None
+        Time budget of the whole search, in seconds, as
+        ``search_critical_surface`` (GM-123): the main search scores coarse
+        first and stops at 80 % of it, the supplementary families at it,
+        and the result says what was covered. Default None, no limit;
+        the agent's tools give ``search.SEARCH_TIME_BUDGET_S`` (180 s).
 
     Returns
     -------
@@ -701,6 +710,7 @@ def search_rapid_drawdown(geom: SlopeGeometry,
 
     from slope_stability.search import (
         grid_search, search_entry_exit, search_noncircular, search_de, _FOS_MAX,
+        search_budget,
     )
 
     def _dd_fos(g: SlopeGeometry, slip) -> float:
@@ -747,49 +757,13 @@ def search_rapid_drawdown(geom: SlopeGeometry,
     x_entry_range, x_exit_range, x_range, y_range, auto = resolve_ranges(
         geom, x_entry_range, x_exit_range, x_range, y_range)
 
-    if surface_type == "circular":
-        search = grid_search(
-            geom, x_range, y_range, nx, ny, method="spencer",
-            n_slices=n_slices, tol=tol, x_entry_range=x_entry_range,
-            x_exit_range=x_exit_range, fos_fn=_dd_fos, refine=refine)
-    elif surface_type == "entry_exit":
-        search = search_entry_exit(
-            geom, x_entry_range, x_exit_range, n_entry=nx, n_exit=ny,
-            method="spencer", n_slices=n_slices, tol=tol, fos_fn=_dd_fos)
-    elif surface_type == "noncircular":
-        search = search_noncircular(
-            geom, x_entry_range, x_exit_range, n_trials=n_trials,
-            n_points=n_points, n_slices=n_slices, tol=tol, seed=seed,
-            method="spencer", fos_fn=_dd_fos)
-    else:  # noncircular_de
-        search = search_de(
-            geom, x_entry_range, x_exit_range, n_points=max(n_points, 5),
-            method="spencer", n_slices=n_slices, tol=tol, seed=seed,
-            fos_fn=_dd_fos)
-
-    # Toe circles and shallow planar surfaces, scored with the drawdown FOS.
-    from slope_stability.search_supplements import (
-        apply_supplements, CIRCULAR, NONCIRCULAR,
-    )
-    circular = surface_type in ("circular", "entry_exit")
-    search = apply_supplements(
-        geom, search, search_kind=CIRCULAR if circular else NONCIRCULAR,
-        method="spencer", n_slices=n_slices, tol=tol,
-        windows_used=(x_entry_range, x_exit_range),
-        windows_auto=windows_auto,
-        grid_used=(x_range, y_range) if surface_type == "circular" else None,
-        grid_auto=grid_auto, toe_circles=toe_circles,
-        infinite_slope=infinite_slope, fos_fn=_dd_fos, auto_ranges=auto,
-        **given)
-    # What the search chose (GM-115); every trial is the drawdown solve.
-    from slope_stability.search_supplements import search_choices
-    search.choices = search_choices(
-        search, surface_type=surface_type, toe_circles=toe_circles,
-        infinite_slope=infinite_slope,
-        surface_types=("circular", "entry_exit", "noncircular",
-                       "noncircular_de"))
-    if window_note:
-        search.warnings.insert(0, window_note)
+    with search_budget(time_budget_s) as budget:
+        search = _drawdown_search(
+            geom, surface_type, x_range, y_range, nx, ny, x_entry_range,
+            x_exit_range, n_trials, n_points, seed, n_slices, tol, _dd_fos,
+            refine, budget, windows_auto=windows_auto, grid_auto=grid_auto,
+            toe_circles=toe_circles, infinite_slope=infinite_slope,
+            auto=auto, given=given, window_note=window_note)
 
     # Recompute the stage-level detail on the winning surface.
     dd = None
@@ -814,3 +788,61 @@ def search_rapid_drawdown(geom: SlopeGeometry,
         n_surfaces_evaluated=search.n_surfaces_evaluated,
         search=search, drawdown=dd,
     )
+
+
+def _drawdown_search(geom, surface_type, x_range, y_range, nx, ny,
+                     x_entry_range, x_exit_range, n_trials, n_points, seed,
+                     n_slices, tol, _dd_fos, refine, budget, *, windows_auto,
+                     grid_auto, toe_circles, infinite_slope, auto, given,
+                     window_note=None):
+    """The search of `search_rapid_drawdown` under its time budget: the
+    main search, its supplementary families and what it chose."""
+    from slope_stability.search import (
+        grid_search, search_entry_exit, search_noncircular, search_de,
+    )
+    if surface_type == "circular":
+        search = grid_search(
+            geom, x_range, y_range, nx, ny, method="spencer",
+            n_slices=n_slices, tol=tol, x_entry_range=x_entry_range,
+            x_exit_range=x_exit_range, fos_fn=_dd_fos, refine=refine)
+    elif surface_type == "entry_exit":
+        search = search_entry_exit(
+            geom, x_entry_range, x_exit_range, n_entry=nx, n_exit=ny,
+            method="spencer", n_slices=n_slices, tol=tol, fos_fn=_dd_fos)
+    elif surface_type == "noncircular":
+        search = search_noncircular(
+            geom, x_entry_range, x_exit_range, n_trials=n_trials,
+            n_points=n_points, n_slices=n_slices, tol=tol, seed=seed,
+            method="spencer", fos_fn=_dd_fos)
+    else:  # noncircular_de
+        search = search_de(
+            geom, x_entry_range, x_exit_range, n_points=max(n_points, 5),
+            method="spencer", n_slices=n_slices, tol=tol, seed=seed,
+            fos_fn=_dd_fos)
+
+    # Toe circles and shallow planar surfaces, scored with the drawdown FOS.
+    from slope_stability.search_supplements import (
+        apply_supplements, note_budget, CIRCULAR, NONCIRCULAR,
+    )
+    budget.supplements()
+    circular = surface_type in ("circular", "entry_exit")
+    search = apply_supplements(
+        geom, search, search_kind=CIRCULAR if circular else NONCIRCULAR,
+        method="spencer", n_slices=n_slices, tol=tol,
+        windows_used=(x_entry_range, x_exit_range),
+        windows_auto=windows_auto,
+        grid_used=(x_range, y_range) if surface_type == "circular" else None,
+        grid_auto=grid_auto, toe_circles=toe_circles,
+        infinite_slope=infinite_slope, fos_fn=_dd_fos, auto_ranges=auto,
+        **given)
+    # What the search chose (GM-115); every trial is the drawdown solve.
+    from slope_stability.search_supplements import search_choices
+    search.choices = search_choices(
+        search, surface_type=surface_type, toe_circles=toe_circles,
+        infinite_slope=infinite_slope,
+        surface_types=("circular", "entry_exit", "noncircular",
+                       "noncircular_de"), budget=budget)
+    if window_note:
+        search.warnings.insert(0, window_note)
+    note_budget(search, budget)     # a search cut short says so first
+    return search

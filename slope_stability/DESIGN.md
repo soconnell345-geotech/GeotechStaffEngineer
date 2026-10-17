@@ -27,15 +27,16 @@ stabilizing piles in every method (`reinforcement.py`).
 - `methods.py` — fellenius_fos(), bishop_fos(), spencer_fos() / morgenstern_price_fos() (wrappers of the rigorous `gle.gle_fos`; the `*_legacy` approximate forms are the fallback), solve_rigorous()
 - `gle.py` — the rigorous general limit equilibrium (Fredlund & Krahn 1977; supports by the slice-by-slice march of Zhu et al. 2005, GM-60) and janbu_fos()
 - `reinforcement.py` — nails, anchors, geosynthetics and stabilizing piles as forces at the base of the slice each crosses, in every method (GM-53, GM-59)
-- `search.py` — optimize_radius(), grid_search() (with the local refinement of its lowest centres, GM-87), search_noncircular(), entry/exit filtering; a rigorous noncircular solution must hold about a second axis and slicing (`_solution_fails`, GM-57 review)
+- `search.py` — optimize_radius(), grid_search() (with the local refinement of its lowest centres, GM-87), search_noncircular(), entry/exit filtering; a rigorous noncircular solution must hold about a second axis and slicing (`_solution_fails`, GM-57 review); the search's time budget and the Bishop screen (`search_budget`, `bishop_screen`, GM-123)
 - `search_supplements.py` — toe-circle, circle-passing-above-the-toe and infinite-slope (shallow planar) families scored after every `search_critical_surface` (GM-13, GM-14, GM-122)
 - `search_ranges.py` — the automatic entry / exit windows and centre ranges, set from the slope's toe, crest, height and depth to the base (GM-57)
 - `analysis.py` — analyze_slope(), search_critical_surface() orchestrators
 - `results.py` — SliceData, SlopeStabilityResult, SearchResult
 - `nails.py` — SoilNail, NailContribution (nails reach the FOS through `reinforcement.py`)
-- `tests/` — 598 tests in 29 files (collected 2026-10-17), among them:
+- `tests/` — 614 tests in 30 files (collected 2026-10-17), among them:
 - `tests/test_ground_crossings.py` — 21 tests (one sliding mass per trial surface, the touch tolerance at its threshold, the refusals counted, the circles passing above the toe, GM-122; entry / exit windows given the wrong way round, GM-124)
 - `tests/test_slope_stability.py` — 92 tests (core + entry/exit limits + noncircular search; Taylor's phi = 0 chart, GM-57)
+- `tests/test_search_budget.py` — 16 tests (a search stopped by its time budget reports the lowest surface in what it covered, what that was and the projected run time; a larger budget covers it all; a finished search is the unbudgeted one; the scan order finds a narrow valley early; differential evolution cut short; the Bishop screen finds the same surface, says when it was not applied or its cap left points out, GM-123)
 - `tests/test_search_ranges.py` — 23 tests (the automatic ranges; a directed search and what the result says it covered; the same slope drawn narrow and wide, GM-57)
 - `tests/test_duncan_verification.py` — 28 tests (Duncan §7.6-7.7 verification examples; Ex 1 against Taylor's chart, GM-63, and the default search on long profiles, GM-87)
 - `tests/test_nails.py` — 38 tests + 16 skipped (nail intersection/pullout/capacity; the skipped ones test the old nail path, replaced by `reinforcement.py`)
@@ -804,6 +805,110 @@ and `search_rapid_drawdown` apply it. Given the other way round, no circle
 could start in one window and end in the other, and the entry / exit
 search returned nothing and said nothing (F61 [13], [14]); it now also
 says when it scored no circle at all.
+
+### Time budget of a search; the Bishop screen (GM-123, 2026-10-17)
+
+A search had no bound on its run time. In a live run a 30 x 30 entry/exit
+grid with 60 slices scored with Spencer took 957 s (Bishop on the same grid
+45 s, the same FOS) and a second one ran past the agent's 1,800 s turn, so
+the user got no answer.
+
+**The budget.** `search_critical_surface` and `search_rapid_drawdown` take
+`time_budget_s`. The library's default is None, no limit, so a library
+search, and every pinned and validation test, never depends on the
+machine's speed. The agent's tools give every search
+`search.SEARCH_TIME_BUDGET_S` (180 s) unless the agent gives another, up
+to 600 s (more is refused, not clipped): the slope_stability adapter's
+searches, `monte_carlo_fos` with `research_surface` (per realization), the
+calc_package slope report (its search and its Monte Carlo re-searches) and
+the project run (`geo_project.builders.run_analyses`, per search); SALib
+reaches the slope tools through the adapter. A Monte Carlo run counts its
+re-searches the budget cut (`n_searches_cut`). `search.search_budget`
+holds the budget in a context variable that every search reads
+(`_time_up`). The main search may use 80 % of it. The centre grid and the
+entry/exit grid score their points by `search._scan_grid`: coarse first
+(every s-th point along each axis and the last, s the largest power of two
+leaving at least three intervals), then, after each finished level, around
+the three lowest points so far (the 3 x 3 neighbourhood at half the step,
+moving to its lowest point until the centre is the lowest, the step halving
+down to every point), then the next level, s halved, down to every point.
+A search cut short has covered the whole range at a coarser spacing and
+looked closely where the FOS is lowest. On the live-run slope's 30 x 30
+Bishop entry/exit map, whose minimum lies in one entry row 0.31 m wide just
+above a clay / sandstone contact, the order reaches the minimum after 44
+points, against 713 for coarse first alone (a review measured 0.5 % of the
+minimum on ACADS 102 -> 29, Slide2 #57 53 -> 30, Slide2 #61 37 -> 20).
+A centre grid keeps a quarter of the main search's time for its refinement
+walk (GM-87), which then stops where it is. The random noncircular and
+weak-layer searches stop between trials, the particle swarm between
+iterations and differential evolution between generations (cut short with
+no confirmed surface of its own, it reports the random search's best that
+seeded it). The toe-circle and circle-passing-above-the-toe families stop at
+the full budget; the infinite slope, the profile-end and support checks
+always run. A main search scores until it has one surface, whatever the
+budget. A search that finishes inside its budget is exactly the search
+without one: each point is scored once, whatever the order, and the record
+is assembled in the grid's own order (proved against the previous code on
+ACADS, Slide2 #57 and the Taylor long profile with Bishop and Spencer: the
+same FOS, surface, grid_fos and surfaces scored).
+
+A search cut short reports the lowest surface in what it covered. The
+first warning (ahead of a swapped-windows note) opens "Cut short by its time
+budget: the reported FOS may be too high (unconservative) ...", and it and
+`search_ranges['time_budget']` say, for each stage
+stopped, what it scored of how many, at what spacing it covered the range,
+what it did not score, the time it took and the run time projected for the
+whole stage (time per point times the points), and what did not run; the
+warning names the levers: for Spencer, Morgenstern-Price or GLE first the
+Bishop screen, then a larger `time_budget_s` (at most 600 s; when the
+projected time is longer, it says that alone cannot cover the search), fewer
+points or slices, narrower windows. `choices` names the budget, given or
+default (the adapters mark the tool's 180 s as the default), with no run
+time, so a search's choices do not change from run to run.
+
+Why 180 s for the agent: the ordinary searches finish. Measured on the development laptop
+(30 slices): the default centre grid 2-3 s with Bishop and 14-25 s with
+Spencer or Morgenstern-Price; 10 x 10 and 12 x 12 entry/exit grids (Slide2
+#57, the ACADS slope) 2 s with Bishop and 59-67 s with Spencer,
+Morgenstern-Price or GLE. The host ran the 30 x 30 Spencer search about as
+fast (957 s against 972 s) and the Bishop one at about half the speed, so
+these fit in the main search's 144 s there too. Three minutes a search
+leaves the turn room for several searches, the model's own calls and the
+answer.
+
+**Cost of each method.** Per trial surface, against Bishop's simplified
+method, on the critical circles of four slopes (ACADS, Slide2 #57, the
+Taylor long profile, the live-run slope): Fellenius about 1 times, Janbu
+1-4 times, Spencer 31-37 times, Morgenstern-Price 31-39 times and GLE 32-40
+times at 30 slices; at 60 slices Spencer 42-56, Morgenstern-Price 42-68 and
+GLE 41-72 times. A whole search costs less than the ratio where it already
+scans with Bishop (the refinement walk, GM-87; the toe-circle families,
+GM-13): the default centre grid 5-13 times, an entry/exit grid 28-46 times.
+
+**The Bishop screen** (`bishop_screen`, default off). For a circular or
+entry/exit search with Spencer, Morgenstern-Price or GLE, every centre or
+pair is scored with Bishop; the lowest are re-scored with the method itself
+(at least 10, every one within 5 % of the screen's minimum, at most 30: the
+centre's radius optimised again; the pair's centre offset by golden section
+from the screen's offset); only those can be reported, and `grid_fos` tags
+the others `method: bishop`. Not applied where supports are modelled (as the
+refinement walk) or to a per-surface solve such as rapid drawdown; not to
+noncircular searches, where a Bishop-like method and a rigorous one can
+rank surfaces differently. Measured with Spencer, Morgenstern-Price and GLE
+on ACADS, Slide2 #57, the Taylor long profile and the live-run slope
+(default grid and 30 x 30 entry/exit at 60 slices): the same governing
+surface and FOS in every case, in 35-60 % of the time on the default
+centre grids, 15-30 % on 10 x 10 and 12 x 12 entry/exit grids and 3 % on
+the 30 x 30 grid at 60 slices (33 s against 972 s). Asked for and not
+applied (a noncircular search, supports modelled, or a method other than
+Spencer, Morgenstern-Price or GLE), `choices` says so and why; when its cap
+of 30 leaves out points within 5 % of the screen's lowest, it says how many. A first version that re-scored by golden
+section about the screen's offset, without the screen's own circle, moved
+Slide2 #57 Spencer 1.4005 -> 1.4031 to a neighbouring circle: the screen
+depends on its short list and its re-score. It stays an option: no
+reference prescribes screening a rigorous search with Bishop, and Bishop
+and the rigorous methods can rank circles differently where interslice
+forces matter.
 
 ## Critical Sign Conventions
 - **Driving moment**: uses `W*(x_mid - xc)/R` + `abs(driving)`, NOT `W*sin(alpha)`

@@ -571,7 +571,7 @@ def _generate_slope_report_package(params: dict) -> dict:
             # search
             "method", "surface_type", "n_slices", "tol", "x_range", "y_range",
             "nx", "ny", "x_entry_range", "x_exit_range", "n_trials", "n_points",
-            "seed", "f_interslice", "FOS_required",
+            "seed", "f_interslice", "FOS_required", "time_budget_s",
             # probabilistic annex
             "variables", "fosm", "monte_carlo", "n", "research_surface",
             # output + header metadata
@@ -582,8 +582,12 @@ def _generate_slope_report_package(params: dict) -> dict:
     )
 
     geom = _build_slope_geom(params, "slope_report_package")
-    from funhouse_agent.adapters.slope_stability import check_variable_specs
+    from funhouse_agent.adapters.slope_stability import (
+        budget_is_default, check_variable_specs, _time_budget,
+    )
     check_variable_specs(params, method="slope_report_package")
+    # Every search has the agent's time budget (GM-123), per search.
+    time_budget_s = _time_budget(params, "slope_report_package")
 
     method = params.get("method", "spencer")
     surface_type = params.get("surface_type", "circular")
@@ -604,7 +608,9 @@ def _generate_slope_report_package(params: dict) -> dict:
         n_trials=params.get("n_trials", 500),
         n_points=params.get("n_points", 5),
         seed=params.get("seed"),
+        time_budget_s=time_budget_s,
     )
+    budget_is_default(search.choices, params)
 
     crit = search.critical
     if crit is None:
@@ -659,6 +665,8 @@ def _generate_slope_report_package(params: dict) -> dict:
                 geom, variables, method=method, n=params.get("n", 1000),
                 seed=params.get("seed"), n_slices=n_slices, tol=tol,
                 research_surface=params.get("research_surface", False),
+                search_kwargs=({"time_budget_s": time_budget_s}
+                               if params.get("research_surface") else None),
                 **prob_surf)
 
     extra = {
@@ -2174,6 +2182,7 @@ METHOD_INFO = {
             "monte_carlo": {"type": "bool", "required": False, "default": False, "description": "If True (and 'variables' given), also run a Monte Carlo simulation on the critical surface for the annex."},
             "n": {"type": "int", "required": False, "default": 1000, "description": "Monte Carlo realizations (when monte_carlo=True)."},
             "research_surface": {"type": "bool", "required": False, "default": False, "description": "Monte Carlo: re-search the critical surface each realization (slower) instead of holding it fixed."},
+            "time_budget_s": {"type": "float", "required": False, "default": 180.0, "description": "Time budget of EACH critical-surface search in seconds (at most 600), as slope_stability search_critical_surface: the report's search, and with research_surface each Monte Carlo realization's (per search, not for the run). A search cut short reports the lowest surface in what it covered and says so in its warnings."},
             "fosm": {"type": "bool", "required": False, "default": True, "description": "With 'variables': run the FOSM annex."},
             "FOS_required": {"type": "float", "required": False, "default": 1.5, "description": "Required factor of safety for the stability check."},
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."},

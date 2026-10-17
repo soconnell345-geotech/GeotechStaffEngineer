@@ -256,7 +256,9 @@ Key conventions:
       lists its choices (method, given or default, basis, alternatives)
       and tool results the defaults used. 2026-10-17: a slip surface
       below the ground in more than one stretch refused, and circles
-      passing above the toe searched by default (release note);
+      passing above the toe searched by default (release note); the
+      agent's slope searches stop at 180 s with a plain warning
+      (library: no limit), and a Bishop screen is an option;
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done".
     Open next: Foundry brief 6, which measures all of this, is drafted

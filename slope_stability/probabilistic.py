@@ -430,6 +430,8 @@ class MonteCarloResult:
     method: str = ""
     seed: Optional[int] = None
     research_surface: bool = False
+    #: Re-searches stopped by their time budget (GM-123; research_surface).
+    n_searches_cut: int = 0
     histogram_bins: List[float] = field(default_factory=list)
     histogram_counts: List[int] = field(default_factory=list)
     samples: Optional[List[float]] = None
@@ -472,6 +474,13 @@ class MonteCarloResult:
             "histogram_bins": [round(b, 4) for b in self.histogram_bins],
             "histogram_counts": list(self.histogram_counts),
         }
+        if self.n_searches_cut:
+            d["n_searches_cut"] = self.n_searches_cut
+            d["note"] = (
+                f"{self.n_searches_cut} of the re-searches were stopped by "
+                f"their time budget (time_budget_s, per search): each of "
+                f"those FOS is the lowest in what its search covered, so it "
+                f"may be high.")
         return d
 
 
@@ -711,6 +720,7 @@ def monte_carlo_fos(geom: SlopeGeometry,
 
     fos_vals = []
     n_eval_failed = 0
+    n_cut = 0
     for i in range(n):
         ab_i = [(law_samples[j][0][i], law_samples[j][1][i])
                 for j in range(len(laws))]
@@ -722,6 +732,7 @@ def monte_carlo_fos(geom: SlopeGeometry,
             kw.setdefault("n_slices", n_slices)
             res = search_critical_surface(g, **kw)
             f = res.critical.FOS if res.critical else float("nan")
+            n_cut += "time_budget" in res.search_ranges
         else:
             f = _eval_fos(g, slip, method, n_slices, tol)
         if f is None or f >= 900 or math.isnan(f):
@@ -756,6 +767,7 @@ def monte_carlo_fos(geom: SlopeGeometry,
         fos_median=float(np.median(arr)),
         beta_lognormal=beta_ln, pf_lognormal=pf_ln,
         method=method, seed=seed, research_surface=research_surface,
+        n_searches_cut=n_cut,
         histogram_bins=[float(e) for e in edges],
         histogram_counts=[int(c) for c in counts],
         samples=[float(f) for f in arr] if keep_samples else None,

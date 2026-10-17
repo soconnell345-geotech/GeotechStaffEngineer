@@ -439,6 +439,34 @@ def test_project_run_gate_ordering(tmp_path):
     assert "_result" not in out["results"]["LE"]
 
 
+def test_project_run_gives_each_search_the_time_budget(tmp_path,
+                                                       monkeypatch):
+    """GM-123: the project run gives each slope search the agent's time
+    budget (the library alone has none)."""
+    import geo_project.builders as builders
+    from slope_stability.search import SEARCH_TIME_BUDGET_S
+    seen = {}
+
+    def fake(project, time_budget_s=None):
+        seen["time_budget_s"] = time_budget_s
+        return {}
+
+    monkeypatch.setattr(builders, "run_analyses", fake)
+    store, by_name = _toolset(tmp_path)
+    _new_template(by_name, H=6.0, slope_ratio=2.0)
+    _confirm(by_name, "geometry")
+    _complete_materials(by_name)
+    _confirm(by_name, "materials")
+    _confirm(by_name, "water_loads")
+    by_name["project_patch"].invoke({
+        "path": "analyses", "op": "append",
+        "value": {"type": "le", "name": "LE", "method": "bishop",
+                  "n_slices": 20, "search": {"nx": 4, "ny": 4}}})
+    out = json.loads(by_name["project_run"].invoke({}))
+    assert out["status"] == "complete", out
+    assert seen["time_budget_s"] == SEARCH_TIME_BUDGET_S
+
+
 def test_project_run_refused_on_validation_errors(tmp_path):
     store, by_name = _toolset(tmp_path)
     _new_template(by_name)

@@ -155,6 +155,62 @@ class TestSearch:
             METHOD_REGISTRY["search_critical_surface"](_no_circle(_base(
                 surface_type="spiral")))
 
+    def test_time_budget_reaches_the_search(self):
+        # GM-123: a tiny budget stops the search; the result says so.
+        r = METHOD_REGISTRY["search_critical_surface"](_no_circle(_base(
+            surface_type="entry_exit",
+            x_entry_range=[2, 18], x_exit_range=[42, 68],
+            nx=8, ny=8, method="spencer", n_slices=20,
+            time_budget_s=0.05)))
+        assert r["search_ranges"]["time_budget"]["time_budget_s"] == 0.05
+        assert r["warnings"][0].startswith("Cut short by its time budget")
+        budget = [c for c in r["choices"]
+                  if c["what"] == "time budget of the search"]
+        assert budget[0]["chosen"] == "0.05 s"
+        assert budget[0]["how"] == "given"
+
+    def test_agent_default_budget_is_180_s(self):
+        # The library has no budget by default; the tool gives 180 s.
+        from slope_stability.search import SEARCH_TIME_BUDGET_S
+        assert SEARCH_TIME_BUDGET_S == 180.0
+        r = METHOD_REGISTRY["search_critical_surface"](_no_circle(_base(
+            surface_type="entry_exit",
+            x_entry_range=[2, 18], x_exit_range=[42, 68],
+            nx=3, ny=3, method="bishop", n_slices=20)))
+        budget = [c for c in r["choices"]
+                  if c["what"] == "time budget of the search"]
+        assert budget[0]["chosen"] == "180 s"
+        assert budget[0]["how"] == "default"
+        assert "time_budget" not in r["search_ranges"]
+
+    @pytest.mark.parametrize("value", [0, -5, 601, "soon"])
+    def test_time_budget_bounds(self, value):
+        # Above 600 s is refused, not clipped, so the agent knows.
+        with pytest.raises(ValueError, match="time_budget_s"):
+            METHOD_REGISTRY["search_critical_surface"](_no_circle(_base(
+                time_budget_s=value)))
+
+    def test_monte_carlo_research_has_a_budget_per_search(self):
+        r = METHOD_REGISTRY["monte_carlo_fos"](_no_circle(_base(
+            method="spencer", n=2, seed=1, n_slices=20,
+            variables={"phi": {"cov": 0.10}}, research_surface=True,
+            time_budget_s=0.01)))
+        assert r["n_searches_cut"] == 2
+        assert "time budget" in r["note"]
+
+    def test_method_cost_and_screen_documented(self):
+        p = METHOD_INFO["search_critical_surface"]["parameters"]
+        assert "30 to 40 times bishop" in p["method"]["description"]
+        assert p["bishop_screen"]["default"] is False
+        assert p["time_budget_s"]["default"] == 180.0
+        assert "time_budget_s" in             METHOD_INFO["search_rapid_drawdown"]["parameters"]
+        assert "EACH" in METHOD_INFO["monte_carlo_fos"]["parameters"][
+            "time_budget_s"]["description"]
+        from funhouse_agent.adapters.calc_package import METHOD_INFO as CP
+        from slope_stability.search import SEARCH_TIME_BUDGET_S
+        assert CP["slope_report_package"]["parameters"]["time_budget_s"][
+            "default"] == SEARCH_TIME_BUDGET_S
+
 
 # ----------------------------------------------------------------------------
 # Reinforcement pass-through

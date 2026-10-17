@@ -631,7 +631,11 @@ class SearchResult:
         (GM-57, ``search_ranges.py``): ``basis``, the ``slopes`` they were
         set from (toe, crest, height, depth to the base, reach beyond the
         toe and behind the crest) and ``clipped`` (a bound the model's end
-        cut short: where the slope called for it).
+        cut short: where the slope called for it). ``time_budget`` when the
+        search's time budget stopped it (GM-123): the budget, the time it
+        ran, each stage ``stopped`` (what it scored, of how many, what it
+        covered and did not, the run time projected for all of it) and
+        what was ``not_run``.
     governing_location : dict
         Where the governing surface lies (GM-57): ``x_entry`` / ``x_exit``,
         ``z_lowest``, the ``layers`` along its base in order, and ``slope``:
@@ -649,8 +653,9 @@ class SearchResult:
         What the search chose (GM-115, ``geotech_common.choices``;
         ``search_supplements.search_choices``): the search, the method it
         scored with, the surface families it tried and those it did not,
-        and how its ranges were set (pointing at ``search_ranges``,
-        ``governing_location`` and ``refused_lowest``).
+        how its ranges were set (pointing at ``search_ranges``,
+        ``governing_location`` and ``refused_lowest``), its time budget
+        and any Bishop screen (GM-123).
     """
     critical: Optional[SlopeStabilityResult] = None
     n_surfaces_evaluated: int = 0

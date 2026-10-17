@@ -24,6 +24,7 @@ from slope_stability.search import (
     grid_search, search_noncircular,
     search_pso, search_weak_layer_biased, search_entry_exit, search_de,
     _counts_ground_refusals, _ordered_windows,
+    search_budget,
 )
 from slope_stability.results import (
     SlopeStabilityResult, SliceData, SearchResult, InfiniteSlopeResult,
@@ -519,6 +520,8 @@ def search_critical_surface(
     toe_circles: bool = True,
     infinite_slope: bool = True,
     refine: bool = True,
+    time_budget_s: Optional[float] = None,
+    bishop_screen: bool = False,
 ) -> SearchResult:
     """Search for the critical slip surface (minimum FOS).
 
@@ -553,6 +556,15 @@ def search_critical_surface(
     the ground and comes back into it) is not one sliding mass and is
     refused (GM-122, ``slip_surface.GroundCrossingError``);
     ``n_rejected_ground_crossings`` counts them, in every family.
+
+    Given a time budget (GM-123, ``time_budget_s``; none by default), the
+    main search scores its centres or entry/exit pairs coarse first and
+    stops at 80 % of the budget; the toe-circle families stop at the
+    budget. A search cut short reports the lowest surface it found, and
+    ``warnings`` and ``search_ranges['time_budget']`` say what it scored,
+    of how many, at what spacing, the run time projected for the whole
+    search, and what it did not run. A search that finishes reports what
+    it did without a budget. ``choices`` names the budget.
 
     Parameters
     ----------
@@ -598,14 +610,28 @@ def search_critical_surface(
     refine : bool
         Refine the lowest centres of the circular grid by a local compass
         search on the centre (circular only). Default True.
+    time_budget_s : float or None
+        Time budget of the whole search, in seconds (GM-123). Default None,
+        no limit, so a library search never depends on the machine's
+        speed; the agent's tools give ``search.SEARCH_TIME_BUDGET_S``
+        (180 s).
+    bishop_screen : bool
+        Circular and entry_exit searches with Spencer / Morgenstern-Price /
+        GLE: score every centre or pair with Bishop's simplified method,
+        then re-score the lowest of them with the method itself (at least
+        10, every one within 5 % of the screen's minimum, at most 30); the
+        reported FOS is the method's own. Not applied where supports are
+        modelled. Default False (GM-123).
 
     Returns
     -------
     SearchResult
     """
     from slope_stability.search_supplements import (
-        apply_supplements, search_choices, CIRCULAR, NONCIRCULAR,
+        apply_supplements, search_choices, note_budget, CIRCULAR,
+        NONCIRCULAR,
     )
+    from slope_stability.search import _screen_method
     from slope_stability.search_ranges import resolve_ranges
     # Entry is the low-x end, exit the high-x end: windows given the other
     # way round are swapped, and the result says so (GM-124).
@@ -622,8 +648,27 @@ def search_critical_surface(
         geom, x_entry_range, x_exit_range, x_range, y_range)
 
     noncirc_method = method if method != "bishop" else "spencer"
+    screened = (bishop_screen and surface_type in ("circular", "entry_exit")
+                and _screen_method(geom, method, None, True) != method)
+    screen_not_applied = None       # asked for, not applied: why (GM-123)
+    if bishop_screen and not screened:
+        if surface_type not in ("circular", "entry_exit"):
+            screen_not_applied = (
+                "noncircular searches are not screened: Bishop's simplified "
+                "method is for circles, and a Bishop-like method and a "
+                "rigorous one can rank noncircular surfaces differently")
+        elif _screen_method(geom, "spencer", None, True) == "spencer" \
+                and method in ("spencer", "morgenstern_price", "gle"):
+            screen_not_applied = (
+                f"the model has supports, which Bishop's simplified method "
+                f"counts little of; every circle was scored with {method}")
+        else:
+            screen_not_applied = (
+                f"the method is {method}; the screen is for Spencer, "
+                f"Morgenstern-Price and GLE")
 
     def _finish(result, search_kind, grid_used=None):
+        budget.supplements()      # the rest of the budget (GM-123)
         result = apply_supplements(
             geom, result, search_kind=search_kind, method=method,
             n_slices=n_slices, tol=tol,
@@ -640,36 +685,44 @@ def search_critical_surface(
         result.choices = search_choices(
             result, surface_type=surface_type, method=method,
             scored_with=scored, toe_circles=toe_circles,
-            infinite_slope=infinite_slope)
+            infinite_slope=infinite_slope, budget=budget,
+            screened=screened, screen_not_applied=screen_not_applied)
         if window_note:
             result.warnings.insert(0, window_note)
+        # A search cut short says so first (GM-123).
+        note_budget(result, budget, method=method, screened=screened,
+                    can_screen=surface_type in ("circular", "entry_exit"))
         return result
 
-    if surface_type in ("noncircular", "noncircular_de", "pso", "weak_layer"):
-        result = _search_noncircular_kind(
-            geom, surface_type, x_entry_range, x_exit_range, nx, ny,
-            n_slices, tol, n_trials, n_points, seed, noncirc_method)
-        return _finish(result, NONCIRCULAR)
+    with search_budget(time_budget_s) as budget:
+        if surface_type in ("noncircular", "noncircular_de", "pso",
+                            "weak_layer"):
+            result = _search_noncircular_kind(
+                geom, surface_type, x_entry_range, x_exit_range, nx, ny,
+                n_slices, tol, n_trials, n_points, seed, noncirc_method)
+            return _finish(result, NONCIRCULAR)
 
-    if surface_type == "entry_exit":
-        result = search_entry_exit(
-            geom,
-            x_entry_range=x_entry_range,
-            x_exit_range=x_exit_range,
-            n_entry=nx,
-            n_exit=ny,
-            method=method,
-            n_slices=n_slices,
-            tol=tol,
-        )
-        return _finish(result, CIRCULAR)
+        if surface_type == "entry_exit":
+            result = search_entry_exit(
+                geom,
+                x_entry_range=x_entry_range,
+                x_exit_range=x_exit_range,
+                n_entry=nx,
+                n_exit=ny,
+                method=method,
+                n_slices=n_slices,
+                tol=tol,
+                bishop_screen=bishop_screen,
+            )
+            return _finish(result, CIRCULAR)
 
-    # Circular search
-    result = grid_search(geom, x_range, y_range, nx, ny, method, n_slices,
-                         tol=tol, x_entry_range=x_entry_range,
-                         x_exit_range=x_exit_range, refine=refine)
+        # Circular search
+        result = grid_search(geom, x_range, y_range, nx, ny, method,
+                             n_slices, tol=tol, x_entry_range=x_entry_range,
+                             x_exit_range=x_exit_range, refine=refine,
+                             bishop_screen=bishop_screen)
 
-    return _finish(result, CIRCULAR, grid_used=(x_range, y_range))
+        return _finish(result, CIRCULAR, grid_used=(x_range, y_range))
 
 
 def _search_noncircular_kind(geom, surface_type, x_entry_range, x_exit_range,

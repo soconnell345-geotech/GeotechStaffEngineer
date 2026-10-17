@@ -704,7 +704,9 @@ def make_setup_tools(store: Optional[ProjectStore] = None,
         """Execute the project's requested analyses. REFUSES unless every
         stage gate (geometry, materials, water_loads) is human-confirmed AND
         validation has no errors. Returns JSON-safe results (LE FOS +
-        critical surface + optional FOSM/MC; FEM FOS)."""
+        critical surface + optional FOSM/MC; FEM FOS). Each LE search has
+        a 180 s time budget (per search); one cut short says so in its
+        warnings."""
         try:
             project = store.require_project()
         except ValueError as exc:
@@ -736,7 +738,10 @@ def make_setup_tools(store: Optional[ProjectStore] = None,
             }, cap)
         try:
             from geo_project.builders import run_analyses
-            results = run_analyses(project)
+            from slope_stability.search import SEARCH_TIME_BUDGET_S
+            # Each slope search has the agent's time budget (GM-123).
+            results = run_analyses(project,
+                                   time_budget_s=SEARCH_TIME_BUDGET_S)
         except Exception as exc:
             return _json({"error": f"{type(exc).__name__}: {exc}"}, cap)
         store.history.append("project_run: executed")

@@ -302,7 +302,9 @@ def search_toe_circles(geom: SlopeGeometry,
     its fraction of the face height above the toe, and ``face_toe``), and
     ``faces`` the faces covered with the heights started from.
     """
-    from slope_stability.search import _compute_fos, _check_entry_exit, _FOS_MAX
+    from slope_stability.search import (
+        _compute_fos, _check_entry_exit, _FOS_MAX, _time_up, _record_not_run,
+    )
 
     scan_method = ("bishop" if method in _SCREENED_METHODS and fos_fn is None
                    else method)
@@ -330,6 +332,10 @@ def search_toe_circles(geom: SlopeGeometry,
     u_step = (u_hi - u_lo) / (n_t - 1)
 
     def circle_fos(xc, yc, r, fos_method, m_alpha_check=False):
+        if _time_up():          # the search's time budget is spent (GM-123)
+            _record_not_run("part of the toe-circle and circle-above-the-"
+                            "toe families")
+            return _FOS_MAX
         if not _centre_admissible(geom, xc, yc, x_range, y_range):
             return _FOS_MAX
         # A hair inside the toe so the arc crosses the ground just above
@@ -1469,17 +1475,73 @@ _RANGE_TEXT = {"x_entry_range": "entry window", "x_exit_range": "exit window",
                "x_range": "centre x range", "y_range": "centre height range"}
 
 
+def note_budget(result: SearchResult, budget, *, method: str = "",
+                screened: bool = False, can_screen: bool = False) -> None:
+    """Say in ``result`` what a search cut short by its time budget covered
+    (GM-123): a warning first in ``warnings`` and
+    ``search_ranges['time_budget']``. Nothing when the search finished."""
+    if budget is None or not budget.stopped:
+        return
+    parts = [f"Cut short by its time budget: the reported FOS may be too "
+             f"high (unconservative), since a lower surface may lie in what "
+             f"the search did not cover. The budget was {budget.seconds:g} s "
+             f"(the main search may use 80 % of it); the search ran "
+             f"{budget.elapsed():.0f} s in all."]
+    for st in budget.stops:
+        text = (f" The {st['stage']} stopped after {st['scored']} of "
+                f"{st['of']} {st['unit']} in {st['time_s']:.0f} s")
+        if st["projected_s"] is not None:
+            text += (f"; all {st['of']} would take about "
+                     f"{st['projected_s']:.0f} s")
+        text += f". Covered: {st['covered']}."
+        if st["not_covered"]:
+            text += f" Not scored: {st['not_covered']}."
+        parts.append(text)
+    if budget.not_run:
+        parts.append(" Not run: " + "; ".join(budget.not_run) + ".")
+    from slope_stability.search import TIME_BUDGET_MAX_S
+    projected = max((st["projected_s"] or 0 for st in budget.stops),
+                    default=0)
+    raise_it = f"raise time_budget_s (at most {TIME_BUDGET_MAX_S:g} s)"
+    if projected > TIME_BUDGET_MAX_S:
+        raise_it = (f"raise time_budget_s (at most {TIME_BUDGET_MAX_S:g} s, "
+                    f"which alone cannot cover this search: about "
+                    f"{projected:.0f} s projected)")
+    levers = [raise_it,
+              "use fewer points (nx, ny) or trials, or fewer slices",
+              "narrow the windows"]
+    if (can_screen and not screened
+            and method.lower() in _SCREENED_METHODS):
+        levers.insert(0, "screen it with Bishop's simplified method "
+                         "(bishop_screen: every circle scored with Bishop, "
+                         f"the lowest re-scored with {method}), which covers "
+                         "the whole range in a fraction of the time")
+    parts.append(" To cover it all, any of: " + "; ".join(levers) + ".")
+    result.warnings.insert(0, "".join(parts))
+    result.search_ranges["time_budget"] = {
+        "time_budget_s": budget.seconds,
+        "elapsed_s": round(budget.elapsed(), 1),
+        "stopped": [dict(st) for st in budget.stops],
+        "not_run": list(budget.not_run)}
+
+
 def search_choices(result: SearchResult, *, surface_type: str,
                    method: Optional[str] = None,
                    scored_with: Optional[str] = None,
                    toe_circles: bool = True, infinite_slope: bool = True,
-                   surface_types=tuple(SEARCH_TEXT)) -> List[Dict[str, Any]]:
+                   surface_types=tuple(SEARCH_TEXT), budget=None,
+                   screened: bool = False,
+                   screen_not_applied: Optional[str] = None,
+                   ) -> List[Dict[str, Any]]:
     """What a critical-surface search chose (GM-115), as its ``choices``
     (``geotech_common.choices``): the search, the method it scored with
     (when one was named), the surface families it tried with those it did
     not, and how its ranges were set. The ranges, the governing surface's
     place and a refused lower surface are not repeated: the entry points at
-    ``search_ranges``, ``governing_location`` and ``refused_lowest``."""
+    ``search_ranges``, ``governing_location`` and ``refused_lowest``. With
+    ``budget`` (GM-123): the time budget, and the Bishop screen when it was
+    applied (``screened``) or asked for and not applied
+    (``screen_not_applied``, the reason)."""
     from geotech_common.choices import GIVEN, MODULE, choice, how_given
     out = [choice(
         "search",
@@ -1498,6 +1560,25 @@ def search_choices(result: SearchResult, *, surface_type: str,
         else:
             out.append(choice("FOS method of the search", used,
                               how_given(method, "bishop")))
+        if screened:
+            basis = (f"every circle of the main search scored with Bishop's "
+                     f"simplified method, the lowest re-scored with {used}: "
+                     f"the reported FOS is {used}'s (bishop_screen)")
+            rec = getattr(budget, "screen", None) or {}
+            if rec.get("dropped"):
+                from slope_stability.search import _SCREEN_WITHIN
+                basis += (f"; {rec['rescored']} re-scored, the most it "
+                          f"re-scores: {rec['dropped']} more within "
+                          f"{100 * _SCREEN_WITHIN:g} % of the screen's "
+                          f"lowest were not")
+            out.append(choice(
+                "Bishop screen of the main search", True, GIVEN, basis,
+                [f"no screen: every circle scored with {used}"]))
+        elif screen_not_applied:
+            out.append(choice(
+                "Bishop screen of the main search", False, GIVEN,
+                f"asked for (bishop_screen) but not applied: "
+                f"{screen_not_applied}"))
     kind = CIRCULAR if surface_type in ("circular", "entry_exit") \
         else NONCIRCULAR
     tried = [kind]
@@ -1548,7 +1629,30 @@ def search_choices(result: SearchResult, *, surface_type: str,
              "slope (x_entry_range, x_exit_range)"]))
     elif sr:
         out.append(choice("search ranges", "given", GIVEN, where))
+    if budget is not None:
+        out.append(budget_choice(budget))
     return out
+
+
+def budget_choice(budget) -> Dict[str, Any]:
+    """The ``choices`` entry for a search's time budget (GM-123)."""
+    from geotech_common.choices import choice, how_given
+    secs = budget.seconds
+    # No run time here, so a search's choices do not change from run to
+    # run; a search cut short has it in search_ranges['time_budget'].
+    if budget.stopped:
+        basis = ("the search stopped at the budget and reports the lowest "
+                 "surface in what it covered (warnings; search_ranges, "
+                 "time_budget)")
+    elif secs is None:
+        basis = ""
+    else:
+        basis = "the search finished inside it"
+    return choice("time budget of the search",
+                  "no limit" if secs is None else f"{secs:g} s",
+                  how_given(secs, None), basis,
+                  ["another budget (time_budget_s)" if secs is not None
+                   else "a time budget (time_budget_s)"])
 
 
 def _surface_of(crit):
