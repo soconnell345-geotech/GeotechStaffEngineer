@@ -313,7 +313,8 @@ def _plot_description() -> str:
         info = METHOD_INFO["plot_data"]
         params = info.get("parameters") or {}
         lines = [str(info.get("brief") or "").strip()]
-        for key in ("series", "annotations", "plan_view", "north_deg",
+        for key in ("series", "annotations", "reference_chart",
+                    "plan_view", "north_deg",
                     "equal_aspect", "xlabel", "ylabel", "depth_axis",
                     "x_on_top", "logx",
                     "hlines", "vlines", "xlim", "ylim", "legend",
@@ -1803,7 +1804,8 @@ def make_vision_tools(
                   legend_position: str = "auto", plan_view: bool = False,
                   north_deg: Optional[float] = None,
                   scale_units: str = "m", x_on_top: bool = False,
-                  annotations: Optional[list] = None) -> str:
+                  annotations: Optional[list] = None,
+                  reference_chart: str = "") -> str:
         """Plot x/y data (the ``profile_figure`` module's ``plot_data``)."""
         params: Dict[str, Any] = {
             "series": series, "title": title, "xlabel": xlabel,
@@ -1816,7 +1818,8 @@ def make_vision_tools(
         for k, v in (("hlines", hlines), ("vlines", vlines),
                      ("legend", legend), ("output_path", output_path or None),
                      ("xlim", xlim), ("ylim", ylim), ("north_deg", north_deg),
-                     ("annotations", annotations)):
+                     ("annotations", annotations),
+                     ("reference_chart", reference_chart or None)):
             if v is not None:
                 params[k] = v
         from funhouse_agent.drawing_wait import drawing
@@ -2048,6 +2051,10 @@ def make_vision_tools(
         if name in include:
             tool = StructuredTool.from_function(
                 fn, name=name, description=overrides.get(name, desc))
+            if name == "plot_data" and not _plot_takes_chart():
+                # a reference library without chart_lines (1.4.1 and
+                # before): the argument is not offered at all (GM-153)
+                tool = _without_argument(tool, "reference_chart")
             if name == "plot_data" and plot_data_replaces:
                 tool = _plot_data_retiring(tool)
             if name in document_names:
@@ -2056,6 +2063,30 @@ def make_vision_tools(
             # name rather than dropped (brief 5, N3).
             tools.append(strict_tool(tool))
     return tools
+
+
+def _plot_takes_chart() -> bool:
+    """Whether plot_data takes ``reference_chart`` here: the adapter
+    accepts it only where the reference library has chart_lines."""
+    try:
+        from funhouse_agent.adapters.profile_figure_adapter import (
+            _VALID_PLOT)
+    except Exception:                                  # noqa: BLE001
+        return False
+    return "reference_chart" in _VALID_PLOT
+
+
+def _without_argument(tool, arg: str):
+    """``tool`` with ``arg`` left out of its arguments (its function keeps
+    the default)."""
+    from pydantic import create_model
+    base = tool.args_schema
+    fields = {k: (f.annotation, f) for k, f in base.model_fields.items()
+              if k != arg}
+    schema = create_model(base.__name__, __config__=base.model_config,
+                          **fields)
+    return StructuredTool(name=tool.name, description=tool.description,
+                          args_schema=schema, func=tool.func)
 
 
 #: Added to plot_data's description where it takes ``replaces``.

@@ -854,6 +854,24 @@ def main() -> int:
                          "nice_length": mod.nice_length}
     except Exception:                                      # noqa: BLE001
         furniture = {}
+    try:
+        # Standard chart lines as the references print them (the A-line,
+        # the U-line, the sieve sizes; BACKLOG GM-153), loaded from their
+        # file the same way, so the reference library stays out of the box.
+        import importlib.util
+        spec = importlib.util.find_spec("geotech_references")
+        if spec and spec.submodule_search_locations:
+            path = os.path.join(list(spec.submodule_search_locations)[0],
+                                "chart_lines.py")
+            if os.path.isfile(path):
+                fspec = importlib.util.spec_from_file_location(
+                    "_box_chart_lines", path)
+                mod = importlib.util.module_from_spec(fspec)
+                fspec.loader.exec_module(mod)
+                furniture.update(chart_lines=mod.chart_lines,
+                                 chart_line_value=mod.line_value)
+    except Exception:                                      # noqa: BLE001
+        pass
 
     import builtins
     import linecache

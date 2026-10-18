@@ -795,6 +795,26 @@ def _run_in_box(code, data_json, name, root, limit, cfg, notes, extra=None):
     return res
 
 
+def _chart_lines_note() -> str:
+    """What the description says of ``chart_lines`` in the box: only where
+    the installed reference library has it (BACKLOG GM-153)."""
+    try:
+        from geotech_references.chart_lines import chart_names
+        names = ", ".join(chart_names())
+    except Exception:                                      # noqa: BLE001
+        return ""
+    return (
+        "chart_lines(name, x_range, y_range) gives a standard chart's lines "
+        f"as the reference prints them ({names}): each line's points over "
+        "the range, its equation and dash, the zones with their names and "
+        "where to write them (hatched: true for the CL-ML zone), the axis "
+        "names, and "
+        "the source and page for the caption; chart_line_value(name, line, "
+        "x) reads one line at x (chart_line_value('uscs_plasticity', "
+        "'A-line', 24) is 4.0). Draw a standard line from these, never from "
+        "memory; ")
+
+
 def plot_code_description(cfg: Optional[Dict[str, int]] = None) -> str:
     """The model-facing description, with this host's limits."""
     cfg = cfg or settings()
@@ -821,7 +841,9 @@ def plot_code_description(cfg: Optional[Dict[str, int]] = None) -> str:
         "the PNG (so draw both from the same numbers); a chart an earlier "
         "draw left under a PNG's name is removed when the PNG is redrawn; "
         "scale_bar(ax, x0, y, length, height, units) and north_arrow(ax, "
-        "(x, y), north_deg) draw the app's plan furniture; a figure left "
+        "(x, y), north_deg) draw the app's plan furniture; "
+        f"{_chart_lines_note()}"
+        "a figure left "
         "open is saved as <name>.png. Draw as for a report: every number "
         "from the data or the files (never made up), labels on the data, "
         "units on every axis (stresses in kPa, forces in kN), sections to "

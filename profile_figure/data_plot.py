@@ -66,7 +66,7 @@ LEGEND_POSITIONS = ("auto", "inside", "outside", "below")
 
 #: The keys an annotation (a note of free text) may carry.
 ANNOTATION_KEYS = ("text", "x", "y", "coords", "point", "align", "box",
-                   "color", "font_size")
+                   "color", "font_size", "halo")
 
 #: Where a note's x, y are measured: in the data's own units, or as
 #: fractions of the plot (0, 0 at its bottom left, 1, 1 at its top right).
@@ -493,6 +493,13 @@ def _clean_notes(raw, categories, logx: bool, logy: bool,
             box = None
         else:
             box = _note_colour(box, idx, "box", "white")
+        halo = item.get("halo")
+        if halo is True:
+            halo = "background"         # the plot's own background colour
+        elif halo is False or halo is None:
+            halo = None
+        else:
+            halo = _note_colour(halo, idx, "halo", "white")
         size = item.get("font_size")
         if size is None:
             size = _LABEL_SIZE
@@ -511,7 +518,7 @@ def _clean_notes(raw, categories, logx: bool, logy: bool,
             echo["point"] = list(item["point"])
         notes.append({
             "index": idx, "lines": lines, "x": x, "y": y, "coords": coords,
-            "point": point, "ha": ha, "va": va, "box": box,
+            "point": point, "ha": ha, "va": va, "box": box, "halo": halo,
             "color": _note_colour(item.get("color"), idx, "color",
                                   _TEXT_COLOR),
             "font_size": min(max(size, lo), hi),
@@ -1033,6 +1040,15 @@ def _draw_notes(ax, notes) -> list:
         if n["box"]:
             kw["bbox"] = {"boxstyle": "square,pad=0.25",
                           "facecolor": n["box"], "edgecolor": "none"}
+        if n.get("halo"):
+            # a thin ring of the background round each letter: hatching or
+            # a grid line behind the text stops short of it (the PNG only;
+            # the interactive chart's text has no such ring)
+            from matplotlib import patheffects
+            ring = (ax.get_facecolor() if n["halo"] == "background"
+                    else n["halo"])
+            kw["path_effects"] = [patheffects.withStroke(linewidth=2.5,
+                                                         foreground=ring)]
         where = "data" if n["coords"] == "data" else "axes fraction"
         text = "\n".join(n["lines"])
         if n["point"] is None:
@@ -1240,7 +1256,9 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
     the point the note marks, drawn as a leader arrow from the text),
     ``align`` (the side of the text at x, y: center, left, right, top,
     bottom, or one of each), ``box`` (true, or a colour: a plain box behind
-    the text), ``color`` and ``font_size``. A line break is a new line or
+    the text), ``halo`` (true, or a colour: a thin ring of the background
+    round the letters, so hatching or a grid behind them stops short; the
+    PNG only), ``color`` and ``font_size``. A line break is a new line or
     ``<br>``. Notes are never moved: point names keep clear of them, and
     the warnings say when a note overlaps other lettering, a line runs
     through it or it stands outside the plot. Both renderings draw them.
