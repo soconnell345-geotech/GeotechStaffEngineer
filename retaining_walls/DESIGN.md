@@ -8,6 +8,9 @@ mechanically stabilized earth (MSE) walls per GEC-11.
 - FHWA GEC-11 (Mechanically Stabilized Earth Walls)
 - AASHTO LRFD Bridge Design Specifications
 - Coulomb/Rankine earth pressure theory
+- FHWA NHI-06-089, Soils and Foundations Reference Manual Vol II (2006),
+  Ch. 10 (CIP semi-gravity walls)
+- UFC 3-220-20 (2025), App. B-1 (cantilever cut wall example)
 
 ## Files
 - `geometry.py` — CantileverWallGeometry (auto-sizing), MSEWallGeometry
@@ -289,6 +292,88 @@ q_heel = 2V / (3 (B - x_R)) for a resultant beyond the middle third on the
 heel side, the signed e in the trapezoid, and P_a with cohesion on the
 section figure. No result number changed.
 
+## A surcharge over the cantilever heel (GM-157, 2026-10-18)
+
+Until GM-157 `cantilever.py` counted the surcharge over the heel (q times
+the heel length, at the middle of the heel) as a resisting vertical force
+in sliding and overturning, and in the middle-third check. Live wave w12
+F55 (H 4.5 m, B 2.8 m, toe 0.7 m, stem 0.35 m, base 0.5 m, gamma 19, phi
+32, q 10 kPa) gave sliding 1.17 and overturning 3.06 with it, 1.07 and
+2.78 without.
+
+**Sources, read from the PDFs (page = printed page (PDF page)).**
+
+- FHWA NHI-06-089 Vol II (`geotech-references/docs/FHWA NHI-06-089 Soils
+  and Foundations Vol 2.pdf`). Sec. 10.4.2, p. 10-31 (PDF 321): surcharges
+  are "(1) dead load surcharges such as that resulting from the weight of a
+  bridge approach slab or concrete pavement; (2) live load surcharges such
+  as that due to traffic loadings". Sec. 10.5.3, p. 10-41 (PDF 331): "For
+  CIP semi-gravity walls, the surcharge loads are generally assumed to be
+  located behind the heel of the wall, and conservatively neglected within
+  the width of the base slab since they contribute to overturning and
+  sliding resistance. However, the surcharge loads within the width of the
+  base slab are considered for the structural design of the wall stem."
+  Sec. 10.5.5, p. 10-43 (PDF 333): "the live load surcharge is not
+  considered as a stabilizing force over the heel of the wall when sliding
+  resistance is being checked"; p. 10-44: the eccentricity limit e <= B/6
+  on soil stands for the overturning check. Fig. 10-17, p. 10-39: W is the
+  wall and the soil above the footing; no surcharge.
+- UFC 3-220-20 (2025) (`ufc_3_220_20_2025.pdf`; no DM 7.2 PDF is in the
+  library, this UFC replaces it), App. B-1, cantilever cut wall with a
+  traffic surcharge. B-1.2, p. 597 (PDF 635): "For overturning and sliding
+  checks, it is assumed that the traffic pressure does not act over the
+  wall heel. For the check of bearing capacity, the traffic pressure is
+  included. These assumptions increase the conservatism in the analyses."
+  B-1.4, pp. 600-601: overturning judged by the resultant in the middle
+  third, without the traffic over the heel. B-1.6, p. 602 (PDF 640):
+  "Unlike the checks of overturning and sliding, it is conservative to
+  include the surcharge over the heel of the wall, if this is possible to
+  occur, in the bearing capacity check." The traffic thrust q Ka H is in
+  every check.
+- GEC-11 Vol I (MSE walls, AASHTO). p. 4-19 (PDF 161): "The live load
+  surcharge is not considered as a stabilizing force when checking
+  sliding". p. 4-22 (PDF 164): "External loads that increase sliding
+  resistance should only be included if those loads are permanent"; "The
+  eccentricity limit check only applies the live load above the retained
+  backfill". p. 4-26 (PDF 168): "the bearing check applies live load above
+  both the reinforced zone and the retained backfill", and "eB =
+  eccentricity for bearing calculation (not equal to eccentricity check
+  e)". pp. 4-4 / 4-5 (PDF 146-147): use minimum load factors "if permanent
+  loads increase stability".
+
+**What the module does.** `CantileverWallGeometry.surcharge` is the live
+load (traffic); `dead_load_surcharge` (new, default 0) is a permanent one.
+Both thrusts, Ka (q_live + q_dead) H at H/2, drive every check. Three
+choices, each in the result's `choices` with its basis and the other
+reading:
+
+| Input | Default | Basis of the default | The other reading |
+|---|---|---|---|
+| `live_load_resists` | False: the live load over the heel, and its share of an inclined thrust's Pv, resist nothing in sliding, overturning and the eccentricity check | NHI-06-089 pp. 10-41 / 10-43; UFC 3-220-20 B-1.2; GEC-11 pp. 4-19 / 4-22 | True: the free body with the load over the heel (the module before GM-157); no reference read counts a live load so |
+| `dead_load_resists` | False: neglected within the width of the base slab | NHI-06-089 p. 10-41, the CIP semi-gravity wall text | True: counted as a permanent load, GEC-11 p. 4-22 (AASHTO) |
+| `surcharge_in_bearing` | True: both surcharges over the heel load the base in q_toe / q_heel / FOS_bearing | UFC 3-220-20 B-1.6; GEC-11 p. 4-26 | False: taken as located behind the heel (NHI-06-089 p. 10-41) |
+
+The dead-load default is a judgment between two readings: NHI-06-089
+speaks of CIP semi-gravity walls and neglects every surcharge over the
+base slab; GEC-11 (MSE walls) allows a permanent load that increases
+sliding resistance. The default follows the cantilever-wall text.
+
+So the eccentricity check (the result's `eccentricity`,
+`in_middle_third`, and `checks_failed` "eccentricity") is on the loads
+the overturning check counts, and the bearing pressures on the bearing
+check's loads; the result gives `eccentricity_bearing` (to_dict
+`eccentricity_bearing_m`) when the two differ. `vertical_forces` marks
+each force with `resists` and `bearing`; the calc steps print a "Counted
+in" column, a total for each check and the eccentricity for bearing.
+
+F55 after: sliding 1.07, overturning 2.78, e 0.338 m (was 0.268 m, still
+within B/6 = 0.467 m), q_toe 122.4 / q_heel 33.1 kPa unchanged. Tests:
+`tests/test_heel_surcharge.py` (a hand check under each reading).
+
+`mse.check_external_stability` (the ASD path) still counts the surcharge
+over the reinforced zone in sliding and overturning (W = gamma H L + q L),
+against GEC-11 pp. 4-19 / 4-22; the LRFD path does not. Not changed here.
+
 ## Key Notes
 - CantileverWallGeometry auto-sizes stem thickness, toe/heel from wall height
 - Cantilever checks decompose the active thrust per the chosen method (RW-1):
@@ -352,3 +437,8 @@ shear per GEC-11/AASHTO); results now report delta_base_deg /
 base_adhesion_kPa actually used, and the funhouse adapter returns a
 `sliding_basis` block. Regression tests: TestBaseInterfaceOverrides
 (session numbers 0.60/1.42/1.01 locked in).
+
+GM-157 (2026-10-18): that free body counted the 7.5 kPa surcharge over the
+heel as resisting. By default the module no longer does (section above),
+so the session numbers are reproduced with `live_load_resists=True`, and
+the defaults are 0.566 / 1.339 / 0.978.

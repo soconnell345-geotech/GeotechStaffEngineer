@@ -971,13 +971,17 @@ class TestWallSlidingBasis:
                   "base_friction_angle": 22.0})   # alias -> delta_base
         out = _run_cantilever_wall(p)
         assert out["sliding_basis"]["delta_base_deg"] == 22.0
+        # GM-157: the surcharge over the heel does not resist by default;
+        # the session's free body (1.42) counted it
+        assert out["FOS_sliding"] == pytest.approx(1.339, abs=0.002)
+        out = _run_cantilever_wall({**p, "live_load_resists": True})
         assert out["FOS_sliding"] == pytest.approx(1.42, abs=0.01)
 
 
 class TestWallChecksReported:
     """GM-100 (live wave w8): with no q_allowable the adapter said
     FOS_bearing 99.9 / passes_bearing true, and the failed sliding check
-    (FOS 1.17) never reached the user."""
+    (FOS 1.17; 1.07 since GM-157) never reached the user."""
 
     W8 = {"wall_height": 4.5, "base_width": 2.8, "toe_length": 0.7,
           "stem_thickness_top": 0.35, "stem_thickness_base": 0.35,
@@ -995,10 +999,18 @@ class TestWallChecksReported:
         assert out["checks_not_run"] == ["bearing"]
         assert out["checks_failed"] == ["sliding"]
         assert out["all_checks_pass"] is False
-        assert out["verdict"].startswith("FAILS: sliding (FOS 1.17")
+        # GM-157: 1.17 with the surcharge over the heel resisting
+        assert out["verdict"].startswith("FAILS: sliding (FOS 1.07")
         assert "Not checked: bearing" in out["verdict"]
         # the verdict is the first thing the agent reads
         assert next(iter(out)) == "verdict"
+        # how the surcharge over the heel was counted, as a default the
+        # run lists (GM-157)
+        live, bearing = out["choices"]
+        assert live["how"] == "default" and bearing["how"] == "default"
+        assert out["defaults_used"]["live_load_resists"] is False
+        assert out["defaults_used"]["surcharge_in_bearing"] is True
+        assert "dead_load_resists" not in out["defaults_used"]
 
     def test_geometry_names_the_height_datum(self):
         from funhouse_agent.adapters.retaining_walls import _run_cantilever_wall

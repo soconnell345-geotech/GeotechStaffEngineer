@@ -152,8 +152,12 @@ def _input_summary_cantilever(result, analysis) -> List[InputItem]:
 
     if geom.backfill_slope > 0:
         items.append(InputItem("\u03b2", "Backfill slope", f"{geom.backfill_slope:.1f}", "deg"))
+    # The live and the dead-load surcharge (GM-157)
     if geom.surcharge > 0:
-        items.append(InputItem("q_s", "Surcharge", f"{geom.surcharge:.1f}", "kPa"))
+        items.append(InputItem("q_s", "Live-load surcharge", f"{geom.surcharge:.1f}", "kPa"))
+    if getattr(geom, "dead_load_surcharge", 0.0) > 0:
+        items.append(InputItem("q_D", "Dead-load surcharge",
+                               f"{geom.dead_load_surcharge:.1f}", "kPa"))
 
     items.extend([
         InputItem("\u03b3_backfill", "Backfill unit weight", f"{gamma:.1f}", "kN/m\u00b3"),
@@ -343,17 +347,21 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
         result_unit="m",
     ))
 
-    # Active force, as the analysis summed it
+    # Active force, as the analysis summed it; q is the live and the
+    # dead-load surcharge together (GM-157)
     Pa_total = ep["Pa"]
+    q_live = ep.get("q_live", geom.surcharge)
+    q_dead = ep.get("q_dead", getattr(geom, "dead_load_surcharge", 0.0))
+    q = q_live + q_dead
     ep_items.append(CalcStep(
         title="Total Active Thrust",
         equation="P_a = 0.5 \u00d7 K_a \u00d7 \u03b3 \u00d7 H\u00b2"
-                 + (" + K_a \u00d7 q \u00d7 H" if geom.surcharge > 0 else "")
+                 + (" + K_a \u00d7 q \u00d7 H" if q > 0 else "")
                  + (" - 2c\u221aK_a \u00d7 H" if c > 0 else ""),
         substitution=(
             f"P_a = 0.5 \u00d7 {Ka_val:.4f} \u00d7 {gamma:.1f} \u00d7 {H:.3f}\u00b2"
-            + (f" + {Ka_val:.4f} \u00d7 {geom.surcharge:.1f} \u00d7 {H:.3f}"
-               if geom.surcharge > 0 else "")
+            + (f" + {Ka_val:.4f} \u00d7 {q:.1f} \u00d7 {H:.3f}"
+               if q > 0 else "")
             + (f" - 2 \u00d7 {c:.1f} \u00d7 \u221a{Ka_val:.4f} \u00d7 {H:.3f}"
                if c > 0 else "")
         ),
@@ -361,6 +369,9 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
         result_value=f"{Pa_total:.1f}",
         result_unit="kN/m",
         reference="Das Ch. 13",
+        notes=(f"q = q_live + q_dead = {q_live:.1f} + {q_dead:.1f} kPa: "
+               "both surcharges' thrust drives every check."
+               if q_live > 0 and q_dead > 0 else ""),
     ))
 
     # Thrust inclination & components (cantilever._active_thrust, RW-1):
@@ -370,6 +381,11 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
     Pv = ep["Pv"]
 
     if delta_incl > 0:
+        # The live load's share of P_v the analysis left out of the
+        # resisting side (GM-157), from the forces it summed
+        Pv_left_out = sum(f["W"] for f in forces
+                          if f.get("kind") == "thrust"
+                          and not f.get("resists", True))
         ep_items.append(CalcStep(
             title="Thrust Components (inclined thrust)",
             equation="P_h = P_a \u00d7 cos(\u03b4),  P_v = P_a \u00d7 sin(\u03b4)",
@@ -384,6 +400,9 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
             notes=(
                 "P_h drives sliding/overturning; P_v acts downward at the "
                 "pressure plane (back of heel) and is stabilizing."
+                + (f" The live load's share, {Pv_left_out:.1f} kN/m, is "
+                   "left out of sliding, overturning and the eccentricity "
+                   "check." if Pv_left_out > 0 else "")
             ),
             reference="Coulomb wall friction \u03b4 = 2/3\u03c6" if method == "coulomb"
             else "Rankine thrust parallel to backfill slope",
@@ -399,17 +418,41 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
     weight_rows = [[f["component"], f"{f['W']:.1f}", f"{f['x']:.3f}",
                     f"{f['M']:.1f}"] for f in forces]
 
-    # Totals, as the analysis summed them
+    # Totals, as the analysis summed them. A surcharge over the heel that
+    # is not a resisting force (GM-157) makes two sets of loads: the one
+    # sliding, overturning and the eccentricity check count, and the one
+    # the bearing pressures count. Each check's own total is printed.
     total_W = br["V"]
     M_stab = br["M_stab"]
-    weight_rows.append(["TOTAL", f"{total_W:.1f}", "\u2014", f"{M_stab:.1f}"])
+    split = _loads_differ(ot, br)
+    headers = ["Component", "Weight (kN/m)", "Arm from Toe (m)",
+               "Moment (kN\u00b7m/m)"]
+    notes = "Moments computed about toe for overturning check."
+    if split or any(not f.get("resists", True) or not f.get("bearing", True)
+                    for f in forces):
+        headers.append("Counted in")
+        for row, f in zip(weight_rows, forces):
+            row.append(_counted_in(f))
+        notes = ("Counted in: the checks that sum the force. A surcharge "
+                 "over the heel that is not a resisting force is left out "
+                 "of sliding, overturning and the eccentricity check "
+                 "(see Choices).")
+    if split:
+        weight_rows.append(["TOTAL, sliding / overturning / eccentricity",
+                            f"{ot['V']:.1f}", "\u2014",
+                            f"{ot['M_stabilizing']:.1f}", ""])
+        weight_rows.append(["TOTAL, bearing", f"{total_W:.1f}", "\u2014",
+                            f"{M_stab:.1f}", ""])
+    else:
+        weight_rows.append(["TOTAL", f"{total_W:.1f}", "\u2014",
+                            f"{M_stab:.1f}"]
+                           + ([""] if len(headers) == 5 else []))
 
     weight_items.append(TableData(
         title="Wall Component Weights and Moments about Toe",
-        headers=["Component", "Weight (kN/m)", "Arm from Toe (m)",
-                 "Moment (kN\u00b7m/m)"],
+        headers=headers,
         rows=weight_rows,
-        notes="Moments computed about toe for overturning check.",
+        notes=notes,
     ))
 
     sections.append(CalcSection(title="Wall Weights & Stabilizing Moments", items=weight_items))
@@ -462,7 +505,10 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
                else "")
               + ("P_p: Rankine passive resistance in front of the base"
                  + (" and shear key" if getattr(geom, "has_shear_key", False)
-                    else "") + "." if Pp > 0 else ""),
+                    else "") + ". " if Pp > 0 else "")
+              + (f"V leaves out {sl['V_left_out']:.1f} kN/m of surcharge "
+                 "over the heel, not a resisting force (see Choices)."
+                 if sl.get("V_left_out", 0.0) > 0 else ""),
     ))
 
     if result.FOS_sliding is None:
@@ -515,7 +561,9 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
     ot_items.append(CalcStep(
         title="Stabilizing Moment about Toe",
         equation="M_stab = \u03a3(W_i \u00d7 x_i)",
-        substitution="(see weight table above)",
+        substitution=("(see weight table above: TOTAL, sliding / "
+                      "overturning / eccentricity)" if split
+                      else "(see weight table above)"),
         result_name="M_stab",
         result_value=f"{ot['M_stabilizing']:.1f}",
         result_unit="kN\u00b7m/m",
@@ -551,30 +599,48 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
     # ── Section 5: Bearing Pressure & Eccentricity ─────────────
     brg_items = []
 
-    # Eccentricity, as the analysis worked it out
-    x_R = br["x_resultant"]
-    e = br["eccentricity"]
-
+    # The eccentricity check, on the loads the overturning check counts,
+    # as the analysis worked it out (GM-157)
+    x_R_check = ot["x_resultant"]
     brg_items.append(CalcStep(
-        title="Resultant Location from Toe",
+        title="Resultant Location from Toe"
+              + (" (sliding / overturning loads)" if split else ""),
         equation="x_R = (M_stab - M_ot) / V",
-        substitution=(f"x_R = ({br['M_stab']:.1f} - {br['M_over']:.1f}) / "
-                      f"{total_W:.1f}"),
+        substitution=(f"x_R = ({ot['M_stabilizing']:.1f} - "
+                      f"{ot['M_overturning']:.1f}) / {ot['V']:.1f}"),
         result_name="x_R",
-        result_value=f"{x_R:.3f}",
+        result_value=f"{x_R_check:.3f}",
         result_unit="m",
     ))
 
     brg_items.append(CalcStep(
         title="Eccentricity of Resultant",
         equation="e = B/2 - x_R",
-        substitution=f"e = {B:.2f}/2 - {x_R:.3f}",
+        substitution=f"e = {B:.2f}/2 - {x_R_check:.3f}",
         result_name="e",
         result_value=f"{result.eccentricity:.3f}",
         result_unit="m",
         notes=f"B/6 = {B / 6:.3f} m. "
               f"{'Resultant within middle third' if result.in_middle_third else 'OUTSIDE middle third'}.",
     ))
+
+    # The bearing pressures, on the bearing check's loads
+    x_R = br["x_resultant"]
+    e = br["eccentricity"]
+    if split:
+        brg_items.append(CalcStep(
+            title="Resultant for Bearing (bearing loads)",
+            equation="x_R,b = (M_stab,b - M_ot) / V_b,  e_b = B/2 - x_R,b",
+            substitution=(f"x_R,b = ({br['M_stab']:.1f} - "
+                          f"{br['M_over']:.1f}) / {total_W:.1f}; "
+                          f"e_b = {B:.2f}/2 - {x_R:.3f}"),
+            result_name="e_b",
+            result_value=f"{e:.3f}",
+            result_unit="m",
+            notes=("The eccentricity for bearing is not the eccentricity "
+                   "check's (GEC-11 Vol I p. 4-26): the bearing pressures "
+                   "count the surcharge over the heel as the Choices say."),
+        ))
 
     # Bearing pressures, by the distribution the analysis used
     if br["distribution"] == "trapezoidal":
@@ -1155,18 +1221,46 @@ def _cantilever_terms(result, analysis):
     method = _used(analysis, "pressure_method")
     gamma_c = _used(analysis, "gamma_concrete")
     ep = cw._active_thrust_terms(geom, gamma, phi, c, method)
+    live = bool(_used(analysis, "live_load_resists"))
+    dead = bool(_used(analysis, "dead_load_resists"))
+    in_bearing = bool(_used(analysis, "surcharge_in_bearing"))
     return (
-        ep, cw._vertical_force_items(geom, gamma, gamma_c, ep),
+        ep, cw._vertical_force_items(geom, gamma, gamma_c, ep, live, dead,
+                                     in_bearing),
         cw._sliding_terms(
             geom, gamma, phi, c, _used(analysis, "phi_foundation"),
             _used(analysis, "c_foundation"), gamma_c, method,
             bool(_used(analysis, "include_passive")),
             _used(analysis, "gamma_foundation"),
             delta_base=_used(analysis, "delta_base"),
-            base_adhesion=_used(analysis, "base_adhesion")),
-        cw._overturning_terms(geom, gamma, phi, c, gamma_c, method),
+            base_adhesion=_used(analysis, "base_adhesion"),
+            live_load_resists=live, dead_load_resists=dead),
+        cw._overturning_terms(geom, gamma, phi, c, gamma_c, method,
+                              live_load_resists=live,
+                              dead_load_resists=dead),
         cw._bearing_terms(geom, gamma, phi, c,
-                          _used(analysis, "q_allowable"), gamma_c, method))
+                          _used(analysis, "q_allowable"), gamma_c, method,
+                          surcharge_in_bearing=in_bearing))
+
+
+def _loads_differ(ot, br) -> bool:
+    """Whether the sliding / overturning / eccentricity loads and the
+    bearing loads differ (GM-157: a surcharge over the heel counted in
+    one and not the other)."""
+    return (abs(ot["V"] - br["V"]) > 1e-9
+            or abs(ot["M_stabilizing"] - br["M_stab"]) > 1e-9)
+
+
+def _counted_in(force) -> str:
+    """The checks a vertical force is counted in (GM-157)."""
+    resists, bearing = force.get("resists", True), force.get("bearing", True)
+    if resists and bearing:
+        return "all checks"
+    if bearing:
+        return "bearing only"
+    if resists:
+        return "sliding, overturning, eccentricity"
+    return "none"
 
 
 def _Ka_value(phi, method, geom):
@@ -1390,11 +1484,14 @@ def _plot_bearing_pressure(result, analysis):
     ax.axvspan(B / 2 - b6, B / 2 + b6, alpha=0.1, color='#16a34a',
                label=f'Middle third (B/6 = {b6:.2f} m)')
 
-    # Eccentricity marker
-    e = result.eccentricity
+    # Eccentricity marker: the resultant of the loads drawn, the bearing
+    # check's (GM-157: it can differ from the eccentricity check's)
+    e = terms.get("eccentricity", result.eccentricity)
     x_R = B / 2.0 - e
+    differs = getattr(result, "eccentricity_bearing", None) is not None
     ax.axvline(x=x_R, color='#dc2626', linestyle='--', linewidth=1.2,
-               label=f'Resultant (e = {e:.3f} m)')
+               label=(f'Resultant for bearing (e_b = {e:.3f} m)' if differs
+                      else f'Resultant (e = {e:.3f} m)'))
     ax.axvline(x=B / 2.0, color='#666', linestyle=':', linewidth=0.8,
                label='Base center')
 

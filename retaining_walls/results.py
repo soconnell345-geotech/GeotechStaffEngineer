@@ -43,11 +43,14 @@ class CantileverWallResult:
         True if the larger edge pressure is within q_allowable. None when
         the bearing check was not run.
     q_toe : float
-        Bearing pressure at the toe (kPa).
+        Bearing pressure at the toe (kPa), on the bearing check's loads.
     q_heel : float
-        Bearing pressure at the heel (kPa).
+        Bearing pressure at the heel (kPa), on the bearing check's loads.
     eccentricity : float
-        Eccentricity of resultant from center of base (m).
+        Eccentricity of resultant from center of base (m), on the loads the
+        overturning check counts (GM-157: without a surcharge over the heel
+        that is not a resisting force). The eccentricity for bearing is
+        ``bearing_terms["eccentricity"]``.
     in_middle_third : bool
         True if resultant is within middle third of base (e <= B/6), the
         module's eccentricity check.
@@ -66,16 +69,24 @@ class CantileverWallResult:
     on a result built by hand):
 
     earth_pressure : dict or None
-        method, Ka, H_active, Pa_earth, Pa_surcharge, Pa_cohesion, Pa
-        (kN/m), z_Pa (m above the base), delta_deg, Ph, Pv.
+        method, Ka, H_active, q_live, q_dead (kPa), Pa_earth, Pa_surcharge,
+        Pa_cohesion, Pa (kN/m), z_Pa (m above the base), delta_deg, Ph, Pv,
+        and the live load's share Pa_live, Pv_live.
     vertical_forces : list of dict or None
-        Each vertical force the overturning and bearing checks sum, in
-        their order: component, W (kN/m), x (arm from the toe, m), M.
+        Each vertical force on the base, in the checks' order: component,
+        kind, W (kN/m), x (arm from the toe, m), M, and the checks that
+        count it: resists (sliding, overturning, eccentricity) and bearing
+        (GM-157).
     sliding_terms, overturning_terms, bearing_terms : dict or None
         The checks' terms (``cantilever._sliding_terms`` and the others):
-        V, delta_b, ca, Pp, resisting, driving; M_stabilizing,
-        M_overturning; V, M_stab, M_over, x_resultant, eccentricity,
+        V, V_left_out, delta_b, ca, Pp, resisting, driving; M_stabilizing,
+        M_overturning, V, x_resultant, eccentricity (the eccentricity
+        check); V, M_stab, M_over, x_resultant, eccentricity (for bearing),
         distribution, B_eff, q_toe, q_heel, q_max.
+    choices : list of dict
+        How the surcharges over the heel were counted, when the wall
+        carries any (GM-157, ``geotech_common.choices``;
+        ``cantilever.heel_surcharge_choices``).
     """
     FOS_sliding: Optional[float] = 0.0
     FOS_overturning: Optional[float] = 0.0
@@ -97,6 +108,17 @@ class CantileverWallResult:
     sliding_terms: Optional[Dict[str, Any]] = None
     overturning_terms: Optional[Dict[str, Any]] = None
     bearing_terms: Optional[Dict[str, Any]] = None
+    choices: List[Dict[str, Any]] = field(default_factory=list)
+
+    @property
+    def eccentricity_bearing(self) -> Optional[float]:
+        """The eccentricity for bearing (m) when it differs from the
+        eccentricity check's (GM-157), else None."""
+        b = self.bearing_terms
+        if not b:
+            return None
+        e = round(b["eccentricity"], 3)
+        return None if e == round(self.eccentricity, 3) else e
 
     @property
     def bearing_checked(self) -> bool:
@@ -234,16 +256,25 @@ class CantileverWallResult:
             f"  q_heel = {self.q_heel:.1f} kPa",
             f"  Eccentricity = {self.eccentricity:.3f} m"
             f"  ({'middle third' if self.in_middle_third else 'OUTSIDE middle third'})",
+        ]
+        if self.eccentricity_bearing is not None:
+            lines.append(f"  Eccentricity for bearing = "
+                         f"{self.eccentricity_bearing:.3f} m (on the "
+                         "bearing check's loads)")
+        lines.extend([
             "",
             "  Failed checks: " + (", ".join(failed) if failed else "none"),
-        ]
+        ])
         if self.checks_not_run:
             lines.append("  Not checked:   " + ", ".join(self.checks_not_run))
+        if self.choices:
+            from geotech_common.choices import choices_lines
+            lines.extend(choices_lines(self.choices))
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "verdict": self.verdict,
             "checks_failed": self.checks_failed,
             "checks_not_run": self.checks_not_run,
@@ -265,6 +296,11 @@ class CantileverWallResult:
             "wall_height_m": self.wall_height,
             "base_width_m": self.base_width,
         }
+        if self.eccentricity_bearing is not None:
+            d["eccentricity_bearing_m"] = self.eccentricity_bearing
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
+        return d
 
     def plot_stability_summary(self, ax=None, show=True):
         """Plot FOS bar chart for sliding, overturning, and bearing. A check

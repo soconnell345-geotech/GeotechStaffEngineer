@@ -45,7 +45,15 @@ class CantileverWallGeometry:
     backfill_slope : float, optional
         Slope of backfill behind wall (degrees). Default 0.
     surcharge : float, optional
-        Uniform surcharge on backfill (kPa). Default 0.
+        Uniform live-load surcharge on the backfill (kPa), e.g. traffic.
+        Default 0. Its thrust K q H drives every check; over the heel it is
+        not a resisting force for sliding and overturning by default
+        (``cantilever``, GM-157).
+    dead_load_surcharge : float, optional
+        Uniform dead-load (permanent) surcharge on the backfill (kPa), e.g.
+        a pavement or an approach slab. Default 0. Its thrust drives every
+        check, as the live load's does; how its weight over the heel counts
+        is a separate choice (``cantilever``, GM-157).
     """
     wall_height: float
     base_width: Optional[float] = None
@@ -57,6 +65,7 @@ class CantileverWallGeometry:
     key_depth: float = 0.0
     backfill_slope: float = 0.0
     surcharge: float = 0.0
+    dead_load_surcharge: float = 0.0
 
     def __post_init__(self):
         if self.wall_height <= 0:

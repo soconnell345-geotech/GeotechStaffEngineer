@@ -92,11 +92,13 @@ def run_cantilever_wall(params, *, method="cantilever_wall"):
         params,
         ("wall_height", "base_width", "toe_length", "stem_thickness_top",
          "stem_thickness_base", "base_thickness", "has_shear_key", "key_depth",
-         "backfill_slope", "surcharge", "gamma_backfill", "phi_backfill",
+         "backfill_slope", "surcharge", "dead_load_surcharge",
+         "gamma_backfill", "phi_backfill",
          "c_backfill", "phi_foundation", "c_foundation", "q_allowable",
          "gamma_concrete", "FOS_sliding_required", "FOS_overturning_required",
          "pressure_method", "include_passive", "gamma_foundation",
-         "delta_base", "base_adhesion"),
+         "delta_base", "base_adhesion", "live_load_resists",
+         "dead_load_resists", "surcharge_in_bearing"),
         method=method)
     require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
                    method=method)
@@ -110,6 +112,7 @@ def run_cantilever_wall(params, *, method="cantilever_wall"):
         key_depth=params.get("key_depth", 0.0),
         backfill_slope=params.get("backfill_slope", 0.0),
         surcharge=params.get("surcharge", 0.0),
+        dead_load_surcharge=params.get("dead_load_surcharge", 0.0),
     )
     used = {
         "geom": geom,
@@ -128,6 +131,10 @@ def run_cantilever_wall(params, *, method="cantilever_wall"):
         "gamma_foundation": params.get("gamma_foundation"),
         "delta_base": params.get("delta_base"),
         "base_adhesion": params.get("base_adhesion"),
+        "live_load_resists": bool(params.get("live_load_resists", False)),
+        "dead_load_resists": bool(params.get("dead_load_resists", False)),
+        "surcharge_in_bearing": bool(params.get("surcharge_in_bearing",
+                                                True)),
     }
     result = analyze_cantilever_wall(
         geom, gamma_backfill=used["gamma_backfill"],
@@ -142,6 +149,9 @@ def run_cantilever_wall(params, *, method="cantilever_wall"):
         gamma_foundation=used["gamma_foundation"],
         delta_base=used["delta_base"],
         base_adhesion=used["base_adhesion"],
+        live_load_resists=used["live_load_resists"],
+        dead_load_resists=used["dead_load_resists"],
+        surcharge_in_bearing=used["surcharge_in_bearing"],
     )
     return result, used
 
@@ -387,7 +397,11 @@ METHOD_INFO = {
             "base_thickness": {"type": "float", "required": False, "default": 0.60, "description": "Base slab thickness (m)."},
             "has_shear_key": {"type": "bool", "required": False, "default": False, "description": "Include a shear key (with key_depth)."},
             "key_depth": {"type": "float", "required": False, "default": 0.0, "description": "Shear key depth (m)."},
-            "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surcharge (kPa)."},
+            "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Uniform LIVE-load surcharge on the backfill (kPa), e.g. traffic. Its thrust K*q*H drives every check. Over the heel it is NOT a resisting force in sliding, overturning or the eccentricity check by default (live_load_resists), and it does load the base in the bearing pressures (surcharge_in_bearing). A permanent surcharge (pavement, approach slab) goes in dead_load_surcharge."},
+            "dead_load_surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Uniform DEAD-load (permanent) surcharge on the backfill (kPa), e.g. a pavement or an approach slab (FHWA NHI-06-089 Sec. 10.4.2). Its thrust drives every check, added to the live load's. Over the heel it is not a resisting force by default (dead_load_resists); it loads the base in the bearing pressures (surcharge_in_bearing)."},
+            "live_load_resists": {"type": "bool", "required": False, "default": False, "description": "Count the live-load surcharge over the heel (and its share of a sloped or Coulomb thrust's vertical component) as a resisting force in sliding, overturning and the eccentricity check. Default false: FHWA NHI-06-089 Sec. 10.5.5 (p. 10-43), 'the live load surcharge is not considered as a stabilizing force over the heel of the wall when sliding resistance is being checked'; UFC 3-220-20 App. B-1.2 (p. 597), 'For overturning and sliding checks, it is assumed that the traffic pressure does not act over the wall heel'. true = the free body with the load over the heel, which none of these references uses for a live load. The result's choices say which was used."},
+            "dead_load_resists": {"type": "bool", "required": False, "default": False, "description": "Count the dead-load surcharge over the heel as a resisting force in sliding, overturning and the eccentricity check. Default false: FHWA NHI-06-089 Sec. 10.5.3 (p. 10-41), for CIP semi-gravity walls the surcharge loads are 'conservatively neglected within the width of the base slab since they contribute to overturning and sliding resistance'. true = counted as a permanent load: GEC-11 Vol I p. 4-22 (AASHTO), loads that increase sliding resistance are included 'only if those loads are permanent'."},
+            "surcharge_in_bearing": {"type": "bool", "required": False, "default": True, "description": "Count the surcharges over the heel in the bearing pressures (q_toe, q_heel, FOS_bearing). Default true: UFC 3-220-20 App. B-1.6 (p. 602), 'it is conservative to include the surcharge over the heel of the wall, if this is possible to occur, in the bearing capacity check'; GEC-11 Vol I p. 4-26. false = the surcharge taken as located behind the heel (NHI-06-089 p. 10-41)."},
             "backfill_slope": {"type": "float", "required": False, "default": 0.0, "description": "Backfill slope angle (degrees)."},
             "c_backfill": {"type": "float", "required": False, "default": 0.0, "description": "Backfill cohesion (kPa)."},
             "phi_foundation": {"type": "float", "required": False, "description": "Foundation soil friction angle (deg), FULL value — the sliding check applies delta_b = (2/3)*phi_foundation INTERNALLY. Do NOT pre-reduce (passing 2/3*phi here double-counts the reduction). To set the base friction angle directly, use delta_base instead. Defaults to phi_backfill."},
@@ -402,7 +416,7 @@ METHOD_INFO = {
             "FOS_overturning_required": {"type": "float", "required": False, "default": 2.0, "description": "Required overturning FOS."},
             "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb"], "description": "Earth pressure theory."},
         },
-        "returns": {"verdict": "The result in plain words: the FAILED checks first with their numbers, then those that pass, then those not checked. Report it to the user, failures first.", "checks_failed": "Checks that were run and failed: sliding, overturning, bearing, eccentricity (resultant outside the middle third). Never leave one out of the answer.", "checks_not_run": "Checks not run ('bearing' when no q_allowable was given). Say so; never call the wall adequate in bearing.", "all_checks_pass": "true only when every check ran and passed; false when one failed; null when none failed but a check was not run.", "FOS_sliding": "Factor of safety against sliding (null when there is no driving force: the check passes).", "FOS_overturning": "Factor of safety against overturning (null when there is no driving force).", "FOS_bearing": "q_allowable / the larger of q_toe and q_heel; null when the bearing check was not run.", "q_toe_kPa": "Bearing pressure at the toe.", "q_heel_kPa": "Bearing pressure at the heel.", "geometry": "The geometry analysed, auto-sized parts included; wall_height is from the underside of the base to the top of the stem.", "sliding_basis": "The sliding-check basis actually used: delta_base_deg, base_adhesion_kPa, driving/resisting forces, Pa and its vertical component + inclination — verify these match your intended assumptions."},
+        "returns": {"verdict": "The result in plain words: the FAILED checks first with their numbers, then those that pass, then those not checked. Report it to the user, failures first.", "checks_failed": "Checks that were run and failed: sliding, overturning, bearing, eccentricity (resultant outside the middle third). Never leave one out of the answer.", "checks_not_run": "Checks not run ('bearing' when no q_allowable was given). Say so; never call the wall adequate in bearing.", "all_checks_pass": "true only when every check ran and passed; false when one failed; null when none failed but a check was not run.", "FOS_sliding": "Factor of safety against sliding (null when there is no driving force: the check passes).", "FOS_overturning": "Factor of safety against overturning (null when there is no driving force).", "FOS_bearing": "q_allowable / the larger of q_toe and q_heel; null when the bearing check was not run.", "q_toe_kPa": "Bearing pressure at the toe.", "q_heel_kPa": "Bearing pressure at the heel.", "eccentricity_m": "Eccentricity of the resultant on the loads the overturning check counts (the eccentricity check, middle third).", "eccentricity_bearing_m": "Present when it differs: the eccentricity on the bearing check's loads (the surcharge over the heel counted), which gives q_toe / q_heel.", "choices": "How the surcharges over the heel were counted in sliding / overturning / eccentricity and in bearing, with the basis and the other reading. Tell the user.", "geometry": "The geometry analysed, auto-sized parts included; wall_height is from the underside of the base to the top of the stem.", "sliding_basis": "The sliding-check basis actually used: delta_base_deg, base_adhesion_kPa, driving/resisting forces, Pa and its vertical component + inclination — verify these match your intended assumptions."},
     },
     "earth_pressure_coefficient": {
         "category": "Earth Pressure",
@@ -506,7 +520,12 @@ METHOD_INFO["mse_lrfd_external_stability"]["refused_parameters"] = {
 _TRAFFIC = {"traffic_vertical_resists": {"backfill_slope": "set",
                                          "surcharge": "set"}}
 declare_applies_when(METHOD_INFO, {
-    "cantilever_wall": {"key_depth": {"has_shear_key": [True]}},
+    "cantilever_wall": {
+        "key_depth": {"has_shear_key": [True]},
+        "live_load_resists": {"surcharge": "set"},
+        "dead_load_resists": {"dead_load_surcharge": "set"},
+        "surcharge_in_bearing": [{"surcharge": "set"},
+                                 {"dead_load_surcharge": "set"}]},
     "mse_wall": {**{
         name: {"reinforcement_Tallowable": "set",
                "reinforcement_name": "unset"}

@@ -17,11 +17,28 @@ Without one it is NOT RUN: ``FOS_bearing`` and ``passes_bearing`` are None
 and the result says "not checked"; the bearing pressures q_toe / q_heel and
 the middle-third check are still reported.
 
+A surcharge over the heel (GM-157). The geometry's ``surcharge`` is a live
+load (traffic) and ``dead_load_surcharge`` a permanent one. Both thrusts
+drive every check. Over the heel, by default neither is a resisting force
+for sliding, overturning or the eccentricity (middle-third) check, and both
+load the base in the bearing pressures; the live load's share of the
+thrust's vertical component is left out of the resisting side with it.
+``live_load_resists``, ``dead_load_resists`` and ``surcharge_in_bearing``
+choose the other readings, and the result's ``choices`` say which was used
+and why (:data:`LIVE_LOAD_BASIS` and the others). The eccentricity check
+and the bearing pressures can therefore use two resultants (GEC-11 Vol I
+p. 4-26: "eB = eccentricity for bearing calculation (not equal to
+eccentricity check e)").
+
 All units are SI: kN, kPa, kN/m³, degrees, meters.
 
 References:
     Das, B.M., Principles of Foundation Engineering, Ch 13
     AASHTO LRFD Section 11.6
+    FHWA NHI-06-089, Soils and Foundations Reference Manual Vol II (2006),
+        Sec. 10.5.3 (p. 10-41) and 10.5.5 (p. 10-43)
+    UFC 3-220-20 (2025), App. B-1 (pp. 597 and 602)
+    FHWA GEC-11 Vol I, FHWA-NHI-10-024 (2009), pp. 4-19, 4-22, 4-26
 """
 
 import math
@@ -35,6 +52,54 @@ from retaining_walls.earth_pressure import (
 )
 from retaining_walls.results import CantileverWallResult
 
+#: Whether the live-load surcharge resists sliding and overturning (GM-157),
+#: by ``live_load_resists``: the basis of each reading.
+LIVE_LOAD_BASIS = {
+    False: ("FHWA NHI-06-089 Sec. 10.5.5 (p. 10-43): 'the live load "
+            "surcharge is not considered as a stabilizing force over the "
+            "heel of the wall when sliding resistance is being checked'; "
+            "Sec. 10.5.3 (p. 10-41): for CIP semi-gravity walls the "
+            "surcharge loads are 'conservatively neglected within the width "
+            "of the base slab since they contribute to overturning and "
+            "sliding resistance'; UFC 3-220-20 App. B-1.2 (p. 597): 'For "
+            "overturning and sliding checks, it is assumed that the traffic "
+            "pressure does not act over the wall heel'; GEC-11 Vol I p. 4-22 "
+            "(AASHTO): external loads that increase sliding resistance are "
+            "included 'only if those loads are permanent', so the vertical "
+            "component of the live load's thrust is left out too"),
+    True: ("counted: the free body with the live load over the heel "
+           "whenever it acts behind the wall (the module's reading before "
+           "GM-157); none of the references above counts a live load so"),
+}
+
+#: Whether a dead-load (permanent) surcharge over the heel resists sliding
+#: and overturning (GM-157), by ``dead_load_resists``.
+DEAD_LOAD_BASIS = {
+    False: ("FHWA NHI-06-089 Sec. 10.5.3 (p. 10-41): for CIP semi-gravity "
+            "walls the surcharge loads are 'generally assumed to be located "
+            "behind the heel of the wall, and conservatively neglected "
+            "within the width of the base slab since they contribute to "
+            "overturning and sliding resistance'"),
+    True: ("counted as a permanent load: GEC-11 Vol I p. 4-22 (AASHTO), "
+           "'External loads that increase sliding resistance should only be "
+           "included if those loads are permanent'; p. 4-4, the minimum load "
+           "factor of a permanent load that increases stability"),
+}
+
+#: Whether the surcharge over the heel loads the base in the bearing
+#: pressures (GM-157), by ``surcharge_in_bearing``.
+BEARING_BASIS = {
+    True: ("UFC 3-220-20 App. B-1.6 (p. 602): 'Unlike the checks of "
+           "overturning and sliding, it is conservative to include the "
+           "surcharge over the heel of the wall, if this is possible to "
+           "occur, in the bearing capacity check'; GEC-11 Vol I p. 4-26: "
+           "'the bearing check applies live load above both the reinforced "
+           "zone and the retained backfill'"),
+    False: ("left out of the base pressures, the surcharge taken as "
+            "located behind the heel (FHWA NHI-06-089 Sec. 10.5.3, "
+            "p. 10-41)"),
+}
+
 
 def _active_thrust_terms(geom: CantileverWallGeometry,
                          gamma_backfill: float, phi_backfill: float,
@@ -44,7 +109,12 @@ def _active_thrust_terms(geom: CantileverWallGeometry,
     :func:`_active_thrust` uses them: ``method``, ``Ka``, ``H_active``,
     the components ``Pa_earth``, ``Pa_surcharge``, ``Pa_cohesion`` and
     their total ``Pa`` (kN/m), its height ``z_Pa`` above the base (m),
-    its inclination ``delta_deg`` and its components ``Ph``, ``Pv``."""
+    its inclination ``delta_deg`` and its components ``Ph``, ``Pv``.
+
+    The surcharge component is K q H with q the live and the dead-load
+    surcharges together (``q_live``, ``q_dead``, kPa). ``Pa_live`` is the
+    live load's share of Pa and ``Pv_live`` its vertical component, which
+    the sliding and overturning checks leave out by default (GM-157)."""
     H = geom.H_active
 
     if pressure_method == "coulomb":
@@ -58,18 +128,25 @@ def _active_thrust_terms(geom: CantileverWallGeometry,
         Ka = rankine_Ka(phi_backfill)
         delta_deg = 0.0
 
+    q_live = geom.surcharge
+    q_dead = geom.dead_load_surcharge
     parts = active_force_components(gamma_backfill, H, Ka, c_backfill,
-                                    geom.surcharge)
+                                    q_live + q_dead)
     Pa, z_Pa = parts["Pa"], parts["z_Pa"]
     delta_rad = math.radians(delta_deg)
     Ph = Pa * math.cos(delta_rad)
     Pv = Pa * math.sin(delta_rad)
+    # The live load's share, never more than the thrust (cohesion may
+    # take the total below it)
+    Pa_live = min(Ka * q_live * H, Pa) if q_live > 0 else 0.0
     return {"method": pressure_method, "Ka": Ka, "H_active": H,
+            "q_live": q_live, "q_dead": q_dead,
             "Pa_earth": parts["Pa_earth"],
             "Pa_surcharge": parts["Pa_surcharge"],
             "Pa_cohesion": parts["Pa_cohesion"],
             "Pa": Pa, "z_Pa": z_Pa, "delta_deg": delta_deg,
-            "Ph": Ph, "Pv": Pv}
+            "Ph": Ph, "Pv": Pv,
+            "Pa_live": Pa_live, "Pv_live": Pa_live * math.sin(delta_rad)}
 
 
 def _active_thrust(geom: CantileverWallGeometry,
@@ -178,24 +255,57 @@ def _compute_wall_weights(geom: CantileverWallGeometry,
 
 def _vertical_force_items(geom: CantileverWallGeometry,
                           gamma_backfill: float, gamma_concrete: float,
-                          thrust: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Every vertical force the overturning and bearing checks sum, in
-    their order, as ``{"component", "W", "x", "M"}``: the weights, the
-    surcharge on the heel and the vertical component of the active thrust
-    at the pressure plane (x = B) (GM-143)."""
-    items = _wall_weight_items(geom, gamma_backfill, gamma_concrete)
+                          thrust: Dict[str, Any],
+                          live_load_resists: bool = False,
+                          dead_load_resists: bool = False,
+                          surcharge_in_bearing: bool = True
+                          ) -> List[Dict[str, Any]]:
+    """Every vertical force on the base, in the order the checks sum them,
+    as ``{"component", "kind", "W", "x", "M", "resists", "bearing"}``
+    (GM-143): the weights, the surcharges on the heel and the vertical
+    component of the active thrust at the pressure plane (x = B). ``kind``
+    is "weight", "surcharge" or "thrust". ``resists``: counted in the
+    sliding, overturning and eccentricity checks; ``bearing``: counted in
+    the bearing pressures (GM-157, the choices in the module docstring)."""
+    items = [{**i, "kind": "weight", "resists": True, "bearing": True}
+             for i in _wall_weight_items(geom, gamma_backfill,
+                                         gamma_concrete)]
     heel = geom.heel_length
-    if heel > 0 and geom.surcharge > 0:
-        items.append({"component": "Surcharge on heel",
-                      "W": geom.surcharge * heel,
-                      "x": geom.toe_length + geom.stem_thickness_base
-                      + heel / 2.0})
-    if thrust["Pv"] != 0.0:
+    x_q = geom.toe_length + geom.stem_thickness_base + heel / 2.0
+    for q, name, resists in (
+            (geom.surcharge, "Live-load surcharge on heel",
+             live_load_resists),
+            (geom.dead_load_surcharge, "Dead-load surcharge on heel",
+             dead_load_resists)):
+        if heel > 0 and q > 0:
+            items.append({"component": name, "kind": "surcharge",
+                          "W": q * heel, "x": x_q, "resists": resists,
+                          "bearing": surcharge_in_bearing})
+    Pv, Pv_live = thrust["Pv"], thrust.get("Pv_live", 0.0)
+    if Pv_live != 0.0:
+        # the live load's share of P_v is a live load too (GEC-11 p. 4-22)
+        if Pv - Pv_live != 0.0:
+            items.append({"component": "Active thrust vert. comp. (P_v), "
+                                       "less live load",
+                          "kind": "thrust", "W": Pv - Pv_live,
+                          "x": geom.base_width, "resists": True,
+                          "bearing": True})
+        items.append({"component": "Active thrust vert. comp. (P_v), "
+                                   "live load",
+                      "kind": "thrust", "W": Pv_live, "x": geom.base_width,
+                      "resists": live_load_resists, "bearing": True})
+    elif Pv != 0.0:
         items.append({"component": "Active thrust vert. comp. (P_v)",
-                      "W": thrust["Pv"], "x": geom.base_width})
+                      "kind": "thrust", "W": Pv, "x": geom.base_width,
+                      "resists": True, "bearing": True})
     for i in items:
         i["M"] = i["W"] * i["x"]
     return items
+
+
+def _sum(items: List[Dict[str, Any]], key: str, flag: str) -> float:
+    """The sum of ``key`` over the items a check counts (``flag``)."""
+    return sum(i[key] for i in items if i[flag])
 
 
 def _sliding_terms(geom: CantileverWallGeometry,
@@ -208,9 +318,14 @@ def _sliding_terms(geom: CantileverWallGeometry,
                    include_passive: bool = False,
                    gamma_foundation: float = None,
                    delta_base: float = None,
-                   base_adhesion: float = None) -> Dict[str, Any]:
+                   base_adhesion: float = None,
+                   live_load_resists: bool = False,
+                   dead_load_resists: bool = False) -> Dict[str, Any]:
     """The sliding check's terms, unrounded (GM-143): ``V`` and its parts
-    (``V_weights``, ``V_surcharge``, ``Pv``), the base interface
+    (``V_weights``, ``V_surcharge`` the surcharge over the heel counted,
+    ``Pv_counted`` the part of the thrust's vertical component ``Pv``
+    counted), ``V_left_out`` (the surcharge over the heel and the live
+    load's share of Pv not counted, GM-157), the base interface
     ``delta_b`` (deg) and ``ca`` (kPa) with whether each was given,
     ``Kp``, ``D_passive`` and ``Pp`` (None / 0 without passive),
     ``resisting``, ``driving`` (= Ph) and ``FOS`` (None with no driving
@@ -223,21 +338,23 @@ def _sliding_terms(geom: CantileverWallGeometry,
     B = geom.base_width
 
     # Active thrust, decomposed per the chosen method (RW-1)
-    Ka, Pa, _, delta_deg, Ph, Pv = _active_thrust(
-        geom, gamma_backfill, phi_backfill, c_backfill, pressure_method
-    )
+    thrust = _active_thrust_terms(geom, gamma_backfill, phi_backfill,
+                                  c_backfill, pressure_method)
+    Pa, delta_deg, Ph = thrust["Pa"], thrust["delta_deg"], thrust["Ph"]
 
-    # Vertical force (sum of weights)
-    weights = _compute_wall_weights(geom, gamma_backfill, gamma_concrete)
-    V = sum(w for w, _ in weights)
-    V_weights = V
-
-    # Add vertical component of surcharge on heel
-    V_surcharge = geom.surcharge * geom.heel_length
-    V += V_surcharge
-
-    # Vertical component of the active thrust (stabilizing)
-    V += Pv
+    # The vertical forces the check counts: the weights, the surcharges
+    # over the heel it counts (GM-157) and the thrust's vertical component
+    # (stabilizing), the live load's share of it only when counted
+    items = _vertical_force_items(geom, gamma_backfill, gamma_concrete,
+                                  thrust, live_load_resists,
+                                  dead_load_resists)
+    V = _sum(items, "W", "resists")
+    V_weights = sum(i["W"] for i in items if i["kind"] == "weight")
+    V_surcharge = sum(i["W"] for i in items
+                      if i["kind"] == "surcharge" and i["resists"])
+    Pv_counted = sum(i["W"] for i in items
+                     if i["kind"] == "thrust" and i["resists"])
+    V_left_out = sum(i["W"] for i in items if not i["resists"])
 
     # Base interface: default delta_b = 2/3 * phi_foundation and
     # ca = 2/3 * c_foundation; explicit overrides bypass the 2/3 factors.
@@ -266,8 +383,12 @@ def _sliding_terms(geom: CantileverWallGeometry,
     # that, not a placeholder FOS (GM-100).
     no_driving_force = driving <= 0
     FOS = None if no_driving_force else resisting / driving
-    return {"V_weights": V_weights, "V_surcharge": V_surcharge, "Pv": Pv,
-            "V": V, "phi_foundation": phi_foundation,
+    return {"V_weights": V_weights, "V_surcharge": V_surcharge,
+            "Pv": thrust["Pv"], "Pv_counted": Pv_counted,
+            "V": V, "V_left_out": V_left_out,
+            "live_load_resists": live_load_resists,
+            "dead_load_resists": dead_load_resists,
+            "phi_foundation": phi_foundation,
             "delta_b": delta_b, "delta_b_given": delta_base is not None,
             "ca": ca, "ca_given": base_adhesion is not None,
             "Kp": Kp, "D_passive": D, "gamma_foundation": gamma_foundation,
@@ -305,10 +426,16 @@ def check_sliding(geom: CantileverWallGeometry,
                   include_passive: bool = False,
                   gamma_foundation: float = None,
                   delta_base: float = None,
-                  base_adhesion: float = None) -> Dict[str, Any]:
+                  base_adhesion: float = None,
+                  live_load_resists: bool = False,
+                  dead_load_resists: bool = False) -> Dict[str, Any]:
     """Check sliding stability.
 
     FOS_sliding = (V * tan(delta_b) + ca * B + Pp) / (Pa * cos(delta))
+
+    V counts the surcharge over the heel only as ``live_load_resists`` and
+    ``dead_load_resists`` say (default: neither, GM-157; the module
+    docstring gives the basis); both surcharges' thrust drives it.
 
     By DEFAULT the base interface parameters are derived from the foundation
     soil: ``delta_b = (2/3)*phi_foundation`` and ``ca = (2/3)*c_foundation``
@@ -357,6 +484,14 @@ def check_sliding(geom: CantileverWallGeometry,
     base_adhesion : float, optional
         Base adhesion ca (kPa), used DIRECTLY (no 2/3 factor). If None
         (default), ca = (2/3)*c_foundation.
+    live_load_resists : bool, optional
+        Count the live-load surcharge (``geom.surcharge``) over the heel,
+        and its share of the thrust's vertical component, as resisting
+        weight. Default False (:data:`LIVE_LOAD_BASIS`).
+    dead_load_resists : bool, optional
+        Count the dead-load surcharge (``geom.dead_load_surcharge``) over
+        the heel as resisting weight. Default False
+        (:data:`DEAD_LOAD_BASIS`).
 
     Returns
     -------
@@ -371,49 +506,59 @@ def check_sliding(geom: CantileverWallGeometry,
     return _sliding_dict(_sliding_terms(
         geom, gamma_backfill, phi_backfill, c_backfill, phi_foundation,
         c_foundation, gamma_concrete, pressure_method, include_passive,
-        gamma_foundation, delta_base, base_adhesion), FOS_required)
+        gamma_foundation, delta_base, base_adhesion, live_load_resists,
+        dead_load_resists), FOS_required)
 
 
 def _overturning_terms(geom: CantileverWallGeometry,
                        gamma_backfill: float, phi_backfill: float,
                        c_backfill: float = 0.0,
                        gamma_concrete: float = 24.0,
-                       pressure_method: str = "rankine") -> Dict[str, Any]:
+                       pressure_method: str = "rankine",
+                       live_load_resists: bool = False,
+                       dead_load_resists: bool = False) -> Dict[str, Any]:
     """The overturning check's terms, unrounded (GM-143):
     ``M_stabilizing``, ``M_overturning`` (= Ph z_Pa), ``Ph``, ``z_Pa``
-    and ``FOS`` (None with no overturning moment)."""
+    and ``FOS`` (None with no overturning moment); and the eccentricity
+    check on the same loads (GM-157): ``V``, ``x_resultant``,
+    ``eccentricity`` (B/2 - x_R) and ``in_middle_third``."""
     B = geom.base_width
 
     # Active thrust, decomposed per the chosen method (RW-1)
-    Ka, Pa, z_Pa, delta_deg, Ph, Pv = _active_thrust(
-        geom, gamma_backfill, phi_backfill, c_backfill, pressure_method
-    )
+    thrust = _active_thrust_terms(geom, gamma_backfill, phi_backfill,
+                                  c_backfill, pressure_method)
+    Ph, z_Pa = thrust["Ph"], thrust["z_Pa"]
 
     # Overturning moment about toe: horizontal component only
     M_overturning = Ph * z_Pa
 
-    # Stabilizing moments about toe
-    weights = _compute_wall_weights(geom, gamma_backfill, gamma_concrete)
-    M_stabilizing = sum(w * x for w, x in weights)
+    # Stabilizing moments about the toe: the weights, the surcharges over
+    # the heel the check counts (GM-157) and the thrust's vertical
+    # component, down at the pressure plane (back of heel, x = B)
+    items = _vertical_force_items(geom, gamma_backfill, gamma_concrete,
+                                  thrust, live_load_resists,
+                                  dead_load_resists)
+    M_stabilizing = _sum(items, "M", "resists")
 
-    # Surcharge on heel
-    heel = geom.heel_length
-    if heel > 0 and geom.surcharge > 0:
-        W_q = geom.surcharge * heel
-        x_q = geom.toe_length + geom.stem_thickness_base + heel / 2.0
-        M_stabilizing += W_q * x_q
-
-    # Vertical thrust component acts down at the pressure plane (back of
-    # heel, x = B from toe) -> stabilizing moment
-    M_stabilizing += Pv * B
+    # The eccentricity check (middle third), on the loads the overturning
+    # check counts: UFC 3-220-20 B-1.4, NHI-06-089 Sec. 10.5.5 (the
+    # eccentricity criterion stands for overturning), GEC-11 p. 4-22
+    V = _sum(items, "W", "resists")
+    x_resultant = (M_stabilizing - M_overturning) / V if V > 0 else B / 2.0
+    eccentricity = B / 2.0 - x_resultant
 
     # No overturning moment: nothing tips the wall (GM-100, as for sliding).
     no_driving_force = M_overturning <= 0
     FOS = None if no_driving_force else M_stabilizing / M_overturning
     return {"M_stabilizing": M_stabilizing, "M_overturning": M_overturning,
-            "Ph": Ph, "z_Pa": z_Pa, "Pa": Pa, "Pv": Pv,
-            "delta_deg": delta_deg, "no_driving_force": no_driving_force,
-            "FOS": FOS}
+            "Ph": Ph, "z_Pa": z_Pa, "Pa": thrust["Pa"], "Pv": thrust["Pv"],
+            "delta_deg": thrust["delta_deg"],
+            "no_driving_force": no_driving_force, "FOS": FOS,
+            "V": V, "x_resultant": x_resultant,
+            "eccentricity": eccentricity,
+            "in_middle_third": abs(eccentricity) <= B / 6.0,
+            "live_load_resists": live_load_resists,
+            "dead_load_resists": dead_load_resists}
 
 
 def check_overturning(geom: CantileverWallGeometry,
@@ -421,10 +566,17 @@ def check_overturning(geom: CantileverWallGeometry,
                       c_backfill: float = 0.0,
                       gamma_concrete: float = 24.0,
                       FOS_required: float = 2.0,
-                      pressure_method: str = "rankine") -> Dict[str, Any]:
-    """Check overturning stability about the toe.
+                      pressure_method: str = "rankine",
+                      live_load_resists: bool = False,
+                      dead_load_resists: bool = False) -> Dict[str, Any]:
+    """Check overturning stability about the toe, and the eccentricity
+    (middle-third) check on the same loads.
 
     FOS_OT = M_stabilizing / M_overturning
+
+    M_stabilizing counts the surcharge over the heel only as
+    ``live_load_resists`` and ``dead_load_resists`` say (default: neither,
+    GM-157; see :func:`check_sliding`); both surcharges' thrust drives it.
 
     Parameters
     ----------
@@ -442,17 +594,21 @@ def check_overturning(geom: CantileverWallGeometry,
         Required FOS. Default 2.0.
     pressure_method : str, optional
         "rankine" or "coulomb". Default "rankine".
+    live_load_resists, dead_load_resists : bool, optional
+        As in :func:`check_sliding`. Default False.
 
     Returns
     -------
     dict
-        FOS_overturning, stabilizing_moment, overturning_moment, passes.
+        FOS_overturning, stabilizing_moment, overturning_moment, passes,
+        and the eccentricity check: eccentricity_m, in_middle_third.
         With no overturning moment (zero active thrust) ``passes`` is True,
         ``no_driving_force`` is True and ``FOS_overturning`` is None.
     """
     return _overturning_dict(_overturning_terms(
         geom, gamma_backfill, phi_backfill, c_backfill, gamma_concrete,
-        pressure_method), FOS_required)
+        pressure_method, live_load_resists, dead_load_resists),
+        FOS_required)
 
 
 def _overturning_dict(t: Dict[str, Any],
@@ -468,6 +624,8 @@ def _overturning_dict(t: Dict[str, Any],
         "Pa_vertical_kN_per_m": round(t["Pv"], 1),
         "thrust_inclination_deg": round(t["delta_deg"], 2),
         "passes": True if FOS is None else FOS >= FOS_required,
+        "eccentricity_m": round(t["eccentricity"], 3),
+        "in_middle_third": t["in_middle_third"],
     }
 
 
@@ -476,36 +634,39 @@ def _bearing_terms(geom: CantileverWallGeometry,
                    c_backfill: float = 0.0,
                    q_allowable: float = None,
                    gamma_concrete: float = 24.0,
-                   pressure_method: str = "rankine") -> Dict[str, Any]:
+                   pressure_method: str = "rankine",
+                   surcharge_in_bearing: bool = True) -> Dict[str, Any]:
     """The bearing check's terms, unrounded (GM-143): ``V``, ``M_stab``,
-    ``M_over``, ``x_resultant``, ``eccentricity``, ``in_middle_third``,
-    ``distribution`` ("trapezoidal", or "triangular_toe" /
-    "triangular_heel" outside the middle third), ``B_eff`` (the
-    triangle's width, None for a trapezoid), ``q_toe``, ``q_heel``,
-    ``q_max``, ``FOS`` and ``passes``."""
+    ``M_over``, ``x_resultant``, ``eccentricity`` (the eccentricity for
+    bearing, GM-157), ``in_middle_third``, ``distribution``
+    ("trapezoidal", or "triangular_toe" / "triangular_heel" outside the
+    middle third), ``B_eff`` (the triangle's width, None for a
+    trapezoid), ``q_toe``, ``q_heel``, ``q_max``, ``FOS`` and
+    ``passes``.
+
+    The loads are the bearing check's (GM-157): the surcharges over the
+    heel count as ``surcharge_in_bearing`` says (default: they do,
+    :data:`BEARING_BASIS`), and the whole of the thrust's vertical
+    component counts. So the eccentricity here can differ from the
+    eccentricity check's (:func:`_overturning_terms`): GEC-11 Vol I
+    p. 4-26, "eB = eccentricity for bearing calculation (not equal to
+    eccentricity check e)"."""
     B = geom.base_width
 
     # Active thrust, decomposed per the chosen method (RW-1)
-    Ka, Pa, z_Pa, delta_deg, Ph, Pv = _active_thrust(
-        geom, gamma_backfill, phi_backfill, c_backfill, pressure_method
-    )
+    thrust = _active_thrust_terms(geom, gamma_backfill, phi_backfill,
+                                  c_backfill, pressure_method)
+    Pa, z_Pa, delta_deg = thrust["Pa"], thrust["z_Pa"], thrust["delta_deg"]
+    Ph, Pv = thrust["Ph"], thrust["Pv"]
 
-    # Weights and moments about toe
-    weights = _compute_wall_weights(geom, gamma_backfill, gamma_concrete)
-    V = sum(w for w, _ in weights)
-    M_stab = sum(w * x for w, x in weights)
-
-    # Surcharge on heel
-    heel = geom.heel_length
-    if heel > 0 and geom.surcharge > 0:
-        W_q = geom.surcharge * heel
-        x_q = geom.toe_length + geom.stem_thickness_base + heel / 2.0
-        V += W_q
-        M_stab += W_q * x_q
-
-    # Vertical thrust component (acts at the pressure plane, x = B)
-    V += Pv
-    M_stab += Pv * B
+    # Weights, the surcharges over the heel the check counts and the
+    # vertical thrust component (at the pressure plane, x = B), with their
+    # moments about the toe
+    items = _vertical_force_items(geom, gamma_backfill, gamma_concrete,
+                                  thrust,
+                                  surcharge_in_bearing=surcharge_in_bearing)
+    V = _sum(items, "W", "bearing")
+    M_stab = _sum(items, "M", "bearing")
 
     M_over = Ph * z_Pa
 
@@ -558,7 +719,8 @@ def _bearing_terms(geom: CantileverWallGeometry,
             "distribution": distribution, "B_eff": B_eff,
             "q_toe": q_toe, "q_heel": q_heel, "q_max": q_max,
             "q_allowable": q_allowable, "FOS": FOS_bearing,
-            "passes": passes, "Pa": Pa, "Pv": Pv, "delta_deg": delta_deg}
+            "passes": passes, "Pa": Pa, "Pv": Pv, "delta_deg": delta_deg,
+            "surcharge_in_bearing": surcharge_in_bearing}
 
 
 def _bearing_dict(t: Dict[str, Any]) -> Dict[str, Any]:
@@ -583,8 +745,14 @@ def check_bearing(geom: CantileverWallGeometry,
                   c_backfill: float = 0.0,
                   q_allowable: float = None,
                   gamma_concrete: float = 24.0,
-                  pressure_method: str = "rankine") -> Dict[str, Any]:
-    """Check bearing pressure and eccentricity.
+                  pressure_method: str = "rankine",
+                  surcharge_in_bearing: bool = True) -> Dict[str, Any]:
+    """Check bearing pressure, with the eccentricity for bearing.
+
+    The surcharges over the heel load the base as ``surcharge_in_bearing``
+    says (default: they do, GM-157). The eccentricity here is the one for
+    bearing; the eccentricity (middle-third) check, on the loads the
+    overturning check counts, is :func:`check_overturning`'s.
 
     Parameters
     ----------
@@ -604,6 +772,9 @@ def check_bearing(geom: CantileverWallGeometry,
         Concrete unit weight (kN/m³). Default 24.
     pressure_method : str, optional
         "rankine" or "coulomb". Default "rankine".
+    surcharge_in_bearing : bool, optional
+        Count the surcharges over the heel in the bearing pressures.
+        Default True (:data:`BEARING_BASIS`).
 
     Returns
     -------
@@ -614,7 +785,7 @@ def check_bearing(geom: CantileverWallGeometry,
     """
     return _bearing_dict(_bearing_terms(
         geom, gamma_backfill, phi_backfill, c_backfill, q_allowable,
-        gamma_concrete, pressure_method))
+        gamma_concrete, pressure_method, surcharge_in_bearing))
 
 
 def analyze_cantilever_wall(geom: CantileverWallGeometry,
@@ -631,7 +802,11 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
                             include_passive: bool = False,
                             gamma_foundation: float = None,
                             delta_base: float = None,
-                            base_adhesion: float = None) -> CantileverWallResult:
+                            base_adhesion: float = None,
+                            live_load_resists: bool = False,
+                            dead_load_resists: bool = False,
+                            surcharge_in_bearing: bool = True
+                            ) -> CantileverWallResult:
     """Run complete cantilever wall stability analysis.
 
     Parameters
@@ -672,31 +847,50 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
     base_adhesion : float, optional
         Base adhesion ca (kPa), used DIRECTLY (no 2/3 factor). Default
         None → (2/3)*c_foundation.
+    live_load_resists : bool, optional
+        Count the live-load surcharge (``geom.surcharge``) over the heel,
+        and its share of the thrust's vertical component, as a resisting
+        force in the sliding, overturning and eccentricity checks. Default
+        False (:data:`LIVE_LOAD_BASIS`, GM-157).
+    dead_load_resists : bool, optional
+        The same for the dead-load surcharge (``geom.dead_load_surcharge``).
+        Default False (:data:`DEAD_LOAD_BASIS`).
+    surcharge_in_bearing : bool, optional
+        Count the surcharges over the heel in the bearing pressures
+        (q_toe, q_heel, FOS_bearing). Default True (:data:`BEARING_BASIS`).
 
     Returns
     -------
     CantileverWallResult
         With the terms each check used (GM-143): ``earth_pressure``,
         ``vertical_forces``, ``sliding_terms``, ``overturning_terms`` and
-        ``bearing_terms``.
+        ``bearing_terms``; ``eccentricity`` / ``in_middle_third`` are the
+        eccentricity check's (on the overturning check's loads), q_toe /
+        q_heel the bearing check's; and ``choices``, how the surcharges
+        over the heel were counted when there are any (GM-157).
     """
     s_terms = _sliding_terms(
         geom, gamma_backfill, phi_backfill, c_backfill,
         phi_foundation, c_foundation, gamma_concrete,
         pressure_method, include_passive, gamma_foundation,
         delta_base=delta_base, base_adhesion=base_adhesion,
+        live_load_resists=live_load_resists,
+        dead_load_resists=dead_load_resists,
     )
     sliding = _sliding_dict(s_terms, FOS_sliding)
 
     o_terms = _overturning_terms(
         geom, gamma_backfill, phi_backfill, c_backfill,
-        gamma_concrete, pressure_method
+        gamma_concrete, pressure_method,
+        live_load_resists=live_load_resists,
+        dead_load_resists=dead_load_resists,
     )
     overturning = _overturning_dict(o_terms, FOS_overturning)
 
     b_terms = _bearing_terms(
         geom, gamma_backfill, phi_backfill, c_backfill,
-        q_allowable, gamma_concrete, pressure_method
+        q_allowable, gamma_concrete, pressure_method,
+        surcharge_in_bearing=surcharge_in_bearing,
     )
     bearing = _bearing_dict(b_terms)
 
@@ -712,8 +906,8 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
         passes_bearing=bearing["passes"],
         q_toe=bearing["q_toe_kPa"],
         q_heel=bearing["q_heel_kPa"],
-        eccentricity=bearing["eccentricity_m"],
-        in_middle_third=bearing["in_middle_third"],
+        eccentricity=overturning["eccentricity_m"],
+        in_middle_third=overturning["in_middle_third"],
         wall_height=geom.wall_height,
         base_width=geom.base_width,
         FOS_sliding_required=FOS_sliding,
@@ -721,8 +915,51 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
         q_allowable=q_allowable,
         earth_pressure=thrust,
         vertical_forces=_vertical_force_items(
-            geom, gamma_backfill, gamma_concrete, thrust),
+            geom, gamma_backfill, gamma_concrete, thrust,
+            live_load_resists, dead_load_resists, surcharge_in_bearing),
         sliding_terms=s_terms,
         overturning_terms=o_terms,
         bearing_terms=b_terms,
+        choices=heel_surcharge_choices(geom, live_load_resists,
+                                       dead_load_resists,
+                                       surcharge_in_bearing),
     )
+
+
+def heel_surcharge_choices(geom: CantileverWallGeometry,
+                           live_load_resists: bool = False,
+                           dead_load_resists: bool = False,
+                           surcharge_in_bearing: bool = True) -> list:
+    """How :func:`analyze_cantilever_wall` counted the surcharges over the
+    heel (GM-157), as a result's ``choices`` (``geotech_common.choices``):
+    one entry per surcharge the wall carries, and one for bearing; none
+    without a surcharge."""
+    from geotech_common.choices import choice, how_given
+    out = []
+    counted = "counted as a resisting force"
+    left_out = "not a resisting force"
+    for q, what, flag, name, basis in (
+            (geom.surcharge, "live-load surcharge over the heel, in "
+             "sliding, overturning and the eccentricity check",
+             live_load_resists, "live_load_resists", LIVE_LOAD_BASIS),
+            (geom.dead_load_surcharge, "dead-load surcharge over the heel, "
+             "in sliding, overturning and the eccentricity check",
+             dead_load_resists, "dead_load_resists", DEAD_LOAD_BASIS)):
+        if q > 0:
+            chosen = counted if flag else left_out
+            other = left_out if flag else counted
+            out.append(choice(
+                what, f"{chosen} ({name}={flag})",
+                how_given(flag, False, name=name), basis[flag],
+                [f"{other} ({name}={not flag}): {basis[not flag]}"]))
+    if out:
+        flag = surcharge_in_bearing
+        out.append(choice(
+            "surcharge over the heel, in the bearing pressures",
+            f"{'counted' if flag else 'left out'} "
+            f"(surcharge_in_bearing={flag})",
+            how_given(flag, True, name="surcharge_in_bearing"),
+            BEARING_BASIS[flag],
+            [f"{'left out' if flag else 'counted'} "
+             f"(surcharge_in_bearing={not flag}): {BEARING_BASIS[not flag]}"]))
+    return out

@@ -74,14 +74,21 @@ def test_the_terms_add_up_to_the_results_numbers(name):
         geom.surcharge)[0]
     assert ep["Pa"] == pytest.approx(max(
         ep["Pa_earth"] + ep["Pa_surcharge"] + ep["Pa_cohesion"], 0.0))
-    # the vertical forces are what the overturning and bearing checks sum
-    assert sum(f["W"] for f in r.vertical_forces) == pytest.approx(b["V"])
-    assert sum(f["M"] for f in r.vertical_forces) \
+    # the vertical forces are what each check sums (GM-157: a surcharge
+    # over the heel that is not a resisting force is summed for bearing
+    # only)
+    f = r.vertical_forces
+    assert sum(i["W"] for i in f if i["bearing"]) == pytest.approx(b["V"])
+    assert sum(i["M"] for i in f if i["bearing"]) \
+        == pytest.approx(b["M_stab"])
+    assert sum(i["W"] for i in f if i["resists"]) == pytest.approx(o["V"])
+    assert sum(i["M"] for i in f if i["resists"]) \
         == pytest.approx(o["M_stabilizing"])
-    assert b["M_stab"] == pytest.approx(o["M_stabilizing"])
     assert r.FOS_overturning == round(o["M_stabilizing"]
                                       / o["M_overturning"], 3)
-    assert r.eccentricity == round(b["eccentricity"], 3)
+    # the eccentricity check is on the overturning check's loads; the
+    # bearing pressures on the bearing check's
+    assert r.eccentricity == round(o["eccentricity"], 3)
     assert r.q_toe == round(b["q_toe"], 1)
 
 
@@ -138,7 +145,14 @@ def test_calc_steps_print_the_results_terms(name):
     stem = next(f for f in r.vertical_forces
                 if f["component"] == "Stem (rect)")
     assert f"'Stem (rect)', '{stem['W']:.1f}', '{stem['x']:.3f}'" in text
-    assert f"'TOTAL', '{r.bearing_terms['V']:.1f}'" in text
+    o, b = r.overturning_terms, r.bearing_terms
+    if abs(o["V"] - b["V"]) > 1e-9:
+        # GM-157: each check's own total
+        assert f"'TOTAL, bearing', '{b['V']:.1f}'" in text
+        assert (f"'TOTAL, sliding / overturning / eccentricity', "
+                f"'{o['V']:.1f}'") in text
+    else:
+        assert f"'TOTAL', '{b['V']:.1f}'" in text
     assert (f"FOS_ot = {r.overturning_terms['M_stabilizing']:.1f} / "
             f"{r.overturning_terms['M_overturning']:.1f}") in text
     # a result built by hand carries no terms: the steps work them out

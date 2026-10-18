@@ -1112,6 +1112,11 @@ class TestBaseInterfaceOverrides:
     These tests lock in (a) the trap numbers, (b) the override path matching
     the session's independent free-body statics (FoS 1.42 Coulomb / 1.01
     Rankine).
+
+    GM-157: that free body counted the 7.5 kPa surcharge over the heel as
+    a resisting force. By default the module now does not (FHWA NHI-06-089
+    p. 10-43; UFC 3-220-20 B-1.2), so the free-body comparisons give
+    ``live_load_resists=True`` and the defaults are pinned beside them.
     """
 
     def _geom(self):
@@ -1127,23 +1132,40 @@ class TestBaseInterfaceOverrides:
                           phi_foundation=22.0, c_foundation=0.0,
                           pressure_method="coulomb")
         assert r["delta_base_deg"] == pytest.approx(14.67, abs=0.01)
+        # GM-157: 0.60 with the surcharge over the heel resisting
+        assert r["FOS_sliding"] == pytest.approx(0.566, abs=0.002)
+        r = check_sliding(self._geom(), 15.0, 33.0, c_backfill=0.0,
+                          phi_foundation=22.0, c_foundation=0.0,
+                          pressure_method="coulomb", live_load_resists=True)
         assert r["FOS_sliding"] == pytest.approx(0.60, abs=0.01)
 
     def test_delta_base_override_matches_free_body_coulomb(self):
         from retaining_walls.cantilever import check_sliding
         r = check_sliding(self._geom(), 15.0, 33.0, c_backfill=5.0,
                           phi_foundation=33.0, c_foundation=0.0,
-                          pressure_method="coulomb", delta_base=22.0)
+                          pressure_method="coulomb", delta_base=22.0,
+                          live_load_resists=True)
         assert r["delta_base_deg"] == 22.0
         assert r["base_adhesion_kPa"] == 0.0
         assert r["FOS_sliding"] == pytest.approx(1.42, abs=0.01)
+        # GM-157 default: the surcharge over the heel does not resist
+        r = check_sliding(self._geom(), 15.0, 33.0, c_backfill=5.0,
+                          phi_foundation=33.0, c_foundation=0.0,
+                          pressure_method="coulomb", delta_base=22.0)
+        assert r["FOS_sliding"] == pytest.approx(1.339, abs=0.002)
 
     def test_delta_base_override_matches_free_body_rankine(self):
         from retaining_walls.cantilever import check_sliding
         r = check_sliding(self._geom(), 15.0, 33.0, c_backfill=5.0,
                           phi_foundation=33.0, c_foundation=0.0,
-                          pressure_method="rankine", delta_base=22.0)
+                          pressure_method="rankine", delta_base=22.0,
+                          live_load_resists=True)
         assert r["FOS_sliding"] == pytest.approx(1.01, abs=0.01)
+        # GM-157 default: the surcharge over the heel does not resist
+        r = check_sliding(self._geom(), 15.0, 33.0, c_backfill=5.0,
+                          phi_foundation=33.0, c_foundation=0.0,
+                          pressure_method="rankine", delta_base=22.0)
+        assert r["FOS_sliding"] == pytest.approx(0.978, abs=0.002)
 
     def test_defaults_unchanged_without_overrides(self):
         from retaining_walls.cantilever import check_sliding
@@ -1175,7 +1197,13 @@ class TestBaseInterfaceOverrides:
                                         pressure_method="coulomb",
                                         delta_base=22.0)
         assert r_fix.FOS_sliding > r_trap.FOS_sliding
-        assert r_fix.FOS_sliding == pytest.approx(1.42, abs=0.01)
+        # GM-157: 1.42 with the surcharge over the heel resisting
+        assert r_fix.FOS_sliding == pytest.approx(1.339, abs=0.002)
+        r_free_body = analyze_cantilever_wall(
+            self._geom(), 15.0, 33.0, c_backfill=5.0, phi_foundation=33.0,
+            pressure_method="coulomb", delta_base=22.0,
+            live_load_resists=True)
+        assert r_free_body.FOS_sliding == pytest.approx(1.42, abs=0.01)
 
 
 # ================================================================
@@ -1184,7 +1212,8 @@ class TestBaseInterfaceOverrides:
 # ================================================================
 def _w8_wall():
     """The live wave-w8 wall (F55): 4.0 m stem on a 0.50 m base, so
-    H = 4.5 m from the underside of the base; it fails sliding (1.17)."""
+    H = 4.5 m from the underside of the base; it fails sliding (1.07;
+    1.17 with the surcharge over the heel resisting, GM-157)."""
     return CantileverWallGeometry(
         wall_height=4.5, base_width=2.8, toe_length=0.7,
         stem_thickness_top=0.35, stem_thickness_base=0.35,
@@ -1274,11 +1303,12 @@ class TestBearingNotChecked:
 class TestFailedChecksVisible:
     def test_failed_sliding_named_everywhere(self):
         r = analyze_cantilever_wall(_w8_wall(), 19.0, 32.0)
-        assert r.FOS_sliding == pytest.approx(1.17, abs=0.01)
+        # GM-157: 1.17 with the surcharge over the heel resisting
+        assert r.FOS_sliding == pytest.approx(1.07, abs=0.01)
         assert r.checks_failed == ["sliding"]
         assert r.all_checks_pass is False
         assert r.verdict.startswith(
-            "FAILS: sliding (FOS 1.17 < 1.50 required).")
+            "FAILS: sliding (FOS 1.07 < 1.50 required).")
         s = r.summary()
         assert "Failed checks: sliding" in s
         assert "[FAIL]  (required 1.50)" in s
@@ -1427,8 +1457,9 @@ def test_a_resultant_beyond_the_middle_third_on_the_heel_side_bears_under_the_he
                                      toe_length=0.2, stem_thickness_top=0.3,
                                      stem_thickness_base=0.3,
                                      base_thickness=0.4)
-    monkeypatch.setattr(cw, "_compute_wall_weights",
-                        lambda g, gb, gc: [(500.0, 3.9)])
+    # (the checks sum the module's weight items since GM-157)
+    monkeypatch.setattr(cw, "_wall_weight_items", lambda g, gb, gc: [
+        {"component": "weight near the heel", "W": 500.0, "x": 3.9}])
     r = cw.check_bearing(geom, gamma_backfill=18.0, phi_backfill=45.0,
                          q_allowable=2000.0)
     assert r["eccentricity_m"] < -geom.base_width / 6.0
