@@ -280,7 +280,8 @@ Key conventions:
       db84be2); the plotting box's layout check judges by drawn pixels
       (`geotech_common/layout_ink.py`), and `plot_data` places notes;
       silent module defaults made right or stated, a strip with no L is a
-      strip (release note);
+      strip (release note); tool descriptions and `defaults_used` say what
+      the code does, guarded over 165 methods (`method_probes.json`);
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done".
     Open next: Foundry brief 6, which measures all of this, is drafted
