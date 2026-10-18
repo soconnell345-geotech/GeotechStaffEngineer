@@ -515,7 +515,7 @@ def _next_step(draw: Optional[int], lettering: list) -> str:
         "line, zone or label that is not in the brief or the files)? are the "
         "names the source's own words? does a legend repeat names already on "
         "the data? Then the lettering: overlaps, what layout_check lists "
-        "(boxes measured from the drawing; the look decides), units, scale")
+        "(judged by the pixels drawn; the look decides), units, scale")
     small = [c for c in lettering if c.get("texts_under_7_pt")]
     if small:
         look += (", and lettering that prints under 7 pt (" + "; ".join(
@@ -681,6 +681,9 @@ def _run_in_box(code, data_json, name, root, limit, cfg, notes, extra=None):
                                         else None)}
         if child.get("preload_failed"):
             res["box"]["preload_failed"] = child["preload_failed"]
+        if child.get("layout_seconds"):
+            # the pixel layout check's time per saved figure (GM-108)
+            res["box"]["layout_check_seconds"] = child["layout_seconds"]
         if not child.get("limits_applied"):
             notes.append("no OS memory or CPU limit could be set on this "
                          "host; only the app's time limit held")
@@ -800,9 +803,10 @@ def plot_code_description(cfg: Optional[Dict[str, int]] = None) -> str:
         f"{cfg['seconds']} s unless you ask for more, up to "
         f"{cfg['max_seconds']} s for a heavy figure; memory up to "
         f"{cfg['memory_mb']} MB. Returns the saved files (each PNG with its "
-        "html_img_tag for report HTML), layout_check (lettering that overlaps "
-        "other lettering, or that a plotted line runs through, measured from "
-        "the drawing), lettering (its smallest size as printed, e.g. '5.6 pt "
+        "html_img_tag for report HTML), layout_check (judged by the pixels "
+        "drawn: lettering that overlaps or runs into other lettering, that a "
+        "line, an edge or markers show through, or that an edge cuts off), "
+        "lettering (its smallest size as printed, e.g. '5.6 pt "
         "at 6.5 in'), anything the code printed, and on a failure the error "
         "with your code's line; next says what to look at.")
 

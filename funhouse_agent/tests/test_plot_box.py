@@ -322,6 +322,9 @@ def test_the_layout_check_measures_what_a_look_can_miss(folders):
     assert ["first label", "second label"] in check["text_overlaps"]
     assert any(t == "on the line" for t, _ in check["text_on_a_line"])
     assert "layout_check" in r["next"]
+    # the check's time per saved figure (GM-108)
+    (seconds,) = r["box"]["layout_check_seconds"]
+    assert 0 <= seconds < 30
 
 
 def _layout(mine, body, name="lay"):
@@ -367,7 +370,8 @@ def test_layout_counts_labels_that_touch(folders):
 
 def test_layout_finds_an_edge_or_frame_through_lettering(folders):
     """Live wave w8b: a pressure diagram's edge and the axes frame ran
-    through labels the check passed."""
+    through labels the check passed. (The frame label sits between ticks:
+    on a tick the check names the tick mark, the line that shows most.)"""
     mine, _ = folders
     chk = _layout(mine, (
         "fig, ax = plt.subplots(); ax.set_xlim(0, 10); ax.set_ylim(0, 10)\n"
@@ -375,10 +379,314 @@ def test_layout_finds_an_edge_or_frame_through_lettering(folders):
         " edgecolor='k'))\n"
         "ax.text(5, 3, 'across the edge', ha='center')\n"
         "ax.text(3, 2, 'inside', ha='center', fontsize=6)\n"
-        "ax.text(0, 8, 'on the frame', ha='center')\n"))
+        "ax.text(0, 7, 'on the frame', ha='center')\n"))
     crossed = {t: what for t, what in chk.get("text_on_a_line", [])}
     assert "across the edge" in crossed and "inside" not in crossed, chk
     assert "frame" in crossed.get("on the frame", ""), chk
+
+
+# ---------------------------------------------------------------------------
+# the layout check judged by the pixels drawn (GM-108)
+# ---------------------------------------------------------------------------
+# Live wave w9: 22 of the check's 36 reports were false while it judged
+# lettering by boxes, and it never tested lettering outside the axes (its
+# trace review, §2.4 and §9). Each class is drawn here in the test process,
+# without the box, through the box's own check.
+
+def _figure(w=5, h=4):
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+    fig = Figure(figsize=(w, h))
+    FigureCanvasAgg(fig)
+    ax = fig.subplots()
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
+    return fig, ax
+
+
+def _found(fig):
+    out = box_child._layout_check(fig, "x.png")
+    assert "unchecked" not in out, out
+    return ({tuple(p) for p in out.get("text_overlaps", [])},
+            dict(out.get("text_on_a_line", [])),
+            dict(out.get("text_cut_off", [])))
+
+
+def test_layout_judges_rotated_lettering_by_its_letters():
+    """w9: "A-line" (33 degrees) and "U-line" (45) in four runs, and
+    "envelope" (29), were reported because their upright boxes took in the
+    line they ran beside; no line showed on their letters."""
+    import math
+    fig, ax = _figure()
+    ax.set_ylim(0, 8)
+    ax.set_aspect("equal")
+    ax.plot([0, 10], [0, 6.5], "k-")
+    slope = math.degrees(math.atan(0.65))
+    ax.text(4, 2.85, "beside the line", rotation=slope,
+            rotation_mode="anchor", ha="center", va="bottom")
+    ax.text(7, 4.55, "on the line", rotation=slope, rotation_mode="anchor",
+            ha="center", va="center")
+    _pairs, crossed, _cut = _found(fig)
+    assert "beside the line" not in crossed, crossed
+    assert crossed.get("on the line") == "a line", crossed
+
+
+def test_layout_lets_a_legend_frame_hide_the_lines_behind_it():
+    """w9: all three legend entries of a grain-size chart, in both runs,
+    were reported "on a line": dividers the legend's opaque frame hid."""
+    fig, ax = _figure()
+    for x in (1, 2, 3):
+        ax.axvline(x, color="0.55", ls="--")
+    ax.plot([0, 10], [5, 5], label="first curve")
+    ax.plot([0, 10], [6, 6], label="second curve")
+    ax.legend(loc="lower left", framealpha=1)
+    pairs, crossed, _cut = _found(fig)
+    assert not crossed and not pairs, (crossed, pairs)
+
+
+def test_legend_entries_are_lettering_too():
+    """Without a frame a line shows through a legend entry; lettering under
+    an opaque legend meets "the legend"."""
+    fig, ax = _figure()
+    ax.plot([0, 10], [2, 2], label="first curve")
+    ax.axhline(5, color="k")
+    ax.legend(loc="center", bbox_to_anchor=(0.5, 0.5), frameon=False)
+    _pairs, crossed, _cut = _found(fig)
+    assert crossed.get("first curve") == "a line", crossed
+    fig, ax = _figure()
+    ax.plot([0, 10], [5, 5], label="first curve")
+    ax.text(1.0, 0.9, "hidden note")
+    ax.legend(loc="lower left", framealpha=1)
+    pairs, _crossed, _cut = _found(fig)
+    assert pairs == {("hidden note", "the legend")}, pairs
+
+
+def test_layout_lets_a_box_hide_the_line_beneath():
+    """w9: the N60 values "4" and "16", drawn on white boxes above the
+    contact lines, were reported in all four runs. A line drawn over the box
+    still runs through, and so does one showing through a box 85 % white
+    ("El. 98.2", which the look confirmed)."""
+    fig, ax = _figure()
+    ax.axhline(8, color="k", zorder=2)
+    ax.text(5, 8, "boxed over", ha="center", va="center", zorder=3,
+            bbox={"fc": "white", "ec": "none", "pad": 2})
+    ax.axhline(6, color="k", zorder=5)
+    ax.text(5, 6, "line over box", ha="center", va="center", zorder=3,
+            bbox={"fc": "white", "ec": "none", "pad": 2})
+    ax.axhline(4, color="#1f4fbf", zorder=2)
+    ax.text(5, 4, "El. 98.2", ha="center", va="center", zorder=8,
+            bbox={"fc": "white", "ec": "none", "alpha": 0.85, "pad": 0.8})
+    _pairs, crossed, _cut = _found(fig)
+    assert "boxed over" not in crossed, crossed
+    assert "line over box" in crossed and "El. 98.2" in crossed, crossed
+
+
+def test_a_box_is_its_lettering_s_footprint():
+    """w9: a white-boxed "24" against "Medium": 5 px between the letters,
+    but the box ran up to the M and the two read as one word."""
+    fig, ax = _figure()
+    ax.text(5, 2, "24", ha="right", va="center", fontsize=7.5,
+            bbox={"fc": "white", "ec": "none", "alpha": 0.8, "pad": 0.6})
+    ax.text(5.05, 2, "Medium", ha="left", va="center", style="italic",
+            fontsize=9)
+    ax.text(5, 7, "on its own", ha="right", va="center",
+            bbox={"fc": "white", "ec": "none", "pad": 0.6})
+    ax.text(6.5, 7, "apart", ha="left", va="center")
+    pairs, _crossed, _cut = _found(fig)
+    assert pairs == {("24", "Medium")}, pairs
+
+
+def test_layout_tests_lettering_outside_the_axes():
+    """w9 (the miss): "Cobbles", in a strip above the axes, crossed by a
+    divider drawn with clip_on=False; text outside the axes was never
+    tested. Titles outside the axes overlap like any lettering."""
+    fig, ax = _figure()
+    strip = ax.get_xaxis_transform()
+    for x, word in ((2, "Cobbles"), (6, "Gravel")):
+        ax.text(x, 1.08, word, transform=strip, ha="center", va="center",
+                clip_on=False)
+    for x in (2.1, 4):
+        ax.plot([x, x], [1.0, 1.12], transform=strip, color="0.55",
+                clip_on=False)
+    _pairs, crossed, _cut = _found(fig)
+    assert crossed == {"Cobbles": "a line"}, crossed
+    fig, ax = _figure()
+    ax.set_title("Panel title here")
+    fig.suptitle("Figure title", y=0.93)
+    pairs, _crossed, _cut = _found(fig)
+    assert pairs == {("Panel title here", "Figure title")}, pairs
+
+
+def test_layout_finds_lettering_cut_off():
+    """Lettering its axes clips, and lettering outside the saved figure."""
+    fig, ax = _figure()
+    ax.text(9.6, 5, "clipped words", clip_on=True)
+    ax.text(2, 5, "whole words", clip_on=True)
+    beyond = fig.text(0.98, 0.5, "beyond the edge")
+    beyond.set_in_layout(False)
+    _pairs, _crossed, cut = _found(fig)
+    assert cut == {"clipped words": "the edge of its axes",
+                   "beyond the edge": "the figure edge"}, cut
+
+
+def test_layout_still_finds_true_collisions():
+    """What the w9 review confirmed true stays found: a line through
+    lettering, letters overlapping, labels touching on one line, an edge
+    and a frame through lettering; markers on a label are data ink too."""
+    from matplotlib.patches import Rectangle
+    fig, ax = _figure()
+    ax.axhline(5, label="water table")
+    ax.text(5, 5, "on the line", ha="center", va="center")
+    ax.text(2, 8, "first label")
+    ax.text(2.1, 8.05, "second label")
+    ax.text(5, 3, "200", ha="right")
+    ax.text(5, 3, "0", ha="left")
+    ax.scatter([8.5], [7.15], s=60, zorder=3)
+    ax.text(8, 7, "on a point")
+    ax.add_patch(Rectangle((6, 0.5), 2, 1.5, facecolor="0.9",
+                           edgecolor="k"))
+    ax.text(8, 1.2, "across the edge", ha="center")
+    ax.text(0, 9.3, "on the frame", ha="center")
+    pairs, crossed, _cut = _found(fig)
+    assert {("first label", "second label"), ("200", "0")} <= pairs, pairs
+    assert crossed.get("on the line") == "water table", crossed
+    assert crossed.get("on a point") == "markers", crossed
+    assert crossed.get("across the edge") == "an outline", crossed
+    assert crossed.get("on the frame") == "the left frame line", crossed
+
+
+def test_the_layout_check_leaves_matplotlib_as_it_was():
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
+    from matplotlib.text import Text
+    before = [vars(k)["draw"] for k in (Text, Line2D, Patch)]
+    fig, ax = _figure()
+    ax.plot([0, 10], [0, 10])
+    ax.text(5, 5, "label", bbox={"fc": "white"})
+    _found(fig)
+    assert [vars(k)["draw"] for k in (Text, Line2D, Patch)] == before
+    assert not fig.artists
+    assert fig.texts == [] and ax.texts[0].get_bbox_patch().get_visible()
+
+
+def _legend_over_lines(n_lines=40, entries=6):
+    import numpy as np
+    fig, ax = _figure()
+    x = np.linspace(0, 10, 40)
+    for k in range(n_lines):
+        ax.plot(x, 0.25 * k + 0.3 * np.sin(x + k), color="0.6", lw=0.5)
+    handles = [ax.plot([], [], label=f"entry {k}")[0]
+               for k in range(entries)]
+    ax.legend(handles=handles, loc="center", framealpha=1)
+    return fig
+
+
+def test_an_opaque_legend_keeps_only_its_own_drawing(monkeypatch):
+    """Review of GM-108: every line was kept again for the legend's frame,
+    where only the frame's own drawing is read (an 18-entry legend over
+    1,500 lines held 4.9 GB, past the box's 2 GB); and past a memory budget
+    the check says it went unchecked."""
+    from matplotlib.text import Text
+    seen = {}
+    found = box_child._Ink.found
+
+    def keep(self):
+        seen["ink"] = self
+        return found(self)
+    monkeypatch.setattr(box_child._Ink, "found", keep)
+    _found(_legend_over_lines())
+    ink = seen["ink"]
+    owners = {k: i for i, k in ink.region.items()}
+    frames = [k for k, i in owners.items()
+              if not isinstance(ink.leaves[i][0], Text)]
+    assert frames, "no legend frame region"
+    for k in frames:
+        assert {leaf for _o, _kd, leaf, _c in ink.layers[k]} == {owners[k]}
+    monkeypatch.setattr(box_child, "LAYOUT_MB", 0)
+    out = box_child._layout_check(_legend_over_lines(), "x.png")
+    assert "in memory" in out["unchecked"], out
+    assert set(out) == {"file", "unchecked"}
+
+
+def test_the_layout_check_gives_up_in_time(monkeypatch):
+    """Review of GM-108: 3,000 texts took 11 s a save. Past its time the
+    check says so instead of slowing the save, and leaves matplotlib as it
+    was."""
+    from matplotlib.collections import Collection
+    from matplotlib.text import Text
+    before = [vars(k)["draw"] for k in (Text, Collection)]
+    monkeypatch.setattr(box_child, "LAYOUT_SECONDS", 0.0)
+    fig, ax = _figure()
+    for k in range(30):
+        ax.text(k % 10, k // 3, f"P{k}")
+    out = box_child._layout_check(fig, "x.png")
+    assert "too many texts to check in time" in out["unchecked"], out
+    assert [vars(k)["draw"] for k in (Text, Collection)] == before
+    assert not fig.artists
+
+
+def test_3d_lettering_is_measured_where_it_is_drawn():
+    """Review of GM-108: 3D text is placed only while it draws, so it was
+    measured at its raw coordinates: called cut off at the figure edge,
+    with the line through it missed."""
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+    fig = Figure(figsize=(5, 4))
+    FigureCanvasAgg(fig)
+    ax = fig.add_subplot(projection="3d")
+    ax.plot([0, 1], [0, 1], [0, 1], color="k")
+    mid = ax.text(0.5, 0.5, 0.5, "mid label", ha="center", va="center")
+    ax.text(0.1, 0.9, 0.9, "clear label")
+    _pairs, crossed, cut = _found(fig)
+    assert crossed.get("mid label") == "a line", crossed
+    assert "clear label" not in crossed, crossed
+    assert not cut, cut
+    assert (mid._x, mid._y) == (0.5, 0.5)       # left as it was
+
+
+def test_a_mesh_is_drawing_too():
+    """Review of GM-108: pcolormesh (and a colorbar's fill) drew outside the
+    check: a mesh over lettering, and a white line through lettering on a
+    mesh, went unseen."""
+    import numpy as np
+    fig, ax = _figure()
+    ax.text(2.5, 2, "under the mesh", ha="center", va="center", zorder=1)
+    X, Y = np.meshgrid(np.linspace(1.5, 3.5, 8), np.linspace(1.5, 2.5, 8))
+    ax.pcolormesh(X, Y, X, zorder=5, shading="auto")
+    X, Y = np.meshgrid(np.linspace(0, 10, 30), np.linspace(5, 10, 30))
+    ax.pcolormesh(X, Y, X + Y, cmap="viridis", shading="auto")
+    ax.axhline(7.5, color="white", lw=1.5)
+    ax.text(5, 7.5, "white line through", ha="center", va="center")
+    _pairs, crossed, _cut = _found(fig)
+    assert crossed.get("under the mesh") == ("an image or filled area "
+                                             "drawn over it"), crossed
+    assert crossed.get("white line through") == "a line", crossed
+
+
+def test_a_collection_s_edges_run_through_lettering():
+    """Review of GM-108: fill_between's (and a PatchCollection's) edges
+    counted as fill, so an edge through a label was missed. The fill under
+    lettering still hides nothing; the colours are left as they were."""
+    import numpy as np
+    from matplotlib.collections import PatchCollection
+    from matplotlib.patches import Rectangle
+    fig, ax = _figure()
+    band = ax.fill_between(np.linspace(0, 10, 30), 1, 3, facecolor="#f2dc8a",
+                           edgecolor="k", lw=1.5)
+    ax.text(3, 3, "on the edge", ha="center", va="center")
+    ax.text(3, 2, "inside the fill", ha="center", va="center")
+    boxes = PatchCollection([Rectangle((5, 5), 4, 3)], edgecolor="k",
+                            lw=1.5, cmap="viridis")
+    boxes.set_array([1.0])                       # a mapped collection
+    ax.add_collection(boxes)
+    ax.text(7, 8, "on the box edge", ha="center", va="center")
+    ax.text(7, 6.5, "inside the box", ha="center", va="center")
+    faces = np.array(band.get_facecolor())
+    _pairs, crossed, _cut = _found(fig)
+    assert crossed == {"on the edge": "an outline",
+                       "on the box edge": "an outline"}, crossed
+    assert np.array_equal(band.get_facecolor(), faces)
+    assert "update_scalarmappable" not in vars(boxes)
 
 
 def test_a_failed_run_saves_nothing_and_asks_for_no_look(folders):
