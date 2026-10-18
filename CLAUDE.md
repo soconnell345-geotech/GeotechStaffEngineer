@@ -285,7 +285,8 @@ Key conventions:
       printed in GEC 9 App. A.5 (release note); a figure is one thing
       across a turn, whoever draws it (`plot_box/figures.py`); standard chart
       lines from the references (refs `chart_lines.py`); a live surcharge
-      over a cantilever wall's heel no longer resists (release note);
+      over a cantilever wall's heel or an MSE wall's reinforced zone no longer
+      resists (release notes);
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done".
     Open next: Foundry brief 6, which measures all of this, is drafted
