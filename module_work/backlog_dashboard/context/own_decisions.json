@@ -1070,5 +1070,42 @@
       "axial_pile/DESIGN.md",
       "GEC-12 (FHWA-NHI-16-064) Vol I pp. 243-252, Vol III Table D-100"
     ]
+  },
+  "OWN-64": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Cantilever wall: should a PERMANENT surcharge over the heel (an approach slab, pavement) count as holding the wall against sliding and overturning?",
+    "why": "GM-157 made the wall leave a live-load surcharge over the heel out of the resisting forces, as every reference does. For a permanent surcharge the references differ, and the choice moves sliding and overturning factors of safety by about 10 % on a typical wall.",
+    "background": "NHI-06-089 Vol II p. 10-41 (cantilever walls): \"the surcharge loads are generally assumed to be located behind the heel of the wall, and conservatively neglected within the width of the base slab since they contribute to overturning and sliding resistance.\" p. 10-31 lists dead-load surcharges such as an approach slab or pavement. GEC-11 p. 4-22 (MSE walls, LRFD): \"External loads that increase sliding resistance should only be included if those loads are permanent\", taken at the minimum load factor (p. 4-4, ES minimum 0.75). Either way the surcharge's thrust still drives and it still loads the base for bearing; every result states the reading in its choices.",
+    "parts": [
+      {
+        "label": "Permanent surcharge over the heel",
+        "options": [
+          {
+            "label": "Leave it out of sliding and overturning (current default)",
+            "effect": "NHI-06-089 p. 10-41, the cantilever-wall text; conservative."
+          },
+          {
+            "label": "Count it at full weight",
+            "effect": "A permanent load resists; higher factors of safety."
+          },
+          {
+            "label": "Count it at its minimum load factor (0.75)",
+            "effect": "The AASHTO / GEC-11 reading; between the two."
+          }
+        ]
+      }
+    ],
+    "recommendation": "Keep the current default: it is the cantilever-wall text's own reading and the conservative one, and `dead_load_resists=true` is there when a permanent slab is certain.",
+    "if_no_answer": "The default stays, stated in every result's choices.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-64",
+      "retaining_walls/DESIGN.md",
+      "FHWA NHI-06-089 Vol II pp. 10-31, 10-41, 10-43",
+      "GEC-11 Vol I pp. 4-4, 4-22"
+    ]
   }
 }
