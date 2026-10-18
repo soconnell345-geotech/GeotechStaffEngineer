@@ -7,13 +7,13 @@ for each slice.
 
 Where the slices are cut (GM-131, GM-134). Every slip surface has a slice
 boundary at every break in the ground surface, every point where it
-crosses a layer boundary or the water table (Slide2's "Slice at
-piezo-surface intersection"), each edge of a surcharge and the edge of a
-tension crack, and a noncircular (polyline) surface also at every corner,
-so that the base of each slice lies in one material, under one water
-table, and its top is one straight segment under one load. The stretches
-between those boundaries share out about ``n_slices`` slices in
-proportion to their width, at least one each.
+crosses a layer boundary (but the model's base, below) or the water table
+(Slide2's "Slice at piezo-surface intersection"), each edge of a
+surcharge and the edge of a tension crack, and a noncircular (polyline)
+surface also at every corner, so that the base of each slice lies in one
+material, under one water table, and its top is one straight segment
+under one load. The stretches between those boundaries share out about
+``n_slices`` slices in proportion to their width, at least one each.
 
 Each slice, on a circle as on a polyline, takes its base angle and base
 length from the chord between its two boundaries on the slip surface
@@ -39,9 +39,17 @@ the slice count (0.65 at 30 slices, 1.18 at 31, 0.97 with a boundary at
 every corner, on one Taylor surface); a circle's slice across a layer
 crossing took one material for its whole base (V-043's circle 1.246,
 1.190, 1.180 and 1.232 on 25, 29, 30 and 31 slices; with the boundaries
-1.208 to 1.211 on 25 to 45 slices, 1.213 on 3,840, Slide2 1.209). And a
-circle dipping under the deepest layer is refused at any count, since
-the base's crossings are boundaries too.
+1.208 to 1.211 on 25 to 45 slices, 1.213 on 3,840, Slide2 1.209).
+
+The model's base (GM-128). A surface may touch the bottom of the deepest
+layer, Taylor's firm base, but not pass under it: it would pass through
+ground the model does not have. Whether it does is measured on the
+surface itself, not on its slices (``base_depth``: the greatest depth of
+the surface under that bottom, exact for a circle and a polyline), so the
+answer does not depend on the slice count. A surface within
+``base_tolerance`` of the bottom, a thousandth of the model's height,
+touches it and is kept with every slice; one that reaches further is
+refused at any count.
 
 References:
     Duncan, Wright & Brandon (2014) — Chapter 6 (straight slice bases;
@@ -57,7 +65,7 @@ References:
 import bisect
 import math
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from geotech_common.water import GAMMA_W
 from slope_stability.geometry import (
@@ -295,10 +303,11 @@ def slice_breaks(geom: SlopeGeometry, slip, x_entry: float,
     """The x, strictly between the entry and the exit, where a slice
     boundary must fall besides a polyline's corners (GM-131, GM-134):
     each break in the ground surface; each crossing of a layer's top or
-    bottom, of the water table and of the tension crack's base on the
-    crest half of the surface (with the middle of the surface, where that
-    half ends, when the crack reaches it); and each edge of a surcharge.
-    A polyline is straight between its corners, and each line here
+    bottom (but the model's base, GM-128), of the water table and of the
+    tension crack's base on the crest half of the surface (with the middle
+    of the surface, where that half ends, when the crack reaches it); and
+    each edge of a surcharge. A polyline is straight between its corners,
+    and each line here
     between its vertices, so the crossings are exact; a circle's are the
     roots of the circle-line quadratic on each straight piece."""
     span = x_exit - x_entry
@@ -323,12 +332,20 @@ def slice_breaks(geom: SlopeGeometry, slip, x_entry: float,
 
     out = inside(p[0] for p in geom.surface_points)
     # Crossings of the layer boundaries and the water table: each is
-    # straight between its vertices (level beyond them).
+    # straight between its vertices (level beyond them). Not the bottom of
+    # the deepest layer, the model's base: a surface that crosses it only
+    # touches it (``base_tolerance``; a deeper one is refused), and the
+    # slice under it takes the same layer as the slice above (GM-128).
+    def on_base(layer, x):
+        return layer.bottom_at(x) <= min(
+            L.bottom_at(x) for L in geom.soil_layers) + 1e-9
+
     for layer in geom.soil_layers:
         out += crossings_of([], layer.top_at)
         bpts = layer.bottom_boundary_points
-        out += crossings_of([p[0] for p in bpts] if bpts else [],
-                            layer.bottom_at)
+        out += [x for x in crossings_of([p[0] for p in bpts] if bpts else [],
+                                        layer.bottom_at)
+                if not on_base(layer, x)]
     if geom.gwt_points:
         out += crossings_of([p[0] for p in geom.gwt_points],
                             geom.gwt_elevation_at)
@@ -411,6 +428,114 @@ def _boundary_elevation(slip, x: float) -> Optional[float]:
     return z
 
 
+# A surface within this fraction of the model's height of the bottom of the
+# deepest layer touches it (GM-128). A circle given as tangent with its
+# centre and radius to the centimetre, as published examples give them, lies
+# within it on a model 10 m or more high. The FOS of a circle reaching that
+# far under a firm base is lower than the circle tangent to it by no more
+# than the slice count moves it: Taylor's D = 2 circle 0.02 %, V-043's
+# 0.06 %, Slide2 #85's 0.26 %, against Taylor's circle at 0.7045 on 25
+# slices and 0.7063 on 100 (0.26 %). A fraction rather than a length,
+# because the FOS changes with the depth of a circle over the model's own
+# length scale. A search keeps to surfaces inside the model
+# (``search._SEARCH_BASE_TOUCH``).
+_BASE_TOUCH = 1e-3
+
+
+def model_height(geom: SlopeGeometry) -> float:
+    """The model's height (m): from the lowest point of the bottom of the
+    deepest layer to the highest ground."""
+    z_bottom = min(
+        min(z for _, z in L.bottom_boundary_points)
+        if L.bottom_boundary_points else L.bottom_elevation
+        for L in geom.soil_layers)
+    return max(z for _, z in geom.surface_points) - z_bottom
+
+
+def base_tolerance(geom: SlopeGeometry) -> float:
+    """How far (m) a slip surface may reach below the bottom of the deepest
+    layer and still touch it (GM-128): a thousandth of the model's height
+    (``model_height``)."""
+    return _BASE_TOUCH * model_height(geom)
+
+
+def base_clearance(geom: SlopeGeometry, slip) -> float:
+    """A lower bound (m) on the height of the slip surface above the bottom
+    of the deepest layer, anywhere: the surface's lowest point (a circle's
+    yc - R, a polyline's lowest corner) less the highest that bottom gets
+    (the least over the layers of each one's highest bottom point). Cheap;
+    where it is not negative the surface is never below the base."""
+    top_of_base = min(
+        max(z for _, z in L.bottom_boundary_points)
+        if L.bottom_boundary_points else L.bottom_elevation
+        for L in geom.soil_layers)
+    if getattr(slip, "is_circular", True):
+        lowest = slip.yc - slip.radius
+    else:
+        lowest = min((z for _, z in getattr(slip, "points", []) or ()),
+                     default=math.inf)
+    return lowest - top_of_base
+
+
+def base_depth(geom: SlopeGeometry, slip, x_entry: float,
+               x_exit: float) -> Tuple[float, float]:
+    """(d, x): the greatest depth d (m) of the slip surface below the bottom
+    of the deepest layer between ``x_entry`` and ``x_exit``, and the x where
+    it is; d <= 0 where the surface is never below it (GM-128; then 0 at
+    ``x_entry`` when ``base_clearance`` already says so).
+
+    Exact, whatever the slicing. Between the corners of a polyline and the
+    vertices of the layer bottoms the deepest bottom is the least of
+    straight lines, so its height above the surface is concave (the lower
+    arc of a circle is convex, a polyline straight) and peaks at a piece's
+    end (either side of a vertical step in a bottom), where two bottoms
+    cross, or, on a circle, where the arc runs parallel to one of the
+    bottoms."""
+    if base_clearance(geom, slip) >= 0.0:
+        return 0.0, x_entry
+    circular = getattr(slip, "is_circular", True)
+    xs = {x_entry, x_exit}
+    for L in geom.soil_layers:
+        xs.update(p[0] for p in (L.bottom_boundary_points or ()))
+    if not circular:
+        xs.update(p[0] for p in (getattr(slip, "points", []) or []))
+    xs = sorted(x for x in xs if x_entry <= x <= x_exit)
+
+    best = (-math.inf, x_entry)
+    layers = geom.soil_layers
+    for a, b in zip(xs[:-1], xs[1:]):
+        if b <= a:
+            continue
+        # Each bottom's line on this piece, from two points inside it: at a
+        # vertical step (two bottom points at one x) `bottom_at` gives the
+        # left value, so the piece's own ends would read the wrong side.
+        qa, qb = a + 0.25 * (b - a), a + 0.75 * (b - a)
+        lines = []
+        for L in layers:
+            za, zb = L.bottom_at(qa), L.bottom_at(qb)
+            m = (zb - za) / (qb - qa)
+            lines.append((za - m * (qa - a), m))
+        cands = {a, b}
+        if circular:
+            for _, m in lines:
+                x = slip.xc + m * slip.radius / math.sqrt(1.0 + m * m)
+                if a < x < b:
+                    cands.add(x)
+        for i, (z1, m1) in enumerate(lines):
+            for z2, m2 in lines[i + 1:]:
+                if m1 != m2:
+                    x = a + (z2 - z1) / (m1 - m2)
+                    if a < x < b:
+                        cands.add(x)
+        for x in cands:
+            z = _boundary_elevation(slip, x)
+            if z is not None:
+                d = min(z0 + m * (x - a) for z0, m in lines) - z
+                if d > best[0]:
+                    best = (d, x)
+    return best
+
+
 def build_slices(geom: SlopeGeometry,
                  slip,
                  n_slices: int = 30,
@@ -442,6 +567,20 @@ def build_slices(geom: SlopeGeometry,
         raise ValueError(f"Need at least 3 slices, got {n_slices}")
 
     x_entry, x_exit = slip.find_entry_exit(geom)
+    # Under the bottom of the deepest layer the surface would pass through
+    # ground the model does not have, so it may at most touch it (SS-5,
+    # GM-128). Measured on the surface, it is refused or kept at any slice
+    # count; a surface that touches keeps every slice.
+    depth, x_deep = base_depth(geom, slip, x_entry, x_exit)
+    touch = base_tolerance(geom)
+    if depth > touch:
+        raise ValueError(
+            "Slip surface passes below the bottom of the deepest soil "
+            f"layer: {depth:.3f} m below it at x = {x_deep:.2f} (a surface "
+            f"may touch it, within {touch:.3f} m, a thousandth of the "
+            "model's height). Use a shallower trial surface or extend the "
+            "soil layers."
+        )
     # a boundary at every ground break, crossing, surcharge and crack edge
     # (and every corner of a polyline); each slice takes the base angle and
     # length of the chord between its boundaries, on a circle as on a
@@ -464,7 +603,6 @@ def build_slices(geom: SlopeGeometry,
     crack_base_elev = _crack_base(geom, x_entry, x_exit)
 
     slices = []
-    below_base_x = []   # x of slices whose base dips below ALL soil layers
     for x_left, x_right, width in cuts:
         x_mid = (x_left + x_right) / 2.0
 
@@ -476,17 +614,6 @@ def build_slices(geom: SlopeGeometry,
         height = z_top - z_base
         if height <= 0:
             continue
-
-        # Slip surface below all soil layers = cutting through empty
-        # space. Edge slivers are skipped; an INTERIOR hole makes the
-        # trial surface invalid (SS-5) — previously the middle slices
-        # were silently dropped and the remaining fragments produced a
-        # meaningless (often absurdly low) FOS that could win searches.
-        if geom.layer_at_point(x_mid, z_base) is None:
-            min_layer_bot = min(L.bottom_at(x_mid) for L in geom.soil_layers)
-            if z_base < min_layer_bot:
-                below_base_x.append(x_mid)
-                continue
 
         z_l = _boundary_elevation(slip, x_left)
         z_r = _boundary_elevation(slip, x_right)
@@ -542,8 +669,14 @@ def build_slices(geom: SlopeGeometry,
         # Strength parameters from layer at base midpoint
         base_layer = geom.layer_at_point(x_mid, z_base)
         if base_layer is None:
-            # Fallback: use bottom-most layer
-            base_layer = geom.soil_layers[-1]
+            bottoms = [L.bottom_at(x_mid) for L in geom.soil_layers]
+            if z_base < min(bottoms):
+                # touching the base, within base_tolerance: the deepest
+                # layer's strength (GM-128)
+                base_layer = geom.soil_layers[bottoms.index(min(bottoms))]
+            else:
+                # Fallback: use bottom-most layer
+                base_layer = geom.soil_layers[-1]
         # Apply Ru if no GWT pore pressure and layer has Ru > 0
         if pp_interp is None and pore_pressure <= 0 and base_layer.ru > 0:
             # u = Ru * gamma * h  where h = overburden depth
@@ -620,35 +753,6 @@ def build_slices(geom: SlopeGeometry,
             pond_hforce=pond_hforce,
             pond_z=pond_z,
         ))
-
-    # Reject surfaces that dip below the deepest soil layer (SS-5, generalized
-    # v5.4 F2c). A base point below the lowest layer bottom passes through
-    # material that does not exist, so the trial surface is geometrically
-    # inadmissible — a legitimate critical surface at most grazes the base
-    # tangentially (a slice or two at the entry/exit from finite
-    # discretization). TWO independent triggers, both physical:
-    #  (1) an INTERIOR below-base gap bracketed by surviving slices on BOTH
-    #      sides (the original SS-5 hole); and
-    #  (2) a below-base span exceeding a small tangential-sliver tolerance
-    #      (NEW). Trigger (1) alone missed a surface that plunges below the base
-    #      right after entry and re-emerges only near the exit: the surviving
-    #      fragment is one-sided (all below-base x fall OUTSIDE
-    #      [slices[0], slices[-1]]), so no bracketing pair exists, yet the tiny
-    #      exit-side fragment yields a spurious low FOS that wins searches
-    #      (e.g. Slide2 #85 steep clay: a circle dipping ~4 ft below the rigid
-    #      base returned ~0.72 on 12 of 40 slices).
-    if below_base_x and slices:
-        x_first = slices[0].x_mid
-        x_last = slices[-1].x_mid
-        interior = any(x_first < xb < x_last for xb in below_base_x)
-        sliver_tol = max(2, round(0.03 * len(cuts)))
-        if interior or len(below_base_x) > sliver_tol:
-            raise ValueError(
-                "Slip surface passes below the bottom of the deepest soil "
-                f"layer over {len(below_base_x)} of {len(cuts)} slices "
-                f"(max {sliver_tol} tangential slivers allowed). "
-                "Use a shallower trial surface or extend the soil layers."
-            )
 
     # Tension crack water force: hydrostatic thrust on the retained face,
     # F_w = 0.5 * gamma_w * z_w^2 acting at z_w/3 above the crack base (treated

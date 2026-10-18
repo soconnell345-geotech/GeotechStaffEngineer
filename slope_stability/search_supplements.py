@@ -357,11 +357,14 @@ def search_toe_circles(geom: SlopeGeometry,
 
     def below_base(ch, xc, yc, r):
         """True when the arc between the chord ends dips below the bottom of
-        the deepest layer. `build_slices` tolerates a tangential sliver or
-        two there, but a toe sitting ON a rigid base would let every toe
-        circle through it shed its toe slices that way and score low
-        (Slide2 #85: 0.83 against the base-tangent 0.91). The critical toe
-        circle can at most touch the base."""
+        the deepest layer. The critical toe circle can at most touch the
+        base, as every search's circle does (`_compute_fos`, GM-128): where
+        the toe sits on the base, a circle through it that dips under the
+        base pivots about the toe into ground the model does not have
+        (Slide2 #85: 0.83 against the base-tangent 0.91 when, before
+        GM-128, such a circle shed its toe slices; 1.01 when, granted
+        `build_slices`' tolerance for a given surface, its centre moved
+        0.64 ft beyond the toe and its anchor went uncounted)."""
         x_low = min(max(xc, ch["xl"]), ch["xr"])
         z_low = yc - math.sqrt(max(r * r - (x_low - xc) ** 2, 0.0))
         base = min(L.bottom_at(x_low) for L in geom.soil_layers)
@@ -1567,8 +1570,8 @@ def m_alpha_confirmation(geom: SlopeGeometry, crit, method: str,
     check turns on the slices at the surface's steep end, and a FOS that
     moves with the slicing is worth saying. ``refused_fine`` says why there
     is no FOS on twice the slices: "geometry" (the finer slicing cannot be
-    built, ``why_fine`` gives the reason: a circle just touching the base
-    sheds slivers below it at one count and not the other) or "no_solution"
+    built, ``why_fine`` gives the reason; a circle touching the model's
+    base is kept at every count since GM-128) or "no_solution"
     (the method does not converge there). None for the Ordinary Method of
     Slices (no m_alpha) or no governing surface."""
     from slope_stability.search import (

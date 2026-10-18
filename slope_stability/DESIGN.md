@@ -138,14 +138,14 @@ the crest, between two of them, and the grid read 0.739 against 0.705 at D = 2
   part (Slide2 #85, anchored: the Bishop walk found nothing below Spencer's grid
   minimum 1.581, Spencer's own walk 1.574), so a reinforced model walks with the
   method itself.
-- **On the base.** `build_slices` drops up to max(2, 3 % of n_slices) below-base END
-  slices as tangential slivers (SS-5). Where the toe sits on a rigid base (Slide2 #85
-  without its support) a circle whose lowest point is a few millimetres under the
-  base just beyond the toe sheds its two toe slices and scores low: 0.867 on a circle
-  refused at 90 slices, against the base-tangent toe circle's 0.883. The walk found
-  such circles, so it keeps to circles that at most touch the base
-  (`search._dips_below_base`, the same test as `build_slices` with no tolerance), as
-  the toe-circle family does. The grid itself is unchanged.
+- **On the base.** Until GM-128 `build_slices` dropped up to max(2, 3 % of n_slices)
+  below-base END slices as tangential slivers (SS-5). Where the toe sits on a rigid
+  base (Slide2 #85 without its support) a circle whose lowest point is a few
+  millimetres under the base just beyond the toe shed its two toe slices and scored
+  low: 0.867 on a circle refused at 90 slices, against the base-tangent toe circle's
+  0.883. The walk found such circles, so it keeps to circles that at most touch the
+  base (`search._dips_below_base`), as every search family does since GM-128 ("A
+  surface touching the model's base"). The grid itself is unchanged.
 - **Rapid drawdown** (`search_rapid_drawdown`, its own per-surface solve): the lowest
   grid centre only, three step halvings, at most 12 centres.
 - **Off switch.** `search_critical_surface(refine=False)` /
@@ -411,10 +411,11 @@ and `refused_lowest` only where the result has them (GM-125).
   method when it is Spencer / M-P / GLE); the planar family six Janbu
   evaluations per outcrop.
 - **Toe circles on a rigid base.** A toe circle may at most TOUCH the
-  bottom of the deepest layer. `build_slices` tolerates a below-base
-  sliver or two (SS-5); a toe sitting on a rigid base would let every toe
-  circle through it shed its toe slices that way and score low (Slide2 #85
-  without support: 0.83, against 0.88 for the base-tangent toe circle).
+  bottom of the deepest layer, as every search's circle (GM-128). Where the
+  toe sits on a rigid base, a toe circle dipping under it pivots about the
+  toe into the base: until GM-128 it shed its toe slices and scored low
+  (Slide2 #85 without support: 0.83, against 0.88 for the base-tangent toe
+  circle).
 - **Rapid drawdown (GM-54).** `search_rapid_drawdown` runs both families
   with its own per-surface drawdown FOS (`fos_fn`), honouring the caller's
   ranges, and its `search` carries `governing_surface` / `candidates` /
@@ -1045,8 +1046,9 @@ own.
 at the search's slice count and at twice it (two solves,
 `search_supplements.m_alpha_confirmation`); `choices` gives both FOS and
 least m_alpha, or why there is none on twice the slices: the finer slicing
-cannot be built (Taylor's deep circle, tangent to the base, sheds a slice
-below it at 60) or the method has no solution there. A warning
+cannot be built (until GM-134 Taylor's deep circle, tangent to the base,
+shed a slice below it at 60; since GM-128 a circle touching the base is kept
+at every count) or the method has no solution there. A warning
 (`finer_slices_warning`) says when the FOS moves more than 1 % (with
 m_alpha too where it falls below 0.2 on the finer slicing), or when the
 method has no solution on the finer slicing (Slide2 #85 with its support,
@@ -1213,11 +1215,13 @@ boundary, entry to exit, and `build_slices` cuts there.
   stretch is refused by `find_entry_exit` before any slicing (GM-122).
   Rapid drawdown cuts both stages alike: each stage's water-table crossings
   are boundaries in the other (`build_slices(extra_boundaries=)`), so the
-  stage-2 strengths map slice for slice. `search._dips_below_base` takes the
-  same boundaries; since a crossing of the deepest layer's bottom is a
-  boundary, a circle dipping under it is refused at every slice count
+  stage-2 strengths map slice for slice. `search._dips_below_base` took the
+  same boundaries; since a crossing of the deepest layer's bottom was a
+  boundary, a circle dipping under it was refused at every slice count
   (before, one 8 mm under the base was scored on 30 slices and refused on
-  90).
+  90). GM-128 measures the depth under the base on the surface itself, and
+  the base's crossings are no longer boundaries ("A surface touching the
+  model's base").
 - **Side effects.** On a phi = 0 circle Spencer and the GLE now equal
   Bishop to about 0.1 % rather than exactly, mainly because the shear on a
   chord base acts at R cos(dtheta / 2) from the centre, not R (`gle.py`
@@ -1294,6 +1298,90 @@ boundary, entry to exit, and `build_slices` cuts there.
   21.1 s, V-054 17.4 -> 18.5 s; Bishop 1.9-2.7 s before and after; all the
   searches of the slope suite 452 -> 456 s.
 
+### A surface touching the model's base (GM-128, 2026-10-18)
+- **The defect as filed.** Taylor's critical circle for D = 2 (FHWA
+  NHI-06-088 Fig. 6-15), tangent to the firm base, was refused at 40, 60
+  and 80 slices and accepted at 30 and 50: `build_slices` dropped up to
+  max(2, 3 % of n_slices) below-base END slices as slivers and refused a
+  surface with more (SS-5), and whether a slice midpoint fell in the
+  circle's dip of millimetres under the base depended on the count. GM-138
+  found V-043's critical circle tangent to the base too.
+- **On master it no longer reproduced as filed.** Since GM-134 the base's
+  crossings were slice boundaries, so the count no longer decided: Taylor's
+  circle tangent to 1e-9 m was kept at 25-100 slices and 1 micron under
+  refused at every count. The tolerance had become an accident of the
+  slicing (crossings closer than 1e-4 of the span merge): under a micron.
+  The entry/exit search had recovered V-043's clay circle 3.5 mm under the
+  base, and its test cut the radius to 0.1 mm above it.
+- **The rule.** The depth of a surface under the bottom of the deepest
+  layer is measured on the surface, not on its slices: `slices.base_depth`
+  gives the greatest depth exactly (between vertices the deepest bottom is
+  the least of straight lines, a circle's lower arc is convex and a
+  polyline straight, so the depth peaks at a piece's end, where two bottoms
+  cross, or where the arc runs parallel to a bottom; at a vertical step in
+  a bottom, which a DXF import can give, each piece's bottoms are taken
+  from points inside it, since `bottom_at` reads the step's left value).
+  A surface
+  `build_slices` is given within a thousandth of the model's height of the
+  base (`base_tolerance`; `model_height` is the highest ground less the
+  lowest point of the base) touches it and keeps every slice at any count,
+  a slice under the base taking the deepest layer's strength; one reaching
+  further is refused at any count, with its depth and where (Taylor's
+  circle 5 cm under): "Slip surface passes below the bottom of the deepest
+  soil layer: 0.050 m below it at x = 48.77 (a surface may touch it, within
+  0.024 m, a thousandth of the model's height)." The base's crossings are no longer slice boundaries (a
+  crossing within the tolerance only touches it, and the slice under takes
+  the same layer): a dip of microns would otherwise put a boundary there
+  and move the FOS (Taylor on 25 slices 0.7045 -> 0.7036). A slice's
+  weight counts the part of it below the base (at most a thousandth of the
+  model's height) as empty; on Taylor's circle 1 cm under that is worth
+  about 0.00005 of FOS, and it is left to the review of the slice integrals
+  (GM-140).
+- **Why a thousandth of the model's height.** A circle given as tangent
+  with its centre and radius to the centimetre, as published examples give
+  them, lies within it on a model 10 m or more high (Taylor's 24.4 m model:
+  0.024 m; Slide2 #85: 0.020 m; V-043's 9 m: 0.009 m). Reaching that far
+  under a firm base lowers the FOS by no more than the slice count moves it:
+  Taylor's circle by 0.02 % (the slice count moves it 0.26 %: 0.7045 on 25
+  slices, 0.7063 on 100), V-043's by 0.06 %, Slide2 #85's 'discard' circles
+  by 0.14-0.26 %. A fraction rather than a length, because the FOS changes
+  with a circle's depth over the model's own length scale.
+- **A search keeps to the model.** `_compute_fos` leaves out of every
+  search family a surface reaching more than a millionth of the model's
+  height under the base (`search._dips_below_base`,
+  `_SEARCH_BASE_TOUCH`); a caller scoring one given surface passes
+  `inside_model=False`, as the probabilistic analyses of a fixed surface do.
+  Within the thousandth the FOS still falls with depth, so a search granted
+  it ends every base-tangent search that far into ground the model does not
+  have, on a circle another program refuses as crossing the model's
+  boundary. Measured with the search granted it: Taylor 0.7049 -> 0.7048
+  (21 mm under), V-031 Spencer 1.4174 -> 1.4160, Slide2 #85 'discard'
+  1.511 -> 1.506 (19 mm under); and on #85 with its support the toe family
+  pivoted about the toe, which sits on the base, onto circles centred
+  0.64 ft past it whose support went uncounted: 1.01 against 1.372. The
+  radius search closes on the circle tangent to the base from above, since
+  the check refuses anything under it. A cheap bound (`base_clearance`:
+  the surface's lowest point less the base's highest) skips the exact
+  depth for a surface wholly above the base.
+- **Not modelled.** A firm layer inside the model, not at its base, is a
+  layer like any other: a circle passes through it with its strength.
+  Slide2's impenetrable material and composite surfaces (a circle that
+  follows the top of a firm layer) are not implemented.
+- **What moved** (VALIDATION.md B18). Given surfaces: Taylor's circle kept
+  at 25, 30, 40, 50, 60, 80 and 100 slices (0.7045-0.7063), and to 1 cm
+  under the base at the same FOS within 0.0002; 5 and 10 cm under refused
+  at every count; V-043's clay circle as recovered, 3.5 mm under, 1.0408
+  against the pinned 1.0409; Slide2 #85's toe circle (Bishop) 1.37156 ->
+  1.37152 (the base's crossing at its toe is no longer a slice boundary).
+  Searches: Taylor D = 3 Bishop 0.677377 -> 0.677376 (another centre in
+  the same flat valley); the toe family's candidate in #85's 'discard'
+  searches 1.5584 -> 1.5583 (not governing). Nothing else the slope suite,
+  the slope validation examples, `funhouse_agent -k slope` or the worked
+  examples record moved, and no search result rose.
+- **Run time** (default searches, laptop, best of three, before / after):
+  Taylor Bishop 2.1-2.3 / 2.1 s, Spencer 12.8-14.4 / 12.4 s; V-043 Spencer
+  14.1-14.7 / 13.6 s; #85 with its support, Bishop 2.5 / 2.5 s.
+
 ## Critical Sign Conventions
 - **Driving moment**: uses `W*(x_mid - xc)/R` + `abs(driving)`, NOT `W*sin(alpha)`
   directly, because `sin(alpha)` can be negative for L-to-R slopes
@@ -1335,7 +1423,8 @@ boundary, entry to exit, and `build_slices` cuts there.
 - **FOS convergence guard**: in `_compute_fos` (search.py), FOS < 0.05 is treated
   as non-convergence and returns FOS_MAX (999). Prevents negative/absurd FOS from
   polluting search results.
-- **Below-the-base rejection, generalized (SS-5, v5.4 F2c)**: a trial slip
+- **Below-the-base rejection, generalized (SS-5, v5.4 F2c; replaced by GM-128,
+  "A surface touching the model's base", as the end of this note says)**: a trial slip
   surface whose base drops below the bottom of the DEEPEST soil layer passes
   through material that does not exist, so it is geometrically inadmissible.
   `build_slices` skips such below-base slices and, after the loop, REJECTS the
@@ -1363,7 +1452,13 @@ boundary, entry to exit, and `build_slices` cuts there.
   separate c'=0 case — a circular search over-estimating the critical for a
   c'=0 slope whose true minimum is the planar infinite slope — is NOT part of
   this rule; it is handled by the infinite-slope family, see "Supplementary
-  families" under Search Algorithms.)
+  families" under Search Algorithms.) **Since GM-128** no slice is dropped:
+  the depth of a surface under the base is measured on the surface
+  (`slices.base_depth`), a given surface within a thousandth of the model's
+  height of the base touches it and keeps every slice, one deeper is refused
+  at any count, and a search keeps to surfaces inside the model. The claim
+  above that a tangent circle touches "at most a slice or two" did not hold:
+  Taylor's circle lost more at 40, 60 and 80 slices.
 - **Noncircular degenerate-surface guard (SS-6, v5.3 B2)**: the random / weak-layer
   polyline generators can emit jagged zig-zag surfaces on which the rigorous GLE
   either fails to converge (the legacy Spencer fallback then returns a spurious

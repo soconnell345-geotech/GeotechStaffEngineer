@@ -143,8 +143,10 @@ def test_reinforced_rigorous_nonconvergence_is_rejected():
 
 
 def test_toe_circles_stay_above_a_rigid_base():
-    """A toe on the rigid base: every toe circle may at most touch the base
-    (build_slices tolerates a below-base sliver; the toe family does not).
+    """A toe on the rigid base: every toe circle may at most touch the base,
+    as every search's circle (GM-128; `build_slices` accepts a given circle
+    within a thousandth of the model's height of the base, a search does
+    not).
     The arc's lowest point inside the sliding mass: the best circle, since
     GM-134, is centred left of the toe and rises from it."""
     g = _slide85(anchor=False)

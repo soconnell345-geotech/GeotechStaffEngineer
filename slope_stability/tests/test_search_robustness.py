@@ -3,6 +3,8 @@ degenerate-surface guard. Jagged, near-vertical, or sliver polyline trial
 surfaces must NOT be reported as the critical surface with a spurious low FOS.
 """
 
+import math
+
 import pytest
 
 from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
@@ -235,35 +237,103 @@ def test_search_returns_base_admissible_critical_surface():
 # ---------------------------------------------------------------------------
 # GM-87: the local refinement of the centre grid. It may only lower the
 # grid's minimum, it stays inside the grid's centre ranges, and it keeps to
-# circles that at most touch the base: build_slices drops up to
-# max(2, 3 % of n_slices) below-base END slices as tangential slivers, and
-# where the toe sits on the rigid base a circle dipping just under it sheds
-# its toe slices and scores low. Without that rule the walk found such a
-# circle on this model (0.265, refused at 90 slices).
+# circles that at most touch the base. Before GM-134 build_slices dropped up
+# to max(2, 3 % of n_slices) below-base END slices as tangential slivers,
+# and where the toe sits on the rigid base a circle dipping just under it
+# shed its toe slices and scored low: the walk found such a circle on this
+# model (0.265, refused at 90 slices). Since GM-128 a given surface touches
+# the base within a thousandth of the model's height, measured on the
+# surface, and keeps every slice; one deeper is refused at any count. A
+# search keeps to surfaces inside the model.
 # ---------------------------------------------------------------------------
 
 _THIN_BOX = ((15.0, 57.0), (31.0, 70.0))      # profile width x (crest+1, +2H)
 
 
 def test_dips_below_base():
-    """A circle tangent to the base inside the slip mass is admissible. One
-    whose lowest point is 8 mm under the base just beyond the toe (as the
-    walk without the rule found) is refused at any slice count: since
-    GM-134 the base's crossings are slice boundaries, so the stretch under
-    the base is slices of its own. Before, it lost two toe slices at 30
-    slices and scored 0.265 against 0.278, and was refused at 90."""
+    """GM-128: on this 20 m model a surface given to `build_slices` may
+    reach 0.02 m (a thousandth of its height) below the base and touch it.
+    A circle tangent to the base inside the slip mass and one whose lowest
+    point is 8 mm under it just beyond the toe are kept with every slice,
+    at any count, at the same FOS within 0.0002; one 5 cm under is refused
+    at any count. A search keeps to circles inside the model: it leaves the
+    8 mm circle out and scores the tangent one. (Before GM-134 the 8 mm
+    circle lost two toe slices at 30 slices and scored 0.265 against 0.278,
+    and was refused at 90; from GM-134 to GM-128 it was refused at every
+    count.)"""
+    from slope_stability.methods import bishop_fos
     from slope_stability.search import _dips_below_base
+    from slope_stability.slices import base_tolerance
     geom = _thin_base_geom()
+    assert base_tolerance(geom) == pytest.approx(0.02)
     touch = CircularSlipSurface(22.0, 32.0, 22.0)       # lowest point el 10
-    assert not _dips_below_base(geom, touch, 30)
-    assert len(build_slices(geom, touch, 90)) == 90
     shed = CircularSlipSurface(15.88, 10.0 + 28.06 - 0.008, 28.06)
-    assert _dips_below_base(geom, shed, 30)
-    for n in (30, 90):
+    tangent = CircularSlipSurface(15.88, 10.0 + 28.06, 28.06)
+    deep = CircularSlipSurface(22.0, 32.0, 22.05)       # lowest point el 9.95
+    given = base_tolerance(geom)
+    assert not _dips_below_base(geom, touch)
+    assert not _dips_below_base(geom, tangent)
+    assert _dips_below_base(geom, shed)                 # a search's test
+    assert not _dips_below_base(geom, shed, touch=given)
+    assert _dips_below_base(geom, deep, touch=given)
+    for n in (25, 30, 40, 60, 90):
+        assert len(build_slices(geom, touch, n)) == n
+        sl = build_slices(geom, shed, n)
+        assert len(sl) == n
+        f_touch = bishop_fos(build_slices(geom, tangent, n), tangent)
+        assert bishop_fos(sl, shed) == pytest.approx(f_touch, abs=2e-4)
         with pytest.raises(ValueError,
                            match="below the bottom of the deepest"):
-            build_slices(geom, shed, n)
+            build_slices(geom, deep, n)
+    assert _compute_fos(geom, tangent, "bishop", 30) == pytest.approx(
+        0.2795, abs=5e-4)
     assert _compute_fos(geom, shed, "bishop", 30) == _FOS_MAX
+    assert _compute_fos(geom, shed, "bishop", 30,
+                        inside_model=False) == pytest.approx(0.2793, abs=5e-4)
+    assert _compute_fos(geom, deep, "bishop", 30,
+                        inside_model=False) == _FOS_MAX
+
+
+def _step_base_geom(bottom):
+    """A 20 m model whose base has a vertical step at x = 30 (two bottom
+    points at one x, as a DXF import can give)."""
+    return SlopeGeometry(
+        surface_points=[(0, 20), (20, 20), (40, 10), (80, 10)],
+        soil_layers=[SlopeSoilLayer("clay", 20, 0, 18.0, cu=30.0,
+                                    analysis_mode="undrained",
+                                    bottom_boundary_points=bottom)])
+
+
+@pytest.mark.parametrize("step, bottom, circle, depth, x_deep", [
+    # step up: a circle tangent to the lower base left of the step passes
+    # 2.27 m under the higher base just right of it
+    ("up", [(0, 2), (30, 2), (30, 5), (80, 5)], (24.0, 27.0, 25.0),
+     5.0 - (27.0 - math.sqrt(25.0 ** 2 - 6.0 ** 2)), 30.0),
+    # step down: 6 m above the higher base at the step, 1 m under the lower
+    # base at its lowest point
+    ("down", [(0, 5), (30, 5), (30, 2), (80, 2)], (45.0, 26.0, 25.0),
+     1.0, 45.0),
+])
+def test_base_depth_either_side_of_a_vertical_step(step, bottom, circle,
+                                                   depth, x_deep):
+    """GM-128: at a vertical step in the base, `bottom_at` reads the left
+    value, so each piece's bottom is taken from points inside it. A circle
+    well under the base right of the step is measured exactly there and
+    refused at any count; before the fix the up-step circle read 0.000 and
+    was kept."""
+    from slope_stability.search import _dips_below_base
+    from slope_stability.slices import base_depth, base_tolerance
+    geom = _step_base_geom(bottom)
+    slip = CircularSlipSurface(*circle)
+    x_en, x_ex = slip.find_entry_exit(geom)
+    d, x = base_depth(geom, slip, x_en, x_ex)
+    assert d == pytest.approx(depth, abs=1e-6)
+    assert x == pytest.approx(x_deep, abs=1e-6)
+    assert _dips_below_base(geom, slip, touch=base_tolerance(geom))
+    for n in (30, 60):
+        with pytest.raises(ValueError,
+                           match="below the bottom of the deepest"):
+            build_slices(geom, slip, n)
 
 
 @pytest.mark.parametrize("nx", [4, 10])

@@ -186,6 +186,34 @@ class TestDuncanExample1:
         assert spencer_fos(slices, slip)[0] == pytest.approx(
             self.TAYLOR_D2, rel=0.005)
 
+    @pytest.mark.parametrize("n", [25, 30, 40, 50, 60, 80])
+    def test_taylor_circle_on_the_base_at_any_slice_count(self, n):
+        """GM-128: Taylor's critical circle, tangent to the firm base, is
+        kept at every slice count (it was refused at 40, 60 and 80 slices and
+        kept at 30 and 50 before GM-134), and so is the same centre's circle
+        reaching 1 cm under the base: within a thousandth of the model's
+        height (2 H = 24.4 m, so 0.024 m) a surface touches the base. Both
+        read 0.705-0.706 (Taylor 0.706), within 0.0002 of each other. The
+        circle 5 or 10 cm under the base passes through ground the model
+        does not have and is refused at every count."""
+        H = _ft_to_m(40)
+        g, crest_x, _ = self._long_geom(3.0)
+        xc, yc = crest_x + 1.0 * H, 1.908 * H
+        fos = {}
+        for under in (0.0, 0.01):
+            slip = CircularSlipSurface(xc, yc, yc + H + under)
+            slices = build_slices(g, slip, n)
+            assert len(slices) == n
+            fos[under] = bishop_fos(slices, slip)
+            assert fos[under] == pytest.approx(self.TAYLOR_D2, rel=0.003)
+        assert fos[0.01] == pytest.approx(fos[0.0], abs=2e-4)
+        for under in (0.05, 0.10):
+            with pytest.raises(ValueError, match=(
+                    r"below the bottom of the deepest soil layer: "
+                    rf"{under:.3f} m below it .* within 0\.024 m")):
+                build_slices(g, CircularSlipSurface(xc, yc, yc + H + under),
+                             n)
+
     def test_search_finds_base_circle_on_long_profile(self):
         """With 4 H of level ground each side and the centre grid over the
         slope, the search finds Taylor's circle tangent to the firm base

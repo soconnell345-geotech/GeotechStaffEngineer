@@ -28,7 +28,8 @@ from slope_stability.geometry import SlopeGeometry
 from slope_stability.slip_surface import (
     CircularSlipSurface, PolylineSlipSurface, GroundCrossingError,
 )
-from slope_stability.slices import build_slices, slice_boundaries
+from slope_stability.slices import (base_clearance, base_depth, build_slices,
+                                    model_height)
 from slope_stability.methods import (
     fellenius_fos, bishop_fos, spencer_fos, morgenstern_price_fos,
     M_ALPHA_MIN, M_ALPHA_RULES, m_alpha_checked, m_alpha_min,
@@ -565,8 +566,8 @@ def _noncircular_admissible(slip, slices, geom, n_slices_requested: int,
     weak-layer generators keep exploring.
 
     * **Too few surviving slices** — a surface that self-clips or barely enters
-      the ground leaves a tiny sliver mass (build_slices drops below-model
-      slices); not a usable failure surface.
+      the ground leaves a tiny sliver mass (build_slices drops slices with
+      no height of ground above the surface); not a usable failure surface.
     * **Too short a horizontal span** — the span floor is anchored to the
       caller's entry/exit WINDOW extent (``window_span``: a real surface roughly
       spans the window) when supplied, else to the local slope HEIGHT (0.5*H).
@@ -821,8 +822,16 @@ def _compute_fos(geom: SlopeGeometry,
                  fos_fn: Optional[Callable] = None,
                  confirm_below: Optional[float] = None,
                  m_alpha_check: bool = True,
-                 info: Optional[Dict[str, Any]] = None) -> float:
+                 info: Optional[Dict[str, Any]] = None,
+                 inside_model: bool = True) -> float:
     """Safely compute FOS, returning _FOS_MAX on any error.
+
+    ``inside_model`` (GM-128): a surface reaching below the bottom of the
+    deepest layer is left out (_FOS_MAX; ``_dips_below_base``), so every
+    search touches the base at most. A caller scoring one given surface,
+    not searching, passes False, and `build_slices` accepts it within a
+    thousandth of the model's height of the base, as touching it (the
+    probabilistic analyses of a fixed surface).
 
     ``m_alpha_check`` (GM-127): a surface with m_alpha = cos(a) (1 + tan(a)
     tan(phi) / F) < 0.2 on any slice, at the method's own F, is left out
@@ -863,6 +872,8 @@ def _compute_fos(geom: SlopeGeometry,
     reinforcement, so the surface is rejected instead.
     """
     try:
+        if inside_model and _dips_below_base(geom, slip):
+            return _FOS_MAX         # as build_slices' refusal (ValueError)
         slices = build_slices(geom, slip, n_slices)
         if len(slices) < 3:
             _bump(reject_stats, "geometry")
@@ -1205,44 +1216,35 @@ def _screen_shortlist(found: Dict[Any, tuple]) -> Tuple[List[Any], int]:
     return keep[:_SCREEN_MAX], max(len(keep) - _SCREEN_MAX, 0)
 
 
-def _dips_below_base(geom: SlopeGeometry, slip, n_slices: int) -> bool:
-    """True when a slice of the trial surface would have its base below the
-    deepest soil layer.
+# A search keeps to surfaces inside the model (GM-128): the surfaces it
+# scores reach below the bottom of the deepest layer by at most this
+# fraction of the model's height (rounding), not the thousandth
+# `build_slices` grants a surface its caller gives as touching the base.
+# Within that thousandth the FOS still falls with depth (0.26 % on Slide2
+# #85), so a search granted it would end every base-tangent search that far
+# into ground the model does not have, on a circle another program refuses.
+_SEARCH_BASE_TOUCH = 1e-6
 
-    `build_slices` refuses a surface with such a slice inside the slip mass,
-    but drops up to ``max(2, 3 % of n_slices)`` of them at its ends as
-    tangential slivers (SS-5). Where the toe sits on the base (Slide2 #85) a
-    circle dipping just under the base then sheds its toe slices and scores
-    low: #85 without its support, Spencer 0.867 on a circle refused at 90
-    slices, against 0.883 for the base-tangent toe circle. The refinement
-    walk keeps to circles that at most touch the base, as the toe-circle
-    family does.
+
+def _dips_below_base(geom: SlopeGeometry, slip,
+                     touch: Optional[float] = None) -> bool:
+    """True when the trial surface reaches below the bottom of the deepest
+    soil layer by more than ``touch`` (m; default ``_SEARCH_BASE_TOUCH`` of
+    the model's height), measured on the surface, whatever the slicing
+    (``base_depth``; GM-128). ``_compute_fos`` leaves such a surface out
+    of every search family, so a search touches the base at most: the
+    radius search closes on the circle tangent to it, and the refinement
+    walk keeps to circles inside the model by the same test.
     """
-    if getattr(slip, "is_circular", False):
-        # No layer bottom anywhere is higher than this, so a circle whose
-        # lowest point is not below it cannot dip under the base.
-        top_of_base = min(
-            max(z for _, z in L.bottom_boundary_points)
-            if L.bottom_boundary_points else L.bottom_elevation
-            for L in geom.soil_layers)
-        if slip.yc - slip.radius >= top_of_base:
-            return False
+    if base_clearance(geom, slip) >= 0.0:
+        return False                  # never below the base, at any x
+    if touch is None:
+        touch = _SEARCH_BASE_TOUCH * model_height(geom)
     try:
         x_en, x_ex = slip.find_entry_exit(geom)
     except ValueError:
         return False                  # _compute_fos rejects it anyway
-    # the slices build_slices cuts (GM-134: a crossing of the base is one
-    # of their boundaries)
-    xs = slice_boundaries(geom, slip, n_slices, x_en, x_ex)
-    for a, b in zip(xs[:-1], xs[1:]):
-        x = 0.5 * (a + b)
-        z = slip.slip_elevation_at(x)
-        if z is None or geom.ground_elevation_at(x) - z <= 0:
-            continue
-        if (geom.layer_at_point(x, z) is None
-                and z < min(L.bottom_at(x) for L in geom.soil_layers)):
-            return True
-    return False
+    return base_depth(geom, slip, x_en, x_ex)[0] > touch
 
 
 def _grid_minima(fos, nx: int, ny: int) -> List[Tuple[float, int, int]]:
@@ -1328,9 +1330,9 @@ def grid_search(geom: SlopeGeometry,
     With ``refine`` the grid's lowest centres are then refined by a local
     compass search on the centre (GM-87; see ``_refine_centre``), inside the
     same centre ranges and entry/exit windows, on circles that at most touch
-    the bottom of the deepest layer (``_dips_below_base``); the centres it
-    scores are added to ``n_surfaces_evaluated``, and those scored with the
-    method itself to ``grid_fos``.
+    the bottom of the deepest layer (``_dips_below_base``, GM-128); the
+    centres it scores are added to ``n_surfaces_evaluated``, and those
+    scored with the method itself to ``grid_fos``.
 
     Parameters
     ----------
@@ -1474,7 +1476,7 @@ def grid_search(geom: SlopeGeometry,
             n_starts, levels, max_centres = _REFINE_FOS_FN
 
         def admissible(slip):
-            return not _dips_below_base(geom, slip, n_slices)
+            return not _dips_below_base(geom, slip)
 
         def strict(xc, yc, m):
             """(R, FOS) of the centre's best circle that at most touches

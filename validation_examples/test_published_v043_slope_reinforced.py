@@ -72,9 +72,11 @@ from slope_stability.slip_surface import CircularSlipSurface
 
 _SURFACE = [(0, 9), (10, 9), (20, 3), (30, 3)]
 # Spencer critical circles recovered by entry-exit search (seed=2), pinned.
-# The clay circle came 3.5 mm under the firm base at el 0; its radius is cut
-# to touch the base 0.1 mm above it, since a circle under the base is refused
-# at any slice count (GM-134).
+# The clay circle came 3.5 mm under the firm base at el 0; its radius was cut
+# to touch the base 0.1 mm above it, since from GM-134 a circle under the
+# base was refused at any slice count. Since GM-128 a circle within a
+# thousandth of the model's height (9 mm here) touches the base and is kept:
+# the circle as recovered reads the same (test below).
 _SAND_CIRC = (15.193905105454997, 10.242328996634253, 9.938523884815131)
 _CLAY_CIRC = (15.027360761475776, 12.983131511749898, 12.983031511749898)
 # The sand fill's critical Spencer circle (GM-138), from an independent
@@ -221,3 +223,18 @@ def test_v043_clay_no_reinforcement_no_crack_is_high():
                         method="spencer").FOS
     assert fos == pytest.approx(1.041, abs=0.01)
     assert fos > 0.975                  # higher than the water-crack value
+
+
+def test_v043_clay_circle_as_recovered_touches_the_base():
+    """GM-128: the clay circle as the search recovered it, 3.5 mm under the
+    firm base, touches it (within 9 mm, a thousandth of the 9 m model) and
+    reads the pinned circle's FOS within 0.0002; 12 mm under is refused."""
+    xc, yc, r = _CLAY_CIRC
+    pinned = analyze_slope(_geom("clay"), xc=xc, yc=yc, radius=r,
+                           method="spencer").FOS
+    as_found = analyze_slope(_geom("clay"), xc=xc, yc=yc, radius=yc + 0.0035,
+                             method="spencer").FOS
+    assert as_found == pytest.approx(pinned, abs=2e-4)
+    with pytest.raises(ValueError, match="below the bottom of the deepest"):
+        analyze_slope(_geom("clay"), xc=xc, yc=yc, radius=yc + 0.012,
+                      method="spencer")

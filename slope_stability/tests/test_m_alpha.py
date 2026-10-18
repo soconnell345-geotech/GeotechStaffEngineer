@@ -403,9 +403,10 @@ def test_twice_the_slices_keeps_the_reason():
     is warned on. A finer slicing that cannot be built is said in the
     choice and not warned of. Taylor's deep circle was that case (on 60
     slices one slice midpoint fell in a dip of millimetres under the
-    base); since GM-134 the base's crossings are slice boundaries, so a
-    circle under the base is refused at every count and the circle the
-    search keeps reads 0.705 on 30 slices and 0.706 on 60."""
+    base); since GM-134 the slice count no longer decides it, and since
+    GM-128 a circle within a thousandth of the model's height of the base
+    touches it at every count: the circle the search keeps reads 0.705 on
+    30 slices and 0.706 on 60."""
     from slope_stability.reinforcement import Anchor
     s85 = SlopeGeometry(
         surface_points=[(15, 10), (25, 30), (57, 30)],
@@ -434,7 +435,7 @@ def test_twice_the_slices_keeps_the_reason():
                 refused=None, why=None, fos_fine=None, m_alpha_min_fine=None,
                 refused_fine="geometry",
                 why_fine="Slip surface passes below the bottom of the "
-                         "deepest soil layer over 1 of 60 slices")
+                         "deepest soil layer: 0.050 m below it at x = 9.30")
     basis = m_alpha_choice(0, "bishop", conf)["basis"]
     assert "on 60 slices it is not admissible" in basis
     assert "below the bottom of the deepest soil layer" in basis

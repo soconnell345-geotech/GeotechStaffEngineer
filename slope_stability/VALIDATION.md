@@ -556,6 +556,9 @@ Janbu surface 1.224 -> 1.203 against 1.214 (0.9 % below against 0.8 %
 above). A circle under the deepest layer is now refused at every slice
 count (a slice boundary falls where it crosses the base); before, one 8 mm
 under it lost two toe slices at 30 slices and scored, and was refused at 90.
+(Since GM-128, B18, a given circle within a thousandth of the model's height
+of the base touches it and is kept at every count; a search keeps to the
+model.)
 On a phi = 0 circle Spencer and the GLE now equal Bishop to about 0.1 %
 rather than exactly: the chord's normal passes a hair off the centre and
 `gle.py` takes its arm as it is. Search times (default search, laptop, best
@@ -625,6 +628,54 @@ circle passing above the toe closed by a crack at the crest; the circles
 passing above the toe leave such circles out by design (GM-122, GM-127).
 Nothing pinned in the slope suite, the slope validation examples or
 `funhouse_agent -k slope` moved.
+
+---
+
+## B18 — A surface touching the model's base (GM-128, 2026-10-18)
+[DESIGN.md "A surface touching the model's base". Tests:
+`tests/test_duncan_verification.py::TestDuncanExample1::test_taylor_circle_on_the_base_at_any_slice_count`,
+`tests/test_search_robustness.py::test_dips_below_base`,
+`validation_examples/test_published_v043_slope_reinforced.py::test_v043_clay_circle_as_recovered_touches_the_base`.]
+
+The depth of a surface under the bottom of the deepest layer is measured on
+the surface, not on its slices. A given surface within a thousandth of the
+model's height of the base touches it and keeps every slice; one deeper is
+refused at any count; a search keeps to surfaces inside the model.
+
+Taylor's critical circle, D = 2 (Duncan Ex 1 profile, 3 H of level ground
+each side; centre 1 H past the crest, 1.908 H high; Taylor 0.706), Bishop:
+
+| Slices | Tangent, as filed (before GM-134) | Tangent | 1 cm under | 5 / 10 cm under |
+|---:|---|---:|---:|---|
+| 25 | | 0.7045 | 0.7045 | refused |
+| 30 | kept | 0.7052 | 0.7052 | refused |
+| 40 | refused | 0.7055 | 0.7055 | refused |
+| 50 | kept | 0.7059 | 0.7059 | refused |
+| 60 | refused | 0.7060 | 0.7060 | refused |
+| 80 | refused | 0.7062 | 0.7062 | refused |
+| 100 | | 0.7063 | 0.7063 | refused |
+
+Tolerance 0.024 m (the model 24.4 m high). Within it the FOS falls with
+depth by no more than the slice count moves it: Taylor 0.02 %, V-043 0.06 %,
+Slide2 #85's 'discard' circles 0.14-0.26 %.
+
+What moved, every recorded result of the slope suite (`-m "not slow"`), the
+slope validation examples, `funhouse_agent -k slope` and the worked
+examples, before and after:
+
+| Case | Before | After | Why |
+|---|---:|---:|---|
+| V-043 clay circle as the search recovered it (3.5 mm under the base), Spencer | refused | 1.0408 | touches the base (tolerance 0.009 m); the pinned circle, 0.1 mm above, reads 1.0409 |
+| Slide2 #85 toe circle given, Bishop (and the agent's two tests of it) | 1.37156 | 1.37152 | the base's crossing at its toe is no longer a slice boundary |
+| Taylor D = 3, default Bishop search | 0.677377 | 0.677376 | another centre in the same flat valley |
+| Slide2 #85 'discard' searches, the toe family's candidate (not governing) | 1.5584 | 1.5583 | as the toe circle above |
+
+Nothing else moved, and no search result rose. Granted the thousandth, the
+searches would have ended that far under the base: Taylor 0.7049 -> 0.7048,
+V-031 Spencer 1.4174 -> 1.4160, V-043 Spencer 1.1859 -> 1.1853, Slide2 #85
+'discard' 1.511 -> 1.506 and 1.316 -> 1.314, and #85 with its support
+1.372 -> 1.01 (a toe circle pivoting about the toe into the base, its
+support uncounted); they keep to the model instead.
 
 ---
 

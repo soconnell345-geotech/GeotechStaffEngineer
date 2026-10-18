@@ -492,9 +492,10 @@ def _eval_fos(geom: SlopeGeometry, slip, method: str, n_slices: int,
               tol: float) -> float:
     from slope_stability.search import _compute_fos
     # one given surface, not a search: no surface is left out for its
-    # m_alpha (GM-127), whatever a realization's strengths make of it
+    # m_alpha (GM-127), whatever a realization's strengths make of it, and
+    # one touching the model's base is kept as build_slices keeps it (GM-128)
     return _compute_fos(geom, slip, method, n_slices, tol=tol,
-                        m_alpha_check=False)
+                        m_alpha_check=False, inside_model=False)
 
 
 def _resolve_surface(geom, xc, yc, radius, slip_surface):
