@@ -132,14 +132,16 @@ _ANALYSIS_VALID_PARAMS = (
 )
 
 
-def _run_lateral_pile_analysis(params):
-    reject_unknown_params(params, _ANALYSIS_VALID_PARAMS,
-                          method="lateral_pile_analysis")
+def run_lateral_pile_analysis(params, *, method="lateral_pile_analysis"):
+    """(result, analysis) of ``lateral_pile_analysis``: the tool's own code
+    path, also run by ``calc_package.lateral_pile_package`` (GM-141).
+    ``method`` names the caller in error messages."""
+    reject_unknown_params(params, _ANALYSIS_VALID_PARAMS, method=method)
     pile = _build_pile(params)
-    require_params(params, ["layers"], method="lateral_pile_analysis")
-    check_py_layers(params["layers"], method="lateral_pile_analysis")
+    require_params(params, ["layers"], method=method)
+    check_py_layers(params["layers"], method=method)
     for l in params["layers"]:
-        require_keys(l, ["top", "bottom", "model"], method="lateral_pile_analysis")
+        require_keys(l, ["top", "bottom", "model"], method=method)
     layers = [SoilLayer(top=l["top"], bottom=l["bottom"], py_model=_build_py_model(l),
                          description=l.get("description")) for l in params["layers"]]
     analysis = LateralPileAnalysis(pile, layers)
@@ -152,7 +154,11 @@ def _run_lateral_pile_analysis(params):
         max_iterations=params.get("max_iterations", 100),
         stickup=stickup,
     )
-    return result.to_dict()
+    return result, analysis
+
+
+def _run_lateral_pile_analysis(params):
+    return run_lateral_pile_analysis(params)[0].to_dict()
 
 
 def _run_get_py_curve(params):

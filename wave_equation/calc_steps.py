@@ -57,6 +57,17 @@ def _is_drivability(result) -> bool:
 
 # ─── Public API ──────────────────────────────────────────────────────
 
+def _used(analysis, key):
+    """An input the bearing graph run used: the analysis dict's, else the
+    default of ``generate_bearing_graph``, which the run then took
+    (GM-141: the steps had a default of their own)."""
+    if key in analysis:
+        return analysis[key]
+    import inspect
+    from wave_equation.bearing_graph import generate_bearing_graph
+    return inspect.signature(generate_bearing_graph).parameters[key].default
+
+
 def get_input_summary(result, analysis) -> List[InputItem]:
     """Build input parameter table for wave equation calc package.
 
@@ -104,25 +115,33 @@ def get_input_summary(result, analysis) -> List[InputItem]:
                                    f"{cushion.thickness * 1000:.0f}", "mm"))
 
     # ── Helmet ──
-    helmet_wt = analysis.get("helmet_weight", 5.0)
+    helmet_wt = _used(analysis, "helmet_weight")
     items.append(InputItem("W_helmet", "Helmet weight",
                            f"{helmet_wt:.1f}", "kN"))
 
     # ── Pile ──
     pile = analysis.get("pile")
     if pile is not None:
+        # E as the run took it (GM-141); worked back from the segment's
+        # wave speed only when the caller did not say
+        E = analysis.get("pile_E")
+        if E is None and pile.n_segments > 0:
+            E = (pile.wave_speeds[0]**2 * pile.masses[0]
+                 / (pile.segment_areas[0] * pile.segment_lengths[0] * 1000))
         items.extend([
             InputItem("L_pile", "Pile length", f"{pile.total_length:.2f}", "m"),
             InputItem("A_pile", "Pile area",
                       f"{pile.segment_areas[0]:.6f}", "m\u00b2"),
             InputItem("E_pile", "Pile elastic modulus",
-                      f"{pile.wave_speeds[0]**2 * pile.masses[0] / (pile.segment_areas[0] * pile.segment_lengths[0] * 1000):,.0f}",
-                      "kPa") if pile.n_segments > 0 else
-            InputItem("E_pile", "Pile elastic modulus", "N/A", "kPa"),
+                      f"{E:,.0f}" if E is not None else "N/A", "kPa"),
             InputItem("N_seg", "Number of segments",
                       str(pile.n_segments), ""),
             InputItem("Z", "Pile impedance", f"{pile.impedance:.1f}", "kN-s/m"),
         ])
+        if analysis.get("pile_unit_weight") is not None:
+            items.append(InputItem("\u03b3_pile", "Pile unit weight",
+                                   f"{analysis['pile_unit_weight']:.1f}",
+                                   "kN/m\u00b3"))
 
     # ── Pile params for drivability (no PileModel yet) ──
     pile_params = analysis.get("pile_params")
@@ -138,6 +157,26 @@ def get_input_summary(result, analysis) -> List[InputItem]:
 
     # ── Soil ──
     soil = analysis.get("soil")
+    if soil is None and analysis.get("quake_side") is not None:
+        # a bearing graph run: the soil model's inputs as the run took them
+        items.extend([
+            InputItem("f_skin", "Skin friction fraction",
+                      f"{_used(analysis, 'skin_fraction'):.2f}", ""),
+            InputItem("Q_side", "Side quake",
+                      f"{_used(analysis, 'quake_side') * 1000:.1f}", "mm"),
+            InputItem("Q_toe", "Toe quake",
+                      f"{_used(analysis, 'quake_toe') * 1000:.1f}", "mm"),
+            InputItem("J_side", "Side Smith damping",
+                      f"{_used(analysis, 'damping_side'):.2f}", "s/m"),
+            InputItem("J_toe", "Toe Smith damping",
+                      f"{_used(analysis, 'damping_toe'):.2f}", "s/m"),
+            InputItem("Damping model", "Smith damping variant",
+                      _used(analysis, 'damping_model'), ""),
+            InputItem("R_ult", "Ultimate resistances run",
+                      f"{_used(analysis, 'R_min'):,.0f} to "
+                      f"{_used(analysis, 'R_max'):,.0f} "
+                      f"by {_used(analysis, 'R_step'):,.0f}", "kN"),
+        ])
     if soil is not None:
         items.extend([
             InputItem("R_ult", "Ultimate resistance (total)",

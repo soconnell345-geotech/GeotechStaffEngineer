@@ -77,6 +77,24 @@ def _get(analysis, key, default=None):
     return getattr(analysis, key, default)
 
 
+def _used(analysis, key):
+    """An input the cantilever run used: the analysis dict's, else the
+    default of ``analyze_cantilever_wall``, which the run then took
+    (GM-141: the steps had defaults of their own)."""
+    if isinstance(analysis, dict) and key in analysis:
+        return analysis[key]
+    import inspect
+    from retaining_walls.cantilever import analyze_cantilever_wall
+    default = inspect.signature(
+        analyze_cantilever_wall).parameters[key].default
+    if default is inspect.Parameter.empty:
+        raise ValueError(
+            f"retaining_walls calc steps: the analysis gives no {key}, "
+            f"which analyze_cantilever_wall requires; pass the inputs the "
+            f"run was given")
+    return default
+
+
 # ════════════════════════════════════════════════════════════════════
 #  INPUT SUMMARY
 # ════════════════════════════════════════════════════════════════════
@@ -105,17 +123,18 @@ def get_input_summary(result, analysis) -> List[InputItem]:
 
 def _input_summary_cantilever(result, analysis) -> List[InputItem]:
     """Input summary for cantilever walls."""
+    # the inputs the run used (the cantilever_wall tool's, GM-141)
     geom = _get(analysis, "geom")
-    gamma = _get(analysis, "gamma_backfill", 18.0)
-    phi = _get(analysis, "phi_backfill", 30.0)
-    c = _get(analysis, "c_backfill", 0.0)
-    method = _get(analysis, "pressure_method", "rankine")
-    gamma_c = _get(analysis, "gamma_concrete", 24.0)
-    phi_f = _get(analysis, "phi_foundation")
-    c_f = _get(analysis, "c_foundation", 0.0)
-    q_all = _get(analysis, "q_allowable")
-    FOS_s = _get(analysis, "FOS_sliding", 1.5)
-    FOS_o = _get(analysis, "FOS_overturning", 2.0)
+    gamma = _used(analysis, "gamma_backfill")
+    phi = _used(analysis, "phi_backfill")
+    c = _used(analysis, "c_backfill")
+    method = _used(analysis, "pressure_method")
+    gamma_c = _used(analysis, "gamma_concrete")
+    phi_f = _used(analysis, "phi_foundation")
+    c_f = _used(analysis, "c_foundation")
+    q_all = _used(analysis, "q_allowable")
+    FOS_s = result.FOS_sliding_required
+    FOS_o = result.FOS_overturning_required
 
     items = [
         InputItem("Type", "Wall type", "Cantilever", ""),
@@ -240,17 +259,18 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
 
 def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
     """Calculation steps for cantilever retaining wall."""
+    # the inputs the run used (the cantilever_wall tool's, GM-141)
     geom = _get(analysis, "geom")
-    gamma = _get(analysis, "gamma_backfill", 18.0)
-    phi = _get(analysis, "phi_backfill", 30.0)
-    c = _get(analysis, "c_backfill", 0.0)
-    method = _get(analysis, "pressure_method", "rankine")
-    gamma_c = _get(analysis, "gamma_concrete", 24.0)
-    phi_f = _get(analysis, "phi_foundation", phi)
-    c_f = _get(analysis, "c_foundation", 0.0)
-    q_all = _get(analysis, "q_allowable")
-    FOS_s_req = _get(analysis, "FOS_sliding", 1.5)
-    FOS_o_req = _get(analysis, "FOS_overturning", 2.0)
+    gamma = _used(analysis, "gamma_backfill")
+    phi = _used(analysis, "phi_backfill")
+    c = _used(analysis, "c_backfill")
+    method = _used(analysis, "pressure_method")
+    gamma_c = _used(analysis, "gamma_concrete")
+    phi_f = _used(analysis, "phi_foundation")
+    c_f = _used(analysis, "c_foundation")
+    q_all = _used(analysis, "q_allowable")
+    FOS_s_req = result.FOS_sliding_required
+    FOS_o_req = result.FOS_overturning_required
 
     if phi_f is None:
         phi_f = phi
@@ -466,14 +486,14 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
     # the package printed (2/3)phi and no passive even when delta_base,
     # base_adhesion or include_passive set them otherwise). The module's own
     # check_sliding gives the numbers, so the printout cannot drift from it.
-    delta_base_in = _get(analysis, "delta_base")
-    adhesion_in = _get(analysis, "base_adhesion")
-    passive_in = bool(_get(analysis, "include_passive", False))
+    delta_base_in = _used(analysis, "delta_base")
+    adhesion_in = _used(analysis, "base_adhesion")
+    passive_in = bool(_used(analysis, "include_passive"))
     try:
         from retaining_walls.cantilever import check_sliding
         used = check_sliding(
             geom, gamma, phi, c, phi_f, c_f, gamma_c, FOS_s_req, method,
-            passive_in, _get(analysis, "gamma_foundation"),
+            passive_in, _used(analysis, "gamma_foundation"),
             delta_base=delta_base_in, base_adhesion=adhesion_in)
         delta_b = float(used["delta_base_deg"])
         ca = float(used["base_adhesion_kPa"])
@@ -1216,9 +1236,9 @@ def _plot_cantilever_section(result, analysis):
     import matplotlib.patches as patches
 
     geom = _get(analysis, "geom")
-    gamma = _get(analysis, "gamma_backfill", 18.0)
-    phi = _get(analysis, "phi_backfill", 30.0)
-    method = _get(analysis, "pressure_method", "rankine")
+    gamma = _used(analysis, "gamma_backfill")
+    phi = _used(analysis, "phi_backfill")
+    method = _used(analysis, "pressure_method")
 
     H = geom.wall_height
     B = geom.base_width
@@ -1406,7 +1426,7 @@ def _plot_bearing_pressure(result, analysis):
     ax.axvline(x=B / 2.0, color='#666', linestyle=':', linewidth=0.8,
                label='Base center')
 
-    q_all = _get(analysis, "q_allowable")
+    q_all = _used(analysis, "q_allowable")
     if q_all is not None:
         ax.axhline(y=q_all, color='#16a34a', linestyle='--', linewidth=1.2,
                    label=f'q_allowable = {q_all:.0f} kPa')

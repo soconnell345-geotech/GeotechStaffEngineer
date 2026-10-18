@@ -646,8 +646,8 @@ class TestPavement:
 class TestCalcPackages:
     def test_axial_and_drilled_and_sheet_layers_refused(self):
         _refused("calc_package", "axial_pile_package",
-                 {"pile_area": 0.01, "pile_perimeter": 1.2,
-                  "pile_tip_area": 0.1, "pile_width": 0.4, "pile_length": 15,
+                 {"pile_type": "h_pile", "designation": "HP12x53",
+                  "pile_length": 15,
                   "soil_layers": [{"soil_type": "cohesionless",
                                    "thickness": 20, "unit_weight": 19,
                                    "phi": 32}]},
@@ -663,15 +663,20 @@ class TestCalcPackages:
                                    "phi_deg": 32}]},
                  r"soil_layers\[0\].*phi_deg -> phi")
 
-    def test_drilled_package_says_where_rational_inputs_go(self):
-        msg = _refused("calc_package", "drilled_shaft_package",
-                       {"diameter": 1.0, "length": 12,
-                        "soil_layers": [{"soil_type": "cohesionless",
-                                         "thickness": 15, "unit_weight": 19,
-                                         "phi": 33, "N1_60": 20, "OCR": 2}]},
-                       r"\['N1_60', 'OCR'\]", r"beta_method='rational'")
-        assert "-> N60" not in msg                 # a different quantity
-        assert msg.count("This package runs") == 1
+    def test_drilled_package_takes_rational_inputs_as_the_tool_does(
+            self, tmp_path):
+        # The package runs drilled_shaft_capacity (GM-141), beta_method
+        # included, so the rational-beta layer inputs reach it.
+        layers = [{"soil_type": "cohesionless", "thickness": 15,
+                   "unit_weight": 19, "phi": 33, "N1_60": 20, "OCR": 2}]
+        tool = _registry("drilled_shaft")["drilled_shaft_capacity"](
+            {"diameter": 1.0, "length": 12, "layers": layers,
+             "beta_method": "rational"})
+        package = _registry("calc_package")["drilled_shaft_package"](
+            {"diameter": 1.0, "length": 12, "soil_layers": layers,
+             "beta_method": "rational",
+             "output_path": str(tmp_path / "ds.html")})
+        assert package["Q_ultimate_kN"] == tool["Q_ultimate_kN"]
 
     def test_sheet_package_reads_layers_as_the_tool_does(self, tmp_path):
         """The same layer dicts (aliases included) work for the analysis
@@ -703,8 +708,7 @@ class TestCalcPackages:
 
         def package(layer, name):
             return _registry("calc_package")["axial_pile_package"](
-                {"pile_area": 0.01, "pile_perimeter": 1.2,
-                 "pile_tip_area": 0.09, "pile_width": 0.3,
+                {"pile_type": "h_pile", "designation": "HP12x53",
                  "pile_length": 20.0, "soil_layers": [layer],
                  "output_path": str(tmp_path / name)})
         plain = package(lay, "a.html")

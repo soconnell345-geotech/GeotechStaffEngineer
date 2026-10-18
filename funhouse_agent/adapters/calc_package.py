@@ -1,9 +1,11 @@
 """Calc package adapter — flat dict → analysis → generate_calc_package → summary dict.
 
 Generates Mathcad-style HTML/LaTeX/PDF calculation packages for 13 analysis
-modules.  Each handler builds domain objects, runs the analysis, and calls
-generate_calc_package().  The response includes a file path and key results
-(never the full HTML, which would exceed the 8000-char ReAct truncation limit).
+modules.  A package runs its analysis tool: it takes the tool's parameters
+and runs the tool's own code path (``_run_tool``, GM-141), then calls
+generate_calc_package() with the result and the inputs that run used.  The
+response includes a file path and key results (never the full HTML, which
+would exceed the 8000-char ReAct truncation limit).
 
 ``slope_report_package`` is the one-call slope REPORT for a critical-surface
 SEARCH run (F7): it runs the search (no fixed circle), re-analyzes the critical
@@ -22,9 +24,7 @@ import os
 import re
 from datetime import datetime
 
-from funhouse_agent.adapters import (apply_aliases, check_nested_list,
-                                     declare_aliases, declare_applies_when,
-                                     require_keys, require_params,
+from funhouse_agent.adapters import (declare_applies_when, require_params,
                                      reject_unknown_params)
 from funhouse_agent._fileio import (
     default_output_dir, find_in_working_folder, rescue_note, rescue_write,
@@ -219,7 +219,8 @@ def _render_figures(params: dict) -> dict:
 
 
 def _build_response(module: str, result, analysis, params: dict,
-                    analysis_type: str, extra: dict = None) -> dict:
+                    analysis_type: str, extra: dict = None,
+                    run: "_ToolRun" = None) -> dict:
     """Run generate_calc_package and return a summary response dict.
 
     Always saves to disk.  Auto-generates output_path if not provided.
@@ -322,6 +323,9 @@ def _build_response(module: str, result, analysis, params: dict,
         response["tables_error"] = table_error
     if extra:
         response.update(extra)
+    if run is not None and run.defaults_used:
+        # the defaults the tool's run left in force (GM-141)
+        response["defaults_used"] = dict(run.defaults_used)
     return response
 
 
@@ -356,46 +360,425 @@ def _save_tables(tables, names, out_dir) -> list:
 
 
 # ---------------------------------------------------------------------------
+# A package runs its analysis tool (GM-141)
+# ---------------------------------------------------------------------------
+# Each package below takes its inputs as its analysis tool takes them (the
+# tool's METHOD_INFO: names, aliases, required inputs, defaults and units),
+# runs the tool's own code path (``run_<tool>`` in the tool's adapter) and
+# prints the result with the inputs that run used. Until GM-141 each
+# package re-implemented its tool and drifted from it: units documented in
+# Pa where the tool takes kPa, a pile layout dropped, other defaults.
+#
+# Per package: the tool adapter; the tool run per value of the selector
+# input (no selector: one tool); the names the package took before that its
+# tool takes under another name, kept (per selector value); keys of list
+# items likewise; the package's own inputs beside the tool's; and the
+# older names it no longer takes, with the reason.
+
+_AXIAL_SECTION = (
+    "axial_pile_capacity builds the section from pile_type with diameter "
+    "and wall_thickness (pipe), width (concrete) or designation (H-pile); "
+    "it takes no custom area, perimeter or tip area")
+
+_PACKAGE_TOOLS = {
+    "bearing_capacity_package": {
+        "adapter": "bearing_capacity",
+        "tools": {None: "bearing_capacity_analysis"},
+    },
+    "lateral_pile_package": {
+        "adapter": "lateral_pile",
+        "tools": {None: "lateral_pile_analysis"},
+        "older": {"soil_layers": "layers"},
+        "older_item_keys": {"layers": {"py_model": "model"}},
+    },
+    "settlement_package": {
+        "adapter": "settlement",
+        "tools": {None: "combined_settlement_analysis"},
+        "older": {"Es_immediate": "Es", "footing_shape": "shape"},
+    },
+    "axial_pile_package": {
+        "adapter": "axial_pile",
+        "tools": {None: "axial_pile_capacity"},
+        "older": {"soil_layers": "layers"},
+        "dropped": {k: _AXIAL_SECTION for k in (
+            "pile_area", "pile_perimeter", "pile_tip_area", "pile_width",
+            "pile_depth", "pile_name")},
+    },
+    "drilled_shaft_package": {
+        "adapter": "drilled_shaft",
+        "tools": {None: "drilled_shaft_capacity"},
+        "older": {"soil_layers": "layers"},
+    },
+    "downdrag_package": {
+        "adapter": "downdrag",
+        "tools": {None: "downdrag_analysis"},
+        "older": {"soil_layers": "layers"},
+    },
+    "seismic_package": {
+        "adapter": "seismic_geotech",
+        "selector": ("analysis_type", "site_classification",
+                     "Which analysis to run and report: the "
+                     "site_classification, seismic_earth_pressure or "
+                     "liquefaction_evaluation tool."),
+        "tools": {"site_classification": "site_classification",
+                  "seismic_earth_pressure": "seismic_earth_pressure",
+                  "liquefaction": "liquefaction_evaluation"},
+        "selector_values": {"liquefaction_evaluation": "liquefaction"},
+        "older": {"liquefaction": {
+            "layer_depths": "depths", "layer_N160": "N160",
+            "layer_FC": "FC", "layer_gamma": "gamma", "M": "magnitude"}},
+    },
+    "retaining_wall_package": {
+        "adapter": "retaining_walls",
+        "selector": ("wall_type", "cantilever",
+                     "The wall to analyse and report: 'cantilever' (the "
+                     "cantilever_wall tool). An MSE wall has no package; "
+                     "run the mse_wall tool."),
+        "tools": {"cantilever": "cantilever_wall"},
+        "selector_values": {"cantilever_wall": "cantilever"},
+        "not_packaged": {"mse": (
+            "the MSE steps work the earth pressure out again from "
+            "phi_backfill, level backfill only, where the mse_wall tool "
+            "takes the retained fill's own phi, a sloping backfill and "
+            "traffic; run the mse_wall tool")},
+        "older": {"cantilever": {
+            "FOS_sliding": "FOS_sliding_required",
+            "FOS_overturning": "FOS_overturning_required"}},
+    },
+    "ground_improvement_package": {
+        "adapter": "ground_improvement",
+        "selector": ("method", "wick_drains",
+                     "Which method to analyse and report: the wick_drains, "
+                     "aggregate_piers, surcharge_preloading ('surcharge') "
+                     "or vibro_compaction ('vibro') tool."),
+        "tools": {"wick_drains": "wick_drains",
+                  "aggregate_piers": "aggregate_piers",
+                  "surcharge": "surcharge_preloading",
+                  "vibro": "vibro_compaction"},
+        "selector_values": {"surcharge_preloading": "surcharge",
+                            "vibro_compaction": "vibro"},
+        "older": {"aggregate_piers": {"E_pier": "E_column"},
+                  "surcharge": {"target_consolidation": "target_U"},
+                  "vibro": {"N1_before": "initial_N_spt",
+                            "N1_target": "target_N_spt"}},
+    },
+    "wave_equation_package": {
+        "adapter": "wave_equation",
+        "tools": {None: "bearing_graph"},
+    },
+    "pile_group_package": {
+        "adapter": "pile_group",
+        "selector": ("method_6dof", False,
+                     "False: the pile_group_simple tool (vertical load and "
+                     "moments on a rigid cap); True: the pile_group_6dof "
+                     "tool (all six load components; needs the pile "
+                     "stiffnesses)."),
+        "tools": {False: "pile_group_simple", True: "pile_group_6dof"},
+        "own": {"pile_diameter": {
+            "type": "float", "required": False,
+            "description": "Pile diameter or width (m). With n_rows, n_cols "
+                           "and spacing, the package adds the "
+                           "Converse-Labarre group efficiency, as the "
+                           "group_efficiency tool works it out."}},
+        "dropped": {"layout": {
+            "reason": "the layout is rectangular when n_rows and n_cols "
+                      "are given, else the piles list",
+            "accepts": ["rectangular"]}},
+    },
+    "sheet_pile_package": {
+        "adapter": "sheet_pile",
+        "selector": ("wall_type", "cantilever",
+                     "Which wall to analyse and report: the cantilever_wall "
+                     "or anchored_wall tool."),
+        "tools": {"cantilever": "cantilever_wall",
+                  "anchored": "anchored_wall"},
+        "selector_values": {"cantilever_wall": "cantilever",
+                            "anchored_wall": "anchored"},
+        "older": {"cantilever": {"soil_layers": "layers"},
+                  "anchored": {"soil_layers": "layers"}},
+    },
+    "pavement_design_package": {
+        "adapter": "pavement_design_adapter",
+        "selector": ("design_type", "flexible",
+                     "Which procedure to run and report: AASHTO 1993 "
+                     "flexible or rigid (flexible_pavement_design, "
+                     "rigid_pavement_design), UFC 3-250-01 flexible_ufc or "
+                     "rigid_ufc, or compare (compare_pavement_methods)."),
+        "tools": {"flexible": "flexible_pavement_design",
+                  "rigid": "rigid_pavement_design",
+                  "flexible_ufc": "flexible_pavement_design_ufc",
+                  "rigid_ufc": "rigid_pavement_design_ufc",
+                  "compare": "compare_pavement_methods"},
+        "selector_values": {"ufc": "flexible_ufc",
+                            "ufc_flexible": "flexible_ufc",
+                            "ufc_rigid": "rigid_ufc",
+                            "comparison": "compare"},
+    },
+}
+
+
+def _tool_adapter(package: str):
+    """The adapter module of ``package``'s analysis tool."""
+    import importlib
+    return importlib.import_module(
+        "funhouse_agent.adapters." + _PACKAGE_TOOLS[package]["adapter"])
+
+
+def _older_names(spec: dict, value) -> dict:
+    """The older names a package takes for the tool run at ``value``."""
+    older = spec.get("older", {})
+    return older.get(value, {}) if "selector" in spec else older
+
+
+class _ToolRun:
+    """A package's run of its tool: the selector value, the tool, the
+    parameters it was given, what its runner returned, the package's own
+    inputs and the defaults the run left in force (the tool's, and the
+    selector's when it was left out)."""
+
+    def __init__(self, value, tool, params, out, own, defaults_used):
+        self.value, self.tool, self.params = value, tool, params
+        self.out, self.own = out, own
+        self.defaults_used = defaults_used
+
+
+def _run_tool(package: str, params: dict) -> _ToolRun:
+    """Run ``package``'s analysis tool on the package's parameters.
+
+    The header fields and the selector are taken off, a name the package
+    took before is put under the tool's, and the tool's own check of the
+    names runs (BACKLOG GM-110), so the package refuses what its tool
+    refuses, with the tool's did-you-mean; an input the tool would use is
+    never dropped. Then ``run_<tool>``, the tool's own code path, runs."""
+    from funhouse_agent.adapters import refused_reason, without_unused
+    from funhouse_agent.dispatch import _check_parameter_names
+
+    spec = _PACKAGE_TOOLS[package]
+    p = {k: v for k, v in params.items() if k not in _COMMON_PARAMS}
+    value = None
+    if "selector" in spec:
+        name, default, _ = spec["selector"]
+        given = p.pop(name, default)
+        value = given
+        if isinstance(given, str):
+            value = given.strip().lower()
+            value = spec.get("selector_values", {}).get(value, value)
+        why = spec.get("not_packaged", {}).get(value)
+        if why:
+            raise ValueError(f"{package}: no package for {name}={given!r}: "
+                             f"{why}.")
+        if value not in spec["tools"]:
+            raise ValueError(
+                f"{package}: {name} must be one of {list(spec['tools'])}, "
+                f"got {given!r}.")
+    tool = spec["tools"][value]
+    own = {k: p.pop(k) for k in list(p) if k in spec.get("own", {})}
+    dropped = spec.get("dropped", {})
+    p = without_unused(p, dropped)
+    hits = sorted(k for k in p if k in dropped)
+    if hits:
+        why = {}
+        for k in hits:
+            why.setdefault(refused_reason(dropped[k]), []).append(k)
+        raise ValueError(
+            f"{package} does not take {hits}: "
+            + "; ".join(r if len(why) == 1 else f"{', '.join(ks)}: {r}"
+                        for r, ks in why.items()) + ".")
+    renamed = {}
+    for old, new in _older_names(spec, value).items():
+        if old in p:
+            if new in p:
+                raise ValueError(f"{package}: give '{new}' or its older "
+                                 f"name '{old}', not both.")
+            p[new] = p.pop(old)
+            renamed[new] = old
+
+    item_renamed = {}
+    for key, renames in spec.get("older_item_keys", {}).items():
+        if isinstance(p.get(key), list):
+            for item in p[key]:
+                if isinstance(item, dict):
+                    item_renamed.update(
+                        {renames[k]: k for k in item if k in renames
+                         and renames[k] not in item})
+            p[key] = [
+                {(renames[k] if k in renames and renames[k] not in item
+                  else k): v for k, v in item.items()}
+                if isinstance(item, dict) else item for item in p[key]]
+
+    def as_given(msg):
+        # an input given by its older name is named so in a message, and
+        # another tool of the package by the selector value that runs it
+        for new, old in renamed.items():
+            msg = re.sub(rf"\b{re.escape(new)}\[", f"{old}[", msg)
+        for new, old in item_renamed.items():
+            msg = msg.replace(f"'{new}'", f"'{old}'")
+        if "selector" in spec:
+            for v, t in spec["tools"].items():
+                if t != tool:
+                    msg = re.sub(rf"\b{re.escape(t)}\b",
+                                 f"{spec['selector'][0]}={v!r} ({t})", msg)
+        return msg
+    label = f"{package} ({tool})"
+    mod = _tool_adapter(package)
+    try:
+        _check_parameter_names(mod, tool, p)
+    except ValueError as exc:
+        msg = as_given(str(exc))
+        if msg.startswith(tool):
+            msg = msg[len(tool):].lstrip(": ")
+        if "selector" in spec:
+            # which input picks the tool that would take it
+            name = spec["selector"][0]
+            msg += (f" ({package} runs {tool} for {name}={value!r}; "
+                    + "; ".join(f"{name}={v!r} runs {t}"
+                                for v, t in spec["tools"].items()
+                                if t != tool) + ".)")
+        raise ValueError(f"{label}: {msg}") from None
+    # the run in the tool's own call context, so its choices and its
+    # defaults_used are the tool's (dispatch does the same for the tool)
+    from funhouse_agent.dispatch import (
+        _defaults_used, _given_names, _left_out)
+    from geotech_common.choices import call_inputs
+    given = set(p)
+    with call_inputs(_given_names(mod, tool, given),
+                     _left_out(mod, tool, given)) as inputs:
+        try:
+            out = getattr(mod, f"run_{tool}")(p, method=label)
+        except ValueError as exc:
+            msg = as_given(str(exc))
+            if msg == str(exc):
+                raise
+            raise ValueError(msg) from None
+    used = {}
+    if "selector" in spec and spec["selector"][0] not in params:
+        used[spec["selector"][0]] = spec["selector"][1]
+    used.update(_defaults_used(mod, tool, given, p, inputs.reported))
+    return _ToolRun(value, tool, p, out, own, used)
+
+
+def _when(condition, selector: str, value):
+    """``condition`` (an ``applies_when``) and the selector at ``value``."""
+    if condition is False:
+        return False
+    if condition is None:
+        return {selector: [value]}
+    if isinstance(condition, list):
+        return [{**c, selector: [value]} for c in condition]
+    return {**condition, selector: [value]}
+
+
+def _union_spec(selector: str, entries, n_tools: int) -> dict:
+    """One parameter spec of a package that runs several tools, from each
+    tool's spec of it (``entries``: (selector value, spec)): its default
+    applies only where a tool that takes it runs (GM-119)."""
+    import copy
+    specs = [s for _, s in entries]
+    out = copy.deepcopy(specs[0])
+    descriptions = []
+    for value, s in entries:
+        d = s.get("description", "")
+        if d not in [x for _, x in descriptions]:
+            descriptions.append((value, d))
+    if len(descriptions) > 1:
+        out["description"] = " | ".join(f"{selector}={v}: {d}"
+                                        for v, d in descriptions)
+    types = []
+    for s in specs:
+        for t in str(s.get("type", "")).split("|"):
+            if t and t not in types:
+                types.append(t)
+    if types:
+        out["type"] = "|".join(types)
+    every = len(entries) == n_tools
+    required = [v for v, s in entries if s.get("required")]
+    out["required"] = every and len(required) == n_tools
+    if required and not out["required"]:
+        out["description"] = (f"Required when {selector} is "
+                              + " or ".join(map(str, required)) + ". "
+                              + out.get("description", ""))
+    defaults = [repr(s.get("default")) for s in specs]
+    if len(set(defaults)) > 1:
+        # each tool's own default, said; the run lists the one it used
+        out.pop("default", None)
+        out["description"] = (
+            "Default: " + "; ".join(
+                f"{v!s} {s['default']!r}" for v, s in entries
+                if s.get("default") is not None)
+            + f" ({selector}). " + out.get("description", ""))
+    allowed = [s.get("allowed_values") for s in specs]
+    if any(a is not None for a in allowed) and len(
+            {repr(a) for a in allowed}) > 1:
+        out["allowed_values"] = sorted({v for a in allowed if a
+                                        for v in a}, key=str)
+    if every and all(s.get("applies_when") is None for s in specs):
+        out.pop("applies_when", None)
+    else:
+        conditions = []
+        for value, s in entries:
+            c = _when(s.get("applies_when"), selector, value)
+            if c is False:
+                continue
+            conditions.extend(c if isinstance(c, list) else [c])
+        out["applies_when"] = (conditions[0] if len(conditions) == 1
+                               else conditions or False)
+    return out
+
+
+def _package_parameters(package: str) -> dict:
+    """A package's ``parameters``, ``parameter_aliases`` and
+    ``refused_parameters``: its tool's (GM-141), one source, with the
+    header fields, the selector, the package's own inputs and the older
+    names it still takes. A package that runs several tools takes the
+    union of their parameters (:func:`_union_spec`). A name one tool
+    refuses and another takes is left to the run's own check."""
+    import copy
+    spec = _PACKAGE_TOOLS[package]
+    info = _tool_adapter(package).METHOD_INFO
+    tools = spec["tools"]
+    params = {}
+    selector = spec.get("selector")
+    if selector:
+        name, default, doc = selector
+        params[name] = {
+            "type": "bool" if isinstance(default, bool) else "str",
+            "required": False, "default": default,
+            "allowed_values": list(tools), "description": doc}
+    entries = {}
+    for value, tool in tools.items():
+        for pname, pspec in info[tool]["parameters"].items():
+            entries.setdefault(pname, []).append((value, pspec))
+    for pname, found in entries.items():
+        params[pname] = (_union_spec(selector[0], found, len(tools))
+                         if selector else copy.deepcopy(found[0][1]))
+    params.update(copy.deepcopy(spec.get("own", {})))
+    params.update(_COMMON_PARAMS)
+    aliases, refused = {}, {}
+    for value, tool in tools.items():
+        aliases.update(info[tool].get("parameter_aliases") or {})
+        refused.update(info[tool].get("refused_parameters") or {})
+        aliases.update(_older_names(spec, value))
+    out = {"parameters": params}
+    aliases = {a: c for a, c in aliases.items() if a not in params}
+    if aliases:
+        out["parameter_aliases"] = aliases
+    refused = {k: v for k, v in refused.items() if k not in params}
+    refused.update(spec.get("dropped", {}))
+    if refused:
+        out["refused_parameters"] = refused
+    return out
+
+
+# ---------------------------------------------------------------------------
 # 1. Bearing Capacity
 # ---------------------------------------------------------------------------
 
 def _generate_bearing_capacity_package(params: dict) -> dict:
-    from bearing_capacity.footing import Footing
-    from bearing_capacity.soil_profile import SoilLayer, BearingSoilProfile
-    from bearing_capacity.capacity import BearingCapacityAnalysis
-
-    require_params(params, ["width", "unit_weight"],
-                   method="bearing_capacity_package")
-
-    footing = Footing(
-        width=params["width"],
-        length=params.get("length"),
-        depth=params.get("depth", 0.0),
-        shape=params.get("shape", "strip"),
-        base_tilt=params.get("base_tilt", 0.0),
-        eccentricity_B=params.get("eccentricity_B", 0.0),
-        eccentricity_L=params.get("eccentricity_L", 0.0),
-    )
-    layer1 = SoilLayer(
-        cohesion=params.get("cohesion", 0.0),
-        friction_angle=params.get("friction_angle", 0.0),
-        unit_weight=params["unit_weight"],
-    )
-    soil = BearingSoilProfile(layer1=layer1, gwt_depth=params.get("gwt_depth"))
-    analysis = BearingCapacityAnalysis(
-        footing=footing, soil=soil,
-        load_inclination=params.get("load_inclination", 0.0),
-        ground_slope=params.get("ground_slope", 0.0),
-        vertical_load=params.get("vertical_load", 0.0),
-        factor_of_safety=params.get("factor_of_safety", 3.0),
-        ngamma_method=params.get("ngamma_method"),
-        factor_method=params.get("factor_method", "vesic"),
-        failure_mode=params.get("failure_mode", "general"),
-    )
-    result = analysis.compute()
-
+    run = _run_tool("bearing_capacity_package", params)
+    result, analysis = run.out
     return _build_response(
         "bearing_capacity", result, analysis, params,
+        run=run,
         analysis_type="Bearing Capacity",
         extra={
             "q_ultimate_kPa": round(result.q_ultimate, 1),
@@ -410,66 +793,11 @@ def _generate_bearing_capacity_package(params: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _generate_lateral_pile_package(params: dict) -> dict:
-    from lateral_pile import Pile, LateralPileAnalysis
-    from lateral_pile.soil import SoilLayer
-    # Same p-y construction/validation as lateral_pile.lateral_pile_analysis,
-    # so both tools accept identical layer dicts and fail with the same
-    # actionable messages (model names, required keys) instead of raw
-    # KeyError/TypeError.
-    from funhouse_agent.adapters.lateral_pile import (
-        _build_py_model, check_py_layers,
-    )
-
-    require_params(
-        params, ["pile_length", "pile_diameter", "pile_E", "soil_layers"],
-        method="lateral_pile_package",
-        valid=["pile_length", "pile_diameter", "pile_E", "pile_thickness",
-               "moment_of_inertia", "soil_layers", "Vt", "Mt", "Q",
-               "head_condition", "output_path", "format", "project_name",
-               "project_number", "engineer", "checker", "company", "date"],
-    )
-
-    pile = Pile(
-        length=params["pile_length"],
-        diameter=params["pile_diameter"],
-        thickness=params.get("pile_thickness"),
-        E=params["pile_E"],
-        moment_of_inertia=params.get("moment_of_inertia"),
-    )
-
-    layers, dicts = [], []
-    for ld in params["soil_layers"]:
-        d = dict(ld)
-        # The analysis tool calls this key 'model'; accept both spellings.
-        if d.get("model") is None and d.get("py_model") is not None:
-            d["model"] = d.pop("py_model")
-        if d.get("model") is None:
-            raise ValueError(
-                "lateral_pile_package: each soil_layers[] dict requires "
-                "'py_model' (p-y model name; 'model' also accepted) "
-                f"(got keys {sorted(ld.keys())})."
-            )
-        dicts.append(d)
-    check_py_layers(dicts, method="lateral_pile_package",
-                    label="soil_layers")
-    for d in dicts:
-        require_keys(d, ["top", "bottom"], method="lateral_pile_package",
-                     item_label="soil_layers[]")
-        layers.append(SoilLayer(
-            top=d["top"], bottom=d["bottom"],
-            py_model=_build_py_model(d), description=d.get("description"),
-        ))
-
-    analysis = LateralPileAnalysis(pile, layers)
-    result = analysis.solve(
-        Vt=params.get("Vt", 0.0),
-        Mt=params.get("Mt", 0.0),
-        Q=params.get("Q", 0.0),
-        head_condition=params.get("head_condition", "free"),
-    )
-
+    run = _run_tool("lateral_pile_package", params)
+    result, analysis = run.out
     return _build_response(
         "lateral_pile", result, analysis, params,
+        run=run,
         analysis_type="Lateral Pile",
         extra={
             "y_top_mm": round(result.y_top * 1000, 2),
@@ -695,79 +1023,11 @@ def _generate_slope_report_package(params: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _generate_settlement_package(params: dict) -> dict:
-    from settlement import SettlementAnalysis, ConsolidationLayer, SchmertmannLayer
-
-    from funhouse_agent.adapters.settlement import (
-        _CONSOLIDATION_KEY_HINTS, _CONSOLIDATION_KEYS,
-        _SCHMERTMANN_KEY_HINTS, _SCHMERTMANN_KEYS,
-    )
-    check_nested_list(params.get("consolidation_layers"),
-                      _CONSOLIDATION_KEYS, method="settlement_package",
-                      label="consolidation_layers",
-                      hints=_CONSOLIDATION_KEY_HINTS)
-    check_nested_list(params.get("schmertmann_layers"), _SCHMERTMANN_KEYS,
-                      method="settlement_package", label="schmertmann_layers",
-                      hints=_SCHMERTMANN_KEY_HINTS)
-
-    consol_layers = None
-    if params.get("consolidation_layers"):
-        consol_layers = []
-        for ld in params["consolidation_layers"]:
-            require_keys(ld, ["thickness", "depth_to_center", "e0", "Cc", "Cr",
-                              "sigma_v0"],
-                         method="settlement_package",
-                         item_label="consolidation_layers[]")
-            consol_layers.append(ConsolidationLayer(
-                thickness=ld["thickness"],
-                depth_to_center=ld["depth_to_center"],
-                e0=ld["e0"],
-                Cc=ld["Cc"],
-                Cr=ld["Cr"],
-                sigma_v0=ld["sigma_v0"],
-                sigma_p=ld.get("sigma_p"),
-                description=ld.get("description", ""),
-            ))
-
-    schm_layers = None
-    if params.get("schmertmann_layers"):
-        schm_layers = []
-        for ld in params["schmertmann_layers"]:
-            require_keys(ld, ["depth_top", "depth_bottom", "Es"],
-                         method="settlement_package",
-                         item_label="schmertmann_layers[]")
-            schm_layers.append(SchmertmannLayer(
-                depth_top=ld["depth_top"],
-                depth_bottom=ld["depth_bottom"],
-                Es=ld["Es"],
-            ))
-
-    # L not given: L = B, as settlement.settlement_analysis takes it (GM-120:
-    # it was 1.0 m whatever B was).
-    B = params.get("B", 1.0)
-    analysis = SettlementAnalysis(
-        q_applied=params.get("q_applied", 0.0),
-        q_overburden=params.get("q_overburden", 0.0),
-        B=B,
-        L=params.get("L", B),
-        footing_shape=params.get("footing_shape", "square"),
-        stress_method=params.get("stress_method", "2:1"),
-        immediate_method=params.get("immediate_method", "elastic"),
-        Es_immediate=params.get("Es_immediate"),
-        nu=params.get("nu", 0.3),
-        schmertmann_layers=schm_layers,
-        time_years_schmertmann=params.get("time_years_schmertmann", 0.0),
-        consolidation_layers=consol_layers,
-        cv=params.get("cv"),
-        Hdr=params.get("Hdr"),
-        drainage=params.get("drainage", "double"),
-        C_alpha=params.get("C_alpha"),
-        e0_secondary=params.get("e0_secondary", 1.0),
-        t_secondary=params.get("t_secondary", 0.0),
-    )
-    result = analysis.compute()
-
+    run = _run_tool("settlement_package", params)
+    result, analysis = run.out
     return _build_response(
         "settlement", result, analysis, params,
+        run=run,
         analysis_type="Settlement",
         extra={
             "total_settlement_mm": round(result.total * 1000, 2),
@@ -783,58 +1043,11 @@ def _generate_settlement_package(params: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _generate_axial_pile_package(params: dict) -> dict:
-    from axial_pile import AxialPileAnalysis, AxialSoilLayer, AxialSoilProfile, PileSection
-
-    require_params(params, ["pile_area", "pile_perimeter", "pile_tip_area",
-                            "pile_width", "pile_length", "soil_layers"],
-                   method="axial_pile_package")
-
-    pile = PileSection(
-        name=params.get("pile_name", "Custom Pile"),
-        pile_type=params.get("pile_type", "h_pile"),
-        area=params["pile_area"],
-        perimeter=params["pile_perimeter"],
-        tip_area=params["pile_tip_area"],
-        width=params["pile_width"],
-        depth=params.get("pile_depth"),
-    )
-
-    from funhouse_agent.adapters.axial_pile import (
-        _LAYER_KEY_HINTS, _LAYER_KEYS,
-    )
-    # The analysis tool's layer keys, all read below; anything else was
-    # silently left out (GM-58).
-    check_nested_list(params["soil_layers"], _LAYER_KEYS,
-                      method="axial_pile_package", label="soil_layers",
-                      hints=_LAYER_KEY_HINTS)
-    layers = []
-    for ld in params["soil_layers"]:
-        require_keys(ld, ["soil_type", "thickness", "unit_weight"],
-                     method="axial_pile_package", item_label="soil_layers[]")
-        layers.append(AxialSoilLayer(
-            soil_type=ld["soil_type"],
-            thickness=ld["thickness"],
-            unit_weight=ld["unit_weight"],
-            friction_angle=ld.get("friction_angle", 0.0),
-            cohesion=ld.get("cohesion", 0.0),
-            delta_phi_ratio=ld.get("delta_phi_ratio"),
-            # the end-bearing phi, as the analysis tool reads it ('toe_phi'
-            # its alias); unset, the toe uses friction_angle
-            toe_friction_angle=ld.get("toe_friction_angle", ld.get("toe_phi")),
-            description=ld.get("description", ""),
-        ))
-    soil = AxialSoilProfile(layers=layers, gwt_depth=params.get("gwt_depth"))
-
-    analysis = AxialPileAnalysis(
-        pile=pile, soil=soil,
-        pile_length=params["pile_length"],
-        factor_of_safety=params.get("factor_of_safety", 2.5),
-        method=params.get("method", "auto"),
-    )
-    result = analysis.compute()
-
+    run = _run_tool("axial_pile_package", params)
+    result, analysis = run.out
     return _build_response(
         "axial_pile", result, analysis, params,
+        run=run,
         analysis_type="Axial Pile Capacity",
         extra={
             "Q_ultimate_kN": round(result.Q_ultimate, 1),
@@ -850,63 +1063,11 @@ def _generate_axial_pile_package(params: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _generate_drilled_shaft_package(params: dict) -> dict:
-    from drilled_shaft import DrillShaft, ShaftSoilLayer, ShaftSoilProfile, DrillShaftAnalysis
-
-    require_params(params, ["diameter", "length", "soil_layers"],
-                   method="drilled_shaft_package")
-
-    shaft = DrillShaft(
-        diameter=params["diameter"],
-        length=params["length"],
-        socket_diameter=params.get("socket_diameter"),
-        socket_length=params.get("socket_length", 0.0),
-        bell_diameter=params.get("bell_diameter"),
-        casing_depth=params.get("casing_depth", 0.0),
-        concrete_fc=params.get("concrete_fc", 28000.0),
-    )
-
-    from funhouse_agent.adapters.drilled_shaft import _LAYER_KEY_HINTS
-    # The keys read below; anything else was silently left out (GM-58). The
-    # package runs the default methods only, so the rational-beta inputs
-    # are refused with a note saying where they are read, never offered as
-    # N60 (a different quantity).
-    rational = ("N1_60", "N160", "sigma_v_ref", "sigma_v_preload", "OCR")
-    note = ("(This package runs the default beta method, beta_method="
-            "'depth'; N1_60 / N160, sigma_v_ref / sigma_v_preload and OCR "
-            "are read by drilled_shaft.drilled_shaft_capacity with "
-            "beta_method='rational'.)")
-    check_nested_list(params["soil_layers"],
-                      ("soil_type", "thickness", "unit_weight", "cu", "phi",
-                       "N60", "qu", "RQD", "description"),
-                      method="drilled_shaft_package", label="soil_layers",
-                      hints={**_LAYER_KEY_HINTS, "n160": (),
-                             "sigmavref": (), "sigmavpreload": (), "ocr": ()},
-                      notes={(k,): note for k in rational})
-    layers = []
-    for ld in params["soil_layers"]:
-        require_keys(ld, ["soil_type", "thickness", "unit_weight"],
-                     method="drilled_shaft_package", item_label="soil_layers[]")
-        layers.append(ShaftSoilLayer(
-            soil_type=ld["soil_type"],
-            thickness=ld["thickness"],
-            unit_weight=ld["unit_weight"],
-            cu=ld.get("cu", 0.0),
-            phi=ld.get("phi", 0.0),
-            N60=ld.get("N60", 0),
-            qu=ld.get("qu", 0.0),
-            RQD=ld.get("RQD", 100.0),
-            description=ld.get("description", ""),
-        ))
-    soil = ShaftSoilProfile(layers=layers, gwt_depth=params.get("gwt_depth"))
-
-    analysis = DrillShaftAnalysis(
-        shaft=shaft, soil=soil,
-        factor_of_safety=params.get("factor_of_safety", 2.5),
-    )
-    result = analysis.compute()
-
+    run = _run_tool("drilled_shaft_package", params)
+    result, analysis = run.out
     return _build_response(
         "drilled_shaft", result, analysis, params,
+        run=run,
         analysis_type="Drilled Shaft Capacity",
         extra={
             "Q_ultimate_kN": round(result.Q_ultimate, 1),
@@ -922,72 +1083,8 @@ def _generate_drilled_shaft_package(params: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _generate_downdrag_package(params: dict) -> dict:
-    from downdrag import DowndragAnalysis, DowndragSoilLayer, DowndragSoilProfile
-
-    require_params(params, ["pile_length", "pile_diameter", "pile_E", "Q_dead",
-                            "soil_layers"],
-                   method="downdrag_package")
-    # The analysis tool's layer keys (DowndragSoilLayer's fields); anything
-    # else was silently left out (GM-58).
-    from funhouse_agent.adapters.downdrag import (
-        _LAYER_KEY_HINTS, _LAYER_KEY_NOTES, _LAYER_KEYS,
-    )
-    check_nested_list(params["soil_layers"], _LAYER_KEYS,
-                      method="downdrag_package", label="soil_layers",
-                      hints=_LAYER_KEY_HINTS, notes=_LAYER_KEY_NOTES)
-
-    layers = []
-    for ld in params["soil_layers"]:
-        require_keys(ld, ["soil_type", "thickness", "unit_weight"],
-                     method="downdrag_package", item_label="soil_layers[]")
-        layers.append(DowndragSoilLayer(
-            soil_type=ld["soil_type"],
-            thickness=ld["thickness"],
-            unit_weight=ld["unit_weight"],
-            cu=ld.get("cu", 0.0),
-            phi=ld.get("phi", 0.0),
-            settling=ld.get("settling", False),
-            alpha=ld.get("alpha"),
-            beta=ld.get("beta"),
-            Cc=ld.get("Cc", 0.0),
-            Cr=ld.get("Cr", 0.0),
-            e0=ld.get("e0", 0.0),
-            C_ec=ld.get("C_ec"),
-            C_er=ld.get("C_er"),
-            sigma_p=ld.get("sigma_p"),
-            E_s=ld.get("E_s"),
-            nu_s=ld.get("nu_s", 0.3),
-            description=ld.get("description", ""),
-        ))
-    soil = DowndragSoilProfile(layers=layers, gwt_depth=params.get("gwt_depth", 0.0))
-
-    analysis = DowndragAnalysis(
-        pile_length=params["pile_length"],
-        pile_diameter=params["pile_diameter"],
-        # an H or pipe pile's own steel area and perimeter (GM-99); the
-        # solid circle of pile_diameter when not given
-        pile_perimeter=params.get("pile_perimeter"),
-        pile_area=params.get("pile_area"),
-        pile_E=params["pile_E"],
-        pile_unit_weight=params.get("pile_unit_weight", 78.5),
-        include_pile_weight=params.get("include_pile_weight", False),
-        Q_dead=params["Q_dead"],
-        soil=soil,
-        fill_thickness=params.get("fill_thickness", 0.0),
-        fill_unit_weight=params.get("fill_unit_weight", 20.0),
-        gw_drawdown=params.get("gw_drawdown", 0.0),
-        structural_capacity=params.get("structural_capacity"),
-        allowable_settlement=params.get("allowable_settlement"),
-        Nt=params.get("Nt"),
-        neutral_plane_method=params.get("neutral_plane_method", "auto"),
-        toe_mobilization=params.get("toe_mobilization", 1.0),
-        endo_bearing_condition=params.get("endo_bearing_condition"),
-        skin_friction_stress=params.get("skin_friction_stress", "final"),
-        influence_depth_criterion=params.get("influence_depth_criterion",
-                                             "bearing_stress"),
-    )
-    result = analysis.compute()
-
+    run = _run_tool("downdrag_package", params)
+    result, analysis = run.out
     extra = {
         "neutral_plane_m": round(result.neutral_plane_depth, 2),
         "neutral_plane_method": result.neutral_plane_method,
@@ -1001,6 +1098,7 @@ def _generate_downdrag_package(params: dict) -> dict:
     }
     return _build_response(
         "downdrag", result, analysis, params,
+        run=run,
         analysis_type="Downdrag",
         extra={
             **extra,
@@ -1018,105 +1116,31 @@ def _generate_downdrag_package(params: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _generate_seismic_package(params: dict) -> dict:
-    from seismic_geotech import (
-        classify_site, site_coefficients, mononobe_okabe_KAE,
-        seismic_earth_pressure, evaluate_liquefaction,
-    )
-    from seismic_geotech.results import (
-        SiteClassResult, SeismicEarthPressureResult, LiquefactionResult,
-    )
+    from seismic_geotech.results import SiteClassResult
 
-    analysis_type = params.get("analysis_type", "site_classification")
-    analysis_dict = dict(params)
-
-    if analysis_type == "site_classification":
-        require_params(params, ["Ss", "S1"],
-                       method="seismic_package (site_classification)")
-        if all(params.get(k) is None for k in ("vs30", "n_bar", "su_bar")):
-            raise ValueError(
-                "seismic_package (site_classification): provide one of "
-                "'vs30' (m/s), 'n_bar' (avg SPT N), or 'su_bar' (kPa)."
-            )
-        site_class = classify_site(
-            vs30=params.get("vs30"),
-            n_bar=params.get("n_bar"),
-            su_bar=params.get("su_bar"),
-        )
-        result = site_coefficients(site_class, Ss=params["Ss"], S1=params["S1"])
-
-    elif analysis_type == "seismic_earth_pressure":
-        require_params(params, ["phi", "kh", "gamma", "H"],
-                       method="seismic_package (seismic_earth_pressure)")
-        KAE = mononobe_okabe_KAE(
-            phi_deg=params["phi"],
-            delta_deg=params.get("delta", params["phi"] * 2 / 3),
-            kh=params["kh"], kv=params.get("kv", 0.0),
-        )
-        # KA not given: Rankine Ka from phi, as the seismic_earth_pressure
-        # analysis tool works it out and as the package's own steps print
-        # it (GM-120: it was 0.333, Rankine Ka for phi 30 deg, whatever
-        # phi was).
-        from sheet_pile.earth_pressure import rankine_Ka
-        ka_given = params.get("KA") is not None
-        KA = params["KA"] if ka_given else rankine_Ka(params["phi"])
-        result_dict = seismic_earth_pressure(
-            gamma=params["gamma"], H=params["H"], KAE=KAE, KA=KA,
-        )
-        from seismic_geotech.mononobe_okabe import (
-            earth_pressure_choices, mo_no_solution_warning,
-        )
-        no_solution = mo_no_solution_warning(params["phi"], params["kh"],
-                                             params.get("kv", 0.0))
-        result = SeismicEarthPressureResult(
-            KAE=KAE, KPE=0.0,
-            PAE_total=result_dict["PAE_total_kN_per_m"],
-            PA_static=result_dict["PA_static_kN_per_m"],
-            delta_PAE=result_dict["delta_PAE_kN_per_m"],
-            height_of_application=result_dict["height_of_application_m"],
-            phi=params["phi"],
-            delta=params.get("delta", params["phi"] * 2 / 3),
-            kh=params["kh"], kv=params.get("kv", 0.0),
-            choices=earth_pressure_choices(
-                params["phi"], params["kh"], kv=params.get("kv"),
-                delta_deg=params.get("delta"),
-                ka=KA if ka_given else "rankine",
-                ka_how="given",
-                forces=True, ka_can_be_given=True),
-            warnings=[no_solution] if no_solution else [],
-        )
-
-    elif analysis_type == "liquefaction":
-        require_params(params, ["layer_depths", "layer_N160", "layer_FC",
-                                "layer_gamma", "amax_g", "gwt_depth"],
-                       method="seismic_package (liquefaction)")
-        layer_results = evaluate_liquefaction(
-            layer_depths=params["layer_depths"],
-            layer_N160=params["layer_N160"],
-            layer_FC=params["layer_FC"],
-            layer_gamma=params["layer_gamma"],
-            amax_g=params["amax_g"],
-            gwt_depth=params["gwt_depth"],
-            M=params.get("M", 7.5),
-        )
-        from seismic_geotech.liquefaction import liquefaction_choices
-        result = LiquefactionResult(
-            layer_results=layer_results,
-            amax_g=params["amax_g"],
-            magnitude=params.get("M", 7.5),
-            gwt_depth=params["gwt_depth"],
-            choices=liquefaction_choices(layer_results, params.get("M", 7.5)),
-        )
+    run = _run_tool("seismic_package", params)
+    # the inputs in force, by the tool's names
+    analysis = dict(run.params)
+    if run.tool == "site_classification":
+        site_class, vs30, n_bar, su_bar, coefficients = run.out
+        # Without Ss and S1 the tool gives the site class alone; so does
+        # the package (no coefficients, no design spectrum).
+        result = coefficients or SiteClassResult(
+            site_class=site_class, Fpga=None, Fa=None, Fv=None, Ss=None,
+            S1=None)
+        result.vs30, result.n_bar, result.su_bar = vs30, n_bar, su_bar
+    elif run.tool == "seismic_earth_pressure":
+        result, _, analysis = run.out
     else:
-        raise ValueError(
-            f"Unknown analysis_type '{analysis_type}'. Allowed: "
-            "['site_classification', 'seismic_earth_pressure', 'liquefaction']."
-        )
+        result = run.out
+        analysis["magnitude"] = result.magnitude
 
-    extra = {"seismic_analysis_type": analysis_type}
+    extra = {"seismic_analysis_type": run.value}
     if getattr(result, "warnings", None):
         extra["warnings"] = list(result.warnings)
     return _build_response(
-        "seismic_geotech", result, analysis_dict, params,
+        "seismic_geotech", result, analysis, params,
+        run=run,
         analysis_type="Seismic Geotechnical",
         extra=extra,
     )
@@ -1127,65 +1151,26 @@ def _generate_seismic_package(params: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _generate_retaining_wall_package(params: dict) -> dict:
-    from retaining_walls import (
-        CantileverWallGeometry, analyze_cantilever_wall,
-    )
+    run = _run_tool("retaining_wall_package", params)
+    result, used = run.out
+    analysis = {**used, "wall_type": run.value}
 
-    wall_type = params.get("wall_type", "cantilever")
-    analysis_dict = dict(params)
+    def _r2(x):
+        return None if x is None else round(x, 2)
 
-    if wall_type == "cantilever":
-        require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
-                       method="retaining_wall_package")
-        geom = CantileverWallGeometry(
-            wall_height=params["wall_height"],
-            base_width=params.get("base_width"),
-            toe_length=params.get("toe_length"),
-            stem_thickness_top=params.get("stem_thickness_top", 0.3),
-            stem_thickness_base=params.get("stem_thickness_base"),
-            base_thickness=params.get("base_thickness", 0.6),
-            has_shear_key=params.get("has_shear_key", False),
-            key_depth=params.get("key_depth", 0.0),
-            backfill_slope=params.get("backfill_slope", 0.0),
-            surcharge=params.get("surcharge", 0.0),
-        )
-        result = analyze_cantilever_wall(
-            geom=geom,
-            gamma_backfill=params["gamma_backfill"],
-            phi_backfill=params["phi_backfill"],
-            c_backfill=params.get("c_backfill", 0.0),
-            phi_foundation=params.get("phi_foundation"),
-            c_foundation=params.get("c_foundation", 0.0),
-            q_allowable=params.get("q_allowable"),
-            gamma_concrete=params.get("gamma_concrete", 24.0),
-            FOS_sliding=params.get("FOS_sliding", 1.5),
-            FOS_overturning=params.get("FOS_overturning", 2.0),
-            pressure_method=params.get("pressure_method", "rankine"),
-            include_passive=params.get("include_passive", False),
-            gamma_foundation=params.get("gamma_foundation"),
-            delta_base=params.get("delta_base"),
-            base_adhesion=params.get("base_adhesion"),
-        )
-        analysis_dict["geom"] = geom
-
-        def _r2(x):
-            return None if x is None else round(x, 2)
-
-        # The verdict travels with the package (GM-100): a failed check or a
-        # check not run must reach the user, not only the file.
-        extra = {
-            "verdict": result.verdict,
-            "checks_failed": result.checks_failed,
-            "checks_not_run": result.checks_not_run,
-            "FOS_sliding": _r2(result.FOS_sliding),
-            "FOS_overturning": _r2(result.FOS_overturning),
-            "FOS_bearing": _r2(result.FOS_bearing),
-        }
-    else:
-        raise ValueError("MSE wall calc package not yet implemented")
-
+    # The verdict travels with the package (GM-100): a failed check or a
+    # check not run must reach the user, not only the file.
+    extra = {
+        "verdict": result.verdict,
+        "checks_failed": result.checks_failed,
+        "checks_not_run": result.checks_not_run,
+        "FOS_sliding": _r2(result.FOS_sliding),
+        "FOS_overturning": _r2(result.FOS_overturning),
+        "FOS_bearing": _r2(result.FOS_bearing),
+    }
     return _build_response(
-        "retaining_walls", result, analysis_dict, params,
+        "retaining_walls", result, analysis, params,
+        run=run,
         analysis_type="Retaining Wall",
         extra=extra,
     )
@@ -1196,89 +1181,16 @@ def _generate_retaining_wall_package(params: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _generate_ground_improvement_package(params: dict) -> dict:
-    from ground_improvement import (
-        analyze_wick_drains, analyze_aggregate_piers,
-        analyze_surcharge_preloading, analyze_vibro_compaction,
-    )
-
-    method = params.get("method", "wick_drains")
-    analysis_dict = dict(params)
-
-    if method == "wick_drains":
-        require_params(params, ["spacing", "ch", "cv", "Hdr", "time"],
-                       method="ground_improvement_package (wick_drains)")
-        result = analyze_wick_drains(
-            spacing=params["spacing"],
-            ch=params["ch"], cv=params["cv"],
-            Hdr=params["Hdr"], time=params["time"],
-            dw=params.get("dw", 0.066),
-            pattern=params.get("pattern", "triangular"),
-            smear_ratio=params.get("smear_ratio", 2.0),
-            kh_ks_ratio=params.get("kh_ks_ratio", 2.0),
-        )
-    elif method == "aggregate_piers":
-        # The analysis tool's own names (stress_concentration_ratio,
-        # column_modulus, ...) and the pre-GEC-13 ones this package once
-        # used; stress_concentration_ratio ran with n = 5.0 (GM-120).
-        from funhouse_agent.adapters.ground_improvement import _AGG_ALIASES
-        p = apply_aliases(params, {**_AGG_ALIASES, "E_pier": "E_column"})
-        # The package prints the inputs by their own names: an input given
-        # by its older name (E_pier) printed 80,000 kPa (GM-120).
-        analysis_dict = dict(p)
-        require_params(p, ["column_diameter", "spacing"],
-                       method="ground_improvement_package (aggregate_piers)")
-        result = analyze_aggregate_piers(
-            column_diameter=p["column_diameter"],
-            spacing=p["spacing"],
-            pattern=p.get("pattern", "triangular"),
-            E_column=p.get("E_column", 80000.0),
-            E_soil=p.get("E_soil", 5000.0),
-            n=p.get("n", 5.0),
-            q_unreinforced=p.get("q_unreinforced", 0.0),
-            S_unreinforced=p.get("S_unreinforced", 0.0),
-        )
-    elif method == "surcharge":
-        p = apply_aliases(params, {"surcharge": "surcharge_kPa",
-                                   "target_consolidation": "target_U"})
-        analysis_dict = dict(p)
-        require_params(p, ["S_ultimate", "surcharge_kPa", "cv", "Hdr"],
-                       method="ground_improvement_package (surcharge)")
-        result = analyze_surcharge_preloading(
-            S_ultimate=p["S_ultimate"],
-            surcharge_kPa=p["surcharge_kPa"],
-            cv=p["cv"], Hdr=p["Hdr"],
-            target_U=p.get("target_U", 90.0),
-            ch=p.get("ch"),
-            drain_spacing=p.get("drain_spacing"),
-            dw=p.get("dw", 0.066),
-            pattern=p.get("pattern", "triangular"),
-            smear_ratio=p.get("smear_ratio", 2.0),
-            kh_ks_ratio=p.get("kh_ks_ratio", 2.0),
-            sigma_v0=p.get("sigma_v0", 0.0),
-        )
-    elif method == "vibro":
-        p = apply_aliases(params, {"N1_before": "initial_N_spt",
-                                   "N1_target": "target_N_spt"})
-        analysis_dict = dict(p)
-        require_params(p, ["fines_content", "initial_N_spt"],
-                       method="ground_improvement_package (vibro)")
-        result = analyze_vibro_compaction(
-            fines_content=p["fines_content"],
-            initial_N_spt=p["initial_N_spt"],
-            target_N_spt=p.get("target_N_spt", 25.0),
-            D50=p.get("D50"),
-            pattern=p.get("pattern", "triangular"),
-        )
-    else:
-        raise ValueError(
-            f"Unknown ground improvement method '{method}'. Allowed: "
-            "['wick_drains', 'aggregate_piers', 'surcharge', 'vibro']."
-        )
-
+    run = _run_tool("ground_improvement_package", params)
+    result, used = run.out
+    # the inputs in force by the module's names, and the method by the
+    # package's name for it, as the steps read them
+    analysis = {**used, "method": run.value}
     return _build_response(
-        "ground_improvement", result, analysis_dict, params,
+        "ground_improvement", result, analysis, params,
+        run=run,
         analysis_type="Ground Improvement",
-        extra={"method": method},
+        extra={"method": run.value},
     )
 
 
@@ -1287,55 +1199,11 @@ def _generate_ground_improvement_package(params: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _generate_wave_equation_package(params: dict) -> dict:
-    from wave_equation import (
-        get_hammer, make_cushion_from_properties, Cushion,
-        discretize_pile, generate_bearing_graph,
-    )
-
-    require_params(params, ["hammer_name", "pile_length", "pile_area", "pile_E"],
-                   method="wave_equation_package")
-    if params.get("cushion_stiffness") is None and any(
-            params.get(k) is None
-            for k in ("cushion_area", "cushion_thickness", "cushion_E")):
-        raise ValueError(
-            "wave_equation_package: provide either 'cushion_stiffness' (kN/m) "
-            "or all of 'cushion_area' (m2), 'cushion_thickness' (m), "
-            "'cushion_E' (kPa)."
-        )
-
-    hammer = get_hammer(params["hammer_name"])
-    if "cushion_stiffness" in params:
-        cushion = Cushion(stiffness=params["cushion_stiffness"],
-                          cor=params.get("cushion_cor", 0.8))
-    else:
-        cushion = make_cushion_from_properties(
-            area=params["cushion_area"],
-            thickness=params["cushion_thickness"],
-            elastic_modulus=params["cushion_E"],
-            cor=params.get("cushion_cor", 0.8),
-        )
-    pile = discretize_pile(
-        length=params["pile_length"],
-        area=params["pile_area"],
-        elastic_modulus=params["pile_E"],
-        segment_length=params.get("segment_length", 1.0),
-        unit_weight_material=params.get("pile_unit_weight", 78.5),
-    )
-    result = generate_bearing_graph(
-        hammer=hammer, cushion=cushion, pile=pile,
-        skin_fraction=params.get("skin_fraction", 0.5),
-        quake_side=params.get("quake_side", 0.0025),
-        quake_toe=params.get("quake_toe", 0.0025),
-        damping_side=params.get("damping_side", 0.16),
-        damping_toe=params.get("damping_toe", 0.5),
-        R_min=params.get("R_min", 200.0),
-        R_max=params.get("R_max", 2000.0),
-        R_step=params.get("R_step", 200.0),
-    )
-
-    analysis_dict = {"hammer": hammer, "cushion": cushion, "pile": pile}
+    run = _run_tool("wave_equation_package", params)
+    result, analysis = run.out
     return _build_response(
-        "wave_equation", result, analysis_dict, params,
+        "wave_equation", result, analysis, params,
+        run=run,
         analysis_type="Wave Equation",
         extra={"n_points": len(result.blow_counts)},
     )
@@ -1346,62 +1214,42 @@ def _generate_wave_equation_package(params: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _generate_pile_group_package(params: dict) -> dict:
-    from pile_group import analyze_vertical_group_simple, analyze_group_6dof
-    # The pile_group module's own layout and load readers, so the package
-    # takes the batter, stiffnesses and capacities its methods take (until
-    # 2026-10-14 it dropped the stiffnesses and method_6dof always failed).
-    from funhouse_agent.adapters.pile_group import _build_load, _build_piles
+    from funhouse_agent.adapters.pile_group import _run_group_efficiency
 
-    if params.get("layout") == "rectangular":
-        require_params(params, ["n_rows", "n_cols", "spacing_x", "spacing_y"],
-                       method="pile_group_package (layout='rectangular')")
-    elif not params.get("piles"):
-        raise ValueError(
-            "pile_group_package: provide either layout='rectangular' with "
-            "n_rows/n_cols/spacing_x/spacing_y, or a 'piles' list of "
-            "{x, y} dicts."
-        )
-    # The simplified vertical distribution carries no lateral load or
-    # torsion; refused rather than dropped with only a Python warning
-    # (GM-110).
-    lateral = [k for k in ("Vx", "Vy", "Mz") if params.get(k)]
-    if lateral and not params.get("method_6dof", False):
-        raise ValueError(
-            f"pile_group_package: {lateral} given without method_6dof. The "
-            "simplified vertical distribution carries only Vz, Mx and My; "
-            "set method_6dof=true (with axial_stiffness, and "
-            "lateral_stiffness for Vx/Vy) to carry them.")
-    piles = _build_piles(params)
-    load = _build_load(params)
-
-    if params.get("method_6dof", False):
-        missing = [p.label or f"#{i}" for i, p in enumerate(piles)
-                   if p.axial_stiffness is None]
-        if missing:
-            raise ValueError(
-                "pile_group_package (method_6dof): every pile needs an "
-                f"axial_stiffness (kN/m); missing on {missing[:6]}"
-                f"{' ...' if len(missing) > 6 else ''}. Give "
-                "'axial_stiffness' at the top level with layout='rectangular' "
-                "or on each piles[] entry, and 'lateral_stiffness' too when "
-                "vertical piles carry Vx/Vy.")
-        result = analyze_group_6dof(piles=piles, load=load)
-    else:
-        result = analyze_vertical_group_simple(piles=piles, load=load)
-
-    analysis_dict = {
-        "piles": piles, "load": load,
-        "pile_diameter": params.get("pile_diameter", 0.3),
-        "pile_spacing": params.get("pile_spacing", 1.5),
-    }
+    run = _run_tool("pile_group_package", params)
+    result, used = run.out
+    analysis = {**used, "method": "6dof" if run.value else "simple"}
+    # The Converse-Labarre efficiency, as the group_efficiency tool works
+    # it out from the layout run and the diameter given. It takes one
+    # spacing: where the rows and columns are spaced differently, the
+    # smaller, where the piles are closer and E_g is lower.
+    d = run.own.get("pile_diameter")
+    sx = used.get("spacing_x", used.get("spacing"))
+    sy = used.get("spacing_y", used.get("spacing"))
+    spacing = min(sx, sy) if sx is not None and sy is not None else None
+    extra = {"n_piles": result.n_piles, "group_efficiency": None}
+    if d is not None:
+        analysis["pile_diameter"] = d
+        if (used.get("n_rows") and used.get("n_cols")
+                and spacing is not None):
+            analysis["efficiency_spacing"] = spacing
+            analysis["efficiency"] = _run_group_efficiency({
+                "n_rows": used["n_rows"], "n_cols": used["n_cols"],
+                "pile_diameter": d, "spacing": spacing,
+            })["converse_labarre_Eg"]
+            extra["group_efficiency"] = analysis["efficiency"]
+            if sx != sy:
+                extra["group_efficiency_spacing_m"] = spacing
+                extra["group_efficiency_note"] = (
+                    f"Converse-Labarre takes one spacing; with spacing_x "
+                    f"{sx:g} m and spacing_y {sy:g} m the smaller, "
+                    f"{spacing:g} m, is used (the closer piles, the lower "
+                    f"E_g).")
     return _build_response(
-        "pile_group", result, analysis_dict, params,
+        "pile_group", result, analysis, params,
+        run=run,
         analysis_type="Pile Group",
-        extra={
-            "n_piles": result.n_piles,
-            "group_efficiency": round(result.group_efficiency, 3)
-            if hasattr(result, "group_efficiency") else None,
-        },
+        extra=extra,
     )
 
 
@@ -1410,58 +1258,19 @@ def _generate_pile_group_package(params: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _generate_sheet_pile_package(params: dict) -> dict:
-    from sheet_pile import analyze_cantilever, analyze_anchored
-
-    require_params(params, ["excavation_depth", "soil_layers"],
-                   method="sheet_pile_package")
-    if params.get("wall_type") == "anchored":
-        require_params(params, ["anchor_depth"],
-                       method="sheet_pile_package (wall_type='anchored')")
-
-    # The analysis tool's own layer reader: the same keys and aliases
-    # (phi, gamma, c, delta, ...), unknown keys refused (GM-58), and the
-    # wall friction passed through for pressure_method='coulomb'.
-    from funhouse_agent.adapters.sheet_pile import _build_soil_layers
-    layers = _build_soil_layers(params, method="sheet_pile_package",
-                                key="soil_layers")
-
-    wall_type = params.get("wall_type", "cantilever")
-    analysis_dict = dict(params)
-    analysis_dict["soil_layers"] = layers
-
-    if wall_type == "cantilever":
-        result = analyze_cantilever(
-            soil_layers=layers,
-            excavation_depth=params["excavation_depth"],
-            gwt_depth_active=params.get("gwt_depth_active"),
-            gwt_depth_passive=params.get("gwt_depth_passive"),
-            surcharge=params.get("surcharge", 0.0),
-            FOS_passive=params.get("FOS_passive", 1.5),
-            pressure_method=params.get("pressure_method", "rankine"),
-        )
-        extra = {
-            "embedment_m": round(result.embedment_depth, 2),
-            "max_moment_kNm_per_m": round(result.max_moment, 1),
-        }
-    else:
-        result = analyze_anchored(
-            soil_layers=layers,
-            excavation_depth=params["excavation_depth"],
-            anchor_depth=params["anchor_depth"],
-            gwt_depth_active=params.get("gwt_depth_active"),
-            gwt_depth_passive=params.get("gwt_depth_passive"),
-            surcharge=params.get("surcharge", 0.0),
-            FOS_passive=params.get("FOS_passive", 1.5),
-            pressure_method=params.get("pressure_method", "rankine"),
-        )
-        extra = {
-            "embedment_m": round(result.embedment_depth, 2),
-            "anchor_force_kN_per_m": round(result.anchor_force, 1),
-            "max_moment_kNm_per_m": round(result.max_moment, 1),
-        }
-
+    run = _run_tool("sheet_pile_package", params)
+    result, used = run.out
+    analysis = {**used, "wall_type": run.value,
+                "soil_layers": used["layers"]}
+    extra = {
+        "embedment_m": round(result.embedment_depth, 2),
+        "max_moment_kNm_per_m": round(result.max_moment, 1),
+    }
+    if run.value == "anchored":
+        extra["anchor_force_kN_per_m"] = round(result.anchor_force, 1)
     return _build_response(
-        "sheet_pile", result, analysis_dict, params,
+        "sheet_pile", result, analysis, params,
+        run=run,
         analysis_type="Sheet Pile Wall",
         extra=extra,
     )
@@ -1766,38 +1575,16 @@ def _generate_html_to_pdf(params: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def _generate_pavement_design_package(params: dict) -> dict:
-    """AASHTO 1993 flexible or rigid pavement design calc package.
+    """AASHTO 1993 or UFC 3-250-01 pavement design calc package.
 
-    ``design_type`` selects the procedure ('flexible' default | 'rigid');
-    the remaining parameters are those of the pavement_design adapter
-    methods (US customary units). Note: for rigid designs,
-    ``pavement_type`` keeps its Table 2.6 meaning (JCP/JRCP vs CRCP).
+    ``design_type`` selects the procedure, each the pavement_design tool of
+    that name run on the remaining parameters (US customary units). Note:
+    for rigid designs, ``pavement_type`` keeps its Table 2.6 meaning
+    (JCP/JRCP vs CRCP).
     """
-    from funhouse_agent.adapters.pavement_design_adapter import (
-        _FLEX_ALIASES, _FLEX_VALID, _RIGID_ALIASES, _RIGID_VALID,
-        check_items)
-    from pavement_design import (design_flexible_pavement,
-                                 design_rigid_pavement)
-
-    from funhouse_agent.adapters.pavement_design_adapter import (
-        _COMPARE_VALID, _UFC_ALIASES, _UFC_FLEX_VALID, _UFC_RIGID_VALID)
-    from pavement_design import (compare_flexible_pavement_methods,
-                                 design_flexible_pavement_ufc,
-                                 design_rigid_pavement_ufc)
-
-    design_type = str(params.get("design_type", "flexible")).strip().lower()
-    meta_keys = set(_COMMON_PARAMS) | {"design_type"}
-    design_params = {k: v for k, v in params.items() if k not in meta_keys}
-
-    if design_type in ("flexible_ufc", "ufc_flexible", "ufc"):
-        p = apply_aliases(design_params, _UFC_ALIASES)
-        reject_unknown_params(p, _UFC_FLEX_VALID,
-                              method="pavement_design_package (flexible_ufc)",
-                              aliases=_UFC_ALIASES)
-        require_params(p, ["passes_18kip", "cbr_subgrade"],
-                       method="pavement_design_package",
-                       valid=_UFC_FLEX_VALID)
-        result = design_flexible_pavement_ufc(**p)
+    run = _run_tool("pavement_design_package", params)
+    result = run.out
+    if run.value == "flexible_ufc":
         extra = {
             "required_total_thickness_in":
                 result["section"]["required_total_thickness_in"],
@@ -1805,51 +1592,20 @@ def _generate_pavement_design_package(params: dict) -> dict:
                 result["section"]["provided_total_thickness_in"],
             "frost_governs": result.get("frost_governs"),
         }
-        return _build_response("pavement_design", result, None, params,
-                               analysis_type="UFC 3-250-01 Flexible "
-                                             "Pavement Design", extra=extra)
-    if design_type in ("rigid_ufc", "ufc_rigid"):
-        p = apply_aliases(design_params, _UFC_ALIASES)
-        reject_unknown_params(p, _UFC_RIGID_VALID,
-                              method="pavement_design_package (rigid_ufc)",
-                              aliases=_UFC_ALIASES)
-        require_params(p, ["passes_18kip", "flexural_strength_psi"],
-                       method="pavement_design_package",
-                       valid=_UFC_RIGID_VALID)
-        result = design_rigid_pavement_ufc(**p)
+        label = "UFC 3-250-01 Flexible Pavement Design"
+    elif run.value == "rigid_ufc":
         extra = {"hd_required_in": result["hd_required_in"],
                  "slab_provided_in": result["slab_provided_in"]}
-        return _build_response("pavement_design", result, None, params,
-                               analysis_type="UFC 3-250-01 Rigid Pavement "
-                                             "Design", extra=extra)
-    if design_type in ("compare", "comparison"):
-        p = apply_aliases(design_params, _UFC_ALIASES)
-        reject_unknown_params(p, _COMPARE_VALID,
-                              method="pavement_design_package (compare)",
-                              aliases=_UFC_ALIASES)
-        require_params(p, ["passes_18kip"],
-                       method="pavement_design_package",
-                       valid=_COMPARE_VALID)
-        result = compare_flexible_pavement_methods(**p)
+        label = "UFC 3-250-01 Rigid Pavement Design"
+    elif run.value == "compare":
         extra = {
             "aashto_total_in": result["aashto_1993"]["total_thickness_in"],
             "ufc_total_in": result["ufc_3_250_01"]["total_thickness_in"],
             "delta_total_thickness_in": result["delta_total_thickness_in"],
         }
-        return _build_response("pavement_design", result, None, params,
-                               analysis_type="Pavement Method Comparison "
-                                             "(AASHTO 1993 vs UFC 3-250-01)",
-                               extra=extra)
-
-    if design_type == "flexible":
-        p = apply_aliases(design_params, _FLEX_ALIASES)
-        reject_unknown_params(p, _FLEX_VALID,
-                              method="pavement_design_package (flexible)",
-                              aliases=_FLEX_ALIASES)
-        require_params(p, ["w18", "layers"],
-                       method="pavement_design_package", valid=_FLEX_VALID)
-        check_items(p, method="pavement_design_package (flexible)")
-        result = design_flexible_pavement(**p)
+        label = ("Pavement Method Comparison (AASHTO 1993 vs "
+                 "UFC 3-250-01)")
+    elif run.value == "flexible":
         extra = {
             "sn_required": result.sn_required,
             "sn_provided": result.sn_provided,
@@ -1859,15 +1615,7 @@ def _generate_pavement_design_package(params: dict) -> dict:
             "adequate": result.adequate,
         }
         label = "AASHTO 1993 Flexible Pavement Design"
-    elif design_type == "rigid":
-        p = apply_aliases(design_params, _RIGID_ALIASES)
-        reject_unknown_params(p, _RIGID_VALID,
-                              method="pavement_design_package (rigid)",
-                              aliases=_RIGID_ALIASES)
-        require_params(p, ["w18", "sc_psi", "ec_psi"],
-                       method="pavement_design_package", valid=_RIGID_VALID)
-        check_items(p, method="pavement_design_package (rigid)")
-        result = design_rigid_pavement(**p)
+    else:
         extra = {
             "d_required_in": result.d_required_in,
             "d_provided_in": result.d_provided_in,
@@ -1875,13 +1623,9 @@ def _generate_pavement_design_package(params: dict) -> dict:
             "adequate": result.adequate,
         }
         label = "AASHTO 1993 Rigid Pavement Design"
-    else:
-        raise ValueError(
-            f"design_type must be 'flexible' or 'rigid', got '{design_type}'"
-        )
 
     return _build_response("pavement_design", result, None, params,
-                           analysis_type=label, extra=extra)
+                           analysis_type=label, extra=extra, run=run)
 
 
 # ---------------------------------------------------------------------------
@@ -1957,58 +1701,17 @@ _COMMON_RETURNS = {
 METHOD_INFO = {
     "pavement_design_package": {
         "category": "Calculation Package",
-        "brief": ("AASHTO 1993 pavement design calc package: flexible "
+        "brief": ("Pavement design calc package: AASHTO 1993 flexible "
                   "(required SN + layer split) or rigid (slab D) with "
-                  "reliability, drainage, and forward checks. US customary "
-                  "units. Same parameters as the pavement_design module "
-                  "methods, plus design_type."),
-        "parameters": {
-            "design_type": {"type": "str", "required": False,
-                            "default": "flexible",
-                            "allowed_values": ["flexible", "rigid"],
-                            "description": "Which AASHTO 1993 procedure to "
-                                           "run and report."},
-            "w18": {"type": "number", "required": True,
-                    "description": "Design-lane 18-kip ESALs."},
-            "layers": {"type": "array", "required": False,
-                       "description": "Flexible only -- layer dicts, "
-                                      "top-down (see pavement_design."
-                                      "flexible_pavement_design)."},
-            "sc_psi": {"type": "number", "required": False,
-                       "description": "Rigid only -- PCC modulus of "
-                                      "rupture, psi."},
-            "ec_psi": {"type": "number", "required": False,
-                       "description": "Rigid only -- PCC elastic modulus, "
-                                      "psi."},
-            "reliability_pct": {"type": "number", "required": False,
-                                "description": "Design reliability R %."},
-            "mr_psi": {"type": "number", "required": False,
-                       "description": "Roadbed resilient modulus, psi "
-                                      "(flexible), or simplified-k source "
-                                      "(rigid)."},
-            "k_pci": {"type": "number", "required": False,
-                      "description": "Rigid: effective k directly, pci."},
-            "composite_k": {"type": "object", "required": False,
-                            "description": "Rigid: Section 3.2 worksheet "
-                                           "spec (see pavement_design."
-                                           "rigid_pavement_design)."},
-            "slab_thickness_in": {"type": "number", "required": False,
-                                  "description": "Rigid: check an existing "
-                                                 "slab instead."},
-            "**other": {"type": "any", "required": False,
-                        "description": "All other pavement_design method "
-                                       "parameters pass through (so, pt, "
-                                       "po, delta_psi, j, cd, "
-                                       "drainage_quality, ...)."},
-            **_COMMON_PARAMS,
-        },
-        # The handler checks the parameters of the design_type it runs, so
-        # dispatch leaves them to it (GM-110).
-        "open_parameters": True,
+                  "reliability, drainage, and forward checks, UFC 3-250-01 "
+                  "flexible or rigid, or the two methods compared. US "
+                  "customary units. The parameters of the pavement_design "
+                  "tool design_type names."),
         "returns": {**_COMMON_RETURNS,
                     "extra": "sn_required/sn_provided + layer thicknesses "
                              "(flexible) or d_required_in/d_provided_in + "
-                             "k_pci (rigid), and adequate."},
+                             "k_pci (rigid), and adequate; the UFC and "
+                             "compare designs give their thicknesses."},
     },
     "render_figures": {
         "category": "Calculation Package",
@@ -2114,45 +1817,11 @@ METHOD_INFO = {
     "bearing_capacity_package": {
         "category": "Calculation Package",
         "brief": "Run bearing capacity analysis and generate Mathcad-style calc package, with a table (CSV + printed) of the factors N, s, d, i, b, g and the value of each term.",
-        "parameters": {
-            "width": {"type": "float", "required": True, "description": "Footing width B (m)."},
-            "unit_weight": {"type": "float", "required": True, "description": "Soil unit weight (kN/m3)."},
-            "friction_angle": {"type": "float", "required": False, "default": 0.0, "description": "Friction angle (deg)."},
-            "cohesion": {"type": "float", "required": False, "default": 0.0, "description": "Cohesion (kPa)."},
-            "depth": {"type": "float", "required": False, "default": 0.0, "description": "Embedment depth Df (m)."},
-            "shape": {"type": "str", "required": False, "default": "strip", "allowed_values": ["strip", "square", "rectangular", "circular"], "description": "Footing shape."},
-            "length": {"type": "float", "required": False, "description": "Footing length L (m). Required for rectangular."},
-            "factor_of_safety": {"type": "float", "required": False, "default": 3.0, "description": "Factor of safety."},
-            "ngamma_method": {"type": "str", "required": False, "default": "vesic", "allowed_values": ["vesic", "meyerhof", "hansen", "kumbhojkar", "coduto"], "description": "Ngamma factor method; with factor_method='terzaghi', 'kumbhojkar' (default) or 'coduto'."},
-            "factor_method": {"type": "str", "required": False, "default": "vesic", "allowed_values": ["vesic", "meyerhof", "terzaghi"], "description": "Correction-factor method; 'terzaghi' = Terzaghi (1943) factors and shape coefficients."},
-            "failure_mode": {"type": "str", "required": False, "default": "general", "allowed_values": ["general", "local"], "description": "factor_method='terzaghi' only: 'local' = Terzaghi's local-shear reduction."},
-            "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m)."},
-            "base_tilt": {"type": "float", "required": False, "default": 0.0, "description": "Base tilt angle (degrees)."},
-            "eccentricity_B": {"type": "float", "required": False, "default": 0.0, "description": "Load eccentricity along B (m)."},
-            "eccentricity_L": {"type": "float", "required": False, "default": 0.0, "description": "Load eccentricity along L (m)."},
-            "load_inclination": {"type": "float", "required": False, "default": 0.0, "description": "Load inclination from vertical (degrees)."},
-            "ground_slope": {"type": "float", "required": False, "default": 0.0, "description": "Ground slope angle (degrees)."},
-            "vertical_load": {"type": "float", "required": False, "default": 0.0, "description": "Applied vertical load (kN) for inclination factors."},
-            **_COMMON_PARAMS,
-        },
         "returns": {**_COMMON_RETURNS, "q_ultimate_kPa": "Ultimate bearing capacity.", "q_allowable_kPa": "Allowable bearing capacity."},
     },
     "lateral_pile_package": {
         "category": "Calculation Package",
         "brief": "Run lateral pile analysis and generate LPILE-style calc package, with tables (CSV + printed) of y, slope, M, V, p and Es at every node and each layer's p-y curve.",
-        "parameters": {
-            "pile_length": {"type": "float", "required": True, "description": "Pile length (m)."},
-            "pile_diameter": {"type": "float", "required": True, "description": "Pile diameter (m)."},
-            "pile_E": {"type": "float", "required": True, "description": "Pile Young's modulus (kPa). Steel ~200e6; concrete drilled shafts ~25e6 gross (use a reduced value, e.g. 0.3x, for cracked sections)."},
-            "pile_thickness": {"type": "float", "required": False, "description": "Wall thickness (m). Solid if omitted."},
-            "moment_of_inertia": {"type": "float", "required": False, "description": "Moment of inertia (m4). Overrides the value computed from diameter/thickness."},
-            "soil_layers": {"type": "array", "required": True, "description": "List of dicts: top, bottom, py_model (alias: model), plus model params. py_model one of SoftClayMatlock/StiffClayAboveWT {c, gamma, eps50}; StiffClayBelowWT {c, gamma, eps50, ks}; SoftClayJeanjean {su, gamma, Gmax}; SandReese/SandAPI {phi, gamma, k} where k = initial subgrade modulus (kN/m3); WeakRock {qu, Er}. Same layer schema as lateral_pile.lateral_pile_analysis."},
-            "Vt": {"type": "float", "required": False, "default": 0.0, "description": "Lateral load at head (kN)."},
-            "Mt": {"type": "float", "required": False, "default": 0.0, "description": "Moment at head (kN-m)."},
-            "Q": {"type": "float", "required": False, "default": 0.0, "description": "Axial load at pile top (kN), for P-delta."},
-            "head_condition": {"type": "str", "required": False, "default": "free", "allowed_values": ["free", "fixed"], "description": "Pile head condition."},
-            **_COMMON_PARAMS,
-        },
         "returns": {**_COMMON_RETURNS, "y_top_mm": "Top deflection (mm).", "max_moment_kNm": "Max moment (kN-m)."},
     },
     "slope_stability_package": {
@@ -2212,94 +1881,21 @@ METHOD_INFO = {
     "settlement_package": {
         "category": "Calculation Package",
         "brief": "Run settlement analysis and generate calc package, with tables (CSV + printed) of consolidation settlement per layer (e0, Cc, Cr, stresses) and settlement against time.",
-        "parameters": {
-            "q_applied": {"type": "float", "required": True, "description": "Applied bearing pressure (kPa)."},
-            "B": {"type": "float", "required": False, "default": 1.0, "description": "Footing width (m)."},
-            "L": {"type": "float", "required": False, "description": "Footing length (m). Not given: L = B, as settlement.settlement_analysis takes it."},
-            "Es_immediate": {"type": "float", "required": False, "description": "Elastic modulus for immediate settlement (kPa)."},
-            "consolidation_layers": {"type": "array", "required": False, "description": "List of dicts: thickness, depth_to_center, e0, Cc, Cr, sigma_v0, sigma_p."},
-            "schmertmann_layers": {"type": "array", "required": False, "description": "List of dicts: depth_top, depth_bottom, Es."},
-            "q_overburden": {"type": "float", "required": False, "default": 0.0, "description": "Overburden pressure at footing base (kPa)."},
-            "footing_shape": {"type": "str", "required": False, "default": "square", "allowed_values": ["square", "rectangular", "strip"], "description": "Footing shape."},
-            "stress_method": {"type": "str", "required": False, "default": "2:1", "allowed_values": ["2:1", "boussinesq", "westergaard"], "description": "Stress distribution method."},
-            "immediate_method": {"type": "str", "required": False, "default": "elastic", "allowed_values": ["elastic", "schmertmann"], "description": "Immediate settlement method."},
-            "nu": {"type": "float", "required": False, "default": 0.3, "description": "Poisson's ratio for immediate settlement."},
-            "time_years_schmertmann": {"type": "float", "required": False, "default": 0.0, "description": "Creep time for Schmertmann immediate method (years)."},
-            "cv": {"type": "float", "required": False, "description": "Coefficient of consolidation (m2/yr), for the time curve."},
-            "Hdr": {"type": "float", "required": False, "description": "Drainage path length (m) for the time curve."},
-            "drainage": {"type": "str", "required": False, "default": "double", "allowed_values": ["single", "double"], "description": "Drainage condition for time rate."},
-            "C_alpha": {"type": "float", "required": False, "description": "Secondary compression index. Enables secondary settlement."},
-            "e0_secondary": {"type": "float", "required": False, "default": 1.0, "description": "Void ratio for secondary settlement."},
-            "t_secondary": {"type": "float", "required": False, "default": 0.0, "description": "Time for secondary settlement (years)."},
-            **_COMMON_PARAMS,
-        },
         "returns": {**_COMMON_RETURNS, "total_settlement_mm": "Total settlement.", "immediate_mm": "Immediate.", "consolidation_mm": "Consolidation."},
     },
     "axial_pile_package": {
         "category": "Calculation Package",
         "brief": "Run axial pile capacity analysis and generate APILE-style calc package, with tables (CSV + printed) of side resistance per layer, load transfer at the ultimate load and capacity against pile length.",
-        "parameters": {
-            "pile_area": {"type": "float", "required": True, "description": "Pile cross-section area (m2)."},
-            "pile_perimeter": {"type": "float", "required": True, "description": "Pile perimeter (m)."},
-            "pile_tip_area": {"type": "float", "required": True, "description": "Pile tip area (m2)."},
-            "pile_width": {"type": "float", "required": True, "description": "Pile width/diameter (m)."},
-            "pile_length": {"type": "float", "required": True, "description": "Embedded pile length (m)."},
-            "soil_layers": {"type": "array", "required": True, "description": "List of dicts: soil_type, thickness, unit_weight, friction_angle, cohesion; optional delta_phi_ratio, toe_friction_angle (alias toe_phi; the end-bearing phi), description. Same layer keys as axial_pile.axial_pile_capacity."},
-            "factor_of_safety": {"type": "float", "required": False, "default": 2.5, "description": "Factor of safety."},
-            "method": {"type": "str", "required": False, "default": "auto", "allowed_values": ["auto", "beta"], "description": "auto = Nordlund (sand) / Tomlinson (clay); beta = effective-stress method."},
-            "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m)."},
-            "pile_name": {"type": "str", "required": False, "default": "Custom Pile", "description": "Section designation for the report."},
-            "pile_type": {"type": "str", "required": False, "default": "h_pile", "allowed_values": ["h_pile", "pipe_open", "pipe_closed", "concrete", "timber"], "description": "Pile type."},
-            "pile_depth": {"type": "float", "required": False, "description": "Section depth (m): an H-pile's nominal depth; a round pile's equals pile_width."},
-            **_COMMON_PARAMS,
-        },
         "returns": {**_COMMON_RETURNS, "Q_ultimate_kN": "Ultimate capacity.", "Q_allowable_kN": "Allowable capacity."},
     },
     "drilled_shaft_package": {
         "category": "Calculation Package",
         "brief": "Run drilled shaft capacity analysis and generate SHAFT-style calc package, with tables (CSV + printed) of side resistance per layer, load transfer at the ultimate load and capacity against shaft length.",
-        "parameters": {
-            "diameter": {"type": "float", "required": True, "description": "Shaft diameter (m)."},
-            "length": {"type": "float", "required": True, "description": "Shaft length (m)."},
-            "soil_layers": {"type": "array", "required": True, "description": "List of dicts: soil_type, thickness, unit_weight, cu, phi, N60, qu, RQD."},
-            "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m)."},
-            "factor_of_safety": {"type": "float", "required": False, "default": 2.5, "description": "Factor of safety."},
-            "socket_diameter": {"type": "float", "required": False, "description": "Rock socket diameter if different from the shaft's (m)."},
-            "socket_length": {"type": "float", "required": False, "default": 0.0, "description": "Rock socket length (m)."},
-            "bell_diameter": {"type": "float", "required": False, "description": "Bell (underream) diameter at the base (m)."},
-            "casing_depth": {"type": "float", "required": False, "default": 0.0, "description": "Depth of permanent casing (m); no side resistance over it."},
-            "concrete_fc": {"type": "float", "required": False, "default": 28000.0, "description": "Concrete f'c (kPa)."},
-            **_COMMON_PARAMS,
-        },
         "returns": {**_COMMON_RETURNS, "Q_ultimate_kN": "Ultimate capacity.", "Q_allowable_kN": "Allowable capacity."},
     },
     "downdrag_package": {
         "category": "Calculation Package",
         "brief": "Run downdrag analysis and generate calc package, with tables (CSV + printed) of axial load, unit skin friction and soil settlement along the pile, and every neutral-plane method side by side (CSV).",
-        "parameters": {
-            "pile_length": {"type": "float", "required": True, "description": "Pile length (m)."},
-            "pile_diameter": {"type": "float", "required": True, "description": "Pile diameter (m)."},
-            "pile_E": {"type": "float", "required": True, "description": "Pile Young's modulus (kPa)."},
-            "Q_dead": {"type": "float", "required": True, "description": "Dead load at pile head (kN)."},
-            "soil_layers": {"type": "array", "required": True, "description": "List of dicts: soil_type ('cohesionless' or 'cohesive'), thickness (m), unit_weight (kN/m3), cu (kPa) or phi (deg), alpha / beta (optional), settling (bool). A settling layer needs its compressibility: cohesive -> Cc and e0 (Cr, sigma_p optional) or C_ec (C_er optional); cohesionless -> E_s (kPa, nu_s optional)."},
-            "gwt_depth": {"type": "float", "required": False, "default": 0.0, "description": "Groundwater depth (m)."},
-            "fill_thickness": {"type": "float", "required": False, "default": 0.0, "description": "Fill thickness causing downdrag (m)."},
-            "fill_unit_weight": {"type": "float", "required": False, "default": 20.0, "description": "Fill unit weight (kN/m3)."},
-            "gw_drawdown": {"type": "float", "required": False, "default": 0.0, "description": "Groundwater drawdown (m)."},
-            "pile_perimeter": {"type": "float", "required": False, "description": "Pile perimeter for skin friction (m). Default: the circle of pile_diameter (pi x D); give it for an H pile or any non-circular section."},
-            "pile_area": {"type": "float", "required": False, "description": "Pile cross-section area (m2) for the pile's elastic compression (A x E) and, when include_pile_weight is true, its own weight. Default: the solid circle of pile_diameter; for a steel H or pipe pile give the steel area."},
-            "pile_unit_weight": {"type": "float", "required": False, "default": 78.5, "description": "Pile material unit weight (kN/m3), times pile_area for the pile's own weight; used only when include_pile_weight is true. Default 78.5 = steel, as in downdrag.downdrag_analysis (concrete is about 24)."},
-            "include_pile_weight": {"type": "bool", "required": False, "default": False, "description": "Whether the load curve carries the pile's own weight. Default false: left out, as UFC 3-220-20 Fig 6-26 and FHWA GEC-12 7.3.6.1 do. True adds the weight of the pile above the neutral plane to Q_np and the drag force."},
-            "structural_capacity": {"type": "float", "required": False, "description": "Factored structural resistance P_r (kN) for the UFC Eq 6-80 check."},
-            "allowable_settlement": {"type": "float", "required": False, "description": "Allowable settlement (m) for the serviceability check."},
-            "Nt": {"type": "float", "required": False, "description": "Toe bearing capacity factor: R_toe = Nt x sigma'v(toe) x A_toe in cohesionless soil, Nt x cu x A_toe in cohesive. Give the MOBILIZED value -- the toe resistance actually developed at the pile's settlement -- not the ultimate. Omitted, Nt is the ULTIMATE value from the toe layer's phi (100-150 in dense sand; 9 in clay); then the load and resistance curves often do not cross, and the neutral plane comes instead from the mobilized toe resistance compatible with the toe penetration (UFC 3-220-20 6-5.8.4.3, Fig 6-19; see neutral_plane_method). UFC 3-220-20 6-5.8.4.2: check 0 %, 50 % and 100 % toe mobilization."},
-            "neutral_plane_method": {"type": "string", "required": False, "default": "auto", "description": "How the headline neutral plane is located, as in downdrag.downdrag_analysis: 'auto' (the UFC 3-220-20 6-7.4 procedure), 'force_equilibrium' (where the load curve meets the resistance curve at the chosen toe mobilization), 'settlement_compatibility' (the mobilized toe resistance compatible with the toe penetration, UFC Fig 6-19), 'bearing_layer_top', 'pile_toe', 'endo' (CGPR #56). The package tabulates every method whatever is chosen.", "allowed_values": ["auto", "force_equilibrium", "settlement_compatibility", "bearing_layer_top", "pile_toe", "endo"]},
-            "toe_mobilization": {"type": "float", "required": False, "default": 1.0, "description": "Fraction (0-1) of the toe resistance for force equilibrium (UFC 6-5.8.4.2: 0, 0.5, 1)."},
-            "endo_bearing_condition": {"type": "string", "required": False, "description": "CGPR #56 Table 3.1 condition for the Endo et al. (1969) method.", "allowed_values": ["floating", "stiff_flexible", "end_bearing"]},
-            "skin_friction_stress": {"type": "string", "required": False, "default": "final", "description": "Effective stress for beta friction and the toe in sand: 'final' (default; UFC 3-220-20 6-7.4 step 2, the profile that includes the stress change producing settlement; GEC-12 is silent) or 'initial' (before the fill or drawdown).", "allowed_values": ["final", "initial"]},
-            "influence_depth_criterion": {"type": "string", "required": False, "default": "bearing_stress", "description": "How deep below the toe the toe load is counted, as in downdrag.downdrag_analysis: to where its stress increase falls below 'bearing_stress' (default) = 10% of the bearing stress of the equivalent footing (UFC 3-220-20 6-5.8.4.3) or 'effective_stress' = 10% of the existing vertical effective stress (FHWA GEC-12 7.3.5.3). The fill / drawdown compresses the settling layers below the toe down to the bottom of the soil profile either way.", "allowed_values": ["bearing_stress", "effective_stress"]},
-            **_COMMON_PARAMS,
-        },
         "returns": {**_COMMON_RETURNS,
                     "neutral_plane_m": "Neutral plane depth (m).",
                     "neutral_plane_method": "'force_equilibrium', 'settlement_compatibility', 'bearing_layer_top', 'pile_toe', 'endo' or 'none' (see downdrag.downdrag_analysis).",
@@ -2319,204 +1915,45 @@ METHOD_INFO = {
     "seismic_package": {
         "category": "Calculation Package",
         "brief": "Run seismic geotechnical analysis and generate calc package.",
-        "parameters": {
-            "analysis_type": {"type": "str", "required": True, "allowed_values": ["site_classification", "seismic_earth_pressure", "liquefaction"], "description": "Seismic sub-analysis to run."},
-            "vs30": {"type": "float", "required": False, "description": "Avg shear wave velocity (m/s) — site classification."},
-            "Ss": {"type": "float", "required": False, "description": "Short-period spectral accel (g) — site classification."},
-            "S1": {"type": "float", "required": False, "description": "1-sec spectral accel (g) — site classification."},
-            "phi": {"type": "float", "required": False, "description": "Friction angle (deg) — earth pressure."},
-            "kh": {"type": "float", "required": False, "description": "Horizontal seismic coefficient — earth pressure."},
-            "gamma": {"type": "float", "required": False, "description": "Unit weight (kN/m3) — earth pressure."},
-            "H": {"type": "float", "required": False, "description": "Wall height (m) — earth pressure."},
-            "n_bar": {"type": "float", "required": False, "description": "Average SPT N — site classification (instead of vs30)."},
-            "su_bar": {"type": "float", "required": False, "description": "Average undrained shear strength (kPa) — site classification (instead of vs30)."},
-            "delta": {"type": "float", "required": False, "description": "Wall friction angle (deg) — earth pressure. Default 2/3 phi."},
-            "kv": {"type": "float", "required": False, "default": 0.0, "description": "Vertical seismic coefficient — earth pressure."},
-            "KA": {"type": "float", "required": False, "description": "Static active coefficient — earth pressure. Not given: Rankine Ka = tan²(45° − phi/2) from phi, as seismic_geotech.seismic_earth_pressure works it out."},
-            "amax_g": {"type": "float", "required": False, "description": "Peak ground acceleration (g) — liquefaction."},
-            "layer_depths": {"type": "array", "required": False, "description": "Layer mid-depths (m) — liquefaction."},
-            "layer_N160": {"type": "array", "required": False, "description": "(N1)60 per layer — liquefaction."},
-            "layer_FC": {"type": "array", "required": False, "description": "Fines content (%) per layer — liquefaction."},
-            "layer_gamma": {"type": "array", "required": False, "description": "Total unit weight (kN/m3) per layer — liquefaction."},
-            "gwt_depth": {"type": "float", "required": False, "description": "Depth to the water table during the design earthquake (m) — liquefaction, where it is required: no default, it is a site input."},
-            "M": {"type": "float", "required": False, "default": 7.5, "description": "Earthquake magnitude — liquefaction."},
-            **_COMMON_PARAMS,
-        },
         "returns": {**_COMMON_RETURNS, "seismic_analysis_type": "Which sub-analysis was performed."},
     },
     "retaining_wall_package": {
         "category": "Calculation Package",
         "brief": "Run retaining wall analysis and generate calc package.",
-        "parameters": {
-            "wall_height": {"type": "float", "required": True, "description": "TOTAL wall height H (m), from the UNDERSIDE of the base slab to the top of the stem (= base_thickness + stem height); add base_thickness to a height retained above the top of the footing."},
-            "gamma_backfill": {"type": "float", "required": True, "description": "Backfill unit weight (kN/m3)."},
-            "phi_backfill": {"type": "float", "required": True, "description": "Backfill friction angle (deg)."},
-            "wall_type": {"type": "str", "required": False, "default": "cantilever", "allowed_values": ["cantilever"], "description": "Wall type (MSE not yet supported)."},
-            "base_width": {"type": "float", "required": False, "description": "Base slab width B (m). Auto-sized ~0.6H if omitted — pass the REAL geometry for a representative package."},
-            "toe_length": {"type": "float", "required": False, "description": "Toe projection (m). Auto-sized ~0.1B if omitted. Heel is inferred: B - toe - stem_thickness_base."},
-            "stem_thickness_top": {"type": "float", "required": False, "default": 0.3, "description": "Stem thickness at top (m)."},
-            "stem_thickness_base": {"type": "float", "required": False, "description": "Stem thickness at base of stem (m). Auto-sized if omitted."},
-            "base_thickness": {"type": "float", "required": False, "default": 0.6, "description": "Base slab (footing) thickness (m)."},
-            "has_shear_key": {"type": "bool", "required": False, "default": False, "description": "Include a shear key (with key_depth)."},
-            "key_depth": {"type": "float", "required": False, "default": 0.0, "description": "Shear key depth below base (m)."},
-            "backfill_slope": {"type": "float", "required": False, "default": 0.0, "description": "Backfill slope angle (deg)."},
-            "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surcharge (kPa)."},
-            "c_backfill": {"type": "float", "required": False, "default": 0.0, "description": "Backfill cohesion (kPa)."},
-            "phi_foundation": {"type": "float", "required": False, "description": "Foundation soil friction angle (deg), FULL value — sliding applies delta_b = (2/3)*phi_foundation INTERNALLY; do NOT pre-reduce. Use delta_base to set the interface angle directly. Defaults to phi_backfill."},
-            "c_foundation": {"type": "float", "required": False, "default": 0.0, "description": "Foundation soil cohesion (kPa), FULL value — sliding applies ca = (2/3)*c_foundation INTERNALLY; do NOT pre-reduce. Use base_adhesion to set adhesion directly."},
-            "delta_base": {"type": "float", "required": False, "description": "Base interface friction angle delta_b (deg), used DIRECTLY (no 2/3 factor)."},
-            "base_adhesion": {"type": "float", "required": False, "description": "Base adhesion ca (kPa), used DIRECTLY (no 2/3 factor; 0 = no adhesion)."},
-            "include_passive": {"type": "bool", "required": False, "default": False, "description": "Include passive resistance in the sliding check."},
-            "gamma_foundation": {"type": "float", "required": False, "description": "Foundation unit weight (kN/m3) for passive. Defaults to gamma_backfill."},
-            "q_allowable": {"type": "float", "required": False, "description": "Allowable bearing pressure (kPa) for the bearing check. Without it the bearing check is NOT RUN and the package says 'not checked'."},
-            "gamma_concrete": {"type": "float", "required": False, "default": 24.0, "description": "Concrete unit weight (kN/m3)."},
-            "FOS_sliding": {"type": "float", "required": False, "default": 1.5, "description": "Required sliding FOS."},
-            "FOS_overturning": {"type": "float", "required": False, "default": 2.0, "description": "Required overturning FOS."},
-            "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb"], "description": "Earth pressure theory."},
-            **_COMMON_PARAMS,
-        },
         "returns": {**_COMMON_RETURNS, "verdict": "The result in plain words: failed checks first, then not checked. Report it to the user.", "checks_failed": "Checks that failed (sliding, overturning, bearing, eccentricity). Report every one.", "checks_not_run": "Checks not run ('bearing' without q_allowable).", "FOS_sliding": "Sliding FOS (null: no driving force).", "FOS_overturning": "Overturning FOS (null: no driving force).", "FOS_bearing": "Bearing FOS (null: not checked)."},
     },
     "ground_improvement_package": {
         "category": "Calculation Package",
         "brief": "Run ground improvement analysis and generate calc package.",
-        "parameters": {
-            "method": {"type": "str", "required": True, "allowed_values": ["wick_drains", "aggregate_piers", "surcharge", "vibro"], "description": "Ground improvement method."},
-            "spacing": {"type": "float", "required": False, "description": "Element spacing (m) — wick drains, aggregate piers."},
-            "ch": {"type": "float", "required": False, "description": "Horizontal cv (m2/yr) — wick drains, surcharge (optional drains)."},
-            "cv": {"type": "float", "required": False, "description": "Vertical cv (m2/yr) — wick drains, surcharge."},
-            "Hdr": {"type": "float", "required": False, "description": "Drainage path (m) — wick drains, surcharge."},
-            "time": {"type": "float", "required": False, "description": "Design time (years) — wick drains."},
-            "column_diameter": {"type": "float", "required": False, "description": "Stone-column/pier diameter (m) — aggregate piers (alias: diameter)."},
-            "E_column": {"type": "float", "required": False, "default": 80000.0, "description": "Column modulus (kPa) — aggregate piers (alias: E_pier)."},
-            "E_soil": {"type": "float", "required": False, "default": 5000.0, "description": "Matrix soil modulus (kPa) — aggregate piers."},
-            "n": {"type": "float", "required": False, "default": 5.0, "description": "Stress concentration ratio — aggregate piers."},
-            "S_unreinforced": {"type": "float", "required": False, "description": "Unreinforced settlement (m) — aggregate piers (enables the improvement figures)."},
-            "q_unreinforced": {"type": "float", "required": False, "description": "Unreinforced bearing (kPa) — aggregate piers."},
-            "S_ultimate": {"type": "float", "required": False, "description": "Ultimate primary settlement (m) — surcharge."},
-            "surcharge_kPa": {"type": "float", "required": False, "description": "Surcharge fill stress (kPa) — surcharge (alias: surcharge)."},
-            "target_U": {"type": "float", "required": False, "default": 90.0, "description": "Target consolidation (%) — surcharge (alias: target_consolidation)."},
-            "drain_spacing": {"type": "float", "required": False, "description": "Optional wick-drain spacing (m) under the surcharge."},
-            "fines_content": {"type": "float", "required": False, "description": "Fines content (%) — vibro feasibility."},
-            "initial_N_spt": {"type": "float", "required": False, "description": "Pre-improvement (N1)60 — vibro (alias: N1_before)."},
-            "target_N_spt": {"type": "float", "required": False, "default": 25.0, "description": "Target (N1)60 — vibro."},
-            "D50": {"type": "float", "required": False, "description": "Median grain size (mm) — vibro."},
-            "pattern": {"type": "str", "required": False, "default": "triangular", "allowed_values": ["triangular", "square"], "description": "Element pattern — piers/drains/vibro."},
-            "dw": {"type": "float", "required": False, "default": 0.066, "description": "Equivalent drain diameter (m) — wick drains, surcharge with drains."},
-            "smear_ratio": {"type": "float", "required": False, "default": 2.0, "description": "Smear zone ratio ds/dw — wick drains, surcharge with drains."},
-            "kh_ks_ratio": {"type": "float", "required": False, "default": 2.0, "description": "Permeability ratio kh/ks — wick drains, surcharge with drains."},
-            "sigma_v0": {"type": "float", "required": False, "default": 0.0, "description": "Current effective stress at layer center (kPa) — surcharge."},
-            **_COMMON_PARAMS,
-        },
         "returns": {**_COMMON_RETURNS, "method": "Ground improvement method used."},
     },
     "wave_equation_package": {
         "category": "Calculation Package",
         "brief": "Run wave equation analysis and generate bearing graph calc package.",
-        "parameters": {
-            "hammer_name": {"type": "str", "required": True, "description": "Hammer designation string."},
-            "cushion_area": {"type": "float", "required": True, "description": "Cushion area (m2)."},
-            "cushion_thickness": {"type": "float", "required": True, "description": "Cushion thickness (m)."},
-            "cushion_E": {"type": "float", "required": True, "description": "Cushion elastic modulus (Pa)."},
-            "pile_length": {"type": "float", "required": True, "description": "Pile length (m)."},
-            "pile_area": {"type": "float", "required": True, "description": "Pile cross-section area (m2)."},
-            "pile_E": {"type": "float", "required": True, "description": "Pile elastic modulus (Pa)."},
-            "skin_fraction": {"type": "float", "required": False, "default": 0.5, "description": "Fraction of resistance from skin."},
-            "cushion_stiffness": {"type": "float", "required": False, "description": "Cushion stiffness (kN/m), instead of cushion_area/thickness/E."},
-            "cushion_cor": {"type": "float", "required": False, "default": 0.8, "description": "Cushion coefficient of restitution."},
-            "segment_length": {"type": "float", "required": False, "default": 1.0, "description": "Pile segment length (m)."},
-            "pile_unit_weight": {"type": "float", "required": False, "default": 78.5, "description": "Pile material unit weight (kN/m3)."},
-            "quake_side": {"type": "float", "required": False, "default": 0.0025, "description": "Side quake (m)."},
-            "quake_toe": {"type": "float", "required": False, "default": 0.0025, "description": "Toe quake (m)."},
-            "damping_side": {"type": "float", "required": False, "default": 0.16, "description": "Side Smith damping (s/m)."},
-            "damping_toe": {"type": "float", "required": False, "default": 0.5, "description": "Toe Smith damping (s/m)."},
-            "R_min": {"type": "float", "required": False, "default": 200.0, "description": "Min resistance (kN)."},
-            "R_max": {"type": "float", "required": False, "default": 2000.0, "description": "Max resistance (kN)."},
-            "R_step": {"type": "float", "required": False, "default": 200.0, "description": "Resistance increment (kN)."},
-            **_COMMON_PARAMS,
-        },
         "returns": {**_COMMON_RETURNS, "n_points": "Number of bearing graph points."},
     },
     "pile_group_package": {
         "category": "Calculation Package",
         "brief": "Run rigid-cap pile group analysis (CPGA stiffness method) and generate calc package; with method_6dof, tables (CSV + printed) of the force and displacement at every pile head.",
-        "parameters": {
-            "layout": {"type": "str", "required": False, "allowed_values": ["rectangular"], "description": "'rectangular' for auto-layout, or provide 'piles' list instead."},
-            "n_rows": {"type": "int", "required": False, "description": "Rows — rectangular layout."},
-            "n_cols": {"type": "int", "required": False, "description": "Columns — rectangular layout."},
-            "spacing_x": {"type": "float", "required": False, "description": "X spacing (m) — rectangular."},
-            "spacing_y": {"type": "float", "required": False, "description": "Y spacing (m) — rectangular."},
-            "pile_diameter": {"type": "float", "required": False, "description": "Pile diameter/width (m), printed with the layout."},
-            "axial_capacity_compression": {"type": "float", "required": False, "description": "Per-pile compression capacity (kN) — rectangular layout."},
-            "axial_capacity_tension": {"type": "float", "required": False, "description": "Per-pile tension capacity (kN) — rectangular layout."},
-            "piles": {"type": "array", "required": False, "description": "List of dicts: x, y, label, plus optional batter_x/batter_y (deg), axial_stiffness/lateral_stiffness (kN/m), axial_capacity_compression/tension (kN) — custom layout."},
-            "method_6dof": {"type": "bool", "required": False, "default": False, "description": "True: 6-DOF rigid-cap analysis (batter, lateral load; needs axial_stiffness), with per-pile head forces and displacements. False: simplified vertical distribution."},
-            "axial_stiffness": {"type": "float", "required": False, "description": "Pile axial stiffness (kN/m) for every pile of a rectangular layout (6-DOF)."},
-            "lateral_stiffness": {"type": "float", "required": False, "description": "Pile lateral stiffness (kN/m), rectangular layout (6-DOF with Vx/Vy)."},
-            "Vx": {"type": "float", "required": False, "default": 0.0, "description": "Lateral load x (kN), 6-DOF only: refused without method_6dof."},
-            "Vy": {"type": "float", "required": False, "default": 0.0, "description": "Lateral load y (kN), 6-DOF only: refused without method_6dof."},
-            "Vz": {"type": "float", "required": False, "default": 0.0, "description": "Vertical load (kN)."},
-            "Mx": {"type": "float", "required": False, "default": 0.0, "description": "Moment about x (kN-m)."},
-            "My": {"type": "float", "required": False, "default": 0.0, "description": "Moment about y (kN-m)."},
-            "Mz": {"type": "float", "required": False, "default": 0.0, "description": "Torsion (kN-m), 6-DOF only: refused without method_6dof."},
-            **_COMMON_PARAMS,
-        },
-        # A rectangular layout needs spacing_x and spacing_y (GM-110).
-        "refused_parameters": {"spacing": (
-            "with layout='rectangular' the package takes spacing_x and "
-            "spacing_y (the same value twice for a square grid)")},
-        "returns": {**_COMMON_RETURNS, "n_piles": "Number of piles.", "group_efficiency": "Group efficiency."},
+        "returns": {**_COMMON_RETURNS, "n_piles": "Number of piles.", "group_efficiency": "Converse-Labarre group efficiency (with n_rows, n_cols, spacing and pile_diameter), else null."},
     },
     "sheet_pile_package": {
         "category": "Calculation Package",
         "brief": "Run sheet pile wall analysis and generate calc package, with a table (CSV + printed) of pressure, shear and moment along the wall.",
-        "parameters": {
-            "excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."},
-            "soil_layers": {"type": "array", "required": True, "description": "List of dicts: thickness, unit_weight, friction_angle, cohesion; optional wall_friction_deg (used with pressure_method='coulomb'), description. Same layer dicts and aliases (gamma, phi, c, cu, delta, wall_friction) as sheet_pile.cantilever_wall."},
-            "wall_type": {"type": "str", "required": False, "default": "cantilever", "allowed_values": ["cantilever", "anchored"], "description": "Wall type."},
-            "anchor_depth": {"type": "float", "required": False, "description": "Anchor depth (m) — anchored walls."},
-            "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."},
-            "FOS_passive": {"type": "float", "required": False, "default": 1.5, "description": "FOS on passive resistance."},
-            "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb"], "description": "Earth pressure theory."},
-            "gwt_depth_active": {"type": "float", "required": False, "description": "Groundwater depth on the retained side (m)."},
-            "gwt_depth_passive": {"type": "float", "required": False, "description": "Groundwater depth on the excavation side (m)."},
-            **_COMMON_PARAMS,
-        },
         "returns": {**_COMMON_RETURNS, "embedment_m": "Required embedment.", "max_moment_kNm_per_m": "Max moment."},
     },
 }
 
-# The older names the ground improvement package still reads (GM-110), and
-# the aggregate_piers tool's own names (GM-120).
-from funhouse_agent.adapters.ground_improvement import (  # noqa: E402
-    _AGG_ALIASES as _GI_AGG_ALIASES,
-)
-declare_aliases(METHOD_INFO, {"ground_improvement_package": {
-    **_GI_AGG_ALIASES, "E_pier": "E_column",
-    "surcharge": "surcharge_kPa", "target_consolidation": "target_U",
-    "N1_before": "initial_N_spt", "N1_target": "target_N_spt"}})
+# A package that runs an analysis tool takes the tool's parameters, aliases
+# and refusals, and its defaults apply when the tool's do (GM-141).
+for _package in _PACKAGE_TOOLS:
+    METHOD_INFO[_package].update(_package_parameters(_package))
 
-# When each default applies (GM-119), as in the analysis tools: the seismic
-# package's settings to its own sub-analysis, the settlement package's to
-# its method and inputs, the slope report's to its kind of search and its
-# probabilistic annex.
+# When each default applies (GM-119), as in the analysis tools: the slope
+# report's settings to its kind of search and its probabilistic annex.
 _CIRCLES_GRID = ["circular", "entry_exit", "pso"]
 _RANDOM_POLYLINES = ["noncircular", "pso", "weak_layer"]
 declare_applies_when(METHOD_INFO, {
-    "seismic_package": {
-        "kv": {"analysis_type": ["seismic_earth_pressure"]},
-        "KA": {"analysis_type": ["seismic_earth_pressure"]},
-        "M": {"analysis_type": ["liquefaction"]},
-    },
-    "settlement_package": {
-        "nu": {"immediate_method": ["elastic"], "Es_immediate": "set"},
-        "time_years_schmertmann": {"immediate_method": ["schmertmann"]},
-        "stress_method": {"consolidation_layers": "set"},
-        "drainage": {"cv": "set", "consolidation_layers": "set",
-                     "Hdr": "unset"},
-        "e0_secondary": {"C_alpha": "set", "t_secondary": "set"},
-        "t_secondary": {"C_alpha": "set"},
-    },
     "slope_report_package": {
         "nx": {"surface_type": _CIRCLES_GRID},
         "ny": {"surface_type": _CIRCLES_GRID},

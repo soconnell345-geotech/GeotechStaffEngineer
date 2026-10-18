@@ -271,7 +271,8 @@ Key conventions:
       to the model base accepted at any slice count; then slope fixes
       stopped by the owner for one integral review (GM-140); calc
       packages derive Ka and L from the given inputs as their tools do
-      (release note);
+      (release note); every calc package runs its tool's own code path,
+      inputs and parameter docs (release note);
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done".
     Open next: Foundry brief 6, which measures all of this, is drafted

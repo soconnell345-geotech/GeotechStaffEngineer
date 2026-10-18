@@ -47,6 +47,33 @@ REFERENCES = [
 ]
 
 
+def _used(analysis, key, analyze):
+    """An input the run used: the analysis dict's, else the default of the
+    module function ``analyze`` (``analyze_aggregate_piers`` etc.), which
+    the run then took (GM-141: the steps had defaults of their own); None
+    where that function has no default."""
+    if isinstance(analysis, dict) and key in analysis:
+        return analysis[key]
+    import inspect
+    default = inspect.signature(analyze).parameters[key].default
+    return None if default is inspect.Parameter.empty else default
+
+
+def _piers(analysis, key):
+    from ground_improvement import analyze_aggregate_piers
+    return _used(analysis, key, analyze_aggregate_piers)
+
+
+def _wicks(analysis, key):
+    from ground_improvement import analyze_wick_drains
+    return _used(analysis, key, analyze_wick_drains)
+
+
+def _surcharge(analysis, key):
+    from ground_improvement import analyze_surcharge_preloading
+    return _used(analysis, key, analyze_surcharge_preloading)
+
+
 # =====================================================================
 # Public API
 # =====================================================================
@@ -152,9 +179,9 @@ def _inputs_aggregate_piers(result, analysis) -> List[InputItem]:
         InputItem("s", "Column spacing (c-c)", r.column_spacing_m, "m"),
         InputItem("Pattern", "Layout pattern", r.pattern.capitalize(), ""),
         InputItem("E_c", "Column modulus",
-                  analysis.get("E_column", 80000.0), "kPa"),
+                  _piers(analysis, "E_column"), "kPa"),
         InputItem("E_s", "Soil modulus",
-                  analysis.get("E_soil", 5000.0), "kPa"),
+                  _piers(analysis, "E_soil"), "kPa"),
         InputItem("n", "Stress concentration ratio",
                   r.stress_concentration_ratio, ""),
     ]
@@ -238,7 +265,7 @@ def _steps_aggregate_piers(result, analysis) -> List[CalcSection]:
     ))
 
     # -- Section 3: Composite Modulus ---------------------------------
-    E_s = analysis.get("E_soil", 5000.0)
+    E_s = _piers(analysis, "E_soil")
 
     srf_items.append(CalcStep(
         title="Composite Modulus of Improved Ground",
@@ -398,8 +425,8 @@ def _inputs_wick_drains(result, analysis) -> List[InputItem]:
                   analysis.get("Hdr", ""), "m"),
         InputItem("t", "Analysis time", r.time_years, "years"),
     ]
-    smear = analysis.get("smear_ratio", 2.0)
-    kh_ks = analysis.get("kh_ks_ratio", 2.0)
+    smear = _wicks(analysis, "smear_ratio")
+    kh_ks = _wicks(analysis, "kh_ks_ratio")
     if smear > 1.0:
         items.append(InputItem("s_r", "Smear zone ratio (d_s/d_w)",
                                smear, ""))
@@ -444,8 +471,8 @@ def _steps_wick_drains(result, analysis) -> List[CalcSection]:
     # -- Section 2: Drain Function F(n) -------------------------------
     fn_items = []
 
-    smear = analysis.get("smear_ratio", 2.0)
-    kh_ks = analysis.get("kh_ks_ratio", 2.0)
+    smear = _wicks(analysis, "smear_ratio")
+    kh_ks = _wicks(analysis, "kh_ks_ratio")
 
     if smear <= 1.0:
         fn_eq = "F(n) = ln(n) - 0.75"
@@ -472,7 +499,7 @@ def _steps_wick_drains(result, analysis) -> List[CalcSection]:
     # -- Section 3: Degree of Consolidation ---------------------------
     consol_items = []
 
-    Hdr = analysis.get("Hdr", 0.0)
+    Hdr = _wicks(analysis, "Hdr")       # required: None if not given
     t = r.time_years
 
     # Radial time factor
@@ -498,8 +525,8 @@ def _steps_wick_drains(result, analysis) -> List[CalcSection]:
     ))
 
     # Vertical consolidation
-    if Hdr > 0:
-        Tv_val = r.cv_m2_per_year * t / Hdr ** 2 if Hdr > 0 else 0.0
+    if Hdr:
+        Tv_val = r.cv_m2_per_year * t / Hdr ** 2
         consol_items.append(CalcStep(
             title="Vertical Time Factor",
             equation="T_v = c_v \u00d7 t / H_dr\u00b2",
@@ -639,7 +666,7 @@ def _steps_surcharge(result, analysis) -> List[CalcSection]:
     ))
 
     if r.equivalent_sigma_p_kPa > 0:
-        sigma_v0 = analysis.get("sigma_v0", 0.0)
+        sigma_v0 = _surcharge(analysis, "sigma_v0")
         design_items.append(CalcStep(
             title="Equivalent Preconsolidation Pressure",
             equation="\u03c3'_p = \u03c3'_v0 + q_surcharge",

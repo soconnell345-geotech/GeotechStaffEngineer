@@ -47,7 +47,7 @@ _LAYER_KEY_NOTES = {
 _VALID_PARAMS = (
     "layers", "gwt_depth", "pile_length", "pile_diameter", "pile_perimeter",
     "pile_area", "pile_E", "pile_unit_weight", "Q_dead", "structural_capacity",
-    "fill_thickness", "fill_unit_weight", "gw_drawdown", "Nt", "n_sublayers",
+    "allowable_settlement", "fill_thickness", "fill_unit_weight", "gw_drawdown", "Nt", "n_sublayers",
     "neutral_plane_method", "toe_mobilization", "endo_bearing_condition",
     "skin_friction_stress", "include_pile_weight",
     "influence_depth_criterion",
@@ -64,19 +64,22 @@ _LAYER_FIX = (
     "settling=false.")
 
 
-def _run_downdrag_analysis(params):
-    reject_unknown_params(params, _VALID_PARAMS, method="downdrag_analysis")
+def run_downdrag_analysis(params, *, method="downdrag_analysis"):
+    """(result, analysis) of ``downdrag_analysis``: the tool's own code
+    path, also run by ``calc_package.downdrag_package`` (GM-141).
+    ``method`` names the caller in error messages."""
+    reject_unknown_params(params, _VALID_PARAMS, method=method)
     require_params(params, ["layers", "pile_length", "pile_diameter"],
-                   method="downdrag_analysis", valid=_VALID_PARAMS)
+                   method=method, valid=_VALID_PARAMS)
     check_nested_list(params["layers"], _LAYER_KEYS,
-                      method="downdrag_analysis", label="layers",
+                      method=method, label="layers",
                       hints=_LAYER_KEY_HINTS, notes=_LAYER_KEY_NOTES)
     layers = []
     for i, l in enumerate(params["layers"]):
-        require_keys(l, ["thickness", "soil_type", "unit_weight"], method="downdrag_analysis")
+        require_keys(l, ["thickness", "soil_type", "unit_weight"], method=method)
         if l["soil_type"] not in _SOIL_TYPES:
             raise ValueError(
-                f"downdrag_analysis: layer soil_type must be one of {list(_SOIL_TYPES)} "
+                f"{method}: layer soil_type must be one of {list(_SOIL_TYPES)} "
                 f"(got '{l['soil_type']}'). Mark settling layers with settling=True."
             )
         try:
@@ -90,7 +93,7 @@ def _run_downdrag_analysis(params):
             ))
         except ValueError as exc:
             raise ValueError(
-                f"downdrag_analysis: layers[{i}] ({l.get('description') or l['soil_type']}): "
+                f"{method}: layers[{i}] ({l.get('description') or l['soil_type']}): "
                 f"{exc}. {_LAYER_FIX}") from None
     soil = DowndragSoilProfile(layers=layers, gwt_depth=params.get("gwt_depth", 0.0))
     analysis = DowndragAnalysis(
@@ -99,6 +102,7 @@ def _run_downdrag_analysis(params):
         pile_E=params.get("pile_E", 200e6), pile_unit_weight=params.get("pile_unit_weight", 78.5),
         include_pile_weight=params.get("include_pile_weight", False),
         Q_dead=params.get("Q_dead", 0.0), structural_capacity=params.get("structural_capacity"),
+        allowable_settlement=params.get("allowable_settlement"),
         fill_thickness=params.get("fill_thickness", 0.0), fill_unit_weight=params.get("fill_unit_weight", 19.0),
         gw_drawdown=params.get("gw_drawdown", 0.0), Nt=params.get("Nt"), n_sublayers=params.get("n_sublayers", 10),
         neutral_plane_method=params.get("neutral_plane_method", "auto"),
@@ -108,7 +112,11 @@ def _run_downdrag_analysis(params):
         influence_depth_criterion=params.get("influence_depth_criterion",
                                              "bearing_stress"),
     )
-    return _basis_first(analysis.compute().to_dict())
+    return analysis.compute(), analysis
+
+
+def _run_downdrag_analysis(params):
+    return _basis_first(run_downdrag_analysis(params)[0].to_dict())
 
 
 #: Result keys that say how far to trust the numbers; put ahead of the long
@@ -397,6 +405,7 @@ METHOD_INFO = {
             "pile_perimeter": {"type": "float", "required": False, "description": "Pile perimeter (m). Computed from diameter if omitted."},
             "pile_area": {"type": "float", "required": False, "description": "Pile cross-section area (m2). Computed from diameter if omitted."},
             "structural_capacity": {"type": "float", "required": False, "description": "Pile structural capacity (kN) for the max-load check."},
+            "allowable_settlement": {"type": "float", "required": False, "description": "Allowable pile settlement (m) for the settlement check."},
             "Nt": {"type": "float", "required": False, "description": "Toe bearing capacity factor: R_toe = Nt x sigma'v(toe) x A_toe in cohesionless soil, Nt x cu x A_toe in cohesive. Give the MOBILIZED value -- the toe resistance actually developed at the pile's settlement -- not the ultimate. Omitted, Nt is the ULTIMATE value from the toe layer's phi (100-150 in dense sand; 9 in clay); then the load and resistance curves often do not intersect and the neutral plane is where the pile and soil settle equally, the toe force compatible with the toe penetration (UFC 3-220-20 6-5.8.4.3; see neutral_plane_method). UFC 3-220-20 6-5.8.4.2: check 0 %, 50 % and 100 % toe mobilization."},
             "pile_unit_weight": {"type": "float", "required": False, "default": 78.5, "description": "Pile material unit weight (kN/m3), times pile_area for the pile's own weight; used only when include_pile_weight is true. Default 78.5 = steel, the same material as the pile_E default (concrete is about 24). For an H or pipe pile give pile_area as the steel area (pile_area defaults to the solid circle)."},
             "include_pile_weight": {"type": "bool", "required": False, "default": False, "description": "Whether the load curve carries the pile's own weight. Default false: left out, as UFC 3-220-20 Fig 6-26 and FHWA GEC-12 7.3.6.1 (and their worked examples) do. True adds the weight of the pile above the neutral plane to Q_np and the drag force."},

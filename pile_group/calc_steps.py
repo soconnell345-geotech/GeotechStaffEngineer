@@ -263,14 +263,37 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     n_rows = _get(analysis, 'n_rows', None)
     n_cols = _get(analysis, 'n_cols', None)
     pile_diameter = _get(analysis, 'pile_diameter', None)
-    spacing = _get(analysis, 'spacing', None) or _get(analysis, 'spacing_x', None)
+    # One spacing for Converse-Labarre: the rows' and columns' spacings as
+    # the layout took them (a single 'spacing' for a direction not given),
+    # and where they differ the smaller, where the piles are closer and
+    # E_g is lower
+    s_one = _get(analysis, 'spacing', None)
+    s_x = _get(analysis, 'spacing_x', None)
+    s_y = _get(analysis, 'spacing_y', None)
+    s_x = s_one if s_x is None else s_x
+    s_y = s_one if s_y is None else s_y
+    s_xy = [s for s in (s_x, s_y) if s is not None]
+    spacing = _get(analysis, 'efficiency_spacing', None)
+    if spacing is None and s_xy:
+        spacing = min(s_xy)
+    spacing_note = ""
+    if s_x is not None and s_y is not None and s_x != s_y:
+        spacing_note = (f"Converse-Labarre takes one spacing; of s_x = "
+                        f"{s_x:.3f} m and s_y = {s_y:.3f} m the smaller is "
+                        "used (the closer piles, the lower E_g). ")
+    # E_g as the run worked it out (the group_efficiency tool), else by
+    # the same function, never by a formula of the steps' own (GM-141);
+    # theta below only shows the substitution
     efficiency = _get(analysis, 'efficiency', None)
 
     if n_rows and n_cols and pile_diameter and spacing:
+        if efficiency is None:
+            from pile_group.group_efficiency import converse_labarre
+            efficiency = converse_labarre(n_rows, n_cols, pile_diameter,
+                                          spacing)
         theta = math.degrees(math.atan(pile_diameter / spacing))
         m, n = n_rows, n_cols
-        Eg = 1.0 - theta / (90.0 * m * n) * (n * (m - 1) + m * (n - 1))
-        Eg = min(max(Eg, 0.0), 1.0)
+        Eg = efficiency
 
         efficiency_items.append(CalcStep(
             title="Converse-Labarre Group Efficiency",
@@ -287,6 +310,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_unit="",
             reference="FHWA GEC-12, Eq. 9-1",
             notes=(
+                spacing_note +
                 f"D = {pile_diameter:.3f} m, s = {spacing:.3f} m, "
                 f"s/D = {spacing/pile_diameter:.1f}. "
                 "Group efficiency should typically be > 0.7 for driven piles."
@@ -314,20 +338,13 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                     reference="FHWA GEC-12, Section 9.4",
                 ))
 
-    elif efficiency is not None:
-        # Efficiency provided directly
-        efficiency_items.append(CalcStep(
-            title="Group Efficiency (Provided)",
-            equation="E_g (user-specified)",
-            substitution="",
-            result_name="E_g",
-            result_value=f"{efficiency:.3f}",
-            notes="Group efficiency factor applied to individual pile capacities.",
-        ))
     else:
+        missing = [k for k, v in (("n_rows", n_rows), ("n_cols", n_cols),
+                                  ("pile_diameter", pile_diameter),
+                                  ("spacing", spacing)) if not v]
         efficiency_items.append(
-            "Group efficiency not computed (Converse-Labarre parameters "
-            "not provided: n_rows, n_cols, pile_diameter, spacing)."
+            "Group efficiency not computed (Converse-Labarre needs "
+            + ", ".join(missing) + ")."
         )
 
     sections.append(CalcSection(

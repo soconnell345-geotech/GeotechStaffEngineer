@@ -17,14 +17,25 @@ def _valid_kwargs(func):
     return set(inspect.signature(func).parameters)
 
 
-def _call(func, p, *, method, aliases=None, required=()):
-    """Alias-map, validate, and call a module function with **p."""
+def _run(func, p, *, method, aliases=None, required=()):
+    """Alias-map, validate, and call a module function with **p: (result,
+    inputs in force), each of the function's inputs as given or its
+    default."""
     if aliases:
         p = apply_aliases(p, aliases)
     valid = _valid_kwargs(func)
     reject_unknown_params(p, valid, method=method)
     require_params(p, required, method=method, valid=valid)
-    return clean_result(func(**p).to_dict())
+    used = {name: p.get(name, prm.default)
+            for name, prm in inspect.signature(func).parameters.items()}
+    return func(**p), used
+
+
+def _call(func, p, *, method, aliases=None, required=()):
+    """Alias-map, validate, and call a module function with **p."""
+    result, _ = _run(func, p, method=method, aliases=aliases,
+                     required=required)
+    return clean_result(result.to_dict())
 
 
 # Aliases: names the agent reaches for (and that older METHOD_INFO advertised)
@@ -44,7 +55,11 @@ _FEAS_ALIASES = {"treatment_depth": "thickness_m", "thickness": "thickness_m",
                  "N_spt_avg": "N_spt"}
 
 
-def _run_aggregate_piers(p):
+# The tools below as (result, inputs in force): their own code path, also
+# run by ``calc_package.ground_improvement_package`` (GM-141). ``method``
+# names the caller in error messages.
+
+def run_aggregate_piers(p, *, method="aggregate_piers"):
     p = apply_aliases(p, _AGG_ALIASES)
     # Accept the commonly-guessed area_replacement_ratio (As/A) and convert it
     # to a center-to-center spacing for the given diameter + pattern.
@@ -52,20 +67,40 @@ def _run_aggregate_piers(p):
         p = dict(p)
         ar = p.pop("area_replacement_ratio")
         if "spacing" not in p:
-            require_params(p, ["column_diameter"], method="aggregate_piers",
+            require_params(p, ["column_diameter"], method=method,
                            valid=_valid_kwargs(analyze_aggregate_piers))
             d = p["column_diameter"]
             A_col = math.pi * d ** 2 / 4.0
             trib = 0.866 if p.get("pattern", "triangular") == "triangular" else 1.0
             p["spacing"] = math.sqrt(A_col / (ar * trib))
-    return _call(analyze_aggregate_piers, p, method="aggregate_piers",
-                 required=["column_diameter", "spacing"])
+    return _run(analyze_aggregate_piers, p, method=method,
+                required=["column_diameter", "spacing"])
+
+
+def run_wick_drains(p, *, method="wick_drains"):
+    return _run(analyze_wick_drains, p, method=method,
+                aliases=_WICK_ALIASES,
+                required=["spacing", "ch", "cv", "Hdr", "time"])
+
+
+def run_surcharge_preloading(p, *, method="surcharge_preloading"):
+    return _run(analyze_surcharge_preloading, p, method=method,
+                aliases=_SURCHARGE_ALIASES,
+                required=["S_ultimate", "surcharge_kPa", "cv", "Hdr"])
+
+
+def run_vibro_compaction(p, *, method="vibro_compaction"):
+    return _run(analyze_vibro_compaction, p, method=method,
+                aliases=_VIBRO_ALIASES,
+                required=["fines_content", "initial_N_spt"])
+
+
+def _run_aggregate_piers(p):
+    return clean_result(run_aggregate_piers(p)[0].to_dict())
 
 
 def _run_wick_drains(p):
-    return _call(analyze_wick_drains, p, method="wick_drains",
-                 aliases=_WICK_ALIASES,
-                 required=["spacing", "ch", "cv", "Hdr", "time"])
+    return clean_result(run_wick_drains(p)[0].to_dict())
 
 
 def _run_design_drain_spacing(p):
@@ -75,15 +110,11 @@ def _run_design_drain_spacing(p):
 
 
 def _run_surcharge_preloading(p):
-    return _call(analyze_surcharge_preloading, p, method="surcharge_preloading",
-                 aliases=_SURCHARGE_ALIASES,
-                 required=["S_ultimate", "surcharge_kPa", "cv", "Hdr"])
+    return clean_result(run_surcharge_preloading(p)[0].to_dict())
 
 
 def _run_vibro_compaction(p):
-    return _call(analyze_vibro_compaction, p, method="vibro_compaction",
-                 aliases=_VIBRO_ALIASES,
-                 required=["fines_content", "initial_N_spt"])
+    return clean_result(run_vibro_compaction(p)[0].to_dict())
 
 
 def _run_feasibility(p):

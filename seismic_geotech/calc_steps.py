@@ -112,11 +112,18 @@ def _inputs_site_class(result, analysis) -> List[InputItem]:
     if result.su_bar is not None:
         items.append(InputItem("su-bar", "Average undrained strength (top 30 m)", f"{result.su_bar:.0f}", "kPa"))
 
-    items.append(InputItem("Ss", "Spectral acceleration at 0.2 s", f"{result.Ss:.3f}", "g"))
-    items.append(InputItem("S1", "Spectral acceleration at 1.0 s", f"{result.S1:.3f}", "g"))
+    if result.Ss is not None:
+        items.append(InputItem("Ss", "Spectral acceleration at 0.2 s", f"{result.Ss:.3f}", "g"))
+        items.append(InputItem("S1", "Spectral acceleration at 1.0 s", f"{result.S1:.3f}", "g"))
+    else:
+        items.append(InputItem("Ss, S1", "Spectral accelerations",
+                               "not given: site class only", ""))
 
     # Echo layer data if provided in analysis dict
     a = analysis or {}
+    if a.get("pga") is not None and result.Ss is not None:
+        items.append(InputItem("PGA", "Peak ground acceleration on rock",
+                               f"{a['pga']:.3f}", "g"))
     if "layer_thicknesses" in a:
         items.append(InputItem("Layers", "Number of soil layers", len(a["layer_thicknesses"]), ""))
 
@@ -134,14 +141,19 @@ def _inputs_earth_pressure(result, analysis) -> List[InputItem]:
     ]
 
     a = analysis or {}
-    if "beta" in a:
+    if a.get("beta") is not None:
         items.append(InputItem("\u03b2", "Wall batter from vertical", a["beta"], "deg"))
-    if "i" in a:
+    if a.get("i") is not None:
         items.append(InputItem("i", "Backfill slope angle", a["i"], "deg"))
-    if "gamma" in a:
+    if a.get("gamma") is not None:
         items.append(InputItem("\u03b3", "Backfill unit weight", a["gamma"], "kN/m\u00b3"))
-    if "H" in a:
+    if a.get("H") is not None:
         items.append(InputItem("H", "Wall height", a["H"], "m"))
+    if a.get("KA") is not None:
+        items.append(InputItem(
+            "K_A", "Static active coefficient behind PA",
+            f"{a['KA']:.4f}",
+            "given" if a.get("KA_given") else "Rankine, from \u03c6"))
 
     return items
 
@@ -259,16 +271,29 @@ def _steps_site_class(result, analysis) -> List[CalcSection]:
     ))
     sections.append(CalcSection(title="Site Classification", items=class_items))
 
+    # Without Ss and S1 the run gives the site class alone.
+    if result.Ss is None:
+        return sections
+
     # Section: Site Coefficients
     coeff_items = []
 
+    # Fpga is read against PGA when it is given, else against Ss
+    # (site_coefficients, SG-2).
+    pga = a.get("pga")
     coeff_items.append(CalcStep(
         title="Site Coefficient Fpga (PGA amplification)",
-        equation="Fpga = f(Site Class, Ss) from AASHTO Table 3.10.3.2-1",
-        substitution=f"Site Class {result.site_class}, Ss = {result.Ss:.3f} g",
+        equation=("Fpga = f(Site Class, PGA) from AASHTO Table 3.10.3.2-1"
+                  if pga is not None else
+                  "Fpga = f(Site Class, Ss) from AASHTO Table 3.10.3.2-1"),
+        substitution=(f"Site Class {result.site_class}, PGA = {pga:.3f} g"
+                      if pga is not None else
+                      f"Site Class {result.site_class}, Ss = {result.Ss:.3f} g"),
         result_name="Fpga",
         result_value=f"{result.Fpga:.3f}",
         reference="AASHTO LRFD Table 3.10.3.2-1",
+        notes=("" if pga is not None else
+               "PGA not given: Fpga read against Ss, the same table values"),
     ))
 
     coeff_items.append(CalcStep(
@@ -400,12 +425,12 @@ def _steps_earth_pressure(result, analysis) -> List[CalcSection]:
         reference="AASHTO LRFD Eq. 11.6.5.2-1; Mononobe-Okabe (1929)",
     ))
 
-    # Static Ka: with no KA given it is the KA behind PA and delta-PAE
-    # (GM-120); beside a KA given it is for comparison.
-    Ka_static = math.tan(math.pi / 4 - math.radians(r.phi) / 2) ** 2
-    ka_worked_out = a.get("KA") is None
+    # Static Ka: with no KA given it is the KA the run used behind PA and
+    # delta-PAE (GM-120); beside a KA given it is for comparison.
     # The KA behind PA and delta-PAE, printed where they are worked out.
-    Ka_used = Ka_static if ka_worked_out else float(a["KA"])
+    Ka_used, ka_worked_out = _ka_used(a, r.phi)
+    Ka_static = (Ka_used if ka_worked_out else
+                 math.tan(math.pi / 4 - math.radians(r.phi) / 2) ** 2)
     ratio = f"KAE/Ka = {r.KAE/Ka_static:.2f}" if Ka_static > 0 else ""
     kae_items.append(CalcStep(
         title=("Static Active Coefficient (Rankine Ka)" if ka_worked_out
@@ -439,7 +464,8 @@ def _steps_earth_pressure(result, analysis) -> List[CalcSection]:
             ),
             substitution=(
                 f"\u03c6 = {r.phi:.1f}\u00b0, \u03b4 = {r.delta:.1f}\u00b0, "
-                f"k_h = {r.kh:.3f}, k_v = {r.kv:.3f}"
+                f"k_h = {r.kh:.3f}, k_v = {r.kv:.3f}, "
+                f"\u03b2 = {beta_deg:.1f}\u00b0, i = {i_deg:.1f}\u00b0"
             ),
             result_name="KPE",
             result_value=f"{r.KPE:.4f}",
@@ -451,14 +477,16 @@ def _steps_earth_pressure(result, analysis) -> List[CalcSection]:
 
     # Section: Pressure Resultants (if H and gamma available)
     if r.PAE_total > 0:
-        gamma = a.get("gamma", 0.0)
-        H = a.get("H", 0.0)
+        # as the run used them; the symbol where the analysis lacks one
+        gamma, H = a.get("gamma"), a.get("H")
+        g_txt = f"{gamma:.1f}" if gamma is not None else "\u03b3"
+        H_txt = f"{H:.2f}" if H is not None else "H"
 
         force_items = []
         force_items.append(CalcStep(
             title="Total Seismic Active Force",
             equation="PAE = 0.5 \u00d7 \u03b3 \u00d7 H\u00b2 \u00d7 KAE",
-            substitution=f"PAE = 0.5 \u00d7 {gamma:.1f} \u00d7 {H:.2f}\u00b2 \u00d7 {r.KAE:.4f}",
+            substitution=f"PAE = 0.5 \u00d7 {g_txt} \u00d7 {H_txt}\u00b2 \u00d7 {r.KAE:.4f}",
             result_name="PAE",
             result_value=f"{r.PAE_total:.2f}",
             result_unit="kN/m",
@@ -468,7 +496,7 @@ def _steps_earth_pressure(result, analysis) -> List[CalcSection]:
         force_items.append(CalcStep(
             title="Static Active Force",
             equation="PA = 0.5 \u00d7 \u03b3 \u00d7 H\u00b2 \u00d7 Ka",
-            substitution=f"PA = 0.5 \u00d7 {gamma:.1f} \u00d7 {H:.2f}\u00b2 \u00d7 {Ka_used:.4f}",
+            substitution=f"PA = 0.5 \u00d7 {g_txt} \u00d7 {H_txt}\u00b2 \u00d7 {Ka_used:.4f}",
             result_name="PA",
             result_value=f"{r.PA_static:.2f}",
             result_unit="kN/m",
@@ -488,7 +516,7 @@ def _steps_earth_pressure(result, analysis) -> List[CalcSection]:
         force_items.append(CalcStep(
             title="Height of Application of Seismic Increment",
             equation="h_app = 0.6 \u00d7 H",
-            substitution=f"h_app = 0.6 \u00d7 {H:.2f}",
+            substitution=f"h_app = 0.6 \u00d7 {H_txt}",
             result_name="h_app",
             result_value=f"{r.height_of_application:.2f}",
             result_unit="m",
@@ -693,6 +721,8 @@ def get_figures(result, analysis) -> List[FigureData]:
 def _figures_site_class(result, analysis) -> List[FigureData]:
     """Figures for site classification: design response spectrum."""
     figures = []
+    if result.Ss is None:
+        return figures
     try:
         fig = _plot_design_spectrum(result)
         b64 = figure_to_base64(fig, dpi=150)
@@ -801,13 +831,24 @@ def _plot_design_spectrum(result):
 
 # ── Mononobe-Okabe Figures ──────────────────────────────────────
 
+def _ka_used(a, phi):
+    """(the static KA behind PA and delta-PAE, whether it was worked out):
+    the seismic_earth_pressure run's KA (it passes KA and KA_given), else a
+    KA given in the analysis, else Rankine Ka from phi, as the tool works
+    it out (GM-120)."""
+    KA = a.get("KA")
+    if KA is None:
+        return math.tan(math.pi / 4 - math.radians(phi) / 2) ** 2, True
+    return float(KA), a.get("KA_given") is False
+
+
 def _figures_earth_pressure(result, analysis) -> List[FigureData]:
     """Figures for Mononobe-Okabe: pressure diagram."""
     r = result
     a = analysis or {}
     figures = []
 
-    if r.PAE_total > 0 and "H" in a:
+    if r.PAE_total > 0 and a.get("H") is not None:
         try:
             fig = _plot_pressure_diagram(r, a)
             b64 = figure_to_base64(fig, dpi=150)
@@ -839,11 +880,10 @@ def _plot_pressure_diagram(result, analysis):
     import numpy as np
 
     r = result
-    H = analysis.get("H", 6.0)
-    gamma = analysis.get("gamma", 18.0)
-    # The KA behind PA: as given, else Rankine Ka from phi (GM-120).
-    Ka_static = (float(analysis["KA"]) if analysis.get("KA") is not None
-                 else math.tan(math.pi / 4 - math.radians(r.phi) / 2) ** 2)
+    H = analysis["H"]          # the caller draws this only with H known
+    # The KA the run used behind PA: as given, else Rankine Ka from phi
+    # (GM-120).
+    Ka_static, _ = _ka_used(analysis, r.phi)
 
     fig, ax = plt.subplots(figsize=(8, 6))
 
@@ -853,13 +893,15 @@ def _plot_pressure_diagram(result, analysis):
 
     # Static pressure triangle
     z_vals = np.linspace(0, H, 50)
-    p_static = Ka_static * gamma * (H - z_vals)  # pressure at elevation z from base
+    # pressure shapes at elevation z from base, scaled to the plot (the
+    # unit weight cancels)
+    p_static = Ka_static * (H - z_vals)
     ax.fill_betweenx(z_vals, 0, p_static / max(p_static) * H * 0.4,
                       color='#2563eb', alpha=0.3, label=f'Static PA (Ka={Ka_static:.3f})')
     ax.plot(p_static / max(p_static) * H * 0.4, z_vals, 'b-', linewidth=1.5)
 
     # Seismic pressure (M-O)
-    p_seismic = r.KAE * gamma * (H - z_vals)
+    p_seismic = r.KAE * (H - z_vals)
     ax.fill_betweenx(z_vals, 0, p_seismic / max(p_seismic) * H * 0.55,
                       color='#dc2626', alpha=0.2, label=f'Seismic PAE (KAE={r.KAE:.3f})')
     ax.plot(p_seismic / max(p_seismic) * H * 0.55, z_vals, 'r-', linewidth=1.5)
@@ -904,9 +946,10 @@ def _plot_pressure_diagram(result, analysis):
     # Info box
     info = (
         f"\u03c6 = {r.phi:.0f}\u00b0, \u03b4 = {r.delta:.0f}\u00b0\n"
-        f"k_h = {r.kh:.3f}, k_v = {r.kv:.3f}\n"
-        f"\u03b3 = {gamma:.1f} kN/m\u00b3"
+        f"k_h = {r.kh:.3f}, k_v = {r.kv:.3f}"
     )
+    if analysis.get("gamma") is not None:
+        info += f"\n\u03b3 = {analysis['gamma']:.1f} kN/m\u00b3"
     ax.text(0.02, 0.98, info, transform=ax.transAxes,
             fontsize=8, va='top',
             bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.9))

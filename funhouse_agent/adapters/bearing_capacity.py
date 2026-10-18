@@ -36,17 +36,19 @@ _ANALYSIS_ALIASES = {
 _FACTOR_METHODS = ("vesic", "meyerhof", "terzaghi")
 
 
-def _run_bearing_capacity_analysis(params: dict) -> dict:
+def run_bearing_capacity_analysis(params: dict, *,
+                                  method: str = "bearing_capacity_analysis"):
+    """(result, analysis) of ``bearing_capacity_analysis``: the tool's own
+    code path, also run by ``calc_package.bearing_capacity_package``
+    (GM-141). ``method`` names the caller in error messages."""
     params = apply_aliases(params, _ANALYSIS_ALIASES)
-    reject_unknown_params(params, _ANALYSIS_VALID_PARAMS,
-                          method="bearing_capacity_analysis")
-    require_params(params, ["width", "unit_weight"],
-                   method="bearing_capacity_analysis",
+    reject_unknown_params(params, _ANALYSIS_VALID_PARAMS, method=method)
+    require_params(params, ["width", "unit_weight"], method=method,
                    valid=_ANALYSIS_VALID_PARAMS)
     factor_method = str(params.get("factor_method", "vesic")).strip().lower()
     if factor_method not in _FACTOR_METHODS:
         raise ValueError(
-            f"bearing_capacity_analysis: factor_method must be one of "
+            f"{method}: factor_method must be one of "
             f"{list(_FACTOR_METHODS)} (it sets the shape, depth and "
             f"inclination factors; 'terzaghi' = Terzaghi 1943 throughout), "
             f"got '{params.get('factor_method')}'. Hansen's N-gamma is "
@@ -87,7 +89,11 @@ def _run_bearing_capacity_analysis(params: dict) -> dict:
         factor_method=params.get("factor_method", "vesic"),
         failure_mode=params.get("failure_mode", "general"),
     )
-    return analysis.compute().to_dict()
+    return analysis.compute(), analysis
+
+
+def _run_bearing_capacity_analysis(params: dict) -> dict:
+    return run_bearing_capacity_analysis(params)[0].to_dict()
 
 
 def _terzaghi_factors(phi, params: dict) -> dict:

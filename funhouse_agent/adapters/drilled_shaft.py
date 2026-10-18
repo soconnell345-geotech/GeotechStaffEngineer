@@ -76,16 +76,23 @@ def _rational_kwargs(params):
     return kw
 
 
-def _run_drilled_shaft_capacity(params):
+def run_drilled_shaft_capacity(params, *, method="drilled_shaft_capacity"):
+    """(result, analysis) of ``drilled_shaft_capacity``: the tool's own code
+    path, also run by ``calc_package.drilled_shaft_package`` (GM-141).
+    ``method`` names the caller in error messages."""
     params = apply_aliases(params, _SHAFT_ALIASES)
     reject_unknown_params(params, _SHAFT_PARAMS + _SOIL_PARAMS + _RATIONAL_PARAMS + ("factor_of_safety",),
-                          method="drilled_shaft_capacity")
+                          method=method)
     shaft = _build_shaft(params)
     soil = _build_soil_profile(params)
     analysis = DrillShaftAnalysis(shaft=shaft, soil=soil,
                                   factor_of_safety=params.get("factor_of_safety", 2.5),
                                   **_rational_kwargs(params))
-    return analysis.compute().to_dict()
+    return analysis.compute(), analysis
+
+
+def _run_drilled_shaft_capacity(params):
+    return run_drilled_shaft_capacity(params)[0].to_dict()
 
 
 def _run_capacity_vs_depth(params):

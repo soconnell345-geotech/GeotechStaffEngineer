@@ -12,16 +12,23 @@ from seismic_geotech.dynamic_properties import (
 from sheet_pile.earth_pressure import rankine_Ka
 
 
-def _run_site_classification(params: dict) -> dict:
+def run_site_classification(params: dict, *,
+                            method: str = "site_classification"):
+    """(site class, vs30, n_bar, su_bar, coefficients) of
+    ``site_classification``: the tool's own code path, also run by
+    ``calc_package.seismic_package`` (GM-141). The averages are those
+    worked out from layers or given (None when neither); the coefficients
+    are a SiteClassResult when Ss and S1 are given, else None. ``method``
+    names the caller in error messages."""
     reject_unknown_params(
         params,
         ("vs30", "layer_thicknesses", "layer_vs", "layer_N", "n_bar",
          "su_layer_thicknesses", "layer_su", "su_bar", "Ss", "S1", "pga"),
-        method="site_classification")
+        method=method)
     if all(params.get(k) is None for k in
            ("vs30", "n_bar", "su_bar", "layer_vs", "layer_N", "layer_su")):
         raise ValueError(
-            "site_classification: provide one of 'vs30' (m/s), 'n_bar' "
+            f"{method}: provide one of 'vs30' (m/s), 'n_bar' "
             "(avg SPT N), 'su_bar' (kPa), or layer arrays "
             "(layer_thicknesses + layer_vs / layer_N / layer_su)."
         )
@@ -41,64 +48,125 @@ def _run_site_classification(params: dict) -> dict:
     elif "su_bar" in params:
         su_bar = params["su_bar"]
     site_class = classify_site(vs30=vs30, n_bar=n_bar, su_bar=su_bar)
-    result = {"site_class": site_class, "vs30_m_per_s": round(vs30, 1) if vs30 else None, "n_bar": round(n_bar, 1) if n_bar else None}
     Ss = params.get("Ss")
     S1 = params.get("S1")
+    coefficients = None
     if Ss is not None and S1 is not None:
-        sc_result = site_coefficients(site_class, Ss, S1, pga=params.get("pga"))
-        result.update(sc_result.to_dict())
+        coefficients = site_coefficients(site_class, Ss, S1,
+                                         pga=params.get("pga"))
+    return site_class, vs30, n_bar, su_bar, coefficients
+
+
+def _run_site_classification(params: dict) -> dict:
+    site_class, vs30, n_bar, _, coefficients = run_site_classification(params)
+    result = {"site_class": site_class, "vs30_m_per_s": round(vs30, 1) if vs30 else None, "n_bar": round(n_bar, 1) if n_bar else None}
+    if coefficients is not None:
+        result.update(coefficients.to_dict())
     return result
 
 
-def _run_seismic_earth_pressure(params: dict) -> dict:
-    _valid = ("phi", "delta", "kh", "kv", "beta", "i", "include_passive",
-              "gamma", "H")
-    reject_unknown_params(params, _valid, method="seismic_earth_pressure")
-    require_params(params, ["phi", "kh"], method="seismic_earth_pressure",
-                   valid=_valid)
+_MO_VALID = ("phi", "delta", "kh", "kv", "beta", "i", "include_passive",
+             "gamma", "H", "KA")
+
+
+def run_seismic_earth_pressure(params: dict, *,
+                               method: str = "seismic_earth_pressure"):
+    """(result, forces, inputs in force) of ``seismic_earth_pressure``: the
+    tool's own code path, also run by ``calc_package.seismic_package``
+    (GM-141). ``result`` is a SeismicEarthPressureResult; ``forces`` the
+    resultants as ``seismic_earth_pressure`` gives them (empty without
+    gamma and H); the inputs in force carry the static KA behind PA (as
+    given, else Rankine Ka from phi). ``method`` names the caller in error
+    messages."""
+    from seismic_geotech.results import SeismicEarthPressureResult
+    reject_unknown_params(params, _MO_VALID, method=method)
+    require_params(params, ["phi", "kh"], method=method, valid=_MO_VALID)
     phi = params["phi"]
     delta = params.get("delta", 2.0 / 3.0 * phi)
     kh = params["kh"]
     kv = params.get("kv", 0.0)
     beta = params.get("beta", 0.0)
     i = params.get("i", 0.0)
+    include_passive = params.get("include_passive", False)
     KAE = mononobe_okabe_KAE(phi, delta, kh, kv, beta, i)
-    KA = rankine_Ka(phi)
-    result = {"KAE": round(KAE, 4), "KA_static": round(KA, 4)}
-    if params.get("include_passive", False):
-        result["KPE"] = round(mononobe_okabe_KPE(phi, delta, kh, kv, beta, i), 4)
+    # KA not given: Rankine Ka from phi (vertical wall, level backfill, no
+    # wall friction; GM-120)
+    ka_given = params.get("KA") is not None
+    KA = float(params["KA"]) if ka_given else rankine_Ka(phi)
+    KPE = (mononobe_okabe_KPE(phi, delta, kh, kv, beta, i)
+           if include_passive else 0.0)
     gamma = params.get("gamma")
     H = params.get("H")
-    forces = gamma is not None and H is not None
-    if forces:
-        result.update(seismic_earth_pressure(gamma, H, KAE, KA))
-    result.update({"phi_deg": phi, "delta_deg": round(delta, 1), "kh": kh, "kv": kv})
-    result["choices"] = earth_pressure_choices(
-        phi, kh, kv=params.get("kv"), delta_deg=params.get("delta"),
-        i_deg=i, ka="rankine", forces=forces)
+    forces = (seismic_earth_pressure(gamma, H, KAE, KA)
+              if gamma is not None and H is not None else {})
     note = mo_no_solution_warning(phi, kh, kv, i)
-    if note:
-        result["warnings"] = [note]
+    result = SeismicEarthPressureResult(
+        KAE=KAE, KPE=KPE,
+        PAE_total=forces.get("PAE_total_kN_per_m", 0.0),
+        PA_static=forces.get("PA_static_kN_per_m", 0.0),
+        delta_PAE=forces.get("delta_PAE_kN_per_m", 0.0),
+        height_of_application=forces.get("height_of_application_m", 0.0),
+        phi=phi, delta=delta, kh=kh, kv=kv,
+        choices=earth_pressure_choices(
+            phi, kh, kv=params.get("kv"), delta_deg=params.get("delta"),
+            i_deg=i, ka=KA if ka_given else "rankine", ka_how="given",
+            forces=bool(forces), ka_can_be_given=True),
+        warnings=[note] if note else [],
+    )
+    used = {"phi": phi, "delta": delta, "kh": kh, "kv": kv, "beta": beta,
+            "i": i, "include_passive": include_passive, "gamma": gamma,
+            "H": H, "KA": KA, "KA_given": ka_given}
+    return result, forces, used
+
+
+def _run_seismic_earth_pressure(params: dict) -> dict:
+    r, forces, used = run_seismic_earth_pressure(params)
+    result = {"KAE": round(r.KAE, 4), "KA_static": round(used["KA"], 4)}
+    if used["include_passive"]:
+        result["KPE"] = round(r.KPE, 4)
+    result.update(forces)
+    result.update({"phi_deg": r.phi, "delta_deg": round(r.delta, 1),
+                   "kh": r.kh, "kv": r.kv})
+    result["choices"] = r.choices
+    if r.warnings:
+        result["warnings"] = list(r.warnings)
     return result
 
 
-def _run_liquefaction_evaluation(params: dict) -> dict:
-    _valid = ("depths", "N160", "FC", "gamma", "amax_g", "gwt_depth",
+_LIQ_VALID = ("depths", "N160", "FC", "gamma", "amax_g", "gwt_depth",
               "magnitude")
-    reject_unknown_params(params, _valid, method="liquefaction_evaluation")
+
+
+def run_liquefaction_evaluation(params: dict, *,
+                                method: str = "liquefaction_evaluation"):
+    """The LiquefactionResult of ``liquefaction_evaluation``: the tool's own
+    code path, also run by ``calc_package.seismic_package`` (GM-141).
+    ``method`` names the caller in error messages."""
+    from seismic_geotech.results import LiquefactionResult
+    reject_unknown_params(params, _LIQ_VALID, method=method)
     require_params(params, ["depths", "N160", "FC", "gamma", "amax_g",
                             "gwt_depth"],
-                   method="liquefaction_evaluation", valid=_valid)
+                   method=method, valid=_LIQ_VALID)
+    magnitude = params.get("magnitude", 7.5)
     results = evaluate_liquefaction(
         layer_depths=params["depths"], layer_N160=params["N160"],
         layer_FC=params["FC"], layer_gamma=params["gamma"],
         amax_g=params["amax_g"], gwt_depth=params["gwt_depth"],
-        M=params.get("magnitude", 7.5),
+        M=magnitude,
     )
-    n_liq = sum(1 for r in results if r.get("liquefiable", False))
-    min_fos = min((r["FOS_liq"] for r in results), default=99.9)
-    return {"layer_results": results, "n_liquefiable": n_liq, "min_FOS_liq": round(min_fos, 3), "magnitude": params.get("magnitude", 7.5),
-            "choices": liquefaction_choices(results, params.get("magnitude", 7.5))}
+    return LiquefactionResult(
+        layer_results=results, amax_g=params["amax_g"], magnitude=magnitude,
+        gwt_depth=params["gwt_depth"],
+        choices=liquefaction_choices(results, magnitude))
+
+
+def _run_liquefaction_evaluation(params: dict) -> dict:
+    r = run_liquefaction_evaluation(params)
+    results = r.layer_results
+    n_liq = sum(1 for layer in results if layer.get("liquefiable", False))
+    min_fos = min((layer["FOS_liq"] for layer in results), default=99.9)
+    return {"layer_results": results, "n_liquefiable": n_liq, "min_FOS_liq": round(min_fos, 3), "magnitude": r.magnitude,
+            "choices": r.choices}
 
 
 def _run_residual_strength(params: dict) -> dict:
@@ -260,6 +328,7 @@ METHOD_INFO = {
             "include_passive": {"type": "bool", "required": False, "default": False, "description": "Also return KPE (passive seismic coefficient)."},
             "gamma": {"type": "float", "required": False, "description": "Soil unit weight (kN/m3) for force calculation."},
             "H": {"type": "float", "required": False, "description": "Wall height (m) for force calculation."},
+            "KA": {"type": "float", "required": False, "description": "Static active coefficient behind PA and delta-PAE. Not given: Rankine Ka from phi (vertical wall, level backfill, no wall friction)."},
         },
         "returns": {"KAE": "Active seismic coefficient.", "KA_static": "Static active coefficient.", "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives."},
     },

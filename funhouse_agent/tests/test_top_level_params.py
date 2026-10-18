@@ -240,14 +240,22 @@ class TestRenderFigures:
         assert "Provide 'package'" in err
 
 
-def test_open_method_checks_its_own():
+def test_pavement_package_checks_its_tools_names():
+    # The package takes the parameters of the pavement_design tools
+    # (GM-141): dispatch checks a name against them all, the run against
+    # the tool design_type names.
     mod = D._load_adapter("calc_package")
-    assert mod.METHOD_INFO["pavement_design_package"]["open_parameters"]
+    assert not mod.METHOD_INFO["pavement_design_package"].get(
+        "open_parameters")
     D._check_parameter_names(mod, "pavement_design_package",
-                             {"w18": 1e6, "esals": 1, "anything": 1})
+                             {"w18": 1e6, "esals": 1, "sc_psi": 650})
     err = _error("calc_package", "pavement_design_package",
                  {"w18": 1e6, "layers": [], "w_19": 1})
     assert "unknown parameter(s) ['w_19']" in err
+    err = _error("calc_package", "pavement_design_package",
+                 {"w18": 1e6, "layers": [], "sc_psi": 650})
+    assert "unknown parameter(s) ['sc_psi']" in err
+    assert "design_type='rigid' runs rigid_pavement_design" in err
 
 
 def test_reference_wrapper_keeps_its_signature_check():
@@ -357,9 +365,6 @@ class TestReferenceCatchAll:
     ("soe", "braced_excavation",
      {"excavation_depth": 3, "layers": [], "excavation_width": 10},
      "excavation_width", "does not use the excavation width"),
-    ("calc_package", "pile_group_package",
-     {"layout": "rectangular", "n_rows": 2, "n_cols": 2, "spacing": 1.5},
-     "spacing", "spacing_x and spacing_y"),
 ])
 def test_refused_with_its_reason(agent, method, params, refused, reason):
     err = _error(agent, method, params)
@@ -475,8 +480,8 @@ class TestPileGroupPackageLateral:
         from funhouse_agent.adapters.calc_package import (
             _generate_pile_group_package)
         for key in ("Vx", "Vy", "Mz"):
-            with pytest.raises(ValueError, match=rf"\['{key}'\] given "
-                               r"without method_6dof.*method_6dof=true"):
+            with pytest.raises(ValueError, match=rf"\['{key}'\].*"
+                               r"method_6dof=True runs pile_group_6dof"):
                 _generate_pile_group_package({
                     **self._BASE, key: 50.0,
                     "output_path": str(tmp_path / "pg.html")})

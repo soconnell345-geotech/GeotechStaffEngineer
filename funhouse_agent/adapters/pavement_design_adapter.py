@@ -65,17 +65,24 @@ _FLEX_VALID = ("w18", "reliability_pct", "zr", "so", "mr_psi",
                "swelling", "frost", "design_period_yr")
 
 
-def _run_flexible(params: dict) -> dict:
+# The design methods as their module result: their own code path, also run
+# by ``calc_package.pavement_design_package`` (GM-141). ``method`` names the
+# caller in error messages.
+
+def run_flexible_pavement_design(params: dict, *,
+                                 method="flexible_pavement_design"):
     from pavement_design import design_flexible_pavement
 
     p = apply_aliases(params, _FLEX_ALIASES)
-    reject_unknown_params(p, _FLEX_VALID, method="flexible_pavement_design",
+    reject_unknown_params(p, _FLEX_VALID, method=method,
                           aliases=_FLEX_ALIASES)
-    require_params(p, ["w18", "layers"], method="flexible_pavement_design",
-                   valid=_FLEX_VALID)
-    check_items(p, method="flexible_pavement_design")
-    res = design_flexible_pavement(**p)
-    return clean_result(res.to_dict())
+    require_params(p, ["w18", "layers"], method=method, valid=_FLEX_VALID)
+    check_items(p, method=method)
+    return design_flexible_pavement(**p)
+
+
+def _run_flexible(params: dict) -> dict:
+    return clean_result(run_flexible_pavement_design(params).to_dict())
 
 
 _RIGID_ALIASES = {
@@ -97,17 +104,21 @@ _RIGID_VALID = ("w18", "sc_psi", "ec_psi", "reliability_pct", "zr", "so",
                 "swelling", "frost", "design_period_yr")
 
 
-def _run_rigid(params: dict) -> dict:
+def run_rigid_pavement_design(params: dict, *,
+                              method="rigid_pavement_design"):
     from pavement_design import design_rigid_pavement
 
     p = apply_aliases(params, _RIGID_ALIASES)
-    reject_unknown_params(p, _RIGID_VALID, method="rigid_pavement_design",
+    reject_unknown_params(p, _RIGID_VALID, method=method,
                           aliases=_RIGID_ALIASES)
-    require_params(p, ["w18", "sc_psi", "ec_psi"],
-                   method="rigid_pavement_design", valid=_RIGID_VALID)
-    check_items(p, method="rigid_pavement_design")
-    res = design_rigid_pavement(**p)
-    return clean_result(res.to_dict())
+    require_params(p, ["w18", "sc_psi", "ec_psi"], method=method,
+                   valid=_RIGID_VALID)
+    check_items(p, method=method)
+    return design_rigid_pavement(**p)
+
+
+def _run_rigid(params: dict) -> dict:
+    return clean_result(run_rigid_pavement_design(params).to_dict())
 
 
 _TRAFFIC_ALIASES = {
@@ -202,42 +213,51 @@ _UFC_ALIASES = {"passes": "passes_18kip", "esals": "passes_18kip",
                 "k": "k_pci", "reliability": "reliability_pct"}
 
 
-def _run_flexible_ufc(params: dict) -> dict:
+def run_flexible_pavement_design_ufc(params: dict, *,
+                                     method="flexible_pavement_design_ufc"):
     from pavement_design import design_flexible_pavement_ufc
 
     p = apply_aliases(params, _UFC_ALIASES)
-    reject_unknown_params(p, _UFC_FLEX_VALID,
-                          method="flexible_pavement_design_ufc",
+    reject_unknown_params(p, _UFC_FLEX_VALID, method=method,
                           aliases=_UFC_ALIASES)
-    require_params(p, ["passes_18kip", "cbr_subgrade"],
-                   method="flexible_pavement_design_ufc",
+    require_params(p, ["passes_18kip", "cbr_subgrade"], method=method,
                    valid=_UFC_FLEX_VALID)
-    return clean_result(design_flexible_pavement_ufc(**p))
+    return design_flexible_pavement_ufc(**p)
 
 
-def _run_rigid_ufc(params: dict) -> dict:
+def run_rigid_pavement_design_ufc(params: dict, *,
+                                  method="rigid_pavement_design_ufc"):
     from pavement_design import design_rigid_pavement_ufc
 
     p = apply_aliases(params, _UFC_ALIASES)
-    reject_unknown_params(p, _UFC_RIGID_VALID,
-                          method="rigid_pavement_design_ufc",
+    reject_unknown_params(p, _UFC_RIGID_VALID, method=method,
                           aliases=_UFC_ALIASES)
     require_params(p, ["passes_18kip", "flexural_strength_psi"],
-                   method="rigid_pavement_design_ufc",
-                   valid=_UFC_RIGID_VALID)
-    return clean_result(design_rigid_pavement_ufc(**p))
+                   method=method, valid=_UFC_RIGID_VALID)
+    return design_rigid_pavement_ufc(**p)
 
 
-def _run_compare(params: dict) -> dict:
+def run_compare_pavement_methods(params: dict, *,
+                                 method="compare_pavement_methods"):
     from pavement_design import compare_flexible_pavement_methods
 
     p = apply_aliases(params, _UFC_ALIASES)
-    reject_unknown_params(p, _COMPARE_VALID,
-                          method="compare_pavement_methods",
+    reject_unknown_params(p, _COMPARE_VALID, method=method,
                           aliases=_UFC_ALIASES)
-    require_params(p, ["passes_18kip"], method="compare_pavement_methods",
-                   valid=_COMPARE_VALID)
-    return clean_result(compare_flexible_pavement_methods(**p))
+    require_params(p, ["passes_18kip"], method=method, valid=_COMPARE_VALID)
+    return compare_flexible_pavement_methods(**p)
+
+
+def _run_flexible_ufc(params: dict) -> dict:
+    return clean_result(run_flexible_pavement_design_ufc(params))
+
+
+def _run_rigid_ufc(params: dict) -> dict:
+    return clean_result(run_rigid_pavement_design_ufc(params))
+
+
+def _run_compare(params: dict) -> dict:
+    return clean_result(run_compare_pavement_methods(params))
 
 
 _MIXED_VALID = ("vehicles", "representative_cbr")

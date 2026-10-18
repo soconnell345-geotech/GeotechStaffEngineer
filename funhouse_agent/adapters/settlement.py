@@ -157,7 +157,11 @@ def _run_hough_settlement(params: dict) -> dict:
     return result.to_dict()
 
 
-def _run_combined_settlement(params: dict) -> dict:
+def run_combined_settlement_analysis(
+        params: dict, *, method: str = "combined_settlement_analysis"):
+    """(result, analysis) of ``combined_settlement_analysis``: the tool's
+    own code path, also run by ``calc_package.settlement_package``
+    (GM-141). ``method`` names the caller in error messages."""
     params = apply_aliases(params, _COMBINED_ALIASES)
     reject_unknown_params(
         params, ("q_applied", "q_overburden", "B", "L", "shape",
@@ -165,16 +169,16 @@ def _run_combined_settlement(params: dict) -> dict:
                  "consolidation_layers", "cv", "Hdr", "drainage", "C_alpha",
                  "e0_secondary", "t_secondary", "stress_method",
                  "time_years_schmertmann"),
-        method="combined_settlement_analysis")
-    require_params(params, ["q_applied", "B"], method="combined_settlement_analysis")
+        method=method)
+    require_params(params, ["q_applied", "B"], method=method)
     consol_layers = None
     check_nested_list(params.get("consolidation_layers"),
                       _CONSOLIDATION_KEYS,
-                      method="combined_settlement_analysis",
+                      method=method,
                       label="consolidation_layers",
                       hints=_CONSOLIDATION_KEY_HINTS)
     check_nested_list(params.get("schmertmann_layers"), _SCHMERTMANN_KEYS,
-                      method="combined_settlement_analysis",
+                      method=method,
                       label="schmertmann_layers",
                       hints=_SCHMERTMANN_KEY_HINTS)
     if "consolidation_layers" in params:
@@ -182,19 +186,20 @@ def _run_combined_settlement(params: dict) -> dict:
         for l in params["consolidation_layers"]:
             require_keys(l, ["thickness", "depth_to_center", "e0", "Cc", "Cr",
                              "sigma_v0"],
-                         method="combined_settlement_analysis",
+                         method=method,
                          item_label="consolidation_layers[]")
             consol_layers.append(ConsolidationLayer(
                 thickness=l["thickness"], depth_to_center=l["depth_to_center"],
                 e0=l["e0"], Cc=l["Cc"], Cr=l["Cr"],
                 sigma_v0=l["sigma_v0"], sigma_p=l.get("sigma_p"),
+                description=l.get("description", ""),
             ))
     schmertmann_layers = None
     if "schmertmann_layers" in params:
         schmertmann_layers = []
         for l in params["schmertmann_layers"]:
             require_keys(l, ["depth_top", "depth_bottom", "Es"],
-                         method="combined_settlement_analysis",
+                         method=method,
                          item_label="schmertmann_layers[]")
             schmertmann_layers.append(SchmertmannLayer(
                 depth_top=l["depth_top"], depth_bottom=l["depth_bottom"],
@@ -215,7 +220,11 @@ def _run_combined_settlement(params: dict) -> dict:
         stress_method=params.get("stress_method", "2:1"),
         time_years_schmertmann=params.get("time_years_schmertmann", 0.0),
     )
-    return analysis.compute().to_dict()
+    return analysis.compute(), analysis
+
+
+def _run_combined_settlement(params: dict) -> dict:
+    return run_combined_settlement_analysis(params)[0].to_dict()
 
 
 METHOD_REGISTRY = {
@@ -295,7 +304,7 @@ METHOD_INFO = {
             "drainage": {"type": "str", "required": False, "default": "double", "allowed_values": ["single", "double"], "description": "Drainage condition for time rate."},
             "stress_method": {"type": "str", "required": False, "default": "2:1", "allowed_values": ["2:1", "boussinesq", "westergaard"], "description": "Stress distribution method."},
             "q_overburden": {"type": "float", "required": False, "default": 0.0, "description": "Overburden pressure at footing base (kPa)."},
-            "L": {"type": "float", "required": False, "description": "Footing length (m). Defaults to B."},
+            "L": {"type": "float", "required": False, "description": "Footing length (m). Not given: L = B."},
             "shape": {"type": "str", "required": False, "default": "square", "allowed_values": ["square", "rectangular", "strip"], "description": "Footing shape."},
             "nu": {"type": "float", "required": False, "default": 0.3, "description": "Poisson's ratio for immediate settlement."},
             "C_alpha": {"type": "float", "required": False, "description": "Secondary compression index. Enables secondary settlement."},

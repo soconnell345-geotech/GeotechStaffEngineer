@@ -455,12 +455,8 @@ class TestAxialPilePackage:
         from funhouse_agent.adapters.calc_package import _generate_axial_pile_package
         outfile = str(tmp_path / "ap.html")
         result = _generate_axial_pile_package({
-            "pile_name": "HP12x53",
             "pile_type": "h_pile",
-            "pile_area": 0.01,
-            "pile_perimeter": 1.2,
-            "pile_tip_area": 0.09,
-            "pile_width": 0.3,
+            "designation": "HP12x53",
             "pile_length": 20.0,
             "soil_layers": [{
                 "soil_type": "cohesionless",
@@ -674,10 +670,10 @@ class TestWaveEquationPackage:
             "hammer_name": "Delmag D30-32",
             "cushion_area": 0.1,
             "cushion_thickness": 0.1,
-            "cushion_E": 3.5e9,
+            "cushion_E": 3.5e6,
             "pile_length": 15.0,
             "pile_area": 0.01,
-            "pile_E": 200e9,
+            "pile_E": 200e6,
             "output_path": outfile,
         })
         assert result["status"] == "success"
@@ -831,14 +827,21 @@ class TestLateralPilePackageErgonomics:
         result = _generate_lateral_pile_package(self._params(tmp_path, layers))
         assert result["status"] == "success"
 
-    def test_missing_pile_E_actionable(self, tmp_path):
+    def test_pile_E_left_out_is_the_tools_default(self, tmp_path):
+        # The package takes pile_E as lateral_pile_analysis does (GM-141):
+        # left out, the tool's default for the pile type, not a refusal.
         from funhouse_agent.adapters.calc_package import _generate_lateral_pile_package
+        from funhouse_agent.adapters.lateral_pile import METHOD_REGISTRY
         layers = [{"top": 0, "bottom": 15, "py_model": "SandAPI",
                    "phi": 32, "gamma": 19, "k": 8150}]
         p = self._params(tmp_path, layers)
         del p["pile_E"]
-        with pytest.raises(ValueError, match="pile_E"):
-            _generate_lateral_pile_package(p)
+        result = _generate_lateral_pile_package(p)
+        tool = METHOD_REGISTRY["lateral_pile_analysis"]({
+            "pile_length": 15.0, "pile_diameter": 0.8, "Vt": 20.0,
+            "layers": [{"top": 0, "bottom": 15, "model": "SandAPI",
+                        "phi": 32, "gamma": 19, "k": 8150}]})
+        assert result["y_top_mm"] == round(tool["y_top_m"] * 1000, 2)
 
     def test_file_verification_fields(self, tmp_path):
         from funhouse_agent.adapters.calc_package import _generate_lateral_pile_package

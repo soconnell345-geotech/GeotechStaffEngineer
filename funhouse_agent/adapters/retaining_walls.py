@@ -81,7 +81,12 @@ def _build_reinforcement(params):
     )
 
 
-def _run_cantilever_wall(params):
+def run_cantilever_wall(params, *, method="cantilever_wall"):
+    """(result, inputs in force) of ``cantilever_wall``: the tool's own code
+    path, also run by ``calc_package.retaining_wall_package`` (GM-141).
+    The inputs in force are the geometry analysed (``geom``, auto-sized
+    parts included) and each input given or defaulted, by the tool's
+    names. ``method`` names the caller in error messages."""
     params = apply_aliases(params, _WALL_ALIASES)
     reject_unknown_params(
         params,
@@ -92,9 +97,9 @@ def _run_cantilever_wall(params):
          "gamma_concrete", "FOS_sliding_required", "FOS_overturning_required",
          "pressure_method", "include_passive", "gamma_foundation",
          "delta_base", "base_adhesion"),
-        method="cantilever_wall")
+        method=method)
     require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
-                   method="cantilever_wall")
+                   method=method)
     geom = CantileverWallGeometry(
         wall_height=params["wall_height"],
         base_width=params.get("base_width"), toe_length=params.get("toe_length"),
@@ -106,19 +111,44 @@ def _run_cantilever_wall(params):
         backfill_slope=params.get("backfill_slope", 0.0),
         surcharge=params.get("surcharge", 0.0),
     )
+    used = {
+        "geom": geom,
+        "gamma_backfill": params["gamma_backfill"],
+        "phi_backfill": params["phi_backfill"],
+        "c_backfill": params.get("c_backfill", 0.0),
+        "phi_foundation": params.get("phi_foundation"),
+        "c_foundation": params.get("c_foundation", 0.0),
+        "q_allowable": params.get("q_allowable"),
+        "gamma_concrete": params.get("gamma_concrete", 24.0),
+        "FOS_sliding_required": params.get("FOS_sliding_required", 1.5),
+        "FOS_overturning_required": params.get("FOS_overturning_required",
+                                               2.0),
+        "pressure_method": params.get("pressure_method", "rankine"),
+        "include_passive": params.get("include_passive", False),
+        "gamma_foundation": params.get("gamma_foundation"),
+        "delta_base": params.get("delta_base"),
+        "base_adhesion": params.get("base_adhesion"),
+    }
     result = analyze_cantilever_wall(
-        geom, gamma_backfill=params["gamma_backfill"], phi_backfill=params["phi_backfill"],
-        c_backfill=params.get("c_backfill", 0.0), phi_foundation=params.get("phi_foundation"),
-        c_foundation=params.get("c_foundation", 0.0), q_allowable=params.get("q_allowable"),
-        gamma_concrete=params.get("gamma_concrete", 24.0),
-        FOS_sliding=params.get("FOS_sliding_required", 1.5),
-        FOS_overturning=params.get("FOS_overturning_required", 2.0),
-        pressure_method=params.get("pressure_method", "rankine"),
-        include_passive=params.get("include_passive", False),
-        gamma_foundation=params.get("gamma_foundation"),
-        delta_base=params.get("delta_base"),
-        base_adhesion=params.get("base_adhesion"),
+        geom, gamma_backfill=used["gamma_backfill"],
+        phi_backfill=used["phi_backfill"], c_backfill=used["c_backfill"],
+        phi_foundation=used["phi_foundation"],
+        c_foundation=used["c_foundation"], q_allowable=used["q_allowable"],
+        gamma_concrete=used["gamma_concrete"],
+        FOS_sliding=used["FOS_sliding_required"],
+        FOS_overturning=used["FOS_overturning_required"],
+        pressure_method=used["pressure_method"],
+        include_passive=used["include_passive"],
+        gamma_foundation=used["gamma_foundation"],
+        delta_base=used["delta_base"],
+        base_adhesion=used["base_adhesion"],
     )
+    return result, used
+
+
+def _run_cantilever_wall(params):
+    result, used = run_cantilever_wall(params)
+    geom = used["geom"]
     output = result.to_dict()
     # The geometry actually analysed, auto-sized parts included, with the
     # height's datum named (GM-100: a model read H as the retained height).
@@ -136,14 +166,13 @@ def _run_cantilever_wall(params):
     # Surface the sliding-interface values actually used, so the caller can
     # verify the basis instead of guessing (owner wall session 2026-07-14).
     from retaining_walls.cantilever import check_sliding as _cs
-    sl = _cs(geom, params["gamma_backfill"], params["phi_backfill"],
-             params.get("c_backfill", 0.0), params.get("phi_foundation"),
-             params.get("c_foundation", 0.0), params.get("gamma_concrete", 24.0),
-             params.get("FOS_sliding_required", 1.5),
-             params.get("pressure_method", "rankine"),
-             params.get("include_passive", False), params.get("gamma_foundation"),
-             delta_base=params.get("delta_base"),
-             base_adhesion=params.get("base_adhesion"))
+    sl = _cs(geom, used["gamma_backfill"], used["phi_backfill"],
+             used["c_backfill"], used["phi_foundation"],
+             used["c_foundation"], used["gamma_concrete"],
+             used["FOS_sliding_required"], used["pressure_method"],
+             used["include_passive"], used["gamma_foundation"],
+             delta_base=used["delta_base"],
+             base_adhesion=used["base_adhesion"])
     output["sliding_basis"] = {
         "delta_base_deg": sl["delta_base_deg"],
         "base_adhesion_kPa": sl["base_adhesion_kPa"],
@@ -156,7 +185,12 @@ def _run_cantilever_wall(params):
     return output
 
 
-def _run_mse_wall(params):
+def run_mse_wall(params, *, method="mse_wall"):
+    """(result, inputs in force) of ``mse_wall``: the tool's own code path,
+    also run by ``calc_package.retaining_wall_package`` (GM-141). The inputs
+    in force are the geometry (``geom``), the reinforcement and each input
+    given or defaulted, by the tool's names. ``method`` names the caller in
+    error messages."""
     params = apply_aliases(params, _MSE_ALIASES)
     reject_unknown_params(
         params,
@@ -169,9 +203,9 @@ def _run_mse_wall(params):
          "reinforcement_transverse_spacing", "gamma_foundation",
          "phi_foundation", "c_foundation", "q_allowable",
          "phi_retained", "gamma_retained", "traffic_vertical_resists"),
-        method="mse_wall")
+        method=method)
     require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
-                   method="mse_wall")
+                   method=method)
     geom = MSEWallGeometry(
         wall_height=params["wall_height"],
         reinforcement_length=params.get("reinforcement_length"),
@@ -181,18 +215,36 @@ def _run_mse_wall(params):
         broken_backslope_height=params.get("broken_backslope_height"),
     )
     reinforcement = _build_reinforcement(params)
-    result = analyze_mse_wall(
-        geom, gamma_backfill=params["gamma_backfill"], phi_backfill=params["phi_backfill"],
-        reinforcement=reinforcement, gamma_foundation=params.get("gamma_foundation"),
-        phi_foundation=params.get("phi_foundation"), c_foundation=params.get("c_foundation", 0.0),
-        q_allowable=params.get("q_allowable"),
-        phi_retained=params.get("phi_retained"),
-        gamma_retained=params.get("gamma_retained"),
-        traffic_vertical_resists=bool(
+    used = {
+        "geom": geom, "reinforcement": reinforcement,
+        "gamma_backfill": params["gamma_backfill"],
+        "phi_backfill": params["phi_backfill"],
+        "gamma_foundation": params.get("gamma_foundation"),
+        "phi_foundation": params.get("phi_foundation"),
+        "c_foundation": params.get("c_foundation", 0.0),
+        "q_allowable": params.get("q_allowable"),
+        "phi_retained": params.get("phi_retained"),
+        "gamma_retained": params.get("gamma_retained"),
+        "traffic_vertical_resists": bool(
             params.get("traffic_vertical_resists", False)),
+    }
+    result = analyze_mse_wall(
+        geom, gamma_backfill=used["gamma_backfill"],
+        phi_backfill=used["phi_backfill"], reinforcement=reinforcement,
+        gamma_foundation=used["gamma_foundation"],
+        phi_foundation=used["phi_foundation"],
+        c_foundation=used["c_foundation"], q_allowable=used["q_allowable"],
+        phi_retained=used["phi_retained"],
+        gamma_retained=used["gamma_retained"],
+        traffic_vertical_resists=used["traffic_vertical_resists"],
     )
+    return result, used
+
+
+def _run_mse_wall(params):
+    result, used = run_mse_wall(params)
     output = result.to_dict()
-    output["reinforcement_name"] = reinforcement.name
+    output["reinforcement_name"] = used["reinforcement"].name
     return output
 
 

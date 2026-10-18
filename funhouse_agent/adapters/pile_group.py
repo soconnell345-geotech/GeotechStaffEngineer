@@ -78,29 +78,53 @@ _GROUP_VALID_PARAMS = (
 _SIMPLE_IGNORES = ("Vx", "Vy", "Mz", "axial_stiffness", "lateral_stiffness")
 
 
-def _run_pile_group_simple(params):
+# The group methods as (result, inputs in force): their own code path, also
+# run by ``calc_package.pile_group_package`` (GM-141). The inputs in force
+# are the piles and load built, and the layout inputs given. ``method``
+# names the caller in error messages.
+
+def _layout_used(params, piles, load):
+    used = {"piles": piles, "load": load}
+    used.update({k: params[k] for k in ("n_rows", "n_cols", "spacing_x",
+                                        "spacing_y", "spacing")
+                 if params.get(k) is not None})
+    return used
+
+
+def run_pile_group_simple(params, *, method="pile_group_simple"):
     params = without_unused(
         params, METHOD_INFO["pile_group_simple"]["refused_parameters"])
     reject_unknown_params(
         params, [k for k in _GROUP_VALID_PARAMS if k not in _SIMPLE_IGNORES],
-        method="pile_group_simple")
-    return analyze_vertical_group_simple(_build_piles(params), _build_load(params)).to_dict()
+        method=method)
+    piles, load = _build_piles(params), _build_load(params)
+    return (analyze_vertical_group_simple(piles, load),
+            _layout_used(params, piles, load))
 
 
-def _run_pile_group_6dof(params):
-    reject_unknown_params(params, _GROUP_VALID_PARAMS, method="pile_group_6dof")
+def run_pile_group_6dof(params, *, method="pile_group_6dof"):
+    reject_unknown_params(params, _GROUP_VALID_PARAMS, method=method)
     piles = _build_piles(params)
     missing = [p.label or f"#{i}" for i, p in enumerate(piles)
                if p.axial_stiffness is None]
     if missing:
         raise ValueError(
-            "pile_group_6dof needs every pile's axial_stiffness (kN/m) — "
+            f"{method} needs every pile's axial_stiffness (kN/m) — "
             f"missing on {missing[:6]}{' ...' if len(missing) > 6 else ''}. "
             "Give 'axial_stiffness' at the top level with n_rows/n_cols, or on "
             "each piles[] entry, and 'lateral_stiffness' (kN/m) as well when "
             "vertical piles must carry Vx/Vy. For vertical load and moments "
             "only, pile_group_simple needs no stiffness.")
-    return analyze_group_6dof(piles, _build_load(params)).to_dict()
+    load = _build_load(params)
+    return analyze_group_6dof(piles, load), _layout_used(params, piles, load)
+
+
+def _run_pile_group_simple(params):
+    return run_pile_group_simple(params)[0].to_dict()
+
+
+def _run_pile_group_6dof(params):
+    return run_pile_group_6dof(params)[0].to_dict()
 
 
 def _run_group_efficiency(params):

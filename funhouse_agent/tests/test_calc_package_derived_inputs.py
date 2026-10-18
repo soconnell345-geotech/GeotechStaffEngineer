@@ -30,7 +30,7 @@ def built(monkeypatch):
     seen = {}
 
     def _capture(module, result, analysis, params, analysis_type,
-                 extra=None):
+                 extra=None, run=None):
         seen.update(module=module, result=result, analysis=analysis)
         return {"status": "success"}
 

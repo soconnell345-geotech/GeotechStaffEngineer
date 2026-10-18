@@ -37,40 +37,73 @@ def _build_soil_layers(params, *, method, key="layers"):
     return layers
 
 
-def _run_cantilever_wall(params):
+# The wall methods as (result, inputs in force): their own code path, also
+# run by ``calc_package.sheet_pile_package`` (GM-141). The inputs in force
+# are the soil layers built (``layers``) and each input given or defaulted,
+# by the tool's names. ``method`` names the caller in error messages.
+
+def run_cantilever_wall(params, *, method="cantilever_wall"):
     reject_unknown_params(
         params,
         ("excavation_depth", "layers", "gwt_depth_active", "gwt_depth_passive",
          "surcharge", "FOS_passive", "pressure_method", "embedment_increase"),
-        method="cantilever_wall")
-    layers = _build_soil_layers(params, method="cantilever_wall")
-    require_params(params, ["excavation_depth"], method="cantilever_wall")
+        method=method)
+    layers = _build_soil_layers(params, method=method)
+    require_params(params, ["excavation_depth"], method=method)
+    used = {
+        "excavation_depth": params["excavation_depth"], "layers": layers,
+        "gwt_depth_active": params.get("gwt_depth_active"),
+        "gwt_depth_passive": params.get("gwt_depth_passive"),
+        "surcharge": params.get("surcharge", 0.0),
+        "FOS_passive": params.get("FOS_passive", 1.5),
+        "pressure_method": params.get("pressure_method", "rankine"),
+        "embedment_increase": params.get("embedment_increase", 1.0),
+    }
     result = analyze_cantilever(
-        excavation_depth=params["excavation_depth"], soil_layers=layers,
-        gwt_depth_active=params.get("gwt_depth_active"), gwt_depth_passive=params.get("gwt_depth_passive"),
-        surcharge=params.get("surcharge", 0.0), FOS_passive=params.get("FOS_passive", 1.5),
-        pressure_method=params.get("pressure_method", "rankine"),
-        embedment_increase=params.get("embedment_increase", 1.0),
+        excavation_depth=used["excavation_depth"], soil_layers=layers,
+        gwt_depth_active=used["gwt_depth_active"],
+        gwt_depth_passive=used["gwt_depth_passive"],
+        surcharge=used["surcharge"], FOS_passive=used["FOS_passive"],
+        pressure_method=used["pressure_method"],
+        embedment_increase=used["embedment_increase"],
     )
-    return result.to_dict()
+    return result, used
 
 
-def _run_anchored_wall(params):
+def run_anchored_wall(params, *, method="anchored_wall"):
     reject_unknown_params(
         params,
         ("excavation_depth", "anchor_depth", "layers", "gwt_depth_active",
          "gwt_depth_passive", "surcharge", "FOS_passive", "pressure_method"),
-        method="anchored_wall")
-    layers = _build_soil_layers(params, method="anchored_wall")
-    require_params(params, ["excavation_depth", "anchor_depth"], method="anchored_wall")
+        method=method)
+    layers = _build_soil_layers(params, method=method)
+    require_params(params, ["excavation_depth", "anchor_depth"], method=method)
+    used = {
+        "excavation_depth": params["excavation_depth"],
+        "anchor_depth": params["anchor_depth"], "layers": layers,
+        "gwt_depth_active": params.get("gwt_depth_active"),
+        "gwt_depth_passive": params.get("gwt_depth_passive"),
+        "surcharge": params.get("surcharge", 0.0),
+        "FOS_passive": params.get("FOS_passive", 1.5),
+        "pressure_method": params.get("pressure_method", "rankine"),
+    }
     result = analyze_anchored(
-        excavation_depth=params["excavation_depth"], anchor_depth=params["anchor_depth"],
-        soil_layers=layers, gwt_depth_active=params.get("gwt_depth_active"),
-        gwt_depth_passive=params.get("gwt_depth_passive"), surcharge=params.get("surcharge", 0.0),
-        FOS_passive=params.get("FOS_passive", 1.5),
-        pressure_method=params.get("pressure_method", "rankine"),
+        excavation_depth=used["excavation_depth"],
+        anchor_depth=used["anchor_depth"], soil_layers=layers,
+        gwt_depth_active=used["gwt_depth_active"],
+        gwt_depth_passive=used["gwt_depth_passive"],
+        surcharge=used["surcharge"], FOS_passive=used["FOS_passive"],
+        pressure_method=used["pressure_method"],
     )
-    return result.to_dict()
+    return result, used
+
+
+def _run_cantilever_wall(params):
+    return run_cantilever_wall(params)[0].to_dict()
+
+
+def _run_anchored_wall(params):
+    return run_anchored_wall(params)[0].to_dict()
 
 
 METHOD_REGISTRY = {

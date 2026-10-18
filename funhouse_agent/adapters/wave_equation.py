@@ -36,7 +36,12 @@ def _build_cushion(params):
     return Cushion(stiffness=500000, cor=0.80)
 
 
-def _run_bearing_graph(params):
+def run_bearing_graph(params, *, method="bearing_graph"):
+    """(result, inputs in force) of ``bearing_graph``: the tool's own code
+    path, also run by ``calc_package.wave_equation_package`` (GM-141). The
+    inputs in force are the hammer, cushion and pile models and each
+    soil and range input given or defaulted, by the tool's names.
+    ``method`` names the caller in error messages."""
     reject_unknown_params(
         params,
         _HAMMER_PARAMS + _CUSHION_PARAMS + (
@@ -44,23 +49,45 @@ def _run_bearing_graph(params):
             "pile_unit_weight", "skin_fraction", "quake_side", "quake_toe",
             "damping_side", "damping_toe", "R_min", "R_max", "R_step",
             "helmet_weight", "damping_model"),
-        method="bearing_graph")
-    require_params(params, ["pile_length", "pile_area"], method="bearing_graph")
+        method=method)
+    require_params(params, ["pile_length", "pile_area"], method=method)
     hammer = _build_hammer(params)
     cushion = _build_cushion(params)
+    pile_E = params.get("pile_E", 200e6)
+    segment_length = params.get("segment_length", 1.0)
+    pile_unit_weight = params.get("pile_unit_weight", 78.5)
     pile = discretize_pile(length=params["pile_length"], area=params["pile_area"],
-                            elastic_modulus=params.get("pile_E", 200e6),
-                            segment_length=params.get("segment_length", 1.0),
-                            unit_weight_material=params.get("pile_unit_weight", 78.5))
+                            elastic_modulus=pile_E,
+                            segment_length=segment_length,
+                            unit_weight_material=pile_unit_weight)
+    used = {
+        "hammer": hammer, "cushion": cushion, "pile": pile,
+        "pile_E": pile_E, "segment_length": segment_length,
+        "pile_unit_weight": pile_unit_weight,
+        "skin_fraction": params.get("skin_fraction", 0.5),
+        "quake_side": params.get("quake_side", 0.0025),
+        "quake_toe": params.get("quake_toe", 0.0025),
+        "damping_side": params.get("damping_side", 0.16),
+        "damping_toe": params.get("damping_toe", 0.50),
+        "R_min": params.get("R_min", 200.0),
+        "R_max": params.get("R_max", 2000.0),
+        "R_step": params.get("R_step", 200.0),
+        "helmet_weight": params.get("helmet_weight", 5.0),
+        "damping_model": params.get("damping_model", "smith"),
+    }
     bg = generate_bearing_graph(
-        hammer, cushion, pile, skin_fraction=params.get("skin_fraction", 0.5),
-        quake_side=params.get("quake_side", 0.0025), quake_toe=params.get("quake_toe", 0.0025),
-        damping_side=params.get("damping_side", 0.16), damping_toe=params.get("damping_toe", 0.50),
-        R_min=params.get("R_min", 200.0), R_max=params.get("R_max", 2000.0), R_step=params.get("R_step", 200.0),
-        helmet_weight=params.get("helmet_weight", 5.0),
-        damping_model=params.get("damping_model", "smith"),
+        hammer, cushion, pile, skin_fraction=used["skin_fraction"],
+        quake_side=used["quake_side"], quake_toe=used["quake_toe"],
+        damping_side=used["damping_side"], damping_toe=used["damping_toe"],
+        R_min=used["R_min"], R_max=used["R_max"], R_step=used["R_step"],
+        helmet_weight=used["helmet_weight"],
+        damping_model=used["damping_model"],
     )
-    return bg.to_dict()
+    return bg, used
+
+
+def _run_bearing_graph(params):
+    return run_bearing_graph(params)[0].to_dict()
 
 
 def _run_drivability(params):
