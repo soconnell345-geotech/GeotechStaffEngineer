@@ -3,8 +3,8 @@
 import numpy as np
 
 from funhouse_agent.adapters import (
-    check_nested_list, clean_result, reject_unknown_params, require_keys,
-    require_params,
+    check_nested_list, clean_result, declare_applies_when,
+    reject_unknown_params, require_keys, require_params,
 )
 
 
@@ -834,3 +834,10 @@ for _m, _names in _FEM_PARAM_BACKFILL.items():
     _pp = METHOD_INFO[_m]["parameters"]
     for _n in _names:
         _pp.setdefault(_n, dict(_FEM_PARAM_DECLS[_n]))
+
+# When each default applies (GM-119): the Biot modulus and the time
+# integration parameter to the monolithic consolidation scheme.
+declare_applies_when(METHOD_INFO, {
+    "fem2d_consolidation": {
+        name: {"consolidation_scheme": ["monolithic"]}
+        for name in ("n_w", "theta")}})

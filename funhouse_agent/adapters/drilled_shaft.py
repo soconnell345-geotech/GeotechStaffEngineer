@@ -1,7 +1,8 @@
 """Drilled shaft adapter — GEC-10 alpha/beta/rock socket capacity + LRFD."""
 
 from funhouse_agent.adapters import (
-    apply_aliases, check_nested_list, declare_aliases, field_keys,
+    apply_aliases, check_nested_list, declare_aliases,
+    declare_applies_when, field_keys,
     reject_unknown_params, require_keys, require_params,
 )
 from drilled_shaft import DrillShaft, ShaftSoilLayer, ShaftSoilProfile, DrillShaftAnalysis
@@ -222,3 +223,12 @@ METHOD_INFO = {
 declare_aliases(METHOD_INFO, {
     m: _SHAFT_ALIASES for m in ("drilled_shaft_capacity", "capacity_vs_depth",
                                 "lrfd_capacity")})
+
+# When each default applies (GM-119): the CIUC transform and the
+# atmospheric pressure go with GEC-10's rational chains only.
+declare_applies_when(METHOD_INFO, {
+    m: {"su_test_type": {"alpha_method": ["rational"]},
+        "pa": [{"alpha_method": ["rational"]},
+               {"beta_method": ["rational"]}]}
+    for m in ("drilled_shaft_capacity", "capacity_vs_depth",
+              "lrfd_capacity")})

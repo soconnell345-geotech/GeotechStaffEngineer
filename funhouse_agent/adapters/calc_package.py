@@ -642,7 +642,7 @@ def _run_tool(package: str, params: dict) -> _ToolRun:
     from geotech_common.choices import call_inputs
     given = set(p)
     with call_inputs(_given_names(mod, tool, given),
-                     _left_out(mod, tool, given)) as inputs:
+                     _left_out(mod, tool, given, p)) as inputs:
         try:
             out = getattr(mod, f"run_{tool}")(p, method=label)
         except ValueError as exc:
@@ -711,8 +711,12 @@ def _union_spec(selector: str, entries, n_tools: int) -> dict:
             {repr(a) for a in allowed}) > 1:
         out["allowed_values"] = sorted({v for a in allowed if a
                                         for v in a}, key=str)
-    if every and all(s.get("applies_when") is None for s in specs):
+    if every and len({repr(s.get("applies_when")) for s in specs}) == 1:
+        # every tool takes it on the same condition: the selector adds
+        # nothing
         out.pop("applies_when", None)
+        if specs[0].get("applies_when") is not None:
+            out["applies_when"] = copy.deepcopy(specs[0]["applies_when"])
     else:
         conditions = []
         for value, s in entries:

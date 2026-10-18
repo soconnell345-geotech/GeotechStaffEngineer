@@ -216,6 +216,66 @@ def test_adapter_own_checks_agree_with_method_info(monkeypatch, tmp_path):
     assert problems == []
 
 
+def test_method_info_declares_only_what_the_adapter_accepts(monkeypatch,
+                                                           tmp_path):
+    """BACKLOG GM-150 (the other direction of the test above): every
+    parameter METHOD_INFO declares is one the adapter's own
+    reject_unknown_params accepts. A declared name the adapter refuses
+    sends the agent to a parameter that fails. Captured from each
+    handler's first check, called with no inputs and with each of its
+    probes (``method_probes.py``: a check that depends on an input, such as
+    the p-y model, is seen once per probe). Only a check in the method's
+    own name counts: a calc package's is its tool's, checked under the
+    tool."""
+    from funhouse_agent.tests import method_probes as MP
+    monkeypatch.chdir(tmp_path)
+
+    class _Stop(Exception):
+        pass
+
+    seen = []
+
+    def _capture(params, valid, *, method, aliases=()):
+        seen.append((method, set(valid)))
+        raise _Stop
+
+    calls = {}
+    for agent in sorted(D.MODULE_REGISTRY):
+        mod = D._load_adapter(agent)
+        if hasattr(mod, "reject_unknown_params"):
+            monkeypatch.setattr(mod, "reject_unknown_params", _capture)
+        for method in mod.METHOD_REGISTRY:
+            calls[f"{agent}|{method}"] = [{}]
+    for key, probe in MP.PROBES.items():
+        calls[key.split("#")[0]].append(probe["params"])
+    accepted = {}
+    for key, inputs in calls.items():
+        agent, method = key.split("|")
+        mod = D._load_adapter(agent)
+        if mod.METHOD_INFO.get(method, {}).get("open_parameters"):
+            continue
+        for params in inputs:
+            seen.clear()
+            try:
+                mod.METHOD_REGISTRY[method](dict(params))
+            except _Stop:
+                pass
+            except Exception:           # noqa: BLE001 - stopped elsewhere
+                pass
+            if seen and seen[0][0] == method:
+                accepted.setdefault(key, set()).update(seen[0][1])
+    problems = []
+    for key, names in accepted.items():
+        agent, method = key.split("|")
+        info = D._load_adapter(agent).METHOD_INFO[method]
+        refused = sorted(set(info.get("parameters") or {}) - names - {
+            name for k, name in MP.READ_BEFORE_THE_CHECK if k == key})
+        if refused:
+            problems.append((key, refused))
+    assert len(accepted) > 100
+    assert problems == []
+
+
 # ---------------------------------------------------------------------------
 # render_figures, open methods, references
 # ---------------------------------------------------------------------------

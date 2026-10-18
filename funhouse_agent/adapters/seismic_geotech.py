@@ -1,6 +1,7 @@
 """Seismic geotechnical adapter — site class, M-O pressure, liquefaction."""
 
-from funhouse_agent.adapters import reject_unknown_params, require_params
+from funhouse_agent.adapters import (declare_applies_when,
+                                     reject_unknown_params, require_params)
 from seismic_geotech.site_class import compute_vs30, compute_n_bar, compute_su_bar, classify_site, site_coefficients
 from seismic_geotech.mononobe_okabe import mononobe_okabe_KAE, mononobe_okabe_KPE, seismic_earth_pressure, earth_pressure_choices, mo_no_solution_warning
 from seismic_geotech.liquefaction import evaluate_liquefaction, CRR_from_N160cs, compute_CSR, stress_reduction_rd, magnitude_scaling_factor, fines_correction, liquefaction_choices
@@ -371,3 +372,7 @@ METHOD_INFO = {
         "returns": {"CSR": "Cyclic stress ratio.", "CRR": "Cyclic resistance ratio.", "FOS_liq": "Factor of safety."},
     },
 }
+
+# When each default applies (GM-119): B to Hardin & Black only.
+declare_applies_when(METHOD_INFO, {
+    "gmax": {"coefficient_B": {"correlation": ["hardin_black"]}}})

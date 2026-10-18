@@ -63,15 +63,18 @@ METHOD_INFO = {
         "parameters": {
             "variables": {
                 "type": "array",
-                "brief": "List of dicts with keys: name (str), dist (normal/lognormal/gumbel/uniform/constant/weibull/gamma_dist/beta), mean (float), stdv (float), value (float, for constant).",
+                "required": True,
+                "description": "List of dicts with keys: name (str), dist (normal/lognormal/gumbel/uniform/constant/weibull/gamma_dist/beta), mean (float), stdv (float), value (float, for constant).",
             },
             "limit_state": {
                 "type": "str",
-                "brief": "Limit state expression string. Positive = safe, negative = failure. Example: 'R - S'.",
+                "required": True,
+                "description": "Limit state expression string. Positive = safe, negative = failure. Example: 'R - S'.",
             },
             "correlation": {
                 "type": "array",
-                "brief": "Optional correlation matrix as list of lists (symmetric, positive definite, 1.0 on diagonal).",
+                "required": False,
+                "description": "Optional correlation matrix as list of lists (symmetric, positive definite, 1.0 on diagonal).",
                 "default": None,
             },
         },
@@ -94,15 +97,18 @@ METHOD_INFO = {
         "parameters": {
             "variables": {
                 "type": "array",
-                "brief": "List of dicts with keys: name, dist, mean, stdv (same as FORM).",
+                "required": True,
+                "description": "List of dicts with keys: name, dist, mean, stdv (same as FORM).",
             },
             "limit_state": {
                 "type": "str",
-                "brief": "Limit state expression string. Positive = safe, negative = failure.",
+                "required": True,
+                "description": "Limit state expression string. Positive = safe, negative = failure.",
             },
             "correlation": {
                 "type": "array",
-                "brief": "Optional correlation matrix as list of lists.",
+                "required": False,
+                "description": "Optional correlation matrix as list of lists.",
                 "default": None,
             },
         },
@@ -128,20 +134,24 @@ METHOD_INFO = {
         "parameters": {
             "variables": {
                 "type": "array",
-                "brief": "List of dicts with keys: name, dist, mean, stdv (same as FORM).",
+                "required": True,
+                "description": "List of dicts with keys: name, dist, mean, stdv (same as FORM).",
             },
             "limit_state": {
                 "type": "str",
-                "brief": "Limit state expression string. Positive = safe, negative = failure.",
+                "required": True,
+                "description": "Limit state expression string. Positive = safe, negative = failure.",
             },
             "n_samples": {
                 "type": "int",
-                "brief": "Number of Monte Carlo samples.",
+                "required": False,
+                "description": "Number of Monte Carlo samples.",
                 "default": 100000,
             },
             "correlation": {
                 "type": "array",
-                "brief": "Optional correlation matrix as list of lists.",
+                "required": False,
+                "description": "Optional correlation matrix as list of lists.",
                 "default": None,
             },
         },

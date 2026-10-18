@@ -9,6 +9,7 @@ midpoint-selected coefficient in 'notes' so reports can state the basis.
 
 from funhouse_agent.adapters import (apply_aliases, check_nested_list,
                                      clean_result, declare_aliases,
+                                     declare_applies_when,
                                      reject_unknown_params, require_params)
 
 # Keys of the nested dicts the pavement_design module reads (GM-58). A
@@ -731,3 +732,9 @@ declare_aliases(METHOD_INFO, {
     "compare_pavement_methods": _UFC_ALIASES,
     "mixed_traffic_ufc": _MIXED_ALIASES,
 })
+
+# When each default applies (GM-119): the assumed SN to flexible load
+# equivalency factors, the assumed slab D to rigid ones.
+declare_applies_when(METHOD_INFO, {
+    "design_traffic_esals": {"sn": {"pavement_type": ["flexible"]},
+                             "d_in": {"pavement_type": ["rigid"]}}})

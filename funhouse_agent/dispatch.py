@@ -1159,7 +1159,8 @@ def call_agent(
         from geotech_common.choices import call_inputs
         try:
             with call_inputs(_given_names(mod, method, given),
-                             _left_out(mod, method, given)) as inputs:
+                             _left_out(mod, method, given,
+                                       parameters)) as inputs:
                 result = mod.METHOD_REGISTRY[method](parameters)
         except TypeError as e:
             if not _SIGNATURE_ERROR.search(str(e)):
@@ -1201,18 +1202,62 @@ def _given_names(mod, method: str, given) -> set:
     return set(given) | {aliases[k] for k in given if k in aliases}
 
 
-def _left_out(mod, method: str, given) -> dict:
+def _fold(value):
+    """``value`` compared without case when it is a string."""
+    return value.lower() if isinstance(value, str) else value
+
+
+def default_in_force(spec: dict, values: dict):
+    """The default one declared parameter takes in a call: its
+    ``default``, or, where the default depends on another input, the one
+    its ``default_depends_on`` gives for that input's value in force
+    (``values``; BACKLOG GM-158: Terzaghi's N-gamma defaults to
+    Kumbhojkar, every other factor method's to Vesic).
+    ``default_depends_on`` is ``{"parameter": other input, "values":
+    {its value: default}, "otherwise": default}``, strings compared
+    without case."""
+    depends = spec.get("default_depends_on")
+    if not depends:
+        return spec.get("default")
+    other = _fold(values.get(depends["parameter"]))
+    for value, default in depends["values"].items():
+        if _fold(value) == other:
+            return default
+    return depends["otherwise"]
+
+
+def _values_in_force(declared: dict, aliases: dict, parameters=None) -> dict:
+    """Each declared parameter's value in force in a call: the call's
+    (under the name the method reads), else its default, a default that
+    depends on another input (:func:`default_in_force`) taken at that
+    input's value in force."""
+    values = {name: spec.get("default") for name, spec in declared.items()
+              if isinstance(spec, dict)}
+    named = set()
+    for key, value in (parameters or {}).items():
+        values[aliases.get(key, key)] = value
+        named.add(aliases.get(key, key))
+    for name, spec in declared.items():
+        if isinstance(spec, dict) and spec.get("default_depends_on") \
+                and name not in named:
+            values[name] = default_in_force(spec, values)
+    return values
+
+
+def _left_out(mod, method: str, given, parameters=None) -> dict:
     """The declared defaults of ``method`` that a call left in force: name
-    -> default. Left out: a declared default of None (worked out by the
-    method) or "" (an empty field), and a calc package's header and
-    format."""
-    declared, _ = _declared(mod, method)
+    -> default, a default that depends on another input taken at the
+    call's value of it (``parameters``). Left out: a declared default of
+    None (worked out by the method) or "" (an empty field), and a calc
+    package's header and format."""
+    declared, aliases = _declared(mod, method)
     named = _given_names(mod, method, given)
     if str(getattr(mod, "__name__", "")).endswith("calc_package"):
         named |= _PACKAGE_HEADER_PARAMS
-    return {name: spec["default"] for name, spec in declared.items()
-            if isinstance(spec, dict) and spec.get("default") is not None
-            and spec.get("default") != "" and name not in named}
+    values = _values_in_force(declared, aliases, parameters)
+    return {name: values[name] for name, spec in declared.items()
+            if isinstance(spec, dict) and name not in named
+            and values.get(name) is not None and values.get(name) != ""}
 
 
 #: What a parameter's ``applies_when`` may ask of another parameter (GM-119).
@@ -1254,8 +1299,7 @@ def applies(condition, values: dict) -> bool:
         elif want == _UNSET:
             ok = not _is_set(value)
         else:
-            fold = (lambda v: v.lower() if isinstance(v, str) else v)
-            ok = any(fold(value) == fold(w) for w in want)
+            ok = any(_fold(value) == _fold(w) for w in want)
         if not ok:
             return False
     return True
@@ -1265,20 +1309,19 @@ def _defaults_used(mod, method: str, given, parameters=None,
                    reported=()) -> dict:
     """The declared defaults a call left in force that apply to it, with
     the default each took (BACKLOG GM-115, GM-119): name -> default, from
-    the method's METHOD_INFO ``parameters`` (GM-110). A parameter given
-    under another spelling it reads (``parameter_aliases``) counts as
-    given. A parameter whose ``applies_when`` (:func:`applies`) does not
-    hold for this call is left out, unless the module said it used the
-    default (``reported``, the names its ``choices`` called "default"), so
-    ``defaults_used`` and ``choices`` never contradict each other."""
-    left = _left_out(mod, method, given)
+    the method's METHOD_INFO ``parameters`` (GM-110), a default that
+    depends on another input at the call's value of it (GM-158). A
+    parameter given under another spelling it reads
+    (``parameter_aliases``) counts as given. A parameter whose
+    ``applies_when`` (:func:`applies`) does not hold for this call is left
+    out, unless the module said it used the default (``reported``, the
+    names its ``choices`` called "default"), so ``defaults_used`` and
+    ``choices`` never contradict each other."""
+    left = _left_out(mod, method, given, parameters)
     if not left:
         return {}
     declared, aliases = _declared(mod, method)
-    values = {name: spec.get("default") for name, spec in declared.items()
-              if isinstance(spec, dict)}
-    for key, value in (parameters or {}).items():
-        values[aliases.get(key, key)] = value
+    values = _values_in_force(declared, aliases, parameters)
     return {name: default for name, default in left.items()
             if name in reported
             or applies(declared[name].get("applies_when"), values)}

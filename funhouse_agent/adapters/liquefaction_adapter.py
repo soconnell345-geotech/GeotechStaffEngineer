@@ -308,14 +308,6 @@ METHOD_INFO = {
                                    "(kPa) at each depth."},
             "u_2": {"type": "array", "required": False,
                     "description": "Pore pressure behind cone (kPa) (CPT, optional)."},
-            "gwl": {"type": "float", "required": False,
-                    "description": "The water table depth (m) by its CPT "
-                                   "name: the same input as gwt_depth; give "
-                                   "one."},
-            "pga": {"type": "float", "required": False,
-                    "description": "Peak ground acceleration (g) by its CPT "
-                                   "name: the same input as amax_g; give "
-                                   "one."},
             # shared
             "m_w": {"type": "float", "required": False, "default": 7.5,
                     "description": "Moment magnitude (alias magnitude)."},
@@ -375,6 +367,8 @@ declare_aliases(METHOD_INFO, {"liquefaction_analysis": {
     "n160": "N160", "N1_60": "N160", "n1_60": "N160", "N": "N160",
     "n_values": "N160", "fc": "FC", "fines": "FC", "unit_weight": "gamma",
     "amax": "amax_g", "magnitude": "m_w", "M": "m_w",
+    # the CPT route's names for the same two inputs; give one
+    "gwl": "gwt_depth", "pga": "amax_g",
 }})
 
 # When each default applies (GM-119): the CPT settings to a CPT, C0 to the

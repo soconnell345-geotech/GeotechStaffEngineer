@@ -10,8 +10,9 @@ import re
 import numpy as np
 
 from funhouse_agent.adapters import (
-    check_nested_keys, check_nested_list, clean_result, figure_output_format,
-    require_params, save_html_output,
+    check_nested_keys, check_nested_list, clean_result,
+    declare_applies_when, figure_output_format, require_params,
+    save_html_output,
 )
 
 
@@ -1431,3 +1432,7 @@ METHOD_INFO = {
         },
     },
 }
+
+# When each default applies (GM-119): the band width to a plot with bands.
+declare_applies_when(METHOD_INFO, {
+    "plot_parameter_vs_depth": {"band_sigma": {"show_bands": [True]}}})

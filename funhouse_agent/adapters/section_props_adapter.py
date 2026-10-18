@@ -1,7 +1,7 @@
 """Section properties adapter — flat dict -> section_props_agent -> dict."""
 
 from funhouse_agent.adapters import (
-    clean_result, reject_unknown_params, require_params,
+    clean_result, declare_applies_when, reject_unknown_params, require_params,
 )
 
 _SHAPES = ["rectangle", "circle", "chs", "rhs", "i_section"]
@@ -70,3 +70,7 @@ METHOD_INFO = {
                     "i11_mm4": "Principal I11.", "phi_deg": "Principal axis angle."},
     },
 }
+
+# When each default applies (GM-119): the root radius to an I-section.
+declare_applies_when(METHOD_INFO, {
+    "section_properties": {"r": {"shape": ["i_section"]}}})

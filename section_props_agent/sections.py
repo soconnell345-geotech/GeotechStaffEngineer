@@ -222,7 +222,10 @@ def analyze_section(shape, mesh_size=None, warping=True,
             f"shape '{shape}' requires dimensions {SECTION_SHAPES[shape]}; "
             f"missing {missing}")
     for k, v in dims.items():
-        if not (isinstance(v, (int, float)) and math.isfinite(v) and v > 0):
+        # a root radius r of 0 (no fillet) is the default, so it may be given
+        ok = isinstance(v, (int, float)) and math.isfinite(v) and (
+            v > 0 or (k == "r" and v == 0))
+        if not ok:
             raise ValueError(f"dimension '{k}' must be a positive number, got {v!r}")
 
     if shape == "circle":

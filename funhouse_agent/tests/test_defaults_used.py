@@ -2,9 +2,15 @@
 ``defaults_used`` (the declared parameters a call left out, with the default
 each took); the module results carry ``choices``."""
 
+import copy
+import math
+import random
+import re
+
 import pytest
 
 from funhouse_agent import dispatch as D
+from funhouse_agent.tests import method_probes as MP
 
 _PILE = {"pile_type": "pipe_closed", "diameter": 0.6, "wall_thickness": 0.012,
          "pile_length": 15,
@@ -451,3 +457,263 @@ def test_axial_gec12_options_reach_the_module():
     bad = D.call_agent("axial_pile", "axial_pile_capacity",
                        {**pipe, "open_pipe_method": "nope"})
     assert "error" in bad
+
+
+# ---------------------------------------------------------------------------
+# GM-158 / GM-150: METHOD_INFO and defaults_used say what each method does.
+# Every analysis-side method runs on its probe (method_probes.py); the
+# defaults the run lists are then given back by name, and nothing may move.
+# A default that depends on another input is declared with
+# default_depends_on and listed at the value the call used.
+
+#: Result keys that differ between two identical runs (time, files) or
+#: only in how an input was given ("given" or "default").
+_VOLATILE = frozenset({
+    "defaults_used", "output_note", "output_path", "file_size_bytes",
+    "html_length", "elapsed_s", "runtime_s", "seconds_per_evaluation",
+    "dxf_base64", "notes", "warnings", "note"})
+_STAMP = re.compile(r"\d{8}_\d{6}(_\d+)?")
+
+
+def _analysis_methods() -> set:
+    out = set()
+    for agent in sorted(D.MODULE_REGISTRY):
+        if agent in D.REFERENCE_MODULES:
+            continue
+        mod = D._load_adapter(agent)
+        out |= {f"{agent}|{m}" for m in mod.METHOD_REGISTRY}
+    return out
+
+
+def _run(agent: str, method: str, params: dict):
+    """One call with the random generators reset, so a sampling method
+    answers the same twice."""
+    import numpy as np
+    random.seed(0)
+    np.random.seed(0)
+    return D.call_agent(agent, method, copy.deepcopy(params))
+
+
+def _norm(x, where: str):
+    if isinstance(x, str):
+        return _STAMP.sub("<t>", x.replace(where, "<cwd>"))
+    if isinstance(x, dict):
+        return {k: _norm(v, where) for k, v in x.items()
+                if k not in _VOLATILE}
+    if isinstance(x, list):
+        return [_norm({k: w for k, w in v.items() if k != "how"}
+                      if isinstance(v, dict) and "what" in v and "how" in v
+                      else v, where) for v in x]
+    return x
+
+
+def _diff(a, b, path=""):
+    """Where ``a`` and ``b`` first differ, or None."""
+    if isinstance(a, dict) and isinstance(b, dict):
+        for k in sorted(set(a) | set(b), key=str):
+            if k not in a or k not in b:
+                return f"{path}.{k} in one result only"
+            d = _diff(a[k], b[k], f"{path}.{k}")
+            if d:
+                return d
+        return None
+    if isinstance(a, list) and isinstance(b, list):
+        if len(a) != len(b):
+            return f"{path}: {len(a)} items != {len(b)}"
+        for i, (x, y) in enumerate(zip(a, b)):
+            d = _diff(x, y, f"{path}[{i}]")
+            if d:
+                return d
+        return None
+    numbers = (int, float)
+    if isinstance(a, numbers) and isinstance(b, numbers) \
+            and not isinstance(a, bool) and not isinstance(b, bool):
+        if (math.isnan(a) and math.isnan(b)) or math.isclose(
+                a, b, rel_tol=1e-9, abs_tol=1e-12):
+            return None
+    return None if a == b else f"{path}: {str(a)[:80]!r} != {str(b)[:80]!r}"
+
+
+def _same(echo, value) -> bool:
+    if isinstance(echo, str) and isinstance(value, str):
+        return echo.strip().lower() == value.strip().lower()
+    return _diff(echo, value) is None
+
+
+def test_every_method_has_a_probe_or_a_reason():
+    methods = _analysis_methods()
+    probed = {key.split("#")[0] for key in MP.PROBES}
+    assert sorted(methods - probed - set(MP.EXCLUDED)) == []
+    assert sorted(probed - methods) == []
+    assert sorted(set(MP.EXCLUDED) & probed) == []
+    assert sorted(set(MP.EXCLUDED) - methods) == []
+
+
+def test_a_probe_names_only_declared_parameters_and_every_required_one():
+    """Each probe runs, so every parameter a method declares required is
+    in it; and every name in it is one the method declares."""
+    problems = []
+    for key, probe in MP.PROBES.items():
+        agent, method = key.split("#")[0].split("|")
+        mod = D._load_adapter(agent)
+        info = mod.METHOD_INFO[method]
+        declared = info.get("parameters") or {}
+        aliases = info.get("parameter_aliases") or {}
+        of = info.get("parameters_of")   # render_figures: a package's too
+        if of:
+            other = mod.METHOD_INFO[probe["params"][of]]
+            declared = {**(other.get("parameters") or {}), **declared}
+            aliases = {**(other.get("parameter_aliases") or {}), **aliases}
+        given = {aliases.get(k, k) for k in probe["params"]}
+        problems += [(key, "not declared", k) for k in probe["params"]
+                     if k not in declared and k not in aliases]
+        problems += [(key, "required but not needed", name)
+                     for name, spec in declared.items()
+                     if spec.get("required") and name not in given]
+    assert problems == []
+
+
+def test_every_parameter_says_whether_it_is_required():
+    problems = []
+    for key in sorted(_analysis_methods()):
+        agent, method = key.split("|")
+        info = D._load_adapter(agent).METHOD_INFO[method]
+        for name, spec in (info.get("parameters") or {}).items():
+            if not isinstance(spec.get("required"), bool):
+                problems.append((agent, method, name))
+    assert problems == []
+
+
+@pytest.mark.parametrize("key", [
+    pytest.param(k, marks=pytest.mark.slow) if k in MP.SLOW else k
+    for k in sorted(MP.PROBES)])
+def test_the_defaults_a_run_lists_are_the_values_it_used(key, tmp_path,
+                                                         monkeypatch):
+    """GM-158: give a run its own defaults_used by name and the result
+    does not move; where the result echoes a listed default, it echoes
+    the same value."""
+    monkeypatch.chdir(tmp_path)
+    base = key.split("#")[0]
+    agent, method = base.split("|")
+    probe = MP.PROBES[key]
+    for before in probe.get("before", ()):
+        D.call_agent(before[0], before[1], copy.deepcopy(before[2]))
+    params = probe["params"]
+    r0 = _run(agent, method, params)
+    assert isinstance(r0, dict) and "error" not in r0, (key, r0)
+    used = r0.get("defaults_used") or {}
+    for name, value in used.items():
+        if (base, name) in MP.KNOWN or (base, name) in \
+                MP.ECHO_IS_NOT_THE_INPUT:
+            continue
+        echo = r0.get(name)
+        if name in r0 and not isinstance(echo, (dict, list)):
+            assert _same(echo, value), (
+                f"{key}: defaults_used says {name}={value!r}, the result "
+                f"says {echo!r}")
+    if not used:
+        return
+    r1 = _run(agent, method, {**params, **used})
+    assert "error" not in r1, (key, r1["error"])
+    where = str(tmp_path)
+    moved = _diff(_norm(r0, where), _norm(r1, where))
+    assert moved is None, f"{key}: giving defaults_used back moved {moved}"
+
+
+def test_a_wrapped_function_and_its_method_info_agree():
+    """A method that passes its inputs straight to a function (the
+    reference wrappers): every name, required flag and default
+    METHOD_INFO gives is the function's own (inspect.signature)."""
+    import inspect
+    problems, checked = [], 0
+    for agent in sorted(D.MODULE_REGISTRY):
+        mod = D._load_adapter(agent)
+        for method, handler in mod.METHOD_REGISTRY.items():
+            fn = getattr(handler, "__wrapped__", None)
+            if fn is None:
+                continue
+            checked += 1
+            declared = (mod.METHOD_INFO.get(method) or {}).get(
+                "parameters") or {}
+            sig = inspect.signature(fn).parameters
+            catch_all = any(p.kind == p.VAR_KEYWORD for p in sig.values())
+            named = {n: p for n, p in sig.items()
+                     if p.kind not in (p.VAR_KEYWORD, p.VAR_POSITIONAL)}
+            if not catch_all:
+                problems += [(agent, method, n, "not taken")
+                             for n in set(declared) - set(named)]
+            for n, p in named.items():
+                spec = declared.get(n)
+                if spec is None:
+                    problems.append((agent, method, n, "not listed"))
+                elif (p.default is p.empty) != bool(spec.get("required")):
+                    problems.append((agent, method, n, "required flag"))
+                elif p.default is not p.empty and p.default is not None \
+                        and spec.get("default") != p.default:
+                    problems.append((agent, method, n, "default"))
+    assert checked > 1000
+    assert problems == []
+
+
+def test_a_default_that_depends_on_another_input_says_so():
+    seen = 0
+    for agent in sorted(D.MODULE_REGISTRY):
+        mod = D._load_adapter(agent)
+        for method, info in mod.METHOD_INFO.items():
+            params = info.get("parameters") or {}
+            for name, spec in params.items():
+                dep = spec.get("default_depends_on") \
+                    if isinstance(spec, dict) else None
+                if not dep:
+                    continue
+                seen += 1
+                where = (agent, method, name)
+                other = dep["parameter"]
+                assert other in params, where
+                assert "default" not in spec, where
+                assert f"Default depends on {other}" in spec[
+                    "description"], where
+                allowed = spec.get("allowed_values")
+                if allowed:
+                    assert set(dep["values"].values()) | {
+                        dep["otherwise"]} <= set(allowed), where
+                theirs = params[other].get("allowed_values")
+                if theirs:
+                    assert set(dep["values"]) <= set(theirs), where
+    # bearing_capacity_analysis and the package that runs it
+    assert seen >= 2
+
+
+def test_default_in_force_follows_the_other_input():
+    spec = {"default_depends_on": {"parameter": "factor_method",
+                                   "values": {"terzaghi": "kumbhojkar"},
+                                   "otherwise": "vesic"}}
+    assert D.default_in_force(spec, {"factor_method": "Terzaghi"}) \
+        == "kumbhojkar"
+    assert D.default_in_force(spec, {"factor_method": "meyerhof"}) \
+        == "vesic"
+    assert D.default_in_force(spec, {}) == "vesic"
+    assert D.default_in_force({"default": 3}, {}) == 3
+
+
+def test_terzaghi_lists_the_n_gamma_it_used(tmp_path, monkeypatch):
+    """GM-158: with factor_method='terzaghi' the N-gamma default is
+    Kumbhojkar's, and defaults_used says so, on the tool and the package."""
+    monkeypatch.chdir(tmp_path)
+    footing = {"width": 2.0, "unit_weight": 18.0, "friction_angle": 30.0}
+    r = D.call_agent("bearing_capacity", "bearing_capacity_analysis",
+                     {**footing, "factor_method": "terzaghi"})
+    assert r["defaults_used"]["ngamma_method"] == "kumbhojkar"
+    assert r["ngamma_method"] == "kumbhojkar"
+    assert r["defaults_used"]["failure_mode"] == "general"
+    r = D.call_agent("bearing_capacity", "bearing_capacity_analysis",
+                     dict(footing))
+    assert r["defaults_used"]["ngamma_method"] == "vesic"
+    assert "failure_mode" not in r["defaults_used"]
+    r = D.call_agent("bearing_capacity", "bearing_capacity_factors",
+                     {"friction_angle": 30.0})
+    assert set(r["defaults_used"]) == {"method"}
+    r = D.call_agent("calc_package", "bearing_capacity_package",
+                     {**footing, "factor_method": "terzaghi"})
+    assert "error" not in r, r
+    assert r["defaults_used"]["ngamma_method"] == "kumbhojkar"

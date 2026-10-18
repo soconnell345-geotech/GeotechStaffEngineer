@@ -4,8 +4,8 @@ import inspect
 import math
 
 from funhouse_agent.adapters import (
-    apply_aliases, clean_result, declare_aliases, reject_unknown_params,
-    require_params,
+    apply_aliases, clean_result, declare_aliases, declare_applies_when,
+    reject_unknown_params, require_params,
 )
 from ground_improvement import (
     analyze_aggregate_piers, analyze_wick_drains, design_drain_spacing,
@@ -138,7 +138,7 @@ def _run_priebe_improvement_factor(p):
         "n0": round(n0, 3),
         "as_ratio": p["as_ratio"],
         "phi_column_deg": p.get("phi_column", 42.5),
-        "nu_soil": p.get("nu_soil", round(1.0 / 3.0, 6)),
+        "nu_soil": p.get("nu_soil", 1.0 / 3.0),
         "note": "Priebe (1995) basic improvement factor: settlement_unimproved / settlement_improved.",
     }
 
@@ -180,7 +180,7 @@ METHOD_INFO = {
         "parameters": {
             "as_ratio": {"type": "float", "required": True, "description": "Area replacement ratio as = Ac/A, 0 < as < 1 (0.1-0.35 typical). Alias: area_replacement_ratio."},
             "phi_column": {"type": "float", "required": False, "default": 42.5, "description": "Friction angle of the column material (degrees)."},
-            "nu_soil": {"type": "float", "required": False, "default": 0.333, "description": "Poisson's ratio of the surrounding soil."},
+            "nu_soil": {"type": "float", "required": False, "default": 1.0 / 3.0, "description": "Poisson's ratio of the surrounding soil (default 1/3)."},
         },
         "returns": {"n0": "Basic improvement factor (settlement reduction ratio, >= 1)."},
     },
@@ -282,3 +282,10 @@ declare_aliases(METHOD_INFO, {
     "feasibility": _FEAS_ALIASES,
     "priebe_improvement_factor": _PRIEBE_ALIASES,
 })
+
+# When each default applies (GM-119): the drain inputs of a preload to a
+# preload with drains.
+declare_applies_when(METHOD_INFO, {
+    "surcharge_preloading": {
+        name: {"drain_spacing": "set"}
+        for name in ("pattern", "dw", "smear_ratio", "kh_ks_ratio")}})

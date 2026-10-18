@@ -1,8 +1,8 @@
 """Retaining walls adapter — cantilever + MSE wall analysis + earth pressure coefficients."""
 
 from funhouse_agent.adapters import (
-    apply_aliases, declare_aliases, reject_unknown_params, require_params,
-    without_unused,
+    apply_aliases, declare_aliases, declare_applies_when,
+    reject_unknown_params, require_params, without_unused,
 )
 from retaining_walls import earth_pressure as _ep
 from retaining_walls.geometry import CantileverWallGeometry, MSEWallGeometry
@@ -498,3 +498,20 @@ METHOD_INFO["mse_lrfd_external_stability"]["refused_parameters"] = {
     "reinforcement_spacing": (
         "external stability does not depend on it; mse_wall's internal "
         "checks use it")}
+
+# When each default applies (GM-119): the key depth to a wall with a shear
+# key, the custom reinforcement's properties to a custom reinforcement (a
+# reinforcement_Tallowable and no built-in name), and the traffic thrust's
+# vertical component to a sloping backfill carrying a surcharge.
+_TRAFFIC = {"traffic_vertical_resists": {"backfill_slope": "set",
+                                         "surcharge": "set"}}
+declare_applies_when(METHOD_INFO, {
+    "cantilever_wall": {"key_depth": {"has_shear_key": [True]}},
+    "mse_wall": {**{
+        name: {"reinforcement_Tallowable": "set",
+               "reinforcement_name": "unset"}
+        for name in ("reinforcement_type", "reinforcement_width",
+                     "reinforcement_Fy", "reinforcement_thickness",
+                     "reinforcement_transverse_spacing")}, **_TRAFFIC},
+    "mse_lrfd_external_stability": _TRAFFIC,
+})

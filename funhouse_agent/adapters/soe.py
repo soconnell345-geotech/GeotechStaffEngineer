@@ -1,8 +1,8 @@
 """Support of excavation adapter — braced/cantilever, stability, anchors."""
 
 from funhouse_agent.adapters import (
-    check_nested_list, field_keys, reject_unknown_params, require_keys,
-    require_params,
+    check_nested_list, declare_applies_when, field_keys,
+    reject_unknown_params, require_keys, require_params,
 )
 from soe import (
     ExcavationGeometry, SOEWallLayer, SupportLevel,
@@ -277,3 +277,10 @@ METHOD_INFO["cantilever_excavation"]["refused_parameters"] = {
     "excavation_width": _NO_WIDTH,
     "supports": ("a cantilever wall has no supports; a wall with struts or "
                  "anchors is braced_excavation")}
+
+# When each default applies (GM-119): the failure-block width to the
+# Caltrans check; the apparent-pressure envelope leaves the surcharge out
+# (braced_excavation adds it).
+declare_applies_when(METHOD_INFO, {
+    "check_basal_heave": {"width_factor": {"method": ["caltrans"]}},
+    "apparent_pressure": {"surcharge": False}})

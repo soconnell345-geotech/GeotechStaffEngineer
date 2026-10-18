@@ -1,6 +1,7 @@
 """Wave equation adapter — Smith 1-D (bearing graph, drivability)."""
 
-from funhouse_agent.adapters import reject_unknown_params, require_params
+from funhouse_agent.adapters import (declare_applies_when,
+                                     reject_unknown_params, require_params)
 from wave_equation import (
     Hammer, get_hammer, list_hammers, Cushion, make_cushion_from_properties,
     discretize_pile, SoilSetup, simulate_blow, generate_bearing_graph, drivability_study,
@@ -265,3 +266,10 @@ METHOD_INFO = {
         "returns": {"hammers": "Dict of hammer properties."},
     },
 }
+
+# When each default applies (GM-119): a custom hammer's efficiency and type
+# only when no hammer_name picks a hammer from the list.
+declare_applies_when(METHOD_INFO, {
+    m: {name: {"hammer_name": "unset"}
+        for name in ("efficiency", "hammer_type")}
+    for m in ("bearing_graph", "drivability", "single_blow")})

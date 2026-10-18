@@ -1,6 +1,7 @@
 """Bearing capacity adapter — flat dict → BearingCapacityAnalysis → dict."""
 
 from funhouse_agent.adapters import (apply_aliases, declare_aliases,
+                                     declare_applies_when,
                                      reject_unknown_params, require_params)
 from bearing_capacity.footing import Footing
 from bearing_capacity.soil_profile import SoilLayer, BearingSoilProfile
@@ -174,7 +175,7 @@ METHOD_INFO = {
             "layer2_description": {"type": "str", "required": False, "description": "Second layer label for the result."},
             "factor_of_safety": {"type": "float", "required": False, "default": 3.0, "description": "Factor of safety."},
             "factor_method": {"type": "str", "required": False, "default": "vesic", "allowed_values": ["vesic", "meyerhof", "terzaghi"], "description": "Shape/depth/inclination-factor method. Hansen applies to N-gamma only: use ngamma_method='hansen'. 'terzaghi' = Terzaghi (1943): his Nc, Nq, N-gamma and shape coefficients (1.3cNc; 0.4/0.3 gamma B Ngamma square/circular), no depth or inclination factors; not for inclined loads, slopes or tilted bases (UFC 3-220-20 Table 5-3)."},
-            "ngamma_method": {"type": "str", "required": False, "default": "vesic", "allowed_values": ["vesic", "meyerhof", "hansen", "kumbhojkar", "coduto"], "description": "Ngamma factor method (may differ from factor_method). With factor_method='terzaghi' (Terzaghi gave N-gamma only as a chart): 'kumbhojkar' (default; Kumbhojkar 1993 as tabulated in Das) or 'coduto' (Coduto et al. 2016 approximation, UFC 3-220-20 Table 5-2); the result reports the other beside it."},
+            "ngamma_method": {"type": "str", "required": False, "default_depends_on": {"parameter": "factor_method", "values": {"terzaghi": "kumbhojkar"}, "otherwise": "vesic"}, "allowed_values": ["vesic", "meyerhof", "hansen", "kumbhojkar", "coduto"], "description": "Ngamma factor method (may differ from factor_method). Default depends on factor_method: 'kumbhojkar' with factor_method='terzaghi', else 'vesic'. With factor_method='terzaghi' (Terzaghi gave N-gamma only as a chart): 'kumbhojkar' (Kumbhojkar 1993 as tabulated in Das) or 'coduto' (Coduto et al. 2016 approximation, UFC 3-220-20 Table 5-2); the result reports the other beside it."},
             "failure_mode": {"type": "str", "required": False, "default": "general", "allowed_values": ["general", "local"], "description": "factor_method='terzaghi' only: 'local' applies Terzaghi's local-shear reduction c* = 2/3 c, tan(phi*) = 2/3 tan(phi) (UFC 3-220-20 Table 5-4)."},
             "base_tilt": {"type": "float", "required": False, "default": 0.0, "description": "Base tilt angle (degrees)."},
             "eccentricity_B": {"type": "float", "required": False, "default": 0.0, "description": "Load eccentricity along B (m)."},
@@ -206,3 +207,13 @@ METHOD_INFO = {
 
 declare_aliases(METHOD_INFO, {
     "bearing_capacity_analysis": _ANALYSIS_ALIASES})
+
+# When each default applies (GM-119): the failure mode and Terzaghi's
+# N-gamma source go with Terzaghi's factors only.
+declare_applies_when(METHOD_INFO, {
+    "bearing_capacity_analysis": {
+        "failure_mode": {"factor_method": ["terzaghi"]}},
+    "bearing_capacity_factors": {
+        "ngamma_method": {"method": ["terzaghi"]},
+        "failure_mode": {"method": ["terzaghi"]}},
+})

@@ -274,8 +274,8 @@ METHOD_INFO = {
             "su": {"type": "float", "required": False, "description": "Undrained shear strength (kPa). For SoftClayJeanjean."},
             "Gmax": {"type": "float", "required": False, "description": "Small-strain shear modulus (kPa). For SoftClayJeanjean."},
             "J": {"type": "float", "required": False, "default": 0.5, "description": "Matlock J factor. For SoftClayMatlock, StiffClayAboveWT, SoftClayJeanjean."},
-            "gamma_r": {"type": "float", "required": False, "default": 22.0, "description": "Rock unit weight (kN/m3). For WeakRock."},
-            "RQD": {"type": "float", "required": False, "default": 100.0, "description": "Rock quality designation (%). For WeakRock."},
+            "gamma_r": {"type": "float", "required": False, "default": 22.0, "description": "Rock unit weight (kN/m3). Accepted for WeakRock but not used by the weak-rock model (alpha_r = 1.0)."},
+            "RQD": {"type": "float", "required": False, "default": 100.0, "description": "Rock quality designation (%). Accepted for WeakRock but not used by the weak-rock model (alpha_r = 1.0)."},
         },
         "returns": {"y_m": "Deflection array (m).", "p_kN_per_m": "Soil resistance array (kN/m)."},
     },
@@ -315,4 +315,13 @@ declare_applies_when(METHOD_INFO, {
     "composite_section_ei": {
         "E_steel": {"section_type": ["filled_pipe", "cased_concrete"]},
     },
+    # each p-y model's own optional inputs (J, construction) to the models
+    # that read them; the weak-rock model takes gamma_r and RQD and uses
+    # neither (alpha_r = 1.0)
+    "get_py_curve": {
+        **{name: {"model": [m for m, keys in _PY_OPTIONAL.items()
+                            if name in keys]}
+           for name in sorted({k for keys in _PY_OPTIONAL.values()
+                               for k in keys})},
+        "gamma_r": False, "RQD": False},
 })

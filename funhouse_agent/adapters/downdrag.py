@@ -9,8 +9,9 @@ from downdrag import (
     downdrag_method_comparison,
 )
 from funhouse_agent.adapters import (
-    check_nested_keys, check_nested_list, clean_result, field_keys,
-    reject_unknown_params, require_keys, require_params,
+    check_nested_keys, check_nested_list, clean_result,
+    declare_applies_when, field_keys, reject_unknown_params, require_keys,
+    require_params,
 )
 
 _SOIL_TYPES = ("cohesionless", "cohesive")
@@ -570,3 +571,9 @@ METHOD_INFO = {
         "returns": {"reduction_factor": "A (interpolated 2.5-5 diameters; 1.0 beyond 5).", "max_force_group_pile": "Reduced max force for the group pile (kN)."},
     },
 }
+
+# When each default applies (GM-119): the pile's unit weight only when its
+# own weight is in the load.
+declare_applies_when(METHOD_INFO, {
+    "downdrag_analysis": {
+        "pile_unit_weight": {"include_pile_weight": [True]}}})

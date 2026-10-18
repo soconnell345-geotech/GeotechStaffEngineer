@@ -319,7 +319,18 @@ the eyes). What changed on master after 5.33.0, in short:
   a Monte Carlo search budget, the infinite slope's water inputs; the kh
   yield_acceleration finds itself). The choice-bearing methods name
   `choices` in their returns, and `call_agent`'s description names both
-  (GM-125).
+  (GM-125). A default that depends on another input (Terzaghi's N-gamma
+  is Kumbhojkar's, every other factor method's Vesic's; GM-158) is
+  declared `default_depends_on` = `{"parameter", "values", "otherwise"}`
+  in place of one `default`, its description says "Default depends on
+  X", and `defaults_used` and the modules' `choices` take it at the
+  call's value of X (`dispatch.default_in_force`). The guard
+  (`tests/test_defaults_used.py` with `tests/method_probes.py`) runs every
+  analysis-side method on its smallest inputs, gives the run its own
+  `defaults_used` back by name and fails if the result moves or a result
+  that echoes a default echoes another value; the same probes check that
+  every declared name is one the adapter's own check accepts
+  (`test_top_level_params.py`, GM-150).
 - **Vision** (VIS-01, VIS-04, VIS-05): an optional `turn` (0/90/180/270) on
   `analyze_pdf_page` / `render_region`; boxes right on sideways sheets; a
   zoom that cuts lines of lettering widens to take them in or says which
