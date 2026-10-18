@@ -240,8 +240,10 @@ class TestDuncanExample1:
         assert result.critical.FOS == pytest.approx(self.TAYLOR_D2, rel=0.01)
 
     def test_spencer_default_search_finds_taylor_circle(self):
-        """The rigorous methods refine with a Bishop walk and re-score with
-        the method itself: Spencer gives the same circle (phi = 0)."""
+        """The rigorous methods refine with a walk on which Bishop picks
+        each centre's circle and the method scores it (GM-138), the end
+        re-scored with the method itself: Spencer gives the same circle
+        (phi = 0)."""
         g, _, _ = self._long_geom(4.0)
         result = search_critical_surface(g, method="spencer")
         assert result.critical.FOS == pytest.approx(self.TAYLOR_D2, rel=0.01)

@@ -124,12 +124,16 @@ the crest, between two of them, and the grid read 0.739 against 0.705 at D = 2
   centre (the base at -1.00 H in every run); what was missing was the centre, and a
   tangent family still needs a centre grid. A local search on the centre is
   general: it serves any slope, not only one with a firm base.
-- **Rigorous methods.** Spencer / Morgenstern-Price / GLE walk with Bishop (the same
-  critical circles to about 1 % and some 30 times cheaper, as the toe-circle family
-  does) and re-optimise the radius at each walk's end with the method itself; the
-  method's own FOS decides. Measured against a walk with Spencer itself on nine
-  models: the same FOS to four decimals on eight, at +2 to +23 % run time instead of
-  +40 to +225 %. Not where supports are modelled: Bishop counts a support only
+- **Rigorous methods.** Spencer / Morgenstern-Price / GLE pick each centre's circle
+  with Bishop (its radius optimisation some 30 times cheaper, as the toe-circle family
+  does) and score that circle with the method itself, so the walk moves only where the
+  method's own FOS falls (since GM-138; before, it moved on Bishop's FOS, which on
+  V-043 led it away from Spencer's critical circle: "The refinement walk moves on the
+  method's own FOS" below); at each walk's end the radius is optimised again with the
+  method itself; the method's own FOS decides. Measured on the walk before GM-138
+  (moving on Bishop's FOS) against a walk with Spencer itself on nine models: the
+  same FOS to four decimals on eight, at +2 to +23 % run time instead of +40 to
+  +225 %. Not where supports are modelled: Bishop counts a support only
   through its moment about the centre (GM-59) and the two methods' critical circles
   part (Slide2 #85, anchored: the Bishop walk found nothing below Spencer's grid
   minimum 1.581, Spencer's own walk 1.574), so a reinforced model walks with the
@@ -1228,6 +1232,67 @@ boundary, entry to exit, and `build_slices` cuts there.
   value on 3,840 slices.
 - **Not done.** The edge of ponded water (where the water table crosses
   the ground) is not a slice boundary.
+
+### The refinement walk moves on the method's own FOS (GM-138, 2026-10-18)
+- **The defect.** On V-043 (Slide2 #39 sand fill, c' = 0 / phi' 37 over 3 m
+  of soft clay, phi = 0, on a base at el 0) the default Spencer search
+  reported 1.238 on a centre of its grid, (16.67, 10.87), where an
+  independent brute force finds 1.186 on 30 slices (1.190 on 480): a circle
+  tangent to the clay's base centred over the face's mid-length,
+  (14.98, 9.76) R 9.76. The circle the test pins (1.210, from an old
+  entry/exit search) is not the critical one either. Along the base-tangent
+  circles Spencer's FOS is a bowl about x = 15, the face's mid-length:
+  1.240 / 1.187 / 1.237 at centre x 13.33 / 15.0 / 16.67, the grid's columns
+  falling either side of it.
+- **Why the walk missed it.** The grid's lowest centres are refined by a
+  compass walk (GM-87). For Spencer, Morgenstern-Price and GLE the walk
+  scored each centre with Bishop and only its end with the method. Bishop and
+  Spencer rank this slope's two families of circles differently: at the
+  start, Bishop's best circle is the deep one, 1.270 (Spencer 1.237); one
+  step on, at x 18.33, Bishop's best is a shallow circle on the sand face,
+  1.259, near the infinite slope tan 37 / tan 31 = 1.256, which Spencer
+  reads no lower. The walk took the first step that lowered Bishop's FOS,
+  followed the shallow circles to 1.256 and ended there; Spencer at the end
+  was no lower than at the start, so all three walks added nothing. Through
+  the frictional fill Spencer reads the deep circles 2-3 % below Bishop; on
+  the shallow circles the two agree (force equilibrium governs a thin slide).
+- **Not the other suspects.** The centre heights (9.6-21) hold the critical
+  centre and its bowl is flat in height (1.1858-1.1864 from 9.35 to 10.5);
+  the radius scan finds it at its centre (`optimize_radius` at (15.0,
+  10.15) gives 1.187); the search takes 13 s, far inside a 180 s budget;
+  it leaves two circles out for m_alpha; and it is a circle of the grid's
+  own family. With the Bishop screen on, the grid's minima are
+  Bishop's and the old walk reached the bowl by chance (1.187).
+- **The fix.** At each centre of the walk Bishop optimises the radius, as
+  before, and the method scores that circle (one solve more a centre); the
+  walk moves only where the method's FOS falls. At the walk's end the method
+  optimises the radius again and the lower of the two is kept (`grid_fos`
+  records the circle reported). Each move now lowers the method's own FOS;
+  Bishop only chooses the radius, the cheap one-dimensional part. Bishop,
+  Janbu and the ordinary method walk with themselves, unchanged, as do a
+  model with supports and a per-surface solve (rapid drawdown).
+- **What moved** (default searches on the published circular cases, before
+  and after; best known: the brute force above, Spencer on phi = 0 cases
+  taken on Bishop's best circle; VALIDATION.md B17): V-043 Spencer 1.2375 ->
+  1.1859 (best 1.1858), Morgenstern-Price and GLE 1.2464 -> 1.1958; Slide2 #57
+  (V-031) Spencer 1.4177 -> 1.4174 (best 1.4173, Slide2 1.422); V-042 Spencer
+  1.3464 -> 1.3461 (best 1.3454); Duncan Ex 4 Spencer 1.2586 -> 1.2584 (best
+  1.2584). Every other case, every Bishop search and every search the slope
+  suite and the slope validation examples pin are unchanged. Every default
+  search is now within 0.0013 of the lowest circle the brute force found
+  among circles with no reverse curvature, or below it (Slide2 #85, whose
+  searches report toe circles closed by a crack).
+- **The families.** Re-measured (Bishop / Spencer): the toe circle governs
+  ACADS 1(a) by 0.001 (0.9851 / 0.9840 against the grid's 0.9863 / 0.9850)
+  and the steep phi = 0 slope from its toe (GM-13, V-054's face) by 0.001
+  (2.3464 / 2.3466 against 2.3475 / 2.3477); with level ground past that toe
+  the base circle governs (2.222). On V-043 the toe circle, the circle
+  passing above the toe and the infinite slope read 1.254-1.298, 6-9 % above
+  the circle found.
+- **Run time** (best of two, laptop): V-043 Spencer 11.5 -> 13.0 s (its walks
+  now go somewhere), V-031 13.3 -> 13.5 s, Slide2 #85 with its support 21.2 ->
+  21.1 s, V-054 17.4 -> 18.5 s; Bishop 1.9-2.7 s before and after; all the
+  searches of the slope suite 452 -> 456 s.
 
 ## Critical Sign Conventions
 - **Driving moment**: uses `W*(x_mid - xc)/R` + `abs(driving)`, NOT `W*sin(alpha)`

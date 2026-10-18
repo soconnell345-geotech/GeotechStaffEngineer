@@ -25,17 +25,35 @@ VERDICTS
   evenly, so one across the crossing of the fill's base took one material
   (1.246, 1.190, 1.180, 1.232 on 25, 29, 30, 31 slices); the crossings are
   slice boundaries now. Clean without a crack -- the dry sand crack barely
-  intersects the critical surface. Noncircular: a KNOWN GAP (GM-117). Differential evolution
-  reaches 1.234 (+3.8% on 1.188), above our own converged critical circle
-  (1.213 on 60 slices or more) and a 41-point polyline inscribed in it
-  (1.2145): the search falls short of a surface it should reach or beat.
+  intersects the critical surface. That circle came from an old entry/exit
+  search and is not the critical one (GM-138): an independent brute force
+  finds the critical circle tangent to the soft clay's base, centred over
+  the face's mid-length, at 1.186 on 30 slices and 1.190 on 480: -1.6% on
+  Slide2's circular 1.209 (Tandjiria 1.219), because Slide2's circular
+  search stopped short of a circle tangent to the model's base. The
+  published values pair up by surface: Slide2's circular 1.209 and 44-45
+  kN/m match the pinned circle (1.2096 on 30 slices, 41 kN/m); its
+  noncircular 1.188 and 56 kN/m match the critical circle (1.190, 57
+  kN/m). A dry crack cannot explain the lower value: truncated by a dry
+  crack 1, 2 or 3 m deep, the critical circle reads 1.189 / 1.198 / 1.221,
+  higher. The default Spencer search finds it (1.186); before GM-138 it
+  reported 1.238.
+  Noncircular: a KNOWN GAP (GM-117). Differential evolution
+  reaches 1.234 (+3.8% on 1.188), above our own critical circle (1.190
+  converged; the pinned circle 1.213) and a 41-point polyline inscribed in
+  the pinned circle (1.2145): the search falls short of surfaces it should
+  reach or beat.
 - SAND, reinforcement force: CONVENTION. The force to reach FS=1.35 on the
-  module's own searched surface is 41 kN/m (circular; 40 on 240 slices) /
-  ~50 kN/m (noncircular), against the published 44-45 / 56 kN/m: the circular
-  7% below, the split the same way round. The reinforcement force is highly
-  critical-surface sensitive (the manual itself attributes such differences to
-  search-method/surface differences). Before GM-134 the circular force was
-  ~55 kN/m, from the 30-slice 1.180 above.
+  pinned circle is 41 kN/m (circular; 40 on 240 slices) / ~50 kN/m
+  (noncircular), against the published 44-45 / 56 kN/m: the circular
+  7% below, the split the same way round. On the critical circle (GM-138)
+  it is 57 kN/m (55 on 240 slices): it matches the published noncircular
+  56 kN/m (the same slide); the published 44-45 belongs to Slide2's own
+  circle, close to the pinned one. The
+  reinforcement force is highly critical-surface sensitive (the manual
+  itself attributes such differences to search-method/surface
+  differences). Before GM-134 the force on the pinned circle was ~55 kN/m,
+  from the 30-slice 1.180 above.
 - CLAY, no reinforcement: CONVENTION. Without the crack the module gives circular
   1.041 (+6.8% vs 0.975); the published value includes a WATER-FILLED crest crack
   whose depth is NOT labeled in Fig 39.1 and to which the FS is very sensitive
@@ -59,6 +77,12 @@ _SURFACE = [(0, 9), (10, 9), (20, 3), (30, 3)]
 # at any slice count (GM-134).
 _SAND_CIRC = (15.193905105454997, 10.242328996634253, 9.938523884815131)
 _CLAY_CIRC = (15.027360761475776, 12.983131511749898, 12.983031511749898)
+# The sand fill's critical Spencer circle (GM-138), from an independent
+# brute force: a 20 x 20 grid of centres over the whole profile with 40
+# radii at each, then Nelder-Mead in (xc, yc, R) from the best minima.
+# Tangent to the soft clay's base (1 mm above it), centred over the face's
+# mid-length.
+_SAND_CRITICAL = (14.977, 9.757, 9.7569)
 
 
 def _geom(fill, T=None):
@@ -89,6 +113,31 @@ def test_v043_sand_no_reinforcement_circular():
                         method="spencer").FOS
     assert fos == pytest.approx(1.210, abs=0.003)
     assert fos == pytest.approx(1.209, rel=0.01)
+
+
+def test_v043_sand_critical_circle_is_below_the_pinned_one():
+    """The critical circle of the sand fill reads 1.186 on 30 slices and
+    1.190 on 480, below the pinned circle's 1.210 / 1.213 (GM-138)."""
+    xc, yc, r = _SAND_CRITICAL
+    fos = [analyze_slope(_geom("sand"), xc=xc, yc=yc, radius=r,
+                         method="spencer", n_slices=n).FOS for n in (30, 480)]
+    assert fos == pytest.approx([1.186, 1.190], abs=0.001)
+
+
+def test_v043_sand_default_search_finds_the_critical_circle():
+    """GM-138: the default Spencer search finds the critical circle, within
+    0.01 of it. Before, it reported 1.238 on a centre of its grid: its
+    refinement walk moved on Bishop's FOS, which on the next centre preferred
+    a shallow circle on the sand face (1.259; the infinite slope tan 37 /
+    tan 31 = 1.256) to the deep circle (1.270) that Spencer reads 1.237, and
+    it never came back to the deep circles between the two grid columns."""
+    xc, yc, r = _SAND_CRITICAL
+    best = analyze_slope(_geom("sand"), xc=xc, yc=yc, radius=r,
+                         method="spencer").FOS
+    res = search_critical_surface(_geom("sand"), method="spencer")
+    assert res.critical.FOS == pytest.approx(best, abs=0.01)
+    assert res.critical.FOS < 1.209            # below the pinned circle
+    assert res.governing_surface == "circular"
 
 
 @functools.lru_cache(maxsize=1)
@@ -127,9 +176,9 @@ def test_v043_sand_no_reinforcement_noncircular():
 
 @pytest.mark.xfail(strict=True, reason=(
     "GM-117: the noncircular search falls short. Its best, 1.234, is above "
-    "our own converged critical circle (1.213 on 60 slices or more) and a "
-    "41-point polyline inscribed in it (1.2145), so DE misses surfaces it "
-    "should reach or beat; Slide2 1.188"))
+    "our own critical circle (1.190 converged; GM-138) and a 41-point "
+    "polyline inscribed in the pinned circle (1.2145), so DE misses "
+    "surfaces it should reach or beat; Slide2 1.188"))
 def test_v043_sand_noncircular_reaches_the_published():
     """Known gap: the noncircular minimum within 0.04 of Slide2's 1.188 /
     Tandjiria's 1.192 (it was, at 1.19, only through even slices across the
@@ -138,10 +187,11 @@ def test_v043_sand_noncircular_reaches_the_published():
 
 
 def test_v043_sand_reinforcement_force_brackets_published():
-    """CONVENTION: the geosynthetic force to raise the sand circular critical
-    surface to FS=1.35 is 41 kN/m, 7% below the published circular 44-45
-    kN/m (critical-surface sensitive; see module note). ~55 kN/m before
-    GM-134."""
+    """CONVENTION: the geosynthetic force to raise the pinned sand circle to
+    FS=1.35 is 41 kN/m, 7% below the published circular 44-45 kN/m
+    (critical-surface sensitive; on the critical circle, GM-138, 57 kN/m,
+    matching the published noncircular 56; see module note). ~55 kN/m
+    before GM-134."""
     xc, yc, r = _SAND_CIRC
     slip = CircularSlipSurface(xc=xc, yc=yc, radius=r)
     lo, hi = 0.0, 300.0

@@ -33,7 +33,7 @@ from slope_stability.slip_surface import CircularSlipSurface
 from slope_stability.slices import build_slices
 from slope_stability.methods import bishop_fos, spencer_fos, fellenius_fos
 from slope_stability.gle import gle_fos, janbu_fos
-from slope_stability.analysis import search_critical_surface
+from slope_stability.analysis import search_critical_surface, analyze_slope
 
 FT, PSF, PCF = 0.3048, 0.04788, 0.157087
 
@@ -92,6 +92,26 @@ def test_v031_pockoski_duncan_circular_bishop_spencer():
     assert fos["bishop"] == pytest.approx(1.417, rel=0.005)    # Slide2 circular
     assert fos["spencer"] == pytest.approx(1.422, rel=0.005)   # Slide2 circular
     assert fos["gle"] == pytest.approx(1.409, abs=0.005)
+
+
+# Spencer's critical circle on 30 slices from an independent brute force
+# (a 20 x 20 grid of centres over the whole profile with 40 radii at each,
+# then Nelder-Mead in (xc, yc, R) from the best minima; GM-138)
+_V031_SPENCER_CRITICAL = (10.879, 59.282, 33.373)
+
+
+def test_v031_default_spencer_search_finds_the_critical_circle():
+    """GM-138: the default Spencer search (30 slices) finds the critical
+    circle within 0.01 (1.417 against 1.417; 1.420 on 480 slices, Slide2
+    1.422). It refines its grid with a walk on which Bishop picks each
+    centre's circle and Spencer scores it."""
+    xc, yc, r = _V031_SPENCER_CRITICAL
+    best = analyze_slope(_v031_geom(), xc=xc, yc=yc, radius=r,
+                         method="spencer").FOS
+    assert best == pytest.approx(1.4173, abs=0.0005)
+    res = search_critical_surface(_v031_geom(), method="spencer")
+    assert res.critical.FOS == pytest.approx(best, abs=0.01)
+    assert res.critical.FOS == pytest.approx(1.422, rel=0.01)   # Slide2
 
 
 def test_v031_critical_search_finds_circular():

@@ -266,7 +266,8 @@ Key conventions:
       water-table crossings (release note); liquefaction requires the
       water table and PGA on every route (release note). 2026-10-18:
       circles sliced at layer/water/surcharge/crack edges, each slice
-      on its chord (release note);
+      on its chord (release note); the rigorous methods' circular
+      search refines on their own FOS (release note);
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done".
     Open next: Foundry brief 6, which measures all of this, is drafted

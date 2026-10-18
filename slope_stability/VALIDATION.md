@@ -568,6 +568,66 @@ profiled search).
 
 ---
 
+## B17 — The refinement walk moves on the method's own FOS (GM-138, 2026-10-18)
+[DESIGN.md "The refinement walk moves on the method's own FOS". Tests:
+`validation_examples/test_published_v043_slope_reinforced.py`,
+`validation_examples/test_published_v031_slope.py`.]
+
+Spencer / Morgenstern-Price / GLE searches refine their lowest grid centres
+by a walk on which Bishop picks each centre's circle and the method scores
+it; before, the walk moved on Bishop's FOS. Default searches (automatic
+ranges, refinement and supplementary families on) on the published circular
+cases, before and after. "Best known" is an independent brute force: a
+20 x 20 grid of centres over the whole profile with 40 radii at each, then
+Nelder-Mead in (xc, yc, R) from the five best minima and from both searches'
+circles, scored with the same per-surface checks and limited to circles with
+no reverse curvature; on phi = 0 slopes Spencer's is taken on Bishop's best
+circle (the brute force's Spencer found only the legacy solver's spurious
+states there). 480 = that circle on 480 slices.
+
+| Case (slices) | Method | Before | After | Best known (480) | Published |
+|---|---|---:|---:|---:|---:|
+| V-043 sand fill, Slide2 #39 (30) | Bishop | 1.2182 | 1.2182 | 1.2180 (1.2172) | |
+| | Spencer | 1.2375 | 1.1859 | 1.1858 (1.1901) | Slide2 1.209 (its own circle, close to the pinned one), Tandjiria 1.219; noncircular 1.188 |
+| | M-P / GLE | 1.2464 | 1.1958 | | |
+| V-031 Slide2 #57 (30) | Bishop | 1.4138 | 1.4138 | 1.4134 (1.4136) | 1.417 |
+| | Spencer | 1.4177 | 1.4174 | 1.4173 (1.4200) | 1.422 |
+| ACADS 1(a) (30) | Bishop | 0.9851 toe circle | 0.9851 | 0.9850 (0.9850) | 1.00 (Slide2 0.987) |
+| | Spencer / GLE | 0.9840 / 0.9840 toe circle | same | 0.9839 / 0.9838 | |
+| Slide2 #85 + support (30) | Bishop | 1.3715 toe circle closed by a crack | same | 1.5509 (1.5530) | 1.531, D&W 1.51 |
+| | Spencer | 1.5505 | same | 1.5493 (1.5527) | 1.884 |
+| | GLE | 1.5726 toe circle | same | 1.5843 (1.5865) | 1.575 |
+| Steep phi = 0 slope from its toe, GM-13 / V-054's face (40) | Bishop / Spencer | 2.3464 / 2.3466 toe circle | same | 2.3464 / 2.3466 (2.3481) | |
+| V-054 with level ground past the toe (40) | Bishop / Spencer | 2.2222 / 2.2212 | same | 2.2222 / 2.2210 (2.2262) | 2.16 (FLAC 2.18) |
+| Duncan Ex 1, 4 H each side (30) | Bishop / Spencer | 0.7049 / 0.7044 | same | 0.7047 / 0.7041 (0.7065) | Taylor 0.706 |
+| V-042 Hassan & Wolff (30) | Bishop | 1.3334 | 1.3334 | 1.3333 (1.3335) | 1.334 (Slide2 1.340) |
+| | Spencer | 1.3464 | 1.3461 | 1.3454 (1.3467) | |
+| Duncan Ex 4 sand over clay (30) | Bishop | 1.2709 | 1.2709 | 1.2704 (1.2691) | |
+| | Spencer | 1.2586 | 1.2584 | 1.2584 (1.2634) | |
+
+Every move is down. V-043's critical circle is tangent to the soft clay's
+base and centred over the face's mid-length, (14.98, 9.76) R 9.76; the circle
+the V-043 tests pin (1.210, from an old entry/exit search) is not it. It
+reads 1.186 on 30 slices (1.190 on 480), 1.6 % below Slide2's circular
+1.209, because Slide2's circular search stopped short of a circle tangent to
+the model's base. The published values pair up by surface: Slide2's circular
+1.209 and 44-45 kN/m match the pinned circle (1.2096 on 30 slices, 41 kN/m);
+its noncircular 1.188 and 56 kN/m match the critical circle (1.190 converged,
+57 kN/m). A dry crack cannot explain the lower value: truncated by a dry
+crack 1, 2 or 3 m deep (the mass ending at the crack face, as Slide2 models
+it), the critical circle reads 1.189 / 1.198 / 1.221 on 30 slices, higher.
+The geosynthetic force to raise the critical circle to 1.35 is 57 kN/m (55
+on 240 slices); it matches the published noncircular 56 kN/m (the same
+slide); the published 44-45 belongs to Slide2's own circle, close to the
+pinned one (41 kN/m). On #85 the
+brute force without the no-reverse-curvature limit finds Bishop 0.922 on a
+circle passing above the toe closed by a crack at the crest; the circles
+passing above the toe leave such circles out by design (GM-122, GM-127).
+Nothing pinned in the slope suite, the slope validation examples or
+`funhouse_agent -k slope` moved.
+
+---
+
 ## Notes / known deviations
 
 - Ordinary method with ru: formulation-sensitive (F&K 1.607 vs Slide2

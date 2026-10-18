@@ -1152,10 +1152,14 @@ _REFINE_LEVELS = 4            # steps of 1/2, 1/4, 1/8 and 1/16 of the grid spac
 _REFINE_STARTS = 3            # grid minima refined, at most ...
 _REFINE_WITHIN = 0.10         # ... those within 10 % of the lowest grid FOS
 _REFINE_MAX_CENTRES = 40      # centres scored from one start, at most
-# Spencer / Morgenstern-Price / GLE walk with Bishop (the same critical
-# circles to about 1 % and some 30 times cheaper, as the toe-circle family
-# does) and re-optimise the radius at each walk's end with the method
-# itself; the method's own FOS decides. Not where supports are modelled:
+# Spencer / Morgenstern-Price / GLE pick each centre's circle with Bishop's
+# radius optimisation (some 30 times cheaper, as the toe-circle family
+# does) and score it with the method itself, so the walk moves only where
+# the method's FOS falls (GM-138: moving on Bishop's FOS, V-043's walk left
+# Spencer's critical circle for shallow circles on the sand face, which
+# Bishop ranks lower and Spencer higher); at each walk's end the radius is
+# optimised again with the method itself; the method's own FOS decides.
+# Not where supports are modelled:
 # Bishop counts a support only through its moment about the centre (GM-59),
 # and the two methods' critical circles part (Slide2 #85, anchored: the
 # Bishop walk found nothing below Spencer's grid minimum 1.581, Spencer's
@@ -1488,8 +1492,17 @@ def grid_search(geom: SlopeGeometry,
                                  "FOS": round(fos_opt, 4)})
             return r_opt, fos_opt
 
-        walk_method = "bishop" if screen else method
         seen = {}
+
+        def screened(xc, yc):
+            """(R, FOS): Bishop picks the centre's circle, the method
+            scores it (GM-138), so each move of the walk lowers the
+            method's own FOS."""
+            r_b, f_b = strict(xc, yc, "bishop")
+            if f_b >= _FOS_MAX:
+                return r_b, _FOS_MAX
+            return r_b, _compute_fos(geom, CircularSlipSurface(xc, yc, r_b),
+                                     method, n_slices, tol=tol)
 
         def walk_score(xc, yc):
             key = (round(xc, 6), round(yc, 6))
@@ -1498,7 +1511,8 @@ def grid_search(geom: SlopeGeometry,
                     _record_not_run("part of the refinement of the lowest "
                                     "grid centres")
                     return (0.0, _FOS_MAX)
-                seen[key] = strict(xc, yc, walk_method)
+                seen[key] = (screened(xc, yc) if screen
+                             else strict(xc, yc, method))
             return seen[key]
 
         minima = _grid_minima([[p[0] for p in col] for col in lattice],
@@ -1514,9 +1528,14 @@ def grid_search(geom: SlopeGeometry,
                                           bounds, max_centres=max_centres,
                                           levels=levels)
             if screen:
-                if (xc, yc) == (x0, y0):
-                    continue
-                r, f = strict(xc, yc, method)
+                # the method's own radius at the walk's end
+                r_m, f_m = (strict(xc, yc, method) if (xc, yc) != (x0, y0)
+                            else (r, _FOS_MAX))
+                if f_m < f:
+                    r, f = r_m, f_m
+                elif f < best_fos:          # Bishop's circle, reported
+                    grid_fos.append({"xc": round(xc, 2), "yc": round(yc, 2),
+                                     "R": round(r, 2), "FOS": round(f, 4)})
             if f < best_fos:
                 best_fos, best_xc, best_yc, best_r = f, xc, yc, r
 
