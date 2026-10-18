@@ -50,6 +50,7 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 
+from funhouse_agent.plot_box import figures
 from funhouse_agent.plot_box.child import (ALLOWED_IMPORTS, check_code,
                                            DEFAULT_PRINT_WIDTH_IN,
                                            MAX_CODE_CHARS)
@@ -80,9 +81,11 @@ _IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".svg", ".pdf", ".gif", ".webp")
 CHART_SUFFIX = ".plotly.json"
 
 #: Tools whose calls draw a figure: drawn figures are counted across them,
-#: and across file names, within one helper run (live wave w9: a helper drew
-#: six times -- two with plot_data, four with plot_code under a new name --
-#: past a cap of three that nothing counted).
+#: and across file names, within one figure helper run (live wave w9: a
+#: helper drew six times -- two with plot_data, four with plot_code under a
+#: new name -- past a cap of three that nothing counted), and per figure
+#: across the turn, whoever draws it (live wave w12: a second helper's cap
+#: started again; :mod:`funhouse_agent.plot_box.figures`).
 DRAW_TOOLS = ("plot_code", "plot_data")
 #: The draw from which a result asks for the best version to be handed
 #: back: a first draw and at most two redraws.
@@ -253,10 +256,33 @@ def draws_so_far() -> Optional[int]:
 
 def draw_cap_note(n: int) -> str:
     """What a draw at or past :data:`DRAW_CAP` says."""
-    return (f"This is draw {n} in this helper run (plot_code and plot_data "
-            "draws count together, under any file name): look at it once if "
-            "no look has read it, then hand back the best version and name "
+    return (f"This is draw {n} of this figure this turn (plot_code and "
+            "plot_data draws count together, by any helper, under its name, "
+            "a version of it or a name that replaces it; in the figure "
+            "helper every draw of its run counts): look at it once if no "
+            "look has read it, then hand back the best version and name "
             "what is left. Do not draw again.")
+
+
+def drawn_count(helper_draw: Optional[int], figure_draw: Optional[int]):
+    """The draw number a result gives: the more of this figure helper run's
+    draws (:func:`draws_so_far` + 1) and this figure's draws this turn;
+    ``None`` when neither is counted."""
+    known = [n for n in (helper_draw, figure_draw) if n]
+    return max(known) if known else None
+
+
+def booked_notes(booked: Dict[str, Any]) -> List[str]:
+    """What a draw says about the figures it continues
+    (:func:`funhouse_agent.plot_box.figures.record_draw`)."""
+    notes = []
+    if booked.get("standing"):
+        notes.append(
+            ", ".join(booked["standing"]) + ", an earlier version of this "
+            "figure drawn this turn, still shows as its own card: if this "
+            "drawing takes its place, draw under that name or name it in "
+            "replaces=")
+    return notes
 
 
 # ---------------------------------------------------------------------------
@@ -382,6 +408,9 @@ def retire_drafts(names, root: Optional[str] = None, keep=(),
                     continue
                 os.remove(f)
                 retired.append(rel(f))
+                # its kept code goes too: no later brief is handed the code
+                # of a figure that is gone (GM-151)
+                figures.forget_code(base, rel(f))
             except OSError as exc:
                 refused.append({"name": rel(f),
                                 "why": f"could not be removed: {exc}"})
@@ -528,7 +557,8 @@ def _next_step(draw: Optional[int], lettering: list) -> str:
               "(a draft under another name is retired with replaces=), at "
               "most twice in all")
     if draw is not None:
-        redraw += f" (this was draw {draw} of at most {DRAW_CAP})"
+        redraw += (f" (this was draw {draw} of at most {DRAW_CAP} of this "
+                   "figure this turn)")
     return look + redraw + ". Paste html_img_tag into report HTML."
 
 
@@ -724,13 +754,30 @@ def _run_in_box(code, data_json, name, root, limit, cfg, notes, extra=None):
                          "failed")
     else:
         notes.extend(_settle_charts(images, set(made), root))
+        # the figure is one thing across the turn: its draws by any helper
+        # are counted, and the code that drew it is kept beside it (GM-151)
+        booked = figures.record_draw(
+            [i["file"] for i in images] + [c["file"] for c in charts],
+            "plot_code", root, replaces=extra.get("replaces"), code=code,
+            data_json=data_json)
+        kept = {figures.figure_stem(f["file"]).lower(): f
+                for f in booked["figures"]}
+        for entry in images + charts:
+            fig = kept.get(figures.figure_stem(entry["file"]).lower()) or {}
+            if fig.get("code_file"):
+                entry["code_file"] = fig["code_file"]
+        continued = sorted({f["continues"] for f in booked["figures"]
+                            if f.get("continues")})
+        if continued:
+            res["continues"] = continued
         if extra.get("replaces"):
             gone = retire_drafts(extra["replaces"], root=root,
                                  keep=[i["output_path"] for i in images]
                                  + [c["output_path"] for c in charts])
             res.update(gone)
+        notes.extend(booked_notes(booked))
         if images:
-            draw = extra.get("draw")
+            draw = drawn_count(extra.get("draw"), booked["draw"])
             if draw is not None:
                 res["draw"] = draw
             res["next"] = _next_step(draw, lettering)
@@ -793,11 +840,16 @@ def plot_code_description(cfg: Optional[Dict[str, int]] = None) -> str:
         "at least 7 pt at the size the figure is printed; to clear a label, "
         "move the label, never the drawing. Look after each draw, and redraw "
         "a figure at most twice (its drafts by plot_code and plot_data, "
-        "under any name, count together): then hand back the best and say "
-        "what is left. "
-        "replaces: file names of drafts this turn drew under another name "
-        "(a picture or chart, or the name without its extension), removed "
-        "once this draw succeeds, so the chat shows only the final figure. "
+        "under any name, count together, and so do its redraws by another "
+        "helper this turn): then hand back the best and say what is left. "
+        "The code that drew each figure is kept beside it (code_file, in "
+        "the hidden .figure_code folder): to change a figure drawn earlier, "
+        "change that code and draw under the same name, so the redraw takes "
+        "its place. "
+        "replaces: file names of drafts this turn drew under another name, "
+        "by any helper (a picture or chart, or the name without its "
+        "extension), removed once this draw succeeds, so the chat shows "
+        "only the final figure. "
         "print_width_in: the width the figure is printed at (6.5 in unless "
         "given), for the lettering's printed size. time_limit_s: "
         f"{cfg['seconds']} s unless you ask for more, up to "
@@ -834,5 +886,6 @@ def make_plot_code_tool():
 __all__ = ["run_plot_code", "make_plot_code_tool", "plot_code_description",
            "available", "settings", "check_code", "ALLOWED_IMPORTS",
            "MAX_CODE_CHARS", "SETTINGS_ENVS", "retire_drafts",
-           "draws_so_far", "draw_cap_note", "drew_figure", "DRAW_TOOLS",
-           "DRAW_CAP", "CAPPED_HELPER"]
+           "draws_so_far", "draw_cap_note", "drawn_count", "booked_notes",
+           "drew_figure", "DRAW_TOOLS", "DRAW_CAP", "CAPPED_HELPER",
+           "figures"]

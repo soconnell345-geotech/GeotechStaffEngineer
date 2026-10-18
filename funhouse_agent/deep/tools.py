@@ -1851,14 +1851,30 @@ def make_vision_tools(
                 and (_rf.figure_helper() or _rf.plot_code())):
             # Inside a helper, draws are counted across plot_data and
             # plot_code and across file names (live wave w9: six draws
-            # against a cap of three, two of them here); behind the figure
-            # switches.
+            # against a cap of three, two of them here); and each figure's
+            # draws across the turn, whoever draws it, with the arguments
+            # that drew it kept beside it (live wave w12, GM-151); behind
+            # the figure switches.
             from funhouse_agent import plot_box as _box
             before = _box.draws_so_far()
-            if before is not None:
-                result["draw"] = before + 1
-                if before + 1 >= _box.DRAW_CAP:
-                    result["redraw_note"] = _box.draw_cap_note(before + 1)
+            drawn = [result.get("output_path"),
+                     result.get("plotly_json_path")]
+            booked = _box.figures.record_draw(drawn, "plot_data", folder,
+                                              args=params)
+            draw = _box.drawn_count(None if before is None else before + 1,
+                                    booked["draw"])
+            if draw is not None:
+                result["draw"] = draw
+                if draw >= _box.DRAW_CAP:
+                    result["redraw_note"] = _box.draw_cap_note(draw)
+            fig = (booked["figures"] or [{}])[0]
+            if fig.get("code_file"):
+                result["code_file"] = fig["code_file"]
+            if fig.get("continues"):
+                result["continues"] = fig["continues"]
+            notes = _box.booked_notes(booked)
+            if notes:
+                result["figure_notes"] = notes
         return _truncate(json.dumps(result, default=str), max_result_chars)
 
     def write_xlsx(path: str, sheets: Optional[list] = None,
@@ -2044,9 +2060,10 @@ def make_vision_tools(
 
 #: Added to plot_data's description where it takes ``replaces``.
 PLOT_DATA_REPLACES_NOTE = (
-    " replaces: file names of drafts this turn drew under another name (a "
-    "picture or chart, or the name without its extension), removed once "
-    "this figure is drawn, so the chat shows only the final figure.")
+    " replaces: file names of drafts this turn drew under another name, by "
+    "any helper (a picture or chart, or the name without its extension), "
+    "removed once this figure is drawn, so the chat shows only the final "
+    "figure.")
 
 
 def _plot_data_retiring(tool):
@@ -2062,10 +2079,12 @@ def _plot_data_retiring(tool):
 
     def plot_data(**kwargs) -> str:
         replaces = kwargs.pop("replaces", None)
-        out = inner(**kwargs)
+        from funhouse_agent import plot_box
+        # the figure this draw replaces is counted on (GM-151)
+        with plot_box.figures.replacing(replaces):
+            out = inner(**kwargs)
         if not replaces:
             return out
-        from funhouse_agent import plot_box
         try:
             res = json.loads(out)
         except (TypeError, ValueError):

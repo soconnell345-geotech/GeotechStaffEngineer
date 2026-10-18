@@ -631,7 +631,9 @@ def build_calc_subagent(
     system_prompt = _CALC_PREAMBLE + _CALC_FRAMING
     # Plotting code in the locked box, behind GEOTECH_PLOT_CODE (GM-98; the
     # owner on calc packages' figures, 2026-10-15).
-    from funhouse_agent.deep.figure_helper import _plot_code_tool
+    from funhouse_agent.deep.figure_helper import (CALC_REDRAW_NOTE,
+                                                   FigureLooks,
+                                                   _plot_code_tool)
     description = _CALC_DESCRIPTION
     plot_code = _plot_code_tool()
     if plot_code is not None:
@@ -640,8 +642,10 @@ def build_calc_subagent(
         description = description + (
             " It draws the package's figures too, in code (plot_code) where "
             "plot_data cannot: a wall or pile to scale with its diagrams "
-            "beside it, panels sharing one elevation axis.")
+            "beside it, panels sharing one elevation axis."
+            + CALC_REDRAW_NOTE)
     from funhouse_agent import review_flags as _flags
+    figure_looks = _flags.figure_helper() or _flags.plot_code()
     if _flags.judgment_calls():
         system_prompt = system_prompt + _CALC_JUDGMENT_CALLS
     if extra_tools:
@@ -656,6 +660,14 @@ def build_calc_subagent(
     }
     if max_model_calls:
         spec["middleware"] = [ModelCallBudgetMiddleware(max_model_calls)]
+    if figure_looks:
+        # The figures a module method draws ask for a look, as plot_code's
+        # do, and html_to_pdf names the ones no look read (live wave w12,
+        # F18j: five figures in a package, no look; GM-151); behind the
+        # figure switches. build_deep_agent moves it just inside
+        # DeliveredToolResults.
+        spec["middleware"] = list(spec.get("middleware") or []) + [
+            FigureLooks()]
     return spec
 
 
@@ -749,6 +761,7 @@ def build_primary_tools(
         reference_result_chars=reference_result_chars,
         attachments=attachments,
     ) if allowed_agents else []
+    from funhouse_agent import review_flags as _flags
     return core_tools + make_vision_tools(
         engine=engine,
         attachments=attachments,
@@ -757,6 +770,9 @@ def build_primary_tools(
         reference_result_chars=reference_result_chars,
         markup_author=markup_author,
         description_overrides=description_overrides,
+        # behind the figure switches the main agent's own redraw can retire
+        # a figure any helper drew this turn (GM-151)
+        plot_data_replaces=_flags.figure_helper() or _flags.plot_code(),
     ) + [make_calculate_tool()]
 
 
@@ -1428,7 +1444,15 @@ def build_deep_agent(
         # ToolErrorGuard next: a tool that raises is a tool error, not the
         # end of the turn (wave 2b, C3); OutputLimitGuard last: a reply cut
         # at the output limit is caught before anything acts on it (C5).
-        extra_mw = [DeliveredToolResults(), ToolErrorGuard(),
+        # A helper's own result notes (the calc helper's FigureLooks) go
+        # just inside DeliveredToolResults, so the activity log shows them.
+        from funhouse_agent.deep.figure_helper import FigureLooks
+        notes = [m for m in spec.get("middleware") or []
+                 if isinstance(m, FigureLooks)]
+        if notes:
+            spec["middleware"] = [m for m in spec["middleware"]
+                                  if m not in notes]
+        extra_mw = [DeliveredToolResults(), *notes, ToolErrorGuard(),
                     LargeResultKeyMap(), ScratchFilesystemGuard()]
         if "runnable" not in spec:
             # What the helper reads and writes, recorded as it happens, so

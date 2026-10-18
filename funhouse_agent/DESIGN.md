@@ -422,6 +422,33 @@ the eyes). What changed on master after 5.33.0, in short:
   prompt names the helper and says not to look again at what it looked at
   (`FIGURE_PRIMARY_NOTE`). Tests: `funhouse_agent/tests/
   test_plot_box_drafts.py`, `deep/tests/test_figure_runs.py`.
+- **A figure is one thing across a turn, whoever draws it** (GM-151;
+  2026-10-18; `module_work/live_smoke/runs/w12-figures-judgment/
+  TRACE_REVIEW.md` F55j, F65, fixes 1, 2, 7). `plot_box/figures.py`. Where
+  `plot_code` or (behind the switches) `plot_data` runs, every draw is
+  booked on the turn (`TurnScope.figures`; else the helper's record):
+  under its name, a version of it (`plan_v2`) or a name its draw
+  `replaces`, so the cap of three counts per figure per turn by any helper
+  (the figure helper's per-run count still applies), and `replaces=`
+  reaches a file another helper drew this turn. The code that drew each
+  figure is kept in the working folder's hidden `.figure_code/`
+  (`<name>.plot.py` + `<name>.data.json`, or `<name>.plot_data.json`);
+  as a dot-folder it gets no card, is not mirrored to SharePoint, and
+  neither the prompt's file list nor `list_files` shows it; a retired
+  figure's code goes with it, and a module redraw of the figure drops it.
+  A file is removed only by a draw under its own name or by `replaces=`:
+  a version name only counts on the draws and says the earlier file still
+  shows ("keep both" is a brief too; `boring_V-1` is no version). Behind
+  the switches: `FigureTasks` serves the figure and calc helpers: a brief
+  that names a figure with kept code (or a version of its name) gets a
+  "FIGURE TO REDRAW" block with the code and data and is asked to keep the
+  name; both helpers' results end with their record, naming each figure's
+  code file. The main agent's own `plot_data` takes `replaces=`. On the
+  calc helper `FigureLooks` (just inside `DeliveredToolResults`, so
+  activity.jsonl shows its notes) asks for a look at a figure a module
+  method drew (booked like a draw) and has `html_to_pdf` name embedded
+  figures no look read. Tests: `deep/tests/test_figure_turn.py`,
+  `webapp/tests/test_figure_code_cards.py`.
 - **Notes on `plot_data`** (GM-109; 2026-10-18; w9 TRACE_REVIEW §2.7, fix
   10): `annotations` places free text where the caller puts it, in data
   units or fractions of the plot, with an optional leader to the point it

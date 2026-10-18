@@ -220,7 +220,8 @@ def test_a_first_draw_may_be_redrawn_and_says_how_many(tmp_path,
 
 def test_only_the_figure_helper_is_capped(tmp_path, monkeypatch):
     """The calc helper draws a package's several figures: its fourth
-    separate figure is not told to stop drawing."""
+    separate figure is not told to stop drawing; it is that figure's first
+    draw (GM-151 counts each figure's draws, whoever draws it)."""
     from funhouse_agent.deep.figure_helper import FIGURE_HELPER_NAME
     assert plot_box.CAPPED_HELPER == FIGURE_HELPER_NAME
     monkeypatch.setenv("GEOTECH_DEFAULT_OUTPUT_DIR", str(tmp_path))
@@ -233,7 +234,7 @@ def test_only_the_figure_helper_is_capped(tmp_path, monkeypatch):
         finally:
             keep_work._HELPER.reset(token)
         assert out["status"] == "success", out
-        assert "draw" not in out, helper
+        assert out["draw"] == 1, helper
         assert "Do not draw again" not in out["next"], helper
 
 

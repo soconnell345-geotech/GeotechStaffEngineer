@@ -72,7 +72,18 @@ FIGURE_HELPER_DESCRIPTION = (
     "(what it shows against the data, then the lettering) and redraws at "
     "most twice, then returns the PNG and chart file names and one line on "
     "what the figure shows; the result also lists, from the record, what "
-    "each of its looks found. It never makes up data.")
+    "each of its looks found and where the code of each figure is kept. "
+    "To change a figure drawn earlier, send it a brief that names the "
+    "figure's file and keeps that name: it is handed the code that drew "
+    "the figure and redraws it in place. It never makes up data.")
+
+#: Added to the calc helper's description (what the delegating agent reads)
+#: when ``plot_code`` is offered (live wave w12, F55j: a second calc helper
+#: told to save a figure as ``_v2`` had no code and redrew it from a look).
+CALC_REDRAW_NOTE = (
+    " To change a figure it drew, name the figure's file in the brief and "
+    "keep that name: it is handed the code that drew the figure and "
+    "redraws it in place.")
 
 #: The checklist, in our own words (Tufte's terms named, not his text).
 FIGURE_CHECKLIST = """\
@@ -469,10 +480,21 @@ MAX_LOOKS_LISTED = 8
 
 
 def _json_of(text):
+    """The JSON object a tool result holds; also with a note after it (the
+    calc helper's :class:`FigureLooks`) or a key map before it
+    (``result_map.LargeResultKeyMap``)."""
     try:
         out = json.loads(text)
     except (TypeError, ValueError):
-        return None
+        out = None
+        if isinstance(text, str):
+            decoder = json.JSONDecoder()
+            for m in re.finditer(r"(?m)^\{", text):
+                try:
+                    out = decoder.raw_decode(text, m.start())[0]
+                    break
+                except ValueError:
+                    continue
     return out if isinstance(out, dict) else None
 
 
@@ -480,21 +502,67 @@ def _base(name) -> str:
     return str(name or "").replace("\\", "/").rsplit("/", 1)[-1]
 
 
+#: Tools besides plot_code and plot_data whose results can name figures a
+#: module method drew (the calc helper's profile_figure and calc_package
+#: calls).
+MODULE_TOOL = "call_agent"
+
+_PICTURES = (".png", ".jpg", ".jpeg")
+
+
+def _picture_paths(obj, depth: int = 0) -> list:
+    """Every ``output_path`` naming a picture, anywhere in a result."""
+    out = []
+    if depth > 6:
+        return out
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k == "output_path" and isinstance(v, str) \
+                    and v.lower().endswith(_PICTURES):
+                out.append(v)
+            elif isinstance(v, (dict, list)):
+                out += _picture_paths(v, depth + 1)
+    elif isinstance(obj, list):
+        for v in obj[:200]:
+            out += _picture_paths(v, depth + 1)
+    return out
+
+
 def _drawn_files(tool: str, text: str):
-    """``(files, look copies)`` a successful draw names: the figure files
-    by their base names, and each look copy's base name -> its figure."""
+    """``(files, look copies, code files)`` a successful draw names: the
+    figure files by their base names, each look copy's base name -> its
+    figure, and each figure -> where its code is kept."""
     res = _json_of(text) or {}
-    files, looks = [], {}
+    files, looks, code = [], {}, {}
     if tool == "plot_code":
         for entry in res.get("images") or []:
             if isinstance(entry, dict) and entry.get("file"):
                 files.append(_base(entry["file"]))
                 if entry.get("look_file"):
                     looks[_base(entry["look_file"])] = _base(entry["file"])
-    else:
+                if entry.get("code_file"):
+                    code[_base(entry["file"])] = entry["code_file"]
+    elif tool == "plot_data":
         if res.get("output_path"):
             files.append(_base(res["output_path"]))
-    return files, looks
+            if res.get("code_file"):
+                code[_base(res["output_path"])] = res["code_file"]
+    elif not res.get("error"):
+        files = list(dict.fromkeys(_base(p) for p in _picture_paths(res)))
+    return files, looks, code
+
+
+def _code_still_kept(path: str) -> bool:
+    """Whether a kept code file is still there (a retired figure's goes)."""
+    try:
+        from funhouse_agent._fileio import host_output_dir
+        root = host_output_dir()
+    except Exception:                                      # noqa: BLE001
+        root = None
+    if not root:
+        return True
+    import os
+    return os.path.isfile(os.path.join(root, path))
 
 
 def _look_answer(text: str) -> str:
@@ -515,47 +583,72 @@ def _look_answer(text: str) -> str:
     return found
 
 
-def looks_report(rec) -> str:
-    """What the figure helper drew and what each of its looks found,
-    written in code from its record (:class:`~funhouse_agent.deep.keep_work.
-    HelperRecord`): the main agent does not see a helper's steps, and in
-    live wave w9 it looked again at figures the helper had looked at up to
-    six times. Empty when the helper neither drew nor looked."""
+def _record_draws(rec):
+    """``(draws, looks, look copies, code files, draws by tool)`` from a
+    helper's record: each successful draw's figure files, in order; each
+    look as ``(figure, draws before it, what it found)``."""
     from funhouse_agent.plot_box import DRAW_TOOLS, drew_figure
-    if rec is None:
-        return ""
     calls = {}
     for step in list(rec.steps):
         if step.get("kind") == "model":
             for c in step.get("calls") or []:
                 calls[c.get("id")] = c.get("args") or {}
-    draws, looks, look_copy = [], [], {}
-    last_draw, last_look = {}, {}
-    by_tool = {}
+    draws, looks, look_copy, code, by_tool = [], [], {}, {}, {}
     for step in list(rec.steps):
         if step.get("kind") != "result":
             continue
         name, text = step.get("name"), step.get("text") or ""
-        if name in DRAW_TOOLS:
-            if step.get("status") == "error" or not drew_figure(text):
+        if name in DRAW_TOOLS or name == MODULE_TOOL:
+            if step.get("status") == "error" or (
+                    name in DRAW_TOOLS and not drew_figure(text)):
                 continue
-            files, copies = _drawn_files(name, text)
+            files, copies, kept = _drawn_files(name, text)
+            if not files and name == MODULE_TOOL:
+                continue                     # a method that drew nothing
             look_copy.update(copies)
+            code.update(kept)
             draws.append(files)
             by_tool[name] = by_tool.get(name, 0) + 1
-            for f in files:
-                last_draw[f] = len(draws)
         elif name == "analyze_image":
             args = calls.get(step.get("id")) or {}
             target = _base(args.get("attachment_key"))
             figure = look_copy.get(target, target)
             looks.append((figure, len(draws), _look_answer(text)))
-            last_look[figure] = len(draws)
+    return draws, looks, look_copy, code, by_tool
+
+
+def looked_at(rec) -> set:
+    """The figures (base names) a helper's looks have read so far."""
+    if rec is None:
+        return set()
+    return {figure for figure, _n, _found in _record_draws(rec)[1]}
+
+
+def looks_report(rec) -> str:
+    """What a helper drew, where each figure's code is kept and what each of
+    its looks found, written in code from its record
+    (:class:`~funhouse_agent.deep.keep_work.HelperRecord`): the main agent
+    does not see a helper's steps, and in live wave w9 it looked again at
+    figures the helper had looked at up to six times; in w12 it sent a
+    second helper to redraw a figure with no code to edit (GM-151). Empty
+    when the helper neither drew nor looked."""
+    if rec is None:
+        return ""
+    draws, looks, _copies, code, by_tool = _record_draws(rec)
+    last_draw, last_look = {}, {}
+    for n, files in enumerate(draws, 1):
+        for f in files:
+            last_draw[f] = n
+    for figure, after, _found in looks:
+        last_look[figure] = after
     if not draws and not looks:
         return ""
     tools = ", ".join(f"{k} {v}" for k, v in sorted(by_tool.items()))
-    lines = [f"FIGURE HELPER RECORD (written in code from what the helper "
-             f"did): it drew {len(draws)} time(s)"
+    who = ("FIGURE HELPER RECORD (written in code from what the helper "
+           "did): it" if rec.subagent == FIGURE_HELPER_NAME else
+           f"FIGURE RECORD of the {rec.subagent} helper (written in code "
+           "from what it did): it")
+    lines = [f"{who} drew {len(draws)} time(s)"
              + (f" ({tools})" if tools else "")
              + f" and looked {len(looks)} time(s)."]
     shown = looks[-MAX_LOOKS_LISTED:]
@@ -571,14 +664,59 @@ def looks_report(rec) -> str:
     if looks:
         lines.append("Do not look again at what these looks read; look "
                      "only to judge an item the reply leaves open.")
+    kept = [(f, c) for f, c in code.items()
+            if f in last_draw and _code_still_kept(c)]
+    if kept:
+        lines.append(
+            "The code that drew each figure is kept: "
+            + "; ".join(f"{f} in {c}" for f, c in kept[:12])
+            + ". To change one, name it in the next helper's brief and keep "
+            "its name: that helper is handed this code and redraws it in "
+            "place.")
     return "\n".join(lines)
+
+
+#: Helpers that draw figures: a brief to one of them that names a figure
+#: with kept code is handed that code, and its result says what it drew.
+DRAWING_HELPERS = (FIGURE_HELPER_NAME, "calc")
+
+
+def redraw_brief(brief, root=None, named_from=None):
+    """``(brief, stems)``: ``brief`` with, for each figure it names (or the
+    text ``named_from`` names: the brief as the main agent wrote it) that
+    has kept code, that code and what a redraw of it does
+    (:func:`funhouse_agent.plot_box.figures.redraw_note`); the brief
+    unchanged when it names none or carries the code already."""
+    from funhouse_agent.plot_box import figures
+    if not isinstance(brief, str) or figures.REDRAW_HEADING in brief:
+        return brief, []
+    if named_from is None:
+        named_from = brief
+    if root is None:
+        try:
+            from funhouse_agent._fileio import host_output_dir
+            root = host_output_dir()
+        except Exception:                                  # noqa: BLE001
+            root = None
+    if not root:
+        return brief, []
+    try:
+        stems = figures.named_in(named_from, root)
+        note = figures.redraw_note(stems, root) if stems else ""
+    except Exception:                                      # noqa: BLE001
+        return brief, []
+    if not note:
+        return brief, []
+    return brief.rstrip() + "\n\n" + note, stems
 
 
 class FigureTasks(AgentMiddleware):
     """On the main agent, when the figure helper is on: each ``task`` for
     the figure helper carries the nearest worked example
-    (:func:`brief_with_example`), and its result ends with
-    :func:`looks_report`. Put it just inside
+    (:func:`brief_with_example`); each ``task`` for a helper that draws
+    figures (:data:`DRAWING_HELPERS`) that names a figure with kept code
+    carries that code (:func:`redraw_brief`; live wave w12, GM-151); its
+    result ends with :func:`looks_report`. Put it just inside
     :class:`~funhouse_agent.deep.keep_work.KeepWork`, whose record of the
     helper it reads."""
 
@@ -587,17 +725,23 @@ class FigureTasks(AgentMiddleware):
         self.with_code = bool(with_code)
 
     @staticmethod
-    def _is_figure(request) -> bool:
+    def _helper(request) -> Optional[str]:
         call = getattr(request, "tool_call", None) or {}
         args = call.get("args")
-        return (call.get("name") == "task" and isinstance(args, dict)
-                and args.get("subagent_type") == FIGURE_HELPER_NAME)
+        if (call.get("name") == "task" and isinstance(args, dict)
+                and args.get("subagent_type") in DRAWING_HELPERS):
+            return args["subagent_type"]
+        return None
 
-    def _briefed(self, request):
+    def _briefed(self, request, helper: str):
         call = request.tool_call
         args = call["args"]
-        brief = brief_with_example(args.get("description"), self.with_code)
-        if brief == args.get("description"):
+        given = args.get("description")
+        brief = given
+        if helper == FIGURE_HELPER_NAME:
+            brief = brief_with_example(brief, self.with_code)
+        brief, _stems = redraw_brief(brief, named_from=given)
+        if brief == given:
             return request
         try:
             return request.override(tool_call={
@@ -609,7 +753,7 @@ class FigureTasks(AgentMiddleware):
     def _reported(result):
         from funhouse_agent.deep.keep_work import _with_note, current_helper
         rec = current_helper()
-        if rec is None or rec.subagent != FIGURE_HELPER_NAME:
+        if rec is None or rec.subagent not in DRAWING_HELPERS:
             return result
         try:
             note = looks_report(rec)
@@ -618,19 +762,135 @@ class FigureTasks(AgentMiddleware):
         return _with_note(result, note) if note else result
 
     def wrap_tool_call(self, request, handler):
-        if not self._is_figure(request):
+        helper = self._helper(request)
+        if helper is None:
             return handler(request)
-        return self._reported(handler(self._briefed(request)))
+        return self._reported(handler(self._briefed(request, helper)))
 
     async def awrap_tool_call(self, request, handler):
-        if not self._is_figure(request):
+        helper = self._helper(request)
+        if helper is None:
             return await handler(request)
-        return self._reported(await handler(self._briefed(request)))
+        return self._reported(await handler(self._briefed(request, helper)))
+
+
+# ---------------------------------------------------------------------------
+# On the calc helper: the figures a module method draws are looked at
+# ---------------------------------------------------------------------------
+
+#: What a figure a module method drew asks for, as plot_code's ``next``
+#: does.
+MODULE_FIGURE_LOOK = (
+    "LOOK at {files} with analyze_image in a step after this one, before it "
+    "goes in a report: ask first what it SHOWS against the data it was "
+    "drawn from (two or three plotted values and the axis ranges read back "
+    "off it, compared here with the data; nothing drawn that the data do "
+    "not give), then the lettering (overlaps, units, scale).")
+
+
+class FigureLooks(AgentMiddleware):
+    """On the calc helper, behind the figure switches (live wave w12, F18j:
+    a calc package's five figures went out with no look; BACKLOG GM-151):
+    a figure a module method drew (``profile_figure``, ``calc_package``'s
+    ``render_figures``, a package's own figures) is booked as a draw of that
+    figure this turn, with its plot_data arguments kept beside it, and its
+    result asks for a LOOK as plot_code's does; ``html_to_pdf``'s result
+    names the figures it embedded that no look in this helper run read.
+    Put it just inside :class:`~funhouse_agent.deep.delivered_log.
+    DeliveredToolResults`, so the activity log shows its notes (the helper's
+    record, outside both, then holds the result with the note after it;
+    :func:`_json_of` reads past it)."""
+
+    @staticmethod
+    def _note(request, result) -> str:
+        import os
+        from funhouse_agent import plot_box
+        from funhouse_agent._fileio import host_output_dir
+        from funhouse_agent.deep.keep_work import (_result_messages,
+                                                   current_helper)
+        from funhouse_agent.deep.tool_guards import _text
+        call = getattr(request, "tool_call", None) or {}
+        if call.get("name") != MODULE_TOOL:
+            return ""
+        args = call.get("args") if isinstance(call.get("args"), dict) else {}
+        method = str(args.get("method") or "")
+        msgs = [m for m in _result_messages(result)
+                if getattr(m, "status", None) != "error"]
+        res = _json_of("\n".join(_text(m.content) for m in msgs))
+        if res is None or res.get("error"):
+            return ""
+        if method == "html_to_pdf":
+            seen = looked_at(current_helper())
+            unseen = list(dict.fromkeys(
+                _base(p) for p in res.get("embedded_images") or []
+                if isinstance(p, str) and p.lower().endswith(_PICTURES)
+                and _base(p) not in seen))
+            if not unseen:
+                return ""
+            return ("FIGURES NOT LOOKED AT: this PDF embeds "
+                    + ", ".join(unseen) + ", which no look in this helper "
+                    "run has read. Look at each with analyze_image (what it "
+                    "shows against the data, then the lettering); if a look "
+                    "finds a fault, redraw the figure and build the PDF "
+                    "again.")
+        # a module names its files relative to the working folder
+        root = host_output_dir()
+        pictures = []
+        for p in _picture_paths(res):
+            if not os.path.isabs(p) and root:
+                p = os.path.join(root, p)
+            if os.path.isfile(p) and p not in pictures:
+                pictures.append(p)
+        if not pictures:
+            return ""
+        agent = str(args.get("agent_name") or "")
+        params = args.get("parameters")
+        plot_data = agent == "profile_figure" and method == "plot_data"
+        booked = plot_box.figures.record_draw(
+            pictures, "plot_data" if plot_data else f"{agent}.{method}",
+            root, args=params if plot_data and isinstance(params, dict)
+            else None)
+        note = MODULE_FIGURE_LOOK.format(files=", ".join(
+            dict.fromkeys(_base(p) for p in pictures)))
+        draw = booked["draw"]
+        if draw is not None and draw >= plot_box.DRAW_CAP:
+            note += " " + plot_box.draw_cap_note(draw)
+        elif draw is not None:
+            note += (" Redraw only to fix what the look found, under the "
+                     f"same name (this was draw {draw} of at most "
+                     f"{plot_box.DRAW_CAP} of this figure this turn).")
+        for extra in plot_box.booked_notes(booked):
+            note += " " + extra[0].upper() + extra[1:] + "."
+        kept = [f["code_file"] for f in booked["figures"]
+                if f.get("code_file")]
+        if kept:
+            note += " Its arguments are kept in " + ", ".join(kept) + "."
+        return note
+
+    def wrap_tool_call(self, request, handler):
+        from funhouse_agent.deep.keep_work import _with_note
+        result = handler(request)
+        try:
+            note = self._note(request, result)
+        except Exception:                                  # noqa: BLE001
+            note = ""
+        return _with_note(result, note) if note else result
+
+    async def awrap_tool_call(self, request, handler):
+        from funhouse_agent.deep.keep_work import _with_note
+        result = await handler(request)
+        try:
+            note = self._note(request, result)
+        except Exception:                                  # noqa: BLE001
+            note = ""
+        return _with_note(result, note) if note else result
 
 
 __all__ = ["FIGURE_CHECKLIST", "FIGURE_HELPER_DESCRIPTION",
            "FIGURE_HELPER_NAME", "FIGURE_HELPER_PROMPT", "PLOT_CODE_STEP",
            "PLOT_CODE_DESCRIPTION_NOTE", "FIGURE_PRIMARY_NOTE",
+           "CALC_REDRAW_NOTE", "DRAWING_HELPERS", "MODULE_FIGURE_LOOK",
            "DEFAULT_FIGURE_MAX_MODEL_CALLS", "build_figure_subagent",
            "make_figure_examples_tool", "nearest_example",
-           "brief_with_example", "looks_report", "FigureTasks"]
+           "brief_with_example", "redraw_brief", "looks_report",
+           "looked_at", "FigureTasks", "FigureLooks"]

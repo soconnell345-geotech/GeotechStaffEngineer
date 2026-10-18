@@ -116,6 +116,9 @@ class TurnScope:
         self.busy_events = 0
         self.full_results: dict = {}          # tool_call_id -> full text
         self.kept_files: List[str] = []       # helper files written
+        # the figures drawn this turn, by any helper or tool, and how often
+        # (funhouse_agent.plot_box.figures; BACKLOG GM-151)
+        self.figures: dict = {}
         self._lock = threading.Lock()
 
     def note_full_result(self, call_id: Optional[str], text: str) -> None:
@@ -183,6 +186,8 @@ class HelperRecord:
         self.arg_chars = 0
         self.budget_reached = False
         self.error: Optional[BaseException] = None
+        # its figures' draws when no turn is open (BACKLOG GM-151)
+        self.figures: dict = {}
         self._lock = threading.Lock()
 
     def add_model(self, message) -> None:

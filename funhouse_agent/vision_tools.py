@@ -1025,15 +1025,17 @@ def _dispatch_list_files(arguments):
                      "list its parent directory."),
         })
 
-    # The tool scratch folder (thumbnails, contact sheets) is working data,
-    # not the user's files: left out of a listing of the working folder.
+    # The tool scratch folder (thumbnails, contact sheets) and the code kept
+    # beside each figure (GM-151) are working data, not the user's files:
+    # left out of a listing of the working folder.
     at_home = roots is not None and _within(abs_path, roots[0]) \
         and os.path.normcase(os.path.realpath(abs_path)) == \
         os.path.normcase(os.path.realpath(roots[0]))
+    from funhouse_agent.plot_box.figures import CODE_DIR
     try:
         entries, truncated = _collect_entries(
             abs_path, depth, max_entries, _LIST_FILES_CHAR_BUDGET,
-            skip_top=(SCRATCH_DIR,) if at_home else ())
+            skip_top=(SCRATCH_DIR, CODE_DIR) if at_home else ())
     except PermissionError as e:
         return json.dumps({"error": f"Permission denied reading '{shown}': {e}"})
     except OSError as e:

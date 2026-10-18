@@ -143,9 +143,11 @@ def test_the_switch_names_the_helper_and_puts_its_middleware_inside_keepwork(
     plot = next(t for t in fig["tools"] if t.name == "plot_data")
     assert {"replaces", "x_on_top"} <= _schema_props(plot)
     assert "replaces:" in plot.description
-    # the main agent's own plot_data stays as it is
+    # the main agent's own redraw can retire a figure a helper drew this
+    # turn (GM-151)
     main_plot = next(t for t in got["tools"] if t.name == "plot_data")
-    assert "replaces" not in _schema_props(main_plot)
+    assert "replaces" in _schema_props(main_plot)
+    assert "by any helper" in main_plot.description
     for words in ("rather than drawing a draft yourself",
                   "do not look again at a figure it has looked at",
                   "ask the helper (it has the code)",
@@ -391,7 +393,8 @@ def test_a_figure_task_through_the_real_agent(tmp_path, monkeypatch):
 
 def test_plot_data_in_another_helper_is_not_capped(tmp_path, monkeypatch):
     """With the switch on, the main agent's plot_data in a general helper
-    (or the calc helper's) draws as many figures as it is asked for."""
+    (or the calc helper's) draws as many figures as it is asked for: a new
+    figure is that figure's first draw (GM-151)."""
     from funhouse_agent.deep.tools import make_vision_tools
     _no_switches(monkeypatch)
     monkeypatch.setenv(review_flags.PLOT_CODE_ENV, "1")
@@ -415,7 +418,7 @@ def test_plot_data_in_another_helper_is_not_capped(tmp_path, monkeypatch):
             assert out["draw"] == 4
             assert "Do not draw again" in out["redraw_note"]
         else:
-            assert "draw" not in out and "redraw_note" not in out, helper
+            assert out["draw"] == 1 and "redraw_note" not in out, helper
 
 
 def test_replaces_on_a_cut_short_result_says_nothing_was_retired(
