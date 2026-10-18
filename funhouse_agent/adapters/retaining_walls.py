@@ -207,7 +207,8 @@ def run_mse_wall(params, *, method="mse_wall"):
          "reinforcement_Fy", "reinforcement_thickness",
          "reinforcement_transverse_spacing", "gamma_foundation",
          "phi_foundation", "c_foundation", "q_allowable",
-         "phi_retained", "gamma_retained", "traffic_vertical_resists"),
+         "phi_retained", "gamma_retained", "traffic_vertical_resists",
+         "live_load_resists", "surcharge_in_bearing"),
         method=method)
     require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
                    method=method)
@@ -232,6 +233,9 @@ def run_mse_wall(params, *, method="mse_wall"):
         "gamma_retained": params.get("gamma_retained"),
         "traffic_vertical_resists": bool(
             params.get("traffic_vertical_resists", False)),
+        "live_load_resists": bool(params.get("live_load_resists", False)),
+        "surcharge_in_bearing": bool(params.get("surcharge_in_bearing",
+                                                True)),
     }
     result = analyze_mse_wall(
         geom, gamma_backfill=used["gamma_backfill"],
@@ -242,6 +246,8 @@ def run_mse_wall(params, *, method="mse_wall"):
         phi_retained=used["phi_retained"],
         gamma_retained=used["gamma_retained"],
         traffic_vertical_resists=used["traffic_vertical_resists"],
+        live_load_resists=used["live_load_resists"],
+        surcharge_in_bearing=used["surcharge_in_bearing"],
     )
     return result, used
 
@@ -447,18 +453,20 @@ METHOD_INFO = {
             "reinforcement_Fy": {"type": "float", "required": False, "default": 0.0, "description": "Custom steel yield strength (MPa)."},
             "reinforcement_thickness": {"type": "float", "required": False, "default": 0.0, "description": "Strip thickness (m) for a strip; transverse-bar diameter t (m) for a steel bar mat / welded grid (the t in F* = 20 t/St)."},
             "reinforcement_transverse_spacing": {"type": "float", "required": False, "default": 0.0, "description": "Transverse-bar (grid) spacing St (m) for a steel bar mat / welded grid (the St in F* = 20 t/St). Used only for bar_mat/welded_grid/metallic_grid."},
-            "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Live-load (traffic) surcharge (kPa), e.g. heq*gamma. Internally it is in Tmax and not in the pullout resistance, which GEC-11 takes 'neglecting traffic loads' (p. 4-49). With a sloping backfill it is taken only with broken_backslope_height, as traffic on the level ground behind the crest; refused on a slope that continues."},
+            "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Live-load (traffic) surcharge (kPa), e.g. heq*gamma. Externally its thrust drives every check; over the reinforced zone it is not a resisting force in sliding or overturning and it loads the base for bearing (GEC-11 Fig. 4-2; live_load_resists, surcharge_in_bearing). Internally it is in Tmax and not in the pullout resistance, which GEC-11 takes 'neglecting traffic loads' (p. 4-49). With a sloping backfill it is taken only with broken_backslope_height, as traffic on the level ground behind the crest; refused on a slope that continues."},
             "backfill_slope": {"type": "float", "required": False, "default": 0.0, "description": "Slope of the backfill surface above the wall, beta (degrees from horizontal), rising away from the face; 0 = level. GEC-11 Section 4.4.4: Coulomb Kab with the interface angle delta = beta (Eqs. 4-2/4-3); thrust F_T = 1/2*Kab*gamma_retained*h^2 on h = H + L*tan(beta), inclined at beta (Eq. 4-7); the slope fill over the reinforced zone is added to the weight; internally the slope adds S_eq = 1/2*(0.7H)*tan(beta) of fill (Fig. 4-11). Must not be steeper than phi_retained."},
             "phi_retained": {"type": "float", "required": False, "description": "Friction angle (deg) of the retained fill behind the reinforced zone, for the external thrust. Defaults to phi_backfill."},
             "gamma_retained": {"type": "float", "required": False, "description": "Unit weight (kN/m3) of the retained fill behind the reinforced zone. Defaults to gamma_backfill."},
             "broken_backslope_height": {"type": "float", "required": False, "description": "For a broken backslope (GEC-11 Fig. 4-4): the height S (m) of the slope crest above the top of the wall, with level ground behind it. Omit for a slope that continues. Kab and the thrust inclination then use I, the angle from the top of the wall to the ground 2H behind the face, and h = H + min(L*tan(beta), S)."},
             "traffic_vertical_resists": {"type": "bool", "required": False, "default": False, "description": "Broken backslope with traffic (surcharge) behind the crest only: count the traffic thrust's vertical component F2*sin(I) as sliding and eccentricity resistance, as GEC-11 Example E1 does (Vol II pp. E1-7 to E1-9). Default false: the GEC-11 text counts loads that increase sliding resistance 'only if those loads are permanent' (Vol I p. 4-22). Bearing counts it either way (p. 4-26). The result's backslope.traffic_basis says which was used."},
+            "live_load_resists": {"type": "bool", "required": False, "default": False, "description": "Count the live-load surcharge over the reinforced zone (q*L; behind the crest of a broken backslope, q over the level ground on the zone) as resisting weight in sliding and overturning. Default false: GEC-11 Vol I p. 4-19, 'The live load surcharge is not considered as a stabilizing force when checking sliding'; p. 4-21 (Eq. 4-12), 'the live load is excluded since it increases sliding stability'; p. 4-22, loads that increase sliding resistance only 'if those loads are permanent', and the eccentricity (overturning) check 'only applies the live load above the retained backfill' (Fig. 4-2). true = the free body with the load over the zone, W = gamma*H*L + q*L. The result's choices say which was used."},
+            "surcharge_in_bearing": {"type": "bool", "required": False, "default": True, "description": "Count the live-load surcharge over the reinforced zone in the bearing pressure sigma_v and its eccentricity. Default true: GEC-11 Vol I p. 4-26, 'The bearing check applies live load above both the reinforced zone and the retained backfill' (Fig. 4-2; Eqs. 4-19, 4-20). false = the live load taken as not over the zone."},
             "gamma_foundation": {"type": "float", "required": False, "description": "Foundation soil unit weight (kN/m3)."},
             "phi_foundation": {"type": "float", "required": False, "description": "Foundation soil friction angle (deg)."},
             "c_foundation": {"type": "float", "required": False, "default": 0.0, "description": "Foundation soil cohesion (kPa)."},
             "q_allowable": {"type": "float", "required": False, "description": "Allowable bearing pressure (kPa). Without it the external bearing check is NOT RUN (FOS_bearing null, checks_not_run lists 'bearing'); sigma_v is still reported."},
         },
-        "returns": {"verdict": "The result in plain words: failed checks first, then those not checked. Report it to the user.", "checks_failed": "Checks run and failed: sliding, overturning, bearing, internal (pullout or rupture at some level).", "checks_not_run": "Checks not run ('bearing' when no q_allowable).", "all_checks_pass": "true only when every check ran and passed; false when one failed; null when none failed but a check was not run.", "FOS_sliding": "Sliding FOS.", "FOS_overturning": "Overturning FOS.", "FOS_bearing": "Bearing FOS q_allowable / sigma_v; null when not checked.", "passes_external": "true / false, or null when nothing failed but bearing was not checked.", "backslope": "With a sloping backfill only: the GEC-11 basis used (Kab, interface angle, h, F_T and its components, the slope fill weight V2; S_eq, sigma_2 and H1 for internal stability). Each internal level then also gives Zp_m, the depth below the slope used for pullout."},
+        "returns": {"verdict": "The result in plain words: failed checks first, then those not checked. Report it to the user.", "choices": "How a live-load surcharge over the reinforced zone was counted in sliding / overturning and in bearing, with the basis and the other reading. Tell the user.", "checks_failed": "Checks run and failed: sliding, overturning, bearing, internal (pullout or rupture at some level).", "checks_not_run": "Checks not run ('bearing' when no q_allowable).", "all_checks_pass": "true only when every check ran and passed; false when one failed; null when none failed but a check was not run.", "FOS_sliding": "Sliding FOS.", "FOS_overturning": "Overturning FOS.", "FOS_bearing": "Bearing FOS q_allowable / sigma_v; null when not checked.", "passes_external": "true / false, or null when nothing failed but bearing was not checked.", "backslope": "With a sloping backfill only: the GEC-11 basis used (Kab, interface angle, h, F_T and its components, the slope fill weight V2; S_eq, sigma_2 and H1 for internal stability). Each internal level then also gives Zp_m, the depth below the slope used for pullout."},
     },
     "mse_lrfd_external_stability": {
         "category": "MSE Wall",
@@ -531,6 +539,8 @@ declare_applies_when(METHOD_INFO, {
                "reinforcement_name": "unset"}
         for name in ("reinforcement_type", "reinforcement_width",
                      "reinforcement_Fy", "reinforcement_thickness",
-                     "reinforcement_transverse_spacing")}, **_TRAFFIC},
+                     "reinforcement_transverse_spacing")}, **_TRAFFIC,
+        "live_load_resists": {"surcharge": "set"},
+        "surcharge_in_bearing": {"surcharge": "set"}},
     "mse_lrfd_external_stability": _TRAFFIC,
 })

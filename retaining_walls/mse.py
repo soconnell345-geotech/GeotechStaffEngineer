@@ -22,6 +22,18 @@ References:
     Vol II Examples E3 (a slope that continues) and E1 (a broken backslope);
     see DESIGN.md.
 
+    A live load over the reinforced zone (GM-164): ``geom.surcharge`` is the
+    live load (traffic). On the ASD path (``check_external_stability``) it is
+    not a resisting force in sliding or overturning by default, and it does
+    load the base for bearing, as GEC-11 Vol I pp. 4-19, 4-21, 4-22 and 4-26
+    (Fig. 4-2) have it and as the LRFD path already did. Its thrust drives
+    every check. ``live_load_resists`` and ``surcharge_in_bearing`` choose
+    the other readings, and the result's ``choices`` say which was used and
+    why (:data:`LIVE_LOAD_BASIS`, :data:`BEARING_BASIS`). The bearing
+    eccentricity is therefore on other loads than the overturning check's
+    (GEC-11 p. 4-26: "eB = eccentricity for bearing calculation (not equal
+    to eccentricity check e)").
+
     Source basis (Kr/K0 ratio and F* pullout curves): DIGITIZED from GEC-11
     Figs 4-10/4-11/E4-5 (also AASHTO Fig. 11.10.6.2.1-3). Authoring-time in-hand
     status not recorded, but the curves are anchored by the GEC-11 Example E4
@@ -35,7 +47,7 @@ from typing import Dict, Any, List, Optional
 
 from retaining_walls.geometry import MSEWallGeometry
 from retaining_walls.earth_pressure import (
-    rankine_Ka, coulomb_Ka, horizontal_force_active,
+    rankine_Ka, coulomb_Ka, horizontal_force_active, active_force_components,
 )
 from retaining_walls.reinforcement import Reinforcement
 from retaining_walls.results import MSEWallResult
@@ -431,6 +443,44 @@ _TRAFFIC_VERTICAL_BASIS = {
 }
 
 
+#: Whether the live-load surcharge over the reinforced zone resists sliding
+#: and overturning on the ASD path (GM-164), by ``live_load_resists``: the
+#: basis of each reading.
+LIVE_LOAD_BASIS = {
+    False: ("GEC-11 Vol I (FHWA-NHI-10-024) p. 4-19: 'The live load "
+            "surcharge is not considered as a stabilizing force when "
+            "checking sliding, i.e., the sliding stability check only "
+            "applies the live load above the retained backfill, as shown in "
+            "Figure 4-2'; p. 4-21 (Eq. 4-12): 'the live load is excluded "
+            "since it increases sliding stability'; p. 4-22: 'External loads "
+            "that increase sliding resistance should only be included if "
+            "those loads are permanent' and 'The eccentricity limit check "
+            "only applies the live load above the retained backfill' "
+            "(limiting eccentricity is 'formerly known as overturning', "
+            "p. 4-18). The ASD procedure is not updated; its users 'may want "
+            "to refer to current LRFD procedures for any updates' (Vol II "
+            "App. F.1, p. F-2)"),
+    True: ("counted: the free body with the live load over the reinforced "
+           "zone in the resisting weight and moment, W = gamma H L + q L "
+           "(the module's ASD reading before GM-164); GEC-11 Fig. 4-2 "
+           "applies it there for bearing and overall stability only"),
+}
+
+#: Whether the live-load surcharge over the reinforced zone loads the base
+#: in the bearing pressure on the ASD path (GM-164), by
+#: ``surcharge_in_bearing``.
+BEARING_BASIS = {
+    True: ("GEC-11 Vol I p. 4-26: 'The bearing check applies live load above "
+           "both the reinforced zone and the retained backfill, as shown in "
+           "Figure 4-2'; Eqs. 4-19 and 4-20 (p. 4-27) put q L in the "
+           "vertical load and in eB, the 'eccentricity for bearing "
+           "calculation (not equal to eccentricity check e)' (p. 4-26)"),
+    False: ("left out of the bearing pressure: the live load taken as not "
+            "reaching over the reinforced zone, as in the sliding and "
+            "overturning checks; GEC-11 p. 4-26 applies it for bearing"),
+}
+
+
 def _backslope_summary(ld: Dict[str, Any],
                        traffic_vertical_resists: bool = False
                        ) -> Dict[str, Any]:
@@ -638,8 +688,18 @@ def check_external_stability(
     phi_retained: float = None,
     gamma_retained: float = None,
     traffic_vertical_resists: bool = False,
+    live_load_resists: bool = False,
+    surcharge_in_bearing: bool = True,
 ) -> Dict[str, Any]:
-    """Check external stability of MSE wall as rigid block.
+    """Check external stability of MSE wall as rigid block (ASD).
+
+    FOS_sliding = (V tan(delta_b) + ca L) / P_a, FOS_overturning =
+    M_stabilizing / M_overturning, both about the toe of the reinforced
+    zone, and the Meyerhof bearing pressure sigma_v = V_b / (L - 2 e_B).
+    V and M_stabilizing count the live-load surcharge over the reinforced
+    zone only with ``live_load_resists`` (default: not, GM-164); V_b and
+    e_B count it as ``surcharge_in_bearing`` says (default: they do). Its
+    thrust drives every check.
 
     Parameters
     ----------
@@ -674,16 +734,28 @@ def check_external_stability(
         GEC-11 Vol I p. 4-22 counts loads that increase sliding resistance
         "only if those loads are permanent". It is counted in bearing
         either way (p. 4-26).
+    live_load_resists : bool, optional
+        Count the live-load surcharge over the reinforced zone (q L; behind
+        the crest of a broken backslope, q over the level ground on the
+        zone) as resisting weight in sliding and overturning. Default False
+        (:data:`LIVE_LOAD_BASIS`, GM-164); True is the module's reading
+        before GM-164.
+    surcharge_in_bearing : bool, optional
+        Count that surcharge in the bearing pressure and its eccentricity
+        e_B. Default True (:data:`BEARING_BASIS`).
 
     Returns
     -------
     dict
         FOS_sliding / FOS_overturning / FOS_bearing, passes_sliding /
         passes_overturning / passes_bearing, bearing_checked, sigma_v_kPa,
-        eccentricity_m, and ``passes``: True only when every check was run
+        L_eff_m, eccentricity_m (e_B, the eccentricity for bearing, on the
+        bearing loads), and ``passes``: True only when every check was run
         and passed, False when one failed, None when none failed but the
         bearing check was not run (GM-100). With a sloping backfill also
         ``backslope``: the GEC-11 basis (Kab, h, F_T and its components, V2).
+        The ASD path has no separate eccentricity (middle-third) check; the
+        overturning check stands for it.
 
     Notes
     -----
@@ -697,6 +769,44 @@ def check_external_stability(
     unfactored here. A negative eccentricity leaves the full width L
     (GEC-11 p. 4-28).
     """
+    return _external_dict(
+        _external_terms(geom, gamma_backfill, phi_backfill, phi_foundation,
+                        c_foundation, phi_retained, gamma_retained,
+                        traffic_vertical_resists, live_load_resists,
+                        surcharge_in_bearing),
+        q_allowable, FOS_sliding_req, FOS_overturning_req)
+
+
+def _external_terms(
+    geom: MSEWallGeometry,
+    gamma_backfill: float,
+    phi_backfill: float,
+    phi_foundation: float,
+    c_foundation: float = 0.0,
+    phi_retained: float = None,
+    gamma_retained: float = None,
+    traffic_vertical_resists: bool = False,
+    live_load_resists: bool = False,
+    surcharge_in_bearing: bool = True,
+) -> Dict[str, Any]:
+    """The ASD external-stability terms, unrounded (GM-164), as
+    :func:`check_external_stability` sums them.
+
+    ``vertical_forces``: each vertical force on the base, in the order the
+    checks sum them, as ``{"component", "kind", "W", "x", "M", "resists",
+    "bearing"}`` (kN/m; the arm x from the toe of the reinforced zone, m;
+    ``kind`` "weight", "surcharge" or "thrust"; ``resists``: counted in
+    sliding and overturning; ``bearing``: counted in the bearing pressure).
+    ``horizontal_forces``: ``{"component", "P", "z", "M"}`` (z above the
+    base). Then ``Ka`` (the retained fill's; Kab with a sloping backfill),
+    the ``phi_retained``, ``gamma_retained``, ``phi_backfill`` and
+    ``phi_foundation`` used; ``V`` and ``M_stabilizing`` (sliding and
+    overturning), ``V_left_out``, ``V_bearing`` and ``M_bearing``, ``Pa``
+    and ``M_overturning``;
+    ``delta_b``, ``ca``, ``resisting``; and the bearing resultant
+    ``x_resultant``, ``eccentricity`` (e_B), ``L_eff``, ``sigma_v``.
+    With a sloping backfill ``backslope_loads`` (:func:`backslope_loads`),
+    else None."""
     H = geom.wall_height
     L = geom.reinforcement_length
 
@@ -704,59 +814,161 @@ def check_external_stability(
     phi_ext = phi_retained if phi_retained is not None else phi_backfill
     gamma_ext = gamma_retained if gamma_retained is not None else gamma_backfill
 
-    backslope = None
+    def weight(component, W, x, kind="weight", resists=True, bearing=True):
+        return {"component": component, "kind": kind, "W": W, "x": x,
+                "M": W * x, "resists": resists, "bearing": bearing}
+
+    def thrust(component, P, z):
+        return {"component": component, "P": P, "z": z, "M": P * z}
+
+    ld = None
     if geom.backfill_slope > 0:
         ld = backslope_loads(geom, gamma_backfill, phi_ext, gamma_ext,
                              geom.surcharge)
-        backslope = _backslope_summary(ld, traffic_vertical_resists)
-        # Weight on the base, the surcharge over the zone counted as in the
-        # level case, plus the thrust's vertical component at the back. The
-        # traffic thrust's vertical component resists sliding and overturning
-        # only by choice (Example E1; not by p. 4-22); bearing takes it.
-        f2v = 1.0 if traffic_vertical_resists else 0.0
-        W = (ld["V1"] + ld["V2"] + ld["Vs"] + ld["FTV"]
-             + f2v * ld["F2V"])
-        Pa = ld["FTH"] + ld["F2H"]                   # horizontal driving force
-        M_stab = (ld["MV1"] + ld["MV2"] + ld["MVs"] + ld["MFTV"]
-                  + f2v * ld["MF2V"])
-        M_over = ld["MFTH"] + ld["MF2H"]
-        W_bearing = W + (1.0 - f2v) * ld["F2V"]
-        M_bearing = M_stab + (1.0 - f2v) * ld["MF2V"]
+        Ka = ld["Kab"]
+        bs = ld["geometry"]
+        # The weights on the base, the live load over any level ground on
+        # the zone (Vs) as chosen (GM-164), and the thrust's vertical
+        # component at the back. The traffic thrust's vertical component
+        # resists only by choice (Example E1; not by p. 4-22); bearing
+        # takes it.
+        vertical = [weight("Reinforced fill (V1)", ld["V1"], L / 2.0)]
+        if ld["V2"] > 0:
+            vertical.append(weight("Slope fill over the reinforced zone (V2)",
+                                   ld["V2"], bs["V2_arm"]))
+        if ld["Vs"] > 0:
+            vertical.append(weight(
+                "Live-load surcharge over the level ground on the reinforced "
+                "zone", ld["Vs"], L - bs["level_length"] / 2.0,
+                "surcharge", live_load_resists, surcharge_in_bearing))
+        vertical.append(weight("Vertical component of F_T (F_T sin I)",
+                               ld["FTV"], L, "thrust"))
+        if ld["F2V"] > 0:
+            vertical.append(weight(
+                "Vertical component of the traffic thrust (F2 sin I)",
+                ld["F2V"], L, "thrust", traffic_vertical_resists, True))
+        horizontal = [thrust("Retained fill thrust (F_T cos I)", ld["FTH"],
+                             ld["h"] / 3.0)]
+        if ld["F2H"] > 0:
+            horizontal.append(thrust("Traffic thrust (F2 cos I)", ld["F2H"],
+                                     ld["h"] / 2.0))
     else:
         Ka = rankine_Ka(phi_ext)
+        # Weight of the reinforced block (reinforced fill properties) and
+        # the live load over it, counted as chosen (GM-164)
+        vertical = [weight("Reinforced fill (V1)", gamma_backfill * H * L,
+                           L / 2.0)]
+        if geom.surcharge > 0:
+            vertical.append(weight(
+                "Live-load surcharge over the reinforced zone (q L)",
+                geom.surcharge * L, L / 2.0, "surcharge", live_load_resists,
+                surcharge_in_bearing))
+        # Active thrust of the retained fill behind the reinforced zone,
+        # and of the live load over it (GEC-11 Fig. 4-2)
+        parts = active_force_components(gamma_ext, H, Ka, q=geom.surcharge)
+        horizontal = [thrust("Retained fill thrust (F1)",
+                             parts["Pa_earth"], H / 3.0)]
+        if parts["Pa_surcharge"] > 0:
+            horizontal.append(thrust("Live-load surcharge thrust (F2)",
+                                     parts["Pa_surcharge"], H / 2.0))
 
-        # Active force from retained soil behind reinforced zone
-        Pa, z_Pa = horizontal_force_active(gamma_ext, H, Ka, q=geom.surcharge)
-
-        # Weight of reinforced block (uses reinforced fill properties)
-        W = gamma_backfill * H * L + geom.surcharge * L
-
-        M_stab = W * L / 2.0
-        M_over = Pa * z_Pa
-        W_bearing, M_bearing = W, M_stab
+    V = sum(f["W"] for f in vertical if f["resists"])
+    M_stab = sum(f["M"] for f in vertical if f["resists"])
+    V_bearing = sum(f["W"] for f in vertical if f["bearing"])
+    M_bearing = sum(f["M"] for f in vertical if f["bearing"])
+    Pa = sum(f["P"] for f in horizontal)                  # horizontal driving
+    M_over = sum(f["M"] for f in horizontal)
 
     # Sliding: soil-on-soil interface, use min(phi_backfill, phi_foundation)
     # per GEC-11 Section 4.3 (no 2/3 reduction for soil-on-soil)
     delta_b = min(phi_backfill, phi_foundation)
     ca = 2.0 / 3.0 * c_foundation
-    R_sliding = W * math.tan(math.radians(delta_b)) + ca * L
-    FOS_sliding = R_sliding / Pa if Pa > 0 else 99.9
-
-    # Overturning about toe
-    FOS_overturning = M_stab / M_over if M_over > 0 else 99.9
+    R_sliding = V * math.tan(math.radians(delta_b)) + ca * L
 
     # Bearing — Meyerhof uniform pressure over the effective width
-    # (AASHTO 11.10.5.4 / GEC-11 Eq. 4-13): sigma_v = W / (L - 2e).
+    # (AASHTO 11.10.5.4 / GEC-11 Eq. 4-13): sigma_v = V_b / (L - 2e_B).
     # This replaces the trapezoidal q_toe = (W/L)(1 + 6e/L) convention,
     # which is not the AASHTO/GEC-11 MSE convention (RW-3). A negative e
     # (resultant behind the centre) leaves L - 2e = L (GEC-11 p. 4-28).
-    x_R = (M_bearing - M_over) / W_bearing if W_bearing > 0 else L / 2.0
+    x_R = (M_bearing - M_over) / V_bearing if V_bearing > 0 else L / 2.0
     e = L / 2.0 - x_R
     L_eff = L - 2.0 * max(e, 0.0)
     if L_eff > 0:
-        sigma_v = W_bearing / L_eff
+        sigma_v = V_bearing / L_eff
     else:
         sigma_v = 1.0e6  # resultant off the base — bearing effectively fails
+
+    return {
+        "vertical_forces": vertical, "horizontal_forces": horizontal,
+        "Ka": Ka, "phi_retained": phi_ext, "gamma_retained": gamma_ext,
+        "V": V, "M_stabilizing": M_stab,
+        "V_left_out": sum(f["W"] for f in vertical if not f["resists"]),
+        "V_bearing": V_bearing, "M_bearing": M_bearing,
+        "Pa": Pa, "M_overturning": M_over,
+        "phi_backfill": phi_backfill, "phi_foundation": phi_foundation,
+        "delta_b": delta_b, "ca": ca, "L": L, "resisting": R_sliding,
+        "x_resultant": x_R, "eccentricity": e, "L_eff": L_eff,
+        "sigma_v": sigma_v,
+        "traffic_vertical_resists": bool(traffic_vertical_resists),
+        "live_load_resists": bool(live_load_resists),
+        "surcharge_in_bearing": bool(surcharge_in_bearing),
+        "backslope_loads": ld,
+    }
+
+
+def live_load_choices(geom: MSEWallGeometry,
+                      live_load_resists: bool = False,
+                      surcharge_in_bearing: bool = True) -> list:
+    """How the ASD path (:func:`check_external_stability`) counted a
+    live-load surcharge over the reinforced zone (GM-164), as a result's
+    ``choices`` (``geotech_common.choices``): one entry for sliding and
+    overturning and one for bearing; none when no live load stands over
+    the zone (none given, or all of it behind the crest of a broken
+    backslope)."""
+    from geotech_common.choices import choice, how_given
+    if geom.surcharge <= 0:
+        return []
+    if (geom.backfill_slope > 0
+            and backslope_geometry(geom)["level_length"] <= 0):
+        return []
+    counted = "counted as a resisting force"
+    left_out = "not a resisting force"
+    flag = live_load_resists
+    out = [choice(
+        "live-load surcharge over the reinforced zone, in sliding and "
+        "overturning (ASD)",
+        f"{counted if flag else left_out} (live_load_resists={flag})",
+        how_given(flag, False, name="live_load_resists"),
+        LIVE_LOAD_BASIS[flag],
+        [f"{left_out if flag else counted} (live_load_resists={not flag}): "
+         f"{LIVE_LOAD_BASIS[not flag]}"])]
+    flag = surcharge_in_bearing
+    out.append(choice(
+        "live-load surcharge over the reinforced zone, in the bearing "
+        "pressure (ASD)",
+        f"{'counted' if flag else 'left out'} (surcharge_in_bearing={flag})",
+        how_given(flag, True, name="surcharge_in_bearing"),
+        BEARING_BASIS[flag],
+        [f"{'left out' if flag else 'counted'} "
+         f"(surcharge_in_bearing={not flag}): {BEARING_BASIS[not flag]}"]))
+    return out
+
+
+def _external_dict(t: Dict[str, Any], q_allowable: float = None,
+                   FOS_sliding_req: float = 1.5,
+                   FOS_overturning_req: float = 2.0) -> Dict[str, Any]:
+    """The :func:`check_external_stability` result from its terms
+    (:func:`_external_terms`)."""
+    Pa, M_over = t["Pa"], t["M_overturning"]
+    FOS_sliding = t["resisting"] / Pa if Pa > 0 else 99.9
+
+    # Overturning about toe
+    FOS_overturning = (t["M_stabilizing"] / M_over if M_over > 0 else 99.9)
+
+    sigma_v, L_eff, e = t["sigma_v"], t["L_eff"], t["eccentricity"]
+    backslope = (None if t["backslope_loads"] is None
+                 else _backslope_summary(t["backslope_loads"],
+                                         t["traffic_vertical_resists"]))
 
     # Bearing check (GM-100): without q_allowable it is NOT RUN, never a
     # placeholder FOS reported as a pass.
@@ -1176,6 +1388,8 @@ def analyze_mse_wall(
     bearing_resistance_service: float = None,
     live_load: float = None,
     traffic_vertical_resists: bool = False,
+    live_load_resists: bool = False,
+    surcharge_in_bearing: bool = True,
 ) -> MSEWallResult:
     """Run complete MSE wall analysis.
 
@@ -1216,6 +1430,14 @@ def analyze_mse_wall(
         traffic thrust's vertical component as sliding and eccentricity /
         overturning resistance, as GEC-11 Example E1 does. Default False
         (GEC-11 Vol I p. 4-22); see ``check_external_stability_lrfd``.
+    live_load_resists : bool, optional
+        ASD path: count the live-load surcharge over the reinforced zone as
+        resisting weight in sliding and overturning. Default False
+        (:data:`LIVE_LOAD_BASIS`, GM-164). The LRFD path leaves it out
+        either way.
+    surcharge_in_bearing : bool, optional
+        ASD path: count that surcharge in the bearing pressure. Default
+        True (:data:`BEARING_BASIS`).
 
     Returns
     -------
@@ -1223,19 +1445,23 @@ def analyze_mse_wall(
         With a sloping backfill (``geom.backfill_slope`` > 0, optionally a
         broken backslope) ``result.backslope`` carries the GEC-11 basis;
         see ``check_external_stability`` and ``check_internal_stability``.
+        ``external_terms`` holds the ASD terms as the checks used them
+        (:func:`_external_terms`) and ``choices`` how a live load over the
+        reinforced zone was counted (:func:`live_load_choices`).
     """
     if gamma_foundation is None:
         gamma_foundation = gamma_backfill
     if phi_foundation is None:
         phi_foundation = phi_backfill
 
-    external = check_external_stability(
-        geom, gamma_backfill, phi_backfill,
-        gamma_foundation, phi_foundation, c_foundation,
-        q_allowable, phi_retained=phi_retained,
-        gamma_retained=gamma_retained,
+    terms = _external_terms(
+        geom, gamma_backfill, phi_backfill, phi_foundation, c_foundation,
+        phi_retained=phi_retained, gamma_retained=gamma_retained,
         traffic_vertical_resists=traffic_vertical_resists,
+        live_load_resists=live_load_resists,
+        surcharge_in_bearing=surcharge_in_bearing,
     )
+    external = _external_dict(terms, q_allowable)
 
     internal = check_internal_stability(
         geom, gamma_backfill, phi_backfill, reinforcement,
@@ -1280,4 +1506,7 @@ def analyze_mse_wall(
         reinforcement_length=geom.reinforcement_length,
         external_lrfd=external_lrfd,
         backslope=backslope,
+        external_terms=terms,
+        choices=live_load_choices(geom, live_load_resists,
+                                  surcharge_in_bearing),
     )

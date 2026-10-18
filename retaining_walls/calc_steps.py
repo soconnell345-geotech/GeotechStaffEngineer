@@ -208,7 +208,7 @@ def _input_summary_mse(result, analysis) -> List[InputItem]:
     if geom.backfill_slope > 0:
         items.append(InputItem("\u03b2", "Backfill slope", f"{geom.backfill_slope:.1f}", "deg"))
     if geom.surcharge > 0:
-        items.append(InputItem("q_s", "Surcharge", f"{geom.surcharge:.1f}", "kPa"))
+        items.append(InputItem("q_s", "Live-load surcharge", f"{geom.surcharge:.1f}", "kPa"))
 
     items.extend([
         InputItem("\u03b3_backfill", "Backfill unit weight", f"{gamma:.1f}", "kN/m\u00b3"),
@@ -770,19 +770,14 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
 
 
 def _calc_steps_mse(result, analysis) -> List[CalcSection]:
-    """Calculation steps for MSE wall."""
+    """Calculation steps for MSE wall. The external steps print the terms
+    the ASD analysis used (GM-143, GM-164; :func:`_mse_terms`)."""
     geom = _get(analysis, "geom")
-    gamma = _get(analysis, "gamma_backfill", 18.0)
-    phi = _get(analysis, "phi_backfill", 34.0)
     reinforcement = _get(analysis, "reinforcement")
-    phi_f = _get(analysis, "phi_foundation", phi)
-    c_f = _get(analysis, "c_foundation", 0.0)
     q_all = _get(analysis, "q_allowable")
 
-    if phi_f is None:
-        phi_f = phi
     if geom.backfill_slope > 0:
-        # The steps below re-derive a level backfill (Rankine Ka); printing
+        # The steps below print a level backfill (Rankine Ka); printing
         # them beside a sloping-backfill result would contradict it (GM-112).
         raise ValueError(
             "MSE calculation steps cover a level backfill only; the analysis "
@@ -790,75 +785,115 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
             "backfill per GEC-11 Section 4.4.4 and reports its basis in "
             "'backslope'.")
 
+    t = _mse_terms(result, analysis)
+    phi, phi_f = t["phi_backfill"], t["phi_foundation"]
+
     sections = []
     H = geom.wall_height
     L = geom.reinforcement_length
+    q = geom.surcharge
+    forces = t["vertical_forces"]
+    thrusts = t["horizontal_forces"]
 
     # ── Section 1: Earth Pressure ──────────────────────────────
     ep_items = []
 
-    Ka = math.tan(math.radians(45 - phi / 2)) ** 2
+    Ka = t["Ka"]
+    phi_b, gamma_b = t["phi_retained"], t["gamma_retained"]
     ep_items.append(CalcStep(
-        title="Rankine Active Earth Pressure Coefficient",
-        equation="K_a = tan\u00b2(45\u00b0 - \u03c6/2)",
-        substitution=f"K_a = tan\u00b2(45\u00b0 - {phi:.1f}\u00b0/2)",
+        title="Rankine Active Earth Pressure Coefficient (retained fill)",
+        equation="K_a = tan²(45° - φ_b/2)",
+        substitution=f"K_a = tan²(45° - {phi_b:.1f}°/2)",
         result_name="K_a",
         result_value=f"{Ka:.4f}",
         reference="Rankine (1857); GEC-11 uses Rankine for MSE walls",
     ))
 
-    # Active force
-    Pa = 0.5 * Ka * gamma * H ** 2
-    Pa_q = Ka * geom.surcharge * H if geom.surcharge > 0 else 0
-    Pa_total = Pa + Pa_q
-
+    # Active force: the thrusts the analysis summed
+    Pa_total = t["Pa"]
     ep_items.append(CalcStep(
         title="Total Active Force on Reinforced Zone",
-        equation="P_a = 0.5 \u00d7 K_a \u00d7 \u03b3 \u00d7 H\u00b2"
-                 + (" + K_a \u00d7 q \u00d7 H" if geom.surcharge > 0 else ""),
+        equation="P_a = 0.5 × K_a × γ_b × H²"
+                 + (" + K_a × q × H" if q > 0 else ""),
         substitution=(
-            f"P_a = 0.5 \u00d7 {Ka:.4f} \u00d7 {gamma:.1f} \u00d7 {H:.2f}\u00b2"
-            + (f" + {Ka:.4f} \u00d7 {geom.surcharge:.1f} \u00d7 {H:.2f}"
-               if geom.surcharge > 0 else "")
+            f"P_a = 0.5 × {Ka:.4f} × {gamma_b:.1f} × {H:.2f}²"
+            + (f" + {Ka:.4f} × {q:.1f} × {H:.2f}" if q > 0 else "")
         ),
         result_name="P_a",
         result_value=f"{Pa_total:.1f}",
         result_unit="kN/m",
         reference="GEC-11, Ch. 4",
+        notes=("The live-load surcharge's thrust (K_a q H) drives every "
+               "check." if q > 0 else ""),
     ))
 
     sections.append(CalcSection(title="Earth Pressure Computation", items=ep_items))
 
-    # ── Section 2: External Sliding ────────────────────────────
+    # ── Section 2: External Stability ──────────────────────────
     ext_items = []
 
-    W = gamma * H * L + geom.surcharge * L
-    ext_items.append(CalcStep(
-        title="Weight of Reinforced Soil Block",
-        equation="W = \u03b3 \u00d7 H \u00d7 L + q \u00d7 L",
-        substitution=(
-            f"W = {gamma:.1f} \u00d7 {H:.2f} \u00d7 {L:.2f}"
-            + (f" + {geom.surcharge:.1f} \u00d7 {L:.2f}" if geom.surcharge > 0 else "")
-        ),
-        result_name="W",
-        result_value=f"{W:.1f}",
-        result_unit="kN/m",
+    # Every vertical force the analysis summed and the checks that count it
+    # (GM-164: a live load over the reinforced zone is left out of sliding
+    # and overturning and counted in bearing, GEC-11 Fig. 4-2)
+    V, M_stab = t["V"], t["M_stabilizing"]
+    V_b, M_b = t["V_bearing"], t["M_bearing"]
+    split = abs(V - V_b) > 1e-9 or abs(M_stab - M_b) > 1e-9
+    marked = split or any(not f["resists"] or not f["bearing"]
+                          for f in forces)
+    rows = []
+    for f in forces:
+        row = [f["component"], f"{f['W']:.1f}", f"{f['x']:.3f}",
+               f"{f['M']:.1f}"]
+        if marked:
+            row.append(_counted_in(f, "sliding, overturning"))
+        rows.append(row)
+    if split:
+        rows.append(["TOTAL, sliding / overturning", f"{V:.1f}", "—",
+                     f"{M_stab:.1f}", ""])
+        rows.append(["TOTAL, bearing", f"{V_b:.1f}", "—", f"{M_b:.1f}",
+                     ""])
+    else:
+        rows.append(["TOTAL", f"{V:.1f}", "—", f"{M_stab:.1f}"]
+                    + ([""] if marked else []))
+    headers = ["Component", "Weight (kN/m)", "Arm from Toe (m)",
+               "Moment (kN·m/m)"] + (["Counted in"] if marked else [])
+    left_out = sum(f["W"] for f in forces
+                   if f["kind"] == "surcharge" and not f["resists"])
+    notes = "Moments about the toe of the reinforced zone."
+    if marked:
+        notes += (" Counted in: the checks that sum the force. The live load "
+                  "over the reinforced zone is not a stabilizing force in "
+                  "sliding or overturning (GEC-11 Vol I pp. 4-19, 4-21 "
+                  "Eq. 4-12, 4-22) and is applied for bearing (p. 4-26; "
+                  "Fig. 4-2); see Choices."
+                  if left_out > 0 else
+                  " Counted in: the checks that sum the force (see Choices).")
+    ext_items.append(TableData(
+        title="Vertical Forces and Moments about the Toe",
+        headers=headers,
+        rows=rows,
+        notes=notes,
     ))
 
-    delta_b = 2.0 / 3.0 * phi_f
-    ca = 2.0 / 3.0 * c_f
-    R_slide = W * math.tan(math.radians(delta_b)) + ca * L
-
+    delta_b = t["delta_b"]
+    ca = t["ca"]
+    R_slide = t["resisting"]
     ext_items.append(CalcStep(
         title="Sliding Resistance",
-        equation="R = W \u00d7 tan(\u03b4_b) + c_a \u00d7 L,  \u03b4_b = 2/3 \u00d7 \u03c6_f",
+        equation=("R = V × tan(δ_b) + c_a × L,  "
+                  "δ_b = min(φ_r, φ_f)"),
         substitution=(
-            f"R = {W:.1f} \u00d7 tan({delta_b:.2f}\u00b0)"
-            + (f" + {ca:.1f} \u00d7 {L:.2f}" if ca > 0 else "")
+            f"δ_b = min({phi:.1f}°, {phi_f:.1f}°); "
+            f"R = {V:.1f} × tan({delta_b:.2f}°)"
+            + (f" + {ca:.1f} × {L:.2f}" if ca > 0 else "")
         ),
         result_name="R",
         result_value=f"{R_slide:.1f}",
         result_unit="kN/m",
+        reference="GEC-11 Vol I Eq. 4-12 (soil on soil)",
+        notes=(f"V leaves out the live load over the reinforced zone, "
+               f"{left_out:.1f} kN/m (GEC-11 p. 4-19)."
+               if left_out > 0 else ""),
     ))
 
     ext_items.append(CalcStep(
@@ -870,29 +905,27 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         reference="GEC-11 (min 1.5)",
     ))
 
-    # Overturning
-    M_stab = W * L / 2.0
-    z_Pa = H / 3.0
-    if geom.surcharge > 0 and Pa_total > 0:
-        z_Pa = (Pa * H / 3.0 + Pa_q * H / 2.0) / Pa_total
-    M_over = Pa_total * z_Pa
-
+    # Overturning: the thrusts' moments as the analysis summed them
+    M_over = t["M_overturning"]
     ext_items.append(CalcStep(
         title="Overturning Moment about Toe",
-        equation="M_ot = P_a \u00d7 z_Pa",
-        substitution=f"M_ot = {Pa_total:.1f} \u00d7 {z_Pa:.3f}",
+        equation="M_ot = Σ P × z",
+        substitution="M_ot = " + " + ".join(
+            f"{f['P']:.1f} × {f['z']:.3f}" for f in thrusts),
         result_name="M_ot",
         result_value=f"{M_over:.1f}",
-        result_unit="kN\u00b7m/m",
+        result_unit="kN·m/m",
     ))
 
     ext_items.append(CalcStep(
         title="Stabilizing Moment",
-        equation="M_stab = W \u00d7 L/2",
-        substitution=f"M_stab = {W:.1f} \u00d7 {L:.2f}/2",
+        equation="M_stab = Σ W × x (the forces counted in overturning)",
+        substitution="M_stab = " + " + ".join(
+            f"{f['W']:.1f} × {f['x']:.3f}" for f in forces
+            if f["resists"]),
         result_name="M_stab",
         result_value=f"{M_stab:.1f}",
-        result_unit="kN\u00b7m/m",
+        result_unit="kN·m/m",
     ))
 
     ext_items.append(CalcStep(
@@ -904,23 +937,27 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         reference="GEC-11 (min 2.0)",
     ))
 
-    # Bearing — Meyerhof uniform pressure over effective width (RW-3)
-    x_R = (M_stab - M_over) / W if W > 0 else L / 2.0
-    e_ext = L / 2.0 - x_R
-    L_eff = L - 2.0 * abs(e_ext)
-    q_toe = W / L_eff if L_eff > 0 else 1.0e6
-
+    # Bearing — Meyerhof uniform pressure over effective width (RW-3), on
+    # the bearing loads: e_B is not the overturning check's (GEC-11 p. 4-26)
+    e_B = t["eccentricity"]
+    sigma_v = t["sigma_v"]
     ext_items.append(CalcStep(
         title="Eccentricity & Bearing Pressure (Meyerhof effective width)",
-        equation="e = L/2 - (M_stab - M_ot)/W;  σ_v = W / (L - 2e)",
+        equation=("e_B = L/2 - (M_b - M_ot)/V_b;  "
+                  "σ_v = V_b / (L - 2e_B)"),
         substitution=(
-            f"e = {L:.2f}/2 - ({M_stab:.1f} - {M_over:.1f})/{W:.1f} "
-            f"= {e_ext:.3f} m;  σ_v = {W:.1f} / ({L:.2f} - 2×{abs(e_ext):.3f})"
+            f"e_B = {L:.2f}/2 - ({M_b:.1f} - {M_over:.1f})/{V_b:.1f} "
+            f"= {e_B:.3f} m;  σ_v = {V_b:.1f} / ({L:.2f} - "
+            f"2×{max(e_B, 0.0):.3f})"
         ),
         result_name="σ_v",
-        result_value=f"{q_toe:.1f}",
+        result_value=f"{sigma_v:.1f}",
         result_unit="kPa",
-        reference="AASHTO 11.10.5.4; GEC-11",
+        reference="AASHTO 11.10.5.4; GEC-11 Eqs. 4-19, 4-20",
+        notes=("V_b and M_b count the live load over the reinforced zone "
+               "(GEC-11 p. 4-26), so e_B is not the eccentricity of the "
+               "sliding and overturning loads."
+               if split else ""),
     ))
 
     bearing_checked = q_all is not None and result.FOS_bearing is not None
@@ -928,7 +965,7 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         ext_items.append(CalcStep(
             title="Factor of Safety Against Bearing",
             equation="FOS_bearing = q_allowable / σ_v",
-            substitution=f"FOS_bearing = {q_all:.1f} / {q_toe:.1f}",
+            substitution=f"FOS_bearing = {q_all:.1f} / {sigma_v:.1f}",
             result_name="FOS_bearing",
             result_value=f"{result.FOS_bearing:.3f}",
         ))
@@ -1251,16 +1288,58 @@ def _loads_differ(ot, br) -> bool:
             or abs(ot["M_stabilizing"] - br["M_stab"]) > 1e-9)
 
 
-def _counted_in(force) -> str:
-    """The checks a vertical force is counted in (GM-157)."""
+def _counted_in(force, resisting="sliding, overturning, eccentricity") -> str:
+    """The checks a vertical force is counted in (GM-157); ``resisting``
+    names the checks its ``resists`` flag stands for."""
     resists, bearing = force.get("resists", True), force.get("bearing", True)
     if resists and bearing:
         return "all checks"
     if bearing:
         return "bearing only"
     if resists:
-        return "sliding, overturning, eccentricity"
+        return resisting
     return "none"
+
+
+def _mse_used(analysis, key):
+    """An input the MSE run used: the analysis dict's, else the default of
+    ``analyze_mse_wall``, which the run then took."""
+    if isinstance(analysis, dict) and key in analysis:
+        return analysis[key]
+    if not isinstance(analysis, dict) and hasattr(analysis, key):
+        return getattr(analysis, key)
+    import inspect
+    from retaining_walls.mse import analyze_mse_wall
+    default = inspect.signature(
+        analyze_mse_wall).parameters[key].default
+    if default is inspect.Parameter.empty:
+        raise ValueError(
+            f"retaining_walls calc steps: the analysis gives no {key}, "
+            f"which analyze_mse_wall requires; pass the inputs the run "
+            f"was given")
+    return default
+
+
+def _mse_terms(result, analysis):
+    """The ASD external terms the MSE analysis used (GM-143, GM-164): the
+    result's own; a result built by hand carries none, and then the
+    module's term function works them out from the inputs the run used."""
+    if getattr(result, "external_terms", None) is not None:
+        return result.external_terms
+    from retaining_walls import mse
+    phi = _mse_used(analysis, "phi_backfill")
+    phi_f = _mse_used(analysis, "phi_foundation")
+    return mse._external_terms(
+        _get(analysis, "geom"), _mse_used(analysis, "gamma_backfill"), phi,
+        phi if phi_f is None else phi_f,
+        _mse_used(analysis, "c_foundation"),
+        phi_retained=_mse_used(analysis, "phi_retained"),
+        gamma_retained=_mse_used(analysis, "gamma_retained"),
+        traffic_vertical_resists=bool(
+            _mse_used(analysis, "traffic_vertical_resists")),
+        live_load_resists=bool(_mse_used(analysis, "live_load_resists")),
+        surcharge_in_bearing=bool(
+            _mse_used(analysis, "surcharge_in_bearing")))
 
 
 def _Ka_value(phi, method, geom):

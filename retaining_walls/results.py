@@ -377,6 +377,18 @@ class MSEWallResult:
         plane height h, the thrust F_T and its components, the slope fill
         weight V2, and S_eq / sigma_2 / H1 for internal stability. None for
         a level backfill.
+    external_terms : dict or None
+        The ASD external-stability terms, unrounded, as the checks used
+        them (GM-143, GM-164; ``mse._external_terms``): each vertical force
+        and the checks that count it (``resists``: sliding and overturning;
+        ``bearing``), the thrusts, V, M_stabilizing, V_bearing, M_bearing,
+        Pa, M_overturning, delta_b, the bearing eccentricity e_B, L_eff and
+        sigma_v. The calc package prints these. None on a result built by
+        hand.
+    choices : list of dict
+        How a live-load surcharge over the reinforced zone was counted on
+        the ASD path, when the wall carries one (GM-164,
+        ``geotech_common.choices``; ``mse.live_load_choices``).
     """
     FOS_sliding: float = 0.0
     FOS_overturning: float = 0.0
@@ -398,6 +410,8 @@ class MSEWallResult:
     FOS_sliding_required: float = 1.5
     FOS_overturning_required: float = 2.0
     backslope: Optional[Dict[str, Any]] = None
+    external_terms: Optional[Dict[str, Any]] = None
+    choices: List[Dict[str, Any]] = field(default_factory=list)
 
     @property
     def n_levels(self) -> int:
@@ -539,6 +553,9 @@ class MSEWallResult:
         ])
         if self.checks_not_run:
             lines.append("  Not checked:   " + ", ".join(self.checks_not_run))
+        if self.choices:
+            from geotech_common.choices import choices_lines
+            lines.extend(choices_lines(self.choices))
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
@@ -568,4 +585,6 @@ class MSEWallResult:
             d["external_lrfd"] = self.external_lrfd
         if self.backslope is not None:
             d["backslope"] = self.backslope
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
         return d

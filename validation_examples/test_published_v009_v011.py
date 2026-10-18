@@ -197,10 +197,14 @@ def test_v009_bearing_lrfd():
 
 def test_v009_highlevel_api_reports_asd_fos_not_lrfd_cdr():
     """CONVENTION / scope: the high-level `analyze_mse_wall` returns ASD factors
-    of safety (R/demand, NO load factors, LL not split out), not the GEC-11 LRFD
-    CDRs. This pins the documented API gap — the ASD sliding FoS is the
-    *unfactored* resistance/demand ratio, distinctly larger than the LRFD
-    sliding CDR (1.85). The module is not tuned to the LRFD example."""
+    of safety (R/demand, NO load factors), not the GEC-11 LRFD CDRs. This
+    pins the documented API gap — the ASD sliding FoS is the *unfactored*
+    resistance/demand ratio, distinctly larger than the LRFD sliding CDR
+    (1.85). The module is not tuned to the LRFD example. Like Eq. 4-12
+    (p. 4-21, "the live load is excluded since it increases sliding
+    stability") the resisting weight leaves the live load over the
+    reinforced zone out (GM-164: it was counted, ~2.27; now ~2.10;
+    live_load_resists=True gives the old free body)."""
     geom = MSEWallGeometry(wall_height=H, reinforcement_length=L,
                            reinforcement_spacing=2.5 * FT, surcharge=Q_LL)
     rebar = Reinforcement(name="bar mat", type="metallic_grid",
@@ -212,13 +216,24 @@ def test_v009_highlevel_api_reports_asd_fos_not_lrfd_cdr():
     )
     # ASD sliding FoS uses unfactored W and unfactored thrust -> > LRFD CDR
     assert res.FOS_sliding > 1.85          # ASD, not the LRFD 1.85
-    # It is an UNFACTORED R/demand ratio (W includes the surcharge; demand is the
-    # combined earth+surcharge thrust), NOT the load-factored LRFD CDR.
+    # It is an UNFACTORED R/demand ratio (W = V1 alone, the live load left
+    # out as in Eq. 4-12; demand is the combined earth+surcharge thrust),
+    # NOT the load-factored LRFD CDR.
     Kaf = rankine_Ka(PHI_F)
     Pa, _ = horizontal_force_active(GAMMA, H, Kaf, q=Q_LL)
-    W = GAMMA * H * L + Q_LL * L
+    W = GAMMA * H * L
     asd_expected = (W * math.tan(math.radians(PHI_FD))) / Pa
-    assert res.FOS_sliding == pytest.approx(asd_expected, rel=0.02)   # ~2.27
+    assert res.FOS_sliding == pytest.approx(asd_expected, rel=0.02)   # ~2.10
+    old = analyze_mse_wall(
+        geom, gamma_backfill=GAMMA, phi_backfill=PHI_R, reinforcement=rebar,
+        gamma_foundation=GAMMA, phi_foundation=PHI_FD,
+        q_allowable=10.50 * KSF, phi_retained=PHI_F, gamma_retained=GAMMA,
+        live_load_resists=True,
+    )
+    W_old = W + Q_LL * L
+    assert old.FOS_sliding == pytest.approx(
+        W_old * math.tan(math.radians(PHI_FD)) / Pa, rel=0.02)    # ~2.27
+    assert old.sigma_v == res.sigma_v          # bearing counts it either way
 
 
 def test_v009_lrfd_external_stability_high_level_path():

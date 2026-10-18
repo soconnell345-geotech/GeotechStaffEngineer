@@ -32,8 +32,10 @@ list_reinforcement() -> list of built-in reinforcement products
 ## MSE external stability: ASD FOS (default) vs LRFD CDRs (opt-in)
 Two external-stability paths are available; both are default-preserving.
 - **ASD** — `check_external_stability` / `analyze_mse_wall` return unfactored
-  factors of safety (resistance/demand, live load folded into the mass weight).
-  This is the historical default and is unchanged.
+  factors of safety (resistance/demand). This is the historical default. Since
+  GM-164 its live load over the reinforced zone is left out of the resisting
+  weight in sliding and overturning and counted in bearing, as on the LRFD
+  path below (see "A live load over the MSE reinforced zone").
 - **LRFD** — `check_external_stability_lrfd` returns the AASHTO/GEC-11
   capacity:demand ratios (CDRs). `analyze_mse_wall(lrfd_external=True)` also runs
   it and attaches the CDR set to `MSEWallResult.external_lrfd` (None otherwise).
@@ -370,9 +372,72 @@ F55 after: sliding 1.07, overturning 2.78, e 0.338 m (was 0.268 m, still
 within B/6 = 0.467 m), q_toe 122.4 / q_heel 33.1 kPa unchanged. Tests:
 `tests/test_heel_surcharge.py` (a hand check under each reading).
 
-`mse.check_external_stability` (the ASD path) still counts the surcharge
+`mse.check_external_stability` (the ASD path) still counted the surcharge
 over the reinforced zone in sliding and overturning (W = gamma H L + q L),
-against GEC-11 pp. 4-19 / 4-22; the LRFD path does not. Not changed here.
+against GEC-11 pp. 4-19 / 4-22; the LRFD path did not. GM-164 below.
+
+## A live load over the MSE reinforced zone, ASD path (GM-164, 2026-10-18)
+
+Until GM-164 `mse.check_external_stability` took W = gamma H L + q L in
+sliding, overturning and bearing: the live load (traffic) over the
+reinforced zone was a resisting weight. GEC-11 Vol I (FHWA-NHI-10-024)
+reads otherwise, and the LRFD path already followed it:
+
+- Fig. 4-2 (p. 4-12): the live load over the retained backfill only for
+  limiting eccentricity and sliding; over both zones for bearing and
+  global stability.
+- p. 4-17: "Live loads are not used on specific design steps since they
+  contribute to stability." p. 4-18: limiting eccentricity "(formerly
+  known as overturning)".
+- p. 4-19: "The live load surcharge is not considered as a stabilizing
+  force when checking sliding". p. 4-21 (Eq. 4-12, R = gamma_EV V1 mu):
+  "the live load is excluded since it increases sliding stability".
+- p. 4-22: "External loads that increase sliding resistance should only
+  be included if those loads are permanent"; "The eccentricity limit
+  check only applies the live load above the retained backfill" (Eq. 4-15,
+  p. 4-23, with V1 only).
+- p. 4-26: "The bearing check applies live load above both the reinforced
+  zone and the retained backfill"; "eB = eccentricity for bearing
+  calculation (not equal to eccentricity check e)" (Eqs. 4-19 / 4-20,
+  p. 4-27, with q L).
+- Vol II App. F.1 (p. F-2): the ASD procedure was not updated; its users
+  "may want to refer to current LRFD procedures for any updates which may
+  also be applicable to ASD procedure designs".
+
+**What the module does.** `MSEWallGeometry.surcharge` is the live load.
+Its thrust, Ka q H at H/2, drives every check. Two choices, in the
+result's `choices` with the basis and the other reading
+(`LIVE_LOAD_BASIS`, `BEARING_BASIS`, `live_load_choices`):
+
+| Input | Default | Basis of the default | The other reading |
+|---|---|---|---|
+| `live_load_resists` | False: q L (with a broken backslope, q over the level ground on the zone) resists nothing in sliding or overturning | GEC-11 pp. 4-19, 4-21 (Eq. 4-12), 4-22; Fig. 4-2 | True: the free body with the load over the zone, W = gamma H L + q L (the module before GM-164) |
+| `surcharge_in_bearing` | True: it loads the base in sigma_v and e_B | GEC-11 p. 4-26; Eqs. 4-19 / 4-20 | False: taken as not over the zone |
+
+The ASD path has no separate eccentricity (middle-third) check: the
+overturning FOS stands for it and leaves the live load out. The result's
+`eccentricity_m` stays e_B, the bearing eccentricity, on the bearing
+loads. MSE geometry has no dead-load surcharge; a permanent load over the
+zone (which p. 4-22 would count) is not modelled. The traffic thrust's
+vertical component behind a broken backslope keeps its own choice,
+`traffic_vertical_resists` (GM-112).
+
+`_external_terms` returns the terms the checks sum: each vertical force
+with `resists` and `bearing`, the thrusts, V / M_stabilizing, V_bearing /
+M_bearing, Pa / M_overturning, delta_b, e_B, L_eff, sigma_v.
+`MSEWallResult.external_terms` keeps them, and the MSE calc steps print
+them (GM-143): a "Counted in" column, a total for each check, R with
+delta_b = min(phi_r, phi_f) as the module uses (they printed 2/3 phi_f,
+part of GM-114), K_a of the retained fill, and e_B.
+
+Numbers (live load left out / before): 6 m wall, L 4.2 m, 18 kN/m3, phi
+34/30, q 12 kPa: sliding 2.339 / 2.599, overturning 3.900 / 4.333,
+sigma_v 156.0 kPa both. Example E4 inputs on the ASD path: sliding
+2.104 / 2.268, overturning 3.594 / 3.875, sigma_v 223.0 kPa both. A
+broken backslope with 3 m of level ground on a 5 m zone: sliding 2.428 /
+2.561, overturning 4.346 / 4.667. A crest at or beyond L (Example E1) has
+no live load on the zone and does not move. Tests:
+`tests/test_mse_live_load.py`.
 
 ## Key Notes
 - CantileverWallGeometry auto-sizes stem thickness, toe/heel from wall height
