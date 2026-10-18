@@ -276,6 +276,8 @@ Key conventions:
       GEC-12 chapter 7 as printed (release note; OWN-63); the reference
       library's section numbers follow the printed manuals (refs 4dc357f)
       and every section level is searchable and fetchable (refs d5f7f52);
+      every reference tool's result fits the size limit by its shape (refs
+      db84be2);
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done".
     Open next: Foundry brief 6, which measures all of this, is drafted

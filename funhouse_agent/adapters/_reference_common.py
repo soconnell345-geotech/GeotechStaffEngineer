@@ -7,6 +7,7 @@ provides a factory so each adapter is ~15 lines.
 
 import ast
 import inspect
+import json
 import re
 import textwrap
 import typing
@@ -325,14 +326,46 @@ def build_lookup_registry(lookup_modules, *, skip_callable=False):
     return registry, info
 
 
+#: What a reference tool's result is shaped to fit, in JSON characters
+#: (BACKLOG REF-26): under the deep agent's 16,000-character cap on a
+#: reference read (``deep.tools.DEFAULT_REFERENCE_RESULT_CHARS``), with room
+#: for what dispatch adds (``defaults_used``), so a result is never cut
+#: mid-JSON. A listing, a search or a chapter too long for it comes back in
+#: a shorter shape that says how to get the rest.
+RESULT_BUDGET_CHARS = 14000
+
+#: Hits search_sections returns when the call names no limit.
+SEARCH_SECTIONS_DEFAULT_LIMIT = 10
+
+
+def takes(func, name: str) -> bool:
+    """Whether ``func`` takes a parameter ``name``: a geotech-references
+    older than a feature lacks it, and the adapters pass it only where it
+    is taken."""
+    try:
+        return name in inspect.signature(func).parameters
+    except (TypeError, ValueError):
+        return False
+
+
+def as_result(shaped: dict, key: str) -> dict:
+    """A library's shaped dict (``{"hits"|"rows": [...], "shown": ...}``)
+    as the tool result the agent has always had (``{"result": [...]}``),
+    with the counts and the note beside it."""
+    out = {"result": shaped.get(key, [])}
+    out.update({k: v for k, v in shaped.items() if k != key})
+    return out
+
+
 def add_text_retrieval(registry, info, ref_package_name, reference_str):
     """Add retrieve_section / search_sections / list_chapters / load_chapter."""
     from geotech_references import _retrieval
 
     # geotech-references before REF-24 has no include_subsections (and
     # always inlined a section's subsections); pass it only where taken.
-    takes_include = "include_subsections" in inspect.signature(
-        _retrieval.retrieve_section).parameters
+    takes_include = takes(_retrieval.retrieve_section, "include_subsections")
+    # ... and before REF-26 no shaped results (max_chars, chapter, offset).
+    shaped = takes(_retrieval.search_sections, "max_chars")
 
     def _retrieve(params):
         kwargs = {}
@@ -342,13 +375,54 @@ def add_text_retrieval(registry, info, ref_package_name, reference_str):
             ref_package_name, params["section_id"], **kwargs)
 
     def _search(params):
-        return {"result": _retrieval.search_sections(ref_package_name, params["query"])}
+        limit = int(params.get("limit") or SEARCH_SECTIONS_DEFAULT_LIMIT)
+        limit = max(1, min(limit, 50))
+        offset = max(0, int(params.get("offset") or 0))
+        if shaped:
+            return as_result(_retrieval.search_sections(
+                ref_package_name, params["query"], limit=limit,
+                offset=offset, max_chars=RESULT_BUDGET_CHARS), "hits")
+        hits = _retrieval.search_sections(ref_package_name, params["query"])
+        return {"result": hits[offset:offset + limit]}
 
     def _list_ch(params):
-        return {"result": _retrieval.list_chapters(ref_package_name)}
+        chapter = params.get("chapter")
+        chapter = None if chapter in (None, "") else int(chapter)
+        if chapter is not None:
+            if shaped:
+                return {"result": _retrieval.list_chapters(
+                    ref_package_name, chapter=chapter,
+                    max_chars=RESULT_BUDGET_CHARS)}
+            chapters = [c for c in _retrieval.list_chapters(ref_package_name)
+                        if c.get("chapter") == chapter]
+            if not chapters:
+                raise KeyError(f"Chapter {chapter} not found")
+            return {"result": chapters}
+        # Every chapter with its sections when that fits one result (22 of
+        # 27 references); otherwise the chapters alone, and how to get one
+        # chapter's sections.
+        full = _retrieval.list_chapters(ref_package_name)
+        size = len(json.dumps({"result": full}, default=str))
+        if size <= RESULT_BUDGET_CHARS:
+            return {"result": full}
+        chapters = [dict({k: v for k, v in c.items()
+                          if k not in ("sections", "n_sections", "note")},
+                         n_sections=len(c.get("sections") or []))
+                    for c in full]
+        return {"result": chapters, "note": (
+            "Chapters with their titles and how many sections each holds: "
+            f"with every section the listing is {size:,} characters, over "
+            f"the {RESULT_BUDGET_CHARS:,}-character limit. A chapter's "
+            "sections (number and title): list_chapters with "
+            "chapter=<number>; a section's text: retrieve_section.")}
 
     def _load_ch(params):
-        return _retrieval.load_chapter(ref_package_name, params["chapter"])
+        if shaped:
+            return _retrieval.load_chapter(
+                ref_package_name, int(params["chapter"]),
+                max_chars=RESULT_BUDGET_CHARS)
+        return _retrieval.load_chapter(ref_package_name,
+                                       int(params["chapter"]))
 
     _TEXT = {
         "retrieve_section": (_retrieve, {
@@ -356,7 +430,8 @@ def add_text_retrieval(registry, info, ref_package_name, reference_str):
             "brief": ("Retrieve one section by its ID, at any level: its own "
                       "text, 'under' (the sections above it) and 'children' "
                       "(ID and title of each subsection, fetched by its own "
-                      "ID)."),
+                      "ID). A missing ID's error names the nearest section "
+                      "above it and the sections numbered under it."),
             "reference": reference_str,
             "parameters": {
                 "section_id": {
@@ -376,28 +451,56 @@ def add_text_retrieval(registry, info, ref_package_name, reference_str):
         }),
         "search_sections": (_search, {
             "category": "Text Retrieval",
-            "brief": ("Keyword search across every section and subsection; "
-                      "each hit carries 'under' (the sections above it)."),
+            "brief": ("Keyword search across every section and subsection, "
+                      "best first: each hit is a section's number, title, "
+                      "chapter, 'under' (the sections above it) and a "
+                      "snippet of its text, never the whole text "
+                      "(retrieve_section fetches that). As many hits as "
+                      "fit; 'next_offset' and a note say how to get more."),
             "reference": reference_str,
             "parameters": {
                 "query": {
                     "type": "str", "required": True,
                     "description": "Search query (case-insensitive, multi-word AND).",
                 },
+                "limit": {
+                    "type": "int", "required": False,
+                    "default": SEARCH_SECTIONS_DEFAULT_LIMIT,
+                    "description": ("Most hits to return (at most 50; "
+                                    "fewer when they would not fit)."),
+                },
+                "offset": {
+                    "type": "int", "required": False, "default": 0,
+                    "description": ("Skip this many of the best hits: the "
+                                    "'next_offset' of the last call."),
+                },
             },
-            "returns": "list of dict",
+            "returns": "dict",
         }),
         "list_chapters": (_list_ch, {
             "category": "Text Retrieval",
-            "brief": ("List all chapters and their section IDs, subsections "
-                      "included (a nested one carries parent_id)."),
+            "brief": ("List chapters and their sections by ID and title, "
+                      "subsections included (a nested one carries "
+                      "parent_id). Without 'chapter': every chapter, with "
+                      "its sections when the whole listing fits one result "
+                      "(otherwise titles and section counts, and a note). "
+                      "With 'chapter': that chapter's sections."),
             "reference": reference_str,
-            "parameters": {},
-            "returns": "list of dict",
+            "parameters": {
+                "chapter": {
+                    "type": "int", "required": False,
+                    "description": ("Chapter number: list its sections. "
+                                    "Leave out for every chapter."),
+                },
+            },
+            "returns": "dict",
         }),
         "load_chapter": (_load_ch, {
             "category": "Text Retrieval",
-            "brief": "Load a full chapter JSON file.",
+            "brief": ("Load a whole chapter: every section's text. A chapter "
+                      "too long for one result (most are) comes back as its "
+                      "list of sections with a note: fetch the ones you "
+                      "need with retrieve_section."),
             "reference": reference_str,
             "parameters": {
                 "chapter": {

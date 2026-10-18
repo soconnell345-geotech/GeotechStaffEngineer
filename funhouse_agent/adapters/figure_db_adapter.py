@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from funhouse_agent.adapters import declare_aliases
 from funhouse_agent.adapters._reference_common import (
-    extract_method_info, make_wrapper,
+    RESULT_BUDGET_CHARS, as_result, extract_method_info, make_wrapper, takes,
 )
 
 #: Names models guess for figure_search's result cap; its catch-all reads
@@ -28,8 +28,16 @@ _LIMIT_ALIASES = ("top_k", "k", "n", "max_results", "top", "num_results")
 def _build():
     from geotech_references import _figures_db
 
+    # geotech-references before REF-26 has no paged or size-shaped figure
+    # search; pass the new options only where taken.
+    pages = takes(_figures_db.figure_search, "offset")
+    fit_hits = None
+    if takes(_figures_db.figure_get, "max_chars"):
+        from geotech_references._retrieval import fit_hits
+
     def figure_search(query: str, reference: str = "",
-                      chapter: int = 0, limit: int = 5, **kwargs) -> list:
+                      chapter: int = 0, limit: int = 5, offset: int = 0,
+                      **kwargs) -> list:
         """Full-text search the figure catalog by caption and concept.
 
         Captions use notation (``KA``/``KP``); the index also carries concept
@@ -48,7 +56,13 @@ def _build():
             Chapter number to scope to (prologue figures are chapter 0).
             ``0`` means no chapter filter.
         limit : int, optional
-            Max hits (default 5, capped at 50).
+            Max hits (default 5, capped at 50; fewer when they would not
+            fit one result: captions are cut to 300 characters first, then
+            the lowest-ranked hits left out, and ``next_offset`` and a
+            ``note`` say how to get the rest).
+        offset : int, optional
+            Skip this many of the best hits: the ``next_offset`` of the
+            last call (default 0).
 
         Returns
         -------
@@ -69,9 +83,14 @@ def _build():
                     pass
         ref = reference if reference else None
         ch = int(chapter) if chapter else None
-        hits = _figures_db.figure_search(
-            query, reference=ref, chapter=ch, limit=int(limit)
-        )
+        if pages:
+            hits = _figures_db.figure_search(
+                query, reference=ref, chapter=ch, limit=int(limit),
+                offset=int(offset or 0))
+        else:
+            hits = _figures_db.figure_search(
+                query, reference=ref, chapter=ch,
+                limit=int(limit) + int(offset or 0))[int(offset or 0):]
         # Starve the shortcut: a number that lives in a chart must come from the
         # rendered image, not this caption or the model's training memory. The
         # search result only *identifies* the figure; it carries no values. So
@@ -106,8 +125,13 @@ def _build():
             ``pdf_path``, ``pdf_page_index`` (0-based for rendering),
             ``printed_page``, ``page_estimated``. Pass ``reference`` and
             ``figure_number`` to ``read_reference_figure`` to read a value off
-            the chart with vision.
+            the chart with vision. A row too long for one result (a few
+            catalog captions run on into the page text) has its caption cut,
+            and a ``note`` says so.
         """
+        if fit_hits is not None:
+            return _figures_db.figure_get(reference, figure_number,
+                                          max_chars=RESULT_BUDGET_CHARS)
         return _figures_db.figure_get(reference, figure_number)
 
     def list_indexed_figures() -> list:
@@ -133,6 +157,39 @@ def _build():
         info[name] = extract_method_info(
             fn, "Figure DB (FTS5)", "geotech_references figure catalogs"
         )
+
+    def _search_fitted(params):
+        """figure_search as the agent gets it: the signposted hits, as many
+        as fit one result (BACKLOG REF-26; 50 hits ran to 68,859
+        characters), one more asked for to learn whether more match."""
+        params = dict(params)
+        limit = int(params.get("limit") or 5)
+        for alt in _LIMIT_ALIASES:
+            if params.get(alt):
+                try:
+                    limit = int(params.pop(alt))
+                except (TypeError, ValueError):
+                    params.pop(alt)
+        limit = max(1, min(limit, 50))
+        offset = max(0, int(params.get("offset") or 0))
+        hits = figure_search(**dict(params, limit=limit + 1))
+        if fit_hits is None or any("error" in h for h in hits):
+            return {"result": hits[:limit]}
+        more = len(hits) > limit
+        if not more and pages and len(hits) == limit:
+            # the library gives at most 50: ask for the one after them
+            after = figure_search(**dict(params, limit=1,
+                                         offset=offset + limit))
+            more = bool(after) and not any("error" in h for h in after)
+        return as_result(fit_hits(
+            hits[:limit], RESULT_BUDGET_CHARS, text_fields=("caption",),
+            offset=offset, more=more,
+            max_offset=getattr(_figures_db, "_MAX_OFFSET", None),
+            narrow="narrow the query (more specific words, or a 'reference')",
+            fetch="figure_get returns a figure's whole catalog row"), "hits")
+
+    _search_fitted.__wrapped__ = figure_search
+    registry["figure_search"] = _search_fitted
     # figure_search's catch-all reads only the result-cap names above, so
     # dispatch checks it against its parameters and these (GM-110).
     info["figure_search"].pop("open_parameters", None)

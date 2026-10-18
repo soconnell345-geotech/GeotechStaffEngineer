@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from funhouse_agent.adapters import apply_aliases
 from funhouse_agent.adapters._reference_common import (
-    extract_method_info, make_wrapper,
+    RESULT_BUDGET_CHARS, as_result, extract_method_info, make_wrapper, takes,
 )
 
 # Common guesses for the result-count parameter, mapped to ``limit``.
@@ -36,9 +36,12 @@ def _build():
     # subsection rows to inline); pass it only where taken.
     takes_include = "include_subsections" in inspect.signature(
         _retrieval_db.reference_get).parameters
+    # ... and before REF-26 no results shaped to a size (offset, max_chars).
+    shaped = takes(_retrieval_db.reference_search, "max_chars")
 
     def reference_search(query: str, reference: str = "",
-                         chapter: int = 0, limit: int = 5) -> list:
+                         chapter: int = 0, limit: int = 5,
+                         offset: int = 0) -> dict:
         """Full-text search across all structured reference text, every
         section and subsection indexed with its own text; each hit's
         ``under`` names the sections above it.
@@ -48,7 +51,10 @@ def _build():
         run it first to scope, then drill in. The hit is the section
         that holds the words (a method's own subsection, e.g. GEC-12
         7.2.1.3.1 for "Nordlund", not only the chapter section above
-        it).
+        it). As many hits as fit one result: when they would not all
+        fit, summaries are cut to 300 characters, then the lowest-ranked
+        hits are left out, and ``next_offset`` and a ``note`` say how to
+        get the rest.
 
         Parameters
         ----------
@@ -65,22 +71,36 @@ def _build():
             Chapter number to scope to (only meaningful with
             ``reference``). ``0`` means no chapter filter.
         limit : int, optional
-            Max hits (default 5, capped at 50).
+            Max hits (default 5, capped at 50; fewer when they would
+            not fit).
+        offset : int, optional
+            Skip this many of the best hits: the ``next_offset`` of the
+            last call (default 0).
 
         Returns
         -------
-        list
-            Summary-only hits, each with ``reference``, ``reference_title``,
-            ``chapter``, ``chapter_title``, ``section_id``, ``title``,
-            ``parent_id``, ``under`` (e.g. ``"7.2 Strength Limit States >
-            7.2.1 Nominal Axial ..."``; empty at the top level),
-            ``summary``.
+        dict
+            ``result``: summary-only hits, each with ``reference``,
+            ``reference_title``, ``chapter``, ``chapter_title``,
+            ``section_id``, ``title``, ``parent_id``, ``under`` (e.g.
+            ``"7.2 Strength Limit States > 7.2.1 Nominal Axial ..."``;
+            empty at the top level), ``summary``; ``shown``; and, when
+            hits were left out, cut or more match, ``left_out``,
+            ``next_offset`` and ``note``.
         """
         ref = reference if reference else None
         ch = int(chapter) if chapter else None
-        return _retrieval_db.reference_search(
-            query, reference=ref, chapter=ch, limit=int(limit)
-        )
+        if not shaped:
+            hits = _retrieval_db.reference_search(
+                query, reference=ref, chapter=ch,
+                limit=int(limit) + int(offset or 0))
+            return {"result": hits[int(offset or 0):]}
+        out = _retrieval_db.reference_search(
+            query, reference=ref, chapter=ch, limit=int(limit),
+            offset=int(offset or 0), max_chars=RESULT_BUDGET_CHARS)
+        if "error" in out:
+            return {"result": [out]}
+        return as_result(out, "hits")
 
     def reference_get(reference: str, section_id: str,
                       include_subsections: bool = False) -> dict:
@@ -119,7 +139,7 @@ def _build():
                 reference, section_id, include_subsections=True)
         return _retrieval_db.reference_get(reference, section_id)
 
-    def reference_query(sql: str) -> list:
+    def reference_query(sql: str) -> dict:
         """Run a read-only SELECT against the reference text database.
 
         Tables available:
@@ -135,7 +155,11 @@ def _build():
           ``sections_fts MATCH '...'`` and ``bm25(sections_fts)``.
 
         Only single SELECT (or ``WITH ... SELECT``) statements are
-        accepted. Connection is read-only. Result set capped at 50 rows.
+        accepted. Connection is read-only. Result set capped at 50 rows,
+        and at the whole rows that fit one result: select the columns you
+        need (``substr(body, 1, 500)`` rather than ``body``; a section's
+        whole text is ``reference_get``) and page with ``LIMIT`` /
+        ``OFFSET``.
 
         Parameters
         ----------
@@ -145,10 +169,18 @@ def _build():
 
         Returns
         -------
-        list
-            Result rows as dicts, or ``[{"error": "..."}]`` on failure.
+        dict
+            ``result``: the rows as dicts, or ``[{"error": "..."}]`` on
+            failure; when rows were left out or a value cut,
+            ``left_out`` and a ``note``.
         """
-        return _retrieval_db.reference_query(sql)
+        if not shaped:
+            return {"result": _retrieval_db.reference_query(sql)}
+        out = _retrieval_db.reference_query(sql,
+                                            max_chars=RESULT_BUDGET_CHARS)
+        if "error" in out:
+            return {"result": [out]}
+        return as_result(out, "rows")
 
     def list_indexed_references() -> list:
         """Inventory of references currently in the FTS DB.
