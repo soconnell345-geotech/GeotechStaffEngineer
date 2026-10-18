@@ -348,8 +348,51 @@ def test_every_flow_is_well_formed():
             assert steps & set(st), (f["id"], st)
         for seed in f.get("sharepoint_seed") or []:
             assert "doc" in seed
+        for spec in (f.get("expect") or {}).get("cards") or []:
+            spec = spec if isinstance(spec, dict) else {"kind": spec}
+            assert set(spec) <= {"kind", "pattern", "count", "min", "max",
+                                 "looked_at"}, (f["id"], spec)
+            assert spec.get("kind") or spec.get("pattern"), f["id"]
+            if spec.get("pattern"):
+                re.compile(spec["pattern"])
+            for k in ("count", "min", "max"):
+                assert isinstance(spec.get(k, 0), int), (f["id"], spec)
+            assert det.card_spec_bounds(spec)[1] >= 0
+        assert all(isinstance(c, str) and c
+                   for c in f.get("reader_checks") or []), f["id"]
+        for item in (f.get("expect") or {}).get("answer_names") or []:
+            label, patterns = det._answer_name(item)
+            assert label and patterns, (f["id"], item)
+            for p in patterns:
+                re.compile(p)
     covered = {p for f in flows for p in [f.get("page", "document_review")]}
     assert covered == pages
+
+
+def test_judgment_arms_pair_with_their_flows():
+    """EV-26: each j-arm is its flow with GEOTECH_JUDGMENT_CALLS on and one
+    more answer key, the "Judgment calls" list; the reader checks are the
+    same, so the trace read asks both arms the same questions."""
+    from live_smoke import runner
+    flows = {f["id"]: f for f in runner.load_flows()}
+    arms = [i for i in flows if re.match(r"F\d+j-", i)]
+    assert {a.split("-")[0] for a in arms} >= {"F18j", "F51j", "F55j",
+                                                "F61j"}
+    for a in arms:
+        num = re.match(r"F\d+", a).group(0)
+        base, arm = flows[num + a[len(num) + 1:]], flows[a]
+        assert "GEOTECH_JUDGMENT_CALLS" not in (base.get("env") or {}), a
+        assert arm["env"] == dict(base.get("env") or {},
+                                  GEOTECH_JUDGMENT_CALLS="1"), a
+        for k in ("page", "cost", "steps", "reader_checks"):
+            assert arm.get(k) == base.get(k), (a, k)
+        be, ae = dict(base["expect"]), dict(arm["expect"])
+        names, arm_names = be.pop("answer_names"), ae.pop("answer_names")
+        assert ae == be, a
+        assert arm_names[:-1] == names and len(names) >= 3, a
+        assert det._answer_name(arm_names[-1]) == (
+            'a "Judgment calls" list', ["judge?ment calls?"])
+        assert base.get("reader_checks"), a
 
 
 # ---------------------------------------------------------------------------
@@ -526,8 +569,11 @@ def test_f61_answer_names_score_seven_phrasings(answer, missing):
            "a surface in or along the weak layer": "weak",
            "what would change the answer": "change",
            'a "Judgment calls" list': "list"}
+    # the four keys these phrasings were written for (w11 added two more)
+    names = [n for n in flow["expect"]["answer_names"] if n["name"] in key]
+    assert len(names) == 4
     found = det.detect_expectations(
-        {"expect": {"answer_names": flow["expect"]["answer_names"]}},
+        {"expect": {"answer_names": names}},
         [_Sess([{"final": answer, "t_end": 1.0}])])
     got = {key[f["message"].replace("the final answer does not name ", "")]
            for f in found}
@@ -543,7 +589,464 @@ def test_f61_change_names_phi_written_as_a_symbol():
             "final": "A circular search gives 6.3; a block along the base "
                      "of the clay 0.9. If φ′ is lower, so is FS.",
             "t_end": 1.0}])])
-    assert found == []
+    # only w11's key (the method's reason)
+    assert {f["message"].replace("the final answer does not name ", "")
+            for f in found} == {"the limit-equilibrium method and why"}
+
+
+def test_f61_w11_key_method_reason():
+    """w11 §4: neither arm said why it chose Spencer; a key asks for it.
+    The assumed model base is a reader check only (el. -30 m is the tool's
+    default, and no wording of it is reliable)."""
+    from live_smoke import runner
+    flow = {f["id"]: f for f in runner.load_flows()}[
+        "F61-geotech-slope-weak-layer"]
+    names = [n for n in flow["expect"]["answer_names"]
+             if n["name"] == "the limit-equilibrium method and why"]
+    assert len(names) == 1
+    assert not any("model base" in n["name"]
+                   for n in flow["expect"]["answer_names"])
+    assert any("model base" in c for c in flow["reader_checks"])
+
+    def missing(text):
+        return len(det.detect_expectations(
+            {"expect": {"answer_names": names}},
+            [_Sess([{"final": text, "t_end": 1.0}])]))
+    assert missing("Spencer, because it satisfies both force and moment "
+                   "equilibrium.") == 0
+    assert missing("I used Spencer's method on the circle. FS = 0.94.") == 1
+
+
+# ---------------------------------------------------------------------------
+# EV-24: figure cards (k), card expectations, the commit, the estimate
+# ---------------------------------------------------------------------------
+
+def _at(path, t):
+    """Set a file's time on disk (what (k) compares with the log's)."""
+    os.utime(path, (t, t))
+
+
+def _look(rid, key, t, size, *, kind="image", agent="figure"):
+    """A look as the activity log records it (w9 F60 [10]-[13]): the
+    tool's start, its vision call (tagged with the tool's run id), its end."""
+    return [{"event": "tool_start", "name": "analyze_image", "run_id": rid,
+             "agent": agent, "ts": t, "args": {"attachment_key": key,
+                                               "prompt": "check"}},
+            {"event": "model_start", "agent": agent, "ts": t + 0.1,
+             "vision": {"kind": kind, "image_bytes": size},
+             "tool": "analyze_image", "tool_run_id": rid},
+            {"event": "tool_end", "name": "analyze_image", "run_id": rid,
+             "agent": agent, "ts": t + 4.0,
+             "result": json.dumps({"analysis": "looks fine"})}]
+
+
+def _draw(rid, tool, name, t, *, look_file=None):
+    """A drawing tool's end as w9 recorded it: plot_data names its PNG in
+    ``output_path``, plot_code lists ``images`` (GM-107: with a
+    ``look_file`` when the report copy is larger than a look takes)."""
+    if tool == "plot_data":
+        res = {"status": "success", "output_path": name,
+               "file_size_bytes": 10}
+    else:
+        img = {"file": name, "output_path": f"C:\\sb\\files\\{name}"}
+        if look_file:
+            img["look_file"] = look_file
+        res = {"seconds": 0.9, "images": [img]}
+    return [{"event": "tool_start", "name": tool, "run_id": rid, "ts": t - 1,
+             "args": {}},
+            {"event": "tool_end", "name": tool, "run_id": rid, "ts": t,
+             "result": json.dumps(res)}]
+
+
+def _write_acts(conv, acts):
+    (conv / "activity.jsonl").write_text(
+        "\n".join(json.dumps(a) for a in acts) + "\n", encoding="utf-8")
+
+
+def _fig_rec(conv, files, cards):
+    return {"conv_dir": str(conv), "files_dir": str(files), "final": "x",
+            "activity_offset": 0,
+            "entry": {"artifacts": [str(files / c) for c in cards]}}
+
+
+LOOKED = {"cards": [{"kind": "figure", "count": 1, "looked_at": True}]}
+
+
+def test_stale_chart_card_after_a_redraw_w9_f56(tmp_path):
+    """w9 F56: plot_data wrote the chart and its PNG; plot_code redrew the
+    PNG 77 s later; the card was still the draft's chart."""
+    conv, files = _conv(tmp_path)
+    t0 = 1_792_114_530.0
+    (files / "gsd.plotly.json").write_text("{}")
+    (files / "gsd.png").write_bytes(b"p" * 175)
+    _at(files / "gsd.plotly.json", t0)
+    _at(files / "gsd.png", t0 + 77)
+    _write_acts(conv, _draw("d1", "plot_data", "gsd.png", t0)
+                + _look("l1", "gsd.png", t0 + 3, 87)       # the draft
+                + _draw("d2", "plot_code", "gsd.png", t0 + 50)
+                + _look("l2", "gsd.png", t0 + 52, 171)
+                + _draw("d3", "plot_code", "gsd.png", t0 + 77)
+                + _look("l3", "gsd.png", t0 + 78, 175))
+    rec = _fig_rec(conv, files, ["gsd.plotly.json"])
+    found = det.detect_figure_cards(_ctx(rec, expect=LOOKED))
+    stale = [f for f in found if f["code"] == "stale_figure_card"]
+    assert len(stale) == 1 and stale[0]["severity"] == "high"
+    assert stale[0]["evidence"]["newer_shown"] is False
+    assert stale[0]["evidence"]["newer_by_s"] == pytest.approx(77, abs=0.5)
+    # the chart WAS read: its twin, drawn with it, was looked at before
+    # the first redraw
+    assert "figure_card_not_looked_at" not in codes(found)
+    # a turn whose only looks came after the first redraw read the redraws,
+    # never what the chart shows
+    _write_acts(conv, _draw("d1", "plot_data", "gsd.png", t0)
+                + _draw("d2", "plot_code", "gsd.png", t0 + 50)
+                + _look("l2", "gsd.png", t0 + 52, 171)
+                + _draw("d3", "plot_code", "gsd.png", t0 + 77)
+                + _look("l3", "gsd.png", t0 + 78, 175))
+    found = det.detect_figure_cards(_ctx(rec, expect=LOOKED))
+    assert "figure_card_not_looked_at" in codes(found)
+    # after GM-107 the card is the newer PNG: nothing is stale
+    rec = _fig_rec(conv, files, ["gsd.png"])
+    found = det.detect_figure_cards(_ctx(rec, expect=LOOKED))
+    assert not codes(found)
+
+
+def test_chart_drawn_in_code_is_not_read_by_a_look_at_its_png(tmp_path):
+    """w8 F54: plot_code wrote a Plotly chart and its own matplotlib PNG
+    under one name; the looks read the PNG, a different drawing, so the
+    chart card was never looked at. Only plot_data draws both from one
+    spec."""
+    conv, files = _conv(tmp_path)
+    t0 = 1_792_104_982.0
+    (files / "prof.plotly.json").write_text("{}")
+    (files / "prof.png").write_bytes(b"p")
+    _at(files / "prof.png", t0 + 0.3)
+    _at(files / "prof.plotly.json", t0 + 0.6)
+    code = [{"event": "tool_end", "name": "plot_code", "run_id": "d1",
+             "ts": t0 + 0.7, "result": json.dumps({"images": [
+                 {"file": "prof.png", "output_path": "C:\\sb\\prof.png"}],
+                 "files": ["prof.plotly.json", "prof.png"]})}]
+    rec = _fig_rec(conv, files, ["prof.plotly.json"])
+    _write_acts(conv, code + _look("l1", "prof.png", t0 + 13, 1))
+    found = det.detect_figure_cards(_ctx(rec, expect=LOOKED))
+    assert codes(found) == {"figure_card_not_looked_at"}
+    # the same files written by plot_data: the PNG look reads the chart
+    _write_acts(conv, _draw("d1", "plot_data", "prof.png", t0 + 0.7)
+                + _look("l1", "prof.png", t0 + 13, 1))
+    assert det.detect_figure_cards(_ctx(rec, expect=LOOKED)) == []
+    # a writer the record does not name: no look is credited
+    _write_acts(conv, _look("l1", "prof.png", t0 + 13, 1))
+    assert codes(det.detect_figure_cards(_ctx(rec, expect=LOOKED))) == {
+        "figure_card_not_looked_at"}
+
+
+def test_numbered_siblings_are_not_versions(tmp_path):
+    """sheet_1 and sheet_10, B1 and B12 are other figures; sheet_v2 and
+    plan_2 are later versions."""
+    conv, files = _conv(tmp_path)
+    t0 = 1_792_104_000.0
+    for name, dt in (("sheet_1.png", 0), ("sheet_10.png", 30),
+                     ("B1.png", 0), ("B12.png", 30), ("plan.png", 0),
+                     ("plan_2.png", 30), ("sheet_1_v2.png", 40)):
+        (files / name).write_bytes(b"x")
+        _at(files / name, t0 + dt)
+    rec = _fig_rec(conv, files, ["sheet_1.png", "B1.png", "plan.png"])
+    found = det.detect_figure_cards(_ctx(rec))
+    sup = sorted((os.path.basename(f["evidence"]["card"]),
+                  os.path.basename(f["evidence"]["newer"])) for f in found
+                 if f["code"] == "superseded_figure_card")
+    assert sup == [("plan.png", "plan_2.png"),
+                   ("sheet_1.png", "sheet_1_v2.png")]
+
+
+def test_picture_and_chart_of_one_draw_are_not_stale(tmp_path):
+    conv, files = _conv(tmp_path)
+    t0 = 1_792_114_600.0
+    (files / "plan.plotly.json").write_text("{}")
+    (files / "plan.png").write_bytes(b"x" * 50)
+    _at(files / "plan.plotly.json", t0 + 0.4)          # one call writes both
+    _at(files / "plan.png", t0)
+    _write_acts(conv, _draw("d1", "plot_data", "plan.png", t0 + 0.4)
+                + _look("l1", "plan.png", t0 + 2, 50))
+    rec = _fig_rec(conv, files, ["plan.plotly.json"])
+    assert det.detect_figure_cards(_ctx(rec, expect=LOOKED)) == []
+
+
+def test_superseded_draft_card_w9_f57(tmp_path):
+    """w9 F57: the draft chart and the final PNG under a longer name were
+    both shown."""
+    conv, files = _conv(tmp_path)
+    t0 = 1_792_114_670.0
+    for name in ("plasticity_chart.plotly.json", "plasticity_chart.png"):
+        (files / name).write_bytes(b"{}")
+        _at(files / name, t0)
+    (files / "plasticity_chart_report.png").write_bytes(b"r" * 141)
+    _at(files / "plasticity_chart_report.png", t0 + 152)
+    (files / "plasticity_chart_notes.png").write_bytes(b"n")   # not a version
+    _at(files / "plasticity_chart_notes.png", t0 + 160)
+    _write_acts(conv, _draw("d1", "plot_data", "plasticity_chart.png", t0)
+                + _look("l1", "plasticity_chart.png", t0 + 2, 2)
+                + _draw("d2", "plot_code", "plasticity_chart_report.png",
+                        t0 + 152)
+                + _look("l2", "plasticity_chart_report.png", t0 + 154, 141))
+    both = ["plasticity_chart.plotly.json", "plasticity_chart_report.png"]
+    found = det.detect_figure_cards(_ctx(_fig_rec(conv, files, both)))
+    sup = [f for f in found if f["code"] == "superseded_figure_card"]
+    assert len(sup) == 1 and sup[0]["severity"] == "medium"
+    assert sup[0]["evidence"]["newer"].endswith("plasticity_chart_report.png")
+    # only the draft shown: high
+    found = det.detect_figure_cards(_ctx(_fig_rec(
+        conv, files, ["plasticity_chart.plotly.json"])))
+    assert [f["severity"] for f in found
+            if f["code"] == "superseded_figure_card"] == ["high"]
+    # a later version drawn as picture and chart is one later draw (w7b
+    # F52h, w8 F55); the shown one is named
+    (files / "plasticity_chart_report.plotly.json").write_text("{}")
+    _at(files / "plasticity_chart_report.plotly.json", t0 + 152)
+    found = det.detect_figure_cards(_ctx(_fig_rec(
+        conv, files, ["plasticity_chart.plotly.json",
+                      "plasticity_chart_report.plotly.json"])))
+    (sup,) = [f for f in found if f["code"] == "superseded_figure_card"]
+    assert sup["severity"] == "medium"
+    assert sup["evidence"]["newer"].endswith("report.plotly.json")
+    assert sup["evidence"]["also"] == ["plasticity_chart_report.png"]
+    os.remove(files / "plasticity_chart_report.plotly.json")
+    # the card checks of the expectations see two figure cards for one
+    flow = {"expect": LOOKED}
+    found = det.detect_expectations(flow, [_Sess([_fig_rec(conv, files,
+                                                           both)])])
+    assert [f["code"] for f in found] == ["unexpected_card_count"]
+    assert found[0]["severity"] == "info"
+    assert found[0]["evidence"]["matched"] == sorted(both)
+
+
+def test_look_copy_counts_as_a_look_and_failed_looks_do_not(tmp_path):
+    """GM-107: a report PNG larger than a look takes gets a look copy in
+    .scratch, and the look reads that copy."""
+    conv, files = _conv(tmp_path)
+    t0 = 1_792_114_700.0
+    (files / "fig.png").write_bytes(b"big" * 100)
+    _at(files / "fig.png", t0)
+    (files / "memo.pdf").write_bytes(b"%PDF")
+    rec = _fig_rec(conv, files, ["fig.png", "memo.pdf"])
+    draw = _draw("d1", "plot_code", "fig.png", t0,
+                 look_file=".scratch/fig_look.png")
+    _write_acts(conv, draw + _look("l1", ".scratch/fig_look.png", t0 + 1, 9))
+    assert det.detect_figure_cards(_ctx(rec, expect=LOOKED)) == []
+    # no look at all
+    _write_acts(conv, draw)
+    found = det.detect_figure_cards(_ctx(rec, expect=LOOKED))
+    assert codes(found) == {"figure_card_not_looked_at"}
+    assert found[0]["evidence"]["card"].endswith("fig.png")
+    # the vision probe reads nothing; a look that failed read nothing
+    probe = _look("l2", "fig.png", t0 + 1, None, kind="probe")
+    probe[0]["name"] = "other_tool"                 # only the probe tags it
+    failed = _look("l3", "fig.png", t0 + 2, 300)
+    failed[2]["result"] = json.dumps({"error": "image too large"})
+    _write_acts(conv, draw + probe + failed)
+    assert "figure_card_not_looked_at" in codes(
+        det.detect_figure_cards(_ctx(rec, expect=LOOKED)))
+    # a look before the last draw read an older figure
+    _write_acts(conv, _look("l4", "fig.png", t0 - 30, 12) + draw)
+    assert "figure_card_not_looked_at" in codes(
+        det.detect_figure_cards(_ctx(rec, expect=LOOKED)))
+    # without looked_at in the flow's expectations, no look is asked for
+    _write_acts(conv, draw)
+    assert det.detect_figure_cards(_ctx(rec)) == []
+    assert det.detect_figure_cards(_ctx(rec, expect={"cards": [
+        {"kind": "pdf", "looked_at": True}]})) == []
+
+
+def test_figure_cards_detector_runs_with_the_others(tmp_path):
+    assert det.detect_figure_cards in det.DETECTORS
+    conv, files = _conv(tmp_path)
+    (files / "memo.docx").write_bytes(b"x")
+    rec = _fig_rec(conv, files, ["memo.docx"])
+    assert det.detect_figure_cards(_ctx(rec)) == []
+
+
+def test_card_expectations_count_kinds_and_patterns(tmp_path):
+    conv, files = _conv(tmp_path)
+    for n in ("calc.pdf", "wall.png", "wall_2.png", "data.csv"):
+        (files / n).write_bytes(b"x")
+    t1 = _fig_rec(conv, files, ["calc.pdf", "wall.png"])
+    t2 = _fig_rec(conv, files, ["wall.png", "wall_2.png", "data.csv"])
+    flow = {"expect": {"cards": [
+        {"kind": "pdf", "count": 1},                       # met
+        {"kind": "figure", "max": 1},                      # 2 figures
+        {"kind": "chart"},                                 # none
+        {"pattern": r"^data\.csv$", "min": 1, "max": 1},   # met
+        "docx"]}}                                          # none
+    found = det.detect_expectations(flow, [_Sess([t1, t2])])
+    got = sorted((f["code"], f["evidence"]["spec"].get("kind")) for f in found)
+    assert got == [("expected_cards_missing", "chart"),
+                   ("expected_cards_missing", "docx"),
+                   ("unexpected_card_count", "figure")]
+    assert det.card_spec_bounds({"kind": "figure"}) == ("figure", 1, None)
+    assert det.card_spec_bounds({"max": 2})[1:] == (0, 2)
+    assert det.card_kinds("a/b/x.plotly.json") >= {"figure", "chart"}
+    assert "image" in det.card_kinds("x.PNG") and \
+        "figure" not in det.card_kinds("x.pdf")
+
+
+def test_watch_ignores_claude_codes_own_state_file(tmp_path):
+    """w9 F56/F57: both low unattributed_file_in_home findings were
+    ~/.claude.json, rewritten by the Claude Code sessions beside the wave."""
+    from live_smoke import watch
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".claude.json").write_text("{}")
+    (home / "report.pdf").write_bytes(b"%PDF")
+    roots = {"home": (str(home), 0)}
+    before = watch.snapshot(roots)
+    for name in (".claude.json", "report.pdf"):
+        _at(home / name, os.path.getmtime(home / name) + 10)
+    (home / ".claude.json.backup").write_text("{}")
+    (home / "new.json").write_text("{}")
+    changed = watch.diff(before, watch.snapshot(roots))
+    assert sorted(os.path.basename(d["path"]) for d in changed) == [
+        "new.json", "report.pdf"]
+
+
+def test_wave_json_records_the_code(tmp_path):
+    from live_smoke import report, runner
+    import subprocess
+    head = subprocess.run(["git", "-C", REPO, "rev-parse", "HEAD"],
+                          capture_output=True, text=True).stdout.strip()
+    w = runner.Wave("cv", mode="flow", model_id="claude-haiku-5-5", cap=0,
+                    fake=True, runs_dir=str(tmp_path), verbose=False)
+    w.start()
+    meta = json.loads((tmp_path / "cv" / "wave.json").read_text("utf-8"))
+    app = meta["code"]["app"]
+    assert app["commit"] == head and isinstance(app["dirty"], bool)
+    assert isinstance(app["changed"], list) and meta["code"]["recorded"]
+    assert meta["code_earlier"] == []
+    w.finish()
+    head_line = (tmp_path / "cv" / "REPORT.md").read_text("utf-8")
+    assert f"app `{head[:10]}`" in head_line
+    # a wave resumed on other code keeps what the earlier session ran
+    meta["code"]["app"]["commit"] = "0" * 40
+    (tmp_path / "cv" / "wave.json").write_text(json.dumps(meta), "utf-8")
+    w2 = runner.Wave("cv", mode="flow", model_id="claude-haiku-5-5", cap=0,
+                     fake=True, runs_dir=str(tmp_path), verbose=False)
+    w2.start()
+    meta2 = json.loads((tmp_path / "cv" / "wave.json").read_text("utf-8"))
+    assert [c["app"]["commit"] for c in meta2["code_earlier"]] == ["0" * 40]
+    assert meta2["code"]["app"]["commit"] == head
+    w2.finish()
+    text = (tmp_path / "cv" / "REPORT.md").read_text("utf-8")
+    assert "Earlier session of this wave" in text and "`0000000000`" in text
+    assert report.code_line({}) == ""
+    assert runner.git_state(str(tmp_path)) == {}         # not a checkout
+
+
+def test_estimate_from_recorded_runs(tmp_path):
+    runs = tmp_path / "runs"
+
+    def summ(wave, sid, usd, model="m", **kw):
+        d = runs / wave / sid
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "summary.json").write_text(json.dumps(
+            {"id": sid, "model": model, "usd": usd, **kw}), "utf-8")
+    summ("w1", "F90-a", 0.30)
+    summ("w2", "F90-a", 0.50)
+    summ("w2", "F91-b", 0.20)
+    summ("w3", "F91-b", 9.0, incomplete=True)            # cut short
+    summ("w3", "F92-c", 9.0, model="m (scripted fake)")  # a fake wave
+    env = {"GEOTECH_PLOT_CODE": "1"}
+    flows = [{"id": "F90-a", "page": "geotech", "cost": "light",
+              "steps": [{"say": "x"}]},
+             {"id": "F91-b", "page": "geotech", "cost": "light", "env": env,
+              "steps": [{"say": "x"}]},
+             {"id": "F92-c", "page": "geotech", "cost": "light", "env": env,
+              "steps": [{"say": "x"}]},
+             {"id": "F93-d", "page": "document_review", "cost": "heavy",
+              "steps": [{"say": "x"}]}]
+    est = spend.estimate_flows(flows + [{"id": "F90j"}], "m", str(runs))
+    usd = {r["id"]: r["usd"] for r in est["rows"]}
+    assert usd == {"F90-a": 0.50, "F91-b": 0.20, "F92-c": 0.20,
+                   "F93-d": spend.FALLBACK_USD["heavy"], "F90j": 0.50}
+    basis = {r["id"]: r["basis"] for r in est["rows"]}
+    assert "other arm" in basis["F90j"] and "not in flows.json" in \
+        basis["F90j"]
+    assert "same page, cost tier and switches" in basis["F92-c"]
+    assert est["total_usd"] == pytest.approx(3.90)
+    assert est["suggested_cap_usd"] == 6.0               # 5.85 -> 6.00
+
+
+def test_estimate_picks_what_the_flow_command_runs(capsys):
+    """``estimate --ids F61`` prices F61 and F61j, as ``flow --ids F61``
+    runs both; an id with no flow yet gets a row of its own."""
+    from live_smoke import run as run_cli
+    assert run_cli.main(["estimate", "--model", "claude-sonnet-5-5",
+                         "--ids", "F61,F99z"]) == 0
+    rows = [ln.split()[0] for ln in capsys.readouterr().out.splitlines()]
+    assert rows == ["F61-geotech-slope-weak-layer",
+                    "F61j-geotech-slope-weak-layer", "F99z", "total"]
+
+
+def test_recheck_judges_a_recorded_wave_again(tmp_path):
+    """The $0 recheck rebuilds each turn from detectors.json and the copied
+    conversation (files keep their times) and runs (k) and the flow's
+    expectations with the flows given."""
+    from live_smoke import dryrun
+    scen = tmp_path / "wave" / "F99-figure"
+    conv = scen / "conversations" / "main_abcdef12"
+    files = conv / "files"
+    files.mkdir(parents=True)
+    t0 = 1_792_114_530.0
+    (files / "g.plotly.json").write_text("{}")
+    (files / "g.png").write_bytes(b"p")
+    _at(files / "g.plotly.json", t0)
+    _at(files / "g.png", t0 + 60)
+    acts = [dict(a, turn=1) for a in
+            _draw("d1", "plot_data", "g.png", t0)
+            + _draw("d2", "plot_code", "g.png", t0 + 60)
+            + _look("l1", "g.png", t0 + 61, 1)]
+    _write_acts(conv, acts)
+    (scen / "detectors.json").write_text(json.dumps({
+        "flow": {"id": "F99-figure"},
+        "turns": [{"session": "main", "thread_id": "abcdef1234567890",
+                   "cards": ["g.plotly.json"], "final": "done"}]}), "utf-8")
+    flows = [{"id": "F99-figure", "expect": LOOKED, "steps": []}]
+    res = dryrun.recheck(str(tmp_path / "wave"), flows=flows)
+    turn = {f["code"] for f in res["F99-figure"]["turns"][0]}
+    assert turn == {"stale_figure_card", "figure_card_not_looked_at"}
+    assert res["F99-figure"]["scenario"] == []
+    # with no expectation of looks, only the stale card
+    res = dryrun.recheck(str(tmp_path / "wave"), flows=[
+        {"id": "F99-figure", "steps": []}])
+    assert {f["code"] for f in res["F99-figure"]["turns"][0]} == {
+        "stale_figure_card"}
+
+
+#: The EV-24 flows: figures a geotechnical engineer asks for in their own
+#: words, one of each kind.
+EV24_FLOWS = ("F62-geotech-figure-excavation-section",
+              "F63-geotech-figure-consolidation-curve",
+              "F64-geotech-figure-exploration-plan",
+              "F65-geotech-figure-groundwater-record",
+              "F66-geotech-figure-pile-options")
+
+
+def test_ev24_figure_flows_name_no_tool_and_expect_one_looked_card():
+    from live_smoke import runner
+    flows = {f["id"]: f for f in runner.load_flows()}
+    tools = re.compile(r"plot_code|plot_data|matplotlib|plotly|figure "
+                       r"helper|render_figures|profile_figure|\btask\b",
+                       re.IGNORECASE)
+    for fid in EV24_FLOWS + ("F56-geotech-figure-grain-size",
+                             "F57-geotech-figure-plasticity-chart",
+                             "F60-geotech-figure-settlement-monitoring"):
+        f = flows[fid]
+        assert f["page"] == "geotech" and f["cost"] == "light"
+        assert f["env"] == {"GEOTECH_PLOT_CODE": "1"}
+        (step,) = f["steps"]
+        assert not tools.search(step["say"]), fid
+        assert f["expect"]["cards"] == [{"kind": "figure", "count": 1,
+                                         "looked_at": True}]
+        assert f["reader_checks"] and all(
+            isinstance(c, str) and c for c in f["reader_checks"])
 
 
 def test_recovered_tool_error_is_low_and_meter_gap_is_flagged(tmp_path):

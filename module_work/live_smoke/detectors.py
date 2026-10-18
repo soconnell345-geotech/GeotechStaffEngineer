@@ -10,9 +10,11 @@ Each detector takes the turn context (:func:`turn_context` builds it from a
 (a) files outside the conversation folder, (b) answer links, (c) download
 cards, (d) the SharePoint mirror and the agent's SharePoint calls,
 (e) health (tool errors, refusals, tracebacks, step caps, empty answers,
-"unavailable" answers, success claimed after an error), (f) cost. A model's
-answer QUALITY is never judged here -- only whether the app's plumbing did
-what it says.
+"unavailable" answers, success claimed after an error), (f) cost,
+(k) figure cards (a card showing an older draw than a figure written
+later, and, where the flow asks, a card no look read). A model's answer
+QUALITY is never judged here -- only whether the app's plumbing did what it
+says.
 """
 
 from __future__ import annotations
@@ -145,8 +147,10 @@ def turn_context(rec: dict, *, fm=None, remote_folder: Optional[str] = None,
                  fm_calls: Optional[list] = None,
                  outside: Optional[list] = None,
                  input_roots: Iterable[str] = (),
-                 prompts: Iterable[str] = ()) -> dict:
-    """Everything the detectors read for one turn."""
+                 prompts: Iterable[str] = (),
+                 expect: Optional[dict] = None) -> dict:
+    """Everything the detectors read for one turn. ``expect`` is the flow's
+    ``expect`` block (detector (k) reads its ``cards``)."""
     conv = rec.get("conv_dir") or ""
     acts = load_activity(conv) if conv else []
     lo = int(rec.get("activity_offset") or 0)
@@ -158,7 +162,8 @@ def turn_context(rec: dict, *, fm=None, remote_folder: Optional[str] = None,
             "fm_calls": list(fm_calls or []),
             "outside": list(outside or []),
             "input_roots": [r for r in input_roots if r],
-            "prompts": list(prompts or [])}
+            "prompts": list(prompts or []),
+            "expect": dict(expect or {})}
 
 
 def _tool_ends(acts) -> List[dict]:
@@ -1003,9 +1008,324 @@ def detect_cost(ctx) -> List[dict]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# (k) figure cards: stale cards, and cards no look read
+# ---------------------------------------------------------------------------
+
+#: A figure card is a picture or the interactive chart (``*.plotly.json``).
+FIGURE_EXTS = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg")
+CHART_SUFFIX = ".plotly.json"
+#: Seconds by which a file must be newer than a card to count as drawn
+#: after it. ``plot_data`` writes a figure's picture and chart in one call,
+#: well inside this; a redraw comes at least one model call later (wave w9:
+#: 49-77 s).
+NEWER_S = 2.0
+#: Slack between a file's time on disk and the activity log's clock when
+#: asking whether a look read a file after it was written (a look in the
+#: same step as the draw waits for it and reads ~0.1 s after; w9 F56 [37]).
+CLOCK_SLACK_S = 0.25
+#: How a later version of a figure is named: the draft's name and one of
+#: these (wave w9 F57: ``plasticity_chart`` -> ``plasticity_chart_report``).
+_VERSION_SUFFIX = re.compile(
+    r"^[ _.\-]?(?:v\d+|r\d+|rev\w*|final\w*|report|revised|updated|new|"
+    r"fixed|clean\w*|corrected|redraw\w*|redrawn|draft\d*|\d+)$",
+    re.IGNORECASE)
+#: Tools that read an image the agent names by ``attachment_key``.
+LOOK_TOOLS = ("analyze_image", "render_region")
+
+
+def is_figure(path: str) -> bool:
+    low = str(path).lower()
+    return low.endswith(CHART_SUFFIX) or low.endswith(FIGURE_EXTS)
+
+
+def figure_stem(path: str) -> str:
+    """A figure's base name without its extension (or ``.plotly.json``),
+    lower case: the picture and the chart of one draw share it."""
+    base = os.path.basename(str(path)).lower()
+    if base.endswith(CHART_SUFFIX):
+        return base[:-len(CHART_SUFFIX)]
+    return os.path.splitext(base)[0]
+
+
+def card_kinds(path: str) -> set:
+    """What a card is, for ``expect.cards``: ``figure`` (a picture or a
+    chart), ``image`` or ``chart``, and its extension with and without the
+    dot (``pdf``, ``.pdf``)."""
+    low = os.path.basename(str(path)).lower()
+    if low.endswith(CHART_SUFFIX):
+        return {"figure", "chart", CHART_SUFFIX, CHART_SUFFIX[1:]}
+    ext = os.path.splitext(low)[1]
+    kinds = {ext, ext.lstrip(".")}
+    if ext in FIGURE_EXTS:
+        kinds |= {"figure", "image"}
+    return kinds
+
+
+def card_matches(spec: dict, path: str) -> bool:
+    """Whether a card fits an ``expect.cards`` entry (``kind`` and/or a
+    ``pattern`` searched in its base name)."""
+    kind = spec.get("kind")
+    if kind and str(kind).lower() not in card_kinds(path):
+        return False
+    pat = spec.get("pattern")
+    if pat and not _search(str(pat), os.path.basename(str(path))):
+        return False
+    return True
+
+
+def _mtime(path: str) -> Optional[float]:
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return None
+
+
+def _base(name: Any) -> str:
+    return str(name or "").replace("\\", "/").rsplit("/", 1)[-1].lower()
+
+
+def _json_of(result: Any) -> Optional[dict]:
+    if isinstance(result, dict):
+        return result
+    text = _text(result)
+    for cand in (text, text[text.find("{"):] if "{" in text else ""):
+        try:
+            data = json.loads(cand)
+        except (ValueError, TypeError):
+            continue
+        return data if isinstance(data, dict) else None
+    return None
+
+
+def _named_outputs(obj, key=None, out=None) -> set:
+    """Base names (lower case) of every file a tool result names under an
+    output key (``output_path``, ``file``, ...), relative or absolute."""
+    out = set() if out is None else out
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            _named_outputs(v, str(k).lower(), out)
+    elif isinstance(obj, list):
+        for v in obj:
+            _named_outputs(v, key, out)
+    elif isinstance(obj, str) and key in OUTPUT_KEYS and obj.strip():
+        out.add(_base(obj.strip()))
+    return out
+
+
+def figure_looks(acts: List[dict]) -> List[dict]:
+    """Every look at an image in ``acts``, oldest first::
+
+        {"target": base name of the figure it read (a look copy is resolved
+                   to its figure through plot_code's ``look_file``),
+         "key": the name the look was given, "tool", "t": when it read
+         (its first vision call, else its end), "bytes": [image sizes]}
+
+    A look that raised or returned an error, and the vision probe's calls,
+    read nothing and are left out."""
+    copies: Dict[str, str] = {}
+    starts: Dict[str, dict] = {}
+    vision: Dict[str, List[dict]] = {}
+    ends: Dict[str, dict] = {}
+    failed = set()
+    for a in acts:
+        ev = a.get("event")
+        rid = a.get("run_id")
+        if ev == "tool_start" and rid:
+            starts[rid] = a
+        elif ev == "tool_end":
+            if rid:
+                ends[rid] = a
+            if a.get("name") == "plot_code":
+                for e in (_json_of(a.get("result")) or {}).get("images") or []:
+                    if isinstance(e, dict) and e.get("look_file") \
+                            and e.get("file"):
+                        copies[_base(e["look_file"])] = _base(e["file"])
+            res = _json_of(a.get("result"))
+            if rid and res is not None and res.get("error"):
+                failed.add(rid)
+        elif ev == "tool_error" and rid:
+            failed.add(rid)
+        elif ev == "model_start" and isinstance(a.get("vision"), dict) \
+                and a["vision"].get("kind") != "probe" and a.get("tool_run_id"):
+            vision.setdefault(a["tool_run_id"], []).append(a)
+    out = []
+    for rid, s in starts.items():
+        if rid in failed:
+            continue
+        if s.get("name") not in LOOK_TOOLS and rid not in vision:
+            continue
+        args = s.get("args") if isinstance(s.get("args"), dict) else {}
+        key = next((args[k] for k in ("attachment_key", "image", "path",
+                                      "file") if args.get(k)), None)
+        if not key:
+            continue
+        vs = vision.get(rid) or []
+        t = (min(float(v.get("ts") or 0) for v in vs) if vs else
+             float((ends.get(rid) or s).get("ts") or 0))
+        out.append({"target": copies.get(_base(key), _base(key)),
+                    "key": str(key), "tool": s.get("name"), "t": t,
+                    "bytes": [v["vision"].get("image_bytes") for v in vs
+                              if v["vision"].get("image_bytes")]})
+    return sorted(out, key=lambda lk: lk["t"])
+
+
+def _rewritten_after(acts: List[dict], names: set, t0: float,
+                     fallback: Optional[float]) -> Optional[float]:
+    """When a file named in ``names`` was first written again after ``t0``:
+    the earliest drawing tool's end that names it, else ``fallback`` (the
+    file's time on disk, which is its LAST write)."""
+    times = [float(a.get("ts") or 0) for a in acts
+             if a.get("event") == "tool_end"
+             and a.get("name") not in LOOK_TOOLS + ("analyze_pdf_page",)
+             and float(a.get("ts") or 0) > t0 + NEWER_S
+             and names & _named_outputs(_json_of(a.get("result")) or {})]
+    return min(times) if times else fallback
+
+
+def _chart_writer(acts: List[dict], chart: str, twins: set,
+                  t_chart: float) -> Optional[str]:
+    """The tool that wrote a chart last: the first drawing tool to end after
+    the chart's time that names it, else one that names its picture twin
+    within :data:`NEWER_S` of the chart's time."""
+    named_twin = None
+    for a in acts:
+        if a.get("event") != "tool_end" \
+                or a.get("name") in LOOK_TOOLS + ("analyze_pdf_page",):
+            continue
+        ts = float(a.get("ts") or 0)
+        outs = _named_outputs(_json_of(a.get("result")) or {})
+        if chart in outs and ts >= t_chart - CLOCK_SLACK_S:
+            return a.get("name")
+        if named_twin is None and outs & twins \
+                and abs(ts - t_chart) <= NEWER_S:
+            named_twin = a.get("name")
+    return named_twin
+
+
+def card_looks(card: str, looks: List[dict], acts: List[dict]) -> List[dict]:
+    """The looks that read what ``card`` shows now.
+
+    A picture card: a look at that file (or its look copy) after it was last
+    written, or one that read exactly its bytes. A chart card: a look at its
+    picture twin, after the chart was written and before the twin was drawn
+    again (wave w9 F56: the twin was redrawn in code and later looks read
+    the redraw, not the chart); and only when ``plot_data`` wrote the chart,
+    since it draws both from one spec. A chart written by other code (w8
+    F54: ``plot_code`` wrote a Plotly chart beside its own matplotlib PNG)
+    is a different drawing from its PNG, and no look reads a chart."""
+    t_card = _mtime(card)
+    if t_card is None:
+        return []
+    base = os.path.basename(card).lower()
+    if base.endswith(CHART_SUFFIX):
+        stem = base[:-len(CHART_SUFFIX)]
+        names = {stem + ext for ext in (".png", ".jpg", ".jpeg")}
+        if _chart_writer(acts, base, names, t_card) != "plot_data":
+            return []
+        twin = next((os.path.join(os.path.dirname(card), n)
+                     for n in os.listdir(os.path.dirname(card) or ".")
+                     if n.lower() in names), None)
+        t_twin = _mtime(twin) if twin else None
+        until = (_rewritten_after(acts, names, t_card, t_twin)
+                 if t_twin is not None and t_twin > t_card + NEWER_S
+                 else float("inf"))
+        return [lk for lk in looks if lk["target"] in names
+                and t_card - CLOCK_SLACK_S <= lk["t"] < until]
+    try:
+        size = os.path.getsize(card)
+    except OSError:
+        size = None
+    return [lk for lk in looks if lk["target"] == base and (
+        lk["t"] >= t_card - CLOCK_SLACK_S or (size and size in lk["bytes"]))]
+
+
+def detect_figure_cards(ctx) -> List[dict]:
+    """(k) The turn's figure cards against the figure files and the looks.
+
+    * ``stale_figure_card`` (high): a newer figure under the card's own name
+      (its picture or chart) was written later, so the card shows an older
+      draw (wave w9 F56: the chat showed the rejected ``plot_data`` draft's
+      chart; the PNG redrawn 77 s later had no card).
+    * ``superseded_figure_card``: a later version under the card's name plus
+      a version word (``_v2``, ``_final``, ``_report`` ...) exists: medium
+      when that version is shown too (w9 F57: draft and final side by side),
+      high when only the draft is.
+    * ``figure_card_not_looked_at`` (medium), only where the flow's
+      ``expect.cards`` asks for looks (``"looked_at": true``): no look read
+      what the card shows.
+    """
+    D = "k_figure_cards"
+    rec = ctx["rec"]
+    cards = [str(c) for c in (rec.get("entry") or {}).get("artifacts") or []]
+    figs = [c for c in cards if is_figure(c) and os.path.isfile(c)]
+    out: List[dict] = []
+    if not figs:
+        return out
+    shown = {_norm(c) for c in cards}
+    for c in figs:
+        folder = os.path.dirname(c) or "."
+        stem, t_card = figure_stem(c), _mtime(c)
+        later_draws: Dict[str, list] = {}
+        for name in sorted(os.listdir(folder)):
+            p = os.path.join(folder, name)
+            if _norm(p) == _norm(c) or not is_figure(p) \
+                    or not os.path.isfile(p):
+                continue
+            later = (_mtime(p) or 0) - (t_card or 0)
+            other = figure_stem(p)
+            # A numbered sibling is another figure, not a later version
+            # (sheet_1 and sheet_10, B1 and B12).
+            if later > NEWER_S and (other == stem or (
+                    other.startswith(stem)
+                    and _VERSION_SUFFIX.match(other[len(stem):])
+                    and not (stem[-1:].isdigit()
+                             and other[len(stem):][:1].isdigit()))):
+                later_draws.setdefault(other, []).append((later, name, p))
+        # One finding per later draw: its picture and its chart are one
+        # figure (the shown one named if either is shown).
+        for other, files in sorted(later_draws.items()):
+            later, name, p = max(files, key=lambda f: (_norm(f[2]) in shown,
+                                                       f[0]))
+            ev = {"card": c, "newer": p, "newer_by_s": round(later, 1),
+                  "newer_shown": _norm(p) in shown,
+                  "also": [f[1] for f in files if f[2] != p]}
+            if other == stem:
+                out.append(finding(
+                    D, "stale_figure_card", "high",
+                    f"the card {os.path.basename(c)} shows an older draw: "
+                    f"{name} was written {later:.0f} s after it under the "
+                    "same name" + ("" if ev["newer_shown"] else
+                                   " and has no card"), **ev))
+            else:
+                out.append(finding(
+                    D, "superseded_figure_card",
+                    "medium" if ev["newer_shown"] else "high",
+                    f"the card {os.path.basename(c)} is a draft: {name}, "
+                    f"written {later:.0f} s later, is a later version of it"
+                    + (" and is shown beside it" if ev["newer_shown"] else
+                       ", and has no card"), **ev))
+    wants = [s for s in (ctx.get("expect") or {}).get("cards") or []
+             if isinstance(s, dict) and s.get("looked_at")]
+    if wants:
+        looks = figure_looks(ctx["activity"])
+        for c in figs:
+            if not any(card_matches(s, c) for s in wants):
+                continue
+            if not card_looks(c, looks, ctx["activity"]):
+                out.append(finding(
+                    D, "figure_card_not_looked_at", "medium",
+                    f"no look read the figure the card "
+                    f"{os.path.basename(c)} shows (the flow expects every "
+                    "figure card checked)", card=c,
+                    looks=[{k: lk[k] for k in ("key", "t")}
+                           for lk in looks][:20]))
+    return out
+
+
 DETECTORS = (detect_files_outside, detect_answer_links, detect_download_cards,
              detect_sharepoint, detect_health, detect_cost,
-             detect_conversation_record)
+             detect_conversation_record, detect_figure_cards)
 
 
 def run_turn_detectors(ctx) -> dict:
@@ -1147,15 +1467,21 @@ def detect_restore(session, mirrored_before: Optional[List[dict]] = None
 def detect_expectations(flow: dict, sessions) -> List[dict]:
     """The flow's soft expectations -- whether the scenario exercised the
     plumbing it was written for (a model choice, so 'info'): ``tools_any``,
-    ``artifact_ext`` and ``answer_names``, the phrases or regexes the
+    ``artifact_ext``, ``answer_names``, the phrases or regexes the
     flow's final answer must contain (BACKLOG EV-26: does the answer name
-    its judgment calls?)."""
+    its judgment calls?), and ``cards``, the download cards the flow should
+    end with (BACKLOG EV-24): entries ``{"kind": "figure" | "image" |
+    "chart" | an extension, "pattern": a regex on the base name, "count": n
+    | "min": n | "max": n, "looked_at": true}``, counted over the distinct
+    cards of every turn (``min`` 1 when no number is given). ``looked_at``
+    is checked per turn by :func:`detect_figure_cards`."""
     D = "i_expectations"
     exp = flow.get("expect") or {}
     out: List[dict] = []
     if not exp:
         return out
     tools, exts = set(), set()
+    cards: Dict[str, str] = {}
     for s in sessions:
         for t in s.turns:
             for a in load_activity(t.get("conv_dir") or "")[
@@ -1169,6 +1495,7 @@ def detect_expectations(flow: dict, sessions) -> List[dict]:
                                       f"{args.get('method')}")
             for c in (t.get("entry") or {}).get("artifacts") or []:
                 exts.add(os.path.splitext(str(c))[1].lower())
+                cards.setdefault(_norm(c), str(c))
     want_any = exp.get("tools_any") or []
     if want_any and not any(any(w == t or (t and w in t) for t in tools)
                             for w in want_any):
@@ -1180,6 +1507,24 @@ def detect_expectations(flow: dict, sessions) -> List[dict]:
             out.append(finding(D, "expected_artifact_missing", "info",
                                f"no {ext} download card was produced "
                                f"(cards: {sorted(exts)})"))
+    names_shown = sorted(os.path.basename(c) for c in cards.values())
+    for spec in exp.get("cards") or []:
+        spec = spec if isinstance(spec, dict) else {"kind": str(spec)}
+        label, lo, hi = card_spec_bounds(spec)
+        hits = sorted(os.path.basename(c) for c in cards.values()
+                      if card_matches(spec, c))
+        want = (f"{lo}" if lo == hi else f"at least {lo}" if hi is None
+                else f"{lo} to {hi}")
+        if len(hits) < lo:
+            out.append(finding(D, "expected_cards_missing", "info",
+                               f"{len(hits)} {label} card(s); the flow "
+                               f"expects {want} (cards: {names_shown})",
+                               spec=spec, matched=hits))
+        elif hi is not None and len(hits) > hi:
+            out.append(finding(D, "unexpected_card_count", "info",
+                               f"{len(hits)} {label} cards ({', '.join(hits)}"
+                               f"); the flow expects {want}",
+                               spec=spec, matched=hits))
     names = exp.get("answer_names") or []
     if names:
         final = _final_answer(sessions)
@@ -1192,6 +1537,20 @@ def detect_expectations(flow: dict, sessions) -> List[dict]:
                     + ("" if final.strip() else " (the answer is empty)"),
                     looked_for=patterns, answer_chars=len(final)))
     return out
+
+
+def card_spec_bounds(spec: dict) -> Tuple[str, int, Optional[int]]:
+    """``(label, min, max)`` for an ``expect.cards`` entry: ``count`` is
+    exact, ``min``/``max`` bound it, and with no number at least one."""
+    label = " ".join(x for x in (
+        str(spec.get("kind") or ""),
+        f"/{spec['pattern']}/" if spec.get("pattern") else "") if x) or "any"
+    if spec.get("count") is not None:
+        n = int(spec["count"])
+        return label, n, n
+    lo = int(spec.get("min", 1 if spec.get("max") is None else 0))
+    hi = spec.get("max")
+    return label, lo, (int(hi) if hi is not None else None)
 
 
 def _final_answer(sessions) -> str:
@@ -1239,4 +1598,6 @@ __all__ = ["finding", "turn_context", "run_turn_detectors", "DETECTORS",
            "detect_download_cards", "detect_sharepoint", "detect_health",
            "detect_cost", "detect_isolation", "detect_restore",
            "detect_expectations", "tool_result_paths", "url_well_formed",
-           "severity_counts", "load_activity", "turn_metrics"]
+           "severity_counts", "load_activity", "turn_metrics",
+           "detect_figure_cards", "figure_looks", "card_looks",
+           "card_matches", "card_kinds", "card_spec_bounds", "is_figure"]

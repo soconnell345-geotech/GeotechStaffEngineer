@@ -14,6 +14,9 @@ is printed and the scenario's folder is written:
         sharepoint_listing.json              the fake library afterwards
 
 and ``runs/<wave>/REPORT.md`` is rewritten (:mod:`live_smoke.report`).
+``runs/<wave>/wave.json`` carries the model, the cap, the meter and the code
+the wave ran (:func:`code_version`: the app's commit and dirty flag, taken
+at the wave's start).
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import time
 import traceback
 from typing import Any, Dict, List, Optional
@@ -47,6 +51,59 @@ def load_flows(path: str = FLOWS_PATH) -> List[dict]:
     with open(path, encoding="utf-8") as fh:
         data = json.load(fh)
     return data["flows"] if isinstance(data, dict) else data
+
+
+def git_state(path: str) -> dict:
+    """A checkout's commit, branch and whether TRACKED files differ from the
+    commit (``dirty``, with the paths in ``changed``; untracked files such
+    as the owner's scratch notes, and a submodule's untracked files, do not
+    count). ``{}`` when ``path`` is not a git checkout. Reads only:
+    ``GIT_OPTIONAL_LOCKS=0`` keeps ``git status`` from taking the index lock
+    another session working in the same checkout may hold."""
+    if not os.path.exists(os.path.join(path, ".git")):
+        return {}
+    env = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
+
+    def git(*args) -> str:
+        return subprocess.run(["git", "-C", path, *args], capture_output=True,
+                              text=True, timeout=60, env=env,
+                              check=True).stdout
+    try:
+        commit = git("rev-parse", "HEAD").strip()
+        branch = git("rev-parse", "--abbrev-ref", "HEAD").strip()
+        status = git("status", "--porcelain", "--untracked-files=no",
+                     "--ignore-submodules=untracked")
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"error": f"{type(exc).__name__}: {exc}"[:300]}
+    changed = [line[3:] for line in status.splitlines() if line.strip()]
+    return {"commit": commit, "branch": branch, "dirty": bool(changed),
+            "changed": changed[:50]}
+
+
+def code_version() -> dict:
+    """The code a wave runs, recorded in ``wave.json`` at its start: the
+    app's commit and dirty flag, and the same for the reference library
+    (a submodule) and the planlens checkout beside the app when present.
+    Wave w9's record named no commit, and its trace read had to infer one
+    from commit times (TRACE_REVIEW §11, BACKLOG EV-24)."""
+    repo = watch.REPO
+    out = {"recorded": time.strftime("%Y-%m-%dT%H:%M:%S"),
+           "app": git_state(repo)}
+    for key, path in (("geotech_references",
+                       os.path.join(repo, "geotech-references")),
+                      ("planlens", os.path.join(os.path.dirname(repo),
+                                                "planlens"))):
+        state = git_state(path)
+        if state:
+            out[key] = state
+    return out
+
+
+def _commits(code: dict) -> tuple:
+    """What tells two recorded code versions apart."""
+    return tuple((k, (code.get(k) or {}).get("commit"),
+                  (code.get(k) or {}).get("dirty"))
+                 for k in ("app", "geotech_references", "planlens"))
 
 
 class TurnWatch:
@@ -138,11 +195,26 @@ class Wave:
             self.model_id_label = model_id
         self.summaries: List[dict] = []
         self.stopped: Optional[str] = None
+        self.code: dict = {}
+        self.code_earlier: List[dict] = []
 
     # -- lifecycle -----------------------------------------------------------
     def start(self) -> None:
         self.ledger.begin_wave(self.name, self.cap, model=self.model_id_label,
                                mode=self.mode)
+        self.code = code_version()
+        # A wave resumed later (the same --wave) may run other code: keep
+        # what each earlier session ran.
+        try:
+            with open(os.path.join(self.dir, "wave.json"),
+                      encoding="utf-8") as fh:
+                prev = json.load(fh)
+        except (OSError, ValueError):
+            prev = {}
+        self.code_earlier = list(prev.get("code_earlier") or [])
+        last = prev.get("code") or {}
+        if last and _commits(last) != _commits(self.code):
+            self.code_earlier.append(last)
         self._write_meta()
         self.say(f"[wave] {self.name}: mode={self.mode} model="
                  f"{self.model_id_label} cap=${self.cap:.2f} | cumulative "
@@ -165,6 +237,7 @@ class Wave:
         meta = {"wave": self.name, "mode": self.mode,
                 "model": self.model_id_label, "cap_usd": self.cap,
                 "fake": self.fake, "stopped": self.stopped,
+                "code": self.code, "code_earlier": self.code_earlier,
                 "updated": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "ledger": self.ledger.path,
                 "meter": self.meter.summary(),
@@ -283,7 +356,8 @@ class Wave:
                     for rec in recs:
                         # a together_with step returns other people's turns
                         who = sessions.get(rec.get("session"), s)
-                        turns.append(self._judge(env, who, rec))
+                        turns.append(self._judge(env, who, rec,
+                                                 expect=flow.get("expect")))
                 live = list(sessions.values()) + retired
                 people = {s.ident.key for s in live if s.turns}
                 if len(people) > 1:
@@ -348,9 +422,11 @@ class Wave:
             return []
         raise ValueError(f"unknown step {step!r}")
 
-    def _judge(self, env, s: Session, rec) -> dict:
+    def _judge(self, env, s: Session, rec, expect: Optional[dict] = None
+               ) -> dict:
         """Run the detectors on one turn; return the turn's record for the
-        output (detectors + a compact view of the turn)."""
+        output (detectors + a compact view of the turn). ``expect`` is the
+        flow's ``expect`` block (detector (k) reads its ``cards``)."""
         from webapp import sharepoint_store
         remote = None
         if env.fm is not None and rec.get("thread_id"):
@@ -364,7 +440,7 @@ class Wave:
             rec, fm=env.fm, remote_folder=remote,
             meter_calls=rec.get("meter_calls"), fm_calls=rec.get("fm_calls"),
             outside=rec.get("outside"), input_roots=docs.input_roots(),
-            prompts=prompts)
+            prompts=prompts, expect=expect)
         result = det.run_turn_detectors(ctx)
         return {"session": s.label, "user": rec.get("user"),
                 "together_with": rec.get("together_with"),
@@ -563,4 +639,5 @@ class Wave:
         return summary
 
 
-__all__ = ["Wave", "load_flows", "DEFAULT_USER", "RUNS", "FLOWS_PATH"]
+__all__ = ["Wave", "load_flows", "DEFAULT_USER", "RUNS", "FLOWS_PATH",
+           "code_version", "git_state"]

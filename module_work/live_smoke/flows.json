@@ -1,5 +1,5 @@
 {
- "about": "Multi-turn Tiny Apps tester scenarios for the live smoke harness (module_work/live_smoke/run.py flow). PUBLIC documents only: Review-suite document ids (Mecklenburg County standard details, UFC manuals, the app's sample calc packages, planlens synthetic fixtures), {\"file\": ...} from geotech-references/docs (FHWA/UFC only), {\"sample\": ...} from funhouse_agent/eval_samples, {\"render\": ...} screenshots cut from those, {\"doc\": <ref>, \"name\": ...} any of those renamed, {\"make\": {\"kind\": ...}} files generated in docs.py (a stamped sheet set C-1..C-10, an invented spec section as PDF or DOCX that contradicts some sheets, a submittal-log XLSX, a DXF plan, a JPEG phone photo, a scan, a sideways sheet, a blank PDF, planlens' synthetic report). Every flow runs as a Tiny Apps user (IIS header identity LIVESMOKE\\tester) unless it names another; SharePoint is the local fake library. Step keys: upload | paste (+say) | say | say + together_with ({\"as\", \"say\"} or a list: sent at the same moment, in threads; those sessions must have acted before) | new_conversation | open (\"previous\" or an index) | restart | restore; \"as\" picks a session. An upload of a type the app's uploader does not take (core.ACCEPTED_UPLOAD_TYPES, e.g. .docx/.xlsx) is refused before the app sees it, as Streamlit refuses it. 'cost' is a rough tier for --max-cost; 'expect' is soft (whether the flow exercised the plumbing it was written for), never a pass/fail: 'tools_any', 'artifact_ext', and 'answer_names' (phrases or case-insensitive regexes, or {\"name\", \"any\": [...]}, that the flow's final answer must contain; EV-26). 'env' sets switches for the flow; a pair of flows that differ only in a switch (F52/F52h, F61/F61j) runs both arms in one wave.",
+ "about": "Multi-turn Tiny Apps tester scenarios for the live smoke harness (module_work/live_smoke/run.py flow). PUBLIC documents only: Review-suite document ids (Mecklenburg County standard details, UFC manuals, the app's sample calc packages, planlens synthetic fixtures), {\"file\": ...} from geotech-references/docs (FHWA/UFC only), {\"sample\": ...} from funhouse_agent/eval_samples, {\"render\": ...} screenshots cut from those, {\"doc\": <ref>, \"name\": ...} any of those renamed, {\"make\": {\"kind\": ...}} files generated in docs.py (a stamped sheet set C-1..C-10, an invented spec section as PDF or DOCX that contradicts some sheets, a submittal-log XLSX, a DXF plan, a JPEG phone photo, a scan, a sideways sheet, a blank PDF, planlens' synthetic report). Every flow runs as a Tiny Apps user (IIS header identity LIVESMOKE\\tester) unless it names another; SharePoint is the local fake library. Step keys: upload | paste (+say) | say | say + together_with ({\"as\", \"say\"} or a list: sent at the same moment, in threads; those sessions must have acted before) | new_conversation | open (\"previous\" or an index) | restart | restore; \"as\" picks a session. An upload of a type the app's uploader does not take (core.ACCEPTED_UPLOAD_TYPES, e.g. .docx/.xlsx) is refused before the app sees it, as Streamlit refuses it. 'cost' is a rough tier for --max-cost; 'expect' is soft (whether the flow exercised the plumbing it was written for), never a pass/fail: 'tools_any', 'artifact_ext', 'answer_names' (phrases or case-insensitive regexes, or {\"name\", \"any\": [...]}, that the flow's final answer must contain; EV-26), and 'cards' (EV-24: the download cards the flow ends with, each {\"kind\": \"figure\" | \"image\" | \"chart\" | an extension, \"pattern\": a regex on the file name, \"count\" or \"min\"/\"max\", \"looked_at\": true}; with looked_at, a matching figure card no look read is a medium finding of detector (k)). 'reader_checks' lists what the trace read should check in the figure or answer; no code checks them, the transcript prints them. 'env' sets switches for the flow; a pair of flows that differ only in a switch (F52/F52h, F61/F61j) runs both arms in one wave.",
  "flows": [
   {
    "id": "F01-review-orient-scale",
@@ -205,13 +205,45 @@
   },
   {
    "id": "F18-geotech-calc-package",
-   "title": "Geotech page: bearing capacity with a calc package PDF",
+   "title": "Geotech page: bearing capacity with a calc package PDF (judgment calls OFF; EV-26)",
    "page": "geotech",
    "cost": "medium",
    "steps": [
     {"say": "Compute the ultimate and allowable bearing capacity of a 2 m square footing 1 m deep in sand (phi = 32 degrees, unit weight 19 kN/m3, factor of safety 3) and give me a calculation package as a PDF."}
    ],
-   "expect": {"artifact_ext": [".pdf"]}
+   "expect": {"artifact_ext": [".pdf"],
+    "answer_names": [
+     {"name": "the bearing capacity method", "any": ["vesi[cć]", "meyerhof", "terzaghi", "hansen", "brinch"]},
+     {"name": "the water table (not given)", "any": ["ground ?water", "water table", "\\bgwt\\b", "phreatic", "dewater", "(dry|moist|submerged|buoyant|effective) unit weight", "\\bno water\\b", "(above|below) the water"]},
+     {"name": "net or gross pressure under the factor of safety", "any": ["\\bnet\\b", "\\bgross\\b"]},
+     {"name": "general or local shear (how dense the sand is)", "any": ["general shear", "local shear", "punching", "relative density", "\\b(loose|dense)\\b"]},
+     {"name": "settlement, which may govern the allowable pressure", "any": ["settle(ment|s)"]},
+     {"name": "what would change the answer", "any": ["would change", "would (make|lower|raise|reduce|increase|drop|fall|govern)", "sensitiv", "(influenced|controlled|governed|driven) by", "hinges on", "depends (heavily |strongly |mainly )?on", "chang(e|es|ing) the (answer|result|capacity|forces?|moments?|factor of safety|fs|fos)"]}
+    ]
+   },
+   "reader_checks": ["for each call below, in the answer itself (not only in a PDF): stated, why (with its reference), the alternative set aside, and what would change the answer (a number only from a tool run)", "the bearing capacity method and its factors (Vesic, Meyerhof, Terzaghi or Hansen; N-gamma differs most between them at phi = 32): stated? why, with its reference? the alternative set aside? what would change the answer?", "the water table, not given (deep, or at the footing base, and what it does to q_ult): stated? why, with its reference? the alternative set aside? what would change the answer?", "net or gross pressure under the factor of safety of 3: stated? why, with its reference? the alternative set aside? what would change the answer?", "general shear, i.e. a sand dense enough for it (phi = 32 alone does not say): stated? why, with its reference? the alternative set aside? what would change the answer?", "the allowable pressure from strength alone, with settlement left out (for a 2 m footing on sand settlement may govern): stated? why, with its reference? the alternative set aside? what would change the answer?", "the calc PDF makes the same calls as the answer; which inputs the user gave and which the agent or a tool assumed, said as such"]
+  },
+  {
+   "id": "F18j-geotech-calc-package",
+   "title": "Geotech page: bearing capacity with a calc package PDF (judgment calls ON, GM-116; EV-26)",
+   "page": "geotech",
+   "cost": "medium",
+   "env": {"GEOTECH_JUDGMENT_CALLS": "1"},
+   "steps": [
+    {"say": "Compute the ultimate and allowable bearing capacity of a 2 m square footing 1 m deep in sand (phi = 32 degrees, unit weight 19 kN/m3, factor of safety 3) and give me a calculation package as a PDF."}
+   ],
+   "expect": {"artifact_ext": [".pdf"],
+    "answer_names": [
+     {"name": "the bearing capacity method", "any": ["vesi[cć]", "meyerhof", "terzaghi", "hansen", "brinch"]},
+     {"name": "the water table (not given)", "any": ["ground ?water", "water table", "\\bgwt\\b", "phreatic", "dewater", "(dry|moist|submerged|buoyant|effective) unit weight", "\\bno water\\b", "(above|below) the water"]},
+     {"name": "net or gross pressure under the factor of safety", "any": ["\\bnet\\b", "\\bgross\\b"]},
+     {"name": "general or local shear (how dense the sand is)", "any": ["general shear", "local shear", "punching", "relative density", "\\b(loose|dense)\\b"]},
+     {"name": "settlement, which may govern the allowable pressure", "any": ["settle(ment|s)"]},
+     {"name": "what would change the answer", "any": ["would change", "would (make|lower|raise|reduce|increase|drop|fall|govern)", "sensitiv", "(influenced|controlled|governed|driven) by", "hinges on", "depends (heavily |strongly |mainly )?on", "chang(e|es|ing) the (answer|result|capacity|forces?|moments?|factor of safety|fs|fos)"]},
+     {"name": "a \"Judgment calls\" list", "any": ["judge?ment calls?"]}
+    ]
+   },
+   "reader_checks": ["for each call below, in the answer itself (not only in a PDF): stated, why (with its reference), the alternative set aside, and what would change the answer (a number only from a tool run)", "the bearing capacity method and its factors (Vesic, Meyerhof, Terzaghi or Hansen; N-gamma differs most between them at phi = 32): stated? why, with its reference? the alternative set aside? what would change the answer?", "the water table, not given (deep, or at the footing base, and what it does to q_ult): stated? why, with its reference? the alternative set aside? what would change the answer?", "net or gross pressure under the factor of safety of 3: stated? why, with its reference? the alternative set aside? what would change the answer?", "general shear, i.e. a sand dense enough for it (phi = 32 alone does not say): stated? why, with its reference? the alternative set aside? what would change the answer?", "the allowable pressure from strength alone, with settlement left out (for a 2 m footing on sand settlement may govern): stated? why, with its reference? the alternative set aside? what would change the answer?", "the calc PDF makes the same calls as the answer; which inputs the user gave and which the agent or a tool assumed, said as such"]
   },
   {
    "id": "F19-geotech-memo-sharepoint-link",
@@ -635,13 +667,47 @@
   },
   {
    "id": "F51-geotech-fem-excavation",
-   "title": "Geotech page: a staged FEM excavation with a strut, and the wall's design forces (GM-71)",
+   "title": "Geotech page: a staged FEM excavation with a strut, and the wall's design forces (GM-71; judgment calls OFF; EV-26)",
    "page": "geotech",
    "cost": "medium",
    "steps": [
     {"say": "Run a 2D finite-element staged excavation: a 10 m wide, 5 m deep cut in stiff clay (c' = 25 kPa, phi' = 20 degrees, E = 20 MPa, nu = 0.3, unit weight 18 kN/m3) retained by a 10 m long sheet pile wall (EI = 50,000 kN*m2/m, EA = 2,000,000 kN/m) with one strut at 1.5 m depth (stiffness 50,000 kN/m per m). Give the moment and shear to design the wall for, the strut force, and how far the wall top moves and in which direction."}
    ],
-   "expect": {"tools_any": ["fem2d.fem2d_excavation", "fem2d_excavation"]}
+   "expect": {"tools_any": ["fem2d.fem2d_excavation", "fem2d_excavation"],
+    "answer_names": [
+     {"name": "drained or undrained", "any": ["\\bdrained\\b", "undrained", "effective[- ]stress", "long[- ]term", "short[- ]term"]},
+     {"name": "the water table (not given)", "any": ["ground ?water", "water table", "\\bgwt\\b", "phreatic", "dewater", "(dry|moist|submerged|buoyant|effective) unit weight", "\\bno water\\b", "(above|below) the water"]},
+     {"name": "the initial horizontal stress (K0)", "any": ["\\bk_?0\\b", "k₀", "at[- ]rest", "jaky", "initial (horizontal )?(stress|state)", "in[- ]situ stress"]},
+     {"name": "when the strut goes in (the lifts)", "any": ["\\blifts?\\b", "(install|plac|insert)\\w* (of )?(the )?strut", "strut (is |was |gets )?(install|plac|insert|add)", "before (the )?strut", "(first|second|initial|final) (lift|stage)"]},
+     {"name": "unfactored forces and the load factor for design", "any": ["factored", "service (level|loads?|state|forces?|values?)", "load factor", "characteristic", "\\buls\\b", "\\bsls\\b", "\\blrfd\\b", "(load|resistance) (or (load|resistance) )?factors?", "working (values?|loads?|forces?)"]},
+     {"name": "the soil model", "any": ["mohr[- ]coulomb", "linear[- ]elastic", "elasto-?plastic", "elastic[- ]perfectly[- ]plastic", "hardening soil", "constitutive", "soil model"]},
+     {"name": "what would change the answer", "any": ["would change", "would (make|lower|raise|reduce|increase|drop|fall|govern)", "sensitiv", "(influenced|controlled|governed|driven) by", "hinges on", "depends (heavily |strongly |mainly )?on", "chang(e|es|ing) the (answer|result|capacity|forces?|moments?|factor of safety|fs|fos)"]}
+    ]
+   },
+   "reader_checks": ["for each call below, in the answer itself (not only in a PDF): stated, why (with its reference), the alternative set aside, and what would change the answer (a number only from a tool run)", "drained (effective stress, long term, as the parameters given) or undrained (short term in a stiff clay): stated? why, with its reference? the alternative set aside? what would change the answer?", "the water table, not given (dry, or a level and the water inside the cut): stated? why, with its reference? the alternative set aside? what would change the answer?", "the initial horizontal stress K0 (Jaky's 1 - sin phi' = 0.66, or higher for an overconsolidated stiff clay): stated? why, with its reference? the alternative set aside? what would change the answer?", "when the strut goes in (a lift to 1.5 m before it, then to 5 m): stated? why, with its reference? the alternative set aside? what would change the answer?", "the moment, shear and strut force as unfactored values, and the load factor that makes them design values: stated? why, with its reference? the alternative set aside? what would change the answer?", "the soil model (Mohr-Coulomb, one stiffness for loading and unloading), the wall-soil interface and the model's extent: stated? why, with its reference? the alternative set aside? what would change the answer?", "the wall-top movement with its direction, and which inputs the user gave and which the agent or a tool assumed, said as such"]
+  },
+  {
+   "id": "F51j-geotech-fem-excavation",
+   "title": "Geotech page: a staged FEM excavation with a strut, and the wall's design forces (GM-71; judgment calls ON, GM-116; EV-26)",
+   "page": "geotech",
+   "cost": "medium",
+   "env": {"GEOTECH_JUDGMENT_CALLS": "1"},
+   "steps": [
+    {"say": "Run a 2D finite-element staged excavation: a 10 m wide, 5 m deep cut in stiff clay (c' = 25 kPa, phi' = 20 degrees, E = 20 MPa, nu = 0.3, unit weight 18 kN/m3) retained by a 10 m long sheet pile wall (EI = 50,000 kN*m2/m, EA = 2,000,000 kN/m) with one strut at 1.5 m depth (stiffness 50,000 kN/m per m). Give the moment and shear to design the wall for, the strut force, and how far the wall top moves and in which direction."}
+   ],
+   "expect": {"tools_any": ["fem2d.fem2d_excavation", "fem2d_excavation"],
+    "answer_names": [
+     {"name": "drained or undrained", "any": ["\\bdrained\\b", "undrained", "effective[- ]stress", "long[- ]term", "short[- ]term"]},
+     {"name": "the water table (not given)", "any": ["ground ?water", "water table", "\\bgwt\\b", "phreatic", "dewater", "(dry|moist|submerged|buoyant|effective) unit weight", "\\bno water\\b", "(above|below) the water"]},
+     {"name": "the initial horizontal stress (K0)", "any": ["\\bk_?0\\b", "k₀", "at[- ]rest", "jaky", "initial (horizontal )?(stress|state)", "in[- ]situ stress"]},
+     {"name": "when the strut goes in (the lifts)", "any": ["\\blifts?\\b", "(install|plac|insert)\\w* (of )?(the )?strut", "strut (is |was |gets )?(install|plac|insert|add)", "before (the )?strut", "(first|second|initial|final) (lift|stage)"]},
+     {"name": "unfactored forces and the load factor for design", "any": ["factored", "service (level|loads?|state|forces?|values?)", "load factor", "characteristic", "\\buls\\b", "\\bsls\\b", "\\blrfd\\b", "(load|resistance) (or (load|resistance) )?factors?", "working (values?|loads?|forces?)"]},
+     {"name": "the soil model", "any": ["mohr[- ]coulomb", "linear[- ]elastic", "elasto-?plastic", "elastic[- ]perfectly[- ]plastic", "hardening soil", "constitutive", "soil model"]},
+     {"name": "what would change the answer", "any": ["would change", "would (make|lower|raise|reduce|increase|drop|fall|govern)", "sensitiv", "(influenced|controlled|governed|driven) by", "hinges on", "depends (heavily |strongly |mainly )?on", "chang(e|es|ing) the (answer|result|capacity|forces?|moments?|factor of safety|fs|fos)"]},
+     {"name": "a \"Judgment calls\" list", "any": ["judge?ment calls?"]}
+    ]
+   },
+   "reader_checks": ["for each call below, in the answer itself (not only in a PDF): stated, why (with its reference), the alternative set aside, and what would change the answer (a number only from a tool run)", "drained (effective stress, long term, as the parameters given) or undrained (short term in a stiff clay): stated? why, with its reference? the alternative set aside? what would change the answer?", "the water table, not given (dry, or a level and the water inside the cut): stated? why, with its reference? the alternative set aside? what would change the answer?", "the initial horizontal stress K0 (Jaky's 1 - sin phi' = 0.66, or higher for an overconsolidated stiff clay): stated? why, with its reference? the alternative set aside? what would change the answer?", "when the strut goes in (a lift to 1.5 m before it, then to 5 m): stated? why, with its reference? the alternative set aside? what would change the answer?", "the moment, shear and strut force as unfactored values, and the load factor that makes them design values: stated? why, with its reference? the alternative set aside? what would change the answer?", "the soil model (Mohr-Coulomb, one stiffness for loading and unloading), the wall-soil interface and the model's extent: stated? why, with its reference? the alternative set aside? what would change the answer?", "the wall-top movement with its direction, and which inputs the user gave and which the agent or a tool assumed, said as such"]
   },
   {
    "id": "F52-geotech-figure-plan",
@@ -651,7 +717,7 @@
    "steps": [
     {"say": "Draw a plan for a report: the building footprint has corners at (40,60), (80,60), (80,85), (70,85), (70,100), (80,100), (80,150), (40,150) in our local site grid (metres). Borings and what they found: B-2 at (52,120) hard rock at 14.2 m; B-6 at (150,40) hard rock at 11.8 m; B-9 at (230,160) hard rock at 12.5 m; B-1 (45,70), B-3 (74,140), B-4 (95,90), B-5 (120,130), B-7 (160,95), B-8 (210,60) ended in soil without reaching hard rock. Show which borings reached hard rock, and let me see each boring's depth to rock when I hover."}
    ],
-   "expect": {"tools_any": ["plot_data"]}
+   "expect": {"tools_any": ["plot_data"], "cards": [{"kind": "figure", "count": 1}]}
   },
   {
    "id": "F52h-geotech-figure-plan",
@@ -662,7 +728,7 @@
    "steps": [
     {"say": "Draw a plan for a report: the building footprint has corners at (40,60), (80,60), (80,85), (70,85), (70,100), (80,100), (80,150), (40,150) in our local site grid (metres). Borings and what they found: B-2 at (52,120) hard rock at 14.2 m; B-6 at (150,40) hard rock at 11.8 m; B-9 at (230,160) hard rock at 12.5 m; B-1 (45,70), B-3 (74,140), B-4 (95,90), B-5 (120,130), B-7 (160,95), B-8 (210,60) ended in soil without reaching hard rock. Show which borings reached hard rock, and let me see each boring's depth to rock when I hover."}
    ],
-   "expect": {"tools_any": ["task", "plot_data"]}
+   "expect": {"tools_any": ["task", "plot_data"], "cards": [{"kind": "figure", "count": 1, "looked_at": true}]}
   },
   {
    "id": "F53-geotech-figure-cases-time",
@@ -672,7 +738,7 @@
    "steps": [
     {"say": "Make two figures for the report from these results. (1) Fraction of the footprint above the excavation level for five covariance cases - Exp 15 m: upper contact 0.42, persistent contact 0.16; Exp 30 m: 0.53, 0.14; Exp 60 m: 0.42, 0.21; Sph 30 m: 0.49, 0.21; Gau 30 m: 0.44, 0.21 - with our best estimate 0.16 marked. (2) Settlement of the embankment centre over time, no drains vs wick drains at 1.5 m, days 1, 3, 10, 30, 60, 100, 200, 400, 1000: no drains 5, 14, 40, 90, 150, 210, 300, 360, 395 mm; wick drains 12, 45, 130, 260, 340, 375, 392, 398, 400 mm; filling finished at day 60."}
    ],
-   "expect": {"tools_any": ["plot_data"]}
+   "expect": {"tools_any": ["plot_data"], "cards": [{"kind": "figure", "count": 2}]}
   },
   {
    "id": "F53h-geotech-figure-cases-time",
@@ -683,7 +749,7 @@
    "steps": [
     {"say": "Make two figures for the report from these results. (1) Fraction of the footprint above the excavation level for five covariance cases - Exp 15 m: upper contact 0.42, persistent contact 0.16; Exp 30 m: 0.53, 0.14; Exp 60 m: 0.42, 0.21; Sph 30 m: 0.49, 0.21; Gau 30 m: 0.44, 0.21 - with our best estimate 0.16 marked. (2) Settlement of the embankment centre over time, no drains vs wick drains at 1.5 m, days 1, 3, 10, 30, 60, 100, 200, 400, 1000: no drains 5, 14, 40, 90, 150, 210, 300, 360, 395 mm; wick drains 12, 45, 130, 260, 340, 375, 392, 398, 400 mm; filling finished at day 60."}
    ],
-   "expect": {"tools_any": ["task", "plot_data"]}
+   "expect": {"tools_any": ["task", "plot_data"], "cards": [{"kind": "figure", "count": 2, "looked_at": true}]}
   },
   {
    "id": "F54-geotech-figure-settlement-profile",
@@ -694,18 +760,46 @@
    "steps": [
     {"say": "Make the settlement profile figure for our report. Soil: 0 to 2 m sandy fill (unit weight 19 kN/m3), 2 to 9 m soft clay (16.5 kN/m3), 9 to 15 m dense sand (20 kN/m3); water table at 2 m depth. Oedometer tests in the clay gave preconsolidation pressures of 62 kPa at 3.0 m, 70 kPa at 4.5 m, 76 kPa at 6.0 m, 88 kPa at 7.5 m and 95 kPa at 8.5 m. The new fill adds 60 kPa at the surface, 58 at 3 m, 54 at 6 m, 49 at 9 m, 44 at 12 m and 40 at 15 m. I want the soil column on the left, then panels sharing one depth axis: initial vertical effective stress, the preconsolidation pressures as test points, and the added stress, so I can see where the clay is overconsolidated and where the final stress passes the preconsolidation pressure. Depth in metres down, stresses in kPa."}
    ],
-   "expect": {"tools_any": ["task", "plot_code"]}
+   "expect": {"tools_any": ["task", "plot_code"], "cards": [{"kind": "figure", "count": 1, "looked_at": true}]}
   },
   {
    "id": "F55-geotech-calc-wall-figure",
-   "title": "Geotech page: a wall drawn to scale with its pressure diagrams in a calc PDF (plot_code ON for the calc helper, GM-98)",
+   "title": "Geotech page: a wall drawn to scale with its pressure diagrams in a calc PDF (plot_code ON for the calc helper, GM-98; judgment calls OFF; EV-26)",
    "page": "geotech",
    "cost": "light",
    "env": {"GEOTECH_PLOT_CODE": "1"},
    "steps": [
     {"say": "Make a short calc PDF for the report on our cantilever retaining wall: retained height 4.0 m, stem 0.35 m thick, base 2.8 m wide and 0.5 m thick with a 0.7 m toe; backfill level with the top of the wall, unit weight 19 kN/m3, friction angle 32 degrees, no water, 10 kPa surcharge on the backfill. Use Rankine active pressure. Include a figure of the wall drawn to scale with the active earth pressure and the surcharge pressure drawn beside it as separate diagrams, each resultant and its height above the base marked."}
    ],
-   "expect": {"tools_any": ["task", "plot_code"]}
+   "expect": {"tools_any": ["task", "plot_code"], "cards": [{"kind": "pdf", "count": 1}, {"kind": "figure", "max": 1, "looked_at": true}],
+    "answer_names": [
+     {"name": "where the Rankine pressure acts", "any": ["virtual (back|plane|wall)", "(vertical )?plane (through|at|above|from) the (back of the |end of the )?heel", "through the (back of the |end of the )?heel", "(back|end) of the heel", "4\\.5 ?m"]},
+     {"name": "the soil under the base (not given)", "any": ["base[- ]soil", "foundation soil", "(soil|ground) (under|beneath|below) the (base|footing|wall)", "base (friction|interface|adhesion)", "(sliding|interface) friction", "δ_?b\\b", "delta_?b(ase)?\\b", "2/3"]},
+     {"name": "the concrete unit weight (not given)", "any": ["concrete (unit )?weight", "unit weight (of|for) (the )?concrete", "concrete[^.\\n]{0,30}\\b2[345](\\.\\d+)? ?kn/m", "\\b2[345](\\.\\d+)? ?kn/m[^.\\n]{0,30}concrete", "γ_?c\\b"]},
+     {"name": "what would change the answer", "any": ["would change", "would (make|lower|raise|reduce|increase|drop|fall|govern)", "sensitiv", "(influenced|controlled|governed|driven) by", "hinges on", "depends (heavily |strongly |mainly )?on", "chang(e|es|ing) the (answer|result|capacity|forces?|moments?|factor of safety|fs|fos)"]}
+    ]
+   },
+   "reader_checks": ["for each call below, in the answer itself (not only in a PDF): stated, why (with its reference), the alternative set aside, and what would change the answer (a number only from a tool run)", "where the Rankine pressure acts: the vertical plane through the heel over 4.5 m for stability, the stem's back over 4.0 m for the stem: stated? why, with its reference? the alternative set aside? what would change the answer?", "the soil under the base, not given (sliding friction, bearing): stated? why, with its reference? the alternative set aside? what would change the answer?", "if the calc checks stability (the prompt does not ask for it): passive resistance in front of the toe, counted or not: stated? why, with its reference? the alternative set aside? what would change the answer?", "the concrete unit weight, not given: stated? why, with its reference? the alternative set aside? what would change the answer?", "if the calc checks stability: the surcharge in the driving force but left off the resisting weight over the heel: stated? why, with its reference? the alternative set aside? what would change the answer?", "if the calc checks stability: the factors of safety the checks are held to, not given: stated? why, with its reference? the alternative set aside? what would change the answer?", "the calc PDF makes the same calls as the answer; which inputs the user gave and which the agent or a tool assumed, said as such"]
+  },
+  {
+   "id": "F55j-geotech-calc-wall-figure",
+   "title": "Geotech page: a wall drawn to scale with its pressure diagrams in a calc PDF (plot_code ON for the calc helper, GM-98; judgment calls ON, GM-116; EV-26)",
+   "page": "geotech",
+   "cost": "light",
+   "env": {"GEOTECH_PLOT_CODE": "1", "GEOTECH_JUDGMENT_CALLS": "1"},
+   "steps": [
+    {"say": "Make a short calc PDF for the report on our cantilever retaining wall: retained height 4.0 m, stem 0.35 m thick, base 2.8 m wide and 0.5 m thick with a 0.7 m toe; backfill level with the top of the wall, unit weight 19 kN/m3, friction angle 32 degrees, no water, 10 kPa surcharge on the backfill. Use Rankine active pressure. Include a figure of the wall drawn to scale with the active earth pressure and the surcharge pressure drawn beside it as separate diagrams, each resultant and its height above the base marked."}
+   ],
+   "expect": {"tools_any": ["task", "plot_code"], "cards": [{"kind": "pdf", "count": 1}, {"kind": "figure", "max": 1, "looked_at": true}],
+    "answer_names": [
+     {"name": "where the Rankine pressure acts", "any": ["virtual (back|plane|wall)", "(vertical )?plane (through|at|above|from) the (back of the |end of the )?heel", "through the (back of the |end of the )?heel", "(back|end) of the heel", "4\\.5 ?m"]},
+     {"name": "the soil under the base (not given)", "any": ["base[- ]soil", "foundation soil", "(soil|ground) (under|beneath|below) the (base|footing|wall)", "base (friction|interface|adhesion)", "(sliding|interface) friction", "δ_?b\\b", "delta_?b(ase)?\\b", "2/3"]},
+     {"name": "the concrete unit weight (not given)", "any": ["concrete (unit )?weight", "unit weight (of|for) (the )?concrete", "concrete[^.\\n]{0,30}\\b2[345](\\.\\d+)? ?kn/m", "\\b2[345](\\.\\d+)? ?kn/m[^.\\n]{0,30}concrete", "γ_?c\\b"]},
+     {"name": "what would change the answer", "any": ["would change", "would (make|lower|raise|reduce|increase|drop|fall|govern)", "sensitiv", "(influenced|controlled|governed|driven) by", "hinges on", "depends (heavily |strongly |mainly )?on", "chang(e|es|ing) the (answer|result|capacity|forces?|moments?|factor of safety|fs|fos)"]},
+     {"name": "a \"Judgment calls\" list", "any": ["judge?ment calls?"]}
+    ]
+   },
+   "reader_checks": ["for each call below, in the answer itself (not only in a PDF): stated, why (with its reference), the alternative set aside, and what would change the answer (a number only from a tool run)", "where the Rankine pressure acts: the vertical plane through the heel over 4.5 m for stability, the stem's back over 4.0 m for the stem: stated? why, with its reference? the alternative set aside? what would change the answer?", "the soil under the base, not given (sliding friction, bearing): stated? why, with its reference? the alternative set aside? what would change the answer?", "if the calc checks stability (the prompt does not ask for it): passive resistance in front of the toe, counted or not: stated? why, with its reference? the alternative set aside? what would change the answer?", "the concrete unit weight, not given: stated? why, with its reference? the alternative set aside? what would change the answer?", "if the calc checks stability: the surcharge in the driving force but left off the resisting weight over the heel: stated? why, with its reference? the alternative set aside? what would change the answer?", "if the calc checks stability: the factors of safety the checks are held to, not given: stated? why, with its reference? the alternative set aside? what would change the answer?", "the calc PDF makes the same calls as the answer; which inputs the user gave and which the agent or a tool assumed, said as such"]
   },
   {
    "id": "F56-geotech-figure-grain-size",
@@ -716,7 +810,8 @@
    "steps": [
     {"say": "Plot the grain-size distribution curves for the report's lab appendix. Percent finer by weight at sieve sizes 75, 37.5, 19, 9.5, 4.75, 2.0, 0.85, 0.425, 0.25, 0.15 and 0.075 mm, then hydrometer at 0.03, 0.01, 0.005 and 0.002 mm. B-1 S-3 (3.0 m): 100, 100, 98, 94, 88, 80, 71, 60, 48, 35, 22, 15, 10, 7, 5. B-2 S-2 (1.5 m): 100, 95, 85, 74, 62, 51, 42, 33, 26, 19, 12 (no hydrometer). B-3 S-5 (6.0 m): 100, 100, 100, 100, 100, 99, 98, 97, 96, 94, 88, 72, 50, 38, 26."}
    ],
-   "expect": {"tools_any": ["task", "plot_code", "plot_data"]}
+   "expect": {"tools_any": ["task", "plot_code", "plot_data"], "cards": [{"kind": "figure", "count": 1, "looked_at": true}]},
+   "reader_checks": ["particle size on a log axis in mm, coarse on the left", "every point as given; B-2 stops at 0.075 mm (no hydrometer)", "no test standard, zone or boundary the user did not give stated as theirs"]
   },
   {
    "id": "F57-geotech-figure-plasticity-chart",
@@ -727,7 +822,8 @@
    "steps": [
     {"say": "Plot our Atterberg limits on a plasticity chart for the report: B-1 S-4 LL 38, PI 18; B-1 S-6 LL 55, PI 31; B-2 S-3 LL 46, PI 14; B-3 S-2 LL 29, PI 9; B-3 S-5 LL 62, PI 38; B-4 S-1 LL 24, PI 5."}
    ],
-   "expect": {"tools_any": ["task", "plot_code", "plot_data"]}
+   "expect": {"tools_any": ["task", "plot_code", "plot_data"], "cards": [{"kind": "figure", "count": 1, "looked_at": true}]},
+   "reader_checks": ["the six points at their LL and PI", "the A-line horizontal at PI 4 up to LL 25.5, then PI = 0.73(LL - 20) (ASTM D2487)", "the CL-ML band from PI 4 to 7, out to the PI = LL line", "'CL or OL' between the A-line and the U-line, not above the U-line"]
   },
   {
    "id": "F58-geotech-figure-subsurface-profile",
@@ -738,7 +834,8 @@
    "steps": [
     {"say": "Draw a subsurface profile along the line B-1 to B-4 for the report. Station along the line and ground surface elevation: B-1 at 0 m, el. 102.4 m; B-2 at 35 m, el. 101.1; B-3 at 70 m, el. 99.8; B-4 at 110 m, el. 98.6. Strata (bottom elevations): B-1 fill to 100.9, soft lean clay (CL) to 95.4, medium dense silty sand (SM) to 89.4, end of boring; B-2 fill to 100.1, CL to 94.6, SM to 88.1; B-3 CL to 93.8 (no fill), SM to 87.8; B-4 CL to 92.9, SM to 86.6. Groundwater measured at el. 99.6 (B-1), 99.3 (B-2), 98.9 (B-3) and 98.2 (B-4). SPT N60 at sample elevations: B-1 101.6: 12, 100.1: 4, 98.6: 3, 97.1: 5, 95.6: 4, 94.1: 18, 92.6: 22, 91.1: 25, 89.6: 27; B-2 100.5: 10, 99.0: 3, 97.5: 4, 96.0: 4, 94.5: 16, 93.0: 21, 91.5: 24, 90.0: 26, 88.5: 30; B-3 99.2: 5, 97.7: 3, 96.2: 4, 94.7: 5, 93.2: 17, 91.7: 20, 90.2: 23, 88.7: 28; B-4 98.0: 6, 96.5: 4, 95.0: 3, 93.5: 5, 92.0: 15, 90.5: 19, 89.0: 24, 87.5: 27."}
    ],
-   "expect": {"tools_any": ["task", "plot_code", "plot_data"]}
+   "expect": {"tools_any": ["task", "plot_code", "plot_data"], "cards": [{"kind": "figure", "count": 1, "looked_at": true}]},
+   "reader_checks": ["elevations and stations as given; each boring at its own ground level", "each stratum's bottom, the water levels and the N60 values as given"]
   },
   {
    "id": "F59-geotech-figure-mohr-circles",
@@ -749,7 +846,8 @@
    "steps": [
     {"say": "Plot the consolidated-undrained triaxial results for sample B-2 S-4 for the report: Mohr circles in effective stress at failure and the failure envelope, with the effective friction angle and cohesion from a fit to the three specimens. At failure: sigma'3 = 50, 100 and 200 kPa; sigma'1 = 165, 310 and 590 kPa."}
    ],
-   "expect": {"tools_any": ["task", "plot_code", "plot_data"]}
+   "expect": {"tools_any": ["task", "plot_code", "plot_data"], "cards": [{"kind": "figure", "count": 1, "looked_at": true}]},
+   "reader_checks": ["equal scales on both stress axes", "each circle at its centre and radius; the envelope tangent to the circles"]
   },
   {
    "id": "F60-geotech-figure-settlement-monitoring",
@@ -760,7 +858,8 @@
    "steps": [
     {"say": "Plot the embankment's settlement-plate readings for the report, with the fill height in a panel above sharing the time axis. Days since the start of filling: 0, 10, 20, 30, 45, 60, 90, 120, 180. Fill height (m): 0, 1.0, 2.0, 3.0, 4.0, 4.0, 4.0, 4.0, 4.0. Settlement (mm): SP-1 0, 12, 30, 55, 90, 118, 150, 172, 185; SP-2 0, 8, 22, 40, 66, 85, 108, 124, 133."}
    ],
-   "expect": {"tools_any": ["task", "plot_code", "plot_data"]}
+   "expect": {"tools_any": ["task", "plot_code", "plot_data"], "cards": [{"kind": "figure", "count": 1, "looked_at": true}]},
+   "reader_checks": ["readings joined by straight lines or shown as points, never a stair (the fill is not 0 m while the plates settle)", "one time axis shared by both panels; settlement increasing downward"]
   },
   {
    "id": "F61-geotech-slope-weak-layer",
@@ -775,9 +874,11 @@
     "answer_names": [
      {"name": "the circular search", "any": ["(?<!non)(?<!non-)(?<!non )circular", "circles?\\b"]},
      {"name": "a surface in or along the weak layer", "any": ["non-?circular", "\\bblock\\b", "\\bwedge\\b", "planar", "translational", "along the (base of the |top of the |weak |residual )?(layer|clay|contact|interface|rock|sandstone)", "(within|confined to|inside) the (weak |residual |upper )?(layer|clay)", "shallow (slide|slip|surface|failure|circle|mechanism)", "daylight\\w* (on|at|in) the (face|slope)"]},
+     {"name": "the limit-equilibrium method and why", "any": ["(spencer|bishop|morgenstern|\\bgle\\b|janbu)[^.\\n]{0,100}(because|since|satisf\\w*|equilibrium)", "(because|since)[^.\\n]{0,80}(spencer|bishop|morgenstern|\\bgle\\b)"]},
      {"name": "what would change the answer", "any": ["would change", "would (make|lower|raise|reduce|increase|drop|fall|govern)", "sensitiv", "(influenced|controlled|governed|driven) by", "hinges on", "if (the )?(residual |weak )?(groundwater|water|clay|strength|c'|phi|φ|ϕ|layer)", "depends (heavily |strongly |mainly )?on", "chang(e|es|ing) the (answer|result|factor of safety|fs|fos)"]}
     ]
-   }
+   },
+   "reader_checks": ["for each call below, in the answer itself (not only in a PDF): stated, why (with its reference), the alternative set aside, and what would change the answer (a number only from a tool run)", "the search (the automatic circles, the windows, a surface along the layer): stated? why, with its reference? the alternative set aside? what would change the answer?", "the method (Spencer, a Bishop screen): stated? why, with its reference? the alternative set aside? what would change the answer?", "the clay's c' = 3 kPa (c' = 0 gives the infinite-slope value): stated? why, with its reference? the alternative set aside? what would change the answer?", "the layer read as horizontal, and no water: stated? why, with its reference? the alternative set aside? what would change the answer?", "the sandstone's depth (the model base, assumed; el. -30 m is the tool's default, so naming it is the call): stated? why, with its reference? the alternative set aside? what would change the answer?", "a target factor of safety, if one is named, with its reference", "which inputs the user gave and which the agent or a tool assumed, said as such"]
   },
   {
    "id": "F61j-geotech-slope-weak-layer",
@@ -793,10 +894,72 @@
     "answer_names": [
      {"name": "the circular search", "any": ["(?<!non)(?<!non-)(?<!non )circular", "circles?\\b"]},
      {"name": "a surface in or along the weak layer", "any": ["non-?circular", "\\bblock\\b", "\\bwedge\\b", "planar", "translational", "along the (base of the |top of the |weak |residual )?(layer|clay|contact|interface|rock|sandstone)", "(within|confined to|inside) the (weak |residual |upper )?(layer|clay)", "shallow (slide|slip|surface|failure|circle|mechanism)", "daylight\\w* (on|at|in) the (face|slope)"]},
+     {"name": "the limit-equilibrium method and why", "any": ["(spencer|bishop|morgenstern|\\bgle\\b|janbu)[^.\\n]{0,100}(because|since|satisf\\w*|equilibrium)", "(because|since)[^.\\n]{0,80}(spencer|bishop|morgenstern|\\bgle\\b)"]},
      {"name": "what would change the answer", "any": ["would change", "would (make|lower|raise|reduce|increase|drop|fall|govern)", "sensitiv", "(influenced|controlled|governed|driven) by", "hinges on", "if (the )?(residual |weak )?(groundwater|water|clay|strength|c'|phi|φ|ϕ|layer)", "depends (heavily |strongly |mainly )?on", "chang(e|es|ing) the (answer|result|factor of safety|fs|fos)"]},
      {"name": "a \"Judgment calls\" list", "any": ["judge?ment calls?"]}
     ]
-   }
+   },
+   "reader_checks": ["for each call below, in the answer itself (not only in a PDF): stated, why (with its reference), the alternative set aside, and what would change the answer (a number only from a tool run)", "the search (the automatic circles, the windows, a surface along the layer): stated? why, with its reference? the alternative set aside? what would change the answer?", "the method (Spencer, a Bishop screen): stated? why, with its reference? the alternative set aside? what would change the answer?", "the clay's c' = 3 kPa (c' = 0 gives the infinite-slope value): stated? why, with its reference? the alternative set aside? what would change the answer?", "the layer read as horizontal, and no water: stated? why, with its reference? the alternative set aside? what would change the answer?", "the sandstone's depth (the model base, assumed; el. -30 m is the tool's default, so naming it is the call): stated? why, with its reference? the alternative set aside? what would change the answer?", "a target factor of safety, if one is named, with its reference", "which inputs the user gave and which the agent or a tool assumed, said as such"]
+  },
+  {
+   "id": "F62-geotech-figure-excavation-section",
+   "title": "Geotech page: a cross-section through an excavation with its strata and the water before and during dewatering (plot_code ON; a figure the tools do not name; EV-24)",
+   "page": "geotech",
+   "cost": "light",
+   "env": {"GEOTECH_PLOT_CODE": "1"},
+   "steps": [
+    {"say": "Draw the cross-section through the proposed excavation for the report, at true scale (the same scale across and up). Distance along the section x in metres from its left end, elevations in metres. The ground is level at el. 100.0 from x = 0 to x = 70. Strata, level across the section, by bottom elevation: fill to el. 98.5; medium dense silty sand to el. 92.0; stiff clay to el. 85.0; weathered sandstone below that, to the bottom of the section at el. 80.0. Groundwater before construction is at el. 97.0. The excavation runs from x = 29 to x = 41 down to a base at el. 94.0, retained by sheet pile walls at x = 29 and x = 41 with their toes at el. 88.0 and one level of struts at el. 98.5. Inside the excavation the water is pumped down to el. 93.5. Outside, the water level during dewatering is el. 96.2 at each wall and rises back to el. 97.0 at 20 m from the wall (x = 9 and x = 61). Show the water level before and during dewatering."}
+   ],
+   "expect": {"tools_any": ["task", "plot_code", "plot_data"], "cards": [{"kind": "figure", "count": 1, "looked_at": true}]},
+   "reader_checks": ["an elevation axis in m, one scale across and up", "each contact at its elevation (98.5, 92.0, 85.0) and level across; the walls to el. 88.0, struts at el. 98.5, base at el. 94.0", "the water before (el. 97.0) and during dewatering (el. 93.5 inside; 96.2 at each wall, back to 97.0 at x = 9 and x = 61) told apart", "strata named as given; nothing drawn the user did not give (no flow arrows, no extra layers)"]
+  },
+  {
+   "id": "F63-geotech-figure-consolidation-curve",
+   "title": "Geotech page: an oedometer test's void ratio against log stress, loading and unloading, with the stresses we picked marked (plot_code ON; a figure the tools do not name; EV-24)",
+   "page": "geotech",
+   "cost": "light",
+   "env": {"GEOTECH_PLOT_CODE": "1"},
+   "steps": [
+    {"say": "Plot the one-dimensional consolidation test on B-2 S-5, taken at 7.5 m, for the lab appendix: void ratio against vertical effective stress on a log scale. Initial void ratio 1.12. Loading, stress (kPa) and void ratio at the end of each increment: 12.5, 1.105; 25, 1.095; 50, 1.078; 100, 1.040; 200, 0.955; 400, 0.850; 800, 0.745; 1600, 0.640. Unloading: 400, 0.662; 100, 0.690; 25, 0.712. Mark the preconsolidation pressure we picked, 85 kPa, and the vertical effective stress in the ground at the sample depth, 62 kPa, and give Cc = 0.35 and Cr = 0.04 from our reduction."}
+   ],
+   "expect": {"tools_any": ["task", "plot_code", "plot_data"], "cards": [{"kind": "figure", "count": 1, "looked_at": true}]},
+   "reader_checks": ["stress on a log axis in kPa showing every increment (12.5 to 1600); void ratio on a linear axis", "loading and unloading told apart; the unloading branch runs from 1600 back to 25 kPa", "85 kPa and 62 kPa marked as given, not re-picked; Cc 0.35 and Cr 0.04 as given, not recomputed", "the initial void ratio 1.12 not plotted at a stress nobody gave"]
+  },
+  {
+   "id": "F64-geotech-figure-exploration-plan",
+   "title": "Geotech page: an exploration location plan with three kinds of points, two buildings and a property line, north from the survey (plot_code ON; EV-24)",
+   "page": "geotech",
+   "cost": "light",
+   "env": {"GEOTECH_PLOT_CODE": "1"},
+   "steps": [
+    {"say": "Make the exploration location plan for the report. Coordinates are our site grid (easting, northing in metres); the survey sheet shows grid north 18 degrees east of true north. Property line corners: (0, 0), (120, 0), (120, 85), (65, 110), (0, 110). Existing building, to be demolished: (15, 20), (45, 20), (45, 45), (15, 45). Proposed building: (30, 35), (95, 35), (95, 80), (30, 80). Borings: B-1 (25, 30), B-2 (60, 40), B-3 (90, 45), B-4 (50, 75), B-5 (85, 78). Test pits: TP-1 (10, 95), TP-2 (105, 15), TP-3 (70, 100). Cone soundings: C-1 (40, 55), C-2 (75, 60), C-3 (100, 70). Give each kind of exploration its own symbol and label every point."}
+   ],
+   "expect": {"tools_any": ["task", "plot_code", "plot_data"], "cards": [{"kind": "figure", "count": 1, "looked_at": true}]},
+   "reader_checks": ["drawn as a plan: one scale both ways, a scale bar, no axis frame or tick numbers", "the north arrow points to TRUE north, 18 degrees anticlockwise (west) of the sheet's up, since grid north is 18 degrees east of true north", "the property line closed through all five corners; the existing building told apart from the proposed one", "three symbols with a key; all eleven points labelled at their coordinates"]
+  },
+  {
+   "id": "F65-geotech-figure-groundwater-record",
+   "title": "Geotech page: groundwater levels in three wells over a year with rainfall below and the design level (plot_code ON; a figure the tools do not name; EV-24)",
+   "page": "geotech",
+   "cost": "light",
+   "env": {"GEOTECH_PLOT_CODE": "1"},
+   "steps": [
+    {"say": "Plot the groundwater observations for the report: the water level elevation (m) in observation wells OW-1, OW-2 and OW-3 on each reading date, with the rainfall for the month before each reading as bars in a panel below on the same date axis, and our design groundwater level, el. 46.5 m, as a line. Reading dates: 2025-01-10, 2025-02-11, 2025-03-12, 2025-04-10, 2025-05-12, 2025-06-11, 2025-07-10, 2025-08-12, 2025-09-10, 2025-10-13, 2025-11-12, 2025-12-10, 2026-01-12, 2026-02-10. OW-1: 45.8, 46.1, 46.4, 46.2, 45.9, 45.5, 45.2, 45.0, 45.1, 45.4, 45.9, 46.3, 46.6, 46.4. OW-2: 44.9, 45.2, 45.6, 45.5, 45.1, 44.7, 44.4, 44.2, 44.3, 44.6, 45.0, 45.4, 45.8, 45.6. OW-3: 46.6, 46.9, 47.1, 47.0, 46.7, not read (blocked), not read (blocked), 45.9, 46.0, 46.3, 46.7, 47.0, 47.3, 47.1. Rainfall (mm): 98, 85, 110, 72, 54, 30, 12, 8, 25, 61, 104, 120, 131, 95."}
+   ],
+   "expect": {"tools_any": ["task", "plot_code", "plot_data"], "cards": [{"kind": "figure", "count": 1, "looked_at": true}]},
+   "reader_checks": ["a date axis shared by both panels; elevations in m, rainfall in mm", "OW-3's two missed readings left out, not filled in (no points in June or July)", "the design level at el. 46.5, with OW-3 above it in winter and spring", "each rainfall bar at its reading date; no trend or forecast the user did not give"]
+  },
+  {
+   "id": "F66-geotech-figure-pile-options",
+   "title": "Geotech page: three pile options' factored resistance against embedded length with the factored load (plot_code ON; a figure the tools do not name; EV-24)",
+   "page": "geotech",
+   "cost": "light",
+   "env": {"GEOTECH_PLOT_CODE": "1"},
+   "steps": [
+    {"say": "Compare the three pile options for the report: factored axial resistance against embedded length, with the factored load per pile, 1,800 kN, as a line, so we can read the length each option needs. Embedded lengths 12, 15, 18, 21, 24, 27 and 30 m. Factored resistance (kN): 356 mm square precast concrete 980, 1210, 1450, 1720, 2010, 2310, 2620; HP 310x110 steel H-pile 820, 1030, 1270, 1540, 1830, 2150, 2490; 406 mm closed-end steel pipe 1050, 1290, 1530, 1790, 2060, 2340, 2640."}
+   ],
+   "expect": {"tools_any": ["task", "plot_code", "plot_data"], "cards": [{"kind": "figure", "count": 1, "looked_at": true}]},
+   "reader_checks": ["the 1,800 kN line; resistance in kN, length in m", "each option crosses 1,800 kN where straight-line reading puts it: concrete about 21.8 m, H-pile about 23.7 m, pipe about 21.1 m", "the three options told apart, best by labels on the lines", "any required length printed is a reading off the data, no more precise than they allow"]
   }
  ]
 }

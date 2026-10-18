@@ -22,6 +22,9 @@ on, an upload and its automatic orientation turn), the scripted model:
 
 The second turn is a clean control ("Thanks" -> a plain answer): it must
 raise no high or medium finding.
+
+:func:`recheck` is the other $0 check: detector (k) and the flow
+expectations run again over a wave already recorded on disk.
 """
 
 from __future__ import annotations
@@ -201,5 +204,82 @@ def run(wave: str = "dry-run", runs_dir: str = None, verbose: bool = False
             "wave_dir": w.dir, "turns": dj.get("turns")}
 
 
+class _Turns:
+    """A session for :func:`detectors.detect_expectations`: its turns."""
+
+    def __init__(self, turns):
+        self.turns = turns
+
+
+def _find(conv: str, name: str) -> str:
+    """Where a card named ``name`` sits in a copied conversation folder
+    (``files/`` first)."""
+    first = os.path.join(conv, "files", name)
+    if os.path.isfile(first):
+        return first
+    for root, _dirs, files in os.walk(conv):
+        if name in files:
+            return os.path.join(root, name)
+    return first
+
+
+def recheck(wave_dir: str, ids=(), *, flows=None,
+            looks_everywhere: bool = False) -> dict:
+    """Detector (k) and the flow expectations again over a wave already on
+    disk: no model, no API, $0 (BACKLOG EV-24).
+
+    Each turn is rebuilt from the scenario's ``detectors.json`` and its
+    copied conversation folder (the copy keeps the files' times, which (k)
+    compares with the activity log's), and judged with the CURRENT
+    ``flows.json`` expectations, so new ``expect`` keys can be tried on an
+    old wave. ``looks_everywhere`` asks for a look at every figure card, as
+    if every flow said ``"looked_at": true``. Returns ``{scenario:
+    {"turns": [[finding, ...], ...], "scenario": [finding, ...]}}``."""
+    import json
+    from live_smoke import detectors as det
+    from live_smoke import runner
+    flows = {f["id"]: f for f in (flows if flows is not None
+                                  else runner.load_flows())}
+    out = {}
+    for sid in sorted(os.listdir(wave_dir)):
+        path = os.path.join(wave_dir, sid, "detectors.json")
+        if sid.startswith("_") or not os.path.isfile(path):
+            continue
+        if ids and not any(sid == i or sid.startswith(i) for i in ids):
+            continue
+        with open(path, encoding="utf-8") as fh:
+            dj = json.load(fh)
+        flow = dict(flows.get(sid) or dj.get("flow") or {"id": sid})
+        expect = dict(flow.get("expect") or {})
+        if looks_everywhere:
+            expect["cards"] = list(expect.get("cards") or []) + [
+                {"kind": "figure", "min": 0, "looked_at": True}]
+        flow["expect"] = expect
+        recs, found, seen = [], [], {}
+        for i, t in enumerate(dj.get("turns") or []):
+            conv = os.path.join(wave_dir, sid, "conversations",
+                                f"{t.get('session')}_"
+                                f"{str(t.get('thread_id') or '')[:8]}")
+            if not os.path.isdir(conv):
+                found.append([])
+                continue
+            n = seen[conv] = seen.get(conv, 0) + 1
+            acts = det.load_activity(conv)
+            mine = [k for k, a in enumerate(acts) if a.get("turn") == n]
+            lo, hi = (mine[0], mine[-1] + 1) if mine else (0, None)
+            rec = {"conv_dir": conv, "files_dir": os.path.join(conv, "files"),
+                   "final": t.get("final") or "", "t_end": float(i + 1),
+                   "activity_offset": lo, "activity_end": hi,
+                   "entry": {"artifacts": [_find(conv, c)
+                                           for c in t.get("cards") or []]}}
+            recs.append(rec)
+            found.append(det.detect_figure_cards(
+                det.turn_context(rec, expect=expect)))
+        out[sid] = {"turns": found,
+                    "scenario": det.detect_expectations(flow,
+                                                        [_Turns(recs)])}
+    return out
+
+
 __all__ = ["run", "bad_policy", "FLOW", "EXPECTED", "fired", "rogue_tool",
-           "redirect_request"]
+           "redirect_request", "recheck"]

@@ -13,7 +13,8 @@ Detector (a) compares a before and an after snapshot of:
 * ``c_tmp`` -- ``C:\\tmp``, which is where ``/tmp/...`` lands on Windows;
 * ``repo``  -- the source checkout's top level.
 
-The harness's own output and pytest's folders are left out.
+The harness's own output and pytest's folders are left out, and so is
+Claude Code's own ``~/.claude.json`` (:data:`SKIP_FILES`).
 """
 
 from __future__ import annotations
@@ -36,6 +37,17 @@ DELIVERABLE_EXT = (".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv", ".png",
 SKIP_DIRS = {"__pycache__", ".git", ".venv", "node_modules", ".pytest_cache",
              "geotech-references", "build", "dist"}
 SKIP_PREFIXES = ("pytest-of-", "claude")
+
+#: File names never recorded: Claude Code's own state file in the home
+#: folder (and its backups, ``.claude.json.<anything>``). The Claude Code
+#: sessions running beside a wave rewrite it during every turn, and the app
+#: never writes it: both of wave w9's low ``unattributed_file_in_home``
+#: findings were this file (TRACE_REVIEW §2.11, BACKLOG EV-24).
+SKIP_FILES = (".claude.json",)
+
+
+def _skip_file(name: str) -> bool:
+    return any(name == n or name.startswith(n + ".") for n in SKIP_FILES)
 
 
 def watched_roots(cwd: Optional[str] = None) -> Dict[str, Tuple[str, int]]:
@@ -85,6 +97,8 @@ def snapshot(roots: Dict[str, Tuple[str, int]],
                 if d >= depth:
                     dirs[:] = []
                 for n in names:
+                    if _skip_file(n):
+                        continue
                     p = os.path.join(root, n)
                     try:
                         st = os.stat(p)
@@ -113,4 +127,5 @@ def diff(before: Dict[str, Dict[str, list]],
     return sorted(out, key=lambda d: (d["root"], d["path"]))
 
 
-__all__ = ["watched_roots", "snapshot", "diff", "DELIVERABLE_EXT", "REPO"]
+__all__ = ["watched_roots", "snapshot", "diff", "DELIVERABLE_EXT", "REPO",
+           "SKIP_FILES"]

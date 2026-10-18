@@ -24,6 +24,7 @@ DETECTOR_TITLES = {
     "h_restore": "(h) Restore from SharePoint",
     "i_expectations": "(i) Flow expectations (model choices, not bugs)",
     "j_conversation": "(j) Conversation record (meta, titles, owner)",
+    "k_figure_cards": "(k) Figure cards (stale draws, cards no look read)",
     "harness": "Harness problems",
 }
 
@@ -52,6 +53,26 @@ def _md(text: str, n: int = 160) -> str:
     return t if len(t) <= n else t[:n - 1] + "…"
 
 
+def code_line(code: Optional[dict]) -> str:
+    """``Code: app `abc1234` (master) ...`` from ``wave.json``'s ``code``."""
+    if not code:
+        return ""
+    parts = []
+    for key, label in (("app", "app"), ("geotech_references", "references"),
+                       ("planlens", "planlens")):
+        c = code.get(key) or {}
+        if not c.get("commit"):
+            continue
+        s = f"{label} `{c['commit'][:10]}`"
+        if c.get("branch"):
+            s += f" ({c['branch']})"
+        if c.get("dirty"):
+            s += (f" **with uncommitted changes** "
+                  f"({len(c.get('changed') or [])} files)")
+        parts.append(s)
+    return ("Code: " + " · ".join(parts)) if parts else ""
+
+
 def write_report(wave_dir: str, *, ledger=None, wave: Optional[str] = None
                  ) -> str:
     """Render ``<wave_dir>/REPORT.md``; returns its path."""
@@ -72,6 +93,14 @@ def write_report(wave_dir: str, *, ledger=None, wave: Optional[str] = None
     L.append(f"Mode `{meta.get('mode')}` · model `{meta.get('model')}` · "
              f"cap ${float(meta.get('cap_usd') or 0):.2f} · updated "
              f"{meta.get('updated')}")
+    code = code_line(meta.get("code"))
+    if code:
+        L.append("")
+        L.append(code)
+    for earlier in meta.get("code_earlier") or []:
+        L.append("")
+        L.append(f"Earlier session of this wave ({earlier.get('recorded')}): "
+                 + code_line(earlier))
     if meta.get("stopped"):
         L.append("")
         L.append(f"**STOPPED:** {meta['stopped']}")
@@ -169,6 +198,11 @@ def write_transcript(path: str, flow: dict, turns: List[dict],
             ", ".join(f"{k}={str(v)[:60]}" for k, v in s.items())
             for s in flow["steps"]))
         L.append("")
+    if flow.get("reader_checks"):
+        L.append("**What a reader checks** (for the trace read; no code "
+                 "checks these):")
+        L += [f"- {c}" for c in flow["reader_checks"]]
+        L.append("")
     for i, t in enumerate(turns, 1):
         m = t.get("metrics") or {}
         L.append(f"## Turn {i} · {t.get('session')} · {t.get('kind')} · "
@@ -229,4 +263,4 @@ def write_transcript(path: str, flow: dict, turns: List[dict],
         fh.write("\n".join(L) + "\n")
 
 
-__all__ = ["write_report", "write_transcript"]
+__all__ = ["write_report", "write_transcript", "code_line"]

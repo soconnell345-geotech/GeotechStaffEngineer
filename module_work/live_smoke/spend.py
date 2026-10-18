@@ -430,7 +430,120 @@ def spend_line(ledger: SpendLedger, wave: str, cap: float,
             f"${ledger.cumulative:.4f} of ${ledger.hard_total:.2f}")
 
 
+# ---------------------------------------------------------------------------
+# Estimating a wave before it runs
+# ---------------------------------------------------------------------------
+
+#: USD per flow when nothing like it has run on the model (by cost tier;
+#: a rough Sonnet figure).
+FALLBACK_USD = {"light": 0.40, "medium": 0.80, "heavy": 2.50}
+#: A wave's suggested cap: the estimate times this, rounded up to $0.50.
+CAP_MARGIN = 1.5
+
+
+def _flow_number(fid: str) -> str:
+    """``F18`` for ``F18-geotech-...``, ``F18j-...`` and ``F18j``: the arms
+    of one question share the number."""
+    import re
+    m = re.match(r"^(F\d+)", str(fid))
+    return m.group(1) if m else str(fid)
+
+
+def recorded_costs(runs_dir: str, model_id: str) -> Dict[str, List[float]]:
+    """``{scenario id: [USD, ...]}``: what each scenario cost every time it
+    ran to the end on ``model_id``, as the meter priced it
+    (``runs/<wave>/<scenario>/summary.json``). Fake waves record
+    ``"<model> (scripted fake)"`` and never match; scenarios a cap cut short
+    or that carried unpriced calls are left out."""
+    out: Dict[str, List[float]] = {}
+    if not os.path.isdir(runs_dir):
+        return out
+    for wave in sorted(os.listdir(runs_dir)):
+        wdir = os.path.join(runs_dir, wave)
+        if wave.startswith("_") or not os.path.isdir(wdir):
+            continue
+        for sid in sorted(os.listdir(wdir)):
+            try:
+                with open(os.path.join(wdir, sid, "summary.json"),
+                          encoding="utf-8") as fh:
+                    s = json.load(fh)
+            except (OSError, ValueError):
+                continue
+            if s.get("model") != model_id or s.get("incomplete") \
+                    or s.get("unmetered"):
+                continue
+            out.setdefault(str(s.get("id") or sid), []).append(
+                float(s.get("usd") or 0.0))
+    return out
+
+
+def estimate_flows(flows: List[dict], model_id: str, runs_dir: str, *,
+                   pool: Optional[List[dict]] = None,
+                   margin: float = CAP_MARGIN) -> dict:
+    """What a wave of ``flows`` should cost on ``model_id``, from what the
+    meter recorded before (``pool``, default ``flows``, is where 3 and 4
+    look for like flows: pass every flow in ``flows.json``). Per flow, the
+    first that applies:
+
+    1. the dearest recorded run of the flow itself;
+    2. the dearest recorded run of its other arm (the same F-number: F18
+       for F18j, F61 for F61j);
+    3. the mean of the dearest runs of recorded flows with the same page,
+       cost tier and switches (``env``);
+    4. the same with the page and cost tier only;
+    5. :data:`FALLBACK_USD` by cost tier.
+
+    A dict ``{"id": ...}`` with nothing else (a flow not written yet) is
+    estimated by 2 and then 5. Returns ``{"rows": [{"id", "usd", "basis"}],
+    "total_usd", "suggested_cap_usd", "model"}``; the cap is the total times
+    ``margin``, rounded up to $0.50."""
+    import math
+    rec = recorded_costs(runs_dir, model_id)
+    best = {k: max(v) for k, v in rec.items()}
+    known = {f["id"]: f for f in (pool or flows) if f.get("steps")}
+
+    def env_key(f):
+        return tuple(sorted((f.get("env") or {}).items()))
+
+    def peers(f, with_env):
+        return [best[i] for i, g in known.items() if i in best
+                and g.get("page") == f.get("page")
+                and g.get("cost", "medium") == f.get("cost", "medium")
+                and (not with_env or env_key(g) == env_key(f))]
+
+    rows = []
+    for f in flows:
+        fid = f["id"]
+        twins = [i for i in best if i != fid
+                 and _flow_number(i) == _flow_number(fid)]
+        if fid in best:
+            usd, basis = best[fid], (f"the dearest of {len(rec[fid])} "
+                                     "recorded run(s)")
+        elif twins:
+            usd = max(best[i] for i in twins)
+            basis = f"its other arm ({', '.join(sorted(twins))})"
+        elif f.get("steps") and peers(f, True):
+            p = peers(f, True)
+            usd = sum(p) / len(p)
+            basis = (f"mean of {len(p)} recorded flows with the same page, "
+                     "cost tier and switches")
+        elif f.get("steps") and peers(f, False):
+            p = peers(f, False)
+            usd = sum(p) / len(p)
+            basis = f"mean of {len(p)} recorded flows with the same page " \
+                    "and cost tier"
+        else:
+            usd = FALLBACK_USD.get(f.get("cost", "medium"), 0.80)
+            basis = "no record: the cost tier's default"
+        if not f.get("steps"):
+            basis += "; not in flows.json yet"
+        rows.append({"id": fid, "usd": round(usd, 4), "basis": basis})
+    total = sum(r["usd"] for r in rows)
+    return {"model": model_id, "rows": rows, "total_usd": round(total, 4),
+            "suggested_cap_usd": math.ceil(total * margin * 2) / 2.0}
+
+
 __all__ = ["HARD_TOTAL_USD", "PRICES", "SpendLedger", "SpendMeter",
            "WaveCapReached", "RefuseToStart", "UnpricedModel", "rates_for",
            "cost_of", "split_usage", "usage_from_raw", "spend_line",
-           "DEFAULT_LEDGER"]
+           "DEFAULT_LEDGER", "recorded_costs", "estimate_flows"]

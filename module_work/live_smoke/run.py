@@ -21,6 +21,14 @@ Modes
              purpose (saves to temp, links a missing file, fails a tool) and
              prints which detectors fired. Never touches the spend ledger.
 ``report``   re-render ``runs/<wave>/REPORT.md`` from disk.
+``recheck``  detector (k) (figure cards) and the flow expectations again
+             over a recorded wave, with today's ``flows.json`` ($0, no
+             model). ``--looks`` asks for a look at every figure card.
+``estimate`` what a flow wave should cost on ``--model``, from the meter's
+             record of earlier runs (``runs/*/*/summary.json``), and a
+             suggested cap. ``--ids`` picks as ``flow`` does (by prefix),
+             so the same ids give the same flows; an id matching no flow
+             (one not written yet) is estimated from its other arm.
 ``ledger``   print the spend ledger.
 ``list``     list flows, geotech question ids and suite task ids.
 
@@ -37,6 +45,8 @@ Examples::
     run.py geotech --wave g1 --cap 3.00 --model claude-haiku-5-5 --ids BC-1,SE-1,RW-1
     run.py suite --wave s1 --cap 4.00 --model claude-haiku-5-5 --ids fixture-markups,produce-memo
     run.py flow --wave fake-all --cap 0 --fake
+    run.py recheck --wave w9-figures
+    run.py estimate --model claude-sonnet-5-5 --ids F56,F57,F60,F18
 """
 
 from __future__ import annotations
@@ -73,7 +83,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("mode", choices=("flow", "geotech", "suite", "dry-run",
-                                     "report", "ledger", "list"))
+                                     "report", "recheck", "estimate",
+                                     "ledger", "list"))
     ap.add_argument("--wave", help="wave name (its folder under runs/)")
     ap.add_argument("--cap", type=float, help="wave cap in USD")
     ap.add_argument("--model", default="claude-haiku-5-5",
@@ -92,6 +103,8 @@ def main(argv=None) -> int:
     ap.add_argument("--orientation", action="store_true",
                     help="suite: send the orientation turn first")
     ap.add_argument("--docs-dir", default=None, help="suite: docs folder")
+    ap.add_argument("--looks", action="store_true",
+                    help="recheck: ask for a look at every figure card")
     ap.add_argument("--ledger", default=None, help="ledger path (default "
                     "module_work/live_smoke/spend_ledger.json)")
     args = ap.parse_args(argv)
@@ -124,6 +137,36 @@ def main(argv=None) -> int:
         res = dryrun.run(wave=args.wave or "dry-run", verbose=True)
         print(json.dumps(res["fired"], indent=1))
         return 0 if res["ok"] else 1
+    if args.mode == "recheck":
+        if not args.wave:
+            ap.error("recheck needs --wave")
+        from live_smoke import dryrun
+        res = dryrun.recheck(os.path.join(runner.RUNS, args.wave),
+                             _ids(args.ids), looks_everywhere=args.looks)
+        for sid, r in res.items():
+            print(f"[{sid}]")
+            for i, fs in enumerate(r["turns"], 1):
+                for f in fs:
+                    print(f"  turn {i}: {f['severity']} {f['detector']}/"
+                          f"{f['code']}: {f['message']}")
+            for f in r["scenario"]:
+                print(f"  flow: {f['severity']} {f['detector']}/"
+                      f"{f['code']}: {f['message']}")
+        return 0
+    if args.mode == "estimate":
+        flows = runner.load_flows()
+        picked = []
+        # the same prefix rule as ``flow --ids`` (F18 picks F18 and F18j)
+        for i in _ids(args.ids) or [f["id"] for f in flows]:
+            hits = _pick(flows, [i])
+            picked += [f for f in hits if f not in picked] or [{"id": i}]
+        est = spend.estimate_flows(picked, args.model, runner.RUNS,
+                                   pool=flows)
+        for r in est["rows"]:
+            print(f"{r['id']:<44} ${r['usd']:.4f}  {r['basis']}")
+        print(f"{'total':<44} ${est['total_usd']:.4f} on {est['model']}; "
+              f"suggested cap ${est['suggested_cap_usd']:.2f}")
+        return 0
 
     if not args.wave or args.cap is None:
         ap.error(f"{args.mode} needs --wave and --cap")
