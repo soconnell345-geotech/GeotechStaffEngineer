@@ -329,8 +329,17 @@ def add_text_retrieval(registry, info, ref_package_name, reference_str):
     """Add retrieve_section / search_sections / list_chapters / load_chapter."""
     from geotech_references import _retrieval
 
+    # geotech-references before REF-24 has no include_subsections (and
+    # always inlined a section's subsections); pass it only where taken.
+    takes_include = "include_subsections" in inspect.signature(
+        _retrieval.retrieve_section).parameters
+
     def _retrieve(params):
-        return _retrieval.retrieve_section(ref_package_name, params["section_id"])
+        kwargs = {}
+        if takes_include and params.get("include_subsections"):
+            kwargs["include_subsections"] = True
+        return _retrieval.retrieve_section(
+            ref_package_name, params["section_id"], **kwargs)
 
     def _search(params):
         return {"result": _retrieval.search_sections(ref_package_name, params["query"])}
@@ -344,19 +353,31 @@ def add_text_retrieval(registry, info, ref_package_name, reference_str):
     _TEXT = {
         "retrieve_section": (_retrieve, {
             "category": "Text Retrieval",
-            "brief": "Retrieve a specific section by its ID.",
+            "brief": ("Retrieve one section by its ID, at any level: its own "
+                      "text, 'under' (the sections above it) and 'children' "
+                      "(ID and title of each subsection, fetched by its own "
+                      "ID)."),
             "reference": reference_str,
             "parameters": {
                 "section_id": {
                     "type": "str", "required": True,
-                    "description": "Section identifier (e.g. '5.7.2', '4.4').",
+                    "description": ("Section identifier at any level (e.g. "
+                                    "'4.4', '5.7.2', '7.2.1.3.1')."),
+                },
+                "include_subsections": {
+                    "type": "bool", "required": False, "default": False,
+                    "description": ("Inline the subsections' text too, when "
+                                    "the whole fits in 12,000 characters; "
+                                    "otherwise they stay listed in "
+                                    "'children' with a note."),
                 },
             },
             "returns": "dict",
         }),
         "search_sections": (_search, {
             "category": "Text Retrieval",
-            "brief": "Keyword search across all sections.",
+            "brief": ("Keyword search across every section and subsection; "
+                      "each hit carries 'under' (the sections above it)."),
             "reference": reference_str,
             "parameters": {
                 "query": {
@@ -368,7 +389,8 @@ def add_text_retrieval(registry, info, ref_package_name, reference_str):
         }),
         "list_chapters": (_list_ch, {
             "category": "Text Retrieval",
-            "brief": "List all chapters and their section IDs.",
+            "brief": ("List all chapters and their section IDs, subsections "
+                      "included (a nested one carries parent_id)."),
             "reference": reference_str,
             "parameters": {},
             "returns": "list of dict",

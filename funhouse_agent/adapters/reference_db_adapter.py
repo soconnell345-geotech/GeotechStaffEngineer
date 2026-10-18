@@ -28,15 +28,27 @@ _SEARCH_ALIASES = {"max_results": "limit", "top_k": "limit",
 
 
 def _build():
+    import inspect
+
     from geotech_references import _retrieval_db
+
+    # geotech-references before REF-24 has no include_subsections (and no
+    # subsection rows to inline); pass it only where taken.
+    takes_include = "include_subsections" in inspect.signature(
+        _retrieval_db.reference_get).parameters
 
     def reference_search(query: str, reference: str = "",
                          chapter: int = 0, limit: int = 5) -> list:
-        """Full-text search across all structured reference text.
+        """Full-text search across all structured reference text, every
+        section and subsection indexed with its own text; each hit's
+        ``under`` names the sections above it.
 
         Returns ranked summary-only hits — call ``reference_get`` to
         fetch the full body. Search is the noise-reduction lever:
-        run it first to scope, then drill in.
+        run it first to scope, then drill in. The hit is the section
+        that holds the words (a method's own subsection, e.g. GEC-12
+        7.2.1.3.1 for "Nordlund", not only the chapter section above
+        it).
 
         Parameters
         ----------
@@ -60,6 +72,8 @@ def _build():
         list
             Summary-only hits, each with ``reference``, ``reference_title``,
             ``chapter``, ``chapter_title``, ``section_id``, ``title``,
+            ``parent_id``, ``under`` (e.g. ``"7.2 Strength Limit States >
+            7.2.1 Nominal Axial ..."``; empty at the top level),
             ``summary``.
         """
         ref = reference if reference else None
@@ -68,8 +82,14 @@ def _build():
             query, reference=ref, chapter=ch, limit=int(limit)
         )
 
-    def reference_get(reference: str, section_id: str) -> dict:
-        """Fetch the full body of one section by id.
+    def reference_get(reference: str, section_id: str,
+                      include_subsections: bool = False) -> dict:
+        """Fetch the full body of one section by id, at any level; its
+        subsections are listed in ``children`` (id and title), each
+        fetched by its own id, not inlined.
+
+        A missing id's error names the nearest section above it and the
+        sections numbered under it.
 
         Parameters
         ----------
@@ -77,16 +97,26 @@ def _build():
             Reference id (e.g. ``"dm7_1"``, ``"gec_12"``,
             ``"micropile"``).
         section_id : str
-            Section id as it appears in the source. Examples:
-            UFC hyphen-then-dot ``"4-2.1"``, ``"5-5.4"``;
-            FHWA dot ``"5.7.2"``; prologue ``"P-1"``.
+            Section id as it appears in the source, at any level.
+            Examples: UFC hyphen-then-dot ``"4-2.1"``, ``"5-5.4"``;
+            FHWA dot ``"5.7.2"``, ``"7.2.1.3.1"``; prologue ``"P-1"``.
+        include_subsections : bool, optional
+            Inline the subsections' text as ``subsections`` when the
+            whole fits in 12,000 characters; otherwise they stay listed
+            in ``children`` with a note. Default False.
 
         Returns
         -------
         dict
             Full section dict with body, key_points, applicability,
-            equations (with implemented_in), figures, tables.
+            equations (with implemented_in), figures, tables, plus
+            ``under`` (the sections above it), ``parent_id`` and
+            ``children`` (``section_id`` and ``title`` of each section
+            directly under it).
         """
+        if takes_include and include_subsections:
+            return _retrieval_db.reference_get(
+                reference, section_id, include_subsections=True)
         return _retrieval_db.reference_get(reference, section_id)
 
     def reference_query(sql: str) -> list:
@@ -94,11 +124,13 @@ def _build():
 
         Tables available:
 
-        - ``sections`` — one row per section. Columns: ``reference``,
-          ``reference_title``, ``chapter``, ``chapter_title``,
-          ``section_id``, ``title``, ``summary``, ``body``,
-          ``key_points``, ``applicability``, ``equations_json``,
-          ``figures_json``, ``tables_json``.
+        - ``sections`` — one row per section, at every level. Columns:
+          ``rowid``, ``reference``, ``reference_title``, ``chapter``,
+          ``chapter_title``, ``section_id``, ``title``, ``summary``,
+          ``body``, ``key_points``, ``applicability``, ``equations_json``,
+          ``figures_json``, ``tables_json``, ``parent_rowid`` (the row
+          of the section above; NULL at the top level), ``depth``,
+          ``parents_json``.
         - ``sections_fts`` — FTS5 virtual table. Use
           ``sections_fts MATCH '...'`` and ``bm25(sections_fts)``.
 
