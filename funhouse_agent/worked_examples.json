@@ -16,7 +16,7 @@
    "pile foundation"
   ],
   "source": "FHWA GEC-12, Design and Construction of Driven Pile Foundations, Vol 3 (FHWA-NHI-16-064), Appendix D, North Abutment design example, Table D-6 (nominal resistance vs depth)",
-  "problem": "A bridge abutment is supported on driven HP 12x74 H-piles (box convention: perimeter ~4.06 ft, toe area ~1.03 ft2). The pile head is at the bottom of the footing, 5 ft below grade; the profile below the footing is 20 ft of loose silty sand (phi = 33 deg, gamma = 105 pcf = 16.494 kN/m3), then 25 ft of medium dense sand (phi = 36 deg, gamma = 112 pcf = 17.594 kN/m3), then dense sandy gravel (shaft phi = 36 deg, design-limit toe phi = 40 deg, gamma = 125 pcf = 19.636 kN/m3). Groundwater is 10 ft (3.048 m) below the footing. Compute the nominal axial resistance (Nordlund shaft + toe) for a pile driven 60 ft (18.288 m) below the footing. Because the footing sits in an excavation, model depths FROM the footing bottom (z=0 at the pile head), not the ground surface.",
+  "problem": "A bridge abutment is supported on driven HP 12x74 H-piles (box convention: perimeter ~4.06 ft, toe area ~1.03 ft2). The pile head is at the bottom of the footing, 5 ft (1.524 m) below grade. The profile below the ground surface is 25 ft of loose silty sand (phi = 33 deg, gamma = 105 pcf = 16.494 kN/m3), then 25 ft of medium dense sand (phi = 36 deg, gamma = 112 pcf = 17.594 kN/m3), then dense sandy gravel (shaft phi = 36 deg, design-limit toe phi = 40 deg, gamma = 125 pcf = 19.636 kN/m3). Groundwater is 15 ft (4.572 m) below grade. Compute the nominal axial resistance (Nordlund shaft + toe) for a pile driven 60 ft (18.288 m) below the footing. Model the profile FROM THE GROUND SURFACE with the pile head at the footing (head_depth = 1.524 m): the shaft starts at the head, and the effective stress keeps the 5 ft of soil above it, as the published table does (its toe at 0.01 ft below the footing is 16.4 kips, which needs that stress).",
   "dispatch_calls": [
    {
     "module": "axial_pile",
@@ -33,11 +33,12 @@
      "pile_type": "h_pile",
      "designation": "HP12x74",
      "pile_length": 18.288,
-     "gwt_depth": 3.048,
+     "gwt_depth": 4.572,
+     "head_depth": 1.524,
      "factor_of_safety": 2.5,
      "layers": [
       {
-       "thickness": 6.096,
+       "thickness": 7.62,
        "soil_type": "cohesionless",
        "unit_weight": 16.494,
        "friction_angle": 33,
@@ -66,14 +67,13 @@
   "computed_result": {
    "perimeter_m": 1.237,
    "tip_area_m2": 0.095635,
-   "Q_skin_kN": 1570.6,
-   "Q_tip_kN": 1909.4,
-   "Q_ultimate_kN": 3480.1,
-   "Q_allowable_kN": 1392.0,
-   "note_2026_07_19": "Q_tip/Q_ultimate refreshed after the Fig 7-15 qL re-digitization (phi=40 cap 19,000 -> 19,152 kPa, +0.8%; low-phi values corrected up to 10x — see axial_pile/nordlund.py provenance note). Toe then 411.7 kips vs published plateau 428.1 (-3.8%).",
-   "note_2026_10_08": "Fig 7-15 re-measured off the printed figure (phi=40 cap 19,152 -> 19,966 kPa, 208.5 tsf). Toe now 429.3 kips (1909.4 kN) vs the published plateau 428.1 (+0.3%); total 3480.1 kN vs 3435 (+1.3%)."
+   "Q_skin_kN": 1547.2,
+   "Q_tip_kN": 1600.0,
+   "Q_ultimate_kN": 3147.2,
+   "Q_allowable_kN": 1258.9,
+   "note_2026_10_18": "GM-121: the GEC-12 Nordlund charts (delta/phi 0.79 from Fig. 7-9 curve f at V = 0.151 ft3/ft, K_delta from Tables 7-6/7-7, C_F from Fig. 7-14) and the profile from the ground surface with head_depth. Shaft 1547.2 kN = 347.8 kips vs 344.1 published (+1.1 %). The toe applies GEC-12 Step 8's limit on sigma'p (3 ksf): alpha_t N'q x 3 ksf x box area = 1600.0 kN (359.7 kips), -16 % vs the 428.1-kip plateau, because the published DrivenPiles run did not apply Step 8 (sigma'v at its toe is 4.2 ksf; its plateau is q_L(40) of Fig. 7-15 x box area). With toe_stress_limit null the module gives 1909.4 kN (429.3 kips, +0.3 %) and a total of 3456.6 kN (+0.6 %). Before GM-121: shaft 1570.6 kN (fitted K_delta, delta/phi 0.75, the footing-datum profile), toe 1909.4, total 3480.1."
   },
-  "report_notes": "A good report states the H-pile box convention (shaft on box perimeter 2(d+bf), toe on box area d*bf — confirm via make_pile_section: 1.237 m = 4.06 ft, 0.0956 m2 = 1.03 ft2), the footing-bottom datum (layers clipped at the footing line, GWT shifted up accordingly — modeling from grade would add ~5 ft of spurious skin friction), and the separate design-limit toe phi = 40 deg via per-layer toe_friction_angle. Computed vs published: shaft +2.6%, toe +0.3% (module's Meyerhof q_L cap at phi=40 governs at 429.3 kips vs the 428.1 kip plateau), total +1.3% — all within the +/-15% validation tolerance. Report Q_skin/Q_tip separately with sigma_v at the tip, and the FS basis (ASD FS = 2.5 here).",
+  "report_notes": "A good report states the H-pile box convention (shaft on box perimeter 2(d+bf), toe on box area d*bf; confirm via make_pile_section: 1.237 m = 4.06 ft, 0.0956 m2 = 1.03 ft2), the datum (profile from the ground surface, pile head at the footing via head_depth, the soil above the footing counted in sigma'), the separate design-limit toe phi = 40 deg via per-layer toe_friction_angle, and the Nordlund chart values the result lists in its choices (V, delta/phi, K_delta, C_F per layer). It states the toe basis as a judgment: GEC-12 Step 8 limits sigma'p to 3 ksf (module default, 359.7 kips); GEC-12's own worked example did not (428.1 kips). Computed vs published: shaft +1.1 %, toe -16 % with Step 8 (+0.3 % without), total -8.4 % (+0.6 %). Report Q_skin/Q_tip separately with sigma'v at the toe, and the FS basis (ASD FS = 2.5 here).",
   "provenance": "validation_examples/test_published_v001_v005.py::test_v001_hpile_box_section_convention, test_v001_nordlund_shaft_resistance_matches, test_v001_highlevel_api_toe_phi40_matches_plateau",
   "source_doc": "GEC 12 Vol 3.pdf",
   "source_pdf_pages": [
@@ -2134,14 +2134,14 @@
   "computed_result": {
    "perimeter_m": 1.2192,
    "tip_area_m2": 0.092903,
-   "Q_skin_kN": 491.1,
+   "Q_skin_kN": 715.3,
    "Q_tip_kN": 44.0,
-   "Q_ultimate_kN": 535.1,
-   "Q_allowable_kN": 267.5,
-   "vs_published": "Q_ultimate 535.1 vs 711.7 kN (-24.8%). The gap is an input-assumption difference, not an arithmetic one: the manual's site-specific stipulation is adhesion = cohesion (alpha = 1.0) in both layers, while axial_pile_capacity applies the standard Tomlinson design curve for concrete piles, which gives alpha = 1.0 for the soft clay (upper-layer skin 89.0 kN matches the printed 10 tons EXACTLY) but alpha = 0.642 at cu = 52.7 kPa in the lower clay.",
-   "reconciliation": "Lower-layer skin computed 402.1 kN; dividing out the module's alpha (402.1/0.642 = 626.4 kN) reproduces the printed 622.7 kN within +0.6%. With alpha = 1 in both layers and the toe dropped (the manual neglects 9*cu*At; the module includes it, +44.0 kN) the kernel reproduces the printed 711.7 kN within 0.5%. Perimeter (1.2192 m = 4 ft) and tip area (0.0929 m2 = 1 ft2) match the manual's Cd and At exactly."
+   "Q_ultimate_kN": 759.3,
+   "Q_allowable_kN": 379.7,
+   "vs_published": "Q_ultimate 759.3 vs 711.7 kN (+6.7 %); without the toe the manual neglects, 715.3 kN (+0.5 %). Since GM-121 the module reads Ca off GEC-12 Fig. 7-17 (concrete, timber, corrugated curves; D/b with D from the ground surface), at most su: the chart gives alpha = 1.006 in the upper clay (su 0.5 ksf, D = 10b) and 1.074 in the lower clay (su 1.1 ksf, D = 42b, the D = 40b curve), both taken as 1.0 (Ca at most su), so 89.0 kN and 626.3 kN vs the printed 10 tons (89.0 kN) and 70 tons (622.7 kN; 2.2 tons/ft x 32 ft = 70.4 tons). Before GM-121 a simplified alpha curve gave 0.642 in the lower clay and the total was 535.1 kN (-24.8 %).",
+   "reconciliation": "The module's alpha is 1.0 in both layers, as the manual's site-specific alpha; with the toe dropped (the manual neglects 9*cu*At; the module includes it, +44.0 kN) it reproduces the printed 711.7 kN within 0.6 % (the manual rounds 70.4 tons to 70). Perimeter (1.2192 m = 4 ft) and tip area (0.0929 m2 = 1 ft2) match the manual's Cd and At exactly."
   },
-  "report_notes": "A capacity report should state the adhesion basis explicitly: the manual uses a site-specific load-test-backed alpha = 1.0, whereas without such data standard practice (and this module) reads alpha from the Tomlinson curves, which is 36% lower in the 1,100-psf clay - a defensible, conservative difference that directly lengthens the required pile. Also state whether toe resistance in clay is counted (the manual neglects it; the module reports it separately as Q_tip so it can be excluded). The reconciliation above shows the module's alpha-method kernel matches the printed arithmetic to <1% once those two assumptions are aligned.",
+  "report_notes": "A capacity report should state the adhesion basis explicitly: the manual uses a site-specific, load-test-backed alpha = 1.0, while the module reads Ca from GEC-12 Fig. 7-17, whose D = 40b curve for concrete piles passes slightly above Ca = su (alpha 1.07 at su = 1.1 ksf) and is held at su (alpha 1.0). Name the curve, D/b and the Ca-at-most-su limit from the result's choices list, and whether toe resistance in clay is counted (the manual neglects it; the module reports it separately as Q_tip so it can be excluded). The reconciliation above shows the module's alpha-method kernel matches the printed arithmetic to <1 % once those two assumptions are aligned.",
   "provenance": "NHI-06-089 Example 9-3, pdf pp.168-169",
   "source_doc": "FHWA NHI-06-089 Soils and Foundations Vol 2.pdf",
   "source_pdf_pages": [

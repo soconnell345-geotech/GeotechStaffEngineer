@@ -377,8 +377,7 @@ def _axial():
                             AxialSoilProfile, make_h_pile)
     soil = AxialSoilProfile(layers=[AxialSoilLayer(
         thickness=25.0, soil_type="cohesionless", unit_weight=18.0,
-        friction_angle=32.0,
-        delta_phi_ratio=0.75)])            # the tool's delta/phi
+        friction_angle=32.0)])     # delta/phi from GEC-12 Fig. 7-9 (GM-121)
     return AxialPileAnalysis(pile=make_h_pile("HP12x53"), soil=soil,
                              pile_length=20.0).compute()
 

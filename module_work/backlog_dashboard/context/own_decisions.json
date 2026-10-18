@@ -982,5 +982,93 @@
    "downdrag/DESIGN.md, \"Settlement below the toe\"",
    "geotech-references/docs/ufc_3_220_20_2025.pdf p. 449; GEC-12 Vol I p. 324"
   ]
- }
+ },
+  "OWN-63": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Driven piles: five places where GEC-12 leaves a reading open. Which default should each take?",
+    "why": "GM-121 made the pile module follow GEC-12 chapter 7's printed charts and limits. Five readings change capacities by 10-50 % and the manual leaves them to judgment; each result already states its choice.",
+    "background": "Reviewed against the printed manual: Fig. 7-17 (p. 248) traced to about 0.02 ksf, Tables 7-6/7-7 to 0.005. (1) Above the chart's su range p. 247 recommends API RP 2A for highly overconsolidated clays; GEC-12's own worked example (Vol 3 Table D-100) held Ca at the chart's end. With API, a published clay example's shaft comes out 25-53 % above it; at the chart's end, 1-13 %. (2) The printed D = 40b curve gives Ca slightly above su (alpha up to 1.1); API caps alpha at 1.0 (p. 252). (3) Step 8 (p. 243) limits the toe's effective stress to 3 ksf; a published example that did not apply it is 16 % higher at the toe. (4) p. 247 puts H-piles on the corrugated curve; the worked example used smooth steel. (5) Fig. 7-17's legend measures D from the ground surface; Step 1 speaks of the embedded length in clay.",
+    "parts": [
+      {
+        "label": "1. Above Fig. 7-17's su range",
+        "options": [
+          {
+            "label": "Hold Ca at the chart's end (current default)",
+            "effect": "Matches GEC-12's worked example; lower, conservative."
+          },
+          {
+            "label": "API RP 2A alpha",
+            "effect": "p. 247's recommendation for highly overconsolidated clays; Ca jumps at the chart's end."
+          },
+          {
+            "label": "API only where the clay is highly overconsolidated (su / sigma'v > 1)",
+            "effect": "Follows p. 247's condition literally; needs sigma'v, which the module has."
+          }
+        ]
+      },
+      {
+        "label": "2. Ca above su inside the chart",
+        "options": [
+          {
+            "label": "Cap Ca at su (current default)",
+            "effect": "alpha <= 1.0 as API; a published soft-over-stiff clay example within 1 %."
+          },
+          {
+            "label": "Read the printed curve as drawn",
+            "effect": "alpha up to 1.1; that example 13 % above published."
+          }
+        ]
+      },
+      {
+        "label": "3. Step 8's 3 ksf limit on the toe's effective stress",
+        "options": [
+          {
+            "label": "On by default (current)",
+            "effect": "As GEC-12 prints it; deep sand toes lower."
+          },
+          {
+            "label": "Off by default, an option",
+            "effect": "Matches older published examples; higher toe capacity."
+          }
+        ]
+      },
+      {
+        "label": "4. H-piles in clay",
+        "options": [
+          {
+            "label": "Corrugated steel curve (current default)",
+            "effect": "p. 247's text."
+          },
+          {
+            "label": "Smooth steel curve",
+            "effect": "GEC-12's worked example's choice; lower adhesion."
+          }
+        ]
+      },
+      {
+        "label": "5. D for Fig. 7-17",
+        "options": [
+          {
+            "label": "From the ground surface (current default)",
+            "effect": "The figure's legend."
+          },
+          {
+            "label": "From the top of the clay",
+            "effect": "Step 1's 'embedded pile length in clay'; a smaller D/b, so the D = 10b curve sooner."
+          }
+        ]
+      }
+    ],
+    "recommendation": "Keep the current defaults: each is either GEC-12's printed text or its own worked example's basis, and on (1) and (2) the conservative side. The module states every one in its results, so the engineer sees the reading used.",
+    "if_no_answer": "The current defaults stay, stated in every result's choices.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-63",
+      "axial_pile/DESIGN.md",
+      "GEC-12 (FHWA-NHI-16-064) Vol I pp. 243-252, Vol III Table D-100"
+    ]
+  }
 }

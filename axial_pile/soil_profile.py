@@ -35,10 +35,9 @@ class AxialSoilLayer:
     cohesion : float, optional
         Undrained shear strength cu (kPa). Required for cohesive.
     delta_phi_ratio : float, optional
-        Ratio of pile-soil friction angle to soil friction angle (delta/phi).
-        If None, ``nordlund.delta_from_phi`` supplies the default:
-        0.75 for steel, 0.90 for concrete/timber (GEC-12 Table 7-1 typical
-        values). Can be overridden per layer.
+        Ratio of pile-soil friction angle to soil friction angle (delta/phi)
+        for the Nordlund side resistance. If None (default), GEC-12 Figure
+        7-9 gives it by pile type and displaced volume V (Step 2).
     toe_friction_angle : float, optional
         Separate drained friction angle phi (degrees) used for TOE
         (end-bearing) resistance when the pile tip falls in this layer.
@@ -51,6 +50,15 @@ class AxialSoilLayer:
         layers, which use 9*cu at the toe.
     description : str, optional
         Layer description.
+    beta : float, optional
+        beta coefficient of this layer for the beta method, from local
+        experience (GEC-12 Sec. 7.2.1.3.4, Step 2a). If None (default),
+        beta is estimated from phi' (Step 2b).
+    Nt : float, optional
+        Toe resistance coefficient Nt of this layer for the beta method,
+        from local experience (Step 5a). If None (default), Nt is
+        estimated from phi' in cohesionless soil and is the analysis's
+        ``cohesive_Nt`` in cohesive soil (Step 5b).
     """
     thickness: float
     soil_type: str
@@ -60,6 +68,8 @@ class AxialSoilLayer:
     delta_phi_ratio: Optional[float] = None
     toe_friction_angle: Optional[float] = None
     description: str = ""
+    beta: Optional[float] = None
+    Nt: Optional[float] = None
 
     def __post_init__(self):
         self.soil_type = self.soil_type.lower()
@@ -93,6 +103,11 @@ class AxialSoilLayer:
         if self.soil_type != "cohesionless":
             if self.cohesion <= 0:
                 raise ValueError("Cohesive soil must have cohesion (cu) > 0")
+
+        for name in ("delta_phi_ratio", "beta", "Nt"):
+            value = getattr(self, name)
+            if value is not None and value <= 0:
+                raise ValueError(f"{name} must be > 0 when set, got {value}")
 
     @property
     def toe_phi(self) -> float:

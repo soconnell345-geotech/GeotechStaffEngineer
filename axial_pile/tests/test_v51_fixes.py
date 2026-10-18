@@ -5,8 +5,9 @@ AP-2: dead segmentation code removed; midpoint-rule integration now splits
       layer segments at the GWT (exact for piecewise-linear sigma_v').
 AP-3: beta-method clay phi is a documented, overridable parameter
       (cohesive_phi, default 25 deg keeps prior behavior).
-AP-5: uplift applies the 0.75 rule to OUTSIDE skin friction only (inside
-      plug friction excluded) with optional pile self-weight.
+AP-5: uplift applies the uplift fraction to OUTSIDE skin friction only
+      (inside plug friction excluded) with optional pile self-weight. The
+      fraction's default is 1.0 since GM-121 (GEC-12 Eq. 7-38).
 Plus: capacity_vs_depth no longer mutates the shared analysis object.
 """
 
@@ -14,7 +15,7 @@ import pytest
 
 from axial_pile.pile_types import make_pipe_pile
 from axial_pile.soil_profile import AxialSoilLayer, AxialSoilProfile
-from axial_pile.nordlund import skin_friction_cohesionless
+from axial_pile.nordlund import displaced_volume, skin_friction_cohesionless
 from axial_pile.capacity import AxialPileAnalysis
 
 
@@ -59,9 +60,10 @@ class TestGwtSplitIntegration:
         result = analysis.compute()
 
         sigma_mid = soil.effective_stress_at_depth(4.0)
+        ratio = result.layer_breakdown[0]["delta_phi_ratio"]
         Qs_hand = skin_friction_cohesionless(
-            33.0, sigma_mid, pile.perimeter, 8.0,
-            pile_material="steel", delta_phi_ratio=None,
+            33.0, sigma_mid, pile.perimeter, 8.0, ratio,
+            displaced_volume(pile.tip_area), notes=[],
         )
         assert result.Q_skin == pytest.approx(Qs_hand, rel=1e-12)
 
@@ -97,7 +99,9 @@ class TestCohesivePhiOverride:
             pile=pile, soil=soil, pile_length=12.0, method="beta",
             cohesive_phi=30.0).compute()
         assert r_30.Q_skin > r_25.Q_skin
-        assert r_30.Q_tip > r_25.Q_tip
+        # GM-121: a cohesive toe takes cohesive_Nt (GEC-12: a low Nt in
+        # clays), not an Nt from phi', so the toe does not move
+        assert r_30.Q_tip == r_25.Q_tip
 
     def test_ignored_for_auto_method(self):
         """cohesive_phi only affects method='beta'."""
@@ -155,36 +159,31 @@ class TestUplift:
 
     def test_uplift_closed_pile_is_fraction_of_skin(self):
         """Closed-end pile: outside skin == Q_skin, so uplift is exactly
-        the fraction of Q_skin (unchanged behavior)."""
+        the fraction of Q_skin (1.0 by default, GEC-12 Eq. 7-38)."""
         pile = make_pipe_pile(0.6, 0.012, closed_end=True)
         r = AxialPileAnalysis(
             pile=pile, soil=self._dense_sand(), pile_length=20.0,
             include_uplift=True).compute()
-        assert r.Q_uplift == pytest.approx(0.75 * r.Q_skin, rel=1e-12)
+        assert r.Q_uplift == pytest.approx(r.Q_skin, rel=1e-12)
 
     def test_uplift_excludes_inside_friction_when_unplugged_governs(self):
         """Open pipe, unplugged governing: Q_skin includes inside friction,
-        but uplift must be based on the OUTSIDE skin friction only — equal
-        to 0.75 x the skin of a closed-end pile of the same diameter."""
+        but uplift must be based on the OUTSIDE skin friction only (the
+        layer breakdown)."""
         soil = self._dense_sand()
         pile_open = make_pipe_pile(0.6, 0.012, closed_end=False)
-        pile_closed = make_pipe_pile(0.6, 0.012, closed_end=True)
 
-        # Short embedment: inside friction + annular tip < plugged tip,
-        # so the unplugged case governs.
         r_open = AxialPileAnalysis(
             pile=pile_open, soil=soil, pile_length=10.0,
-            include_uplift=True).compute()
-        r_closed = AxialPileAnalysis(
-            pile=pile_closed, soil=soil, pile_length=10.0).compute()
+            include_uplift=True, uplift_skin_fraction=0.75).compute()
+        outside = sum(lb["skin_friction_kN"] for lb in r_open.layer_breakdown)
 
         # Sanity: the unplugged case governs here (inside friction was
         # added to the reported Q_skin).
-        assert r_open.Q_skin > r_closed.Q_skin
+        assert r_open.Q_skin > outside
 
         # Regression (AP-5): uplift excludes the inside friction
-        assert r_open.Q_uplift == pytest.approx(0.75 * r_closed.Q_skin,
-                                                rel=1e-12)
+        assert r_open.Q_uplift == pytest.approx(0.75 * outside, rel=1e-12)
         assert r_open.Q_uplift < 0.75 * r_open.Q_skin
 
     def test_uplift_pile_weight_and_fraction(self):
@@ -200,7 +199,7 @@ class TestUplift:
             include_uplift=True, uplift_skin_fraction=0.6).compute()
 
         assert with_w.Q_uplift == pytest.approx(base.Q_uplift + 50.0)
-        assert frac.Q_uplift == pytest.approx(base.Q_uplift * 0.6 / 0.75)
+        assert frac.Q_uplift == pytest.approx(base.Q_uplift * 0.6)
 
 
 # ---------------------------------------------------------------------------

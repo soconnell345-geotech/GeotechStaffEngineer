@@ -550,8 +550,9 @@ class TestAxialUpliftParams:
                                            uplift_skin_fraction=1.0))
         assert hi["Q_uplift_kN"] > lo["Q_uplift_kN"]
 
-    def test_cohesive_phi_changes_beta_tip(self):
-        """cohesive_phi drives the Nt tip term for cohesive layers (beta method)."""
+    def test_cohesive_phi_changes_beta_shaft_and_cohesive_nt_the_tip(self):
+        """cohesive_phi drives beta in cohesive layers; a cohesive toe takes
+        cohesive_Nt (GEC-12: a relatively low Nt in clays; GM-121)."""
         from funhouse_agent.adapters.axial_pile import METHOD_REGISTRY as R
         base = {
             "pile_type": "pipe_closed", "diameter": 0.61,
@@ -561,7 +562,10 @@ class TestAxialUpliftParams:
         }
         r25 = R["axial_pile_capacity"](dict(base))
         r35 = R["axial_pile_capacity"](dict(base, cohesive_phi=35.0))
-        assert r35["Q_tip_kN"] > r25["Q_tip_kN"]
+        assert r35["Q_skin_kN"] > r25["Q_skin_kN"]
+        assert r35["Q_tip_kN"] == r25["Q_tip_kN"]
+        r9 = R["axial_pile_capacity"](dict(base, cohesive_Nt=9.0))
+        assert r9["Q_tip_kN"] == pytest.approx(3 * r25["Q_tip_kN"], rel=1e-3)
 
 
 class TestPriebeImprovementFactor:

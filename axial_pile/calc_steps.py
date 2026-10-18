@@ -187,22 +187,25 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             substitution="Q_s = \u03a3 (f_s \u00d7 P \u00d7 \u0394L)",
             result_name="Method",
             result_value=method_display,
-            reference="Burland (1973); FHWA GEC-12 Ch. 8",
-            notes="\u03b2 = K \u00d7 tan(\u03b4), where K depends on soil friction angle.",
+            reference="FHWA GEC-12 Eq. 7-19 (Sec. 7.2.1.3.4)",
+            notes=("\u03b2 from local experience where a layer gives one "
+                   "(Step 2a), else (1 - sin \u03c6') tan \u03c6' "
+                   "(Fellenius 1991)."),
         ))
     else:
         # Auto method: Nordlund for cohesionless, Tomlinson for cohesive
         skin_items.append(CalcStep(
             title="Combined Method (Nordlund + Tomlinson)",
             equation=(
-                "Cohesionless: f_s = K_\u03b4 \u00d7 C_F \u00d7 \u03c3'_v \u00d7 "
-                "sin(\u03b4 + \u03c9) / cos(\u03c9)  (Nordlund)\n"
-                "Cohesive: f_s = \u03b1 \u00d7 c_u  (Tomlinson)"
+                "Cohesionless: f_s = K_\u03b4 \u00d7 C_F \u00d7 \u03c3'_d \u00d7 "
+                "sin(\u03b4)  (Nordlund, Eq. 7-8)\n"
+                "Cohesive: f_s = C_a = \u03b1 \u00d7 s_u  (\u03b1-method, Eq. 7-10)"
             ),
             substitution="Q_s = \u03a3 (f_s \u00d7 P \u00d7 \u0394L)",
             result_name="Method",
             result_value="Auto (Nordlund/Tomlinson)",
-            reference="Nordlund (1963); Tomlinson (1971); FHWA GEC-12 Ch. 7-8",
+            reference="FHWA GEC-12 Sec. 7.2.1.3.1 and 7.2.1.3.2",
+            notes=_auto_method_notes(result),
         ))
 
     # Per-layer breakdown table
@@ -249,44 +252,60 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     if method == "beta":
         tip_items.append(CalcStep(
             title="End Bearing (Beta Method)",
-            equation="Q_t = \u03c3'_v,tip \u00d7 N_t \u00d7 A_tip",
+            equation="Q_t = N_t \u00d7 \u03c3'_p \u00d7 A_p  (Eq. 7-20)",
             substitution=(
-                f"Q_t = {result.sigma_v_tip:.1f} \u00d7 N_t \u00d7 "
-                f"{analysis.pile.tip_area:.6f}"
+                f"Q_t = {result.toe_details.get('N_t', 0):g} \u00d7 "
+                f"{result.sigma_v_tip:.1f} \u00d7 "
+                f"{result.toe_details.get('toe_area_m2', 0):.6f}"
+                + (" (open-end pipe limit governs)"
+                   if result.toe_details.get("governs") ==
+                   "open-end pipe limit" else "")
             ),
             result_name="Q_t",
             result_value=f"{result.Q_tip:,.1f}",
             result_unit="kN",
-            reference="FHWA GEC-12 Ch. 8",
+            reference="FHWA GEC-12 Sec. 7.2.1.3.4",
             notes=f"Tip in {tip_layer_info}. \u03c3'_v,tip = {result.sigma_v_tip:.1f} kPa.",
         ))
-    elif tip_layer_info.startswith("cohesionless") or tip_layer_info.startswith("Cohesionless"):
+    elif "alpha_t" in result.toe_details:
+        t = result.toe_details
         tip_items.append(CalcStep(
             title="End Bearing (Nordlund — Cohesionless)",
-            equation="Q_t = \u03c3'_v,tip \u00d7 N_q \u00d7 A_tip (limited by N_q)",
+            equation=("Q_t = \u03b1_t \u00d7 N'_q \u00d7 \u03c3'_p \u00d7 A_p "
+                      "\u2264 q_L \u00d7 A_p  (Eq. 7-9)"),
             substitution=(
-                f"Q_t = {result.sigma_v_tip:.1f} \u00d7 N_q \u00d7 "
-                f"{analysis.pile.tip_area:.6f}"
+                f"Q_t = min({t['alpha_t']:.3f} \u00d7 {t['N_q_prime']:.1f} "
+                f"\u00d7 {t['sigma_p_kPa']:.1f}, {t['q_L_kPa']:,.0f}"
+                + (f", {t['q_p_kPa']:,.0f}" if t["governs"] ==
+                   "open-end pipe limit" else "")
+                + f") \u00d7 {t['toe_area_m2']:.6f}"
             ),
             result_name="Q_t",
             result_value=f"{result.Q_tip:,.1f}",
             result_unit="kN",
-            reference="Meyerhof (1976); FHWA GEC-12 Ch. 7",
-            notes=(f"\u03c3'_v at pile tip = {result.sigma_v_tip:.1f} kPa."
+            reference="FHWA GEC-12 Steps 7-9, Figs. 7-15 and 7-16",
+            notes=(f"\u03c3'_v at the toe = {t['sigma_v_tip_kPa']:.1f} kPa; "
+                   f"\u03c3'_p = {t['sigma_p_kPa']:.1f} kPa; D/b = "
+                   f"{t['D_over_b']:.1f}; governed by {t['governs']}."
                    + "".join(f" WARNING: {w}" for w in result.warnings)),
         ))
     else:
         tip_items.append(CalcStep(
             title="End Bearing (Tomlinson — Cohesive)",
-            equation="Q_t = N_c \u00d7 c_u \u00d7 A_tip",
+            equation=("Q_t = 4.5 \u00d7 s_u \u00d7 A_p  (Eq. 7-90)"
+                      if result.toe_details.get("governs") == "Eq. 7-90"
+                      else "Q_t = N_c \u00d7 s_u \u00d7 A_p  (Eq. 7-11)"),
             substitution=(
-                f"Q_t = 9.0 \u00d7 c_u \u00d7 {analysis.pile.tip_area:.6f}"
+                f"Q_t = {result.toe_details.get('q_p_kPa', 0):,.1f} \u00d7 "
+                f"{result.toe_details.get('toe_area_m2', 0):.6f}"
             ),
             result_name="Q_t",
             result_value=f"{result.Q_tip:,.1f}",
             result_unit="kN",
-            reference="Tomlinson (1971); FHWA GEC-12 Ch. 7",
-            notes=f"N_c = 9.0 for driven piles. \u03c3'_v at pile tip = {result.sigma_v_tip:.1f} kPa.",
+            reference="FHWA GEC-12 Sec. 7.2.1.3.2 and 7.10.7",
+            notes=(f"N_c = 9.0 for driven piles (4.5 in Tomlinson's Eq. 7-90 "
+                   f"for a small open pipe in clay). \u03c3'_v at the toe = "
+                   f"{result.sigma_v_tip:.1f} kPa."),
         ))
 
     sections.append(CalcSection(title="End Bearing", items=tip_items))
@@ -297,10 +316,17 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     pct_skin = 100 * result.Q_skin / result.Q_ultimate if result.Q_ultimate > 0 else 0
     pct_tip = 100 * result.Q_tip / result.Q_ultimate if result.Q_ultimate > 0 else 0
 
+    if result.plug_weight:
+        ult_equation = "Q_ult = Q_s + Q_t - W_p  (Eq. 7-89, unplugged)"
+        ult_sub = (f"Q_ult = {result.Q_skin:,.1f} + {result.Q_tip:,.1f} - "
+                   f"{result.plug_weight:,.1f}")
+    else:
+        ult_equation = "Q_ult = Q_s + Q_t"
+        ult_sub = f"Q_ult = {result.Q_skin:,.1f} + {result.Q_tip:,.1f}"
     cap_items.append(CalcStep(
         title="Ultimate Axial Capacity",
-        equation="Q_ult = Q_s + Q_t",
-        substitution=f"Q_ult = {result.Q_skin:,.1f} + {result.Q_tip:,.1f}",
+        equation=ult_equation,
+        substitution=ult_sub,
         result_name="Q_ult",
         result_value=f"{result.Q_ultimate:,.1f}",
         result_unit="kN",
@@ -327,15 +353,24 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     ))
 
     if result.Q_uplift is not None:
+        frac = analysis.uplift_skin_fraction
+        weight = analysis.pile_weight
+        outside = (result.Q_uplift - (weight or 0.0)) / frac if frac else 0.0
         cap_items.append(CalcStep(
             title="Uplift (Tension) Capacity",
-            equation="Q_uplift = 0.75 \u00d7 Q_s (conservative estimate)",
-            substitution=f"Q_uplift = 0.75 \u00d7 {result.Q_skin:,.1f}",
+            equation=("Q_uplift = f \u00d7 Q_s,outside"
+                      + (" + W_pile" if weight is not None else "")),
+            substitution=(f"Q_uplift = {frac:g} \u00d7 {outside:,.1f}"
+                          + (f" + {weight:,.1f}" if weight is not None
+                             else "")),
             result_name="Q_uplift",
             result_value=f"{result.Q_uplift:,.1f}",
             result_unit="kN",
-            reference="FHWA GEC-12 Ch. 7",
-            notes="Uplift capacity reduced from compression skin friction.",
+            reference="FHWA GEC-12 Sec. 7.2.3.1, Eq. 7-38",
+            notes=("GEC-12 takes the nominal shaft resistance in uplift, "
+                   "with the uplift resistance factor carrying the "
+                   "reduction; side resistance inside an open pipe is "
+                   "left out."),
         ))
 
     sections.append(CalcSection(
@@ -498,15 +533,40 @@ def _skin_sum_substitution(result) -> str:
     if not result.layer_breakdown:
         return ""
     parts = [f"{lb['skin_friction_kN']:.1f}" for lb in result.layer_breakdown]
-    if len(parts) <= 6:
-        return "Q_s = " + " + ".join(parts)
-    # Truncate for very many layers
-    return "Q_s = " + " + ".join(parts[:5]) + " + ..."
+    if len(parts) > 6:
+        # Truncate for very many layers
+        parts = parts[:5] + ["..."]
+    # An unplugged open pipe adds its interior side resistance (Eq. 7-89)
+    inside = result.Q_skin - sum(lb["skin_friction_kN"]
+                                 for lb in result.layer_breakdown)
+    if abs(inside) > 1e-6 * max(abs(result.Q_skin), 1.0):
+        parts.append(f"{inside:.1f} (inside the pipe)")
+    return "Q_s = " + " + ".join(parts)
+
+
+def _auto_method_notes(result) -> str:
+    """The chart readings of each layer, for the method step."""
+    parts = []
+    for lb in result.layer_breakdown or []:
+        where = f"{lb['depth_top_m']:.1f}-{lb['depth_bottom_m']:.1f} m"
+        if lb["method"] == "nordlund":
+            parts.append(f"{where}: \u03b4/\u03c6 = {lb['delta_phi_ratio']:.2f}, "
+                         f"K_\u03b4 = {lb['K_delta']:.2f}, C_F = "
+                         f"{lb['C_F']:.2f}")
+        elif lb["method"] == "tomlinson":
+            parts.append(f"{where}: D/b = {lb['D_over_b']:.0f}, \u03b1 = "
+                         f"{lb['alpha']:.2f} ({lb['adhesion_source']})"
+                         + (", \u00d7 0.8 (Eq. 7-90)"
+                            if "eq_7_90_factor" in lb else ""))
+    text = ("K_\u03b4 from Tables 7-6/7-7 (log-linear in the displaced volume "
+            "V), \u03b4/\u03c6 from Fig. 7-9, C_F from Fig. 7-14; C_a from "
+            "Fig. 7-17 by s_u, pile type and D/b.")
+    return text + (" " + "; ".join(parts) + "." if parts else "")
 
 
 def _get_tip_layer_info(analysis) -> str:
     """Get a description of the soil layer at the pile tip."""
-    tip_layer = analysis.soil.layer_at_depth(analysis.pile_length - 0.01)
+    tip_layer = analysis.soil.layer_at_depth(analysis._tip_depth - 0.01)
     if tip_layer is None:
         return "unknown"
     desc = tip_layer.description or tip_layer.soil_type.capitalize()

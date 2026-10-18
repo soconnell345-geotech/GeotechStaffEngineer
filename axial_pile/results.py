@@ -17,7 +17,7 @@ class AxialPileResult:
     Attributes
     ----------
     Q_ultimate : float
-        Ultimate axial capacity (kN) = Q_skin + Q_tip.
+        Ultimate axial capacity (kN) = Q_skin + Q_tip - plug_weight.
     Q_skin : float
         Total skin friction (kN).
     Q_tip : float
@@ -45,7 +45,15 @@ class AxialPileResult:
         What the analysis chose (GM-115, ``geotech_common.choices``): the
         side and toe resistance methods ``method="auto"`` resolved to by
         soil type, an open pipe's plugged or unplugged case, Nordlund's
-        delta/phi.
+        delta/phi, the limits applied and the judgments GEC-12 leaves to
+        the engineer.
+    plug_weight : float
+        Soil plug weight Wp (kN) subtracted when an open pipe's unplugged
+        case governs (GEC-12 Eq. 7-89); 0 otherwise.
+    toe_details : dict
+        The toe resistance's factors: for a Nordlund toe alpha_t, N'q, D/b,
+        sigma'p, q_L and which limit governed; the unit toe resistance
+        q_p and the toe area for every method.
     """
     Q_ultimate: float = 0.0
     Q_skin: float = 0.0
@@ -60,6 +68,8 @@ class AxialPileResult:
     sigma_v_tip: float = 0.0
     warnings: List[str] = field(default_factory=list)
     choices: List[Dict[str, Any]] = field(default_factory=list)
+    plug_weight: float = 0.0
+    toe_details: Dict[str, Any] = field(default_factory=dict)
 
     def summary(self) -> str:
         """Return a formatted summary string."""
@@ -76,6 +86,10 @@ class AxialPileResult:
             f"  ({self._pct(self.Q_skin)}%)",
             f"  End bearing  (Qt):   {self.Q_tip:>10,.1f} kN"
             f"  ({self._pct(self.Q_tip)}%)",
+        ]
+        if self.plug_weight:
+            lines.append(f"  Soil plug (Wp):     -{self.plug_weight:>10,.1f} kN")
+        lines += [
             f"  {'-'*44}",
             f"  Ultimate capacity:   {self.Q_ultimate:>10,.1f} kN",
             f"  Factor of safety:    {self.factor_of_safety:>10.1f}",
@@ -124,6 +138,12 @@ class AxialPileResult:
         }
         if self.Q_uplift is not None:
             d["Q_uplift_kN"] = round(self.Q_uplift, 1)
+        if self.plug_weight:
+            d["plug_weight_kN"] = round(self.plug_weight, 1)
+        if self.toe_details:
+            d["toe_details"] = {
+                k: (round(v, 4) if isinstance(v, float) else v)
+                for k, v in self.toe_details.items()}
         if self.warnings:
             d["warnings"] = list(self.warnings)
         if self.choices:
@@ -165,6 +185,9 @@ class AxialPileResult:
                 note += (f"; Q_s = {self.Q_skin:.1f} kN also includes "
                          f"{inside:.1f} kN of side resistance inside the "
                          "open pipe (unplugged case governs)")
+            if any("eq_7_90_factor" in lb for lb in layers):
+                note += ("; the cohesive layers carry 0.8 Ca (Tomlinson's "
+                         "Eq. 7-90 for a small open pipe in clay)")
             tables.append(CalcTable(
                 title="Side resistance per layer",
                 columns=[("Top", "m", ".2f"), ("Bottom", "m", ".2f"),
@@ -194,6 +217,9 @@ class AxialPileResult:
                 "resistance inside the open pipe" if has_inside else
                 f"at the toe it is the toe resistance Q_t = "
                 f"{self.Q_tip:.1f} kN")
+            if self.plug_weight:
+                load_note += (f", less the soil plug weight Wp = "
+                              f"{self.plug_weight:.1f} kN (Eq. 7-89)")
             tables.append(CalcTable(
                 title="Load transfer at the ultimate load",
                 columns=[("Depth z", "m", ".2f"),
@@ -205,6 +231,11 @@ class AxialPileResult:
         summary = [
             ["Side resistance", "Q_s", self.Q_skin, "kN"],
             ["Toe resistance", "Q_t", self.Q_tip, "kN"],
+        ]
+        if self.plug_weight:
+            summary.append(["Soil plug weight (subtracted)", "W_p",
+                            self.plug_weight, "kN"])
+        summary += [
             ["Ultimate capacity", "Q_ult", self.Q_ultimate, "kN"],
             ["Factor of safety", "FS", self.factor_of_safety, ""],
             ["Allowable capacity", "Q_all", self.Q_allowable, "kN"],

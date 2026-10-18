@@ -11,22 +11,25 @@ gives perimeter = 4.058 ft and tip_area = 1.029 ft2, matching the example's stat
 ~4.06 ft / ~1.03 ft2 box values.
 
 Datum note: the example references depths to the bottom of footing/cap, which is
-5 ft below ground surface. The pile head is AT the footing bottom, so the
-analysis-module profile is modeled FROM the footing bottom (z=0 at the pile head):
-the loose silty sand / medium clay layers are clipped at the footing line and the
-water table is shifted up by 5 ft accordingly. (Modeling from the ground surface
-instead would integrate ~5 ft of spurious skin friction above the pile head.)
+5 ft below ground surface. Since GM-121 (2026-10-18) the profiles are modeled
+FROM THE GROUND SURFACE with the pile head at the footing (head_depth = 5 ft):
+the shaft starts at the head, sigma' keeps the 5 ft of soil above it (Table
+D-6's toe at 0.01 ft below the footing, 16.4 kips, needs it) and Fig. 7-17's
+D runs from the ground surface (GEC-12 p. 246). Before GM-121 the profiles
+started at the footing with that overburden removed.
 
 Summary of verdicts (details in each test docstring and RESULTS.md):
-- V-001 axial_pile Nordlund (sand): shaft PASS (-8%..+5%); toe PASS — the v5.2
-  per-layer AxialSoilLayer.toe_friction_angle lets the high-level API apply the
-  example's separate Layer-3 toe phi=40 (design limit), reaching 429.3 kips
-  (+0.3% vs the published 428.1 plateau; -4.6% before Fig 7-15 was re-measured
-  2026-10-08). The old single-phi toe (phi=36 -> 301
-  kips, -30%) is retained below as the documented default-behaviour baseline.
-- V-002 axial_pile alpha (clay): toe (9*cu) PASS; shaft CONVENTION — the module's
-  simplified Tomlinson alpha-vs-cu curve gives a lower alpha for stiff clay than the
-  example's DrivenPiles Tomlinson curve.
+- V-001 axial_pile Nordlund (sand): shaft PASS (+1.1 %..+1.2 % since GM-121's
+  charts: Fig. 7-9, Tables 7-6/7-7, Fig. 7-14); toe PASS with the example's
+  separate Layer-3 toe phi=40 when sigma'p is not limited (429.3 kips, +0.3 %
+  vs the 428.1 plateau). With GEC-12 Step 8's 3 ksf limit on sigma'p (the
+  module's default since GM-121) the toe is 359.7 kips (-16 %): the example
+  (DrivenPiles) did not apply Step 8.
+- V-002 axial_pile alpha (clay): toe (9*cu) PASS; shaft PASS within 1 % with the
+  example's two Fig. 7-17 choices (smooth steel curves for the H-pile, Ca held at
+  the chart's end); with the module's defaults (corrugated curve for H-piles,
+  GEC-12 p. 247; Ca held at the chart's end) +13 %..+14 %, and with API alpha
+  past the chart +25 %..+53 %, documented CONVENTION differences.
 - V-003 wave_equation drivability: N/A (scope) — no Delmag D36-52 in the hammer DB
   and the simplified diesel model can't reproduce a GRLWEAP diesel bearing graph.
 - V-004 downdrag neutral plane: PASS — the neutral plane at 100% toe
@@ -69,16 +72,16 @@ KIPFT = 1.356
 
 # ── V-001 : Nordlund driven H-pile in sand (North Abutment, Table D-6) ───────
 
-def _v001_profile():
-    """V-001 cohesionless profile, modeled FROM the footing bottom (pile head).
+def _v001_profile(toe_phi=None):
+    """V-001 cohesionless profile FROM THE GROUND SURFACE; the pile head sits at
+    the footing bottom, 5 ft below grade (head_depth).
 
-    Layers below the footing (5 ft bgs): L1 loose silty sand 0-20 ft (phi 33,
-    gamma 105 pcf), L2 medium dense sand 20-45 ft (phi 36, 112 pcf), L3 dense
-    gravel 45+ ft (phi 36 shaft, 125 pcf). Water table 15 ft bgs = 10 ft below
-    the footing.
+    L1 loose silty sand 0-25 ft bgs (phi 33, gamma 105 pcf), L2 medium dense
+    sand 25-50 ft (phi 36, 112 pcf), L3 dense gravel 50+ ft (phi 36 shaft,
+    125 pcf; toe phi 40 where the example used it). Water table 15 ft bgs.
     """
     return AxialSoilProfile(layers=[
-        AxialSoilLayer(thickness=20 * FT, soil_type="cohesionless",
+        AxialSoilLayer(thickness=25 * FT, soil_type="cohesionless",
                        unit_weight=105 * PCF, friction_angle=33,
                        description="L1 loose silty sand"),
         AxialSoilLayer(thickness=25 * FT, soil_type="cohesionless",
@@ -86,8 +89,17 @@ def _v001_profile():
                        description="L2 medium dense sand"),
         AxialSoilLayer(thickness=52 * FT, soil_type="cohesionless",
                        unit_weight=125 * PCF, friction_angle=36,
-                       description="L3 dense gravel (shaft phi)"),
-    ], gwt_depth=10 * FT)
+                       toe_friction_angle=toe_phi,
+                       description="L3 dense gravel"),
+    ], gwt_depth=15 * FT)
+
+
+def _v001_run(D_ft, toe_phi=None, **kw):
+    """D_ft below the footing (Table D-6's depth)."""
+    return AxialPileAnalysis(pile=make_h_pile("HP12x74"),
+                             soil=_v001_profile(toe_phi),
+                             pile_length=D_ft * FT, head_depth=5 * FT,
+                             method="auto", **kw).compute()
 
 
 def test_v001_hpile_box_section_convention():
@@ -101,37 +113,51 @@ def test_v001_hpile_box_section_convention():
 def test_v001_nordlund_shaft_resistance_matches():
     """Nordlund shaft resistance vs Table D-6 (depths below footing).
 
-    PASS within +/-15% at every depth (-8% to +5%). The module's displacement-
-    pile Kd fit reproduces the published Nordlund shaft for this phi 33-36
-    profile once the footing datum is used.
+    PASS within +1.1 % to +1.2 % at every depth since GM-121 (2026-10-18):
+    delta/phi from GEC-12 Fig. 7-9 (curve f, V = 0.151 ft3/ft), K_delta from
+    Tables 7-6/7-7 and C_F from Fig. 7-14 (before: a fitted K_delta and
+    delta/phi 0.75 on the footing-datum profile, -8 % to +5 %).
     """
-    pile = make_h_pile("HP12x74")
-    soil = _v001_profile()
     published_Rs = {35: 137.5, 50: 250.7, 60: 344.1, 70: 452.5}
     for D_ft, Rs_pub in published_Rs.items():
-        r = AxialPileAnalysis(pile=pile, soil=soil,
-                              pile_length=D_ft * FT, method="auto").compute()
-        assert r.Q_skin / KIP == pytest.approx(Rs_pub, rel=0.15), (
+        r = _v001_run(D_ft)
+        assert r.Q_skin / KIP == pytest.approx(Rs_pub, rel=0.02), (
             f"D={D_ft} ft: shaft {r.Q_skin / KIP:.1f} vs published {Rs_pub}"
         )
 
 
+def test_v001_overburden_above_the_footing_counts():
+    """Table D-6's sigma' includes the 5 ft of soil above the footing: its toe
+    at 0.01 ft below the footing is 16.4 kips, which needs sigma' > 0 there.
+    The ground-surface profile with head_depth gives 16.1 kips; a profile
+    started at the footing (overburden removed) gives none, and its shaft
+    falls 17-27 % short of the table."""
+    r = _v001_run(0.01, toe_stress_limit=None)
+    assert r.Q_tip / KIP == pytest.approx(16.4, rel=0.03)
+    assert r.layer_breakdown[0]["depth_top_m"] == pytest.approx(5 * FT, abs=0.01)
+    footing = AxialSoilProfile(layers=[
+        AxialSoilLayer(20 * FT, "cohesionless", 105 * PCF, friction_angle=33),
+        AxialSoilLayer(25 * FT, "cohesionless", 112 * PCF, friction_angle=36),
+        AxialSoilLayer(52 * FT, "cohesionless", 125 * PCF, friction_angle=36),
+    ], gwt_depth=10 * FT)
+    r = AxialPileAnalysis(pile=make_h_pile("HP12x74"), soil=footing,
+                          pile_length=60 * FT).compute()
+    assert r.Q_skin / KIP / 344.1 == pytest.approx(0.81, abs=0.02)
+
+
 def test_v001_toe_with_design_limit_phi40_matches():
     """Toe resistance reproduces the Table D-6 Layer-3 plateau (428.1 kips) to
-    within 1% when driven with the example's separate Layer-3 toe phi = 40 deg
-    (the GEC-12 design-limit toe friction angle).
-
-    The module's q_L cap (Meyerhof Fig 7-15) at phi=40 governs, giving 429.3
-    kips (+0.3%; 408.5 before Fig 7-15 was re-measured 2026-10-08) — the
-    basis for the published ~428 kip plateau.
-    """
+    within 1 % with the example's separate Layer-3 toe phi = 40 deg, when
+    sigma'p is not limited: q_L (Fig. 7-15) at phi = 40 governs at 60 and
+    70 ft (429.3 kips) and Eq. 7-9 at 50 ft (425.9)."""
     pile = make_h_pile("HP12x74")
-    soil = _v001_profile()
+    soil = _v001_profile(toe_phi=40)
     for D_ft in (50, 60, 70):           # depths where the tip is in Layer 3
-        sigma_v_tip = soil.effective_stress_at_depth(D_ft * FT)
+        sigma_v_tip = soil.effective_stress_at_depth((D_ft + 5) * FT)
         Rt = end_bearing_cohesionless(
-            40.0, sigma_v_tip, pile.tip_area, D_ft * FT, pile.width) / KIP
-        assert Rt == pytest.approx(428.1, rel=0.15), (
+            40.0, sigma_v_tip, pile.tip_area, D_ft * FT, pile.width,
+            notes=[], sigma_p_limit=None) / KIP
+        assert Rt == pytest.approx(428.1, rel=0.01), (
             f"D={D_ft} ft: toe(phi=40) {Rt:.1f} vs published plateau 428.1"
         )
 
@@ -139,101 +165,41 @@ def test_v001_toe_with_design_limit_phi40_matches():
 def test_v001_toe_single_phi_api_is_default_behaviour():
     """DEFAULT BEHAVIOUR: with NO per-layer toe phi set, the high-level
     AxialPileAnalysis API uses ONE phi per layer, so it applies phi=36
-    (shaft) at the toe too. With the CORRECTED Fig 7-15 qL digitization
-    (re-measured 2026-10-08: qL(36)=7,201 kPa per the printed tsf chart — the old table's
-    14,000 was ~2x unconservative there), that gives ~154 kips in Layer 3
-    (-64% vs the published 428.1, which REQUIRES the design-limit toe phi=40
-    that GEC-12's own example selects — see the next test). The pre-fix pin
-    here (301 kips) was a regression pin of the wrong table, not a published
-    value."""
-    pile = make_h_pile("HP12x74")
-    soil = _v001_profile()           # no toe_friction_angle anywhere
-    r = AxialPileAnalysis(pile=pile, soil=soil,
-                          pile_length=60 * FT, method="auto").compute()
-    Rt_single_phi = r.Q_tip / KIP
-    assert Rt_single_phi == pytest.approx(154.4, rel=0.05)   # module, phi=36 toe
+    (shaft) at the toe too: ~155 kips in Layer 3 (-64 % vs the published
+    428.1, which needs the design-limit toe phi=40 that GEC-12's own
+    example selects)."""
+    Rt_single_phi = _v001_run(60).Q_tip / KIP
+    assert Rt_single_phi == pytest.approx(154.8, rel=0.02)   # module, phi=36 toe
     assert abs(Rt_single_phi - 428.1) / 428.1 > 0.15         # off vs published
 
 
-def _v001_profile_with_toe_phi40():
-    """V-001 profile (footing datum) with the Layer-3 design-limit toe phi=40
-    set per-layer — the GEC-12 DrivenPiles "separate shaft/toe phi" option."""
-    return AxialSoilProfile(layers=[
-        AxialSoilLayer(thickness=20 * FT, soil_type="cohesionless",
-                       unit_weight=105 * PCF, friction_angle=33,
-                       description="L1 loose silty sand"),
-        AxialSoilLayer(thickness=25 * FT, soil_type="cohesionless",
-                       unit_weight=112 * PCF, friction_angle=36,
-                       description="L2 medium dense sand"),
-        AxialSoilLayer(thickness=52 * FT, soil_type="cohesionless",
-                       unit_weight=125 * PCF, friction_angle=36,
-                       toe_friction_angle=40,
-                       description="L3 dense gravel (shaft phi=36 / toe phi=40)"),
-    ], gwt_depth=10 * FT)
-
-
 def test_v001_highlevel_api_toe_phi40_matches_plateau():
-    """PASS (v5.2 feature): the high-level AxialPileAnalysis API, given the
-    Layer-3 per-layer toe phi=40 (AxialSoilLayer.toe_friction_angle), now
-    reproduces the Table D-6 toe plateau (428.1 kips) to within +/-15% at every
-    depth where the tip is in Layer 3 — closing the old single-phi CONVENTION
-    gap. The q_L cap (Meyerhof Fig 7-15) at phi=40 governs at 429.3 kips
-    (+0.3%; -4.6% before Fig 7-15 was re-measured 2026-10-08). The shaft is unaffected (still uses phi=36)."""
-    pile = make_h_pile("HP12x74")
-    soil = _v001_profile_with_toe_phi40()
+    """The high-level API with the Layer-3 toe phi=40:
+
+    - with GEC-12 Step 8's limit on sigma'p (3 ksf, the module's default since
+      GM-121) the toe is alpha_t N'q x 3 ksf x box area = 359.7 kips, -16 %
+      vs the 428.1 plateau. Table D-6 (DrivenPiles) did not apply Step 8:
+      sigma'v at its Layer-3 toe is 3.6-4.8 ksf and its plateau is q_L(40)
+      times the box area;
+    - with the limit off (toe_stress_limit None) it reproduces the plateau
+      within 1 %.
+    The shaft is unaffected (still phi=36)."""
     for D_ft in (50, 60, 70):           # depths where the tip is in Layer 3
-        r = AxialPileAnalysis(pile=pile, soil=soil,
-                              pile_length=D_ft * FT, method="auto").compute()
-        assert r.Q_tip / KIP == pytest.approx(428.1, rel=0.15), (
+        r = _v001_run(D_ft, toe_phi=40)
+        assert r.Q_tip / KIP == pytest.approx(359.7, rel=0.005)
+        assert r.toe_details["sigma_p_kPa"] == pytest.approx(3 * KSF, rel=1e-3)
+        r = _v001_run(D_ft, toe_phi=40, toe_stress_limit=None)
+        assert r.Q_tip / KIP == pytest.approx(428.1, rel=0.01), (
             f"D={D_ft} ft: high-level toe(phi=40) {r.Q_tip / KIP:.1f} "
             f"vs published plateau 428.1"
         )
-    # And the toe-phi feature is additive: shaft matches the single-phi profile.
-    r40 = AxialPileAnalysis(pile=pile, soil=soil,
-                            pile_length=60 * FT, method="auto").compute()
-    r36 = AxialPileAnalysis(pile=pile, soil=_v001_profile(),
-                            pile_length=60 * FT, method="auto").compute()
+    r40 = _v001_run(60, toe_phi=40)
+    r36 = _v001_run(60)
     assert r40.Q_skin == pytest.approx(r36.Q_skin, rel=1e-12)
     assert r40.Q_tip > r36.Q_tip
 
 
-def test_v001_head_depth_offset_reproduces_footing_datum_shaft():
-    """PASS (v5.2 feature): the head_depth offset lets the API model the pile
-    head at the footing bottom WITHOUT hand-clipping the layers. Because the
-    GEC-12 footing sits in a 5-ft excavation (overburden removed, sigma_v'=0 at
-    the head), the footing-datum profile IS the correct shaft model; this test
-    confirms head_depth=0 on that profile is unchanged and the offset machinery
-    runs cleanly on a from-ground-surface profile (clipping the 5 ft above the
-    head out of the shaft integral)."""
-    pile = make_h_pile("HP12x74")
-    # Footing-datum profile, head at surface (head_depth=0) == validated shaft.
-    soil_footing = _v001_profile()
-    published_Rs = {35: 137.5, 50: 250.7, 60: 344.1, 70: 452.5}
-    for D_ft, Rs_pub in published_Rs.items():
-        r = AxialPileAnalysis(pile=pile, soil=soil_footing, pile_length=D_ft * FT,
-                              head_depth=0.0, method="auto").compute()
-        assert r.Q_skin / KIP == pytest.approx(Rs_pub, rel=0.15)
-
-    # From-ground-surface profile with the head 5 ft down: the 5-ft top layer
-    # above the head contributes NO skin friction (auto-clipped).
-    soil_ground = AxialSoilProfile(layers=[
-        AxialSoilLayer(thickness=25 * FT, soil_type="cohesionless",
-                       unit_weight=105 * PCF, friction_angle=33),
-        AxialSoilLayer(thickness=25 * FT, soil_type="cohesionless",
-                       unit_weight=112 * PCF, friction_angle=36),
-        AxialSoilLayer(thickness=47 * FT, soil_type="cohesionless",
-                       unit_weight=125 * PCF, friction_angle=36,
-                       toe_friction_angle=40),
-    ], gwt_depth=15 * FT)
-    r_clip = AxialPileAnalysis(pile=pile, soil=soil_ground, pile_length=45 * FT,
-                               head_depth=5 * FT, method="auto").compute()
-    # Shaft integration starts at the head (5 ft), not the ground surface
-    # (depth_top_m is reported rounded to 2 decimals).
-    assert r_clip.layer_breakdown[0]["depth_top_m"] == pytest.approx(5 * FT, abs=0.01)
-    assert r_clip.Q_skin > 0
-
-
-# ── V-002 : Tomlinson alpha H-pile in clay (South Abutment, Table D-100) ─────
+# ── V-002 : alpha-method H-pile in clay (South Abutment, Table D-100) ─────────
 
 def _su_at_bgs(bgs_ft):
     """Undrained strength su (ksf) vs depth below ground surface, from the
@@ -251,68 +217,92 @@ def _su_at_bgs(bgs_ft):
 
 
 def _v002_profile():
-    """V-002 cohesive profile as 1-ft cohesive sublayers from the cap bottom
-    (5 ft bgs), each with its sample-depth su. L1 medium clay (110 pcf), L2
-    stiff clay (124 pcf), L3 very stiff clay (129 pcf)."""
+    """V-002 cohesive profile as 1-ft cohesive sublayers from the GROUND
+    SURFACE, each with its sample-depth su (Fig. 7-17's D is measured from
+    the ground surface, GEC-12 p. 246). L1 medium clay (110 pcf), L2 stiff
+    clay (124 pcf), L3 very stiff clay (129 pcf)."""
     layers = []
-    z_cap = 5.0
-    while z_cap < 96:
-        bgs = z_cap + 0.5
+    z = 0.0
+    while z < 101:
+        bgs = z + 0.5
         gamma = 110 if bgs < 25 else (124 if bgs < 45 else 129)
         layers.append(AxialSoilLayer(
             thickness=1 * FT, soil_type="cohesive",
             unit_weight=gamma * PCF, cohesion=_su_at_bgs(bgs) * KSF))
-        z_cap += 1
+        z += 1
     return AxialSoilProfile(layers=layers, gwt_depth=None)
 
 
+def _v002_run(D_ft, **kw):
+    """D_ft below the cap (5 ft bgs; Table D-100's depth)."""
+    return AxialPileAnalysis(pile=make_h_pile("HP12x74"), soil=_v002_profile(),
+                             pile_length=D_ft * FT, head_depth=5 * FT,
+                             method="auto", **kw).compute()
+
+
 def test_v002_toe_nine_su_matches():
-    """End bearing 9*cu reproduces Table D-100 toe resistance to within +/-3%
+    """End bearing 9*cu reproduces Table D-100 toe resistance to within +/-2%
     at the depths where the tip sits cleanly inside Layer 3 (D = 70/80/90 ft)."""
-    pile = make_h_pile("HP12x74")
-    soil = _v002_profile()
     published_Rt = {70: 32.75, 80: 33.03, 90: 33.68}
     for D_ft, Rt_pub in published_Rt.items():
-        r = AxialPileAnalysis(pile=pile, soil=soil,
-                              pile_length=D_ft * FT, method="auto").compute()
-        assert r.Q_tip / KIP == pytest.approx(Rt_pub, rel=0.05), (
+        r = _v002_run(D_ft)
+        assert r.Q_tip / KIP == pytest.approx(Rt_pub, rel=0.02), (
             f"D={D_ft} ft: toe {r.Q_tip / KIP:.1f} vs published {Rt_pub}"
         )
 
 
-def test_v002_alpha_curve_convention_gap():
-    """CONVENTION / scope: the module's simplified Tomlinson alpha-vs-cu curve
-    matches the example for SOFT (su~0.7 ksf, alpha~0.85) and VERY STIFF
-    (su~3.5 ksf, alpha~0.34) clay, but gives a much lower alpha for STIFF clay
-    (su~1.9 ksf: module 0.42 vs the example's DrivenPiles ~0.76). That single
-    band drives the shaft under-prediction below.
-    """
-    # soft clay — agrees
-    assert alpha_tomlinson(0.70 * KSF, "steel") == pytest.approx(0.85, abs=0.03)
-    # very stiff clay — agrees
-    assert alpha_tomlinson(3.45 * KSF, "steel") == pytest.approx(0.34, abs=0.03)
-    # stiff clay — module is well below the example's ~0.76
-    alpha_stiff = alpha_tomlinson(1.90 * KSF, "steel")
-    assert alpha_stiff == pytest.approx(0.42, abs=0.03)
-    assert (0.76 - alpha_stiff) > 0.15      # genuinely different alpha curve
+def test_v002_alpha_from_fig_7_17():
+    """Since GM-121 alpha comes from GEC-12 Fig. 7-17 by su, pile type and
+    D/b. The example's stiff-clay alpha (~0.76 at su ~1.9 ksf, deep) is the
+    smooth-steel D = 40b curve's 0.79; the corrugated curve, which GEC-12
+    p. 247 gives for H-piles, reads 0.92 there."""
+    assert alpha_tomlinson(0.70 * KSF, "steel", D_over_b=40) == \
+        pytest.approx(0.99, abs=0.02)
+    assert alpha_tomlinson(1.90 * KSF, "steel", D_over_b=40) == \
+        pytest.approx(0.79, abs=0.02)
+    assert alpha_tomlinson(1.90 * KSF, "h_pile", D_over_b=40) == \
+        pytest.approx(0.92, abs=0.02)
 
 
-def test_v002_shaft_underpredicts_documented():
-    """Shaft resistance vs Table D-100: the module under-predicts by 18-32%
-    (outside +/-15%), driven entirely by the lower stiff-clay alpha. Recorded
-    as a CONVENTION gap (alpha-curve choice), module not tuned to the example.
-    This test pins the observed deficit so a future alpha-curve change is
-    caught."""
-    pile = make_h_pile("HP12x74")
-    soil = _v002_profile()
+def test_v002_shaft_matches_with_the_examples_chart_choices():
+    """PASS within 1 % with the two choices the example made: the smooth
+    steel curves of Fig. 7-17 for the H-pile (adhesion_curve) and Ca held at
+    the curve's end where su exceeds the chart (adhesion_beyond_chart)."""
     published_Rs = {70: 318.4, 80: 369.3, 90: 420.33}
     for D_ft, Rs_pub in published_Rs.items():
-        r = AxialPileAnalysis(pile=pile, soil=soil,
-                              pile_length=D_ft * FT, method="auto").compute()
+        r = _v002_run(D_ft, adhesion_curve="smooth_steel",
+                      adhesion_beyond_chart="chart_end")
+        assert r.Q_skin / KIP == pytest.approx(Rs_pub, rel=0.015), (
+            f"D={D_ft} ft: shaft {r.Q_skin / KIP:.1f} vs published {Rs_pub}"
+        )
+
+
+def test_v002_shaft_with_the_module_defaults_documented():
+    """CONVENTION: with the module's defaults (the corrugated curve times the
+    box area for an H-pile, GEC-12 p. 247; Ca held at the curve's end where
+    su exceeds Fig. 7-17, as the example did) the shaft is 13-14 % above
+    Table D-100, the corrugated curve's higher adhesion. With API alpha past
+    the chart (adhesion_beyond_chart "api", which p. 247 recommends for
+    highly overconsolidated clays) it is 25-53 % above: Layer 3's su
+    (3.1-3.7 ksf) is past the chart's end, where API alpha (about 0.7 at
+    sigma'v ~7 ksf) nearly doubles the chart-end adhesion. The test pins
+    both bands so a change to either is caught."""
+    published_Rs = {70: 318.4, 80: 369.3, 90: 420.33}
+    for D_ft, Rs_pub in published_Rs.items():
+        r = _v002_run(D_ft)
         ratio = (r.Q_skin / KIP) / Rs_pub
-        assert 0.68 <= ratio <= 0.85, (
+        assert 1.10 <= ratio <= 1.17, (
             f"D={D_ft} ft: shaft ratio {ratio:.2f} outside documented band"
         )
+        sources = {lb.get("adhesion_source") for lb in r.layer_breakdown}
+        assert "Fig. 7-17 end" in sources and "API alpha" not in sources
+        api = _v002_run(D_ft, adhesion_beyond_chart="api")
+        ratio = (api.Q_skin / KIP) / Rs_pub
+        assert 1.20 <= ratio <= 1.60, (
+            f"D={D_ft} ft: API shaft ratio {ratio:.2f} outside the band"
+        )
+        assert any(lb.get("adhesion_source") == "API alpha"
+                   for lb in api.layer_breakdown)
 
 
 # ── V-003 : wave-equation drivability with a Delmag D36-52 diesel ────────────

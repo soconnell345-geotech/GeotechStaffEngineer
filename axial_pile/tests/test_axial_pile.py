@@ -16,10 +16,14 @@ from axial_pile.pile_types import (
     PileSection, make_pipe_pile, make_concrete_pile, make_h_pile,
 )
 from axial_pile.soil_profile import AxialSoilLayer, AxialSoilProfile
-from axial_pile.tomlinson import alpha_tomlinson, skin_friction_cohesive, end_bearing_cohesive
+from axial_pile.tomlinson import (
+    adhesion, adhesion_fig_7_17, alpha_tomlinson, api_alpha,
+    end_bearing_cohesive, skin_friction_cohesive,
+)
 from axial_pile.nordlund import (
-    delta_from_phi, nordlund_Kd, nordlund_CF, skin_friction_cohesionless,
-    end_bearing_cohesionless, nordlund_Nq_prime, _limiting_tip_resistance,
+    alpha_t, correction_factor, delta_phi_ratio_fig_7_9, displaced_volume,
+    end_bearing_cohesionless, k_delta, n_q_prime, nordlund_side_factors,
+    skin_friction_cohesionless, _limiting_tip_resistance,
     toe_limit_chart_note,
 )
 from axial_pile.beta_method import beta_from_phi, skin_friction_beta, Nt_from_phi
@@ -137,41 +141,109 @@ class TestSoilProfile:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# TEST 3: Tomlinson Alpha Method
+# TEST 3: alpha-method (GEC-12 Figure 7-17, after Tomlinson 1979)
 # ═══════════════════════════════════════════════════════════════════════
 
+KSF = 47.880259
+
+
 class TestTomlinson:
-    """Test Tomlinson alpha values and cohesive skin friction."""
+    """Adhesion Ca from GEC-12 Figure 7-17, measured off the printed figure
+    (2026-10-18). Pins are chart nodes; the curves' shape is checked by
+    what the figure shows."""
 
-    def test_alpha_soft_clay(self):
-        """Soft clay (cu=20 kPa): alpha should be ~1.0."""
-        alpha = alpha_tomlinson(20, "steel")
-        assert alpha == pytest.approx(1.0, abs=0.1)
+    @pytest.mark.parametrize("curve, D_over_b, su, ca", [
+        ("concrete_timber_corrugated", 10, 0.5, 0.503),
+        ("concrete_timber_corrugated", 10, 2.0, 1.369),
+        ("concrete_timber_corrugated", 40, 2.0, 1.799),
+        ("smooth_steel", 10, 2.0, 1.17),
+        ("smooth_steel", 40, 2.0, 1.516),
+        ("smooth_steel", 40, 3.0, 1.294),
+    ])
+    def test_chart_nodes(self, curve, D_over_b, su, ca):
+        assert adhesion_fig_7_17(su * KSF, D_over_b, curve) == pytest.approx(
+            ca * KSF, rel=1e-6)
 
-    def test_alpha_medium_clay(self):
-        """Medium clay (cu=50 kPa): alpha ≈ 0.5 for steel."""
-        alpha = alpha_tomlinson(50, "steel")
-        assert 0.3 < alpha < 0.7
+    def test_D_over_b_linear_between_the_curves_and_held_outside(self):
+        c10 = adhesion_fig_7_17(2.0 * KSF, 10, "smooth_steel")
+        c40 = adhesion_fig_7_17(2.0 * KSF, 40, "smooth_steel")
+        assert adhesion_fig_7_17(2.0 * KSF, 25, "smooth_steel") == \
+            pytest.approx((c10 + c40) / 2, rel=1e-9)
+        assert adhesion_fig_7_17(2.0 * KSF, 5, "smooth_steel") == c10
+        assert adhesion_fig_7_17(2.0 * KSF, 80, "smooth_steel") == c40
 
-    def test_alpha_stiff_clay(self):
-        """Stiff clay (cu=150 kPa): alpha ≈ 0.35 for steel."""
-        alpha = alpha_tomlinson(150, "steel")
-        assert 0.2 < alpha < 0.5
+    def test_solid_40b_curve_starts_at_1_ksf(self):
+        """Below su = 1.0 ksf the chart draws one solid curve for both
+        D/b; the D = 40b curve starts at 1.0 ksf, above it."""
+        lo = adhesion_fig_7_17(0.9 * KSF, 40, "concrete_timber_corrugated")
+        assert lo == pytest.approx(0.875 * KSF, rel=1e-6)
+        hi = adhesion_fig_7_17(1.0 * KSF, 40, "concrete_timber_corrugated")
+        assert hi == pytest.approx(1.106 * KSF, rel=1e-6)
 
-    def test_alpha_concrete_higher(self):
-        """Concrete pile alpha >= steel pile alpha."""
-        for cu in [25, 50, 100, 200]:
-            alpha_s = alpha_tomlinson(cu, "steel")
-            alpha_c = alpha_tomlinson(cu, "concrete")
-            assert alpha_c >= alpha_s
+    def test_alpha_soft_clay_about_one(self):
+        """Very soft clay (su = 10 kPa, below the chart's 0.25 ksf start):
+        the curve's starting alpha, at most 1."""
+        assert alpha_tomlinson(10, "steel") == pytest.approx(0.92, abs=0.005)
+        assert alpha_tomlinson(10, "concrete") == pytest.approx(1.0)
 
-    def test_alpha_decreasing(self):
-        """Alpha should generally decrease with increasing cu."""
+    def test_smooth_steel_at_or_below_the_corrugated_curve(self):
+        for cu in [25, 50, 100, 140]:
+            for db in (10, 40):
+                assert (alpha_tomlinson(cu, "steel", D_over_b=db)
+                        <= alpha_tomlinson(cu, "concrete", D_over_b=db))
+
+    def test_alpha_falls_past_the_peak(self):
+        """Ca peaks near su = 2 ksf; alpha = Ca/su falls throughout."""
         prev = 2.0
-        for cu in [10, 25, 50, 100, 200]:
+        for cu in [12, 25, 50, 100, 140]:
             alpha = alpha_tomlinson(cu, "steel")
             assert alpha <= prev
             prev = alpha
+
+    def test_beyond_the_chart_held_or_api_alpha(self):
+        """su beyond Fig. 7-17: Ca held at the curve's end by default (GEC-12
+        Vol 3 Table D-100), or API alpha (GEC-12 p. 247)."""
+        su, sv = 3.5 * KSF, 2.5 * KSF
+        notes = []
+        ca_end, source = adhesion(su, 40, "smooth_steel", sigma_v=sv,
+                                  notes=notes)
+        assert source == "Fig. 7-17 end"
+        assert ca_end == pytest.approx(1.279 * KSF, rel=1e-6)
+        assert len(notes) == 1 and "beyond GEC-12 Figure 7-17" in notes[0]
+        ca, source = adhesion(su, 40, "smooth_steel", sigma_v=sv,
+                              beyond_chart="api")
+        assert source == "API alpha"
+        psi = su / sv
+        assert ca == pytest.approx(0.5 * psi ** -0.25 * su, rel=1e-9)
+
+    def test_ca_at_most_su(self):
+        """Within the chart Ca is at most su (alpha <= 1): below, at and
+        above the point where the D = 40b solid curve crosses Ca = su."""
+        solid = "concrete_timber_corrugated"
+        for su_ksf in (1.0, 1.2):          # the chart is above su here
+            su = su_ksf * KSF
+            assert adhesion_fig_7_17(su, 40, solid) > su
+            assert adhesion(su, 40, solid) == (su, "Fig. 7-17, at most su")
+        su = 2.0 * KSF                     # the chart is below su here
+        assert adhesion(su, 40, solid) == (
+            adhesion_fig_7_17(su, 40, solid), "Fig. 7-17")
+        # where the chart meets su the two agree
+        lo, hi = 1.2, 2.0
+        for _ in range(60):
+            mid = (lo + hi) / 2
+            if adhesion_fig_7_17(mid * KSF, 40, solid) > mid * KSF:
+                lo = mid
+            else:
+                hi = mid
+        at = lo * KSF
+        assert adhesion(at, 40, solid)[0] == pytest.approx(at, rel=1e-9)
+        assert alpha_tomlinson(1.0 * KSF, "concrete", D_over_b=40) == 1.0
+
+    def test_api_alpha_equations(self):
+        """GEC-12 Eqs. 7-13 to 7-15, at most 1.0."""
+        assert api_alpha(50, 100) == pytest.approx(0.5 * 0.5 ** -0.5)
+        assert api_alpha(200, 100) == pytest.approx(0.5 * 2.0 ** -0.25)
+        assert api_alpha(10, 100) == 1.0
 
     def test_end_bearing_cohesive(self):
         """Qt = 9 * cu * At."""
@@ -179,58 +251,129 @@ class TestTomlinson:
         assert Qt == pytest.approx(45.0, rel=1e-6)
 
     def test_skin_friction_cohesive(self):
-        """Qs = alpha * cu * perimeter * thickness."""
-        # For cu=20 (soft), alpha≈1.0
-        Qs = skin_friction_cohesive(20, 1.0, 5.0, "steel")
-        alpha = alpha_tomlinson(20, "steel")
-        expected = alpha * 20 * 1.0 * 5.0
-        assert Qs == pytest.approx(expected, rel=1e-6)
+        """Qs = Ca * perimeter * thickness."""
+        Qs = skin_friction_cohesive(60, 1.0, 5.0, D_over_b=25,
+                                    curve="smooth_steel")
+        ca = adhesion_fig_7_17(60, 25, "smooth_steel")
+        assert Qs == pytest.approx(ca * 1.0 * 5.0, rel=1e-9)
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# TEST 4: Nordlund Method
+# TEST 4: Nordlund Method (GEC-12 Sec. 7.2.1.3.1, Steps 2-9)
 # ═══════════════════════════════════════════════════════════════════════
 
 class TestNordlund:
-    """Test Nordlund method for cohesionless soils."""
+    """The Nordlund charts, measured off the printed figures (2026-10-18)
+    and Tables 7-6/7-7 as printed."""
 
-    def test_delta_from_phi_steel(self):
-        """Steel pile: delta ≈ 0.75 * phi."""
-        delta = delta_from_phi(30, "steel")
-        assert delta == pytest.approx(22.5, rel=1e-4)
+    def test_fig_7_9_by_pile_type(self):
+        assert delta_phi_ratio_fig_7_9("pipe_closed", 1.0) == pytest.approx(0.655)
+        assert delta_phi_ratio_fig_7_9("timber", 1.0) == pytest.approx(0.694)
+        assert delta_phi_ratio_fig_7_9("concrete", 1.0) == pytest.approx(0.767)
+        assert delta_phi_ratio_fig_7_9("h_pile", 0.15) == pytest.approx(0.791)
 
-    def test_delta_from_phi_concrete(self):
-        """Concrete pile: delta ≈ 0.90 * phi."""
-        delta = delta_from_phi(30, "concrete")
-        assert delta == pytest.approx(27.0, rel=1e-4)
+    def test_fig_7_9_held_off_the_curve_with_a_note(self):
+        notes = []
+        r = delta_phi_ratio_fig_7_9("pipe_open", 0.1, notes)
+        assert r == pytest.approx(0.344)
+        assert len(notes) == 1 and "outside GEC-12 Figure 7-9" in notes[0]
 
-    def test_Kd_increases_with_phi(self):
-        """Kd should be non-decreasing with phi."""
+    @pytest.mark.parametrize("phi, V, kd", [
+        # Table 7-6 / 7-7 printed values (omega = 0)
+        (25, 0.1, 0.70), (30, 1.0, 1.15), (35, 0.5, 1.57), (36, 0.3, 1.61),
+        (40, 10.0, 4.30), (33, 4.0, 1.80), (38, 0.8, 2.40),
+    ])
+    def test_k_delta_reproduces_tables_7_6_and_7_7(self, phi, V, kd):
+        assert k_delta(phi, V) == pytest.approx(kd, abs=0.011)
+
+    def test_k_delta_log_linear_in_V(self):
+        """Step 3d: log-linear between the chart volumes."""
+        mid = k_delta(35, math.sqrt(0.1 * 1.0))
+        assert mid == pytest.approx((1.15 + 1.75) / 2, rel=1e-9)
+
+    def test_k_delta_held_outside_the_tables(self):
+        notes = []
+        assert k_delta(42, 1.0, notes) == pytest.approx(3.00)
+        assert k_delta(36, 0.05, notes) == pytest.approx(1.26)
+        assert len(notes) == 2
+
+    def test_cf_from_fig_7_14(self):
+        assert correction_factor(30, 1.0) == pytest.approx(1.0)
+        assert correction_factor(30, 0.6) == pytest.approx(0.817)
+        assert correction_factor(40, 0.2) == pytest.approx(0.370)
+        assert correction_factor(35, 0.7) == pytest.approx((0.757 + 0.917) / 2)
+
+    def test_alpha_t_and_nq_from_fig_7_16(self):
+        assert alpha_t(30, 20) == pytest.approx(0.580)
+        assert alpha_t(30, 45) == pytest.approx(0.491)
+        assert alpha_t(30, 100) == pytest.approx(0.491)   # nearest curve
+        assert alpha_t(40, 30) == pytest.approx(0.750)    # curves merged
+        assert n_q_prime(30) == pytest.approx(29.6, rel=1e-6)
+        assert n_q_prime(40) == pytest.approx(155.3, rel=1e-6)
         prev = 0
-        for phi in [20, 25, 30, 35, 40]:
-            Kd = nordlund_Kd(phi)
-            assert Kd >= prev
-            prev = Kd
-        # Also verify significant increase from low to high phi
-        assert nordlund_Kd(40) > nordlund_Kd(25)
+        for phi in [15, 20, 25, 30, 35, 40, 45]:
+            assert n_q_prime(phi) > prev
+            prev = n_q_prime(phi)
 
-    def test_Nq_increases_with_phi(self):
-        """Nq' should increase with phi."""
-        prev = 0
-        for phi in [20, 25, 30, 35, 40]:
-            Nq = nordlund_Nq_prime(phi)
-            assert Nq > prev
-            prev = Nq
+    def test_table_d6_unit_side_resistance(self):
+        """GEC-12 Vol 3 Table D-6 (HP12x74, DrivenPiles) implies fs/sigma'd
+        of 0.447 at phi 33 and 0.592 at phi 36; the charts give them to
+        about 2 %."""
+        V = displaced_volume(make_h_pile("HP12x74").area)
+        r = delta_phi_ratio_fig_7_9("h_pile", V)
+        for phi, published in ((33, 0.447), (36, 0.592)):
+            f = nordlund_side_factors(phi, r, V)
+            assert f["fs_ratio"] == pytest.approx(published, rel=0.03)
 
-    def test_skin_friction_positive(self):
-        """Skin friction should be positive for positive inputs."""
-        Qs = skin_friction_cohesionless(30, 50, 1.0, 5.0)
-        assert Qs > 0
+    def test_skin_friction_is_eq_7_8(self):
+        Qs = skin_friction_cohesionless(30, 50, 1.0, 5.0, 0.7, 0.5)
+        f = nordlund_side_factors(30, 0.7, 0.5)
+        assert Qs == pytest.approx(
+            f["K_delta"] * f["C_F"] * math.sin(math.radians(21)) * 50 * 5,
+            rel=1e-9)
 
     def test_end_bearing_positive(self):
         """End bearing should be positive."""
         Qt = end_bearing_cohesionless(30, 100, 0.1, 15, 0.3)
         assert Qt > 0
+
+
+class TestToeStressLimit:
+    """GEC-12 Step 8: 'The limiting value of sigma'p is 3 ksf'."""
+
+    def _toe(self, sigma_v, **kw):
+        d = {}
+        Q = end_bearing_cohesionless(40, sigma_v, 0.1, 15, 0.3,
+                                     notes=[], details=d, **kw)
+        return Q, d
+
+    def test_below_at_and_above_the_limit(self):
+        lim = 3.0 * KSF
+        below, d = self._toe(0.5 * lim)
+        assert d["sigma_p_kPa"] == pytest.approx(0.5 * lim)
+        at, d = self._toe(lim)
+        assert d["sigma_p_kPa"] == pytest.approx(lim)
+        above, d = self._toe(2 * lim)
+        assert d["sigma_p_kPa"] == pytest.approx(lim)
+        assert above == pytest.approx(at, rel=1e-12)
+        assert below < at
+
+    def test_no_limit_when_none(self):
+        lim = 3.0 * KSF
+        _, d = self._toe(2 * lim, sigma_p_limit=None)
+        assert d["sigma_p_kPa"] == pytest.approx(2 * lim)
+
+    def test_analysis_applies_it_and_says_so(self):
+        soil = AxialSoilProfile(layers=[
+            AxialSoilLayer(30, "cohesionless", 19.0, friction_angle=38)])
+        pile = make_pipe_pile(0.3239, 0.00953, closed_end=True)
+        r = AxialPileAnalysis(pile=pile, soil=soil, pile_length=25).compute()
+        assert r.sigma_v_tip == pytest.approx(475.0)
+        assert r.toe_details["sigma_p_kPa"] == pytest.approx(3.0 * KSF)
+        r0 = AxialPileAnalysis(pile=pile, soil=soil, pile_length=25,
+                               toe_stress_limit=None).compute()
+        assert r0.toe_details["sigma_p_kPa"] == pytest.approx(475.0)
+        assert r0.Q_tip > r.Q_tip
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -380,48 +523,6 @@ class TestCombinedAnalysis:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# TEST 7: CRITICAL-1 — Nordlund /cos(omega) for tapered piles
-# ═══════════════════════════════════════════════════════════════════════
-
-class TestNordlundCosOmega:
-    """Verify /cos(omega) divisor in Nordlund skin friction (GEC-12 Eq 7-1)."""
-
-    def test_uniform_pile_unchanged(self):
-        """For omega=0, cos(0)=1.0 so no change in result."""
-        Qs = skin_friction_cohesionless(30, 50, 1.0, 5.0, omega_deg=0.0)
-        assert Qs > 0
-
-    def test_tapered_pile_higher_than_uniform(self):
-        """Tapered pile (omega>0) should have higher skin friction than uniform.
-
-        Two effects increase it: Kd increases with omega, and /cos(omega)>1.
-        """
-        Qs_uniform = skin_friction_cohesionless(30, 50, 1.0, 5.0, omega_deg=0.0)
-        Qs_tapered = skin_friction_cohesionless(30, 50, 1.0, 5.0, omega_deg=5.0)
-        assert Qs_tapered > Qs_uniform
-
-    def test_cos_omega_factor_applied(self):
-        """Directly verify /cos(omega) is present by comparing to manual calc."""
-        phi = 30.0
-        sigma_v = 100.0
-        perim = 1.0
-        dz = 1.0
-        omega = 5.0
-
-        Qs = skin_friction_cohesionless(phi, sigma_v, perim, dz, omega_deg=omega)
-
-        # Manual calculation
-        delta = delta_from_phi(phi, "steel")
-        delta_rad = math.radians(delta)
-        omega_rad = math.radians(omega)
-        Kd = nordlund_Kd(phi, omega)
-        CF = nordlund_CF(delta / phi)
-        fs_expected = Kd * CF * sigma_v * math.sin(delta_rad + omega_rad) / math.cos(omega_rad)
-        expected = fs_expected * perim * dz
-        assert Qs == pytest.approx(expected, rel=1e-10)
-
-
-# ═══════════════════════════════════════════════════════════════════════
 # TEST 8: CRITICAL-2 — Limiting tip resistance matches GEC-12 Fig 7-15
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -520,21 +621,30 @@ class TestToeLimitOutsideTheChart:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# TEST 9: CRITICAL-3 — Open-ended pipe pile plugging analysis
+# TEST 9: Open-ended pipe piles (GEC-12 Sec. 7.10.7)
 # ═══════════════════════════════════════════════════════════════════════
 
-class TestOpenEndedPlugging:
-    """Verify plugging analysis for open-ended pipe piles (GEC-12 Sec 7.2.1.4)."""
+def _pipe_cases(r):
+    """(plugged, unplugged) totals the result's choice reports."""
+    import re
+    c = {c["what"]: c for c in r.choices}["open-ended pipe"]
+    m = re.search(r"plugged ([\d.]+) kN, unplugged ([\d.]+) kN", c["basis"])
+    return float(m.group(1)), float(m.group(2))
 
-    def _make_open_pile_problem(self):
-        """Open-ended 24-inch pipe pile in sand."""
-        diameter = 0.6096  # 24 inches
-        thickness = 0.0127  # 0.5 inch wall
-        pile = make_pipe_pile(diameter, thickness, closed_end=False)
-        soil = AxialSoilProfile(layers=[
+
+class TestOpenEndedPlugging:
+    """The lesser of Eqs. 7-88 (plugged) and 7-89 (unplugged), with the
+    interior side resistance a fraction of the exterior and the soil plug
+    weight Wp subtracted; Tomlinson's 105 ksf limit in sand; Eq. 7-90 for
+    a pipe under 24 in in predominantly cohesive soil."""
+
+    def _sand(self):
+        return AxialSoilProfile(layers=[
             AxialSoilLayer(20, 'cohesionless', 18.0, friction_angle=32),
         ], gwt_depth=3.0)
-        return pile, soil
+
+    def _open(self, d=0.6096, t=0.0127):
+        return make_pipe_pile(d, t, closed_end=False)
 
     def test_open_pile_has_plugging_fields(self):
         """Open-ended pile should have tip_area_plugged and inner_perimeter set."""
@@ -542,10 +652,8 @@ class TestOpenEndedPlugging:
         assert pile.tip_area_plugged is not None
         assert pile.inner_perimeter is not None
         assert pile.closed_end is False
-        # tip_area_plugged = full area
         r_o = 0.3
         assert pile.tip_area_plugged == pytest.approx(math.pi * r_o**2, rel=1e-4)
-        # inner_perimeter = pi * inner_diameter
         inner_d = 0.6 - 2 * 0.012
         assert pile.inner_perimeter == pytest.approx(math.pi * inner_d, rel=1e-4)
 
@@ -556,43 +664,123 @@ class TestOpenEndedPlugging:
         assert pile.inner_perimeter is None
         assert pile.closed_end is True
 
-    def test_open_pile_returns_lesser_capacity(self):
-        """Open-ended pile capacity should be lesser of plugged and unplugged."""
-        pile, soil = self._make_open_pile_problem()
-        result = AxialPileAnalysis(
-            pile=pile, soil=soil, pile_length=15.0
-        ).compute()
+    def test_lesser_of_the_two_cases_governs(self):
+        r = AxialPileAnalysis(pile=self._open(), soil=self._sand(),
+                              pile_length=15.0).compute()
+        plugged, unplugged = _pipe_cases(r)
+        assert r.Q_ultimate == pytest.approx(min(plugged, unplugged), abs=0.06)
+        assert r.Q_ultimate == pytest.approx(
+            r.Q_skin + r.Q_tip - r.plug_weight, rel=1e-9)
 
-        # Capacity must be positive
-        assert result.Q_ultimate > 0
-        assert result.Q_skin > 0
-        assert result.Q_tip > 0
-        assert result.Q_ultimate == pytest.approx(
-            result.Q_skin + result.Q_tip, rel=1e-6
-        )
+    def test_unplugged_is_eq_7_89(self):
+        """Rn = fso Aso + fsi Asi + qp Ap - Wp, fsi = ratio x fso."""
+        a = AxialPileAnalysis(pile=self._open(), soil=self._sand(),
+                              pile_length=15.0, inside_friction_ratio=0.5)
+        r = a.compute()
+        _, unplugged = _pipe_cases(r)
+        outside = sum(lb["skin_friction_kN"] for lb in r.layer_breakdown)
+        V = displaced_volume(a.pile.tip_area_plugged)
+        inside = 0.5 * a._compute_inside_skin_friction(V, [])
+        assert inside == pytest.approx(
+            0.5 * outside * a.pile.inner_perimeter / a.pile.perimeter,
+            rel=1e-9)
+        d = {}
+        qp_ann = end_bearing_cohesionless(
+            32, r.sigma_v_tip, a.pile.tip_area, 15.0, a.pile.width,
+            notes=[], q_limit=a.open_pipe_toe_limit, details=d)
+        Wp = (a.pile.tip_area_plugged - a.pile.tip_area) * r.sigma_v_tip
+        assert unplugged == pytest.approx(outside + inside + qp_ann - Wp,
+                                          abs=0.06)
 
-    def test_open_less_than_closed(self):
-        """Open-ended pile should have less (or equal) capacity than closed-end."""
-        diameter = 0.6096
-        thickness = 0.0127
-        soil = AxialSoilProfile(layers=[
-            AxialSoilLayer(20, 'cohesionless', 18.0, friction_angle=32),
-        ], gwt_depth=3.0)
+    def test_inside_ratio_scales_only_the_unplugged_case(self):
+        runs = {k: AxialPileAnalysis(pile=self._open(), soil=self._sand(),
+                                     pile_length=15.0,
+                                     inside_friction_ratio=k).compute()
+                for k in (1 / 3, 0.5, 1.0)}
+        cases = {k: _pipe_cases(r) for k, r in runs.items()}
+        assert cases[1 / 3][0] == cases[0.5][0] == cases[1.0][0]
+        assert cases[1 / 3][1] < cases[0.5][1] < cases[1.0][1]
+        with pytest.raises(ValueError, match="inside_friction_ratio"):
+            AxialPileAnalysis(pile=self._open(), soil=self._sand(),
+                              pile_length=15.0, inside_friction_ratio=1.5)
 
-        pile_closed = make_pipe_pile(diameter, thickness, closed_end=True)
-        pile_open = make_pipe_pile(diameter, thickness, closed_end=False)
+    def test_plug_weight_is_the_soil_inside(self):
+        a = AxialPileAnalysis(pile=self._open(), soil=self._sand(),
+                              pile_length=15.0, head_depth=2.0)
+        inner = a.pile.tip_area_plugged - a.pile.tip_area
+        stress = (a.soil.effective_stress_at_depth(17.0)
+                  - a.soil.effective_stress_at_depth(2.0))
+        assert a._plug_weight() == pytest.approx(inner * stress, rel=1e-12)
 
-        r_closed = AxialPileAnalysis(
-            pile=pile_closed, soil=soil, pile_length=15.0
-        ).compute()
-        r_open = AxialPileAnalysis(
-            pile=pile_open, soil=soil, pile_length=15.0
-        ).compute()
+    def test_105_ksf_limit_below_at_and_above(self):
+        """Tomlinson's limiting unit toe resistance of an open pipe in
+        cohesionless soil (GEC-12 p. 407) caps q_p only above it."""
+        lim = 105 * KSF
+        d = {}
+        end_bearing_cohesionless(40, 200, 1.0, 15, 0.6, notes=[],
+                                 q_limit=lim, details=d)
+        assert d["q_p_kPa"] == pytest.approx(lim)          # above: capped
+        assert d["governs"] == "open-end pipe limit"
+        d = {}
+        end_bearing_cohesionless(32, 100, 1.0, 15, 0.6, notes=[],
+                                 q_limit=lim, details=d)
+        assert d["q_p_kPa"] < lim                           # below: free
+        assert d["governs"] != "open-end pipe limit"
+        q_free = d["q_p_kPa"]
+        d = {}
+        end_bearing_cohesionless(32, 100, 1.0, 15, 0.6, notes=[],
+                                 q_limit=q_free, details=d)
+        assert d["q_p_kPa"] == pytest.approx(q_free)        # at the limit
 
-        # Open-ended should be <= closed-end capacity
-        # (plugged case has same tip as closed but might govern;
-        #  unplugged has less tip but added inside friction)
-        assert r_open.Q_ultimate <= r_closed.Q_ultimate + 1.0  # small tolerance
+    def test_105_ksf_limit_applies_to_open_pipes_only(self):
+        dense = AxialSoilProfile(layers=[
+            AxialSoilLayer(30, 'cohesionless', 20.0, friction_angle=40)],
+            gwt_depth=None)
+        r = AxialPileAnalysis(pile=self._open(), soil=dense,
+                              pile_length=20.0).compute()
+        assert r.toe_details["q_p_kPa"] == pytest.approx(105 * KSF)
+        r0 = AxialPileAnalysis(pile=self._open(), soil=dense,
+                               pile_length=20.0,
+                               open_pipe_toe_limit=None).compute()
+        assert r0.toe_details["q_p_kPa"] > 105 * KSF
+        closed = AxialPileAnalysis(
+            pile=make_pipe_pile(0.6096, 0.0127, closed_end=True), soil=dense,
+            pile_length=20.0).compute()
+        assert closed.toe_details["q_p_kPa"] > 105 * KSF
+
+    def test_eq_7_90_for_a_small_pipe_in_clay(self):
+        """GEC-12 p. 407: a pipe under 24 in in predominantly cohesive soil:
+        Rn = 0.8 Ca As + 4.5 su Ap."""
+        clay = AxialSoilProfile(layers=[
+            AxialSoilLayer(3, 'cohesionless', 18.0, friction_angle=30),
+            AxialSoilLayer(25, 'cohesive', 18.0, cohesion=80)],
+            gwt_depth=2.0)
+        pile = make_pipe_pile(0.4064, 0.0127, closed_end=False)
+        r = AxialPileAnalysis(pile=pile, soil=clay, pile_length=20).compute()
+        pw = AxialPileAnalysis(pile=pile, soil=clay, pile_length=20,
+                               open_pipe_method="paikowsky_whitman").compute()
+        sand_pw, clay_pw = (lb["skin_friction_kN"] for lb in pw.layer_breakdown)
+        sand, clay_q = (lb["skin_friction_kN"] for lb in r.layer_breakdown)
+        assert sand == pytest.approx(sand_pw)
+        assert clay_q == pytest.approx(0.8 * clay_pw)
+        assert r.Q_tip == pytest.approx(4.5 * 80 * pile.tip_area_plugged)
+        assert r.Q_ultimate == pytest.approx(r.Q_skin + r.Q_tip)
+        assert {c["what"]: c for c in r.choices}["open-ended pipe"][
+            "chosen"] == "Tomlinson's Eq. 7-90"
+
+    def test_eq_7_90_not_for_24_in_or_sand_toe(self):
+        clay = AxialSoilProfile(layers=[
+            AxialSoilLayer(25, 'cohesive', 18.0, cohesion=80),
+            AxialSoilLayer(10, 'cohesionless', 19.0, friction_angle=34)],
+            gwt_depth=2.0)
+        big = make_pipe_pile(0.6096, 0.0127, closed_end=False)
+        small = make_pipe_pile(0.4064, 0.0127, closed_end=False)
+        for pile, L in ((big, 20), (small, 28)):
+            r = AxialPileAnalysis(pile=pile, soil=clay, pile_length=L).compute()
+            assert r.toe_details["governs"] != "Eq. 7-90"
+        with pytest.raises(ValueError, match="Eq. 7-90"):
+            AxialPileAnalysis(pile=small, soil=clay, pile_length=28,
+                              open_pipe_method="tomlinson").compute()
 
     def test_closed_end_behavior_unchanged(self):
         """Closed-end pipe pile should not be affected by plugging logic."""
@@ -601,13 +789,10 @@ class TestOpenEndedPlugging:
             AxialSoilLayer(10, 'cohesionless', 18.0, friction_angle=30),
             AxialSoilLayer(10, 'cohesive', 17.0, cohesion=50),
         ], gwt_depth=3.0)
-
         result = AxialPileAnalysis(
             pile=pile, soil=soil, pile_length=15.0
         ).compute()
-
-        # Basic checks that it still works correctly
-        assert result.Q_ultimate > 0
+        assert result.plug_weight == 0.0
         assert result.Q_ultimate == pytest.approx(
             result.Q_skin + result.Q_tip, rel=1e-6
         )
@@ -615,19 +800,100 @@ class TestOpenEndedPlugging:
             result.Q_ultimate / 2.5, rel=1e-6
         )
 
-    def test_plugging_governs_correctly(self):
-        """Verify that the governing case (plugged vs unplugged) is correctly selected.
 
-        The result should be the lesser of the two computed capacities.
-        """
-        pile, soil = self._make_open_pile_problem()
-        analysis = AxialPileAnalysis(pile=pile, soil=soil, pile_length=15.0)
-        result = analysis.compute()
+class TestUplift:
+    """GEC-12 Sec. 7.2.3.1 (Eq. 7-38): the nominal shaft resistance."""
 
-        # The result Q_ultimate must equal Q_skin + Q_tip
-        assert result.Q_ultimate == pytest.approx(
-            result.Q_skin + result.Q_tip, rel=1e-6
-        )
+    def _soil(self):
+        return AxialSoilProfile(layers=[
+            AxialSoilLayer(10, 'cohesionless', 18.0, friction_angle=30),
+            AxialSoilLayer(10, 'cohesive', 17.0, cohesion=50),
+        ], gwt_depth=3.0)
+
+    def test_default_is_the_whole_outside_side_resistance(self):
+        pile = make_pipe_pile(0.3239, 0.00953, closed_end=True)
+        r = AxialPileAnalysis(pile=pile, soil=self._soil(), pile_length=15,
+                              include_uplift=True).compute()
+        assert r.Q_uplift == pytest.approx(r.Q_skin, rel=1e-12)
+        r7 = AxialPileAnalysis(pile=pile, soil=self._soil(), pile_length=15,
+                               include_uplift=True,
+                               uplift_skin_fraction=0.7).compute()
+        assert r7.Q_uplift == pytest.approx(0.7 * r.Q_skin, rel=1e-12)
+
+    def test_eq_7_90_uplift_is_its_reduced_shaft(self):
+        """Under Eq. 7-90 the shaft is 0.8 Ca As; uplift takes that, not the
+        unreduced side resistance."""
+        clay = AxialSoilProfile(layers=[
+            AxialSoilLayer(3, 'cohesionless', 18.0, friction_angle=30),
+            AxialSoilLayer(25, 'cohesive', 18.0, cohesion=80)],
+            gwt_depth=2.0)
+        pile = make_pipe_pile(0.4064, 0.0127, closed_end=False)
+        r = AxialPileAnalysis(pile=pile, soil=clay, pile_length=20,
+                              include_uplift=True).compute()
+        assert r.toe_details["governs"] == "Eq. 7-90"
+        assert r.Q_uplift == pytest.approx(r.Q_skin, rel=1e-12)
+        pw = AxialPileAnalysis(pile=pile, soil=clay, pile_length=20,
+                               include_uplift=True,
+                               open_pipe_method="paikowsky_whitman").compute()
+        assert r.Q_uplift < pw.Q_uplift
+
+
+class TestPileWidthNotes:
+    """GEC-12 p. 232: piles over 18 in were not in the correlation
+    database; Nordlund tends to over predict over 24 in."""
+
+    def _soil(self):
+        return AxialSoilProfile(layers=[
+            AxialSoilLayer(30, 'cohesionless', 19.0, friction_angle=34)],
+            gwt_depth=2.0)
+
+    def test_notes_by_width(self):
+        for d, n in ((0.4064, 0), (0.508, 1), (0.762, 2)):
+            pile = make_pipe_pile(d, 0.0127, closed_end=True)
+            r = AxialPileAnalysis(pile=pile, soil=self._soil(),
+                                  pile_length=20).compute()
+            got = [w for w in r.warnings if "p. 232" in w]
+            assert len(got) == n, (d, r.warnings)
+
+
+class TestBetaOptions:
+    """GEC-12 Sec. 7.2.1.3.4: beta and Nt from local experience first;
+    a low Nt in clays (default 3)."""
+
+    def test_cohesive_toe_nt(self):
+        clay = AxialSoilProfile(layers=[
+            AxialSoilLayer(30, 'cohesive', 18.0, cohesion=80)], gwt_depth=1)
+        pile = make_pipe_pile(0.4064, 0.0127, closed_end=True)
+        r = AxialPileAnalysis(pile=pile, soil=clay, pile_length=20,
+                              method="beta").compute()
+        assert r.Q_tip == pytest.approx(3.0 * r.sigma_v_tip * pile.tip_area)
+        r9 = AxialPileAnalysis(pile=pile, soil=clay, pile_length=20,
+                               method="beta", cohesive_Nt=9).compute()
+        assert r9.Q_tip == pytest.approx(3 * r.Q_tip)
+
+    def test_layer_beta_and_nt_win(self):
+        soil = AxialSoilProfile(layers=[
+            AxialSoilLayer(30, 'cohesionless', 19.0, friction_angle=34,
+                           beta=0.5, Nt=60)], gwt_depth=1)
+        pile = make_pipe_pile(0.4064, 0.0127, closed_end=True)
+        r = AxialPileAnalysis(pile=pile, soil=soil, pile_length=20,
+                              method="beta").compute()
+        assert r.layer_breakdown[0]["beta"] == 0.5
+        assert r.toe_details["N_t"] == 60
+        assert r.Q_tip == pytest.approx(60 * r.sigma_v_tip * pile.tip_area)
+
+
+class TestHPileToeArea:
+    def test_box_or_steel(self):
+        soil = AxialSoilProfile(layers=[
+            AxialSoilLayer(30, 'cohesive', 18.0, cohesion=100)])
+        pile = make_h_pile("HP12x74")
+        box = AxialPileAnalysis(pile=pile, soil=soil, pile_length=20).compute()
+        steel = AxialPileAnalysis(pile=pile, soil=soil, pile_length=20,
+                                  h_pile_toe_area="steel").compute()
+        assert box.Q_tip == pytest.approx(900 * pile.tip_area)
+        assert steel.Q_tip == pytest.approx(900 * pile.area)
+        assert box.Q_skin == steel.Q_skin
 
 
 def test_Nt_from_phi_consistent_with_gec12_table_7_9():

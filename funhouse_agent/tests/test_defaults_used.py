@@ -17,10 +17,12 @@ _PILE = {"pile_type": "pipe_closed", "diameter": 0.6, "wall_thickness": 0.012,
 def test_defaults_used_lists_what_the_call_left_out():
     r = D.call_agent("axial_pile", "axial_pile_capacity", dict(_PILE))
     # cohesive_phi (beta only) and the uplift fraction (uplift only) are
-    # not used by this run, so not listed (GM-119)
+    # not used by this run, so not listed (GM-119); the clay layer's Fig.
+    # 7-17 curve is (GM-121), and the sand-toe limit is not: the toe is in
+    # clay
     assert r["defaults_used"] == {
         "head_depth": 0.0, "factor_of_safety": 2.5, "method": "auto",
-        "include_uplift": False}
+        "include_uplift": False, "adhesion_curve": "auto"}
     r = D.call_agent("axial_pile", "axial_pile_capacity",
                      {**_PILE, "factor_of_safety": 3.0, "method": "auto"})
     assert "factor_of_safety" not in r["defaults_used"]
@@ -94,8 +96,9 @@ def test_axial_choices_reach_the_agent_with_the_tool_default_named():
     by = {c["what"]: c for c in r["choices"]}
     assert by["side resistance method"]["chosen"] == \
         "Nordlund 0-10 m; Tomlinson alpha 10-15 m"
-    # the adapter gives a layer with no delta_phi_ratio 0.75: its default
-    assert by["Nordlund delta/phi"]["how"] == "default"
+    # a layer with no delta_phi_ratio takes GEC-12 Fig. 7-9 (GM-121)
+    assert by["Nordlund delta/phi"] == {**by["Nordlund delta/phi"],
+        "chosen": "0.80 (Fig. 7-9 curve a, pipe piles)", "how": "module"}
     given = [dict(_PILE["layers"][0], delta_phi_ratio=0.8),
              _PILE["layers"][1]]
     r = D.call_agent("axial_pile", "axial_pile_capacity",
@@ -375,3 +378,75 @@ def test_choices_and_defaults_used_agree_on_the_worked_examples(
 def test_choices_and_defaults_used_agree_on_the_worked_example_searches(
         monkeypatch):
     assert _agree_on_worked_examples(monkeypatch, searches=True) >= 5
+
+
+def test_axial_gec12_limits_are_listed_where_the_soil_uses_them():
+    """GM-121: the toe-stress limit, the open-pipe toe limit, the Fig. 7-17
+    settings and the beta method's clay Nt depend on the soil, so they are
+    listed when the result's choices report them as defaults."""
+    sand = [{"thickness": 30, "soil_type": "cohesionless",
+             "unit_weight": 19, "friction_angle": 36}]
+    clay = [{"thickness": 30, "soil_type": "cohesive",
+             "unit_weight": 18, "cohesion": 4.0 * 47.88}]
+    pipe = {"pile_type": "pipe_open", "diameter": 0.6,
+            "wall_thickness": 0.012, "pile_length": 20}
+    r = D.call_agent("axial_pile", "axial_pile_capacity",
+                     {**pipe, "layers": sand})
+    used = set(r["defaults_used"])
+    assert {"toe_stress_limit", "open_pipe_toe_limit",
+            "inside_friction_ratio", "open_pipe_method"} <= used
+    assert not {"adhesion_curve", "adhesion_beyond_chart",
+                "cohesive_Nt", "h_pile_toe_area"} & used
+    r = D.call_agent("axial_pile", "axial_pile_capacity",
+                     {**pipe, "layers": clay, "toe_stress_limit": None})
+    used = set(r["defaults_used"])
+    assert {"adhesion_curve", "adhesion_beyond_chart"} <= used
+    assert not {"toe_stress_limit", "open_pipe_toe_limit"} & used
+    r = D.call_agent("axial_pile", "axial_pile_capacity",
+                     {**pipe, "layers": clay, "method": "beta"})
+    assert "cohesive_Nt" in r["defaults_used"]
+    r = D.call_agent("axial_pile", "axial_pile_capacity",
+                     {**pipe, "layers": clay, "method": "beta",
+                      "cohesive_Nt": 9})
+    assert "cohesive_Nt" not in r["defaults_used"]
+    by = {c["what"]: c for c in r["choices"]}
+    assert by["Nt of the cohesive toe layer (beta method)"]["how"] == "given"
+
+
+def test_axial_gec12_options_reach_the_module():
+    """Each GM-121 option the tool declares changes the run it is given to."""
+    sand = [{"thickness": 30, "soil_type": "cohesionless",
+             "unit_weight": 19, "friction_angle": 38}]
+    pipe = {"pile_type": "pipe_open", "diameter": 0.6,
+            "wall_thickness": 0.012, "pile_length": 20, "layers": sand}
+    closed = {**pipe, "pile_type": "pipe_closed"}
+    for call, name, value in ((closed, "toe_stress_limit", None),
+                              (pipe, "inside_friction_ratio", 0.5),
+                              (pipe, "open_pipe_toe_limit", None),
+                              (pipe, "displaced_volume", 0.2)):
+        base = D.call_agent("axial_pile", "axial_pile_capacity", dict(call))
+        r = D.call_agent("axial_pile", "axial_pile_capacity",
+                         {**call, name: value})
+        assert "error" not in r, (name, r)
+
+        def cases(res):   # the plugged and unplugged totals, if any
+            return [c["basis"] for c in res["choices"]
+                    if c["what"] == "open-ended pipe"]
+        assert (r["Q_ultimate_kN"], cases(r)) != (base["Q_ultimate_kN"],
+                                                  cases(base)), name
+    h = D.call_agent("axial_pile", "axial_pile_capacity", {
+        "pile_type": "h_pile", "designation": "HP12x74", "pile_length": 20,
+        "layers": sand, "h_pile_toe_area": "steel"})
+    assert h["Q_tip_kN"] < D.call_agent("axial_pile", "axial_pile_capacity", {
+        "pile_type": "h_pile", "designation": "HP12x74", "pile_length": 20,
+        "layers": sand})["Q_tip_kN"]
+    stiff = {**closed, "layers": [{"thickness": 30, "soil_type": "cohesive",
+                                   "unit_weight": 19,
+                                   "cohesion": 4.0 * 47.88}]}
+    end = D.call_agent("axial_pile", "axial_pile_capacity", dict(stiff))
+    api = D.call_agent("axial_pile", "axial_pile_capacity",
+                       {**stiff, "adhesion_beyond_chart": "api"})
+    assert api["Q_skin_kN"] > end["Q_skin_kN"]
+    bad = D.call_agent("axial_pile", "axial_pile_capacity",
+                       {**pipe, "open_pipe_method": "nope"})
+    assert "error" in bad

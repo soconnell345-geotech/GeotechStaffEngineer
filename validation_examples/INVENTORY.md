@@ -35,6 +35,7 @@ are SI — implementers must convert (1 ft = 0.3048 m, 1 kip = 4.448 kN, 1 ksf =
   - Suggested tolerance: +/-15% on Rs and Rt at each depth (Nordlund chart-interpolation differences).
 - Confidence in extraction: high (full table in text; profile read off rendered Figure D-7, cross-checked against the sigma'v table D-4)
 - Notes: exercises Nordlund K-delta/CF charts, layered profile, water table handling, separate shaft/toe phi, toe limiting. H-pile perimeter/toe-area convention (box) matters.
+  - Read off the table (GM-121, 2026-10-18): sigma' includes the 5 ft of soil above the footing (the toe at 0.01 ft below the footing is 16.4 kips, which needs sigma' > 0 there), and DrivenPiles did NOT apply GEC-12 Step 8's 3 ksf limit on sigma'p (sigma'v at the Layer-3 toe is 3.6-4.8 ksf; the plateau is q_L(40) of Fig. 7-15 times the box area).
 
 ## V-002 GEC-12 South Abutment — alpha-method H-pile in clay vs depth
 - Source: GEC-12 Vol 3, Appendix D, Block 10 South Abutment, Tables D-96/97/98 + D-100 + Figure D-83 (PDF pp. 209-216; extracts: `g12_south.txt`, `g12v3_p212.png`)
@@ -51,6 +52,7 @@ are SI — implementers must convert (1 ft = 0.3048 m, 1 kip = 4.448 kN, 1 ksf =
   - Suggested tolerance: +/-15% (alpha-curve interpolation differences).
 - Confidence in extraction: high (su tables + resistance table verbatim; unit weights from rendered Figure D-83)
 - Notes: exercises alpha-vs-su curve and 9*su toe for an H-pile in layered clay. Do NOT validate the 91.25-ft rock-toe value (1527 kips) against the alpha method.
+  - Read off the table (GM-121, 2026-10-18): DrivenPiles used the smooth-steel curves of GEC-12 Fig. 7-17 for the H-pile (GEC-12 p. 247 gives the corrugated curve) and held Ca at the chart's end where su exceeds it (GEC-12 p. 247 and Step 1 give API alpha there); Fig. 7-17's D from the ground surface fits it best.
 
 ## V-003 GEC-12 North Abutment — wave-equation drivability (Smith model)
 - Source: GEC-12 Vol 3, Appendix D, D.10.3, Tables D-7/D-8/D-10 (PDF pp. 72-79; extract: `g12_north_drv_np.txt`)

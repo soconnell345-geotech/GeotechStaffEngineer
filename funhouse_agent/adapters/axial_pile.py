@@ -2,6 +2,10 @@
 
 from axial_pile import PileSection, make_pipe_pile, make_concrete_pile, make_h_pile
 from axial_pile import AxialSoilLayer, AxialSoilProfile, AxialPileAnalysis
+from axial_pile.capacity import (
+    COHESIVE_NT, INSIDE_FRICTION_RATIO, OPEN_PIPE_TOE_LIMIT,
+    UPLIFT_SKIN_FRACTION, _TOE_STRESS_LIMIT,
+)
 from funhouse_agent.adapters import (
     apply_aliases, check_nested_list, declare_aliases, declare_applies_when,
     field_keys, reject_unknown_params, require_keys, require_params,
@@ -13,6 +17,19 @@ _PILE_TYPES = ("pipe_closed", "pipe_open", "concrete_square", "concrete_circular
 _PILE_PARAMS = ("pile_type", "diameter", "wall_thickness", "width",
                 "thickness", "designation", "E")
 _SOIL_PARAMS = ("layers", "gwt_depth")
+# The GEC-12 limits and judgments AxialPileAnalysis takes (GM-121), each
+# with the module's own default.
+_GEC12_OPTIONS = {
+    "toe_stress_limit": _TOE_STRESS_LIMIT,
+    "inside_friction_ratio": INSIDE_FRICTION_RATIO,
+    "open_pipe_toe_limit": OPEN_PIPE_TOE_LIMIT,
+    "open_pipe_method": "auto",
+    "cohesive_Nt": COHESIVE_NT,
+    "h_pile_toe_area": "box",
+    "adhesion_curve": "auto",
+    "adhesion_beyond_chart": "chart_end",
+    "displaced_volume": None,
+}
 
 # Keys a layer dict may carry: AxialSoilLayer's fields plus the 'toe_phi'
 # alias. Anything else was read with .get and silently left out (GM-58).
@@ -63,9 +80,10 @@ def _build_soil_profile(params, *, method):
         layers.append(AxialSoilLayer(
             thickness=l["thickness"], soil_type=l.get("soil_type", "cohesionless"),
             unit_weight=l["unit_weight"], friction_angle=l.get("friction_angle"),
-            cohesion=l.get("cohesion"), delta_phi_ratio=l.get("delta_phi_ratio", 0.75),
+            cohesion=l.get("cohesion"), delta_phi_ratio=l.get("delta_phi_ratio"),
             toe_friction_angle=toe_phi,
             description=l.get("description", ""),
+            beta=l.get("beta"), Nt=l.get("Nt"),
         ))
     return AxialSoilProfile(layers=layers, gwt_depth=params.get("gwt_depth"))
 
@@ -78,7 +96,8 @@ def run_axial_pile_capacity(params, *, method="axial_pile_capacity"):
         params,
         _PILE_PARAMS + _SOIL_PARAMS + (
             "pile_length", "method", "factor_of_safety", "include_uplift",
-            "cohesive_phi", "uplift_skin_fraction", "pile_weight", "head_depth"),
+            "cohesive_phi", "uplift_skin_fraction", "pile_weight", "head_depth")
+        + tuple(_GEC12_OPTIONS),
         method=method)
     require_params(params, ["pile_type"], method=method)
     pile = _build_pile(params)
@@ -89,20 +108,13 @@ def run_axial_pile_capacity(params, *, method="axial_pile_capacity"):
                                   factor_of_safety=params.get("factor_of_safety", 2.5),
                                   include_uplift=params.get("include_uplift", False),
                                   cohesive_phi=params.get("cohesive_phi", 25.0),
-                                  uplift_skin_fraction=params.get("uplift_skin_fraction", 0.75),
+                                  uplift_skin_fraction=params.get(
+                                      "uplift_skin_fraction", UPLIFT_SKIN_FRACTION),
                                   pile_weight=params.get("pile_weight"),
-                                  head_depth=params.get("head_depth", 0.0))
+                                  head_depth=params.get("head_depth", 0.0),
+                                  **{k: params.get(k, v)
+                                     for k, v in _GEC12_OPTIONS.items()})
     result = analysis.compute()
-    # _build_soil_profile gives a layer with no delta_phi_ratio 0.75, so the
-    # module reads it as given; say it is this tool's default (GM-115).
-    if not any("delta_phi_ratio" in l for l in params["layers"]):
-        for c in result.choices:
-            if c["what"] == "Nordlund delta/phi":
-                c["how"] = "default"
-                c["basis"] = ("this tool's default; GEC-12 Fig. 7-9 gives "
-                              "delta/phi by pile type and displaced volume")
-                c["alternatives"] = ["delta/phi given for a layer "
-                                     "(delta_phi_ratio)"]
     return result, analysis
 
 
@@ -158,15 +170,24 @@ METHOD_INFO = {
             "designation": {"type": "str", "required": False, "description": "H-pile designation (e.g., 'HP14x117')."},
             "E": {"type": "float", "required": False, "description": "Pile elastic modulus (kPa). Defaults: steel 200e6, concrete 25e6."},
             "pile_length": {"type": "float", "required": True, "description": "Embedded pile length from the pile head to the tip (m)."},
-            "layers": {"type": "array", "required": True, "description": "Array of soil-layer dicts (measured from the GROUND SURFACE): {thickness (m), soil_type, unit_weight (kN/m3), friction_angle (deg, for cohesionless), cohesion (kPa, for cohesive), toe_friction_angle (deg, OPTIONAL: separate end-bearing phi if the pile tip is in this layer; defaults to friction_angle)}. soil_type must be 'cohesionless' or 'cohesive' (NOT 'sand'/'clay')."},
+            "layers": {"type": "array", "required": True, "description": "Array of soil-layer dicts (measured from the GROUND SURFACE): {thickness (m), soil_type, unit_weight (kN/m3), friction_angle (deg, for cohesionless), cohesion (kPa, for cohesive), toe_friction_angle (deg, OPTIONAL: separate end-bearing phi if the pile tip is in this layer; defaults to friction_angle), delta_phi_ratio (OPTIONAL Nordlund delta/phi; default from GEC-12 Fig. 7-9 by pile type and displaced volume), beta and Nt (OPTIONAL, beta method: the layer's beta and toe Nt from local experience, GEC-12 Steps 2a/5a)}. soil_type must be 'cohesionless' or 'cohesive' (NOT 'sand'/'clay')."},
             "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth below ground surface (m)."},
             "head_depth": {"type": "float", "required": False, "default": 0.0, "description": "Depth of the pile head below the ground surface (m), e.g. the bottom of a footing 1.5 m down. Layers above the head contribute no skin friction; overburden above the head still raises effective stress at the tip. Default 0 = head at the ground surface."},
             "factor_of_safety": {"type": "float", "required": False, "default": 2.5, "description": "Factor of safety."},
             "method": {"type": "str", "required": False, "default": "auto", "allowed_values": ["auto", "beta"], "description": "auto = Nordlund (sand) / Tomlinson (clay); beta = effective-stress method for all layers."},
             "include_uplift": {"type": "bool", "required": False, "default": False, "description": "Also report uplift (tension) capacity."},
             "cohesive_phi": {"type": "float", "required": False, "default": 25.0, "description": "FALLBACK drained phi' (deg) for cohesive layers under method='beta' (skin AND tip); a per-layer friction_angle on a cohesive layer wins over this global."},
-            "uplift_skin_fraction": {"type": "float", "required": False, "default": 0.75, "description": "Fraction of outside skin friction credited in uplift (with include_uplift)."},
+            "uplift_skin_fraction": {"type": "float", "required": False, "default": UPLIFT_SKIN_FRACTION, "description": "Fraction of the outside side resistance taken in uplift (with include_uplift). Default 1.0: GEC-12 Eq. 7-38 takes the whole shaft resistance and puts the uplift reduction in the resistance factor; 0.7 is the customary share in free-draining soils GEC-12 cites."},
             "pile_weight": {"type": "float", "required": False, "description": "Pile self-weight (kN) added to uplift capacity (with include_uplift)."},
+            "toe_stress_limit": {"type": "float", "required": False, "default": _TOE_STRESS_LIMIT, "description": "Limit on sigma'p at the toe for the Nordlund toe resistance (kPa). Default 143.6 kPa = 3 ksf, GEC-12 Step 8; null for no limit (GEC-12's worked example did not limit it)."},
+            "inside_friction_ratio": {"type": "float", "required": False, "default": INSIDE_FRICTION_RATIO, "description": "Open-end pipe, unplugged case: interior over exterior unit side resistance. Default 1/3, the low end of GEC-12's 'typically on the order of 1/3 to 1/2' (Sec. 7.10.7)."},
+            "open_pipe_toe_limit": {"type": "float", "required": False, "default": OPEN_PIPE_TOE_LIMIT, "description": "Open-end pipe in cohesionless soil: limiting unit toe resistance (kPa). Default 5027 kPa = 105 ksf (Tomlinson, GEC-12 Sec. 7.10.7); null for none."},
+            "open_pipe_method": {"type": "str", "required": False, "default": "auto", "allowed_values": ["auto", "paikowsky_whitman", "tomlinson"], "description": "Open-end pipe: 'auto' takes Tomlinson's Eq. 7-90 for a pipe under 24 in with the toe in clay and over half its length in clay (GEC-12 p. 407), else the lesser of the plugged and unplugged cases (Eqs. 7-88/7-89, 'paikowsky_whitman')."},
+            "cohesive_Nt": {"type": "float", "required": False, "default": COHESIVE_NT, "description": "method='beta': Nt of a cohesive toe layer. Default 3 (GEC-12: a relatively low Nt in clays unless local correlations suggest higher; Table 7-9 clay 3-30). A layer's own Nt wins."},
+            "h_pile_toe_area": {"type": "str", "required": False, "default": "box", "allowed_values": ["box", "steel"], "description": "H-pile toe area: 'box' (depth x flange width, GEC-12 Sec. 7.10.7) or 'steel'. GEC-12 Step 9 leaves it to past experience and local load tests."},
+            "adhesion_curve": {"type": "str", "required": False, "default": "auto", "allowed_values": ["auto", "concrete_timber_corrugated", "smooth_steel"], "description": "alpha-method: GEC-12 Fig. 7-17 curves. 'auto' = smooth steel for pipe piles, the concrete/timber/corrugated curve for H-piles (GEC-12 p. 247) and concrete or timber piles."},
+            "adhesion_beyond_chart": {"type": "str", "required": False, "default": "chart_end", "allowed_values": ["chart_end", "api"], "description": "alpha-method where su exceeds Fig. 7-17: 'chart_end' (Ca held at the curve's end, as GEC-12's worked example, Vol 3 Table D-100) or 'api' (alpha from API RP 2A, which GEC-12 p. 247 recommends for highly overconsolidated clays; Ca jumps at the chart's end). Within the chart Ca is at most su."},
+            "displaced_volume": {"type": "float", "required": False, "description": "Nordlund displaced volume V per unit length (m3/m). Default: the steel area of an H-pile, the gross area of other piles (an open pipe as a closed pipe; its steel area, if it drives unplugged, is below GEC-12 Fig. 7-9)."},
         },
         "returns": {"Q_ultimate_kN": "Ultimate capacity.", "Q_skin_kN": "Skin friction.", "Q_tip_kN": "Tip resistance.", "Q_allowable_kN": "Allowable capacity.", "choices": "What the run chose and how: what, chosen, how (given, default or module), basis, alternatives."},
     },
@@ -215,4 +236,15 @@ declare_aliases(METHOD_INFO, {
 declare_applies_when(METHOD_INFO, {"axial_pile_capacity": {
     "cohesive_phi": {"method": ["beta"]},
     "uplift_skin_fraction": {"include_uplift": [True]},
+    "inside_friction_ratio": {"pile_type": ["pipe_open"]},
+    "open_pipe_method": {"pile_type": ["pipe_open"]},
+    "h_pile_toe_area": {"pile_type": ["h_pile"]},
+    # These apply by the soil (a sand or clay toe, a clay layer, su past
+    # Fig. 7-17), which no other parameter says: listed when the result's
+    # choices report them as defaults.
+    "cohesive_Nt": False,
+    "toe_stress_limit": False,
+    "adhesion_curve": False,
+    "adhesion_beyond_chart": False,
+    "open_pipe_toe_limit": False,
 }})

@@ -272,7 +272,8 @@ Key conventions:
       stopped by the owner for one integral review (GM-140); calc
       packages derive Ka and L from the given inputs as their tools do
       (release note); every calc package runs its tool's own code path,
-      inputs and parameter docs (release note);
+      inputs and parameter docs (release note); driven piles follow
+      GEC-12 chapter 7 as printed (release note; OWN-63);
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done".
     Open next: Foundry brief 6, which measures all of this, is drafted

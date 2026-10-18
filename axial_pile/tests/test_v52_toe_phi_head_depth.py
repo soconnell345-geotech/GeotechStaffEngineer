@@ -169,47 +169,48 @@ class TestHeadDepthOffset:
 
 class TestV001ToePhi40:
 
-    def _footing_datum_profile(self):
-        """GEC-12 V-001 profile from the footing datum (excavated 5 ft), with
-        the Layer-3 design-limit toe phi=40 set per-layer."""
+    def _ground_profile(self, toe_phi=40):
+        """GEC-12 V-001 profile from the GROUND SURFACE (Vol 3 Table D-6:
+        sigma' includes the 5 ft above the footing; GWT 15 ft below grade),
+        the pile head at the footing (head_depth 5 ft) and the Layer-3
+        design-limit toe phi=40 set per-layer."""
         return AxialSoilProfile(layers=[
-            AxialSoilLayer(20 * FT, "cohesionless", 105 * PCF, friction_angle=33),
+            AxialSoilLayer(25 * FT, "cohesionless", 105 * PCF, friction_angle=33),
             AxialSoilLayer(25 * FT, "cohesionless", 112 * PCF, friction_angle=36),
             AxialSoilLayer(52 * FT, "cohesionless", 125 * PCF, friction_angle=36,
-                           toe_friction_angle=40),
-        ], gwt_depth=10 * FT)
+                           toe_friction_angle=toe_phi),
+        ], gwt_depth=15 * FT)
 
-    def test_highlevel_toe_phi40_reaches_published_plateau(self):
-        """The high-level API with the per-layer toe phi=40 reproduces the
-        Table D-6 Layer-3 toe plateau (428.1 kips) to within +/-15% at every
-        depth where the tip is in Layer 3 — closing the old single-phi gap."""
-        pile = make_h_pile("HP12x74")
-        soil = self._footing_datum_profile()
+    def _run(self, D_ft, toe_phi=40, **kw):
+        return AxialPileAnalysis(pile=make_h_pile("HP12x74"),
+                                 soil=self._ground_profile(toe_phi),
+                                 pile_length=D_ft * FT, head_depth=5 * FT,
+                                 **kw).compute()
+
+    def test_toe_phi40_reaches_the_published_plateau_without_step_8(self):
+        """Table D-6's Layer-3 toe plateau (428.1 kips) is reached when
+        sigma'p is not limited: DrivenPiles' example did not apply GEC-12
+        Step 8's 3 ksf limit (its plateau is q_L(40) x box area)."""
         for D_ft in (50, 60, 70):
-            r = AxialPileAnalysis(pile=pile, soil=soil,
-                                  pile_length=D_ft * FT, method="auto").compute()
-            assert r.Q_tip / KIP == pytest.approx(428.1, rel=0.15), (
-                f"D={D_ft} ft: high-level toe(phi=40) {r.Q_tip / KIP:.1f} "
-                f"vs published plateau 428.1"
-            )
+            r = self._run(D_ft, toe_stress_limit=None)
+            assert r.Q_tip / KIP == pytest.approx(428.1, rel=0.01), D_ft
+
+    def test_step_8_limit_lowers_the_published_plateau(self):
+        """With GEC-12's Step 8 limit (the module's default) the toe is
+        alpha_t N'q 3 ksf x box area, 359.7 kips (-16 %)."""
+        for D_ft in (50, 60, 70):
+            r = self._run(D_ft)
+            assert r.Q_tip / KIP == pytest.approx(359.7, rel=0.005), D_ft
+            assert r.toe_details["governs"] == "Eq. 7-9"
 
     def test_highlevel_toe_phi40_beats_single_phi(self):
-        """Setting toe phi=40 raises the high-level toe well above the
-        single-phi (phi=36) result — ~154 kips with the corrected Fig 7-15 qL
-        digitization (2026-07-19; the old 301-kip pin encoded the wrong
-        table's qL(36)=14,000 kPa, ~2x the printed chart)."""
-        pile = make_h_pile("HP12x74")
-        soil40 = self._footing_datum_profile()
-        soil36 = AxialSoilProfile(layers=[
-            AxialSoilLayer(20 * FT, "cohesionless", 105 * PCF, friction_angle=33),
-            AxialSoilLayer(25 * FT, "cohesionless", 112 * PCF, friction_angle=36),
-            AxialSoilLayer(52 * FT, "cohesionless", 125 * PCF, friction_angle=36),
-        ], gwt_depth=10 * FT)
-        r40 = AxialPileAnalysis(pile=pile, soil=soil40, pile_length=60 * FT).compute()
-        r36 = AxialPileAnalysis(pile=pile, soil=soil36, pile_length=60 * FT).compute()
-        assert r36.Q_tip / KIP == pytest.approx(154.4, rel=0.05)  # single-phi=36
+        """Setting toe phi=40 raises the toe well above the single-phi
+        (phi=36) result, about 155 kips; the shaft does not change."""
+        r40 = self._run(60)
+        r36 = self._run(60, toe_phi=None)
+        assert r36.Q_tip / KIP == pytest.approx(154.8, rel=0.01)
         assert r40.Q_tip > r36.Q_tip
-        assert r40.Q_skin == pytest.approx(r36.Q_skin, rel=1e-12)  # shaft unchanged
+        assert r40.Q_skin == pytest.approx(r36.Q_skin, rel=1e-12)
 
 
 if __name__ == "__main__":
