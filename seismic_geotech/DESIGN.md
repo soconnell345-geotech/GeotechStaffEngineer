@@ -64,3 +64,8 @@ analyze_liquefaction(N160, FC, sigma_v, sigma_v_eff, amax, M, ...) -> Liquefacti
   limit-equilibrium solution. Active uses inertia toward the wall; passive
   uses inertia away from the wall (worst case each).
 - SoilProfile adapter: to_seismic_input(amax_g, magnitude)
+- Static KA behind PA and delta-PAE (GM-120, GM-142): Rankine from phi by
+  default (unchanged). With a sloping backfill, a batter or wall friction
+  that is not the only reading, so `earth_pressure_choices(..., beta_deg=)`
+  also states Coulomb's KA with KAE's own delta, i and beta (KAE at kh = 0)
+  in the basis and as the first alternative; the tool passes its beta.

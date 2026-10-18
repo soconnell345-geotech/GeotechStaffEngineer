@@ -33,8 +33,12 @@ def test_given_method_and_the_assumed_t1():
     assert c["stress increase with depth"]["how"] == "given"
     t1 = c["end of primary consolidation t1"]
     assert t1["chosen"] == "1 year (assumed)" and t1["how"] == "default"
+    # GM-142: the layer's own e0, not a default of 1.0
     e0 = c["void ratio e0 for secondary compression"]
-    assert e0["chosen"] == "1" and e0["how"] == "default"
+    assert e0["chosen"] == "each layer's own e0 (0.9)"
+    assert e0["how"] == "module"
+    assert e0["alternatives"] == [
+        "one e0 given for every layer (e0_secondary)"]
     # Hdr is not used without a cv: no drainage path is reported
     assert "drainage path" not in c
     # the assumed t1 is a warning on the result, not only a choice

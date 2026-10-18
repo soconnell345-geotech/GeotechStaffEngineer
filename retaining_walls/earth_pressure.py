@@ -100,6 +100,17 @@ def horizontal_force_active(gamma: float, H: float, Ka: float,
     z_Pa : float
         Height of resultant above base (m).
     """
+    parts = active_force_components(gamma, H, Ka, c, q)
+    return parts["Pa"], parts["z_Pa"]
+
+
+def active_force_components(gamma: float, H: float, Ka: float,
+                            c: float = 0.0, q: float = 0.0) -> dict:
+    """The parts of :func:`horizontal_force_active` (GM-143):
+    ``Pa_earth`` (0.5 Ka gamma H^2, at H/3), ``Pa_surcharge`` (Ka q H, at
+    H/2), ``Pa_cohesion`` (-2 c sqrt(Ka) H, at H/2), their total ``Pa``
+    (not below zero) and its height ``z_Pa`` above the base (m), as that
+    function works them out (it returns this ``Pa`` and ``z_Pa``)."""
     # Triangular earth pressure component
     Pa_earth = 0.5 * Ka * gamma * H ** 2
     z_earth = H / 3.0
@@ -122,7 +133,8 @@ def horizontal_force_active(gamma: float, H: float, Ka: float,
     else:
         z_Pa = H / 3.0
 
-    return Pa_total, z_Pa
+    return {"Pa_earth": Pa_earth, "Pa_surcharge": Pa_surcharge,
+            "Pa_cohesion": Pa_cohesion, "Pa": Pa_total, "z_Pa": z_Pa}
 
 
 def horizontal_force_passive(gamma: float, D: float, Kp: float,

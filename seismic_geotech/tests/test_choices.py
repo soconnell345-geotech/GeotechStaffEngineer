@@ -51,6 +51,30 @@ def test_the_packages_ka_is_rankine_from_phi_or_the_value_given():
     assert given == {"what": "static KA", "chosen": "0.3", "how": "given"}
 
 
+def test_a_rankine_ka_also_states_coulombs_reading():
+    # GM-142: the static KA stays Rankine by default; the choice states the
+    # other reading, Coulomb's KA with KAE's own delta, i and beta (KAE at
+    # kh = 0), so the two bases behind delta-PAE are both in view.
+    from seismic_geotech.mononobe_okabe import mononobe_okabe_KAE
+    ka = _by_what(earth_pressure_choices(
+        34, 0.15, ka="rankine", i_deg=10, beta_deg=5, forces=True,
+        ka_can_be_given=True))["static KA"]
+    assert ka["chosen"] == "Rankine, 0.2827" and ka["how"] == "module"
+    coulomb = mononobe_okabe_KAE(34, 2.0 / 3.0 * 34, 0.0, 0.0, 5, 10)
+    assert ka["alternatives"][0].startswith(f"Coulomb, {coulomb:.4f}")
+    assert "beta 5 deg" in ka["alternatives"][0]
+    assert f"Coulomb KA = {coulomb:.4f}" in ka["basis"]
+    assert "KA given (KA)" in ka["alternatives"]
+    # level backfill, vertical wall, delta = 20 deg: Coulomb 0.2973
+    level = _by_what(earth_pressure_choices(
+        30, 0.1, delta_deg=20, ka="rankine"))["static KA"]
+    assert level["alternatives"][0].startswith("Coulomb, 0.2973")
+    # a slope steeper than phi: Coulomb has no solution, and says so
+    steep = _by_what(earth_pressure_choices(
+        30, 0.0, i_deg=35, ka="rankine"))["static KA"]
+    assert "no solution" in steep["alternatives"][0]
+
+
 def test_mo_fallback_is_named_and_warned():
     # phi - theta - i < 0: the module falls back to Ka + 0.75 kh
     c = _by_what(earth_pressure_choices(20, 0.5))

@@ -249,11 +249,16 @@ def analyze_aggregate_piers(
     pattern : str
         'triangular' or 'square'. Default 'triangular'.
     E_column : float
-        Modulus of aggregate column (kPa). Default 80,000 kPa.
+        Modulus of aggregate column (kPa). Default 80,000 kPa. Used only
+        to warn when it is below E_soil: the stress split is set by ``n``,
+        not worked out from the moduli.
     E_soil : float
-        Modulus of surrounding soil (kPa). Default 5,000 kPa.
+        Modulus of surrounding soil (kPa). Default 5,000 kPa. Used only
+        for the composite modulus.
     n : float
-        Stress concentration ratio. Default 5.0.
+        Stress concentration ratio sigma_c / sigma_s. Default 5.0 (GEC-13:
+        typically 2 to 5 for stone columns in soft clay, 4 to 10 for
+        rammed aggregate piers).
     q_unreinforced : float
         Unreinforced bearing capacity (kPa). Default 0 (not computed).
     S_unreinforced : float
@@ -262,7 +267,9 @@ def analyze_aggregate_piers(
     Returns
     -------
     AggregatePierResult
-        Complete analysis results.
+        Complete analysis results, with its ``choices`` (GM-142): n, the
+        soil modulus and the pattern, each given or default, and what
+        E_column is used for.
     """
     as_ratio = area_replacement_ratio(column_diameter, spacing, pattern)
 
@@ -300,4 +307,40 @@ def analyze_aggregate_piers(
         column_diameter_m=column_diameter,
         column_spacing_m=spacing,
         pattern=pattern,
+        choices=aggregate_pier_choices(n, E_soil, E_column, pattern),
     )
+
+
+def aggregate_pier_choices(n: float, E_soil: float, E_column: float,
+                           pattern: str) -> list:
+    """What :func:`analyze_aggregate_piers` chose (GM-142), as a result's
+    ``choices`` (``geotech_common.choices``)."""
+    from geotech_common.choices import choice, how_given
+    return [
+        choice("stress concentration ratio n", f"{n:g}",
+               how_given(n, 5.0, name="n"),
+               "n = sigma_c / sigma_s, taken as given and not worked out "
+               "from the moduli; GEC-13 (FHWA-NHI-16-027) Vol. I Ch. 5: "
+               "typically 2 to 5 for stone columns in soft clay and 4 to "
+               "10 for rammed aggregate piers. It sets the settlement "
+               "reduction factor 1 / [1 + a_s (n - 1)], the improved "
+               "bearing and the composite modulus",
+               ["n from the moduli, n = E_c / E_s for one-dimensional "
+                "compression (GEC-13 Eq. 5-17)",
+                "Priebe's improvement factor n0 "
+                "(priebe_improvement_factor)"]),
+        choice("soil modulus E_s", f"{E_soil:g} kPa",
+               how_given(E_soil, 5000.0, name="E_soil"),
+               "used only for the composite modulus E_comp = "
+               "E_s [1 + a_s (n - 1)]"),
+        choice("column modulus E_c", f"{E_column:g} kPa",
+               how_given(E_column, 80000.0, name="E_column"),
+               "not used in the calculation: only a warning when it is "
+               "below E_s (n sets the stress split)"),
+        choice("column pattern", pattern,
+               how_given(pattern, "triangular", name="pattern"),
+               "unit cell of equal area: d_e = 1.05 S (triangular) or "
+               "1.13 S (square), a_s = (d / d_e)^2",
+               ["square (pattern 'square')" if pattern == "triangular"
+                else "triangular (pattern 'triangular')"]),
+    ]

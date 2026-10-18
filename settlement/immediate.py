@@ -185,6 +185,21 @@ def schmertmann_settlement(q_net: float, q0: float, B: float,
     """
     if q_net <= 0:
         return 0.0
+    return schmertmann_terms(q_net, q0, B, layers, footing_shape,
+                             time_years, L, gamma_soil)["Se"]
+
+
+def schmertmann_terms(q_net: float, q0: float, B: float,
+                      layers: List[SchmertmannLayer],
+                      footing_shape: str = "square",
+                      time_years: float = 0.0,
+                      L: Optional[float] = None,
+                      gamma_soil: Optional[float] = None) -> dict:
+    """The terms of :func:`schmertmann_settlement` as it works them out
+    (it returns this ``Se``): ``strip`` (the plane-strain diagram),
+    ``C1``, ``C2``, ``C3``, ``z_peak``, ``z_max``, ``Iz_0``,
+    ``sigma_vp`` (kPa), ``Iz_peak``, ``sum_Iz_dz_over_Es`` (m/kPa) and
+    ``Se`` (m). Same parameters; ``q_net`` must be positive."""
 
     # Determine shape behavior
     is_strip = footing_shape.lower() == "strip"
@@ -262,4 +277,7 @@ def schmertmann_settlement(q_net: float, q0: float, B: float,
             total += strain_influence(z_mid) / layer.Es * (zc - za)
 
     Se = C1 * C2 * C3 * q_net * total
-    return Se
+    return {"strip": is_strip, "C1": C1, "C2": C2, "C3": C3,
+            "z_peak": z_peak, "z_max": z_max, "Iz_0": Iz_0,
+            "sigma_vp": sigma_vp, "Iz_peak": Iz_peak,
+            "sum_Iz_dz_over_Es": total, "Se": Se}

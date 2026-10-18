@@ -38,6 +38,24 @@ from drilled_shaft.end_bearing import (
 from drilled_shaft.results import DrillShaftResult
 
 
+def require_tip_N60(tip_layer: ShaftSoilLayer, depth: float) -> float:
+    """The N60 a cohesionless tip layer's end bearing uses (GM-142).
+
+    End bearing in cohesionless soil is q_b = 57.5 N60 kPa (N60 capped
+    at 50; GEC-10, O'Neill & Reese 1999), so it needs the tip layer's
+    N60. Until GM-142 a layer with no N60 took N60 = 15 without saying
+    so; now it is refused.
+    """
+    if tip_layer.N60 > 0:
+        return tip_layer.N60
+    name = f" ({tip_layer.description})" if tip_layer.description else ""
+    raise ValueError(
+        f"the shaft tip at {depth:g} m is in a cohesionless layer{name} "
+        "with no N60: end bearing q_b = 57.5 N60 kPa (N60 capped at 50; "
+        "GEC-10, O'Neill & Reese 1999) needs that layer's N60 (the SPT "
+        "blow count corrected to 60 % energy at the tip)")
+
+
 @dataclass
 class DrillShaftAnalysis:
     """Drilled shaft axial capacity analysis.
@@ -258,7 +276,7 @@ class DrillShaftAnalysis:
                 base_diameter=base_D, shaft_length=L,
             )
         elif tip_layer.soil_type == "cohesionless":
-            N60 = tip_layer.N60 if tip_layer.N60 > 0 else 15.0
+            N60 = require_tip_N60(tip_layer, L)
             Qt = end_bearing_cohesionless(N60, shaft.tip_area, base_D)
         else:  # rock
             Qt = end_bearing_rock(tip_layer.qu, shaft.tip_area, tip_layer.RQD)
@@ -306,6 +324,13 @@ class DrillShaftAnalysis:
 
         depths = np.linspace(depth_min, depth_max, n_points)
         results = []
+
+        # A cohesionless tip with no N60 is refused (GM-142), not left out
+        # of the curve by the guard below.
+        for d in depths:
+            tip = self.soil.layer_at_depth(float(d) - 0.01)
+            if tip.soil_type == "cohesionless":
+                require_tip_N60(tip, float(d))
 
         # Use a copy of the shaft per trial depth rather than temporarily
         # mutating the shared shaft.length (re-entrant / thread-safe).

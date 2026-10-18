@@ -147,7 +147,7 @@ METHOD_REGISTRY = {
 # documents them identically (with allowed_values), so capacity_vs_depth and
 # lrfd_capacity stay in lockstep with drilled_shaft_capacity instead of drifting.
 _INFO_DIAMETER = {"type": "float", "required": True, "description": "Shaft diameter (m)."}
-_INFO_LAYERS = {"type": "array", "required": True, "description": "Array of {thickness, soil_type, unit_weight, cu, phi, N60, qu, RQD} dicts. soil_type: cohesive/cohesionless/rock. For beta_method='rational' each cohesionless layer also takes N1_60 (overburden-corrected SPT, seeds phi'=27.5+9.2*log10[(N1)60]) and optionally sigma_v_ref (kPa, pre-scour effective stress for OCR; default = current sigma'v) or a direct OCR."}
+_INFO_LAYERS = {"type": "array", "required": True, "description": "Array of {thickness, soil_type, unit_weight, cu, phi, N60, qu, RQD} dicts. soil_type: cohesive/cohesionless/rock. A cohesionless layer at the shaft tip needs its N60 (end bearing q_b = 57.5*N60 kPa, N60 capped at 50); without it the call is refused. For beta_method='rational' each cohesionless layer also takes N1_60 (overburden-corrected SPT, seeds phi'=27.5+9.2*log10[(N1)60]) and optionally sigma_v_ref (kPa, pre-scour effective stress for OCR; default = current sigma'v) or a direct OCR."}
 _INFO_GWT = {"type": "float", "required": False, "description": "Groundwater depth (m)."}
 _INFO_FOS = {"type": "float", "required": False, "default": 2.5, "description": "Factor of safety."}
 # GEC-10 rational side-resistance selectors (opt-in; defaults preserve AASHTO/depth).

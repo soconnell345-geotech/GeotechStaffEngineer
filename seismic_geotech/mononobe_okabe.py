@@ -233,7 +233,8 @@ def earth_pressure_choices(phi_deg: float, kh: float, kv: float = None,
                            delta_deg: float = None, i_deg: float = 0.0,
                            ka=None, ka_how: str = "module",
                            forces: bool = False,
-                           ka_can_be_given: bool = False) -> list:
+                           ka_can_be_given: bool = False,
+                           beta_deg: float = 0.0) -> list:
     """What a seismic earth pressure calculation chose (GM-115), as a
     result's ``choices`` (``geotech_common.choices``).
 
@@ -255,6 +256,11 @@ def earth_pressure_choices(phi_deg: float, kh: float, kv: float = None,
     ka_can_be_given : bool
         Whether the caller takes KA as an input (the calc package does):
         a worked-out Rankine KA then names giving it as an alternative.
+    beta_deg : float
+        The wall batter as given to :func:`mononobe_okabe_KAE`. With a
+        Rankine KA the choice also states the other reading (GM-142):
+        Coulomb's KA with the same delta, i and beta, which is what KAE
+        becomes at kh = 0.
     """
     from geotech_common.choices import DEFAULT, GIVEN, MODULE, choice
     out = []
@@ -285,13 +291,25 @@ def earth_pressure_choices(phi_deg: float, kh: float, kv: float = None,
                           GIVEN))
     if ka == "rankine":
         ka_r = math.tan(math.pi / 4 - math.radians(phi_deg) / 2) ** 2
+        basis = ("vertical wall, level backfill, no wall friction; with a "
+                 "sloping backfill or a batter UFC 3-220-20 Sec. 4-4.4.1 "
+                 "takes KA from the same slope and batter")
+        d = 2.0 / 3.0 * phi_deg if delta_deg is None else delta_deg
+        if phi_deg - i_deg >= 0:
+            # Coulomb: M-O at kh = kv = 0, the same wedge as KAE
+            ka_c = mononobe_okabe_KAE(phi_deg, d, 0.0, 0.0, beta_deg, i_deg)
+            other = (f"Coulomb, {ka_c:.4f} (delta {d:.1f} deg, i {i_deg:g} "
+                     f"deg, beta {beta_deg:g} deg: KAE at kh = 0)")
+            basis += (f". The other reading: Coulomb KA = {ka_c:.4f} with "
+                      f"the same delta, i and beta as KAE (KAE at kh = 0)")
+        else:
+            other = ("Coulomb KA with the same delta, i and beta (no "
+                     "solution here: the backfill slope i exceeds phi)")
+        if forces:
+            basis += "; delta-PAE = PAE - PA takes the KA chosen"
         out.append(choice(
-            "static KA", f"Rankine, {ka_r:.4f}", MODULE,
-            "vertical wall, level backfill, no wall friction; with a "
-            "sloping backfill or a batter UFC 3-220-20 Sec. 4-4.4.1 takes KA "
-            "from the same slope and batter",
-            ["KA from the same backfill slope, batter and wall friction"]
-            + (["KA given (KA)"] if ka_can_be_given else [])))
+            "static KA", f"Rankine, {ka_r:.4f}", MODULE, basis,
+            [other] + (["KA given (KA)"] if ka_can_be_given else [])))
     elif ka is not None:
         out.append(choice("static KA", f"{ka:g}", ka_how))
     if forces:

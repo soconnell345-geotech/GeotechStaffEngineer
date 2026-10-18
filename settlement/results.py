@@ -43,6 +43,25 @@ class SettlementResult:
     warnings : list of str
         What the user must be told, e.g. that secondary settlement starts
         at an assumed t1 of 1 year.
+
+    The terms the analysis used, as it used them (GM-143; the calc
+    package prints these rather than working them out again):
+
+    B, L : float
+        The footing's width and length (m); L is None for a strip taken
+        as infinitely long (no L given).
+    footing_shape : str
+    Iw : float, optional
+        The elastic influence factor used (elastic method).
+    schmertmann_terms : dict, optional
+        Schmertmann's C1, C2, C3, z_peak, z_max, Iz_0, sigma_vp, Iz_peak,
+        sum_Iz_dz_over_Es, strip and Se (``immediate.schmertmann_terms``).
+    consolidation_terms : list of dict, optional
+        Per consolidation layer, unrounded: delta_sigma, sigma_final (kPa),
+        case and Sc (m) (``consolidation.consolidation_layer_terms``).
+    secondary_terms : dict, optional
+        t1_years, t2_years, t1_from, C_alpha, H_total, e0_given, layers
+        (thickness, e0, Ss) and Ss (m).
     """
     immediate: float = 0.0
     consolidation: float = 0.0
@@ -59,6 +78,13 @@ class SettlementResult:
     t90_years: Optional[float] = None
     choices: List[Dict[str, Any]] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    B: Optional[float] = None
+    L: Optional[float] = None
+    footing_shape: str = ""
+    Iw: Optional[float] = None
+    schmertmann_terms: Optional[Dict[str, Any]] = None
+    consolidation_terms: Optional[List[Dict[str, Any]]] = None
+    secondary_terms: Optional[Dict[str, Any]] = None
 
     def summary(self) -> str:
         """Return a formatted summary string.

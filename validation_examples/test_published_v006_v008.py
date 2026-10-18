@@ -165,7 +165,8 @@ def test_v007_high_level_rational_alpha():
     soil = ShaftSoilProfile(layers=[
         ShaftSoilLayer(3.0, "cohesive", 18.0, cu=100.0),          # cased cover
         ShaftSoilLayer(dz, "cohesive", 20.3, cu=1750 * PSF, description="Layer 4 clay"),
-        ShaftSoilLayer(3.0, "cohesionless", 19.0, phi=35),        # bearing layer / tip
+        # bearing layer / tip: the example's N60 = 41 (GM-142 needs it)
+        ShaftSoilLayer(3.0, "cohesionless", 19.0, phi=35, N60=41),
     ])
     result = DrillShaftAnalysis(shaft=shaft, soil=soil,
                                 alpha_method="rational", su_test_type="uc").compute()

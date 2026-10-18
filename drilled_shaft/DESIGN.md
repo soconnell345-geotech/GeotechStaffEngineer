@@ -30,6 +30,12 @@ get_resistance_factors(method, condition) -> dict
   fields N1_60/sigma_v_ref/OCR)
 - SoilProfile adapter: to_drilled_shaft_input(shaft_length)
 - LRFD phi factors: alpha=0.45, beta=0.55, rock=0.50 (redundant), etc.
+- A cohesionless tip needs its N60 (GM-142, 2026-10-18): q_b = 57.5 N60
+  kPa (N60 capped at 50) has no other input, so `require_tip_N60` refuses a
+  tip layer with none, in `compute`, the calc steps and
+  `capacity_vs_depth` (which used to leave those depths out). Before, N60 =
+  15 was taken without saying so. On the side, a cohesionless layer with no
+  N60 still gets no N60 < 15 reduction of beta (O'Neill & Reese).
 
 ## Side-resistance methods: simplified (default) vs rational (opt-in)
 

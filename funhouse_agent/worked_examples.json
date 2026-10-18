@@ -161,6 +161,7 @@
        "soil_type": "cohesionless",
        "unit_weight": 19.0,
        "phi": 35,
+       "N60": 41,
        "description": "bearing layer"
       }
      ]

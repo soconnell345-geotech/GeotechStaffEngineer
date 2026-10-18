@@ -40,6 +40,9 @@ class AggregatePierResult:
         Center-to-center spacing.
     pattern : str
         'triangular' or 'square'.
+    choices : list of dict
+        What the analysis chose (GM-142, ``geotech_common.choices``;
+        ``aggregate_piers.aggregate_pier_choices``).
     """
     area_replacement_ratio: float = 0.0
     stress_concentration_ratio: float = 0.0
@@ -52,6 +55,7 @@ class AggregatePierResult:
     column_diameter_m: float = 0.0
     column_spacing_m: float = 0.0
     pattern: str = ""
+    choices: List[Dict[str, Any]] = field(default_factory=list)
 
     def summary(self) -> str:
         lines = [
@@ -78,11 +82,14 @@ class AggregatePierResult:
             lines.append(f"    Unreinforced:           {self.settlement_unreinforced_mm:.1f} mm")
             lines.append(f"    Improved:               {self.settlement_improved_mm:.1f} mm")
             lines.append("")
+        if self.choices:
+            from geotech_common.choices import choices_lines
+            lines.extend(choices_lines(self.choices))
         lines.append("=" * 60)
         return "\n".join(lines)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "area_replacement_ratio": round(self.area_replacement_ratio, 4),
             "stress_concentration_ratio": round(self.stress_concentration_ratio, 2),
             "composite_modulus_kPa": round(self.composite_modulus_kPa, 1),
@@ -95,6 +102,9 @@ class AggregatePierResult:
             "column_spacing_m": round(self.column_spacing_m, 2),
             "pattern": self.pattern,
         }
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
+        return d
 
 
 @dataclass

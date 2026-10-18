@@ -716,7 +716,9 @@ class TestRationalSideResistance:
         layers = [
             ShaftSoilLayer(3.0, "cohesive", 18.0, cu=100.0),
             ShaftSoilLayer(15 * 0.3048, "cohesive", 20.3, cu=1750 * 0.04788, description="clay"),
-            ShaftSoilLayer(3.0, "cohesionless", 19.0, phi=35),
+            # the example's bearing sand, N60 = 41 (a cohesionless tip
+            # needs its N60 since GM-142)
+            ShaftSoilLayer(3.0, "cohesionless", 19.0, phi=35, N60=41),
         ]
         soil = ShaftSoilProfile(layers=layers)
         rational = DrillShaftAnalysis(shaft=shaft, soil=soil,
@@ -749,7 +751,10 @@ class TestRationalSideResistance:
         """A layer OCR override bypasses the sigma'p/N60 computation."""
         shaft = DrillShaft(diameter=1.0, length=10.0)
         soil = ShaftSoilProfile(layers=[
-            ShaftSoilLayer(10.0, "cohesionless", 18.0, phi=40, OCR=1.65)])
+            # N60 for the tip's end bearing (GM-142); the OCR given
+            # still bypasses sigma'p from N60 on the side
+            ShaftSoilLayer(10.0, "cohesionless", 18.0, phi=40, OCR=1.65,
+                           N60=30)])
         result = DrillShaftAnalysis(shaft=shaft, soil=soil, beta_method="rational").compute()
         sand = next(lb for lb in result.layer_breakdown if lb["soil_type"] == "cohesionless")
         assert float(sand["method"].split("=")[1].split()[0]) == pytest.approx(0.41, abs=0.02)

@@ -111,8 +111,28 @@ def consolidation_settlement_layer(layer: ConsolidationLayer,
     ----------
     FHWA GEC-6, Eqs 8-5 through 8-7.
     """
+    return consolidation_layer_terms(layer, delta_sigma)["Sc"]
+
+
+#: The three cases of :func:`consolidation_settlement_layer`, by key.
+CONSOLIDATION_CASES = {
+    "nc": "Case 1 (NC)",
+    "oc": "Case 2 (OC, stays in OC range)",
+    "oc_to_nc": "Case 3 (OC, exceeds preconsolidation)",
+    "none": "no stress increase",
+}
+
+
+def consolidation_layer_terms(layer: ConsolidationLayer,
+                              delta_sigma: float) -> dict:
+    """The terms of :func:`consolidation_settlement_layer` for one
+    sublayer: ``delta_sigma`` and ``sigma_final`` (kPa), the ``case``
+    (a key of :data:`CONSOLIDATION_CASES`) and the settlement ``Sc`` (m),
+    as that function works them out (it returns this ``Sc``)."""
     if delta_sigma <= 0:
-        return 0.0
+        return {"delta_sigma": delta_sigma,
+                "sigma_final": layer.sigma_v0 + delta_sigma,
+                "case": "none", "Sc": 0.0}
 
     H = layer.thickness
     e0 = layer.e0
@@ -124,19 +144,23 @@ def consolidation_settlement_layer(layer: ConsolidationLayer,
 
     if layer.is_normally_consolidated:
         # Case 1: Normally consolidated
+        case = "nc"
         Sc = Cc * H / (1.0 + e0) * math.log10(sigma_final / sigma_v0)
 
     elif sigma_final <= sigma_p:
         # Case 2: Overconsolidated, stays in OC range
+        case = "oc"
         Sc = Cr * H / (1.0 + e0) * math.log10(sigma_final / sigma_v0)
 
     else:
         # Case 3: Overconsolidated, but stress exceeds preconsolidation
+        case = "oc_to_nc"
         Sc_oc = Cr * H / (1.0 + e0) * math.log10(sigma_p / sigma_v0)
         Sc_nc = Cc * H / (1.0 + e0) * math.log10(sigma_final / sigma_p)
         Sc = Sc_oc + Sc_nc
 
-    return Sc
+    return {"delta_sigma": delta_sigma, "sigma_final": sigma_final,
+            "case": case, "Sc": Sc}
 
 
 def total_consolidation_settlement(

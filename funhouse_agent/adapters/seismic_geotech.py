@@ -110,7 +110,7 @@ def run_seismic_earth_pressure(params: dict, *,
         choices=earth_pressure_choices(
             phi, kh, kv=params.get("kv"), delta_deg=params.get("delta"),
             i_deg=i, ka=KA if ka_given else "rankine", ka_how="given",
-            forces=bool(forces), ka_can_be_given=True),
+            forces=bool(forces), ka_can_be_given=True, beta_deg=beta),
         warnings=[note] if note else [],
     )
     used = {"phi": phi, "delta": delta, "kh": kh, "kv": kv, "beta": beta,

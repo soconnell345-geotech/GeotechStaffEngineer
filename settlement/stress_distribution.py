@@ -183,6 +183,36 @@ def approximate_2to1_strip(q: float, B: float, z: float) -> float:
     return q * B / (B + z)
 
 
+def boussinesq_center_strip(q: float, B: float, z: float) -> float:
+    """Vertical stress below the centre of a uniformly loaded strip of
+    width B: the limit L -> infinity of
+    :func:`boussinesq_center_rectangular`,
+
+        delta_sigma = (q / pi) (alpha + sin alpha),  alpha = 2 atan(B / 2z),
+
+    alpha being the angle the strip subtends at the point.
+
+    References
+    ----------
+    Poulos & Davis (1974), Elastic Solutions for Soil and Rock Mechanics,
+    the uniformly loaded strip; FHWA NHI-06-088 Sec. 8.3.
+    """
+    if z <= 0:
+        return q
+    alpha = 2.0 * math.atan(B / (2.0 * z))
+    return q / math.pi * (alpha + math.sin(alpha))
+
+
+def westergaard_center_strip(q: float, B: float, z: float) -> float:
+    """Vertical stress below the centre of a uniformly loaded strip of
+    width B by this module's Westergaard solution: the limit L -> infinity
+    of four corner rectangles of :func:`westergaard_rectangular`,
+    delta_sigma = (2 q / pi) atan(B / 2z)."""
+    if z <= 0:
+        return q
+    return 2.0 * q / math.pi * math.atan(B / (2.0 * z))
+
+
 def westergaard_rectangular(q: float, B: float, L: float, z: float) -> float:
     """Vertical stress under the corner of a rectangle — Westergaard solution.
 
@@ -238,7 +268,8 @@ def stress_at_depth(q: float, B: float, L: float, z: float,
     B : float
         Footing width (m).
     L : float
-        Footing length (m). For strip footings, use a large value.
+        Footing length (m). ``math.inf`` is a strip: each method's limit
+        L -> infinity, below the strip's centre (GM-142).
     z : float
         Depth below the footing base (m).
     method : str, optional
@@ -255,6 +286,16 @@ def stress_at_depth(q: float, B: float, L: float, z: float,
         Vertical stress increase delta_sigma_z (kPa).
     """
     method = method.lower().replace(" ", "")
+    if math.isinf(L):
+        if location != "center":
+            raise ValueError("an infinitely long strip has no corner; "
+                             "location 'center' only")
+        if method in ("2:1", "2to1"):
+            return approximate_2to1_strip(q, B, z)
+        if method == "boussinesq":
+            return boussinesq_center_strip(q, B, z)
+        if method == "westergaard":
+            return westergaard_center_strip(q, B, z)
     if method == "2:1" or method == "2to1":
         return approximate_2to1(q, B, L, z)
     elif method == "boussinesq":

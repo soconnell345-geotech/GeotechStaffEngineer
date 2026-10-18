@@ -55,7 +55,7 @@ def get_input_summary(result, analysis) -> List[InputItem]:
         InputItem("q_0", "Overburden pressure", f"{analysis.q_overburden:.1f}", "kPa"),
         InputItem("q_net", "Net applied pressure", f"{analysis.q_net:.1f}", "kPa"),
         InputItem("B", "Footing width", f"{analysis.B:.2f}", "m"),
-        InputItem("L", "Footing length", f"{analysis.L:.2f}", "m"),
+        _length_input(result, analysis),
         InputItem("Shape", "Footing shape", analysis.footing_shape, ""),
         InputItem("Stress", "Stress distribution method", analysis.stress_method, ""),
     ]
@@ -92,8 +92,12 @@ def get_input_summary(result, analysis) -> List[InputItem]:
     if analysis.C_alpha is not None:
         items.append(InputItem("C_\u03b1", "Secondary compression index",
                                f"{analysis.C_alpha:.4f}", ""))
-        items.append(InputItem("e_0(sec)", "Void ratio (secondary)",
-                               f"{analysis.e0_secondary:.2f}", ""))
+        if analysis.e0_secondary is not None:
+            items.append(InputItem("e_0(sec)", "Void ratio (secondary)",
+                                   f"{analysis.e0_secondary:.2f}", ""))
+        else:
+            items.append(InputItem("e_0(sec)", "Void ratio (secondary)",
+                                   "each layer's own e_0", ""))
         if analysis.t_secondary > 0:
             items.append(InputItem("t_sec", "Secondary time",
                                    f"{analysis.t_secondary:.1f}", "years"))
@@ -137,13 +141,13 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         imm_items.append(CalcStep(
             title="Elastic (Immediate) Settlement",
             equation="S_e = q_net \u00d7 B \u00d7 (1 - \u03bd\u00b2) / E_s \u00d7 I_w",
-            substitution=_elastic_substitution(analysis),
+            substitution=_elastic_substitution(analysis, result),
             result_name="S_e",
             result_value=f"{result.immediate * 1000:.2f}",
             result_unit="mm",
             reference="Timoshenko & Goodier; FHWA GEC-6, Eq. 8-1",
             notes=(
-                f"I_w = {_immediate_Iw(analysis):.3f} "
+                f"I_w = {_immediate_Iw(analysis, result):.3f} "
                 + ("(user-supplied)"
                    if getattr(analysis, "Iw_immediate", None) is not None
                    else "(Schleicher flexible-footing value; 1.12 for a square, "
@@ -161,10 +165,10 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             reference="Schmertmann et al. (1978); FHWA GEC-6, Section 8.3.2",
         ))
 
-        # Schmertmann correction factors
-        if analysis.schmertmann_layers and analysis.q_net > 0:
-            C1 = 1.0 - 0.5 * (analysis.q_overburden / analysis.q_net)
-            C1 = max(C1, 0.5)
+        # Schmertmann correction factors, as the analysis used them (GM-143)
+        terms = getattr(result, "schmertmann_terms", None)
+        if terms:
+            C1 = terms["C1"]
             imm_items.append(CalcStep(
                 title="Depth Correction Factor C_1",
                 equation="C_1 = 1 - 0.5 \u00d7 (q_0 / q_net) \u2265 0.5",
@@ -177,10 +181,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                 reference="Schmertmann et al. (1978), Eq. 2",
             ))
 
-            if analysis.time_years_schmertmann > 0.1:
-                C2 = 1.0 + 0.2 * math.log10(analysis.time_years_schmertmann / 0.1)
-            else:
-                C2 = 1.0
+            C2 = terms["C2"]
             imm_items.append(CalcStep(
                 title="Creep Correction Factor C_2",
                 equation="C_2 = 1 + 0.2 \u00d7 log\u2081\u2080(t / 0.1)" if C2 > 1.0
@@ -193,6 +194,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                 result_value=f"{C2:.3f}",
                 reference="Schmertmann et al. (1978), Eq. 3",
             ))
+            imm_items.append(_schmertmann_peak_step(analysis, terms))
 
         # Schmertmann layer table
         if analysis.schmertmann_layers:
@@ -231,7 +233,9 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         # Stress distribution note
         consol_items.append(CalcStep(
             title="Stress Distribution Method",
-            equation=_stress_method_equation(analysis.stress_method),
+            equation=_stress_method_equation(
+                analysis.stress_method,
+                strip=getattr(result, "L", 0) is None),
             substitution="",
             result_name="Method",
             result_value=analysis.stress_method,
@@ -241,15 +245,18 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         # Per-layer consolidation table
         if result.consolidation_layers:
             layer_rows = []
+            used = getattr(result, "consolidation_terms", None) or []
             for i, layer_data in enumerate(result.consolidation_layers, 1):
                 desc = layer_data.get("description", "")
                 label = desc if desc else f"Layer {i}"
+                ds = (used[i - 1]["delta_sigma"] if len(used) >= i
+                      else layer_data['delta_sigma_kPa'])
                 layer_rows.append([
                     str(i),
                     label,
                     f"{layer_data['depth_m']:.2f}",
                     f"{layer_data['thickness_m']:.2f}",
-                    f"{layer_data['delta_sigma_kPa']:.1f}",
+                    f"{ds:.1f}",
                     f"{layer_data['OCR']:.2f}",
                     f"{layer_data['settlement_mm']:.2f}",
                 ])
@@ -263,9 +270,11 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             ))
 
         # Show detailed per-layer equations for first layer (representative)
-        if analysis.consolidation_layers:
+        used = getattr(result, "consolidation_terms", None)
+        if analysis.consolidation_layers and used:
             first_layer = analysis.consolidation_layers[0]
-            consol_items.append(_consolidation_layer_step(first_layer, analysis))
+            consol_items.append(
+                _consolidation_layer_step(first_layer, used[0]))
 
         sections.append(CalcSection(
             title="Primary Consolidation Settlement", items=consol_items
@@ -275,9 +284,15 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     if analysis.C_alpha is not None and analysis.t_secondary > 0:
         sec_items = []
 
+        sec = getattr(result, "secondary_terms", None)
+        one_e0 = _one_e0(sec)
         sec_items.append(CalcStep(
             title="Secondary Compression Settlement",
-            equation="S_s = [C_\u03b1 / (1 + e_0)] \u00d7 H \u00d7 log\u2081\u2080(t_2 / t_1)",
+            equation=("S_s = [C_\u03b1 / (1 + e_0)] \u00d7 H \u00d7 "
+                      "log\u2081\u2080(t_2 / t_1)" if one_e0 is not None else
+                      "S_s = \u03a3 [C_\u03b1 / (1 + e_0,i)] \u00d7 H_i "
+                      "\u00d7 log\u2081\u2080(t_2 / t_1), each layer's own "
+                      "e_0"),
             substitution=_secondary_substitution(analysis, result),
             result_name="S_s",
             result_value=f"{result.secondary * 1000:.2f}",
@@ -294,19 +309,32 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                      "computed end-of-primary time."),
         ))
 
-        # Modified secondary compression index
-        C_alpha_eps = analysis.C_alpha / (1.0 + analysis.e0_secondary)
-        sec_items.append(CalcStep(
-            title="Modified Secondary Compression Index",
-            equation="C_\u03b1\u03b5 = C_\u03b1 / (1 + e_0)",
-            substitution=(
-                f"C_\u03b1\u03b5 = {analysis.C_alpha:.4f} / "
-                f"(1 + {analysis.e0_secondary:.2f})"
-            ),
-            result_name="C_\u03b1\u03b5",
-            result_value=f"{C_alpha_eps:.5f}",
-            reference="Mesri (1973)",
-        ))
+        # Modified secondary compression index, with the e0 used (GM-142)
+        if one_e0 is not None:
+            C_alpha_eps = analysis.C_alpha / (1.0 + one_e0)
+            sec_items.append(CalcStep(
+                title="Modified Secondary Compression Index",
+                equation="C_\u03b1\u03b5 = C_\u03b1 / (1 + e_0)",
+                substitution=(
+                    f"C_\u03b1\u03b5 = {analysis.C_alpha:.4f} / "
+                    f"(1 + {one_e0:.2f})"
+                ),
+                result_name="C_\u03b1\u03b5",
+                result_value=f"{C_alpha_eps:.5f}",
+                reference="Mesri (1973)",
+            ))
+        elif sec:
+            sec_items.append(TableData(
+                title="Secondary Compression by Layer",
+                headers=["#", "H (m)", "e_0", "C_\u03b1\u03b5 = C_\u03b1 / (1 + e_0)",
+                         "S_s (mm)"],
+                rows=[[str(i), f"{lay['thickness']:.2f}", f"{lay['e0']:.2f}",
+                       f"{sec['C_alpha'] / (1.0 + lay['e0']):.5f}",
+                       f"{lay['Ss'] * 1000:.2f}"]
+                      for i, lay in enumerate(sec["layers"], 1)],
+                notes=(f"Each layer's own e_0; t_1 = {sec['t1_years']:.2f}, "
+                       f"t_2 = {sec['t2_years']:.2f} years"),
+            ))
 
         sections.append(CalcSection(
             title="Secondary Compression Settlement", items=sec_items
@@ -435,10 +463,9 @@ def get_figures(result, analysis) -> List[FigureData]:
 
             # Compute Tv at 50% consolidation as a representative query point
             from settlement.time_rate import time_factor as compute_Tv
-            Hdr = analysis._get_Hdr()
-            # Use time at 50% consolidation as the query point
-            from settlement.time_rate import time_for_consolidation
-            t50 = time_for_consolidation(50.0, analysis.cv, Hdr)
+            # Hdr and t50 as the analysis used them (GM-143)
+            Hdr = result.Hdr
+            t50 = result.t50_years
             Tv50 = compute_Tv(analysis.cv, t50, Hdr)
 
             figures.append(dm7_figure(
@@ -504,21 +531,63 @@ def get_tables(result, analysis) -> list:
 
 # -- Helper functions -------------------------------------------------------
 
-def _immediate_Iw(analysis) -> float:
-    """The elastic influence factor actually used for immediate settlement.
+def _length_input(result, analysis) -> InputItem:
+    """The footing length as the analysis used it: L given, L = B, or a
+    strip taken as infinitely long (GM-142)."""
+    L = getattr(result, "L", analysis.L)
+    if L is None or math.isinf(L):
+        return InputItem("L", "Footing length",
+                         "infinitely long strip (plane strain)", "")
+    return InputItem("L", "Footing length", f"{L:.2f}", "m")
 
-    Mirrors ``Analysis.immediate`` exactly: the explicit ``Iw_immediate`` when
-    supplied, else the Schleicher shape/aspect-ratio value from
-    ``elastic_influence_factor`` (~1.12 for a square). Used so the calc package
-    displays the SAME Iw the analysis applied (previously it hardcoded 1.0).
+
+def _one_e0(sec):
+    """The one e0 every layer's secondary settlement used, or None when
+    the layers' own e0 differ (GM-142)."""
+    if not sec:
+        return None
+    if sec.get("e0_given") is not None:
+        return sec["e0_given"]
+    e0s = {lay["e0"] for lay in sec["layers"]}
+    return e0s.pop() if len(e0s) == 1 else None
+
+
+def _schmertmann_peak_step(analysis, terms) -> CalcStep:
+    """The peak strain influence factor as the analysis used it."""
+    dq = analysis.q_net
+    sig = terms["sigma_vp"]
+    diagram = ("plane strain (strip): peak at z = B, to 4B"
+               if terms["strip"] else
+               "axisymmetric: peak at z = B/2, to 2B")
+    return CalcStep(
+        title="Peak Strain Influence Factor I_zp",
+        equation="I_zp = 0.5 + 0.1 \u00d7 \u221a(q_net / \u03c3'_vp) \u2264 1.0",
+        substitution=(f"I_zp = 0.5 + 0.1 \u00d7 \u221a({dq:.1f} / {sig:.1f})"
+                      if sig > 0 else "\u03c3'_vp = 0; I_zp = 0.5"),
+        result_name="I_zp",
+        result_value=f"{terms['Iz_peak']:.3f}",
+        reference="Schmertmann et al. (1978)",
+        notes=(f"{diagram}; \u03c3'_vp at z = {terms['z_peak']:.2f} m"
+               + ("" if analysis.gamma_soil is not None else
+                  " taken as q_0 (no unit weight given)")),
+    )
+
+
+def _immediate_Iw(analysis, result=None) -> float:
+    """The elastic influence factor actually used for immediate settlement:
+    the result's own ``Iw`` (GM-143); without one, the explicit
+    ``Iw_immediate`` when supplied, else the Schleicher shape/aspect-ratio
+    value from ``elastic_influence_factor`` (~1.12 for a square).
     """
+    if result is not None and getattr(result, "Iw", None) is not None:
+        return result.Iw
     if getattr(analysis, "Iw_immediate", None) is not None:
         return analysis.Iw_immediate
     from settlement.immediate import elastic_influence_factor
     return elastic_influence_factor(analysis.footing_shape, analysis.L, analysis.B)
 
 
-def _elastic_substitution(analysis) -> str:
+def _elastic_substitution(analysis, result=None) -> str:
     """Build substitution string for elastic settlement equation."""
     if analysis.Es_immediate is None or analysis.Es_immediate <= 0:
         return "E_s not provided or non-positive; S_e = 0"
@@ -527,7 +596,7 @@ def _elastic_substitution(analysis) -> str:
     return (
         f"S_e = {analysis.q_net:.1f} \u00d7 {analysis.B:.2f} \u00d7 "
         f"(1 - {analysis.nu:.2f}\u00b2) / {analysis.Es_immediate:.0f} \u00d7 "
-        f"{_immediate_Iw(analysis):.3f}"
+        f"{_immediate_Iw(analysis, result):.3f}"
     )
 
 
@@ -545,9 +614,20 @@ def _consolidation_equation_text() -> str:
     )
 
 
-def _stress_method_equation(method: str) -> str:
-    """Return the stress distribution equation text."""
+def _stress_method_equation(method: str, strip: bool = False) -> str:
+    """Return the stress distribution equation text (``strip``: an
+    infinitely long strip, GM-142)."""
     m = method.lower().replace(" ", "")
+    if strip:
+        if m in ("2:1", "2to1"):
+            return "\u0394\u03c3_z = q_net \u00d7 B / (B + z) (strip)"
+        if m == "boussinesq":
+            return ("\u0394\u03c3_z = (q_net / \u03c0)(\u03b1 + sin \u03b1), "
+                    "\u03b1 = 2 atan(B / 2z) (Boussinesq, below the centre "
+                    "of a strip)")
+        if m == "westergaard":
+            return ("\u0394\u03c3_z = (2 q_net / \u03c0) atan(B / 2z) "
+                    "(Westergaard, below the centre of a strip)")
     if m == "2:1" or m == "2to1":
         return "\u0394\u03c3_z = q_net \u00d7 B \u00d7 L / [(B + z)(L + z)]"
     elif m == "boussinesq":
@@ -575,82 +655,76 @@ def _stress_method_reference(method: str) -> str:
     return ""
 
 
-def _consolidation_layer_step(layer, analysis) -> CalcStep:
-    """Build a representative CalcStep for the first consolidation layer."""
-    from settlement.stress_distribution import stress_at_depth
+def _consolidation_layer_step(layer, used) -> CalcStep:
+    """Build a representative CalcStep for the first consolidation layer,
+    with the terms the analysis used for it (``used``: a
+    ``consolidation_layer_terms`` dict, GM-143)."""
+    from settlement.consolidation import CONSOLIDATION_CASES
 
-    delta_sigma = stress_at_depth(
-        analysis.q_net, analysis.B, analysis.L,
-        layer.depth_to_center,
-        method=analysis.stress_method
-    )
+    delta_sigma = used["delta_sigma"]
+    sigma_final = used["sigma_final"]
+    case = CONSOLIDATION_CASES[used["case"]]
 
-    sigma_final = layer.sigma_v0 + delta_sigma
-
-    if layer.is_normally_consolidated:
-        case = "Case 1 (NC)"
+    if used["case"] in ("nc", "none"):
         eq = (
-            f"S_c = [{layer.Cc:.3f} / (1 + {layer.e0:.2f})] \u00d7 "
-            f"{layer.thickness:.2f} \u00d7 "
-            f"log\u2081\u2080[({layer.sigma_v0:.1f} + {delta_sigma:.1f}) / "
+            f"S_c = [{layer.Cc:.3f} / (1 + {layer.e0:.2f})] × "
+            f"{layer.thickness:.2f} × "
+            f"log₁₀[({layer.sigma_v0:.1f} + {delta_sigma:.1f}) / "
             f"{layer.sigma_v0:.1f}]"
         )
-    elif sigma_final <= layer.sigma_p:
-        case = "Case 2 (OC, stays in OC range)"
+    elif used["case"] == "oc":
         eq = (
-            f"S_c = [{layer.Cr:.4f} / (1 + {layer.e0:.2f})] \u00d7 "
-            f"{layer.thickness:.2f} \u00d7 "
-            f"log\u2081\u2080[({layer.sigma_v0:.1f} + {delta_sigma:.1f}) / "
+            f"S_c = [{layer.Cr:.4f} / (1 + {layer.e0:.2f})] × "
+            f"{layer.thickness:.2f} × "
+            f"log₁₀[({layer.sigma_v0:.1f} + {delta_sigma:.1f}) / "
             f"{layer.sigma_v0:.1f}]"
         )
     else:
-        case = "Case 3 (OC, exceeds preconsolidation)"
         eq = (
-            f"S_c = [{layer.Cr:.4f} / (1 + {layer.e0:.2f})] \u00d7 "
-            f"{layer.thickness:.2f} \u00d7 "
-            f"log\u2081\u2080[{layer.sigma_p:.1f} / {layer.sigma_v0:.1f}] + "
-            f"[{layer.Cc:.3f} / (1 + {layer.e0:.2f})] \u00d7 "
-            f"{layer.thickness:.2f} \u00d7 "
-            f"log\u2081\u2080[{sigma_final:.1f} / {layer.sigma_p:.1f}]"
+            f"S_c = [{layer.Cr:.4f} / (1 + {layer.e0:.2f})] × "
+            f"{layer.thickness:.2f} × "
+            f"log₁₀[{layer.sigma_p:.1f} / {layer.sigma_v0:.1f}] + "
+            f"[{layer.Cc:.3f} / (1 + {layer.e0:.2f})] × "
+            f"{layer.thickness:.2f} × "
+            f"log₁₀[{sigma_final:.1f} / {layer.sigma_p:.1f}]"
         )
-
-    from settlement.consolidation import consolidation_settlement_layer
-    Sc = consolidation_settlement_layer(layer, delta_sigma)
 
     desc = layer.description if layer.description else "Layer 1"
     return CalcStep(
         title=f"Consolidation — {desc} ({case})",
         equation=eq,
         substitution=(
-            f"\u0394\u03c3 = {delta_sigma:.1f} kPa at depth {layer.depth_to_center:.2f} m, "
+            f"Δσ = {delta_sigma:.1f} kPa at depth {layer.depth_to_center:.2f} m, "
             f"OCR = {layer.OCR:.2f}"
         ),
         result_name="S_c",
-        result_value=f"{Sc * 1000:.2f}",
+        result_value=f"{used['Sc'] * 1000:.2f}",
         result_unit="mm",
         reference="FHWA GEC-6, Eqs. 8-5 through 8-7",
     )
 
 
 def _secondary_substitution(analysis, result) -> str:
-    """Build substitution string for secondary settlement equation."""
-    # Estimate t1 (end of primary consolidation)
-    if analysis.cv is not None and analysis.consolidation_layers:
-        Hdr = analysis._get_Hdr()
-        from settlement.time_rate import time_for_consolidation
-        t1 = time_for_consolidation(95.0, analysis.cv, Hdr)
-    else:
-        t1 = 1.0
-
-    t2 = t1 + analysis.t_secondary
-    total_H = sum(layer.thickness for layer in analysis.consolidation_layers) \
-        if analysis.consolidation_layers else 0
-
-    return (
-        f"S_s = [{analysis.C_alpha:.4f} / (1 + {analysis.e0_secondary:.2f})] "
-        f"\u00d7 {total_H:.2f} \u00d7 "
-        f"log\u2081\u2080({t2:.2f} / {t1:.2f})"
-    )
+    """Build substitution string for secondary settlement equation, from
+    the terms the analysis used (GM-142/143)."""
+    sec = getattr(result, "secondary_terms", None)
+    if not sec:
+        return ""
+    t1, t2 = sec["t1_years"], sec["t2_years"]
+    one = _one_e0(sec)
+    if one is not None:
+        return (
+            f"S_s = [{sec['C_alpha']:.4f} / (1 + {one:.2f})] "
+            f"× {sec['H_total']:.2f} × "
+            f"log₁₀({t2:.2f} / {t1:.2f})"
+        )
+    if len(sec["layers"]) > 4:
+        return (f"S_s summed over {len(sec['layers'])} layers (table below), "
+                f"log₁₀({t2:.2f} / {t1:.2f})")
+    return "S_s = " + " + ".join(
+        f"[{sec['C_alpha']:.4f} / (1 + {lay['e0']:.2f})] × "
+        f"{lay['thickness']:.2f} × log₁₀({t2:.2f} / {t1:.2f})"
+        for lay in sec["layers"])
 
 
 def _plot_settlement_breakdown(result):

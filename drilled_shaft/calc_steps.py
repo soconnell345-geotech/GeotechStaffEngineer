@@ -439,7 +439,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         ))
 
     elif tip_layer.soil_type == "cohesionless":
-        N60 = tip_layer.N60 if tip_layer.N60 > 0 else 15.0
+        from drilled_shaft.capacity import require_tip_N60
+        N60 = require_tip_N60(tip_layer, shaft.length)
         N60_capped = min(N60, 50.0)
         qb = 57.5 * N60_capped
         large_dia_note = ""

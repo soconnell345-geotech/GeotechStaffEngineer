@@ -60,6 +60,22 @@ class CantileverWallResult:
         The required factors of safety the checks were run against.
     q_allowable : float or None
         The allowable bearing pressure given (kPa), or None.
+
+    The terms each check used, unrounded, as it used them (GM-143; the
+    calc package prints these rather than working them out again; None
+    on a result built by hand):
+
+    earth_pressure : dict or None
+        method, Ka, H_active, Pa_earth, Pa_surcharge, Pa_cohesion, Pa
+        (kN/m), z_Pa (m above the base), delta_deg, Ph, Pv.
+    vertical_forces : list of dict or None
+        Each vertical force the overturning and bearing checks sum, in
+        their order: component, W (kN/m), x (arm from the toe, m), M.
+    sliding_terms, overturning_terms, bearing_terms : dict or None
+        The checks' terms (``cantilever._sliding_terms`` and the others):
+        V, delta_b, ca, Pp, resisting, driving; M_stabilizing,
+        M_overturning; V, M_stab, M_over, x_resultant, eccentricity,
+        distribution, B_eff, q_toe, q_heel, q_max.
     """
     FOS_sliding: Optional[float] = 0.0
     FOS_overturning: Optional[float] = 0.0
@@ -76,6 +92,11 @@ class CantileverWallResult:
     FOS_sliding_required: float = 1.5
     FOS_overturning_required: float = 2.0
     q_allowable: Optional[float] = None
+    earth_pressure: Optional[Dict[str, Any]] = None
+    vertical_forces: Optional[List[Dict[str, Any]]] = None
+    sliding_terms: Optional[Dict[str, Any]] = None
+    overturning_terms: Optional[Dict[str, Any]] = None
+    bearing_terms: Optional[Dict[str, Any]] = None
 
     @property
     def bearing_checked(self) -> bool:

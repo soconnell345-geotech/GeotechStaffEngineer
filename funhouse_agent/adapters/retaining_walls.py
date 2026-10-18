@@ -164,15 +164,10 @@ def _run_cantilever_wall(params):
         "stem_thickness_base_m": geom.stem_thickness_base,
     }
     # Surface the sliding-interface values actually used, so the caller can
-    # verify the basis instead of guessing (owner wall session 2026-07-14).
-    from retaining_walls.cantilever import check_sliding as _cs
-    sl = _cs(geom, used["gamma_backfill"], used["phi_backfill"],
-             used["c_backfill"], used["phi_foundation"],
-             used["c_foundation"], used["gamma_concrete"],
-             used["FOS_sliding_required"], used["pressure_method"],
-             used["include_passive"], used["gamma_foundation"],
-             delta_base=used["delta_base"],
-             base_adhesion=used["base_adhesion"])
+    # verify the basis instead of guessing (owner wall session 2026-07-14);
+    # the result carries them since GM-143, so they are not worked out twice.
+    from retaining_walls.cantilever import _sliding_dict
+    sl = _sliding_dict(result.sliding_terms, used["FOS_sliding_required"])
     output["sliding_basis"] = {
         "delta_base_deg": sl["delta_base_deg"],
         "base_adhesion_kPa": sl["base_adhesion_kPa"],

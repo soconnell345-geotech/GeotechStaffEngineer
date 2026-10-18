@@ -271,6 +271,24 @@ The E1 rows above are with E1's choice, `traffic_vertical_resists=True`.
 The ASD path is the same statics with every factor 1.0: on E3 it gives the
 Service I column (e 2.61 ft, σv 7.16 ksf).
 
+## The terms each cantilever check used (GM-143, 2026-10-18)
+
+`analyze_cantilever_wall` attaches, unrounded: `earth_pressure` (method,
+Ka, H_active, Pa_earth / Pa_surcharge / Pa_cohesion, Pa, z_Pa, delta, Ph,
+Pv; `earth_pressure.active_force_components` is the arithmetic of
+`horizontal_force_active`), `vertical_forces` (each weight, the heel
+surcharge and Pv with its arm from the toe and moment, in the order the
+checks sum them), `sliding_terms`, `overturning_terms` and `bearing_terms`
+(V, M_stab, M_over, x_R, e, distribution, B_eff, q_toe, q_heel, q_max).
+`check_sliding` / `check_overturning` / `check_bearing` return the same
+rounded dicts as before, built from these terms. The calc package prints
+them (a result built by hand carries none; the steps then call the same
+term functions). What the printout gained: the stem arm the module uses
+(t_toe + t_stem_top / 2; the steps had their own), totals summed exactly,
+q_heel = 2V / (3 (B - x_R)) for a resultant beyond the middle third on the
+heel side, the signed e in the trapezoid, and P_a with cohesion on the
+section figure. No result number changed.
+
 ## Key Notes
 - CantileverWallGeometry auto-sizes stem thickness, toe/heel from wall height
 - Cantilever checks decompose the active thrust per the chosen method (RW-1):

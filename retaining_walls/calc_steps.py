@@ -265,9 +265,7 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
     phi = _used(analysis, "phi_backfill")
     c = _used(analysis, "c_backfill")
     method = _used(analysis, "pressure_method")
-    gamma_c = _used(analysis, "gamma_concrete")
     phi_f = _used(analysis, "phi_foundation")
-    c_f = _used(analysis, "c_foundation")
     q_all = _used(analysis, "q_allowable")
     FOS_s_req = result.FOS_sliding_required
     FOS_o_req = result.FOS_overturning_required
@@ -280,11 +278,13 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
     # ── Section 1: Earth Pressure Coefficient ──────────────────
     ep_items = []
 
-    phi_rad = math.radians(phi)
+    # The terms the analysis used (GM-143): the result's own, so the
+    # printout cannot drift from the run.
+    ep, forces, sl, ot, br = _cantilever_terms(result, analysis)
 
+    Ka_val = ep["Ka"]
     if method == "coulomb":
-        delta = 2.0 / 3.0 * phi
-        alpha = 90.0  # vertical back face
+        delta = ep["delta_deg"]
         beta = geom.backfill_slope
 
         ep_items.append(CalcStep(
@@ -300,11 +300,10 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
                 f"\u03b2 = {beta:.1f}\u00b0"
             ),
             result_name="K_a",
-            result_value=f"{_Ka_value(phi, method, geom):.4f}",
+            result_value=f"{Ka_val:.4f}",
             reference="Coulomb (1776)",
         ))
     else:
-        Ka = _Ka_value(phi, method, geom)
         if geom.backfill_slope > 0:
             ep_items.append(CalcStep(
                 title="Rankine Active Earth Pressure Coefficient (sloped backfill)",
@@ -316,7 +315,7 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
                     f"\u03c6 = {phi:.1f}\u00b0, \u03b2 = {geom.backfill_slope:.1f}\u00b0"
                 ),
                 result_name="K_a",
-                result_value=f"{Ka:.4f}",
+                result_value=f"{Ka_val:.4f}",
                 reference="Rankine (1857), sloped backfill",
             ))
         else:
@@ -325,12 +324,12 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
                 equation="K_a = tan\u00b2(45\u00b0 - \u03c6/2)",
                 substitution=f"K_a = tan\u00b2(45\u00b0 - {phi:.1f}\u00b0/2)",
                 result_name="K_a",
-                result_value=f"{Ka:.4f}",
+                result_value=f"{Ka_val:.4f}",
                 reference="Rankine (1857)",
             ))
 
     # Active height
-    H = geom.H_active
+    H = ep["H_active"]
     ep_items.append(CalcStep(
         title="Active Pressure Height",
         equation="H_active = H + heel \u00d7 tan(\u03b2)" if geom.backfill_slope > 0
@@ -344,13 +343,8 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
         result_unit="m",
     ))
 
-    # Active force
-    Ka_val = _Ka_value(phi, method, geom)
-    Pa_earth = 0.5 * Ka_val * gamma * H ** 2
-    Pa_surcharge = Ka_val * geom.surcharge * H if geom.surcharge > 0 else 0
-    Pa_cohesion = -2.0 * c * math.sqrt(Ka_val) * H if c > 0 else 0
-    Pa_total = max(Pa_earth + Pa_surcharge + Pa_cohesion, 0.0)
-
+    # Active force, as the analysis summed it
+    Pa_total = ep["Pa"]
     ep_items.append(CalcStep(
         title="Total Active Thrust",
         equation="P_a = 0.5 \u00d7 K_a \u00d7 \u03b3 \u00d7 H\u00b2"
@@ -369,16 +363,11 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
         reference="Das Ch. 13",
     ))
 
-    # Thrust inclination & components (mirrors cantilever._active_thrust, RW-1):
+    # Thrust inclination & components (cantilever._active_thrust, RW-1):
     # Coulomb -> delta = 2/3*phi; sloped Rankine -> delta = beta; else horizontal.
-    if method == "coulomb":
-        delta_incl = 2.0 / 3.0 * phi
-    elif geom.backfill_slope > 0:
-        delta_incl = geom.backfill_slope
-    else:
-        delta_incl = 0.0
-    Ph = Pa_total * math.cos(math.radians(delta_incl))
-    Pv = Pa_total * math.sin(math.radians(delta_incl))
+    delta_incl = ep["delta_deg"]
+    Ph = ep["Ph"]
+    Pv = ep["Pv"]
 
     if delta_incl > 0:
         ep_items.append(CalcStep(
@@ -404,70 +393,16 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
 
     # ── Section 2: Wall Weight Components ──────────────────────
     weight_items = []
-
-    # Build the weight table
     B = geom.base_width
-    t_toe = geom.toe_length
-    t_stem_b = geom.stem_thickness_base
-    t_stem_t = geom.stem_thickness_top
-    h_stem = geom.stem_height
-    t_base = geom.base_thickness
-    heel = geom.heel_length
 
-    weight_rows = []
+    # Every vertical force the analysis summed, with its arm (GM-143)
+    weight_rows = [[f["component"], f"{f['W']:.1f}", f"{f['x']:.3f}",
+                    f"{f['M']:.1f}"] for f in forces]
 
-    # Base slab
-    W_base = gamma_c * B * t_base
-    x_base = B / 2.0
-    weight_rows.append(["Base slab", f"{W_base:.1f}", f"{x_base:.3f}",
-                         f"{W_base * x_base:.1f}"])
-
-    # Stem (rectangular part)
-    W_stem_rect = gamma_c * t_stem_t * h_stem
-    x_stem_rect = t_toe + t_stem_b / 2.0
-    weight_rows.append(["Stem (rect)", f"{W_stem_rect:.1f}", f"{x_stem_rect:.3f}",
-                         f"{W_stem_rect * x_stem_rect:.1f}"])
-
-    # Stem taper
-    if t_stem_b > t_stem_t:
-        t_taper = t_stem_b - t_stem_t
-        W_stem_tri = gamma_c * 0.5 * t_taper * h_stem
-        x_stem_tri = t_toe + t_stem_t + t_taper / 3.0
-        weight_rows.append(["Stem (taper)", f"{W_stem_tri:.1f}", f"{x_stem_tri:.3f}",
-                             f"{W_stem_tri * x_stem_tri:.1f}"])
-
-    # Soil on heel
-    if heel > 0:
-        W_soil = gamma * heel * h_stem
-        x_soil = t_toe + t_stem_b + heel / 2.0
-        weight_rows.append(["Soil on heel", f"{W_soil:.1f}", f"{x_soil:.3f}",
-                             f"{W_soil * x_soil:.1f}"])
-
-        # Sloped backfill: triangular wedge above the heel (RW-4)
-        if geom.backfill_slope > 0:
-            rise = heel * math.tan(math.radians(geom.backfill_slope))
-            W_wedge = 0.5 * gamma * heel * rise
-            x_wedge = t_toe + t_stem_b + 2.0 * heel / 3.0
-            weight_rows.append(["Backfill wedge (sloped)", f"{W_wedge:.1f}",
-                                 f"{x_wedge:.3f}", f"{W_wedge * x_wedge:.1f}"])
-
-    # Surcharge on heel
-    if heel > 0 and geom.surcharge > 0:
-        W_q = geom.surcharge * heel
-        x_q = t_toe + t_stem_b + heel / 2.0
-        weight_rows.append(["Surcharge on heel", f"{W_q:.1f}", f"{x_q:.3f}",
-                             f"{W_q * x_q:.1f}"])
-
-    # Vertical component of the inclined active thrust, applied at the
-    # pressure plane (back of heel, x = B) — stabilizing (RW-1)
-    if delta_incl > 0:
-        weight_rows.append(["Active thrust vert. comp. (P_v)", f"{Pv:.1f}",
-                             f"{B:.3f}", f"{Pv * B:.1f}"])
-
-    # Totals
-    total_W = sum(float(r[1]) for r in weight_rows)
-    total_M = sum(float(r[3]) for r in weight_rows)
-    weight_rows.append(["TOTAL", f"{total_W:.1f}", "\u2014", f"{total_M:.1f}"])
+    # Totals, as the analysis summed them
+    total_W = br["V"]
+    M_stab = br["M_stab"]
+    weight_rows.append(["TOTAL", f"{total_W:.1f}", "\u2014", f"{M_stab:.1f}"])
 
     weight_items.append(TableData(
         title="Wall Component Weights and Moments about Toe",
@@ -484,28 +419,12 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
 
     # The base interface and passive resistance the analysis USED (GM-103:
     # the package printed (2/3)phi and no passive even when delta_base,
-    # base_adhesion or include_passive set them otherwise). The module's own
-    # check_sliding gives the numbers, so the printout cannot drift from it.
-    delta_base_in = _used(analysis, "delta_base")
-    adhesion_in = _used(analysis, "base_adhesion")
-    passive_in = bool(_used(analysis, "include_passive"))
-    try:
-        from retaining_walls.cantilever import check_sliding
-        used = check_sliding(
-            geom, gamma, phi, c, phi_f, c_f, gamma_c, FOS_s_req, method,
-            passive_in, _used(analysis, "gamma_foundation"),
-            delta_base=delta_base_in, base_adhesion=adhesion_in)
-        delta_b = float(used["delta_base_deg"])
-        ca = float(used["base_adhesion_kPa"])
-        Pp = float(used["Pp_kN_per_m"])
-    except Exception:                                      # noqa: BLE001
-        delta_b = (float(delta_base_in) if delta_base_in is not None
-                   else 2.0 / 3.0 * phi_f)
-        ca = (float(adhesion_in) if adhesion_in is not None
-              else 2.0 / 3.0 * c_f)
-        Pp = 0.0
+    # base_adhesion or include_passive set them otherwise).
+    delta_b = sl["delta_b"]
+    ca = sl["ca"]
+    Pp = sl["Pp"]
 
-    if delta_base_in is not None:
+    if sl["delta_b_given"]:
         slide_items.append(CalcStep(
             title="Base Friction Angle",
             equation="\u03b4_b given directly (no 2/3 factor)",
@@ -526,21 +445,21 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
             reference="Das Ch. 13; typically 1/2 to 2/3 of \u03c6",
         ))
 
-    R_sliding = total_W * math.tan(math.radians(delta_b)) + ca * B + Pp
+    R_sliding = sl["resisting"]
     slide_items.append(CalcStep(
         title="Resisting Force (Sliding)",
         equation=("R = V \u00d7 tan(\u03b4_b) + c_a \u00d7 B"
                   + (" + P_p" if Pp > 0 else "")),
         substitution=(
-            f"R = {total_W:.1f} \u00d7 tan({delta_b:.2f}\u00b0)"
+            f"R = {sl['V']:.1f} \u00d7 tan({delta_b:.2f}\u00b0)"
             + (f" + {ca:.1f} \u00d7 {B:.2f}" if ca > 0 else "")
             + (f" + {Pp:.1f}" if Pp > 0 else "")
         ),
         result_name="R",
         result_value=f"{R_sliding:.1f}",
         result_unit="kN/m",
-        notes=("c_a given directly (no 2/3 factor). " if adhesion_in
-               is not None else "")
+        notes=("c_a given directly (no 2/3 factor). " if sl["ca_given"]
+               else "")
               + ("P_p: Rankine passive resistance in front of the base"
                  + (" and shear key" if getattr(geom, "has_shear_key", False)
                     else "") + "." if Pp > 0 else ""),
@@ -556,7 +475,7 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
         slide_items.append(CalcStep(
             title="Factor of Safety Against Sliding",
             equation="FOS_sliding = R / P_h",
-            substitution=f"FOS_sliding = {R_sliding:.1f} / {Ph:.1f}",
+            substitution=f"FOS_sliding = {R_sliding:.1f} / {sl['driving']:.1f}",
             result_name="FOS_sliding",
             result_value=f"{result.FOS_sliding:.3f}",
             reference="AASHTO 11.6.3 (min 1.5)",
@@ -578,20 +497,13 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
     # ── Section 4: Overturning Check ───────────────────────────
     ot_items = []
 
-    M_stab = total_M
-    # Location of resultant of Pa (mirrors horizontal_force_active:
-    # triangular earth at H/3, surcharge and cohesion components at H/2)
-    z_Pa = H / 3.0
-    if Pa_total > 0:
-        z_Pa = (Pa_earth * (H / 3.0) + Pa_surcharge * (H / 2.0)
-                + Pa_cohesion * (H / 2.0)) / Pa_total
-        z_Pa = max(z_Pa, 0.0)
-    M_over = Ph * z_Pa
+    z_Pa = ot["z_Pa"]
+    M_over = ot["M_overturning"]
 
     ot_items.append(CalcStep(
         title="Overturning Moment about Toe",
         equation="M_ot = P_h \u00d7 z_Pa",
-        substitution=f"M_ot = {Ph:.1f} \u00d7 {z_Pa:.3f}",
+        substitution=f"M_ot = {ot['Ph']:.1f} \u00d7 {z_Pa:.3f}",
         result_name="M_ot",
         result_value=f"{M_over:.1f}",
         result_unit="kN\u00b7m/m",
@@ -605,7 +517,7 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
         equation="M_stab = \u03a3(W_i \u00d7 x_i)",
         substitution="(see weight table above)",
         result_name="M_stab",
-        result_value=f"{M_stab:.1f}",
+        result_value=f"{ot['M_stabilizing']:.1f}",
         result_unit="kN\u00b7m/m",
     ))
 
@@ -618,7 +530,8 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
         ot_items.append(CalcStep(
             title="Factor of Safety Against Overturning",
             equation="FOS_ot = M_stab / M_ot",
-            substitution=f"FOS_ot = {M_stab:.1f} / {M_over:.1f}",
+            substitution=(f"FOS_ot = {ot['M_stabilizing']:.1f} / "
+                          f"{M_over:.1f}"),
             result_name="FOS_ot",
             result_value=f"{result.FOS_overturning:.3f}",
             reference="AASHTO 11.6.3 (min 2.0)",
@@ -638,14 +551,15 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
     # ── Section 5: Bearing Pressure & Eccentricity ─────────────
     brg_items = []
 
-    # Eccentricity
-    x_R = (M_stab - M_over) / total_W if total_W > 0 else B / 2.0
-    e = B / 2.0 - x_R
+    # Eccentricity, as the analysis worked it out
+    x_R = br["x_resultant"]
+    e = br["eccentricity"]
 
     brg_items.append(CalcStep(
         title="Resultant Location from Toe",
         equation="x_R = (M_stab - M_ot) / V",
-        substitution=f"x_R = ({M_stab:.1f} - {M_over:.1f}) / {total_W:.1f}",
+        substitution=(f"x_R = ({br['M_stab']:.1f} - {br['M_over']:.1f}) / "
+                      f"{total_W:.1f}"),
         result_name="x_R",
         result_value=f"{x_R:.3f}",
         result_unit="m",
@@ -662,12 +576,12 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
               f"{'Resultant within middle third' if result.in_middle_third else 'OUTSIDE middle third'}.",
     ))
 
-    # Bearing pressures
-    if result.in_middle_third:
+    # Bearing pressures, by the distribution the analysis used
+    if br["distribution"] == "trapezoidal":
         brg_items.append(CalcStep(
             title="Toe Bearing Pressure (Trapezoidal Distribution)",
             equation="q_toe = (V/B)(1 + 6e/B)",
-            substitution=f"q_toe = ({total_W:.1f}/{B:.2f})(1 + 6\u00d7{abs(result.eccentricity):.3f}/{B:.2f})",
+            substitution=f"q_toe = ({total_W:.1f}/{B:.2f})(1 + 6\u00d7{e:.3f}/{B:.2f})",
             result_name="q_toe",
             result_value=f"{result.q_toe:.1f}",
             result_unit="kPa",
@@ -675,13 +589,18 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
         brg_items.append(CalcStep(
             title="Heel Bearing Pressure",
             equation="q_heel = (V/B)(1 - 6e/B)",
-            substitution=f"q_heel = ({total_W:.1f}/{B:.2f})(1 - 6\u00d7{abs(result.eccentricity):.3f}/{B:.2f})",
+            substitution=f"q_heel = ({total_W:.1f}/{B:.2f})(1 - 6\u00d7{e:.3f}/{B:.2f})",
             result_name="q_heel",
             result_value=f"{result.q_heel:.1f}",
             result_unit="kPa",
         ))
-    else:
-        B_eff = 3.0 * x_R if x_R > 0 else B
+    elif not (br["B_eff"] or 0) > 0:
+        # x_R <= 0 (or >= B): the resultant falls outside the base
+        brg_items.append(
+            "Bearing pressure: the resultant falls outside the base "
+            f"(x_R = {x_R:.3f} m from the toe, B = {B:.2f} m), so no "
+            "bearing pressure distribution balances it.")
+    elif br["distribution"] == "triangular_toe":
         brg_items.append(CalcStep(
             title="Toe Bearing Pressure (Triangular Distribution)",
             equation="q_toe = 2V / (3 \u00d7 x_R)  [resultant outside middle third]",
@@ -690,6 +609,18 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
             result_value=f"{result.q_toe:.1f}",
             result_unit="kPa",
             notes="q_heel = 0 kPa (resultant outside middle third).",
+        ))
+    else:
+        brg_items.append(CalcStep(
+            title="Heel Bearing Pressure (Triangular Distribution)",
+            equation=("q_heel = 2V / (3 \u00d7 (B - x_R))  [resultant outside "
+                      "middle third, heel side]"),
+            substitution=(f"q_heel = 2 \u00d7 {total_W:.1f} / (3 \u00d7 "
+                          f"({B:.2f} - {x_R:.3f}))"),
+            result_name="q_heel",
+            result_value=f"{result.q_heel:.1f}",
+            result_unit="kPa",
+            notes="q_toe = 0 kPa (resultant outside middle third).",
         ))
 
     # Bearing check (GM-100): run only against a given q_allowable, on the
@@ -1207,6 +1138,37 @@ def get_figures(result, analysis) -> List[FigureData]:
 #  PRIVATE HELPERS
 # ═══════════════════════════════════════════════════════════════════
 
+def _cantilever_terms(result, analysis):
+    """(earth pressure, vertical forces, sliding, overturning, bearing):
+    the terms the cantilever analysis used (GM-143). The result's own;
+    a result built by hand carries none, and then the module's own term
+    functions work them out from the inputs the run used."""
+    if getattr(result, "bearing_terms", None) is not None:
+        return (result.earth_pressure, result.vertical_forces,
+                result.sliding_terms, result.overturning_terms,
+                result.bearing_terms)
+    from retaining_walls import cantilever as cw
+    geom = _get(analysis, "geom")
+    gamma = _used(analysis, "gamma_backfill")
+    phi = _used(analysis, "phi_backfill")
+    c = _used(analysis, "c_backfill")
+    method = _used(analysis, "pressure_method")
+    gamma_c = _used(analysis, "gamma_concrete")
+    ep = cw._active_thrust_terms(geom, gamma, phi, c, method)
+    return (
+        ep, cw._vertical_force_items(geom, gamma, gamma_c, ep),
+        cw._sliding_terms(
+            geom, gamma, phi, c, _used(analysis, "phi_foundation"),
+            _used(analysis, "c_foundation"), gamma_c, method,
+            bool(_used(analysis, "include_passive")),
+            _used(analysis, "gamma_foundation"),
+            delta_base=_used(analysis, "delta_base"),
+            base_adhesion=_used(analysis, "base_adhesion")),
+        cw._overturning_terms(geom, gamma, phi, c, gamma_c, method),
+        cw._bearing_terms(geom, gamma, phi, c,
+                          _used(analysis, "q_allowable"), gamma_c, method))
+
+
 def _Ka_value(phi, method, geom):
     """Compute Ka exactly as the cantilever analysis does, so the rendered calc
     package matches the analysis.
@@ -1290,8 +1252,10 @@ def _plot_cantilever_section(result, analysis):
         facecolor='#e8dcc8', edgecolor='none', alpha=0.5,
     ))
 
-    # Earth pressure diagram (triangular, on back of wall)
-    Ka_val = _Ka_value(phi, method, geom)
+    # Earth pressure diagram (triangular, on back of wall), with the Ka
+    # and the thrust the analysis used (GM-143)
+    ep = _cantilever_terms(result, analysis)[0]
+    Ka_val = ep["Ka"]
     sigma_base = Ka_val * gamma * geom.H_active  # max pressure at base
 
     # Scale the pressure arrow to fit in the figure
@@ -1306,7 +1270,7 @@ def _plot_cantilever_section(result, analysis):
         facecolor='#fca5a5', edgecolor='#dc2626', linewidth=1.5, alpha=0.5,
     )
     ax.annotate(
-        f'P_a = {_compute_Pa(gamma, geom.H_active, Ka_val, geom.surcharge):.0f} kN/m',
+        f'P_a = {ep["Pa"]:.0f} kN/m',
         xy=(press_x_base + sigma_base * p_scale * 0.5, t_base + geom.H_active / 3.0),
         fontsize=8, ha='left', color='#dc2626', fontweight='bold',
     )
@@ -1393,9 +1357,17 @@ def _plot_bearing_pressure(result, analysis):
 
     fig, ax = plt.subplots(figsize=(7, 3.5))
 
-    # x along base from toe (0) to heel (B)
-    x = [0, B]
-    q = [q_toe, q_heel]
+    # x along base from toe (0) to heel (B); outside the middle third the
+    # pressure is a triangle over the width the analysis used (GM-143)
+    terms = getattr(result, "bearing_terms", None) or {}
+    B_eff = terms.get("B_eff")
+    if terms.get("distribution") == "triangular_toe" and B_eff:
+        x, q = [0, min(B_eff, B)], [q_toe, 0.0]
+    elif terms.get("distribution") == "triangular_heel" and B_eff:
+        x, q = [max(B - B_eff, 0.0), B], [0.0, q_heel]
+    else:
+        x = [0, B]
+        q = [q_toe, q_heel]
 
     # Fill the pressure distribution
     ax.fill_between(x, 0, q, color='#fca5a5', alpha=0.5, edgecolor='#dc2626', linewidth=1.5)
@@ -1605,9 +1577,3 @@ def _plot_mse_internal(result, analysis):
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
     return fig
-
-
-def _compute_Pa(gamma, H, Ka, surcharge=0):
-    """Quick total active force computation for annotation."""
-    Pa = 0.5 * Ka * gamma * H ** 2 + Ka * surcharge * H
-    return max(Pa, 0.0)

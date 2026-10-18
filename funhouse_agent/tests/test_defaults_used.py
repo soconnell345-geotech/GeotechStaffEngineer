@@ -159,8 +159,9 @@ def test_a_typed_value_equal_to_the_default_is_given():
     in defaults_used; left out, it is 'default' and listed."""
     typed = D.call_agent("settlement", "consolidation_settlement", {
         "layers": _CLAY, "q_net": 100, "B": 2, "stress_method": "2:1"})
-    (c,) = typed["choices"]
-    assert c["what"] == "stress increase with depth" and c["how"] == "given"
+    # (the footing length L = B is the other choice, GM-142)
+    c = {x["what"]: x for x in typed["choices"]}["stress increase with depth"]
+    assert c["how"] == "given"
     assert "stress_method" not in typed.get("defaults_used", {})
     left = D.call_agent("settlement", "consolidation_settlement", {
         "layers": _CLAY, "q_net": 100, "B": 2})

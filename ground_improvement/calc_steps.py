@@ -178,8 +178,8 @@ def _inputs_aggregate_piers(result, analysis) -> List[InputItem]:
         InputItem("d_c", "Column diameter", r.column_diameter_m, "m"),
         InputItem("s", "Column spacing (c-c)", r.column_spacing_m, "m"),
         InputItem("Pattern", "Layout pattern", r.pattern.capitalize(), ""),
-        InputItem("E_c", "Column modulus",
-                  _piers(analysis, "E_column"), "kPa"),
+        # E_column is not printed: it feeds only a warning, n sets the
+        # stress split (GM-142; the choices table says so)
         InputItem("E_s", "Soil modulus",
                   _piers(analysis, "E_soil"), "kPa"),
         InputItem("n", "Stress concentration ratio",

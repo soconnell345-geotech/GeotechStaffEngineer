@@ -711,8 +711,10 @@ class TestCalcPackages:
             self, tmp_path):
         # The package runs drilled_shaft_capacity (GM-141), beta_method
         # included, so the rational-beta layer inputs reach it.
+        # N60 for the cohesionless tip's end bearing (GM-142)
         layers = [{"soil_type": "cohesionless", "thickness": 15,
-                   "unit_weight": 19, "phi": 33, "N1_60": 20, "OCR": 2}]
+                   "unit_weight": 19, "phi": 33, "N1_60": 20, "OCR": 2,
+                   "N60": 25}]
         tool = _registry("drilled_shaft")["drilled_shaft_capacity"](
             {"diameter": 1.0, "length": 12, "layers": layers,
              "beta_method": "rational"})

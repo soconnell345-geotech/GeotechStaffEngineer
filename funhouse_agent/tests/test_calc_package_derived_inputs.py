@@ -187,7 +187,11 @@ def test_aggregate_pier_inputs_given_by_older_names_are_printed(built):
     assert module == "ground_improvement"
     assert analysis["E_column"] == 100000.0 and "E_pier" not in analysis
     items = {i.name: i.value for i in get_input_summary(r, analysis)}
-    assert items["E_c"] == 100000.0                          # not 80,000
+    # E_column feeds only a warning: stated in the choices, not printed as
+    # an input (GM-142)
+    assert "E_c" not in items
+    chosen = {c["what"]: c["chosen"] for c in r.choices}
+    assert chosen["column modulus E_c"] == "100000 kPa"     # not 80,000
     assert items["d_c"] == 0.8
 
 
@@ -208,7 +212,9 @@ def test_aggregate_pier_tool_names_reach_the_package(built):
     assert (analysis["n"], analysis["E_column"], analysis["E_soil"]) == \
         (3.0, 90000.0, 4500.0)
     items = {i.name: i.value for i in get_input_summary(r, analysis)}
-    assert (items["E_c"], items["E_s"], items["n"]) == (90000.0, 4500.0, 3.0)
+    assert (items["E_s"], items["n"]) == (4500.0, 3.0)
+    chosen = {c["what"]: c["chosen"] for c in r.choices}
+    assert chosen["column modulus E_c"] == "90000 kPa"
     tool = GI_TOOL["aggregate_piers"](dict(given))
     assert r.settlement_improved_mm == pytest.approx(
         tool["settlement_improved_mm"], abs=0.05)
@@ -218,10 +224,15 @@ def test_aggregate_pier_tool_names_reach_the_package(built):
         assert name in spec["parameter_aliases"]
 
 
-def test_aggregate_pier_column_modulus_default_is_still_printed(built):
+def test_aggregate_pier_column_modulus_default_is_stated(built):
+    # GM-142: E_column feeds only a warning, so the package states its
+    # default in the choices rather than printing it as an input
     from ground_improvement.calc_steps import get_input_summary
     _, r, analysis = built("ground_improvement_package", {
         "method": "aggregate_piers", "column_diameter": 0.8, "spacing": 2.0})
     items = {i.name: i.value for i in get_input_summary(r, analysis)}
-    assert items["E_c"] == 80000.0 and items["E_s"] == 5000.0
+    assert "E_c" not in items and items["E_s"] == 5000.0
+    by = {c["what"]: c for c in r.choices}
+    assert by["column modulus E_c"]["chosen"] == "80000 kPa"
+    assert "not used in the calculation" in by["column modulus E_c"]["basis"]
     assert math.isclose(r.stress_concentration_ratio, 5.0)

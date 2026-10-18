@@ -113,8 +113,14 @@ def _run_consolidation_settlement(params: dict) -> dict:
             S_total += Sc
             layer_results.append({"depth_m": layer.depth_to_center, "settlement_mm": round(Sc * 1000, 3), "delta_sigma_kPa": round(ds, 2)})
     else:
-        q_net = params.get("q_net", 0)
-        B = params.get("B", 1.0)
+        # the stress increase is worked out from the footing: it needs the
+        # pressure and the width (no silent q_net = 0 or B = 1 m, GM-142)
+        require_params(params, ["q_net", "B"],
+                       method="consolidation_settlement",
+                       valid=["delta_sigma", "delta_sigmas", "q_net", "B",
+                              "L", "stress_method"])
+        q_net = params["q_net"]
+        B = params["B"]
         L = params.get("L", B)
         method = params.get("stress_method", "2:1")
         for layer in layers:
@@ -126,8 +132,13 @@ def _run_consolidation_settlement(params: dict) -> dict:
     out = {"consolidation_settlement_m": round(S_total, 6), "consolidation_settlement_mm": round(S_total * 1000, 2), "layer_breakdown": layer_results}
     if delta_sigmas is None:
         # The stress increase was worked out here, by a method (GM-115).
+        from geotech_common.choices import DEFAULT, choice
         from settlement.stress_distribution import stress_method_choice
         out["choices"] = [stress_method_choice(method)]
+        if "L" not in params:
+            out["choices"].append(choice(
+                "footing length", f"L = B = {B:g} m (square)", DEFAULT,
+                "L not given: a square footing", ["L given (L)"]))
     return out
 
 
@@ -168,7 +179,7 @@ def run_combined_settlement_analysis(
                  "immediate_method", "Es", "nu", "schmertmann_layers",
                  "consolidation_layers", "cv", "Hdr", "drainage", "C_alpha",
                  "e0_secondary", "t_secondary", "stress_method",
-                 "time_years_schmertmann"),
+                 "time_years_schmertmann", "Iw"),
         method=method)
     require_params(params, ["q_applied", "B"], method=method)
     consol_layers = None
@@ -207,15 +218,18 @@ def run_combined_settlement_analysis(
 
     analysis = SettlementAnalysis(
         q_applied=params["q_applied"], q_overburden=params.get("q_overburden", 0.0),
-        B=params["B"], L=params.get("L", params["B"]),
+        # L not given: the module works it out from the shape and says
+        # so in its choices (GM-142)
+        B=params["B"], L=params.get("L"),
         footing_shape=params.get("shape", "square"),
         immediate_method=params.get("immediate_method", "elastic"),
         Es_immediate=params.get("Es"), nu=params.get("nu", 0.3),
+        Iw_immediate=params.get("Iw"),
         schmertmann_layers=schmertmann_layers, consolidation_layers=consol_layers,
         cv=params.get("cv"), Hdr=params.get("Hdr"),
         drainage=params.get("drainage", "double"),
         C_alpha=params.get("C_alpha"),
-        e0_secondary=params.get("e0_secondary", 1.0),
+        e0_secondary=params.get("e0_secondary"),
         t_secondary=params.get("t_secondary", 0.0),
         stress_method=params.get("stress_method", "2:1"),
         time_years_schmertmann=params.get("time_years_schmertmann", 0.0),
@@ -271,8 +285,8 @@ METHOD_INFO = {
             "layers": {"type": "array", "required": True, "description": "Array of {thickness (m), depth_to_center (m), e0, Cc, Cr (recompression index; ~Cc/10 if unknown), sigma_v0 (initial effective stress at layer center, kPa, must be > 0), sigma_p (preconsolidation, kPa, optional)} dicts. All of thickness/depth_to_center/e0/Cc/Cr/sigma_v0 are required."},
             "delta_sigma": {"type": "float", "required": False, "description": "Uniform stress increase (kPa). Or use delta_sigmas array."},
             "delta_sigmas": {"type": "array", "required": False, "description": "Per-layer stress increases (kPa), one per layer."},
-            "q_net": {"type": "float", "required": False, "description": "Net pressure for auto stress distribution."},
-            "B": {"type": "float", "required": False, "description": "Footing width for stress distribution (m)."},
+            "q_net": {"type": "float", "required": False, "description": "Net pressure for auto stress distribution; required without delta_sigma(s)."},
+            "B": {"type": "float", "required": False, "description": "Footing width for stress distribution (m); required without delta_sigma(s)."},
             "L": {"type": "float", "required": False, "description": "Footing length for stress distribution (m). Defaults to B."},
             "stress_method": {"type": "str", "required": False, "default": "2:1", "allowed_values": ["2:1", "boussinesq", "westergaard"], "description": "Stress distribution method."},
         },
@@ -304,11 +318,12 @@ METHOD_INFO = {
             "drainage": {"type": "str", "required": False, "default": "double", "allowed_values": ["single", "double"], "description": "Drainage condition for time rate."},
             "stress_method": {"type": "str", "required": False, "default": "2:1", "allowed_values": ["2:1", "boussinesq", "westergaard"], "description": "Stress distribution method."},
             "q_overburden": {"type": "float", "required": False, "default": 0.0, "description": "Overburden pressure at footing base (kPa)."},
-            "L": {"type": "float", "required": False, "description": "Footing length (m). Not given: L = B."},
-            "shape": {"type": "str", "required": False, "default": "square", "allowed_values": ["square", "rectangular", "strip"], "description": "Footing shape."},
+            "L": {"type": "float", "required": False, "description": "Footing length (m). Not given: L = B for a square or circular footing; a strip is taken as infinitely long (plane strain), which the elastic method refuses unless Iw is given (its Iw grows with L/B without limit); a rectangular footing needs L."},
+            "shape": {"type": "str", "required": False, "default": "square", "allowed_values": ["square", "rectangular", "strip", "circular"], "description": "Footing shape."},
             "nu": {"type": "float", "required": False, "default": 0.3, "description": "Poisson's ratio for immediate settlement."},
+            "Iw": {"type": "float", "required": False, "description": "Elastic influence factor for the elastic method. Not given: Schleicher's value at the centre of a flexible footing (1.12 for a square, growing with L/B; 1.0 for a circle)."},
             "C_alpha": {"type": "float", "required": False, "description": "Secondary compression index. Enables secondary settlement."},
-            "e0_secondary": {"type": "float", "required": False, "default": 1.0, "description": "Void ratio for secondary settlement."},
+            "e0_secondary": {"type": "float", "required": False, "description": "One void ratio for the secondary settlement of every consolidation layer. Not given: each layer's own e0, layer by layer."},
             "t_secondary": {"type": "float", "required": False, "default": 0.0, "description": "Time for secondary settlement (years)."},
             "time_years_schmertmann": {"type": "float", "required": False, "default": 0.0, "description": "Creep time for Schmertmann immediate method (years)."},
         },
@@ -341,7 +356,8 @@ declare_aliases(METHOD_INFO, {
 # When each default applies (GM-119): the stress increase to a stress worked
 # out from the footing pressure, nu to the elastic method with a modulus,
 # the creep time to Schmertmann, the drainage to a time curve with no Hdr
-# given, the secondary settings to a run with C_alpha.
+# given, the secondary time to a run with C_alpha (e0_secondary has no
+# default since GM-142: each layer's own e0, stated in the choices).
 declare_applies_when(METHOD_INFO, {
     "consolidation_settlement": {
         "stress_method": {"delta_sigma": "unset", "delta_sigmas": "unset"},
@@ -352,7 +368,6 @@ declare_applies_when(METHOD_INFO, {
         "stress_method": {"consolidation_layers": "set"},
         "drainage": {"cv": "set", "consolidation_layers": "set",
                      "Hdr": "unset"},
-        "e0_secondary": {"C_alpha": "set", "t_secondary": "set"},
         "t_secondary": {"C_alpha": "set"},
     },
 })
