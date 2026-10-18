@@ -241,7 +241,7 @@ def _steps_aggregate_piers(result, analysis) -> List[CalcSection]:
         substitution=f"a_s = {Ac_val:.4f} / {A_trib_val:.4f}",
         result_name="a_s",
         result_value=f"{r.area_replacement_ratio:.4f}",
-        reference="GEC-13, Section 7.3",
+        reference="FHWA GEC-13 (2017), Ch. 5, Sec. 4.1.2.2",
     ))
 
     sections.append(CalcSection(
@@ -934,7 +934,7 @@ def _steps_vibro(result, analysis) -> List[CalcSection]:
             result_name="s_probe",
             result_value=f"{r.recommended_spacing_m:.2f}",
             result_unit="m",
-            reference="FHWA GEC-13, Section 5.4",
+            reference="FHWA GEC-13 (2017), Ch. 4, Sec. 3.3.2.1",
         ))
 
         sections.append(CalcSection(
