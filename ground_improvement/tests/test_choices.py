@@ -17,8 +17,15 @@ def test_aggregate_pier_choices_state_n_and_its_basis():
     c = _by_what(r.choices)
     n = c["stress concentration ratio n"]
     assert n["chosen"] == "5" and n["how"] == "default"
-    assert "GEC-13" in n["basis"] and "4 to 10" in n["basis"]
-    assert any("Eq. 5-17" in a for a in n["alternatives"])
+    # GEC-13's own ranges (Sec. 4.1.2.4; p. 5-45)
+    assert "GEC-13" in n["basis"]
+    assert "between 2.0 and 5.0" in n["basis"]
+    assert "4 to 45 for rigid footings" in n["basis"]
+    assert "5 to 10 under embankments" in n["basis"]
+    assert "soft clay" not in n["basis"] and "4 to 10" not in n["basis"]
+    assert any("equal-strain modular ratio" in a
+               for a in n["alternatives"])
+    assert not any("Eq. 5-17" in a for a in n["alternatives"])
     assert c["soil modulus E_s"]["chosen"] == "5000 kPa"
     assert "composite modulus" in c["soil modulus E_s"]["basis"]
     assert "not used in the calculation" in c["column modulus E_c"]["basis"]

@@ -38,9 +38,9 @@ evaluate_feasibility(soil_type, fines_content, ...) -> FeasibilityResult
   `aggregate_piers.priebe_basic_improvement_factor`
 - `equivalent_drain_diameter = 2(w+t)/π` (Hansbo; GI-1 fixed in 5.0)
 - Aggregate piers state their choices (GM-142, 2026-10-18): n (default
-  5.0; GEC-13 Vol. I Ch. 5: 2 to 5 for stone columns in soft clay, 4 to 10
-  for rammed aggregate piers; taken as given, not worked out from the
-  moduli), E_soil (used only for the composite modulus), E_column (used only
+  5.0; GEC-13: "between 2.0 and 5.0" for stone columns, Sec. 4.1.2.4; for
+  rammed aggregate piers "4 to 45 for rigid footings" and 5 to 10 under
+  embankments, p. 5-45; taken as given, not worked out from the moduli), E_soil (used only for the composite modulus), E_column (used only
   in a warning when below E_soil) and the pattern. The calc package no
   longer prints E_column as an input.
 - Tests in tests/test_ground_improvement.py

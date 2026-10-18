@@ -188,7 +188,7 @@
     "id": "DS-2",
     "module": "drilled_shaft",
     "complexity": "high",
-    "question": "Estimate the ultimate axial capacity of a 1.2 m diameter, 15 m deep drilled shaft in sand with phi = 34 degrees and unit weight 19 kN/m3, using the beta method.",
+    "question": "Estimate the ultimate axial capacity of a 1.2 m diameter, 15 m deep drilled shaft in sand with phi = 34 degrees and unit weight 19 kN/m3, N60 = 15 at the tip, using the beta method.",
     "expected": {
       "values": [
         {

@@ -168,7 +168,7 @@ METHOD_INFO = {
             "pattern": _PATTERN,
             "E_column": {"type": "float", "required": False, "default": 80000.0, "description": "Aggregate column modulus (kPa). Not used in the calculation, only a warning when it is below E_soil: n sets the stress split."},
             "E_soil": {"type": "float", "required": False, "default": 5000.0, "description": "Surrounding soil modulus (kPa). Used only for the composite modulus E_comp = E_soil*[1 + as*(n-1)]."},
-            "n": {"type": "float", "required": False, "default": 5.0, "description": "Stress concentration ratio sigma_c/sigma_s; sets the settlement reduction factor and the improved bearing. GEC-13: typically 2-5 for stone columns in soft clay, 4-10 for rammed aggregate piers."},
+            "n": {"type": "float", "required": False, "default": 5.0, "description": "Stress concentration ratio sigma_c/sigma_s; sets the settlement reduction factor and the improved bearing. GEC-13: 'between 2.0 and 5.0' for stone columns (Sec. 4.1.2.4); for rammed aggregate piers '4 to 45 for rigid footings' and 5 to 10 under embankments (p. 5-45)."},
             "q_unreinforced": {"type": "float", "required": False, "default": 0.0, "description": "Unreinforced bearing capacity (kPa). 0 = not computed."},
             "S_unreinforced": {"type": "float", "required": False, "default": 0.0, "description": "Unreinforced settlement (mm). 0 = not computed."},
         },

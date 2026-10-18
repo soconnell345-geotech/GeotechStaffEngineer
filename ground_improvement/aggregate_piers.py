@@ -257,8 +257,9 @@ def analyze_aggregate_piers(
         for the composite modulus.
     n : float
         Stress concentration ratio sigma_c / sigma_s. Default 5.0 (GEC-13:
-        typically 2 to 5 for stone columns in soft clay, 4 to 10 for
-        rammed aggregate piers).
+        "between 2.0 and 5.0" for stone columns, Sec. 4.1.2.4; for rammed
+        aggregate piers "4 to 45 for rigid footings" and 5 to 10 under
+        embankments, p. 5-45).
     q_unreinforced : float
         Unreinforced bearing capacity (kPa). Default 0 (not computed).
     S_unreinforced : float
@@ -320,13 +321,14 @@ def aggregate_pier_choices(n: float, E_soil: float, E_column: float,
         choice("stress concentration ratio n", f"{n:g}",
                how_given(n, 5.0, name="n"),
                "n = sigma_c / sigma_s, taken as given and not worked out "
-               "from the moduli; GEC-13 (FHWA-NHI-16-027) Vol. I Ch. 5: "
-               "typically 2 to 5 for stone columns in soft clay and 4 to "
-               "10 for rammed aggregate piers. It sets the settlement "
-               "reduction factor 1 / [1 + a_s (n - 1)], the improved "
-               "bearing and the composite modulus",
-               ["n from the moduli, n = E_c / E_s for one-dimensional "
-                "compression (GEC-13 Eq. 5-17)",
+               "from the moduli; GEC-13 (FHWA-NHI-16-027): for stone "
+               "columns n is 'between 2.0 and 5.0' (Sec. 4.1.2.4); for "
+               "rammed aggregate piers '4 to 45 for rigid footings' and "
+               "5 to 10 under embankments (p. 5-45). It sets the "
+               "settlement reduction factor 1 / [1 + a_s (n - 1)], the "
+               "improved bearing and the composite modulus",
+               ["n from the moduli, n = E_c / E_s (equal-strain modular "
+                "ratio)",
                 "Priebe's improvement factor n0 "
                 "(priebe_improvement_factor)"]),
         choice("soil modulus E_s", f"{E_soil:g} kPa",
