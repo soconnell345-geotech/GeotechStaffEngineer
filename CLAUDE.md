@@ -283,7 +283,8 @@ Key conventions:
       strip (release note); tool descriptions and `defaults_used` say what
       the code does, guarded over 165 methods (`method_probes.json`); weak-rock p-y curves as
       printed in GEC 9 App. A.5 (release note); a figure is one thing
-      across a turn, whoever draws it (`plot_box/figures.py`);
+      across a turn, whoever draws it (`plot_box/figures.py`); standard chart
+      lines from the references (refs `chart_lines.py`);
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done".
     Open next: Foundry brief 6, which measures all of this, is drafted
