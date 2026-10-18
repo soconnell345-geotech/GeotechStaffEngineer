@@ -509,5 +509,49 @@
       "funhouse_agent/deep/figure_helper.py",
       "funhouse_agent/plot_box/"
     ]
+  },
+  "GM-140": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "When should the integral slope_stability review happen, and should its first step be a written account only (no code)?",
+    "why": "You asked on 2026-10-18 to defer slope fixes until they can be done integrally: nine single fixes in three days each moved pinned values, each started by one case. Twelve slope items now wait on one review.",
+    "background": "The fixes were GM-87, GM-122, GM-123, GM-124, GM-127, GM-128, GM-131, GM-134 and GM-138: search ranges, ground crossings, a time budget, circles above the toe, the m_alpha check, base-tangent circles, slicing for polylines and circles, and the rigorous methods' refinement. Each was right on its own and reviewed, but they were found one case at a time. Waiting: GM-12, GM-15, GM-18, GM-19, GM-56, GM-82, GM-117, GM-130, GM-135, GM-136, GM-137, GM-139, and your decisions OWN-17 and OWN-59.",
+    "options": [
+      {
+        "label": "Written account first, when you say",
+        "effect": "One agent writes how the whole chain works (surfaces generated, sliced, admitted, solved, reported), set against the references, Slide2 / SLOPE/W practice and every published case at once, with the open items placed in it. You read it before any code."
+      },
+      {
+        "label": "After the release",
+        "effect": "Nothing happens to slope_stability until the held release (OWN-55) is out; then the written account."
+      },
+      {
+        "label": "Leave it parked",
+        "effect": "No slope module work until you raise it again."
+      }
+    ],
+    "recommendation": "Written account first, when you say. It needs no code and no API spend, and it gives you the whole picture before any further change.",
+    "if_no_answer": "Stays parked: no slope_stability module changes. Agent-side slope measurement (EV-25) is separate and can still run.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "GM-12",
+      "GM-15",
+      "GM-18",
+      "GM-19",
+      "GM-56",
+      "GM-82",
+      "GM-117",
+      "GM-130",
+      "GM-135",
+      "GM-136",
+      "GM-137",
+      "GM-139"
+    ],
+    "sources": [
+      "BACKLOG.md GM-140",
+      "slope_stability/DESIGN.md",
+      "slope_stability/VALIDATION.md"
+    ]
   }
 }
