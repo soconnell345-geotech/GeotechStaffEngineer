@@ -37,7 +37,7 @@ _PY_OPTIONAL = {
     "SoftClayMatlock": ("J",), "StiffClayBelowWT": (),
     "StiffClayAboveWT": ("J",), "SoftClayJeanjean": ("J",),
     "SandReese": ("construction",), "SandAPI": (),
-    "WeakRock": ("gamma_r", "RQD"),
+    "WeakRock": ("gamma_r", "RQD", "krm", "rock_top"),
 }
 _LAYER_COMMON_KEYS = ("top", "bottom", "model", "description", "loading")
 # Words the near-miss matcher cannot place; only the keys the layer's own
@@ -94,7 +94,8 @@ def _build_py_model(d):
     elif model_name == "SandAPI":
         return cls(phi=d["phi"], gamma=d["gamma"], k=d["k"], loading=loading)
     elif model_name == "WeakRock":
-        return cls(qu=d["qu"], Er=d["Er"], gamma_r=d.get("gamma_r", 22.0), RQD=d.get("RQD", 100.0), loading=loading)
+        return cls(qu=d["qu"], Er=d["Er"], gamma_r=d.get("gamma_r", 22.0), RQD=d.get("RQD", 100.0),
+                   krm=d.get("krm", 0.0005), rock_top=d.get("rock_top"), loading=loading)
 
 
 def _build_pile(params):
@@ -241,7 +242,7 @@ METHOD_INFO = {
             "designation": {"type": "str", "required": False, "description": "H-pile designation (e.g. 'HP360x132') — required for pile_type 'h_pile'."},
             "axis": {"type": "str", "required": False, "default": "strong", "allowed_values": ["strong", "weak"], "description": "Bending axis — pile_type 'h_pile' only."},
             "fc": {"type": "float", "required": False, "default": 28000.0, "description": "Concrete f'c (kPa) — pile_type 'filled_pipe' only."},
-            "layers": {"type": "array", "required": True, "description": "Array of {top, bottom, model, ...model params}. Required model params: SoftClayMatlock/StiffClayAboveWT {c, gamma, eps50}; StiffClayBelowWT {c, gamma, eps50, ks}; SoftClayJeanjean {su, gamma, Gmax}; SandReese/SandAPI {phi, gamma, k} where k = initial subgrade modulus (kN/m3); WeakRock {qu, Er}. SandReese also takes optional construction='simplified'(default)|'reese1974' (full four-segment Reese 1974 curve)."},
+            "layers": {"type": "array", "required": True, "description": "Array of {top, bottom, model, ...model params}. Required model params: SoftClayMatlock/StiffClayAboveWT {c, gamma, eps50}; StiffClayBelowWT {c, gamma, eps50, ks}; SoftClayJeanjean {su, gamma, Gmax}; SandReese/SandAPI {phi, gamma, k} where k = initial subgrade modulus (kN/m3); WeakRock {qu, Er}. SandReese also takes optional construction='simplified'(default)|'reese1974' (full four-segment Reese 1974 curve). WeakRock (Reese 1997, FHWA GEC 9 App. A.5) also takes optional RQD (%, default 100: alpha_r = 1/3, the printed lower bound; alpha_r rises linearly to 1.0 at RQD 0), krm (default 0.0005, the softer end of 0.00005-0.0005) and rock_top (depth of the rock surface, m; default the top of the weak-rock layers that hold the layer); its gamma_r is accepted and not used (the criterion does not use the unit weight)."},
             "Vt": {"type": "float", "required": False, "default": 0.0, "description": "Lateral load at pile top (kN)."},
             "Mt": {"type": "float", "required": False, "default": 0.0, "description": "Moment at pile top (kN-m)."},
             "head_condition": {"type": "str", "required": False, "default": "free", "allowed_values": ["free", "fixed"], "description": "Pile head condition."},
@@ -267,15 +268,17 @@ METHOD_INFO = {
             "phi": {"type": "float", "required": False, "description": "Friction angle (deg). For sand."},
             "k": {"type": "float", "required": False, "description": "Initial subgrade modulus (kN/m3). For sand."},
             "construction": {"type": "str", "required": False, "default": "simplified", "allowed_values": ["simplified", "reese1974"], "description": "SandReese curve construction. 'simplified' (default): initial linear + 1/3-power parabola anchored at ultimate. 'reese1974': the full four-segment Reese (1974) curve (linear -> parabola -> straight m-segment -> plateau) with the A/B chart coefficients and the m-point (pm=B*pu at ym=b/60, pu=A*pu at yu=3b/80)."},
-            "qu": {"type": "float", "required": False, "description": "UCS (kPa). For WeakRock."},
-            "Er": {"type": "float", "required": False, "description": "Rock mass modulus (kPa). For WeakRock."},
+            "qu": {"type": "float", "required": False, "description": "Uniaxial compressive strength of intact rock (kPa). For WeakRock."},
+            "Er": {"type": "float", "required": False, "description": "Modulus of the rock mass E_m (kPa), e.g. from a pressuremeter or dilatometer test. For WeakRock."},
             "loading": {"type": "str", "required": False, "default": "static", "allowed_values": ["static", "cyclic"], "description": "Loading type."},
             "ks": {"type": "float", "required": False, "description": "Subgrade modulus (kN/m3). For StiffClayBelowWT."},
             "su": {"type": "float", "required": False, "description": "Undrained shear strength (kPa). For SoftClayJeanjean."},
             "Gmax": {"type": "float", "required": False, "description": "Small-strain shear modulus (kPa). For SoftClayJeanjean."},
             "J": {"type": "float", "required": False, "default": 0.5, "description": "Matlock J factor. For SoftClayMatlock, StiffClayAboveWT, SoftClayJeanjean."},
-            "gamma_r": {"type": "float", "required": False, "default": 22.0, "description": "Rock unit weight (kN/m3). Accepted for WeakRock but not used by the weak-rock model (alpha_r = 1.0)."},
-            "RQD": {"type": "float", "required": False, "default": 100.0, "description": "Rock quality designation (%). Accepted for WeakRock but not used by the weak-rock model (alpha_r = 1.0)."},
+            "gamma_r": {"type": "float", "required": False, "default": 22.0, "description": "Rock unit weight (kN/m3). Accepted for WeakRock but not used: the weak-rock criterion (Reese 1997, GEC 9 App. A.5) does not use the unit weight."},
+            "RQD": {"type": "float", "required": False, "default": 100.0, "description": "Rock quality designation (%), 0-100. For WeakRock: strength reduction alpha_r = 1 - (2/3) RQD/100 (1/3 at RQD 100, 1.0 at RQD 0; GEC 9 p. 231). The default 100 gives the printed lower bound alpha_r = 1/3."},
+            "krm": {"type": "float", "required": False, "default": 0.0005, "description": "k_rm, strain at 50% of the ultimate, 0.00005-0.0005 (GEC 9 p. 232); the lower value is stiffer. For WeakRock; default 0.0005, the softer end."},
+            "rock_top": {"type": "float", "required": False, "default": 0.0, "description": "Depth of the rock surface below the ground (m). For WeakRock: z_r = z - rock_top is the depth below the rock surface its p_ur and K_ir use."},
         },
         "returns": {"y_m": "Deflection array (m).", "p_kN_per_m": "Soil resistance array (kN/m)."},
     },
@@ -315,13 +318,13 @@ declare_applies_when(METHOD_INFO, {
     "composite_section_ei": {
         "E_steel": {"section_type": ["filled_pipe", "cased_concrete"]},
     },
-    # each p-y model's own optional inputs (J, construction) to the models
-    # that read them; the weak-rock model takes gamma_r and RQD and uses
-    # neither (alpha_r = 1.0)
+    # each p-y model's own optional inputs (J, construction, RQD, krm,
+    # rock_top) to the models that read them; the weak-rock model takes
+    # gamma_r and does not use it (GEC 9 App. A.5 has no unit weight)
     "get_py_curve": {
         **{name: {"model": [m for m, keys in _PY_OPTIONAL.items()
                             if name in keys]}
            for name in sorted({k for keys in _PY_OPTIONAL.values()
                                for k in keys})},
-        "gamma_r": False, "RQD": False},
+        "gamma_r": False},
 })

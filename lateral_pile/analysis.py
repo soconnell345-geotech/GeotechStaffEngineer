@@ -10,15 +10,18 @@ All units are SI: meters (m), kilonewtons (kN), kilopascals (kPa).
 References
 ----------
 - COM624P Manual: FHWA-SA-91-048 (Wang & Reese, 1993)
-- FHWA GEC-13: FHWA-HIF-18-031
+- FHWA GEC 9: FHWA-HIF-18-031
 """
 
+import copy
+import dataclasses
 import warnings
 from typing import List, Optional
 
 import numpy as np
 
 from lateral_pile.pile import Pile
+from lateral_pile.py_curves import WeakRock
 from lateral_pile.soil import SoilLayer, get_layer_at_depth, validate_layers
 from lateral_pile.solver import solve_lateral_pile
 from lateral_pile.results import Results
@@ -35,7 +38,8 @@ _PY_SOURCE = {
     "SoftClayJeanjean": "Jeanjean (2009), OTC-20158-MS, soft clay",
     "SandReese": "Reese, Cox & Koop (1974), OTC 2080, sand",
     "SandAPI": "API RP2A-WSD (2000) / O'Neill & Murchison (1983), sand",
-    "WeakRock": "Reese (1997), JGGE 123(11), weak rock",
+    "WeakRock": "Reese (1997), JGGE 123(11), weak rock, as printed in "
+                "FHWA GEC 9 App. A.5",
     "SandLiquefied": "Rollins et al. (2005), liquefied sand",
 }
 _PY_FAMILIES = (
@@ -65,7 +69,7 @@ def py_choices(layers) -> list:
         model = layer.py_model
         name = type(model).__name__
         notes = []
-        for opt in ("J", "construction", "RQD", "gamma_r"):
+        for opt in ("J", "construction"):
             if hasattr(model, opt):
                 value = getattr(model, opt)
                 if how_given(value, _field_default(model, opt)) == DEFAULT:
@@ -74,9 +78,13 @@ def py_choices(layers) -> list:
         basis = _PY_SOURCE.get(name, "")
         if notes:
             basis += "; default " + ", ".join(notes)
+        if isinstance(model, WeakRock):
+            basis += _weak_rock_note(model)
         family = next((f for f in _PY_FAMILIES if name in f), ())
         out.append(choice(f"p-y curves {layer.top:g}-{layer.bottom:g} m",
                           name, GIVEN, basis, family))
+        if isinstance(model, WeakRock):
+            out += _weak_rock_choices(model, layer)
         load = getattr(model, "loading", None)
         if load is not None:
             if how_given(load, _field_default(model, "loading")) != DEFAULT:
@@ -94,6 +102,74 @@ def py_choices(layers) -> list:
             "each model's static or cyclic p-y curve (COM624P, "
             "FHWA-SA-91-048)",
             [x for x in ("static", "cyclic") if one and x != one]))
+    return out
+
+
+def _weak_rock_note(model) -> str:
+    """Where a weak-rock layer's depths are measured from, and what its
+    criterion covers (GEC 9 App. A.5 and p. 92)."""
+    note = (f"; z_r below the rock surface at {model.rock_top or 0.0:g} m")
+    if not 500.0 <= model.qu <= 5000.0:
+        note += (f"; qu {model.qu:g} kPa is outside the 0.5-5 MPa the "
+                 "criterion was proposed for")
+    if model.loading == "cyclic":
+        note += ("; the criterion is for static loading (GEC 9 p. 92), so "
+                 "the cyclic curve is the static one")
+    return note
+
+
+def _weak_rock_choices(model, layer) -> list:
+    """A weak-rock layer's alpha_r (from RQD) and k_rm (GM-159)."""
+    from geotech_common.choices import choice, how_given
+    span = f"{layer.top:g}-{layer.bottom:g} m"
+    krm_options = (
+        (0.0005, "0.0005, the softer end: more deflection"),
+        (0.00005, "0.00005, the stiffer end: less deflection (a 1.2 m "
+                  "shaft in rock: 0.23 to 0.10 mm at 500 kN, 5 % less at "
+                  "8,000 kN)"),
+        (0.0004, "0.0004 (GEC 10 p. 9-31: decomposed rock): slightly less "
+                 "deflection than 0.0005"))
+    return [
+        choice(f"strength reduction alpha_r {span}",
+               f"{model.alpha_r:.3g} (RQD {model.RQD:g} %)",
+               how_given(model.RQD, _field_default(model, "RQD")),
+               "alpha_r = 1/3 at RQD 100 %, rising linearly to 1.0 at RQD 0 "
+               "(Reese 1997, GEC 9 p. 231); RQD 100 % gives the printed lower "
+               "bound, alpha_r = 1/3",
+               ["a measured RQD (RQD): RQD below 100 % raises alpha_r and "
+                "p_ur, so less deflection",
+                "RQD 0: alpha_r = 1.0, p_ur three times as large, so less "
+                "deflection"]),
+        choice(f"k_rm {span}", model.krm,
+               how_given(model.krm, _field_default(model, "krm")),
+               "strain at 50 % of the ultimate, 0.00005 to 0.0005 (GEC 9 "
+               "p. 232); the lower value gives a stiffer initial response "
+               "(GEC 10 p. 9-31), so 0.0005 is the softer end",
+               [text for value, text in krm_options
+                if abs(value - model.krm) > 1e-12]),
+    ]
+
+
+def _with_rock_surface(layers: list) -> list:
+    """The layers, each weak-rock model measuring z_r from the rock
+    surface (GEC 9 App. A.5): a model given no ``rock_top`` takes the one
+    of the run of weak-rock layers that holds it, which is the first
+    layer's ``rock_top`` where given, else its top. Such a model is
+    copied, so the caller's object is left as it was."""
+    out, top = [], None
+    for layer in layers:
+        model = layer.py_model
+        if not isinstance(model, WeakRock):
+            top = None
+            out.append(layer)
+            continue
+        if top is None:
+            top = model.rock_top if model.rock_top is not None else layer.top
+        if model.rock_top is None:
+            model = copy.copy(model)
+            model.rock_top = top
+            layer = dataclasses.replace(layer, py_model=model)
+        out.append(layer)
     return out
 
 
@@ -132,6 +208,7 @@ class LateralPileAnalysis:
         self.pile = pile
         self.layers = sorted(layers, key=lambda l: l.top)
         validate_layers(self.layers, self.pile.length)
+        self.layers = _with_rock_surface(self.layers)
 
     def solve(
         self,

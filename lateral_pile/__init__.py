@@ -7,7 +7,7 @@ advancements including Jeanjean (2009) soft clay.
 
 References:
     - COM624P Manual: FHWA-SA-91-048 (Wang & Reese, 1993)
-    - FHWA GEC-13: FHWA-HIF-18-031
+    - FHWA GEC 9: FHWA-HIF-18-031
     - Jeanjean (2009): OTC-20158-MS
 """
 

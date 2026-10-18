@@ -24,7 +24,8 @@ References
 - O'Neill, M.W. & Murchison, J.M. (1983). "An Evaluation of p-y
   Relationships in Sands." Report to API, Univ. of Houston.
 - Reese, L.C. (1997). "Analysis of Laterally Loaded Piles in Weak Rock."
-  J. Geotech. & Geoenviron. Eng., 123(11), 1010-1017.
+  J. Geotech. & Geoenviron. Eng., 123(11), 1010-1017; as printed in FHWA
+  GEC 9 (FHWA-HIF-18-031, 2018), Appendix A.5.
 - Jeanjean, P. (2009). "Re-assessment of p-y curves for soft clays from
   centrifuge testing and finite element modeling." OTC-20158-MS.
 - Jeanjean, P., Zhang, Y., Andersen, K.H., Gilbert, R., & Senanayake, A.
@@ -1054,58 +1055,117 @@ class SandAPI:
 
 @dataclass
 class WeakRock:
-    """p-y curves for weak/weathered rock per Reese (1997).
+    """p-y curves for weak rock per Reese (1997).
 
-    For weak rock characterized by unconfined compressive strength qu.
+    Reese's interim criterion for rock with an unconfined compressive
+    strength of 0.5 to 5 MPa, as printed in FHWA GEC 9 (FHWA-HIF-18-031,
+    2018), Appendix A.5, pp. 230-232, Eqs. A-33 to A-42, with z_r the
+    depth below the rock surface:
+
+        p_ur = alpha_r qu b (1 + 1.4 z_r/b)   0 <= z_r <= 3b    (A-33)
+        p_ur = 5.2 alpha_r qu b               z_r >= 3b         (A-34)
+        alpha_r = 1 - (2/3)(RQD/100): 1/3 at RQD 100 %, rising
+                  linearly to 1.0 at RQD 0                       (p. 231)
+        K_ir = k_ir E_m                                          (A-35)
+        k_ir = 100 + 400 z_r/(3b)   0 <= z_r <= 3b;  500 below   (A-36, A-37)
+        p = K_ir y                         y <= y_A              (A-38)
+        p = (p_ur/2)(y/y_rm)^0.25          y >= y_A, p <= p_ur   (A-39)
+        p = p_ur                                                 (A-40)
+        y_rm = k_rm b                                            (A-41)
+        y_A = [p_ur / (2 y_rm^0.25 K_ir)]^1.333                  (A-42)
+
+    GEC 9 prints A-38 with a lower-case k_ir and A-41 as y_m; its Figure
+    A-12, A-35 and A-42 make the initial slope K_ir and the deflection the
+    y_rm of A-39, which is what is used here. The exponent of A-42 is taken
+    as 4/3, the exact crossing of A-38 and A-39 (printed 1.333).
 
     Parameters
     ----------
     qu : float
-        Unconfined compressive strength (kPa).
+        Uniaxial compressive strength of intact rock, sigma_ci (kPa).
     Er : float
-        Modulus of rock mass (kPa). If not known, estimate as 100-500 * qu.
+        Modulus of the rock mass, E_m (kPa): from a pressuremeter or
+        dilatometer test (GEC 9 p. 231). GEC 10 (FHWA-NHI-18-024) p. 9-31
+        modelled a decomposed quartzite with 150 qu.
     gamma_r : float
-        Unit weight of rock (kN/m^3). Typical: 20-26 kN/m^3.
+        Unit weight of rock (kN/m^3). Not used: the criterion's p_ur and
+        K_ir do not depend on it (GEC 9 Eqs. A-33 to A-42).
     RQD : float
-        Rock Quality Designation (%). Used to estimate krm. Default 100.
+        Rock quality designation (%), 0-100: sets alpha_r. Default 100,
+        which gives the printed lower bound alpha_r = 1/3.
     loading : str
-        'static' or 'cyclic'. Default 'static'.
+        'static' or 'cyclic'. Default 'static'. The criterion is for static
+        loading (GEC 9 p. 92), so 'cyclic' gives the same curve.
+    krm : float
+        k_rm, the strain at 50 % of the ultimate (GEC 9 p. 232: 0.00005 to
+        0.0005; GEC 10 p. 9-31: the lower value gives a stiffer initial
+        response). Default 0.0005, the upper end: the softer curve.
+    rock_top : float, optional
+        Depth of the rock surface below the ground (m); z_r = z - rock_top.
+        Default None: 0 for the model alone, and in a
+        :class:`~lateral_pile.analysis.LateralPileAnalysis` the top of the
+        weak-rock layers that hold this one.
 
     References
     ----------
     Reese, L.C. (1997). J. Geotech. & Geoenviron. Eng., 123(11), 1010-1017.
-    COM624P Manual (FHWA-SA-91-048), Section 2.3.6.
+    FHWA GEC 9 (FHWA-HIF-18-031, 2018), Appendix A.5, pp. 230-232.
+    FHWA GEC 10 (FHWA-NHI-18-024, 2018), Section 9.3.3.4.4, p. 9-31.
     """
     qu: float
     Er: float
     gamma_r: float = 22.0
     RQD: float = 100.0
     loading: str = 'static'
+    krm: float = 0.0005
+    rock_top: Optional[float] = None
 
     def __post_init__(self):
         if self.qu <= 0:
             raise ValueError(f"qu must be positive, got {self.qu}")
         if self.Er <= 0:
             raise ValueError(f"Er must be positive, got {self.Er}")
+        if not 0.0 <= self.RQD <= 100.0:
+            raise ValueError(f"RQD must be between 0 and 100 %, got {self.RQD}")
+        if self.krm <= 0:
+            raise ValueError(f"krm must be positive, got {self.krm}")
+        if self.rock_top is not None and self.rock_top < 0:
+            raise ValueError(f"rock_top must be >= 0, got {self.rock_top}")
         if self.loading not in ('static', 'cyclic'):
             raise ValueError(f"loading must be 'static' or 'cyclic', got '{self.loading}'")
 
-    def get_pu(self, z: float, b: float) -> float:
-        """Ultimate resistance for weak rock.
+    @property
+    def alpha_r(self) -> float:
+        """Strength reduction factor: 1/3 at RQD 100 %, rising linearly to
+        1.0 at RQD 0 (GEC 9 p. 231)."""
+        return 1.0 - (2.0 / 3.0) * self.RQD / 100.0
 
-        pur = alpha_r * qu * b * (1 + 1.4 * z/b)  for z/b <= 3
-        pur = 5.2 * alpha_r * qu * b               for z/b > 3
+    def depth_in_rock(self, z: float) -> float:
+        """z_r, the depth below the rock surface (m), for a depth z below
+        the ground; 0 above the rock surface."""
+        return max(z - (self.rock_top or 0.0), 0.0)
+
+    def get_pu(self, z: float, b: float) -> float:
+        """Ultimate resistance p_ur (kN/m), GEC 9 Eqs. A-33 and A-34.
+
+        p_ur = alpha_r * qu * b * (1 + 1.4 * z_r/b)  for z_r <= 3b
+        p_ur = 5.2 * alpha_r * qu * b                for z_r > 3b
         """
-        alpha_r = 1.0  # conservative; could be reduced based on RQD
-        zb = z / b if b > 0 else 0
+        zb = self.depth_in_rock(z) / b if b > 0 else 0.0
         if zb <= 3.0:
-            pur = alpha_r * self.qu * b * (1.0 + 1.4 * zb)
-        else:
-            pur = 5.2 * alpha_r * self.qu * b
-        return pur
+            return self.alpha_r * self.qu * b * (1.0 + 1.4 * zb)
+        return 5.2 * self.alpha_r * self.qu * b
+
+    def get_Kir(self, z: float, b: float) -> float:
+        """Initial slope K_ir = k_ir * E_m (kN/m^2), GEC 9 Eqs. A-35 to
+        A-37: k_ir = 100 + 400 z_r/(3b) to z_r = 3b, 500 below."""
+        zr = self.depth_in_rock(z)
+        kir = 100.0 + 400.0 * zr / (3.0 * b) if zr <= 3.0 * b else 500.0
+        return kir * self.Er
 
     def get_p(self, y: float, z: float, b: float) -> float:
-        """Compute soil resistance for weak rock."""
+        """Rock resistance p (kN/m) at deflection y: the three segments of
+        GEC 9 Eqs. A-38 to A-40."""
         if z < 0:
             return 0.0
 
@@ -1115,31 +1175,22 @@ class WeakRock:
             return 0.0
 
         pur = self.get_pu(z, b)
-
-        # Initial modulus
-        kir = self.Er  # simplified: Kir ≈ Er for initial slope
-
-        # Reference deflection
-        yr = pur / (0.25 * kir) if kir > 0 else 0.001 * b
-
-        if y_abs <= yr:
-            # Linear region
-            p = kir * y_abs * 0.25
+        Kir = self.get_Kir(z, b)
+        y_rm = self.krm * b
+        y_A = (pur / (2.0 * y_rm ** 0.25 * Kir)) ** (4.0 / 3.0)
+        if y_abs <= y_A:
+            p = Kir * y_abs
         else:
-            # Ultimate plateau
-            p = pur
-
-        p = min(p, pur)
-        return sign * p
+            p = 0.5 * pur * (y_abs / y_rm) ** 0.25
+        return sign * min(p, pur)
 
     def get_py_curve(self, z: float, b: float, n_points: int = 50,
-                     y_max_factor: float = 3.0) -> Tuple[np.ndarray, np.ndarray]:
-        """Generate a complete p-y curve at depth z."""
-        pur = self.get_pu(z, b)
-        kir = self.Er * 0.25
-        yr = pur / kir if kir > 0 else 0.001 * b
-        y_max = y_max_factor * yr
-        y_array = np.linspace(0, y_max, n_points)
+                     y_max_factor: float = 1.5) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate a complete p-y curve at depth z, to ``y_max_factor``
+        times the deflection at which p reaches p_ur (16 y_rm, or p_ur/K_ir
+        where the first segment reaches p_ur first)."""
+        y_u = max(16.0 * self.krm * b, self.get_pu(z, b) / self.get_Kir(z, b))
+        y_array = np.linspace(0, y_max_factor * y_u, n_points)
         p_array = np.array([self.get_p(y, z, b) for y in y_array])
         return y_array, p_array
 

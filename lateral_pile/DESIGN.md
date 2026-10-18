@@ -13,6 +13,9 @@ applications.
 - Reese (1975) — stiff clay below/above water table
 - Jeanjean (2009) — soft clay updated model
 - Rollins et al. (2005) — liquefied sand p-y curves
+- Reese (1997) — weak rock p-y curves, as printed in FHWA GEC 9
+  (FHWA-HIF-18-031, 2018) Appendix A.5, pp. 230-232, and GEC 10
+  (FHWA-NHI-18-024, 2018) Section 9.3.3.4.4, pp. 9-31 to 9-33
 - COM624P User Manual (Wang & Reese 1993)
 
 ## Files
@@ -84,6 +87,24 @@ results.summary()
     (60/125 lb/in^3); the phi=40 k points are extrapolations beyond the manual
     (flagged non-primary). The earlier audit RED-FLAG on chart ordinates is
     CLOSED.
+- **Weak rock (`WeakRock`, GM-159, 2026-10-18)**: Reese (1997) as printed
+  in GEC 9 App. A.5 (Eqs. A-33 to A-42). p_ur = alpha_r qu b (1 + 1.4 z_r/b)
+  to z_r = 3b, 5.2 alpha_r qu b below; alpha_r = 1 - (2/3) RQD/100 (1/3 at
+  RQD 100 %, 1.0 at RQD 0); K_ir = k_ir E_m with k_ir = 100 + 400 z_r/(3b)
+  to 3b, 500 below; p = K_ir y to y_A, then (p_ur/2)(y/y_rm)^0.25 to p_ur,
+  y_rm = k_rm b. z_r is the depth below the ROCK SURFACE: `rock_top`, which
+  `LateralPileAnalysis` fills (on a copy) with the top of the run of
+  weak-rock layers holding the layer. Defaults: RQD 100 (the printed lower
+  bound alpha_r = 1/3), k_rm 0.0005 (the softer end of 0.00005-0.0005);
+  both reported in `choices`. GEC 9 prints A-38 with a lower-case k_ir and
+  A-41 as y_m; Fig. A-12, A-35 and A-42 make them K_ir and y_rm. `gamma_r`
+  is accepted and not used (no unit weight in the criterion); the criterion
+  is static only (GEC 9 p. 92), so 'cyclic' gives the static curve and says
+  so. Before GM-159 alpha_r was fixed at 1.0 (p_ur three times the printed
+  value at RQD 100), depth was measured from the ground, and the curve was
+  0.25 E_m y to p_ur (an initial slope of 0.25 E_m against the printed
+  100-500 E_m).
+  Checked against GEC 10 Fig. 9-31 (p. 9-33) in `tests/test_weak_rock.py`.
 - **numpy >=2.0**: np.trapz renamed to np.trapezoid — use try/except
 - **Composite / transformed-section EI (`composite_section.py`, v5.4 E5)**:
   `composite_section_ei(section_type, ...)` returns a `CompositeSection` with the

@@ -245,6 +245,25 @@ def test_a_pipe_pile_lists_no_h_pile_or_filled_pipe_settings():
                          {**params, "pile_type": "filled_pipe"})
 
 
+def test_the_weak_rock_curve_uses_rqd_and_lists_it():
+    """GM-159: alpha_r follows RQD (GEC 9 p. 231), so the weak-rock probe
+    lists RQD, k_rm and the rock surface as defaults it used; gamma_r is
+    still not used (the criterion has no unit weight), and other models
+    list none of them."""
+    probe = MP.PROBES["lateral_pile|get_py_curve#WeakRock"]["params"]
+    r = D.call_agent("lateral_pile", "get_py_curve", dict(probe))
+    assert {"RQD": 100.0, "krm": 0.0005, "rock_top": 0.0}.items() <= \
+        r["defaults_used"].items()
+    assert "gamma_r" not in r["defaults_used"]
+    fractured = D.call_agent("lateral_pile", "get_py_curve",
+                             {**probe, "RQD": 0})
+    assert max(fractured["p_kN_per_m"]) == pytest.approx(
+        3 * max(r["p_kN_per_m"]))
+    sand = _used("lateral_pile", "get_py_curve",
+                 MP.PROBES["lateral_pile|get_py_curve#SandAPI"]["params"])
+    assert not {"RQD", "krm", "rock_top", "gamma_r"} & sand
+
+
 @pytest.mark.parametrize("surface_type, used, unused", [
     ("circular", {"nx", "ny"}, {"n_trials", "n_points", "bishop_screen"}),
     ("noncircular_de", {"n_points"}, {"nx", "ny", "n_trials",

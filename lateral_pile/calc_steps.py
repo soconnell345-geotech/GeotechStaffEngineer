@@ -332,4 +332,14 @@ def _extract_model_params(model) -> str:
         parts.append(f"k={model.k:.0f} kN/m\u00b3")
     if hasattr(model, 'J'):
         parts.append(f"J={model.J}")
+    if hasattr(model, 'qu'):
+        parts.append(f"qu={model.qu:.0f} kPa")
+    if hasattr(model, 'Er'):
+        parts.append(f"E_m={model.Er:.0f} kPa")
+    if hasattr(model, 'alpha_r'):
+        parts.append(f"RQD={model.RQD:g}% (\u03b1_r={model.alpha_r:.3g})")
+    if hasattr(model, 'krm'):
+        parts.append(f"k_rm={model.krm:g}")
+    if getattr(model, 'rock_top', None) is not None:
+        parts.append(f"rock surface {model.rock_top:g} m")
     return ", ".join(parts) if parts else "—"
