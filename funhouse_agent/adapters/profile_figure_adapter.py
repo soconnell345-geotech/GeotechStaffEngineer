@@ -52,18 +52,35 @@ _SERIES_KEYS = ("x", "y", "label", "style", "color", "marker", "marker_size",
                 "fill", "hatch", "fill_opacity", "labels", "hover",
                 "in_legend")
 _REF_LINE_KEYS = ("value", "label")
+#: A plot_data note's keys (profile_figure.data_plot.ANNOTATION_KEYS).
+_NOTE_KEYS = ("text", "x", "y", "coords", "point", "align", "box", "color",
+              "font_size")
 # Words the near-miss matcher cannot place. Suggestions only, never renamed.
 _KEY_HINTS = {
-    "name": ("label",), "legend": ("label", "in_legend"),
+    "name": ("label", "text"), "legend": ("label", "in_legend"),
     "showlegend": ("in_legend",), "mode": ("style",), "kind": ("style",),
     "dash": ("line_dash",), "linestyle": ("line_dash",),
     "ls": ("line_dash",), "lw": ("line_width",), "width": ("line_width",),
-    "size": ("marker_size",), "ms": ("marker_size",),
+    "size": ("marker_size", "font_size"), "ms": ("marker_size",),
     "opacity": ("fill_opacity",), "alpha": ("fill_opacity",),
     "colour": ("color",), "text": ("labels", "label"),
     "pointlabels": ("labels",), "hovertext": ("hover",),
     "q": ("pressure",), "elev": ("elevation",), "z": ("elevation",),
-    "note": ("text",), "position": ("side",), "y": ("value",),
+    "note": ("text",), "position": ("side", "align"), "y": ("value",),
+    # a plot_data note's own words, as matplotlib and Plotly spell them
+    "label": ("text",), "txt": ("text",), "string": ("text",),
+    "ha": ("align",), "va": ("align",), "anchor": ("align",),
+    "horizontalalignment": ("align",), "verticalalignment": ("align",),
+    "xanchor": ("align",), "yanchor": ("align",),
+    "textposition": ("align",), "alignment": ("align",),
+    "xy": ("point",), "arrow": ("point",), "arrowto": ("point",),
+    "leader": ("point",), "target": ("point",), "marks": ("point",),
+    "pointsto": ("point",), "xytext": ("x", "y"),
+    "bbox": ("box",), "background": ("box",), "bgcolor": ("box",),
+    "boxed": ("box",), "frame": ("box",),
+    "fontsize": ("font_size",), "textsize": ("font_size",),
+    "xycoords": ("coords",), "textcoords": ("coords",), "xref": ("coords",),
+    "yref": ("coords",), "coordinates": ("coords",), "units": ("coords",),
     "x": ("value",), "diam": ("diameter",), "b": ("width",),
     "tip": ("tip_elevation", "tip_depth"),
     "head": ("head_elevation", "head_depth"),
@@ -158,7 +175,7 @@ _VALID_PLOT = {
     "hlines", "vlines", "grid", "legend", "output_path", "dpi", "width_in",
     "height_in", "include_base64", "interactive", "equal_aspect", "xlim",
     "ylim", "legend_position", "plan_view", "north_deg", "scale_units",
-    "x_on_top",
+    "x_on_top", "annotations",
 }
 
 
@@ -180,6 +197,9 @@ def _run_plot_data(params: dict) -> dict:
     require_params(params, ["series"], method="plot_data", valid=_VALID_PLOT)
     check_nested_list(params["series"], _SERIES_KEYS, method="plot_data",
                       label="series", hints=_KEY_HINTS)
+    check_nested_list(params.get("annotations"), _NOTE_KEYS,
+                      method="plot_data", label="annotations",
+                      hints=_KEY_HINTS)
     for key in ("hlines", "vlines"):           # a bare number is a line too
         lines = params.get(key)
         for i, spec in enumerate(lines if isinstance(lines, list) else []):
@@ -216,6 +236,7 @@ def _run_plot_data(params: dict) -> dict:
         north_deg=params.get("north_deg"),
         scale_units=str(params.get("scale_units") or "m"),
         x_on_top=bool(params.get("x_on_top", False)),
+        annotations=params.get("annotations"),
     )
     saved = save_verified(output_path, result.png_bytes)
     abs_path = saved.get("saved", os.path.abspath(output_path))
@@ -243,6 +264,8 @@ def _run_plot_data(params: dict) -> dict:
             "put a markdown image link to a local path in the reply; it "
             "cannot display. Never write '[image]' or an inline <svg>."),
     }
+    if result.annotations:
+        response["annotations"] = list(result.annotations)
     # The interactive twin, written beside the PNG as <name>.plotly.json —
     # what the chat actually renders (webapp/core.classify_artifact -> the
     # st.plotly_chart card). Additive and best-effort: the PNG response above
@@ -417,6 +440,25 @@ METHOD_INFO = {
                     "not there. Name points on the figure with 'labels' "
                     "rather than a legend entry each."),
             },
+            "annotations": {
+                "type": "array", "required": False,
+                "description": (
+                    "Text placed where you put it: a note, the name of a "
+                    "zone or a line, a reading at a point. It is never "
+                    "moved (point names keep clear of it). [{'text', 'x', "
+                    "'y'}] in data units (a case's name for x on a case "
+                    "axis), or with 'coords': 'axes' in fractions of the "
+                    "plot (0, 0 bottom left; 1, 1 top right). Optional: "
+                    "'point': [x, y] in data units, the point the note "
+                    "marks, drawn as a leader arrow from the text; 'align': "
+                    "the side of the text that stands at x, y (center, "
+                    "left, right, top, bottom, or e.g. 'top left'); 'box': "
+                    "true for a plain white box behind the text (or a "
+                    "colour); 'color'; 'font_size' (pt). A new line or "
+                    "'<br>' breaks a line. The warnings say when a note "
+                    "overlaps other lettering, a line runs through it or it "
+                    "stands outside the plot."),
+            },
             "equal_aspect": {
                 "type": "bool", "required": False, "default": False,
                 "description": (
@@ -529,6 +571,9 @@ METHOD_INFO = {
             "height_px": "Rendered height in pixels.",
             "series": ("Each series as drawn: label, n points, x/y ranges "
                        "(x_categories when x named cases), points_named."),
+            "annotations": ("Each note as drawn: text, at ([x, y] as "
+                            "given), coords, and point for a note with a "
+                            "leader. Absent when there are none."),
             "summary": "Human-readable description of the figure.",
             "html_img_tag": ("Ready-to-paste <img> tag referencing the saved "
                              "PNG — drop it straight into report HTML for "
@@ -536,7 +581,8 @@ METHOD_INFO = {
             "plotly_json_path": ("Name of the interactive chart written beside "
                                  "the PNG; this is what the chat shows. Absent "
                                  "when interactive=false."),
-            "warnings": "Non-fatal notes (e.g. non-finite points dropped).",
+            "warnings": ("Non-fatal notes (e.g. non-finite points dropped, "
+                         "a note that overlaps other lettering)."),
         },
     },
 }

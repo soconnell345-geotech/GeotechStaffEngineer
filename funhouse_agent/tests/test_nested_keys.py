@@ -575,6 +575,50 @@ class TestProfileFigure:
                   "output_path": str(tmp_path / "s.png")},
                  r"annotations\[0\].*elev -> elevation")
 
+    def test_note_keys_refused_with_their_own_words(self, tmp_path):
+        """A plot_data note's keys as matplotlib and Plotly spell them
+        (GM-109)."""
+        base = {"series": [{"x": [1, 2], "y": [3, 4]}],
+                "output_path": str(tmp_path / "p.png")}
+        for bad, words in (({"txt": "a"}, r"txt -> text"),
+                           ({"label": "a"}, r"label -> text\?"),
+                           ({"text": "a", "xy": [1, 3]}, r"xy -> point\?"),
+                           ({"text": "a", "ha": "left"}, r"ha -> align\?"),
+                           ({"text": "a", "bbox": True}, r"bbox -> box\?"),
+                           ({"text": "a", "fontsize": 9},
+                            r"fontsize -> font_size"),
+                           ({"text": "a", "xref": "paper"},
+                            r"xref -> coords\?")):
+            note = dict({"x": 1.5, "y": 3.5}, **bad)
+            _refused("profile_figure_adapter", "plot_data",
+                     dict(base, annotations=[note]),
+                     r"annotations\[0\]", words)
+        # the agreed key list is the module's own
+        from funhouse_agent.adapters import profile_figure_adapter as pfa
+        from profile_figure.data_plot import ANNOTATION_KEYS
+        assert set(pfa._NOTE_KEYS) == set(ANNOTATION_KEYS)
+
+    def test_notes_run_and_come_back(self, tmp_path):
+        r = _registry("profile_figure_adapter")["plot_data"](
+            {"series": [{"x": [1, 2], "y": [3, 4], "label": "SPT"}],
+             "annotations": [{"text": "Dense", "x": 1.2, "y": 3.8},
+                             {"text": "Refusal", "x": 0.95, "y": 0.1,
+                              "coords": "axes", "align": "bottom right",
+                              "point": [2, 4]}],
+             "output_path": str(tmp_path / "p.png")})
+        assert r["file_exists"]
+        assert [a["text"] for a in r["annotations"]] == ["Dense", "Refusal"]
+        assert r["annotations"][1]["point"] == [2, 4]
+        import json
+        with open(r["plotly_json_path"], encoding="utf-8") as f:
+            twin = json.load(f)
+        texts = [a["text"] for a in twin["layout"]["annotations"]]
+        assert "Dense" in texts and "Refusal" in texts
+        plain = _registry("profile_figure_adapter")["plot_data"](
+            {"series": [{"x": [1, 2], "y": [3, 4]}],
+             "output_path": str(tmp_path / "q.png")})
+        assert "annotations" not in plain
+
     def test_correct_plot_runs(self, tmp_path):
         r = _registry("profile_figure_adapter")["plot_data"](
             {"series": [{"x": [1, 2], "y": [3, 4], "label": "SPT",

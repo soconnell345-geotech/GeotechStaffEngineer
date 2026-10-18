@@ -411,6 +411,26 @@ the eyes). What changed on master after 5.33.0, in short:
   prompt names the helper and says not to look again at what it looked at
   (`FIGURE_PRIMARY_NOTE`). Tests: `funhouse_agent/tests/
   test_plot_box_drafts.py`, `deep/tests/test_figure_runs.py`.
+- **Notes on `plot_data`** (GM-109; 2026-10-18; w9 TRACE_REVIEW §2.7, fix
+  10): `annotations` places free text where the caller puts it, in data
+  units or fractions of the plot, with an optional leader to the point it
+  marks, alignment and plain box, the same in the PNG and the Plotly twin
+  (`profile_figure/DESIGN.md`). The adapter refuses a misspelt note key with
+  a did-you-mean in the note's own words (`ha` -> `align`, `xy` -> `point`,
+  `bbox` -> `box`), returns the notes as drawn, and the layout check's
+  findings come back in `warnings`. `plot_code`'s description no longer
+  lists leaders among what only it can draw. The notes are checked by the
+  plotting box's own pixel check, moved for this to
+  `geotech_common/layout_ink.py` (the box loads it by its file path, so the
+  rest of `geotech_common` stays out of the box; behaviour and budgets
+  unchanged). In the app's process it runs one at a time under a lock, and
+  a draw on any other thread passes straight through (the review saw 300 of
+  300 figures saved by another thread lose their line while a check ran);
+  leader arrows now count as lines, in `plot_code` too. Tests:
+  `profile_figure/tests/test_data_plot_notes.py`,
+  `geotech_common/tests/test_layout_ink.py`,
+  `funhouse_agent/tests/test_nested_keys.py`,
+  `deep/tests/test_figure_runs.py`.
 - **The step cap** (TA-33; 2026-10-16): the message for a turn that runs
   out of steps is plain words (no LangGraph error name, no documentation
   link; the raw text goes to the activity log). Behind

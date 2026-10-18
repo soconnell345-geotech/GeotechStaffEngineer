@@ -385,6 +385,20 @@ def test_layout_finds_an_edge_or_frame_through_lettering(folders):
     assert "frame" in crossed.get("on the frame", ""), chk
 
 
+def test_layout_finds_a_leader_through_lettering(folders):
+    """Review of GM-109: an annotation draws its leader apart from its text,
+    and no leader was measured, so one across another label passed."""
+    mine, _ = folders
+    chk = _layout(mine, (
+        "fig, ax = plt.subplots(); ax.set_xlim(0, 10); ax.set_ylim(0, 10)\n"
+        "ax.text(5, 5, 'Other label', ha='center', va='center')\n"
+        "ax.annotate('Note', xy=(9.5, 5), xytext=(0.5, 5), va='center',"
+        " arrowprops={'arrowstyle': '-|>', 'lw': 1.2})\n"))
+    crossed = {t: what for t, what in chk.get("text_on_a_line", [])}
+    assert crossed.get("Other label") == "the leader of 'Note'", chk
+    assert "Note" not in crossed, chk
+
+
 # ---------------------------------------------------------------------------
 # the layout check judged by the pixels drawn (GM-108)
 # ---------------------------------------------------------------------------

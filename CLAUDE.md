@@ -277,7 +277,8 @@ Key conventions:
       library's section numbers follow the printed manuals (refs 4dc357f)
       and every section level is searchable and fetchable (refs d5f7f52);
       every reference tool's result fits the size limit by its shape (refs
-      db84be2); the plotting box's layout check judges by drawn pixels;
+      db84be2); the plotting box's layout check judges by drawn pixels
+      (`geotech_common/layout_ink.py`), and `plot_data` places notes;
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done".
     Open next: Foundry brief 6, which measures all of this, is drafted

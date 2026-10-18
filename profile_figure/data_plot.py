@@ -7,7 +7,10 @@ has no code-execution tool to improvise one. This is the small, general,
 matplotlib-backed plot the agent CAN call: SPT/CPT vs depth, settlement vs
 time, load vs displacement, a sensitivity sweep, a method comparison, and
 (since 2026-10-15) a plan view drawn to scale: outlines with a fill, points
-named beside them, hover text, separate cases on a case axis.
+named beside them, hover text, separate cases on a case axis. Since BACKLOG
+GM-109 it also places free text where the caller puts it (``annotations``:
+a note, the name of a zone or a line, a reading at a point), with a leader
+arrow to the point a note marks.
 
 It draws exactly what it is handed and knows no analysis. Units are whatever
 the caller labels the axes with — put them in ``xlabel`` / ``ylabel``.
@@ -27,6 +30,7 @@ from __future__ import annotations
 
 import base64
 import math
+import re
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -60,6 +64,14 @@ HATCHES = ("/", "\\", "x", "-", "|", "+", ".")
 #: (where the data fill the frame), inside otherwise.
 LEGEND_POSITIONS = ("auto", "inside", "outside", "below")
 
+#: The keys an annotation (a note of free text) may carry.
+ANNOTATION_KEYS = ("text", "x", "y", "coords", "point", "align", "box",
+                   "color", "font_size")
+
+#: Where a note's x, y are measured: in the data's own units, or as
+#: fractions of the plot (0, 0 at its bottom left, 1, 1 at its top right).
+ANNOTATION_COORDS = ("data", "axes")
+
 _PALETTE = ["#1f4e79", "#c0504d", "#4f8f3a", "#8064a2", "#e08a1e", "#3b8ea5",
             "#7f7f7f", "#a05d2c"]
 
@@ -75,6 +87,9 @@ _GRID_WIDTH = 0.7
 _TEXT_COLOR = "#222222"     #: titles, labels, point names: dark on white
 _LABEL_SIZE = 7.5           #: point-name font size (points)
 _FILL_OPACITY = 0.2         #: default polygon fill opacity
+_LEADER_WIDTH = 0.8         #: a note's leader arrow, line width (points)
+#: A note's font size is held between these (points).
+_NOTE_SIZE_RANGE = (6.0, 20.0)
 #: plan_view: the margins, as fractions of the site's height, below it (the
 #: scale bar and its caption) and above it (the north arrow)
 _PLAN_BAND_BELOW = 0.26
@@ -124,8 +139,12 @@ class DataPlotResult:
     reversed_axes : list of str
         The axes drawn running from high to low because ``xlim`` / ``ylim``
         gave them that way (``["x"]``); empty otherwise.
+    annotations : list of dict
+        The notes as drawn: ``text``, ``at`` ([x, y] as given), ``coords``
+        and, for a note with a leader, ``point``.
     warnings : list of str
-        Non-fatal notes (a dropped non-finite point, an empty label).
+        Non-fatal notes (a dropped non-finite point, an empty label, a note
+        that overlaps other lettering or that a line runs through).
     figure : plotly Figure or None
         The interactive twin of the PNG, drawn from the same cleaned series
         (``None`` when ``interactive=False`` or plotly is unavailable). Named
@@ -149,12 +168,16 @@ class DataPlotResult:
     plan_view: bool = False
     x_on_top: bool = False
     reversed_axes: List[str] = field(default_factory=list)
+    annotations: List[dict] = field(default_factory=list)
 
     def summary(self) -> str:
         parts = [f"'{self.title}'" if self.title else "data plot",
                  f"{len(self.series)} series"]
         for s in self.series:
             parts.append(f"{s['label']} ({s['n']} pts)")
+        if self.annotations:
+            n = len(self.annotations)
+            parts.append(f"{n} note{'s' if n > 1 else ''}")
         if self.depth_axis:
             parts.append("depth axis (down)")
         elif self.x_on_top:
@@ -177,6 +200,7 @@ class DataPlotResult:
             "plan_view": self.plan_view,
             "x_on_top": self.x_on_top,
             "reversed_axes": list(self.reversed_axes),
+            "annotations": list(self.annotations),
             "width_px": self.width_px, "height_px": self.height_px,
             "warnings": list(self.warnings),
         }
@@ -332,6 +356,169 @@ def _categories(cleaned) -> Optional[list]:
     return order
 
 
+def _note_lines(text, idx: int) -> List[str]:
+    """A note's text as its lines: a line break may be written as a new
+    line, as ``<br>`` (the hover text's way) or as the two characters
+    ``\\n`` (a model escaping one twice)."""
+    if text is None or isinstance(text, (dict, list, tuple, bool)):
+        raise ValueError(f"annotations[{idx}] needs 'text': the words to "
+                         "place")
+    s = re.sub(r"<br\s*/?>", "\n", str(text), flags=re.IGNORECASE)
+    lines = [ln.rstrip() for ln in s.replace("\\n", "\n").split("\n")]
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    if not lines:
+        raise ValueError(f"annotations[{idx}] needs 'text': the words to "
+                         "place")
+    return lines
+
+
+def _note_align(spec, idx: int) -> tuple:
+    """``(ha, va)`` from ``align``: which side of the text stands at the
+    note's x, y -- 'center' (the default), 'left', 'right', 'top',
+    'bottom', or one of each ('top left')."""
+    words = str(spec or "center").lower().replace("-", " ") \
+        .replace("_", " ").split()
+    ha = va = None
+    for w in words:
+        if w in ("left", "right"):
+            if ha is not None:
+                break
+            ha = w
+        elif w in ("top", "bottom"):
+            if va is not None:
+                break
+            va = w
+        elif w not in ("center", "centre", "middle"):
+            break
+    else:
+        return ha or "center", va or "center"
+    raise ValueError(f"annotations[{idx}] align '{spec}': give the side of "
+                     "the text that stands at x, y -- center, left, right, "
+                     "top, bottom, or one of each, e.g. 'top left'")
+
+
+def _note_coord(value, idx: int, what: str, categories, log: bool,
+                in_data: bool) -> float:
+    """One coordinate of a note, as drawn: a number, or on a case axis a
+    case's name (placed at that case)."""
+    if (in_data and categories is not None and what.endswith("x")
+            and isinstance(value, str) and not _is_number(value)):
+        if value in categories:
+            return float(categories.index(value))
+        raise ValueError(f"annotations[{idx}] {what} '{value}' is not one "
+                         f"of the cases {categories}")
+    if not _is_number(value):
+        cases = (" (or one of the cases along x)"
+                 if in_data and categories is not None
+                 and what.endswith("x") else "")
+        raise ValueError(f"annotations[{idx}] {what} must be a number"
+                         f"{cases}, got {value!r}")
+    v = float(value)
+    if not math.isfinite(v):
+        raise ValueError(f"annotations[{idx}] {what} must be a finite number")
+    if in_data and log and v <= 0:
+        raise ValueError(f"annotations[{idx}] {what} must be above zero on "
+                         "a log axis")
+    return v
+
+
+def _note_colour(value, idx: int, what: str, default: str) -> str:
+    from matplotlib.colors import is_color_like
+    if value is None:
+        return default
+    if not isinstance(value, str) or not is_color_like(value):
+        raise ValueError(f"annotations[{idx}] {what} {value!r} is not a "
+                         "colour (a name such as 'gray', or '#1f4e79')")
+    return value
+
+
+def _clean_notes(raw, categories, logx: bool, logy: bool,
+                 warnings: Optional[list] = None) -> List[dict]:
+    """The notes (``annotations``) as both renderings draw them, checked:
+    each needs its text and a number for x and y; ``coords`` is 'data' (the
+    default) or 'axes' (fractions of the plot); ``point`` is the [x, y], in
+    data units, that the note marks with a leader arrow. A ``font_size``
+    outside 6-20 pt is drawn at the nearer end, with a warning."""
+    import difflib
+    if raw is None:
+        return []
+    if not isinstance(raw, (list, tuple)):
+        raise ValueError("annotations must be a list of {text, x, y} dicts")
+    notes = []
+    for idx, item in enumerate(raw):
+        if not isinstance(item, dict):
+            raise ValueError(f"annotations[{idx}] must be a dict with "
+                             "'text', 'x' and 'y'")
+        unknown = sorted(str(k) for k in item if k not in ANNOTATION_KEYS)
+        if unknown:
+            near = [f"{k} -> {m[0]}" for k in unknown
+                    for m in [difflib.get_close_matches(
+                        k, ANNOTATION_KEYS, n=1, cutoff=0.6)] if m]
+            hint = f" Did you mean: {'; '.join(near)}?" if near else ""
+            raise ValueError(f"annotations[{idx}] has unknown key(s) "
+                             f"{unknown}.{hint} Valid keys: "
+                             f"{sorted(ANNOTATION_KEYS)}.")
+        lines = _note_lines(item.get("text"), idx)
+        coords = str(item.get("coords") or "data").lower().strip()
+        if coords not in ANNOTATION_COORDS:
+            raise ValueError(f"annotations[{idx}] coords '{item['coords']}' "
+                             "not in ('data', 'axes'): 'data' for the data's "
+                             "own units, 'axes' for fractions of the plot "
+                             "(0, 0 bottom left; 1, 1 top right)")
+        for key in ("x", "y"):
+            if item.get(key) is None:
+                raise ValueError(f"annotations[{idx}] needs '{key}' (where "
+                                 "the text stands)")
+        in_data = coords == "data"
+        x = _note_coord(item["x"], idx, "x", categories, logx, in_data)
+        y = _note_coord(item["y"], idx, "y", categories, logy, in_data)
+        point = item.get("point")
+        if point is not None:
+            if (isinstance(point, (str, dict)) or not hasattr(point, "__len__")
+                    or len(point) != 2):
+                raise ValueError(f"annotations[{idx}] point must be [x, y] "
+                                 "in data units: the point the note marks")
+            point = (_note_coord(point[0], idx, "point x", categories, logx,
+                                 True),
+                     _note_coord(point[1], idx, "point y", categories, logy,
+                                 True))
+        ha, va = _note_align(item.get("align"), idx)
+        box = item.get("box")
+        if box is True:
+            box = "white"
+        elif box is False or box is None:
+            box = None
+        else:
+            box = _note_colour(box, idx, "box", "white")
+        size = item.get("font_size")
+        if size is None:
+            size = _LABEL_SIZE
+        elif not _is_number(size) or not math.isfinite(float(size)):
+            raise ValueError(f"annotations[{idx}] font_size must be a number "
+                             "(points)")
+        lo, hi = _NOTE_SIZE_RANGE
+        size = float(size)
+        if not lo <= size <= hi and warnings is not None:
+            warnings.append(f"annotations[{idx}] font_size {size:g} pt drawn "
+                            f"at {min(max(size, lo), hi):g} pt (a note is "
+                            f"{lo:g} to {hi:g} pt)")
+        echo = {"text": "\n".join(lines),
+                "at": [item["x"], item["y"]], "coords": coords}
+        if point is not None:
+            echo["point"] = list(item["point"])
+        notes.append({
+            "index": idx, "lines": lines, "x": x, "y": y, "coords": coords,
+            "point": point, "ha": ha, "va": va, "box": box,
+            "color": _note_colour(item.get("color"), idx, "color",
+                                  _TEXT_COLOR),
+            "font_size": min(max(size, lo), hi),
+            "echo": echo})
+    return notes
+
+
 def _marker_size(s) -> float:
     if s["marker_size"] is not None:
         return s["marker_size"]
@@ -402,6 +589,81 @@ def _plotly_range(lim, log: bool) -> list:
     return [math.log10(v) for v in lim] if log else list(lim)
 
 
+def _axes_to_data(fx: float, fy: float, view, logx: bool,
+                  logy: bool) -> tuple:
+    """A point given in fractions of the plot, in data units, for the view
+    ``((left, right), (bottom, top))`` (each in the order drawn)."""
+    def along(f, ends, log):
+        a, b = ends
+        if log:
+            return 10 ** (math.log10(a) + f * (math.log10(b) - math.log10(a)))
+        return a + f * (b - a)
+    return along(fx, view[0], logx), along(fy, view[1], logy)
+
+
+def _fallback_view(cleaned, categories, xlim, ylim, logx, logy,
+                   depth_axis) -> tuple:
+    """The view a caller of the Plotly builder alone did not give: the
+    axis limits, else the data's own extent."""
+    xl, yl, _rev = _axis_limits(xlim, ylim, logx, logy, depth_axis)
+
+    def extent(values):
+        lo, hi = min(values), max(values)
+        return (lo, hi) if hi > lo else (lo - 1.0, hi + 1.0)
+    if categories is not None:
+        xv = (-0.5, len(categories) - 0.5)
+    else:
+        xv = xl or extent([x for s in cleaned for x in s["x"]])
+    yv = yl or extent([y for s in cleaned for y in s["y"]])
+    if depth_axis:
+        yv = (max(yv), min(yv))
+    return xv, yv
+
+
+def _plotly_notes(fig, notes, logx: bool, logy: bool, view) -> bool:
+    """The notes on the Plotly twin, where the PNG has them: text at x, y in
+    data units (log10 of them on a log axis, as Plotly takes positions
+    there) or in fractions of the plot (the axis domain), anchored on the
+    same side, on the same box, with the leader arrow from the text to the
+    point. Plotly draws a leader's tail in the head's coordinates, so a note
+    in fractions of the plot with a leader is placed in data units for the
+    PNG's view, and the view is then held to the PNG's (returns True)."""
+    def pos(v, log):
+        return math.log10(v) if log else v
+
+    hold_view = False
+    for n in notes:
+        kw = {"text": "<br>".join(n["lines"]), "showarrow": False,
+              "xanchor": n["ha"],
+              "yanchor": "middle" if n["va"] == "center" else n["va"],
+              "align": n["ha"],
+              "font": {"size": n["font_size"] * _PT_TO_PX * 0.75,
+                       "color": n["color"]}}
+        if n["box"]:
+            kw.update(bgcolor=_rgba(n["box"], 1.0), borderpad=3,
+                      borderwidth=0)
+        x, y = n["x"], n["y"]
+        if n["coords"] == "axes":
+            if n["point"] is None:
+                fig.add_annotation(xref="x domain", yref="y domain", x=x,
+                                   y=y, **kw)
+                continue
+            x, y = _axes_to_data(x, y, view, logx, logy)
+            hold_view = True
+        if n["point"] is None:
+            fig.add_annotation(xref="x", yref="y", x=pos(x, logx),
+                               y=pos(y, logy), **kw)
+            continue
+        kw.update(showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1,
+                  arrowcolor=n["color"], standoff=2, startstandoff=2)
+        fig.add_annotation(xref="x", yref="y",
+                           x=pos(n["point"][0], logx),
+                           y=pos(n["point"][1], logy),
+                           axref="x", ayref="y", ax=pos(x, logx),
+                           ay=pos(y, logy), **kw)
+    return hold_view
+
+
 def build_data_plot_figure(cleaned_series, *, title: str = "",
                            xlabel: str = "", ylabel: str = "",
                            depth_axis: bool = False, logx: bool = False,
@@ -412,7 +674,8 @@ def build_data_plot_figure(cleaned_series, *, title: str = "",
                            legend_position: Optional[str] = None,
                            plan_view: bool = False,
                            north_deg: Optional[float] = None,
-                           scale_units: str = "m", x_on_top: bool = False):
+                           scale_units: str = "m", x_on_top: bool = False,
+                           annotations=None, view=None):
     """Build the interactive Plotly twin of :func:`render_data_plot`'s PNG.
 
     ``cleaned_series`` is what :func:`_clean_series` produced for the
@@ -434,6 +697,13 @@ def build_data_plot_figure(cleaned_series, *, title: str = "",
     drawn in the same color, width and dash. One deliberate difference: a
     labelled reference line becomes a chart ANNOTATION here (matplotlib puts
     it in the legend) — Plotly shapes carry no legend entry.
+
+    ``annotations`` are the notes as :func:`_clean_notes` resolved them for
+    the PNG, drawn where the PNG has them. ``view`` is the PNG's own axis
+    limits, ``((left, right), (bottom, top))``: a note placed in fractions
+    of the plot with a leader to a data point is put in data units for that
+    view, and the chart is drawn over the same view (without one, the axis
+    limits or the data's extent stand in for it).
     """
     try:
         import plotly.graph_objects as go
@@ -580,6 +850,15 @@ def build_data_plot_figure(cleaned_series, *, title: str = "",
             fig.update_layout(title={"x": 0.0, "xanchor": "left"})
         _plotly_plan_furniture(fig, cleaned_series, scale_units, north_deg,
                                xlabel)
+    if annotations:
+        if view is None:
+            view = _fallback_view(cleaned_series, categories, xlim, ylim,
+                                  logx, logy, depth_axis)
+        if _plotly_notes(fig, annotations, logx, logy, view):
+            fig.update_xaxes(range=_plotly_range(view[0], logx),
+                             autorange=False)
+            fig.update_yaxes(range=_plotly_range(view[1], logy),
+                             autorange=False)
     return fig
 
 
@@ -683,38 +962,111 @@ def _overlap(a, b) -> float:
     return w * h if (w > 0 and h > 0) else 0.0
 
 
-def _place_point_names(fig, ax, drawn, fixed_texts=()) -> int:
-    """Write each point's name beside it where it covers the fewest other
-    names, points and reference-line labels, and stays inside the plot frame
-    (eight spots tried in turn), and record the spot so the interactive twin
-    puts the name in the same place. ``drawn`` is ``[(series,
-    xs_plotted)]``. Returns how many names were written."""
+def _segment_boxes(p0, p1, half: float, skip=None) -> list:
+    """Small boxes every few pixels along the segment ``p0``-``p1`` (pixel
+    coordinates): a line as an obstacle; none inside ``skip`` (a box)."""
     from matplotlib.transforms import Bbox
+    (x0, y0), (x1, y1) = p0, p1
+    n = int(min(max(math.hypot(x1 - x0, y1 - y0) / 6.0, 1), 200))
+    out = []
+    for k in range(n + 1):
+        cx = x0 + (x1 - x0) * k / n
+        cy = y0 + (y1 - y0) * k / n
+        if skip is not None and skip.contains(cx, cy):
+            continue
+        out.append(Bbox([[cx - half, cy - half], [cx + half, cy + half]]))
+    return out
 
-    fig.canvas.draw()                       # settle limits (equal aspect)
-    renderer = fig.canvas.get_renderer()
+
+def _data_obstacles(fig, ax, drawn) -> list:
+    """Every point and line drawn, as pixel boxes (lines sampled every few
+    pixels along them). ``drawn`` is ``[(series, xs_plotted)]``."""
+    from matplotlib.transforms import Bbox
     to_px = ax.transData.transform
-    frame = ax.get_window_extent(renderer)
-    pad = 3.0
-    taken = [t.get_window_extent(renderer) for t in fixed_texts]
+    boxes = []
     for s, xs in drawn:                     # every point is an obstacle
         size_px = _marker_size(s) * fig.dpi / 72.0
         for x, y in zip(xs, s["y"]):
             px, py = to_px((x, y))
-            taken.append(Bbox([[px - size_px, py - size_px],
+            boxes.append(Bbox([[px - size_px, py - size_px],
                                [px + size_px, py + size_px]]))
         if s["style"] == "markers":
             continue
-        # ... and so is every line, sampled every few pixels along it
+        # ... and so is every line
         pts = [to_px((x, y)) for x, y in zip(xs, s["y"])]
         half = max(s["line_width"] * fig.dpi / 72.0, 1.5)
-        for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
-            n = int(min(max(math.hypot(x1 - x0, y1 - y0) / 6.0, 1), 200))
-            for k in range(n + 1):
-                cx = x0 + (x1 - x0) * k / n
-                cy = y0 + (y1 - y0) * k / n
-                taken.append(Bbox([[cx - half, cy - half],
-                                   [cx + half, cy + half]]))
+        for p0, p1 in zip(pts, pts[1:]):
+            boxes += _segment_boxes(p0, p1, half)
+    return boxes
+
+
+def _note_box(artist, renderer):
+    """What a note covers: its text, or the box behind it when it has one
+    (never its leader)."""
+    from matplotlib.text import Text
+    patch = artist.get_bbox_patch()
+    if patch is not None:
+        return patch.get_window_extent(renderer)
+    return Text.get_window_extent(artist, renderer)
+
+
+def _leader_boxes(fig, ax, artist, point, renderer) -> list:
+    """A note's leader, from its text to the point it marks, as pixel
+    boxes (the stretch under the text left out)."""
+    text = _note_box(artist, renderer)
+    start = ((text.x0 + text.x1) / 2.0, (text.y0 + text.y1) / 2.0)
+    end = ax.transData.transform(point)
+    half = max(_LEADER_WIDTH * fig.dpi / 72.0, 1.5)
+    return _segment_boxes(start, end, half, skip=text)
+
+
+def _draw_notes(ax, notes) -> list:
+    """Draw the notes where they were put (never moved): text at x, y in
+    data units or in fractions of the plot, aligned as asked, on a plain
+    box when asked, with a leader arrow to the point a note marks. Returns
+    the text artists, in order."""
+    artists = []
+    for n in notes:
+        kw = {"fontsize": n["font_size"], "color": n["color"],
+              "ha": n["ha"], "va": n["va"], "multialignment": n["ha"],
+              "zorder": 6, "annotation_clip": False}
+        if n["box"]:
+            kw["bbox"] = {"boxstyle": "square,pad=0.25",
+                          "facecolor": n["box"], "edgecolor": "none"}
+        where = "data" if n["coords"] == "data" else "axes fraction"
+        text = "\n".join(n["lines"])
+        if n["point"] is None:
+            artists.append(ax.annotate(text, (n["x"], n["y"]),
+                                       xycoords=where, **kw))
+            continue
+        artists.append(ax.annotate(
+            text, n["point"], xycoords="data", xytext=(n["x"], n["y"]),
+            textcoords=where,
+            arrowprops={"arrowstyle": "-|>", "color": n["color"],
+                        "lw": _LEADER_WIDTH, "mutation_scale": 8,
+                        "shrinkA": 2, "shrinkB": 2}, **kw))
+    return artists
+
+
+def _place_point_names(fig, ax, drawn, fixed_texts=(), leaders=()) -> int:
+    """Write each point's name beside it where it covers the fewest other
+    names, points, lines, notes and reference-line labels, and stays inside
+    the plot frame (eight spots tried in turn), and record the spot so the
+    interactive twin puts the name in the same place. ``drawn`` is
+    ``[(series, xs_plotted)]``; ``fixed_texts`` are lettering that stays
+    where it is (a note by its text or box) and ``leaders`` ``[(note
+    artist, point)]`` the notes' leader arrows. Returns how many names were
+    written."""
+    from matplotlib.transforms import Bbox
+
+    fig.canvas.draw()                       # settle limits (equal aspect)
+    renderer = fig.canvas.get_renderer()
+    frame = ax.get_window_extent(renderer)
+    pad = 3.0
+    taken = [_note_box(t, renderer) for t in fixed_texts]
+    for artist, point in leaders:
+        taken += _leader_boxes(fig, ax, artist, point, renderer)
+    taken += _data_obstacles(fig, ax, drawn)
     written = 0
     for s, xs in drawn:
         if not s["labels"]:
@@ -753,6 +1105,85 @@ def _place_point_names(fig, ax, drawn, fixed_texts=()) -> int:
     return written
 
 
+def _short(text: str, n: int = 30) -> str:
+    s = " ".join(str(text).split())
+    return s if len(s) <= n else s[:n - 3] + "..."
+
+
+def _lettering_names(ax, notes, artists) -> dict:
+    """What the warnings call the lettering a note can meet, by ``id``:
+    another note, the title, an axis title, the axis numbers, the legend."""
+    names = {id(a): f"annotations[{n['index']}]"
+             for a, n in zip(artists, notes)}
+    names[id(ax.title)] = "the title"
+    names[id(ax.xaxis.label)] = "the x-axis title"
+    names[id(ax.yaxis.label)] = "the y-axis title"
+    for axis in (ax.xaxis, ax.yaxis):
+        for tick in axis.get_major_ticks() + axis.get_minor_ticks():
+            names[id(tick.label1)] = names[id(tick.label2)] =                 "the axis numbers"
+    legend = ax.get_legend()
+    if legend is not None:
+        for a in legend.findobj():
+            names[id(a)] = "the legend"
+    return names
+
+
+def _check_notes(fig, ax, notes, artists, dpi, lines_named=None) -> list:
+    """The layout check over the notes, which stay where they were put (the
+    point names move round them). By the pixels drawn, with the plotting
+    box's own check (``geotech_common.layout_ink``) at the PNG's dpi: a
+    note whose letters overlap or run into other lettering, that a line,
+    markers, an edge or another note's leader shows through (a line under
+    the note's own box does not show), or that the figure edge cuts. And
+    by the numbers: a note, or the point it marks, outside the axis limits.
+    ``lines_named`` names the series and reference lines by artist ``id``.
+    One warning per note found."""
+    from geotech_common.layout_ink import layout_check
+
+    res = layout_check(fig, "plot_data", dpi=int(dpi), texts=artists)
+    names = _lettering_names(ax, notes, artists)
+    parts = {k: [] for k in range(len(notes))}
+    met = {k: [] for k in range(len(notes))}
+    for k, words, other in res.get("text_overlaps", []):
+        met[k].append(names.get(id(other), f"'{_short(words)}'"))
+    for k, hits in met.items():
+        if hits:
+            parts[k].append("overlaps " + ", ".join(dict.fromkeys(hits)))
+    for k, what, by in res.get("text_on_a_line", []):
+        if id(by) in names and names[id(by)].startswith("annotations["):
+            what = f"the leader of {names[id(by)]}"
+        elif id(by) in (lines_named or {}):
+            what = lines_named[id(by)]
+        if not what.endswith("drawn over it"):
+            what = f"crossed by {what}"
+        hint = ("move it" if notes[k]["box"]
+                else "move it, or give it box: true")
+        parts[k].append(f"{what} ({hint})")
+    for k, where in res.get("text_cut_off", []):
+        parts[k].append(f"cut off by {where}")
+
+    xl, yl = sorted(ax.get_xlim()), sorted(ax.get_ylim())
+
+    def inside(x, y):
+        return xl[0] <= x <= xl[1] and yl[0] <= y <= yl[1]
+
+    found = []
+    if res.get("unchecked"):
+        found.append(f"the notes' overlaps were not checked "
+                     f"({res['unchecked']})")
+    for k, n in enumerate(notes):
+        if n["coords"] == "data" and not inside(n["x"], n["y"]):
+            parts[k].append("it stands outside the plot, beyond the axis "
+                            "limits (set xlim/ylim to take it in, or give "
+                            "it in axes fractions)")
+        if n["point"] is not None and not inside(*n["point"]):
+            parts[k].append("the point it marks is outside the plot")
+        if parts[k]:
+            found.append(f"annotations[{n['index']}] "
+                         f"'{_short(n['lines'][0])}': " + "; ".join(parts[k]))
+    return found
+
+
 def render_data_plot(series, *, title: str = "", xlabel: str = "",
                      ylabel: str = "", depth_axis: bool = False,
                      logx: bool = False, logy: bool = False,
@@ -765,7 +1196,8 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
                      plan_view: bool = False,
                      north_deg: Optional[float] = None,
                      scale_units: str = "m",
-                     x_on_top: bool = False) -> DataPlotResult:
+                     x_on_top: bool = False,
+                     annotations=None) -> DataPlotResult:
     """Render ``series`` to a PNG (and its interactive twin).
 
     Each series is ``{x, y, label, style, color}`` plus, optionally,
@@ -801,6 +1233,18 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
     or the project's other plans show it; drawn straight up, with a note,
     when not given).
 
+    ``annotations`` places free text where the caller puts it (BACKLOG
+    GM-109): ``[{"text", "x", "y"}]`` in data units (a case's name for x on
+    a case axis), or with ``coords="axes"`` in fractions of the plot (0, 0
+    bottom left, 1, 1 top right); optional ``point`` ([x, y] in data units:
+    the point the note marks, drawn as a leader arrow from the text),
+    ``align`` (the side of the text at x, y: center, left, right, top,
+    bottom, or one of each), ``box`` (true, or a colour: a plain box behind
+    the text), ``color`` and ``font_size``. A line break is a new line or
+    ``<br>``. Notes are never moved: point names keep clear of them, and
+    the warnings say when a note overlaps other lettering, a line runs
+    through it or it stands outside the plot. Both renderings draw them.
+
     ``interactive=True`` (the default) also builds the Plotly twin of the same
     figure on ``result.figure`` — what the chat renders as a real zoom/hover
     chart, while the PNG stays the thing a PDF report embeds. Building it can
@@ -816,6 +1260,8 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
     warnings: List[str] = []
     cleaned = [_clean_series(s, i, warnings) for i, s in enumerate(series)]
     categories = _categories(cleaned)
+    notes = _clean_notes(annotations, categories, bool(logx), bool(logy),
+                         warnings)
     plan_view = bool(plan_view)
     if plan_view and (categories is not None or logx or logy
                       or depth_axis):
@@ -849,10 +1295,12 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
 
     fig, ax = plt.subplots(figsize=(float(width_in), float(height_in)))
     drawn = []
+    lines_named = {}            # the notes' check: artist id -> its line
     order = sorted(range(len(cleaned)),
                    key=lambda i: cleaned[i]["style"] != "polygon")
     for i in order:
         s = cleaned[i]
+        before = {id(a) for a in ax.get_children()}
         xs = ([categories.index(v) for v in s["x"]] if categories is not None
               else s["x"])
         color = s["color"] or _PALETTE[i % len(_PALETTE)]
@@ -890,14 +1338,19 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
         else:
             ax.plot(xs, s["y"], linestyle=dash, **mk, **kw)
         drawn.append((s, xs))
+        if s["label"]:
+            lines_named.update((id(a), f"'{_short(s['label'])}'")
+                               for a in ax.get_children()
+                               if id(a) not in before)
 
     # Reference lines are named on the line itself (labels on the data,
     # not in a legend the reader has to match).
     ref_texts = []
     for spec in (hlines or []):
         v, lab = _ref(spec)
-        ax.axhline(v, color=_REF_COLOR, linestyle="--", linewidth=_REF_WIDTH,
-                   label="_nolegend_")
+        ref = ax.axhline(v, color=_REF_COLOR, linestyle="--",
+                         linewidth=_REF_WIDTH, label="_nolegend_")
+        lines_named[id(ref)] = f"the reference line at {v:g}"
         if lab:
             ref_texts.append(ax.annotate(
                 lab, xy=(1.0, v), xycoords=("axes fraction", "data"),
@@ -906,13 +1359,17 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
                 zorder=5))
     for spec in (vlines or []):
         v, lab = _ref(spec)
-        ax.axvline(v, color=_REF_COLOR, linestyle=":", linewidth=_REF_WIDTH,
-                   label="_nolegend_")
+        ref = ax.axvline(v, color=_REF_COLOR, linestyle=":",
+                         linewidth=_REF_WIDTH, label="_nolegend_")
+        lines_named[id(ref)] = f"the reference line at {v:g}"
         if lab:
             ref_texts.append(ax.annotate(
                 lab, xy=(v, 1.0), xycoords=("data", "axes fraction"),
                 xytext=(3, -3), textcoords="offset points", ha="left",
                 va="top", fontsize=_LABEL_SIZE, color=_REF_COLOR, zorder=5))
+    # Notes go where they were put, before the legend, so a legend placed
+    # "best" keeps clear of them too.
+    note_artists = _draw_notes(ax, notes)
 
     if categories is not None:
         ax.set_xticks(range(len(categories)))
@@ -979,7 +1436,18 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
         ref_texts += _draw_plan_furniture(ax, cleaned, scale_units,
                                           north_deg, xlabel)
     if any(s["labels"] for s in cleaned):
-        _place_point_names(fig, ax, drawn, ref_texts)
+        _place_point_names(fig, ax, drawn, ref_texts + note_artists,
+                           [(a, n["point"]) for a, n in
+                            zip(note_artists, notes) if n["point"]])
+    view = None
+    if notes:
+        try:
+            warnings += _check_notes(fig, ax, notes, note_artists, dpi,
+                                     lines_named)
+        except Exception as exc:                        # noqa: BLE001
+            warnings.append("the notes' layout was not checked "
+                            f"({type(exc).__name__}: {exc})")
+        view = (tuple(ax.get_xlim()), tuple(ax.get_ylim()))
 
     png = figure_to_png(fig, dpi=int(dpi))
     w_px, h_px = int(fig.get_size_inches()[0] * dpi), \
@@ -1004,7 +1472,7 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
                 equal_aspect=equal_aspect, xlim=xlim, ylim=ylim,
                 legend_position=legend_position, plan_view=plan_view,
                 north_deg=north_deg, scale_units=scale_units,
-                x_on_top=x_on_top)
+                x_on_top=x_on_top, annotations=notes, view=view)
         except Exception as exc:                        # noqa: BLE001
             warnings.append("interactive chart not built "
                             f"({type(exc).__name__}: {exc}); the PNG is fine")
@@ -1028,7 +1496,8 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
         depth_axis=bool(depth_axis), warnings=warnings, figure=figure,
         equal_aspect=equal_aspect, plan_view=plan_view,
         x_on_top=bool(depth_axis) or x_on_top,
-        reversed_axes=reversed_axes)
+        reversed_axes=reversed_axes,
+        annotations=[n["echo"] for n in notes])
 
 
 def _ref(spec) -> tuple:
@@ -1041,4 +1510,5 @@ def _ref(spec) -> tuple:
 
 
 __all__ = ["render_data_plot", "build_data_plot_figure", "DataPlotResult",
-           "STYLES", "MARKERS", "DASHES", "HATCHES", "LEGEND_POSITIONS"]
+           "STYLES", "MARKERS", "DASHES", "HATCHES", "LEGEND_POSITIONS",
+           "ANNOTATION_KEYS", "ANNOTATION_COORDS"]

@@ -298,7 +298,8 @@ _PLOT_APP_NOTE = (
     "out, and redraw under the same name. Never draw a chart by hand as SVG, "
     "as text or as a .plotly.json. What it draws: x/y series, filled "
     "outlines and named points (a name is placed where it stands clear of "
-    "the data, near the point, not exactly on it). It cannot draw a "
+    "the data, near the point, not exactly on it), and notes placed where "
+    "you put them (annotations). It cannot draw a "
     "structure to scale with diagrams beside it, or several panels sharing "
     "one axis. plan_view is for plans only (it adds a north arrow and a "
     "scale bar), never for a section.")
@@ -312,8 +313,9 @@ def _plot_description() -> str:
         info = METHOD_INFO["plot_data"]
         params = info.get("parameters") or {}
         lines = [str(info.get("brief") or "").strip()]
-        for key in ("series", "plan_view", "north_deg", "equal_aspect",
-                    "xlabel", "ylabel", "depth_axis", "x_on_top", "logx",
+        for key in ("series", "annotations", "plan_view", "north_deg",
+                    "equal_aspect", "xlabel", "ylabel", "depth_axis",
+                    "x_on_top", "logx",
                     "hlines", "vlines", "xlim", "ylim", "legend",
                     "legend_position", "interactive"):
             desc = (params.get(key) or {}).get("description")
@@ -1800,7 +1802,8 @@ def make_vision_tools(
                   xlim: Optional[list] = None, ylim: Optional[list] = None,
                   legend_position: str = "auto", plan_view: bool = False,
                   north_deg: Optional[float] = None,
-                  scale_units: str = "m", x_on_top: bool = False) -> str:
+                  scale_units: str = "m", x_on_top: bool = False,
+                  annotations: Optional[list] = None) -> str:
         """Plot x/y data (the ``profile_figure`` module's ``plot_data``)."""
         params: Dict[str, Any] = {
             "series": series, "title": title, "xlabel": xlabel,
@@ -1812,7 +1815,8 @@ def make_vision_tools(
             "x_on_top": bool(x_on_top)}
         for k, v in (("hlines", hlines), ("vlines", vlines),
                      ("legend", legend), ("output_path", output_path or None),
-                     ("xlim", xlim), ("ylim", ylim), ("north_deg", north_deg)):
+                     ("xlim", xlim), ("ylim", ylim), ("north_deg", north_deg),
+                     ("annotations", annotations)):
             if v is not None:
                 params[k] = v
         from funhouse_agent.drawing_wait import drawing

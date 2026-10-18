@@ -113,7 +113,8 @@ that day (tests: `tests/test_data_plot_maps.py`):
   `fill_opacity` and `hatch`; outlines are drawn under the points and lines.
 - **`labels`** names each point beside it (`""` skips one): each name goes
   in whichever of eight spots round its point covers least of the other
-  names, the points, the lines and the reference-line names, and stays inside
+  names, the points, the lines, the reference-line names and the notes with
+  their leaders, and stays inside
   the plot frame; the Plotly twin puts it in the same spot. **`hover`** is one
   text per point, shown on hover in the chat. Both need one entry per point,
   and a dropped point drops its name.
@@ -145,6 +146,38 @@ that day (tests: `tests/test_data_plot_maps.py`):
   a warning, on named cases, log axes or a depth axis. The scale bar and
   arrow are `geotech_common/plan_furniture.py`, which the gstools probability
   map shares, so the plans read alike.
+- **`annotations`** places free text (BACKLOG GM-109; live wave w9 carried a
+  plasticity chart's zone names on series of invisible markers, then moved it
+  to `plot_code`): `[{text, x, y}]` in data units (a case's name for x on a
+  case axis), or with `coords: "axes"` in fractions of the plot (0, 0 bottom
+  left). Optional: `point` ([x, y], always data units), the point the note
+  marks, drawn as a leader arrow from the text; `align`, the side of the text
+  that stands at x, y (`center`, `left`, `right`, `top`, `bottom`, or one of
+  each); `box` (true for white, or a colour) a plain box with no edge behind
+  the text; `color`; `font_size` (pt, 6–20). A new line or `<br>` breaks a
+  line. Unknown keys are refused with a did-you-mean, x and y must be finite
+  numbers (above zero on a log axis), text is required. Notes are drawn on
+  every mode, plan views included, and never moved: point names treat them
+  and their leaders as fixed obstacles. The Plotly twin carries each note at
+  the same place, side and box (log10 positions on a log axis; `x domain` /
+  `y domain` for fractions; with a leader the tail sits in the head's units,
+  so a note given in fractions with a leader is converted through the PNG's
+  view and the twin is pinned to that view). A layout check after the draw
+  reports in `warnings` a note that overlaps other lettering (another note,
+  a point name, a reference-line name, the title, axis titles, tick numbers,
+  the legend), one that a line, markers, an edge or another note's leader
+  shows through (named: the series, the reference line, `the leader of
+  annotations[j]`; a line under the note's own box does not show), one the
+  figure edge cuts, one that stands outside the axis limits and one whose
+  point lies outside them. The first three are judged by the pixels drawn,
+  with the plotting box's own check (`geotech_common/layout_ink.py`, GM-108)
+  at the PNG's dpi, about 50 ms a figure (the review of GM-109: a box check
+  made 21 false reports in 236 one-note figures: rotated case names, legend
+  padding, a two-line note's empty band, a boxed note under the title); the
+  last two by the numbers. It moves nothing, and a failure of the check is
+  a warning, never a lost figure. A `font_size` outside 6-20 pt is drawn at
+  the nearer end with a warning (tests: `tests/test_data_plot_notes.py`,
+  including two w9 figures redrawn).
 
 **Worked examples** (`figure_examples.py`, the owner's option B of
 2026-10-15): six complete `plot_data` calls on made-up data (`EXAMPLES`),

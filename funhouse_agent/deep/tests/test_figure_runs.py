@@ -450,3 +450,30 @@ def test_plot_data_through_the_tool_takes_x_on_top_and_says_a_reversed_axis(
     assert out["status"] == "success", out
     assert "x axis runs high to low" in out["summary"]
     assert "x axis along the top" in out["summary"]
+
+
+def test_plot_data_through_the_tool_places_notes(tmp_path, monkeypatch):
+    """GM-109: the deep agent's plot_data takes annotations, says what they
+    are for, and a misspelt note key comes back with a did-you-mean."""
+    from funhouse_agent.deep.tools import make_vision_tools
+    _no_switches(monkeypatch)
+    (tool,) = make_vision_tools(include={"plot_data"})
+    assert "annotations" in _schema_props(tool)
+    assert "annotations:" in tool.description
+    assert "notes placed where you put them" in tool.description
+    with working_dir_bound(str(tmp_path)):
+        out = json.loads(tool.invoke({
+            "series": [{"x": [0, 10, 20], "y": [0, 8, 12], "label": "Test"}],
+            "annotations": [{"text": "Yield", "x": 4, "y": 10,
+                             "point": [10, 8]}],
+            "output_path": "notes.png"}))
+        assert out["status"] == "success", out
+        assert out["annotations"] == [{"text": "Yield", "at": [4, 10],
+                                       "coords": "data", "point": [10, 8]}]
+        bad = json.loads(tool.invoke({
+            "series": [{"x": [0, 10], "y": [0, 8]}],
+            "annotations": [{"text": "Yield", "x": 4, "y": 10,
+                             "arrow": [10, 8]}],
+            "output_path": "bad.png"}))
+    assert bad.get("status") != "success"
+    assert "arrow -> point" in json.dumps(bad)
