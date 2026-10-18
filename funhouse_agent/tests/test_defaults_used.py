@@ -216,7 +216,9 @@ def test_the_seismic_package_lists_only_its_own_analysis():
     mo = _used("calc_package", "seismic_package",
                {"analysis_type": "seismic_earth_pressure", "phi": 30,
                 "kh": 0.15})
-    assert {"KA", "kv"} <= mo and "M" not in mo
+    # KA has no declared default: the package works it out from phi
+    # (GM-120), so it is not a default the call left in force
+    assert "kv" in mo and "KA" not in mo and "M" not in mo
     liq = _used("calc_package", "seismic_package",
                 {"analysis_type": "liquefaction", "layers": []})
     assert "M" in liq and not {"KA", "kv"} & liq

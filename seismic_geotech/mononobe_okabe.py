@@ -232,7 +232,8 @@ def seismic_earth_pressure(gamma: float, H: float,
 def earth_pressure_choices(phi_deg: float, kh: float, kv: float = None,
                            delta_deg: float = None, i_deg: float = 0.0,
                            ka=None, ka_how: str = "module",
-                           forces: bool = False) -> list:
+                           forces: bool = False,
+                           ka_can_be_given: bool = False) -> list:
     """What a seismic earth pressure calculation chose (GM-115), as a
     result's ``choices`` (``geotech_common.choices``).
 
@@ -245,11 +246,15 @@ def earth_pressure_choices(phi_deg: float, kh: float, kv: float = None,
         delta = 2/3 phi).
     ka : None, "rankine" or float
         The static coefficient behind PA and delta-PAE: None when none was
-        used, "rankine" for tan^2(45 - phi/2), or the value used (with
-        ``ka_how`` "given" or "default").
+        used, "rankine" for tan^2(45 - phi/2) worked out from phi (the
+        analysis tool, and the calc package when KA is not given), or the
+        value used (with ``ka_how``, "given").
     forces : bool
         Whether the forces (PAE, PA, delta-PAE and its height) were worked
         out.
+    ka_can_be_given : bool
+        Whether the caller takes KA as an input (the calc package does):
+        a worked-out Rankine KA then names giving it as an alternative.
     """
     from geotech_common.choices import DEFAULT, GIVEN, MODULE, choice
     out = []
@@ -285,12 +290,8 @@ def earth_pressure_choices(phi_deg: float, kh: float, kv: float = None,
             "vertical wall, level backfill, no wall friction; with a "
             "sloping backfill or a batter UFC 3-220-20 Sec. 4-4.4.1 takes KA "
             "from the same slope and batter",
-            ["KA from the same backfill slope, batter and wall friction"]))
-    elif ka is not None and ka_how == DEFAULT:
-        out.append(choice(
-            "static KA", f"{ka:g} assumed (Rankine Ka for phi 30 deg)",
-            DEFAULT, f"not computed from phi ({phi_deg:g} deg here)",
-            ["KA given (KA)"]))
+            ["KA from the same backfill slope, batter and wall friction"]
+            + (["KA given (KA)"] if ka_can_be_given else [])))
     elif ka is not None:
         out.append(choice("static KA", f"{ka:g}", ka_how))
     if forces:

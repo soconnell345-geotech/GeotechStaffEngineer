@@ -400,16 +400,23 @@ def _steps_earth_pressure(result, analysis) -> List[CalcSection]:
         reference="AASHTO LRFD Eq. 11.6.5.2-1; Mononobe-Okabe (1929)",
     ))
 
-    # Static Ka for comparison
+    # Static Ka: with no KA given it is the KA behind PA and delta-PAE
+    # (GM-120); beside a KA given it is for comparison.
     Ka_static = math.tan(math.pi / 4 - math.radians(r.phi) / 2) ** 2
+    ka_worked_out = a.get("KA") is None
+    # The KA behind PA and delta-PAE, printed where they are worked out.
+    Ka_used = Ka_static if ka_worked_out else float(a["KA"])
+    ratio = f"KAE/Ka = {r.KAE/Ka_static:.2f}" if Ka_static > 0 else ""
     kae_items.append(CalcStep(
-        title="Static Active Coefficient (Rankine Ka, for comparison)",
+        title=("Static Active Coefficient (Rankine Ka)" if ka_worked_out
+               else "Static Active Coefficient (Rankine Ka, for comparison)"),
         equation="Ka = tan\u00b2(45\u00b0 - \u03c6/2)",
         substitution=f"Ka = tan\u00b2(45\u00b0 - {r.phi:.1f}\u00b0/2)",
         result_name="Ka",
         result_value=f"{Ka_static:.4f}",
         reference="Rankine (1857)",
-        notes=f"KAE/Ka = {r.KAE/Ka_static:.2f}" if Ka_static > 0 else "",
+        notes=(f"KA not given: this Ka gives PA and \u0394PAE. {ratio}"
+               if ka_worked_out else ratio),
     ))
 
     sections.append(CalcSection(
@@ -461,7 +468,7 @@ def _steps_earth_pressure(result, analysis) -> List[CalcSection]:
         force_items.append(CalcStep(
             title="Static Active Force",
             equation="PA = 0.5 \u00d7 \u03b3 \u00d7 H\u00b2 \u00d7 Ka",
-            substitution=f"PA = 0.5 \u00d7 {gamma:.1f} \u00d7 {H:.2f}\u00b2 \u00d7 {Ka_static:.4f}",
+            substitution=f"PA = 0.5 \u00d7 {gamma:.1f} \u00d7 {H:.2f}\u00b2 \u00d7 {Ka_used:.4f}",
             result_name="PA",
             result_value=f"{r.PA_static:.2f}",
             result_unit="kN/m",
@@ -494,7 +501,7 @@ def _steps_earth_pressure(result, analysis) -> List[CalcSection]:
             headers=["Quantity", "Value", "Unit"],
             rows=[
                 ["KAE (seismic active)", f"{r.KAE:.4f}", ""],
-                ["Ka (static active)", f"{Ka_static:.4f}", ""],
+                ["Ka (static active)", f"{Ka_used:.4f}", ""],
                 ["PAE (total seismic)", f"{r.PAE_total:.2f}", "kN/m"],
                 ["PA (static)", f"{r.PA_static:.2f}", "kN/m"],
                 ["\u0394PAE (seismic increment)", f"{r.delta_PAE:.2f}", "kN/m"],
@@ -834,7 +841,9 @@ def _plot_pressure_diagram(result, analysis):
     r = result
     H = analysis.get("H", 6.0)
     gamma = analysis.get("gamma", 18.0)
-    Ka_static = math.tan(math.pi / 4 - math.radians(r.phi) / 2) ** 2
+    # The KA behind PA: as given, else Rankine Ka from phi (GM-120).
+    Ka_static = (float(analysis["KA"]) if analysis.get("KA") is not None
+                 else math.tan(math.pi / 4 - math.radians(r.phi) / 2) ** 2)
 
     fig, ax = plt.subplots(figsize=(8, 6))
 

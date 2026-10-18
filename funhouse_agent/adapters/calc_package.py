@@ -741,11 +741,14 @@ def _generate_settlement_package(params: dict) -> dict:
                 Es=ld["Es"],
             ))
 
+    # L not given: L = B, as settlement.settlement_analysis takes it (GM-120:
+    # it was 1.0 m whatever B was).
+    B = params.get("B", 1.0)
     analysis = SettlementAnalysis(
         q_applied=params.get("q_applied", 0.0),
         q_overburden=params.get("q_overburden", 0.0),
-        B=params.get("B", 1.0),
-        L=params.get("L", 1.0),
+        B=B,
+        L=params.get("L", B),
         footing_shape=params.get("footing_shape", "square"),
         stress_method=params.get("stress_method", "2:1"),
         immediate_method=params.get("immediate_method", "elastic"),
@@ -1049,9 +1052,15 @@ def _generate_seismic_package(params: dict) -> dict:
             delta_deg=params.get("delta", params["phi"] * 2 / 3),
             kh=params["kh"], kv=params.get("kv", 0.0),
         )
+        # KA not given: Rankine Ka from phi, as the seismic_earth_pressure
+        # analysis tool works it out and as the package's own steps print
+        # it (GM-120: it was 0.333, Rankine Ka for phi 30 deg, whatever
+        # phi was).
+        from sheet_pile.earth_pressure import rankine_Ka
+        ka_given = params.get("KA") is not None
+        KA = params["KA"] if ka_given else rankine_Ka(params["phi"])
         result_dict = seismic_earth_pressure(
-            gamma=params["gamma"], H=params["H"], KAE=KAE,
-            KA=params.get("KA", 0.333),
+            gamma=params["gamma"], H=params["H"], KAE=KAE, KA=KA,
         )
         from seismic_geotech.mononobe_okabe import (
             earth_pressure_choices, mo_no_solution_warning,
@@ -1070,9 +1079,9 @@ def _generate_seismic_package(params: dict) -> dict:
             choices=earth_pressure_choices(
                 params["phi"], params["kh"], kv=params.get("kv"),
                 delta_deg=params.get("delta"),
-                ka=params.get("KA", 0.333),
-                ka_how="given" if "KA" in params else "default",
-                forces=True),
+                ka=KA if ka_given else "rankine",
+                ka_how="given",
+                forces=True, ka_can_be_given=True),
             warnings=[no_solution] if no_solution else [],
         )
 
@@ -1208,9 +1217,14 @@ def _generate_ground_improvement_package(params: dict) -> dict:
             kh_ks_ratio=params.get("kh_ks_ratio", 2.0),
         )
     elif method == "aggregate_piers":
-        # Aliases from the pre-GEC-13 parameterization this package once used.
-        p = apply_aliases(params, {"diameter": "column_diameter",
-                                   "E_pier": "E_column"})
+        # The analysis tool's own names (stress_concentration_ratio,
+        # column_modulus, ...) and the pre-GEC-13 ones this package once
+        # used; stress_concentration_ratio ran with n = 5.0 (GM-120).
+        from funhouse_agent.adapters.ground_improvement import _AGG_ALIASES
+        p = apply_aliases(params, {**_AGG_ALIASES, "E_pier": "E_column"})
+        # The package prints the inputs by their own names: an input given
+        # by its older name (E_pier) printed 80,000 kPa (GM-120).
+        analysis_dict = dict(p)
         require_params(p, ["column_diameter", "spacing"],
                        method="ground_improvement_package (aggregate_piers)")
         result = analyze_aggregate_piers(
@@ -1226,6 +1240,7 @@ def _generate_ground_improvement_package(params: dict) -> dict:
     elif method == "surcharge":
         p = apply_aliases(params, {"surcharge": "surcharge_kPa",
                                    "target_consolidation": "target_U"})
+        analysis_dict = dict(p)
         require_params(p, ["S_ultimate", "surcharge_kPa", "cv", "Hdr"],
                        method="ground_improvement_package (surcharge)")
         result = analyze_surcharge_preloading(
@@ -1244,6 +1259,7 @@ def _generate_ground_improvement_package(params: dict) -> dict:
     elif method == "vibro":
         p = apply_aliases(params, {"N1_before": "initial_N_spt",
                                    "N1_target": "target_N_spt"})
+        analysis_dict = dict(p)
         require_params(p, ["fines_content", "initial_N_spt"],
                        method="ground_improvement_package (vibro)")
         result = analyze_vibro_compaction(
@@ -2199,7 +2215,7 @@ METHOD_INFO = {
         "parameters": {
             "q_applied": {"type": "float", "required": True, "description": "Applied bearing pressure (kPa)."},
             "B": {"type": "float", "required": False, "default": 1.0, "description": "Footing width (m)."},
-            "L": {"type": "float", "required": False, "default": 1.0, "description": "Footing length (m)."},
+            "L": {"type": "float", "required": False, "description": "Footing length (m). Not given: L = B, as settlement.settlement_analysis takes it."},
             "Es_immediate": {"type": "float", "required": False, "description": "Elastic modulus for immediate settlement (kPa)."},
             "consolidation_layers": {"type": "array", "required": False, "description": "List of dicts: thickness, depth_to_center, e0, Cc, Cr, sigma_v0, sigma_p."},
             "schmertmann_layers": {"type": "array", "required": False, "description": "List of dicts: depth_top, depth_bottom, Es."},
@@ -2316,7 +2332,7 @@ METHOD_INFO = {
             "su_bar": {"type": "float", "required": False, "description": "Average undrained shear strength (kPa) — site classification (instead of vs30)."},
             "delta": {"type": "float", "required": False, "description": "Wall friction angle (deg) — earth pressure. Default 2/3 phi."},
             "kv": {"type": "float", "required": False, "default": 0.0, "description": "Vertical seismic coefficient — earth pressure."},
-            "KA": {"type": "float", "required": False, "default": 0.333, "description": "Static active coefficient — earth pressure."},
+            "KA": {"type": "float", "required": False, "description": "Static active coefficient — earth pressure. Not given: Rankine Ka = tan²(45° − phi/2) from phi, as seismic_geotech.seismic_earth_pressure works it out."},
             "amax_g": {"type": "float", "required": False, "description": "Peak ground acceleration (g) — liquefaction."},
             "layer_depths": {"type": "array", "required": False, "description": "Layer mid-depths (m) — liquefaction."},
             "layer_N160": {"type": "array", "required": False, "description": "(N1)60 per layer — liquefaction."},
@@ -2470,9 +2486,13 @@ METHOD_INFO = {
     },
 }
 
-# The older names the ground improvement package still reads (GM-110).
+# The older names the ground improvement package still reads (GM-110), and
+# the aggregate_piers tool's own names (GM-120).
+from funhouse_agent.adapters.ground_improvement import (  # noqa: E402
+    _AGG_ALIASES as _GI_AGG_ALIASES,
+)
 declare_aliases(METHOD_INFO, {"ground_improvement_package": {
-    "diameter": "column_diameter", "E_pier": "E_column",
+    **_GI_AGG_ALIASES, "E_pier": "E_column",
     "surcharge": "surcharge_kPa", "target_consolidation": "target_U",
     "N1_before": "initial_N_spt", "N1_target": "target_N_spt"}})
 

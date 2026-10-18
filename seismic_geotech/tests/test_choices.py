@@ -32,12 +32,23 @@ def test_mo_choices_say_the_defaults_and_the_static_basis():
         == "given"
 
 
-def test_assumed_ka_of_the_package_is_labelled():
-    ka = _by_what(earth_pressure_choices(36, 0.15, ka=0.333,
-                                         ka_how="default"))["static KA"]
-    assert ka["chosen"] == "0.333 assumed (Rankine Ka for phi 30 deg)"
-    assert ka["basis"] == "not computed from phi (36 deg here)"
-    assert ka["how"] == "default"
+def test_the_packages_ka_is_rankine_from_phi_or_the_value_given():
+    # GM-120: the calc package works KA out from phi when it is not given
+    # (it was 0.333, Rankine Ka for phi 30 deg, whatever phi was), and
+    # names giving it as the other option; the analysis tool takes no KA.
+    ka = _by_what(earth_pressure_choices(
+        34, 0.15, ka="rankine", ka_can_be_given=True))["static KA"]
+    assert ka["chosen"] == "Rankine, 0.2827"
+    assert ka["how"] == "module"
+    assert ka["basis"].startswith("vertical wall, level backfill, no wall "
+                                  "friction")
+    assert "KA given (KA)" in ka["alternatives"]
+    tool = _by_what(earth_pressure_choices(34, 0.15, ka="rankine"))
+    assert "KA given (KA)" not in tool["static KA"]["alternatives"]
+    given = _by_what(earth_pressure_choices(
+        34, 0.15, ka=0.30, ka_how="given",
+        ka_can_be_given=True))["static KA"]
+    assert given == {"what": "static KA", "chosen": "0.3", "how": "given"}
 
 
 def test_mo_fallback_is_named_and_warned():
