@@ -581,6 +581,24 @@ the eyes). What changed on master after 5.33.0, in short:
   assumption's basis is its engineering basis or "assumed, not given",
   never "stated by the engineer" (w13 F18j's PDFs said that for every
   assumption).
+  **GM-181 and w13b fix 10 (2026-10-19, behind the switch):** a package's
+  Given Inputs hold only what its call names in `given` (GM-167), and
+  w13b F18j's brief and both PDFs put c = 0, which "sand" only implies,
+  under Given; F55j's bespoke PDF printed none of the consult's
+  citations, which ran beside the delegation and never reached the brief.
+  The delegation nudge (`calc_delegation_nudge`) now asks for a GIVEN
+  block in the user's own words, passed to a package as `given`, with a
+  value derived from those words, or chosen, under assumptions with its
+  basis (`_CALC_DELEGATION_GIVEN`); and, where the references helper is
+  built, for the consult before a deliverable that rests on calls the
+  main agent can see coming, its citations passed in the brief beside the
+  method or assumption each supports (`_CALC_DELEGATION_CITATIONS`). The
+  calc helper passes the GIVEN block as `given` and prints each citation
+  the brief passes beside its choice: in a report it composes, next to
+  it; in a package, in that assumption's basis
+  (`_CALC_GIVEN_AND_CITATIONS`). Off, every prompt is as it was. The live
+  smoke harness sees each of these (`expect.given_inputs`,
+  `expect.pdf_cites_consult` in `module_work/live_smoke/flows.json`).
 
 Every switch and its default: `review_flags.py` and
 `module_work/REVIEW_HARNESS.md`.
