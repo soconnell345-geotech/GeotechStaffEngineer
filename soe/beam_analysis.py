@@ -153,8 +153,12 @@ def analyze_braced_excavation(geometry: ExcavationGeometry,
                       "centroid_below_top_m": round(centroid, 3),
                       "to_upper_kN_per_m": round(to_upper, 2),
                       "to_lower_kN_per_m": round(to_lower, 2)})
+        # Recorded in the free earth body's sign (push toward the excavation
+        # positive, supports resisting it), so the two diagrams the calc
+        # package draws on one set of axes agree: _span_diagram's V and M
+        # are the negatives of that.
         dz.extend(map(float, z)); dp.extend(map(float, p(z)))
-        dV.extend(map(float, V)); dM.extend(map(float, M))
+        dV.extend(-float(v) for v in V); dM.extend(-float(m) for m in M)
         k = int(np.argmax(np.abs(M)))
         if abs(M[k]) > max_moment:
             max_moment, max_moment_depth = float(abs(M[k])), float(z[k])
@@ -234,6 +238,7 @@ def analyze_braced_excavation(geometry: ExcavationGeometry,
         converged=fe.converged,
         notes=notes,
         apparent_pressure=dict(ap),
+        layers_used=_layers_used(profile_for(geometry), geometry),
         spans=spans,
         diagram={"z": dz, "p": dp, "V": dV, "M": dM},
         free_earth_diagram=getattr(fe, "diagram", None),
@@ -243,6 +248,19 @@ def analyze_braced_excavation(geometry: ExcavationGeometry,
 # ============================================================================
 # Cantilever excavation analysis
 # ============================================================================
+
+def _layers_used(prof, geometry) -> list:
+    """Each layer of a profile as the pressures used it: top_m, bottom_m,
+    unit_weight, friction_angle, cohesion, Ka, Kp."""
+    tops = np.concatenate([[0.0], prof.bottoms[:-1]])
+    return [
+        {"top_m": round(float(t), 3), "bottom_m": round(float(b), 3),
+         "unit_weight": float(prof.gamma[k]),
+         "friction_angle": float(geometry.soil_layers[k].friction_angle),
+         "cohesion": float(prof.c[k]),
+         "Ka": round(float(prof.Ka[k]), 4), "Kp": round(float(prof.Kp[k]), 4)}
+        for k, (t, b) in enumerate(zip(tops, prof.bottoms))]
+
 
 def _pressure_points(prof, FS: float, O: float) -> list:
     """The pressures of a cantilever profile at its break depths down to O
@@ -327,14 +345,7 @@ def analyze_cantilever_excavation(
             f"to about {_CANTILEVER_TYPICAL_MAX_H:.1f} m (18 ft, Caltrans T&S "
             "7-1); check deflection.")
 
-    tops = np.concatenate([[0.0], prof.bottoms[:-1]])
-    layers_used = [
-        {"top_m": round(float(t), 3), "bottom_m": round(float(b), 3),
-         "unit_weight": float(prof.gamma[k]),
-         "friction_angle": float(geometry.soil_layers[k].friction_angle),
-         "cohesion": float(prof.c[k]),
-         "Ka": round(float(prof.Ka[k]), 4), "Kp": round(float(prof.Kp[k]), 4)}
-        for k, (t, b) in enumerate(zip(tops, prof.bottoms))]
+    layers_used = _layers_used(prof, geometry)
 
     if not sol.converged:
         # No D0 within 6H: nothing below is reported (see the first note).

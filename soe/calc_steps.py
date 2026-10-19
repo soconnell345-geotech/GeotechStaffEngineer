@@ -34,7 +34,8 @@ REFERENCES = [
     "Chapter 8 (anchored walls, Example 8-1).",
     "FHWA-IF-99-015 (1999). Geotechnical Engineering Circular No. 4: Ground "
     "Anchors and Anchored Systems, Section 5.2 (apparent pressure envelopes, "
-    "Figure 24) and Figure 39 (tributary area method).",
+    "Figure 24), Figure 34 (anchor loads, hinge method), Equation 20 and "
+    "Figure 39 (anchor loads and moments, tributary area method).",
     "Terzaghi, K. and Peck, R.B. (1967). Soil Mechanics in Engineering "
     "Practice, 2nd ed. Wiley.",
     "Peck, R.B. (1969). Deep Excavations and Tunneling in Soft Ground. "
@@ -166,7 +167,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     return _fhwa_steps(result, analysis)
 
 
-def _layer_table(layers_used) -> TableData:
+def _layer_table(layers_used, where: str = "") -> TableData:
     return TableData(
         title="Soil layers and earth pressure coefficients",
         headers=["Layer", "Top (m)", "Bottom (m)", "γ (kN/m³)", "φ' (deg)",
@@ -176,8 +177,8 @@ def _layer_table(layers_used) -> TableData:
                f"{l['cohesion']:.1f}", f"{l['Ka']:.4f}", f"{l['Kp']:.4f}"]
               for k, l in enumerate(layers_used, 1)],
         notes="Ka = tan²(45° − φ'/2), Kp = tan²(45° + φ'/2) (Rankine), as the "
-              "analysis applied them; the last layer continues below its "
-              "bottom.")
+              f"analysis applied them{where}; the last layer continues below "
+              "its bottom.")
 
 
 def _cantilever_steps(r, analysis) -> List[CalcSection]:
@@ -358,20 +359,28 @@ def _braced_steps(r, analysis) -> List[CalcSection]:
                    f"{s['to_upper_kN_per_m']:.2f}",
                    f"{s['to_lower_kN_per_m']:.2f}"]
                   for k, s in enumerate(r.spans, 1)],
-            notes="The span above the first support is a cantilever (all to "
-                  "that support); the bottom span goes wholly to the lowest "
-                  "support; interior spans split by their load's centroid."))
+            notes="The hinge method of FHWA GEC-4 Figure 34 (p. 67): the "
+                  "span above the first support is a cantilever (all to "
+                  "that support); interior spans split by their load's "
+                  "centroid; the bottom span goes wholly to the lowest "
+                  "support, with no subgrade reaction."))
     for k, rx in enumerate(r.support_reactions, 1):
         loads.append(CalcStep(
             title=f"Support {k} load ({rx['type']}, z = {rx['depth_m']:g} m)",
             equation="R<sub>i</sub> = Σ tributary span loads",
             substitution="sum of the span shares above",
             result_name=f"R{k}", result_value=rx["load_kN_per_m"],
-            result_unit="kN/m", reference="FHWA GEC-4 Figure 39, p. 80 (tributary area)"))
+            result_unit="kN/m",
+            reference="FHWA GEC-4 Figure 34, p. 67 (hinge method)"))
     sections.append(CalcSection(title="Support Loads", items=loads))
 
     fe = r.free_earth or {}
     emb = []
+    if r.layers_used:
+        emb.append(_layer_table(
+            r.layers_used, " in the free earth body below H (active and "
+            "water on the retained side, passive on the excavation side; "
+            "above H the body carries the design pressure)"))
     if r.required_embedment_m is None:
         emb.append("Free earth support found no moment balance within 6H; "
                    "the embedment is not found. "
@@ -431,25 +440,33 @@ def _fhwa_steps(r, analysis) -> List[CalcSection]:
         result_name="Ka", result_value=r["Ka"],
         reference="Rankine; FHWA GEC-4 5.2.4")]
     h1, hn = r.get("H1_m"), r.get("Hn1_m")
+    single = r.get("n_anchors") == 1
+    items.append(CalcStep(
+        title="Total apparent earth load",
+        equation="P<sub>T</sub> = 0.65 K<sub>a</sub> γ H²",
+        substitution=f"P<sub>T</sub> = 0.65 × {r['Ka']:.4f} × "
+                     f"{u.get('gamma')} × {H}²",
+        result_name="PT", result_value=r["PT_total_kN_per_m"],
+        result_unit="kN/m", reference="FHWA GEC-4 Figure 24, p. 51",
+        notes="The earth load alone; the surcharge pressure below acts over "
+              "H in addition and is in the anchor loads."))
     items.append(CalcStep(
         title="Apparent pressure ordinate",
-        equation="p<sub>e</sub> = 0.65 K<sub>a</sub> γ H² / "
-                 "(H − H<sub>1</sub>/3 − H<sub>n+1</sub>/3)",
-        substitution=f"0.65 × {r['Ka']:.4f} × {u.get('gamma')} × {H}² / "
-                     f"({H} − {h1:g}/3 − {hn:g}/3)",
+        equation=("p<sub>e</sub> = P<sub>T</sub> / (2H/3)" if single else
+                  "p<sub>e</sub> = P<sub>T</sub> / "
+                  "(H − H<sub>1</sub>/3 − H<sub>n+1</sub>/3)"),
+        substitution=(f"p<sub>e</sub> = {r['PT_total_kN_per_m']} / "
+                      + (f"(2 × {H} / 3)" if single else
+                         f"({H} − {h1:g}/3 − {hn:g}/3)")),
         result_name="pe", result_value=r["pe_kPa"], result_unit="kPa",
-        reference="FHWA GEC-4 Figure 24(b), p. 51"))
+        reference=("FHWA GEC-4 Figure 24(a), p. 51 (one anchor level: "
+                   "H − H1/3 − Hn+1/3 = 2H/3)" if single else
+                   "FHWA GEC-4 Figure 24(b), p. 51")))
     items.append(CalcStep(
         title="Surcharge pressure", equation="p<sub>s</sub> = K<sub>a</sub> q",
         substitution=f"{r['Ka']:.4f} × {u.get('surcharge')}",
         result_name="ps", result_value=r["ps_kPa"], result_unit="kPa",
         reference="FHWA GEC-4 5.2.4, p. 52; 5.2.10.1"))
-    items.append(CalcStep(
-        title="Total horizontal load on the wall",
-        equation="P<sub>T</sub>", substitution="area of the envelope "
-        "(pe and ps) over H",
-        result_name="PT", result_value=r["PT_total_kN_per_m"],
-        result_unit="kN/m"))
     sections.append(CalcSection(title="Apparent Earth Pressure", items=items))
 
     loads = []
@@ -461,21 +478,24 @@ def _fhwa_steps(r, analysis) -> List[CalcSection]:
             substitution="GEC-4 tributary area formulas" if r["n_anchors"]
             > 1 else "moments about the anchor, FS = 1",
             result_name=f"TH{k}", result_value=a["TH_kN_per_m"],
-            result_unit="kN/m", reference="FHWA GEC-4 Figure 24, p. 51; Figure 39, p. 80"))
+            result_unit="kN/m",
+            reference="FHWA GEC-4 Figure 39, p. 80 (tributary area)"
+            if r["n_anchors"] > 1 else
+            "Caltrans T&S 8-4, Example 8-1 (free earth support)"))
         loads.append(CalcStep(
             title=f"Anchor {k} design load",
             equation="DL = T<sub>H</sub> · s / cos i",
             substitution=f"DL = {a['TH_kN_per_m']:.2f} × "
                          f"{r['spacing_m']:g} / cos {r['inclination_deg']:g}°",
             result_name=f"DL{k}", result_value=a["design_load_kN"],
-            result_unit="kN"))
+            result_unit="kN", reference="FHWA GEC-4 Eq. 20, p. 67"))
     if r.get("subgrade_reaction_kN_per_m") is not None:
         loads.append(CalcStep(
             title="Subgrade reaction at the excavation base",
             equation="R", substitution="tributary share below the lowest "
             "anchor", result_name="R",
             result_value=r["subgrade_reaction_kN_per_m"], result_unit="kN/m",
-            reference="FHWA GEC-4 Figure 24, p. 51 (R)"))
+            reference="FHWA GEC-4 Figure 39, p. 80 (R)"))
     sections.append(CalcSection(title="Anchor Loads", items=loads))
 
     dem = []
@@ -496,11 +516,14 @@ def _fhwa_steps(r, analysis) -> List[CalcSection]:
         dem.append(CalcStep(
             title="Maximum wall moment",
             equation="M<sub>max</sub>",
-            substitution=("hinge-method moments of the envelope"
+            substitution=("the largest of the span moments, 13/54 H1² p and "
+                          "p l²/10 (tributary area method)"
                           if r["n_anchors"] > 1 else
                           f"at zero shear, z = {r.get('zero_shear_depth_m')} m"),
             result_name="M_max", result_value=r["max_moment_kN_m_per_m"],
-            result_unit="kN·m/m"))
+            result_unit="kN·m/m",
+            reference="FHWA GEC-4 Figure 39, p. 80" if r["n_anchors"] > 1
+            else "Caltrans T&S 8-4, Example 8-1"))
     if dem:
         sections.append(CalcSection(title="Embedment and Wall Moment",
                                     items=dem))

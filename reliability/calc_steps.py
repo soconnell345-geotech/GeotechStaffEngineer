@@ -123,15 +123,12 @@ def _correlation_table(a):
         for k, v in corr.items():
             rows.append([str(k), _num(v, ".3f")])
     elif isinstance(corr, (list, tuple)):
+        # a full matrix in variable order, the only list the engines take
+        # (reliability.variables.build_correlation)
         names = [v["name"] for v in a.get("variables", [])]
-        for e in corr:
-            if isinstance(e, (list, tuple)) and len(e) == 3:
-                rows.append([f"{e[0]}, {e[1]}", _num(e[2], ".3f")])
-            elif isinstance(e, (list, tuple)):
-                # a matrix row
-                i = len(rows)
-                rows.append([names[i] if i < len(names) else str(i),
-                             ", ".join(_num(x, ".3f") for x in e)])
+        for i, e in enumerate(corr):
+            rows.append([names[i] if i < len(names) else str(i),
+                         ", ".join(_num(float(x), ".3f") for x in e)])
     return TableData(title="Correlation", headers=["Pair / row", "ρ"],
                      rows=rows, notes="As given to the engine.")
 
@@ -160,6 +157,13 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     else:
         sections.append(CalcSection(title="FORM",
                                     items=_form_steps(result)))
+    sections[-1].items.append(
+        "β and Pf are what the assumed model implies: g as given "
+        "and the variables' distributions and correlations above"
+        + (", and g taken as linear at the design point" if eng == "form"
+           else ", and for Φ(−β) the distribution named for g") + ". They are "
+        "not a measured frequency of failure; UFC 3-220-20 7-4.2 (p. 533) "
+        "calls β a relative measure of reliability.")
     return sections
 
 
@@ -281,7 +285,8 @@ def _mc_steps(r, a) -> list:
             f"{k} {v:.4f}" for k, v in r.percentiles.items())))
     items.extend(_beta_steps(r, "UFC 3-220-20 Eq. 7-7, p. 533"))
     items.append("The indices from the moments of g are printed beside the "
-                 "counted probability, which assumes no distribution of g.")
+                 "counted probability, which takes no distribution for g "
+                 "(only the variables' own).")
     return items
 
 

@@ -767,3 +767,41 @@ def test_reliability_package_prints_the_engines_numbers(tmp_path):
     assert f"{tool['beta_lognormal']:.3f}" in html
     assert out["beta_lognormal"] == tool["beta_lognormal"]
     assert "lognormal" in html and "R/S" in html
+    # the owner's wording for a probability (never "exact")
+    assert "what the assumed model implies" in html
+
+
+def test_reliability_package_correlation_matrix_rows():
+    # a 3 x 3 matrix is three rows by variable, not three (a, b, rho) pairs
+    from reliability.calc_steps import _correlation_table
+    t = _correlation_table({
+        "variables": [{"name": "a"}, {"name": "b"}, {"name": "c"}],
+        "correlation": [[1.0, 0.3, 0.0], [0.3, 1.0, 0.5],
+                        [0.0, 0.5, 1.0]]})
+    assert [r[0] for r in t.rows] == ["a", "b", "c"]
+    assert t.rows[1][1] == "0.300, 1.000, 0.500"
+
+
+def test_soe_braced_diagrams_share_one_sign():
+    # GM-41 review: the spans above the excavation and the free earth body
+    # below the lowest support are drawn on one set of axes, so both use
+    # the free earth body's sign (load toward the excavation positive):
+    # the shear at the bottom of the cantilever span is +(its load)
+    import soe
+    layers = [soe.SOEWallLayer(thickness=12.0, unit_weight=18.0,
+                               friction_angle=32.0)]
+    g = soe.ExcavationGeometry(
+        excavation_depth=8.0, soil_layers=layers, surcharge=10.0,
+        support_levels=[soe.SupportLevel(depth=2.0),
+                        soe.SupportLevel(depth=5.0, support_type="anchor")])
+    r = soe.analyze_braced_excavation(g)
+    d = r.diagram
+    v_end, m_end = max((v, m) for z, v, m in zip(d["z"], d["V"], d["M"])
+                       if z <= 2.0 + 1e-6)
+    assert v_end == pytest.approx(r.spans[0]["load_kN_per_m"], rel=0.02)
+    assert m_end == pytest.approx(r.spans[0]["load_kN_per_m"]
+                                  * r.spans[0]["centroid_below_top_m"],
+                                  rel=0.02)
+    assert r.free_earth_diagram["V"][-1] == pytest.approx(0.0, abs=1.0)
+    assert [l["Kp"] for l in r.layers_used] == [round(
+        math.tan(math.radians(61.0)) ** 2, 4)]
