@@ -81,6 +81,57 @@ def test_a_custom_section_says_what_it_lacks(params, said):
     assert said in r["error"]
 
 
+@pytest.mark.parametrize("params, said", [
+    # a solid pile's toe larger than its section
+    ({"pile_type": "concrete_square", "pile_area": 0.16,
+      "pile_perimeter": 1.6, "pile_width": 0.4, "pile_tip_area": 0.5},
+     "pile_tip_area = 0.5 m2 exceeds the gross area 0.16"),
+    # a closed pipe's toe larger than the circle of its diameter
+    ({"pile_type": "pipe_closed", "pile_area": 0.01, "pile_perimeter": 1.277,
+      "pile_width": 0.4064, "pile_tip_area": 0.9}, "pi b^2/4"),
+    # an H-pile's toe larger than its box
+    ({"pile_type": "h_pile", "pile_area": 0.0141, "pile_perimeter": 1.24,
+      "pile_width": 0.31, "pile_depth": 0.31, "pile_tip_area": 0.5},
+     "the box"),
+    # a closed pipe's steel larger than its circle
+    ({"pile_type": "pipe_closed", "pile_area": 0.2, "pile_perimeter": 1.277,
+      "pile_width": 0.4064, "pile_tip_area": 0.1297},
+     "pile_area = 0.2 m2 exceeds"),
+])
+def test_a_custom_toe_area_is_at_most_the_gross_area(params, said):
+    """Review of GM-144: a toe area past the gross area inflated the toe."""
+    r = _call("axial_pile_capacity", {**params, "pile_length": 10,
+                                      "layers": _SAND})
+    assert said in r["error"]
+
+
+def test_a_custom_section_is_stated_in_choices():
+    """Review of GM-144: the run states the section it took, and a solid
+    pile's toe area taken as its pile_area is a default."""
+    solid = _call("axial_pile_capacity", {
+        "pile_type": "concrete_square", "pile_area": 0.16,
+        "pile_perimeter": 1.6, "pile_width": 0.4, "pile_length": 15,
+        "layers": _SAND})
+    c = _by_what(solid)["pile section (custom)"]
+    assert c["how"] == "default" and "toe area 0.16 m2 (pile_area" in (
+        c["chosen"])
+    hp = _call("axial_pile_capacity", {
+        "pile_type": "h_pile", "pile_area": 0.0141, "pile_perimeter": 1.24,
+        "pile_width": 0.31, "pile_tip_area": 0.0961, "pile_length": 15,
+        "layers": _SAND})
+    c = _by_what(hp)["pile section (custom)"]
+    assert c["how"] == "given" and "toe area 0.0961 m2" in c["chosen"]
+    curve = _call("capacity_vs_depth", {
+        "pile_type": "concrete_square", "pile_area": 0.16,
+        "pile_perimeter": 1.6, "pile_width": 0.4, "layers": _SAND,
+        "n_points": 3})
+    assert "pile section (custom)" in _by_what(curve)
+    named = _call("axial_pile_capacity", {
+        "pile_type": "concrete_square", "width": 0.4, "pile_length": 15,
+        "layers": _SAND})
+    assert "pile section (custom)" not in _by_what(named)
+
+
 def test_make_pile_section_reports_a_custom_section():
     r = _call("make_pile_section", {
         "pile_type": "pipe_closed", "pile_area": 0.0113,

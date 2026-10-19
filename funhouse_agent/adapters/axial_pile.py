@@ -1,5 +1,6 @@
 """Axial pile adapter — driven pile capacity (Nordlund/Tomlinson/Beta)."""
 
+import math
 from dataclasses import replace
 
 from axial_pile import PileSection, make_pipe_pile, make_concrete_pile, make_h_pile
@@ -134,6 +135,23 @@ def _custom_pile(params, pile_type):
                  ("pile_tip_area", tip_area)):
         if not v > 0:
             raise ValueError(f"{method}: {k} must be > 0, got {v}")
+    # The toe area (and a hollow section's steel) is at most the gross
+    # area: a solid pile's own area, a closed pipe's circle of diameter b,
+    # an H-pile's box b x depth (b x b without pile_depth); 1 % for rounding.
+    b = params["pile_width"]
+    if solid:
+        gross, what = params["pile_area"], "pile_area"
+    elif pile_type == "pipe_closed":
+        gross, what = math.pi * b * b / 4.0, "pi b^2/4 of pile_width b"
+    else:
+        d = params.get("pile_depth") or b
+        gross, what = b * d, "the box, pile_width x pile_depth"
+    for k, v in (("pile_tip_area", tip_area),
+                 ("pile_area", params["pile_area"])):
+        if v > 1.01 * gross:
+            raise ValueError(
+                f"{method}: {k} = {v:g} m2 exceeds the gross area "
+                f"{gross:g} m2 ({what}).")
     kind = _CUSTOM_TYPES[pile_type]
     E = params.get("E")
     if E is None and kind != "timber":
@@ -145,6 +163,26 @@ def _custom_pile(params, pile_type):
         width=params["pile_width"], depth=params.get("pile_depth"), E=E,
         outer_diameter=(params["pile_width"] if kind == "pipe_closed"
                         else None))
+
+
+def _section_choice(params, pile):
+    """The custom section a run took, for its ``choices`` (GM-144), or None
+    for a section built from its dimensions or designation."""
+    if not any(params.get(k) is not None for k in _CUSTOM_SECTION):
+        return None
+    from geotech_common.choices import DEFAULT, GIVEN, choice
+    toe_given = params.get("pile_tip_area") is not None
+    return choice(
+        "pile section (custom)",
+        f"area {pile.area:g} m2, perimeter {pile.perimeter:g} m, width "
+        f"{pile.width:g} m, toe area {pile.tip_area:g} m2"
+        + ("" if toe_given else " (pile_area; pile_tip_area not given)"),
+        GIVEN if toe_given else DEFAULT,
+        "given by its properties in place of diameter, wall_thickness, "
+        "width or designation; pile_type picks GEC-12's curves (Fig. 7-9, "
+        "Fig. 7-17); a concrete or timber pile's toe area is its section's "
+        "area unless pile_tip_area is given",
+        [] if toe_given else ["pile_tip_area, a toe area of its own"])
 
 
 def _build_soil_profile(params, *, method):
@@ -197,6 +235,9 @@ def run_axial_pile_capacity(params, *, method="axial_pile_capacity"):
                                   **{k: params.get(k, v)
                                      for k, v in _GEC12_OPTIONS.items()})
     result = analysis.compute()
+    section = _section_choice(params, pile)
+    if section:
+        result.choices.insert(0, section)
     return result, analysis
 
 
@@ -232,6 +273,9 @@ def _run_capacity_vs_depth(params):
             deepest = min(analysis.pile_length, soil.total_thickness)
         out["choices"] = replace(analysis,
                                  pile_length=float(deepest)).compute().choices
+        section = _section_choice(params, pile)
+        if section:
+            out["choices"].insert(0, section)
     return out
 
 
