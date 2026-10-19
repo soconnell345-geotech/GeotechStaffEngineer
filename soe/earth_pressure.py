@@ -460,6 +460,27 @@ def select_apparent_pressure(soil_layers, H: float,
             }
 
 
+def _single_anchor_choices(FOS_embedment: float, Kp_given, Kp_used: float):
+    """What the single-anchor route chose (GM-182), as a result's
+    ``choices`` (``geotech_common.choices``): the two inputs only that route
+    reads, so a run with two or more anchors reports neither."""
+    from geotech_common.choices import choice, how_given
+    return [
+        choice("embedment factor of safety", FOS_embedment,
+               how_given(FOS_embedment, 1.3, name="FOS_embedment"),
+               "embedment D from MR = FS x MD about the anchor, free earth "
+               "support as in the Caltrans Trenching and Shoring Manual "
+               "Sec. 8-4 (Example 8-1), which takes FS = 1.3"),
+        choice("passive coefficient below the excavation",
+               f"{Kp_used:.4f}" + ("" if Kp_given is not None
+                                   else " (Rankine, from phi)"),
+               how_given(Kp_given, None, name="Kp"),
+               "Rankine Kp = tan^2(45 + phi/2), no wall friction, unless "
+               "Kp is given",
+               ["a log-spiral Kp with wall friction (give Kp)"]),
+    ]
+
+
 def fhwa_apparent_pressure_anchored_wall(
     H: float,
     anchor_depths: List[float],
@@ -543,7 +564,8 @@ def fhwa_apparent_pressure_anchored_wall(
          max_moment_kN_m_per_m, ...}. Each anchors[] entry: {depth_m,
          TH_kN_per_m (horizontal load), design_load_kN}. For n=1 also
          TH_upper/TH_lower, embedment_D_m, embedment_D_FS1_m,
-         max_moment_depth_m, converged, notes, and
+         max_moment_depth_m, converged, notes, choices (the embedment FS
+         and Kp, given or default; GM-182), and
          subgrade_reaction_kN_per_m = None (the passive pressure below the
          excavation takes the base load). With no moment balance within 6H
          (``converged`` False) the depths that have no root, and the anchor
@@ -631,6 +653,7 @@ def fhwa_apparent_pressure_anchored_wall(
             "zero_shear_depth_m": _r(sol.zero_shear_depth, 3),
             "converged": sol.converged,
             "notes": list(sol.notes),
+            "choices": _single_anchor_choices(FOS_embedment, Kp, Kp_used),
         }
     else:
         for i in range(n):

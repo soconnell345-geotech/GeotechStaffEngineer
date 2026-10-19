@@ -91,7 +91,8 @@ def test_module_names_ignore_case(name):
     assert "error" not in list_methods(name)
     out = call_agent(name, "apparent_pressure", {
         "excavation_depth": 6.0,
-        "layers": [{"thickness": 20, "unit_weight": 18, "friction_angle": 30}]})
+        "layers": [{"thickness": 20, "unit_weight": 18, "friction_angle": 30,
+                    "soil_type": "sand"}]})
     assert out.get("type") == "sand"
 
 

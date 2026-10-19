@@ -28,6 +28,13 @@ empirical apparent pressure envelopes from field measurements:
 
 Where N = γH/cu is the stability number and m = 1.0 for most cases.
 
+The envelope is the sand one where the layers marked `sand` are the
+thicker over the excavation depth, else a clay one by the average N.
+`SOEWallLayer.soil_type` defaults to `sand` in the library, so the agent
+tools (`braced_excavation`, `apparent_pressure`) refuse a layer above the
+excavation base that gives none (GM-182, 2026-10-19): the default picked
+the method unstated. The cantilever analysis does not read it.
+
 ### Pressure above the excavation (braced walls)
 
 The apparent-pressure envelope carries no surcharge or water. FHWA GEC-4
@@ -206,6 +213,10 @@ formulas do not apply: the wall is solved by free earth support about the anchor
 `FOS_embedment` default 1.3), returning the total TH, D, D′ and the wall moment —
 D = 6.09 ft, T1 = 14,254 lb/ft, M = 22,494 ft-lb/ft (V-013). Until 2026-09-15 the
 single-anchor result stopped at the upper tributary load without saying so (N3).
+`Kp` and `FOS_embedment` are read on the single-anchor route only: its result
+carries them as `choices`, and with two or more anchors the tool refuses them
+and `defaults_used` leaves them out (GM-182). The multi-anchor route works out
+no embedment; `braced_excavation` does, about the lowest support.
 
 ## Log-spiral passive coefficient (v5.3)
 `earth_pressure.caquot_kerisel_Kp(phi, delta)` — the Caquot-Kerisel (1948)
