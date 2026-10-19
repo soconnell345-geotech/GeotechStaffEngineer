@@ -110,9 +110,12 @@ dependencies = [
     # dictionary validation degrades gracefully (has_pydiggs); install the
     # [pydiggs] extra where kernel stability is not a concern.
     "ezdxf>=1.4",
-    # Below 2: PyMuPDF 2.0 (2026-10-19) reads table cells differently and
-    # breaks report_ingest's table floor (six tests in CI); BACKLOG INF-17.
-    "PyMuPDF>=1.23,<2",
+    # Below 2 for the app: planlens reads PyMuPDF 2.0 correctly from 0.14,
+    # but 2.0 loads onnxruntime and a layout model on every import (about
+    # 2 s and 90 MB, seven new packages) that the app turns off; lift it
+    # with planlens>=0.14 and an import probe on the hosts (BACKLOG INF-18).
+    # 1.27.2 is the oldest version the readers pass on (INF-17).
+    "PyMuPDF>=1.27.2,<2",
     # Drawing & submittal intelligence — split out 2026-09-04 (owner:
     # independently importable/publishable package). Carries the former
     # drawing_ir/ (as planlens.ir), pdf_import/ (planlens.pdf), and

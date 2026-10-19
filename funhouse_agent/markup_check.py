@@ -471,14 +471,22 @@ def _text_letters(page) -> List[Tuple[Tuple[float, float, float, float],
     a display list WITHOUT the annotations, as planlens reads the text
     layer: ``get_text`` also returns the words annotations draw, and on a
     marked copy that is the labels themselves. A display list's text is in
-    the displayed frame (planlens ``pdf_text._textpage``)."""
+    the displayed frame (planlens ``pdf_text._textpage``). Line-high boxes
+    on PyMuPDF 2.x as on 1.x, through planlens' own guard (INF-17)."""
+    import contextlib
     import fitz
+    try:
+        from planlens.pymupdf_settings import line_boxes
+    except Exception:  # noqa: BLE001 - a planlens before 0.14 has no guard
+        line_boxes = contextlib.nullcontext
     stext = page.get_displaylist(annots=False).get_textpage()
     tp = stext if isinstance(stext, fitz.TextPage) else fitz.TextPage(stext)
     tp.parent = page
+    with line_boxes():
+        words = page.get_text("words", textpage=tp)
     return [((float(w[0]), float(w[1]), float(w[2]), float(w[3])),
              len(str(w[4]).strip()))
-            for w in page.get_text("words", textpage=tp)]
+            for w in words]
 
 
 def _text_turns_label(letters, mark_bbox: Any) -> bool:
