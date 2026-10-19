@@ -325,7 +325,7 @@ METHOD_INFO = {
         "parameters": {
             "phi": {"type": "float", "required": True, "description": "Friction angle (degrees)."},
             "kh": {"type": "float", "required": True, "description": "Horizontal seismic coefficient."},
-            "kv": {"type": "float", "required": False, "default": 0.0, "description": "Vertical seismic coefficient (positive upward). Enters KAE through theta = atan(kh/(1-kv)) (UFC 3-220-20 Eq. 4-15) and, with gamma and H, the thrust PAE = (gamma H^2/2)(1-kv) KAE (Eq. 4-16)."},
+            "kv": {"type": "float", "required": False, "default": 0.0, "description": "Vertical seismic coefficient (positive upward). Enters KAE through the seismic angle psi = atan(kh/(1-kv)) (UFC 3-220-20 Eq. 4-15) and, with gamma and H, the thrust PAE = (gamma H^2/2)(1-kv) KAE (Eq. 4-16)."},
             "delta": {"type": "float", "required": False, "description": "Wall friction angle (deg). Defaults to 2/3 phi."},
             "beta": {"type": "float", "required": False, "default": 0.0, "description": "Wall back face batter from vertical (degrees)."},
             "i": {"type": "float", "required": False, "default": 0.0, "description": "Backfill slope angle (degrees)."},

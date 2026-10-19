@@ -196,7 +196,8 @@ def seismic_earth_pressure(gamma: float, H: float,
     """Compute seismic earth pressure resultants.
 
     PAE = (gamma H^2 / 2)(1 - kv) KAE, UFC 3-220-20 Eq. 4-16 (p. 215),
-    with KAE from Eq. 4-15 (theta = atan(kh / (1 - kv))). Until GM-149
+    with KAE from Eq. 4-15 (psi = atan(kh / (1 - kv)), theta in this
+    module's code). Until GM-149
     the (1 - kv) was left out, overstating PAE by 1 / (1 - kv) wherever
     kv was not 0.
 
