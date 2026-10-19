@@ -44,9 +44,10 @@ found, precise in how it is named:
   GEC, as the reference modules' own briefs and chapter files name them:
   GEC-11 = FHWA-NHI-10-024 / -025), AASHTO LRFD with or without an article
   number, the AASHTO 1993 pavement guide and AASHTO test standards, UFC
-  n-nnn-nn, NAVFAC DM 7 / 7.01 / 7.02 (the same documents as UFC 3-220-10 /
-  -20, which replaced them and which the app's ``dm7`` module serves), USACE
-  EM / ETL / ER / EP and TM numbers, ASTM, ACI, ASCE 7, AISC, API RP, IBC,
+  n-nnn-nn and UFS n-nnn-nn (one key: UFS 3-220-10, 2026, supersedes UFC
+  3-220-10), NAVFAC DM 7 / 7.01 / 7.02 (the same documents as UFS 3-220-10 /
+  UFC 3-220-20, which replaced them and which the app's ``dm7`` module
+  serves), USACE EM / ETL / ER / EP and TM numbers, ASTM, ACI, ASCE 7, AISC, API RP, IBC,
   the Caltrans manuals, NCHRP and CGPR reports, Eurocodes and EN 1997, FEMA
   P- numbers and NEHRP, ISO / BS standards, PTI DC35.1, the GSA Alternate
   Path guidelines and the Wood Handbook;
@@ -374,8 +375,8 @@ _AASHTO_1993 = re.compile(
     r"[ \t]+)?Guide)?|Guide[ \t]+for[ \t]+(?:the[ \t]+)?Design[ \t]+of[ \t]+"
     r"Pavement[ \t]+Structures)")
 _AASHTO_STD = re.compile(r"[ \t]*(?P<l>[TMR])[ \t-]?(?P<n>\d{1,3})(?!\d)")
-_UFC = re.compile(
-    r"(?i)(?<![\w-])UFC\)?[ \t-]*(?P<a>\d)-(?P<b>\d{3})-(?P<c>\d{2})"
+_UFC = re.compile(      # UFS: a Unified Facilities Supplement (DM 7.1, 2026)
+    r"(?i)(?<![\w-])(?P<p>UF[CS])\)?[ \t-]*(?P<a>\d)-(?P<b>\d{3})-(?P<c>\d{2})"
     r"(?P<s>[A-Z]{0,2})(?![\w-])")
 _DM = re.compile(
     r"(?<![\w-])(?:NAVFAC[ \t-]*(?:DM|Design[ \t]+Manual)|NAVDOCKS[ \t-]*DM|DM)"
@@ -502,7 +503,8 @@ def _documents(t: str, internal: bool = False) -> List[_Found]:
         num = f"{m.group('a')}-{m.group('b')}-{m.group('c')}"
         sec, end = _section(t, m.end())
         add(m.start(), end, f"ufc-{num}",
-            f"UFC {num}{(m.group('s') or '').upper()}", sec)
+            f"{m.group('p').upper()} {num}{(m.group('s') or '').upper()}",
+            sec)
     for m in _DM.finditer(t):
         v = m.group("v")
         key, shown = {"1": ("ufc-3-220-10", "NAVFAC DM 7.01"),
