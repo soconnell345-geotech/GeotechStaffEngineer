@@ -65,7 +65,7 @@ jobs:
           pip install pystra || true
           pip install pydiggs || true
           pip install ezdxf || true
-          pip install "PyMuPDF<2" || true   # 2.0 breaks report_ingest's table floor (INF-17)
+          pip install "PyMuPDF<2" || true   # planlens 0.13 (PyPI) misreads tables on 2.0; lift with planlens>=0.14 (INF-18)
           pip install pyproj || true   # foundry tier3 needs it
 
       - name: Run tests
