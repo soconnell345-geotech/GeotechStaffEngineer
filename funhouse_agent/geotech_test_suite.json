@@ -1297,11 +1297,11 @@
       "values": [
         {
           "name": "Kp",
-          "value": 7.2,
+          "value": 8.24,
           "rtol": 0.05
         }
       ],
-      "source": "v5.3 worktree ground truth, 2026-07-07 (retaining_walls.earth_pressure_coefficient theory=caquot_kerisel -> soe.earth_pressure.caquot_kerisel_Kp; recomputed via the adapter path)"
+      "source": "Caquot-Kerisel as printed (BACKLOG GM-21, 2026-10-19): Kp0 = 10.2 at phi 35 (Caltrans Trenching and Shoring Manual Fig. 4-20, p. 4-30) times the printed reduction factor R for delta/phi = 2/3; was 7.2, the module's own value before GM-21 (v5.3 worktree, 2026-07-07)"
     }
   },
   {
