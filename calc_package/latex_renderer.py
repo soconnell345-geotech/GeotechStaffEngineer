@@ -414,7 +414,9 @@ def _save_pdf_story(data: CalcPackageData, filepath: str) -> str:
 # - a figure that does not fit what is left of a page starts the next page
 #   at that size, with the heading or "Figure n" title just before it; the
 #   text after it follows it there (the engine has no floats), so the page
-#   before ends short;
+#   before ends short. So does one the engine drew past a page's foot (it
+#   does that after a picture it shrank, and drops the text after it), and
+#   one that starts a page with its heading left on the page before;
 # - a figure taller than a whole page starts a page and is scaled to fit
 #   it, leaving room for its caption. It is never shrunk to fit what is left
 #   of a page. A picture cannot be split across pages, so one that a page
@@ -432,10 +434,20 @@ _CAPTION_ROOM_PT = 36
 #: should be scaled to; under it the caller is told to draw it shorter.
 MIN_FIGURE_SCALE = 0.5
 #: The most pages a Story PDF runs to: a page break before the document's
-#: first element makes the engine repeat an empty page for ever.
+#: first element, or anywhere after a table whose borders are not collapsed,
+#: makes the engine start the document again for ever (PyMuPDF 1.27).
 _MAX_STORY_PAGES = 2000
 #: What starts a new page before a figure.
 _PAGE_BREAK = '<div style="page-break-before:always"></div>'
+#: Put before the HTML when a page break makes the engine loop: the loop
+#: after a table goes when its borders are collapsed. First in the document,
+#: so the HTML's own table rules still win.
+_COLLAPSED_TABLES = "<style>table{border-collapse:collapse}</style>"
+
+
+class _StoryLoop(RuntimeError):
+    """The Story engine ran past its page limit without placing
+    everything: it is repeating the document."""
 #: Containers a figure's own block climbs through, when the picture is the
 #: first thing in them and their only picture.
 _FIGURE_WRAPPERS = {"div", "figure", "p", "center", "a", "span", "picture"}
@@ -454,12 +466,14 @@ def _drawn(src) -> bool:
 def _figure_marks(html: str) -> dict:
     """Where each drawn ``<img>`` (:func:`_drawn`) sits in ``html``, in
     document order:
-    ``{"spans": [(start, end)], "breaks": [offset or None]}``. ``breaks``
-    is where a page break moves the figure to the next page: before its
-    own block (the containers it is the first thing in), a table holding
-    it, and the heading or short "Figure ..." title just before that.
+    ``{"spans": [(start, end)], "breaks": [offset or None],
+    "titled": [bool]}``. ``breaks`` is where a page break moves the figure
+    to the next page: before its own block (the containers it is the first
+    thing in), a table holding it, and the heading or short "Figure ..."
+    title just before that (not the caption under the figure before it).
     ``None`` where that would come before anything else in the document
-    (a break there makes the engine loop)."""
+    (a break there makes the engine loop). ``titled``: a heading or title
+    goes with it."""
     from html.parser import HTMLParser
 
     line_starts = [0]
@@ -535,13 +549,20 @@ def _figure_marks(html: str) -> dict:
         i = next((j for j, n in enumerate(sibs) if n is node), 0)
         return sibs[i - 1] if i > 0 else None
 
-    def _title(node) -> bool:
-        return (node["tag"] in _HEADINGS
-                or (node["tag"] in ("p", "div") and not node["imgs"]
-                    and node["head"][:3].lower() == "fig"))
+    def _next(node):
+        sibs = node["parent"]["children"] if node["parent"] else []
+        i = next((j for j, n in enumerate(sibs) if n is node), len(sibs))
+        return sibs[i + 1] if i + 1 < len(sibs) else None
 
-    breaks = []
-    for img in img_nodes:
+    def _fig_text(node) -> bool:
+        return (node is not None and node["tag"] in ("p", "div")
+                and not node["imgs"] and node["head"][:3].lower() == "fig")
+
+    def _holds_picture(node) -> bool:
+        return node is not None and (
+            node.get("imgs") or any(node is i for i in img_nodes))
+
+    def _block(img):
         node = img
         while (node["parent"] and node["parent"]["tag"] in _FIGURE_WRAPPERS
                and node["parent"]["imgs"] == 1
@@ -552,6 +573,29 @@ def _figure_marks(html: str) -> dict:
             if anc["tag"] == "table":
                 node = anc                         # the outermost table
             anc = anc["parent"]
+        return node
+
+    blocks = [_block(img) for img in img_nodes]
+    # Captions under their figures (the house style: render_figures says
+    # "use the caption text under it") or titles above them: a "Figure ..."
+    # line between two figures belongs to the one before when most figures
+    # have their "Figure ..." line under them.
+    below = sum(1 for b in blocks if _fig_text(_next(b)))
+    above = sum(1 for b in blocks if _fig_text(_previous(b))
+                and not _holds_picture(_previous(_previous(b))))
+    captions_below = below > above
+
+    def _title(node) -> bool:
+        if node["tag"] in _HEADINGS:
+            return True
+        if not _fig_text(node):
+            return False
+        # under a figure, it is that figure's caption
+        return not (captions_below and _holds_picture(_previous(node)))
+
+    breaks, titled = [], []
+    for block in blocks:
+        node = block
         for _ in range(2):                         # heading, then title
             prev = _previous(node)
             if prev is None or not _title(prev):
@@ -560,28 +604,31 @@ def _figure_marks(html: str) -> dict:
         first = state["first"]
         breaks.append(None if first is None or node["start"] <= first
                       else node["start"])
-    return {"spans": spans, "breaks": breaks}
+        titled.append(node is not block)
+    return {"spans": spans, "breaks": breaks, "titled": titled}
 
 
-def _story_bytes(html: str, mediabox, where) -> bytes:
+def _story_bytes(html: str, mediabox, where, max_pages=None) -> bytes:
     """``html`` laid out by the Story engine into pages ``where`` on
-    ``mediabox``: the PDF's bytes."""
+    ``mediabox``: the PDF's bytes. :class:`_StoryLoop` past ``max_pages``
+    (default :data:`_MAX_STORY_PAGES`)."""
     import io
 
     import fitz
 
+    limit = max_pages or _MAX_STORY_PAGES
     story = fitz.Story(html=html)
     buf = io.BytesIO()
     writer = fitz.DocumentWriter(buf)
     more, pages = 1, 0
     while more:
-        if pages >= _MAX_STORY_PAGES:
+        if pages >= limit:
             writer.close()
-            raise RuntimeError(
-                f"the layout ran past {_MAX_STORY_PAGES} pages without "
-                "placing everything (a page break before the first element "
-                "of the HTML makes the engine repeat an empty page): remove "
-                "that page break")
+            raise _StoryLoop(
+                f"the layout ran past {limit} pages without placing "
+                "everything (a page break before the first element of the "
+                "HTML makes the engine repeat an empty page): remove that "
+                "page break")
         device = writer.begin_page(mediabox)
         more, _filled = story.place(where)
         story.draw(device)
@@ -647,7 +694,12 @@ def _lay_out_figures(html: str, mediabox, where):
     drawn cannot be matched to the HTML's ``<img>`` tags."""
     import fitz
 
-    pdf = _story_bytes(html, mediabox, where)
+    try:
+        pdf = _story_bytes(html, mediabox, where)
+    except _StoryLoop:
+        # the HTML's own page break after a table: collapsed borders end it
+        html = _COLLAPSED_TABLES + html
+        pdf = _story_bytes(html, mediabox, where)
     placed = _story_images(pdf)
     try:
         marks = _figure_marks(html)
@@ -659,13 +711,16 @@ def _lay_out_figures(html: str, mediabox, where):
     # the size each figure is laid out at on a page of its own: one frame
     # tall enough for the whole document, so nothing reaches a page foot
     with fitz.open("pdf", pdf) as doc:
-        tall_h = (doc.page_count + 2) * where.height
+        pages = doc.page_count
+        tall_h = (pages + 2) * where.height
     tall_box = fitz.Rect(0, 0, mediabox.width, tall_h + 2 * where.y0)
     tall_where = fitz.Rect(where.x0, where.y0, where.x1, where.y0 + tall_h)
     laid_out = [r for _p, r, _t in
                 _story_images(_story_bytes(html, tall_box, tall_where))]
     if len(laid_out) != n:
         return pdf, None
+    # a move adds a page at most, so a trial past this is the engine looping
+    trial_pages = pages + n + 4
 
     edits = {}
     settled = set()
@@ -673,26 +728,57 @@ def _lay_out_figures(html: str, mediabox, where):
     def _target(k):
         return edits.get(k, {}).get("width_pt") or laid_out[k].width
 
+    def _misplaced(i, p, r, at_top):
+        # shrunk to fit what was left of a page, or drawn past its foot
+        # (the engine does that to a picture after one it shrank, and drops
+        # the text after it), or starting a page with its heading or title
+        # left at the foot of the page before
+        return (r.width < _SQUEEZED * _target(i) or r.y1 > where.y1 + 1
+                or (at_top and p > 0 and marks["titled"][i]
+                    and not edits.get(i, {}).get("break")))
+
+    def _trial(edits):
+        trial_pdf = _story_bytes(_with_figure_edits(html, marks, edits),
+                                 mediabox, where, max_pages=trial_pages)
+        return trial_pdf, _story_images(trial_pdf)
+
     for _ in range(2 * n + 1):
-        k = next((i for i, (_p, r, _t) in enumerate(placed)
-                  if i not in settled and r.width < _SQUEEZED * _target(i)),
-                 None)
+        k = next((i for i, (p, r, t) in enumerate(placed)
+                  if i not in settled and _misplaced(i, p, r, t)), None)
         if k is None:
             break
-        _p, r, at_top = placed[k]
+        p, r, at_top = placed[k]
+        before = dict(edits.get(k, {}))
         e = edits.setdefault(k, {})
-        if not e.get("break") and not at_top \
-                and marks["breaks"][k] is not None:
+        if not e.get("break") and marks["breaks"][k] is not None \
+                and (not at_top or marks["titled"][k]):
             e["break"] = True                  # the next page, at its width
         else:
             # it does not fit a page, or cannot move: the engine has fitted
             # it to the page; keep room under it for its caption
-            room = min(_CAPTION_ROOM_PT, 0.5 * r.height)
-            e["width_pt"] = r.width * (r.height - room) / r.height
+            tall = min(r.y1, where.y1) - r.y0
+            if tall > 0:
+                room = min(_CAPTION_ROOM_PT, 0.5 * tall)
+                e["width_pt"] = r.width * (tall - room) / r.height
             settled.add(k)
-        trial = _with_figure_edits(html, marks, edits)
-        trial_pdf = _story_bytes(trial, mediabox, where)
-        trial_placed = _story_images(trial_pdf)
+        try:
+            trial_pdf, trial_placed = _trial(edits)
+        except _StoryLoop:
+            # a page break after a table whose borders are not collapsed
+            # makes the engine loop; collapsed, it does not
+            loops = True
+            if not html.startswith(_COLLAPSED_TABLES):
+                html = _COLLAPSED_TABLES + html
+                marks = _figure_marks(html)
+                try:
+                    trial_pdf, trial_placed = _trial(edits)
+                    loops = False
+                except _StoryLoop:
+                    pass
+            if loops:                          # leave this figure as it was
+                edits[k] = before
+                settled.add(k)
+                continue
         if len(trial_placed) != n:
             break
         pdf, placed = trial_pdf, trial_placed
@@ -720,9 +806,17 @@ def _png_letterings(html: str) -> list:
 
     from geotech_common.layout_ink import (LETTERING_KEY, parse_lettering,
                                            png_texts)
+    try:
+        # the tags :func:`_figure_marks` matches to the pictures drawn (not
+        # one in a comment, a script or the head)
+        tags = [html[start:end]
+                for start, end in _figure_marks(html)["spans"]]
+    except Exception:                                      # noqa: BLE001
+        tags = [m.group(0) for m in re.finditer(r"<img\b[^>]*>", html,
+                                                flags=re.IGNORECASE)]
     out = []
-    for tag in re.finditer(r"<img\b[^>]*>", html, flags=re.IGNORECASE):
-        src = re.search(r"\bsrc\s*=\s*[\"']([^\"']*)", tag.group(0))
+    for tag in tags:
+        src = re.search(r"\bsrc\s*=\s*[\"']([^\"']*)", tag)
         if not src or not _drawn(src.group(1)):
             continue
         m = re.match(r"\s*data:image/png;base64,(.+)", src.group(1),

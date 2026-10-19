@@ -183,19 +183,34 @@ TEXT = "<p>" + ("The bearing resistance of the footing is checked against "
                 "the factored load for each load case. ") * 6 + "</p>"
 
 
-def _plot(tmp_path, name, width_in, height_in, fontsize=9.0):
-    """A PNG saved the way the calc packages save theirs."""
+def _plot(tmp_path, name, width_in, height_in, fontsize=9.0,
+          checked_in=None):
+    """A PNG saved the way the calc packages save theirs or, with
+    ``checked_in``, the way the plotting box saves one whose lettering it
+    checked at that print width."""
+    import io
+
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     from calc_package.renderer import figure_to_base64
+    from geotech_common.layout_ink import (LETTERING_KEY, lettering_sizes,
+                                           lettering_text)
     fig, ax = plt.subplots(figsize=(width_in, height_in))
     ax.plot([0, 1], [0, 1])
     ax.set_xlabel("Distance (m)", fontsize=fontsize)
     ax.tick_params(labelsize=fontsize)
     try:
-        png = base64.b64decode(figure_to_base64(fig, dpi=100))
+        if checked_in:
+            sizes, saved_w = lettering_sizes(fig)
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", dpi=100, bbox_inches="tight",
+                        metadata={LETTERING_KEY: lettering_text(
+                            min(sizes), saved_w, checked_in)})
+            png = buf.getvalue()
+        else:
+            png = base64.b64decode(figure_to_base64(fig, dpi=100))
     finally:
         plt.close(fig)
     path = tmp_path / name
@@ -249,8 +264,9 @@ class TestHtmlToPdfFigureSizes:
         assert fig["width_in"] > 6.0 and fig.get("moved")
 
     def test_a_narrow_figure_with_small_lettering_is_warned(self, tmp_path):
+        """A figure the plotting box drew: the caller has its code."""
         pytest.importorskip("fitz")
-        _plot(tmp_path, "small.png", 10, 4, fontsize=8)
+        _plot(tmp_path, "small.png", 10, 4, fontsize=8, checked_in=6.5)
         res = _generate_html_to_pdf({
             "html": _doc(f'<img src="{tmp_path / "small.png"}" '
                          'style="width:35%">'),
@@ -260,11 +276,26 @@ class TestHtmlToPdfFigureSizes:
         (warning,) = res["figure_warnings"]
         assert warning.startswith("Figure 1 (pdf_page 1)")
         assert "under 7 pt" in warning
+        assert "checked at" in warning
 
-    def test_a_figure_with_no_lettering_record_is_judged_by_width(
+    def test_a_module_figure_is_reported_not_warned(self, tmp_path):
+        """A module's own figure (lettering recorded, never checked): the
+        caller cannot redraw it, and every canned figure prints under 7 pt
+        today (GM-186), so its size is reported and nothing is warned."""
+        pytest.importorskip("fitz")
+        _plot(tmp_path, "small.png", 10, 4, fontsize=8)
+        res = _generate_html_to_pdf({
+            "html": _doc(f'<img src="{tmp_path / "small.png"}" '
+                         'style="width:35%">'),
+            "output_path": str(tmp_path / "r.pdf")})
+        (fig,) = res["page_contents"][0]["figures"]
+        assert fig["width_in"] < 3.0 and fig["lettering_pt"] < 7.0
+        assert "figure_warnings" not in res
+
+    def test_a_picture_with_no_lettering_record_is_not_judged_by_width(
             self, tmp_path):
-        """Without a record of its lettering, a figure printed narrower
-        than the 6.5 in the lettering check measures at is warned."""
+        """A photo, a drawing or a logo carries no lettering record; its
+        width is the caller's choice."""
         pytest.importorskip("fitz")
         (tmp_path / "dot.png").write_bytes(_tiny_png())
         res = _generate_html_to_pdf({
@@ -272,9 +303,8 @@ class TestHtmlToPdfFigureSizes:
                          'style="width:3in">'),
             "output_path": str(tmp_path / "r.pdf")})
         (fig,) = res["page_contents"][0]["figures"]
-        assert "lettering_pt" not in fig
-        (warning,) = res["figure_warnings"]
-        assert "narrower than the 6.5 in" in warning
+        assert "lettering_pt" not in fig and fig["width_in"] == 3.0
+        assert "figure_warnings" not in res
 
     def test_the_numbers_are_the_lettering_checks(self):
         from funhouse_agent.adapters.calc_package import _figure_warnings
@@ -282,11 +312,18 @@ class TestHtmlToPdfFigureSizes:
                                                    MIN_PRINT_PT)
         base = {"pdf_page": 1, "height_in": 3.0}
         assert _figure_warnings([{**base, "width_in": 6.5}]) == []
+        # no record: not judged by width
         assert _figure_warnings([{**base, "width_in":
-                                  DEFAULT_PRINT_WIDTH_IN - 0.5}])
-        ok = {**base, "width_in": 5.0, "lettering_pt": MIN_PRINT_PT}
+                                  DEFAULT_PRINT_WIDTH_IN - 0.5}]) == []
+        # a module's figure: lettering reported elsewhere, not warned
+        module = {**base, "width_in": 6.5, "lettering_pt": MIN_PRINT_PT - 1}
+        assert _figure_warnings([module]) == []
+        # the plotting box's: warned under its 7 pt and its print width
+        boxed = {**module, "checked_width_in": DEFAULT_PRINT_WIDTH_IN}
+        assert "under 7 pt" in _figure_warnings([boxed])[0]
+        ok = {**boxed, "lettering_pt": MIN_PRINT_PT}
         assert _figure_warnings([ok]) == []
-        checked = {**ok, "checked_width_in": 6.5}
-        assert "checked at" in _figure_warnings([checked])[0]
+        narrow = {**ok, "width_in": 5.0}
+        assert "checked at" in _figure_warnings([narrow])[0]
         tall = {**base, "width_in": 6.5, "scaled": 0.4}
         assert "taller than a page" in _figure_warnings([tall])[0]

@@ -210,3 +210,131 @@ def test_edits_write_the_break_and_the_width():
         html, marks, {0: {"break": True, "width_pt": 300.0}})
     assert latex_renderer._PAGE_BREAK + "<div><img" in out
     assert 'style="max-width:80%;width:300.0pt"' in out
+
+
+# ── review fixes (GM-168 review, 2026-10-19) ──────────────────────────
+
+TABLE = ("<table border='1'><tr><th>Case</th><th>FS</th></tr>"
+         + "".join(f"<tr><td>LC{i}</td><td>3.0</td></tr>" for i in range(6))
+         + "</table>")
+
+
+def _words(path) -> str:
+    with fitz.open(path) as doc:
+        return " ".join(page.get_text() for page in doc)
+
+
+def test_a_page_break_after_a_table_does_not_make_the_engine_loop(
+        tmp_path, monkeypatch):
+    """PyMuPDF's Story starts the document again for ever at a page break
+    anywhere after a table whose borders are not collapsed: moving a
+    figure after such a table made html_to_pdf fail on a normal report.
+    Collapsed borders end the loop; the figure still moves."""
+    monkeypatch.setattr(latex_renderer, "_MAX_STORY_PAGES", 60)
+    html = (f"<html><body><h1>Report</h1>{TABLE}{TEXT * 3}"
+            f"<img src=\"data:image/png;base64,{_png(6.5, 5)}\" "
+            'style="width:100%"><p>After the drawing.</p></body></html>')
+    with pytest.raises(RuntimeError):                  # the engine's trap
+        latex_renderer._story_bytes(
+            latex_renderer._PAGE_BREAK.join(html.split("<img", 1)),
+            fitz.paper_rect("letter"),
+            fitz.paper_rect("letter") + (54, 54, -54, -54))
+    out = render_html_pdf_story(html, str(tmp_path / "table.pdf"))
+    fig, = out["figures"]
+    assert fig["moved"] and fig["width_in"] > 6.0
+    assert "After the drawing." in _words(out["path"])
+
+
+def test_a_page_break_the_html_carries_after_a_table_renders(tmp_path,
+                                                             monkeypatch):
+    """The caller's own page break after a table hung master for ever."""
+    monkeypatch.setattr(latex_renderer, "_MAX_STORY_PAGES", 60)
+    html = (f"<html><body><h1>Report</h1>{TABLE}"
+            f"{latex_renderer._PAGE_BREAK}<p>Appendix.</p></body></html>")
+    out = render_html_pdf_story(html, str(tmp_path / "own.pdf"))
+    with fitz.open(out["path"]) as doc:
+        assert doc.page_count == 2
+        assert "Appendix." in doc[1].get_text()
+
+
+def test_no_text_is_lost_after_figures_at_a_page_foot(tmp_path):
+    """The engine shrinks a figure into a page foot, draws the next one
+    past the page's edge and drops the text after them: master lost the
+    captions and the section after. Every word now prints, and no picture
+    runs off a page."""
+    html = (f"<html><body><h1>Report</h1>{TEXT * 4}"
+            f"<img src=\"data:image/png;base64,{_png(6.5, 8)}\" "
+            'style="width:100%"><p>Figure 1: Wall section</p>'
+            f"<img src=\"data:image/png;base64,{_png(6.5, 3.2)}\" "
+            'style="width:100%"><p>Figure 2: Base pressure</p>'
+            "<h2>Conclusions</h2><p>The wall is adequate.</p>"
+            "</body></html>")
+    master = latex_renderer._story_bytes(
+        html, fitz.paper_rect("letter"),
+        fitz.paper_rect("letter") + (54, 54, -54, -54))
+    with fitz.open("pdf", master) as doc:
+        assert "Conclusions" not in " ".join(p.get_text() for p in doc)
+    out = render_html_pdf_story(html, str(tmp_path / "lost.pdf"))
+    text = _words(out["path"])
+    for words in ("Figure 1: Wall section", "Figure 2: Base pressure",
+                  "Conclusions", "The wall is adequate."):
+        assert words in text
+    for _page, _w, height, top in _images(out["path"]):
+        assert top + height <= 11 - 0.75 + 0.02
+    assert all(f["width_in"] > 6.0 for f in out["figures"])
+
+
+def test_a_caption_under_a_figure_stays_with_it():
+    """Captions under their figures (render_figures says "use the caption
+    text under it"): the next figure's break goes before that figure, not
+    before the caption of the one above it."""
+    html = ("<html><body><h1>R</h1><p>Text.</p>"
+            f"<img {A_PNG}><p>Figure 1: Wall</p>"
+            f"<img {B_PNG}><p>Figure 2: Pressure</p></body></html>")
+    marks = latex_renderer._figure_marks(html)
+    assert html[marks["breaks"][1]:].startswith(f"<img {B_PNG}")
+    assert marks["titled"] == [False, False]
+
+
+def test_a_title_above_its_figure_still_goes_with_it():
+    html = ("<html><body><h1>R</h1><p>Text.</p>"
+            f"<p>Figure 1: Wall</p><img {A_PNG}>"
+            f"<p>Figure 2: Pressure</p><img {B_PNG}></body></html>")
+    marks = latex_renderer._figure_marks(html)
+    assert html[marks["breaks"][1]:].startswith("<p>Figure 2")
+    assert marks["titled"] == [True, True]
+
+
+def test_a_heading_left_at_the_foot_of_the_page_before_follows(tmp_path):
+    """A figure the engine starts on a new page left its section heading
+    alone at the foot of the page before (the bearing package's
+    "8. Figures"): the heading now starts the page with it."""
+    filler = "<p>Line of text in the report body.</p>" * 22
+    block = (f'<div style="page-break-inside:avoid"><img src="data:image/'
+             f'png;base64,{_png(6.5, 4.5)}" style="width:100%">'
+             "<div>Figure 1: Section</div></div>")
+    html = (f"<html><body><h1>Report</h1>{filler}<h2>8. Figures</h2>"
+            f"{block}</body></html>")
+    master = latex_renderer._story_bytes(
+        html, fitz.paper_rect("letter"),
+        fitz.paper_rect("letter") + (54, 54, -54, -54))
+    with fitz.open("pdf", master) as doc:
+        assert doc.page_count == 2
+        assert "8. Figures" in doc[0].get_text()       # the orphan
+    out = render_html_pdf_story(html, str(tmp_path / "orphan.pdf"))
+    with fitz.open(out["path"]) as doc:
+        assert "8. Figures" not in doc[0].get_text()
+        assert "8. Figures" in doc[1].get_text()
+    assert out["figures"][0]["pdf_page"] == 2
+
+
+def test_a_commented_out_picture_does_not_shift_the_lettering(tmp_path):
+    """The lettering is read off the same tags the pictures drawn are
+    matched to: an image in an HTML comment is neither."""
+    big, small = _png(6.5, 3, fontsize=12), _png(10, 4, fontsize=7)
+    html = (f'<html><body><p>Start.</p><!-- <img src="data:image/png;'
+            f'base64,{small}"> --><img src="data:image/png;base64,{big}" '
+            'style="width:100%"></body></html>')
+    out = render_html_pdf_story(html, str(tmp_path / "comment.pdf"))
+    fig, = out["figures"]
+    assert fig["lettering_pt"] > 10

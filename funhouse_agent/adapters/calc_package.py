@@ -1900,19 +1900,22 @@ def _unembeddable_error(findings: list) -> str:
 
 
 def _figure_warnings(figures) -> list:
-    """What a reader of the PDF cannot read, per figure (GM-168): lettering
-    that prints under the lettering check's 7 pt, a figure printed narrower
-    than the width that check measured it at (6.5 in when it never ran and
-    its lettering is not known), or a figure taller than a page scaled far
-    down. The numbers are the plotting box's own."""
+    """What a reader of the PDF cannot read, per figure (GM-168): for a
+    figure the plotting box drew (its PNG says the width its lettering
+    check measured it at, so the caller has its code), lettering that
+    prints under that check's 7 pt or a figure printed narrower than that
+    width; for any figure, one taller than a page scaled far down. The
+    numbers are the plotting box's own. A module's or a tool's own figure
+    (its lettering recorded, never checked) is reported in page_contents
+    and not warned: the caller cannot redraw it, and the canned figures
+    all print under 7 pt today (BACKLOG GM-186). A picture with no record
+    (a photo, a drawing, a logo) is not judged by its width."""
     from calc_package.latex_renderer import MIN_FIGURE_SCALE
-    from funhouse_agent.plot_box.child import (DEFAULT_PRINT_WIDTH_IN,
-                                               MIN_PRINT_PT)
+    from funhouse_agent.plot_box.child import MIN_PRINT_PT
     out = []
     for k, f in enumerate(figures or [], start=1):
-        lettering = f.get("lettering_pt")
-        checked = f.get("checked_width_in") or (
-            None if lettering is not None else DEFAULT_PRINT_WIDTH_IN)
+        checked = f.get("checked_width_in")
+        lettering = f.get("lettering_pt") if checked else None
         why = []
         if lettering is not None and lettering < MIN_PRINT_PT - 0.05:
             why.append(f"its smallest lettering prints {lettering:g} pt, "
@@ -2360,9 +2363,11 @@ METHOD_INFO = {
                              "size that reads, from this, without opening "
                              "the PDF.",
             "figure_warnings": "Present when a figure prints too small to "
-                               "read: lettering under 7 pt, narrower than the "
-                               "width its lettering was checked at, or taller "
-                               "than a page and scaled down. Fix those "
+                               "read: one the plotting box drew whose "
+                               "lettering prints under 7 pt or that prints "
+                               "narrower than the width its lettering was "
+                               "checked at, or any figure taller than a page "
+                               "and scaled below half its width. Fix those "
                                "figures before handing the PDF over.",
             "unembeddable": "On error (or with allow_unembeddable=true): each figure "
                             "reference that cannot be embedded, and why.",
