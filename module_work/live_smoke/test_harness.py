@@ -1488,6 +1488,28 @@ def test_answer_numbers_spare_the_user_ids_and_arithmetic():
                     "more.", tool) == ["22"]
 
 
+def test_answer_numbers_spare_arithmetic_read_off_a_table():
+    """EV-30 review (w12 F66, F61j): a difference read off the answer's own
+    table is spared; a rounded value a table matches only by chance is not
+    (within 1 %), and neither is a number no table holds."""
+    tool = json.dumps({"lengths": [21.1, 23.7], "fos": [0.937, 0.938],
+                       "grid": [15, 20]})
+    lengths = ("| Option | Length needed |\n|---|---|\n| Pipe | 21.1 m |\n"
+               "| H-pile | 23.7 m |\n\n")
+    assert _numbers(lengths + "- The H-pile is about 2.6 m longer.",
+                    tool) == []
+    fos = ("| Search | FOS |\n|---|---|\n| Spencer | 0.937 |\n"
+           "| Bishop | 0.938 |\n\n")
+    assert _numbers(fos + "The two agree to within 0.001.", tool) == []
+    # 20/15 = 1.33 is a rounded 1.3, but 2.6 % off: chance, not arithmetic
+    grids = ("| Grid | FOS |\n|---|---|\n| 15 by 15 | 0.937 |\n"
+             "| 20 by 20 | 0.938 |\n\n")
+    assert _numbers(grids + "A required FOS of 1.3 would call for a fix.",
+                    tool) == ["1.3"]
+    assert _numbers(lengths + "The lengths spread about ±15%.",
+                    json.dumps({"lengths": [21.1, 23.7]})) == ["15"]
+
+
 def test_answer_numbers_detector_reads_tools_and_earlier_turns(tmp_path):
     """The detector holds the turn's tool results and arguments, every
     prompt, and what earlier turns' tools and answers said; not the tools'

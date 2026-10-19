@@ -1608,13 +1608,30 @@ def _held(value: float, tol: float, pool: List[float],
     return False
 
 
-def _derived_in_paragraph(tok: dict, para: List[dict]) -> bool:
+#: A row of a Markdown table in the answer.
+_TABLE_ROW = re.compile(r"^[ \t]*\|.*\|[ \t]*$", re.MULTILINE)
+
+
+def _derived_nearby(tok: dict, para: List[dict],
+                    table: List[dict] = ()) -> bool:
     """``tok`` is a sum, difference, product, ratio, percentage or percent
-    difference of two other numbers in its own paragraph of the answer."""
-    v, tol = tok["value"], _tolerance(tok)
-    nums = [p["value"] for p in para if p is not tok and p["value"]]
-    for i, a in enumerate(nums):
-        for b in nums[i + 1:]:
+    difference of two other numbers: both in its own paragraph of the
+    answer, to the precision printed; or one or both in a table of the
+    answer, to within 1 % as well (EV-30 review: w12's "2.6 m longer" and
+    "agree to within 0.001" were read off the answer's own table; a table
+    holds many numbers, so a match as loose as a rounded "1.3" is mostly
+    chance)."""
+    v = tok["value"]
+    near = _tolerance(tok)
+    far = min(near, 0.01 * abs(v) + 1e-9)
+    mine = {id(p) for p in para}
+    nums = [(p["value"], False) for p in para
+            if p is not tok and p["value"]]
+    nums += [(p["value"], True) for p in table
+             if p is not tok and p["value"] and id(p) not in mine]
+    for i, (a, fa) in enumerate(nums):
+        for b, fb in nums[i + 1:]:
+            tol = far if fa or fb else near
             for r in (a + b, abs(a - b), a * b, a / b, b / a,
                       100 * a / b, 100 * b / a, abs(100 * (a / b - 1)),
                       abs(100 * (b / a - 1))):
@@ -1626,7 +1643,8 @@ def _derived_in_paragraph(tok: dict, para: List[dict]) -> bool:
 def unsourced_numbers(answer: str, held_texts: Iterable[str]) -> List[dict]:
     """The quantities in ``answer`` that no text of ``held_texts`` holds
     (to the precision the answer printed, or in another common unit), and
-    that are no simple arithmetic of two numbers in their own paragraph."""
+    that are no simple arithmetic of two numbers in their own paragraph or
+    in the answer's tables (:func:`_derived_nearby`)."""
     pool = _pool_values(held_texts)
     toks = _number_tokens(answer)
     paras: List[List[dict]] = []
@@ -1636,13 +1654,15 @@ def unsourced_numbers(answer: str, held_texts: Iterable[str]) -> List[dict]:
         while len(paras) <= k:
             paras.append([])
         paras[k].append(t)
+    rows = [m.span() for m in _TABLE_ROW.finditer(answer)]
+    table = [t for t in toks if any(s <= t["start"] < e for s, e in rows)]
     out = []
     for k, para in enumerate(paras):
         for t in para:
             if not t["quantity"] or _held(t["value"], _tolerance(t), pool,
                                           t["factors"]):
                 continue
-            if _derived_in_paragraph(t, para):
+            if _derived_nearby(t, para, table):
                 continue
             out.append(t)
     return out
@@ -1656,7 +1676,8 @@ def detect_answer_numbers(ctx) -> List[dict]:
     work a number out in its head. Not counted: section, equation, table,
     figure and page numbers, years, list markers, names and files, counts
     of ten or less, numbers in another common unit, and a sum, difference,
-    product, ratio or percentage of two numbers in the same paragraph."""
+    product, ratio or percentage of two numbers in the same paragraph or
+    read off a table in the answer (within 1 %)."""
     D = "m_answer_numbers"
     rec = ctx["rec"]
     answer = rec.get("final") or ""

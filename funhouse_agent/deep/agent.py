@@ -134,16 +134,18 @@ HELPER_PARTIAL_RULE = (
 #: GM-187): a line per call, and the two lookups that find a section, so its
 #: tighter budget goes on lookups. In live waves w13b and w14 each such
 #: consult spent one to three of its calls listing the library's modules and
-#: methods before the first search.
+#: methods before the first search. A search per call: ``reference_search``
+#: matches every plain word of its query, so one search over several calls
+#: finds little.
 _REFERENCES_JUDGMENT_CALLS = (
     "\n\nAsked about a list of judgment calls, answer each in one line: the "
     "reference and the section, table, figure or page your lookups returned "
     "that supports the choice or its alternative, or \"no reference "
     "found\". Look up with `call_agent` on `reference_db`: "
-    "`reference_search` (`query`, optional `reference`, `chapter`, `limit`) "
-    "for several calls at once, then `reference_get` (`reference`, "
-    "`section_id`) for a section you cite; there is no need to list the "
-    "modules or methods first."
+    "`reference_search` (`query`, optional `reference`, `chapter`, `limit`), "
+    "one per judgment call, several at once, then `reference_get` "
+    "(`reference`, `section_id`) for a section you cite; there is no need "
+    "to list the modules or methods first."
 )
 
 #: The consult's model-call budget, stated to it (live smoke wave 1, G5).
