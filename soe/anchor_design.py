@@ -85,7 +85,11 @@ _STRAND_DATA = {
     },
 }
 
-# Prestressing bar properties (ASTM A722, Grade 150)
+# Prestressing bar properties (ASTM A722, Grade 150): GEC-4 Table 9 (p. 77),
+# its metric rows as printed. The 15 mm strand is GEC-4 Table 10 (p. 78);
+# the 13 mm strand is not in GEC-4 (ASTM A416). Until the GM-182/185 review
+# the 32 mm bar carried 819 mm2 / 848 kN and the 1-3/4 in bar 1548 mm2 /
+# 1601 kN, neither traced; Table 9 prints 806 / 835 and 1716 / 1779.
 _BAR_DATA = {
     "bar_26mm": {
         "diameter_mm": 26,
@@ -95,21 +99,22 @@ _BAR_DATA = {
     },
     "bar_32mm": {
         "diameter_mm": 32,
-        "area_mm2": 819,
-        "ultimate_kN": 848,
+        "area_mm2": 806,
+        "ultimate_kN": 835,
         "description": "1.25 in (32 mm) Grade 150 bar",
     },
     "bar_36mm": {
         "diameter_mm": 36,
         "area_mm2": 1019,
-        "ultimate_kN": 1054,
+        "ultimate_kN": 1055,
         "description": "1.375 in (36 mm) Grade 150 bar",
     },
     "bar_44mm": {
         "diameter_mm": 44,
-        "area_mm2": 1548,
-        "ultimate_kN": 1601,
-        "description": "1.75 in (44 mm) Grade 150 bar",
+        "area_mm2": 1716,
+        "ultimate_kN": 1779,
+        "description": "1.75 in (44 mm; GEC-4 Table 9 prints 45 mm) "
+                       "Grade 150 bar",
     },
 }
 
@@ -257,11 +262,18 @@ _TEST_LOAD_LIMIT = 0.80
 #: test load may vary from 120 to 150 percent of the design load with 133
 #: percent being commonly used for permanent applications and 120 percent
 #: being commonly used for temporary applications. A test load of 150
-#: percent may be used for anchors in potentially creeping soils" (Sec.
-#: 7.4.2.2, p. 143); the proof test goes to 1.33 DL, "1.20 DL" for a
-#: temporary support of excavation (Table 22, p. 147); permanent anchors
-#: "are typically loaded to 133 percent" (p. 76). Until GM-185 the tendon
-#: was sized for a 1.50 DL performance test, fixed.
+#: percent may be used for anchors in potentially creeping soils or when an
+#: independent reference cannot be established for the dial gauge" (Sec.
+#: 7.4.2.2, p. 143); the performance and proof test schedules both end at
+#: 1.33 DL (Tables 21 and 22, pp. 144, 147), and "the test load for an
+#: anchor for a temporary support of excavation application may be set at
+#: 1.20 DL" (Table 22); permanent anchors "are typically loaded to 133
+#: percent" (p. 76). The default is 1.33, the schedules' test load, though
+#: this module mostly serves temporary support of excavation: 1.20 is
+#: GEC-4's permission, not its procedure, and the higher test load is the
+#: stricter check. At max_load_pct 0.60 the two size the same tendon (the
+#: design-load limit governs at both). Until GM-185 the tendon was sized
+#: for a 1.50 DL performance test, fixed.
 TEST_LOAD_FACTOR = 1.33
 
 
@@ -296,8 +308,9 @@ def select_tendon(
         (``lock_off_kN``); it does not size the tendon.
     max_load_pct : float
         Design-load limit as a fraction of SMTS. Default 0.60 (GEC-4
-        p. 77). It governs the tendon only when it is below 0.53, the
-        design load the 80 % test-load limit allows.
+        p. 77). It governs the tendon when it is below
+        0.80 / test_load_factor, the design load the 80 % test-load limit
+        allows (0.6015 at 1.33, so the default governs; 0.53 at 1.50).
     tendon_type : str
         "strand_13mm", "strand_15mm", or a bar type from _BAR_DATA.
         Default "strand_15mm" (0.6 in Grade 270).
@@ -557,9 +570,12 @@ def design_ground_anchor(
 
 #: The test loads GEC-4 names (Sec. 7.4.2.2, p. 143; Table 22, p. 147).
 _TEST_LOADS = (
-    (1.20, "1.20 DL, temporary applications (test_load_factor 1.2)"),
-    (1.33, "1.33 DL, permanent applications (test_load_factor 1.33)"),
-    (1.50, "1.50 DL, potentially creeping soils (test_load_factor 1.5)"),
+    (1.20, "1.20 DL, temporary applications; Table 22 permits it for a "
+           "temporary support of excavation (test_load_factor 1.2)"),
+    (1.33, "1.33 DL, permanent applications; the test load of Tables 21 "
+           "and 22 (test_load_factor 1.33)"),
+    (1.50, "1.50 DL, potentially creeping soils, or no independent "
+           "reference for the dial gauge (test_load_factor 1.5)"),
 )
 
 
@@ -586,10 +602,13 @@ def anchor_choices(soil_type: str, bond_stress_kPa: Optional[float],
                "GEC-4 Sec. 7.4.2.2 (p. 143): 120 to 150 percent of the "
                "design load, 133 percent commonly used for permanent and "
                "120 percent for temporary applications, 150 percent for "
-               "potentially creeping soils; Table 22 (p. 147): proof test "
-               "to 1.33 DL, 1.20 DL for a temporary support of excavation. "
-               "The tendon carries it at no more than 0.80 SMTS (Sec. "
-               "5.3.8, p. 77)",
+               "potentially creeping soils; Table 21 (p. 144) and Table "
+               "22 (p. 147): the performance and proof tests to 1.33 DL, "
+               "which may be set at 1.20 DL for a temporary support of "
+               "excavation. The default is 1.33, the tables' test load and "
+               "the stricter check; at max_load_pct 0.60, 1.20 sizes the "
+               "same tendon. The tendon carries the test load at no more "
+               "than 0.80 SMTS (Sec. 5.3.8, p. 77)",
                [text for f, text in _TEST_LOADS
                 if abs(f - test_load_factor) > 1e-9]),
         choice("design load limit (fraction of SMTS)", max_load_pct,

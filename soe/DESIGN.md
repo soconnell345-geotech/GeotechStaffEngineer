@@ -275,7 +275,12 @@ in kN/m (p. 71), used as a stress in kPa over the hole's perimeter, and
 GEC-4 Table 7 (p. 73) prints the measured bond stresses. The result's
 `choices` say so and point at Table 7 and `bond_stress_kPa`;
 tendon strand/bar data follow **PTI DC35.1** and **ASTM A722** (bar) / **A416**
-(strand). **RED FLAG — UNBENCHMARKED:** the anchor-design tables have **no
+(strand); the bars and the 15 mm strand are now GEC-4 Table 9 (p. 77) and
+Table 10 (p. 78) as printed, pinned by `test_tendon_limits.py` (GM-182/185
+review, 2026-10-19: the 32 mm bar had 819 mm2 / 848 kN against Table 9's
+806 / 835, and the 1-3/4 in bar 1548 / 1601 against 1716 / 1779; a 32 mm
+bar now holds a design load of 501 kN at 0.60 SMTS, was 509).
+**RED FLAG — UNBENCHMARKED:** the anchor-design tables have **no
 worked-example numeric validation** (no `validation_examples` anchor), so they
 rest on the transcribed nominal values alone. Wiki-wishlist: GEC-4 Table 4,
 PTI DC35.1 strand/bar tables, ASTM A722/A416.
@@ -288,11 +293,17 @@ held to the design-load limit only until then.
 Test load (GM-185, 2026-10-19): `test_load_factor` x DL, the maximum load
 of the proof and the performance test, default 1.33. GEC-4: 120 to 150
 percent, 133 commonly used for permanent and 120 for temporary
-applications, 150 for potentially creeping soils (Sec. 7.4.2.2, p. 143);
-the proof test to 1.33 DL, 1.20 DL for a temporary support of excavation
-(Table 22, p. 147); permanent anchors "typically loaded to 133 percent"
-(p. 76). At 1.33 the 0.80 test-load limit allows 0.60 SMTS, the design-load
-limit (GEC-4's own example, p. 77); at 1.50 it allows 0.53 and governs.
+applications, 150 for potentially creeping soils or with no independent
+reference for the dial gauge (Sec. 7.4.2.2, p. 143); the performance and
+proof test schedules both end at 1.33 DL (Tables 21 and 22, pp. 144, 147),
+and Table 22 adds that the test load for a temporary support of excavation
+"may be set at 1.20 DL"; permanent anchors "typically loaded to 133
+percent" (p. 76). The default is 1.33 although this module mostly serves
+temporary excavation support: 1.33 is the schedules' test load and 1.20 a
+permission, and the higher test load is the stricter check. At
+`max_load_pct` 0.60 the two size the same tendon. At 1.33 the 0.80
+test-load limit allows 0.60 SMTS, the design-load limit (GEC-4's own
+example, p. 77); at 1.50 it allows 0.53 and governs.
 Until GM-185 the 1.50 DL performance test was fixed and sized every tendon
 (and `performance_test_kN` was 1.50 DL beside a 1.33 DL proof test): DL 300
 kN on 15 mm strand was 3 strands, now 2; a 32 mm bar at DL 500 kN, which

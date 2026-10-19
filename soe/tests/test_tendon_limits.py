@@ -9,9 +9,9 @@ from soe.anchor_design import TEST_LOAD_FACTOR, select_tendon
 
 
 def test_a_bar_is_held_to_the_test_load_limit():
-    # DL 500 kN at a 1.50 DL test load: a 32 mm bar (848 kN) meets 0.60
-    # SMTS (509 kN) but the 750 kN test load would be 88 % SMTS; the 36 mm
-    # bar (1054 kN) is not
+    # DL 500 kN at a 1.50 DL test load: a 32 mm bar (835 kN) meets 0.60
+    # SMTS (501 kN) but the 750 kN test load would be 90 % SMTS; the 36 mm
+    # bar (1055 kN) is not
     t = select_tendon(500, tendon_type="bar_32mm", test_load_factor=1.5)
     assert t["tendon_type"] == "bar_36mm"
     assert t["max_test_load_pct_GUTS"] <= 80.0
@@ -54,3 +54,29 @@ def test_the_test_load_sizes_the_tendon():
 def test_a_test_load_below_the_design_load_is_refused():
     with pytest.raises(ValueError, match="test_load_factor"):
         select_tendon(300, test_load_factor=0.9)
+
+
+def test_the_tendon_tables_are_gec4s():
+    # GEC-4 Table 9 (p. 77), Grade 150 bars, metric rows: area (mm2) and
+    # ultimate strength fpu Aps (kN); Table 10 (p. 78), one 15 mm strand
+    from soe.anchor_design import _BAR_DATA, _STRAND_DATA
+    printed = {"bar_26mm": (548, 568), "bar_32mm": (806, 835),
+               "bar_36mm": (1019, 1055), "bar_44mm": (1716, 1779)}
+    for name, (area, ultimate) in printed.items():
+        assert (_BAR_DATA[name]["area_mm2"],
+                _BAR_DATA[name]["ultimate_kN"]) == (area, ultimate), name
+    strand = _STRAND_DATA["strand_15mm"]
+    assert (strand["area_mm2"], strand["ultimate_kN"]) == (140.0, 260.7)
+
+
+def test_the_hand_checks():
+    # DL 500 kN bar at 1.33: SMTS needed max(665/0.80, 500/0.60) = 833.3
+    # kN, the 32 mm bar's 835 kN (GEC-4 Table 9's 0.6 fpu Aps column
+    # prints 501 kN); at 1.50, 750/0.80 = 937.5 kN, the 36 mm bar
+    assert select_tendon(500, tendon_type="bar_32mm")["tendon_type"] == \
+        "bar_32mm"
+    assert select_tendon(500, tendon_type="bar_32mm",
+                         test_load_factor=1.5)["tendon_type"] == "bar_36mm"
+    # the largest bar now holds 0.60 x 1779 = 1067 kN
+    assert select_tendon(1060, tendon_type="bar_44mm")["tendon_type"] == \
+        "bar_44mm"
