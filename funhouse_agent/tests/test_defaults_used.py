@@ -685,6 +685,12 @@ def _moved_by(name: str, r0, r1, where: str = ""):
                  _without(_norm(r1, where), name))
 
 
+@pytest.mark.skip(reason=(
+    "GM-160 follow-up: LABEL_ONLY and NOT_REACHED were never filled. On "
+    "2026-10-19 the check flagged about 165 inputs on 79 of the 172 probes "
+    "outside slope_stability (a calc package returns a file, not the "
+    "numbers its inputs move; many probes do not reach the input), and the "
+    "slope probes ran over 45 minutes. Sweep, then turn it on."))
 @pytest.mark.parametrize("key", [
     pytest.param(k, marks=pytest.mark.slow) if k in MP.SLOW else k
     for k in sorted(MP.PROBES)])

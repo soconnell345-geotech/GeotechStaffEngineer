@@ -337,6 +337,9 @@ the eyes). What changed on master after 5.33.0, in short:
   where the result does not move past the input's own echo and the
   `choices`; a label-only input is in `method_probes.LABEL_ONLY` and one
   whose effect the probe does not reach in `NOT_REACHED`, each with why.
+  That check is written but skipped until those two lists are swept: on
+  2026-10-19 it flagged about 165 inputs on 79 probes, and the slope
+  probes ran over 45 minutes.
   The file readers are probed on `eval_samples/` (`"<eval_samples>/..."`;
   a probe needing an optional backend names it under `"needs"`).
 - **Vision** (VIS-01, VIS-04, VIS-05): an optional `turn` (0/90/180/270) on
