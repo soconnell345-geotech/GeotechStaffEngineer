@@ -119,7 +119,7 @@ def _build():
         section_id : str
             Section id as it appears in the source, at any level.
             Examples: UFC hyphen-then-dot ``"4-2.1"``, ``"5-5.4"``;
-            FHWA dot ``"5.7.2"``, ``"7.2.1.3.1"``; prologue ``"P-1"``.
+            FHWA dot ``"4.4"``, ``"7.2.1.3.1"``; prologue ``"P-1"``.
         include_subsections : bool, optional
             Inline the subsections' text as ``subsections`` when the
             whole fits in 12,000 characters; otherwise they stay listed
