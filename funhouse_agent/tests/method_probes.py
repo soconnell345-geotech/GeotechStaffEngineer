@@ -82,6 +82,20 @@ READ_BEFORE_THE_CHECK = {
 #: Probes that take several seconds a run even on a coarse grid.
 SLOW = frozenset({"slope_stability|search_rapid_drawdown"})
 
+#: Probes whose run takes several seconds, so giving each listed default
+#: other values takes a minute or more (GM-160's check only).
+SLOW_TO_VARY = frozenset({
+    "calc_package|downdrag_package", "calc_package|lateral_pile_package",
+    "calc_package|retaining_wall_package",
+    "calc_package|retaining_wall_package#surcharge",
+    "calc_package|sheet_pile_package", "calc_package|slope_report_package",
+    "calc_package|wave_equation_package", "fem2d|fem2d_excavation",
+    "fem2d|fem2d_footing_capacity", "fem2d|fem2d_local_fos",
+    "fem2d|fem2d_slope_srm", "gstools|conditional_simulation",
+    "slope_stability|monte_carlo_fos",
+    "slope_stability|search_critical_surface",
+    "slope_stability|yield_acceleration"})
+
 #: Result keys that share a parameter's name but report something else,
 #: so ``defaults_used`` and the result may differ there: (probe key, name)
 #: -> what the result's value is.

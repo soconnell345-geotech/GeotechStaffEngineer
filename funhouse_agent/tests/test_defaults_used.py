@@ -641,27 +641,27 @@ def test_the_defaults_a_run_lists_are_the_values_it_used(key, tmp_path,
     assert moved is None, f"{key}: giving defaults_used back moved {moved}"
 
 
-def _other_value(spec: dict, value):
-    """A value other than ``value`` for an input declared by ``spec``: the
-    next of its allowed values, the other boolean, a number moved by half
-    (by 1 for an integer), or a string with a suffix; None where none can
-    be made (a list, a dict, None)."""
+def _other_values(spec: dict, value) -> list:
+    """Values other than ``value`` for an input declared by ``spec``: its
+    other allowed values (up to four), the other boolean, a number moved
+    up and down by half (by 1 for an integer), or a string with a suffix;
+    none for a list, a dict or None."""
     allowed = spec.get("allowed_values")
     if allowed:
         def same(a):
             return (a.strip().lower() == value.strip().lower()
                     if isinstance(a, str) and isinstance(value, str)
                     else a == value)
-        return next((a for a in allowed if not same(a)), None)
+        return [a for a in allowed if not same(a)][:4]
     if isinstance(value, bool):
-        return not value
+        return [not value]
     if isinstance(value, int):
-        return value + 1
+        return [value + 1] + ([value - 1] if value > 1 else [])
     if isinstance(value, float):
-        return value * 1.5 if value else 0.5
+        return [value * 1.5, value * 0.5] if value else [0.5]
     if isinstance(value, str):
-        return value + "_other"
-    return None
+        return [value + "_other"]
+    return []
 
 
 def _without(x, name: str):
@@ -685,14 +685,16 @@ def _moved_by(name: str, r0, r1, where: str = ""):
 
 
 @pytest.mark.parametrize("key", [
-    pytest.param(k, marks=pytest.mark.slow) if k in MP.SLOW else k
+    pytest.param(k, marks=pytest.mark.slow)
+    if k in MP.SLOW or k in MP.SLOW_TO_VARY else k
     for k in sorted(MP.PROBES)])
 def test_every_default_a_run_lists_changes_its_result(key, tmp_path,
                                                       monkeypatch):
     """GM-160: an input that changes nothing is not advertised. Each
     default a probe's run lists (``defaults_used``: the declared inputs
     that apply to the run) is given another value; the result must move,
-    past the input's own echo and the ``choices``. Inputs that are a label
+    past the input's own echo and the ``choices``; it fails only where no
+    other value moves it (a limit may act one way only). Inputs that are a label
     only are in ``MP.LABEL_ONLY``; inputs whose effect this probe does not
     reach are in ``MP.NOT_REACHED``, each with why."""
     monkeypatch.chdir(tmp_path)
@@ -717,12 +719,11 @@ def test_every_default_a_run_lists_changes_its_result(key, tmp_path,
                 or (key, name) in MP.NOT_REACHED \
                 or (base, name) in MP.KNOWN:
             continue
-        other = _other_value(info.get(name) or {}, value)
-        if other is None:
-            continue
-        if _moved_by(name, r0, run({**probe["params"], name: other}),
-                     where) is None:
-            still.append(f"{name}: {value!r} -> {other!r}")
+        others = _other_values(info.get(name) or {}, value)
+        if others and all(
+                _moved_by(name, r0, run({**probe["params"], name: other}),
+                          where) is None for other in others):
+            still.append(f"{name}: {value!r} -> {others!r}")
     assert still == [], (
         f"{key}: these inputs changed nothing in the result; use them as "
         f"described, or say what they do and stop advertising them: {still}")
