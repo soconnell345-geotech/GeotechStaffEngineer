@@ -317,7 +317,6 @@ Parked at 5.25.0; every number since is GPT-5.4 on Foundry. Code items were conf
 
 ### Downdrag
 - **GM-02** [Next] **Endo ratios unverified.** CGPR #56 IS on disk in a downdrag field session's gitignored `raw/` (2026-09-04): verify locally, commit nothing (not public domain). *was:* H E2
-- **GM-03** [Next] **Post-liquefaction drag (GEC-10 §10.7)** not implemented; pair with a liquefaction worked-example anchor (NCHRP downdrag Appendix G CPT example). *was:* H E2
 - **GM-04** [Later] **Downdrag limits**: Poulos / PILENEG outside the comparison; single pile, ultimate consolidation only; β shaft far below Nordlund in dense gravel (V-004); β = 0.3 default uncited. *Src:* `downdrag/DESIGN.md:61-64, 317-325`
 
 ### fem2d
@@ -371,6 +370,7 @@ Parked at 5.25.0; every number since is GPT-5.4 on Foundry. Code items were conf
 - **GM-198** [Next] **`pile_group_package` with loads drops its figures section**: with loads given, the PDF has no "8. Figures", no plan view and no caption (`figures=None`, so no warning either); on master before GM-186 too. *Src:* GM-186 review 2026-10-19
 - **GM-199** [Later] **Ground anchors, two follow-ups from GM-191**: a rock `bond_stress_kPa` given with the default `soil_type` gets the soil FS 2.0 and soil minimums (stated in `choices`, but the call says rock): take the ground from the bond input or ask; worked example WE-SOE-2 (GEC-4 Example 1) could add the anchor call and check its printed 8.9 m bond and 5.7/3.9 m unbonded lengths. *Src:* GM-191 review 2026-10-19
 - **GM-200** [Next] **Three calc-package figures against the owner's figure conventions**: the M-O figure's x axis reads "Pressure (normalized)", not kPa; the cantilever wall section draws a ground line at H on the toe side (check against the wall's actual toe-side ground); downdrag's profiles plot against depth, not elevation (the owner's default is elevation). *Src:* GM-194 build 2026-10-19
+- **GM-201** [Later] **Liquefaction to downdrag, the gaps**: the `liquefaction` tool's CPT route returns no per-depth profile (depth, FS, volumetric strain), so a CPT cannot feed `post_liquefaction_downdrag` except as `liquefied_layers` or a liquepy result object; the SPT routes compute no post-liquefaction volumetric strain (it must be given; a cited method, e.g. Ishihara and Yoshimine 1992 as the references print it, could supply it as a stated choice); the downdrag brief (`funhouse_agent/adapters/__init__.py`) and the liquefaction tool's description do not mention the new method. *Src:* GM-03 build and review 2026-10-19
 
 ### SOE and sheet pile
 - **GM-65** [Later] **SOE free earth support searches only to 6H**: a balance deeper than that is reported as "none within 6H" (the result says so); no option to search deeper.
@@ -523,6 +523,7 @@ Long items kept in their own sections: DR-08–DR-13, GM-39, VIS-11, VIS-20, TA-
 
 Older docs still list these as open. Delete this section at the next sweep.
 
+- **GM-03** (post-liquefaction drag, GEC-10 §10.7, not implemented): 2026-10-19 `downdrag.post_liquefaction_downdrag` (`downdrag/liquefaction.py`): every neutral-plane method before the earthquake and after the liquefied layers reconsolidate, with the cited side-resistance options in the liquefied layer side by side (50 % of the pre-earthquake beta resistance, GEC-10 p. 10-52 citing Rollins et al. 2018, the default; zero; su,r by GEC-10 Eq 9-13; a given ratio), checked at structural strength and service as GEC-10 says; layers given or taken from the `liquefaction` tool (SPT routes; strain must be given); warnings say why force equilibrium and the settlement-following methods differ (it counts friction in soil that does not settle) and quote GEC-12 §7.4.2.2. No printed worked example exists; pinned to hand check HC-1 (DESIGN.md, labelled as such). No existing number moved. Follow-up GM-201. Commit `beb1fdc` (1bbfa26, review 6b0f2df).
 - **DOC-18** 2026-10-19 the Harness Map gained the figure-helper variant and fresh summaries for the references helper, the review page and the figure helper (dev/harness_viz, outside the repos); the other 21 stale summaries -> DOC-20; the Foundry part stays with INF-06. Commit `1f278d4`.
 - **DOC-15** 2026-10-19 the stale statements made true or marked HISTORICAL, each checked against the code and git log (the stale-docs sweep). Commit `1f278d4` (539d623, 667879b).
 - **DOC-08** 2026-10-19 the stale statements made true or marked HISTORICAL, each checked against the code and git log (the stale-docs sweep). Commit `1f278d4` (539d623, 667879b).
