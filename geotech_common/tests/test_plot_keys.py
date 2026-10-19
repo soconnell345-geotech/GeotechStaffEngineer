@@ -79,6 +79,20 @@ def test_a_key_under_the_axes_leaves_the_curves_clear_of_it():
     plt.close(fig)
 
 
+def test_the_figure_grows_by_the_key_so_the_axes_keep_their_room():
+    """A four-line key under the axes took a third of a chart's height
+    when the figure kept its size (the pavement design chart)."""
+    fig, ax = plt.subplots(figsize=(5.7, 3.6))
+    for i in range(4):
+        ax.plot([0, 1], [i, i + 1], label=f"over layer {i}: SN required {i}")
+    fig.tight_layout()
+    before = _box(ax, fig).height
+    key_under_axes(fig, ax, ncol=1)
+    assert fig.get_size_inches()[1] > 3.6 + 0.5
+    assert _box(ax, fig).height >= 0.95 * before
+    plt.close(fig)
+
+
 def test_halo_rings_the_lettering():
     from matplotlib import patheffects
     fig, ax = plt.subplots()

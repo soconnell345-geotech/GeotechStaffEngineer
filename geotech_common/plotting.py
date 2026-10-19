@@ -66,8 +66,10 @@ def key_under_axes(fig, axes, *, handles=None, labels=None, note=None,
     Inside the axes a key or a note's box covers the drawing, or the
     drawing runs through it, once the figure is drawn for the width it
     prints at (5 in, lettering 7 pt or more: BACKLOG GM-186, GM-194);
-    under the axes it covers nothing. Call it when the figure is drawn,
-    in place of ``tight_layout``.
+    under the axes it covers nothing. The figure grows by the key's
+    height, so the drawing keeps the room it had (a four-line key took a
+    third of a chart's height). Call it when the figure is drawn, in
+    place of ``tight_layout``.
 
     ``handles`` and ``labels`` default to the axes' labelled artists, one
     entry per label. Returns the key, or None when it has nothing to say.
@@ -92,6 +94,13 @@ def key_under_axes(fig, axes, *, handles=None, labels=None, note=None,
                          fontsize=fontsize, frameon=False,
                          ncol=max(1, min(ncol, len(handles))),
                          title=note, title_fontsize=fontsize)
+        try:
+            tall = (key.get_window_extent(fig.canvas.get_renderer()).height
+                    / fig.dpi)
+        except Exception:                                  # noqa: BLE001
+            tall = 0.0
+        w, h = fig.get_size_inches()
+        fig.set_size_inches(w, h + tall)
     _lay_out(fig)
     return key
 

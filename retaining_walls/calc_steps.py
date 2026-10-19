@@ -1687,12 +1687,17 @@ def _plot_mse_section(result, analysis):
     # Labels: the zone's name between the failure surface and the back of
     # the zone, between two reinforcement levels, and ringed so a level
     # stops short of it (centred in the zone the surface ran through it;
-    # GM-194)
+    # GM-194). Measured from the surface where it crosses the upper of the
+    # two levels: from the plane's top, it sat across the zone's back.
     from geotech_common.plotting import halo
     levels = sorted(H - z for z in geom.reinforcement_depths)
-    mids = [(a + b) / 2 for a, b in zip(levels, levels[1:])]
-    y_name = min(mids, key=lambda y: abs(y - H / 2)) if mids else H / 2
-    halo([ax.text((min(x_fail_top, L) + L) / 2, y_name,
+    bands = list(zip(levels, levels[1:])) or [(0.4 * H, 0.6 * H)]
+    lo, hi = min(bands, key=lambda b: abs((b[0] + b[1]) / 2 - H / 2))
+    if reinforcement is not None and reinforcement.is_metallic:
+        x_surface = x_fail_top * min(1.0, hi / (H / 2.0))
+    else:
+        x_surface = x_fail_top * hi / H
+    halo([ax.text((min(x_surface, L) + L) / 2, (lo + hi) / 2,
                   'Reinforced\nSoil Zone', ha='center', va='center',
                   fontsize=10, fontweight='bold', color='#6b6358')],
          colour='#f5e6c8')
@@ -1705,11 +1710,20 @@ def _plot_mse_section(result, analysis):
 
     # The factors of safety head the key, under the drawing: the box in
     # the axes covered the zone's top corner and the key covered L at the
-    # printed width (GM-194)
-    status = "OK" if result.passes_external and result.all_pass_internal else "CHECK"
-    status_color = '#16a34a' if status == "OK" else '#dc2626'
+    # printed width (GM-194). Red for a check that fails, green when every
+    # check passes, dark grey when one was not made (bearing with no
+    # allowable pressure): in red, "all pass" read as a failure.
+    verdicts = (result.passes_external, result.all_pass_internal)
+    if any(v is False for v in verdicts):
+        status_color = '#dc2626'
+    elif all(v is True for v in verdicts):
+        status_color = '#16a34a'
+    else:
+        status_color = '#333333'
+    fos_brg = getattr(result, 'FOS_bearing', None)
     fos_text = (
-        f"External: slide={result.FOS_sliding:.2f}, OT={result.FOS_overturning:.2f}; "
+        f"External: slide={result.FOS_sliding:.2f}, OT={result.FOS_overturning:.2f}, "
+        f"bearing={'not checked' if fos_brg is None else f'{fos_brg:.2f}'}; "
         f"Internal: {'all pass' if result.all_pass_internal else 'FAIL'}"
     )
 

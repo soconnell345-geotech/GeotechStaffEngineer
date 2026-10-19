@@ -1054,10 +1054,18 @@ def _plot_fos_profile(result):
     ax.axvline(x=1.0, color='#dc2626', linestyle='--', linewidth=2,
                label='FOS = 1.0')
 
-    # Value labels
+    # Value labels, set off from the bar by points and ringed, so the
+    # FOS = 1.0 and water-table lines stop short of a value that sits
+    # on them (set off by 0.05 in FOS, a value near 1.0 lay on its line;
+    # GM-194)
+    from geotech_common.plotting import halo
+    values = []
     for d, f, f_display in zip(depths, fos_vals, fos_display):
         label = f"{f:.2f}" if f <= 3.0 else f"{f:.1f}+"
-        ax.text(f_display + 0.05, d, label, va='center', fontsize=8)
+        values.append(ax.annotate(label, (f_display, d), xytext=(3, 0),
+                                  textcoords='offset points', va='center',
+                                  fontsize=8))
+    halo(values)
 
     # GWT line
     ax.axhline(y=result.gwt_depth, color='#2563eb', linestyle='--',
