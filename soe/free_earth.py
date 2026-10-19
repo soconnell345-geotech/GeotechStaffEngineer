@@ -246,6 +246,12 @@ def _shear_moment(q: Callable, top: float, bottom: float, breaks,
 _SEARCH_H = 6.0
 
 
+def _diagram(z, p, V, M) -> dict:
+    """A solution's diagram as plain lists (for a result and its tables)."""
+    return {"z": [float(v) for v in z], "p_net": [float(v) for v in p],
+            "V": [float(v) for v in V], "M": [float(v) for v in M]}
+
+
 def _no_balance_cantilever(H: float) -> str:
     return (f"No moment balance about the point of rotation O within "
             f"{_SEARCH_H:g}H = {_SEARCH_H * H:.1f} m of embedment: the wall "
@@ -292,6 +298,10 @@ class CantileverSolution:
     max_shear: Optional[float]
     converged: bool
     notes: List[str] = field(default_factory=list)
+    #: The net pressure, shear and moment the solution integrated, top of
+    #: the wall to O: {"z", "p_net", "V", "M"} (lists; m, kPa, kN/m,
+    #: kN-m/m). None without a moment balance.
+    diagram: Optional[dict] = None
 
 
 def solve_cantilever(profile: LayeredProfile, FS_passive: float = 1.5,
@@ -342,7 +352,8 @@ def solve_cantilever(profile: LayeredProfile, FS_passive: float = 1.5,
         D0=D0, D=D0 * embedment_increase, embedment_increase=embedment_increase,
         net_force_at_O=float(net_force), max_moment=float(abs(M[k])),
         max_moment_depth=float(z[k]), max_shear=float(np.max(np.abs(V))),
-        converged=True, notes=notes)
+        converged=True, notes=notes,
+        diagram=_diagram(z, drive(z) - resist(z), V, M))
 
 
 @dataclass
@@ -364,6 +375,10 @@ class SupportSolution:
     max_shear: Optional[float]
     converged: bool
     notes: List[str] = field(default_factory=list)
+    #: The FS = 1 body's net pressure, shear and moment, body_top to the
+    #: wall's tip: {"z", "p_net", "V", "M"}; the support load acts at the
+    #: pivot. None without an FS = 1 balance.
+    diagram: Optional[dict] = None
 
 
 def solve_about_support(profile: LayeredProfile, pivot: float,
@@ -447,7 +462,8 @@ def solve_about_support(profile: LayeredProfile, pivot: float,
         D=D, D_prime=Dp, support_load=float(T), max_moment=float(abs(M[k])),
         max_moment_depth=float(z[k]), zero_shear_depth=zs_depth,
         moment_at_zero_shear=zs_moment, max_shear=float(np.max(np.abs(V))),
-        converged=ok and ok_p, notes=notes)
+        converged=ok and ok_p, notes=notes,
+        diagram=_diagram(z, drive(z) - profile.passive(z), V, M))
 
 
 # ---------------------------------------------------------------------------
