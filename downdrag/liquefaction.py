@@ -438,7 +438,7 @@ def _strain_basis(result: Any) -> str:
     if (rows or (isinstance(result, (list, tuple)) and result
                  and isinstance(result[0], dict) and "top_m" in result[0])
             or hasattr(result, "q_c1n_cs")):
-        out = ("Zhang et al. (2002, Can. Geotech. J. 39, doi "
+        out = ("Zhang et al. (2002) (Can. Geotech. J. 39, doi "
                "10.1139/t02-047) from FS_liq and qc1Ncs, as the "
                "liquefaction tool's CPT route (liquepy) computes it; GEC-10 "
                "§10.7 names Ishihara and Yoshimine (1992), as Idriss and "
