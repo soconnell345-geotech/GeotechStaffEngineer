@@ -589,10 +589,13 @@ def test_f61_change_names_phi_written_as_a_symbol():
             "final": "A circular search gives 6.3; a block along the base "
                      "of the clay 0.9. If φ′ is lower, so is FS.",
             "t_end": 1.0}])])
-    # only w11's key (the method's reason) and GM-155's (a reference)
+    # only w11's key (the method's reason) and GM-155's (a reference),
+    # the latter looked for in the whole answer, which has no list
     assert {f["message"].replace("the final answer does not name ", "")
-            for f in found} == {"the limit-equilibrium method and why",
-                                "a reference cited for a judgment call"}
+            for f in found} == {
+        "the limit-equilibrium method and why",
+        'a reference cited for a judgment call (it has no "Judgment calls" '
+        'list, so the whole answer was searched)'}
 
 
 def test_f61_w11_key_method_reason():
@@ -641,10 +644,21 @@ def _names(fid, name):
             if n["name"] == name]
 
 
-def _misses(names, text):
-    return len(det.detect_expectations(
+def _found(names, text):
+    return det.detect_expectations(
         {"expect": {"answer_names": names}},
-        [_Sess([{"final": text, "t_end": 1.0}])]))
+        [_Sess([{"final": text, "t_end": 1.0}])])
+
+
+def _misses(names, text):
+    return sum(f["code"] == "expected_answer_name_missing"
+               for f in _found(names, text))
+
+
+def _listed(text):
+    """``text`` as one call in an answer's "Judgment calls" list."""
+    return ("q_ult = 1,159 kPa; q_all = 386 kPa.\n\n**Judgment calls**\n"
+            f"- {text}\n")
 
 
 @pytest.mark.parametrize("fid, name, text", [
@@ -676,6 +690,7 @@ def test_every_judgment_pair_looks_for_a_reference(fid):
     for arm in (fid, fid.replace("-", "j-", 1)):
         names = _names(arm, _REFERENCE_KEY)
         assert len(names) == 1, arm
+        assert names[0].get("within") == "judgment_calls", arm
         for text in ("Vesic (1973) as in GEC-6.", "per UFC 3-220-20",
                      "K0 from Jaky (1944)", "NAVFAC DM7.2 Table 5-3",
                      "FHWA NHI-06-089 Sec. 10.5.5",
@@ -683,16 +698,99 @@ def test_every_judgment_pair_looks_for_a_reference(fid):
                      "K0 = 1 - sin phi' (Jaky, 1944).",
                      "N-gamma as tabulated (Vesic 1973).",
                      "N-gamma per Vesić (1973)."):
-            assert _misses(names, text) == 0, (arm, text)
+            assert _misses(names, _listed(text)) == 0, (arm, text)
+            # with no list, the whole answer is searched, and said so
+            found = _found(names, text)
+            assert [f["code"] for f in found] == [
+                "expected_answer_name_unscoped"], (arm, text)
+            assert "so the whole answer was searched" in found[0]["message"]
         for text in ("Vesic, as the module's default.",
                      "Run on 2026-10-18; FS 0.94.",
                      "I used Spencer because it is rigorous.",
                      "Smooth wall: judgment, with no reference cited.",
                      "I assume no reference governs this.",
                      "q_ult = 1990 kPa (FS 3)."):
+            assert _misses(names, _listed(text)) == 1, (arm, text)
             assert _misses(names, text) == 1, (arm, text)
         assert any("says so plainly" in c
                    for c in _flow(arm)["reader_checks"]), arm
+
+
+def test_the_reference_key_looks_inside_the_list_only():
+    """w13 §7 fix 13: F18j's key hit "Vesic 1973" in a results heading
+    while every call in its list said "no reference basis". The key now
+    looks in the "Judgment calls" list only."""
+    names = _names("F18j-geotech-calc-package", _REFERENCE_KEY)
+    answer = ("## Results (Vesic 1973 factors, GEC-6 Eq. 6-1)\n"
+              "q_ult = 1,159 kPa.\n\n"
+              "## Judgment calls\n"
+              "1. **Vesic as the primary method.** No reference basis beyond "
+              "common practice.\n"
+              "2. **Gross against net.** Gross headlined.\n")
+    found = _found(names, answer)
+    assert [f["code"] for f in found] == ["expected_answer_name_missing"]
+    assert found[0]["message"].endswith(
+        'a reference cited for a judgment call in its "Judgment calls" '
+        "list")
+    assert _misses(names, answer.replace(
+        "No reference basis beyond common practice.",
+        "Vesic (1973), as GEC-6 Eq. 6-1 gives it.")) == 0
+    # a citation after the list's own heading level ends is outside it
+    assert _misses(names, answer + "\n## Sources\nVesic (1973)\n") == 1
+
+
+@pytest.mark.parametrize("heading", ["## Judgment calls",
+                                     "**Judgment calls**"])
+def test_a_bold_references_block_after_the_list_is_outside_it(heading):
+    """Round 2 review: a line that is only bold text ends the list, so a
+    "**References**" block after it is not read as a call's citation; a
+    call that opens in bold stays inside."""
+    names = _names("F51j-geotech-fem-excavation", _REFERENCE_KEY)
+    answer = (f"Wall moment 120 kN·m/m.\n\n{heading}\n"
+              "- **Smooth wall contact.** Rests on judgment, no reference "
+              "found.\n"
+              "- **K0 = 0.658**, the module's default.\n\n"
+              "**References**\n"
+              "- Jaky (1944); UFC 3-220-20 Ch. 4.\n")
+    part = det.answer_section(answer, "judgment_calls")
+    assert "Smooth wall contact" in part and "K0 = 0.658" in part
+    assert "References" not in part and "Jaky" not in part
+    assert _misses(names, answer) == 1
+    assert _misses(names, answer.replace("**References**",
+                                         "References:")) == 0
+    assert _misses(names, answer.replace("**References**\n", "")) == 0
+
+
+@pytest.mark.parametrize("answer, inside, outside", [
+    ("Intro.\n## Judgment calls\n- a\n### One call\n- b\n## Files\n- c",
+     ("- a", "### One call", "- b"), ("Intro.", "- c")),
+    ("Intro.\n**Judgment calls**\n- a\n\n**Method.** b\n", ("- a", "b"),
+     ("Intro.",)),
+    ("Intro.\nJudgment calls (yours to accept):\n1. a\n", ("1. a",),
+     ("Intro.",)),
+    ("Intro.\n### 3. Judgment Call\n- a\n## Next\n- z", ("- a",),
+     ("- z", "Intro.")),
+])
+def test_answer_section_finds_the_list(answer, inside, outside):
+    part = det.answer_section(answer, "judgment_calls")
+    for t in inside:
+        assert t in part, t
+    for t in outside:
+        assert t not in part, t
+
+
+def test_answer_section_none_without_a_list():
+    assert det.answer_section("No list here; judgment calls are below "
+                              "nowhere.", "judgment_calls") is None
+    assert det.answer_section("", "judgment_calls") is None
+
+
+def test_every_within_names_a_known_part():
+    from live_smoke import runner
+    for f in runner.load_flows():
+        for item in (f.get("expect") or {}).get("answer_names") or []:
+            if isinstance(item, dict) and "within" in item:
+                assert item["within"] in det._SCOPES, (f["id"], item)
 
 
 # ---------------------------------------------------------------------------
