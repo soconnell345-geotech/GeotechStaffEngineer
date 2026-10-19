@@ -880,6 +880,7 @@ _CONDITIONAL = re.compile(
 #: Inputs, by name, whose absence is no case, with why.
 _NO_CASE_NAMES = {
     "assumptions": "the package's statements, not an analysis input",
+    "given": "the package's statement of whose inputs they are",
     "output_path": "where a file goes", "output_dir": "where files go",
     "output_prefix": "a file name", "name_prefix": "a file name",
     "height_in": "a figure's size", "legend": "a figure's furniture",

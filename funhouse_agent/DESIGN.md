@@ -342,9 +342,12 @@ the eyes). What changed on master after 5.33.0, in short:
   surcharge or live load, a second layer or a seismic load; one whose
   description says what absence means; and one a probe gives that moves
   the result when dropped, each unless exempt with its reason (GM-165).
-  In a calc package an option the call passes and does not name in
-  `user_given` prints under Assumed Inputs as chosen for the calculation,
-  and the module's Method Choices say "assumed"; an `assumptions` key
+  A calc package's Given Inputs hold only the inputs the call names in
+  `given` (a list, or {input: the user's words}, printed beside the
+  value); every other input passed prints under Assumed Inputs as
+  passed, not stated as given, and the module's Method Choices say
+  "assumed" for it (with nothing named, every "given" choice), so an
+  input not known to be the user's is assumed; an `assumptions` key
   written as an input name that is not one is refused with a
   did-you-mean, and a statement in words is its own row (GM-167).
 - **Vision** (VIS-01, VIS-04, VIS-05): an optional `turn` (0/90/180/270) on

@@ -10,13 +10,16 @@ with ``assumptions`` ({input name: basis}), which move from Given to
 Assumed with their basis. The module's echo, which mixes given, assumed
 and derived values, is "Values Used". Pure rendering: no number changes.
 
-GM-167 (wave w13): a method the agent chose printed as given, a refused
-assumption lost the valid ones with it, and a left-out water table said
-nothing. A method or option input the call does not name in
-``user_given`` now prints under Assumed Inputs; an assumption refusal
-names only the bad keys; a statement that is not an input ("drained") is
-its own row; and a left-out input with no default prints as the case it
-stands for (GM-165: "no water table").
+GM-167 (waves w13, w13b): a method the agent chose, c = 0 and a height
+read off a sheet printed as given; a refused assumption lost the valid
+ones with it; and a left-out water table said nothing. Given Inputs now
+holds only the inputs the call names in ``given`` (the user's own words
+with them when the call has them); every other input passed prints under
+Assumed Inputs as passed, not stated as given, so an input not known to
+be the user's is assumed. An assumption refusal names only the bad keys;
+a statement that is not an input ("drained") is its own row; and a
+left-out input with no default prints as the case it stands for (GM-165:
+"no water table").
 """
 
 import re
@@ -64,7 +67,7 @@ def _section(text: str, title: str, end: str) -> str:
 def test_defaults_used_print_as_assumed(tmp_path):
     out = str(tmp_path / "wall.html")
     r = call_agent("calc_package", "retaining_wall_package",
-                   dict(_WALL, output_path=out))
+                   dict(_WALL, output_path=out, given=list(_WALL)))
     assert r["status"] == "success", r
     used = r["defaults_used"]
     assert used["gamma_concrete"] == 24.0
@@ -111,7 +114,8 @@ def test_given_inputs_hold_only_what_was_given(tmp_path, package, inputs,
     among the inputs; the bearing echo c = 0 and N-gamma by Vesic. Given
     Inputs holds the call's own inputs, one row each, and no default."""
     out = str(tmp_path / "p.html")
-    r = call_agent("calc_package", package, dict(inputs, output_path=out))
+    r = call_agent("calc_package", package, dict(inputs, output_path=out,
+                                                 given=list(inputs)))
     assert r["status"] == "success", r
     text = _text(out)
     part = _section(text, "Given Inputs", "Assumed Inputs")
@@ -130,6 +134,7 @@ def test_a_callers_assumptions_print_with_their_basis(tmp_path):
     out = str(tmp_path / "wall.html")
     r = call_agent("calc_package", "retaining_wall_package", dict(
         _WALL, output_path=out,
+        given=[k for k in _WALL if k != "phi_foundation"],
         assumptions={"phi_foundation": "not given; taken equal to the "
                                        "backfill",
                      "gamma_concrete": "not given; normal-weight concrete"}))
@@ -238,46 +243,85 @@ def test_a_left_out_water_table_prints_as_no_water_table(tmp_path):
     assert ("Groundwater depth below surface (m) no water table not given: "
             "total unit weight above and below the base") in assumed
     r = call_agent("calc_package", "bearing_capacity_package", dict(
-        _BEARING, gwt_depth=1.5, output_path=out))
+        _BEARING, gwt_depth=1.5, given=["gwt_depth"], output_path=out))
     text = _text(out)
     assert "Groundwater depth below surface (m) 1.5" in _section(
         text, "Given Inputs", "Assumed Inputs")
     assert "no water table" not in text
 
 
-def test_a_method_the_user_did_not_name_is_assumed(tmp_path):
-    """GM-167 (a), wave w13 F18/F18j: the helper's Vesic printed as
-    given. A method or option input the call passes and does not name in
-    ``user_given`` prints under Assumed Inputs as chosen for this
-    calculation; named, it prints as given."""
+def test_only_the_inputs_named_as_given_print_as_given(tmp_path):
+    """GM-167 (a), waves w13 / w13b: the helper's Vesic, c = 0 and a
+    wall height read off a sheet printed as given. Only the inputs the call
+    names in ``given`` print under Given Inputs; every other input passed
+    prints under Assumed Inputs as passed, not stated as given."""
     out = str(tmp_path / "bc.html")
     r = call_agent("calc_package", "bearing_capacity_package", dict(
-        _BEARING, factor_method="meyerhof", shape="square",
+        _BEARING, cohesion=0, factor_method="meyerhof", shape="square",
+        given=["width", "depth", "friction_angle", "shape"],
         output_path=out))
     assert r["status"] == "success", r
     text = _text(out)
     given = _section(text, "Given Inputs", "Assumed Inputs")
     assumed = _section(text, "Assumed Inputs", _NEXT)
-    assert "meyerhof" not in given and "square" not in given
-    assert ("Shape/depth/inclination-factor method meyerhof chosen for this "
-            "calculation; not given by the user") in assumed
-    assert "Footing shape square chosen for this calculation" in assumed
-    # the numbers are the same either way
+    assert given.startswith("Given Inputs The inputs the user gave")
+    for row in ("Footing width B (m) 2", "Embedment depth Df (m) 1",
+                "Friction angle phi (degrees) 32", "Footing shape square"):
+        assert row in given, row
+    for words in ("meyerhof", "Soil cohesion", "Soil unit weight"):
+        assert words not in given, words
+    for row in ("Soil unit weight gamma (kN/m3) 19 passed, not stated as "
+                "given",
+                "Soil cohesion c (kPa) 0 passed, not stated as given",
+                "Shape/depth/inclination-factor method meyerhof passed, not "
+                "stated as given"):
+        assert row in assumed, row
+    # the numbers are the same whoever gave the inputs
     r2 = call_agent("calc_package", "bearing_capacity_package", dict(
-        _BEARING, factor_method="meyerhof", shape="square",
-        user_given=["factor_method", "shape"], output_path=out))
+        _BEARING, cohesion=0, factor_method="meyerhof", shape="square",
+        output_path=str(tmp_path / "none.html")))
     assert r2["q_ultimate_kPa"] == r["q_ultimate_kPa"]
+
+
+def test_with_no_given_list_every_input_passed_is_assumed(tmp_path):
+    """Not knowing whose an input is, the package takes it as assumed, and
+    the Given Inputs section says no input was named as the user's."""
+    out = str(tmp_path / "bc.html")
+    r = call_agent("calc_package", "bearing_capacity_package", dict(
+        _BEARING, output_path=out))
+    assert r["status"] == "success", r
     text = _text(out)
-    given = _section(text, "Given Inputs", "Assumed Inputs")
-    assert "Shape/depth/inclination-factor method meyerhof" in given
-    assert "Footing shape square" in given
-    assert "chosen for this calculation" not in _section(
-        text, "Assumed Inputs", _NEXT)
+    assert ("Given Inputs No input was named as given by the user: each "
+            "input passed is listed under Assumed Inputs.") in text
+    assumed = _section(text, "Assumed Inputs", _NEXT)
+    for row in ("Footing width B (m) 2 passed, not stated as given",
+                "Friction angle phi (degrees) 32 passed, not stated as "
+                "given"):
+        assert row in assumed, row
+
+
+def test_given_with_the_users_words(tmp_path):
+    """``given`` as {input: the user's own words} prints them beside the
+    value."""
+    out = str(tmp_path / "bc.html")
+    r = call_agent("calc_package", "bearing_capacity_package", dict(
+        _BEARING, output_path=out,
+        given={"width": "a 2 m square footing",
+               "friction_angle": "phi = 32 deg from the boring logs",
+               "depth": ""}))
+    assert r["status"] == "success", r
+    given = _section(_text(out), "Given Inputs", "Assumed Inputs")
+    assert "Input Value As the user gave it" in given
+    assert "Footing width B (m) 2 a 2 m square footing" in given
+    assert ("Friction angle phi (degrees) 32 phi = 32 deg from the boring "
+            "logs") in given
+    assert "Embedment depth Df (m) 1" in given
+    assert "Soil unit weight" not in given
 
 
 def test_a_chosen_method_reads_assumed_in_method_choices(tmp_path):
-    """The module's own Method Choices table says "assumed" for an option
-    the call passed and did not say the user gave, never "given"."""
+    """The module's own Method Choices table says "assumed" for an input
+    the call passed and did not name as the user's, never "given"."""
     out = str(tmp_path / "w.html")
     row = ("live-load surcharge over the heel, in sliding, overturning and "
            "the eccentricity check not a resisting force")
@@ -286,7 +330,7 @@ def test_a_chosen_method_reads_assumed_in_method_choices(tmp_path):
     assert r["status"] == "success", r
     assert f"{row} assumed FHWA" in _text(out)
     r = call_agent("calc_package", "retaining_wall_package", dict(
-        _WALL, live_load_resists=False, user_given=["live_load_resists"],
+        _WALL, live_load_resists=False, given=["live_load_resists"],
         output_path=out))
     assert f"{row} given FHWA" in _text(out)
     # left out, it is the default, as before
@@ -295,18 +339,41 @@ def test_a_chosen_method_reads_assumed_in_method_choices(tmp_path):
     assert f"{row} default FHWA" in _text(out)
 
 
-def test_user_given_names_inputs_of_the_package(tmp_path):
+def test_given_names_inputs_of_the_package(tmp_path):
     out = tmp_path / "bc.html"
     r = call_agent("calc_package", "bearing_capacity_package", dict(
-        _BEARING, factor_method="vesic", user_given=["factor_metod"],
+        _BEARING, factor_method="vesic", given=["width", "factor_metod"],
         output_path=str(out)))
-    assert "user_given: unknown parameter(s) ['factor_metod']" in r["error"]
+    assert "given: unknown parameter(s) ['factor_metod']" in r["error"]
     assert "factor_metod -> factor_method" in r["error"]
+    assert "The others ('width') are fine" in r["error"]
     assert not out.exists()
     r = call_agent("calc_package", "bearing_capacity_package", dict(
-        _BEARING, factor_method="vesic", user_given=["factor_method"],
+        _BEARING, factor_method="vesic", given=["factor_method"],
         assumptions={"factor_method": "x"}, output_path=str(out)))
-    assert "in both assumptions and user_given" in r["error"]
+    assert "in both assumptions and given" in r["error"]
+    r = call_agent("calc_package", "bearing_capacity_package", dict(
+        _BEARING, given=3, output_path=str(out)))
+    assert "given: give the input names the user gave" in r["error"]
+
+
+def test_with_nothing_named_as_given_no_choice_reads_given(tmp_path):
+    """A module that says "given" for a passed input by its own rule (the
+    seismic wall friction delta) says "assumed" in a package whose call
+    names no input as the user's; named, it says "given"."""
+    params = {"analysis_type": "seismic_earth_pressure", "phi": 32,
+              "kh": 0.2, "delta": 21, "gamma": 19, "H": 5}
+    out = str(tmp_path / "s.html")
+    r = call_agent("calc_package", "seismic_package",
+                   dict(params, output_path=out))
+    assert r["status"] == "success", r
+    text = _text(out)
+    assert "wall friction delta 21 deg assumed" in text
+    assert "wall friction delta 21 deg given" not in text
+    r = call_agent("calc_package", "seismic_package", dict(
+        params, output_path=out, given=["delta"]))
+    assert r["status"] == "success", r
+    assert "wall friction delta 21 deg given" in _text(out)
 
 
 @pytest.mark.parametrize("package, extra", [
@@ -334,9 +401,9 @@ def test_every_package_takes_assumptions_and_says_why():
         assert spec["assumptions"]["type"] == "dict"
         assert "so no assumption reads as given" in \
             spec["assumptions"]["description"]
-        assert spec["user_given"]["type"] == "list", name
-        assert "prints under Assumed Inputs" in \
-            spec["user_given"]["description"]
+        assert spec["given"]["type"] == "list|dict", name
+        assert "Only these print under Given Inputs" in \
+            spec["given"]["description"]
 
 
 def test_the_tool_is_not_handed_assumptions(tmp_path, monkeypatch):

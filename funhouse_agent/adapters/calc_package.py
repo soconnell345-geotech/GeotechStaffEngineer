@@ -240,6 +240,13 @@ def _build_response(module: str, result, analysis, params: dict,
     meta = _extract_metadata(params)
     fmt = params.get("format", "html")
     output_path = params.get("output_path") or _default_output_path(module, fmt)
+    if not _statements(params, package)[1]:
+        # the call names no input as the user's, so no choice the module
+        # calls given is the user's either (GM-167)
+        from calc_package.tables import package_choices
+        for c in package_choices(result, analysis):
+            if isinstance(c, dict) and c.get("how") == "given":
+                c["how"] = "assumed"
 
     # Calculation tables (GM-39): built here so each CSV is written with a
     # verified save, like the package itself. A table that fails to build
@@ -590,35 +597,41 @@ def _stated_assumptions(value, package: str = None) -> dict:
 _NAME = re.compile(r"[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+")
 
 
-def _user_given(value, package: str = None) -> set:
-    """A package's ``user_given`` (GM-167): the names of the method and
-    option inputs the user gave. A list of names, or one name; with
-    ``package``, a name given by another spelling is put under its own,
-    and a name that is not an input is refused with a did-you-mean."""
-    if value is None or value == "" or value == []:
-        return set()
+def _named_given(value, package: str = None) -> dict:
+    """A package's ``given`` (GM-167): the inputs the user gave, as
+    ``{name: the user's words, or ""}``. A list of names, one name, or
+    ``{name: the user's words}``; with ``package``, a name given by
+    another spelling is put under its own, and a name that is not an input
+    is refused with a did-you-mean."""
+    if value is None or value == "" or value == [] or value == {}:
+        return {}
     if isinstance(value, str):
         value = [value]
-    if not (isinstance(value, (list, tuple, set))
-            and all(isinstance(v, str) for v in value)):
-        raise ValueError("user_given: give a list of the input names the "
-                         "user gave, e.g. [\"factor_method\"].")
+    if isinstance(value, dict) and all(isinstance(k, str) for k in value):
+        words = {k: "" if w is None else str(w).strip()
+                 for k, w in value.items()}
+    elif isinstance(value, (list, tuple, set)) \
+            and all(isinstance(v, str) for v in value):
+        words = dict.fromkeys(value, "")
+    else:
+        raise ValueError("given: give the input names the user gave, e.g. "
+                         "[\"B\", \"phi\"], or {input name: the user's own "
+                         "words}.")
     if package is None:
-        return set(value)
+        return words
     from funhouse_agent.adapters import suggest_params
     inputs, aliases = _package_inputs(package), _package_aliases(package)
     valid = [n for n in inputs if n not in _COMMON_PARAMS]
-    names, bad = set(), {}
-    for key in value:
+    names, bad = {}, {}
+    for key, said in words.items():
         name = aliases.get(key, key)
         if name in inputs and name not in _COMMON_PARAMS:
-            names.add(name)
+            names[name] = said
         else:
             bad[key] = (None if name in _COMMON_PARAMS
                         else suggest_params(key, valid))
     if bad:
-        _refuse(package, "user_given", bad,
-                [k for k in value if k not in bad])
+        _refuse(package, "given", bad, [k for k in words if k not in bad])
     return names
 
 
@@ -648,17 +661,17 @@ def _refuse(package: str, field: str, bad: dict, fine: list,
 
 
 def _checked_statements(params: dict, package: str):
-    """``(assumptions, user_given)`` of a package call, checked (GM-155,
+    """``(assumptions, given)`` of a package call, checked (GM-155,
     GM-167): an input both stated as an assumption and named as the
     user's is refused."""
     stated = _stated_assumptions(params.get("assumptions"), package)
-    users = _user_given(params.get("user_given"), package)
-    both = sorted(set(stated) & users)
+    named = _named_given(params.get("given"), package)
+    both = sorted(set(stated) & set(named))
     if both:
         raise ValueError(f"{package}: {both} in both assumptions and "
-                         "user_given; an input is either the user's or "
+                         "given; an input is either the user's or "
                          "assumed.")
-    return stated, users
+    return stated, named
 
 
 def _package_inputs(package: str) -> dict:
@@ -687,25 +700,6 @@ def _input_words(name: str, declared: dict) -> str:
     return text
 
 
-def _is_option(spec) -> bool:
-    """Whether an input is a method or option (GM-167): its value is one
-    of the tool's named options (``allowed_values``) or true / false. The
-    agent picks these far more often than the user names them, so one the
-    call does not say the user gave (``user_given``) is assumed."""
-    if not isinstance(spec, dict):
-        return False
-    return bool(spec.get("allowed_values")) or spec.get("type") == "bool"
-
-
-def _chosen_options(passed, declared: dict, users: set,
-                    selector: str = None) -> list:
-    """The method and option inputs a call passed that it did not say the
-    user gave (GM-167), in the order passed; never the package's selector,
-    which names the calculation asked for."""
-    return [n for n in passed if n != selector and n not in users
-            and _is_option(declared.get(n))]
-
-
 def _package_declared(package: str = None, run: "_ToolRun" = None) -> dict:
     """The inputs a package's rows are worded from: the package's own,
     then its tool's."""
@@ -717,70 +711,74 @@ def _package_declared(package: str = None, run: "_ToolRun" = None) -> dict:
 
 
 def _statements(params: dict, package: str = None):
-    """``(assumptions, user_given)`` of a call, checked when the package
-    is known."""
+    """``(assumptions, given)`` of a call, checked when the package is
+    known."""
     if package:
         return _checked_statements(params, package)
     return (_stated_assumptions(params.get("assumptions")),
-            _user_given(params.get("user_given")))
+            _named_given(params.get("given")))
 
 
-def _given_inputs(params: dict, run: "_ToolRun" = None,
-                  package: str = None) -> list:
-    """The inputs the call gave, for the package's Given Inputs section
-    (GM-155): what it passed for the analysis (the selector, the package's
-    own inputs and the tool's), less the header fields, the inputs it
-    stated as assumptions and the methods and options it did not say the
-    user gave (GM-167); each ``{input, value}``."""
-    package = package or getattr(run, "package", None)
-    stated, users = _statements(params, package)
-    declared = _package_declared(package, run)
-    selector = (_PACKAGE_TOOLS.get(package, {}).get("selector") or [None])[0]
+def _passed_inputs(params: dict, run: "_ToolRun" = None,
+                   package: str = None, declared: dict = None) -> dict:
+    """What a package call passed for the analysis, in the order passed:
+    the selector, the package's own inputs and the tool's, without the
+    header fields. ``declared`` gets the selector's words."""
     if run is None:
-        given = {k: v for k, v in params.items() if k not in _COMMON_PARAMS}
-    else:
-        given = {}
-        if selector and selector in params:
-            given[selector] = params[selector]
+        return {k: v for k, v in params.items() if k not in _COMMON_PARAMS}
+    selector = (_PACKAGE_TOOLS.get(package, {}).get("selector") or [None])[0]
+    passed = {}
+    if selector and selector in params:
+        passed[selector] = params[selector]
+        if declared is not None:
             # "The wall to analyse and report: 'cantilever' (...)": the
             # words before the list of tools, where they make a phrase
             words = _input_words(selector, declared)
             head = words.split(": ", 1)[0]
             declared[selector] = {"description": head if head != words
-                                  and len(head.split()) >= 3 else
-                                  selector}
-        given.update(run.own)
-        given.update(run.params)
-    chosen = set(_chosen_options(given, declared, users, selector))
-    return [{"input": _input_words(name, declared), "value": value}
-            for name, value in given.items()
-            if name not in stated and name not in chosen]
+                                  and len(head.split()) >= 3 else selector}
+    passed.update(run.own)
+    passed.update(run.params)
+    return passed
 
 
-#: The basis of a method or option the call passed and did not say the
-#: user gave (GM-167).
-_CHOSEN_BASIS = "chosen for this calculation; not given by the user"
+def _given_inputs(params: dict, run: "_ToolRun" = None,
+                  package: str = None) -> list:
+    """The inputs the user gave, for the package's Given Inputs section
+    (GM-155, GM-167): the inputs the call passed and named in ``given``,
+    each ``{input, value, words}`` (``words``: the user's own, when the
+    call gave them). Any other input passed is assumed: an input the call
+    does not say is the user's is never printed as given."""
+    package = package or getattr(run, "package", None)
+    named = _statements(params, package)[1]
+    declared = _package_declared(package, run)
+    passed = _passed_inputs(params, run, package, declared)
+    return [{"input": _input_words(name, declared), "value": value,
+             "words": named[name]}
+            for name, value in passed.items() if name in named]
+
+
+#: The basis of an input the call passed and did not name as the user's
+#: (GM-167).
+_PASSED_BASIS = "passed, not stated as given"
 
 
 def _assumed_inputs(params: dict, run: "_ToolRun" = None, result=None,
                     analysis=None, package: str = None) -> list:
     """The inputs that were not given, for the package's Assumed Inputs
     section (GM-155): the inputs and statements the caller stated as
-    assumptions (``assumptions``), the methods and options it passed and
-    did not say the user gave (GM-167), then the defaults the tool's run
+    assumptions (``assumptions``), every other input it passed and did not
+    name as the user's in ``given`` (GM-167; not knowing whose an input is,
+    the package takes it as assumed), then the defaults the tool's run
     left in force (``defaults_used``): a left-out input with no default as
     the case it stands for, or as the other input's value it takes
     (GM-165); each ``{input, value, basis}``."""
     from calc_package.tables import package_choices
     package = package or getattr(run, "package", None)
-    stated, users = _statements(params, package)
+    stated, named = _statements(params, package)
     used = dict(run.defaults_used) if run is not None else {}
     declared = _package_declared(package, run)
-    given = dict(run.params) if run is not None else {
-        k: v for k, v in params.items() if k not in _COMMON_PARAMS}
-    if run is not None:
-        given.update(run.own)
-    selector = (_PACKAGE_TOOLS.get(package, {}).get("selector") or [None])[0]
+    given = _passed_inputs(params, run, package, declared)
     try:
         chosen = " ".join(str(c.get("chosen", ""))
                           for c in package_choices(result, analysis)
@@ -805,10 +803,10 @@ def _assumed_inputs(params: dict, run: "_ToolRun" = None, result=None,
         else:   # a statement that is not an input ("drained")
             out.append({"input": name, "value": "",
                         "basis": basis or "stated as an assumption"})
-    for name in _chosen_options(given, declared, users, selector):
-        if name not in stated:
+    for name, value in given.items():
+        if name not in stated and name not in named:
             out.append({"input": _input_words(name, declared),
-                        "value": given[name], "basis": _CHOSEN_BASIS})
+                        "value": value, "basis": _PASSED_BASIS})
     for name, value in used.items():
         if name in stated:
             continue
@@ -861,7 +859,7 @@ def _run_tool(package: str, params: dict) -> _ToolRun:
 
     spec = _PACKAGE_TOOLS[package]
     # checked before a run (GM-155, GM-167)
-    stated, users = _checked_statements(params, package)
+    named = _checked_statements(params, package)[1]
     p = {k: v for k, v in params.items() if k not in _COMMON_PARAMS}
     value = None
     if "selector" in spec:
@@ -949,12 +947,11 @@ def _run_tool(package: str, params: dict) -> _ToolRun:
         _declared, _defaults_used, _given_names, _left_out)
     from geotech_common.choices import call_inputs
     given = set(p)
-    # the inputs passed that are not the user's: the module's choices say
-    # "assumed" for them, not "given" (GM-167)
+    # the inputs passed that the call does not name as the user's: the
+    # module's choices say "assumed" for them, not "given" (GM-167)
     declared = _declared(mod, tool)[0]
     tool_name = {old: new for new, old in renamed.items()}
-    assumed = {tool_name.get(k, k) for k in stated} | set(_chosen_options(
-        p, declared, {tool_name.get(k, k) for k in users}))
+    assumed = given - {tool_name.get(k, k) for k in named}
     with call_inputs(_given_names(mod, tool, given),
                      _left_out(mod, tool, given, p),
                      assumed=assumed & given) as inputs:
@@ -1233,7 +1230,7 @@ def _generate_slope_report_package(params: dict) -> dict:
             # inputs it says the user gave (GM-155, GM-167)
             "output_path", "format", "project_name", "project_number",
             "engineer", "checker", "company", "date", "assumptions",
-            "user_given",
+            "given",
         ],
         method="slope_report_package",
     )
@@ -2008,16 +2005,17 @@ _COMMON_PARAMS = {
                         "analysis's own defaults, so no assumption reads as "
                         "given. A misspelt input name is refused with a "
                         "did-you-mean.")},
-    "user_given": {"type": "list", "required": False,
-                   "description": (
-                       "The method and option inputs you pass that the user "
-                       "named, e.g. [\"factor_method\"] when the user asked "
-                       "for Vesic, [\"shape\"] for a footing the user called "
-                       "square. A method or option input (one with a list of "
-                       "allowed values, or true / false) not named here "
-                       "prints under Assumed Inputs as chosen for this "
-                       "calculation; every other input you pass prints as "
-                       "given unless it is in assumptions.")},
+    "given": {"type": "list|dict", "required": False,
+              "description": (
+                  "The inputs you pass that the user gave, by name, e.g. "
+                  "[\"B\", \"Df\", \"phi\"], or with the user's own "
+                  "words, {\"phi\": \"friction angle 32 deg from the "
+                  "boring logs\"}. Only these print under Given Inputs. "
+                  "Every other input you pass prints under Assumed Inputs "
+                  "as passed, not stated as given (with its basis when it "
+                  "is in assumptions); left out, no input is the user's. A "
+                  "value you read off, worked out or chose is assumed, not "
+                  "given.")},
     "output_path": {"type": "str", "required": False,
                     "description": "File path to save output. Auto-generated if omitted."},
     "format": {"type": "str", "required": False, "default": "html",
