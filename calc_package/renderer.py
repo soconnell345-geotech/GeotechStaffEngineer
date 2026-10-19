@@ -38,9 +38,13 @@ def figure_to_base64(fig, dpi: int = 150) -> str:
     fig.savefig(buf, format='png', dpi=dpi, bbox_inches='tight',
                 facecolor='white', edgecolor='none')
     buf.seek(0)
-    encoded = base64.b64encode(buf.read()).decode('utf-8')
+    png = buf.read()
     buf.close()
-    return encoded
+    # the PNG carries its smallest lettering, so a PDF built from it can
+    # tell how large that prints (GM-168)
+    from geotech_common.layout_ink import png_with_lettering
+    png = png_with_lettering(fig, png, dpi)
+    return base64.b64encode(png).decode('utf-8')
 
 
 def _preprocess_sections(sections: list) -> list:

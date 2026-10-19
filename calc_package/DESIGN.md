@@ -70,6 +70,39 @@ multi-analysis narrative, anything with no canned template) can carry the
 module's figures — before this they were reachable only inside a whole canned
 package (owner feedback 2026-09-11).
 
+The saved files are named from the figure's title (GM-171, 2026-10-19):
+`[<name_prefix>_]<title slug>.png`, the slug cut at a word to 32 characters
+(less where the folder is deep, `fig<i>` when under 8 would be left), and
+`_2`, `_3` ... when the package or the folder already has the name. Before
+this a deep folder gave `f1_<time>.png`.
+
+### Figures in the Story PDF (GM-168, 2026-10-19)
+
+`fitz.Story` shrinks a picture to the height left on the page, so a figure
+placed after most of a page of text printed 0.1-2 in wide at the page foot
+(live wave w13). `render_html_pdf_story` (behind `save_html_pdf_story`,
+`html_to_pdf` and every canned Story PDF) lays the document out, finds each
+figure printed narrower than it lays out on a page of its own (a pass with
+one frame tall enough for the whole document), and moves it to the next page
+with a page break before its block, the heading or "Figure ..." title just
+above it, or the table holding it; the text after it follows. A figure that
+does not fit even a fresh page starts one and is scaled to fit it, with room
+for a caption. A picture cannot be split across pages, so nothing stops a
+very tall figure printing small: below `MIN_FIGURE_SCALE` (0.5) of its width
+`html_to_pdf` warns "draw it shorter". Two engine traps: a page break before
+the document's first element makes `Story` repeat an empty page for ever
+(no break is put there, and `_MAX_STORY_PAGES` turns any such loop into an
+error), and edits to its DOM attributes are unreliable, so the breaks and
+widths are written into the HTML string.
+
+Each figure's PNG carries its smallest lettering and the width it was saved
+at (a `Lettering` text chunk, `geotech_common.layout_ink.png_with_lettering`,
+written by `figure_to_base64`, `profile_figure` and the plotting box), so
+`html_to_pdf`'s `page_contents` gives every figure its printed `width_in`,
+`height_in` and `lettering_pt`, and `figure_warnings` names one whose
+lettering prints under 7 pt or that prints narrower than the 6.5 in the
+plotting box's lettering check measured it at (the box's own constants).
+
 ## Calculation tables (`tables.py`, GM-39, 2026-10-14)
 
 Engineers using LPILE, APILE, GROUP or SLIDE get, beside the answer, the

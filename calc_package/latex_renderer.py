@@ -403,19 +403,377 @@ def _save_pdf_story(data: CalcPackageData, filepath: str) -> str:
     return save_html_pdf_story(render_html(data), filepath)
 
 
+# ── Story PDF figure layout (BACKLOG GM-168) ──────────────────────────
+#
+# The Story engine shrinks a picture to whatever height is left on the page
+# it reaches: live wave w13 printed figures 0.11, 0.3, 1.6 and 2.1 in wide
+# at page feet, with lettering about 3 pt. The layout rule here:
+#
+# - every figure prints at the size the HTML lays it out at on a page of its
+#   own (its CSS width, else its natural size, within the text width);
+# - a figure that does not fit what is left of a page starts the next page
+#   at that size, with the heading or "Figure n" title just before it; the
+#   text after it follows it there (the engine has no floats), so the page
+#   before ends short;
+# - a figure taller than a whole page starts a page and is scaled to fit
+#   it, leaving room for its caption. It is never shrunk to fit what is left
+#   of a page. A picture cannot be split across pages, so one that a page
+#   holds only under MIN_FIGURE_SCALE of its width still prints at the page
+#   size, and its record says so (``scaled``) for the caller to warn.
+
+#: The Story PDF page: US letter, ~0.75 in margins.
+_STORY_MARGIN_PT = 54
+#: A figure printed narrower than this share of its laid-out width was
+#: shrunk by the engine to fit what was left of a page.
+_SQUEEZED = 0.97
+#: Room kept under a figure scaled to a page, for its caption (points).
+_CAPTION_ROOM_PT = 36
+#: The smallest share of its laid-out width a figure taller than a page
+#: should be scaled to; under it the caller is told to draw it shorter.
+MIN_FIGURE_SCALE = 0.5
+#: The most pages a Story PDF runs to: a page break before the document's
+#: first element makes the engine repeat an empty page for ever.
+_MAX_STORY_PAGES = 2000
+#: What starts a new page before a figure.
+_PAGE_BREAK = '<div style="page-break-before:always"></div>'
+#: Containers a figure's own block climbs through, when the picture is the
+#: first thing in them and their only picture.
+_FIGURE_WRAPPERS = {"div", "figure", "p", "center", "a", "span", "picture"}
+_HEADINGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
+_VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input",
+              "link", "meta", "source", "track", "wbr"}
+_UNSEEN_TAGS = {"head", "style", "script", "title"}
+
+
+def _drawn(src) -> bool:
+    """An ``<img>`` the engine draws: one carrying its picture inline (the
+    renderers embed every image as a data URI before laying out)."""
+    return (src or "").strip().lower().startswith("data:image/")
+
+
+def _figure_marks(html: str) -> dict:
+    """Where each drawn ``<img>`` (:func:`_drawn`) sits in ``html``, in
+    document order:
+    ``{"spans": [(start, end)], "breaks": [offset or None]}``. ``breaks``
+    is where a page break moves the figure to the next page: before its
+    own block (the containers it is the first thing in), a table holding
+    it, and the heading or short "Figure ..." title just before that.
+    ``None`` where that would come before anything else in the document
+    (a break there makes the engine loop)."""
+    from html.parser import HTMLParser
+
+    line_starts = [0]
+    pos = html.find("\n")
+    while pos != -1:
+        line_starts.append(pos + 1)
+        pos = html.find("\n", pos + 1)
+
+    root = {"tag": "#root", "start": 0, "children": [], "parent": None,
+            "imgs": 0, "head": ""}
+    spans, img_nodes = [], []
+    state = {"first": None, "unseen": 0}
+
+    class _Parser(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.stack = [root]
+
+        def _offset(self):
+            line, col = self.getpos()
+            return line_starts[line - 1] + col
+
+        def handle_starttag(self, tag, attrs):
+            start = self._offset()
+            text = self.get_starttag_text() or ""
+            parent = self.stack[-1]
+            node = {"tag": tag, "start": start, "children": [],
+                    "parent": parent, "imgs": 0, "head": ""}
+            if tag == "img" and _drawn(dict(attrs).get("src")):
+                spans.append((start, start + len(text)))
+                img_nodes.append(node)
+                for anc in self.stack:
+                    anc["imgs"] += 1
+                if state["first"] is None and not state["unseen"]:
+                    state["first"] = start
+            if not state["unseen"]:
+                parent["children"].append(node)
+            if tag in _UNSEEN_TAGS:
+                state["unseen"] += 1
+            if tag not in _VOID_TAGS:
+                self.stack.append(node)
+
+        def handle_startendtag(self, tag, attrs):
+            self.handle_starttag(tag, attrs)
+            if tag not in _VOID_TAGS:
+                self.handle_endtag(tag)
+
+        def handle_endtag(self, tag):
+            for i in range(len(self.stack) - 1, 0, -1):
+                if self.stack[i]["tag"] == tag:
+                    state["unseen"] -= sum(
+                        1 for n in self.stack[i:] if n["tag"] in _UNSEEN_TAGS)
+                    del self.stack[i:]
+                    break
+
+        def handle_data(self, data):
+            text = " ".join(data.split())
+            if not text or state["unseen"]:
+                return
+            if state["first"] is None:
+                state["first"] = self._offset()
+            self.stack[-1]["children"].append({"tag": "#text"})
+            for anc in self.stack:
+                if len(anc["head"]) < 40:
+                    anc["head"] = (anc["head"] + " " + text).strip()
+
+    parser = _Parser()
+    parser.feed(html)
+    parser.close()
+
+    def _previous(node):
+        sibs = node["parent"]["children"] if node["parent"] else []
+        i = next((j for j, n in enumerate(sibs) if n is node), 0)
+        return sibs[i - 1] if i > 0 else None
+
+    def _title(node) -> bool:
+        return (node["tag"] in _HEADINGS
+                or (node["tag"] in ("p", "div") and not node["imgs"]
+                    and node["head"][:3].lower() == "fig"))
+
+    breaks = []
+    for img in img_nodes:
+        node = img
+        while (node["parent"] and node["parent"]["tag"] in _FIGURE_WRAPPERS
+               and node["parent"]["imgs"] == 1
+               and node["parent"]["children"][:1] == [node]):
+            node = node["parent"]
+        anc = img["parent"]
+        while anc is not None:
+            if anc["tag"] == "table":
+                node = anc                         # the outermost table
+            anc = anc["parent"]
+        for _ in range(2):                         # heading, then title
+            prev = _previous(node)
+            if prev is None or not _title(prev):
+                break
+            node = prev
+        first = state["first"]
+        breaks.append(None if first is None or node["start"] <= first
+                      else node["start"])
+    return {"spans": spans, "breaks": breaks}
+
+
+def _story_bytes(html: str, mediabox, where) -> bytes:
+    """``html`` laid out by the Story engine into pages ``where`` on
+    ``mediabox``: the PDF's bytes."""
+    import io
+
+    import fitz
+
+    story = fitz.Story(html=html)
+    buf = io.BytesIO()
+    writer = fitz.DocumentWriter(buf)
+    more, pages = 1, 0
+    while more:
+        if pages >= _MAX_STORY_PAGES:
+            writer.close()
+            raise RuntimeError(
+                f"the layout ran past {_MAX_STORY_PAGES} pages without "
+                "placing everything (a page break before the first element "
+                "of the HTML makes the engine repeat an empty page): remove "
+                "that page break")
+        device = writer.begin_page(mediabox)
+        more, _filled = story.place(where)
+        story.draw(device)
+        writer.end_page()
+        pages += 1
+    writer.close()
+    return buf.getvalue()
+
+
+def _story_images(pdf: bytes) -> list:
+    """``[(page index, rect, at_top)]`` for each picture drawn in ``pdf``,
+    in the order drawn (document order). ``at_top``: nothing is printed
+    above it on its page."""
+    import fitz
+
+    out = []
+    with fitz.open("pdf", pdf) as doc:
+        for page in doc:
+            infos = page.get_image_info()
+            tops = [b[3] for b in page.get_text("blocks")]
+            tops += [fitz.Rect(i["bbox"]).y1 for i in infos]
+            for info in infos:
+                r = fitz.Rect(info["bbox"])
+                out.append((page.number, r,
+                            not any(y <= r.y0 + 1 for y in tops)))
+    return out
+
+
+def _with_figure_edits(html: str, marks: dict, edits: dict) -> str:
+    """``html`` with each figure's page break and width (``edits``:
+    ``{k: {"break": bool, "width_pt": float}}``) written in."""
+    import re
+
+    inserts = {}                                   # (start, end) -> text
+    for k, e in edits.items():
+        if e.get("width_pt"):
+            start, end = marks["spans"][k]
+            tag = html[start:end]
+            width = f"width:{e['width_pt']:.1f}pt"
+            m = re.search(r"\bstyle\s*=\s*(\"([^\"]*)\"|'([^']*)')", tag)
+            if m:
+                old = m.group(2) if m.group(2) is not None else m.group(3)
+                old = old.strip().rstrip(";")
+                tag = (tag[:m.start()] + 'style="'
+                       + (old + ";" if old else "") + width + '"'
+                       + tag[m.end():])
+            else:
+                tag = tag[:4] + f' style="{width}"' + tag[4:]
+            inserts[(start, end)] = tag
+        if e.get("break") and marks["breaks"][k] is not None:
+            at = marks["breaks"][k]
+            inserts.setdefault((at, at), _PAGE_BREAK)
+    for (start, end), text in sorted(inserts.items(), reverse=True):
+        html = html[:start] + text + html[end:]
+    return html
+
+
+def _lay_out_figures(html: str, mediabox, where):
+    """``(pdf bytes, figures)``: ``html`` laid out with no figure shrunk to
+    fit what is left of a page (see the rule above). ``figures``: per
+    picture, in document order, ``{"pdf_page", "width_pt", "height_pt",
+    "laid_out_width_pt", "moved", "scaled"}``; ``None`` when the pictures
+    drawn cannot be matched to the HTML's ``<img>`` tags."""
+    import fitz
+
+    pdf = _story_bytes(html, mediabox, where)
+    placed = _story_images(pdf)
+    try:
+        marks = _figure_marks(html)
+    except Exception:                                  # noqa: BLE001
+        marks = None
+    n = len(placed)
+    if not n or marks is None or len(marks["spans"]) != n:
+        return pdf, None
+    # the size each figure is laid out at on a page of its own: one frame
+    # tall enough for the whole document, so nothing reaches a page foot
+    with fitz.open("pdf", pdf) as doc:
+        tall_h = (doc.page_count + 2) * where.height
+    tall_box = fitz.Rect(0, 0, mediabox.width, tall_h + 2 * where.y0)
+    tall_where = fitz.Rect(where.x0, where.y0, where.x1, where.y0 + tall_h)
+    laid_out = [r for _p, r, _t in
+                _story_images(_story_bytes(html, tall_box, tall_where))]
+    if len(laid_out) != n:
+        return pdf, None
+
+    edits = {}
+    settled = set()
+
+    def _target(k):
+        return edits.get(k, {}).get("width_pt") or laid_out[k].width
+
+    for _ in range(2 * n + 1):
+        k = next((i for i, (_p, r, _t) in enumerate(placed)
+                  if i not in settled and r.width < _SQUEEZED * _target(i)),
+                 None)
+        if k is None:
+            break
+        _p, r, at_top = placed[k]
+        e = edits.setdefault(k, {})
+        if not e.get("break") and not at_top \
+                and marks["breaks"][k] is not None:
+            e["break"] = True                  # the next page, at its width
+        else:
+            # it does not fit a page, or cannot move: the engine has fitted
+            # it to the page; keep room under it for its caption
+            room = min(_CAPTION_ROOM_PT, 0.5 * r.height)
+            e["width_pt"] = r.width * (r.height - room) / r.height
+            settled.add(k)
+        trial = _with_figure_edits(html, marks, edits)
+        trial_pdf = _story_bytes(trial, mediabox, where)
+        trial_placed = _story_images(trial_pdf)
+        if len(trial_placed) != n:
+            break
+        pdf, placed = trial_pdf, trial_placed
+
+    figures = []
+    for k, (page, r, _t) in enumerate(placed):
+        e = edits.get(k, {})
+        full = laid_out[k].width
+        figures.append({
+            "pdf_page": page + 1,
+            "width_pt": r.width, "height_pt": r.height,
+            "laid_out_width_pt": full,
+            "moved": bool(e.get("break")) and marks["breaks"][k] is not None,
+            "scaled": (round(r.width / full, 2)
+                       if full and r.width < _SQUEEZED * full else None),
+        })
+    return pdf, figures
+
+
+def _png_letterings(html: str) -> list:
+    """Per drawn ``<img>`` in ``html`` (:func:`_drawn`), in document order,
+    the lettering its PNG carries
+    (``geotech_common.layout_ink.parse_lettering``), or ``{}``."""
+    import re
+
+    from geotech_common.layout_ink import (LETTERING_KEY, parse_lettering,
+                                           png_texts)
+    out = []
+    for tag in re.finditer(r"<img\b[^>]*>", html, flags=re.IGNORECASE):
+        src = re.search(r"\bsrc\s*=\s*[\"']([^\"']*)", tag.group(0))
+        if not src or not _drawn(src.group(1)):
+            continue
+        m = re.match(r"\s*data:image/png;base64,(.+)", src.group(1),
+                     flags=re.IGNORECASE | re.DOTALL)
+        found = {}
+        if m:
+            try:
+                png = base64.b64decode(m.group(1))
+                found = parse_lettering(png_texts(png).get(LETTERING_KEY))
+            except Exception:                              # noqa: BLE001
+                found = {}
+        out.append(found)
+    return out
+
+
 def save_html_pdf_story(html: str, filepath: str) -> str:
     """Render ARBITRARY self-contained HTML to a paginated PDF (fitz.Story).
 
     Public generic entry point (also exposed to LLM agents as the
     ``calc_package.html_to_pdf`` method) for report content that no canned
-    ``*_package`` generator covers. Two Story-only adjustments are applied:
-    inline base64 PNG figures are re-encoded to JPEG (so they stay compressed
-    in the PDF instead of bloating it) and wide tables are wrapped to the page
-    width (so they cannot clip at the right edge). The Story engine supports a
-    SUBSET of CSS: it lays out text, headings, tables, colours and inline
-    base64 PNG/JPEG ``<img>`` figures, but ignores advanced CSS (flexbox/grid,
-    positioned layout, some border/spacing rules) and does NOT render inline
-    ``<svg>`` elements. Returns the absolute PDF path.
+    ``*_package`` generator covers. Returns the absolute PDF path; see
+    :func:`render_html_pdf_story` for what it does and for the figures'
+    printed sizes.
+    """
+    return render_html_pdf_story(html, filepath)["path"]
+
+
+def render_html_pdf_story(html: str, filepath: str) -> dict:
+    """Render self-contained HTML to a paginated PDF (fitz.Story) and say
+    where each figure printed.
+
+    Three Story-only adjustments are applied: inline base64 PNG figures are
+    re-encoded to JPEG (so they stay compressed in the PDF instead of
+    bloating it), wide tables are wrapped to the page width (so they cannot
+    clip at the right edge), and figures are laid out by the rule above
+    (never shrunk to fit what is left of a page; BACKLOG GM-168). The Story
+    engine supports a SUBSET of CSS: it lays out text, headings, tables,
+    colours and inline base64 PNG/JPEG ``<img>`` figures, but ignores
+    advanced CSS (flexbox/grid, positioned layout, some border/spacing
+    rules) and does NOT render inline ``<svg>`` elements.
+
+    Returns ``{"path": absolute PDF path, "figures": [...] or None}``:
+    per ``<img>``, in document order, ``pdf_page`` (from 1), ``width_in``,
+    ``height_in``, ``laid_out_width_in`` (its width on a page of its own),
+    ``moved`` (to the next page, so as not to shrink), ``scaled`` (the
+    share of its width it printed at, when under it: a figure taller than a
+    page) and, when its PNG carries its lettering
+    (``geotech_common.layout_ink.LETTERING_KEY``), ``lettering_pt`` (the
+    smallest as printed) and ``checked_width_in`` (the width the layout
+    check measured it at). ``figures`` is ``None`` when the pictures drawn
+    cannot be matched to the HTML's ``<img>`` tags.
     """
     try:
         import fitz  # PyMuPDF, installed via the [pdf] extra
@@ -426,6 +784,7 @@ def save_html_pdf_story(html: str, filepath: str) -> str:
             "pip install 'geotech-staff-engineer[pdf]'."
         ) from exc
 
+    letterings = _png_letterings(html)
     html = _compress_pdf_images(html)
     html = _fit_wide_tables_for_pdf(html)
     if "</head>" in html:
@@ -435,18 +794,30 @@ def save_html_pdf_story(html: str, filepath: str) -> str:
     output_path = Path(filepath).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    story = fitz.Story(html=html)
-    writer = fitz.DocumentWriter(str(output_path))
     mediabox = fitz.paper_rect("letter")
-    where = mediabox + (54, 54, -54, -54)      # ~0.75 in margins
-    more = 1
-    while more:
-        device = writer.begin_page(mediabox)
-        more, _filled = story.place(where)
-        story.draw(device)
-        writer.end_page()
-    writer.close()
-    return str(output_path)
+    m = _STORY_MARGIN_PT
+    where = mediabox + (m, m, -m, -m)
+    pdf, placed = _lay_out_figures(html, mediabox, where)
+    output_path.write_bytes(pdf)
+
+    figures = None
+    if placed is not None:
+        figures = []
+        for k, f in enumerate(placed):
+            row = {"pdf_page": f["pdf_page"],
+                   "width_in": round(f["width_pt"] / 72, 2),
+                   "height_in": round(f["height_pt"] / 72, 2),
+                   "laid_out_width_in": round(f["laid_out_width_pt"] / 72, 2),
+                   "moved": f["moved"], "scaled": f["scaled"]}
+            lt = letterings[k] if k < len(letterings) else {}
+            if lt:
+                row["lettering_pt"] = round(
+                    lt["smallest_pt"] * f["width_pt"] / 72
+                    / lt["saved_width_in"], 1)
+                if lt.get("checked_width_in"):
+                    row["checked_width_in"] = lt["checked_width_in"]
+            figures.append(row)
+    return {"path": str(output_path), "figures": figures}
 
 
 def render_pdf(

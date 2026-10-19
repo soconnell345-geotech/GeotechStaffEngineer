@@ -173,3 +173,120 @@ def _tiny_png() -> bytes:
     return base64.b64decode(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAE"
         "hQGAhKmMIQAAAABJRU5ErkJggg==")
+
+
+# ---------------------------------------------------------------------------
+# html_to_pdf — what each figure prints at (BACKLOG GM-168)
+# ---------------------------------------------------------------------------
+
+TEXT = "<p>" + ("The bearing resistance of the footing is checked against "
+                "the factored load for each load case. ") * 6 + "</p>"
+
+
+def _plot(tmp_path, name, width_in, height_in, fontsize=9.0):
+    """A PNG saved the way the calc packages save theirs."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    from calc_package.renderer import figure_to_base64
+    fig, ax = plt.subplots(figsize=(width_in, height_in))
+    ax.plot([0, 1], [0, 1])
+    ax.set_xlabel("Distance (m)", fontsize=fontsize)
+    ax.tick_params(labelsize=fontsize)
+    try:
+        png = base64.b64decode(figure_to_base64(fig, dpi=100))
+    finally:
+        plt.close(fig)
+    path = tmp_path / name
+    path.write_bytes(png)
+    return path
+
+
+class TestHtmlToPdfFigureSizes:
+    def test_page_contents_count_from_one_as_pdf_page(self, tmp_path):
+        """GM-154's convention: ``pdf_page`` counts from 1, ``page`` from
+        0; a 1-based number is never called ``page``."""
+        pytest.importorskip("fitz")
+        _plot(tmp_path, "a.png", 6.5, 4)
+        res = _generate_html_to_pdf({
+            "html": _doc(f'{TEXT}<img src="{tmp_path / "a.png"}" '
+                         'style="width:100%">'),
+            "output_path": str(tmp_path / "r.pdf")})
+        assert res["status"] == "success", res.get("error")
+        rows = res["page_contents"]
+        assert [r["pdf_page"] for r in rows] == list(range(1, len(rows) + 1))
+        assert all("page" not in r for r in rows)
+
+    def test_each_figure_reports_its_printed_size_and_lettering(
+            self, tmp_path):
+        pytest.importorskip("fitz")
+        _plot(tmp_path, "a.png", 6.5, 4, fontsize=10)
+        res = _generate_html_to_pdf({
+            "html": _doc(f'<img src="{tmp_path / "a.png"}" '
+                         'style="width:100%">'),
+            "output_path": str(tmp_path / "r.pdf")})
+        (fig,) = res["page_contents"][0]["figures"]
+        assert fig["figure"] == 1 and fig["width_in"] > 6.0
+        assert fig["height_in"] > 3.0
+        # 10 pt on a figure saved about 5.5 in wide, printed wider
+        assert 10.0 < fig["lettering_pt"] < 14.0
+        assert "figure_warnings" not in res
+
+    def test_a_figure_at_a_page_foot_moves_to_the_next_page(self, tmp_path):
+        """The live case: a figure after most of a page of text printed
+        0.3 in wide; it now starts the next page at its width."""
+        pytest.importorskip("fitz")
+        _plot(tmp_path, "wall.png", 6.5, 5)
+        res = _generate_html_to_pdf({
+            "html": _doc(TEXT * 4 + f'<img src="{tmp_path / "wall.png"}" '
+                         'style="width:100%"><p>Figure 1: Wall</p>'),
+            "output_path": str(tmp_path / "r.pdf")})
+        on_page = {r["pdf_page"]: r.get("figures") for r in
+                   res["page_contents"]}
+        assert not on_page[1]
+        (fig,) = on_page[2]
+        assert fig["width_in"] > 6.0 and fig.get("moved")
+
+    def test_a_narrow_figure_with_small_lettering_is_warned(self, tmp_path):
+        pytest.importorskip("fitz")
+        _plot(tmp_path, "small.png", 10, 4, fontsize=8)
+        res = _generate_html_to_pdf({
+            "html": _doc(f'<img src="{tmp_path / "small.png"}" '
+                         'style="width:35%">'),
+            "output_path": str(tmp_path / "r.pdf")})
+        (fig,) = res["page_contents"][0]["figures"]
+        assert fig["width_in"] < 3.0 and fig["lettering_pt"] < 7.0
+        (warning,) = res["figure_warnings"]
+        assert warning.startswith("Figure 1 (pdf_page 1)")
+        assert "under 7 pt" in warning
+
+    def test_a_figure_with_no_lettering_record_is_judged_by_width(
+            self, tmp_path):
+        """Without a record of its lettering, a figure printed narrower
+        than the 6.5 in the lettering check measures at is warned."""
+        pytest.importorskip("fitz")
+        (tmp_path / "dot.png").write_bytes(_tiny_png())
+        res = _generate_html_to_pdf({
+            "html": _doc(f'<img src="{tmp_path / "dot.png"}" '
+                         'style="width:3in">'),
+            "output_path": str(tmp_path / "r.pdf")})
+        (fig,) = res["page_contents"][0]["figures"]
+        assert "lettering_pt" not in fig
+        (warning,) = res["figure_warnings"]
+        assert "narrower than the 6.5 in" in warning
+
+    def test_the_numbers_are_the_lettering_checks(self):
+        from funhouse_agent.adapters.calc_package import _figure_warnings
+        from funhouse_agent.plot_box.child import (DEFAULT_PRINT_WIDTH_IN,
+                                                   MIN_PRINT_PT)
+        base = {"pdf_page": 1, "height_in": 3.0}
+        assert _figure_warnings([{**base, "width_in": 6.5}]) == []
+        assert _figure_warnings([{**base, "width_in":
+                                  DEFAULT_PRINT_WIDTH_IN - 0.5}])
+        ok = {**base, "width_in": 5.0, "lettering_pt": MIN_PRINT_PT}
+        assert _figure_warnings([ok]) == []
+        checked = {**ok, "checked_width_in": 6.5}
+        assert "checked at" in _figure_warnings([checked])[0]
+        tall = {**base, "width_in": 6.5, "scaled": 0.4}
+        assert "taller than a page" in _figure_warnings([tall])[0]

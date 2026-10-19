@@ -88,18 +88,37 @@ def _slug(text: str, n: int = 40) -> str:
 _MAX_FIGURE_PATH = 220
 
 
-def _figure_file_name(out_dir: str, stem: str, index: int, title: str,
-                      ts: str) -> str:
-    """``<stem>_f<i>_<title slug>_<HHMMSS>.png``, short: the title slug is
-    cut, then dropped, to keep the full path under :data:`_MAX_FIGURE_PATH`."""
-    room = _MAX_FIGURE_PATH - len(os.path.abspath(out_dir)) - 1
-    base = f"{stem}_f{index}"
-    tail = f"_{ts}.png"
-    slug = _slug(title, 24)
-    for name in (f"{base}_{slug}{tail}", f"{base}{tail}"):
-        if len(name) <= room:
-            return name
-    return f"f{index}{tail}"
+def _figure_file_name(out_dir: str, prefix: str, index: int, title: str,
+                      taken=()) -> str:
+    """``[<prefix>_]<title slug>.png``: a short name from the figure's
+    title (GM-171: figures were named ``f1_<time>.png`` when the folder was
+    deep), unique among ``taken`` (this package's names) and the files
+    already in ``out_dir`` (``_2``, ``_3`` ...), with the full path under
+    :data:`_MAX_FIGURE_PATH`: the slug is cut to fit at a word, and is
+    ``fig<i>`` when under 8 characters would be left."""
+    lead = f"{prefix}_" if prefix else ""
+    # what the slug may take: the path cap less the folder, a separator,
+    # a "_99" suffix and ".png"
+    room = (_MAX_FIGURE_PATH - len(os.path.abspath(out_dir)) - 1 - 3 - 4
+            - len(lead))
+    full = slug = _slug(title, 32)
+    if len(slug) == 32 and "_" in slug:            # end on a whole word
+        slug = slug.rsplit("_", 1)[0]
+    if len(slug) > room:
+        room = max(room, 0)
+        cut = slug[:room].rstrip("_")
+        whole = slug[room] == "_" or "_" not in cut     # ends on a word
+        word = cut if whole else cut.rsplit("_", 1)[0]
+        slug = word if len(word) >= 8 else cut
+    base = lead + (slug if len(slug) >= 8 or slug == full
+                   else f"fig{index}")
+    taken = {t.lower() for t in taken}
+    name, n = f"{base}.png", 1
+    while (name.lower() in taken
+           or os.path.exists(os.path.join(out_dir, name))):
+        n += 1
+        name = f"{base}_{n}.png"
+    return name
 
 
 def _figures_response(module: str, result, analysis, opts: dict,
@@ -126,8 +145,9 @@ def _figures_response(module: str, result, analysis, opts: dict,
     out_dir = (resolve_output_path(str(out_dir)) if out_dir
                else default_output_dir())
     os.makedirs(out_dir, exist_ok=True)
-    stem = _slug(opts.get("name_prefix") or module, 24)
-    ts = datetime.now().strftime("%H%M%S")
+    prefix = (_slug(opts["name_prefix"], 24) if opts.get("name_prefix")
+              else "")
+    names = []
 
     saved_figs = []
     problems = []
@@ -140,8 +160,12 @@ def _figures_response(module: str, result, analysis, opts: dict,
             problems.append(f"figure {i} ('{title}'): undecodable image "
                             f"({type(exc).__name__})")
             continue
-        path = os.path.join(out_dir, _figure_file_name(out_dir, stem, i,
-                                                       title, ts))
+        name = _figure_file_name(
+            out_dir, prefix, i,
+            getattr(fig, "title", "") or getattr(fig, "caption", "")
+            or f"{module} figure {i}", names)
+        names.append(name)
+        path = os.path.join(out_dir, name)
         saved = save_verified(path, png)
         abs_path = saved.get("saved", os.path.abspath(path))
         entry = {
@@ -1875,16 +1899,63 @@ def _unembeddable_error(findings: list) -> str:
             + _EMBED_FIX)
 
 
-def _pdf_layout(path: str, max_pages: int = 20) -> dict:
-    """``{"pages", "page_contents"}`` read back from a written PDF: per page,
-    its first line of text, how many characters and images it holds, and a
-    note on a page with nothing on it. ``{}`` when it cannot be read."""
+def _figure_warnings(figures) -> list:
+    """What a reader of the PDF cannot read, per figure (GM-168): lettering
+    that prints under the lettering check's 7 pt, a figure printed narrower
+    than the width that check measured it at (6.5 in when it never ran and
+    its lettering is not known), or a figure taller than a page scaled far
+    down. The numbers are the plotting box's own."""
+    from calc_package.latex_renderer import MIN_FIGURE_SCALE
+    from funhouse_agent.plot_box.child import (DEFAULT_PRINT_WIDTH_IN,
+                                               MIN_PRINT_PT)
+    out = []
+    for k, f in enumerate(figures or [], start=1):
+        lettering = f.get("lettering_pt")
+        checked = f.get("checked_width_in") or (
+            None if lettering is not None else DEFAULT_PRINT_WIDTH_IN)
+        why = []
+        if lettering is not None and lettering < MIN_PRINT_PT - 0.05:
+            why.append(f"its smallest lettering prints {lettering:g} pt, "
+                       f"under {MIN_PRINT_PT:g} pt")
+        if checked and f["width_in"] < checked - 0.05:
+            why.append(f"it prints narrower than the {checked:g} in its "
+                       "lettering is checked at")
+        scaled = f.get("scaled")
+        if scaled is not None and scaled < MIN_FIGURE_SCALE:
+            why.append(f"it is taller than a page, so it prints at "
+                       f"{scaled:.0%} of its width: draw it shorter")
+        if why:
+            out.append(f"Figure {k} (pdf_page {f['pdf_page']}) prints "
+                       f"{f['width_in']:g} x {f['height_in']:g} in: "
+                       + "; ".join(why) + ". Give it the page width "
+                       "(width:100%) or draw it for the width it prints at, "
+                       "then look at the page.")
+    return out
+
+
+def _pdf_layout(path: str, figures=None, max_pages: int = 20) -> dict:
+    """``{"pages", "page_contents"[, "figure_warnings"]}`` read back from a
+    written PDF: per page (``pdf_page``, from 1, as a PDF viewer shows),
+    its first line of text, how many characters and images it holds, a
+    note on a page with nothing on it, and each figure on it: its printed
+    ``width_in`` and ``height_in`` and, where the figure's PNG says,
+    ``lettering_pt`` (its smallest lettering as printed). ``figures`` is
+    the renderer's (``render_html_pdf_story``); without it the sizes are
+    read from the PDF. ``{}`` when it cannot be read."""
     try:
         import fitz                                        # PyMuPDF
         doc = fitz.open(path)
     except Exception:                                      # noqa: BLE001
         return {}
     try:
+        if figures is None:
+            figures = []
+            for page in doc:
+                for info in page.get_image_info():
+                    r = fitz.Rect(info["bbox"])
+                    figures.append({"pdf_page": page.number + 1,
+                                    "width_in": round(r.width / 72, 2),
+                                    "height_in": round(r.height / 72, 2)})
         rows = []
         for i, page in enumerate(doc):
             if i >= max_pages:
@@ -1892,9 +1963,21 @@ def _pdf_layout(path: str, max_pages: int = 20) -> dict:
             text = page.get_text("text") or ""
             lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
             n_img = len(page.get_images(full=True))
-            row = {"page": i + 1, "first_line": (lines[0][:80] if lines
-                                                 else ""),
+            row = {"pdf_page": i + 1, "first_line": (lines[0][:80] if lines
+                                                     else ""),
                    "chars": len(text.strip()), "images": n_img}
+            on_page = []
+            for k, f in enumerate(figures, start=1):
+                if f["pdf_page"] != i + 1:
+                    continue
+                fig = {"figure": k, "width_in": f["width_in"],
+                       "height_in": f["height_in"]}
+                for key in ("lettering_pt", "moved", "scaled"):
+                    if f.get(key):
+                        fig[key] = f[key]
+                on_page.append(fig)
+            if on_page:
+                row["figures"] = on_page
             if not lines and not n_img:
                 row["note"] = "nothing on this page"
             rows.append(row)
@@ -1902,6 +1985,9 @@ def _pdf_layout(path: str, max_pages: int = 20) -> dict:
         if doc.page_count > max_pages:
             out["page_contents_note"] = (f"first {max_pages} of "
                                          f"{doc.page_count} pages")
+        warnings = _figure_warnings(figures)
+        if warnings:
+            out["figure_warnings"] = warnings
         return out
     except Exception:                                      # noqa: BLE001
         return {}
@@ -1910,7 +1996,7 @@ def _pdf_layout(path: str, max_pages: int = 20) -> dict:
 
 
 def _generate_html_to_pdf(params: dict) -> dict:
-    from calc_package.latex_renderer import save_html_pdf_story
+    from calc_package.latex_renderer import render_html_pdf_story
 
     reject_unknown_params(
         params, {"html", "html_path", "output_path", "allow_unembeddable"},
@@ -1957,7 +2043,7 @@ def _generate_html_to_pdf(params: dict) -> dict:
         output_path += ".pdf"
     abs_path = os.path.abspath(output_path)
     try:
-        save_html_pdf_story(html, abs_path)
+        rendered = render_html_pdf_story(html, abs_path)
     except Exception as exc:
         return {"status": "error",
                 "error": f"PDF render failed ({type(exc).__name__}: {exc}). "
@@ -1983,7 +2069,7 @@ def _generate_html_to_pdf(params: dict) -> dict:
         # What landed on each page, read back from the PDF (GM-101: the
         # calc helper could not see the PDF it built, and spent three
         # delegations finding out what was in it).
-        layout = _pdf_layout(abs_path)
+        layout = _pdf_layout(abs_path, rendered.get("figures"))
         if layout:
             response.update(layout)
     if findings:  # only reachable with allow_unembeddable=true
@@ -2221,7 +2307,9 @@ METHOD_INFO = {
                  "method matches the analysis — compose the report HTML yourself "
                  "(inline CSS; figures as a real local PNG path or a base64 PNG/JPEG "
                  "data URI) and pass it here. Figures it cannot embed are a hard ERROR, "
-                 "never a silent blank. Pure-Python (PyMuPDF Story engine).",
+                 "never a silent blank. A figure that does not fit what is left of a "
+                 "page starts the next page at its full size; one taller than a page is "
+                 "scaled to fit a page. Pure-Python (PyMuPDF Story engine).",
         "parameters": {
             "html": {"type": "str", "required": False,
                      "description": "Self-contained HTML content to render. Inline all "
@@ -2262,10 +2350,20 @@ METHOD_INFO = {
             "images_embedded": "How many local image files were inlined into the PDF.",
             "pages": "How many pages the PDF has.",
             "page_contents": "What landed on each page, read back from the PDF: "
-                             "its first line of text, characters and images "
-                             "(a page with nothing on it says so). Check a "
-                             "figure landed where the report needs it from "
-                             "this, without opening the PDF.",
+                             "pdf_page (from 1, as a PDF viewer shows), its "
+                             "first line of text, characters and images (a "
+                             "page with nothing on it says so), and each "
+                             "figure on it with its printed width_in and "
+                             "height_in and, where its PNG says, lettering_pt "
+                             "(its smallest lettering as printed). Check a "
+                             "figure landed where the report needs it, at a "
+                             "size that reads, from this, without opening "
+                             "the PDF.",
+            "figure_warnings": "Present when a figure prints too small to "
+                               "read: lettering under 7 pt, narrower than the "
+                               "width its lettering was checked at, or taller "
+                               "than a page and scaled down. Fix those "
+                               "figures before handing the PDF over.",
             "unembeddable": "On error (or with allow_unembeddable=true): each figure "
                             "reference that cannot be embedded, and why.",
         },

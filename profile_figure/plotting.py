@@ -307,4 +307,7 @@ def figure_to_png(fig, dpi: int = 150) -> bytes:
     buf.seek(0)
     data = buf.read()
     buf.close()
-    return data
+    # the PNG carries its smallest lettering, so a PDF built from it can
+    # tell how large that prints (GM-168)
+    from geotech_common.layout_ink import png_with_lettering
+    return png_with_lettering(fig, data, dpi)
