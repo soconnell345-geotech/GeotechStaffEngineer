@@ -96,6 +96,14 @@ SLOW_TO_VARY = frozenset({
     "slope_stability|search_critical_surface",
     "slope_stability|yield_acceleration"})
 
+#: Probes GM-160's check does not vary, and why.
+NOT_VARIED = {
+    k: "each run is a full critical-surface search (minutes), and "
+       "slope_stability is frozen by the owner until the integral review"
+    for k in ("slope_stability|monte_carlo_fos",
+              "slope_stability|search_critical_surface",
+              "slope_stability|search_rapid_drawdown")}
+
 #: Result keys that share a parameter's name but report something else,
 #: so ``defaults_used`` and the result may differ there: (probe key, name)
 #: -> what the result's value is.

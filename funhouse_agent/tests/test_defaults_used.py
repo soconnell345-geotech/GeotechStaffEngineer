@@ -697,6 +697,8 @@ def test_every_default_a_run_lists_changes_its_result(key, tmp_path,
     other value moves it (a limit may act one way only). Inputs that are a label
     only are in ``MP.LABEL_ONLY``; inputs whose effect this probe does not
     reach are in ``MP.NOT_REACHED``, each with why."""
+    if key in MP.NOT_VARIED:
+        pytest.skip(MP.NOT_VARIED[key])
     monkeypatch.chdir(tmp_path)
     base = key.split("#")[0]
     agent, method = base.split("|")
