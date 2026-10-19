@@ -226,7 +226,16 @@ REPORT_LIBRARY_NUDGE = (
 #: and every other choice -- a factor of safety, a search grid, a method, the
 #: stratum a check was run on -- silent or in passing; the librarian was
 #: consulted in 4 of 77 calc runs. Kept general on purpose: no example from
-#: those runs. ``{reference}`` names the references helper where it is built.
+#: those runs. ``{sources}`` names the references helper where it is built.
+#:
+#: GM-155 (live wave w12, four pairs OFF / ON): no ON answer cited a
+#: reference for any call, though a tool's ``choices`` carry a basis; a
+#: default a tool applied (one named only in its notes) fell out of the list
+#: where the OFF answer had stated it; and one ON answer ran fewer
+#: alternatives than OFF, stating what would change the answer instead of
+#: running it. So: a tool's defaults are calls, each call names its source
+#: or says it has none, one consult covers every call that needs one, and
+#: the run the list asks for adds to the alternatives, never replaces them.
 _JUDGMENT_CALLS_SECTION = """\
 ## Judgment Calls
 
@@ -237,14 +246,30 @@ the user did not make: the method or analysis type, including whether the
 default analysis suits the geometry and loading; a parameter value, factor
 of safety or load factor they did not give (inputs you assumed go in this
 list, not a second one); drained or undrained, which stratum governs, search
-or mesh settings; how you read ambiguous data. An answer that rests on one
-ends with a short "Judgment calls" list, your helpers' calls included, each
-giving what was chosen; why, with its reference where one applies{reference};
-the alternative set aside; and what would change the answer (a number only
-from a tool run). An answer that rests on none needs no list."""
+or mesh settings; how you read ambiguous data. A tool's defaults are calls
+too: its `choices` not marked given, its `defaults_used` where the answer
+turns on them, and what its notes say it assumed. An answer that rests on
+one ends with a short "Judgment calls" list, your helpers' calls included,
+each giving:
+- what was chosen and the alternative set aside;
+- why, with its source: {sources};
+  otherwise say plainly that it rests on judgment, with no reference cited;
+- what would change the answer: for the call the answer turns on most, run
+  the alternative (one tool call; no second helper task or deliverable) and
+  give its number; for the others, say which way the answer would move (a
+  number only from a tool run).
+That run adds to the alternatives you would run anyway, never replaces
+them. Leave out choices that cannot change the answer, such as rounding or
+presentation. An answer that rests on none needs no list."""
 
-_JUDGMENT_CALLS_REFERENCES = (
-    " (ask the\n`references` helper when a reference governs the choice)")
+_JUDGMENT_CALLS_SOURCES = (
+    "the basis in a tool's `choices`, a reference\n"
+    "  looked up in this conversation, or the `references` helper, asked once\n"
+    "  about all the calls the answer turns on that have no basis in hand")
+
+_JUDGMENT_CALLS_SOURCES_NO_HELPER = (
+    "the basis in a tool's `choices` or a reference\n"
+    "  looked up in this conversation")
 
 
 def judgment_calls_section(references: bool = True) -> str:
@@ -252,7 +277,8 @@ def judgment_calls_section(references: bool = True) -> str:
     (``GEOTECH_JUDGMENT_CALLS``); ``references`` says whether the references
     helper is built, so the block names it only where it exists."""
     return _JUDGMENT_CALLS_SECTION.format(
-        reference=_JUDGMENT_CALLS_REFERENCES if references else "")
+        sources=(_JUDGMENT_CALLS_SOURCES if references
+                 else _JUDGMENT_CALLS_SOURCES_NO_HELPER))
 
 
 def build_domain_prompt(allowed_agents=None, *, memory_enabled: bool = False) -> str:

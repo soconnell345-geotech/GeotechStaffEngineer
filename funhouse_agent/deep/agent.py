@@ -109,7 +109,9 @@ _REFERENCES_OPTIONS = (
     "\n\nWhere the references give more than one method or value for the "
     "question, return each as a cited option with when it applies, and say "
     "which fits the question as asked; the choice is the user's. Otherwise "
-    "return only what was asked."
+    "return only what was asked. Asked about several choices at once, "
+    "answer each in a line or two with its citation, or say no reference "
+    "was found for it."
 )
 
 #: Added to deepagents' stock general-purpose helper prompt (field session
@@ -504,6 +506,11 @@ _CALC_FRAMING = (
     "them, stop and reply saying exactly what is missing — never write 'per "
     "prior analysis', 'see previous table' or labels you made up, and never "
     "describe a case differently from how it was defined.\n"
+    "GIVEN OR ASSUMED: a deliverable keeps the inputs the delegation says "
+    "the user gave apart from the assumptions (the delegation's, yours and "
+    "a tool's defaults_used), each assumption with its basis; never print "
+    "an assumption as given. A *_package takes `assumptions` for the inputs "
+    "you pass that the user did not give.\n"
     "LAYER NAMES: keep soil layer names exactly as the delegation gives them. "
     "When asked to change a property of named layers, change only those, and "
     "say in your reply which layers (name and depth range) you changed.\n"
@@ -527,16 +534,22 @@ _CALC_PLOT_CODE = (
 
 #: Added to the calc helper's prompt with ``GEOTECH_JUDGMENT_CALLS`` on
 #: (BACKLOG GM-116): its compact reply left out the choices it made, so the
-#: main agent had none to relay.
+#: main agent had none to relay. GM-155 (live wave w12): no call carried a
+#: reference, and the lists padded with rounding and how totals are
+#: reported; a tool's ``choices`` already carry a basis.
 _CALC_JUDGMENT_CALLS = (
     "\nJUDGMENT CALLS: the engineering judgment is the user's, and the "
     "delegating agent puts your choices in front of them. End your reply "
-    "with a short \"Judgment calls\" list of every choice the delegation did "
-    "not make for you -- a method or analysis type, a parameter value, "
-    "factor of safety or load factor, drained or undrained, which stratum "
-    "governs, search or mesh settings, how you read ambiguous data -- each "
-    "giving what you chose, why (with its reference where one applies), the "
-    "alternative you set aside and what would change the result.")
+    "with a short \"Judgment calls\" list of every engineering choice the "
+    "delegation did not make for you, a tool's defaults and choices "
+    "included where the result turns on them -- a method or analysis "
+    "type, a parameter value, factor of "
+    "safety or load factor, drained or undrained, which stratum governs, "
+    "search or mesh settings, how you read ambiguous data -- each giving "
+    "what you chose, why (the basis the tool's `choices` give, else say it "
+    "rests on judgment, with no reference cited), the alternative you set "
+    "aside and what would change the result (a number only from a tool "
+    "run). Leave out rounding and presentation.")
 
 #: Appended to the PRIMARY agent's system prompt when the calc sub-agent is on,
 #: nudging it to delegate tool-heavy calc rather than run those tools inline.
@@ -560,7 +573,10 @@ _CALC_DELEGATION_NUDGE = (
     "path of the earlier file. When it reports a rebuilt deliverable, open the "
     "file (read_pdf_text) and check the numbers are in it before you tell the "
     "user it is fixed. When you ask for a change to named soil layers, pass the "
-    "layer list with those names and say exactly which layers to change."
+    "layer list with those names and say exactly which layers to change. "
+    "Keep what the user gave apart from what you assumed: an assumed value "
+    "goes in the brief under assumptions, with its basis, never among the "
+    "user's inputs, and never reads as something found or measured."
 )
 
 

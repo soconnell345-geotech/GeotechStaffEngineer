@@ -258,11 +258,115 @@ def test_the_block_is_general_and_short():
                  "whether the default analysis suits the geometry and "
                  "loading", "factor of safety", "load factor", "drained or",
                  "which stratum governs", "search or mesh", "ambiguous data",
-                 '"Judgment calls"', "why,", "alternative set aside",
-                 "what would change the answer (a number only from a tool "
-                 "run)", "inputs you assumed",
+                 '"Judgment calls"', "why, with its source",
+                 "alternative set aside", "what would change the answer",
+                 "(a number only from a tool run)", "inputs you assumed",
                  "An answer that rests on none needs no list."):
         assert part in flat, part
-    assert len(block) < 1000
-    assert len(agent_mod._CALC_JUDGMENT_CALLS) < 600
-    assert len(agent_mod._REFERENCES_OPTIONS) < 250
+    # GM-155: 963 characters before; the sources, a tool's defaults and
+    # the one bounded run that adds to the alternatives cost about 700 more
+    assert len(block) < 1700
+    assert len(judgment_calls_section(references=False)) < 1600
+    assert len(agent_mod._CALC_JUDGMENT_CALLS) < 800
+    assert len(agent_mod._REFERENCES_OPTIONS) < 400
+
+
+# ---------------------------------------------------------------------------
+# GM-155: grounded calls, given apart from assumed, numbers from tools
+# ---------------------------------------------------------------------------
+
+def test_each_call_names_its_source_or_says_it_has_none():
+    """Live wave w12: no ON answer cited a reference for any call. A tool's
+    ``choices`` already carry a basis, so the block asks for that first and
+    for one consult covering every call left without one (the cost lever);
+    a call with no source says so."""
+    flat = " ".join(judgment_calls_section(references=True).split())
+    for part in ("the basis in a tool's `choices`",
+                 "a reference looked up in this conversation",
+                 "the `references` helper, asked once about all the calls "
+                 "the answer turns on that have no basis in hand",
+                 "otherwise say plainly that it rests on judgment, with no "
+                 "reference cited"):
+        assert part in flat, part
+    alone = " ".join(judgment_calls_section(references=False).split())
+    assert "the basis in a tool's `choices` or a reference looked up in " \
+        "this conversation; otherwise say plainly" in alone
+    assert "`references` helper" not in alone and "asked once" not in alone
+    calc = agent_mod._CALC_JUDGMENT_CALLS
+    assert "the basis the tool's `choices` give" in calc
+    assert "no reference cited" in calc
+    assert "several choices at once" in agent_mod._REFERENCES_OPTIONS
+
+
+def test_a_tools_defaults_are_calls():
+    """w12 F51j: K0, named only in the tool's notes, fell out of the ON
+    list where the OFF answer had stated it."""
+    flat = " ".join(judgment_calls_section(references=True).split())
+    assert ("A tool's defaults are calls too: its `choices` not marked "
+            "given, its `defaults_used` where the answer turns on them, and "
+            "what its notes say it assumed.") in flat
+    # only those that matter: the bearing tool has 9 defaults, the wall 13
+    assert ("a tool's defaults and choices included where the result turns "
+            "on them") in agent_mod._CALC_JUDGMENT_CALLS
+
+
+def test_the_list_runs_one_alternative_and_drops_no_other():
+    """w12 F61j ran fewer alternatives than OFF and said what would change
+    the answer instead; F18 OFF and F18j quoted sensitivities no tool gave.
+    One run for the call the answer turns on most, the rest by direction,
+    and the run adds to the alternatives, never replaces them."""
+    flat = " ".join(judgment_calls_section(references=True).split())
+    for part in ("for the call the answer turns on most, run the "
+                 "alternative (one tool call; no second helper task or "
+                 "deliverable) and give its number",
+                 "for the others, say which way the answer would move",
+                 "That run adds to the alternatives you would run anyway, "
+                 "never replaces them.",
+                 "Leave out choices that cannot change the answer, such as "
+                 "rounding or presentation."):
+        assert part in flat, part
+    assert "Leave out rounding and presentation." in \
+        agent_mod._CALC_JUDGMENT_CALLS
+
+
+@pytest.mark.parametrize("calc", [False, True])
+def test_switch_off_carries_no_gm155_switched_text(monkeypatch, calc):
+    """With the switch off, none of the switched GM-155 text reaches any
+    prompt (the general fixes below are in both arms)."""
+    captured, _ = _built(monkeypatch, False, enable_calc_subagent=calc)
+    texts = [captured["system_prompt"]] + [
+        s.get("system_prompt") or "" for s in captured["subagents"]]
+    for t in texts:
+        for part in ("A tool's defaults are calls", "no reference cited",
+                     "asked once about all", "several choices at once",
+                     "turns on most"):
+            assert part not in t, part
+
+
+@pytest.mark.parametrize("on", [False, True])
+def test_the_general_fixes_are_in_both_arms(monkeypatch, on):
+    """GM-155's unswitched fixes, listed: the base prompt's confidence
+    sentence asks for a tool-run number or a direction (both arms invented
+    sensitivity percentages in w12); a brief keeps the user's inputs apart
+    from the agent's assumptions, and so does the calc helper's
+    deliverable (F55 OFF and F55j put an assumed concrete unit weight
+    under the user's inputs; F18j's brief stated an assumed water table as
+    found)."""
+    from funhouse_agent.system_prompt import REACT_PREFIX
+    captured, _ = _built(monkeypatch, on, enable_calc_subagent=True)
+    main = " ".join(captured["system_prompt"].split())
+    flat_prefix = " ".join(REACT_PREFIX.replace("\\\n", "").split())
+    for part in ("Say how much an assumption moves a result only with a "
+                 "number from a tool run or a reference looked up in this "
+                 "conversation",
+                 "say which way it moves the result, not by how much"):
+        assert part in flat_prefix and part in main, part
+    # no invitation to rerun in the OFF arm
+    assert "rerun" not in flat_prefix
+    assert ("Keep what the user gave apart from what you assumed: an "
+            "assumed value goes in the brief under assumptions, with its "
+            "basis, never among the user's inputs") in main
+    calc = _spec(captured, "calc")["system_prompt"]
+    assert "GIVEN OR ASSUMED: a deliverable keeps the inputs" in calc
+    assert "never print an assumption as given" in calc
+    assert "takes `assumptions`" in calc

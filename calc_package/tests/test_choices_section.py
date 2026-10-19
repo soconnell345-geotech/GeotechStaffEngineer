@@ -37,7 +37,7 @@ def test_section_lists_each_choice():
 def test_package_prints_it_after_the_inputs():
     result, analysis = _axial()
     html = generate_calc_package("axial_pile", result, analysis)
-    inputs = html.index("Input Parameters")
+    inputs = html.index("Values Used")
     choices = html.index("Method Choices")
     assert inputs < choices < html.index("Tomlinson alpha 10-15 m") \
         < html.index("Soil Profile")

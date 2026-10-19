@@ -52,7 +52,7 @@ from calc_package.latex_renderer import render_latex, save_latex, save_pdf, rend
 from calc_package.equation_converter import unicode_to_latex, escape_latex
 from calc_package.tables import (
     csv_file_names, export_tables, input_table, module_tables, tables_section,
-    choices_section,
+    choices_section, assumed_section, given_section,
 )
 
 
@@ -147,6 +147,8 @@ def generate_calc_package(
     render_report: dict = None,
     tables=True,
     table_files: list = None,
+    assumed_inputs: list = None,
+    given_inputs: list = None,
 ) -> str:
     """Generate a Mathcad-style calculation package.
 
@@ -196,6 +198,16 @@ def generate_calc_package(
         With a ``tables`` list: the CSV file names the caller has already
         written, parallel to the list. The package names them under each
         table and writes no CSV itself.
+    assumed_inputs : list of dict, optional
+        The inputs that were not given, one ``{input, value, basis}`` each
+        (GM-155): the analysis's defaults and the caller's own
+        assumptions. Printed as an "Assumed Inputs" section before the
+        Values Used, so an assumption never reads as given. ``None``: no
+        such section.
+    given_inputs : list of dict, optional
+        The inputs the caller gave, one ``{input, value}`` each, less those
+        it stated as assumptions (GM-155). Printed first, as "Given
+        Inputs". ``None``: no such section.
 
     Returns
     -------
@@ -212,10 +224,20 @@ def generate_calc_package(
     # Build sections
     sections = []
 
-    # Section 1: Input Parameters
+    # The inputs given, then those assumed (GM-155): kept apart, so an
+    # assumption never reads as given.
+    given_part = given_section(given_inputs)
+    if given_part is not None:
+        sections.append(given_part)
+    assumed_part = assumed_section(assumed_inputs)
+    if assumed_part is not None:
+        sections.append(assumed_part)
+
+    # Section 1: the module's echo of every value used -- given, assumed
+    # and worked out from them (a wall's heel length), so not "inputs".
     input_items = reg["get_input_summary"](result, analysis)
     if input_items:
-        sections.append(CalcSection(title="Input Parameters", items=input_items))
+        sections.append(CalcSection(title="Values Used", items=input_items))
 
     # What the analysis chose (GM-115): beside the inputs, before the steps.
     choices_part = choices_section(result, analysis)
