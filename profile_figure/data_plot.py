@@ -1211,14 +1211,16 @@ _REF_SPOTS = {
 
 
 def _place_ref_names(fig, ax, ref_names, drawn, fixed_texts=(),
-                     leaders=()) -> dict:
+                     leaders=(), ref_lines=()) -> dict:
     """Put each reference line's name at whichever end of its line, above
     or below it (left or right of a vertical one), covers least of the
-    points, the lines, the notes and the other names, inside the plot frame
-    (the right end above the line, as before, wins a tie). ``ref_names`` is
-    ``[(artist, "h" | "v", value, k)]``. Returns ``{(kind, k): Plotly's
-    annotation_position}`` for the interactive twin (BACKLOG GM-152: a
-    worked example's "Best estimate" stood on a data point)."""
+    points, the lines, the other reference lines, the notes and the other
+    names, inside the plot frame (the right end above the line, as before,
+    wins a tie). ``ref_names`` is ``[(artist, "h" | "v", value, k)]``;
+    ``ref_lines`` ``[("h" | "v", value)]`` every reference line drawn.
+    Returns ``{(kind, k): Plotly's annotation_position}`` for the
+    interactive twin (BACKLOG GM-152: a worked example's "Best estimate"
+    stood on a data point)."""
     from matplotlib.transforms import Bbox
 
     fig.canvas.draw()
@@ -1231,17 +1233,22 @@ def _place_ref_names(fig, ax, ref_names, drawn, fixed_texts=(),
     taken += _data_obstacles(fig, ax, drawn)
     spots = {}
     for t, kind, v, k in ref_names:
+        # the other reference lines cut a name as they cut a point's name
+        # (_LINE_COST); its own line runs beside it
+        strokes = _ref_line_boxes(fig, ax, [r for r in ref_lines
+                                            if r != (kind, v)])
         best = None
         for along, off, ha, va, plotly_pos in _REF_SPOTS[kind]:
             t.xy = (along, v) if kind == "h" else (v, along)
             t.xyann = off
             t.set_ha(ha)
             t.set_va(va)
-            bb = t.get_window_extent(renderer)
-            bb = Bbox([[bb.x0 - pad, bb.y0 - pad],
-                       [bb.x1 + pad, bb.y1 + pad]])
+            letters = t.get_window_extent(renderer)
+            bb = Bbox([[letters.x0 - pad, letters.y0 - pad],
+                       [letters.x1 + pad, letters.y1 + pad]])
             area = (bb.x1 - bb.x0) * (bb.y1 - bb.y0)
-            cost = sum(_overlap(bb, o) for o in taken)
+            cost = sum(_overlap(bb, o) for o in taken + strokes)
+            cost += _LINE_COST * sum(_overlap(letters, o) for o in strokes)
             cost += 3.0 * (area - _overlap(bb, frame))
             if best is None or cost < best[0]:
                 best = (cost, along, off, ha, va, plotly_pos, bb)
@@ -1376,6 +1383,11 @@ _PLACED_HINTS = {
     "point": "no spot beside the point was clear: name it with a note and "
              "a leader, or leave the name out",
 }
+#: ... and on a piece whose one fault is the legend, which names are not
+#: placed round (a legend inside the plot takes its "best" place at the
+#: last draw, after them)
+_LEGEND_HINT = ("the legend sits on it: legend_position 'outside' or "
+                "'below' takes the legend off the plot")
 
 
 def _check_lettering(fig, ax, notes, artists, dpi, lines_named=None,
@@ -1459,8 +1471,9 @@ def _check_lettering(fig, ax, notes, artists, dpi, lines_named=None,
                          f"'{_short(n['lines'][0])}': " + "; ".join(parts[k]))
     for k, (_a, name, kind) in enumerate(placed, start=n_notes):
         if parts[k]:
-            found.append(f"{name}: " + "; ".join(parts[k])
-                         + f" ({_PLACED_HINTS[kind]})")
+            hint = (_LEGEND_HINT if parts[k] == ["overlaps the legend"]
+                    else _PLACED_HINTS[kind])
+            found.append(f"{name}: " + "; ".join(parts[k]) + f" ({hint})")
     return found
 
 
@@ -1726,7 +1739,8 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
     if ref_names:
         ref_spots = _place_ref_names(fig, ax, ref_names, drawn, note_artists,
                                      [(a, n["point"]) for a, n in
-                                      zip(note_artists, notes) if n["point"]])
+                                      zip(note_artists, notes) if n["point"]],
+                                     ref_lines)
     plan_lay, furniture = None, []
     if plan_view:
         fig.canvas.draw()               # settle the layout

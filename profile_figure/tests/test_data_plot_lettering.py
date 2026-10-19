@@ -137,6 +137,39 @@ def test_a_reference_line_name_moves_off_the_data_and_the_twin_follows():
     assert (a.xanchor, a.yanchor) != ("right", "bottom")   # not top right
 
 
+def test_a_reference_line_name_keeps_clear_of_the_other_lines():
+    """Two vertical lines closer than a name is wide: the first line's name
+    stood at the top right of its line, across the second, with the top
+    left clear (the other reference lines were not obstacles)."""
+    pts = {"x": [60, 80], "y": [10, 20], "label": "Data", "style": "markers"}
+    res = render_data_plot([pts], vlines=[{"value": 17.7, "label": "Bound"},
+                                          20.2],
+                           xlim=[0, 100], ylim=[0, 50])
+    assert res.warnings == [], res.warnings
+    a = [a for a in res.figure.layout.annotations if a.text == "Bound"][0]
+    assert a.xanchor == "right"                 # the top left of its line
+
+
+def test_a_name_the_legend_sits_on_is_told_to_move_the_legend(monkeypatch):
+    """A legend inside the plot takes its "best" place at the last draw,
+    after the names: a name it sits on is told to move the legend, not
+    that no spot beside the point was clear."""
+    import geotech_common.layout_ink as layout_ink
+
+    def legend_on_the_first_name(fig, fname, dpi=200, **kw):
+        legend = fig.axes[0].get_legend()
+        return {"file": fname,
+                "text_overlaps": [[0, "Samples", legend.get_texts()[0]]]}
+    monkeypatch.setattr(layout_ink, "layout_check", legend_on_the_first_name)
+    pts = {"x": [1, 2], "y": [1, 2], "label": "Samples", "style": "markers",
+           "labels": ["S-1", ""]}
+    res = render_data_plot([pts], legend=True, interactive=False)
+    assert res.warnings == [
+        "series[0] point name 'S-1': overlaps the legend (the legend sits "
+        "on it: legend_position 'outside' or 'below' takes the legend off "
+        "the plot)"], res.warnings
+
+
 def test_a_vertical_line_name_crossed_by_the_data_is_reported():
     """Data along the top and the bottom of the plot: every end of the
     line is crossed, and the warning names the name and the series."""

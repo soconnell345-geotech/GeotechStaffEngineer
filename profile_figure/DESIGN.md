@@ -87,7 +87,10 @@ more `{x, y, label, style, color}` series with matplotlib: `depth_axis=True`
 inverts y and puts the x axis on top (boring-log convention), `logx`/`logy`
 (ticks written 1, 10, 100), `hlines`/`vlines` as reference lines (a water
 table, an allowable value), each named on the line itself and kept out of
-the legend. It knows no analysis and does no unit conversion — the caller labels
+the legend; the name stands at whichever end of its line, on either side,
+covers least of the data, the notes and the other names (the right end
+above a horizontal line, the top right of a vertical one, when clear), and
+the interactive twin puts it at the same end (BACKLOG GM-152). It knows no analysis and does no unit conversion — the caller labels
 the axes WITH units. Non-finite points are dropped with a warning; unequal
 `x`/`y` lengths, an empty series and an unknown style are errors that name the
 series index. It exists because the agent has no code-execution tool: without
