@@ -432,6 +432,32 @@ class TestEarthPressureCoefficient:
                           "theory": "caquot_kerisel"})["K"]
         assert full == pytest.approx(6.3, abs=0.1)   # delta=phi anchor
 
+    @pytest.mark.parametrize("params, says", [
+        ({"delta_deg": 20.0}, "wall friction"),
+        ({"alpha_deg": 80.0}, "battered"),
+        ({"state": "passive", "beta_deg": 10.0}, "sloping"),
+        ({"state": "at_rest", "beta_deg": 10.0}, "Jaky"),
+        ({"state": "passive", "theory": "caquot_kerisel",
+          "alpha_deg": 80.0}, "battered"),
+    ])
+    def test_an_input_the_theory_does_not_take_is_refused(self, params,
+                                                          says):
+        # GM-184: these were echoed in the result and not used
+        with pytest.raises(ValueError, match=says):
+            self._run({"phi_deg": 30.0, **params})
+
+    def test_the_neutral_values_are_taken_by_every_theory(self):
+        r = self._run({"phi_deg": 30.0, "delta_deg": 0, "alpha_deg": 90,
+                       "beta_deg": 0})
+        assert r["K"] == pytest.approx(1.0 / 3.0, abs=1e-3)
+
+    def test_caquot_kerisel_echoes_the_wall_friction_it_used(self):
+        # GM-184: delta left out is full wall friction, delta = phi
+        r = self._run({"phi_deg": 30.0, "state": "passive",
+                       "theory": "caquot_kerisel"})
+        assert r["delta_deg"] == 30.0
+        assert self._run({"phi_deg": 30.0})["delta_deg"] == 0.0
+
     def test_caquot_kerisel_requires_passive(self):
         with pytest.raises(ValueError, match="passive"):
             self._run({"phi_deg": 35.0, "theory": "caquot_kerisel",

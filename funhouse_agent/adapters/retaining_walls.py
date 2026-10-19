@@ -335,6 +335,7 @@ def _run_earth_pressure_coefficient(params):
                          "['rankine', 'coulomb', 'caquot_kerisel'].")
     if state not in ("active", "passive", "at_rest"):
         raise ValueError(f"Unknown state '{state}'. Allowed: ['active', 'passive', 'at_rest'].")
+    _refuse_unused_k_inputs(p, theory, state)
 
     if theory == "caquot_kerisel":
         # Caquot-Kerisel (1948) log-spiral PASSIVE coefficient Kp (v5.3). Unlike
@@ -361,16 +362,56 @@ def _run_earth_pressure_coefficient(params):
             K, symbol = _ep.coulomb_Ka(phi, delta, alpha, beta), "Ka"
         else:
             K, symbol = _ep.coulomb_Kp(phi, delta, alpha, beta), "Kp"
+    delta = p.get("delta_deg")
+    if delta is None:
+        # Caquot-Kerisel's Kp takes full wall friction when none is given
+        delta = phi if theory == "caquot_kerisel" else 0.0
     return {
         "K": round(K, 4),
         "coefficient": symbol,
         "theory": "jaky_at_rest" if state == "at_rest" else theory,
         "state": state,
         "phi_deg": phi,
-        "delta_deg": p.get("delta_deg", 0.0),
+        "delta_deg": delta,
         "beta_deg": beta,
         "alpha_deg": p.get("alpha_deg", 90.0),
     }
+
+
+# What each coefficient takes besides phi (GM-184): Rankine's active Ka a
+# sloping backfill, its Kp neither wall friction nor a slope; Coulomb's
+# wall friction, a battered back and a sloping backfill; Caquot-Kerisel's
+# Kp here wall friction only; Jaky's K0 none. A value the chosen one does
+# not take is refused, never echoed as if it had been used.
+_K_TAKES = {
+    ("rankine", "active"): ("beta_deg",),
+    ("rankine", "passive"): (),
+    ("coulomb", "active"): ("delta_deg", "alpha_deg", "beta_deg"),
+    ("coulomb", "passive"): ("delta_deg", "alpha_deg", "beta_deg"),
+    ("caquot_kerisel", "passive"): ("delta_deg",),
+}
+_K_NEUTRAL = {"delta_deg": 0.0, "alpha_deg": 90.0, "beta_deg": 0.0}
+_K_SAYS = {"delta_deg": "wall friction", "alpha_deg": "a battered wall back",
+           "beta_deg": "a sloping backfill"}
+
+
+def _refuse_unused_k_inputs(p, theory, state):
+    takes = (() if state == "at_rest"
+             else _K_TAKES.get((theory, state), tuple(_K_NEUTRAL)))
+    unused = [n for n, neutral in _K_NEUTRAL.items()
+              if n not in takes and p.get(n) is not None
+              and float(p[n]) != neutral]
+    if not unused:
+        return
+    which = ("Jaky's at-rest K0 = 1 - sin(phi) (level ground, any theory)"
+             if state == "at_rest" else f"the {theory} {state} coefficient")
+    raise ValueError(
+        f"earth_pressure_coefficient: {which} does not take "
+        + " or ".join(f"{_K_SAYS[n]} ({n} {p[n]})" for n in unused)
+        + ". theory 'coulomb' takes wall friction, a battered back and a "
+        "sloping backfill; leave these out (or at "
+        + ", ".join(f"{n} {_K_NEUTRAL[n]:g}" for n in unused)
+        + ") for this coefficient.")
 
 
 def _run_list_reinforcement(params):
@@ -401,7 +442,7 @@ METHOD_INFO = {
             "stem_thickness_top": {"type": "float", "required": False, "default": 0.30, "description": "Stem thickness at top (m)."},
             "stem_thickness_base": {"type": "float", "required": False, "description": "Stem thickness at base (m)."},
             "base_thickness": {"type": "float", "required": False, "default": 0.60, "description": "Base slab thickness (m)."},
-            "has_shear_key": {"type": "bool", "required": False, "default": False, "description": "Include a shear key (with key_depth)."},
+            "has_shear_key": {"type": "bool", "required": False, "default": False, "description": "Include a shear key (with key_depth). It acts only with include_passive: the sliding check then takes the passive resistance over key_depth instead of the base thickness."},
             "key_depth": {"type": "float", "required": False, "default": 0.0, "description": "Shear key depth (m)."},
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Uniform LIVE-load surcharge on the backfill (kPa), e.g. traffic. Its thrust K*q*H drives every check. Over the heel it is NOT a resisting force in sliding, overturning or the eccentricity check by default (live_load_resists), and it does load the base in the bearing pressures (surcharge_in_bearing). A permanent surcharge (pavement, approach slab) goes in dead_load_surcharge."},
             "dead_load_surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Uniform DEAD-load (permanent) surcharge on the backfill (kPa), e.g. a pavement or an approach slab (FHWA NHI-06-089 Sec. 10.4.2). Its thrust drives every check, added to the live load's. Over the heel it is not a resisting force by default (dead_load_resists); it loads the base in the bearing pressures (surcharge_in_bearing)."},
@@ -431,9 +472,9 @@ METHOD_INFO = {
             "phi_deg": {"type": "float", "required": True, "description": "Soil friction angle (degrees). Alias: phi."},
             "theory": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "caquot_kerisel"], "description": "Earth pressure theory. 'caquot_kerisel' = Caquot-Kerisel (1948) log-spiral PASSIVE coefficient Kp (state must be 'passive'; does not over-predict Kp at high wall friction the way Coulomb does). Theory is ignored for at_rest, which uses Jaky K0 = 1 - sin(phi)."},
             "state": {"type": "str", "required": False, "default": "active", "allowed_values": ["active", "passive", "at_rest"], "description": "Pressure state: Ka (active), Kp (passive), or K0 (at rest). 'caquot_kerisel' requires 'passive'."},
-            "delta_deg": {"type": "float", "required": False, "default": 0.0, "description": "Wall friction angle (degrees). Coulomb and caquot_kerisel. Alias: delta. For caquot_kerisel, omitting it means delta = phi (full wall friction, R = 1)."},
-            "beta_deg": {"type": "float", "required": False, "default": 0.0, "description": "Backfill slope angle (degrees). Aliases: beta, backfill_slope."},
-            "alpha_deg": {"type": "float", "required": False, "default": 90.0, "description": "Wall back face angle from horizontal (degrees, 90 = vertical). Coulomb only. Alias: alpha."},
+            "delta_deg": {"type": "float", "required": False, "default": 0.0, "description": "Wall friction angle (degrees): Coulomb and caquot_kerisel only; Rankine and K0 take none and refuse a non-zero value. Alias: delta. For caquot_kerisel, omitting it means delta = phi (full wall friction, R = 1)."},
+            "beta_deg": {"type": "float", "required": False, "default": 0.0, "description": "Backfill slope angle (degrees): Rankine active and Coulomb; Rankine passive, caquot_kerisel and K0 here are for level ground and refuse a non-zero value. Aliases: beta, backfill_slope."},
+            "alpha_deg": {"type": "float", "required": False, "default": 90.0, "description": "Wall back face angle from horizontal (degrees, 90 = vertical). Coulomb only; the others take a vertical back and refuse another value. Alias: alpha."},
         },
         "returns": {"K": "Earth pressure coefficient value.", "coefficient": "Ka, Kp, or K0.", "theory": "Theory used."},
     },
@@ -461,7 +502,7 @@ METHOD_INFO = {
             "traffic_vertical_resists": {"type": "bool", "required": False, "default": False, "description": "Broken backslope with traffic (surcharge) behind the crest only: count the traffic thrust's vertical component F2*sin(I) as sliding and eccentricity resistance, as GEC-11 Example E1 does (Vol II pp. E1-7 to E1-9). Default false: the GEC-11 text counts loads that increase sliding resistance 'only if those loads are permanent' (Vol I p. 4-22). Bearing counts it either way (p. 4-26). The result's backslope.traffic_basis says which was used."},
             "live_load_resists": {"type": "bool", "required": False, "default": False, "description": "Count the live-load surcharge over the reinforced zone (q*L; behind the crest of a broken backslope, q over the level ground on the zone) as resisting weight in sliding and overturning. Default false: GEC-11 Vol I p. 4-19, 'The live load surcharge is not considered as a stabilizing force when checking sliding'; p. 4-21 (Eq. 4-12), 'the live load is excluded since it increases sliding stability'; p. 4-22, loads that increase sliding resistance only 'if those loads are permanent', and the eccentricity (overturning) check 'only applies the live load above the retained backfill' (Fig. 4-2). true = the free body with the load over the zone, W = gamma*H*L + q*L. The result's choices say which was used."},
             "surcharge_in_bearing": {"type": "bool", "required": False, "default": True, "description": "Count the live-load surcharge over the reinforced zone in the bearing pressure sigma_v and its eccentricity. Default true: GEC-11 Vol I p. 4-26, 'The bearing check applies live load above both the reinforced zone and the retained backfill' (Fig. 4-2; Eqs. 4-19, 4-20). false = the live load taken as not over the zone."},
-            "gamma_foundation": {"type": "float", "required": False, "description": "Foundation soil unit weight (kN/m3)."},
+            "gamma_foundation": {"type": "float", "required": False, "description": "Foundation soil unit weight (kN/m3). Not used by these checks: bearing compares the Meyerhof pressure with q_allowable (no bearing capacity is computed) and no passive resistance is counted."},
             "phi_foundation": {"type": "float", "required": False, "description": "Foundation soil friction angle (deg)."},
             "c_foundation": {"type": "float", "required": False, "default": 0.0, "description": "Foundation soil cohesion (kPa)."},
             "q_allowable": {"type": "float", "required": False, "description": "Allowable bearing pressure (kPa). Without it the external bearing check is NOT RUN (FOS_bearing null, checks_not_run lists 'bearing'); sigma_v is still reported."},
@@ -528,12 +569,25 @@ METHOD_INFO["mse_lrfd_external_stability"]["refused_parameters"] = {
 # GM-165 the foundation soil's unit weight to passive resistance, its
 # friction angle to the base friction it sets and to passive, the base
 # adhesion to a foundation cohesion, and a crest height to a sloping
-# backfill.
+# backfill; since GM-184 each earth pressure input to the coefficients
+# that take it, and a shear key to passive resistance (it acts only
+# there).
 _TRAFFIC = {"traffic_vertical_resists": {"backfill_slope": "set",
                                          "surcharge": "set"}}
+_COULOMB = ["coulomb"]
+_ACTIVE_PASSIVE = ["active", "passive"]
 declare_applies_when(METHOD_INFO, {
+    "earth_pressure_coefficient": {
+        "theory": {"state": _ACTIVE_PASSIVE},
+        "delta_deg": {"theory": _COULOMB, "state": _ACTIVE_PASSIVE},
+        "alpha_deg": {"theory": _COULOMB, "state": _ACTIVE_PASSIVE},
+        "beta_deg": [{"theory": ["rankine"], "state": ["active"]},
+                     {"theory": _COULOMB, "state": _ACTIVE_PASSIVE}]},
     "cantilever_wall": {
-        "key_depth": {"has_shear_key": [True]},
+        # the key acts only through the passive resistance in front of it
+        # (cantilever.py: Pp on key_depth when has_shear_key)
+        "has_shear_key": {"include_passive": [True]},
+        "key_depth": {"has_shear_key": [True], "include_passive": [True]},
         "gamma_foundation": {"include_passive": [True]},
         "phi_foundation": [{"delta_base": "unset"},
                            {"include_passive": [True]}],
@@ -550,7 +604,9 @@ declare_applies_when(METHOD_INFO, {
                      "reinforcement_transverse_spacing")}, **_TRAFFIC,
         "live_load_resists": {"surcharge": "set"},
         "surcharge_in_bearing": {"surcharge": "set"},
-        "broken_backslope_height": {"backfill_slope": "set"}},
+        "broken_backslope_height": {"backfill_slope": "set"},
+        # taken and not used (GM-184): no MSE check here needs it
+        "gamma_foundation": False},
     "mse_lrfd_external_stability": {
         **_TRAFFIC,
         "broken_backslope_height": {"backfill_slope": "set"}},

@@ -75,6 +75,12 @@ METHOD_INFO = {
 
 declare_aliases(METHOD_INFO, {"rc_rectangular_section": _RC_ALIASES})
 
+# When each default applies (GM-184): the diagram's resolution only to a
+# call that asks for the N-M interaction diagram.
+from funhouse_agent.adapters import declare_applies_when  # noqa: E402
+declare_applies_when(METHOD_INFO, {"rc_rectangular_section": {
+    "n_interaction_points": {"include_interaction": [True]}}})
+
 
 # What a left-out input with no default stands for (BACKLOG GM-165):
 # the concrete modulus.

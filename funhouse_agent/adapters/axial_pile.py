@@ -290,6 +290,8 @@ def _run_make_pile_section(params):
         "perimeter_m": round(pile.perimeter, 4),
         "tip_area_m2": round(pile.tip_area, 6),
         "width_m": round(pile.width, 4),
+        # the modulus the section carries, given or by material (GM-184)
+        "E_kPa": pile.E,
     }
 
 
@@ -387,7 +389,7 @@ METHOD_INFO = {
             "designation": {"type": "str", "required": False, "description": "H-pile designation (e.g., 'HP14x117')."},
             "E": {"type": "float", "required": False, "description": "Pile elastic modulus (kPa). Defaults: steel 200e6, concrete 25e6."},
         },
-        "returns": {"name": "Pile section name.", "area_m2": "Cross-sectional area.", "perimeter_m": "Perimeter.", "tip_area_m2": "Tip area.", "width_m": "Width."},
+        "returns": {"name": "Pile section name.", "area_m2": "Cross-sectional area.", "perimeter_m": "Perimeter.", "tip_area_m2": "Tip area.", "width_m": "Width.", "E_kPa": "The section's elastic modulus (kPa): E as given, else steel 200e6 or concrete 25e6; null for a timber section without E."},
     },
 }
 
