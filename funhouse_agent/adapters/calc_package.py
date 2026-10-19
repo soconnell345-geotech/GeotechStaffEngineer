@@ -338,6 +338,13 @@ def _build_response(module: str, result, analysis, params: dict,
         response["renderer"] = render_report["renderer"]
         if render_report.get("warnings"):
             response["renderer_warnings"] = render_report["warnings"]
+        # the package's own figures are drawn to print at 7 pt or more
+        # (GM-186): one that does not is a regression, and says so, as the
+        # module's figure (reported, not the caller's to redraw)
+        figure_warnings = _figure_warnings(render_report.get("figures"),
+                                           package=True)
+        if figure_warnings:
+            response["figure_warnings"] = figure_warnings
     if problem:
         rescue = rescue_write(abs_path, expected) if expected is not None else None
         response["status"] = "error"
@@ -1901,23 +1908,29 @@ def _unembeddable_error(findings: list) -> str:
             + _EMBED_FIX)
 
 
-def _figure_warnings(figures) -> list:
-    """What a reader of the PDF cannot read, per figure (GM-168): for a
-    figure the plotting box drew (its PNG says the width its lettering
-    check measured it at, so the caller has its code), lettering that
-    prints under that check's 7 pt or a figure printed narrower than that
-    width; for any figure, one taller than a page scaled far down. The
-    numbers are the plotting box's own. A module's or a tool's own figure
-    (its lettering recorded, never checked) is reported in page_contents
-    and not warned: the caller cannot redraw it, and the canned figures
-    all print under 7 pt today (BACKLOG GM-186). A picture with no record
-    (a photo, a drawing, a logo) is not judged by its width."""
+def _figure_warnings(figures, package: bool = False) -> list:
+    """What a reader of the PDF cannot read, per figure (GM-168): for any
+    figure whose PNG records its lettering, lettering that prints under
+    7 pt; for a figure the plotting box drew (its PNG says the width its
+    lettering check measured it at, so the caller has its code), one
+    printed narrower than that width; for any figure, one taller than a
+    page scaled far down. The numbers are the plotting box's own. The
+    canned package figures are drawn for the width they print at
+    (BACKLOG GM-186), so one of theirs warned on here is printed narrower
+    than that, or a regression. A picture with no record (a photo, a
+    drawing, a logo) is not judged by its width.
+
+    Each warning says whose figure it is and what the caller can do: the
+    plotting box's is the caller's to redraw; a module's own figure (no
+    checked width) can be given the page width in report HTML, and is
+    otherwise reported, not the caller's to redraw; in a canned package
+    (``package``) every figure is the module's."""
     from calc_package.latex_renderer import MIN_FIGURE_SCALE
-    from funhouse_agent.plot_box.child import MIN_PRINT_PT
+    from geotech_common.layout_ink import MIN_PRINT_PT
     out = []
     for k, f in enumerate(figures or [], start=1):
         checked = f.get("checked_width_in")
-        lettering = f.get("lettering_pt") if checked else None
+        lettering = f.get("lettering_pt")
         why = []
         if lettering is not None and lettering < MIN_PRINT_PT - 0.05:
             why.append(f"its smallest lettering prints {lettering:g} pt, "
@@ -1928,13 +1941,23 @@ def _figure_warnings(figures) -> list:
         scaled = f.get("scaled")
         if scaled is not None and scaled < MIN_FIGURE_SCALE:
             why.append(f"it is taller than a page, so it prints at "
-                       f"{scaled:.0%} of its width: draw it shorter")
-        if why:
-            out.append(f"Figure {k} (pdf_page {f['pdf_page']}) prints "
-                       f"{f['width_in']:g} x {f['height_in']:g} in: "
-                       + "; ".join(why) + ". Give it the page width "
-                       "(width:100%) or draw it for the width it prints at, "
-                       "then look at the page.")
+                       f"{scaled:.0%} of its width")
+        if not why:
+            continue
+        if package:
+            fix = ("It is the package's own figure, drawn by the module: "
+                   "tell the user; it is not yours to redraw.")
+        elif checked:
+            fix = ("You drew it: draw it for the width it prints at "
+                   "(shorter, if taller than a page) or give it the page "
+                   "width (width:100%), then look at the page.")
+        else:
+            fix = ("It is a module's own figure, not yours to redraw: give "
+                   "it the page width (width:100%); if it already has it, "
+                   "tell the user.")
+        out.append(f"Figure {k} (pdf_page {f['pdf_page']}) prints "
+                   f"{f['width_in']:g} x {f['height_in']:g} in: "
+                   + "; ".join(why) + ". " + fix)
     return out
 
 
@@ -2243,6 +2266,9 @@ _COMMON_RETURNS = {
                "the input echo is *_inputs.csv), saved beside the package, "
                "which prints the same tables. Name them to the user."),
     "tables_error": "Only when a table could not be built or saved.",
+    "figure_warnings": ("Only for a PDF with a figure that prints too small "
+                        "to read (lettering under 7 pt). The figure is the "
+                        "module's own, not yours to redraw: tell the user."),
 }
 
 METHOD_INFO = {
@@ -2365,12 +2391,16 @@ METHOD_INFO = {
                              "size that reads, from this, without opening "
                              "the PDF.",
             "figure_warnings": "Present when a figure prints too small to "
-                               "read: one the plotting box drew whose "
-                               "lettering prints under 7 pt or that prints "
-                               "narrower than the width its lettering was "
-                               "checked at, or any figure taller than a page "
-                               "and scaled below half its width. Fix those "
-                               "figures before handing the PDF over.",
+                               "read: any figure whose lettering prints "
+                               "under 7 pt, one the plotting box drew that "
+                               "prints narrower than the width its lettering "
+                               "was checked at, or any figure taller than a "
+                               "page and scaled below half its width. Each "
+                               "says whose figure it is: fix the ones you "
+                               "drew before handing the PDF over; a module's "
+                               "own figure is reported, not yours to redraw "
+                               "(give it the page width, else tell the "
+                               "user).",
             "unembeddable": "On error (or with allow_unembeddable=true): each figure "
                             "reference that cannot be embedded, and why.",
         },

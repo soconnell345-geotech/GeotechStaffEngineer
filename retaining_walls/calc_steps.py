@@ -1584,9 +1584,12 @@ def _plot_bearing_pressure(result, analysis):
     ax.set_title('Base Bearing Pressure Distribution', fontsize=11, fontweight='bold')
     ax.set_xlim(-B * 0.05, B * 1.05)
     ax.set_ylim(0, max(q_toe, q_heel, q_all or 0) * 1.3 + 5)
-    ax.legend(loc='upper center', fontsize=7, ncol=2)
+    # the key under the axes: inside them it covered the q_toe note once
+    # the figure was drawn for the width it prints at (GM-186)
+    fig.legend(*ax.get_legend_handles_labels(), loc='lower center',
+               fontsize=7, ncol=2, frameon=False)
     ax.grid(True, alpha=0.2)
-    plt.tight_layout()
+    plt.tight_layout(rect=(0, 0.12, 1, 1))
     return fig
 
 

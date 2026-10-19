@@ -314,7 +314,10 @@ class Results:
     def plot_all(self, show: bool = True):
         """Plot all four response profiles in a 2x2 grid."""
         plt = _import_matplotlib()
-        fig, axes = plt.subplots(1, 4, figsize=(16, 8))
+        # four panels in one row printed 1 in wide each, their titles over
+        # each other (GM-186)
+        fig, axes = plt.subplots(2, 2, figsize=(10, 10))
+        axes = axes.ravel()
         self.plot_deflection(ax=axes[0], show=False)
         self.plot_moment(ax=axes[1], show=False)
         self.plot_shear(ax=axes[2], show=False)
