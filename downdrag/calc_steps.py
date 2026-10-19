@@ -973,7 +973,10 @@ def _plot_settlement_profile(result, analysis):
     ax.set_title('Soil Settlement Profile with Neutral Plane',
                  fontsize=11, fontweight='bold')
     ax.invert_yaxis()
-    ax.set_xlim(left=0)
+    # no settlement at all: the notes sit at x = 1 mm, so the axis runs to
+    # 2 mm (its own range was a hundredth of that, and the notes printed
+    # 80 in off the figure; GM-186)
+    ax.set_xlim(left=0, right=None if max(s_soil) > 0 else 2.0)
     ax.set_ylim(bottom=result.pile_length * 1.05, top=-result.pile_length * 0.03)
     ax.legend(loc='lower right', fontsize=8)
     ax.grid(True, alpha=0.3)

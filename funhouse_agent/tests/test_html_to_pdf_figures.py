@@ -278,10 +278,11 @@ class TestHtmlToPdfFigureSizes:
         assert "under 7 pt" in warning
         assert "checked at" in warning
 
-    def test_a_module_figure_is_reported_not_warned(self, tmp_path):
-        """A module's own figure (lettering recorded, never checked): the
-        caller cannot redraw it, and every canned figure prints under 7 pt
-        today (GM-186), so its size is reported and nothing is warned."""
+    def test_a_module_figure_printed_small_is_warned(self, tmp_path):
+        """A module's own figure (lettering recorded, never checked) is
+        drawn for the width a package prints it at (GM-186); squeezed into
+        a third of the page its lettering prints under 7 pt, and that is
+        warned. It has no checked width, so nothing is said of one."""
         pytest.importorskip("fitz")
         _plot(tmp_path, "small.png", 10, 4, fontsize=8)
         res = _generate_html_to_pdf({
@@ -290,6 +291,22 @@ class TestHtmlToPdfFigureSizes:
             "output_path": str(tmp_path / "r.pdf")})
         (fig,) = res["page_contents"][0]["figures"]
         assert fig["width_in"] < 3.0 and fig["lettering_pt"] < 7.0
+        (warning,) = res["figure_warnings"]
+        assert "under 7 pt" in warning and "checked at" not in warning
+
+    def test_a_module_figure_at_the_page_width_is_not_warned(
+            self, tmp_path):
+        """The same figure given the page width prints its lettering at
+        7 pt or more: drawn 10 in wide with 8 pt lettering, it is saved
+        for the 5 in a package prints it at."""
+        pytest.importorskip("fitz")
+        _plot(tmp_path, "wide.png", 10, 4, fontsize=8)
+        res = _generate_html_to_pdf({
+            "html": _doc(f'<img src="{tmp_path / "wide.png"}" '
+                         'style="width:100%">'),
+            "output_path": str(tmp_path / "r.pdf")})
+        (fig,) = res["page_contents"][0]["figures"]
+        assert fig["lettering_pt"] >= 7.0
         assert "figure_warnings" not in res
 
     def test_a_picture_with_no_lettering_record_is_not_judged_by_width(
@@ -315,9 +332,13 @@ class TestHtmlToPdfFigureSizes:
         # no record: not judged by width
         assert _figure_warnings([{**base, "width_in":
                                   DEFAULT_PRINT_WIDTH_IN - 0.5}]) == []
-        # a module's figure: lettering reported elsewhere, not warned
+        # a module's figure: warned under 7 pt like any other (GM-186),
+        # never for its width
         module = {**base, "width_in": 6.5, "lettering_pt": MIN_PRINT_PT - 1}
-        assert _figure_warnings([module]) == []
+        (warning,) = _figure_warnings([module])
+        assert "under 7 pt" in warning and "checked at" not in warning
+        assert _figure_warnings([{**module, "width_in": 2.0,
+                                  "lettering_pt": MIN_PRINT_PT}]) == []
         # the plotting box's: warned under its 7 pt and its print width
         boxed = {**module, "checked_width_in": DEFAULT_PRINT_WIDTH_IN}
         assert "under 7 pt" in _figure_warnings([boxed])[0]

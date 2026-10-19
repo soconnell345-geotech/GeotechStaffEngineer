@@ -19,8 +19,22 @@ from calc_package.data_model import (
 from calc_package.template import CALC_PACKAGE_TEMPLATE
 
 
-def figure_to_base64(fig, dpi: int = 150) -> str:
+#: The width a package figure prints at in the package's PDF: the
+#: template's text width, a letter page less the PDF's 0.75 in margins and
+#: the page's 1 in padding each side. Every package figure is drawn for it,
+#: so its lettering prints at 7 pt or larger (BACKLOG GM-186).
+FIGURE_PRINT_WIDTH_IN = 5.0
+
+
+def figure_to_base64(fig, dpi: int = 150, *,
+                     print_width_in=FIGURE_PRINT_WIDTH_IN) -> str:
     """Convert a matplotlib Figure to a base64-encoded PNG string.
+
+    The figure is first drawn for the width it prints at
+    (``geotech_common.layout_ink.draw_for_print``): lettering under 7 pt is
+    raised to 7 pt, and a figure that would print its smallest lettering
+    under 7 pt at ``print_width_in`` is made smaller, its shape kept, and
+    laid out again. ``fig`` is changed in place.
 
     Parameters
     ----------
@@ -28,12 +42,21 @@ def figure_to_base64(fig, dpi: int = 150) -> str:
         The figure to convert.
     dpi : int
         Resolution in dots per inch. Default 150.
+    print_width_in : float or None
+        The width the figure prints at (default
+        :data:`FIGURE_PRINT_WIDTH_IN`); ``None`` saves it as drawn.
 
     Returns
     -------
     str
         Base64-encoded PNG image data (no data URI prefix).
     """
+    if print_width_in:
+        from geotech_common.layout_ink import draw_for_print
+        try:
+            draw_for_print(fig, float(print_width_in))
+        except Exception:                                  # noqa: BLE001
+            pass                    # saved as drawn; its record says so
     buf = io.BytesIO()
     fig.savefig(buf, format='png', dpi=dpi, bbox_inches='tight',
                 facecolor='white', edgecolor='none')

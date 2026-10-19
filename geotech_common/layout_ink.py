@@ -1082,3 +1082,194 @@ def png_with_lettering(fig, png: bytes, dpi: float) -> bytes:
                              figure_lettering(fig, dpi, width_px))
     except Exception:                                      # noqa: BLE001
         return png
+
+
+# ---------------------------------------------------------------------------
+# A figure drawn for the width it prints at (BACKLOG GM-186)
+# ---------------------------------------------------------------------------
+
+#: The smallest lettering a printed figure should carry (points): the
+#: plotting box's check and the calc packages' figures hold to it.
+MIN_PRINT_PT = 7.0
+#: A figure that saves more than this many times its own width or height
+#: has lettering far outside it (a note placed in data units beyond the
+#: axes): a smaller figure cannot bring that in.
+_FAR_OUTSIDE = 2.0
+#: Rounds of resizing and laying out again before the figure is left as
+#: drawn.
+_FIT_ROUNDS = 6
+#: The share of the widest width a figure is fitted to, so that the small
+#: differences between a draw on screen and the save leave its smallest
+#: lettering at the minimum or over it.
+_FIT_MARGIN = 0.98
+
+
+def _saved_size(fig) -> tuple:
+    """``(width, height)`` in inches ``fig`` saves at with
+    ``bbox_inches="tight"``."""
+    import matplotlib
+    fig.canvas.draw()
+    bb = fig.get_tightbbox(fig.canvas.get_renderer())
+    pad = 2 * float(matplotlib.rcParams.get("savefig.pad_inches", 0.1))
+    return bb.width + pad, bb.height + pad
+
+
+def _raise_lettering(fig, min_pt: float) -> list:
+    """Lettering drawn under ``min_pt`` set to ``min_pt``; tick labels
+    through their axis too, so the ticks a later draw makes keep the size.
+    Returns what puts it back: ``[(text, size)]`` and ``[(axes, axis,
+    which, size)]`` pairs, in one list."""
+    fig.canvas.draw()
+    small = [t for _s, _bb, t in drawn_texts(fig, fig.canvas.get_renderer())
+             if t.get_fontsize() < min_pt - 1e-6]
+    undo = []
+    if not small:
+        return undo
+    ids = {id(t) for t in small}
+    for ax in fig.get_axes():
+        for name, axis in (("x", ax.xaxis), ("y", ax.yaxis)):
+            for which, labels in (("major", axis.get_majorticklabels()),
+                                  ("minor", axis.get_minorticklabels())):
+                hit = [t for t in labels if id(t) in ids]
+                if hit:
+                    undo.append((ax, name, which, hit[0].get_fontsize()))
+                    ax.tick_params(axis=name, which=which, labelsize=min_pt)
+    for t in small:
+        undo.append((t, t.get_fontsize()))
+        t.set_fontsize(min_pt)
+    return undo
+
+
+def _figure_band(fig) -> list:
+    """``[left, bottom, right, top]`` (figure fractions) left to the axes
+    once the figure's own legends have their room (``tight_layout`` leaves
+    them out; it does make room for a suptitle): a legend in the lower half
+    takes the band under its top, one in the upper half the band over its
+    bottom."""
+    rect = [0.0, 0.0, 1.0, 1.0]
+    legends = [g for g in fig.legends if g.get_visible()]
+    if not legends:
+        return rect
+    fig.canvas.draw()
+    r = fig.canvas.get_renderer()
+    to_fig = fig.transFigure.inverted()
+    for a in legends:
+        try:
+            bb = a.get_window_extent(r).transformed(to_fig)
+        except Exception:                                  # noqa: BLE001
+            continue
+        if bb.y1 <= 0.5:
+            rect[1] = max(rect[1], min(bb.y1, 0.4))
+        elif bb.y0 >= 0.5:
+            rect[3] = min(rect[3], max(bb.y0, 0.6))
+    return rect
+
+
+def _lays_itself_out(fig) -> bool:
+    """``fig`` has a layout engine that lays it out at every draw
+    (constrained or tight); a figure laid out once by ``tight_layout``
+    keeps only a placeholder."""
+    from matplotlib.layout_engine import PlaceHolderLayoutEngine
+    engine = fig.get_layout_engine()
+    return engine is not None and not isinstance(engine,
+                                                 PlaceHolderLayoutEngine)
+
+
+def _lay_out(fig) -> None:
+    """Lay ``fig`` out again at its new size as the figures are drawn
+    (``tight_layout``, its axes kept clear of the figure's own legends);
+    a figure with a layout engine of its own lays itself out when
+    drawn."""
+    import warnings
+    if _lays_itself_out(fig):
+        return
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            fig.tight_layout(rect=_figure_band(fig))
+        except Exception:                                  # noqa: BLE001
+            pass
+
+
+def _as_drawn(fig, size, pars, undo) -> None:
+    """``fig`` back as it was drawn: its size, its subplots' layout and
+    its lettering."""
+    import warnings
+    fig.set_size_inches(*size)
+    if not _lays_itself_out(fig):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            try:
+                fig.subplots_adjust(**pars)
+            except Exception:                              # noqa: BLE001
+                pass
+    for item in undo:
+        if len(item) == 4:
+            ax, name, which, size_pt = item
+            ax.tick_params(axis=name, which=which, labelsize=size_pt)
+        else:
+            item[0].set_fontsize(item[1])
+
+
+def draw_for_print(fig, width_in: float, *,
+                   min_pt: float = MIN_PRINT_PT) -> dict:
+    """Draw ``fig`` for the width it prints at, ``width_in``, so its
+    smallest lettering prints at ``min_pt`` or larger (BACKLOG GM-186: the
+    calc-package figures were drawn 6-16 in wide and printed 5 in wide,
+    their lettering 3.5-6.5 pt).
+
+    Lettering drawn under ``min_pt`` is raised to it. A figure saves
+    (``bbox_inches="tight"``) at most ``width_in`` times its smallest
+    lettering over ``min_pt`` wide, so that lettering prints at
+    ``min_pt``; one that saves wider is made smaller, its shape kept, and
+    laid out again (``tight_layout``, as the figures are drawn). A figure
+    whose smallest lettering is ``min_pt`` is so drawn at the size it
+    prints. One that saves narrower keeps its size.
+
+    A figure that cannot be made that narrow (lettering placed far outside
+    it, or a title or legend wider than the width) is left as it was
+    drawn, lettering included, with ``"kept"`` saying why; its lettering
+    record then says how small it prints.
+
+    Returns ``{"drawn_in": [w, h], "saved_in": [w, h], "widest_in": w,
+    "raised": n}``: the size it was drawn at, the size it now saves at,
+    the widest it may save at and how many pieces of lettering were
+    raised."""
+    w0, h0 = (float(v) for v in fig.get_size_inches())
+    sp = fig.subplotpars
+    pars = {k: getattr(sp, k) for k in ("left", "right", "bottom", "top",
+                                        "wspace", "hspace")}
+    undo = _raise_lettering(fig, float(min_pt))
+    out = {"drawn_in": [round(w0, 2), round(h0, 2)],
+           "raised": sum(1 for u in undo if len(u) == 2)}
+    if undo:
+        _lay_out(fig)
+    sizes, _w = lettering_sizes(fig)
+    sw, sh = _saved_size(fig)
+    if not sizes:
+        out["saved_in"] = [round(sw, 2), round(sh, 2)]
+        return out
+    widest = float(width_in) * min(sizes) / float(min_pt)
+    out["widest_in"] = round(widest, 2)
+    if sw > widest and (sw > _FAR_OUTSIDE * w0 or sh > _FAR_OUTSIDE * h0):
+        kept = (f"it saves {sw:.1f} x {sh:.1f} in, far larger than its "
+                f"{w0:g} x {h0:g} in: lettering lies far outside it")
+    else:
+        target = widest * _FIT_MARGIN
+        for _round in range(_FIT_ROUNDS):
+            if sw <= widest:
+                break
+            w, h = fig.get_size_inches()
+            s = target / sw
+            fig.set_size_inches(w * s, h * s)
+            _lay_out(fig)
+            sw, sh = _saved_size(fig)
+        kept = None if sw <= widest else (
+            f"made smaller it still saves {sw:.1f} in wide, wider than "
+            f"{widest:.1f} in: a title, legend or note keeps it wide")
+    if kept:
+        _as_drawn(fig, (w0, h0), pars, undo)
+        sw, sh = _saved_size(fig)
+        out["kept"] = kept
+    out["saved_in"] = [round(sw, 2), round(sh, 2)]
+    return out

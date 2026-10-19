@@ -636,8 +636,6 @@ LOOK_DIR = ".scratch"
 #: The width a figure is printed at when the call names none: a report
 #: page's text width (8.5 in less two 1 in margins).
 DEFAULT_PRINT_WIDTH_IN = 6.5
-#: The smallest lettering a printed figure should carry (points).
-MIN_PRINT_PT = 7.0
 
 
 def _dpi_for(fig, dpi) -> int:
@@ -710,6 +708,9 @@ INK_ALPHA = _layout_ink.INK_ALPHA
 TOUCH_EM = _layout_ink.TOUCH_EM
 TOUCH_PT = _layout_ink.TOUCH_PT
 BOX_OPAQUE = _layout_ink.BOX_OPAQUE
+#: The smallest lettering a printed figure should carry (points): one
+#: number with the calc packages' figures (GM-186).
+MIN_PRINT_PT = _layout_ink.MIN_PRINT_PT
 #: The box's budgets for the check: past either, "unchecked".
 LAYOUT_SECONDS = _layout_ink.LAYOUT_SECONDS
 LAYOUT_MB = _layout_ink.LAYOUT_MB

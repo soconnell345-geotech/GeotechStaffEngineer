@@ -703,14 +703,15 @@ def _plot_pile_load_bar(pile_forces, result):
     bars = ax.bar(x_pos, forces, color=colors, edgecolor='#333333',
                   linewidth=0.8, width=0.65)
 
-    # Value labels on bars
+    # Value labels on bars, 2 pt off the bar end (an offset of 2 kN put
+    # them 68 in off the figure when the forces were near zero; GM-186)
     for bar, val in zip(bars, forces):
         ypos = bar.get_height()
         va = 'bottom' if val >= 0 else 'top'
         offset = 2 if val >= 0 else -2
-        ax.text(bar.get_x() + bar.get_width() / 2, ypos + offset,
-                f'{val:+,.1f}', ha='center', va=va, fontsize=7.5,
-                fontweight='bold')
+        ax.annotate(f'{val:+,.1f}', (bar.get_x() + bar.get_width() / 2, ypos),
+                    xytext=(0, offset), textcoords='offset points',
+                    ha='center', va=va, fontsize=7.5, fontweight='bold')
 
     # Zero line
     ax.axhline(y=0, color='#333333', linewidth=0.8)

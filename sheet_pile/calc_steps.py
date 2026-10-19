@@ -747,7 +747,8 @@ def _plot_shear_moment(result, analysis):
     ax1.axvline(x=0, color='black', linewidth=0.5)
     ax1.set_xlabel('Shear Force (kN/m)', fontsize=10)
     ax1.set_ylabel('Depth from Top of Wall (m)', fontsize=10)
-    ax1.set_title('Shear Force Diagram', fontsize=11, fontweight='bold')
+    # no panel titles: the axis labels name each panel, and the titles
+    # ran into each other at the printed width (GM-186)
     ax1.invert_yaxis()
     ax1.legend(fontsize=8)
     ax1.grid(True, alpha=0.3)
@@ -774,7 +775,6 @@ def _plot_shear_moment(result, analysis):
     )
 
     ax2.set_xlabel('Bending Moment (kN\u00b7m/m)', fontsize=10)
-    ax2.set_title('Bending Moment Diagram', fontsize=11, fontweight='bold')
     # the axes share y: ax1 already inverted it (see the pressure diagram)
     ax2.grid(True, alpha=0.3)
     ax2.tick_params(labelsize=9)
