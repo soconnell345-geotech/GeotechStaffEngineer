@@ -24,7 +24,8 @@ import os
 import re
 from datetime import datetime
 
-from funhouse_agent.adapters import (declare_applies_when, require_params,
+from funhouse_agent.adapters import (declare_applies_when, declare_when_absent,
+                                     require_params,
                                      reject_unknown_params)
 from funhouse_agent._fileio import (
     default_output_dir, find_in_working_folder, rescue_note, rescue_write,
@@ -819,11 +820,16 @@ def _assumed_inputs(params: dict, run: "_ToolRun" = None, result=None,
                         "basis": "not given: " + case["basis"]})
             continue
         if source:
+            basis = "not given: taken equal to the " + _lower_first(
+                re.sub(r"\s*\([^()]*\)$", "",     # its unit is this one's
+                       _input_words(source, declared)))
+            from funhouse_agent.dispatch import absent_case, case_of
+            if value == absent_case(spec, declared):   # left out too
+                case = case_of(spec, declared)
+                value = case["case"]
+                basis += ", itself not given: " + case["basis"]
             out.append({"input": _input_words(name, declared),
-                        "value": value,
-                        "basis": "not given: taken equal to the "
-                                 + _lower_first(_input_words(source,
-                                                             declared))})
+                        "value": value, "basis": basis})
             continue
         in_choices = re.search(rf"\b{re.escape(name)}\b", chosen)
         out.append({"input": _input_words(name, declared), "value": value,
@@ -2309,3 +2315,32 @@ declare_applies_when(METHOD_INFO, {
         "research_surface": {"variables": "set", "monte_carlo": [True]},
     },
 })
+
+# What a left-out input of a slope package stands for (GM-165), as in the
+# slope tools: no water table, the search's windows and grid from the
+# slope, and an unseeded search or Monte Carlo.
+_SLOPE_NO_WATER = ("no water table", "no pore water pressure: effective "
+                   "stress equals total stress")
+_SLOPE_WINDOW = ("set from the slope's geometry",
+                 "entry and exit windows from the slope's toe, crest, height "
+                 "and depth to the base; the package lists what the search "
+                 "covered")
+_SLOPE_GRID = ("set from the slope's geometry",
+               "the circle-centre grid over the windows, from the slope's "
+               "height and depth to the base")
+declare_when_absent(METHOD_INFO, {
+    "slope_stability_package": {"gwt_points": _SLOPE_NO_WATER},
+    "slope_report_package": {
+        "gwt_points": _SLOPE_NO_WATER,
+        "x_entry_range": _SLOPE_WINDOW, "x_exit_range": _SLOPE_WINDOW,
+        "x_range": _SLOPE_GRID, "y_range": _SLOPE_GRID,
+        "seed": ("not seeded", "random trial surfaces and Monte Carlo "
+                 "samples can differ from run to run; give seed to repeat "
+                 "a run")},
+})
+_report = METHOD_INFO["slope_report_package"]["parameters"]
+for _name in ("x_range", "y_range"):
+    _report[_name]["applies_when"] = {"surface_type": _CIRCLES_GRID}
+_report["seed"]["applies_when"] = [
+    {"surface_type": _RANDOM_POLYLINES + ["noncircular_de"]},
+    {"variables": "set", "monte_carlo": [True]}]

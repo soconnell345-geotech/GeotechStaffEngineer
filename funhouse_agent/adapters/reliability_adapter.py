@@ -526,3 +526,25 @@ METHOD_INFO = {
                     "delta_guidance": "Published ranges when looked up."},
     },
 }
+
+
+# What a left-out input with no default stands for (BACKLOG GM-165):
+# independent variables, a fresh random seed and the scale of fluctuation
+# for the soil type.
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+_INDEPENDENT = ("independent variables",
+                "no correlation between the random variables")
+declare_when_absent(METHOD_INFO, {
+    "fosm": {"correlation": _INDEPENDENT},
+    "pem": {"correlation": _INDEPENDENT},
+    "monte_carlo": {
+        "correlation": _INDEPENDENT,
+        "seed": ("a fresh random seed",
+                 "the samples, and so the result, differ from run to run; "
+                 "give seed to repeat a run")},
+    "form": {"correlation": _INDEPENDENT},
+    "variance_reduction": {
+        "delta": ("looked up by soil_type",
+                  "the scale of fluctuation for the soil type given "
+                  "(vertical average)")},
+})

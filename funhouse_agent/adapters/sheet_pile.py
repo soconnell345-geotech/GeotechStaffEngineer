@@ -143,3 +143,15 @@ METHOD_INFO = {
         "returns": {"embedment_depth_m": "Required embedment.", "anchor_force_kN_per_m": "Anchor force."},
     },
 }
+
+
+# What a left-out input with no default stands for (BACKLOG GM-165):
+# the water table on each side.
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+_NO_WATER = ("no water table",
+             "no water pressure on either side of the wall; total unit "
+             "weight throughout")
+declare_when_absent(METHOD_INFO, {
+    method: {"gwt_depth_active": _NO_WATER,
+             "gwt_depth_passive": "gwt_depth_active"}
+    for method in ("cantilever_wall", "anchored_wall")})

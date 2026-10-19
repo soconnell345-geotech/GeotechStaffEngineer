@@ -240,3 +240,20 @@ def _motion_alternatives(method_info: dict) -> dict:
 # name or a custom history -- which no single parameter carries alone.
 mark_required(METHOD_INFO, {})
 _motion_alternatives(METHOD_INFO)
+
+
+# What a left-out input with no default stands for (BACKLOG GM-165):
+# an unscaled motion, the spectral periods and the RotD percentiles.
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+_UNSCALED = ("the motion as given, not scaled",
+             "the input motion's own peak ground acceleration")
+_PERIODS = ("200 periods from 0.01 to 10 s, evenly spaced on a log scale",
+            "the module's period list")
+declare_when_absent(METHOD_INFO, {
+    "response_spectrum": {"target_pga_g": _UNSCALED, "periods": _PERIODS},
+    "intensity_measures": {"target_pga_g": _UNSCALED},
+    "signal_processing": {"target_pga_g": _UNSCALED},
+    "rotd_spectrum": {"periods": _PERIODS,
+                      "percentiles": ("0, 50 and 100",
+                                      "RotD0, RotD50 and RotD100")},
+})

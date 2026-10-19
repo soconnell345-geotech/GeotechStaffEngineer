@@ -85,3 +85,12 @@ KNOWN = {
         "GM-140: 'bishop' is listed, but a noncircular slip_points surface "
         "runs Spencer",
 }
+
+#: Inputs a run lists as taken from another input (GM-165) that, given
+#: back, add a row the package prints only for a given input, the numbers
+#: the same: (probe key, name) -> why. The guard does not give them back.
+SHOWN_ONLY_WHEN_GIVEN = {
+    ("calc_package|drilled_shaft_package", "socket_diameter"):
+        "the calc steps print a rock-socket diameter row only when it is "
+        "given; the probe has no rock layer",
+}

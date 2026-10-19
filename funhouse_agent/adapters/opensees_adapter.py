@@ -229,3 +229,16 @@ mark_required(METHOD_INFO, {
     "site_response_1d": ["layers"],
 })
 _motion_alternatives(METHOD_INFO)
+
+
+# What a left-out input with no default stands for (BACKLOG GM-165):
+# Poisson's ratio from K0 and an unscaled motion.
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+_UNSCALED = ("the motion as given, not scaled",
+             "the input motion's own peak ground acceleration")
+declare_when_absent(METHOD_INFO, {
+    "pm4sand_cyclic_dss": {
+        "nu": ("K0 / (1 + K0)", "Poisson's ratio from the at-rest "
+               "coefficient K0 given")},
+    "site_response_1d": {"target_pga_g": _UNSCALED},
+})

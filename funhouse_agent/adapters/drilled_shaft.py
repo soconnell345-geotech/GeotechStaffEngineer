@@ -232,3 +232,20 @@ declare_applies_when(METHOD_INFO, {
                {"beta_method": ["rational"]}]}
     for m in ("drilled_shaft_capacity", "capacity_vs_depth",
               "lrfd_capacity")})
+
+
+# What a left-out input with no default stands for (BACKLOG GM-165):
+# the water table and the rock socket's diameter.
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+_NO_WATER = ("no water table",
+             "total unit weight throughout: effective stress equals total "
+             "stress")
+declare_when_absent(METHOD_INFO, {
+    "drilled_shaft_capacity": {"gwt_depth": _NO_WATER,
+                               "socket_diameter": "diameter"},
+    "capacity_vs_depth": {
+        "gwt_depth": _NO_WATER, "socket_diameter": "diameter",
+        "depth_max": ("the shaft length or the soil profile depth, "
+                      "whichever is less", "the deepest trial shaft")},
+    "lrfd_capacity": {"gwt_depth": _NO_WATER, "socket_diameter": "diameter"},
+})

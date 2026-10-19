@@ -600,7 +600,7 @@ METHOD_INFO = {
         "parameters": {
             "surface_points": {"type": "array", "required": True, "description": "Ground surface as [[x,z],...] array."},
             "soil_layers": {"type": "array", "required": True, "description": "Array of dicts with 'name','bottom_elevation','E','nu','c','phi','psi','gamma'."},
-            "depth": {"type": "float", "required": False, "description": "Depth below lowest surface (m). Default 2*H."},
+            "depth": {"type": "float", "required": False, "description": "Depth below lowest surface (m). Default the larger of 2*H and 10 m."},
             "nx": {"type": "int", "required": False, "default": 30, "description": "Mesh divisions in x."},
             "ny": {"type": "int", "required": False, "default": 15, "description": "Mesh divisions in y."},
             "x_extend": {"type": "float", "required": False, "description": "Horizontal margin (m): a number adds 30 % of it on each side, a [left, right] pair gives each side in metres. Default 0.3 max(0.5*H, depth, 5) each side; over undrained (phi = 0) soil below the toe the level ground is carried to twice that soil's depth each side, with nx raised to keep the element size (Taylor's deep circle; the result's notes say so). Pass 0 when the profile already has margins."},
@@ -633,7 +633,7 @@ METHOD_INFO = {
         "parameters": {
             "surface_points": {"type": "array", "required": True, "description": "Ground surface as [[x,z],...] array."},
             "soil_layers": {"type": "array", "required": True, "description": "Array of dicts with 'name','bottom_elevation','E','nu','c','phi','psi','gamma' (same as fem2d_slope_srm)."},
-            "depth": {"type": "float", "required": False, "description": "Depth below lowest surface (m). Default 2*H."},
+            "depth": {"type": "float", "required": False, "description": "Depth below lowest surface (m). Default the larger of 2*H and 10 m."},
             "nx": {"type": "int", "required": False, "default": 30, "description": "Mesh divisions in x."},
             "ny": {"type": "int", "required": False, "default": 15, "description": "Mesh divisions in y."},
             "x_extend": {"type": "float", "required": False, "description": "Horizontal margin (m). Pass 0 when the profile already has margins."},
@@ -841,3 +841,57 @@ declare_applies_when(METHOD_INFO, {
     "fem2d_consolidation": {
         name: {"consolidation_scheme": ["monolithic"]}
         for name in ("n_w", "theta")}})
+
+# The values the handlers pass when these are left out (BACKLOG GM-165),
+# and what a left-out input with no default stands for: the load ramp,
+# the model's extent, the water table, the Gauss rule, the lifts and the
+# stage the reported movements are measured from.
+for _m, _defaults in {
+        "fem2d_footing_capacity": {"max_iter": 1000, "tol": 1e-4},
+        "fem2d_slope_srm": {"n_load_steps": 2, "tol": 1e-5},
+        "fem2d_local_fos": {"n_load_steps": 2, "srf_range": [0.5, 3.0],
+                            "max_iter": 1000, "tol": 1e-5},
+        "fem2d_excavation": {"nx": 30, "ny": 15, "tol": 1e-5},
+        "fem2d_staged": {"max_iter": 500, "tol": 1e-5}}.items():
+    for _n, _v in _defaults.items():
+        METHOD_INFO[_m]["parameters"][_n]["default"] = _v
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+_NO_WATER = ("no water table", "no pore water pressure")
+_DEPTH = ("the larger of 2 H and 10 m",
+          "the model's depth below the lowest ground surface")
+_X_EXTEND = ("0.3 max(0.5 H, depth, 5 m) each side",
+             "the model's margin beyond the slope; wider over deep undrained "
+             "soil, to reach Taylor's deep circle")
+_GAUSS = ("the 3-point Gauss rule", "for T6 elements")
+declare_when_absent(METHOD_INFO, {
+    "fem2d_footing_capacity": {
+        "q_max": ("1.6 times the closed-form estimate",
+                  "the load ramp tops at 1.6 (c Nc + q Nq + 0.5 gamma B "
+                  "Ngamma)"),
+        "domain_depth": ("5 B", "the mesh extends five footing widths "
+                         "below the footing"),
+        "domain_half_width": ("5 B", "the mesh extends five footing widths "
+                              "to the side")},
+    "fem2d_slope_srm": {"depth": _DEPTH, "x_extend": _X_EXTEND,
+                        "gwt": _NO_WATER, "n_gp": _GAUSS},
+    "fem2d_local_fos": {"depth": _DEPTH, "x_extend": _X_EXTEND,
+                        "gwt": _NO_WATER, "n_gp": _GAUSS},
+    "fem2d_consolidation": {
+        "reset_displacements_after": (
+            "from the end of the initial stage",
+            "the load stage alone: the settlements leave out self-weight "
+            "(common FE practice); the result carries a judgment record "
+            "where the choice matters")},
+    "fem2d_staged": {
+        "reset_displacements_after": (
+            "after stage 0",
+            "the initial gravity / K0 stage: construction movements leave "
+            "out self-weight (common FE practice); the result carries a "
+            "judgment record where the choice matters")},
+    "fem2d_excavation": {
+        "gwt": ("no water table",
+                "no water pressure on the wall and no seepage"),
+        "lifts": ("one lift to each strut level, then to the final depth",
+                  "the excavation sequence the module takes; give lifts for "
+                  "the sequence planned")},
+})

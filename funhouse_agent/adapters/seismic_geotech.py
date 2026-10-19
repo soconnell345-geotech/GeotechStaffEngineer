@@ -376,3 +376,20 @@ METHOD_INFO = {
 # When each default applies (GM-119): B to Hardin & Black only.
 declare_applies_when(METHOD_INFO, {
     "gmax": {"coefficient_B": {"correlation": ["hardin_black"]}}})
+
+
+# What a left-out input with no default stands for (BACKLOG GM-165):
+# no site-adjusted PGA, the wall friction and the static active
+# coefficient.
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+declare_when_absent(METHOD_INFO, {
+    "site_classification": {
+        "pga": ("no site-adjusted PGA",
+                "Fpga and the site-adjusted PGA need the mapped PGA")},
+    "seismic_earth_pressure": {
+        "delta": ("2/3 of phi", "wall friction delta = (2/3) phi; give "
+                  "delta for the wall's interface"),
+        "KA": ("Rankine Ka from phi",
+               "a vertical wall, level backfill and no wall friction; give "
+               "KA for another case")},
+})

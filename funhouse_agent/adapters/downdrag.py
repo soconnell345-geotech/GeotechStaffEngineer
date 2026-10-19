@@ -398,9 +398,9 @@ METHOD_INFO = {
             "pile_diameter": {"type": "float", "required": True, "description": "Pile diameter (m)."},
             "layers": {"type": "array", "required": True, "description": "Array of {thickness, soil_type, unit_weight, phi, cu, beta, alpha, settling, description} dicts. soil_type must be 'cohesionless' or 'cohesive' (NOT 'sand'/'clay'/'settling_fill'). Mark settling layers with settling=True; a settling layer also needs its compressibility: cohesionless -> E_s (elastic modulus, kPa, > 0) and optional nu_s; cohesive -> Cc and e0 (optional Cr, sigma_p kPa) or C_ec/C_er."},
             "Q_dead": {"type": "float", "required": False, "default": 0.0, "description": "Dead load at pile top (kN)."},
-            "fill_thickness": {"type": "float", "required": False, "description": "Fill thickness causing downdrag (m)."},
+            "fill_thickness": {"type": "float", "required": False, "default": 0.0, "description": "Fill thickness causing downdrag (m)."},
             "fill_unit_weight": {"type": "float", "required": False, "default": 19.0, "description": "Fill unit weight (kN/m3)."},
-            "gw_drawdown": {"type": "float", "required": False, "description": "Groundwater drawdown (m)."},
+            "gw_drawdown": {"type": "float", "required": False, "default": 0.0, "description": "Groundwater drawdown (m)."},
             "gwt_depth": {"type": "float", "required": False, "default": 0.0, "description": "Groundwater depth (m)."},
             "pile_E": {"type": "float", "required": False, "default": 200e6, "description": "Pile elastic modulus (kPa). Default is steel."},
             "pile_perimeter": {"type": "float", "required": False, "description": "Pile perimeter (m). Computed from diameter if omitted."},
@@ -577,3 +577,33 @@ METHOD_INFO = {
 declare_applies_when(METHOD_INFO, {
     "downdrag_analysis": {
         "pile_unit_weight": {"include_pile_weight": [True]}}})
+
+
+# What a left-out input with no default stands for (BACKLOG GM-165):
+# the pile's section from its diameter, the toe factor and area, and
+# the CGPR equivalent footing.
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+declare_when_absent(METHOD_INFO, {
+    "downdrag_analysis": {
+        "pile_perimeter": ("pi D, from pile_diameter",
+                           "the perimeter of a circular section"),
+        "pile_area": ("pi D^2 / 4, from pile_diameter",
+                      "the solid circle; give the steel area for an H or "
+                      "pipe pile"),
+        "Nt": ("the ultimate value from the toe layer",
+               "Nt from the toe layer's friction angle (Fellenius 1991; "
+               "GEC-12 Table 7-9), 9 in clay: the ultimate, not the "
+               "mobilized, toe resistance")},
+    "poulos_downdrag": {"toe_area": "pile_area"},
+    "fellenius_cgpr56": {"toe_area": "pile_area",
+                         "eq_footing_length": "eq_footing_width",
+                         "eq_footing_load": "Q_static"},
+    "pileneg_downdrag": {
+        "toe_area": "pile_area",
+        "trial_depths": ("a dense grid over the pile length",
+                         "neutral-plane trial depths evenly spaced from the "
+                         "head to the toe")},
+    "downdrag_method_comparison": {"toe_area": "pile_area",
+                                   "eq_footing_length": "eq_footing_width",
+                                   "eq_footing_load": "Q_static"},
+})

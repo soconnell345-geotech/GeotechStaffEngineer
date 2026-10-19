@@ -216,8 +216,8 @@ METHOD_INFO = {
             "spacing": {"type": "float", "required": False, "description": "Uniform center-to-center spacing (m), used for both x and y."},
             "piles": {"type": "array", "required": False, "description": "Explicit pile list [{x, y, batter_x, batter_y, ...}] instead of n_rows/n_cols."},
             "Vz": {"type": "float", "required": True, "description": "Vertical load (kN)."},
-            "Mx": {"type": "float", "required": False, "description": "Moment about x (kN-m)."},
-            "My": {"type": "float", "required": False, "description": "Moment about y (kN-m)."},
+            "Mx": {"type": "float", "required": False, "default": 0.0, "description": "Moment about x (kN-m)."},
+            "My": {"type": "float", "required": False, "default": 0.0, "description": "Moment about y (kN-m)."},
             "axial_capacity_compression": {"type": "float", "required": False, "description": "Per-pile compression capacity (kN) for utilization checks (rectangular layout)."},
             "axial_capacity_tension": {"type": "float", "required": False, "description": "Per-pile tension capacity (kN) (rectangular layout)."},
         },
@@ -235,12 +235,12 @@ METHOD_INFO = {
             "piles": {"type": "array", "required": False, "description": "Explicit pile list [{x, y, batter_x, batter_y, axial_stiffness, lateral_stiffness, label}] instead of n_rows/n_cols."},
             "axial_stiffness": {"type": "float", "required": True, "description": "Pile-head axial stiffness ka (kN/m), e.g. from a load test or E*A/L for an end-bearing pile. REQUIRED for every pile: give it here with n_rows/n_cols, or on each piles[] entry."},
             "lateral_stiffness": {"type": "float", "required": False, "description": "Pile-head lateral stiffness kl (kN/m), here with n_rows/n_cols or on each piles[] entry. Needed for vertical piles to carry Vx/Vy (0 if omitted)."},
-            "Vx": {"type": "float", "required": False, "description": "Lateral load x (kN)."},
-            "Vy": {"type": "float", "required": False, "description": "Lateral load y (kN)."},
-            "Vz": {"type": "float", "required": False, "description": "Vertical load (kN)."},
-            "Mx": {"type": "float", "required": False, "description": "Moment about x (kN-m)."},
-            "My": {"type": "float", "required": False, "description": "Moment about y (kN-m)."},
-            "Mz": {"type": "float", "required": False, "description": "Torsion about z (kN-m)."},
+            "Vx": {"type": "float", "required": False, "default": 0.0, "description": "Lateral load x (kN)."},
+            "Vy": {"type": "float", "required": False, "default": 0.0, "description": "Lateral load y (kN)."},
+            "Vz": {"type": "float", "required": False, "default": 0.0, "description": "Vertical load (kN)."},
+            "Mx": {"type": "float", "required": False, "default": 0.0, "description": "Moment about x (kN-m)."},
+            "My": {"type": "float", "required": False, "default": 0.0, "description": "Moment about y (kN-m)."},
+            "Mz": {"type": "float", "required": False, "default": 0.0, "description": "Torsion about z (kN-m)."},
             "axial_capacity_compression": {"type": "float", "required": False, "description": "Per-pile compression capacity (kN) for utilization checks (rectangular layout)."},
             "axial_capacity_tension": {"type": "float", "required": False, "description": "Per-pile tension capacity (kN) (rectangular layout)."},
         },
@@ -272,7 +272,7 @@ METHOD_INFO = {
             "N160": {"type": "float", "required": True, "description": "Average corrected SPT (N1)60 within ~B below the pile-group toe (dimensionless)."},
             "load_kN": {"type": "float", "required": False, "description": "Total unfactored permanent load Q (kN); net pressure pf = Q/(B·Z). Provide this OR pf_kPa."},
             "pf_kPa": {"type": "float", "required": False, "description": "Net foundation pressure pf (kPa), supplied directly. Takes precedence over load_kN. Provide this OR load_kN."},
-            "embedment_DB": {"type": "float", "required": False, "description": "Embedment depth of the group into the bearing stratum DB (m); If = 1 − (2/3·DB)/(8·B), floored at 0.5. Default 0.0 (If = 1.0)."},
+            "embedment_DB": {"type": "float", "required": False, "default": 0.0, "description": "Embedment depth of the group into the bearing stratum DB (m); If = 1 − (2/3·DB)/(8·B), floored at 0.5. Default 0.0 (If = 1.0)."},
         },
         "returns": {"settlement_mm": "Group settlement (mm).", "settlement_in": "Group settlement (inches).", "influence_factor": "Embedment factor If.", "pf_kPa": "Net foundation pressure used (kPa)."},
     },
@@ -291,3 +291,20 @@ _STIFFNESS = ("pile_group_simple assumes a rigid cap on equal piles and "
 METHOD_INFO["pile_group_simple"]["refused_parameters"] = {
     "Vx": _LATERAL, "Vy": _LATERAL, "Mz": _LATERAL,
     "axial_stiffness": _STIFFNESS, "lateral_stiffness": _STIFFNESS}
+
+
+# What a left-out input with no default stands for (BACKLOG GM-165):
+# no pile-head lateral stiffness, and the s/D from the spacing.
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+declare_when_absent(METHOD_INFO, {
+    "pile_group_6dof": {
+        "lateral_stiffness": ("0", "with no pile-head lateral stiffness, "
+                              "vertical piles carry no horizontal load (Vx, "
+                              "Vy)")},
+    "group_efficiency": {
+        "spacing_diameter_ratio": ("spacing / pile_diameter",
+                                   "the s/D for the p-multiplier, from the "
+                                   "spacing and pile diameter given")},
+})
+METHOD_INFO["pile_group_6dof"]["parameters"]["lateral_stiffness"][
+    "applies_when"] = {"piles": "unset"}

@@ -1240,11 +1240,31 @@ def default_in_force(spec: dict, values: dict):
     return depends["otherwise"]
 
 
-def absent_case(spec) -> str:
+def case_of(spec, declared=None):
+    """The ``when_absent`` case ({case, basis}) a left-out input stands
+    for (GM-165), else None. A parameter that takes another's value
+    (``default_from``) takes that one's case when it is left out too,
+    followed through ``declared`` (the method's parameters): a passive-side
+    water table that defaults to the active side's, with neither given, is
+    "no water table"."""
+    seen = set()
+    while isinstance(spec, dict):
+        if spec.get("when_absent"):
+            return spec["when_absent"]
+        source = spec.get("default_from")
+        if not source or declared is None or source in seen:
+            return None
+        seen.add(source)
+        spec = declared.get(source)
+    return None
+
+
+def absent_case(spec, declared=None) -> str:
     """What a left-out input with no default stands for in the run, as
     ``defaults_used`` gives it (GM-165): "<case>: <basis>" from the
-    parameter's ``when_absent``; "" when it declares none."""
-    case = spec.get("when_absent") if isinstance(spec, dict) else None
+    parameter's ``when_absent`` (:func:`case_of`); "" when it declares
+    none."""
+    case = case_of(spec, declared)
     if not case:
         return ""
     return f"{case['case']}: {case['basis']}"
@@ -1292,7 +1312,7 @@ def _left_out(mod, method: str, given, parameters=None) -> dict:
             continue
         value = values.get(name)
         if value is None:
-            value = absent_case(spec) or None
+            value = absent_case(spec, declared) or None
         if value is not None and value != "":
             out[name] = value
     return out

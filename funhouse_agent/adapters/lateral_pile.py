@@ -328,3 +328,15 @@ declare_applies_when(METHOD_INFO, {
                                for k in keys})},
         "gamma_r": False},
 })
+
+
+# What a left-out input with no default stands for (BACKLOG GM-165):
+# a solid section and its moment of inertia.
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+declare_when_absent(METHOD_INFO, {
+    "lateral_pile_analysis": {
+        "pile_thickness": ("a solid section", "no wall thickness given"),
+        "moment_of_inertia": ("from the diameter and wall thickness",
+                              "I of the section given; give "
+                              "moment_of_inertia to set it")},
+})

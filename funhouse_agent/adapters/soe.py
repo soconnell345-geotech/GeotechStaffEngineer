@@ -284,3 +284,32 @@ METHOD_INFO["cantilever_excavation"]["refused_parameters"] = {
 declare_applies_when(METHOD_INFO, {
     "check_basal_heave": {"width_factor": {"method": ["caltrans"]}},
     "apparent_pressure": {"surcharge": False}})
+
+
+# What a left-out input with no default stands for (BACKLOG GM-165):
+# the water table on each side, the Caltrans basal-heave length and Nc,
+# and the FHWA wall's earth pressure coefficients.
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+_NO_WATER = ("no water table",
+             "no water pressure on the wall; total unit weight throughout")
+declare_when_absent(METHOD_INFO, {
+    "braced_excavation": {"gwt_depth": _NO_WATER,
+                          "gwt_depth_excavation": "gwt_depth"},
+    "cantilever_excavation": {"gwt_depth": _NO_WATER,
+                              "gwt_depth_excavation": "gwt_depth"},
+    "apparent_pressure": {"gwt_depth": _NO_WATER},
+    "check_basal_heave": {
+        "L": "B",
+        "Nc": ("from the Skempton / Bjerrum-Eide form",
+               "Nc from the excavation's H/B and B/L; give Nc for a chart "
+               "reading")},
+    "fhwa_apparent_pressure_anchored_wall": {
+        "Ka": ("Rankine Ka from phi",
+               "a vertical wall and level ground; give Ka for another case"),
+        "Kp": ("Rankine Kp from phi",
+               "no wall friction; give a log-spiral value for a wall with "
+               "friction")},
+})
+for _name in ("L", "Nc"):
+    METHOD_INFO["check_basal_heave"]["parameters"][_name][
+        "applies_when"] = {"method": ["caltrans"]}

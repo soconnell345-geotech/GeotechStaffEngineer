@@ -330,7 +330,23 @@ the eyes). What changed on master after 5.33.0, in short:
   `defaults_used` back by name and fails if the result moves or a result
   that echoes a default echoes another value; the same probes check that
   every declared name is one the adapter's own check accepts
-  (`test_top_level_params.py`, GM-150).
+  (`test_top_level_params.py`, GM-150). An optional input with no default
+  whose absence is a case (no water table, one soil layer, bearing not
+  checked) declares it through `adapters.declare_when_absent`: a
+  `when_absent` {case, basis}, which `defaults_used` gives as "case:
+  basis" (`dispatch.absent_case`), or a `default_from` naming the input
+  whose value it takes (a foundation friction angle the backfill's; a case
+  is followed through it, `dispatch.case_of`). A calc package prints both
+  under Assumed Inputs. Three guards in the same file fail on an input
+  that should state its case and does not: one named for water, a
+  surcharge or live load, a second layer or a seismic load; one whose
+  description says what absence means; and one a probe gives that moves
+  the result when dropped, each unless exempt with its reason (GM-165).
+  In a calc package an option the call passes and does not name in
+  `user_given` prints under Assumed Inputs as chosen for the calculation,
+  and the module's Method Choices say "assumed"; an `assumptions` key
+  written as an input name that is not one is refused with a
+  did-you-mean, and a statement in words is its own row (GM-167).
 - **Vision** (VIS-01, VIS-04, VIS-05): an optional `turn` (0/90/180/270) on
   `analyze_pdf_page` / `render_region`; boxes right on sideways sheets; a
   zoom that cuts lines of lettering widens to take them in or says which

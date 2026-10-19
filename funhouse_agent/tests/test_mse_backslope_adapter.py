@@ -68,8 +68,13 @@ def test_mse_wall_takes_the_retained_fill():
     assert weaker["backslope"]["Kab"] > same["backslope"]["Kab"]
     assert weaker["FOS_sliding"] < same["FOS_sliding"]
     level = _call("mse_wall", MSE)
-    assert _call("mse_wall", {**MSE, "phi_retained": 34,
-                              "gamma_retained": 19}) == level
+    given = _call("mse_wall", {**MSE, "phi_retained": 34,
+                               "gamma_retained": 19})
+    # left out, the two are listed as taken from the backfill (GM-165)
+    used = level.pop("defaults_used")
+    assert (used["phi_retained"], used["gamma_retained"]) == (34, 19)
+    given.pop("defaults_used")
+    assert given == level
 
 
 def test_broken_backslope_with_traffic_runs():

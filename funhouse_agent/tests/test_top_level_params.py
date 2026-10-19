@@ -86,8 +86,9 @@ def test_refused_before_the_handler_runs(monkeypatch):
                         lambda p: ran.append(p) or {"ok": True})
     _error("seismic_signals", "response_spectrum", {"dampng": 0.05})
     assert ran == []
-    assert D.call_agent("seismic_signals", "response_spectrum",
-                        {"damping": 0.05}) == {"ok": True}
+    r = D.call_agent("seismic_signals", "response_spectrum",
+                     {"damping": 0.05})
+    assert r["ok"] is True and len(ran) == 1
 
 
 def test_nothing_is_renamed(monkeypatch):
