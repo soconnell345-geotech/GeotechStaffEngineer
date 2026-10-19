@@ -11,8 +11,10 @@
 > language review and a visual review."*
 >
 > The construct work below remains correct and remains the foundation; it is
-> a means. The current plan of record is
-> `C:/Users/socon/.claude/plans/delightful-swinging-sky.md` — a review
+> a means. The plan of record then was
+> `C:/Users/socon/.claude/plans/delightful-swinging-sky.md` (now gone and
+> never committed; replaced by the 2026-09-13 document-review reset, then
+> `module_work/REVIEW_ARCHITECTURE.md`; the slice is BACKLOG DR-12) — a review
 > finding over a DOCUMENT, built as a vertical slice on *"what is the
 > average spacing of the borings in this plan?"*. Owner decisions: PDF
 > nearly always (so block/INSERT structure is not the mechanism), vertical
