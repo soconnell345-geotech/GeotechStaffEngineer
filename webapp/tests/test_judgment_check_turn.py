@@ -40,7 +40,21 @@ SOURCED = """The strut force is 182 kN/m.
 3. **Strut preload.** None. This rests on judgment, no reference found.
 """
 
-NO_LIST = "The strut force is 182 kN/m, from the fem2d staged excavation."
+#: Every call with a source of its own: no consult needed.
+CITED = SOURCED.replace(
+    "None. This rests on judgment, no reference found.",
+    "None, as GEC-4 Section 5.6 allows for a temporary strut.")
+
+#: w13 F51j's wording, word for word: "no reference" with nothing looked up.
+F51J = """The strut force is 27 kN/m.
+
+## Judgment calls
+
+- **Smooth wall contact (default) instead of bonded.** The default is the Rankine, no wall friction assumption, and I found no reference for it. I ran the bonded alternative; the results are in the table above.
+- **Strut preload.** None. This rests on judgment, no reference found.
+"""
+
+NO_LIST ="The strut force is 182 kN/m, from the fem2d staged excavation."
 
 
 @pytest.fixture(autouse=True)
@@ -130,12 +144,40 @@ def test_the_reply_after_the_note_is_the_answer(tmp_path, monkeypatch):
 
 def test_a_sourced_list_is_not_sent_back(tmp_path, monkeypatch):
     monkeypatch.setenv(review_flags.JUDGMENT_CALLS_ENV, "1")
-    agent = _ScriptedAgent(_reply(SOURCED))
+    agent = _ScriptedAgent(_reply(CITED))
     answer, items, events = _run(agent, tmp_path)
-    assert answer == SOURCED and len(agent.inputs) == 1
+    assert answer == CITED and len(agent.inputs) == 1
     assert {"kind": "tool_call", "text": jc.RETRY_STATUS} not in items
     assert [e["action"] for e in events] == ["none"]
     assert events[0]["n_calls"] == 3 and events[0]["unsourced"] == []
+
+
+def test_no_reference_found_with_no_consult_is_sent_back(tmp_path,
+                                                          monkeypatch):
+    """w13 F51j: "I found no reference for it" with no consult, and the
+    exempt words with none: nothing was looked for, so both go back."""
+    monkeypatch.setenv(review_flags.JUDGMENT_CALLS_ENV, "1")
+    agent = _ScriptedAgent(_reply(F51J), _consult_then(F51J))
+    answer, items, events = _run(agent, tmp_path)
+    assert len(agent.inputs) == 2               # sent back once
+    told = agent.inputs[1]["messages"][-1]["content"]
+    assert "- Smooth wall contact (default) instead of bonded." in told
+    assert "- Strut preload." in told
+    assert {"kind": "tool_call", "text": jc.RETRY_STATUS} in items
+    assert answer == F51J
+    assert [e["action"] for e in events] == ["fed_back", "none"]
+    # after the consult the exempt words count; F51j's own wording never does
+    assert events[1]["references_ran"] is True
+    assert events[1]["n_unsourced"] == 1
+
+
+def test_the_exempt_words_after_a_consult_are_not_sent_back(tmp_path,
+                                                            monkeypatch):
+    monkeypatch.setenv(review_flags.JUDGMENT_CALLS_ENV, "1")
+    agent = _ScriptedAgent(_consult_then(SOURCED))
+    answer, _items, events = _run(agent, tmp_path)
+    assert answer == SOURCED and len(agent.inputs) == 1
+    assert events[0]["unsourced"] == []
 
 
 def test_an_answer_with_no_list_is_not_sent_back(tmp_path, monkeypatch):

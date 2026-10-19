@@ -118,9 +118,14 @@ def test_check_names_only_the_unsourced_calls():
               "3. **Preload.** Rests on judgment, no reference found.\n")
     result = jc.check(answer)
     assert result["n_calls"] == 3
-    assert result["unsourced"] == ["Water. None given."]
+    # no consult: "no reference found" cannot be true yet, so it counts
+    assert result["unsourced"] == ["Water. None given.",
+                                   "Preload. Rests on judgment, no reference "
+                                   "found."]
     assert result["acts"] is True
-    assert jc.check(answer, references_ran=True)["acts"] is False
+    consulted = jc.check(answer, references_ran=True)
+    assert consulted["unsourced"] == ["Water. None given."]
+    assert consulted["acts"] is False
     note = jc.note_for_model(result)
     assert note.startswith(jc.NOTE_PREFIX) and "- Water. None given." in note
     assert "This note comes once." in note
@@ -168,3 +173,17 @@ def test_mode_needs_the_switch_and_a_build_that_asks_for_a_consult(
     monkeypatch.setenv(review_flags.JUDGMENT_CALLS_ENV, "1")
     assert jc.mode_for(Agent()) == "retry"
     assert jc.mode_for(object()) == "off"
+
+
+@pytest.mark.parametrize("call", [
+    # w13 F51j, word for word: no consult ran
+    "**Smooth wall contact (default) instead of bonded.** The default is the "
+    "Rankine, no wall friction assumption, and I found no reference for it.",
+    "**Smooth wall contact.** This rests on judgment, no reference found.",
+])
+def test_no_reference_found_with_no_consult_is_unsourced(call):
+    """The exemption counts only after a consult: with none, nothing was
+    looked for, so the call is sent back."""
+    answer = "## Judgment calls\n\n- " + call + "\n"
+    assert jc.check(answer)["acts"] is True
+    assert jc.check(answer)["n_unsourced"] == 1

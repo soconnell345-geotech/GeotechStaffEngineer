@@ -14,10 +14,12 @@ WHEN IT ACTS (:meth:`TurnJudgmentCheck.feedback`). All three hold:
 
 * the answer has a "Judgment calls" list (:mod:`funhouse_agent.
   answer_sections`, the same list the live smoke harness reads);
-* at least one call in it names no source (:func:`has_source`) and does not
-  say it rests on judgment with no reference found (:func:`says_none_found`);
+* at least one call in it names no source (:func:`has_source`);
 * no ``references`` task ran in the turn (the primary's ``task`` calls, as
-  the turn's stream carries them: :meth:`TurnJudgmentCheck.saw`).
+  the turn's stream carries them: :meth:`TurnJudgmentCheck.saw`). So a call
+  that says it rests on judgment with no reference found
+  (:func:`says_none_found`) is exempt only after a consult: with none, the
+  words cannot be true.
 
 WHAT IT DOES. It sends the answer back ONCE, naming those calls and asking
 for one consult covering them, before the answer goes out; the reply after
@@ -48,7 +50,9 @@ THE "NO REFERENCE FOUND" WORDS (:func:`says_none_found`): the call names
 judgment ("rests on judgment", "engineering judgment") and says no
 reference, source or basis was found ("no reference found", "found no
 reference"). "Rests on judgment" alone is not enough: in w13 every answer
-took that wording without looking.
+took that wording without looking. And the words count only in a turn
+where a ``references`` task ran: w13 F51j wrote "I found no reference for
+it" having looked for none.
 
 RECORDING. Whenever an answer has the list, the check is kept in the turn's
 ``activity.jsonl`` as a :data:`RECORD_EVENT` event: ``action`` is
@@ -146,9 +150,12 @@ def judgment_calls(answer: str) -> Optional[List[str]]:
     return items(part)
 
 
-def unsourced_calls(calls: Iterable[str]) -> List[str]:
-    """The calls that name no source and do not say none was found."""
-    return [c for c in calls if not has_source(c) and not says_none_found(c)]
+def unsourced_calls(calls: Iterable[str],
+                    references_ran: bool = False) -> List[str]:
+    """The calls that name no source; after a consult (``references_ran``)
+    a call that says none was found is not one of them."""
+    return [c for c in calls if not has_source(c)
+            and not (references_ran and says_none_found(c))]
 
 
 def check(answer: str, references_ran: bool = False) -> Dict[str, Any]:
@@ -159,7 +166,7 @@ def check(answer: str, references_ran: bool = False) -> Dict[str, Any]:
     if calls is None:
         return {"has_list": False, "n_calls": 0, "unsourced": [],
                 "references_ran": bool(references_ran), "acts": False}
-    bare = [call_head(c) for c in unsourced_calls(calls)]
+    bare = [call_head(c) for c in unsourced_calls(calls, references_ran)]
     return {"has_list": True, "n_calls": len(calls),
             "unsourced": bare[:MAX_LISTED], "n_unsourced": len(bare),
             "references_ran": bool(references_ran),
@@ -174,9 +181,9 @@ def note_for_model(result: Dict[str, Any]) -> Optional[str]:
     return (f"{NOTE_PREFIX} Before your answer goes to the user, the app "
             "read its \"Judgment calls\" list. These calls name no source "
             "(a reference with its section, page, table, figure or "
-            "equation; an author and year; or a tool's `choices` basis) "
-            "and do not say they rest on judgment with no reference found, "
-            "and no `references` task ran this turn:\n" + lines + "\n"
+            "equation; an author and year; or a tool's `choices` basis), "
+            "and no `references` task ran this turn, so none can yet say "
+            "that no reference was found:\n" + lines + "\n"
             "The answer you wrote is held back: the user will not see it. "
             "Ask the `references` helper once, in one task, about all of "
             "these calls together. Then write your whole answer to the "
