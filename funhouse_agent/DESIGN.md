@@ -481,6 +481,34 @@ the eyes). What changed on master after 5.33.0, in short:
   method drew (booked like a draw) and has `html_to_pdf` name embedded
   figures no look read. Tests: `deep/tests/test_figure_turn.py`,
   `webapp/tests/test_figure_code_cards.py`.
+- **A stand-in is not a figure** (GM-190; 2026-10-19; live wave w14
+  `TRACE_REVIEW.md` §7.5, §8 fixes 9 and 10). In a parallel batch the calc
+  helper sent `plot_data` a series named as a placeholder with axes named
+  by bare letters, and the PNG and its chart reached the user. Every
+  figure a tool saves is delivered, so the tools refuse, before anything is
+  written (`plot_box.figures.stand_in`, unswitched): a figure that draws
+  nothing; one whose only words say there is nothing to show ("No layer
+  data available"); one whose title, axis or series names call it a
+  placeholder (`dummy`, `lorem ipsum`); and a chart whose only names are
+  bare letters. A chart with no names at all, a note about missing
+  readings over data, a series of borings named "no data", a diagram drawn
+  in words and a picture with no words all pass. `plot_data` raises a
+  plain refusal on every route (the main agent's tool, `call_agent` on any
+  helper); in the box `save_figure` / `save_chart` return `None` and the
+  result names each refused file (an error when nothing was saved), and a
+  figure left open is not saved when it is a stand-in or when a save was
+  refused. The figure book's alternative, keeping the file out of the
+  user's files and cards, was set aside: the book runs only behind the
+  figure switches, the file would stay in the working folder for
+  `html_to_pdf` to embed, and the model would not learn its figure was
+  not one. `render_figures` needs no check: a module's figures come from
+  its own result, and each module figure that would print "no data" is
+  drawn only when its data exist. Behind the figure switches the calc helper is
+  also told to fix what a look at a figure or at a page of its own PDF
+  finds before handing back (`_CALC_LOOK_FIXES`). Limit: code that calls
+  `fig.savefig` itself skips the check, as it skips the layout check.
+  Tests: `tests/test_figure_stand_ins.py`,
+  `deep/tests/test_deep_calc_figures_offline.py`.
 - **Notes on `plot_data`** (GM-109; 2026-10-18; w9 TRACE_REVIEW §2.7, fix
   10): `annotations` places free text where the caller puts it, in data
   units or fractions of the plot, with an optional leader to the point it

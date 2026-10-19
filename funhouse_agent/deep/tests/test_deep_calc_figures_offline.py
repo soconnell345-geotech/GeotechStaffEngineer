@@ -94,3 +94,22 @@ def test_calc_subagent_has_the_figure_modules_in_scope():
     from funhouse_agent.dispatch import ANALYSIS_MODULES
     assert "profile_figure" in ANALYSIS_MODULES
     assert "calc_package" in ANALYSIS_MODULES
+
+
+@pytest.mark.parametrize("env", ["GEOTECH_FIGURE_HELPER", "GEOTECH_PLOT_CODE"])
+def test_a_fault_a_look_finds_is_fixed_before_handing_back(monkeypatch, env):
+    """Live wave w14 (TRACE_REVIEW §8 fix 10, BACKLOG GM-190): the calc
+    helper's look at a page of its own PDF found a figure it could not read
+    and the PDF went back as it was. Behind the figure switches the helper
+    is told to fix what a look at a figure or a page finds, then look
+    again; with them off its prompt is unchanged."""
+    from funhouse_agent import review_flags
+    from funhouse_agent.deep.agent import _CALC_LOOK_FIXES
+    for name in (review_flags.FIGURE_HELPER_ENV, review_flags.PLOT_CODE_ENV):
+        monkeypatch.delenv(name, raising=False)
+    assert _CALC_LOOK_FIXES not in build_calc_subagent()["system_prompt"]
+    monkeypatch.setenv(env, "1")
+    prompt = build_calc_subagent()["system_prompt"]
+    assert _CALC_LOOK_FIXES in prompt
+    assert "a page of a PDF you built" in _CALC_LOOK_FIXES
+    assert "look again, at most twice" in _CALC_LOOK_FIXES

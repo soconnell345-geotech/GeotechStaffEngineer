@@ -30,6 +30,14 @@ figure a module method drew) is booked here:
   a draw under its own name or one that names it in ``replaces``: a name
   that reads as a version (``plan_v2``) only counts on the draws and says
   the earlier file still shows, since "keep both" is a brief too.
+- **Stand-ins are not figures** (:func:`stand_in`; BACKLOG GM-190, live
+  wave w14 ``TRACE_REVIEW.md`` §7.5, fix 9): every figure a tool saves
+  reaches the user's files and the chat, so ``plot_data`` and the plotting
+  box refuse, before anything is written, a figure that draws nothing, one
+  whose only words say there is nothing to show, one whose title, axis or
+  series names call it a placeholder, and a chart whose only names are
+  bare letters ('x', 'y'). Not switched: it is the tools' own check, on
+  every path.
 """
 
 from __future__ import annotations
@@ -520,7 +528,84 @@ def redraw_note(stems: Iterable[str], root: Optional[str]) -> str:
     return "\n\n".join(blocks)
 
 
+# ---------------------------------------------------------------------------
+# stand-ins: a figure that holds a place rather than shows data
+# ---------------------------------------------------------------------------
+
+#: Words that mark a figure as a stand-in wherever they stand in its title,
+#: axis names or series names: no figure meant for a reader is named so.
+_STAND_IN_WORDS = re.compile(
+    r"\b(?:place[ _\-]?holders?|dummy|lorem\s+ipsum|fake\s+data)\b",
+    re.IGNORECASE)
+#: A whole text that says there is nothing to show ("No data", "No layer
+#: data available", "N/A"), as the words of a figure that draws nothing.
+#: Over data it is left alone: a series of borings with no results, or one
+#: panel of several, may be named so.
+_NOTHING = re.compile(
+    r"^(?:no(?:[ \-]+\w+){0,3}[ \-]+data(?: (?:available|yet|shown"
+    r"|to (?:show|plot)))?|n/?a|none|empty|nothing(?: to (?:show|plot))?)"
+    r"[.!]?$", re.IGNORECASE)
+#: An axis named by a bare letter names no quantity: a stand-in name.
+_BARE_AXIS = re.compile(r"^[xyz](?:[ _\-]*axis)?$", re.IGNORECASE)
+
+#: What a refused figure's message ends with.
+STAND_IN_NOTE = (
+    "Every figure a tool saves reaches the user's files and the chat: draw "
+    "a figure only from the data in hand, and name what it shows (a title, "
+    "or each axis with its units). No figure is needed to hold a place.")
+
+
+def _texts(values) -> List[str]:
+    if isinstance(values, str):
+        values = [values]
+    return [" ".join(str(v).split()) for v in values or ()
+            if v is not None and str(v).strip()]
+
+
+def stand_in(titles=(), axes=(), series=(), notes=(), drawn: bool = True,
+             chart: bool = True) -> Optional[str]:
+    """Why a figure is a stand-in rather than a figure to deliver (BACKLOG
+    GM-190), else ``None``.
+
+    ``titles``: its title(s); ``axes``: its axis names; ``series``: the
+    names of what it plots (series, legend entries); ``notes``: any other
+    words on it (notes, point names, reference-line names); ``drawn``:
+    whether it draws any data; ``chart``: whether what it draws is a
+    chart's (lines, points, bars, areas) rather than a picture or a
+    table.
+
+    A figure that draws nothing is a stand-in when it has no words, or
+    when any of its words says there is nothing to show; one of words alone
+    (a diagram drawn in text) is not. A figure that draws data is one when
+    a title, axis or series name calls it a placeholder (``dummy``,
+    ``lorem ipsum``) and, for a chart, when its only names are bare
+    letters (axes named ``x`` and ``y``, no title, no named series, no
+    other words). A chart with no names at all is left to the look: a name
+    left out is not a stand-in."""
+    titles, axes = _texts(titles), _texts(axes)
+    series, notes = _texts(series), _texts(notes)
+    named = titles + axes + series
+    if not drawn:
+        words = named + notes
+        if not words:
+            return "nothing is drawn on it"
+        hit = next((w for w in words if _STAND_IN_WORDS.search(w)
+                    or _NOTHING.match(w)), None)
+        if hit:
+            return f"it draws no data, only words such as '{hit}'"
+        return None
+    hit = next((w for w in named if _STAND_IN_WORDS.search(w)), None)
+    if hit:
+        return f"'{hit}' on it marks it as a stand-in, not a figure of data"
+    if chart and axes and not (titles or series or notes) and all(
+            _BARE_AXIS.match(a) for a in axes):
+        return ("its only names are bare letters ("
+                + ", ".join(f"'{a}'" for a in axes) + "): nothing on it "
+                "names what it plots")
+    return None
+
+
 __all__ = ["CODE_DIR", "REDRAW_HEADING", "record_draw", "write_code",
            "forget_code", "kept_code", "kept_figures", "named_in",
            "redraw_note", "replacing", "draws_of", "figure_stem",
-           "version_base", "is_figure_file"]
+           "version_base", "is_figure_file", "stand_in", "STAND_IN_NOTE"]
