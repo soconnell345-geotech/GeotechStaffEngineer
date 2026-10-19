@@ -3,7 +3,7 @@
 from funhouse_agent.adapters import (declare_applies_when,
                                      reject_unknown_params, require_params)
 from seismic_geotech.site_class import compute_vs30, compute_n_bar, compute_su_bar, classify_site, site_coefficients
-from seismic_geotech.mononobe_okabe import mononobe_okabe_KAE, mononobe_okabe_KPE, seismic_earth_pressure, earth_pressure_choices, mo_no_solution_warning
+from seismic_geotech.mononobe_okabe import mononobe_okabe_KAE, mononobe_okabe_KPE, seismic_earth_pressure, earth_pressure_choices, mo_no_solution, mo_no_solution_warning
 from seismic_geotech.liquefaction import evaluate_liquefaction, CRR_from_N160cs, compute_CSR, stress_reduction_rd, magnitude_scaling_factor, fines_correction, liquefaction_choices
 from seismic_geotech.residual_strength import post_liquefaction_strength
 from seismic_geotech.dynamic_properties import (
@@ -98,7 +98,10 @@ def run_seismic_earth_pressure(params: dict, *,
            if include_passive else 0.0)
     gamma = params.get("gamma")
     H = params.get("H")
-    forces = (seismic_earth_pressure(gamma, H, KAE, KA)
+    # UFC 3-220-20 Eq. 4-16 carries (1 - kv) (GM-149); the Seed &
+    # Whitman fallback KAE where M-O has no solution leaves kv out.
+    kv_force = 0.0 if mo_no_solution(phi, kh, kv, i) else kv
+    forces = (seismic_earth_pressure(gamma, H, KAE, KA, kv=kv_force)
               if gamma is not None and H is not None else {})
     note = mo_no_solution_warning(phi, kh, kv, i)
     result = SeismicEarthPressureResult(
@@ -322,7 +325,7 @@ METHOD_INFO = {
         "parameters": {
             "phi": {"type": "float", "required": True, "description": "Friction angle (degrees)."},
             "kh": {"type": "float", "required": True, "description": "Horizontal seismic coefficient."},
-            "kv": {"type": "float", "required": False, "default": 0.0, "description": "Vertical seismic coefficient."},
+            "kv": {"type": "float", "required": False, "default": 0.0, "description": "Vertical seismic coefficient (positive upward). Enters KAE through theta = atan(kh/(1-kv)) (UFC 3-220-20 Eq. 4-15) and, with gamma and H, the thrust PAE = (gamma H^2/2)(1-kv) KAE (Eq. 4-16)."},
             "delta": {"type": "float", "required": False, "description": "Wall friction angle (deg). Defaults to 2/3 phi."},
             "beta": {"type": "float", "required": False, "default": 0.0, "description": "Wall back face batter from vertical (degrees)."},
             "i": {"type": "float", "required": False, "default": 0.0, "description": "Backfill slope angle (degrees)."},

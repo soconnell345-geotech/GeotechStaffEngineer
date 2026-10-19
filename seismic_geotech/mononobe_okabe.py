@@ -191,8 +191,14 @@ def mononobe_okabe_KPE(phi_deg: float, delta_deg: float, kh: float,
 
 
 def seismic_earth_pressure(gamma: float, H: float,
-                           KAE: float, KA: float) -> Dict[str, float]:
+                           KAE: float, KA: float,
+                           kv: float = 0.0) -> Dict[str, float]:
     """Compute seismic earth pressure resultants.
+
+    PAE = (gamma H^2 / 2)(1 - kv) KAE, UFC 3-220-20 Eq. 4-16 (p. 215),
+    with KAE from Eq. 4-15 (theta = atan(kh / (1 - kv))). Until GM-149
+    the (1 - kv) was left out, overstating PAE by 1 / (1 - kv) wherever
+    kv was not 0.
 
     Parameters
     ----------
@@ -204,6 +210,9 @@ def seismic_earth_pressure(gamma: float, H: float,
         Seismic active earth pressure coefficient.
     KA : float
         Static active earth pressure coefficient.
+    kv : float, optional
+        Vertical seismic coefficient, the one KAE was worked out with
+        (positive upward, lightening the wedge). Default 0.
 
     Returns
     -------
@@ -215,9 +224,9 @@ def seismic_earth_pressure(gamma: float, H: float,
 
     References
     ----------
-    Seed & Whitman (1970); FHWA GEC-3
+    UFC 3-220-20 Eq. 4-16; Seed & Whitman (1970); FHWA GEC-3
     """
-    PAE_total = 0.5 * gamma * H ** 2 * KAE
+    PAE_total = 0.5 * gamma * H ** 2 * (1.0 - kv) * KAE
     PA_static = 0.5 * gamma * H ** 2 * KA
     delta_PAE = PAE_total - PA_static
 
@@ -281,7 +290,16 @@ def earth_pressure_choices(phi_deg: float, kh: float, kv: float = None,
             "Eq. 4-15; GEC-11 Vol I Eq. 7-6)"))
     out.append(choice("kh", kh, GIVEN,
                       "as given; not worked out from the PGA here"))
-    out.append(choice("kv", kv or 0.0, DEFAULT if kv is None else GIVEN))
+    kv_basis = ""
+    if forces:
+        kv_basis = ("PAE = (gamma H^2 / 2)(1 - kv) KAE (UFC 3-220-20 Eq. "
+                    "4-16, p. 215), kv positive upward; kv = 0 leaves the "
+                    "vertical inertia out")
+        if mo_no_solution(phi_deg, kh, kv or 0.0, i_deg):
+            kv_basis = ("not used: the Seed & Whitman estimate of KAE "
+                        "leaves kv out, and PAE takes no (1 - kv)")
+    out.append(choice("kv", kv or 0.0, DEFAULT if kv is None else GIVEN,
+                      kv_basis))
     if delta_deg is None:
         out.append(choice("wall friction delta",
                           f"{2.0 / 3.0 * phi_deg:.1f} deg (2/3 phi)",
