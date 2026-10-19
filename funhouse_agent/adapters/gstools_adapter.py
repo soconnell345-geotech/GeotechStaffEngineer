@@ -171,7 +171,7 @@ def _run_variogram(params: dict) -> dict:
         values=params["values"],
         model_type=params.get("model_type", "Gaussian"),
         n_bins=params.get("n_bins", 10),
-        nugget=params.get("nugget", 0.0),
+        nugget=params.get("nugget"),
     )
     return clean_result(result.to_dict())
 
@@ -404,12 +404,13 @@ METHOD_INFO = {
             "values": {"type": "array", "required": True, "description": "Measured values at each point."},
             "model_type": {"type": "str", "required": False, "default": "Gaussian", "allowed_values": _MODEL_TYPES, "description": "Covariance model to fit."},
             "n_bins": {"type": "int", "required": False, "default": 10, "description": "Number of lag classes between 0 and the largest pair separation."},
-            "nugget": {"type": "float", "required": False, "default": 0.0, "description": "Whether the fit has a nugget: 0 or more (the default) fits the nugget with the sill and range, and the value itself is not used; a negative value fixes the nugget at 0. The fitted nugget is returned."},
+            "nugget": {"type": "float", "required": False, "description": "Nugget variance. Left out: fitted with the sill and range. A number (0 or more): the nugget is fixed at it and only the sill and range are fitted (0 = no nugget). The nugget used is returned, with nugget_fitted."},
         },
         "returns": {
             "variance": "Fitted sill variance.",
             "len_scale": "Fitted correlation length (m).",
-            "nugget": "Fitted nugget.",
+            "nugget": "Nugget used: fitted, or as given (nugget_fitted).",
+            "nugget_fitted": "Whether the nugget was fitted (true) or fixed at the value given.",
             "n_bins": "Lag classes that hold point pairs (of the n_bins asked for).",
             "bin_center": "Lag distances of the populated classes.",
             "gamma": "Empirical semivariance per class.",
@@ -507,11 +508,11 @@ declare_aliases(METHOD_INFO, {"conditional_simulation": _COND_ALIASES})
 
 # When each default applies (GM-119): kriging's nugget only when the
 # variogram is not fitted (a fit fits the nugget too), its quantity only
-# with regions; the variogram's nugget is a switch, never a value used.
+# with regions.
 declare_applies_when(METHOD_INFO, {
     "kriging": {"nugget": {"fit_variogram": [False]},
                 "quantity": {"regions": "set"}},
-    "variogram": {"nugget": False}})
+})
 
 
 # What a left-out input with no default stands for (BACKLOG GM-165):

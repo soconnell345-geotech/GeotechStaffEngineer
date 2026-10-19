@@ -365,6 +365,19 @@ def test_every_flow_is_well_formed():
             assert label and patterns, (f["id"], item)
             for p in patterns:
                 re.compile(p)
+        gi = (f.get("expect") or {}).get("given_inputs")
+        if gi is not None:
+            assert set(gi) <= {"package_given", "brief_given",
+                               "not_given"}, (f["id"], gi)
+            for item in gi.get("not_given") or []:
+                assert set(item) <= {"name", "inputs", "any"}, f["id"]
+                assert item["name"] and item["any"], (f["id"], item)
+                assert all(isinstance(i, str) for i in item.get("inputs")
+                           or []), f["id"]
+                for p in item["any"]:
+                    re.compile(p)
+        assert isinstance((f.get("expect") or {}).get(
+            "pdf_cites_consult", False), bool), f["id"]
     covered = {p for f in flows for p in [f.get("page", "document_review")]}
     assert covered == pages
 
@@ -1041,6 +1054,49 @@ def test_figure_cards_detector_runs_with_the_others(tmp_path):
     assert det.detect_figure_cards(_ctx(rec)) == []
 
 
+def _judgment_event(action, unsourced, references_ran=False, mode="retry"):
+    return {"turn": 1, "agent": "primary", "event": "judgment_check",
+            "where": "answer", "mode": mode, "action": action,
+            "has_list": True, "n_calls": 3, "unsourced": unsourced,
+            "n_unsourced": len(unsourced), "references_ran": references_ran}
+
+
+def test_judgment_check_retry_is_seen_and_counted(tmp_path):
+    """GM-174: an answer the app sent back for calls with no source is a
+    finding a wave can count, and a turn metric."""
+    assert det.detect_judgment_check in det.DETECTORS
+    conv, files = _conv(tmp_path)
+    _write_acts(conv, [
+        _judgment_event("fed_back", ["Wall contact. Smooth.",
+                                     "Water. None given."]),
+        {"turn": 1, "event": "tool_start", "name": "task"},
+        _judgment_event("none", [], references_ran=True)])
+    ctx = _ctx(_fig_rec(conv, files, []))
+    found = det.detect_judgment_check(ctx)
+    assert codes(found) == {"judgment_check_retry"}
+    assert found[0]["severity"] == "info"
+    assert found[0]["detector"] == "l_judgment_check"
+    assert "2 of 3" in found[0]["message"]
+    assert det.turn_metrics(ctx)["judgment_retries"] == 1
+    # the answers it read, so a rerun sees the check ran (GM-181 rerun)
+    assert det.turn_metrics(ctx)["judgment_checks"] == 2
+
+
+def test_judgment_calls_left_unsourced_with_no_consult_are_seen(tmp_path):
+    conv, files = _conv(tmp_path)
+    _write_acts(conv, [_judgment_event("none", ["Water. None given."],
+                                       mode="off")])
+    ctx = _ctx(_fig_rec(conv, files, []))
+    assert codes(det.detect_judgment_check(ctx)) == {
+        "judgment_calls_unsourced"}
+    assert det.turn_metrics(ctx)["judgment_retries"] == 0
+    # a turn that consulted, or whose calls all name a source: nothing
+    _write_acts(conv, [_judgment_event("none", ["Water."],
+                                       references_ran=True),
+                       _judgment_event("none", [])])
+    assert det.detect_judgment_check(_ctx(_fig_rec(conv, files, []))) == []
+
+
 def test_card_expectations_count_kinds_and_patterns(tmp_path):
     conv, files = _conv(tmp_path)
     for n in ("calc.pdf", "wall.png", "wall_2.png", "data.csv"):
@@ -1267,3 +1323,203 @@ def test_recovered_tool_error_is_low_and_meter_gap_is_flagged(tmp_path):
     assert "meter_activity_mismatch" in codes(cost)
     cost = det.detect_cost(_ctx(rec, meter_calls=[{"usd": 0.0}] * 2))
     assert "meter_activity_mismatch" not in codes(cost)
+
+
+# ---------------------------------------------------------------------------
+# Given inputs and the consult's citations in deliverables (GM-155, GM-167,
+# GM-181): expect keys ``given_inputs`` and ``pdf_cites_consult``
+# ---------------------------------------------------------------------------
+
+#: w13b F18j's composed report, cut down: c = 0 under "Given by user".
+_F18J_HTML = (
+    "<h2>1. Inputs</h2><h3>Given by user</h3><table><tr><th>Input</th>"
+    "<th>Value</th></tr><tr><td>Friction angle phi</td><td>32 deg</td></tr>"
+    "<tr><td>Cohesion c</td><td>0 kPa</td></tr></table>"
+    "<h3>Assumed (not given)</h3><ul><li>No groundwater within influence "
+    "zone</li></ul><h2>3. Method</h2><p>Vesic factors per GEC-6.</p>")
+
+#: w13b F55j's: a status column, H worked out but marked Given.
+_F55J_HTML = (
+    "<table><tr><th>Item</th><th>Value</th><th>Status</th></tr>"
+    "<tr><td>Retained height</td><td>4.0 m</td><td>Given</td></tr>"
+    "<tr><td>Total wall height H</td><td>4.5 m (= 4.0 + 0.5)</td>"
+    "<td>Given (convention of the tool)</td></tr>"
+    "<tr><td>Concrete unit weight</td><td>24 kN/m3</td>"
+    "<td>Assumed, not given</td></tr></table>")
+
+
+def test_given_rows_read_given_parts_and_status_cells():
+    rows = det.given_rows(_F18J_HTML)
+    assert "Cohesion c | 0 kPa" in rows
+    assert not any("groundwater" in r.lower() for r in rows)
+    assert not any("Vesic" in r for r in rows)
+    rows = det.given_rows(_F55J_HTML)
+    assert any(r.startswith("Total wall height H") for r in rows)
+    assert not any("Concrete" in r for r in rows)
+    assert det.given_rows("<h2>Inputs</h2><p>B = 2 m</p>") == []
+
+
+def test_brief_given_block():
+    brief = ("Build the package.\nGIVEN (the user's words): \"2 m square "
+             "footing\", \"phi = 32 degrees\"\nASSUMPTIONS: c = 0 (sand), "
+             "no water table\nRETURN the path.")
+    block = det.brief_given_block(brief)
+    assert "phi = 32" in block and "c = 0" not in block
+    block = det.brief_given_block("**Given:** B = 2 m\n\nAssumed: c = 0")
+    assert "B = 2 m" in block and "c = 0" not in block
+    # "not given" and running text are no GIVEN block
+    for text in ("ASSUMPTIONS (NOT GIVEN): c = 0",
+                 "phi=32 deg (user-given), c=0", "as given by the user"):
+        assert det.brief_given_block(text) is None, text
+
+
+def _call(rid, t, agent_name, method, params, result='{"ok": 1}'):
+    return [{"event": "tool_start", "name": "call_agent", "run_id": rid,
+             "agent": "calc", "ts": t,
+             "args": {"agent_name": agent_name, "method": method,
+                      "parameters": params}},
+            {"event": "tool_end", "name": "call_agent", "run_id": rid,
+             "agent": "calc", "ts": t + 1, "result": result}]
+
+
+def _task(rid, t, helper, brief, result, t_end=None):
+    # the activity log keeps a task's arguments as a Python repr
+    return [{"event": "tool_start", "name": "task", "run_id": rid,
+             "agent": "primary", "ts": t, "subagent": helper,
+             "args": repr({"subagent_type": helper, "description": brief})},
+            {"event": "tool_end", "name": "task", "run_id": rid,
+             "agent": "primary", "ts": t_end or t + 5, "subagent": helper,
+             "result": result}]
+
+
+_NOT_GIVEN = {"package_given": True, "brief_given": True, "not_given": [
+    {"name": "c = 0", "inputs": ["cohesion"],
+     "any": ["cohesion", r"(?<![\w.'])c'?\s*=\s*0(?![.\d])"]}]}
+
+
+def test_given_inputs_expectations(tmp_path):
+    """The F18j rerun sees whether the package call passed `given`, whether
+    an input the user did not state (c = 0 for "sand") is under Given in
+    the call, a composed report or a brief, and whether briefs have a
+    GIVEN block; a call that failed is not counted."""
+    conv, files = _conv(tmp_path)
+    (files / "calc.html").write_text(_F18J_HTML, encoding="utf-8")
+    acts = (_task("t1", 1.0, "calc", "Run it. phi=32 (user-given), c=0",
+                  "done")
+            + _call("p0", 2.0, "calc_package", "bearing_capacity_package",
+                    {"width": 2}, result='{"error": "ValueError: given: x '
+                    'named but not passed"}')
+            + _call("p1", 3.0, "calc_package", "bearing_capacity_package",
+                    {"width": 2, "cohesion": 0})
+            + _call("p2", 4.0, "calc_package", "bearing_capacity_package",
+                    {"width": 2, "cohesion": 0,
+                     "given": {"width": "2 m square", "cohesion": "sand"}})
+            + _call("h1", 5.0, "calc_package", "html_to_pdf",
+                    {"html_path": "calc.html", "output_path": "calc.pdf"}))
+    _write_acts(conv, acts)
+    flow = {"expect": {"given_inputs": _NOT_GIVEN}}
+    found = det.detect_expectations(flow, [_Sess([_fig_rec(conv, files,
+                                                            [])])])
+    got = [(f["code"], f["evidence"].get("where") or
+            f["evidence"].get("package")) for f in found]
+    assert ("expected_package_given_missing",
+            "bearing_capacity_package") in got
+    assert sum(1 for c, _w in got
+               if c == "expected_package_given_missing") == 1   # not p0
+    assert ("expected_brief_given_missing", None) in got
+    assert ("assumed_input_given", "bearing_capacity_package") in got
+    assert ("assumed_input_given", "calc.pdf") in got
+    assert all(f["severity"] == "info" and f["detector"] == "i_expectations"
+               for f in found)
+    # a brief with a GIVEN block in the user's words, c = 0 under
+    # assumptions, and `given` without cohesion: nothing to say
+    acts = (_task("t1", 1.0, "calc", "GIVEN: \"2 m square footing\", "
+                  "\"phi = 32\"\nASSUMPTIONS: c = 0 (sand)", "done")
+            + _call("p2", 4.0, "calc_package", "bearing_capacity_package",
+                    {"width": 2, "cohesion": 0, "given": ["width"]}))
+    _write_acts(conv, acts)
+    assert det.detect_expectations(flow, [_Sess([_fig_rec(conv, files,
+                                                           [])])]) == []
+    # no package built and no brief: the keys say they were not exercised
+    _write_acts(conv, [])
+    assert codes(det.detect_expectations(
+        flow, [_Sess([_fig_rec(conv, files, [])])])) == {
+        "expected_package_not_called", "expected_calc_brief_missing"}
+
+
+_CONSULT = ("**Scope.** FHWA-NHI-06-089 is not in the indexed references. "
+            "GEC-6 Sec. 5.2.3.2 gives the factors; UFC 3-220-20 Sec. 5-2.4 "
+            "the factor of safety.")
+
+
+def test_pdf_cites_consult(tmp_path):
+    """w13b fix 10: a composed report cites what the consult named, the
+    consult finished before it; a document a tool also named counts only
+    with a section the consult gave (w13b F55j: the PDF's FHWA-NHI-06-089
+    came from the tool's notes)."""
+    conv, files = _conv(tmp_path)
+    flow = {"expect": {"pdf_cites_consult": True}}
+
+    def run(acts):
+        _write_acts(conv, acts)
+        return det.detect_expectations(flow, [_Sess([_fig_rec(conv, files,
+                                                               [])])])
+    tool = _call("w1", 0.5, "retaining_walls", "cantilever_wall", {},
+                 result=json.dumps({"notes": "Per FHWA-NHI-06-089 Sec. "
+                                    "10.4.2 and GEC-6."}))
+    consult = _task("r1", 1.0, "references", "which method?", _CONSULT,
+                    t_end=2.0)
+    good = _call("h1", 3.0, "calc_package", "html_to_pdf",
+                 {"html": "<p>Factors per GEC-6 Sec. 5.2.3.2.</p>",
+                  "output_path": "a.pdf"})
+    assert run(tool + consult + good) == []
+    other = _call("h2", 3.0, "calc_package", "html_to_pdf",
+                  {"html": "<p>FS per UFC 3-220-20.</p>",
+                   "output_path": "b.pdf"})
+    assert run(tool + consult + other) == []
+    copied = _call("h3", 3.0, "calc_package", "html_to_pdf",
+                   {"html": "<p>Per FHWA-NHI-06-089 Sec. 10.4.2; GEC-6.</p>",
+                    "output_path": "c.pdf"})
+    found = run(tool + consult + copied)
+    assert codes(found) == {"expected_consult_citation_missing"}
+    assert "also named by a tool" in found[0]["message"]
+    # written before the consult finished
+    early = _call("h4", 1.5, "calc_package", "html_to_pdf",
+                  {"html": "<p>GEC-6 Sec. 5.2.3.2</p>",
+                   "output_path": "d.pdf"})
+    found = run(tool + consult + early)
+    assert codes(found) == {"expected_consult_before_deliverable"}
+    assert "1 finished after it" in found[0]["message"]
+    # a package's assumptions carry the citation in the basis
+    pkg = _call("p1", 3.0, "calc_package", "bearing_capacity_package",
+                {"assumptions": {"gwt_depth": "not given; deep, per "
+                                 "UFC 3-220-20 Sec. 5-2.4"}})
+    assert run(tool + consult + pkg) == []
+    assert codes(run(tool)) == {"expected_deliverable_missing"}
+
+
+def test_report_shows_the_judgment_check_and_given_keys(tmp_path):
+    """REPORT.md and the transcript list the judgment-call check's info
+    findings (did it send an answer back?) beside the flow expectations."""
+    from live_smoke import report
+    wave = tmp_path / "w"
+    sc = wave / "F18j-x"
+    sc.mkdir(parents=True)
+    retry = det.finding("l_judgment_check", "judgment_check_retry", "info",
+                        "the answer was sent back once")
+    given = det.finding("i_expectations", "assumed_input_given", "info",
+                        "c = 0 is under Given in calc.pdf")
+    (sc / "summary.json").write_text(json.dumps({"id": "F18j-x"}),
+                                     encoding="utf-8")
+    (sc / "detectors.json").write_text(json.dumps(
+        {"turns": [{"findings": [retry]}], "scenario": [given]}),
+        encoding="utf-8")
+    text = open(report.write_report(str(wave)), encoding="utf-8").read()
+    assert "judgment_check_retry" in text and "assumed_input_given" in text
+    path = tmp_path / "t.md"
+    report.write_transcript(str(path), {"id": "F18j-x"}, [{
+        "final": "ok", "findings": [retry],
+        "metrics": {"judgment_checks": 2, "judgment_retries": 1}}], [given])
+    text = path.read_text(encoding="utf-8")
+    assert "read 2 answer(s), sent 1 back" in text
+    assert "judgment_check_retry" in text and "assumed_input_given" in text

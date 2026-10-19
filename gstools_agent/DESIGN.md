@@ -176,6 +176,12 @@ handful of borings a fitted variogram is unstable (in `kriging` it defaults
 to True and then overrides given variance, len_scale and nugget, which the
 notes say).
 
+**The variogram's nugget** (GM-160, 2026-10-19): left out, it is fitted with
+the sill and range; a number (0 or more) fixes it and only the sill and range
+are fitted (GSTools `fit_variogram` with a fixed value); `nugget_fitted` says
+which. Before, the value was never used: 0 or more fitted it, a negative value
+fixed it at 0 (now refused).
+
 **Non-finite realizations.** The field session's own CondSRF script
 (ordinary kriging → CondSRF, seeds 0–999, 2 m grid) produced ONE all-NaN
 realization in a thousand and its statistics printed NaN. Any realization

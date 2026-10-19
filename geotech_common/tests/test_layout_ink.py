@@ -140,6 +140,34 @@ def test_a_box_or_a_halo_keeps_hatching_off_the_letters():
     assert not _crossed(layout_check(fig, "x.png"))
 
 
+@pytest.mark.parametrize("halo", [True, False])
+def test_a_halo_on_a_long_label_keeps_hatching_off_its_letters(halo):
+    """Lettering with a halo is drawn as paths, the halo and the letters
+    alike, and its letters were measured as plain lettering draws them:
+    glyphs hinted to whole pixels (matplotlib 3.11's default), about half a
+    pixel a letter wider at 200 dpi, so on a long label they drifted off
+    the halo round them and the hatching at the halo's edge was counted
+    (CI on 3.11). Without the halo the hatching still crosses the label."""
+    import matplotlib
+    from matplotlib import patheffects
+    from matplotlib.patches import Rectangle
+    rc = {"text.hinting": "default"}
+    if tuple(int(p) for p in matplotlib.__version__.split(".")[:2]) < (3, 11):
+        rc["text.hinting_factor"] = 1       # 3.11 has no factor
+    words = "Soft clay zone, very soft to soft, grey"
+    kw = ({"path_effects": [patheffects.withStroke(linewidth=2.5,
+                                                   foreground="white")]}
+          if halo else {})
+    with matplotlib.rc_context(rc):
+        fig, ax = _figure(w=6.5)
+        ax.add_patch(Rectangle((0, 0), 10, 5, facecolor="none",
+                               edgecolor="#555555", hatch="//", lw=0.8,
+                               label="Soft clay"))
+        ax.text(5, 2.5, words, ha="center", va="center", fontsize=10, **kw)
+        found = _crossed(layout_check(fig, "x.png"))
+    assert found == ({} if halo else {words: "the hatching of 'Soft clay'"})
+
+
 def test_a_plain_fill_under_lettering_is_still_where_it_stands():
     """Only the hatching moved: a label on a tinted zone is not crossed."""
     from matplotlib.patches import Rectangle
@@ -287,3 +315,53 @@ def test_a_check_takes_little_time():
     t = time.monotonic()
     layout_check(fig, "x.png", dpi=150)
     assert time.monotonic() - t < 2.0
+
+
+# ---------------------------------------------------------------------------
+# lettering as printed (GM-168)
+# ---------------------------------------------------------------------------
+
+def test_a_png_carries_its_lettering_and_reads_it_back():
+    from calc_package.renderer import figure_to_base64
+    import base64
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax.plot([0, 1], [0, 1])
+    ax.tick_params(labelsize=6.5)
+    ax.set_xlabel("Depth (m)", fontsize=9)
+    try:
+        png = base64.b64decode(figure_to_base64(fig, dpi=120))
+    finally:
+        plt.close(fig)
+    meta = layout_ink.parse_lettering(
+        layout_ink.png_texts(png)[layout_ink.LETTERING_KEY])
+    assert meta["smallest_pt"] == pytest.approx(6.5)
+    # the width saved: the PNG's pixels over its dpi
+    import struct
+    width_px = struct.unpack(">I", png[16:20])[0]
+    assert meta["saved_width_in"] == pytest.approx(width_px / 120, abs=0.01)
+    assert "checked_width_in" not in meta
+
+
+def test_a_tick_label_outside_the_view_is_not_lettering():
+    fig, ax = _figure()
+    ax.set_xticks([0, 5, 10, 50])
+    ax.set_xticklabels(["0", "5", "10", "far"], fontsize=3)
+    ax.set_xlim(0, 10)
+    ax.tick_params(axis="x", labelsize=3)
+    ax.get_xticklabels()[1].set_fontsize(9)
+    sizes, _w = layout_ink.lettering_sizes(fig)
+    texts = [t for t, _bb, _a in layout_ink.drawn_texts(
+        fig, fig.canvas.get_renderer())]
+    assert "far" not in texts
+    assert min(sizes) == pytest.approx(3.0)
+
+
+def test_png_text_helpers_leave_other_files_alone():
+    assert layout_ink.png_with_text(b"not a png", "k", "v") == b"not a png"
+    assert layout_ink.png_texts(b"GIF89a") == {}
+    assert layout_ink.parse_lettering("something else") == {}
+    text = layout_ink.lettering_text(6.123, 9.8765, 6.5)
+    assert layout_ink.parse_lettering(text) == {
+        "smallest_pt": 6.12, "saved_width_in": 9.877,
+        "checked_width_in": 6.5}

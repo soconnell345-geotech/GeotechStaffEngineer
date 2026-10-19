@@ -163,3 +163,14 @@ Duncan (2000) JGGE 126(4); UFC 3-220-20 (2025) ch. 7; USACE ETL 1110-2-547
 (1995); Phoon & Kulhawy (1999a,b) CGJ 36(4); Rosenblueth (1975) PNAS 72(10);
 Hasofer & Lind (1974); Rackwitz & Fiessler (1978); Vanmarcke (1977, 1983);
 Baecher & Christian (2003); Cami et al. (2020); ISSMGE-TC304 (2021).
+
+## Calc package (GM-41)
+`reliability/calc_steps.py` renders the four engines through
+`calc_package(reliability_package, engine=fosm|pem|monte_carlo|form)`: the
+performance function, each random variable as the engine read it, the
+correlations, then the moments of g, beta and Pf with UFC 3-220-20's
+equations (7-7, 7-8, p. 533; 7-10 to 7-12, p. 535; 7-13, 7-14, p. 536), each
+variable's share (FOSM variance or FORM alpha squared) and, for Monte Carlo,
+the histogram and the convergence of Pf. The package runs the tool's own
+`run_<engine>` in `funhouse_agent/adapters/reliability_adapter.py`.
+

@@ -656,65 +656,18 @@ def _report_dpi(fig, dpi) -> int:
                        int(MAX_REPORT_PX / max(w, h, 1e-6))))
 
 
-def _hidden_tick_labels(fig) -> set:
-    """Tick labels matplotlib keeps but never draws: those of ticks outside
-    the axis's view limits (live wave w8b: a phantom "100" beyond a panel's
-    right edge was reported against the next panel's "0")."""
-    hidden = set()
-    for ax in fig.get_axes():
-        for axis in (ax.xaxis, ax.yaxis):
-            lo, hi = sorted(axis.get_view_interval())
-            tol = 1e-9 * max(abs(hi - lo), 1e-12)
-            for tick in axis.get_major_ticks() + axis.get_minor_ticks():
-                loc = tick.get_loc()
-                if loc is None or not (lo - tol <= loc <= hi + tol):
-                    hidden.add(id(tick.label1))
-                    hidden.add(id(tick.label2))
-    return hidden
-
-
-def _drawn_texts(fig, renderer) -> list:
-    """``[(text, window box, artist)]`` for the lettering that is drawn:
-    visible, not empty, not a tick label outside the view; an annotation
-    measured by its text, not its leader."""
-    from matplotlib.text import Annotation, Text
-    hidden = _hidden_tick_labels(fig)
-    texts = []
-    for t in fig.findobj(Text):
-        s = t.get_text().strip() if t.get_visible() else ""
-        if not s or id(t) in hidden:
-            continue
-        try:
-            # an Annotation's own extent takes in its leader line
-            bb = (Text.get_window_extent(t, renderer)
-                  if isinstance(t, Annotation)
-                  else t.get_window_extent(renderer))
-        except Exception:                                  # noqa: BLE001
-            continue
-        if bb.width > 1 and bb.height > 1:
-            texts.append((" ".join(s.split())[:40], bb, t))
-    return texts
-
-
-def _lettering(fig, fname: str, print_width_in: float) -> dict:
+def _lettering(fig, fname: str, print_width_in: float,
+               measured=None) -> dict:
     """The lettering's size as printed ``print_width_in`` wide (live wave
     w9: figures drawn 9.5-11 in wide printed at 4.6-5.6 pt on a report
     page, and nothing measured it): the smallest size, the width the figure
-    was saved at, and how many texts print under :data:`MIN_PRINT_PT`."""
-    try:
-        fig.canvas.draw()
-        r = fig.canvas.get_renderer()
-        texts = _drawn_texts(fig, r)
-        if not texts:
-            return {}
-        import matplotlib
-        pad = float(matplotlib.rcParams.get("savefig.pad_inches", 0.1))
-        # the width the figure is saved at (bbox_inches="tight"), inches
-        saved_w = fig.get_tightbbox(r).width + 2 * pad
-        scale = float(print_width_in) / max(saved_w, 1e-6)
-        sizes = [float(t.get_fontsize()) * scale for _s, _bb, t in texts]
-    except Exception:                                      # noqa: BLE001
+    was saved at, and how many texts print under :data:`MIN_PRINT_PT`.
+    ``measured``: ``layout_ink.lettering_sizes(fig)``, when taken already."""
+    sizes, saved_w = measured or _layout_ink.lettering_sizes(fig)
+    if not sizes or saved_w <= 0:
         return {}
+    scale = float(print_width_in) / max(saved_w, 1e-6)
+    sizes = [s * scale for s in sizes]
     smallest = min(sizes)
     under = sum(1 for s in sizes if s < MIN_PRINT_PT - 0.05)
     return {"file": fname, "smallest_pt": round(smallest, 1),
@@ -945,8 +898,17 @@ def main() -> int:
         """``fname`` for the report at ``dpi``; for a picture larger than a
         look takes whole, a copy that size in :data:`LOOK_DIR` for looks."""
         look_copies.pop(fname, None)
-        if os.path.splitext(fname)[1].lower() in (".png", ".jpg", ".jpeg"):
-            fig.savefig(fname, dpi=_report_dpi(fig, dpi), bbox_inches="tight")
+        # the lettering, measured before the save so a PNG carries it: a
+        # PDF built from the file can then tell how large it prints (GM-168)
+        measured = _layout_ink.lettering_sizes(fig)
+        ext = os.path.splitext(fname)[1].lower()
+        meta = None
+        if ext == ".png" and measured[0] and measured[1] > 0:
+            meta = {_layout_ink.LETTERING_KEY: _layout_ink.lettering_text(
+                min(measured[0]), measured[1], print_w)}
+        if ext in (".png", ".jpg", ".jpeg"):
+            fig.savefig(fname, dpi=_report_dpi(fig, dpi), bbox_inches="tight",
+                        metadata=meta)
             look_dpi = _dpi_for(fig, dpi)
             if look_dpi < _report_dpi(fig, dpi):
                 os.makedirs(LOOK_DIR, exist_ok=True)
@@ -959,7 +921,7 @@ def main() -> int:
         t_check = _monotonic()
         checks.append(_layout_check(fig, fname, dpi))
         check_seconds.append(round(_monotonic() - t_check, 2))
-        letters.append(_lettering(fig, fname, print_w))
+        letters.append(_lettering(fig, fname, print_w, measured))
 
     def save_figure(fig=None, name=None, dpi=200):
         """Save a matplotlib figure in the conversation folder; returns its

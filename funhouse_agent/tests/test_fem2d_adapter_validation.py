@@ -199,3 +199,22 @@ class TestStagedExcavationThroughTheRegistry:
         assert dew["wall_water_pressures"][-1]["net_kPa"] == \
             pytest.approx(0.0, abs=1e-9)
         assert any("UFC 3-220-20" in n for n in dew["notes"])
+
+    def test_wall_friction_passes_through(self):
+        """GM-72: wall_contact='interface' with interface_delta reaches the
+        analysis; the result names the wall friction in choices and sums
+        the joints per face."""
+        out = R["fem2d_excavation"]({
+            "width": 10, "depth": 2, "wall_depth": 5,
+            "soil_layers": [{"name": "Sand", "bottom_elevation": -20,
+                             "E": 30000, "nu": 0.3, "gamma": 18, "c": 1,
+                             "phi": 32, "psi": 0}],
+            "wall_EI": 5e4, "wall_EA": 5e6, "nx": 12, "ny": 8,
+            "n_steps": 4, "wall_contact": "interface",
+            "interface_delta": 17})
+        assert out["converged"]
+        chosen = {c["what"]: c["chosen"] for c in out["choices"]}
+        assert chosen["wall contact (wall friction)"] == "interface"
+        assert chosen["wall friction angle delta (deg)"] == 17
+        assert 0 < out["wall_interface"]["retained_side"][
+            "mobilized_delta_deg"] <= 17.5

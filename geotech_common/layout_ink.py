@@ -522,6 +522,7 @@ class _Ink:
         if part == "full":
             orig(a, off)
         elif part in ("glyph", "unclipped"):
+            from matplotlib import patheffects
             bp = a.get_bbox_patch()
             effects = a.get_path_effects()
             shown = bp.get_visible() if bp is not None else None
@@ -529,7 +530,13 @@ class _Ink:
                 if bp is not None:
                     bp.set_visible(False)
                 if effects:
-                    a.set_path_effects([])
+                    # the letters as the picture draws them: lettering with
+                    # path effects (a halo) is drawn as paths, and plain
+                    # lettering's glyphs are hinted wider (matplotlib 3.11:
+                    # about half a pixel a letter at 200 dpi), so they
+                    # drifted off the letters the halo is round and hatching
+                    # under the halo was counted
+                    a.set_path_effects([patheffects.Normal()])
                 if part == "unclipped":
                     a.set_clip_on(False)
                 orig(a, off)
@@ -919,3 +926,159 @@ class _Ink:
                                                                  rb[0]):
             return False
         return _meet(a, b, grow=g)
+
+
+# ---------------------------------------------------------------------------
+# Lettering as printed (BACKLOG GM-168)
+# ---------------------------------------------------------------------------
+
+#: The PNG text key a saved figure carries its lettering under, so a PDF
+#: built from the file can tell how large the lettering prints (live wave
+#: w13: figures printed 0.11-3 in wide in a calc PDF, lettering about 3 pt,
+#: and nothing could say so).
+LETTERING_KEY = "Lettering"
+
+
+def _hidden_tick_labels(fig) -> set:
+    """Tick labels matplotlib keeps but never draws: those of ticks outside
+    the axis's view limits (live wave w8b: a phantom "100" beyond a panel's
+    right edge was reported against the next panel's "0")."""
+    hidden = set()
+    for ax in fig.get_axes():
+        for axis in (ax.xaxis, ax.yaxis):
+            lo, hi = sorted(axis.get_view_interval())
+            tol = 1e-9 * max(abs(hi - lo), 1e-12)
+            for tick in axis.get_major_ticks() + axis.get_minor_ticks():
+                loc = tick.get_loc()
+                if loc is None or not (lo - tol <= loc <= hi + tol):
+                    hidden.add(id(tick.label1))
+                    hidden.add(id(tick.label2))
+    return hidden
+
+
+def drawn_texts(fig, renderer) -> list:
+    """``[(text, window box, artist)]`` for the lettering that is drawn:
+    visible, not empty, not a tick label outside the view; an annotation
+    measured by its text, not its leader."""
+    from matplotlib.text import Annotation, Text
+    hidden = _hidden_tick_labels(fig)
+    texts = []
+    for t in fig.findobj(Text):
+        s = t.get_text().strip() if t.get_visible() else ""
+        if not s or id(t) in hidden:
+            continue
+        try:
+            # an Annotation's own extent takes in its leader line
+            bb = (Text.get_window_extent(t, renderer)
+                  if isinstance(t, Annotation)
+                  else t.get_window_extent(renderer))
+        except Exception:                                  # noqa: BLE001
+            continue
+        if bb.width > 1 and bb.height > 1:
+            texts.append((" ".join(s.split())[:40], bb, t))
+    return texts
+
+
+def lettering_sizes(fig, *, draw: bool = True):
+    """``(sizes, saved_width_in)``: the size in points of each piece of
+    lettering drawn, at the figure's own size, and the width the figure is
+    saved at with ``bbox_inches="tight"``. ``draw=False`` after a save,
+    which has drawn it already. ``([], 0.0)`` when it cannot be told."""
+    try:
+        import matplotlib
+        if draw:
+            fig.canvas.draw()
+        r = fig.canvas.get_renderer()
+        texts = drawn_texts(fig, r)
+        pad = float(matplotlib.rcParams.get("savefig.pad_inches", 0.1))
+        saved_w = fig.get_tightbbox(r).width + 2 * pad
+        return [float(t.get_fontsize()) for _s, _bb, t in texts], saved_w
+    except Exception:                                      # noqa: BLE001
+        return [], 0.0
+
+
+def lettering_text(smallest_pt: float, saved_width_in: float,
+                   checked_width_in=None) -> str:
+    """The value stored under :data:`LETTERING_KEY`: the smallest lettering
+    at the saved width, and the print width the layout check measured it
+    at, when it ran."""
+    text = f"smallest {smallest_pt:.2f} pt at {saved_width_in:.3f} in wide"
+    if checked_width_in:
+        text += f"; checked at {float(checked_width_in):g} in"
+    return text
+
+
+def parse_lettering(text) -> dict:
+    """``{"smallest_pt", "saved_width_in"[, "checked_width_in"]}`` from a
+    :func:`lettering_text` value; ``{}`` when it is not one."""
+    import re
+    m = re.match(r"smallest ([0-9.]+) pt at ([0-9.]+) in wide"
+                 r"(?:; checked at ([0-9.]+) in)?", str(text or ""))
+    if not m or not float(m.group(2)):
+        return {}
+    out = {"smallest_pt": float(m.group(1)),
+           "saved_width_in": float(m.group(2))}
+    if m.group(3):
+        out["checked_width_in"] = float(m.group(3))
+    return out
+
+
+def figure_lettering(fig, png_dpi: float, png_width_px: int, *,
+                     draw: bool = False) -> str:
+    """:func:`lettering_text` for ``fig`` saved as a PNG ``png_width_px``
+    wide at ``png_dpi``, or ``""`` when it has no lettering."""
+    sizes, _w = lettering_sizes(fig, draw=draw)
+    if not sizes or not png_dpi or not png_width_px:
+        return ""
+    return lettering_text(min(sizes), png_width_px / float(png_dpi))
+
+
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+
+def png_with_text(png: bytes, key: str, text: str) -> bytes:
+    """``png`` with a ``tEXt`` chunk ``key``: ``text`` added before its
+    end; ``png`` unchanged when it is not a PNG or the text is empty."""
+    import struct
+    import zlib
+    end = png.rfind(b"IEND") - 4 if png.startswith(_PNG_SIGNATURE) else -1
+    if end < len(_PNG_SIGNATURE) or not text:
+        return png
+    data = key.encode("latin-1") + b"\0" + text.encode("latin-1", "replace")
+    chunk = (struct.pack(">I", len(data)) + b"tEXt" + data
+             + struct.pack(">I", zlib.crc32(b"tEXt" + data) & 0xFFFFFFFF))
+    return png[:end] + chunk + png[end:]
+
+
+def png_texts(png: bytes) -> dict:
+    """The ``tEXt`` chunks of a PNG, ``{key: text}``; ``{}`` for anything
+    else."""
+    import struct
+    out = {}
+    if not png.startswith(_PNG_SIGNATURE):
+        return out
+    pos = len(_PNG_SIGNATURE)
+    while pos + 8 <= len(png):
+        n, kind = struct.unpack(">I4s", png[pos:pos + 8])
+        if kind == b"tEXt":
+            key, _sep, val = png[pos + 8:pos + 8 + n].partition(b"\0")
+            out[key.decode("latin-1")] = val.decode("latin-1")
+        elif kind == b"IEND":
+            break
+        pos += 12 + n
+    return out
+
+
+def png_with_lettering(fig, png: bytes, dpi: float) -> bytes:
+    """``png``, ``fig`` just saved at ``dpi``, carrying its smallest
+    lettering under :data:`LETTERING_KEY`; ``png`` unchanged when that
+    cannot be told."""
+    import struct
+    try:
+        if not png.startswith(_PNG_SIGNATURE):
+            return png
+        width_px = struct.unpack(">I", png[16:20])[0]      # IHDR width
+        return png_with_text(png, LETTERING_KEY,
+                             figure_lettering(fig, dpi, width_px))
+    except Exception:                                      # noqa: BLE001
+        return png

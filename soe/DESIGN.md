@@ -215,17 +215,43 @@ over-predict Kp at high δ/φ. φ=30, δ/φ=0.5 → 4.70 (V-013). Mirrored in
 `sheet_pile.earth_pressure` (a byte-identical copy of the table) and selectable
 there as `pressure_method="log_spiral"`.
 
-**Source basis (Caquot-Kerisel Kp0 base values + R reduction grid).** These are
-CHART/TABLE reads. Only the **φ=30 → Kp0=6.30 entry is a verified chart read**
-(Caltrans T&S Manual Fig 4-20, anchored by V-013 Example 8-1). The neighbouring
-Kp0 values (other φ) and the full R(δ/φ) grid are attributed to
-Caquot-Kerisel 1948 / NAVFAC DM-7.2 / Caltrans Matrix 4-1 but were **not
-confirmed per-value from a source in hand**. This is the **top wiki-wishlist
-item** for this module: re-verify the Kp0 column and R grid against Caquot &
-Kerisel (1948) tables, NAVFAC DM-7.2 passive-pressure charts, and Caltrans
-Fig 4-20 / Matrix 4-1. (A DM7.2 Kp chart in the in-house `dm7` figure catalog
-would allow a vision cross-read of the 5 unverified Kp0 values — a recommended
-follow-up.)
+**Source basis (Caquot-Kerisel Kp0 base values + R reduction grid), cross-read
+2026-10-19 (GM-21).** Kp0 (δ = φ, vertical wall, level backfill: the β/φ = 0
+curve) is read off the chart as printed in the Caltrans T&S Manual (July
+2025) Figure 4-20, p. 4-30 (the same chart: FHWA NHI-06-089 Figure 10-10,
+p. 10-22), on a 300 dpi render at φ ± 0.2°. R is the table printed on the
+same figure (φ 10–45°, −δ/φ 0–0.7), identical in NHI-06-089; Matrix 4-1
+(p. 4-29) quotes its φ 30/32/35 rows.
+
+| φ (deg) | Kp0 before | Kp0 now | chart read | Kp_Rankine / R(0) |
+|---|---|---|---|---|
+| 10 | 2.20 (clamped) | 1.65 | 1.65 | 1.64 |
+| 20 | 3.10 | 3.00 | 3.03 | 3.01 |
+| 25 | 4.40 | 4.30 | 4.31 | 4.29 |
+| 30 | 6.30 | 6.30 (kept: Example 8-1, p. 8-12, reads 6.3) | 6.40 | 6.42 |
+| 35 | 9.20 | 10.2 | 10.17 | 10.19 |
+| 40 | 14.0 | 17.7 | 17.77 | 17.55 |
+| 45 | 14.0 (clamped) | 33.5 | ~33.6 | 33.5 |
+
+Before, R was tabulated only for φ 30–35° and δ/φ 0.40–0.50 and clamped
+outside that (φ = 40° used φ = 35°'s R). Now the full printed grid is used,
+linear from δ/φ 0.7 to R = 1 at δ = φ; below δ/φ = 0.1 R still runs to the
+Rankine anchor so δ = 0 returns exactly the Rankine Kp (the printed R(0)
+times the chart Kp0 is Rankine within 2 %). DM 7.2 Figure 4-13 (p. 193) is
+Kerisel & Absi (1990) at δ/φ = 0.66: within 5 % of this table up to φ 35°,
+and 8–12 % lower at 40–45° (the 1948 chart runs higher there). Pinned in
+`soe/tests/test_caquot_kerisel_printed.py`. The chart's sloping-backfill
+curves (β/φ ≠ 0) are not built.
+
+## Calc package (GM-41)
+`soe/calc_steps.py` renders the three wall tools through
+`calc_package(soe_package, wall_type=cantilever|braced|fhwa_anchored)`. The
+package runs the tool's own `run_<tool>` and prints the result: for that the
+cantilever result carries `layers_used` (each layer's Ka, Kp), the
+`pressure_points` at the break depths and the `diagram` (net pressure, shear,
+moment to O); the braced result carries the `apparent_pressure` envelope, the
+`spans` (tributary split) and both diagrams. These fields are not in
+`to_dict()`, so the tools' outputs are unchanged.
 
 ## Ground anchor design (built — provenance)
 `anchor_design.py` is fully implemented (grouted-anchor bond capacity, tendon
@@ -238,6 +264,13 @@ tendon strand/bar data follow **PTI DC35.1** and **ASTM A722** (bar) / **A416**
 worked-example numeric validation** (no `validation_examples` anchor), so they
 rest on the transcribed nominal values alone. Wiki-wishlist: GEC-4 Table 4,
 PTI DC35.1 strand/bar tables, ASTM A722/A416.
+
+Tendon limits (GM-160, 2026-10-19): GEC-4 Sec. 5.3.8 (p. 77) - design load
+<= 0.60 SMTS (`max_load_pct`), lock-off <= 0.70 SMTS, maximum test load <=
+0.80 SMTS. With the 150 % performance test the test-load limit allows 0.53
+SMTS and governs unless `max_load_pct` is below that; `tendon.governed_by`
+names the limit. Bars were held to the design-load limit only: a 32 mm bar
+at DL 500 kN (88 % SMTS at the test load) is now a 36 mm bar.
 
 ## Future Work
 

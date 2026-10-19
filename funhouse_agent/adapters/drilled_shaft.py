@@ -10,8 +10,7 @@ from drilled_shaft.lrfd import apply_lrfd, RESISTANCE_FACTORS
 
 # Shaft + soil params shared by every method below.
 _SHAFT_PARAMS = ("diameter", "shaft_length", "socket_diameter",
-                 "socket_length", "bell_diameter", "casing_depth",
-                 "concrete_fc")
+                 "socket_length", "bell_diameter", "casing_depth")
 _SOIL_PARAMS = ("layers", "gwt_depth")
 # GEC-10 rational side-resistance method selectors (opt-in; defaults preserve
 # the AASHTO / depth-based behavior).
@@ -38,8 +37,7 @@ def _build_shaft(params):
                        socket_diameter=params.get("socket_diameter"),
                        socket_length=params.get("socket_length", 0.0),
                        bell_diameter=params.get("bell_diameter"),
-                       casing_depth=params.get("casing_depth", 0.0),
-                       concrete_fc=params.get("concrete_fc", 28000.0))
+                       casing_depth=params.get("casing_depth", 0.0))
 
 
 def _build_soil_profile(params):
@@ -163,7 +161,6 @@ _INFO_SHAFT_GEOM = {
     "socket_length": {"type": "float", "required": False, "default": 0.0, "description": "Rock socket length (m)."},
     "bell_diameter": {"type": "float", "required": False, "description": "Belled base diameter (m)."},
     "casing_depth": {"type": "float", "required": False, "default": 0.0, "description": "Permanent casing depth (m, no side resistance)."},
-    "concrete_fc": {"type": "float", "required": False, "default": 28000.0, "description": "Concrete f'c (kPa)."},
 }
 
 METHOD_INFO = {
@@ -219,6 +216,15 @@ METHOD_INFO = {
         "returns": {"resistance_factors": "Dict of component → phi factor."},
     },
 }
+
+# The concrete strength was declared (default 28 MPa) and changed nothing:
+# GEC-10's geotechnical resistances do not use it, and no structural check
+# of the shaft is made here (GM-160).
+_NO_FC = ("the geotechnical capacity (GEC-10 side and base resistance) does "
+          "not use the concrete strength, and these tools make no "
+          "structural check of the shaft")
+for _m in ("drilled_shaft_capacity", "capacity_vs_depth", "lrfd_capacity"):
+    METHOD_INFO[_m]["refused_parameters"] = {"concrete_fc": _NO_FC}
 
 declare_aliases(METHOD_INFO, {
     m: _SHAFT_ALIASES for m in ("drilled_shaft_capacity", "capacity_vs_depth",

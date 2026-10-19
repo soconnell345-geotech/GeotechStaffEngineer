@@ -262,6 +262,28 @@ class BracedExcavationResult:
     free_earth: Dict[str, Any] = field(default_factory=dict)
     converged: bool = True
     notes: List[str] = field(default_factory=list)
+    # What the analysis used, for its calc package (BACKLOG GM-41); not in
+    # to_dict, so the tool's output is as before.
+    #: The apparent-pressure envelope (select_apparent_pressure's dict, with
+    #: the surcharge and water terms the design pressure adds).
+    apparent_pressure: Dict[str, Any] = field(default_factory=dict, repr=False)
+    #: Per layer: top_m, bottom_m, unit_weight, friction_angle, cohesion,
+    #: Ka, Kp (the Rankine coefficients of the free earth body below the
+    #: excavation, from the profile embedment_detail solves).
+    layers_used: List[Dict[str, Any]] = field(default_factory=list,
+                                              repr=False)
+    #: One entry per span above the excavation: z_top_m, z_bot_m,
+    #: load_kN_per_m, centroid_below_top_m, to_upper_kN_per_m,
+    #: to_lower_kN_per_m (the tributary split).
+    spans: List[Dict[str, Any]] = field(default_factory=list, repr=False)
+    #: The design pressure, shear and moment over the spans above the
+    #: excavation: {"z", "p", "V", "M"}, V and M in the free earth body's
+    #: sign (push toward the excavation positive).
+    diagram: Optional[Dict[str, Any]] = field(default=None, repr=False)
+    #: The free-earth body below the lowest support (FS = 1): {"z", "p_net",
+    #: "V", "M"}, or None.
+    free_earth_diagram: Optional[Dict[str, Any]] = field(default=None,
+                                                         repr=False)
 
     def summary(self) -> str:
         """Return formatted summary string."""
@@ -396,6 +418,20 @@ class CantileverExcavationResult:
     net_force_at_O_kN_per_m: Optional[float] = 0.0
     converged: bool = True
     notes: List[str] = field(default_factory=list)
+    # What the analysis used, for its calc package (BACKLOG GM-41); not in
+    # to_dict, so the tool's output is as before.
+    #: Per layer: top_m, bottom_m, unit_weight, friction_angle, cohesion,
+    #: Ka, Kp (the coefficients the pressures used).
+    layers_used: List[Dict[str, Any]] = field(default_factory=list,
+                                              repr=False)
+    #: The pressures at the wall's break depths (layer bottoms, water
+    #: tables, H, O): z_m, sv_retained_kPa, active_kPa, water_net_kPa,
+    #: sv_excavation_kPa, passive_over_FS_kPa, net_kPa.
+    pressure_points: List[Dict[str, Any]] = field(default_factory=list,
+                                                  repr=False)
+    #: Net pressure, shear and moment, top of wall to O: {"z", "p_net",
+    #: "V", "M"}, or None without a moment balance.
+    diagram: Optional[Dict[str, Any]] = field(default=None, repr=False)
 
     def summary(self) -> str:
         """Return formatted summary string."""

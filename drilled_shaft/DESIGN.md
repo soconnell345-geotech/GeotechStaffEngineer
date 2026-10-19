@@ -36,6 +36,19 @@ get_resistance_factors(method, condition) -> dict
   `capacity_vs_depth` (which used to leave those depths out). Before, N60 =
   15 was taken without saying so. On the side, a cohesionless layer with no
   N60 still gets no N60 < 15 reduction of beta (O'Neill & Reese).
+- The calc steps print the analysis's own end bearing (GM-148,
+  2026-10-19): `end_bearing.unit_end_bearing_cohesive` /
+  `unit_end_bearing_cohesionless` / `rock_end_bearing_multiplier` hold the
+  arithmetic once, and both `compute` and the calc steps call them with the
+  BASE diameter (the bell's where there is one). Before, the steps
+  re-derived q_b with the shaft diameter and without the 3,830 kPa (80 ksf)
+  limit or F_r. A side layer with no N60 under the depth beta is now a
+  `choices` entry: NHI-06-089 Eq. 9-42 (p. 9-132) prints beta = 1.5 -
+  0.135 sqrt(z, ft) with no N60 term; the N60/15 reduction is O'Neill &
+  Reese (1999), which neither that manual nor GEC-10 (2018, rational beta
+  only, Sec. 10.3.5.1, pp. 10-10 to 10-12) prints, so N60 is stated rather
+  than required. `concrete_fc` is not an input of the tools (refused with
+  the reason): the capacity never used it (GM-160).
 
 ## Side-resistance methods: simplified (default) vs rational (opt-in)
 

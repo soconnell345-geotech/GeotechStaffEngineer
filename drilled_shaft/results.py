@@ -38,6 +38,10 @@ class DrillShaftResult:
         Per-layer side resistance breakdown.
     sigma_v_tip : float
         Effective stress at shaft tip (kPa).
+    choices : list of dict
+        What the analysis chose for the user (GM-115,
+        ``geotech_common.choices``), e.g. the depth beta of a cohesionless
+        side layer given no N60 (GM-148).
     """
     Q_ultimate: float = 0.0
     Q_skin: float = 0.0
@@ -52,6 +56,7 @@ class DrillShaftResult:
     method: str = "GEC-10"
     layer_breakdown: Optional[List[Dict[str, Any]]] = None
     sigma_v_tip: float = 0.0
+    choices: List[Dict[str, Any]] = field(default_factory=list)
 
     def summary(self) -> str:
         """Return a formatted summary string."""
@@ -93,6 +98,8 @@ class DrillShaftResult:
                     f"({layer['soil_type']}, {layer['method']})"
                 )
 
+        from geotech_common.choices import choices_lines
+        lines.extend(choices_lines(self.choices))
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
@@ -127,6 +134,8 @@ class DrillShaftResult:
                 "GEC-10 exclusion zones (top 1.5 m or casing depth; bottom 1D "
                 "in cohesive layers) that carry no side resistance."
             )
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
         return d
 
     def get_tables(self) -> list:

@@ -155,7 +155,10 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     "Judgment calls" list, each with its reason and reference, the
     alternative set aside and what would change the answer. The ``calc``
     helper's reply lists the calls it made, and the references helper
-    returns a reference's several methods or values as cited options. The
+    returns a reference's several methods or values as cited options. An
+    answer whose list has calls that name no source, in a turn where no
+    ``references`` task ran, is sent back once asking for one consult
+    (:mod:`funhouse_agent.judgment_check`, GM-174). The
     owner, 2026-10-16: "make sure the agent is communicating its
     engineering judgements to the user. User's judgement is the one that
     matters." The geotech page only: the Document Review page has its own
@@ -315,8 +318,9 @@ def plot_code() -> bool:
 
 def judgment_calls() -> bool:
     """Whether the geotech agent ends an answer with its judgment calls, the
-    ``calc`` helper reports the calls it made and the references helper
-    returns a reference's several methods or values as cited options."""
+    ``calc`` helper reports the calls it made, the references helper
+    returns a reference's several methods or values as cited options, and
+    an answer with unsourced calls and no consult is sent back once."""
     return _on(JUDGMENT_CALLS_ENV)
 
 

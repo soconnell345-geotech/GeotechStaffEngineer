@@ -69,3 +69,9 @@ analyze_liquefaction(N160, FC, sigma_v, sigma_v_eff, amax, M, ...) -> Liquefacti
   that is not the only reading, so `earth_pressure_choices(..., beta_deg=)`
   also states Coulomb's KA with KAE's own delta, i and beta (KAE at kh = 0)
   in the basis and as the first alternative; the tool passes its beta.
+- PAE = (gamma H^2 / 2)(1 - kv) KAE, UFC 3-220-20 Eq. 4-16 (p. 215), with
+  KAE from Eq. 4-15 (cos psi in its denominator, psi = atan(kh/(1 - kv)))
+  (GM-149, 2026-10-19). Before, the (1 - kv) was left out, overstating
+  PAE by 1/(1 - kv) wherever kv was not 0 (kv = 0, the default, is
+  unchanged). Where M-O has no solution the Seed & Whitman KAE leaves kv
+  out, and so does PAE; the `kv` choice says which.

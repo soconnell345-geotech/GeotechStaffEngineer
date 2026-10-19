@@ -649,6 +649,8 @@ def test_the_defaults_a_run_lists_are_the_values_it_used(key, tmp_path,
     base = key.split("#")[0]
     agent, method = base.split("|")
     probe = MP.PROBES[key]
+    if probe.get("needs"):
+        pytest.importorskip(probe["needs"])
     for before in probe.get("before", ()):
         D.call_agent(before[0], before[1], copy.deepcopy(before[2]))
     params = probe["params"]
@@ -788,6 +790,110 @@ def test_a_choice_made_from_an_input_follows_whether_it_was_stated(
     unstated = D.call_agent(agent, method, copy.deepcopy(params))
     by = {c["what"]: c["how"] for c in _choice_entries(unstated)}
     assert {w: by.get(w) for w in whats} == {w: "assumed" for w in whats}
+
+
+def _other_value(spec: dict, value):
+    """A value other than ``value`` for an input declared by ``spec``: the
+    next of its allowed values, the other boolean, a number moved by half
+    (by 1 for an integer), or a string with a suffix; None where none can
+    be made (a list, a dict, None)."""
+    allowed = spec.get("allowed_values")
+    if allowed:
+        def same(a):
+            return (a.strip().lower() == value.strip().lower()
+                    if isinstance(a, str) and isinstance(value, str)
+                    else a == value)
+        return next((a for a in allowed if not same(a)), None)
+    if isinstance(value, bool):
+        return not value
+    if isinstance(value, int):
+        return value + 1
+    if isinstance(value, float):
+        return value * 1.5 if value else 0.5
+    if isinstance(value, str):
+        return value + "_other"
+    return None
+
+
+def _without(x, name: str):
+    """``x`` without ``choices`` and without any key named ``name``, at
+    any depth: what an input's own echo leaves of a result."""
+    if isinstance(x, dict):
+        return {k: _without(v, name) for k, v in x.items()
+                if k != name and k != "choices"}
+    if isinstance(x, list):
+        return [_without(v, name) for v in x]
+    return x
+
+
+def _moved_by(name: str, r0, r1, where: str = ""):
+    """Where the result moved when ``name`` took another value, or None.
+    A run the other value refuses has moved."""
+    if isinstance(r1, dict) and "error" in r1:
+        return "refused: " + str(r1["error"])[:80]
+    return _diff(_without(_norm(r0, where), name),
+                 _without(_norm(r1, where), name))
+
+
+@pytest.mark.skip(reason=(
+    "GM-160 follow-up: LABEL_ONLY and NOT_REACHED were never filled. On "
+    "2026-10-19 the check flagged about 165 inputs on 79 of the 172 probes "
+    "outside slope_stability (a calc package returns a file, not the "
+    "numbers its inputs move; many probes do not reach the input), and the "
+    "slope probes ran over 45 minutes. Sweep, then turn it on."))
+@pytest.mark.parametrize("key", [
+    pytest.param(k, marks=pytest.mark.slow) if k in MP.SLOW else k
+    for k in sorted(MP.PROBES)])
+def test_every_default_a_run_lists_changes_its_result(key, tmp_path,
+                                                      monkeypatch):
+    """GM-160: an input that changes nothing is not advertised. Each
+    default a probe's run lists (``defaults_used``: the declared inputs
+    that apply to the run) is given another value; the result must move,
+    past the input's own echo and the ``choices``. Inputs that are a label
+    only are in ``MP.LABEL_ONLY``; inputs whose effect this probe does not
+    reach are in ``MP.NOT_REACHED``, each with why."""
+    monkeypatch.chdir(tmp_path)
+    base = key.split("#")[0]
+    agent, method = base.split("|")
+    probe = MP.PROBES[key]
+    if probe.get("needs"):
+        pytest.importorskip(probe["needs"])
+
+    def run(params):
+        for before in probe.get("before", ()):
+            D.call_agent(before[0], before[1], copy.deepcopy(before[2]))
+        return _run(agent, method, params)
+
+    r0 = run(probe["params"])
+    assert isinstance(r0, dict) and "error" not in r0, (key, r0)
+    info = D._load_adapter(agent).METHOD_INFO[method].get("parameters") or {}
+    where = str(tmp_path)
+    still = []
+    for name, value in (r0.get("defaults_used") or {}).items():
+        if (base, name) in MP.LABEL_ONLY or (key, name) in MP.LABEL_ONLY \
+                or (key, name) in MP.NOT_REACHED \
+                or (base, name) in MP.KNOWN:
+            continue
+        other = _other_value(info.get(name) or {}, value)
+        if other is None:
+            continue
+        if _moved_by(name, r0, run({**probe["params"], name: other}),
+                     where) is None:
+            still.append(f"{name}: {value!r} -> {other!r}")
+    assert still == [], (
+        f"{key}: these inputs changed nothing in the result; use them as "
+        f"described, or say what they do and stop advertising them: {still}")
+
+
+def test_the_allow_lists_name_declared_inputs_of_probed_methods():
+    for table in (MP.LABEL_ONLY, MP.NOT_REACHED):
+        for (key, name), why in table.items():
+            assert key in MP.PROBES or key in {
+                k.split("#")[0] for k in MP.PROBES}, key
+            agent, method = key.split("#")[0].split("|")
+            params = D._load_adapter(agent).METHOD_INFO[method][
+                "parameters"]
+            assert name in params and why, (key, name)
 
 
 def test_a_wrapped_function_and_its_method_info_agree():

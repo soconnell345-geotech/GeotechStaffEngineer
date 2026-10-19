@@ -12,7 +12,9 @@ cards, (d) the SharePoint mirror and the agent's SharePoint calls,
 (e) health (tool errors, refusals, tracebacks, step caps, empty answers,
 "unavailable" answers, success claimed after an error), (f) cost,
 (k) figure cards (a card showing an older draw than a figure written
-later, and, where the flow asks, a card no look read). A model's answer
+later, and, where the flow asks, a card no look read), (l) the app's
+judgment-call check (an answer sent back for calls with no source, and
+calls still without one when it went out). A model's answer
 QUALITY is never judged here -- only whether the app's plumbing did what it
 says.
 """
@@ -25,6 +27,7 @@ import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import unquote, urlsplit
 
+from funhouse_agent import answer_sections as _answer_sections
 from live_smoke import watch
 
 SEVERITIES = ("high", "medium", "low", "info")
@@ -970,6 +973,12 @@ def turn_metrics(ctx) -> dict:
     tot["seconds"] = round(float(t1) - float(t0), 1) if t0 and t1 else None
     tot["tool_calls"] = sum(1 for a in ctx["activity"]
                             if a.get("event") == "tool_start")
+    # the answers the judgment-call check read, and those it sent back
+    # (GM-174)
+    checks = judgment_checks(ctx["activity"])
+    tot["judgment_checks"] = len(checks)
+    tot["judgment_retries"] = sum(1 for a in checks
+                                  if a.get("action") == "fed_back")
     tot["app_turn_tokens"] = (rec.get("result") or {}).get("turn_tokens")
     return tot
 
@@ -1331,9 +1340,52 @@ def detect_figure_cards(ctx) -> List[dict]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# (l) the judgment-call check (GM-174)
+# ---------------------------------------------------------------------------
+
+#: The activity-log event of the app's judgment-call check
+#: (``funhouse_agent.judgment_check.RECORD_EVENT``).
+JUDGMENT_EVENT = "judgment_check"
+
+
+def judgment_checks(acts: Iterable[dict]) -> List[dict]:
+    """The turn's judgment-call check records, in order."""
+    return [a for a in acts if a.get("event") == JUDGMENT_EVENT]
+
+
+def detect_judgment_check(ctx) -> List[dict]:
+    """What the app's turn-end judgment-call check did (both 'info': the
+    check's work and the model's choices, never a plumbing fault): the
+    answer sent back for calls that named no source with no consult, and
+    an answer that went out with such calls and no consult."""
+    D = "l_judgment_check"
+    out: List[dict] = []
+    for ev in judgment_checks(ctx["activity"]):
+        calls = [str(c) for c in ev.get("unsourced") or []]
+        listed = "; ".join(c[:80] for c in calls[:5])
+        if ev.get("action") == "fed_back":
+            out.append(finding(
+                D, "judgment_check_retry", "info",
+                f"the answer was sent back once: {len(calls)} of "
+                f"{ev.get('n_calls')} judgment calls named no source and no "
+                f"references task had run ({listed})",
+                n_calls=ev.get("n_calls"), unsourced=calls))
+        elif calls and not ev.get("references_ran"):
+            out.append(finding(
+                D, "judgment_calls_unsourced", "info",
+                f"the answer went out with {len(calls)} of "
+                f"{ev.get('n_calls')} judgment calls naming no source and no "
+                f"references task in the turn (mode {ev.get('mode')}: "
+                f"{listed})", n_calls=ev.get("n_calls"), unsourced=calls,
+                mode=ev.get("mode")))
+    return out
+
+
 DETECTORS = (detect_files_outside, detect_answer_links, detect_download_cards,
              detect_sharepoint, detect_health, detect_cost,
-             detect_conversation_record, detect_figure_cards)
+             detect_conversation_record, detect_figure_cards,
+             detect_judgment_check)
 
 
 def run_turn_detectors(ctx) -> dict:
@@ -1472,6 +1524,401 @@ def detect_restore(session, mirrored_before: Optional[List[dict]] = None
     return out
 
 
+# ---------------------------------------------------------------------------
+# What a deliverable holds as given, and the consult's citations in it
+# (expect keys ``given_inputs`` and ``pdf_cites_consult``; GM-155, GM-167,
+# GM-181)
+# ---------------------------------------------------------------------------
+
+def _args_of(act: dict) -> dict:
+    """A tool call's arguments as a dict: the activity log keeps a dict,
+    JSON, or (``task``) a Python repr."""
+    a = act.get("args")
+    if isinstance(a, dict):
+        return a
+    text = str(a or "")
+    try:
+        data = json.loads(text)
+    except (TypeError, ValueError):
+        try:
+            import ast
+            data = ast.literal_eval(text)
+        except (ValueError, SyntaxError, MemoryError, RecursionError):
+            data = None
+    return data if isinstance(data, dict) else {}
+
+
+def _failed_runs(acts) -> set:
+    """The run ids of tool calls that raised or returned an error."""
+    return {a.get("run_id") for a in acts if a.get("run_id") and (
+        a.get("event") == "tool_error" or (
+            a.get("event") == "tool_end" and _result_is_error(
+                _text(a.get("result") or ""))[0]))}
+
+
+def package_calls(acts) -> List[Tuple[dict, str, dict]]:
+    """``(tool_start, method, parameters)`` of each calc package call
+    (``call_agent`` on ``calc_package``, a ``*_package`` method) that did not
+    fail."""
+    failed = _failed_runs(acts)
+    out = []
+    for a in acts:
+        if a.get("event") != "tool_start" or a.get("name") != "call_agent" \
+                or a.get("run_id") in failed:
+            continue
+        args = _args_of(a)
+        method = str(args.get("method") or "")
+        if str(args.get("agent_name") or "") == "calc_package" \
+                and method.endswith("_package"):
+            params = args.get("parameters") or args.get("params") or {}
+            out.append((a, method, params if isinstance(params, dict)
+                        else {}))
+    return out
+
+
+def _read_text(path: str, limit: int = 4 * 1024 * 1024) -> str:
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            return fh.read(limit)
+    except OSError:
+        return ""
+
+
+def bespoke_reports(acts, rec: Optional[dict] = None
+                    ) -> List[Tuple[dict, str, str]]:
+    """``(tool_start, file, html)`` of each report composed with
+    ``calc_package`` ``html_to_pdf`` that did not fail: the HTML it was
+    given, or the file its ``html_path`` names (read from the turn's
+    folder; a file rewritten later reads as its last version)."""
+    rec = rec or {}
+    failed = _failed_runs(acts)
+    out = []
+    for a in acts:
+        if a.get("event") != "tool_start" or a.get("name") != "call_agent" \
+                or a.get("run_id") in failed:
+            continue
+        args = _args_of(a)
+        if str(args.get("agent_name") or "") != "calc_package" \
+                or args.get("method") != "html_to_pdf":
+            continue
+        params = args.get("parameters") or args.get("params") or {}
+        params = params if isinstance(params, dict) else {}
+        html = str(params.get("html") or "")
+        src = str(params.get("html_path") or "")
+        if not html and src:
+            for cand in (src, os.path.join(rec.get("files_dir") or "",
+                                           os.path.basename(src)),
+                         os.path.join(rec.get("conv_dir") or "", src)):
+                if cand and os.path.isfile(cand):
+                    html = _read_text(cand)
+                    break
+        name = os.path.basename(str(params.get("output_path") or src
+                                    or "html_to_pdf"))
+        out.append((a, name, html))
+    return out
+
+
+def helper_tasks(acts, helper: str, event: str = "tool_start"
+                 ) -> List[Tuple[dict, str]]:
+    """``(record, text)`` of each ``task`` to ``helper``: its brief for
+    ``tool_start``, its hand-back for ``tool_end``."""
+    started = {a.get("run_id"): str(a.get("subagent") or _args_of(a).get(
+        "subagent_type") or "") for a in acts
+        if a.get("event") == "tool_start" and a.get("name") == "task"}
+    out = []
+    for a in acts:
+        if a.get("event") != event or a.get("name") != "task":
+            continue
+        who = str(a.get("subagent") or started.get(a.get("run_id")) or "")
+        if event == "tool_start":
+            args = _args_of(a)
+            who = who or str(args.get("subagent_type") or "")
+            text = str(args.get("description") or "")
+        else:
+            text = _text(a.get("result") or "")
+        if who == helper:
+            out.append((a, text))
+    return out
+
+
+_HEADING_TAG = re.compile(r"(?is)<h([1-6])\b[^>]*>(.*?)</h\1\s*>")
+_ROW_TAG = re.compile(r"(?is)<tr\b[^>]*>(.*?)</tr\s*>")
+_CELL_TAG = re.compile(r"(?is)<t[dh]\b[^>]*>(.*?)</t[dh]\s*>")
+_ITEM_TAG = re.compile(r"(?is)<li\b[^>]*>(.*?)</li\s*>")
+_GIVEN_WORD = re.compile(r"(?i)\bgiven\b")
+_NOT_GIVEN = re.compile(r"(?i)\b(?:not|un)[ -]?given\b|\bassum")
+
+
+def _plain(html: str) -> str:
+    from funhouse_agent.cited_documents import plain_text
+    return " ".join(plain_text(html).split())
+
+
+def given_rows(html: str) -> List[str]:
+    """What a composed report prints as given, as plain text: each table
+    row, list item or (with neither) the text of a part headed "Given..."
+    (not "not given" or "assumed"), to the next heading at its level or
+    above; and each table row whose status cell says "Given"."""
+    text = str(html or "")
+    rows: List[str] = []
+    heads = list(_HEADING_TAG.finditer(text))
+    for i, h in enumerate(heads):
+        title = _plain(h.group(2))
+        if not _GIVEN_WORD.search(title) or _NOT_GIVEN.search(title):
+            continue
+        end = next((n.start() for n in heads[i + 1:]
+                    if int(n.group(1)) <= int(h.group(1))), len(text))
+        part = text[h.end():end]
+        items = ([m.group(1) for m in _ROW_TAG.finditer(part)]
+                 + [m.group(1) for m in _ITEM_TAG.finditer(part)]) or [part]
+        rows += [" | ".join(_plain(c) for c in _CELL_TAG.findall(x))
+                 or _plain(x) for x in items]
+    for m in _ROW_TAG.finditer(text):
+        cells = [_plain(c) for c in _CELL_TAG.findall(m.group(1))]
+        if any(re.match(r"(?i)given\b", c) and not _NOT_GIVEN.search(c)
+               for c in cells):
+            rows.append(" | ".join(cells))
+    out: List[str] = []
+    for r in rows:
+        if r and r not in out:
+            out.append(r)
+    return out
+
+
+#: Where a brief's GIVEN block ends: the next block a brief opens with a
+#: capitalised word (ASSUMPTIONS, METHOD, ...), or a line opening with
+#: "Assum...".
+_BRIEF_BLOCK_END = re.compile(
+    r"(?<![A-Za-z])(?:ASSUM[A-Z]*|METHODS?|TASKS?|DELIVERABLES?|OUTPUTS?|"
+    r"RETURN|REPORT|FIGURES?|CITATIONS?|REFERENCES?|CHECKS?|JUDGE?MENT)"
+    r"(?![a-z])|(?m:^[ \t>*#_-]*Assum)")
+
+
+def brief_given_block(text: str) -> Optional[str]:
+    """A brief's GIVEN block: from "GIVEN" (or a line opening with
+    "Given"), not "not given", to the next block; ``None`` without one."""
+    t = str(text or "")
+    for m in re.finditer(r"(?<![A-Za-z])(GIVEN|Given)(?![A-Za-z])", t):
+        if re.search(r"(?i)(?:not|un)[\s-]*\W?$", t[max(0, m.start() - 6):
+                                                     m.start()]):
+            continue
+        if m.group(1) == "Given":
+            line = t[t.rfind("\n", 0, m.start()) + 1:m.start()]
+            if line.strip(" \t>*#_-"):
+                continue            # "Given" in running text is no block
+        rest = t[m.end():]
+        end = _BRIEF_BLOCK_END.search(rest)
+        return rest[:end.start()] if end else rest
+    return None
+
+
+def _given_names(given: Any) -> List[str]:
+    if isinstance(given, dict):
+        return [str(k) for k in given]
+    if isinstance(given, (list, tuple)):
+        return [str(x) for x in given]
+    return [str(given)] if isinstance(given, str) and given else []
+
+
+def _flow_turns(sessions) -> List[Tuple[dict, List[dict]]]:
+    """Every turn of a flow with its activity records."""
+    out = []
+    for s in sessions:
+        for t in s.turns:
+            acts = load_activity(t.get("conv_dir") or "")[
+                int(t.get("activity_offset") or 0):t.get("activity_end")]
+            out.append((t, acts))
+    return out
+
+
+def _expect_given_inputs(spec: dict, turns) -> List[dict]:
+    """``expect.given_inputs`` (GM-155, GM-167, GM-181): ``package_given``,
+    every calc package call names the user's inputs in ``given``;
+    ``brief_given``, every brief to ``calc`` has a GIVEN block;
+    ``not_given``, entries ``{"name", "inputs": [package input names],
+    "any": [regexes]}`` the user did not state, found in a package call's
+    ``given`` (by input name), in what a composed report prints as given
+    or in a brief's GIVEN block (by regex)."""
+    D = "i_expectations"
+    out: List[dict] = []
+    calls = [(c, t) for t, acts in turns for c in package_calls(acts)]
+    reports = [(r, t) for t, acts in turns
+               for r in bespoke_reports(acts, t)]
+    briefs = [b for _t, acts in turns for b in helper_tasks(acts, "calc")]
+    if spec.get("package_given"):
+        if not calls:
+            out.append(finding(D, "expected_package_not_called", "info",
+                               "no calc package (*_package) was built, so "
+                               "`given` was not exercised"))
+        for (_a, method, params), _t in calls:
+            if not _given_names(params.get("given")):
+                out.append(finding(
+                    D, "expected_package_given_missing", "info",
+                    f"the {method} call passed no `given`, so its Given "
+                    "Inputs name no input as the user's",
+                    package=method, passed=sorted(params)))
+    if spec.get("brief_given"):
+        if not briefs:
+            out.append(finding(D, "expected_calc_brief_missing", "info",
+                               "no brief went to `calc`, so a GIVEN block "
+                               "was not exercised"))
+        missing = [text for _a, text in briefs
+                   if brief_given_block(text) is None]
+        if missing:
+            out.append(finding(
+                D, "expected_brief_given_missing", "info",
+                f"{len(missing)} of {len(briefs)} brief(s) to `calc` had no "
+                f"GIVEN block (first: {missing[0][:160]!r})",
+                n_briefs=len(briefs), n_missing=len(missing)))
+    items = spec.get("not_given") or []
+    given_parts = [(name, given_rows(html)) for (_a, name, html), _t
+                   in reports]
+    for name, rows in given_parts if items else ():
+        if not rows:
+            out.append(finding(
+                D, "report_given_part_missing", "info",
+                f"{name} prints no Given part (no heading or status cell "
+                "saying Given), so not_given was not checked in it",
+                where=name))
+    for item in items:
+        label, patterns = _answer_name(item)
+        inputs = {str(i).lower() for i in (item.get("inputs") or [])}
+        for (_a, method, params), _t in calls:
+            hit = [n for n in _given_names(params.get("given"))
+                   if n.lower() in inputs]
+            if hit:
+                out.append(finding(
+                    D, "assumed_input_given", "info",
+                    f"{label} is under Given: the {method} call's `given` "
+                    f"names {', '.join(hit)}", item=label, where=method,
+                    given=params.get("given")))
+        for name, rows in given_parts:
+            hit = [r for r in rows if any(_search(p, r) for p in patterns)]
+            if hit:
+                out.append(finding(
+                    D, "assumed_input_given", "info",
+                    f"{label} is under Given in {name}: {hit[0][:160]!r}",
+                    item=label, where=name, rows=hit[:5]))
+        for _a, text in briefs:
+            block = brief_given_block(text)
+            if block and any(_search(p, block) for p in patterns):
+                out.append(finding(
+                    D, "assumed_input_given", "info",
+                    f"{label} is in the GIVEN block of a brief to `calc`: "
+                    f"{' '.join(block.split())[:160]!r}", item=label,
+                    where="brief"))
+    return _dedupe(out)
+
+
+def _tool_named_documents(turns) -> set:
+    """The documents and works the turns' tool results name, outside the
+    references helper (its tools and its hand-back), the helpers'
+    hand-backs and the calc package writers (which echo what they were
+    given): a tool's notes or `choices` (w13b F55j: the PDF cited the wall
+    tool's FHWA-NHI-06-089 and GEC-11, which the consult had named only to
+    say it found nothing in one and the other did not apply)."""
+    from funhouse_agent.cited_documents import find_citations
+    named: set = set()
+    for _t, acts in turns:
+        writer = {a.get("run_id") for a in acts
+                  if a.get("event") == "tool_start"
+                  and str(_args_of(a).get("agent_name") or "")
+                  == "calc_package"}
+        for a in acts:
+            if a.get("event") != "tool_end" or a.get("name") == "task" \
+                    or a.get("agent") == "references" \
+                    or a.get("run_id") in writer:
+                continue
+            named |= {c.key for c in find_citations(
+                _text(a.get("result") or ""), internal=True)}
+    return named
+
+
+_SECTION_NO = re.compile(r"\d+(?:[.\-]\d+)+")
+
+
+def _dedupe(found: List[dict]) -> List[dict]:
+    seen, out = set(), []
+    for f in found:
+        key = (f["code"], f["message"])
+        if key not in seen:
+            seen.add(key)
+            out.append(f)
+    return out
+
+
+def _expect_pdf_cites_consult(turns) -> List[dict]:
+    """``expect.pdf_cites_consult`` (GM-155 w13b fix 10): each report
+    composed with ``html_to_pdf``, and each calc package's
+    ``assumptions``, cites a document or work the ``references`` helper's
+    hand-back named, the consult having finished before the deliverable
+    was written. A document a tool's result also named counts only when
+    the deliverable cites it with a section number the consult's hand-back
+    gives (else it may be the tool's citation copied)."""
+    from funhouse_agent.cited_documents import (covered, find_citations,
+                                                plain_text)
+    D = "i_expectations"
+    out: List[dict] = []
+    consults = []
+    for _t, acts in turns:
+        for a, text in helper_tasks(acts, "references", "tool_end"):
+            consults.append((float(a.get("ts") or 0),
+                             find_citations(text, internal=True),
+                             plain_text(text)))
+    tools_named = _tool_named_documents(turns) if consults else set()
+    deliverables = []
+    for t, acts in turns:
+        for a, name, html in bespoke_reports(acts, t):
+            deliverables.append((a, f"the composed report {name}", html))
+        for a, method, params in package_calls(acts):
+            deliverables.append((a, f"the {method} call's assumptions",
+                                 json.dumps(params.get("assumptions") or {})))
+    if not deliverables:
+        out.append(finding(D, "expected_deliverable_missing", "info",
+                           "no report was composed with html_to_pdf and no "
+                           "calc package built, so pdf_cites_consult was "
+                           "not exercised"))
+    for a, what, text in deliverables:
+        t0 = float(a.get("ts") or 0)
+        done = [(cs, words) for ts, cs, words in consults if ts <= t0]
+        if not done:
+            later = sum(1 for ts, _cs, _w in consults if ts > t0)
+            out.append(finding(
+                D, "expected_consult_before_deliverable", "info",
+                f"{what} was written with no references consult finished "
+                "before it" + (f" ({later} finished after it)" if later
+                               else " (none ran)"), where=what))
+            continue
+        before = [c for cs, _w in done for c in cs]
+        words = "\n".join(w for _cs, w in done)
+        docs = {c.key for c in before if c.kind == "document"}
+        works = {c.key for c in before if c.kind == "work"}
+        cited = find_citations(text)
+        shared, tools_too = [], []
+        for c in cited:
+            if not ((c.kind == "document" and covered(c.key, docs))
+                    or (c.kind == "work" and c.key in works)):
+                continue
+            if not (c.key in tools_named or covered(c.key, tools_named)) \
+                    or any(n in words
+                           for n in _SECTION_NO.findall(c.section or "")):
+                shared.append(c.shown)
+            else:
+                tools_too.append(c.shown)
+        if not shared:
+            out.append(finding(
+                D, "expected_consult_citation_missing", "info",
+                f"{what} cites none of the {len(docs) + len(works)} "
+                "documents and works the consult named (consult: "
+                f"{', '.join(c.shown for c in before[:8]) or 'none'}; "
+                f"cited: {', '.join(c.shown for c in cited[:8]) or 'none'}"
+                + (f"; {', '.join(tools_too)} also named by a tool, cited "
+                   "with no section the consult gave" if tools_too else "")
+                + ")", where=what, consult=[c.shown for c in before][:20],
+                cited=[c.shown for c in cited][:20], tools_too=tools_too))
+    return _dedupe(out)
+
+
 def detect_expectations(flow: dict, sessions) -> List[dict]:
     """The flow's soft expectations -- whether the scenario exercised the
     plumbing it was written for (a model choice, so 'info'): ``tools_any``,
@@ -1485,7 +1932,11 @@ def detect_expectations(flow: dict, sessions) -> List[dict]:
     "chart" | an extension, "pattern": a regex on the base name, "count": n
     | "min": n | "max": n, "looked_at": true}``, counted over the distinct
     cards of every turn (``min`` 1 when no number is given). ``looked_at``
-    is checked per turn by :func:`detect_figure_cards`."""
+    is checked per turn by :func:`detect_figure_cards`. ``given_inputs``
+    (:func:`_expect_given_inputs`) and ``pdf_cites_consult``
+    (:func:`_expect_pdf_cites_consult`) look at what the flow's calc
+    packages, composed reports and briefs to ``calc`` hold as given and
+    cite (GM-155, GM-167, GM-181)."""
     D = "i_expectations"
     exp = flow.get("expect") or {}
     out: List[dict] = []
@@ -1493,20 +1944,19 @@ def detect_expectations(flow: dict, sessions) -> List[dict]:
         return out
     tools, exts = set(), set()
     cards: Dict[str, str] = {}
-    for s in sessions:
-        for t in s.turns:
-            for a in load_activity(t.get("conv_dir") or "")[
-                    int(t.get("activity_offset") or 0):t.get("activity_end")]:
-                if a.get("event") == "tool_start":
-                    tools.add(a.get("name"))
-                    if a.get("name") == "call_agent":
-                        args = a.get("args") or {}
-                        if isinstance(args, dict):
-                            tools.add(f"{args.get('agent_name')}."
-                                      f"{args.get('method')}")
-            for c in (t.get("entry") or {}).get("artifacts") or []:
-                exts.add(os.path.splitext(str(c))[1].lower())
-                cards.setdefault(_norm(c), str(c))
+    turns = _flow_turns(sessions)
+    for t, acts in turns:
+        for a in acts:
+            if a.get("event") == "tool_start":
+                tools.add(a.get("name"))
+                if a.get("name") == "call_agent":
+                    args = a.get("args") or {}
+                    if isinstance(args, dict):
+                        tools.add(f"{args.get('agent_name')}."
+                                  f"{args.get('method')}")
+        for c in (t.get("entry") or {}).get("artifacts") or []:
+            exts.add(os.path.splitext(str(c))[1].lower())
+            cards.setdefault(_norm(c), str(c))
     want_any = exp.get("tools_any") or []
     if want_any and not any(any(w == t or (t and w in t) for t in tools)
                             for w in want_any):
@@ -1567,20 +2017,20 @@ def detect_expectations(flow: dict, sessions) -> List[dict]:
                     f"the final answer names {label}, but it has no "
                     f"{_SCOPES[scope][0]} list, so the whole answer was "
                     "searched", looked_for=patterns, within=scope))
+    if exp.get("given_inputs"):
+        out += _expect_given_inputs(exp["given_inputs"], turns)
+    if exp.get("pdf_cites_consult"):
+        out += _expect_pdf_cites_consult(turns)
     return out
 
 
 #: The parts of an answer an ``answer_names`` entry can be held to
 #: (``"within"``): name -> (the heading as written, its pattern). w13 F18j:
 #: "Vesic (1973)" in a results heading hit the "a reference cited for a
-#: judgment call" key though every call said "no reference basis".
-_SCOPES = {"judgment_calls": ('"Judgment calls"',
-                              r"judge?ment calls?\b")}
-
-_MD_HEADING = re.compile(r"^[ \t]{0,3}(#{1,6})[ \t]")
-#: A line that is only bold text, such as a "**References**" block after
-#: the list (a call that opens in bold carries text after it, or a marker).
-_BOLD_LINE = re.compile(r"^[ \t]{0,3}(\*\*|__)[^*_\n]+(\*\*|__)[ \t]*:?[ \t]*$")
+#: judgment call" key though every call said "no reference basis". The app's
+#: own module, so the harness reads the list the app's judgment-call check
+#: (GM-174) acted on.
+_SCOPES = _answer_sections.SCOPES
 
 
 def answer_section(text: str, scope: str) -> Optional[str]:
@@ -1588,26 +2038,8 @@ def answer_section(text: str, scope: str) -> Optional[str]:
     heads it -- a Markdown heading, a bold line or a line that opens with
     its name -- to the next Markdown heading at its level or above, the
     next line that is only bold text, or the end. ``None`` when no line
-    heads it."""
-    head = re.compile(r"^[ \t]{0,3}(#{1,6}[ \t]*|\*\*|__)?[ \t]*"
-                      r"(\d+[.)][ \t]*)?(\*\*|__)?[ \t]*" + _SCOPES[scope][1],
-                      re.IGNORECASE)
-    lines = text.splitlines()
-    for i, line in enumerate(lines):
-        if not head.match(line):
-            continue
-        level = _MD_HEADING.match(line)
-        level = len(level.group(1)) if level else None
-        out = [line]
-        for nxt in lines[i + 1:]:
-            m = _MD_HEADING.match(nxt)
-            if m and (level is None or len(m.group(1)) <= level):
-                break
-            if _BOLD_LINE.match(nxt):
-                break
-            out.append(nxt)
-        return "\n".join(out)
-    return None
+    heads it (:func:`funhouse_agent.answer_sections.section`)."""
+    return _answer_sections.section(text, scope)
 
 
 def card_spec_bounds(spec: dict) -> Tuple[str, int, Optional[int]]:
@@ -1671,4 +2103,7 @@ __all__ = ["finding", "turn_context", "run_turn_detectors", "DETECTORS",
            "detect_expectations", "tool_result_paths", "url_well_formed",
            "severity_counts", "load_activity", "turn_metrics",
            "detect_figure_cards", "figure_looks", "card_looks",
-           "card_matches", "card_kinds", "card_spec_bounds", "is_figure"]
+           "card_matches", "card_kinds", "card_spec_bounds", "is_figure",
+           "detect_judgment_check", "judgment_checks", "answer_section",
+           "package_calls", "bespoke_reports", "helper_tasks", "given_rows",
+           "brief_given_block"]

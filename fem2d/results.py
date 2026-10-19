@@ -446,6 +446,10 @@ class FEMResult:
     excavation_water: Optional[str] = None
     wall_water_pressures: Optional[List[Dict]] = field(default=None,
                                                        repr=False)
+    # Wall friction (GM-72, 2026-10-19): the joints' forces summed per face
+    wall_interface: Optional[Dict[str, Any]] = None
+    # What the analysis chose for the user (GM-115)
+    choices: List[Dict[str, Any]] = field(default_factory=list)
 
     # Raw arrays (not serialized to dict)
     nodes: Optional[np.ndarray] = field(default=None, repr=False)
@@ -527,6 +531,23 @@ class FEMResult:
                 + (f" at {env['shear_depth_m']:.2f} m depth"
                    if env.get('shear_depth_m') is not None else "")
                 + f" ({env['shear_stage']})")
+        if self.wall_interface:
+            for side in ('retained_side', 'excavation_side'):
+                w = self.wall_interface.get(side)
+                if not w:
+                    continue
+                md = w.get('mobilized_delta_deg')
+                lines.append(
+                    f"    Wall friction, {side.replace('_', ' ')}: thrust "
+                    f"{w['normal_thrust_kN_per_m']:.1f} kN/m, shear "
+                    f"{w['wall_shear_kN_per_m']:.1f} kN/m"
+                    + (f", delta mobilized {md:.1f} deg" if md is not None
+                       else "")
+                    + f" ({w['joints_slipping']} of {w['joints']} joints "
+                    "slipping)")
+        if self.choices:
+            from geotech_common.choices import choices_lines
+            lines.extend(choices_lines(self.choices))
         if self.notes:
             lines.append("")
             for n in self.notes:
@@ -578,6 +599,12 @@ class FEMResult:
         if self.wall_water_pressures:
             d["wall_water_pressures"] = [dict(r) for r in
                                          self.wall_water_pressures]
+        if self.wall_interface:
+            d["wall_interface"] = {
+                k: (dict(v) if isinstance(v, dict) else v)
+                for k, v in self.wall_interface.items()}
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
         if self.notes:
             d["notes"] = list(self.notes)
         return d
@@ -742,6 +769,11 @@ class PhaseResult:
         k x its stretch since placement ('force_x_kN_per_m',
         'force_y_kN_per_m'; positive = the node moved +x / +y relative to
         ground or to ``node_b``), with 'placed_in_phase'.
+    interface_forces : per active wall/soil joint
+        (``analyze_staged(interfaces=...)``, GM-72): the effective normal
+        force on the wall ('normal_kN_per_m', compression positive), the
+        soil's tangential force on the wall ('shear_kN_per_m', +y = up),
+        its Mohr-Coulomb limit and the fraction mobilized (1 = slipping).
     settled_steps : load steps accepted at the iteration ceiling with the
         displacements standing still (``settled_ratio``), each with its
         residual ratio; ``final_residual`` is the last step's.
@@ -763,6 +795,8 @@ class PhaseResult:
     max_beam_shear_kN_per_m: float = 0.0
     beam_forces: Optional[List] = field(default=None, repr=False)
     spring_forces: Optional[List[Dict[str, Any]]] = field(
+        default=None, repr=False)
+    interface_forces: Optional[List[Dict[str, Any]]] = field(
         default=None, repr=False)
     settled_steps: Optional[List[Dict[str, Any]]] = field(
         default=None, repr=False)
@@ -846,6 +880,8 @@ class PhaseResult:
                 d["beam_forces"] = [bf.to_dict() for bf in self.beam_forces]
         if self.spring_forces:
             d["spring_forces"] = [dict(s) for s in self.spring_forces]
+        if self.interface_forces:
+            d["interface_forces"] = [dict(r) for r in self.interface_forces]
         if self.settled_steps:
             d["settled_steps"] = [dict(s) for s in self.settled_steps]
         return d

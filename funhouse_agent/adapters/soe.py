@@ -87,25 +87,43 @@ _GEOM_PARAMS = ("excavation_depth", "layers", "supports", "surcharge",
                 "gwt_depth", "gwt_depth_excavation")
 
 
-def _run_braced_excavation(p):
+def run_braced_excavation(p, *, method="braced_excavation"):
+    """The braced_excavation tool's run: (result, the inputs it used)."""
     reject_unknown_params(p, _GEOM_PARAMS + ("Fy", "FOS_passive", "embedment_increase"),
-                          method="braced_excavation")
-    return analyze_braced_excavation(
-        _build_geometry(p, method="braced_excavation"), Fy=p.get("Fy", 345.0),
-        FOS_passive=p.get("FOS_passive", 1.5),
-        embedment_increase=p.get("embedment_increase", 1.0)).to_dict()
+                          method=method)
+    geometry = _build_geometry(p, method=method)
+    used = {"geometry": geometry, "Fy": p.get("Fy", 345.0),
+            "FOS_passive": p.get("FOS_passive", 1.5),
+            "embedment_increase": p.get("embedment_increase", 1.0)}
+    result = analyze_braced_excavation(
+        geometry, Fy=used["Fy"], FOS_passive=used["FOS_passive"],
+        embedment_increase=used["embedment_increase"])
+    return result, used
 
 
-def _run_cantilever_excavation(p):
+def _run_braced_excavation(p):
+    return run_braced_excavation(p)[0].to_dict()
+
+
+def run_cantilever_excavation(p, *, method="cantilever_excavation"):
+    """The cantilever_excavation tool's run: (result, the inputs it used)."""
     # No supports: a cantilever has none (GM-110).
     reject_unknown_params(
         p, tuple(k for k in _GEOM_PARAMS if k != "supports")
         + ("FOS_passive", "Fy", "embedment_increase"),
-        method="cantilever_excavation")
-    return analyze_cantilever_excavation(
-        _build_geometry(p, method="cantilever_excavation"),
-        FOS_passive=p.get("FOS_passive", 1.5), Fy=p.get("Fy", 345.0),
-        embedment_increase=p.get("embedment_increase", 1.2)).to_dict()
+        method=method)
+    geometry = _build_geometry(p, method=method)
+    used = {"geometry": geometry, "FOS_passive": p.get("FOS_passive", 1.5),
+            "Fy": p.get("Fy", 345.0),
+            "embedment_increase": p.get("embedment_increase", 1.2)}
+    result = analyze_cantilever_excavation(
+        geometry, FOS_passive=used["FOS_passive"], Fy=used["Fy"],
+        embedment_increase=used["embedment_increase"])
+    return result, used
+
+
+def _run_cantilever_excavation(p):
+    return run_cantilever_excavation(p)[0].to_dict()
 
 
 def _run_apparent_pressure(params):
@@ -165,18 +183,26 @@ def _run_check_basal_heave(params):
     return {"error": f"Unknown method '{m}'. Allowed: ['terzaghi', 'bjerrum_eide', 'caltrans']."}
 
 
-def _run_fhwa_apparent_pressure(p):
+def run_fhwa_apparent_pressure_anchored_wall(
+        p, *, method="fhwa_apparent_pressure_anchored_wall"):
+    """The FHWA anchored-wall tool's run: (result dict, the inputs it used)."""
     reject_unknown_params(
         p, ("H", "anchor_depths", "gamma", "phi", "surcharge", "spacing",
             "inclination_deg", "Ka", "Kp", "FOS_embedment"),
-        method="fhwa_apparent_pressure_anchored_wall")
-    require_params(p, ["H", "anchor_depths", "gamma", "phi"],
-                   method="fhwa_apparent_pressure_anchored_wall")
-    return fhwa_apparent_pressure_anchored_wall(
-        H=p["H"], anchor_depths=p["anchor_depths"], gamma=p["gamma"], phi=p["phi"],
-        surcharge=p.get("surcharge", 0.0), spacing=p.get("spacing", 1.0),
-        inclination_deg=p.get("inclination_deg", 0.0), Ka=p.get("Ka"),
-        Kp=p.get("Kp"), FOS_embedment=p.get("FOS_embedment", 1.3))
+        method=method)
+    require_params(p, ["H", "anchor_depths", "gamma", "phi"], method=method)
+    used = {"H": p["H"], "anchor_depths": p["anchor_depths"],
+            "gamma": p["gamma"], "phi": p["phi"],
+            "surcharge": p.get("surcharge", 0.0),
+            "spacing": p.get("spacing", 1.0),
+            "inclination_deg": p.get("inclination_deg", 0.0),
+            "Ka": p.get("Ka"), "Kp": p.get("Kp"),
+            "FOS_embedment": p.get("FOS_embedment", 1.3)}
+    return fhwa_apparent_pressure_anchored_wall(**used), used
+
+
+def _run_fhwa_apparent_pressure(p):
+    return run_fhwa_apparent_pressure_anchored_wall(p)[0]
 
 
 def _run_check_bottom_blowout(p):
@@ -263,7 +289,7 @@ METHOD_INFO = {
         "parameters": {"delta_h": {"type": "float", "required": True, "description": "Head difference (m)."}, "flow_path": {"type": "float", "required": True, "description": "Seepage path length (m)."}, "Gs": {"type": "float", "required": False, "default": 2.65, "description": "Specific gravity of solids."}, "void_ratio": {"type": "float", "required": False, "default": 0.65, "description": "Void ratio."}, "FOS_required": {"type": "float", "required": False, "default": 2.0, "description": "Required FOS."}},
         "returns": {"FOS": "Factor of safety.", "i_exit": "Exit gradient."}},
     "design_ground_anchor": {"category": "Anchors", "brief": "Ground anchor design per GEC-4/PTI.",
-        "parameters": {"design_load_kN": {"type": "float", "required": True, "description": "Design anchor load (kN)."}, "anchor_depth": {"type": "float", "required": True, "description": "Anchor depth (m)."}, "excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "phi_deg": {"type": "float", "required": True, "description": "Soil friction angle (degrees)."}, "soil_type": {"type": "str", "required": False, "default": "sand_medium", "allowed_values": ["sand_loose", "sand_medium", "sand_dense", "gravel", "clay_stiff", "clay_hard", "rock_soft", "rock_medium", "rock_hard"], "description": "Soil/rock type for bond stress lookup (or give bond_stress_kPa directly)."}, "tendon_type": {"type": "str", "required": False, "default": "strand_15mm", "allowed_values": ["strand_13mm", "strand_15mm", "bar_26mm", "bar_32mm", "bar_36mm", "bar_44mm"], "description": "Tendon type."}, "anchor_angle_deg": {"type": "float", "required": False, "default": 15.0, "description": "Anchor inclination below horizontal (deg)."}, "bond_stress_kPa": {"type": "float", "required": False, "description": "Override ultimate bond stress (kPa)."}, "drill_diameter_mm": {"type": "float", "required": False, "default": 150.0, "description": "Drill hole diameter (mm)."}, "FOS_bond": {"type": "float", "required": False, "default": 2.0, "description": "FOS on bond stress."}, "lock_off_pct": {"type": "float", "required": False, "default": 0.80, "description": "Lock-off load fraction of design load."}, "max_load_pct": {"type": "float", "required": False, "default": 0.60, "description": "Max tendon load fraction of ultimate strength."}},
+        "parameters": {"design_load_kN": {"type": "float", "required": True, "description": "Design anchor load (kN)."}, "anchor_depth": {"type": "float", "required": True, "description": "Anchor depth (m)."}, "excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "phi_deg": {"type": "float", "required": True, "description": "Soil friction angle (degrees)."}, "soil_type": {"type": "str", "required": False, "default": "sand_medium", "allowed_values": ["sand_loose", "sand_medium", "sand_dense", "gravel", "clay_stiff", "clay_hard", "rock_soft", "rock_medium", "rock_hard"], "description": "Soil/rock type for bond stress lookup (or give bond_stress_kPa directly)."}, "tendon_type": {"type": "str", "required": False, "default": "strand_15mm", "allowed_values": ["strand_13mm", "strand_15mm", "bar_26mm", "bar_32mm", "bar_36mm", "bar_44mm"], "description": "Tendon type."}, "anchor_angle_deg": {"type": "float", "required": False, "default": 15.0, "description": "Anchor inclination below horizontal (deg)."}, "bond_stress_kPa": {"type": "float", "required": False, "description": "Override ultimate bond stress (kPa)."}, "drill_diameter_mm": {"type": "float", "required": False, "default": 150.0, "description": "Drill hole diameter (mm)."}, "FOS_bond": {"type": "float", "required": False, "default": 2.0, "description": "FOS on bond stress."}, "lock_off_pct": {"type": "float", "required": False, "default": 0.80, "description": "Lock-off load fraction of design load. Reported as tendon.lock_off_kN only; it does not size the tendon."}, "max_load_pct": {"type": "float", "required": False, "default": 0.60, "description": "Design-load limit as a fraction of the tendon's SMTS (GEC-4 Sec. 5.3.8, p. 77: 0.60). The tendon is also sized so the maximum test load (1.50 x design load) is at most 0.80 SMTS, which allows 0.53 SMTS and governs unless max_load_pct is below 0.53; tendon.governed_by names the limit that sized it."}},
         "returns": {"unbonded_length_m": "Unbonded length.", "bond_length_m": "Bond length.", "total_length_m": "Total anchor length."}},
 }
 

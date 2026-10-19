@@ -241,6 +241,11 @@ def compute_bond_length(
 # Tendon selection
 # ============================================================================
 
+#: GEC-4 Sec. 5.3.8 (p. 77): the maximum test load shall not exceed 80 %
+#: of the SMTS.
+_TEST_LOAD_LIMIT = 0.80
+
+
 def select_tendon(
     design_load_kN: float,
     lock_off_pct: float = 0.80,
@@ -249,12 +254,16 @@ def select_tendon(
 ) -> Dict[str, Any]:
     """Select tendon size and strand count for a ground anchor.
 
-    Per PTI DC35.1, the maximum lock-off load should not exceed
-    60% of the guaranteed ultimate tensile strength (GUTS) for
-    permanent anchors or 80% for temporary anchors.
-
-    The test load (typically 1.33× or 1.50× design load) must
-    also not exceed 80% GUTS.
+    GEC-4 Sec. 5.3.8 (p. 77): the design load shall not exceed 60 % of
+    the specified minimum tensile strength (SMTS), the lock-off load 70 %
+    and the maximum test load 80 %. The maximum test load here is the
+    performance test, 150 % of the design load, so the 80 % test-load
+    limit allows a design load of 0.80/1.50 = 0.53 SMTS and governs over
+    the 60 % design-load limit (GEC-4 works this example on p. 77). Both
+    limits are checked for strand and bar tendons; until GM-160 a bar was
+    held to the design-load limit only. The lock-off load (at most 100 %
+    of the design load) is under 70 % SMTS whenever the design load is
+    under 60 %.
 
     Parameters
     ----------
@@ -262,10 +271,12 @@ def select_tendon(
         Design anchor load (kN).
     lock_off_pct : float
         Lock-off load as fraction of design load. Default 0.80
-        (80% of design load, common practice).
+        (80% of design load, common practice). Reported only
+        (``lock_off_kN``); it does not size the tendon.
     max_load_pct : float
-        Maximum allowable load as fraction of GUTS. Default 0.60
-        for permanent anchors. Use 0.80 for temporary.
+        Design-load limit as a fraction of SMTS. Default 0.60 (GEC-4
+        p. 77). It governs the tendon only when it is below 0.53, the
+        design load the 80 % test-load limit allows.
     tendon_type : str
         "strand_13mm", "strand_15mm", or a bar type from _BAR_DATA.
         Default "strand_15mm" (0.6 in Grade 270).
@@ -275,7 +286,8 @@ def select_tendon(
     dict
         "tendon_type", "n_strands" or "bar_size", "ultimate_capacity_kN",
         "lock_off_kN", "proof_test_kN", "performance_test_kN",
-        "max_test_load_pct_GUTS".
+        "max_test_load_pct_GUTS", and "governed_by": which GEC-4 limit
+        sized the tendon.
     """
     if design_load_kN <= 0:
         raise ValueError("Design load must be positive")
@@ -286,19 +298,20 @@ def select_tendon(
 
     # Maximum test load governs tendon sizing
     max_test_load = performance_test_kN  # 150% DL is the highest
+    # The SMTS each GEC-4 limit needs (Sec. 5.3.8, p. 77)
+    need_test = max_test_load / _TEST_LOAD_LIMIT
+    need_design = design_load_kN / max_load_pct
+    governed_by = (
+        f"maximum test load (1.50 DL) <= {_TEST_LOAD_LIMIT:.2f} SMTS "
+        f"(GEC-4 Sec. 5.3.8, p. 77)" if need_test >= need_design else
+        f"design load <= {max_load_pct:.2f} SMTS (max_load_pct; GEC-4 "
+        f"Sec. 5.3.8, p. 77, prints 0.60)")
+    governing_GUTS = max(need_test, need_design)
 
     if tendon_type in _STRAND_DATA:
         strand = _STRAND_DATA[tendon_type]
         strand_capacity = strand["ultimate_kN"]
 
-        # Required capacity: max_test_load / max_load_pct must not
-        # exceed total GUTS
-        # n * strand_capacity * max_load_pct >= max_test_load
-        # But for permanent: design_load / (n * strand_capacity) <= 0.60
-        required_GUTS = max_test_load / 0.80  # test load < 80% GUTS
-        required_GUTS_dl = design_load_kN / max_load_pct  # DL < 60% GUTS
-
-        governing_GUTS = max(required_GUTS, required_GUTS_dl)
         n_strands = math.ceil(governing_GUTS / strand_capacity)
         n_strands = max(n_strands, 1)
 
@@ -317,19 +330,19 @@ def select_tendon(
             "performance_test_kN": round(performance_test_kN, 1),
             "design_load_pct_GUTS": round(design_load_kN / total_GUTS * 100, 1),
             "max_test_load_pct_GUTS": round(max_test_pct * 100, 1),
+            "governed_by": governed_by,
         }
 
     elif tendon_type in _BAR_DATA:
         bar = _BAR_DATA[tendon_type]
         bar_capacity = bar["ultimate_kN"]
 
-        allowable = bar_capacity * max_load_pct
-        if design_load_kN > allowable:
+        if bar_capacity < governing_GUTS:
             # Bar is inadequate, try to find a larger bar
             selected_bar = None
             for bar_name in sorted(_BAR_DATA.keys(),
                                    key=lambda k: _BAR_DATA[k]["ultimate_kN"]):
-                if _BAR_DATA[bar_name]["ultimate_kN"] * max_load_pct >= design_load_kN:
+                if _BAR_DATA[bar_name]["ultimate_kN"] >= governing_GUTS:
                     selected_bar = bar_name
                     break
             if selected_bar is None:
@@ -359,6 +372,7 @@ def select_tendon(
             "performance_test_kN": round(performance_test_kN, 1),
             "design_load_pct_GUTS": round(design_load_kN / bar_capacity * 100, 1),
             "max_test_load_pct_GUTS": round(max_test_pct * 100, 1),
+            "governed_by": governed_by,
         }
 
     else:
@@ -415,7 +429,9 @@ def design_ground_anchor(
     lock_off_pct : float
         Lock-off as fraction of design load. Default 0.80.
     max_load_pct : float
-        Max allowable load as fraction of GUTS. Default 0.60 (permanent).
+        Design-load limit as a fraction of SMTS. Default 0.60 (GEC-4
+        Sec. 5.3.8, p. 77); the 80 % test-load limit governs above 0.53
+        (see :func:`select_tendon`).
     bond_stress_kPa : float or None
         Override bond stress (kPa). If None, looked up from soil_type.
 

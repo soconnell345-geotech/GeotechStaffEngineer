@@ -44,6 +44,11 @@ _DD_LAYERS = [{"soil_type": "cohesive", "thickness": 8.0,
                "unit_weight": 19.0, "phi": 35.0, "settling": False}]
 _SP_LAYERS = [{"thickness": 12.0, "unit_weight": 18.0,
                "friction_angle": 32.0}]
+_SOE_LAYERS = [{"thickness": 12.0, "unit_weight": 18.0,
+                "friction_angle": 32.0}]
+_SOE_SUPPORTS = [{"depth": 2.0}, {"depth": 5.0, "support_type": "anchor"}]
+_RV = {"R": {"mean": 200.0, "cov": 0.15, "dist": "lognormal"},
+       "S": {"mean": 100.0, "cov": 0.25}}
 _PV_LAYERS = [{"layer_type": "asphalt", "modulus_psi": 400000},
               {"layer_type": "granular_base", "modulus_psi": 30000},
               {"layer_type": "granular_subbase", "modulus_psi": 11000}]
@@ -155,6 +160,44 @@ CASES = [
     ("sheet_pile_package", {"wall_type": "anchored", "excavation_depth": 5.0,
                             "anchor_depth": 1.5, "layers": _SP_LAYERS,
                             "FOS_passive": 1.5}),
+    ("soe_package", {"excavation_depth": 3.0, "layers": _SOE_LAYERS}),
+    ("soe_package", {"wall_type": "cantilever", "excavation_depth": 3.5,
+                     "layers": _SOE_LAYERS, "surcharge": 0.0,
+                     "gwt_depth": 2.0, "FOS_passive": 1.3,
+                     "embedment_increase": 1.2, "Fy": 250.0}),
+    ("soe_package", {"wall_type": "braced", "excavation_depth": 8.0,
+                     "layers": _SOE_LAYERS, "supports": _SOE_SUPPORTS}),
+    ("soe_package", {"wall_type": "braced", "excavation_depth": 8.0,
+                     "layers": _SOE_LAYERS, "supports": _SOE_SUPPORTS,
+                     "gwt_depth": 6.0, "surcharge": 12.0,
+                     "FOS_passive": 1.3}),
+    ("soe_package", {"wall_type": "fhwa_anchored", "H": 8.0,
+                     "anchor_depths": [2.0, 5.0], "gamma": 18.0,
+                     "phi": 32.0}),
+    ("soe_package", {"wall_type": "fhwa_anchored", "H": 6.0,
+                     "anchor_depths": [1.5], "gamma": 18.0, "phi": 32.0,
+                     "surcharge": 10.0, "spacing": 2.5,
+                     "inclination_deg": 15.0}),
+    ("reliability_package", {"variables": _RV, "g_expression": "R/S"}),
+    ("reliability_package", {"engine": "fosm", "variables": _RV,
+                             "g_expression": "R - S",
+                             "convention": "margin"}),
+    ("reliability_package", {"engine": "pem", "variables": _RV,
+                             "g_expression": "R/S"}),
+    ("reliability_package", {"engine": "pem", "variables": _RV,
+                             "g_expression": "R/S",
+                             "scheme": "multiplicative"}),
+    ("reliability_package", {"engine": "monte_carlo", "variables": _RV,
+                             "g_expression": "R/S", "seed": 7}),
+    ("reliability_package", {"engine": "monte_carlo", "variables": _RV,
+                             "g_expression": "R/S", "seed": 7,
+                             "n": 2000, "sampling": "lhs"}),
+    ("reliability_package", {"engine": "form", "variables": _RV,
+                             "g_expression": "R/S"}),
+    ("reliability_package", {"engine": "form", "variables": _RV,
+                             "g_expression": "R - S",
+                             "convention": "margin",
+                             "max_iterations": 50}),
     ("pavement_design_package", {"w18": 5e6, "reliability_pct": 90,
                                  "mr_psi": 7500, "layers": _PV_LAYERS}),
     ("pavement_design_package", {"design_type": "flexible", "w18": 5e6,
@@ -429,7 +472,8 @@ def _mononobe_okabe():
     KAE = mononobe_okabe_KAE(phi, delta, kh, kv)
     # KA not given: Rankine Ka from phi, as the tool works it out (GM-120)
     KA = math.tan(math.radians(45.0 - phi / 2.0)) ** 2
-    f = seismic_earth_pressure(19.0, 5.0, KAE, KA)
+    # PAE carries (1 - kv), UFC 3-220-20 Eq. 4-16 (GM-149)
+    f = seismic_earth_pressure(19.0, 5.0, KAE, KA, kv=kv)
     return SeismicEarthPressureResult(
         KAE=KAE, KPE=mononobe_okabe_KPE(phi, delta, kh, kv),
         PAE_total=f["PAE_total_kN_per_m"],
@@ -488,6 +532,41 @@ def _sheet_pile(anchor_depth=None):
     if anchor_depth is None:
         return analyze_cantilever(3.0, layers)
     return analyze_anchored(5.0, anchor_depth, layers)
+
+
+def _soe(wall):
+    """The SOE module called directly, the tool's defaults written out
+    (surcharge 10 kPa, FOS 1.5, Fy 345; D/D0 1.2 cantilever, 1.0 braced)."""
+    def run():
+        import soe
+        layers = [soe.SOEWallLayer(thickness=12.0, unit_weight=18.0,
+                                   friction_angle=32.0)]
+        if wall == "fhwa_anchored":
+            return soe.fhwa_apparent_pressure_anchored_wall(
+                H=8.0, anchor_depths=[2.0, 5.0], gamma=18.0, phi=32.0)
+        if wall == "cantilever":
+            g = soe.ExcavationGeometry(excavation_depth=3.0,
+                                       soil_layers=layers, surcharge=10.0)
+            return soe.analyze_cantilever_excavation(
+                g, FOS_passive=1.5, Fy=345.0, embedment_increase=1.2)
+        g = soe.ExcavationGeometry(
+            excavation_depth=8.0, soil_layers=layers, surcharge=10.0,
+            support_levels=[soe.SupportLevel(depth=2.0),
+                            soe.SupportLevel(depth=5.0,
+                                             support_type="anchor")])
+        return soe.analyze_braced_excavation(g, Fy=345.0, FOS_passive=1.5,
+                                             embedment_increase=1.0)
+    return run
+
+
+def _reliability(engine, **options):
+    """The reliability engine called directly on the same variables."""
+    def run():
+        import reliability
+        g = (lambda x: x["R"] / x["S"])
+        return getattr(reliability, engine)(
+            g, {k: dict(v) for k, v in _RV.items()}, **options)
+    return run
 
 
 def _pavement(design, **inputs):
@@ -551,6 +630,21 @@ MODULE_CASES = [
     ("sheet_pile_package", {"wall_type": "anchored", "excavation_depth": 5.0,
                             "anchor_depth": 1.0, "layers": _SP_LAYERS},
      lambda: _sheet_pile(anchor_depth=1.0)),
+    ("soe_package", {"excavation_depth": 3.0, "layers": _SOE_LAYERS},
+     _soe("cantilever")),
+    ("soe_package", {"wall_type": "braced", "excavation_depth": 8.0,
+                     "layers": _SOE_LAYERS, "supports": _SOE_SUPPORTS},
+     _soe("braced")),
+    ("soe_package", {"wall_type": "fhwa_anchored", "H": 8.0,
+                     "anchor_depths": [2.0, 5.0], "gamma": 18.0,
+                     "phi": 32.0}, _soe("fhwa_anchored")),
+    ("reliability_package", {"variables": _RV, "g_expression": "R/S"},
+     _reliability("fosm")),
+    ("reliability_package", {"engine": "form", "variables": _RV,
+                             "g_expression": "R/S"}, _reliability("form")),
+    ("reliability_package", {"engine": "monte_carlo", "variables": _RV,
+                             "g_expression": "R/S", "seed": 7},
+     _reliability("monte_carlo", seed=7)),
     ("pavement_design_package", {"w18": 5e6, "reliability_pct": 90,
                                  "mr_psi": 7500, "layers": _PV_LAYERS},
      _pavement("design_flexible_pavement", w18=5e6, reliability_pct=90,
@@ -631,3 +725,84 @@ def test_package_messages_use_the_callers_names():
         "Vz": 100.0})
     assert ("method_6dof=False (pile_group_simple) needs no stiffness"
             in out["error"])
+
+
+def test_soe_package_prints_the_results_numbers(tmp_path):
+    # GM-41: the SOE package's file carries the result's numbers
+    out = D.call_agent("calc_package", "soe_package", {
+        "wall_type": "braced", "excavation_depth": 8.0,
+        "layers": _SOE_LAYERS, "supports": _SOE_SUPPORTS,
+        "output_path": str(tmp_path / "soe.html")})
+    assert out["status"] == "success", out
+    tool = D.call_agent("soe", "braced_excavation", {
+        "excavation_depth": 8.0, "layers": _SOE_LAYERS,
+        "supports": _SOE_SUPPORTS})
+    html = (tmp_path / "soe.html").read_text(encoding="utf-8")
+    for r in tool["support_reactions"]:
+        assert f"{r['load_kN_per_m']}" in html
+    assert f"{tool['required_embedment_m']}" in html
+    assert f"{tool['max_moment_kNm_per_m']}" in html
+    assert out["support_loads_kN_per_m"] == [
+        r["load_kN_per_m"] for r in tool["support_reactions"]]
+    out = D.call_agent("calc_package", "soe_package", {
+        "wall_type": "fhwa_anchored", "H": 8.0, "anchor_depths": [2.0, 5.0],
+        "gamma": 18.0, "phi": 32.0,
+        "output_path": str(tmp_path / "fhwa.html")})
+    html = (tmp_path / "fhwa.html").read_text(encoding="utf-8")
+    assert "36.328" in html and "102.93" in html   # pe and DL1
+    out = D.call_agent("calc_package", "soe_package", {
+        "wall_type": "anchored", "H": 8.0})
+    assert "wall_type must be one of" in out["error"]
+
+
+def test_reliability_package_prints_the_engines_numbers(tmp_path):
+    # GM-41: beta and Pf in the file are the tool's
+    tool = D.call_agent("reliability", "fosm",
+                        {"variables": _RV, "g_expression": "R/S"})
+    out = D.call_agent("calc_package", "reliability_package", {
+        "variables": _RV, "g_expression": "R/S",
+        "output_path": str(tmp_path / "rel.html")})
+    assert out["status"] == "success", out
+    html = (tmp_path / "rel.html").read_text(encoding="utf-8")
+    assert f"{tool['beta_normal']:.3f}" in html
+    assert f"{tool['beta_lognormal']:.3f}" in html
+    assert out["beta_lognormal"] == tool["beta_lognormal"]
+    assert "lognormal" in html and "R/S" in html
+    # the owner's wording for a probability (never "exact")
+    assert "what the assumed model implies" in html
+
+
+def test_reliability_package_correlation_matrix_rows():
+    # a 3 x 3 matrix is three rows by variable, not three (a, b, rho) pairs
+    from reliability.calc_steps import _correlation_table
+    t = _correlation_table({
+        "variables": [{"name": "a"}, {"name": "b"}, {"name": "c"}],
+        "correlation": [[1.0, 0.3, 0.0], [0.3, 1.0, 0.5],
+                        [0.0, 0.5, 1.0]]})
+    assert [r[0] for r in t.rows] == ["a", "b", "c"]
+    assert t.rows[1][1] == "0.300, 1.000, 0.500"
+
+
+def test_soe_braced_diagrams_share_one_sign():
+    # GM-41 review: the spans above the excavation and the free earth body
+    # below the lowest support are drawn on one set of axes, so both use
+    # the free earth body's sign (load toward the excavation positive):
+    # the shear at the bottom of the cantilever span is +(its load)
+    import soe
+    layers = [soe.SOEWallLayer(thickness=12.0, unit_weight=18.0,
+                               friction_angle=32.0)]
+    g = soe.ExcavationGeometry(
+        excavation_depth=8.0, soil_layers=layers, surcharge=10.0,
+        support_levels=[soe.SupportLevel(depth=2.0),
+                        soe.SupportLevel(depth=5.0, support_type="anchor")])
+    r = soe.analyze_braced_excavation(g)
+    d = r.diagram
+    v_end, m_end = max((v, m) for z, v, m in zip(d["z"], d["V"], d["M"])
+                       if z <= 2.0 + 1e-6)
+    assert v_end == pytest.approx(r.spans[0]["load_kN_per_m"], rel=0.02)
+    assert m_end == pytest.approx(r.spans[0]["load_kN_per_m"]
+                                  * r.spans[0]["centroid_below_top_m"],
+                                  rel=0.02)
+    assert r.free_earth_diagram["V"][-1] == pytest.approx(0.0, abs=1.0)
+    assert [l["Kp"] for l in r.layers_used] == [round(
+        math.tan(math.radians(61.0)) ** 2, 4)]
