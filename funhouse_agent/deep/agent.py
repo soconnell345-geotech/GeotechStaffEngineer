@@ -54,6 +54,7 @@ from funhouse_agent.deep.limits import (
     HELPER_EXHAUSTED,
     HELPER_FINAL_NUDGE,
     REFERENCE_HIDDEN_TOOLS,
+    UNRUNNABLE_TOOLS,
     HideTools,
     ModelCallBudgetMiddleware,
     helper_max_model_calls,
@@ -1503,6 +1504,12 @@ def build_deep_agent(
                                   if m not in notes]
         extra_mw = [DeliveredToolResults(), *notes, ToolErrorGuard(),
                     LargeResultKeyMap(), ScratchFilesystemGuard()]
+        if "runnable" not in spec and not any(
+                isinstance(m, HideTools) and UNRUNNABLE_TOOLS <= m.hidden
+                for m in spec.get("middleware") or []):
+            # deepagents' shell and delete cannot run on this backend
+            # (GM-176); a helper that already hides them keeps its own.
+            extra_mw.append(HideTools(UNRUNNABLE_TOOLS))
         if "runnable" not in spec:
             # What the helper reads and writes, recorded as it happens, so
             # a helper that stops can hand it back as a file (TA-21).
@@ -1542,7 +1549,8 @@ def build_deep_agent(
                              DeliveredToolResults(),
                              ToolErrorGuard(),
                              LargeResultKeyMap(),
-                             ScratchFilesystemGuard()]
+                             ScratchFilesystemGuard(),
+                             HideTools(UNRUNNABLE_TOOLS)]       # GM-176
                           + ([UnknownToolHint(allowed_agents)]
                              if allowed_agents else [])
                           + [OutputLimitGuard()]})
@@ -1611,6 +1619,10 @@ def build_deep_agent(
         # none of the user's files and answered "not found" for them (wave
         # 2b, F41); they are kept off this page's menu and prompt.
         middleware.append(HideScratchFilesystem())
+    else:
+        # The geotech page: deepagents' shell and delete cannot run on this
+        # backend (GM-176; wave w13b F55j called execute with no command).
+        middleware.append(HideTools(UNRUNNABLE_TOOLS))
     # The review page: a model-call budget whose last call answers from what
     # was gathered, so a long turn ends with findings and what was not
     # checked, never a GraphRecursionError (DR-03). With the coverage gate

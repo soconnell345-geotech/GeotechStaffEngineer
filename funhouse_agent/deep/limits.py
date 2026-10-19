@@ -66,12 +66,40 @@ DEFAULT_REVIEWER_MAX_MODEL_CALLS = DEFAULT_REFERENCES_MAX_MODEL_CALLS
 REFERENCE_HIDDEN_TOOLS = frozenset({"ls", "glob", "grep", "write_file",
                                     "edit_file", "delete", "execute"})
 
+#: deepagents' tools no agent on the geotech page can use (BACKLOG GM-176):
+#: ``execute`` is its shell, which our in-memory backend cannot run, and
+#: ``delete`` (deepagents 0.7.x) works on that scratch space only. Live
+#: wave w13b: F55j's calc helper called ``execute`` with no command; the
+#: review page and the references helper already hid both.
+UNRUNNABLE_TOOLS = frozenset({"execute", "delete"})
+
+#: deepagents' system-prompt section about a tool, by the tool's name: it
+#: goes with the tool. deepagents adds "## Execute Tool `execute`" only
+#: where its backend can run a shell, so on ours there is none to take.
+_TOOL_SECTIONS = {"execute": "Execute Tool"}
+
+
+def _without_sections(text: str, titles) -> str:
+    """``text`` without each ``## <title>`` section (to the next heading or
+    the end); unchanged when none is there."""
+    import re
+    out = str(text or "")
+    for title in titles:
+        out = re.sub(r"(?ms)^## " + re.escape(title) + r"\b.*?(?=^## |\Z)",
+                     "", out)
+    if out == text:
+        return text
+    return re.sub(r"\n{3,}", "\n\n", out)
+
 
 class HideTools(AgentMiddleware):
     """Keep the named tools out of the model's view (they stay registered,
     so nothing that refers to them breaks). deepagents attaches its
     filesystem tools to every sub-agent; this takes the ones a sub-agent
-    must not spend calls on off the menu."""
+    must not spend calls on off the menu, with deepagents' prompt section
+    about a hidden tool where it has one, and out of an unknown-tool
+    error's list of tools (BACKLOG GM-176: that list names every
+    REGISTERED tool, and F18j's named 7 hidden ones)."""
 
     def __init__(self, names):
         super().__init__()
@@ -83,13 +111,65 @@ class HideTools(AgentMiddleware):
         tools = [t for t in (request.tools or [])
                  if (t.get("name") if isinstance(t, dict)
                      else getattr(t, "name", None)) not in self.hidden]
-        return request.override(tools=tools)
+        request = request.override(tools=tools)
+        titles = [_TOOL_SECTIONS[n] for n in sorted(self.hidden)
+                  if n in _TOOL_SECTIONS]
+        sm = getattr(request, "system_message", None)
+        if not titles or sm is None:
+            return request
+        content = sm.content
+        if isinstance(content, str):
+            new = _without_sections(content, titles)
+            if new is content:
+                return request
+            return request.override(
+                system_message=sm.model_copy(update={"content": new}))
+        if isinstance(content, list):
+            blocks, changed = [], False
+            for b in content:
+                if isinstance(b, dict) and isinstance(b.get("text"), str):
+                    t = _without_sections(b["text"], titles)
+                    if t is not b["text"]:
+                        changed = True
+                        if not t.strip():
+                            continue
+                        b = {**b, "text": t}
+                blocks.append(b)
+            if changed:
+                return request.override(
+                    system_message=sm.model_copy(update={"content": blocks}))
+        return request
 
     def wrap_model_call(self, request, handler):
         return handler(self._filtered(request))
 
     async def awrap_model_call(self, request, handler):
         return await handler(self._filtered(request))
+
+    def _unlisted(self, request, result):
+        """An unknown-tool error lists every REGISTERED tool; the hidden ones
+        are taken out of that list too (F31's listed them as the page's)."""
+        import re
+
+        from langchain_core.messages import ToolMessage
+        if getattr(request, "tool", None) is not None or \
+                not isinstance(result, ToolMessage) or \
+                not isinstance(result.content, str) or not self.hidden:
+            return result
+        m = re.search(r"try one of \[([^\]]*)\]", result.content)
+        if not m:
+            return result
+        kept = [n.strip() for n in m.group(1).split(",")
+                if n.strip() and n.strip().strip("'\"") not in self.hidden]
+        return result.model_copy(update={"content": (
+            result.content[:m.start(1)] + ", ".join(kept)
+            + result.content[m.end(1):])})
+
+    def wrap_tool_call(self, request, handler):
+        return self._unlisted(request, handler(request))
+
+    async def awrap_tool_call(self, request, handler):
+        return self._unlisted(request, await handler(request))
 
 #: Injected as a user message on the last budgeted model call (with tools
 #: stripped) so the sub-agent spends its final call answering, not searching.
