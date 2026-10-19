@@ -266,24 +266,125 @@ moment to O); the braced result carries the `apparent_pressure` envelope, the
 
 ## Ground anchor design (built — provenance)
 `anchor_design.py` is fully implemented (grouted-anchor bond capacity, tendon
-selection). **Source basis:** the presumptive ultimate grout-to-ground **bond
-stress table** (`_BOND_STRESS_TABLE` in `anchor_design.py`, sand/clay/rock)
-is **not traced to a printed table** (GM-185, 2026-10-19). It used to cite
-GEC-4 "Table 4", which is GEC-4's table of design steps; the medium sand
-row (145, range 100-190) is GEC-4 Table 6's ultimate transfer LOAD for sand
-in kN/m (p. 71), used as a stress in kPa over the hole's perimeter, and
-GEC-4 Table 7 (p. 73) prints the measured bond stresses. The result's
-`choices` say so and point at Table 7 and `bond_stress_kPa`;
-tendon strand/bar data follow **PTI DC35.1** and **ASTM A722** (bar) / **A416**
-(strand); the bars and the 15 mm strand are now GEC-4 Table 9 (p. 77) and
-Table 10 (p. 78) as printed, pinned by `test_tendon_limits.py` (GM-182/185
-review, 2026-10-19: the 32 mm bar had 819 mm2 / 848 kN against Table 9's
-806 / 835, and the 1-3/4 in bar 1548 / 1601 against 1716 / 1779; a 32 mm
-bar now holds a design load of 501 kN at 0.60 SMTS, was 509).
-**RED FLAG — UNBENCHMARKED:** the anchor-design tables have **no
-worked-example numeric validation** (no `validation_examples` anchor), so they
-rest on the transcribed nominal values alone. Wiki-wishlist: GEC-4 Table 4,
-PTI DC35.1 strand/bar tables, ASTM A722/A416.
+selection). Source: GEC-4, *Ground Anchors and Anchored Systems*
+(FHWA-IF-99-015), Sec. 5.3; tendon strand/bar data follow **PTI DC35.1** and
+**ASTM A722** (bar) / **A416** (strand); the bars and the 15 mm strand are
+GEC-4 Table 9 (p. 77) and Table 10 (p. 78) as printed, pinned by
+`test_tendon_limits.py` (GM-182/185 review, 2026-10-19: the 32 mm bar had
+819 mm2 / 848 kN against Table 9's 806 / 835, and the 1-3/4 in bar 1548 /
+1601 against 1716 / 1779; a 32 mm bar now holds a design load of 501 kN at
+0.60 SMTS, was 509).
+
+**Benchmarked against GEC-4's two design examples** (`test_anchor_gec4.py`):
+App. A design example 1 (pp. A-7 to A-9, Figure A-3: H 10 m, phi' 33,
+anchors at 15 deg from 2.5 m and 6.25 m deep, DL 445 kN, sand and silt
+medium dense at 100 kN/m, FS 2.0) gives a bond length of 8.9 m and unbonded
+lengths of 5.7 m and 3.9 m, "minimum unbonded length for strand anchor is
+4.5 m" — the module gives 8.90 m, 5.74 m and 3.90 m (bar) / 4.50 m
+(strand); design example 2 (pp. A-27, A-28: mudstone taken as hard shales
+and slates, 360 kN/m, FS 3.0) gives 7.5 m for 900 kN and 5.3 m for 636 kN —
+the module gives both.
+
+### Bond: the ultimate load transfer (GM-191, 2026-10-19)
+`soil_type` names a printed row, and the row's value is used as the
+quantity it is printed in: the ultimate LOAD TRANSFER per metre of bond
+length (kN/m). Bond length = FOS_bond x DL / load transfer, at least the
+minimum bond length. The hole diameter does not enter it.
+
+- GEC-4 Table 6 (p. 71): "Presumptive ultimate values of load transfer for
+  preliminary design of small diameter straight shaft gravity-grouted ground
+  anchors in soil"; "The maximum allowable anchor design load in soil may be
+  determined by multiplying the bond length by the ultimate transfer load
+  and dividing by a factor of safety of 2.0."
+- GEC-4 Table 8 (p. 74): "Presumptive ultimate values of load transfer for
+  preliminary design of ground anchors in rock"; "The maximum allowable
+  anchor design load in competent rock may be determined by multiplying the
+  bond length by the ultimate transfer load and dividing by a factor of
+  safety of 3.0."
+- GEC-4 Table 7 (p. 73, after PTI 1996) prints average ultimate bond
+  STRESSES (MPa). One given as `bond_stress_kPa` is multiplied by the
+  perimeter of `drill_diameter_mm` (default 150 mm): "capacity estimates
+  should be based on the as-drilled hole diameter" (p. 72). A load transfer
+  found by preproduction tests (p. 75) goes in `load_transfer_kN_per_m`.
+
+The rows (kN/m): Table 6 — `sand_gravel_loose` 145, `sand_gravel_medium`
+220, `sand_gravel_dense` 290, `sand_loose` 100, `sand_medium` 145,
+`sand_dense` 190, `sand_silt_loose` 70, `sand_silt_medium` 100,
+`sand_silt_dense` 130, `silt_clay_stiff` 30, `silt_clay_hard` 60 ("silt-clay
+mixture with low plasticity or fine micaceous sand or silt mixtures");
+Table 8 — `granite_basalt` 730, `dolomitic_limestone` 580, `soft_limestone`
+440, `sandstone` 440, `slates_hard_shales` 360, `soft_shales` 150.
+
+Until GM-191 the table was nine "bond stresses" (kPa) multiplied by the
+perimeter of a 150 mm hole and cited to no table that printed them. The
+trace, row by row:
+
+| Old row (kPa) | What it was | Now |
+|---|---|---|
+| `sand_loose` 70 | Table 6's sand-and-silt loose, kN/m | Table 6 sand loose, 100 kN/m |
+| `sand_medium` 145 | Table 6's sand medium dense, kN/m | the same 145, as kN/m |
+| `sand_dense` 250 | no printed row | Table 6 sand dense, 190 kN/m |
+| `gravel` 310 | no printed row | removed; `sand_gravel_*` 145/220/290 |
+| `clay_stiff` 50 | the middle of Table 7's gravity-grouted cohesive range (30-70 kPa) | removed; `silt_clay_stiff` 30 kN/m, or `bond_stress_kPa` |
+| `clay_hard` 100 | Table 6's sand-and-silt row (70-130), kN/m | removed; `silt_clay_hard` 60 kN/m |
+| `rock_soft` 700 | no printed row | removed; Table 8 rows |
+| `rock_medium` 1050 | no printed row | removed; Table 8 rows |
+| `rock_hard` 1750 | the middle of Table 7's dolomitic limestone range, labelled granite | removed; `granite_basalt` 730 kN/m |
+
+A removed name raises a ValueError that says what the row was and which
+printed rows to use. A kN/m value read as kPa over a 150 mm hole (perimeter
+0.471 m) gave 47 % of the load transfer and a bond length 2.1 times Table
+6's: conservative for holes under 318 mm (where pi x d = 1 m), unconservative
+above.
+
+**Release note (GM-191):** the anchor's bond length now uses GEC-4's
+printed load transfer per metre (Tables 6 and 8) and no longer depends on
+the hole diameter. At DL 445 kN on strand, bond lengths before -> after:
+`sand_loose` 26.98 -> 8.90 m; `sand_medium` 13.03 -> 6.14 m; `sand_dense`
+7.55 -> 4.68 m; `gravel` 6.09 -> `sand_gravel_dense` 4.50 m (the minimum);
+`clay_stiff` 37.77 -> `silt_clay_stiff` 29.67 m; `clay_hard` 18.89 ->
+`silt_clay_hard` 14.83 m; `rock_soft` 3.00 -> `soft_shales` 8.90 m (longer:
+the old row was unconservative); `rock_medium` 3.00 -> `soft_limestone` 4.50
+m; `rock_hard` 3.00 -> `granite_basalt` 4.50 m (both now at the 4.5 m
+minimum for strand in rock). The soil rows shorten (the old reading was
+conservative for a 150 mm hole); the old rock rows lengthen. Six names are
+gone (`gravel`, `clay_stiff`, `clay_hard`, `rock_soft`, `rock_medium`,
+`rock_hard`) and say where they went.
+
+### Factor of safety and minimum lengths (GM-192, 2026-10-19)
+- **FOS_bond** defaults by ground: 2.0 for the Table 6 soil rows (p. 71) and
+  3.0 for the Table 8 rock rows (competent rock, "to account for
+  uncertainties associated with potential discontinuities in the rock
+  mass", p. 74). GEC-4 also gives 2.0 for "weak rocks such as clay shales",
+  intermediate geomaterials of unconfined compressive strength 0.5 to 5.0
+  MPa (p. 74); give `FOS_bond` 2.0 for those. The result's `choices` states
+  which was used, given or default, with the other as the alternative.
+- **Distance behind the critical potential failure surface:** the greater of
+  1.5 m and H/5. GEC-4 App. E Part 3 C (p. E-15): "The free stressing length
+  (unbonded length) shall extend at least 1.5 m or 20 percent of the height
+  of the wall, whichever is greater, behind the critical failure surface";
+  Sec. 5.3.2 (p. 65) and 5.3.4 (p. 68): "a minimum distance of H/5 or 1.5
+  m". The surface rises from the corner of the excavation at 45 + phi/2
+  (p. 65, walls in cohesionless soils); the distance is measured normal to
+  it and the unbonded length runs along the anchor to that line, as Figure
+  A-3 draws it.
+- **Minimum unbonded length:** GEC-4 Sec. 5.3.4 (p. 67): "The minimum
+  unbonded length for rock and soil ground anchors is 4.5 m for strand
+  tendons and 3 m for bar tendons."
+- **Minimum bond length:** GEC-4 App. E Part 3 B (p. E-15): "The minimum
+  bond length shall be 4.5 m for strand tendons in rock and 3 m for bar
+  tendons in rock. The minimum bond length shall be 4.5 m for strand and bar
+  tendons in soil." A note is added when a soil bond length passes 12 m
+  (p. 71) or a rock one 10 m (p. 74).
+
+**Release note (GM-192):** rock rows default to FOS_bond 3.0 (was 2.0); the
+minimum bond length is 4.5 m in soil and for strand in rock (was 3 m
+everywhere); a bar's minimum unbonded length is 3 m (was 4.5 m); the
+unbonded length extends the greater of 1.5 m and H/5 behind the failure
+surface, measured normal to it (was 1.5 m measured along the level of the
+anchor head). At phi 33 and 15 deg: H 10 m, anchor 2.5 m deep 5.72 ->
+5.74 m; H 12 m, 3 m deep 6.56 -> 6.88 m; H 10 m, 6.25 m deep, bar 4.50 ->
+3.90 m (strand stays 4.50 m).
 
 Tendon limits (GM-160, 2026-10-19): GEC-4 Sec. 5.3.8 (p. 77) - design load
 <= 0.60 SMTS (`max_load_pct`), lock-off <= 0.70 SMTS, maximum test load <=
@@ -308,9 +409,10 @@ Until GM-185 the 1.50 DL performance test was fixed and sized every tendon
 (and `performance_test_kN` was 1.50 DL beside a 1.33 DL proof test): DL 300
 kN on 15 mm strand was 3 strands, now 2; a 32 mm bar at DL 500 kN, which
 GM-160 made a 36 mm bar, is a 32 mm bar again at 1.33. The result's
-`choices` list the method, the test load, the SMTS limit, the bond stress
-and FOS_bond (GEC-4 Sec. 5.3.6: 2.0 in soil, p. 71; 3.0 in competent rock,
-p. 74), each given or default.
+`choices` list the method, the test load, the SMTS limit, the load transfer
+(and the hole diameter when a bond stress is given), FOS_bond, the distance
+behind the failure surface and the minimum unbonded and bond lengths, each
+given, default or the module's, with its basis and alternatives.
 
 ## Future Work
 
