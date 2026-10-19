@@ -267,9 +267,13 @@ moment to O); the braced result carries the `apparent_pressure` envelope, the
 ## Ground anchor design (built — provenance)
 `anchor_design.py` is fully implemented (grouted-anchor bond capacity, tendon
 selection). **Source basis:** the presumptive ultimate grout-to-ground **bond
-stress table** (`_BOND_STRESS` in `anchor_design.py`, sand/clay/rock) are
-**nominal presumptive values per FHWA GEC-4 (Ground Anchors & Anchored Systems,
-FHWA-IF-99-015) Table 4** (the code already carries the "nominal values" caveat);
+stress table** (`_BOND_STRESS_TABLE` in `anchor_design.py`, sand/clay/rock)
+is **not traced to a printed table** (GM-185, 2026-10-19). It used to cite
+GEC-4 "Table 4", which is GEC-4's table of design steps; the medium sand
+row (145, range 100-190) is GEC-4 Table 6's ultimate transfer LOAD for sand
+in kN/m (p. 71), used as a stress in kPa over the hole's perimeter, and
+GEC-4 Table 7 (p. 73) prints the measured bond stresses. The result's
+`choices` say so and point at Table 7 and `bond_stress_kPa`;
 tendon strand/bar data follow **PTI DC35.1** and **ASTM A722** (bar) / **A416**
 (strand). **RED FLAG — UNBENCHMARKED:** the anchor-design tables have **no
 worked-example numeric validation** (no `validation_examples` anchor), so they
@@ -278,10 +282,24 @@ PTI DC35.1 strand/bar tables, ASTM A722/A416.
 
 Tendon limits (GM-160, 2026-10-19): GEC-4 Sec. 5.3.8 (p. 77) - design load
 <= 0.60 SMTS (`max_load_pct`), lock-off <= 0.70 SMTS, maximum test load <=
-0.80 SMTS. With the 150 % performance test the test-load limit allows 0.53
-SMTS and governs unless `max_load_pct` is below that; `tendon.governed_by`
-names the limit. Bars were held to the design-load limit only: a 32 mm bar
-at DL 500 kN (88 % SMTS at the test load) is now a 36 mm bar.
+0.80 SMTS; `tendon.governed_by` names the limit that sized it. Bars were
+held to the design-load limit only until then.
+
+Test load (GM-185, 2026-10-19): `test_load_factor` x DL, the maximum load
+of the proof and the performance test, default 1.33. GEC-4: 120 to 150
+percent, 133 commonly used for permanent and 120 for temporary
+applications, 150 for potentially creeping soils (Sec. 7.4.2.2, p. 143);
+the proof test to 1.33 DL, 1.20 DL for a temporary support of excavation
+(Table 22, p. 147); permanent anchors "typically loaded to 133 percent"
+(p. 76). At 1.33 the 0.80 test-load limit allows 0.60 SMTS, the design-load
+limit (GEC-4's own example, p. 77); at 1.50 it allows 0.53 and governs.
+Until GM-185 the 1.50 DL performance test was fixed and sized every tendon
+(and `performance_test_kN` was 1.50 DL beside a 1.33 DL proof test): DL 300
+kN on 15 mm strand was 3 strands, now 2; a 32 mm bar at DL 500 kN, which
+GM-160 made a 36 mm bar, is a 32 mm bar again at 1.33. The result's
+`choices` list the method, the test load, the SMTS limit, the bond stress
+and FOS_bond (GEC-4 Sec. 5.3.6: 2.0 in soil, p. 71; 3.0 in competent rock,
+p. 74), each given or default.
 
 ## Future Work
 

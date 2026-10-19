@@ -121,12 +121,22 @@ class AnchorDesignResult:
         Drill hole diameter (mm).
     tendon : dict
         Tendon selection details (type, strand count, capacities).
+    test_load_factor : float
+        The test load as a multiple of the design load (GEC-4 Sec.
+        7.4.2.2, p. 143; default 1.33; GM-185).
+    test_load_kN : float
+        Test load = test_load_factor × design load (kN): the maximum load
+        of the proof and the performance test.
     proof_test_kN : float
-        Proof test load = 1.33 × design load (kN).
+        Proof test load, the test load (kN).
     performance_test_kN : float
-        Performance test load = 1.50 × design load (kN).
+        Performance test load, the test load (kN). Until GM-185 1.50 ×
+        design load, fixed.
     notes : list
         Warnings or special conditions.
+    choices : list of dict
+        What the design chose (GM-185, ``geotech_common.choices``;
+        ``anchor_design.anchor_choices``).
     """
     design_load_kN: float = 0.0
     anchor_depth_m: float = 0.0
@@ -138,9 +148,12 @@ class AnchorDesignResult:
     soil_type: str = ""
     drill_diameter_mm: float = 150.0
     tendon: Dict[str, Any] = field(default_factory=dict)
+    test_load_factor: float = 1.33
+    test_load_kN: float = 0.0
     proof_test_kN: float = 0.0
     performance_test_kN: float = 0.0
     notes: List[str] = field(default_factory=list)
+    choices: List[Dict[str, Any]] = field(default_factory=list)
 
     def summary(self) -> str:
         """Return formatted summary string."""
@@ -179,9 +192,12 @@ class AnchorDesignResult:
 
         lines.extend([
             "",
-            f"  Proof test load:       {self.proof_test_kN:.1f} kN (133% DL)",
-            f"  Performance test load: {self.performance_test_kN:.1f} kN (150% DL)",
+            f"  Test load:             {self.test_load_kN:.1f} kN "
+            f"({self.test_load_factor:g} DL; proof and performance tests)",
         ])
+        if self.choices:
+            from geotech_common.choices import choices_lines
+            lines.extend(choices_lines(self.choices))
         if self.notes:
             lines.append("")
             for note in self.notes:
@@ -202,9 +218,12 @@ class AnchorDesignResult:
             "soil_type": self.soil_type,
             "drill_diameter_mm": self.drill_diameter_mm,
             "tendon": self.tendon,
+            "test_load_factor": self.test_load_factor,
+            "test_load_kN": self.test_load_kN,
             "proof_test_kN": self.proof_test_kN,
             "performance_test_kN": self.performance_test_kN,
             "notes": self.notes,
+            "choices": self.choices,
         }
 
 

@@ -272,18 +272,17 @@ def _run_check_piping(p):
                          void_ratio=p.get("void_ratio", 0.65), FOS_required=p.get("FOS_required", 2.0)).to_dict()
 
 
+_ANCHOR_PARAMS = (
+    "design_load_kN", "anchor_depth", "excavation_depth", "phi_deg",
+    "soil_type", "anchor_angle_deg", "drill_diameter_mm", "tendon_type",
+    "FOS_bond", "lock_off_pct", "max_load_pct", "bond_stress_kPa",
+    "test_load_factor")
+
+
 def _run_design_ground_anchor(p):
-    reject_unknown_params(
-        p,
-        ("design_load_kN", "anchor_depth", "excavation_depth", "phi_deg",
-         "soil_type", "anchor_angle_deg", "drill_diameter_mm", "tendon_type",
-         "FOS_bond", "lock_off_pct", "max_load_pct", "bond_stress_kPa"),
-        method="design_ground_anchor")
+    reject_unknown_params(p, _ANCHOR_PARAMS, method="design_ground_anchor")
     require_params(p, ["design_load_kN", "anchor_depth", "excavation_depth", "phi_deg"],
-                   method="design_ground_anchor",
-                   valid=["design_load_kN", "anchor_depth", "excavation_depth", "phi_deg",
-                          "soil_type", "anchor_angle_deg", "drill_diameter_mm", "tendon_type",
-                          "FOS_bond", "lock_off_pct", "max_load_pct", "bond_stress_kPa"])
+                   method="design_ground_anchor", valid=list(_ANCHOR_PARAMS))
     return design_ground_anchor(
         design_load_kN=p["design_load_kN"], anchor_depth=p["anchor_depth"],
         excavation_depth=p["excavation_depth"], phi_deg=p["phi_deg"],
@@ -291,6 +290,7 @@ def _run_design_ground_anchor(p):
         drill_diameter_mm=p.get("drill_diameter_mm", 150.0), tendon_type=p.get("tendon_type", "strand_15mm"),
         FOS_bond=p.get("FOS_bond", 2.0), lock_off_pct=p.get("lock_off_pct", 0.80),
         max_load_pct=p.get("max_load_pct", 0.60), bond_stress_kPa=p.get("bond_stress_kPa"),
+        test_load_factor=p.get("test_load_factor", 1.33),
     ).to_dict()
 
 
@@ -338,8 +338,8 @@ METHOD_INFO = {
         "parameters": {"delta_h": {"type": "float", "required": True, "description": "Head difference (m)."}, "flow_path": {"type": "float", "required": True, "description": "Seepage path length (m)."}, "Gs": {"type": "float", "required": False, "default": 2.65, "description": "Specific gravity of solids."}, "void_ratio": {"type": "float", "required": False, "default": 0.65, "description": "Void ratio."}, "FOS_required": {"type": "float", "required": False, "default": 2.0, "description": "Required FOS."}},
         "returns": {"FOS": "Factor of safety.", "i_exit": "Exit gradient."}},
     "design_ground_anchor": {"category": "Anchors", "brief": "Ground anchor design per GEC-4/PTI.",
-        "parameters": {"design_load_kN": {"type": "float", "required": True, "description": "Design anchor load (kN)."}, "anchor_depth": {"type": "float", "required": True, "description": "Anchor depth (m)."}, "excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "phi_deg": {"type": "float", "required": True, "description": "Soil friction angle (degrees)."}, "soil_type": {"type": "str", "required": False, "default": "sand_medium", "allowed_values": ["sand_loose", "sand_medium", "sand_dense", "gravel", "clay_stiff", "clay_hard", "rock_soft", "rock_medium", "rock_hard"], "description": "Soil/rock type for bond stress lookup (or give bond_stress_kPa directly)."}, "tendon_type": {"type": "str", "required": False, "default": "strand_15mm", "allowed_values": ["strand_13mm", "strand_15mm", "bar_26mm", "bar_32mm", "bar_36mm", "bar_44mm"], "description": "Tendon type."}, "anchor_angle_deg": {"type": "float", "required": False, "default": 15.0, "description": "Anchor inclination below horizontal (deg)."}, "bond_stress_kPa": {"type": "float", "required": False, "description": "Override ultimate bond stress (kPa)."}, "drill_diameter_mm": {"type": "float", "required": False, "default": 150.0, "description": "Drill hole diameter (mm)."}, "FOS_bond": {"type": "float", "required": False, "default": 2.0, "description": "FOS on bond stress."}, "lock_off_pct": {"type": "float", "required": False, "default": 0.80, "description": "Lock-off load fraction of design load. Reported as tendon.lock_off_kN only; it does not size the tendon."}, "max_load_pct": {"type": "float", "required": False, "default": 0.60, "description": "Design-load limit as a fraction of the tendon's SMTS (GEC-4 Sec. 5.3.8, p. 77: 0.60). The tendon is also sized so the maximum test load (1.50 x design load) is at most 0.80 SMTS, which allows 0.53 SMTS and governs unless max_load_pct is below 0.53; tendon.governed_by names the limit that sized it."}},
-        "returns": {"unbonded_length_m": "Unbonded length.", "bond_length_m": "Bond length.", "total_length_m": "Total anchor length."}},
+        "parameters": {"design_load_kN": {"type": "float", "required": True, "description": "Design anchor load (kN)."}, "anchor_depth": {"type": "float", "required": True, "description": "Anchor depth (m)."}, "excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "phi_deg": {"type": "float", "required": True, "description": "Soil friction angle (degrees)."}, "soil_type": {"type": "str", "required": False, "default": "sand_medium", "allowed_values": ["sand_loose", "sand_medium", "sand_dense", "gravel", "clay_stiff", "clay_hard", "rock_soft", "rock_medium", "rock_hard"], "description": "Soil/rock type for the module's presumptive bond stress (not traced to a printed table; the result's choices say so), or give bond_stress_kPa directly (GEC-4 Table 7, p. 73)."}, "tendon_type": {"type": "str", "required": False, "default": "strand_15mm", "allowed_values": ["strand_13mm", "strand_15mm", "bar_26mm", "bar_32mm", "bar_36mm", "bar_44mm"], "description": "Tendon type."}, "anchor_angle_deg": {"type": "float", "required": False, "default": 15.0, "description": "Anchor inclination below horizontal (deg)."}, "bond_stress_kPa": {"type": "float", "required": False, "description": "Override ultimate bond stress (kPa)."}, "drill_diameter_mm": {"type": "float", "required": False, "default": 150.0, "description": "Drill hole diameter (mm)."}, "FOS_bond": {"type": "float", "required": False, "default": 2.0, "description": "FOS on the ultimate load transfer (GEC-4 Sec. 5.3.6: 2.0 in soil, p. 71, and weak rock; 3.0 in competent rock, p. 74)."}, "lock_off_pct": {"type": "float", "required": False, "default": 0.80, "description": "Lock-off load fraction of design load. Reported as tendon.lock_off_kN only; it does not size the tendon."}, "max_load_pct": {"type": "float", "required": False, "default": 0.60, "description": "Design-load limit as a fraction of the tendon's SMTS (GEC-4 Sec. 5.3.8, p. 77: 0.60). The tendon is also sized so the test load (test_load_factor x design load) is at most 0.80 SMTS, which allows 0.80 / test_load_factor SMTS (0.60 at 1.33, 0.53 at 1.50); tendon.governed_by names the limit that sized it."}, "test_load_factor": {"type": "float", "required": False, "default": 1.33, "description": "Test load as a multiple of the design load: the maximum load of the proof and performance tests, carried by the tendon at no more than 0.80 SMTS. GEC-4 Sec. 7.4.2.2 (p. 143): 1.20 to 1.50, 1.33 commonly used for permanent and 1.20 for temporary applications, 1.50 for potentially creeping soils; Table 22 (p. 147): 1.20 for a temporary support of excavation."}},
+        "returns": {"unbonded_length_m": "Unbonded length.", "bond_length_m": "Bond length.", "total_length_m": "Total anchor length.", "tendon": "Tendon size and governed_by, the SMTS limit that sized it.", "test_load_kN": "The test load (test_load_factor x design load).", "choices": "Method, test load, SMTS limit, bond stress and FOS_bond: given or default, with basis and alternatives."}},
 }
 
 # Names the wall analyses do not take, with the reason dispatch gives
@@ -358,6 +358,8 @@ METHOD_INFO["cantilever_excavation"]["refused_parameters"] = {
 # (braced_excavation adds it).
 declare_applies_when(METHOD_INFO, {
     "check_basal_heave": {"width_factor": {"method": ["caltrans"]}},
+    # GM-185: a given bond stress replaces the soil_type lookup
+    "design_ground_anchor": {"soil_type": {"bond_stress_kPa": "unset"}},
     "apparent_pressure": {"surcharge": False},
     # GM-182: a single anchor's alone; that run's choices call them
     # "default" when left out, so defaults_used lists them there only
