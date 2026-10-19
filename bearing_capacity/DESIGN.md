@@ -102,10 +102,10 @@ wraps it).
 - **Local shear** (`failure_mode="local"`, Terzaghi only): c* = 2/3·c,
   φ* = atan(2/3·tanφ) (UFC Table 5-4 prints 0.67; "probably too conservative
   for sands"). `c_used_kPa` / `phi_used_deg` report the reduced values.
-- `ngamma_method` now defaults to `None`, resolved to `"vesic"` (or
+- `ngamma_method` now defaults to `None`, resolved to the factor method's
+  own N-gamma (`OWN_NGAMMA`: `"vesic"`, `"meyerhof"` since GM-188, or
   `"kumbhojkar"` for Terzaghi); the Terzaghi sources are refused with the
-  Vesic/Meyerhof factor sets and vice versa. Vesic/Meyerhof results are
-  unchanged (no new keys in `to_dict()`).
+  Vesic/Meyerhof factor sets and vice versa.
 - **Misprints found in the published tables** (pinned in `test_terzaghi.py`):
   Das Nc at 18° printed 15.12 (formula 15.52; neighbours 14.60, 16.56);
   UFC 3-220-20 Table 5-2 Terzaghi Nc 18° = 15 (Das's misprint carried over),
@@ -137,3 +137,52 @@ gross pressure, the footing and backfill weight counted in the applied
 load, and Sec. 6.3.1 (p. 113) notes a footing heavier than the soil it
 replaces; the basis quotes both. The calc package prints the two steps
 after q_all. No number the result gave before changes.
+
+## Each method with its own N-gamma (2026-10-19, BACKLOG GM-188)
+
+`factor_method="meyerhof"` used to take Vesic's N-gamma, 2(Nq + 1) tan phi,
+because `ngamma_method` defaulted to `"vesic"` for both factor sets. Wave
+w14 (F18: 2 m square, Df = 1 m, phi = 32 deg, gamma = 19 kN/m3, c = 0)
+reported a Meyerhof q_ult of 1,466 kPa; Meyerhof's own N-gamma gives 1,241.
+Each method now takes its own N-gamma unless `ngamma_method` names another,
+each checked against its printed source:
+
+| factor_method | N-gamma | printed |
+|---|---|---|
+| vesic | 2 (Nq + 1) tan phi, Caquot and Kerisel (1948) | GEC-6 Eq. 5-8 (p. 53): "currently used by FHWA and AASHTO"; Table 5-1 (p. 54) |
+| meyerhof | (Nq - 1) tan(1.4 phi) | UFC 3-220-20 Table 5-6 (p. 294); Table 5-2 (p. 289) tabulates it, 22 at 32 deg; Example B-1.6 (p. 603) 53.27 at 37 deg |
+| terzaghi | Kumbhojkar (1993) | UFC 3-220-20 Table 5-2 note (p. 289), unchanged |
+
+Hansen's 1.5 (Nq - 1) tan phi stays an option. Another N-gamma than the
+method's own is a mixed method, and the result's choices say so.
+
+**Meyerhof shape factors under an inclined load are 1.** UFC 3-220-20
+Table 5-6 note A (p. 294): "Do not combine factors for shape and inclined
+load"; Sec. 5-3.3.2: "it is safe to assume that sc = sq = sgamma = 1 if load
+inclination is present". The Vesic set is unchanged: GEC-6 Sec. 5.2.3.7
+(p. 62) finds shape and inclination factors applied together "overly
+conservative" and omits the inclination factor, with a sliding check, but
+keeps no rule for its shape factors under an inclined load.
+
+**Not changed, stated in the choices:** the depth parameter k. Table 5-6
+prints k = Df/B for Meyerhof; the module keeps Hansen's (1970) bound,
+k = arctan(Df/B) beyond Df/B = 1, for both factor sets (the smaller depth
+factors).
+
+**The result's `choices`** (`geotech_common.choices`, in `to_dict()`, the
+summary and the calc package): the bearing capacity method; its N-gamma,
+with the other N-gammas as alternatives; the shear mode (general, or
+Terzaghi's local shear; UFC 3-220-20 Sec. 5-3.1.3 and Table 5-4, p. 291);
+the allowable pressure's basis (gross q_all = q_ult / FS, Eq. 5-13, with the
+net beside it, Eq. 5-14; GEC-6 Sec. 5.2.2 p. 53 recommends the gross); and,
+for Meyerhof, k beyond Df/B = 1 and the shape factors under an inclined
+load.
+
+**Release note:** with `factor_method="meyerhof"` and phi below about
+46 deg, where Meyerhof's N-gamma is the smaller, q_ult falls (above 46 deg
+it rises). F18 (2 m square, Df = 1 m, phi = 32 deg, gamma = 19 kN/m3):
+q_ult 1,465.9 -> 1,241.0 kPa (-15 %); a 2 m strip at phi = 30 deg:
+842.4 -> 703.4 kPa (-17 %). With a load inclined 10 deg the shape factors
+also drop to 1: F18 894.9 -> 594.9 kPa (-34 %). Pass
+`ngamma_method="vesic"` for the old mixed method. Vesic and Terzaghi
+results do not change.

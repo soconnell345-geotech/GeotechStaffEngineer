@@ -229,7 +229,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     elif method == "meyerhof":
         ng_eq = "N_\u03b3 = (N_q - 1) \u00d7 tan(1.4\u03c6)"
         ng_sub = f"N_\u03b3 = ({r.Nq:.2f} - 1) \u00d7 tan(1.4 \u00d7 {phi_deg:.1f}\u00b0)"
-        ng_ref = "Meyerhof (1963)"
+        ng_ref = "Meyerhof (1963); UFC 3-220-20 Table 5-6"
     else:
         ng_eq = "N_\u03b3 = 1.5 \u00d7 (N_q - 1) \u00d7 tan(\u03c6)"
         ng_sub = f"N_\u03b3 = 1.5 \u00d7 ({r.Nq:.2f} - 1) \u00d7 tan({phi_deg:.1f}\u00b0)"
@@ -247,16 +247,21 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
 
     # ── Section: Correction Factors ────────────────────────────
     factor_method = analysis.factor_method.capitalize()
+    meyerhof = analysis.factor_method == "meyerhof"
     cf_items = []
 
-    # Shape factors
+    # Shape factors; Meyerhof's are 1 under an inclined load (GM-188)
+    not_combined = meyerhof and analysis.load_inclination != 0
     cf_items.append(CalcStep(
         title="Shape Factors",
         equation=_shape_factor_equation(analysis.factor_method, phi_deg),
-        substitution="",
+        substitution=("s_c = s_q = s_\u03b3 = 1: shape and inclined load "
+                      "not combined (UFC 3-220-20 Table 5-6 note A)"
+                      if not_combined else ""),
         result_name="s_c, s_q, s_\u03b3",
         result_value=f"{r.sc:.4f}, {r.sq:.4f}, {r.sgamma:.4f}",
-        reference=f"{factor_method}; FHWA GEC-6 Table 6-2",
+        reference=("Meyerhof; UFC 3-220-20 Table 5-6" if meyerhof
+                   else f"{factor_method}; FHWA GEC-6 Table 6-2"),
     ))
 
     # Depth factors
@@ -266,7 +271,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         substitution="",
         result_name="d_c, d_q, d_\u03b3",
         result_value=f"{r.dc:.4f}, {r.dq:.4f}, {r.dgamma:.4f}",
-        reference=f"{factor_method}; FHWA GEC-6 Table 6-3",
+        reference=("Meyerhof; UFC 3-220-20 Table 5-6" if meyerhof
+                   else f"{factor_method}; FHWA GEC-6 Table 6-3"),
     ))
 
     # Only show inclination, base, and ground factors if non-unity

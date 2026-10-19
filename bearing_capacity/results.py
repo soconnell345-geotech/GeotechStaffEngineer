@@ -96,6 +96,10 @@ class BearingCapacityResult:
         are worked on; set by ``BearingCapacityAnalysis.compute`` (GM-170).
     is_strip : bool
         A strip footing: the allowable loads are per metre run.
+    choices : list of dict
+        What the analysis chose (GM-188, ``geotech_common.choices``): the
+        method, its N-gamma, the shear mode and the allowable pressure's
+        basis, each with its basis and the alternatives.
     """
     # Primary results
     q_ultimate: float = 0.0
@@ -163,6 +167,7 @@ class BearingCapacityResult:
     # The area the allowable loads are worked on (GM-170)
     area_m2: Optional[float] = None
     is_strip: bool = False
+    choices: List[Dict[str, Any]] = field(default_factory=list)
 
     @property
     def q_allowable_net(self) -> float:
@@ -270,6 +275,10 @@ class BearingCapacityResult:
             lines.append("")
             lines.extend(f"  Note: {n}" for n in self.notes)
 
+        if self.choices:
+            from geotech_common.choices import choices_lines
+            lines.extend(choices_lines(self.choices))
+
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
@@ -334,6 +343,8 @@ class BearingCapacityResult:
         loads = self.allowable_loads()
         if loads:
             d["allowable_load"] = loads
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
         return d
 
     def get_tables(self) -> list:

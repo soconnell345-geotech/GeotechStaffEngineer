@@ -44,6 +44,34 @@ from bearing_capacity.results import BearingCapacityResult
 FACTOR_METHODS = ("vesic", "meyerhof", "terzaghi")
 #: N-gamma choices that go with the Vesic/Meyerhof factor sets.
 GENERAL_NGAMMA_METHODS = ("vesic", "meyerhof", "hansen")
+#: Each method's own N-gamma, the default for ``ngamma_method`` (GM-188):
+#: Vesic's factors with the FHWA/AASHTO N-gamma, Meyerhof's with his own,
+#: Terzaghi's with Kumbhojkar's tabulation of his chart.
+OWN_NGAMMA = {"vesic": "vesic", "meyerhof": "meyerhof",
+              "terzaghi": "kumbhojkar"}
+
+#: Where each method and N-gamma is printed (GM-188).
+METHOD_BASIS = {
+    "vesic": ("GEC-6 Sec. 5.2.2 (p. 53): Eq. 5-7, N-gamma Eq. 5-8, "
+              "Table 5-1 (p. 54); shape factors Sec. 5.2.3.1, Table 5-2 "
+              "(p. 56)"),
+    "meyerhof": ("UFC 3-220-20 Sec. 5-3.3.2, Table 5-6 (p. 294): Meyerhof "
+                 "(1963) bearing, shape, depth and inclination factors; "
+                 "Table 5-3 (p. 291): any conditions except a tilted base, "
+                 "shear strength dominated by friction"),
+    "terzaghi": ("UFC 3-220-20 Table 5-2 (p. 289) and Table 5-5 (p. 294): "
+                 "Terzaghi (1943); Table 5-3 (p. 291): undrained soils, "
+                 "Df/B <= 1, no inclined load, slope or tilted base"),
+}
+NGAMMA_BASIS = {
+    "vesic": ("2 (Nq + 1) tan phi, Caquot and Kerisel (1948), GEC-6 "
+              "Eq. 5-8 (p. 53): 'currently used by FHWA and AASHTO', "
+              "Table 5-1 (p. 54)"),
+    "meyerhof": ("(Nq - 1) tan(1.4 phi), UFC 3-220-20 Table 5-6 (p. 294), "
+                 "Table 5-2 (p. 289)"),
+    "hansen": ("1.5 (Nq - 1) tan phi, Brinch Hansen (1970), UFC 3-220-20 "
+               "Table 5-2 (p. 289)"),
+}
 
 
 @dataclass
@@ -66,9 +94,12 @@ class BearingCapacityAnalysis:
     factor_of_safety : float, optional
         Required factor of safety. Default 3.0.
     ngamma_method : str, optional
-        Method for Ngamma: "vesic" (default), "meyerhof", or "hansen"; with
-        ``factor_method="terzaghi"``, "kumbhojkar" (default) or "coduto"
-        (see ``factors.TERZAGHI_NGAMMA_SOURCES``).
+        Method for Ngamma: "vesic", "meyerhof", or "hansen"; with
+        ``factor_method="terzaghi"``, "kumbhojkar" or "coduto" (see
+        ``factors.TERZAGHI_NGAMMA_SOURCES``). Default: the factor method's
+        own (:data:`OWN_NGAMMA`; GM-188: Meyerhof took Vesic's before).
+        Another one makes a mixed method, and the result's ``choices``
+        say so.
     factor_method : str, optional
         Method for shape/depth/inclination factors: "vesic" (default) or
         "meyerhof"; or "terzaghi" for Terzaghi (1943): his own Nc, Nq,
@@ -115,7 +146,8 @@ class BearingCapacityAnalysis:
                 f"'{self.factor_method}'")
         terzaghi = self.factor_method == "terzaghi"
         if self.ngamma_method is None:
-            self.ngamma_method = "kumbhojkar" if terzaghi else "vesic"
+            # the method's own N-gamma (GM-188: Meyerhof took Vesic's)
+            self.ngamma_method = OWN_NGAMMA[self.factor_method]
         self.ngamma_method = str(self.ngamma_method).strip().lower()
         if terzaghi and self.ngamma_method not in TERZAGHI_NGAMMA_SOURCES:
             raise ValueError(
@@ -165,7 +197,101 @@ class BearingCapacityAnalysis:
         result.is_strip = self.footing.shape == "strip"
         result.area_m2 = (self.footing.B_eff if result.is_strip
                           else self.footing.A_eff)
+        result.choices = self._choices(result)
         return result
+
+    def _choices(self, r: BearingCapacityResult) -> list:
+        """What the analysis chose (GM-188, ``geotech_common.choices``):
+        the method, its N-gamma, the shear mode and the allowable pressure's
+        basis; for Meyerhof, the depth parameter beyond Df/B = 1 and the
+        shape factors under an inclined load."""
+        from geotech_common.choices import MODULE, choice, how_given
+        name = {"vesic": "Vesic (1973)", "meyerhof": "Meyerhof (1963)",
+                "terzaghi": "Terzaghi (1943)"}
+        fm = self.factor_method
+        out = [choice(
+            "bearing capacity method",
+            f"{name[fm]} factors (factor_method '{fm}')",
+            how_given(fm, "vesic", name="factor_method"), METHOD_BASIS[fm],
+            [f"{name[m]} (factor_method '{m}'): {METHOD_BASIS[m]}"
+             for m in FACTOR_METHODS if m != fm])]
+
+        ng, own = self.ngamma_method, OWN_NGAMMA[fm]
+        how = how_given(ng, own, name="ngamma_method")
+        if fm == "terzaghi":
+            out.append(choice(
+                "N-gamma",
+                f"{r.Ngamma:.2f}, {TERZAGHI_NGAMMA_SOURCES[ng]} "
+                f"(ngamma_method '{ng}')", how,
+                "Terzaghi gave N-gamma as a chart only (UFC 3-220-20 "
+                "Table 5-2 note, p. 289)",
+                [f"{v:.2f}, {TERZAGHI_NGAMMA_SOURCES[k]} (ngamma_method "
+                 f"'{k}')" for k, v in r.Ngamma_alternatives.items()]))
+        else:
+            phi = self.soil.layer1.friction_angle
+            out.append(choice(
+                "N-gamma",
+                f"{r.Ngamma:.2f} = {NGAMMA_BASIS[ng].split(',')[0]} "
+                f"(ngamma_method '{ng}')", how,
+                NGAMMA_BASIS[ng] + (
+                    ", the method's own" if ng == own else
+                    f"; a mixed method: {name[fm]} factors with another "
+                    "N-gamma"),
+                [f"{bearing_capacity_Ngamma(phi, m):.2f} = "
+                 f"{NGAMMA_BASIS[m]} (ngamma_method '{m}')"
+                 + (", the method's own" if m == own else "")
+                 for m in GENERAL_NGAMMA_METHODS if m != ng]))
+
+        local = self.failure_mode == "local"
+        out.append(choice(
+            "shear mode",
+            ("local shear: c* = 2/3 c, phi* = atan(2/3 tan phi) "
+             "(failure_mode 'local')") if local else
+            "general shear (failure_mode 'general')",
+            # failure_mode is Terzaghi's input; the other methods assume
+            # general shear
+            how_given(self.failure_mode, "general", name="failure_mode")
+            if fm == "terzaghi" else MODULE,
+            "UFC 3-220-20 Sec. 5-3.1.3 (p. 291): the bearing capacity "
+            "theories assume general shear, appropriate only for dense "
+            "and/or stiff soils; for local or punching shear settlement "
+            "almost always controls; Table 5-4 (p. 291)",
+            ["general shear (failure_mode 'general')" if local else
+             "local shear, Terzaghi's c* = 0.67 c', phi* = atan(0.67 tan "
+             "phi'), UFC 3-220-20 Table 5-4 (factor_method 'terzaghi', "
+             "failure_mode 'local')"]))
+
+        out.append(choice(
+            "allowable bearing pressure",
+            f"gross: q_all = q_ult / FS = {r.q_allowable:,.1f} kPa "
+            f"(q_allowable); the net beside it, q_all,net = "
+            f"{r.q_allowable_net:,.1f} kPa (q_allowable_net)",
+            MODULE,
+            "UFC 3-220-20 Sec. 5-2.4 Eq. 5-13 and 5-14 (p. 279); GEC-6 Sec. "
+            "5.2.2 (p. 53) recommends the gross, with the footing and "
+            "backfill weight in the applied load; the allowable structural "
+            "load is on the net (allowable_load)",
+            ["net: q_all,net = q_ult / FS - q (UFC 3-220-20 Eq. 5-14), "
+             "set against the structural load over the area (Eq. 5-3)"]))
+
+        df_b = self.footing.depth / self.footing.B_for_factors
+        if fm == "meyerhof" and df_b > 1.0:
+            out.append(choice(
+                "depth parameter k (Meyerhof depth factors)",
+                f"k = arctan(Df/B) = {math.atan(df_b):.3f} at Df/B = "
+                f"{df_b:.2f}",
+                MODULE,
+                "Hansen's (1970) bound beyond Df/B = 1, applied to both "
+                "factor sets: the smaller depth factors",
+                [f"k = Df/B = {df_b:.2f}, as UFC 3-220-20 Table 5-6 "
+                 "(p. 294) prints for Meyerhof (larger depth factors)"]))
+        if fm == "meyerhof" and self.load_inclination:
+            out.append(choice(
+                "shape factors under inclined load", "sc = sq = sgamma = 1",
+                MODULE,
+                "UFC 3-220-20 Sec. 5-3.3.2 and Table 5-6 note A (p. 294): "
+                "'Do not combine factors for shape and inclined load'"))
+        return out
 
     def _compute_single_layer(self) -> BearingCapacityResult:
         """Compute bearing capacity for a single-layer soil profile.
@@ -189,8 +315,11 @@ class BearingCapacityAnalysis:
         # Bearing capacity factors
         Nc, Nq, Ng = all_N_factors(phi, self.ngamma_method)
 
-        # Shape factors
+        # Shape factors; Meyerhof's are 1 under an inclined load (UFC
+        # 3-220-20 Table 5-6 note A: do not combine shape and inclination)
         sc, sq, sg = shape_factors(phi, B, L, self.factor_method)
+        if self.factor_method == "meyerhof" and self.load_inclination:
+            sc = sq = sg = 1.0
 
         # Depth factors
         dc, dq, dg = depth_factors(phi, Df, B, self.factor_method)
