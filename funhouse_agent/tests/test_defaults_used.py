@@ -25,11 +25,17 @@ def test_defaults_used_lists_what_the_call_left_out():
     # cohesive_phi (beta only) and the uplift fraction (uplift only) are
     # not used by this run, so not listed (GM-119); the clay layer's Fig.
     # 7-17 curve is (GM-121) and the adhesion chart (GM-144), and the
-    # sand-toe limit and toe phi are not: the toe is in clay
-    assert r["defaults_used"] == {
+    # sand-toe limit and toe phi are not: the toe is in clay. The inputs
+    # left out with no default are the cases they stand for (GM-165).
+    used = r["defaults_used"]
+    cases = {k: used.pop(k) for k in ("gwt_depth", "displaced_volume",
+                                      "shrink_swell_depth")}
+    assert used == {
         "head_depth": 0.0, "factor_of_safety": 2.5, "method": "auto",
         "include_uplift": False, "adhesion_curve": "auto",
         "adhesion_chart": "fig_7_17"}
+    assert cases["gwt_depth"].startswith("no water table: ")
+    assert cases["shrink_swell_depth"].startswith("no shrink-swell zone: ")
     r = D.call_agent("axial_pile", "axial_pile_capacity",
                      {**_PILE, "factor_of_safety": 3.0, "method": "auto"})
     assert "factor_of_safety" not in r["defaults_used"]
@@ -228,8 +234,8 @@ def test_the_seismic_package_lists_only_its_own_analysis():
                {"analysis_type": "seismic_earth_pressure", "phi": 30,
                 "kh": 0.15})
     # KA has no declared default: the run works it out from phi
-    # (GM-120), so it is not a default the call left in force
-    assert "kv" in mo and "KA" not in mo and "magnitude" not in mo
+    # (GM-120), and lists it as that case (GM-165)
+    assert "kv" in mo and "KA" in mo and "magnitude" not in mo
     liq = _used("calc_package", "seismic_package",
                 {"analysis_type": "liquefaction", "layers": []})
     assert "magnitude" in liq and not {"KA", "kv"} & liq
@@ -560,6 +566,33 @@ def _same(echo, value) -> bool:
     return _diff(echo, value) is None
 
 
+def _specs(agent: str, method: str, params: dict = None) -> dict:
+    """The declared inputs of a run: ``method``'s own and, for a calc
+    package, its tools' (a case is a tool's declaration)."""
+    mod = D._load_adapter(agent)
+    out = {}
+    if agent == "calc_package" and method in getattr(mod, "_PACKAGE_TOOLS",
+                                                     {}):
+        tools = mod._PACKAGE_TOOLS[method]
+        adapter = mod._tool_adapter(method)
+        for tool in set(tools["tools"].values()):
+            for name, spec in adapter.METHOD_INFO[tool]["parameters"].items():
+                if isinstance(spec, dict) and spec.get("when_absent"):
+                    out[name] = spec
+    out.update((mod.METHOD_INFO.get(method) or {}).get("parameters") or {})
+    return out
+
+
+def _cases(agent: str, method: str, params: dict = None) -> dict:
+    """{input: what defaults_used says for it left out} of every input of
+    the run that declares a case, or takes one from the input it defaults
+    to (GM-165)."""
+    specs = _specs(agent, method, params)
+    cases = {name: D.absent_case(spec, specs)
+             for name, spec in specs.items() if isinstance(spec, dict)}
+    return {name: case for name, case in cases.items() if case}
+
+
 def test_every_method_has_a_probe_or_a_reason():
     methods = _analysis_methods()
     probed = {key.split("#")[0] for key in MP.PROBES}
@@ -622,18 +655,27 @@ def test_the_defaults_a_run_lists_are_the_values_it_used(key, tmp_path,
     r0 = _run(agent, method, params)
     assert isinstance(r0, dict) and "error" not in r0, (key, r0)
     used = r0.get("defaults_used") or {}
+    # a left-out input listed as the case it stands for (GM-165) is not a
+    # value to give back: the run had none
+    cases = _cases(agent, method, params)
+
+    def is_case(name, value):
+        return name in cases and value == cases[name]
+
     for name, value in used.items():
         if (base, name) in MP.KNOWN or (base, name) in \
-                MP.ECHO_IS_NOT_THE_INPUT:
+                MP.ECHO_IS_NOT_THE_INPUT or is_case(name, value):
             continue
         echo = r0.get(name)
         if name in r0 and not isinstance(echo, (dict, list)):
             assert _same(echo, value), (
                 f"{key}: defaults_used says {name}={value!r}, the result "
                 f"says {echo!r}")
-    if not used:
+    back = {k: v for k, v in used.items() if not is_case(k, v)
+            and (base, k) not in MP.SHOWN_ONLY_WHEN_GIVEN}
+    if not back:
         return
-    r1 = _run(agent, method, {**params, **used})
+    r1 = _run(agent, method, {**params, **back})
     assert "error" not in r1, (key, r1["error"])
     where = str(tmp_path)
     moved = _diff(_norm(r0, where), _norm(r1, where))
@@ -737,3 +779,234 @@ def test_terzaghi_lists_the_n_gamma_it_used(tmp_path, monkeypatch):
                      {**footing, "factor_method": "terzaghi"})
     assert "error" not in r, r
     assert r["defaults_used"]["ngamma_method"] == "kumbhojkar"
+
+
+# --- GM-165: a left-out input says the case it stands for ------------------
+
+def test_a_left_out_input_with_no_default_is_listed_as_its_case():
+    info = {"parameters": {
+        "gwt_depth": {"type": "float"}, "gwt_passive": {"type": "float"},
+        "phi_backfill": {"default": 30.0}, "phi_foundation": {},
+        "label": {"default": ""}}}
+    from funhouse_agent.adapters import declare_when_absent
+    declare_when_absent({"m": info}, {"m": {
+        "gwt_depth": ("no water table", "total unit weight throughout"),
+        "gwt_passive": "gwt_depth", "phi_foundation": "phi_backfill"}})
+
+    class Mod:
+        METHOD_INFO = {"m": info}
+    assert D._defaults_used(Mod, "m", set(), {}) == {
+        "gwt_depth": "no water table: total unit weight throughout",
+        "gwt_passive": "no water table: total unit weight throughout",
+        "phi_backfill": 30.0, "phi_foundation": 30.0}
+    # given, the other input's value is the one taken; a given input with
+    # a case is not listed
+    used = D._defaults_used(Mod, "m", {"gwt_depth", "phi_backfill"},
+                            {"gwt_depth": 2.0, "phi_backfill": 34.0})
+    assert used == {"gwt_passive": 2.0, "phi_foundation": 34.0}
+
+
+def test_declare_when_absent_refuses_a_slip_on_import():
+    from funhouse_agent.adapters import declare_when_absent
+    info = {"m": {"parameters": {"a": {"default": 1}, "b": {},
+                                 "c": {"default": None}}}}
+    with pytest.raises(KeyError, match="no parameter 'z'"):
+        declare_when_absent(info, {"m": {"z": ("x", "y")}})
+    with pytest.raises(ValueError, match="has a default"):
+        declare_when_absent(info, {"m": {"a": ("x", "y")}})
+    with pytest.raises(ValueError, match="needs what the run takes"):
+        declare_when_absent(info, {"m": {"b": ("x", " ")}})
+    with pytest.raises(KeyError, match="default_from names no other"):
+        declare_when_absent(info, {"m": {"b": "nope"}})
+    with pytest.raises(KeyError, match="default_from names no other"):
+        declare_when_absent(info, {"m": {"b": "b"}})
+    spec = info["m"]["parameters"]["c"]
+    declare_when_absent(info, {"m": {"c": ("none", "basis"), "b": "a"}})
+    assert info["m"]["parameters"]["c"]["when_absent"] == {
+        "case": "none", "basis": "basis"}
+    assert "when_absent" not in spec            # the spec was copied
+    assert info["m"]["parameters"]["b"]["default_from"] == "a"
+
+
+def test_a_case_follows_the_input_it_defaults_to():
+    declared = {"a": {"when_absent": {"case": "none", "basis": "why"}},
+                "b": {"default_from": "a"}, "c": {"default_from": "b"},
+                "d": {"default_from": "e"}, "e": {"default_from": "d"}}
+    assert D.absent_case(declared["c"], declared) == "none: why"
+    assert D.absent_case(declared["c"]) == ""
+    assert D.absent_case(declared["d"], declared) == ""   # a loop ends
+    assert D.case_of(declared["b"], declared) == declared["a"]["when_absent"]
+
+
+def test_describe_method_leaves_the_cases_out():
+    doc = D.describe_method("retaining_walls", "cantilever_wall")
+    for spec in doc["parameters"].values():
+        assert not {"when_absent", "default_from"} & set(spec)
+    from funhouse_agent.adapters.retaining_walls import METHOD_INFO
+    params = METHOD_INFO["cantilever_wall"]["parameters"]
+    assert params["phi_foundation"]["default_from"] == "phi_backfill"
+    assert params["q_allowable"]["when_absent"]["case"]
+
+
+def test_a_passive_water_table_left_out_follows_the_active_side():
+    """Sheet pile: gwt_depth_passive defaults to gwt_depth_active; with
+    neither given both are the no-water-table case, with one given the
+    other takes its value."""
+    walls = MP.PROBES["sheet_pile|cantilever_wall"]["params"]
+    r = D.call_agent("sheet_pile", "cantilever_wall", copy.deepcopy(walls))
+    case = r["defaults_used"]["gwt_depth_active"]
+    assert case.startswith("no water table: ")
+    assert r["defaults_used"]["gwt_depth_passive"] == case
+    r = D.call_agent("sheet_pile", "cantilever_wall",
+                     {**copy.deepcopy(walls), "gwt_depth_active": 3.0})
+    assert r["defaults_used"]["gwt_depth_passive"] == 3.0
+
+
+#: Inputs whose absence is a case a reader must see: a water table, a
+#: surcharge or live load, a second layer, a seismic load.
+_CASE_FAMILY = re.compile(
+    r"(^|_)(gwt|water|phreatic|pore_pressure|surcharge|live_load|layer2|"
+    r"kh|kv|pga|amax|a_max|seismic)(_|$)", re.I)
+#: A description that says what the method does when the input is left
+#: out.
+_SAYS_ABSENT = re.compile(r"default|not given|omitted|omit |auto-sized|"
+                          r"auto if|\(else |computed from|otherwise", re.I)
+#: A description that says when the input is required or what it is the
+#: alternative to: left out, the call is refused or takes the other input.
+_CONDITIONAL = re.compile(
+    r"required (when|for|with)|instead of|alternative|\bor omit\b|"
+    r"used (with|when|if|to compute) .*(omitted|not given)|"
+    r"^for [a-z_]+\s*=", re.I)
+#: Inputs, by name, whose absence is no case, with why.
+_NO_CASE_NAMES = {
+    "assumptions": "the package's statements, not an analysis input",
+    "given": "the package's statement of whose inputs they are",
+    "output_path": "where a file goes", "output_dir": "where files go",
+    "output_prefix": "a file name", "name_prefix": "a file name",
+    "height_in": "a figure's size", "legend": "a figure's furniture",
+    "nails": "an element the call adds: left out, there is none",
+    "anchors": "an element the call adds: left out, there is none",
+    "geosynthetics": "an element the call adds: left out, there is none",
+    "stabilizing_piles": "an element the call adds: left out, there is "
+                         "none",
+    "foundation": "a drawn element the call adds",
+    "member_dist_loads": "loads the call adds: left out, there are none",
+    "nail_defaults": "values for the nails a drawing has",
+}
+#: Inputs, by agent|method|name (a method "*" for all), with why.
+_NO_CASE = {
+    "drawing_ir|*|*": "the drawing tools compute no engineering value; "
+                      "their result names the pages, region and units read",
+    "slope_stability|rapid_drawdown_fos|gwt_points":
+        "the drawdown's pool levels set the water",
+    "slope_stability|rapid_drawdown_fos|pore_pressure_points":
+        "the drawdown's pool levels set the water",
+    "slope_stability|search_rapid_drawdown|gwt_points":
+        "the drawdown's pool levels set the water",
+    "slope_stability|search_rapid_drawdown|pore_pressure_points":
+        "the drawdown's pool levels set the water",
+    "calc_package|slope_report_package|variables":
+        "the reliability annex the call adds",
+}
+
+
+def _states_absence(spec) -> bool:
+    return bool(spec.get("default") is not None
+                or spec.get("default_depends_on") or spec.get("when_absent")
+                or spec.get("default_from")
+                or spec.get("applies_when") is False)
+
+
+def _exempt(agent, method, name, words) -> bool:
+    return bool(name in _NO_CASE_NAMES or _CONDITIONAL.search(words)
+                or {f"{agent}|{method}|{name}", f"{agent}|*|*",
+                    f"{agent}|*|{name}"} & set(_NO_CASE))
+
+
+def _unstated(select) -> list:
+    """Every optional input of an analysis method with no default that
+    ``select(name, description)`` picks and that states no case (a calc
+    package's input states one where a tool it runs does)."""
+    out = []
+    for agent in sorted(D.MODULE_REGISTRY):
+        if agent in D.REFERENCE_MODULES:
+            continue
+        mod = D._load_adapter(agent)
+        packages = getattr(mod, "_PACKAGE_TOOLS", {})
+        for method, info in sorted(mod.METHOD_INFO.items()):
+            tools = []
+            if method in packages:
+                adapter = mod._tool_adapter(method)
+                tools = [adapter.METHOD_INFO[t]["parameters"]
+                         for t in set(packages[method]["tools"].values())]
+            for name, spec in sorted((info.get("parameters") or {}).items()):
+                if not isinstance(spec, dict) or spec.get("required") \
+                        or _states_absence(spec) or any(
+                            _states_absence(t.get(name) or {})
+                            for t in tools):
+                    continue
+                words = spec.get("description") or spec.get("brief") or ""
+                if select(name, words) and not _exempt(agent, method, name,
+                                                       words):
+                    out.append(f"{agent}|{method}|{name}")
+    return out
+
+
+def test_a_water_load_layer_or_seismic_input_left_out_states_its_case():
+    """GM-165: an optional input with no default named for a water table,
+    a surcharge or live load, a second layer or a seismic load says what
+    a call without it is analysed with (``when_absent``) or which input it
+    takes (``default_from``), or is exempt with a reason above."""
+    assert _unstated(lambda name, words: _CASE_FAMILY.search(name)) == []
+
+
+def test_an_input_whose_description_gives_its_absence_declares_it():
+    """GM-165: a description that says what absence means ("Default 2/3
+    phi", "Not given: L = B", "auto-sized") has it declared too, so
+    defaults_used and a calc package print it."""
+    assert _unstated(lambda name, words: _SAYS_ABSENT.search(words)) == []
+
+
+def test_a_left_out_input_that_moves_the_result_states_its_case(
+        tmp_path, monkeypatch):
+    """GM-165: drop each optional input with no default that a probe
+    gives and states no case: the call is refused, or the result does not
+    move, or the input is exempt with a reason above."""
+    monkeypatch.chdir(tmp_path)
+    where, moved = str(tmp_path), []
+    for key, probe in sorted(MP.PROBES.items()):
+        if key in MP.SLOW:
+            continue
+        agent, method = key.split("#")[0].split("|")
+        info = D._load_adapter(agent).METHOD_INFO[method]
+        declared = info.get("parameters") or {}
+        aliases = info.get("parameter_aliases") or {}
+        params = probe["params"]
+        drop = []
+        for given in params:
+            name = aliases.get(given, given)
+            spec = declared.get(name)
+            if isinstance(spec, dict) and not spec.get("required") \
+                    and not _states_absence(spec) and not _exempt(
+                        agent, method, name,
+                        spec.get("description") or spec.get("brief") or ""):
+                drop.append((given, name))
+        if not drop:
+            continue
+        for before in probe.get("before", ()):
+            D.call_agent(before[0], before[1], copy.deepcopy(before[2]))
+        r0 = _run(agent, method, params)
+        for given, name in drop:
+            for before in probe.get("before", ()):
+                D.call_agent(before[0], before[1], copy.deepcopy(before[2]))
+            r1 = _run(agent, method,
+                      {k: v for k, v in params.items() if k != given})
+            if "error" in r1:
+                continue
+            skip = {name, given, "defaults_used", "choices"}
+            a, b = _norm(r0, where), _norm(r1, where)
+            common = (set(a) & set(b)) - skip
+            what = _diff({k: a[k] for k in common}, {k: b[k] for k in common})
+            if what is not None:
+                moved.append(f"{key}: without {name}, {what}")
+    assert moved == []

@@ -221,6 +221,7 @@ def choices_section(result, analysis=None) -> Optional[CalcSection]:
     if not rows:
         return None
     intro = ("The choices this analysis made. \"Given\": in the inputs. "
+             "\"Assumed\": in the inputs, not stated as given by the user. "
              "\"Default\": the module's default value. \"Module's "
              "choice\": the module decided, by the rule in the basis. Each "
              "is the engineer's to accept or change.")
@@ -240,37 +241,52 @@ def _input_value(value) -> str:
 
 def given_section(given) -> Optional[CalcSection]:
     """The calc package's "Given Inputs" section (GM-155), or ``None`` when
-    the caller named none. ``given``: one ``{input, value}`` dict per input
-    the call passed, less those it stated as assumptions. The Values Used
-    echo mixes given, assumed and derived values; this section holds the
-    given ones alone."""
-    rows = [[str(g.get("input") or ""), _input_value(g.get("value"))]
-            for g in given or () if isinstance(g, dict)]
-    rows = [r for r in rows if r[0]]
-    if not rows:
+    the caller did not split given from assumed. ``given``: one ``{input,
+    value, words}`` dict per input the call named as the user's (GM-167;
+    ``words``, the user's own, when given). An empty list says so: no
+    input was named as the user's. The Values Used echo mixes given,
+    assumed and derived values; this section holds the given ones alone."""
+    if given is None:
         return None
-    intro = ("The inputs supplied for this calculation, apart from those "
-             "stated as assumptions.")
+    given = [g for g in given if isinstance(g, dict)
+             and str(g.get("input") or "")]
+    if not given:
+        return CalcSection(title="Given Inputs", items=[
+            "No input was named as given by the user: each input passed is "
+            "listed under Assumed Inputs."])
+    words = any(str(g.get("words") or "").strip() for g in given)
+    rows = [[str(g["input"]), _input_value(g.get("value"))]
+            + ([str(g.get("words") or "").strip()] if words else [])
+            for g in given]
+    intro = "The inputs the user gave for this calculation."
     return CalcSection(title="Given Inputs", items=[intro, TableData(
-        title="Given inputs", headers=["Input", "Value"], rows=rows)])
+        title="Given inputs",
+        headers=["Input", "Value"] + (["As the user gave it"] if words
+                                      else []),
+        rows=rows)])
 
 
 def assumed_section(assumed) -> Optional[CalcSection]:
     """The calc package's "Assumed Inputs" section (GM-155), or ``None``
     when nothing was assumed. ``assumed``: one ``{input, value, basis}``
-    dict per input that was not given -- the analysis's defaults (the
-    result's ``defaults_used``) and the inputs the caller stated as its own
-    assumptions. The Values Used echo prints them among every value used;
-    this section keeps them apart, so an assumption never reads as given."""
+    dict per input that was not given -- the inputs and statements the
+    caller stated as its own assumptions, the inputs it passed and did not
+    name as the user's (GM-167),
+    and the analysis's defaults (the result's ``defaults_used``), a
+    left-out input as the case it stands for ("no water table", GM-165).
+    The Values Used echo prints them among every value used; this section
+    keeps them apart, so an assumption never reads as given."""
     rows = [[str(a.get("input") or ""), _input_value(a.get("value")),
              str(a.get("basis") or "")]
             for a in assumed or () if isinstance(a, dict)]
     rows = [r for r in rows if r[0]]
     if not rows:
         return None
-    intro = ("Assumed, not given: the analysis's defaults and the inputs "
-             "stated as assumptions when this package was made. Each is "
-             "the engineer's to accept or change.")
+    intro = ("Assumed, not given: the assumptions stated when this "
+             "package was made, the inputs passed and not stated as given "
+             "by the user, and the analysis's defaults, an input left out "
+             "as the case it stands for. Each is the engineer's to accept "
+             "or change.")
     return CalcSection(title="Assumed Inputs", items=[intro, TableData(
         title="Assumed inputs", headers=["Input", "Value used", "Basis"],
         rows=rows)])

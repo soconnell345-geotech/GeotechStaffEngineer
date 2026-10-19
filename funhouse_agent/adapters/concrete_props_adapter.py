@@ -58,7 +58,7 @@ METHOD_INFO = {
             "dia_bot": {"type": "float", "required": True, "description": "Bottom bar diameter (mm)."},
             "cover": {"type": "float", "required": False, "default": 40.0, "description": "Clear cover to bar surface (mm), both faces."},
             "n_top": {"type": "int", "required": False, "default": 0, "description": "Top bar count (0 = none)."},
-            "dia_top": {"type": "float", "required": False, "description": "Top bar diameter (mm)."},
+            "dia_top": {"type": "float", "required": False, "default": 0.0, "applies_when": {"n_top": "set"}, "description": "Top bar diameter (mm)."},
             "ec": {"type": "float", "required": False, "description": "Concrete modulus (MPa). Default ACI 4700*sqrt(f'c)."},
             "es": {"type": "float", "required": False, "default": 200000.0, "description": "Steel modulus (MPa)."},
             "include_interaction": {"type": "bool", "required": False, "default": False, "description": "Also compute the N-M interaction diagram."},
@@ -74,3 +74,13 @@ METHOD_INFO = {
 }
 
 declare_aliases(METHOD_INFO, {"rc_rectangular_section": _RC_ALIASES})
+
+
+# What a left-out input with no default stands for (BACKLOG GM-165):
+# the concrete modulus.
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+declare_when_absent(METHOD_INFO, {
+    "rc_rectangular_section": {
+        "ec": ("4700 sqrt(f'c) MPa",
+               "ACI 318's modulus for normal-weight concrete")},
+})

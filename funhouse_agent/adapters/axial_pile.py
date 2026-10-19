@@ -429,3 +429,35 @@ declare_applies_when(METHOD_INFO, {
         "uplift_skin_fraction": {"include_uplift": [True]}},
     "capacity_vs_depth": _APPLIES_WHEN,
 })
+
+
+# What a left-out input with no default stands for (BACKLOG GM-165):
+# the water table, Nordlund's displaced volume, a shrink-swell zone, the
+# reference length and a section's modulus. The capacity does not use E.
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+_NO_WATER = ("no water table",
+             "total unit weight to the pile toe: effective stress equals "
+             "total stress")
+_E = ("by pile material: steel 200 GPa, concrete 25 GPa, none for a "
+      "timber section",
+      "the module's modulus for the material; give E for the pile's own")
+_DISPLACED = ("the steel area of an H-pile, the gross area of other piles",
+              "Nordlund's displaced volume per unit length for the section "
+              "(an open pipe as a closed pipe)")
+_NO_SHRINK_SWELL = ("no shrink-swell zone",
+                    "shaft resistance in cohesive soil counted from the "
+                    "ground surface")
+declare_when_absent(METHOD_INFO, {
+    "axial_pile_capacity": {
+        "gwt_depth": _NO_WATER, "displaced_volume": _DISPLACED,
+        "shrink_swell_depth": _NO_SHRINK_SWELL},
+    "capacity_vs_depth": {
+        "gwt_depth": _NO_WATER, "displaced_volume": _DISPLACED,
+        "shrink_swell_depth": _NO_SHRINK_SWELL,
+        "pile_length": ("the total soil thickness",
+                        "the reference pile length is the depth of the "
+                        "soil profile given")},
+    "make_pile_section": {"E": _E},
+})
+for _m in ("axial_pile_capacity", "capacity_vs_depth"):
+    METHOD_INFO[_m]["parameters"]["E"]["applies_when"] = False

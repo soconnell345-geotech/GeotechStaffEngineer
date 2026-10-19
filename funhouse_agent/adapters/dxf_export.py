@@ -192,3 +192,12 @@ METHOD_INFO = {
         },
     },
 }
+
+
+# What a left-out input with no default stands for (BACKLOG GM-165):
+# no groundwater line.
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+declare_when_absent(METHOD_INFO, {
+    method: {"gwt_points": ("no groundwater line",
+                            "none is written to the drawing")}
+    for method in ("export_geometry_to_dxf", "export_to_dxf_bytes")})

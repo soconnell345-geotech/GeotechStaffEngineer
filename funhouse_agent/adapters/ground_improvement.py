@@ -267,7 +267,7 @@ METHOD_INFO = {
             "time_constraint_months": {"type": "float", "required": False, "default": 0.0, "description": "Time available (months). 0 = no constraint."},
             "cv_m2_per_year": {"type": "float", "required": False, "description": "Vertical coefficient of consolidation (m2/yr)."},
             "Hdr_m": {"type": "float", "required": False, "description": "Vertical drainage path length (m)."},
-            "gwt_depth_m": {"type": "float", "required": False, "description": "Depth to groundwater (m)."},
+            "gwt_depth_m": {"type": "float", "required": False, "description": "Depth to groundwater (m). Taken and not used by the screening."},
         },
         "returns": {"recommended_methods": "List of feasible methods.", "is_feasible": "Overall feasibility."},
     },
@@ -289,3 +289,18 @@ declare_applies_when(METHOD_INFO, {
     "surcharge_preloading": {
         name: {"drain_spacing": "set"}
         for name in ("pattern", "dw", "smear_ratio", "kh_ks_ratio")}})
+
+# What a left-out input with no default stands for (BACKLOG GM-165): the
+# screening's consolidation time needs cv and Hdr; the water table is taken
+# and not used by the screening.
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+_NO_TIME = ("consolidation time not estimated",
+            "the time to 90 % consolidation without drains needs both cv "
+            "and Hdr; the result asks for them")
+declare_when_absent(METHOD_INFO, {
+    "feasibility": {"cv_m2_per_year": _NO_TIME, "Hdr_m": _NO_TIME}})
+for _name in ("cv_m2_per_year", "Hdr_m"):
+    METHOD_INFO["feasibility"]["parameters"][_name]["applies_when"] = {
+        "time_constraint_months": "set"}
+METHOD_INFO["feasibility"]["parameters"]["gwt_depth_m"]["applies_when"] = \
+    False

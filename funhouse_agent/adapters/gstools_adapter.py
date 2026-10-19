@@ -512,3 +512,39 @@ declare_applies_when(METHOD_INFO, {
     "kriging": {"nugget": {"fit_variogram": [False]},
                 "quantity": {"regions": "set"}},
     "variogram": {"nugget": False}})
+
+
+# What a left-out input with no default stands for (BACKLOG GM-165):
+# the grid, the variogram's starting values, the cell size and north.
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+_VARIANCE = ("the sample variance of the observations",
+             "flagged in the result; state its basis")
+_LEN_SCALE = ("a third of the data extent",
+              "flagged in the result; state its basis")
+_CELL = ("the smallest round size giving at most about 3,000 cells",
+         "the cell size for the region totals")
+declare_when_absent(METHOD_INFO, {
+    "kriging": {
+        "grid_x_min": ("the smallest x less 10 % of the data's x range",
+                       "the grid's extent"),
+        "grid_x_max": ("the largest x plus 10 % of the data's x range",
+                       "the grid's extent"),
+        "grid_y_min": ("the smallest y less 10 % of the data's y range",
+                       "the grid's extent"),
+        "grid_y_max": ("the largest y plus 10 % of the data's y range",
+                       "the grid's extent"),
+        "variance": ("the sample variance of the observations",
+                     "with fit_variogram, the starting guess for the fit"),
+        "len_scale": ("a third of the data extent",
+                      "with fit_variogram, the starting guess for the fit"),
+        "cell_size": _CELL},
+    "conditional_simulation": {
+        "variance": _VARIANCE, "len_scale": _LEN_SCALE, "cell_size": _CELL,
+        "nugget": ("0, or the largest measurement_error",
+                   "with a nugget the field does not pass exactly through "
+                   "the data"),
+        "report_values": ("round values per region and level",
+                          "the totals the exceedance table reports"),
+        "north_deg": ("north straight up",
+                      "the source plan's north was not given")},
+})

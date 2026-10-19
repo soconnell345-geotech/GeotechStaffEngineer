@@ -128,3 +128,14 @@ METHOD_INFO = {
         },
     },
 }
+
+
+# What a left-out input with no default stands for (BACKLOG GM-165):
+# the supports of a continuous beam.
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+declare_when_absent(METHOD_INFO, {
+    "continuous_beam": {
+        "support_types": ("pinned, then rollers",
+                          "the first support pinned and the others on "
+                          "rollers")},
+})

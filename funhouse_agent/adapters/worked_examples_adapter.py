@@ -70,7 +70,7 @@ METHOD_INFO = {
             "domain": {"type": "str", "required": False,
                        "brief": "Optional module-name filter, e.g. "
                                 "'slope_stability', 'pavement_design'."},
-            "limit": {"type": "int", "required": False,
+            "limit": {"type": "int", "required": False, "default": 3,
                       "brief": "Max results (default 3)."},
         },
     },

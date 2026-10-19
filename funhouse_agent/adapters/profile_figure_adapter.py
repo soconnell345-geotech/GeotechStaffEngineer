@@ -1016,3 +1016,26 @@ if _chart_lines():
         "the extent drawn over.")
 
 declare_aliases(METHOD_INFO, {"plot_data": _PLOT_ALIASES})
+
+
+# What a left-out input with no default stands for (BACKLOG GM-165):
+# no water table or surcharge drawn, the ground surface, and north.
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+_NO_WATER_DRAWN = ("no water table drawn", "none was given")
+declare_when_absent(METHOD_INFO, {
+    "subsurface_profile": {
+        "water_elevation": _NO_WATER_DRAWN,
+        "water_depth": _NO_WATER_DRAWN,
+        "surcharge": ("no surcharge drawn", "none was given"),
+        "ground_elevation": ("the first layer's top elevation, else 0",
+                             "with thickness-only layers the axis reads as "
+                             "depth below the ground")},
+    "plot_data": {
+        "north_deg": ("north straight up",
+                      "the source plan's north was not given; the result "
+                      "says so")},
+})
+METHOD_INFO["subsurface_profile"]["parameters"]["water_elevation"][
+    "applies_when"] = {"water_depth": "unset"}
+METHOD_INFO["subsurface_profile"]["parameters"]["water_depth"][
+    "applies_when"] = {"water_elevation": "unset"}

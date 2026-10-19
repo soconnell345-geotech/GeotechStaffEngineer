@@ -84,11 +84,24 @@ def test_given_section_lists_each_given_input():
                              {"input": "", "value": 1}, "not a row"])
     assert section.title == "Given Inputs"
     intro, table = section.items
-    assert intro.startswith("The inputs supplied for this calculation")
+    assert intro == "The inputs the user gave for this calculation."
     assert table.headers == ["Input", "Value"]
     assert table.rows == [["Footing width B (m)", "2"],
                           ["Layers", '[{"top": 0}]']]
-    assert given_section(None) is None and given_section([]) is None
+    assert given_section(None) is None
+    # none named as the user's: the section says so (GM-167)
+    for none in ([], [{"input": "", "value": 1}]):
+        assert given_section(none).items == [
+            "No input was named as given by the user: each input passed "
+            "is listed under Assumed Inputs."]
+    # the user's own words, where the call has them
+    _, table = given_section([
+        {"input": "Footing width B (m)", "value": 2.0,
+         "words": "a 2 m wide footing"},
+        {"input": "Depth (m)", "value": 1.0}]).items
+    assert table.headers == ["Input", "Value", "As the user gave it"]
+    assert table.rows == [["Footing width B (m)", "2", "a 2 m wide footing"],
+                          ["Depth (m)", "1", ""]]
 
 
 def test_values_print_as_the_package_prints_cells():

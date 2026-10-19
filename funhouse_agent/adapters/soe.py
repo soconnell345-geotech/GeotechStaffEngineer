@@ -251,7 +251,7 @@ METHOD_INFO = {
         "parameters": {"required_Sx_cm3": {"type": "float", "required": True, "description": "Required section modulus (cm3)."}, "section_type": {"type": "str", "required": False, "default": "hp", "allowed_values": ["hp", "sheet_pile", "w"], "description": "Section family."}},
         "returns": {"designation": "Section designation.", "Sx_cm3": "Section modulus."}},
     "check_basal_heave": {"category": "Stability", "brief": "Basal heave stability check (Terzaghi, Bjerrum-Eide, or Caltrans force-balance).",
-        "parameters": {"H": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "cu": {"type": "float", "required": True, "description": "Undrained shear strength (kPa)."}, "gamma": {"type": "float", "required": True, "description": "Soil unit weight (kN/m3)."}, "method": {"type": "str", "required": False, "default": "terzaghi", "allowed_values": ["terzaghi", "bjerrum_eide", "caltrans"], "description": "Check method. bjerrum_eide requires Be+Le (inverted-footing bearing ratio, NO side shear). caltrans requires B (Caltrans/Terzaghi force-balance with sidewall shear S=cu*H and the 0.7B block; optional L for the rectangular Nc correction)."}, "B": {"type": "float", "required": False, "default": 0.0, "description": "Excavation width (m); terzaghi and caltrans methods."}, "L": {"type": "float", "required": False, "description": "Excavation length (m) for the caltrans rectangular Nc correction (default square)."}, "Nc": {"type": "float", "required": False, "description": "Explicit chart-read bearing factor Nc (caltrans); default from the Skempton/Bjerrum-Eide form."}, "Be": {"type": "float", "required": False, "description": "Excavation width (m). REQUIRED for bjerrum_eide."}, "Le": {"type": "float", "required": False, "description": "Excavation length (m). REQUIRED for bjerrum_eide."}, "width_factor": {"type": "float", "required": False, "default": 0.7, "description": "Failure-block width as a fraction of B (caltrans). Default 0.7 (Terzaghi)."}, "q_surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."}, "FOS_required": {"type": "float", "required": False, "default": 1.5, "description": "Required FOS."}},
+        "parameters": {"H": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "cu": {"type": "float", "required": True, "description": "Undrained shear strength (kPa)."}, "gamma": {"type": "float", "required": True, "description": "Soil unit weight (kN/m3)."}, "method": {"type": "str", "required": False, "default": "terzaghi", "allowed_values": ["terzaghi", "bjerrum_eide", "caltrans"], "description": "Check method. bjerrum_eide requires Be+Le (inverted-footing bearing ratio, NO side shear). caltrans requires B (Caltrans/Terzaghi force-balance with sidewall shear S=cu*H and the 0.7B block; optional L for the rectangular Nc correction)."}, "B": {"type": "float", "required": False, "default": 0.0, "description": "Excavation width (m); terzaghi and caltrans methods."}, "L": {"type": "float", "required": False, "description": "Excavation length (m) for the caltrans rectangular Nc correction (default square)."}, "Nc": {"type": "float", "required": False, "description": "Explicit chart-read bearing factor Nc (caltrans); default Skempton's (1951) Nc = 5.14 (1 + 0.2 B/L)(1 + 0.2 H/B), H/B capped at 2.5."}, "Be": {"type": "float", "required": False, "description": "Excavation width (m). REQUIRED for bjerrum_eide."}, "Le": {"type": "float", "required": False, "description": "Excavation length (m). REQUIRED for bjerrum_eide."}, "width_factor": {"type": "float", "required": False, "default": 0.7, "description": "Failure-block width as a fraction of B (caltrans). Default 0.7 (Terzaghi)."}, "q_surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."}, "FOS_required": {"type": "float", "required": False, "default": 1.5, "description": "Required FOS."}},
         "returns": {"FOS": "Factor of safety.", "is_stable": "Pass/fail."}},
     "fhwa_apparent_pressure_anchored_wall": {"category": "Earth Pressure", "brief": "FHWA/GEC-4 apparent-pressure anchored-wall design (tributary method): apparent envelope pe + tributary anchor loads + subgrade reaction + hinge moments + anchor design loads.",
         "parameters": {"H": {"type": "float", "required": True, "description": "Total wall height (m)."}, "anchor_depths": {"type": "array", "required": True, "description": "Depths of the anchor levels below the top of wall (m), e.g. [2.5, 6.25]."}, "gamma": {"type": "float", "required": True, "description": "Retained-soil unit weight (kN/m3)."}, "phi": {"type": "float", "required": True, "description": "Retained-soil friction angle (deg)."}, "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Uniform surface surcharge q (kPa); adds ps = Ka*q."}, "spacing": {"type": "float", "required": False, "default": 1.0, "description": "Horizontal anchor spacing (m) for the design loads."}, "inclination_deg": {"type": "float", "required": False, "default": 0.0, "description": "Anchor inclination from horizontal (deg)."}, "Ka": {"type": "float", "required": False, "description": "Active coefficient override (default Rankine Ka)."}, "Kp": {"type": "float", "required": False, "description": "Single anchor: passive coefficient below the excavation (default Rankine; pass a log-spiral value)."}, "FOS_embedment": {"type": "float", "required": False, "default": 1.3, "description": "Single anchor: embedment FS, MR = FS*MD (Caltrans)."}},
@@ -284,3 +284,33 @@ METHOD_INFO["cantilever_excavation"]["refused_parameters"] = {
 declare_applies_when(METHOD_INFO, {
     "check_basal_heave": {"width_factor": {"method": ["caltrans"]}},
     "apparent_pressure": {"surcharge": False}})
+
+
+# What a left-out input with no default stands for (BACKLOG GM-165):
+# the water table on each side, the Caltrans basal-heave length and Nc,
+# and the FHWA wall's earth pressure coefficients.
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+_NO_WATER = ("no water table",
+             "no water pressure on the wall; total unit weight throughout")
+declare_when_absent(METHOD_INFO, {
+    "braced_excavation": {"gwt_depth": _NO_WATER,
+                          "gwt_depth_excavation": "gwt_depth"},
+    "cantilever_excavation": {"gwt_depth": _NO_WATER,
+                              "gwt_depth_excavation": "gwt_depth"},
+    "apparent_pressure": {"gwt_depth": _NO_WATER},
+    "check_basal_heave": {
+        "L": "B",
+        "Nc": ("Skempton's (1951) Nc from H/B and B/L",
+               "Nc = 5.14 (1 + 0.2 B/L)(1 + 0.2 H/B), H/B capped at 2.5, "
+               "the chart the Caltrans heave method reads; give Nc for "
+               "another chart reading")},
+    "fhwa_apparent_pressure_anchored_wall": {
+        "Ka": ("Rankine Ka from phi",
+               "a vertical wall and level ground; give Ka for another case"),
+        "Kp": ("Rankine Kp from phi",
+               "no wall friction; give a log-spiral value for a wall with "
+               "friction")},
+})
+for _name in ("L", "Nc"):
+    METHOD_INFO["check_basal_heave"]["parameters"][_name][
+        "applies_when"] = {"method": ["caltrans"]}

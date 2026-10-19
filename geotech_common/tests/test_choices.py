@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 
 from geotech_common.choices import (
-    DEFAULT, GIVEN, MODULE, call_inputs, choice, choice_rows, choices_from,
-    choices_lines, how_given, plain,
+    ASSUMED, DEFAULT, GIVEN, MODULE, call_inputs, choice, choice_rows,
+    choices_from, choices_lines, how_given, plain,
 )
 
 
@@ -19,9 +19,10 @@ def test_entry_keeps_what_chosen_how_and_drops_empty_parts():
     assert c["alternatives"] == ["noncircular"]
 
 
-def test_how_must_be_one_of_three():
+def test_how_must_be_one_of_four():
     with pytest.raises(ValueError, match="how must be one of"):
-        choice("x", 1, "assumed")
+        choice("x", 1, "guessed")
+    assert choice("x", 1, ASSUMED)["how"] == "assumed"
 
 
 def test_numpy_values_become_plain():
@@ -47,6 +48,19 @@ def test_inside_a_call_how_given_answers_by_the_inputs_named():
     assert inputs.reported == {"e0_secondary"}
     # outside a call: by value, as before
     assert how_given("2:1", "2:1", name="stress_method") == DEFAULT
+
+
+def test_a_given_name_the_call_says_is_not_the_users_is_assumed():
+    """GM-167: a calc package told which inputs the user did not give
+    (a method the agent chose, a stated assumption) has the module say
+    "assumed" for them, never "given"."""
+    with call_inputs({"stress_method", "B"}, (),
+                     assumed={"stress_method"}) as inputs:
+        assert how_given("2:1", "2:1", name="stress_method") == ASSUMED
+        assert how_given(2.0, 1.0, name="B") == GIVEN
+    assert inputs.reported == set()
+    assert choice_rows([choice("x", "y", ASSUMED)]) == [
+        ["x", "y", "assumed", "", ""]]
 
 
 def test_printed_text_leaves_out_the_keys_named_for_the_agent():

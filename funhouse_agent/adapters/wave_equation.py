@@ -187,7 +187,7 @@ _HAMMER_CUSHION_DOC = {
     "hammer_custom_name": {"type": "str", "required": False, "default": "Custom", "description": "Custom hammer label."},
     "hammer_type": {"type": "str", "required": False, "default": "single_acting", "allowed_values": ["single_acting", "diesel", "hydraulic"], "description": "Custom hammer type."},
     "segment_length": {"type": "float", "required": False, "default": 1.0, "description": "Pile segment length (m)."},
-    "cushion_stiffness": {"type": "float", "required": False, "description": "Cushion stiffness (kN/m). Or give cushion_area + cushion_thickness + cushion_E. Default cushion used if omitted."},
+    "cushion_stiffness": {"type": "float", "required": False, "default": 500000.0, "description": "Cushion stiffness (kN/m). Or give cushion_area + cushion_thickness + cushion_E. Default 500,000 kN/m when neither is given."},
     "cushion_area": {"type": "float", "required": False, "description": "Cushion area (m2) — with cushion_thickness and cushion_E."},
     "cushion_thickness": {"type": "float", "required": False, "description": "Cushion thickness (m)."},
     "cushion_E": {"type": "float", "required": False, "description": "Cushion elastic modulus (kPa)."},
@@ -273,3 +273,8 @@ declare_applies_when(METHOD_INFO, {
     m: {name: {"hammer_name": "unset"}
         for name in ("efficiency", "hammer_type")}
     for m in ("bearing_graph", "drivability", "single_blow")})
+
+# The default cushion, when no cushion is described (GM-165).
+for _m in ("single_blow", "bearing_graph", "drivability"):
+    METHOD_INFO[_m]["parameters"]["cushion_stiffness"]["applies_when"] = {
+        "cushion_area": "unset"}

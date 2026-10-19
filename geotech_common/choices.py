@@ -10,8 +10,10 @@ result carries them as a ``choices`` list, one entry per choice:
 * ``what``: the quantity or method ("side resistance method");
 * ``chosen``: what was used ("Nordlund, 0-10 m");
 * ``how``: ``"given"`` (in the inputs), ``"default"`` (the module's default
-  value) or ``"module"`` (the module decided, e.g. ``method="auto"``
-  resolved by soil type);
+  value), ``"module"`` (the module decided, e.g. ``method="auto"``
+  resolved by soil type) or ``"assumed"`` (in the inputs, but a calc
+  package's call said the user did not give it: a method the agent chose,
+  or an input it stated as an assumption; GM-167);
 * ``basis``: the reason, cited in the reference's own terms, where one
   exists;
 * ``alternatives``: the other options the module offers.
@@ -44,10 +46,12 @@ from typing import Any, FrozenSet, Iterable, Iterator, List, Optional, Set
 GIVEN = "given"
 DEFAULT = "default"
 MODULE = "module"
-HOW = (GIVEN, DEFAULT, MODULE)
+ASSUMED = "assumed"
+HOW = (GIVEN, DEFAULT, MODULE, ASSUMED)
 
 #: How each ``how`` reads in a summary or a calc package.
-HOW_TEXT = {GIVEN: "given", DEFAULT: "default", MODULE: "module's choice"}
+HOW_TEXT = {GIVEN: "given", DEFAULT: "default", MODULE: "module's choice",
+            ASSUMED: "assumed"}
 
 
 def _plain(value: Any) -> Any:
@@ -74,7 +78,7 @@ def choice(what: str, chosen: Any, how: str, basis: str = "",
     chosen : str, number or bool
         What was used.
     how : str
-        ``"given"``, ``"default"`` or ``"module"``.
+        ``"given"``, ``"default"``, ``"module"`` or ``"assumed"``.
     basis : str, optional
         The reason, with its reference where one governs.
     alternatives : iterable of str, optional
@@ -93,15 +97,19 @@ def choice(what: str, chosen: Any, how: str, basis: str = "",
 
 class CallInputs:
     """The inputs of one ``call_agent`` call (GM-118): the names it gave
-    (``given``), the declared defaults it left in force (``defaults``), and
-    the names :func:`how_given` has called "default" so far
+    (``given``), the declared defaults it left in force (``defaults``), the
+    names it gave that are not the user's (``assumed``: a calc package's
+    stated assumptions and the methods it was not told the user gave,
+    GM-167), and the names :func:`how_given` has called "default" so far
     (``reported``)."""
 
-    __slots__ = ("given", "defaults", "reported")
+    __slots__ = ("given", "defaults", "assumed", "reported")
 
-    def __init__(self, given: Iterable[str], defaults: Iterable[str]):
+    def __init__(self, given: Iterable[str], defaults: Iterable[str],
+                 assumed: Iterable[str] = ()):
         self.given: FrozenSet[str] = frozenset(given)
         self.defaults: FrozenSet[str] = frozenset(defaults)
+        self.assumed: FrozenSet[str] = frozenset(assumed)
         self.reported: Set[str] = set()
 
 
@@ -110,12 +118,13 @@ _CALL: ContextVar[Optional[CallInputs]] = ContextVar(
 
 
 @contextmanager
-def call_inputs(given: Iterable[str],
-                defaults: Iterable[str] = ()) -> Iterator[CallInputs]:
-    """Run a method call with the names it was given and the declared
-    defaults it left in force known to :func:`how_given`; yields the
+def call_inputs(given: Iterable[str], defaults: Iterable[str] = (),
+                assumed: Iterable[str] = ()) -> Iterator[CallInputs]:
+    """Run a method call with the names it was given, the declared
+    defaults it left in force and the given names that are not the user's
+    (``assumed``) known to :func:`how_given`; yields the
     :class:`CallInputs`, whose ``reported`` the caller reads after."""
-    record = CallInputs(given, defaults)
+    record = CallInputs(given, defaults, assumed)
     token = _CALL.set(record)
     try:
         yield record
@@ -127,14 +136,15 @@ def how_given(value: Any, default: Any, name: Optional[str] = None) -> str:
     """``"given"`` or ``"default"``: whether the input was given.
 
     With ``name`` (the input as the tool declares it) inside
-    :func:`call_inputs`: ``"given"`` when the call named it, ``"default"``
+    :func:`call_inputs`: ``"given"`` when the call named it (``"assumed"``
+    when the call also said it is not the user's, GM-167), ``"default"``
     when it left that declared default in force. Otherwise, and for a value
     nested inside an input: ``"default"`` when ``value`` equals the
     module's ``default``, else ``"given"``."""
     record = _CALL.get()
     if name is not None and record is not None:
         if name in record.given:
-            return GIVEN
+            return ASSUMED if name in record.assumed else GIVEN
         if name in record.defaults:
             record.reported.add(name)
             return DEFAULT
@@ -195,6 +205,7 @@ def choice_rows(choices: Optional[List[dict]]) -> List[list]:
     return rows
 
 
-__all__ = ["GIVEN", "DEFAULT", "MODULE", "HOW", "HOW_TEXT", "choice",
+__all__ = ["GIVEN", "DEFAULT", "MODULE", "ASSUMED", "HOW", "HOW_TEXT",
+           "choice",
            "how_given", "call_inputs", "CallInputs", "choices_lines",
            "choices_from", "plain", "choice_rows"]

@@ -738,3 +738,32 @@ declare_aliases(METHOD_INFO, {
 declare_applies_when(METHOD_INFO, {
     "design_traffic_esals": {"sn": {"pavement_type": ["flexible"]},
                              "d_in": {"pavement_type": ["rigid"]}}})
+
+
+# What a left-out input with no default stands for (BACKLOG GM-165): the
+# lane fraction, the serviceability loss, the load transfer coefficient,
+# the first trial
+# period and a two-layer UFC section.
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+_DELTA_PSI = ("po - pt", "the design serviceability loss from the initial "
+              "and terminal serviceability (AASHTO 1993 Sec. 2.2.1)")
+declare_when_absent(METHOD_INFO, {
+    "design_traffic_esals": {
+        "lane_factor": ("the Sec. 2.1.2 table midpoint",
+                        "the design-lane fraction DL for the lanes in each "
+                        "direction (AASHTO 1993 Sec. 2.1.2)")},
+    "flexible_pavement_design": {"delta_psi": _DELTA_PSI},
+    "rigid_pavement_design": {
+        "delta_psi": _DELTA_PSI,
+        "j": ("the Table 2.6 midpoint",
+              "J from pavement_type, shoulder_type and load_transfer_devices "
+              "(AASHTO 1993 Table 2.6)")},
+    "performance_period": {
+        "initial_trial_yr": ("0.9 times the cap",
+                             "the first trial performance period")},
+    "flexible_pavement_design_ufc": {
+        "cbr_subbase": ("a two-layer section", "no subbase")},
+})
+# Cd's default is for a call that names no drainage quality.
+METHOD_INFO["rigid_pavement_design"]["parameters"]["cd"]["applies_when"] = {
+    "drainage_quality": "unset"}

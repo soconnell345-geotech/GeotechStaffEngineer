@@ -205,9 +205,10 @@ def generate_calc_package(
         Values Used, so an assumption never reads as given. ``None``: no
         such section.
     given_inputs : list of dict, optional
-        The inputs the caller gave, one ``{input, value}`` each, less those
-        it stated as assumptions (GM-155). Printed first, as "Given
-        Inputs". ``None``: no such section.
+        The inputs the user gave, one ``{input, value, words}`` each
+        (GM-155, GM-167; ``words``: the user's own, when known). Printed
+        first, as "Given Inputs"; an empty list says no input was named as
+        the user's. ``None``: no such section.
 
     Returns
     -------

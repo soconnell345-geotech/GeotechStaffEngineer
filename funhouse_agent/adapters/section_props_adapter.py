@@ -74,3 +74,17 @@ METHOD_INFO = {
 # When each default applies (GM-119): the root radius to an I-section.
 declare_applies_when(METHOD_INFO, {
     "section_properties": {"r": {"shape": ["i_section"]}}})
+
+
+# What a left-out input with no default stands for (BACKLOG GM-165):
+# the corner radius and the torsion grid.
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+_GRID = ("150 cells across the section",
+         "the grid for a polygon's torsion constant J")
+declare_when_absent(METHOD_INFO, {
+    "section_properties": {
+        "r_out": ("2 t", "the outer corner radius of a rectangular hollow "
+                  "section"),
+        "mesh_size": _GRID},
+    "polygon_section": {"mesh_size": _GRID},
+})

@@ -1,7 +1,7 @@
 """Retaining walls adapter — cantilever + MSE wall analysis + earth pressure coefficients."""
 
 from funhouse_agent.adapters import (
-    apply_aliases, declare_aliases, declare_applies_when,
+    apply_aliases, declare_aliases, declare_applies_when, declare_when_absent,
     reject_unknown_params, require_params, without_unused,
 )
 from retaining_walls import earth_pressure as _ep
@@ -524,12 +524,20 @@ METHOD_INFO["mse_lrfd_external_stability"]["refused_parameters"] = {
 # When each default applies (GM-119): the key depth to a wall with a shear
 # key, the custom reinforcement's properties to a custom reinforcement (a
 # reinforcement_Tallowable and no built-in name), and the traffic thrust's
-# vertical component to a sloping backfill carrying a surcharge.
+# vertical component to a sloping backfill carrying a surcharge; since
+# GM-165 the foundation soil's unit weight to passive resistance, its
+# friction angle to the base friction it sets and to passive, the base
+# adhesion to a foundation cohesion, and a crest height to a sloping
+# backfill.
 _TRAFFIC = {"traffic_vertical_resists": {"backfill_slope": "set",
                                          "surcharge": "set"}}
 declare_applies_when(METHOD_INFO, {
     "cantilever_wall": {
         "key_depth": {"has_shear_key": [True]},
+        "gamma_foundation": {"include_passive": [True]},
+        "phi_foundation": [{"delta_base": "unset"},
+                           {"include_passive": [True]}],
+        "base_adhesion": {"c_foundation": "set"},
         "live_load_resists": {"surcharge": "set"},
         "dead_load_resists": {"dead_load_surcharge": "set"},
         "surcharge_in_bearing": [{"surcharge": "set"},
@@ -541,6 +549,72 @@ declare_applies_when(METHOD_INFO, {
                      "reinforcement_Fy", "reinforcement_thickness",
                      "reinforcement_transverse_spacing")}, **_TRAFFIC,
         "live_load_resists": {"surcharge": "set"},
-        "surcharge_in_bearing": {"surcharge": "set"}},
-    "mse_lrfd_external_stability": _TRAFFIC,
+        "surcharge_in_bearing": {"surcharge": "set"},
+        "broken_backslope_height": {"backfill_slope": "set"}},
+    "mse_lrfd_external_stability": {
+        **_TRAFFIC,
+        "broken_backslope_height": {"backfill_slope": "set"}},
+})
+
+# What a left-out input with no default stands for (GM-165): a part the
+# module sizes, the foundation and retained soils taken as the backfill,
+# the base friction and adhesion it works out, a slope that continues, and
+# a bearing check not run.
+_NOT_SIZED = "a trial proportion; give it for the wall as designed"
+_REINFORCEMENT_LENGTH = (
+    "0.7 H, at least 2.5 m",
+    "GEC-11's preliminary reinforcement length L = max(0.7H, 8 ft "
+    "[2.5 m]); give reinforcement_length for the wall as designed")
+_SLOPE_CONTINUES = (
+    "a slope that continues",
+    "with a backfill slope and no crest height, the slope is taken to "
+    "continue behind the wall (GEC-11 Sec. 4.4.4)")
+declare_when_absent(METHOD_INFO, {
+    "cantilever_wall": {
+        "base_width": ("B = 0.6 H, sized by the module", _NOT_SIZED),
+        "toe_length": ("0.1 B, sized by the module", _NOT_SIZED),
+        "stem_thickness_base": (
+            "the larger of 0.08 H + 0.2 m and the stem thickness at the top, "
+            "sized by the module", _NOT_SIZED),
+        "phi_foundation": "phi_backfill",
+        "gamma_foundation": "gamma_backfill",
+        "delta_base": ("2/3 of the foundation soil friction angle",
+                       "the sliding check's base friction delta_b = (2/3) "
+                       "phi_foundation; give delta_base to set it directly"),
+        "base_adhesion": ("2/3 of the foundation soil cohesion",
+                          "the sliding check's base adhesion ca = (2/3) "
+                          "c_foundation; give base_adhesion to set it "
+                          "directly"),
+        "q_allowable": ("bearing not checked",
+                        "with no allowable bearing pressure the bearing "
+                        "check is not run (checks_not_run lists it)"),
+    },
+    "mse_wall": {
+        "reinforcement_length": _REINFORCEMENT_LENGTH,
+        "phi_retained": "phi_backfill",
+        "gamma_retained": "gamma_backfill",
+        "broken_backslope_height": _SLOPE_CONTINUES,
+        "gamma_foundation": "gamma_backfill",
+        "phi_foundation": "phi_backfill",
+        "q_allowable": ("bearing not checked",
+                        "with no allowable bearing pressure the external "
+                        "bearing check is not run (checks_not_run lists "
+                        "it)"),
+    },
+    "mse_lrfd_external_stability": {
+        "reinforcement_length": _REINFORCEMENT_LENGTH,
+        "broken_backslope_height": _SLOPE_CONTINUES,
+        "phi_foundation": "phi_backfill",
+        "phi_retained": "phi_backfill",
+        "gamma_retained": "gamma_backfill",
+        "live_load": "surcharge",
+        "bearing_resistance_strength": (
+            "bearing not checked at the strength limit",
+            "with no factored bearing resistance qR the Strength I bearing "
+            "CDR is not computed (checks_not_run lists it)"),
+        "bearing_resistance_service": (
+            "bearing not checked at the service limit",
+            "with no service bearing resistance the Service I bearing CDR "
+            "is not computed (checks_not_run lists it)"),
+    },
 })

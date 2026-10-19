@@ -2,6 +2,7 @@
 
 from funhouse_agent.adapters import (apply_aliases, declare_aliases,
                                      declare_applies_when,
+                                     declare_when_absent,
                                      reject_unknown_params, require_params)
 from bearing_capacity.footing import Footing
 from bearing_capacity.soil_profile import SoilLayer, BearingSoilProfile
@@ -167,12 +168,12 @@ METHOD_INFO = {
             "friction_angle": {"type": "float", "required": False, "default": 0.0, "description": "Friction angle phi (degrees)."},
             "unit_weight": {"type": "float", "required": True, "description": "Soil unit weight gamma (kN/m3)."},
             "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth below surface (m)."},
-            "layer2_cohesion": {"type": "float", "required": False, "description": "Second layer cohesion (kPa)."},
-            "layer2_friction_angle": {"type": "float", "required": False, "description": "Second layer phi (degrees)."},
+            "layer2_cohesion": {"type": "float", "required": False, "default": 0.0, "description": "Second layer cohesion (kPa)."},
+            "layer2_friction_angle": {"type": "float", "required": False, "default": 0.0, "description": "Second layer phi (degrees)."},
             "layer2_unit_weight": {"type": "float", "required": False, "description": "Second layer gamma (kN/m3). Triggers 2-layer analysis."},
             "layer1_thickness": {"type": "float", "required": False, "description": "First layer thickness (m) for 2-layer."},
-            "layer1_description": {"type": "str", "required": False, "description": "First layer label for the result."},
-            "layer2_description": {"type": "str", "required": False, "description": "Second layer label for the result."},
+            "layer1_description": {"type": "str", "required": False, "default": "", "description": "First layer label for the result."},
+            "layer2_description": {"type": "str", "required": False, "default": "", "description": "Second layer label for the result."},
             "factor_of_safety": {"type": "float", "required": False, "default": 3.0, "description": "Factor of safety."},
             "factor_method": {"type": "str", "required": False, "default": "vesic", "allowed_values": ["vesic", "meyerhof", "terzaghi"], "description": "Shape/depth/inclination-factor method. Hansen applies to N-gamma only: use ngamma_method='hansen'. 'terzaghi' = Terzaghi (1943): his Nc, Nq, N-gamma and shape coefficients (1.3cNc; 0.4/0.3 gamma B Ngamma square/circular), no depth or inclination factors; not for inclined loads, slopes or tilted bases (UFC 3-220-20 Table 5-3)."},
             "ngamma_method": {"type": "str", "required": False, "default_depends_on": {"parameter": "factor_method", "values": {"terzaghi": "kumbhojkar"}, "otherwise": "vesic"}, "allowed_values": ["vesic", "meyerhof", "hansen", "kumbhojkar", "coduto"], "description": "Ngamma factor method (may differ from factor_method). Default depends on factor_method: 'kumbhojkar' with factor_method='terzaghi', else 'vesic'. With factor_method='terzaghi' (Terzaghi gave N-gamma only as a chart): 'kumbhojkar' (Kumbhojkar 1993 as tabulated in Das) or 'coduto' (Coduto et al. 2016 approximation, UFC 3-220-20 Table 5-2); the result reports the other beside it."},
@@ -212,8 +213,27 @@ declare_aliases(METHOD_INFO, {
 # N-gamma source go with Terzaghi's factors only.
 declare_applies_when(METHOD_INFO, {
     "bearing_capacity_analysis": {
-        "failure_mode": {"factor_method": ["terzaghi"]}},
+        "failure_mode": {"factor_method": ["terzaghi"]},
+        "layer2_cohesion": {"layer2_unit_weight": "set"},
+        "layer2_friction_angle": {"layer2_unit_weight": "set"}},
     "bearing_capacity_factors": {
         "ngamma_method": {"method": ["terzaghi"]},
         "failure_mode": {"method": ["terzaghi"]}},
+})
+
+# What a left-out input with no default stands for (GM-165): the water
+# table, the second layer and the footing length.
+declare_when_absent(METHOD_INFO, {
+    "bearing_capacity_analysis": {
+        "gwt_depth": ("no water table",
+                      "total unit weight above and below the base, as for "
+                      "a water table more than B below the base (Vesic "
+                      "1973; FHWA GEC-6)"),
+        "layer2_unit_weight": ("one soil layer",
+                               "the first layer's strength and unit weight "
+                               "throughout the zone below the base"),
+        "length": ("set by shape and width",
+                   "a strip is taken as infinitely long; a square or "
+                   "circular footing has L = B"),
+    },
 })

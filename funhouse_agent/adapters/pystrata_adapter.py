@@ -150,3 +150,14 @@ METHOD_INFO = {
         },
     },
 }
+
+
+# What a left-out input with no default stands for (BACKLOG GM-165):
+# an unscaled motion.
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+_UNSCALED = ("the motion as given, not scaled",
+             "the input motion's own peak ground acceleration")
+declare_when_absent(METHOD_INFO, {
+    "eql_site_response": {"target_pga_g": _UNSCALED},
+    "linear_site_response": {"target_pga_g": _UNSCALED},
+})

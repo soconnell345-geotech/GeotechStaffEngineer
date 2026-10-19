@@ -187,3 +187,15 @@ mark_required(METHOD_INFO, {
     "field_correlations": ["depth", "q_c", "f_s", "gwl"],
 })
 declare_aliases(METHOD_INFO, {"spt_liquefaction": _SPT_ALIASES})
+
+
+# What a left-out input with no default stands for (BACKLOG GM-165):
+# no pore pressure measured behind the cone.
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+_NO_U2 = ("no pore pressure measured: u2 = 0",
+          "the tip resistance is not corrected for pore pressure (q_t = "
+          "q_c)")
+declare_when_absent(METHOD_INFO, {
+    "cpt_liquefaction": {"u_2": _NO_U2},
+    "field_correlations": {"u_2": _NO_U2},
+})

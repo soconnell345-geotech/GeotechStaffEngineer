@@ -4,7 +4,7 @@
 # funhouse_agent.adapters for every adapter; imported here so older imports
 # of it from this module keep working.
 from funhouse_agent.adapters import (
-    check_nested_keys, declare_applies_when, field_keys,
+    check_nested_keys, declare_applies_when, declare_when_absent, field_keys,
     reject_unknown_params, require_keys, require_params,
 )
 from slope_stability.geometry import SlopeGeometry, SlopeSoilLayer
@@ -904,3 +904,74 @@ declare_applies_when(METHOD_INFO, {
         "gamma_w": _WATER, "water_depth": _WATER,
         "ru": {"water_condition": ["ru"]}},
 })
+
+# What a left-out input with no default stands for (BACKLOG GM-165): the
+# water table, the surcharge's extent, the search's windows and grid, the
+# random seed, independent variables, the stage-1 phreatic surface and the
+# Bray-Travasarou branch. Soil nails, anchors, geosynthetics and
+# stabilizing piles left out are simply not there.
+_NO_WATER = ("no water table",
+             "no pore water pressure: effective stress equals total stress")
+_FROM_WATER = ("from the water table",
+               "hydrostatic below gwt_points; none without a water table")
+_WHOLE_SURFACE = ("the whole ground surface",
+                  "the single surcharge acts over the entire surface")
+_NO_ZONES = ("no surcharge zones", "only the single surcharge, if any")
+_NOT_APPLIED = ("the reinforcement force not applied",
+                "reinforcement_force acts only at a given elevation; "
+                "without one it is left out of the analysis")
+_WINDOW = ("set from the slope's geometry",
+           "entry and exit windows from the slope's toe, crest, height and "
+           "depth to the base; the result lists what the search covered")
+_GRID = ("set from the slope's geometry",
+         "the circle-centre grid over the windows, from the slope's height "
+         "and depth to the base")
+_NOT_SEEDED = ("not seeded", "the trial surfaces are random and can differ "
+               "from run to run; give seed to repeat a run")
+_INDEPENDENT = ("independent variables",
+                "no correlation between the random variables")
+_POOL = ("a flat full-pool phreatic surface",
+         "hydrostatic to the reservoir for the stage-1 consolidation "
+         "stresses: the conservative no-through-seepage bound")
+_LOADS = {"surcharge_x_range": _WHOLE_SURFACE, "surcharges": _NO_ZONES,
+          "reinforcement_elevation": _NOT_APPLIED}
+_GROUND = {"gwt_points": _NO_WATER, "pore_pressure_points": _FROM_WATER,
+           **_LOADS}
+declare_when_absent(METHOD_INFO, {
+    "analyze_slope": _GROUND,
+    "compare_methods_table": _GROUND,
+    "yield_acceleration": _GROUND,
+    "search_critical_surface": {
+        **_GROUND, "x_entry_range": _WINDOW, "x_exit_range": _WINDOW,
+        "x_range": _GRID, "y_range": _GRID, "seed": _NOT_SEEDED},
+    "fosm_fos": {**_GROUND, "correlations": _INDEPENDENT},
+    "monte_carlo_fos": {**_GROUND, "correlations": _INDEPENDENT,
+                        "seed": _NOT_SEEDED},
+    "rapid_drawdown_fos": {**_LOADS, "stage1_phreatic_points": _POOL},
+    "search_rapid_drawdown": {
+        **_LOADS, "stage1_phreatic_points": _POOL,
+        "x_entry_range": _WINDOW, "x_exit_range": _WINDOW,
+        "x_range": _GRID, "y_range": _GRID, "seed": _NOT_SEEDED},
+    "bray_travasarou_2007": {
+        "rigid": ("chosen by the period ts",
+                  "the rigid branch when ts < 0.05 s, else the flexible "
+                  "branch")},
+})
+for _m, _info in METHOD_INFO.items():
+    _p = _info["parameters"]
+    for _name, _when in (
+            ("surcharge_x_range", {"surcharge": "set"}),
+            ("reinforcement_elevation", {"reinforcement_force": "set"}),
+            ("gwt_points", {"pore_pressure_points": "unset"}),
+            ("pore_pressure_points", {"gwt_points": "set"})):
+        if _name in _p and _p[_name].get("when_absent"):
+            _p[_name]["applies_when"] = _when
+for _m, _seeded in (
+        ("search_critical_surface",
+         ["noncircular", "noncircular_de", "pso", "weak_layer"]),
+        ("search_rapid_drawdown", ["noncircular", "noncircular_de"])):
+    _p = METHOD_INFO[_m]["parameters"]
+    _p["seed"]["applies_when"] = {"surface_type": _seeded}
+    for _name in ("x_range", "y_range"):
+        _p[_name]["applies_when"] = {
+            "surface_type": ["circular", "entry_exit", "pso"]}

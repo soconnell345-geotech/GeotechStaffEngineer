@@ -371,3 +371,26 @@ declare_applies_when(METHOD_INFO, {
         "t_secondary": {"C_alpha": "set"},
     },
 })
+
+
+# What a left-out input with no default stands for (BACKLOG GM-165):
+# the footing length, the drainage path, the influence factor and the
+# secondary void ratio.
+from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+declare_when_absent(METHOD_INFO, {
+    "schmertmann_settlement": {"L": "B"},
+    "consolidation_settlement": {"L": "B"},
+    "hough_settlement": {"L": "B"},
+    "combined_settlement_analysis": {
+        "L": ("set by shape and B",
+              "L = B for a square or circular footing; a strip is taken as "
+              "infinitely long (plane strain)"),
+        "Hdr": ("half the consolidating thickness, or all of it with single "
+                "drainage", "the drainage path for the time curve from the "
+                "drainage given"),
+        "Iw": ("Schleicher's value at the centre of a flexible footing",
+               "1.12 for a square, growing with L/B; 1.0 for a circle"),
+        "e0_secondary": ("each layer's own e0",
+                         "the secondary settlement of each consolidation "
+                         "layer uses that layer's void ratio")},
+})
