@@ -180,7 +180,7 @@ def test_switch_on_calc_helper_reports_its_calls(monkeypatch):
     assert _spec(on, "calc")["system_prompt"] == (
         _spec(off, "calc")["system_prompt"] + agent_mod._CALC_JUDGMENT_CALLS)
     text = agent_mod._CALC_JUDGMENT_CALLS
-    for part in ("the user's", '"Judgment calls"', "why", "reference",
+    for part in ("the user's", '"Judgment calls"', "why", "basis",
                  "alternative", "what would change the result"):
         assert part in text, part
 
@@ -258,15 +258,19 @@ def test_the_block_is_general_and_short():
                  "whether the default analysis suits the geometry and "
                  "loading", "factor of safety", "load factor", "drained or",
                  "which stratum governs", "search or mesh", "ambiguous data",
-                 '"Judgment calls"', "why, with its source",
+                 '"Judgment calls"',
+                 "why, citing its source by name and the section or page it "
+                 "gives",
                  "alternative set aside", "what would change the answer",
                  "(a number only from a tool run)", "inputs you assumed",
-                 "An answer that rests on none needs no list."):
+                 "An answer that rests on no call needs no list."):
         assert part in flat, part
-    # GM-155: 963 characters before; the sources, a tool's defaults and
-    # the one bounded run that adds to the alternatives cost about 700 more
-    assert len(block) < 1700
-    assert len(judgment_calls_section(references=False)) < 1600
+    # GM-155: 963 characters before; the consult as a step, a tool's
+    # defaults and the one bounded run cost about 700 more (w13: 1,651;
+    # the step came in by rewording, at 1,666 with "the section or page
+    # it gives")
+    assert len(block) < 1680
+    assert len(judgment_calls_section(references=False)) < 1530
     assert len(agent_mod._CALC_JUDGMENT_CALLS) < 800
     assert len(agent_mod._REFERENCES_OPTIONS) < 400
 
@@ -275,26 +279,37 @@ def test_the_block_is_general_and_short():
 # GM-155: grounded calls, given apart from assumed, numbers from tools
 # ---------------------------------------------------------------------------
 
-def test_each_call_names_its_source_or_says_it_has_none():
-    """Live wave w12: no ON answer cited a reference for any call. A tool's
-    ``choices`` already carry a basis, so the block asks for that first and
-    for one consult covering every call left without one (the cost lever);
-    a call with no source says so."""
+def test_the_consult_is_a_step_before_the_list():
+    """Live wave w12: no ON answer cited a reference for any call. w13,
+    with the consult offered as one source among three: the references
+    helper was asked 0 times in 4 ON runs; F61j left a `choices` basis
+    uncited and F51j said "found no reference" without looking. Now the
+    consult is a step before the list, one task covering every call with
+    no basis in hand (the cost lever); a basis is cited by name and the
+    section or page it gives (no page made up); "no reference found" only
+    where that consult found none."""
     flat = " ".join(judgment_calls_section(references=True).split())
-    for part in ("the basis in a tool's `choices`",
-                 "a reference looked up in this conversation",
-                 "the `references` helper, asked once about all the calls "
-                 "the answer turns on that have no basis in hand",
-                 "otherwise say plainly that it rests on judgment, with no "
-                 "reference cited"):
+    for part in ("Before the list, ask the `references` helper once, in one "
+                 "task, about every call with no basis in a tool's "
+                 "`choices` or a reference already looked up.",
+                 "why, citing its source by name and the section or page "
+                 "it gives (a `choices` basis or a reference looked up);",
+                 '"rests on judgment, no reference found" only where that '
+                 "consult found none;"):
         assert part in flat, part
+    # the step comes before the list it feeds
+    assert flat.index("Before the list") < flat.index('"Judgment calls"')
+    assert "otherwise say plainly" not in flat
     alone = " ".join(judgment_calls_section(references=False).split())
-    assert "the basis in a tool's `choices` or a reference looked up in " \
-        "this conversation; otherwise say plainly" in alone
-    assert "`references` helper" not in alone and "asked once" not in alone
+    assert ("(a `choices` basis or a reference looked up); otherwise say "
+            "plainly that it rests on judgment, with no reference cited;") \
+        in alone
+    assert "`references` helper" not in alone and "consult" not in alone
     calc = agent_mod._CALC_JUDGMENT_CALLS
-    assert "the basis the tool's `choices` give" in calc
-    assert "no reference cited" in calc
+    # the helper hands up the calls it has no basis for, for that consult
+    assert ("the basis the tool's `choices` give, by name and the section "
+            'or page it gives, else "no basis in hand"') in calc
+    assert "rests on judgment" not in calc
     assert "several choices at once" in agent_mod._REFERENCES_OPTIONS
 
 
@@ -322,8 +337,7 @@ def test_the_list_runs_one_alternative_and_drops_no_other():
                  "for the others, say which way the answer would move",
                  "That run adds to the alternatives you would run anyway, "
                  "never replaces them.",
-                 "Leave out choices that cannot change the answer, such as "
-                 "rounding or presentation."):
+                 "Leave out rounding and presentation."):
         assert part in flat, part
     assert "Leave out rounding and presentation." in \
         agent_mod._CALC_JUDGMENT_CALLS
@@ -338,7 +352,9 @@ def test_switch_off_carries_no_gm155_switched_text(monkeypatch, calc):
         s.get("system_prompt") or "" for s in captured["subagents"]]
     for t in texts:
         for part in ("A tool's defaults are calls", "no reference cited",
-                     "asked once about all", "several choices at once",
+                     "Before the list, ask", "no basis in hand",
+                     "the section or page it gives",
+                     "several choices at once",
                      "turns on most"):
             assert part not in t, part
 
@@ -351,7 +367,9 @@ def test_the_general_fixes_are_in_both_arms(monkeypatch, on):
     from the agent's assumptions, and so does the calc helper's
     deliverable (F55 OFF and F55j put an assumed concrete unit weight
     under the user's inputs; F18j's brief stated an assumed water table as
-    found)."""
+    found). w13: F18j's brief still put c = 0, which "sand" only implies,
+    under GIVEN, and its calc helper wrote every assumption's basis as
+    "stated by the engineer"."""
     from funhouse_agent.system_prompt import REACT_PREFIX
     captured, _ = _built(monkeypatch, on, enable_calc_subagent=True)
     main = " ".join(captured["system_prompt"].split())
@@ -363,10 +381,20 @@ def test_the_general_fixes_are_in_both_arms(monkeypatch, on):
         assert part in flat_prefix and part in main, part
     # no invitation to rerun in the OFF arm
     assert "rerun" not in flat_prefix
-    assert ("Keep what the user gave apart from what you assumed: an "
-            "assumed value goes in the brief under assumptions, with its "
-            "basis, never among the user's inputs") in main
-    calc = _spec(captured, "calc")["system_prompt"]
-    assert "GIVEN OR ASSUMED: a deliverable keeps the inputs" in calc
-    assert "never print an assumption as given" in calc
-    assert "takes `assumptions`" in calc
+    assert ("Keep what the user gave apart from what you assumed: a value "
+            "the user's words only imply is assumed. An assumed value goes "
+            "in the brief under assumptions, with its engineering basis, "
+            "never among the user's inputs") in main
+    calc = " ".join(_spec(captured, "calc")["system_prompt"].split())
+    # the rule, not the w13 cases the next wave measures (F18, F51)
+    for t in (main, calc):
+        for case in ("c = 0 for", "no water table where none"):
+            assert case not in t, case
+    for part in ("GIVEN OR ASSUMED: a deliverable keeps the inputs",
+                 "A value the user's words only imply is assumed.",
+                 "The delegation's assumptions and choices are the "
+                 "delegating agent's, not the user's",
+                 '"assumed, not given", never "stated by the engineer"',
+                 "Never print an assumption as given.",
+                 "takes `assumptions`"):
+        assert part in calc, part
