@@ -337,11 +337,20 @@ class TestHtmlToPdfFigureSizes:
         module = {**base, "width_in": 6.5, "lettering_pt": MIN_PRINT_PT - 1}
         (warning,) = _figure_warnings([module])
         assert "under 7 pt" in warning and "checked at" not in warning
+        # ...and said to be the module's, not the caller's to redraw
+        assert "module's own figure, not yours to redraw" in warning
+        assert "width:100%" in warning
+        # in a canned package every figure is the module's
+        (warning,) = _figure_warnings([module], package=True)
+        assert "package's own figure" in warning
+        assert "not yours to redraw" in warning
+        assert "width:100%" not in warning
         assert _figure_warnings([{**module, "width_in": 2.0,
                                   "lettering_pt": MIN_PRINT_PT}]) == []
         # the plotting box's: warned under its 7 pt and its print width
         boxed = {**module, "checked_width_in": DEFAULT_PRINT_WIDTH_IN}
         assert "under 7 pt" in _figure_warnings([boxed])[0]
+        assert "You drew it" in _figure_warnings([boxed])[0]
         ok = {**boxed, "lettering_pt": MIN_PRINT_PT}
         assert _figure_warnings([ok]) == []
         narrow = {**ok, "width_in": 5.0}

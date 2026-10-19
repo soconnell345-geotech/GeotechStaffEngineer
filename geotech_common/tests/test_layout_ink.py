@@ -494,3 +494,39 @@ def test_lettering_of_a_figure_legend_keeps_clear_of_the_axes():
         assert legend_top <= lowest + 1
     finally:
         plt.close(fig)
+
+
+def test_fits_on_several_threads_leave_the_warning_filters_as_they_were():
+    """The app draws figures on several threads at once; each fit swaps
+    the process's warning filters while it lays a figure out, one swap at
+    a time, so the filters end as they began."""
+    import threading
+    import warnings
+    import matplotlib
+    matplotlib.use("Agg")
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+    before = list(warnings.filters)
+    errors = []
+
+    def fit():
+        try:
+            for _ in range(3):
+                fig = Figure(figsize=(10, 5))
+                FigureCanvasAgg(fig)
+                ax = fig.add_subplot()
+                ax.plot([0, 10], [0, 5])
+                ax.set_xlabel("Distance (m)", fontsize=8)
+                ax.tick_params(labelsize=8)
+                fig.tight_layout()
+                layout_ink.draw_for_print(fig, 5.0)
+        except Exception as exc:                           # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=fit) for _ in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert not errors
+    assert list(warnings.filters) == before

@@ -835,7 +835,9 @@ def _plot_axial_load(result, analysis):
 
     ax.set_xlabel('Axial Load Q(z) (kN)', fontsize=10)
     ax.set_ylabel('Depth (m)', fontsize=10)
-    ax.set_title('Axial Load Profile Along Pile', fontsize=11, fontweight='bold')
+    # the title clear of the Q_dead note on the axes' top edge (GM-186)
+    ax.set_title('Axial Load Profile Along Pile', fontsize=11,
+                 fontweight='bold', pad=16)
     ax.invert_yaxis()
     ax.set_xlim(left=0)
     ax.set_ylim(bottom=result.pile_length * 1.05, top=-result.pile_length * 0.03)
@@ -970,8 +972,10 @@ def _plot_settlement_profile(result, analysis):
 
     ax.set_xlabel('Settlement (mm)', fontsize=10)
     ax.set_ylabel('Depth (m)', fontsize=10)
+    # the title clear of the surface-settlement note on the axes' top
+    # edge (GM-186)
     ax.set_title('Soil Settlement Profile with Neutral Plane',
-                 fontsize=11, fontweight='bold')
+                 fontsize=11, fontweight='bold', pad=16)
     ax.invert_yaxis()
     # no settlement at all: the notes sit at x = 1 mm, so the axis runs to
     # 2 mm (its own range was a hundredth of that, and the notes printed

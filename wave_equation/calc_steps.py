@@ -679,12 +679,17 @@ def _bearing_graph_figures(result, analysis) -> List[FigureData]:
             r_max = result.R_values[valid][-1]
             bc_min = result.blow_counts[valid][0]
             bc_max = result.blow_counts[valid][-1]
+            # both inside the frame: right of the first point, left of
+            # the last (beyond them they ran past the frame at the
+            # printed width; GM-186)
             ax.annotate(f'{r_min:,.0f} kN',
                         xy=(bc_min, r_min), fontsize=8,
-                        xytext=(10, -15), textcoords='offset points')
+                        xytext=(8, 0), textcoords='offset points',
+                        va='center')
             ax.annotate(f'{r_max:,.0f} kN',
                         xy=(bc_max, r_max), fontsize=8,
-                        xytext=(10, 5), textcoords='offset points')
+                        xytext=(-8, 3), textcoords='offset points',
+                        ha='right', va='center')
 
         plt.tight_layout()
         b64 = figure_to_base64(fig, dpi=150)

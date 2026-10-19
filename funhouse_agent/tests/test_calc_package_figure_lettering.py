@@ -68,3 +68,6 @@ def test_a_package_figure_printed_too_small_is_warned(tmp_path, monkeypatch):
         pytest.skip("pdflatex prints the figures; the Story engine is tested")
     warnings = result["figure_warnings"]
     assert warnings and all("under 7 pt" in w for w in warnings)
+    # the module's figure: reported, not the caller's to redraw
+    assert all("package's own figure" in w and "not yours to redraw" in w
+               for w in warnings)

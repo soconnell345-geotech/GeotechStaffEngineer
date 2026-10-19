@@ -713,6 +713,9 @@ def _plot_pile_load_bar(pile_forces, result):
                     xytext=(0, offset), textcoords='offset points',
                     ha='center', va=va, fontsize=7.5, fontweight='bold')
 
+    # room past the longest bar for its value (GM-186)
+    ax.margins(y=0.12)
+
     # Zero line
     ax.axhline(y=0, color='#333333', linewidth=0.8)
 

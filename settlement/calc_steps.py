@@ -798,10 +798,13 @@ def _plot_time_settlement(result):
     ax.set_ylabel('Settlement (mm)', fontsize=10)
     ax.set_title('Settlement vs Time', fontsize=11, fontweight='bold')
     ax.set_xscale('log')
-    ax.legend(loc='lower right', fontsize=8)
+    # the key under the axes: inside them it covered the curve once the
+    # figure was drawn for the width it prints at (GM-186)
+    fig.legend(*ax.get_legend_handles_labels(), loc='lower center',
+               fontsize=8, ncol=2, frameon=False)
     ax.grid(True, alpha=0.3, which='both')
     ax.tick_params(labelsize=9)
-    plt.tight_layout()
+    plt.tight_layout(rect=(0, 0.12, 1, 1))
     return fig
 
 

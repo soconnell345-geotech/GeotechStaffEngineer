@@ -1102,6 +1102,10 @@ _FIT_ROUNDS = 6
 #: differences between a draw on screen and the save leave its smallest
 #: lettering at the minimum or over it.
 _FIT_MARGIN = 0.98
+#: ``warnings.catch_warnings`` swaps the process's warning filters, and
+#: the app draws figures on several threads at once: two fits whose swaps
+#: interleaved could leave every warning silenced. One swap at a time.
+_WARNINGS_LOCK = threading.Lock()
 
 
 def _saved_size(fig) -> tuple:
@@ -1183,10 +1187,14 @@ def _lay_out(fig) -> None:
     import warnings
     if _lays_itself_out(fig):
         return
-    with warnings.catch_warnings():
+    try:
+        rect = _figure_band(fig)
+    except Exception:                                      # noqa: BLE001
+        return
+    with _WARNINGS_LOCK, warnings.catch_warnings():
         warnings.simplefilter("ignore")
         try:
-            fig.tight_layout(rect=_figure_band(fig))
+            fig.tight_layout(rect=rect)
         except Exception:                                  # noqa: BLE001
             pass
 
@@ -1197,7 +1205,7 @@ def _as_drawn(fig, size, pars, undo) -> None:
     import warnings
     fig.set_size_inches(*size)
     if not _lays_itself_out(fig):
-        with warnings.catch_warnings():
+        with _WARNINGS_LOCK, warnings.catch_warnings():
             warnings.simplefilter("ignore")
             try:
                 fig.subplots_adjust(**pars)
