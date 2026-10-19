@@ -63,11 +63,22 @@ def test_a_strip_gives_its_loads_per_metre():
 
 
 def test_an_eccentric_load_works_on_the_effective_area():
-    r = _f18(eccentricity_B=0.2)
+    from bearing_capacity.calc_steps import get_calc_steps
+    from calc_package.data_model import CalcStep
+    a = _analysis(eccentricity_B=0.2)
+    r = a.compute()
     loads = r.allowable_loads()
     assert loads["area_m2"] == pytest.approx(1.6 * 2.0)
+    # the load bears on A' (Eq. 5-10); the footing's and the soil's weight,
+    # q x A, on the whole 2 m x 2 m footing, not on A'
     assert loads["structural_load_kN"] == pytest.approx(
-        r.q_allowable_net * 3.2, abs=0.1)
+        r.q_allowable * 3.2 - 19.0 * 4.0, abs=0.1)
+    assert loads["gross_load_kN"] == pytest.approx(r.q_allowable * 3.2,
+                                                   abs=0.1)
+    steps = {st.result_name: st for sec in get_calc_steps(r, a)
+             for st in sec.items if isinstance(st, CalcStep)}
+    assert steps["Q_DL+LL"].equation == "Q_DL+LL = q_all × A' - q × A"
+    assert "(qall x A' - q x A; Eq. 5-3, 5-10)" in r.summary()
 
 
 @pytest.mark.parametrize("method", ["vesic", "terzaghi"])

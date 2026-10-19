@@ -143,7 +143,9 @@ def suggest_params(unknown: str, valid, n: int = 2) -> list:
     for word, canon in _WORD_SYNONYMS:
         if word in raw:
             forms.add(raw.replace(word, canon))
-    forms.add(_without_unit(raw))
+    # 'E_s' (the soil's modulus) is not 'E' in seconds: offered 'E' it
+    # would put the soil's modulus in axial_pile_capacity's pile modulus
+    forms.add(_without_unit(raw, _SUBSCRIPT_SUFFIXES))
     keys = {_param_key(f) for f in forms}
     exact = [v for v in valid if _param_key(v) in keys]
     if exact:

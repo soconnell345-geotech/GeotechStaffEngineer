@@ -197,6 +197,10 @@ class BearingCapacityAnalysis:
         result.is_strip = self.footing.shape == "strip"
         result.area_m2 = (self.footing.B_eff if result.is_strip
                           else self.footing.A_eff)
+        f = self.footing
+        result.area_full_m2 = (
+            f.width if result.is_strip else math.pi / 4.0 * f.width ** 2
+            if f.shape == "circular" else f.width * f.length)
         result.choices = self._choices(result)
         return result
 
@@ -223,8 +227,10 @@ class BearingCapacityAnalysis:
                 "N-gamma",
                 f"{r.Ngamma:.2f}, {TERZAGHI_NGAMMA_SOURCES[ng]} "
                 f"(ngamma_method '{ng}')", how,
-                "Terzaghi gave N-gamma as a chart only (UFC 3-220-20 "
-                "Table 5-2 note, p. 289)",
+                "'Terzaghi (1943) only provided N-gamma values for 0, 34, "
+                "and 48 degrees' (UFC 3-220-20 Table 5-2 note, p. 289), so "
+                "every Terzaghi N-gamma is someone's evaluation; the table "
+                "prints Coduto et al.'s (2016)",
                 [f"{v:.2f}, {TERZAGHI_NGAMMA_SOURCES[k]} (ngamma_method "
                  f"'{k}')" for k, v in r.Ngamma_alternatives.items()]))
         else:

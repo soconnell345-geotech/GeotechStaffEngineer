@@ -293,7 +293,7 @@ def earth_pressure_choices(phi_deg: float, kh: float, kv: float = None,
     # kh, kv and delta as the call gave them, or as a calc package's call
     # says they are assumed (GM-180)
     out.append(choice("kh", kh, how_given(kh, None, name="kh"),
-                      "as given; not worked out from the PGA here"))
+                      "as input; not worked out from the PGA here"))
     kv_basis = ""
     if forces:
         kv_basis = ("PAE = (gamma H^2 / 2)(1 - kv) KAE (UFC 3-220-20 Eq. "

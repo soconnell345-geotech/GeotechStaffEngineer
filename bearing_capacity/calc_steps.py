@@ -593,11 +593,22 @@ def _allowable_load_items(r) -> list:
         return items
     unit = "kN_per_m" if r.is_strip else "kN"
     area = "B'" if r.is_strip else "A'"
+    if r.area_full_m2 in (None, r.area_m2):
+        equation = f"Q_DL+LL = q_all,net × {area}"
+        substitution = (f"Q_DL+LL = {r.q_allowable_net:,.1f} × "
+                        f"{r.area_m2:,.3f}")
+    else:
+        # an eccentric load bears on A'; the foundation's and the soil's
+        # weight on the whole footing (Eq. 5-10)
+        whole = "B" if r.is_strip else "A"
+        equation = f"Q_DL+LL = q_all × {area} - q × {whole}"
+        substitution = (f"Q_DL+LL = {r.q_allowable:,.1f} × "
+                        f"{r.area_m2:,.3f} - {r.q_overburden:,.1f} × "
+                        f"{r.area_full_m2:,.3f}")
     items.append(CalcStep(
         title="Allowable Structural Load",
-        equation=f"Q_DL+LL = q_all,net × {area}",
-        substitution=(f"Q_DL+LL = {r.q_allowable_net:,.1f} × "
-                      f"{r.area_m2:,.3f}"),
+        equation=equation,
+        substitution=substitution,
         result_name="Q_DL+LL",
         result_value=f"{loads['structural_load_' + unit]:,.0f}",
         result_unit="kN/m" if r.is_strip else "kN",

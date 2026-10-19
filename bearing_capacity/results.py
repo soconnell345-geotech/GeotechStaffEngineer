@@ -14,7 +14,10 @@ LOAD_BASIS = (
     "structural load Q_DL+LL = q_all,net x A' = (q_ult/FS - q) x A', "
     "A' = B'L' the effective area, the foundation and the soil over it "
     "taken at the soil's unit weight (UFC 3-220-20 Sec. 5-2.2 Eq. 5-3, "
-    "p. 276; Sec. 5-2.4 Eq. 5-14, p. 279). gross load = q_all x A' = "
+    "p. 276; Sec. 5-2.4 Eq. 5-14, p. 279); under an eccentric load, "
+    "q_all x A' - q x A, the load on A' (Eq. 5-10, p. 277) and the "
+    "foundation's and the soil's weight on the whole footing A. "
+    "gross load = q_all x A' = "
     "Q_DL+LL + W_F + W_S, the total load on the bearing surface with the "
     "foundation's and the overlying soil's weight in it (Eq. 5-1, p. 275), "
     "so it is not the structural load. GEC-6 Sec. 5.2.2 (p. 53) recommends "
@@ -94,6 +97,10 @@ class BearingCapacityResult:
         The effective bearing area A' = B'L' (m^2), or for a strip the
         effective width B' (m^2 per metre run), that the allowable loads
         are worked on; set by ``BearingCapacityAnalysis.compute`` (GM-170).
+    area_full_m2 : float, optional
+        The whole footing's area A (m^2; the width B for a strip), which the
+        foundation's and the soil's weight bear on; equal to ``area_m2``
+        unless the load is eccentric.
     is_strip : bool
         A strip footing: the allowable loads are per metre run.
     choices : list of dict
@@ -166,6 +173,7 @@ class BearingCapacityResult:
 
     # The area the allowable loads are worked on (GM-170)
     area_m2: Optional[float] = None
+    area_full_m2: Optional[float] = None
     is_strip: bool = False
     choices: List[Dict[str, Any]] = field(default_factory=list)
 
@@ -184,9 +192,13 @@ class BearingCapacityResult:
         if self.area_m2 is None:
             return None
         unit = "kN_per_m" if self.is_strip else "kN"
+        # q_all x A' less the foundation's and the soil's weight, q x A:
+        # q_all,net x A' when the load is centred (A' = A)
+        full = self.area_m2 if self.area_full_m2 is None             else self.area_full_m2
         return {
             f"structural_load_{unit}": round(
-                self.q_allowable_net * self.area_m2, 1),
+                self.q_allowable * self.area_m2 - self.q_overburden * full,
+                1),
             f"gross_load_{unit}": round(self.q_allowable * self.area_m2, 1),
             ("width_m" if self.is_strip else "area_m2"): round(
                 self.area_m2, 4),
@@ -220,7 +232,9 @@ class BearingCapacityResult:
             lines += [
                 f"  Allowable structural load Q = "
                 f"{loads['structural_load_' + unit]:,.0f} kN{per} "
-                f"(qall,net x A'; Eq. 5-3)",
+                + ("(qall,net x A'; Eq. 5-3)" if self.area_full_m2 in (
+                    None, self.area_m2) else
+                   "(qall x A' - q x A; Eq. 5-3, 5-10)"),
                 f"  Gross load on the base   qall x A' = "
                 f"{loads['gross_load_' + unit]:,.0f} kN{per} "
                 f"(with the footing and the soil over it; Eq. 5-1)",

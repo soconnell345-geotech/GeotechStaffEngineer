@@ -154,6 +154,8 @@ class TestParameterSuggestions:
     def test_a_subscript_is_not_a_unit(self):
         # 'E_s' is the soil's modulus, not E in seconds
         assert suggest_params("E", ["E_s", "E_p"]) == []
+        # nor on the name given: axial_pile_capacity's E is the pile's
+        assert suggest_params("E_s", ["E", "nu"]) == []
 
     def test_does_not_offer_a_different_quantity(self):
         # sharing a word is not a spelling slip: base vs load inclination

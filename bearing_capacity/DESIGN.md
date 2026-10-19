@@ -131,6 +131,10 @@ soil's weight in it. The result now also gives:
   q_all x A', each named, on the effective area A' = B'L' the analysis
   set (`area_m2`; a strip's width B', per metre run), with
   `results.LOAD_BASIS`. F18: 1,469 kN structural, 1,545 kN gross.
+  Under an eccentric load the structural load is q_all x A' - q x A: the
+  load bears on A' (Eq. 5-10, p. 277) and the footing's and the soil's
+  weight on the whole footing A (`area_full_m2`), so q_all,net x A' would
+  overstate it by q (A - A').
 
 GEC-6 Sec. 5.2.2 (p. 53) recommends the allowable bearing capacity on the
 gross pressure, the footing and backfill weight counted in the applied
@@ -151,7 +155,7 @@ each checked against its printed source:
 |---|---|---|
 | vesic | 2 (Nq + 1) tan phi, Caquot and Kerisel (1948) | GEC-6 Eq. 5-8 (p. 53): "currently used by FHWA and AASHTO"; Table 5-1 (p. 54) |
 | meyerhof | (Nq - 1) tan(1.4 phi) | UFC 3-220-20 Table 5-6 (p. 294); Table 5-2 (p. 289) tabulates it, 22 at 32 deg; Example B-1.6 (p. 603) 53.27 at 37 deg |
-| terzaghi | Kumbhojkar (1993) | UFC 3-220-20 Table 5-2 note (p. 289), unchanged |
+| terzaghi | Kumbhojkar (1993), as tabulated in Das | unchanged; UFC 3-220-20 Table 5-2 (p. 289) prints Coduto et al.'s (2016), `ngamma_method="coduto"` (its note: Terzaghi gave N-gamma at 0, 34 and 48 deg only) |
 
 Hansen's 1.5 (Nq - 1) tan phi stays an option. Another N-gamma than the
 method's own is a mixed method, and the result's choices say so.
@@ -183,6 +187,8 @@ load.
 it rises). F18 (2 m square, Df = 1 m, phi = 32 deg, gamma = 19 kN/m3):
 q_ult 1,465.9 -> 1,241.0 kPa (-15 %); a 2 m strip at phi = 30 deg:
 842.4 -> 703.4 kPa (-17 %). With a load inclined 10 deg the shape factors
-also drop to 1: F18 894.9 -> 594.9 kPa (-34 %). Pass
-`ngamma_method="vesic"` for the old mixed method. Vesic and Terzaghi
-results do not change.
+also drop to 1: F18 894.9 -> 594.9 kPa (-34 %; the N-gamma alone takes
+it to 788.6, the shape factors the rest). Pass `ngamma_method="vesic"` for
+the old mixed method under a vertical load; under an inclined load no input
+restores the old combination of shape and inclination factors (675.1 kPa
+with Vesic's N-gamma). Vesic and Terzaghi results do not change.
