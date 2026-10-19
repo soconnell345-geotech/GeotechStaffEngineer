@@ -164,14 +164,22 @@ project. The review-harness items are its §2 (DR-nn) and §3 (VIS-nn); the
 - The vision call's box precision was measured on 2026-10-07 (run 5 below;
   `module_work/harness_theory/locating_things_on_a_page.md`).
 - The location fix built from it HELD on Foundry (run 6; 5.32.1).
-- Next for this harness:
+- The three items that were next after run 6 are done (2026-10-08/09; the
+  code for each shipped in 5.33.0):
   1. the run-6 fix list
      (`module_work/review_eval_results/2026-10-07_foundry_5.32.1rc3/TRACE_REVIEW.md`
      §7): comments judged by what they point at, a geometric "encloses", a
-     `dpi` floor, tile-only finds, `markups_point_at`;
+     `dpi` floor, tile-only finds, `markups_point_at`; built in app `cc36945`
+     and planlens `cbca2ec`, measured in run 7;
   2. the coverage arms `coverage` / `checklist`
-     (`module_work/COVERAGE_AND_CHECKLIST.md`), measured in Foundry brief 5;
-  3. the `measure` tool (`module_work/VISUAL_SCALES_DESIGN.md`).
+     (`module_work/COVERAGE_AND_CHECKLIST.md`), measured in run 7 (brief 5):
+     neither is ready, both stay OFF; brief 5's coverage fixes are in
+     `b6d7ffd`;
+  3. the `measure` tool (`module_work/VISUAL_SCALES_DESIGN.md`): planlens
+     `a3f2a1d`, app `c0ecc9f`; in run 7 Sol used it and passed both new
+     scale tasks.
+- Open work from run 7 on is in `BACKLOG.md` (DR, VIS and EV items; Foundry
+  brief 6 is EV-02).
 
 The other review-harness items on the list: the look-alike /
 self-verification and box-carrying boundary found by
