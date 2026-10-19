@@ -23,46 +23,155 @@ from soe.results import AnchorDesignResult
 
 
 # ============================================================================
-# Nominal bond stress by soil/rock type
+# Presumptive ultimate load transfer by ground (GEC-4 Tables 6 and 8)
 # ============================================================================
-# Values in kPa — representative ultimate bond stress at the
-# grout-ground interface for straight-shaft pressure-grouted anchors.
-# These are nominal values; actual values depend on installation method,
-# grout pressure, and ground conditions.
+# GM-191 (2026-10-19): every row is a printed row, in the quantity printed:
+# the ultimate LOAD TRANSFER per metre of bond length (kN/m), used per metre
+# (bond length = FS x design load / load transfer), never multiplied by a
+# perimeter.
 #
-# Provenance (GM-185, 2026-10-19): not traced to a printed table. This
-# comment used to cite "GEC-4 Table 4", which is GEC-4's table of design
-# steps. The medium sand row's numbers (145, range 100-190) are GEC-4
-# Table 6's ultimate transfer LOADS for sand in kN/m (p. 71), used here as
-# a bond stress in kPa over the hole's perimeter; GEC-4 Table 7 (p. 73,
-# after PTI 1996) prints average ultimate bond stresses by anchor type and
-# ground. The anchor result's choices say so.
+# GEC-4 Table 6 (p. 71): "Presumptive ultimate values of load transfer for
+# preliminary design of small diameter straight shaft gravity-grouted
+# ground anchors in soil" (SPT values corrected for overburden pressure);
+# "The maximum allowable anchor design load in soil may be determined by
+# multiplying the bond length by the ultimate transfer load and dividing by
+# a factor of safety of 2.0."
+# GEC-4 Table 8 (p. 74): "Presumptive ultimate values of load transfer for
+# preliminary design of ground anchors in rock"; "The maximum allowable
+# anchor design load in competent rock may be determined by multiplying the
+# bond length by the ultimate transfer load and dividing by a factor of
+# safety of 3.0."
+#
+# GEC-4 Table 7 (p. 73, after PTI 1996) prints average ultimate bond
+# STRESSES (MPa) instead; one given as bond_stress_kPa is multiplied by the
+# perimeter of the drill hole ("capacity estimates should be based on the
+# as-drilled hole diameter", p. 72).
+#
+# Until GM-191 this was a table of "bond stresses" (kPa) multiplied by the
+# hole's perimeter and traced to no table: medium sand's 145 (100-190) is
+# Table 6's sand row in kN/m, loose sand's 70 and hard clay's 100 (70-130)
+# are Table 6's sand-and-silt row, stiff clay's 50 (30-70) is the middle of
+# Table 7's gravity-grouted range for cohesive soil, hard rock's 1750
+# (1400-2100) is the middle of Table 7's dolomitic limestone range; dense
+# sand's 250, gravel's 310 and soft and medium rock's 700 and 1050 match no
+# printed row. Over a 150 mm hole (perimeter 0.471 m) a kN/m value read as
+# kPa gave 47 % of the load transfer, so a bond length 2.1 times Table 6's:
+# conservative below a 318 mm hole (where pi x d = 1 m) and unconservative
+# above. The rows kept their names where the name is a printed row (sand
+# loose, medium dense, dense); the others are in _REMOVED_TYPES.
 
-_BOND_STRESS_TABLE = {
-    # Cohesionless soils
-    "sand_loose": {"bond_stress_kPa": 70, "range": (50, 100),
-                   "description": "Loose sand (SPT N < 10)"},
-    "sand_medium": {"bond_stress_kPa": 145, "range": (100, 190),
-                    "description": "Medium dense sand (SPT N 10-30)"},
-    "sand_dense": {"bond_stress_kPa": 250, "range": (190, 310),
-                   "description": "Dense sand (SPT N 30-50)"},
-    "gravel": {"bond_stress_kPa": 310, "range": (250, 380),
-               "description": "Sand-gravel mixtures"},
+_TABLE_6 = "GEC-4 Table 6 (p. 71)"
+_TABLE_8 = "GEC-4 Table 8 (p. 74)"
 
-    # Cohesive soils
-    "clay_stiff": {"bond_stress_kPa": 50, "range": (30, 70),
-                   "description": "Stiff clay (cu 50-100 kPa)"},
-    "clay_hard": {"bond_stress_kPa": 100, "range": (70, 130),
-                  "description": "Hard clay (cu > 100 kPa)"},
-
-    # Rock
-    "rock_soft": {"bond_stress_kPa": 700, "range": (350, 1050),
-                  "description": "Soft shale, sandstone, marl"},
-    "rock_medium": {"bond_stress_kPa": 1050, "range": (700, 1400),
-                    "description": "Medium limestone, schist"},
-    "rock_hard": {"bond_stress_kPa": 1750, "range": (1400, 2100),
-                  "description": "Hard granite, basalt, gneiss"},
+_LOAD_TRANSFER_TABLE = {
+    # Table 6, soil
+    "sand_gravel_loose": {"load_transfer_kN_per_m": 145, "ground": "soil",
+                          "description": "Sand and gravel, loose (SPT 4-10)",
+                          "source": _TABLE_6},
+    "sand_gravel_medium": {"load_transfer_kN_per_m": 220, "ground": "soil",
+                           "description": "Sand and gravel, medium dense "
+                                          "(SPT 11-30)",
+                           "source": _TABLE_6},
+    "sand_gravel_dense": {"load_transfer_kN_per_m": 290, "ground": "soil",
+                          "description": "Sand and gravel, dense (SPT 31-50)",
+                          "source": _TABLE_6},
+    "sand_loose": {"load_transfer_kN_per_m": 100, "ground": "soil",
+                   "description": "Sand, loose (SPT 4-10)",
+                   "source": _TABLE_6},
+    "sand_medium": {"load_transfer_kN_per_m": 145, "ground": "soil",
+                    "description": "Sand, medium dense (SPT 11-30)",
+                    "source": _TABLE_6},
+    "sand_dense": {"load_transfer_kN_per_m": 190, "ground": "soil",
+                   "description": "Sand, dense (SPT 31-50)",
+                   "source": _TABLE_6},
+    "sand_silt_loose": {"load_transfer_kN_per_m": 70, "ground": "soil",
+                        "description": "Sand and silt, loose (SPT 4-10)",
+                        "source": _TABLE_6},
+    "sand_silt_medium": {"load_transfer_kN_per_m": 100, "ground": "soil",
+                         "description": "Sand and silt, medium dense "
+                                        "(SPT 11-30)",
+                         "source": _TABLE_6},
+    "sand_silt_dense": {"load_transfer_kN_per_m": 130, "ground": "soil",
+                        "description": "Sand and silt, dense (SPT 31-50)",
+                        "source": _TABLE_6},
+    "silt_clay_stiff": {"load_transfer_kN_per_m": 30, "ground": "soil",
+                        "description": "Silt-clay mixture with low plasticity "
+                                       "or fine micaceous sand or silt "
+                                       "mixtures, stiff (SPT 10-20)",
+                        "source": _TABLE_6},
+    "silt_clay_hard": {"load_transfer_kN_per_m": 60, "ground": "soil",
+                       "description": "Silt-clay mixture with low plasticity "
+                                      "or fine micaceous sand or silt "
+                                      "mixtures, hard (SPT 21-40)",
+                       "source": _TABLE_6},
+    # Table 8, rock
+    "granite_basalt": {"load_transfer_kN_per_m": 730, "ground": "rock",
+                       "description": "Granite or basalt",
+                       "source": _TABLE_8},
+    "dolomitic_limestone": {"load_transfer_kN_per_m": 580, "ground": "rock",
+                            "description": "Dolomitic limestone",
+                            "source": _TABLE_8},
+    "soft_limestone": {"load_transfer_kN_per_m": 440, "ground": "rock",
+                       "description": "Soft limestone", "source": _TABLE_8},
+    "sandstone": {"load_transfer_kN_per_m": 440, "ground": "rock",
+                  "description": "Sandstone", "source": _TABLE_8},
+    "slates_hard_shales": {"load_transfer_kN_per_m": 360, "ground": "rock",
+                           "description": "Slates and hard shales",
+                           "source": _TABLE_8},
+    "soft_shales": {"load_transfer_kN_per_m": 150, "ground": "rock",
+                    "description": "Soft shales", "source": _TABLE_8},
 }
+
+#: The rock rows (GEC-4 Table 8): their factor of safety on bond defaults
+#: to 3.0 (p. 74).
+ROCK_TYPES = tuple(k for k, v in _LOAD_TRANSFER_TABLE.items()
+                   if v["ground"] == "rock")
+
+#: The rows GM-191 removed, with what each was and where to look instead.
+_REMOVED_TYPES = {
+    "gravel": "'gravel' (sand-gravel mixtures, 310 kPa) was removed (GM-191): "
+              "no printed row has it. GEC-4 Table 6 (p. 71) prints sand and "
+              "gravel by density: 'sand_gravel_loose' 145, "
+              "'sand_gravel_medium' 220, 'sand_gravel_dense' 290 kN/m",
+    "clay_stiff": "'clay_stiff' (50 kPa, the middle of GEC-4 Table 7's "
+                  "gravity-grouted range for cohesive soil) was removed "
+                  "(GM-191). Table 6 (p. 71) prints only silt-clay mixtures "
+                  "with low plasticity: 'silt_clay_stiff' 30 kN/m; for a "
+                  "clay give bond_stress_kPa from Table 7 (p. 73; "
+                  "gravity-grouted 30-70 kPa, pressure-grouted by clay)",
+    "clay_hard": "'clay_hard' (100 kPa; its 70-130 is Table 6's sand-and-silt "
+                 "row in kN/m) was removed (GM-191). Table 6 (p. 71) prints "
+                 "'silt_clay_hard' 60 kN/m (silt-clay mixture with low "
+                 "plasticity, hard); for a clay give bond_stress_kPa from "
+                 "Table 7 (p. 73)",
+    "rock_soft": "'rock_soft' (soft shale, sandstone, marl, 700 kPa) was "
+                 "removed (GM-191): no printed row has it. GEC-4 Table 8 "
+                 "(p. 74) prints 'soft_shales' 150 and 'sandstone' 440 kN/m; "
+                 "Table 7 (p. 73) prints bond stresses for bond_stress_kPa",
+    "rock_medium": "'rock_medium' (medium limestone, schist, 1050 kPa) was "
+                   "removed (GM-191): no printed row has it. GEC-4 Table 8 "
+                   "(p. 74) prints 'soft_limestone' 440, "
+                   "'dolomitic_limestone' 580 and 'slates_hard_shales' "
+                   "360 kN/m",
+    "rock_hard": "'rock_hard' (hard granite, basalt, gneiss, 1750 kPa: the "
+                 "middle of Table 7's dolomitic limestone range) was removed "
+                 "(GM-191). GEC-4 Table 8 (p. 74) prints 'granite_basalt' "
+                 "730 kN/m; Table 7 (p. 73) prints granite and basalt "
+                 "1.7-3.1 MPa as a bond stress",
+}
+
+
+def _row(soil_type: str) -> Dict[str, Any]:
+    """The load-transfer row of ``soil_type``; a removed row or an unknown
+    name raises, the removed one saying where it went."""
+    if soil_type in _LOAD_TRANSFER_TABLE:
+        return _LOAD_TRANSFER_TABLE[soil_type]
+    if soil_type in _REMOVED_TYPES:
+        raise ValueError(_REMOVED_TYPES[soil_type])
+    raise ValueError(
+        f"Unknown soil_type '{soil_type}'. "
+        f"Available: {list(_LOAD_TRANSFER_TABLE.keys())}"
+    )
 
 
 # ============================================================================
@@ -123,19 +232,47 @@ _BAR_DATA = {
 # Unbonded (free) length
 # ============================================================================
 
+#: GEC-4 Sec. 5.3.4 (p. 67): "The minimum unbonded length for rock and
+#: soil ground anchors is 4.5 m for strand tendons and 3 m for bar
+#: tendons" (the same in the guide specification, App. E Part 3 C, p. E-15).
+MIN_UNBONDED_STRAND_M = 4.5
+MIN_UNBONDED_BAR_M = 3.0
+
+
+def distance_behind_failure_surface(H: float) -> float:
+    """How far behind the critical potential failure surface the unbonded
+    length extends: the greater of 1.5 m and H/5 (m). GEC-4 App. E Part 3
+    C (p. E-15): "The free stressing length (unbonded length) shall extend
+    at least 1.5 m or 20 percent of the height of the wall, whichever is
+    greater, behind the critical failure surface"; Sec. 5.3.2 (p. 65) and
+    5.3.4 (p. 68) give "H/5 or 1.5 m"."""
+    return max(1.5, H / 5.0)
+
+
 def compute_unbonded_length(
     anchor_depth: float,
     H: float,
     phi_deg: float,
     anchor_angle_deg: float = 15.0,
-    min_free_length: float = 4.5,
+    min_free_length: float = MIN_UNBONDED_STRAND_M,
 ) -> float:
     """Compute minimum unbonded (free) length for a ground anchor.
 
-    The unbonded length must extend beyond the active failure wedge
-    so that the bond zone is entirely in stable ground. Per GEC-4,
-    the minimum unbonded length is also 4.5 m (or 3.0 m for bars)
-    to allow adequate load transfer and limit lock-off losses.
+    GEC-4 (FHWA-IF-99-015): for walls in cohesionless soils the critical
+    potential failure surface "can be assumed to extend up from the corner
+    of the excavation at an angle of 45 + phi/2 from the horizontal" (Sec.
+    5.3.2, p. 65), and the unbonded length extends the greater of 1.5 m and
+    H/5 behind it (:func:`distance_behind_failure_surface`; App. E, p.
+    E-15). The distance is measured normal to the surface and the unbonded
+    length runs along the anchor to that line, as GEC-4's design example
+    draws it (App. A, Figure A-3, p. A-8: H 10 m, phi 33, anchors at 15
+    deg from 2.5 m and 6.25 m deep, 5.7 m and 3.9 m). It is at least
+    ``min_free_length`` (Sec. 5.3.4, p. 67: 4.5 m for strand, 3 m for bar
+    tendons).
+
+    Until GM-192 (2026-10-19) the distance behind the surface was 1.5 m
+    whatever the wall height, and the anchor was measured to the surface at
+    the anchor head's level (longer than the anchor's own run to it).
 
     Parameters
     ----------
@@ -148,7 +285,8 @@ def compute_unbonded_length(
     anchor_angle_deg : float
         Anchor inclination below horizontal (degrees). Default 15.
     min_free_length : float
-        Minimum free length per code (m). Default 4.5 (GEC-4 for strand).
+        Minimum unbonded length (m). Default 4.5, GEC-4's for strand
+        tendons (3.0 for bar tendons).
 
     Returns
     -------
@@ -158,36 +296,24 @@ def compute_unbonded_length(
     if anchor_depth <= 0 or H <= 0:
         raise ValueError("anchor_depth and H must be positive")
 
-    # Active wedge angle from vertical = 45 - phi/2
-    # The failure plane extends from the base of the wall at angle
-    # (45 + phi/2) from horizontal
-    wedge_angle_rad = math.radians(45.0 + phi_deg / 2.0)
-    anchor_angle_rad = math.radians(anchor_angle_deg)
+    beta = math.radians(45.0 + phi_deg / 2.0)   # surface from horizontal
+    theta = math.radians(anchor_angle_deg)       # anchor below horizontal
+    clear = distance_behind_failure_surface(H)
 
-    # Horizontal distance from wall to active wedge at anchor depth
-    # The active wedge starts at the excavation base and goes up at
-    # angle (45+phi/2) from horizontal
-    depth_below_anchor = H - anchor_depth
-    if depth_below_anchor <= 0:
-        # Anchor is at or below excavation level
-        horiz_to_wedge = 0.0
-    else:
-        # Horizontal distance from wall base to where wedge intersects
-        # anchor elevation
-        horiz_to_wedge = depth_below_anchor / math.tan(wedge_angle_rad)
+    # The limit line is the failure surface moved back `clear`, measured
+    # normal to it: horizontally from the wall at depth z it lies
+    #   x(z) = clear / sin(beta) + (H - z) / tan(beta).
+    # Along the anchor, x = s cos(theta) at depth z = anchor_depth +
+    # s sin(theta), so
+    #   s = (clear / sin(beta) + (H - anchor_depth) / tan(beta))
+    #       / (cos(theta) + sin(theta) / tan(beta)).
+    # An anchor head at or below the excavation level is clear of the
+    # surface from the start.
+    above_base = max(H - anchor_depth, 0.0)
+    to_limit = ((clear / math.sin(beta) + above_base / math.tan(beta))
+                / (math.cos(theta) + math.sin(theta) / math.tan(beta)))
 
-    # Length along anchor direction to reach past the wedge
-    # Add 1.5 m buffer past the active wedge per GEC-4
-    if anchor_angle_rad > 0:
-        length_to_wedge = horiz_to_wedge / math.cos(anchor_angle_rad)
-    else:
-        length_to_wedge = horiz_to_wedge
-
-    # Add 1.5 m past the wedge
-    length_past_wedge = length_to_wedge + 1.5
-
-    # Apply minimum free length
-    return max(length_past_wedge, min_free_length)
+    return max(to_limit, min_free_length)
 
 
 # ============================================================================
@@ -196,35 +322,45 @@ def compute_unbonded_length(
 
 def compute_bond_length(
     design_load_kN: float,
-    bond_stress_kPa: float,
+    bond_stress_kPa: Optional[float] = None,
     drill_diameter_mm: float = 150.0,
     FOS_bond: float = 2.0,
     min_bond_length: float = 3.0,
     max_bond_length: float = 12.0,
+    load_transfer_kN_per_m: Optional[float] = None,
 ) -> float:
     """Compute required bond (anchor) length in the grout zone.
 
-    Bond length is determined by the grout-ground interface capacity:
+    From an ultimate load transfer per metre of bond length q (kN/m, GEC-4
+    Tables 6 and 8, pp. 71, 74), used as printed (GM-191):
+        Lb = FOS * T / q
+    or from an average ultimate bond stress tau (kPa, GEC-4 Table 7, p. 73)
+    over the perimeter of the drill hole:
         Lb = FOS * T / (pi * DDH * tau)
-
-    where T is the design load, DDH is the drill hole diameter,
-    and tau is the ultimate bond stress.
+    where T is the design load and DDH the drill hole diameter. Give one
+    of ``load_transfer_kN_per_m`` and ``bond_stress_kPa``.
 
     Parameters
     ----------
     design_load_kN : float
         Design anchor load (kN).
-    bond_stress_kPa : float
-        Ultimate bond stress at grout-ground interface (kPa).
+    bond_stress_kPa : float, optional
+        Average ultimate bond stress at the grout-ground interface (kPa).
     drill_diameter_mm : float
-        Drill hole diameter (mm). Default 150.
+        Drill hole diameter (mm), with ``bond_stress_kPa`` only. Default
+        150.
     FOS_bond : float
-        Factor of safety on bond capacity. Default 2.0 (GEC-4).
+        Factor of safety on the ultimate load transfer. Default 2.0, GEC-4's
+        for soil (p. 71; 3.0 in competent rock, p. 74).
     min_bond_length : float
-        Minimum bond length (m). Default 3.0 per GEC-4.
+        Minimum bond length (m). Default 3.0; :func:`design_ground_anchor`
+        passes GEC-4's (App. E Part 3 B, p. E-15: 4.5 m in soil, 4.5 m for
+        strand and 3 m for bar tendons in rock).
     max_bond_length : float
-        Maximum effective bond length (m). Default 12.0 per GEC-4.
-        Beyond ~12 m, bond efficiency decreases significantly.
+        Not applied; GEC-4 p. 71: soil anchor bond lengths are "typically
+        4.5 to 12 m" and longer ones add little capacity.
+    load_transfer_kN_per_m : float, optional
+        Ultimate load transfer per metre of bond length (kN/m).
 
     Returns
     -------
@@ -233,16 +369,23 @@ def compute_bond_length(
     """
     if design_load_kN <= 0:
         raise ValueError("Design load must be positive")
-    if bond_stress_kPa <= 0:
-        raise ValueError("Bond stress must be positive")
-    if drill_diameter_mm <= 0:
-        raise ValueError("Drill diameter must be positive")
-
-    drill_diameter_m = drill_diameter_mm / 1000.0
-    perimeter = math.pi * drill_diameter_m  # m
+    if (bond_stress_kPa is None) == (load_transfer_kN_per_m is None):
+        raise ValueError("Give one of load_transfer_kN_per_m (kN/m) and "
+                         "bond_stress_kPa (kPa)")
+    if load_transfer_kN_per_m is not None:
+        if load_transfer_kN_per_m <= 0:
+            raise ValueError("Load transfer must be positive")
+        q = load_transfer_kN_per_m
+    else:
+        if bond_stress_kPa <= 0:
+            raise ValueError("Bond stress must be positive")
+        if drill_diameter_mm <= 0:
+            raise ValueError("Drill diameter must be positive")
+        # kPa over the hole's perimeter (m) is kN per metre of bond length
+        q = bond_stress_kPa * math.pi * drill_diameter_mm / 1000.0
 
     # Required bond length
-    Lb = (FOS_bond * design_load_kN) / (perimeter * bond_stress_kPa)
+    Lb = (FOS_bond * design_load_kN) / q
 
     # Apply limits
     Lb = max(Lb, min_bond_length)
@@ -442,13 +585,14 @@ def design_ground_anchor(
     phi_deg: float,
     soil_type: str = "sand_medium",
     anchor_angle_deg: float = 15.0,
-    drill_diameter_mm: float = 150.0,
+    drill_diameter_mm: Optional[float] = None,
     tendon_type: str = "strand_15mm",
-    FOS_bond: float = 2.0,
+    FOS_bond: Optional[float] = None,
     lock_off_pct: float = 0.80,
     max_load_pct: float = 0.60,
     bond_stress_kPa: Optional[float] = None,
     test_load_factor: float = TEST_LOAD_FACTOR,
+    load_transfer_kN_per_m: Optional[float] = None,
 ) -> AnchorDesignResult:
     """Design a complete ground anchor per GEC-4 and PTI.
 
@@ -466,16 +610,24 @@ def design_ground_anchor(
     phi_deg : float
         Friction angle of retained soil (degrees).
     soil_type : str
-        Soil/rock type for bond stress lookup. See _BOND_STRESS_TABLE.
-        Default "sand_medium".
+        The ground of the bond zone, a row of GEC-4 Table 6 (soil, p. 71)
+        or Table 8 (rock, p. 74): its presumptive ultimate load transfer
+        (kN/m) is used per metre of bond length (GM-191), and its ground
+        sets FOS_bond's default and the minimum bond length. Default
+        "sand_medium" (sand, medium dense, 145 kN/m). See
+        :func:`list_bond_stress_types`.
     anchor_angle_deg : float
         Anchor inclination below horizontal (degrees). Default 15.
-    drill_diameter_mm : float
-        Drill hole diameter (mm). Default 150.
+    drill_diameter_mm : float, optional
+        Drill hole diameter (mm): the perimeter a given ``bond_stress_kPa``
+        acts on. Default 150 there (GEC-4 p. 70: "generally less than 150
+        mm"); not used with a load transfer per metre.
     tendon_type : str
         Tendon type for selection. Default "strand_15mm".
-    FOS_bond : float
-        Factor of safety on bond. Default 2.0.
+    FOS_bond : float, optional
+        Factor of safety on the ultimate load transfer. Default 2.0 in soil
+        (GEC-4 p. 71) and 3.0 in rock (competent rock, p. 74), by
+        ``soil_type``'s ground.
     lock_off_pct : float
         Lock-off as fraction of design load. Default 0.80.
     max_load_pct : float
@@ -483,17 +635,25 @@ def design_ground_anchor(
         Sec. 5.3.8, p. 77); the 80 % test-load limit governs where it
         allows less, 0.80 / test_load_factor (see :func:`select_tendon`).
     bond_stress_kPa : float or None
-        Override bond stress (kPa). If None, looked up from soil_type.
+        Average ultimate bond stress (kPa; GEC-4 Table 7, p. 73), used in
+        place of ``soil_type``'s load transfer over the perimeter of the
+        drill hole.
     test_load_factor : float
         The test load as a multiple of the design load (GEC-4 Sec.
         7.4.2.2, p. 143). Default 1.33 (:data:`TEST_LOAD_FACTOR`).
+    load_transfer_kN_per_m : float or None
+        Ultimate load transfer per metre of bond length (kN/m), used in
+        place of ``soil_type``'s, e.g. as verified by preproduction
+        performance tests (GEC-4 p. 75).
 
     Returns
     -------
     AnchorDesignResult
-        With ``choices`` (GM-185): the method, the test load, the SMTS
-        limit, the bond stress and its factor of safety, each given or
-        default, with its basis and the other options.
+        With ``choices`` (GM-185, GM-191/192): the method, the test load,
+        the SMTS limit, the load transfer and its factor of safety, the
+        distance behind the failure surface and the minimum unbonded and
+        bond lengths, each given, default or the module's, with its basis
+        and the other options.
     """
     if design_load_kN <= 0:
         raise ValueError("Design load must be positive")
@@ -501,26 +661,53 @@ def design_ground_anchor(
         raise ValueError("Anchor depth must be positive")
     if excavation_depth <= 0:
         raise ValueError("Excavation depth must be positive")
-
-    # Bond stress
-    if bond_stress_kPa is not None:
-        tau = bond_stress_kPa
-    elif soil_type in _BOND_STRESS_TABLE:
-        tau = _BOND_STRESS_TABLE[soil_type]["bond_stress_kPa"]
-    else:
+    if bond_stress_kPa is not None and load_transfer_kN_per_m is not None:
         raise ValueError(
-            f"Unknown soil_type '{soil_type}'. "
-            f"Available: {list(_BOND_STRESS_TABLE.keys())}"
-        )
+            "Give bond_stress_kPa (a stress, kPa, over the drill hole's "
+            "perimeter) or load_transfer_kN_per_m (kN per metre of bond "
+            "length), not both")
+
+    # The ground: its row gives the load transfer and, beside a given one,
+    # still says soil or rock for the factor of safety and the minimum
+    # bond length.
+    row = _row(soil_type)
+    ground = row["ground"]
+    bar = tendon_type in _BAR_DATA
+
+    # Ultimate load transfer per metre of bond length (kN/m)
+    diameter = None
+    if bond_stress_kPa is not None:
+        if bond_stress_kPa <= 0:
+            raise ValueError("Bond stress must be positive")
+        diameter = 150.0 if drill_diameter_mm is None else drill_diameter_mm
+        if diameter <= 0:
+            raise ValueError("Drill diameter must be positive")
+        q = bond_stress_kPa * math.pi * diameter / 1000.0
+    elif load_transfer_kN_per_m is not None:
+        if load_transfer_kN_per_m <= 0:
+            raise ValueError("Load transfer must be positive")
+        q = load_transfer_kN_per_m
+    else:
+        q = row["load_transfer_kN_per_m"]
+
+    fs = FOS_bond if FOS_bond is not None else (
+        3.0 if ground == "rock" else 2.0)
+    if fs <= 0:
+        raise ValueError("FOS_bond must be positive")
+
+    min_bond = _min_bond_length(ground, bar)
+    min_unbonded = MIN_UNBONDED_BAR_M if bar else MIN_UNBONDED_STRAND_M
 
     # Unbonded length
     unbonded_length = compute_unbonded_length(
-        anchor_depth, excavation_depth, phi_deg, anchor_angle_deg
+        anchor_depth, excavation_depth, phi_deg, anchor_angle_deg,
+        min_free_length=min_unbonded,
     )
 
     # Bond length
     bond_length = compute_bond_length(
-        design_load_kN, tau, drill_diameter_mm, FOS_bond
+        design_load_kN, FOS_bond=fs, min_bond_length=min_bond,
+        load_transfer_kN_per_m=q,
     )
 
     # Total anchor length
@@ -534,16 +721,26 @@ def design_ground_anchor(
 
     # Notes
     notes = []
-    if bond_length > 12.0:
+    if ground == "soil" and bond_length > 12.0:
         notes.append(
-            f"Bond length {bond_length:.1f} m exceeds 12 m — "
-            "bond efficiency decreases; consider higher capacity "
-            "soil zone or post-grouting"
+            f"Bond length {bond_length:.1f} m exceeds 12 m: GEC-4 p. 71, "
+            "soil anchor bond lengths are typically 4.5 to 12 m, and "
+            "significant increases in capacity beyond about 12 m cannot "
+            "be achieved unless specialized methods are used to transfer "
+            "load towards the end of the anchor; consider post-grouting, "
+            "a better bond zone or a lower design load"
         )
-    if unbonded_length < 4.5:
+    if ground == "rock" and bond_length > 10.0:
         notes.append(
-            f"Unbonded length {unbonded_length:.1f} m is less than "
-            "4.5 m minimum — check active wedge geometry"
+            f"Bond length {bond_length:.1f} m exceeds 10 m: GEC-4 p. 74, "
+            "rock anchor bond lengths typically range from 3 to 10 m"
+        )
+    if drill_diameter_mm is not None and bond_stress_kPa is None:
+        notes.append(
+            "drill_diameter_mm is not used: a load transfer per metre "
+            "(GEC-4 Table 6 or 8, or load_transfer_kN_per_m) does not "
+            "depend on the hole; give bond_stress_kPa for a stress over "
+            "the hole's perimeter"
         )
 
     return AnchorDesignResult(
@@ -553,9 +750,12 @@ def design_ground_anchor(
         unbonded_length_m=round(unbonded_length, 2),
         bond_length_m=round(bond_length, 2),
         total_length_m=round(total_length, 2),
-        bond_stress_kPa=round(tau, 1),
+        load_transfer_kN_per_m=round(q, 1),
+        FOS_bond=fs,
+        bond_stress_kPa=(None if bond_stress_kPa is None
+                         else round(bond_stress_kPa, 1)),
         soil_type=soil_type,
-        drill_diameter_mm=drill_diameter_mm,
+        drill_diameter_mm=diameter,
         tendon=tendon,
         test_load_factor=test_load_factor,
         test_load_kN=round(design_load_kN * test_load_factor, 1),
@@ -563,9 +763,20 @@ def design_ground_anchor(
         performance_test_kN=round(design_load_kN * test_load_factor, 1),
         notes=notes,
         choices=anchor_choices(
-            soil_type, bond_stress_kPa, tau, FOS_bond, max_load_pct,
-            test_load_factor, tendon.get("governed_by", "")),
+            soil_type, bond_stress_kPa, load_transfer_kN_per_m, q,
+            FOS_bond, fs, max_load_pct, test_load_factor,
+            tendon.get("governed_by", ""), diameter=diameter,
+            drill_diameter_mm=drill_diameter_mm, bar=bar,
+            H=excavation_depth),
     )
+
+
+def _min_bond_length(ground: str, bar: bool) -> float:
+    """GEC-4 App. E Part 3 B (p. E-15): "The minimum bond length shall be
+    4.5 m for strand tendons in rock and 3 m for bar tendons in rock. The
+    minimum bond length shall be 4.5 m for strand and bar tendons in
+    soil." (m)"""
+    return 3.0 if (ground == "rock" and bar) else 4.5
 
 
 #: The test loads GEC-4 names (Sec. 7.4.2.2, p. 143; Table 22, p. 147).
@@ -578,23 +789,38 @@ _TEST_LOADS = (
            "reference for the dial gauge (test_load_factor 1.5)"),
 )
 
+#: The factors of safety on bond GEC-4 gives (Sec. 5.3.6).
+_BOND_FS = (
+    (2.0, "2.0 in soil (p. 71), and in weak rocks such as clay shales, "
+          "intermediate geomaterials of unconfined compressive strength 0.5 "
+          "to 5.0 MPa (p. 74) (FOS_bond 2)"),
+    (3.0, "3.0 in competent rock (p. 74) (FOS_bond 3)"),
+)
+
 
 def anchor_choices(soil_type: str, bond_stress_kPa: Optional[float],
-                   tau: float, FOS_bond: float, max_load_pct: float,
-                   test_load_factor: float, governed_by: str) -> list:
-    """What :func:`design_ground_anchor` chose (GM-185), as a result's
-    ``choices`` (``geotech_common.choices``)."""
+                   load_transfer_kN_per_m: Optional[float], q: float,
+                   FOS_bond: Optional[float], fs: float,
+                   max_load_pct: float, test_load_factor: float,
+                   governed_by: str, *, diameter: Optional[float] = None,
+                   drill_diameter_mm: Optional[float] = None,
+                   bar: bool = False, H: float = 0.0) -> list:
+    """What :func:`design_ground_anchor` chose (GM-185, GM-191/192), as a
+    result's ``choices`` (``geotech_common.choices``)."""
     from geotech_common.choices import MODULE, choice, how_given
+    row = _LOAD_TRANSFER_TABLE[soil_type]
+    ground = row["ground"]
     out = [
         choice("anchor design method",
                "GEC-4 (FHWA-IF-99-015) Sec. 5.3", MODULE,
-               "unbonded length to 1.5 m past the active wedge from the "
-               "excavation base at 45 + phi/2, at least 4.5 m (GEC-4 Sec. "
-               "5.3.4, pp. 65-68: at least 4.5 m for strand and 3 m for "
-               "bar tendons, extended H/5 or 1.5 m behind the critical "
-               "potential failure surface); bond length L_b = FS_bond x "
-               "DL / (pi d tau), at least 3 m; the tendon to the SMTS "
-               "limits of Sec. 5.3.8 (p. 77)"),
+               "unbonded length from the anchor head to a line behind the "
+               "critical potential failure surface, which rises from the "
+               "corner of the excavation at 45 + phi/2 from the horizontal "
+               "(Sec. 5.3.2, p. 65, for walls in cohesionless soils), the "
+               "distance measured normal to it as GEC-4's design example "
+               "draws it (App. A, Figure A-3, p. A-8); bond length L_b = FS "
+               "x DL / ultimate load transfer per metre (pp. 71, 74); the "
+               "tendon to the SMTS limits of Sec. 5.3.8 (p. 77)"),
         choice("test load", f"{test_load_factor:g} x design load",
                how_given(test_load_factor, TEST_LOAD_FACTOR,
                          name="test_load_factor"),
@@ -619,39 +845,93 @@ def anchor_choices(soil_type: str, bond_stress_kPa: Optional[float],
                f"{0.80 / test_load_factor:.2f} SMTS. Sized by: "
                f"{governed_by}"),
     ]
+    by_row = (f"soil_type '{soil_type}': {row['load_transfer_kN_per_m']:g} "
+              f"kN/m, {row['description']} ({row['source']})")
+    given_transfer = ("load_transfer_kN_per_m, e.g. as verified by "
+                      "preproduction performance tests (GEC-4 p. 75)")
+    given_stress = ("bond_stress_kPa from GEC-4 Table 7 (p. 73, after PTI "
+                    "1996), an average ultimate bond stress by anchor type "
+                    "and ground, over the perimeter of the drill hole "
+                    "(drill_diameter_mm)")
     if bond_stress_kPa is not None:
         out.append(choice(
-            "ultimate bond stress", f"{tau:g} kPa",
+            "ultimate load transfer",
+            f"{bond_stress_kPa:g} kPa x pi x {diameter:g} mm = {q:.1f} kN/m",
             how_given(bond_stress_kPa, None, name="bond_stress_kPa"),
-            "bond_stress_kPa as given; GEC-4 Table 7 (p. 73, after PTI "
-            "1996) prints average ultimate bond stresses by anchor type "
-            "and ground"))
-    else:
-        row = _BOND_STRESS_TABLE[soil_type]
-        lo, hi = row["range"]
+            "bond_stress_kPa as given, an average ultimate bond stress "
+            "(GEC-4 Table 7, p. 73, after PTI 1996), over the perimeter of "
+            "the drill hole: \"capacity estimates should be based on the "
+            "as-drilled hole diameter\" (p. 72)",
+            [given_transfer, by_row]))
         out.append(choice(
-            "ultimate bond stress",
-            f"{tau:g} kPa for soil_type '{soil_type}' "
-            f"({row['description']}; range {lo:g}-{hi:g} kPa)",
+            "drill hole diameter", f"{diameter:g} mm",
+            how_given(drill_diameter_mm, None, name="drill_diameter_mm"),
+            "the perimeter the bond stress acts on; GEC-4 p. 70: the drill "
+            "hole diameter \"is generally less than 150 mm, except for "
+            "hollow stem augered anchors that are typically approximately "
+            "300 mm in diameter\""))
+    elif load_transfer_kN_per_m is not None:
+        out.append(choice(
+            "ultimate load transfer", f"{q:g} kN/m",
+            how_given(load_transfer_kN_per_m, None,
+                      name="load_transfer_kN_per_m"),
+            "load_transfer_kN_per_m as given, per metre of bond length",
+            [by_row, given_stress]))
+    else:
+        table = ("small diameter straight shaft gravity-grouted ground "
+                 "anchors in soil" if ground == "soil"
+                 else "ground anchors in rock")
+        caveat = ("SPT values corrected for overburden pressure"
+                  if ground == "soil" else
+                  "lower values may be recommended after input from a "
+                  "geologist, especially if the rock mass strength is "
+                  "controlled by discontinuities (p. 74)")
+        out.append(choice(
+            "ultimate load transfer",
+            f"{q:g} kN/m for soil_type '{soil_type}' "
+            f"({row['description']}; {row['source']})",
             how_given(soil_type, "sand_medium", name="soil_type"),
-            "the module's presumptive value, not traced to a printed "
-            "table (medium sand's 145, range 100-190, are GEC-4 Table 6's "
-            "ultimate transfer loads for sand in kN/m, p. 71, not "
-            "stresses); GEC-4 Table 7 (p. 73, after PTI 1996) prints "
-            "average ultimate bond stresses by anchor type and ground, "
-            "e.g. pressure-grouted fine-medium sand, medium dense to "
-            "dense, 0.08-0.38 MPa",
-            ["bond_stress_kPa from GEC-4 Table 7 (p. 73) for the anchor "
-             "type and ground",
-             "bond_stress_kPa from preproduction load tests (GEC-4 Sec. "
-             "5.3.6, p. 75)"]))
+            f"{row['source']}: presumptive ultimate values of load transfer "
+            f"for preliminary design of {table}, per metre of bond length; "
+            f"{caveat}. The drill hole diameter does not enter it (until "
+            "GM-191 the module read kN/m values as kPa and multiplied them "
+            "by the hole's perimeter)",
+            [given_transfer, given_stress]))
     out.append(choice(
-        "factor of safety on bond", FOS_bond,
-        how_given(FOS_bond, 2.0, name="FOS_bond"),
+        "factor of safety on bond", fs,
+        how_given(FOS_bond, None, name="FOS_bond"),
         "on the ultimate load transfer; GEC-4 Sec. 5.3.6: 2.0 in soil "
-        "(p. 71) and in weak rock, 3.0 in competent rock (p. 74)",
-        ["3.0 for competent rock (FOS_bond 3)"] if FOS_bond != 3.0
-        else ["2.0 for soil and weak rock (FOS_bond 2)"]))
+        "(p. 71); 3.0 in competent rock, \"to account for uncertainties "
+        "associated with potential discontinuities in the rock mass\", and "
+        "2.0 in weak rocks such as clay shales (p. 74). The default follows "
+        f"soil_type: '{soil_type}' is {ground}",
+        [text for f, text in _BOND_FS if abs(f - fs) > 1e-9]))
+    clear = distance_behind_failure_surface(H)
+    out.append(choice(
+        "distance behind the critical potential failure surface",
+        f"{clear:.2f} m (the greater of 1.5 m and H/5)", MODULE,
+        "GEC-4 App. E Part 3 C (p. E-15): \"The free stressing length "
+        "(unbonded length) shall extend at least 1.5 m or 20 percent of "
+        "the height of the wall, whichever is greater, behind the critical "
+        "failure surface\"; Sec. 5.3.2 (p. 65) and 5.3.4 (p. 68): \"a "
+        "minimum distance of H/5 or 1.5 m\". Until GM-192, 1.5 m whatever "
+        "the wall height"))
+    out.append(choice(
+        "minimum unbonded length",
+        f"{MIN_UNBONDED_BAR_M if bar else MIN_UNBONDED_STRAND_M:g} m "
+        f"({'bar' if bar else 'strand'} tendon)", MODULE,
+        "GEC-4 Sec. 5.3.4 (p. 67): \"The minimum unbonded length for rock "
+        "and soil ground anchors is 4.5 m for strand tendons and 3 m for "
+        "bar tendons\", to prevent significant reductions in load from "
+        "seating losses. Until GM-192, 4.5 m for bars too"))
+    out.append(choice(
+        "minimum bond length",
+        f"{_min_bond_length(ground, bar):g} m ({ground}, "
+        f"{'bar' if bar else 'strand'} tendon)", MODULE,
+        "GEC-4 App. E Part 3 B (p. E-15): \"The minimum bond length shall "
+        "be 4.5 m for strand tendons in rock and 3 m for bar tendons in "
+        "rock. The minimum bond length shall be 4.5 m for strand and bar "
+        "tendons in soil.\" Until GM-192, 3 m in every ground"))
     return out
 
 
@@ -660,15 +940,17 @@ def anchor_choices(soil_type: str, bond_stress_kPa: Optional[float],
 # ============================================================================
 
 def list_bond_stress_types() -> Dict[str, str]:
-    """Return available soil/rock types and their bond stress descriptions."""
-    return {k: v["description"] for k, v in _BOND_STRESS_TABLE.items()}
+    """The ``soil_type`` values and the printed row each is: GEC-4 Table 6
+    (soil) and Table 8 (rock), presumptive ultimate load transfer per metre
+    of bond length (GM-191)."""
+    return {k: f"{v['description']}: {v['load_transfer_kN_per_m']:g} kN/m "
+               f"({v['source']})"
+            for k, v in _LOAD_TRANSFER_TABLE.items()}
 
 
 def get_bond_stress(soil_type: str) -> Dict[str, Any]:
-    """Get bond stress data for a soil/rock type."""
-    if soil_type not in _BOND_STRESS_TABLE:
-        raise ValueError(
-            f"Unknown soil_type '{soil_type}'. "
-            f"Available: {list(_BOND_STRESS_TABLE.keys())}"
-        )
-    return {**_BOND_STRESS_TABLE[soil_type], "soil_type": soil_type}
+    """The load-transfer row of a ``soil_type``: ``load_transfer_kN_per_m``
+    (kN per metre of bond length, GEC-4 Table 6 or 8), ``ground``,
+    ``description``, ``source``. Kept under its old name; the table has
+    held loads per metre, not stresses, since GM-191."""
+    return {**_row(soil_type), "soil_type": soil_type}

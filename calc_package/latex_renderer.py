@@ -378,12 +378,12 @@ def _compress_pdf_images(html: str, jpg_quality: int = 90,
             if pix.alpha:                       # JPEG has no alpha channel
                 pix = fitz.Pixmap(pix, 0)
             longest = max(pix.width, pix.height)
-            if longest > max_px:                # halve until within the cap
-                n = 0
-                while longest > max_px and n < 4:
-                    n += 1
-                    longest /= 2
-                pix.shrink(n)
+            if longest > max_px:                # scaled to the cap
+                # (halving left a tall figure under the text width at the
+                # engine's 96 px an inch, so it printed smaller; GM-186)
+                s = max_px / longest
+                pix = fitz.Pixmap(pix, max(1, round(pix.width * s)),
+                                  max(1, round(pix.height * s)))
             jpg = pix.tobytes("jpeg", jpg_quality=jpg_quality)
             return ('src="data:image/jpeg;base64,'
                     + base64.b64encode(jpg).decode("ascii") + '"')
@@ -393,14 +393,15 @@ def _compress_pdf_images(html: str, jpg_quality: int = 90,
     return re.sub(r'src="data:image/png;base64,([^"]+)"', _repl, html)
 
 
-def _save_pdf_story(data: CalcPackageData, filepath: str) -> str:
+def _save_pdf_story(data: CalcPackageData, filepath: str) -> dict:
     """Pure-Python HTML -> PDF via PyMuPDF's Story engine (no LaTeX needed).
 
     Renders the SAME self-contained HTML as ``format="html"`` (``render_html``)
-    into a paginated PDF. See :func:`save_html_pdf_story` for the engine's
-    capabilities and limits. Returns the absolute PDF path.
+    into a paginated PDF. See :func:`render_html_pdf_story` for the engine's
+    capabilities and limits, and for what it returns: the absolute PDF path
+    and each figure's printed size and lettering.
     """
-    return save_html_pdf_story(render_html(data), filepath)
+    return render_html_pdf_story(render_html(data), filepath)
 
 
 # ── Story PDF figure layout (BACKLOG GM-168) ──────────────────────────
@@ -934,7 +935,9 @@ def render_pdf(
     Returns
     -------
     dict
-        ``{"path": str, "renderer": "pdflatex"|"pymupdf_story", "warnings": [str]}``.
+        ``{"path": str, "renderer": "pdflatex"|"pymupdf_story", "warnings": [str]}``,
+        plus, from the Story engine, ``"figures"``: each figure's printed
+        size and lettering (see :func:`render_html_pdf_story`).
 
     Raises
     ------
@@ -964,7 +967,7 @@ def render_pdf(
             "Story HTML engine (simpler layout, CSS subset). Install a LaTeX "
             "distribution (MiKTeX / TeX Live) for the full-fidelity PDF.")
     try:
-        path = _save_pdf_story(data, filepath)
+        rendered = _save_pdf_story(data, filepath)
     except Exception as exc:
         raise RuntimeError(
             "Could not produce a PDF: pdflatex is not installed and the "
@@ -973,7 +976,10 @@ def render_pdf(
             "Print -> Save as PDF, or install a LaTeX distribution "
             "(MiKTeX / TeX Live)."
         ) from exc
-    return {"path": path, "renderer": "pymupdf_story", "warnings": warnings}
+    # each figure's printed size and lettering (GM-186), for the caller to
+    # warn on one that prints too small
+    return {"path": rendered["path"], "renderer": "pymupdf_story",
+            "warnings": warnings, "figures": rendered.get("figures")}
 
 
 def save_pdf(

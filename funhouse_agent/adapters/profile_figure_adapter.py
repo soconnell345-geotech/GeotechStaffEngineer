@@ -583,6 +583,13 @@ def _run_plot_data(params: dict) -> dict:
     if params.get("reference_chart"):
         params, n_added, chart_said = _reference_overlay(params)
 
+    # Every figure saved reaches the user: one that only holds a place is
+    # refused before anything is written (BACKLOG GM-190).
+    from funhouse_agent.plot_box.figures import STAND_IN_NOTE, stand_in
+    why = stand_in(**_plot_words(params))
+    if why:
+        raise ValueError(f"plot_data drew no figure: {why}. {STAND_IN_NOTE}")
+
     output_path = params.get("output_path") or _default_plot_path()
     output_path = resolve_output_path(str(output_path))
     if not output_path.lower().endswith((".png", ".jpg", ".jpeg")):
@@ -676,6 +683,28 @@ def _run_plot_data(params: dict) -> dict:
     if params.get("include_base64"):
         response["image_base64"] = result.image_base64
     return response
+
+
+def _plot_words(params: dict) -> dict:
+    """The words a ``plot_data`` figure carries, for the stand-in check
+    (:func:`funhouse_agent.plot_box.figures.stand_in`): its title, axis
+    names, series names, and the point names, notes and reference-line
+    names."""
+    series = [s for s in params.get("series") or [] if isinstance(s, dict)]
+    notes = []
+    for s in series:
+        if isinstance(s.get("labels"), (list, tuple)):
+            notes += list(s["labels"])
+    notes += [a.get("text") for a in params.get("annotations") or []
+              if isinstance(a, dict)]
+    for key in ("hlines", "vlines"):
+        lines = params.get(key)
+        notes += [spec.get("label") for spec in
+                  (lines if isinstance(lines, list) else [])
+                  if isinstance(spec, dict)]
+    return {"titles": [params.get("title")],
+            "axes": [params.get("xlabel"), params.get("ylabel")],
+            "series": [s.get("label") for s in series], "notes": notes}
 
 
 def _own_places(text: str, n_added: int) -> str:

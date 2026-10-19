@@ -20,7 +20,9 @@ TEXT = "<p>" + ("The bearing resistance of the footing is checked against "
 
 def _png(width_in: float, height_in: float, dpi: int = 100,
          fontsize: float = 10.0) -> str:
-    """A base64 PNG plot ``width_in`` x ``height_in`` at ``dpi``."""
+    """A base64 PNG plot ``width_in`` x ``height_in`` at ``dpi``, saved as
+    drawn (not fitted to a package's print width: these tests are about
+    the page layout)."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -31,7 +33,7 @@ def _png(width_in: float, height_in: float, dpi: int = 100,
     ax.set_xlabel("Distance (m)", fontsize=fontsize)
     ax.tick_params(labelsize=fontsize)
     try:
-        return figure_to_base64(fig, dpi=dpi)
+        return figure_to_base64(fig, dpi=dpi, print_width_in=None)
     finally:
         plt.close(fig)
 
@@ -338,3 +340,58 @@ def test_a_commented_out_picture_does_not_shift_the_lettering(tmp_path):
     out = render_html_pdf_story(html, str(tmp_path / "comment.pdf"))
     fig, = out["figures"]
     assert fig["lettering_pt"] > 10
+
+
+# ---------------------------------------------------------------------------
+# package figures drawn for the width they print at (BACKLOG GM-186)
+# ---------------------------------------------------------------------------
+
+def _package_pdf(tmp_path, fig, name="pkg.pdf"):
+    """``fig`` as a calc package carries it: saved by figure_to_base64,
+    laid out by the package template, printed by the Story engine."""
+    from calc_package.data_model import CalcPackageData, CalcSection, FigureData
+    from calc_package.renderer import figure_to_base64, render_html
+    data = CalcPackageData(project_name="T", analysis_type="Test", sections=[
+        CalcSection(title="Figures", items=[FigureData(
+            title="F", image_base64=figure_to_base64(fig), caption="c")])])
+    return render_html_pdf_story(render_html(data), str(tmp_path / name))
+
+
+def test_a_package_figure_prints_its_lettering_at_7_pt(tmp_path):
+    """Drawn 10 in wide with 8 pt lettering, a package figure printed at
+    the template's 5 in with 4 pt lettering; it is now drawn for 5 in."""
+    import matplotlib.pyplot as plt
+    from calc_package.renderer import FIGURE_PRINT_WIDTH_IN
+    from geotech_common.layout_ink import MIN_PRINT_PT
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot([0, 1], [0, 1])
+    ax.set_xlabel("Distance (m)", fontsize=8)
+    ax.tick_params(labelsize=8)
+    try:
+        out = _package_pdf(tmp_path, fig)
+    finally:
+        plt.close(fig)
+    printed, = out["figures"]
+    assert printed["width_in"] == pytest.approx(FIGURE_PRINT_WIDTH_IN,
+                                                abs=0.05)
+    assert printed["lettering_pt"] >= MIN_PRINT_PT
+
+
+def test_a_tall_package_figure_keeps_the_text_width(tmp_path):
+    """A tall figure's pixels are scaled to the PDF's cap, not halved: a
+    half left it under the text width at the engine's 96 px an inch, and
+    its lettering printed under 7 pt."""
+    import matplotlib.pyplot as plt
+    from calc_package.renderer import FIGURE_PRINT_WIDTH_IN
+    from geotech_common.layout_ink import MIN_PRINT_PT
+    fig, ax = plt.subplots(figsize=(6, 8))
+    ax.plot([0, 1], [0, 1])
+    ax.set_ylabel("Depth (m)", fontsize=9)
+    ax.tick_params(labelsize=9)
+    try:
+        out = _package_pdf(tmp_path, fig, "tall.pdf")
+    finally:
+        plt.close(fig)
+    printed, = out["figures"]
+    assert printed["width_in"] >= FIGURE_PRINT_WIDTH_IN - 0.05
+    assert printed["lettering_pt"] >= MIN_PRINT_PT

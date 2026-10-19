@@ -1012,7 +1012,8 @@ class TestUnbondedLength:
     """Tests for compute_unbonded_length()."""
 
     def test_minimum_free_length(self):
-        """Unbonded length should be at least 4.5 m (GEC-4 minimum)."""
+        """Unbonded length should be at least 4.5 m (GEC-4 minimum for
+        strand, the function's default)."""
         L = compute_unbonded_length(
             anchor_depth=2.0, H=6.0, phi_deg=30.0, anchor_angle_deg=15.0
         )
@@ -1160,7 +1161,9 @@ class TestDesignGroundAnchor:
         assert result.test_load_kN == pytest.approx(500 * 1.33, abs=0.1)
 
     def test_rock_anchor_shorter_bond(self):
-        """Rock anchors need shorter bond lengths than sand."""
+        """Rock anchors need shorter bond lengths than sand: soft
+        limestone's 440 kN/m at FS 3 (GEC-4 Table 8, p. 74) against
+        medium dense sand's 145 kN/m at FS 2 (Table 6, p. 71)."""
         r_sand = design_ground_anchor(
             design_load_kN=500.0, anchor_depth=3.0,
             excavation_depth=8.0, phi_deg=30.0,
@@ -1169,9 +1172,10 @@ class TestDesignGroundAnchor:
         r_rock = design_ground_anchor(
             design_load_kN=500.0, anchor_depth=3.0,
             excavation_depth=8.0, phi_deg=35.0,
-            soil_type="rock_medium",
+            soil_type="soft_limestone",
         )
         assert r_rock.bond_length_m < r_sand.bond_length_m
+        assert r_rock.FOS_bond == 3.0 and r_sand.FOS_bond == 2.0
 
     def test_custom_bond_stress(self):
         """Override bond stress with site-specific value."""
@@ -1181,6 +1185,10 @@ class TestDesignGroundAnchor:
             bond_stress_kPa=200.0,
         )
         assert result.bond_stress_kPa == 200.0
+        # over the default 150 mm hole's perimeter (GM-191)
+        assert result.drill_diameter_mm == 150.0
+        assert result.load_transfer_kN_per_m == pytest.approx(
+            200.0 * math.pi * 0.150, abs=0.05)
 
     def test_summary_and_to_dict(self):
         """Result should have working summary() and to_dict()."""
@@ -1218,15 +1226,21 @@ class TestBondStressLookup:
     """Tests for bond stress table lookup helpers."""
 
     def test_list_types(self):
+        """GEC-4 Table 6's eleven soil rows and Table 8's six rock rows
+        (GM-191)."""
         types = list_bond_stress_types()
         assert "sand_medium" in types
-        assert "rock_hard" in types
-        assert len(types) >= 9
+        assert "granite_basalt" in types
+        assert "rock_hard" not in types
+        assert len(types) == 17
 
     def test_get_bond_stress(self):
+        """Dense sand is Table 6's 190 kN/m (p. 71); it was 250 kPa,
+        no printed row (GM-191)."""
         data = get_bond_stress("sand_dense")
-        assert data["bond_stress_kPa"] == 250
-        assert "range" in data
+        assert data["load_transfer_kN_per_m"] == 190
+        assert data["ground"] == "soil"
+        assert data["source"] == "GEC-4 Table 6 (p. 71)"
         assert data["soil_type"] == "sand_dense"
 
     def test_unknown_type_raises(self):

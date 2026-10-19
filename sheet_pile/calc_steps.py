@@ -666,7 +666,6 @@ def _plot_pressure_diagram(result, analysis):
     ax1.set_ylabel('Depth from Top of Wall (m)', fontsize=10)
     ax1.set_title('Active & Passive Pressures', fontsize=11, fontweight='bold')
     ax1.invert_yaxis()
-    ax1.legend(fontsize=8, loc='lower left')
     ax1.grid(True, alpha=0.3)
     ax1.tick_params(labelsize=9)
 
@@ -684,11 +683,17 @@ def _plot_pressure_diagram(result, analysis):
     ax2.set_title('Net Pressure Diagram', fontsize=11, fontweight='bold')
     # no second invert_yaxis: the axes share y, and inverting both turned
     # the wall upside down (depth 0 at the bottom) until 2026-10-14
-    ax2.legend(fontsize=8, loc='lower left')
     ax2.grid(True, alpha=0.3)
     ax2.tick_params(labelsize=9)
 
-    plt.tight_layout()
+    # one key for both panels, under them: inside the panels it covered
+    # the pressure diagrams once the figure was drawn for the width it
+    # prints at (GM-186)
+    h1, l1 = ax1.get_legend_handles_labels()
+    h2, l2 = ax2.get_legend_handles_labels()
+    fig.legend(h1 + h2, l1 + l2, loc='lower center', fontsize=8, ncol=2,
+               frameon=False)
+    plt.tight_layout(rect=(0, 0.1, 1, 1))
     return fig
 
 
@@ -747,7 +752,8 @@ def _plot_shear_moment(result, analysis):
     ax1.axvline(x=0, color='black', linewidth=0.5)
     ax1.set_xlabel('Shear Force (kN/m)', fontsize=10)
     ax1.set_ylabel('Depth from Top of Wall (m)', fontsize=10)
-    ax1.set_title('Shear Force Diagram', fontsize=11, fontweight='bold')
+    # no panel titles: the axis labels name each panel, and the titles
+    # ran into each other at the printed width (GM-186)
     ax1.invert_yaxis()
     ax1.legend(fontsize=8)
     ax1.grid(True, alpha=0.3)
@@ -774,7 +780,6 @@ def _plot_shear_moment(result, analysis):
     )
 
     ax2.set_xlabel('Bending Moment (kN\u00b7m/m)', fontsize=10)
-    ax2.set_title('Bending Moment Diagram', fontsize=11, fontweight='bold')
     # the axes share y: ax1 already inverted it (see the pressure diagram)
     ax2.grid(True, alpha=0.3)
     ax2.tick_params(labelsize=9)
@@ -869,18 +874,19 @@ def _plot_wall_section(result, analysis):
                       edgecolor='#1a1a1a', alpha=0.9),
         )
 
-    # Dimension annotations: H
+    # Dimension annotations: H and D, each written along its dimension
+    # line (written across it they ran past the frame at the printed
+    # width; GM-186)
     ax.annotate('', xy=(right_extent - 0.5, 0),
                 xytext=(right_extent - 0.5, H),
                 arrowprops=dict(arrowstyle='<->', color='#1a1a1a', lw=1.2))
-    ax.text(right_extent - 0.3, H / 2, f'H = {H:.1f} m',
+    ax.text(right_extent - 0.35, H / 2, f'H = {H:.1f} m', rotation=90,
             ha='left', va='center', fontsize=9, fontweight='bold')
 
-    # Dimension annotations: D
     ax.annotate('', xy=(right_extent - 0.5, H),
                 xytext=(right_extent - 0.5, L),
                 arrowprops=dict(arrowstyle='<->', color='#1a1a1a', lw=1.2))
-    ax.text(right_extent - 0.3, H + D / 2, f'D = {D:.1f} m',
+    ax.text(right_extent - 0.35, H + D / 2, f'D = {D:.1f} m', rotation=90,
             ha='left', va='center', fontsize=9, fontweight='bold')
 
     # Soil layer labels on retained side
