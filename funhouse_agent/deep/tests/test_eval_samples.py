@@ -136,13 +136,15 @@ def test_ags4_sample_parses():
 
 @requires_ags4
 def test_ags4_sample_validates():
-    """sample_borehole.ags passes AGS4 rule validation with zero errors."""
+    """sample_borehole.ags goes through AGS4 rule validation, and the result
+    says what the rules found. The sample is minimal (LF line ends, no TRAN
+    or DICT group), so python-ags4 reports rule errors; until GM-160 the
+    count was misread as 0 and every file came back valid."""
     from subsurface_characterization.formats.ags4 import validate_ags4
     r = validate_ags4(filepath=str(eh.resolve_sample_path("sample_borehole.ags")))
     d = r.to_dict()
-    # The sample is intentionally minimal (no DICT group etc), so warnings/FYI
-    # are acceptable; hard errors are not.
-    assert d["n_errors"] == 0, d.get("errors")
+    assert d["n_errors"] > 0 and d["is_valid"] is False
+    assert "AGS Format Rule 2a" in d["errors"]   # lines not ended CR LF
 
 
 def test_gef_cpt_sample_parses():

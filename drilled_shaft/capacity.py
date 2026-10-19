@@ -341,7 +341,8 @@ class DrillShaftAnalysis:
         Returns
         -------
         list of dict
-            Each dict has 'depth_m', 'Q_ultimate_kN', 'Q_skin_kN', 'Q_tip_kN'.
+            Each dict has 'depth_m', 'Q_ultimate_kN', 'Q_skin_kN', 'Q_tip_kN'
+            and 'Q_allowable_kN' (Q_ultimate / factor_of_safety; GM-160).
         """
         if depth_max is None:
             depth_max = min(self.shaft.length, self.soil.total_thickness)
@@ -373,6 +374,7 @@ class DrillShaftAnalysis:
                     "Q_ultimate_kN": round(r.Q_ultimate, 1),
                     "Q_skin_kN": round(r.Q_skin, 1),
                     "Q_tip_kN": round(r.Q_tip, 1),
+                    "Q_allowable_kN": round(r.Q_allowable, 1),
                 })
             except Exception:
                 pass

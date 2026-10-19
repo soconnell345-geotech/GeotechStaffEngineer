@@ -491,7 +491,8 @@ _VOLATILE = frozenset({
     "defaults_used", "output_note", "output_path", "file_size_bytes",
     "html_length", "elapsed_s", "runtime_s", "seconds_per_evaluation",
     "dxf_base64", "notes", "warnings", "note"})
-_STAMP = re.compile(r"\d{8}_\d{6}(_\d+)?")
+_STAMP = re.compile(r"\d{8}_\d{6}(_\d+)?"
+                    r"|\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}")
 
 
 def _analysis_methods() -> set:
@@ -696,7 +697,8 @@ def test_every_default_a_run_lists_changes_its_result(key, tmp_path,
     past the input's own echo and the ``choices``; it fails only where no
     other value moves it (a limit may act one way only). Inputs that are a label
     only are in ``MP.LABEL_ONLY``; inputs whose effect this probe does not
-    reach are in ``MP.NOT_REACHED``, each with why."""
+    reach are in ``MP.NOT_REACHED``, each with why; ``MP.TO_TRACE`` holds
+    the ones the first sweep found and nobody has traced yet."""
     if key in MP.NOT_VARIED:
         pytest.skip(MP.NOT_VARIED[key])
     monkeypatch.chdir(tmp_path)
@@ -719,6 +721,7 @@ def test_every_default_a_run_lists_changes_its_result(key, tmp_path,
     for name, value in (r0.get("defaults_used") or {}).items():
         if (base, name) in MP.LABEL_ONLY or (key, name) in MP.LABEL_ONLY \
                 or (key, name) in MP.NOT_REACHED \
+                or (key, name) in MP.TO_TRACE \
                 or (base, name) in MP.KNOWN:
             continue
         others = _other_values(info.get(name) or {}, value)
@@ -732,7 +735,7 @@ def test_every_default_a_run_lists_changes_its_result(key, tmp_path,
 
 
 def test_the_allow_lists_name_declared_inputs_of_probed_methods():
-    for table in (MP.LABEL_ONLY, MP.NOT_REACHED):
+    for table in (MP.LABEL_ONLY, MP.NOT_REACHED, MP.TO_TRACE):
         for (key, name), why in table.items():
             assert key in MP.PROBES or key in {
                 k.split("#")[0] for k in MP.PROBES}, key

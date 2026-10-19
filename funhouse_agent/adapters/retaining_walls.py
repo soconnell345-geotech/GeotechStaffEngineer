@@ -528,6 +528,11 @@ METHOD_INFO["mse_lrfd_external_stability"]["refused_parameters"] = {
 _TRAFFIC = {"traffic_vertical_resists": {"backfill_slope": "set",
                                          "surcharge": "set"}}
 declare_applies_when(METHOD_INFO, {
+    # GM-160: the wall friction and back-face angle are Coulomb's; omitted
+    # under caquot_kerisel delta is phi, not this 0 (so not listed there).
+    "earth_pressure_coefficient": {
+        "delta_deg": {"theory": ["coulomb"], "state": ["active", "passive"]},
+        "alpha_deg": {"theory": ["coulomb"], "state": ["active", "passive"]}},
     "cantilever_wall": {
         "key_depth": {"has_shear_key": [True]},
         "live_load_resists": {"surcharge": "set"},

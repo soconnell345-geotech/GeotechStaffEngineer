@@ -193,7 +193,7 @@ METHOD_INFO = {
             "depth_max": {"type": "float", "required": False, "description": "Maximum trial shaft length (m). Default: min(shaft_length, soil profile depth)."},
             "n_points": {"type": "int", "required": False, "default": 20, "description": "Number of trial lengths in the sweep."},
         },
-        "returns": {"capacity_vs_depth": "List of {depth, Q_ult, Q_skin, Q_tip} dicts."},
+        "returns": {"capacity_vs_depth": "List of {depth_m, Q_ultimate_kN, Q_skin_kN, Q_tip_kN, Q_allowable_kN} dicts (Q_allowable = Q_ultimate / factor_of_safety)."},
     },
     "lrfd_capacity": {
         "category": "Drilled Shaft",
