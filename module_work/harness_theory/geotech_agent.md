@@ -135,7 +135,20 @@ it, the only general line was "always comment on confidence" (item 1); a
 survey of 17 recorded runs found assumed inputs stated well and other choices
 (factors of safety, a search grid, a method, the stratum a check ran on)
 silent or in passing, and the librarian consulted in 4 of 77 calc runs.
-Measured by live-smoke flows F61 / F61j (EV-25, EV-26).
+Measured by live-smoke flows F61 / F61j (EV-25, EV-26). Wave w12 measured
+four pairs (F18, F51, F55, F61): the same engineering at 1.8x the cost, no
+reference for any call, assumptions printed as "Given", K0 lost from one
+list, fewer alternatives in another. GM-155 (2026-10-18) rewrote the
+section (1,651 characters): a tool's defaults are calls; each call names
+its source (a tool's `choices` basis, a reference already looked up, or
+ONE consult for all the calls without one) or says it has none; one tool
+run for the call the answer turns on most, a direction for the rest, and
+that run never replaces the alternatives. Unswitched with it: item 1's
+confidence sentence now asks for a tool-run number or a direction, the
+`calc` delegation and helper keep given apart from assumed, and calc
+packages print "Given Inputs" apart from "Assumed Inputs"
+(`defaults_used` plus the package input
+`assumptions`).
 
 ### 3.2 Tools (32 in both configurations; about 38 thousand characters of schema)
 

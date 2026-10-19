@@ -286,7 +286,8 @@ Key conventions:
       across a turn, whoever draws it (`plot_box/figures.py`); standard chart
       lines from the references (refs `chart_lines.py`); a live surcharge
       over a cantilever wall's heel or an MSE wall's reinforced zone no longer
-      resists (release notes);
+      resists (release notes); calc packages keep given and assumed inputs apart
+      and judgment calls cite their source (behind the OFF switch);
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done".
     Open next: Foundry brief 6, which measures all of this, is drafted

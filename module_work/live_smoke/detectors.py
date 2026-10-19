@@ -890,8 +890,16 @@ def detect_health(ctx) -> List[dict]:
             out.append(finding(D, "unknown_tool", "high",
                                f"the model called a tool that does not "
                                f"exist: {(e.get('text') or '')[:200]}"))
-    # scratch filesystem writes the user can never download
+    # scratch filesystem writes the user can never download; a write that
+    # failed wrote nothing (w12 F55j: an edit_file "not found" counted
+    # twice, as its error and as a write; EV-28)
+    failed = {a.get("run_id") for a in acts if a.get("run_id") and (
+        a.get("event") == "tool_error" or (
+            a.get("event") == "tool_end" and _result_is_error(
+                _text(a.get("result") or ""))[0]))}
     for a in acts:
+        if a.get("run_id") in failed:
+            continue
         if a.get("event") == "tool_start" and a.get("name") in ("write_file",
                                                                 "edit_file"):
             args = a.get("args") or {}

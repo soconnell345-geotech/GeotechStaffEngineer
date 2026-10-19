@@ -514,6 +514,34 @@ the eyes). What changed on master after 5.33.0, in short:
   and off the build is byte-for-byte as before
   (`deep/tests/test_judgment_calls.py`). Measured by live-smoke flows
   F61 / F61j and `expect.answer_names` (EV-25, EV-26).
+  **GM-155 (2026-10-18, after live wave w12 measured four pairs):** no ON
+  answer cited a reference, assumptions reached two PDFs as "Given", K0
+  (a tool default named only in its notes) fell out of one list, and one
+  ON answer ran fewer alternatives than OFF. The section (now 1,651
+  characters; 1,544 without the helper) makes a tool's defaults calls
+  (`choices` not marked given, `defaults_used` where the answer turns on
+  them, what its notes say it assumed); each call's "why" names its
+  source -- the basis in a tool's
+  `choices`, a reference already looked up, or one consult of the
+  `references` helper covering every call the answer turns on that has
+  none -- or says it rests on judgment with no reference cited; "what
+  would change the answer" is one tool run (one call; no second helper
+  task or deliverable) for the call the answer turns on most and a
+  direction for the rest, and that run adds to the
+  alternatives, never replaces them; rounding and presentation are left
+  out. The calc helper's text and the librarian's (several choices at
+  once, a line or two each) follow. Unswitched, as plain corrections: the
+  base prompt's confidence sentence asks for a number from a tool run or
+  a reference looked up, else a direction (both arms invented
+  sensitivity percentages); the delegation nudge and the calc helper keep
+  the user's inputs apart from the assumptions; and every `*_package`
+  opens with "Given Inputs" (what the call passed, less what it stated as
+  assumptions) and "Assumed Inputs" (`defaults_used`, plus a new
+  `assumptions` input, {input name: basis}, refused with a did-you-mean
+  when a name is not one of the package's inputs), then the module's echo,
+  retitled "Values Used" because it mixes given, assumed and derived
+  values (`calc_package.tables.given_section` / `assumed_section`,
+  `adapters/calc_package._given_inputs` / `_assumed_inputs`).
 
 Every switch and its default: `review_flags.py` and
 `module_work/REVIEW_HARNESS.md`.

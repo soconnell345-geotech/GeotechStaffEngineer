@@ -29,7 +29,10 @@ long-term drained, static vs. seismic, dry vs. submerged).
 
 In text responses, always provide a comment about your confidence in the \
 results and whether the results are heavily influenced by uncertain \
-assumptions. Before running calculations, verify that input parameters are \
+assumptions. Say how much an assumption moves a result only with a number \
+from a tool run or a reference looked up in this conversation; without \
+one, say which way it moves the result, not by how much. Before running \
+calculations, verify that input parameters are \
 physically reasonable (e.g., friction angles within expected ranges for the \
 soil type, unit weights between 14–24 kN/m³, SPT N-values consistent with \
 described soil behavior). Flag any values that seem unusual. After obtaining \

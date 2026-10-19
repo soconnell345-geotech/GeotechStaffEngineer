@@ -589,9 +589,10 @@ def test_f61_change_names_phi_written_as_a_symbol():
             "final": "A circular search gives 6.3; a block along the base "
                      "of the clay 0.9. If φ′ is lower, so is FS.",
             "t_end": 1.0}])])
-    # only w11's key (the method's reason)
+    # only w11's key (the method's reason) and GM-155's (a reference)
     assert {f["message"].replace("the final answer does not name ", "")
-            for f in found} == {"the limit-equilibrium method and why"}
+            for f in found} == {"the limit-equilibrium method and why",
+                                "a reference cited for a judgment call"}
 
 
 def test_f61_w11_key_method_reason():
@@ -615,6 +616,83 @@ def test_f61_w11_key_method_reason():
     assert missing("Spencer, because it satisfies both force and moment "
                    "equilibrium.") == 0
     assert missing("I used Spencer's method on the circle. FS = 0.94.") == 1
+    # EV-28 (w12 F61j): agreement between methods is confidence, not why
+    # the method was chosen; nor is naming the limit-equilibrium family
+    assert missing("Moderate to high, because Spencer and Bishop agree to "
+                   "within 0.001.") == 1
+    assert missing("Spencer's limit-equilibrium analysis gives 0.94.") == 1
+    assert missing("Spencer is the rigorous choice here.") == 0
+
+
+#: The judgment-call pairs (EV-26) and the w12 sentences that hit a key
+#: falsely (EV-28): each must now miss it.
+_PAIRS = ("F18-geotech-calc-package", "F51-geotech-fem-excavation",
+          "F55-geotech-calc-wall-figure", "F61-geotech-slope-weak-layer")
+_REFERENCE_KEY = "a reference cited for a judgment call"
+
+
+def _flow(fid):
+    from live_smoke import runner
+    return {f["id"]: f for f in runner.load_flows()}[fid]
+
+
+def _names(fid, name):
+    return [n for n in _flow(fid)["expect"]["answer_names"]
+            if n["name"] == name]
+
+
+def _misses(names, text):
+    return len(det.detect_expectations(
+        {"expect": {"answer_names": names}},
+        [_Sess([{"final": text, "t_end": 1.0}])]))
+
+
+@pytest.mark.parametrize("fid, name, text", [
+    ("F18-geotech-calc-package",
+     "general or local shear (how dense the sand is)",
+     "phi = 32 suits a medium-dense sand; q_all = 386 kPa."),
+    ("F55-geotech-calc-wall-figure", "where the Rankine pressure acts",
+     "Ka = 0.3073, H = 4.5 m, so Pa = 59.1 kN/m."),
+])
+def test_ev28_keys_no_longer_hit_falsely(fid, name, text):
+    for arm in (fid, fid.replace("-", "j-", 1)):
+        names = _names(arm, name)
+        assert len(names) == 1, arm
+        assert _misses(names, text) == 1, arm
+    assert _misses(_names(fid, name), {
+        "general or local shear (how dense the sand is)":
+            "General shear is assumed for a sand this dense.",
+        "where the Rankine pressure acts":
+            "Pa acts on the vertical plane through the back of the heel.",
+    }[name]) == 0
+
+
+@pytest.mark.parametrize("fid", _PAIRS)
+def test_every_judgment_pair_looks_for_a_reference(fid):
+    """GM-155: w12's four ON answers cited no reference for any call. Both
+    arms of each pair now look for a cited one, before the j-arm's list
+    key. Saying none was found is a reader check, not this key: the ON
+    prompt's own words ("with no reference cited") would satisfy it."""
+    for arm in (fid, fid.replace("-", "j-", 1)):
+        names = _names(arm, _REFERENCE_KEY)
+        assert len(names) == 1, arm
+        for text in ("Vesic (1973) as in GEC-6.", "per UFC 3-220-20",
+                     "K0 from Jaky (1944)", "NAVFAC DM7.2 Table 5-3",
+                     "FHWA NHI-06-089 Sec. 10.5.5",
+                     "Duncan and Wright (2014) recommend Spencer.",
+                     "K0 = 1 - sin phi' (Jaky, 1944).",
+                     "N-gamma as tabulated (Vesic 1973).",
+                     "N-gamma per Vesić (1973)."):
+            assert _misses(names, text) == 0, (arm, text)
+        for text in ("Vesic, as the module's default.",
+                     "Run on 2026-10-18; FS 0.94.",
+                     "I used Spencer because it is rigorous.",
+                     "Smooth wall: judgment, with no reference cited.",
+                     "I assume no reference governs this.",
+                     "q_ult = 1990 kPa (FS 3)."):
+            assert _misses(names, text) == 1, (arm, text)
+        assert any("says so plainly" in c
+                   for c in _flow(arm)["reader_checks"]), arm
 
 
 # ---------------------------------------------------------------------------
@@ -1047,6 +1125,29 @@ def test_ev24_figure_flows_name_no_tool_and_expect_one_looked_card():
                                          "looked_at": True}]
         assert f["reader_checks"] and all(
             isinstance(c, str) and c for c in f["reader_checks"])
+
+
+def test_a_failed_scratch_write_is_not_a_write(tmp_path):
+    """EV-28 (w12 F55j): an edit_file that failed "not found" wrote
+    nothing; it is the tool error it returned, not a scratch write too."""
+    conv, files = _conv(tmp_path)
+    acts = [{"event": "tool_start", "name": "edit_file", "run_id": "r1",
+             "args": {"file_path": "calc_v2.html"}},
+            {"event": "tool_end", "name": "edit_file", "run_id": "r1",
+             "result": "Error: File '/calc_v2.html' not found"},
+            {"event": "tool_start", "name": "write_file", "run_id": "r2",
+             "args": {"file_path": "/notes.md"}},
+            {"event": "tool_end", "name": "write_file", "run_id": "r2",
+             "result": "Updated file /notes.md"}]
+    (conv / "activity.jsonl").write_text(
+        "\n".join(json.dumps(a) for a in acts) + "\n", encoding="utf-8")
+    rec = {"conv_dir": str(conv), "files_dir": str(files),
+           "final": "Done; the notes are saved.", "activity_offset": 0}
+    found = det.detect_health(_ctx(rec))
+    writes = [f["evidence"]["path"] for f in found
+              if f["code"] == "scratch_filesystem_write"]
+    assert writes == ["/notes.md"]
+    assert "tool_returned_error" in codes(found)
 
 
 def test_recovered_tool_error_is_low_and_meter_gap_is_flagged(tmp_path):

@@ -39,7 +39,7 @@ INPUTS_NAME = "inputs"
 def input_table(items: Sequence) -> Optional[CalcTable]:
     """The calc package's input echo (its ``InputItem`` list) as a table.
 
-    The values are the strings the package prints in its Input Parameters
+    The values are the strings the package prints in its Values Used
     section, so the CSV and the package agree. Not printed again in the
     Tables section (``printed=False``)."""
     rows = [[i.description, i.name, i.value, i.unit]
@@ -230,6 +230,53 @@ def choices_section(result, analysis=None) -> Optional[CalcSection]:
         rows=rows)])
 
 
+def _input_value(value) -> str:
+    """A given or assumed input's value as the package prints it."""
+    if isinstance(value, (list, tuple, dict)):
+        import json
+        return json.dumps(value, ensure_ascii=False, default=str)
+    return format_cell(value) if value is not None else ""
+
+
+def given_section(given) -> Optional[CalcSection]:
+    """The calc package's "Given Inputs" section (GM-155), or ``None`` when
+    the caller named none. ``given``: one ``{input, value}`` dict per input
+    the call passed, less those it stated as assumptions. The Values Used
+    echo mixes given, assumed and derived values; this section holds the
+    given ones alone."""
+    rows = [[str(g.get("input") or ""), _input_value(g.get("value"))]
+            for g in given or () if isinstance(g, dict)]
+    rows = [r for r in rows if r[0]]
+    if not rows:
+        return None
+    intro = ("The inputs supplied for this calculation, apart from those "
+             "stated as assumptions.")
+    return CalcSection(title="Given Inputs", items=[intro, TableData(
+        title="Given inputs", headers=["Input", "Value"], rows=rows)])
+
+
+def assumed_section(assumed) -> Optional[CalcSection]:
+    """The calc package's "Assumed Inputs" section (GM-155), or ``None``
+    when nothing was assumed. ``assumed``: one ``{input, value, basis}``
+    dict per input that was not given -- the analysis's defaults (the
+    result's ``defaults_used``) and the inputs the caller stated as its own
+    assumptions. The Values Used echo prints them among every value used;
+    this section keeps them apart, so an assumption never reads as given."""
+    rows = [[str(a.get("input") or ""), _input_value(a.get("value")),
+             str(a.get("basis") or "")]
+            for a in assumed or () if isinstance(a, dict)]
+    rows = [r for r in rows if r[0]]
+    if not rows:
+        return None
+    intro = ("Assumed, not given: the analysis's defaults and the inputs "
+             "stated as assumptions when this package was made. Each is "
+             "the engineer's to accept or change.")
+    return CalcSection(title="Assumed Inputs", items=[intro, TableData(
+        title="Assumed inputs", headers=["Input", "Value used", "Basis"],
+        rows=rows)])
+
+
 __all__ = ["MAX_PRINTED_ROWS", "INPUTS_NAME", "input_table", "module_tables",
            "csv_file_names", "export_tables", "csv_bytes", "to_table_data",
-           "tables_section", "package_choices", "choices_section"]
+           "tables_section", "package_choices", "choices_section",
+           "assumed_section", "given_section"]
