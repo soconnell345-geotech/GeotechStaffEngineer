@@ -498,7 +498,7 @@ _VOLATILE = frozenset({
     "defaults_used", "output_note", "output_path", "file_size_bytes",
     "html_length", "elapsed_s", "runtime_s", "seconds_per_evaluation",
     "dxf_base64", "notes", "warnings", "note"})
-_STAMP = re.compile(r"\d{8}_\d{6}(_\d+)?")
+_STAMP = re.compile(r"\d{8}_\d{6}(_\d+)?|\d{4}-\d\d-\d\d[ T]\d\d:\d\d:\d\d")
 
 
 def _analysis_methods() -> set:
