@@ -331,6 +331,14 @@ the eyes). What changed on master after 5.33.0, in short:
   that echoes a default echoes another value; the same probes check that
   every declared name is one the adapter's own check accepts
   (`test_top_level_params.py`, GM-150).
+  An input that changes nothing is not advertised (GM-160): the guard
+  also gives every default a probe's run lists another value (the next
+  allowed value, the other boolean, a number moved by half) and fails
+  where the result does not move past the input's own echo and the
+  `choices`; a label-only input is in `method_probes.LABEL_ONLY` and one
+  whose effect the probe does not reach in `NOT_REACHED`, each with why.
+  The file readers are probed on `eval_samples/` (`"<eval_samples>/..."`;
+  a probe needing an optional backend names it under `"needs"`).
 - **Vision** (VIS-01, VIS-04, VIS-05): an optional `turn` (0/90/180/270) on
   `analyze_pdf_page` / `render_region`; boxes right on sideways sheets; a
   zoom that cuts lines of lettering widens to take them in or says which
