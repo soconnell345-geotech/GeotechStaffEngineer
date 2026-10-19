@@ -332,6 +332,43 @@ def declare_applies_when(method_info: dict, table: dict) -> dict:
     return method_info
 
 
+def declare_when_absent(method_info: dict, table: dict) -> dict:
+    """Record what a call that leaves out an optional input with no default
+    is analysed with (``{method: {parameter: case}}``, BACKLOG GM-165), so
+    a result's ``defaults_used`` says so and a calc package prints it under
+    Assumed Inputs. ``case`` is either ``(what the run takes, its basis)``
+    -- the parameter's ``when_absent``, e.g. ("no water table", "...") --
+    or the name of another parameter whose value in force the method takes
+    in its place, the parameter's ``default_from`` (a foundation friction
+    angle that defaults to the backfill's). The spec is copied first. A
+    name the method does not declare, a parameter with a default, or an
+    empty case raises, so a slip in the table fails on import. Returns
+    ``method_info``."""
+    for method, cases in table.items():
+        params = method_info[method]["parameters"]
+        for name, case in cases.items():
+            if name not in params:
+                raise KeyError(f"{method}: no parameter {name!r}")
+            spec = params[name]
+            if spec.get("default") is not None \
+                    or spec.get("default_depends_on"):
+                raise ValueError(f"{method}.{name}: has a default; a case "
+                                 "is for an input with none")
+            if isinstance(case, str):
+                if case not in params or case == name:
+                    raise KeyError(f"{method}.{name}: default_from names "
+                                   f"no other parameter {case!r}")
+                params[name] = {**spec, "default_from": case}
+                continue
+            what, basis = case
+            if not (str(what).strip() and str(basis).strip()):
+                raise ValueError(f"{method}.{name}: a case needs what the "
+                                 "run takes and its basis")
+            params[name] = {**spec, "when_absent": {"case": what,
+                                                    "basis": basis}}
+    return method_info
+
+
 def figure_output_format(params: dict, default: str = "metadata") -> str:
     """Resolve a plot method's ``output_format``, honoring ``output_path``.
 

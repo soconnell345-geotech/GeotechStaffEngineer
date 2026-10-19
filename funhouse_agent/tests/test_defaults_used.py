@@ -560,6 +560,31 @@ def _same(echo, value) -> bool:
     return _diff(echo, value) is None
 
 
+def _specs(agent: str, method: str, params: dict = None) -> dict:
+    """The declared inputs of a run: ``method``'s own and, for a calc
+    package, its tools' (a case is a tool's declaration)."""
+    mod = D._load_adapter(agent)
+    out = {}
+    if agent == "calc_package" and method in getattr(mod, "_PACKAGE_TOOLS",
+                                                     {}):
+        tools = mod._PACKAGE_TOOLS[method]
+        adapter = mod._tool_adapter(method)
+        for tool in set(tools["tools"].values()):
+            for name, spec in adapter.METHOD_INFO[tool]["parameters"].items():
+                if isinstance(spec, dict) and spec.get("when_absent"):
+                    out[name] = spec
+    out.update((mod.METHOD_INFO.get(method) or {}).get("parameters") or {})
+    return out
+
+
+def _cases(agent: str, method: str, params: dict = None) -> dict:
+    """{input: what defaults_used says for it left out} of every input of
+    the run that declares a case (GM-165)."""
+    return {name: D.absent_case(spec)
+            for name, spec in _specs(agent, method, params).items()
+            if isinstance(spec, dict) and spec.get("when_absent")}
+
+
 def test_every_method_has_a_probe_or_a_reason():
     methods = _analysis_methods()
     probed = {key.split("#")[0] for key in MP.PROBES}
@@ -622,18 +647,24 @@ def test_the_defaults_a_run_lists_are_the_values_it_used(key, tmp_path,
     r0 = _run(agent, method, params)
     assert isinstance(r0, dict) and "error" not in r0, (key, r0)
     used = r0.get("defaults_used") or {}
+    # a left-out input listed as the case it stands for (GM-165) is not a
+    # value to give back: the run had none
+    cases = _cases(agent, method, params)
     for name, value in used.items():
         if (base, name) in MP.KNOWN or (base, name) in \
                 MP.ECHO_IS_NOT_THE_INPUT:
             continue
         echo = r0.get(name)
-        if name in r0 and not isinstance(echo, (dict, list)):
+        if name in cases:
+            assert value == cases[name], (key, name, value)
+        elif name in r0 and not isinstance(echo, (dict, list)):
             assert _same(echo, value), (
                 f"{key}: defaults_used says {name}={value!r}, the result "
                 f"says {echo!r}")
-    if not used:
+    back = {k: v for k, v in used.items() if k not in cases}
+    if not back:
         return
-    r1 = _run(agent, method, {**params, **used})
+    r1 = _run(agent, method, {**params, **back})
     assert "error" not in r1, (key, r1["error"])
     where = str(tmp_path)
     moved = _diff(_norm(r0, where), _norm(r1, where))

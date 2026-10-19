@@ -9,6 +9,14 @@ defaults under "Assumed Inputs", and a caller names its own assumptions
 with ``assumptions`` ({input name: basis}), which move from Given to
 Assumed with their basis. The module's echo, which mixes given, assumed
 and derived values, is "Values Used". Pure rendering: no number changes.
+
+GM-167 (wave w13): a method the agent chose printed as given, a refused
+assumption lost the valid ones with it, and a left-out water table said
+nothing. A method or option input the call does not name in
+``user_given`` now prints under Assumed Inputs; an assumption refusal
+names only the bad keys; a statement that is not an input ("drained") is
+its own row; and a left-out input with no default prints as the case it
+stands for (GM-165: "no water table").
 """
 
 import re
@@ -71,9 +79,13 @@ def test_defaults_used_print_as_assumed(tmp_path):
         assert f"{words} {value} the analysis's default" in assumed, words
     # a default whose basis the result's choices give points there
     assert "its basis is under Method Choices" in assumed
-    # one row per default in force, nothing given among them
-    assert len(re.findall(r"the analysis's default(?!s)", assumed)) == \
-        len(used)
+    # one row per default in force, nothing given among them; a left-out
+    # input with no default is the case it stands for (GM-165)
+    rows = assumed.split("Input Value used Basis", 1)[1]
+    assert len(re.findall(r"the analysis's default(?!s)|not given: ",
+                          rows)) == len(used)
+    assert ("Allowable bearing pressure (kPa) for the bearing check bearing "
+            "not checked not given: ") in rows
     for given in ("Wall height", "Backfill unit weight"):
         assert given not in assumed
     # given, then assumed, then every value used, then the choices
@@ -159,26 +171,142 @@ def test_assumptions_in_another_shape_are_refused(tmp_path):
     assert "assumptions: give {input name: its basis}" in r["error"]
 
 
-def test_an_assumption_names_an_input_of_the_package(tmp_path):
-    """{"gwt": "none"} printed a bare "gwt" row: a name that is not one of
-    the package's inputs is refused before the run, with a did-you-mean
-    where one is near (as an unknown input is, GM-110)."""
+def test_an_assumption_written_as_a_name_names_an_input(tmp_path):
+    """A key written as an input's name that is not one, a word that is a
+    misspelt input and a header field are refused before the run, with a
+    did-you-mean (as an unknown input is, GM-110); GM-167: only those keys
+    are named, and the message says the others are fine to send again."""
     out = tmp_path / "bc.html"
     r = call_agent("calc_package", "bearing_capacity_package", dict(
         _BEARING, output_path=str(out),
-        assumptions={"water_table_depth": "none found"}))
+        assumptions={"unit_weight": "typical of the sand described",
+                     "gwt_dept": "none found", "cohesoin": "sand",
+                     "project_name": "x"}))
     assert "error" in r and not out.exists()
-    assert "bearing_capacity_package assumptions: unknown parameter(s) "         "['water_table_depth']" in r["error"]
-    assert "water_table_depth -> gwt_depth" in r["error"]
+    err = r["error"]
+    assert "bearing_capacity_package assumptions: unknown parameter(s) " \
+        "['cohesoin', 'gwt_dept']" in err
+    assert "gwt_dept -> gwt_depth" in err and "cohesoin -> cohesion" in err
+    assert "['project_name']: header fields, not inputs" in err
+    assert "The others ('unit_weight') are fine: send them again" in err
+    # a name the package reads by another spelling is that input
+    r = call_agent("calc_package", "bearing_capacity_package", dict(
+        _BEARING, output_path=str(out),
+        assumptions={"water_table_depth": "none found in the borings"}))
+    assert r["status"] == "success", r
+    assert ("Groundwater depth below surface (m) no water table none found "
+            "in the borings") in _section(_text(out), "Assumed Inputs",
+                                          _NEXT)
+
+
+def test_an_assumption_in_words_is_its_own_row(tmp_path):
+    """GM-167: "groundwater", "drained" and "c = 0 for sand" are not
+    inputs; each is a row of its own under Assumed Inputs, with its
+    basis, and the run is the same."""
+    out = str(tmp_path / "bc.html")
+    plain = call_agent("calc_package", "bearing_capacity_package", dict(
+        _BEARING, output_path=str(tmp_path / "plain.html")))
+    r = call_agent("calc_package", "bearing_capacity_package", dict(
+        _BEARING, output_path=out,
+        assumptions={"groundwater": "none found in the borings",
+                     "drained": "long-term condition",
+                     "c = 0 for sand": "clean sand"}))
+    assert r["status"] == "success", r
+    for k in ("q_ultimate_kPa", "q_allowable_kPa", "defaults_used"):
+        assert r[k] == plain[k], k
+    assumed = _section(_text(out), "Assumed Inputs", _NEXT)
+    for row in ("groundwater none found in the borings",
+                "drained long-term condition", "c = 0 for sand clean sand"):
+        assert row in assumed, row
+    # a word on its own with no basis says it was stated
     r = call_agent("calc_package", "retaining_wall_package", dict(
-        _WALL, output_path=str(tmp_path / "w.html"),
-        assumptions={"gwt": "none"}))
-    assert "unknown parameter(s) ['gwt']" in r["error"]
-    # the header fields are not inputs to assume
+        _WALL, output_path=str(tmp_path / "w.html"), assumptions=["gwt"]))
+    assert r["status"] == "success", r
+    assert "gwt stated as an assumption" in _section(
+        _text(str(tmp_path / "w.html")), "Assumed Inputs", _NEXT)
+
+
+def test_a_left_out_water_table_prints_as_no_water_table(tmp_path):
+    """GM-167 (c), with GM-165: bearing capacity with no gwt_depth is
+    analysed with no water table, and the package says so under Assumed
+    Inputs with its basis; given, the depth prints under Given Inputs."""
+    out = str(tmp_path / "bc.html")
+    r = call_agent("calc_package", "bearing_capacity_package", dict(
+        _BEARING, output_path=out))
+    assert r["defaults_used"]["gwt_depth"].startswith("no water table: ")
+    assumed = _section(_text(out), "Assumed Inputs", _NEXT)
+    assert ("Groundwater depth below surface (m) no water table not given: "
+            "total unit weight above and below the base") in assumed
+    r = call_agent("calc_package", "bearing_capacity_package", dict(
+        _BEARING, gwt_depth=1.5, output_path=out))
+    text = _text(out)
+    assert "Groundwater depth below surface (m) 1.5" in _section(
+        text, "Given Inputs", "Assumed Inputs")
+    assert "no water table" not in text
+
+
+def test_a_method_the_user_did_not_name_is_assumed(tmp_path):
+    """GM-167 (a), wave w13 F18/F18j: the helper's Vesic printed as
+    given. A method or option input the call passes and does not name in
+    ``user_given`` prints under Assumed Inputs as chosen for this
+    calculation; named, it prints as given."""
+    out = str(tmp_path / "bc.html")
+    r = call_agent("calc_package", "bearing_capacity_package", dict(
+        _BEARING, factor_method="meyerhof", shape="square",
+        output_path=out))
+    assert r["status"] == "success", r
+    text = _text(out)
+    given = _section(text, "Given Inputs", "Assumed Inputs")
+    assumed = _section(text, "Assumed Inputs", _NEXT)
+    assert "meyerhof" not in given and "square" not in given
+    assert ("Shape/depth/inclination-factor method meyerhof chosen for this "
+            "calculation; not given by the user") in assumed
+    assert "Footing shape square chosen for this calculation" in assumed
+    # the numbers are the same either way
+    r2 = call_agent("calc_package", "bearing_capacity_package", dict(
+        _BEARING, factor_method="meyerhof", shape="square",
+        user_given=["factor_method", "shape"], output_path=out))
+    assert r2["q_ultimate_kPa"] == r["q_ultimate_kPa"]
+    text = _text(out)
+    given = _section(text, "Given Inputs", "Assumed Inputs")
+    assert "Shape/depth/inclination-factor method meyerhof" in given
+    assert "Footing shape square" in given
+    assert "chosen for this calculation" not in _section(
+        text, "Assumed Inputs", _NEXT)
+
+
+def test_a_chosen_method_reads_assumed_in_method_choices(tmp_path):
+    """The module's own Method Choices table says "assumed" for an option
+    the call passed and did not say the user gave, never "given"."""
+    out = str(tmp_path / "w.html")
+    row = ("live-load surcharge over the heel, in sliding, overturning and "
+           "the eccentricity check not a resisting force")
     r = call_agent("calc_package", "retaining_wall_package", dict(
-        _WALL, output_path=str(tmp_path / "w.html"),
-        assumptions={"project_name": "x"}))
-    assert "unknown parameter(s) ['project_name']" in r["error"]
+        _WALL, live_load_resists=False, output_path=out))
+    assert r["status"] == "success", r
+    assert f"{row} assumed FHWA" in _text(out)
+    r = call_agent("calc_package", "retaining_wall_package", dict(
+        _WALL, live_load_resists=False, user_given=["live_load_resists"],
+        output_path=out))
+    assert f"{row} given FHWA" in _text(out)
+    # left out, it is the default, as before
+    r = call_agent("calc_package", "retaining_wall_package", dict(
+        _WALL, output_path=out))
+    assert f"{row} default FHWA" in _text(out)
+
+
+def test_user_given_names_inputs_of_the_package(tmp_path):
+    out = tmp_path / "bc.html"
+    r = call_agent("calc_package", "bearing_capacity_package", dict(
+        _BEARING, factor_method="vesic", user_given=["factor_metod"],
+        output_path=str(out)))
+    assert "user_given: unknown parameter(s) ['factor_metod']" in r["error"]
+    assert "factor_metod -> factor_method" in r["error"]
+    assert not out.exists()
+    r = call_agent("calc_package", "bearing_capacity_package", dict(
+        _BEARING, factor_method="vesic", user_given=["factor_method"],
+        assumptions={"factor_method": "x"}, output_path=str(out)))
+    assert "in both assumptions and user_given" in r["error"]
 
 
 @pytest.mark.parametrize("package, extra", [
@@ -190,8 +318,10 @@ def test_the_slope_packages_check_assumptions_before_running(
     out = tmp_path / "s.html"
     r = call_agent("calc_package", package, dict(
         extra, surface_points=[[0, 0], [10, 5]], soil_layers=[],
-        output_path=str(out), assumptions={"cohesoin": "not given"}))
-    assert f"{package} assumptions: unknown parameter(s) ['cohesoin']"         in r["error"]
+        output_path=str(out), assumptions={"gwt_pionts": "not given"}))
+    assert f"{package} assumptions: unknown parameter(s) ['gwt_pionts']" \
+        in r["error"]
+    assert "gwt_pionts -> gwt_points" in r["error"]
     assert not out.exists()
 
 
@@ -204,6 +334,9 @@ def test_every_package_takes_assumptions_and_says_why():
         assert spec["assumptions"]["type"] == "dict"
         assert "so no assumption reads as given" in \
             spec["assumptions"]["description"]
+        assert spec["user_given"]["type"] == "list", name
+        assert "prints under Assumed Inputs" in \
+            spec["user_given"]["description"]
 
 
 def test_the_tool_is_not_handed_assumptions(tmp_path, monkeypatch):

@@ -425,17 +425,26 @@ def describe_method(agent_name: str, method: str, allowed_agents=None) -> dict:
     return _documented(mod.METHOD_INFO[method])
 
 
+#: Parameter keys read by ``defaults_used`` and left out of a method's
+#: documentation, the descriptions saying the same in words: when a default
+#: applies (GM-119) and what a left-out input with no default stands for
+#: (GM-165).
+_DEFAULTS_ONLY_KEYS = ("applies_when", "when_absent", "default_from")
+
+
 def _documented(info: dict) -> dict:
     """A method's documentation as the model reads it: each parameter's
-    ``applies_when`` (GM-119, read by ``defaults_used``) is left out, the
-    descriptions saying the same in words."""
+    ``applies_when`` (GM-119), ``when_absent`` and ``default_from``
+    (GM-165), read by ``defaults_used``, are left out, the descriptions
+    saying the same in words."""
     params = info.get("parameters")
     if not isinstance(params, dict) or not any(
-            isinstance(s, dict) and "applies_when" in s
+            isinstance(s, dict) and set(s) & set(_DEFAULTS_ONLY_KEYS)
             for s in params.values()):
         return info
     return {**info, "parameters": {
-        name: ({k: v for k, v in spec.items() if k != "applies_when"}
+        name: ({k: v for k, v in spec.items()
+                if k not in _DEFAULTS_ONLY_KEYS}
                if isinstance(spec, dict) else spec)
         for name, spec in params.items()}}
 
@@ -1215,7 +1224,12 @@ def default_in_force(spec: dict, values: dict):
     Kumbhojkar, every other factor method's to Vesic).
     ``default_depends_on`` is ``{"parameter": other input, "values":
     {its value: default}, "otherwise": default}``, strings compared
-    without case."""
+    without case. A parameter whose ``default_from`` names another input
+    (GM-165: a foundation friction angle that defaults to the backfill's)
+    takes that input's value in force."""
+    source = spec.get("default_from")
+    if source:
+        return values.get(source)
     depends = spec.get("default_depends_on")
     if not depends:
         return spec.get("default")
@@ -1224,6 +1238,16 @@ def default_in_force(spec: dict, values: dict):
         if _fold(value) == other:
             return default
     return depends["otherwise"]
+
+
+def absent_case(spec) -> str:
+    """What a left-out input with no default stands for in the run, as
+    ``defaults_used`` gives it (GM-165): "<case>: <basis>" from the
+    parameter's ``when_absent``; "" when it declares none."""
+    case = spec.get("when_absent") if isinstance(spec, dict) else None
+    if not case:
+        return ""
+    return f"{case['case']}: {case['basis']}"
 
 
 def _values_in_force(declared: dict, aliases: dict, parameters=None) -> dict:
@@ -1241,13 +1265,20 @@ def _values_in_force(declared: dict, aliases: dict, parameters=None) -> dict:
         if isinstance(spec, dict) and spec.get("default_depends_on") \
                 and name not in named:
             values[name] = default_in_force(spec, values)
+    for name, spec in declared.items():
+        if isinstance(spec, dict) and spec.get("default_from") \
+                and name not in named:
+            values[name] = default_in_force(spec, values)
     return values
 
 
 def _left_out(mod, method: str, given, parameters=None) -> dict:
     """The declared defaults of ``method`` that a call left in force: name
     -> default, a default that depends on another input taken at the
-    call's value of it (``parameters``). Left out: a declared default of
+    call's value of it (``parameters``), one taken from another input
+    (``default_from``) at that input's value, and a left-out input with no
+    default as the case it stands for (``when_absent``,
+    :func:`absent_case`; GM-165). Left out: any other declared default of
     None (worked out by the method) or "" (an empty field), and a calc
     package's header and format."""
     declared, aliases = _declared(mod, method)
@@ -1255,9 +1286,16 @@ def _left_out(mod, method: str, given, parameters=None) -> dict:
     if str(getattr(mod, "__name__", "")).endswith("calc_package"):
         named |= _PACKAGE_HEADER_PARAMS
     values = _values_in_force(declared, aliases, parameters)
-    return {name: values[name] for name, spec in declared.items()
-            if isinstance(spec, dict) and name not in named
-            and values.get(name) is not None and values.get(name) != ""}
+    out = {}
+    for name, spec in declared.items():
+        if not isinstance(spec, dict) or name in named:
+            continue
+        value = values.get(name)
+        if value is None:
+            value = absent_case(spec) or None
+        if value is not None and value != "":
+            out[name] = value
+    return out
 
 
 #: What a parameter's ``applies_when`` may ask of another parameter (GM-119).
@@ -1310,7 +1348,9 @@ def _defaults_used(mod, method: str, given, parameters=None,
     """The declared defaults a call left in force that apply to it, with
     the default each took (BACKLOG GM-115, GM-119): name -> default, from
     the method's METHOD_INFO ``parameters`` (GM-110), a default that
-    depends on another input at the call's value of it (GM-158). A
+    depends on another input at the call's value of it (GM-158), and a
+    left-out input with no default as the case it stands for or the other
+    input's value it takes (GM-165, :func:`_left_out`). A
     parameter given under another spelling it reads
     (``parameter_aliases``) counts as given. A parameter whose
     ``applies_when`` (:func:`applies`) does not hold for this call is left
