@@ -24,13 +24,13 @@ from funhouse_agent.plot_box.figures import STAND_IN_NOTE, stand_in
 @pytest.mark.parametrize("words", [
     {"series": ["placeholder"], "axes": ["x", "y"]},
     {"series": ["Place-holder series"], "axes": ["Depth (m)"]},
-    {"titles": ["Dummy chart"], "axes": ["q (kPa)"]},
-    {"axes": ["x", "y"]},
-    {"axes": ["X axis"]},
+    {"titles": ["Dummy data"], "axes": ["q (kPa)"]},
+    {"series": ["Lorem ipsum"]},
     {"drawn": False},
     {"drawn": False, "titles": ["Skin friction"],
      "notes": ["No layer data available"]},
     {"drawn": False, "notes": ["N/A"]},
+    {"drawn": False, "titles": ["No data"], "axes": ["x (m)", "y (m)"]},
 ])
 def test_stand_ins_are_named(words):
     assert stand_in(**words)
@@ -42,14 +42,22 @@ def test_stand_ins_are_named(words):
     {"titles": ["Sensitivity of q_ult to friction angle"], "axes": ["x"]},
     {"axes": ["Friction angle (deg)", "y"]},
     {"axes": ["x", "y"], "notes": ["B-1"]},
-    # a name left out is not a stand-in: the look judges an unnamed chart
+    # names left out, or bare letters, are not a stand-in: a plan, a
+    # section or a coordinate plot is named so; the look judges them
     {},
+    {"axes": ["x", "y"]},
+    {"axes": ["x", "z"]},
+    {"axes": ["X axis"]},
+    # "dummy" alone names real things
+    {"series": ["Dummy pile load test"]},
+    {"titles": ["Dummy joint spacing"], "axes": ["Slab length (m)"]},
     # a real group or a note about missing readings, over data
     {"series": ["SPT N60", "No data"], "axes": ["N60", "Depth (m)"]},
     {"titles": ["CPT tip resistance"], "notes": ["no data below 12 m"]},
-    # a diagram drawn in words, and a picture with no words
+    # a diagram or a table drawn in words, one cell of it "N/A"
     {"drawn": False, "notes": ["Site", "Wall"]},
-    {"chart": False},
+    {"drawn": False, "titles": ["Boring summary"],
+     "notes": ["Boring", "B-1", "Water", "N/A", "Refusal", "None"]},
 ])
 def test_real_figures_pass(words):
     assert stand_in(**words) is None
@@ -75,7 +83,7 @@ def _figures(folder):
 def test_plot_data_refuses_the_trace_call_and_writes_nothing(folder):
     from funhouse_agent.dispatch import call_agent
     res = call_agent("profile_figure", "plot_data", {
-        "series": [{"x": [1158.77, 1465.88, 950.24, 1051.29, 1240.96],
+        "series": [{"x": [410.0, 520.0, 380.0, 450.0, 495.0],
                     "y": [1, 2, 3, 4, 5], "label": "placeholder"}],
         "xlabel": "x", "ylabel": "y"})
     assert "status" not in res
@@ -85,20 +93,28 @@ def test_plot_data_refuses_the_trace_call_and_writes_nothing(folder):
     assert _figures(folder) == []
 
 
-def test_plot_data_refuses_bare_letter_names_alone(folder):
+@pytest.mark.parametrize("params", [
+    # coordinates named by bare letters, with nothing else named
+    {"series": [{"x": [0, 12.5, 30], "y": [0, 8, 22], "style": "markers"}],
+     "xlabel": "x", "ylabel": "y"},
+    {"series": [{"x": [0, 10, 20], "y": [5, 3, 0]}],
+     "xlabel": "x", "ylabel": "z"},
+    # a plan drawn as a drawing, its coordinate system named 'x'
+    {"series": [{"x": [0, 40, 40, 0, 0], "y": [0, 0, 25, 25, 0],
+                 "line_dash": "dashdot"}], "plan_view": True, "xlabel": "x"},
+])
+def test_plot_data_draws_real_data_named_by_bare_letters(folder, params):
+    pytest.importorskip("matplotlib")
     from funhouse_agent.dispatch import call_agent
-    res = call_agent("profile_figure", "plot_data", {
-        "series": [{"x": [1, 2, 3], "y": [2, 4, 6]}],
-        "xlabel": "x", "ylabel": "y"})
-    assert "bare letters ('x', 'y')" in res.get("error", ""), res
-    assert _figures(folder) == []
+    res = call_agent("profile_figure", "plot_data", params)
+    assert res.get("status") == "success", res
 
 
 def test_plot_data_draws_a_named_figure(folder):
     pytest.importorskip("matplotlib")
     from funhouse_agent.dispatch import call_agent
     res = call_agent("profile_figure", "plot_data", {
-        "series": [{"x": [30, 32, 34], "y": [886.46, 1158.77, 1527.53],
+        "series": [{"x": [30, 32, 34], "y": [410.0, 520.0, 660.0],
                     "label": "Vesic q_ult (kPa)"}],
         "xlabel": "Friction angle phi (deg)",
         "ylabel": "Ultimate bearing capacity q_ult (kPa)",
@@ -130,7 +146,7 @@ def test_box_saves_the_figures_and_not_the_stand_ins(tmp_path):
     res = _box(
         "import matplotlib.pyplot as plt\n"
         "f1, a1 = plt.subplots()\n"
-        "a1.plot([30, 32, 34], [886, 1159, 1528])\n"
+        "a1.plot([30, 32, 34], [410, 520, 660])\n"
         "a1.set_xlabel('Friction angle (deg)'); a1.set_ylabel('q_ult (kPa)')\n"
         "print(save_figure(f1, 'sensitivity'))\n"
         "f2, a2 = plt.subplots()\n"
@@ -180,3 +196,48 @@ def test_box_saves_a_diagram_drawn_in_words_and_refuses_a_stand_in_chart(
     assert "charts" not in res
     assert any("sketch_chart.plotly.json: 'placeholder'" in n
                for n in res["notes"])
+
+
+def test_box_saves_real_figures_the_rule_could_mistake(tmp_path):
+    """Real figures that look sparse to the rule: coordinates named by bare
+    letters, arrows alone (a quiver has no paths until it is drawn), a
+    table drawn in text with an "N/A" cell, and a Plotly drawing made of
+    layout shapes."""
+    pytest.importorskip("plotly")
+    res = _box(
+        "import matplotlib.pyplot as plt\n"
+        "import plotly.graph_objects as go\n"
+        "f1, a1 = plt.subplots()\n"
+        "a1.scatter([0, 12, 30], [0, 8, 22])\n"
+        "a1.set_xlabel('x'); a1.set_ylabel('y')\n"
+        "save_figure(f1, 'coords')\n"
+        "f2, a2 = plt.subplots()\n"
+        "a2.quiver([0, 1], [0, 1], [1, 1], [1, 0])\n"
+        "save_figure(f2, 'arrows')\n"
+        "f3, a3 = plt.subplots(); a3.axis('off')\n"
+        "for i, (k, v) in enumerate([('Boring', 'B-1'), ('Water', 'N/A'), "
+        "('Refusal', 'None')]):\n"
+        "    a3.text(0.1, 0.8 - 0.2 * i, k); a3.text(0.6, 0.8 - 0.2 * i, v)\n"
+        "save_figure(f3, 'table')\n"
+        "fig = go.Figure()\n"
+        "fig.add_shape(type='rect', x0=0, x1=4, y0=0, y1=2)\n"
+        "save_chart(fig, 'section')\n", tmp_path)
+    assert res["status"] == "success", res
+    assert sorted(i["file"] for i in res["images"]) == [
+        "arrows.png", "coords.png", "table.png"]
+    assert (tmp_path / "section.plotly.json").exists()
+    assert not any(n.startswith("Not saved") for n in res.get("notes", []))
+
+
+def test_box_names_a_refused_figure_when_the_code_then_fails(tmp_path):
+    """save_figure returns None for a stand-in; code that uses the name
+    then fails, and the result still says why nothing was saved."""
+    res = _box(
+        "import matplotlib.pyplot as plt\n"
+        "fig, ax = plt.subplots()\n"
+        "ax.plot([1, 2], [3, 4], label='placeholder'); ax.legend()\n"
+        "name = save_figure(fig, 'slot')\n"
+        "print(name.upper())\n", tmp_path)
+    assert res["status"] == "error"
+    assert any(n.startswith("Not saved, as a stand-in: slot.png")
+               for n in res["notes"]), res

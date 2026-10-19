@@ -498,11 +498,14 @@ the eyes). What changed on master after 5.33.0, in short:
   figure a tool saves is delivered, so the tools refuse, before anything is
   written (`plot_box.figures.stand_in`, unswitched): a figure that draws
   nothing; one whose only words say there is nothing to show ("No layer
-  data available"); one whose title, axis or series names call it a
-  placeholder (`dummy`, `lorem ipsum`); and a chart whose only names are
-  bare letters. A chart with no names at all, a note about missing
-  readings over data, a series of borings named "no data", a diagram drawn
-  in words and a picture with no words all pass. `plot_data` raises a
+  data available"); and one whose title, axis or series names call it a
+  placeholder (`dummy data`, `lorem ipsum`). A chart with no names at all,
+  axes named only 'x', 'y' or 'z' (plans, sections and coordinate plots are
+  named so; the review dropped the builder's bare-letter rule, which
+  refused them), a note about missing readings over data, a series of
+  borings named "no data", a dummy pile, a diagram or a table drawn in
+  words (one cell "N/A"), arrows alone, a Plotly drawing of layout shapes
+  and a picture with no words all pass. `plot_data` raises a
   plain refusal on every route (the main agent's tool, `call_agent` on any
   helper); in the box `save_figure` / `save_chart` return `None` and the
   result names each refused file (an error when nothing was saved), and a

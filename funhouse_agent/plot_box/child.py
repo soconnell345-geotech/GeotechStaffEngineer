@@ -773,7 +773,10 @@ def _line_has_points(line) -> bool:
 def _collection_has_marks(coll) -> bool:
     try:
         from matplotlib.collections import PathCollection
-        if isinstance(coll, PathCollection):     # scatter: its points
+        from matplotlib.quiver import Quiver
+        # scatter: its points; quiver: its arrows' tails (its paths are
+        # made only when it is drawn)
+        if isinstance(coll, (PathCollection, Quiver)):
             return len(coll.get_offsets()) > 0
         return len(coll.get_paths()) > 0
     except Exception:                                      # noqa: BLE001
@@ -784,10 +787,9 @@ def _figure_words(fig) -> dict:
     """What a matplotlib figure draws and the words on it, for the
     stand-in rule (``figures.stand_in``): titles, axis names, legend
     entries, other texts; ``drawn`` (a line with a point, a collection
-    with marks, a patch, an artist, an image or a table) and ``chart``
-    (something drawn that is not an image or a table)."""
+    with marks, a patch, an artist, an image or a table)."""
     words = {"titles": [], "axes": [], "series": [], "notes": [],
-             "drawn": False, "chart": False}
+             "drawn": False}
     sup = getattr(fig, "_suptitle", None)
     supxy = (getattr(fig, "_supxlabel", None), getattr(fig, "_supylabel",
                                                        None))
@@ -797,9 +799,8 @@ def _figure_words(fig) -> dict:
         words[key].append(_visible_text(t))
     for leg in getattr(fig, "legends", ()):
         words["series"] += [_visible_text(t) for t in leg.get_texts()]
-    if getattr(fig, "lines", None) or getattr(fig, "patches", None):
-        words["drawn"] = words["chart"] = True
-    if getattr(fig, "images", None):
+    if (getattr(fig, "lines", None) or getattr(fig, "patches", None)
+            or getattr(fig, "images", None)):
         words["drawn"] = True
     for ax in fig.axes:
         if not ax.get_visible():
@@ -817,10 +818,9 @@ def _figure_words(fig) -> dict:
                      for l in ax.lines)
                  or any(c.get_visible() and _collection_has_marks(c)
                         for c in ax.collections)
-                 or bool(ax.patches) or bool(ax.artists))
+                 or bool(ax.patches) or bool(ax.artists)
+                 or bool(ax.images) or bool(ax.tables))
         if marks:
-            words["drawn"] = words["chart"] = True
-        if ax.images or ax.tables:
             words["drawn"] = True
     return words
 
@@ -846,7 +846,9 @@ def _chart_words(fig: dict) -> dict:
 
     layout = fig.get("layout") if isinstance(fig.get("layout"), dict) else {}
     words = {"titles": [title(layout.get("title"))], "axes": [],
-             "series": [], "notes": [], "drawn": False, "chart": False}
+             "series": [], "notes": [],
+             # a drawing made of layout shapes or images draws too
+             "drawn": bool(layout.get("shapes") or layout.get("images"))}
     for key, value in layout.items():
         if not isinstance(value, dict):
             continue
@@ -863,8 +865,6 @@ def _chart_words(fig: dict) -> dict:
             continue
         if any(_has_values(trace.get(k)) for k in _TRACE_DATA):
             words["drawn"] = True
-            if trace.get("type") not in ("image", "table"):
-                words["chart"] = True
         if trace.get("name") and trace.get("showlegend") is not False:
             words["series"].append(trace["name"])
     return words

@@ -95,8 +95,9 @@ the axes WITH units. Non-finite points are dropped with a warning; unequal
 `x`/`y` lengths, an empty series and an unknown style are errors that name the
 series index. The agent's adapter also refuses, before anything is written, a
 figure that only holds a place: a title, axis or series named as a
-placeholder, or axes named by bare letters with nothing else named (BACKLOG
-GM-190; the rule is `funhouse_agent/plot_box/figures.py` `stand_in`).
+placeholder (BACKLOG GM-190; the rule is `funhouse_agent/plot_box/figures.py`
+`stand_in`). Axes named 'x' and 'y' alone are not refused: a plan or a
+coordinate plot is named so.
 `render_data_plot` itself does not check. It exists because the agent has no code-execution tool: without
 it, SPT-vs-depth or settlement-vs-time in a bespoke report was impossible.
 It lives here rather than in a new module because the agent catalog is within

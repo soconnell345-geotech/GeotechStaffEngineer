@@ -709,7 +709,8 @@ def _run_in_box(code, data_json, name, root, limit, cfg, notes, extra=None):
     stand_ins = "; ".join(
         f"{s.get('file')}: {s.get('why')}"
         for s in child.get("not_saved") or [] if isinstance(s, dict))
-    if stand_ins and (images or charts):
+    if stand_ins and (images or charts or child.get("error")):
+        # with nothing saved and no error the error itself says so below
         notes.append("Not saved, as a stand-in: " + stand_ins + ". "
                      + figures.STAND_IN_NOTE)
     if child:
