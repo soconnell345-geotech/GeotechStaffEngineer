@@ -736,7 +736,7 @@ class TestDispatchIntegration:
         methods = list_methods("calc_package")
         # list_methods returns {category: {method: brief}}
         total = sum(len(v) for v in methods.values())
-        assert total == 17  # 15 packages + html_to_pdf + render_figures
+        assert total == 19  # 17 packages + html_to_pdf + render_figures
 
     def test_describe_method(self):
         from funhouse_agent.dispatch import describe_method
