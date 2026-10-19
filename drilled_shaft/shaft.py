@@ -35,8 +35,11 @@ class DrillShaft:
         side resistance. Default 0.
     concrete_fc : float, optional
         Concrete compressive strength f'c (kPa). Default 28000 (28 MPa).
+        Carried for the caller's own structural checks; the GEC-10
+        capacity in this module does not use it (GM-160).
     rebar_area : float, optional
-        Total longitudinal reinforcement area (m²). Default 0.
+        Total longitudinal reinforcement area (m²). Default 0. Likewise
+        not used by the capacity.
 
     Properties
     ----------
