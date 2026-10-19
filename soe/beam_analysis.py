@@ -123,6 +123,7 @@ def analyze_braced_excavation(geometry: ExcavationGeometry,
     n_spans = len(bounds) - 1
     reactions = [0.0] * len(depths)
     max_moment = max_moment_depth = max_shear = 0.0
+    spans, dz, dp, dV, dM = [], [], [], [], []
 
     for i in range(n_spans):
         z_top, z_bot = bounds[i], bounds[i + 1]
@@ -132,18 +133,28 @@ def analyze_braced_excavation(geometry: ExcavationGeometry,
             # Cantilever above the first support: all its load to that support.
             reactions[0] += force
             top_shear = 0.0
+            to_upper, to_lower = 0.0, force
         elif i == n_spans - 1:
             # Bottom span: all load to the lowest support (none to the soil
             # below the excavation) -- conservative for that support. Its
             # moment is the simply-supported one.
             reactions[-1] += force
             top_shear = force * (L - centroid) / L if L > 0 else 0.0
+            to_upper, to_lower = force, 0.0
         else:
             frac_bot = centroid / L if L > 0 else 1.0
             reactions[i - 1] += force * (1.0 - frac_bot)
             reactions[i] += force * frac_bot
             top_shear = force * (1.0 - frac_bot)
+            to_upper, to_lower = force * (1.0 - frac_bot), force * frac_bot
         z, V, M = _span_diagram(p, z_top, z_bot, breaks, top_shear)
+        spans.append({"z_top_m": round(z_top, 3), "z_bot_m": round(z_bot, 3),
+                      "load_kN_per_m": round(force, 2),
+                      "centroid_below_top_m": round(centroid, 3),
+                      "to_upper_kN_per_m": round(to_upper, 2),
+                      "to_lower_kN_per_m": round(to_lower, 2)})
+        dz.extend(map(float, z)); dp.extend(map(float, p(z)))
+        dV.extend(map(float, V)); dM.extend(map(float, M))
         k = int(np.argmax(np.abs(M)))
         if abs(M[k]) > max_moment:
             max_moment, max_moment_depth = float(abs(M[k])), float(z[k])
@@ -222,12 +233,47 @@ def analyze_braced_excavation(geometry: ExcavationGeometry,
         },
         converged=fe.converged,
         notes=notes,
+        apparent_pressure=dict(ap),
+        spans=spans,
+        diagram={"z": dz, "p": dp, "V": dV, "M": dM},
+        free_earth_diagram=getattr(fe, "diagram", None),
     )
 
 
 # ============================================================================
 # Cantilever excavation analysis
 # ============================================================================
+
+def _pressure_points(prof, FS: float, O: float) -> list:
+    """The pressures of a cantilever profile at its break depths down to O
+    (just above and just below a depth where a layer changes)."""
+    eps = 1e-6
+    depths = sorted({0.0, O, *[b for b in prof.breaks() if 0.0 < b < O]})
+    rows = []
+    for z in depths:
+        for zz in ((z,) if z in (0.0, O) else (z - eps, z + eps)):
+            act = float(prof.active(zz))
+            water = float(prof.u_retained(zz) - prof.u_excavation(zz))
+            pas = float(prof.passive(zz)) / FS
+            rows.append({
+                "z_m": round(z, 3),
+                "side": ("" if zz == z else ("above" if zz < z else "below")),
+                "sv_retained_kPa": round(float(prof.sv_retained(zz)), 2),
+                "active_kPa": round(act, 2),
+                "water_net_kPa": round(water, 2),
+                "sv_excavation_kPa": round(float(prof.sv_excavation(zz)), 2),
+                "passive_over_FS_kPa": round(pas, 2),
+                "net_kPa": round(act + water - pas, 2)})
+    # one row where nothing changes across the depth
+    out = []
+    for r in rows:
+        if out and out[-1]["z_m"] == r["z_m"] and all(
+                out[-1][k] == r[k] for k in r if k not in ("side",)):
+            out[-1]["side"] = ""
+            continue
+        out.append(r)
+    return out
+
 
 def analyze_cantilever_excavation(
     geometry: ExcavationGeometry,
@@ -281,9 +327,19 @@ def analyze_cantilever_excavation(
             f"to about {_CANTILEVER_TYPICAL_MAX_H:.1f} m (18 ft, Caltrans T&S "
             "7-1); check deflection.")
 
+    tops = np.concatenate([[0.0], prof.bottoms[:-1]])
+    layers_used = [
+        {"top_m": round(float(t), 3), "bottom_m": round(float(b), 3),
+         "unit_weight": float(prof.gamma[k]),
+         "friction_angle": float(geometry.soil_layers[k].friction_angle),
+         "cohesion": float(prof.c[k]),
+         "Ka": round(float(prof.Ka[k]), 4), "Kp": round(float(prof.Kp[k]), 4)}
+        for k, (t, b) in enumerate(zip(tops, prof.bottoms))]
+
     if not sol.converged:
         # No D0 within 6H: nothing below is reported (see the first note).
         return CantileverExcavationResult(
+            layers_used=layers_used,
             excavation_depth=H, FOS_passive=FOS_passive,
             Ka=round(float(prof.Ka[i]), 4), Kp=round(float(prof.Kp[i]), 4),
             required_embedment_m=None, total_wall_length_m=None,
@@ -293,6 +349,8 @@ def analyze_cantilever_excavation(
             net_force_at_O_kN_per_m=None, converged=False, notes=notes)
 
     return CantileverExcavationResult(
+        layers_used=layers_used, diagram=sol.diagram,
+        pressure_points=_pressure_points(prof, FOS_passive, H + sol.D0),
         excavation_depth=H,
         FOS_passive=FOS_passive,
         Ka=round(float(prof.Ka[i]), 4),

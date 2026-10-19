@@ -183,51 +183,86 @@ def _prep(params: dict, method: str):
     return g, variables, params.get("correlation"), convention
 
 
-def _run_fosm(params: dict) -> dict:
+def _used(params: dict, variables, corr, conv, **options) -> dict:
+    """The inputs an engine's run used, for its calc package (GM-41): the
+    performance function, each variable as the engine read it (mean, std,
+    cov, distribution, bounds), the correlations and the options."""
+    from reliability.variables import variables_from_spec
+    return {"g_expression": params["g_expression"],
+            "variables": [v.to_dict() for v in variables_from_spec(variables)],
+            "correlation": corr, "convention": conv, **options}
+
+
+def run_fosm(params: dict, *, method: str = "fosm"):
+    """The fosm tool's run: (result, the inputs it used)."""
     from reliability import fosm
-    reject_unknown_params(params, _ENGINE_PARAMS, method="fosm")
-    g, variables, corr, conv = _prep(params, "fosm")
+    reject_unknown_params(params, _ENGINE_PARAMS, method=method)
+    g, variables, corr, conv = _prep(params, method)
     res = fosm(g, variables, correlation=corr, convention=conv)
-    return clean_result(res.to_dict())
+    return res, _used(params, variables, corr, conv, engine="fosm")
+
+
+def _run_fosm(params: dict) -> dict:
+    return clean_result(run_fosm(params)[0].to_dict())
+
+
+def run_pem(params: dict, *, method: str = "pem"):
+    """The pem tool's run: (result, the inputs it used)."""
+    from reliability import pem
+    reject_unknown_params(params, _ENGINE_PARAMS + ("scheme",), method=method)
+    g, variables, corr, conv = _prep(params, method)
+    scheme = params.get("scheme", "full")
+    if scheme not in _SCHEMES:
+        raise ValueError(f"{method}: scheme must be one of {_SCHEMES}.")
+    res = pem(g, variables, correlation=corr, convention=conv,
+              scheme=scheme)
+    return res, _used(params, variables, corr, conv, engine="pem",
+                      scheme=scheme)
 
 
 def _run_pem(params: dict) -> dict:
-    from reliability import pem
-    reject_unknown_params(params, _ENGINE_PARAMS + ("scheme",), method="pem")
-    g, variables, corr, conv = _prep(params, "pem")
-    scheme = params.get("scheme", "full")
-    if scheme not in _SCHEMES:
-        raise ValueError(f"pem: scheme must be one of {_SCHEMES}.")
-    res = pem(g, variables, correlation=corr, convention=conv,
-              scheme=scheme)
-    return clean_result(res.to_dict())
+    return clean_result(run_pem(params)[0].to_dict())
 
 
-def _run_monte_carlo(params: dict) -> dict:
+def run_monte_carlo(params: dict, *, method: str = "monte_carlo"):
+    """The monte_carlo tool's run: (result, the inputs it used)."""
     from reliability import monte_carlo
     reject_unknown_params(params,
                           _ENGINE_PARAMS + ("n", "seed", "sampling", "n_bins"),
-                          method="monte_carlo")
-    g, variables, corr, conv = _prep(params, "monte_carlo")
+                          method=method)
+    g, variables, corr, conv = _prep(params, method)
     sampling = params.get("sampling", "random")
     if sampling not in _SAMPLING:
         raise ValueError(
-            f"monte_carlo: sampling must be one of {_SAMPLING}.")
+            f"{method}: sampling must be one of {_SAMPLING}.")
+    n, n_bins = int(params.get("n", 10000)), int(params.get("n_bins", 30))
     res = monte_carlo(
         g, variables, correlation=corr, convention=conv,
-        n=int(params.get("n", 10000)), seed=params.get("seed"),
-        sampling=sampling, n_bins=int(params.get("n_bins", 30)))
-    return clean_result(res.to_dict())
+        n=n, seed=params.get("seed"), sampling=sampling, n_bins=n_bins)
+    return res, _used(params, variables, corr, conv, engine="monte_carlo",
+                      n=n, seed=params.get("seed"), sampling=sampling,
+                      n_bins=n_bins)
+
+
+def _run_monte_carlo(params: dict) -> dict:
+    return clean_result(run_monte_carlo(params)[0].to_dict())
+
+
+def run_form(params: dict, *, method: str = "form"):
+    """The form tool's run: (result, the inputs it used)."""
+    from reliability import form
+    reject_unknown_params(params, _ENGINE_PARAMS + ("max_iterations",),
+                          method=method)
+    g, variables, corr, conv = _prep(params, method)
+    max_it = int(params.get("max_iterations", 100))
+    res = form(g, variables, correlation=corr, convention=conv,
+               max_iterations=max_it)
+    return res, _used(params, variables, corr, conv, engine="form",
+                      max_iterations=max_it)
 
 
 def _run_form(params: dict) -> dict:
-    from reliability import form
-    reject_unknown_params(params, _ENGINE_PARAMS + ("max_iterations",),
-                          method="form")
-    g, variables, corr, conv = _prep(params, "form")
-    res = form(g, variables, correlation=corr, convention=conv,
-               max_iterations=int(params.get("max_iterations", 100)))
-    return clean_result(res.to_dict())
+    return clean_result(run_form(params)[0].to_dict())
 
 
 def _run_cov_guidance(params: dict) -> dict:

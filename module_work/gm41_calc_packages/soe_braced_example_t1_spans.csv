@@ -1,0 +1,4 @@
+﻿Top (m),Bottom (m),Load (kN/m),Centroid below top (m),To support above (kN/m),To support below (kN/m)
+0,2,55.83,1,0,55.83
+2,5,83.74,1.5,41.87,41.87
+5,8,103.36,1.658,103.36,0

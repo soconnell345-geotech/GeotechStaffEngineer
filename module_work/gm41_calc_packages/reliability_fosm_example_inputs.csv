@@ -1,0 +1,6 @@
+﻿Parameter,Symbol,Value,Unit
+Method,Engine,"First-order second-moment (Taylor series, central differences)",
+Performance function,g,R/S,
+Convention,Conv.,factor of safety (failure at g < 1),
+Random variables,n_var,2,
+Correlation,ρ,none (independent),

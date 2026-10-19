@@ -500,6 +500,34 @@ _PACKAGE_TOOLS = {
         "older": {"cantilever": {"soil_layers": "layers"},
                   "anchored": {"soil_layers": "layers"}},
     },
+    "soe_package": {
+        "adapter": "soe",
+        "selector": ("wall_type", "cantilever",
+                     "The excavation wall to analyse and report: "
+                     "'cantilever' (the cantilever_excavation tool), "
+                     "'braced' (braced_excavation: struts, rakers or "
+                     "anchors at given support levels) or 'fhwa_anchored' "
+                     "(fhwa_apparent_pressure_anchored_wall)."),
+        "tools": {"cantilever": "cantilever_excavation",
+                  "braced": "braced_excavation",
+                  "fhwa_anchored": "fhwa_apparent_pressure_anchored_wall"},
+        "selector_values": {"cantilever_excavation": "cantilever",
+                            "braced_excavation": "braced",
+                            "fhwa": "fhwa_anchored",
+                            "fhwa_apparent_pressure_anchored_wall":
+                                "fhwa_anchored"},
+    },
+    "reliability_package": {
+        "adapter": "reliability_adapter",
+        "selector": ("engine", "fosm",
+                     "Which reliability engine to run and report: 'fosm' "
+                     "(Taylor series), 'pem' (Rosenblueth point estimates), "
+                     "'monte_carlo' or 'form' (the tool of that name)."),
+        "tools": {"fosm": "fosm", "pem": "pem",
+                  "monte_carlo": "monte_carlo", "form": "form"},
+        "selector_values": {"mc": "monte_carlo", "monte carlo": "monte_carlo",
+                            "taylor": "fosm"},
+    },
     "pavement_design_package": {
         "adapter": "pavement_design_adapter",
         "selector": ("design_type", "flexible",
@@ -1394,6 +1422,66 @@ def _generate_sheet_pile_package(params: dict) -> dict:
     )
 
 
+def _generate_soe_package(params: dict) -> dict:
+    run = _run_tool("soe_package", params)
+    result, used = run.out
+    analysis = {**used, "wall_type": run.value}
+    if run.value == "fhwa_anchored":
+        extra = {
+            "pe_kPa": result["pe_kPa"],
+            "anchor_design_loads_kN": [a["design_load_kN"]
+                                       for a in result["anchors"]],
+            "max_moment_kNm_per_m": result.get("max_moment_kN_m_per_m"),
+        }
+        if result.get("embedment_D_m") is not None:
+            extra["embedment_m"] = result["embedment_D_m"]
+    else:
+        extra = {
+            "embedment_m": result.required_embedment_m,
+            "total_wall_length_m": result.total_wall_length_m,
+            "max_moment_kNm_per_m": result.max_moment_kNm_per_m,
+            "required_Sx_cm3": result.required_Sx_cm3,
+            "converged": result.converged,
+        }
+        if run.value == "braced":
+            extra["support_loads_kN_per_m"] = [
+                r["load_kN_per_m"] for r in result.support_reactions]
+        if result.notes:
+            extra["notes"] = list(result.notes)
+    if run.value == "fhwa_anchored" and result.get("notes"):
+        extra["notes"] = list(result["notes"])
+    return _build_response(
+        "soe", result, analysis, params,
+        run=run,
+        analysis_type="Support of Excavation Wall",
+        extra=extra,
+    )
+
+
+def _generate_reliability_package(params: dict) -> dict:
+    run = _run_tool("reliability_package", params)
+    result, used = run.out
+    extra = {"engine": run.value}
+    if run.value == "form":
+        extra.update(beta=round(result.beta, 4), pf=result.pf,
+                     converged=result.converged)
+    elif run.value == "monte_carlo":
+        extra.update(pf=result.pf, n_failed=result.n_failed, n=result.n,
+                     beta_normal=round(result.beta_normal, 3))
+    else:
+        extra.update(beta_normal=round(result.beta_normal, 3),
+                     pf_normal=result.pf_normal)
+        if result.beta_lognormal is not None:
+            extra.update(beta_lognormal=round(result.beta_lognormal, 3),
+                         pf_lognormal=result.pf_lognormal)
+    return _build_response(
+        "reliability", result, used, params,
+        run=run,
+        analysis_type="Reliability Analysis",
+        extra=extra,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Generic HTML -> PDF report render (owner wall session 2026-07-14: no canned
 # package matched an atypical wall, and the agent had no way to turn its own
@@ -1766,6 +1854,8 @@ METHOD_REGISTRY = {
     "wave_equation_package": _generate_wave_equation_package,
     "pile_group_package": _generate_pile_group_package,
     "sheet_pile_package": _generate_sheet_pile_package,
+    "soe_package": _generate_soe_package,
+    "reliability_package": _generate_reliability_package,
 }
 
 
@@ -2067,6 +2157,16 @@ METHOD_INFO = {
         "category": "Calculation Package",
         "brief": "Run sheet pile wall analysis and generate calc package, with a table (CSV + printed) of pressure, shear and moment along the wall.",
         "returns": {**_COMMON_RETURNS, "embedment_m": "Required embedment.", "max_moment_kNm_per_m": "Max moment."},
+    },
+    "soe_package": {
+        "category": "Calculation Package",
+        "brief": "Run a support-of-excavation wall analysis (cantilever, braced/anchored at support levels, or FHWA apparent-pressure anchored wall) and generate its calc package: earth pressures, embedment, moments and the strut or anchor loads, with tables (CSV + printed) of pressure, shear and moment along the wall.",
+        "returns": {**_COMMON_RETURNS, "embedment_m": "Required embedment below the excavation (null: no moment balance; see notes).", "max_moment_kNm_per_m": "Max wall moment.", "support_loads_kN_per_m": "Braced: the load on each support level.", "anchor_design_loads_kN": "FHWA anchored: each anchor's design load.", "notes": "The analysis's notes (also printed in the package). Report every one."},
+    },
+    "reliability_package": {
+        "category": "Calculation Package",
+        "brief": "Run a reliability analysis (FOSM, point estimates, Monte Carlo or FORM) on a performance function of random variables and generate its calc package: the variables and their distributions, the moments of g, the reliability index beta and the probability of failure, and which variable matters.",
+        "returns": {**_COMMON_RETURNS, "engine": "The engine run.", "beta_normal": "Reliability index, g normal (FOSM, PEM, Monte Carlo moments).", "pf_normal": "Probability of failure, g normal.", "beta_lognormal": "Reliability index, factor of safety lognormal (convention 'fos').", "pf_lognormal": "Probability of failure, lognormal.", "beta": "FORM reliability index.", "pf": "FORM or Monte Carlo (counted) probability of failure."},
     },
 }
 

@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reliability Analysis &mdash; GM-41 example</title>
+<style>
+
+/* ---- Base ---- */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 11pt;
+    line-height: 1.5;
+    color: #1a1a1a;
+    background: #fff;
+    max-width: 8.5in;
+    margin: 0 auto;
+    padding: 0.75in 1in;
+}
+
+/* ---- Header / Title Block ---- */
+.header-block {
+    border: 2px solid #1a1a1a;
+    padding: 16px 24px;
+    margin-bottom: 24px;
+}
+
+.header-block h1 {
+    font-size: 16pt;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+    color: #1a1a1a;
+}
+
+.header-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 24px;
+    font-size: 10pt;
+}
+
+.header-grid .label {
+    color: #555;
+    font-weight: bold;
+}
+
+/* ---- Sections ---- */
+.section {
+    margin-bottom: 20px;
+    page-break-inside: avoid;
+}
+
+.section h2 {
+    font-size: 13pt;
+    font-weight: bold;
+    border-bottom: 1.5px solid #1a1a1a;
+    padding-bottom: 3px;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+/* ---- Input Table ---- */
+.input-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 12px;
+    font-size: 10pt;
+}
+
+.input-table th {
+    background: #f0f0f0;
+    border: 1px solid #ccc;
+    padding: 4px 10px;
+    text-align: left;
+    font-weight: bold;
+}
+
+.input-table td {
+    border: 1px solid #ccc;
+    padding: 4px 10px;
+}
+
+.input-table td:nth-child(3) {
+    text-align: right;
+    font-family: "Courier New", monospace;
+    font-weight: bold;
+}
+
+.input-table td:nth-child(4) {
+    text-align: left;
+    color: #555;
+    width: 60px;
+}
+
+/* ---- Calculation Step ---- */
+.calc-step {
+    margin-bottom: 16px;
+    padding: 10px 14px;
+    background: #fafafa;
+    border-left: 3px solid #2563eb;
+    page-break-inside: avoid;
+}
+
+.calc-step .step-title {
+    font-weight: bold;
+    font-size: 10.5pt;
+    margin-bottom: 6px;
+    color: #1e40af;
+}
+
+.calc-step .equation {
+    font-family: "Courier New", monospace;
+    font-size: 10.5pt;
+    color: #333;
+    margin-bottom: 4px;
+    padding-left: 16px;
+}
+
+.calc-step .substitution {
+    font-family: "Courier New", monospace;
+    font-size: 10.5pt;
+    color: #555;
+    margin-bottom: 4px;
+    padding-left: 16px;
+}
+
+.calc-step .result {
+    font-family: "Courier New", monospace;
+    font-size: 11pt;
+    font-weight: bold;
+    color: #1a1a1a;
+    padding-left: 16px;
+    margin-top: 4px;
+}
+
+.calc-step .result .computed {
+    color: #2563eb;
+    font-size: 11.5pt;
+}
+
+.calc-step .reference {
+    font-size: 9pt;
+    color: #888;
+    font-style: italic;
+    margin-top: 4px;
+    padding-left: 16px;
+}
+
+.calc-step .notes {
+    font-size: 9.5pt;
+    color: #666;
+    margin-top: 4px;
+    padding-left: 16px;
+}
+
+/* ---- Check Items ---- */
+.check-item {
+    padding: 8px 14px;
+    margin-bottom: 2px;
+    border-radius: 4px;
+    font-size: 10.5pt;
+}
+
+.check-item.pass {
+    background: #f0fdf4;
+    border-left: 4px solid #16a34a;
+}
+
+.check-item.fail {
+    background: #fef2f2;
+    border-left: 4px solid #dc2626;
+}
+
+.check-badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 3px;
+    font-weight: bold;
+    font-family: "Courier New", monospace;
+    font-size: 9pt;
+    margin-right: 8px;
+}
+
+.check-badge.pass {
+    background: #16a34a;
+    color: white;
+}
+
+.check-badge.fail {
+    background: #dc2626;
+    color: white;
+}
+
+.check-detail {
+    font-family: "Courier New", monospace;
+    font-size: 10pt;
+    color: #555;
+    padding-left: 28px;
+    margin-top: 0;
+    margin-bottom: 12px;
+}
+
+/* ---- Data Tables ---- */
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 12px;
+    font-size: 9.5pt;
+}
+
+/* A table's title sits in its own block ABOVE the table: the PDF engine
+   draws a table caption element below the table. */
+.table-title {
+    font-weight: bold;
+    font-size: 10pt;
+    text-align: left;
+    margin-bottom: 4px;
+}
+
+.data-table th {
+    background: #f0f0f0;
+    border: 1px solid #ccc;
+    padding: 3px 8px;
+    text-align: center;
+    font-weight: bold;
+    font-size: 9pt;
+}
+
+.data-table td {
+    border: 1px solid #ccc;
+    padding: 3px 8px;
+    text-align: center;
+    font-family: "Courier New", monospace;
+}
+
+.table-notes {
+    font-size: 8.5pt;
+    color: #666;
+    font-style: italic;
+    margin-top: -8px;
+    margin-bottom: 12px;
+}
+
+/* Tables of seven or more columns (the calculation tables, the slice
+   forces) sit in a .wide-table block: smaller type and padding so they fit
+   the page width. (A plain descendant selector: the PDF engine's CSS parser
+   rejects :has().) */
+.wide-table .data-table th,
+.wide-table .data-table td {
+    padding: 2px 3px;
+    font-size: 7.5pt;
+}
+
+/* ---- Figures ---- */
+.figure-block {
+    text-align: center;
+    margin: 16px 0;
+    page-break-inside: avoid;
+}
+
+.figure-block img {
+    border: 1px solid #ddd;
+    padding: 4px;
+    background: white;
+}
+
+.figure-block .caption {
+    font-size: 9.5pt;
+    color: #555;
+    margin-top: 6px;
+    font-style: italic;
+}
+
+/* ---- Text Paragraphs ---- */
+.text-block {
+    margin-bottom: 10px;
+    font-size: 10.5pt;
+}
+
+/* ---- References ---- */
+.references ol {
+    padding-left: 24px;
+    font-size: 9.5pt;
+}
+
+.references li {
+    margin-bottom: 4px;
+}
+
+/* ---- Footer ---- */
+.footer {
+    margin-top: 32px;
+    padding-top: 8px;
+    border-top: 1px solid #ccc;
+    font-size: 8.5pt;
+    color: #999;
+    text-align: center;
+}
+
+.footer .basis {
+    text-align: left;
+    color: #666;
+    margin: 8px 0;
+    line-height: 1.4;
+}
+
+.footer .basis strong {
+    color: #444;
+}
+
+/* ---- Print styles ---- */
+@media print {
+    body {
+        padding: 0.5in 0.75in;
+        max-width: none;
+    }
+    .section { page-break-inside: avoid; }
+    .figure-block { page-break-inside: avoid; }
+    .calc-step { page-break-inside: avoid; }
+    .no-print { display: none; }
+}
+
+</style>
+</head>
+<body>
+
+<!-- Header Block -->
+<div class="header-block">
+    <h1>Reliability Analysis</h1>
+    <div class="header-grid">
+        <div><span class="label">Project:</span> GM-41 example</div>
+        <div><span class="label">Number:</span> </div>
+        <div><span class="label">Prepared By:</span> </div>
+        <div><span class="label">Date:</span> 2026-10-19</div>
+        
+        
+    </div>
+</div>
+
+<!-- Sections -->
+
+<div class="section">
+    <h2>1. Given Inputs</h2>
+
+    
+    
+
+    
+    <div class="text-block">The inputs supplied for this calculation, apart from those stated as assumptions.</div>
+
+    
+    
+    
+
+    
+    
+    <div class="table-title">Given inputs</div>
+    
+    
+    <table class="data-table">
+        <thead>
+            <tr>
+                
+                <th>Input</th>
+                
+                <th>Value</th>
+                
+            </tr>
+        </thead>
+        <tbody>
+            
+            <tr>
+                
+                <td>Random variables: {name: {mean, cov or std, dist, lower, upper}}. dist one...</td>
+                
+                <td>{&#34;R&#34;: {&#34;mean&#34;: 200, &#34;cov&#34;: 0.15, &#34;dist&#34;: &#34;lognormal&#34;}, &#34;S&#34;: {&#34;mean&#34;: 100, &#34;cov&#34;: 0.25}}</td>
+                
+            </tr>
+            
+            <tr>
+                
+                <td>Performance function of the variable names</td>
+                
+                <td>R/S</td>
+                
+            </tr>
+            
+        </tbody>
+    </table>
+    
+    
+
+    
+    
+</div>
+
+<div class="section">
+    <h2>2. Assumed Inputs</h2>
+
+    
+    
+
+    
+    <div class="text-block">Assumed, not given: the analysis&#39;s defaults and the inputs stated as assumptions when this package was made. Each is the engineer&#39;s to accept or change.</div>
+
+    
+    
+    
+
+    
+    
+    <div class="table-title">Assumed inputs</div>
+    
+    
+    <table class="data-table">
+        <thead>
+            <tr>
+                
+                <th>Input</th>
+                
+                <th>Value used</th>
+                
+                <th>Basis</th>
+                
+            </tr>
+        </thead>
+        <tbody>
+            
+            <tr>
+                
+                <td>engine</td>
+                
+                <td>fosm</td>
+                
+                <td>the analysis&#39;s default</td>
+                
+            </tr>
+            
+            <tr>
+                
+                <td>&#39;fos&#39;: g is a factor of safety (failure g&lt;1, lognormal beta reported)....</td>
+                
+                <td>fos</td>
+                
+                <td>the analysis&#39;s default</td>
+                
+            </tr>
+            
+        </tbody>
+    </table>
+    
+    
+
+    
+    
+</div>
+
+<div class="section">
+    <h2>3. Values Used</h2>
+
+    
+    
+
+    
+    <table class="input-table">
+        <thead>
+            <tr>
+                
+                <th>Parameter</th>
+                
+                <th>Symbol</th>
+                
+                <th>Value</th>
+                
+                <th>Unit</th>
+                
+            </tr>
+        </thead>
+        <tbody>
+            
+            <tr>
+                
+                <td>Method</td>
+                
+                <td>Engine</td>
+                
+                <td>First-order second-moment (Taylor series, central differences)</td>
+                
+                <td></td>
+                
+            </tr>
+            
+            <tr>
+                
+                <td>Performance function</td>
+                
+                <td>g</td>
+                
+                <td>R/S</td>
+                
+                <td></td>
+                
+            </tr>
+            
+            <tr>
+                
+                <td>Convention</td>
+                
+                <td>Conv.</td>
+                
+                <td>factor of safety (failure at g &lt; 1)</td>
+                
+                <td></td>
+                
+            </tr>
+            
+            <tr>
+                
+                <td>Random variables</td>
+                
+                <td>n_var</td>
+                
+                <td>2</td>
+                
+                <td></td>
+                
+            </tr>
+            
+            <tr>
+                
+                <td>Correlation</td>
+                
+                <td>ρ</td>
+                
+                <td>none (independent)</td>
+                
+                <td></td>
+                
+            </tr>
+            
+        </tbody>
+    </table>
+
+    
+    
+</div>
+
+<div class="section">
+    <h2>4. Random Variables</h2>
+
+    
+    
+
+    
+    
+    <div class="table-title">Random variables</div>
+    
+    <div class="wide-table">
+    <table class="data-table">
+        <thead>
+            <tr>
+                
+                <th>Variable</th>
+                
+                <th>Distribution</th>
+                
+                <th>Mean</th>
+                
+                <th>Std. dev.</th>
+                
+                <th>COV</th>
+                
+                <th>Lower</th>
+                
+                <th>Upper</th>
+                
+                <th>Mode</th>
+                
+            </tr>
+        </thead>
+        <tbody>
+            
+            <tr>
+                
+                <td>R</td>
+                
+                <td>lognormal</td>
+                
+                <td>200</td>
+                
+                <td>30</td>
+                
+                <td>0.150</td>
+                
+                <td>—</td>
+                
+                <td>—</td>
+                
+                <td>—</td>
+                
+            </tr>
+            
+            <tr>
+                
+                <td>S</td>
+                
+                <td>normal</td>
+                
+                <td>100</td>
+                
+                <td>25</td>
+                
+                <td>0.250</td>
+                
+                <td>—</td>
+                
+                <td>—</td>
+                
+                <td>—</td>
+                
+            </tr>
+            
+        </tbody>
+    </table>
+    </div>
+    
+    <div class="table-notes">As the engine read them: a COV given is turned into the standard deviation (std = COV × |mean|) and the reverse.</div>
+    
+
+    
+    
+</div>
+
+<div class="section">
+    <h2>5. FOSM (Taylor Series)</h2>
+
+    
+    
+
+    
+    <div class="calc-step">
+        <div class="step-title">Mean of g at the mean values</div>
+        
+        <div class="equation">μ<sub>g</sub> = g(μ<sub>X1</sub>, …, μ<sub>Xn</sub>)</div>
+        
+        <div class="substitution">g evaluated with every variable at its mean</div>
+        
+        <div class="result">μ_g = <span class="computed">2.0</span> </div>
+        
+        <div class="reference">UFC 3-220-20 Eq. 7-8, p. 533</div>
+        
+        
+    </div>
+
+    
+    
+    
+
+    
+    
+    <div class="table-title">Central differences, one standard deviation either side</div>
+    
+    
+    <table class="data-table">
+        <thead>
+            <tr>
+                
+                <th>Variable</th>
+                
+                <th>Δg = g(μ+σ) − g(μ−σ)</th>
+                
+                <th>Δg / 2</th>
+                
+                <th>Share of variance (%)</th>
+                
+            </tr>
+        </thead>
+        <tbody>
+            
+            <tr>
+                
+                <td>R</td>
+                
+                <td>0.6000</td>
+                
+                <td>0.3000</td>
+                
+                <td>24.0</td>
+                
+            </tr>
+            
+            <tr>
+                
+                <td>S</td>
+                
+                <td>-1.0667</td>
+                
+                <td>-0.5333</td>
+                
+                <td>76.0</td>
+                
+            </tr>
+            
+        </tbody>
+    </table>
+    
+    
+    <div class="table-notes">UFC 3-220-20 Eq. 7-10 (p. 535); the share is (Δg/2)² over their sum (Duncan 2000).</div>
+    
+
+    
+    
+    
+
+    
+    <div class="calc-step">
+        <div class="step-title">Standard deviation of g</div>
+        
+        <div class="equation">σ<sub>g</sub> = [Σ (Δg<sub>i</sub>/2)²]<sup>0.5</sup></div>
+        
+        <div class="substitution">from the table above</div>
+        
+        <div class="result">σ_g = <span class="computed">0.6119</span> </div>
+        
+        <div class="reference">UFC 3-220-20 Eq. 7-11, p. 535</div>
+        
+        
+    </div>
+
+    
+    
+    
+
+    
+    <div class="calc-step">
+        <div class="step-title">Coefficient of variation of g</div>
+        
+        <div class="equation">COV<sub>g</sub> = σ<sub>g</sub> / μ<sub>g</sub></div>
+        
+        <div class="substitution">COV<sub>g</sub> = 0.6119 / 2.0000</div>
+        
+        <div class="result">COV_g = <span class="computed">0.306</span> </div>
+        
+        
+    </div>
+
+    
+    
+    
+
+    
+    <div class="calc-step">
+        <div class="step-title">Reliability index (g normal)</div>
+        
+        <div class="equation">β = (μ<sub>g</sub> − 1) / σ<sub>g</sub></div>
+        
+        <div class="substitution">β = (2.0000 − 1) / 0.6119</div>
+        
+        <div class="result">β = <span class="computed">1.634</span> </div>
+        
+        <div class="reference">UFC 3-220-20 Eq. 7-7, p. 533</div>
+        
+        
+        <div class="notes">g = F − 1 in the form of Eq. 7-7.</div>
+        
+    </div>
+
+    
+    
+    
+
+    
+    <div class="calc-step">
+        <div class="step-title">Probability of failure (g normal)</div>
+        
+        <div class="equation">P<sub>f</sub> = Φ(−β)</div>
+        
+        <div class="substitution">P<sub>f</sub> = Φ(−1.634)</div>
+        
+        <div class="result">Pf = <span class="computed">0.05111</span> </div>
+        
+        <div class="reference">UFC 3-220-20 7-4.2</div>
+        
+        
+    </div>
+
+    
+    
+    
+
+    
+    <div class="calc-step">
+        <div class="step-title">Reliability index (factor of safety lognormal)</div>
+        
+        <div class="equation">β<sub>LN</sub> = [ln μ<sub>F</sub> − 0.5 ln(1 + COV<sub>F</sub>²)] / [ln(1 + COV<sub>F</sub>²)]<sup>0.5</sup></div>
+        
+        <div class="substitution">μ<sub>F</sub> = 2.0000, COV<sub>F</sub> = 0.3060</div>
+        
+        <div class="result">β_LN = <span class="computed">2.168</span> </div>
+        
+        <div class="reference">UFC 3-220-20 Eq. 7-12, p. 535; Duncan (2000)</div>
+        
+        
+    </div>
+
+    
+    
+    
+
+    
+    <div class="calc-step">
+        <div class="step-title">Probability of failure (lognormal)</div>
+        
+        <div class="equation">P<sub>f</sub> = Φ(−β<sub>LN</sub>)</div>
+        
+        <div class="substitution">P<sub>f</sub> = Φ(−2.168)</div>
+        
+        <div class="result">Pf_LN = <span class="computed">0.0151</span> </div>
+        
+        
+    </div>
+
+    
+    
+    
+
+    
+    <div class="text-block">g evaluated 5 times (1 + 2n).</div>
+
+    
+    
+</div>
+
+<div class="section">
+    <h2>6. Figures</h2>
+
+    
+    
+
+    
+    <div class="figure-block">
+        <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABAsAAAFoCAYAAAAxYnLkAAAAOnRFWHRTb2Z0d2FyZQBNYXRwbG90bGliIHZlcnNpb24zLjExLjIsIGh0dHBzOi8vbWF0cGxvdGxpYi5vcmcvgI3uAAAAAAlwSFlzAAAXEgAAFxIBZ5/SUgAAMAVJREFUeJzt3XmUVdWZP+73UsUMAoogiIiCMs9BjVHBWYySiBNKjCJESUxrvg7RaMcphETbDC41tlPHqXFChLSBRAERjTgrKCDKPIqAgAwCQu3fH/6o9nQVcxVVWM+zVi0Xezj7Pe66Vfd+7ql7cimlFAAAAAD/v0plXQAAAABQvggLAAAAgAxhAQAAAJAhLAAAAAAyhAUAAABAhrAAAAAAyBAWAAAAABnCAgAAACBDWAAAAABkCAsAAACADGEBAAAAkCEsAAAAADKEBQAAAEBGflkXsL3222+/WLNmTTRt2rSsSwEAAIBybe7cuVGzZs349NNPd2r+HnNlwZo1a2LDhg1lXQalbNOmTbFp06ayLoPdwF5XDPa54rDXFYN9rjjsdcVgn7/dvvrqq1izZs1Oz99jrixo2rRpbNq0KSZPnlzWpVCKli5dGhER9evXL+NKKG32umKwzxWHva4Y7HPFYa8rBvv87da2bdtdmr/HXFkAAAAA7B7CAgAAACBDWAAAAABkCAsAAACADGEBAAAAkCEsAAAAADKEBQAAAECGsAAAAADIEBYAAAAAGcICAAAAICO/rAvYEfM/Wx7NfnB9WZdBKWqxX+2IiJj+6aoyroTS9m3Z69kjBpd1CQAAUOJcWQAAAABkCAsAAACADGEBAAAAkCEsAAAAADKEBQAAAECGsAAAAADIEBYAAAAAGcICAAAAIENYAAAAAGQICwAAAIAMYQEAAACQISwAAAAAMoQFAAAAQIawAAAAAMgQFgAAAAAZwgIAAAAgQ1gAAAAAZAgLAAAAgAxhAQAAAJAhLAAAAAAyhAUAAABAhrAAAAAAyBAWAAAAABnCAgAAACBDWAAAAABkCAsAAACADGEBAAAAkCEsAAAAADKEBQAAAECGsAAAAADIEBYAAAAAGcICAAAAIENYAAAAAGQICwAAAIAMYQEAAACQISwAAAAAMoQFAAAAQIawAAAAAMgQFgAAAAAZwgIAAAAgQ1gAAAAAZAgLAAAAgAxhAQAAAJAhLAAAAAAyhAUAAABARv6uHuDTTz+NP/zhD0Xa99lnn2jZsmUcccQR0ahRo11dBgAAANhNdjksWLZsWdxxxx1b7K9Ro0bccMMNcf311+/qUgAAAMBusMthwWZdunSJIUOGRERESimWLl0ab731Vvz+97+PG264IRo2bBj9+/cvqeUAAACAUlJiYUGNGjWiZcuWmbajjjoqevToEd26dYsbb7xRWAAAAAB7gFL/gMPOnTtHy5YtY+HChbF06dLSXg4AAADYRSV2ZcHW1KhRIyIiVq5cGfXr19/q2LZt2xbbPmPGjMivUafEawMAAACySv3Kgk8//TSmTJkS1atXjyZNmpT2cgAAAMAuKrUrC7744ot477334pprrom1a9fGwIEDo2rVqtucN3ny5GLb27ZtG3MW+TMGAAAAKG0lFha8+uqrUbly5Yj4+m4ImzZtKuw7/vjj4w9/+ENJLQUAAACUohILC+rUqRPdunUr/Pf06dNj9uzZ0b9//3jwwQdLahkAAACglJVYWNC+fft48cUXC//97rvvxne+85147rnn4o477oi6deuW1FIAAABAKSq1Dzjs0qVLnH322fH555/H73//+9JaBgAAAChhpXo3hEGDBkV+fn7ceeedMW/evNJcCgAAACghpRoWHHLIIdG/f/9Yt25d/PrXvy7NpQAAAIASUqphQUTETTfdFDVq1IjHHnssJk2aVNrLAQAAALtolz/gsF69ejFgwIBo0aJFsf2NGjWKu+66KyZMmBDvvfdedOjQYVeXBAAAAErRLocFjRs3jgceeGCrYy6++OK4+OKLd3UpAAAAYDco9T9DAAAAAPYswgIAAAAgQ1gAAAAAZAgLAAAAgAxhAQAAAJAhLAAAAAAyhAUAAABAhrAAAAAAyBAWAAAAABnCAgAAACBDWAAAAABkCAsAAACADGEBAAAAkCEsAAAAADKEBQAAAECGsAAAAADIEBYAAAAAGcICAAAAIENYAAAAAGQICwAAAIAMYQEAAACQISwAAAAAMoQFAAAAQIawAAAAAMgQFgAAAAAZwgIAAAAgQ1gAAAAAZAgLAAAAgAxhAQAAAJAhLAAAAAAyhAUAAABAhrAAAAAAyBAWAAAAABnCAgAAACBDWAAAAABkCAsAAACADGEBAAAAkCEsAAAAADKEBQAAAECGsAAAAADIyC/rAnZEkwb14qMRg8u6DErR0qVL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v90qV64cNWvW3On5+SVYS6lq2bJlRERMnjy5jCuhNLVt2zYi7HNFYK8rBvtccdjrisE+Vxz2umKwz2zNHnNlAQAAALB7CAsAAACADGEBAAAAkCEsAAAAADKEBQAAAEBGLqWUyroIAAAAoPxwZQEAAACQISwAAAAAMoQFAAAAQIawAAAAAMgQFgAAAAAZwgIAAAAgQ1gAAAAAZAgLAAAAgAxhAQAAAJAhLAAAAAAyhAUAAABARrkPC9555504++yzo3nz5tGiRYs499xz4/333y/rsthFDz74YPTs2TN69uwZEyZMKHbMkCFD4thjj40DDjgg2rVrF//v//2/WL58+W6ulJ2xYsWKuPbaa+Ooo46Kgw46KE455ZS4++67Y9OmTVucs3Llyrjqqquiffv2ccABB0SPHj3iscce241VszNGjBgRZ5xxRrRq1Srat28fffv2jbfffnurc1566aU47bTTolmzZtGqVavo169fzJgxYzdVTEm4/vrro2fPnnHxxRdvddwjjzwS3bt3jwMOOCA6dOgQV199dXzxxRe7qUp21NVXX134u7m4rw8++KDYec8991yceOKJ0bRp02jTpk38/Oc/j8WLF+/m6tkRKaV46KGHokePHtG0adM44ogj4sorr4wlS5Zscc7atWvj+uuvj06dOsUBBxwQRx11VNx///27sWp2xEUXXbTVx3PPnj3j3HPPLTJv1qxZ0b9//2jVqlU0a9Ysvv/978fo0aPL4AwoF1I5NmrUqFSjRo0UEalx48apYcOGKSJSrVq10osvvljW5bETVq5cmfr06ZMiovBr+PDhRcbdcMMNhf2HHnpo4fdB27Zt0/z588ugcrbXtGnTUoMGDVJEpAYNGqROnTqlmjVrpohIRxxxRFq3bl2ROYsWLUodO3ZMEZGqV6+eWrZsWbj/11xzTSooKCiDM2FrNm3alH74wx+miEiVK1dObdu2TS1atEi5XC5VqlQp3XvvvcXOe/TRR1N+fn6KiNSsWbO09957F36vvPPOO7v5LNgZL7zwQuHjs0WLFsWOKSgoSFdddVXhuJYtW6bq1auniEidOnVKixYt2s1Vsz0OPvjgFBEpPz+/2K+XX365yJzbb7898/1Qu3btFBGpefPmacaMGWVwFmzLxo0bU69evQr37eCDD0716tVLEZHq1q2bPvzwwyJzli1blr773e+miEhVq1ZNrVq1SrlcLkVEuvTSS9OmTZvK4EzYmubNm2/xsZyXl5ciItWvXz8zZ+LEialRo0YpIlK9evVSs2bNUkSkvLy89OCDD5bRmVCWym1YMG/evFSlSpVUtWrV9Pe//z2l9PWTjxEjRhS2e7KxZ5k2bVpq3rx5iojUu3fvdM455xQbFjzyyCMpItIhhxySZs2alVJKad26demXv/xlioh0+OGHl0H1bK9u3bqliEh33XVX4Yv8lStXFu73tddeW2TO0UcfnSIi/eIXv0hffvllSimlOXPmpFatWqWISA888MBuPQe2bfDgwSki0gknnJAWLFhQ2D5hwoS01157pWrVqqWZM2dm5rz99tspl8ulunXrpgkTJqSUvg4dHnzwwZTL5VL9+vXT2rVrd+t5sGPWrl2bDj744FSnTp2Uy+W2GBbcd999KSJS69at09y5c1NKKX355ZfpiiuuSBGRunfvvhurZnsUFBSkKlWqpFatWm33nBEjRqSISE2aNElTp05NKaW0YcOGNGjQoBQRqVWrVsLecuh3v/tdioh07LHHFj6X3rRpU7rlllsK36T5vy/+Tz/99BQRqX///mnNmjUppa+D/q5du6aISP/xH/+x28+DnTd8+PAUEenUU08tbFu/fn3ab7/9UkSkv/zlL2njxo0ppZTeeuuttM8++6SISK+99lpZlUwZKbdhwfXXX1/4guP/+uMf/5giIt18881lUBk76/HHH09Vq1ZNd999d0oppYEDBxYbFnTp0iXlcrk0bdq0Isc4+eSTU0Sk119/fbfUzI6ZOXNmioh04oknFulbvXp1qlKlSmrZsmWm/d13300RkXr06FHkSeWsWbNSXl5eateuXanWzY7r2rVrqlSpUlq8eHGRvs1XBv3fkOfHP/5xioj03HPPFZlz5ZVXpojwzkU5d+2116aISP/1X/+V8vPztxgWtG3bNuXl5RUGvpsVFBSkHj16pIhI7733XukXzHZbuHBhioh00kknbfec4447LkVEeuutt4r0bQ6I//GPf5Rkmeyir776KjVp0iQddNBBRcLZTZs2pe985zspItL48eML26dPn54qVaqUunbtWvgCcrPFixen6tWrpwMPPLBIH+VTQUFB6ty5c4qI9Oabbxa2P/rooyki0mWXXVZkzsiRI1NEpD59+uzOUikHymVYUFBQkOrXr5+qVq2ali9fXqR/6dKlqXLlyqlRo0a7vzh22vjx4zNPDosLC956662tvuv09NNPp4hI/fr1K+Vq2RkffvhhGjhwYBo6dGix/QceeGCqWrVqpu3SSy9NEZEee+yxYuecdNJJKSLSv/71rxKvl523ePHiYoOClFK66667UkSkwYMHF7atWLEiVa1aNTVo0KDYJ5STJ09OEZG6detWajWzayZOnJjy8/NTjx49Ukppi2HBK6+8kiIinXzyycUeZ/MT0p/+9KelWi87ZsKECSki0oABA7Zr/CeffJIiInXs2LHY/s1/rnLGGWeUYJXsqmeeeSZFRLrtttuK7V+9enX69NNPC68eSOl/Q8Li3sBL6X+Doc1XAlO+DRs2LEVEOv300zPt3/ve97YY5BYUFKQmTZqk/Pz8tHTp0t1UKeVBufyAw6VLl8bSpUvjiCOOiLp16xbp32effaJbt26xaNGiWLFixW6vj51z9NFHR6dOnbY6ZurUqRERccoppxTbv7l9ypQpJVobJaNt27Zx7733xplnnlmkb+HChTF//vxo2bJlpt2e75kaNGgQDRo0KNKeUornnnsuIiK++93vFrbPnDkz1q9fHyeeeGLk5eUVmdemTZto2rSpfS6nCgoK4pJLLom8vLy47777tjrWY3rPNHfu3IiIOOCAA2L69OnxyCOPxH/+53/Gm2++WeyH025rn4877rioUqWKfS5n/vWvf0VERM+ePSOlFOPHj4+77747nn322Zg/f37UrFkzGjZsGDVq1Cic4zH97ZFSiptvvjkiovC/m02dOjUaNmxY7HP1XC4XJ510UmzcuDE++eST0i+UciO/rAsozvz58yMionHjxlscs7lv/vz5xQYK7Jm2tfe1a9eOWrVqFY5jz3H99dfHpk2b4mc/+1mmff78+VGlSpWoX79+sfO++VinfFq0aFEsWbIk5syZE/fee2+MHTs2+vbtGz169Cgcs70/1+fOnRsrVqzwc72c+ctf/hJvvPFGDBo0KA499NCtjt3WXtevXz8qV67sMV3ObA4Lnnzyybj11lszAcHhhx8ejz32WBxyyCGFbdva57y8vGjQoIF9LmcWLFgQEV8/nzruuONi3LhxhX15eXnxq1/9Km688caoXLlyYfu29trv6T3Hs88+G5MmTYof/OAH0aVLl8L2tWvXxueffx6dO3fe4lz7XDGVyysLNn8TFveu1WYNGzbMjOXbYXv3ftGiRVu9DR/ly/333x+PPPJIHHPMMfGTn/wk07dgwYLYd999tzjXY738Gzx4cHTs2DF69eoVo0aNiltvvTUeffTRzBg/1/dcCxYsiOuvvz7atGkTv/zlL7c5flt7ncvlvIgshzZu3Bj16tWLr776Km677bb45z//GY8//ngce+yx8cYbb8Txxx8fq1evLhy/vY/pNWvWuAq0HJk/f37kcrk488wzY+rUqfHnP/85xo4dG3fffXc0aNAgBg0aVOQd581XHHzzaoNv8rN7z5BSiltuuSVyuVyRPd4cIvkdzf9VLq8sqFq1akREfPXVV1scs2HDhsxYvh22d+/z8/OjUqVymXXxf/ztb3+Ln/3sZ9GkSZMYMmRIkX2rUqWKx/oe7uSTT47atWvH/PnzY9y4cXHjjTfGm2++GY8//njUqVMnIvxc35P9/Oc/j9WrV8f999+febdxS7Z3r6tUqVJiNbLrrrvuurjuuuuKtJ9//vlxzjnnxNChQ+P3v/99DBo0KCJ27DFtr8uPpUuXRkop5s6dG5MmTYpGjRpFRMSxxx4bvXv3jrZt28btt98e/fv3j4MPPjgivt7rrQU+fnbvGZ555pn48MMP44wzzijypwZ+R7Ml5fLV1v777x8REZ999tkWxyxevDgiIpo0abJbamL32J69/+yzz6JJkyaRy+V2V1nspFdeeSXOPffcqFWrVowcObJwf79p//33j6VLl0ZBQUGxx/BYL/9OO+20GDx4cDz66KMxffr0uPjii+P555/PvAu9Iz/Xi/s+oWw899xzMXz48Bg4cGB873vf264529rrTZs2xbJly+KAAw4osTopPblcLgYPHhwRkblkfXsf03vvvfcW35Fm96tVq1ZERFxzzTWFQcFmjRo1ip/+9KexcePGeO211wrb999//9iwYUOsXLmy2GP6PV3+FRQUFF5VcNNNNxXpb9SoUeRyOa+9KKJchgWbvwlnzpy5xTGzZs2KCE8qv222tfcLFy6M9evX+0G1B3j//ffj9NNPj1wuFyNGjIj27dsXO65JkyZRUFAQc+bMKbZ/82Pdnu8ZqlSpEvfcc09UqVIlnnjiicL2bT22N38PeGFRfqxduzb+7d/+LSpVqhQdO3aMp556KvNVUFAQq1atiqeeeipGjBhROG9bez1nzpwoKCjwmN6DtGjRIqpVqxbTpk0rbNvWPq9atSqWLl1qn8uZ/fbbLyIiOnToUGx/69atIyJ2aK/9ni7/nnrqqZgyZUr07t07OnbsWKS/cuXK0bBhw5g3b15s3Lix2GPY54qpXIYFderUiZYtW8a7775b+I35TR9//HF88MEH0b59e08qv2W6desWlSpVimeffbbY/s3thx9++O4six00Y8aMOOWUU2Lt2rUxdOjQ6N69+xbHbt7LYcOGFdv/7LPPRi6Xi8MOO6xUamXHLV68OB566KEYNWpUsf3VqlWL+vXrx9q1a2P9+vUR8fWLjX322SdefPHFWLVqVZE5L7/8cixbtsxjuxxZsmRJLFiwIAoKCmLgwIHRp0+fzFdBQUEsXrw4+vTpEwMHDiyctz2P6W+Oo3wYMWJEPPTQQ7Fu3boifcuWLYt169ZFs2bNCts6d+4cVapUieHDhxd7ZdjmdvtcvhxxxBEREcU+v47430DgoIMOKmzzmN6zbeuqgs0OP/zwWLlyZYwZM6ZI39q1a2PUqFFRt27dIne14luuTG/cuBV33313ioh06aWXFum7+OKLU0Sk+++/vwwqo6QMHDgwRUQaPnx4pv20005LEZGee+65TPvKlStTq1atUqVKldKsWbN2X6HskIULF6aDDjooVapUKT311FPbHD9v3rzC+7UvX7480zdy5MgUEemkk04qpWrZGStWrEh5eXmpXr166fPPPy/Sv/l+7Z07d860X3fddSki0m9+85tM+8aNG1PPnj1TRKSRI0eWau1sv9WrV6fHH398i18RkRo2bJgef/zxNHTo0MzcE044IUVEGjVqVKb9888/T82bN0/5+flpwYIFu/N02IZ+/fqliEj//d//XaTvpptuShGRLr/88kz7j370oxQR6a9//Wumfe3atalr164pItLEiRNLs2x20NSpU1Mul0uHHnpoWrduXaZvxYoVqVGjRimXy6XJkycXtn/++eepRo0aqXHjxmnx4sWZOa+++mrK5XKpW7duu6V+dtxjjz2WIiKdffbZWx03evToFBHp+OOPT1999VWm7/bbb08Rka688srSLJVyqNyGBatWrUr7779/ioh0xRVXpEmTJqX3338/XXbZZSki0oEHHpjWrFlT1mWyC7YUFowfPz7l5+enGjVqpPvuuy/NmjUrjR49Oh199NEpItIFF1xQRhWzLcuXL0/t27dPEZHOP//8NHr06GK/li1blpnXv3//FBHpyCOPTC+++GKaPXt2euCBB1LNmjVTXl5eGjNmTBmdEVuy+YVFhw4d0vDhw9O8efPStGnT0j333JP23XffFBFFXkDOnTs31a1bN+VyuXTrrbemjz76KL3++uupT58+KSJSly5dUkFBQRmdETsqIlKLFi2K7XvxxRdTXl5eqlWrVnrooYfS7Nmz0wsvvJCOOOKIFBHpJz/5yW6ulm157bXXUuXKlVPt2rXTPffck2bNmpU++OCDdO2116a8vLy07777piVLlmTmvPvuu6latWqpSpUq6c4770wzZsxIL7/8cjr55JNTRKTTTz+9jM6GrbnoootSRKTvfOc76YUXXkhz585Nzz//fGrTpk2KiPSzn/2syJyrrrqqMAQeOXJkmjNnTnr00UdTvXr1Ui6XK/IGD+XDxo0b06GHHppyuVz68MMPtzn+8MMPLwwWJkyYkKZNm5Z++9vfplwul/baa680c+bM3VA15Um5DQtSSmnOnDmpZcuWKSIyX+3atUvz588v6/LYRVsKC1L6+h3lGjVqFNn7Cy64oEjaSfnx4IMPFtmz4r5Gjx6dmffVV18VPnn55lf16tXT3/72tzI6G7Zm/fr1qW/fvimXyxXZtzp16qR77rmn2HmTJk1KjRs3LjLn6KOPLnJlCeXb1sKClFIaPnx4qlatWpG9HjBgQNq4ceNurJTt9eijj6a99tqryJ4deuih6fXXXy92zssvv5zq1KlTZM4ZZ5yRvvzyy918BmyPtWvXpp/+9KfF/n4eMGBAWr16dZE5BQUF6fLLLy8yvnLlymnIkCFlcBZsj4cffjhFRDr33HO3a/yKFStS9+7di+zzfvvtl957773SLZZyKZdSStv7Jwtl4Ysvvognn3wy3n///YiI6NKlS/Tp06fw01zZc40dOzY++OCDOP300wtvz/NNM2fOjCeffDJmzpwZderUieOPPz569uzpLgjl2OTJk2P06NHbHNe7d+9iPwl91KhRMXr06Fi5cmUcdNBB0adPn2jevHlplEoJ+fDDD+PFF1+M6dOnR/Xq1aN169bxgx/8IOrXr7/FOUuWLIkhQ4bElClTokqVKvHd7343zjzzTLdj2sPceeedUadOnbjooou2OOaTTz6Jp556KmbPnh1169aNE088MU4++eTdVyQ7bMmSJTF06NCYMmVK1KpVKzp16hS9evWK6tWrb3HOvHnz4oknnohPPvkkatWqFd27d49evXq5xXE5N2HChBg3blzMmTMnWrZsGUcddVR069Ztq3PGjBkT//jHP2L58uVxwAEHxLnnnhutWrXaTRWzo4YNGxbz5s2LXr16ZT6HYms2bNgQzz77bEyYMCHWr18frVu3jvPPPz8aNGhQytVSHpX7sAAAAADYvUS+AAAAQIawAAAAAMgQFgAAAAAZwgIAAAAgQ1gAAAAAZAgLAAAAgAxhAQAAAJAhLAAAAAAyhAUAAABAhrAAAAAAyBAWAAAAABnCAgAAACBDWAAAAABkCAsAAACADGEBAFBurFy5MtasWVNqx1+1alV88cUXpXZ8APi2EBYAAOXCs88+G3Xr1o0//vGPpbbGZZddFnXr1o2JEyeW2hoA8G2QSymlsi4CAPhaSik+/vjjmDZtWmzcuDFatmwZrVq1iry8vCJjP/744/jyyy+jQ4cOkcvlyqDakpNSis6dO8fUqVNj7ty50bBhw0z/559/Hi+//HIUFBTEMcccE/vuu+8Wj/XRRx9FSilat25dpO+tt96Kww47LM4888wYOnRoiZ8HAHxbuLIAAMqJF198MTp37hytWrWKH/zgB3HmmWdGu3btonXr1jFs2LAi4/v27RudOnWKDRs2lEG1JeuVV16JiRMnRu/evYsEBRMnTozWrVtHnz59om/fvtGqVat48803iz3O2LFjo02bNvE///M/xfZ369YtunbtGsOGDYsFCxaU+HkAwLeFsAAAyoGxY8fGqaeeGh999FEMGDAg7r///njggQdiwIABMW/evDjrrLPimWeeKesyS83md/nPOuusIn3XXntt5HK5WLhwYSxevDhq1KgRv/zlL4uM++KLL6Jfv35x5JFHxtVXX73Ftc4888xIKRUbwAAAX/NnCABQDrRp0yY++eSTeOmll+Koo47K9L322mtxzDHHRP369ePTTz8tbO/WrVu8/fbbsW7duqhateruLrlENWnSJJYuXRpLly6NWrVqZfr23XffOPHEE2PIkCEREXHhhRfGsGHDYtWqVZlxF110UQwdOjQmTpwYzZs33+JaU6dOjTZt2kT37t1j3LhxJX4uAPBtkF/WBQBARff555/HRx99FF26dCkSFEREHHnkkfHv//7vMWPGjFiyZEmxf6//2WefxdChQ2Px4sVxyCGHxGmnnRZ169Ytdr358+fH3//+95g3b17UqlUrjjrqqGLXfe6552LJkiVxySWXxNSpU+O5556LlStXxm233ZYZN2XKlHjjjTdi3rx50bJlyzjppJOiXr16233+c+bMiQULFsTRRx9dJCiIiCgoKIj8/P99ypKXlxcFBQWZMcOHD49HHnkk7rvvvq0GBRERrVu3joYNG8abb74ZmzZtKvbzIACgohMWAEAZq1KlSkREzJ07NzZs2FD472+6+eabtzj/tddeizPPPDOWL19e2Na4ceN4/vnno3PnzoVtBQUFceONN8bvfve7Ii+2TzjhhHj++eczVyjcfvvt8fbbb0e7du3i2GOPjQ0bNkR+fn5hWLBu3br4xS9+Effdd1/mWPvuu2/cfffdcc4552zX+b/99tsREdG1a9di+9u3bx8vv/xyrF27NnK5XLz00kvRoUOHwv7NgcYpp5wSl1xyyXat2bVr1xg5cmRMmTIl2rdvv11zAKAi8ZkFAFDGatWqFaecckosWbIkTj311MIXz9trwIABcfnll8f7778fr7/+epx55pmxcOHCuPTSSzPj7rrrrvjtb38bTZs2jWHDhsX8+fNj0qRJcdZZZ8Xo0aOL/RyATZs2xVlnnRUDBw6MF154IcaMGVPY179//7jvvvvijDPOiPHjx8f06dPj4YcfjpRS/OhHP4pJkyZtV/2TJ0+OiIiOHTsW2/+b3/wmli1bFk2bNo2mTZvG4sWLY/DgwYX9l1xySWzcuDEeeuih7Vrvm2t9+OGH2z0HACoSVxYAQDnw0EMPxQ9/+MMYM2ZMdOvWLTp06BC9evWK73//+3H44Ydv9daI/fv3j+uvv77w308++WS0a9cu3nrrrViwYEHsv//+ERHRqVOnuPTSS+OKK64ovK3g/vvvH4899liMGjUqhg0bFnfeeWfm2CmluPzyy+O6667LtL/99tvxxBNPRK9evTIfFNi8efNo3rx5HH300fGLX/wixo4du81zX7JkSUREkbsgbHb00UfHBx98ECNHjoyUUvTs2bPwTw0eeeSRGD58eDz55JPRuHHjba612X777RcREUuXLt3uOQBQkQgLAKAcaNSoUfzrX/+KIUOGxF//+td45ZVXYtKkSTFo0KBo3rx5DBo0KPr06VPs3HPPPTfz7/z8/OjRo0dMmzYtPv7448KwoHv37tG9e/ci83O5XNSqVSsWLVpU7PHPP//8Im1PPfVUpJSKhAgREUcddVR07Ngx3nzzzUgpbTXoiPj6MxsiIvbZZ58tjjnooIPisssuy7TNnTs3Lr/88jj33HOL/D/Yls1rLVu2bIfmAUBFISwAgHIiPz8/fvzjH8ePf/zjWL58efzjH/+IBx98MMaOHRvnnXdezJkzJ6699toi8zaHAd+0+QMG165dm2nftGlTvPTSS/Hmm2/GRx99FHPnzo0PPvig8AV7cYp7ET9t2rSIiPjTn/4Uf/nLX4r0L1++PNasWRNz5syJZs2abfW8K1euHBERX3311VbHfVNKKfr16xc1a9bMrP/000/HCy+8ELVr144LLrggunTpUuz8zWsV9/kQAICwAADKpXr16sV5550X5513Xrz//vtx4oknxq9+9avo169fNGjQIDN2W+/cbzZp0qQ4/fTTY+7cuRHx9dUMhxxySPTr1y+efvrpmDdv3nbXt3jx4oiIGD9+/BbX32+//WLJkiXbDAt25l3+u+66K8aOHRsjR46MvffeOyIibr311rjpppviuOOOi08//TTuueeeGD9+fBxxxBFF5m9ea2tXMwBAReYDDgGgnOvUqVP86Ec/ipRSjB8/fqeP07t375g/f37ccsstMX369Fi4cGG8/PLLcccdd8Ree+21Q8c66KCDIiLi9ddfj0WLFm3xq1u3bts81ubPH5gyZcp2rT1t2rS47rrr4tJLL42ePXtGxNd3erjtttuiV69eMWbMmHj33XejWrVq8ac//anYY2xea/N5AABZwgIAKGN//OMfI5fLxVVXXbXFMZ999llERNSuXXun1li0aFHMmDEjunfvHjfeeGPhC/SIr/80Yc6cOTt0vLZt20ZExLhx44rtX7Vq1XYfa/M7/xMmTNjm2I0bN8YFF1wQjRo1ijvuuKOwfeHChbF27do46qijIiKiatWq0blz55gxY0axx3njjTcil8vF4Ycfvt11AkBFIiwAgDJ2yimnRC6Xi4ceeijeeOONIv3Dhg2Lp59+OmrWrBmHHXbYTq1Rt27dyM/Pj0WLFsXGjRszfYMGDYrVq1fv0PEuueSSqF27dtxwww2Ff9aw2ZgxY2LvvfeOE044YbuO1aFDh6hXr16MGzcu1q1bt9WxgwcPjnfeeSceeeSRqFWrVmF7jRo1IiJixYoVhW3Lly8vbP+muXPnxpQpU6JTp05Rp06d7aoRACoan1kAAGWsTZs2MWjQoLjhhhviyCOPjBNOOCHat28f69evj7feeqswQHj00UcLP7hwR1WvXj3OPvvseOKJJ6Jr167x/e9/P2rXrh2jR4+O999/Pxo3bhwLFy7c7uM1bNgwbrvttrjsssuiXbt2cd5550WzZs3ivffei1GjRsXGjRuLvYtCcfLz8+Pss8+O+++/P0aOHBm9e/cudty7774bgwYNiquvvrrwCoLN9t5772jbtm0888wzccEFF8SsWbPiww8/zNxScrPNd3Lo27fvdp8vAFQ4CQAoF4YOHZo6dOiQIqLwKy8vLx1zzDHp1VdfLTL+yCOPTNWqVUvr1q0r0vfv//7vqVq1amnkyJGFbV988UW68MILU6VKlQqP36ZNm/TGG2+kww47LFWrVi1zjGOOOSZVq1YtrV69eos1jxkzJrVr1y5zzNatW6dnnnlmh879tddeSxGRevXqVWz/+vXrU5cuXVKnTp2KPd+UUnrjjTdS48aNC+s47rjj0sqVK4uMa9u2bapcuXJauHDhDtUIABVJLqWUyiqoAACKWrNmTcycOTOqVKkSBx98cOGtBUvKqlWrYvr06VG3bt1o1qzZdt9NYWvWrl0bM2bMiAYNGkTDhg136hjHH398jBs3LqZNmxYtWrTYqWOsX78+pkyZErVr147mzZsXObcXXnghTj755Bg4cGDce++9O7UGAFQEwgIAoFyYMGFCXHzxxXHxxRfHNddcUypr/PznP4+XXnop/vnPf0aTJk1KZQ0A+DYQFgAAAAAZ7oYAAAAAZAgLAAAAgAxhAQAAAJAhLAAAAAAyhAUAAABAhrAAAAAAyBAWAAAAABnCAgAAACBDWAAAAABkCAsAAACADGEBAAAAkCEsAAAAADKEBQAAAECGsAAAAADIEBYAAAAAGcICAAAAIENYAAAAAGT8f5ykYodrafHlAAAAAElFTkSuQmCC"
+             alt="Which variable matters"
+             style="max-width: 65%;">
+        
+        <div class="caption">Each variable&#39;s share of the variance of g.</div>
+        
+    </div>
+
+    
+    
+</div>
+
+
+<!-- References -->
+
+<div class="section references">
+    <h2>References</h2>
+    <ol>
+        
+        <li>UFC 3-220-20 (2025). Foundations and Earth Structures, Section 7-4.2 (reliability analysis): Eq. 7-7 and 7-8 (p. 533), Eq. 7-10 to 7-12 (p. 535), Eq. 7-13 and 7-14 (p. 536).</li>
+        
+        <li>Duncan, J.M. (2000). Factors of safety and reliability in geotechnical engineering. J. Geotech. Geoenviron. Eng., 126(4), 307-316.</li>
+        
+        <li>Rosenblueth, E. (1975). Point estimates for probability moments. Proc. Natl. Acad. Sci. USA, 72(10), 3812-3814.</li>
+        
+        <li>Hasofer, A.M. and Lind, N.C. (1974). Exact and invariant second-moment code format. J. Eng. Mech. Div., ASCE, 100(EM1), 111-121.</li>
+        
+        <li>Baecher, G.B. and Christian, J.T. (2003). Reliability and Statistics in Geotechnical Engineering. Wiley.</li>
+        
+    </ol>
+</div>
+
+
+<!-- Footer -->
+<div class="footer">
+    Generated by GeotechStaffEngineer &mdash; 2026-10-19
+    <div class="basis">
+        <strong>Basis &amp; limitations.</strong> This package applies published,
+        industry-standard geotechnical methods (see the References section and each
+        module's design documentation) to the inputs shown above. All quantities are
+        SI. Every method has applicability limits, sign conventions, and edge cases;
+        results are valid only where the selected method and the assumed subsurface
+        and loading conditions apply.
+    </div>
+    <em>This document was generated using artificial intelligence under human
+    guidance and is an analysis aid, not a design deliverable. It creates no
+    engineer-of-record relationship. All inputs, method selections, and results
+    must be independently reviewed by a licensed professional engineer familiar
+    with the site before use. Provided AS IS, without warranty.</em>
+</div>
+
+</body>
+</html>

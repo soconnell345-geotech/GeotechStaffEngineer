@@ -77,6 +77,8 @@ _IMPORT_MAP = {
     "wave_equation": "wave_equation.calc_steps",
     "pile_group": "pile_group.calc_steps",
     "sheet_pile": "sheet_pile.calc_steps",
+    "soe": "soe.calc_steps",
+    "reliability": "reliability.calc_steps",
     "fem2d": "fem2d.calc_steps",
 }
 

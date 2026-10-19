@@ -1,0 +1,11 @@
+﻿Parameter,Symbol,Value,Unit
+Wall type,Wall,Braced / anchored (multi-level),
+Excavation depth,H,8,m
+Surcharge on the retained side,q,10,kPa
+"Water table, retained side (below top of wall)",GWT,6,m
+"Water table, excavation side (not above the base)",GWT_e,8,m
+"Support 1 (strut), depth",S1,2,m
+"Support 2 (anchor), depth",S2,5,m
+"Embedment factor of safety, MR = FS x MD",FS,1.5,
+Embedment increase,D/D_FS,1,
+Steel yield strength,Fy,345,MPa

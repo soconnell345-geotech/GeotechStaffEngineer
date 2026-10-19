@@ -1,0 +1,3 @@
+﻿Variable,Distribution,Mean,Std. dev.,COV,Lower,Upper,Mode
+R,lognormal,200,30,0.15,,,
+S,normal,100,25,0.25,,,
