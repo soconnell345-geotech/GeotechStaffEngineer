@@ -12,7 +12,9 @@ cards, (d) the SharePoint mirror and the agent's SharePoint calls,
 (e) health (tool errors, refusals, tracebacks, step caps, empty answers,
 "unavailable" answers, success claimed after an error), (f) cost,
 (k) figure cards (a card showing an older draw than a figure written
-later, and, where the flow asks, a card no look read). A model's answer
+later, and, where the flow asks, a card no look read), (l) the app's
+judgment-call check (an answer sent back for calls with no source, and
+calls still without one when it went out). A model's answer
 QUALITY is never judged here -- only whether the app's plumbing did what it
 says.
 """
@@ -25,6 +27,7 @@ import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import unquote, urlsplit
 
+from funhouse_agent import answer_sections as _answer_sections
 from live_smoke import watch
 
 SEVERITIES = ("high", "medium", "low", "info")
@@ -970,6 +973,10 @@ def turn_metrics(ctx) -> dict:
     tot["seconds"] = round(float(t1) - float(t0), 1) if t0 and t1 else None
     tot["tool_calls"] = sum(1 for a in ctx["activity"]
                             if a.get("event") == "tool_start")
+    # the answers the judgment-call check sent back (GM-174)
+    tot["judgment_retries"] = sum(1 for a in ctx["activity"]
+                                  if a.get("event") == "judgment_check"
+                                  and a.get("action") == "fed_back")
     tot["app_turn_tokens"] = (rec.get("result") or {}).get("turn_tokens")
     return tot
 
@@ -1331,9 +1338,52 @@ def detect_figure_cards(ctx) -> List[dict]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# (l) the judgment-call check (GM-174)
+# ---------------------------------------------------------------------------
+
+#: The activity-log event of the app's judgment-call check
+#: (``funhouse_agent.judgment_check.RECORD_EVENT``).
+JUDGMENT_EVENT = "judgment_check"
+
+
+def judgment_checks(acts: Iterable[dict]) -> List[dict]:
+    """The turn's judgment-call check records, in order."""
+    return [a for a in acts if a.get("event") == JUDGMENT_EVENT]
+
+
+def detect_judgment_check(ctx) -> List[dict]:
+    """What the app's turn-end judgment-call check did (both 'info': the
+    check's work and the model's choices, never a plumbing fault): the
+    answer sent back for calls that named no source with no consult, and
+    an answer that went out with such calls and no consult."""
+    D = "l_judgment_check"
+    out: List[dict] = []
+    for ev in judgment_checks(ctx["activity"]):
+        calls = [str(c) for c in ev.get("unsourced") or []]
+        listed = "; ".join(c[:80] for c in calls[:5])
+        if ev.get("action") == "fed_back":
+            out.append(finding(
+                D, "judgment_check_retry", "info",
+                f"the answer was sent back once: {len(calls)} of "
+                f"{ev.get('n_calls')} judgment calls named no source and no "
+                f"references task had run ({listed})",
+                n_calls=ev.get("n_calls"), unsourced=calls))
+        elif calls and not ev.get("references_ran"):
+            out.append(finding(
+                D, "judgment_calls_unsourced", "info",
+                f"the answer went out with {len(calls)} of "
+                f"{ev.get('n_calls')} judgment calls naming no source and no "
+                f"references task in the turn (mode {ev.get('mode')}: "
+                f"{listed})", n_calls=ev.get("n_calls"), unsourced=calls,
+                mode=ev.get("mode")))
+    return out
+
+
 DETECTORS = (detect_files_outside, detect_answer_links, detect_download_cards,
              detect_sharepoint, detect_health, detect_cost,
-             detect_conversation_record, detect_figure_cards)
+             detect_conversation_record, detect_figure_cards,
+             detect_judgment_check)
 
 
 def run_turn_detectors(ctx) -> dict:
@@ -1573,14 +1623,10 @@ def detect_expectations(flow: dict, sessions) -> List[dict]:
 #: The parts of an answer an ``answer_names`` entry can be held to
 #: (``"within"``): name -> (the heading as written, its pattern). w13 F18j:
 #: "Vesic (1973)" in a results heading hit the "a reference cited for a
-#: judgment call" key though every call said "no reference basis".
-_SCOPES = {"judgment_calls": ('"Judgment calls"',
-                              r"judge?ment calls?\b")}
-
-_MD_HEADING = re.compile(r"^[ \t]{0,3}(#{1,6})[ \t]")
-#: A line that is only bold text, such as a "**References**" block after
-#: the list (a call that opens in bold carries text after it, or a marker).
-_BOLD_LINE = re.compile(r"^[ \t]{0,3}(\*\*|__)[^*_\n]+(\*\*|__)[ \t]*:?[ \t]*$")
+#: judgment call" key though every call said "no reference basis". The app's
+#: own module, so the harness reads the list the app's judgment-call check
+#: (GM-174) acted on.
+_SCOPES = _answer_sections.SCOPES
 
 
 def answer_section(text: str, scope: str) -> Optional[str]:
@@ -1588,26 +1634,8 @@ def answer_section(text: str, scope: str) -> Optional[str]:
     heads it -- a Markdown heading, a bold line or a line that opens with
     its name -- to the next Markdown heading at its level or above, the
     next line that is only bold text, or the end. ``None`` when no line
-    heads it."""
-    head = re.compile(r"^[ \t]{0,3}(#{1,6}[ \t]*|\*\*|__)?[ \t]*"
-                      r"(\d+[.)][ \t]*)?(\*\*|__)?[ \t]*" + _SCOPES[scope][1],
-                      re.IGNORECASE)
-    lines = text.splitlines()
-    for i, line in enumerate(lines):
-        if not head.match(line):
-            continue
-        level = _MD_HEADING.match(line)
-        level = len(level.group(1)) if level else None
-        out = [line]
-        for nxt in lines[i + 1:]:
-            m = _MD_HEADING.match(nxt)
-            if m and (level is None or len(m.group(1)) <= level):
-                break
-            if _BOLD_LINE.match(nxt):
-                break
-            out.append(nxt)
-        return "\n".join(out)
-    return None
+    heads it (:func:`funhouse_agent.answer_sections.section`)."""
+    return _answer_sections.section(text, scope)
 
 
 def card_spec_bounds(spec: dict) -> Tuple[str, int, Optional[int]]:
@@ -1671,4 +1699,5 @@ __all__ = ["finding", "turn_context", "run_turn_detectors", "DETECTORS",
            "detect_expectations", "tool_result_paths", "url_well_formed",
            "severity_counts", "load_activity", "turn_metrics",
            "detect_figure_cards", "figure_looks", "card_looks",
-           "card_matches", "card_kinds", "card_spec_bounds", "is_figure"]
+           "card_matches", "card_kinds", "card_spec_bounds", "is_figure",
+           "detect_judgment_check", "judgment_checks", "answer_section"]

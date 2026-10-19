@@ -1174,6 +1174,29 @@ def _turn_citation_check(callbacks, messages):
         return None
 
 
+def _turn_judgment_check(agent, callbacks):
+    """The turn-end check of the answer's "Judgment calls" list
+    (:mod:`funhouse_agent.judgment_check`, BACKLOG GM-174): with
+    ``GEOTECH_JUDGMENT_CALLS`` on and a build that asks for the list after a
+    consult, an answer whose calls name no source, with no ``references``
+    task in the turn, is sent back once. Its result is kept in the turn's
+    activity log. ``None`` where it cannot be had."""
+    try:
+        from funhouse_agent.judgment_check import (RECORD_EVENT,
+                                                   TurnJudgmentCheck,
+                                                   mode_for)
+        logger = next((cb for cb in callbacks or ()
+                       if hasattr(cb, "conv_dir")
+                       and hasattr(cb, "on_custom_event")), None)
+        log = None
+        if logger is not None:
+            def log(data, _logger=logger):
+                _logger.on_custom_event(RECORD_EVENT, data, run_id=None)
+        return TurnJudgmentCheck(mode=mode_for(agent), log=log)
+    except Exception:  # noqa: BLE001 - the turn runs without it
+        return None
+
+
 def _citation_words_bound(citation_check):
     """Binds the user's own words for the turn's tools (a writer's
     citation check reads them), or a no-op."""
@@ -1184,13 +1207,15 @@ def _citation_words_bound(citation_check):
         return contextlib.nullcontext()
 
 
-def _checked_answer(page_check, answer: str, citation_check=None) -> str:
+def _checked_answer(page_check, answer: str, citation_check=None,
+                    judgment_check=None) -> str:
     """``answer`` after the turn's page and citation checks (recorded;
-    noted per ``GEOTECH_CITED_PAGES`` / ``GEOTECH_CITED_DOCUMENTS``). Each
-    check reads the answer as the model wrote it, never the other's note."""
+    noted per ``GEOTECH_CITED_PAGES`` / ``GEOTECH_CITED_DOCUMENTS``) and the
+    judgment-call check (recorded only). Each check reads the answer as the
+    model wrote it, never the other's note."""
     head = str(answer or "").rstrip()
     notes = []
-    for check in (page_check, citation_check):
+    for check in (page_check, citation_check, judgment_check):
         if check is None:
             continue
         try:
@@ -1285,7 +1310,10 @@ def stream_turn(agent, messages: list, thread_id: str,
     the same way against what the conversation looked up and what the user
     said (:func:`_turn_citation_check`; BACKLOG EV-21), behind
     ``GEOTECH_CITED_DOCUMENTS``; when both checks tell the model, they do it
-    in one note.
+    in one note. With ``GEOTECH_JUDGMENT_CALLS`` on, an answer whose
+    "Judgment calls" list has calls that name no source, in a turn with no
+    ``references`` task, is sent back once the same way, asking for one
+    consult (:func:`_turn_judgment_check`; BACKLOG GM-174).
 
     Reuses the PURE ``_format_update`` parser and ``_sum_callback_tokens`` from
     ``funhouse_agent.deep.notebook`` so the stream contract is shared with the
@@ -1328,6 +1356,7 @@ def stream_turn(agent, messages: list, thread_id: str,
         cb_ctx = None
     page_check = _turn_page_check(callbacks)
     citation_check = _turn_citation_check(callbacks, messages)
+    judgment_check = _turn_judgment_check(agent, callbacks)
 
     def _run_passes(run_config):
         # One or more graph invocations: the extra passes are the bounded
@@ -1363,6 +1392,9 @@ def stream_turn(agent, messages: list, thread_id: str,
                 if mode == "updates":
                     new = _new_run_messages(chunk)
                     added.extend(new)
+                    if judgment_check is not None and new:
+                        # the turn's references tasks (GM-174)
+                        judgment_check.saw(new)
                     if record is not None and new:
                         try:
                             record.add(new)
@@ -1435,12 +1467,13 @@ def stream_turn(agent, messages: list, thread_id: str,
                                 f"{MAX_AUTO_CONTINUES}: finishing the stated "
                                 "next step")}
                 continue
-            # Pages the answer cites that no tool opened, and documents it
-            # cites that nothing looked up: each told once, before it goes
-            # out, in one note (GEOTECH_CITED_PAGES / GEOTECH_CITED_DOCUMENTS
-            # =retry; EV-18, EV-21).
+            # Pages the answer cites that no tool opened, documents it cites
+            # that nothing looked up, and judgment calls that name no source
+            # with no consult: each told once, before it goes out, in one
+            # note (GEOTECH_CITED_PAGES / GEOTECH_CITED_DOCUMENTS=retry;
+            # GEOTECH_JUDGMENT_CALLS; EV-18, EV-21, GM-174).
             told = []
-            for check in (page_check, citation_check):
+            for check in (page_check, citation_check, judgment_check):
                 if check is None:
                     continue
                 try:
@@ -1498,7 +1531,7 @@ def stream_turn(agent, messages: list, thread_id: str,
             yield entry
         yield {"kind": "turn_done",
                "answer": _checked_answer(page_check, "".join(answer_parts),
-                                         citation_check),
+                                         citation_check, judgment_check),
                "turn_tokens": 0}
         return
 
@@ -1520,7 +1553,7 @@ def stream_turn(agent, messages: list, thread_id: str,
         turn_tokens = _sum_callback_tokens(dict(cb.usage_metadata))
     yield {"kind": "turn_done",
            "answer": _checked_answer(page_check, "".join(answer_parts),
-                                     citation_check),
+                                     citation_check, judgment_check),
            "turn_tokens": turn_tokens}
 
 

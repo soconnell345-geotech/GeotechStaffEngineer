@@ -1041,6 +1041,47 @@ def test_figure_cards_detector_runs_with_the_others(tmp_path):
     assert det.detect_figure_cards(_ctx(rec)) == []
 
 
+def _judgment_event(action, unsourced, references_ran=False, mode="retry"):
+    return {"turn": 1, "agent": "primary", "event": "judgment_check",
+            "where": "answer", "mode": mode, "action": action,
+            "has_list": True, "n_calls": 3, "unsourced": unsourced,
+            "n_unsourced": len(unsourced), "references_ran": references_ran}
+
+
+def test_judgment_check_retry_is_seen_and_counted(tmp_path):
+    """GM-174: an answer the app sent back for calls with no source is a
+    finding a wave can count, and a turn metric."""
+    assert det.detect_judgment_check in det.DETECTORS
+    conv, files = _conv(tmp_path)
+    _write_acts(conv, [
+        _judgment_event("fed_back", ["Wall contact. Smooth.",
+                                     "Water. None given."]),
+        {"turn": 1, "event": "tool_start", "name": "task"},
+        _judgment_event("none", [], references_ran=True)])
+    ctx = _ctx(_fig_rec(conv, files, []))
+    found = det.detect_judgment_check(ctx)
+    assert codes(found) == {"judgment_check_retry"}
+    assert found[0]["severity"] == "info"
+    assert found[0]["detector"] == "l_judgment_check"
+    assert "2 of 3" in found[0]["message"]
+    assert det.turn_metrics(ctx)["judgment_retries"] == 1
+
+
+def test_judgment_calls_left_unsourced_with_no_consult_are_seen(tmp_path):
+    conv, files = _conv(tmp_path)
+    _write_acts(conv, [_judgment_event("none", ["Water. None given."],
+                                       mode="off")])
+    ctx = _ctx(_fig_rec(conv, files, []))
+    assert codes(det.detect_judgment_check(ctx)) == {
+        "judgment_calls_unsourced"}
+    assert det.turn_metrics(ctx)["judgment_retries"] == 0
+    # a turn that consulted, or whose calls all name a source: nothing
+    _write_acts(conv, [_judgment_event("none", ["Water."],
+                                       references_ran=True),
+                       _judgment_event("none", [])])
+    assert det.detect_judgment_check(_ctx(_fig_rec(conv, files, []))) == []
+
+
 def test_card_expectations_count_kinds_and_patterns(tmp_path):
     conv, files = _conv(tmp_path)
     for n in ("calc.pdf", "wall.png", "wall_2.png", "data.csv"):

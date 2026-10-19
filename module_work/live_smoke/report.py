@@ -25,6 +25,8 @@ DETECTOR_TITLES = {
     "i_expectations": "(i) Flow expectations (model choices, not bugs)",
     "j_conversation": "(j) Conversation record (meta, titles, owner)",
     "k_figure_cards": "(k) Figure cards (stale draws, cards no look read)",
+    "l_judgment_check": "(l) Judgment-call check (answers sent back, calls "
+                        "with no source)",
     "harness": "Harness problems",
 }
 

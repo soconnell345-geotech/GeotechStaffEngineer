@@ -1281,6 +1281,9 @@ def build_deep_agent(
     # ``system_prompt`` REPLACES the geotechnical domain prompt — the
     # document-review page is a different agent over the same tools, not the
     # geotech agent with a suffix. ``extra_system_prompt`` still appends.
+    # Whether the prompt asks for a judgment-calls list after one consult
+    # of the references helper: the turn-end check (GM-174) acts only then.
+    judgment_consult = False
     if system_prompt is None:
         system_prompt = build_domain_prompt(allowed_agents,
                                             memory_enabled=enable_memory)
@@ -1291,6 +1294,7 @@ def build_deep_agent(
             # only: a page that brings its own prompt is unchanged.
             system_prompt += "\n\n" + judgment_calls_section(
                 references=reference_mode != "off")
+            judgment_consult = reference_mode != "off"
     if extra_system_prompt:
         # Appended AFTER the domain prompt (mirrors GeotechAgent.system_prompt_extra)
         # so a caller can re-cast the agent — e.g. the seismic reviewer's review-mode
@@ -1687,6 +1691,9 @@ def build_deep_agent(
             "switches": _rf.describe(),
             "prompt_chars": len(system_prompt or ""),
         }
+        # The turn-end judgment-call check (GM-174) reads this in
+        # webapp.core.stream_turn (funhouse_agent.judgment_check.mode_for).
+        agent.geotech_judgment_consult = judgment_consult
         if page_budget:
             # The host's step cap is raised to fit the budget, so the budget,
             # not a GraphRecursionError, ends a long request (webapp
