@@ -409,22 +409,26 @@ def plot_srf_curve(result, title='Strength Reduction — SRF vs '
                     label='Failed trials (no equilibrium)')
 
     if result.FOS is not None:
-        ax.axvline(result.FOS, color='#16a34a', linestyle='--',
-                   linewidth=1.6, label=f'FOS = {result.FOS:.3f}')
+        # the failure basis in the key: written along the FOS line it sat
+        # on the line and ran into the axis' numbers (GM-194)
         basis = getattr(result, 'fos_basis', None)
-        if basis:
-            ax.text(result.FOS, ax.get_ylim()[1] * 0.55,
-                    f'  failure basis: {basis}', rotation=90,
-                    fontsize=8, va='center', color='#16a34a')
+        ax.axvline(result.FOS, color='#16a34a', linestyle='--',
+                   linewidth=1.6,
+                   label=(f'FOS = {result.FOS:.3f}'
+                          + (f', failure basis: {basis}' if basis else '')))
 
     ax.set_xlabel('Strength Reduction Factor (SRF)', fontsize=10)
-    ax.set_ylabel('Dimensionless displacement  '
+    # two lines: on one it ran off the figure once the key took its
+    # room under the axes (GM-194)
+    ax.set_ylabel('Dimensionless displacement\n'
                   'E·δ_max / (γ·H²)', fontsize=10)
     ax.set_title(title, fontsize=12, fontweight='bold')
     ax.grid(True, alpha=0.25)
     ax.tick_params(labelsize=9)
-    ax.legend(fontsize=8, loc='upper left')
-    fig.tight_layout()
+    # the key under the axes: inside them the rising curve ran through it
+    # (GM-194)
+    from geotech_common.plotting import key_under_axes
+    key_under_axes(fig, ax)
     return fig
 
 
@@ -584,7 +588,14 @@ def plot_seepage(seepage_result, n_levels=14, show_vectors=True,
     cf = ax.tricontourf(tri, head, levels=n_levels, cmap='Blues')
     lines = ax.tricontour(tri, head, levels=n_levels,
                           colors='#1e3a8a', linewidths=0.5)
-    ax.clabel(lines, fontsize=6.5, fmt='%.1f')
+    # the values over the flow arrows, each in a ring of white, so the
+    # arrows stop short of them (they ran through every value at the
+    # printed width; GM-194)
+    from geotech_common.plotting import halo
+    values = ax.clabel(lines, fontsize=6.5, fmt='%.1f')
+    halo(values)
+    for value in values:
+        value.set_zorder(7)
     _draw_outline(ax, nodes, elements, color='#555555', lw=0.9)
 
     if show_vectors and seepage_result.velocity is not None:

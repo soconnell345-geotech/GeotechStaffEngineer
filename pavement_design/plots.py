@@ -46,13 +46,14 @@ def plot_flexible_design_chart(result):
                     sn, result.zr, result.so, result.delta_psi, mr)["w18"])
             except ValueError:
                 w18s.append(float("nan"))
+        # each curve's required SN in its key entry: written beside the
+        # points, the curves of the layers below ran through the values
+        # at the printed width (GM-194)
         ax.plot(w18s, sn_grid, lw=1.4,
-                label=f"over {row['over']} (MR = {mr:,.0f} psi)")
+                label=f"over {row['over']} (MR = {mr:,.0f} psi): "
+                      f"SN required {row['sn_required']:.2f}")
         ax.plot([result.w18], [row["sn_required"]], "o", ms=6, color="k",
                 zorder=5)
-        ax.annotate(f"SN = {row['sn_required']:.2f}",
-                    (result.w18, row["sn_required"]),
-                    textcoords="offset points", xytext=(6, -10), fontsize=8)
     ax.axvline(result.w18, color="0.4", ls=":", lw=1)
     ax.axhline(result.sn_provided, color="tab:green", ls="--", lw=1.2,
                label=f"SN provided = {result.sn_provided:.2f}")
@@ -63,9 +64,9 @@ def plot_flexible_design_chart(result):
                  f"ZR = {result.zr}, So = {result.so}, "
                  f"ΔPSI = {result.delta_psi}")
     ax.grid(True, which="both", alpha=0.3)
-    ax.legend(fontsize=8, loc="upper left")
     ax.set_xlim(result.w18 / 300.0, result.w18 * 300.0)
-    fig.tight_layout()
+    from geotech_common.plotting import key_under_axes
+    key_under_axes(fig, ax, ncol=1)
     return fig
 
 
@@ -287,6 +288,7 @@ def plot_method_comparison(compare_result):
     plt = _plt()
     fig, ax = plt.subplots(figsize=(6.8, 4.6))
     colors = ["0.25", "#c8a165", "#e0cba8", "#9fb4c7"]
+    names = []
     for x, (label, layers) in enumerate((
             ("AASHTO 1993", compare_result["aashto_1993"]["layers"]),
             ("UFC 3-250-01", compare_result["ufc_3_250_01"]["layers"]))):
@@ -300,11 +302,13 @@ def plot_method_comparison(compare_result):
                     ha="center", va="center", fontsize=8, color="w"
                     if i == 0 else "k")
             top += d
-        ax.text(x, -(top + 1.0), f"{label}\ntotal {top:g} in", ha="center",
-                va="top", fontsize=9)
+        names.append(f"{label}\ntotal {top:g} in")
+    # each method's name and total under its bar, as the bar's label (a
+    # note under the bar sat on the bottom frame line; GM-194)
     ax.set_xlim(-0.6, 1.6)
     ax.margins(y=0.15)
-    ax.set_xticks([])
+    ax.set_xticks([0, 1], names, fontsize=9)
+    ax.tick_params(axis="x", length=0)
     ax.set_ylabel("Depth below surface (in)")
     ax.set_title("Method comparison — same 18-kip traffic, two design bases")
     fig.tight_layout()

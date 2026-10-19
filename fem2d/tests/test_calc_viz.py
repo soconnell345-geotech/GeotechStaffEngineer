@@ -132,8 +132,8 @@ class TestSRMPlots:
     def test_srf_curve(self, srm_result):
         res, _ = srm_result
         fig = plot_srf_curve(res)
-        labels = [t.get_text()
-                  for t in fig.axes[0].get_legend().get_texts()]
+        # the key is under the axes, the figure's (GM-194)
+        labels = [t.get_text() for t in fig.legends[0].get_texts()]
         assert any("FOS" in t for t in labels)
         plt.close(fig)
 
