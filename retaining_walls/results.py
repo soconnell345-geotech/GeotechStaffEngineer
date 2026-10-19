@@ -84,9 +84,10 @@ class CantileverWallResult:
         check); V, M_stab, M_over, x_resultant, eccentricity (for bearing),
         distribution, B_eff, q_toe, q_heel, q_max.
     choices : list of dict
-        How the surcharges over the heel were counted, when the wall
-        carries any (GM-157, ``geotech_common.choices``;
-        ``cantilever.heel_surcharge_choices``).
+        The sliding check's base friction delta_b (GM-173,
+        ``cantilever.base_friction_choice``) and how the surcharges over
+        the heel were counted, when the wall carries any (GM-157,
+        ``cantilever.heel_surcharge_choices``; ``geotech_common.choices``).
     """
     FOS_sliding: Optional[float] = 0.0
     FOS_overturning: Optional[float] = 0.0

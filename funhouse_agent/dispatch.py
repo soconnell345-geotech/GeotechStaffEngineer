@@ -606,7 +606,22 @@ def _parameter_error(mod, agent_name: str, method: str, parameters: dict,
                     + ", ".join(f"'{p}'" for p in missing))
         else:
             what = f"the parameters given do not fit {method}"
-    out = {"error": (f"{agent_name}.{method}: {what}. "
+    # A did-you-mean for each given name the method does not take, as the
+    # adapters' own check gives (GM-177): a reference function takes
+    # 'phi_deg' where the analysis modules take 'phi'. Nothing is renamed.
+    from funhouse_agent.adapters import suggest_params
+    info = mod.METHOD_INFO.get(method) if hasattr(mod, "METHOD_INFO") else None
+    aliases = (info.get("parameter_aliases") or {}) \
+        if isinstance(info, dict) else {}
+    hints = []
+    for k in given:
+        if documented and k not in documented and k not in aliases \
+                and k not in _DISPATCH_PARAMS:
+            near = suggest_params(k, documented)
+            if near:
+                hints.append(f"{k} -> {' or '.join(near)}")
+    hint = f" Did you mean: {'; '.join(hints)}?" if hints else ""
+    out = {"error": (f"{agent_name}.{method}: {what}.{hint} "
                      f"Parameters given: {given or 'none'}."),
            # the function's own words, minus internal qualifiers
            "detail": re.sub(r"[\w.]*<locals>\.", "", text),

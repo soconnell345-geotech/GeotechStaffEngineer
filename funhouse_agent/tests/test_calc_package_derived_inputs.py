@@ -94,10 +94,15 @@ def test_ka_not_given_is_stated_as_the_modules_choice(built):
 
 
 def test_ka_given_is_used_as_given(built):
-    _, r, _ = built("seismic_package", {**_MO, "KA": 0.30})
+    _, r, _ = built("seismic_package", {**_MO, "KA": 0.30, "given": ["KA"]})
     assert r.PA_static == pytest.approx(round(0.5 * 19 * 36 * 0.30, 2))
     assert _by_what(r.choices)["static KA"] == {
         "what": "static KA", "chosen": "0.3", "how": "given"}
+    # a KA the call does not name as the user's is used the same, and the
+    # module's own choice reads assumed (GM-167, GM-180)
+    _, r, _ = built("seismic_package", {**_MO, "KA": 0.30})
+    assert r.PA_static == pytest.approx(round(0.5 * 19 * 36 * 0.30, 2))
+    assert _by_what(r.choices)["static KA"]["how"] == "assumed"
 
 
 def test_printed_steps_say_which_ka_gives_pa(tmp_path):

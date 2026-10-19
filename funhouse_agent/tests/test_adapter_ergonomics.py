@@ -1009,9 +1009,13 @@ class TestWallChecksReported:
         assert "Not checked: bearing" in out["verdict"]
         # the verdict is the first thing the agent reads
         assert next(iter(out)) == "verdict"
-        # how the surcharge over the heel was counted, as a default the
-        # run lists (GM-157)
-        live, bearing = out["choices"]
+        # the base friction (GM-173), then how the surcharge over the heel
+        # was counted, as defaults the run lists (GM-157)
+        friction, live, bearing = out["choices"]
+        assert friction["what"] == "base friction delta_b (sliding)"
+        assert friction["how"] == "default"
+        assert "delta_base" in out["defaults_used"]
+        assert out["defaults_used"]["phi_foundation"] == 32.0  # phi_backfill
         assert live["how"] == "default" and bearing["how"] == "default"
         assert out["defaults_used"]["live_load_resists"] is False
         assert out["defaults_used"]["surcharge_in_bearing"] is True

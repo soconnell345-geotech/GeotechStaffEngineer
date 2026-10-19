@@ -1095,13 +1095,17 @@ def _excavation_choices(wall_contact, delta, ratio, adhesion):
                           if not a.startswith(f"'{wall_contact}'")])]
     if wall_contact == 'interface':
         if delta is not None:
+            # as the call gave it, or as a calc package's call says it
+            # is assumed (GM-180)
             out.append(choice("wall friction angle delta (deg)",
-                              float(delta), "given",
+                              float(delta),
+                              how_given(delta, None, name='interface_delta'),
                               "UFC 3-220-20 (2025) Table 4-1, p. 184",
                               ["interface_ratio (delta/phi' per layer)"]))
         else:
             out.append(choice("wall friction ratio delta/phi'",
-                              float(ratio), "given",
+                              float(ratio),
+                              how_given(ratio, None, name='interface_ratio'),
                               "delta = ratio x phi' of the layer at each "
                               "joint", ["interface_delta (one angle)"]))
         out.append(choice("wall adhesion c_a (kPa)", adhesion,
