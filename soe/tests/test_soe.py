@@ -1122,9 +1122,12 @@ class TestTendonSelection:
         assert "bar_capacity_kN" in result or "total_GUTS_kN" in result
 
     def test_test_loads(self):
-        """Proof = 133% DL, performance = 150% DL per PTI."""
+        """Proof and performance tests both go to the test load, 1.33 DL
+        by default (GEC-4 Sec. 7.4.2.2, p. 143; GM-185)."""
         result = select_tendon(design_load_kN=400.0)
         assert result["proof_test_kN"] == pytest.approx(400 * 1.33, abs=0.1)
+        assert result["performance_test_kN"] == pytest.approx(400 * 1.33, abs=0.1)
+        result = select_tendon(design_load_kN=400.0, test_load_factor=1.5)
         assert result["performance_test_kN"] == pytest.approx(400 * 1.50, abs=0.1)
 
     def test_unknown_tendon_raises(self):
@@ -1153,7 +1156,8 @@ class TestDesignGroundAnchor:
             result.unbonded_length_m + result.bond_length_m, abs=0.01
         )
         assert result.proof_test_kN == pytest.approx(500 * 1.33, abs=0.1)
-        assert result.performance_test_kN == pytest.approx(500 * 1.50, abs=0.1)
+        assert result.performance_test_kN == pytest.approx(500 * 1.33, abs=0.1)
+        assert result.test_load_kN == pytest.approx(500 * 1.33, abs=0.1)
 
     def test_rock_anchor_shorter_bond(self):
         """Rock anchors need shorter bond lengths than sand."""

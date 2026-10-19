@@ -657,7 +657,7 @@ _REJECT_CASES = [
     ("soe", "braced_excavation",
      {"excavation_depth": 6.0,
       "layers": [{"thickness": 15, "unit_weight": 18,
-                  "friction_angle": 30}],
+                  "friction_angle": 30, "soil_type": "sand"}],
       "supports": [{"depth": 2.0}, {"depth": 4.5}]}),
     ("downdrag", "downdrag_analysis",
      {"pile_length": 20.0, "pile_diameter": 0.4,

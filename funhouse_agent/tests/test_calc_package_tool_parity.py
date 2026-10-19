@@ -45,7 +45,7 @@ _DD_LAYERS = [{"soil_type": "cohesive", "thickness": 8.0,
 _SP_LAYERS = [{"thickness": 12.0, "unit_weight": 18.0,
                "friction_angle": 32.0}]
 _SOE_LAYERS = [{"thickness": 12.0, "unit_weight": 18.0,
-                "friction_angle": 32.0}]
+                "friction_angle": 32.0, "soil_type": "sand"}]
 _SOE_SUPPORTS = [{"depth": 2.0}, {"depth": 5.0, "support_type": "anchor"}]
 _RV = {"R": {"mean": 200.0, "cov": 0.15, "dist": "lognormal"},
        "S": {"mean": 100.0, "cov": 0.25}}
@@ -540,7 +540,7 @@ def _soe(wall):
     def run():
         import soe
         layers = [soe.SOEWallLayer(thickness=12.0, unit_weight=18.0,
-                                   friction_angle=32.0)]
+                                   friction_angle=32.0, soil_type="sand")]
         if wall == "fhwa_anchored":
             return soe.fhwa_apparent_pressure_anchored_wall(
                 H=8.0, anchor_depths=[2.0, 5.0], gamma=18.0, phi=32.0)

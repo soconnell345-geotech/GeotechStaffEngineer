@@ -56,7 +56,8 @@ EXAMPLES = [
         surcharge=10.0, FOS_passive=1.5, embedment_increase=1.2)),
     ("soe", "braced_excavation", dict(
         excavation_depth=8.0,
-        layers=[dict(thickness=20.0, unit_weight=18.0, friction_angle=30.0, cohesion=5.0)],
+        layers=[dict(thickness=20.0, unit_weight=18.0, friction_angle=30.0, cohesion=5.0,
+                     soil_type="sand")],
         supports=[dict(depth=2.0, support_type="strut", spacing=4.0),
                   dict(depth=5.0, support_type="strut", spacing=4.0)],
         surcharge=12.0, gwt_depth=10.0)),

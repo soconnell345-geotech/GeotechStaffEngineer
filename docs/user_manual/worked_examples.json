@@ -1494,7 +1494,8 @@
           "thickness": 20.0,
           "unit_weight": 18.0,
           "friction_angle": 30.0,
-          "cohesion": 5.0
+          "cohesion": 5.0,
+          "soil_type": "sand"
         }
       ],
       "supports": [
