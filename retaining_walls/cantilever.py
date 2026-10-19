@@ -100,6 +100,25 @@ BEARING_BASIS = {
             "p. 10-41)"),
 }
 
+#: The sliding check's base friction delta_b (GM-173): the module's
+#: default, 2/3 phi_f, and the reading for concrete cast against the
+#: ground, delta_b = phi_f.
+BASE_FRICTION_BASIS = {
+    "two_thirds": (
+        "a base not cast against the ground: EN 1997-1 Sec. 6.5.3(10) "
+        "(p. 64) takes 2/3 phi'cv;d for smooth precast foundations; UFC "
+        "3-220-20 Fig. 4-27 (p. 220) takes tan delta, the friction factor "
+        "between soil and base, from Table 4-1 (p. 184), e.g. mass concrete "
+        "on clean fine to medium sand 24-29 deg"),
+    "phi_f": (
+        "concrete cast against the ground: GEC-6 Sec. 5.4 (p. 99): 'For "
+        "concrete cast against cohesionless or granular material, the "
+        "coefficient of friction, tan delta, will be equal to the tangent "
+        "of the friction angle (tan phi) for the soil supporting the "
+        "footing'; EN 1997-1 Sec. 6.5.3(10) (p. 64): phi'cv;d for "
+        "cast-in-situ concrete foundations"),
+}
+
 
 def _active_thrust_terms(geom: CantileverWallGeometry,
                          gamma_backfill: float, phi_backfill: float,
@@ -866,8 +885,9 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
         ``vertical_forces``, ``sliding_terms``, ``overturning_terms`` and
         ``bearing_terms``; ``eccentricity`` / ``in_middle_third`` are the
         eccentricity check's (on the overturning check's loads), q_toe /
-        q_heel the bearing check's; and ``choices``, how the surcharges
-        over the heel were counted when there are any (GM-157).
+        q_heel the bearing check's; and ``choices``: the base friction
+        delta_b (GM-173) and how the surcharges over the heel were counted
+        when there are any (GM-157).
     """
     s_terms = _sliding_terms(
         geom, gamma_backfill, phi_backfill, c_backfill,
@@ -920,10 +940,39 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
         sliding_terms=s_terms,
         overturning_terms=o_terms,
         bearing_terms=b_terms,
-        choices=heel_surcharge_choices(geom, live_load_resists,
-                                       dead_load_resists,
-                                       surcharge_in_bearing),
+        choices=[base_friction_choice(s_terms)]
+        + heel_surcharge_choices(geom, live_load_resists,
+                                 dead_load_resists, surcharge_in_bearing),
     )
+
+
+def base_friction_choice(terms: Dict[str, Any]) -> dict:
+    """The sliding check's base friction delta_b (GM-173), as an entry of
+    a result's ``choices`` (``geotech_common.choices``): 2/3 phi_f by
+    default or ``delta_base`` as input; the other reading is the
+    alternative. phi_f is ``phi_foundation``; that it is the backfill's
+    when not given is the tool's declared absent case (GM-165, in
+    ``defaults_used``), not repeated here. ``terms`` are the sliding
+    check's (:func:`_sliding_terms`)."""
+    from geotech_common.choices import DEFAULT, choice, how_given
+    phi_f, delta_b = terms["phi_foundation"], terms["delta_b"]
+    two_thirds = 2.0 / 3.0 * phi_f
+    cast = (f"phi_f = {phi_f:g} deg (delta_base = {phi_f:g}): "
+            + BASE_FRICTION_BASIS["phi_f"])
+    if terms["delta_b_given"]:
+        return choice(
+            "base friction delta_b (sliding)",
+            f"{delta_b:g} deg (delta_base)",
+            how_given(delta_b, None, name="delta_base"),
+            "the base interface friction angle as input, with no 2/3 "
+            "factor",
+            [f"2/3 phi_f = {two_thirds:.1f} deg, the module's default: "
+             + BASE_FRICTION_BASIS["two_thirds"], cast])
+    return choice(
+        "base friction delta_b (sliding)",
+        f"{delta_b:.1f} deg = 2/3 phi_f, phi_f = {phi_f:g} deg, the "
+        "foundation soil's friction angle (phi_foundation)",
+        DEFAULT, BASE_FRICTION_BASIS["two_thirds"], [cast])
 
 
 def heel_surcharge_choices(geom: CantileverWallGeometry,

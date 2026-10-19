@@ -268,17 +268,20 @@ def cpt_choices(i_c_limit: float = 2.6, cfc: float = 0.0,
                 gwl: float = None) -> list:
     """What :func:`analyze_cpt_liquefaction` chose (GM-115), as a result's
     ``choices`` (``geotech_common.choices``); the water table second, as
-    given (GM-133: it is required)."""
-    from geotech_common.choices import GIVEN, MODULE, choice, how_given
+    given (GM-133: it is required). The procedure is this function's own,
+    not an input, so it is the module's; the water table is as the call
+    gave it (GM-180)."""
+    from geotech_common.choices import MODULE, choice, how_given
     out = [
         choice("triggering procedure",
-               "Boulanger & Idriss (2014) CPT (liquepy run_bi2014)", GIVEN,
+               "Boulanger & Idriss (2014) CPT (liquepy run_bi2014)", MODULE,
                f"rd, MSF and K_sigma per B&I (2014); fines content from Ic "
                f"with C_FC = {cfc:g}"),
     ]
     if gwl is not None:
         out.append(choice(
-            "water table", f"{gwl:g} m below the ground surface", GIVEN,
+            "water table", f"{gwl:g} m below the ground surface",
+            how_given(gwl, None, name="gwl"),
             "the depth to groundwater during the design earthquake; it "
             "sets sigma'v in CSR and which points can liquefy. A site "
             "input with no default (GEC 5, FHWA-NHI-16-072, p. 12-23)"))

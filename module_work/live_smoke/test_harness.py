@@ -382,10 +382,18 @@ def test_every_flow_is_well_formed():
     assert covered == pages
 
 
+#: Expectations only the switch can meet: the brief to the calc helper and
+#: the PDF's citations follow the consult the switch asks for (EV-30: w14's
+#: F18 OFF was scored on them).
+_ON_ONLY = ("pdf_cites_consult",)
+_ON_ONLY_GIVEN = ("brief_given",)
+
+
 def test_judgment_arms_pair_with_their_flows():
     """EV-26: each j-arm is its flow with GEOTECH_JUDGMENT_CALLS on and one
     more answer key, the "Judgment calls" list; the reader checks are the
-    same, so the trace read asks both arms the same questions."""
+    same, so the trace read asks both arms the same questions. The keys only
+    the switch can meet are on the arm alone (EV-30)."""
     from live_smoke import runner
     flows = {f["id"]: f for f in runner.load_flows()}
     arms = [i for i in flows if re.match(r"F\d+j-", i)]
@@ -401,6 +409,16 @@ def test_judgment_arms_pair_with_their_flows():
             assert arm.get(k) == base.get(k), (a, k)
         be, ae = dict(base["expect"]), dict(arm["expect"])
         names, arm_names = be.pop("answer_names"), ae.pop("answer_names")
+        for k in _ON_ONLY:
+            assert k not in be, (a, k)
+            ae.pop(k, None)
+        if "given_inputs" in ae:
+            bg = dict(be.get("given_inputs") or {})
+            ag = dict(ae["given_inputs"])
+            for k in _ON_ONLY_GIVEN:
+                assert k not in bg, (a, k)
+                ag.pop(k, None)
+            ae["given_inputs"] = ag
         assert ae == be, a
         assert arm_names[:-1] == names and len(names) >= 3, a
         assert det._answer_name(arm_names[-1]) == (
@@ -1090,11 +1108,29 @@ def test_judgment_calls_left_unsourced_with_no_consult_are_seen(tmp_path):
     assert codes(det.detect_judgment_check(ctx)) == {
         "judgment_calls_unsourced"}
     assert det.turn_metrics(ctx)["judgment_retries"] == 0
-    # a turn that consulted, or whose calls all name a source: nothing
-    _write_acts(conv, [_judgment_event("none", ["Water."],
-                                       references_ran=True),
-                       _judgment_event("none", [])])
+    # calls whose list names a source: nothing
+    _write_acts(conv, [_judgment_event("none", [])])
     assert det.detect_judgment_check(_ctx(_fig_rec(conv, files, []))) == []
+
+
+def test_judgment_calls_unsourced_after_a_consult_are_seen(tmp_path):
+    """EV-30 (w14 F18j: 2 of 5 calls went out with no source after the
+    consult, recorded only as the check's numbers); GM-187's retry for them
+    says why it went back."""
+    conv, files = _conv(tmp_path)
+    _write_acts(conv, [_judgment_event("none", ["Water. None given."],
+                                       references_ran=True)])
+    found = det.detect_judgment_check(_ctx(_fig_rec(conv, files, [])))
+    assert codes(found) == {"judgment_calls_unsourced_after_consult"}
+    assert found[0]["severity"] == "info"
+    assert "after the references consult" in found[0]["message"]
+    _write_acts(conv, [dict(_judgment_event("fed_back", ["Water."],
+                                            references_ran=True),
+                            reason="after_consult")])
+    found = det.detect_judgment_check(_ctx(_fig_rec(conv, files, [])))
+    assert codes(found) == {"judgment_check_retry"}
+    assert "after the references consult" in found[0]["message"]
+    assert found[0]["evidence"]["reason"] == "after_consult"
 
 
 def test_card_expectations_count_kinds_and_patterns(tmp_path):
@@ -1250,6 +1286,20 @@ def test_recheck_judges_a_recorded_wave_again(tmp_path):
         {"id": "F99-figure", "steps": []}])
     assert {f["code"] for f in res["F99-figure"]["turns"][0]} == {
         "stale_figure_card"}
+    # (e), (l) and (m) run again too (EV-30)
+    _write_acts(conv, acts + [
+        dict(_judgment_event("none", ["Water."], references_ran=True)),
+        {"turn": 1, "event": "tool_error", "name": "call_agent",
+         "run_id": "x", "error": "1 validation error\nmethod\n  Field "
+         "required"}])
+    dj = json.loads((scen / "detectors.json").read_text("utf-8"))
+    dj["turns"][0]["final"] = "The settlement is 123.4 mm."
+    (scen / "detectors.json").write_text(json.dumps(dj), "utf-8")
+    res = dryrun.recheck(str(tmp_path / "wave"), flows=[
+        {"id": "F99-figure", "steps": []}])
+    assert {f["code"] for f in res["F99-figure"]["turns"][0]} >= {
+        "stale_figure_card", "judgment_calls_unsourced_after_consult",
+        "missing_argument", "answer_number_unsourced"}
 
 
 #: The EV-24 flows: figures a geotechnical engineer asks for in their own
@@ -1323,6 +1373,166 @@ def test_recovered_tool_error_is_low_and_meter_gap_is_flagged(tmp_path):
     assert "meter_activity_mismatch" in codes(cost)
     cost = det.detect_cost(_ctx(rec, meter_calls=[{"usd": 0.0}] * 2))
     assert "meter_activity_mismatch" not in codes(cost)
+
+
+def test_argument_refusals_by_kind():
+    """EV-30: pydantic's "Field required" is a missing argument, not an
+    unknown one; a value of the wrong shape is its own kind."""
+    r = det.argument_refusal
+    assert r("ValidationError: 1 validation error for _CallAgentArgs\n"
+             "method\n  Field required [type=missing]") == "missing_argument"
+    assert r("ValidationError: 1 validation error for _CallAgentArgs\n"
+             "parameters\n  Input should be a valid dictionary "
+             "[type=dict_type]") == "invalid_argument"
+    assert r("f() got an unexpected keyword argument 'x'") == \
+        "unknown_argument_refusal"
+    assert r("dm7.meyerhof_hansen_Nq: 'friction_angle' is not a parameter "
+             "of meyerhof_hansen_Nq.") == "unknown_argument_refusal"
+    assert r("read_document() missing 1 required positional argument: "
+             "'document'") == "missing_argument"
+    assert r("ValueError: bad depth") is None
+
+
+def test_a_refusal_fixed_on_the_next_call_is_medium(tmp_path):
+    """EV-30 (w14 F18j): a call refused over its arguments that the same
+    agent put right on its next call of that method did not reach the user:
+    medium, not high. Left unfixed, it stays high."""
+    conv, files = _conv(tmp_path)
+    refused = [{"event": "tool_start", "name": "call_agent", "run_id": "a",
+                "agent": "references", "task_id": "T",
+                "args": {"agent_name": "reference_get", "parameters": {}}},
+               {"event": "tool_error", "name": "call_agent", "run_id": "a",
+                "agent": "references", "task_id": "T",
+                "error": "ValidationError: 1 validation error for "
+                         "_CallAgentArgs\nmethod\n  Field required"}]
+    fixed = [{"event": "tool_start", "name": "call_agent", "run_id": "b",
+              "agent": "references", "task_id": "T",
+              "args": {"agent_name": "reference_db",
+                       "method": "reference_get", "parameters": {}}},
+             {"event": "tool_end", "name": "call_agent", "run_id": "b",
+              "agent": "references", "task_id": "T", "result": '{"ok": 1}'}]
+    rec = {"conv_dir": str(conv), "files_dir": str(files),
+           "final": "Done.", "activity_offset": 0}
+    # the method is missing, so the module name stands in its place
+    _write_acts(conv, refused + fixed)
+    f = [x for x in det.detect_health(_ctx(rec))
+         if x["code"] == "missing_argument"]
+    assert f and f[0]["severity"] == "medium" and f[0]["evidence"][
+        "recovered"]
+    # an unknown parameter, fixed on the next call of the same method
+    bad = _call("c", 1.0, "dm7", "meyerhof_hansen_Nq", {"friction_angle": 32},
+                result=json.dumps({"error": "dm7.meyerhof_hansen_Nq: "
+                                   "'friction_angle' is not a parameter of "
+                                   "meyerhof_hansen_Nq."}))
+    good = _call("d", 3.0, "dm7", "meyerhof_hansen_Nq", {"phi_deg": 32})
+    _write_acts(conv, bad + good)
+    f = [x for x in det.detect_health(_ctx(rec))
+         if x["code"] == "unknown_argument_refusal"]
+    assert f and f[0]["severity"] == "medium"
+    # not fixed (another method came next, and the same one never again)
+    other = _call("e", 3.0, "dm7", "bearing_capacity_factors", {"phi": 32})
+    _write_acts(conv, bad + other)
+    f = [x for x in det.detect_health(_ctx(rec))
+         if x["code"] == "unknown_argument_refusal"]
+    assert f and f[0]["severity"] == "high"
+    # fixed by another agent's call: still high
+    _write_acts(conv, refused + [dict(a, agent="calc", task_id="U")
+                                 for a in fixed])
+    f = [x for x in det.detect_health(_ctx(rec))
+         if x["code"] == "missing_argument"]
+    assert f and f[0]["severity"] == "high"
+
+
+# ---------------------------------------------------------------------------
+# (m) numbers in the answer that nothing holds (EV-30)
+# ---------------------------------------------------------------------------
+
+def _numbers(answer, *held):
+    return [t["raw"] for t in det.unsourced_numbers(answer, held)]
+
+
+def test_answer_numbers_flag_a_number_no_tool_holds():
+    """w14 F18 OFF: the methods 'spread about ±15 %' where the runs gave
+    -18 % and +7 %; the tool's own numbers, rounded, are not flagged."""
+    tool = json.dumps({"q_ultimate_kPa": 1158.77, "q_allowable_kPa": 386.26,
+                       "meyerhof": 1240.96, "terzaghi": 950.24})
+    answer = ("| Method | q_ult (kPa) |\n|---|---|\n| Vesic | 1,159 |\n"
+              "| Meyerhof | 1,241 |\n| Terzaghi | 950 |\n\n"
+              "The methods spread about ±15% around Vesic.")
+    assert _numbers(answer, tool) == ["15"]
+    # held at the precision printed, with a hedge's 3 %
+    assert _numbers("q_allow is about 390 kPa.", tool) == []
+    assert _numbers("q_allow is 386.3 kPa.", tool) == []
+    assert _numbers("q_allow is 386.4 kPa.", tool) == ["386.4"]
+
+
+def test_answer_numbers_spare_the_user_ids_and_arithmetic():
+    prompt = "A 2 m square footing 1 m deep, phi = 32 degrees, 19 kN/m3."
+    tool = json.dumps({"q": 386.26, "t": 316.75})
+    for answer in (
+            "With phi = 32° and gamma = 19 kN/m3 as given.",     # the user's
+            "See GEC-6 Sec. 5.2.3.2, UFC 3-220-20 Eq. 5-13 and Table 4-1.",
+            "Terzaghi (1943) and Vesic (1973), page 245, Figure 7-15.",
+            "1. First step\n2. Second step\n12. Twelfth step",
+            "The file bearing_capacity_t17.csv and the B-17 log's N60.",
+            "Use 3 layers and 7 slices.",                        # counts
+            "The load is 386.3 kPa x 4 m² = 1,545 kN.",          # shown
+            "Vesic gives 386 kPa, 22% above Terzaghi's 317 kPa.",
+            "q is 8.07 ksf.",                                   # converted
+            "phi is 0.5585 rad."):
+        assert _numbers(answer, prompt, tool) == [], answer
+    # a conversion counts only in the unit printed
+    assert _numbers("q is 8.07 kPa.", prompt, tool) == ["8.07"]
+    # arithmetic in another paragraph does not count
+    assert _numbers("Vesic 386 kPa, Terzaghi 317 kPa.\n\nThat is 22% "
+                    "more.", tool) == ["22"]
+
+
+def test_answer_numbers_spare_arithmetic_read_off_a_table():
+    """EV-30 review (w12 F66, F61j): a difference read off the answer's own
+    table is spared; a rounded value a table matches only by chance is not
+    (within 1 %), and neither is a number no table holds."""
+    tool = json.dumps({"lengths": [21.1, 23.7], "fos": [0.937, 0.938],
+                       "grid": [15, 20]})
+    lengths = ("| Option | Length needed |\n|---|---|\n| Pipe | 21.1 m |\n"
+               "| H-pile | 23.7 m |\n\n")
+    assert _numbers(lengths + "- The H-pile is about 2.6 m longer.",
+                    tool) == []
+    fos = ("| Search | FOS |\n|---|---|\n| Spencer | 0.937 |\n"
+           "| Bishop | 0.938 |\n\n")
+    assert _numbers(fos + "The two agree to within 0.001.", tool) == []
+    # 20/15 = 1.33 is a rounded 1.3, but 2.6 % off: chance, not arithmetic
+    grids = ("| Grid | FOS |\n|---|---|\n| 15 by 15 | 0.937 |\n"
+             "| 20 by 20 | 0.938 |\n\n")
+    assert _numbers(grids + "A required FOS of 1.3 would call for a fix.",
+                    tool) == ["1.3"]
+    assert _numbers(lengths + "The lengths spread about ±15%.",
+                    json.dumps({"lengths": [21.1, 23.7]})) == ["15"]
+
+
+def test_answer_numbers_detector_reads_tools_and_earlier_turns(tmp_path):
+    """The detector holds the turn's tool results and arguments, every
+    prompt, and what earlier turns' tools and answers said; not the tools'
+    own descriptions."""
+    assert det.detect_answer_numbers in det.DETECTORS
+    conv, files = _conv(tmp_path)
+    acts = ([{"turn": 1, "event": "turn_start", "prompt": "B = 2.5 m"},
+             {"turn": 1, "event": "model_end", "text": "Earlier: 77.7 kPa"}]
+            + [dict(a, turn=1) for a in _call("a", 1.0, "bc", "run", {},
+                                              result='{"q": 12.34}')]
+            + [{"turn": 2, "event": "turn_start", "prompt": "and now?"},
+               {"turn": 2, "event": "tool_end", "name": "describe_method",
+                "result": '{"example": 55.5}'}])
+    _write_acts(conv, acts)
+    rec = {"conv_dir": str(conv), "files_dir": str(files),
+           "activity_offset": 4, "activity_end": None,
+           "final": "q = 12.34 kPa on B = 2.5 m, 77.7 before; 55.5 now."}
+    found = det.detect_answer_numbers(_ctx(rec, prompts=["B = 2.5 m"]))
+    assert codes(found) == {"answer_number_unsourced"}
+    assert found[0]["severity"] == "low"
+    assert [n["value"] for n in found[0]["evidence"]["numbers"]] == ["55.5"]
+    rec["final"] = "q = 12.34 kPa."
+    assert det.detect_answer_numbers(_ctx(rec)) == []
 
 
 # ---------------------------------------------------------------------------
@@ -1483,6 +1693,26 @@ def test_pdf_cites_consult(tmp_path):
     found = run(tool + consult + copied)
     assert codes(found) == {"expected_consult_citation_missing"}
     assert "also named by a tool" in found[0]["message"]
+    # every citation is read, not each document's first (EV-30, w14 F18j:
+    # GEC-6 named first with no section, its sections cited later)
+    later = _call("h5", 3.0, "calc_package", "html_to_pdf",
+                  {"html": "<p>Vesic factors (GEC-6).</p><p>Shape factors "
+                   "per GEC-6 Sec. 5.2.3.2.</p>", "output_path": "e.pdf"})
+    assert run(tool + consult + later) == []
+    # an equation number the consult gave places a citation too
+    eq_tool = _call("w2", 0.5, "bearing_capacity", "run", {},
+                    result=json.dumps({"notes": "UFC 3-220-20."}))
+    eq_consult = _task("r2", 1.0, "references", "which?",
+                       "UFC 3-220-20 Eq. 5-13 gives the factor.", t_end=2.0)
+    eq = _call("h6", 3.0, "calc_package", "html_to_pdf",
+               {"html": "<p>N per DM7 (UFC 3-220-20) Eq. 5-13.</p>",
+                "output_path": "f.pdf"})
+    assert run(eq_tool + eq_consult + eq) == []
+    plain = _call("h7", 3.0, "calc_package", "html_to_pdf",
+                  {"html": "<p>N per UFC 3-220-20.</p>",
+                   "output_path": "g.pdf"})
+    assert codes(run(eq_tool + eq_consult + plain)) == {
+        "expected_consult_citation_missing"}
     # written before the consult finished
     early = _call("h4", 1.5, "calc_package", "html_to_pdf",
                   {"html": "<p>GEC-6 Sec. 5.2.3.2</p>",

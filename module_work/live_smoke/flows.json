@@ -212,14 +212,13 @@
     {"say": "Compute the ultimate and allowable bearing capacity of a 2 m square footing 1 m deep in sand (phi = 32 degrees, unit weight 19 kN/m3, factor of safety 3) and give me a calculation package as a PDF."}
    ],
    "expect": {"artifact_ext": [".pdf"],
-    "given_inputs": {"package_given": true, "brief_given": true,
+    "given_inputs": {"package_given": true,
      "not_given": [
       {"name": "c = 0 (the user said sand, and gave no cohesion)", "inputs": ["cohesion", "c", "c_prime"], "any": ["cohesion", "(?<![\\w.'])c'?\\s*=\\s*0(?![.\\d])"]},
       {"name": "the bearing capacity method (the user named none)", "inputs": ["factor_method", "ngamma_method", "method"], "any": ["vesi[cć]", "meyerhof", "hansen", "terzaghi"]},
       {"name": "general shear (the user did not say how dense the sand is)", "inputs": ["failure_mode"], "any": ["general shear", "local shear", "punching"]},
       {"name": "the water table (the user gave none)", "inputs": ["gwt_depth", "water_table", "water_table_depth", "groundwater_depth"], "any": ["ground ?water", "water table", "\\bgwt\\b"]}
      ]},
-    "pdf_cites_consult": true,
     "answer_names": [
      {"name": "the bearing capacity method", "any": ["vesi[cć]", "meyerhof", "terzaghi", "hansen", "brinch"]},
      {"name": "the water table (not given)", "any": ["ground ?water", "water table", "\\bgwt\\b", "phreatic", "dewater", "(dry|moist|submerged|buoyant|effective) unit weight", "\\bno water\\b", "(above|below) the water"]},
@@ -792,13 +791,12 @@
     {"say": "Make a short calc PDF for the report on our cantilever retaining wall: retained height 4.0 m, stem 0.35 m thick, base 2.8 m wide and 0.5 m thick with a 0.7 m toe; backfill level with the top of the wall, unit weight 19 kN/m3, friction angle 32 degrees, no water, 10 kPa surcharge on the backfill. Use Rankine active pressure. Include a figure of the wall drawn to scale with the active earth pressure and the surcharge pressure drawn beside it as separate diagrams, each resultant and its height above the base marked."}
    ],
    "expect": {"tools_any": ["task", "plot_code"], "cards": [{"kind": "pdf", "count": 1}, {"kind": "figure", "max": 1, "looked_at": true}],
-    "given_inputs": {"brief_given": true,
+    "given_inputs": {
      "not_given": [
       {"name": "the total wall height H = 4.5 m (worked out from the retained height and the base)", "inputs": ["wall_height"], "any": ["4\\.5 ?m", "total (wall )?height"]},
       {"name": "the concrete unit weight (not given)", "inputs": ["gamma_concrete"], "any": ["concrete (unit )?weight", "unit weight (of|for) (the )?concrete"]},
       {"name": "the soil under the base (not given)", "inputs": ["phi_foundation", "c_foundation", "gamma_foundation", "delta_base", "base_adhesion"], "any": ["foundation soil", "(soil|ground) (under|beneath|below) the (base|footing|wall)", "base (friction|interface|adhesion)"]}
      ]},
-    "pdf_cites_consult": true,
     "answer_names": [
      {"name": "where the Rankine pressure acts", "any": ["virtual (back|plane|wall)", "(vertical )?plane (through|at|above|from) the (back of the |end of the )?heel", "through the (back of the |end of the )?heel", "(back|end) of the heel"]},
      {"name": "the soil under the base (not given)", "any": ["base[- ]soil", "foundation soil", "(soil|ground) (under|beneath|below) the (base|footing|wall)", "base (friction|interface|adhesion)", "(sliding|interface) friction", "δ_?b\\b", "delta_?b(ase)?\\b", "2/3"]},

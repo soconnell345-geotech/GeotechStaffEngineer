@@ -242,7 +242,7 @@ class SettlementAnalysis:
         stress increase under the footing, the drainage path and the start
         of secondary compression."""
         from geotech_common.choices import (
-            DEFAULT, GIVEN, MODULE, choice, how_given,
+            DEFAULT, MODULE, choice, how_given,
         )
         from settlement.stress_distribution import stress_method_choice
         out = []
@@ -284,7 +284,7 @@ class SettlementAnalysis:
             Hdr = self._get_Hdr()
             if self.Hdr is not None:
                 out.append(choice("drainage path", f"Hdr = {Hdr:g} m",
-                                  GIVEN))
+                                  how_given(self.Hdr, None, name="Hdr")))
             else:
                 H = sum(l.thickness for l in self.consolidation_layers)
                 out.append(choice(
@@ -348,13 +348,14 @@ class SettlementAnalysis:
     def _e0_secondary_choice(self, terms: dict) -> dict:
         """The void ratio of the secondary settlement (GM-142): each
         consolidating layer's own e0, or the one given."""
-        from geotech_common.choices import GIVEN, MODULE, choice
+        from geotech_common.choices import MODULE, choice, how_given
         basis = ("Ss = C_alpha / (1 + e0) H log10(t2/t1), FHWA NHI-06-088 "
                  "Eq. 7-10")
         if self.e0_secondary is not None:
             return choice(
                 "void ratio e0 for secondary compression",
-                f"{self.e0_secondary:g}, for every layer", GIVEN,
+                f"{self.e0_secondary:g}, for every layer",
+                how_given(self.e0_secondary, None, name="e0_secondary"),
                 basis + "; the one e0 given is used for every consolidating "
                 "layer, not the layers' own",
                 ["each layer's own e0 (e0_secondary not given)"])

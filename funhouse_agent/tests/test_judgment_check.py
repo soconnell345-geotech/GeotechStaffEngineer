@@ -122,13 +122,26 @@ def test_check_names_only_the_unsourced_calls():
     assert result["unsourced"] == ["Water. None given.",
                                    "Preload. Rests on judgment, no reference "
                                    "found."]
-    assert result["acts"] is True
-    consulted = jc.check(answer, references_ran=True)
-    assert consulted["unsourced"] == ["Water. None given."]
-    assert consulted["acts"] is False
+    assert result["acts"] is True and result["reason"] == jc.NO_CONSULT
     note = jc.note_for_model(result)
     assert note.startswith(jc.NOTE_PREFIX) and "- Water. None given." in note
+    assert "`references` helper once, in one task" in note
+    assert "one line each, asking only for its source" in note
     assert "This note comes once." in note
+    # GM-187: after a consult, a call with no source still goes back
+    consulted = jc.check(answer, references_ran=True)
+    assert consulted["unsourced"] == ["Water. None given."]
+    assert consulted["acts"] is True
+    assert consulted["reason"] == jc.AFTER_CONSULT
+    after = jc.note_for_model(consulted)
+    assert after.startswith(jc.NOTE_PREFIX)
+    assert "- Water. None given." in after and "Preload" not in after
+    assert "Do not ask the helper again." in after
+    assert "rests on judgment, no reference found" in after
+    assert "This note comes once." in after
+    # every call sourced after the consult: nothing to send back
+    sourced = answer.replace("None given.", "None, per GEC-4 Section 5.6.")
+    assert jc.check(sourced, references_ran=True)["acts"] is False
 
 
 def test_a_long_call_is_cut_for_the_note():
@@ -157,8 +170,27 @@ def test_feedback_is_once_and_finish_never_changes_the_answer():
     assert check.feedback(answer) is None
     assert check.finish(answer) == answer
     assert [r["action"] for r in logged] == ["fed_back", "none"]
+    assert [r["reason"] for r in logged] == [jc.NO_CONSULT] * 2
+    assert check.retry_status == jc.RETRY_STATUS
     off = jc.TurnJudgmentCheck(mode="off")
     assert off.feedback(answer) is None
+
+
+def test_once_a_turn_whichever_note_went():
+    """GM-187: sent back for no consult, the answer is not sent back again
+    for calls still unsourced after the consult it asked for; sent back
+    after a consult, it is not sent back again either."""
+    answer = "## Judgment calls\n1. Smooth wall.\n"
+    first = jc.TurnJudgmentCheck(mode="retry")
+    assert first.feedback(answer)
+    first.references_ran = True                 # the consult the note asked for
+    assert first.feedback(answer) is None
+    second = jc.TurnJudgmentCheck(mode="retry")
+    second.references_ran = True
+    note = second.feedback(answer)
+    assert "Do not ask the helper again." in note
+    assert second.retry_status == jc.RETRY_STATUS_AFTER_CONSULT
+    assert second.feedback(answer) is None
 
 
 def test_mode_needs_the_switch_and_a_build_that_asks_for_a_consult(

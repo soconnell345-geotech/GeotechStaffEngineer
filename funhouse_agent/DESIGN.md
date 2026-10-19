@@ -352,6 +352,16 @@ the eyes). What changed on master after 5.33.0, in short:
   user's value would otherwise print as a default); an `assumptions` key
   written as an input name that is not one is refused with a
   did-you-mean, and a statement in words is its own row (GM-167).
+  No module writes "given" itself (GM-180): a choice made from an input
+  asks `how_given` with the input's name, and one made from a value
+  nested in an input (a layer's p-y model, delta/phi, Nt or Fig. 7-18
+  case) names that input as `within`, so it reads "assumed" when the
+  call says the input is not the user's. A procedure a tool runs with no
+  input to pick it (the liquepy CPT and SPT tools, NCEER liquefaction) is
+  the module's; the `liquefaction` tool's routed one follows its `method`.
+  The guard runs every probe as a call that states no input as the
+  user's and fails on any "given" (`test_defaults_used.py`). The slope
+  packages and tools are left for GM-140.
   An input that changes nothing is not advertised (GM-160): the guard
   also gives every default a probe's run lists another value (the next
   allowed value, the other boolean, a number moved by half) and fails
@@ -610,6 +620,29 @@ the eyes). What changed on master after 5.33.0, in short:
   (`_CALC_GIVEN_AND_CITATIONS`). Off, every prompt is as it was. The live
   smoke harness sees each of these (`expect.given_inputs`,
   `expect.pdf_cites_consult` in `module_work/live_smoke/flows.json`).
+  **GM-187 (2026-10-19, after live wave w14, behind the switch):** F18j
+  sent 2 of its 5 calls out with no source after the consult, and each
+  consult cost $0.20-0.53 a turn. The turn-end check
+  (`funhouse_agent/judgment_check.py`) now also sends back, once, calls
+  that name no source after a consult ran (`reason` `after_consult`): no
+  second consult; each gets the source the consult found or "rests on
+  judgment, no reference found". Whichever note went, the reply after it
+  goes out as written. The consult: the five consults of w13b and w14
+  each used 9 or 10 of their 10 calls, one to three of them listing the
+  library's modules and methods, and cost $0.18-0.34 (Sonnet 5.5, a
+  cache-thread model of each call's tokens, within 6 % of the ledger on
+  four of the five flows): about half the cache writes of a context that
+  grew to 45-65k tokens, a third output. So where the main agent is asked
+  to consult (the geotech page), the references helper has at most 6
+  calls (`limits.JUDGMENT_REFERENCES_MAX_MODEL_CALLS`, never above the
+  caller's budget), is told two calls ahead, answers each listed call in
+  one line, and is told the two lookups (`reference_search`, then
+  `reference_get`) so no call goes to listing; the main agent's task
+  lists the calls one per line and asks only for each one's source
+  (`_JUDGMENT_CALLS_LOOKUP`, `agent._REFERENCES_JUDGMENT_CALLS`). Cut at
+  6 calls without the listing ones, the same five records keep 66 of the
+  71 sections their answers cited, for about $0.14-0.23 a consult. Off,
+  the helper's prompt and budget are as before.
 
 Every switch and its default: `review_flags.py` and
 `module_work/REVIEW_HARNESS.md`.

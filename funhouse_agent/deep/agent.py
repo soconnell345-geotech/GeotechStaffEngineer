@@ -53,6 +53,8 @@ from funhouse_agent.deep.limits import (
     DEFAULT_REVIEWER_MAX_MODEL_CALLS,
     HELPER_EXHAUSTED,
     HELPER_FINAL_NUDGE,
+    JUDGMENT_REFERENCES_MAX_MODEL_CALLS,
+    JUDGMENT_REFERENCES_WARN_REMAINING,
     REFERENCE_HIDDEN_TOOLS,
     UNRUNNABLE_TOOLS,
     HideTools,
@@ -125,6 +127,25 @@ HELPER_PARTIAL_RULE = (
     "you did gather: the data itself, in full (or, for data you saved with "
     "save_file, the file's name), then what is missing and why. "
     "Never answer with only an apology."
+)
+
+#: Added after the options rule where the main agent asks the consult about
+#: its judgment calls (``GEOTECH_JUDGMENT_CALLS`` on the geotech page; BACKLOG
+#: GM-187): a line per call, and the two lookups that find a section, so its
+#: tighter budget goes on lookups. In live waves w13b and w14 each such
+#: consult spent one to three of its calls listing the library's modules and
+#: methods before the first search. A search per call: ``reference_search``
+#: matches every plain word of its query, so one search over several calls
+#: finds little.
+_REFERENCES_JUDGMENT_CALLS = (
+    "\n\nAsked about a list of judgment calls, answer each in one line: the "
+    "reference and the section, table, figure or page your lookups returned "
+    "that supports the choice or its alternative, or \"no reference "
+    "found\". Look up with `call_agent` on `reference_db`: "
+    "`reference_search` (`query`, optional `reference`, `chapter`, `limit`), "
+    "one per judgment call, several at once, then `reference_get` "
+    "(`reference`, `section_id`) for a section you cite; there is no need "
+    "to list the modules or methods first."
 )
 
 #: The consult's model-call budget, stated to it (live smoke wave 1, G5).
@@ -324,6 +345,7 @@ def build_references_subagent(
     max_model_calls: Optional[int] = DEFAULT_REFERENCES_MAX_MODEL_CALLS,
     extra_tools=None,
     extra_system_prompt: Optional[str] = None,
+    judgment_consult: bool = False,
 ) -> dict:
     """Build the ``references`` sub-agent spec (reference librarian).
 
@@ -361,6 +383,14 @@ def build_references_subagent(
         Appended to the sub-agent's tools and prompt (the web app hands it
         ``record_feedback`` — a figure whose source PDF is missing is found
         HERE). Defaults leave the spec unchanged.
+    judgment_consult : bool, optional
+        The main agent's prompt asks it to consult this helper about its
+        judgment calls (``GEOTECH_JUDGMENT_CALLS`` on the geotech page; see
+        :func:`build_deep_agent`). With the switch on, the budget is then at
+        most :data:`~funhouse_agent.deep.limits.JUDGMENT_REFERENCES_MAX_MODEL_CALLS`,
+        warned two calls ahead, and the prompt asks for one line per call
+        and names the two lookups (BACKLOG GM-187). Off by default: the spec
+        as before.
     """
     tools = make_core_tools(
         allowed_agents=REFERENCE_MODULES,
@@ -379,8 +409,15 @@ def build_references_subagent(
         tools = list(tools) + list(extra_tools)
     system_prompt = CONSULTANT_FRAMING + _REFERENCES_CONCISION
     from funhouse_agent import review_flags as _flags
+    warn = None
     if _flags.judgment_calls():
         system_prompt += _REFERENCES_OPTIONS
+        if judgment_consult:
+            system_prompt += _REFERENCES_JUDGMENT_CALLS
+            if max_model_calls:
+                max_model_calls = min(int(max_model_calls),
+                                      JUDGMENT_REFERENCES_MAX_MODEL_CALLS)
+                warn = JUDGMENT_REFERENCES_WARN_REMAINING
     if max_model_calls:
         system_prompt += _REFERENCES_BUDGET.format(n=int(max_model_calls))
     if extra_system_prompt:
@@ -398,7 +435,8 @@ def build_references_subagent(
     if max_model_calls:
         # deepagents appends SubAgent-spec middleware to the sub-agent's
         # default stack (see create_deep_agent's subagent processing).
-        middleware.insert(0, ModelCallBudgetMiddleware(max_model_calls))
+        middleware.insert(0, ModelCallBudgetMiddleware(
+            max_model_calls, warn_remaining=warn))
     spec["middleware"] = middleware
     return spec
 
@@ -1422,6 +1460,7 @@ def build_deep_agent(
                 max_model_calls=references_max_model_calls,
                 extra_tools=subagent_extra_tools,
                 extra_system_prompt=subagent_extra_system_prompt,
+                judgment_consult=judgment_consult,
             )
         )
         subagents.append(

@@ -294,11 +294,13 @@ def liquefaction_choices(layer_results: List[Dict[str, Any]],
     """What :func:`evaluate_liquefaction` chose (GM-115), as a result's
     ``choices`` (``geotech_common.choices``): the procedure and its rd and
     MSF (their values are in each layer result), the overburden correction
-    it leaves out, and the dense-soil cap where a layer reached it."""
-    from geotech_common.choices import GIVEN, MODULE, choice
+    it leaves out, and the dense-soil cap where a layer reached it. The
+    procedure is this function's own, not an input, so it is the
+    module's (GM-180)."""
+    from geotech_common.choices import MODULE, choice
     out = [
         choice("triggering procedure",
-               "NCEER / Youd et al. (2001) SPT simplified procedure", GIVEN,
+               "NCEER / Youd et al. (2001) SPT simplified procedure", MODULE,
                "rd by Liao & Whitman (1986); MSF = 10^2.24 / M^2.56 = "
                f"{_msf_applied(M):.3f} at M {M:g}; fines by Youd et al. "
                "(2001); rd and MSF are listed for each layer "

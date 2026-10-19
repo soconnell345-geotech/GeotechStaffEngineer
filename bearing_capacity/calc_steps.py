@@ -229,7 +229,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     elif method == "meyerhof":
         ng_eq = "N_\u03b3 = (N_q - 1) \u00d7 tan(1.4\u03c6)"
         ng_sub = f"N_\u03b3 = ({r.Nq:.2f} - 1) \u00d7 tan(1.4 \u00d7 {phi_deg:.1f}\u00b0)"
-        ng_ref = "Meyerhof (1963)"
+        ng_ref = "Meyerhof (1963); UFC 3-220-20 Table 5-6"
     else:
         ng_eq = "N_\u03b3 = 1.5 \u00d7 (N_q - 1) \u00d7 tan(\u03c6)"
         ng_sub = f"N_\u03b3 = 1.5 \u00d7 ({r.Nq:.2f} - 1) \u00d7 tan({phi_deg:.1f}\u00b0)"
@@ -247,16 +247,21 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
 
     # ── Section: Correction Factors ────────────────────────────
     factor_method = analysis.factor_method.capitalize()
+    meyerhof = analysis.factor_method == "meyerhof"
     cf_items = []
 
-    # Shape factors
+    # Shape factors; Meyerhof's are 1 under an inclined load (GM-188)
+    not_combined = meyerhof and analysis.load_inclination != 0
     cf_items.append(CalcStep(
         title="Shape Factors",
         equation=_shape_factor_equation(analysis.factor_method, phi_deg),
-        substitution="",
+        substitution=("s_c = s_q = s_\u03b3 = 1: shape and inclined load "
+                      "not combined (UFC 3-220-20 Table 5-6 note A)"
+                      if not_combined else ""),
         result_name="s_c, s_q, s_\u03b3",
         result_value=f"{r.sc:.4f}, {r.sq:.4f}, {r.sgamma:.4f}",
-        reference=f"{factor_method}; FHWA GEC-6 Table 6-2",
+        reference=("Meyerhof; UFC 3-220-20 Table 5-6" if meyerhof
+                   else f"{factor_method}; FHWA GEC-6 Table 6-2"),
     ))
 
     # Depth factors
@@ -266,7 +271,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         substitution="",
         result_name="d_c, d_q, d_\u03b3",
         result_value=f"{r.dc:.4f}, {r.dq:.4f}, {r.dgamma:.4f}",
-        reference=f"{factor_method}; FHWA GEC-6 Table 6-3",
+        reference=("Meyerhof; UFC 3-220-20 Table 5-6" if meyerhof
+                   else f"{factor_method}; FHWA GEC-6 Table 6-3"),
     ))
 
     # Only show inclination, base, and ground factors if non-unity
@@ -359,6 +365,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         result_value=f"{r.q_allowable:,.1f}",
         result_unit="kPa",
     ))
+    gbc_items.extend(_allowable_load_items(r))
 
     # Two-layer info
     if r.is_two_layer:
@@ -550,6 +557,7 @@ def _terzaghi_sections(r, analysis) -> List[CalcSection]:
             result_value=f"{r.q_allowable:,.1f}",
             result_unit="kPa",
         ),
+        *_allowable_load_items(r),
     ]
     if r.is_two_layer:
         eq_items.append(TableData(
@@ -564,6 +572,56 @@ def _terzaghi_sections(r, analysis) -> List[CalcSection]:
     eq_items.extend(r.notes)
     sections.append(CalcSection(title="Bearing Capacity Equation", items=eq_items))
     return sections
+
+
+def _allowable_load_items(r) -> list:
+    """The net allowable bearing pressure and the allowable structural load
+    on the footing, after q_all (GM-170; UFC 3-220-20 Sec. 5-2.2 and
+    5-2.4)."""
+    items = [CalcStep(
+        title="Net Allowable Bearing Pressure",
+        equation="q_all,net = q_ult / FS - q",
+        substitution=(f"q_all,net = {r.q_allowable:,.1f} - "
+                      f"{r.q_overburden:,.1f}"),
+        result_name="q_all,net",
+        result_value=f"{r.q_allowable_net:,.1f}",
+        result_unit="kPa",
+        reference="UFC 3-220-20 Eq. 5-14",
+    )]
+    loads = r.allowable_loads()
+    if not loads:
+        return items
+    unit = "kN_per_m" if r.is_strip else "kN"
+    area = "B'" if r.is_strip else "A'"
+    if r.area_full_m2 in (None, r.area_m2):
+        equation = f"Q_DL+LL = q_all,net × {area}"
+        substitution = (f"Q_DL+LL = {r.q_allowable_net:,.1f} × "
+                        f"{r.area_m2:,.3f}")
+    else:
+        # an eccentric load bears on A'; the foundation's and the soil's
+        # weight on the whole footing (Eq. 5-10)
+        whole = "B" if r.is_strip else "A"
+        equation = f"Q_DL+LL = q_all × {area} - q × {whole}"
+        substitution = (f"Q_DL+LL = {r.q_allowable:,.1f} × "
+                        f"{r.area_m2:,.3f} - {r.q_overburden:,.1f} × "
+                        f"{r.area_full_m2:,.3f}")
+    items.append(CalcStep(
+        title="Allowable Structural Load",
+        equation=equation,
+        substitution=substitution,
+        result_name="Q_DL+LL",
+        result_value=f"{loads['structural_load_' + unit]:,.0f}",
+        result_unit="kN/m" if r.is_strip else "kN",
+        reference="UFC 3-220-20 Eq. 5-3",
+    ))
+    items.append(
+        "The foundation and the soil over it are taken at the soil's unit "
+        "weight (UFC 3-220-20 Sec. 5-2.2). q_all "
+        f"× {area} = {loads['gross_load_' + unit]:,.0f} "
+        f"{'kN/m' if r.is_strip else 'kN'} is the gross load on the bearing "
+        "surface, the structural load plus the foundation's and the soil's "
+        "weight (Eq. 5-1); it is not the structural load.")
+    return items
 
 
 def _shape_factor_equation(method: str, phi_deg: float) -> str:

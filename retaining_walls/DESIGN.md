@@ -507,3 +507,20 @@ GM-157 (2026-10-18): that free body counted the 7.5 kPa surcharge over the
 heel as resisting. By default the module no longer does (section above),
 so the session numbers are reproduced with `live_load_resists=True`, and
 the defaults are 0.566 / 1.339 / 0.978.
+
+GM-173 (2026-10-19): the result's `choices` state the base friction used,
+first in the list (`cantilever.base_friction_choice`,
+`BASE_FRICTION_BASIS`). The default stays delta_b = 2/3 phi_f, phi_f the
+foundation soil's or the backfill's when `phi_foundation` is not given
+(GM-165 declares that absent case in `defaults_used`; the choice does not
+repeat it, so it reads the same with phi_foundation given or left out). Its basis: EN 1997-1 Sec. 6.5.3(10) (p. 64), 2/3
+phi'cv;d "for smooth precast foundations", and UFC 3-220-20 Fig. 4-27
+(p. 220), tan delta "friction factor between soil and base" from Table 4-1
+(p. 184). The alternative is delta_b = phi_f (`delta_base` = phi_f) for
+concrete cast against the ground: GEC-6 Sec. 5.4 (p. 99), "For concrete
+cast against cohesionless or granular material, the coefficient of
+friction, tan delta, will be equal to the tangent of the friction angle
+(tan phi) for the soil supporting the footing", and EN 1997-1 Sec.
+6.5.3(10), phi'cv;d "for cast-in-situ concrete foundations". Wave w13 F55
+turned on it: sliding 1.07 at the default, 1.72 at delta_b = phi_f. No
+number changes. EM 1110-2-2502 is not in the reference library.

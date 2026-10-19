@@ -133,8 +133,9 @@ def test_no_surcharge_is_unchanged_and_says_nothing():
                                 dead_load_resists=True,
                                 surcharge_in_bearing=False)
     assert a.to_dict() == b.to_dict()
-    assert a.choices == []
-    assert "choices" not in a.to_dict()
+    # only the base friction (GM-173): nothing about a surcharge
+    assert [c["what"] for c in a.choices] == [
+        "base friction delta_b (sliding)"]
 
 
 def test_dead_load_surcharge_by_its_own_choice():
@@ -165,10 +166,11 @@ def test_live_and_dead_together():
     assert r.FOS_sliding == pytest.approx(v * TAN_DB / ph, abs=5e-4)
     assert r.bearing_terms["V"] == pytest.approx(V_WALL + W_Q + 6.0 * HEEL)
     whats = [c["what"] for c in r.choices]
-    assert len(whats) == 3
-    assert whats[0].startswith("live-load surcharge over the heel")
-    assert whats[1].startswith("dead-load surcharge over the heel")
-    assert whats[2] == "surcharge over the heel, in the bearing pressures"
+    assert len(whats) == 4
+    assert whats[0] == "base friction delta_b (sliding)"      # GM-173
+    assert whats[1].startswith("live-load surcharge over the heel")
+    assert whats[2].startswith("dead-load surcharge over the heel")
+    assert whats[3] == "surcharge over the heel, in the bearing pressures"
 
 
 def test_the_live_share_of_an_inclined_thrust_does_not_resist():
@@ -238,7 +240,8 @@ def test_the_f55_wall_before_and_after():
 
 def test_the_choices_say_what_was_used_and_why():
     r = analyze_cantilever_wall(_wall(surcharge=Q), GAMMA, PHI)
-    live, bearing = r.choices
+    friction, live, bearing = r.choices
+    assert friction["what"] == "base friction delta_b (sliding)"
     assert live["how"] == "default"
     assert "not a resisting force" in live["chosen"]
     assert "NHI-06-089" in live["basis"] and "10-43" in live["basis"]
@@ -249,7 +252,7 @@ def test_the_choices_say_what_was_used_and_why():
     assert "B-1.6" in bearing["basis"]
     given = analyze_cantilever_wall(_wall(surcharge=Q), GAMMA, PHI,
                                     live_load_resists=True)
-    assert given.choices[0]["how"] == "given"
+    assert given.choices[1]["how"] == "given"
     assert "Choices:" in r.summary()
     assert r.to_dict()["choices"] == r.choices
 

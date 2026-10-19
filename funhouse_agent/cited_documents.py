@@ -678,11 +678,15 @@ def _works(t: str) -> List[Tuple[int, int, str, str, str, str]]:
     return out
 
 
-def find_citations(text: Any, internal: bool = False) -> List[DocCited]:
+def find_citations(text: Any, internal: bool = False,
+                   every: bool = False) -> List[DocCited]:
     """Every document and work ``text`` cites, in order, one per document
     (the first time it is cited, with the first section cited). HTML is
     read as its text. ``internal`` also reads the reference library's own
-    ids ("gec_11"), as a references result may print them."""
+    ids ("gec_11"), as a references result may print them. ``every``
+    gives each citation where it stands, with its own section, not just
+    each document's first (BACKLOG EV-30: a deliverable that names a
+    document first without a section and cites its sections later)."""
     t = plain_text(text)
     docs = _documents(t, internal=internal)
     spans = [(s, e) for s, e, *_ in docs]
@@ -698,7 +702,7 @@ def find_citations(text: Any, internal: bool = False) -> List[DocCited]:
     seen: Set[str] = set()
     out: List[DocCited] = []
     for c in sorted(found, key=lambda c: (c.start, -c.end)):
-        if c.key in seen:
+        if c.key in seen and not every:
             continue
         seen.add(c.key)
         out.append(c)

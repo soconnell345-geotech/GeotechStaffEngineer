@@ -21,9 +21,11 @@ Modes
              purpose (saves to temp, links a missing file, fails a tool) and
              prints which detectors fired. Never touches the spend ledger.
 ``report``   re-render ``runs/<wave>/REPORT.md`` from disk.
-``recheck``  detector (k) (figure cards) and the flow expectations again
-             over a recorded wave, with today's ``flows.json`` ($0, no
-             model). ``--looks`` asks for a look at every figure card.
+``recheck``  detectors (e) health, (k) figure cards, (l) judgment-call
+             check and (m) answer numbers, and the flow expectations,
+             again over a recorded wave, with today's ``flows.json`` and
+             detectors ($0, no model). ``--looks`` asks for a look at
+             every figure card.
 ``estimate`` what a flow wave should cost on ``--model``, from the meter's
              record of earlier runs (``runs/*/*/summary.json``), and a
              suggested cap. ``--ids`` picks as ``flow`` does (by prefix),

@@ -23,8 +23,8 @@ on, an upload and its automatic orientation turn), the scripted model:
 The second turn is a clean control ("Thanks" -> a plain answer): it must
 raise no high or medium finding.
 
-:func:`recheck` is the other $0 check: detector (k) and the flow
-expectations run again over a wave already recorded on disk.
+:func:`recheck` is the other $0 check: detectors (e), (k), (l) and (m) and
+the flow expectations run again over a wave already recorded on disk.
 """
 
 from __future__ import annotations
@@ -40,7 +40,8 @@ EXPECTED = {
     "b_answer_links#2": {"local_link_in_chat"},
     "b_answer_links#3": {"sharepoint_url_not_from_a_tool"},
     "b_answer_links#4": {"server_path_in_answer"},
-    "e_health": {"unknown_argument_refusal"},
+    # read_document with no document: a missing argument (EV-30)
+    "e_health": {"unknown_argument_refusal", "missing_argument"},
     "e_health#2": {"unknown_tool"},
     "e_health#3": {"success_claimed_after_error"},
     "d_sharepoint": {"sharepoint_tool_failed_honestly"},
@@ -225,8 +226,11 @@ def _find(conv: str, name: str) -> str:
 
 def recheck(wave_dir: str, ids=(), *, flows=None,
             looks_everywhere: bool = False) -> dict:
-    """Detector (k) and the flow expectations again over a wave already on
-    disk: no model, no API, $0 (BACKLOG EV-24).
+    """Detectors (e) health, (k) figure cards, (l) the judgment-call check
+    and (m) answer numbers, and the flow expectations, again over a wave
+    already on disk: no model, no API, $0 (BACKLOG EV-24, EV-30). (e)
+    cannot see what the record does not keep (a tool the graph refused
+    before it ran, the harness's own time limit).
 
     Each turn is rebuilt from the scenario's ``detectors.json`` and its
     copied conversation folder (the copy keeps the files' times, which (k)
@@ -256,6 +260,7 @@ def recheck(wave_dir: str, ids=(), *, flows=None,
                 {"kind": "figure", "min": 0, "looked_at": True}]
         flow["expect"] = expect
         recs, found, seen = [], [], {}
+        prompts = [t.get("prompt") or "" for t in dj.get("turns") or []]
         for i, t in enumerate(dj.get("turns") or []):
             conv = os.path.join(wave_dir, sid, "conversations",
                                 f"{t.get('session')}_"
@@ -269,12 +274,17 @@ def recheck(wave_dir: str, ids=(), *, flows=None,
             lo, hi = (mine[0], mine[-1] + 1) if mine else (0, None)
             rec = {"conv_dir": conv, "files_dir": os.path.join(conv, "files"),
                    "final": t.get("final") or "", "t_end": float(i + 1),
+                   "prompt": t.get("prompt") or "", "error": t.get("error"),
                    "activity_offset": lo, "activity_end": hi,
                    "entry": {"artifacts": [_find(conv, c)
                                            for c in t.get("cards") or []]}}
             recs.append(rec)
-            found.append(det.detect_figure_cards(
-                det.turn_context(rec, expect=expect)))
+            ctx = det.turn_context(rec, expect=expect, prompts=prompts)
+            found.append([f for d in (det.detect_health,
+                                      det.detect_figure_cards,
+                                      det.detect_judgment_check,
+                                      det.detect_answer_numbers)
+                          for f in d(ctx)])
         out[sid] = {"turns": found,
                     "scenario": det.detect_expectations(flow,
                                                         [_Turns(recs)])}
