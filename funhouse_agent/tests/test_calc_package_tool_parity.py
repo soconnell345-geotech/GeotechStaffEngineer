@@ -472,7 +472,8 @@ def _mononobe_okabe():
     KAE = mononobe_okabe_KAE(phi, delta, kh, kv)
     # KA not given: Rankine Ka from phi, as the tool works it out (GM-120)
     KA = math.tan(math.radians(45.0 - phi / 2.0)) ** 2
-    f = seismic_earth_pressure(19.0, 5.0, KAE, KA)
+    # PAE carries (1 - kv), UFC 3-220-20 Eq. 4-16 (GM-149)
+    f = seismic_earth_pressure(19.0, 5.0, KAE, KA, kv=kv)
     return SeismicEarthPressureResult(
         KAE=KAE, KPE=mononobe_okabe_KPE(phi, delta, kh, kv),
         PAE_total=f["PAE_total_kN_per_m"],

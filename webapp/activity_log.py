@@ -34,7 +34,9 @@ Record shape (one JSON object per line)::
 model, with ``GEOTECH_COVERAGE`` on), the app events of
 :data:`APP_EVENTS` (``cited_pages``: the answer's page citations checked
 against the pages opened; ``cited_documents``: the documents an answer or a
-writer cites, checked against what was looked up), and -- since 2026-10-09 (live smoke
+writer cites, checked against what was looked up; ``judgment_check``: the
+answer's "Judgment calls" list checked for calls with no source, and
+whether it was sent back), and -- since 2026-10-09 (live smoke
 wave 1, G11) -- ``tool_delivered`` (what the model RECEIVED from a tool call,
 when the agent's middleware changed the tool's own output) and
 ``tool_refused`` (a call no tool ran: an unknown tool name, an
@@ -122,7 +124,8 @@ TASK_TOOL = "task"
 #: ``where`` (``answer`` or the writer), ``action``; ``funhouse_agent.
 #: cited_documents``, BACKLOG EV-21).
 APP_EVENTS = frozenset({"helper_kept", "helper_queued", "model_busy",
-                        "pacer_wait", "cited_pages", "cited_documents"})
+                        "pacer_wait", "cited_pages", "cited_documents",
+                        "judgment_check"})
 
 PRIMARY = "primary"
 

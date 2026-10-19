@@ -265,6 +265,13 @@ worked-example numeric validation** (no `validation_examples` anchor), so they
 rest on the transcribed nominal values alone. Wiki-wishlist: GEC-4 Table 4,
 PTI DC35.1 strand/bar tables, ASTM A722/A416.
 
+Tendon limits (GM-160, 2026-10-19): GEC-4 Sec. 5.3.8 (p. 77) - design load
+<= 0.60 SMTS (`max_load_pct`), lock-off <= 0.70 SMTS, maximum test load <=
+0.80 SMTS. With the 150 % performance test the test-load limit allows 0.53
+SMTS and governs unless `max_load_pct` is below that; `tendon.governed_by`
+names the limit. Bars were held to the design-load limit only: a 32 mm bar
+at DL 500 kN (88 % SMTS at the test load) is now a 36 mm bar.
+
 ## Future Work
 
 - Full ACI 318 concrete design for secant/diaphragm walls

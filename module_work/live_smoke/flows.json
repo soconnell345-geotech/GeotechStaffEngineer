@@ -1,5 +1,5 @@
 {
- "about": "Multi-turn Tiny Apps tester scenarios for the live smoke harness (module_work/live_smoke/run.py flow). PUBLIC documents only: Review-suite document ids (Mecklenburg County standard details, UFC manuals, the app's sample calc packages, planlens synthetic fixtures), {\"file\": ...} from geotech-references/docs (FHWA/UFC only), {\"sample\": ...} from funhouse_agent/eval_samples, {\"render\": ...} screenshots cut from those, {\"doc\": <ref>, \"name\": ...} any of those renamed, {\"make\": {\"kind\": ...}} files generated in docs.py (a stamped sheet set C-1..C-10, an invented spec section as PDF or DOCX that contradicts some sheets, a submittal-log XLSX, a DXF plan, a JPEG phone photo, a scan, a sideways sheet, a blank PDF, planlens' synthetic report). Every flow runs as a Tiny Apps user (IIS header identity LIVESMOKE\\tester) unless it names another; SharePoint is the local fake library. Step keys: upload | paste (+say) | say | say + together_with ({\"as\", \"say\"} or a list: sent at the same moment, in threads; those sessions must have acted before) | new_conversation | open (\"previous\" or an index) | restart | restore; \"as\" picks a session. An upload of a type the app's uploader does not take (core.ACCEPTED_UPLOAD_TYPES, e.g. .docx/.xlsx) is refused before the app sees it, as Streamlit refuses it. 'cost' is a rough tier for --max-cost; 'expect' is soft (whether the flow exercised the plumbing it was written for), never a pass/fail: 'tools_any', 'artifact_ext', 'answer_names' (phrases or case-insensitive regexes, or {\"name\", \"any\": [...]}, that the flow's final answer must contain; EV-26), and 'cards' (EV-24: the download cards the flow ends with, each {\"kind\": \"figure\" | \"image\" | \"chart\" | an extension, \"pattern\": a regex on the file name, \"count\" or \"min\"/\"max\", \"looked_at\": true}; with looked_at, a matching figure card no look read is a medium finding of detector (k)). 'reader_checks' lists what the trace read should check in the figure or answer; no code checks them, the transcript prints them. 'env' sets switches for the flow; a pair of flows that differ only in a switch (F52/F52h, F61/F61j) runs both arms in one wave.",
+ "about": "Multi-turn Tiny Apps tester scenarios for the live smoke harness (module_work/live_smoke/run.py flow). PUBLIC documents only: Review-suite document ids (Mecklenburg County standard details, UFC manuals, the app's sample calc packages, planlens synthetic fixtures), {\"file\": ...} from geotech-references/docs (FHWA/UFC only), {\"sample\": ...} from funhouse_agent/eval_samples, {\"render\": ...} screenshots cut from those, {\"doc\": <ref>, \"name\": ...} any of those renamed, {\"make\": {\"kind\": ...}} files generated in docs.py (a stamped sheet set C-1..C-10, an invented spec section as PDF or DOCX that contradicts some sheets, a submittal-log XLSX, a DXF plan, a JPEG phone photo, a scan, a sideways sheet, a blank PDF, planlens' synthetic report). Every flow runs as a Tiny Apps user (IIS header identity LIVESMOKE\\tester) unless it names another; SharePoint is the local fake library. Step keys: upload | paste (+say) | say | say + together_with ({\"as\", \"say\"} or a list: sent at the same moment, in threads; those sessions must have acted before) | new_conversation | open (\"previous\" or an index) | restart | restore; \"as\" picks a session. An upload of a type the app's uploader does not take (core.ACCEPTED_UPLOAD_TYPES, e.g. .docx/.xlsx) is refused before the app sees it, as Streamlit refuses it. 'cost' is a rough tier for --max-cost; 'expect' is soft (whether the flow exercised the plumbing it was written for), never a pass/fail: 'tools_any', 'artifact_ext', 'answer_names' (phrases or case-insensitive regexes, or {\"name\", \"any\": [...]}, that the flow's final answer must contain; EV-26), and 'cards' (EV-24: the download cards the flow ends with, each {\"kind\": \"figure\" | \"image\" | \"chart\" | an extension, \"pattern\": a regex on the file name, \"count\" or \"min\"/\"max\", \"looked_at\": true}; with looked_at, a matching figure card no look read is a medium finding of detector (k)), 'given_inputs' (GM-155, GM-167, GM-181: {\"package_given\": every calc package call names the user's inputs in `given`, \"brief_given\": every brief to calc has a GIVEN block, \"not_given\": [{\"name\", \"inputs\": package input names, \"any\": regexes}] the user did not state, never in a package's `given`, what a report composed with html_to_pdf prints as given, or a brief's GIVEN block}) and 'pdf_cites_consult' (GM-155 w13b fix 10: each composed report, and each calc package's assumptions, cites a document or work the references consult named, the consult finished before it was written). 'reader_checks' lists what the trace read should check in the figure or answer; no code checks them, the transcript prints them. 'env' sets switches for the flow; a pair of flows that differ only in a switch (F52/F52h, F61/F61j) runs both arms in one wave.",
  "flows": [
   {
    "id": "F01-review-orient-scale",
@@ -212,6 +212,14 @@
     {"say": "Compute the ultimate and allowable bearing capacity of a 2 m square footing 1 m deep in sand (phi = 32 degrees, unit weight 19 kN/m3, factor of safety 3) and give me a calculation package as a PDF."}
    ],
    "expect": {"artifact_ext": [".pdf"],
+    "given_inputs": {"package_given": true, "brief_given": true,
+     "not_given": [
+      {"name": "c = 0 (the user said sand, and gave no cohesion)", "inputs": ["cohesion", "c", "c_prime"], "any": ["cohesion", "(?<![\\w.'])c'?\\s*=\\s*0(?![.\\d])"]},
+      {"name": "the bearing capacity method (the user named none)", "inputs": ["factor_method", "ngamma_method", "method"], "any": ["vesi[cć]", "meyerhof", "hansen", "terzaghi"]},
+      {"name": "general shear (the user did not say how dense the sand is)", "inputs": ["failure_mode"], "any": ["general shear", "local shear", "punching"]},
+      {"name": "the water table (the user gave none)", "inputs": ["gwt_depth", "water_table", "water_table_depth", "groundwater_depth"], "any": ["ground ?water", "water table", "\\bgwt\\b"]}
+     ]},
+    "pdf_cites_consult": true,
     "answer_names": [
      {"name": "the bearing capacity method", "any": ["vesi[cć]", "meyerhof", "terzaghi", "hansen", "brinch"]},
      {"name": "the water table (not given)", "any": ["ground ?water", "water table", "\\bgwt\\b", "phreatic", "dewater", "(dry|moist|submerged|buoyant|effective) unit weight", "\\bno water\\b", "(above|below) the water"]},
@@ -234,6 +242,14 @@
     {"say": "Compute the ultimate and allowable bearing capacity of a 2 m square footing 1 m deep in sand (phi = 32 degrees, unit weight 19 kN/m3, factor of safety 3) and give me a calculation package as a PDF."}
    ],
    "expect": {"artifact_ext": [".pdf"],
+    "given_inputs": {"package_given": true, "brief_given": true,
+     "not_given": [
+      {"name": "c = 0 (the user said sand, and gave no cohesion)", "inputs": ["cohesion", "c", "c_prime"], "any": ["cohesion", "(?<![\\w.'])c'?\\s*=\\s*0(?![.\\d])"]},
+      {"name": "the bearing capacity method (the user named none)", "inputs": ["factor_method", "ngamma_method", "method"], "any": ["vesi[cć]", "meyerhof", "hansen", "terzaghi"]},
+      {"name": "general shear (the user did not say how dense the sand is)", "inputs": ["failure_mode"], "any": ["general shear", "local shear", "punching"]},
+      {"name": "the water table (the user gave none)", "inputs": ["gwt_depth", "water_table", "water_table_depth", "groundwater_depth"], "any": ["ground ?water", "water table", "\\bgwt\\b"]}
+     ]},
+    "pdf_cites_consult": true,
     "answer_names": [
      {"name": "the bearing capacity method", "any": ["vesi[cć]", "meyerhof", "terzaghi", "hansen", "brinch"]},
      {"name": "the water table (not given)", "any": ["ground ?water", "water table", "\\bgwt\\b", "phreatic", "dewater", "(dry|moist|submerged|buoyant|effective) unit weight", "\\bno water\\b", "(above|below) the water"]},
@@ -776,6 +792,13 @@
     {"say": "Make a short calc PDF for the report on our cantilever retaining wall: retained height 4.0 m, stem 0.35 m thick, base 2.8 m wide and 0.5 m thick with a 0.7 m toe; backfill level with the top of the wall, unit weight 19 kN/m3, friction angle 32 degrees, no water, 10 kPa surcharge on the backfill. Use Rankine active pressure. Include a figure of the wall drawn to scale with the active earth pressure and the surcharge pressure drawn beside it as separate diagrams, each resultant and its height above the base marked."}
    ],
    "expect": {"tools_any": ["task", "plot_code"], "cards": [{"kind": "pdf", "count": 1}, {"kind": "figure", "max": 1, "looked_at": true}],
+    "given_inputs": {"brief_given": true,
+     "not_given": [
+      {"name": "the total wall height H = 4.5 m (worked out from the retained height and the base)", "inputs": ["wall_height"], "any": ["4\\.5 ?m", "total (wall )?height"]},
+      {"name": "the concrete unit weight (not given)", "inputs": ["gamma_concrete"], "any": ["concrete (unit )?weight", "unit weight (of|for) (the )?concrete"]},
+      {"name": "the soil under the base (not given)", "inputs": ["phi_foundation", "c_foundation", "gamma_foundation", "delta_base", "base_adhesion"], "any": ["foundation soil", "(soil|ground) (under|beneath|below) the (base|footing|wall)", "base (friction|interface|adhesion)"]}
+     ]},
+    "pdf_cites_consult": true,
     "answer_names": [
      {"name": "where the Rankine pressure acts", "any": ["virtual (back|plane|wall)", "(vertical )?plane (through|at|above|from) the (back of the |end of the )?heel", "through the (back of the |end of the )?heel", "(back|end) of the heel"]},
      {"name": "the soil under the base (not given)", "any": ["base[- ]soil", "foundation soil", "(soil|ground) (under|beneath|below) the (base|footing|wall)", "base (friction|interface|adhesion)", "(sliding|interface) friction", "δ_?b\\b", "delta_?b(ase)?\\b", "2/3"]},
@@ -796,6 +819,13 @@
     {"say": "Make a short calc PDF for the report on our cantilever retaining wall: retained height 4.0 m, stem 0.35 m thick, base 2.8 m wide and 0.5 m thick with a 0.7 m toe; backfill level with the top of the wall, unit weight 19 kN/m3, friction angle 32 degrees, no water, 10 kPa surcharge on the backfill. Use Rankine active pressure. Include a figure of the wall drawn to scale with the active earth pressure and the surcharge pressure drawn beside it as separate diagrams, each resultant and its height above the base marked."}
    ],
    "expect": {"tools_any": ["task", "plot_code"], "cards": [{"kind": "pdf", "count": 1}, {"kind": "figure", "max": 1, "looked_at": true}],
+    "given_inputs": {"brief_given": true,
+     "not_given": [
+      {"name": "the total wall height H = 4.5 m (worked out from the retained height and the base)", "inputs": ["wall_height"], "any": ["4\\.5 ?m", "total (wall )?height"]},
+      {"name": "the concrete unit weight (not given)", "inputs": ["gamma_concrete"], "any": ["concrete (unit )?weight", "unit weight (of|for) (the )?concrete"]},
+      {"name": "the soil under the base (not given)", "inputs": ["phi_foundation", "c_foundation", "gamma_foundation", "delta_base", "base_adhesion"], "any": ["foundation soil", "(soil|ground) (under|beneath|below) the (base|footing|wall)", "base (friction|interface|adhesion)"]}
+     ]},
+    "pdf_cites_consult": true,
     "answer_names": [
      {"name": "where the Rankine pressure acts", "any": ["virtual (back|plane|wall)", "(vertical )?plane (through|at|above|from) the (back of the |end of the )?heel", "through the (back of the |end of the )?heel", "(back|end) of the heel"]},
      {"name": "the soil under the base (not given)", "any": ["base[- ]soil", "foundation soil", "(soil|ground) (under|beneath|below) the (base|footing|wall)", "base (friction|interface|adhesion)", "(sliding|interface) friction", "δ_?b\\b", "delta_?b(ase)?\\b", "2/3"]},

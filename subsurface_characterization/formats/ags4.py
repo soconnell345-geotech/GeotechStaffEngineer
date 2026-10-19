@@ -181,9 +181,15 @@ def validate_ags4(
         else:
             errors_clean[str(rule)] = str(messages)
 
-    n_errors = error_counts.get("Errors", 0) if isinstance(error_counts, dict) else 0
-    n_warnings = error_counts.get("Warnings", 0) if isinstance(error_counts, dict) else 0
-    n_fyi = error_counts.get("FYI", 0) if isinstance(error_counts, dict) else 0
+    # python-ags4 returns (errors, warnings, fyi); a dict was read here
+    # before and a tuple counted as no errors, so every file was valid
+    # (GM-160, found by the method probes).
+    if isinstance(error_counts, dict):
+        n_errors = error_counts.get("Errors", 0)
+        n_warnings = error_counts.get("Warnings", 0)
+        n_fyi = error_counts.get("FYI", 0)
+    else:
+        n_errors, n_warnings, n_fyi = (list(error_counts) + [0, 0, 0])[:3]
 
     return AGS4ValidationResult(
         filepath=source_name,

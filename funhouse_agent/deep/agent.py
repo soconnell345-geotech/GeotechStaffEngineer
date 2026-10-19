@@ -54,6 +54,7 @@ from funhouse_agent.deep.limits import (
     HELPER_EXHAUSTED,
     HELPER_FINAL_NUDGE,
     REFERENCE_HIDDEN_TOOLS,
+    UNRUNNABLE_TOOLS,
     HideTools,
     ModelCallBudgetMiddleware,
     helper_max_model_calls,
@@ -572,6 +573,21 @@ _CALC_JUDGMENT_CALLS = (
     "aside and what would change the result (a number only from a tool "
     "run). Leave out rounding and presentation.")
 
+#: Added after ``_CALC_JUDGMENT_CALLS`` (BACKLOG GM-181; GM-155 w13b §8
+#: fixes 2 and 10): a package's Given Inputs hold only what its call names
+#: in ``given`` (GM-167), so the helper passes the brief's GIVEN block
+#: there; and a bespoke calc PDF printed none of the consult's citations.
+_CALC_GIVEN_AND_CITATIONS = (
+    "\nGIVEN IN A PACKAGE: pass a *_package `given` naming each input the "
+    "delegation says the user gave, with the user's words as the "
+    "delegation quotes them ({input name: the user's words}); a value "
+    "worked out from those words, or chosen, goes in `assumptions` with "
+    "its basis.\n"
+    "CITATIONS: print each citation the delegation passes beside the "
+    "method or assumption it supports: in a report you compose "
+    "(html_to_pdf), next to it; in a *_package, in that assumption's "
+    "basis.")
+
 #: Appended to the PRIMARY agent's system prompt when the calc sub-agent is on,
 #: nudging it to delegate tool-heavy calc rather than run those tools inline.
 _CALC_DELEGATION_NUDGE = (
@@ -600,6 +616,41 @@ _CALC_DELEGATION_NUDGE = (
     "brief under assumptions, with its engineering basis, never among the "
     "user's inputs, and never reads as something found or measured."
 )
+
+#: Added to the delegation nudge with ``GEOTECH_JUDGMENT_CALLS`` on (BACKLOG
+#: GM-181; GM-155 w13b §8 fix 2): a calc package's Given Inputs hold only
+#: the inputs its call names in ``given`` (GM-167), so the brief carries the
+#: user's own words for the helper to pass there.
+_CALC_DELEGATION_GIVEN = (
+    " In a brief to `calc`, a GIVEN block quotes the user's own words for "
+    "each input they stated, and asks that a calc package pass those "
+    "inputs as `given` ({input name: the user's words}); a value you "
+    "derived from those words, or chose, goes under assumptions with its "
+    "basis, for the package's `assumptions`.")
+
+#: And where the references helper is built (w13b §8 fix 10): a bespoke
+#: calc PDF printed only the request's and the tools' citations, because
+#: the consult ran beside the delegation and the brief never carried its
+#: citations.
+_CALC_DELEGATION_CITATIONS = (
+    " For a deliverable that rests on judgment calls you can see coming (a "
+    "method, a value the user did not give), ask the `references` helper "
+    "before you delegate it, and pass its citations in the brief, each "
+    "beside the method or assumption it supports.")
+
+
+def calc_delegation_nudge(judgment_calls: bool = False,
+                          references: bool = True) -> str:
+    """The primary's nudge to delegate to ``calc``; with the judgment calls
+    on (``GEOTECH_JUDGMENT_CALLS``, the geotech prompt) it also asks for the
+    brief's GIVEN block and ``given``, and, where the references helper is
+    built, for the consult's citations in the brief."""
+    text = _CALC_DELEGATION_NUDGE
+    if judgment_calls:
+        text += _CALC_DELEGATION_GIVEN
+        if references:
+            text += _CALC_DELEGATION_CITATIONS
+    return text
 
 
 def build_calc_subagent(
@@ -658,9 +709,11 @@ def build_calc_subagent(
         # only built where openpyxl imports). analyze_image: the helper that
         # draws the figures can look at them (field session 2026-10-15: it
         # tried read_file on its PNG, was refused, and the figure went out
-        # unseen).
+        # unseen). analyze_pdf_page: and at the pages of the PDF it builds
+        # (GM-175; wave w13b F55j: asked to look at its pages, it had no
+        # page tool and called execute, then analyze_image on the PDF).
         include={"save_file", "list_files", "read_pdf_text", "read_text_file",
-                 "write_xlsx", "analyze_image"},
+                 "write_xlsx", "analyze_image", "analyze_pdf_page"},
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
     ) + [make_calculate_tool()]
@@ -688,7 +741,8 @@ def build_calc_subagent(
     from funhouse_agent import review_flags as _flags
     figure_looks = _flags.figure_helper() or _flags.plot_code()
     if _flags.judgment_calls():
-        system_prompt = system_prompt + _CALC_JUDGMENT_CALLS
+        system_prompt = (system_prompt + _CALC_JUDGMENT_CALLS
+                         + _CALC_GIVEN_AND_CITATIONS)
     if extra_tools:
         tools = list(tools) + list(extra_tools)
     if extra_system_prompt:
@@ -1281,6 +1335,10 @@ def build_deep_agent(
     # ``system_prompt`` REPLACES the geotechnical domain prompt — the
     # document-review page is a different agent over the same tools, not the
     # geotech agent with a suffix. ``extra_system_prompt`` still appends.
+    # Whether the prompt asks for a judgment-calls list after one consult
+    # of the references helper: the turn-end check (GM-174) acts only then.
+    judgment_consult = False
+    judgment_prompt = False
     if system_prompt is None:
         system_prompt = build_domain_prompt(allowed_agents,
                                             memory_enabled=enable_memory)
@@ -1291,6 +1349,8 @@ def build_deep_agent(
             # only: a page that brings its own prompt is unchanged.
             system_prompt += "\n\n" + judgment_calls_section(
                 references=reference_mode != "off")
+            judgment_consult = reference_mode != "off"
+            judgment_prompt = True
     if extra_system_prompt:
         # Appended AFTER the domain prompt (mirrors GeotechAgent.system_prompt_extra)
         # so a caller can re-cast the agent — e.g. the seismic reviewer's review-mode
@@ -1300,7 +1360,12 @@ def build_deep_agent(
     if enable_calc_subagent:
         # A2: nudge the primary to delegate tool-heavy calc to the `calc`
         # sub-agent so the bulky trace stays out of the main conversation.
-        system_prompt = system_prompt + "\n\n" + _CALC_DELEGATION_NUDGE
+        # With the judgment calls on, the brief also carries the user's own
+        # words for a package's `given` and the consult's citations
+        # (GM-181, GM-155 w13b fix 10).
+        system_prompt = system_prompt + "\n\n" + calc_delegation_nudge(
+            judgment_calls=judgment_prompt,
+            references=reference_mode != "off")
     # The whole-report ingest: one primary tool and one sub-agent, both OFF by
     # default. The tool hides itself on a planlens too old to serve the ingest
     # (the page roles and the log grid), so the pair is only really on when
@@ -1499,6 +1564,12 @@ def build_deep_agent(
                                   if m not in notes]
         extra_mw = [DeliveredToolResults(), *notes, ToolErrorGuard(),
                     LargeResultKeyMap(), ScratchFilesystemGuard()]
+        if "runnable" not in spec and not any(
+                isinstance(m, HideTools) and UNRUNNABLE_TOOLS <= m.hidden
+                for m in spec.get("middleware") or []):
+            # deepagents' shell and delete cannot run on this backend
+            # (GM-176); a helper that already hides them keeps its own.
+            extra_mw.append(HideTools(UNRUNNABLE_TOOLS))
         if "runnable" not in spec:
             # What the helper reads and writes, recorded as it happens, so
             # a helper that stops can hand it back as a file (TA-21).
@@ -1538,7 +1609,8 @@ def build_deep_agent(
                              DeliveredToolResults(),
                              ToolErrorGuard(),
                              LargeResultKeyMap(),
-                             ScratchFilesystemGuard()]
+                             ScratchFilesystemGuard(),
+                             HideTools(UNRUNNABLE_TOOLS)]       # GM-176
                           + ([UnknownToolHint(allowed_agents)]
                              if allowed_agents else [])
                           + [OutputLimitGuard()]})
@@ -1607,6 +1679,10 @@ def build_deep_agent(
         # none of the user's files and answered "not found" for them (wave
         # 2b, F41); they are kept off this page's menu and prompt.
         middleware.append(HideScratchFilesystem())
+    else:
+        # The geotech page: deepagents' shell and delete cannot run on this
+        # backend (GM-176; wave w13b F55j called execute with no command).
+        middleware.append(HideTools(UNRUNNABLE_TOOLS))
     # The review page: a model-call budget whose last call answers from what
     # was gathered, so a long turn ends with findings and what was not
     # checked, never a GraphRecursionError (DR-03). With the coverage gate
@@ -1687,6 +1763,9 @@ def build_deep_agent(
             "switches": _rf.describe(),
             "prompt_chars": len(system_prompt or ""),
         }
+        # The turn-end judgment-call check (GM-174) reads this in
+        # webapp.core.stream_turn (funhouse_agent.judgment_check.mode_for).
+        agent.geotech_judgment_consult = judgment_consult
         if page_budget:
             # The host's step cap is raised to fit the budget, so the budget,
             # not a GraphRecursionError, ends a long request (webapp

@@ -13,6 +13,11 @@ from typing import Dict, List, Optional
 
 SEV_ORDER = {"high": 0, "medium": 1, "low": 2, "info": 3}
 
+#: Detectors whose 'info' findings are the measurement itself, so REPORT.md
+#: and the transcripts list them: the flow's expectations, and the app's
+#: judgment-call check (GM-174: did it send an answer back?).
+SHOWN_INFO = ("i_expectations", "l_judgment_check")
+
 DETECTOR_TITLES = {
     "a_files_outside": "(a) Files outside the conversation folder",
     "b_answer_links": "(b) Answer links",
@@ -25,6 +30,8 @@ DETECTOR_TITLES = {
     "i_expectations": "(i) Flow expectations (model choices, not bugs)",
     "j_conversation": "(j) Conversation record (meta, titles, owner)",
     "k_figure_cards": "(k) Figure cards (stale draws, cards no look read)",
+    "l_judgment_check": "(l) Judgment-call check (answers sent back, calls "
+                        "with no source)",
     "harness": "Harness problems",
 }
 
@@ -138,7 +145,7 @@ def write_report(wave_dir: str, *, ledger=None, wave: Optional[str] = None
     # -- findings by detector
     L += ["", "## Findings by detector", ""]
     real = [f for f in findings if f["severity"] != "info"
-            or f["detector"] in ("i_expectations",)]
+            or f["detector"] in SHOWN_INFO]
     if not real:
         L.append("No findings.")
     groups: Dict[str, Dict[tuple, List[dict]]] = {}
@@ -245,7 +252,12 @@ def write_transcript(path: str, flow: dict, turns: List[dict],
         if t.get("sp_web_url"):
             L.append(f"**Sidebar folder link:** {t['sp_web_url']}")
             L.append("")
-        fs = [f for f in t.get("findings") or [] if f["severity"] != "info"]
+        if m.get("judgment_checks"):
+            L.append(f"**Judgment-call check:** read {m['judgment_checks']} "
+                     f"answer(s), sent {m.get('judgment_retries', 0)} back")
+            L.append("")
+        fs = [f for f in t.get("findings") or [] if f["severity"] != "info"
+              or f["detector"] in SHOWN_INFO]
         if fs:
             L.append("**Findings:**")
             for f in sorted(fs, key=lambda f: SEV_ORDER[f["severity"]]):

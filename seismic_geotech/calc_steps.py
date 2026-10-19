@@ -481,16 +481,27 @@ def _steps_earth_pressure(result, analysis) -> List[CalcSection]:
         gamma, H = a.get("gamma"), a.get("H")
         g_txt = f"{gamma:.1f}" if gamma is not None else "\u03b3"
         H_txt = f"{H:.2f}" if H is not None else "H"
+        # the kv in PAE: the run's, except where M-O has no solution and
+        # the Seed & Whitman KAE leaves it out (GM-149)
+        from seismic_geotech.mononobe_okabe import mo_no_solution
+        kv_force = (0.0 if mo_no_solution(r.phi, r.kh, r.kv,
+                                          a.get("i", 0.0) or 0.0)
+                    else r.kv)
 
         force_items = []
         force_items.append(CalcStep(
             title="Total Seismic Active Force",
-            equation="PAE = 0.5 \u00d7 \u03b3 \u00d7 H\u00b2 \u00d7 KAE",
-            substitution=f"PAE = 0.5 \u00d7 {g_txt} \u00d7 {H_txt}\u00b2 \u00d7 {r.KAE:.4f}",
+            equation=("PAE = 0.5 \u00d7 \u03b3 \u00d7 H\u00b2 \u00d7 "
+                      "(1 - k_v) \u00d7 KAE"),
+            substitution=(f"PAE = 0.5 \u00d7 {g_txt} \u00d7 {H_txt}\u00b2 "
+                          f"\u00d7 (1 - {kv_force:.3f}) \u00d7 {r.KAE:.4f}"),
             result_name="PAE",
             result_value=f"{r.PAE_total:.2f}",
             result_unit="kN/m",
-            reference="Seed & Whitman (1970); FHWA GEC-3",
+            reference="UFC 3-220-20 Eq. 4-16 (p. 215); Seed & Whitman (1970)",
+            notes=("M-O has no solution here: the Seed & Whitman KAE "
+                   "leaves k_v out, and so does PAE" if kv_force != r.kv
+                   else ""),
         ))
 
         force_items.append(CalcStep(

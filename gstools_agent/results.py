@@ -157,7 +157,9 @@ class VariogramResult:
     len_scale : float
         Fitted correlation length.
     nugget : float
-        Fitted nugget.
+        The nugget: fitted, or as given (``nugget_fitted``).
+    nugget_fitted : bool
+        Whether the nugget was fitted (True) or fixed at the value given.
     bin_center : np.ndarray or None
         Bin centers (lag distances).
     gamma : np.ndarray or None
@@ -173,6 +175,7 @@ class VariogramResult:
     variance: float = 0.0
     len_scale: float = 0.0
     nugget: float = 0.0
+    nugget_fitted: bool = True
     bin_center: Optional[np.ndarray] = None
     gamma: Optional[np.ndarray] = None
     pair_counts: Optional[np.ndarray] = None
@@ -201,6 +204,7 @@ class VariogramResult:
             "variance": float(self.variance),
             "len_scale": float(self.len_scale),
             "nugget": float(self.nugget),
+            "nugget_fitted": bool(self.nugget_fitted),
         }
         if self.bin_center is not None:
             d["bin_center"] = [float(x) for x in self.bin_center]

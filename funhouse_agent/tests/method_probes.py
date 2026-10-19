@@ -11,14 +11,42 @@ default. A few probes also give a seed (a sampler with its own generator)
 or a coarse mesh or search grid (the guard runs each probe twice), so
 those defaults are the ones not checked here.
 
+A file reader's probe names a sample in ``funhouse_agent/eval_samples/``
+as ``"<eval_samples>/<file>"``, or a test fixture as ``"<repo>/<path>"``,
+made an absolute path here (the guard runs each probe in a scratch
+folder); a probe whose method needs an optional
+backend names it under ``"needs"`` (an importable module), and the guard
+skips it where that is not installed.
+
 Each method either has a probe or is in :data:`EXCLUDED` with the reason.
 """
 
 import json
 from pathlib import Path
 
-PROBES = json.loads((Path(__file__).with_name("method_probes.json"))
-                    .read_text(encoding="utf-8"))
+#: The sample files the file readers' probes read (GM-160).
+REPO = Path(__file__).resolve().parents[2]
+SAMPLES = REPO / "funhouse_agent" / "eval_samples"
+_TAGS = {"<eval_samples>/": SAMPLES, "<repo>/": REPO}
+
+
+def _with_samples(x):
+    """``x`` with every ``"<eval_samples>/<file>"`` or ``"<repo>/<path>"``
+    made an absolute path."""
+    if isinstance(x, str):
+        for tag, root in _TAGS.items():
+            if x.startswith(tag):
+                return str(root / x[len(tag):])
+    if isinstance(x, dict):
+        return {k: _with_samples(v) for k, v in x.items()}
+    if isinstance(x, list):
+        return [_with_samples(v) for v in x]
+    return x
+
+
+PROBES = _with_samples(json.loads(
+    (Path(__file__).with_name("method_probes.json")).read_text(
+        encoding="utf-8")))
 
 _FILE = "reads a file the call names; no file fixture here"
 _HANDLE = "works on a handle an earlier file read returned"
@@ -30,8 +58,6 @@ EXCLUDED = {
     "drawing_ir|query_drawing": _HANDLE,
     "drawing_ir|search_drawing_set": _FILE,
     "drawing_ir|snip_region": _FILE,
-    "dxf_import|discover_layers": _FILE,
-    "dxf_import|parse_geometry": _FILE,
     "pdf_import|build_fem_inputs": _HANDLE,
     "pdf_import|build_slope_geometry": _HANDLE,
     "pdf_import|cleanup_geometry": _HANDLE,
@@ -40,13 +66,6 @@ EXCLUDED = {
     "pdf_import|extract_vector_geometry": _FILE,
     "pdf_import|propose_role_mapping": _HANDLE,
     "pdf_import|propose_scale": _HANDLE,
-    "subsurface|parse_bore": _FILE,
-    "subsurface|parse_cpt": _FILE,
-    "subsurface|parse_diggs": _FILE,
-    "subsurface|read_ags4": _FILE,
-    "subsurface|validate_ags4": _FILE,
-    "subsurface|validate_diggs_dictionary": _FILE,
-    "subsurface|validate_diggs_schema": _FILE,
     "opensees|pm4sand_cyclic_dss": "needs OpenSeesPy, an optional backend "
                                    "that is not always present",
     "opensees|site_response_1d": "needs OpenSeesPy, an optional backend "
@@ -77,6 +96,20 @@ ECHO_IS_NOT_THE_INPUT = {
     ("reliability|pem", "scheme"): "the scheme's full name",
     ("salib|sobol_analysis", "n_samples"): "the model outputs analysed",
 }
+
+#: Declared inputs that change nothing in their probe's result by design
+#: (GM-160): ``(probe key, name) -> what the input does``. The guard
+#: gives every default a probe's run listed (``defaults_used``) another
+#: value and fails where the result does not move, past the input's own
+#: echo and the result's ``choices``; an input here is skipped. A name
+#: whose effect the probe's inputs cannot show (a clamp the probe does not
+#: reach, a branch it does not take) goes in :data:`NOT_REACHED`, never
+#: here.
+LABEL_ONLY = {}
+
+#: Declared inputs that act, but not on their probe's inputs: ``(probe
+#: key, name) -> why the probe does not show it``.
+NOT_REACHED = {}
 
 #: Mismatches the guard finds and leaves, each with its BACKLOG item.
 #: slope_stability is frozen by the owner until the integral review.

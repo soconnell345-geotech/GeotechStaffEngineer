@@ -437,29 +437,23 @@ def validate_diggs_dictionary(
             output_log=False  # Don't write .log files
         )
 
-        # Run dictionary validation
-        v.dictionary_check()
-
-        # Check validation results — attribute only exists when errors found
-        if getattr(v, 'dictionary_validation_log', None) is None:
-            # None means valid
-            return DiggValidationResult(
-                source=source,
-                check_type="dictionary",
-                is_valid=True,
-                n_errors=0,
-                errors=[]
-            )
-        else:
-            # Has undefined properties
-            errors = v.dictionary_validation_log
-            return DiggValidationResult(
-                source=source,
-                check_type="dictionary",
-                is_valid=False,
-                n_errors=len(errors),
-                errors=errors
-            )
+        # Run dictionary validation. pydiggs (1.1 here) returns whether
+        # there were no ERRORs and logs every message, "[SEVERITY] ...",
+        # passing or not; older releases returned None and set the log only
+        # when it found errors. Reading the log alone called a pass with
+        # an empty log invalid (GM-160, found by the method probes).
+        ok = v.dictionary_check()
+        log = list(getattr(v, 'dictionary_validation_log', None) or [])
+        errors = [m for m in log if not str(m).startswith(
+            ("[WARNING]", "[INFO]"))]
+        is_valid = ok if isinstance(ok, bool) else not errors
+        return DiggValidationResult(
+            source=source,
+            check_type="dictionary",
+            is_valid=is_valid,
+            n_errors=0 if is_valid else len(errors),
+            errors=[] if is_valid else errors
+        )
 
     finally:
         # Clean up temp file if created

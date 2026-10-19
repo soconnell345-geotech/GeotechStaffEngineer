@@ -171,8 +171,8 @@ excavation. It now runs on `analyze_staged`:
    allows) and the thrust fell to 0.18 gamma H^2/2 against Ka = 0.271
    (moment 66 against 155 kN-m/m smooth); bonded, the clay cases of the
    table below move the wall head back into the soil (-0.1 to -2.0 mm).
-   Wall friction between 0 and phi' needs
-   interface elements, which fem2d does not have.
+   `'interface'` (GM-72, 2026-10-19; section "Wall friction" below): wall
+   friction delta between 0 and phi'.
 5. **Water** (`excavation_water`, GM-73, 2026-10-15; section "Dewatered
    excavation" below). The table `gwt` is the in-situ table and is held
    outside the excavation. Inside, where the table is above the excavation
@@ -343,6 +343,89 @@ above with the water table at the ground (30 x 15, T6; "before" = today's
 
 (width 10 m, so the flow up in front of the wall is confined by the centre
 line 5 m away; with no seepage the net pressure would be 49.1 kPa.)
+
+### Wall friction: `wall_contact='interface'` (GM-72, 2026-10-19)
+
+**The element.** A zero-thickness joint lumped at each node pair of the
+cut (a Goodman-type joint element integrated at its nodes, node-to-node
+contact). The wall already has its own nodes tied to each soil face by a
+spring pair (`analyze_staged(springs=)`); the joint keeps the smooth wall's
+normal tie and adds a tangential force
+
+    T = ks (s - s_p),   |T| <= N' tan(delta) + c_a L
+
+(elastic-perfectly-plastic, Mohr-Coulomb; `solver._iface_force`). N' is the
+compressive normal force of the tie less, where the wall carries the water
+(a dewatered excavation, `wall_face_nodes`), u L; L is the face length the
+node stands for (T6: 1/6, 2/3, 1/6 of each element side, the consistent
+nodal shares, so a uniform traction gives the same ratio T/N at every
+node); s_p is the plastic slip, committed per load step and carried from
+stage to stage; a joint is placed stress-free with its tie (s_p starts at
+the relative movement then). Return mapping: a trial T over the limit is
+put back on it and the excess becomes slip. In the constant-stiffness
+iteration ks sits in the factorized matrix and the joint's force is
+recomputed each iteration, as the soil's stresses are.
+
+Why this and not a thin layer of continuum elements with reduced strength:
+the wall is already joined to the soil by node pairs on a cut mesh, so a
+joint needs no change to the mesh, the wall friction angle is an input
+rather than the outcome of a thin element's Mohr-Coulomb return, and thin
+elements (aspect ratios of 10 to 100) stiffen and slow the iteration.
+
+**Choices.** ks = G / (0.5 h) per unit length (G of the soil beside the
+joint, h the element side along the wall): at 0.1 h the iteration stalled
+where joints slip (the USS cantilever at delta/phi' = 0.5 did not converge
+in 1000 iterations a step); at 0.5 h and 2 h it converges and the moment
+differs by 0.1 %. The normal tie does not open (tension carried, as for
+'smooth'). The tip is tied both ways (the wall bears on the soil). A
+joint with delta = 0 and no adhesion is left out, so `interface_delta=0`
+is the smooth wall exactly. delta is given (`interface_delta`, 0 to 45
+deg) or as delta/phi' per layer (`interface_ratio`); there is no default
+(UFC 3-220-20, 2025, Table 4-1, p. 184, and Caltrans T&S Manual, 2025,
+Table 4-2, p. 4-15: steel sheet piles against clean sand 17 deg, formed
+concrete 17-22 deg); adhesion `interface_adhesion` (kPa, default 0). Above
+about 80 deg the first lift failed to converge (tan delta amplifies the
+switching of joints near N' = 0), hence the 45 deg cap.
+
+**Verification** (`tests/test_excavation_interface.py`). A rigid wall 4 m
+high translated against sand (phi' = 30, E = 20 MPa, 20 x 20 T6 under and
+beside it, the soil below the heel on rollers), horizontal thrust on the
+wall against Coulomb's K_A (UFC 3-220-20 Table 4-2, p. 194: 0.30 at
+delta/phi' = 0.5 and 1) for the wall moved 1 % of its height away (psi =
+0), and Caquot-Kerisel's Kp (Caltrans Figure 4-20, p. 4-30: 6.3 x R) for
+5 % into the soil (psi = phi', the associated flow the log-spiral solution
+assumes):
+
+| case | delta (deg) | fem2d P_h (kN/m) | reference (kN/m) | difference |
+|---|---|---|---|---|
+| active | 0 | 46.8 | 48.0 (Rankine) | -2.5 % |
+| active | 15 | 41.0 | 41.9 (Coulomb) | -2.1 % |
+| active | 30 | 37.0 | 37.1 (Coulomb) | -0.2 % |
+| passive | 0 | 433.0 | 432.0 (Rankine) | +0.2 % |
+| passive | 12 | 594.6 | 608.6 (C-K, R 0.686) | -2.3 % |
+| passive | 15 | 646.9 | 653.6 (C-K, R 0.746) | -1.0 % |
+| passive | 21 | 748.5 | 743.4 (C-K, R 0.878) | +0.7 % |
+
+Tolerance 5 %: the heel node sits on the rollers, not on the wall (its
+share L p / 6 is about 3 % of the thrust here), the heel corner is a stress
+singularity, and the chart reads to about 1.6 %. In the active runs the
+wall shear is tan(delta) times the thrust to within 0.01. Not reached:
+passive with delta = phi' (the run stops converging at 43 % of the
+Caquot-Kerisel thrust), and passive with psi = 0 and delta > 0 (at delta =
+15 it stops at 538 kN/m, -18 %): non-associated flow gives less than the
+plasticity solution.
+
+The USS cantilever (pp. 86-90, the GM-71 benchmark) with the manual's own
+delta/phi' = 0.5: M_max 98.7 kN-m/m from fem2d, 98.7 from the conventional
+method with Coulomb's K_A at 17.5 deg and the manual's Kp = 6.56, both
+times cos delta (117.1 with the manual's Ka = 0.27 and Kp = 6.56 as
+printed). On the same wall: smooth 155.2, delta/phi' = 0.5 98.7, 1.0 80.9,
+45 deg 75.7, bonded 65.7 kN-m/m; adhesion 10 MPa (no slip) 65.6, the
+bonded value. On the retained side the joints mobilize the given
+17.5 deg at delta/phi' = 0.5 (12 of 14 joints slip). At delta = phi' =
+35 the 8 joints from the ground to about 1.5 m below the excavation level
+slip at 35 deg; the 5 deeper joints carry 33 to 52 % of their limit, so
+the summed forces lean at 23.6 deg. The default (smooth) is unchanged.
 
 ### Mesh Generation
 

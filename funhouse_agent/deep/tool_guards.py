@@ -360,33 +360,12 @@ class HideScratchFilesystem(_hide_tools_base()):
     ``read_file('/Submittal Log.xlsx')`` answered "not found" for a file the
     conversation held, and an unknown-tool error listed them as if they
     were the page's tools). They stay registered, so a result deepagents
-    saved to scratch (a very large tool result) can still be read back."""
+    saved to scratch (a very large tool result) can still be read back. An
+    unknown-tool error's list of tools leaves them out (:class:`HideTools`,
+    F31)."""
 
     def __init__(self, names=SCRATCH_TOOLS):
         super().__init__(names)
-
-    def _unlisted(self, request, result):
-        """An unknown-tool error lists every REGISTERED tool; the hidden ones
-        are taken out of that list too (F31's listed them as the page's)."""
-        import re
-        if getattr(request, "tool", None) is not None or \
-                not isinstance(result, ToolMessage) or \
-                not isinstance(result.content, str):
-            return result
-        m = re.search(r"try one of \[([^\]]*)\]", result.content)
-        if not m:
-            return result
-        kept = [n.strip() for n in m.group(1).split(",")
-                if n.strip() and n.strip().strip("'\"") not in self.hidden]
-        return result.model_copy(update={"content": (
-            result.content[:m.start(1)] + ", ".join(kept)
-            + result.content[m.end(1):])})
-
-    def wrap_tool_call(self, request, handler):
-        return self._unlisted(request, handler(request))
-
-    async def awrap_tool_call(self, request, handler):
-        return self._unlisted(request, await handler(request))
 
     def _filtered(self, request):
         request = super()._filtered(request)

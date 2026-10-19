@@ -1252,6 +1252,10 @@ def make_vision_tools(
             # An image FILE (a contact sheet) is shown to the main model like
             # the inline page tools' images; an upload keeps the vision call.
             args["_inline"] = True
+        # A file that is not an image is answered with the tools that read
+        # it, of those this agent has (GM-175: the calc helper was told to
+        # use analyze_pdf_page, which it did not have).
+        args["_tools"] = sorted(include)
         _wait_for_drawing(attachment_key)
         return _dispatch("analyze_image", args)
 

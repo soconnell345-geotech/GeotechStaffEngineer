@@ -2334,27 +2334,41 @@ def _image_kind(data: bytes) -> Optional[str]:
     return None
 
 
-def _not_an_image_message(data: bytes, name: str) -> str:
+def _not_an_image_message(data: bytes, name: str, tools=None) -> str:
+    """What a file that is not an image is, and the tools that read it --
+    of ``tools`` (the caller's own tool names) when given, so a helper is
+    never sent to a tool it does not have (BACKLOG GM-175: the calc helper
+    was told to use analyze_pdf_page). ``None``: every tool named."""
     ext = os.path.splitext(name)[1].lower()
     shown = os.path.basename(name.replace("\\", "/")) or name
+
+    def has(tool):
+        return tools is None or tool in tools
+
+    text_tip = (": read it with read_text_file." if has("read_text_file")
+                else ".")
     if data[:5] == b"%PDF-" or ext == ".pdf":
-        return (f"'{shown}' is a PDF, not an image: look at a page with "
-                f"analyze_pdf_page, or open it with open_document.")
+        ways = [w for t, w in (
+            ("analyze_pdf_page", "look at a page with analyze_pdf_page"),
+            ("open_document", "open it with open_document")) if has(t)]
+        if not ways and has("read_pdf_text"):
+            ways = ["read its text with read_pdf_text"]
+        return (f"'{shown}' is a PDF, not an image: "
+                + (", or ".join(ways) if ways
+                   else "no tool here shows its pages") + ".")
     from funhouse_agent import office_text
     if office_text.is_office_file(name) or ext in office_text.LEGACY_OFFICE:
-        return (f"'{shown}' is a Word/Excel file, not an image: read it with "
-                f"read_text_file.")
+        return f"'{shown}' is a Word/Excel file, not an image{text_tip}"
     if data[:4] == b"PK\x03\x04":
         return (f"'{shown}' is a zip-based document (an Office file?), not "
                 f"an image.")
     if data and b"\x00" not in data[:4096]:
-        return (f"'{shown}' is a text file, not an image: read it with "
-                f"read_text_file.")
+        return f"'{shown}' is a text file, not an image{text_tip}"
     return (f"'{shown}' is not an image this tool can send (PNG, JPEG, "
             f"WebP, GIF, TIFF or BMP).")
 
 
-def _image_for_vision(data: bytes, name: str, engine=None):
+def _image_for_vision(data: bytes, name: str, engine=None, tools=None):
     """``(bytes, note)`` to send for an image file: PNG, JPEG and WebP as
     they are; GIF, TIFF and BMP converted to PNG (the first frame or page;
     held to the vision model's largest edge). Raises :class:`NotAnImage`
@@ -2365,7 +2379,8 @@ def _image_for_vision(data: bytes, name: str, engine=None):
     if kind in ("png", "jpeg", "webp"):
         return data, None
     if kind is None:
-        raise NotAnImage(_not_an_image_message(data, str(name or "")))
+        raise NotAnImage(_not_an_image_message(data, str(name or ""),
+                                               tools))
     import io
     try:
         from PIL import Image
@@ -2398,7 +2413,7 @@ def _image_for_vision(data: bytes, name: str, engine=None):
     return buf.getvalue(), note
 
 
-def _open_image(data, name):
+def _open_image(data, name, tools=None):
     """``(picture, refusal)`` for an image file: the decoded
     :class:`image_view.Picture`; or a JSON refusal for bytes that are not an
     image (naming the tool that reads them) or a damaged GIF, TIFF or BMP;
@@ -2409,7 +2424,7 @@ def _open_image(data, name):
     kind = _image_kind(data)
     if kind is None:
         return None, json.dumps({"error": _not_an_image_message(
-            data, str(name or ""))})
+            data, str(name or ""), tools)})
     try:
         from funhouse_agent import image_view
         return image_view.open_picture(data, kind), None
@@ -2445,6 +2460,9 @@ def _dispatch_analyze_image(arguments, engine, attachments):
     if turn_error:
         return json.dumps({"error": turn_error, "accepted": TURN_ACCEPTED})
 
+    # The caller's own tools, so a file that is not an image is answered
+    # with tools it has (GM-175); absent, every tool is named.
+    tools = arguments.get("_tools")
     try:
         image_data, src = _resolve_attachment_or_path(key, attachments)
     except FileNotFoundError as e:
@@ -2452,14 +2470,15 @@ def _dispatch_analyze_image(arguments, engine, attachments):
 
     if arguments.get("_inline") and src == "path":
         try:
-            shown, _note = _image_for_vision(image_data, key, engine)
+            shown, _note = _image_for_vision(image_data, key, engine,
+                                             tools)
         except NotAnImage as e:
             return json.dumps({"error": str(e)})
         inline = _inline_image_file_result(shown, key)
         if inline is not None:
             return json.dumps(inline)
 
-    picture, refusal = _open_image(image_data, key)
+    picture, refusal = _open_image(image_data, key, tools)
     if refusal is not None:
         return refusal
     if picture is not None:
