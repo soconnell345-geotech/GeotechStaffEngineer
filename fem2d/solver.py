@@ -246,7 +246,8 @@ def build_nl_context(nodes, elements, material_props, gamma, bc_nodes,
                      t=1.0, beam_elements=None, rotation_dof_map=None,
                      pore_pressures=None, active_elements=None,
                      active_beams=None, surface_loads=None,
-                     strut_springs=None, n_gp=None, extra_forces=None):
+                     strut_springs=None, n_gp=None, extra_forces=None,
+                     interfaces=None):
     """Precompute everything load- and mesh-dependent for nonlinear runs.
 
     The returned context can be reused across multiple `run_nl` calls with
@@ -260,6 +261,16 @@ def build_nl_context(nodes, elements, material_props, gamma, bc_nodes,
     water standing on free faces, ``porewater.standing_water_forces``).
     The rotation DOF of a beam node that no ACTIVE beam touches is fixed
     (an inactive beam has no stiffness to hold it).
+    ``interfaces`` : dict of equal-length arrays, optional — wall/soil
+    joints (GM-72): a node pair with a Mohr-Coulomb slip limit on its
+    tangential force (see ``_iface_force``). Keys 'a_t', 'b_t' (tangential
+    DOFs of the wall and soil node), 'a_n', 'b_n' (normal DOFs), 'ks'
+    (tangential stiffness, kN/m per m run), 'kn' (the stiffness of the
+    linear normal tie between the same nodes, already in the springs),
+    'n_off' (that tie's stretch at placement), 'sgn' (+1 when the soil is on
+    the -x side of the wall, -1 on the +x side), 'tan_d' (tan delta), 'adh'
+    (adhesion force, kN per m run), 'n_water' (pore-water force the normal
+    tie carries, subtracted to give the effective normal force).
     """
     from fem2d.assembly import assemble_gravity, assemble_surface_load
 
@@ -383,6 +394,19 @@ def build_nl_context(nodes, elements, material_props, gamma, bc_nodes,
                 bc_dofs.add(2 * ni + 1)
     bc_dofs = np.array(sorted(bc_dofs), dtype=int)
 
+    # Wall/soil joints (GM-72): their elastic tangential stiffness enters the
+    # iteration matrix; their force is computed with the slip limit.
+    iface, K_if = None, None
+    if interfaces is not None and len(interfaces.get('a_t', ())):
+        iface = {k: np.asarray(v, dtype=(int if k in ('a_t', 'b_t', 'a_n',
+                                                       'b_n') else float))
+                 for k, v in interfaces.items()}
+        a, b, ks = iface['a_t'], iface['b_t'], iface['ks']
+        K_if = coo_matrix(
+            (np.concatenate([ks, -ks, -ks, ks]),
+             (np.concatenate([a, a, b, b]), np.concatenate([a, b, a, b]))),
+            shape=(n_dof, n_dof)).tocsr()
+
     penalty = 1e20
     pen_diag = coo_matrix(
         (np.full(len(bc_dofs), penalty), (bc_dofs, bc_dofs)),
@@ -400,6 +424,7 @@ def build_nl_context(nodes, elements, material_props, gamma, bc_nodes,
         'beam_elements': beam_elements,
         'rotation_dof_map': rotation_dof_map,
         '_K_el_factor': None,
+        'iface': iface, 'K_if': K_if,
     }
 
 
@@ -430,6 +455,8 @@ def _build_operator(ctx, Dep_gp):
     K = _assemble_K_soil(ctx, Dep_gp)
     if ctx['K_lin'] is not None:
         K = K + ctx['K_lin']
+    if ctx.get('K_if') is not None:
+        K = K + ctx['K_if']
     K = K + ctx['pen_diag']
     return K.tocsc()
 
@@ -551,13 +578,46 @@ def _internal_force(ctx, sig_gp):
     return F
 
 
+def _iface_force(ctx, u, slip):
+    """Forces of the wall/soil joints (GM-72) at ``u`` from the committed
+    plastic ``slip``: (F (n_dof,), slip, shear, effective normal) or None
+    when there are none.
+
+    A zero-thickness joint lumped at a node pair (a Goodman-type joint
+    element integrated at its nodes). Normal: the linear tie already in the
+    springs (no opening). Tangential: elastic-perfectly-plastic,
+    T = ks (s - s_p) with |T| <= N' tan(delta) + adhesion and N' the
+    effective compressive normal force (no shear resistance beyond the
+    adhesion in tension). Return mapping: a trial T over the limit is put
+    back on it and the excess becomes plastic slip. ``slip`` includes the
+    relative tangential displacement at placement, so a joint carries only
+    the movement after it was placed.
+    """
+    I = ctx.get('iface')
+    if I is None:
+        return None
+    rel_t = u[I['a_t']] - u[I['b_t']]
+    rel_n = u[I['a_n']] - u[I['b_n']]
+    n_eff = -I['sgn'] * I['kn'] * (rel_n - I['n_off']) - I['n_water']
+    t_max = np.maximum(I['tan_d'] * n_eff + I['adh'], 0.0)
+    shear = I['ks'] * (rel_t - slip)
+    over = np.abs(shear) > t_max
+    shear = np.clip(shear, -t_max, t_max)
+    slip_new = np.where(over, rel_t - shear / I['ks'], slip)
+    F = np.zeros(ctx['n_dof'])
+    np.add.at(F, I['a_t'], shear)
+    np.add.at(F, I['b_t'], -shear)
+    return F, slip_new, shear, n_eff
+
+
 def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
            u_init=None, sigma_gp_init=None, strain_gp_init=None,
            hs_state_init=None, method='elastic', reform_interval=1,
            disp_tol=None, disp_residual_cap=0.01, max_cutbacks=3,
            line_search=False, mats_override=None,
            stall_window=None, stall_ratio=0.98, f_int_offset=None,
-           settled_ratio=None, settled_residual_cap=1e-2, F_start=None):
+           settled_ratio=None, settled_residual_cap=1e-2, F_start=None,
+           iface_slip_init=None):
     """Run the incremental-iterative nonlinear solution on a context.
 
     Parameters
@@ -650,6 +710,13 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
                 'settled': [], 'final_residual': 0.0,
                 'final_growth_ratio': None}
 
+    iface_on = ctx.get('iface') is not None
+    slip = None
+    if iface_on:
+        slip = (np.array(iface_slip_init, dtype=float)
+                if iface_slip_init is not None
+                else np.zeros(len(ctx['iface']['a_t'])))
+
     if method == 'elastic':
         lu = _elastic_factor(ctx, mats)
 
@@ -699,6 +766,8 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
                 F_int += ctx['K_lin'] @ u
             if f_int_offset is not None:
                 F_int = F_int - f_int_offset
+            if iface_on:
+                F_int += _iface_force(ctx, u, slip)[0]
 
             R = F_ext - F_int
             R[bc] = -penalty * u[bc]
@@ -745,6 +814,8 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
                         F_t += ctx['K_lin'] @ u_try
                     if f_int_offset is not None:
                         F_t = F_t - f_int_offset
+                    if iface_on:
+                        F_t += _iface_force(ctx, u_try, slip)[0]
                     R_t = F_ext - F_t
                     R_t[bc] = -penalty * u_try[bc]
                     R_t_norm = np.linalg.norm(np.where(free, R_t, 0.0))
@@ -808,6 +879,8 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
                     F_int += ctx['K_lin'] @ u
                 if f_int_offset is not None:
                     F_int = F_int - f_int_offset
+                if iface_on:
+                    F_int += _iface_force(ctx, u, slip)[0]
                 R = F_ext - F_int
                 R[bc] = -penalty * u[bc]
                 r_ratio = np.linalg.norm(np.where(free, R, 0.0)) / F_norm
@@ -830,6 +903,8 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
             for e in np.where(actm)[0]:
                 if hs_tent[e] is not None:
                     hs_state[e] = hs_tent[e]
+            if iface_on:
+                slip = _iface_force(ctx, u, slip)[1]
             lam_done = lam_t
             iters_per_step.append(n_it)
             continue
@@ -846,8 +921,13 @@ def run_nl(ctx, n_steps=10, max_iter=100, tol=1e-5,
         iters_per_step.append(n_it)
         break
 
+    out_if = {}
+    if iface_on:
+        _, _, shear_if, n_if = _iface_force(ctx, u, slip)
+        out_if = {'iface_slip': slip, 'iface_shear': shear_if,
+                  'iface_normal': n_if}
     return {'converged': converged_overall, 'u': u, 'sigma_gp': sig_gp,
-            'eps_gp': eps_gp, 'hs_state': hs_state,
+            'eps_gp': eps_gp, 'hs_state': hs_state, **out_if,
             'iterations': iters_per_step, 'n_iter_total': n_iter_total,
             'r_history': r_hist, 'settled': settled,
             'final_residual': float(r_ratio),
@@ -911,7 +991,8 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
                     n_gp=None, return_gp=False, _ctx=None,
                     initial_stress_relaxation=False, lin_offset=None,
                     extra_forces=None, settled_ratio=None,
-                    settled_residual_cap=1e-2, return_info=False):
+                    settled_residual_cap=1e-2, return_info=False,
+                    interfaces=None, iface_slip_init=None):
     """Solve a nonlinear (MC/HS) problem.
 
     Vectorized Gauss-point core with 4-component stress state and 3D
@@ -956,7 +1037,11 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
         displacements stand still at the iteration ceiling (see run_nl).
         Default None: off.
     return_info : bool — append run_nl's record (iterations, settled steps,
-        final residual) as a dict to the returned tuple.
+        final residual; with ``interfaces`` also 'iface_slip',
+        'iface_shear' and 'iface_normal') as a dict to the returned tuple.
+    interfaces : dict, optional — wall/soil joints with a Mohr-Coulomb slip
+        limit (GM-72; see build_nl_context). ``iface_slip_init`` : their
+        committed plastic slip at the start (default zero).
 
     Returns
     -------
@@ -978,7 +1063,7 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
             pore_pressures=pore_pressures, active_elements=active_elements,
             active_beams=active_beams, surface_loads=surface_loads,
             strut_springs=strut_springs, n_gp=n_gp,
-            extra_forces=extra_forces)
+            extra_forces=extra_forces, interfaces=interfaces)
     ngp = ctx['gp']['n_gp']
     if lin_offset is not None:
         lin_offset = np.asarray(lin_offset, dtype=float)
@@ -1003,6 +1088,12 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
             F_start = F_start + ctx['K_lin'] @ np.asarray(u_init, float)
         if lin_offset is not None:
             F_start = F_start - lin_offset
+        if ctx.get('iface') is not None:
+            slip0 = (np.asarray(iface_slip_init, dtype=float)
+                     if iface_slip_init is not None
+                     else np.zeros(len(ctx['iface']['a_t'])))
+            F_start = F_start + _iface_force(
+                ctx, np.asarray(u_init, float), slip0)[0]
 
     f_int_offset = lin_offset
     if initial_stress_relaxation:
@@ -1025,7 +1116,8 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
                  disp_tol=disp_tol, max_cutbacks=max_cutbacks,
                  line_search=line_search, f_int_offset=f_int_offset,
                  F_start=F_start, settled_ratio=settled_ratio,
-                 settled_residual_cap=settled_residual_cap)
+                 settled_residual_cap=settled_residual_cap,
+                 iface_slip_init=iface_slip_init)
 
     sig_gp = res['sigma_gp']
     eps_gp = res['eps_gp']
@@ -1041,7 +1133,9 @@ def solve_nonlinear(nodes, elements, material_props, gamma, bc_nodes,
         out = out + ({'iterations': list(res['iterations']),
                       'n_iter_total': res['n_iter_total'],
                       'settled': list(res['settled']),
-                      'final_residual': res['final_residual']},)
+                      'final_residual': res['final_residual'],
+                      **{k: res[k] for k in ('iface_slip', 'iface_shear',
+                                             'iface_normal') if k in res}},)
     return out
 
 

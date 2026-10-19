@@ -297,7 +297,8 @@ def _run_analyze_excavation(params: dict) -> dict:
     _valid = ("width", "depth", "wall_depth", "soil_layers", "wall_EI",
               "wall_EA", "nx", "ny", "t", "n_steps", "gamma_w", "max_iter",
               "tol", "gwt", "struts", "layer_polylines", "lifts",
-              "wall_contact", "excavation_water", "water_level_inside")
+              "wall_contact", "excavation_water", "water_level_inside",
+              "interface_delta", "interface_ratio", "interface_adhesion")
     reject_unknown_params(params, _valid, method="fem2d_excavation")
     require_params(params, ["width", "depth", "wall_depth", "soil_layers",
                             "wall_EI", "wall_EA"],
@@ -333,9 +334,13 @@ def _run_analyze_excavation(params: dict) -> dict:
     if "lifts" in params:
         kwargs["lifts"] = params["lifts"]
     if "wall_contact" in params:
-        _require_choice(params["wall_contact"], ("smooth", "bonded"),
+        _require_choice(params["wall_contact"],
+                        ("smooth", "bonded", "interface"),
                         name="wall_contact", method="fem2d_excavation")
         kwargs["wall_contact"] = params["wall_contact"]
+    for name in ("interface_delta", "interface_ratio", "interface_adhesion"):
+        if params.get(name) is not None:
+            kwargs[name] = params[name]
     if "excavation_water" in params:
         _require_choice(params["excavation_water"],
                         ("dewatered", "full", "level"),
@@ -663,7 +668,10 @@ METHOD_INFO = {
             "wall_EA": {"type": "float", "required": True, "description": "Wall axial stiffness (kN/m)."},
             "struts": {"type": "array", "required": False, "description": "Array of {depth (m, above the final excavation level), stiffness (kN/m per m)}; each installed stress-free once the excavation reaches its level; no preload."},
             "lifts": {"type": "array", "required": False, "description": "Excavation depths (m) at the end of each lift; default one lift to each strut level, then to depth."},
-            "wall_contact": {"type": "str", "required": False, "default": "smooth", "allowed_values": ["smooth", "bonded"], "description": "'smooth' (default): no wall friction (Rankine). 'bonded': the wall shares the soil's nodes and hangs the retained soil (thrust below active)."},
+            "wall_contact": {"type": "str", "required": False, "default": "smooth", "allowed_values": ["smooth", "bonded", "interface"], "description": "'smooth' (default): no wall friction (Rankine). 'bonded': the wall shares the soil's nodes and hangs the retained soil (thrust below active). 'interface': wall friction delta between 0 and phi' (Mohr-Coulomb joints between wall and soil); give interface_delta or interface_ratio."},
+            "interface_delta": {"type": "float", "required": False, "description": "For wall_contact='interface': the wall friction angle delta (deg, 0-45), the same on every layer. UFC 3-220-20 (2025) Table 4-1, p. 184: steel sheet piles against clean sand 17, clean gravel 22, silty sand 14; formed concrete against clean sand 17-22. Give this or interface_ratio."},
+            "interface_ratio": {"type": "float", "required": False, "description": "For wall_contact='interface', in place of interface_delta: delta/phi' (0-1) of the layer at each joint."},
+            "interface_adhesion": {"type": "float", "required": False, "default": 0.0, "description": "For wall_contact='interface': adhesion c_a (kPa) on the wall (UFC 3-220-20 Table 4-1 gives it for clayey soils by undrained strength). Default 0 (friction only)."},
             "gwt": {"type": "float|array", "required": False, "description": "Groundwater table elevation (m, the ground is 0, negative below it): the in-situ table, held outside the excavation. What happens inside where it is above the excavation level is excavation_water."},
             "excavation_water": {"type": "str", "required": False, "default": "dewatered", "allowed_values": ["dewatered", "full", "level"], "description": "Water inside the excavation where the table is above the excavation level. 'dewatered' (default, the construction case: UFC 3-220-20 p. 97, groundwater control below the table; Caltrans T&S Example 7-2): lowered to the excavation level at each lift, steady seepage under the wall's tip, the wall carries the net water pressure (GEC 4 sec. 5.2.9). 'full': kept full of water to the table (dug in the wet; the water on the two faces balances). 'level': lowered to water_level_inside."},
             "water_level_inside": {"type": "float", "required": False, "description": "For excavation_water='level': depth (m below the ground) of the water inside the excavation, between the table and the excavation depth."},
@@ -681,6 +689,8 @@ METHOD_INFO = {
             "excavation_water": "The water condition modelled inside the excavation.",
             "wall_water_pressures": "Pore pressure on each face of the wall and the net, per wall node, at the end of the last stage.",
             "notes": "Method, K0 per layer, sign conventions; the water condition with its basis and the net water pressure beside the no-seepage and GEC 4 values.",
+            "wall_interface": "With wall_contact='interface': per face (retained side, excavation side) the effective normal thrust and the soil's shear on the wall (+ up) summed over the joints, the wall friction angle mobilized and how many joints slip.",
+            "choices": "The wall contact and, with 'interface', the wall friction and adhesion, each with how it was set and its basis.",
         },
     },
     "fem2d_seepage": {
@@ -840,7 +850,10 @@ for _m, _names in _FEM_PARAM_BACKFILL.items():
 declare_applies_when(METHOD_INFO, {
     "fem2d_consolidation": {
         name: {"consolidation_scheme": ["monolithic"]}
-        for name in ("n_w", "theta")}})
+        for name in ("n_w", "theta")},
+    # the wall's joints (GM-72)
+    "fem2d_excavation": {
+        "interface_adhesion": {"wall_contact": ["interface"]}}})
 
 # The values the handlers pass when these are left out (BACKLOG GM-165),
 # and what a left-out input with no default stands for: the load ramp,
