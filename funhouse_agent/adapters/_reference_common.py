@@ -359,7 +359,7 @@ def as_result(shaped: dict, key: str) -> dict:
 
 def example_section_ids(ref_package_name: str, n: int = 3) -> list[str]:
     """Up to ``n`` section numbers this reference holds, one per level from
-    the top (``['2.1', '7.2.1', '7.2.1.3.1']`` for GEC-12), for the
+    the top (``['1.1', '4.2.3.1', '7.2.1.3.1']`` for GEC-12), for the
     ``retrieve_section`` description (BACKLOG REF-01: a fixed example,
     '5.7.2', was in no reference at all). Empty when the reference's text
     cannot be read."""
