@@ -31,6 +31,13 @@ matches found", and reported that its searches had found nothing -- it never
 called a reference tool. An ``ls`` / ``glob`` / ``grep`` that finds nothing
 now says what it searched and where to search instead
 (:data:`EMPTY_SCRATCH_NOTE`).
+
+And it says when a scratch write left a real file as it was (BACKLOG
+GM-154). Live waves w12 and w13: a calc helper saved its report with
+``save_file``, then ran ``edit_file`` on that file's name four times and got
+a bare "File not found" each time; nothing said the file was real and
+unchanged. An ``edit_file`` or ``write_file`` now says "Nothing was changed"
+(or written) on a real path, and on a name the working folder holds.
 """
 
 from __future__ import annotations
@@ -221,9 +228,71 @@ def _message(tool: str, path: str) -> str:
                 "text file use read_text_file. To search your own scratch "
                 "notes and any saved large tool results, call grep with no "
                 "path.")
-    return (f"{tool} only writes to scratch space, which the user never sees; "
-            f"{where}. To save a real file use save_file, or pass output_path "
-            "to the tool that builds it.")
+    if tool == "edit_file":
+        return (f"Nothing was changed: edit_file edits only this agent's "
+                f"scratch notes; {where}. " + _CHANGE_REAL_FILE)
+    return (f"Nothing was written: {tool} only writes to scratch space, which "
+            f"the user never sees; {where}. To save a real file use "
+            "save_file, or pass output_path to the tool that builds it.")
+
+
+#: How a real file is changed (BACKLOG GM-154).
+_CHANGE_REAL_FILE = (
+    "To change it, read it with read_text_file, then save the whole "
+    "corrected text under the same name with save_file (or rebuild it with "
+    "the tool that wrote it).")
+
+
+def _working_file(path: str) -> Optional[str]:
+    """The name ``path`` (a scratch path) has in the working folder the host
+    bound for the turn, when the folder holds a file of that name; else
+    ``None`` (and always ``None`` with no folder bound)."""
+    try:
+        from funhouse_agent._fileio import host_output_dir
+        host = host_output_dir()
+    except Exception:  # noqa: BLE001 - no host, no working folder
+        return None
+    rel = _virtual(path).lstrip("/")
+    if not host or not rel:
+        return None
+    root = os.path.normcase(os.path.abspath(host))
+    cand = os.path.abspath(os.path.join(host, rel))
+    try:
+        inside = os.path.commonpath([os.path.normcase(cand), root]) == root
+    except ValueError:                      # another drive (Windows)
+        return None
+    return rel if inside and os.path.isfile(cand) else None
+
+
+def _failed(result) -> bool:
+    if not isinstance(result, ToolMessage):
+        return False
+    low = _text(result).strip().lower()
+    return (getattr(result, "status", None) == "error"
+            or low.startswith("error") or low.startswith("cannot write"))
+
+
+def _write_note(tool: str, name: str, failed: Optional[str]) -> str:
+    """What a scratch ``write_file`` / ``edit_file`` on ``name``, a file of
+    the working folder, did to that file: nothing. ``failed`` is the tool's
+    own error text when the call failed."""
+    real = (f"'{name}' is a file in this conversation's working folder (the "
+            "real disk, what the user sees)")
+    if failed:
+        return (f"{failed.strip()} Nothing was changed: {real}, and {tool} "
+                "works only on this agent's scratch notes. "
+                + _CHANGE_REAL_FILE)
+    return (f"(That changed only this agent's scratch notes. {real} and is "
+            "NOT changed: to change it, save the whole text under that name "
+            "with save_file.)")
+
+
+#: ``edit_file``'s own miss, explained when the name is not the working
+#: folder's either.
+_EDIT_MISS_NOTE = (
+    "Nothing was changed. edit_file edits only this agent's scratch notes "
+    "(written with write_file in this conversation); a real file is changed "
+    "by saving its whole new text with save_file.")
 
 
 class ScratchFilesystemGuard(AgentMiddleware):
@@ -316,6 +385,37 @@ class ScratchFilesystemGuard(AgentMiddleware):
         name = (getattr(request, "tool_call", None) or {}).get("name")
         if _is_empty_search(name, result):
             return ScratchFilesystemGuard._noted(result, EMPTY_SCRATCH_NOTE)
+        return ScratchFilesystemGuard._write_explained(request, result)
+
+    @staticmethod
+    def _write_explained(request, result):
+        """A scratch ``write_file`` / ``edit_file`` that left a real file as
+        it was says so (BACKLOG GM-154): a miss on a working-folder name is
+        an error saying nothing changed and how to change it; a write that
+        went into the scratch notes under such a name says the real file is
+        unchanged; any other ``edit_file`` miss says nothing changed."""
+        call = getattr(request, "tool_call", None) or {}
+        name = call.get("name")
+        if name not in ("write_file", "edit_file") \
+                or not isinstance(result, ToolMessage):
+            return result
+        path = (call.get("args") or {}).get("file_path")
+        if not isinstance(path, str) or not path.strip():
+            return result
+        failed = _failed(result)
+        real = _working_file(path)
+        if real is not None:
+            if not failed:
+                return result.model_copy(update={"content": (
+                    f"{_text(result).strip()}\n"
+                    f"{_write_note(name, real, None)}")})
+            return ToolMessage(
+                content=_write_note(name, real, _text(result)),
+                tool_call_id=getattr(result, "tool_call_id", None)
+                or call.get("id") or "", name=name, status="error")
+        if name == "edit_file" and _is_not_found(result):
+            return result.model_copy(update={
+                "content": f"{_text(result).strip()} {_EDIT_MISS_NOTE}"})
         return result
 
     def wrap_tool_call(self, request, handler):

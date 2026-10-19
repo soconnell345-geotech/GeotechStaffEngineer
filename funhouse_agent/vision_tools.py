@@ -100,8 +100,10 @@ first-choice reader for a text-based report** (boring logs, lab summaries,
 recommendations, specs): read the text directly instead of vision-reading every
 page. `source` is an attachment key OR a real filesystem path (driver-local
 `/tmp/...` or a `/Volumes/...` path; `/Workspace` reads are unreliable). `pages`
-is an int, a list, or a "start-end" range (e.g. "0-9"); omit it for the first
-several pages. A page with no text layer (scanned image) is flagged per-page —
+counts from 0: an int, a list, or a "start-end" range (e.g. "0-9"); or give
+`pdf_pages` instead, 1-based as a PDF viewer shows (e.g. "1-10"); omit both
+for the first several pages. Each page in the result gives both (`page`,
+`pdf_page`). A page with no text layer (scanned image) is flagged per-page —
 use `analyze_pdf_page` on those.
 ```
 <tool_call>
@@ -1075,12 +1077,14 @@ _PDF_TEXT_DEFAULT_PAGES = 8
 _SCANNED_TEXT_THRESHOLD = 20
 
 
-def _parse_pages(pages, n_total, default_n):
+def _parse_pages(pages, n_total, default_n, one_based=False):
     """Resolve the ``pages`` argument to a sorted list of valid 0-based indices.
 
     Accepts ``None`` (first ``default_n`` pages), an int, a list of ints, or a
-    ``"start-end"`` / ``"N"`` range string. Returns ``(page_list, note)`` where
-    ``note`` is a message about dropped out-of-range requests (or None).
+    ``"start-end"`` / ``"N"`` range string, or several joined by commas
+    (``"0-2,5"``). Returns ``(page_list, note)`` where ``note`` is a message
+    about dropped out-of-range requests (or None), in the viewer's 1-based
+    numbers when ``one_based`` (the call gave ``pdf_pages``).
     """
     if n_total <= 0:
         return [], "document has no pages"
@@ -1094,12 +1098,20 @@ def _parse_pages(pages, n_total, default_n):
         elif isinstance(pages, (list, tuple)):
             raw = [int(p) for p in pages]
         elif isinstance(pages, str):
-            s = pages.strip()
-            if "-" in s:
-                a, b = s.split("-", 1)
-                raw = list(range(int(a), int(b) + 1))
-            else:
-                raw = [int(s)]
+            for part in pages.split(","):
+                s = part.strip()
+                if not s:
+                    continue
+                if "-" in s:
+                    a, b = s.split("-", 1)
+                    # Nothing past one beyond the end: a range like
+                    # "0-999999999" is never built page by page.
+                    hi = min(int(b), max(int(a), n_total))
+                    raw += list(range(int(a), hi + 1))
+                else:
+                    raw.append(int(s))
+            if not raw:
+                raise ValueError(pages)
         else:
             raw = [int(pages)]
     except (ValueError, TypeError):
@@ -1108,7 +1120,11 @@ def _parse_pages(pages, n_total, default_n):
             f"{min(default_n, n_total)} pages instead")
     valid = sorted({p for p in raw if 0 <= p < n_total})
     dropped = sorted({p for p in raw if not (0 <= p < n_total)})
-    if dropped:
+    if dropped and one_based:
+        note = (f"requested pdf_page(s) {[p + 1 for p in dropped]} are out "
+                f"of range (document has {n_total} pages, pdf_page "
+                f"1-{n_total})")
+    elif dropped:
         note = (f"requested page(s) {dropped} are out of range "
                 f"(document has {n_total} pages, 0-{n_total - 1})")
     if not valid:
@@ -1116,11 +1132,45 @@ def _parse_pages(pages, n_total, default_n):
     return valid, note
 
 
+#: What ``read_pdf_text``'s result says about its two page numbers (BACKLOG
+#: GM-154 / VIS-27: a helper read 0-based ``pages`` "3-5" as the 1-based
+#: pages ``html_to_pdf`` reports and cited its tables one page low).
+PDF_TEXT_PAGE_NOTE = (
+    "page counts from 0, as pages does; pdf_page is the number a PDF viewer "
+    "shows, as html_to_pdf's page_contents count: cite pdf_page, and give "
+    "pdf_pages to read by it")
+
+
+def _read_pdf_text_pages(arguments):
+    """``(pages_spec, one_based, error_json)``: the 0-based ``pages`` to
+    read, from ``pages`` or the 1-based ``pdf_pages`` (both given must name
+    the same pages, never a guess)."""
+    pages = arguments.get("pages")
+    given = arguments.get("pdf_pages")
+    if given in (None, "", [], ()):
+        return pages, False, None
+    from funhouse_agent.page_numbers import pdf_pages_to_pages
+    zero, problem = pdf_pages_to_pages(given)
+    if problem is not None:
+        return None, True, json.dumps(problem)
+    if pages not in (None, "", [], ()):
+        span = 100_000
+        if _parse_pages(pages, span, 0)[0] != _parse_pages(zero, span, 0)[0]:
+            return None, True, json.dumps({
+                "error": "give pages (0-based) or pdf_pages (1-based), not "
+                         "both",
+                "hint": "pdf_pages counts as a PDF viewer does; pages "
+                        "counts from 0"})
+    return zero, True, None
+
+
 def _dispatch_read_pdf_text(arguments, attachments):
     """Extract a PDF's text layer with PyMuPDF (no vision engine required)."""
     key = (arguments.get("source") or arguments.get("attachment_key")
            or arguments.get("path") or "")
-    pages_arg = arguments.get("pages")
+    pages_arg, one_based, refused = _read_pdf_text_pages(arguments)
+    if refused is not None:
+        return refused
     try:
         max_chars = int(arguments.get("max_chars", _PDF_TEXT_MAX_CHARS))
     except (ValueError, TypeError):
@@ -1151,7 +1201,8 @@ def _dispatch_read_pdf_text(arguments, attachments):
 
     try:
         n_total = doc.page_count
-        page_list, page_note = _parse_pages(pages_arg, n_total, max_pages)
+        page_list, page_note = _parse_pages(pages_arg, n_total, max_pages,
+                                            one_based=one_based)
 
         out_pages = []
         total_chars = 0
@@ -1160,8 +1211,9 @@ def _dispatch_read_pdf_text(arguments, attachments):
             text = doc[p].get_text("text")
             if len(text.strip()) < _SCANNED_TEXT_THRESHOLD:
                 out_pages.append({
-                    "page": p, "has_text_layer": False, "text": "",
-                    "note": (f"page {p} has no text layer — use "
+                    "page": p, "pdf_page": p + 1, "has_text_layer": False,
+                    "text": "",
+                    "note": (f"pdf_page {p + 1} has no text layer — use "
                              f"analyze_pdf_page for this page"),
                 })
                 continue
@@ -1173,7 +1225,7 @@ def _dispatch_read_pdf_text(arguments, attachments):
                 text = text[:remaining] + "\n...[page text truncated]"
                 truncated = True
             out_pages.append({
-                "page": p, "has_text_layer": True,
+                "page": p, "pdf_page": p + 1, "has_text_layer": True,
                 "chars": len(text), "text": text,
             })
             total_chars += len(text)
@@ -1188,18 +1240,26 @@ def _dispatch_read_pdf_text(arguments, attachments):
         "source_type": source_type,
         "n_pages_total": n_total,
         "pages_returned": [e["page"] for e in out_pages],
+        "pdf_pages_returned": [e["pdf_page"] for e in out_pages],
+        "page_numbers": PDF_TEXT_PAGE_NOTE,
         "pages": out_pages,
     }
     if scanned:
         result["scanned_pages"] = scanned
         result["scanned_note"] = (
-            f"{len(scanned)} page(s) have no text layer "
-            f"(scanned images): {scanned}. Use analyze_pdf_page for those.")
+            f"{len(scanned)} page(s) have no text layer (scanned images): "
+            f"pdf_page {[p + 1 for p in scanned]}. Use analyze_pdf_page for "
+            "those.")
     if truncated:
+        # The page cut short, else the one after the last read whole.
+        last = out_pages[-1] if out_pages else None
+        nxt = (1 if last is None else last["pdf_page"] if
+               last["text"].endswith("[page text truncated]")
+               else last["pdf_page"] + 1)
         result["truncated"] = True
         result["truncated_note"] = (
             "Output hit the character budget. Request specific later pages "
-            "(e.g. pages='8-15') to continue reading.")
+            f"(e.g. pdf_pages='{nxt}-{nxt + 7}') to continue reading.")
     if page_note:
         result["page_request_note"] = page_note
     return json.dumps(result)
