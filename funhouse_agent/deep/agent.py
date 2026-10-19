@@ -418,6 +418,20 @@ def build_references_subagent(
 #: bounds the references consultant). ``None``/``0`` disables the budget.
 DEFAULT_CALC_MAX_MODEL_CALLS = 16
 
+#: The calc helper's budget, stated to it as the references helper's is
+#: (BACKLOG GM-101; live wave w13: both calc helpers ran out of calls, one
+#: before html_to_pdf, one before its PDF, and were never told the budget).
+_CALC_BUDGET = (
+    "\nCALL BUDGET: you have {n} model calls for this task, the last of "
+    "which must be your reply. Make independent calls in the SAME turn "
+    "(several tool calls at once). Build the deliverable and check it "
+    "(html_to_pdf's page_contents, read_pdf_text for its numbers) with "
+    "calls to spare.")
+
+#: The calc helper is told how many calls are left from this many calls
+#: left (that call included) down to its last but one (BACKLOG GM-101).
+CALC_WARN_REMAINING = 4
+
 _CALC_DESCRIPTION = (
     "The calculation engine. Delegate TOOL-HEAVY calculation work to it: running "
     "an analysis method (bearing capacity, settlement, slope stability, FEM, "
@@ -508,9 +522,12 @@ _CALC_FRAMING = (
     "describe a case differently from how it was defined.\n"
     "GIVEN OR ASSUMED: a deliverable keeps the inputs the delegation says "
     "the user gave apart from the assumptions (the delegation's, yours and "
-    "a tool's defaults_used), each assumption with its basis; never print "
-    "an assumption as given. A *_package takes `assumptions` for the inputs "
-    "you pass that the user did not give.\n"
+    "a tool's defaults_used). A value the user's words only imply is "
+    "assumed. The delegation's assumptions and choices are the delegating "
+    "agent's, not the user's: give each assumption its engineering basis, "
+    "or \"assumed, not given\", never \"stated by the engineer\". Never "
+    "print an assumption as given. A *_package takes `assumptions` for the "
+    "inputs you pass that the user did not give.\n"
     "LAYER NAMES: keep soil layer names exactly as the delegation gives them. "
     "When asked to change a property of named layers, change only those, and "
     "say in your reply which layers (name and depth range) you changed.\n"
@@ -536,7 +553,10 @@ _CALC_PLOT_CODE = (
 #: (BACKLOG GM-116): its compact reply left out the choices it made, so the
 #: main agent had none to relay. GM-155 (live wave w12): no call carried a
 #: reference, and the lists padded with rounding and how totals are
-#: reported; a tool's ``choices`` already carry a basis.
+#: reported; a tool's ``choices`` already carry a basis. Wave w13: the
+#: helper's "rests on judgment" reached the answer as it stood, and the
+#: delegating agent looked nothing up; a call with no basis now says so,
+#: for the delegating agent's one consult.
 _CALC_JUDGMENT_CALLS = (
     "\nJUDGMENT CALLS: the engineering judgment is the user's, and the "
     "delegating agent puts your choices in front of them. End your reply "
@@ -546,8 +566,9 @@ _CALC_JUDGMENT_CALLS = (
     "type, a parameter value, factor of "
     "safety or load factor, drained or undrained, which stratum governs, "
     "search or mesh settings, how you read ambiguous data -- each giving "
-    "what you chose, why (the basis the tool's `choices` give, else say it "
-    "rests on judgment, with no reference cited), the alternative you set "
+    "what you chose, why (the basis the tool's `choices` give, by name and "
+    "the section or page it gives, else \"no basis in hand\"), the "
+    "alternative you set "
     "aside and what would change the result (a number only from a tool "
     "run). Leave out rounding and presentation.")
 
@@ -574,8 +595,9 @@ _CALC_DELEGATION_NUDGE = (
     "file (read_pdf_text) and check the numbers are in it before you tell the "
     "user it is fixed. When you ask for a change to named soil layers, pass the "
     "layer list with those names and say exactly which layers to change. "
-    "Keep what the user gave apart from what you assumed: an assumed value "
-    "goes in the brief under assumptions, with its basis, never among the "
+    "Keep what the user gave apart from what you assumed: a value the "
+    "user's words only imply is assumed. An assumed value goes in the "
+    "brief under assumptions, with its engineering basis, never among the "
     "user's inputs, and never reads as something found or measured."
 )
 
@@ -645,6 +667,9 @@ def build_calc_subagent(
     # NOT CONSULTANT_FRAMING: that is the references sub-agent's librarian
     # preamble ("Do NOT perform engineering calculations"). See _CALC_PREAMBLE.
     system_prompt = _CALC_PREAMBLE + _CALC_FRAMING
+    if max_model_calls:     # the budget, stated (GM-101; unswitched)
+        system_prompt = system_prompt + _CALC_BUDGET.format(
+            n=int(max_model_calls))
     # Plotting code in the locked box, behind GEOTECH_PLOT_CODE (GM-98; the
     # owner on calc packages' figures, 2026-10-15).
     from funhouse_agent.deep.figure_helper import (CALC_REDRAW_NOTE,
@@ -675,7 +700,8 @@ def build_calc_subagent(
         "tools": tools,
     }
     if max_model_calls:
-        spec["middleware"] = [ModelCallBudgetMiddleware(max_model_calls)]
+        spec["middleware"] = [ModelCallBudgetMiddleware(
+            max_model_calls, warn_remaining=CALC_WARN_REMAINING)]
     if figure_looks:
         # The figures a module method draws ask for a look, as plot_code's
         # do, and html_to_pdf names the ones no look read (live wave w12,
@@ -1185,6 +1211,9 @@ def build_deep_agent(
     filesystem tools are present regardless because deepagents attaches them by
     default.
     """
+    # The first pyplot import, before tools run side by side (GM-172).
+    from funhouse_agent.deep.warm_imports import warm_pyplot
+    warm_pyplot()
     if review_page:
         from funhouse_agent import review_flags
         if review_flags.minimal_agent():

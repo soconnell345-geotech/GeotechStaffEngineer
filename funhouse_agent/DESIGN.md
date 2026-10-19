@@ -561,6 +561,24 @@ the eyes). What changed on master after 5.33.0, in short:
   retitled "Values Used" because it mixes given, assumed and derived
   values (`calc_package.tables.given_section` / `assumed_section`,
   `adapters/calc_package._given_inputs` / `_assumed_inputs`).
+  **GM-155 round 2 (2026-10-19, after live wave w13):** the references
+  helper was asked 0 times in 4 ON runs, one answer left a `choices`
+  basis uncited and one said "found no reference" without looking. The
+  consult is now a step: before the list, the `references` helper is
+  asked once, in one task, about every call with no basis in a tool's
+  `choices` or a reference already looked up; each call cites its source
+  by name and the section or page it gives (no page made up); "rests on
+  judgment, no reference found" only where that consult found none
+  (1,666 characters; 1,513 without the helper, which keeps "rests on
+  judgment, with no reference cited"). The calc helper writes "no basis
+  in hand" for a call with none, for that consult. Unswitched: a value
+  the user's words only imply is assumed, in the delegation nudge and
+  the calc helper (w13's cases, c = 0 for "sand" and no water table, stay
+  out of the prompt: the next wave measures them); and the calc helper is
+  told the delegation's assumptions are the delegating agent's, so an
+  assumption's basis is its engineering basis or "assumed, not given",
+  never "stated by the engineer" (w13 F18j's PDFs said that for every
+  assumption).
 
 Every switch and its default: `review_flags.py` and
 `module_work/REVIEW_HARNESS.md`.

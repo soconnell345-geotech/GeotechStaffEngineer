@@ -148,7 +148,18 @@ confidence sentence now asks for a tool-run number or a direction, the
 `calc` delegation and helper keep given apart from assumed, and calc
 packages print "Given Inputs" apart from "Assumed Inputs"
 (`defaults_used` plus the package input
-`assumptions`).
+`assumptions`). Wave w13 measured it: still no consult in 4 ON runs (the
+consult was one source among three, and every answer took "otherwise it
+rests on judgment"), and F18j's brief put c = 0, which "sand" only
+implies, under Given, while its calc helper wrote every assumption's
+basis as "stated by the engineer" (it read the brief's assumptions as an
+engineer's statement). GM-155 round 2 (2026-10-19) made the consult a step
+before the list (one task for every call with no basis in hand), asked
+for a source by name and the section or page it gives, allowed "no
+reference found" only where that consult found none, and, in both arms,
+made a value the user's words only imply an assumption (the rule, with
+no example from w13) and the delegation's assumptions the delegating
+agent's.
 
 ### 3.2 Tools (32 in both configurations; about 38 thousand characters of schema)
 

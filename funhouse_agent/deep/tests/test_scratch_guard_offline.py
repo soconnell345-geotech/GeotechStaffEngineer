@@ -355,3 +355,112 @@ def test_the_empty_note_on_the_async_path():
                                    "args": {"pattern": "ASCE 7"}},
                         state={"files": {}}), handler))
     assert "NOT the reference library" in out.content
+
+
+# ---------------------------------------------------------------------------
+# GM-154: a scratch write never reads as a change to a real file
+# ---------------------------------------------------------------------------
+# Live waves w12 (F55j [161]) and w13 (F18j [81]/[82]/[85]): a calc helper
+# saved its report with save_file, then ran edit_file on the file's name and
+# got a bare "File '/x.html' not found" each time, with no word that the
+# file was real and unchanged.
+
+
+def _deepagents_like(name, files):
+    """A handler answering write_file / edit_file as deepagents does."""
+    def handler(r):
+        path = r.tool_call["args"]["file_path"]
+        if name == "edit_file" and path not in files:
+            return ToolMessage(content=f"Error: File '{path}' not found",
+                               tool_call_id="c1", name=name, status="error")
+        if name == "edit_file":
+            return ToolMessage(content="Successfully replaced 1 instance(s) "
+                                       f"of the string in '{path}'",
+                               tool_call_id="c1", name=name)
+        return ToolMessage(content=f"Updated file {path}", tool_call_id="c1",
+                           name=name)
+    return handler
+
+
+def _guarded(name, path, files=None, **args):
+    req = SimpleNamespace(tool_call={"name": name, "id": "c1",
+                                     "args": {"file_path": path, **args}},
+                          state={"files": files or {}})
+    return ScratchFilesystemGuard().wrap_tool_call(
+        req, _deepagents_like(name, files or {}))
+
+
+def test_edit_of_a_working_folder_file_says_nothing_changed(tmp_path):
+    from funhouse_agent._fileio import working_dir_bound
+    (tmp_path / "bearing_calc_package.html").write_text("<td>-410.0%</td>")
+    with working_dir_bound(tmp_path):
+        out = _guarded("edit_file", "/bearing_calc_package.html",
+                       old_string="-410.0%", new_string="-41.0%")
+    assert out.status == "error"
+    assert "not found" in out.content                  # the tool's own words
+    assert "Nothing was changed" in out.content
+    assert "'bearing_calc_package.html' is a file in this conversation's " \
+           "working folder" in out.content
+    assert "read_text_file" in out.content and "save_file" in out.content
+    assert (tmp_path / "bearing_calc_package.html").read_text() == \
+        "<td>-410.0%</td>"
+
+
+def test_a_scratch_write_under_a_working_folder_name_says_the_file_is_not_changed(
+        tmp_path):
+    from funhouse_agent._fileio import working_dir_bound
+    (tmp_path / "report.html").write_text("real")
+    with working_dir_bound(tmp_path):
+        out = _guarded("write_file", "report.html", content="new")
+    assert out.content.startswith("Updated file")
+    assert "'report.html' is a file in this conversation's working folder" \
+        in out.content
+    assert "is NOT changed" in out.content and "save_file" in out.content
+
+
+def test_edit_on_a_real_path_says_nothing_changed():
+    out = _guarded("edit_file", "/tmp/report.html", old_string="a",
+                   new_string="b")
+    assert out.status == "error"
+    assert out.content.startswith("Nothing was changed")
+    assert "read_text_file" in out.content and "save_file" in out.content
+
+
+def test_write_on_a_real_path_says_nothing_written():
+    out = _guarded("write_file", "/tmp/report.html", content="x")
+    assert out.content.startswith("Nothing was written")
+    assert "save_file" in out.content
+
+
+def test_any_other_edit_miss_says_nothing_changed():
+    out = _guarded("edit_file", "/draft.md", old_string="a", new_string="b")
+    assert out.content.startswith("Error: File '/draft.md' not found")
+    assert "Nothing was changed" in out.content and "save_file" in out.content
+
+
+def test_scratch_notes_of_their_own_are_untouched(tmp_path):
+    from funhouse_agent._fileio import working_dir_bound
+    (tmp_path / "other.html").write_text("real")
+    with working_dir_bound(tmp_path):
+        wrote = _guarded("write_file", "/notes.md", content="x")
+        edited = _guarded("edit_file", "/notes.md", files={"/notes.md": {}},
+                          old_string="x", new_string="y")
+    assert wrote.content == "Updated file /notes.md"
+    assert edited.content.startswith("Successfully replaced")
+
+
+def test_the_write_note_on_the_async_path(tmp_path):
+    from funhouse_agent._fileio import working_dir_bound
+    (tmp_path / "calc.html").write_text("real")
+
+    async def handler(r):
+        return ToolMessage(content="Error: File '/calc.html' not found",
+                           tool_call_id="c1", name="edit_file",
+                           status="error")
+
+    with working_dir_bound(tmp_path):
+        out = asyncio.run(ScratchFilesystemGuard().awrap_tool_call(
+            SimpleNamespace(tool_call={"name": "edit_file", "id": "c1",
+                                       "args": {"file_path": "/calc.html"}},
+                            state={"files": {}}), handler))
+    assert "Nothing was changed" in out.content

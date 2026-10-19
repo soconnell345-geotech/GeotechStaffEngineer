@@ -126,6 +126,80 @@ class TestReadPdfText:
         assert "error" in out and "PDF" in out["error"]
 
 
+class TestViewerPages:
+    """One page convention (BACKLOG GM-154 / VIS-27): ``pages`` counts from
+    0 as every tool's does, ``pdf_pages`` from 1 as a viewer (and
+    html_to_pdf's page_contents) do, and every page in the result carries
+    both. Live wave w13: a helper read ``pages`` "3-5" as 1-based and cited
+    its tables one page low."""
+
+    def test_pdf_pages_reads_the_pages_a_viewer_shows(self):
+        att = {"rpt": _make_pdf(n_text=6)}
+        out = _call("read_pdf_text", {"source": "rpt", "pdf_pages": "4-5"},
+                    attachments=att)
+        assert out["pages_returned"] == [3, 4]
+        assert out["pdf_pages_returned"] == [4, 5]
+        assert [p["pdf_page"] for p in out["pages"]] == [4, 5]
+        assert "PAGE 3" in out["pages"][0]["text"]       # the 4th page
+        assert "pdf_page" in out["page_numbers"]
+        assert "html_to_pdf" in out["page_numbers"]
+
+    def test_every_page_carries_its_viewer_number(self):
+        out = _call("read_pdf_text", {"source": "rpt", "pages": "0-2"},
+                    attachments={"rpt": _make_pdf(n_text=2, scanned=True)})
+        assert [(p["page"], p["pdf_page"]) for p in out["pages"]] == \
+            [(0, 1), (1, 2), (2, 3)]
+        assert "pdf_page 3" in out["pages"][2]["note"]
+        assert "pdf_page [3]" in out["scanned_note"]
+
+    def test_pdf_pages_forms(self):
+        att = {"rpt": _make_pdf(n_text=6)}
+        for spec, want in ((2, [1]), ([1, 6], [0, 5]), ("1-2,5", [0, 1, 4])):
+            got = _call("read_pdf_text", {"source": "rpt", "pdf_pages": spec},
+                        attachments=att)["pages_returned"]
+            assert got == want, spec
+
+    def test_pdf_page_zero_is_refused(self):
+        out = _call("read_pdf_text", {"source": "rpt", "pdf_pages": "0-2"},
+                    attachments={"rpt": _make_pdf()})
+        assert "error" in out and "count from 1" in out["error"]
+
+    def test_both_given_must_agree(self):
+        att = {"rpt": _make_pdf(n_text=4)}
+        out = _call("read_pdf_text",
+                    {"source": "rpt", "pages": "1-2", "pdf_pages": "2-3"},
+                    attachments=att)
+        assert out["pages_returned"] == [1, 2]
+        out = _call("read_pdf_text",
+                    {"source": "rpt", "pages": "3", "pdf_pages": "3"},
+                    attachments=att)
+        assert "not both" in out["error"]
+
+    def test_out_of_range_said_in_the_numbers_given(self):
+        out = _call("read_pdf_text", {"source": "rpt", "pdf_pages": "2-4"},
+                    attachments={"rpt": _make_pdf(n_text=2)})
+        assert out["pdf_pages_returned"] == [2]
+        assert "pdf_page(s) [3]" in out["page_request_note"]
+        assert "pdf_page 1-2" in out["page_request_note"]
+
+    def test_truncation_names_the_next_viewer_pages(self):
+        out = _call("read_pdf_text",
+                    {"source": "rpt", "pages": [0, 1], "max_chars": 150},
+                    attachments={"rpt": _make_pdf(n_text=2)})
+        # The first page fits; the second (pdf_page 2) is cut short.
+        assert out["pages"][-1]["text"].endswith("[page text truncated]")
+        assert "pdf_pages='2-9'" in out["truncated_note"]
+
+    def test_the_agent_tool_takes_pdf_pages(self):
+        from funhouse_agent.deep.tools import make_vision_tools
+        (tool,) = make_vision_tools(attachments={"rpt": _make_pdf(n_text=5)},
+                                    include={"read_pdf_text"})
+        out = json.loads(tool.invoke({"source": "rpt", "pdf_pages": 5}))
+        assert out["pdf_pages_returned"] == [5]
+        assert "pdf_pages" in tool.description
+        assert "pdf_pages" in tool.args
+
+
 class TestRealPathFallback:
     def test_analyze_pdf_page_resolves_real_path(self, tmp_path):
         p = tmp_path / "r.pdf"
@@ -192,3 +266,11 @@ class TestParsePages:
     def test_unparseable_falls_back(self):
         pages, note = _parse_pages("garbage", 5, 3)
         assert pages == [0, 1, 2] and "could not parse" in note
+
+    def test_comma_lists(self):
+        assert _parse_pages("0-1,3", 5, 3)[0] == [0, 1, 3]
+        assert _parse_pages(" 4 , 2 ", 5, 3)[0] == [2, 4]
+
+    def test_a_huge_range_is_not_built_page_by_page(self):
+        pages, note = _parse_pages("3-999999999", 5, 3)
+        assert pages == [3, 4] and "out of range" in note

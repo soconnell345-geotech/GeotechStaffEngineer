@@ -110,7 +110,9 @@ dependencies = [
     # dictionary validation degrades gracefully (has_pydiggs); install the
     # [pydiggs] extra where kernel stability is not a concern.
     "ezdxf>=1.4",
-    "PyMuPDF>=1.23",
+    # Below 2: PyMuPDF 2.0 (2026-10-19) reads table cells differently and
+    # breaks report_ingest's table floor (six tests in CI); BACKLOG INF-17.
+    "PyMuPDF>=1.23,<2",
     # Drawing & submittal intelligence — split out 2026-09-04 (owner:
     # independently importable/publishable package). Carries the former
     # drawing_ir/ (as planlens.ir), pdf_import/ (planlens.pdf), and

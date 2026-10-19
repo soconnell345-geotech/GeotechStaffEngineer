@@ -645,6 +645,12 @@ def _run_plot_data(params: dict) -> dict:
             "put a markdown image link to a local path in the reply; it "
             "cannot display. Never write '[image]' or an inline <svg>."),
     }
+    if response["status"] == "success":
+        # a look at the figure, in a later step, before it is used: what
+        # plot_code asks (BACKLOG GM-152, live wave w12)
+        from funhouse_agent.plot_box import next_step
+        response["next"] = next_step(None, renamed_drafts=False,
+                                     checked_in="warnings")
     if result.annotations:
         response["annotations"] = list(result.annotations)
     if chart_said:

@@ -194,8 +194,17 @@ OPENAI_TOOLS = [
                     "pages": {
                         "type": "string",
                         "description": (
-                            "Pages to read: an int, a list, or a 'start-end' "
-                            "range like '0-9'. Omit for the first several pages."
+                            "Pages to read, counted from 0: an int, a list, or "
+                            "a 'start-end' range like '0-9'. Omit for the "
+                            "first several pages."
+                        ),
+                    },
+                    "pdf_pages": {
+                        "type": "string",
+                        "description": (
+                            "Instead of pages: the same, 1-based as a PDF "
+                            "viewer shows (e.g. '1-3,6'). Each page in the "
+                            "result gives both (page, pdf_page)."
                         ),
                     },
                 },

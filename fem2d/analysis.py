@@ -1035,7 +1035,7 @@ def _excavation_water_notes(mode, seep, z_w, w_in, row, d_last, wall_depth,
         f"{row['critical_gradient']:.2f} (at the critical gradient the soil "
         f"in front is quick: piping and heave; Caltrans T&S Manual 2025, "
         f"section 10-4, p. 10-21; USS Steel Sheet Piling Design Manual, "
-        f"pp. 64-65; UFC 3-220-10, 2026, section 6-5.2.2, p. 312, asks for "
+        f"pp. 64-65; UFS 3-220-10, 2026, section 6-5.2.2, p. 312, asks for "
         f"a factor of safety of 1.5 to 2 against heave).")
     return notes
 
