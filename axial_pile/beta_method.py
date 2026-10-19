@@ -17,6 +17,8 @@ References:
 import math
 import warnings
 
+from axial_pile.nordlund import _note
+
 
 def beta_from_phi(phi_deg: float, OCR: float = 1.0,
                   method: str = "fellenius") -> float:
@@ -186,9 +188,6 @@ def table_7_9(soil: str, phi_deg: float, notes=None) -> tuple:
         text = (f"phi' = {phi_deg:g} deg is outside GEC-12 Table 7-9's "
                 f"{soil} range ({p0:g}-{p1:g} deg); beta and Nt were taken "
                 f"at {phi:g} deg, the range's end.")
-        if notes is None:
-            warnings.warn(text, stacklevel=2)
-        elif text not in notes:
-            notes.append(text)
+        _note(notes, text)
     w = (phi - p0) / (p1 - p0)
     return b0 + w * (b1 - b0), n0 + w * (n1 - n0)

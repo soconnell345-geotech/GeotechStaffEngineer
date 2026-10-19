@@ -119,6 +119,8 @@ silt toe takes the table's Nt.
   module's reading of "predominantly", which GEC-12 does not measure; the
   result's `choices` state it with the clay share, "predominantly cohesive
   soil (Eq. 7-90)", GM-144); "paikowsky_whitman" or "tomlinson" force one;
+  Ca is from Fig. 7-17 as Eq. 7-90 prints it (p. 407), whatever
+  `adhesion_chart` is (that chart still sets Eqs. 7-88/7-89);
   uplift then takes the reduced shaft (0.8 Ca As). A note says plugging is
   uncertain at 24 in and over.
 

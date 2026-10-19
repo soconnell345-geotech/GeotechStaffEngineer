@@ -579,6 +579,8 @@ def _auto_method_notes(result, analysis=None) -> str:
                             f"({lb['shrink_swell_m']:.2f} m)"
                             if lb.get("shrink_swell_m") else ""))
     chart = getattr(analysis, "adhesion_chart", "fig_7_17")
+    if (result.toe_details or {}).get("governs") == "Eq. 7-90":
+        chart = "fig_7_17"  # Eq. 7-90 takes Ca from Fig. 7-17 (p. 407)
     text = ("K_\u03b4 from Tables 7-6/7-7 (log-linear in the displaced volume "
             "V), \u03b4/\u03c6 from Fig. 7-9, C_F from Fig. 7-14; "
             f"{_ADHESION_CHART_TEXT.get(chart, _ADHESION_CHART_TEXT['fig_7_17'])}"

@@ -35,6 +35,8 @@ from typing import Optional, Tuple
 
 import numpy as np
 
+from axial_pile.nordlund import _note
+
 #: 1 ksf in kPa.
 KSF = 47.880259
 
@@ -322,13 +324,13 @@ def alpha_fig_7_18(su: float, D_over_b: float, case: str,
     su_ksf = su / KSF
     start, _ = fig_7_18_range_ksf(case, D_over_b)
     if su_ksf < start:
-        _fig_note(notes, (
+        _note(notes, (
             f"su = {su_ksf:.2f} ksf is below GEC-12 Figure 7-18's "
             f"{FIG_7_18_CASES[case]} curves (they start near {start:g} "
             f"ksf); alpha was held at the curves' starting value."))
     lowest = _FIG_7_18[case][0][0]
     if case != SAND_OVER_STIFF_CLAY and D_over_b < lowest:
-        _fig_note(notes, (
+        _note(notes, (
             f"The penetration into the stiff clay, D = {D_over_b:.1f}b, is "
             f"less than the shallowest curve of GEC-12 Figure 7-18's "
             f"{FIG_7_18_CASES[case]} (D = {lowest:g}b); alpha was read off "
@@ -336,13 +338,6 @@ def alpha_fig_7_18(su: float, D_over_b: float, case: str,
             f"penetration, so it is overstated for a shallower one."))
     return sum(w * float(np.interp(su_ksf, s, a))
                for w, s, a in _fig_7_18_curves(case, D_over_b))
-
-
-def _fig_note(notes: Optional[list], text: str) -> None:
-    if notes is None:
-        warnings.warn(text, stacklevel=3)
-    elif text not in notes:
-        notes.append(text)
 
 
 def adhesion_fig_7_18(su: float, D_over_b: float, case: str,
@@ -363,7 +358,7 @@ def adhesion_fig_7_18(su: float, D_over_b: float, case: str,
     if beyond_chart == "api" and sigma_v is not None:
         return api_alpha(su, sigma_v) * su, "API alpha"
     ca = alpha_fig_7_18(end, D_over_b, case, notes) * end
-    _fig_note(notes, (
+    _note(notes, (
         f"su = {su / KSF:.2f} ksf is beyond GEC-12 Figure 7-18's "
         f"{FIG_7_18_CASES[case]} curves (they end near {end / KSF:.2f} ksf); "
         f"Ca was held at the chart's end value."))

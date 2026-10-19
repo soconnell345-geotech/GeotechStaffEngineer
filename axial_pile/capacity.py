@@ -346,56 +346,12 @@ class AxialPileAnalysis:
         # ride on the result as its warnings.
         notes: List[str] = []
         pile = self.pile
-        total_Qs = 0.0
-        layer_results = []
-        shaft_layers = []
-        current_depth = 0.0
         tip_depth = self._tip_depth
 
         area_V, _ = self._displaced_area()
         V = displaced_volume(area_V)
-        strata = self._fig_7_18_strata()
-
-        for layer, stratum in zip(self.soil.layers, strata):
-            layer_top = current_depth
-            layer_bottom = current_depth + layer.thickness
-            current_depth = layer_bottom
-
-            if layer_top >= tip_depth:
-                break
-
-            # Portion of this layer that intersects the pile shaft. Layers
-            # above the pile head (head_depth) contribute no skin friction;
-            # with the default head_depth = 0 this clips at [0, pile_length].
-            z_top = max(layer_top, self.head_depth)
-            z_bottom = min(layer_bottom, tip_depth)
-            if z_bottom - z_top <= 0:
-                continue
-
-            Qs_layer, sigma_v, method_used, info = self._layer_skin_friction(
-                layer, layer_bottom, z_top, z_bottom, pile.perimeter, V,
-                notes, stratum)
-
-            shaft_layers.append(layer)
-            total_Qs += Qs_layer
-            layer_results.append({
-                "depth_top_m": round(z_top, 2),
-                "depth_bottom_m": round(z_bottom, 2),
-                "soil_type": layer.soil_type,
-                "description": layer.description,
-                "method": method_used,
-                # Unrounded, so the layers sum to Q_s exactly (the
-                # calculation tables, GM-39); every display formats them.
-                "skin_friction_kN": Qs_layer,
-                "sigma_v_kPa": sigma_v,
-                # Q_s,i / (perimeter x segment length): the unit side
-                # resistance averaged over the segment (exact for one
-                # segment; across a GWT split it is the average).
-                "unit_side_resistance_kPa": (
-                    Qs_layer / (pile.perimeter * (z_bottom - z_top))
-                    if pile.perimeter > 0 else 0.0),
-                **info,
-            })
+        layer_results, shaft_layers, total_Qs = self._shaft(V, notes)
+        shaft_notes = len(notes)
 
         # Outside side resistance (before any inside/plug friction)
         Qs_outside = total_Qs
@@ -463,7 +419,14 @@ class AxialPileAnalysis:
                               "predominantly_cohesive": reading}
             if pw_method == "tomlinson":
                 # Eq. 7-90: Rn = 0.8 Ca As + 4.5 su Ap (Ap of the plugged
-                # pile); a cohesionless layer keeps its own side resistance.
+                # pile), Ca from Fig. 7-17 as p. 407 prints it whatever
+                # adhesion_chart is (the shaft again on Fig. 7-17, its notes
+                # in place of the first pass's); a cohesionless layer keeps
+                # its own side resistance.
+                if self.adhesion_chart != "fig_7_17":
+                    again: List[str] = []
+                    layer_results, _, _ = self._shaft(V, again, "fig_7_17")
+                    notes[:shaft_notes] = again
                 for lb in layer_results:
                     if lb["method"] == "tomlinson":
                         lb["skin_friction_kN"] *= 0.8
@@ -527,6 +490,60 @@ class AxialPileAnalysis:
             plug_weight=plug_weight,
             toe_details=toe_details,
         )
+
+    def _shaft(self, V: float, notes: List[str],
+               chart: Optional[str] = None) -> Tuple[list, list, float]:
+        """(layer rows, shaft layers, outside side resistance in kN) of the
+        layers along the shaft, the alpha-method on ``chart`` (default
+        ``adhesion_chart``)."""
+        pile = self.pile
+        tip_depth = self._tip_depth
+        total_Qs = 0.0
+        layer_results = []
+        shaft_layers = []
+        current_depth = 0.0
+
+        for layer, stratum in zip(self.soil.layers, self._fig_7_18_strata()):
+            layer_top = current_depth
+            layer_bottom = current_depth + layer.thickness
+            current_depth = layer_bottom
+
+            if layer_top >= tip_depth:
+                break
+
+            # Portion of this layer that intersects the pile shaft. Layers
+            # above the pile head (head_depth) contribute no skin friction;
+            # with the default head_depth = 0 this clips at [0, pile_length].
+            z_top = max(layer_top, self.head_depth)
+            z_bottom = min(layer_bottom, tip_depth)
+            if z_bottom - z_top <= 0:
+                continue
+
+            Qs_layer, sigma_v, method_used, info = self._layer_skin_friction(
+                layer, layer_bottom, z_top, z_bottom, pile.perimeter, V,
+                notes, stratum, chart)
+
+            shaft_layers.append(layer)
+            total_Qs += Qs_layer
+            layer_results.append({
+                "depth_top_m": round(z_top, 2),
+                "depth_bottom_m": round(z_bottom, 2),
+                "soil_type": layer.soil_type,
+                "description": layer.description,
+                "method": method_used,
+                # Unrounded, so the layers sum to Q_s exactly (the
+                # calculation tables, GM-39); every display formats them.
+                "skin_friction_kN": Qs_layer,
+                "sigma_v_kPa": sigma_v,
+                # Q_s,i / (perimeter x segment length): the unit side
+                # resistance averaged over the segment (exact for one
+                # segment; across a GWT split it is the average).
+                "unit_side_resistance_kPa": (
+                    Qs_layer / (pile.perimeter * (z_bottom - z_top))
+                    if pile.perimeter > 0 else 0.0),
+                **info,
+            })
+        return layer_results, shaft_layers, total_Qs
 
     def _toe_Nt(self, tip_layer: AxialSoilLayer,
                 notes: Optional[List[str]] = None) -> Tuple[float, str]:
@@ -823,7 +840,7 @@ class AxialPileAnalysis:
 
         clay = [lb for lb in layer_results if lb["method"] == "tomlinson"]
         if clay:
-            out.extend(self._adhesion_choices(clay))
+            out.extend(self._adhesion_choices(clay, plug_case == "eq_7_90"))
         if self.shrink_swell_depth is not None:
             left = sum(lb.get("shrink_swell_m", 0.0) for lb in layer_results)
             out.append(choice(
@@ -873,7 +890,9 @@ class AxialPileAnalysis:
                     "should be used (taken here as the toe in clay and more "
                     "than half the embedded length in clay layers; Tomlinson "
                     "applies it when field measurements confirm a plug); a "
-                    f"cohesionless layer keeps its side resistance; "
+                    f"cohesionless layer keeps its side resistance; Ca from "
+                    f"Fig. 7-17 as Eq. 7-90 prints it (p. 407), whatever "
+                    f"adhesion chart is chosen for the side resistance; "
                     f"Eqs. 7-88/7-89 give {numbers}")
             else:
                 basis = ("the lesser of Eqs. 7-88 and 7-89 governs "
@@ -982,10 +1001,13 @@ class AxialPileAnalysis:
                  "(uplift_skin_fraction 0.7)"]))
         return out
 
-    def _adhesion_choices(self, clay: List[dict]) -> List[dict]:
+    def _adhesion_choices(self, clay: List[dict],
+                          eq_7_90: bool = False) -> List[dict]:
         """The alpha-method's choices over the clay layers (``clay``, their
         breakdown rows): the chart (GEC-12 p. 246), Figure 7-17's curves
-        and limit, each layer's Figure 7-18 case, and su past a chart."""
+        and limit, each layer's Figure 7-18 case, and su past a chart.
+        Under Eq. 7-90 (``eq_7_90``) the side resistance is on Figure 7-17
+        whatever the chart, so no Figure 7-18 case is read."""
         from geotech_common.choices import GIVEN, MODULE, choice, how_given
         out = []
         charts = {"fig_7_17": "Fig. 7-17 (Tomlinson 1979)",
@@ -997,7 +1019,9 @@ class AxialPileAnalysis:
         chosen = charts[chart]
         used = sorted({lb.get("adhesion_chart") for lb in clay} - {None})
         if chart != "fig_7_17":
-            chosen += f" (used: {', '.join(used)})"
+            chosen += f" (used: {', '.join(used)}"
+            chosen += (", Eq. 7-90 takes Ca from Fig. 7-17, p. 407)"
+                       if eq_7_90 else ")")
         out.append(choice(
             "adhesion chart (alpha-method)", chosen,
             how_given(chart, "fig_7_17", name="adhesion_chart"),
@@ -1047,7 +1071,7 @@ class AxialPileAnalysis:
                 ["uncapped, Fig. 7-17 as drawn (not offered)"]))
 
         read_18 = [lb for lb in clay if "fig_7_18_case" in lb]
-        if chart != "fig_7_17":
+        if chart != "fig_7_17" and not eq_7_90:
             strata = {}
             for lb in clay:
                 case = lb.get("fig_7_18_case", "none")
@@ -1166,7 +1190,8 @@ class AxialPileAnalysis:
     def _layer_skin_friction(self, layer: AxialSoilLayer, layer_bottom: float,
                              z_top: float, z_bottom: float, perimeter: float,
                              V: float, notes: Optional[List[str]],
-                             stratum: Optional[Tuple[str, float, str]] = None
+                             stratum: Optional[Tuple[str, float, str]] = None,
+                             chart: Optional[str] = None
                              ) -> Tuple[float, float, str, dict]:
         """Side resistance of one layer segment of the pile.
 
@@ -1177,7 +1202,8 @@ class AxialPileAnalysis:
         (unit side resistance linear in sigma_v'). The segment is also split
         at ``shrink_swell_depth``; cohesive soil above it gives no shaft
         resistance (GEC-12 p. 247). ``stratum`` is the layer's Figure 7-18
-        case (:meth:`_fig_7_18_strata`).
+        case (:meth:`_fig_7_18_strata`); ``chart`` the alpha-method's chart
+        (default ``adhesion_chart``).
 
         Returns
         -------
@@ -1236,7 +1262,7 @@ class AxialPileAnalysis:
                         "C_F": f["C_F"]}
             else:
                 ca, info = self._adhesion(layer, layer_bottom, sigma_v,
-                                          stratum, notes)
+                                          stratum, notes, chart)
                 Qs += share * ca * perimeter * seg_thickness
                 method_used = "tomlinson"
 
@@ -1252,8 +1278,10 @@ class AxialPileAnalysis:
 
     def _adhesion(self, layer: AxialSoilLayer, layer_bottom: float,
                   sigma_v: float, stratum: Optional[Tuple[str, float, str]],
-                  notes: Optional[List[str]]) -> Tuple[float, dict]:
-        """(Ca in kPa, its readings) of a clay layer by ``adhesion_chart``:
+                  notes: Optional[List[str]], chart: Optional[str] = None
+                  ) -> Tuple[float, dict]:
+        """(Ca in kPa, its readings) of a clay layer by ``chart`` (default
+        ``adhesion_chart``):
         Figure 7-17, Figure 7-18 for the layer's stratigraphy case, or the
         smaller of the two (GEC-12 p. 246). The notes of a chart not used
         are left out."""
@@ -1263,7 +1291,7 @@ class AxialPileAnalysis:
         D_over_b = bottom / self.pile.width
         info: dict = {"D_over_b": D_over_b}
         case = stratum[0] if stratum else "none"
-        chart = self.adhesion_chart
+        chart = chart or self.adhesion_chart
         readings = {}
         if chart in ("fig_7_17", "smaller") or case == "none":
             own: List[str] = []

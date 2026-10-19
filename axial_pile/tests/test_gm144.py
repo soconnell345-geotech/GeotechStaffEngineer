@@ -390,6 +390,33 @@ def test_the_predominantly_cohesive_reading_is_stated():
     assert "predominantly cohesive soil (Eq. 7-90)" not in _by_what(r)
 
 
+@pytest.mark.parametrize("chart", ["fig_7_18", "smaller"])
+def test_eq_7_90_takes_ca_from_fig_7_17_whatever_the_chart(chart):
+    """p. 407 prints Eq. 7-90 with Ca from Fig. 7-17: Rn = 0.8 Ca As +
+    4.5 su Ap. The side-resistance chart does not reach it."""
+    pile = make_pipe_pile(0.3556, 0.0095, closed_end=False)
+    soil = _sand_over_clay()
+    r17 = AxialPileAnalysis(pile=pile, soil=soil, pile_length=20).compute()
+    r = AxialPileAnalysis(pile=pile, soil=soil, pile_length=20,
+                          adhesion_chart=chart).compute()
+    assert r.toe_details["governs"] == "Eq. 7-90"
+    assert (r.Q_skin, r.Q_tip, r.Q_ultimate) == \
+        (r17.Q_skin, r17.Q_tip, r17.Q_ultimate)
+    assert r.layer_breakdown[1]["adhesion_chart"] == "Fig. 7-17"
+    c = _by_what(r)
+    assert ("Ca from Fig. 7-17 as Eq. 7-90 prints it (p. 407), whatever "
+            "adhesion chart is chosen for the side resistance"
+            in c["open-ended pipe"]["basis"])
+    assert "Fig. 7-18 stratigraphy case" not in c
+    # Eqs. 7-88/7-89 keep the chosen chart: Fig. 7-18 moves them
+    pw = AxialPileAnalysis(pile=pile, soil=soil, pile_length=20,
+                           adhesion_chart="fig_7_18",
+                           open_pipe_method="paikowsky_whitman").compute()
+    pw17 = AxialPileAnalysis(pile=pile, soil=soil, pile_length=20,
+                             open_pipe_method="paikowsky_whitman").compute()
+    assert pw.Q_skin != pw17.Q_skin
+
+
 # --------------------------------------------- the defaults do not move
 
 def test_every_new_option_at_its_default_is_the_old_run():
