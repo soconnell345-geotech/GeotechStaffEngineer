@@ -1137,7 +1137,11 @@ def _wall_interface_summary(rows, exc_depth):
                     "soil's shear on the wall (+ up) summed over the joints "
                     "of each face (the retained face from the ground, the "
                     "excavation face from the excavation level, to the "
-                    "tip; the tip itself is tied, not a joint)."}
+                    "tip; the tip itself is tied, not a joint). "
+                    "mobilized_delta_deg is the angle of the summed forces, "
+                    "atan(|shear| / normal); joints short of their limit "
+                    "(joints less joints_slipping) carry less than delta, "
+                    "so it can be below the delta given."}
 
 
 def _wall_joints(nodes, elements, springs, wall_ties, right_ties, col,

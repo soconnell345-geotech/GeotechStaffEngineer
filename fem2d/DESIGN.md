@@ -422,8 +422,10 @@ times cos delta (117.1 with the manual's Ka = 0.27 and Kp = 6.56 as
 printed). On the same wall: smooth 155.2, delta/phi' = 0.5 98.7, 1.0 80.9,
 45 deg 75.7, bonded 65.7 kN-m/m; adhesion 10 MPa (no slip) 65.6, the
 bonded value. On the retained side the joints mobilize the given
-17.5 deg at delta/phi' = 0.5; at delta = phi' = 35 the soil next to the
-wall yields first and 23.6 deg is mobilized. The default (smooth) is unchanged.
+17.5 deg at delta/phi' = 0.5 (12 of 14 joints slip). At delta = phi' =
+35 the 8 joints from the ground to about 1.5 m below the excavation level
+slip at 35 deg; the 5 deeper joints carry 33 to 52 % of their limit, so
+the summed forces lean at 23.6 deg. The default (smooth) is unchanged.
 
 ### Mesh Generation
 

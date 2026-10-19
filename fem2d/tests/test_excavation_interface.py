@@ -244,9 +244,10 @@ def test_wall_friction_orders_the_wall_forces(runs):
 
 def test_retained_side_mobilizes_the_given_delta(runs):
     """delta/phi' = 0.5: the joints slip and the given 17.5 deg is
-    mobilized. delta = phi' = 35: the soil next to the wall yields before
-    the joints slip (23.6 deg mobilized), more than at 0.5, less than
-    given."""
+    mobilized. delta = phi' = 35: the joints to about 1.5 m below the
+    excavation level slip at 35 deg, the deeper ones do not reach their
+    limit, and the summed forces lean at 23.6 deg: more than at 0.5, less
+    than given."""
     w = runs['half'].wall_interface['retained_side']
     assert w['mobilized_delta_deg'] == pytest.approx(17.5, abs=1.0)
     assert w['joints_slipping'] >= 0.75 * w['joints']
