@@ -1870,6 +1870,9 @@ def make_vision_tools(
                 result["draw"] = draw
                 if draw >= _box.DRAW_CAP:
                     result["redraw_note"] = _box.draw_cap_note(draw)
+                result["next"] = _box.next_step(
+                    draw, renamed_drafts=plot_data_replaces,
+                    checked_in="warnings")
             fig = (booked["figures"] or [{}])[0]
             if fig.get("code_file"):
                 result["code_file"] = fig["code_file"]

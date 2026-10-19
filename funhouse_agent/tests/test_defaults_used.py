@@ -24,11 +24,12 @@ def test_defaults_used_lists_what_the_call_left_out():
     r = D.call_agent("axial_pile", "axial_pile_capacity", dict(_PILE))
     # cohesive_phi (beta only) and the uplift fraction (uplift only) are
     # not used by this run, so not listed (GM-119); the clay layer's Fig.
-    # 7-17 curve is (GM-121), and the sand-toe limit is not: the toe is in
-    # clay
+    # 7-17 curve is (GM-121) and the adhesion chart (GM-144), and the
+    # sand-toe limit and toe phi are not: the toe is in clay
     assert r["defaults_used"] == {
         "head_depth": 0.0, "factor_of_safety": 2.5, "method": "auto",
-        "include_uplift": False, "adhesion_curve": "auto"}
+        "include_uplift": False, "adhesion_curve": "auto",
+        "adhesion_chart": "fig_7_17"}
     r = D.call_agent("axial_pile", "axial_pile_capacity",
                      {**_PILE, "factor_of_safety": 3.0, "method": "auto"})
     assert "factor_of_safety" not in r["defaults_used"]

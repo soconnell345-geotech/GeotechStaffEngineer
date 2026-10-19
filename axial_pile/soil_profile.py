@@ -16,6 +16,16 @@ from typing import List, Optional
 
 from geotech_common.water import GAMMA_W
 
+#: A layer's ``fig_7_18_case`` values: the three GEC-12 Figure 7-18 cases
+#: and "none" (Figure 7-18 does not apply).
+FIG_7_18_LAYER_CASES = ("sand_over_stiff_clay", "soft_clay_over_stiff_clay",
+                        "stiff_clay", "none")
+
+#: GEC-12 Table 7-9's soil types a layer of each soil_type may take (a silt
+#: may be cohesive or cohesionless).
+SOIL_CLASSES = {"cohesive": ("clay", "silt"),
+                "cohesionless": ("silt", "sand", "gravel")}
+
 
 @dataclass
 class AxialSoilLayer:
@@ -59,6 +69,20 @@ class AxialSoilLayer:
         from local experience (Step 5a). If None (default), Nt is
         estimated from phi' in cohesionless soil and is the analysis's
         ``cohesive_Nt`` in cohesive soil (Step 5b).
+    fig_7_18_case : str, optional
+        The GEC-12 Figure 7-18 soil stratigraphy case of a cohesive layer
+        (alpha-method, with the analysis's ``adhesion_chart`` 'fig_7_18' or
+        'smaller'): "sand_over_stiff_clay" (top graph),
+        "soft_clay_over_stiff_clay" (middle graph), "stiff_clay" (bottom
+        graph) or "none" (Figure 7-18 does not apply: Figure 7-17 alone).
+        A given case starts a clay stratum at this layer's top, from which
+        D is measured. If None (default), the case comes from the profile
+        (see ``AxialPileAnalysis``).
+    soil_class : str, optional
+        The layer's soil type in GEC-12 Table 7-9, for the beta method with
+        ``beta_coefficients`` 'table_7_9': "clay", "silt", "sand" or
+        "gravel". If None (default), "clay" for a cohesive layer and "sand"
+        for a cohesionless one.
     """
     thickness: float
     soil_type: str
@@ -70,6 +94,8 @@ class AxialSoilLayer:
     description: str = ""
     beta: Optional[float] = None
     Nt: Optional[float] = None
+    fig_7_18_case: Optional[str] = None
+    soil_class: Optional[str] = None
 
     def __post_init__(self):
         self.soil_type = self.soil_type.lower()
@@ -108,6 +134,32 @@ class AxialSoilLayer:
             value = getattr(self, name)
             if value is not None and value <= 0:
                 raise ValueError(f"{name} must be > 0 when set, got {value}")
+
+        if self.fig_7_18_case is not None:
+            cases = FIG_7_18_LAYER_CASES
+            if self.fig_7_18_case not in cases:
+                raise ValueError(f"fig_7_18_case must be one of {list(cases)}"
+                                 f", got '{self.fig_7_18_case}'")
+            if self.soil_type != "cohesive":
+                raise ValueError("fig_7_18_case is for a cohesive layer "
+                                 "(GEC-12 Figure 7-18 gives the adhesion "
+                                 "in clay)")
+        if self.soil_class is not None:
+            self.soil_class = self.soil_class.lower()
+            allowed = SOIL_CLASSES[self.soil_type]
+            if self.soil_class not in allowed:
+                raise ValueError(
+                    f"soil_class of a {self.soil_type} layer must be one of "
+                    f"{list(allowed)} (GEC-12 Table 7-9's soil types), got "
+                    f"'{self.soil_class}'")
+
+    @property
+    def table_7_9_soil(self) -> str:
+        """The layer's soil type in GEC-12 Table 7-9: ``soil_class``, else
+        clay for a cohesive layer and sand for a cohesionless one."""
+        if self.soil_class is not None:
+            return self.soil_class
+        return "clay" if self.soil_type == "cohesive" else "sand"
 
     @property
     def toe_phi(self) -> float:

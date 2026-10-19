@@ -433,7 +433,7 @@ def test_the_check_leaves_the_picture_as_it_was(monkeypatch):
     notes = [{"text": "Yield", "x": 4, "y": 20, "point": [10, 12]},
              {"text": "Boxed", "x": 30, "y": 6, "box": True}]
     checked = dp.render_data_plot([CURVE], annotations=notes)
-    monkeypatch.setattr(dp, "_check_notes", lambda *a, **k: [])
+    monkeypatch.setattr(dp, "_check_lettering", lambda *a, **k: [])
     unchecked = dp.render_data_plot([CURVE], annotations=notes)
     assert checked.png_bytes == unchecked.png_bytes
 
@@ -459,7 +459,7 @@ def test_a_failed_check_never_costs_the_figure(monkeypatch):
 
     def broken(*a, **k):
         raise RuntimeError("boom")
-    monkeypatch.setattr(dp, "_check_notes", broken)
+    monkeypatch.setattr(dp, "_check_lettering", broken)
     res = dp.render_data_plot([CURVE], annotations=[
         {"text": "a", "x": 5, "y": 15}])
     assert res.png_bytes[:8] == b"\x89PNG\r\n\x1a\n"
@@ -523,7 +523,15 @@ def test_w9_plasticity_chart_draws_its_zone_names_with_notes(drawn):
                            xlabel="Liquid limit, LL (%)",
                            ylabel="Plasticity index, PI (%)",
                            title="Plasticity chart", legend=True)
-    assert not res.warnings, res.warnings
+    # The LL = 50 line is an obstacle for point names, as the data are
+    # (BACKLOG GM-146: it ran through two names here and no warning said
+    # so). B-1 S-6 now stands clear of it; B-2 S-3 has no clear spot (the
+    # line 12 px to the right of its point, the A-line to its left), so it
+    # takes the thin dotted line and the check says so.
+    assert res.warnings == [
+        "series[4] point name 'B-2 S-3': crossed by the reference line at "
+        "50 (no spot beside the point was clear: name it with a note and a "
+        "leader, or leave the name out)"], res.warnings
     assert "8 notes" in res.summary()
     for n in notes:
         a = _plotly_note(res, n["text"])

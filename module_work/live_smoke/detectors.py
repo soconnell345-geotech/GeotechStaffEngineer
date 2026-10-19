@@ -1477,7 +1477,10 @@ def detect_expectations(flow: dict, sessions) -> List[dict]:
     plumbing it was written for (a model choice, so 'info'): ``tools_any``,
     ``artifact_ext``, ``answer_names``, the phrases or regexes the
     flow's final answer must contain (BACKLOG EV-26: does the answer name
-    its judgment calls?), and ``cards``, the download cards the flow should
+    its judgment calls?; an entry with ``"within": "judgment_calls"`` is
+    looked for in the answer's "Judgment calls" list only, or, where the
+    answer has none, in the whole answer, which the finding says), and
+    ``cards``, the download cards the flow should
     end with (BACKLOG EV-24): entries ``{"kind": "figure" | "image" |
     "chart" | an extension, "pattern": a regex on the base name, "count": n
     | "min": n | "max": n, "looked_at": true}``, counted over the distinct
@@ -1538,13 +1541,73 @@ def detect_expectations(flow: dict, sessions) -> List[dict]:
         final = _final_answer(sessions)
         for item in names:
             label, patterns = _answer_name(item)
-            if not any(_search(p, final) for p in patterns):
+            scope = item.get("within") if isinstance(item, dict) else None
+            text, where, whole = final, "", False
+            if scope:
+                part = answer_section(final, scope)
+                heading = _SCOPES[scope][0]
+                if part is None:
+                    whole = True
+                    where = (f" (it has no {heading} list, so the whole "
+                             "answer was searched)")
+                else:
+                    text, where = part, f" in its {heading} list"
+            if not any(_search(p, text) for p in patterns):
                 out.append(finding(
                     D, "expected_answer_name_missing", "info",
-                    f"the final answer does not name {label}"
+                    f"the final answer does not name {label}{where}"
                     + ("" if final.strip() else " (the answer is empty)"),
-                    looked_for=patterns, answer_chars=len(final)))
+                    looked_for=patterns, answer_chars=len(final),
+                    within=scope, searched_chars=len(text)))
+            elif whole and final.strip():
+                # found, but only in an answer with no list to hold the
+                # key to (w13 F18j: a citation outside the calls)
+                out.append(finding(
+                    D, "expected_answer_name_unscoped", "info",
+                    f"the final answer names {label}, but it has no "
+                    f"{_SCOPES[scope][0]} list, so the whole answer was "
+                    "searched", looked_for=patterns, within=scope))
     return out
+
+
+#: The parts of an answer an ``answer_names`` entry can be held to
+#: (``"within"``): name -> (the heading as written, its pattern). w13 F18j:
+#: "Vesic (1973)" in a results heading hit the "a reference cited for a
+#: judgment call" key though every call said "no reference basis".
+_SCOPES = {"judgment_calls": ('"Judgment calls"',
+                              r"judge?ment calls?\b")}
+
+_MD_HEADING = re.compile(r"^[ \t]{0,3}(#{1,6})[ \t]")
+#: A line that is only bold text, such as a "**References**" block after
+#: the list (a call that opens in bold carries text after it, or a marker).
+_BOLD_LINE = re.compile(r"^[ \t]{0,3}(\*\*|__)[^*_\n]+(\*\*|__)[ \t]*:?[ \t]*$")
+
+
+def answer_section(text: str, scope: str) -> Optional[str]:
+    """The ``scope`` part of ``text`` (see ``_SCOPES``): from the line that
+    heads it -- a Markdown heading, a bold line or a line that opens with
+    its name -- to the next Markdown heading at its level or above, the
+    next line that is only bold text, or the end. ``None`` when no line
+    heads it."""
+    head = re.compile(r"^[ \t]{0,3}(#{1,6}[ \t]*|\*\*|__)?[ \t]*"
+                      r"(\d+[.)][ \t]*)?(\*\*|__)?[ \t]*" + _SCOPES[scope][1],
+                      re.IGNORECASE)
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if not head.match(line):
+            continue
+        level = _MD_HEADING.match(line)
+        level = len(level.group(1)) if level else None
+        out = [line]
+        for nxt in lines[i + 1:]:
+            m = _MD_HEADING.match(nxt)
+            if m and (level is None or len(m.group(1)) <= level):
+                break
+            if _BOLD_LINE.match(nxt):
+                break
+            out.append(nxt)
+        return "\n".join(out)
+    return None
 
 
 def card_spec_bounds(spec: dict) -> Tuple[str, int, Optional[int]]:

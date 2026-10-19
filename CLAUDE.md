@@ -287,7 +287,10 @@ Key conventions:
       lines from the references (refs `chart_lines.py`); a live surcharge
       over a cantilever wall's heel or an MSE wall's reinforced zone no longer
       resists (release notes); calc packages keep given and assumed inputs apart
-      and judgment calls cite their source (behind the OFF switch);
+      and judgment calls cite their source (behind the OFF switch); the driven-pile
+      tools take GEC-12 chapter 7's remaining options and a custom section; the
+      figure tools keep names off reference lines and hatching and take in every
+      plan outline;
       the release notes to carry are listed in HANDOFF §0a-current;
       see BACKLOG "Done".
     Open next: Foundry brief 6, which measures all of this, is drafted
