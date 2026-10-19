@@ -548,6 +548,8 @@ class MethodComparisonResult:
 
 # Table 3.1 (Little 1994 and Endo et al. 1969): neutral plane depth as a
 # fraction of pile embedment for piles driven through consolidating clay.
+# Checked 2026-10-19 against the printed CGPR #56 Table 3.1 (p. 13): 0.67,
+# 0.75 and 1.0, as here (BACKLOG GM-02).
 ENDO_NEUTRAL_PLANE_RATIOS = {
     # Floating pile, almost no toe resistance (bearing on soft/medium clay)
     "floating": 0.67,
