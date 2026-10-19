@@ -179,6 +179,24 @@ def test_next_asks_what_the_figure_shows_against_the_data(tmp_path):
     assert "redraw" in nxt.lower() and "at most twice" in nxt
 
 
+def test_plot_data_asks_for_the_same_look(tmp_path):
+    """BACKLOG GM-152 (live wave w12): plot_data's result asked for no
+    look; it asks for the one plot_code asks for, in its own terms (its
+    findings are in warnings; it takes no replaces outside the figure
+    helper)."""
+    from funhouse_agent.adapters.profile_figure_adapter import _run_plot_data
+    r = _run_plot_data({"series": [{"x": [0, 1, 2], "y": [0, 1, 4]}],
+                        "output_path": str(tmp_path / "curve.png"),
+                        "interactive": False})
+    assert r["status"] == "success", r
+    nxt = r["next"]
+    for words in ("in a step after this one", "two or three plotted values",
+                  "compare them here with the data", "what warnings lists",
+                  "(the same output_path)"):
+        assert words in nxt, words
+    assert "replaces=" not in nxt and "layout_check" not in nxt
+
+
 def _helper_with_draws(n, helper="figure"):
     rec = keep_work.HelperRecord("t1", helper, "draw it")
     for k in range(n):
