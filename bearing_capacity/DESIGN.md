@@ -113,3 +113,27 @@ wraps it).
 - Check value: 2 m square, Df = 1.5 m, φ′ = 25°, c′ = 20 kPa, γ = 16.5 kN/m³ →
   qult = 653.4 + 314.8 + 110.1 = 1,078 kPa (hand calculation from the
   tabulated factors).
+
+## Allowable loads on the footing (2026-10-19, BACKLOG GM-170)
+
+`q_allowable` is the GROSS allowable pressure q_ult / FS (UFC 3-220-20
+Sec. 5-2.4 Eq. 5-13). Waves w12 and w13 (F18) multiplied it by the footing
+area and called the product "an allowable column load" (1,545 kN on a 2 m
+square footing 1 m deep); that product is the total load on the bearing
+surface, Q_DL+LL + W_F + W_S (Eq. 5-1, p. 275), the footing's and the
+soil's weight in it. The result now also gives:
+
+- `q_allowable_net` = q_ult / FS - q (Eq. 5-14, p. 279), q the overburden
+  at the base the bearing equation used;
+- `allowable_loads()` (`allowable_load` in `to_dict()`): the structural
+  load Q_DL+LL = q_all,net x A' (Eq. 5-3, p. 276: the foundation and the
+  soil over it taken at the soil's unit weight) and the gross load
+  q_all x A', each named, on the effective area A' = B'L' the analysis
+  set (`area_m2`; a strip's width B', per metre run), with
+  `results.LOAD_BASIS`. F18: 1,469 kN structural, 1,545 kN gross.
+
+GEC-6 Sec. 5.2.2 (p. 53) recommends the allowable bearing capacity on the
+gross pressure, the footing and backfill weight counted in the applied
+load, and Sec. 6.3.1 (p. 113) notes a footing heavier than the soil it
+replaces; the basis quotes both. The calc package prints the two steps
+after q_all. No number the result gave before changes.

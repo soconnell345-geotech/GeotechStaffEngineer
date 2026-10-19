@@ -1122,6 +1122,8 @@ def _generate_bearing_capacity_package(params: dict) -> dict:
         extra={
             "q_ultimate_kPa": round(result.q_ultimate, 1),
             "q_allowable_kPa": round(result.q_allowable, 1),
+            "q_allowable_net_kPa": round(result.q_allowable_net, 1),
+            "allowable_load": result.allowable_loads(),
             "factor_of_safety": result.factor_of_safety,
         },
     )
@@ -2183,7 +2185,7 @@ METHOD_INFO = {
     "bearing_capacity_package": {
         "category": "Calculation Package",
         "brief": "Run bearing capacity analysis and generate Mathcad-style calc package, with a table (CSV + printed) of the factors N, s, d, i, b, g and the value of each term.",
-        "returns": {**_COMMON_RETURNS, "q_ultimate_kPa": "Ultimate bearing capacity.", "q_allowable_kPa": "Allowable bearing capacity."},
+        "returns": {**_COMMON_RETURNS, "q_ultimate_kPa": "Ultimate bearing capacity.", "q_allowable_kPa": "Allowable bearing capacity (gross).", "q_allowable_net_kPa": "Net allowable bearing pressure q_ult/FS - q (UFC 3-220-20 Eq. 5-14).", "allowable_load": "The allowable loads on the footing (per metre for a strip): structural_load_kN, the column or structure load Q_DL+LL = q_all,net x A' (Eq. 5-3), and gross_load_kN = q_all x A', the total load on the base with the footing and the soil over it (Eq. 5-1), with their basis. Quote the structural load as the allowable column load, never the gross load."},
     },
     "lateral_pile_package": {
         "category": "Calculation Package",

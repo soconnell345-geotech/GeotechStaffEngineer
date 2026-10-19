@@ -359,6 +359,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         result_value=f"{r.q_allowable:,.1f}",
         result_unit="kPa",
     ))
+    gbc_items.extend(_allowable_load_items(r))
 
     # Two-layer info
     if r.is_two_layer:
@@ -550,6 +551,7 @@ def _terzaghi_sections(r, analysis) -> List[CalcSection]:
             result_value=f"{r.q_allowable:,.1f}",
             result_unit="kPa",
         ),
+        *_allowable_load_items(r),
     ]
     if r.is_two_layer:
         eq_items.append(TableData(
@@ -564,6 +566,45 @@ def _terzaghi_sections(r, analysis) -> List[CalcSection]:
     eq_items.extend(r.notes)
     sections.append(CalcSection(title="Bearing Capacity Equation", items=eq_items))
     return sections
+
+
+def _allowable_load_items(r) -> list:
+    """The net allowable bearing pressure and the allowable structural load
+    on the footing, after q_all (GM-170; UFC 3-220-20 Sec. 5-2.2 and
+    5-2.4)."""
+    items = [CalcStep(
+        title="Net Allowable Bearing Pressure",
+        equation="q_all,net = q_ult / FS - q",
+        substitution=(f"q_all,net = {r.q_allowable:,.1f} - "
+                      f"{r.q_overburden:,.1f}"),
+        result_name="q_all,net",
+        result_value=f"{r.q_allowable_net:,.1f}",
+        result_unit="kPa",
+        reference="UFC 3-220-20 Eq. 5-14",
+    )]
+    loads = r.allowable_loads()
+    if not loads:
+        return items
+    unit = "kN_per_m" if r.is_strip else "kN"
+    area = "B'" if r.is_strip else "A'"
+    items.append(CalcStep(
+        title="Allowable Structural Load",
+        equation=f"Q_DL+LL = q_all,net × {area}",
+        substitution=(f"Q_DL+LL = {r.q_allowable_net:,.1f} × "
+                      f"{r.area_m2:,.3f}"),
+        result_name="Q_DL+LL",
+        result_value=f"{loads['structural_load_' + unit]:,.0f}",
+        result_unit="kN/m" if r.is_strip else "kN",
+        reference="UFC 3-220-20 Eq. 5-3",
+    ))
+    items.append(
+        "The foundation and the soil over it are taken at the soil's unit "
+        "weight (UFC 3-220-20 Sec. 5-2.2). q_all "
+        f"× {area} = {loads['gross_load_' + unit]:,.0f} "
+        f"{'kN/m' if r.is_strip else 'kN'} is the gross load on the bearing "
+        "surface, the structural load plus the foundation's and the soil's "
+        "weight (Eq. 5-1); it is not the structural load.")
+    return items
 
 
 def _shape_factor_equation(method: str, phi_deg: float) -> str:

@@ -158,8 +158,14 @@ class BearingCapacityAnalysis:
             Complete results including qult, qallowable, and all factors.
         """
         if self.soil.is_two_layer:
-            return self._compute_two_layer()
-        return self._compute_single_layer()
+            result = self._compute_two_layer()
+        else:
+            result = self._compute_single_layer()
+        # the area the allowable loads are worked on (GM-170)
+        result.is_strip = self.footing.shape == "strip"
+        result.area_m2 = (self.footing.B_eff if result.is_strip
+                          else self.footing.A_eff)
+        return result
 
     def _compute_single_layer(self) -> BearingCapacityResult:
         """Compute bearing capacity for a single-layer soil profile.
