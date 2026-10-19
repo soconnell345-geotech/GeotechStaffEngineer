@@ -588,6 +588,20 @@ _CALC_PLOT_CODE = (
     "analyze_image (what it shows against the data, then the lettering), "
     "redraw at most twice, then paste its html_img_tag.")
 
+#: Added to the calc helper's prompt behind the figure switches (BACKLOG
+#: GM-190; live wave w14 TRACE_REVIEW §8 fix 10): a look the helper made at
+#: a page of its own PDF found a figure it could not read, and the PDF was
+#: handed back as it was, with the fault named. Each draw's ``next`` asks
+#: for a redraw on what a look at the figure finds; nothing asked the same
+#: of a look at the built report.
+_CALC_LOOK_FIXES = (
+    "\nAFTER A LOOK: when a look at a figure, or at a page of a PDF you "
+    "built, finds something a reader could not read or would read wrongly, "
+    "fix it before handing back: redraw the figure or give it the page "
+    "width, build the report again and look again, at most twice. Hand "
+    "back a fault only when these tools cannot fix it, and name it in your "
+    "reply.")
+
 #: Added to the calc helper's prompt with ``GEOTECH_JUDGMENT_CALLS`` on
 #: (BACKLOG GM-116): its compact reply left out the choices it made, so the
 #: main agent had none to relay. GM-155 (live wave w12): no call carried a
@@ -778,6 +792,8 @@ def build_calc_subagent(
             + CALC_REDRAW_NOTE)
     from funhouse_agent import review_flags as _flags
     figure_looks = _flags.figure_helper() or _flags.plot_code()
+    if figure_looks:
+        system_prompt = system_prompt + _CALC_LOOK_FIXES
     if _flags.judgment_calls():
         system_prompt = (system_prompt + _CALC_JUDGMENT_CALLS
                          + _CALC_GIVEN_AND_CITATIONS)

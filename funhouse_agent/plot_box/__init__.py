@@ -706,6 +706,13 @@ def _run_in_box(code, data_json, name, root, limit, cfg, notes, extra=None):
     if child.get("auto_saved"):
         notes.append("figures left open were saved as "
                      + ", ".join(child["auto_saved"]))
+    stand_ins = "; ".join(
+        f"{s.get('file')}: {s.get('why')}"
+        for s in child.get("not_saved") or [] if isinstance(s, dict))
+    if stand_ins and (images or charts or child.get("error")):
+        # with nothing saved and no error the error itself says so below
+        notes.append("Not saved, as a stand-in: " + stand_ins + ". "
+                     + figures.STAND_IN_NOTE)
     if child:
         # kept for the record: whether the OS limits were in force, and how
         # the time split between starting the box and drawing
@@ -744,7 +751,12 @@ def _run_in_box(code, data_json, name, root, limit, cfg, notes, extra=None):
         res["error"] = child["error"]
     else:
         res["status"] = "success" if (images or charts) else "error"
-        if not (images or charts):
+        if not (images or charts) and stand_ins:
+            # every figure the code drew held a place (GM-190)
+            res["error"] = ("No figure was saved, each a stand-in: "
+                            + stand_ins + ". "
+                            + figures.STAND_IN_NOTE)
+        elif not (images or charts):
             res["error"] = ("The code ran but saved no figure: call "
                             "save_figure(fig, name) (or leave the figure "
                             "open and it is saved for you).")

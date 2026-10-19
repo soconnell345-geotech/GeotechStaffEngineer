@@ -731,6 +731,156 @@ def _layout_check(fig, fname: str, dpi=200) -> dict:
                                     seconds=LAYOUT_SECONDS, mb=LAYOUT_MB)
 
 
+def _load_figure_rules():
+    """``funhouse_agent.plot_box.figures``, whose stand-in rule the box
+    applies before it saves (BACKLOG GM-190): imported as usual where this
+    file is a module of the app; in the box loaded from its file beside
+    this one, as ``layout_ink`` is. ``None`` when it cannot be loaded (the
+    box then saves as before)."""
+    try:
+        if __name__ != "__main__":
+            from funhouse_agent.plot_box import figures
+            return figures
+        import importlib.util
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "figures.py")
+        fspec = importlib.util.spec_from_file_location("_box_figures", path)
+        mod = importlib.util.module_from_spec(fspec)
+        fspec.loader.exec_module(mod)
+        return mod
+    except Exception:                                      # noqa: BLE001
+        return None
+
+
+_figure_rules = _load_figure_rules()
+
+
+def _visible_text(t) -> str:
+    try:
+        return t.get_text() if t is not None and t.get_visible() else ""
+    except Exception:                                      # noqa: BLE001
+        return ""
+
+
+def _line_has_points(line) -> bool:
+    try:
+        import numpy as np
+        xy = np.asarray(line.get_xydata(), dtype=float)
+        return bool(xy.size) and bool(np.isfinite(xy).all(axis=-1).any())
+    except Exception:                                      # noqa: BLE001
+        return True                  # in doubt, drawn: never refuse on it
+
+
+def _collection_has_marks(coll) -> bool:
+    try:
+        from matplotlib.collections import PathCollection
+        from matplotlib.quiver import Quiver
+        # scatter: its points; quiver: its arrows' tails (its paths are
+        # made only when it is drawn)
+        if isinstance(coll, (PathCollection, Quiver)):
+            return len(coll.get_offsets()) > 0
+        return len(coll.get_paths()) > 0
+    except Exception:                                      # noqa: BLE001
+        return True
+
+
+def _figure_words(fig) -> dict:
+    """What a matplotlib figure draws and the words on it, for the
+    stand-in rule (``figures.stand_in``): titles, axis names, legend
+    entries, other texts; ``drawn`` (a line with a point, a collection
+    with marks, a patch, an artist, an image or a table)."""
+    words = {"titles": [], "axes": [], "series": [], "notes": [],
+             "drawn": False}
+    sup = getattr(fig, "_suptitle", None)
+    supxy = (getattr(fig, "_supxlabel", None), getattr(fig, "_supylabel",
+                                                       None))
+    for t in getattr(fig, "texts", ()):
+        key = ("titles" if t is sup else "axes" if t in supxy
+               else "notes")
+        words[key].append(_visible_text(t))
+    for leg in getattr(fig, "legends", ()):
+        words["series"] += [_visible_text(t) for t in leg.get_texts()]
+    if (getattr(fig, "lines", None) or getattr(fig, "patches", None)
+            or getattr(fig, "images", None)):
+        words["drawn"] = True
+    for ax in fig.axes:
+        if not ax.get_visible():
+            continue
+        words["titles"] += [ax.get_title(loc=loc)
+                            for loc in ("left", "center", "right")]
+        words["axes"] += [ax.get_xlabel(), ax.get_ylabel()]
+        if hasattr(ax, "get_zlabel"):
+            words["axes"].append(ax.get_zlabel())
+        leg = ax.get_legend()
+        if leg is not None:
+            words["series"] += [_visible_text(t) for t in leg.get_texts()]
+        words["notes"] += [_visible_text(t) for t in ax.texts]
+        marks = (any(l.get_visible() and _line_has_points(l)
+                     for l in ax.lines)
+                 or any(c.get_visible() and _collection_has_marks(c)
+                        for c in ax.collections)
+                 or bool(ax.patches) or bool(ax.artists)
+                 or bool(ax.images) or bool(ax.tables))
+        if marks:
+            words["drawn"] = True
+    return words
+
+
+#: A Plotly trace's keys that hold its data.
+_TRACE_DATA = ("x", "y", "z", "values", "lat", "lon", "r", "theta", "a",
+               "b", "c", "open", "close", "cells", "source")
+
+
+def _has_values(value) -> bool:
+    if isinstance(value, (list, tuple, str)):
+        return len(value) > 0
+    if isinstance(value, dict):       # a typed array {"dtype", "bdata"};
+        return bool(value.get("bdata") or value.get("values"))  # cells
+    return value is not None
+
+
+def _chart_words(fig: dict) -> dict:
+    """What a Plotly figure (as its JSON object) draws and names, for the
+    stand-in rule."""
+    def title(v):
+        return v.get("text", "") if isinstance(v, dict) else (v or "")
+
+    layout = fig.get("layout") if isinstance(fig.get("layout"), dict) else {}
+    words = {"titles": [title(layout.get("title"))], "axes": [],
+             "series": [], "notes": [],
+             # a drawing made of layout shapes or images draws too
+             "drawn": bool(layout.get("shapes") or layout.get("images"))}
+    for key, value in layout.items():
+        if not isinstance(value, dict):
+            continue
+        if key.startswith(("xaxis", "yaxis")):
+            words["axes"].append(title(value.get("title")))
+        elif key.startswith("scene"):
+            words["axes"] += [title((value.get(a) or {}).get("title"))
+                              for a in ("xaxis", "yaxis", "zaxis")
+                              if isinstance(value.get(a), dict)]
+    words["notes"] += [a.get("text") for a in layout.get("annotations") or []
+                       if isinstance(a, dict)]
+    for trace in fig.get("data") or []:
+        if not isinstance(trace, dict):
+            continue
+        if any(_has_values(trace.get(k)) for k in _TRACE_DATA):
+            words["drawn"] = True
+        if trace.get("name") and trace.get("showlegend") is not False:
+            words["series"].append(trace["name"])
+    return words
+
+
+def _stand_in(words) -> str:
+    """Why a figure (its :func:`_figure_words` or :func:`_chart_words`)
+    is a stand-in, else ``''``; ``''`` too when the rule cannot be read."""
+    try:
+        return (_figure_rules.stand_in(**words) or "") if _figure_rules \
+            else ""
+    except Exception:                                      # noqa: BLE001
+        return ""
+
+
 def _format_error(exc: BaseException) -> str:
     import traceback
     here = os.path.normcase(os.path.abspath(__file__))
@@ -885,6 +1035,7 @@ def main() -> int:
                               _read_roots(_norm(root)),
                               int(limits.get("max_files", 40)))
     saved_names = []
+    not_saved = []
     checks = []
     check_seconds = []
     letters = []
@@ -924,24 +1075,42 @@ def main() -> int:
         check_seconds.append(round(_monotonic() - t_check, 2))
         letters.append(_lettering(fig, fname, print_w, measured))
 
+    def refused(fname, words) -> bool:
+        """Whether ``fname`` is a stand-in, which is not saved: every figure
+        saved reaches the user (BACKLOG GM-190)."""
+        why = _stand_in(words)
+        if why:
+            not_saved.append({"file": fname, "why": why})
+        return bool(why)
+
     def save_figure(fig=None, name=None, dpi=200):
         """Save a matplotlib figure in the conversation folder; returns its
-        file name. ``name`` without an extension saves a PNG."""
+        file name (``None`` when it holds a place and is not saved). ``name``
+        without an extension saves a PNG."""
         fig = fig if fig is not None else plt.gcf()
         base = _safe_stem(name, stem)
         ext = os.path.splitext(str(name or ""))[1].lower()
         fname = base + (ext if ext in (".png", ".svg", ".pdf", ".jpg",
                                        ".jpeg") else ".png")
+        if refused(fname, _figure_words(fig)):
+            return None
         _save(fig, fname, dpi)
         saved_names.append(fname)
         return fname
 
     def save_chart(fig, name=None):
         """Save a Plotly figure as the app's interactive chart
-        (``<name>.plotly.json``); returns its file name."""
+        (``<name>.plotly.json``); returns its file name (``None`` when it
+        holds a place and is not saved)."""
         text = fig if isinstance(fig, str) else (
             json.dumps(fig) if isinstance(fig, dict) else fig.to_json())
         fname = _safe_stem(name, stem) + ".plotly.json"
+        try:
+            parsed = json.loads(text)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, dict) and refused(fname, _chart_words(parsed)):
+            return None
         with open(fname, "w", encoding="utf-8") as fh:
             fh.write(text)
         saved_names.append(fname)
@@ -971,19 +1140,23 @@ def main() -> int:
     run_s = _monotonic() - t_run
 
     # Figures the code drew but did not save: saved for it, when it saved
-    # no image itself (a script that saved its own chose what to keep) and
-    # ran to the end (live wave w8b: a half-drawn figure from a failed run
-    # was saved over the name a good one would carry).
+    # no image itself (a script that saved its own, or whose save was
+    # refused, chose what to keep) and ran to the end (live wave w8b: a
+    # half-drawn figure from a failed run was saved over the name a good
+    # one would carry). A stand-in is not saved here either (GM-190).
     auto = []
     wrote_image = any(os.path.splitext(p)[1].lower()
                       in (".png", ".jpg", ".jpeg", ".svg", ".pdf")
                       for p in record["written"])
     try:
         nums = list(plt.get_fignums())
-        if nums and not wrote_image and result["ok"]:
+        if nums and not wrote_image and not not_saved and result["ok"]:
             for k, num in enumerate(nums, 1):
                 fname = stem + (".png" if len(nums) == 1 else f"_{k}.png")
-                _save(plt.figure(num), fname, 200)
+                fig = plt.figure(num)
+                if refused(fname, _figure_words(fig)):
+                    continue
+                _save(fig, fname, 200)
                 auto.append(fname)
         plt.close("all")
     except BaseException as exc:                           # noqa: BLE001
@@ -995,6 +1168,7 @@ def main() -> int:
         "written": [os.path.relpath(p, _norm(root))
                     for p in record["written"]],
         "auto_saved": auto,
+        "not_saved": not_saved,
         "stdout": out.text(),
         "stderr": err.text(),
         "refused": record["refused"],

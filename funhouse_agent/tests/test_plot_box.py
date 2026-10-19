@@ -372,6 +372,9 @@ def test_layout_ignores_tick_labels_that_are_never_drawn(folders):
     chk = _layout(mine, (
         "fig, (a, b) = plt.subplots(1, 2, figsize=(4, 3))\n"
         "fig.subplots_adjust(wspace=0)\n"
+        # data in each panel: a figure that draws nothing is not saved
+        # (GM-190)
+        "a.plot([0, 60], [0, 1]); b.plot([0, 60], [0, 1])\n"
         "a.set_xticks([0, 50, 100]); a.set_xlim(0, 60)\n"
         "b.set_xlim(0, 60); b.set_yticks([])\n"))
     pairs = chk.get("text_overlaps", [])
