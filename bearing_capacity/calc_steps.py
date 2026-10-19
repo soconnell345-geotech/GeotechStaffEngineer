@@ -767,13 +767,23 @@ def _plot_footing_section(result, analysis):
     # B dimension
     ax.annotate('', xy=(-B / 2, Df + B * 0.15), xytext=(B / 2, Df + B * 0.15),
                 arrowprops=dict(arrowstyle='<->', color='#1a1a1a', lw=1.2))
-    ax.text(0, Df + B * 0.2, f'B = {B:.2f} m', ha='center', fontsize=9, fontweight='bold')
+    # each dimension's value clear of its line, by points (placed by
+    # metres the line ran through it at the printed width; GM-194)
+    ax.annotate(f'B = {B:.2f} m', (0, Df + B * 0.15), xytext=(0, -3),
+                textcoords='offset points', ha='center', va='top',
+                fontsize=9, fontweight='bold')
 
-    # Df dimension
-    ax.annotate('', xy=(B / 2 + B * 0.3, 0), xytext=(B / 2 + B * 0.3, Df),
-                arrowprops=dict(arrowstyle='<->', color='#1a1a1a', lw=1.2))
-    ax.text(B / 2 + B * 0.4, Df / 2, f'D_f = {Df:.2f} m',
-            ha='left', va='center', fontsize=9, fontweight='bold')
+    # Df dimension (a footing on the surface has none: its value over the
+    # ground line)
+    if Df > 0:
+        ax.annotate('', xy=(B / 2 + B * 0.3, 0), xytext=(B / 2 + B * 0.3, Df),
+                    arrowprops=dict(arrowstyle='<->', color='#1a1a1a', lw=1.2))
+        ax.text(B / 2 + B * 0.4, Df / 2, f'D_f = {Df:.2f} m',
+                ha='left', va='center', fontsize=9, fontweight='bold')
+    else:
+        ax.annotate(f'D_f = {Df:.2f} m', (B / 2 + B * 0.3, 0),
+                    xytext=(0, 3), textcoords='offset points', ha='left',
+                    va='bottom', fontsize=9, fontweight='bold')
 
     # Load arrow
     arrow_top = max(-B * 0.3, Df - footing_thickness - B * 0.6)

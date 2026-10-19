@@ -824,10 +824,12 @@ def _plot_capacity_breakdown(result):
         fontsize=11, fontweight="bold",
     )
     ax.set_xlim(0, result.Q_ultimate * 1.25 if result.Q_ultimate > 0 else 1)
-    ax.legend(loc="lower right", fontsize=9)
     ax.grid(True, axis="x", alpha=0.3)
     ax.tick_params(labelsize=9)
-    plt.tight_layout()
+    # the key under the axes: inside them the Q_ult line ran through it
+    # (GM-194)
+    from geotech_common.plotting import key_under_axes
+    key_under_axes(fig, ax, fontsize=9)
     return fig
 
 
@@ -916,7 +918,8 @@ def _plot_layer_profile(result, analysis):
         color="#ef4444", alpha=0.15,
         label=f"Top exclusion ({top_excl:.1f} m)",
     ))
-    ax.legend(handles=legend_handles, loc="lower right", fontsize=8)
-
-    plt.tight_layout()
+    # the key under the axes: inside them it covered the bars and the
+    # shaft tip (GM-194)
+    from geotech_common.plotting import key_under_axes
+    key_under_axes(fig, ax, handles=legend_handles)
     return fig

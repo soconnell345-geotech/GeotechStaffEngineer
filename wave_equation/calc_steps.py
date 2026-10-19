@@ -712,6 +712,7 @@ def _bearing_graph_figures(result, analysis) -> List[FigureData]:
     try:
         fig, ax = plt.subplots(figsize=(8, 6))
         valid = result.blow_counts < 1e5
+        twins = [ax]
         if np.any(valid):
             ax.plot(result.blow_counts[valid], result.R_values[valid],
                     'bo-', linewidth=2, markersize=6, label='R_ult')
@@ -730,16 +731,15 @@ def _bearing_graph_figures(result, analysis) -> List[FigureData]:
                      label='Tens. Stress')
             ax2.set_ylabel('Driving Stress (MPa)', fontsize=10)
 
-            # Combined legend
-            lines1, labels1 = ax.get_legend_handles_labels()
-            lines2, labels2 = ax2.get_legend_handles_labels()
-            ax.legend(lines1 + lines2, labels1 + labels2,
-                      loc='upper left', fontsize=8)
+            twins.append(ax2)
 
         ax.set_title('Bearing Graph with Driving Stresses',
                      fontsize=12, fontweight='bold')
         ax.grid(True, alpha=0.3)
-        plt.tight_layout()
+        # one key for both axes, under them: inside, the stress lines on
+        # the twin axis ran through it (GM-194)
+        from geotech_common.plotting import key_under_axes
+        key_under_axes(fig, twins, ncol=3)
         b64 = figure_to_base64(fig, dpi=150)
         plt.close(fig)
         figures.append(FigureData(

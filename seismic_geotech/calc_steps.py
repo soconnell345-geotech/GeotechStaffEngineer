@@ -800,12 +800,13 @@ def _plot_design_spectrum(result):
     ax.axvline(x=T0, color='gray', linestyle=':', alpha=0.3)
     ax.axvline(x=Ts, color='gray', linestyle=':', alpha=0.3)
 
-    # Annotations
+    # Annotations: SDS over its own line at the right, where the spectrum
+    # has fallen away (over the plateau it ran across the T0 line at the
+    # printed width; GM-194)
     ax.annotate(f'SDS = {SDS:.3f} g',
-                xy=(T0 + (Ts - T0) / 2, SDS),
-                xytext=(0, 15), textcoords='offset points',
-                fontsize=9, ha='center', fontweight='bold',
-                arrowprops=dict(arrowstyle='->', color='gray'))
+                xy=(1, SDS), xycoords=('axes fraction', 'data'),
+                xytext=(-4, 3), textcoords='offset points',
+                fontsize=9, ha='right', va='bottom', fontweight='bold')
     if Ts < 3.5:
         ax.annotate(f'SD1 = {SD1:.3f} g',
                     xy=(1.0, SD1 / 1.0 if 1.0 > Ts else SDS),
@@ -820,7 +821,6 @@ def _plot_design_spectrum(result):
     )
     ax.set_xlim(0, 4.0)
     ax.set_ylim(0, max(SDS * 1.3, 0.1))
-    ax.legend(loc='upper right', fontsize=9)
     ax.grid(True, alpha=0.3)
 
     # Info box
@@ -836,7 +836,9 @@ def _plot_design_spectrum(result):
             bbox=dict(boxstyle='round,pad=0.4', facecolor='lightyellow',
                      edgecolor='gray', alpha=0.9))
 
-    plt.tight_layout()
+    # the key under the axes, clear of the SDS note
+    from geotech_common.plotting import key_under_axes
+    key_under_axes(fig, ax, fontsize=9, ncol=3)
     return fig
 
 
@@ -922,8 +924,13 @@ def _plot_pressure_diagram(result, analysis):
     pa_y = H / 3
     ax.annotate('', xy=(0, pa_y), xytext=(H * 0.35, pa_y),
                 arrowprops=dict(arrowstyle='->', color='#2563eb', lw=2))
-    ax.text(H * 0.36, pa_y, f'PA = {r.PA_static:.1f} kN/m\nat H/3 = {pa_y:.1f} m',
-            fontsize=8, color='#2563eb', va='center')
+    # its note just outside the seismic diagram's edge, over that height
+    # (the edge leans in going up; at a fixed 0.36H the note lay on it;
+    # GM-194)
+    ax.annotate(f'PA = {r.PA_static:.1f} kN/m\nat H/3 = {pa_y:.1f} m',
+                (H * 0.55 * (H - pa_y) / H, pa_y), xytext=(4, 3),
+                textcoords='offset points', fontsize=8, color='#2563eb',
+                va='bottom')
 
     # Seismic increment at 0.6H
     dPAE_y = r.height_of_application
@@ -951,21 +958,18 @@ def _plot_pressure_diagram(result, analysis):
                  fontsize=11, fontweight='bold')
     ax.set_xlim(-0.8, H * 0.7)
     ax.set_ylim(-0.3, H * 1.1)
-    ax.legend(loc='upper right', fontsize=8)
     ax.grid(True, alpha=0.2)
 
-    # Info box
+    # The inputs head the key, under the drawing: in a box in the axes
+    # they covered the H dimension at the printed width (GM-194)
     info = (
-        f"\u03c6 = {r.phi:.0f}\u00b0, \u03b4 = {r.delta:.0f}\u00b0\n"
+        f"\u03c6 = {r.phi:.0f}\u00b0, \u03b4 = {r.delta:.0f}\u00b0, "
         f"k_h = {r.kh:.3f}, k_v = {r.kv:.3f}"
     )
     if analysis.get("gamma") is not None:
-        info += f"\n\u03b3 = {analysis['gamma']:.1f} kN/m\u00b3"
-    ax.text(0.02, 0.98, info, transform=ax.transAxes,
-            fontsize=8, va='top',
-            bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.9))
-
-    plt.tight_layout()
+        info += f", \u03b3 = {analysis['gamma']:.1f} kN/m\u00b3"
+    from geotech_common.plotting import key_under_axes
+    key_under_axes(fig, ax, note=info)
     return fig
 
 
@@ -1068,20 +1072,19 @@ def _plot_fos_profile(result):
     )
     ax.invert_yaxis()
     ax.set_xlim(0, max(fos_display) * 1.3)
-    ax.legend(loc='lower right', fontsize=9)
     ax.grid(True, alpha=0.3, axis='x')
 
-    # Status box
+    # The status heads the key, under the axes: the box and the key in
+    # the corner covered each other and the deepest layer's value (GM-194)
     status = "LIQUEFIABLE" if result.n_liquefiable > 0 else "NON-LIQUEFIABLE"
     status_color = '#dc2626' if result.n_liquefiable > 0 else '#16a34a'
-    ax.text(0.98, 0.02,
-            f"{status}\n{result.n_liquefiable}/{len(result.layer_results)} layers",
-            transform=ax.transAxes, fontsize=10, fontweight='bold',
-            ha='right', va='bottom', color=status_color,
-            bbox=dict(boxstyle='round,pad=0.4', facecolor='white',
-                     edgecolor=status_color, alpha=0.9))
-
-    plt.tight_layout()
+    from geotech_common.plotting import key_under_axes
+    key = key_under_axes(
+        fig, ax, fontsize=9,
+        note=(f"{status}: {result.n_liquefiable}/"
+              f"{len(result.layer_results)} layers"))
+    key.get_title().set_color(status_color)
+    key.get_title().set_fontweight('bold')
     return fig
 
 

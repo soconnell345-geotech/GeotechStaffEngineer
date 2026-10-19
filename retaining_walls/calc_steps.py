@@ -1442,9 +1442,12 @@ def _plot_cantilever_section(result, analysis):
         [t_base, t_base, H],
         facecolor='#fca5a5', edgecolor='#dc2626', linewidth=1.5, alpha=0.5,
     )
+    # P_a beside the diagram's base corner: written inside the triangle
+    # it ran across its edge at the printed width (GM-194)
     ax.annotate(
         f'P_a = {ep["Pa"]:.0f} kN/m',
-        xy=(press_x_base + sigma_base * p_scale * 0.5, t_base + geom.H_active / 3.0),
+        xy=(press_x_base + sigma_base * p_scale, t_base), xytext=(4, 4),
+        textcoords='offset points', va='bottom',
         fontsize=8, ha='left', color='#dc2626', fontweight='bold',
     )
 
@@ -1455,65 +1458,67 @@ def _plot_cantilever_section(result, analysis):
     ax.text(-B * 0.22, H / 2, f'H = {H:.2f} m', ha='right', va='center',
             fontsize=9, fontweight='bold', rotation=90)
 
-    # Base width
-    ax.annotate('', xy=(0, -B * 0.08), xytext=(B, -B * 0.08),
-                arrowprops=dict(arrowstyle='<->', color='#1a1a1a', lw=1.2))
-    ax.text(B / 2, -B * 0.14, f'B = {B:.2f} m', ha='center', fontsize=9, fontweight='bold')
+    # The dimensions under the base, set off from it by points (by metres
+    # they ran into each other and their values onto their lines at the
+    # printed width; GM-194): toe and heel 4 pt under it, B under those.
+    from matplotlib.transforms import offset_copy
 
-    # Toe dimension
+    def _under(pts):
+        return offset_copy(ax.transData, fig=fig, y=-pts, units='points')
+
+    def _dimension(x0, x1, pts, text, **kw):
+        line = dict(color=kw.pop('color', '#1a1a1a'), lw=kw.pop('lw', 1.2))
+        ax.annotate('', xy=(x0, 0), xytext=(x1, 0), xycoords=_under(pts),
+                    textcoords=_under(pts),
+                    arrowprops=dict(arrowstyle='<->', **line))
+        ax.text((x0 + x1) / 2, 0, text, transform=_under(pts + 4),
+                ha='center', va='top', color=line['color'], **kw)
+
     if t_toe > 0:
-        ax.annotate('', xy=(0, -B * 0.02), xytext=(t_toe, -B * 0.02),
-                    arrowprops=dict(arrowstyle='<->', color='#666', lw=0.8))
-        ax.text(t_toe / 2, -B * 0.05, f'toe={t_toe:.2f}', ha='center', fontsize=7, color='#666')
-
-    # Heel dimension
+        _dimension(0, t_toe, 4, f'toe={t_toe:.2f}', fontsize=7,
+                   color='#666', lw=0.8)
     if heel > 0:
-        heel_start = t_toe + t_stem_b
-        ax.annotate('', xy=(heel_start, -B * 0.02), xytext=(B, -B * 0.02),
-                    arrowprops=dict(arrowstyle='<->', color='#666', lw=0.8))
-        ax.text((heel_start + B) / 2, -B * 0.05, f'heel={heel:.2f}',
-                ha='center', fontsize=7, color='#666')
+        _dimension(t_toe + t_stem_b, B, 4, f'heel={heel:.2f}', fontsize=7,
+                   color='#666', lw=0.8)
+    _dimension(0, B, 20, f'B = {B:.2f} m', fontsize=9, fontweight='bold')
 
     # Ground surface line
     ax.plot([-B * 0.3, t_toe], [H, H], 'g-', linewidth=2)
     ax.plot([t_toe, t_toe], [H, t_base + h_stem], 'g-', linewidth=1)
 
-    # Resultant location marker
+    # Resultant location marker, its point on the base's underside, and
+    # its label beside it inside the base (under the base it ran into B)
     x_R_scaled = (result.base_width / 2.0 - result.eccentricity)
-    ax.plot(x_R_scaled, 0, 'rv', markersize=10)
-    ax.text(x_R_scaled, -B * 0.2, f'R\n(e={result.eccentricity:.3f}m)',
-            ha='center', fontsize=7, color='#dc2626')
+    ax.plot(x_R_scaled, 0, 'rv', markersize=10,
+            transform=offset_copy(ax.transData, fig=fig, y=4,
+                                  units='points'))
+    ax.annotate(f'R (e={result.eccentricity:.3f}m)', (x_R_scaled, 0),
+                xytext=(7, 5), textcoords='offset points', ha='left',
+                va='center', fontsize=7, color='#dc2626')
 
-    # Soil property label
-    ax.text(B * 1.1, H * 0.5,
-            f'\u03b3 = {gamma:.1f} kN/m\u00b3\n\u03c6 = {phi:.1f}\u00b0\n'
-            f'Ka = {Ka_val:.3f}',
-            fontsize=9, va='center',
-            bbox=dict(boxstyle='round,pad=0.3', facecolor='#fffde7', alpha=0.9))
-
-    # FOS annotation box (a check with no FOS says why, GM-100)
+    # The soil and the factors of safety under the drawing: in boxes in
+    # the axes they covered the stem and ran over the frame at the
+    # printed width (GM-194). A check with no FOS says why (GM-100).
     def _fos_text(fos, word):
         return word if fos is None else f"{fos:.2f}"
 
-    status_items = [
-        f"FOS_slide = {_fos_text(result.FOS_sliding, 'no driving force')}",
-        f"FOS_OT    = {_fos_text(result.FOS_overturning, 'no driving force')}",
-        f"FOS_brg   = {_fos_text(result.FOS_bearing, 'not checked')}",
-    ]
-    ax.text(0.02, 0.98, '\n'.join(status_items),
-            transform=ax.transAxes, fontsize=9,
-            verticalalignment='top', fontfamily='monospace',
-            bbox=dict(boxstyle='round,pad=0.4', facecolor='white',
-                     edgecolor='#333', alpha=0.9))
+    note = (
+        f'\u03b3 = {gamma:.1f} kN/m\u00b3, \u03c6 = {phi:.1f}\u00b0, '
+        f'Ka = {Ka_val:.3f}\n'
+        f"FOS_slide = {_fos_text(result.FOS_sliding, 'no driving force')}, "
+        f"FOS_OT = {_fos_text(result.FOS_overturning, 'no driving force')}, "
+        f"FOS_brg = {_fos_text(result.FOS_bearing, 'not checked')}"
+    )
 
     ax.set_xlim(-B * 0.4, B * 1.4)
-    ax.set_ylim(-B * 0.35, H * 1.15)
+    ax.set_ylim(-B * 0.45, H * 1.15)
     ax.set_xlabel('Distance (m)', fontsize=10)
     ax.set_ylabel('Elevation (m)', fontsize=10)
     ax.set_title('Cantilever Retaining Wall Cross-Section', fontsize=11, fontweight='bold')
     ax.set_aspect('equal')
     ax.grid(True, alpha=0.15)
-    plt.tight_layout()
+    from geotech_common.plotting import key_under_axes
+    key_under_axes(fig, ax, note=note)
     return fig
 
 
@@ -1546,15 +1551,6 @@ def _plot_bearing_pressure(result, analysis):
     ax.fill_between(x, 0, q, color='#fca5a5', alpha=0.5, edgecolor='#dc2626', linewidth=1.5)
     ax.plot(x, q, 'r-', linewidth=2)
 
-    # Annotations
-    ax.annotate(f'q_toe = {q_toe:.1f} kPa', xy=(0, q_toe),
-                xytext=(B * 0.15, q_toe * 1.1 + 5), fontsize=9, fontweight='bold',
-                arrowprops=dict(arrowstyle='->', color='#dc2626'))
-    if q_heel > 0:
-        ax.annotate(f'q_heel = {q_heel:.1f} kPa', xy=(B, q_heel),
-                    xytext=(B * 0.7, q_heel * 1.1 + 5), fontsize=9, fontweight='bold',
-                    arrowprops=dict(arrowstyle='->', color='#2563eb'))
-
     # Base line
     ax.axhline(y=0, color='k', linewidth=1)
 
@@ -1584,12 +1580,15 @@ def _plot_bearing_pressure(result, analysis):
     ax.set_title('Base Bearing Pressure Distribution', fontsize=11, fontweight='bold')
     ax.set_xlim(-B * 0.05, B * 1.05)
     ax.set_ylim(0, max(q_toe, q_heel, q_all or 0) * 1.3 + 5)
-    # the key under the axes: inside them it covered the q_toe note once
-    # the figure was drawn for the width it prints at (GM-186)
-    fig.legend(*ax.get_legend_handles_labels(), loc='lower center',
-               fontsize=7, ncol=2, frameon=False)
     ax.grid(True, alpha=0.2)
-    plt.tight_layout(rect=(0, 0.12, 1, 1))
+    # the key under the axes, headed by the edge pressures: inside them it
+    # covered the q_toe note once the figure was drawn for the width it
+    # prints at (GM-186), and the notes over the diagram lay on the
+    # resultant's line and the pressure line (GM-194)
+    from geotech_common.plotting import key_under_axes
+    key_under_axes(fig, ax, fontsize=7,
+                   note=(f'q_toe = {q_toe:.1f} kPa, '
+                         f'q_heel = {q_heel:.1f} kPa'))
     return fig
 
 
@@ -1630,6 +1629,7 @@ def _plot_mse_section(result, analysis):
     # Failure surface: bilinear coherent-gravity surface for inextensible
     # (metallic) reinforcement, Rankine 45+phi/2 plane for extensible (RW-2)
     if reinforcement is not None and reinforcement.is_metallic:
+        x_fail_top = 0.3 * H
         ax.plot([0, 0.3 * H, 0.3 * H], [0, H / 2.0, H], 'r--',
                 linewidth=2, alpha=0.7,
                 label='Coherent-gravity surface (0.3H, inextensible)')
@@ -1669,8 +1669,9 @@ def _plot_mse_section(result, analysis):
     # Reinforcement length
     ax.annotate('', xy=(0, -H * 0.06), xytext=(L, -H * 0.06),
                 arrowprops=dict(arrowstyle='<->', color='#1a1a1a', lw=1.2))
-    ax.text(L / 2, -H * 0.1, f'L = {L:.2f} m', ha='center',
-            fontsize=9, fontweight='bold')
+    ax.annotate(f'L = {L:.2f} m', (L / 2, -H * 0.06), xytext=(0, -2),
+                textcoords='offset points', ha='center', va='top',
+                fontsize=9, fontweight='bold')
 
     # Spacing annotation
     if len(geom.reinforcement_depths) >= 2:
@@ -1683,9 +1684,18 @@ def _plot_mse_section(result, analysis):
         ax.text(L * 1.08, (y1 + y2) / 2, f'Sv = {Sv:.2f} m',
                 fontsize=7, va='center', color='#666')
 
-    # Labels
-    ax.text(L / 2, H / 2, 'Reinforced\nSoil Zone', ha='center', va='center',
-            fontsize=10, fontweight='bold', alpha=0.6)
+    # Labels: the zone's name between the failure surface and the back of
+    # the zone, between two reinforcement levels, and ringed so a level
+    # stops short of it (centred in the zone the surface ran through it;
+    # GM-194)
+    from geotech_common.plotting import halo
+    levels = sorted(H - z for z in geom.reinforcement_depths)
+    mids = [(a + b) / 2 for a, b in zip(levels, levels[1:])]
+    y_name = min(mids, key=lambda y: abs(y - H / 2)) if mids else H / 2
+    halo([ax.text((min(x_fail_top, L) + L) / 2, y_name,
+                  'Reinforced\nSoil Zone', ha='center', va='center',
+                  fontsize=10, fontweight='bold', color='#6b6358')],
+         colour='#f5e6c8')
     ax.text(L * 1.2, H / 2, 'Retained\nSoil', ha='center', va='center',
             fontsize=9, alpha=0.5)
 
@@ -1693,18 +1703,15 @@ def _plot_mse_section(result, analysis):
     r_name = reinforcement.name if reinforcement else "Reinforcement"
     ax.plot([], [], color=r_color, linewidth=2, label=r_name)
 
-    # FOS box
+    # The factors of safety head the key, under the drawing: the box in
+    # the axes covered the zone's top corner and the key covered L at the
+    # printed width (GM-194)
     status = "OK" if result.passes_external and result.all_pass_internal else "CHECK"
     status_color = '#16a34a' if status == "OK" else '#dc2626'
     fos_text = (
-        f"External: slide={result.FOS_sliding:.2f}, OT={result.FOS_overturning:.2f}\n"
+        f"External: slide={result.FOS_sliding:.2f}, OT={result.FOS_overturning:.2f}; "
         f"Internal: {'all pass' if result.all_pass_internal else 'FAIL'}"
     )
-    ax.text(0.02, 0.98, fos_text,
-            transform=ax.transAxes, fontsize=8,
-            verticalalignment='top', fontfamily='monospace',
-            bbox=dict(boxstyle='round,pad=0.4', facecolor='white',
-                     edgecolor=status_color, alpha=0.9))
 
     ax.set_xlim(-L * 0.25, L * 1.5)
     ax.set_ylim(-H * 0.15, H * 1.1)
@@ -1712,9 +1719,10 @@ def _plot_mse_section(result, analysis):
     ax.set_ylabel('Elevation (m)', fontsize=10)
     ax.set_title('MSE Wall Cross-Section', fontsize=12, fontweight='bold')
     ax.set_aspect('equal')
-    ax.legend(loc='lower right', fontsize=8)
     ax.grid(True, alpha=0.15)
-    plt.tight_layout()
+    from geotech_common.plotting import key_under_axes
+    key = key_under_axes(fig, ax, note=fos_text)
+    key.get_title().set_color(status_color)
     return fig
 
 
@@ -1752,7 +1760,9 @@ def _plot_mse_internal(result, analysis):
     ax.set_ylabel('Depth z (m)', fontsize=10)
     ax.set_title('Internal Stability: T_max vs Pullout Resistance', fontsize=11,
                  fontweight='bold')
-    ax.legend(loc='lower right', fontsize=9)
     ax.grid(True, alpha=0.3)
-    plt.tight_layout()
+    # the key under the axes: inside them the deepest P_r ran through it
+    # (GM-194)
+    from geotech_common.plotting import key_under_axes
+    key_under_axes(fig, ax, fontsize=9)
     return fig
