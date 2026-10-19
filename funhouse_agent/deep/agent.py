@@ -659,9 +659,11 @@ def build_calc_subagent(
         # only built where openpyxl imports). analyze_image: the helper that
         # draws the figures can look at them (field session 2026-10-15: it
         # tried read_file on its PNG, was refused, and the figure went out
-        # unseen).
+        # unseen). analyze_pdf_page: and at the pages of the PDF it builds
+        # (GM-175; wave w13b F55j: asked to look at its pages, it had no
+        # page tool and called execute, then analyze_image on the PDF).
         include={"save_file", "list_files", "read_pdf_text", "read_text_file",
-                 "write_xlsx", "analyze_image"},
+                 "write_xlsx", "analyze_image", "analyze_pdf_page"},
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
     ) + [make_calculate_tool()]
