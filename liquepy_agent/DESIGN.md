@@ -81,6 +81,36 @@ The B&I 2014 CPT-based simplified procedure:
 - **Shear strain** (Zhang et al. 2004): function of FoS and relative density
 - **Relative density** (Zhang 2002): `Dr = (-85 + 76·log10(q_c1n)) / 100`
 
+## Depth profile for the agent's tool results (GM-201)
+
+`cpt_liquefaction.depth_profile(depth, factor_of_safety, volumetric_strain)`
+gives the CPT's FS_liq and post-liquefaction volumetric strain by depth as
+rows of `top_m`, `bottom_m`, `FOS_liq`, `volumetric_strain`; the
+`liquefaction` tool's CPT route returns them as `depth_profile`, and
+`downdrag.post_liquefaction_downdrag` takes that result as it is. Each
+reading stands for the depth halfway to its neighbours. Up to
+`PROFILE_MAX_ROWS` (40) readings give one row each; a longer CPT (hundreds
+of readings) is summarised in depth bands of whole readings so the result
+stays under the agents' 8,000-character tool-result cap (about 5,100
+characters measured for 600 and 1,500 readings):
+
+- a band never holds readings on both sides of FS_liq = 1.0 (GEC-10
+  §9.4.2.2: "FSliq ≤ 1.0" liquefies), so at that threshold the liquefied
+  depths are the readings' own; only when the readings cross 1.0 more often
+  than there are rows are the thinnest runs counted with the soil around
+  them, and `depth_profile_note` gives that thickness;
+- the rest of the rows split the runs into bands of about equal thickness;
+- `FOS_liq` is the band's lowest reading on its side of 1.0, rounded UP to
+  three decimals (so 1.0004 never reads as 1.0), and `volumetric_strain` is
+  the band's thickness-weighted average (strain x thickness = the band's
+  settlement), never below zero (Zhang's interpolation dips a hair below
+  zero where liquepy caps FS at 2).
+
+The SPT routes compute no post-liquefaction volumetric strain: no reference
+in the library prints an SPT method (see `downdrag/DESIGN.md`,
+"Post-liquefaction downdrag"), and liquepy's Zhang et al. (2002) is CPT
+only.
+
 ## Vs Correlations
 
 | Method | Reference | Notes |

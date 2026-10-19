@@ -247,11 +247,15 @@ def liquefied_layer(item: Any) -> LiquefiedLayer:
 
 
 def _readings(result: Any):
-    """``(depth, fs_liq, strain or None, N1_60 or None)`` lists from a
-    liquefaction result: the ``liquefaction`` tool's SPT output
-    (``layer_results`` rows with ``depth_m``, ``FOS_liq`` and ``N1_60`` or
-    ``N160``), or a profile with ``depth`` and ``factor_of_safety`` arrays
-    (and ``volumetric_strain``), as a dict or as the CPT result object."""
+    """``(depth, fs_liq, strain or None, N1_60 or None, bounds or None)``
+    lists from a liquefaction result: the ``liquefaction`` tool's CPT
+    output (``depth_profile`` rows with ``top_m``, ``bottom_m``,
+    ``FOS_liq`` and ``volumetric_strain``: ``bounds`` are then their
+    ``(top, bottom)``), its SPT output (``layer_results`` rows with
+    ``depth_m``, ``FOS_liq`` and ``N1_60`` or ``N160``), either list of
+    rows on its own, or a profile with ``depth`` and ``factor_of_safety``
+    arrays (and ``volumetric_strain``), as a dict or as the CPT result
+    object."""
     def get(name):
         if isinstance(result, dict):
             return result.get(name)
@@ -260,16 +264,38 @@ def _readings(result: Any):
     def num(v):
         return None if v is None else float(v)
 
-    rows = get("layer_results")
+    def fs_of(r):
+        f = num(r.get("FOS_liq", r.get("fos")))
+        return math.nan if f is None else f
+
+    if isinstance(result, (list, tuple)) and result and all(
+            isinstance(r, dict) for r in result):
+        rows = list(result)
+        bands = "top_m" in rows[0]
+    else:
+        bands = bool(get("depth_profile"))
+        rows = get("depth_profile") or get("layer_results")
+    if rows and bands:
+        depth, fs, strain, bounds = [], [], [], []
+        for r in rows:
+            if r.get("top_m") is None or r.get("bottom_m") is None:
+                raise ValueError(
+                    "liquefaction_result: each depth_profile row needs "
+                    "top_m and bottom_m")
+            top, bottom = float(r["top_m"]), float(r["bottom_m"])
+            bounds.append((top, bottom))
+            depth.append(0.5 * (top + bottom))
+            fs.append(fs_of(r))
+            strain.append(num(r.get("volumetric_strain")))
+        return depth, fs, strain, [None] * len(depth), bounds
     if rows:
         depth, fs, strain, n = [], [], [], []
         for r in rows:
             depth.append(float(r["depth_m"]))
-            f = num(r.get("FOS_liq", r.get("fos")))
-            fs.append(math.nan if f is None else f)
+            fs.append(fs_of(r))
             strain.append(num(r.get("volumetric_strain")))
             n.append(num(r.get("N1_60", r.get("N160"))))
-        return depth, fs, strain, n
+        return depth, fs, strain, n, None
     depth = get("depth")
     fos = get("factor_of_safety")
     if fos is None:
@@ -277,9 +303,10 @@ def _readings(result: Any):
     if depth is None or fos is None:
         raise ValueError(
             "liquefaction_result: expected the liquefaction tool's output "
-            "(layer_results with depth_m and FOS_liq) or a profile with "
-            "depth and factor_of_safety; the CPT route of the tool returns "
-            "only LPI/LSN/LDI, so give liquefied_layers for a CPT")
+            "(depth_profile rows with top_m, bottom_m, FOS_liq and "
+            "volumetric_strain from a CPT; layer_results with depth_m and "
+            "FOS_liq from SPT) or a profile with depth and "
+            "factor_of_safety")
     depth = [float(x) for x in np.asarray(depth, dtype=float).ravel()]
     fos = [float(x) for x in np.asarray(fos, dtype=float).ravel()]
     if len(depth) != len(fos):
@@ -290,7 +317,7 @@ def _readings(result: Any):
         strain = [float(x) for x in np.asarray(vs, dtype=float).ravel()]
     else:
         strain = [None] * len(depth)
-    return depth, fos, strain, [None] * len(depth)
+    return depth, fos, strain, [None] * len(depth), None
 
 
 def liquefied_layers_from_result(result: Any, volumetric_strain=None,
@@ -304,15 +331,21 @@ def liquefied_layers_from_result(result: Any, volumetric_strain=None,
     §9.4.2.2, p. 9-42: "layers predicted to undergo liquefaction (FSliq ≤
     1.0)"). Each reading stands for the depth halfway to its neighbours
     (the first and last half a spacing beyond their reading, the first not
-    above the ground surface, the last not below ``profile_depth``), and
-    not above ``water_table``: soil above the water table does not
-    liquefy.
+    above the ground surface, the last not below ``profile_depth``), or,
+    for the ``liquefaction`` tool's CPT ``depth_profile`` rows, for its
+    own ``top_m`` to ``bottom_m`` (the last not below ``profile_depth``);
+    and not above ``water_table``: soil above the water table does not
+    liquefy. A banded row counts by its ``FOS_liq``, the band's lowest
+    reading on its side of 1.0, so at a threshold other than 1.0 a band
+    is all liquefied or all not.
 
     The reconsolidation strain is the result's own (a CPT profile from
     liquepy carries Zhang et al. 2002's) or ``volumetric_strain``: one
-    decimal for every liquefied reading, or one per reading in the
+    decimal for every liquefied reading, or one per reading (row) in the
     result's order, which replaces the result's. The tool's SPT routes
-    compute none, so it must then be given.
+    compute none and no reference in the library prints an SPT method
+    (GEC-10 §10.7 names Ishihara and Yoshimine 1992 without printing it),
+    so it must then be given.
 
     Returns
     -------
@@ -324,12 +357,14 @@ def liquefied_layers_from_result(result: Any, volumetric_strain=None,
     if fs_liq_threshold is None or not fs_liq_threshold > 0:
         raise ValueError(f"fs_liq_threshold must be positive, got "
                          f"{fs_liq_threshold!r}")
-    depth, fs, strain, n160 = _readings(result)
-    if len(depth) < 2:
+    depth, fs, strain, n160, bounds = _readings(result)
+    if bounds is None and len(depth) < 2:
         raise ValueError(
             "liquefaction_result has fewer than two readings, so the depth "
             "each stands for is not known: give liquefied_layers (top, "
             "bottom, volumetric_strain) instead")
+    if not depth:
+        raise ValueError("liquefaction_result has no readings")
     order = sorted(range(len(depth)), key=lambda i: depth[i])
     if volumetric_strain is not None:
         if isinstance(volumetric_strain, (list, tuple, np.ndarray)):
@@ -345,16 +380,27 @@ def liquefied_layers_from_result(result: Any, volumetric_strain=None,
             one = float(volumetric_strain)
             strain = [one if math.isfinite(f) and f <= fs_liq_threshold
                       else None for f in fs]
-    z = [depth[i] for i in order]
-    edges = [max(0.0, z[0] - 0.5 * (z[1] - z[0]))]
-    edges += [0.5 * (a + b) for a, b in zip(z[:-1], z[1:])]
-    last = z[-1] + 0.5 * (z[-1] - z[-2])
-    if profile_depth is not None:
-        last = min(last, float(profile_depth))
-    edges.append(last)
+    if bounds is not None:
+        spans = [list(bounds[i]) for i in order]
+        for (_, b0), (t1, _) in zip(spans[:-1], spans[1:]):
+            if t1 < b0 - 1e-9:
+                raise ValueError(
+                    f"liquefaction_result: depth_profile rows overlap at "
+                    f"{t1:g}-{b0:g} m")
+        if profile_depth is not None and spans[-1][0] < float(profile_depth):
+            spans[-1][1] = min(spans[-1][1], float(profile_depth))
+    else:
+        z = [depth[i] for i in order]
+        edges = [max(0.0, z[0] - 0.5 * (z[1] - z[0]))]
+        edges += [0.5 * (a + b) for a, b in zip(z[:-1], z[1:])]
+        last = z[-1] + 0.5 * (z[-1] - z[-2])
+        if profile_depth is not None:
+            last = min(last, float(profile_depth))
+        edges.append(last)
+        spans = [[a, b] for a, b in zip(edges[:-1], edges[1:])]
     layers, left_out = [], 0.0
     for k, i in enumerate(order):
-        top, bottom = edges[k], edges[k + 1]
+        top, bottom = spans[k]
         if water_table is not None:
             top = max(top, float(water_table))
         if bottom <= top:
@@ -370,15 +416,38 @@ def liquefied_layers_from_result(result: Any, volumetric_strain=None,
             raise ValueError(
                 f"the liquefaction result gives no post-liquefaction "
                 f"volumetric strain at {depth[i]:g} m (FS_liq {f:.2f}); the "
-                f"tool's SPT routes compute none. Give volumetric_strain "
+                f"tool's SPT routes compute none, and no reference in the "
+                f"library prints an SPT method (GEC-10 §10.7 names Ishihara "
+                f"and Yoshimine (1992), as Idriss and Boulanger (2008) "
+                f"describe it, without printing it). Give volumetric_strain "
                 f"(decimal: one value for every liquefied reading, or one "
-                f"per reading), from Ishihara and Yoshimine (1992) as "
-                f"Idriss and Boulanger (2008) describe it (GEC-10 §10.7), "
-                f"or give liquefied_layers")
+                f"per reading) and say where it comes from, or give "
+                f"liquefied_layers; a CPT gives its own (the liquefaction "
+                f"tool's depth_profile)")
         layers.append(LiquefiedLayer(top=top, bottom=bottom,
                                      volumetric_strain=eps, N1_60=n160[i],
                                      fs_liq=f))
     return layers, left_out
+
+
+def _strain_basis(result: Any) -> str:
+    """Where a liquefaction result's own strains come from, as far as the
+    result says: the ``liquefaction`` tool's CPT route (and liquepy's CPT
+    result) computes them by Zhang et al. (2002)."""
+    rows = isinstance(result, dict) and result.get("depth_profile")
+    if (rows or (isinstance(result, (list, tuple)) and result
+                 and isinstance(result[0], dict) and "top_m" in result[0])
+            or hasattr(result, "q_c1n_cs")):
+        out = ("Zhang et al. (2002) from FS_liq and qc1Ncs, as the "
+               "liquefaction tool's CPT route (liquepy) computes it; GEC-10 "
+               "§10.7 names Ishihara and Yoshimine (1992), as Idriss and "
+               "Boulanger (2008) describe it")
+        note = isinstance(result, dict) and result.get("depth_profile_note")
+        if note:
+            out += (". The CPT profile came in depth bands: "
+                    "each band's strain is its average")
+        return out
+    return "as the liquefaction result gives it"
 
 
 def _zones(layers: Sequence[LiquefiedLayer]) -> List[List[LiquefiedLayer]]:
@@ -437,6 +506,12 @@ class _AfterLiquefaction(DowndragAnalysis):
             lo = z > s.top or (s.top <= tol and z >= -tol)
             hi = z < s.bottom or (s.bottom >= L - tol and z <= L + tol)
             if lo and hi:
+                return s
+        # a node on the boundary between two liquefied layers of one zone
+        # is inside the zone (GM-201: until then it kept its static value)
+        for s in self.liquefied:
+            if abs(z - s.bottom) <= tol and any(
+                    abs(t.top - s.bottom) <= tol for t in self.liquefied):
                 return s
         return None
 
@@ -782,12 +857,15 @@ def post_liquefaction_downdrag(
         ``volumetric_strain`` or ``settlement``, optional ``su_r``,
         ``N1_60``, ``fs_liq``). Give this or ``liquefaction_result``.
     liquefaction_result : dict or object, optional
-        The ``liquefaction`` tool's output (SPT ``layer_results``) or a
-        profile with ``depth``, ``factor_of_safety`` and
-        ``volumetric_strain`` (liquepy's CPT result).
+        The ``liquefaction`` tool's output (CPT ``depth_profile``, with its
+        strains; SPT ``layer_results``) or a profile with ``depth``,
+        ``factor_of_safety`` and ``volumetric_strain`` (liquepy's CPT
+        result).
     volumetric_strain : float or list, optional
         Reconsolidation strain (decimal) for the readings of
-        ``liquefaction_result``: one value, or one per reading.
+        ``liquefaction_result``: one value, or one per reading. Needed for
+        the SPT routes, which compute none (no reference in the library
+        prints an SPT method).
     fs_liq_threshold : float
         A reading liquefies where FS_liq <= this. Default 1.0 (GEC-10
         §9.4.2.2, p. 9-42).
@@ -818,7 +896,8 @@ def post_liquefaction_downdrag(
         raise ValueError(
             "give the liquefied layers one way: liquefied_layers (top, "
             "bottom, volumetric_strain) or liquefaction_result (the "
-            "liquefaction tool's output, with volumetric_strain)")
+            "liquefaction tool's output: a CPT's carries its strains, an "
+            "SPT's needs volumetric_strain)")
     profile_depth = float(analysis.soil.total_depth)
     left_out = 0.0
     if liquefied_layers is not None:
@@ -1167,7 +1246,8 @@ def post_liquefaction_downdrag(
                 "reconsolidation volumetric strain",
                 "the liquefaction result's own",
                 how_given(liquefaction_result, None,
-                          name="liquefaction_result")))
+                          name="liquefaction_result"),
+                _strain_basis(liquefaction_result)))
     if chosen == "residual_strength":
         out_choices.append(choice(
             "residual strength su,r",
