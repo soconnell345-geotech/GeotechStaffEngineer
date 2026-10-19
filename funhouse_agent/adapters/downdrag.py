@@ -1,13 +1,16 @@
 """Downdrag adapter — Fellenius neutral plane (UFC 3-220-20) plus the
 CGPR #56 method family (Greenfield & Filz 2009): Endo, Poulos, the report's
-Fellenius formulation, PILENEG, pile-group methods, and a comparison runner."""
+Fellenius formulation, PILENEG, pile-group methods, and a comparison runner;
+and post-liquefaction downdrag (FHWA GEC-10 §10.7)."""
 
 from downdrag import (
     DowndragSoilLayer, DowndragSoilProfile, DowndragAnalysis,
     endo_method, poulos_method, fellenius_method_cgpr56, pileneg_procedure,
     rigid_block_method, drag_load_reduction_method,
-    downdrag_method_comparison,
+    downdrag_method_comparison, post_liquefaction_downdrag,
+    LIQUEFIED_SIDE_RESISTANCE,
 )
+from downdrag.liquefaction import LIQUEFIED_LAYER_KEYS
 from funhouse_agent.adapters import (
     check_nested_keys, check_nested_list, clean_result,
     declare_applies_when, field_keys, reject_unknown_params, require_keys,
@@ -70,8 +73,14 @@ def run_downdrag_analysis(params, *, method="downdrag_analysis"):
     path, also run by ``calc_package.downdrag_package`` (GM-141).
     ``method`` names the caller in error messages."""
     reject_unknown_params(params, _VALID_PARAMS, method=method)
+    analysis = _build_analysis(params, method, _VALID_PARAMS)
+    return analysis.compute(), analysis
+
+
+def _build_analysis(params, method, valid):
+    """The ``DowndragAnalysis`` the static parameters describe."""
     require_params(params, ["layers", "pile_length", "pile_diameter"],
-                   method=method, valid=_VALID_PARAMS)
+                   method=method, valid=valid)
     check_nested_list(params["layers"], _LAYER_KEYS,
                       method=method, label="layers",
                       hints=_LAYER_KEY_HINTS, notes=_LAYER_KEY_NOTES)
@@ -113,7 +122,7 @@ def run_downdrag_analysis(params, *, method="downdrag_analysis"):
         influence_depth_criterion=params.get("influence_depth_criterion",
                                              "bearing_stress"),
     )
-    return analysis.compute(), analysis
+    return analysis
 
 
 def _run_downdrag_analysis(params):
@@ -135,6 +144,50 @@ def _basis_first(d: dict) -> dict:
     out = {k: d[k] for k in _BASIS_KEYS if k in d}
     out.update((k, v) for k, v in d.items() if k not in out)
     return clean_result(out)
+
+
+# ── Post-liquefaction downdrag (FHWA GEC-10 §10.7; GM-03) ────────────────
+
+_POST_LIQUEFACTION_PARAMS = _VALID_PARAMS + (
+    "liquefied_layers", "liquefaction_result", "volumetric_strain",
+    "fs_liq_threshold", "liquefied_side_resistance",
+    "liquefied_side_resistance_ratio",
+)
+_LIQUEFIED_KEY_HINTS = {
+    "strain": ("volumetric_strain",), "ev": ("volumetric_strain",),
+    "epsv": ("volumetric_strain",), "epsilonv": ("volumetric_strain",),
+    "settle": ("settlement",), "settlementm": ("settlement",),
+    "fos": ("fs_liq",), "fosliq": ("fs_liq",), "fs": ("fs_liq",),
+    "n160": ("N1_60",), "sr": ("su_r",), "residualstrength": ("su_r",),
+    "z_top": ("top",), "ztop": ("top",), "zbot": ("bottom",),
+    "zbottom": ("bottom",),
+}
+
+
+def _run_post_liquefaction(params):
+    method = "post_liquefaction_downdrag"
+    reject_unknown_params(params, _POST_LIQUEFACTION_PARAMS, method=method)
+    if params.get("liquefied_layers") is not None:
+        check_nested_list(params["liquefied_layers"], LIQUEFIED_LAYER_KEYS,
+                          method=method, label="liquefied_layers",
+                          hints=_LIQUEFIED_KEY_HINTS)
+    static = {k: v for k, v in params.items() if k in _VALID_PARAMS}
+    analysis = _build_analysis(static, method, _POST_LIQUEFACTION_PARAMS)
+    try:
+        result = post_liquefaction_downdrag(
+            analysis,
+            liquefied_layers=params.get("liquefied_layers"),
+            liquefaction_result=params.get("liquefaction_result"),
+            volumetric_strain=params.get("volumetric_strain"),
+            fs_liq_threshold=params.get("fs_liq_threshold", 1.0),
+            liquefied_side_resistance=params.get(
+                "liquefied_side_resistance", "half_pre_earthquake"),
+            liquefied_side_resistance_ratio=params.get(
+                "liquefied_side_resistance_ratio"),
+        )
+    except ValueError as exc:
+        raise ValueError(f"{method}: {exc}") from None
+    return clean_result(result.to_dict())
 
 
 # ── CGPR #56 method family (Greenfield & Filz 2009) ──────────────────────
@@ -387,6 +440,7 @@ METHOD_REGISTRY = {
     "downdrag_method_comparison": _run_comparison,
     "group_rigid_block": _run_rigid_block,
     "group_drag_reduction": _run_group_reduction,
+    "post_liquefaction_downdrag": _run_post_liquefaction,
 }
 
 METHOD_INFO = {
@@ -572,28 +626,69 @@ METHOD_INFO = {
     },
 }
 
+# Post-liquefaction downdrag takes every input of the static analysis (the
+# state before the earthquake) and the liquefied layers.
+METHOD_INFO["post_liquefaction_downdrag"] = {
+    "category": "Downdrag",
+    "brief": "Post-liquefaction downdrag (FHWA GEC-10 10.7): neutral plane, drag force and settlement before the earthquake and after the liquefied layers reconsolidate, every neutral-plane method and every cited side resistance for the liquefied layers side by side.",
+    "parameters": {
+        **{name: dict(spec) for name, spec in
+           METHOD_INFO["downdrag_analysis"]["parameters"].items()},
+        "liquefied_layers": {"type": "array", "required": False, "description": "The layers that liquefy, instead of liquefaction_result: array of {top, bottom (m below the pile head), volumetric_strain (post-liquefaction reconsolidation strain, decimal: 0.03 = 3 %) or settlement (m, the layer's reconsolidation settlement), su_r (kPa, residual undrained strength; optional), N1_60 (optional; su_r by GEC-10 Eq 9-13 when su_r is not given), fs_liq (optional, reported)}. The other inputs (layers, pile, Q_dead, fill, neutral_plane_method, ...) describe the state before the earthquake, as for downdrag_analysis."},
+        "liquefaction_result": {"type": "object", "required": False, "description": "The liquefaction tool's result, instead of liquefied_layers: its layer_results rows (depth_m, FOS_liq, N1_60; the SPT routes), or a profile with depth, factor_of_safety and volumetric_strain arrays. A reading liquefies where FOS_liq <= fs_liq_threshold and stands for the depth halfway to its neighbours, below gwt_depth. The tool's CPT route returns only LPI/LSN/LDI, so for a CPT give liquefied_layers."},
+        "volumetric_strain": {"type": "float", "required": False, "description": "Reconsolidation volumetric strain (decimal) for liquefaction_result's readings: one value for every liquefied reading, or a list with one value per reading in the result's order. Required with liquefaction_result when the result carries no strains (the liquefaction tool's SPT routes compute none). GEC-10 10.7 estimates it by Ishihara and Yoshimine (1992) as described in Idriss and Boulanger (2008)."},
+        "fs_liq_threshold": {"type": "float", "required": False, "default": 1.0, "description": "A reading of liquefaction_result liquefies where FOS_liq <= this. 1.0 = GEC-10 9.4.2.2 ('layers predicted to undergo liquefaction (FSliq <= 1.0)'); 1.0 < FSliq <= about 1.5 generates excess pore pressure."},
+        "liquefied_side_resistance": {"type": "string", "required": False, "default": "half_pre_earthquake", "description": "Unit side resistance of the liquefied layers after reconsolidation, as drag above the neutral plane and resistance below it, for the headline numbers; every option that can be evaluated is reported in side_resistance_comparison whatever is chosen. 'half_pre_earthquake' (default) = 50 percent of the pre-earthquake (static) side resistance, GEC-10 10.7 p. 10-52 (Rollins et al. 2018); 'zero' = none, GEC-10 p. 10-51 and UFC 3-220-20 Table 6-49 (the state while liquefied); 'residual_strength' = su_r, the lower bound of GEC-10 p. 10-51 and GEC-12 7.4.2.2 (needs su_r or N1_60 for each layer; never more than the static value); 'ratio' = liquefied_side_resistance_ratio x the static value. The other layers keep their static side resistance.", "allowed_values": list(LIQUEFIED_SIDE_RESISTANCE)},
+        "liquefied_side_resistance_ratio": {"type": "float", "required": False, "description": "Fraction (0-1) of the pre-earthquake unit side resistance the liquefied layers carry. Required when liquefied_side_resistance='ratio'; given with another option, it adds a 'ratio' row to side_resistance_comparison."},
+    },
+    "returns": {
+        "post_liquefaction_basis": "What was done and on what basis (GEC-10 10.7, GEC-12 7.4.2.2 quoted). Report it.",
+        "warnings": "What the engineer must know: why the methods' drag forces differ so much (force equilibrium counts all the friction above the curves' intersection, settling or not; the methods that follow the settlement count only the soil that settles), a toe in or on a liquefied layer, a liquefied zone below the neutral plane before the earthquake with the methods whose drag force rises, readings left out. Report every one.",
+        "methods_range_after": "The spread of neutral plane and drag force over the neutral-plane methods after liquefaction. Report it.",
+        "neutral_plane_before_m / neutral_plane_after_m": "Neutral plane (m) of the headline method (neutral_plane_method) before and after.",
+        "drag_force_before_kN / drag_force_after_kN": "Drag force Q_np - Q_dead (kN; UFC 3-220-20 Eq 6-80) before and after.",
+        "max_pile_load_before_kN / max_pile_load_after_kN": "Q_np, the maximum axial load (kN).",
+        "pile_settlement_before_mm / pile_settlement_after_mm": "Pile head settlement (mm).",
+        "reconsolidation_settlement_mm": "Reconsolidation settlement of all the liquefied layers (mm): what the ground surface settles by.",
+        "liquefied_zones": "Each contiguous liquefied zone: top, bottom, strain, settlement, side resistance before and after (kN), its position against the headline neutral plane before the earthquake, and below_the_plane_before_of (the methods whose plane before lies above it). Present it as a table.",
+        "side_resistance_comparison": "Each side-resistance option (headline method): name, source, assumptions, applies, used, neutral plane, drag force, pile settlement. Present it as a table.",
+        "by_method": "Every neutral-plane method before and after: neutral plane, drag force, pile settlement in each state. Present it as a table.",
+        "limit_states_note": "The limit states GEC-10 10.7 checks the drag at (structural strength and service; AASHTO's Extreme Event I with load factor 1.0 noted). Report it.",
+        "structural_ok / structural_demand_kN": "1.25 Q_dead + 1.10 DF after liquefaction <= structural_capacity (when given).",
+        "choices": "Each choice the run made, given or default, with its basis.",
+        "before": "The static analysis's headline: neutral plane, method, basis, drag force, warnings.",
+        "after": "The full downdrag_analysis result after liquefaction (neutral_plane_comparison, profiles z_m / axial_load_kN / soil_settlement_mm / unit_skin_friction_kPa, below_toe).",
+    },
+}
+
 # When each default applies (GM-119): the pile's unit weight only when its
-# own weight is in the load.
+# own weight is in the load; the FS_liq threshold only for a liquefaction
+# result.
 declare_applies_when(METHOD_INFO, {
     "downdrag_analysis": {
-        "pile_unit_weight": {"include_pile_weight": [True]}}})
+        "pile_unit_weight": {"include_pile_weight": [True]}},
+    "post_liquefaction_downdrag": {
+        "pile_unit_weight": {"include_pile_weight": [True]},
+        "fs_liq_threshold": {"liquefaction_result": "set"}}})
 
 
 # What a left-out input with no default stands for (BACKLOG GM-165):
 # the pile's section from its diameter, the toe factor and area, and
 # the CGPR equivalent footing.
 from funhouse_agent.adapters import declare_when_absent  # noqa: E402
+_SECTION_CASES = {
+    "pile_perimeter": ("pi D, from pile_diameter",
+                       "the perimeter of a circular section"),
+    "pile_area": ("pi D^2 / 4, from pile_diameter",
+                  "the solid circle; give the steel area for an H or "
+                  "pipe pile"),
+    "Nt": ("the ultimate value from the toe layer",
+           "Nt from the toe layer's friction angle (Fellenius 1991; "
+           "GEC-12 Table 7-9), 9 in clay: the ultimate, not the "
+           "mobilized, toe resistance")}
 declare_when_absent(METHOD_INFO, {
-    "downdrag_analysis": {
-        "pile_perimeter": ("pi D, from pile_diameter",
-                           "the perimeter of a circular section"),
-        "pile_area": ("pi D^2 / 4, from pile_diameter",
-                      "the solid circle; give the steel area for an H or "
-                      "pipe pile"),
-        "Nt": ("the ultimate value from the toe layer",
-               "Nt from the toe layer's friction angle (Fellenius 1991; "
-               "GEC-12 Table 7-9), 9 in clay: the ultimate, not the "
-               "mobilized, toe resistance")},
+    "downdrag_analysis": dict(_SECTION_CASES),
+    "post_liquefaction_downdrag": dict(_SECTION_CASES),
     "poulos_downdrag": {"toe_area": "pile_area"},
     "fellenius_cgpr56": {"toe_area": "pile_area",
                          "eq_footing_length": "eq_footing_width",

@@ -113,12 +113,21 @@ class AnchorDesignResult:
         Required bond length in grout zone (m).
     total_length_m : float
         Total anchor length = unbonded + bond (m).
-    bond_stress_kPa : float
-        Ultimate bond stress used (kPa).
+    load_transfer_kN_per_m : float
+        Ultimate load transfer per metre of bond length used (kN/m):
+        soil_type's GEC-4 Table 6 or 8 value, a given one, or a given bond
+        stress over the drill hole's perimeter (GM-191).
+    FOS_bond : float
+        Factor of safety on the ultimate load transfer used.
+    bond_stress_kPa : float or None
+        The given average ultimate bond stress (kPa); None when the load
+        transfer is per metre (GM-191; until then the table's value read
+        as kPa).
     soil_type : str
-        Soil/rock type used for bond stress.
-    drill_diameter_mm : float
-        Drill hole diameter (mm).
+        Soil/rock type of the bond zone (a GEC-4 Table 6 or 8 row).
+    drill_diameter_mm : float or None
+        Drill hole diameter (mm) a given bond stress acts on; None when
+        the load transfer is per metre (the hole does not enter it).
     tendon : dict
         Tendon selection details (type, strand count, capacities).
     test_load_factor : float
@@ -144,9 +153,11 @@ class AnchorDesignResult:
     unbonded_length_m: float = 0.0
     bond_length_m: float = 0.0
     total_length_m: float = 0.0
-    bond_stress_kPa: float = 0.0
+    load_transfer_kN_per_m: float = 0.0
+    FOS_bond: float = 2.0
+    bond_stress_kPa: Optional[float] = None
     soil_type: str = ""
-    drill_diameter_mm: float = 150.0
+    drill_diameter_mm: Optional[float] = None
     tendon: Dict[str, Any] = field(default_factory=dict)
     test_load_factor: float = 1.33
     test_load_kN: float = 0.0
@@ -170,10 +181,14 @@ class AnchorDesignResult:
             f"  Bond length:          {self.bond_length_m:.2f} m",
             f"  Total anchor length:  {self.total_length_m:.2f} m",
             "",
-            f"  Bond stress:          {self.bond_stress_kPa:.1f} kPa"
+            f"  Load transfer:        {self.load_transfer_kN_per_m:.1f} kN/m"
             f"  ({self.soil_type})",
-            f"  Drill diameter:       {self.drill_diameter_mm:.0f} mm",
+            f"  FS on bond:           {self.FOS_bond:g}",
         ]
+        if self.bond_stress_kPa is not None:
+            lines.append(
+                f"  Bond stress:          {self.bond_stress_kPa:.1f} kPa"
+                f" over a {self.drill_diameter_mm:.0f} mm hole")
         if self.tendon:
             lines.append("")
             lines.append("  Tendon:")
@@ -214,6 +229,8 @@ class AnchorDesignResult:
             "unbonded_length_m": self.unbonded_length_m,
             "bond_length_m": self.bond_length_m,
             "total_length_m": self.total_length_m,
+            "load_transfer_kN_per_m": self.load_transfer_kN_per_m,
+            "FOS_bond": self.FOS_bond,
             "bond_stress_kPa": self.bond_stress_kPa,
             "soil_type": self.soil_type,
             "drill_diameter_mm": self.drill_diameter_mm,

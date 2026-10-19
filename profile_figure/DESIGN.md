@@ -93,7 +93,12 @@ above a horizontal line, the top right of a vertical one, when clear), and
 the interactive twin puts it at the same end (BACKLOG GM-152). It knows no analysis and does no unit conversion — the caller labels
 the axes WITH units. Non-finite points are dropped with a warning; unequal
 `x`/`y` lengths, an empty series and an unknown style are errors that name the
-series index. It exists because the agent has no code-execution tool: without
+series index. The agent's adapter also refuses, before anything is written, a
+figure that only holds a place: a title, axis or series named as a
+placeholder (BACKLOG GM-190; the rule is `funhouse_agent/plot_box/figures.py`
+`stand_in`). Axes named 'x' and 'y' alone are not refused: a plan or a
+coordinate plot is named so.
+`render_data_plot` itself does not check. It exists because the agent has no code-execution tool: without
 it, SPT-vs-depth or settlement-vs-time in a bespoke report was impossible.
 It lives here rather than in a new module because the agent catalog is within
 ~35 characters of its 8,000-char budget — a method costs less than a module.

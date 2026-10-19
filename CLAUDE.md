@@ -388,8 +388,8 @@ Key conventions:
   a prompt rule; a switch goes on by default only when the suite says so.
   Plan of record and cells: `module_work/REVIEW_HARNESS.md`. Pickup:
   `HANDOFF.md` §0a-current. planlens branch
-  `fix/advice-names-no-missing-tools` (one wording fix) is committed, not
-  released.
+  `fix/advice-names-no-missing-tools` (one wording fix) was released in
+  planlens 0.11.0 (as `0d9787b`, with 5.32.0).
 - **5.29.1 RELEASED 2026-09-26 (tag `v5.29.1`) with planlens 0.10.1 (tag
   `v0.10.1`). No dependency change** (pin stays `planlens>=0.10`). The
   owner's correction the day after 5.29.0: "This seems kinda niche. The
@@ -1373,10 +1373,13 @@ subagent for a narrow task is fine — one at a time, never concurrent.)
 Engineers reviewing design and construction documents; an upload is usually a
 geotechnical REPORT (narrative, then tables, then figures), not a sheet; and
 the user must not have to declare whether they want a language review or a
-visual one. Approved plan of record:
-`C:/Users/socon/.claude/plans/delightful-swinging-sky.md` — vertical slice on
+visual one. The plan approved then
+(`C:/Users/socon/.claude/plans/delightful-swinging-sky.md`, now gone and never
+committed) was a vertical slice on
 *"what is the average spacing of the borings in this plan?"*, PDF-first,
-findings as data rather than a fixed deliverable.
+findings as data rather than a fixed deliverable. The document-review reset
+below replaced it; the plan of record is now
+`module_work/REVIEW_ARCHITECTURE.md`, and the slice is BACKLOG DR-12.
 
 **2026-09-13/14 — the document-review reset, RELEASED as 5.16.0 / planlens
 0.3.0.** A high-level review found planlens had drifted into arrowhead tuning
@@ -1956,7 +1959,7 @@ check: `funhouse_agent/deep/rc_wheel_check.py` (`run_rc_check(fh_prompter)`); th
 suite: `funhouse_agent/deep/eval_harness.py` (`run_suite(model, out=...)`). Save outputs to
 `/tmp` or `/Volumes`, NOT `/Workspace` (FUSE writes are non-durable / permission-blocked).
 
-## Module Inventory (31 analysis + geo_project setup layer + 30 reference, + foundry harness; reference layer fully QC'd, all figure catalogs 100% page-accurate)
+## Module Inventory (31 analysis + geo_project setup layer + 30 reference, + foundry harness; reference layer QC'd 2026-06, its open QC items in `BACKLOG.md` §8; all figure catalogs page-accurate, 0 of 3,394 figures `page_estimated` on 2026-10-19)
 
 | Module | Tests | Purpose |
 |--------|-------|---------|
@@ -2050,7 +2053,7 @@ not pitch it as CAD-object recognition — the goal is document review.
 |-------|-------------------------|
 | `planlens.document` | Any PDF (or image) as review-ready data: a page map (kinds text / drawing_sheet / form / figure / scanned / blank / mixed, with evidence, word density, the page number PRINTED on the page, sheet refs, scale notes); the document's STRUCTURE (segments from running headers/footers, printed numbering, dividers, duplicates); text lines with exact boxes and reading direction; tables; review markups (author, date, says/shows, the point a callout or arrow aims at, reply links); AutoCAD hidden SHX text; search; contact sheets. Azure Document Intelligence results as an optional text source (never called by planlens). One frame: displayed-page points, top-left origin — `render_region`'s frame. |
 | `planlens.ir` | Drawing geometry: DXF / vector-PDF / raster ingest into a provenance-and-confidence-bearing IR, slice queries, the construct finders (leaders, dimensions, title blocks, bubbles, clouds), `render_region` (zoom with set-of-marks), `measure` / `spatial`. |
-| `planlens.tools` | The framework-neutral LLM tool layer (`ReviewToolkit`): ten tools, JSON-Schema specs in Anthropic / OpenAI style, every result valid JSON inside a size limit, cursors for anything longer. |
+| `planlens.tools` | The framework-neutral LLM tool layer (`ReviewToolkit`): 15 tools at 0.13.0 (`planlens/tools/specs.py`), JSON-Schema specs in Anthropic / OpenAI style, every result valid JSON inside a size limit, cursors for anything longer. |
 | `planlens.pdf` | The PDF ingest leg + the geotechnical cross-section importer (role mappings, soil-layer vision prompts) that predates the split; app-side bridge `dxf_import/pdf_bridge.py` → `build_slope_geometry()` / `build_fem_inputs()`. Moving the geotech part back here is on planlens' open list. |
 
 **In this app** (5.19.0; the surface is unchanged from 5.18.0 — planlens
@@ -2254,11 +2257,13 @@ decisions. See memory `feedback-reference-layer-autonomy`.
   has since been removed in the Phase 1 consolidation — see `CONSOLIDATION_CHANGES.md`.)
 
 **Open backlog (history; current status is `BACKLOG.md` §8 and the "Done since the last sweep" list there):** the ~23 per-module param-name/value bugs and the `retaining_walls`
-earth-pressure-coefficient gap were FIXED in v5.1 (adapter-ergonomics stream). Still open:
-module-*selection* mis-routing (e.g. Rankine guessed on the wrong module) and a `fem2d`
-footing-SRM convenience method.
-`ufc_expansive` has ~22 more figures behind an OCR pass (scanned PDF). The weekend QC routine's
-gec_6/7/12/13 chapter-text edits are a separate uncommitted workstream.
+earth-pressure-coefficient gap were FIXED in v5.1 (adapter-ergonomics stream). Open at the
+time: module-*selection* mis-routing (e.g. Rankine guessed on the wrong module) and a `fem2d`
+footing convenience method, since built as `fem2d.analyze_footing_capacity` (load to collapse;
+0aea590, 5.4.0).
+`ufc_expansive`'s remaining figures were catalogued in geotech-references 1.3.1 (3b25e0e; all
+42 page-accurate). The weekend QC routine's gec_6/7/12/13 chapter-text edits are committed
+only on the refs branch `rescue/reference-wip-2026-06-02` (7fb6fe8, unmerged): BACKLOG REF-04.
 
 ## HANDOFF — Figure Read-Off: Status & Remaining Work
 
