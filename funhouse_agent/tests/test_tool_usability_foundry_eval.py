@@ -141,9 +141,19 @@ class TestParameterSuggestions:
         ("b_mm", ["b", "h", "fc"], ["b"]),
         ("water_table_depth", ["depth", "gwt_depth"], ["gwt_depth"]),
         ("unit_wieght", ["unit_weight", "width"], ["unit_weight"]),
+        # GM-177: the unit the VALID name carries, added or left off
+        ("phi", ["phi_deg", "phi_prime_deg"], ["phi_deg"]),
+        ("B", ["b_m", "l_m"], ["b_m"]),
+        ("gamma", ["gamma_d_kNm3", "gamma_kNm3"], ["gamma_kNm3"]),
+        ("unit_weight", ["unit_weight_kN_per_m3"], ["unit_weight_kN_per_m3"]),
+        ("phi_deg", ["phi", "c"], ["phi"]),
     ])
     def test_suggests(self, unknown, valid, expected):
         assert suggest_params(unknown, valid) == expected
+
+    def test_a_subscript_is_not_a_unit(self):
+        # 'E_s' is the soil's modulus, not E in seconds
+        assert suggest_params("E", ["E_s", "E_p"]) == []
 
     def test_does_not_offer_a_different_quantity(self):
         # sharing a word is not a spelling slip: base vs load inclination

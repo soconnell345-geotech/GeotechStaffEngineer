@@ -170,6 +170,22 @@ def test_an_unknown_keyword_is_named_without_internals():
     assert "section_id" in out["required_parameters"]
 
 
+@pytest.mark.parametrize("method", [
+    "meyerhof_hansen_Nq", "meyerhof_Ngamma", "hansen_Ngamma"])
+def test_a_reference_function_offers_the_name_with_its_unit(method):
+    # GM-177 (w13b F18j): the dm7 factor functions take phi_deg, never phi
+    out = dispatch.call_agent("dm7", method, {"phi": 30})
+    assert f"'phi' is not a parameter of {method}" in out["error"]
+    assert "Did you mean: phi -> phi_deg?" in out["error"]
+    assert out["required_parameters"] == ["phi_deg"]
+
+
+def test_a_name_with_no_near_match_gets_no_guess():
+    out = dispatch.call_agent("dm7", "meyerhof_hansen_Nq", {"friction": 30})
+    assert "'friction' is not a parameter" in out["error"]
+    assert "Did you mean" not in out["error"]
+
+
 # ---------------------------------------------------------------------------
 # A15f: write_diggs names its own file
 # ---------------------------------------------------------------------------
