@@ -166,6 +166,31 @@ class TestHandCheckHC1:
         assert rows["residual_strength"]["neutral_plane_depth_m"] == \
             pytest.approx(z_res, abs=0.01)
 
+    def test_the_warnings_say_why_the_methods_differ(self):
+        """1163 kN against 187 kN is the methods' definitions: force
+        equilibrium counts the friction down to the curves' intersection,
+        8.13 m of it in dense sand that does not settle; the methods that
+        follow the settlement count it above 10 m only. And before the
+        earthquake nothing settles, yet force equilibrium gives a drag
+        force: the warnings say both plainly."""
+        r = post_liquefaction_downdrag(_hand_check(),
+                                       liquefied_layers=_HC1_ZONE)
+        before = next(w for w in r.warnings
+                      if w.startswith("Before the earthquake no soil"))
+        assert "Neutral plane at 100% toe mobilization 1207 kN at " \
+            "17.85 m" in before
+        assert "Compare before and after within one method" in before
+        why = next(w for w in r.warnings
+                   if w.startswith("Why the methods differ"))
+        assert "(18.13 m)" in why and "(1163 kN)" in why
+        assert "8.13 m of it below 10.00 m" in why
+        assert "Mobilized toe resistance compatible with the toe " \
+            "penetration gives 187 kN at 10.00 m" in why
+        # no "before" note where the soil settles before the earthquake
+        r2 = TestBelowTheStaticNeutralPlane._case()
+        assert not any(w.startswith("Before the earthquake no soil")
+                       for w in r2.warnings)
+
 
 class TestResidualStrength:
 

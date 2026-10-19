@@ -643,7 +643,7 @@ METHOD_INFO["post_liquefaction_downdrag"] = {
     },
     "returns": {
         "post_liquefaction_basis": "What was done and on what basis (GEC-10 10.7, GEC-12 7.4.2.2 quoted). Report it.",
-        "warnings": "What the engineer must know: a toe in or on a liquefied layer, a liquefied zone below the neutral plane before the earthquake with the methods whose drag force rises, readings left out. Report every one.",
+        "warnings": "What the engineer must know: why the methods' drag forces differ so much (force equilibrium counts all the friction above the curves' intersection, settling or not; the methods that follow the settlement count only the soil that settles), a toe in or on a liquefied layer, a liquefied zone below the neutral plane before the earthquake with the methods whose drag force rises, readings left out. Report every one.",
         "methods_range_after": "The spread of neutral plane and drag force over the neutral-plane methods after liquefaction. Report it.",
         "neutral_plane_before_m / neutral_plane_after_m": "Neutral plane (m) of the headline method (neutral_plane_method) before and after.",
         "drag_force_before_kN / drag_force_after_kN": "Drag force Q_np - Q_dead (kN; UFC 3-220-20 Eq 6-80) before and after.",

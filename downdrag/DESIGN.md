@@ -755,9 +755,9 @@ resistance, as GEC-10 says for the layers above.
 ### What the module does, and what it assumes
 
 1. **Before**: `analysis.compute()`, unchanged. If the chosen
-   `neutral_plane_method` finds no plane before the earthquake (the plane at
-   the base of the settling soil when nothing settles yet), the numbers
-   before are `auto` and a warning says so.
+   `neutral_plane_method` finds no plane before the earthquake (the
+   neutral plane at the bearing layer, `bearing_layer_top`, when nothing
+   settles yet), the numbers before are `auto` and a warning says so.
 2. **After**: a subclass of `DowndragAnalysis` with (a) the liquefied zones'
    top and bottom as repeated grid depths (the `_extra_boundaries` hook,
    empty for the static analysis), (b) the liquefied layers' unit side
@@ -774,12 +774,21 @@ resistance, as GEC-10 says for the layers above.
    equilibrium takes the plane from the load and resistance curves, which
    the reconsolidation settlement does not move; lowering the liquefied
    layer's friction lowers both. The methods that follow the settlement
-   (toe force compatible with the toe penetration, plane at the base of the
-   settling soil) are the ones whose drag rises when the liquefied zone is
-   below the plane before the earthquake: when a zone lies below the plane
-   some method gives before the earthquake and the headline drag force does
-   not rise, a warning quotes GEC-12 §7.4.2.2 and names those methods and
-   their numbers. Nothing is chosen for the engineer.
+   (mobilized toe resistance compatible with the toe penetration; neutral
+   plane at the bearing layer) are the ones whose drag rises when the
+   liquefied zone is below the plane before the earthquake: when a zone
+   lies below the plane some method gives before the earthquake and the
+   headline drag force does not rise, a warning quotes GEC-12 §7.4.2.2 and
+   names those methods and their numbers. Nothing is chosen for the
+   engineer.
+   Two more warnings say in plain words why the methods differ so much
+   (HC-1 below): when no soil settles before the earthquake, the methods
+   that do not follow the settlement (force equilibrium, the plane at the
+   pile toe, Endo) still give a drag force, so before and after are
+   compared within one method; and when the headline plane after lies
+   below the depth where the soil settles less than the pile, the warning
+   gives that length, the headline drag force and the drag force of the
+   methods that follow the settlement.
 4. **Inputs**: `liquefied_layers` (top, bottom, `volumetric_strain` or
    `settlement`; optional `su_r`, `N1_60`, `fs_liq`), or a
    `liquefaction_result` — the `liquefaction` tool's SPT `layer_results`
@@ -821,23 +830,42 @@ The 6-10 m layer liquefies with εv = 3 %.
 | Toe resistance | R = 30 × (91.9 + 10.19 × 10) × 0.25 = 30 × 193.8 × 0.25 = 1453.5 kN | |
 | Shaft 10-20 m | 2.0 × 0.45 × (91.9 × 10 + 10.19 × 10²/2) = 1285.65 kN | |
 | Reconsolidation settlement | 0.03 × 4.0 = 120 mm: 120 mm above 6 m, linear to 0 at 10 m | 120.0 mm, same profile |
-| Plane at the base of the settling soil / toe force compatible with toe penetration, after | 10.00 m; drag force 99.25 + 88.22 = 187.48 kN | 10.00 m; 187.5 kN |
-| The same methods before | nothing settles: no plane at the bearing layer; zero drag | n/a; 0 kN |
+| Neutral plane at the bearing layer / mobilized toe resistance compatible with the toe penetration, after | 10.00 m; drag force 99.25 + 88.22 = 187.48 kN | 10.00 m, 187.5 kN / 9.997 m, 187.4 kN |
+| The same methods before | nothing settles: no bearing-layer plane; the compatible plane at the head, zero drag | n/a; 0.00 m, 0 kN |
 | Force equilibrium, toe 100 %, below 10 m (u = z − 10) | Q + S_top + S(u) = R + 1285.65 − S(u), S(u) = 0.9 (91.9 u + 5.095 u²) | |
 | — before (S_top = 275.70) | S(u) = 931.73 → u = 7.849 → **17.85 m**, Q_np = **1807.4 kN** | 17.85 m, 1807.4 kN |
 | — after, 50 % (S_top = 187.48) | S(u) = 975.84 → u = 8.132 → **18.13 m**, Q_np = **1763.3 kN** | 18.13 m, 1763.3 kN |
 | — after, zero (S_top = 99.25) | S(u) = 1019.95 → u = 8.410 → 18.41 m | 18.41 m |
 | GEC-10 Eq 9-13 at 8 m, (N1)60 = 8 | σ'v0 = 73.52 kPa = 0.7256 atm; su,r = exp(−8.444 + 0.872 + 5.379 × 0.7256^0.1) = 0.0941 atm = **9.54 kPa** (static fs there 22.1 kPa) | 9.54 kPa |
 
-What HC-1 shows: with the liquefied layer ABOVE every plane before the
-earthquake (here none settles before), force equilibrium moves the plane
-down a little and the drag force falls (1207 → 1163 kN), as GEC-12 §7.4.2.2
-says for liquefaction above the plane ("limited effect"); the methods that
-follow the reconsolidation settlement go from no drag to 187 kN at the base
-of the liquefied layer. `TestBelowTheStaticNeutralPlane` covers a zone
-below the plane before the earthquake (clay under a fill over sand), where
-those methods' drag force rises from 377 to about 880 kN and the warning
-names them.
+What HC-1 shows. The numbers are right; the methods differ by how each
+defines the neutral plane, and the result says so in its warnings.
+
+- **Force equilibrium** (the headline, UFC 3-220-20 §6-7.4) takes the plane
+  where the load and resistance curves meet and counts all the friction
+  above it as drag, whether the soil there settles or not. Before the
+  earthquake nothing settles, yet it gives a drag force of 1207 kN
+  (Q_np 1807 kN) at 17.85 m. After, the liquefied layer is above that
+  plane; halving its friction lowers the load curve, so the plane moves
+  down (18.13 m) and the drag force falls (1163 kN), as GEC-12 §7.4.2.2
+  says for liquefaction above the plane ("limited effect"). 8.13 m of the
+  shaft it counts as drag is dense sand below 10 m that does not settle:
+  UFC's conservative assumption for the structural drag force.
+- **The methods that follow the settlement** (toe resistance compatible
+  with the toe penetration; plane at the bearing layer) give no drag
+  before (the compatible plane is at the head, 0.00 m) and 187 kN after,
+  at 10.00 m: the static friction above the liquefied layer (99.25 kN)
+  plus half the liquefied layer's (88.22 kN). That is GEC-10 §10.7's rule
+  applied to the soil that settles. The liquefied layer is below their
+  plane before the earthquake, so their drag rises, as GEC-12 §7.4.2.2
+  says.
+
+The factor of six between 1163 and 187 kN is therefore the difference
+between "all the friction above the curves' intersection" and "the friction
+of the soil that settles". Each row is compared before and after within
+itself. `TestBelowTheStaticNeutralPlane` covers a zone below the plane
+before the earthquake (clay under a fill over sand), where those methods'
+drag force rises from 377 to about 880 kN and the warning names them.
 
 ## CGPR #56 Method Family (`cgpr56.py`)
 

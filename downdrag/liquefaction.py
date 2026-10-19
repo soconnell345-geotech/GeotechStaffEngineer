@@ -74,8 +74,11 @@ _SIDE = {
             "back to about its pre-earthquake value, the liquefied layer "
             "carries half its pre-earthquake (static) unit side resistance; "
             "from instrumented deep foundations in blast-induced "
-            "liquefaction (Rollins et al. 2018). The same unit value acts "
-            "as resistance where the layer is below the neutral plane."),
+            "liquefaction (Rollins et al. 2018). GEC-10 is the drilled "
+            "shaft manual; the Rollins et al. (2018) tests it cites "
+            "covered 'various deep foundation types' (p. 10-51). The same "
+            "unit value acts as resistance where the layer is below the "
+            "neutral plane."),
     },
     "zero": {
         "name": "Zero side resistance in the liquefied layers",
@@ -689,6 +692,73 @@ def _available(key: str, layers: Sequence[LiquefiedLayer],
     return ""
 
 
+#: The neutral-plane methods whose plane follows the soil settlement.
+_FOLLOW_SETTLEMENT = ("settlement_compatibility", "bearing_layer_top")
+
+#: What each method that does not follow the settlement counts as drag.
+_COUNTS_AS_DRAG = {
+    "force_equilibrium": (
+        "force equilibrium (UFC 3-220-20 §6-7.4) counts all the friction "
+        "above the intersection of the load and resistance curves as "
+        "negative"),
+    "pile_toe": ("the plane at the pile toe counts the whole shaft (GEC-12 "
+                 "§7.3.5.7: the upper bound)"),
+    "endo": ("Endo et al. (1969) sets the plane at a fixed fraction of the "
+             "embedment (CGPR #56 Table 3.1)"),
+}
+
+
+def _method_spread_notes(before: DowndragResult, after: DowndragResult,
+                         after_analysis: DowndragAnalysis,
+                         by_method: list) -> list:
+    """Plain words on why the methods' drag forces differ so much: before
+    the earthquake when nothing settles, and after it when the headline
+    plane lies below the soil that settles."""
+    notes = []
+    if not np.any(np.asarray(before.soil_settlement_profile) > 0):
+        rows = [r for r in by_method
+                if r["method"] not in _FOLLOW_SETTLEMENT
+                and r["applies_before"]
+                and (r["drag_force_before_kN"] or 0.0) > 0.5]
+        if rows:
+            kinds = [k for k in _COUNTS_AS_DRAG
+                     if any(r["method"] == k for r in rows)]
+            notes.append(
+                "Before the earthquake no soil settles in this model, yet "
+                "these methods give a drag force: "
+                + "; ".join(f"{r['name']} {r['drag_force_before_kN']:.0f} "
+                            f"kN at {r['neutral_plane_before_m']:.2f} m"
+                            for r in rows)
+                + ". They do not follow the soil settlement: "
+                + "; ".join(_COUNTS_AS_DRAG[k] for k in kinds)
+                + ". The methods that follow it give no drag before the "
+                "earthquake. Compare before and after within one method.")
+    if after.neutral_plane_method != "force_equilibrium":
+        return notes
+    z_se = float(after_analysis._state()["z_se"])
+    z_np = float(after.neutral_plane_depth)
+    follow = [r for r in by_method
+              if r["method"] in _FOLLOW_SETTLEMENT and r["applies_after"]
+              and r["drag_force_after_kN"] < after.drag_force - 0.5]
+    if z_np > z_se + 1e-6 and follow:
+        notes.append(
+            f"Why the methods differ so much after liquefaction (how each "
+            f"defines the neutral plane, not an error): the headline, "
+            f"{after.headline_method}, puts the plane where the load and "
+            f"resistance curves meet ({z_np:.2f} m) and counts all the "
+            f"friction above it as drag ({after.drag_force:.0f} kN), "
+            f"{z_np - z_se:.2f} m of it below {z_se:.2f} m, where the soil "
+            f"settles less than the pile: UFC 3-220-20 §6-7.4's "
+            f"conservative assumption for the structural drag force. "
+            + "; ".join(f"{r['name']} gives {r['drag_force_after_kN']:.0f} "
+                        f"kN at {r['neutral_plane_after_m']:.2f} m"
+                        for r in follow)
+            + ": drag only where the soil settles more than the pile. "
+            "GEC-10 §10.7 names the drag of the liquefied layers and of "
+            "the layers above them; it says nothing of the soil below.")
+    return notes
+
+
 def post_liquefaction_downdrag(
         analysis: DowndragAnalysis,
         liquefied_layers: Optional[Sequence] = None,
@@ -949,6 +1019,8 @@ def post_liquefaction_downdrag(
         "reconsolidation follows the shaking by hours or days.")
 
     warnings = [before_note] if before_note else []
+    warnings += _method_spread_notes(before, after, after_analysis,
+                                     by_method)
     gwt = float(analysis.soil.gwt_depth)
     dry = [f"{s.top:g}-{s.bottom:g} m" for s in layers if s.top < gwt - 1e-9]
     if dry:
