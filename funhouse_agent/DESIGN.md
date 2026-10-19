@@ -352,6 +352,17 @@ the eyes). What changed on master after 5.33.0, in short:
   user's value would otherwise print as a default); an `assumptions` key
   written as an input name that is not one is refused with a
   did-you-mean, and a statement in words is its own row (GM-167).
+  An input that changes nothing is not advertised (GM-160): the guard
+  also gives every default a probe's run lists another value (the next
+  allowed value, the other boolean, a number moved by half) and fails
+  where the result does not move past the input's own echo and the
+  `choices`; a label-only input is in `method_probes.LABEL_ONLY` and one
+  whose effect the probe does not reach in `NOT_REACHED`, each with why.
+  That check is written but skipped until those two lists are swept: on
+  2026-10-19 it flagged about 165 inputs on 79 probes, and the slope
+  probes ran over 45 minutes.
+  The file readers are probed on `eval_samples/` (`"<eval_samples>/..."`;
+  a probe needing an optional backend names it under `"needs"`).
 - **Vision** (VIS-01, VIS-04, VIS-05): an optional `turn` (0/90/180/270) on
   `analyze_pdf_page` / `render_region`; boxes right on sideways sheets; a
   zoom that cuts lines of lettering widens to take them in or says which

@@ -115,7 +115,7 @@ def analyze_variogram(
     values,
     model_type="Gaussian",
     n_bins=10,
-    nugget=0.0,
+    nugget=None,
 ) -> VariogramResult:
     """Estimate and fit an empirical variogram.
 
@@ -130,8 +130,12 @@ def analyze_variogram(
     n_bins : int
         Number of lag classes between 0 and the largest pair separation;
         classes with no pairs are dropped. Default 10.
-    nugget : float
-        Nugget variance. Default 0.
+    nugget : float or None
+        None (the default): the nugget is fitted with the sill and range.
+        A number (0 or more): the nugget is fixed at it and the variance
+        and length scale are fitted (GSTools ``fit_variogram`` with a fixed
+        parameter value). Until GM-160 the value was never used: 0 or more
+        fitted it, a negative value fixed it at 0.
 
     Returns
     -------
@@ -157,9 +161,14 @@ def analyze_variogram(
     bin_center, gamma, counts, warnings = empirical_variogram(
         gs, x_arr, y_arr, val_arr, n_bins=n_bins)
 
+    if nugget is not None and not nugget >= 0:
+        raise ValueError(
+            f"nugget must be 0 or more (a fixed nugget variance), or left "
+            f"out to fit it; got {nugget!r}. To fit with no nugget give 0.")
     model_cls = getattr(gs, model_type)
     model = model_cls(dim=2)
-    model.fit_variogram(bin_center, gamma, nugget=nugget >= 0)
+    model.fit_variogram(bin_center, gamma,
+                        nugget=True if nugget is None else float(nugget))
     warnings += fit_warnings(model, val_arr, float(
         np.max(np.hypot(x_arr[:, None] - x_arr[None, :],
                         y_arr[:, None] - y_arr[None, :]))))
@@ -171,6 +180,7 @@ def analyze_variogram(
         variance=float(model.var),
         len_scale=float(model.len_scale),
         nugget=float(model.nugget),
+        nugget_fitted=nugget is None,
         bin_center=bin_center,
         gamma=gamma,
         pair_counts=counts,

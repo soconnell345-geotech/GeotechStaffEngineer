@@ -56,6 +56,26 @@ def require_tip_N60(tip_layer: ShaftSoilLayer, depth: float) -> float:
         "blow count corrected to 60 % energy at the tip)")
 
 
+def side_n60_choice(spans) -> dict:
+    """The choice made for cohesionless side layers given no N60 under the
+    depth beta (GM-148): beta unreduced, as for N60 >= 15. ``spans`` are
+    the layers' (top, bottom) depths in m."""
+    from geotech_common.choices import MODULE, choice
+    where = ", ".join(f"{a:g}-{b:g} m" for a, b in spans)
+    return choice(
+        "beta of cohesionless side layers given no N60",
+        f"depth beta unreduced, as for N60 >= 15 ({where})", MODULE,
+        basis=("FHWA NHI-06-089 Eq. 9-42 (p. 9-132) prints beta = 1.5 - "
+               "0.135 sqrt(z, ft), 0.25 <= beta <= 1.2, with no N60 term; "
+               "the reduction beta x N60/15 for N60 < 15 is O'Neill & Reese "
+               "(1999), applied here only where the layer's N60 is given. "
+               "GEC-10 (2018) prints the rational beta instead (Sec. "
+               "10.3.5.1, Eqs. 10-6 to 10-13, pp. 10-10 to 10-12)."),
+        alternatives=["give each layer's N60 (beta x N60/15 when N60 < 15)",
+                      "beta_method 'rational' (GEC-10 Sec. 10.3.5.1; "
+                      "needs N60 or N1_60)"])
+
+
 @dataclass
 class DrillShaftAnalysis:
     """Drilled shaft axial capacity analysis.
@@ -162,6 +182,7 @@ class DrillShaftAnalysis:
         # Bottom exclusion: 1 diameter for cohesive only (applied per-layer)
 
         total_Qs = 0.0
+        no_n60 = []          # cohesionless side layers with no N60 (GM-148)
         Qs_clay = 0.0
         Qs_sand = 0.0
         Qs_rock = 0.0
@@ -232,6 +253,8 @@ class DrillShaftAnalysis:
                     # N60 < 15 reduces beta (O'Neill-Reese); N60 = 0 means
                     # "not measured" -> no reduction (assumes N60 >= 15).
                     N60_side = layer.N60 if layer.N60 > 0 else None
+                    if N60_side is None:
+                        no_n60.append((z_top, z_bottom))
                     beta = beta_cohesionless(z_center, N60=N60_side)
                     method_used = f"beta={beta:.3f}"
                 Qs_layer = side_resistance_cohesionless(
@@ -298,6 +321,7 @@ class DrillShaftAnalysis:
             method="GEC-10",
             layer_breakdown=layer_results,
             sigma_v_tip=sigma_v_tip,
+            choices=[side_n60_choice(no_n60)] if no_n60 else [],
         )
 
     def capacity_vs_depth(self, depth_min: float = 3.0,

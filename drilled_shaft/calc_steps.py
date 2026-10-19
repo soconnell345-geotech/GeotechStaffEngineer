@@ -85,11 +85,6 @@ def get_input_summary(result, analysis) -> List[InputItem]:
             "L_case", "Permanent casing depth", shaft.casing_depth, "m",
         ))
 
-    # Concrete
-    items.append(InputItem(
-        "f'c", "Concrete strength", shaft.concrete_fc / 1000, "MPa",
-    ))
-
     # Soil layers
     items.append(InputItem(
         "Layers", "Number of soil layers", len(soil.layers), "",
@@ -410,9 +405,21 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     tip_layer = soil.layer_at_depth(shaft.length - 0.01)
     L_over_D = shaft.length / shaft.diameter
 
+    # The unit end bearing the analysis used, each step from the same code
+    # (GM-148): the reductions are governed by the base, so a belled
+    # shaft's bell diameter, as DrillShaftAnalysis.compute does.
+    from drilled_shaft.end_bearing import (
+        QB_MAX_COHESIVE, unit_end_bearing_cohesionless,
+        unit_end_bearing_cohesive)
+    base_D = (shaft.bell_diameter if shaft.bell_diameter is not None
+              else shaft.diameter)
+    base_name = "D_bell" if shaft.bell_diameter is not None else "D"
+
     if tip_layer.soil_type == "cohesive":
-        Nc = min(6.0 * (1.0 + 0.2 * L_over_D), 9.0)
-        qb = Nc * tip_layer.cu
+        u = unit_end_bearing_cohesive(
+            tip_layer.cu, L_over_D, base_diameter=base_D,
+            shaft_length=shaft.length)
+        Nc = u["Nc"]
         eb_items.append(CalcStep(
             title="Bearing Capacity Factor N_c (Cohesive Tip)",
             equation="N_c = min(6.0 × (1 + 0.2 × L/D), 9.0)",
@@ -421,18 +428,45 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_value=f"{Nc:.2f}",
             reference="GEC-10 Section 13.3.4.2; O'Neill & Reese (1999)",
         ))
+        cap_note = (
+            f"N_c × c_u = {u['qb_uncapped']:,.1f} kPa exceeds the "
+            f"limiting {QB_MAX_COHESIVE:,.0f} kPa (80 ksf); the limit is "
+            f"used" if u["capped"] else "")
+        qb_cap = min(u["qb_uncapped"], QB_MAX_COHESIVE)
         eb_items.append(CalcStep(
             title="Unit End Bearing",
-            equation="q_b = N_c \u00d7 c_u",
-            substitution=f"q_b = {Nc:.2f} \u00d7 {tip_layer.cu:.1f}",
+            equation=("q_b = N_c × c_u ≤ "
+                      f"{QB_MAX_COHESIVE:,.0f} kPa"),
+            substitution=f"q_b = {Nc:.2f} × {tip_layer.cu:.1f}",
             result_name="q_b",
-            result_value=f"{qb:,.1f}",
+            result_value=f"{qb_cap:,.1f}",
             result_unit="kPa",
+            reference="GEC-10 Section 13.3.4.2; O'Neill & Reese (1999)",
+            notes=cap_note,
         ))
+        if u["Fr"] is not None:
+            eb_items.append(CalcStep(
+                title="Large-Base Reduction F_r",
+                equation=("F_r = 2.5 / (a × B_b + 2.5 b) ≤ 1.0, "
+                          "a = 0.0071 + 0.0021 L/B_b ≤ 0.015, "
+                          "b = 0.45 √(c_u, ksf) in [0.5, 1.5], "
+                          "B_b in inches"),
+                substitution=(
+                    f"a = {u['a']:.4f}, b = {u['b']:.3f}, "
+                    f"{base_name} = {base_D:.3f} m "
+                    f"({base_D * 39.3701:.1f} in), L = {u['L']:.2f} m; "
+                    f"q_b = {qb_cap:,.1f} × {u['Fr']:.3f}"),
+                result_name="q_b",
+                result_value=f"{u['qb']:,.1f}",
+                result_unit="kPa",
+                reference="O'Neill & Reese (1999); AASHTO LRFD 10.8.3.5.1c",
+                notes=f"Applies to a base wider than 1.90 m (75 in); "
+                      f"{base_name} = {base_D:.3f} m",
+            ))
         eb_items.append(CalcStep(
             title="End Bearing Capacity",
-            equation="Q_tip = q_b \u00d7 A_tip",
-            substitution=f"Q_tip = {qb:,.1f} \u00d7 {shaft.tip_area:.4f}",
+            equation="Q_tip = q_b × A_tip",
+            substitution=f"Q_tip = {u['qb']:,.1f} × {shaft.tip_area:.4f}",
             result_name="Q_tip",
             result_value=f"{r.Q_tip:,.1f}",
             result_unit="kN",
@@ -441,32 +475,29 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     elif tip_layer.soil_type == "cohesionless":
         from drilled_shaft.capacity import require_tip_N60
         N60 = require_tip_N60(tip_layer, shaft.length)
-        N60_capped = min(N60, 50.0)
-        qb = 57.5 * N60_capped
+        u = unit_end_bearing_cohesionless(N60, base_D)
         large_dia_note = ""
-        if shaft.diameter > 1.27:
-            reduction = 1.27 / shaft.diameter
-            qb_reduced = qb * reduction
+        if u["reduction"] is not None:
             large_dia_note = (
-                f"Large-diameter reduction: q_b = {qb:,.1f} \u00d7 "
-                f"(1.27/{shaft.diameter:.3f}) = {qb_reduced:,.1f} kPa"
+                f"Large-diameter reduction: q_b = {u['qb_unreduced']:,.1f} "
+                f"× (1.27/{base_D:.3f}) = {u['qb']:,.1f} kPa "
+                f"({base_name}, the base diameter)"
             )
-            qb = qb_reduced
 
         eb_items.append(CalcStep(
             title="Unit End Bearing (Cohesionless Tip)",
-            equation="q_b = 57.5 \u00d7 N_60 (N_60 capped at 50)",
-            substitution=f"q_b = 57.5 \u00d7 {N60_capped:.0f}",
+            equation="q_b = 57.5 × N_60 (N_60 capped at 50)",
+            substitution=f"q_b = 57.5 × {u['N60_capped']:.0f}",
             result_name="q_b",
-            result_value=f"{qb:,.1f}",
+            result_value=f"{u['qb']:,.1f}",
             result_unit="kPa",
             reference="GEC-10 Section 13.3.4.3; O'Neill & Reese (1999)",
             notes=large_dia_note,
         ))
         eb_items.append(CalcStep(
             title="End Bearing Capacity",
-            equation="Q_tip = q_b \u00d7 A_tip",
-            substitution=f"Q_tip = {qb:,.1f} \u00d7 {shaft.tip_area:.4f}",
+            equation="Q_tip = q_b × A_tip",
+            substitution=f"Q_tip = {u['qb']:,.1f} × {shaft.tip_area:.4f}",
             result_name="Q_tip",
             result_value=f"{r.Q_tip:,.1f}",
             result_unit="kN",
@@ -475,15 +506,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     else:  # rock
         RQD = tip_layer.RQD
         qu = tip_layer.qu
-        # Replicate RQD-based multiplier logic from end_bearing.py
-        if RQD >= 70:
-            mult = 2.5
-        elif RQD >= 50:
-            mult = 1.5 + (RQD - 50) / 20 * 1.0
-        elif RQD >= 25:
-            mult = 0.8 + (RQD - 25) / 25 * 0.7
-        else:
-            mult = 0.4 + RQD / 25 * 0.4
+        from drilled_shaft.end_bearing import rock_end_bearing_multiplier
+        mult = rock_end_bearing_multiplier(RQD)
         qb = mult * qu
 
         eb_items.append(CalcStep(

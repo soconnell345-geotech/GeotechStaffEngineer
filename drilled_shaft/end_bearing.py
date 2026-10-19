@@ -103,9 +103,26 @@ def end_bearing_cohesive(cu: float, tip_area: float,
     ----------
     GEC-10; O'Neill & Reese (1999); AASHTO LRFD 10.8.3.5.1c
     """
-    Nc = Nc_drilled_shaft(L_over_D)
-    qb = min(Nc * cu, QB_MAX_COHESIVE)
+    return unit_end_bearing_cohesive(
+        cu, L_over_D, base_diameter, shaft_length)["qb"] * tip_area
 
+
+def unit_end_bearing_cohesive(cu: float, L_over_D: float = 10.0,
+                              base_diameter: float = None,
+                              shaft_length: float = None) -> dict:
+    """The unit end bearing in cohesive soil and each step to it (GM-148).
+
+    One place for the arithmetic of :func:`end_bearing_cohesive`, so the
+    calc package prints the values the analysis used: ``Nc``,
+    ``qb_uncapped`` (Nc cu), ``capped`` (the 3830 kPa limit applied),
+    ``Fr`` (None where the base is 1.90 m or smaller), ``a``, ``b``,
+    ``L`` (the length in ``a``) and ``qb`` (kPa).
+    """
+    Nc = Nc_drilled_shaft(L_over_D)
+    qb0 = Nc * cu
+    qb = min(qb0, QB_MAX_COHESIVE)
+    out = {"Nc": Nc, "qb_uncapped": qb0, "capped": qb0 > QB_MAX_COHESIVE,
+           "Fr": None, "a": None, "b": None, "L": None}
     if base_diameter is not None and base_diameter > LARGE_BASE_DIAMETER:
         L = shaft_length if shaft_length is not None \
             else L_over_D * base_diameter
@@ -114,8 +131,9 @@ def end_bearing_cohesive(cu: float, tip_area: float,
         b = min(max(b, 0.5), 1.5)
         Fr = min(2.5 / (a * base_diameter * _M_TO_IN + 2.5 * b), 1.0)
         qb *= Fr
-
-    return qb * tip_area
+        out.update(Fr=Fr, a=a, b=b, L=L)
+    out["qb"] = qb
+    return out
 
 
 def end_bearing_cohesionless(N60: float, tip_area: float,
@@ -145,14 +163,20 @@ def end_bearing_cohesionless(N60: float, tip_area: float,
     ----------
     GEC-10 Section 13.3.4.3; O'Neill & Reese (1999)
     """
+    return unit_end_bearing_cohesionless(N60, diameter)["qb"] * tip_area
+
+
+def unit_end_bearing_cohesionless(N60: float, diameter: float = 1.0) -> dict:
+    """The unit end bearing in cohesionless soil and each step (GM-148):
+    ``N60_capped``, ``qb_unreduced`` (57.5 N60), ``reduction`` (1.27/D
+    with D the base diameter, None at 1.27 m or smaller) and ``qb``
+    (kPa); see :func:`end_bearing_cohesionless`."""
     N60_capped = min(N60, 50.0)
-    qb = 57.5 * N60_capped  # kPa
-
-    # Large diameter reduction
-    if diameter > 1.27:
-        qb *= 1.27 / diameter
-
-    return qb * tip_area
+    qb0 = 57.5 * N60_capped  # kPa
+    reduction = 1.27 / diameter if diameter > 1.27 else None
+    return {"N60_capped": N60_capped, "qb_unreduced": qb0,
+            "reduction": reduction,
+            "qb": qb0 * reduction if reduction else qb0}
 
 
 def end_bearing_rock(qu: float, tip_area: float,
@@ -180,16 +204,16 @@ def end_bearing_rock(qu: float, tip_area: float,
     ----------
     GEC-10 Section 13.3.4.4; Canadian Foundation Engineering Manual
     """
-    if RQD >= 70:
-        qb = 2.5 * qu
-    elif RQD >= 50:
-        # Linear interpolation: 2.5 at RQD=70, 1.5 at RQD=50
-        qb = (1.5 + (RQD - 50) / 20 * 1.0) * qu
-    elif RQD >= 25:
-        # Further reduction: 1.5 at RQD=50, 0.8 at RQD=25
-        qb = (0.8 + (RQD - 25) / 25 * 0.7) * qu
-    else:
-        # Very fractured: 0.8 at RQD=25, 0.4 at RQD=0
-        qb = (0.4 + RQD / 25 * 0.4) * qu
+    return rock_end_bearing_multiplier(RQD) * qu * tip_area
 
-    return qb * tip_area
+
+def rock_end_bearing_multiplier(RQD: float) -> float:
+    """q_b / q_u for :func:`end_bearing_rock`: 2.5 at RQD >= 70 %, then
+    linear to 1.5 at 50 %, 0.8 at 25 % and 0.4 at 0 %."""
+    if RQD >= 70:
+        return 2.5
+    if RQD >= 50:
+        return 1.5 + (RQD - 50) / 20 * 1.0
+    if RQD >= 25:
+        return 0.8 + (RQD - 25) / 25 * 0.7
+    return 0.4 + RQD / 25 * 0.4
