@@ -15,6 +15,12 @@ floats first, so a huge power overflows at once instead of building an
 enormous integer; and the evaluator refuses any exact integer power above
 about 1e308 before computing it (``floor(9)**floor(9)**floor(9)`` held the
 process for minutes, live smoke wave 2a), so no expression can stall a turn.
+
+One call evaluates several expressions over the same variables (BACKLOG
+GM-169): a list, a ``{name: expression}`` map whose names are variables of
+the expressions after them, or a string that is a list of expressions. Live
+wave w13: one helper made 10 single calls after its list was refused, another
+17.
 """
 
 from __future__ import annotations
@@ -23,7 +29,7 @@ import ast
 import json
 import math
 import statistics
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from langchain_core.tools import StructuredTool
 
@@ -43,7 +49,12 @@ CALCULATE_DESCRIPTION = (
     "numbers used through count sum mean median std (sample) min max "
     "percentile(L, p) count_above(L, v) count_below(L, v), e.g. "
     "count_above(z, 873.5) / count(z). Count, add up or average a list here, "
-    "never by eye. Returns the value with the expression and inputs; "
+    "never by eye. Several formulas go in ONE call: 'expression' may be a "
+    "list of expressions, or an object of name -> expression, e.g. "
+    "{\"Ka\": \"tan(radians(45 - phi/2))**2\", \"Pa\": \"0.5*Ka*g*H**2\"} "
+    "(each name's value can be used in the expressions after it), all "
+    "over the same 'variables'; each comes back in 'results'. Returns the "
+    "value with the expression and inputs; "
     "report all three. Where a module method computes the quantity "
     "(capacity, settlement, FOS...), call that method instead.")
 
@@ -124,6 +135,26 @@ def _echo(values: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _bind(variables) -> Tuple[Dict[str, Any], Optional[str]]:
+    """``(values, None)`` -- each variable as a float or a list of floats --
+    or ``({}, why)`` for one that is neither."""
+    raw = variables if isinstance(variables, dict) else {}
+    values: Dict[str, Any] = {}
+    for name, v in raw.items():
+        try:
+            if isinstance(v, (list, tuple)):
+                if len(v) > _MAX_LIST:
+                    return {}, (f"variable '{name}' holds {len(v):,} "
+                                f"values; the limit is {_MAX_LIST:,}")
+                values[str(name)] = [float(x) for x in v]
+            else:
+                values[str(name)] = float(v)
+        except (TypeError, ValueError):
+            return {}, (f"variable '{name}' is not a number or a list of "
+                        f"numbers ({str(v)[:80]!r})")
+    return values, None
+
+
 def evaluate(expression: str, variables: Optional[Dict[str, Any]] = None
              ) -> Dict[str, Any]:
     """``{"value", "expression", "variables"}`` or ``{"error", ...}``."""
@@ -134,22 +165,9 @@ def evaluate(expression: str, variables: Optional[Dict[str, Any]] = None
         return {"error": f"the expression is too long ({len(expr):,} "
                          f"characters; the limit is {_MAX_EXPR_CHARS:,})",
                 "expression": expr[:200] + "..."}
-    raw = variables if isinstance(variables, dict) else {}
-    values: Dict[str, Any] = {}
-    for name, v in raw.items():
-        try:
-            if isinstance(v, (list, tuple)):
-                if len(v) > _MAX_LIST:
-                    return {"error": f"variable '{name}' holds {len(v):,} "
-                                     f"values; the limit is {_MAX_LIST:,}",
-                            "expression": expr}
-                values[str(name)] = [float(x) for x in v]
-            else:
-                values[str(name)] = float(v)
-        except (TypeError, ValueError):
-            return {"error": f"variable '{name}' is not a number or a list "
-                             f"of numbers ({str(v)[:80]!r})",
-                    "expression": expr}
+    values, problem = _bind(variables)
+    if problem:
+        return {"error": problem, "expression": expr}
     if not expr:
         return {"error": "give 'expression', e.g. '(qt - sigma_v0) / Nkt' "
                          "with 'variables' {\"qt\": 1250, ...}"}
@@ -200,18 +218,85 @@ def evaluate(expression: str, variables: Optional[Dict[str, Any]] = None
     return {"value": out, "expression": expr, "variables": _echo(values)}
 
 
+#: The most expressions one call evaluates.
+MAX_EXPRESSIONS = 50
+
+
+def _several(expression) -> Optional[List[Tuple[Optional[str], str]]]:
+    """``[(name or None, expression), ...]`` when ``expression`` holds
+    several -- a list, a ``{name: expression}`` map, or a string that is
+    itself a list or tuple of expressions (``"[a/3, b*4]"``, the form live
+    wave w13 refused) -- else ``None``."""
+    if isinstance(expression, dict):
+        return [(str(k), str(v)) for k, v in expression.items()]
+    if isinstance(expression, (list, tuple)):
+        return [(None, str(v)) for v in expression]
+    if isinstance(expression, str):
+        try:
+            tree = ast.parse(expression.strip(), mode="eval")
+        except SyntaxError:
+            return None
+        if isinstance(tree.body, (ast.List, ast.Tuple)) and tree.body.elts:
+            return [(None, ast.unparse(e)) for e in tree.body.elts]
+    return None
+
+
+def evaluate_many(items: List[Tuple[Optional[str], str]],
+                  variables: Optional[Dict[str, Any]] = None
+                  ) -> Dict[str, Any]:
+    """Each expression over the same ``variables``: ``{"results",
+    "variables"}``, ``results`` a list, or a ``{name: result}`` map when the
+    expressions are named -- then each name's value is a variable of the
+    expressions after it. One expression's error is that one's alone."""
+    if not items:
+        return {"error": "give at least one expression"}
+    if len(items) > MAX_EXPRESSIONS:
+        return {"error": f"{len(items)} expressions in one call; the limit "
+                         f"is {MAX_EXPRESSIONS}"}
+    values, problem = _bind(variables)
+    if problem:
+        return {"error": problem}
+    named = all(name is not None for name, _ in items)
+    known = dict(values)
+    results: Any = {} if named else []
+    for name, expr in items:
+        if named and name in known:
+            out = {"error": f"'{name}' is already a variable; give this "
+                            "result another name", "expression": expr}
+        else:
+            out = evaluate(expr, known)
+            out.pop("variables", None)
+        if named:
+            results[name] = out
+            if isinstance(out.get("value"), float):
+                known[name] = out["value"]
+        else:
+            results.append(out)
+    return {"results": results, "variables": _echo(values)}
+
+
+def calculate_any(expression, variables=None) -> Dict[str, Any]:
+    """:func:`evaluate` for one expression, :func:`evaluate_many` for
+    several (see :func:`_several`)."""
+    items = _several(expression)
+    if items is None:
+        return evaluate(expression, variables)
+    return evaluate_many(items, variables)
+
+
 def make_calculate_tool() -> StructuredTool:
     """The ``calculate`` tool (strict arguments, JSON result)."""
     from funhouse_agent.deep.strict_args import strict_tool
 
-    def calculate(expression: str,
+    def calculate(expression: Union[str, List[str], Dict[str, str]],
                   variables: Optional[Dict[str, Any]] = None) -> str:
         """Evaluate an arithmetic formula exactly."""
-        return json.dumps(evaluate(expression, variables), default=str)
+        return json.dumps(calculate_any(expression, variables), default=str)
 
     return strict_tool(StructuredTool.from_function(
         calculate, name="calculate", description=CALCULATE_DESCRIPTION))
 
 
-__all__ = ["make_calculate_tool", "evaluate", "CALCULATE_DESCRIPTION",
-           "LIST_FUNCS"]
+__all__ = ["make_calculate_tool", "evaluate", "evaluate_many",
+           "calculate_any", "CALCULATE_DESCRIPTION", "LIST_FUNCS",
+           "MAX_EXPRESSIONS"]
