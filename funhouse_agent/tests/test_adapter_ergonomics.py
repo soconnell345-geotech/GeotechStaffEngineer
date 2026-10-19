@@ -139,6 +139,9 @@ class TestAxialPileAliases:
     def test_unknown_pile_type_lists_allowed(self):
         from funhouse_agent.adapters.axial_pile import METHOD_REGISTRY as R
         with pytest.raises(ValueError, match="pipe_closed"):
+            R["make_pile_section"]({"pile_type": "steel_tube"})
+        # a timber pile is a custom section (GM-144)
+        with pytest.raises(ValueError, match="custom section"):
             R["make_pile_section"]({"pile_type": "timber"})
 
     def _h_pile_layers_toe(self, toe=None):

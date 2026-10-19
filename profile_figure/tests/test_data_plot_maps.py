@@ -268,7 +268,12 @@ def test_plan_view_is_a_drawing_not_a_chart():
                            north_deg=20, xlabel="Local site grid, metres",
                            title="Plan")
     assert res.plan_view and res.equal_aspect
-    assert not res.warnings
+    # B-1 stands inside the 40 m footprint, whose edges leave its name no
+    # clear spot at this scale; the check names it where a pixel touches
+    # (BACKLOG GM-152: point names are checked). Nothing else is reported.
+    assert all(w.startswith("series[2] point name 'B-1': crossed by "
+                            "'Footprint'") for w in res.warnings), \
+        res.warnings
     lay = res.figure.layout
     assert lay.xaxis.visible is False and lay.yaxis.visible is False
     assert lay.yaxis.scaleanchor == "x"

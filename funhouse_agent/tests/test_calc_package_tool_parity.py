@@ -75,6 +75,11 @@ CASES = [
     ("axial_pile_package", {"pile_type": "pipe_open", "diameter": 0.4,
                             "wall_thickness": 0.012, "pile_length": 18.0,
                             "layers": _AX_LAYERS, "factor_of_safety": 3.0}),
+    # GM-144: a custom section, which the package took before GM-141
+    ("axial_pile_package", {"pile_type": "h_pile", "pile_area": 0.01006,
+                            "pile_perimeter": 1.209, "pile_tip_area": 0.09135,
+                            "pile_width": 0.3048, "pile_length": 20.0,
+                            "layers": _AX_LAYERS}),
     ("drilled_shaft_package", {"diameter": 1.0, "shaft_length": 15.0,
                                "layers": _DS_LAYERS}),
     ("drilled_shaft_package", {"diameter": 1.2, "shaft_length": 18.0,
@@ -370,12 +375,17 @@ def test_a_misspelt_input_gets_the_tools_did_you_mean(package, params,
     assert f"{wrong} -> {right}" in out["error"]
 
 
-def test_an_input_the_package_dropped_is_refused_with_its_reason():
+def test_the_axial_package_takes_a_custom_section_as_its_tool_does():
+    """GM-144: the custom section the package took before GM-141 (area,
+    perimeter, tip area, width) is the tool's again (the parity cases above
+    check its numbers); an H-pile's toe area is still asked for."""
     out = D.call_agent("calc_package", "axial_pile_package", {
         "pile_type": "h_pile", "pile_length": 20.0, "layers": _AX_LAYERS,
         "pile_area": 0.01})
-    assert "does not take ['pile_area']" in out["error"]
-    assert "designation (H-pile)" in out["error"]
+    assert "pile_perimeter" in out["error"] and "pile_tip_area" in out["error"]
+
+
+def test_an_input_the_package_dropped_is_refused_with_its_reason():
     out = D.call_agent("calc_package", "retaining_wall_package", {
         "wall_type": "mse", "wall_height": 5.0, "gamma_backfill": 18.0,
         "phi_backfill": 30.0})

@@ -17,7 +17,10 @@ resistance in cohesionless soil, or Tomlinson's Eq. 7-90 for a pipe under
 24 inches in predominantly cohesive soil (Sec. 7.10.7); uplift as the whole
 shaft resistance (Sec. 7.2.3.1). Where GEC-12 leaves a judgment (a range or
 "local experience"), it is an input with a cited default and the result's
-``choices`` say what was used.
+``choices`` say what was used. Options beside the defaults (GM-144): Figure
+7-18's stratigraphy cases or the smaller of Figures 7-17 and 7-18 (p. 246),
+a shrink-swell zone (p. 247), Table 7-9's beta and Nt by soil type, and the
+toe phi averaged from the toe to 3b below (Step 7c).
 
 All units are SI: kN, m, kPa.
 
@@ -34,13 +37,17 @@ import numpy as np
 from axial_pile.pile_types import PileSection
 from axial_pile.soil_profile import AxialSoilProfile, AxialSoilLayer
 from axial_pile.tomlinson import (
-    AT_MOST_SU, CURVES, adhesion, curve_for_pile, end_bearing_cohesive,
+    AT_MOST_SU, BEYOND_SOURCES, CURVES, FIG_7_18_CASES, SAND_OVER_STIFF_CLAY,
+    STIFF_CLAY, adhesion, adhesion_fig_7_18, curve_for_pile,
+    end_bearing_cohesive,
 )
 from axial_pile.nordlund import (
     FIG_7_9_CURVE, KSF, SIGMA_P_LIMIT, delta_phi_ratio_fig_7_9,
     displaced_volume, end_bearing_cohesionless, nordlund_side_factors,
 )
-from axial_pile.beta_method import beta_from_phi, end_bearing_beta, Nt_from_phi
+from axial_pile.beta_method import (
+    TABLE_7_9, Nt_from_phi, beta_from_phi, end_bearing_beta, table_7_9,
+)
 from axial_pile.results import AxialPileResult
 
 #: Side-resistance method names in a result's ``choices`` (plain text: the
@@ -80,6 +87,11 @@ _OPEN_PIPE_METHODS = ("auto", "paikowsky_whitman", "tomlinson")
 _ADHESION_CURVES = ("auto",) + tuple(CURVES)
 _BEYOND_CHART = ("api", "chart_end")
 _H_TOE_AREAS = ("box", "steel")
+#: GEC-12 p. 246: Figure 7-17 generally, Figure 7-18 for its stratigraphy
+#: cases, and the smaller of the two for the inexperienced user.
+_ADHESION_CHARTS = ("fig_7_17", "fig_7_18", "smaller")
+_BETA_COEFFICIENTS = ("from_phi", "table_7_9")
+_TOE_PHI_ZONES = ("toe_layer", "average_3b")
 
 
 @dataclass
@@ -161,6 +173,37 @@ class AxialPileAnalysis:
         Displaced volume V per unit length (m3/m) for the Nordlund charts.
         Default None: the steel area of an H-pile, the gross area of other
         piles (an open pipe included).
+    adhesion_chart : str, optional
+        The alpha-method's chart (GEC-12 p. 246): "fig_7_17" (default;
+        "It is recommended that Figure 7-17 generally be used"),
+        "fig_7_18" (Figure 7-18's alpha for each clay layer's stratigraphy
+        case; a layer whose case is "none" keeps Figure 7-17) or "smaller"
+        (the smaller Ca of the two in each layer: "the inexperienced user
+        should select and use the smaller value obtained from either
+        figure"). A clay layer's case is its ``fig_7_18_case``, else from
+        the profile: contiguous cohesive layers are one clay stratum,
+        "sand_over_stiff_clay" under a cohesionless layer and "stiff_clay"
+        from the ground surface; "soft_clay_over_stiff_clay" only where a
+        layer gives it (GEC-12 gives no su that separates them). D for
+        Figure 7-18 runs from the top of the clay stratum to the bottom of
+        the layer, or to the toe if less.
+    shrink_swell_depth : float or None, optional
+        Depth (m below the ground surface) of a shrink-swell zone in clay:
+        no shaft resistance in cohesive soil above it (GEC-12 p. 247, the
+        alpha-method; also applied to the beta method in cohesive soil).
+        Default None: no zone.
+    beta_coefficients : str, optional
+        The beta method's beta and Nt where a layer gives none (Steps 2b,
+        5b): "from_phi" (default; beta = (1 - sin phi') tan phi', Fellenius
+        1991, and Nt within Table 7-9's ranges by phi') or "table_7_9"
+        (Table 7-9 by the layer's soil type, linear in phi' across the
+        type's phi' range). A clay toe keeps ``cohesive_Nt`` either way.
+    toe_phi_zone : str, optional
+        The phi near the toe for the Nordlund toe (Steps 7 and 9):
+        "toe_layer" (default; the toe layer's toe_friction_angle or
+        friction_angle) or "average_3b" (the thickness-weighted average of
+        the cohesionless layers' toe phi from the toe to 3b below, the zone
+        of Step 7c).
 
     Notes
     -----
@@ -203,6 +246,10 @@ class AxialPileAnalysis:
     adhesion_curve: str = "auto"
     adhesion_beyond_chart: str = "chart_end"
     displaced_volume: Optional[float] = None
+    adhesion_chart: str = "fig_7_17"
+    shrink_swell_depth: Optional[float] = None
+    beta_coefficients: str = "from_phi"
+    toe_phi_zone: str = "toe_layer"
 
     def __post_init__(self):
         if self.pile is None:
@@ -219,7 +266,10 @@ class AxialPileAnalysis:
         for name, allowed in (("open_pipe_method", _OPEN_PIPE_METHODS),
                               ("adhesion_curve", _ADHESION_CURVES),
                               ("adhesion_beyond_chart", _BEYOND_CHART),
-                              ("h_pile_toe_area", _H_TOE_AREAS)):
+                              ("h_pile_toe_area", _H_TOE_AREAS),
+                              ("adhesion_chart", _ADHESION_CHARTS),
+                              ("beta_coefficients", _BETA_COEFFICIENTS),
+                              ("toe_phi_zone", _TOE_PHI_ZONES)):
             if getattr(self, name) not in allowed:
                 raise ValueError(f"{name} must be one of {list(allowed)}, "
                                  f"got '{getattr(self, name)}'")
@@ -227,7 +277,7 @@ class AxialPileAnalysis:
             raise ValueError("inside_friction_ratio must be between 0 and 1, "
                              f"got {self.inside_friction_ratio}")
         for name in ("toe_stress_limit", "open_pipe_toe_limit",
-                     "displaced_volume"):
+                     "displaced_volume", "shrink_swell_depth"):
             value = getattr(self, name)
             if value is not None and value <= 0:
                 raise ValueError(f"{name} must be > 0 or None, got {value}")
@@ -296,55 +346,12 @@ class AxialPileAnalysis:
         # ride on the result as its warnings.
         notes: List[str] = []
         pile = self.pile
-        total_Qs = 0.0
-        layer_results = []
-        shaft_layers = []
-        current_depth = 0.0
         tip_depth = self._tip_depth
 
         area_V, _ = self._displaced_area()
         V = displaced_volume(area_V)
-
-        for layer in self.soil.layers:
-            layer_top = current_depth
-            layer_bottom = current_depth + layer.thickness
-            current_depth = layer_bottom
-
-            if layer_top >= tip_depth:
-                break
-
-            # Portion of this layer that intersects the pile shaft. Layers
-            # above the pile head (head_depth) contribute no skin friction;
-            # with the default head_depth = 0 this clips at [0, pile_length].
-            z_top = max(layer_top, self.head_depth)
-            z_bottom = min(layer_bottom, tip_depth)
-            if z_bottom - z_top <= 0:
-                continue
-
-            Qs_layer, sigma_v, method_used, info = self._layer_skin_friction(
-                layer, layer_bottom, z_top, z_bottom, pile.perimeter, V,
-                notes)
-
-            shaft_layers.append(layer)
-            total_Qs += Qs_layer
-            layer_results.append({
-                "depth_top_m": round(z_top, 2),
-                "depth_bottom_m": round(z_bottom, 2),
-                "soil_type": layer.soil_type,
-                "description": layer.description,
-                "method": method_used,
-                # Unrounded, so the layers sum to Q_s exactly (the
-                # calculation tables, GM-39); every display formats them.
-                "skin_friction_kN": Qs_layer,
-                "sigma_v_kPa": sigma_v,
-                # Q_s,i / (perimeter x segment length): the unit side
-                # resistance averaged over the segment (exact for one
-                # segment; across a GWT split it is the average).
-                "unit_side_resistance_kPa": (
-                    Qs_layer / (pile.perimeter * (z_bottom - z_top))
-                    if pile.perimeter > 0 else 0.0),
-                **info,
-            })
+        layer_results, shaft_layers, total_Qs = self._shaft(V, notes)
+        shaft_notes = len(notes)
 
         # Outside side resistance (before any inside/plug friction)
         Qs_outside = total_Qs
@@ -356,22 +363,29 @@ class AxialPileAnalysis:
         q_cap = (self.open_pipe_toe_limit
                  if open_pipe and tip_layer.soil_type == "cohesionless"
                  else None)
+        nordlund_toe = not beta and tip_layer.soil_type == "cohesionless"
+        toe_phi, toe_zone = (self._toe_phi(tip_layer, notes) if nordlund_toe
+                             else (tip_layer.toe_phi, None))
 
         def toe(area: float, details: dict) -> float:
             """Toe resistance (kN) on ``area`` by the toe layer's method."""
             if beta:
-                Nt = self._toe_Nt(tip_layer)
+                Nt, source = self._toe_Nt(tip_layer, notes)
                 q_p = Nt * sigma_v_tip
                 governs = "Eq. 7-20"
                 if q_cap is not None and q_cap < q_p:
                     q_p, governs = q_cap, "open-end pipe limit"
-                details.update({"N_t": Nt, "sigma_v_tip_kPa": sigma_v_tip,
+                details.update({"N_t": Nt, "N_t_source": source,
+                                "sigma_v_tip_kPa": sigma_v_tip,
                                 "q_p_kPa": q_p, "governs": governs,
                                 "toe_area_m2": area})
                 return q_p * area
             if tip_layer.soil_type == "cohesionless":
+                details["toe_phi_deg"] = toe_phi
+                if toe_zone:
+                    details["toe_zone"] = toe_zone
                 return end_bearing_cohesionless(
-                    tip_layer.toe_phi, sigma_v_tip, area, self.pile_length,
+                    toe_phi, sigma_v_tip, area, self.pile_length,
                     pile.width, notes=notes,
                     sigma_p_limit=self.toe_stress_limit, q_limit=q_cap,
                     details=details)
@@ -387,7 +401,8 @@ class AxialPileAnalysis:
         if open_pipe:
             # GEC-12 Sec. 7.10.7: the lesser of the plugged (Eq. 7-88) and
             # unplugged (Eq. 7-89) cases, or Tomlinson's Eq. 7-90.
-            pw_method = self._open_pipe_method(tip_layer, layer_results)
+            pw_method, reading = self._open_pipe_method(tip_layer,
+                                                        layer_results)
             plugged_details: dict = {}
             Qt_plugged = toe(pile.tip_area_plugged, plugged_details)
             Q_plugged = Qs_outside + Qt_plugged
@@ -400,10 +415,18 @@ class AxialPileAnalysis:
             open_pipe_info = {"Q_plugged": Q_plugged,
                               "Q_unplugged": Q_unplugged,
                               "Qs_inside": Qs_inside, "W_p": W_p,
-                              "method": pw_method}
+                              "method": pw_method,
+                              "predominantly_cohesive": reading}
             if pw_method == "tomlinson":
                 # Eq. 7-90: Rn = 0.8 Ca As + 4.5 su Ap (Ap of the plugged
-                # pile); a cohesionless layer keeps its own side resistance.
+                # pile), Ca from Fig. 7-17 as p. 407 prints it whatever
+                # adhesion_chart is (the shaft again on Fig. 7-17, its notes
+                # in place of the first pass's); a cohesionless layer keeps
+                # its own side resistance.
+                if self.adhesion_chart != "fig_7_17":
+                    again: List[str] = []
+                    layer_results, _, _ = self._shaft(V, again, "fig_7_17")
+                    notes[:shaft_notes] = again
                 for lb in layer_results:
                     if lb["method"] == "tomlinson":
                         lb["skin_friction_kN"] *= 0.8
@@ -468,18 +491,158 @@ class AxialPileAnalysis:
             toe_details=toe_details,
         )
 
-    def _toe_Nt(self, tip_layer: AxialSoilLayer) -> float:
-        """Nt of the toe layer for the beta method (GEC-12 Step 5): the
-        layer's own (local experience), else ``cohesive_Nt`` in clay, else
-        estimated from phi'."""
-        if tip_layer.Nt is not None:
-            return tip_layer.Nt
-        if tip_layer.soil_type != "cohesionless":
-            return self.cohesive_Nt
-        return Nt_from_phi(tip_layer.toe_phi)
+    def _shaft(self, V: float, notes: List[str],
+               chart: Optional[str] = None) -> Tuple[list, list, float]:
+        """(layer rows, shaft layers, outside side resistance in kN) of the
+        layers along the shaft, the alpha-method on ``chart`` (default
+        ``adhesion_chart``)."""
+        pile = self.pile
+        tip_depth = self._tip_depth
+        total_Qs = 0.0
+        layer_results = []
+        shaft_layers = []
+        current_depth = 0.0
 
-    def _open_pipe_method(self, tip_layer, layer_results) -> str:
-        """'tomlinson' (Eq. 7-90) or 'paikowsky_whitman' (Eqs. 7-88/89)."""
+        for layer, stratum in zip(self.soil.layers, self._fig_7_18_strata()):
+            layer_top = current_depth
+            layer_bottom = current_depth + layer.thickness
+            current_depth = layer_bottom
+
+            if layer_top >= tip_depth:
+                break
+
+            # Portion of this layer that intersects the pile shaft. Layers
+            # above the pile head (head_depth) contribute no skin friction;
+            # with the default head_depth = 0 this clips at [0, pile_length].
+            z_top = max(layer_top, self.head_depth)
+            z_bottom = min(layer_bottom, tip_depth)
+            if z_bottom - z_top <= 0:
+                continue
+
+            Qs_layer, sigma_v, method_used, info = self._layer_skin_friction(
+                layer, layer_bottom, z_top, z_bottom, pile.perimeter, V,
+                notes, stratum, chart)
+
+            shaft_layers.append(layer)
+            total_Qs += Qs_layer
+            layer_results.append({
+                "depth_top_m": round(z_top, 2),
+                "depth_bottom_m": round(z_bottom, 2),
+                "soil_type": layer.soil_type,
+                "description": layer.description,
+                "method": method_used,
+                # Unrounded, so the layers sum to Q_s exactly (the
+                # calculation tables, GM-39); every display formats them.
+                "skin_friction_kN": Qs_layer,
+                "sigma_v_kPa": sigma_v,
+                # Q_s,i / (perimeter x segment length): the unit side
+                # resistance averaged over the segment (exact for one
+                # segment; across a GWT split it is the average).
+                "unit_side_resistance_kPa": (
+                    Qs_layer / (pile.perimeter * (z_bottom - z_top))
+                    if pile.perimeter > 0 else 0.0),
+                **info,
+            })
+        return layer_results, shaft_layers, total_Qs
+
+    def _toe_Nt(self, tip_layer: AxialSoilLayer,
+                notes: Optional[List[str]] = None) -> Tuple[float, str]:
+        """(Nt, its source) of the toe layer for the beta method (GEC-12
+        Step 5): the layer's own (local experience, Step 5a), else, in clay,
+        ``cohesive_Nt`` (p. 256), else Table 7-9 by soil type with
+        ``beta_coefficients`` 'table_7_9', else estimated from phi'."""
+        if tip_layer.Nt is not None:
+            return tip_layer.Nt, "given"
+        soil = tip_layer.table_7_9_soil
+        if self.beta_coefficients == "table_7_9" and soil != "clay":
+            return (table_7_9(soil, self._beta_phi(tip_layer, toe=True),
+                              notes)[1], f"Table 7-9 ({soil})")
+        if tip_layer.soil_type != "cohesionless":
+            return self.cohesive_Nt, "cohesive_Nt"
+        return Nt_from_phi(tip_layer.toe_phi), "from phi'"
+
+    def _beta_phi(self, layer: AxialSoilLayer, toe: bool = False) -> float:
+        """phi' of a layer for the beta method: a cohesionless layer's own
+        (its toe phi at the toe), a cohesive layer's friction_angle, else
+        ``cohesive_phi``."""
+        if layer.soil_type == "cohesionless":
+            return layer.toe_phi if toe else layer.friction_angle
+        return ((layer.toe_friction_angle if toe else None)
+                or layer.friction_angle or self.cohesive_phi)
+
+    def _fig_7_18_strata(self) -> List[Optional[Tuple[str, float, str]]]:
+        """Each layer's GEC-12 Figure 7-18 stratigraphy case: None for a
+        cohesionless layer, else (case, depth of the top of its clay
+        stratum, "given" or "profile"). Contiguous cohesive layers are one
+        clay stratum; a layer that gives a ``fig_7_18_case`` starts one at
+        its top. A stratum's case, where no layer gives it, is the top
+        graph's under a cohesionless layer and the bottom graph's from the
+        ground surface (GEC-12 p. 246-247); the middle graph (soft clay over
+        stiff clay) only where a layer gives it."""
+        out: List[Optional[Tuple[str, float, str]]] = []
+        top, current, above = 0.0, None, None
+        for layer in self.soil.layers:
+            if layer.soil_type != "cohesive":
+                current = None
+            elif layer.fig_7_18_case is not None:
+                current = (layer.fig_7_18_case, top, "given")
+            elif current is None:
+                current = (SAND_OVER_STIFF_CLAY if above is not None
+                           else STIFF_CLAY, top, "profile")
+            out.append(current)
+            above = layer
+            top += layer.thickness
+        return out
+
+    def _toe_phi(self, tip_layer: AxialSoilLayer,
+                 notes: List[str]) -> Tuple[float, Optional[dict]]:
+        """(phi near the toe, the zone it was averaged over) for the
+        Nordlund toe (Steps 7 and 9). "toe_layer": the toe layer's toe phi.
+        "average_3b": the thickness-weighted average of the cohesionless
+        layers' toe phi from the toe to 3b below (Step 7c's zone; the
+        profile's last layer continues below it)."""
+        if self.toe_phi_zone == "toe_layer":
+            return tip_layer.toe_phi, None
+        tip = self._tip_depth
+        depth = 3.0 * self.pile.width
+        bottom = tip + depth
+        layers = self.soil.layers
+        top, weighted, length = 0.0, 0.0, 0.0
+        parts, clay = [], []
+        for i, layer in enumerate(layers):
+            lt, lb = top, top + layer.thickness
+            top = lb
+            if i == len(layers) - 1:
+                lb = max(lb, bottom)
+            a, b = max(lt, tip), min(lb, bottom)
+            if b <= a:
+                continue
+            if layer.soil_type == "cohesionless":
+                weighted += layer.toe_phi * (b - a)
+                length += b - a
+                parts.append({"depth_top_m": a, "depth_bottom_m": b,
+                              "toe_phi_deg": layer.toe_phi})
+            else:
+                clay.append((a, b))
+        if clay:
+            where = ", ".join(f"{a:.2f}-{b:.2f} m" for a, b in clay)
+            notes.append(
+                f"The zone from the toe to 3b below ({tip:.2f}-{bottom:.2f} "
+                f"m) takes in cohesive soil ({where}); the toe phi is "
+                f"averaged over the cohesionless soil in it only. A weaker "
+                f"layer below the toe lowers the toe resistance; check it.")
+        if length <= 0:
+            notes.append(
+                "The zone from the toe to 3b below is all cohesive soil; the "
+                "toe layer's own toe phi was used.")
+            return tip_layer.toe_phi, None
+        return weighted / length, {"from_m": tip, "to_m": bottom,
+                                   "layers": parts}
+
+    def _open_pipe_method(self, tip_layer, layer_results
+                          ) -> Tuple[str, Optional[dict]]:
+        """('tomlinson' (Eq. 7-90) or 'paikowsky_whitman' (Eqs. 7-88/89),
+        the reading of "predominantly cohesive" when 'auto' made one)."""
         clay_toe = (tip_layer.soil_type == "cohesive"
                     and self.method != "beta")
         if self.open_pipe_method == "tomlinson":
@@ -488,15 +651,16 @@ class AxialPileAnalysis:
                     "open_pipe_method 'tomlinson' (GEC-12 Eq. 7-90) needs the "
                     "toe in a cohesive layer and the alpha-method (method "
                     "'auto')")
-            return "tomlinson"
-        if self.open_pipe_method == "paikowsky_whitman" or not clay_toe:
-            return "paikowsky_whitman"
+            return "tomlinson", None
+        if (self.open_pipe_method == "paikowsky_whitman" or not clay_toe
+                or self.pile.width >= _EQ_7_90_MAX_OD):
+            return "paikowsky_whitman", None
         clay = sum(lb["depth_bottom_m"] - lb["depth_top_m"]
                    for lb in layer_results if lb["soil_type"] == "cohesive")
-        if (self.pile.width < _EQ_7_90_MAX_OD
-                and clay > 0.5 * self.pile_length):
-            return "tomlinson"
-        return "paikowsky_whitman"
+        reading = {"clay_m": clay, "length_m": self.pile_length,
+                   "predominantly": clay > 0.5 * self.pile_length}
+        return ("tomlinson" if reading["predominantly"]
+                else "paikowsky_whitman"), reading
 
     def _plug_weight(self) -> float:
         """Wp of Eq. 7-89 (kN): the effective weight of the soil inside the
@@ -543,11 +707,11 @@ class AxialPileAnalysis:
             out.append(choice(
                 "side resistance method", "beta method, every layer",
                 GIVEN, "fs = beta sigma'v (GEC-12 Eq. 7-19); beta from local "
-                "experience where a layer gives one (Step 2a), else from "
-                "phi' as (1 - sin phi') tan phi' (Fellenius 1991), about "
-                "0.27-0.30 for phi' 25-40 deg: inside Table 7-9's clay and "
-                "silt ranges, the low end of its sand range (0.30-0.90) and "
-                "below its gravel range (0.35-0.80)", [auto_text]))
+                "experience where a layer gives one (Step 2a), else as "
+                "'beta and Nt (beta method)' says (Step 2b)", [auto_text]))
+            c = self._beta_choice(layer_results, tip_layer, toe_details)
+            if c:
+                out.append(c)
         else:
             # Contiguous runs of one method, top to bottom.
             runs = []
@@ -570,8 +734,8 @@ class AxialPileAnalysis:
         if beta:
             toe, basis, how = ("Nt sigma'p (beta method)",
                                "GEC-12 Eq. 7-20; Nt from local experience "
-                               "where a layer gives one (Step 5a), else from "
-                               "phi' within Table 7-9's ranges, or "
+                               "where a layer gives one (Step 5a), else as "
+                               "'beta and Nt (beta method)' says, or "
                                "cohesive_Nt in clay; no limiting value "
                                "(p. 256)", GIVEN)
             alts = [auto_text]
@@ -607,6 +771,37 @@ class AxialPileAnalysis:
                 "DrivenPiles) did not apply it",
                 ["sigma'p limited to 3 ksf (toe_stress_limit 143.6)"
                  if limit is None else "no limit (toe_stress_limit None)"]))
+        if "toe_phi_deg" in toe_details and plug_case != "eq_7_90":
+            phi = toe_details["toe_phi_deg"]
+            zone = toe_details.get("toe_zone")
+            if zone:
+                chosen = (f"{phi:.1f} deg, averaged from the toe to 3b below "
+                          f"({zone['from_m']:.2f}-{zone['to_m']:.2f} m): "
+                          + ", ".join(f"{z['toe_phi_deg']:g} deg over "
+                                      f"{z['depth_top_m']:.2f}-"
+                                      f"{z['depth_bottom_m']:.2f} m"
+                                      for z in zone["layers"]))
+            else:
+                chosen = (f"{phi:g} deg, the toe layer's "
+                          + ("toe_friction_angle"
+                             if tip_layer.toe_friction_angle is not None
+                             else "friction_angle"))
+            out.append(choice(
+                "toe friction angle (Nordlund)", chosen,
+                how_given(self.toe_phi_zone, "toe_layer",
+                          name="toe_phi_zone"),
+                "GEC-12 Steps 7a, 7b and 9 (pp. 244-245) enter Figs. 7-16 "
+                "and 7-15 with the 'phi angle near the pile toe'; Step 7c: "
+                "where phi is estimated from SPT data, average (N1)60 'over "
+                "the zone from the pile toe to 3 diameters below the pile "
+                "toe' and estimate phi from that; the module takes phi, so "
+                "'average_3b' averages the cohesionless layers' toe phi over "
+                "that zone (the same where phi is linear in N); GEC-12's "
+                "worked examples (Vol 3, Tables D-6 and D-51, DrivenPiles) "
+                "took the toe layer's phi",
+                ["the toe layer's phi (toe_phi_zone 'toe_layer')",
+                 "averaged from the toe to 3b below (toe_phi_zone "
+                 "'average_3b')"]))
 
         sand = [l for l in shaft_layers if l.soil_type == "cohesionless"]
         if sand and not beta:
@@ -645,66 +840,23 @@ class AxialPileAnalysis:
 
         clay = [lb for lb in layer_results if lb["method"] == "tomlinson"]
         if clay:
-            curve = self._adhesion_curve()
-            chosen = f"Fig. 7-17, {CURVES[curve]} curves"
-            if self.adhesion_curve == "auto":
-                chosen += " (by pile type)"
-            if self.pile.pile_type == "h_pile":
-                chosen += ", on the box perimeter"
+            out.extend(self._adhesion_choices(clay, plug_case == "eq_7_90"))
+        if self.shrink_swell_depth is not None:
+            left = sum(lb.get("shrink_swell_m", 0.0) for lb in layer_results)
             out.append(choice(
-                "adhesion (alpha-method)", chosen,
-                how_given(self.adhesion_curve, "auto",
-                          name="adhesion_curve"),
-                "GEC-12 Step 1 (p. 250): Ca from Fig. 7-17 by su, pile type "
-                "and D/b, D from the ground surface to the bottom of the "
-                "clay layer or to the toe if less (p. 246), linear between "
-                "the D = 10b and 40b curves; H-piles: the corrugated pile "
-                "curve times the box area (p. 247); GEC-12's worked example "
-                "(Vol 3, Table D-100, DrivenPiles) used the smooth steel "
-                "curves for an H-pile",
-                [f"{CURVES[c]} curves (adhesion_curve '{c}')"
-                 for c in CURVES if c != curve]
-                + ["Fig. 7-18's alpha for the three stratigraphy cases (sand "
-                   "or sandy gravel over stiff clay, soft clay over stiff "
-                   "clay, stiff clay alone; p. 246-247), not computed by the "
-                   "module: where either figure could be used, p. 246 "
-                   "advises the inexperienced user to take the smaller "
-                   "value"]))
-            capped = sum(lb.get("adhesion_source") == AT_MOST_SU
-                         for lb in clay)
-            out.append(choice(
-                "adhesion limit (alpha-method)",
-                "Ca at most su (alpha <= 1)"
-                + (f"; it governed in {capped} layer(s)" if capped else ""),
-                MODULE,
-                "API RP 2A takes alpha at most 1.0 (GEC-12 p. 252: 'An alpha "
-                "value of 1.0 is recommended for unconsolidated clays'), and "
-                "p. 247 takes su on an H-pile's soil-to-soil faces; Fig. "
-                "7-17 as drawn passes above Ca = su at low su (the D = 40b "
-                "concrete, timber and corrugated curve up to about 1.5 ksf)",
-                ["uncapped, Fig. 7-17 as drawn (not offered)"]))
-            beyond = sorted({lb.get("adhesion_source") for lb in clay}
-                            - {"Fig. 7-17", AT_MOST_SU, None})
-            if beyond:
-                chosen = ("alpha from API RP 2A (Eqs. 7-13/7-14)"
-                          if self.adhesion_beyond_chart == "api"
-                          else "Ca held at the curve's end")
-                out.append(choice(
-                    "su beyond Fig. 7-17", chosen,
-                    how_given(self.adhesion_beyond_chart, "chart_end",
-                              name="adhesion_beyond_chart"),
-                    "GEC-12's worked example (Vol 3, Table D-100) held Ca at "
-                    "the chart's end; p. 247 (and Step 1) recommends alpha by "
-                    "API RP 2A (Sec. 7.2.1.3.3) for highly overconsolidated "
-                    "clays whose su exceeds the charts; at the chart's end "
-                    "Ca jumps (the concrete, timber and corrugated curves "
-                    "end at su = 3.45 ksf with Ca 0.83-1.37 ksf for D = "
-                    "10b-40b; API alpha there at sigma'v 4 ksf gives 1.86 "
-                    "ksf)",
-                    ["Ca held at the curve's end (adhesion_beyond_chart "
-                     "'chart_end')"
-                     if self.adhesion_beyond_chart == "api" else
-                     "API alpha (adhesion_beyond_chart 'api')"]))
+                "shrink-swell zone (cohesive soil)",
+                f"no shaft resistance in cohesive soil above "
+                f"{self.shrink_swell_depth:g} m ({left:.2f} m of the pile in "
+                f"cohesive soil left out)",
+                how_given(self.shrink_swell_depth, None,
+                          name="shrink_swell_depth"),
+                "GEC-12 p. 247 (alpha-method): 'In clays with large "
+                "shrink-swell potential, static resistance calculations "
+                "should ignore the shaft resistance from the adhesion in the "
+                "shrink-swell zone'; the module leaves out the beta method's "
+                "shaft resistance in cohesive soil there too, since the gap "
+                "p. 247 describes is the same",
+                ["no shrink-swell zone (shrink_swell_depth None)"]))
 
         if self.pile.pile_type == "h_pile":
             chosen = ("box area, depth x flange width"
@@ -738,7 +890,9 @@ class AxialPileAnalysis:
                     "should be used (taken here as the toe in clay and more "
                     "than half the embedded length in clay layers; Tomlinson "
                     "applies it when field measurements confirm a plug); a "
-                    f"cohesionless layer keeps its side resistance; "
+                    f"cohesionless layer keeps its side resistance; Ca from "
+                    f"Fig. 7-17 as Eq. 7-90 prints it (p. 407), whatever "
+                    f"adhesion chart is chosen for the side resistance; "
                     f"Eqs. 7-88/7-89 give {numbers}")
             else:
                 basis = ("the lesser of Eqs. 7-88 and 7-89 governs "
@@ -754,6 +908,25 @@ class AxialPileAnalysis:
                 [c for k, c in cases.items()
                  if k not in (plug_case, "eq_7_90")]
                 + [cases["eq_7_90"] + " (open_pipe_method 'tomlinson')"]))
+            reading = info.get("predominantly_cohesive")
+            if reading:
+                share = 100.0 * reading["clay_m"] / reading["length_m"]
+                out.append(choice(
+                    "predominantly cohesive soil (Eq. 7-90)",
+                    f"{'yes' if reading['predominantly'] else 'no'}: "
+                    f"{reading['clay_m']:.2f} of {reading['length_m']:.2f} m "
+                    f"of embedded length in cohesive layers ({share:.0f} %)",
+                    MODULE,
+                    "GEC-12 Sec. 7.10.7 (p. 407) takes Eq. 7-90 for open end "
+                    "pipe piles less than 24 inches in diameter 'in "
+                    "predominantly cohesive soils' and gives no measure of "
+                    "it; the module reads it as the toe in a cohesive layer "
+                    "and more than half the embedded length in cohesive "
+                    "layers",
+                    ["Eq. 7-90 whatever the share (open_pipe_method "
+                     "'tomlinson')",
+                     "Eqs. 7-88/7-89 whatever the share (open_pipe_method "
+                     "'paikowsky_whitman')"]))
             out.append(choice(
                 "interior unit side resistance (open pipe)",
                 f"{self.inside_friction_ratio:.3g} x the exterior "
@@ -787,11 +960,12 @@ class AxialPileAnalysis:
                     "size or soil density, once q_L of Fig. 7-15 exceeds it",
                     ["no limit (open_pipe_toe_limit None)"]))
 
-        if beta and tip_layer.soil_type != "cohesionless":
-            given = tip_layer.Nt is not None
+        if (beta and tip_layer.soil_type != "cohesionless"
+                and toe_details.get("N_t_source") in ("given", "cohesive_Nt")):
+            given = toe_details["N_t_source"] == "given"
             out.append(choice(
                 "Nt of the cohesive toe layer (beta method)",
-                f"{self._toe_Nt(tip_layer):g}",
+                f"{toe_details['N_t']:g}",
                 GIVEN if given else how_given(self.cohesive_Nt, COHESIVE_NT,
                                               name="cohesive_Nt"),
                 "GEC-12 p. 256: an Nt of 3 in clay gives about the toe "
@@ -827,9 +1001,197 @@ class AxialPileAnalysis:
                  "(uplift_skin_fraction 0.7)"]))
         return out
 
+    def _adhesion_choices(self, clay: List[dict],
+                          eq_7_90: bool = False) -> List[dict]:
+        """The alpha-method's choices over the clay layers (``clay``, their
+        breakdown rows): the chart (GEC-12 p. 246), Figure 7-17's curves
+        and limit, each layer's Figure 7-18 case, and su past a chart.
+        Under Eq. 7-90 (``eq_7_90``) the side resistance is on Figure 7-17
+        whatever the chart, so no Figure 7-18 case is read."""
+        from geotech_common.choices import GIVEN, MODULE, choice, how_given
+        out = []
+        charts = {"fig_7_17": "Fig. 7-17 (Tomlinson 1979)",
+                  "fig_7_18": "Fig. 7-18 (Tomlinson 1980) by stratigraphy "
+                              "case",
+                  "smaller": "the smaller Ca of Figs. 7-17 and 7-18 in each "
+                             "layer"}
+        chart = self.adhesion_chart
+        chosen = charts[chart]
+        used = sorted({lb.get("adhesion_chart") for lb in clay} - {None})
+        if chart != "fig_7_17":
+            chosen += f" (used: {', '.join(used)}"
+            chosen += (", Eq. 7-90 takes Ca from Fig. 7-17, p. 407)"
+                       if eq_7_90 else ")")
+        out.append(choice(
+            "adhesion chart (alpha-method)", chosen,
+            how_given(chart, "fig_7_17", name="adhesion_chart"),
+            "GEC-12 p. 246: 'It is recommended that Figure 7-17 generally be "
+            "used for adhesion calculations, unless one of the special soil "
+            "stratigraphy cases identified in Figure 7-18 is present at a "
+            "site. In cases where either Figures 7-17 or 7-18 could be "
+            "used, the inexperienced user should select and use the smaller "
+            "value obtained from either figure'",
+            [f"{text} (adhesion_chart '{key}')"
+             for key, text in charts.items() if key != chart]))
+
+        read_17 = [lb for lb in clay if "fig_7_17_source" in lb]
+        if read_17:
+            curve = self._adhesion_curve()
+            chosen = f"Fig. 7-17, {CURVES[curve]} curves"
+            if self.adhesion_curve == "auto":
+                chosen += " (by pile type)"
+            if self.pile.pile_type == "h_pile":
+                chosen += ", on the box perimeter"
+            out.append(choice(
+                "adhesion (alpha-method)", chosen,
+                how_given(self.adhesion_curve, "auto",
+                          name="adhesion_curve"),
+                "GEC-12 Step 1 (p. 250): Ca from Fig. 7-17 by su, pile type "
+                "and D/b, D from the ground surface to the bottom of the "
+                "clay layer or to the toe if less (p. 246), linear between "
+                "the D = 10b and 40b curves; H-piles: the corrugated pile "
+                "curve times the box area (p. 247); GEC-12's worked example "
+                "(Vol 3, Table D-100, DrivenPiles) used the smooth steel "
+                "curves for an H-pile",
+                [f"{CURVES[c]} curves (adhesion_curve '{c}')"
+                 for c in CURVES if c != curve]))
+            capped = sum(lb.get("fig_7_17_source") == AT_MOST_SU
+                         and lb.get("adhesion_chart") == "Fig. 7-17"
+                         for lb in clay)
+            out.append(choice(
+                "adhesion limit (alpha-method)",
+                "Ca at most su (alpha <= 1)"
+                + (f"; it governed in {capped} layer(s)" if capped else ""),
+                MODULE,
+                "API RP 2A takes alpha at most 1.0 (GEC-12 p. 252: 'An alpha "
+                "value of 1.0 is recommended for unconsolidated clays'), and "
+                "p. 247 takes su on an H-pile's soil-to-soil faces; Fig. "
+                "7-17 as drawn passes above Ca = su at low su (the D = 40b "
+                "concrete, timber and corrugated curve up to about 1.5 ksf)",
+                ["uncapped, Fig. 7-17 as drawn (not offered)"]))
+
+        read_18 = [lb for lb in clay if "fig_7_18_case" in lb]
+        if chart != "fig_7_17" and not eq_7_90:
+            strata = {}
+            for lb in clay:
+                case = lb.get("fig_7_18_case", "none")
+                text = (FIG_7_18_CASES[case] if case != "none"
+                        else "none (Fig. 7-17)")
+                where = f"{lb['depth_top_m']:g}-{lb['depth_bottom_m']:g} m"
+                if case != "none":
+                    where += f", D = {lb['D_over_b_fig_7_18']:.1f}b"
+                strata.setdefault(text, []).append(where)
+            given = any(l.fig_7_18_case is not None for l in self.soil.layers)
+            out.append(choice(
+                "Fig. 7-18 stratigraphy case",
+                "; ".join(f"{t}: {', '.join(w)}" for t, w in strata.items()),
+                GIVEN if given else MODULE,
+                "GEC-12 pp. 246-247: the top graph for piles driven through "
+                "a sand or sandy gravel layer into an underlying stiff clay, "
+                "the middle graph through a soft clay layer into an "
+                "underlying stiff clay, the bottom graph in stiff clays "
+                "without any different overlying strata; D is the "
+                "penetration into the stiff clay (the figure's sketches), "
+                "taken from the top of the clay stratum (the ground surface "
+                "in the bottom graph) to the bottom of the layer or to the "
+                "toe if less; the module takes contiguous cohesive layers as "
+                "one stratum, the top graph under a cohesionless layer and "
+                "the bottom graph from the ground surface, and the middle "
+                "graph only where a layer gives it (GEC-12 gives no su that "
+                "separates a soft clay from a stiff one); a layer's "
+                "fig_7_18_case wins",
+                ["a layer's fig_7_18_case: 'sand_over_stiff_clay', "
+                 "'soft_clay_over_stiff_clay', 'stiff_clay' or 'none'"]))
+        if any("Ca_fig_7_17_kPa" in lb for lb in clay):
+            parts = [f"{lb['depth_top_m']:g}-{lb['depth_bottom_m']:g} m: "
+                     f"Fig. 7-17 {lb['Ca_fig_7_17_kPa']:.1f} kPa, Fig. 7-18 "
+                     f"{lb['Ca_fig_7_18_kPa']:.1f} kPa"
+                     for lb in clay if "Ca_fig_7_17_kPa" in lb]
+            out.append(choice(
+                "Ca of the two charts (alpha-method)", "; ".join(parts),
+                MODULE, "GEC-12 p. 246: the smaller value governs"))
+
+        for which, rows, text in (
+                ("Fig. 7-17", read_17, "fig_7_17_source"),
+                ("Fig. 7-18", read_18, "fig_7_18_source")):
+            if not any(lb.get(text) in BEYOND_SOURCES for lb in rows):
+                continue
+            chosen = ("alpha from API RP 2A (Eqs. 7-13/7-14)"
+                      if self.adhesion_beyond_chart == "api"
+                      else "Ca held at the curve's end")
+            basis = ("GEC-12's worked example (Vol 3, Table D-100) held Ca "
+                     "at the chart's end; p. 247 (and Step 1) recommends "
+                     "alpha by API RP 2A (Sec. 7.2.1.3.3) for highly "
+                     "overconsolidated clays whose su exceeds the charts")
+            if which == "Fig. 7-17":
+                basis += ("; at the chart's end Ca jumps (the concrete, "
+                          "timber and corrugated curves end at su = 3.45 ksf "
+                          "with Ca 0.83-1.37 ksf for D = 10b-40b; API alpha "
+                          "there at sigma'v 4 ksf gives 1.86 ksf)")
+            else:
+                basis += ("; Fig. 7-18's curves end at su = 5.0 ksf (top "
+                          "and bottom graphs) and about 4.6-4.8 ksf (middle "
+                          "graph)")
+            out.append(choice(
+                f"su beyond {which}", chosen,
+                how_given(self.adhesion_beyond_chart, "chart_end",
+                          name="adhesion_beyond_chart"),
+                basis,
+                ["Ca held at the curve's end (adhesion_beyond_chart "
+                 "'chart_end')"
+                 if self.adhesion_beyond_chart == "api" else
+                 "API alpha (adhesion_beyond_chart 'api')"]))
+        return out
+
+    def _beta_choice(self, layer_results, tip_layer,
+                     toe_details) -> Optional[dict]:
+        """The beta method's beta and Nt where a layer gives none (Steps 2b
+        and 5b), or None when every layer gave its own."""
+        from geotech_common.choices import choice, how_given
+        sources = {lb.get("beta_source") for lb in layer_results}
+        nt = toe_details.get("N_t_source")
+        if sources <= {"given"} and nt in ("given", "cohesive_Nt"):
+            return None
+        if self.beta_coefficients == "table_7_9":
+            soils = []
+            for s in list(sources) + [nt]:
+                if s and s.startswith("Table 7-9 ("):
+                    soil = s[len("Table 7-9 ("):-1]
+                    if soil not in soils:
+                        soils.append(soil)
+            soils.sort(key=list(TABLE_7_9).index)
+            chosen = ("Table 7-9 by soil type, linear in phi' across the "
+                      "type's phi' range: " + "; ".join(
+                          f"{s} beta {TABLE_7_9[s][1][0]:g}-"
+                          f"{TABLE_7_9[s][1][1]:g}, Nt {TABLE_7_9[s][2][0]:g}-"
+                          f"{TABLE_7_9[s][2][1]:g} over phi' "
+                          f"{TABLE_7_9[s][0][0]:g}-{TABLE_7_9[s][0][1]:g} deg"
+                          for s in soils))
+        else:
+            chosen = ("from phi': beta = (1 - sin phi') tan phi' (Fellenius "
+                      "1991), Nt within Table 7-9's ranges by phi'")
+        return choice(
+            "beta and Nt (beta method)", chosen,
+            how_given(self.beta_coefficients, "from_phi",
+                      name="beta_coefficients"),
+            "GEC-12 Steps 2b and 5b (pp. 257-258): in the absence of local "
+            "experience, use Table 7-9 (after Fellenius 2014) to estimate "
+            "beta and Nt from phi'; the table gives ranges by soil type "
+            "(clay, silt, sand, gravel), which 'table_7_9' reads linearly in "
+            "phi' (a layer's soil_class, else clay or sand); (1 - sin phi') "
+            "tan phi' is about 0.27-0.30 for phi' 25-40 deg: inside Table "
+            "7-9's clay and silt ranges, the low end of its sand range "
+            "(0.30-0.90) and below its gravel range (0.35-0.80); a clay toe "
+            "takes cohesive_Nt either way (p. 256)",
+            ["from phi' (beta_coefficients 'from_phi')"
+             if self.beta_coefficients == "table_7_9" else
+             "Table 7-9 by soil type (beta_coefficients 'table_7_9')"])
+
     def _layer_skin_friction(self, layer: AxialSoilLayer, layer_bottom: float,
                              z_top: float, z_bottom: float, perimeter: float,
-                             V: float, notes: Optional[List[str]]
+                             V: float, notes: Optional[List[str]],
+                             stratum: Optional[Tuple[str, float, str]] = None,
+                             chart: Optional[str] = None
                              ) -> Tuple[float, float, str, dict]:
         """Side resistance of one layer segment of the pile.
 
@@ -837,43 +1199,56 @@ class AxialPileAnalysis:
         groundwater table when it falls strictly inside: sigma_v' is
         piecewise linear with a kink at the GWT, so midpoint x thickness
         on each side of the kink is exact for the Nordlund and beta methods
-        (unit side resistance linear in sigma_v').
+        (unit side resistance linear in sigma_v'). The segment is also split
+        at ``shrink_swell_depth``; cohesive soil above it gives no shaft
+        resistance (GEC-12 p. 247). ``stratum`` is the layer's Figure 7-18
+        case (:meth:`_fig_7_18_strata`); ``chart`` the alpha-method's chart
+        (default ``adhesion_chart``).
 
         Returns
         -------
         (Qs, sigma_v_mid, method_used, info) : tuple
             Segment side resistance (kN), effective stress at the full
             segment midpoint (kPa, for reporting), the method label and the
-            method's factors (delta/phi, K_delta, C_F; D/b and the adhesion
-            source; beta).
+            method's factors (delta/phi, K_delta, C_F; D/b, the adhesion
+            source and the Figure 7-18 case; beta).
         """
-        gwt = self.soil.gwt_depth
-        if gwt is not None and z_top < gwt < z_bottom:
-            cuts = [z_top, gwt, z_bottom]
-        else:
-            cuts = [z_top, z_bottom]
+        cuts = [z_top, z_bottom]
+        for z in (self.soil.gwt_depth, self.shrink_swell_depth):
+            if z is not None and z_top < z < z_bottom:
+                cuts.append(z)
+        cuts.sort()
+        zone = (self.shrink_swell_depth
+                if layer.soil_type == "cohesive" else None)
 
         Qs = 0.0
+        counted = 0.0
         method_used = ""
         info: dict = {}
         for za, zb in zip(cuts[:-1], cuts[1:]):
             seg_thickness = zb - za
             sigma_v = self.soil.effective_stress_at_depth((za + zb) / 2)
+            # The shrink-swell zone: the segment's resistance is worked out
+            # (so the layer reports its chart readings) and left out.
+            share = 0.0 if zone is not None and zb <= zone else 1.0
+            counted += share * seg_thickness
 
             if self.method == "beta":
                 # Cohesive layers: an explicitly supplied per-layer
                 # friction_angle WINS; the global cohesive_phi is only the
                 # fallback for layers without one.
                 if layer.beta is not None:
-                    beta = layer.beta
+                    beta, source = layer.beta, "given"
+                elif self.beta_coefficients == "table_7_9":
+                    soil = layer.table_7_9_soil
+                    beta = table_7_9(soil, self._beta_phi(layer), notes)[0]
+                    source = f"Table 7-9 ({soil})"
                 else:
-                    phi = (layer.friction_angle
-                           if layer.soil_type == "cohesionless"
-                           else (layer.friction_angle or self.cohesive_phi))
-                    beta = beta_from_phi(phi)
-                Qs += beta * sigma_v * perimeter * seg_thickness
+                    beta = beta_from_phi(self._beta_phi(layer))
+                    source = "from phi'"
+                Qs += share * beta * sigma_v * perimeter * seg_thickness
                 method_used = "beta"
-                info = {"beta": beta}
+                info = {"beta": beta, "beta_source": source}
             elif layer.soil_type == "cohesionless":
                 ratio = layer.delta_phi_ratio
                 if ratio is None:
@@ -886,23 +1261,71 @@ class AxialPileAnalysis:
                 info = {"delta_phi_ratio": ratio, "K_delta": f["K_delta"],
                         "C_F": f["C_F"]}
             else:
-                # Fig. 7-17's D: ground surface to the bottom of the clay
-                # layer, or to the toe if less (GEC-12 p. 246).
-                D_over_b = (min(layer_bottom, self._tip_depth)
-                            / self.pile.width)
-                ca, source = adhesion(
-                    layer.cohesion, D_over_b, self._adhesion_curve(),
-                    sigma_v=sigma_v, beyond_chart=self.adhesion_beyond_chart,
-                    notes=notes)
-                Qs += ca * perimeter * seg_thickness
+                ca, info = self._adhesion(layer, layer_bottom, sigma_v,
+                                          stratum, notes, chart)
+                Qs += share * ca * perimeter * seg_thickness
                 method_used = "tomlinson"
-                info = {"D_over_b": D_over_b, "adhesion_source": source}
 
+        if zone is not None and counted < z_bottom - z_top:
+            info["shrink_swell_m"] = (z_bottom - z_top) - counted
         if method_used == "tomlinson" and z_bottom > z_top and perimeter > 0:
-            info["alpha"] = Qs / (perimeter * (z_bottom - z_top)
-                                  * layer.cohesion)
+            # alpha = Ca / su over the length that counts (all of it, but
+            # for a shrink-swell zone)
+            info["alpha"] = (Qs / (perimeter * counted * layer.cohesion)
+                             if counted > 0 else ca / layer.cohesion)
         sigma_v_mid = self.soil.effective_stress_at_depth((z_top + z_bottom) / 2)
         return Qs, sigma_v_mid, method_used, info
+
+    def _adhesion(self, layer: AxialSoilLayer, layer_bottom: float,
+                  sigma_v: float, stratum: Optional[Tuple[str, float, str]],
+                  notes: Optional[List[str]], chart: Optional[str] = None
+                  ) -> Tuple[float, dict]:
+        """(Ca in kPa, its readings) of a clay layer by ``chart`` (default
+        ``adhesion_chart``):
+        Figure 7-17, Figure 7-18 for the layer's stratigraphy case, or the
+        smaller of the two (GEC-12 p. 246). The notes of a chart not used
+        are left out."""
+        bottom = min(layer_bottom, self._tip_depth)
+        # Fig. 7-17's D: ground surface to the bottom of the clay layer, or
+        # to the toe if less (GEC-12 p. 246).
+        D_over_b = bottom / self.pile.width
+        info: dict = {"D_over_b": D_over_b}
+        case = stratum[0] if stratum else "none"
+        chart = chart or self.adhesion_chart
+        readings = {}
+        if chart in ("fig_7_17", "smaller") or case == "none":
+            own: List[str] = []
+            ca, source = adhesion(
+                layer.cohesion, D_over_b, self._adhesion_curve(),
+                sigma_v=sigma_v, beyond_chart=self.adhesion_beyond_chart,
+                notes=own)
+            readings["Fig. 7-17"] = (ca, source, own)
+            info["fig_7_17_source"] = source
+        if chart in ("fig_7_18", "smaller") and case != "none":
+            # Fig. 7-18's D: the penetration into the clay stratum, from its
+            # top (the ground surface in the bottom graph) to the bottom of
+            # the layer, or to the toe if less.
+            D18 = (bottom - stratum[1]) / self.pile.width
+            own = []
+            ca, source = adhesion_fig_7_18(
+                layer.cohesion, D18, case, sigma_v=sigma_v,
+                beyond_chart=self.adhesion_beyond_chart, notes=own)
+            readings["Fig. 7-18"] = (ca, source, own)
+            info.update({"fig_7_18_case": case, "D_over_b_fig_7_18": D18,
+                         "fig_7_18_source": source})
+        if len(readings) == 2:
+            info["Ca_fig_7_17_kPa"] = readings["Fig. 7-17"][0]
+            info["Ca_fig_7_18_kPa"] = readings["Fig. 7-18"][0]
+        used = min(readings, key=lambda k: (readings[k][0], k))
+        ca, source, own = readings[used]
+        if notes is not None:
+            notes.extend(n for n in own if n not in notes)
+        else:
+            for n in own:
+                warnings.warn(n, stacklevel=3)
+        info["adhesion_source"] = source
+        info["adhesion_chart"] = used
+        return ca, info
 
     def _compute_inside_skin_friction(self, V: float,
                                       notes: Optional[List[str]] = None
@@ -918,7 +1341,7 @@ class AxialPileAnalysis:
         current_depth = 0.0
         tip_depth = self._tip_depth
 
-        for layer in self.soil.layers:
+        for layer, stratum in zip(self.soil.layers, self._fig_7_18_strata()):
             layer_top = current_depth
             layer_bottom = current_depth + layer.thickness
             current_depth = layer_bottom
@@ -932,7 +1355,8 @@ class AxialPileAnalysis:
                 continue
 
             Qs_layer, _, _, _ = self._layer_skin_friction(
-                layer, layer_bottom, z_top, z_bottom, inner_perim, V, notes)
+                layer, layer_bottom, z_top, z_bottom, inner_perim, V, notes,
+                stratum)
             Qs_inside += Qs_layer
 
         return Qs_inside

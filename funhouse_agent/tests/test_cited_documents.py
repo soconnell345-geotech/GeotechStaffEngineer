@@ -62,6 +62,7 @@ def test_one_document_by_any_of_its_names(text):
      "aashto-1993"),
     ("AASHTO T 99", "AASHTO T 99", "aashto-t99"),
     ("UFC 3-220-10N", "UFC 3-220-10N", "ufc-3-220-10"),
+    ("UFS 3-220-10", "UFS 3-220-10", "ufc-3-220-10"),
     ("NAVFAC DM 7.01", "NAVFAC DM 7.01", "ufc-3-220-10"),
     ("DM7.2", "NAVFAC DM 7.02", "ufc-3-220-20"),
     ("DM7 §6-7.4", "NAVFAC DM 7 §6-7.4", "dm7"),

@@ -1,4 +1,4 @@
-"""DM7 reference adapter — 340+ NAVFAC DM7 equations (UFC 3-220-10/20).
+"""DM7 reference adapter — 340+ NAVFAC DM7 equations (UFS 3-220-10 / UFC 3-220-20).
 
 Special handling: auto-discovers functions via inspect and resolves name
 collisions across 15 chapter modules with chapter-key prefixes, mirroring
@@ -31,42 +31,42 @@ def _build():
         "dm7_1_ch1": {
             "module": dm7_1_ch1,
             "category": "DM7.1 Ch1 - Identification & Classification",
-            "reference": "UFC 3-220-10, Chapter 1",
+            "reference": "UFS 3-220-10, Chapter 1",
         },
         "dm7_1_ch2": {
             "module": dm7_1_ch2,
             "category": "DM7.1 Ch2 - Field Exploration & Testing",
-            "reference": "UFC 3-220-10, Chapter 2",
+            "reference": "UFS 3-220-10, Chapter 2",
         },
         "dm7_1_ch3": {
             "module": dm7_1_ch3,
             "category": "DM7.1 Ch3 - Laboratory Testing",
-            "reference": "UFC 3-220-10, Chapter 3",
+            "reference": "UFS 3-220-10, Chapter 3",
         },
         "dm7_1_ch4": {
             "module": dm7_1_ch4,
             "category": "DM7.1 Ch4 - Distribution of Stresses",
-            "reference": "UFC 3-220-10, Chapter 4",
+            "reference": "UFS 3-220-10, Chapter 4",
         },
         "dm7_1_ch5": {
             "module": dm7_1_ch5,
             "category": "DM7.1 Ch5 - Consolidation & Settlement",
-            "reference": "UFC 3-220-10, Chapter 5",
+            "reference": "UFS 3-220-10, Chapter 5",
         },
         "dm7_1_ch6": {
             "module": dm7_1_ch6,
             "category": "DM7.1 Ch6 - Seepage & Drainage",
-            "reference": "UFC 3-220-10, Chapter 6",
+            "reference": "UFS 3-220-10, Chapter 6",
         },
         "dm7_1_ch7": {
             "module": dm7_1_ch7,
             "category": "DM7.1 Ch7 - Slope Stability",
-            "reference": "UFC 3-220-10, Chapter 7",
+            "reference": "UFS 3-220-10, Chapter 7",
         },
         "dm7_1_ch8": {
             "module": dm7_1_ch8,
             "category": "DM7.1 Ch8 - Correlations for Soil Properties",
-            "reference": "UFC 3-220-10, Chapter 8",
+            "reference": "UFS 3-220-10, Chapter 8",
         },
         "dm7_2_pro": {
             "module": dm7_2_pro,

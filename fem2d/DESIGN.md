@@ -321,7 +321,7 @@ pressure on the wall at the excavation level, the upward hydraulic gradient
 in front of the wall (tip to excavation level, along the wall) and the
 critical gradient (gamma - gamma_w)/gamma_w of the soil there; a warning
 when the gradient reaches it (quick condition, heave and piping: Caltrans
-T&S Manual 2025 section 10-4, p. 10-21; UFC 3-220-10 (2026) section
+T&S Manual 2025 section 10-4, p. 10-21; UFS 3-220-10 (2026) section
 6-5.2.2, p. 312 asks for 1.5 to 2 against heave). `wall_water_pressures`
 lists both faces and the net at the end. Tables: "Water on the wall by
 stage" (printed) and "Water pressures on the wall" (CSV); the calc package
