@@ -418,6 +418,20 @@ def build_references_subagent(
 #: bounds the references consultant). ``None``/``0`` disables the budget.
 DEFAULT_CALC_MAX_MODEL_CALLS = 16
 
+#: The calc helper's budget, stated to it as the references helper's is
+#: (BACKLOG GM-101; live wave w13: both calc helpers ran out of calls, one
+#: before html_to_pdf, one before its PDF, and were never told the budget).
+_CALC_BUDGET = (
+    "\nCALL BUDGET: you have {n} model calls for this task, the last of "
+    "which must be your reply. Make independent calls in the SAME turn "
+    "(several tool calls at once). Build the deliverable and check it "
+    "(html_to_pdf's page_contents, read_pdf_text for its numbers) with "
+    "calls to spare.")
+
+#: The calc helper is told how many calls are left from this many calls
+#: left (that call included) down to its last but one (BACKLOG GM-101).
+CALC_WARN_REMAINING = 4
+
 _CALC_DESCRIPTION = (
     "The calculation engine. Delegate TOOL-HEAVY calculation work to it: running "
     "an analysis method (bearing capacity, settlement, slope stability, FEM, "
@@ -653,6 +667,9 @@ def build_calc_subagent(
     # NOT CONSULTANT_FRAMING: that is the references sub-agent's librarian
     # preamble ("Do NOT perform engineering calculations"). See _CALC_PREAMBLE.
     system_prompt = _CALC_PREAMBLE + _CALC_FRAMING
+    if max_model_calls:     # the budget, stated (GM-101; unswitched)
+        system_prompt = system_prompt + _CALC_BUDGET.format(
+            n=int(max_model_calls))
     # Plotting code in the locked box, behind GEOTECH_PLOT_CODE (GM-98; the
     # owner on calc packages' figures, 2026-10-15).
     from funhouse_agent.deep.figure_helper import (CALC_REDRAW_NOTE,
@@ -683,7 +700,8 @@ def build_calc_subagent(
         "tools": tools,
     }
     if max_model_calls:
-        spec["middleware"] = [ModelCallBudgetMiddleware(max_model_calls)]
+        spec["middleware"] = [ModelCallBudgetMiddleware(
+            max_model_calls, warn_remaining=CALC_WARN_REMAINING)]
     if figure_looks:
         # The figures a module method draws ask for a look, as plot_code's
         # do, and html_to_pdf names the ones no look read (live wave w12,
@@ -1193,6 +1211,9 @@ def build_deep_agent(
     filesystem tools are present regardless because deepagents attaches them by
     default.
     """
+    # The first pyplot import, before tools run side by side (GM-172).
+    from funhouse_agent.deep.warm_imports import warm_pyplot
+    warm_pyplot()
     if review_page:
         from funhouse_agent import review_flags
         if review_flags.minimal_agent():

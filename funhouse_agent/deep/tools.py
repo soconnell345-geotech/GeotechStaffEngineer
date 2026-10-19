@@ -1184,19 +1184,25 @@ def make_vision_tools(
             {"path": path, "max_entries": max_entries, "depth": depth},
         )
 
-    def read_pdf_text(source: str, pages: str = "") -> str:
+    def read_pdf_text(source: str, pages: str = "",
+                      pdf_pages: Any = None) -> str:
         """Extract the TEXT LAYER of a PDF (PyMuPDF — cheap, no vision). Use
         this FIRST for a text-based report (boring logs, lab summaries,
         recommendations, specs) instead of vision-reading every page.
 
         ``source`` is an attachment key or a file name in the working folder
-        (a relative path is inside it). ``pages`` is an int, a list, or a "start-end" range like
-        "0-9"; omit for the first several pages. A page with no text layer
-        (scanned image) is flagged per-page — use analyze_pdf_page for those.
+        (a relative path is inside it). ``pages`` counts from 0: an int, a
+        list, or a range like "0-9"; or give ``pdf_pages`` instead, 1-based
+        as a PDF viewer shows (e.g. "1-10"); omit both for the first several
+        pages. Each page in the result gives both (``page``, ``pdf_page``).
+        A page with no text layer (scanned image) is flagged per-page — use
+        analyze_pdf_page for those.
         """
         args = {"source": source}
         if pages != "":
             args["pages"] = pages
+        if pdf_pages not in ("", None, [], ()):
+            args["pdf_pages"] = pdf_pages
         return _dispatch("read_pdf_text", args)
 
     def read_text_file(path: str, offset: int = 0, max_chars: int = 6000,
@@ -1938,7 +1944,8 @@ def make_vision_tools(
             "First-choice reader for a text-based report; a scanned page with "
             "no text layer is flagged per-page (use analyze_pdf_page there). "
             "source is an attachment key or a file name in the working "
-            "folder.",
+            "folder." + _PDF_PAGES_NOTE + " Each page in the result gives "
+            "both (page, pdf_page).",
         ),
         "read_text_file": (
             read_text_file,
