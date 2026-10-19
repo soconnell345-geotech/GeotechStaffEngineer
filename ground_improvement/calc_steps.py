@@ -865,10 +865,11 @@ def _steps_vibro(result, analysis) -> List[CalcSection]:
         result_value=fc_status,
         reference="FHWA GEC-13 (2017), Ch. 4, Sec. 3.1.3.1, Table 4-5 "
                   "and Figure 4-27, pp. 4-65 to 4-67",
-        notes="GEC-13 calls soils with fines below 10 % ideally suited "
-              "(Figure 4-27) and silty sand inhibited above 8 % silt "
-              "(Table 4-5); the 15 % and 20 % bounds are this module's "
-              "screening limits, not printed values.",
+        notes="GEC-13: densification generally cannot be achieved "
+              "above 12 to 15 % silt or 2 % clay (p. 4-65); fines below "
+              "10 % are ideally suited (Figure 4-27); silty sand is "
+              "inhibited above 8 % silt (Table 4-5). The 10/15/20 % bands "
+              "are this module's screening limits.",
     ))
 
     # D50 check
