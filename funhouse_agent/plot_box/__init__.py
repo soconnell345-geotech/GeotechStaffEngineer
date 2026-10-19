@@ -529,11 +529,16 @@ def run_plot_code(code: str, data: Any = None, name: str = "",
                            extra)
 
 
-def _next_step(draw: Optional[int], lettering: list) -> str:
+def next_step(draw: Optional[int], lettering: list = (),
+              renamed_drafts: bool = True,
+              checked_in: str = "layout_check") -> str:
     """What a successful draw asks for next: a LOOK that checks what the
     figure shows against the data before the lettering (live wave w9: 13 of
     13 look prompts asked about lettering only, and figures that misdrew
-    passed), and a redraw only within the cap."""
+    passed), and a redraw only within the cap. ``plot_data`` gives it too
+    (BACKLOG GM-152: live wave w12, its result asked for no look);
+    ``renamed_drafts`` False where the tool takes no ``replaces``;
+    ``checked_in`` the result key listing the layout check's findings."""
     look = (
         "LOOK at each figure with analyze_image (its look_file when it has "
         "one), in a step after this one. Ask first what it SHOWS, against the "
@@ -543,8 +548,9 @@ def _next_step(draw: Optional[int], lettering: list) -> str:
         "stair or a smoothed curve between readings, an extrapolation, a "
         "line, zone or label that is not in the brief or the files)? are the "
         "names the source's own words? does a legend repeat names already on "
-        "the data? Then the lettering: overlaps, what layout_check lists "
-        "(judged by the pixels drawn; the look decides), units, scale")
+        "the data? Then the lettering: overlaps, what " + checked_in
+        + " lists (judged by the pixels drawn; the look decides), units, "
+        "scale")
     small = [c for c in lettering if c.get("texts_under_7_pt")]
     if small:
         look += (", and lettering that prints under 7 pt (" + "; ".join(
@@ -554,8 +560,9 @@ def _next_step(draw: Optional[int], lettering: list) -> str:
     if draw is not None and draw >= DRAW_CAP:
         return look + draw_cap_note(draw)
     redraw = ("Redraw only to fix what the look found, under the same name "
-              "(a draft under another name is retired with replaces=), at "
-              "most twice in all")
+              + ("(a draft under another name is retired with replaces=), "
+                 if renamed_drafts else "(the same output_path), ")
+              + "at most twice in all")
     if draw is not None:
         redraw += (f" (this was draw {draw} of at most {DRAW_CAP} of this "
                    "figure this turn)")
@@ -780,7 +787,7 @@ def _run_in_box(code, data_json, name, root, limit, cfg, notes, extra=None):
             draw = drawn_count(extra.get("draw"), booked["draw"])
             if draw is not None:
                 res["draw"] = draw
-            res["next"] = _next_step(draw, lettering)
+            res["next"] = next_step(draw, lettering)
     if charts:
         # live wave w8: the chart the chat showed had lost lines the PNG had,
         # and no look had checked it
@@ -905,7 +912,7 @@ def make_plot_code_tool():
         plot_code, name="plot_code", description=plot_code_description()))
 
 
-__all__ = ["run_plot_code", "make_plot_code_tool", "plot_code_description",
+__all__ = ["next_step", "run_plot_code", "make_plot_code_tool", "plot_code_description",
            "available", "settings", "check_code", "ALLOWED_IMPORTS",
            "MAX_CODE_CHARS", "SETTINGS_ENVS", "retire_drafts",
            "draws_so_far", "draw_cap_note", "drawn_count", "booked_notes",

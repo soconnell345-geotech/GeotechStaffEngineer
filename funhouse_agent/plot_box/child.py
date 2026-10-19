@@ -39,18 +39,31 @@ import sys
 import time
 import types
 
+#: The box's own clock, held before the code runs: ``time`` is one of the
+#: code's modules, and the code may replace what it holds.
+_monotonic = time.monotonic
+
 #: Top-level modules plotting code may import: the plotting and number
 #: libraries the owner named (matplotlib, Plotly, numpy, pandas), SciPy for
 #: interpolation and statistics, and the standard library's maths and text
 #: modules. Nothing that reaches the network, processes or the system, and
 #: nothing that turns a string into code or into an attribute (``typing``'s
 #: type hints, ``string.Formatter``).
+#:
+#: ``time`` (BACKLOG GM-152; live wave w12 had a script refused for it): it
+#: reads clocks and formats dates, which ``datetime`` already offers, and
+#: waits (``sleep``), which costs no more than a loop: the parent stops the
+#: box at its time limit either way. The one thing in it that reaches the
+#: system, setting the clock (``clock_settime``, which a box run as root
+#: could do and which raises no audit event), is refused by name
+#: (:data:`BLOCKED_ATTRIBUTES`) and taken out of the module before the code
+#: runs.
 ALLOWED_IMPORTS = frozenset({
     "numpy", "pandas", "matplotlib", "mpl_toolkits", "plotly", "scipy",
     "math", "cmath", "statistics", "random", "itertools", "functools",
     "collections", "json", "csv", "datetime", "decimal", "fractions", "re",
     "textwrap", "enum", "copy", "bisect", "heapq", "colorsys", "numbers",
-    "io",
+    "io", "time",
 })
 
 #: Names the code may not use: the ways to run new code, to reach a module's
@@ -74,6 +87,7 @@ BLOCKED_ATTRIBUTES = frozenset({
     "ag_frame", "ag_code", "tb_frame", "tb_next", "co_code", "eval", "query",
     "attrgetter", "methodcaller", "format_map", "read_pickle", "to_pickle",
     "load_library", "Formatter", "get_field", "vformat", "get_type_hints",
+    "clock_settime", "clock_settime_ns",
 })
 ALLOWED_DUNDERS = frozenset({"__init__", "__name__", "__doc__"})
 
@@ -791,7 +805,7 @@ def main() -> int:
     raw = sys.stdin.buffer.read()
     payload = json.loads(raw.decode("utf-8"))
     marker = str(payload.get("marker") or "")
-    t0 = time.monotonic()
+    t0 = _monotonic()
     result = {"ok": False}
 
     def report(res):
@@ -904,6 +918,11 @@ def main() -> int:
                         f"imported from '{name}' in the plotting box")
         return mod
 
+    # setting the system clock is not the code's to do (ALLOWED_IMPORTS)
+    for name in ("clock_settime", "clock_settime_ns"):
+        if hasattr(time, name):
+            delattr(time, name)
+
     safe_builtins = {k: v for k, v in vars(builtins).items()
                      if k not in BLOCKED_NAMES}
     safe_builtins["__import__"] = guarded_import
@@ -937,9 +956,9 @@ def main() -> int:
                 look_copies[fname] = look
         else:
             fig.savefig(fname, dpi=_dpi_for(fig, dpi), bbox_inches="tight")
-        t_check = time.monotonic()
+        t_check = _monotonic()
         checks.append(_layout_check(fig, fname, dpi))
-        check_seconds.append(round(time.monotonic() - t_check, 2))
+        check_seconds.append(round(_monotonic() - t_check, 2))
         letters.append(_lettering(fig, fname, print_w))
 
     def save_figure(fig=None, name=None, dpi=200):
@@ -974,7 +993,7 @@ def main() -> int:
     sys.stdout, sys.stderr = out, err
     if os.name == "posix":
         applied.update(_posix_no_children())
-    t_run = time.monotonic()
+    t_run = _monotonic()
     # From here to the end of the process every file, folder, process,
     # network and native-code operation goes past the hook, including the
     # box's own saving and reporting below (the code may have replaced any
@@ -986,7 +1005,7 @@ def main() -> int:
         result["ok"] = True
     except BaseException as exc:                           # noqa: BLE001
         result["error"] = _format_error(exc)
-    run_s = time.monotonic() - t_run
+    run_s = _monotonic() - t_run
 
     # Figures the code drew but did not save: saved for it, when it saved
     # no image itself (a script that saved its own chose what to keep) and
@@ -1017,7 +1036,7 @@ def main() -> int:
         "stderr": err.text(),
         "refused": record["refused"],
         "run_seconds": round(run_s, 2),
-        "seconds": round(time.monotonic() - t0, 2),
+        "seconds": round(_monotonic() - t0, 2),
         "limits_applied": applied,
         "preload_failed": failed,
         "layout": [c for c in checks if len(c) > 1],

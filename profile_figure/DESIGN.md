@@ -113,9 +113,14 @@ that day (tests: `tests/test_data_plot_maps.py`):
   `fill_opacity` and `hatch`; outlines are drawn under the points and lines.
 - **`labels`** names each point beside it (`""` skips one): each name goes
   in whichever of eight spots round its point covers least of the other
-  names, the points, the lines, the reference-line names and the notes with
-  their leaders, and stays inside
-  the plot frame; the Plotly twin puts it in the same spot. **`hover`** is one
+  names, the points, the lines, the reference lines (BACKLOG GM-146: a
+  vertical LL = 50 line ran through two names), hatched outlines, the
+  reference-line names, the plan's furniture and the notes with their
+  leaders, and stays inside the plot frame; a line through a name's letters
+  costs more than one in the margin round it. A name that can only stand on
+  hatching (its point inside a hatched zone) gets a thin ring of the
+  background round its letters, as a note's `halo`, in the PNG only. The
+  Plotly twin puts each name in the same spot. **`hover`** is one
   text per point, shown on hover in the chat. Both need one entry per point,
   and a dropped point drops its name.
 - **x given as names** (cases, scenarios, borings) puts them along x in the
@@ -142,7 +147,13 @@ that day (tests: `tests/test_data_plot_maps.py`):
   `xlabel`, the coordinate system, under it, and beside it a north arrow at
   `north_deg` (degrees clockwise from up, as the plan the data came from or
   the project's other plans show it), or straight up with a warning saying so
-  when none is given. Nothing is drawn on the site itself. It is ignored, with
+  when none is given. Nothing is drawn on the site itself. The view takes in
+  every outline, line and point drawn with a margin all round, and the band
+  and margins are sized in points as printed (`_PLAN_PT`), so the bar's end
+  names stand clear of the site on a long flat site and the arrow clear of
+  the bar on a narrow one; the equal aspect fits the axes' box and never
+  trims the view (BACKLOG GM-147: a 40 x 25 m outline lost its top edge,
+  the view stopping at 24.76). It is ignored, with
   a warning, on named cases, log axes or a depth axis. The scale bar and
   arrow are `geotech_common/plan_furniture.py`, which the gstools probability
   map shares, so the plans read alike.
@@ -165,8 +176,8 @@ that day (tests: `tests/test_data_plot_maps.py`):
   view and the twin is pinned to that view). A layout check after the draw
   reports in `warnings` a note that overlaps other lettering (another note,
   a point name, a reference-line name, the title, axis titles, tick numbers,
-  the legend), one that a line, markers, an edge or another note's leader
-  shows through (named: the series, the reference line, `the leader of
+  the legend), one that a line, markers, an edge, hatching or another note's
+  leader shows through (named: the series, the reference line, `the leader of
   annotations[j]`; a line under the note's own box does not show), one the
   figure edge cuts, one that stands outside the axis limits and one whose
   point lies outside them. The first three are judged by the pixels drawn,
@@ -177,7 +188,14 @@ that day (tests: `tests/test_data_plot_maps.py`):
   last two by the numbers. It moves nothing, and a failure of the check is
   a warning, never a lost figure. A `font_size` outside 6-20 pt is drawn at
   the nearer end with a warning (tests: `tests/test_data_plot_notes.py`,
-  including two w9 figures redrawn).
+  including two w9 figures redrawn). The same check covers the lettering
+  `plot_data` places itself (BACKLOG GM-152): the reference lines' names
+  (horizontal and vertical), the plan's scale-bar names, north arrow and
+  coordinate system, and the point names, each warning naming the piece
+  (`the name of the reference line at 50 ('LL = 50')`, `the scale bar's
+  '20 m'`, `series[3] point name 'B-2'`) and what to do; a piece that meets
+  a note is reported once, on the note. Tests:
+  `tests/test_data_plot_lettering.py`.
 
 **Worked examples** (`figure_examples.py`, the owner's option B of
 2026-10-15): six complete `plot_data` calls on made-up data (`EXAMPLES`),

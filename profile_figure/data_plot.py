@@ -90,10 +90,26 @@ _FILL_OPACITY = 0.2         #: default polygon fill opacity
 _LEADER_WIDTH = 0.8         #: a note's leader arrow, line width (points)
 #: A note's font size is held between these (points).
 _NOTE_SIZE_RANGE = (6.0, 20.0)
-#: plan_view: the margins, as fractions of the site's height, below it (the
-#: scale bar and its caption) and above it (the north arrow)
-_PLAN_BAND_BELOW = 0.26
-_PLAN_BAND_ABOVE = 0.05
+#: plan_view: the margins round everything drawn, in points as printed:
+#: the band below holds the scale bar with its end names, the coordinate
+#: system under it and the north arrow beside it; above and at the sides a
+#: margin keeps an outline off the edge of the view and leaves room for
+#: the name of a point on it (BACKLOG GM-147: margins taken as fractions
+#: of the site's height, and an equal aspect free to trim the view, cut
+#: the top edge off a 40 x 25 m site and put a long flat site's scale bar
+#: names on its property line)
+_PLAN_PT = {"side": 14.0, "above": 14.0, "below": 58.0}
+#: ... and where the furniture sits in that band, in points: the bar's
+#: bottom below the lowest thing drawn, its height, the north arrow's
+#: centre left of the right edge and below the lowest thing drawn, and the
+#: gap from the bar's right end to the arrow's centre (the arrow and its N
+#: reach about 24 pt from the centre at any angle, the bar's end name
+#: about 14 pt past the bar).
+_PLAN_BAR_DROP = 30.0
+_PLAN_BAR_HEIGHT = 4.0
+_PLAN_ARROW_IN = 12.0
+_PLAN_ARROW_DROP = 32.0
+_PLAN_BAR_TO_ARROW = 44.0
 #: matplotlib sizes markers in POINTS, Plotly in PIXELS. At the PNG's default
 #: 150 dpi one point is ~2 px, so the interactive chart reads like the image.
 _PT_TO_PX = 2.0
@@ -682,7 +698,8 @@ def build_data_plot_figure(cleaned_series, *, title: str = "",
                            plan_view: bool = False,
                            north_deg: Optional[float] = None,
                            scale_units: str = "m", x_on_top: bool = False,
-                           annotations=None, view=None):
+                           annotations=None, view=None, plan_layout=None,
+                           ref_spots=None):
     """Build the interactive Plotly twin of :func:`render_data_plot`'s PNG.
 
     ``cleaned_series`` is what :func:`_clean_series` produced for the
@@ -710,7 +727,11 @@ def build_data_plot_figure(cleaned_series, *, title: str = "",
     limits, ``((left, right), (bottom, top))``: a note placed in fractions
     of the plot with a leader to a data point is put in data units for that
     view, and the chart is drawn over the same view (without one, the axis
-    limits or the data's extent stand in for it).
+    limits or the data's extent stand in for it). ``plan_layout`` is the
+    PNG's plan layout (:func:`_plan_layout`), so a plan's view and furniture
+    stand where the PNG has them; ``ref_spots`` where the PNG put each
+    reference line's name, ``{("h" | "v", k): "top right" | ...}`` (k the
+    line's index in ``hlines`` / ``vlines``; top right when not given).
     """
     try:
         import plotly.graph_objects as go
@@ -775,23 +796,28 @@ def build_data_plot_figure(cleaned_series, *, title: str = "",
             trace.hoverinfo = "text"
         fig.add_trace(trace)
 
-    for spec in (hlines or []):
+    ref_spots = ref_spots or {}
+    for k, spec in enumerate(hlines or []):
         v, lab = _ref(spec)
         pos = _axis_coord(v, logy)
         if pos is not None:
             fig.add_hline(y=pos, line_color=_REF_COLOR, line_width=_REF_WIDTH,
                           line_dash="dash",
                           **({"annotation_text": lab,
+                              "annotation_position":
+                                  ref_spots.get(("h", k), "top right"),
                               "annotation_font": {"size": 10,
                                                   "color": _REF_COLOR}}
                              if lab else {}))
-    for spec in (vlines or []):
+    for k, spec in enumerate(vlines or []):
         v, lab = _ref(spec)
         pos = _axis_coord(v, logx)
         if pos is not None:
             fig.add_vline(x=pos, line_color=_REF_COLOR, line_width=_REF_WIDTH,
                           line_dash="dot",
                           **({"annotation_text": lab,
+                              "annotation_position":
+                                  ref_spots.get(("v", k), "top right"),
                               "annotation_font": {"size": 10,
                                                   "color": _REF_COLOR}}
                              if lab else {}))
@@ -851,12 +877,14 @@ def build_data_plot_figure(cleaned_series, *, title: str = "",
         fig.update_yaxes(scaleanchor="x", scaleratio=1)
     if plan_view:
         # a drawing, not a chart: no axes or grid; a scale bar and north
-        fig.update_xaxes(visible=False)
-        fig.update_yaxes(visible=False)
+        # the view kept whole: the equal aspect fits the plot's box, never
+        # trims the range (BACKLOG GM-147)
+        fig.update_xaxes(visible=False, constrain="domain")
+        fig.update_yaxes(visible=False, constrain="domain")
         if title:
             fig.update_layout(title={"x": 0.0, "xanchor": "left"})
         _plotly_plan_furniture(fig, cleaned_series, scale_units, north_deg,
-                               xlabel)
+                               xlabel, plan_layout)
     if annotations:
         if view is None:
             view = _fallback_view(cleaned_series, categories, xlim, ylim,
@@ -872,36 +900,80 @@ def build_data_plot_figure(cleaned_series, *, title: str = "",
 from geotech_common.plan_furniture import nice_length as _nice_length
 
 
-def _plan_layout(cleaned) -> dict:
+def _plan_layout(cleaned, axes_pt=None) -> dict:
     """Where plan_view's furniture goes, in data units, for both renderings:
     a band below the site holds the scale bar and, at its right, the north
     arrow (drafting practice keeps them together); the coordinate system is
-    named under them. Nothing is drawn on the site itself."""
+    named under the bar. Nothing is drawn on the site itself.
+
+    The view takes in every outline, line and point drawn with a margin
+    all round (BACKLOG GM-147), and the band and margins are sized in
+    points as printed, so the furniture reads the same on a long flat site
+    as on a tall narrow one. ``axes_pt`` is the room the plot has, ``(width,
+    height)`` in points (the matplotlib figure's); without it (the
+    interactive chart drawn alone) a 6.5 in figure with the legend outside
+    is assumed. ``scale`` is data units per point."""
     xs = [x for s in cleaned for x in s["x"]]
     ys = [y for s in cleaned for y in s["y"]]
     x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
     dx, dy = (x1 - x0) or 1.0, (y1 - y0) or 1.0
+    if (x1 - x0) == 0 and (y1 - y0) > 0:
+        dx = dy
+    if (y1 - y0) == 0:
+        dy = dx
     length = _nice_length(dx)
-    bar_end = x1 - 0.09 * dx
-    return {"xlim": (x0 - 0.04 * dx, x1 + 0.04 * dx),
-            "ylim": (y0 - _PLAN_BAND_BELOW * dy, y1 + _PLAN_BAND_ABOVE * dy),
-            "length": length, "bx": bar_end - length,
-            "by": y0 - 0.12 * dy, "h": 0.014 * dy,
-            "arrow": (x1 - 0.02 * dx, y0 - 0.15 * dy),
-            "caption_xy": (x1, y0 - 0.12 * dy)}
+    side, above, below = (_PLAN_PT["side"], _PLAN_PT["above"],
+                          _PLAN_PT["below"])
+    if axes_pt is None:
+        w = (6.5 - 1.3 - 1.9) * 72.0
+        axes_pt = (w, max(w * (dy + 1e-9) / dx, 1.0) + above + below)
+    w, h = (max(float(v), 1.0) for v in axes_pt)
+    # the drawing's scale (data units per point): the view (everything
+    # drawn, the bar and the margins) fills the room it has one way and
+    # fits the other; the bar may reach left of a narrow site
+    scale = max(dx / max(w - 2 * side, 0.2 * w),
+                dy / max(h - above - below, 0.2 * h))
+    for _ in range(20):
+        bx = x1 - (_PLAN_ARROW_IN + _PLAN_BAR_TO_ARROW) * scale - length
+        left = min(x0 - side * scale, bx - side * scale)
+        right = x1 + side * scale
+        bottom, top = y0 - below * scale, y1 + above * scale
+        new = max((right - left) / w, (top - bottom) / h)
+        if abs(new - scale) <= 1e-9 * scale:
+            break
+        scale = new
+    bx = x1 - (_PLAN_ARROW_IN + _PLAN_BAR_TO_ARROW) * scale - length
+    by = y0 - _PLAN_BAR_DROP * scale
+    return {"xlim": (min(x0 - side * scale, bx - side * scale),
+                     x1 + side * scale),
+            "ylim": (y0 - below * scale, y1 + above * scale),
+            "scale": scale, "length": length, "bx": bx, "by": by,
+            "h": _PLAN_BAR_HEIGHT * scale,
+            "arrow": (x1 - _PLAN_ARROW_IN * scale,
+                      y0 - _PLAN_ARROW_DROP * scale),
+            "caption_xy": (bx + length, by)}
 
 
 def _draw_plan_furniture(ax, cleaned, units, north_deg, caption):
     """The scale bar, the north arrow beside it and the coordinate system
-    under them, in a band below the site
-    (:mod:`geotech_common.plan_furniture`). Returns the text artists, so
-    point names keep clear of them."""
+    under the bar, in a band below the site
+    (:mod:`geotech_common.plan_furniture`), the view set to take in
+    everything drawn with a margin and kept so (an equal aspect fitted by
+    the axes' box, never by trimming the view). Returns the layout, the
+    text artists and the other artists drawn (the bar, the arrow), so
+    point names keep clear of them and the layout check names them."""
     from geotech_common import plan_furniture as pf
 
-    lay = _plan_layout(cleaned)
+    fig = ax.figure
+    pos = ax.get_position(original=True)
+    fw, fh = fig.get_size_inches()
+    lay = _plan_layout(cleaned, (pos.width * fw * 72.0,
+                                 pos.height * fh * 72.0))
     ax.set_autoscale_on(False)
     ax.set_xlim(*lay["xlim"])
     ax.set_ylim(*lay["ylim"])
+    ax.set_aspect("equal", adjustable="box")
+    before = {id(a) for a in ax.get_children()}
     texts = pf.mpl_scale_bar(ax, lay["bx"], lay["by"], lay["length"],
                              lay["h"], units, fontsize=_LABEL_SIZE,
                              text_color=_TEXT_COLOR)
@@ -912,14 +984,19 @@ def _draw_plan_furniture(ax, cleaned, units, north_deg, caption):
             fontsize=_LABEL_SIZE - 0.5, color="#555555", zorder=7))
     angle, _note = pf.north_or_default(north_deg)
     texts += pf.mpl_north_arrow(ax, lay["arrow"], angle)
-    return texts
+    named = {id(t) for t in texts}
+    shapes = [a for a in ax.get_children()
+              if id(a) not in before and id(a) not in named]
+    return lay, texts, shapes
 
 
-def _plotly_plan_furniture(fig, cleaned, units, north_deg, caption):
-    """The Plotly twin's scale bar, north arrow and caption (same layout)."""
+def _plotly_plan_furniture(fig, cleaned, units, north_deg, caption,
+                           lay=None):
+    """The Plotly twin's scale bar, north arrow and caption (the PNG's
+    layout when given)."""
     from geotech_common import plan_furniture as pf
 
-    lay = _plan_layout(cleaned)
+    lay = lay or _plan_layout(cleaned)
     fig.update_xaxes(range=list(lay["xlim"]))
     fig.update_yaxes(range=list(lay["ylim"]))
     pf.plotly_scale_bar(fig, lay["bx"], lay["by"], lay["length"], lay["h"],
@@ -957,9 +1034,13 @@ def _scale_height(cleaned, width_in: float, legend_out: bool,
     ys = [v for s in cleaned for v in s["y"]]
     span_x = (max(xs) - min(xs)) or 1.0
     span_y = (max(ys) - min(ys)) or 1.0
-    if plan_view:
-        span_y *= 1.0 + _PLAN_BAND_BELOW + _PLAN_BAND_ABOVE
     axes_w = max(width_in - 1.3 - (1.9 if legend_out else 0.0), 2.0)
+    if plan_view:
+        # the site to scale across the room left by the side margins, and
+        # the bands above and below it as printed (_PLAN_PT)
+        site_w = max(axes_w - 2 * _PLAN_PT["side"] / 72.0, 1.0)
+        bands = (_PLAN_PT["above"] + _PLAN_PT["below"]) / 72.0
+        return min(max(site_w * span_y / span_x + bands + 1.2, 3.0), 10.0)
     return min(max(axes_w * span_y / span_x + 1.2, 3.0), 10.0)
 
 
@@ -985,12 +1066,14 @@ def _segment_boxes(p0, p1, half: float, skip=None) -> list:
     return out
 
 
-def _data_obstacles(fig, ax, drawn) -> list:
+def _data_obstacles(fig, ax, drawn, lines=None) -> list:
     """Every point and line drawn, as pixel boxes (lines sampled every few
-    pixels along them). ``drawn`` is ``[(series, xs_plotted)]``."""
+    pixels along them). ``drawn`` is ``[(series, xs_plotted)]``. With
+    ``lines`` (a list) the lines' boxes go there instead."""
     from matplotlib.transforms import Bbox
     to_px = ax.transData.transform
     boxes = []
+    line_boxes = boxes if lines is None else lines
     for s, xs in drawn:                     # every point is an obstacle
         size_px = _marker_size(s) * fig.dpi / 72.0
         for x, y in zip(xs, s["y"]):
@@ -1003,7 +1086,7 @@ def _data_obstacles(fig, ax, drawn) -> list:
         pts = [to_px((x, y)) for x, y in zip(xs, s["y"])]
         half = max(s["line_width"] * fig.dpi / 72.0, 1.5)
         for p0, p1 in zip(pts, pts[1:]):
-            boxes += _segment_boxes(p0, p1, half)
+            line_boxes += _segment_boxes(p0, p1, half)
     return boxes
 
 
@@ -1064,14 +1147,128 @@ def _draw_notes(ax, notes) -> list:
     return artists
 
 
-def _place_point_names(fig, ax, drawn, fixed_texts=(), leaders=()) -> int:
+#: How much more a line through a point name's letters costs than its area
+#: of overlap with the line's thin boxes (a marker's box is about 6 times
+#: as wide as a line's); a line only in the margin round the name costs
+#: its area, as anything else there does.
+_LINE_COST = 6.0
+
+
+def _ref_line_boxes(fig, ax, ref_lines) -> list:
+    """Each reference line (``("h" | "v", value)``) across the plot as
+    pixel boxes along it: an obstacle for point names, as a series' line is
+    (BACKLOG GM-146: a vertical LL = 50 line ran through two names)."""
+    half = max(_REF_WIDTH * fig.dpi / 72.0, 1.5)
+    boxes = []
+    for kind, v in ref_lines:
+        if kind == "h":
+            ends = ax.get_yaxis_transform().transform([(0.0, v), (1.0, v)])
+        else:
+            ends = ax.get_xaxis_transform().transform([(v, 0.0), (v, 1.0)])
+        if not all(math.isfinite(c) for p in ends for c in p):
+            continue
+        boxes += _segment_boxes(tuple(ends[0]), tuple(ends[1]), half)
+    return boxes
+
+
+def _hatched_areas(ax, drawn) -> list:
+    """The hatched outlines (style ``polygon`` with a hatch) as pixel paths:
+    a name inside one has hatching through its letters."""
+    from matplotlib.path import Path
+    to_px = ax.transData.transform
+    return [Path(to_px(list(zip(xs, s["y"]))))
+            for s, xs in drawn
+            if s["style"] == "polygon" and s.get("hatch") and len(xs) >= 3]
+
+
+def _hatch_cost(bb, areas) -> float:
+    """The share of a name's box inside hatched outlines, as an area: nine
+    points of the box tested."""
+    if not areas:
+        return 0.0
+    pts = [(bb.x0 + (bb.x1 - bb.x0) * i / 2.0,
+            bb.y0 + (bb.y1 - bb.y0) * j / 2.0)
+           for i in range(3) for j in range(3)]
+    inside = 0
+    for path in areas:
+        inside = max(inside, int(path.contains_points(pts).sum()))
+    return (bb.x1 - bb.x0) * (bb.y1 - bb.y0) * inside / 9.0
+
+
+#: Where a reference line's name may stand, in turn: (axes fraction along
+#: the line, offset in points, alignment, Plotly's annotation_position).
+#: The first is where it always stood.
+_REF_SPOTS = {
+    "h": ((1.0, (-3, 2), "right", "bottom", "top right"),
+          (1.0, (-3, -2), "right", "top", "bottom right"),
+          (0.0, (3, 2), "left", "bottom", "top left"),
+          (0.0, (3, -2), "left", "top", "bottom left")),
+    "v": ((1.0, (3, -3), "left", "top", "top right"),
+          (1.0, (-3, -3), "right", "top", "top left"),
+          (0.0, (3, 3), "left", "bottom", "bottom right"),
+          (0.0, (-3, 3), "right", "bottom", "bottom left")),
+}
+
+
+def _place_ref_names(fig, ax, ref_names, drawn, fixed_texts=(),
+                     leaders=()) -> dict:
+    """Put each reference line's name at whichever end of its line, above
+    or below it (left or right of a vertical one), covers least of the
+    points, the lines, the notes and the other names, inside the plot frame
+    (the right end above the line, as before, wins a tie). ``ref_names`` is
+    ``[(artist, "h" | "v", value, k)]``. Returns ``{(kind, k): Plotly's
+    annotation_position}`` for the interactive twin (BACKLOG GM-152: a
+    worked example's "Best estimate" stood on a data point)."""
+    from matplotlib.transforms import Bbox
+
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    frame = ax.get_window_extent(renderer)
+    pad = 2.0
+    taken = [_note_box(t, renderer) for t in fixed_texts]
+    for artist, point in leaders:
+        taken += _leader_boxes(fig, ax, artist, point, renderer)
+    taken += _data_obstacles(fig, ax, drawn)
+    spots = {}
+    for t, kind, v, k in ref_names:
+        best = None
+        for along, off, ha, va, plotly_pos in _REF_SPOTS[kind]:
+            t.xy = (along, v) if kind == "h" else (v, along)
+            t.xyann = off
+            t.set_ha(ha)
+            t.set_va(va)
+            bb = t.get_window_extent(renderer)
+            bb = Bbox([[bb.x0 - pad, bb.y0 - pad],
+                       [bb.x1 + pad, bb.y1 + pad]])
+            area = (bb.x1 - bb.x0) * (bb.y1 - bb.y0)
+            cost = sum(_overlap(bb, o) for o in taken)
+            cost += 3.0 * (area - _overlap(bb, frame))
+            if best is None or cost < best[0]:
+                best = (cost, along, off, ha, va, plotly_pos, bb)
+            if cost == 0:
+                break
+        _c, along, off, ha, va, plotly_pos, bb = best
+        t.xy = (along, v) if kind == "h" else (v, along)
+        t.xyann = off
+        t.set_ha(ha)
+        t.set_va(va)
+        taken.append(bb)
+        spots[(kind, k)] = plotly_pos
+    return spots
+
+
+def _place_point_names(fig, ax, drawn, fixed_texts=(), leaders=(),
+                       fixed_shapes=(), ref_lines=()) -> list:
     """Write each point's name beside it where it covers the fewest other
-    names, points, lines, notes and reference-line labels, and stays inside
-    the plot frame (eight spots tried in turn), and record the spot so the
-    interactive twin puts the name in the same place. ``drawn`` is
-    ``[(series, xs_plotted)]``; ``fixed_texts`` are lettering that stays
-    where it is (a note by its text or box) and ``leaders`` ``[(note
-    artist, point)]`` the notes' leader arrows. Returns how many names were
+    names, points, lines, reference lines, hatched areas, notes and
+    reference-line labels, and stays inside the plot frame (eight spots
+    tried in turn), and record the spot so the interactive twin puts the
+    name in the same place. ``drawn`` is ``[(series, xs_plotted)]``;
+    ``fixed_texts`` are lettering that stays where it is (a note by its
+    text or box), ``leaders`` ``[(note artist, point)]`` the notes' leader
+    arrows, ``fixed_shapes`` other things drawn that stay (a plan's scale
+    bar and north arrow) and ``ref_lines`` ``[("h" | "v", value)]`` the
+    reference lines. Returns ``[(artist, series, name)]`` for the names
     written."""
     from matplotlib.transforms import Bbox
 
@@ -1080,10 +1277,21 @@ def _place_point_names(fig, ax, drawn, fixed_texts=(), leaders=()) -> int:
     frame = ax.get_window_extent(renderer)
     pad = 3.0
     taken = [_note_box(t, renderer) for t in fixed_texts]
+    for shape in fixed_shapes:
+        try:
+            taken.append(shape.get_window_extent(renderer))
+        except Exception:                               # noqa: BLE001
+            pass
+    # a line through a name (a series, a reference line, a leader) costs
+    # more than its thin boxes' area: it cuts the letters, where a name
+    # grazing a marker's box only sits close (_LINE_COST)
+    strokes = []
     for artist, point in leaders:
-        taken += _leader_boxes(fig, ax, artist, point, renderer)
-    taken += _data_obstacles(fig, ax, drawn)
-    written = 0
+        strokes += _leader_boxes(fig, ax, artist, point, renderer)
+    strokes += _ref_line_boxes(fig, ax, ref_lines)
+    taken += _data_obstacles(fig, ax, drawn, strokes)
+    hatched = _hatched_areas(ax, drawn)
+    written = []
     for s, xs in drawn:
         if not s["labels"]:
             continue
@@ -1098,10 +1306,14 @@ def _place_point_names(fig, ax, drawn, fixed_texts=(), leaders=()) -> int:
                                 textcoords="offset points", ha=ha, va=va,
                                 fontsize=_LABEL_SIZE, color=_TEXT_COLOR,
                                 zorder=6)
-                bb = t.get_window_extent(renderer)
-                bb = Bbox([[bb.x0 - pad, bb.y0 - pad],
-                           [bb.x1 + pad, bb.y1 + pad]])
-                cost = sum(_overlap(bb, o) for o in taken)
+                letters = t.get_window_extent(renderer)
+                bb = Bbox([[letters.x0 - pad, letters.y0 - pad],
+                           [letters.x1 + pad, letters.y1 + pad]])
+                cost = sum(_overlap(bb, o) for o in taken + strokes)
+                cost += _LINE_COST * sum(_overlap(letters, o)
+                                         for o in strokes)
+                on_hatch = _hatch_cost(bb, hatched)
+                cost += on_hatch
                 # a name outside the plot frame runs into the axis numbers
                 # or off the figure: costlier than touching another name
                 area = (bb.x1 - bb.x0) * (bb.y1 - bb.y0)
@@ -1109,14 +1321,22 @@ def _place_point_names(fig, ax, drawn, fixed_texts=(), leaders=()) -> int:
                 if best is None or cost < best[0]:
                     if best is not None:
                         best[1].remove()
-                    best = (cost, t, bb, plotly_pos)
+                    best = (cost, t, bb, plotly_pos, on_hatch)
                 else:
                     t.remove()
                 if cost == 0:
                     break
+            if best[4]:
+                # a name on hatching (a point inside a hatched zone): a thin
+                # ring of the background round its letters, so the hatch
+                # stops short of them, as on a drawing (the PNG only, as a
+                # note's halo)
+                from matplotlib import patheffects
+                best[1].set_path_effects([patheffects.withStroke(
+                    linewidth=2.5, foreground=ax.get_facecolor())])
             taken.append(best[2])
             spots.append(best[3])
-            written += 1
+            written.append((best[1], s, text))
         s["label_spots"] = spots
     return written
 
@@ -1126,9 +1346,11 @@ def _short(text: str, n: int = 30) -> str:
     return s if len(s) <= n else s[:n - 3] + "..."
 
 
-def _lettering_names(ax, notes, artists) -> dict:
+def _lettering_names(ax, notes, artists, placed=()) -> dict:
     """What the warnings call the lettering a note can meet, by ``id``:
-    another note, the title, an axis title, the axis numbers, the legend."""
+    another note, the title, an axis title, the axis numbers, the legend,
+    and the lettering ``plot_data`` places itself (``placed``: ``[(artist,
+    name)]``: reference-line names, the plan's furniture, point names)."""
     names = {id(a): f"annotations[{n['index']}]"
              for a, n in zip(artists, notes)}
     names[id(ax.title)] = "the title"
@@ -1136,31 +1358,62 @@ def _lettering_names(ax, notes, artists) -> dict:
     names[id(ax.yaxis.label)] = "the y-axis title"
     for axis in (ax.xaxis, ax.yaxis):
         for tick in axis.get_major_ticks() + axis.get_minor_ticks():
-            names[id(tick.label1)] = names[id(tick.label2)] =                 "the axis numbers"
+            names[id(tick.label1)] = names[id(tick.label2)] = \
+                "the axis numbers"
     legend = ax.get_legend()
     if legend is not None:
         for a in legend.findobj():
             names[id(a)] = "the legend"
+    for a, name in placed:
+        names[id(a)] = name
     return names
 
 
-def _check_notes(fig, ax, notes, artists, dpi, lines_named=None) -> list:
-    """The layout check over the notes, which stay where they were put (the
-    point names move round them). By the pixels drawn, with the plotting
-    box's own check (``geotech_common.layout_ink``) at the PNG's dpi: a
-    note whose letters overlap or run into other lettering, that a line,
-    markers, an edge or another note's leader shows through (a line under
-    the note's own box does not show), or that the figure edge cuts. And
-    by the numbers: a note, or the point it marks, outside the axis limits.
-    ``lines_named`` names the series and reference lines by artist ``id``.
-    One warning per note found."""
+#: What a warning on lettering plot_data places itself suggests.
+_PLACED_HINTS = {
+    "reference": "name the line with a note placed clear instead",
+    "furniture": "move what runs into it off the band below the site",
+    "point": "no spot beside the point was clear: name it with a note and "
+             "a leader, or leave the name out",
+}
+
+
+def _check_lettering(fig, ax, notes, artists, dpi, lines_named=None,
+                     placed=()) -> list:
+    """The layout check over the lettering on the figure that is not the
+    axes' own: the notes, which stay where they were put, and what
+    plot_data places itself (``placed``: ``[(artist, name, kind)]``, kind
+    ``reference`` for a reference line's name, ``furniture`` for a plan's
+    scale bar, north arrow and caption, ``point`` for a point's name;
+    BACKLOG GM-152). By the pixels drawn, with the plotting box's own check
+    (``geotech_common.layout_ink``) at the PNG's dpi: lettering that
+    overlaps or runs into other lettering, that a line, markers, an edge,
+    hatching or an arrow shows through (a line under the lettering's own
+    box does not show), or that the figure edge cuts. And by the numbers: a
+    note, or the point it marks, outside the axis limits. ``lines_named``
+    names the series and reference lines by artist ``id``. One warning per
+    piece of lettering found, the notes first; two pieces that meet are
+    reported once, on the note when one is a note."""
     from geotech_common.layout_ink import layout_check
 
-    res = layout_check(fig, "plot_data", dpi=int(dpi), texts=artists)
-    names = _lettering_names(ax, notes, artists)
-    parts = {k: [] for k in range(len(notes))}
-    met = {k: [] for k in range(len(notes))}
+    placed = list(placed)
+    texts = list(artists) + [a for a, _n, _k in placed]
+    res = layout_check(fig, "plot_data", dpi=int(dpi), texts=texts)
+    names = _lettering_names(ax, notes, artists,
+                             [(a, n) for a, n, _k in placed])
+    n_notes = len(notes)
+    parts = {k: [] for k in range(len(texts))}
+    met = {k: [] for k in range(len(texts))}
+    index = {id(a): k for k, a in enumerate(texts)}
     for k, words, other in res.get("text_overlaps", []):
+        j = index.get(id(other))
+        # a note and a piece plot_data placed: on the note; two pieces it
+        # placed: on the first (two notes: on each, as before)
+        if j is not None and (j < n_notes) != (k < n_notes):
+            if k >= n_notes:
+                continue
+        elif j is not None and j < k and k >= n_notes:
+            continue
         met[k].append(names.get(id(other), f"'{_short(words)}'"))
     for k, hits in met.items():
         if hits:
@@ -1169,12 +1422,19 @@ def _check_notes(fig, ax, notes, artists, dpi, lines_named=None) -> list:
         if id(by) in names and names[id(by)].startswith("annotations["):
             what = f"the leader of {names[id(by)]}"
         elif id(by) in (lines_named or {}):
-            what = lines_named[id(by)]
+            what = (f"the hatching of {lines_named[id(by)]}"
+                    if what.startswith("the hatching") or what == "hatching"
+                    else lines_named[id(by)])
         if not what.endswith("drawn over it"):
             what = f"crossed by {what}"
-        hint = ("move it" if notes[k]["box"]
-                else "move it, or give it box: true")
-        parts[k].append(f"{what} ({hint})")
+        if k < n_notes:
+            hint = ("move it" if notes[k]["box"]
+                    else "move it, or give it box: true")
+            if "hatching" in what and not notes[k]["box"]:
+                hint = "move it, or give it box: true or halo: true"
+            parts[k].append(f"{what} ({hint})")
+        else:
+            parts[k].append(what)
     for k, where in res.get("text_cut_off", []):
         parts[k].append(f"cut off by {where}")
 
@@ -1185,7 +1445,7 @@ def _check_notes(fig, ax, notes, artists, dpi, lines_named=None) -> list:
 
     found = []
     if res.get("unchecked"):
-        found.append(f"the notes' overlaps were not checked "
+        found.append(f"the lettering's overlaps were not checked "
                      f"({res['unchecked']})")
     for k, n in enumerate(notes):
         if n["coords"] == "data" and not inside(n["x"], n["y"]):
@@ -1197,6 +1457,10 @@ def _check_notes(fig, ax, notes, artists, dpi, lines_named=None) -> list:
         if parts[k]:
             found.append(f"annotations[{n['index']}] "
                          f"'{_short(n['lines'][0])}': " + "; ".join(parts[k]))
+    for k, (_a, name, kind) in enumerate(placed, start=n_notes):
+        if parts[k]:
+            found.append(f"{name}: " + "; ".join(parts[k])
+                         + f" ({_PLACED_HINTS[kind]})")
     return found
 
 
@@ -1363,28 +1627,37 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
 
     # Reference lines are named on the line itself (labels on the data,
     # not in a legend the reader has to match).
-    ref_texts = []
+    ref_texts, ref_lines, placed, ref_names = [], [], [], []
     for spec in (hlines or []):
         v, lab = _ref(spec)
         ref = ax.axhline(v, color=_REF_COLOR, linestyle="--",
                          linewidth=_REF_WIDTH, label="_nolegend_")
         lines_named[id(ref)] = f"the reference line at {v:g}"
+        ref_lines.append(("h", v))
         if lab:
             ref_texts.append(ax.annotate(
                 lab, xy=(1.0, v), xycoords=("axes fraction", "data"),
                 xytext=(-3, 2), textcoords="offset points", ha="right",
                 va="bottom", fontsize=_LABEL_SIZE, color=_REF_COLOR,
                 zorder=5))
+            placed.append((ref_texts[-1], f"the name of the reference "
+                           f"line at {v:g} ('{_short(lab)}')", "reference"))
+            ref_names.append((ref_texts[-1], "h", v, len(ref_lines) - 1))
     for spec in (vlines or []):
         v, lab = _ref(spec)
         ref = ax.axvline(v, color=_REF_COLOR, linestyle=":",
                          linewidth=_REF_WIDTH, label="_nolegend_")
         lines_named[id(ref)] = f"the reference line at {v:g}"
+        ref_lines.append(("v", v))
         if lab:
             ref_texts.append(ax.annotate(
                 lab, xy=(v, 1.0), xycoords=("data", "axes fraction"),
                 xytext=(3, -3), textcoords="offset points", ha="left",
                 va="top", fontsize=_LABEL_SIZE, color=_REF_COLOR, zorder=5))
+            placed.append((ref_texts[-1], f"the name of the reference "
+                           f"line at {v:g} ('{_short(lab)}')", "reference"))
+            ref_names.append((ref_texts[-1], "v", v,
+                              sum(1 for k, _v in ref_lines if k == "v") - 1))
     # Notes go where they were put, before the legend, so a legend placed
     # "best" keeps clear of them too.
     note_artists = _draw_notes(ax, notes)
@@ -1449,22 +1722,47 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
         ax.legend(fontsize=8.5, frameon=False, loc="upper center",
                   bbox_to_anchor=(0.5, y_axes - 0.02),
                   ncol=min(3, max(1, len(shown))))
+    ref_spots = {}
+    if ref_names:
+        ref_spots = _place_ref_names(fig, ax, ref_names, drawn, note_artists,
+                                     [(a, n["point"]) for a, n in
+                                      zip(note_artists, notes) if n["point"]])
+    plan_lay, furniture = None, []
     if plan_view:
-        fig.canvas.draw()               # settle the limits (equal aspect)
-        ref_texts += _draw_plan_furniture(ax, cleaned, scale_units,
-                                          north_deg, xlabel)
+        fig.canvas.draw()               # settle the layout
+        plan_lay, plan_texts, furniture = _draw_plan_furniture(
+            ax, cleaned, scale_units, north_deg, xlabel)
+        ref_texts += plan_texts
+        for a in furniture:     # the bar's segments, the arrow
+            lines_named[id(a)] = ("the north arrow"
+                                  if a.__class__.__name__ == "Annotation"
+                                  else "the scale bar")
+        # the bar's two end names, the coordinate system when given, the N
+        for n, t in enumerate(plan_texts):
+            words = " ".join(t.get_text().split())
+            what = (f"the scale bar's '{words}'" if n < 2
+                    else "the north arrow's N" if n == len(plan_texts) - 1
+                    else f"the coordinate system '{_short(words)}'")
+            placed.append((t, what, "furniture"))
     if any(s["labels"] for s in cleaned):
-        _place_point_names(fig, ax, drawn, ref_texts + note_artists,
-                           [(a, n["point"]) for a, n in
-                            zip(note_artists, notes) if n["point"]])
+        index_of = {id(s): i for i, s in enumerate(cleaned)}
+        for t, s, text in _place_point_names(
+                fig, ax, drawn, ref_texts + note_artists,
+                [(a, n["point"]) for a, n in zip(note_artists, notes)
+                 if n["point"]], furniture, ref_lines):
+            placed.append((t, f"series[{index_of[id(s)]}] point name "
+                              f"'{_short(text)}'", "point"))
     view = None
-    if notes:
+    if notes or placed:
+        # the notes, the reference lines' names, the plan's furniture and
+        # the point names (BACKLOG GM-152)
         try:
-            warnings += _check_notes(fig, ax, notes, note_artists, dpi,
-                                     lines_named)
+            warnings += _check_lettering(fig, ax, notes, note_artists, dpi,
+                                         lines_named, placed)
         except Exception as exc:                        # noqa: BLE001
-            warnings.append("the notes' layout was not checked "
+            warnings.append("the lettering's layout was not checked "
                             f"({type(exc).__name__}: {exc})")
+    if notes:
         view = (tuple(ax.get_xlim()), tuple(ax.get_ylim()))
 
     png = figure_to_png(fig, dpi=int(dpi))
@@ -1490,7 +1788,8 @@ def render_data_plot(series, *, title: str = "", xlabel: str = "",
                 equal_aspect=equal_aspect, xlim=xlim, ylim=ylim,
                 legend_position=legend_position, plan_view=plan_view,
                 north_deg=north_deg, scale_units=scale_units,
-                x_on_top=x_on_top, annotations=notes, view=view)
+                x_on_top=x_on_top, annotations=notes, view=view,
+                plan_layout=plan_lay, ref_spots=ref_spots)
         except Exception as exc:                        # noqa: BLE001
             warnings.append("interactive chart not built "
                             f"({type(exc).__name__}: {exc}); the PNG is fine")
