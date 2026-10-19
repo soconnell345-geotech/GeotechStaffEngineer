@@ -70,6 +70,36 @@ def test_the_static_check_passes_ordinary_plotting_code():
     assert box_child.check_code(code) == []
 
 
+@pytest.mark.parametrize("code", [
+    "import time\ntime.clock_settime(0, 0)",
+    "from time import clock_settime_ns",
+])
+def test_the_clock_is_not_the_codes_to_set(code):
+    """``time`` is allowed (BACKLOG GM-152); setting the system clock is
+    not."""
+    problems = box_child.check_code(code)
+    assert problems and any("clock_settime" in p for p in problems), \
+        problems
+
+
+def test_time_runs_in_the_box(folders):
+    """BACKLOG GM-152 (live wave w12): a script that imported ``time`` was
+    refused. It reads clocks, formats dates and waits; the box's time limit
+    stands either way."""
+    mine, _ = folders
+    code = ("import time\nimport matplotlib.pyplot as plt\n"
+            "t0 = time.perf_counter()\ntime.sleep(0.01)\n"
+            "stamp = time.strftime('%Y-%m-%d', time.gmtime(0))\n"
+            "fig, ax = plt.subplots()\nax.plot([0, 1], [0, 1])\n"
+            "ax.set_title(stamp)\n"
+            "print(time.perf_counter() - t0 > 0, "
+            "hasattr(time, 'clock_settime'))\n"
+            "save_figure(fig, 'clock')\n")
+    res = _run(code, mine)
+    assert res["status"] == "success", res
+    assert "True False" in res.get("printed", ""), res
+
+
 def test_a_refused_script_costs_no_process(folders, monkeypatch):
     mine, _ = folders
 

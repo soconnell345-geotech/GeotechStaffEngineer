@@ -19,6 +19,10 @@ import io
 import threading
 import time
 
+#: The check's own clock, held at import: in the plotting box the code it
+#: checks may import ``time`` and replace what the module holds.
+_monotonic = time.monotonic
+
 #: The layout check judges lettering by the pixels drawn (live wave w9: 22
 #: of its 36 reports were false while it judged by boxes -- rotated text by
 #: its upright box, legend text through the legend's opaque frame, text
@@ -68,10 +72,15 @@ def layout_check(fig, fname: str, dpi=200, *, texts=None, seconds=None,
       "0" reads "2000"). Lettering on its own opaque box (a bbox, a legend's
       frame) has the box as its footprint; an opaque legend is one footprint,
       "the legend".
-    - ``text_on_a_line``: lettering that a line, a shape's edge, markers, a
-      tick mark or an axes frame shows through, or that a filled shape is
-      drawn over. A line hidden by a box drawn over it (the lettering's own
-      box, a legend's frame) is not through the lettering.
+    - ``text_on_a_line``: lettering that a line, a shape's edge, markers,
+      hatching, an arrow, a tick mark or an axes frame shows through, or
+      that a filled shape is drawn over. A line hidden by a box drawn over
+      it (the lettering's own box, a legend's frame, a halo) is not through
+      the lettering. Hatching is judged like a line wherever it is in the
+      draw order (BACKLOG GM-145: it was part of its shape's fill, and a
+      fill drawn under lettering is where the lettering stands, so a hatch
+      through a label went unreported); so is an arrow drawn as a filled
+      shape (``ax.arrow``, a quiver).
     - ``text_cut_off``: lettering the figure edge or its axes' edge cuts.
 
     Every drawn text counts, inside the axes or out (titles, axis and tick
@@ -169,7 +178,7 @@ def _ink_check_locked(fig, dpi: int, seconds, mb) -> dict:
     state = {"drawn": [], "placed": {}, "off": None, "depth": 0,
              "found": None, "seconds": seconds,
              "mb": LAYOUT_MB if mb is None else float(mb),
-             "deadline": time.monotonic() + seconds}
+             "deadline": _monotonic() + seconds}
     checking = threading.get_ident()
 
     def wrap(orig):
@@ -333,7 +342,7 @@ class _Ink:
 
     def __init__(self, fig, renderer, drawn, state):
         import numpy as np
-        if time.monotonic() > state["deadline"]:
+        if _monotonic() > state["deadline"]:
             raise _Unchecked(f"too many texts to check in time "
                              f"({state['seconds']:g} s per figure); a look "
                              f"decides")
@@ -355,7 +364,7 @@ class _Ink:
         self.boxes = np.array(self.regions, dtype=float).reshape(-1, 4)
 
     def _in_time(self):
-        if time.monotonic() > self.deadline:
+        if _monotonic() > self.deadline:
             raise _Unchecked(
                 f"too many texts to check in time ({len(self.names)} "
                 f"texts, {self.seconds:g} s per figure); a look decides")
@@ -424,10 +433,12 @@ class _Ink:
         """``(part, kind)`` for each separate drawing of leaf ``a``: kind
         ``glyph`` (a text's letters alone: its mask), ``text`` (a text as
         drawn, with its box), ``stroke`` (a line, an edge, markers: what can
-        run through lettering), ``face`` (a fill, an image: what can hide
-        it), ``grid`` (drawn, never reported) and ``unclipped`` (a text's
-        letters without its clip). An arrow (an annotation's leader, which
-        it draws apart from its text, or one drawn alone) is a ``stroke``."""
+        run through lettering), ``hatch`` (a shape's hatching alone: judged
+        as a stroke), ``face`` (a fill, an image: what can hide it),
+        ``grid`` (drawn, never reported) and ``unclipped`` (a text's letters
+        without its clip). An arrow (an annotation's leader, which it draws
+        apart from its text, one drawn alone, or one drawn as a filled
+        shape: ``ax.arrow``, a quiver) is a ``stroke``."""
         from matplotlib.collections import Collection
         from matplotlib.lines import Line2D
         from matplotlib.patches import FancyArrowPatch, Patch
@@ -448,7 +459,7 @@ class _Ink:
             return parts
         if isinstance(a, Line2D):
             return [("full", "grid" if id(a) in roles["grid"] else "stroke")]
-        if isinstance(a, FancyArrowPatch):
+        if isinstance(a, FancyArrowPatch) or self._arrow(a):
             return [("full", "stroke")]
         if isinstance(a, Patch):
             if (id(a) in roles["panels"] or id(a) in roles["frames"]
@@ -458,8 +469,10 @@ class _Ink:
             if id(a) in roles["spines"]:
                 return [("full", "stroke")]
             parts = []
-            if (a.get_fill() and a.get_facecolor()[3] > 0) or a.get_hatch():
+            if a.get_fill() and a.get_facecolor()[3] > 0:
                 parts.append(("face", "face"))
+            if a.get_hatch():
+                parts.append(("hatch", "hatch"))
             if (a.get_linewidth() > 0 and a.get_edgecolor()[3] > 0
                     and a.get_linestyle() not in ("None", "none", "", " ")):
                 parts.append(("edge", "stroke"))
@@ -480,12 +493,22 @@ class _Ink:
             except Exception:                              # noqa: BLE001
                 return [("full", "face")]
             parts = []
-            if (faces[:, 3] > 0).any() or a.get_hatch():
+            if (faces[:, 3] > 0).any():
                 parts.append(("cface", "face"))
+            if a.get_hatch():
+                parts.append(("chatch", "hatch"))
             if (edges[:, 3] > 0).any() and (widths > 0).any():
                 parts.append(("cedge", "stroke"))
             return parts
         return [("full", "face")]
+
+    @staticmethod
+    def _arrow(a) -> bool:
+        """An arrow drawn as a filled shape: ``ax.arrow`` (a FancyArrow),
+        an ``Arrow`` patch, a quiver's arrows."""
+        from matplotlib.patches import Arrow, FancyArrow
+        from matplotlib.quiver import Quiver
+        return isinstance(a, (FancyArrow, Arrow, Quiver))
 
     def _lines(self, a) -> bool:
         """A collection that is lines or markers, drawn whole as a line."""
@@ -517,35 +540,51 @@ class _Ink:
                     a.set_path_effects(effects)
                 if part == "unclipped":
                     a.set_clip_on(True)
-        elif part in ("cface", "cedge"):        # a collection's fill or edges
+        elif part in ("cface", "cedge", "chatch"):
+            # a collection's fill, edges or hatching alone
             np = self.np
             # its colours as drawn, held while it draws (a mapped
             # collection would map them again)
             edges = np.asarray(a.get_edgecolor(), float).reshape(-1, 4)
-            kept = (a._facecolors, a._edgecolors, a._hatch)
+            kept = (a._facecolors, a._edgecolors, a._hatch, a._linewidths)
             a.update_scalarmappable = lambda: None
             try:
                 if part == "cface":
                     a._edgecolors = np.zeros((1, 4))
-                else:
+                    a._hatch = None
+                elif part == "cedge":
                     a._edgecolors = edges
                     a._facecolors = np.zeros((1, 4))
                     a._hatch = None
+                else:
+                    # the hatch alone: no fill, edges of no width (their
+                    # colour kept, a hatch may take its colour from them)
+                    a._edgecolors = edges
+                    a._facecolors = np.zeros((1, 4))
+                    a._linewidths = [0.0]
                 orig(a, off)
             finally:
-                a._facecolors, a._edgecolors, a._hatch = kept
+                (a._facecolors, a._edgecolors, a._hatch,
+                 a._linewidths) = kept
                 del a.update_scalarmappable
-        else:                                   # a shape's fill or edge
-            kept = (a._facecolor, a._edgecolor, a._hatch)
+        else:                       # a shape's fill, edge or hatching
+            kept = (a._facecolor, a._edgecolor, a._hatch, a._linewidth)
             try:
                 if part == "face":
                     a._edgecolor = (0.0, 0.0, 0.0, 0.0)
-                else:
+                    a._hatch = None
+                elif part == "edge":
                     a._facecolor = (0.0, 0.0, 0.0, 0.0)
                     a._hatch = None
+                else:
+                    # the hatch alone: the edge keeps its colour (a hatch
+                    # may take its colour from it) and draws at no width
+                    a._facecolor = (0.0, 0.0, 0.0, 0.0)
+                    a._linewidth = 0.0
                 orig(a, off)
             finally:
-                a._facecolor, a._edgecolor, a._hatch = kept
+                (a._facecolor, a._edgecolor, a._hatch,
+                 a._linewidth) = kept
 
     def _near(self, i, a):
         """The regions leaf ``a`` can draw in: a clipped leaf draws inside
@@ -626,6 +665,13 @@ class _Ink:
             note = roles["leaders"].get(id(a))
             words = " ".join(note.get_text().split())[:40] if note else ""
             return f"the leader of '{words}'" if words else "an arrow"
+        if self._arrow(a):
+            return "an arrow"
+        if kind == "hatch":
+            label = str(a.get_label() or "")
+            if label and not label.startswith("_"):
+                return f"the hatching of '{label[:40]}'"
+            return "hatching"
         if kind == "face":
             if id(a) in roles["panels"]:
                 return "an axes panel drawn over it"
@@ -673,7 +719,7 @@ class _Ink:
             # never the text itself, nor its own leader (which starts at it)
             if leaf == i or leaders.get(id(self.leaves[leaf][0])) is text:
                 return False
-            if kind == "stroke":
+            if kind in ("stroke", "hatch"):
                 return True
             # a fill drawn over the text; a legend's frame over lettering is
             # the legend's footprint (text_overlaps)
@@ -688,6 +734,16 @@ class _Ink:
             return None
         alphas = [e[3][..., 3][grown].astype(np.float32) / 255.0
                   for e in layers]
+        if text.get_path_effects():
+            # lettering with a halo hides what is under the halo: the
+            # letters drawn over it leave a few pixels part clear (alpha
+            # 180-230 where the halo is opaque), and hatching under them
+            # was counted (BACKLOG GM-145). A box keeps its own alpha: one
+            # 85 % white lets a line show.
+            for n, e in enumerate(layers):
+                if e[2] == i and e[1] == "text":
+                    alphas[n] = np.where(alphas[n] >= BOX_OPAQUE, 1.0,
+                                         alphas[n])
         above = [None] * len(layers)
         clear = np.ones(alphas[0].shape, np.float32)
         for n in range(len(layers) - 1, -1, -1):
