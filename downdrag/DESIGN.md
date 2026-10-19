@@ -712,6 +712,20 @@ relationship (Ishihara and Yoshimine 1992 / Idriss and Boulanger 2008) is
 NOT printed in GEC-10 as an equation (Fig 9-34 is a chart of maximum shear
 strain), so the strain is an input.
 
+**No reference in the library prints an SPT method for it (searched
+2026-10-19, GM-201)**: the reference text packages and every source PDF in
+`geotech-references/docs/` for "volumetric strain", "reconsolidation",
+Ishihara, Yoshimine, Tokimatsu, Zhang and post-liquefaction settlement.
+GEC-10 names Ishihara and Yoshimine (1992) (p. 10-52) without printing the
+relationship; GEC-5 p. 12-23 names Tokimatsu and Seed (1987) for "dry or
+partially saturated cohesionless soils" and defers to Kavazanjian et al.
+(2011), which is not in the library; GEC-13 cites Tokimatsu and Seed in a
+case history only. liquepy offers Zhang et al. (2002) for a CPT (from FS_liq
+and qc1Ncs) and nothing for SPT. So the SPT routes keep the strain as an
+input (`volumetric_strain`), and the error says why. A CPT through the
+`liquefaction` tool brings its own (Zhang et al. 2002, liquepy) in its
+`depth_profile`.
+
 **FHWA GEC-12 (FHWA-NHI-16-009 Vol I) §7.4.2.2 "Liquefaction"**, p. 383:
 "Evaluation of compression and uplift resistances during the seismic event
 can be made by assigning residual strength properties to the liquefiable
@@ -800,8 +814,25 @@ resistance, as GEC-10 says for the layers above.
    `volumetric_strain` is then required (one value for every liquefied
    reading, or one per reading); strains the result gives at readings above
    the threshold are left out and their total is a warning. The tool's CPT
-   route returns only LPI / LSN / LDI, so a CPT goes in as `liquefied_layers`
-   (or as liquepy's own result object, which carries the arrays).
+   route returns a `depth_profile` (GM-201): rows of `top_m`, `bottom_m`,
+   `FOS_liq` and `volumetric_strain` (Zhang et al. 2002, liquepy), one per
+   reading, or 40 depth bands for a longer CPT so the result stays inside
+   the 8,000-character tool-result cap. A band never holds readings on both
+   sides of FS_liq = 1.0 (unless the readings cross 1.0 more often than there
+   are rows: then the thinnest runs above 1.0 are counted in the liquefied
+   bands around them, never the reverse, and the note gives that
+   thickness), its `FOS_liq` is its lowest reading on its side of 1.0 and its
+   strain the average, so its settlement is kept. So every reading with
+   FS_liq <= 1.0, however thin its layer, lies in a band this method takes
+   as liquefied at the default `fs_liq_threshold` of 1.0. Each row stands for its
+   own `top_m` to `bottom_m`; the whole tool result goes in as
+   `liquefaction_result`, and the strain choice names Zhang et al. (2002).
+   A node on the boundary between two liquefied layers of one zone belongs
+   to the zone: until GM-201 it kept its static side resistance, so a zone
+   given as several layers (bands, SPT readings) gave a slightly different
+   neutral plane from the same zone given whole (HC-1's zone split in two:
+   18.11 m before the fix against 18.13 m whole; 18.13 m after it, split
+   in 2 or 16).
 5. **Not modelled**: the toe resistance stays the static value (a warning
    quotes GEC-10's rule when the toe is in, on top of, or at the base of a
    liquefied layer); only liquefied layers reconsolidate; a layer above the
