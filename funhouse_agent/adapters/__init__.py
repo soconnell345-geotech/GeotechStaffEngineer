@@ -88,12 +88,36 @@ def require_keys(item: dict, required, *, method: str, item_label: str = "layers
         )
 
 
-#: Unit suffixes an agent appends to a parameter name ('b_mm', 'fc_mpa').
+#: Unit suffixes an agent appends to a parameter name ('b_mm', 'fc_mpa'),
+#: and those the adapters' own names carry ('phi_deg', 'su_ksf',
+#: 'unit_weight_kN_per_m3', 'gamma_d_kNm3').
 _UNIT_SUFFIXES = frozenset({
     "mm", "cm", "m", "km", "in", "ft", "kpa", "mpa", "gpa", "pa", "psi",
-    "psf", "ksf", "pci", "pcf", "kn", "knm", "kip", "kips", "deg", "degrees",
-    "rad", "s", "sec", "yr", "yrs", "years", "pct", "percent",
+    "psf", "ksf", "tsf", "pci", "pcf", "kn", "knm", "knm3", "kip", "kips",
+    "lb", "lbs", "kg", "deg", "degrees", "rad", "s", "sec", "day", "yr",
+    "yrs", "years", "pct", "percent", "mph", "m2", "m3", "ft2", "ft3",
 })
+
+#: Of those, the ones an adapter's own name carries as a subscript, not a
+#: unit ('E_s', 'R_s', 'f_s'): left on a valid name.
+_SUBSCRIPT_SUFFIXES = frozenset({"s"})
+
+
+def _without_unit(name: str, subscripts=frozenset()) -> str:
+    """``name`` less its trailing unit, one unit or a compound one
+    ('phi_deg' -> 'phi', 'unit_weight_kN_per_m3' -> 'unit_weight',
+    'rate_mm_day' -> 'rate'); ``name`` itself when it ends in none. A suffix
+    in ``subscripts`` is not taken for a unit."""
+    parts = [p for p in str(name).lower().replace("-", "_").split("_") if p]
+    units = _UNIT_SUFFIXES - frozenset(subscripts)
+    if len(parts) < 2 or parts[-1] not in units:
+        return str(name).lower()
+    parts.pop()
+    if len(parts) > 2 and parts[-1] == "per" and parts[-2] in units:
+        del parts[-2:]
+    elif len(parts) > 1 and parts[-1] in units:
+        parts.pop()
+    return "_".join(parts)
 
 #: Domain words written more than one way; applied to a guessed name only to
 #: rank suggestions, never to rename a parameter.
@@ -109,8 +133,9 @@ def _param_key(name: str) -> str:
 
 def suggest_params(unknown: str, valid, n: int = 2) -> list:
     """Valid parameter names closest to an unknown one ('x_label' -> 'xlabel',
-    'fc_mpa' -> 'fc', 'water_table_depth' -> 'gwt_depth'). Suggestions only:
-    nothing is renamed."""
+    'fc_mpa' -> 'fc', 'water_table_depth' -> 'gwt_depth'), with or without
+    the unit the valid name carries ('phi' -> 'phi_deg', 'B' -> 'b_m';
+    GM-177). Suggestions only: nothing is renamed."""
     import difflib
     valid = list(valid)
     raw = str(unknown).lower()
@@ -118,13 +143,19 @@ def suggest_params(unknown: str, valid, n: int = 2) -> list:
     for word, canon in _WORD_SYNONYMS:
         if word in raw:
             forms.add(raw.replace(word, canon))
-    parts = [p for p in raw.replace("-", "_").split("_") if p]
-    if len(parts) > 1 and parts[-1] in _UNIT_SUFFIXES:
-        forms.add("_".join(parts[:-1]))
+    # 'E_s' (the soil's modulus) is not 'E' in seconds: offered 'E' it
+    # would put the soil's modulus in axial_pile_capacity's pile modulus
+    forms.add(_without_unit(raw, _SUBSCRIPT_SUFFIXES))
     keys = {_param_key(f) for f in forms}
     exact = [v for v in valid if _param_key(v) in keys]
     if exact:
         return exact[:n]
+    # The same name with its unit left off, on either side: a reference
+    # function takes 'phi_deg' where the analysis modules take 'phi'.
+    bare = [v for v in valid
+            if _param_key(_without_unit(v, _SUBSCRIPT_SUFFIXES)) in keys]
+    if bare:
+        return bare[:n]
     # Spelling slips only ('unit_wieght'): a looser cutoff starts offering
     # a different quantity that shares a word ('base_inclination' would get
     # 'load_inclination'), which is worse than no suggestion.

@@ -170,14 +170,15 @@ def _section_choice(params, pile):
     for a section built from its dimensions or designation."""
     if not any(params.get(k) is not None for k in _CUSTOM_SECTION):
         return None
-    from geotech_common.choices import DEFAULT, GIVEN, choice
+    from geotech_common.choices import DEFAULT, choice, how_given
     toe_given = params.get("pile_tip_area") is not None
     return choice(
         "pile section (custom)",
         f"area {pile.area:g} m2, perimeter {pile.perimeter:g} m, width "
         f"{pile.width:g} m, toe area {pile.tip_area:g} m2"
         + ("" if toe_given else " (pile_area; pile_tip_area not given)"),
-        GIVEN if toe_given else DEFAULT,
+        how_given(params.get("pile_tip_area"), None, name="pile_tip_area")
+        if toe_given else DEFAULT,
         "given by its properties in place of diameter, wall_thickness, "
         "width or designation; pile_type picks GEC-12's curves (Fig. 7-9, "
         "Fig. 7-17); a concrete or timber pile's toe area is its section's "

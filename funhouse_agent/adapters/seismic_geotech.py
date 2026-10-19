@@ -11,6 +11,7 @@ from seismic_geotech.dynamic_properties import (
     gmax_hardin_black, gmax_clay_andersen, modulus_reduction_ishibashi_zhang,
 )
 from sheet_pile.earth_pressure import rankine_Ka
+from geotech_common.choices import how_given
 
 
 def run_site_classification(params: dict, *,
@@ -113,7 +114,8 @@ def run_seismic_earth_pressure(params: dict, *,
         phi=phi, delta=delta, kh=kh, kv=kv,
         choices=earth_pressure_choices(
             phi, kh, kv=params.get("kv"), delta_deg=params.get("delta"),
-            i_deg=i, ka=KA if ka_given else "rankine", ka_how="given",
+            i_deg=i, ka=KA if ka_given else "rankine",
+            ka_how=how_given(params.get("KA"), None, name="KA"),
             forces=bool(forces), ka_can_be_given=True, beta_deg=beta),
         warnings=[note] if note else [],
     )

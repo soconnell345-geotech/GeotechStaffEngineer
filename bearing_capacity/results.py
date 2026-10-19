@@ -7,6 +7,25 @@ Stores all computed factors and provides summary output and optional plotting.
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List
 
+#: What the allowable loads on a footing are (GM-170): the structural load
+#: on the net allowable pressure, and the gross load on the bearing surface,
+#: which is not the structural load.
+LOAD_BASIS = (
+    "structural load Q_DL+LL = q_all,net x A' = (q_ult/FS - q) x A', "
+    "A' = B'L' the effective area, the foundation and the soil over it "
+    "taken at the soil's unit weight (UFC 3-220-20 Sec. 5-2.2 Eq. 5-3, "
+    "p. 276; Sec. 5-2.4 Eq. 5-14, p. 279); under an eccentric load, "
+    "q_all x A' - q x A, the load on A' (Eq. 5-10, p. 277) and the "
+    "foundation's and the soil's weight on the whole footing A. "
+    "gross load = q_all x A' = "
+    "Q_DL+LL + W_F + W_S, the total load on the bearing surface with the "
+    "foundation's and the overlying soil's weight in it (Eq. 5-1, p. 275), "
+    "so it is not the structural load. GEC-6 Sec. 5.2.2 (p. 53) recommends "
+    "the allowable bearing capacity on the gross pressure, the self-weight "
+    "of the footing and the backfill over it counted in the applied load; "
+    "a footing heavier than the soil it replaces leaves less for the "
+    "column (GEC-6 Sec. 6.3.1, p. 113)")
+
 
 @dataclass
 class BearingCapacityResult:
@@ -74,6 +93,20 @@ class BearingCapacityResult:
         reduced c*, phi* for local shear).
     notes : list of str
         Method basis and applicability notes (Terzaghi results).
+    area_m2 : float, optional
+        The effective bearing area A' = B'L' (m^2), or for a strip the
+        effective width B' (m^2 per metre run), that the allowable loads
+        are worked on; set by ``BearingCapacityAnalysis.compute`` (GM-170).
+    area_full_m2 : float, optional
+        The whole footing's area A (m^2; the width B for a strip), which the
+        foundation's and the soil's weight bear on; equal to ``area_m2``
+        unless the load is eccentric.
+    is_strip : bool
+        A strip footing: the allowable loads are per metre run.
+    choices : list of dict
+        What the analysis chose (GM-188, ``geotech_common.choices``): the
+        method, its N-gamma, the shear mode and the allowable pressure's
+        basis, each with its basis and the alternatives.
     """
     # Primary results
     q_ultimate: float = 0.0
@@ -138,6 +171,40 @@ class BearingCapacityResult:
     phi_used: Optional[float] = None
     notes: List[str] = field(default_factory=list)
 
+    # The area the allowable loads are worked on (GM-170)
+    area_m2: Optional[float] = None
+    area_full_m2: Optional[float] = None
+    is_strip: bool = False
+    choices: List[Dict[str, Any]] = field(default_factory=list)
+
+    @property
+    def q_allowable_net(self) -> float:
+        """Net allowable bearing pressure q_all,net = q_ult/FS - q (kPa), q
+        the overburden at the base the bearing equation used (UFC 3-220-20
+        Sec. 5-2.4 Eq. 5-14; GM-170)."""
+        return self.q_allowable - self.q_overburden
+
+    def allowable_loads(self) -> Optional[Dict[str, Any]]:
+        """The allowable loads on the footing (GM-170): the structural load
+        on the net allowable pressure and the gross load on the bearing
+        surface, with :data:`LOAD_BASIS`; per metre run for a strip. None
+        when the area is not known."""
+        if self.area_m2 is None:
+            return None
+        unit = "kN_per_m" if self.is_strip else "kN"
+        # q_all x A' less the foundation's and the soil's weight, q x A:
+        # q_all,net x A' when the load is centred (A' = A)
+        full = self.area_m2 if self.area_full_m2 is None             else self.area_full_m2
+        return {
+            f"structural_load_{unit}": round(
+                self.q_allowable * self.area_m2 - self.q_overburden * full,
+                1),
+            f"gross_load_{unit}": round(self.q_allowable * self.area_m2, 1),
+            ("width_m" if self.is_strip else "area_m2"): round(
+                self.area_m2, 4),
+            "basis": LOAD_BASIS,
+        }
+
     def summary(self) -> str:
         """Return a formatted summary string.
 
@@ -155,6 +222,24 @@ class BearingCapacityResult:
             f"  Factor of safety           FS   = {self.factor_of_safety:.1f}",
             f"  Allowable bearing capacity qall = {self.q_allowable:,.1f} kPa",
             f"  Net ultimate capacity      qnet = {self.q_net:,.1f} kPa",
+            f"  Net allowable              qall,net = "
+            f"{self.q_allowable_net:,.1f} kPa (UFC 3-220-20 Eq. 5-14)",
+        ]
+        loads = self.allowable_loads()
+        if loads:
+            per = " per m" if self.is_strip else ""
+            unit = "kN_per_m" if self.is_strip else "kN"
+            lines += [
+                f"  Allowable structural load Q = "
+                f"{loads['structural_load_' + unit]:,.0f} kN{per} "
+                + ("(qall,net x A'; Eq. 5-3)" if self.area_full_m2 in (
+                    None, self.area_m2) else
+                   "(qall x A' - q x A; Eq. 5-3, 5-10)"),
+                f"  Gross load on the base   qall x A' = "
+                f"{loads['gross_load_' + unit]:,.0f} kN{per} "
+                f"(with the footing and the soil over it; Eq. 5-1)",
+            ]
+        lines += [
             "",
             f"  Effective footing: B' = {self.B_eff:.3f} m, L' = {self.L_eff:.3f} m",
             f"  Overburden pressure: q = {self.q_overburden:.1f} kPa",
@@ -204,6 +289,10 @@ class BearingCapacityResult:
             lines.append("")
             lines.extend(f"  Note: {n}" for n in self.notes)
 
+        if self.choices:
+            from geotech_common.choices import choices_lines
+            lines.extend(choices_lines(self.choices))
+
         lines.extend(["", "=" * 60])
         return "\n".join(lines)
 
@@ -224,6 +313,7 @@ class BearingCapacityResult:
             "q_ultimate_kPa": round(self.q_ultimate, 2),
             "q_allowable_kPa": round(self.q_allowable, 2),
             "q_net_kPa": round(self.q_net, 2),
+            "q_allowable_net_kPa": round(self.q_allowable_net, 2),
             "factor_of_safety": self.factor_of_safety,
             "Nc": round(self.Nc, 3),
             "Nq": round(self.Nq, 3),
@@ -264,6 +354,11 @@ class BearingCapacityResult:
                 d["phi_used_deg"] = round(self.phi_used, 3)
         if self.notes:
             d["notes"] = list(self.notes)
+        loads = self.allowable_loads()
+        if loads:
+            d["allowable_load"] = loads
+        if self.choices:
+            d["choices"] = [dict(c) for c in self.choices]
         return d
 
     def get_tables(self) -> list:
@@ -311,6 +406,8 @@ class BearingCapacityResult:
             ["Net ultimate bearing capacity", "q_net", self.q_net, "kPa"],
             ["Factor of safety", "FS", self.factor_of_safety, ""],
             ["Allowable bearing capacity", "q_all", self.q_allowable, "kPa"],
+            ["Net allowable bearing pressure", "q_all,net",
+             self.q_allowable_net, "kPa"],
             ["Effective overburden at the base", "q", self.q_overburden,
              "kPa"],
             ["Effective unit weight below the base", "γ'",
@@ -318,6 +415,16 @@ class BearingCapacityResult:
             ["Effective width", "B'", self.B_eff, "m"],
             ["Effective length", "L'", self.L_eff, "m"],
         ]
+        loads = self.allowable_loads()
+        if loads:
+            unit = "kN_per_m" if self.is_strip else "kN"
+            shown = "kN/m" if self.is_strip else "kN"
+            summary += [
+                ["Allowable structural load", "Q_DL+LL",
+                 loads["structural_load_" + unit], shown],
+                ["Gross load on the base (with the footing and soil)",
+                 "q_all A'", loads["gross_load_" + unit], shown],
+            ]
         if self.is_two_layer:
             summary += [
                 ["q_ult of the upper layer alone", "q_t",

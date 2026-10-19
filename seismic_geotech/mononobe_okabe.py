@@ -259,7 +259,8 @@ def earth_pressure_choices(phi_deg: float, kh: float, kv: float = None,
         The static coefficient behind PA and delta-PAE: None when none was
         used, "rankine" for tan^2(45 - phi/2) worked out from phi (the
         analysis tool, and the calc package when KA is not given), or the
-        value used (with ``ka_how``, "given").
+        value used (with ``ka_how``: how the caller's KA input was
+        given, ``geotech_common.choices.how_given``).
     forces : bool
         Whether the forces (PAE, PA, delta-PAE and its height) were worked
         out.
@@ -272,7 +273,7 @@ def earth_pressure_choices(phi_deg: float, kh: float, kv: float = None,
         Coulomb's KA with the same delta, i and beta, which is what KAE
         becomes at kh = 0.
     """
-    from geotech_common.choices import DEFAULT, GIVEN, MODULE, choice
+    from geotech_common.choices import DEFAULT, MODULE, choice, how_given
     out = []
     if mo_no_solution(phi_deg, kh, kv or 0.0, i_deg):
         out.append(choice(
@@ -289,8 +290,10 @@ def earth_pressure_choices(phi_deg: float, kh: float, kv: float = None,
             "KAE", "Mononobe-Okabe", MODULE,
             "pseudo-static wedge, inertia toward the wall (UFC 3-220-20 "
             "Eq. 4-15; GEC-11 Vol I Eq. 7-6)"))
-    out.append(choice("kh", kh, GIVEN,
-                      "as given; not worked out from the PGA here"))
+    # kh, kv and delta as the call gave them, or as a calc package's call
+    # says they are assumed (GM-180)
+    out.append(choice("kh", kh, how_given(kh, None, name="kh"),
+                      "as input; not worked out from the PGA here"))
     kv_basis = ""
     if forces:
         kv_basis = ("PAE = (gamma H^2 / 2)(1 - kv) KAE (UFC 3-220-20 Eq. "
@@ -299,7 +302,8 @@ def earth_pressure_choices(phi_deg: float, kh: float, kv: float = None,
         if mo_no_solution(phi_deg, kh, kv or 0.0, i_deg):
             kv_basis = ("not used: the Seed & Whitman estimate of KAE "
                         "leaves kv out, and PAE takes no (1 - kv)")
-    out.append(choice("kv", kv or 0.0, DEFAULT if kv is None else GIVEN,
+    out.append(choice("kv", kv or 0.0, DEFAULT if kv is None
+                      else how_given(kv, None, name="kv"),
                       kv_basis))
     if delta_deg is None:
         out.append(choice("wall friction delta",
@@ -307,7 +311,7 @@ def earth_pressure_choices(phi_deg: float, kh: float, kv: float = None,
                           DEFAULT))
     else:
         out.append(choice("wall friction delta", f"{delta_deg:g} deg",
-                          GIVEN))
+                          how_given(delta_deg, None, name="delta")))
     if ka == "rankine":
         ka_r = math.tan(math.pi / 4 - math.radians(phi_deg) / 2) ** 2
         basis = ("vertical wall, level backfill, no wall friction; with a "

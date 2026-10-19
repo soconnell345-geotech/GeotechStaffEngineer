@@ -352,6 +352,16 @@ the eyes). What changed on master after 5.33.0, in short:
   user's value would otherwise print as a default); an `assumptions` key
   written as an input name that is not one is refused with a
   did-you-mean, and a statement in words is its own row (GM-167).
+  No module writes "given" itself (GM-180): a choice made from an input
+  asks `how_given` with the input's name, and one made from a value
+  nested in an input (a layer's p-y model, delta/phi, Nt or Fig. 7-18
+  case) names that input as `within`, so it reads "assumed" when the
+  call says the input is not the user's. A procedure a tool runs with no
+  input to pick it (the liquepy CPT and SPT tools, NCEER liquefaction) is
+  the module's; the `liquefaction` tool's routed one follows its `method`.
+  The guard runs every probe as a call that states no input as the
+  user's and fails on any "given" (`test_defaults_used.py`). The slope
+  packages and tools are left for GM-140.
   An input that changes nothing is not advertised (GM-160): the guard
   also gives every default a probe's run lists another value (the next
   allowed value, the other boolean, a number moved by half) and fails

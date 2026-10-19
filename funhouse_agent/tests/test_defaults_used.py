@@ -498,7 +498,7 @@ _VOLATILE = frozenset({
     "defaults_used", "output_note", "output_path", "file_size_bytes",
     "html_length", "elapsed_s", "runtime_s", "seconds_per_evaluation",
     "dxf_base64", "notes", "warnings", "note"})
-_STAMP = re.compile(r"\d{8}_\d{6}(_\d+)?")
+_STAMP = re.compile(r"\d{8}_\d{6}(_\d+)?|\d{4}-\d\d-\d\d[ T]\d\d:\d\d:\d\d")
 
 
 def _analysis_methods() -> set:
@@ -682,6 +682,114 @@ def test_the_defaults_a_run_lists_are_the_values_it_used(key, tmp_path,
     where = str(tmp_path)
     moved = _diff(_norm(r0, where), _norm(r1, where))
     assert moved is None, f"{key}: giving defaults_used back moved {moved}"
+
+
+def _choice_entries(x) -> list:
+    """Every ``choices`` entry anywhere in a result."""
+    if isinstance(x, dict):
+        if "what" in x and "how" in x:
+            return [x]
+        return [c for v in x.values() for c in _choice_entries(v)]
+    if isinstance(x, list):
+        return [c for v in x for c in _choice_entries(v)]
+    return []
+
+
+@pytest.mark.parametrize("key", [
+    pytest.param(k, marks=pytest.mark.slow) if k in MP.SLOW else k
+    for k in sorted(MP.PROBES)])
+def test_a_choice_is_given_only_by_an_input_the_call_named(key, tmp_path,
+                                                           monkeypatch):
+    """GM-180: a choice reads "given" only through ``how_given`` asking
+    about an input the call passed. Each probe runs as a calc package's
+    call that states none of its inputs as the user's (every input it
+    passes assumed, GM-167), so no choice may read "given": one that does
+    was written "given" by the module itself, or asked about a name the
+    tool does not take."""
+    from contextlib import contextmanager
+    import geotech_common.choices as gc
+    real = gc.call_inputs
+
+    @contextmanager
+    def none_stated(given, defaults=(), assumed=()):
+        with real(given, defaults, assumed=given) as inputs:
+            yield inputs
+    monkeypatch.setattr(gc, "call_inputs", none_stated)
+    monkeypatch.chdir(tmp_path)
+    agent, method = key.split("#")[0].split("|")
+    probe = MP.PROBES[key]
+    for before in probe.get("before", ()):
+        D.call_agent(before[0], before[1], copy.deepcopy(before[2]))
+    r = _run(agent, method, probe["params"])
+    assert isinstance(r, dict) and "error" not in r, (key, r)
+    given = [c["what"] for c in _choice_entries(r) if c["how"] == "given"]
+    assert given == [], f"{key}: 'given' with no input stated: {given}"
+
+
+_SAND_CLAY = [{"thickness": 5, "soil_type": "cohesionless", "unit_weight": 18,
+               "friction_angle": 32, "delta_phi_ratio": 0.8},
+              {"thickness": 20, "soil_type": "cohesive", "unit_weight": 19,
+               "cohesion": 100, "Nt": 5, "fig_7_18_case": "stiff_clay"}]
+
+
+@pytest.mark.parametrize("agent, method, params, whats", [
+    # the beta method, a layer's own Nt and a custom toe area
+    ("axial_pile", "axial_pile_capacity",
+     {"pile_type": "h_pile", "pile_area": 0.0141, "pile_perimeter": 1.24,
+      "pile_width": 0.31, "pile_tip_area": 0.0961, "pile_length": 15,
+      "method": "beta", "layers": _SAND_CLAY},
+     ["side resistance method", "toe resistance method",
+      "Nt of the cohesive toe layer (beta method)",
+      "pile section (custom)"]),
+    # V, a layer's delta/phi, the open-pipe method, a layer's Fig. 7-18 case
+    ("axial_pile", "axial_pile_capacity",
+     {"pile_type": "pipe_open", "diameter": 0.4, "wall_thickness": 0.012,
+      "pile_length": 15, "displaced_volume": 0.5,
+      "open_pipe_method": "paikowsky_whitman",
+      "adhesion_chart": "fig_7_18", "layers": _SAND_CLAY},
+     ["displaced volume V (Nordlund)", "Nordlund delta/phi",
+      "open-ended pipe", "Fig. 7-18 stratigraphy case"]),
+    ("lateral_pile", "lateral_pile_analysis",
+     {"pile_diameter": 0.8, "pile_length": 15.0, "layers": [
+         {"top": 0, "bottom": 5, "model": "SandAPI", "phi": 32,
+          "gamma": 19, "k": 8150, "loading": "cyclic"},
+         {"top": 5, "bottom": 15, "model": "WeakRock", "qu": 5000,
+          "Er": 1e6, "RQD": 50, "krm": 0.0001}]},
+     ["p-y curves 0-5 m", "p-y curves 5-15 m", "loading",
+      "strength reduction alpha_r 5-15 m", "k_rm 5-15 m"]),
+    ("seismic_geotech", "seismic_earth_pressure",
+     {"phi": 32, "kh": 0.2, "kv": 0.05, "delta": 16, "KA": 0.3},
+     ["kh", "kv", "wall friction delta", "static KA"]),
+    ("settlement", "combined_settlement_analysis",
+     {"B": 2.0, "q_applied": 150.0, "cv": 2.0, "Hdr": 3.0,
+      "C_alpha": 0.01, "t_secondary": 50, "e0_secondary": 0.9,
+      "consolidation_layers": [{"thickness": 6, "depth_to_center": 3,
+                                "Cc": 0.3, "Cr": 0.05,
+                                "e0": 1.0, "sigma_v0": 80,
+                                "sigma_p": 100}]},
+     ["drainage path", "void ratio e0 for secondary compression"]),
+])
+def test_a_choice_made_from_an_input_follows_whether_it_was_stated(
+        agent, method, params, whats, monkeypatch):
+    """GM-180: a choice made from an input reads "given" when the call
+    passes it and "assumed" when a calc package's call says the input is
+    not the user's: the branches the probes do not reach."""
+    from contextlib import contextmanager
+    import geotech_common.choices as gc
+    stated = D.call_agent(agent, method, copy.deepcopy(params))
+    assert "error" not in stated, stated
+    by = {c["what"]: c["how"] for c in _choice_entries(stated)}
+    assert {w: by.get(w) for w in whats} == {w: "given" for w in whats}
+    real = gc.call_inputs
+
+    @contextmanager
+    def none_stated(given, defaults=(), assumed=()):
+        with real(given, defaults, assumed=given) as inputs:
+            yield inputs
+    monkeypatch.setattr(gc, "call_inputs", none_stated)
+    unstated = D.call_agent(agent, method, copy.deepcopy(params))
+    by = {c["what"]: c["how"] for c in _choice_entries(unstated)}
+    assert {w: by.get(w) for w in whats} == {w: "assumed" for w in whats}
 
 
 def _other_value(spec: dict, value):
