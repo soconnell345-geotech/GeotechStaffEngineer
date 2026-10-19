@@ -737,6 +737,40 @@ Reproduction: `fem2d/tests/test_srm_duncan.py::TestSRMDuncanExample1`
 (Taylor's circle, the search on a long profile, the warning on the short
 one).
 
+## 12. Wall friction: joints against Coulomb and Caquot-Kerisel (GM-72, 2026-10-19)
+
+`analyze_excavation(wall_contact='interface')` (DESIGN.md, "Wall friction").
+A rigid wall 4 m high, translated against sand (phi' = 30 deg, gamma = 18
+kN/m3, E = 20 MPa, nu = 0.3), the same ties and joints as the excavation;
+horizontal thrust P_h against 0.5 gamma H^2 K cos(delta):
+
+| case | delta (deg) | fem2d P_h (kN/m) | reference (kN/m) | difference |
+|---|---|---|---|---|
+| active, 1 % H, psi = 0 | 0 | 46.8 | 48.0 Rankine | -2.5 % |
+| | 15 | 41.0 | 41.9 Coulomb (K_A 0.301) | -2.1 % |
+| | 30 | 37.0 | 37.1 Coulomb (K_A 0.297) | -0.2 % |
+| passive, 5 % H, psi = phi' | 0 | 433.0 | 432.0 Rankine | +0.2 % |
+| | 12 | 594.6 | 608.6 C-K (6.3 x 0.686) | -2.3 % |
+| | 15 | 646.9 | 653.6 C-K (6.3 x 0.746) | -1.0 % |
+| | 21 | 748.5 | 743.4 C-K (6.3 x 0.878) | +0.7 % |
+
+Coulomb K_A as printed in UFC 3-220-20 (2025) Table 4-2, p. 194 (0.30 at
+delta/phi' = 0.5 and 1); Caquot-Kerisel Kp from the Caltrans Trenching and
+Shoring Manual (2025) Figure 4-20, p. 4-30 (Kp = 6.3 read at phi' = 30,
+beta = 0; R from the chart's table). Tolerance 5 % (the heel node is not on
+the wall, about 3 %; the heel singularity; the chart read). Active: wall
+shear / thrust = tan(delta) within 0.01. Not reached: passive at delta =
+phi' (no convergence beyond 43 % of C-K), and passive with psi = 0 at
+delta > 0 (-18 % at delta = 15 when it stops converging).
+
+The USS cantilever of section 9 with delta/phi' = 0.5 (the manual's own
+ratio for its Kp = 6.56): fem2d M_max 98.7 kN-m/m; the conventional method
+with Coulomb K_A(17.5 deg) = 0.246 and Kp = 6.56, horizontal components:
+98.7 (+0.1 %; the manual's printed Ka = 0.27 and Kp = 6.56 give 117.1).
+Smooth 155.2 (unchanged), bonded 65.7, a joint that cannot slip 65.6.
+
+Tests: `fem2d/tests/test_excavation_interface.py` (the passive runs slow).
+
 ## 6. Performance
 
 Wall-clock on the dev machine, single process, including mesh build and

@@ -1052,6 +1052,158 @@ _EXC_SETTLED_RATIO = 0.1
 _EXC_SETTLED_CAP = 1e-2
 
 
+# Elastic tangential stiffness of a wall/soil joint: the shear modulus of
+# the soil beside it over a virtual thickness of this fraction of the local
+# element size along the wall (GM-72). At 0.1 the constant-stiffness
+# iteration stalled where joints slip (the USS cantilever with
+# delta/phi' = 0.5 did not converge in 1000 iterations a step); at 0.5 and
+# at 2.0 it converges and the wall moment differs by 0.1 %.
+_JOINT_VIRTUAL_THICKNESS = 0.5
+
+
+def _joint_text(rows, delta, ratio, adhesion):
+    """The wall friction of the joints, in words, for the notes."""
+    if delta is not None:
+        txt = f"delta = {float(delta):g} deg (given) on every layer"
+    else:
+        ds = sorted({(round(d, 2), round(p, 2)) for _, d, p in rows})
+        txt = (f"delta = {float(ratio):g} phi' (given): "
+               + ", ".join(f"{d:g} deg where phi' = {p:g}" for d, p in ds))
+    return txt + (f", adhesion c_a = {adhesion:g} kPa." if adhesion > 0
+                  else ", no adhesion.")
+
+
+def _excavation_choices(wall_contact, delta, ratio, adhesion):
+    """The ``choices`` of ``analyze_excavation`` (GM-115, GM-72)."""
+    from geotech_common.choices import choice, how_given
+    alts = ["'smooth' (no wall friction)", "'bonded' (no slip)",
+            "'interface' (wall friction delta between 0 and phi')"]
+    basis = {
+        'smooth': "delta = 0, the Rankine assumption; the USS Steel Sheet "
+                  "Piling Design Manual and Caltrans design methods use the "
+                  "Rankine active pressure on the retained side",
+        'bonded': "no slip between wall and soil: the wall hangs the "
+                  "retained soil (more friction than any delta up to phi')",
+        'interface': "Mohr-Coulomb joints between wall and soil; typical "
+                     "delta: UFC 3-220-20 (2025) Table 4-1, p. 184 (steel "
+                     "sheet piles against clean sand 17 deg, formed "
+                     "concrete 17-22 deg)",
+    }[wall_contact]
+    out = [choice("wall contact (wall friction)", wall_contact,
+                  how_given(wall_contact, 'smooth', name='wall_contact'),
+                  basis, [a for a in alts
+                          if not a.startswith(f"'{wall_contact}'")])]
+    if wall_contact == 'interface':
+        if delta is not None:
+            out.append(choice("wall friction angle delta (deg)",
+                              float(delta), "given",
+                              "UFC 3-220-20 (2025) Table 4-1, p. 184",
+                              ["interface_ratio (delta/phi' per layer)"]))
+        else:
+            out.append(choice("wall friction ratio delta/phi'",
+                              float(ratio), "given",
+                              "delta = ratio x phi' of the layer at each "
+                              "joint", ["interface_delta (one angle)"]))
+        out.append(choice("wall adhesion c_a (kPa)", adhesion,
+                          how_given(adhesion, 0.0,
+                                    name='interface_adhesion'),
+                          "UFC 3-220-20 (2025) Table 4-1, p. 184, gives "
+                          "adhesion for clayey soils by undrained strength"))
+    return out
+
+
+def _wall_interface_summary(rows, exc_depth):
+    """The joints' forces on the wall at the end of the last stage, summed
+    on the retained side (ground to tip) and on the excavation side (the
+    excavation level to tip): thrust, wall shear, the friction angle
+    mobilized and the share of joints slipping."""
+    def _side(face):
+        sel = [r for r in rows if r['face'] == face]
+        if not sel:
+            return None
+        n = float(sum(r['normal_kN_per_m'] for r in sel))
+        v = float(sum(r['shear_kN_per_m'] for r in sel))
+        slip = sum(1 for r in sel if r['mobilized'] >= 1.0 - 1e-6)
+        return {
+            'normal_thrust_kN_per_m': n,
+            'wall_shear_kN_per_m': v,
+            'mobilized_delta_deg': (float(np.degrees(np.arctan2(abs(v), n)))
+                                    if n > 0 else None),
+            'joints': len(sel), 'joints_slipping': slip,
+        }
+    return {'retained_side': _side(+1), 'excavation_side': _side(-1),
+            'excavation_depth_m': float(exc_depth),
+            'note': "Effective normal force (compression positive) and the "
+                    "soil's shear on the wall (+ up) summed over the joints "
+                    "of each face (the retained face from the ground, the "
+                    "excavation face from the excavation level, to the "
+                    "tip; the tip itself is tied, not a joint)."}
+
+
+def _wall_joints(nodes, elements, springs, wall_ties, right_ties, col,
+                 soil_layers, layer_ids, quad, delta, ratio, adhesion, t):
+    """The wall/soil joints of ``analyze_excavation(wall_contact=
+    'interface')`` (GM-72): one per wall-to-face tie above the tip, with the
+    face length it stands for, its stiffness and its tan(delta).
+
+    Returns (joints for ``analyze_staged(interfaces=)``, rows of
+    (depth m, delta deg, phi' deg) for the retained-side joints).
+    """
+    y = nodes[col, 1]
+    n = len(col)
+    trib = np.zeros(n)                  # face length each wall node carries
+    h_loc = np.zeros(n)                 # local element size along the wall
+    if quad:
+        for i in range(0, n - 2, 2):
+            L = abs(y[i] - y[i + 2])
+            trib[i] += L / 6.0
+            trib[i + 1] += 2.0 * L / 3.0
+            trib[i + 2] += L / 6.0
+            for k in (i, i + 1, i + 2):
+                h_loc[k] = max(h_loc[k], L)
+    else:
+        for i in range(n - 1):
+            L = abs(y[i] - y[i + 1])
+            trib[i] += L / 2.0
+            trib[i + 1] += L / 2.0
+            h_loc[i] = max(h_loc[i], L)
+            h_loc[i + 1] = max(h_loc[i + 1], L)
+    elements = np.asarray(elements)
+    node_layers = {}
+    for e, conn in enumerate(elements):
+        for nd in conn:
+            node_layers.setdefault(int(nd), []).append(int(layer_ids[e]))
+
+    def _joint(spring_idx, k, face):
+        nd_soil = springs[spring_idx]['node_b']
+        lays = node_layers.get(int(nd_soil)) or [0]
+        sl = [soil_layers[min(int(li), len(soil_layers) - 1)]
+              for li in sorted(set(lays))]
+        phi = float(np.mean([float(x.get('phi', 0.0)) for x in sl]))
+        G = float(np.mean([float(x.get('E', 30000)) / (2.0 * (1.0 + float(
+            x.get('nu', 0.3)))) for x in sl]))
+        d = float(delta) if delta is not None else float(ratio) * phi
+        ks = G * trib[k] * t / (_JOINT_VIRTUAL_THICKNESS * h_loc[k])
+        return {'spring': spring_idx, 'face': face,
+                'tan_delta': float(np.tan(np.radians(d))),
+                'adhesion': adhesion * trib[k] * t, 'ks': ks,
+                'length': float(trib[k])}, d, phi
+
+    # A joint with no strength (delta = 0, no adhesion) carries no shear:
+    # it is left out, and its tie is the smooth wall's exactly.
+    joints, rows = [], []
+    for k, j in enumerate(wall_ties[:-1]):          # the tip stays tied
+        jt, d, phi = _joint(j, k, +1)
+        rows.append((float(-y[k]), d, phi))
+        if jt['tan_delta'] > 0 or jt['adhesion'] > 0:
+            joints.append(jt)
+    for k, (j, _) in enumerate(right_ties):
+        jt = _joint(j, k, -1)[0]
+        if jt['tan_delta'] > 0 or jt['adhesion'] > 0:
+            joints.append(jt)
+    return joints, rows
+
+
 def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
                        wall_EA, nx=30, ny=15, t=1.0, n_steps=10,
                        gwt=None, gamma_w=9.81, struts=None,
@@ -1059,7 +1211,8 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
                        layer_polylines=None, element_type='t6',
                        lifts=None, wall_contact='smooth',
                        excavation_water='dewatered',
-                       water_level_inside=None):
+                       water_level_inside=None, interface_delta=None,
+                       interface_ratio=None, interface_adhesion=0.0):
     """Excavation in front of an embedded wall, staged (GM-71, 2026-10-14).
 
     The model is half of a symmetric excavation, in plane strain: the wall
@@ -1184,8 +1337,35 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
         force reached 1.5 times the horizontal thrust above the excavation
         level (more than any wall friction angle up to phi' allows) and the
         thrust fell below the Coulomb active value with delta = phi'.
-        There are no interface elements yet (a wall friction delta between
-        0 and phi' needs them).
+        'interface' (GM-72, 2026-10-19): wall friction between the two. The
+        wall has its own nodes as for 'smooth', and each tie to a soil face
+        (above the tip) is a zero-thickness joint lumped at the node pair:
+        normal, the same tie as 'smooth'; tangential, elastic-perfectly-
+        plastic with the Mohr-Coulomb slip limit
+        |T| <= N' tan(delta) + c_a L, N' the effective normal force on the
+        joint's face length L (the water pressure the wall carries is
+        taken off). The tip is tied in both directions, as for 'smooth'
+        (the wall bears on the soil there). Give the wall friction angle
+        as ``interface_delta`` or ``interface_ratio``.
+    interface_delta : float, optional — for 'interface': the wall friction
+        angle delta (degrees, 0 to 45), the same on every layer.
+        Typical values: UFC 3-220-20 (2025) Table 4-1, p. 184 (and the
+        Caltrans Trenching and Shoring Manual, 2025, Table 4-2, p. 4-15):
+        steel sheet piles against clean sand 17 deg (tan delta 0.30),
+        against clean gravel 22 deg, against silty sand 14 deg; formed
+        concrete against clean sand 17-22 deg, against clean gravel
+        22-26 deg; mass concrete on clean fine to medium sand 24-29 deg.
+        A delta above a layer's phi' is used as given there: the soil next
+        to the wall then yields before the joint slips.
+    interface_ratio : float, optional — for 'interface', in place of
+        ``interface_delta``: delta / phi' of the layer at each joint
+        (0 to 1). There is no default: a wall friction angle is a design
+        input (the table above).
+    interface_adhesion : float — for 'interface': the adhesion c_a (kPa)
+        on the joints, default 0 (friction only). UFC 3-220-20 (2025)
+        Table 4-1, p. 184, gives adhesion for clayey soils by undrained
+        strength (e.g. 750-950 psf, 36-45 kPa, for stiff fine-grained
+        soil).
 
     Returns
     -------
@@ -1235,9 +1415,34 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
             f"({depth} m): the wall has to reach below the excavation level")
     if not soil_layers:
         raise ValueError("soil_layers is empty")
-    if wall_contact not in ('smooth', 'bonded'):
-        raise ValueError(f"wall_contact must be 'smooth' or 'bonded' (got "
-                         f"{wall_contact!r})")
+    if wall_contact not in ('smooth', 'bonded', 'interface'):
+        raise ValueError(f"wall_contact must be 'smooth', 'bonded' or "
+                         f"'interface' (got {wall_contact!r})")
+    if wall_contact == 'interface':
+        if (interface_delta is None) == (interface_ratio is None):
+            raise ValueError(
+                "wall_contact='interface' needs the wall friction angle: "
+                "give interface_delta (degrees) or interface_ratio "
+                "(delta/phi'), one of them (typical values: UFC 3-220-20, "
+                "2025, Table 4-1, p. 184)")
+        if interface_delta is not None and not \
+                0.0 <= float(interface_delta) <= 45.0:
+            raise ValueError(
+                f"interface_delta must be from 0 to 45 degrees (got "
+                f"{interface_delta}); the largest wall friction angle in "
+                f"UFC 3-220-20 (2025) Table 4-1, p. 184, is 35 degrees")
+        if interface_ratio is not None and not \
+                0.0 <= float(interface_ratio) <= 1.0:
+            raise ValueError(f"interface_ratio (delta/phi') must be from 0 "
+                             f"to 1 (got {interface_ratio})")
+        if float(interface_adhesion) < 0:
+            raise ValueError(f"interface_adhesion must be >= 0 kPa (got "
+                             f"{interface_adhesion})")
+    elif interface_delta is not None or interface_ratio is not None \
+            or float(interface_adhesion or 0.0) != 0.0:
+        raise ValueError("interface_delta, interface_ratio and "
+                         "interface_adhesion are used only with "
+                         "wall_contact='interface'")
     if excavation_water not in ('dewatered', 'full', 'level'):
         raise ValueError(f"excavation_water must be 'dewatered', 'full' or "
                          f"'level' (got {excavation_water!r})")
@@ -1408,7 +1613,7 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
     # contact: the pore pressure differs on the wall's two faces, and the
     # cut makes the wall impermeable to the seepage (GM-73). A bonded wall
     # is then tied to both faces in both directions (no slip).
-    cut = wall_contact == 'smooth' or seep
+    cut = wall_contact in ('smooth', 'interface') or seep
     col, right_ids = list(wall_nodes), []
     if cut:
         # Cut the soil along the wall above its tip: the elements right of
@@ -1455,6 +1660,15 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
             springs.append({'node': w, 'node_b': right, 'kx': k_tie,
                             'ky': k_tie if ky_face else 0.0})
     n_ties = len(springs)
+
+    joints = []
+    joint_delta = []                     # (depth, delta) per joint, left
+    if wall_contact == 'interface':
+        joints, joint_delta = _wall_joints(
+            nodes, elements, springs, wall_ties, right_ties, col,
+            soil_layers, layer_ids, element_type == 't6'
+            and len(col) % 2 == 1, interface_delta, interface_ratio,
+            float(interface_adhesion), t)
 
     # Struts as springs at the wall node nearest their level
     for d, k, j in strut_defs:
@@ -1568,7 +1782,7 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
         settled_ratio=_EXC_SETTLED_RATIO,
         settled_residual_cap=_EXC_SETTLED_CAP,
         wall_face_nodes=(set(left_face) | set(right_face)) if seep
-        else None)
+        else None, interfaces=joints or None)
 
     # Result: the end of the last stage reached
     last = staged.phases[-1]
@@ -1740,13 +1954,25 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
            "wall, no wall friction (delta = 0), the Rankine assumption "
            "(wall_contact='smooth')."
            if wall_contact == 'smooth' else
+           "The soil is cut along the wall; the wall is tied to each face "
+           "horizontally and joined to it along the wall by zero-thickness "
+           "joints lumped at the node pairs, which slip when the shear "
+           "reaches N' tan(delta) + c_a L (Mohr-Coulomb; N' the effective "
+           "normal force) (wall_contact='interface'); "
+           + _joint_text(joint_delta, interface_delta, interface_ratio,
+                         float(interface_adhesion))
+           + " The tip is tied in both directions (the wall bears on the "
+           "soil there). The joints do not open: the normal tie also "
+           "carries tension, as for 'smooth'."
+           if wall_contact == 'interface' else
            "The soil is cut along the wall (the water pressure differs on "
            "its two faces) and the wall is tied to each face in both "
-           "directions: fully rough, no slip (no interface elements), and "
+           "directions: fully rough, no slip (no joints that slip; "
+           "wall_contact='interface' gives wall friction), and "
            "the wall hangs the retained soil (wall_contact='bonded')."
            if cut else
            "The wall shares nodes with the soil on both sides (no "
-           "interface elements): fully rough, the soil is not separated by "
+           "joints that slip): fully rough, the soil is not separated by "
            "it, and the wall hangs the retained soil "
            "(wall_contact='bonded')."),
         "Strut force = stiffness x movement toward the excavation since "
@@ -1772,6 +1998,12 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
             "results are those of the last stage reached. Try more n_steps "
             "or a higher max_iter, or the excavation may not be stable.")
     result.excavation_water = excavation_water
+    result.choices = _excavation_choices(wall_contact, interface_delta,
+                                         interface_ratio,
+                                         float(interface_adhesion))
+    if joints and last.interface_forces:
+        result.wall_interface = _wall_interface_summary(
+            last.interface_forces, lift_depths[n_lifts_done - 1])
     if pp is not None and excavation_water == 'full':
         if len(exc_floor) and float(np.max(pp[exc_floor])) > 1e-6:
             warnings.append(
@@ -2422,7 +2654,7 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
                    reset_displacements_after=None, springs=None,
                    initial_stresses=None, water_on_free_faces=True,
                    settled_ratio=None, settled_residual_cap=1e-2,
-                   wall_face_nodes=None):
+                   wall_face_nodes=None, interfaces=None):
     """Staged construction analysis.
 
     Solves a sequence of construction phases. Each phase activates a
@@ -2516,6 +2748,20 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
         stall of Gauss points switching at the Mohr-Coulomb apex). Default
         None: off, every step must meet ``tol``. Accepted steps are listed
         on each phase (``settled_steps``).
+    interfaces : list of dict, optional — wall/soil joints with wall
+        friction (GM-72, 2026-10-19): a Mohr-Coulomb slip limit on the
+        tangential (y) force between the two nodes of a tie spring, whose
+        own kx is the joint's normal stiffness and whose ky must be 0.
+        Keys: 'spring' (index into ``springs``; the joint is active while
+        that spring is), 'face' (+1 when ``node_b`` is soil on the -x side
+        of the wall node ``node``, -1 on the +x side), 'tan_delta',
+        'adhesion' (kN per m run: adhesion x the joint's length x t), 'ks'
+        (elastic tangential stiffness, kN/m per m run) and 'length' (m, the
+        face length the joint stands for; with a water table and
+        ``wall_face_nodes``, the tie carries the water pressure on that
+        length too, which is taken off to give the effective normal force).
+        Placed stress-free with its spring; its plastic slip carries from
+        stage to stage. Each phase reports ``interface_forces``.
 
     Returns
     -------
@@ -2560,6 +2806,18 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
         rotation_dof_map, n_dof_total = build_rotation_dof_map(
             n_nodes_count, beam_elements)
     spring_list = _normalize_springs(springs, n_nodes_count)
+    joints = list(interfaces or [])
+    for i, jt in enumerate(joints):
+        j = int(jt['spring'])
+        if not 0 <= j < len(spring_list) or spring_list[j][3] is None:
+            raise ValueError(f"interfaces[{i}]: spring {j} is not a tie "
+                             f"between two nodes")
+        if spring_list[j][2]:
+            raise ValueError(f"interfaces[{i}]: spring {j} has ky != 0; "
+                             f"the joint carries the tangential force")
+        if float(jt.get('ks', 0.0)) <= 0:
+            raise ValueError(f"interfaces[{i}]: ks must be > 0")
+    iface_slip = {}      # joint index -> committed plastic slip
 
     # Initialize cumulative state. The Gauss-point stress/strain arrays carry
     # between phases (element averages lose the T6 variation and the
@@ -2741,6 +2999,46 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
                     lin_offset[2 * node_b + 1] -= ky * u0y
         phase_springs = [spring_list[j] for j in sorted(active_spr)]
 
+        # 4c. Wall/soil joints of the active ties; a joint placed in this
+        #     phase starts with its slip at the current relative movement.
+        act_joints = [i for i, jt in enumerate(joints)
+                      if int(jt['spring']) in active_spr]
+        for i in list(iface_slip):
+            if i not in act_joints:
+                del iface_slip[i]
+        iface = None
+        if act_joints:
+            cols = {k: [] for k in ('a_t', 'b_t', 'a_n', 'b_n', 'ks', 'kn',
+                                    'n_off', 'sgn', 'tan_d', 'adh',
+                                    'n_water')}
+            slip0 = []
+            for i in act_joints:
+                jt = joints[i]
+                j = int(jt['spring'])
+                node, kx, _, node_b = spring_list[j]
+                if i not in iface_slip:
+                    iface_slip[i] = float(u[2 * node + 1]
+                                          - u[2 * node_b + 1])
+                slip0.append(iface_slip[i])
+                cols['a_t'].append(2 * node + 1)
+                cols['b_t'].append(2 * node_b + 1)
+                cols['a_n'].append(2 * node)
+                cols['b_n'].append(2 * node_b)
+                cols['ks'].append(float(jt['ks']))
+                cols['kn'].append(kx)
+                cols['n_off'].append(spring_placed[j][0])
+                cols['sgn'].append(float(jt['face']))
+                cols['tan_d'].append(float(jt['tan_delta']))
+                cols['adh'].append(float(jt.get('adhesion', 0.0)))
+                n_w = 0.0
+                if pp is not None and wall_face_nodes is not None \
+                        and node_b in wall_face_nodes:
+                    n_w = max(float(pp[node_b]), 0.0) \
+                        * float(jt.get('length', 0.0)) * t
+                cols['n_water'].append(n_w)
+            iface = cols
+            slip0 = np.array(slip0)
+
         # 5. Handle empty active elements gracefully
         if len(active_elems) == 0:
             pr = PhaseResult(
@@ -2780,6 +3078,8 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
             settled_ratio=settled_ratio,
             settled_residual_cap=settled_residual_cap,
             return_info=True,
+            interfaces=iface,
+            iface_slip_init=slip0 if iface is not None else None,
         )
 
         (converged, u_new, sigma_new, strain_new, state_new,
@@ -2876,6 +3176,32 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
                 })
             pr.spring_forces = sf
 
+        if iface is not None and 'iface_shear' in run_info:
+            rows = []
+            for k, i in enumerate(act_joints):
+                jt = joints[i]
+                node, _, _, node_b = spring_list[int(jt['spring'])]
+                iface_slip[i] = float(run_info['iface_slip'][k])
+                n_eff = float(run_info['iface_normal'][k])
+                shear = float(run_info['iface_shear'][k])
+                lim = max(float(jt['tan_delta']) * n_eff
+                          + float(jt.get('adhesion', 0.0)), 0.0)
+                rows.append({
+                    'joint': i, 'node_id': int(node),
+                    'soil_node_id': int(node_b),
+                    'face': int(jt['face']),
+                    'x_m': float(nodes[node, 0]),
+                    'y_m': float(nodes[node, 1]),
+                    'length_m': float(jt.get('length', 0.0)),
+                    # effective compressive normal force on the wall
+                    'normal_kN_per_m': n_eff,
+                    # force of the soil on the wall, +y = up
+                    'shear_kN_per_m': -shear,
+                    'limit_kN_per_m': lim,
+                    'mobilized': (abs(shear) / lim) if lim > 0 else
+                    (1.0 if abs(shear) > 0 else 0.0),
+                })
+            pr.interface_forces = rows
         pr.settled_steps = list(run_info['settled'])
         pr.final_residual = float(run_info['final_residual'])
 
