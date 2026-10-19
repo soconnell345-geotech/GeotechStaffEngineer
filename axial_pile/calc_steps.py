@@ -188,9 +188,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_name="Method",
             result_value=method_display,
             reference="FHWA GEC-12 Eq. 7-19 (Sec. 7.2.1.3.4)",
-            notes=("\u03b2 from local experience where a layer gives one "
-                   "(Step 2a), else (1 - sin \u03c6') tan \u03c6' "
-                   "(Fellenius 1991)."),
+            notes=_beta_notes(result, analysis),
         ))
     else:
         # Auto method: Nordlund for cohesionless, Tomlinson for cohesive
@@ -205,7 +203,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_name="Method",
             result_value="Auto (Nordlund/Tomlinson)",
             reference="FHWA GEC-12 Sec. 7.2.1.3.1 and 7.2.1.3.2",
-            notes=_auto_method_notes(result),
+            notes=_auto_method_notes(result, analysis),
         ))
 
     # Per-layer breakdown table
@@ -284,7 +282,11 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_value=f"{result.Q_tip:,.1f}",
             result_unit="kN",
             reference="FHWA GEC-12 Steps 7-9, Figs. 7-15 and 7-16",
-            notes=(f"\u03c3'_v at the toe = {t['sigma_v_tip_kPa']:.1f} kPa; "
+            notes=((f"\u03c6 near the toe = {t['toe_phi_deg']:.1f}\u00b0"
+                    + (" (averaged from the toe to 3b below, Step 7c)"
+                       if t.get("toe_zone") else "") + "; ")
+                   if "toe_phi_deg" in t else "")
+                   + (f"\u03c3'_v at the toe = {t['sigma_v_tip_kPa']:.1f} kPa; "
                    f"\u03c3'_p = {t['sigma_p_kPa']:.1f} kPa; D/b = "
                    f"{t['D_over_b']:.1f}; governed by {t['governs']}."
                    + "".join(f" WARNING: {w}" for w in result.warnings)),
@@ -544,7 +546,18 @@ def _skin_sum_substitution(result) -> str:
     return "Q_s = " + " + ".join(parts)
 
 
-def _auto_method_notes(result) -> str:
+#: The alpha-method's chart, as the method step says it (GM-144).
+_ADHESION_CHART_TEXT = {
+    "fig_7_17": "C_a from Fig. 7-17 by s_u, pile type and D/b",
+    "fig_7_18": ("\u03b1 from Fig. 7-18 by s_u, stratigraphy case and the "
+                 "penetration D/b into the clay"),
+    "smaller": ("C_a the smaller of Fig. 7-17 (by s_u, pile type and D/b) "
+                "and Fig. 7-18 (by s_u, stratigraphy case and D/b into the "
+                "clay)"),
+}
+
+
+def _auto_method_notes(result, analysis=None) -> str:
     """The chart readings of each layer, for the method step."""
     parts = []
     for lb in result.layer_breakdown or []:
@@ -554,13 +567,40 @@ def _auto_method_notes(result) -> str:
                          f"K_\u03b4 = {lb['K_delta']:.2f}, C_F = "
                          f"{lb['C_F']:.2f}")
         elif lb["method"] == "tomlinson":
-            parts.append(f"{where}: D/b = {lb['D_over_b']:.0f}, \u03b1 = "
+            reading = (f"D/b = {lb['D_over_b']:.0f}"
+                       if lb.get("adhesion_chart", "Fig. 7-17") == "Fig. 7-17"
+                       else f"{lb['fig_7_18_case'].replace('_', ' ')}, D/b "
+                            f"into the clay = {lb['D_over_b_fig_7_18']:.1f}")
+            parts.append(f"{where}: {reading}, \u03b1 = "
                          f"{lb['alpha']:.2f} ({lb['adhesion_source']})"
                          + (", \u00d7 0.8 (Eq. 7-90)"
-                            if "eq_7_90_factor" in lb else ""))
+                            if "eq_7_90_factor" in lb else "")
+                         + (f", none in the shrink-swell zone "
+                            f"({lb['shrink_swell_m']:.2f} m)"
+                            if lb.get("shrink_swell_m") else ""))
+    chart = getattr(analysis, "adhesion_chart", "fig_7_17")
+    if (result.toe_details or {}).get("governs") == "Eq. 7-90":
+        chart = "fig_7_17"  # Eq. 7-90 takes Ca from Fig. 7-17 (p. 407)
     text = ("K_\u03b4 from Tables 7-6/7-7 (log-linear in the displaced volume "
-            "V), \u03b4/\u03c6 from Fig. 7-9, C_F from Fig. 7-14; C_a from "
-            "Fig. 7-17 by s_u, pile type and D/b.")
+            "V), \u03b4/\u03c6 from Fig. 7-9, C_F from Fig. 7-14; "
+            f"{_ADHESION_CHART_TEXT.get(chart, _ADHESION_CHART_TEXT['fig_7_17'])}"
+            ".")
+    return text + (" " + "; ".join(parts) + "." if parts else "")
+
+
+def _beta_notes(result, analysis=None) -> str:
+    """Where the beta method's beta came from, for the method step."""
+    if getattr(analysis, "beta_coefficients", "from_phi") == "table_7_9":
+        text = ("\u03b2 from local experience where a layer gives one "
+                "(Step 2a), else GEC-12 Table 7-9 by soil type, linear in "
+                "\u03c6' across the type's \u03c6' range (Step 2b).")
+    else:
+        text = ("\u03b2 from local experience where a layer gives one "
+                "(Step 2a), else (1 - sin \u03c6') tan \u03c6' "
+                "(Fellenius 1991).")
+    parts = [f"{lb['depth_top_m']:.1f}-{lb['depth_bottom_m']:.1f} m: "
+             f"\u03b2 = {lb['beta']:.3f} ({lb['beta_source']})"
+             for lb in result.layer_breakdown or [] if "beta_source" in lb]
     return text + (" " + "; ".join(parts) + "." if parts else "")
 
 
