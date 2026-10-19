@@ -694,20 +694,22 @@ class AxialPileAnalysis:
         """What this analysis chose (GM-115, GM-121): the side and toe
         resistance methods, the GEC-12 charts and limits each used and the
         judgments GEC-12 leaves to the engineer, with their basis."""
-        from geotech_common.choices import (
-            GIVEN, MODULE, choice, how_given,
-        )
+        from geotech_common.choices import MODULE, choice, how_given
         # Citations are to the printed GEC-12 (FHWA-NHI-16-009, 2016).
         out = []
         beta = self.method == "beta"
+        # the beta method as the call named it, or as a calc package's call
+        # says it is assumed (GM-180)
+        method_how = (how_given(self.method, "auto", name="method")
+                      if beta else None)
         auto_text = "Nordlund / alpha-method by soil type (method 'auto')"
         beta_text = ("the beta method in every layer, GEC-12 Sec. 7.2.1.3.4 "
                      "(method 'beta')")
         if beta:
             out.append(choice(
                 "side resistance method", "beta method, every layer",
-                GIVEN, "fs = beta sigma'v (GEC-12 Eq. 7-19); beta from local "
-                "experience where a layer gives one (Step 2a), else as "
+                method_how, "fs = beta sigma'v (GEC-12 Eq. 7-19); beta from "
+                "local experience where a layer gives one (Step 2a), else as "
                 "'beta and Nt (beta method)' says (Step 2b)", [auto_text]))
             c = self._beta_choice(layer_results, tip_layer, toe_details)
             if c:
@@ -737,7 +739,7 @@ class AxialPileAnalysis:
                                "where a layer gives one (Step 5a), else as "
                                "'beta and Nt (beta method)' says, or "
                                "cohesive_Nt in clay; no limiting value "
-                               "(p. 256)", GIVEN)
+                               "(p. 256)", method_how)
             alts = [auto_text]
         elif tip_layer.soil_type == "cohesionless":
             toe, basis, how = (
@@ -820,7 +822,9 @@ class AxialPileAnalysis:
             out.append(choice(
                 "displaced volume V (Nordlund)",
                 f"{V:.3g} ft3/ft ({what})",
-                GIVEN if self.displaced_volume is not None else MODULE,
+                how_given(self.displaced_volume, None,
+                          name="displaced_volume")
+                if self.displaced_volume is not None else MODULE,
                 basis, alts))
             given = sorted({l.delta_phi_ratio for l in sand
                             if l.delta_phi_ratio is not None})
@@ -833,7 +837,8 @@ class AxialPileAnalysis:
                 parts.append(f"{ratio:.2f} (Fig. 7-9 curve {key}, {label})")
             out.append(choice(
                 "Nordlund delta/phi", ", ".join(parts),
-                MODULE if from_chart else GIVEN,
+                MODULE if from_chart else how_given(
+                    given[0], None, within="layers"),
                 "GEC-12 Step 2b: Fig. 7-9 with V for the pile type; a "
                 "layer's delta_phi_ratio wins",
                 ["delta/phi given for a layer (delta_phi_ratio)"]))
@@ -900,7 +905,9 @@ class AxialPileAnalysis:
                          f"p. 406): {numbers}")
             out.append(choice(
                 "open-ended pipe", cases[plug_case],
-                MODULE if self.open_pipe_method == "auto" else GIVEN, basis,
+                MODULE if self.open_pipe_method == "auto" else how_given(
+                    self.open_pipe_method, "auto", name="open_pipe_method"),
+                basis,
                 [cases["plugged"] + " / " + cases["unplugged"]
                  + " (open_pipe_method 'paikowsky_whitman')",
                  cases["eq_7_90"] + " (open_pipe_method 'tomlinson')"]
@@ -966,8 +973,9 @@ class AxialPileAnalysis:
             out.append(choice(
                 "Nt of the cohesive toe layer (beta method)",
                 f"{toe_details['N_t']:g}",
-                GIVEN if given else how_given(self.cohesive_Nt, COHESIVE_NT,
-                                              name="cohesive_Nt"),
+                how_given(toe_details["N_t"], None, within="layers")
+                if given else how_given(self.cohesive_Nt, COHESIVE_NT,
+                                        name="cohesive_Nt"),
                 "GEC-12 p. 256: an Nt of 3 in clay gives about the toe "
                 "resistance of an undrained (su) analysis; 'the use of a "
                 "relatively low Nt coefficient in clays is recommended unless "
@@ -1008,7 +1016,7 @@ class AxialPileAnalysis:
         and limit, each layer's Figure 7-18 case, and su past a chart.
         Under Eq. 7-90 (``eq_7_90``) the side resistance is on Figure 7-17
         whatever the chart, so no Figure 7-18 case is read."""
-        from geotech_common.choices import GIVEN, MODULE, choice, how_given
+        from geotech_common.choices import MODULE, choice, how_given
         out = []
         charts = {"fig_7_17": "Fig. 7-17 (Tomlinson 1979)",
                   "fig_7_18": "Fig. 7-18 (Tomlinson 1980) by stratigraphy "
@@ -1081,11 +1089,13 @@ class AxialPileAnalysis:
                 if case != "none":
                     where += f", D = {lb['D_over_b_fig_7_18']:.1f}b"
                 strata.setdefault(text, []).append(where)
-            given = any(l.fig_7_18_case is not None for l in self.soil.layers)
+            given = [l.fig_7_18_case for l in self.soil.layers
+                     if l.fig_7_18_case is not None]
             out.append(choice(
                 "Fig. 7-18 stratigraphy case",
                 "; ".join(f"{t}: {', '.join(w)}" for t, w in strata.items()),
-                GIVEN if given else MODULE,
+                how_given(given[0], None, within="layers") if given
+                else MODULE,
                 "GEC-12 pp. 246-247: the top graph for piles driven through "
                 "a sand or sandy gravel layer into an underlying stiff clay, "
                 "the middle graph through a soft clay layer into an "

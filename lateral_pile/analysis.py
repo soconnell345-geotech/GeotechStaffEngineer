@@ -59,11 +59,13 @@ def _field_default(obj, name):
     return None
 
 
-def py_choices(layers) -> list:
+def py_choices(layers, within: str = "layers") -> list:
     """What a lateral analysis used (GM-115): each layer's p-y model with
     its source and any option left at its default, and the loading (static
-    or cyclic) over the layers."""
-    from geotech_common.choices import DEFAULT, GIVEN, choice, how_given
+    or cyclic) over the layers. ``within`` is the input the layers came in,
+    so a calc package's call that says it is not the user's makes each
+    model and loading read "assumed" (GM-180)."""
+    from geotech_common.choices import DEFAULT, choice, how_given
     out, loading, all_default = [], [], True
     for layer in layers:
         model = layer.py_model
@@ -82,9 +84,10 @@ def py_choices(layers) -> list:
             basis += _weak_rock_note(model)
         family = next((f for f in _PY_FAMILIES if name in f), ())
         out.append(choice(f"p-y curves {layer.top:g}-{layer.bottom:g} m",
-                          name, GIVEN, basis, family))
+                          name, how_given(name, None, within=within),
+                          basis, family))
         if isinstance(model, WeakRock):
-            out += _weak_rock_choices(model, layer)
+            out += _weak_rock_choices(model, layer, within)
         load = getattr(model, "loading", None)
         if load is not None:
             if how_given(load, _field_default(model, "loading")) != DEFAULT:
@@ -98,7 +101,9 @@ def py_choices(layers) -> list:
         chosen = (f"{one}, every layer" if one else
                   "; ".join(f"{l} {a:g}-{b:g} m" for l, a, b in loading))
         out.append(choice(
-            "loading", chosen, DEFAULT if all_default else GIVEN,
+            "loading", chosen,
+            DEFAULT if all_default else how_given(chosen, None,
+                                                  within=within),
             "each model's static or cyclic p-y curve (COM624P, "
             "FHWA-SA-91-048)",
             [x for x in ("static", "cyclic") if one and x != one]))
@@ -118,8 +123,9 @@ def _weak_rock_note(model) -> str:
     return note
 
 
-def _weak_rock_choices(model, layer) -> list:
-    """A weak-rock layer's alpha_r (from RQD) and k_rm (GM-159)."""
+def _weak_rock_choices(model, layer, within: str = "layers") -> list:
+    """A weak-rock layer's alpha_r (from RQD) and k_rm (GM-159), each
+    read from a field of the input ``within``."""
     from geotech_common.choices import choice, how_given
     span = f"{layer.top:g}-{layer.bottom:g} m"
     krm_options = (
@@ -132,7 +138,8 @@ def _weak_rock_choices(model, layer) -> list:
     return [
         choice(f"strength reduction alpha_r {span}",
                f"{model.alpha_r:.3g} (RQD {model.RQD:g} %)",
-               how_given(model.RQD, _field_default(model, "RQD")),
+               how_given(model.RQD, _field_default(model, "RQD"),
+                         within=within),
                "alpha_r = 1/3 at RQD 100 %, rising linearly to 1.0 at RQD 0 "
                "(Reese 1997, GEC 9 p. 231); RQD 100 % gives the printed lower "
                "bound, alpha_r = 1/3",
@@ -141,7 +148,8 @@ def _weak_rock_choices(model, layer) -> list:
                 "RQD 0: alpha_r = 1.0, p_ur three times as large, so less "
                 "deflection"]),
         choice(f"k_rm {span}", model.krm,
-               how_given(model.krm, _field_default(model, "krm")),
+               how_given(model.krm, _field_default(model, "krm"),
+                         within=within),
                "strain at 50 % of the ultimate, 0.00005 to 0.0005 (GEC 9 "
                "p. 232); the lower value gives a stiffer initial response "
                "(GEC 10 p. 9-31), so 0.0005 is the softer end",

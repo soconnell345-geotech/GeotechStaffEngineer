@@ -226,14 +226,21 @@ def _run_spt_nceer2001(params: dict) -> dict:
 
 def _routed(out: dict, params: dict, alternatives: list) -> dict:
     """The routed procedure as this tool chose it (GM-115): the first of
-    the result's ``choices`` is "given" when the call named a method, else
-    "default", with the procedures this tool also offers."""
+    the result's ``choices`` is "given" when the call named a method (or
+    "assumed" when a calc package's call says it is not the user's,
+    GM-180), else "default", with the procedures this tool also offers;
+    the water table reads as this tool's own input was given."""
+    from geotech_common.choices import how_given
     first = (out.get("choices") or [None])[0]
     if first is not None and first.get("what") == "triggering procedure":
-        first["how"] = "given" if params.get("method") is not None \
-            else "default"
+        first["how"] = how_given(params.get("method"), None, name="method")
         if alternatives:
             first["alternatives"] = list(alternatives)
+    for c in out.get("choices") or []:
+        if c.get("what") == "water table":
+            # the routed function takes it as gwl; this tool, gwt_depth
+            c["how"] = how_given(_first(params, "gwt_depth", "gwl"), None,
+                                 name="gwt_depth")
     return out
 
 

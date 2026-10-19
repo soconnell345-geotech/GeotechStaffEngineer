@@ -30,7 +30,11 @@ explicitly, so the agent layer says which inputs a call named (GM-118):
 :func:`how_given` with the input's ``name`` answers from that, so a typed
 value equal to the default is "given". Outside such a call, and for values
 nested inside an input (a layer's field), :func:`how_given` compares the
-value with the default. The agent layer also adds ``defaults_used`` to a
+value with the default, and a nested value names the input it came in
+(``within``), so it reads "assumed" with that input. A module never writes
+"given" itself: an entry is "given" only by :func:`how_given`, so a calc
+package's call that says an input is not the user's reaches every choice
+made from it (GM-180). The agent layer also adds ``defaults_used`` to a
 result (the declared defaults a call left in force and that apply to it);
 a name :func:`how_given` called "default" is always among them, so the two
 never contradict each other.
@@ -132,7 +136,8 @@ def call_inputs(given: Iterable[str], defaults: Iterable[str] = (),
         _CALL.reset(token)
 
 
-def how_given(value: Any, default: Any, name: Optional[str] = None) -> str:
+def how_given(value: Any, default: Any, name: Optional[str] = None,
+              within: Optional[str] = None) -> str:
     """``"given"`` or ``"default"``: whether the input was given.
 
     With ``name`` (the input as the tool declares it) inside
@@ -140,7 +145,11 @@ def how_given(value: Any, default: Any, name: Optional[str] = None) -> str:
     when the call also said it is not the user's, GM-167), ``"default"``
     when it left that declared default in force. Otherwise, and for a value
     nested inside an input: ``"default"`` when ``value`` equals the
-    module's ``default``, else ``"given"``."""
+    module's ``default``, else ``"given"``; with ``within`` (the input the
+    nested value came in, such as ``"layers"`` for a layer's field),
+    ``"assumed"`` in place of ``"given"`` when the call said that input is
+    not the user's (GM-180). A required input has no default: pass
+    ``None``."""
     record = _CALL.get()
     if name is not None and record is not None:
         if name in record.given:
@@ -153,7 +162,12 @@ def how_given(value: Any, default: Any, name: Optional[str] = None) -> str:
         same = bool(same)
     except (TypeError, ValueError):
         same = False
-    return DEFAULT if same else GIVEN
+    if same:
+        return DEFAULT
+    if within is not None and record is not None \
+            and within in record.given and within in record.assumed:
+        return ASSUMED
+    return GIVEN
 
 
 def choices_lines(choices: Optional[List[dict]],

@@ -223,11 +223,12 @@ def analyze_spt_liquefaction(
 
 def spt_choices(c_0: float = 2.8) -> list:
     """What :func:`analyze_spt_liquefaction` chose (GM-115), as a result's
-    ``choices`` (``geotech_common.choices``)."""
-    from geotech_common.choices import GIVEN, MODULE, choice, how_given
+    ``choices`` (``geotech_common.choices``). The procedure is this
+    function's own, not an input, so it is the module's (GM-180)."""
+    from geotech_common.choices import MODULE, choice, how_given
     return [
         choice("triggering procedure",
-               "Boulanger & Idriss (2014) SPT", GIVEN,
+               "Boulanger & Idriss (2014) SPT", MODULE,
                "rd Eq. 2.14a, MSF Eqs. 2.20/2.21, K_sigma Eq. 2.16a, fines "
                "Eq. 2.23; rd, MSF and K_sigma are listed for each layer "
                "(layer_results)"),
