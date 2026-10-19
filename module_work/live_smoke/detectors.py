@@ -14,9 +14,10 @@ cards, (d) the SharePoint mirror and the agent's SharePoint calls,
 (k) figure cards (a card showing an older draw than a figure written
 later, and, where the flow asks, a card no look read), (l) the app's
 judgment-call check (an answer sent back for calls with no source, and
-calls still without one when it went out). A model's answer
-QUALITY is never judged here -- only whether the app's plumbing did what it
-says.
+calls still without one when it went out), (m) numbers in the answer that
+no tool result, tool input or prompt holds (a 'low' lead for the trace
+read). A model's answer QUALITY is never judged here -- only whether the
+app's plumbing did what it says.
 """
 
 from __future__ import annotations
@@ -81,13 +82,39 @@ _SUCCESS_CLAIM = re.compile(
     r"written|generated|exported|marked)|is (?:now )?(?:attached|saved|"
     r"uploaded|ready)|here is (?:the|your) (?:link|file|memo|pdf|report))",
     re.IGNORECASE)
+#: A tool call refused for an argument it does not take.
 _UNKNOWN_ARG = re.compile(
-    r"unexpected keyword argument|validation error|field required|"
-    r"input should be|extra (?:inputs|fields) (?:are )?not permitted|"
+    r"unexpected keyword argument|"
+    r"extra (?:inputs|fields) (?:are )?not permitted|"
     r"unknown (?:argument|parameter|param)|got an unexpected|"
-    r"missing \d+ required positional argument|"
+    r"is not a (?:valid )?parameter of|"
     r"is not a valid tool|not a valid tool, try one of",
     re.IGNORECASE)
+#: ... for one it needs and was not given (EV-30, w14 F18j: pydantic's
+#: "Field required" is a missing argument, not an unknown one).
+_MISSING_ARG = re.compile(
+    r"field required|"
+    r"missing \d+ required (?:positional |keyword-only )?arguments?|"
+    r"missing required (?:argument|parameter|field)s?",
+    re.IGNORECASE)
+#: ... for one of the wrong type or shape ("Input should be a valid
+#: dictionary").
+_INVALID_ARG = re.compile(r"validation error|input should be",
+                          re.IGNORECASE)
+
+
+def argument_refusal(text: str) -> Optional[str]:
+    """The finding code for a call refused over its arguments, or None:
+    ``unknown_argument_refusal``, ``missing_argument`` or
+    ``invalid_argument``."""
+    text = str(text or "")
+    if _UNKNOWN_ARG.search(text):
+        return "unknown_argument_refusal"
+    if _MISSING_ARG.search(text):
+        return "missing_argument"
+    if _INVALID_ARG.search(text):
+        return "invalid_argument"
+    return None
 _SP_OK = re.compile(r"^(?:Uploaded |Downloaded |Contents of |Matches for |"
                     r"\(empty folder)", re.MULTILINE)
 _SP_HONEST = re.compile(
@@ -784,6 +811,42 @@ def _acknowledges_failure(answer: str) -> bool:
                               answer or "", re.IGNORECASE))
 
 
+def _call_key(start: dict) -> Tuple[Any, Any, str, str]:
+    """What makes two tool calls the same call for a retry: the agent, its
+    task, the tool and, for ``call_agent``, the method (or, where the
+    method is missing, the module name the call gave in its place)."""
+    name = str(start.get("name") or "?")
+    target = ""
+    if name == "call_agent":
+        args = _args_of(start)
+        target = str(args.get("method") or args.get("agent_name") or "")
+    return start.get("agent"), start.get("task_id"), name, target
+
+
+def _next_call_fixed(acts, ev: dict) -> Optional[str]:
+    """``tool`` (or ``call_agent <method>``) when the refused call ``ev``
+    (its tool_end or tool_error) was followed by the same agent's next call
+    of the same tool and method, and that call did not fail; else None."""
+    run = ev.get("run_id")
+    if not run:
+        return None
+    starts = [(i, a) for i, a in enumerate(acts)
+              if a.get("event") == "tool_start"]
+    mine = next(((i, a) for i, a in starts if a.get("run_id") == run), None)
+    if mine is None:
+        return None
+    key = _call_key(mine[1])
+    nxt = next((a for i, a in starts if i > mine[0]
+                and a.get("run_id") != run and _call_key(a) == key), None)
+    if nxt is None or nxt.get("run_id") in _failed_runs(acts):
+        return None
+    ended = any(a.get("run_id") == nxt.get("run_id")
+                and a.get("event") == "tool_end" for a in acts)
+    if not ended:
+        return None
+    return key[2] + (f" {key[3]}" if key[3] else "")
+
+
 def detect_health(ctx) -> List[dict]:
     D = "e_health"
     rec = ctx["rec"]
@@ -831,16 +894,18 @@ def detect_health(ctx) -> List[dict]:
     errored: Dict[str, int] = {}
     order: List[Tuple[str, bool]] = []
     soft: List[dict] = []
+    refused: List[Tuple[dict, dict]] = []      # (finding, its event)
     for a in acts:
         ev = a.get("event")
         if ev == "tool_error":
             name = a.get("name") or "?"
             text = str(a.get("error") or "")
-            code = ("unknown_argument_refusal" if _UNKNOWN_ARG.search(text)
-                    else "tool_raised")
+            code = argument_refusal(text) or "tool_raised"
             out.append(finding(D, code, "high",
                                f"{name} raised: {text[:300]}", tool=name,
                                agent=a.get("agent"), error=text[:2000]))
+            if code != "tool_raised":
+                refused.append((out[-1], a))
             errored[name] = errored.get(name, 0) + 1
             order.append((name, True))
         elif ev == "tool_end":
@@ -850,12 +915,13 @@ def detect_health(ctx) -> List[dict]:
                 order.append((name, False))
                 continue                      # judged by detector (d)
             is_err, note = _result_is_error(text)
-            if _UNKNOWN_ARG.search(text[:2000]) and (is_err or text.lower()
-                                                     .startswith("error")):
-                out.append(finding(D, "unknown_argument_refusal", "high",
+            code = argument_refusal(text[:2000])
+            if code and (is_err or text.lower().startswith("error")):
+                out.append(finding(D, code, "high",
                                    f"{name} refused its arguments: "
                                    f"{text[:300]}", tool=name,
                                    agent=a.get("agent")))
+                refused.append((out[-1], a))
                 errored[name] = errored.get(name, 0) + 1
                 order.append((name, True))
             elif "Traceback (most recent call last)" in text:
@@ -936,6 +1002,16 @@ def detect_health(ctx) -> List[dict]:
             f["severity"] = "low"
             f["message"] += (" (recovered: a later call of the same tool "
                              "succeeded)")
+            f["evidence"]["recovered"] = True
+    # A call refused over its arguments that the same agent put right on its
+    # next call of that tool (for call_agent, of that method) did not reach
+    # the user: medium, not high (EV-30; w14 F18j's four refusals, a guard's
+    # among them, were each fixed within one round).
+    for f, ev in refused:
+        fix = _next_call_fixed(acts, ev)
+        if fix:
+            f["severity"] = "medium"
+            f["message"] += f" (recovered: the next call of {fix} succeeded)"
             f["evidence"]["recovered"] = True
     if unrecovered and len(stripped) >= 40 and _SUCCESS_CLAIM.search(answer) \
             and not _acknowledges_failure(answer):
@@ -1355,22 +1431,34 @@ def judgment_checks(acts: Iterable[dict]) -> List[dict]:
 
 
 def detect_judgment_check(ctx) -> List[dict]:
-    """What the app's turn-end judgment-call check did (both 'info': the
+    """What the app's turn-end judgment-call check did (all 'info': the
     check's work and the model's choices, never a plumbing fault): the
-    answer sent back for calls that named no source with no consult, and
-    an answer that went out with such calls and no consult."""
+    answer sent back for calls that named no source (with no consult, or
+    after one: GM-187), and an answer that went out with such calls, with
+    no consult or after one (EV-30: w14 F18j's 2 of 5 were recorded only as
+    the check's numbers)."""
     D = "l_judgment_check"
     out: List[dict] = []
     for ev in judgment_checks(ctx["activity"]):
         calls = [str(c) for c in ev.get("unsourced") or []]
         listed = "; ".join(c[:80] for c in calls[:5])
         if ev.get("action") == "fed_back":
+            why = ("after the references consult" if ev.get("references_ran")
+                   else "and no references task had run")
             out.append(finding(
                 D, "judgment_check_retry", "info",
                 f"the answer was sent back once: {len(calls)} of "
-                f"{ev.get('n_calls')} judgment calls named no source and no "
-                f"references task had run ({listed})",
-                n_calls=ev.get("n_calls"), unsourced=calls))
+                f"{ev.get('n_calls')} judgment calls named no source {why} "
+                f"({listed})", n_calls=ev.get("n_calls"), unsourced=calls,
+                reason=ev.get("reason")))
+        elif calls and ev.get("references_ran"):
+            out.append(finding(
+                D, "judgment_calls_unsourced_after_consult", "info",
+                f"the answer went out with {len(calls)} of "
+                f"{ev.get('n_calls')} judgment calls naming no source after "
+                f"the references consult (mode {ev.get('mode')}: {listed})",
+                n_calls=ev.get("n_calls"), unsourced=calls,
+                mode=ev.get("mode")))
         elif calls and not ev.get("references_ran"):
             out.append(finding(
                 D, "judgment_calls_unsourced", "info",
@@ -1382,10 +1470,228 @@ def detect_judgment_check(ctx) -> List[dict]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# (m) numbers in the answer that nothing holds (EV-30)
+# ---------------------------------------------------------------------------
+
+#: A number as an answer prints it ("1,159", "0.60", "32").
+_ANSWER_NUM = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?")
+#: Every number a tool result, an argument or a prompt holds, either way a
+#: comma reads ("[1,234]" is 1 and 234, or 1234).
+_POOL_NUM = re.compile(r"\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
+_POOL_THOUSANDS = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?")
+#: Words before a number that make it a locator, not a quantity.
+_LOCATOR_WORD = re.compile(
+    r"(?:\b(?:eqs?|eqns?|equations?|tables?|figs?|figures?|sections?|secs?|"
+    r"chapters?|ch|articles?|art|pages?|pp?|steps?|examples?|appendix|"
+    r"app|no|rev|version|v|items?|parts?|vol|volume|cases?|stages?|"
+    r"runs?|turns?|lines?|rows?|columns?|layers?|options?)\.?|§|#)\s*$",
+    re.IGNORECASE)
+#: A document code just before a number ("GEC 6", "DM 7.01", "UFC 3-...").
+_CODE_BEFORE = re.compile(r"\b[A-Z][A-Z\-]{1,9}\s$")
+_HEDGE_BEFORE = re.compile(r"(?:about|approximately|approx\.|roughly|around|"
+                           r"nearly|some|~|≈)\s*[±+\-−]?\s*$", re.IGNORECASE)
+#: Conversions an answer may make of a tool's number, by the unit printed
+#: after it: a percent of a fraction, US customary of SI, a prefix, degrees
+#: of radians. Only by the unit: with every factor tried on every number,
+#: almost any number is some tool number converted (w14 F18's "15" was
+#: 1.0 x 14.59).
+_UNIT_AFTER = (
+    (re.compile(r"\s*(?:%|percent\b)"), (100.0, 0.01)),
+    (re.compile(r"\s*(?:ft|feet|foot|in\b|inch|psf|ksf|tsf|psi|ksi|kips?\b|"
+                r"lbs?\b|pcf|kcf|klf|plf|kip-ft|ft-kip)", re.IGNORECASE),
+     (0.3048, 3.28084, 0.0254, 39.3701, 47.8803, 0.0208854, 0.0478803,
+      20.8854, 95.7605, 0.0104427, 4.44822, 0.224809, 14.5939, 0.0685218,
+      6.89476, 0.145038, 0.157087, 6.36588, 0.453592, 2.20462, 1.35582,
+      0.737562)),
+    (re.compile(r"\s*(?:MPa|GPa|MN|mm|km|kg|tonnes?)\b"), (1000.0, 0.001)),
+    (re.compile(r"\s*(?:°|deg\b|degrees?\b|rad\b|radians?\b)"),
+     (57.2958, 0.0174533)),
+)
+
+
+#: Tools whose results describe the tools, not the problem: their numbers
+#: (ranges, defaults, examples) are no source for an answer's.
+_DOC_TOOLS = frozenset({"list_agents", "list_methods", "describe_method"})
+
+
+def _factors_after(text: str, end: int) -> Tuple[float, ...]:
+    after = text[end:end + 12]
+    for pattern, factors in _UNIT_AFTER:
+        if pattern.match(after):
+            return (1.0,) + factors
+    return (1.0,)
+
+
+def _number_tokens(text: str) -> List[dict]:
+    """Every number in ``text`` with what an answer-number check needs:
+    its value, printed decimals and trailing zeros, its span, and whether
+    it is a quantity at all (not a section, equation, table, figure or page
+    number, a year, a list marker, part of a name or a file, or a count of
+    ten or less)."""
+    out = []
+    for m in _ANSWER_NUM.finditer(text):
+        s, e = m.span()
+        raw = m.group(0)
+        prev = text[s - 1] if s else ""
+        prev2 = text[s - 2] if s > 1 else ""
+        nxt = text[e] if e < len(text) else ""
+        nxt2 = text[e + 1] if e + 1 < len(text) else ""
+        digits = raw.replace(",", "")
+        value = float(digits)
+        dec = len(digits.split(".")[1]) if "." in digits else 0
+        tz = 0 if dec else len(digits) - len(digits.rstrip("0"))
+        line_start = text.rfind("\n", 0, s) + 1
+        before = text[max(line_start, s - 24):s]
+        token = re.split(r"\s", text[max(line_start, s - 60):s])[-1] + \
+            re.split(r"\s", text[e:e + 60])[0]
+        quantity = not (
+            prev.isalnum() or prev == "_"
+            or (prev in "-‐." and prev2.isalnum())
+            or (nxt in ".-‐" and nxt2.isdigit())
+            or (nxt.isalpha() and re.match(r"(?:st|nd|rd|th|D)\b",
+                                           text[e:e + 3]))
+            or _LOCATOR_WORD.search(before)
+            or _CODE_BEFORE.search(before)
+            or (not dec and "," not in raw and len(raw) == 4
+                and 1800 <= value <= 2099)
+            or (nxt in ".)" and not text[line_start:s].strip(" \t>*-|#"))
+            or re.search(r"[/\\]|\.[A-Za-z]{2,4}\b", token)
+            or (not dec and value <= 10))
+        out.append({"value": value, "raw": raw, "dec": dec, "tz": tz,
+                    "start": s, "end": e, "quantity": bool(quantity),
+                    "factors": _factors_after(text, e),
+                    "hedged": bool(_HEDGE_BEFORE.search(before)),
+                    "context": text[max(line_start, s - 50):
+                                    min(len(text), e + 30)].strip()})
+    return out
+
+
+def _pool_values(texts: Iterable[str]) -> List[float]:
+    """The sorted absolute values of every number in ``texts``."""
+    vals = set()
+    for t in texts:
+        if not t:
+            continue
+        for m in _POOL_NUM.finditer(t):
+            try:
+                vals.add(abs(float(m.group(0))))
+            except ValueError:
+                pass
+        for m in _POOL_THOUSANDS.finditer(t):
+            vals.add(abs(float(m.group(0).replace(",", ""))))
+    return sorted(vals)
+
+
+def _tolerance(tok: dict) -> float:
+    """Half a unit in the last place the answer printed (a trailing zero
+    of a whole number counts as rounding, at most 2 %); 3 % when the
+    answer says "about"."""
+    v = tok["value"]
+    if tok["dec"]:
+        tol = 0.5 * 10 ** -tok["dec"]
+    else:
+        tol = max(0.5, min(0.5 * 10 ** tok["tz"], 0.02 * v))
+    if tok["hedged"]:
+        tol = max(tol, 0.03 * v)
+    return tol + 1e-9
+
+
+def _held(value: float, tol: float, pool: List[float],
+          factors: Iterable[float] = (1.0,)) -> bool:
+    import bisect
+    for f in factors:
+        lo, hi = (value - tol) / f, (value + tol) / f
+        i = bisect.bisect_left(pool, lo)
+        if i < len(pool) and pool[i] <= hi:
+            return True
+    return False
+
+
+def _derived_in_paragraph(tok: dict, para: List[dict]) -> bool:
+    """``tok`` is a sum, difference, product, ratio, percentage or percent
+    difference of two other numbers in its own paragraph of the answer."""
+    v, tol = tok["value"], _tolerance(tok)
+    nums = [p["value"] for p in para if p is not tok and p["value"]]
+    for i, a in enumerate(nums):
+        for b in nums[i + 1:]:
+            for r in (a + b, abs(a - b), a * b, a / b, b / a,
+                      100 * a / b, 100 * b / a, abs(100 * (a / b - 1)),
+                      abs(100 * (b / a - 1))):
+                if abs(r - v) <= tol:
+                    return True
+    return False
+
+
+def unsourced_numbers(answer: str, held_texts: Iterable[str]) -> List[dict]:
+    """The quantities in ``answer`` that no text of ``held_texts`` holds
+    (to the precision the answer printed, or in another common unit), and
+    that are no simple arithmetic of two numbers in their own paragraph."""
+    pool = _pool_values(held_texts)
+    toks = _number_tokens(answer)
+    paras: List[List[dict]] = []
+    bounds = [m.start() for m in re.finditer(r"\n\s*\n", answer)]
+    for t in toks:
+        k = sum(1 for b in bounds if b < t["start"])
+        while len(paras) <= k:
+            paras.append([])
+        paras[k].append(t)
+    out = []
+    for k, para in enumerate(paras):
+        for t in para:
+            if not t["quantity"] or _held(t["value"], _tolerance(t), pool,
+                                          t["factors"]):
+                continue
+            if _derived_in_paragraph(t, para):
+                continue
+            out.append(t)
+    return out
+
+
+def detect_answer_numbers(ctx) -> List[dict]:
+    """A number the answer states that no tool result, tool input or user
+    prompt holds, in this turn or before it (EV-30: w14's F18 OFF wrote
+    "the methods spread about ±15 %" where its runs gave -18 % and +7 %).
+    'low': a lead for the trace read, never a verdict, since a model may
+    work a number out in its head. Not counted: section, equation, table,
+    figure and page numbers, years, list markers, names and files, counts
+    of ten or less, numbers in another common unit, and a sum, difference,
+    product, ratio or percentage of two numbers in the same paragraph."""
+    D = "m_answer_numbers"
+    rec = ctx["rec"]
+    answer = rec.get("final") or ""
+    if not answer.strip():
+        return []
+    lo = int(rec.get("activity_offset") or 0)
+    held = list(ctx.get("prompts") or []) + [rec.get("prompt") or ""]
+    for a in ctx.get("activity_all") or []:
+        if a.get("event") == "turn_start":
+            held.append(str(a.get("prompt") or ""))
+    for a in (ctx.get("activity_all") or [])[:lo]:
+        held.append(_text(a.get("text") or ""))      # earlier answers
+    for a in (ctx.get("activity_all") or [])[:lo] + list(ctx["activity"]):
+        for k in ("args", "result", "error"):
+            if a.get(k) is None or (k != "args"
+                                    and a.get("name") in _DOC_TOOLS):
+                continue
+            held.append(_text(a.get(k)))
+    found = unsourced_numbers(answer, held)
+    if not found:
+        return []
+    shown = "; ".join(f"{t['raw']} (\"{t['context'][:70]}\")"
+                      for t in found[:6])
+    return [finding(
+        D, "answer_number_unsourced", "low",
+        f"{len(found)} number(s) in the answer that no tool result, input "
+        f"or prompt holds: {shown}",
+        numbers=[{"value": t["raw"], "context": t["context"]}
+                 for t in found[:20]])]
+
+
 DETECTORS = (detect_files_outside, detect_answer_links, detect_download_cards,
              detect_sharepoint, detect_health, detect_cost,
              detect_conversation_record, detect_figure_cards,
-             detect_judgment_check)
+             detect_judgment_check, detect_answer_numbers)
 
 
 def run_turn_detectors(ctx) -> dict:
@@ -1835,6 +2141,23 @@ def _tool_named_documents(turns) -> set:
 
 
 _SECTION_NO = re.compile(r"\d+(?:[.\-]\d+)+")
+#: An equation, table or figure number printed just after a citation, as a
+#: locator (w14 F18j: "DM7 (UFC 3-220-20) Eq. 5-13"; EV-30).
+_LOCATOR_AFTER = re.compile(
+    r"^[\s,;:)]*(?:\([^()]{1,30}\)[\s,]*)?"
+    r"(?:Eqs?\.?|Eqns?\.?|Equations?|Tables?|Figs?\.?|Figures?)\s*"
+    r"\(?(\d+(?:[.\-]\d+)+[a-z]?)", re.IGNORECASE)
+
+
+def citation_locators(c, text: str) -> List[str]:
+    """The numbers that place one citation in its document: its section
+    number(s) and an equation, table or figure number printed right after
+    it (EV-30)."""
+    out = _SECTION_NO.findall(c.section or "")
+    m = _LOCATOR_AFTER.match(text[c.end:c.end + 60])
+    if m:
+        out.append(m.group(1))
+    return out
 
 
 def _dedupe(found: List[dict]) -> List[dict]:
@@ -1853,8 +2176,11 @@ def _expect_pdf_cites_consult(turns) -> List[dict]:
     ``assumptions``, cites a document or work the ``references`` helper's
     hand-back named, the consult having finished before the deliverable
     was written. A document a tool's result also named counts only when
-    the deliverable cites it with a section number the consult's hand-back
-    gives (else it may be the tool's citation copied)."""
+    the deliverable cites it with a section, equation, table or figure
+    number the consult's hand-back gives (else it may be the tool's
+    citation copied). Every citation in the deliverable is read, not each
+    document's first (EV-30: w14 F18j's PDF named GEC-6 first with no
+    section and cited its sections later)."""
     from funhouse_agent.cited_documents import (covered, find_citations,
                                                 plain_text)
     D = "i_expectations"
@@ -1893,29 +2219,31 @@ def _expect_pdf_cites_consult(turns) -> List[dict]:
         words = "\n".join(w for _cs, w in done)
         docs = {c.key for c in before if c.kind == "document"}
         works = {c.key for c in before if c.kind == "work"}
-        cited = find_citations(text)
+        flat = plain_text(text)
+        cited = find_citations(flat, every=True)
         shared, tools_too = [], []
         for c in cited:
             if not ((c.kind == "document" and covered(c.key, docs))
                     or (c.kind == "work" and c.key in works)):
                 continue
             if not (c.key in tools_named or covered(c.key, tools_named)) \
-                    or any(n in words
-                           for n in _SECTION_NO.findall(c.section or "")):
+                    or any(n in words for n in citation_locators(c, flat)):
                 shared.append(c.shown)
-            else:
+            elif c.shown not in tools_too:
                 tools_too.append(c.shown)
         if not shared:
+            shown = list(dict.fromkeys(c.shown for c in cited))
             out.append(finding(
                 D, "expected_consult_citation_missing", "info",
                 f"{what} cites none of the {len(docs) + len(works)} "
                 "documents and works the consult named (consult: "
                 f"{', '.join(c.shown for c in before[:8]) or 'none'}; "
-                f"cited: {', '.join(c.shown for c in cited[:8]) or 'none'}"
+                f"cited: {', '.join(shown[:8]) or 'none'}"
                 + (f"; {', '.join(tools_too)} also named by a tool, cited "
-                   "with no section the consult gave" if tools_too else "")
+                   "with no section, equation, table or figure number the "
+                   "consult gave" if tools_too else "")
                 + ")", where=what, consult=[c.shown for c in before][:20],
-                cited=[c.shown for c in cited][:20], tools_too=tools_too))
+                cited=shown[:20], tools_too=tools_too))
     return _dedupe(out)
 
 
@@ -2106,4 +2434,5 @@ __all__ = ["finding", "turn_context", "run_turn_detectors", "DETECTORS",
            "card_matches", "card_kinds", "card_spec_bounds", "is_figure",
            "detect_judgment_check", "judgment_checks", "answer_section",
            "package_calls", "bespoke_reports", "helper_tasks", "given_rows",
-           "brief_given_block"]
+           "brief_given_block", "argument_refusal", "citation_locators",
+           "detect_answer_numbers", "unsourced_numbers"]
