@@ -1211,6 +1211,9 @@ def build_deep_agent(
     filesystem tools are present regardless because deepagents attaches them by
     default.
     """
+    # The first pyplot import, before tools run side by side (GM-172).
+    from funhouse_agent.deep.warm_imports import warm_pyplot
+    warm_pyplot()
     if review_page:
         from funhouse_agent import review_flags
         if review_flags.minimal_agent():
