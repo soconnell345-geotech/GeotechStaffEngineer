@@ -36,6 +36,9 @@ minutes; "small" was wrong before. One run of the circle task reads 160–360
 thousand input tokens, and check 6 runs it six times.
 
 Checks 1, 2, 3, 4 and 6 are done, and check 9 on Claude (see "Done").
+Check 7 and check 8 (steps 1, 2 and 4) ran on Foundry in brief 5
+(5.33.0rc1, 2026-10-08); check 7's repeats and check 8 step 3 are open
+(BACKLOG EV-02, for Foundry brief 6).
 
 ---
 
@@ -221,7 +224,10 @@ numbers to beat are in brackets):
 files, this run's per-item files record what the model actually wrote, so I
 can see exactly what is still wrong.
 
-## Check 7 — Whole 32-px patches: does GPT-5.4's small y stretch go? (next release; about 30 minutes, ~130 thousand input tokens)
+## Check 7 — Whole 32-px patches: does GPT-5.4's small y stretch go? (5.33.0 or later; about 30 minutes, ~130 thousand input tokens)
+
+**Status (2026-10-19).** Run once on Foundry in brief 5 (part F, one sample
+per look; `TRACE_REVIEW_B_AEFG.md`). The repeats are open: BACKLOG EV-02.
 
 **Why.** In brief 4 (part A) GPT-5.4's pixel boxes came back stretched in y
 by 1.4–1.7 % and not at all in x. Each stretch matched the image's height
@@ -229,7 +235,7 @@ rounded UP to whole 32 px patches (1344 / 1325 = 1.014), while the width
 (2,048) already was a whole number of patches. If GPT-5.4 works in a frame
 of whole patches, an image that already is one should remove the stretch:
 up to ~10 pt at the bottom of an 11 × 17 sheet, under 4 pt in a zoom. This
-is a **hypothesis to test, not a fix**: the next release carries a switch,
+is a **hypothesis to test, not a fix**: 5.33.0 carries a switch,
 `GEOTECH_VISION_PATCH_ALIGN`, OFF by default, that pads every image with at
 most 31 px of white paper on the right and bottom so both sides are whole
 patches (the view is widened to match, so conversions stay exact).
@@ -238,7 +244,7 @@ TRACE_REVIEW §7 item K; code `funhouse_agent/vision_view.align_to_patches`.
 **Where.** GPT-5.4 (`funhouse-gpt-high` on Funhouse, or GPT-5.4 on Foundry).
 Sol showed no stretch, so it needs no run.
 
-**Setup.** The release (or test wheel) that carries the switch.
+**Setup.** 5.33.0 or later (the switch shipped in 5.33.0).
 
 **Step 1: as shipped (switch off).** Run the §5.2 cell of
 `module_work/harness_theory/locating_things_on_a_page.md` unchanged. Note the
@@ -395,7 +401,12 @@ count (BACKLOG GM-96: your own call) and say so in the question.
 
 **Send:** the conversation folder.
 
-## Check 8 — Visual scales: label crops, `measure`, the chart's second reading, report ingest (next release; on Foundry as part of brief 5)
+## Check 8 — Visual scales: label crops, `measure`, the chart's second reading, report ingest (5.33.0 or later; on Foundry as part of brief 5)
+
+**Status (2026-10-19).** Steps 1, 2 and 4 ran on Foundry in brief 5
+(5.33.0rc1; see "Done"), and its part E read GEC-12 Fig 7-15. Step 3's
+DM7.2 Fig 4-12 question is open: BACKLOG EV-02.
+The text below is as written before brief 5.
 
 **Why.** W3's app side (`module_work/VISUAL_SCALES_DESIGN.md` §12) has only
 been tested offline, with stand-in models.
@@ -410,8 +421,8 @@ been tested offline, with stand-in models.
 Nothing here has met a real model. Steps 1-3 are small. Step 4 is a cluster
 run and belongs in brief 5.
 
-**Setup.** The release (or test wheel) that carries W3's app side, with its
-planlens.
+**Setup.** 5.33.0 or later with planlens 0.13.0 or later (W3's app side
+shipped in 5.33.0).
 
 **Step 1: the model reads numbered label crops** (no agent; about 3 calls
 per model, under 20 thousand input tokens). Run once with

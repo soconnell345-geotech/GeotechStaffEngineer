@@ -2540,7 +2540,11 @@ usually a REPORT (thirty pages of narrative, then tables, then figures), not
 a sheet. The user must not have to say whether they want a language review or
 a visual review.
 
-**Plan of record: `C:/Users/socon/.claude/plans/delightful-swinging-sky.md`.**
+**Plan of record then: `C:/Users/socon/.claude/plans/delightful-swinging-sky.md`.
+That file is gone (not in `~/.claude/plans/`, never committed).** It was
+replaced by the 2026-09-13 document-review reset ("DOCUMENT-REVIEW RESET",
+above), then `module_work/REVIEW_ARCHITECTURE.md`; open work is in
+`BACKLOG.md`, and this slice is DR-12.
 Driving example: *"what is the average spacing of the borings in this plan?"*
 over a Langan Subsurface Investigation Plan. Surveyed verdict: today that
 fails as a plausible wrong number rather than a refusal.
@@ -2784,7 +2788,7 @@ agent per wave (parallel fan-outs burn the session limit); owner is a
 practicing geotech engineer, not a developer — actionable results, no git
 lectures; wiki/Das content = internal anchors only, never shipped.
 
-## 0. Delta since the table below (2026-07-15 → 07-18; table not yet rewritten)
+## 0. Delta since the table below (2026-07-15 → 07-18; table not yet rewritten) [HISTORICAL]
 
 Everything here is also in CLAUDE.md's release sections (read those) and the
 auto-memory. Headlines:
@@ -2818,7 +2822,9 @@ auto-memory. Headlines:
 
 ---
 
-## 1. One-screen status
+## 1. One-screen status (2026-07-15) [HISTORICAL]
+
+> **HISTORICAL, §0 to the end of this file (written 2026-07-15/18).** Since then the repo is public, the release and master are in §0a-current, the `v5.1-todos` worktree is gone, `module_work/V5.4_PLAN.md` is closed (open work is in `BACKLOG.md`), and the eval suite has 106 questions (`funhouse_agent/geotech_test_suite.json`).
 
 | Item | Value |
 |------|-------|
@@ -2838,7 +2844,7 @@ explicit OK.
 
 ---
 
-## 1b. Post-5.5.2 app workstream (2026-07-13/14, on master, UNRELEASED)
+## 1b. Post-5.5.2 app workstream (2026-07-13/14; released in 5.6.0) [HISTORICAL]
 
 Owner pivoted to app-heavy work (wiki integration PARKED). **All A-items built +
 deployed locally** — plan of record + close-out: `module_work/APP_PLAN.md`
@@ -2859,7 +2865,7 @@ free-body discrepancy (owner wall session); CI mock eval subset. Webapp tests:
 
 ---
 
-## 2. What's on master (done + durable)
+## 2. What's on master (done + durable, to 5.3.0) [HISTORICAL]
 
 Chronological, all merged and pushed. Full detail: `docs/V5.1_SUMMARY.html`,
 the per-module `DESIGN.md`/`VALIDATION.md`/`UPGRADE_PLAN.md`, and the memory
@@ -2911,7 +2917,7 @@ note `project_le_fem_modernization` (auto-loaded).
 
 ---
 
-## 3. What's on branch `v5.4` (BUILT + gated, awaiting owner release call)
+## 3. What's on branch `v5.4` (BUILT + gated; released as 5.4.0 on 2026-07-08) [HISTORICAL]
 
 All six owner directives (2026-07-06) are DONE on `v5.4` (13 commits over
 master; final gate 8279 passed / 48 skipped). Plan of record + per-item log:
@@ -2962,7 +2968,7 @@ master; final gate 8279 passed / 48 skipped). Plan of record + per-item log:
 
 ---
 
-## 4. How to run things (all offline unless noted)
+## 4. How to run things (all offline unless noted) [HISTORICAL; current: CLAUDE.md]
 
 **Environment:**
 - Work in the git worktree `C:\Users\socon\OneDrive\dev\GeotechStaffEngineer\.claude\worktrees\v5.1-todos`
@@ -3009,7 +3015,7 @@ just-added file): unzip and confirm the new files/tokens are present.
 
 ---
 
-## 5. Standing constraints & gotchas (carry forward)
+## 5. Standing constraints & gotchas (carry forward) [HISTORICAL; current: CLAUDE.md and §0a-current]
 
 - **No version bump→tag→publish without explicit owner OK.** A `v*` tag push
   auto-publishes to PyPI. rc strings are committed without tags on purpose.
@@ -3034,7 +3040,7 @@ just-added file): unzip and confirm the new files/tokens are present.
 
 ---
 
-## 6. File map (where the important things live)
+## 6. File map (where the important things live) [HISTORICAL; open work: `BACKLOG.md`]
 
 - `HANDOFF.md` (this file) — current authoritative handoff.
 - **`module_work/V5.4_PLAN.md`** — CURRENT plan of record (owner directives
