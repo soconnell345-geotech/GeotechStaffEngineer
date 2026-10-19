@@ -272,11 +272,14 @@ That run adds to the alternatives you would run anyway, never replaces
 them. Leave out rounding and presentation. An answer that rests on no call
 needs no list."""
 
-#: The consult as a step, where the references helper is built.
+#: The consult as a step, where the references helper is built. GM-187
+#: (live wave w14: the consult cost $0.20-0.53 a turn; briefs asked several
+#: questions per call): the task lists the calls and asks only for sources.
 _JUDGMENT_CALLS_LOOKUP = (
     "Before the list, ask the `references` helper once, in one task, about\n"
     "every call with no basis in a tool's `choices` or a reference already\n"
-    "looked up. ")
+    "looked up: list those calls one per line and ask only for each one's\n"
+    "source or \"no reference found\". ")
 
 _JUDGMENT_CALLS_NONE = (
     '"rests on judgment, no\n  reference found" only where that consult '

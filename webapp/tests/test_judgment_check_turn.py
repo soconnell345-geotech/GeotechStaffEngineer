@@ -1,10 +1,11 @@
 """The turn's "Judgment calls" list, checked for calls with no source
-(BACKLOG GM-174).
+(BACKLOG GM-174, GM-187).
 
 With ``GEOTECH_JUDGMENT_CALLS`` on and a build that asks for the list after
 a consult (``agent.geotech_judgment_consult``), ``core.stream_turn`` sends
-an answer back ONCE when its list has calls that name no source and no
-``references`` task ran in the turn, and keeps the check in
+an answer back ONCE when its list has calls that name no source: asking for
+the consult when no ``references`` task ran in the turn, and for a source
+or "no reference found" when one did. It keeps the check in
 ``activity.jsonl``. Driven here with a scripted stream.
 """
 
@@ -188,14 +189,40 @@ def test_an_answer_with_no_list_is_not_sent_back(tmp_path, monkeypatch):
     assert events == []                         # nothing to record
 
 
-def test_a_turn_that_consulted_is_not_sent_back(tmp_path, monkeypatch):
+def test_unsourced_after_a_consult_is_sent_back_once(tmp_path, monkeypatch):
+    """GM-187 (w14 F18j: 2 of 5 calls with no source after the consult):
+    the answer goes back once, asking for no second consult, and the reply
+    after the note goes out as written."""
     monkeypatch.setenv(review_flags.JUDGMENT_CALLS_ENV, "1")
-    agent = _ScriptedAgent(_consult_then(UNSOURCED))
+    agent = _ScriptedAgent(_consult_then(UNSOURCED), _reply(UNSOURCED))
+    answer, items, events = _run(agent, tmp_path)
+    assert len(agent.inputs) == 2               # one retry, never a second
+    told = agent.inputs[1]["messages"][-1]["content"]
+    assert told.startswith(jc.NOTE_PREFIX)
+    for head in ("Wall contact.", "Drained analysis.", "Strut preload."):
+        assert f"- {head}" in told
+    assert "Do not ask the helper again." in told
+    assert {"kind": "tool_call", "text": jc.RETRY_STATUS_AFTER_CONSULT} \
+        in items
+    assert {"kind": "tool_call", "text": jc.RETRY_STATUS} not in items
+    assert answer == UNSOURCED
+    assert [(e["action"], e["reason"]) for e in events] == [
+        ("fed_back", jc.AFTER_CONSULT), ("none", jc.AFTER_CONSULT)]
+    assert events[1]["n_unsourced"] == 3       # kept for the wave to read
+
+
+def test_sent_back_for_no_consult_it_is_not_sent_back_again(tmp_path,
+                                                            monkeypatch):
+    """Once a turn: the reply after the no-consult note still has calls with
+    no source after its consult, and it goes out as written."""
+    monkeypatch.setenv(review_flags.JUDGMENT_CALLS_ENV, "1")
+    agent = _ScriptedAgent(_reply(UNSOURCED), _consult_then(UNSOURCED),
+                           _reply(SOURCED))
     answer, _items, events = _run(agent, tmp_path)
-    assert answer == UNSOURCED and len(agent.inputs) == 1
-    assert [e["action"] for e in events] == ["none"]
-    assert events[0]["references_ran"] is True
-    assert events[0]["n_unsourced"] == 3       # kept for the wave to read
+    assert len(agent.inputs) == 2
+    assert answer == UNSOURCED
+    assert [(e["action"], e["reason"]) for e in events] == [
+        ("fed_back", jc.NO_CONSULT), ("none", jc.AFTER_CONSULT)]
 
 
 def test_switch_off_it_never_fires(tmp_path):

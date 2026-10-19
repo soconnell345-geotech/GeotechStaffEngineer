@@ -53,6 +53,19 @@ from langchain_core.messages import AIMessage, HumanMessage
 #: 10 calls = up to 9 tool rounds + the final answer. Measure against 12.
 DEFAULT_REFERENCES_MAX_MODEL_CALLS = 10
 
+#: The consult's budget where the main agent asks it about its judgment calls
+#: (``GEOTECH_JUDGMENT_CALLS`` on the geotech page; BACKLOG GM-187), and the
+#: calls left at which it is told so. Measured on the five consults of live
+#: waves w13b and w14 (``module_work/live_smoke/runs/*/activity.jsonl``): each
+#: used 9 or 10 calls and cost $0.18-0.34, mostly the cache writes of a context
+#: that grew to 45-65k tokens; one to three of the first calls only listed the
+#: library's modules and methods. Without those calls, 6 keeps 66 of the 71
+#: sections the five answers cited (93 %; 43 of 71 with them), for about
+#: $0.14-0.23 a consult (the same records cut there). Never above the
+#: caller's own budget.
+JUDGMENT_REFERENCES_MAX_MODEL_CALLS = 6
+JUDGMENT_REFERENCES_WARN_REMAINING = 2
+
 #: Default model-call budget per ``reviewer`` delegation. The reviewer had
 #: none: in a field session (2026-10-14, app 5.33.0) one delegation ran for
 #: over 2.5 hours without returning. Its work is reference lookups, so it
@@ -403,6 +416,8 @@ __all__ = [
     "HideTools",
     "REFERENCE_HIDDEN_TOOLS",
     "DEFAULT_REFERENCES_MAX_MODEL_CALLS",
+    "JUDGMENT_REFERENCES_MAX_MODEL_CALLS",
+    "JUDGMENT_REFERENCES_WARN_REMAINING",
     "FINAL_TURN_NUDGE",
     "LOW_BUDGET_NOTE",
     "BUDGET_EXHAUSTED_MESSAGE",

@@ -136,6 +136,16 @@ def test_one_entry_per_document():
         ["gec-11"]
 
 
+def test_every_citation_where_it_stands():
+    """EV-30: ``every`` gives each citation with its own section, so a
+    document named first without one and cited by section later is seen."""
+    text = "Vesic factors (GEC-6). Shape factors per GEC-6 Sec. 5.2.3.2."
+    every = cd.find_citations(text, every=True)
+    assert [c.key for c in every] == ["gec-6", "gec-6"]
+    assert [c.section for c in every] == ["", "Sec. 5.2.3.2"]
+    assert [c.section for c in cd.find_citations(text)] == [""]
+
+
 @pytest.mark.parametrize("text", [
     "the boring was drilled in March (2021)",
     "Boring B-1 (2019) and Table 4 (2014)",

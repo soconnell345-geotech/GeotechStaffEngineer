@@ -21,7 +21,8 @@ from langchain_core.outputs import ChatGeneration, ChatResult  # noqa: E402
 from funhouse_agent import review_flags  # noqa: E402
 from funhouse_agent.deep import agent as agent_mod  # noqa: E402
 from funhouse_agent.deep.limits import (  # noqa: E402
-    DEFAULT_REFERENCES_MAX_MODEL_CALLS)
+    DEFAULT_REFERENCES_MAX_MODEL_CALLS, JUDGMENT_REFERENCES_MAX_MODEL_CALLS,
+    JUDGMENT_REFERENCES_WARN_REMAINING, ModelCallBudgetMiddleware)
 from funhouse_agent.deep.prompt import (  # noqa: E402
     build_domain_prompt, judgment_calls_section)
 from funhouse_agent.dispatch import ANALYSIS_MODULES  # noqa: E402
@@ -72,11 +73,21 @@ def _spec(captured, name):
     return next(s for s in captured["subagents"] if s.get("name") == name)
 
 
-def _references_prompt(options: bool) -> str:
+def _references_prompt(options: bool, consult: bool = False) -> str:
     return (CONSULTANT_FRAMING + agent_mod._REFERENCES_CONCISION
             + (agent_mod._REFERENCES_OPTIONS if options else "")
+            + (agent_mod._REFERENCES_JUDGMENT_CALLS if consult else "")
             + agent_mod._REFERENCES_BUDGET.format(
-                n=DEFAULT_REFERENCES_MAX_MODEL_CALLS))
+                n=(JUDGMENT_REFERENCES_MAX_MODEL_CALLS if consult
+                   else DEFAULT_REFERENCES_MAX_MODEL_CALLS)))
+
+
+def _budget(spec):
+    """A helper's model-call budget as (calls, warned from), or None."""
+    for m in spec.get("middleware") or []:
+        if isinstance(m, ModelCallBudgetMiddleware):
+            return m.run_limit, m.warn_remaining
+    return None
 
 
 def _surface(captured, agent) -> dict:
@@ -138,6 +149,9 @@ def test_switch_off_leaves_every_prompt_as_it_was(monkeypatch, calc,
     if reference_mode == "anytime":
         assert _spec(captured, "references")["system_prompt"] == \
             _references_prompt(False)
+        # GM-187's tighter budget and its warning are behind the switch
+        assert _budget(_spec(captured, "references")) == (
+            DEFAULT_REFERENCES_MAX_MODEL_CALLS, 0)
         assert _spec(captured, "reviewer")["system_prompt"] == \
             REVIEWER_DEEP_PROMPT
     else:
@@ -200,7 +214,7 @@ def test_switch_on_calc_helper_reports_its_calls(monkeypatch):
 def test_switch_on_references_return_cited_options(monkeypatch):
     captured, _ = _built(monkeypatch, True)
     assert _spec(captured, "references")["system_prompt"] == \
-        _references_prompt(True)
+        _references_prompt(True, consult=True)
     opts = agent_mod._REFERENCES_OPTIONS
     assert "cited option" in opts and "when it applies" in opts
     assert "say which fits the question as asked" in opts
@@ -284,8 +298,8 @@ def test_the_block_is_general_and_short():
     # GM-155: 963 characters before; the consult as a step, a tool's
     # defaults and the one bounded run cost about 700 more (w13: 1,651;
     # the step came in by rewording, at 1,666 with "the section or page
-    # it gives")
-    assert len(block) < 1680
+    # it gives"); GM-187's one line per call, 90 more (1,756)
+    assert len(block) < 1770
     assert len(judgment_calls_section(references=False)) < 1530
     assert len(agent_mod._CALC_JUDGMENT_CALLS) < 800
     assert len(agent_mod._REFERENCES_OPTIONS) < 400
@@ -307,7 +321,9 @@ def test_the_consult_is_a_step_before_the_list():
     flat = " ".join(judgment_calls_section(references=True).split())
     for part in ("Before the list, ask the `references` helper once, in one "
                  "task, about every call with no basis in a tool's "
-                 "`choices` or a reference already looked up.",
+                 "`choices` or a reference already looked up: list those "
+                 "calls one per line and ask only for each one's source or "
+                 '"no reference found".',
                  "why, citing its source by name and the section or page "
                  "it gives (a `choices` basis or a reference looked up);",
                  '"rests on judgment, no reference found" only where that '
@@ -490,3 +506,54 @@ def test_the_given_and_citation_lines_are_general_and_short():
     assert len(agent_mod._CALC_GIVEN_AND_CITATIONS) < 480
     assert agent_mod.calc_delegation_nudge() == \
         agent_mod._CALC_DELEGATION_NUDGE
+
+
+# ---------------------------------------------------------------------------
+# GM-187: the consult's cost (live wave w14: $0.20-0.53 a turn)
+# ---------------------------------------------------------------------------
+
+def test_switch_on_the_judgment_consult_has_a_tighter_budget(monkeypatch):
+    """Where the main agent is asked to consult about its calls, the
+    references helper gets at most 6 calls, is told two calls ahead, and
+    is asked for one line per call with the two lookups named."""
+    captured, agent = _built(monkeypatch, True)
+    assert agent.geotech_judgment_consult is True
+    spec = _spec(captured, "references")
+    assert _budget(spec) == (JUDGMENT_REFERENCES_MAX_MODEL_CALLS,
+                             JUDGMENT_REFERENCES_WARN_REMAINING)
+    assert f"You have {JUDGMENT_REFERENCES_MAX_MODEL_CALLS} model calls" \
+        in spec["system_prompt"]
+    # never above the caller's own budget, and no budget stays none
+    small, _ = _built(monkeypatch, True, references_max_model_calls=4)
+    assert _budget(_spec(small, "references")) == (
+        4, JUDGMENT_REFERENCES_WARN_REMAINING)
+    none, _ = _built(monkeypatch, True, references_max_model_calls=0)
+    assert _budget(_spec(none, "references")) is None
+    # the reviewer's budget is its own
+    assert _budget(_spec(captured, "reviewer")) == _budget(
+        _spec(_built(monkeypatch, False)[0], "reviewer"))
+
+
+def test_switch_on_a_build_asking_no_consult_keeps_the_old_budget(
+        monkeypatch):
+    """A page that brings its own prompt asks for no judgment-call consult
+    (GM-174 never acts there): its references helper keeps the options rule
+    of GM-116 and the full budget."""
+    captured, agent = _built(monkeypatch, True, system_prompt="OWN PAGE")
+    assert agent.geotech_judgment_consult is False
+    spec = _spec(captured, "references")
+    assert spec["system_prompt"] == _references_prompt(True)
+    assert _budget(spec) == (DEFAULT_REFERENCES_MAX_MODEL_CALLS, 0)
+
+
+def test_the_judgment_consult_text_is_general_and_short():
+    text = " ".join(agent_mod._REFERENCES_JUDGMENT_CALLS.split())
+    for part in ("answer each in one line", '"no reference found"',
+                 "`reference_search`", "`reference_get`",
+                 "no need to list the modules or methods first"):
+        assert part in text, part
+    low = text.lower()
+    for word in ("sand", "bearing", "wall", "strut", "gec", "ufc", "dm7",
+                 "slope", "footing", "excavation"):
+        assert word not in low, word
+    assert len(agent_mod._REFERENCES_JUDGMENT_CALLS) < 500
