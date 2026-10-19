@@ -169,23 +169,37 @@ def coulomb_Kp(phi_deg: float, delta_deg: float = 0.0,
 # Caquot-Kerisel (1948) log-spiral passive coefficient
 # ----------------------------------------------------------------------------
 
-# Base passive coefficient Kp at delta = phi (full wall friction), vertical wall,
-# horizontal backfill, from the Caquot & Kerisel (1948) log-spiral charts (as
-# reproduced in the Caltrans T&S Manual Figure 4-20 and NAVFAC DM-7.2). The
-# phi = 30 deg anchor is the Caltrans Fig 4-20 read (6.30) used in the Ex 8-1
-# validation; neighbouring phi are the corresponding chart values.
-_CK_KP0_PHI = [15.0, 20.0, 25.0, 30.0, 35.0, 40.0]
-_CK_KP0 = [2.20, 3.10, 4.40, 6.30, 9.20, 14.0]
+# Base Kp at delta = phi (full wall friction), vertical wall, level backfill
+# (beta/phi = 0 curve), read off the Caquot & Kerisel (1948) chart as printed in
+# the Caltrans Trenching and Shoring Manual (2025), Figure 4-20, p. 4-30 (the
+# same chart: FHWA NHI-06-089 Figure 10-10, p. 10-22). Cross-read 2026-10-19
+# (BACKLOG GM-21): each value is the chart read, and agrees within 1 % with
+# Kp_Rankine(phi) / R(delta/phi = 0) from the printed R table (a smooth wall's
+# log-spiral Kp is the Rankine Kp). phi = 30 deg keeps 6.30, the value the
+# manual's own Example 8-1 reads off the chart (p. 8-12); the pixel read is 6.40,
+# inside reading accuracy. Before 2026-10-19 the table stopped at 40 deg and read
+# 35 and 40 deg low (9.20 and 14.0); phi = 0 is the chart's own origin (1.0).
+_CK_KP0_PHI = [0.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0, 40.0, 45.0]
+_CK_KP0 = [1.00, 1.65, 2.20, 3.00, 4.30, 6.30, 10.2, 17.7, 33.5]
 
-# Wall-friction reduction factor R = Kp(delta) / Kp(delta=phi), from the
-# Caquot-Kerisel chart (Caltrans T&S Matrix 4-1 / NAVFAC DM-7.2). Tabulated for
-# phi = 30/32/35 deg and delta/phi = 0.40/0.44/0.50; R = 1.0 at delta = phi.
-_CK_R_PHI = [30.0, 32.0, 35.0]
-_CK_R_RATIO = [0.40, 0.44, 0.50, 1.00]
+# Wall-friction reduction factor R = Kp(delta)/Kp(delta=phi), the table printed
+# on Caltrans T&S Figure 4-20 (p. 4-30) and, identically, FHWA NHI-06-089
+# Figure 10-10 (p. 10-22): phi 10-45 deg, -delta/phi 0 to 0.7 (Matrix 4-1, p.
+# 4-29, quotes the phi 30/32/35 rows of it). R = 1.0 at delta = phi by
+# definition; between 0.7 and 1.0 it is interpolated linearly. The printed
+# delta/phi = 0 column is kept for reference; the code anchors delta = 0 to the
+# Rankine Kp instead (see caquot_kerisel_Kp).
+_CK_R_PHI = [10.0, 15.0, 20.0, 25.0, 30.0, 35.0, 40.0, 45.0]
+_CK_R_RATIO = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 1.0]
 _CK_R = {
-    30.0: {0.40: 0.686, 0.44: 0.710, 0.50: 0.746, 1.00: 1.000},
-    32.0: {0.40: 0.653, 0.44: 0.679, 0.50: 0.717, 1.00: 1.000},
-    35.0: {0.40: 0.603, 0.44: 0.631, 0.50: 0.674, 1.00: 1.000},
+    10.0: {0.0: 0.864, 0.1: 0.881, 0.2: 0.898, 0.3: 0.912, 0.4: 0.929, 0.5: 0.946, 0.6: 0.962, 0.7: 0.978, 1.0: 1.000},
+    15.0: {0.0: 0.775, 0.1: 0.803, 0.2: 0.830, 0.3: 0.854, 0.4: 0.881, 0.5: 0.907, 0.6: 0.934, 0.7: 0.961, 1.0: 1.000},
+    20.0: {0.0: 0.678, 0.1: 0.716, 0.2: 0.752, 0.3: 0.787, 0.4: 0.824, 0.5: 0.862, 0.6: 0.901, 0.7: 0.939, 1.0: 1.000},
+    25.0: {0.0: 0.574, 0.1: 0.620, 0.2: 0.666, 0.3: 0.711, 0.4: 0.759, 0.5: 0.808, 0.6: 0.860, 0.7: 0.912, 1.0: 1.000},
+    30.0: {0.0: 0.467, 0.1: 0.520, 0.2: 0.574, 0.3: 0.627, 0.4: 0.686, 0.5: 0.746, 0.6: 0.811, 0.7: 0.878, 1.0: 1.000},
+    35.0: {0.0: 0.362, 0.1: 0.417, 0.2: 0.475, 0.3: 0.536, 0.4: 0.603, 0.5: 0.674, 0.6: 0.752, 0.7: 0.836, 1.0: 1.000},
+    40.0: {0.0: 0.262, 0.1: 0.316, 0.2: 0.375, 0.3: 0.439, 0.4: 0.512, 0.5: 0.592, 0.6: 0.682, 0.7: 0.783, 1.0: 1.000},
+    45.0: {0.0: 0.174, 0.1: 0.221, 0.2: 0.276, 0.3: 0.339, 0.4: 0.414, 0.5: 0.500, 0.6: 0.600, 0.7: 0.718, 1.0: 1.000},
 }
 
 
@@ -221,8 +235,8 @@ def caquot_kerisel_Kp(phi_deg: float, delta_deg: float = None,
         Wall friction angle (degrees). Default None -> delta = phi (R = 1.0).
     Kp_initial : float, optional
         Chart-read base Kp at delta = phi. If None, taken from the digitized
-        Caquot-Kerisel table (phi 15-40 deg; the phi = 30 anchor is the Caltrans
-        Fig 4-20 value 6.30).
+        Caquot-Kerisel chart (Caltrans T&S Fig 4-20, phi 0-45 deg; the phi = 30
+        anchor is the manual's Example 8-1 read, 6.30).
 
     Returns
     -------
@@ -231,11 +245,12 @@ def caquot_kerisel_Kp(phi_deg: float, delta_deg: float = None,
 
     Notes
     -----
-    The reduction factor R is tabulated (Caltrans Matrix 4-1 / NAVFAC DM-7.2)
-    for phi 30-35 deg and delta/phi 0.40-0.50; delta >= phi gives R = 1.0. For
-    delta/phi BELOW the lowest tabulated column (0.40) R is interpolated down to
-    the Rankine anchor R(0) = Kp_rankine(phi)/Kp0, so a smooth wall (delta = 0)
-    returns exactly the Rankine Kp rather than clamping to 0.686*Kp0 (which would
+    The reduction factor R is the table printed on Caltrans T&S Fig 4-20 (and
+    FHWA NHI-06-089 Fig 10-10): phi 10-45 deg, delta/phi 0-0.7; delta >= phi
+    gives R = 1.0, interpolated linearly from 0.7. For delta/phi below 0.1 R is
+    interpolated down to the Rankine anchor R(0) = Kp_rankine(phi)/Kp0, so a
+    smooth wall (delta = 0) returns exactly the Rankine Kp rather than clamping
+    to R(0.1)*Kp0 (which would
     over-predict passive resistance and under-predict embedment). For phi = 30
     deg, delta/phi = 0.5, Kp' = 6.30 * 0.746 = 4.70 (Caltrans Ex 8-1).
 
@@ -254,20 +269,21 @@ def caquot_kerisel_Kp(phi_deg: float, delta_deg: float = None,
         return Kp0
 
     def _R_tab(r):
-        # Bilinear over the tabulated (phi, delta/phi) grid, clamped in phi.
+        # Bilinear over the printed (phi, delta/phi) grid, clamped in phi.
+        cols = _CK_R_RATIO[1:]
         phi_c = min(max(phi_deg, _CK_R_PHI[0]), _CK_R_PHI[-1])
-        r_row = [_lininterp(r, _CK_R_RATIO, [_CK_R[p][k] for k in _CK_R_RATIO])
+        r_row = [_lininterp(r, cols, [_CK_R[p][k] for k in cols])
                  for p in _CK_R_PHI]
         return _lininterp(phi_c, _CK_R_PHI, r_row)
 
-    lowest = _CK_R_RATIO[0]  # 0.40 -- lowest tabulated delta/phi column
+    lowest = _CK_R_RATIO[1]  # 0.1 -- lowest printed delta/phi column used
     if ratio >= lowest:
         R = _R_tab(ratio)
     else:
-        # Below the lowest tabulated column the table would clamp to R(0.40),
-        # over-predicting passive resistance for near-smooth walls. Interpolate R
-        # linearly between the Rankine anchor R(0) = Kp_rankine(phi)/Kp0 -- which
-        # makes delta = 0 return exactly the Rankine Kp -- and R(0.40).
+        # Between delta = 0 and the 0.1 column R is interpolated from the
+        # Rankine anchor R(0) = Kp_rankine(phi)/Kp0, so a smooth wall returns
+        # exactly the Rankine Kp (the printed R(0) times the chart Kp0 gives it
+        # within 2 %).
         R0 = rankine_Kp(phi_deg) / Kp0
         R = R0 + (ratio / lowest) * (_R_tab(lowest) - R0)
     return Kp0 * R

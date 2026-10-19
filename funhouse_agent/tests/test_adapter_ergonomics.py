@@ -417,12 +417,14 @@ class TestEarthPressureCoefficient:
         assert r["delta_deg"] == 20.0
 
     def test_caquot_kerisel_log_spiral_kp(self):
-        # Caquot-Kerisel (1948) log-spiral passive Kp (v5.3). phi=35, delta=23.33
-        # (delta/phi=2/3) -> Kp ~ 7.2; delta omitted -> delta=phi (R=1).
+        # Caquot-Kerisel (1948) log-spiral passive Kp. phi=35, delta=23.33
+        # (delta/phi=2/3) -> Kp0 10.2 x R 0.808 = 8.24 (Caltrans T&S Fig
+        # 4-20, p. 4-30; was 7.2 on the old Kp0 of 9.2, GM-21); DM 7.2 Fig
+        # 4-13 (p. 193, delta/phi 0.66) reads 8.0. delta omitted -> R=1.
         r = self._run({"phi_deg": 35.0, "state": "passive",
                        "theory": "caquot_kerisel", "delta_deg": 23.33})
         assert r["coefficient"] == "Kp"
-        assert r["K"] == pytest.approx(7.2, abs=0.05)
+        assert r["K"] == pytest.approx(8.24, abs=0.05)
         full = self._run({"phi_deg": 30.0, "state": "passive",
                           "theory": "caquot_kerisel"})["K"]
         assert full == pytest.approx(6.3, abs=0.1)   # delta=phi anchor
