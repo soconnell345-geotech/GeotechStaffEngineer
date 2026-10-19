@@ -7,7 +7,11 @@ Finds the neutral plane by every method the references give, side by side,
 computes drag load, drag force and settlement, and checks structural and
 geotechnical limit states.
 
-Supports fill placement and groundwater drawdown as settlement triggers.
+Supports fill placement and groundwater drawdown as settlement triggers,
+and post-liquefaction downdrag (FHWA GEC-10 §10.7): the same analysis before
+the earthquake and after reconsolidation of the liquefied layers, with the
+cited side-resistance options for those layers side by side. See
+downdrag/liquefaction.py.
 
 Also implements the CGPR #56 method family (Greenfield & Filz 2009,
 "Downdrag and Drag Load on Piles", Virginia Tech CGPR #56): Endo, Poulos
@@ -21,6 +25,7 @@ References:
     - AASHTO LRFD Bridge Design Specifications, Section 10.7.3.7.
     - UFC 3-220-20, Chapter 6.
     - Greenfield, M.L. and Filz, G.M. (2009). Virginia Tech CGPR #56.
+    - FHWA GEC-10 (FHWA-NHI-18-024), §10.7 Post-Liquefaction Downdrag.
 """
 
 from downdrag.soil import DowndragSoilLayer, DowndragSoilProfile
@@ -34,6 +39,11 @@ from downdrag.cgpr56 import (
     EndoResult, PoulosResult, FelleniusCgpr56Result, PilenegResult,
     RigidBlockResult, GroupReductionResult, MethodComparisonResult,
 )
+from downdrag.liquefaction import (
+    post_liquefaction_downdrag, PostLiquefactionResult, LiquefiedLayer,
+    liquefied_layers_from_result, residual_strength_kramer_wang,
+    LIQUEFIED_SIDE_RESISTANCE,
+)
 
 __all__ = [
     'DowndragSoilLayer', 'DowndragSoilProfile',
@@ -44,4 +54,7 @@ __all__ = [
     'consolidation_settlement_profile', 'ENDO_NEUTRAL_PLANE_RATIOS',
     'EndoResult', 'PoulosResult', 'FelleniusCgpr56Result', 'PilenegResult',
     'RigidBlockResult', 'GroupReductionResult', 'MethodComparisonResult',
+    'post_liquefaction_downdrag', 'PostLiquefactionResult', 'LiquefiedLayer',
+    'liquefied_layers_from_result', 'residual_strength_kramer_wang',
+    'LIQUEFIED_SIDE_RESISTANCE',
 ]
