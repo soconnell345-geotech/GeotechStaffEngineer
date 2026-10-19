@@ -53,7 +53,9 @@ _PLANNING_AND_SCRATCH_SECTION = """\
   coloured table standing in for a figure; `html_to_pdf` rejects those and
   names what to fix. If a `calc` sub-agent is available and you DELEGATE the
   package to it, hand it the layer stack, water table, foundation geometry
-  and any depth-wise data — it draws only what it is given.
+  and any depth-wise data — it draws only what it is given. A PDF you build
+  yourself you read back (`read_pdf_text`) and look at (`analyze_pdf_page` on
+  each page with a figure) before you hand it over.
 - **Use the scratch filesystem to stay organized.** You have `write_file` /
   `read_file` / `edit_file` / `ls`. Stash intermediate results, large tool
   outputs (e.g. a full method dump or a long reference excerpt), and tables you

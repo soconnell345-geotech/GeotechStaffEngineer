@@ -102,8 +102,11 @@ def test_switches_off_leave_the_default_agent_unchanged(monkeypatch):
             assert "look_file" not in (t.description or ""), t.name
         if calc:
             spec = next(s for s in got["subagents"] if s["name"] == "calc")
-            assert spec["system_prompt"] == (agent_mod._CALC_PREAMBLE
-                                             + agent_mod._CALC_FRAMING)
+            # GM-101's budget line is unswitched (it states the budget).
+            assert spec["system_prompt"] == (
+                agent_mod._CALC_PREAMBLE + agent_mod._CALC_FRAMING
+                + agent_mod._CALC_BUDGET.format(
+                    n=agent_mod.DEFAULT_CALC_MAX_MODEL_CALLS))
 
 
 def test_switches_off_plot_data_counts_per_name_as_before(tmp_path,

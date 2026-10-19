@@ -28,7 +28,15 @@ stages instead of cutting the consult off with a stock "limits exceeded" note:
    re-delegate with a narrower question" note instead of the stock error text.
 
 Neither stage raises: the parent agent always receives a final message.
+
+A budget can also warn ahead (``warn_remaining``): while that many calls or
+fewer are left before the last, each call carries a note saying how many
+remain (:data:`LOW_BUDGET_NOTE`). BACKLOG GM-101: calc helpers that ran out
+of calls before building their PDF (live waves w8b and w13) were never told
+the end was near.
 """
+
+from typing import Optional
 
 from langchain.agents.middleware import (AgentMiddleware,
                                         ModelCallLimitMiddleware, hook_config)
@@ -92,6 +100,15 @@ FINAL_TURN_NUDGE = (
     "(reference + section/table/figure). If something could not be "
     "confirmed, say so in one line rather than guessing."
 )
+
+#: Added (as a user message, tools kept) to each call while ``warn_remaining``
+#: calls or fewer are left before the last; ``{left}`` counts the call it is
+#: on (BACKLOG GM-101).
+LOW_BUDGET_NOTE = (
+    "[Model-call budget] {left} model calls left, this one included; the "
+    "last is your reply, with no tools. Use them to finish and check what "
+    "the task asked for; leave anything else and say in your reply what "
+    "you left.")
 
 #: Backstop final message if the model ignores the forced final turn and the
 #: hard limit fires. Replaces the stock "Model call limits exceeded" text with
@@ -158,6 +175,12 @@ class ModelCallBudgetMiddleware(ModelCallLimitMiddleware):
         last budgeted call.
     exhausted_message : str, optional
         Final AI message injected if the hard backstop fires.
+    warn_remaining : int, optional
+        While this many calls or fewer are left before the last, each call
+        carries ``low_budget_note`` saying how many remain. ``None`` (the
+        default) or ``0`` gives no warning.
+    low_budget_note : str, optional
+        The warning, with ``{left}`` for the calls left (this one included).
     """
 
     def __init__(
@@ -166,6 +189,8 @@ class ModelCallBudgetMiddleware(ModelCallLimitMiddleware):
         *,
         final_turn_nudge: str = FINAL_TURN_NUDGE,
         exhausted_message: str = BUDGET_EXHAUSTED_MESSAGE,
+        warn_remaining: Optional[int] = None,
+        low_budget_note: str = LOW_BUDGET_NOTE,
     ) -> None:
         if max_model_calls < 1:
             raise ValueError(
@@ -176,17 +201,25 @@ class ModelCallBudgetMiddleware(ModelCallLimitMiddleware):
         super().__init__(run_limit=int(max_model_calls), exit_behavior="end")
         self.final_turn_nudge = final_turn_nudge
         self.exhausted_message = exhausted_message
+        self.warn_remaining = max(0, int(warn_remaining or 0))
+        self.low_budget_note = low_budget_note
 
     # -- forced final turn ---------------------------------------------------
+
+    def _calls_left(self, request) -> Optional[int]:
+        """Calls left in budget, the one about to be made included."""
+        if self.run_limit is None:
+            return None
+        state = request.state or {}
+        return self.run_limit - state.get("run_model_call_count", 0)
 
     def _is_final_budgeted_call(self, request) -> bool:
         """True when the call about to be made is the LAST one in budget.
         A ``task`` helper's record notes it: a helper whose answer was
         forced by its budget has its reading kept in a file
         (:mod:`funhouse_agent.deep.keep_work`, BACKLOG TA-21)."""
-        state = request.state or {}
-        run_count = state.get("run_model_call_count", 0)
-        final = self.run_limit is not None and run_count >= self.run_limit - 1
+        left = self._calls_left(request)
+        final = left is not None and left <= 1
         if final:
             _note_budget_reached()
         return final
@@ -202,17 +235,31 @@ class ModelCallBudgetMiddleware(ModelCallLimitMiddleware):
             ],
         )
 
-    def wrap_model_call(self, request, handler):
-        """On the last budgeted call, force a tool-less final-answer turn."""
+    def _warned(self, request):
+        """``request`` with the low-budget note added while
+        :attr:`warn_remaining` calls or fewer are left before the last."""
+        left = self._calls_left(request)
+        if not self.warn_remaining or left is None \
+                or not 1 < left <= self.warn_remaining:
+            return request
+        return request.override(messages=[
+            *request.messages,
+            HumanMessage(content=self.low_budget_note.format(left=left)),
+        ])
+
+    def _budgeted(self, request):
         if self._is_final_budgeted_call(request):
-            request = self._force_final_answer(request)
-        return handler(request)
+            return self._force_final_answer(request)
+        return self._warned(request)
+
+    def wrap_model_call(self, request, handler):
+        """On the last budgeted call, force a tool-less final-answer turn;
+        near it, say how many calls are left."""
+        return handler(self._budgeted(request))
 
     async def awrap_model_call(self, request, handler):
         """Async mirror of :meth:`wrap_model_call`."""
-        if self._is_final_budgeted_call(request):
-            request = self._force_final_answer(request)
-        return await handler(request)
+        return await handler(self._budgeted(request))
 
     # -- hard backstop (inherited check, friendlier message) ------------------
 
@@ -253,5 +300,6 @@ __all__ = [
     "REFERENCE_HIDDEN_TOOLS",
     "DEFAULT_REFERENCES_MAX_MODEL_CALLS",
     "FINAL_TURN_NUDGE",
+    "LOW_BUDGET_NOTE",
     "BUDGET_EXHAUSTED_MESSAGE",
 ]
