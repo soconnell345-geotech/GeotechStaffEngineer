@@ -79,6 +79,77 @@ def test_a_leader_clear_of_lettering_says_nothing():
 # findings for chosen texts
 # ---------------------------------------------------------------------------
 
+def test_arrows_drawn_as_filled_shapes_are_lines_too():
+    """BACKLOG GM-145: an arrow drawn as a filled shape (``ax.arrow`` with no
+    edge, a quiver) was a fill under the lettering, and a fill under
+    lettering is where it stands: the arrow through a label went
+    unreported."""
+    for draw in (
+            lambda ax: ax.arrow(0.5, 4.6, 9, 0.8, width=0.08, lw=0,
+                                color="black"),
+            lambda ax: ax.quiver([0.5], [4.6], [9], [0.8], angles="xy",
+                                 scale_units="xy", scale=1, width=0.006)):
+        fig, ax = _figure()
+        ax.text(5, 5, "Under an arrow", ha="center", va="center",
+                fontsize=10)
+        draw(ax)
+        assert _crossed(layout_check(fig, "x.png")) == {
+            "Under an arrow": "an arrow"}
+        fig, ax = _figure()
+        ax.text(5, 8, "Clear of it", ha="center", va="center", fontsize=10)
+        draw(ax)
+        assert not _crossed(layout_check(fig, "x.png"))
+
+
+# ---------------------------------------------------------------------------
+# hatching is judged as lines are (BACKLOG GM-145)
+# ---------------------------------------------------------------------------
+
+def _hatched(ax, **text_kw):
+    from matplotlib.patches import Rectangle
+    ax.add_patch(Rectangle((0, 0), 10, 5, facecolor="#eeeeee",
+                           edgecolor="#555555", hatch="//", lw=0.8,
+                           label="Soft clay"))
+    ax.fill_between([0, 10], 6, 9, facecolor="none", edgecolor="#555555",
+                    hatch="xx", lw=0)
+    ax.text(5, 2.5, "CLAY: soft", ha="center", va="center", fontsize=10,
+            **text_kw)
+    ax.text(5, 7.5, "SAND: dense", ha="center", va="center", fontsize=10,
+            **text_kw)
+
+
+def test_hatching_under_lettering_is_found():
+    """A hatched shape drawn under a label was a fill (where the label
+    stands), so a hatch through the letters went unreported: a patch's and
+    a collection's hatching are both found, named by the shape's label."""
+    fig, ax = _figure()
+    _hatched(ax)
+    assert _crossed(layout_check(fig, "x.png")) == {
+        "CLAY: soft": "the hatching of 'Soft clay'",
+        "SAND: dense": "hatching"}
+
+
+def test_a_box_or_a_halo_keeps_hatching_off_the_letters():
+    from matplotlib import patheffects
+    fig, ax = _figure()
+    _hatched(ax, bbox={"facecolor": "white", "edgecolor": "none"})
+    assert not _crossed(layout_check(fig, "x.png"))
+    fig, ax = _figure()
+    _hatched(ax, path_effects=[patheffects.withStroke(linewidth=3,
+                                                      foreground="white")])
+    assert not _crossed(layout_check(fig, "x.png"))
+
+
+def test_a_plain_fill_under_lettering_is_still_where_it_stands():
+    """Only the hatching moved: a label on a tinted zone is not crossed."""
+    from matplotlib.patches import Rectangle
+    fig, ax = _figure()
+    ax.add_patch(Rectangle((0, 0), 10, 5, facecolor="#c0d0e0",
+                           edgecolor="none"))
+    ax.text(5, 2.5, "On a tint", ha="center", va="center", fontsize=10)
+    assert not _crossed(layout_check(fig, "x.png"))
+
+
 def test_texts_keeps_the_findings_on_those_texts_by_index():
     fig, ax = _figure()
     ax.plot([0, 10], [5, 5], color="black", lw=1.5)
