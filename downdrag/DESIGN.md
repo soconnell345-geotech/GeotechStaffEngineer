@@ -819,9 +819,12 @@ resistance, as GEC-10 says for the layers above.
    reading, or 40 depth bands for a longer CPT so the result stays inside
    the 8,000-character tool-result cap. A band never holds readings on both
    sides of FS_liq = 1.0 (unless the readings cross 1.0 more often than there
-   are rows, and then its note gives the thickness counted with the soil
-   around it), its `FOS_liq` is its lowest reading on its side of 1.0 and its
-   strain the average, so its settlement is kept. Each row stands for its
+   are rows: then the thinnest runs above 1.0 are counted in the liquefied
+   bands around them, never the reverse, and the note gives that
+   thickness), its `FOS_liq` is its lowest reading on its side of 1.0 and its
+   strain the average, so its settlement is kept. So every reading with
+   FS_liq <= 1.0, however thin its layer, lies in a band this method takes
+   as liquefied at the default `fs_liq_threshold` of 1.0. Each row stands for its
    own `top_m` to `bottom_m`; the whole tool result goes in as
    `liquefaction_result`, and the strain choice names Zhang et al. (2002).
    A node on the boundary between two liquefied layers of one zone belongs

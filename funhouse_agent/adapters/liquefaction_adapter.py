@@ -374,7 +374,7 @@ METHOD_INFO = {
             "min_fos": "Minimum factor of safety against liquefaction.",
             "n_liquefiable": "Number of liquefiable layers/points.",
             "layer_results": "Per-layer CSR/CRR/FoS (SPT). The SPT routes compute no post-liquefaction volumetric strain: no reference in the library prints an SPT method (GEC-10 10.7 names Ishihara and Yoshimine 1992 without printing it), so post_liquefaction_downdrag then needs volumetric_strain given.",
-            "depth_profile": "CPT only: rows of top_m, bottom_m, FOS_liq and volumetric_strain (post-liquefaction reconsolidation strain, decimal; Zhang et al. 2002 from FS and qc1Ncs, as liquepy computes it). One row per reading, or depth bands for a long CPT, never mixing readings above and below FS 1.0; depth_profile_note then says how. post_liquefaction_downdrag takes the whole result as liquefaction_result.",
+            "depth_profile": "CPT only: rows of top_m, bottom_m, FOS_liq and volumetric_strain (post-liquefaction reconsolidation strain, decimal; Zhang et al. 2002 from FS and qc1Ncs, as liquepy computes it). One row per reading, or depth bands for a long CPT that never put a reading with FS <= 1.0 in a band above 1.0, however thin its layer; depth_profile_note then says how. post_liquefaction_downdrag takes the whole result as liquefaction_result.",
             "lpi": "Liquefaction Potential Index (CPT only).",
             "lsn": "Liquefaction Severity Number (CPT only).",
             "ldi_m": "Lateral Displacement Index in m (CPT only).",

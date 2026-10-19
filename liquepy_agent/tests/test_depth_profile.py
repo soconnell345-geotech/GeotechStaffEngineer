@@ -109,11 +109,36 @@ class TestBands:
         rows, note = depth_profile(self.z, fs, eps)
         assert len(rows) == PROFILE_MAX_ROWS
         assert "cross 1.0 more often than there are rows" in note
-        assert "inside bands above it" in note
-        # a band counted above 1.0 still reads above 1.0
+        assert "Every reading with FS_liq <= 1.0 is in a liquefied band" \
+            in note
+        # no reading at or below 1.0 is hidden in a band above it
+        for z, f in zip(self.z, fs):
+            if f <= 1.0:
+                assert any(r["FOS_liq"] <= 1.0 for r in rows
+                           if r["top_m"] <= z <= r["bottom_m"]), z
         assert any(r["FOS_liq"] > 1.0 for r in rows)
         assert _rows_settlement(rows) == pytest.approx(
             _settlement(self.z, eps), rel=1e-3)
+
+    def test_a_thin_liquefied_lens_is_never_lost(self):
+        # 1000 readings, sixty one-reading lenses at FS 0.9 in FS 1.5 soil:
+        # more crossings than rows, and each lens 2 cm thick
+        fs = np.full(self.z.size, 1.5)
+        fs[np.arange(10, 1000, 16)[:60]] = 0.9
+        rows, note = depth_profile(self.z, fs, np.where(fs < 1, 0.02, 0.0))
+        assert len(rows) == PROFILE_MAX_ROWS
+        for z in self.z[fs < 1.0]:
+            assert any(r["FOS_liq"] <= 1.0 for r in rows
+                       if r["top_m"] <= z <= r["bottom_m"]), z
+        assert "take in" in note
+
+    def test_a_short_lens_keeps_its_own_depths(self):
+        # one 0.3 m lens in a long CPT: its own band, its readings' depths
+        fs = np.where((self.z > 12.0) & (self.z < 12.3), 0.8, 1.6)
+        rows, note = depth_profile(self.z, fs, np.where(fs < 1, 0.02, 0.0))
+        liq = [r for r in rows if r["FOS_liq"] <= 1.0]
+        assert [(r["top_m"], r["bottom_m"]) for r in liq] == [(12.01, 12.29)]
+        assert "No band holds readings on both sides of 1.0" in note
 
     def test_the_row_limit_is_a_parameter(self):
         fs = np.where(self.z > 10.0, 0.7, 1.6)

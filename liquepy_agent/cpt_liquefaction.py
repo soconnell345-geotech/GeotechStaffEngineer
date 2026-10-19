@@ -64,8 +64,9 @@ def depth_profile(depth, factor_of_safety, volumetric_strain,
     - a band never holds readings on both sides of FS_liq = 1.0 (GEC-10
       §9.4.2.2), so at that threshold the liquefied depths are the
       readings'; only when the readings cross 1.0 more often than there
-      are rows are the thinnest runs counted with the thicker soil around
-      them (the note gives the thickness);
+      are rows are the thinnest runs ABOVE 1.0 counted in the liquefied
+      bands around them (the note gives the thickness). A reading at or
+      below 1.0 is never put in a band above it, however thin its layer;
     - the bands are about equally thick within that;
     - ``FOS_liq`` is the band's lowest reading on its side of 1.0, and
       ``volumetric_strain`` the band's average (strain x thickness = the
@@ -95,6 +96,8 @@ def depth_profile(depth, factor_of_safety, volumetric_strain,
     n = len(z)
     if n < 2:
         raise ValueError("a depth profile needs at least two readings")
+    if max_rows < 1:
+        raise ValueError(f"max_rows must be at least 1, got {max_rows!r}")
     order = np.argsort(z, kind="stable")
     z, fs, ev = z[order], fs[order], ev[order]
     edges = np.empty(n + 1)
@@ -129,13 +132,15 @@ def depth_profile(depth, factor_of_safety, volumetric_strain,
     def size(r):
         return edges[r[1]] - edges[r[0]]
 
-    # more crossings than rows: the thinnest run goes with the soil around
-    # it (its neighbours are the other kind, so the three become one)
+    # more crossings than rows: the thinnest run ABOVE 1.0 goes into the
+    # liquefied runs around it (the three become one liquefied run), never
+    # the other way, so no reading at or below 1.0 is hidden in a band
+    # above it, however thin its layer
     while len(runs) > max_rows:
-        k = min(range(len(runs)), key=lambda j: size(runs[j]))
+        k = min((j for j in range(len(runs)) if not runs[j][2]),
+                key=lambda j: size(runs[j]))
         lo, hi = max(k - 1, 0), min(k + 1, len(runs) - 1)
-        kind = runs[k - 1][2] if k > 0 else runs[k + 1][2]
-        runs[lo:hi + 1] = [[runs[lo][0], runs[hi][1], kind]]
+        runs[lo:hi + 1] = [[runs[lo][0], runs[hi][1], True]]
     # then the rows left split the runs into bands of about equal thickness
     pieces = [1] * len(runs)
     while sum(pieces) < max_rows:
@@ -156,17 +161,17 @@ def depth_profile(depth, factor_of_safety, volumetric_strain,
         f"band's lowest reading on its side of FS_liq = {split}; "
         f"volumetric_strain is the band's average, so strain x thickness "
         f"is its settlement.")
-    lenses = [float(np.sum(thick[a:b][liq[a:b] != kind]))
-              for a, b, kind in runs]
-    wet = sum(x for x, r in zip(lenses, runs) if not r[2])
-    dry = sum(x for x, r in zip(lenses, runs) if r[2])
-    if wet + dry > 0:
+    dry = sum(float(np.sum(thick[a:b][~liq[a:b]]))
+              for a, b, kind in runs if kind)
+    if dry > 0:
         note += (
             f" The readings cross {split} more often than there are rows, "
-            f"so the thinnest runs are counted with the soil around them: "
-            f"{wet:.2f} m with FS_liq <= {split} inside bands above it, "
-            f"{dry:.2f} m above it inside liquefied bands; elsewhere no band "
-            f"holds readings on both sides of {split} (GEC-10 §9.4.2.2).")
+            f"so the thinnest runs above {split} are counted in the "
+            f"liquefied bands around them: those bands take in {dry:.2f} m "
+            f"of readings above {split} (their strain is in the band's "
+            f"average), so the liquefied depths are that much thicker than "
+            f"the readings'. Every reading with FS_liq <= {split} is in a "
+            f"liquefied band (GEC-10 §9.4.2.2).")
     else:
         note += (
             f" No band holds readings on both sides of {split} (GEC-10 "

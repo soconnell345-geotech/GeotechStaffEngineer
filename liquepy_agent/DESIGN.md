@@ -84,7 +84,11 @@ The B&I 2014 CPT-based simplified procedure:
 ## Depth profile for the agent's tool results (GM-201)
 
 `cpt_liquefaction.depth_profile(depth, factor_of_safety, volumetric_strain)`
-gives the CPT's FS_liq and post-liquefaction volumetric strain by depth as
+gives the CPT's FS_liq and post-liquefaction volumetric strain by depth (the
+strain is liquepy's `calc_volumetric_strain_zhang_2002`: Zhang, Robertson
+and Brachman (2002), "Estimating liquefaction-induced ground settlements
+from CPT for level ground", Canadian Geotechnical Journal 39(5), 1168-1180,
+doi 10.1139/t02-047, the doi liquepy gives) as
 rows of `top_m`, `bottom_m`, `FOS_liq`, `volumetric_strain`; the
 `liquefaction` tool's CPT route returns them as `depth_profile`, and
 `downdrag.post_liquefaction_downdrag` takes that result as it is. Each
@@ -97,8 +101,13 @@ characters measured for 600 and 1,500 readings):
 - a band never holds readings on both sides of FS_liq = 1.0 (GEC-10
   §9.4.2.2: "FSliq ≤ 1.0" liquefies), so at that threshold the liquefied
   depths are the readings' own; only when the readings cross 1.0 more often
-  than there are rows are the thinnest runs counted with the soil around
-  them, and `depth_profile_note` gives that thickness;
+  than there are rows are the thinnest runs ABOVE 1.0 counted in the
+  liquefied bands around them, and `depth_profile_note` gives that
+  thickness. A reading at or below 1.0 is never put in a band above it,
+  however thin its layer: a lens one reading thick stays in a liquefied
+  band (review of GM-201: the first build merged the thinnest run of
+  either kind, and a noisy 25 m CPT lost 1.0 m of liquefied readings into
+  bands above 1.0);
 - the rest of the rows split the runs into bands of about equal thickness;
 - `FOS_liq` is the band's lowest reading on its side of 1.0, rounded UP to
   three decimals (so 1.0004 never reads as 1.0), and `volumetric_strain` is
