@@ -357,6 +357,40 @@ def as_result(shaped: dict, key: str) -> dict:
     return out
 
 
+def example_section_ids(ref_package_name: str, n: int = 3) -> list[str]:
+    """Up to ``n`` section numbers this reference holds, one per level from
+    the top (``['2.1', '7.2.1', '7.2.1.3.1']`` for GEC-12), for the
+    ``retrieve_section`` description (BACKLOG REF-01: a fixed example,
+    '5.7.2', was in no reference at all). Empty when the reference's text
+    cannot be read."""
+    try:
+        from geotech_references import _retrieval
+        chapters = _retrieval.list_chapters(ref_package_name)
+    except Exception:  # noqa: BLE001 — an example is never worth a failure
+        return []
+    by_depth: dict[int, str] = {}
+    for chapter in chapters:
+        for sec in chapter.get("sections") or []:
+            sid = str(sec.get("section_id") or "")
+            # a combined section ('5.15-5.16') is not an example of a number
+            if sid and not re.search(r"\.\d+-", sid):
+                by_depth.setdefault(len(re.findall(r"[.-]", sid)), sid)
+    depths = sorted(by_depth)
+    if len(depths) > n:
+        # the top level, the deepest, and evenly between
+        step = (len(depths) - 1) / max(n - 1, 1)
+        depths = [depths[round(i * step)] for i in range(n)]
+    return [by_depth[d] for d in depths]
+
+
+def _section_id_description(ref_package_name: str) -> str:
+    examples = example_section_ids(ref_package_name)
+    if not examples:
+        return "Section identifier at any level, as the reference prints it."
+    shown = ", ".join(f"'{sid}'" for sid in examples)
+    return f"Section identifier at any level (e.g. {shown})."
+
+
 def add_text_retrieval(registry, info, ref_package_name, reference_str):
     """Add retrieve_section / search_sections / list_chapters / load_chapter."""
     from geotech_references import _retrieval
@@ -436,8 +470,8 @@ def add_text_retrieval(registry, info, ref_package_name, reference_str):
             "parameters": {
                 "section_id": {
                     "type": "str", "required": True,
-                    "description": ("Section identifier at any level (e.g. "
-                                    "'4.4', '5.7.2', '7.2.1.3.1')."),
+                    "description": _section_id_description(
+                        ref_package_name),
                 },
                 "include_subsections": {
                     "type": "bool", "required": False, "default": False,

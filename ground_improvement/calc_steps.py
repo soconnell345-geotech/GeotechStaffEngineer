@@ -260,8 +260,11 @@ def _steps_aggregate_piers(result, analysis) -> List[CalcSection]:
         substitution=f"SRF = 1 / [1 + {a_s:.4f} \u00d7 ({n:.1f} - 1)]",
         result_name="SRF",
         result_value=f"{r.settlement_reduction_factor:.4f}",
-        reference="Priebe (1995); GEC-13 Eq. 7-2",
-        notes="SRF < 1 indicates settlement improvement.",
+        reference="FHWA GEC-13 (2017), Ch. 5, Eq. 5-4 and Sec. 4.1.2.6 "
+                  "(stress reduction method), pp. 5-32, 5-36",
+        notes="SRF < 1 indicates settlement improvement. SRF is the "
+              "stress on the soil over the average stress, "
+              "sigma_soil / q (Eq. 5-4), under equal strain.",
     ))
 
     # -- Section 3: Composite Modulus ---------------------------------
@@ -675,7 +678,10 @@ def _steps_surcharge(result, analysis) -> List[CalcSection]:
             result_name="\u03c3'_p",
             result_value=f"{r.equivalent_sigma_p_kPa:.1f}",
             result_unit="kPa",
-            reference="GEC-13, Section 3",
+            reference="FHWA GEC-13 (2017), Ch. 2, Sec. 4.2 (surcharge to "
+                      "overconsolidate the soil for the design load, "
+                      "p. 2-36); preconsolidation stress as defined in "
+                      "Sec. 1.4, p. 2-7",
         ))
 
     sections.append(CalcSection(
@@ -857,7 +863,12 @@ def _steps_vibro(result, analysis) -> List[CalcSection]:
         substitution=f"FC = {r.fines_content_percent:.1f}%",
         result_name="FC status",
         result_value=fc_status,
-        reference="GEC-13, Table 5-1; Brown (1977)",
+        reference="FHWA GEC-13 (2017), Ch. 4, Sec. 3.1.3.1, Table 4-5 "
+                  "and Figure 4-27, pp. 4-65 to 4-67",
+        notes="GEC-13 calls soils with fines below 10 % ideally suited "
+              "(Figure 4-27) and silty sand inhibited above 8 % silt "
+              "(Table 4-5); the 15 % and 20 % bounds are this module's "
+              "screening limits, not printed values.",
     ))
 
     # D50 check
