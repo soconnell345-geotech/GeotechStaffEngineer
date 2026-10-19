@@ -126,8 +126,10 @@ def test_the_switch_is_off_by_default_and_has_an_arm(monkeypatch):
 @pytest.mark.parametrize("reference_mode", ["anytime", "off"])
 def test_switch_off_leaves_every_prompt_as_it_was(monkeypatch, calc,
                                                   reference_mode):
-    captured, _ = _built(monkeypatch, False, reference_mode=reference_mode,
-                         enable_calc_subagent=calc)
+    captured, agent = _built(monkeypatch, False,
+                             reference_mode=reference_mode,
+                             enable_calc_subagent=calc)
+    assert agent.geotech_judgment_consult is False      # GM-174 never acts
     want = build_domain_prompt(ANALYSIS_MODULES, memory_enabled=False)
     if calc:
         want += "\n\n" + agent_mod._CALC_DELEGATION_NUDGE
@@ -175,6 +177,8 @@ def test_switch_on_ends_the_geotech_prompt_with_the_judgment_calls(
         want += "\n\n" + agent_mod._CALC_DELEGATION_NUDGE
     assert captured["system_prompt"] == want
     assert "GEOTECH_JUDGMENT_CALLS=1" in agent.geotech_build["switches"]
+    # the turn-end check (GM-174) acts on this build
+    assert agent.geotech_judgment_consult is True
 
 
 def test_switch_on_calc_helper_reports_its_calls(monkeypatch):
@@ -208,9 +212,11 @@ def test_switch_on_leaves_the_reviewer_and_general_helpers(monkeypatch):
 
 def test_without_the_references_helper_the_block_does_not_name_it(
         monkeypatch):
-    captured, _ = _built(monkeypatch, True, reference_mode="off")
+    captured, agent = _built(monkeypatch, True, reference_mode="off")
     assert captured["system_prompt"].endswith(
         "\n\n" + judgment_calls_section(references=False))
+    # no helper to consult: the turn-end check (GM-174) never acts
+    assert agent.geotech_judgment_consult is False
     assert "`references` helper" not in captured["system_prompt"]
     assert "`references` helper" in judgment_calls_section(references=True)
 
@@ -240,6 +246,8 @@ def test_the_document_review_page_is_unchanged(monkeypatch):
     off, on = prompts(False), prompts(True)
     assert on == off
     assert "judgment call" not in off[0].lower()
+    _c, agent = _built(monkeypatch, True, **DOCUMENT_REVIEW.build_kwargs())
+    assert agent.geotech_judgment_consult is False      # GM-174 never acts
 
 
 # ---------------------------------------------------------------------------

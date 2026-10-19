@@ -54,6 +54,7 @@ from funhouse_agent.deep.limits import (
     HELPER_EXHAUSTED,
     HELPER_FINAL_NUDGE,
     REFERENCE_HIDDEN_TOOLS,
+    UNRUNNABLE_TOOLS,
     HideTools,
     ModelCallBudgetMiddleware,
     helper_max_model_calls,
@@ -658,9 +659,11 @@ def build_calc_subagent(
         # only built where openpyxl imports). analyze_image: the helper that
         # draws the figures can look at them (field session 2026-10-15: it
         # tried read_file on its PNG, was refused, and the figure went out
-        # unseen).
+        # unseen). analyze_pdf_page: and at the pages of the PDF it builds
+        # (GM-175; wave w13b F55j: asked to look at its pages, it had no
+        # page tool and called execute, then analyze_image on the PDF).
         include={"save_file", "list_files", "read_pdf_text", "read_text_file",
-                 "write_xlsx", "analyze_image"},
+                 "write_xlsx", "analyze_image", "analyze_pdf_page"},
         max_result_chars=max_result_chars,
         reference_result_chars=reference_result_chars,
     ) + [make_calculate_tool()]
@@ -1281,6 +1284,9 @@ def build_deep_agent(
     # ``system_prompt`` REPLACES the geotechnical domain prompt — the
     # document-review page is a different agent over the same tools, not the
     # geotech agent with a suffix. ``extra_system_prompt`` still appends.
+    # Whether the prompt asks for a judgment-calls list after one consult
+    # of the references helper: the turn-end check (GM-174) acts only then.
+    judgment_consult = False
     if system_prompt is None:
         system_prompt = build_domain_prompt(allowed_agents,
                                             memory_enabled=enable_memory)
@@ -1291,6 +1297,7 @@ def build_deep_agent(
             # only: a page that brings its own prompt is unchanged.
             system_prompt += "\n\n" + judgment_calls_section(
                 references=reference_mode != "off")
+            judgment_consult = reference_mode != "off"
     if extra_system_prompt:
         # Appended AFTER the domain prompt (mirrors GeotechAgent.system_prompt_extra)
         # so a caller can re-cast the agent — e.g. the seismic reviewer's review-mode
@@ -1499,6 +1506,12 @@ def build_deep_agent(
                                   if m not in notes]
         extra_mw = [DeliveredToolResults(), *notes, ToolErrorGuard(),
                     LargeResultKeyMap(), ScratchFilesystemGuard()]
+        if "runnable" not in spec and not any(
+                isinstance(m, HideTools) and UNRUNNABLE_TOOLS <= m.hidden
+                for m in spec.get("middleware") or []):
+            # deepagents' shell and delete cannot run on this backend
+            # (GM-176); a helper that already hides them keeps its own.
+            extra_mw.append(HideTools(UNRUNNABLE_TOOLS))
         if "runnable" not in spec:
             # What the helper reads and writes, recorded as it happens, so
             # a helper that stops can hand it back as a file (TA-21).
@@ -1538,7 +1551,8 @@ def build_deep_agent(
                              DeliveredToolResults(),
                              ToolErrorGuard(),
                              LargeResultKeyMap(),
-                             ScratchFilesystemGuard()]
+                             ScratchFilesystemGuard(),
+                             HideTools(UNRUNNABLE_TOOLS)]       # GM-176
                           + ([UnknownToolHint(allowed_agents)]
                              if allowed_agents else [])
                           + [OutputLimitGuard()]})
@@ -1607,6 +1621,10 @@ def build_deep_agent(
         # none of the user's files and answered "not found" for them (wave
         # 2b, F41); they are kept off this page's menu and prompt.
         middleware.append(HideScratchFilesystem())
+    else:
+        # The geotech page: deepagents' shell and delete cannot run on this
+        # backend (GM-176; wave w13b F55j called execute with no command).
+        middleware.append(HideTools(UNRUNNABLE_TOOLS))
     # The review page: a model-call budget whose last call answers from what
     # was gathered, so a long turn ends with findings and what was not
     # checked, never a GraphRecursionError (DR-03). With the coverage gate
@@ -1687,6 +1705,9 @@ def build_deep_agent(
             "switches": _rf.describe(),
             "prompt_chars": len(system_prompt or ""),
         }
+        # The turn-end judgment-call check (GM-174) reads this in
+        # webapp.core.stream_turn (funhouse_agent.judgment_check.mode_for).
+        agent.geotech_judgment_consult = judgment_consult
         if page_budget:
             # The host's step cap is raised to fit the budget, so the budget,
             # not a GraphRecursionError, ends a long request (webapp
