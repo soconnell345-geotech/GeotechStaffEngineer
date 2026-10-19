@@ -196,7 +196,7 @@ def choices_from(obj: Any) -> List[dict]:
 #: A bracket that only names inputs or result keys for the agent
 #: ("(stress_method 'boussinesq')", "(layer_results)", "(Hdr)"): a printed
 #: table leaves it out, so the engineer reads plain words.
-_CODE_ITEM = (r"(?:[A-Za-z0-9]*_[A-Za-z0-9_]*(?:\s*=\s*\w+|\s+'[^']*')?"
+_CODE_ITEM = (r"(?:[A-Za-z0-9]*_[A-Za-z0-9_]*(?:\s*=\s*[\w.]+|\s+'[^']*')?"
               r"|[A-Za-z]\w*\s+'[^']*'|'[^']*'|Hdr|cv|KA|Es|candidates)")
 _CODE_BRACKET = re.compile(rf"\s*\((?:{_CODE_ITEM})(?:,\s*(?:{_CODE_ITEM}))*\)")
 
