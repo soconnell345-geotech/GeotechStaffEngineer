@@ -522,6 +522,7 @@ class _Ink:
         if part == "full":
             orig(a, off)
         elif part in ("glyph", "unclipped"):
+            from matplotlib import patheffects
             bp = a.get_bbox_patch()
             effects = a.get_path_effects()
             shown = bp.get_visible() if bp is not None else None
@@ -529,7 +530,13 @@ class _Ink:
                 if bp is not None:
                     bp.set_visible(False)
                 if effects:
-                    a.set_path_effects([])
+                    # the letters as the picture draws them: lettering with
+                    # path effects (a halo) is drawn as paths, and plain
+                    # lettering's glyphs are hinted wider (matplotlib 3.11:
+                    # about half a pixel a letter at 200 dpi), so they
+                    # drifted off the letters the halo is round and hatching
+                    # under the halo was counted
+                    a.set_path_effects([patheffects.Normal()])
                 if part == "unclipped":
                     a.set_clip_on(False)
                 orig(a, off)

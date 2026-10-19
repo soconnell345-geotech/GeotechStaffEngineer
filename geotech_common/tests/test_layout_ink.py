@@ -140,6 +140,34 @@ def test_a_box_or_a_halo_keeps_hatching_off_the_letters():
     assert not _crossed(layout_check(fig, "x.png"))
 
 
+@pytest.mark.parametrize("halo", [True, False])
+def test_a_halo_on_a_long_label_keeps_hatching_off_its_letters(halo):
+    """Lettering with a halo is drawn as paths, the halo and the letters
+    alike, and its letters were measured as plain lettering draws them:
+    glyphs hinted to whole pixels (matplotlib 3.11's default), about half a
+    pixel a letter wider at 200 dpi, so on a long label they drifted off
+    the halo round them and the hatching at the halo's edge was counted
+    (CI on 3.11). Without the halo the hatching still crosses the label."""
+    import matplotlib
+    from matplotlib import patheffects
+    from matplotlib.patches import Rectangle
+    rc = {"text.hinting": "default"}
+    if tuple(int(p) for p in matplotlib.__version__.split(".")[:2]) < (3, 11):
+        rc["text.hinting_factor"] = 1       # 3.11 has no factor
+    words = "Soft clay zone, very soft to soft, grey"
+    kw = ({"path_effects": [patheffects.withStroke(linewidth=2.5,
+                                                   foreground="white")]}
+          if halo else {})
+    with matplotlib.rc_context(rc):
+        fig, ax = _figure(w=6.5)
+        ax.add_patch(Rectangle((0, 0), 10, 5, facecolor="none",
+                               edgecolor="#555555", hatch="//", lw=0.8,
+                               label="Soft clay"))
+        ax.text(5, 2.5, words, ha="center", va="center", fontsize=10, **kw)
+        found = _crossed(layout_check(fig, "x.png"))
+    assert found == ({} if halo else {words: "the hatching of 'Soft clay'"})
+
+
 def test_a_plain_fill_under_lettering_is_still_where_it_stands():
     """Only the hatching moved: a label on a tinted zone is not crossed."""
     from matplotlib.patches import Rectangle
