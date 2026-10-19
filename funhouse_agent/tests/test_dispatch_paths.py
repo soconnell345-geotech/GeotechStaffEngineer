@@ -222,16 +222,34 @@ def test_a_failed_save_names_the_rescue_and_never_asks_for_a_path(
 
 
 def test_generated_figure_names_are_short(tmp_path):
+    """GM-171: a short stem from the figure's title, never a clock time,
+    unique within the package and the folder, the path under the cap."""
     from funhouse_agent.adapters.calc_package import (_MAX_FIGURE_PATH,
                                                       _figure_file_name)
     out_dir = str(tmp_path / ("d" * 40))
-    name = _figure_file_name(out_dir, "slope_stability", 1,
+    os.makedirs(out_dir)
+    name = _figure_file_name(out_dir, "", 1,
                              "Slope cross section with the critical surface "
-                             "and every trial surface", "221735")
-    assert name.startswith("slope_stability_f1_") and name.endswith(
-        "_221735.png")
+                             "and every trial surface")
+    assert name == "slope_cross_section_with_the.png"
     assert len(os.path.join(out_dir, name)) <= _MAX_FIGURE_PATH
-    deep = str(tmp_path / ("d" * 205))
-    assert len(os.path.join(deep, _figure_file_name(
-        deep, "slope_stability", 2, "t", "1"))) <= max(
-        _MAX_FIGURE_PATH, len(deep) + 12)
+    # unique within the package, then within the folder
+    again = _figure_file_name(out_dir, "", 2, "Slope cross section with "
+                              "the critical surface", taken=[name])
+    assert again == "slope_cross_section_with_the_2.png"
+    open(os.path.join(out_dir, name), "wb").close()
+    assert _figure_file_name(out_dir, "", 1, "Slope cross section with the "
+                             "critical surface") == again
+    assert _figure_file_name(out_dir, "pav", 1, "Layer section") == \
+        "pav_layer_section.png"
+    # a folder that leaves the slug 21 characters: cut at a word
+    deep = str(tmp_path / ("d" * (_MAX_FIGURE_PATH - 1 - 3 - 4 - 21 - 1
+                                  - len(str(tmp_path)))))
+    short = _figure_file_name(deep, "", 1, "Footing cross-section with "
+                              "the water table")
+    assert short == "footing_cross_section.png"
+    assert len(os.path.join(deep, short)) <= _MAX_FIGURE_PATH
+    deeper = str(tmp_path / ("d" * 205))
+    name = _figure_file_name(deeper, "", 2, "t")
+    assert len(os.path.join(deeper, name)) <= max(
+        _MAX_FIGURE_PATH, len(deeper) + 12)

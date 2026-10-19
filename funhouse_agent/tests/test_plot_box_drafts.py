@@ -306,6 +306,27 @@ def test_a_figure_drawn_at_report_width_passes(tmp_path):
     assert let["texts_under_7_pt"] == 0 and let["smallest_pt"] >= 7.0
 
 
+def test_the_saved_png_carries_its_lettering(tmp_path):
+    """GM-168: the file says how large its lettering is and the width the
+    check measured it at, so a PDF built from it can tell what prints."""
+    from geotech_common.layout_ink import (LETTERING_KEY, parse_lettering,
+                                           png_texts)
+    code = ("import matplotlib.pyplot as plt\n"
+            "fig, ax = plt.subplots(figsize=(13, 6))\n"
+            "ax.plot([0, 1], [0, 1])\n"
+            "ax.set_xlabel('x (m)', fontsize=9); ax.tick_params(labelsize=9)\n"
+            "save_figure(fig, 'wide')\n")
+    r = run_plot_code(code, root=str(tmp_path))
+    assert r["status"] == "success", r
+    (let,) = r["lettering"]
+    meta = parse_lettering(
+        png_texts((tmp_path / "wide.png").read_bytes())[LETTERING_KEY])
+    assert meta["smallest_pt"] == pytest.approx(9.0)
+    assert meta["checked_width_in"] == 6.5
+    assert meta["saved_width_in"] == pytest.approx(let["saved_width_in"],
+                                                   abs=0.01)
+
+
 # ---------------------------------------------------------------------------
 # fix 15: the report copy at full resolution, a look copy beside it
 # ---------------------------------------------------------------------------

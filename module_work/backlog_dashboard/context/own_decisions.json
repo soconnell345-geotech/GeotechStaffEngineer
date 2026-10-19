@@ -1107,5 +1107,43 @@
       "FHWA NHI-06-089 Vol II pp. 10-31, 10-41, 10-43",
       "GEC-11 Vol I pp. 4-4, 4-22"
     ]
-  }
+  },
+ "OWN-65": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "How should we judge whether the judgment-calls switch costs too much?",
+  "why": "The switch makes the agent list the judgment calls an answer turns on and check them with the references helper. The last live rerun showed it now works: the references are looked up, their citations reach the calc PDFs, and given vs assumed inputs print right. What it fails is the cost test, a ratio: ON may cost at most 1.8 times OFF. A references lookup costs about $0.20-0.53 whatever the question, so a short question can never pass that test.",
+  "background": "Rerun w14 (2026-10-19, $1.79): ON cost 2.87 times OFF on the two flows run, about 2.0-2.4 times over four flows. A short FEM question costs $0.11 with the switch off; the lookup alone adds $0.20-0.53. The switch stays OFF until this is settled.",
+  "parts": [
+   {
+    "label": "The cost test",
+    "options": [
+     {
+      "label": "Keep the ratio (ON at most 1.8 times OFF)",
+      "effect": "The switch stays off unless the lookup gets much cheaper."
+     },
+     {
+      "label": "An added cost per turn (for example at most $0.50 more for a turn that produces a deliverable)",
+      "effect": "Judges what the lookup actually costs; short questions are not penalised for being cheap."
+     },
+     {
+      "label": "Look references up only for deliverables (calc packages, reports), not chat answers",
+      "effect": "Chat answers cost what they do today; deliverables carry cited judgment calls."
+     }
+    ]
+   }
+  ],
+  "recommendation": "The added cost per turn, together with looking references up only for deliverables: a calc package is where a cited basis matters, and the cost is then bounded per deliverable.",
+  "if_no_answer": "The switch stays OFF; the rest of the work behind it (given vs assumed inputs, unrunnable tools hidden) is already on.",
+  "message_to_send": null,
+  "steps": [],
+  "unblocks": [
+   "GM-155",
+   "GM-187"
+  ],
+  "sources": [
+   "BACKLOG.md OWN-65, GM-155",
+   "module_work/live_smoke/runs/w14-judgment/TRACE_REVIEW.md §3, §8"
+  ]
+ }
 }
