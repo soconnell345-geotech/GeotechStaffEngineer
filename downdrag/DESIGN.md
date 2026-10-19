@@ -130,7 +130,7 @@ Drag-load assumptions the references state:
 | Transient load excluded from the head load (it reverses the friction while it acts) | UFC §6-7.4 step 4 (p. 477) | Yes (Q_dead only) |
 | Drag excluded from the geotechnical strength check, included in structural strength and in settlement | UFC Table 6-30 (p. 437); GEC-12 §7.3.6 (pp. 336-337); GEC-10 §10.6.1 (p. 10-46; notes AASHTO treats DD as a load in geotechnical strength) | Yes (UFC / FHWA) |
 | Load factor 1.10 on the drag force (1.25 on Q_d) | UFC Eq 6-80 (p. 478); GEC-12 Eq 7-70 (pp. 346-347: MnDOT 1.1, no AASHTO factor yet) | Yes |
-| Post-liquefaction drag = 50 % of the pre-earthquake beta side resistance in liquefied layers | GEC-10 §10.7 (p. 10-52) | Not implemented |
+| Post-liquefaction drag = 50 % of the pre-earthquake beta side resistance in liquefied layers | GEC-10 §10.7 (p. 10-52) | Yes, in `post_liquefaction_downdrag` (default; zero, su,r and a given ratio side by side): section "Post-liquefaction downdrag" |
 
 ## Effective stress for skin friction: final (owner, 2026-10-14)
 
@@ -646,6 +646,198 @@ only with the toe-load zone. Pinned by
 8. Siegel, T.C. et al. (2013), the neutral-plane downdrag procedure within
    LRFD, as cited by UFC 3-220-20 §6-5.8.4.2 and GEC-12 §7.3.6.1.
 9. UFC 3-220-20, Appendix B-5 (Example 5), Table B-28: the validation case.
+10. FHWA GEC-10 §10.7 (pp. 10-51, 10-52; Rollins et al. 2018 as GEC-10
+    cites it), Eq 9-13 (p. 9-43; Kramer and Wang 2015) and §9.4.2.2
+    (p. 9-42): post-liquefaction drag, residual strength, FSliq.
+11. FHWA GEC-12 §7.4.2.2 (pp. 383-385; Fellenius and Siegel 2008 as GEC-12
+    cites it): liquefaction relative to the neutral plane.
+
+## Post-liquefaction downdrag (`liquefaction.py`; BACKLOG GM-03, 2026-10-19)
+
+`post_liquefaction_downdrag(analysis, liquefied_layers=... | liquefaction_result=...)`
+runs the static analysis twice on the same inputs: **before** the earthquake
+(the analysis as given, its numbers unchanged) and **after** the liquefied
+layers reconsolidate. Every neutral-plane method is reported in both states
+(`by_method`) and every cited side resistance for the liquefied layers is
+evaluated side by side (`side_resistance_comparison`). The agent tool is
+`downdrag.post_liquefaction_downdrag`.
+
+### What the references print
+
+**FHWA GEC-10 (FHWA-NHI-18-024), §10.7 "Seismic Considerations",
+"Post-Liquefaction Downdrag", p. 10-52** — the one printed procedure:
+
+> "Post-liquefaction reconsolidation settlement of liquefied layers due to
+> excess pore water pressure dissipation as well as settlement of overlying
+> non-liquefied layers results in drag loads on drilled shafts. The
+> magnitude of post-liquefaction reconsolidation settlement can be
+> approximated by procedures given by Ishihara and Yoshimine (1992) and
+> described in Idriss and Boulanger (2008). Maximum drag loads occur at the
+> end of reconsolidation settlement when effective stress has returned to a
+> condition approximately equal to the pre-earthquake effective stress. Drag
+> loads imposed by previously liquefied layers should be computed as 50
+> percent of the pre-earthquake side resistance calculated using the beta
+> method. This value is based on the results of multiple tests by Rollins et
+> al. (2018) of instrumented deep foundations subjected to blast-induced
+> liquefaction and downdrag. For geomaterial layers above the zone of
+> liquefaction, drag loads should be based on side resistance values
+> corresponding to static conditions."
+
+and on the limit state, the same page: AASHTO (2017a) includes the drag
+(DD) in Extreme Event Load Combination I with a load factor of 1.0; GEC-10
+calls this "misguided" (reconsolidation follows the shaking) and concludes
+"Post-liquefaction drag loads should therefore be considered only for
+structural strength and service limit states as described in Section 10.6."
+§10.6.2 (p. 10-48) defers to GEC-12 §7.3.6.1, the neutral-plane procedure
+`DowndragAnalysis` runs.
+
+**GEC-10 §10.7 "Strength Reductions", p. 10-51** — resistance while
+liquefied: it "can be taken as zero for practical purposes when evaluating
+the Extreme Event I limit state. Rollins et al. (2018) ... confirmed that
+liquefied soil exhibits essentially zero side resistance"; "A lower bound
+side resistance should be taken as equal to the post-liquefaction residual
+undrained strength of the layer, su,r"; and "In no case should a drilled
+shaft be designed with its tip bearing immediately above or in a layer
+predicted to be susceptible to liquefaction."
+
+**GEC-10 Eq 9-13 (p. 9-43)**, Kramer and Wang (2015), median:
+su,r = exp(−8.444 + 0.109 (N1)60 + 5.379 (σ'v0)^0.1) ≥ drained strength,
+σ'v0 (pre-earthquake) and su,r in atmospheres. The PDF's text layer reads
+"1.109"; the printed equation (checked on the rendered page) reads 0.109,
+which is what the module uses. The module never lets su,r exceed the
+layer's pre-earthquake unit side resistance (a warning says where it would).
+GEC-10 §9.4.2.2 (p. 9-42) takes FSliq ≤ 1.0 as liquefying and
+1.0 < FSliq ≲ 1.5 as generating excess pore pressure. The volumetric strain
+relationship (Ishihara and Yoshimine 1992 / Idriss and Boulanger 2008) is
+NOT printed in GEC-10 as an equation (Fig 9-34 is a chart of maximum shear
+strain), so the strain is an input.
+
+**FHWA GEC-12 (FHWA-NHI-16-009 Vol I) §7.4.2.2 "Liquefaction"**, p. 383:
+"Evaluation of compression and uplift resistances during the seismic event
+can be made by assigning residual strength properties to the liquefiable
+layers"; pp. 384-385: "Following a seismic event that induces soil
+liquefaction, the liquefied layer will generally consolidate as pore water
+pressure dissipates. ... Fellenius and Siegel (2008) noted that the location
+of the zone of liquefaction relative to the neutral plane is very important.
+If liquefaction occurs in soil layers above the location of the neutral
+plane before liquefaction, the liquefaction event will have limited effect
+on the pile. If liquefaction occurs in soil layers located below the
+pre-liquefaction location of the neutral plane, it will increase the axial
+compression load in the pile as well as result in additional pile
+settlement. ... The pile foundation must be structurally capable of
+supporting the increased drag force and foundation settlement occurring
+after liquefaction must be within the structure's performance criteria."
+
+**UFC 3-220-20 (2025)** prints no post-liquefaction drag procedure. Table
+6-49 (p. 501): liquefaction "temporarily eliminates the geotechnical
+resistance within the liquefied zones" and post-construction densification
+of loose sand "can introduce a drag force and downdrag settlement".
+
+**Worked examples: none.** GEC-10, GEC-12 (its Vol III examples leave
+liquefaction out) and UFC 3-220-20 print no post-liquefaction drag example.
+The NCHRP downdrag report with the Appendix G CPT example is not in the
+reference library (National Academies Press record 27864); none of its
+numbers is used. The anchor is therefore the hand check HC-1 below.
+
+### The side-resistance options (all evaluated; one gives the headline)
+
+| `liquefied_side_resistance` | Source | Assumes |
+|---|---|---|
+| `half_pre_earthquake` (default) | GEC-10 §10.7, p. 10-52 (Rollins et al. 2018) | 50 % of the pre-earthquake (static) unit side resistance in the liquefied layers at the end of reconsolidation; GEC-10 states it for the beta method (a warning says so for a cohesive layer) |
+| `zero` | GEC-10 p. 10-51; UFC Table 6-49 | No side resistance and no drag in the liquefied layers: the state while liquefied, a lower bound on both |
+| `residual_strength` | GEC-10 p. 10-51 (lower bound su,r); GEC-12 §7.4.2.2 p. 383; su,r given or GEC-10 Eq 9-13 from (N1)60 | Unit side resistance = su,r, never more than the static value; needs `su_r` or `N1_60` on each layer |
+| `ratio` | the call's `liquefied_side_resistance_ratio` | A given fraction of the static value (0.5 reproduces the default) |
+
+The same unit value acts as drag above the neutral plane and as resistance
+below it. Layers outside the liquefied zones keep their static unit side
+resistance, as GEC-10 says for the layers above.
+
+### What the module does, and what it assumes
+
+1. **Before**: `analysis.compute()`, unchanged. If the chosen
+   `neutral_plane_method` finds no plane before the earthquake (the plane at
+   the base of the settling soil when nothing settles yet), the numbers
+   before are `auto` and a warning says so.
+2. **After**: a subclass of `DowndragAnalysis` with (a) the liquefied zones'
+   top and bottom as repeated grid depths (the `_extra_boundaries` hook,
+   empty for the static analysis), (b) the liquefied layers' unit side
+   resistance by the option, and (c) the soil settlement profile = the
+   static (fill / drawdown) profile + the reconsolidation settlement of the
+   liquefied soil between each depth and the toe (volumetric strain ×
+   thickness; the soil above a liquefied layer rides down with it, the
+   "settlement of overlying non-liquefied layers" GEC-10 names).
+   Reconsolidation of liquefied soil below the toe takes the toe down with
+   it (added to the settlement below the toe).
+3. Every neutral-plane method is evaluated in both states. The headline is
+   the analysis's `neutral_plane_method` (default `auto`, UFC §6-7.4: force
+   equilibrium at full toe mobilization, the structural drag force). Force
+   equilibrium takes the plane from the load and resistance curves, which
+   the reconsolidation settlement does not move; lowering the liquefied
+   layer's friction lowers both. The methods that follow the settlement
+   (toe force compatible with the toe penetration, plane at the base of the
+   settling soil) are the ones whose drag rises when the liquefied zone is
+   below the plane before the earthquake: when a zone lies below the plane
+   some method gives before the earthquake and the headline drag force does
+   not rise, a warning quotes GEC-12 §7.4.2.2 and names those methods and
+   their numbers. Nothing is chosen for the engineer.
+4. **Inputs**: `liquefied_layers` (top, bottom, `volumetric_strain` or
+   `settlement`; optional `su_r`, `N1_60`, `fs_liq`), or a
+   `liquefaction_result` — the `liquefaction` tool's SPT `layer_results`
+   (depth_m, FOS_liq, N1_60 / N160) or a profile with depth,
+   factor_of_safety and volumetric_strain arrays (liquepy's CPT result). A
+   reading liquefies where FOS_liq ≤ `fs_liq_threshold` (default 1.0, GEC-10
+   §9.4.2.2) and stands for the depth halfway to its neighbours, not above
+   the water table. The tool's SPT routes compute no strain, so
+   `volumetric_strain` is then required (one value for every liquefied
+   reading, or one per reading); strains the result gives at readings above
+   the threshold are left out and their total is a warning. The tool's CPT
+   route returns only LPI / LSN / LDI, so a CPT goes in as `liquefied_layers`
+   (or as liquepy's own result object, which carries the arrays).
+5. **Not modelled**: the toe resistance stays the static value (a warning
+   quotes GEC-10's rule when the toe is in, on top of, or at the base of a
+   liquefied layer); only liquefied layers reconsolidate; a layer above the
+   water table is warned, not clipped, when given directly.
+6. **Limit states**: the structural check (UFC Eq 6-80 / GEC-12 Eq 7-70),
+   the geotechnical check without the drag and the settlement check run on
+   the state after, as GEC-10 §10.7 says (strength and service); the result
+   notes AASHTO's Extreme Event I with a load factor of 1.0 on the drag.
+
+### Hand check HC-1 (a hand check from the printed equations, NOT a published anchor)
+
+`tests/test_post_liquefaction.py::TestHandCheckHC1` computes every number
+below in closed form and pins the module to it.
+
+Inputs: a 0.5 m square pile (perimeter P = 2.0 m, area 0.25 m²), L = 20 m,
+Q_dead = 600 kN, water table at the ground surface, no fill. Sand 0-10 m,
+γ = 19 kN/m³, β = 0.30; dense sand 10-30 m, γ = 20 kN/m³, β = 0.45, Nt = 30.
+The 6-10 m layer liquefies with εv = 3 %.
+
+| Step | Hand | Module |
+|---|---|---|
+| γ' above / below 10 m | 19 − 9.81 = 9.19; 20 − 9.81 = 10.19 kN/m³ | |
+| Unit side resistance above 10 m (UFC §6-7.4 step 2, β σ'v) | fs = 0.30 × 9.19 z = 2.757 z kPa; after, 6-10 m: 1.3785 z | same, jumps on repeated nodes at 6 and 10 m |
+| Shaft 0-6 m / 6-10 m | 2.0 × 2.757 × 6²/2 = 99.25 kN; 2.0 × 2.757 × (10² − 6²)/2 = 176.45 kN | |
+| Shaft 6-10 m after (50 %) | 88.22 kN | 88 kN (`liquefied_zones`) |
+| Toe resistance | R = 30 × (91.9 + 10.19 × 10) × 0.25 = 30 × 193.8 × 0.25 = 1453.5 kN | |
+| Shaft 10-20 m | 2.0 × 0.45 × (91.9 × 10 + 10.19 × 10²/2) = 1285.65 kN | |
+| Reconsolidation settlement | 0.03 × 4.0 = 120 mm: 120 mm above 6 m, linear to 0 at 10 m | 120.0 mm, same profile |
+| Plane at the base of the settling soil / toe force compatible with toe penetration, after | 10.00 m; drag force 99.25 + 88.22 = 187.48 kN | 10.00 m; 187.5 kN |
+| The same methods before | nothing settles: no plane at the bearing layer; zero drag | n/a; 0 kN |
+| Force equilibrium, toe 100 %, below 10 m (u = z − 10) | Q + S_top + S(u) = R + 1285.65 − S(u), S(u) = 0.9 (91.9 u + 5.095 u²) | |
+| — before (S_top = 275.70) | S(u) = 931.73 → u = 7.849 → **17.85 m**, Q_np = **1807.4 kN** | 17.85 m, 1807.4 kN |
+| — after, 50 % (S_top = 187.48) | S(u) = 975.84 → u = 8.132 → **18.13 m**, Q_np = **1763.3 kN** | 18.13 m, 1763.3 kN |
+| — after, zero (S_top = 99.25) | S(u) = 1019.95 → u = 8.410 → 18.41 m | 18.41 m |
+| GEC-10 Eq 9-13 at 8 m, (N1)60 = 8 | σ'v0 = 73.52 kPa = 0.7256 atm; su,r = exp(−8.444 + 0.872 + 5.379 × 0.7256^0.1) = 0.0941 atm = **9.54 kPa** (static fs there 22.1 kPa) | 9.54 kPa |
+
+What HC-1 shows: with the liquefied layer ABOVE every plane before the
+earthquake (here none settles before), force equilibrium moves the plane
+down a little and the drag force falls (1207 → 1163 kN), as GEC-12 §7.4.2.2
+says for liquefaction above the plane ("limited effect"); the methods that
+follow the reconsolidation settlement go from no drag to 187 kN at the base
+of the liquefied layer. `TestBelowTheStaticNeutralPlane` covers a zone
+below the plane before the earthquake (clay under a fill over sand), where
+those methods' drag force rises from 377 to about 880 kN and the warning
+names them.
 
 ## CGPR #56 Method Family (`cgpr56.py`)
 

@@ -1045,6 +1045,9 @@ class DowndragAnalysis:
             top += layer.thickness
             if tol < top < L - tol:
                 bounds.append(top)
+        for zb in self._extra_boundaries():
+            if tol < zb < L - tol and all(abs(zb - b) > tol for b in bounds):
+                bounds.append(zb)
         kinks = []
         for zw in (self.soil.gwt_depth,
                    self.soil.gwt_depth + self.gw_drawdown):
@@ -1057,6 +1060,13 @@ class DowndragAnalysis:
                     if all(abs(z - s) > tol for s in special)]
             z_nodes = np.array(sorted(keep + kinks + bounds + bounds))
         return z_nodes, dz
+
+    def _extra_boundaries(self) -> tuple:
+        """Depths, besides the layer boundaries, where the unit skin
+        friction jumps (carried twice in the grid, as a layer boundary is).
+        None here; the post-liquefaction analysis adds the liquefied
+        zones' top and bottom (``downdrag.liquefaction``)."""
+        return ()
 
     @staticmethod
     def _lookup_depths(z_nodes: np.ndarray) -> np.ndarray:
