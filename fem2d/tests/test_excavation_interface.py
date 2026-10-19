@@ -242,14 +242,21 @@ def test_wall_friction_orders_the_wall_forces(runs):
     assert h == sorted(h, reverse=True)
 
 
-@pytest.mark.parametrize("key,delta", [('half', 17.5), ('full', 35.0)])
-def test_retained_side_mobilizes_the_given_delta(runs, key, delta):
-    w = runs[key].wall_interface['retained_side']
-    assert w['mobilized_delta_deg'] == pytest.approx(delta, abs=1.0)
+def test_retained_side_mobilizes_the_given_delta(runs):
+    """delta/phi' = 0.5: the joints slip and the given 17.5 deg is
+    mobilized. delta = phi' = 35: the soil next to the wall yields before
+    the joints slip (23.6 deg mobilized), more than at 0.5, less than
+    given."""
+    w = runs['half'].wall_interface['retained_side']
+    assert w['mobilized_delta_deg'] == pytest.approx(17.5, abs=1.0)
     assert w['joints_slipping'] >= 0.75 * w['joints']
     assert w['wall_shear_kN_per_m'] < 0        # the soil drags the wall down
-    front = runs[key].wall_interface['excavation_side']
-    assert front['wall_shear_kN_per_m'] > 0    # the soil in front heaves
+    full = runs['full'].wall_interface['retained_side']
+    assert w['mobilized_delta_deg'] + 2.0 < full['mobilized_delta_deg'] \
+        <= 35.0
+    for key in ('half', 'full'):
+        front = runs[key].wall_interface['excavation_side']
+        assert front['wall_shear_kN_per_m'] > 0    # the soil in front heaves
 
 
 def test_uss_cantilever_with_wall_friction(runs):

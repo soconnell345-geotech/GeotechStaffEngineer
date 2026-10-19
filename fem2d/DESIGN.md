@@ -421,7 +421,9 @@ method with Coulomb's K_A at 17.5 deg and the manual's Kp = 6.56, both
 times cos delta (117.1 with the manual's Ka = 0.27 and Kp = 6.56 as
 printed). On the same wall: smooth 155.2, delta/phi' = 0.5 98.7, 1.0 80.9,
 45 deg 75.7, bonded 65.7 kN-m/m; adhesion 10 MPa (no slip) 65.6, the
-bonded value. The default (smooth) is unchanged.
+bonded value. On the retained side the joints mobilize the given
+17.5 deg at delta/phi' = 0.5; at delta = phi' = 35 the soil next to the
+wall yields first and 23.6 deg is mobilized. The default (smooth) is unchanged.
 
 ### Mesh Generation
 
