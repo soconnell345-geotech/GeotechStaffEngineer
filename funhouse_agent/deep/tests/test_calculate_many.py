@@ -72,6 +72,15 @@ def test_limits():
     assert "at least one" in calculate_any([])["error"]
 
 
+def test_a_string_too_long_or_too_deep_to_parse_is_refused_not_raised():
+    # The list check parses the string; it must not raise where the single
+    # form answers with an error (review of GM-169: RecursionError).
+    out = calculate_any("1+" * 100_000 + "1")
+    assert "too long" in out["error"]
+    out = calculate_any("[" + "1+" * 4_000 + "1, 2]")
+    assert "error" in out
+
+
 def test_a_list_inside_a_function_is_still_one_expression():
     out = calculate_any("max(a, b)", {"a": 1, "b": 2})
     assert out["value"] == 2.0

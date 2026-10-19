@@ -128,3 +128,17 @@ def test_the_agent_build_warms_pyplot(monkeypatch):
     build_deep_agent(GenericFakeChatModel(
         messages=iter([AIMessage(content="ok")])))
     assert calls == [1]
+
+
+def test_no_matplotlib_no_error():
+    script = textwrap.dedent(f"""
+        import sys
+        sys.path.insert(0, {ROOT!r})
+        sys.modules["matplotlib"] = None        # import matplotlib fails
+        from funhouse_agent.deep.warm_imports import warm_pyplot
+        print(warm_pyplot(), warm_pyplot())
+    """)
+    run = subprocess.run([sys.executable, "-c", script], capture_output=True,
+                         text=True, timeout=300, cwd=ROOT)
+    assert run.returncode == 0, run.stderr[-2000:]
+    assert run.stdout.strip() == "False False"

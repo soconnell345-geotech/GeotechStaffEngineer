@@ -232,12 +232,17 @@ def _several(expression) -> Optional[List[Tuple[Optional[str], str]]]:
     if isinstance(expression, (list, tuple)):
         return [(None, str(v)) for v in expression]
     if isinstance(expression, str):
+        from funhouse_agent.adapters.reliability_adapter import (
+            _MAX_EXPR_CHARS)
+        if len(expression) > _MAX_EXPR_CHARS:
+            return None                 # evaluate says it is too long
         try:
             tree = ast.parse(expression.strip(), mode="eval")
-        except SyntaxError:
-            return None
-        if isinstance(tree.body, (ast.List, ast.Tuple)) and tree.body.elts:
-            return [(None, ast.unparse(e)) for e in tree.body.elts]
+            if isinstance(tree.body, (ast.List, ast.Tuple)) \
+                    and tree.body.elts:
+                return [(None, ast.unparse(e)) for e in tree.body.elts]
+        except Exception:  # noqa: BLE001 - SyntaxError, RecursionError...
+            return None                 # evaluate words the error
     return None
 
 

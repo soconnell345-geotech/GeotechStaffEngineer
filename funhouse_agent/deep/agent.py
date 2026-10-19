@@ -428,8 +428,8 @@ _CALC_BUDGET = (
     "(html_to_pdf's page_contents, read_pdf_text for its numbers) with "
     "calls to spare.")
 
-#: The calc helper is told how many calls are left from this many before
-#: its last (BACKLOG GM-101).
+#: The calc helper is told how many calls are left from this many calls
+#: left (that call included) down to its last but one (BACKLOG GM-101).
 CALC_WARN_REMAINING = 4
 
 _CALC_DESCRIPTION = (

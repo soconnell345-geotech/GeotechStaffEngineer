@@ -29,9 +29,10 @@ stages instead of cutting the consult off with a stock "limits exceeded" note:
 
 Neither stage raises: the parent agent always receives a final message.
 
-A budget can also warn ahead (``warn_remaining``): while that many calls or
-fewer are left before the last, each call carries a note saying how many
-remain (:data:`LOW_BUDGET_NOTE`). BACKLOG GM-101: calc helpers that ran out
+A budget can also warn ahead (``warn_remaining``): from that many calls
+left (the one being made included) down to the last but one, each call
+carries a note saying how many remain (:data:`LOW_BUDGET_NOTE`); the last
+is the forced final turn. BACKLOG GM-101: calc helpers that ran out
 of calls before building their PDF (live waves w8b and w13) were never told
 the end was near.
 """
@@ -101,9 +102,9 @@ FINAL_TURN_NUDGE = (
     "confirmed, say so in one line rather than guessing."
 )
 
-#: Added (as a user message, tools kept) to each call while ``warn_remaining``
-#: calls or fewer are left before the last; ``{left}`` counts the call it is
-#: on (BACKLOG GM-101).
+#: Added (as a user message, tools kept) to each call from ``warn_remaining``
+#: calls left down to the last but one; ``{left}`` counts the call it is on
+#: (BACKLOG GM-101).
 LOW_BUDGET_NOTE = (
     "[Model-call budget] {left} model calls left, this one included; the "
     "last is your reply, with no tools. Use them to finish and check what "
@@ -176,9 +177,10 @@ class ModelCallBudgetMiddleware(ModelCallLimitMiddleware):
     exhausted_message : str, optional
         Final AI message injected if the hard backstop fires.
     warn_remaining : int, optional
-        While this many calls or fewer are left before the last, each call
-        carries ``low_budget_note`` saying how many remain. ``None`` (the
-        default) or ``0`` gives no warning.
+        From this many calls left (the one being made included) down to
+        the last but one, each call carries ``low_budget_note`` saying how
+        many remain. ``None`` (the default), ``0`` or ``1`` gives no
+        warning.
     low_budget_note : str, optional
         The warning, with ``{left}`` for the calls left (this one included).
     """
@@ -236,8 +238,8 @@ class ModelCallBudgetMiddleware(ModelCallLimitMiddleware):
         )
 
     def _warned(self, request):
-        """``request`` with the low-budget note added while
-        :attr:`warn_remaining` calls or fewer are left before the last."""
+        """``request`` with the low-budget note added from
+        :attr:`warn_remaining` calls left down to the last but one."""
         left = self._calls_left(request)
         if not self.warn_remaining or left is None \
                 or not 1 < left <= self.warn_remaining:

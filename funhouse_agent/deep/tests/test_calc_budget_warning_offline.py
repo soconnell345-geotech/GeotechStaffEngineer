@@ -64,7 +64,7 @@ def _run(budget, warn):
     return model.seen
 
 
-def test_the_last_four_calls_before_the_final_one_say_how_many_are_left():
+def test_from_four_calls_left_each_call_says_how_many_are_left():
     seen = _run(budget=7, warn=4)
     assert len(seen) == 7
     # calls 1-3: no note; calls 4-6: 4, 3 and 2 left; call 7 is the final
@@ -79,6 +79,13 @@ def test_the_last_four_calls_before_the_final_one_say_how_many_are_left():
 def test_no_warning_unless_asked():
     seen = _run(budget=5, warn=None)
     assert not any(_notes(m) for m in seen)
+
+
+def test_the_boundaries():
+    # 1 would warn only on the final turn, which says so itself: no note.
+    assert [len(_notes(m)) for m in _run(budget=5, warn=1)] == [0] * 5
+    assert [len(_notes(m)) for m in _run(budget=5, warn=2)] ==         [0, 0, 0, 1, 0]
+    assert [len(_notes(m)) for m in _run(budget=1, warn=4)] == [0]
 
 
 def test_a_small_budget_warns_from_the_start():
