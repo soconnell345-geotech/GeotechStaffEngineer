@@ -2024,7 +2024,8 @@ def _pdf_layout(path: str, figures=None, max_pages: int = 20) -> dict:
 
 
 def _generate_html_to_pdf(params: dict) -> dict:
-    from calc_package.latex_renderer import render_html_pdf_story
+    from calc_package.latex_renderer import (figures_not_printed_warning,
+                                           render_html_pdf_story)
 
     reject_unknown_params(
         params, {"html", "html_path", "output_path", "allow_unembeddable"},
@@ -2106,6 +2107,9 @@ def _generate_html_to_pdf(params: dict) -> dict:
             f"{len(findings)} figure reference(s) were NOT embedded and are "
             "missing from the PDF (allow_unembeddable=true). Tell the user "
             "which figures are absent — do not describe the PDF as complete."]
+    missing = figures_not_printed_warning(rendered)
+    if missing:
+        response.setdefault("renderer_warnings", []).append(missing)
     if problem:
         response["status"] = "error"
         response["error"] = (f"PDF was generated but {problem}."
