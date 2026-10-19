@@ -525,10 +525,14 @@ _CELL = ("the smallest round size giving at most about 3,000 cells",
          "the cell size for the region totals")
 declare_when_absent(METHOD_INFO, {
     "kriging": {
-        "grid_x_min": ("the data's x range less 10 %", "the grid's extent"),
-        "grid_x_max": ("the data's x range plus 10 %", "the grid's extent"),
-        "grid_y_min": ("the data's y range less 10 %", "the grid's extent"),
-        "grid_y_max": ("the data's y range plus 10 %", "the grid's extent"),
+        "grid_x_min": ("the smallest x less 10 % of the data's x range",
+                       "the grid's extent"),
+        "grid_x_max": ("the largest x plus 10 % of the data's x range",
+                       "the grid's extent"),
+        "grid_y_min": ("the smallest y less 10 % of the data's y range",
+                       "the grid's extent"),
+        "grid_y_max": ("the largest y plus 10 % of the data's y range",
+                       "the grid's extent"),
         "variance": ("the sample variance of the observations",
                      "with fit_variogram, the starting guess for the fit"),
         "len_scale": ("a third of the data extent",

@@ -347,7 +347,9 @@ the eyes). What changed on master after 5.33.0, in short:
   value); every other input passed prints under Assumed Inputs as
   passed, not stated as given, and the module's Method Choices say
   "assumed" for it (with nothing named, every "given" choice), so an
-  input not known to be the user's is assumed; an `assumptions` key
+  input not known to be the user's is assumed; a `given` name the call
+  does not pass is refused, the refusal listing the inputs passed (the
+  user's value would otherwise print as a default); an `assumptions` key
   written as an input name that is not one is refused with a
   did-you-mean, and a statement in words is its own row (GM-167).
 - **Vision** (VIS-01, VIS-04, VIS-05): an optional `turn` (0/90/180/270) on

@@ -438,7 +438,8 @@ from funhouse_agent.adapters import declare_when_absent  # noqa: E402
 _NO_WATER = ("no water table",
              "total unit weight to the pile toe: effective stress equals "
              "total stress")
-_E = ("by pile material: steel 200 GPa, concrete 25 GPa",
+_E = ("by pile material: steel 200 GPa, concrete 25 GPa, none for a "
+      "timber section",
       "the module's modulus for the material; give E for the pile's own")
 _DISPLACED = ("the steel area of an H-pile, the gross area of other piles",
               "Nordlund's displaced volume per unit length for the section "

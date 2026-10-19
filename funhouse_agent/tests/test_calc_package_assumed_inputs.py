@@ -354,7 +354,31 @@ def test_given_names_inputs_of_the_package(tmp_path):
     assert "in both assumptions and given" in r["error"]
     r = call_agent("calc_package", "bearing_capacity_package", dict(
         _BEARING, given=3, output_path=str(out)))
-    assert "given: give the input names the user gave" in r["error"]
+    assert "given: give the names of the inputs you pass" in r["error"]
+
+
+def test_given_names_only_inputs_the_call_passes(tmp_path):
+    """A name the call does not pass is refused (its value would print as
+    the analysis's default, the user's words lost), and a refusal lists
+    the inputs passed: symbols such as B or phi are not the bearing
+    package's names."""
+    out = tmp_path / "bc.html"
+    r = call_agent("calc_package", "bearing_capacity_package", dict(
+        _BEARING, given=["width", "factor_of_safety"], output_path=str(out)))
+    assert "given: ['factor_of_safety'] named but not passed" in r["error"]
+    assert ("The inputs this call passes: depth, friction_angle, "
+            "unit_weight, width.") in r["error"]
+    assert not out.exists()
+    r = call_agent("calc_package", "bearing_capacity_package", dict(
+        _BEARING, given=["B", "phi"], output_path=str(out)))
+    assert "unknown parameter(s) ['B', 'phi']" in r["error"]
+    assert "The inputs this call passes: depth, friction_angle" in r["error"]
+    r = call_agent("calc_package", "bearing_capacity_package", dict(
+        _BEARING, factor_of_safety=3.0, output_path=str(out),
+        given={"width": "2 m", "factor_of_safety": "FS = 3"}))
+    assert r["status"] == "success", r
+    given = _section(_text(out), "Given Inputs", "Assumed Inputs")
+    assert "Factor of safety 3 FS = 3" in given
 
 
 def test_with_nothing_named_as_given_no_choice_reads_given(tmp_path):

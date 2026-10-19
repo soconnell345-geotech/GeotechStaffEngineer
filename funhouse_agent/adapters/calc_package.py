@@ -597,12 +597,15 @@ def _stated_assumptions(value, package: str = None) -> dict:
 _NAME = re.compile(r"[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+")
 
 
-def _named_given(value, package: str = None) -> dict:
+def _named_given(value, package: str = None, passed=None) -> dict:
     """A package's ``given`` (GM-167): the inputs the user gave, as
     ``{name: the user's words, or ""}``. A list of names, one name, or
     ``{name: the user's words}``; with ``package``, a name given by
     another spelling is put under its own, and a name that is not an input
-    is refused with a did-you-mean."""
+    is refused with a did-you-mean. With ``passed`` (the inputs the call
+    passes, by their own names), a name the call does not pass is refused
+    too, so the user's value never drops out of Given Inputs to print as a
+    default, and each refusal lists the inputs passed."""
     if value is None or value == "" or value == [] or value == {}:
         return {}
     if isinstance(value, str):
@@ -614,14 +617,16 @@ def _named_given(value, package: str = None) -> dict:
             and all(isinstance(v, str) for v in value):
         words = dict.fromkeys(value, "")
     else:
-        raise ValueError("given: give the input names the user gave, e.g. "
-                         "[\"B\", \"phi\"], or {input name: the user's own "
-                         "words}.")
+        raise ValueError("given: give the names of the inputs you pass that "
+                         "the user gave, e.g. [\"width\", \"friction_angle\"]"
+                         ", or {input name: the user's own words}.")
     if package is None:
         return words
     from funhouse_agent.adapters import suggest_params
     inputs, aliases = _package_inputs(package), _package_aliases(package)
     valid = [n for n in inputs if n not in _COMMON_PARAMS]
+    passing = ("" if passed is None else " The inputs this call passes: "
+               + ", ".join(sorted(passed)) + ".")
     names, bad = {}, {}
     for key, said in words.items():
         name = aliases.get(key, key)
@@ -631,15 +636,24 @@ def _named_given(value, package: str = None) -> dict:
             bad[key] = (None if name in _COMMON_PARAMS
                         else suggest_params(key, valid))
     if bad:
-        _refuse(package, "given", bad, [k for k in words if k not in bad])
+        _refuse(package, "given", bad, [k for k in words if k not in bad],
+                extra=passing)
+    missing = sorted(k for k in words if passed is not None
+                     and aliases.get(k, k) not in passed)
+    if missing:
+        raise ValueError(
+            f"{package} given: {missing} named but not passed. Pass the "
+            "value the user gave for each as well, so Given Inputs prints "
+            "it." + passing)
     return names
 
 
 def _refuse(package: str, field: str, bad: dict, fine: list,
-            words: bool = False):
+            words: bool = False, extra: str = ""):
     """Refuse the keys of ``field`` in ``bad`` ({key: its near inputs, or
     None for a header field}) in the words of an unknown input (GM-110),
-    naming the keys that were fine so the next call sends them again."""
+    naming the keys that were fine so the next call sends them again;
+    ``extra`` is added at the end."""
     header = sorted(k for k, near in bad.items() if near is None)
     unknown = sorted(k for k in bad if k not in header)
     parts = []
@@ -657,15 +671,18 @@ def _refuse(package: str, field: str, bad: dict, fine: list,
     if fine:
         msg += (" The others (" + ", ".join(map(repr, fine)) + ") are "
                 "fine: send them again with these corrected.")
-    raise ValueError(msg)
+    raise ValueError(msg + extra)
 
 
 def _checked_statements(params: dict, package: str):
     """``(assumptions, given)`` of a package call, checked (GM-155,
-    GM-167): an input both stated as an assumption and named as the
-    user's is refused."""
+    GM-167): ``given`` names only inputs the call passes, and an input
+    both stated as an assumption and named as the user's is refused."""
+    aliases = _package_aliases(package)
+    passed = {aliases.get(k, k) for k, v in params.items()
+              if k not in _COMMON_PARAMS and v is not None}
     stated = _stated_assumptions(params.get("assumptions"), package)
-    named = _named_given(params.get("given"), package)
+    named = _named_given(params.get("given"), package, passed)
     both = sorted(set(stated) & set(named))
     if both:
         raise ValueError(f"{package}: {both} in both assumptions and "
@@ -2007,10 +2024,11 @@ _COMMON_PARAMS = {
                         "did-you-mean.")},
     "given": {"type": "list|dict", "required": False,
               "description": (
-                  "The inputs you pass that the user gave, by name, e.g. "
-                  "[\"B\", \"Df\", \"phi\"], or with the user's own "
-                  "words, {\"phi\": \"friction angle 32 deg from the "
-                  "boring logs\"}. Only these print under Given Inputs. "
+                  "The inputs you pass that the user gave, by the names "
+                  "you pass them under, e.g. [\"width\", \"depth\", "
+                  "\"friction_angle\"], or with the user's own words, "
+                  "{\"friction_angle\": \"phi 32 deg from the boring "
+                  "logs\"}. Only these print under Given Inputs. "
                   "Every other input you pass prints under Assumed Inputs "
                   "as passed, not stated as given (with its basis when it "
                   "is in assumptions); left out, no input is the user's. A "
