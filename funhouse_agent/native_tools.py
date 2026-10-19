@@ -12,6 +12,7 @@ from typing import Any, Callable, Dict, Optional
 
 from funhouse_agent.dispatch import (
     call_agent, describe_method, list_agents, list_methods,
+    parameters_object,
 )
 from funhouse_agent.vision_tools import (
     IMAGE_FIND_NOTE, IMAGE_LOOK_NOTE, IMAGE_ZOOM_NOTE, TURN_ARG_NOTE,
@@ -532,11 +533,12 @@ def dispatch_native_tool(
     if name == "call_agent":
         # LLMs sometimes flatten method parameters to the top level instead
         # of nesting them inside "parameters".  Auto-nest any extra keys.
+        # Any shape but an object is left for call_agent to refuse (GM-189).
         _CALL_AGENT_KEYS = {"agent_name", "method", "parameters"}
-        params = dict(arguments.get("parameters", {}))
+        params = parameters_object(arguments.get("parameters"))
         extras = {k: v for k, v in arguments.items() if k not in _CALL_AGENT_KEYS}
-        if extras:
-            params.update(extras)
+        if extras and isinstance(params, dict):
+            params = {**params, **extras}
         return json.dumps(
             call_agent(
                 agent_name=arguments.get("agent_name", ""),

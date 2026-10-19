@@ -2343,7 +2343,11 @@ METHOD_INFO = {
                  "scaled to fit a page. Pure-Python (PyMuPDF Story engine).",
         "parameters": {
             "html": {"type": "str", "required": False,
-                     "description": "Self-contained HTML content to render. Inline all "
+                     "description": "Self-contained HTML content to render: the "
+                                    "finished page as ONE string value, written out "
+                                    "in full with each figure's <img> tag in place "
+                                    "(nothing in the call is run, so no code builds "
+                                    "or edits it). Inline all "
                                     "CSS. FIGURES: use <img src=\"fig.png\"> "
                                     "(a PNG/JPEG in the working folder, named as the "
                                     "figure tool returned it, or a real local path, "

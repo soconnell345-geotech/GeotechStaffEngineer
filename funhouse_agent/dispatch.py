@@ -637,6 +637,85 @@ def _parameter_error(mod, agent_name: str, method: str, parameters: dict,
     return out
 
 
+#: The shape of call_agent's ``parameters``, said to a call that sent
+#: another (GM-189).
+PARAMETERS_SHAPE = (
+    "'parameters' is an object of named inputs, {\"name\": value, ...}, "
+    "each value a JSON value (a number, a string, true/false, null, a list "
+    "or an object). Long text such as HTML is ONE string value, written "
+    "out in full. Nothing in the arguments is run: no code, no method "
+    "calls, joins or variables.")
+
+
+def parameters_object(parameters):
+    """``parameters`` as the object of named inputs a method takes
+    (GM-189): a dict as it is, None or a blank string as ``{}``, a string
+    holding a JSON object parsed. Anything else comes back as it is, for
+    :func:`call_agent` to refuse."""
+    if parameters is None:
+        return {}
+    if isinstance(parameters, str):
+        if not parameters.strip():
+            return {}
+        try:
+            parsed = json.loads(parameters)
+        except ValueError:
+            return parameters
+        if isinstance(parsed, dict):
+            return parsed
+    return parameters
+
+
+def _json_kind(value) -> str:
+    if isinstance(value, bool):
+        return "true/false"
+    if isinstance(value, (int, float)):
+        return "a number"
+    if isinstance(value, (list, tuple)):
+        return "a list"
+    if isinstance(value, str):
+        return "a string"
+    return f"a {type(value).__name__}"
+
+
+def _parameters_shape_error(mod, agent_name: str, method: str,
+                            parameters) -> dict:
+    """The answer to a call whose ``parameters`` is not an object of named
+    inputs (GM-189): what came, where a string stops being JSON, the shape
+    expected and, where the method is known, the names it takes. The
+    argument itself is not echoed back; it can run to thousands of
+    characters."""
+    if isinstance(parameters, str):
+        try:
+            got = f"a string holding {_json_kind(json.loads(parameters))}"
+        except json.JSONDecodeError as e:
+            after = parameters[e.pos:e.pos + 40]
+            got = (f"a string that is not JSON ({e.msg} at character "
+                   f"{e.pos:,} of {len(parameters):,}: {after!r})")
+    else:
+        got = _json_kind(parameters)
+    real = method if method in mod.METHOD_REGISTRY else None
+    if real is None:
+        try:
+            resolved = _resolve_unknown_method(mod, agent_name, method, {})
+        except Exception:                              # noqa: BLE001
+            resolved = None
+        real = resolved[0] if resolved else None
+    out = {"error": (f"{agent_name}.{method}: 'parameters' came as {got}, "
+                     "not an object of named inputs. The call was NOT run."),
+           "expected": PARAMETERS_SHAPE}
+    documented = _method_params(mod, real) if real else {}
+    if documented:
+        required = sorted(k for k, v in documented.items()
+                          if isinstance(v, dict) and v.get("required"))
+        out["required_parameters"] = required
+        out["optional_parameters"] = sorted(k for k in documented
+                                            if k not in required)
+    out["directive"] = (f"Call call_agent('{agent_name}', '{real or method}', "
+                        "{...}) again with 'parameters' as that object.")
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Smart method resolution — cut the agent's method-name guessing
 # ---------------------------------------------------------------------------
@@ -1112,7 +1191,9 @@ def call_agent(
     method : str
         Method name within that module.
     parameters : dict
-        Flat dict of parameters.
+        Flat dict of parameters. A string holding a JSON object is read as
+        that object; any other shape is refused, with the shape expected
+        and the method's parameter names (GM-189).
     attachments : dict, optional
         Agent attachments ({key: bytes}).  If parameters contains an
         ``attachment_key``, the corresponding bytes are decoded to text
@@ -1139,6 +1220,9 @@ def call_agent(
         mod = _load_adapter(agent_name)
     except Exception as e:
         return {"error": f"Failed to load module '{agent_name}': {e}"}
+    parameters = parameters_object(parameters)
+    if not isinstance(parameters, dict):
+        return _parameters_shape_error(mod, agent_name, method, parameters)
     if method not in mod.METHOD_REGISTRY:
         resolved = _resolve_unknown_method(mod, agent_name, method, parameters)
         if resolved is not None:
@@ -1167,8 +1251,6 @@ def call_agent(
             return {"error": f"Unknown method '{method}'. Did you mean: "
                              f"{near}? {avail}"}
     from funhouse_agent._fileio import hide_working_folder
-    if not isinstance(parameters, dict):
-        parameters = {}
     given = set(parameters)
     try:
         _check_parameter_names(mod, method, parameters)
