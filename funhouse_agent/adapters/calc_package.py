@@ -375,11 +375,6 @@ def _save_tables(tables, names, out_dir) -> list:
 # items likewise; the package's own inputs beside the tool's; and the
 # older names it no longer takes, with the reason.
 
-_AXIAL_SECTION = (
-    "axial_pile_capacity builds the section from pile_type with diameter "
-    "and wall_thickness (pipe), width (concrete) or designation (H-pile); "
-    "it takes no custom area, perimeter or tip area")
-
 _PACKAGE_TOOLS = {
     "bearing_capacity_package": {
         "adapter": "bearing_capacity",
@@ -400,9 +395,6 @@ _PACKAGE_TOOLS = {
         "adapter": "axial_pile",
         "tools": {None: "axial_pile_capacity"},
         "older": {"soil_layers": "layers"},
-        "dropped": {k: _AXIAL_SECTION for k in (
-            "pile_area", "pile_perimeter", "pile_tip_area", "pile_width",
-            "pile_depth", "pile_name")},
     },
     "drilled_shaft_package": {
         "adapter": "drilled_shaft",
