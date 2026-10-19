@@ -174,7 +174,11 @@ def test_switch_on_ends_the_geotech_prompt_with_the_judgment_calls(
             + "\n\n" + judgment_calls_section(references=True)
             + "\n\nHOST BLOCK")
     if calc:
-        want += "\n\n" + agent_mod._CALC_DELEGATION_NUDGE
+        # GM-181 / GM-155 w13b fix 10: the brief's GIVEN block and the
+        # consult's citations, after the unswitched nudge
+        want += "\n\n" + (agent_mod._CALC_DELEGATION_NUDGE
+                          + agent_mod._CALC_DELEGATION_GIVEN
+                          + agent_mod._CALC_DELEGATION_CITATIONS)
     assert captured["system_prompt"] == want
     assert "GEOTECH_JUDGMENT_CALLS=1" in agent.geotech_build["switches"]
     # the turn-end check (GM-174) acts on this build
@@ -185,7 +189,8 @@ def test_switch_on_calc_helper_reports_its_calls(monkeypatch):
     off, _ = _built(monkeypatch, False, enable_calc_subagent=True)
     on, _ = _built(monkeypatch, True, enable_calc_subagent=True)
     assert _spec(on, "calc")["system_prompt"] == (
-        _spec(off, "calc")["system_prompt"] + agent_mod._CALC_JUDGMENT_CALLS)
+        _spec(off, "calc")["system_prompt"] + agent_mod._CALC_JUDGMENT_CALLS
+        + agent_mod._CALC_GIVEN_AND_CITATIONS)
     text = agent_mod._CALC_JUDGMENT_CALLS
     for part in ("the user's", '"Judgment calls"', "why", "basis",
                  "alternative", "what would change the result"):
@@ -366,7 +371,10 @@ def test_switch_off_carries_no_gm155_switched_text(monkeypatch, calc):
                      "Before the list, ask", "no basis in hand",
                      "the section or page it gives",
                      "several choices at once",
-                     "turns on most"):
+                     "turns on most",
+                     # GM-181 and w13b fix 10
+                     "GIVEN block", "as `given`", "*_package `given`",
+                     "pass its citations", "print each citation"):
             assert part not in t, part
 
 
@@ -409,3 +417,76 @@ def test_the_general_fixes_are_in_both_arms(monkeypatch, on):
                  "Never print an assumption as given.",
                  "takes `assumptions`"):
         assert part in calc, part
+
+
+# ---------------------------------------------------------------------------
+# GM-181: the brief fills a package's `given`; w13b fix 10: a bespoke PDF
+# carries the consult's citations
+# ---------------------------------------------------------------------------
+
+def test_the_brief_carries_the_users_words_for_given(monkeypatch):
+    """GM-167 prints under Given Inputs only what a package call names in
+    `given`. w13b F18j: the brief put c = 0, which "sand" only implies,
+    beside the user's inputs, and the package call named nothing. With
+    the switch on the nudge asks for a GIVEN block in the user's own words
+    and `given` from it, and the calc helper passes it; a value worked out
+    from the user's words, or chosen, is an assumption with its basis."""
+    captured, _ = _built(monkeypatch, True, enable_calc_subagent=True)
+    main = " ".join(captured["system_prompt"].split())
+    for part in ("a GIVEN block quotes the user's own words for each input "
+                 "they stated",
+                 "pass those inputs as `given` ({input name: the user's "
+                 "words})",
+                 "a value you derived from those words, or chose, goes "
+                 "under assumptions with its basis"):
+        assert part in main, part
+    calc = " ".join(_spec(captured, "calc")["system_prompt"].split())
+    for part in ("pass a *_package `given` naming each input the delegation "
+                 "says the user gave",
+                 "a value worked out from those words, or chosen, goes in "
+                 "`assumptions` with its basis"):
+        assert part in calc, part
+    # the unswitched nudge comes first, whole
+    assert captured["system_prompt"].endswith(agent_mod.calc_delegation_nudge(
+        judgment_calls=True, references=True))
+
+
+def test_the_brief_carries_the_consults_citations(monkeypatch):
+    """w13b F55j: the consult's citations reached the main agent and not
+    the rebuild brief, so the bespoke PDF printed none of them. The main
+    agent consults before it delegates such a deliverable and passes the
+    citations in the brief; the helper prints each beside the choice it
+    supports. Without a references helper there is nothing to pass."""
+    captured, _ = _built(monkeypatch, True, enable_calc_subagent=True)
+    main = " ".join(captured["system_prompt"].split())
+    assert ("ask the `references` helper before you delegate it, and pass "
+            "its citations in the brief, each beside the method or "
+            "assumption it supports") in main
+    calc = " ".join(_spec(captured, "calc")["system_prompt"].split())
+    assert ("print each citation the delegation passes beside the method "
+            "or assumption it supports") in calc
+    assert "(html_to_pdf)" in calc
+    alone, _ = _built(monkeypatch, True, enable_calc_subagent=True,
+                      reference_mode="off")
+    assert alone["system_prompt"].endswith(agent_mod.calc_delegation_nudge(
+        judgment_calls=True, references=False))
+    assert "pass its citations" not in alone["system_prompt"]
+    assert "GIVEN block" in alone["system_prompt"]
+
+
+def test_the_given_and_citation_lines_are_general_and_short():
+    """No case from the measured runs (the owner's no-overfitting rule),
+    and short."""
+    texts = (agent_mod._CALC_DELEGATION_GIVEN,
+             agent_mod._CALC_DELEGATION_CITATIONS,
+             agent_mod._CALC_GIVEN_AND_CITATIONS)
+    for t in texts:
+        low = " ".join(t.split()).lower()
+        for word in ("sand", "c = 0", "cohesion", "vesic", "water table",
+                     "rankine", "gec", "ufc", "wall", "footing", "4.5"):
+            assert word not in low, word
+    assert len(agent_mod._CALC_DELEGATION_GIVEN) < 320
+    assert len(agent_mod._CALC_DELEGATION_CITATIONS) < 280
+    assert len(agent_mod._CALC_GIVEN_AND_CITATIONS) < 480
+    assert agent_mod.calc_delegation_nudge() == \
+        agent_mod._CALC_DELEGATION_NUDGE
