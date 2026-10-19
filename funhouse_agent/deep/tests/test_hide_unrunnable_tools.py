@@ -205,3 +205,28 @@ def test_hide_tools_scrubs_an_unknown_tool_errors_list():
 
     same = hide.wrap_tool_call(Known(), lambda r: err)
     assert same is err                           # a real tool's result
+
+
+def test_hide_tools_drops_deepagents_advice_to_call_execute():
+    """read_file's note on a cut long line says to call execute (deepagents
+    0.6.8 and 0.7.13); with execute hidden, the advice goes with it."""
+    from deepagents.middleware import filesystem as fs
+    note = getattr(fs, "READ_FILE_TRUNCATION_MSG", None) or (
+        "\n\n[Output was truncated due to size limits. For example, if this "
+        "is JSON, use execute(command='jq . {file_path}') to pretty-print it "
+        "with line breaks. For other formats, you can use appropriate "
+        "formatting tools to split long lines.]")
+    assert "execute(" in note
+
+    class Known:
+        tool = object()
+
+    result = ToolMessage(content="1\t{...}" + note.format(
+        file_path="/large_tool_results/c1"), tool_call_id="1")
+    out = HideTools(UNRUNNABLE_TOOLS).wrap_tool_call(Known(), lambda r: result)
+    assert "execute" not in out.content
+    assert out.content.startswith("1\t{...}")
+    assert "For other formats" in out.content
+    # where execute is offered, the advice stays: the very same message
+    kept = HideTools({"delete"}).wrap_tool_call(Known(), lambda r: result)
+    assert kept is result

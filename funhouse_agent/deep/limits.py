@@ -78,6 +78,13 @@ UNRUNNABLE_TOOLS = frozenset({"execute", "delete"})
 #: where its backend can run a shell, so on ours there is none to take.
 _TOOL_SECTIONS = {"execute": "Execute Tool"}
 
+#: deepagents' advice, inside another tool's result, to call a tool by
+#: name: it goes with the tool too. ``read_file``'s note on a cut long line
+#: says "use execute(command='jq . <file>') to pretty-print it" (deepagents
+#: 0.6.8 and 0.7.13).
+_TOOL_ADVICE = {"execute": (r"For example, if this is JSON, use "
+                            r"execute\(command='[^']*'\)[^.]*\.[ \t]*")}
+
 
 def _without_sections(text: str, titles) -> str:
     """``text`` without each ``## <title>`` section (to the next heading or
@@ -97,9 +104,10 @@ class HideTools(AgentMiddleware):
     so nothing that refers to them breaks). deepagents attaches its
     filesystem tools to every sub-agent; this takes the ones a sub-agent
     must not spend calls on off the menu, with deepagents' prompt section
-    about a hidden tool where it has one, and out of an unknown-tool
-    error's list of tools (BACKLOG GM-176: that list names every
-    REGISTERED tool, and F18j's named 7 hidden ones)."""
+    about a hidden tool where it has one, out of an unknown-tool error's
+    list of tools (BACKLOG GM-176: that list names every REGISTERED tool,
+    and F18j's named 7 hidden ones), and out of deepagents' advice in
+    another tool's result (``read_file``'s "use execute(...)")."""
 
     def __init__(self, names):
         super().__init__()
@@ -146,16 +154,30 @@ class HideTools(AgentMiddleware):
     async def awrap_model_call(self, request, handler):
         return await handler(self._filtered(request))
 
+    def _unadvised(self, result):
+        """A tool's result without deepagents' advice to call a hidden tool
+        (:data:`_TOOL_ADVICE`); the very same message when it has none."""
+        import re
+        content = result.content
+        for name in sorted(self.hidden):
+            if name in _TOOL_ADVICE and f"{name}(" in content:
+                content = re.sub(_TOOL_ADVICE[name], "", content)
+        if content == result.content:
+            return result
+        return result.model_copy(update={"content": content})
+
     def _unlisted(self, request, result):
         """An unknown-tool error lists every REGISTERED tool; the hidden ones
-        are taken out of that list too (F31's listed them as the page's)."""
+        are taken out of that list too (F31's listed them as the page's). A
+        real tool's result loses advice to call a hidden one."""
         import re
 
         from langchain_core.messages import ToolMessage
-        if getattr(request, "tool", None) is not None or \
-                not isinstance(result, ToolMessage) or \
+        if not isinstance(result, ToolMessage) or \
                 not isinstance(result.content, str) or not self.hidden:
             return result
+        if getattr(request, "tool", None) is not None:
+            return self._unadvised(result)
         m = re.search(r"try one of \[([^\]]*)\]", result.content)
         if not m:
             return result

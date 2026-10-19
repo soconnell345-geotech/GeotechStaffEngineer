@@ -85,6 +85,7 @@ def _run(agent, tmp_path):
     (conv / "files").mkdir(parents=True)
     (conv / "meta.json").write_text("{}", encoding="utf-8")
     logger = ActivityLogger(str(conv), turn=1)
+    logger.turn_start(prompt=QUESTION)          # as turn_jobs does
     items = list(core.stream_turn(
         agent, [{"role": "user", "content": QUESTION}], "thread-1",
         callbacks=[logger]))
@@ -171,3 +172,26 @@ def test_a_build_with_no_consult_never_fires(tmp_path, monkeypatch):
     answer, _items, events = _run(agent, tmp_path)
     assert answer == UNSOURCED and len(agent.inputs) == 1
     assert [e["mode"] for e in events] == ["off"]
+
+
+def test_with_the_citation_check_one_note_and_one_retry(tmp_path,
+                                                       monkeypatch):
+    """Both checks fire on the same answer: one message carries both notes,
+    the turn is sent back once, and neither check sends it back again. (A
+    check that did not fire on the first answer can still fire once on the
+    rewritten one, as the page and citation checks do.)"""
+    from funhouse_agent import cited_documents as cd
+    monkeypatch.setenv(review_flags.JUDGMENT_CALLS_ENV, "1")
+    monkeypatch.setenv(review_flags.CITED_DOCUMENTS_ENV, "retry")
+    both = UNSOURCED.replace(
+        "The strut force is 182 kN/m.",
+        "The strut force is 182 kN/m (AASHTO LRFD 3.11.5).")
+    agent = _ScriptedAgent(_reply(both), _reply(both))
+    _answer, items, events = _run(agent, tmp_path)
+    assert len(agent.inputs) == 2               # one retry for both checks
+    told = agent.inputs[1]["messages"][-1]["content"]
+    assert told.count(jc.NOTE_PREFIX) == 1
+    assert told.count(cd.NOTE_PREFIX) == 1
+    statuses = [i["text"] for i in items if i["kind"] == "tool_call"]
+    assert jc.RETRY_STATUS in statuses and cd.RETRY_STATUS in statuses
+    assert [e["action"] for e in events] == ["fed_back", "none"]
