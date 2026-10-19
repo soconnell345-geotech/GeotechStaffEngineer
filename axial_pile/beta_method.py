@@ -158,3 +158,37 @@ def Nt_from_phi(phi_deg: float) -> float:
         return 70 + (phi_deg - 33) * 16  # 70 to 150
     else:
         return 150 + (phi_deg - 38) * 20
+
+
+#: GEC-12 Table 7-9 (after Fellenius 2014, printed p. 256): the approximate
+#: range of beta and Nt by soil type, with the phi' range each goes with:
+#: soil type -> ((phi' low, high) deg, (beta low, high), (Nt low, high)).
+TABLE_7_9 = {
+    "clay": ((25.0, 30.0), (0.15, 0.35), (3.0, 30.0)),
+    "silt": ((28.0, 34.0), (0.25, 0.50), (20.0, 40.0)),
+    "sand": ((32.0, 40.0), (0.30, 0.90), (30.0, 150.0)),
+    "gravel": ((35.0, 45.0), (0.35, 0.80), (60.0, 300.0)),
+}
+
+
+def table_7_9(soil: str, phi_deg: float, notes=None) -> tuple:
+    """(beta, Nt) from GEC-12 Table 7-9 for ``soil`` ("clay", "silt",
+    "sand" or "gravel") at phi' (degrees), as Steps 2b and 5b read it ("use
+    Table 7-9 to estimate beta coefficient from phi' angle"): linear in
+    phi' across the soil type's phi' range, low beta and Nt at its low
+    phi'. A phi' outside the range takes the range's end, with a note."""
+    if soil not in TABLE_7_9:
+        raise ValueError(f"Table 7-9 soil type must be one of "
+                         f"{list(TABLE_7_9)}, got '{soil}'")
+    (p0, p1), (b0, b1), (n0, n1) = TABLE_7_9[soil]
+    phi = min(max(phi_deg, p0), p1)
+    if phi != phi_deg:
+        text = (f"phi' = {phi_deg:g} deg is outside GEC-12 Table 7-9's "
+                f"{soil} range ({p0:g}-{p1:g} deg); beta and Nt were taken "
+                f"at {phi:g} deg, the range's end.")
+        if notes is None:
+            warnings.warn(text, stacklevel=2)
+        elif text not in notes:
+            notes.append(text)
+    w = (phi - p0) / (p1 - p0)
+    return b0 + w * (b1 - b0), n0 + w * (n1 - n0)

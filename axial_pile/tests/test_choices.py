@@ -138,8 +138,11 @@ def test_adhesion_limit_and_fig_7_18_are_named():
     assert lim["how"] == "module" and "governed in 1 layer" in lim["chosen"]
     assert "p. 252" in lim["basis"] and "uncapped" in lim["alternatives"][0]
     assert r.layer_breakdown[0]["alpha"] == pytest.approx(1.0)
-    assert any("Fig. 7-18" in a and "smaller value" in a
-               for a in c["adhesion (alpha-method)"]["alternatives"])
+    # Fig. 7-18 and the smaller of the two are offered (GM-144)
+    chart = c["adhesion chart (alpha-method)"]
+    assert chart["how"] == "default" and "smaller value" in chart["basis"]
+    assert any("'fig_7_18'" in a for a in chart["alternatives"])
+    assert any("'smaller'" in a for a in chart["alternatives"])
 
 
 def test_h_pile_toe_area_and_uplift_are_named():
