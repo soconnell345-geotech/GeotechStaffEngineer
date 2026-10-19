@@ -689,13 +689,15 @@ def _plot_skin_friction_profile(result):
             ax.text(label_x, z_mid, f'{qs:.0f} kN',
                     va='center', fontsize=8)
 
-    # Soil type labels on the left
-    for layer_info in layers:
-        z_mid = (layer_info['depth_top_m'] + layer_info['depth_bottom_m']) / 2
-        desc = layer_info.get('description', '') or layer_info['soil_type'].capitalize()
-        ax.text(-max(lb['skin_friction_kN'] for lb in layers) * 0.02, z_mid,
-                f'{desc} ',
-                va='center', ha='right', fontsize=7, fontstyle='italic')
+    # Soil type labels on a depth axis of their own at the right (written
+    # left of the bars they ran over the frame and the depth numbers at
+    # the printed width; GM-194)
+    side = ax.secondary_yaxis('right')
+    side.set_yticks(
+        [(lb['depth_top_m'] + lb['depth_bottom_m']) / 2 for lb in layers],
+        [lb.get('description', '') or lb['soil_type'].capitalize()
+         for lb in layers], fontsize=7, fontstyle='italic')
+    side.tick_params(length=0)
 
     # Pile tip line
     ax.axhline(y=result.pile_length, color='#dc2626', linestyle='--',
@@ -712,10 +714,9 @@ def _plot_skin_friction_profile(result):
         ))
     legend_handles.append(plt.Line2D([0], [0], color='#dc2626', linestyle='--',
                                      linewidth=1.5, label='Pile tip'))
-    ax.legend(handles=legend_handles, loc='lower right', fontsize=8)
 
     max_qs = max(lb['skin_friction_kN'] for lb in layers)
-    ax.set_xlim(-max_qs * 0.15 if max_qs > 0 else -1,
+    ax.set_xlim(0 if max_qs > 0 else -1,
                 max_qs * 1.35 if max_qs > 0 else 1)
     ax.set_ylim(result.pile_length * 1.08, -result.pile_length * 0.03)
     ax.set_xlabel('Skin Friction per Layer (kN)', fontsize=10)
@@ -726,5 +727,7 @@ def _plot_skin_friction_profile(result):
     )
     ax.grid(True, alpha=0.2)
     ax.tick_params(labelsize=9)
-    plt.tight_layout()
+    # the key under the axes: inside them it covered the pile tip (GM-194)
+    from geotech_common.plotting import key_under_axes
+    key_under_axes(fig, ax, handles=legend_handles)
     return fig

@@ -1250,8 +1250,10 @@ def _plot_surcharge_settlement_vs_time(result):
         fontsize=11, fontweight='bold',
     )
     ax.set_xlim(left=0)
-    ax.legend(fontsize=9, loc='lower right')
     ax.grid(True, alpha=0.3)
     ax.tick_params(labelsize=9)
-    plt.tight_layout()
+    # the key under the axes: in the corner the curve and the target's
+    # lines ran through it (GM-194)
+    from geotech_common.plotting import key_under_axes
+    key_under_axes(fig, ax, fontsize=9, ncol=1)
     return fig

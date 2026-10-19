@@ -801,17 +801,21 @@ def _plot_capacity_breakdown(result):
     bars = ax.barh(components, values, color=colors, edgecolor="#333",
                    height=0.5)
 
-    # Value labels on bars
-    max_val = max(values) if values else 1.0
+    # Value labels on bars, set off by points and ringed, so the Q_ult
+    # line stops short of a value that reaches it (a component near the
+    # whole capacity ends at that line; GM-194)
+    from geotech_common.plotting import halo
+    notes = []
     for bar, val in zip(bars, values):
         if val > 0:
             pct = 100 * val / result.Q_ultimate if result.Q_ultimate > 0 else 0
-            ax.text(
-                bar.get_width() + max_val * 0.02,
-                bar.get_y() + bar.get_height() / 2,
+            notes.append(ax.annotate(
                 f"{val:,.0f} kN ({pct:.0f}%)",
+                (bar.get_width(), bar.get_y() + bar.get_height() / 2),
+                xytext=(4, 0), textcoords="offset points",
                 va="center", fontsize=9,
-            )
+            ))
+    halo(notes)
 
     # Ultimate capacity line
     ax.axvline(x=result.Q_ultimate, color="#dc2626", linestyle="--",
@@ -824,10 +828,12 @@ def _plot_capacity_breakdown(result):
         fontsize=11, fontweight="bold",
     )
     ax.set_xlim(0, result.Q_ultimate * 1.25 if result.Q_ultimate > 0 else 1)
-    ax.legend(loc="lower right", fontsize=9)
     ax.grid(True, axis="x", alpha=0.3)
     ax.tick_params(labelsize=9)
-    plt.tight_layout()
+    # the key under the axes: inside them the Q_ult line ran through it
+    # (GM-194)
+    from geotech_common.plotting import key_under_axes
+    key_under_axes(fig, ax, fontsize=9)
     return fig
 
 
@@ -916,7 +922,8 @@ def _plot_layer_profile(result, analysis):
         color="#ef4444", alpha=0.15,
         label=f"Top exclusion ({top_excl:.1f} m)",
     ))
-    ax.legend(handles=legend_handles, loc="lower right", fontsize=8)
-
-    plt.tight_layout()
+    # the key under the axes: inside them it covered the bars and the
+    # shaft tip (GM-194)
+    from geotech_common.plotting import key_under_axes
+    key_under_axes(fig, ax, handles=legend_handles)
     return fig

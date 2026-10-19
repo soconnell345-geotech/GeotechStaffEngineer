@@ -642,15 +642,18 @@ def _plot_plan_view(pile_forces, result, analysis):
     scatter = ax.scatter(xs, ys, s=sizes, c=colors, edgecolors='#333333',
                          linewidths=1.5, zorder=5)
 
-    # Labels with force values
+    # Labels with force values, each just under its own marker: a
+    # marker's size is in points, so its label is set off by the marker's
+    # radius in points (set off by a share of the layout in metres, the
+    # markers covered the labels; GM-194)
     x_range = max(xs) - min(xs) if len(xs) > 1 else 1.0
     y_range = max(ys) - min(ys) if len(ys) > 1 else 1.0
-    offset_y = max(y_range, x_range) * 0.06
 
-    for x, y, label, force in zip(xs, ys, labels, forces):
+    for x, y, label, force, size in zip(xs, ys, labels, forces, sizes):
         ax.annotate(
             f"{label}\n{force:+,.1f} kN",
-            (x, y), textcoords="offset points", xytext=(0, -offset_y * 30),
+            (x, y), textcoords="offset points",
+            xytext=(0, -(math.sqrt(size) / 2 + 3)),
             ha='center', va='top', fontsize=7.5, fontweight='bold',
             bbox=dict(boxstyle='round,pad=0.2', facecolor='white',
                       edgecolor='#cccccc', alpha=0.85),
@@ -664,7 +667,7 @@ def _plot_plan_view(pile_forces, result, analysis):
     import matplotlib.patches as mpatches
     comp_patch = mpatches.Patch(color=(0.15, 0.39, 0.92, 0.8), label='Compression (+)')
     tens_patch = mpatches.Patch(color=(0.86, 0.20, 0.16, 0.8), label='Tension (\u2212)')
-    ax.legend(handles=[comp_patch, tens_patch], loc='upper right', fontsize=9)
+    legend_handles = [comp_patch, tens_patch]
 
     # Axis setup
     margin = max(x_range, y_range, 1.0) * 0.4
@@ -679,7 +682,9 @@ def _plot_plan_view(pile_forces, result, analysis):
     ax.set_aspect('equal')
     ax.grid(True, alpha=0.2)
     ax.tick_params(labelsize=9)
-    plt.tight_layout()
+    # the key under the axes, clear of the corner piles
+    from geotech_common.plotting import key_under_axes
+    key_under_axes(fig, ax, handles=legend_handles, fontsize=9)
     return fig
 
 
