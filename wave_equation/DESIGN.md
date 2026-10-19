@@ -36,6 +36,10 @@ analyze_drivability(hammer, pile, soil_profile, ...) -> DrivabilityResult
 ```
 
 ## Key Notes
+- `hammer_type` is a label (result, calc package): every hammer is a rigid
+  ram striking at sqrt(2 g h efficiency); diesel combustion is not modelled,
+  so a type's losses go in `efficiency` (GEC-12 Sec. 12.6.2, p. 205).
+  `cushion_cor` applies to the default 500,000 kN/m cushion too (GM-160).
 - Time step automatically chosen for Courant stability
 - Static soil spring is a true elasto-plastic (kinematic) spring with memory:
   loads at slope R_ult/Q to R_ult, unloads along the same elastic slope from

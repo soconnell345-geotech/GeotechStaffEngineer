@@ -34,7 +34,8 @@ def _build_cushion(params):
                        valid=_CUSHION_PARAMS)
         return make_cushion_from_properties(area=params["cushion_area"], thickness=params["cushion_thickness"],
                                               elastic_modulus=params["cushion_E"], cor=params.get("cushion_cor", 0.80))
-    return Cushion(stiffness=500000, cor=0.80)
+    # No cushion given: 500,000 kN/m; cushion_cor still applies (GM-160).
+    return Cushion(stiffness=500000, cor=params.get("cushion_cor", 0.80))
 
 
 def run_bearing_graph(params, *, method="bearing_graph"):
@@ -185,13 +186,13 @@ _HAMMER_CUSHION_DOC = {
     "stroke": {"type": "float", "required": False, "description": "Custom hammer stroke (m)."},
     "efficiency": {"type": "float", "required": False, "default": 0.67, "description": "Custom hammer efficiency."},
     "hammer_custom_name": {"type": "str", "required": False, "default": "Custom", "description": "Custom hammer label."},
-    "hammer_type": {"type": "str", "required": False, "default": "single_acting", "allowed_values": ["single_acting", "diesel", "hydraulic"], "description": "Custom hammer type."},
+    "hammer_type": {"type": "str", "required": False, "default": "single_acting", "allowed_values": ["single_acting", "diesel", "hydraulic"], "description": "Custom hammer type: a label in the result and calc package only. Every type is modelled as a rigid ram striking at v = sqrt(2 g stroke efficiency); a diesel hammer's combustion pressure is not modelled. Give the type's losses through efficiency (GEC-12 Sec. 12.6.2, p. 205: e.g. about 0.95 for a hydraulic hammer whose ram energy is measured)."},
     "segment_length": {"type": "float", "required": False, "default": 1.0, "description": "Pile segment length (m)."},
     "cushion_stiffness": {"type": "float", "required": False, "description": "Cushion stiffness (kN/m). Or give cushion_area + cushion_thickness + cushion_E. Default cushion used if omitted."},
     "cushion_area": {"type": "float", "required": False, "description": "Cushion area (m2) — with cushion_thickness and cushion_E."},
     "cushion_thickness": {"type": "float", "required": False, "description": "Cushion thickness (m)."},
     "cushion_E": {"type": "float", "required": False, "description": "Cushion elastic modulus (kPa)."},
-    "cushion_cor": {"type": "float", "required": False, "default": 0.80, "description": "Cushion coefficient of restitution."},
+    "cushion_cor": {"type": "float", "required": False, "default": 0.80, "description": "Cushion coefficient of restitution; applies to the cushion given by stiffness or by properties, and to the default cushion (500,000 kN/m) when neither is given."},
     "pile_E": {"type": "float", "required": False, "default": 200e6, "description": "Pile elastic modulus (kPa). Default is steel."},
     "pile_unit_weight": {"type": "float", "required": False, "default": 78.5, "description": "Pile material unit weight (kN/m3)."},
     "helmet_weight": {"type": "float", "required": False, "default": 5.0, "description": "Helmet weight (kN)."},
