@@ -503,8 +503,9 @@ class TestEarthPressureCoefficient:
         )
         assert set(METHOD_INFO) == set(METHOD_REGISTRY)
         info = METHOD_INFO["earth_pressure_coefficient"]
+        # log_spiral by name since GM-242 (the same route as caquot_kerisel)
         assert info["parameters"]["theory"]["allowed_values"] == [
-            "rankine", "coulomb", "caquot_kerisel", "log_spiral"]  # GM-242
+            "rankine", "coulomb", "caquot_kerisel", "log_spiral"]
         assert info["parameters"]["state"]["allowed_values"] == [
             "active", "passive", "at_rest"]
 
