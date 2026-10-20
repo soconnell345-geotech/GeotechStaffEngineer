@@ -1,5 +1,5 @@
 """The agent states its judgment calls (BACKLOG GM-116, behind
-``GEOTECH_JUDGMENT_CALLS``).
+``GEOTECH_JUDGMENT_CALLS``, on by default since 2026-10-20: GM-226).
 
 The owner, 2026-10-16: "We should also make sure the agent is communicating
 its engineering judgements to the user. User's judgement is the one that
@@ -44,8 +44,12 @@ class _Quiet(BaseChatModel):
 
 
 def _no_switches(monkeypatch):
+    """Every switch off: unset, and those on by default set to 0 (GM-226,
+    GM-227), so a test sees this switch's effect alone."""
     for env in review_flags.ALL_ENVS + review_flags.SETTINGS_ENVS:
         monkeypatch.delenv(env, raising=False)
+    for env in review_flags.DEFAULT_ON_ENVS:
+        monkeypatch.setenv(env, "0")
 
 
 def _built(monkeypatch, on: bool, env=None, **kw):
@@ -55,8 +59,7 @@ def _built(monkeypatch, on: bool, env=None, **kw):
     _no_switches(monkeypatch)
     for k, v in (env or {}).items():
         monkeypatch.setenv(k, v)
-    if on:
-        monkeypatch.setenv(review_flags.JUDGMENT_CALLS_ENV, "1")
+    monkeypatch.setenv(review_flags.JUDGMENT_CALLS_ENV, "1" if on else "0")
     captured = {}
     real = agent_mod.create_deep_agent
 
@@ -111,22 +114,57 @@ def _surface(captured, agent) -> dict:
 # the switch and its arm
 # ---------------------------------------------------------------------------
 
-def test_the_switch_is_off_by_default_and_has_an_arm(monkeypatch):
-    _no_switches(monkeypatch)
-    assert review_flags.judgment_calls() is False
+def test_the_switch_is_on_by_default_and_has_arms(monkeypatch):
+    """GM-226 (owner, OWN-65, 2026-10-20): on unless ``0`` (or false, no,
+    off); ``describe`` says so; the arms put it on and take it away."""
+    for env in review_flags.ALL_ENVS + review_flags.SETTINGS_ENVS:
+        monkeypatch.delenv(env, raising=False)
+    assert review_flags.judgment_calls() is True
     assert review_flags.JUDGMENT_CALLS_ENV == "GEOTECH_JUDGMENT_CALLS"
     assert review_flags.JUDGMENT_CALLS_ENV in review_flags.ALL_ENVS
+    assert review_flags.JUDGMENT_CALLS_ENV in review_flags.DEFAULT_ON_ENVS
+    assert "GEOTECH_JUDGMENT_CALLS=1 (default)" in review_flags.describe()
     arm = review_flags.ARMS["judgment_calls"]
     assert arm == {review_flags.JUDGMENT_CALLS_ENV: "1"}
+    off = review_flags.ARMS["judgment_calls_off"]
+    assert off == {review_flags.JUDGMENT_CALLS_ENV: "0"}
     with review_flags.switches(arm):
         assert review_flags.judgment_calls() is True
         assert "GEOTECH_JUDGMENT_CALLS=1" in review_flags.describe()
-    assert review_flags.judgment_calls() is False
-    for value in ("1", "true", "on", "yes"):
-        monkeypatch.setenv(review_flags.JUDGMENT_CALLS_ENV, value)
+    with review_flags.switches(off):
+        assert review_flags.judgment_calls() is False
+        assert "GEOTECH_JUDGMENT_CALLS=0" in review_flags.describe()
+    with review_flags.switches(review_flags.ARMS["baseline"]):
         assert review_flags.judgment_calls() is True
-    monkeypatch.setenv(review_flags.JUDGMENT_CALLS_ENV, "0")
-    assert review_flags.judgment_calls() is False
+    assert review_flags.judgment_calls() is True
+    for value in ("1", "true", "on", "yes", "", " "):
+        monkeypatch.setenv(review_flags.JUDGMENT_CALLS_ENV, value)
+        assert review_flags.judgment_calls() is True, value
+    for value in ("0", "false", "no", "off", " OFF "):
+        monkeypatch.setenv(review_flags.JUDGMENT_CALLS_ENV, value)
+        assert review_flags.judgment_calls() is False, value
+
+
+def test_the_default_build_states_its_judgment_calls(monkeypatch):
+    """No variable set at all: the geotech build is the switch-on build,
+    and its record says the switch is on by default."""
+    for env in review_flags.ALL_ENVS + review_flags.SETTINGS_ENVS:
+        monkeypatch.delenv(env, raising=False)
+    captured = {}
+    real = agent_mod.create_deep_agent
+
+    def spy(**k):
+        captured.update(k)
+        return real(**k)
+    monkeypatch.setattr(agent_mod, "create_deep_agent", spy)
+    agent = agent_mod.build_deep_agent(model=_Quiet())
+    assert ("\n\n" + judgment_calls_section(references=True)) in \
+        captured["system_prompt"]
+    assert agent.geotech_judgment_consult is True
+    assert "GEOTECH_JUDGMENT_CALLS=1 (default)" in \
+        agent.geotech_build["switches"]
+    assert _spec(captured, "references")["system_prompt"] == \
+        _references_prompt(True, consult=True)
 
 
 # ---------------------------------------------------------------------------

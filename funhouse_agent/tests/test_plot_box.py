@@ -824,7 +824,9 @@ def test_plot_data_says_when_one_figure_is_redrawn_again(tmp_path):
     assert "plot_code" in outs[2]["redraw_note"]
 
 
-def test_off_by_default_then_offered_to_both_helpers(monkeypatch):
+def test_on_by_default_offered_to_both_helpers_and_0_turns_it_off(
+        monkeypatch):
+    """GM-227 (owner, GM-92, 2026-10-15: "on everywhere")."""
     from funhouse_agent.deep.agent import build_calc_subagent
     from funhouse_agent.deep.figure_helper import (PLOT_CODE_STEP,
                                                    build_figure_subagent)
@@ -832,12 +834,17 @@ def test_off_by_default_then_offered_to_both_helpers(monkeypatch):
     def names(spec):
         return {t.name for t in spec["tools"]}
 
-    monkeypatch.delenv(review_flags.PLOT_CODE_ENV, raising=False)
+    monkeypatch.setenv(review_flags.PLOT_CODE_ENV, "0")
     assert "plot_code" not in names(build_calc_subagent())
     fig = build_figure_subagent()
     assert fig is None or "plot_code" not in names(fig)
 
-    monkeypatch.setenv(review_flags.PLOT_CODE_ENV, "1")
+    for value in (None, "1"):          # unset (the default), then set
+        if value is None:
+            monkeypatch.delenv(review_flags.PLOT_CODE_ENV, raising=False)
+        else:
+            monkeypatch.setenv(review_flags.PLOT_CODE_ENV, value)
+        assert "plot_code" in names(build_calc_subagent()), value
     calc = build_calc_subagent()
     assert "plot_code" in names(calc)
     assert "plot_code" in calc["system_prompt"]

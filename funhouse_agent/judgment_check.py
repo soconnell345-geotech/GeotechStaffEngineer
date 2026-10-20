@@ -1,5 +1,7 @@
 """The turn-end judgment-call check (BACKLOG GM-174), behind
-``GEOTECH_JUDGMENT_CALLS``.
+``GEOTECH_JUDGMENT_CALLS`` (on by default since 2026-10-20, GM-226), and
+only where the build has a references helper to consult: with the chat's
+"Consult references" off it never acts (:func:`mode_for`).
 
 WHY. With the switch on, the geotech prompt asks for a "Judgment calls" list
 in which each call names its source or says it rests on judgment, no
