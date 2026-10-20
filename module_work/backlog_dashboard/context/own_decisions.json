@@ -1624,5 +1624,86 @@
       "BACKLOG.md OWN-78",
       "module_work/APP_SPLIT_PLAN.md section 7 (D9)"
     ]
+  },
+  "OWN-79": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Passive coefficients: accept the small step between UFC's Eq. 4-12 and its charts?",
+    "why": "With your routing, a vertical wall with level ground uses Eq. 4-12, and a face battered by even 1 degree, or ground sloping by 1 degree, uses Fig. 4-12 or Fig. 4-13. The charts' vertical-and-level curve reads 1-5 % above Eq. 4-12 at delta/phi' 0.66 (5.30 against 5.06 at phi' 30), so Kp steps by about 2-7 % as the face or the ground leaves level.",
+    "background": "UFC 3-220-20 p. 191 prints Eq. 4-12 as an approximation for theta = 0 and beta = 0; Figs. 4-12 and 4-13 (pp. 192-193) are drawn at delta/phi' 0.66. Every result names the route it took and lists the other sources' values, so the step is visible.",
+    "parts": [
+      {
+        "label": "The step",
+        "options": [
+          {
+            "label": "Accept it, as UFC prints both",
+            "effect": "No change; each result names its route and gives the other sources' Kp."
+          },
+          {
+            "label": "Scale the chart so the route is continuous",
+            "effect": "No step, but the charted values are no longer as printed."
+          },
+          {
+            "label": "Use the charts' level, vertical curve at 0.66 too",
+            "effect": "Continuous at delta/phi' 0.66; Eq. 4-12 then only for other delta."
+          }
+        ]
+      }
+    ],
+    "recommendation": "Accept it: both are UFC's own, the difference is within what a chart reading carries, and the result shows both.",
+    "if_no_answer": "The step stays, and every result names its route.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-79, GM-232",
+      "UFC 3-220-20 pp. 191-193"
+    ]
+  },
+  "OWN-80": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Foundry: where should the reference PDFs and the three wheels live?",
+    "why": "Your first Foundry run works with the reference PDFs and the wheels committed in the workspace repo. That is fine for testing, but each published build carries them, and the managed environment cannot list the wheels as ordinary dependencies.",
+    "background": "Reference PDFs feed chart read-offs and worked-example source pages; today the app reads them from the workspace's references/ folder by their SharePoint file names. The AI FDE suggests a Foundry Artifacts repository (or conda channel) for the three wheels; the app split (INF-26) will need one too.",
+    "parts": [
+      {
+        "label": "Reference PDFs",
+        "options": [
+          {
+            "label": "Keep them in the workspace repo",
+            "effect": "Works today; every published build carries them."
+          },
+          {
+            "label": "A Foundry media set or dataset",
+            "effect": "One copy the app reads; needs a small fetcher (INF-39)."
+          }
+        ]
+      },
+      {
+        "label": "The three wheels",
+        "options": [
+          {
+            "label": "Keep them committed, installed at start",
+            "effect": "Works today; nothing to ask."
+          },
+          {
+            "label": "Ask the AI FDE for an Artifacts repository",
+            "effect": "The managed environment lists them; cleaner, and the split needs it."
+          }
+        ]
+      }
+    ],
+    "recommendation": "Keep both as they are while you test; ask the AI FDE for the Artifacts repository before testers use the app.",
+    "if_no_answer": "Both stay as they are; nothing is blocked.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "INF-39"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-80, INF-39, INF-26",
+      "the AI FDE's handoff 2026-10-20 (local only)"
+    ]
   }
 }

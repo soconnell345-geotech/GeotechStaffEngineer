@@ -46,6 +46,75 @@ def _with_log_spiral_source(pressure_method: str, source: str) -> str:
     return f"log_spiral:{source}"
 
 
+def _log_spiral_choices(pressure_method: str, soil_layers, excavation_depth,
+                        *, tied_back: bool = False) -> list:
+    """The result's ``choices`` for the log-spiral passive Kp (GM-232): the
+    printed source and, by default, the UFC 3-220-20 route, with each
+    passive-side friction layer's Kp from it and from every other source.
+    A sheet pile wall has a vertical face and the module takes level ground
+    in front of it, so the UFC route is always Eq. 4-12. ``tied_back``
+    adds UFC 3-220-20 p. 260."""
+    if not pressure_method.startswith("log_spiral:"):
+        return []
+    from geotech_common.choices import choice, how_given
+    source = pressure_method.split(":", 1)[1]
+    cases, top = [], 0.0
+    for i, layer in enumerate(soil_layers, 1):
+        bottom = top + layer.thickness
+        below = bottom > excavation_depth or i == len(soil_layers)
+        top = bottom
+        if below and layer.friction_angle > 0:
+            cases.append((f"layer {i} (phi' {layer.friction_angle:g}, "
+                          f"delta {layer.wall_friction_deg:g})",
+                          layer.friction_angle, layer.wall_friction_deg))
+    if not cases:
+        return []
+
+    def values(key):
+        got = [(name, *_log_spiral.source_Kp(key, phi, delta))
+               for name, phi, delta in cases]
+        why = next((r for _, _, r in got if r), None)
+        if why:
+            return f"none here, {why}"
+        return "; ".join(f"{name} Kp {kp:.3g}" for name, kp, _ in got)
+
+    if source == "ufc_3_220_20":
+        basis = ("UFC 3-220-20 p. 191: the log spiral method 'is commonly "
+                 "used for cut walls, such as sheet pile or soldier pile "
+                 "and lagging ... These walls are vertical and often have "
+                 "no backslope.' The module takes a vertical face and level "
+                 "ground in front of the wall, so the route is Eq. 4-12 at "
+                 "each layer's wall friction: " + values("dm7_2_eq_4_12")
+                 + ". " + _log_spiral.EQ_VS_CHARTS_NOTE)
+        if tied_back:
+            basis += ". " + _log_spiral.TIED_BACK_NOTE
+        used = (source, "dm7_2_eq_4_12")
+    else:
+        basis = (_log_spiral.SOURCE_BASIS[source] + ": " + values(source))
+        if tied_back:
+            basis += ". " + _log_spiral.TIED_BACK_QUOTE
+        used = (source,)
+    if "dm7_2_eq_4_12" in used and any(
+            _log_spiral.above_the_charts(phi, delta)
+            for _, phi, delta in cases):
+        basis += ". " + _log_spiral.HIGH_FRICTION_NOTE
+    if tied_back:
+        basis += ". " + _log_spiral.ANCHORED_BULKHEAD_QUOTE
+    # each layer's wall friction is the engineer's (wall_friction_deg)
+    basis += ". " + _log_spiral.wall_friction_note(
+        source, left_out=(
+            "The module takes each layer's wall_friction_deg, 0 when left "
+            "out: a smooth wall, for which Eq. 4-12 and the 1948 chart give "
+            "Rankine's Kp."))
+    return [choice(
+        "Log-spiral passive Kp (log_spiral_source)", source,
+        how_given(source, _log_spiral.DEFAULT_SOURCE,
+                  name="log_spiral_source"),
+        basis,
+        [f"{_log_spiral.source_label(key)}: {values(key)}"
+         for key in _log_spiral.SOURCES if key not in used])]
+
+
 @dataclass
 class WallSoilLayer:
     """Soil layer for sheet pile wall analysis.
@@ -63,10 +132,11 @@ class WallSoilLayer:
     description : str, optional
         Layer description.
     wall_friction_deg : float, optional
-        Wall friction angle delta (degrees), used only by the Coulomb pressure
-        method. Default 0 (smooth wall -> Coulomb reduces to Rankine). A nonzero
-        value lowers the active coefficient and raises the passive coefficient.
-        Must be in [0, friction_angle].
+        Wall friction angle delta (degrees), used by the Coulomb and
+        log-spiral pressure methods. Default 0 (smooth wall -> Coulomb, and
+        the log-spiral Kp of Eq. 4-12 or the 1948 chart, reduce to Rankine).
+        A nonzero value lowers the active coefficient and raises the passive
+        coefficient. Must be in [0, friction_angle].
     """
     thickness: float
     unit_weight: float
@@ -110,6 +180,8 @@ class CantileverWallResult:
     #: net water pressure, net pressure p, shear V, moment M] (kPa, kN/m,
     #: kN-m/m). Not in to_dict; read by get_tables.
     profile: List[list] = field(default_factory=list, repr=False)
+    #: What the analysis chose (GM-232: the log-spiral passive Kp's source).
+    choices: list = field(default_factory=list)
 
     def get_tables(self) -> list:
         """The pressure diagram along the wall with the shear and bending
@@ -238,6 +310,7 @@ class CantileverWallResult:
             "max_moment_depth_m": round(self.max_moment_depth, 2),
             "FOS_passive": round(self.FOS_passive, 2),
             "excavation_depth_m": round(self.excavation_depth, 2),
+            **({"choices": self.choices} if self.choices else {}),
         }
 
 
@@ -251,7 +324,7 @@ def analyze_cantilever(
     gamma_w: float = GAMMA_W,
     pressure_method: str = "rankine",
     embedment_increase: float = 1.0,
-    log_spiral_source: str = "caquot_kerisel_1948",
+    log_spiral_source: str = "ufc_3_220_20",
 ) -> CantileverWallResult:
     """Analyze a cantilever sheet pile wall.
 
@@ -301,10 +374,12 @@ def analyze_cantilever(
         depth-increase basis. Must be >= 1.0.
     log_spiral_source : str, optional
         With pressure_method "log_spiral", the printed source of the
-        passive Kp (``geotech_common.log_spiral.SOURCES``): the Caquot-
-        Kerisel (1948) chart, Caltrans T&S Fig. 4-20 (default); UFC
-        3-220-20 Fig. 4-13 (Kerisel and Absi 1990, delta/phi' = 0.66 only);
-        or UFC 3-220-20 Eq. 4-12 (level ground, any wall friction).
+        passive Kp (``geotech_common.log_spiral.SOURCES``). Default
+        "ufc_3_220_20": UFC 3-220-20's source by the wall's geometry, here
+        always Eq. 4-12 (p. 191; a vertical face and level ground, any wall
+        friction). Or the Caquot-Kerisel (1948) chart, Caltrans T&S Fig.
+        4-20 ("caquot_kerisel_1948"), or a UFC source by name. The result's
+        ``choices`` give each layer's Kp from it and from the others.
 
     Returns
     -------
@@ -361,6 +436,8 @@ def analyze_cantilever(
         embedment_converged=D_converged,
         embedment_increase=embedment_increase,
         profile=profile,
+        choices=_log_spiral_choices(pressure_method, soil_layers,
+                                    excavation_depth),
     )
 
 
