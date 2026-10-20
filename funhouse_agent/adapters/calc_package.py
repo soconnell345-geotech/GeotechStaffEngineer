@@ -514,7 +514,15 @@ _PACKAGE_TOOLS = {
             "description": "Pile diameter or width (m). With n_rows, n_cols "
                            "and spacing, the package adds the "
                            "Converse-Labarre group efficiency, as the "
-                           "group_efficiency tool works it out."}},
+                           "group_efficiency tool works it out. The plan "
+                           "view draws the piles to scale at it."},
+                "north_deg": {
+            "type": "float", "required": False,
+            "description": "Direction of north on the plan view, degrees "
+                           "clockwise from the cap's +y axis (up on the "
+                           "plan), as the plan the layout came from shows "
+                           "it. Not given: north is drawn up and the "
+                           "figure says so."}},
         "dropped": {"layout": {
             "reason": "the layout is rectangular when n_rows and n_cols "
                       "are given, else the piles list",
@@ -1632,6 +1640,8 @@ def _generate_pile_group_package(params: dict) -> dict:
     sy = used.get("spacing_y", used.get("spacing"))
     spacing = min(sx, sy) if sx is not None and sy is not None else None
     extra = {"n_piles": result.n_piles, "group_efficiency": None}
+    if run.own.get("north_deg") is not None:
+        analysis["north_deg"] = float(run.own["north_deg"])
     if d is not None:
         analysis["pile_diameter"] = d
         if (used.get("n_rows") and used.get("n_cols")
