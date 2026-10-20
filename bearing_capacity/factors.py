@@ -398,7 +398,8 @@ def _meyerhof_inclination_factors(phi_deg: float,
         ic = iq = (1 - beta/90)^2
         ig = (1 - beta/phi)^2   (phi > 0), else 1.0 (N_gamma = 0)
 
-    The table takes theta = atan(H/V) < phi' (its note B), so beta >= phi
+    The table's notes define theta = atan(H/V) < phi' (its "Inclined
+    Load" row carries a note B whose text is not printed), so beta >= phi
     is refused (GM-214): i_gamma is 0 at beta = phi and grows again beyond
     it, to 1 at beta = 2 phi; a clamp at 0 had let that through.
     """
@@ -569,7 +570,8 @@ def base_inclination_factors(phi_deg: float,
         bc = 1 - 2*alpha/(pi+2)          for phi = 0
     alpha in radians for the equations; upward + (GEC-6 Table 5-5).
     Refused where alpha tan(phi) passes 1: b_q is 0 there and grows again
-    beyond it (GM-214).
+    beyond it (GM-214); that limit is this module's own, Table 5-5 prints
+    none.
     """
     if alpha_deg == 0:
         return 1.0, 1.0, 1.0
@@ -580,8 +582,10 @@ def base_inclination_factors(phi_deg: float,
         raise ValueError(
             f"Base tilt {alpha_deg:g} deg with phi = {phi_deg:g} deg gives "
             "alpha tan(phi) above 1 (alpha in radians): b_q = (1 - alpha "
-            "tan phi)^2 is 0 at 1 and grows again beyond it. GEC-6 Sec. "
-            "5.2.3.5 (p. 58) limits inclined footings to about 8 to 10 deg.")
+            "tan phi)^2 is 0 at 1 and grows again beyond it. That limit is "
+            "this module's own (GEC-6 Table 5-5 prints none); GEC-6 Sec. "
+            "5.2.3.5 (p. 58) advises inclined footings of less than about 8 "
+            "to 10 deg.")
 
     if phi_deg == 0:
         bc = 1.0 - 2.0 * alpha / (math.pi + 2.0)
@@ -625,14 +629,19 @@ def ground_inclination_factors(phi_deg: float,
         gc = 1 - 2*omega/(pi+2)          for phi = 0
     omega in radians for the equations. Refused below 0 (the factors
     went above 1) and above 45 deg, where g_q = (1 - tan omega)^2 is 0
-    and grows again beyond it (GM-214).
+    and grows again beyond it (GM-214). The 45 deg is this module's own:
+    neither GEC-6 nor UFC 3-220-20 prints Vesic's g factors or a limit
+    for them (UFC p. 296 cautions against Brinch Hansen's g factors on
+    ground steeper than 2H:1V).
     """
     if not 0.0 <= omega_deg <= 45.0:
         raise ValueError(
             f"ground_slope is the slope's angle down from horizontal, 0 to "
-            f"45 deg here; got {omega_deg:g}. Vesic's g_q = (1 - tan "
-            "omega)^2 is 0 at 45 deg and grows again beyond it; a negative "
-            "angle gave factors above 1. For a footing on or near a slope "
+            f"45 deg here; got {omega_deg:g}. The 45 deg is this module's "
+            "own limit, where Vesic's g_q = (1 - tan omega)^2 is 0 and "
+            "beyond which it grows again (no reference in the library "
+            "prints a limit for it); a negative angle gave factors above 1. "
+            "For a footing on or near a slope "
             "GEC-6 Sec. 5.2.3.4 (p. 58) uses N_cq and N_gamma-q (Fig. 5-7), "
             "and the slope's own stability is checked.")
     if omega_deg == 0:

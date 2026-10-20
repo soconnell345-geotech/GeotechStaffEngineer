@@ -373,8 +373,8 @@ class BearingCapacityAnalysis:
             alternatives.append(
                 f"d_c = {ufc_table_5_8_printed_dc(phi, Df, B):.3f}, as UFC "
                 "3-220-20 Table 5-8 (p. 296) prints it, 1 + k (1 - sin "
-                "phi)^2 N_q/N_c: half of its note C formula's (not an "
-                "option of this tool)")
+                "phi)^2 N_q/N_c: half of what the correspondence formula "
+                "its note C names gives (not an option of this tool)")
         return choice(
             "depth factors", chosen,
             how_given(dm, "hansen", name="depth_factor_method"), basis,
