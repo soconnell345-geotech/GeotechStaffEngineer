@@ -590,6 +590,29 @@ and `Kp`. Wall 5 m, B 3.5 m, toe 1 m, t 0.6 m, phi 32, gamma 19:
 FOS_sliding 1.53 (Rankine, Kp 3.25), 1.65 (log spiral, Kp 5.90 at delta
 21.1), 1.37 with no passive.
 
+**The coefficient tool's wall friction (GM-253, 2026-10-20).**
+`earth_pressure_coefficient` with theory 'caquot_kerisel' takes no wall
+friction that no source prints. Left out, the UFC 3-220-20 sources take
+delta/phi' = 0.66: Figs. 4-12 and 4-13 (pp. 192-193) are drawn for that
+value only, their headers print it, and p. 191 calls it "a common
+assumption" beside Eq. 4-12. The Caquot-Kerisel (1948) chart and Eq. 4-12
+by name print no value: the Caltrans T&S procedure for the chart (Sec.
+4-6, p. 4-29) begins "Given delta, beta, and phi". So a call that leaves
+`delta_deg` out with them is refused and names it, as `soe` and the wall
+toe refuse it (GM-242). Before, the 1948 chart took delta = phi, its
+largest Kp: 6.30 at phi 30, against 5.06 by default. The refusal gives
+the printed guidance: Caltrans Table 4-2 (p. 4-15), UFC Table 4-1 (p.
+184), and FHWA NHI-06-089 (p. 10-17), which gives delta = 1/2 phi' as
+"the maximum wall friction suggested for design" on the passive side and
+prints the same chart as its Fig. 10-10. Every log-spiral result's wall
+friction choice gives the Kp at delta = 0 beside the delta used:
+- Rankine's Kp before a vertical face with level ground, which Eq. 4-12
+  gives at delta = 0;
+- the 1948 chart with R from its delta/phi = 0 column for sloping ground;
+- Coulomb's Kp at alpha = 90 - theta for a battered face, as no log-spiral
+  chart here gives one at delta = 0 (NHI-06-089 p. 10-19 finds Coulomb's
+  passive Kp unreliable only above delta = phi'/3).
+
 ## The foundation cohesion in sliding (GM-212, 2026-10-20)
 
 Before, the sliding check added ca = 2/3 c_foundation on B to the friction

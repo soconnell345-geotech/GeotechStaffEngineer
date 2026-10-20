@@ -79,10 +79,14 @@ Above delta/phi' = 0.66 Eq. 4-12 is UFC's only log-spiral Kp, and UFC gives
 it as an approximation with no range of delta/phi' stated; for phi' 30 to
 45 deg it passes the 1948 chart between delta/phi' 0.87 and 0.95 and reads
 up to 7 % above it at delta = phi' (:data:`HIGH_FRICTION_NOTE`). The wall
-friction is the engineer's to set (:func:`wall_friction_note`); left out it
-is 0.66 phi' with the UFC sources and phi with the 1948 chart, except in a
-wall's design (:func:`level_front_Kp`), where the 1948 chart and Eq. 4-12
-by name refuse it.
+friction is the engineer's to set (:func:`wall_friction_note`). Left out,
+the UFC sources take 0.66 phi', the one value Figs. 4-12 and 4-13 are drawn
+for and the one p. 191 calls "a common assumption"; the 1948 chart and Eq.
+4-12 by name print no value, and the tools refuse a left-out wall friction
+with them (:data:`LEVEL_FRONT_NEEDS_DELTA`: a wall's design since GM-242,
+earth_pressure_coefficient since GM-253). Only the library function
+:func:`caquot_kerisel_1948_Kp` still reads delta None as the chart's own Kp
+at delta = phi.
 """
 
 from __future__ import annotations
@@ -141,18 +145,14 @@ def above_the_charts(phi_deg: float, delta_deg: float) -> bool:
 
 def wall_friction_note(source: str, left_out: str = None) -> str:
     """The wall friction delta as a judgment call, for a result's choices
-    (GM-232): where UFC 3-220-20 gives a value, and what is taken when it
-    is left out with ``source`` (``left_out``, a sentence, where the caller
-    takes something else; "" where the caller has said it). The same words
-    whether delta was given or not."""
-    if left_out is None and source == "caquot_kerisel_1948":
-        left_out = (
-            "Left out with the Caquot-Kerisel (1948) chart, the tool takes "
-            "delta = phi', the chart's own Kp (reduction factor R = 1) and "
-            "the most wall friction there can be.")
-    elif left_out is None:
-        left_out = ("Left out, the tool takes delta/phi' = 0.66, for which "
-                    "UFC Figs. 4-12 and 4-13 are drawn.")
+    (GM-232): where UFC 3-220-20 and FHWA NHI-06-089 give a value, and what
+    is taken when it is left out with ``source`` (``left_out``, a sentence,
+    where the caller takes something else; "" where the caller has said
+    it; by default :func:`level_front_left_out`, refused with the 1948
+    chart and Eq. 4-12 by name, GM-253). The same words whether delta was
+    given or not."""
+    if left_out is None:
+        left_out = level_front_left_out(source)
     return (
         "The wall friction angle delta is the engineer's call: set it from "
         "the wall-soil interface, UFC 3-220-20 Table 4-1 (p. 184, interface "
@@ -161,7 +161,17 @@ def wall_friction_note(source: str, left_out: str = None) -> str:
         + (left_out + " " if left_out else "") + "UFC "
         "gives a range for some walls: delta/phi' of 0.5 to 1.0 on the "
         "passive side of a tied-back wall (p. 260), and for soldier piles in "
-        "coarse-grained soil KP 'determined without wall friction' (p. 249)")
+        "coarse-grained soil KP 'determined without wall friction' (p. 249). "
+        + NHI_PASSIVE_DELTA)
+
+
+#: FHWA NHI-06-089 on the passive wall friction (GM-253), read on the
+#: rendered page (p. 10-17); the same manual prints the Caquot-Kerisel
+#: (1948) chart as its Fig. 10-10 (p. 10-22).
+NHI_PASSIVE_DELTA = (
+    "FHWA NHI-06-089 (p. 10-17) gives 'the maximum wall friction suggested "
+    "for design' on the passive side as delta = 1/2 phi', values that 'can "
+    "be adopted in most cases'")
 
 #: The level-ground comparison (GM-232), for a result's choices.
 EQ_VS_CHARTS_NOTE = (
@@ -693,15 +703,20 @@ def log_spiral_Kp(phi_deg: float, delta_deg: float = None,
                      f"{list(SOURCES)}")
 
 
-#: Why the Kp of a wall's design refuses a left-out wall friction with
-#: these sources (GM-242 review), naming the input to give.
+#: Why the Kp of a wall's design (GM-242 review) and the coefficient tool
+#: (GM-253) refuse a left-out wall friction with these sources, naming the
+#: input to give.
 LEVEL_FRONT_NEEDS_DELTA = {
     "caquot_kerisel_1948": (
         "log_spiral_source 'caquot_kerisel_1948' needs the wall friction "
         "given ({name}): the Caltrans T&S Manual's procedure for the chart "
         "(Sec. 4-6, p. 4-29) begins 'Given delta, beta, and phi', and its "
-        "Example 8-1 takes 15 deg on phi 30. Or leave log_spiral_source "
-        "out: UFC 3-220-20 takes delta/phi' = 0.66 when it is left out."),
+        "Example 8-1 takes 15 deg on phi 30. Caltrans Table 4-2 (p. 4-15) "
+        "and UFC 3-220-20 Table 4-1 (p. 184) give interface friction "
+        "angles by wall material and soil; " + NHI_PASSIVE_DELTA + ", and "
+        "prints this chart as its Fig. 10-10 (p. 10-22). Or leave "
+        "log_spiral_source out: UFC 3-220-20 takes delta/phi' = 0.66 when "
+        "it is left out."),
     "dm7_2_eq_4_12": (
         "log_spiral_source 'dm7_2_eq_4_12' (UFC 3-220-20 Eq. 4-12) needs "
         "the wall friction given ({name}); p. 191: 'while delta/phi' = 0.66 "
@@ -712,9 +727,9 @@ LEVEL_FRONT_NEEDS_DELTA = {
 
 
 def level_front_left_out(source: str) -> str:
-    """What :func:`level_front_Kp` takes for a left-out wall friction with
-    ``source``, as the ``left_out`` sentence of :func:`wall_friction_note`
-    (GM-242 review)."""
+    """What :func:`level_front_Kp` and earth_pressure_coefficient take for
+    a left-out wall friction with ``source``, as the ``left_out`` sentence
+    of :func:`wall_friction_note` (GM-242 review, GM-253)."""
     if source in LEVEL_FRONT_NEEDS_DELTA:
         return (f"With log_spiral_source '{source}' it must be given; left "
                 f"out, it is refused.")

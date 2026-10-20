@@ -297,7 +297,9 @@ def test_wall_friction_note_says_what_each_source_takes():
     for note in (ufc, ck):
         assert "engineer's call" in note and "Table 4-1 (p. 184" in note
         assert "(p. 260)" in note and "(p. 249)" in note
-    assert "0.66, for which" in ufc and "delta = phi'" in ck
+    assert "0.66, for which" in ufc and "refused" in ck  # GM-253
+    for note in (ufc, ck):
+        assert "1/2 phi'" in note and "(p. 10-17)" in note
     assert "smooth" in LS.wall_friction_note("ufc_3_220_20",
                                              left_out="A smooth wall.")
     # "" where the caller has said what is taken

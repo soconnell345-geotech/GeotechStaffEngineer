@@ -58,17 +58,78 @@ def test_log_spiral_default_is_ufc_by_geometry_and_listed():
 
 def test_left_out_wall_friction_is_listed_at_the_value_it_took():
     """GM-232: delta_deg left out is listed in defaults_used at the wall
-    friction the source took (0.66 phi' for UFC, phi for the 1948 chart),
-    not the declared 0.0 the Coulomb theory takes."""
+    friction the source took (0.66 phi' for UFC), not the declared 0.0 the
+    Coulomb theory takes; the 1948 chart refuses it (GM-253)."""
     assert _ck()["defaults_used"]["delta_deg"] == pytest.approx(19.8)
-    ck = _ck(log_spiral_source="caquot_kerisel_1948")
-    assert ck["K"] == pytest.approx(6.30, abs=0.01)
-    assert ck["defaults_used"]["delta_deg"] == pytest.approx(30.0)
-    (d,) = [c for c in ck["choices"] if c["what"].startswith("Wall friction")]
-    assert d["how"] == "default" and "delta = phi'" in d["basis"]
+    fig = _ck(log_spiral_source="dm7_2_fig_4_13")
+    assert fig["defaults_used"]["delta_deg"] == pytest.approx(19.8)
+    (d,) = [c for c in fig["choices"]
+            if c["what"].startswith("Wall friction")]
+    assert d["how"] == "default" and "0.66, for which" in d["basis"]
+    assert "needs the wall friction given (delta_deg)" in _ck(
+        log_spiral_source="caquot_kerisel_1948")["error"]
     # Coulomb keeps its declared 0.0
     co = _k(phi_deg=30.0, theory="coulomb", state="passive")
     assert co["defaults_used"]["delta_deg"] == 0.0
+
+
+@pytest.mark.parametrize("source", ["caquot_kerisel_1948", "dm7_2_eq_4_12"])
+@pytest.mark.parametrize("geometry", [{}, {"beta_deg": 10.0}])
+def test_a_source_that_prints_no_wall_friction_refuses_it_left_out(
+        source, geometry):
+    """GM-253: the 1948 chart (Caltrans T&S p. 4-29: 'Given delta, beta,
+    and phi') and Eq. 4-12 by name print no wall friction, so a call that
+    leaves delta_deg out is refused and names it, as soe and the wall toe
+    refuse it (GM-242); before, the 1948 chart took delta = phi, its
+    largest Kp (6.30 at phi 30, against 5.06 by default). A geometry the
+    source does not take is refused first, for that."""
+    r = _ck(log_spiral_source=source, **geometry)
+    if source == "dm7_2_eq_4_12" and geometry:
+        assert "level ground" in r["error"]
+        return
+    assert "needs the wall friction given (delta_deg)" in r["error"]
+    assert "leave log_spiral_source out" in r["error"]
+    if source == "caquot_kerisel_1948":
+        assert "'Given delta, beta, and phi'" in r["error"]
+        assert "1/2 phi'" in r["error"] and "(p. 10-17)" in r["error"]
+    given = _ck(log_spiral_source=source, delta_deg=15.0, **geometry)
+    assert "error" not in given and given["delta_deg"] == 15.0
+    assert "vertical wall face" in _ck(log_spiral_source=source,
+                                       theta_deg=10.0)["error"]
+    # phi' = 0 needs no wall friction
+    assert _ck(phi_deg=0.0, log_spiral_source=source)["K"] == 1.0
+
+
+@pytest.mark.parametrize("params, kp, kp0, words", [
+    ({}, 5.062, "Kp 3,", "Rankine's, which UFC 3-220-20 Eq. 4-12 gives"),
+    ({"beta_deg": 10.0}, 7.346, "Kp 4.18,", "Fig. 4-13 is drawn for 0.66"),
+    ({"theta_deg": 10.0}, 4.10, "Kp 2.54,", "alpha_deg 80 = 90 - theta_deg"),
+    ({"log_spiral_source": "dm7_2_fig_4_13", "beta_deg": 10.0}, 7.346,
+     "Kp 4.18,", "R from its delta/phi = 0 column"),
+    ({"log_spiral_source": "dm7_2_fig_4_12", "theta_deg": 10.0}, 4.10,
+     "Kp 2.54,", "Coulomb's"),
+    ({"log_spiral_source": "caquot_kerisel_1948", "delta_deg": 14.0,
+      "phi_deg": 32.0, "beta_deg": 27.0}, 13.05, "Kp 8.19,",
+     "(Caltrans T&S Fig. 4-20, p. 4-30)"),
+])
+def test_the_kp_at_no_wall_friction_is_given_beside_the_delta_used(
+        params, kp, kp0, words):
+    """GM-253: where a printed default wall friction is taken (UFC Figs.
+    4-12 and 4-13 are drawn for delta/phi' 0.66; p. 191 calls it 'a
+    common assumption'), or a wall friction is given, the choice states it
+    with its basis and gives the Kp at delta = 0 beside it."""
+    r = _ck(**params)
+    assert r["K"] == pytest.approx(kp, abs=0.05)
+    (d,) = [c for c in r["choices"] if c["what"].startswith("Wall friction")]
+    assert d["how"] == ("given" if "delta_deg" in params else "default")
+    (alt,) = d["alternatives"]
+    assert alt.startswith("delta = 0 (no wall friction): " + kp0)
+    assert words in alt
+    assert "1/2 phi'" in d["basis"] and "engineer's call" in d["basis"]
+    # no alternative where no wall friction was used
+    zero = _ck(delta_deg=0.0)
+    (z,) = [c for c in zero["choices"] if c["what"].startswith("Wall")]
+    assert "alternatives" not in z and zero["K"] == pytest.approx(3.0)
 
 
 def test_eq_4_12_above_the_charts_wall_friction_is_noted():
