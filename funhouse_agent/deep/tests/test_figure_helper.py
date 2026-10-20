@@ -250,7 +250,8 @@ def test_the_code_examples_come_with_plot_code():
         assert got["name"] == name, (want, got.get("name"))
 
 
-def test_the_helper_draws_looks_and_counts():
+def test_the_helper_draws_looks_and_counts(monkeypatch):
+    monkeypatch.setenv(review_flags.PLOT_CODE_ENV, "0")
     spec = build_figure_subagent()
     assert spec["name"] == FIGURE_HELPER_NAME
     names = {t.name for t in spec["tools"]}
@@ -311,12 +312,33 @@ def _captured_subagents(monkeypatch, **kw):
     return captured["subagents"]
 
 
-def test_off_by_default(monkeypatch):
-    monkeypatch.delenv(review_flags.FIGURE_HELPER_ENV, raising=False)
+def test_on_by_default_and_off_with_both_switches_at_0(monkeypatch):
+    """GM-227 (owner, GM-92, 2026-10-15: "on everywhere"): the helper is
+    built with no variable set, and left out only with both switches at 0
+    (plot_code brings it)."""
+    for env in (review_flags.FIGURE_HELPER_ENV, review_flags.PLOT_CODE_ENV):
+        monkeypatch.delenv(env, raising=False)
+    assert review_flags.figure_helper() and review_flags.plot_code()
+    names = {s["name"] for s in _captured_subagents(monkeypatch)}
+    assert FIGURE_HELPER_NAME in names
+    monkeypatch.setenv(review_flags.FIGURE_HELPER_ENV, "0")
+    names = {s["name"] for s in _captured_subagents(monkeypatch)}
+    assert FIGURE_HELPER_NAME in names
+    monkeypatch.setenv(review_flags.PLOT_CODE_ENV, "0")
     names = {s["name"] for s in _captured_subagents(monkeypatch)}
     assert FIGURE_HELPER_NAME not in names
     assert review_flags.ARMS["figure_helper"] == {
         review_flags.FIGURE_HELPER_ENV: "1"}
+    assert review_flags.ARMS["figure_helper_off"] == {
+        review_flags.FIGURE_HELPER_ENV: "0", review_flags.PLOT_CODE_ENV: "0"}
+    with review_flags.switches(review_flags.ARMS["figure_helper_off"]):
+        assert not review_flags.figure_helper()
+        assert not review_flags.plot_code()
+    with review_flags.switches(review_flags.ARMS["baseline"]):
+        assert review_flags.figure_helper() and review_flags.plot_code()
+        described = review_flags.describe()
+    assert "GEOTECH_FIGURE_HELPER=1 (default)" in described
+    assert "GEOTECH_PLOT_CODE=1 (default)" in described
 
 
 def test_plot_code_brings_the_helper_and_says_so(monkeypatch):

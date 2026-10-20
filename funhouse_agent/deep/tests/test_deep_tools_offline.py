@@ -534,7 +534,8 @@ def test_reference_mode_off_omits_named_subagents():
     listed = _listed_subagents(agent)
     assert "references" not in listed
     assert "reviewer" not in listed
-    assert listed == {"general-purpose"}
+    # the figure helper is on by default (GM-227), references or not
+    assert listed == {"general-purpose", "figure"}
     # Core domain tools still present.
     assert "call_agent" in _compiled_tool_names(agent)
 
@@ -592,8 +593,13 @@ def test_calc_subagent_on_when_enabled():
 def test_calc_subagent_budget_default():
     from funhouse_agent.deep.agent import DEFAULT_CALC_MAX_MODEL_CALLS
     assert DEFAULT_CALC_MAX_MODEL_CALLS >= 1
-    # None/0 disables the middleware.
-    assert "middleware" not in build_calc_subagent(max_model_calls=0)
+    # None/0 disables the budget (the figure looks, on by default since
+    # GM-227, are not a budget).
+    from funhouse_agent.deep.limits import ModelCallBudgetMiddleware
+    assert not any(
+        isinstance(m, ModelCallBudgetMiddleware)
+        for m in build_calc_subagent(max_model_calls=0).get("middleware")
+        or [])
 
 
 if __name__ == "__main__":

@@ -73,7 +73,9 @@ arm that compares straight against `baseline`: `GEOTECH_COVERAGE` and
 `kept_readings`, `cited_pages_note`, `cited_pages_retry`),
 `GEOTECH_FIGURE_HELPER` (2026-10-15; `figure_helper`; the default agent on
 both pages, not the lean one), `GEOTECH_PLOT_CODE` (2026-10-15; `plot_code`;
-`plot_code` for the figure and `calc` helpers, and the figure helper with it). The full list with
+`plot_code` for the figure and `calc` helpers, and the figure helper with it);
+those two are ON by default since 2026-10-20 (GM-227; `=0` turns each off,
+arms `figure_helper_off`, `plot_code_off`). The full list with
 defaults is the switch table in `module_work/REVIEW_HARNESS.md`. And since
 2026-10-12 (app `ae50842`, unreleased) the default ("legacy") build has the
 lean build's two safeguards: a 40-call budget whose last call answers, and a
@@ -135,8 +137,8 @@ unreadable, split long sets among helpers, cite tool page + 1.
 | (since 2026-10-15, fde2df1) `annotate_document` and `find_like` on an image file, in the image's own pixels | yes | yes | `mark_up` too |
 | (since 2026-10-15, 642bd36) `kept_readings`: the conversation's kept page readings, read-only | only with `GEOTECH_REVIEW_KEPT_READINGS` (OFF), its helper too | same, `page_reader` too | — |
 | (since 5.33.0) `plot_data`, `write_xlsx` (each where its library imports), `calculate` | all three | `plot_data`, `write_xlsx` (not `page_reader`) | — |
-| (since 2026-10-15, 1f87ea5) `task` → the `figure` helper: draws with `plot_data` to a figure checklist, looks and redraws | only with `GEOTECH_FIGURE_HELPER` (OFF) | — (not wired) | — |
-| (since 2026-10-15) the figure helper's and `calc` helper's `plot_code`: matplotlib code run in a locked box (`funhouse_agent/plot_box/`) | only with `GEOTECH_PLOT_CODE` (OFF) | — (not wired) | — |
+| (since 2026-10-15, 1f87ea5) `task` → the `figure` helper: draws with `plot_data` to a figure checklist, looks and redraws | with `GEOTECH_FIGURE_HELPER` or `GEOTECH_PLOT_CODE` (both ON by default since 2026-10-20; `=0` turns each off) | — (not wired) | — |
+| (since 2026-10-15) the figure helper's and `calc` helper's `plot_code`: matplotlib code run in a locked box (`funhouse_agent/plot_box/`) | with `GEOTECH_PLOT_CODE` (ON by default since 2026-10-20; `=0` turns it off) | — (not wired) | — |
 | `find_like` | yes (without OpenCV too since 5.32.1, on FIPS hosts) | same | — |
 | `read_pdf_text`, `read_text_file`, `list_files`, `save_file`, `write_docx` | yes | yes (no `read_pdf_text`) | `write_docx` only |
 | geotech-only `read_reference_figure`, `view_worked_example_source` | removed 2026-10-14 (077192c; they were inherited and could not work here) | — | — |

@@ -226,12 +226,13 @@ Key conventions:
       conditioning by its definition (55410b5); `calculate` counts, adds up
       and averages lists and has the normal distribution (c43e96f, GM-94);
       a figure helper with a Tufte-style checklist and worked examples
-      (behind `GEOTECH_FIGURE_HELPER`, OFF; GM-92) and plans drawn as
+      (behind `GEOTECH_FIGURE_HELPER`, ON by default since 2026-10-20,
+      GM-227; GM-92) and plans drawn as
       drawings (no axes, a scale bar, a north arrow from the source plan,
       the property line; `plot_data(plan_view=True)`) (1f87ea5); plotting
       code the model writes, run in a locked box for the figure and calc
-      helpers (`funhouse_agent/plot_box/`, behind `GEOTECH_PLOT_CODE`, OFF;
-      f0bc000); downdrag leaves the pile's own weight out of the load curve
+      helpers (`funhouse_agent/plot_box/`, behind `GEOTECH_PLOT_CODE`, ON by
+      default since 2026-10-20, GM-227; f0bc000); downdrag leaves the pile's own weight out of the load curve
       by default, as UFC 3-220-20 and GEC-12 do (867b08b; release note: a
       smaller drag force and Q_np by the pile's weight above the plane).
       The night of 2026-10-15/16 (owner asleep): plotting code measured
@@ -250,7 +251,9 @@ Key conventions:
       or top-level, with a did-you-mean; MSE walls with a sloping or
       broken backslope per GEC-11 (traffic out of pullout, release
       note); `annotate_document` keeps its own signature; the agent
-      states its judgment calls behind GEOTECH_JUDGMENT_CALLS (OFF);
+      states its judgment calls behind GEOTECH_JUDGMENT_CALLS (ON by
+      default since 2026-10-20, GM-226; the chat's "Consult references"
+      off stops its consult);
       the slope search's ranges from the slope's own geometry, with
       what it covered and refused in the result; each module's result
       lists its choices (method, given or default, basis, alternatives)
@@ -287,7 +290,8 @@ Key conventions:
       lines from the references (refs `chart_lines.py`); a live surcharge
       over a cantilever wall's heel or an MSE wall's reinforced zone no longer
       resists (release notes); calc packages keep given and assumed inputs apart
-      and judgment calls cite their source (behind the OFF switch); the driven-pile
+      and judgment calls cite their source (behind the judgment switch, ON
+      by default since 2026-10-20); the driven-pile
       tools take GEC-12 chapter 7's remaining options and a custom section; the
       figure tools keep names off reference lines and hatching and take in every
       plan outline. 2026-10-19/20: CI about 2.2x faster (pytest-xdist); OpenSees
@@ -2123,7 +2127,7 @@ app-side wiring). Design notes: `planlens/document/DESIGN.md`,
 | `document_tools.py` | The whole-document review tools (planlens `ReviewToolkit` bridge, 5.16.0): `open_document`, `document_structure`, `document_page_map`, `read_document`, `search_document`, `document_markups`, `render_page_thumbnails`, and, when the installed planlens serves them, `find_quantities`, `annotate_document`, `measure`, `log_grid` (`document_tool_names()`) — attachments via contextvar, one toolkit per conversation, look cues naming the app's vision tools |
 | `notebook.py` | `NotebookChat` — ipywidgets chat interface for Jupyter/Databricks |
 | `adapters/` | analysis-module adapters + 16 reference adapters bridging flat JSON → module APIs (the former pygef/ags4/pydiggs adapters were folded into `subsurface_adapter`) |
-| `deep/` | The deepagents agent the app runs since 5.0 (`build_deep_agent`, helpers, budgets, busy retries, kept turns, `kept_readings`, `calculate`; the `figure` helper in `figure_helper.py`, behind `GEOTECH_FIGURE_HELPER`, OFF); `funhouse_agent/DESIGN.md` describes it, including what changed after 5.33.0 |
+| `deep/` | The deepagents agent the app runs since 5.0 (`build_deep_agent`, helpers, budgets, busy retries, kept turns, `kept_readings`, `calculate`; the `figure` helper in `figure_helper.py`, behind `GEOTECH_FIGURE_HELPER`, ON by default since 2026-10-20); `funhouse_agent/DESIGN.md` describes it, including what changed after 5.33.0 |
 | `cited_pages.py` | Pages an answer or a DIGGS file cites, checked against the pages a tool actually opened (EV-18; the answer note is behind `GEOTECH_CITED_PAGES`, OFF) |
 | `tests/` | 2,011 tests collected 2026-10-15 (0bb5f1b), and 3,167 across all of `funhouse_agent/` (mock engines, no API key needed) |
 

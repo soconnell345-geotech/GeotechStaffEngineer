@@ -47,8 +47,12 @@ class _Quiet(BaseChatModel):
 
 
 def _no_switches(monkeypatch):
+    """Every switch off: unset, and those on by default set to 0 (GM-226,
+    GM-227)."""
     for env in review_flags.ALL_ENVS + review_flags.SETTINGS_ENVS:
         monkeypatch.delenv(env, raising=False)
+    for env in review_flags.DEFAULT_ON_ENVS:
+        monkeypatch.setenv(env, "0")
 
 
 def _built(monkeypatch, **kw):

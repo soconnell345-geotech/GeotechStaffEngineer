@@ -393,7 +393,8 @@ def test_judgment_arms_pair_with_their_flows():
     """EV-26: each j-arm is its flow with GEOTECH_JUDGMENT_CALLS on and one
     more answer key, the "Judgment calls" list; the reader checks are the
     same, so the trace read asks both arms the same questions. The keys only
-    the switch can meet are on the arm alone (EV-30)."""
+    the switch can meet are on the arm alone (EV-30). The switch is on by
+    default since GM-226, so the OFF flow sets it to 0."""
     from live_smoke import runner
     flows = {f["id"]: f for f in runner.load_flows()}
     arms = [i for i in flows if re.match(r"F\d+j-", i)]
@@ -402,7 +403,7 @@ def test_judgment_arms_pair_with_their_flows():
     for a in arms:
         num = re.match(r"F\d+", a).group(0)
         base, arm = flows[num + a[len(num) + 1:]], flows[a]
-        assert "GEOTECH_JUDGMENT_CALLS" not in (base.get("env") or {}), a
+        assert (base.get("env") or {}).get("GEOTECH_JUDGMENT_CALLS")             == "0", a
         assert arm["env"] == dict(base.get("env") or {},
                                   GEOTECH_JUDGMENT_CALLS="1"), a
         for k in ("page", "cost", "steps", "reader_checks"):
@@ -546,7 +547,7 @@ def test_judgment_call_flows_run_both_arms():
     flows = {f["id"]: f for f in runner.load_flows()}
     off = flows["F61-geotech-slope-weak-layer"]
     on = flows["F61j-geotech-slope-weak-layer"]
-    assert "GEOTECH_JUDGMENT_CALLS" not in (off.get("env") or {})
+    assert off["env"] == {"GEOTECH_JUDGMENT_CALLS": "0"}
     assert on["env"] == {"GEOTECH_JUDGMENT_CALLS": "1"}
     assert off["steps"] == on["steps"] and off["page"] == on["page"] == \
         "geotech"
@@ -556,6 +557,22 @@ def test_judgment_call_flows_run_both_arms():
         for item in f["expect"]["answer_names"]:
             for p in item["any"]:
                 re.compile(p)
+
+
+def test_figure_helper_pairs_set_their_switches():
+    """GM-227: the figure helper and plotting code are on by default, so the
+    "figure helper off" flows set both to 0 (plotting code brings the
+    helper), and their ON twins keep plotting code off as when measured."""
+    from live_smoke import runner
+    flows = {f["id"]: f for f in runner.load_flows()}
+    for num in ("F52", "F53"):
+        off, = [f for i, f in flows.items() if i.startswith(num + "-")]
+        on, = [f for i, f in flows.items() if i.startswith(num + "h-")]
+        assert off["env"] == {"GEOTECH_FIGURE_HELPER": "0",
+                              "GEOTECH_PLOT_CODE": "0"}, num
+        assert on["env"] == {"GEOTECH_FIGURE_HELPER": "1",
+                             "GEOTECH_PLOT_CODE": "0"}, num
+        assert off["steps"] == on["steps"], num
 
 
 #: Seven phrasings of an answer to F61 and what each should be found to
