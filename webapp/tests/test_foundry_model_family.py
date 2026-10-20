@@ -112,7 +112,7 @@ class TestRouting:
     def test_stated_family_sends_plain_rid_to_anthropic_proxy(self, foundry):
         res = engine_config.resolve_engine(model_id=f"anthropic:{PLAIN_RID}")
         assert res.ok and res.source == "foundry", res.message
-        assert type(res.model).__name__ == "ChatAnthropic"
+        assert type(res.model).__name__ == "FoundryChatAnthropic"
         assert res.model.model == PLAIN_RID          # the prefix is not sent
         assert str(res.model.anthropic_api_url) == (
             "https://stack.example.palantirfoundry.com"
@@ -122,7 +122,7 @@ class TestRouting:
 
     def test_claude_rid_auto(self, foundry):
         res = engine_config.resolve_engine(model_id=CLAUDE_RID)
-        assert type(res.model).__name__ == "ChatAnthropic", res.message
+        assert type(res.model).__name__ == "FoundryChatAnthropic", res.message
         assert "family read off the id" in res.message
 
     def test_plain_rid_auto_stays_openai(self, foundry):
@@ -144,7 +144,7 @@ class TestRouting:
         """The palantir_models SDK engine speaks to GPT models only."""
         res = engine_config.resolve_engine(model_id=mid)
         assert res.source == "foundry", res.message
-        assert type(res.model).__name__ == "ChatAnthropic"
+        assert type(res.model).__name__ == "FoundryChatAnthropic"
         assert res.model.model == split_model_family(mid)[1]
 
     @pytest.mark.parametrize("mid", ["GPT_5_1", "openai:GPT_5_1"])
@@ -159,7 +159,7 @@ class TestRouting:
         assert core.default_model_id() == f"anthropic:{PLAIN_RID}"
         assert core.model_label(f"anthropic:{PLAIN_RID}") == "Opus 5.5"
         res = engine_config.resolve_engine(model_id=core.default_model_id())
-        assert type(res.model).__name__ == "ChatAnthropic", res.message
+        assert type(res.model).__name__ == "FoundryChatAnthropic", res.message
 
     def test_claude_api_name_without_token_says_so(self, foundry):
         foundry.delenv("FOUNDRY_TOKEN")
@@ -210,8 +210,8 @@ class _FakeProxy(BaseHTTPRequestHandler):
         pass
 
     def do_POST(self):                                  # noqa: N802
-        body = json.loads(self.rfile.read(
-            int(self.headers.get("Content-Length") or 0)) or b"{}")
+        raw = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        body = json.loads(raw or b"{}")
         images = [b["source"] for m in body.get("messages") or []
                   if isinstance(m.get("content"), list)
                   for b in m["content"] if b.get("type") == "image"]
@@ -220,6 +220,8 @@ class _FakeProxy(BaseHTTPRequestHandler):
                                 "model": body.get("model"),
                                 "max_tokens": body.get("max_tokens"),
                                 "images": images,
+                                "top_cache": "cache_control" in body,
+                                "cache_marks": raw.count(b'"cache_control"'),
                                 "stream": bool(body.get("stream")),
                                 "tools": [t.get("name")
                                           for t in body.get("tools") or []]})
@@ -347,3 +349,45 @@ def test_vision_side_call_reaches_the_proxy_as_an_anthropic_image(
     assert req["max_tokens"] == 2000
     assert req["images"] == [{"type": "base64", "media_type": "image/png",
                               "data": base64.b64encode(png).decode()}]
+
+
+@needs_anthropic
+@pytest.mark.parametrize("setting, marks", [(None, True), ("0", False)])
+def test_prompt_cache_mark_is_never_top_level(fake_proxy, monkeypatch,
+                                              setting, marks):
+    """The agent's prompt-caching middleware asks for a top-level
+    ``cache_control``, which only Anthropic's own API accepts. On the
+    Foundry proxy it goes on a message block instead, or nowhere with
+    GEOTECH_FOUNDRY_PROMPT_CACHE=0."""
+    if setting is not None:
+        monkeypatch.setenv(engine_config.FOUNDRY_PROMPT_CACHE_ENV, setting)
+    res = engine_config.resolve_engine(model_id=f"anthropic:{PLAIN_RID}")
+    reply = res.model.invoke("Say OK",
+                             cache_control={"type": "ephemeral", "ttl": "5m"})
+    assert "OK" in reply.content
+    req = fake_proxy[-1]
+    assert req["top_cache"] is False
+    assert (req["cache_marks"] > 0) is marks
+
+
+@needs_anthropic
+def test_agent_middleware_marks_reach_the_proxy_on_blocks(fake_proxy):
+    """The deep agent's own caching middleware, on a real model request:
+    system, tool and message marks, none at the top level."""
+    from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
+    from langchain.agents import create_agent
+    from langchain_core.tools import tool
+
+    @tool
+    def add_numbers(a: int, b: int) -> int:
+        """Add two numbers."""
+        return a + b
+
+    res = engine_config.resolve_engine(model_id=f"anthropic:{PLAIN_RID}")
+    agent = create_agent(res.model, tools=[add_numbers],
+                         system_prompt="You are terse.",
+                         middleware=[AnthropicPromptCachingMiddleware()])
+    agent.invoke({"messages": [{"role": "user", "content": "Say OK"}]})
+    req = fake_proxy[-1]
+    assert req["top_cache"] is False
+    assert req["cache_marks"] >= 2

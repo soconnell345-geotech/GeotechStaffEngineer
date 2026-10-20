@@ -243,6 +243,60 @@ def _resolve_palantir_sdk(model_id: str) -> "EngineResolution":
         f"Using the in-platform palantir_models SDK ({model_id}).")
 
 
+#: Prompt-cache marks on the Foundry Anthropic proxy: on by default, as marks
+#: on content blocks only; ``0`` / ``off`` sends none (see
+#: :func:`foundry_chat_anthropic_class`).
+FOUNDRY_PROMPT_CACHE_ENV = "GEOTECH_FOUNDRY_PROMPT_CACHE"
+
+_FOUNDRY_CHAT_ANTHROPIC = None
+
+
+def _strip_cache_marks(obj) -> None:
+    """Remove every ``cache_control`` key from a request payload, in place."""
+    if isinstance(obj, dict):
+        obj.pop("cache_control", None)
+        for value in obj.values():
+            _strip_cache_marks(value)
+    elif isinstance(obj, list):
+        for value in obj:
+            _strip_cache_marks(value)
+
+
+def foundry_chat_anthropic_class():
+    """``ChatAnthropic`` as the Foundry Anthropic proxy takes it (INF-25).
+
+    The agent's prompt-caching middleware (deepagents) adds a TOP-LEVEL
+    ``cache_control`` to every chat turn, a field only Anthropic's own API
+    accepts (langchain-anthropic says so; Bedrock refuses extra keys). The
+    Foundry proxy is not that API, so this class names a non-direct
+    ``_llm_type`` and langchain-anthropic moves the mark onto the last message
+    block, the form every Claude host takes. ``GEOTECH_FOUNDRY_PROMPT_CACHE=0``
+    sends no cache marks at all. Connection diagnostics send none either way:
+    only the agent's own turns carry them.
+    """
+    global _FOUNDRY_CHAT_ANTHROPIC
+    if _FOUNDRY_CHAT_ANTHROPIC is None:
+        from langchain_anthropic import ChatAnthropic
+
+        class FoundryChatAnthropic(ChatAnthropic):
+            """ChatAnthropic against the Foundry Anthropic-messages proxy."""
+
+            @property
+            def _llm_type(self) -> str:
+                return "anthropic-chat-foundry-proxy"
+
+            def _get_request_payload(self, input_, *, stop=None, **kwargs):
+                payload = super()._get_request_payload(
+                    input_, stop=stop, **kwargs)
+                if str(os.environ.get(FOUNDRY_PROMPT_CACHE_ENV, "")).strip() \
+                        .lower() in ("0", "off", "false", "no"):
+                    _strip_cache_marks(payload)
+                return payload
+
+        _FOUNDRY_CHAT_ANTHROPIC = FoundryChatAnthropic
+    return _FOUNDRY_CHAT_ANTHROPIC
+
+
 def _resolve_foundry(model_id: str) -> "EngineResolution":
     """Build a chat model against the Foundry LLM proxy for a model id.
 
@@ -273,7 +327,7 @@ def _resolve_foundry(model_id: str) -> "EngineResolution":
 
     if family == "anthropic":
         try:
-            from langchain_anthropic import ChatAnthropic
+            chat_anthropic = foundry_chat_anthropic_class()
         except Exception as exc:
             return EngineResolution(
                 None, "error", model_id,
@@ -282,7 +336,7 @@ def _resolve_foundry(model_id: str) -> "EngineResolution":
         try:
             # The proxy authenticates with "Authorization: Bearer <token>"; the
             # Anthropic client's own x-api-key header is sent too and ignored.
-            model = ChatAnthropic(
+            model = chat_anthropic(
                 model=model_id,
                 max_tokens=_default_max_tokens(),
                 anthropic_api_url=f"{base}/api/v2/llm/proxy/anthropic",

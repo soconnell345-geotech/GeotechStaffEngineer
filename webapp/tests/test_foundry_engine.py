@@ -39,7 +39,7 @@ class TestRouting:
     def test_claude_rid_builds_chat_anthropic_on_proxy(self, foundry_env):
         res = engine_config.resolve_engine(model_id=CLAUDE_RID)
         assert res.ok and res.source == "foundry", res.message
-        assert type(res.model).__name__ == "ChatAnthropic"
+        assert type(res.model).__name__ == "FoundryChatAnthropic"
         base = str(getattr(res.model, "anthropic_api_url", ""))
         assert base == ("https://stack.example.palantirfoundry.com"
                         "/api/v2/llm/proxy/anthropic")

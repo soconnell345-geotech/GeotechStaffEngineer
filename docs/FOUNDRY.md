@@ -96,6 +96,16 @@ data URI, which `langchain-anthropic` turns into an Anthropic `image` block
 request. Checked against a stand-in proxy on the laptop
 (`webapp/tests/test_foundry_model_family.py`), not yet on Foundry.
 
+**Prompt caching.** The agent's turns (not the connection diagnostics) ask
+for prompt caching through deepagents' caching middleware, which would put a
+`cache_control` field at the top of the request: a field only Anthropic's
+own API accepts (Bedrock refuses extra keys). On the Foundry proxy the app
+puts the marks on the system prompt, the tools and the last message instead
+(`engine_config.foundry_chat_anthropic_class`). If chat questions still fail
+with a 400 that names `cache_control` while the diagnostics pass, add
+`os.environ["GEOTECH_FOUNDRY_PROMPT_CACHE"] = "0"` to the app file: no cache
+marks are sent at all.
+
 ### 3b. Alternative engine: the in-platform `palantir_models` SDK (no proxy, no token)
 
 On a Foundry deployment, a model id that is **not** an `ri....` RID is treated
