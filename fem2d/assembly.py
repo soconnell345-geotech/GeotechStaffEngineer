@@ -374,7 +374,7 @@ def beam_element_dofs(node_i, node_j, rotation_dof_map):
 
 
 def assemble_beam_stiffness(nodes, beam_elements, rotation_dof_map,
-                            n_dof_total, active_beams=None):
+                            n_dof_total, active_beams=None, t=1.0):
     """Assemble global stiffness from beam elements.
 
     Parameters
@@ -385,6 +385,10 @@ def assemble_beam_stiffness(nodes, beam_elements, rotation_dof_map,
     n_dof_total : int — total system DOFs.
     active_beams : set of int, optional — beam indices to include.
         None means all beams are active.
+    t : float — out-of-plane thickness of the slice (m), as for the soil
+        elements: a beam's EA and EI are per metre run, so its stiffness
+        in the slice is t times theirs (GM-204, 2026-10-20; before, a
+        thickness other than 1 scaled the soil and not the beams).
 
     Returns
     -------
@@ -401,6 +405,7 @@ def assemble_beam_stiffness(nodes, beam_elements, rotation_dof_map,
             continue
         coords_ij = np.array([nodes[beam.node_i], nodes[beam.node_j]])
         K_e, _, _ = beam2d_stiffness(coords_ij, beam.EA, beam.EI)
+        K_e = K_e * t
         dofs = beam_element_dofs(beam.node_i, beam.node_j, rotation_dof_map)
         for i in range(6):
             for j in range(6):
@@ -413,7 +418,7 @@ def assemble_beam_stiffness(nodes, beam_elements, rotation_dof_map,
 
 
 def assemble_beam_gravity(nodes, beam_elements, rotation_dof_map,
-                          n_dof_total, active_beams=None):
+                          n_dof_total, active_beams=None, t=1.0):
     """Assemble gravity load from beam self-weight.
 
     Distributes weight_per_m as consistent nodal forces (half to each node,
@@ -427,6 +432,8 @@ def assemble_beam_gravity(nodes, beam_elements, rotation_dof_map,
     n_dof_total : int
     active_beams : set of int, optional — beam indices to include.
         None means all beams are active.
+    t : float — out-of-plane thickness of the slice (m): weight_per_m is
+        per metre run, so the slice carries t times it (GM-204).
 
     Returns
     -------
@@ -444,7 +451,7 @@ def assemble_beam_gravity(nodes, beam_elements, rotation_dof_map,
         dx = nodes[beam.node_j, 0] - nodes[beam.node_i, 0]
         dy = nodes[beam.node_j, 1] - nodes[beam.node_i, 1]
         L = np.sqrt(dx ** 2 + dy ** 2)
-        w_total = beam.weight_per_m * L
+        w_total = beam.weight_per_m * L * t
         # Half to each node, downward
         F[2 * beam.node_i + 1] -= w_total / 2.0
         F[2 * beam.node_j + 1] -= w_total / 2.0

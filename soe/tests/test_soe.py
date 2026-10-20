@@ -1182,7 +1182,7 @@ class TestDesignGroundAnchor:
         result = design_ground_anchor(
             design_load_kN=400.0, anchor_depth=2.5,
             excavation_depth=7.0, phi_deg=30.0,
-            bond_stress_kPa=200.0,
+            bond_stress_kPa=200.0, soil_type="soil",
         )
         assert result.bond_stress_kPa == 200.0
         # over the default 150 mm hole's perimeter (GM-191)

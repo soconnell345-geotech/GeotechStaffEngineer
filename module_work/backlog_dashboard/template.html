@@ -509,7 +509,9 @@ function renderDone() {
         <div><div class="t" style="font-weight:600">${esc(r.question || "")}</div>${ans ? `<div class="ans">${ans}</div>` : ""}${when ? `<div class="small">${when}</div>` : ""}</div></li>`;
     }).join("")}</ul></div>
     <h2 style="margin:0 0 8px">Other finished work</h2>` : "";
-  return closedHtml + `<p class="small" style="margin:0 0 10px">Finished work that older documents still list as open. Cleared at the next full sweep.</p>
+  const arc = DATA.archive || {};
+  const arcNote = arc.entries ? ` Earlier finished work (${arc.entries} entries, last moved ${esc(arc.sweeps[0] || "")}) is in <code>${esc(arc.path)}</code> in the repository.` : "";
+  return closedHtml + `<p class="small" style="margin:0 0 10px">Finished work that older documents still list as open. Moved to the archive at the next sweep.${arcNote}</p>
     <div class="panel"><ul style="margin:0;padding-left:18px">${DATA.done.map(d => `<li style="margin:6px 0">${md(d)}</li>`).join("")}</ul></div>`;
 }
 

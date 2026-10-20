@@ -546,7 +546,7 @@ METHOD_INFO = {
             "nu": {"type": "float", "required": True, "description": "Poisson's ratio."},
             "nx": {"type": "int", "required": False, "default": 20, "description": "Mesh divisions in x."},
             "ny": {"type": "int", "required": False, "default": 10, "description": "Mesh divisions in y."},
-            "t": {"type": "float", "required": False, "default": 1.0, "description": "Out-of-plane thickness (m)."},
+            "t": {"type": "float", "required": False, "default": 1.0, "description": "Out-of-plane thickness of the plane-strain slice (m). Every result is per metre run and does not depend on it (the soil, walls, struts and joints all scale with it); leave it at 1."},
         },
         "returns": {
             "max_displacement_m": "Maximum displacement magnitude.",
@@ -702,6 +702,7 @@ METHOD_INFO = {
             "k": {"type": "float|array", "required": True, "description": "Hydraulic conductivity (m/s). Scalar or per-element."},
             "head_bcs": {"type": "array", "required": True, "description": "Dirichlet BCs [[node_id, head_value],...]."},
             "gamma_w": {"type": "float", "required": False, "default": 9.81, "description": "Unit weight of water (kN/m3)."},
+            "t": {"type": "float", "required": False, "default": 1.0, "description": "Out-of-plane thickness of the plane-strain slice (m). The heads and pore pressures do not depend on it; total_flow_m3_per_s_per_m sums |v| x element area x t, so it grows with t. Leave it at 1."},
         },
         "returns": {
             "max_head_m": "Maximum total head.",
@@ -723,7 +724,7 @@ METHOD_INFO = {
             "n_w": {"type": "float", "required": False, "default": 2.2e6, "description": "For 'monolithic': the Biot modulus M (kPa) (~2.2e6 for near-incompressible water). Governs the undrained load response p0. Ignored by 'staggered'."},
             "nx": {"type": "int", "required": False, "default": 10, "description": "Mesh divisions in x (horizontal)."},
             "ny": {"type": "int", "required": False, "default": 20, "description": "Mesh divisions in y (vertical)."},
-            "t": {"type": "float", "required": False, "default": 1.0, "description": "Out-of-plane thickness (m) for plane-strain assembly."},
+            "t": {"type": "float", "required": False, "default": 1.0, "description": "Out-of-plane thickness of the plane-strain slice (m). Every result is per metre run and does not depend on it (the soil, walls, struts and joints all scale with it); leave it at 1."},
             "gamma_w": {"type": "float", "required": False, "default": 9.81, "description": "Unit weight of water (kN/m3)."},
             "layer_polylines": {"type": "array", "required": False, "description": "Optional explicit layer-boundary polylines [[[x,z],...],...] for non-horizontal layering."},
             "consolidation_scheme": {"type": "string", "required": False, "default": "staggered",
@@ -794,7 +795,10 @@ METHOD_INFO = {
 # ``setdefault`` never overrides a hand-written declaration.
 _FEM_PARAM_DECLS = {
     "t": {"type": "float", "required": False, "default": 1.0,
-          "description": "Out-of-plane thickness (m) for plane-strain assembly."},
+          "description": "Out-of-plane thickness of the plane-strain slice "
+          "(m). Every result is per metre run and does not depend on it "
+          "(the soil, walls, struts and joints all scale with it); leave it "
+          "at 1."},
     "gamma_w": {"type": "float", "required": False, "default": 9.81,
                 "description": "Unit weight of water (kN/m3)."},
     "nx": {"type": "int", "required": False,

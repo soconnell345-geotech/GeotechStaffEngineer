@@ -929,8 +929,9 @@ def _face_node_at(nodes, face, y):
 
 
 def _free_water_on_wall(nodes, wall_nodes, z_water, z_floor, gamma_w,
-                        quadratic, t=1.0):
-    """Nodal forces (2 n_nodes,) of water standing in an excavation against
+                        quadratic):
+    """Nodal forces (2 n_nodes,), per metre run (a phase's
+    ``nodal_forces``), of water standing in an excavation against
     the wall's face, between its floor (z_floor) and the water level
     (z_water): pressure gamma_w (z_water - y), pushing the wall toward the
     retained soil (-x). No soil element carries this face (GM-73). The
@@ -955,7 +956,7 @@ def _free_water_on_wall(nodes, wall_nodes, z_water, z_floor, gamma_w,
                 N = np.array([1 - s, s])
             p = gamma_w * max(z_water - float(N @ ys), 0.0)
             for kk, node in enumerate(edge):
-                F[2 * node] -= w * L * t * N[kk] * p
+                F[2 * node] -= w * L * N[kk] * p
     return F
 
 
@@ -1149,10 +1150,11 @@ def _wall_interface_summary(rows, exc_depth):
 
 
 def _wall_joints(nodes, elements, springs, wall_ties, right_ties, col,
-                 soil_layers, layer_ids, quad, delta, ratio, adhesion, t):
+                 soil_layers, layer_ids, quad, delta, ratio, adhesion):
     """The wall/soil joints of ``analyze_excavation(wall_contact=
     'interface')`` (GM-72): one per wall-to-face tie above the tip, with the
-    face length it stands for, its stiffness and its tan(delta).
+    face length it stands for, its stiffness and its tan(delta), per metre
+    run (``analyze_staged`` multiplies them by t).
 
     Returns (joints for ``analyze_staged(interfaces=)``, rows of
     (depth m, delta deg, phi' deg) for the retained-side joints).
@@ -1191,10 +1193,10 @@ def _wall_joints(nodes, elements, springs, wall_ties, right_ties, col,
         G = float(np.mean([float(x.get('E', 30000)) / (2.0 * (1.0 + float(
             x.get('nu', 0.3)))) for x in sl]))
         d = float(delta) if delta is not None else float(ratio) * phi
-        ks = G * trib[k] * t / (_JOINT_VIRTUAL_THICKNESS * h_loc[k])
+        ks = G * trib[k] / (_JOINT_VIRTUAL_THICKNESS * h_loc[k])
         return {'spring': spring_idx, 'face': face,
                 'tan_delta': float(np.tan(np.radians(d))),
-                'adhesion': adhesion * trib[k] * t, 'ks': ks,
+                'adhesion': adhesion * trib[k], 'ks': ks,
                 'length': float(trib[k])}, d, phi
 
     # A joint with no strength (delta = 0, no adhesion) carries no shear:
@@ -1267,7 +1269,11 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
     nx, ny : int — about this many elements across and down (the mesh has
         a node column on the wall and a node row at every excavation level,
         strut level and the wall tip).
-    t : float — thickness.
+    t : float — out-of-plane thickness of the plane-strain slice (m),
+        default 1. The results are per metre run and do not depend on it
+        (the wall, struts and joints are scaled with the soil; GM-204,
+        2026-10-20: before, at t = 1.5 the wall's moment and shear and the
+        strut forces came out about 1.5 times their values per metre).
     n_steps : int — load steps in each stage.
     gwt : float, (M,2) array, or (n_nodes,) array, optional — groundwater
         table (compute_pore_pressures formats): the in-situ water table,
@@ -1676,7 +1682,7 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
             nodes, elements, springs, wall_ties, right_ties, col,
             soil_layers, layer_ids, element_type == 't6'
             and len(col) % 2 == 1, interface_delta, interface_ratio,
-            float(interface_adhesion), t)
+            float(interface_adhesion))
 
     # Struts as springs at the wall node nearest their level
     for d, k, j in strut_defs:
@@ -1738,7 +1744,7 @@ def analyze_excavation(width, depth, wall_depth, soil_layers, wall_EI,
         nf = None
         if z_in > b + 1e-9:
             nf = _free_water_on_wall(nodes, wall_nodes, z_in, b, gamma_w,
-                                     quad_wall, t)
+                                     quad_wall)
         return head, z_in, nf
 
     exc_nodes_all = sorted(set(np.unique(
@@ -2699,8 +2705,17 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
     bc_nodes : dict from detect_boundary_nodes().
     element_groups : dict of str -> list of int — from assign_element_groups().
     phases : list of ConstructionPhase
-    beam_elements : list of BeamElement, optional
-    t : float — thickness.
+    beam_elements : list of BeamElement, optional — EA, EI and weight per
+        metre run.
+    t : float — out-of-plane thickness of the plane-strain slice (m),
+        default 1. The results are per metre run and do not depend on it:
+        the soil is integrated over the slice and the members given per
+        metre run (beams, springs, joints, ``nodal_forces``) are multiplied
+        by t; displacements and stresses come out the same and the beam,
+        spring and joint forces are reported per metre run (GM-204,
+        2026-10-20; before, t scaled the soil and not the members, so at
+        t = 1.5 a wall's moment came out about 1.5 times the moment per
+        metre).
     max_iter : int — max NR iterations per step. Default 500 (100 until
         2026-10-15, GM-62): a plastic stage such as a 260 kPa footing
         converges in about 500 and not in 100; a step that converges sooner
@@ -2763,7 +2778,7 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
         Keys: 'spring' (index into ``springs``; the joint is active while
         that spring is), 'face' (+1 when ``node_b`` is soil on the -x side
         of the wall node ``node``, -1 on the +x side), 'tan_delta',
-        'adhesion' (kN per m run: adhesion x the joint's length x t), 'ks'
+        'adhesion' (kN per m run: adhesion x the joint's length), 'ks'
         (elastic tangential stiffness, kN/m per m run) and 'length' (m, the
         face length the joint stands for; with a water table and
         ``wall_face_nodes``, the tie carries the water pressure on that
@@ -2950,6 +2965,7 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
                 raise ValueError(
                     f"phase '{phase.name}': nodal_forces has shape "
                     f"{nf.shape}; expected ({2 * n_nodes_count},)")
+            nf = nf * t                  # per m run -> the slice
             water = nf if water is None else water + nf
 
         # 4. Elements activated in this phase are placed stress-free on the
@@ -3042,7 +3058,7 @@ def analyze_staged(nodes, elements, material_props, gamma, bc_nodes,
                 if pp is not None and wall_face_nodes is not None \
                         and node_b in wall_face_nodes:
                     n_w = max(float(pp[node_b]), 0.0) \
-                        * float(jt.get('length', 0.0)) * t
+                        * float(jt.get('length', 0.0))
                 cols['n_water'].append(n_w)
             iface = cols
             slip0 = np.array(slip0)

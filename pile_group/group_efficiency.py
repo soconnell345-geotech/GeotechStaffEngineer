@@ -8,7 +8,7 @@ method per FHWA GEC-12.
 All units are SI: meters, kPa, kN, degrees.
 
 References:
-    FHWA GEC-12, Chapter 9 (FHWA-NHI-16-009)
+    FHWA GEC-12 (FHWA-NHI-16-009), Secs. 7.2.2 and 7.3
     AASHTO LRFD Section 10.7.2.3
     USACE EM 1110-2-2906, Chapter 5
     Meyerhof, G.G. (1976), "Bearing capacity and settlement of pile
@@ -53,7 +53,9 @@ def converse_labarre(n_rows: int, n_cols: int,
 
     References
     ----------
-    FHWA GEC-12, Eq 9-1; AASHTO LRFD 10.7.2.3.
+    Converse (1962); AASHTO LRFD 10.7.2.3. (FHWA GEC-12, 2016, does
+    not print this formula; its Eq. 9-1 is a load test's elastic
+    deformation.)
     """
     if spacing <= 0:
         raise ValueError(f"Spacing must be positive, got {spacing}")

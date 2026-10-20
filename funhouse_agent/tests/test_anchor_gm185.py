@@ -54,14 +54,38 @@ def test_the_test_load_is_an_input():
 def test_a_given_bond_stress_acts_on_the_hole():
     """GM-191: a given stress (GEC-4 Table 7, p. 73) acts over the drill
     hole's perimeter, so the diameter is used; soil_type still names the
-    ground for FOS_bond and the minimum bond length."""
+    ground for FOS_bond and the minimum bond length, and since GM-199 the
+    call gives it."""
     out = call_agent("soe", "design_ground_anchor",
-                     {**_ANCHOR, "bond_stress_kPa": 200.0})
+                     {**_ANCHOR, "bond_stress_kPa": 200.0,
+                      "soil_type": "sand_medium"})
     assert out["defaults_used"]["drill_diameter_mm"] == 150.0
-    assert out["defaults_used"]["soil_type"] == "sand_medium"
+    assert "soil_type" not in out["defaults_used"]
     assert _how(out)["ultimate load transfer"] == "given"
     assert _how(out)["drill hole diameter"] == "default"
     assert out["load_transfer_kN_per_m"] == 94.2
+
+
+def test_a_given_bond_stress_needs_its_ground():
+    """GM-199: a rock bond stress with no soil_type took the default's
+    soil, FS 2.0 and the soil minimum bond length. Now the call is refused
+    and asked for the ground; given as 'rock', FS 3.0 (GEC-4 p. 74) and
+    defaults_used says so."""
+    out = call_agent("soe", "design_ground_anchor",
+                     {**_ANCHOR, "bond_stress_kPa": 1000.0})
+    assert "soil_type='soil' or 'rock'" in out["error"]
+    out = call_agent("soe", "design_ground_anchor",
+                     {**_ANCHOR, "bond_stress_kPa": 1000.0,
+                      "soil_type": "rock"})
+    assert out["FOS_bond"] == 3.0 and out["ground"] == "rock"
+    assert out["defaults_used"]["FOS_bond"] == 3.0
+    assert "soil_type" not in out["defaults_used"]
+    assert _how(out)["factor of safety on bond"] == "default"
+    out = call_agent("soe", "design_ground_anchor",
+                     {**_ANCHOR, "load_transfer_kN_per_m": 120.0,
+                      "soil_type": "soil"})
+    assert out["FOS_bond"] == 2.0 and out["ground"] == "soil"
+    assert out["defaults_used"]["FOS_bond"] == 2.0
 
 
 def test_rock_takes_gec4s_factor_of_safety():

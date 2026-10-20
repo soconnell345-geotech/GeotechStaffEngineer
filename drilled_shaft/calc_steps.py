@@ -581,7 +581,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         result_name="Q_ult",
         result_value=f"{r.Q_ultimate:,.1f}",
         result_unit="kN",
-        reference="GEC-10 Eq. 13-1",
+        reference="GEC-10 Eq. 10-2 (p. 10-9), resistances unfactored",
     ))
 
     # Capacity breakdown
