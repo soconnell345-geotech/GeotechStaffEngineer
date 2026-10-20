@@ -1790,10 +1790,23 @@
       "effect": "Shorter embedment; needs a delta default too."
      }
     ]
+   },
+   {
+    "label": "(d) The coefficient tool, 1948 log-spiral chart, no wall friction given",
+    "options": [
+     {
+      "label": "Refuse and ask for delta (now)",
+      "effect": "Caltrans p. 4-29 begins 'Given delta, beta, and phi' and prints no default; the tool names delta_deg and shows Kp at delta = 0."
+     },
+     {
+      "label": "Take delta = phi'/2 and say so",
+      "effect": "NHI-06-089 p. 10-17 gives phi'/2 as the maximum passive wall friction suggested for design; Kp is lower than the old delta = phi."
+     }
+    ]
    }
   ],
-  "recommendation": "(a) 17 deg only for layers marked clean sand or gravel, else 0 and say so; (b) take the table's delta as EM 2504 and USS do; (c) keep Rankine.",
-  "if_no_answer": "The defaults stay as now (17 deg for any layer without cohesion under log-spiral, 0 under Coulomb, Rankine for soe), each stated in the result with the alternatives' numbers.",
+  "recommendation": "(a) 17 deg only for layers marked clean sand or gravel, else 0 and say so; (b) take the table's delta as EM 2504 and USS do; (c) keep Rankine. (d) refuse, as now; NHI's phi'/2 is a fair stated default if refusals get in the way.",
+  "if_no_answer": "The defaults stay as now (17 deg for any layer without cohesion under log-spiral, 0 under Coulomb, Rankine for soe), each stated in the result with the alternatives' numbers. The coefficient tool keeps refusing a 1948-chart Kp with no delta.",
   "message_to_send": null,
   "steps": [],
   "unblocks": [],
@@ -1801,7 +1814,8 @@
    "BACKLOG.md OWN-82, GM-242",
    "UFC 3-220-20 Fig. 4-37 p. 237, Table 4-1 p. 184",
    "EM 1110-2-2504 p. 4-3",
-   "Caltrans T&S pp. 4-16, 4-28"
+   "Caltrans T&S pp. 4-16, 4-28, 4-29",
+   "NHI-06-089 p. 10-17"
   ]
  }
 }
