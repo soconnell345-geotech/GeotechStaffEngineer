@@ -40,6 +40,14 @@ class AggregatePierResult:
         Center-to-center spacing.
     pattern : str
         'triangular' or 'square'.
+    settlement_method : str
+        'stress_ratio' (SRF from n), or a settlement ratio by E_c / E_s
+        off GEC-13 Fig. 5-21: 'weighted_modulus', 'balaam_rigid',
+        'balaam_flexible' (GM-220).
+    settlement_ratio : float
+        n' = settlement without columns / settlement with them = 1 / SRF.
+    modular_ratio : float or None
+        E_c / E_s, with the Fig. 5-21 methods.
     choices : list of dict
         What the analysis chose (GM-142, ``geotech_common.choices``;
         ``aggregate_piers.aggregate_pier_choices``).
@@ -55,6 +63,9 @@ class AggregatePierResult:
     column_diameter_m: float = 0.0
     column_spacing_m: float = 0.0
     pattern: str = ""
+    settlement_method: str = "stress_ratio"
+    settlement_ratio: float = 0.0
+    modular_ratio: Optional[float] = None
     choices: List[Dict[str, Any]] = field(default_factory=list)
 
     def summary(self) -> str:
@@ -72,6 +83,13 @@ class AggregatePierResult:
             f"  Settlement reduction:     {self.settlement_reduction_factor:.3f}",
             "",
         ]
+        if self.settlement_method != "stress_ratio":
+            lines[-1:-1] = [
+                f"  Settlement method:        {self.settlement_method} "
+                "(GEC-13 Fig. 5-21)",
+                f"  E_c / E_s:                {self.modular_ratio:g}",
+                f"  Settlement ratio n':      {self.settlement_ratio:.2f}",
+            ]
         if self.unreinforced_bearing_kPa > 0:
             lines.append(f"  Bearing capacity:")
             lines.append(f"    Unreinforced:           {self.unreinforced_bearing_kPa:.1f} kPa")
@@ -102,6 +120,10 @@ class AggregatePierResult:
             "column_spacing_m": round(self.column_spacing_m, 2),
             "pattern": self.pattern,
         }
+        if self.settlement_method != "stress_ratio":
+            d["settlement_method"] = self.settlement_method
+            d["settlement_ratio"] = round(self.settlement_ratio, 3)
+            d["modular_ratio"] = round(self.modular_ratio, 3)
         if self.choices:
             d["choices"] = [dict(c) for c in self.choices]
         return d

@@ -7,6 +7,10 @@ pier ground improvement.
 
 All units SI: kPa, meters.
 
+The settlement over the columns is by the stress ratio n (the default) or,
+with the column modulus, by GEC-13 Fig. 5-21's weighted-modulus and Balaam
+curves (``settlement_ratio``, GM-220).
+
 References:
     Barksdale & Bachus (1983) — Design and Construction of Stone Columns
     FHWA GEC-13: Ground Modification Methods Reference Manual
@@ -15,6 +19,7 @@ References:
 
 import math
 import warnings
+from typing import Optional
 
 from ground_improvement.results import AggregatePierResult
 
@@ -228,15 +233,23 @@ def improved_settlement(S_unreinforced: float, as_ratio: float,
     return srf * S_unreinforced
 
 
+#: How the settlement over the columns is worked out: the stress ratio n
+#: (the default), or the settlement ratio n' by E_c / E_s off GEC-13 Fig.
+#: 5-21 (``ground_improvement.settlement_ratio``, GM-220).
+SETTLEMENT_METHODS = ("stress_ratio", "weighted_modulus", "balaam_rigid",
+                      "balaam_flexible")
+
+
 def analyze_aggregate_piers(
     column_diameter: float,
     spacing: float,
     pattern: str = "triangular",
-    E_column: float = 80000.0,
+    E_column: Optional[float] = None,
     E_soil: float = 5000.0,
     n: float = 5.0,
     q_unreinforced: float = 0.0,
     S_unreinforced: float = 0.0,
+    settlement_method: str = "stress_ratio",
 ) -> AggregatePierResult:
     """Run a complete aggregate pier analysis.
 
@@ -248,13 +261,16 @@ def analyze_aggregate_piers(
         Center-to-center spacing (m).
     pattern : str
         'triangular' or 'square'. Default 'triangular'.
-    E_column : float
-        Modulus of aggregate column (kPa). Default 80,000 kPa. Used only
-        to warn when it is below E_soil: the stress split is set by ``n``,
-        not worked out from the moduli.
+    E_column : float, optional
+        Modulus of aggregate column (kPa). Needed by the settlement
+        methods of GEC-13 Fig. 5-21 (``settlement_method`` other than
+        'stress_ratio'), which take E_c / E_s. With 'stress_ratio' it is
+        used only to warn when it is below E_soil: the stress split is
+        set by ``n``, not worked out from the moduli.
     E_soil : float
-        Modulus of surrounding soil (kPa). Default 5,000 kPa. Used only
-        for the composite modulus.
+        Modulus of surrounding soil (kPa). Default 5,000 kPa. With
+        'stress_ratio' used only for the composite modulus; with the
+        Fig. 5-21 methods it also sets E_c / E_s.
     n : float
         Stress concentration ratio sigma_c / sigma_s. Default 5.0 (GEC-13:
         "between 2.0 and 5.0" for stone columns, Sec. 4.1.2.4; for rammed
@@ -264,13 +280,22 @@ def analyze_aggregate_piers(
         Unreinforced bearing capacity (kPa). Default 0 (not computed).
     S_unreinforced : float
         Unreinforced settlement (mm). Default 0 (not computed).
+    settlement_method : str
+        How the settlement over the columns is worked out (GM-220):
+        'stress_ratio' (default): SRF = 1 / [1 + a_s (n - 1)] from n.
+        'weighted_modulus', 'balaam_rigid', 'balaam_flexible': the
+        settlement ratio n' (settlement without columns over settlement
+        with them) by E_c / E_s off GEC-13 Fig. 5-21, p. 5-36; SRF = 1 /
+        n' and the composite modulus E_s n'. Balaam's curves are drawn
+        for E_c / E_s = 5 and 10 (rigid) and 10 (flexible) only. ``n``
+        still sets the improved bearing.
 
     Returns
     -------
     AggregatePierResult
-        Complete analysis results, with its ``choices`` (GM-142): n, the
-        soil modulus and the pattern, each given or default. E_column is
-        not among them: it changes no result (GM-179).
+        Complete analysis results, with its ``choices`` (GM-142): the
+        settlement method, n, the soil modulus and the pattern, each given
+        or default.
     """
     as_ratio = area_replacement_ratio(column_diameter, spacing, pattern)
 
@@ -279,14 +304,32 @@ def analyze_aggregate_piers(
             f"Area replacement ratio {as_ratio:.3f} is unusually high (> 0.4). "
             "Verify column spacing and diameter."
         )
-    if E_column < E_soil:
+    if settlement_method not in SETTLEMENT_METHODS:
+        raise ValueError(
+            f"settlement_method must be one of {SETTLEMENT_METHODS}, got "
+            f"{settlement_method!r}")
+    by_moduli = settlement_method != "stress_ratio"
+    if by_moduli and E_column is None:
+        raise ValueError(
+            f"settlement_method {settlement_method!r} works the settlement "
+            "ratio out from E_c / E_s (GEC-13 Fig. 5-21): give E_column")
+    if E_column is not None and E_column < E_soil and not by_moduli:
         warnings.warn(
             f"Column modulus ({E_column} kPa) is less than soil modulus "
             f"({E_soil} kPa). This is unusual for aggregate piers."
         )
 
-    srf = settlement_reduction_factor(as_ratio, n)
-    E_comp = composite_modulus(as_ratio, E_soil, n)
+    modular_ratio = None
+    if by_moduli:
+        from ground_improvement.settlement_ratio import settlement_ratio
+        modular_ratio = E_column / E_soil
+        n_prime = settlement_ratio(settlement_method, as_ratio,
+                                   modular_ratio)
+        srf = 1.0 / n_prime
+        E_comp = E_soil * n_prime
+    else:
+        srf = settlement_reduction_factor(as_ratio, n)
+        E_comp = composite_modulus(as_ratio, E_soil, n)
 
     q_improved = 0.0
     if q_unreinforced > 0:
@@ -294,7 +337,8 @@ def analyze_aggregate_piers(
 
     S_improved = 0.0
     if S_unreinforced > 0:
-        S_improved = improved_settlement(S_unreinforced, as_ratio, n)
+        S_improved = (srf * S_unreinforced if by_moduli
+                      else improved_settlement(S_unreinforced, as_ratio, n))
 
     return AggregatePierResult(
         area_replacement_ratio=as_ratio,
@@ -308,32 +352,106 @@ def analyze_aggregate_piers(
         column_diameter_m=column_diameter,
         column_spacing_m=spacing,
         pattern=pattern,
-        choices=aggregate_pier_choices(n, E_soil, pattern),
+        settlement_method=settlement_method,
+        settlement_ratio=1.0 / srf,
+        modular_ratio=modular_ratio,
+        choices=aggregate_pier_choices(
+            n, E_soil, pattern, settlement_method, as_ratio, modular_ratio,
+            1.0 / srf, q_unreinforced),
     )
 
 
-def aggregate_pier_choices(n: float, E_soil: float, pattern: str) -> list:
-    """What :func:`analyze_aggregate_piers` chose (GM-142), as a result's
-    ``choices`` (``geotech_common.choices``)."""
+#: The settlement methods besides the stress ratio, for the choices.
+_WEIGHTED = ("settlement_method 'weighted_modulus' with E_column: GEC-13 "
+             "Fig. 5-21 curve (2), n' = 1 + a_s (E_c/E_s - 1)")
+_BALAAM = ("settlement_method 'balaam_rigid' (E_c/E_s 5 to 10) or "
+           "'balaam_flexible' (E_c/E_s = 10) with E_column: GEC-13 Fig. "
+           "5-21 Balaam curves (5), 'an average or lower bound estimate "
+           "suitable for preliminary analyses' (p. 5-37)")
+_STRESS_RATIO = ("settlement_method 'stress_ratio' (the default): SRF = "
+                 "1 / [1 + a_s (n - 1)] from the given n")
+_PRIEBE = ("Priebe's improvement factor n0 (priebe_improvement_factor); "
+           "GEC-13 p. 5-37: the Priebe curve 'may be used to evaluate the "
+           "upper bound effectiveness'")
+_NAMES = {"weighted_modulus": "weighted modulus",
+          "balaam_rigid": "Balaam, rigid",
+          "balaam_flexible": "Balaam, flexible"}
+
+
+def _settlement_method_choice(method, as_ratio, modular_ratio, n_prime):
     from geotech_common.choices import choice, how_given
-    return [
+    how = how_given(method, "stress_ratio", name="settlement_method")
+    if method == "stress_ratio":
+        return choice(
+            "settlement method", "stress ratio, SRF = 1 / [1 + a_s (n - 1)]",
+            how,
+            "unit cell under equal strain, the stress split by the given n "
+            "(GEC-13 Eq. 5-4, the stress reduction method); S = SRF x the "
+            "unreinforced settlement",
+            [_WEIGHTED, _BALAAM, _PRIEBE])
+    from ground_improvement.settlement_ratio import BASIS
+    between = (method == "balaam_rigid"
+               and not any(math.isclose(modular_ratio, r, rel_tol=0.01)
+                           for r in (5.0, 10.0)))
+    others = [_BALAAM] if method == "weighted_modulus" else [_WEIGHTED]
+    if method == "balaam_rigid" and math.isclose(modular_ratio, 10.0,
+                                                 rel_tol=0.01):
+        others.append("settlement_method 'balaam_flexible': Balaam curve "
+                      "(5a), E_c/E_s = 10, flexible")
+    if method == "balaam_flexible":
+        others.append("settlement_method 'balaam_rigid': Balaam curve "
+                      "(5b), E_c/E_s = 10, rigid")
+    return choice(
+        "settlement method",
+        f"{_NAMES[method]}: n' = {n_prime:.2f} at A/A_c = "
+        f"{1.0 / as_ratio:.2f}, E_c/E_s = {modular_ratio:g}", how,
+        BASIS[method]
+        + ("; interpolated linearly in E_c/E_s between (5c) and (5b)"
+           if between else "")
+        + ". n' is the settlement without columns over that with them: "
+        "S = the unreinforced settlement / n'",
+        [_STRESS_RATIO, *others, _PRIEBE])
+
+
+def aggregate_pier_choices(n: float, E_soil: float, pattern: str,
+                           settlement_method: str = "stress_ratio",
+                           as_ratio: Optional[float] = None,
+                           modular_ratio: Optional[float] = None,
+                           n_prime: Optional[float] = None,
+                           q_unreinforced: float = 0.0) -> list:
+    """What :func:`analyze_aggregate_piers` chose (GM-142, GM-220), as a
+    result's ``choices`` (``geotech_common.choices``). With a Fig. 5-21
+    settlement method n sets only the improved bearing, so it is a choice
+    only with ``q_unreinforced``."""
+    from geotech_common.choices import choice, how_given
+    by_moduli = settlement_method != "stress_ratio"
+    sets = ("the improved bearing; the settlement is by E_c/E_s "
+            f"(settlement_method {settlement_method!r})" if by_moduli
+            else "the settlement reduction factor 1 / [1 + a_s (n - 1)], "
+            "the improved bearing and the composite modulus")
+    n_choice = [
         choice("stress concentration ratio n", f"{n:g}",
                how_given(n, 5.0, name="n"),
                "n = sigma_c / sigma_s, taken as given and not worked out "
                "from the moduli; GEC-13 (FHWA-NHI-16-027): for stone "
                "columns n is 'between 2.0 and 5.0' (Sec. 4.1.2.4); for "
                "rammed aggregate piers '4 to 45 for rigid footings' and "
-               "5 to 10 under embankments (p. 5-45). It sets the "
-               "settlement reduction factor 1 / [1 + a_s (n - 1)], the "
-               "improved bearing and the composite modulus",
+               "5 to 10 under embankments (p. 5-45). It sets " + sets,
                ["n from the moduli, n = E_c / E_s (equal-strain modular "
-                "ratio)",
+                "ratio; settlement_method 'weighted_modulus')",
                 "Priebe's improvement factor n0 "
                 "(priebe_improvement_factor)"]),
+    ] if not by_moduli or q_unreinforced > 0 else []
+    return [
+        _settlement_method_choice(settlement_method, as_ratio,
+                                  modular_ratio, n_prime),
+        *n_choice,
         choice("soil modulus E_s", f"{E_soil:g} kPa",
                how_given(E_soil, 5000.0, name="E_soil"),
-               "used only for the composite modulus E_comp = "
-               "E_s [1 + a_s (n - 1)]"),
+               (f"with E_column it sets E_c/E_s = {modular_ratio:g} and "
+                "the composite modulus E_comp = E_s n'" if by_moduli else
+                "used only for the composite modulus E_comp = "
+                "E_s [1 + a_s (n - 1)]")),
         choice("column pattern", pattern,
                how_given(pattern, "triangular", name="pattern"),
                "unit cell of equal area: d_e = 1.05 S (triangular) or "
