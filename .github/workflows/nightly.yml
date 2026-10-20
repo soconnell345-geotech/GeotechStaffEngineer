@@ -1,0 +1,81 @@
+name: Nightly
+
+# Runs the push suite on what the push job does not cover (INF-24, INF-28):
+#  - Python 3.11, which dosdev runs (3.11.9);
+#  - a fresh resolve on Python 3.12: no cache and no pins beyond the
+#    package's own, so the newest numpy (2.5.x) is picked.
+# The push job stays as it is, so push runs stay fast.
+
+on:
+  schedule:
+    - cron: "17 5 * * *"   # 05:17 UTC every day
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  nightly:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "nightly: Python 3.11"
+            python-version: "3.11"
+          - name: "nightly: fresh resolve"
+            python-version: "3.12"
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # geotech-references is a PUBLIC submodule, so the default GITHUB_TOKEN
+          # can fetch it. The old `token: ${{ secrets.SUBMODULE_PAT }}` line broke
+          # checkout (empty/invalid secret -> 401) on every run since March 2026.
+          submodules: recursive
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install core package
+        run: |
+          pip install --upgrade pip
+          pip install -e .
+          pip install -e geotech-references/
+          pip install pytest pytest-xdist
+          pip list 2>/dev/null | grep -iE "^(numpy|scipy|numba) "
+
+      - name: Install optional dependencies
+        # Install what we can; some packages may fail on certain platforms.
+        # Agent tests skip gracefully when their package is missing.
+        run: |
+          pip install matplotlib plotly jinja2 || true
+          # v5.0 deepagents stack ([deep] extra) so funhouse_agent/deep tests run in CI
+          pip install deepagents langchain langgraph langchain-anthropic "typing_extensions>=4.13" || true
+          pip install pystrata || true
+          pip install eqsig pyrotd || true
+          pip install liquepy || true
+          pip install pygef || true
+          pip install gstools || true
+          pip install python-ags4 || true
+          pip install SALib || true
+          pip install pystra || true
+          pip install pydiggs || true
+          pip install ezdxf || true
+          pip install "PyMuPDF<2" || true   # planlens 0.13 (PyPI) misreads tables on 2.0; lift with planlens>=0.14 (INF-18)
+          pip install pyproj || true   # foundry tier3 needs it
+
+      - name: Runner CPU
+        # Job times vary up to 2x with the CPU model GitHub assigns.
+        run: lscpu | grep -E "Model name|^CPU\(s\)"
+
+      - name: Run tests
+        # -n auto: one worker per vCPU. worksteal hands out single tests
+        # and rebalances, so a few multi-minute slope and FEM tests do not
+        # leave the other workers idle at the end. The root conftest gives
+        # each worker its own temp dir.
+        run: pytest -n auto --dist worksteal -q --tb=short --durations=20
