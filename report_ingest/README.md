@@ -19,6 +19,7 @@ available to the app as one sub-agent. Calculation printouts are WP5.
 | 3. Narrative reader | `narrative_reader.py` | one call for the owner's two schemas, cited |
 | Reports bound inside reports | `bound.py` | where a bound document begins and ends, and the one call that says what it IS |
 | 4. Reconciler | `reconciler.py` | pure Python; records disagreements, never settles them |
+| The review checklist | `checklist.py` + `report_review_checklist.json` | pure Python over the record; DRAFT; the judgement items go to the agent |
 | 5. Writers | `writers.py` | the record, the summary, the library page, DIGGS, the index |
 | The DIGGS writer | `diggs_writer.py` | deterministic, with two gates |
 | The whole ingest | `graph.py` | a deterministic loop, resumable per item |
@@ -856,6 +857,54 @@ so it cannot drift from the record. Pass an `engine` and ONE call is spent
 asking for a sentence about each conflict — which value looks like the
 misreading, what would settle it. The comment is appended; the values and the
 verdict are untouched.
+
+## The review checklist (`checklist.py`)
+
+The geotechnical report review checklist, run on a report's record. Every
+standard question the app asks a geotechnical report lives in this package
+(BACKLOG RI-34, owner 2026-10-20: "move all questions related to geotech
+reports to report_ingest"): the owner's two query schemas (`model.py`), their
+conventions (`narrative_glossary.py`) and this checklist. It came from
+`funhouse_agent/report_checklist.py`, which is now a deprecated re-export, and
+the Document Review page no longer offers it.
+
+The checklist is DATA, `report_review_checklist.json` beside the module,
+shipped in the wheel and marked **DRAFT** until the owner has marked it up
+(BACKLOG OWN-31): 18 items in six sections, each `code` or `judge`. Its items
+and wording are the owner's first draft unchanged; only the two notes on how
+it is used say where the checks now read from.
+
+`run_checklist(record)` takes a `ReportRecord`, its dict, or the path of
+`report.record.json` or of the folder the ingest wrote. It runs every `code`
+item it has a check for and returns the `judge` items for the agent:
+
+| Check | What it reads in the record |
+|---|---|
+| `logs_and_lab_read` | every page labelled an exploration log or a laboratory sheet (`page_labels`) against the pages the explorations and tests read came from, as counts; the reconciler's `skipped` pages beside it |
+| `explorations_vs_logs` | the reconciler's count and list checks (`count_mismatch` on `general.*`) and the narrative reader's own differences with the logs, for the explorations the narrative STATED (an answer with a citation; one filled in from the logs proves nothing) |
+| `lab_ids_vs_logs` | each laboratory test's link to an exploration and a sample on its log, and the reconciler's `partial` entries for the ones that did not link |
+| `summary_and_sheets` | each summary-table row against the sheets, and each sheet of a kind the summary tabulates against the rows (a chemistry sheet beside a table of index tests is not missing from it) |
+| `cross_checks` | the reconciler's QA entries of the kinds the item names (`disagreement`, `conflict` for the summary against the sheets; `unconverted` for units) |
+| `values_cite_pages` | every exploration, test and calculation names its pages, and every narrative answer its citation (except the counts the reader takes from the record itself) |
+
+A `code` item whose check cannot run on the record it is given (no record, a
+record written before the page labels were a vote) is handed to the agent
+with the judgement items, carrying what the code found (`code_said`), so
+nothing on the list is dropped in silence. `register_check(name, fn)` wires a
+check a JSON item names.
+
+What the record cannot answer yet: names printed only on the location plan
+(BACKLOG RI-24), so `explorations_vs_logs` compares the narrative and the
+logs only; and the old check's "pages cited that no tool read", which the
+ingest cannot produce (it reads every page it cites). The eleven `judge`
+items stay judgement items; which of them code should learn is the owner's
+call in OWN-31.
+
+**On the app.** `make_checklist_tool()` is the `report_checklist(record)`
+tool: offered on the GeotechStaffEngineer page only, behind
+`GEOTECH_REVIEW_CHECKLIST` (OFF by default), after `report_ingest` has written
+the record. Importing the module costs pydantic and nothing else; the tool
+imports LangChain when it is built.
 
 ## The writers (`writers.py`)
 
@@ -2594,7 +2643,9 @@ with planlens.
   `python -m build --wheel` and look for `report_ingest/` in the wheel.
 - **`templates.json.EXAMPLE` is in `[tool.setuptools.package-data]`** under
   `report_ingest`, so the example fingerprint file ships in the wheel. The
-  REAL fingerprints are never in this repository.
+  REAL fingerprints are never in this repository. So is
+  `report_review_checklist.json` (moved here from `funhouse_agent` with
+  RI-34): without it the `report_checklist` tool fails.
 - **`report_ingest` is in pytest's `testpaths`**, so this suite runs in the
   release gate. The WP0/WP1 harness under `module_work/` is dev-only and is
   deliberately not.

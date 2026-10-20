@@ -13,6 +13,18 @@ checklist as one data file used two ways.
 Everything here is behind switches that are **OFF by default**. Nothing
 changes for users until the review suite has measured it and you say so.
 
+**Since 2026-10-20 (BACKLOG RI-34) the checklist is report_ingest's.** The
+owner: "move all questions related to geotech reports to report_ingest". The
+data file is `report_ingest/report_review_checklist.json` (items unchanged,
+still DRAFT) and the checks are `report_ingest/checklist.py`, run on the
+record report ingest writes, not on the ledger, the text layer or
+`write_diggs`' cross-checks. `report_checklist(record)` is on the geotech page
+only; the gate no longer adds failed checks to its note; on the Document
+Review page `document_coverage` names no kind of report and a turn is held
+only to a declared task. `funhouse_agent/report_checklist.py` is a deprecated
+re-export. What follows is the W4 build as it was; the inventory of the move
+is `module_work/RI34_INVENTORY.md`.
+
 ## What was built
 
 **1. An inventory of the document, in code.** When a document is first
@@ -179,11 +191,11 @@ Nothing for the reconciler. `write_diggs` already returns its
 result's shape changes (`cross_checks.entries` with `kind`, `where`,
 `detail`, `values`, `pages`), update:
 
-- `coverage.CoverageLedger._record_output`;
-- `report_checklist._cross_entries`.
+- `coverage.CoverageLedger._record_output`.
 
-A new code check is added with `report_checklist.register_check(name, fn)`
-and named in the JSON.
+The checklist no longer reads them (RI-34): it reads the reconciler's QA
+entries in the record. A new code check is added with
+`report_ingest.checklist.register_check(name, fn)` and named in the JSON.
 
 ## Known limits
 

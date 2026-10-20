@@ -26,7 +26,8 @@ return a clear error if no engine was wired.
 
 import json
 import os
-from typing import Annotated, Any, Callable, Dict, List, Optional
+from typing import (Annotated, Any, Callable, Dict, List, Optional, Sequence,
+                    Tuple)
 
 from langchain_core.tools import StructuredTool
 
@@ -306,15 +307,18 @@ _PLOT_APP_NOTE = (
     "scale bar), never for a section.")
 
 
-def _plot_description() -> str:
+def _plot_description(reference_chart: bool = True) -> str:
     """``plot_data``'s model-facing description, in the module's own words
-    (``profile_figure`` METHOD_INFO), with the app's note."""
+    (``profile_figure`` METHOD_INFO), with the app's note.
+    ``reference_chart=False`` leaves that argument out (the Document Review
+    page, which draws no soil-classification chart: BACKLOG RI-34)."""
     try:
         from funhouse_agent.adapters.profile_figure_adapter import METHOD_INFO
         info = METHOD_INFO["plot_data"]
         params = info.get("parameters") or {}
         lines = [str(info.get("brief") or "").strip()]
-        for key in ("series", "annotations", "reference_chart",
+        for key in ("series", "annotations",
+                    *(("reference_chart",) if reference_chart else ()),
                     "plan_view", "north_deg",
                     "equal_aspect", "xlabel", "ylabel", "depth_axis",
                     "x_on_top", "logx",
@@ -1038,6 +1042,9 @@ def make_vision_tools(
     inline_images: bool = False,
     inline_image_files: bool = False,
     plot_data_replaces: bool = False,
+    description_rewrites: Optional[
+        Dict[str, Sequence[Tuple[str, str]]]] = None,
+    plot_reference_charts: bool = True,
 ) -> list:
     """Build the vision / file-output tools as LangChain tools.
 
@@ -1048,7 +1055,14 @@ def make_vision_tools(
 
     ``description_overrides`` replaces a tool's model-facing description by
     name — the lean Document Review agent describes its tools for the page it
-    is on (:mod:`funhouse_agent.deep.review_agent`). ``inline_images`` makes
+    is on (:mod:`funhouse_agent.deep.review_agent`). ``description_rewrites``
+    swaps phrases inside a tool's description, ``{name: [(old, new), ...]}``,
+    after any override: the Document Review page's wording for a description
+    built elsewhere (planlens' own, or one with feature-detected parts), so
+    its examples name no kind of geotechnical report (BACKLOG RI-34).
+    ``plot_reference_charts=False`` leaves ``plot_data``'s
+    ``reference_chart`` (the soil-classification charts) out, argument and
+    description both. ``inline_images`` makes
     ``analyze_pdf_page`` / ``render_region`` return the rendered image for the
     main model to look at instead of a one-shot vision call's description
     (only meaningful with the image middleware that shows it; see
@@ -2061,7 +2075,8 @@ def make_vision_tools(
             "warnings and the document is still written. For a Mathcad-style "
             "calculation package use the calc_package module instead.",
         )} if _docx_available() else {}),
-        **({"plot_data": (plot_data, _plot_description())}
+        **({"plot_data": (plot_data,
+                          _plot_description(plot_reference_charts))}
            if _plot_available() else {}),
         **({"write_xlsx": (write_xlsx, WRITE_XLSX_DESCRIPTION)}
            if _xlsx_available() else {}),
@@ -2070,12 +2085,17 @@ def make_vision_tools(
     }
 
     overrides = dict(description_overrides or {})
+    rewrites = dict(description_rewrites or {})
     tools = []
     for name, (fn, desc) in _builders.items():
         if name in include:
+            text = overrides.get(name, desc)
+            for old, new in rewrites.get(name, ()):
+                text = text.replace(old, new)
             tool = StructuredTool.from_function(
-                fn, name=name, description=overrides.get(name, desc))
-            if name == "plot_data" and not _plot_takes_chart():
+                fn, name=name, description=text)
+            if name == "plot_data" and (not plot_reference_charts
+                                        or not _plot_takes_chart()):
                 # a reference library without chart_lines (1.4.1 and
                 # before): the argument is not offered at all (GM-153)
                 tool = _without_argument(tool, "reference_chart")

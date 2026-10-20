@@ -74,13 +74,16 @@ suite) can flip one between two runs without rebuilding anything but the agent.
     data out of a document and tries to finish with data pages unread is
     told once, with the list. BOTH pages and every agent build that reads
     documents (the geotech page, the legacy and lean review agents); not the
-    minimal agent (plan W4, ``module_work/COVERAGE_AND_CHECKLIST.md``).
+    minimal agent (plan W4, ``module_work/COVERAGE_AND_CHECKLIST.md``). On
+    the Document Review page only a declared coverage task holds a turn,
+    and the tool's description names no kind of report (BACKLOG RI-34).
 ``GEOTECH_REVIEW_CHECKLIST``
-    ``1`` offers ``report_checklist``: the report-review checklist (DRAFT,
-    :mod:`funhouse_agent.report_checklist`) with the checks code can make
-    run from the ledger and the data's cross-checks, and the judgement items
-    returned for the agent to report against. With ``GEOTECH_COVERAGE`` on
-    too, a failed code check joins the gate's note.
+    ``1`` offers ``report_checklist`` on the GeotechStaffEngineer page: the
+    geotechnical report review checklist (DRAFT, OWN-31;
+    :mod:`report_ingest.checklist`) with the checks code can make run on the
+    record report ingest wrote, and the judgement items returned for the
+    agent to report against. Never on the Document Review page (BACKLOG
+    RI-34: every geotechnical report question lives in report_ingest).
 ``GEOTECH_VISION_TURN_RETRY``
     ``1`` makes a look whose image goes as the page shows it (no turn asked
     for, none read off the text layer) end with one tagged line when most of
@@ -281,7 +284,8 @@ def coverage() -> bool:
 
 
 def checklist() -> bool:
-    """Whether ``report_checklist`` is offered (both pages)."""
+    """Whether ``report_checklist`` is offered (the GeotechStaffEngineer
+    page only)."""
     return _on(CHECKLIST_ENV)
 
 
@@ -383,7 +387,8 @@ ARMS: Dict[str, Dict[str, str]] = {
     "minimal": {AGENT_ENV: "minimal"},
     # Coverage in code (plan W4, 2026-10-08). On the DEFAULT agent of each
     # page, so it compares straight against `baseline`: the ledger, the
-    # coverage tool and the gate; then the same plus the report checklist.
+    # coverage tool and the gate; then the same plus the report checklist
+    # (which reaches only the geotech page since RI-34).
     "coverage": {COVERAGE_ENV: "1"},
     "checklist": {COVERAGE_ENV: "1", CHECKLIST_ENV: "1"},
     # Turned lettering read again upright (VIS-01, 2026-10-14). On the

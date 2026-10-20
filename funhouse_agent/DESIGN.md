@@ -276,6 +276,29 @@ the eyes). What changed on master after 5.33.0, in short:
   `read_reference_figure` / `view_worked_example_source`, and deepagents
   0.7's `delete` scratch tool is hidden there (and in the references
   consult) with the other scratch tools.
+- **Geotechnical report questions live in `report_ingest`** (RI-34;
+  2026-10-20; the owner: "move all questions related to geotech reports to
+  report_ingest"). The report review checklist (DRAFT, OWN-31) is
+  `report_ingest/checklist.py` + `report_review_checklist.json`; its code
+  checks read the record report ingest writes (page labels, explorations,
+  laboratory tests, narrative answers, the reconciler's QA entries) instead
+  of the coverage ledger, the PDF's text layer and `write_diggs`'
+  cross-checks. `report_checklist(record)` is offered on the geotech page
+  only, behind `GEOTECH_REVIEW_CHECKLIST` (OFF); the coverage gate no longer
+  adds failed checks to its note. `funhouse_agent/report_checklist.py` is a
+  deprecated re-export until INF-26. The Document Review page keeps general
+  review only: no `log_grid` (legacy, lean or the reading helper), no
+  `plot_data` `reference_chart`, and its own wording for `measure`,
+  `plot_data`, `search_document`, `render_page_thumbnails`
+  (`review_agent.REVIEW_REWRITES`, phrase swaps on both builds) and
+  `document_coverage` (`DOCUMENT_COVERAGE_DESCRIPTION_REVIEW`); there a
+  coverage task holds a turn only when declared (`CoverageLedger(
+  declared_only=True)`), not when some log or laboratory pages were read.
+  A guard (`deep/tests/test_review_page_vocabulary_offline.py`) keeps every
+  prompt and tool description of the page's three builds, switches off and
+  on, free of report words. The review suite's `report-extract-all` and
+  `report-summary-vs-sheets` are asked on the geotech page. Inventory:
+  `module_work/RI34_INVENTORY.md`.
 - **Misspelt keys, the app's side** (DR-32; 2026-10-16): `annotate_document`
   shows the model planlens' own markup fields, read off the installed spec
   (`document_tools.annotate_markups_schema`: `pdf_page` added, `author`

@@ -878,6 +878,8 @@ def build_primary_tools(
     reference_result_chars: Optional[int] = None,
     markup_author: Optional[str] = None,
     description_overrides: Optional[dict] = None,
+    description_rewrites: Optional[dict] = None,
+    plot_reference_charts: bool = True,
 ) -> list:
     """Build the primary agent's tool list.
 
@@ -898,6 +900,11 @@ def build_primary_tools(
     description_overrides : dict, optional
         ``{tool name: description}`` for the vision/file tools, forwarded to
         ``make_vision_tools`` (the Document Review page's wording).
+    description_rewrites, plot_reference_charts
+        Forwarded to ``make_vision_tools``: phrases swapped inside built
+        descriptions, and whether ``plot_data`` offers the
+        soil-classification charts (the Document Review page: no; BACKLOG
+        RI-34).
     """
     if allowed_agents is None:
         allowed_agents = ANALYSIS_MODULES
@@ -920,6 +927,8 @@ def build_primary_tools(
         reference_result_chars=reference_result_chars,
         markup_author=markup_author,
         description_overrides=description_overrides,
+        description_rewrites=description_rewrites,
+        plot_reference_charts=plot_reference_charts,
         # behind the figure switches the main agent's own redraw can retire
         # a figure any helper drew this turn (GM-151)
         plot_data_replaces=_flags.figure_helper() or _flags.plot_code(),
@@ -976,8 +985,11 @@ REVIEW_READER_DESCRIPTION = (
 #: Tools the geotech page has and this page cannot use: they render a
 #: reference library figure and a worked example's printed source page, and
 #: the review page has neither the library nor the examples (DR-04; the
-#: review of 2026-09-26). The lean build never had them.
-GEOTECH_ONLY_TOOLS = ("read_reference_figure", "view_worked_example_source")
+#: review of 2026-09-26). The lean build never had them. ``log_grid`` reads a
+#: boring or test-pit log as its grid: a geotechnical report's page, which
+#: is not this page's document (BACKLOG RI-34).
+GEOTECH_ONLY_TOOLS = ("read_reference_figure", "view_worked_example_source",
+                      "log_grid")
 
 
 def _review_page_descriptions() -> dict:
@@ -986,6 +998,13 @@ def _review_page_descriptions() -> dict:
     coordinates, and this page has no modules (DR-01, check 1 C3)."""
     from funhouse_agent.deep.review_agent import REVIEW_DESCRIPTIONS
     return {"render_region": REVIEW_DESCRIPTIONS["render_region"]}
+
+
+def _review_page_rewrites() -> dict:
+    """The lean build's phrase swaps, so this build's examples name no kind
+    of geotechnical report either (BACKLOG RI-34)."""
+    from funhouse_agent.deep.review_agent import REVIEW_REWRITES
+    return dict(REVIEW_REWRITES)
 
 
 def _review_reader_subagent(primary_tools) -> Optional[dict]:
@@ -1376,6 +1395,8 @@ def build_deep_agent(
         markup_author=markup_author,
         description_overrides=(_review_page_descriptions() if review_page
                                else None),
+        description_rewrites=_review_page_rewrites() if review_page else None,
+        plot_reference_charts=not review_page,
     )
     if review_page:
         from funhouse_agent import review_flags as _rf
@@ -1449,15 +1470,24 @@ def build_deep_agent(
         if library_tools:
             tools = list(tools) + list(library_tools)
             system_prompt = system_prompt + "\n\n" + REPORT_LIBRARY_NUDGE
-    # Coverage in code (GEOTECH_COVERAGE / GEOTECH_REVIEW_CHECKLIST, both OFF
-    # by default): the ledger every agent of this build reports its tool
-    # calls to, the gate on the primary, the tools. No prompt text: the tools
-    # describe themselves.
+    # Coverage in code (GEOTECH_COVERAGE, OFF by default): the ledger every
+    # agent of this build reports its tool calls to, the gate on the primary,
+    # the tool. No prompt text: the tool describes itself. On the review page
+    # only a declared coverage task holds a turn (BACKLOG RI-34).
     from funhouse_agent.deep.coverage_tools import coverage_kit
     coverage = coverage_kit(attachments=attachments, folder=coverage_dir,
-                            max_result_chars=max_result_chars)
+                            max_result_chars=max_result_chars,
+                            review_page=review_page)
     if coverage.tools:
         tools = list(tools) + list(coverage.tools)
+    # The geotechnical report review checklist (GEOTECH_REVIEW_CHECKLIST, OFF
+    # by default): report_ingest's, run on the record report ingest wrote;
+    # the geotech page only (BACKLOG RI-34).
+    from funhouse_agent import review_flags as _review_flags
+    if _review_flags.checklist() and not review_page:
+        from report_ingest.checklist import make_checklist_tool
+        cap = max(max_result_chars, 16000) if max_result_chars > 0 else 0
+        tools = list(tools) + [make_checklist_tool(cap)]
     # Every primary tool refuses an argument it does not take, by name,
     # whichever module built it (brief 5, N3: analyze_pdf_page(pages=12)
     # silently looked at page 0). See funhouse_agent/deep/strict_args.py.
