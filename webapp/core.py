@@ -394,6 +394,47 @@ def pdf_data_uri(path, max_bytes: int = PDF_PREVIEW_MAX_BYTES) -> Optional[str]:
         base64.b64encode(artifact_bytes(path)).decode("ascii")
 
 
+#: Pages a page-image preview of a PDF shows (where a ``data:`` PDF cannot
+#: be framed: the Foundry app frame, INF-37), and how finely they are drawn.
+PDF_PREVIEW_PAGES = 10
+PDF_PREVIEW_DPI = 110
+
+_PDF_PAGE_CACHE: dict = {}
+_PDF_PAGE_CACHE_MAX = 16
+
+
+def pdf_page_pngs(path, max_pages: int = PDF_PREVIEW_PAGES,
+                  dpi: int = PDF_PREVIEW_DPI) -> "tuple[list, int]":
+    """``(PNG bytes of the first pages, the PDF's page count)``, or
+    ``([], 0)`` when the file is missing, empty or cannot be read.
+
+    Every rerun draws each card again, so the pages are kept per file
+    version (path, size, modification time) for the process."""
+    try:
+        info = os.stat(path)
+    except OSError:
+        return [], 0
+    if info.st_size <= 0:
+        return [], 0
+    key = (os.path.abspath(str(path)), info.st_size, info.st_mtime_ns,
+           max_pages, dpi)
+    hit = _PDF_PAGE_CACHE.get(key)
+    if hit is not None:
+        return hit
+    try:
+        import fitz  # PyMuPDF
+        with fitz.open(str(path)) as doc:
+            count = doc.page_count
+            pngs = [doc[i].get_pixmap(dpi=dpi).tobytes("png")
+                    for i in range(min(count, max(0, max_pages)))]
+    except Exception:                                    # noqa: BLE001
+        return [], 0
+    if len(_PDF_PAGE_CACHE) >= _PDF_PAGE_CACHE_MAX:
+        _PDF_PAGE_CACHE.pop(next(iter(_PDF_PAGE_CACHE)))
+    _PDF_PAGE_CACHE[key] = (pngs, count)
+    return pngs, count
+
+
 #: A Plotly sidecar and the static image it supersedes share everything but
 #: this suffix (``lateral_pressure.png`` / ``lateral_pressure.plotly.json``).
 PLOTLY_SIDECAR_SUFFIX = ".plotly.json"
@@ -1655,27 +1696,40 @@ def model_choices(env_model: Optional[str] = None) -> List[dict]:
 
 def default_model_id(env_model: Optional[str] = None) -> str:
     """The default selected model id: ``GEOTECH_WEBAPP_MODEL`` if set (whether
-    or not it is already curated), else the first ``GEOTECH_FOUNDRY_MODELS``
-    entry (a Foundry deployment defaults to its own models), else the first
-    curated choice."""
+    or not it is already curated), else, from ``GEOTECH_FOUNDRY_MODELS``,
+    this host's main default (on Foundry the entry labelled "Opus 5.5",
+    BACKLOG INF-41) or the list's first entry (a Foundry deployment defaults
+    to its own models), else the first curated choice."""
+    return default_model(env_model)[0]
+
+
+def default_model(env_model: Optional[str] = None) -> "tuple[str, str]":
+    """``(default model id, where it came from)``: see
+    :func:`default_model_id`. The source is said as Connection diagnostics
+    say it (``GEOTECH_WEBAPP_MODEL``, "this host's default", "first in
+    GEOTECH_FOUNDRY_MODELS", ...)."""
     envm = (env_model if env_model is not None
             else os.environ.get("GEOTECH_WEBAPP_MODEL"))
     if envm:
-        return envm
+        return envm, "GEOTECH_WEBAPP_MODEL"
     from webapp import engine_config
     if engine_config.has_model_builder():
         pm = prompter_model_choices()
         if pm:
-            return pm[0]["id"]
+            return pm[0]["id"], f"first in {PROMPTER_MODELS_ENV}"
     fm = foundry_model_choices()
     if fm:
-        return fm[0]["id"]
+        from webapp import helper_models
+        main = helper_models.host_main_choice(fm)
+        if main is not None:
+            return main["id"], helper_models.SOURCE_HOST
+        return fm[0]["id"], f"first in {FOUNDRY_MODELS_ENV}"
     # Foundry deployment with nothing configured: no default model exists —
     # the app boots engineless and offers the RID input only. Same on Tiny
     # Apps: no Prompter settings, no model.
     if engine_config.is_keyless_deployment():
-        return ""
-    return MODEL_CHOICES[0]["id"]
+        return "", ""
+    return MODEL_CHOICES[0]["id"], "the app's default"
 
 
 def model_label(model_id: Optional[str]) -> str:

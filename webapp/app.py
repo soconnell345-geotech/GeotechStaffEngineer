@@ -26,8 +26,9 @@ if _PKG_ROOT not in sys.path:
 
 import streamlit as st
 
-from webapp import (budget_panel, core, engine_config, identity, profiles,
-                    sharepoint_store, turn_jobs, ws_upload)
+from webapp import (budget_panel, core, engine_config, file_widgets,
+                    helper_models, identity, profiles, sharepoint_store,
+                    turn_jobs, ws_upload)
 
 # Which PAGE this run serves (webapp.profiles): the geotech agent by default
 # — a plain `streamlit run webapp/app.py` and the Databricks launcher change
@@ -132,6 +133,7 @@ _APP_STATE_KEYS = (
     "messages", "transcript", "pending_notes", "total_tokens",
     "last_turn_tokens", "agent", "agent_error", "engine", "model", "save_error",
     "behavior", "upload_epoch", "pending_orientation", "sp_sync",
+    "helper_models", "helper_engines",
 )
 
 
@@ -141,16 +143,23 @@ def _build_agent_for_session() -> None:
     ss = st.session_state
     ss.agent = None
     ss.agent_error = None
+    ss.helper_engines = []
     if ss.engine.ok:
         try:
             _kind = (ss.get("behavior") or {}).get("agent_type", "full")
             if not _PROFILE.specialists:
                 _kind = "full"          # the review page has no specialists
+            # A helper's own model (INF-41): this host's defaults, the env,
+            # the sidebar; built like the main model, for this caller.
+            ss.helper_engines = helper_models.resolve(
+                ss.model, ss.get("helper_models"), identity=_IDENT)
+            _helper_kw = helper_models.build_kwargs(ss.helper_engines)
             if _kind == "full":
                 # The behavior pickers first, then the PAGE's own overrides
                 # (the document-review page: no modules, no reference
                 # sub-agent, its own prompt) — the page wins.
                 _kw = core.behavior_build_kwargs(ss.get("behavior"))      # A5
+                _kw.update(_helper_kw)
                 _kw.update(_PROFILE.build_kwargs())
                 _kw.setdefault("markup_author", _IDENT.markup_author)
                 ss.agent = core.build_agent(
@@ -159,7 +168,7 @@ def _build_agent_for_session() -> None:
             else:                                                         # A5e
                 ss.agent = core.build_reviewer_agent(
                     _kind, ss.engine.model, ss.attachments, ss.temp_dir,
-                    ss.artifacts)
+                    ss.artifacts, **_helper_kw)
         except Exception as exc:  # surface, don't crash the app
             ss.agent_error = f"{type(exc).__name__}: {exc}"
 
@@ -611,6 +620,35 @@ with st.sidebar:
     if eng.source == "prompter" and not core.prompter_model_choices():
         st.caption("Model is fixed by the deployment; the picker doesn't apply.")
 
+    # A helper on a model of its own (INF-41): one picker per helper this
+    # host or GEOTECH_HELPER_MODELS names (on Foundry, the references
+    # helper); every other helper follows the Model picker above.
+    def _on_helper_pick(name: str) -> None:
+        picked = st.session_state.get(f"helper_model_{name}")
+        ss.helper_models = {**(ss.get("helper_models") or {}), name: picked}
+        _build_agent_for_session()
+
+    for _h in (ss.get("helper_engines") or []) if _ids else []:
+        _h_ids = [helper_models.MAIN] + _ids
+        _h_cur = _h.model_id or helper_models.MAIN
+        if _h_cur not in _h_ids:                  # an id set by env
+            _h_ids.append(_h_cur)
+        st.selectbox(
+            f"{helper_models.helper_label(_h.name)} model", _h_ids,
+            index=_h_ids.index(_h_cur),
+            format_func=lambda i: ("Same as the main model"
+                                   if i == helper_models.MAIN
+                                   else _labels.get(i, i)),
+            key=f"helper_model_{_h.name}", on_change=_on_helper_pick,
+            args=(_h.name,),
+            help=f"The model the {_h.name} helper runs on (default: "
+                 f"{_h.setting or 'the main model'}, {_h.source}). Every "
+                 f"other helper runs on the main model. Set by "
+                 f"{helper_models.ENV} too.")
+        if _h.note:
+            st.caption(f"{helper_models.helper_label(_h.name)}: the main "
+                       f"model ({_h.note}).")
+
     # Model RID input. On a Foundry deployment this is the PRIMARY (often only)
     # model surface, shown inline; elsewhere it stays tucked in an "advanced"
     # expander. Same widget keys either way (regression tests rely on them).
@@ -661,7 +699,9 @@ with st.sidebar:
             from webapp import diagnostics as _diag
             with st.spinner("Running connection tests…"):
                 ss.diag_report = _diag.format_report(
-                    _diag.run_diagnostics(ss.model, identity=_IDENT))
+                    _diag.run_diagnostics(
+                        ss.model, identity=_IDENT,
+                        helper_models=ss.get("helper_models")))
         if ss.get("diag_report"):
             st.code(ss.diag_report, language=None)
     try:
@@ -892,10 +932,10 @@ with st.sidebar:
             try:
                 with open(path, "rb") as fh:
                     data = fh.read()
-                st.download_button(_os.path.basename(path), data=data,
-                                   file_name=_os.path.basename(path),
-                                   mime=_mime_for(path),
-                                   key=f"dl_{path}")
+                file_widgets.download_button(
+                    _os.path.basename(path), data,
+                    file_name=_os.path.basename(path),
+                    mime=_mime_for(path), key=f"dl_{path}")
             except OSError:
                 pass
 
@@ -1157,9 +1197,9 @@ def _render_artifact_card(path: str, slot: str = "") -> None:
             st.caption("(file unavailable)")
             return
         dl_name = os.path.basename(dl_path)
-        st.download_button("Download", data=data, file_name=dl_name,
-                           mime=_mime_for(dl_name),
-                           key=f"dlcard_{slot}_{path}")
+        file_widgets.download_button("Download", data, file_name=dl_name,
+                                     mime=_mime_for(dl_name),
+                                     key=f"dlcard_{slot}_{path}")
         if card.kind == "plotly":
             # Native interactive chart from a *.plotly.json sidecar. plotly is
             # imported lazily/guarded so the app still runs without it (then the
@@ -1190,6 +1230,10 @@ def _render_artifact_card(path: str, slot: str = "") -> None:
                 else:
                     st.caption(f"Too large to preview inline "
                                f"({card.size:,} bytes) — download above.")
+        elif card.kind == "pdf" and engine_config.is_foundry_deployment():
+            # The Foundry app frame blocks a data: PDF in a frame; the pages
+            # go as images there, drawn when asked for (INF-37).
+            file_widgets.pdf_page_preview(path, key=f"pdfpages_{slot}_{path}")
         elif card.kind == "pdf":
             with st.expander("Preview (PDF)", expanded=False):
                 uri = core.pdf_data_uri(path)

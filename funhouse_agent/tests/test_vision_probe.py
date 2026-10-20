@@ -327,3 +327,25 @@ def test_the_probe_calls_are_labelled_in_the_record():
     vision_probe._call(_Model(), [{"type": "text", "text": "hi"}])
     assert seen == [{"kind": "probe"}]
     assert current_side_call() is None
+
+
+def test_a_claude_model_is_sized_by_its_name_not_by_the_ratios():
+    """Foundry, 2026-10-20 (INF-39): Claude Opus 5.5 behind the proxy was
+    labelled ``images at gpt-5.2-high (from probe)``. The ratios read
+    OpenAI's ``detail`` levels, which Claude does not have; its budget is
+    the one its name gives, with pixel boxes."""
+    prof = vision_probe.probe(FakeVisionModel("patch", "claude-opus-5-5"))
+    assert prof.answered_by == "claude-opus-5-5"
+    assert (prof.general, prof.detailed) == ("claude-hires", "claude-hires")
+    assert prof.source == "model name"
+    assert "gpt" not in prof.summary()
+    assert prof.summary() == ("claude-opus-5-5: images at claude-hires "
+                              "(from model name)")
+
+
+def test_an_anthropic_chat_model_with_no_model_name_gets_claudes_budget():
+    class FakeChatAnthropic(FakeVisionModel):
+        pass
+
+    prof = vision_probe.probe(FakeChatAnthropic("patch", answered=None))
+    assert prof.general == "claude" and prof.source == "model name"

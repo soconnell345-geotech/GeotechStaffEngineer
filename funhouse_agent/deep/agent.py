@@ -1139,9 +1139,18 @@ def build_deep_agent(
     review_page: bool = False,
     working_dir: Optional[str] = None,
     coverage_dir: Optional[str] = None,
+    subagent_models: Optional[dict] = None,
     **kwargs,
 ):
     """Construct the deepagents port of the geotech agent.
+
+    ``subagent_models`` gives a helper its own chat model, by the helper's
+    name (``{"references": sonnet}``; BACKLOG INF-41). A helper not named,
+    and every helper when it is ``None``, runs on ``model`` as before; a
+    compiled helper (report ingest, the report library) keeps the model it
+    was built with, and a name this build has no helper for is ignored. The
+    host decides the map (``webapp.helper_models``); the compiled agent's
+    ``geotech_build["helper_models"]`` records the result.
 
     ``coverage_dir`` is the conversation's folder, where the coverage ledger
     (``coverage.json``) is kept when ``GEOTECH_COVERAGE`` is on
@@ -1720,6 +1729,19 @@ def build_deep_agent(
                           + ([UnknownToolHint(allowed_agents)]
                              if allowed_agents else [])
                           + [OutputLimitGuard()]})
+    # A helper's own model (INF-41): set on its spec, which deepagents
+    # builds the helper with in place of the primary's model.
+    helper_models = {}
+    for spec in subagents:
+        name = spec.get("name") if isinstance(spec, dict) else None
+        chosen = (subagent_models or {}).get(name)
+        if chosen is None or "runnable" in spec:
+            continue
+        spec["model"] = chosen
+        from funhouse_agent.deep.busy_retry import engine_facts
+        helper_models[str(name)] = (
+            chosen if isinstance(chosen, str)
+            else engine_facts(chosen).get("model") or type(chosen).__name__)
     if coverage.on:
         # Every helper's reads count: the field session's helper read page
         # ranges the primary never saw (FINDINGS P3).
@@ -1869,6 +1891,9 @@ def build_deep_agent(
             "switches": _rf.describe(),
             "prompt_chars": len(system_prompt or ""),
         }
+        if helper_models:
+            # the helpers on a model of their own (INF-41)
+            agent.geotech_build["helper_models"] = helper_models
         # The turn-end judgment-call check (GM-174) reads this in
         # webapp.core.stream_turn (funhouse_agent.judgment_check.mode_for).
         agent.geotech_judgment_consult = judgment_consult

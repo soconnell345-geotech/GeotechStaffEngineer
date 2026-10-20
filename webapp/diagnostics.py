@@ -98,8 +98,12 @@ def _env_check() -> dict:
     """
     from webapp import engine_config
     envs = ("GEOTECH_FOUNDRY_TOKEN", "FOUNDRY_TOKEN",
-            "GEOTECH_FOUNDRY_HOST", "FOUNDRY_HOSTNAME", "FOUNDRY_URL",
-            "GEOTECH_FOUNDRY_MODELS", "GEOTECH_WEBAPP_MAX_TOKENS",
+            "GEOTECH_FOUNDRY_HOST", "ANTHROPIC_BASE_URL", "OPENAI_BASE_URL",
+            *engine_config.FOUNDRY_PROXY_URL_ENVS,
+            "FOUNDRY_HOSTNAME", "FOUNDRY_URL",
+            *engine_config.FOUNDRY_CA_ENVS,
+            "GEOTECH_FOUNDRY_MODELS", "GEOTECH_HELPER_MODELS",
+            "GEOTECH_WEBAPP_MAX_TOKENS",
             "GEOTECH_FOUNDRY_DISABLE_STREAMING",
             "GEOTECH_FOUNDRY_PROMPT_CACHE", "GEOTECH_TRACE")
     if engine_config.is_tinyapps_deployment():
@@ -117,7 +121,8 @@ def _env_check() -> dict:
         v = os.environ.get(e)
         if v is None or not str(v).strip():
             parts.append(f"{e}=unset")
-        elif e in ("GEOTECH_FOUNDRY_MODELS", "GEOTECH_WEBAPP_MAX_TOKENS",
+        elif e in ("GEOTECH_FOUNDRY_MODELS", "GEOTECH_HELPER_MODELS",
+                   "GEOTECH_WEBAPP_MAX_TOKENS",
                    "GEOTECH_FOUNDRY_DISABLE_STREAMING",
                    "GEOTECH_FOUNDRY_PROMPT_CACHE", "GEOTECH_TRACE",
                    "PROMPTER_URL", "PROMPTER_MODEL",
@@ -159,8 +164,10 @@ def _resolution_check(model_id: Optional[str], identity: Any = None) -> dict:
         return _check("engine resolution", FAIL,
                       f"{type(exc).__name__}: {exc}")
     status = PASS if eng.ok else FAIL
+    route = getattr(eng, "route", "")
     return _check("engine resolution", status,
-                  f"source={eng.source} model={eng.model_name} — {eng.message}")
+                  f"source={eng.source} model={eng.model_name} — {eng.message}"
+                  + (f" | {route}" if route else ""))
 
 
 def _get_model(model_id: Optional[str], identity: Any = None):
@@ -276,6 +283,15 @@ def _upload_probe_check() -> dict:
                 data=b"x", timeout=5)
             results.append(f"{method} -> {r.status_code}")
         detail = "; ".join(results) + " (localhost, no proxy in path)"
+        from webapp import engine_config
+        if engine_config.is_foundry_deployment():
+            # Measured 2026-10-20 (INF-25/INF-39): PUT 403 / POST 405 here,
+            # and uploads from the browser worked in the published app.
+            return _check("upload endpoint (localhost probe)", PASS,
+                          detail + " — expected on Foundry: this probe "
+                          "carries no browser session, so Streamlit refuses "
+                          "it. Uploading from the browser works in the "
+                          "published app (tested 2026-10-20).")
         if any(s.endswith("403") for s in results):
             return _check("upload endpoint (localhost probe)", WARN,
                           detail + " — 403 WITHOUT the proxy: Streamlit-side "
@@ -455,21 +471,69 @@ def _vision_check(model: Any) -> dict:
     return _check(name, PASS, prof.summary())
 
 
+def _helper_models(model_id: Optional[str], identity: Any,
+                   overrides: Optional[dict]):
+    """``(the "agent models" check or None, the helpers)``: the model each
+    agent runs on (INF-41). No check on a host that gives no helper a model
+    of its own."""
+    from webapp import core, helper_models
+    try:
+        helpers = helper_models.resolve(model_id, overrides, identity)
+    except Exception as exc:                         # noqa: BLE001
+        return (_check("agent models", WARN, f"{type(exc).__name__}: {exc}"),
+                [])
+    if not helpers:
+        return None, []
+    main = core.model_label(model_id) or str(model_id or "")
+    source = helper_models.main_source(model_id)
+    if main != model_id and model_id:
+        main = f"{main} ({model_id}; {source})"
+    else:
+        main = f"{main} ({source})"
+    status = WARN if any(h.note for h in helpers) else PASS
+    return (_check("agent models", status,
+                   helper_models.summary(main, helpers)), helpers)
+
+
+def _helper_request_checks(helpers) -> List[dict]:
+    """A plain and a tool-calling request on each helper model that is not
+    the main one (two tiny calls each)."""
+    checks = []
+    for h in helpers:
+        if not h.own_model:
+            continue
+        for check in (_invoke_check(h.model), _tool_check(h.model)):
+            check["name"] = f"{check['name']} ({h.name} helper)"
+            if check["status"] != PASS:
+                check["detail"] += (f" | {h.name} helper: {h.label}"
+                                    + (f" | {h.route}" if h.route else ""))
+            checks.append(check)
+    return checks
+
+
 def run_diagnostics(model_id: Optional[str] = None,
-                    identity: Any = None) -> List[dict]:
+                    identity: Any = None,
+                    helper_models: Optional[dict] = None) -> List[dict]:
     """Run every stage against the CURRENTLY CONFIGURED engine and return the
     check list. Never raises. Live checks each make one tiny model call (a few
     tokens) — three calls when everything passes, plus the vision probe's four
     the first time it runs in this process. ``identity`` is the signed-in
     caller: on Tiny Apps the engine is built with THEIR key, and the report
-    says which key source that is (never the key)."""
+    says which key source that is (never the key). ``helper_models`` are the
+    sidebar's picks for helpers on a model of their own; the report names
+    the model each agent runs on and tries each helper model with two more
+    tiny requests (:mod:`webapp.helper_models`)."""
     from webapp import engine_config
     checks = [_versions_check(), _drift_check(), _env_check(),
               _upload_probe_check(), _reference_docs_check()]
     if engine_config.is_tinyapps_deployment():
         checks.append(_prompter_key_check(identity))
-    checks.append(_resolution_check(model_id, identity))
-    if checks[-1]["status"] != PASS:
+    resolved = _resolution_check(model_id, identity)
+    checks.append(resolved)
+    agents, helpers = _helper_models(model_id, identity, helper_models)
+    if agents is not None:
+        checks.append(agents)
+    if resolved["status"] != PASS:
         checks.append(_check("plain request (invoke)", SKIP,
                              "engine did not resolve"))
         checks.append(_check("streaming request", SKIP, ""))
@@ -484,4 +548,5 @@ def run_diagnostics(model_id: Optional[str] = None,
     checks.append(_stream_check(model))
     checks.append(_tool_check(model))
     checks.append(_vision_check(model))
+    checks.extend(_helper_request_checks(helpers))
     return checks
