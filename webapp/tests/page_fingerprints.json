@@ -489,8 +489,8 @@
         "tools": {}
        }
       ],
-      "system_prompt": "27949da554261301",
-      "system_prompt_chars": 26095,
+      "system_prompt": "1d46f7677c186a5e",
+      "system_prompt_chars": 26217,
       "tool_order": [
        "list_agents",
        "list_methods",
