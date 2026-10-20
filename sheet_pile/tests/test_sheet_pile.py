@@ -416,7 +416,10 @@ class TestLogSpiralSource:
                                pressure_method="log_spiral",
                                log_spiral_source="dm7_2_eq_4_12")
         assert a.embedment_depth == b.embedment_depth
-        (c,) = a.choices
+        # the source, then each layer's wall friction (GM-242)
+        c, friction = a.choices
+        assert friction["chosen"] == "layer 1: 15 deg (wall_friction_deg)"
+        assert friction["how"] == "given"
         assert c["chosen"] == "ufc_3_220_20" and c["how"] == "default"
         assert "Eq. 4-12" in c["basis"] and "Kp 4.46" in c["basis"]
         assert c["alternatives"][0].startswith("Caquot-Kerisel 1948")
@@ -451,9 +454,11 @@ class TestLogSpiralSource:
         assert "should be obtained from Figure 4-12" \
             not in eq.choices[0]["basis"]
         assert "p. 238" not in eq.choices[0]["basis"]
-        # every wall: the wall friction is the engineer's call
+        # every wall: the wall friction is the engineer's call (its own
+        # choice since GM-242)
         for r in (a, b, eq, ck, fig):
-            assert "engineer's call" in r.choices[0]["basis"]
+            assert "engineer's call" in r.choices[-1]["basis"]
+            assert r.choices[-1]["what"].startswith("Wall friction delta")
 
     def test_full_wall_friction_on_eq_4_12_is_noted(self):
         """GM-232: a layer above delta/phi' = 0.66 on the UFC route takes
@@ -507,6 +512,86 @@ class TestLogSpiralSource:
             analyze_cantilever(4.0, self._layers(0.0),
                                pressure_method="rankine",
                                log_spiral_source="dm7_2_eq_4_12")
+
+
+class TestWallFrictionDefault:
+    """GM-242: a layer's wall friction left out is stated: the clean sand
+    row of the steel sheet pile table (EM 1110-2-2504 Table 3-3, USS Table
+    4, UFC 3-220-20 Table 4-1: 17 deg) on the passive side of the
+    log-spiral method in a layer without cohesion, none on the active side
+    or with cohesion (UFC 3-220-20 p. 238), and none with Coulomb's."""
+
+    def _sand(self, **kw):
+        return [WallSoilLayer(20.0, 18.0, friction_angle=32.0, **kw)]
+
+    def test_log_spiral_takes_the_clean_sand_row_on_the_passive_side(self):
+        from sheet_pile.cantilever import wall_friction
+        from geotech_common.log_spiral import dm7_2_eq_4_12_Kp
+        (layer,) = self._sand()
+        assert wall_friction(layer, "passive", "log_spiral") == (
+            17.0, "default_row")
+        assert wall_friction(layer, "active", "log_spiral") == (0.0, "none")
+        left_out = analyze_cantilever(4.0, self._sand(),
+                                      pressure_method="log_spiral")
+        named = analyze_cantilever(4.0,
+                                   self._sand(interface_soil="clean_sand"),
+                                   pressure_method="log_spiral")
+        # the row named is used on both sides (Coulomb Ka at 17 deg), so it
+        # needs less embedment than the passive-only default
+        assert named.embedment_depth < left_out.embedment_depth
+        smooth = analyze_cantilever(4.0, self._sand(wall_friction_deg=0.0),
+                                    pressure_method="log_spiral")
+        assert left_out.embedment_depth < 0.8 * smooth.embedment_depth
+        friction = left_out.choices[-1]
+        assert friction["how"] == "default"
+        assert friction["chosen"] == (
+            "layer 1: 17 deg (the clean_sand row, taken)")
+        assert "Table 3-3 (p. 3-4" in friction["basis"]
+        assert "Table 4 (p. 13" in friction["basis"]
+        assert "p. 238" in friction["basis"]
+        alts = friction["alternatives"]
+        assert alts[0] == ("delta = 0, a smooth wall (Rankine's Kp): layer 1 "
+                           "delta 0, Kp 3.25")
+        kp17 = dm7_2_eq_4_12_Kp(32.0, 17.0)
+        assert f"Kp {kp17:.3g}" in left_out.choices[0]["basis"]
+
+    def test_the_probe_sand_cantilever(self):
+        """The GM-242 probe: 4 m in sand, phi' 32, water at the excavation
+        level: 7.21 m of embedment at Rankine's Kp (delta 0, the old
+        default), 5.06 m at the clean sand row."""
+        layers = self._sand()
+        r = analyze_cantilever(4.0, layers, gwt_depth_active=4.0,
+                               pressure_method="log_spiral")
+        old = analyze_cantilever(4.0, self._sand(wall_friction_deg=0.0),
+                                 gwt_depth_active=4.0,
+                                 pressure_method="log_spiral")
+        assert old.embedment_depth == pytest.approx(7.21, abs=0.01)
+        assert r.embedment_depth == pytest.approx(5.06, abs=0.01)
+
+    def test_cap_cohesion_and_coulomb(self):
+        from sheet_pile.cantilever import wall_friction
+        loose = WallSoilLayer(5.0, 18.0, friction_angle=15.0)
+        assert wall_friction(loose, "passive", "log_spiral")[0] == 15.0
+        clay = WallSoilLayer(5.0, 18.0, friction_angle=20.0, cohesion=10.0)
+        assert wall_friction(clay, "passive", "log_spiral") == (0.0, "none")
+        (sand,) = self._sand()
+        assert wall_friction(sand, "passive", "coulomb") == (0.0, "none")
+        gravel = WallSoilLayer(5.0, 18.0, friction_angle=20.0,
+                               interface_soil="clean_gravel")
+        assert wall_friction(gravel, "active", "coulomb") == (20.0, "row")
+        r = analyze_cantilever(4.0, self._sand(), pressure_method="coulomb")
+        (friction,) = r.choices
+        assert friction["chosen"] == "layer 1: 0 deg (taken)"
+        assert "increasingly erroneous" in friction["basis"]
+        assert analyze_cantilever(4.0, self._sand()).choices == []
+
+    def test_interface_soil_is_checked(self):
+        with pytest.raises(ValueError, match="interface_soil must be one of"):
+            WallSoilLayer(5.0, 18.0, friction_angle=30.0,
+                          interface_soil="sand")
+        with pytest.raises(ValueError, match="not both"):
+            WallSoilLayer(5.0, 18.0, friction_angle=30.0,
+                          wall_friction_deg=10.0, interface_soil="clean_sand")
 
 
 # ═══════════════════════════════════════════════════════════════════════

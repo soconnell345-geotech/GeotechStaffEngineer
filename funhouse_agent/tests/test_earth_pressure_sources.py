@@ -275,7 +275,10 @@ def _wall(**params):
 def test_sheet_pile_log_spiral_source():
     ufc = _wall(delta=19.8, pressure_method="log_spiral")
     assert ufc["defaults_used"]["log_spiral_source"] == "ufc_3_220_20"
-    (c,) = ufc["choices"]
+    # the source, then each layer's wall friction (GM-242)
+    c, friction = ufc["choices"]
+    assert friction["chosen"] == "layer 1: 19.8 deg (wall_friction_deg)"
+    assert friction["how"] == "given"
     assert c["how"] == "default" and "Eq. 4-12" in c["basis"]
     assert "layer 1 (phi' 30, delta 19.8) Kp 5.06" in c["basis"]
     ck = _wall(delta=19.8, pressure_method="log_spiral",
@@ -298,10 +301,32 @@ def test_anchored_sheet_pile_states_ufc_p_260():
     r = D.call_agent("sheet_pile", "anchored_wall",
                      {"excavation_depth": 5.0, "anchor_depth": 1.0,
                       "layers": layers, "pressure_method": "log_spiral"})
-    (c,) = r["choices"]
+    c, friction = r["choices"]
+    assert friction["what"].startswith("Wall friction delta")
     assert "p. 260" in c["basis"] and "Figure 4-12" in c["basis"]
     assert "Kp 4.46" in c["basis"]                 # Eq. 4-12 at 0.5
     assert any("Kp 4.7" in a for a in c["alternatives"])
+
+
+def test_sheet_pile_wall_friction_rows():
+    """GM-242: a layer's interface_soil names the steel sheet pile row
+    (EM 1110-2-2504 Table 3-3, USS Table 4, UFC 3-220-20 Table 4-1); left
+    out, the log-spiral passive side takes the clean sand row, 17 deg."""
+    layers = [{"thickness": 15.0, "unit_weight": 18.0,
+               "friction_angle": 32.0}]
+    args = {"excavation_depth": 4.0, "pressure_method": "log_spiral"}
+    left_out = D.call_agent("sheet_pile", "cantilever_wall",
+                            {**args, "layers": layers})
+    friction = left_out["choices"][-1]
+    assert friction["chosen"] == "layer 1: 17 deg (the clean_sand row, taken)"
+    assert friction["how"] == "default"
+    silty = D.call_agent("sheet_pile", "cantilever_wall", {
+        **args, "layers": [{**layers[0], "interface_soil": "silty_sand"}]})
+    assert silty["choices"][-1]["chosen"] == (
+        "layer 1: 14 deg (interface_soil 'silty_sand')")
+    bad = D.call_agent("sheet_pile", "cantilever_wall", {
+        **args, "layers": [{**layers[0], "interface_soil": "sand"}]})
+    assert "interface_soil must be one of" in bad["error"]
 
 
 def test_cantilever_wall_key_passive_over_the_key_depth():

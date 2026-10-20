@@ -32,7 +32,8 @@ def _build_soil_layers(params, *, method, key="layers"):
         layers.append(WallSoilLayer(
             thickness=l["thickness"], unit_weight=l["unit_weight"],
             friction_angle=l.get("friction_angle", 30.0), cohesion=l.get("cohesion", 0.0),
-            wall_friction_deg=l.get("wall_friction_deg", 0.0),
+            wall_friction_deg=l.get("wall_friction_deg"),
+            interface_soil=l.get("interface_soil"),
             description=l.get("description", ""),
         ))
     return layers
@@ -43,18 +44,22 @@ def _log_spiral_source(params, layers, *, method):
     UFC 3-220-20 Figs. 4-12 and 4-13 are drawn for one wall friction,
     delta/phi' = 0.66, so each friction layer must give it."""
     from geotech_common import log_spiral as _ls
+    from sheet_pile.cantilever import wall_friction
     source = params.get("log_spiral_source", _ls.DEFAULT_SOURCE)
     chart = {"dm7_2_fig_4_12": "Fig. 4-12", "dm7_2_fig_4_13": "Fig. 4-13"}
     if source in chart and params.get("pressure_method") == "log_spiral":
         off = [i for i, l in enumerate(layers) if l.friction_angle > 0
-               and abs(l.wall_friction_deg / l.friction_angle - 0.66) > 0.01]
+               and abs(wall_friction(l, "passive", "log_spiral")[0]
+                       / l.friction_angle - 0.66) > 0.01]
         if off:
             raise ValueError(
                 f"{method}: log_spiral_source {source!r} (UFC 3-220-20 "
                 f"{chart[source]}) is drawn for delta/phi' = 0.66 only; "
-                f"layers {off} give another wall_friction_deg. Set each "
-                "layer's wall_friction_deg to 0.66 x its friction_angle, or "
-                "leave log_spiral_source out (UFC 3-220-20 Eq. 4-12 for a "
+                f"layers {off} take another wall friction (left out, a "
+                "cohesionless layer takes the clean sand row of the steel "
+                "sheet pile table, 17 deg). Set each layer's "
+                "wall_friction_deg to 0.66 x its friction_angle, or leave "
+                "log_spiral_source out (UFC 3-220-20 Eq. 4-12 for a "
                 "vertical face and level ground, any wall friction) or give "
                 "'caquot_kerisel_1948'.")
     return source
@@ -173,22 +178,53 @@ _LOG_SPIRAL_SOURCE = {
         "layer's Kp from the source used and from the others."),
 }
 
+# A layer of either wall (GM-242: its wall friction by the steel sheet pile
+# table's row, and what a layer naming none takes).
+_LAYERS = {
+    "type": "array", "required": True,
+    "description": (
+        "Array of soil-layer dicts, top down: {thickness (m, required), "
+        "unit_weight (kN/m3, required; alias gamma), friction_angle (deg, "
+        "default 30; alias phi), cohesion (kPa, default 0), "
+        "wall_friction_deg (deg, 0 to friction_angle; alias delta), "
+        "interface_soil (the soil against the steel, a row of the steel "
+        "sheet pile wall friction table printed in EM 1110-2-2504 Table "
+        "3-3, p. 3-4, the USS Steel Sheet Piling Design Manual Table 4, p. "
+        "13, and UFC 3-220-20 Table 4-1, p. 184: 'clean_gravel' 22 deg "
+        "(clean gravel, gravel-sand mixtures, well-graded rock fill with "
+        "spalls), 'clean_sand' 17 (clean sand, silty sand-gravel mixture, "
+        "single size hard rock fill), 'silty_sand' 14 (silty sand, gravel "
+        "or sand mixed with silt or clay), 'fine_sandy_silt' 11 (fine "
+        "sandy silt, nonplastic silt); at most friction_angle; not with "
+        "wall_friction_deg)}. wall_friction_deg or interface_soil is used "
+        "on both sides by pressure_method 'coulomb' and 'log_spiral'. A "
+        "layer giving neither takes, with 'log_spiral', the clean_sand row "
+        "(17 deg, at most its phi') on the passive side when it has no "
+        "cohesion and no wall friction on the active side or in a layer "
+        "with cohesion (UFC 3-220-20 p. 238: interface friction is 'only "
+        "considered for passive pressure in granular soils'); with "
+        "'coulomb' none (Caltrans T&S Manual p. 4-28: Coulomb's passive "
+        "pressure grows 'increasingly erroneous' with wall friction). The "
+        "result's choices give each layer's wall friction and its Kp at "
+        "the other rows and at delta = 0."),
+}
+
 METHOD_INFO = {
     "cantilever_wall": {
         "category": "Sheet Pile",
         "brief": "Cantilever sheet pile wall: embedment depth and maximum moment.",
         "parameters": {
             "excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."},
-            "layers": {"type": "array", "required": True, "description": "Array of {thickness (m, required), unit_weight (kN/m3, required; alias gamma), friction_angle (deg, default 30; alias phi), cohesion (kPa, default 0)} dicts."},
+            "layers": _LAYERS,
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."},
             "FOS_passive": {"type": "float", "required": False, "default": 1.5, "description": "FOS applied to passive resistance."},
             "gwt_depth_active": {"type": "float", "required": False, "description": "Groundwater depth on active (retained) side (m)."},
             "gwt_depth_passive": {"type": "float", "required": False, "description": "Groundwater depth on passive (excavated) side (m)."},
-            "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "log_spiral"], "description": "Earth pressure theory. 'log_spiral' uses Coulomb active + the log-spiral PASSIVE coefficient from log_spiral_source (avoids Coulomb's over-prediction of Kp at high delta/phi); set the layer wall_friction_deg (delta)."},
+            "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "log_spiral"], "description": "Earth pressure theory. 'log_spiral' uses Coulomb active + the log-spiral PASSIVE coefficient from log_spiral_source (avoids Coulomb's over-prediction of Kp at high delta/phi). 'coulomb' and 'log_spiral' take each layer's wall friction (layers: wall_friction_deg or interface_soil; what a layer giving neither takes is in the layers description)."},
             "log_spiral_source": _LOG_SPIRAL_SOURCE,
             "embedment_increase": {"type": "float", "required": False, "default": 1.0, "description": "Multiplier on the computed embedment (e.g. 1.2 for the traditional 20% rule). Use 1.0 (default) when FOS_passive already provides the safety basis — do not double-count."},
         },
-        "returns": {"embedment_depth_m": "Required embedment.", "max_moment_kNm_per_m": "Maximum bending moment.", "choices": "With pressure_method 'log_spiral': the passive Kp's source and route, each layer's Kp from it and from the other sources. Tell the user."},
+        "returns": {"embedment_depth_m": "Required embedment.", "max_moment_kNm_per_m": "Maximum bending moment.", "choices": "With pressure_method 'log_spiral': the passive Kp's source and route, each layer's Kp from it and from the other sources; with 'coulomb' or 'log_spiral': each passive-side layer's wall friction, given or taken, with its Kp at delta = 0 and at the table's other rows. Tell the user."},
     },
     "anchored_wall": {
         "category": "Sheet Pile",
@@ -196,15 +232,15 @@ METHOD_INFO = {
         "parameters": {
             "excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."},
             "anchor_depth": {"type": "float", "required": True, "description": "Anchor depth below surface (m)."},
-            "layers": {"type": "array", "required": True, "description": "Array of {thickness (m, required), unit_weight (kN/m3, required; alias gamma), friction_angle (deg, default 30; alias phi), cohesion (kPa, default 0)} dicts."},
+            "layers": _LAYERS,
             "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa)."},
             "gwt_depth_active": {"type": "float", "required": False, "description": "Groundwater depth on active side (m)."},
             "gwt_depth_passive": {"type": "float", "required": False, "description": "Groundwater depth on passive side (m)."},
             "FOS_passive": {"type": "float", "required": False, "default": 1.5, "description": "FOS applied to passive resistance."},
-            "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "log_spiral"], "description": "Earth pressure theory. 'log_spiral' uses Coulomb active + the log-spiral PASSIVE coefficient from log_spiral_source (avoids Coulomb's over-prediction of Kp at high delta/phi); set the layer wall_friction_deg (delta)."},
+            "pressure_method": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "log_spiral"], "description": "Earth pressure theory. 'log_spiral' uses Coulomb active + the log-spiral PASSIVE coefficient from log_spiral_source (avoids Coulomb's over-prediction of Kp at high delta/phi). 'coulomb' and 'log_spiral' take each layer's wall friction (layers: wall_friction_deg or interface_soil; what a layer giving neither takes is in the layers description)."},
             "log_spiral_source": _LOG_SPIRAL_SOURCE,
         },
-        "returns": {"embedment_depth_m": "Required embedment.", "anchor_force_kN_per_m": "Anchor force.", "choices": "With pressure_method 'log_spiral': the passive Kp's source and route, each layer's Kp from it and from the other sources, and UFC 3-220-20 p. 260 on tied-back walls. Tell the user."},
+        "returns": {"embedment_depth_m": "Required embedment.", "anchor_force_kN_per_m": "Anchor force.", "choices": "With pressure_method 'log_spiral': the passive Kp's source and route, each layer's Kp from it and from the other sources, and UFC 3-220-20 p. 260 on tied-back walls; with 'coulomb' or 'log_spiral': each passive-side layer's wall friction, given or taken, with its Kp at delta = 0 and at the table's other rows. Tell the user."},
     },
 }
 

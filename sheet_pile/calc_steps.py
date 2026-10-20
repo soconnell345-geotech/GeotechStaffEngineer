@@ -156,6 +156,16 @@ def get_input_summary(result, analysis) -> List[InputItem]:
             f"t_{i}", f"Thickness ({desc})",
             f"{layer.thickness:.2f}", "m",
         ))
+        if key == "coulomb" or key.startswith("log_spiral:"):
+            # the wall friction each side took (GM-242)
+            from sheet_pile.cantilever import wall_friction
+            for side in ("active", "passive"):
+                delta = wall_friction(layer, side, key)[0]
+                items.append(InputItem(
+                    f"δ_{side[0]}{i}",
+                    f"Wall friction, {side} side ({desc})",
+                    f"{delta:.1f}", "deg",
+                ))
 
     return items
 
@@ -206,6 +216,19 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             "Earth pressures computed using Rankine (1857) theory, which "
             "assumes a smooth vertical wall and horizontal backfill."
         )
+    if method == "coulomb" or source:
+        # where each layer's wall friction came from (GM-242)
+        ep_items.append(
+            "Wall friction δ by layer: as given, or the row named for "
+            "the soil against steel sheet piles (EM 1110-2-2504 Table 3-3, "
+            "p. 3-4; USS Steel Sheet Piling Design Manual Table 4, p. 13; "
+            "UFC 3-220-20 Table 4-1, p. 184), at most φ'. "
+            + ("Otherwise the clean sand row, 17°, on the passive side "
+               "of a layer without cohesion and none on the active side "
+               "(UFC 3-220-20 p. 238: 'only considered for passive pressure "
+               "in granular soils')." if source else
+               "Otherwise none (δ = 0).")
+        )
 
     # Ka/Kp for each unique friction angle
     seen_phis = set()
@@ -216,9 +239,11 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
 
         # Mirror the analysis exactly (CS-2): use the same method + wall friction
         # the analysis used, so the displayed Ka/Kp match the reported design.
-        from sheet_pile.cantilever import _compute_Ka_Kp
-        delta = getattr(layer, "wall_friction_deg", 0.0)
-        Ka, Kp = _compute_Ka_Kp(phi, key, delta)
+        from sheet_pile.cantilever import _layer_Ka_Kp, wall_friction
+        Ka, Kp = _layer_Ka_Kp(layer, key)
+        # each side's wall friction (GM-242: they differ when left out)
+        delta_a = wall_friction(layer, "active", key)[0]
+        delta_p = wall_friction(layer, "passive", key)[0]
         if method == "coulomb":
             ka_eq = "Coulomb Ka"
             kp_eq = "Coulomb Kp"
@@ -239,14 +264,14 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             f"{Kp:.4f}",
         ])
 
-        if phi not in seen_phis:
-            seen_phis.add(phi)
+        if (phi, delta_a, delta_p) not in seen_phis:
+            seen_phis.add((phi, delta_a, delta_p))
             ep_items.append(CalcStep(
                 title=f"Active Coefficient Ka (\u03c6 = {phi:.1f}\u00b0)",
                 equation=f"Ka = {ka_eq}",
                 substitution=f"Ka = tan\u00b2(45\u00b0 - {phi/2:.1f}\u00b0)"
                 if method == "rankine"
-                else f"Ka (Coulomb, \u03c6={phi:.1f}\u00b0, \u03b4={delta:.1f}\u00b0)",
+                else f"Ka (Coulomb, \u03c6={phi:.1f}\u00b0, \u03b4={delta_a:.1f}\u00b0)",
                 result_name="Ka",
                 result_value=f"{Ka:.4f}",
                 reference=f"{'Rankine (1857)' if method == 'rankine' else 'Coulomb (1776)'}; "
@@ -258,7 +283,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                 substitution=f"Kp = tan\u00b2(45\u00b0 + {phi/2:.1f}\u00b0)"
                 if method == "rankine"
                 else f"Kp ({'log spiral' if source else 'Coulomb'}, "
-                     f"\u03c6={phi:.1f}\u00b0, \u03b4={delta:.1f}\u00b0)",
+                     f"\u03c6={phi:.1f}\u00b0, \u03b4={delta_p:.1f}\u00b0)",
                 result_name="Kp",
                 result_value=f"{Kp:.4f}",
                 reference=_LOG_SPIRAL_KP[source][1] if source
@@ -293,10 +318,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     # Show tension crack depth for cohesive layers
     for i, layer in enumerate(layers, 1):
         if layer.cohesion > 0:
-            from sheet_pile.cantilever import _compute_Ka_Kp
-            Ka, _ = _compute_Ka_Kp(
-                layer.friction_angle, key,
-                getattr(layer, "wall_friction_deg", 0.0))
+            from sheet_pile.cantilever import _layer_Ka_Kp
+            Ka, _ = _layer_Ka_Kp(layer, key)
             if Ka > 0 and layer.unit_weight > 0:
                 z_crack = (2.0 * layer.cohesion / math.sqrt(Ka) - q) / layer.unit_weight
                 z_crack = max(z_crack, 0.0)
@@ -595,11 +618,17 @@ def get_tables(result, analysis) -> list:
     tables = tables_from(result)
     layers = analysis.get("soil_layers") if isinstance(analysis, dict) \
         else getattr(analysis, "soil_layers", None)
+    from sheet_pile.cantilever import wall_friction
+    method = (_pressure_method(analysis) if isinstance(analysis, dict)
+              else "rankine")
     rows, depth = [], 0.0
     for i, layer in enumerate(layers or [], 1):
+        # the wall friction each side took (GM-242: on the active side of
+        # the log-spiral method none unless given)
         rows.append([i, depth, depth + layer.thickness, layer.description,
                      layer.unit_weight, layer.friction_angle, layer.cohesion,
-                     layer.wall_friction_deg])
+                     wall_friction(layer, "active", method)[0],
+                     wall_friction(layer, "passive", method)[0]])
         depth += layer.thickness
     if rows:
         tables.append(CalcTable(
@@ -607,9 +636,11 @@ def get_tables(result, analysis) -> list:
             columns=["Layer", ("Top", "m"), ("Bottom", "m"), "Description",
                      ("Unit weight γ", "kN/m³"),
                      ("Friction angle φ", "deg"), ("Cohesion c", "kPa"),
-                     ("Wall friction δ", "deg")],
+                     ("Wall friction δ, active side", "deg"),
+                     ("Wall friction δ, passive side", "deg")],
             rows=rows,
-            note="The soil layers as input, depths below the top of the wall",
+            note=("The soil layers as input, with the wall friction each "
+                  "side took; depths below the top of the wall"),
             name="soil_layers", printed=False,
         ))
     return tables
@@ -629,7 +660,7 @@ def _compute_pressures(result, analysis, n_points=200):
     """
     import numpy as np
     from sheet_pile.cantilever import (
-        _get_soil_at_depth, _cumulative_stress, _effective_gamma, _compute_Ka_Kp,
+        _get_soil_at_depth, _cumulative_stress, _effective_gamma, _layer_Ka_Kp,
     )
     from geotech_common.water import GAMMA_W
 
@@ -656,9 +687,7 @@ def _compute_pressures(result, analysis, n_points=200):
 
     for idx, z in enumerate(depths):
         layer = _get_soil_at_depth(z, layers)
-        Ka, Kp = _compute_Ka_Kp(
-            layer.friction_angle, method,
-            getattr(layer, "wall_friction_deg", 0.0))
+        Ka, Kp = _layer_Ka_Kp(layer, method)
 
         if z <= H:
             # Above excavation: active pressure only

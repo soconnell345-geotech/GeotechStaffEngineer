@@ -65,6 +65,31 @@ anchored wall adds UFC p. 260 (tied-back walls: δ/φ′ 0.5 to 1.0, "KP should
 be obtained from Figure 4-12"). The tables are in
 `geotech_common/log_spiral.py` (see `soe/DESIGN.md`).
 
+**The wall friction left out (GM-242, 2026-10-20).** Before, a layer with no
+`wall_friction_deg` took delta = 0 on both sides, so `pressure_method
+"log_spiral"` gave Rankine's Kp without saying so (the coefficient tool's
+left-out delta is 0.66 phi'). Now a layer may name its row of the one table
+EM 1110-2-2504 Table 3-3 (p. 3-4, after Navy 1982), the USS Steel Sheet
+Piling Design Manual Table 4 (p. 13; its procedures take "delta from Table
+4", pp. 23 and 29) and UFC 3-220-20 Table 4-1 (p. 184) print for steel sheet
+piles: `interface_soil` 'clean_gravel' 22, 'clean_sand' 17, 'silty_sand' 14,
+'fine_sandy_silt' 11 deg, at most the layer's phi'; a row or a given delta is
+used on both sides. Left out, with "log_spiral" a layer takes the clean sand
+row (17 deg) on the passive side when it has no cohesion and none on the
+active side or with cohesion, as UFC 3-220-20 p. 238 does on its anchored
+bulkhead design scenarios ("The effects of interface friction between the
+wall and soil are only considered for passive pressure in granular soils.
+Wall friction is ignored in all other cases."); with "coulomb" it takes
+none (the Caltrans T&S Manual Sec. 4-6, p. 4-28: Coulomb's passive "gives
+increasingly erroneous values ... as the wall friction (delta) increases").
+`choices` carry the wall friction per layer with its basis and each layer's
+Kp at delta 0, at each row, at 0.66 phi' (UFC p. 191, Fig. 4-43 p. 245) and
+at 0.54 phi (EM 1110-2-2504 Table 3-2, steel). The probe, 4 m cantilever in
+sand, phi' 32, water at the excavation level: Rankine's Kp 3.25, D 7.21 m,
+M 252 kN-m/m before; the clean sand row, Kp 5.26, D 5.06 m, M 174 kN-m/m
+now. The chart sources (Figs. 4-12, 4-13) still refuse a delta other than
+0.66 phi', the row included.
+
 ## Anchored wall shear and moment (GM-69, fixed 2026-10-14)
 `analyze_anchored` finds the embedment D by moments about the anchor and the
 anchor force T by horizontal equilibrium (both unchanged), then integrates the
