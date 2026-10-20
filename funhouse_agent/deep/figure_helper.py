@@ -809,6 +809,7 @@ class FigureLooks(AgentMiddleware):
         from funhouse_agent.deep.keep_work import (_result_messages,
                                                    current_helper)
         from funhouse_agent.deep.tool_guards import _text
+        from funhouse_agent.dispatch import parameters_object
         call = getattr(request, "tool_call", None) or {}
         if call.get("name") != MODULE_TOOL:
             return ""
@@ -844,7 +845,8 @@ class FigureLooks(AgentMiddleware):
         if not pictures:
             return ""
         agent = str(args.get("agent_name") or "")
-        params = args.get("parameters")
+        # a string holding the object runs as it (GM-189)
+        params = parameters_object(args.get("parameters"))
         plot_data = agent == "profile_figure" and method == "plot_data"
         booked = plot_box.figures.record_draw(
             pictures, "plot_data" if plot_data else f"{agent}.{method}",

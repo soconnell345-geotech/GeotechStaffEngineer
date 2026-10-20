@@ -390,6 +390,20 @@ def test_a_module_figure_asks_the_calc_helper_for_a_look(
     assert "LOOK" not in plain.content
 
 
+def test_a_module_figure_sent_as_a_json_string_keeps_its_arguments(
+        folder, tmp_path_factory, monkeypatch):
+    """GM-189: 'parameters' sent as a string holding the object runs as
+    that object, and its figure keeps those arguments too."""
+    (folder / "profile.png").write_bytes(b"png")
+    monkeypatch.chdir(tmp_path_factory.mktemp("server_cwd"))
+    params = {"series": SERIES, "output_path": "profile.png"}
+    with keep_work.turn_scope():
+        _in_helper("calc", lambda r: FigureLooks().wrap_tool_call(
+            _call_agent("profile_figure", "plot_data", json.dumps(params)),
+            _answer({"status": "success", "output_path": "profile.png"})))
+    assert figures.kept_code("profile", str(folder))["arguments"] == params
+
+
 def test_html_to_pdf_names_the_figures_no_look_read(folder):
     a, b = folder / "a.png", folder / "b.png"
     for p in (a, b):

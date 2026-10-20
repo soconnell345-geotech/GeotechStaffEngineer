@@ -6,6 +6,7 @@ width; one taller than a page starts a page and is scaled to fit it.
 
 import base64
 import io
+import re
 
 import pytest
 
@@ -486,6 +487,133 @@ def test_block_elements_get_an_id_to_find_them_by():
     assert tagged.count(' id="gse-block-') == 2           # p and h2
     assert "a" not in starts                               # used twice
     assert sorted(html[at:at + 3] for at in starts.values()) == ["<h2", "<p>"]
+
+
+def _cells_html(margin_pt: float) -> str:
+    """Thirty table rows with a paragraph in each first cell, after a
+    paragraph ``margin_pt`` down the page, then a closing paragraph: the
+    engine leaves out the rows it opens past a page foot (at 12 pt, rows
+    10 to 20), and at 188 pt the closing paragraph after the table's last
+    row too, once the rows are moved."""
+    from calc_package.template import CALC_PACKAGE_CSS
+    rows = "".join(f"<tr><td><p>Row {i} " + "word " * 12 + "</p></td>"
+                   f"<td><div>{i}.5 kPa</div></td></tr>" for i in range(30))
+    return (f"<html><head><style>{CALC_PACKAGE_CSS}</style></head><body>"
+            f'<p style="margin-top:{margin_pt}pt">Before the table.</p>'
+            f"<table>{rows}</table><p>References follow.</p></body></html>")
+
+
+def _items_html(margin_pt: float) -> str:
+    """Twelve list items of 26 words after a paragraph ``margin_pt`` down
+    the page: the engine leaves out the lines of an item it runs past a
+    page foot, and the items after it."""
+    from calc_package.template import CALC_PACKAGE_CSS
+    items = "".join(f"<li>Item {i} " + "word " * 25 + "</li>"
+                    for i in range(12))
+    return (f"<html><head><style>{CALC_PACKAGE_CSS}</style></head><body>"
+            f'<p style="margin-top:{margin_pt}pt">Before the list.</p>'
+            f"<ul>{items}</ul><p>References follow.</p></body></html>")
+
+
+def _numbered(text: str, word: str) -> set:
+    return {int(n) for n in re.findall(rf"\b{word} (\d+)\b", text)}
+
+
+@pytest.mark.parametrize("margin_pt", [12, 188, 424])
+def test_table_rows_opened_past_a_page_foot_print(margin_pt):
+    """GM-198 for table rows: the table ends before the row and starts
+    again on the next page (or before the row above it, or its last row
+    goes with the paragraph after it), and every row prints."""
+    html = _cells_html(margin_pt)
+    raw = " ".join(_texts(latex_renderer._story_pass(html, _LETTER,
+                                                     _WHERE)[0]))
+    if len(_numbered(raw, "Row")) == 30:
+        pytest.skip("this PyMuPDF prints every row on its own")
+    text = " ".join(_texts(latex_renderer._story_bytes(html, _LETTER,
+                                                       _WHERE)))
+    assert _numbered(text, "Row") == set(range(30))
+    assert text.count("word") == 360 and "References follow." in text
+
+
+@pytest.mark.parametrize("margin_pt", [124, 388])
+def test_list_items_run_past_a_page_foot_print(margin_pt):
+    """GM-198 for list items: one opened or run past the foot goes to the
+    next page, with every line of it."""
+    html = _items_html(margin_pt)
+    raw = " ".join(_texts(latex_renderer._story_pass(html, _LETTER,
+                                                     _WHERE)[0]))
+    if raw.count("word") == 300:
+        pytest.skip("this PyMuPDF prints every item on its own")
+    text = " ".join(_texts(latex_renderer._story_bytes(html, _LETTER,
+                                                       _WHERE)))
+    assert _numbered(text, "Item") == set(range(12))
+    assert text.count("word") == 300 and "References follow." in text
+
+
+def test_one_that_no_break_moves_is_left_and_the_next_is_moved(monkeypatch):
+    """An element no break moves (a row taller than a page) is left as it
+    is, with everything in it, and the ones after it are still moved."""
+    html = _cells_html(12)
+    raw = " ".join(_texts(latex_renderer._story_pass(html, _LETTER,
+                                                     _WHERE)[0]))
+    if 10 in _numbered(raw, "Row"):
+        pytest.skip("this PyMuPDF prints row 10 on its own")
+    real, seen = latex_renderer._foot_breaks, []
+
+    def first_unmovable(text, at):
+        seen.append(text[at:at + 18])
+        return [] if len(seen) == 1 else real(text, at)
+    monkeypatch.setattr(latex_renderer, "_foot_breaks", first_unmovable)
+    text = " ".join(_texts(latex_renderer._story_bytes(html, _LETTER,
+                                                       _WHERE)))
+    assert seen[0].startswith("<tr><td><p>Row 10")
+    assert not any("Row 10 " in s for s in seen[1:])   # nor what is in it
+    # (moving the next one can bring it back too)
+    assert _numbered(text, "Row") >= set(range(30)) - {10}
+    assert "References follow." in text
+
+
+def test_a_table_row_is_found_with_the_body_rows_before_it():
+    html = ("<p>x</p><table><thead><tr><th>A</th></tr></thead>"
+            "<tr><td>1</td></tr><tr><td><table><tr><td>in</td></tr></table>"
+            "</td></tr><tr><td>3</td></tr></table>")
+    rows = [m.start() for m in re.finditer("<tr><td>", html)]
+    table = html.find("<table>")
+    assert latex_renderer._table_row(html, 0) is None
+    assert latex_renderer._table_row(html, rows[0]) == (table, rows[0], [])
+    assert latex_renderer._table_row(html, rows[3]) == (
+        table, rows[3], [rows[0], rows[1]])               # not the inner row
+    inner = html.find("<table>", table + 1)
+    assert latex_renderer._table_row(html, rows[2]) == (inner, rows[2], [])
+    end = latex_renderer._element_end(html, table)
+    assert html[:end].endswith("</table>") and end == len(html)
+
+
+def test_the_breaks_tried_for_a_row_and_for_a_step_result():
+    br = latex_renderer._PAGE_BREAK
+    rows = "".join(f"<tr><td>{i}</td></tr>" for i in range(4))
+    html = f"<h2>T</h2><table>{rows}</table><p>After.</p>"
+    starts = [m.start() for m in re.finditer("<tr>", html)]
+    table, again = html.find("<table>"), "</table>" + br + "<table>"
+    # the third row: before it, before the row above it, then the table
+    # under its heading
+    assert latex_renderer._foot_breaks(html, starts[2])[:4] == [
+        (starts[2], again), (starts[1], again), (0, br), (table, br)]
+    # the first body row goes with the table
+    assert latex_renderer._foot_breaks(html, starts[0])[:2] == [
+        (0, br), (table, br)]
+    # after a table: the paragraph, then with the table's last row
+    after = html.find("<p>After")
+    assert latex_renderer._foot_breaks(html, after)[:2] == [
+        (after, br), (starts[3], again)]
+    step = ('<div class="calc-step"><div class="step-title">T</div>'
+            '<div class="result">R</div></div>')
+    result = step.find('<div class="result">')
+    previous, holding = latex_renderer._blocks_before(step, result)
+    assert step[previous:].startswith('<div class="step-title">')
+    assert holding == [0]
+    assert latex_renderer._foot_breaks(step, result) == [
+        (result, br), (previous, br), (0, br)]
 
 
 def test_a_figure_that_still_does_not_print_is_said(tmp_path, monkeypatch):
