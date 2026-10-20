@@ -295,3 +295,32 @@ def test_arms_dry_run_meters_each_agent_on_its_arms_model(tmp_path):
     # a fake wave's runs never count as recorded costs
     assert spend.recorded_costs(str(tmp_path / "runs"),
                                 "claude-opus-5-5") == {}
+
+
+def test_plain_folds_sub_and_superscripts():
+    """EV-34 (w15 H1): F70 scored "K₀" as missing."""
+    assert arms._plain("K₀ = 0.67, Kₚ, m², σ′") \
+        == "K0 = 0.67, Kp, m2, σ'"
+    key = {"name": "K0", "near": "K_?[0o]", "ranges": [[0.62, 0.72]]}
+    assert arms.key_number("Use K₀β ≈ 0.67 here", key)["in_range"]
+
+
+def _flow_truth(prefix):
+    flows = json.load(open(os.path.join(os.path.dirname(arms.__file__),
+                                        "flows.json"), encoding="utf-8"))["flows"]
+    return next(f for f in flows if f["id"].startswith(prefix))["truth"]
+
+
+def test_ev34_flow_patterns_match_the_w15_answers():
+    f67 = _flow_truth("F67")
+    assert arms.methods_named("it is a settlement equilibrium; and force "
+                              "equilibrium at the toe", f67)["ok"]
+    assert arms.methods_named("pile settlement equals soil settlement, "
+                              "toe mobilization 50 %", f67)["ok"]
+    f74 = _flow_truth("F74")
+    assert not arms.cites_check("GEC-10 Sec. 10.3.5 gives phi 0.45/0.65",
+                                f74)["ok"]
+    assert arms.cites_check("GEC-10 Eq. 10-21, p. 10-20", f74)["ok"]
+    f69 = _flow_truth("F69")
+    assert "4,611" not in f69["key"]["value"]
+    assert f69["key"]["value"].startswith("3,076 to 3,113 kN")
