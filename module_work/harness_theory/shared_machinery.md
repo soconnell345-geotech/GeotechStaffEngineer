@@ -457,7 +457,13 @@ TA-21, TA-22):*
   has a 30-call budget (`GEOTECH_HELPER_MAX_MODEL_CALLS`) whose last call
   hands over what it gathered; a helper that raises, hits its budget or gives
   up after a large read writes everything it read to `kept/helper_*.md` and
-  the primary gets the path (`funhouse_agent/deep/keep_work.py`).
+  the primary gets the path (`funhouse_agent/deep/keep_work.py`). *Since
+  2026-10-20 (RI-31):* the boring-log and lab records such a helper held and
+  had not saved go to `kept/helper_*_records.json` beside it, named in the
+  same note for `write_diggs` (`deep/held_records.py`: found by the record
+  shape, never other JSON); and a helper's `.json` `write_file` is saved on
+  the real disk with its own `save_file` rather than in scratch space, never
+  over a file that helper did not save (it gets a name of its own).
 - **Busy refusals:** `AgentBusyRetry` (`deep/busy_retry.py`), the outermost
   model-call middleware on the primary and every sub-agent, retries a 429 /
   529 / 5xx / overloaded / connection / timeout refusal on the provider's
