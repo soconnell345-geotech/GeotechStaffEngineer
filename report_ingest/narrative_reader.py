@@ -243,6 +243,9 @@ _RE_CAPTION = re.compile(
     r"([A-Za-z]{0,2}[-.]?\d+(?:[-.]\d+)*)\s*[-–—:.)]?\s*(\S.*)?$",
     re.IGNORECASE)
 
+#: An appendix figure's number: a letter, then the number ("A-2", "B.1").
+_RE_APPENDIX_LABEL = re.compile(r"^[A-Za-z]{1,2}[-.]?\d")
+
 #: What each caption word counts towards.
 _CAPTION_KIND = {
     "figure": "figures", "fig": "figures", "figura": "figures",
@@ -258,12 +261,16 @@ def count_captions(doc: Any, pages: Sequence[int]) -> Dict[str, Any]:
     name the thing -- a sentence that refers to table 3 in passing does not,
     and neither does a bare cross-reference that a line break happened to end.
     The label is what is counted, not the line, so a figure captioned on two
-    pages counts once and "Figure 4.1" and "Figure 4.2" count twice.
+    pages counts once and "Figure 4.1" and "Figure 4.2" count twice. A figure
+    numbered like an appendix's ("Figure A-2") is not counted: figureCount is
+    the main body's figures only. Those labels come back as
+    ``appendix_figure_labels``.
 
     Returns the counts and the labels themselves, because a reviewer checking
     a count against a report wants to know WHICH ones were seen.
     """
     labels: Dict[str, List[str]] = {"figures": [], "tables": []}
+    appendix_figures: List[str] = []
     for page in pages:
         try:
             content = doc.page(page, tables=False)
@@ -283,12 +290,19 @@ def count_captions(doc: Any, pages: Sequence[int]) -> Dict[str, Any]:
             if not (match.group(3) or "").strip():
                 continue
             label = f"{kind[:-1]} {match.group(2).upper()}"
+            if kind == "figures" and _RE_APPENDIX_LABEL.match(match.group(2)):
+                # "Figure A-2" belongs to an appendix: figureCount counts
+                # the main body only (owner, OWN-08).
+                if label not in appendix_figures:
+                    appendix_figures.append(label)
+                continue
             if label not in labels[kind]:
                 labels[kind].append(label)
     return {"tables": len(labels["tables"]),
             "figures": len(labels["figures"]),
             "table_labels": labels["tables"],
-            "figure_labels": labels["figures"]}
+            "figure_labels": labels["figures"],
+            "appendix_figure_labels": appendix_figures}
 
 
 def counts_from_outline(outline: Any) -> Dict[str, int]:
@@ -683,7 +697,9 @@ was done -- the sentence that says "four borings were advanced" -- not what
 you can infer from anything else. tableCount and figureCount have already
 been counted from the captions and are given to you as facts below; answer
 them anyway, from the report's own lists of tables and figures, and a
-disagreement will be recorded rather than argued.
+disagreement will be recorded rather than argued. figureCount is the figures
+of the main body only; appendix figures are left out. structureCount is the
+number of items in structureList.
 
 VALUES WITH UNITS. bearingCapacity keeps the report's own sentences, one per
 recommendation. bearingCapacityValues is the same recommendations as numbers:
@@ -1111,11 +1127,13 @@ def _brief(pages: Sequence[int], all_pages: Sequence[int], text: str,
         "",
         "FACTS ALREADY COUNTED FROM THE PAGES",
         f"  tables captioned in the main body: {counted.get('tables', 0)}",
-        f"  figures captioned in the main body: {counted.get('figures', 0)}",
+        f"  figures captioned in the main body: {counted.get('figures', 0)}"
+        " (appendix figures are not counted)",
     ]
     if outline_counts:
         parts.append(
-            "  the report's own printed lists: "
+            "  the report's own printed lists (these may include appendix "
+            "figures, which figureCount leaves out): "
             + ", ".join(f"{k} {v}" for k, v in sorted(outline_counts.items())))
     if headings:
         parts += ["", "THE NARRATIVE'S OWN SECTION HEADINGS", headings]
@@ -1536,6 +1554,21 @@ class _Builder:
                         f"says {theirs}. The counted number is stored",
                         theirs)
                 values[name] = ours
+
+        # structureCount is the number of items in structureList (owner,
+        # OWN-08). A count the report states that differs is kept in
+        # stated_counts and recorded, as the other counts are.
+        listed = values.get("structureList")
+        if listed:
+            ours = len(listed)
+            theirs = values.get("structureCount")
+            if theirs is not None and theirs != ours:
+                self.refuse(
+                    "structureCount",
+                    f"the reading says {theirs}; structureList has {ours} "
+                    f"item(s). The number of items is stored",
+                    theirs)
+            values["structureCount"] = ours
 
         general = GeneralFacts(
             **{k: v for k, v in values.items() if k in GENERAL_FIELDS},
