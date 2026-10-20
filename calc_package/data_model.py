@@ -59,7 +59,7 @@ class CalcStep:
     result_unit : str
         Unit of result, e.g. "kPa".
     reference : str
-        Citation, e.g. "Vesic (1973), GEC-6 Eq. 6-2".
+        Citation, e.g. "Vesic (1973), GEC-6 Eq. 5-8".
     notes : str
         Optional additional notes.
     """

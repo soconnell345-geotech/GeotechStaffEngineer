@@ -13,7 +13,7 @@ Supports:
 
 References:
     FHWA-SA-94-034 (CBEAR User's Guide)
-    FHWA GEC-6 (FHWA-IF-02-054), Chapter 6
+    FHWA GEC-6 (FHWA-SA-02-054), Chapter 5
     FHWA Soils & Foundations Reference Manual, Volume II, Chapter 8
 """
 

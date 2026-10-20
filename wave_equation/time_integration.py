@@ -9,7 +9,7 @@ All units are SI: kN, m, kg, seconds.
 References:
     Smith, E.A.L. (1960) "Bearing Capacity of Piles"
     WEAP87 Manual, Chapter 5
-    FHWA GEC-12, Section 12.4
+    FHWA GEC-12, Section 12.3
 """
 
 import math

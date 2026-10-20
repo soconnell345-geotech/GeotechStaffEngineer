@@ -234,7 +234,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         substitution="",
         result_name="Model",
         result_value="Smith (1960) — explicit time integration",
-        reference="Smith (1960); FHWA GEC-12 Section 12.4",
+        reference="Smith (1960); FHWA GEC-12 Section 12.3",
     ))
 
     # Impact velocity
@@ -260,7 +260,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_name="v_impact",
             result_value=f"{hammer.impact_velocity:.3f}",
             result_unit="m/s",
-            reference="FHWA GEC-12 Eq. 12-1",
+            reference="FHWA GEC-12 Eq. 15-1 (p. 358), stroke times efficiency",
         ))
 
     # Courant condition
@@ -305,7 +305,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         substitution="Q = quake (elastic limit displacement)",
         result_name="Model",
         result_value="Smith elasto-plastic spring (kinematic, with memory)",
-        reference="Smith (1960); FHWA GEC-12 Table 12-3",
+        reference="Smith (1960); FHWA GEC-12 Sec. 12.3 (p. 156)",
     ))
 
     damping_model = getattr(soil, "damping_model", "smith") if soil is not None else "smith"
@@ -325,7 +325,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             substitution="J = Smith damping factor (s/m), v = pile segment velocity",
             result_name="Model",
             result_value="Damping proportional to mobilized static resistance (Smith 1960 / GRLWEAP default)",
-            reference="Smith (1960); FHWA GEC-12, Table 12-3",
+            reference="Smith (1960); FHWA GEC-12 Sec. 12.3 (p. 156)",
         )
     soil_items.append(damping_step)
 
@@ -355,7 +355,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                  f"{soil.damping_side:.2f}",
                  f"{soil.damping_toe:.2f}", "s/m"],
             ],
-            notes="Typical values: Q = 2.5 mm (FHWA GEC-12 Table 12-3). "
+            notes="Typical values: Q = 2.5 mm (FHWA GEC-12 Sec. 12.6.7, p. 211). "
                   "J_side: 0.16 (sand), 0.65 (clay). J_toe: 0.50 (sand/clay).",
         ))
 
