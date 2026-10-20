@@ -337,7 +337,8 @@ _K_ALIASES = {"phi": "phi_deg", "friction_angle": "phi_deg",
               "beta": "beta_deg", "backfill_slope": "beta_deg",
               "slope_angle": "beta_deg",
               "alpha": "alpha_deg", "wall_angle": "alpha_deg",
-              "theta": "theta_deg"}
+              "theta": "theta_deg", "ocr": "OCR",
+              "overconsolidation_ratio": "OCR"}
 
 
 def _log_spiral_kp(p, phi, beta, source):
@@ -390,9 +391,9 @@ def _log_spiral_kp(p, phi, beta, source):
 def _run_earth_pressure_coefficient(params):
     """Thin wrapper over retaining_walls.earth_pressure Ka/Kp/K0 functions."""
     from geotech_common import log_spiral as _ls
-    from geotech_common.choices import choice
+    from geotech_common.choices import choice, how_given
     names = ("phi_deg", "theory", "state", "delta_deg", "beta_deg",
-             "alpha_deg", "theta_deg", "log_spiral_source")
+             "alpha_deg", "theta_deg", "log_spiral_source", "OCR")
     p = without_unused(
         apply_aliases(params, _K_ALIASES),
         METHOD_INFO["earth_pressure_coefficient"]["refused_parameters"])
@@ -417,6 +418,11 @@ def _run_earth_pressure_coefficient(params):
     _refuse_unused_k_inputs(p, theory, state)
     source = p.get("log_spiral_source", _ls.DEFAULT_SOURCE)
     _refuse_unused_k_forms(p, theory, state, source, beta)
+    ocr = p.get("OCR")
+    if ocr is not None and float(ocr) < 1.0:
+        raise ValueError(
+            "earth_pressure_coefficient: OCR is the overconsolidation "
+            f"ratio, at least 1 (1 = normally consolidated); got OCR {ocr}.")
     choices = []
     log_spiral = theory == "caquot_kerisel" and state == "passive"
 
@@ -434,14 +440,22 @@ def _run_earth_pressure_coefficient(params):
         symbol = "Kp"
         choices.extend(ls_choices)
     elif state == "at_rest":
-        K, symbol = _ep.K0(phi), "K0"
+        # EN 1997-1 Eq. 9.1: K0 = (1 - sin phi') sqrt(OCR) (GM-245)
+        ocr_used = float(ocr) if ocr is not None else 1.0
+        K0_level = _ep.K0(phi) * math.sqrt(ocr_used)
+        K, symbol = K0_level, "K0"
+        choices.append(choice(
+            "Overconsolidation ratio OCR in the at-rest K0",
+            f"OCR {ocr_used:g}",
+            how_given(ocr, 1.0, name="OCR"),
+            _k0_ocr_text(phi, ocr_used, K0_level)))
         if beta:
             # EN 1997-1 Eq. 9.2, the one form (GM-243, owner OWN-67)
-            K = K * (1.0 + math.sin(math.radians(beta)))
+            K = K0_level * (1.0 + math.sin(math.radians(beta)))
             choices.append(choice(
                 "At-rest K0 behind sloping ground", "EN 1997-1 Eq. 9.2",
                 "module",
-                f"K0;beta = K0 (1 + sin beta) = (1 - sin {phi:g})(1 + sin "
+                f"K0;beta = K0 (1 + sin beta) = {K0_level:.3f} (1 + sin "
                 f"{beta:g}) = {K:.3f}. " + _K0_SLOPE_BASIS))
     elif theory == "rankine":
         if state == "active":
@@ -464,7 +478,8 @@ def _run_earth_pressure_coefficient(params):
     elif delta is None:
         delta = 0.0
     if state == "at_rest":
-        name = "en_1997_1_eq_9_2" if beta else "jaky_at_rest"
+        name = ("en_1997_1_eq_9_2" if beta else
+                "en_1997_1_eq_9_1" if ocr_used > 1.0 else "jaky_at_rest")
     else:
         name = theory
     out = {
@@ -507,9 +522,24 @@ _K0_SLOPE_BASIS = (
     "force is taken parallel to the ground surface. beta (beta_deg) is the "
     "slope of the ground rising away from the back of the wall, from the "
     "horizontal; Eq. 9.2 does not cover ground falling away from the wall. "
-    "K0 is 1 - sin phi', EN 1997-1 Eq. 9.1 (p. 104) for normally "
-    "consolidated ground; Eq. 9.1 multiplies it by the square root of the "
-    "overconsolidation ratio, which this tool does not take")
+    "K0 is EN 1997-1 Eq. 9.1 (p. 104), (1 - sin phi') times the square "
+    "root of OCR (the OCR choice above gives the value used)")
+
+
+def _k0_ocr_text(phi, ocr, k0):
+    """The choice text for the OCR in EN 1997-1 Eq. 9.1 (GM-245); whether
+    it was given or left at 1 is the choice's `how`."""
+    text = (f"EN 1997-1:2004 Sec. 9.5.2(3), Eq. 9.1 (p. 104), for a "
+            f"horizontal ground surface: K0 = (1 - sin phi') x sqrt(OCR) = "
+            f"(1 - sin {phi:g}) x sqrt({ocr:g}) = {k0:.3f}. ")
+    if ocr == 1.0:
+        text += ("OCR 1 is normally consolidated ground; give OCR for "
+                 "overconsolidated ground. ")
+    else:
+        text += ("The standard says (p. 104): 'The formula should not be "
+                 "used for very high values of OCR.' It prints no limit "
+                 "value, so whether this OCR is too high is your call.")
+    return text.rstrip()
 
 # The input that chose the sloping form before GM-243, refused with this
 # reason; a call naming EN 1997-1 Eq. 9.2, the one form, passes.
@@ -568,19 +598,24 @@ _K_TAKES = {
     ("caquot_kerisel", "passive"): ("delta_deg", "beta_deg", "theta_deg"),
 }
 _K_NEUTRAL = {"delta_deg": 0.0, "alpha_deg": 90.0, "beta_deg": 0.0,
-              "theta_deg": 0.0}
+              "theta_deg": 0.0, "OCR": 1.0}
 _K_SAYS = {"delta_deg": "wall friction", "alpha_deg": "a battered wall back",
            "beta_deg": "a sloping backfill",
-           "theta_deg": "a battered wall face"}
+           "theta_deg": "a battered wall face",
+           "OCR": "an overconsolidation ratio"}
 # What to use instead, by state and input. Caltrans Trenching and Shoring
 # Manual Sec. 4-3: Rankine passive "must NOT be used" for a sloping
 # backfill, Coulomb's passive form is not recommended either, and the
 # Log-Spiral method (Sec. 4-6) is the one for passive pressure with wall
 # friction or slope.
 _CT = "the Caltrans Trenching and Shoring Manual"
+_OCR_INSTEAD = ("OCR is for the at-rest K0 (EN 1997-1 Eq. 9.1, state "
+                "'at_rest'); active and passive coefficients take none")
 _K_INSTEAD = {
     ("active", "delta_deg"): "theory 'coulomb' takes wall friction",
     ("active", "alpha_deg"): "theory 'coulomb' takes a battered back",
+    ("active", "OCR"): _OCR_INSTEAD,
+    ("passive", "OCR"): _OCR_INSTEAD,
     ("active", "theta_deg"): (
         "theory 'coulomb' takes a battered back as alpha_deg, its angle "
         "from horizontal (alpha_deg = 90 - theta_deg)"),
@@ -623,7 +658,7 @@ def _capital(text):
 
 
 def _refuse_unused_k_inputs(p, theory, state):
-    takes = (("beta_deg",) if state == "at_rest"
+    takes = (("beta_deg", "OCR") if state == "at_rest"
              else _K_TAKES.get((theory, state), tuple(_K_NEUTRAL)))
     unused = [n for n, neutral in _K_NEUTRAL.items()
               if n not in takes and p.get(n) is not None
@@ -703,15 +738,16 @@ METHOD_INFO = {
         "brief": "Lateral earth pressure coefficient Ka/Kp/K0 (Rankine, Coulomb, or the log-spiral passive Kp: by default UFC 3-220-20's Eq. 4-12, Fig. 4-12 or Fig. 4-13 by wall geometry, or the Caquot-Kerisel 1948 chart; K0 also behind sloping ground).",
         "parameters": {
             "phi_deg": {"type": "float", "required": True, "description": "Soil friction angle (degrees). Alias: phi."},
-            "theory": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "caquot_kerisel"], "description": "Earth pressure theory. 'caquot_kerisel' = the log-spiral PASSIVE coefficient Kp (state must be 'passive'; UFC 3-220-20 p. 190: passive pressure 'should be calculated using the log spiral method and not the Coulomb method', which over-predicts Kp at high wall friction), from the printed source log_spiral_source names: by default UFC 3-220-20's for the wall's geometry, 'caquot_kerisel_1948' for the Caquot-Kerisel (1948) chart. Theory is ignored for at_rest, which uses Jaky K0 = 1 - sin(phi), and behind ground rising from the wall (beta_deg > 0) EN 1997-1 Eq. 9.2, K0 (1 + sin beta)."},
+            "theory": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "caquot_kerisel"], "description": "Earth pressure theory. 'caquot_kerisel' = the log-spiral PASSIVE coefficient Kp (state must be 'passive'; UFC 3-220-20 p. 190: passive pressure 'should be calculated using the log spiral method and not the Coulomb method', which over-predicts Kp at high wall friction), from the printed source log_spiral_source names: by default UFC 3-220-20's for the wall's geometry, 'caquot_kerisel_1948' for the Caquot-Kerisel (1948) chart. Theory is ignored for at_rest, which uses K0 = (1 - sin(phi)) sqrt(OCR) (EN 1997-1 Eq. 9.1; OCR 1 is Jaky's 1 - sin(phi)), and behind ground rising from the wall (beta_deg > 0) EN 1997-1 Eq. 9.2, K0 (1 + sin beta)."},
             "state": {"type": "str", "required": False, "default": "active", "allowed_values": ["active", "passive", "at_rest"], "description": "Pressure state: Ka (active), Kp (passive), or K0 (at rest). 'caquot_kerisel' requires 'passive'."},
             "delta_deg": {"type": "float", "required": False, "default": 0.0, "description": "Wall friction angle (degrees): Coulomb and caquot_kerisel only; Rankine and K0 take none and refuse a non-zero value. Alias: delta. For caquot_kerisel, omitting it means delta = 0.66 phi' with the UFC 3-220-20 sources (p. 191: 'a common assumption', and the one value its Figs. 4-12 and 4-13 are drawn for) and delta = phi (full wall friction, R = 1) with 'caquot_kerisel_1948'; 'dm7_2_eq_4_12' needs it given. With the default source, a battered face (theta_deg) or sloping ground (beta_deg) at another wall friction is refused: UFC prints none. The wall friction is the engineer's call (UFC 3-220-20 Table 4-1, p. 184, by wall material and soil); the result's choices give the delta used."},
             "beta_deg": {"type": "float", "required": False, "default": 0.0, "description": "Slope of the ground behind the wall (degrees, + rising away from the wall; for a passive Kp, the ground in front of the wall). Rankine active, Coulomb, caquot_kerisel (by default UFC 3-220-20 Fig. 4-13: a vertical face, beta/phi' -0.6 to +1 at delta/phi' 0.66; the Caquot-Kerisel 1948 chart, Caltrans T&S Fig. 4-20: beta/phi -0.9 to +1, phi 10 to 45 deg, any wall friction; Eq. 4-12 and Fig. 4-12 are for level ground) and at_rest (EN 1997-1:2004 Eq. 9.2, p. 104: K0;beta = K0 (1 + sin beta), the horizontal component of the at-rest pressure, for ground sloping upwards from the wall at 0 < beta <= phi'; ground falling away is refused). Rankine passive is for level ground and refuses a non-zero value. Aliases: beta, backfill_slope."},
             "alpha_deg": {"type": "float", "required": False, "default": 90.0, "description": "Wall back face angle from horizontal (degrees, 90 = vertical; below 90 when the soil overhangs the face, as UFC 3-220-20 Fig. 4-7 draws a gravity wall's back, where its theta = 90 - alpha_deg is positive). Coulomb only; the others take a vertical back and refuse another value (the log-spiral Kp takes a battered face as theta_deg = 90 - alpha_deg). Alias: alpha."},
             "theta_deg": {"type": "float", "required": False, "default": 0.0, "description": "With theory 'caquot_kerisel' (passive): the wall face's angle from vertical (degrees), UFC 3-220-20's theta (Figs. 4-7, 4-12): positive when the face slopes down into the soil it bears on, so the soil overhangs it (Kp falls; Fig. 4-12 draws the toe of the face farther into the soil than its top), negative the other way (Kp rises); theta_deg = 90 - Coulomb's alpha_deg. A non-zero value reads UFC 3-220-20 Fig. 4-12 (p. 192): level ground only, theta -30 to +40 deg, delta/phi' 0.66 only, Kp up to 15. Alias: theta."},
+            "OCR": {"type": "float", "required": False, "default": 1.0, "description": "Overconsolidation ratio for the at-rest K0 only (state 'at_rest'): EN 1997-1:2004 Sec. 9.5.2(3), Eq. 9.1 (p. 104), K0 = (1 - sin phi') x sqrt(OCR), then Eq. 9.2 behind sloping ground. 1 = normally consolidated (the default; the result's choices say whether it was given or taken as 1). At least 1. The standard says 'The formula should not be used for very high values of OCR' and prints no limit, so the choices quote that for OCR above 1 and leave the call to you. Aliases: ocr, overconsolidation_ratio. Refused with active or passive, which take none."},
             "log_spiral_source": {"type": "str", "required": False, "default": "ufc_3_220_20", "allowed_values": ["ufc_3_220_20", "caquot_kerisel_1948", "dm7_2_eq_4_12", "dm7_2_fig_4_12", "dm7_2_fig_4_13"], "description": "With theory 'caquot_kerisel', the printed source of the log-spiral passive Kp. 'ufc_3_220_20' (default): UFC 3-220-20 (DM 7.2), the source the wall's geometry calls for (pp. 191-193): Eq. 4-12 (p. 191) for a vertical face and level ground, at any wall friction; Fig. 4-12 (p. 192) for a battered face (theta_deg) with level ground and Fig. 4-13 (p. 193) for a vertical face with sloping ground (beta_deg), both drawn for delta/phi' = 0.66 only. UFC prints nothing for a battered face with sloping ground, nor for those two charts at another wall friction: the default refuses those and names what covers them. 'caquot_kerisel_1948': the Caquot and Kerisel (1948) chart, Kp at delta = phi times the printed reduction factor R(delta/phi), Caltrans Trenching and Shoring Manual Fig. 4-20 (p. 4-30), the method its Sec. 4-6 uses for passive pressure; a vertical wall, level or sloping ground, any wall friction. 'dm7_2_eq_4_12', 'dm7_2_fig_4_12', 'dm7_2_fig_4_13': each UFC source on its own. They differ: at phi 30, delta/phi 0.66 on level ground the 1948 chart gives 5.4, Figs. 4-12 and 4-13 5.3, Eq. 4-12 5.1. UFC 3-220-20 footnote 21 (p. 191): the 1982 DM 7.2 charts 'used delta/phi' = 1 along with reduction ratios', which 'were averages that introduced substantial inaccuracy for some cases'; the 1948 chart takes that form. UFC 3-220-20 Table 4-2 (p. 194) is not used: its row headed delta/phi' = 0.5 prints Fig. 4-13's values for 0.66 (5.3, 8.0, 12, 20 at phi' 30, 35, 40, 45) and Coulomb's Kp at 0.66 (6.1, 9.8, 18, 44); Eq. 4-12 at 0.5 gives 4.46, 6.33, 9.33, 14.3. The result's choices give the route taken and each other source's Kp."},
         },
-        "returns": {"K": "Earth pressure coefficient value.", "coefficient": "Ka, Kp, or K0.", "theory": "Theory used: for at_rest 'jaky_at_rest' on level ground, else 'en_1997_1_eq_9_2' (EN 1997-1 Eq. 9.2, ground rising from the wall).", "delta_deg": "The wall friction used (for caquot_kerisel left out: 0.66 phi' with the UFC sources, phi with the 1948 chart).", "theta_deg": "With caquot_kerisel: the wall face angle from vertical used.", "log_spiral_source": "With caquot_kerisel: the printed source of the Kp.", "log_spiral_route": "With the default 'ufc_3_220_20': the UFC source the geometry called for ('dm7_2_eq_4_12', 'dm7_2_fig_4_12' or 'dm7_2_fig_4_13').", "choices": "The log-spiral source and route, with its basis and each other source's Kp for the case, or behind sloping ground the at-rest K0 equation (EN 1997-1 Eq. 9.2) with its arithmetic, page and the sign of beta. Tell the user."},
+        "returns": {"K": "Earth pressure coefficient value.", "coefficient": "Ka, Kp, or K0.", "theory": "Theory used: for at_rest 'jaky_at_rest' on level ground at OCR 1, 'en_1997_1_eq_9_1' on level ground at OCR above 1, else 'en_1997_1_eq_9_2' (EN 1997-1 Eq. 9.2, ground rising from the wall).", "delta_deg": "The wall friction used (for caquot_kerisel left out: 0.66 phi' with the UFC sources, phi with the 1948 chart).", "theta_deg": "With caquot_kerisel: the wall face angle from vertical used.", "log_spiral_source": "With caquot_kerisel: the printed source of the Kp.", "log_spiral_route": "With the default 'ufc_3_220_20': the UFC source the geometry called for ('dm7_2_eq_4_12', 'dm7_2_fig_4_12' or 'dm7_2_fig_4_13').", "choices": "The log-spiral source and route, with its basis and each other source's Kp for the case, or for at_rest the K0 equation (EN 1997-1 Eq. 9.1, with whether OCR was given or taken as 1, and Eq. 9.2 behind sloping ground) with its arithmetic, page and the sign of beta. Tell the user."},
     },
     "mse_wall": {
         "category": "MSE Wall",
@@ -837,6 +873,7 @@ declare_applies_when(METHOD_INFO, {
                      {"theory": ["caquot_kerisel"], "state": ["passive"]},
                      {"state": ["at_rest"]}],
         "theta_deg": {"theory": ["caquot_kerisel"], "state": ["passive"]},
+        "OCR": {"state": ["at_rest"]},
         "log_spiral_source": {"theory": ["caquot_kerisel"],
                               "state": ["passive"]}},
     "cantilever_wall": {
