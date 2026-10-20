@@ -482,7 +482,7 @@ _REVIEW_NOT = """\
 - You are not the designer of record and you do not sign anything. You point
   at what the document says, what it shows, what is missing and what
   disagrees; the judgement is the reader's.
-- You have no engineering calculation tools on this page. Where a question
+- {calc} Where a question
   turns into an analysis — a capacity, a settlement, a stability check — say
   so plainly and point the person to the GeotechStaffEngineer page, which has
   them.
@@ -490,15 +490,25 @@ _REVIEW_NOT = """\
   say what they need; a construction manager and a structural engineer ask
   different questions of the same sheet."""
 
+#: What the page has to calculate with (BACKLOG DOC-21): the default build
+#: gets ``calculate`` (``deep.agent.build_primary_tools``), the lean one
+#: none.
+_REVIEW_CALC = (
+    "Your one calculation tool here is `calculate`, which evaluates a\n"
+    "  formula you write out (a unit conversion, a sum or an equation the\n"
+    "  document prints); there are no analysis tools on this page.")
+_REVIEW_CALC_LEAN = "You have no engineering calculation tools on this page."
+
 DOCUMENT_REVIEW_PROMPT = "\n\n".join([
     _REVIEW_INTRO, _REVIEW_HOW_YOU_READ + "\n" + _REVIEW_SOURCES,
-    _REVIEW_HAND_BACK, _REVIEW_NOT])
+    _REVIEW_HAND_BACK, _REVIEW_NOT.format(calc=_REVIEW_CALC)])
 
 #: The lean review agent's prompt (``GEOTECH_REVIEW_AGENT=lean``): the same
-#: rules, without the scratch filesystem it does not have.
+#: rules, without the scratch filesystem or the ``calculate`` tool it does
+#: not have.
 DOCUMENT_REVIEW_PROMPT_LEAN = "\n\n".join([
     _REVIEW_INTRO, _REVIEW_HOW_YOU_READ + "\n" + _REVIEW_SOURCES_LEAN,
-    _REVIEW_HAND_BACK, _REVIEW_NOT])
+    _REVIEW_HAND_BACK, _REVIEW_NOT.format(calc=_REVIEW_CALC_LEAN)])
 
 #: The reading helper the lean agent delegates to. It gets the SAME reading
 #: rules as the page — deepagents' own general-purpose helper had a
