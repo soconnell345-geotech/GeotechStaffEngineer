@@ -469,6 +469,15 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
     # GM-212: the printed rule for the foundation cohesion
     rule = sl.get("sliding_cohesion", "drained")
     width = sl.get("adhesion_width")
+    # the theory of the passive coefficient in front of the wall (GM-242)
+    passive_name = "Rankine passive resistance"
+    if sl.get("passive_theory") == "log_spiral":
+        passive_name = (
+            f"log-spiral passive resistance (Kp {sl['Kp']:.3g} at wall "
+            f"friction {sl['passive_delta']:.3g}°, log_spiral_source "
+            f"'{sl['log_spiral_source']}')")
+    elif Pp > 0:
+        passive_name = f"Rankine passive resistance (Kp {sl['Kp']:.3g})"
 
     if delta_b is None:
         pass
@@ -557,13 +566,13 @@ def _calc_steps_cantilever(result, analysis) -> List[CalcSection]:
         result_unit="kN/m",
         reference=reference,
         notes=rule_note
-              + (("P_p: Rankine passive resistance over the depth of the "
+              + ((f"P_p: {passive_name} over the depth of the "
                   "shear key only, below the toe from the underside of the "
                   f"base ({sl['D_passive_top']:.2f} m) to the level of the "
                   f"bottom of the key ({sl['D_passive']:.2f} m), "
                   "UFC 3-220-20 Fig. 4-29. "
                   if sl.get("D_passive_top") else
-                  "P_p: Rankine passive resistance in front of the base. ")
+                  f"P_p: {passive_name} in front of the base. ")
                  if Pp > 0 else "")
               + (f"V leaves out {sl['V_left_out']:.1f} kN/m of surcharge "
                  "over the heel, not a resisting force (see Choices)."

@@ -114,21 +114,45 @@ def _build_geometry(params, *, method, envelope=False):
 # Geometry params consumed by _build_geometry (shared by both wall analyses).
 # No excavation_width: nothing in soe/ reads it, so it is refused, not
 # dropped (GM-110).
+_PASSIVE_THEORY = {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "log_spiral", "caquot_kerisel"], "description": "The passive coefficient below the excavation: 'rankine' (default) = Rankine's Kp, no wall friction, as the Caltrans Trenching and Shoring Manual's examples take it where the wall friction is zero (pp. 7-18, 7-27), with its note that Rankine 'tends to underestimate the passive earth pressure' and Sec. 4-6 (p. 4-28): Rankine 'should not be used ... because it does not account for wall friction'; 'log_spiral' (or 'caquot_kerisel', the same) = the log-spiral Kp of log_spiral_source at passive_wall_friction_deg in each layer below the excavation. Choices give the other theory's Kp and embedment."}
+_LOG_SPIRAL_SOURCE = {"type": "str", "required": False, "default": "ufc_3_220_20", "allowed_values": ["ufc_3_220_20", "caquot_kerisel_1948", "dm7_2_eq_4_12", "dm7_2_fig_4_12", "dm7_2_fig_4_13"], "description": "With passive_theory 'log_spiral', the printed source of Kp, as earth_pressure_coefficient takes it: 'ufc_3_220_20' (default) = UFC 3-220-20 Eq. 4-12 (p. 191), its log-spiral Kp for a vertical face and level ground at any wall friction; 'caquot_kerisel_1948' = the Caltrans Trenching and Shoring Manual Fig. 4-20 chart (its Example 8-1), and 'dm7_2_eq_4_12' = UFC Eq. 4-12 by name, both needing passive_wall_friction_deg given; 'dm7_2_fig_4_12' / 'dm7_2_fig_4_13' = UFC's charts, drawn for delta/phi' 0.66 only."}
+_PASSIVE_WALL_FRICTION = {"type": "float", "required": False, "description": "With passive_theory 'log_spiral', the wall friction delta (deg) in every layer below the excavation, at most its phi': the engineer's call (UFC 3-220-20 Table 4-1, p. 184; Caltrans Example 8-1 takes 15 deg on phi 30). Left out: delta/phi' = 0.66 (UFC p. 191, 'a common assumption') in a layer without cohesion, none in a layer with cohesion (UFC Fig. 4-37 step 1, p. 237: 'Passive pressures for clean coarse grained soils include wall friction'; in other soils it ignores wall friction); refused with 'caquot_kerisel_1948' or 'dm7_2_eq_4_12', which need it given (Caltrans p. 4-29: 'Given delta'). For soldier piles in coarse-grained soil UFC p. 249 takes KP 'without wall friction': give 0."}
+_PASSIVE_CHOICES = "How the passive pressure below the excavation was taken: passive_theory with each layer's Kp and the embedment, the other theory's as the alternative, the Caltrans basis; with 'log_spiral' its source (with the other sources' Kp) and each layer's wall friction. Tell the user."
+
 _GEOM_PARAMS = ("excavation_depth", "layers", "supports", "surcharge",
                 "gwt_depth", "gwt_depth_excavation")
+
+# The passive coefficient below the excavation (GM-242), shared by both wall
+# analyses; 'caquot_kerisel' is what earth_pressure_coefficient calls the
+# log-spiral theory.
+_PASSIVE_PARAMS = ("passive_theory", "log_spiral_source",
+                   "passive_wall_friction_deg")
+_PASSIVE_THEORY_ALIASES = {"caquot_kerisel": "log_spiral",
+                           "logspiral": "log_spiral",
+                           "log-spiral": "log_spiral"}
+
+
+def _passive(p):
+    """The passive theory's inputs as the analyses take them (GM-242)."""
+    theory = p.get("passive_theory", "rankine")
+    return {"passive_theory": _PASSIVE_THEORY_ALIASES.get(theory, theory),
+            "log_spiral_source": p.get("log_spiral_source"),
+            "passive_wall_friction_deg": p.get("passive_wall_friction_deg")}
 
 
 def run_braced_excavation(p, *, method="braced_excavation"):
     """The braced_excavation tool's run: (result, the inputs it used)."""
-    reject_unknown_params(p, _GEOM_PARAMS + ("Fy", "FOS_passive", "embedment_increase"),
-                          method=method)
+    reject_unknown_params(p, _GEOM_PARAMS + ("Fy", "FOS_passive", "embedment_increase")
+                          + _PASSIVE_PARAMS, method=method)
     geometry = _build_geometry(p, method=method, envelope=True)
     used = {"geometry": geometry, "Fy": p.get("Fy", 345.0),
             "FOS_passive": p.get("FOS_passive", 1.5),
-            "embedment_increase": p.get("embedment_increase", 1.0)}
+            "embedment_increase": p.get("embedment_increase", 1.0),
+            **_passive(p)}
     result = analyze_braced_excavation(
         geometry, Fy=used["Fy"], FOS_passive=used["FOS_passive"],
-        embedment_increase=used["embedment_increase"])
+        embedment_increase=used["embedment_increase"],
+        **{k: used[k] for k in _PASSIVE_PARAMS})
     return result, used
 
 
@@ -141,15 +165,17 @@ def run_cantilever_excavation(p, *, method="cantilever_excavation"):
     # No supports: a cantilever has none (GM-110).
     reject_unknown_params(
         p, tuple(k for k in _GEOM_PARAMS if k != "supports")
-        + ("FOS_passive", "Fy", "embedment_increase"),
+        + ("FOS_passive", "Fy", "embedment_increase") + _PASSIVE_PARAMS,
         method=method)
     geometry = _build_geometry(p, method=method)
     used = {"geometry": geometry, "FOS_passive": p.get("FOS_passive", 1.5),
             "Fy": p.get("Fy", 345.0),
-            "embedment_increase": p.get("embedment_increase", 1.2)}
+            "embedment_increase": p.get("embedment_increase", 1.2),
+            **_passive(p)}
     result = analyze_cantilever_excavation(
         geometry, FOS_passive=used["FOS_passive"], Fy=used["Fy"],
-        embedment_increase=used["embedment_increase"])
+        embedment_increase=used["embedment_increase"],
+        **{k: used[k] for k in _PASSIVE_PARAMS})
     return result, used
 
 
@@ -351,11 +377,11 @@ _ANCHOR_INFO = {
 
 METHOD_INFO = {
     "braced_excavation": {"category": "Braced Excavation", "brief": "Multi-level braced excavation analysis (Terzaghi-Peck).",
-        "parameters": {"excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "layers": _LAYERS, "supports": {"type": "array", "required": False, "description": "Support levels [{depth (m), support_type ('strut' or 'anchor'), spacing (m), angle_deg}]."}, "surcharge": {"type": "float", "required": False, "default": 10.0, "description": "Surface surcharge (kPa); added to the envelope as Ka*q (sand) or q (clay)."}, "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth behind the wall (m); water pressure is added for sand envelopes."}, "gwt_depth_excavation": _GWT_EXC, "FOS_passive": {"type": "float", "required": False, "default": 1.5, "description": "Embedment FS, MR = FS*MD about the lowest support (Caltrans uses 1.3)."}, "embedment_increase": {"type": "float", "required": False, "default": 1.0, "description": "Multiplier on the free-earth-support embedment."}, "Fy": {"type": "float", "required": False, "default": 345.0, "description": "Steel yield strength (MPa) for section sizing."}},
-        "returns": {"support_reactions": "Support loads (kN/m of wall).", "max_moment_kNm_per_m": "Max wall moment (spans and embedded portion).", "required_embedment_m": "Free-earth-support embedment below the excavation; null when no moment balance within 6H.", "free_earth": "Embedment detail: D at FS and at 1.0, lowest-support load from below.", "converged": "False when free earth support found no moment balance: the depths (and what follows from them) are null and the first note says why.", "notes": "What pressure was applied and how."}},
+        "parameters": {"excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "layers": _LAYERS, "supports": {"type": "array", "required": False, "description": "Support levels [{depth (m), support_type ('strut' or 'anchor'), spacing (m), angle_deg}]."}, "surcharge": {"type": "float", "required": False, "default": 10.0, "description": "Surface surcharge (kPa); added to the envelope as Ka*q (sand) or q (clay)."}, "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth behind the wall (m); water pressure is added for sand envelopes."}, "gwt_depth_excavation": _GWT_EXC, "FOS_passive": {"type": "float", "required": False, "default": 1.5, "description": "Embedment FS, MR = FS*MD about the lowest support (Caltrans uses 1.3)."}, "embedment_increase": {"type": "float", "required": False, "default": 1.0, "description": "Multiplier on the free-earth-support embedment."}, "passive_theory": _PASSIVE_THEORY, "log_spiral_source": _LOG_SPIRAL_SOURCE, "passive_wall_friction_deg": _PASSIVE_WALL_FRICTION, "Fy": {"type": "float", "required": False, "default": 345.0, "description": "Steel yield strength (MPa) for section sizing."}},
+        "returns": {"support_reactions": "Support loads (kN/m of wall).", "max_moment_kNm_per_m": "Max wall moment (spans and embedded portion).", "required_embedment_m": "Free-earth-support embedment below the excavation; null when no moment balance within 6H.", "free_earth": "Embedment detail: D at FS and at 1.0, lowest-support load from below.", "converged": "False when free earth support found no moment balance: the depths (and what follows from them) are null and the first note says why.", "notes": "What pressure was applied and how.", "choices": _PASSIVE_CHOICES}},
     "cantilever_excavation": {"category": "Cantilever Excavation", "brief": "Cantilever (unbraced) excavation wall analysis.",
-        "parameters": {"excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "layers": _LAYERS_CANTILEVER, "surcharge": {"type": "float", "required": False, "default": 10.0, "description": "Surface surcharge (kPa)."}, "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth behind the wall (m)."}, "gwt_depth_excavation": _GWT_EXC, "FOS_passive": {"type": "float", "required": False, "default": 1.5, "description": "FOS on passive resistance."}, "embedment_increase": {"type": "float", "required": False, "default": 1.2, "description": "D / D0 (Caltrans/AASHTO 1.2; use 1.0 to carry all safety on FOS_passive)."}, "Fy": {"type": "float", "required": False, "default": 345.0, "description": "Steel yield strength (MPa) for section sizing."}},
-        "returns": {"required_embedment_m": "Embedment D = embedment_increase x D0 (Caltrans T&S Simplified Method, layered Rankine pressures with water).", "embedment_converged_m": "D0.", "max_moment_kNm_per_m": "Maximum moment (below the excavation).", "max_moment_depth_m": "Depth of the maximum moment.", "converged": "False when no D0 within 6H balances the moments: the wall cannot stand as a cantilever, embedment/moment/shear are null and the first note says why.", "notes": "Applicability notes."}},
+        "parameters": {"excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "layers": _LAYERS_CANTILEVER, "surcharge": {"type": "float", "required": False, "default": 10.0, "description": "Surface surcharge (kPa)."}, "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth behind the wall (m)."}, "gwt_depth_excavation": _GWT_EXC, "FOS_passive": {"type": "float", "required": False, "default": 1.5, "description": "FOS on passive resistance."}, "embedment_increase": {"type": "float", "required": False, "default": 1.2, "description": "D / D0 (Caltrans/AASHTO 1.2; use 1.0 to carry all safety on FOS_passive)."}, "passive_theory": _PASSIVE_THEORY, "log_spiral_source": _LOG_SPIRAL_SOURCE, "passive_wall_friction_deg": _PASSIVE_WALL_FRICTION, "Fy": {"type": "float", "required": False, "default": 345.0, "description": "Steel yield strength (MPa) for section sizing."}},
+        "returns": {"required_embedment_m": "Embedment D = embedment_increase x D0 (Caltrans T&S Simplified Method, layered Rankine pressures with water; the log-spiral passive Kp with passive_theory 'log_spiral').", "Kp": "The passive coefficient of the layer the wall is embedded in.", "choices": _PASSIVE_CHOICES, "embedment_converged_m": "D0.", "max_moment_kNm_per_m": "Maximum moment (below the excavation).", "max_moment_depth_m": "Depth of the maximum moment.", "converged": "False when no D0 within 6H balances the moments: the wall cannot stand as a cantilever, embedment/moment/shear are null and the first note says why.", "notes": "Applicability notes."}},
     "apparent_pressure": {"category": "Earth Pressure", "brief": "Terzaghi-Peck apparent earth pressure envelope.",
         "parameters": {"excavation_depth": {"type": "float", "required": True, "description": "Excavation depth (m)."}, "layers": _LAYERS, "surcharge": {"type": "float", "required": False, "default": 0.0, "description": "Surface surcharge (kPa); not part of the envelope (braced_excavation adds it)."}, "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m); the sand envelope uses the effective unit weight below it."}},
         "returns": {"type": "Envelope type.", "max_pressure_kPa": "Maximum pressure."}},
@@ -388,6 +414,8 @@ METHOD_INFO["cantilever_excavation"]["refused_parameters"] = {
     "supports": ("a cantilever wall has no supports; a wall with struts or "
                  "anchors is braced_excavation")}
 
+_LOG_SPIRAL = ["log_spiral", "caquot_kerisel"]
+
 # When each default applies (GM-119): the failure-block width to the
 # Caltrans check; the apparent-pressure envelope leaves the surcharge out
 # (braced_excavation adds it).
@@ -402,6 +430,10 @@ declare_applies_when(METHOD_INFO, {
         "soil_type": {"bond_stress_kPa": "unset",
                       "load_transfer_kN_per_m": "unset"}},
     "apparent_pressure": {"surcharge": False},
+    # GM-242: the log-spiral passive Kp's inputs
+    **{name: {"log_spiral_source": {"passive_theory": _LOG_SPIRAL},
+              "passive_wall_friction_deg": {"passive_theory": _LOG_SPIRAL}}
+       for name in ("braced_excavation", "cantilever_excavation")},
     # GM-182: a single anchor's alone; that run's choices call them
     # "default" when left out, so defaults_used lists them there only
     "fhwa_apparent_pressure_anchored_wall": {
@@ -414,11 +446,20 @@ declare_applies_when(METHOD_INFO, {
 from funhouse_agent.adapters import declare_when_absent  # noqa: E402
 _NO_WATER = ("no water table",
              "no water pressure on the wall; total unit weight throughout")
+_LEFT_OUT_FRICTION = (
+    "by layer: delta/phi' 0.66 without cohesion, none with cohesion",
+    "delta/phi' = 0.66 (UFC 3-220-20 p. 191) in a layer below the "
+    "excavation without cohesion; none in one with cohesion (UFC Fig. "
+    "4-37 step 1, p. 237); refused with 'caquot_kerisel_1948' or "
+    "'dm7_2_eq_4_12'; the choices give each layer's")
 declare_when_absent(METHOD_INFO, {
     "braced_excavation": {"gwt_depth": _NO_WATER,
-                          "gwt_depth_excavation": "gwt_depth"},
+                          "gwt_depth_excavation": "gwt_depth",
+                          "passive_wall_friction_deg": _LEFT_OUT_FRICTION},
     "cantilever_excavation": {"gwt_depth": _NO_WATER,
-                              "gwt_depth_excavation": "gwt_depth"},
+                              "gwt_depth_excavation": "gwt_depth",
+                              "passive_wall_friction_deg":
+                                  _LEFT_OUT_FRICTION},
     "apparent_pressure": {"gwt_depth": _NO_WATER},
     "check_basal_heave": {
         "L": "B",

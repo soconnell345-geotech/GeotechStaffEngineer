@@ -275,7 +275,10 @@ def _wall(**params):
 def test_sheet_pile_log_spiral_source():
     ufc = _wall(delta=19.8, pressure_method="log_spiral")
     assert ufc["defaults_used"]["log_spiral_source"] == "ufc_3_220_20"
-    (c,) = ufc["choices"]
+    # the source, then each layer's wall friction (GM-242)
+    c, friction = ufc["choices"]
+    assert friction["chosen"] == "layer 1: 19.8 deg (wall_friction_deg)"
+    assert friction["how"] == "given"
     assert c["how"] == "default" and "Eq. 4-12" in c["basis"]
     assert "layer 1 (phi' 30, delta 19.8) Kp 5.06" in c["basis"]
     ck = _wall(delta=19.8, pressure_method="log_spiral",
@@ -298,10 +301,52 @@ def test_anchored_sheet_pile_states_ufc_p_260():
     r = D.call_agent("sheet_pile", "anchored_wall",
                      {"excavation_depth": 5.0, "anchor_depth": 1.0,
                       "layers": layers, "pressure_method": "log_spiral"})
-    (c,) = r["choices"]
+    c, friction = r["choices"]
+    assert friction["what"].startswith("Wall friction delta")
     assert "p. 260" in c["basis"] and "Figure 4-12" in c["basis"]
     assert "Kp 4.46" in c["basis"]                 # Eq. 4-12 at 0.5
     assert any("Kp 4.7" in a for a in c["alternatives"])
+
+
+def test_log_spiral_names_the_log_spiral_theory():
+    """GM-242: theory 'log_spiral' is 'caquot_kerisel' by its usual name."""
+    p = {"phi_deg": 32.0, "state": "passive", "beta_deg": 10.0}
+    named = D.call_agent("retaining_walls", "earth_pressure_coefficient",
+                         {**p, "theory": "log_spiral"})
+    old = D.call_agent("retaining_walls", "earth_pressure_coefficient",
+                       {**p, "theory": "caquot_kerisel"})
+    assert named["K"] == old["K"] and named["choices"] == old["choices"]
+    err = D.call_agent("retaining_walls", "earth_pressure_coefficient",
+                       {"phi_deg": 32.0, "theory": "log_spiral"})["error"]
+    assert "passive (Kp)" in err
+
+
+def test_sheet_pile_wall_friction_rows():
+    """GM-242: a layer's interface_soil names the steel sheet pile row
+    (EM 1110-2-2504 Table 3-3, USS Table 4, UFC 3-220-20 Table 4-1); left
+    out, the log-spiral passive side takes the clean sand row, 17 deg."""
+    layers = [{"thickness": 15.0, "unit_weight": 18.0,
+               "friction_angle": 32.0}]
+    args = {"excavation_depth": 4.0, "pressure_method": "log_spiral"}
+    left_out = D.call_agent("sheet_pile", "cantilever_wall",
+                            {**args, "layers": layers})
+    friction = left_out["choices"][-1]
+    assert friction["chosen"] == ("layer 1: 17 deg (the clean sand row, "
+                                  "taken when the layer gives none)")
+    assert friction["how"] == "default"
+    # the GM-242 review: the embedment with no wall friction beside it
+    smooth = D.call_agent("sheet_pile", "cantilever_wall", {
+        **args, "layers": [{**layers[0], "wall_friction_deg": 0.0}]})
+    said = friction["alternatives"][0].rsplit("the embedment is ", 1)[1]
+    assert float(said.removesuffix(" m")) == pytest.approx(
+        smooth["embedment_depth_m"], abs=0.006)
+    silty = D.call_agent("sheet_pile", "cantilever_wall", {
+        **args, "layers": [{**layers[0], "interface_soil": "silty_sand"}]})
+    assert silty["choices"][-1]["chosen"] == (
+        "layer 1: 14 deg (interface_soil 'silty_sand')")
+    bad = D.call_agent("sheet_pile", "cantilever_wall", {
+        **args, "layers": [{**layers[0], "interface_soil": "sand"}]})
+    assert "interface_soil must be one of" in bad["error"]
 
 
 def test_cantilever_wall_key_passive_over_the_key_depth():

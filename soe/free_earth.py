@@ -28,7 +28,9 @@ Pressures per metre of wall (kPa), z measured down from the top of the wall:
     retained side      pa = max(0, Ka*s'v - 2c*sqrt(Ka))       (s'v includes q)
     excavation side    pp = Kp*s'v,exc + 2c*sqrt(Kp)           (z > H only)
 
-with Rankine Ka/Kp of the layer at each depth (or explicit overrides). Water
+with Rankine Ka/Kp of the layer at each depth (or explicit overrides; or,
+with ``passive_theory="log_spiral"``, the log-spiral Kp of
+:func:`passive_by_layer`, GM-242). Water
 is hydrostatic on each side: retained side from ``gwt_retained``, excavation
 side from max(``gwt_excavation``, H) -- the excavation is never flooded above
 its own base -- so the net water pressure below the base is carried as a
@@ -57,6 +59,18 @@ _Z_FAR = 1000.0
 _N_SEG = 129
 
 
+def _per_layer(K, phis, rankine):
+    """A coefficient for each layer: Rankine's from phi where ``K`` is None,
+    ``K`` itself where it is a number, else ``K``'s own entry per layer."""
+    if K is None:
+        return [rankine(p) for p in phis]
+    if np.ndim(K) == 0:
+        return [float(K)] * len(phis)
+    if len(K) != len(phis):
+        raise ValueError(f"{len(K)} coefficients for {len(phis)} layers")
+    return [rankine(p) if k is None else float(k) for k, p in zip(K, phis)]
+
+
 class LayeredProfile:
     """Soil, surcharge and water on both sides of an excavation wall.
 
@@ -75,9 +89,9 @@ class LayeredProfile:
     gwt_excavation : float, optional
         Water table depth on the excavation side (m); clipped to be no
         shallower than H. Defaults to ``gwt_retained``.
-    Ka, Kp : float, optional
-        Coefficients applied to every layer instead of Rankine (e.g. a
-        log-spiral Kp).
+    Ka, Kp : float or sequence, optional
+        Coefficients applied instead of Rankine's: one for every layer, or
+        one per layer (e.g. the log-spiral Kp of :func:`passive_by_layer`).
     """
 
     def __init__(self, layers: Sequence, H: float, surcharge: float = 0.0,
@@ -105,10 +119,8 @@ class LayeredProfile:
         self.c = np.array([float(getattr(l, "cohesion", 0.0) or 0.0)
                            for l in layers])
         phis = [float(getattr(l, "friction_angle", 0.0) or 0.0) for l in layers]
-        self.Ka = np.array([float(Ka) if Ka is not None else rankine_Ka(p)
-                            for p in phis])
-        self.Kp = np.array([float(Kp) if Kp is not None else rankine_Kp(p)
-                            for p in phis])
+        self.Ka = np.array(_per_layer(Ka, phis, rankine_Ka))
+        self.Kp = np.array(_per_layer(Kp, phis, rankine_Kp))
         self._sv_r = self._stress_table(0.0, self.gwt_r, self.q)
         self._sv_e = self._stress_table(self.H, self.gwt_e, 0.0)
 
@@ -470,9 +482,155 @@ def solve_about_support(profile: LayeredProfile, pivot: float,
 # bridges from ExcavationGeometry
 # ---------------------------------------------------------------------------
 
+#: The theories of the passive pressure below the excavation (GM-242):
+#: Rankine's Kp, no wall friction (the default, as the Caltrans Trenching
+#: and Shoring Manual's examples take it), or the log-spiral Kp of
+#: ``geotech_common.log_spiral`` with wall friction.
+PASSIVE_THEORIES = ("rankine", "log_spiral")
+
+#: Why the passive pressure takes Rankine's Kp by default (GM-242), for the
+#: choice, in the Caltrans Trenching and Shoring Manual's words.
+PASSIVE_BASIS = (
+    "The Caltrans Trenching and Shoring Manual, which these solvers follow "
+    "(Secs. 7-5.02 and 8-4.02), takes Rankine's where its examples have no "
+    "wall friction: 'since the wall friction (delta) is zero, use Rankine "
+    "earth pressure theory to calculate the active and passive earth "
+    "pressure coefficients' (pp. 7-18, 7-27 and 9-12), each time with the "
+    "note 'Rankine theory tends to underestimate the passive earth "
+    "pressure. It is recommended to use the Log-Spiral model to compute the "
+    "passive earth force' (p. 7-27; 'Log-Spiral-Rankine Model', pp. 7-18 "
+    "and 9-13); Example 8-1 takes the log-spiral Kp at delta 15 deg on phi "
+    "30 deg (p. 8-12); and Sec. 4-6 (p. 4-28) says Rankine's theory "
+    "'should not be used to calculate the passive earth pressure forces "
+    "for a shoring system because it does not account for wall friction'. "
+    "The module keeps Rankine's, the smaller Kp, as its default; "
+    "passive_theory 'log_spiral' takes the log-spiral Kp with wall "
+    "friction. At delta = 0 the two are the same Kp")
+
+#: Each layer's wall friction on the passive side when it is left out
+#: (GM-242), for the choice.
+PASSIVE_FRICTION_LEFT_OUT = (
+    "Left out, a layer below the excavation with no cohesion takes "
+    "delta/phi' = 0.66 (UFC 3-220-20 p. 191, 'a common assumption', the "
+    "wall friction its Figs. 4-12 and 4-13 are drawn for); "
+    "log_spiral_source 'caquot_kerisel_1948' or 'dm7_2_eq_4_12' needs it "
+    "given. A layer with cohesion takes none, so Rankine's Kp, as UFC "
+    "3-220-20's anchored bulkhead procedure does (Fig. 4-37 step 1, p. "
+    "237): 'Passive pressures for clean coarse grained soils include wall "
+    "friction (see Table 4-1). For active or passive pressures in all "
+    "other soil types, ignore wall friction.' Judgment, for the engineer "
+    "to confirm: a layer with no cohesion is read as a clean coarse-grained "
+    "soil; for a steel sheet pile Table 4-1 (p. 184) gives 17 deg against "
+    "clean sand (the sheet_pile tool's default; less than 0.66 phi' for "
+    "phi' above 26 deg) and 22 deg against clean gravel. A wall friction "
+    "given "
+    "is used in every layer below the excavation, at most its phi'")
+
+
+def check_passive(passive_theory: str = "rankine",
+                  log_spiral_source: Optional[str] = None,
+                  passive_wall_friction_deg: Optional[float] = None) -> None:
+    """The passive theory's inputs checked, and refused where they are not
+    used (GM-242)."""
+    from geotech_common import log_spiral as _ls
+    if passive_theory not in PASSIVE_THEORIES:
+        raise ValueError(f"passive_theory must be one of "
+                         f"{list(PASSIVE_THEORIES)}, got {passive_theory!r}")
+    if log_spiral_source is not None \
+            and log_spiral_source not in _ls.SOURCES:
+        raise ValueError(f"log_spiral_source must be one of "
+                         f"{list(_ls.SOURCES)}, got {log_spiral_source!r}")
+    if passive_theory == "rankine":
+        unused = [n for n, v in (
+            ("log_spiral_source", log_spiral_source),
+            ("passive_wall_friction_deg", passive_wall_friction_deg))
+            if v is not None]
+        if unused:
+            raise ValueError(
+                f"{' and '.join(unused)}: for the log-spiral passive Kp "
+                "below the excavation (passive_theory 'log_spiral'); "
+                "Rankine's Kp takes no wall friction. Give passive_theory "
+                "'log_spiral', or leave "
+                f"{'it' if len(unused) == 1 else 'them'} out.")
+    if passive_wall_friction_deg is not None \
+            and not 0.0 <= passive_wall_friction_deg < 90.0:
+        raise ValueError(f"passive_wall_friction_deg must be in [0, 90) "
+                         f"deg, got {passive_wall_friction_deg:g}")
+    if passive_theory == "log_spiral" and passive_wall_friction_deg is None \
+            and log_spiral_source in _ls.LEVEL_FRONT_NEEDS_DELTA:
+        raise ValueError(_ls.LEVEL_FRONT_NEEDS_DELTA[
+            log_spiral_source].format(name="passive_wall_friction_deg"))
+
+
+def passive_by_layer(layers: Sequence, H: float,
+                     passive_theory: str = "rankine",
+                     log_spiral_source: Optional[str] = None,
+                     passive_wall_friction_deg: Optional[float] = None
+                     ) -> List[dict]:
+    """Each layer's passive coefficient (GM-242): ``Kp``, ``delta`` (deg),
+    ``came`` and ``below`` (whether any of the layer is below the excavation
+    level ``H``, where the passive pressure acts).
+
+    "rankine": Rankine's Kp, delta 0 (``came`` "rankine"). "log_spiral",
+    in a layer below the excavation: the log-spiral Kp of
+    ``log_spiral_source`` (default UFC 3-220-20's, Eq. 4-12 for the vertical
+    face and level ground in front of the wall) at the wall friction given,
+    at most the layer's phi' ("given"), or left out delta/phi' = 0.66 with
+    no cohesion ("source"; refused with the 1948 chart and Eq. 4-12 by
+    name) and none with cohesion ("cohesion",
+    :data:`PASSIVE_FRICTION_LEFT_OUT`); phi' = 0 gives Kp = 1 ("phi_0").
+    With delta = 0 the log-spiral Kp is Rankine's, and Rankine's is taken.
+    A layer wholly above the excavation keeps Rankine's (``came``
+    "above")."""
+    from geotech_common import log_spiral as _ls
+    check_passive(passive_theory, log_spiral_source,
+                  passive_wall_friction_deg)
+    source = log_spiral_source or _ls.DEFAULT_SOURCE
+    out, top = [], 0.0
+    for layer in layers:
+        phi = float(getattr(layer, "friction_angle", 0.0) or 0.0)
+        c = float(getattr(layer, "cohesion", 0.0) or 0.0)
+        bottom = top + float(layer.thickness)
+        below = bottom > H or layer is layers[-1]
+        top = bottom
+        row = {"Kp": rankine_Kp(phi), "delta": 0.0, "below": below,
+               "came": "rankine"}
+        out.append(row)
+        if passive_theory == "rankine":
+            continue
+        if not below:
+            row["came"] = "above"
+        elif phi <= 0:
+            row.update(Kp=1.0, came="phi_0")
+        elif passive_wall_friction_deg is not None:
+            row.update(delta=min(float(passive_wall_friction_deg), phi),
+                       came="given")
+        elif c > 0:
+            row["came"] = "cohesion"
+        else:
+            row.update(delta=_ls.level_front_Kp(phi, None, source)
+                       ["delta_deg"], came="source")
+        if row["delta"] > 0:
+            row["Kp"] = _ls.level_front_Kp(phi, row["delta"], source)["Kp"]
+    return out
+
+
 def profile_for(geometry, Ka: Optional[float] = None,
-                Kp: Optional[float] = None) -> LayeredProfile:
-    """The LayeredProfile of an ``ExcavationGeometry``."""
+                Kp: Optional[float] = None,
+                passive_theory: str = "rankine",
+                log_spiral_source: Optional[str] = None,
+                passive_wall_friction_deg: Optional[float] = None
+                ) -> LayeredProfile:
+    """The LayeredProfile of an ``ExcavationGeometry``; with
+    ``passive_theory`` "log_spiral" each layer's Kp from
+    :func:`passive_by_layer` (GM-242)."""
+    if passive_theory != "rankine" or log_spiral_source is not None \
+            or passive_wall_friction_deg is not None:
+        if Kp is not None:
+            raise ValueError("Kp given and a passive_theory: give one")
+        Kp = [row["Kp"] for row in passive_by_layer(
+            geometry.soil_layers, geometry.excavation_depth,
+            passive_theory, log_spiral_source, passive_wall_friction_deg)]
     return LayeredProfile(
         geometry.soil_layers, geometry.excavation_depth,
         surcharge=geometry.surcharge, gwt_retained=geometry.gwt_depth,
@@ -529,4 +687,5 @@ def apparent_pressure_profile(geometry):
 
 __all__ = ["LayeredProfile", "CantileverSolution", "SupportSolution",
            "solve_cantilever", "solve_about_support", "profile_for",
-           "apparent_pressure_profile"]
+           "apparent_pressure_profile", "PASSIVE_THEORIES",
+           "passive_by_layer", "check_passive"]
