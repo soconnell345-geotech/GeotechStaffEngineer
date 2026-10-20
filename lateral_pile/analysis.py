@@ -22,7 +22,9 @@ from typing import List, Optional
 import numpy as np
 
 from lateral_pile.pile import Pile
-from lateral_pile.py_curves import WeakRock
+from lateral_pile.py_curves import (
+    STIFF_CLAY_K_TABLE, StiffClayBelowWT, WeakRock,
+)
 from lateral_pile.soil import SoilLayer, get_layer_at_depth, validate_layers
 from lateral_pile.solver import solve_lateral_pile
 from lateral_pile.results import Results
@@ -31,9 +33,12 @@ from lateral_pile.results import Results
 #: Each p-y model's source, as its class docstring cites it, for a result's
 #: ``choices`` (GM-115), and the models offered for the same ground.
 _PY_SOURCE = {
-    "SoftClayMatlock": "Matlock (1970), OTC 1204, soft clay",
+    "SoftClayMatlock": "Matlock (1970), OTC 1204, soft clay, as printed "
+                       "in COM624P (FHWA-SA-91-048) pp. 323-327 and GEC 9 "
+                       "App. A.1",
     "StiffClayBelowWT": "Reese, Cox & Koop (1975), OTC 2312, stiff clay "
-                        "below the water table",
+                        "below the water table, as printed in COM624P "
+                        "(FHWA-SA-91-048) pp. 328-335 and GEC 9 App. A.2",
     "StiffClayAboveWT": "Welch & Reese (1972), Report 89-10, stiff clay "
                         "above the water table, as printed in COM624P "
                         "(FHWA-SA-91-048) pp. 336-340 and GEC 9 App. A.3",
@@ -92,6 +97,8 @@ def py_choices(layers, within: str = "layers") -> list:
             out += _weak_rock_choices(model, layer, within)
         if getattr(model, "n_cycles", None) is not None:
             out.append(_cycles_choice(model, layer, within))
+        if isinstance(model, StiffClayBelowWT):
+            out.append(_stiff_clay_k_choice(model, layer, within))
         load = getattr(model, "loading", None)
         if load is not None:
             if how_given(load, _field_default(model, "loading")) != DEFAULT:
@@ -147,6 +154,26 @@ def _cycles_choice(model, layer, within: str = "layers") -> dict:
         ["N = 1: the static curve, the stiffest"]
         + [text for n_alt, text in others if abs(n_alt - n) > 1e-9]
         + ["more cycles: a softer curve, more deflection and moment"])
+
+
+def _stiff_clay_k_choice(model, layer, within: str = "layers") -> dict:
+    """The k of a stiff-clay layer below the water table (GM-208): ks for
+    static loading, kc for cyclic, always given (COM624P Table 3.2)."""
+    from geotech_common.choices import choice, how_given
+    name = "ks" if model.loading == "static" else "kc"
+    rows = STIFF_CLAY_K_TABLE[name]
+    return choice(
+        f"k of the initial line, {name}, {layer.top:g}-{layer.bottom:g} m",
+        f"{model.k:g} kN/m3",
+        how_given(model.k, None, within=within),
+        f"the initial line p = ({name} x) y up to the "
+        f"{model.loading} curve (Reese, Cox & Koop 1975; COM624P Eq. 3.16 "
+        "and Table 3.2, GEC 9 Eq. A-9 and Table A-1), by the average "
+        "undrained shear strength to five pile diameters",
+        [f"{k:,.0f} kN/m3 for {lo:g}-{hi:g} kPa" for lo, hi, k in rows
+         if abs(k - model.k) > 0.5]
+        + ["a smaller k: a softer start to the curve, more deflection at "
+           "small loads"])
 
 
 def _weak_rock_choices(model, layer, within: str = "layers") -> list:

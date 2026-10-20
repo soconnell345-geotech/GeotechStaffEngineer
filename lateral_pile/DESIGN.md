@@ -7,10 +7,14 @@ Supports an above-ground free (stickup) length for pile-bent / column
 applications.
 
 ## References
-- Matlock (1970) — soft clay p-y curves
+- Matlock (1970) — soft clay p-y curves, static and cyclic, as printed in
+  the COM624P manual (FHWA-SA-91-048) pp. 323-327 and GEC 9 App. A.1,
+  pp. 216-219
 - Reese et al. (1974) — sand p-y curves
 - API RP2A (2000) — sand simplified p-y
-- Reese et al. (1975) — stiff clay below the water table
+- Reese, Cox & Koop (1975) — stiff clay below the water table, static and
+  cyclic, as printed in the COM624P manual pp. 328-335 and GEC 9 App. A.2,
+  pp. 219-224
 - Welch and Reese (1972) — stiff clay above the water table, static and
   cyclic, as printed in the COM624P manual (FHWA-SA-91-048) pp. 336-340 and
   GEC 9 App. A.3, pp. 224-226
@@ -61,16 +65,68 @@ results.summary()
   stickup mesh also captures the P-delta moment over the free length.
 - **Sign convention**: M = EI*y'', V = EI*y''' + Q*y'. Positive Vt -> positive y.
 - **Moment equilibrium**: integral(p*z*dz) = -Mt (soil reaction opposes applied moment)
-- **Matlock cyclic**: Only engages when deflections exceed 3*y50. Not as
-  printed above z_r (found in the GM-202 sweep, not fixed): past 3 y50 the
-  code drops straight to 0.72 pu z/z_r, where COM624P Fig. 3.5b and GEC 9
-  App. A.1 (Eq. A-6) fall linearly from 0.72 pu at 3 y50 to 0.72 pu z/z_r
-  at 15 y50 (softer than printed between 3 and 15 y50).
-- **Stiff clay below the water table**: the static and cyclic curves are a
-  simplified construction (linear, a square-root parabola, a plateau at
-  A pu), not the printed five- and four-segment curves of Reese et al.
-  (1975) in COM624P pp. 328-335 and GEC 9 App. A.2 (Eqs. A-7 to A-18);
-  found in the GM-202 sweep, not fixed. Cyclic is not ignored.
+- **Matlock cyclic (GM-208, 2026-10-19)**: as printed in COM624P
+  pp. 326-327 (Eq. 3.13, Fig. 3.5b) and GEC 9 Eq. A-6: the static curve
+  while p is below 0.72 pu (reached at 2.99 y50); past 3 y50, at x >= x_r
+  p = 0.72 pu, and above x_r p falls on a straight line from 0.72 pu at
+  3 y50 to 0.72 pu (x/x_r) at 15 y50 and stays there. Before GM-208 it
+  dropped straight to 0.72 pu x/x_r at 3 y50 (a step, softer than printed
+  between 3 and 15 y50). Neither manual prints a cyclic soft-clay example;
+  the curve is pinned to a HAND CALCULATION (c 20 kPa, gamma' 8, eps50
+  0.02, b 0.6 m, x 2 m: pu 65.6 kN/m, x_r 4.865 m; 47.23 kN/m at 3 y50,
+  33.32 at 9 y50, 19.42 from 15 y50), `tests/test_matlock_cyclic.py`.
+- **Stiff clay below the water table (`StiffClayBelowWT`, GM-208,
+  2026-10-19)**: Reese, Cox & Koop (1975) as printed in COM624P pp. 328-335
+  (Eqs. 3.14-3.26, Figs. 3.6-3.8, Tables 3.2-3.3) and GEC 9 App. A.2
+  (Eqs. A-7 to A-18). pc the smaller of 2 ca b + gamma' b x + 2.83 ca x and
+  11 c b (ca taken as the layer's c); y50 = eps50 b (Eq. 3.17; NOT the
+  2.5 eps50 b of the other clay criteria); the initial line p = (k x) y.
+  Static: 0.5 pc (y/y50)^0.5 to As y50; minus 0.055 pc ((y - As y50)/
+  (As y50))^1.25 to 6 As y50; a line of slope -0.0625 pc/y50 to 18 As y50;
+  the residual pc (0.5 (6 As)^0.5 - 0.411 - 0.75 As) beyond. Cyclic, yp =
+  4.1 Ac y50: Ac pc [1 - |(y - 0.45 yp)/(0.45 yp)|^2.5] to 0.6 yp; a line
+  of slope -0.085 pc/y50 to 1.8 yp; 0.936 Ac pc - 0.102 pc yp/y50 beyond.
+  The cyclic method has no number of cycles. The initial line holds until
+  it meets the curve and the smaller p holds where they do not meet
+  (COM624P notes, pp. 333, 335). Where As < 0.223 (x/b below about 0.08)
+  the static residual is negative; p is held at zero.
+  - **k**: `ks` for static loading, `kc` for cyclic (kN/m3), each required
+    with its loading and refused with the other. Table 3.2 (A-1) by the
+    average undrained shear strength to five diameters, 48-96 / 96-192 /
+    192-383 kPa (0.5-1 / 1-2 / 2-4 ton/ft^2): ks 135,700 / 271,400 /
+    542,900 and kc 54,300 / 108,600 / 217,200 kN/m3 (500 / 1,000 / 2,000
+    and 200 / 400 / 800 lb/in^3, 1 lb/in^3 = 271.447 kN/m3). Table 3.3:
+    eps50 0.007 / 0.005 / 0.004. The k in force is reported in `choices`.
+  - **As and Ac** were read off COM624P Fig. 3.7 (p. 330) and its redraw,
+    GEC 9 Fig. A-6 (p. 224): the COM624P scan rendered at 300 dpi and
+    mapped through its four frame corners (the page is skewed 1.4 degrees;
+    the A ticks read back within 0.003); the GEC 9 raster mapped through
+    its grid lines; each line's centre taken across rows where it is steep
+    and down columns where it is flat, away from the test-data marks. The
+    prints agree within 0.013; the table (x/b 0 to 4.5) is their mean
+    rounded to 0.005, with the deep As 0.60 as COM624P prints it (GEC 9
+    redraw 0.593). Both start at 0.2; As reaches 0.60 near x/b 4.5, Ac
+    0.305 near 1.75; both held constant below (dashed to x/b 12 on the
+    figure). Before GM-208 the table ran 2.5 to 0.88 (As) and 0.2 to 0.55
+    (Ac), neither from the figure.
+  - **Where the manuals differ**: GEC 9 prints A-15 as yp = 4.1 As y50;
+    COM624P Eq. 3.23 and Fig. 3.8 give 4.1 Ac y50 (used). GEC 9's static
+    step 9 discards the initial line when it meets A-11 beyond As y50;
+    COM624P's note keeps the smaller p (used). They differ only near the
+    ground (for a 0.9 m shaft, c 100 kPa, ks 271,400: the top 0.2 m).
+  - **Anchors**: no printed example in either manual uses this criterion
+    (COM624P Examples 1-6, GEC 9 App. B), so the curves are pinned to a
+    HAND CALCULATION: c 100 kPa, gamma' 9, eps50 0.005, b 0.6 m, x 1.5 m
+    (As 0.565, Ac 0.305): pc 552.6 kN/m, y50 3 mm; static (ks 271,400)
+    207.68 kN/m at As y50, 293.30 at 6 mm, 168.44 at 20 mm, 47.44 beyond
+    18 As y50; cyclic (kc 108,600) 168.54 at 0.45 yp, 114.71 at 5 mm,
+    87.27 beyond 1.8 yp. `tests/test_stiff_clay_below_wt.py`.
+  - Before GM-208: a line, a square-root parabola and a plateau at A pu
+    with y50 = 2.5 eps50 b, and 'cyclic' took ks. On a 0.9 m, 15 m shaft
+    (E 25 GPa, free head) in c 100 kPa, the head deflection at 600 kN went
+    from 13.7 to 12.1 mm static and 19.4 to 62.8 mm cyclic (kc 108,600).
+    The softening curves need more than the default 100 secant iterations
+    at larger loads (`max_iterations`).
 - **Stiff clay above the water table (`StiffClayAboveWT`, GM-202,
   2026-10-19)**: Welch & Reese (1972) as printed in COM624P pp. 336-340
   (Eqs. 3.27-3.29, Figs. 3.9-3.10) and GEC 9 App. A.3 (Eqs. A-19 to A-21).
@@ -169,6 +225,9 @@ results.summary()
   head-deflection flag from CONVENTION to PASS (see validation_examples/RESULTS.md).
 
 ## Validation
+- Stiff clay below the water table and Matlock cyclic (GM-208): hand
+  calculations from the printed equations, no printed example
+  (`tests/test_stiff_clay_below_wt.py`, `tests/test_matlock_cyclic.py`)
 - COM624P Example 1 (printed pp. 101-126, 14HP89 in stiff clay above the
   water table): p-y curves to 0.002 %, head deflection and moment within
   0.2 % (`tests/test_stiff_clay_above_wt.py`)
