@@ -28,7 +28,10 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.12", "3.13"]
-        dist: [loadfile, worksteal]   # EXPERIMENT (ci/speed only)
+        mode: [serial, n4-blas1]   # EXPERIMENT (ci/speed only)
+        include:
+          - python-version: "3.12"
+            mode: n4
 
     steps:
       - uses: actions/checkout@v5
@@ -75,8 +78,15 @@ jobs:
           python -c "import sys; print(sys.version)"
 
       - name: Run tests
-        run: pytest -n auto --dist ${{ matrix.dist }} -q --tb=short --durations=40
+        run: |
+          case "${{ matrix.mode }}" in
+            serial) ARGS="" ;;
+            n4) ARGS="-n 4 --dist worksteal" ;;
+            n4-blas1) ARGS="-n 4 --dist worksteal"
+                      export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 ;;
+          esac
+          time pytest $ARGS -q --tb=short --durations=0 --durations-min=10
 
       - name: Files the suite left in the checkout
         if: always()
-        run: git status --porcelain --untracked-files=all
+        run: git status --porcelain --ignored --untracked-files=all | grep -vE "__pycache__|egg-info|pytest_cache" || true
