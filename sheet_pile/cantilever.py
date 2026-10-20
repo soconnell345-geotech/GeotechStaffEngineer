@@ -94,6 +94,18 @@ def _log_spiral_choices(pressure_method: str, soil_layers, excavation_depth,
         if tied_back:
             basis += ". " + _log_spiral.TIED_BACK_QUOTE
         used = (source,)
+    if "dm7_2_eq_4_12" in used and any(
+            _log_spiral.above_the_charts(phi, delta)
+            for _, phi, delta in cases):
+        basis += ". " + _log_spiral.HIGH_FRICTION_NOTE
+    if tied_back:
+        basis += ". " + _log_spiral.ANCHORED_BULKHEAD_QUOTE
+    # each layer's wall friction is the engineer's (wall_friction_deg)
+    basis += ". " + _log_spiral.wall_friction_note(
+        source, left_out=(
+            "The module takes each layer's wall_friction_deg, 0 when left "
+            "out: a smooth wall, for which Eq. 4-12 and the 1948 chart give "
+            "Rankine's Kp."))
     return [choice(
         "Log-spiral passive Kp (log_spiral_source)", source,
         how_given(source, _log_spiral.DEFAULT_SOURCE,
@@ -120,10 +132,11 @@ class WallSoilLayer:
     description : str, optional
         Layer description.
     wall_friction_deg : float, optional
-        Wall friction angle delta (degrees), used only by the Coulomb pressure
-        method. Default 0 (smooth wall -> Coulomb reduces to Rankine). A nonzero
-        value lowers the active coefficient and raises the passive coefficient.
-        Must be in [0, friction_angle].
+        Wall friction angle delta (degrees), used by the Coulomb and
+        log-spiral pressure methods. Default 0 (smooth wall -> Coulomb, and
+        the log-spiral Kp of Eq. 4-12 or the 1948 chart, reduce to Rankine).
+        A nonzero value lowers the active coefficient and raises the passive
+        coefficient. Must be in [0, friction_angle].
     """
     thickness: float
     unit_weight: float

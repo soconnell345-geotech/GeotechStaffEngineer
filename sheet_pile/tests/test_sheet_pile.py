@@ -442,10 +442,49 @@ class TestLogSpiralSource:
                              pressure_method="log_spiral",
                              log_spiral_source="caquot_kerisel_1948")
         assert a.embedment_depth > b.embedment_depth
-        # a tied-back wall: UFC 3-220-20 p. 260 points to Fig. 4-12
-        assert "p. 260" in a.choices[0]["basis"]
-        assert "p. 260" in b.choices[0]["basis"]
-        assert "p. 260" not in eq.choices[0]["basis"]
+        # a tied-back wall: UFC 3-220-20 p. 260 points to Fig. 4-12, and
+        # p. 238 says when its anchored bulkheads take wall friction
+        for anchored in (a, b):
+            assert "should be obtained from Figure 4-12" \
+                in anchored.choices[0]["basis"]
+            assert "p. 238" in anchored.choices[0]["basis"]
+        assert "should be obtained from Figure 4-12" \
+            not in eq.choices[0]["basis"]
+        assert "p. 238" not in eq.choices[0]["basis"]
+        # every wall: the wall friction is the engineer's call
+        for r in (a, b, eq, ck, fig):
+            assert "engineer's call" in r.choices[0]["basis"]
+
+    def test_full_wall_friction_on_eq_4_12_is_noted(self):
+        """GM-232: a layer above delta/phi' = 0.66 on the UFC route takes
+        Eq. 4-12, which UFC bounds nowhere; the choice says so."""
+        from geotech_common.log_spiral import HIGH_FRICTION_NOTE
+        hi = analyze_cantilever(4.0, self._layers(1.0),
+                                pressure_method="log_spiral")
+        assert HIGH_FRICTION_NOTE in hi.choices[0]["basis"]
+        lo = analyze_cantilever(4.0, self._layers(0.66),
+                                pressure_method="log_spiral")
+        assert HIGH_FRICTION_NOTE not in lo.choices[0]["basis"]
+
+    def test_calc_package_shows_the_kp_the_design_used(self):
+        """GM-232: the calc package's Kp steps and pressure diagram take
+        the analysis's log-spiral source, so with the UFC default they show
+        Eq. 4-12's Kp (5.06 at phi' 30, delta/phi' 0.66), not the 1948
+        chart's (5.36)."""
+        from sheet_pile import calc_steps as cs
+        layers = self._layers(0.66)
+        for kw, kp in (({}, "5.0620"),
+                       ({"log_spiral_source": "caquot_kerisel_1948"},
+                        "5.3626")):
+            r = analyze_cantilever(4.0, layers, pressure_method="log_spiral",
+                                   **kw)
+            analysis = {"pressure_method": "log_spiral",
+                        "soil_layers": layers, "excavation_depth": 4.0,
+                        "wall_type": "cantilever", **kw}
+            (step,) = [i for i in cs.get_calc_steps(r, analysis)[0].items
+                       if getattr(i, "result_name", None) == "Kp"]
+            assert step.result_value == kp
+            assert not step.equation.startswith("Kp = ln")
 
     def test_only_the_passive_side_layers_are_listed(self):
         layers = [WallSoilLayer(thickness=3.0, unit_weight=18.0,

@@ -274,6 +274,34 @@ def test_the_default_says_where_ufc_prints_nothing(kwargs, words):
         LS.ufc_3_220_20_route(**kwargs)
 
 
+def test_battered_face_with_sloping_ground_names_where_to_read_kp():
+    """GM-232: the refusal names the sources UFC p. 190 points to and which
+    leaving-out overstates Kp."""
+    with pytest.raises(ValueError) as e:
+        LS.ufc_3_220_20_route(30.0, theta_deg=10.0, beta_deg=5.0)
+    words = str(e.value)
+    assert "Alqarawi et al. (2021)" in words
+    assert "theta > 0" in words and "overstates Kp" in words
+
+
+def test_above_the_charts_is_above_0_66():
+    assert not LS.above_the_charts(30.0, 19.8)
+    assert not LS.above_the_charts(30.0, 20.0)
+    assert LS.above_the_charts(30.0, 21.0)
+    assert not LS.above_the_charts(0.0, 0.0)
+
+
+def test_wall_friction_note_says_what_each_source_takes():
+    ufc = LS.wall_friction_note("ufc_3_220_20")
+    ck = LS.wall_friction_note("caquot_kerisel_1948")
+    for note in (ufc, ck):
+        assert "engineer's call" in note and "Table 4-1 (p. 184" in note
+        assert "(p. 260)" in note and "(p. 249)" in note
+    assert "0.66, for which" in ufc and "delta = phi'" in ck
+    assert "smooth" in LS.wall_friction_note("ufc_3_220_20",
+                                             left_out="A smooth wall.")
+
+
 def test_vertical_wall_sources_refuse_a_battered_face():
     for source in ("caquot_kerisel_1948", "dm7_2_eq_4_12", "dm7_2_fig_4_13"):
         with pytest.raises(ValueError, match="vertical wall face"):

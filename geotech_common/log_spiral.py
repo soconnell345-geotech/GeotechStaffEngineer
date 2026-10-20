@@ -72,7 +72,15 @@ UFC 3-220-20 Table 4-2 (p. 194) is not used (GM-212, :data:`TABLE_4_2_NOTE`):
 its row headed delta/phi' = 0.5 prints Fig. 4-13's values for delta/phi' =
 0.66 (5.3, 8.0, 12, 20 at phi' = 30, 35, 40, 45), with Coulomb's Kp at
 delta = 0.66 phi' beside them (6.1, 9.8, 18, 44). Its delta/phi' = 1 row
-agrees with Eq. 4-12 (6.5, 10.5, 18, 35 against 6.63, 10.87, 18.94, 35.21).
+reads 1 to 5 % below Eq. 4-12 (6.5, 10.5, 18, 35 against 6.63, 10.87,
+18.94, 35.21).
+
+Above delta/phi' = 0.66 Eq. 4-12 is UFC's only log-spiral Kp, and UFC gives
+it as an approximation with no range of delta/phi' stated; for phi' 30 to
+45 deg it passes the 1948 chart between delta/phi' 0.87 and 0.95 and reads
+up to 7 % above it at delta = phi' (:data:`HIGH_FRICTION_NOTE`). The wall
+friction is the engineer's to set (:func:`wall_friction_note`); left out it
+is 0.66 phi' with the UFC sources and phi with the 1948 chart.
 """
 
 from __future__ import annotations
@@ -97,6 +105,60 @@ TIED_BACK_NOTE = (
     "4-12 (p. 191) gives at any wall friction, so the route takes Eq. 4-12 "
     "at the wall friction given (at 0.66 it reads 2 to 7 % below the "
     "chart; log_spiral_source 'dm7_2_fig_4_12' reads the chart)")
+#: UFC 3-220-20 p. 238 on its anchored bulkhead design scenarios (Fig.
+#: 4-37), for an anchored wall's choices (GM-232).
+ANCHORED_BULKHEAD_QUOTE = (
+    "UFC 3-220-20 p. 238, on its anchored bulkhead design scenarios (Fig. "
+    "4-37): 'The effects of interface friction between the wall and soil "
+    "are only considered for passive pressure in granular soils. Wall "
+    "friction is ignored in all other cases'")
+
+#: Where Eq. 4-12 is used above the charts' wall friction (GM-232), for a
+#: result's choices: UFC bounds it nowhere, and it reads above the 1948
+#: chart and UFC's own Table 4-2 at full wall friction.
+HIGH_FRICTION_NOTE = (
+    "Above delta/phi' = 0.66 UFC 3-220-20 draws no log-spiral chart, and it "
+    "gives Eq. 4-12 as an approximation ('can be approximated as', p. 191) "
+    "with no range of delta/phi' stated. Eq. 4-12 rises with wall friction "
+    "faster than the Caquot-Kerisel (1948) chart: for phi' 30 to 45 deg it "
+    "passes the chart between delta/phi' 0.87 and 0.95, and at delta = "
+    "phi' it gives 6.63, 10.9 and 18.9 at phi' 30, 35 and 40 deg against "
+    "6.30, 10.2 and 17.7 on the 1948 chart and 6.5, 10.5 and 18 in UFC "
+    "Table 4-2 (p. 194), up to 7 % more passive resistance than the chart; "
+    "below phi' 30 deg it stays under the chart. The alternatives give the "
+    "1948 chart's Kp for this case")
+
+
+def above_the_charts(phi_deg: float, delta_deg: float) -> bool:
+    """Whether the wall friction is above the 0.66 phi' UFC's charts are
+    drawn for, where Eq. 4-12 alone gives a UFC Kp
+    (:data:`HIGH_FRICTION_NOTE`)."""
+    return phi_deg > 0 and delta_deg is not None and (
+        delta_deg / phi_deg > DM_DELTA_RATIO + _DM_DELTA_TOL)
+
+
+def wall_friction_note(source: str, left_out: str = None) -> str:
+    """The wall friction delta as a judgment call, for a result's choices
+    (GM-232): where UFC 3-220-20 gives a value, and what is taken when it
+    is left out with ``source`` (``left_out``, a sentence, where the caller
+    takes something else). The same words whether delta was given or
+    not."""
+    if left_out is None and source == "caquot_kerisel_1948":
+        left_out = (
+            "Left out with the Caquot-Kerisel (1948) chart, the tool takes "
+            "delta = phi', the chart's own Kp (reduction factor R = 1) and "
+            "the most wall friction there can be.")
+    elif left_out is None:
+        left_out = ("Left out, the tool takes delta/phi' = 0.66, for which "
+                    "UFC Figs. 4-12 and 4-13 are drawn.")
+    return (
+        "The wall friction angle delta is the engineer's call: set it from "
+        "the wall-soil interface, UFC 3-220-20 Table 4-1 (p. 184, interface "
+        "friction angles by wall material and soil); p. 191 calls "
+        "delta/phi' = 0.66 'a common assumption'. " + left_out + " UFC "
+        "gives a range for some walls: delta/phi' of 0.5 to 1.0 on the "
+        "passive side of a tied-back wall (p. 260), and for soldier piles in "
+        "coarse-grained soil KP 'determined without wall friction' (p. 249)")
 
 #: The level-ground comparison (GM-232), for a result's choices.
 EQ_VS_CHARTS_NOTE = (
@@ -142,8 +204,9 @@ SOURCE_BASIS = {
         "and Absi (1990), vertical wall with sloping ground, drawn for "
         "delta/phi' = 0.66"),
     "dm7_2_eq_4_12": (
-        "UFC 3-220-20 (DM 7.2) Eq. 4-12 (p. 191), the log-spiral Kp for "
-        "theta = 0 and beta = 0 with any wall friction"),
+        "UFC 3-220-20 (DM 7.2) Eq. 4-12 (p. 191), which UFC gives to "
+        "approximate the log-spiral Kp for theta = 0 and beta = 0 at any "
+        "wall friction"),
 }
 
 # ---------------------------------------------------------------------------
@@ -268,8 +331,12 @@ _DM_DELTA_TOL = 0.01
 # the chart (Kp = 15), the others at phi' = 45. Checked against the printed
 # grid lines where 45 crossings were read with only the two grid lines
 # either side of each: within 0.3 %, and 0.6 % on the theta = -20 curve
-# next to its label. The theta = 0 row agrees with the beta = 0 row of Fig.
-# 4-13 (traced separately, above) within 1 % everywhere.
+# next to its label. Inside a label no curve is printed: a separate fit
+# across the theta = -30 label (phi' 30) and the -20 label (phi' 32.5)
+# reads 1.3 and 1.6 % above the nodes there (review, 2026-10-20), which is
+# how well the chart can be read in those spans. The theta = 0 row agrees
+# with the beta = 0 row of Fig. 4-13 (traced separately, above) within 1 %
+# everywhere.
 _FIG_4_12_TOP = 15.0
 _FIG_4_12_ROWS = {
     -30: {0: 1.0, 2.5: 1.13, 5: 1.30, 7.5: 1.50, 10: 1.76, 12.5: 2.13,
@@ -529,11 +596,16 @@ def ufc_3_220_20_route(phi_deg: float, delta_deg: float = None,
             f"(theta {theta:g} deg) with sloping ground (beta {beta:g} "
             "deg) together: Fig. 4-12 (p. 192) is for a battered face with "
             "level ground, Fig. 4-13 (p. 193) for a vertical face with "
-            "sloping ground, Eq. 4-12 (p. 191) for neither. The Caquot-"
-            "Kerisel (1948) chart here is for a vertical wall too. UFC p. "
-            "190: Caquot and Kerisel (1948) tabulate other wall geometries "
-            "(not held in this library); give the Kp from them, or run "
-            "with theta_deg 0 or beta_deg 0 and say which was left out")
+            "sloping ground, Eq. 4-12 (p. 191) for a vertical face with "
+            "level ground. The Caquot-Kerisel (1948) chart here "
+            "(log_spiral_source 'caquot_kerisel_1948') is for a vertical "
+            "wall too. UFC p. 190 points to the tables of Caquot and "
+            "Kerisel (1948) for other wall geometries and to the log-spiral "
+            "equations of Alqarawi et al. (2021); neither is held here. "
+            "Read Kp from one of them, or run with theta_deg 0 or beta_deg "
+            "0 and say which was left out: leaving out a face that overhangs "
+            "the soil (theta > 0) or ground falling away from the wall "
+            "(beta < 0) overstates Kp")
     if theta:
         if off_066:
             raise ValueError(
@@ -581,9 +653,9 @@ def ufc_3_220_20_route(phi_deg: float, delta_deg: float = None,
     Kp = dm7_2_eq_4_12_Kp(phi_deg, delta)
     return {"route": "dm7_2_eq_4_12", "Kp": Kp, "delta_deg": delta,
             "delta_given": given,
-            "where": (f"UFC 3-220-20 Eq. 4-12 (p. 191): a vertical face and "
-                      f"level ground (theta = 0, beta = 0), at delta/phi' "
-                      f"{ratio:.2f}")}
+            "where": (f"UFC 3-220-20 Eq. 4-12 (p. 191), the approximation "
+                      f"UFC gives for a vertical face and level ground "
+                      f"(theta = 0, beta = 0), at delta/phi' {ratio:.2f}")}
 
 
 def log_spiral_Kp(phi_deg: float, delta_deg: float = None,

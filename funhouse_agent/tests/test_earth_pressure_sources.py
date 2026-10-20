@@ -38,13 +38,50 @@ def test_log_spiral_default_is_ufc_by_geometry_and_listed():
         "Kp 5.3",
         "UFC 3-220-20 Fig. 4-13 (log_spiral_source 'dm7_2_fig_4_13'): "
         "Kp 5.3"]
-    assert d["what"] == "Wall friction delta" and d["how"] == "default"
+    assert d["what"] == "Wall friction delta (delta_deg)"
+    assert d["how"] == "default"
+    assert d["chosen"] == "19.8 deg (delta/phi' 0.66)"
     assert "common assumption" in d["basis"]
-    # wall friction given: Eq. 4-12 at it, no wall-friction choice
+    assert "engineer's call" in d["basis"]
+    assert "Table 4-1 (p. 184" in d["basis"]
+    # wall friction given: Eq. 4-12 at it, the same choice called given
     r = _ck(delta_deg=15.0)
     assert r["K"] == pytest.approx(4.459, abs=0.001)
-    assert len(r["choices"]) == 1
     assert "Kp 4.7" in r["choices"][0]["alternatives"][0]
+    (g,) = r["choices"][1:]
+    assert g["how"] == "given" and g["basis"] == d["basis"]
+    assert "delta_deg" not in r["defaults_used"]
+
+
+def test_left_out_wall_friction_is_listed_at_the_value_it_took():
+    """GM-232: delta_deg left out is listed in defaults_used at the wall
+    friction the source took (0.66 phi' for UFC, phi for the 1948 chart),
+    not the declared 0.0 the Coulomb theory takes."""
+    assert _ck()["defaults_used"]["delta_deg"] == pytest.approx(19.8)
+    ck = _ck(log_spiral_source="caquot_kerisel_1948")
+    assert ck["K"] == pytest.approx(6.30, abs=0.01)
+    assert ck["defaults_used"]["delta_deg"] == pytest.approx(30.0)
+    (d,) = [c for c in ck["choices"] if c["what"].startswith("Wall friction")]
+    assert d["how"] == "default" and "delta = phi'" in d["basis"]
+    # Coulomb keeps its declared 0.0
+    co = _k(phi_deg=30.0, theory="coulomb", state="passive")
+    assert co["defaults_used"]["delta_deg"] == 0.0
+
+
+def test_eq_4_12_above_the_charts_wall_friction_is_noted():
+    """GM-232: above delta/phi' = 0.66 the default route takes Eq. 4-12,
+    which UFC gives as an approximation with no range stated and which
+    reads above the 1948 chart at full wall friction; the choice says so.
+    At or below 0.66, and on the 1948 chart, no such note."""
+    from geotech_common.log_spiral import HIGH_FRICTION_NOTE
+    hi = _ck(delta_deg=30.0)
+    assert hi["K"] == pytest.approx(6.628, abs=0.001)
+    assert HIGH_FRICTION_NOTE in hi["choices"][0]["basis"]
+    assert "Kp 6.3" in hi["choices"][0]["alternatives"][0]
+    for kw in ({}, {"delta_deg": 15.0},
+               {"delta_deg": 30.0,
+                "log_spiral_source": "caquot_kerisel_1948"}):
+        assert HIGH_FRICTION_NOTE not in _ck(**kw)["choices"][0]["basis"]
 
 
 def test_battered_face_reads_fig_4_12():
