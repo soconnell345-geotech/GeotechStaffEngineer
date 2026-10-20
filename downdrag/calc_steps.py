@@ -785,6 +785,17 @@ def _np_note(ax, text, z_np, *, below, x, ha, **kw):
                        va='top' if below else 'bottom', **kw)
 
 
+def _depth_label(analysis) -> str:
+    """The profiles' vertical axis. The owner's default is elevation, and
+    never depth and elevation together (GM-97); the downdrag inputs give
+    no ground or pile-head elevation, so the axis is the depth below the
+    ground the pile head is at and says so (GM-200). With fill, that is
+    the original ground: the fill is a load on it."""
+    fill = getattr(analysis, "fill_thickness", 0) or 0
+    ground = "original ground" if fill > 0 else "ground"
+    return f"Depth below {ground} (m), no elevation given"
+
+
 def _tip_label(ax, pile_length):
     """The pile tip's label just under its line (written in data units
     under it, the line ran through it at the printed width; GM-194)."""
@@ -853,7 +864,7 @@ def _plot_axial_load(result, analysis):
     _tip_label(ax, result.pile_length)
 
     ax.set_xlabel('Axial Load Q(z) (kN)', fontsize=10)
-    ax.set_ylabel('Depth (m)', fontsize=10)
+    ax.set_ylabel(_depth_label(analysis), fontsize=10)
     ax.set_title('Axial Load Profile Along Pile', fontsize=11,
                  fontweight='bold')
     ax.invert_yaxis()
@@ -918,7 +929,7 @@ def _plot_skin_friction(result, analysis):
                linewidth=1, alpha=0.6)
 
     ax.set_xlabel('Unit Skin Friction f_s (kPa)', fontsize=10)
-    ax.set_ylabel('Depth (m)', fontsize=10)
+    ax.set_ylabel(_depth_label(analysis), fontsize=10)
     ax.set_title('Unit Skin Friction Profile', fontsize=11, fontweight='bold')
     ax.invert_yaxis()
     ax.set_ylim(bottom=result.pile_length * 1.05, top=-result.pile_length * 0.03)
@@ -984,7 +995,7 @@ def _plot_settlement_profile(result, analysis):
         )
 
     ax.set_xlabel('Settlement (mm)', fontsize=10)
-    ax.set_ylabel('Depth (m)', fontsize=10)
+    ax.set_ylabel(_depth_label(analysis), fontsize=10)
     ax.set_title('Soil Settlement Profile with Neutral Plane',
                  fontsize=11, fontweight='bold')
     ax.invert_yaxis()

@@ -871,10 +871,11 @@ def _figures_earth_pressure(result, analysis) -> List[FigureData]:
                 title="Seismic Earth Pressure Diagram",
                 image_base64=b64,
                 caption=(
-                    f"Figure 1: Seismic earth pressure distribution. "
-                    f"PAE = {r.PAE_total:.1f} kN/m, "
-                    f"\u0394PAE = {r.delta_PAE:.1f} kN/m applied at "
-                    f"{r.height_of_application:.1f} m above base."
+                    f"Figure 1: Static active earth pressure (kPa) and the "
+                    f"seismic increment \u0394PAE = {r.delta_PAE:.1f} kN/m "
+                    f"applied at {r.height_of_application:.2f} m above the "
+                    f"base (0.6H, Seed & Whitman 1970); "
+                    f"PAE = {r.PAE_total:.1f} kN/m."
                 ),
                 width_percent=75,
             ))
@@ -885,89 +886,94 @@ def _figures_earth_pressure(result, analysis) -> List[FigureData]:
 
 
 def _plot_pressure_diagram(result, analysis):
-    """Plot seismic earth pressure distribution on wall."""
+    """The static active earth pressure on the wall in kPa, PA at H/3 and
+    the seismic increment \u0394PAE at 0.6H.
+
+    Pressures in kPa, the owner's convention (GM-200; the axis read
+    "Pressure (normalized)"). The static pressure is the triangle whose
+    resultant is the run's PA: K_A \u03b3 z, 2 PA / H at the base, so it is
+    drawn from PA and H whether or not \u03b3 was given. \u0394PAE is drawn as the
+    force the method gives at its point of action, 0.6H above the base
+    (Seed & Whitman 1970; DM7.2 Ch. 4, "assumed to act at 0.6H above the
+    wall base"), not as a pressure: the method gives no distribution for
+    it, and PAE drawn as one triangle puts its resultant at H/3."""
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
-    import matplotlib.patches as patches
-    import numpy as np
+    from matplotlib.ticker import MaxNLocator
 
     r = result
     H = analysis["H"]          # the caller draws this only with H known
     # The KA the run used behind PA: as given, else Rankine Ka from phi
     # (GM-120).
     Ka_static, _ = _ka_used(analysis, r.phi)
+    p_base = 2.0 * r.PA_static / H          # K_A \u03b3 H (kPa)
+    # the drawing's pressure scale: the static pressure at the base, or
+    # PAE's equivalent where PA is nil
+    P = p_base if p_base > 0 else max(2.0 * r.PAE_total / H, 1e-6)
 
-    fig, ax = plt.subplots(figsize=(8, 6))
+    # drawn at the width it prints at (5 in), so what is placed here in
+    # points is where it prints (GM-186)
+    fig, ax = plt.subplots(figsize=(5.0, 4.2))
 
-    # Wall
-    ax.plot([0, 0], [0, H], 'k-', linewidth=4)
-    ax.fill_betweenx([0, H], -0.15, 0, color='#666', alpha=0.6)
+    # Wall: its back face at zero pressure, the soil to the right
+    ax.fill_betweenx([0, H], -0.06 * P, 0, color='#666', alpha=0.6,
+                     linewidth=0)
+    ax.plot([0, 0], [0, H], 'k-', linewidth=2.5)
 
-    # Static pressure triangle
-    z_vals = np.linspace(0, H, 50)
-    # pressure shapes at elevation z from base, scaled to the plot (the
-    # unit weight cancels)
-    p_static = Ka_static * (H - z_vals)
-    ax.fill_betweenx(z_vals, 0, p_static / max(p_static) * H * 0.4,
-                      color='#2563eb', alpha=0.3, label=f'Static PA (Ka={Ka_static:.3f})')
-    ax.plot(p_static / max(p_static) * H * 0.4, z_vals, 'b-', linewidth=1.5)
+    # Static active pressure, zero at the top to K_A \u03b3 H at the base
+    ax.fill_betweenx([0, H], 0, [p_base, 0], color='#2563eb', alpha=0.2,
+                     linewidth=0,
+                     label=f'Static active pressure (K_A = {Ka_static:.3f})')
+    ax.plot([p_base, 0], [0, H], color='#2563eb', linewidth=1.5)
+    ax.annotate(f'K_A\u03b3H = {p_base:.1f} kPa', (p_base, 0),
+                xytext=(4, 3), textcoords='offset points', ha='left',
+                va='bottom', fontsize=7.5, color='#2563eb')
 
-    # Seismic pressure (M-O)
-    p_seismic = r.KAE * (H - z_vals)
-    ax.fill_betweenx(z_vals, 0, p_seismic / max(p_seismic) * H * 0.55,
-                      color='#dc2626', alpha=0.2, label=f'Seismic PAE (KAE={r.KAE:.3f})')
-    ax.plot(p_seismic / max(p_seismic) * H * 0.55, z_vals, 'r-', linewidth=1.5)
+    # The forces, as arrows onto the wall at their heights (their length
+    # is not to the pressure scale), each named at its tail
+    tail = 0.95 * P
+    for y, colour, text in (
+            (H / 3.0, '#2563eb',
+             f'PA = {r.PA_static:.1f} kN/m\nat H/3 = {H / 3.0:.2f} m'),
+            (r.height_of_application, '#dc2626',
+             f'\u0394PAE = {r.delta_PAE:.1f} kN/m\n'
+             f'at 0.6H = {r.height_of_application:.2f} m')):
+        ax.annotate('', xy=(0, y), xytext=(tail, y),
+                    arrowprops=dict(arrowstyle='->', color=colour, lw=1.8))
+        ax.annotate(text, (tail, y), xytext=(4, 0),
+                    textcoords='offset points', ha='left', va='center',
+                    fontsize=7.5, color=colour)
 
-    # Force arrows
-    # Static PA at H/3
-    pa_y = H / 3
-    ax.annotate('', xy=(0, pa_y), xytext=(H * 0.35, pa_y),
-                arrowprops=dict(arrowstyle='->', color='#2563eb', lw=2))
-    # its note just outside the seismic diagram's edge, over that height
-    # (the edge leans in going up; at a fixed 0.36H the note lay on it;
-    # GM-194)
-    ax.annotate(f'PA = {r.PA_static:.1f} kN/m\nat H/3 = {pa_y:.1f} m',
-                (H * 0.55 * (H - pa_y) / H, pa_y), xytext=(4, 3),
-                textcoords='offset points', fontsize=8, color='#2563eb',
-                va='bottom')
+    # H dimension, left of the wall
+    ax.annotate('', xy=(-0.17 * P, 0), xytext=(-0.17 * P, H),
+                arrowprops=dict(arrowstyle='<->', color='k', lw=1.0))
+    ax.annotate(f'H = {H:.2f} m', (-0.17 * P, H / 2.0), xytext=(-4, 0),
+                textcoords='offset points', ha='right', va='center',
+                fontsize=8, fontweight='bold', rotation=90)
 
-    # Seismic increment at 0.6H
-    dPAE_y = r.height_of_application
-    ax.annotate('', xy=(0, dPAE_y), xytext=(H * 0.45, dPAE_y),
-                arrowprops=dict(arrowstyle='->', color='#dc2626', lw=2))
-    ax.text(H * 0.46, dPAE_y,
-            f'\u0394PAE = {r.delta_PAE:.1f} kN/m\nat 0.6H = {dPAE_y:.1f} m',
-            fontsize=8, color='#dc2626', va='center')
-
-    # Soil fill behind wall
-    ax.add_patch(patches.Rectangle(
-        (0, 0), H * 0.6, H,
-        facecolor='#f5e6c8', edgecolor='none', alpha=0.3, zorder=0,
-    ))
-
-    # H dimension
-    ax.annotate('', xy=(-0.3, 0), xytext=(-0.3, H),
-                arrowprops=dict(arrowstyle='<->', color='k', lw=1.2))
-    ax.text(-0.5, H / 2, f'H = {H:.1f} m',
-            ha='right', va='center', fontsize=9, fontweight='bold', rotation=90)
-
-    ax.set_xlabel('Pressure (normalized)', fontsize=10)
-    ax.set_ylabel('Elevation (m)', fontsize=10)
-    ax.set_title('Seismic Earth Pressure Distribution (Mononobe-Okabe)',
-                 fontsize=11, fontweight='bold')
-    ax.set_xlim(-0.8, H * 0.7)
-    ax.set_ylim(-0.3, H * 1.1)
+    ax.set_xlim(-0.32 * P, 1.6 * P)
+    ax.set_ylim(-0.04 * H, H * 1.06)
+    # pressures are read off the soil side only
+    ax.set_xticks([t for t in MaxNLocator(5).tick_values(0, 1.6 * P)
+                   if -1e-9 <= t <= 1.6 * P])
+    ax.set_xlabel('Lateral earth pressure (kPa)', fontsize=9)
+    ax.set_ylabel('Height above the wall base (m)', fontsize=9)
+    ax.set_title('Seismic Earth Pressure (Mononobe-Okabe)', fontsize=10,
+                 fontweight='bold')
+    ax.tick_params(labelsize=8)
     ax.grid(True, alpha=0.2)
 
-    # The inputs head the key, under the drawing: in a box in the axes
-    # they covered the H dimension at the printed width (GM-194)
+    # The inputs and PAE head the key, under the drawing: in a box in the
+    # axes they covered the H dimension at the printed width (GM-194)
     info = (
         f"\u03c6 = {r.phi:.0f}\u00b0, \u03b4 = {r.delta:.0f}\u00b0, "
         f"k_h = {r.kh:.3f}, k_v = {r.kv:.3f}"
     )
     if analysis.get("gamma") is not None:
         info += f", \u03b3 = {analysis['gamma']:.1f} kN/m\u00b3"
+    info += (f"\nK_AE = {r.KAE:.3f}: PAE = {r.PAE_total:.1f} kN/m "
+             f"= PA + \u0394PAE")
     from geotech_common.plotting import key_under_axes
     key_under_axes(fig, ax, note=info)
     return fig
