@@ -83,6 +83,18 @@ CONVENTIONS: Tuple[Convention, ...] = (
         why="run 7: cptCount missed on 7 of 8 reports and testPitCount on "
             "5 -- the hand writes 0, the reader wrote null"),
     Convention(
+        rule="structureCount is the number of items in structureList.",
+        fields=("structureCount", "structureList"),
+        status="CONFIRMED",
+        why="owner 2026-10-20 (OWN-08, desk)"),
+    Convention(
+        rule="figureCount counts the figures in the main body of the report "
+             "only; figures in the appendices are left out.",
+        fields=("figureCount",),
+        status="CONFIRMED",
+        why="owner 2026-10-20 (OWN-08, desk): 'there could be lots of "
+            "random figures from appendices'"),
+    Convention(
         rule="null means THE REPORT DOES NOT SAY. It never means zero, "
              "never means not applicable, and is never written as a word: "
              "not the string \"none\", \"N/A\", \"unknown\" or an empty "
@@ -200,7 +212,8 @@ FIELD_NOTES: Dict[str, str] = {
     "reportDate": "the date on the report itself, not the date of the field "
                   "work",
     "tableCount": "how many tables the report contains",
-    "figureCount": "how many figures the report contains",
+    "figureCount": "how many figures the main body of the report contains, "
+                   "appendix figures left out",
 }
 
 
