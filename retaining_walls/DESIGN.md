@@ -576,8 +576,10 @@ excavation in front of the wall". `sliding_basis` reports the Pp counted.
 default) or 'log_spiral' (the coefficient tool's 'caquot_kerisel' name is
 taken too), with `log_spiral_source` (default UFC 3-220-20, Eq. 4-12 for the
 vertical face and level ground in front of the toe) and
-`passive_wall_friction_deg` (0 to phi_foundation; left out, the source's
-own, 0.66 phi' or phi' with the 1948 chart). UFC 3-220-20 Sec. 4-5.1 (p.
+`passive_wall_friction_deg` (0 to phi_foundation; left out, 0.66 phi',
+UFC p. 191; the 1948 chart and Eq. 4-12 by name refuse it, the GM-242
+review). A shear key needs its depth: `has_shear_key` with no `key_depth`
+> 0 is refused (before, it was taken as no key without a word). UFC 3-220-20 Sec. 4-5.1 (p.
 219) says the passive pressure in front "is typically ignored", and with it
 considered Fig. 4-27 (p. 220) and Sec. 4-5.1.3 (p. 223) ask FSL >= 2.0;
 neither names a theory for its Kp, so the module keeps Rankine's, the

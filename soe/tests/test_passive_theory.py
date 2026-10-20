@@ -93,8 +93,12 @@ class TestLogSpiral:
         assert source["chosen"] == "ufc_3_220_20"
         assert "Eq. 4-12 (p. 191)" in source["basis"]
         assert friction["how"] == "default"
-        assert friction["chosen"] == "layer 1: 21.8 deg (the source's own)"
-        assert "p. 238" in friction["basis"]
+        assert friction["chosen"] == (
+            "layer 1: 21.8 deg (delta/phi' 0.66, taken when left out)")
+        assert "Fig. 4-37 step 1, p. 237" in friction["basis"]
+        assert "Judgment, for the engineer to confirm" in friction["basis"]
+        # said once, not again by the note on the wall friction
+        assert friction["basis"].count("delta/phi' = 0.66") == 2
         assert r.to_dict()["method"].endswith(
             "Rankine active and log-spiral passive pressures with water")
         assert r.layers_used[0]["passive_wall_friction_deg"] == 21.78
@@ -117,7 +121,7 @@ class TestLogSpiral:
         assert [r["came"] for r in rows] == ["above", "source", "cohesion",
                                              "phi_0"]
         assert rows[1]["delta"] == pytest.approx(0.66 * 32.0)
-        # a layer with cohesion keeps Rankine's (UFC 3-220-20 p. 238)
+        # a layer with cohesion keeps Rankine's (UFC 3-220-20 Fig. 4-37)
         assert rows[2]["Kp"] == pytest.approx(
             math.tan(math.radians(57.5)) ** 2)
         assert rows[3]["Kp"] == pytest.approx(1.0)
@@ -151,7 +155,22 @@ class TestRefused:
          "log_spiral_source must be one of"),
         ({"passive_theory": "log_spiral", "passive_wall_friction_deg": -1.0},
          "passive_wall_friction_deg must be in"),
+        # the GM-242 review: the 1948 chart and Eq. 4-12 by name need the
+        # wall friction given (before, the chart took delta = phi')
+        ({"passive_theory": "log_spiral",
+          "log_spiral_source": "caquot_kerisel_1948"},
+         r"needs the wall friction given \(passive_wall_friction_deg\)"),
+        ({"passive_theory": "log_spiral",
+          "log_spiral_source": "dm7_2_eq_4_12"},
+         r"needs the wall friction given \(passive_wall_friction_deg\)"),
     ])
     def test_inputs_not_used_are_refused(self, kw, says):
         with pytest.raises(ValueError, match=says):
             _cantilever(**kw)
+
+    def test_the_charts_take_their_own_ratio(self):
+        """Left out with UFC's charts by name, delta/phi' = 0.66, the
+        ratio they are drawn for."""
+        r = _cantilever(passive_theory="log_spiral",
+                        log_spiral_source="dm7_2_fig_4_12")
+        assert r.layers_used[0]["passive_wall_friction_deg"] ==             pytest.approx(0.66 * 33.0, abs=0.01)

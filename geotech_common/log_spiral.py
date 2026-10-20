@@ -80,7 +80,9 @@ it as an approximation with no range of delta/phi' stated; for phi' 30 to
 45 deg it passes the 1948 chart between delta/phi' 0.87 and 0.95 and reads
 up to 7 % above it at delta = phi' (:data:`HIGH_FRICTION_NOTE`). The wall
 friction is the engineer's to set (:func:`wall_friction_note`); left out it
-is 0.66 phi' with the UFC sources and phi with the 1948 chart.
+is 0.66 phi' with the UFC sources and phi with the 1948 chart, except in a
+wall's design (:func:`level_front_Kp`), where the 1948 chart and Eq. 4-12
+by name refuse it.
 """
 
 from __future__ import annotations
@@ -141,8 +143,8 @@ def wall_friction_note(source: str, left_out: str = None) -> str:
     """The wall friction delta as a judgment call, for a result's choices
     (GM-232): where UFC 3-220-20 gives a value, and what is taken when it
     is left out with ``source`` (``left_out``, a sentence, where the caller
-    takes something else). The same words whether delta was given or
-    not."""
+    takes something else; "" where the caller has said it). The same words
+    whether delta was given or not."""
     if left_out is None and source == "caquot_kerisel_1948":
         left_out = (
             "Left out with the Caquot-Kerisel (1948) chart, the tool takes "
@@ -155,7 +157,8 @@ def wall_friction_note(source: str, left_out: str = None) -> str:
         "The wall friction angle delta is the engineer's call: set it from "
         "the wall-soil interface, UFC 3-220-20 Table 4-1 (p. 184, interface "
         "friction angles by wall material and soil); p. 191 calls "
-        "delta/phi' = 0.66 'a common assumption'. " + left_out + " UFC "
+        "delta/phi' = 0.66 'a common assumption'. "
+        + (left_out + " " if left_out else "") + "UFC "
         "gives a range for some walls: delta/phi' of 0.5 to 1.0 on the "
         "passive side of a tied-back wall (p. 260), and for soldier piles in "
         "coarse-grained soil KP 'determined without wall friction' (p. 249)")
@@ -690,16 +693,49 @@ def log_spiral_Kp(phi_deg: float, delta_deg: float = None,
                      f"{list(SOURCES)}")
 
 
+#: Why the Kp of a wall's design refuses a left-out wall friction with
+#: these sources (GM-242 review), naming the input to give.
+LEVEL_FRONT_NEEDS_DELTA = {
+    "caquot_kerisel_1948": (
+        "log_spiral_source 'caquot_kerisel_1948' needs the wall friction "
+        "given ({name}): the Caltrans T&S Manual's procedure for the chart "
+        "(Sec. 4-6, p. 4-29) begins 'Given delta, beta, and phi', and its "
+        "Example 8-1 takes 15 deg on phi 30. Or leave log_spiral_source "
+        "out: UFC 3-220-20 takes delta/phi' = 0.66 when it is left out."),
+    "dm7_2_eq_4_12": (
+        "log_spiral_source 'dm7_2_eq_4_12' (UFC 3-220-20 Eq. 4-12) needs "
+        "the wall friction given ({name}); p. 191: 'while delta/phi' = 0.66 "
+        "is a common assumption, this type of design may require Kp for a "
+        "different value of wall friction'. Or leave log_spiral_source out "
+        "(UFC 3-220-20 by geometry, delta/phi' = 0.66 when left out)."),
+}
+
+
+def level_front_left_out(source: str) -> str:
+    """What :func:`level_front_Kp` takes for a left-out wall friction with
+    ``source``, as the ``left_out`` sentence of :func:`wall_friction_note`
+    (GM-242 review)."""
+    if source in LEVEL_FRONT_NEEDS_DELTA:
+        return (f"With log_spiral_source '{source}' it must be given; left "
+                f"out, it is refused.")
+    return ("Left out, the tool takes delta/phi' = 0.66, for which UFC "
+            "Figs. 4-12 and 4-13 are drawn.")
+
+
 def level_front_Kp(phi_deg: float, delta_deg: float = None,
-                   source: str = DEFAULT_SOURCE) -> dict:
+                   source: str = DEFAULT_SOURCE,
+                   name: str = "passive_wall_friction_deg") -> dict:
     """The log-spiral Kp in front of a vertical wall face with level
     ground, the passive side below an excavation or a retaining wall's toe
     (GM-242): ``Kp``, ``delta_deg`` (the wall friction used), ``delta_given``
     and ``route`` (the UFC 3-220-20 source the default took, else None).
-    ``delta_deg`` None takes the source's own: delta/phi' = 0.66 (UFC
-    3-220-20 p. 191, 'a common assumption', the wall friction its charts are
-    drawn for), or delta = phi' with the Caquot-Kerisel (1948) chart (its
-    Kp at R = 1). phi' = 0 gives Kp = 1 with no wall friction."""
+    ``delta_deg`` None takes delta/phi' = 0.66 (UFC 3-220-20 p. 191, 'a
+    common assumption', the wall friction its charts are drawn for) with
+    the UFC sources by geometry or chart; the Caquot-Kerisel (1948) chart
+    and Eq. 4-12 by name refuse it (:data:`LEVEL_FRONT_NEEDS_DELTA`, naming
+    the input ``name``), as earth_pressure_coefficient refuses Eq. 4-12:
+    a wall's embedment or sliding check is not left at the chart's delta =
+    phi'. phi' = 0 gives Kp = 1 with no wall friction."""
     given = delta_deg is not None
     if phi_deg <= 0:
         return {"Kp": 1.0, "delta_deg": 0.0, "delta_given": given,
@@ -709,8 +745,10 @@ def level_front_Kp(phi_deg: float, delta_deg: float = None,
         return {"Kp": r["Kp"], "delta_deg": r["delta_deg"],
                 "delta_given": given, "route": r["route"]}
     if not given:
-        delta_deg = (phi_deg if source == "caquot_kerisel_1948"
-                     else DM_DELTA_RATIO * phi_deg)
+        if source in LEVEL_FRONT_NEEDS_DELTA:
+            raise ValueError(LEVEL_FRONT_NEEDS_DELTA[source].format(
+                name=name))
+        delta_deg = DM_DELTA_RATIO * phi_deg
     return {"Kp": log_spiral_Kp(phi_deg, delta_deg, 0.0, source=source),
             "delta_deg": float(delta_deg), "delta_given": given,
             "route": None}

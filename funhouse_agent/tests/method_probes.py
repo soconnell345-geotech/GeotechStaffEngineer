@@ -371,7 +371,7 @@ NOT_REACHED = {
         "the probe's HTML has no image to embed",
     # GM-242: the first cantilever_wall probe with include_passive
     ("retaining_walls|cantilever_wall#log_spiral_toe", "has_shear_key"):
-        "the probe gives no key_depth, and a key 0 m deep is taken as no key",
+        "the probe gives no key_depth, and a key with no depth is refused",
 }
 
 #: Mismatches the guard finds and leaves, each with its BACKLOG item.

@@ -103,6 +103,14 @@ class TestRefused:
          "Rankine's Kp takes no wall friction"),
         ({"passive_theory": "log_spiral", "passive_wall_friction_deg": 40.0},
          r"passive_wall_friction_deg must be in \[0, phi_foundation = 32\]"),
+        # the GM-242 review: the 1948 chart and Eq. 4-12 by name need the
+        # wall friction given (before, the chart took delta = phi')
+        ({"passive_theory": "log_spiral",
+          "log_spiral_source": "caquot_kerisel_1948"},
+         r"needs the wall friction given \(passive_wall_friction_deg\)"),
+        ({"passive_theory": "log_spiral",
+          "log_spiral_source": "dm7_2_eq_4_12"},
+         r"needs the wall friction given \(passive_wall_friction_deg\)"),
     ])
     def test_inputs_not_used_are_refused(self, kw, says):
         with pytest.raises(ValueError, match=says):
@@ -114,3 +122,19 @@ class TestRefused:
         with pytest.raises(ValueError, match="only with include_passive"):
             analyze_cantilever_wall(geom, 19.0, 32.0,
                                     passive_theory="log_spiral")
+
+
+class TestShearKey:
+    """The GM-242 review: a shear key with no depth is refused, naming
+    key_depth (before, it was taken as no key without a word)."""
+
+    def test_a_key_needs_its_depth(self):
+        for depth in (0.0, -0.3):
+            with pytest.raises(ValueError, match="key_depth > 0"):
+                CantileverWallGeometry(wall_height=5.0, has_shear_key=True,
+                                       key_depth=depth)
+        with pytest.raises(ValueError, match="key_depth"):
+            CantileverWallGeometry(wall_height=5.0, has_shear_key=True)
+        assert CantileverWallGeometry(wall_height=5.0, has_shear_key=True,
+                                      key_depth=0.5).key_depth == 0.5
+        assert not CantileverWallGeometry(wall_height=5.0).has_shear_key

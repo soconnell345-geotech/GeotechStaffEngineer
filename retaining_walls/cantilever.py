@@ -461,7 +461,9 @@ TOE_PASSIVE_BASIS = (
     "with it considered Fig. 4-27 (p. 220) and Sec. 4-5.1.3 (p. 223) ask "
     "FSL >= 2.0; with a shear key the passive pressure acts over the key's "
     "depth only (Fig. 4-29, p. 224). Neither names the theory of its Kp. "
-    "The module takes Rankine's, with no wall friction, the smaller")
+    "By default the module takes Rankine's, with no wall friction, the "
+    "smaller; passive_theory 'log_spiral' takes the log-spiral Kp with "
+    "wall friction")
 
 
 def toe_passive_Kp(phi_f: float, passive_theory: str = "rankine",
@@ -522,6 +524,10 @@ def _refuse_unused_passive(include_passive: bool, passive_theory: str,
         raise ValueError(
             f"passive_wall_friction_deg must be in [0, phi_foundation = "
             f"{phi_f:g}] deg, got {passive_wall_friction_deg:g}")
+    if passive_wall_friction_deg is None and phi_f > 0 \
+            and log_spiral_source in _ls.LEVEL_FRONT_NEEDS_DELTA:
+        raise ValueError(_ls.LEVEL_FRONT_NEEDS_DELTA[
+            log_spiral_source].format(name="passive_wall_friction_deg"))
 
 
 def _sliding_terms(geom: CantileverWallGeometry,
@@ -1528,5 +1534,6 @@ def toe_passive_choices(terms: Dict[str, Any]) -> list:
                               if phi_f else ""),
         how_given(delta if terms["passive_delta_given"] else None, None,
                   name="passive_wall_friction_deg", took=round(delta, 4)),
-        _ls.wall_friction_note(log_spiral)))
+        _ls.wall_friction_note(
+            log_spiral, left_out=_ls.level_front_left_out(log_spiral))))
     return out

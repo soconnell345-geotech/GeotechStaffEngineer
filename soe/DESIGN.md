@@ -277,16 +277,29 @@ read up to about 5 % above the chart between nodes (φ 32: 7.86 → 7.57;
 for the vertical face and level ground in front of the wall is Eq. 4-12, p.
 191) per layer (`free_earth.passive_by_layer`, a Kp per layer in
 `LayeredProfile`). The wall friction: `passive_wall_friction_deg` in every
-layer below the excavation, at most its phi'; left out, the source's own
-(0.66 phi', or phi' with the 1948 chart) in a layer without cohesion and none
-with cohesion (UFC p. 238). Rankine stays the default because the Caltrans
+layer below the excavation, at most its phi'; left out, 0.66 phi' (UFC p.
+191, "a common assumption") in a layer without cohesion and none with
+cohesion (UFC Fig. 4-37 step 1, p. 237: "Passive pressures for clean coarse
+grained soils include wall friction (see Table 4-1). For active or passive
+pressures in all other soil types, ignore wall friction"). The 1948 chart
+and Eq. 4-12 by name refuse a left-out wall friction (GM-242 review): the
+Caltrans procedure for the chart begins "Given delta" (p. 4-29), and before
+the review the chart took delta = phi', its largest Kp (8.34 against 6.39
+at phi' 33). Judgment listed for the owner: a layer without cohesion is
+read as a clean coarse-grained soil, and 0.66 phi' is above the 17 deg the
+sheet_pile tool takes for a steel sheet pile in clean sand (UFC Table 4-1)
+from phi' 26 up; for soldier piles in coarse-grained soil UFC p. 249 takes
+KP "without wall friction". Rankine stays the default because the Caltrans
 T&S Manual's examples take it where the wall friction is zero (pp. 7-18,
 7-27, 9-12), each with the note that Rankine "tends to underestimate the
 passive earth pressure" and the Log-Spiral model is recommended; Sec. 4-6
 (p. 4-28) says Rankine "should not be used ... because it does not account
-for wall friction", and Example 8-1 takes the log-spiral Kp (4.7 at delta
-15 on phi 30, p. 8-12; the route reproduces D = 6.09 ft,
-`soe/tests/test_passive_theory.py`). Both results carry `choices` with the
+for wall friction", and p. 4-16 that "if a large wall friction value can
+develop" its use "is to be avoided for passive earth pressure". The default
+is an owner judgment (GM-242 review): the statement is about walls with
+wall friction, and the manual's own soldier-pile examples take delta = 0.
+Example 8-1 takes the log-spiral Kp (4.7 at delta 15 on phi 30, p. 8-12;
+the route reproduces D = 6.09 ft, `soe/tests/test_passive_theory.py`). Both results carry `choices` with the
 theory, the other theory's Kp and embedment, and with 'log_spiral' the
 source and each layer's wall friction. 4 m cantilever, phi 33, q 10: D 5.58
 m (Kp 3.39) with Rankine, 3.78 m (Kp 6.39 at delta 21.8) with the log

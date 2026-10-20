@@ -115,8 +115,8 @@ def _build_geometry(params, *, method, envelope=False):
 # No excavation_width: nothing in soe/ reads it, so it is refused, not
 # dropped (GM-110).
 _PASSIVE_THEORY = {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "log_spiral", "caquot_kerisel"], "description": "The passive coefficient below the excavation: 'rankine' (default) = Rankine's Kp, no wall friction, as the Caltrans Trenching and Shoring Manual's examples take it where the wall friction is zero (pp. 7-18, 7-27), with its note that Rankine 'tends to underestimate the passive earth pressure' and Sec. 4-6 (p. 4-28): Rankine 'should not be used ... because it does not account for wall friction'; 'log_spiral' (or 'caquot_kerisel', the same) = the log-spiral Kp of log_spiral_source at passive_wall_friction_deg in each layer below the excavation. Choices give the other theory's Kp and embedment."}
-_LOG_SPIRAL_SOURCE = {"type": "str", "required": False, "default": "ufc_3_220_20", "allowed_values": ["ufc_3_220_20", "caquot_kerisel_1948", "dm7_2_eq_4_12", "dm7_2_fig_4_12", "dm7_2_fig_4_13"], "description": "With passive_theory 'log_spiral', the printed source of Kp, as earth_pressure_coefficient takes it: 'ufc_3_220_20' (default) = UFC 3-220-20 Eq. 4-12 (p. 191), its log-spiral Kp for a vertical face and level ground at any wall friction; 'caquot_kerisel_1948' = the Caltrans Trenching and Shoring Manual Fig. 4-20 chart (its Example 8-1); 'dm7_2_fig_4_12' / 'dm7_2_fig_4_13' = UFC's charts, drawn for delta/phi' 0.66 only."}
-_PASSIVE_WALL_FRICTION = {"type": "float", "required": False, "description": "With passive_theory 'log_spiral', the wall friction delta (deg) in every layer below the excavation, at most its phi': the engineer's call (UFC 3-220-20 Table 4-1, p. 184; Caltrans Example 8-1 takes 15 deg on phi 30). Left out: the source's own (delta/phi' = 0.66, UFC p. 191, or delta = phi' with 'caquot_kerisel_1948') in a layer without cohesion, none in a layer with cohesion (UFC p. 238: wall friction 'only considered for passive pressure in granular soils')."}
+_LOG_SPIRAL_SOURCE = {"type": "str", "required": False, "default": "ufc_3_220_20", "allowed_values": ["ufc_3_220_20", "caquot_kerisel_1948", "dm7_2_eq_4_12", "dm7_2_fig_4_12", "dm7_2_fig_4_13"], "description": "With passive_theory 'log_spiral', the printed source of Kp, as earth_pressure_coefficient takes it: 'ufc_3_220_20' (default) = UFC 3-220-20 Eq. 4-12 (p. 191), its log-spiral Kp for a vertical face and level ground at any wall friction; 'caquot_kerisel_1948' = the Caltrans Trenching and Shoring Manual Fig. 4-20 chart (its Example 8-1), and 'dm7_2_eq_4_12' = UFC Eq. 4-12 by name, both needing passive_wall_friction_deg given; 'dm7_2_fig_4_12' / 'dm7_2_fig_4_13' = UFC's charts, drawn for delta/phi' 0.66 only."}
+_PASSIVE_WALL_FRICTION = {"type": "float", "required": False, "description": "With passive_theory 'log_spiral', the wall friction delta (deg) in every layer below the excavation, at most its phi': the engineer's call (UFC 3-220-20 Table 4-1, p. 184; Caltrans Example 8-1 takes 15 deg on phi 30). Left out: delta/phi' = 0.66 (UFC p. 191, 'a common assumption') in a layer without cohesion, none in a layer with cohesion (UFC Fig. 4-37 step 1, p. 237: 'Passive pressures for clean coarse grained soils include wall friction'; in other soils it ignores wall friction); refused with 'caquot_kerisel_1948' or 'dm7_2_eq_4_12', which need it given (Caltrans p. 4-29: 'Given delta'). For soldier piles in coarse-grained soil UFC p. 249 takes KP 'without wall friction': give 0."}
 _PASSIVE_CHOICES = "How the passive pressure below the excavation was taken: passive_theory with each layer's Kp and the embedment, the other theory's as the alternative, the Caltrans basis; with 'log_spiral' its source (with the other sources' Kp) and each layer's wall friction. Tell the user."
 
 _GEOM_PARAMS = ("excavation_depth", "layers", "supports", "surcharge",
@@ -447,11 +447,11 @@ from funhouse_agent.adapters import declare_when_absent  # noqa: E402
 _NO_WATER = ("no water table",
              "no water pressure on the wall; total unit weight throughout")
 _LEFT_OUT_FRICTION = (
-    "by layer: the log-spiral source's own, none with cohesion",
-    "delta/phi' = 0.66 (UFC 3-220-20 p. 191), or delta = phi' with "
-    "'caquot_kerisel_1948', in a layer below the excavation without "
-    "cohesion; none in one with cohesion (UFC p. 238); the choices give "
-    "each layer's")
+    "by layer: delta/phi' 0.66 without cohesion, none with cohesion",
+    "delta/phi' = 0.66 (UFC 3-220-20 p. 191) in a layer below the "
+    "excavation without cohesion; none in one with cohesion (UFC Fig. "
+    "4-37 step 1, p. 237); refused with 'caquot_kerisel_1948' or "
+    "'dm7_2_eq_4_12'; the choices give each layer's")
 declare_when_absent(METHOD_INFO, {
     "braced_excavation": {"gwt_depth": _NO_WATER,
                           "gwt_depth_excavation": "gwt_depth",

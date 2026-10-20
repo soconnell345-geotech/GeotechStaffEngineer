@@ -510,14 +510,21 @@ PASSIVE_BASIS = (
 #: Each layer's wall friction on the passive side when it is left out
 #: (GM-242), for the choice.
 PASSIVE_FRICTION_LEFT_OUT = (
-    "A layer below the excavation with no cohesion takes the source's own "
-    "wall friction (delta/phi' = 0.66, UFC 3-220-20 p. 191; delta = phi' "
-    "with the Caquot-Kerisel 1948 chart); a layer with cohesion takes none, "
-    "so Rankine's Kp, as UFC 3-220-20 p. 238 does on its anchored "
-    "bulkheads: 'The effects of interface friction between the wall and "
-    "soil are only considered for passive pressure in granular soils. Wall "
-    "friction is ignored in all other cases.' A wall friction given is "
-    "used in every layer below the excavation, at most its phi'")
+    "Left out, a layer below the excavation with no cohesion takes "
+    "delta/phi' = 0.66 (UFC 3-220-20 p. 191, 'a common assumption', the "
+    "wall friction its Figs. 4-12 and 4-13 are drawn for); "
+    "log_spiral_source 'caquot_kerisel_1948' or 'dm7_2_eq_4_12' needs it "
+    "given. A layer with cohesion takes none, so Rankine's Kp, as UFC "
+    "3-220-20's anchored bulkhead procedure does (Fig. 4-37 step 1, p. "
+    "237): 'Passive pressures for clean coarse grained soils include wall "
+    "friction (see Table 4-1). For active or passive pressures in all "
+    "other soil types, ignore wall friction.' Judgment, for the engineer "
+    "to confirm: a layer with no cohesion is read as a clean coarse-grained "
+    "soil; for a steel sheet pile Table 4-1 (p. 184) gives 17 deg against "
+    "clean sand (the sheet_pile tool's default; less than 0.66 phi' for "
+    "phi' above 26 deg) and 22 deg against clean gravel. A wall friction "
+    "given "
+    "is used in every layer below the excavation, at most its phi'")
 
 
 def check_passive(passive_theory: str = "rankine",
@@ -549,6 +556,10 @@ def check_passive(passive_theory: str = "rankine",
             and not 0.0 <= passive_wall_friction_deg < 90.0:
         raise ValueError(f"passive_wall_friction_deg must be in [0, 90) "
                          f"deg, got {passive_wall_friction_deg:g}")
+    if passive_theory == "log_spiral" and passive_wall_friction_deg is None \
+            and log_spiral_source in _ls.LEVEL_FRONT_NEEDS_DELTA:
+        raise ValueError(_ls.LEVEL_FRONT_NEEDS_DELTA[
+            log_spiral_source].format(name="passive_wall_friction_deg"))
 
 
 def passive_by_layer(layers: Sequence, H: float,
@@ -564,8 +575,9 @@ def passive_by_layer(layers: Sequence, H: float,
     in a layer below the excavation: the log-spiral Kp of
     ``log_spiral_source`` (default UFC 3-220-20's, Eq. 4-12 for the vertical
     face and level ground in front of the wall) at the wall friction given,
-    at most the layer's phi' ("given"), or left out the source's own with
-    no cohesion ("source") and none with cohesion ("cohesion",
+    at most the layer's phi' ("given"), or left out delta/phi' = 0.66 with
+    no cohesion ("source"; refused with the 1948 chart and Eq. 4-12 by
+    name) and none with cohesion ("cohesion",
     :data:`PASSIVE_FRICTION_LEFT_OUT`); phi' = 0 gives Kp = 1 ("phi_0").
     With delta = 0 the log-spiral Kp is Rankine's, and Rankine's is taken.
     A layer wholly above the excavation keeps Rankine's (``came``

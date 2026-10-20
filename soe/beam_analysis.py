@@ -452,8 +452,10 @@ def _layers_Kp(rows) -> str:
 
 
 #: How each layer's wall friction came, for the choice.
-_CAME = {"given": "given, at most phi'", "source": "the source's own",
-         "cohesion": "none, a layer with cohesion", "phi_0": "none, phi' 0"}
+_CAME = {"given": "given, at most phi'",
+         "source": "delta/phi' 0.66, taken when left out",
+         "cohesion": "none with cohesion, taken when left out",
+         "phi_0": "none, phi' 0"}
 
 
 def passive_choices(geometry: ExcavationGeometry, passive: dict,
@@ -526,5 +528,6 @@ def passive_choices(geometry: ExcavationGeometry, passive: dict,
                   for k, _, r in below),
         DEFAULT if left_out else how_given(
             given, None, name="passive_wall_friction_deg"),
-        PASSIVE_FRICTION_LEFT_OUT + ". " + _ls.wall_friction_note(source)))
+        PASSIVE_FRICTION_LEFT_OUT + ". " + _ls.wall_friction_note(
+            source, left_out="")))
     return out
