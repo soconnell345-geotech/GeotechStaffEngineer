@@ -1055,8 +1055,8 @@
   "kind": "decision",
   "ask_who": null,
   "question": "How should we judge whether the judgment-calls switch costs too much?",
-  "why": "The switch makes the agent list the judgment calls an answer turns on and check them with the references helper. The last live rerun showed it now works: the references are looked up, their citations reach the calc PDFs, and given vs assumed inputs print right. What it fails is the cost test, a ratio: ON may cost at most 1.8 times OFF. A references lookup costs about $0.20-0.53 whatever the question, so a short question can never pass that test.",
-  "background": "Rerun w14 (2026-10-19, $1.79): ON cost 2.87 times OFF on the two flows run, about 2.0-2.4 times over four flows. A short FEM question costs $0.11 with the switch off; the lookup alone adds $0.20-0.53. The switch stays OFF until this is settled.",
+  "why": "What the switch is: an option, off today, that changes how the agent handles the judgment calls in an engineering answer: which neutral-plane method to use, what strength to assume for a layer nobody tested, what factor of safety to aim for. With it on, the agent (1) lists each judgment call its answer turns on, (2) asks the references helper what the manuals say about each, and (3) states each call with its citation; a calc package then keeps the inputs you gave apart from the ones it assumed. With it off, the agent still makes those calls, from its own reading and usually without a citation. Why it is a decision now: the last live rerun showed the switch works (references looked up, citations reach the calc PDFs, given and assumed inputs printed right), but it fails the cost test it was set: run the same question with the switch off and on, and the on turn may cost at most 1.8 times the off turn. The switch's extra cost is roughly fixed, because the references lookup costs about $0.20-0.53 a turn whatever the question. A short chat question costs $0.11 with the switch off; 1.8 times allows $0.20, only $0.09 more, but the lookup alone adds at least $0.20, so the on turn costs 2.8 to 5.8 times as much and fails however well the switch behaves. On a calc package that already costs a few dollars, the same $0.20-0.53 is a small share and passes. So the test measures how cheap the question was, not whether the switch is worth its cost.",
+  "background": "The measurements: rerun w14 (2026-10-19, $1.79) cost 2.87 times OFF on the two flows run, about 2.0-2.4 times over four flows. A short FEM question costs $0.11 with the switch off, and the lookup alone adds $0.20-0.53. The switch stays off until this is settled.",
   "parts": [
    {
     "label": "The cost test",
@@ -1267,6 +1267,165 @@
     "sources": [
       "module_work/backlog_dashboard/triage_2026-10-20.json",
       "module_work/backlog_dashboard/tidy_proposal_2026-10-20.md"
+    ]
+  },
+  "OWN-70": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Stone columns: which basis should the improvement factor use by default?",
+    "why": "The ground-improvement tool estimates how much stone columns cut settlement with Priebe's basic improvement factor, n0. GEC-13 does not print Priebe's formula; it prints only his design curve (Vol I Fig. 5-21, curve 4), drawn for a column friction angle of 37.5 degrees. The tool's default runs the formula with a column friction angle of 42.5 degrees, a value GEC-13 prints nowhere, so it gives more improvement than the curve GEC-13 itself calls the upper bound (p. 5-37).",
+    "background": "GEC-13 Example 2 has an area ratio A/Ac of 3.61. There the formula at 42.5 degrees gives n0 = 3.06, the formula at 37.5 degrees gives 2.58, the printed curve gives 2.55, and the example reads 2.7 off the chart. The example's untreated settlement of 27 in becomes 8.8 in with today's default and 10.6 in with the printed curve. Your rule from the driven-pile questions (follow the manual's steps as printed and note the judgment) points to the printed curve.",
+    "parts": [
+      {
+        "label": "Default basis",
+        "options": [
+          {
+            "label": "The printed curve (Fig. 5-21, curve 4)",
+            "effect": "Follows GEC-13 as printed. Less improvement than today (10.6 in against 8.8 in on Example 2). The formula stays an option, with its column friction angle a stated input."
+          },
+          {
+            "label": "The formula at 37.5 degrees",
+            "effect": "Within about 1 % of the printed curve where the curve is drawn, and usable beyond the curve's range."
+          },
+          {
+            "label": "Keep 42.5 degrees (current)",
+            "effect": "No number changes; each result keeps saying 42.5 degrees is not printed in GEC-13."
+          }
+        ]
+      }
+    ],
+    "recommendation": "The printed curve, with the formula at a stated angle as the option: it is what GEC-13 prints, and it errs on the safe side of today's default.",
+    "if_no_answer": "The formula at 42.5 degrees stays the default, and each result says that angle is not printed in GEC-13.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "GM-233"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-70",
+      "GEC-13 Vol I pp. 5-36, 5-37 (Fig. 5-21), Example 2"
+    ]
+  },
+  "OWN-71": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Drilled shafts in rock: which side-resistance factor C should be the default?",
+    "why": "GEC-10's equation for side resistance in a rock socket carries a factor C. GEC-10 recommends C = 1.0 for normal sockets in routine design (pp. 10-20 and 10-21). Its Eq. 10-22, for rock that may cave, gives 0.65 when the joints are closed and RQD is 100, and less otherwise (Table 10-3). It allows 1.9 only for roughened sockets verified by load tests or local experience (p. 10-22). The tool's default is 0.65.",
+    "background": "GEC-10 Example 10-4 uses C = 1.0 and prints a side resistance of 5,202 kips; the tool now reproduces it when C = 1.0 is given. At 0.65 the same socket gets 35 % less side resistance. The tool does not yet build Table 10-3, so values below 0.65 must be given directly (GM-233).",
+    "parts": [
+      {
+        "label": "Default C",
+        "options": [
+          {
+            "label": "1.0 (GEC-10's routine design)",
+            "effect": "Matches GEC-10's recommendation and Example 10-4. Side resistance in rock rises by about 54 % against today. 0.65 (caving rock) and 1.9 (roughened, load-tested) are named as the alternatives."
+          },
+          {
+            "label": "Keep 0.65 (current)",
+            "effect": "No number changes; the lower, caving-rock value stays the default."
+          },
+          {
+            "label": "Ask for C on every rock socket",
+            "effect": "The tool refuses a rock socket without C, and its message lists the printed values."
+          }
+        ]
+      }
+    ],
+    "recommendation": "1.0, GEC-10's own recommendation for routine design, with the caving-rock and roughened values named; the result says that which one applies is the engineer's call.",
+    "if_no_answer": "0.65 stays the default, and each result names it as the caving-rock value.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "GM-233"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-71",
+      "GEC-10 pp. 10-20 to 10-22, Example 10-4"
+    ]
+  },
+  "OWN-72": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "The Document Review package: what is it called, and how does Tiny Apps get it?",
+    "why": "You decided today to split the two apps: GeotechStaffEngineer runs in Foundry, and Document Review becomes its own package, not on PyPI, pulled into Tiny Apps as a wheel. Two things need your call before the split starts: the package's name, and how Tiny Apps installs a package that is not on PyPI. Tiny Apps installs only from the Nexus mirror of PyPI, so a wheel that is not on PyPI has to be checked into the wrapper repo (vendored), and CfA has not yet said whether that is allowed.",
+    "background": "Python's convention is a lower-case distribution name with hyphens and an import name with underscores, for example de-docreview installed and imported as de_docreview. planlens, which does the document reading, is already its own package on PyPI and stays there. The split plan (INF-26) will list what moves and what stays.",
+    "parts": [
+      {
+        "label": "Name",
+        "options": [
+          {
+            "label": "de-docreview (import de_docreview)",
+            "effect": "Follows Python's naming convention."
+          },
+          {
+            "label": "Other (see notes)",
+            "effect": "Write the name you want in the notes."
+          }
+        ]
+      },
+      {
+        "label": "How Tiny Apps gets it",
+        "options": [
+          {
+            "label": "Vendored wheel in the wrapper repo, ask CfA first",
+            "effect": "Not on PyPI, as you said; needs CfA's yes (their open question 6)."
+          },
+          {
+            "label": "A package on Nexus after all",
+            "effect": "Installs like everything else on Tiny Apps; the code becomes public on PyPI."
+          }
+        ]
+      }
+    ],
+    "recommendation": "de-docreview, vendored in the wrapper repo once CfA agrees; ask CfA now so the answer is back before the split is built.",
+    "if_no_answer": "The plan uses de-docreview as a working name and leaves the install route open.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "INF-26"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-72, INF-26",
+      "tinyapps/TINYAPPS.md (Nexus only; CfA question 6)"
+    ]
+  },
+  "OWN-73": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Cantilever wall sliding on soil with cohesion: which rule should be the default?",
+    "why": "The sliding check used to add two-thirds of the foundation cohesion to base friction. GEC-6 (p. 100) gives two separate rules: friction for drained loading (Eq. 5-38) and adhesion, cu times the base width, for undrained loading (Eq. 5-39), and says they should not be combined. EN 1997-1 6.5.3(10) neglects c' for drained sliding. UFC 3-220-20 (Fig. 4-27, Sec. 4-5.1.3) adds friction and adhesion Ca over the effective base width. The tool now follows GEC-6 by default and offers UFC's rule.",
+    "background": "A 5 m wall on a foundation soil with phi' 28 degrees and c' 10 kPa: the factor of safety against sliding was 1.51 under the old two-thirds rule, is 1.23 under GEC-6's drained rule (below 1.5, so the wall fails the check), and is 1.55 under UFC's friction plus adhesion. The tool reads the strength from what the user gives: phi = 0 is read as undrained (c as cu), anything else as drained (c as c'), and the result says which and why.",
+    "parts": [
+      {
+        "label": "Default rule",
+        "options": [
+          {
+            "label": "GEC-6 as built (friction when drained, cu times B when phi = 0)",
+            "effect": "Follows GEC-6 and EN 1997-1 as printed and gives the lowest factor of safety of the three where c' > 0. UFC's rule stays a named option."
+          },
+          {
+            "label": "UFC friction plus adhesion",
+            "effect": "A higher factor of safety where c' > 0, as UFC 3-220-20 draws it. GEC-6's rule becomes the option."
+          },
+          {
+            "label": "Ask for the rule whenever the base has cohesion",
+            "effect": "The tool stops until the rule is given; its message lists the three rules with their sources."
+          }
+        ]
+      }
+    ],
+    "recommendation": "GEC-6 as built, with UFC's rule as the named option: it follows the manual's steps as printed, as you asked for driven piles, and it errs on the safe side.",
+    "if_no_answer": "GEC-6's rule stays the default, and each result says which rule it used and gives the other rules' factors of safety.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "GM-234"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-73",
+      "GEC-6 p. 100 (Eqs. 5-38, 5-39)",
+      "EN 1997-1 6.5.3",
+      "UFC 3-220-20 Fig. 4-27, Sec. 4-5.1.3, Table 4-1"
     ]
   }
 }

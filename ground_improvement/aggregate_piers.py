@@ -95,9 +95,10 @@ def composite_modulus(as_ratio: float, E_soil: float,
     reduction factor SRF = 1 / [1 + as*(n-1)] equals Es / E_comp,
     so E_comp = Es / SRF = Es * [1 + as*(n-1)].
 
-    This is the composite modulus consistent with the Priebe settlement
-    reduction factor.  It differs from the simple Voigt weighted average
-    (as*Ec + (1-as)*Es), which is only correct when the stress
+    This is the composite modulus consistent with the stress-ratio
+    settlement reduction factor (GEC-13 Eq. 5-4, the stress reduction
+    method; not Priebe's). It differs from the simple Voigt weighted
+    average (as*Ec + (1-as)*Es), which is only correct when the stress
     concentration ratio equals the modular ratio (n = Ec/Es).
 
     Parameters
@@ -116,7 +117,8 @@ def composite_modulus(as_ratio: float, E_soil: float,
 
     References
     ----------
-    Priebe (1995); FHWA GEC-13 unit-cell model.
+    FHWA GEC-13 (FHWA-NHI-16-027) Vol. I, Secs. 4.1.2.1, 4.1.2.4 and Eq. 5-4,
+    pp. 5-28 to 5-32: the unit cell under equal strain, the stress split by n.
     """
     return E_soil * (1.0 + as_ratio * (n - 1.0))
 
@@ -142,8 +144,9 @@ def priebe_basic_improvement_factor(as_ratio: float,
     as_ratio : float
         Area replacement ratio as = Ac / A (0 < as < 1).
     phi_column : float, optional
-        Friction angle of the column material (degrees). Default 42.5
-        (Priebe's design-chart value for compacted stone).
+        Friction angle of the column material (degrees). Default 42.5,
+        the module's; GEC-13 prints no friction angle for this formula
+        (its Priebe curve, Fig. 5-21 curve (4), is drawn for 37.5).
     nu_soil : float, optional
         Poisson's ratio of the surrounding soil. Default 1/3.
 
@@ -170,6 +173,66 @@ def priebe_basic_improvement_factor(as_ratio: float,
     Kac = math.tan(math.radians(45.0 - phi_column / 2.0)) ** 2
     f = (1.0 - nu_soil) * (1.0 - as_ratio) / (1.0 - 2.0 * nu_soil + as_ratio)
     return 1.0 + as_ratio * ((0.5 + f) / (Kac * f) - 1.0)
+
+
+#: How ``priebe_improvement_factor`` works n0 out (GM-221): Priebe's
+#: formula (the default) or the Priebe curve GEC-13 prints.
+PRIEBE_METHODS = ("formula", "fig_5_21")
+
+#: What each is, for a result's choices and notes.
+PRIEBE_BASIS = {
+    "formula": (
+        "Priebe's basic improvement factor n0 (Priebe 1995, 'The Design of "
+        "Vibro Replacement'), worked out from the column friction angle and "
+        "the soil's Poisson's ratio: n0 = 1 + a_s [(1/2 + f) / (K_ac f) - "
+        "1], f = (1 - nu)(1 - a_s) / (1 - 2 nu + a_s), K_ac = tan^2(45 - "
+        "phi_c / 2). The basic factor only: no correction for the "
+        "compressibility of the column material or for overburden (depth). "
+        "GEC-13 prints no formula; it prints the Priebe curve, Fig. 5-21 "
+        "curve (4), phi = 37.5 deg (p. 5-36)"),
+    "fig_5_21": (
+        "GEC-13 (FHWA-NHI-16-027) Vol. I, Fig. 5-21, p. 5-36, curve (4) "
+        "'PRIEBE phi = 37.5 deg', read off the printed figure (A/A_c 1.6 to "
+        "8.0, about +/- 0.03 in n'; from A/A_c about 4.0 on it is drawn on "
+        "one line with Balaam's curve (5a)). GEC-13 reads it in Example 2 "
+        "(Sec. 4.3.2, Fig. 5-27, p. 5-49), and p. 5-37: 'For preliminary "
+        "estimates, the Priebe curve may be used to evaluate the upper "
+        "bound effectiveness'"),
+}
+
+
+def priebe_choices(method: str, as_ratio: float, n0: float,
+                   phi_column: float = 42.5,
+                   nu_soil: float = 1.0 / 3.0) -> list:
+    """What ``priebe_improvement_factor`` chose (GM-221): the formula, with
+    its column friction angle, or GEC-13's printed curve (4)."""
+    from geotech_common.choices import choice, how_given
+    how = how_given(method, "formula", name="method")
+    at = f"n0 = {n0:.2f} at A/A_c = {1.0 / as_ratio:.2f}"
+    if method == "fig_5_21":
+        return [choice(
+            "Priebe improvement factor", f"GEC-13 Fig. 5-21 curve (4), "
+            f"phi = 37.5 deg: {at}", how, PRIEBE_BASIS["fig_5_21"],
+            ["method 'formula': Priebe's basic n0 from phi_column and "
+             "nu_soil"])]
+    at_37 = priebe_basic_improvement_factor(as_ratio, 37.5, nu_soil)
+    return [
+        choice("Priebe improvement factor",
+               f"Priebe's basic n0, nu = {nu_soil:.3g}: {at}", how,
+               PRIEBE_BASIS["formula"],
+               ["method 'fig_5_21': GEC-13's printed Priebe curve (4), "
+                "phi = 37.5 deg (p. 5-36; Example 2, p. 5-49)"]),
+        choice("column friction angle phi_c", f"{phi_column:g} deg",
+               how_given(phi_column, 42.5, name="phi_column"),
+               "42.5 deg is the module's default; GEC-13 prints no column "
+               "friction angle for Priebe's formula. Its printed Priebe "
+               "curve, Fig. 5-21 curve (4), is drawn for phi = 37.5 deg "
+               "(p. 5-36), and p. 5-37: 'the Priebe curve may be used to "
+               "evaluate the upper bound effectiveness'. n0 rises with "
+               "phi_c",
+               [f"phi_column 37.5: the angle of GEC-13's printed curve, "
+                f"n0 = {at_37:.2f} here"]),
+    ]
 
 
 def improved_bearing_capacity(q_unreinforced: float, as_ratio: float,
@@ -372,9 +435,10 @@ _BALAAM = ("settlement_method 'balaam_rigid' (E_c/E_s 5 to 10) or "
            "preliminary analyses'")
 _STRESS_RATIO = ("settlement_method 'stress_ratio' (the default): SRF = "
                  "1 / [1 + a_s (n - 1)] from the given n")
-_PRIEBE = ("Priebe's improvement factor n0 (priebe_improvement_factor); "
-           "GEC-13 p. 5-37: the Priebe curve 'may be used to evaluate the "
-           "upper bound effectiveness'")
+_PRIEBE = ("Priebe's improvement factor n0 (priebe_improvement_factor; "
+           "method 'fig_5_21' reads GEC-13's printed Priebe curve, Fig. "
+           "5-21 curve (4)); GEC-13 p. 5-37: the Priebe curve 'may be used "
+           "to evaluate the upper bound effectiveness'")
 _NAMES = {"weighted_modulus": "weighted modulus",
           "balaam_rigid": "Balaam, rigid",
           "balaam_flexible": "Balaam, flexible"}

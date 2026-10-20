@@ -181,7 +181,13 @@ NOT_REACHED = {
         "drilled_shaft|drilled_shaft_capacity#sand",
         "drilled_shaft|lrfd_capacity")
        for n, why in (("socket_diameter", _NO_ROCK),
-                      ("casing_depth", _CASING))},
+                      ("casing_depth", _CASING),
+                      ("rock_side_C", _NO_ROCK))},
+    ("calc_package|drilled_shaft_package", "rock_side_C"): _NO_ROCK,
+    # GM-221: the rock probe's soil is clay over rock
+    ("drilled_shaft|drilled_shaft_capacity#rock", "beta_method"):
+        "the probe's soil is clay over rock: the beta method is for sand",
+    ("drilled_shaft|drilled_shaft_capacity#rock", "casing_depth"): _CASING,
     ("downdrag|downdrag_analysis", "n_sublayers"): _GRID,
     ("downdrag|post_liquefaction_downdrag", "n_sublayers"): _GRID,
     # GM-207: the result as returned leaves out the basis text that names
