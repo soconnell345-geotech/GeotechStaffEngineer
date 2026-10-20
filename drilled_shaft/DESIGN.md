@@ -49,6 +49,26 @@ get_resistance_factors(method, condition) -> dict
   only, Sec. 10.3.5.1, pp. 10-10 to 10-12) prints, so N60 is stated rather
   than required. `concrete_fc` is not an input of the tools (refused with
   the reason): the capacity never used it (GM-160).
+- Rock not considered part of the socket (GM-220, 2026-10-20):
+  `DrillShaft.fractured_rock_thickness` (m, default 0) is decomposed or
+  fractured rock below the top of the first rock layer that GEC-10
+  (FHWA-NHI-18-024) p. 8-15 lets the designer remove "but not considered
+  part of the socket for design purposes". No rock side resistance is taken
+  over it, through as many rock layers as it reaches; a soil layer keeps
+  its own side resistance, and the base is the rock at the tip.
+  `casing_depth` differs: it takes the side resistance of soil AND rock
+  above it (GEC-10 Example 10-4, p. 10-27, cases the soil and the
+  decomposed rock). Refused with no rock layer. A rock profile's result
+  states the choice either way (`capacity.fractured_rock_choice`), and
+  says so when the zone lies below the tip (it changes nothing) or holds
+  the tip (the base takes that rock layer's qu and RQD as given; give the
+  fractured rock as its own layer for the base on it); the calc
+  steps print the zone and the side-resistance figure hatches it.
+  `socket_diameter` stays one value for every rock layer: GEC-10 sizes a
+  socket by one diameter B (Eq. 10-21; Example 10-4) and gives no socket
+  diameter per rock layer. Found in passing, not changed: the rock base
+  area is the shaft's (or bell's) diameter, not `socket_diameter`, while
+  Example 10-4 takes the base on the socket diameter B (p. 10-28).
 
 ## Side-resistance methods: simplified (default) vs rational (opt-in)
 

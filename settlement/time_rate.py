@@ -9,7 +9,7 @@ All units are SI: kPa, meters, seconds (or years where noted).
 References:
     Terzaghi, K. (1925) — Erdbaumechanik
     USACE EM 1110-1-1904, Chapter 6
-    FHWA GEC-6 (FHWA-IF-02-054), Section 8.4.3
+    FHWA GEC-6 (FHWA-SA-02-054), Sec. 5.3.3.1 (no procedure; it refers to Cheney & Chassie 2000)
 """
 
 import math

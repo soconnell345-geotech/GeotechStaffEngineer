@@ -1415,58 +1415,102 @@ def _plot_cantilever_section(result, analysis):
     ]
     ax.fill(stem_x, stem_y, facecolor='#94a3b8', edgecolor='#1a1a1a', linewidth=1.5)
 
+    # The earth pressure as the analysis takes it (GM-143), and its height:
+    # the vertical plane through the back of the heel, H_active high
+    ep = _cantilever_terms(result, analysis)[0]
+    Ka_val = ep["Ka"]
+    H_a = ep["H_active"]
+    q = (ep.get("q_live") or 0.0) + (ep.get("q_dead") or 0.0)
+    p_q = Ka_val * q                       # the surcharge's, kPa
+    p_soil = Ka_val * gamma * H_a          # the earth's, at the base
+    # the diagram's widest, a set share of B, and the room right of it
+    p_scale = B * 0.5 / max(p_q + p_soil, 1e-9)
+    w_diagram = (p_q + p_soil) * p_scale
+
     # The ground on each side, as the analysis has it (GM-200: the toe
     # side's ground was drawn at H, level with the backfill). Behind the
     # wall the backfill meets the stem at its top and rises at the
-    # backfill slope; in front, the ground is at the top of the base: H is
-    # measured from the underside of the base, the wall retains H less the
-    # base thickness above the top of the footing, and passive resistance
-    # is taken on the base's embedment (``cantilever._sliding_terms``).
-    x_left, x_right = -B * 0.4, B * 1.4
+    # backfill slope from the back of the stem at the heel, where the
+    # analysis's wedge over the heel starts, so it meets the plane through
+    # the back of the heel at H_active (GM-216); in front, the ground is
+    # at the top of the base: H is measured from the underside of the
+    # base, the wall retains H less the base thickness above the top of
+    # the footing, and passive resistance is taken on the base's
+    # embedment (``cantilever._sliding_terms``).
+    x_left, x_right = -B * 0.4, B + w_diagram + B * 0.3
     slope = math.tan(math.radians(geom.backfill_slope or 0.0))
     x_back_top = t_toe + t_stem_t
+    x_heel = t_toe + t_stem_b
 
     def _backfill_surface(x):
-        return H + (x - x_back_top) * slope
+        return H + max(x - x_heel, 0.0) * slope
 
-    backfill_x = [t_toe + t_stem_b, B, B, x_right, x_right, x_back_top]
-    backfill_y = [t_base, t_base, 0.0, 0.0, _backfill_surface(x_right), H]
+    backfill_x = [x_heel, B, B, x_right, x_right, x_heel, x_back_top]
+    backfill_y = [t_base, t_base, 0.0, 0.0, _backfill_surface(x_right), H,
+                  H]
     ax.fill(backfill_x, backfill_y, facecolor='#f5e6c8', edgecolor='none',
             alpha=0.7, zorder=0)
 
+    # A shear key: where it is given, else under the stem, as UFC 3-220-20
+    # Fig. 4-29 and GEC-6 Fig. 5-22 draw it, and the figure says so
+    # (GM-216); the analysis has no place for it
+    key_depth = geom.key_depth if geom.has_shear_key else 0.0
+    key_lines = []
+    if key_depth > 0:
+        key_x = _get(analysis, "key_distance_from_toe")
+        key_w = _get(analysis, "key_width")
+        if key_x is None or key_w is None:
+            missing = ("position or width" if key_x is None
+                       and key_w is None else
+                       "position" if key_x is None else "width")
+            key_lines += [("Shear key drawn under the stem, as UFC 3-220-20 "
+                           "Fig. 4-29 draws it:"),
+                          f"no key {missing} given."]
+        key_x = t_toe if key_x is None else float(key_x)
+        key_w = t_stem_b if key_w is None else float(key_w)
+        ax.add_patch(patches.Rectangle(
+            (key_x, -key_depth), key_w, key_depth, facecolor='#94a3b8',
+            edgecolor='#1a1a1a', linewidth=1.5))
+        if not _used(analysis, "include_passive"):
+            key_lines.append("No passive resistance in the sliding check: "
+                             "the key is not counted.")
+
     # Foundation soil under the base and the soil in front of the toe
-    y_bottom = -B * 0.45
+    y_bottom = -B * 0.45 - key_depth
     ax.fill([x_left, x_right, x_right, 0.0, 0.0, x_left],
             [y_bottom, y_bottom, 0.0, 0.0, t_base, t_base],
             facecolor='#e8dcc8', edgecolor='none', alpha=0.5, zorder=0)
 
-    # Earth pressure diagram (triangular, on back of wall), with the Ka
-    # and the thrust the analysis used (GM-143)
-    ep = _cantilever_terms(result, analysis)[0]
-    Ka_val = ep["Ka"]
-    sigma_base = Ka_val * gamma * geom.H_active  # max pressure at base
-
-    # Scale the pressure arrow to fit in the figure
-    p_scale = B * 0.5 / max(sigma_base, 1)
-
-    # Draw triangular pressure diagram behind the stem
-    press_x_base = t_toe + t_stem_b
-    ax.fill(
-        [press_x_base, press_x_base + sigma_base * p_scale,
-         press_x_base],
-        [t_base, t_base, H],
-        facecolor='#fca5a5', edgecolor='#dc2626', linewidth=1.5, alpha=0.5,
-    )
-    # P_a beside the diagram's sloping edge, at its mid-height, in the
-    # backfill: written inside the triangle it ran across its edge at the
-    # printed width (GM-194), and beside the base corner it ran past the
-    # frame when a backfill slope made the view taller (GM-200)
-    ax.annotate(
-        f'P_a = {ep["Pa"]:.0f} kN/m',
-        xy=(press_x_base + 0.5 * sigma_base * p_scale, 0.5 * (t_base + H)),
-        xytext=(6, 0), textcoords='offset points', va='center',
-        fontsize=8, ha='left', color='#dc2626', fontweight='bold',
-    )
+    # The pressure diagram on the plane through the back of the heel, from
+    # the underside of the base to H_active, where the analysis applies it
+    # (it was drawn on the stem's face, over the stem only; GM-216): the
+    # surcharge's K_a q next to the plane, the earth's K_a gamma z beyond
+    press = dict(linewidth=1.2, alpha=0.5, zorder=1)
+    if p_q > 0:
+        ax.add_patch(patches.Rectangle(
+            (B, 0.0), p_q * p_scale, H_a, facecolor='#fdba74',
+            edgecolor='#c2410c', hatch='..', **press))
+    x_q = B + p_q * p_scale
+    ax.fill([x_q, x_q + p_soil * p_scale, x_q], [0.0, 0.0, H_a],
+            facecolor='#fca5a5', edgecolor='#dc2626', **press)
+    # The thrust, at its height above the base and inclination as the
+    # analysis has them, named in the key (written at its tail it ran
+    # past the frame at the printed width)
+    delta = math.radians(ep.get("delta_deg") or 0.0)
+    z_pa = ep.get("z_Pa", H_a / 3.0)
+    reach = w_diagram + 0.12 * B
+    tail = (B + reach * math.cos(delta), z_pa + reach * math.sin(delta))
+    ax.annotate('', xy=(B, z_pa), xytext=tail,
+                arrowprops=dict(arrowstyle='-|>', color='#991b1b', lw=1.6,
+                                mutation_scale=12), zorder=4)
+    # The surcharge on the backfill it stands for
+    if q > 0:
+        for i in range(7):
+            x = x_heel + 0.1 * B + i * (x_right - 0.18 * B - x_heel) / 6
+            ax.annotate('', xy=(x, _backfill_surface(x)), xytext=(0, 12),
+                        textcoords='offset points',
+                        arrowprops=dict(arrowstyle='->', color='#c2410c',
+                                        lw=0.8))
 
     # Dimension annotations
     # Wall height
@@ -1477,7 +1521,8 @@ def _plot_cantilever_section(result, analysis):
 
     # The dimensions under the base, set off from it by points (by metres
     # they ran into each other and their values onto their lines at the
-    # printed width; GM-194): toe and heel 4 pt under it, B under those.
+    # printed width; GM-194): toe and heel 4 pt under it, B under those;
+    # under the shear key where there is one (GM-216).
     from matplotlib.transforms import offset_copy
 
     def _under(pts):
@@ -1485,10 +1530,10 @@ def _plot_cantilever_section(result, analysis):
 
     def _dimension(x0, x1, pts, text, **kw):
         line = dict(color=kw.pop('color', '#1a1a1a'), lw=kw.pop('lw', 1.2))
-        ax.annotate('', xy=(x0, 0), xytext=(x1, 0), xycoords=_under(pts),
-                    textcoords=_under(pts),
+        ax.annotate('', xy=(x0, -key_depth), xytext=(x1, -key_depth),
+                    xycoords=_under(pts), textcoords=_under(pts),
                     arrowprops=dict(arrowstyle='<->', **line))
-        ax.text((x0 + x1) / 2, 0, text, transform=_under(pts + 4),
+        ax.text((x0 + x1) / 2, -key_depth, text, transform=_under(pts + 4),
                 ha='center', va='top', color=line['color'], **kw)
 
     if t_toe > 0:
@@ -1501,8 +1546,8 @@ def _plot_cantilever_section(result, analysis):
 
     # Ground surface lines: the backfill behind the stem, the ground in
     # front at the top of the base
-    ax.plot([x_back_top, x_right], [H, _backfill_surface(x_right)], 'g-',
-            linewidth=2)
+    ax.plot([x_back_top, x_heel, x_right],
+            [H, H, _backfill_surface(x_right)], 'g-', linewidth=2)
     ax.plot([x_left, 0.0], [t_base, t_base], 'g-', linewidth=2)
 
     # Resultant location marker, its point on the base's underside, and
@@ -1521,16 +1566,37 @@ def _plot_cantilever_section(result, analysis):
     def _fos_text(fos, word):
         return word if fos is None else f"{fos:.2f}"
 
-    note = (
+    lines = [
+        f"Active pressure on the vertical plane through the back of the "
+        f"heel, {H_a:.2f} m high",
         f'\u03b3 = {gamma:.1f} kN/m\u00b3, \u03c6 = {phi:.1f}\u00b0, '
-        f'Ka = {Ka_val:.3f}\n'
+        f'Ka = {Ka_val:.3f}']
+    if ep.get("Pa_cohesion"):
+        lines.append(f"The backfill's cohesion takes "
+                     f"{-ep['Pa_cohesion']:.0f} kN/m off P_a (not drawn).")
+    lines.append(
         f"FOS_slide = {_fos_text(result.FOS_sliding, 'no driving force')}, "
         f"FOS_OT = {_fos_text(result.FOS_overturning, 'no driving force')}, "
-        f"FOS_brg = {_fos_text(result.FOS_bearing, 'not checked')}"
-    )
+        f"FOS_brg = {_fos_text(result.FOS_bearing, 'not checked')}")
+    lines += key_lines
+    from matplotlib.lines import Line2D
+    handles = [Line2D(
+        [], [], color='#991b1b', lw=1.6, marker='<', markersize=6,
+        label=(f'P_a = {ep["Pa"]:.0f} kN/m, {z_pa:.2f} m above the base'
+               + (f', at {ep["delta_deg"]:.0f}° to horizontal'
+                  if ep.get("delta_deg") else '')))]
+    handles += [patches.Patch(
+        facecolor='#fca5a5', edgecolor='#dc2626', alpha=0.5,
+        label=f'Earth, K_a\u03b3z: {p_soil:.1f} kPa at the base')]
+    if p_q > 0:
+        handles.append(patches.Patch(
+            facecolor='#fdba74', edgecolor='#c2410c', hatch='..', alpha=0.5,
+            label=f'Surcharge, K_a q: {p_q:.1f} kPa (q = {q:g} kPa)'))
 
     ax.set_xlim(x_left, x_right)
-    ax.set_ylim(y_bottom, max(H * 1.15, _backfill_surface(x_right) + 0.05 * H))
+    ax.set_ylim(y_bottom, max(H * 1.15, H_a + 0.05 * H,
+                              _backfill_surface(x_right)
+                              + (0.12 if q > 0 else 0.05) * H))
     # the wall's own frame, said as such: the inputs give no elevation
     # (the axis read "Elevation" with 0 at the underside of the base)
     ax.set_xlabel('Distance from the toe (m)', fontsize=10)
@@ -1539,7 +1605,7 @@ def _plot_cantilever_section(result, analysis):
     ax.set_aspect('equal')
     ax.grid(True, alpha=0.15)
     from geotech_common.plotting import key_under_axes
-    key_under_axes(fig, ax, note=note)
+    key_under_axes(fig, ax, handles=handles, note="\n".join(lines), ncol=1)
     return fig
 
 
@@ -1750,8 +1816,12 @@ def _plot_mse_section(result, analysis):
 
     ax.set_xlim(-L * 0.25, L * 1.5)
     ax.set_ylim(-H * 0.15, H * 1.1)
-    ax.set_xlabel('Distance (m)', fontsize=10)
-    ax.set_ylabel('Elevation (m)', fontsize=10)
+    # the wall's own frame, said as such: the inputs give no elevation
+    # (the axis read "Elevation" with 0 at the base of the reinforced
+    # zone; GM-218, as GM-200 did for the cantilever section)
+    ax.set_xlabel('Distance from the wall face (m)', fontsize=10)
+    ax.set_ylabel('Height above the base of the reinforced zone (m)',
+                  fontsize=10)
     ax.set_title('MSE Wall Cross-Section', fontsize=12, fontweight='bold')
     ax.set_aspect('equal')
     ax.grid(True, alpha=0.15)
@@ -1792,7 +1862,7 @@ def _plot_mse_internal(result, analysis):
 
     ax.invert_yaxis()  # depth increases downward
     ax.set_xlabel('Force (kN/m)', fontsize=10)
-    ax.set_ylabel('Depth z (m)', fontsize=10)
+    ax.set_ylabel('Depth below the top of the wall, z (m)', fontsize=10)
     ax.set_title('Internal Stability: T_max vs Pullout Resistance', fontsize=11,
                  fontweight='bold')
     ax.grid(True, alpha=0.3)

@@ -7,7 +7,7 @@ for Mathcad-style calc package generation.
 References:
     Vesic (1973) — Bearing capacity factors and Ngamma
     Meyerhof (1963) — Shape, depth, inclination factors
-    FHWA GEC-6 (FHWA-IF-02-054), Chapter 6
+    FHWA GEC-6 (FHWA-SA-02-054), Chapter 5 (Sec. 5.2, Bearing Capacity Theory)
 """
 
 import math
@@ -25,7 +25,7 @@ REFERENCES = [
     'JSMFD, ASCE, Vol. 99, No. SM1, pp. 45-73.',
     'Meyerhof, G.G. (1963). "Some Recent Research on the Bearing Capacity '
     'of Foundations." Canadian Geotechnical Journal, Vol. 1, No. 1, pp. 16-26.',
-    "FHWA GEC-6 (FHWA-IF-02-054): Shallow Foundations, Chapter 6.",
+    "FHWA GEC-6 (FHWA-SA-02-054): Shallow Foundations, Chapter 5, Sec. 5.2.",
     'Prandtl, L. (1921). "Uber die Eindringungsfestigkeit plastischer '
     'Baustoffe." Zeitschrift fur Angewandte Mathematik und Mechanik, 1(1).',
     'Hansen, J.B. (1970). "A Revised and Extended Formula for Bearing '

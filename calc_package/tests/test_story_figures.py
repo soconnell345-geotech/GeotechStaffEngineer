@@ -808,3 +808,119 @@ def test_a_table_started_again_keeps_its_heading():
     html = "<table><tr><th>A</th><th>B</th></tr><tr><td>1</td></tr></table>"
     assert restart(html, 0) == "<table><tr><th>A</th><th>B</th></tr>"
     assert restart("<table><tr><td>1</td></tr></table>", 0) == "<table>"
+
+
+# ── no backgrounds: the engine draws them again later (GM-219) ──────
+
+def _shaded_html() -> str:
+    """A package's shaded table heading, calculation step and check on the
+    first page, then four pages of text."""
+    from calc_package.template import CALC_PACKAGE_CSS
+    rows = "".join(f"<tr><td>Layer {i}</td><td>{i}.5</td></tr>"
+                   for i in range(4))
+    return (f"<html><head><style>{CALC_PACKAGE_CSS}</style></head><body>"
+            '<table class="data-table"><thead><tr><th>Layer</th>'
+            f"<th>Value (kPa)</th></tr></thead><tbody>{rows}</tbody></table>"
+            '<div class="calc-step"><div class="step-title">Step 1</div>'
+            '<div class="equation">Q = q A</div></div>'
+            '<div class="check-item fail"><span class="check-badge fail">FAIL'
+            "</span> Sliding</div>" + TEXT * 40 + "</body></html>")
+
+
+def _fills(path) -> list:
+    """``(pdf_page, colour, rect)`` of every fill that is not a rule (a
+    border or a line under a heading)."""
+    out = []
+    with fitz.open(path) as doc:
+        for page in doc:
+            for d in page.get_drawings():
+                r = d["rect"]
+                if (d.get("fill") is None or r.width <= 4.5
+                        or r.height <= 2.0):
+                    continue
+                out.append((page.number + 1, tuple(d["fill"]), r))
+    return out
+
+
+def test_the_engine_draws_a_background_again_on_every_later_page():
+    """Master: the heading's shading came back on every later page as a
+    bar its padding high, where the heading stood (axial pile: 141 bars in
+    ten pages, over text); a step's at the top of every page."""
+    html = _shaded_html()
+    pdf, _at = latex_renderer._story_pass(html, _LETTER, _WHERE)
+    with fitz.open("pdf", pdf) as doc:
+        assert doc.page_count >= 4
+        bars = [d["rect"] for d in doc[3].get_drawings()
+                if d.get("fill") is not None
+                and tuple(round(c, 3) for c in d["fill"]) == (0.941,) * 3]
+    assert bars and all(r.height == pytest.approx(6.0) for r in bars)
+
+
+def test_no_background_is_drawn_again_on_a_later_page(tmp_path):
+    out = render_html_pdf_story(_shaded_html(), str(tmp_path / "bg.pdf"))
+    assert _fills(out["path"]) == []
+    with fitz.open(out["path"]) as doc:
+        assert doc.page_count >= 4
+        first = doc[0]
+        heading = [w for w in first.get_text("words")
+                   if w[4] in ("Layer", "Value")][:2]
+        rules = [d["rect"] for d in first.get_drawings()
+                 if d.get("fill") is not None and d["rect"].height <= 2.0
+                 and max(d["fill"]) < 0.5]
+        badge = [s for b in first.get_text("dict")["blocks"]
+                 for line in b.get("lines", []) for s in line["spans"]
+                 if s["text"].strip() == "FAIL"]
+    # the heading row is set off by a dark rule under it
+    bottom = max(w[3] for w in heading)
+    assert any(r.y0 >= bottom and r.y0 - bottom < 6 and r.width > 50
+               for r in rules)
+    # the badge's word in its colour, no longer white on a red block
+    assert badge and badge[0]["color"] == 0xDC2626
+
+
+def test_text_left_white_by_its_background_going_prints_black(tmp_path):
+    html = ("<html><head><style>th{background:#2c3e50;color:white}"
+            ".band{background-color:#1f4e79;color:#ECF0F1 !important;"
+            "border-color:#fff}</style></head><body>"
+            '<div class="band">Title</div><table><thead><tr><th>Head</th>'
+            '</tr></thead><tbody><tr><td style="color:rgb(255, 255, 255);'
+            'background:#c00">Cell</td></tr></tbody></table></body></html>')
+    out = render_html_pdf_story(html, str(tmp_path / "white.pdf"))
+    with fitz.open(out["path"]) as doc:
+        colours = {s["text"].strip(): s["color"]
+                   for b in doc[0].get_text("dict")["blocks"]
+                   for line in b.get("lines", []) for s in line["spans"]}
+    assert colours["Title"] == colours["Head"] == colours["Cell"] == 0
+    assert _fills(out["path"]) == []
+
+
+def test_the_css_loses_its_backgrounds_and_its_light_text():
+    light = latex_renderer._light
+    assert all(light(v) for v in (
+        "white", "#FFF", "#ffffff", "#ecf0f1", "rgb(255,255,255)",
+        "rgba(255, 255, 255, .5)", "whitesmoke"))
+    assert not any(light(v) for v in ("#555", "red", "#cccccc", "#1a1a1a",
+                                      "rgb(0, 0, 0)", "inherit", "#12"))
+    html = ('<style>p{color:#fff;background-color:#333 !important;'
+            "border-color:white;background-image:url(a.png)}</style>"
+            '<p style="color: white !important;background:url(data:image/'
+            'png;base64,AB) #c00">color: white</p><td bgcolor=red>x</td>')
+    assert latex_renderer._without_backgrounds(html) == (
+        "<style>p{color:#000;background-color:transparent !important;"
+        "border-color:white;background-image:url(a.png)}</style>"
+        '<p style="color: #000 !important;background:transparent">'
+        "color: white</p><td>x</td>")
+
+
+def test_the_fills_left_out_are_counted():
+    """What ``html_to_pdf`` tells its caller is gone: each background that
+    would show on white paper, not one that leaves it white."""
+    count = latex_renderer._fills_set
+    assert count("<p>plain</p>") == 0
+    assert count("<style>body{background:#fff}td{background-color:"
+                 "transparent !important}p{background:white}</style>"
+                 '<td style="background: rgb(255, 255, 255)">x</td>'
+                 "<td bgcolor=\"#FFFFFF\">y</td>") == 0
+    assert count("<style>th{background:#f0f0f0}.band{background-color:"
+                 "#1f4e79}</style>" '<span style="background:#e41a1c">'
+                 "&nbsp;</span><td bgcolor=red>x</td>") == 4

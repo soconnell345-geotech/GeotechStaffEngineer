@@ -7,7 +7,7 @@ and time-rate calculations into a single analysis interface.
 All units are SI: kPa, meters, years.
 
 References:
-    FHWA GEC-6 (FHWA-IF-02-054), Chapter 8
+    FHWA GEC-6 (FHWA-SA-02-054), Sec. 5.3
     USACE EM 1110-1-1904
 """
 

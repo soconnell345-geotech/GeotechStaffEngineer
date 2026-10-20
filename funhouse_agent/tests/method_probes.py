@@ -109,7 +109,8 @@ _HAMMER_LABEL = ("a custom hammer's label in the result and the calc "
                  "package: every type is modelled as a rigid ram, so the "
                  "ram, stroke and efficiency set the blow")
 _PLANE_STRAIN = ("plane strain: the thickness scales the stiffness, the "
-                 "self-weight and the loads alike, so the per-metre "
+                 "self-weight and the loads alike (and, since GM-204, the "
+                 "beams, springs and wall joints), so the per-metre "
                  "results do not change")
 LABEL_ONLY = {
     **{(f"wave_equation|{m}", n): _HAMMER_LABEL
@@ -119,7 +120,7 @@ LABEL_ONLY = {
        for n in ("hammer_type", "hammer_custom_name")},
     **{(f"fem2d|{m}", "t"): _PLANE_STRAIN
        for m in ("fem2d_foundation", "fem2d_gravity", "fem2d_local_fos",
-                 "fem2d_slope_srm")},
+                 "fem2d_slope_srm", "fem2d_excavation", "fem2d_staged")},
 }
 
 #: Declared inputs that act, but not on their probe's inputs or not in
@@ -194,6 +195,11 @@ NOT_REACHED = {
     ("calc_package|downdrag_package", "n_sublayers"): _GRID,
     ("calc_package|downdrag_package", "influence_depth_criterion"):
         "the probe's soil below the toe is marked as not settling",
+    # GM-216: the same probe with a ground elevation
+    ("calc_package|downdrag_package#elevation", "n_sublayers"): _GRID,
+    ("calc_package|downdrag_package#elevation",
+     "influence_depth_criterion"):
+        "the probe's soil below the toe is marked as not settling",
     **{("ground_improvement|feasibility", n):
        "a bearing problem needs both the required and current bearing"
        for n in ("required_bearing_kPa", "current_bearing_kPa")},
@@ -236,9 +242,6 @@ NOT_REACHED = {
     ("fem2d|fem2d_consolidation", "gamma_w"): _DRAINED,
     ("fem2d|fem2d_staged", "gamma_w"):
         "the probe's phases give no water table",
-    ("fem2d|fem2d_staged", "t"):
-        "the probe has no beam elements: t scales the soil's stiffness, "
-        "weight and loads alike, but not a beam's EA and EI (GM-204)",
     **{(k, "max_iter"): _ITERATIONS for k in (
         "fem2d|fem2d_excavation", "fem2d|fem2d_excavation#interface",
         "fem2d|fem2d_footing_capacity", "fem2d|fem2d_local_fos",

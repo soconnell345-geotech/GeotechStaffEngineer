@@ -7,7 +7,7 @@ eccentric loading (effective area method per Meyerhof, 1953).
 All units are SI: meters (m), kilonewtons (kN), kilopascals (kPa).
 
 References:
-    FHWA GEC-6, Chapter 6 (FHWA-IF-02-054)
+    FHWA GEC-6, Chapter 5 (FHWA-SA-02-054)
     Meyerhof, G.G. (1953) — Effective area concept for eccentric loads.
 """
 

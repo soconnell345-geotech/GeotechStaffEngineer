@@ -28,9 +28,14 @@ class BeamElement:
     ----------
     node_i : int — start node index.
     node_j : int — end node index.
-    EA : float — axial stiffness (kN).
-    EI : float — flexural stiffness (kN·m²).
-    weight_per_m : float — self-weight per unit length (kN/m). Default 0.
+    EA : float — axial stiffness per metre run (kN/m).
+    EI : float — flexural stiffness per metre run (kN·m²/m).
+    weight_per_m : float — self-weight per unit length, per metre run
+        (kN/m/m). Default 0.
+
+    In plane strain a wall or plate is given per metre run, as the soil
+    is; the assembly multiplies all three by the slice thickness t, as it
+    does the soil elements (GM-204).
     """
     node_i: int
     node_j: int

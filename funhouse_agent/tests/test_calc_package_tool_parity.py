@@ -312,7 +312,12 @@ def test_the_package_leaves_the_tools_defaults(package, params):
     selector = cp._PACKAGE_TOOLS[package].get("selector")
     if selector and selector[0] not in params:
         expected[selector[0]] = selector[1]
-    assert cp._run_tool(package, dict(params)).defaults_used == expected
+    used = cp._run_tool(package, dict(params)).defaults_used
+    # and the package's own inputs it left out, listed the same way
+    # (GM-218: the plan view's north_deg went unlisted)
+    own = cp._PACKAGE_TOOLS[package].get("own", {})
+    assert {k: v for k, v in used.items() if k not in own} == expected
+    assert not set(used) & set(own) & set(params)
 
 
 def test_the_package_response_says_the_tools_defaults(tmp_path):
