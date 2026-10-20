@@ -62,6 +62,7 @@ REFERENCE_MODULES = frozenset({
     "ufc_stabilization", "ufc_flexible_practice", "ufc_concrete_practice",
     "ufc_structural", "ufc_collapse", "gsa_collapse", "wood_handbook",
     "fema_p2082", "california_trenching", "fhwa_pavements",
+    "fhwa_soils_foundations",
     "eurocode_7_1", "eurocode_7_2", "aashto_1993",
 })
 

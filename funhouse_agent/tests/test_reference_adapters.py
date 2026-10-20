@@ -25,6 +25,7 @@ REFERENCE_MODULES = [
     "micropile",
     "ufc_backfill", "ufc_expansive", "ufc_pavement", "ufc_structural",
     "ufc_collapse", "gsa_collapse", "wood_handbook",
+    "fhwa_soils_foundations",
 ]
 
 # Modules with text retrieval (retrieve_section, search_sections, etc.)
@@ -33,7 +34,7 @@ TEXT_MODULES = [
     "wood_handbook",
     "gec4", "gec5", "gec6", "gec7", "gec8", "gec9",
     "gec10", "gec11", "gec12", "gec13", "gec14",
-    "micropile",
+    "micropile", "fhwa_soils_foundations",
 ]
 
 
