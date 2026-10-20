@@ -104,12 +104,206 @@ ECHO_IS_NOT_THE_INPUT = {
 #: echo and the result's ``choices``; an input here is skipped. A name
 #: whose effect the probe's inputs cannot show (a clamp the probe does not
 #: reach, a branch it does not take) goes in :data:`NOT_REACHED`, never
-#: here.
-LABEL_ONLY = {}
+#: here. Filled by the GM-184 sweep (2026-10-19).
+_HAMMER_LABEL = ("a custom hammer's label in the result and the calc "
+                 "package: every type is modelled as a rigid ram, so the "
+                 "ram, stroke and efficiency set the blow")
+_PLANE_STRAIN = ("plane strain: the thickness scales the stiffness, the "
+                 "self-weight and the loads alike, so the per-metre "
+                 "results do not change")
+LABEL_ONLY = {
+    **{(f"wave_equation|{m}", n): _HAMMER_LABEL
+       for m in ("bearing_graph", "drivability", "single_blow")
+       for n in ("hammer_type", "hammer_custom_name")},
+    **{("calc_package|wave_equation_package", n): _HAMMER_LABEL
+       for n in ("hammer_type", "hammer_custom_name")},
+    **{(f"fem2d|{m}", "t"): _PLANE_STRAIN
+       for m in ("fem2d_foundation", "fem2d_gravity", "fem2d_local_fos",
+                 "fem2d_slope_srm")},
+    ("ground_improvement|aggregate_piers", "E_column"):
+        "not used in the calculation, as its description says: n sets the "
+        "stress split, and E_column only warns below E_soil",
+}
 
-#: Declared inputs that act, but not on their probe's inputs: ``(probe
-#: key, name) -> why the probe does not show it``.
-NOT_REACHED = {}
+#: Declared inputs that act, but not on their probe's inputs or not in
+#: what the probe's run returns: ``(probe key, name) -> why the probe
+#: does not show it``. Filled by the GM-184 sweep (2026-10-19).
+_ALL_CLAY = "the probe's profile is all clay: the beta method is for sand"
+_NO_ROCK = "the probe has no rock layer, so there is no socket"
+_CASING = ("0.5 m of casing lies inside the top 1.5 m that GEC-10 already "
+           "leaves out of the side resistance in clay")
+_TOE_LIMIT = ("the probe's toe stress stays below GEC-12 Fig. 7-15's "
+              "limiting q_L, which the default takes")
+_ONE_SAND = ("one sand layer: averaging phi over 3b about the toe gives "
+             "the same angle")
+_ADHESION = ("'auto' already picks the concrete and timber adhesion curve "
+             "for the probe's pile")
+_GRID = ("the depth grid is the larger of L / 0.25 m, n_sublayers per "
+         "layer and 50, which n_sublayers + 1 does not change here")
+_CONVERGES = "the probe converges well within the limit"
+_EAC = ("a step of 1 psi moves the layer thicknesses by less than the "
+        "design's rounding")
+_FIGURE = ("acts on the drawn figure only; the result carries the file, "
+           "not its pixels")
+_NO_FRICTION = ("the probe's wall friction is 0, where Coulomb's "
+                "coefficients are Rankine's")
+_LINEAR = ("the probe's soil model is linear, so there is no strain "
+           "iteration")
+_SUBLAYERS = ("the probe's layer is already thinner than wave_frac times "
+              "the shortest wavelength at max_freq_hz")
+_PHI_FDN = ("sliding takes the lesser of the backfill and foundation phi; "
+            "the probe's backfill phi is the lesser")
+_LIMITS = "the probe's run stops well before the limit"
+_GEF = "'auto' already reads the probe's .gef file with the gef engine"
+_VIBRO = ("acts in the printed calc steps (spacing and improvement "
+          "ratio); the vibro package writes no table and returns no "
+          "number")
+_DRAINED = ("the probe's soil is elastic and the reported movements are "
+            "the load stage's alone, so the initial hydrostatic state "
+            "does not show")
+_ITERATIONS = "the probe converges in fewer iterations"
+_BLOWUP = ("the probe's strength reduction fails by non-convergence "
+           "before either blow-up factor")
+NOT_REACHED = {
+    ("axial_pile|axial_pile_capacity#clay", "adhesion_curve"): _ADHESION,
+    ("axial_pile|axial_pile_capacity#clay", "adhesion_chart"):
+        "the probe gives no fig_7_18_case, so no Fig. 7-18 chart is read",
+    ("axial_pile|capacity_vs_depth", "toe_stress_limit"): _TOE_LIMIT,
+    ("axial_pile|capacity_vs_depth", "toe_phi_zone"): _ONE_SAND,
+    ("axial_pile|capacity_vs_depth#clay", "adhesion_curve"): _ADHESION,
+    ("calc_package|axial_pile_package", "toe_stress_limit"): _TOE_LIMIT,
+    ("calc_package|axial_pile_package", "toe_phi_zone"): _ONE_SAND,
+    **{(k, "beta_method"): _ALL_CLAY for k in (
+        "drilled_shaft|capacity_vs_depth",
+        "drilled_shaft|drilled_shaft_capacity",
+        "drilled_shaft|lrfd_capacity", "calc_package|drilled_shaft_package")},
+    **{(k, n): why for k in (
+        "drilled_shaft|capacity_vs_depth",
+        "drilled_shaft|drilled_shaft_capacity",
+        "drilled_shaft|drilled_shaft_capacity#sand",
+        "drilled_shaft|lrfd_capacity")
+       for n, why in (("socket_diameter", _NO_ROCK),
+                      ("casing_depth", _CASING))},
+    ("downdrag|downdrag_analysis", "n_sublayers"): _GRID,
+    ("downdrag|post_liquefaction_downdrag", "n_sublayers"): _GRID,
+    ("calc_package|downdrag_package", "n_sublayers"): _GRID,
+    ("calc_package|downdrag_package", "influence_depth_criterion"):
+        "the probe's soil below the toe is marked as not settling",
+    **{("ground_improvement|feasibility", n):
+       "a bearing problem needs both the required and current bearing"
+       for n in ("required_bearing_kPa", "current_bearing_kPa")},
+    ("ground_improvement|feasibility", "predicted_settlement_mm"):
+        "0.5 mm stays below the allowable settlement",
+    ("ground_improvement|feasibility", "allowable_settlement_mm"):
+        "the probe predicts no settlement, so 75 mm allows it as 50 mm does",
+    ("calc_package|ground_improvement_package", "target_N_spt"): _VIBRO,
+    ("calc_package|ground_improvement_package", "pattern"): _VIBRO,
+    **{(f"lateral_pile|get_py_curve#{m}", "loading"):
+       "at the probe's depth (z / b about 8) the cyclic curve is the "
+       "static one; it differs near the surface (and, for SandReese's "
+       "'reese1974' construction, by B at any depth)"
+       for m in ("SandAPI", "SandReese")},
+    ("lateral_pile|get_py_curve#WeakRock", "rock_top"):
+        "the probe's depth is more than 3 b below the rock top either way",
+    ("lateral_pile|lateral_pile_analysis", "max_iterations"): _CONVERGES,
+    ("calc_package|lateral_pile_package", "max_iterations"): _CONVERGES,
+    **{(k, "i_c_limit"): "every Ic in the probe is below 2.6, so a higher "
+       "limit adds no point" for k in (
+           "liquefaction|liquefaction_analysis", "liquepy|cpt_liquefaction")},
+    ("pavement_design|compare_pavement_methods", "eac_psi"): _EAC,
+    ("calc_package|pavement_design_package", "eac_psi"): _EAC,
+    ("calc_package|pavement_design_package", "cbr_subbase"):
+        "a subbase CBR of 31 against 30 moves no layer past the design's "
+        "rounding",
+    ("pavement_design|rigid_pavement_design", "thickness_increment_in"):
+        "D = 8.985 in rounds up to 9.0 in at either increment",
+    **{("settlement|schmertmann_settlement", n):
+       "the strain factor diagram changes only for a strip or L / B over "
+       "10; the probe is a square" for n in ("L", "shape")},
+    **{(k, "units"): "sets the DXF header's $INSUNITS only; the result "
+       "carries the file, not its header" for k in (
+           "dxf_export|export_geometry_to_dxf",
+           "dxf_export|export_to_dxf_bytes")},
+    ("fem2d|fem2d_consolidation", "gwt"): _DRAINED,
+    ("fem2d|fem2d_consolidation", "gamma_w"): _DRAINED,
+    ("fem2d|fem2d_staged", "gamma_w"):
+        "the probe's phases give no water table",
+    ("fem2d|fem2d_staged", "t"):
+        "the probe has no beam elements: t scales the soil's stiffness, "
+        "weight and loads alike, but not a beam's EA and EI (GM-204)",
+    **{(k, "max_iter"): _ITERATIONS for k in (
+        "fem2d|fem2d_excavation", "fem2d|fem2d_excavation#interface",
+        "fem2d|fem2d_footing_capacity", "fem2d|fem2d_local_fos",
+        "fem2d|fem2d_slope_srm", "fem2d|fem2d_staged")},
+    ("fem2d|fem2d_local_fos", "blowup_factor"): _BLOWUP,
+    ("fem2d|fem2d_slope_srm", "blowup_factor"): _BLOWUP,
+    ("fem2d|fem2d_local_fos", "tol"): _ITERATIONS,
+    ("fem2d|fem2d_staged", "tol"): _ITERATIONS,
+    ("fem2d|fem2d_slope_srm", "mesh_check"):
+        "it adds the result's mesh_check block, which shares the input's "
+        "name, so the guard leaves it out with the echo",
+    ("pile_group|pile_group_simple", "Mx"):
+        "the probe's piles all lie on y = 0, so a moment about x loads none",
+    **{("pystrata|eql_site_response", n): _LINEAR for n in (
+        "strain_ratio", "tolerance", "max_iterations")},
+    ("pystrata|eql_site_response#darendeli", "max_iterations"):
+        _ITERATIONS,
+    **{(k, n): _SUBLAYERS for k in (
+        "pystrata|eql_site_response", "pystrata|linear_site_response")
+       for n in ("max_freq_hz", "wave_frac")},
+    ("reliability|form", "max_iterations"): _CONVERGES,
+    ("calc_package|reliability_package#form", "max_iterations"):
+        _CONVERGES,
+    ("calc_package|reliability_package#pem", "scheme"):
+        "one random variable: Rosenblueth's 2n+1 multiplicative form then "
+        "gives the full two-point estimate's mean and COV exactly",
+    **{(k, "phi_foundation"): _PHI_FDN for k in (
+        "retaining_walls|mse_lrfd_external_stability",
+        "retaining_walls|mse_wall", "retaining_walls|mse_wall#surcharge")},
+    ("calc_package|retaining_wall_package#surcharge",
+     "surcharge_in_bearing"):
+        "the probe gives no q_allowable, so the bearing check it enters "
+        "is not run",
+    **{(k, n): _LIMITS for k in ("salib|morris_analysis",
+                                 "salib|sobol_analysis")
+       for n in ("max_evaluations", "time_budget_s")},
+    ("salib|morris_analyze", "seed"):
+        "the probe's model is linear, so every bootstrap sample gives the "
+        "same mu* and the confidence interval is 0",
+    **{(k, "pressure_method"): _NO_FRICTION for k in (
+        "sheet_pile|anchored_wall", "sheet_pile|cantilever_wall",
+        "calc_package|sheet_pile_package")},
+    ("soe|check_bottom_blowout", "FOS_required"):
+        "the probe's factor of safety clears both requirements",
+    ("soe|design_ground_anchor", "anchor_angle_deg"):
+        "GEC-4's 4.5 m minimum free length governs at either angle",
+    ("soe|design_ground_anchor", "soil_type"):
+        "the guard's other value, sand_gravel_loose, prints the same "
+        "145 kN/m as sand_medium in GEC-4 Table 6, and the 4.5 m minimum "
+        "bond length governs either way",
+    ("soe|fhwa_apparent_pressure_anchored_wall", "FOS_embedment"):
+        "the probe's wall reaches no moment balance at FS = 1.3 within 6H, "
+        "so no embedment is reported at either factor",
+    **{(k, "engine"): _GEF for k in ("subsurface|parse_bore",
+                                     "subsurface|parse_cpt")},
+    ("subsurface|plot_atterberg_limits", "use_elevation"): _FIGURE,
+    **{("subsurface|plot_cross_section", n): _FIGURE
+       for n in ("column_width", "show_gwl")},
+    **{("subsurface|plot_parameter_vs_depth", n): _FIGURE
+       for n in ("color_by", "show_bands")},
+    **{("subsurface|plot_plan_view", n): _FIGURE
+       for n in ("color_by", "label_field")},
+    **{("profile_figure|plot_data", n): _FIGURE
+       for n in ("scale_units", "legend_position", "grid")},
+    ("subsurface|spt_correction", "rod_length_m"):
+        "the rod length correction C_R is 1.0 for rods over 10 m",
+    ("wave_equation|drivability", "refusal_blow_count"):
+        "the probe's blow counts stay below either refusal",
+    ("worked_examples|find_worked_examples", "limit"):
+        "the probe's topic matches one example",
+    ("calc_package|html_to_pdf", "allow_unembeddable"):
+        "the probe's HTML has no image to embed",
+}
 
 #: Mismatches the guard finds and leaves, each with its BACKLOG item.
 #: slope_stability is frozen by the owner until the integral review.
@@ -117,6 +311,19 @@ KNOWN = {
     ("slope_stability|analyze_slope", "method"):
         "GM-140: 'bishop' is listed, but a noncircular slip_points surface "
         "runs Spencer",
+    ("lateral_pile|get_py_curve#StiffClayAboveWT", "loading"):
+        "GM-202: the cyclic curve is the static one capped at "
+        "16 y50, where the static one already reaches pu; Reese & Welch's "
+        "cyclic curve needs the number of cycles",
+}
+
+#: Probes the GM-160 guard leaves out, by agent or by probe: why.
+_GM140 = ("GM-140: slope_stability is frozen by the owner until its "
+          "integral review, and its probes run over 45 minutes")
+FROZEN = {
+    "slope_stability": _GM140,
+    "calc_package|slope_report_package": _GM140,
+    "calc_package|slope_stability_package": _GM140,
 }
 
 #: Inputs a run lists as taken from another input (GM-165) that, given

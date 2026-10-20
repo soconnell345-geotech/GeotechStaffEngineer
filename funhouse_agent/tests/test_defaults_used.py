@@ -4,6 +4,7 @@ each took); the module results carry ``choices``."""
 
 import copy
 import math
+import os
 import random
 import re
 
@@ -226,7 +227,14 @@ def test_an_spt_run_lists_no_cpt_settings():
     cpt = _used("liquefaction", "liquefaction_analysis",
                 {"depth": [1], "q_c": [5000], "f_s": [50], "gwl": 1.5,
                  "pga": 0.3, "m_w": 7.5})
-    assert cpt_only <= cpt and not {"c_0", "gamma_w"} & cpt
+    # the area ratio only with u2, Gs only with void-ratio unit weights
+    # (GM-184)
+    assert cpt_only - {"a_ratio", "s_g"} <= cpt
+    assert not {"c_0", "gamma_w", "a_ratio", "s_g"} & cpt
+    cpt_u2 = _used("liquefaction", "liquefaction_analysis",
+                   {"depth": [1], "q_c": [5000], "f_s": [50], "u_2": [20],
+                    "gwl": 1.5, "pga": 0.3, "unit_wt_method": "void_ratio"})
+    assert cpt_only - {"unit_wt_method"} <= cpt_u2
 
 
 def test_the_seismic_package_lists_only_its_own_analysis():
@@ -288,6 +296,104 @@ def test_a_slope_search_lists_only_its_own_settings(surface_type, used,
     rigorous = _used("slope_stability", "search_critical_surface",
                      {**base, "method": "spencer"})
     assert "bishop_screen" in rigorous
+
+
+# GM-184: the guard's sweep found inputs listed where the run does not use
+# them; each case is (agent, method, params, listed, not listed).
+_GM184_LISTS = [
+    # Vesic's inclination factors take V; Meyerhof's and no inclination
+    # do not
+    ("bearing_capacity", "bearing_capacity_analysis", {},
+     set(), {"vertical_load"}),
+    ("bearing_capacity", "bearing_capacity_analysis",
+     {"load_inclination": 10}, {"vertical_load"}, set()),
+    ("bearing_capacity", "bearing_capacity_analysis",
+     {"load_inclination": 10, "factor_method": "meyerhof"},
+     set(), {"vertical_load"}),
+    # what each theory takes
+    ("retaining_walls", "earth_pressure_coefficient", {"phi_deg": 30},
+     {"theory", "beta_deg"}, {"delta_deg", "alpha_deg"}),
+    ("retaining_walls", "earth_pressure_coefficient",
+     {"phi_deg": 30, "state": "passive"}, {"theory"},
+     {"delta_deg", "alpha_deg", "beta_deg"}),
+    ("retaining_walls", "earth_pressure_coefficient",
+     {"phi_deg": 30, "theory": "coulomb"},
+     {"delta_deg", "alpha_deg", "beta_deg"}, set()),
+    ("retaining_walls", "earth_pressure_coefficient",
+     {"phi_deg": 30, "state": "at_rest"}, set(),
+     {"theory", "delta_deg", "alpha_deg", "beta_deg"}),
+    ("retaining_walls", "cantilever_wall", {}, set(), {"has_shear_key"}),
+    ("retaining_walls", "cantilever_wall", {"include_passive": True},
+     {"has_shear_key"}, set()),
+    ("retaining_walls", "mse_wall", {}, set(), {"gamma_foundation"}),
+    ("downdrag", "downdrag_analysis", {},
+     set(), {"pile_unit_weight", "fill_unit_weight"}),
+    ("downdrag", "downdrag_analysis",
+     {"include_pile_weight": True, "fill_thickness": 2},
+     {"pile_unit_weight", "fill_unit_weight"}, set()),
+    ("downdrag", "fellenius_cgpr56", {},
+     set(), {"eq_footing_load", "eq_footing_length"}),
+    ("drilled_shaft", "drilled_shaft_capacity", {}, set(),
+     {"socket_length"}),
+    ("ground_improvement", "feasibility", {}, set(), {"depth_to_top_m"}),
+    ("gstools", "kriging", {}, set(), {"cell_size"}),
+    ("gstools", "conditional_simulation", {}, set(), {"bounds_mode"}),
+    ("gstools", "conditional_simulation", {"bounds": [{"x": 0, "y": 0,
+                                                       "max": 1}]},
+     {"bounds_mode"}, set()),
+    # bars only where the section takes them
+    ("lateral_pile", "composite_section_ei", {"section_type": "filled_pipe"},
+     set(), {"n_bars", "bar_diameter", "E_bar"}),
+    ("lateral_pile", "composite_section_ei",
+     {"section_type": "cased_concrete"}, {"n_bars"},
+     {"bar_diameter", "E_bar"}),
+    ("lateral_pile", "composite_section_ei",
+     {"section_type": "cased_concrete", "n_bars": 8}, {"E_bar"}, set()),
+    ("lateral_pile", "composite_section_ei",
+     {"section_type": "reinforced_concrete", "width": 0.6,
+      "bar_layers": [[3, 0.25]]}, {"E_bar"}, {"n_bars"}),
+    # GEC 9 App. A.5's weak-rock criterion is for static loading
+    ("lateral_pile", "get_py_curve", {"model": "WeakRock"}, set(),
+     {"loading"}),
+    ("lateral_pile", "get_py_curve", {"model": "SandAPI"}, {"loading"},
+     set()),
+    ("liquepy", "cpt_liquefaction", {}, set(), {"a_ratio", "s_g"}),
+    ("liquepy", "cpt_liquefaction",
+     {"u_2": [10], "unit_wt_method": "void_ratio"}, {"a_ratio", "s_g"},
+     set()),
+    ("liquepy", "field_correlations", {"u_2": [10]}, {"a_ratio"},
+     {"i_c_limit", "s_g"}),
+    # water inputs only with a water table, one at the ground included
+    ("fem2d", "fem2d_excavation", {}, set(),
+     {"gamma_w", "excavation_water"}),
+    ("fem2d", "fem2d_excavation", {"gwt": 0},
+     {"gamma_w", "excavation_water"}, set()),
+    ("fem2d", "fem2d_slope_srm", {}, set(), {"gamma_w"}),
+    ("fem2d", "fem2d_local_fos", {"gwt": -3}, {"gamma_w"}, set()),
+    # a truck factor or a base-year total is ESALs already
+    ("pavement_design", "design_traffic_esals", {"vehicles": []}, set(),
+     {"pavement_type", "sn", "d_in", "pt"}),
+    ("pavement_design", "design_traffic_esals", {"axle_groups": [{}]},
+     {"pavement_type", "sn", "pt"}, {"d_in"}),
+    ("pavement_design", "performance_period",
+     {"pavement_type": "flexible"}, set(), {"pt"}),
+    ("pavement_design", "performance_period", {"pavement_type": "rigid"},
+     {"pt"}, set()),
+    ("concrete_props", "rc_rectangular_section", {}, set(),
+     {"n_interaction_points"}),
+    ("concrete_props", "rc_rectangular_section",
+     {"include_interaction": True}, {"n_interaction_points"}, set()),
+    ("settlement", "elastic_settlement", {}, {"Iw"}, {"shape"}),
+    ("pynite", "continuous_beam", {}, set(), {"A"}),
+]
+
+
+@pytest.mark.parametrize("agent, method, params, listed, not_listed",
+                         _GM184_LISTS)
+def test_a_run_lists_only_the_inputs_it_uses(agent, method, params, listed,
+                                             not_listed):
+    got = _used(agent, method, params)
+    assert listed <= got and not not_listed & got, (listed, not_listed, got)
 
 
 def test_a_default_a_module_reported_is_listed_whatever_its_condition():
@@ -835,12 +941,26 @@ def _moved_by(name: str, r0, r1, where: str = ""):
                  _without(_norm(r1, where), name))
 
 
-@pytest.mark.skip(reason=(
-    "GM-160 follow-up: LABEL_ONLY and NOT_REACHED were never filled. On "
-    "2026-10-19 the check flagged about 165 inputs on 79 of the 172 probes "
-    "outside slope_stability (a calc package returns a file, not the "
-    "numbers its inputs move; many probes do not reach the input), and the "
-    "slope probes ran over 45 minutes. Sweep, then turn it on."))
+def _with_computed_tables(result):
+    """``result`` with the rows of each table it wrote read in beside it
+    (GM-184): a calc package returns the numbers its inputs move as CSV
+    files, which the next run writes over, so they are read as soon as
+    the run returns. The input echo (``*_inputs.csv``) is left out, since
+    it moves with every input."""
+    if not isinstance(result, dict) or not isinstance(
+            result.get("tables"), list):
+        return result
+    rows = {}
+    for table in result["tables"]:
+        path = table.get("output_path") if isinstance(table, dict) else None
+        if not path or str(path).endswith("_inputs.csv") \
+                or not os.path.isfile(path):
+            continue
+        with open(path, encoding="utf-8-sig") as f:
+            rows[table.get("title") or os.path.basename(path)] = f.read()
+    return {**result, "computed_tables": rows} if rows else result
+
+
 @pytest.mark.parametrize("key", [
     pytest.param(k, marks=pytest.mark.slow) if k in MP.SLOW else k
     for k in sorted(MP.PROBES)])
@@ -849,12 +969,18 @@ def test_every_default_a_run_lists_changes_its_result(key, tmp_path,
     """GM-160: an input that changes nothing is not advertised. Each
     default a probe's run lists (``defaults_used``: the declared inputs
     that apply to the run) is given another value; the result must move,
-    past the input's own echo and the ``choices``. Inputs that are a label
-    only are in ``MP.LABEL_ONLY``; inputs whose effect this probe does not
-    reach are in ``MP.NOT_REACHED``, each with why."""
-    monkeypatch.chdir(tmp_path)
+    past the input's own echo and the ``choices`` (a calc package's
+    computed tables count, its input echo does not). Inputs that are a
+    label only are in ``MP.LABEL_ONLY``; inputs whose effect this probe
+    does not reach are in ``MP.NOT_REACHED``, each with why; a left-out
+    input listed as the case it stands for (GM-165) has no value to
+    change. The probes of :data:`MP.FROZEN` are left to their review."""
     base = key.split("#")[0]
     agent, method = base.split("|")
+    frozen = MP.FROZEN.get(agent) or MP.FROZEN.get(base)
+    if frozen:
+        pytest.skip(frozen)
+    monkeypatch.chdir(tmp_path)
     probe = MP.PROBES[key]
     if probe.get("needs"):
         pytest.importorskip(probe["needs"])
@@ -862,17 +988,19 @@ def test_every_default_a_run_lists_changes_its_result(key, tmp_path,
     def run(params):
         for before in probe.get("before", ()):
             D.call_agent(before[0], before[1], copy.deepcopy(before[2]))
-        return _run(agent, method, params)
+        return _with_computed_tables(_run(agent, method, params))
 
     r0 = run(probe["params"])
     assert isinstance(r0, dict) and "error" not in r0, (key, r0)
     info = D._load_adapter(agent).METHOD_INFO[method].get("parameters") or {}
+    cases = _cases(agent, method, probe["params"])
     where = str(tmp_path)
     still = []
     for name, value in (r0.get("defaults_used") or {}).items():
         if (base, name) in MP.LABEL_ONLY or (key, name) in MP.LABEL_ONLY \
                 or (key, name) in MP.NOT_REACHED \
-                or (base, name) in MP.KNOWN:
+                or (base, name) in MP.KNOWN or (key, name) in MP.KNOWN \
+                or (name in cases and value == cases[name]):
             continue
         other = _other_value(info.get(name) or {}, value)
         if other is None:
@@ -886,7 +1014,7 @@ def test_every_default_a_run_lists_changes_its_result(key, tmp_path,
 
 
 def test_the_allow_lists_name_declared_inputs_of_probed_methods():
-    for table in (MP.LABEL_ONLY, MP.NOT_REACHED):
+    for table in (MP.LABEL_ONLY, MP.NOT_REACHED, MP.KNOWN):
         for (key, name), why in table.items():
             assert key in MP.PROBES or key in {
                 k.split("#")[0] for k in MP.PROBES}, key

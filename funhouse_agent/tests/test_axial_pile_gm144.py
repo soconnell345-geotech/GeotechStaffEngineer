@@ -140,6 +140,17 @@ def test_make_pile_section_reports_a_custom_section():
     assert r["pile_type"] == "pipe_closed"
 
 
+def test_make_pile_section_returns_the_modulus_it_carries():
+    # GM-184: E was taken and not shown
+    steel = _call("make_pile_section", {"pile_type": "h_pile",
+                                        "designation": "HP12x74"})
+    assert steel["E_kPa"] == pytest.approx(200e6)
+    given = _call("make_pile_section", {"pile_type": "h_pile",
+                                        "designation": "HP12x74",
+                                        "E": 210e6})
+    assert given["E_kPa"] == pytest.approx(210e6)
+
+
 # --------------------------------------------------- the new GEC-12 options
 
 def test_the_gm144_options_reach_the_module():
