@@ -38,6 +38,12 @@ get_resistance_factors(method, condition) -> dict
   the text of p. 10-21 ('The resistance factor recommended with use of
   Equations 10-21 and 10-22 is phi = 0.55 ... as presented in Table 8-4'),
   which the table itself does not bear out; `lrfd_capacity` states that.
+  The base factor follows the soil the base was computed in
+  (`apply_lrfd` takes it from `result.base_steps` and refuses a
+  `tip_soil_type` that differs; GM-244 review: the adapter's default
+  "cohesive" factored a base in rock at 0.40). Table 8-4 prints no row for
+  Eq. 10-22 (C = 0.65) or for the 'rqd' base; `lrfd_capacity` says so in
+  its choices when either is used.
 - A cohesionless tip needs its N60 (GM-142, 2026-10-18): q_b = 57.5 N60
   kPa (N60 capped at 50) has no other input, so `require_tip_N60` refuses a
   tip layer with none, in `compute`, the calc steps and
@@ -84,16 +90,16 @@ get_resistance_factors(method, condition) -> dict
   `DrillShaft.base_diameter(tip_in_rock)` / `base_area` hold the rule, the
   result carries `base_diameter_m` / `base_area_m2`, and the calc steps
   print A_tip on that diameter. The rock side resistance's C is
-  `rock_side_C` (f_s = C pa sqrt(qu/pa)): default 0.65, unchanged, which is
-  GEC-10 Eq. 10-22 (O'Neill and Reese 1999, where caving is anticipated)
-  with alpha_E = 1.0; GEC-10 recommends Eq. 10-21 with C = 1.0 for routine
-  design of a "normal" socket (p. 10-21), 0.65 alpha_E by Table 10-3 where
-  caving is anticipated, and C = 1.9 for roughened sockets verified by load
-  tests or local experience (p. 10-22). The result states the choice
-  (`capacity.rock_side_choice`). With C = 1.0 the tools reproduce Example
-  10-4: R_SN 5,202 kips, R_BN 25,447 kips, phi R_BN 12,723 kips
-  (`tests/test_rock_socket_example.py`). Which C is the default is the
-  owner's call.
+  `rock_side_C` (f_s = C pa sqrt(qu/pa)): default 1.0 since GM-244, Eq.
+  10-21 as GEC-10 recommends it for routine design of a "normal" socket
+  (pp. 10-20, 10-21); 0.65, the default before, is Eq. 10-22 (O'Neill and
+  Reese 1999, where caving is anticipated) with alpha_E = 1.0 (give 0.65
+  alpha_E by Table 10-3 for lower RQD or open joints), and C = 1.9 is for
+  roughened sockets verified by load tests or local experience (p. 10-22).
+  The result states the choice with each alternative's numbers
+  (`capacity.rock_side_choice`). The tools reproduce Example 10-4 by
+  default: R_SN 5,202 kips, R_BN 25,447 kips, phi R_BN 12,723 kips
+  (`tests/test_rock_socket_example.py`).
 
 ## GEC-10 (2018) as printed is the default (GM-241, GM-244)
 
@@ -104,17 +110,34 @@ alternatives with their values. Where the manual leaves a call open the
 default is the printed one and the choice's basis says it is the engineer's
 judgment. GM-244 (2026-10-20) moved these:
 
-| Step | Default (2018 as printed) | Named option (before GM-244) |
+| Step | Default (2018 as printed) | Before GM-244 (the named option, where there is one) |
 |---|---|---|
 | clay side | Eq. 10-18, alpha = 0.30 + 0.17/(su(CIUC)/pa), p. 10-16 | `alpha_method="aashto"`: NHI-06-089 Eqs. 9-37a/b, 0.55 to su/pa 1.5 |
 | clay, bottom of the shaft | side resistance to the base (Example 10-2, p. 10-18) | `bottom_exclusion` (m): NHI-06-089 p. 9-129, the bottom 5 ft; Fig. 9-49 one diameter |
 | clay base | Eq. 10-19 with Table 10-2's N*c (p. 10-19), Eq. 10-20 where D < 3B; su the tip layer's, its su(CIUC) where cu is a UC/UU strength (Example 10-3) | `clay_base_method="oneill_reese"`: NHI-06-089 Eqs. 9-39, 9-40, Nc = 6[1 + 0.2 z/D] <= 9, x 0.67 below 0.5 ksf, q <= 80 ksf |
-| rock base | Eq. 10-23, N*cr = 2.5 (p. 10-22; Example 10-4 with RQD 37 to 100) | `rock_base_method="rqd"`: q_b/q_u reduced below RQD 70 (cited to the 2010 edition, not in the reference library) |
+| rock base | Eq. 10-23, N*cr = 2.5 (p. 10-22; Example 10-4 with RQD 37 to 100), where its three conditions hold: see below | `rock_base_method="rqd"`: q_b/q_u reduced below RQD 70 (cited to the 2010 edition, not in the reference library; Table 8-4 gives no factor for it) |
+| rock side C | 1.0, Eq. 10-21 for a "normal" socket (pp. 10-20, 10-21) | `rock_side_C=0.65`: Eq. 10-22 with alpha_E = 1.0 |
 | large base | none (Eqs. 10-14, 10-19, 10-20 print none) | `large_base_reduction=True`: O'Neill & Reese 1.27/B in sand (B > 1.27 m), F_r in clay (B > 1.90 m) |
 | top zone in rock | none (Sec. 10.3.5.3; Example 10-4 takes the socket's whole length) | `top_exclusion=1.5` |
-| phi' of sand | the layer's phi' where given; 27.5 + 9.2 log (N1)60 only where none is (a layer may give (N1)60 alone) | (N1)60 used to override a given phi' |
-| depth beta's limit | 4 ksf = 191.5 kPa (NHI-06-089 p. 9-133) | 200 kPa |
-| rock side resistance factor | 0.50 (Table 8-4) | 0.55 |
+| phi' of sand | the layer's phi' where given; 27.5 + 9.2 log (N1)60 only where none is (a layer may give (N1)60 alone) | (N1)60 overrode a given phi'; no option, the choices give the correlation's value |
+| depth beta's limit | 4 ksf = 191.5 kPa (NHI-06-089 p. 9-133) | 200 kPa; no option |
+| rock side resistance factor | 0.50 (Table 8-4) | 0.55 (the text of p. 10-21); no option, `lrfd_capacity`'s choices give it as the alternative |
+| base resistance factor | by the soil the base was computed in | the adapter's `tip_soil_type` default "cohesive" (0.40), whatever the tip |
+
+The rock base's conditions (GM-244 review). Eq. 10-23 is recommended
+where the rock below the base is massive or tightly jointed to at least
+one diameter below it, with no solution cavities or voids and a clean base
+(p. 10-22); for a fractured rock mass GEC-10 gives the Hoek-Brown base
+(Eqs. 10-24 to 10-29), not built here. Whether the conditions hold is the
+engineer's judgment, the call's `rock_base_conditions_met`: true takes 2.5
+qu as stated (Example 10-4 does so with RQD 37 to 100 because "Rock coring
+and local experience indicate the rock mass below the socket tip is
+competent"); false is refused, naming the alternatives; left out, the
+conditions are taken as met and said so when every layer within one base
+diameter below the base is rock with RQD 100 (the layer default), and the
+call is refused when any is soil or has a lower RQD, so 2.5 qu is never
+applied silently to fractured rock. No RQD threshold is built: GEC-10
+prints none.
 
 Judgment calls the choices name: cu taken as su(CIUC) when `su_test_type`
 is left out; N*c below 500 psf held at 6.5 (Table 10-2 starts there; the
