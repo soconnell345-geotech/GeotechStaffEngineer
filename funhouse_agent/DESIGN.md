@@ -233,7 +233,10 @@ the eyes). What changed on master after 5.33.0, in short:
   `deep/held_records.py`; never other JSON) as
   `kept/helper_*_records.json`, named in the same note; and a helper's
   `.json` `write_file` is saved on the real disk with its own `save_file`
-  (`ScratchFilesystemGuard(json_saver=...)`), where `write_diggs` reads it.
+  (`ScratchFilesystemGuard(json_saver=...)`), where `write_diggs` reads it,
+  never over a file that helper did not save (another helper's, the user's
+  upload): that name is taken, so it gets one of its own, which its result
+  gives. With no working folder bound on a shared host nothing is kept.
 - **The `reviewer` helper** (TA-25) has a 10-call budget
   (`DEFAULT_REVIEWER_MAX_MODEL_CALLS`), its last call answering from what it
   has; its description says to use it only after a draft answer that

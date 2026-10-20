@@ -367,6 +367,68 @@ def test_a_helpers_json_write_file_lands_on_real_disk_for_write_diggs(
                                  "lab_tests": 0}]
 
 
+def test_a_helpers_json_never_overwrites_a_file_it_did_not_save(tmp_path):
+    """The working folder already holds 'borings.json' (another helper's
+    records, or the user's upload): the helper's write_file of that name
+    gets a name of its own and the file is left as it was. A file the
+    helper saved itself is rewritten under its name."""
+    theirs = json.dumps({"investigations": [B2]})
+    (tmp_path / "borings.json").write_text(theirs, encoding="utf-8")
+
+    def write(name, recs):
+        return [{"name": "write_file",
+                 "args": {"file_path": name, "content": json.dumps(recs)}}]
+
+    model = Played(
+        brief="HELPER: B-1 as a JSON file",
+        script=[write("/borings.json", [B1]), write("/borings.json", [B1]),
+                write("/mine.json", [B1]), write("/mine.json", [B1, B2]),
+                "Wrote the records."])
+    results = _run(model, tmp_path)
+    assert (tmp_path / "borings.json").read_text(encoding="utf-8") == theirs
+    own = tmp_path / "borings_task0.json"           # task_0's own name
+    assert json.loads(own.read_text(encoding="utf-8")) == [B1]
+    assert json.loads((tmp_path / "mine.json").read_text(
+        encoding="utf-8")) == [B1, B2]
+    assert not list(tmp_path.glob("mine_*.json"))
+    by_call = {m.tool_call_id: json.loads(m.content)["note"]
+               for msgs in model.seen for m in msgs
+               if isinstance(m, ToolMessage) and m.name == "write_file"}
+    notes = list(by_call.values())
+    assert len(notes) == 4
+    for note in notes[:2]:
+        assert "as 'borings_task0.json'" in note
+        assert "'borings.json' was already in the working folder and was " \
+               "left as it was" in note
+    assert "as 'mine.json'" in notes[3] and "already" not in notes[3]
+    told = _by_id(results, "task_0").content
+    assert "borings_task0.json" in told and "mine.json" in told
+
+
+def test_nothing_is_kept_in_the_shared_temp_folder_on_a_shared_host(
+        tmp_path, monkeypatch):
+    """With no working folder bound on a shared host the kept files are
+    not written at all -- the temp folder belongs to every user."""
+    from funhouse_agent import _fileio
+    monkeypatch.setattr(keep_work.tempfile, "gettempdir",
+                        lambda: str(tmp_path))
+    rec = _rec(("model", "", [{"name": "check", "id": "c1",
+                               "args": {"investigations": [B1]}}]),
+               ("result", "check", "c1", '{"error": "busy"}', "error"))
+    _fileio.require_turn_binding(True)
+    try:
+        assert keep_work.save_held_records(rec) is None
+        assert keep_work.write_helper_file(rec, "it stopped") is None
+    finally:
+        _fileio.require_turn_binding(False)
+    assert not list(tmp_path.rglob("*"))
+    # bound, the same records are kept in the conversation's folder
+    with working_dir_bound(str(tmp_path / "conv")):
+        kept = keep_work.save_held_records(rec)
+    assert kept["name"].startswith("kept/helper_")
+    assert (tmp_path / "conv" / kept["name"]).is_file()
+
+
 def test_other_write_file_calls_stay_in_scratch(tmp_path):
     """The primary's own .json write_file, and a helper's .md, are scratch
     notes as before: nothing is written to the working folder."""

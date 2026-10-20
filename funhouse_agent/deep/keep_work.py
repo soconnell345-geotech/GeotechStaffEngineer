@@ -464,11 +464,15 @@ def _slug(text: str, words: int = 6, room: int = 40) -> str:
 def kept_folder() -> str:
     """The folder kept work goes into: ``kept/`` in the working folder the
     host bound to this turn, else in the temp folder (a library caller
-    with no working folder)."""
+    with no working folder). On a shared host with no folder bound it
+    raises :class:`~funhouse_agent._fileio.UnboundWorkingDir`, and nothing
+    is kept: the temp folder is every user's (the callers catch it)."""
+    from funhouse_agent._fileio import UnboundWorkingDir, host_output_dir
     base = None
     try:
-        from funhouse_agent._fileio import host_output_dir
         base = host_output_dir()
+    except UnboundWorkingDir:
+        raise
     except Exception:  # noqa: BLE001
         base = None
     if not base:
@@ -652,8 +656,15 @@ def kept_note(rec: HelperRecord, path: str, why: str,
 
 
 def _records_note(records: dict) -> str:
-    from funhouse_agent.deep.held_records import records_note
-    return records_note(records["name"], records)
+    """What the primary is told about a records file; a plainer line if
+    the full note cannot be made (keeping never fails the call)."""
+    try:
+        from funhouse_agent.deep.held_records import records_note
+        return records_note(records["name"], records)
+    except Exception:  # noqa: BLE001
+        return (f"[Records this helper held are saved as "
+                f"'{records.get('name')}' in the working folder: pass that "
+                "file to write_diggs -- never retype them.]")
 
 
 # ---------------------------------------------------------------------------

@@ -462,7 +462,8 @@ TA-21, TA-22):*
   had not saved go to `kept/helper_*_records.json` beside it, named in the
   same note for `write_diggs` (`deep/held_records.py`: found by the record
   shape, never other JSON); and a helper's `.json` `write_file` is saved on
-  the real disk with its own `save_file` rather than in scratch space.
+  the real disk with its own `save_file` rather than in scratch space, never
+  over a file that helper did not save (it gets a name of its own).
 - **Busy refusals:** `AgentBusyRetry` (`deep/busy_retry.py`), the outermost
   model-call middleware on the primary and every sub-agent, retries a 429 /
   529 / 5xx / overloaded / connection / timeout refusal on the provider's
