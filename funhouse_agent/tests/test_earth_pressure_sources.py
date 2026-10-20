@@ -4,6 +4,8 @@ resistance on a shear key; GM-232: the UFC 3-220-20 source by the wall's
 geometry as the log-spiral default; GM-243: the at-rest K0 behind a slope
 is EN 1997-1 Eq. 9.2 always."""
 
+import math
+
 import pytest
 
 from funhouse_agent import dispatch as D
@@ -171,7 +173,8 @@ def test_sloping_at_rest_is_en_1997_1_eq_9_2(phi, beta, k0):
     r = _k(phi_deg=phi, state="at_rest", beta_deg=beta)
     assert r["K"] == pytest.approx(k0, abs=1e-4)
     assert r["theory"] == "en_1997_1_eq_9_2"
-    (c,) = r["choices"]
+    ocr_c, c = r["choices"]
+    assert ocr_c["chosen"] == "OCR 1" and ocr_c["how"] == "default"
     assert c["chosen"] == "EN 1997-1 Eq. 9.2" and c["how"] == "module"
     assert "alternatives" not in c
     assert f"= {k0:.3f}." in c["basis"]
@@ -183,7 +186,49 @@ def test_sloping_at_rest_is_en_1997_1_eq_9_2(phi, beta, k0):
 def test_level_at_rest_is_jaky():
     level = _k(phi_deg=30.0, state="at_rest")
     assert level["K"] == 0.5 and level["theory"] == "jaky_at_rest"
-    assert "choices" not in level
+    (c,) = level["choices"]  # GM-245: OCR defaulted, and said so
+    assert c["chosen"] == "OCR 1" and c["how"] == "default"
+    assert "normally consolidated" in c["basis"]
+    assert "Eq. 9.1" in c["basis"] and "(p. 104)" in c["basis"]
+    assert "very high" not in c["basis"]
+
+
+def test_ocr_1_is_unchanged_from_jaky():
+    """GM-245: OCR 1 given equals OCR left out, level and sloping."""
+    for beta in (0.0, 15.0):
+        a = _k(phi_deg=32.0, state="at_rest", beta_deg=beta)
+        b = _k(phi_deg=32.0, state="at_rest", beta_deg=beta, OCR=1)
+        assert a["K"] == b["K"]
+        assert b["choices"][0]["how"] == "given"
+
+
+def test_ocr_4_doubles_level_k0():
+    """EN 1997-1 Eq. 9.1: K0 = (1 - sin phi') sqrt(OCR); sqrt(4) = 2."""
+    r = _k(phi_deg=30.0, state="at_rest", OCR=4)
+    assert r["K"] == pytest.approx(1.0, abs=1e-4)
+    assert r["theory"] == "en_1997_1_eq_9_1"
+    (c,) = r["choices"]
+    assert c["chosen"] == "OCR 4" and c["how"] == "given"
+    assert "= 1.000." in c["basis"]
+    assert "should not be used for very high values of OCR" in c["basis"]
+    assert "your call" in c["basis"]
+
+
+def test_ocr_with_slope_applies_eq_9_1_then_9_2():
+    r = _k(phi_deg=30.0, state="at_rest", OCR=4, beta_deg=20.0)
+    assert r["K"] == pytest.approx(1.0 * (1 + math.sin(math.radians(20))),
+                                   abs=1e-4)
+    assert r["theory"] == "en_1997_1_eq_9_2"
+    assert "1.000 (1 + sin 20) = 1.342" in r["choices"][1]["basis"]
+
+
+def test_ocr_below_1_refused_and_not_for_active():
+    assert "at least 1" in _k(phi_deg=30.0, state="at_rest",
+                              OCR=0.5)["error"]
+    e = _k(phi_deg=30.0, state="active", OCR=3)["error"]
+    assert "does not take" in e and "overconsolidation ratio" in e
+    assert _k(phi_deg=30.0, state="active", OCR=1)["K"] == pytest.approx(
+        1 / 3, abs=1e-3)
 
 
 @pytest.mark.parametrize("beta, words", [
