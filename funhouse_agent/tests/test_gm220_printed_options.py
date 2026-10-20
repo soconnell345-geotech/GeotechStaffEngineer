@@ -39,8 +39,11 @@ def test_the_shaft_tools_take_the_rock_not_in_the_socket(method):
     assert r["Q_ultimate_kN"] < r0["Q_ultimate_kN"]
     assert r0["defaults_used"]["fractured_rock_thickness"] == 0.0
     if method == "drilled_shaft_capacity":
-        assert r0["Q_ultimate_kN"] == pytest.approx(78489.5, abs=0.1)
-        assert r["Q_ultimate_kN"] == pytest.approx(73257.0, abs=0.1)
+        # GM-244: the clay's alpha by GEC-10 Eq. 10-18, 0.530 for 0.55,
+        # over its 6.5 m: 37.4 kN less than the GM-220 pins (78489.5,
+        # 73257.0)
+        assert r0["Q_ultimate_kN"] == pytest.approx(78452.1, abs=0.1)
+        assert r["Q_ultimate_kN"] == pytest.approx(73219.6, abs=0.1)
         (c,) = [c for c in r["choices"] if "socket" in c["what"]]
         assert c["how"] == "given" and "p. 8-15" in c["basis"]
 
@@ -49,7 +52,7 @@ def test_the_shaft_curve_and_the_refusal_without_rock():
     r = _call("drilled_shaft", "capacity_vs_depth",
               {**_SHAFT, "fractured_rock_thickness": 1.5, "n_points": 5})
     assert r["capacity_vs_depth"][-1]["Q_skin_kN"] == pytest.approx(
-        16708.3, abs=0.1)
+        16670.9, abs=0.1)  # 16708.3 less the 37.4 kN of GM-244's alpha
     err = _call("drilled_shaft", "drilled_shaft_capacity",
                 {**_SHAFT, "layers": _SHAFT["layers"][:1],
                  "shaft_length": 7.0, "fractured_rock_thickness": 1.0})

@@ -11,11 +11,13 @@ from typing import Dict, Any
 from drilled_shaft.results import DrillShaftResult
 
 
-# AASHTO resistance factors for drilled shafts
+# Resistance factors for drilled shafts as GEC-10 Table 8-4 (p. 8-14) prints
+# them. Side resistance in rock (Eq. 10-21) is 0.50 in the table; the text
+# of p. 10-21 gives 0.55 'as presented in Table 8-4' (GM-244).
 RESISTANCE_FACTORS = {
     "side_cohesive": 0.45,
     "side_cohesionless": 0.55,
-    "side_rock": 0.55,
+    "side_rock": 0.50,
     "tip_cohesive": 0.40,
     "tip_cohesionless": 0.50,
     "tip_rock": 0.50,

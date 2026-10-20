@@ -160,13 +160,14 @@ class TestBetaMethod:
         beta = beta_cohesionless(100)
         assert beta == 0.25
 
-    def test_fs_cap_200kpa(self):
-        """fs capped at 200 kPa."""
-        # Large sigma_v * beta > 200
+    def test_fs_limit_4_ksf(self):
+        """fs limited to 4 ksf, 'The limiting value of fsi for shafts in
+        cohesionless soils is 4 ksf (191 kPa)' (FHWA NHI-06-089 p. 9-133):
+        4 x 47.8803 = 191.5 kPa (GM-244; was 200 kPa)."""
         sigma_v = 500.0
         beta = 1.0
         Qs = side_resistance_cohesionless(sigma_v, beta, 3.14, 1.0)
-        expected = 200.0 * 3.14 * 1.0  # fs capped
+        expected = 4 * 47.8803 * 3.14 * 1.0  # fs limited
         assert abs(Qs - expected) < 0.1
 
     def test_normal_case(self):
@@ -299,9 +300,14 @@ class TestEndBearing:
         assert abs(Qt_50 - Qt_80) < 0.1
 
     def test_end_bearing_sand_large_diameter(self):
-        """D > 1.27m reduces end bearing."""
+        """GEC-10 (2018) Eq. 10-14 prints no reduction for a large base
+        (GM-244); O'Neill & Reese's 1.27/B is the large_base_reduction
+        option, for B > 1.27 m."""
         area = math.pi * 2.0**2 / 4
         Qt = end_bearing_cohesionless(30, area, diameter=2.0)
+        assert abs(Qt - 57.5 * 30 * area) < 0.1
+        Qt = end_bearing_cohesionless(30, area, diameter=2.0,
+                                      large_base_reduction=True)
         expected = 57.5 * 30 * (1.27 / 2.0) * area
         assert abs(Qt - expected) < 0.1
 
@@ -314,10 +320,13 @@ class TestEndBearing:
         assert abs(Qt - expected) < 0.1
 
     def test_end_bearing_rock_fractured(self):
-        """RQD < 70 reduces bearing."""
+        """GEC-10 (2018) Eq. 10-23 takes N*cr = 2.5 whatever the RQD
+        (GM-244); rock_base_method 'rqd' reduces it below RQD 70."""
         area = math.pi * 1.0**2 / 4
-        Qt_intact = end_bearing_rock(5000, area, RQD=90)
-        Qt_fractured = end_bearing_rock(5000, area, RQD=40)
+        assert end_bearing_rock(5000, area, RQD=40) == pytest.approx(
+            end_bearing_rock(5000, area, RQD=90))
+        Qt_intact = end_bearing_rock(5000, area, RQD=90, method="rqd")
+        Qt_fractured = end_bearing_rock(5000, area, RQD=40, method="rqd")
         assert Qt_fractured < Qt_intact
 
 
@@ -364,19 +373,24 @@ class TestFullAnalysis:
                    result.Q_side_sand - result.Q_side_rock) < 0.1
 
     def test_exclusion_top_1_5m(self):
-        """Top 1.5m excluded from side resistance."""
+        """Top 1.5m excluded from side resistance; none at the bottom by
+        default (GEC-10 (2018) Example 10-2, GM-244)."""
         shaft = DrillShaft(diameter=1.0, length=10.0)
         soil = ShaftSoilProfile(layers=[
             ShaftSoilLayer(10, "cohesive", 18.0, cu=75),
         ])
         analysis = DrillShaftAnalysis(shaft=shaft, soil=soil)
         result = analysis.compute()
-        # Effective side area = perimeter * (10 - 1.5 - 1.0) = pi * 7.5
-        # (1.5m top excl + 1.0m bottom excl for cohesive)
-        expected_thickness = 10.0 - 1.5 - 1.0  # 7.5m
-        alpha = alpha_cohesive(75)
+        expected_thickness = 10.0 - 1.5  # 8.5 m
+        alpha = alpha_cohesive_rational(75, PA)
         expected_Qs = alpha * 75 * math.pi * 1.0 * expected_thickness
         assert abs(result.Q_skin - expected_Qs) < 1.0
+        # the older basis by its options: AASHTO alpha, bottom 1 D out
+        old = DrillShaftAnalysis(shaft=shaft, soil=soil,
+                                 alpha_method="aashto",
+                                 bottom_exclusion=1.0).compute()
+        expected_Qs = alpha_cohesive(75) * 75 * math.pi * 1.0 * 7.5
+        assert abs(old.Q_skin - expected_Qs) < 1.0
 
     def test_casing_exclusion(self):
         """Casing depth overrides top 1.5m exclusion."""
@@ -386,10 +400,9 @@ class TestFullAnalysis:
         ])
         analysis = DrillShaftAnalysis(shaft=shaft, soil=soil)
         result = analysis.compute()
-        # Top exclusion = max(1.5, 5.0) = 5.0m
-        # Bottom exclusion = 1.0m (cohesive)
-        expected_thickness = 15.0 - 5.0 - 1.0  # 9.0m
-        alpha = alpha_cohesive(75)
+        # Top exclusion = max(1.5, 5.0) = 5.0m; none at the bottom
+        expected_thickness = 15.0 - 5.0  # 10.0m
+        alpha = alpha_cohesive_rational(75, PA)
         expected_Qs = alpha * 75 * math.pi * 1.0 * expected_thickness
         assert abs(result.Q_skin - expected_Qs) < 1.0
 
@@ -452,14 +465,20 @@ class TestFullAnalysis:
 # v5.1 QC regression tests (DS-1, DS-3, DS-4, DS-5)
 # ================================================================
 class TestCohesiveEndBearingCapAndLargeBase:
-    """DS-1: clay end bearing capped at 80 ksf (3830 kPa) and reduced
-    for base diameters > 1.90 m (O'Neill & Reese 1999 / AASHTO)."""
+    """DS-1: under clay_base_method 'oneill_reese' clay end bearing is
+    capped at 80 ksf (3830 kPa, NHI-06-089 p. 9-131); with
+    large_base_reduction it is reduced for base diameters > 1.90 m
+    (O'Neill & Reese 1999). GEC-10 (2018) prints neither (GM-244)."""
 
     def test_qb_cap_high_cu(self):
-        """cu = 600 kPa, Nc = 9 -> Nc*cu = 5400 > 3830: qb is capped."""
+        """cu = 600 kPa, Nc = 9 -> Nc*cu = 5400 > 3830: qb is capped
+        under O'Neill & Reese; GEC-10 (2018) Eq. 10-19 prints no cap."""
         area = math.pi * 1.0**2 / 4
-        Qt = end_bearing_cohesive(600.0, area, L_over_D=10)
+        Qt = end_bearing_cohesive(600.0, area, L_over_D=10,
+                                  method="oneill_reese")
         assert Qt == pytest.approx(3830.0 * area, rel=1e-9)
+        Qt = end_bearing_cohesive(600.0, area, L_over_D=10)
+        assert Qt == pytest.approx(9.0 * 600.0 * area, rel=1e-9)
 
     def test_qb_below_cap_unchanged(self):
         """cu = 100 kPa -> Nc*cu = 900 < 3830: no cap, behavior unchanged."""
@@ -480,8 +499,13 @@ class TestCohesiveEndBearingCapAndLargeBase:
         Fr = min(2.5 / (a * Bb * 39.3701 + 2.5 * b), 1.0)
         assert Fr < 1.0
         Qt = end_bearing_cohesive(cu, area, L_over_D=10,
-                                  base_diameter=Bb, shaft_length=L)
+                                  base_diameter=Bb, shaft_length=L,
+                                  large_base_reduction=True)
         assert Qt == pytest.approx(9.0 * cu * Fr * area, rel=1e-6)
+        # not by default: GEC-10 (2018) prints no F_r
+        Qt = end_bearing_cohesive(cu, area, L_over_D=10,
+                                  base_diameter=Bb, shaft_length=L)
+        assert Qt == pytest.approx(9.0 * cu * area, rel=1e-6)
 
     def test_no_reduction_below_190(self):
         """Base diameter <= 1.90 m: no large-base reduction."""
@@ -499,7 +523,9 @@ class TestCohesiveEndBearingCapAndLargeBase:
         soil = ShaftSoilProfile(layers=[
             ShaftSoilLayer(L, "cohesive", 19.0, cu=500.0),
         ])
-        result = DrillShaftAnalysis(shaft=shaft, soil=soil).compute()
+        result = DrillShaftAnalysis(
+            shaft=shaft, soil=soil, clay_base_method="oneill_reese",
+            large_base_reduction=True).compute()
         L_over_D = L / 1.2  # Nc uses shaft diameter; > 2.5 -> Nc = 9
         qb = min(9.0 * 500.0, 3830.0)
         a = min(0.0071 + 0.0021 * (L / Bb), 0.015)
@@ -510,8 +536,9 @@ class TestCohesiveEndBearingCapAndLargeBase:
 
 
 class TestBelledBaseDiameterCohesionless:
-    """DS-3: the 1.27/D large-diameter tip reduction in sand uses the
-    bell (base) diameter, not the shaft diameter."""
+    """DS-3: the 1.27/D large-diameter tip reduction in sand (the
+    large_base_reduction option since GM-244) uses the bell (base)
+    diameter, not the shaft diameter."""
 
     def test_full_analysis_bell_governs_reduction(self):
         """Shaft D = 1.0 (no reduction alone), bell 2.0 m -> 1.27/2.0
@@ -520,9 +547,11 @@ class TestBelledBaseDiameterCohesionless:
         soil = ShaftSoilProfile(layers=[
             ShaftSoilLayer(15, "cohesionless", 18.5, phi=33, N60=30),
         ])
-        result = DrillShaftAnalysis(shaft=shaft, soil=soil).compute()
+        result = DrillShaftAnalysis(shaft=shaft, soil=soil,
+                                    large_base_reduction=True).compute()
         expected_Qt = end_bearing_cohesionless(30, shaft.tip_area,
-                                               diameter=2.0)
+                                               diameter=2.0,
+                                               large_base_reduction=True)
         assert result.Q_tip == pytest.approx(expected_Qt, rel=1e-9)
         # And the reduction actually engaged (bell > 1.27 m)
         unreduced = 57.5 * 30 * shaft.tip_area
@@ -629,7 +658,8 @@ class TestLRFD:
         lrfd = apply_lrfd(result, tip_soil_type="rock")
         assert abs(lrfd["phi_Qs_clay_kN"] - 500 * 0.45) < 0.1
         assert abs(lrfd["phi_Qs_sand_kN"] - 300 * 0.55) < 0.1
-        assert abs(lrfd["phi_Qs_rock_kN"] - 200 * 0.55) < 0.1
+        # GEC-10 Table 8-4 (p. 8-14): 0.50 for rock side (GM-244)
+        assert abs(lrfd["phi_Qs_rock_kN"] - 200 * 0.50) < 0.1
         assert abs(lrfd["phi_Qt_kN"] - 400 * 0.50) < 0.1
 
     def test_total_factored(self):
@@ -720,7 +750,7 @@ class TestRationalSideResistance:
         assert (abs(sand_r["side_resistance_kN"] - sand_d["side_resistance_kN"])
                 / sand_d["side_resistance_kN"] > 0.05)
 
-    def test_high_level_alpha_rational_vs_aashto_default(self):
+    def test_high_level_alpha_rational_default_vs_aashto(self):
         shaft = DrillShaft(diameter=8 * 0.3048, length=3.0 + 15 * 0.3048 + 3.0, casing_depth=3.0)
         layers = [
             ShaftSoilLayer(3.0, "cohesive", 18.0, cu=100.0),
@@ -731,8 +761,9 @@ class TestRationalSideResistance:
         ]
         soil = ShaftSoilProfile(layers=layers)
         rational = DrillShaftAnalysis(shaft=shaft, soil=soil,
-                                      alpha_method="rational", su_test_type="uc").compute()
-        aashto = DrillShaftAnalysis(shaft=shaft, soil=soil).compute()  # default
+                                      su_test_type="uc").compute()  # default
+        aashto = DrillShaftAnalysis(shaft=shaft, soil=soil,
+                                    alpha_method="aashto").compute()
         clay_r = next(lb for lb in rational.layer_breakdown if lb.get("description") == "clay")
         clay_a = next(lb for lb in aashto.layer_breakdown if lb.get("description") == "clay")
         assert float(clay_r["method"].split("=")[1].split()[0]) == pytest.approx(0.47, abs=0.02)

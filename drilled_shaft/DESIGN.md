@@ -6,7 +6,10 @@ alpha method (clay), beta method (sand), and rock socket design.
 
 ## References
 - FHWA GEC-10 (FHWA-NHI-18-024, 2018), Chapter 10 and Table 8-4; the 2010 edition (FHWA-NHI-10-016) is cited by name where a step follows it
-- O'Neill & Reese (1999) — alpha method for clay
+- O'Neill & Reese (1999) as FHWA NHI-06-089 (Sec. 9.12) prints it — the
+  older methods, kept as named options (`alpha_method="aashto"`,
+  `beta_method="depth"`, `clay_base_method="oneill_reese"`,
+  `bottom_exclusion`, `large_base_reduction`)
 - AASHTO LRFD Bridge Design Specifications — resistance factors
 
 ## Files
@@ -29,7 +32,12 @@ get_resistance_factors(method, condition) -> dict
 - ShaftSoilLayer dicts: soil_type/cu/phi/N60/qu/RQD (+ the GEC-10 beta's
   fields N1_60/sigma_v_ref/OCR/sigma_p_correlation)
 - SoilProfile adapter: to_drilled_shaft_input(shaft_length)
-- LRFD phi factors: alpha=0.45, beta=0.55, rock=0.50 (redundant), etc.
+- LRFD phi factors as GEC-10 Table 8-4 (p. 8-14) prints them: side 0.45
+  clay, 0.55 sand, 0.50 rock (Eq. 10-21); base 0.40 clay, 0.50 sand and
+  rock; uplift 0.35, 0.45, 0.40. The rock side was 0.55 until GM-244, from
+  the text of p. 10-21 ('The resistance factor recommended with use of
+  Equations 10-21 and 10-22 is phi = 0.55 ... as presented in Table 8-4'),
+  which the table itself does not bear out; `lrfd_capacity` states that.
 - A cohesionless tip needs its N60 (GM-142, 2026-10-18): q_b = 57.5 N60
   kPa (N60 capped at 50) has no other input, so `require_tip_N60` refuses a
   tip layer with none, in `compute`, the calc steps and
@@ -87,12 +95,41 @@ get_resistance_factors(method, condition) -> dict
   (`tests/test_rock_socket_example.py`). Which C is the default is the
   owner's call.
 
+## GEC-10 (2018) as printed is the default (GM-241, GM-244)
+
+Every step follows GEC-10 (FHWA-NHI-18-024) as printed by default; the
+older method stays as a named option with its source, and the result's
+`choices` state the method, the step, the page, given vs default and the
+alternatives with their values. Where the manual leaves a call open the
+default is the printed one and the choice's basis says it is the engineer's
+judgment. GM-244 (2026-10-20) moved these:
+
+| Step | Default (2018 as printed) | Named option (before GM-244) |
+|---|---|---|
+| clay side | Eq. 10-18, alpha = 0.30 + 0.17/(su(CIUC)/pa), p. 10-16 | `alpha_method="aashto"`: NHI-06-089 Eqs. 9-37a/b, 0.55 to su/pa 1.5 |
+| clay, bottom of the shaft | side resistance to the base (Example 10-2, p. 10-18) | `bottom_exclusion` (m): NHI-06-089 p. 9-129, the bottom 5 ft; Fig. 9-49 one diameter |
+| clay base | Eq. 10-19 with Table 10-2's N*c (p. 10-19), Eq. 10-20 where D < 3B; su the tip layer's, its su(CIUC) where cu is a UC/UU strength (Example 10-3) | `clay_base_method="oneill_reese"`: NHI-06-089 Eqs. 9-39, 9-40, Nc = 6[1 + 0.2 z/D] <= 9, x 0.67 below 0.5 ksf, q <= 80 ksf |
+| rock base | Eq. 10-23, N*cr = 2.5 (p. 10-22; Example 10-4 with RQD 37 to 100) | `rock_base_method="rqd"`: q_b/q_u reduced below RQD 70 (cited to the 2010 edition, not in the reference library) |
+| large base | none (Eqs. 10-14, 10-19, 10-20 print none) | `large_base_reduction=True`: O'Neill & Reese 1.27/B in sand (B > 1.27 m), F_r in clay (B > 1.90 m) |
+| top zone in rock | none (Sec. 10.3.5.3; Example 10-4 takes the socket's whole length) | `top_exclusion=1.5` |
+| phi' of sand | the layer's phi' where given; 27.5 + 9.2 log (N1)60 only where none is (a layer may give (N1)60 alone) | (N1)60 used to override a given phi' |
+| depth beta's limit | 4 ksf = 191.5 kPa (NHI-06-089 p. 9-133) | 200 kPa |
+| rock side resistance factor | 0.50 (Table 8-4) | 0.55 |
+
+Judgment calls the choices name: cu taken as su(CIUC) when `su_test_type`
+is left out; N*c below 500 psf held at 6.5 (Table 10-2 starts there; the
+line through its first two rows is the alternative); su(CIUC)/pa outside
+Fig. 10-6's 0.25 to 5; whether the rock below the base meets Eq. 10-23's
+three conditions; B in Eq. 10-20 taken as the bell's diameter. Not built:
+su as the mean over 2B below the base (the tip layer's is used), the sand
+base's N60 averaged over 2B below the base, and the Hoek-Brown base of a
+fractured rock mass (Eqs. 10-24 to 10-29).
+
 ## Side-resistance methods
 
 `DrillShaftAnalysis` selects the side-resistance method per soil type. In
 cohesionless soil the default is GEC-10 (2018) as printed (GM-241,
-2026-10-20); in cohesive soil the AASHTO alpha stays the default and GEC-10's
-Chen (2011) alpha is opt-in.
+2026-10-20), and in cohesive soil since GM-244.
 
 **Cohesionless — `beta_method`:**
 - `"rational"` (default since GM-241) — GEC-10 (FHWA-NHI-18-024) Sec.
@@ -105,8 +142,9 @@ Chen (2011) alpha is opt-in.
     Table 10-1 take it). No sub-layering by default: the choices give the
     value with 0.1 m sub-layers (p. 10-7 splits a layer only where its
     N-values vary by more than a COV of 45 %).
-  - `phi'` the layer's, or `27.5 + 9.2 log10[(N1)60]` where `N1_60` is given
-    (Appendix A Eq. A-2).
+  - `phi'` the layer's where given, else `27.5 + 9.2 log10[(N1)60]` from
+    `N1_60` (Example 10-1, p. 10-13; Appendix A Eq. A-2). A given phi' wins
+    (GM-244); the choices give the correlation's value as the alternative.
   - `sigma'p` from N60 by the layer's `sigma_p_correlation`: `"clean_sand"`
     (default, Eq. 10-11 with m = 0.6), `"silty_sand"` (m = 0.8) or `"gravel"`
     (Eq. 10-12, `0.15 pa N60`) (`preconsolidation_stress_gec10`). A direct
@@ -135,36 +173,52 @@ Chen (2011) alpha is opt-in.
 - `"depth"` — O'Neill & Reese (1999) as printed in FHWA NHI-06-089 Eqs. 9-41
   to 9-43: `beta = 1.5 - 0.135*sqrt(z_ft) = 1.5 - 0.245*sqrt(z_m)`, clamped
   to [0.25, 1.2], z the depth to the layer's centre, x N60/15 where N60 < 15;
-  `f_s` capped at 200 kPa (NHI-06-089 prints 4 ksf = 191 kPa).
+  `f_s` limited to 4 ksf, 'The limiting value of fsi for shafts in
+  cohesionless soils is 4 ksf (191 kPa)' (p. 9-133), taken as 4 x 47.88 =
+  191.5 kPa (200 kPa until GM-244).
   `beta_cohesionless(z, N60)`. The default until GM-241; GEC-10 (2018) does
   not print it. (Unit-mixing defect FIXED 2026-07-19: the old code applied
   0.245 to feet; the calc package printed that formula until GM-241.)
 
 **Top zone — `top_exclusion`:** left out, no side resistance over the top
-1.5 m in cohesive soil and rock, and side resistance from the ground surface
-in cohesionless soil. GEC-10 p. 10-17 prints the top 5 ft in Sec. 10.3.5.2,
+1.5 m in cohesive soil, and side resistance from the top in cohesionless
+soil and rock. GEC-10 p. 10-17 prints the top 5 ft in Sec. 10.3.5.2,
 Cohesive Soils: "common design practice to neglect side resistance over the
 top 5 ft of a drilled shaft, or to the depth of seasonal moisture change",
 "subject to modification based on local experience and judgment of the
 designer". Sec. 10.3.5.1 (cohesionless) prints no such zone, and Examples
-10-1 and 10-5 take the sand's side resistance from the surface. The rock's
-1.5 m is the module's carry-over, not printed for rock. Given, the zone
-applies in every layer (1.5 leaves the top 5 ft out of sand too). The
-casing, where deeper, takes its place. With sand in the top 1.5 m the
-result states the choice and Q_ult with the 1.5 m left out.
+10-1 and 10-5 take the sand's side resistance from the surface; Sec.
+10.3.5.3 (rock) prints none either, and Example 10-4 takes the socket's
+over its whole 10 ft below the casing (the rock's 1.5 m was the module's
+carry-over until GM-244). Given, the zone applies in every layer (1.5
+leaves the top 5 ft out of sand and rock too). The casing, where deeper,
+takes its place. With sand or rock in the top 1.5 m the result states the
+choice and Q_ult with the 1.5 m left out.
+
+**Bottom zone — `bottom_exclusion`:** default 0, side resistance in
+cohesive soil taken to the base, as Example 10-2 (p. 10-18) takes Layer 3's
+over its whole 27 ft to the base; GEC-10 (2018) prints no bottom zone.
+Given (m), no side resistance over that length above the base in cohesive
+soil: NHI-06-089 p. 9-129 (O'Neill & Reese 1999) leaves out "the top and
+bottom 5-ft of the shaft", its Fig. 9-49 the bottom one diameter (the
+module's default until GM-244). The choices give both with their values.
 
 **Cohesive — `alpha_method`:**
-- `"aashto"` (default) — piecewise `alpha = 0.55` for cu/pa <= 1.5, decreasing
-  above (floored at 0.35). `alpha_cohesive(cu)`.
-- `"rational"` — GEC-10 Chen (2011) `alpha = 0.30 + 0.17/(su_CIUC/pa)`
-  (`alpha_cohesive_rational`), applied to the **CIUC-equivalent** strength, so
-  `fs = alpha * su_CIUC`. A UC/UU lab strength is first normalized by the Chen &
-  Kulhawy (1993) transform (`su_to_ciuc`, selected by `su_test_type` =
-  "ciuc"/"uc"/"uu"):
+- `"rational"` (default since GM-244) — GEC-10 Eq. 10-18, Chen et al. (2011)
+  `alpha = 0.30 + 0.17/(su_CIUC/pa)` (`alpha_cohesive_rational`), applied to
+  the **CIUC-equivalent** strength, so `fs = alpha * su_CIUC`; validated on
+  Example 10-2 (479.7 kips, `tests/test_gec10_2018_printed.py`). A UC/UU lab
+  strength is first normalized by the Chen & Kulhawy (1993) transform
+  (`su_to_ciuc`, selected by `su_test_type` = "ciuc" (default: cu taken as
+  su(CIUC), a judgment the choices state) / "uc" / "uu"):
   - UC->CIUC: `su(UC)/su(CIUC) = 0.893 + 0.513*log10(su/sigma'v0)`  (Eq 10-16)
   - UU->CIUC: `su(UU)/su(CIUC) = 0.911 + 0.499*log10(su/sigma'v0)`  (Eq 10-17)
   - The GEC-10 Appendix A worked example applies the **UC** pair (0.893/0.513) to
     its mean strength, so `su_test_type="uc"` reproduces it.
+- `"aashto"` — O'Neill & Reese (1999) as NHI-06-089 Eqs. 9-37a/b print it:
+  `alpha = 0.55` for cu/pa <= 1.5, `0.55 - 0.1 (cu/pa - 1.5)` to 2.5; the
+  module goes on along the line to 0.35 and holds it (NHI prints nothing
+  above 2.5). `alpha_cohesive(cu)`. The default until GM-244.
 
 Both GEC-10 chains are validated against the GEC-10 Appendix A design example
 (FHWA-NHI-18-024, Steps 11.5-11.6) in `validation_examples/test_published_v006_v008.py`:

@@ -45,7 +45,9 @@ def test_the_default_neglects_no_rock_and_says_so():
     r = _run()
     assert r.Q_side_rock == pytest.approx(FS_ROCK * math.pi * 1.2 * 6.0,
                                           rel=1e-6)
-    assert r.Q_ultimate == pytest.approx(78489.5, abs=0.1)
+    # the module's value; 78489.5 before GM-244 (the clay's alpha 0.55,
+    # now GEC-10 Eq. 10-18's 0.530 over the clay's full length)
+    assert r.Q_ultimate == pytest.approx(78452.1, abs=0.1)
     c = _rock_choice(r)
     assert c["chosen"] == "none" and c["how"] == "default"
     assert "p. 8-15" in c["basis"]
@@ -119,7 +121,7 @@ def test_with_no_rock_layer_it_is_refused():
     with pytest.raises(ValueError, match="no rock layer"):
         _run(soil, fractured_rock_thickness=1.0)
     # and a soil profile states no choice about rock
-    assert _run(soil).choices == []
+    assert not any("rock" in c["what"] for c in _run(soil).choices)
 
 
 def test_a_negative_thickness_is_refused():

@@ -6,10 +6,10 @@ Auto-selects the appropriate method for each soil layer:
 - Beta method for cohesionless layers (sand/gravel)
 - Rock socket method for rock layers
 
-Applies GEC-10 exclusion zones:
-- Top 1.5m excluded from side resistance
-- Bottom 1 diameter excluded from side resistance (cohesive only)
-- Permanently cased zone excluded
+Side resistance is left out over the top 1.5 m in cohesive soil (GEC-10's
+'top 5 ft', p. 10-17) unless top_exclusion is given, and over the
+permanently cased zone; over the bottom of the shaft in cohesive soil only
+where bottom_exclusion is given (GEC-10 (2018) prints no such zone).
 
 All units are SI: kN, m, kPa.
 
@@ -32,10 +32,12 @@ from drilled_shaft.side_resistance import (
     side_resistance_rock, PA,
     alpha_cohesive_rational, su_to_ciuc,
     beta_gec10, phi_prime_from_N1_60, preconsolidation_stress_gec10,
-    SIGMA_P_CORRELATIONS,
+    SIGMA_P_CORRELATIONS, DEPTH_BETA_FS_MAX,
 )
 from drilled_shaft.end_bearing import (
-    end_bearing_cohesive, end_bearing_cohesionless, end_bearing_rock,
+    CLAY_BASE_METHODS, LARGE_BASE_DIAMETER, LARGE_BASE_DIAMETER_SAND,
+    ROCK_BASE_METHODS, nc_below_table_10_2, rock_base_factor,
+    unit_end_bearing_cohesionless, unit_end_bearing_cohesive,
 )
 from drilled_shaft.results import DrillShaftResult
 
@@ -91,10 +93,11 @@ def side_n60_choice(spans) -> dict:
 
 
 #: Side resistance left out over the top of the shaft (m) in cohesive soil
-#: and rock when top_exclusion is not given: GEC-10's 'top 5 ft' (p.
-#: 10-17), printed for cohesive soils. Cohesionless soil then takes side
-#: resistance from the ground surface: Sec. 10.3.5.1 prints no such zone,
-#: and Examples 10-1 and 10-5 take the sand's from the surface.
+#: when top_exclusion is not given: GEC-10's 'top 5 ft' (p. 10-17), printed
+#: for cohesive soils. Cohesionless soil and rock then take side resistance
+#: from the top: Secs. 10.3.5.1 and 10.3.5.3 print no such zone (Examples
+#: 10-1 and 10-5 take the sand's from the surface, Example 10-4 the
+#: socket's over its whole length below the casing).
 TOP_EXCLUSION = 1.5
 
 #: GEC-10 (FHWA-NHI-18-024) on the top of the shaft, as printed.
@@ -109,20 +112,21 @@ TOP_EXCLUSION_BASIS = (
     "experience and judgment of the designer.' Sec. 10.3.5.1, "
     "Cohesionless Soils, prints no such zone, and Examples 10-1 and 10-5 "
     "(pp. 10-12 to 10-14, 10-29) take the sand's side resistance from the "
-    "ground surface. With top_exclusion left out, the top 1.5 m carries "
-    "none in cohesive soil and rock and cohesionless soil carries side "
-    "resistance from the surface; a top_exclusion given applies in every "
-    "layer. The permanent casing, where deeper, takes its place")
+    "ground surface. Sec. 10.3.5.3, Rock (pp. 10-20 to 10-26), prints none "
+    "at the top of a socket, and Example 10-4 (pp. 10-27, 10-28) takes the "
+    "socket's side resistance over its whole 10 ft below the casing. With "
+    "top_exclusion left out, the top 1.5 m carries none in cohesive soil, "
+    "and cohesionless soil and rock carry side resistance from the top; a "
+    "top_exclusion given applies in every layer. The permanent casing, "
+    "where deeper, takes its place")
 
 #: The depth (m) at whose sigma'v GEC-10 limits beta near the surface:
 #: 'the value corresponding to a depth of 7.5 ft' (pp. 10-11, 10-12).
 SHALLOW_BETA_DEPTH = 7.5 * 0.3048
 
-#: The depth beta's limit on f_s (kPa).
-DEPTH_BETA_FS_MAX = 200.0
-
-#: FHWA NHI-06-089's 4 ksf limit on the depth beta's f_s, in kPa.
-NHI_FS_MAX = 4000 * 0.04788
+#: FHWA NHI-06-089's 4 ksf limit on the depth beta's f_s, in kPa
+#: (p. 9-133; 4 x 47.88 = 191.5 kPa): :data:`DEPTH_BETA_FS_MAX`.
+NHI_FS_MAX = DEPTH_BETA_FS_MAX
 
 #: GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.1, pp. 10-10 to 10-12, as printed.
 GEC10_BETA_BASIS = (
@@ -137,18 +141,20 @@ GEC10_BETA_BASIS = (
     "and Kulhawy 1982); OCR = sigma'p / sigma'v (Eq. 10-9) with sigma'p "
     "from N60 by Eq. 10-11 or 10-12; together Eq. 10-13. 'The value of "
     "beta at shallow depths should be limited to the value corresponding "
-    "to a depth of 7.5 ft' (pp. 10-11, 10-12). phi' is the layer's, or "
-    "27.5 + 9.2 log (N1)60 where (N1)60 is given (Appendix A, Eq. A-2, p. "
-    "A-8). GEC-10 prints no upper limit on f_SN in cohesionless soil. "
-    "Resistance factor 0.55 (p. 10-12)")
+    "to a depth of 7.5 ft' (pp. 10-11, 10-12). phi' is the layer's where "
+    "given, else 27.5 + 9.2 log (N1)60 (Example 10-1, p. 10-13; Appendix "
+    "A, Eq. A-2, p. A-8). GEC-10 prints no upper limit on f_SN in "
+    "cohesionless soil. Resistance factor 0.55 (p. 10-12)")
 
 #: The depth beta, as its sources print it.
 DEPTH_BETA_BASIS = (
     "O'Neill and Reese (1999) as printed in FHWA NHI-06-089 Eqs. 9-41 to "
     "9-43 (pp. 9-132, 9-133): beta = 1.5 - 0.135 sqrt(z, ft) = 1.5 - 0.245 "
     "sqrt(z, m), 0.25 <= beta <= 1.2, z the depth to the layer's centre; "
-    "f_s = beta sigma'v, limited here to 200 kPa (NHI-06-089 prints 4 ksf, "
-    "191 kPa). Where a layer's N60 is under 15, beta x N60/15, from "
+    "f_s = beta sigma'v <= 4 ksf, 'The limiting value of fsi for shafts in "
+    "cohesionless soils is 4 ksf (191 kPa)' (p. 9-133), taken as 4 x "
+    "47.88 = 191.5 kPa. Where a layer's N60 is under 15, beta x N60/15, "
+    "from "
     "O'Neill and Reese (1999), which NHI-06-089 does not print. GEC-10 "
     "(2018) does not print this method: its Sec. 10.3.5.1 gives Eq. 10-13")
 
@@ -184,6 +190,150 @@ def _side_values(Qs_sand: float, Q_ultimate: float) -> str:
             f"{Q_ultimate:,.0f} kN")
 
 
+#: The parts of the capacity a choice's alternatives give (GM-244): the
+#: words and the result's attribute.
+_PARTS = {"sand": ("Q_s in cohesionless soil", "Q_side_sand"),
+          "clay": ("Q_s in cohesive soil", "Q_side_clay"),
+          "rock": ("Q_s in rock", "Q_side_rock"),
+          "side": ("Q_s", "Q_skin"),
+          "base": ("Q_b", "Q_tip")}
+
+
+def _rounded(d: dict) -> dict:
+    """``d`` with its floats rounded to 3 places, for a result."""
+    return {k: (round(v, 3) if isinstance(v, float) else v)
+            for k, v in d.items()}
+
+
+def _spans(rows, key_top="depth_top_m", key_bottom="depth_bottom_m") -> str:
+    """The layers' depth ranges, in words."""
+    return ", ".join(f"{lb[key_top]:g}-{lb[key_bottom]:g} m" for lb in rows)
+
+
+def _values(r: DrillShaftResult, part: str = "sand") -> str:
+    """A run's ``part`` of the capacity (:data:`_PARTS`) and its ultimate
+    capacity, in words, for a choice's alternatives."""
+    words, attr = _PARTS[part]
+    return f"{words} {getattr(r, attr):,.0f} kN, Q_ult {r.Q_ultimate:,.0f} kN"
+
+
+#: GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.2 on side resistance in cohesive
+#: soil, as printed (GM-244).
+ALPHA_BASIS = (
+    "GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.2, Step 5 of the design for "
+    "axial load, pp. 10-15 to 10-18: R_SN = pi B dz alpha su (Eq. 10-15); "
+    "alpha = 0.30 + 0.17 / (su(CIUC) / pa) (Eq. 10-18, p. 10-16; Chen et "
+    "al. 2011, Fig. 10-6, p. 10-17), 'recommended as a revision to the "
+    "expressions for alpha currently given in the AASHTO LRFD Bridge Design "
+    "Specifications (2017a)'; f_SN = alpha su(CIUC) (Example 10-2, p. "
+    "10-18). su is each layer's, with sigma'vo for a transform at the "
+    "middle of the length that carries side resistance. Resistance factor "
+    "0.45 (Table 8-4, p. 8-14)")
+
+#: The older alpha, as FHWA NHI-06-089 prints it (GM-244).
+AASHTO_ALPHA_BASIS = (
+    "O'Neill and Reese (1999) as FHWA NHI-06-089 prints it, Eqs. 9-37a and "
+    "9-37b (p. 9-129): alpha = 0.55 for su/pa <= 1.5, 0.55 - 0.1 (su/pa - "
+    "1.5) for 1.5 < su/pa <= 2.5, on su as measured; NHI-06-089 prints "
+    "nothing above su/pa = 2.5, where this tool goes on along the line to "
+    "0.35 and holds it. GEC-10 (2018) recommends Eq. 10-18 'as a revision' "
+    "to it (p. 10-16)")
+
+#: GEC-10 (FHWA-NHI-18-024) p. 10-16 on the strength in Eq. 10-18.
+SU_TEST_BASIS = (
+    "GEC-10 (FHWA-NHI-18-024) p. 10-16: Eq. 10-18 is fitted to su(CIUC) "
+    "(Fig. 10-6); 'For values of undrained shear strength determined by UC "
+    "or UU lab tests, the value of su should first be transformed to its "
+    "equivalent CIUC value' by Eq. 10-16 (UC) or Eq. 10-17 (UU), Chen and "
+    "Kulhawy (1993), on sigma'vo at the layer's middle (Example 10-2, p. "
+    "10-18). Which test each cu came from is the engineer's to state: left "
+    "out, cu is taken as su(CIUC), untransformed")
+
+#: GEC-10 (FHWA-NHI-18-024) and NHI-06-089 on side resistance near the
+#: base in cohesive soil (GM-244).
+BOTTOM_ZONE_BASIS = (
+    "GEC-10 (FHWA-NHI-18-024) prints no zone above the base that carries "
+    "no side resistance: Sec. 10.3.5.2 prints only the top 5 ft (p. "
+    "10-17), and Example 10-2 (p. 10-18) takes the clay's side resistance "
+    "over the whole 27 ft of Layer 3, down to the shaft's base at 60 ft. "
+    "FHWA NHI-06-089 p. 9-129 (O'Neill and Reese 1999): 'the top and bottom "
+    "5-ft of the shaft should not be included in the development of the "
+    "ultimate skin resistance', its Fig. 9-49 (FHWA 1999) marking the "
+    "bottom one diameter as noncontributing")
+
+#: GEC-10 (FHWA-NHI-18-024) p. 10-19 on base resistance in cohesive soil.
+CLAY_BASE_BASIS = (
+    "GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.2, p. 10-19: q_BN = N*c su (Eq. "
+    "10-19, O'Neill and Reese 1999), su the 'mean undrained shear strength "
+    "of the cohesive soil over a depth of 2B below the base'; 'For cases "
+    "where the shaft depth is at least 3 times the diameter and the mean "
+    "undrained shear strength is at least 2,000 psf, the bearing capacity "
+    "factor can be taken as 9.0. For smaller values of undrained shear "
+    "strength, N*c can be approximated as a function of undrained shear "
+    "strength as given in TABLE 10-2' (6.5 at 500 psf, 8.0 at 1,000 psf, "
+    "9.0 at 2,000 psf or more; 'Linear interpolation can be used'); for a "
+    "depth D less than 3B, q_BN = (2/3)[1 + D/(6B)] N*c su (Eq. 10-20). "
+    "Example 10-3 (p. 10-20): 9.0 x 2,571 psf = 23.1 ksf. No upper limit "
+    "on q_BN and no reduction for a large base is printed. 'it is unusual "
+    "to locate the base of a drilled shaft in cohesive soil with su less "
+    "than 2,000 psf when compression loads are supported' (p. 10-19). "
+    "Resistance factor 0.40 (Table 8-4, p. 8-14). su here is the strength "
+    "of the layer the base sits in, not a mean over 2B below the base: "
+    "where the soil below differs, that mean is the engineer's to give")
+
+#: The older base in clay, as FHWA NHI-06-089 prints it (GM-244).
+ONEILL_REESE_CLAY_BASE_BASIS = (
+    "O'Neill and Reese (1999) as FHWA NHI-06-089 prints it (p. 9-131): q_t "
+    "= Nc su_t (Eq. 9-39), Nc = 6.0 [1 + 0.2 (z/D)] <= 9 (Eq. 9-40); 'The "
+    "limiting value of unit end bearing (qt = Ncsut) is 80 ksf', 'a limit "
+    "based on the largest measured values'; 'If the soil within 2.0 "
+    "diameters of the tip has sut < 0.5 ksf, the value of Nc should be "
+    "multiplied by 0.67' (taken here on the tip layer's cu). GEC-10 (2018) "
+    "gives Eqs. 10-19, 10-20 with Table 10-2 instead")
+
+#: GEC-10 (FHWA-NHI-18-024) pp. 10-22 to 10-24 on base resistance in rock.
+ROCK_BASE_BASIS = (
+    "GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.3, p. 10-22: q_BN = N*cr qu "
+    "(Eq. 10-23); 'a value of Ncr* = 2.5 is recommended for design when qu "
+    "is the sole parameter used for establishing qBN and the following "
+    "conditions are met: 1. The drilled shaft base is bearing on rock which "
+    "is either massive or tightly jointed (no compressible seams or joints) "
+    "to a depth of at least one diameter beneath the base, 2. It can be "
+    "verified that no solution cavities or voids exist beneath the base, "
+    "and 3. A clean base can be achieved and verified using conventional "
+    "clean-out equipment'. Example 10-4 (p. 10-28): 2.5 x 360 ksf = 900 "
+    "ksf. For a fractured rock mass, the Hoek-Brown base (Eqs. 10-24 to "
+    "10-29, pp. 10-23, 10-24), for which 2.5 'can be used as an upper-bound "
+    "limit'. Resistance factor 0.50 (Table 8-4, p. 8-14). Whether the "
+    "three conditions hold is the engineer's judgment")
+
+#: The earlier rock base of this tool (GM-244).
+RQD_BASE_BASIS = (
+    "q_b/q_u by RQD: 2.5 at RQD >= 70 %, then linear to 1.5 at 50 %, 0.8 at "
+    "25 % and 0.4 at 0 %; this tool's earlier rock base, cited to GEC-10 "
+    "(2010 edition) Sec. 13.3.4.4 and the Canadian Foundation Engineering "
+    "Manual, neither in the reference library, so not checked against a "
+    "printed page. GEC-10 (2018) gives Eq. 10-23 with N*cr = 2.5 instead")
+
+#: The large-base reductions (GM-244).
+LARGE_BASE_BASIS = (
+    "GEC-10 (FHWA-NHI-18-024) prints no reduction of base resistance for a "
+    "large base: Eq. 10-14 (p. 10-14) in cohesionless soil, Eqs. 10-19 and "
+    "10-20 (p. 10-19) in cohesive soil, and neither does FHWA NHI-06-089 "
+    "(Eqs. 9-39, 9-40, 9-45). O'Neill and Reese (1999), not in the "
+    "reference library, reduce it by 1.27/B for a base wider than 1.27 m "
+    "in cohesionless soil and by F_r = 2.5 / (a B + 2.5 b) <= 1 (B in "
+    "inches) for a base wider than 1.90 m in cohesive soil")
+
+#: GEC-10 (FHWA-NHI-18-024) on phi' of cohesionless soil (GM-244).
+PHI_BASIS = (
+    "GEC-10 (FHWA-NHI-18-024) Table 10-1 (p. 10-6) lists phi' among the "
+    "properties to evaluate for each layer; Example 10-1 (p. 10-13) takes "
+    "it from (N1)60 by phi' = 27.5 + 9.2 log (N1)60 (Chen and Kulhawy "
+    "2002; Appendix A, Eq. A-2, p. A-8). A phi' given for a layer is used; "
+    "the correlation only where a layer gives (N1)60 and no phi'")
+
+
 #: GEC-10 (FHWA-NHI-18-024) p. 8-15, as printed.
 FRACTURED_ROCK_BASIS = (
     "GEC-10 (FHWA-NHI-18-024) p. 8-15: the amount of rock to be removed "
@@ -209,8 +359,11 @@ ROCK_SIDE_C_BASIS = (
     "(O'Neill and Reese 1999): f_SN = 0.65 alpha_E pa sqrt(qu / pa), "
     "alpha_E from Table 10-3 by RQD and joint condition. For roughened "
     "sockets a mean C = 1.9 (Kulhawy and Prakoso 2007, p. 10-22); 'load "
-    "tests or local experience' should verify C greater than 1.0. The "
-    "resistance factor is 0.55 with either equation (p. 10-21)")
+    "tests or local experience' should verify C greater than 1.0. "
+    "Resistance factor: Table 8-4 (p. 8-14) prints 0.50 for side "
+    "resistance in rock by Eq. 10-21 (0.40 in uplift), which lrfd_capacity "
+    "takes; the text of p. 10-21 gives 0.55 for Eqs. 10-21 and 10-22, 'as "
+    "presented in Table 8-4'")
 
 #: The values of C GEC-10 names, each with where it applies.
 _ROCK_SIDE_C_NAMED = {
@@ -290,15 +443,16 @@ def fractured_rock_choice(shaft: DrillShaft, soil: ShaftSoilProfile) -> dict:
             f"{t:g} m below the top of rock ({z0:g}-{z1:g} m){where}", how,
             basis=FRACTURED_ROCK_BASIS,
             alternatives=[
-                "fractured_rock_thickness 0: all rock below the top 1.5 m "
-                "and the casing is socket",
+                "fractured_rock_thickness 0: all rock below the casing is "
+                "socket",
                 "casing_depth to the top of competent rock: no side "
                 "resistance, soil or rock, above it (GEC-10 Example 10-4, "
                 "p. 10-27)", *base_alt])
     return choice(
         "rock not considered part of the socket", "none", how,
-        basis=("all rock in the shaft below the top 1.5 m and the casing "
-               "is socket. " + FRACTURED_ROCK_BASIS.split(": ", 1)[0]
+        basis=("all rock in the shaft below the casing (and below "
+               "top_exclusion, where given) is socket. "
+               + FRACTURED_ROCK_BASIS.split(": ", 1)[0]
                + " allows decomposed or fractured rock 'that may be "
                "removed but not considered part of the socket for design "
                "purposes'"),
@@ -332,18 +486,42 @@ class DrillShaftAnalysis:
         quality is not controlled (p. 10-12). 0 < K/Ko <= 1.
     top_exclusion : float, optional
         Side resistance left out over the top of the shaft (m), in every
-        layer. Left out (None): 1.5 m in cohesive soil and rock, GEC-10's
-        'top 5 ft' (p. 10-17, printed for cohesive soils), and none in
-        cohesionless soil (Sec. 10.3.5.1 prints none; Examples 10-1 and
-        10-5 take the sand's side resistance from the ground surface). The
-        permanent casing, where deeper, takes its place.
+        layer. Left out (None): 1.5 m in cohesive soil, GEC-10's 'top 5 ft'
+        (p. 10-17, printed for cohesive soils), and none in cohesionless
+        soil or rock (Secs. 10.3.5.1 and 10.3.5.3 print none; Examples
+        10-1, 10-4 and 10-5). The permanent casing, where deeper, takes its
+        place.
+    bottom_exclusion : float, optional
+        Side resistance left out over the bottom of the shaft (m) in
+        cohesive soil. Default 0: GEC-10 (2018) prints no such zone
+        (Example 10-2 takes the clay's to the base). One diameter is the
+        bottom zone of FHWA NHI-06-089 Fig. 9-49 (FHWA 1999); its text
+        says the bottom 5 ft (p. 9-129). See :data:`BOTTOM_ZONE_BASIS`.
     alpha_method : str, optional
-        Cohesive side-resistance method: "aashto" (default, piecewise 0.55) or
-        "rational" (GEC-10 Chen-2011 alpha = 0.30+0.17/(su_CIUC/pa) with the
-        UU/UC->CIUC transform). Default "aashto" preserves prior results.
+        Cohesive side-resistance method: "rational" (default, GEC-10 (2018)
+        Eq. 10-18, alpha = 0.30 + 0.17/(su(CIUC)/pa), on su(CIUC); see
+        :data:`ALPHA_BASIS`) or "aashto" (O'Neill & Reese 1999 as FHWA
+        NHI-06-089 Eqs. 9-37a, 9-37b print it, 0.55 for su/pa <= 1.5), the
+        default until GM-244.
     su_test_type : str, optional
         For alpha_method="rational": what lab test the layer ``cu`` represents,
-        for the CIUC transform — "ciuc" (default, no transform), "uc", or "uu".
+        for the CIUC transform — "ciuc" (default, no transform), "uc"
+        (GEC-10 Eq. 10-16), or "uu" (Eq. 10-17).
+    clay_base_method : str, optional
+        Base resistance with the tip in cohesive soil: "gec10" (default,
+        GEC-10 (2018) Eqs. 10-19, 10-20 with Table 10-2; see
+        :data:`CLAY_BASE_BASIS`) or "oneill_reese" (FHWA NHI-06-089 Eqs.
+        9-39, 9-40: Nc = 6[1 + 0.2 z/D] <= 9, x 0.67 where su < 0.5 ksf,
+        q <= 80 ksf).
+    rock_base_method : str, optional
+        Base resistance with the tip in rock: "gec10" (default, GEC-10
+        (2018) Eq. 10-23, N*cr = 2.5; see :data:`ROCK_BASE_BASIS`) or
+        "rqd" (q_b/q_u reduced by the tip layer's RQD; see
+        :data:`RQD_BASE_BASIS`).
+    large_base_reduction : bool, optional
+        O'Neill and Reese's (1999) reduction of base resistance for a large
+        base: 1.27/B in cohesionless soil (B > 1.27 m), F_r in cohesive
+        soil (B > 1.90 m). Default False: GEC-10 (2018) prints neither.
     pa : float, optional
         Atmospheric pressure (kPa) for the rational chains. Default 101.325.
     rock_side_C : float, optional
@@ -367,12 +545,16 @@ class DrillShaftAnalysis:
     soil: ShaftSoilProfile = None
     factor_of_safety: float = 2.5
     beta_method: str = "rational"
-    alpha_method: str = "aashto"
+    alpha_method: str = "rational"
     su_test_type: str = "ciuc"
     pa: float = PA
     rock_side_C: float = ROCK_SIDE_C
     K_over_Ko: float = 1.0
     top_exclusion: Optional[float] = None
+    bottom_exclusion: float = 0.0
+    clay_base_method: str = "gec10"
+    rock_base_method: str = "gec10"
+    large_base_reduction: bool = False
 
     def __post_init__(self):
         if self.shaft is None:
@@ -390,6 +572,18 @@ class DrillShaftAnalysis:
             raise ValueError(
                 f"top_exclusion must be 0 or more (m), got "
                 f"{self.top_exclusion}")
+        if not self.bottom_exclusion >= 0:
+            raise ValueError(
+                f"bottom_exclusion must be 0 or more (m), got "
+                f"{self.bottom_exclusion}")
+        if self.clay_base_method not in CLAY_BASE_METHODS:
+            raise ValueError(
+                f"clay_base_method must be one of {list(CLAY_BASE_METHODS)}, "
+                f"got {self.clay_base_method!r}")
+        if self.rock_base_method not in ROCK_BASE_METHODS:
+            raise ValueError(
+                f"rock_base_method must be one of {list(ROCK_BASE_METHODS)}, "
+                f"got {self.rock_base_method!r}")
         if self.soil is None:
             raise ValueError("Soil profile must be provided")
         if self.beta_method not in ("depth", "rational"):
@@ -415,16 +609,20 @@ class DrillShaftAnalysis:
         step's value (Eqs. 10-8 to 10-13). ``sigma_v`` is the layer's
         average sigma'v (Eq. 10-5); ``where`` names the layer in a refusal.
 
-        phi' is the layer's, or from (N1)60 where it is given (Appendix A
-        Eq. A-2); OCR is the layer's, or sigma'p (Eq. 10-11 or 10-12, from
+        phi' is the layer's where given, else from (N1)60 (Example 10-1;
+        Appendix A Eq. A-2); OCR is the layer's, or sigma'p (Eq. 10-11 or 10-12, from
         N60) over sigma_v_ref or the layer's sigma'v, that sigma'v not less
         than the sigma'v at 7.5 ft (pp. 10-11, 10-12); delta = phi'.
         """
-        if layer.N1_60 > 0:
+        # a phi' given wins; (N1)60 only where it is not (GM-244)
+        if layer.phi > 0:
+            steps = {"phi_deg": layer.phi, "phi_from": "phi"}
+            if layer.N1_60 > 0:
+                steps["phi_from_N1_60_deg"] = phi_prime_from_N1_60(
+                    layer.N1_60)
+        else:
             steps = {"phi_deg": phi_prime_from_N1_60(layer.N1_60),
                      "phi_from": "N1_60"}
-        else:
-            steps = {"phi_deg": layer.phi, "phi_from": "phi"}
         if layer.OCR > 0:
             OCR = layer.OCR
             steps["OCR_from"] = "OCR"
@@ -479,12 +677,12 @@ class DrillShaftAnalysis:
     def _top_zone(self, soil_type: str) -> float:
         """The top zone (m) with no side resistance in a layer of
         ``soil_type``, before the casing: ``top_exclusion`` where given,
-        else 1.5 m in cohesive soil and rock (GEC-10 p. 10-17, printed for
-        cohesive soils) and none in cohesionless soil (Sec. 10.3.5.1;
-        Examples 10-1 and 10-5)."""
+        else 1.5 m in cohesive soil (GEC-10 p. 10-17, printed for cohesive
+        soils) and none in cohesionless soil or rock (Secs. 10.3.5.1 and
+        10.3.5.3; Examples 10-1, 10-4 and 10-5)."""
         if self.top_exclusion is not None:
             return self.top_exclusion
-        return 0.0 if soil_type == "cohesionless" else TOP_EXCLUSION
+        return TOP_EXCLUSION if soil_type == "cohesive" else 0.0
 
     def _top_of_side(self, soil_type: str) -> float:
         """Depth (m) above which a layer of ``soil_type`` takes no side
@@ -518,9 +716,10 @@ class DrillShaftAnalysis:
         if tip_layer.soil_type == "cohesionless":
             require_tip_N60(tip_layer, L)
 
-        # Exclusion zones: the top zone by soil type (_top_of_side)
-        # Bottom exclusion: 1 diameter for cohesive only (applied per-layer)
-        # Rock not considered part of the socket (GEC-10 p. 8-15, GM-220)
+        # Exclusion zones: the top zone by soil type (_top_of_side); over
+        # the bottom in cohesive soil only where bottom_exclusion is given
+        # (GM-244); rock not considered part of the socket (GEC-10 p.
+        # 8-15, GM-220)
         not_socket = fractured_rock_zone(shaft, self.soil)
         in_rock = False
 
@@ -547,11 +746,10 @@ class DrillShaftAnalysis:
             # Apply top exclusion zone
             z_top_eff = max(z_top, self._top_of_side(layer.soil_type))
 
-            # Apply bottom exclusion for cohesive only (bottom 1*D)
+            # The bottom zone, cohesive soil only, where given (GM-244)
             z_bottom_eff = z_bottom
-            if layer.soil_type == "cohesive":
-                bottom_excl_start = L - D
-                z_bottom_eff = min(z_bottom, bottom_excl_start)
+            if layer.soil_type == "cohesive" and self.bottom_exclusion > 0:
+                z_bottom_eff = min(z_bottom, L - self.bottom_exclusion)
 
             if layer.soil_type == "rock":
                 in_rock = True
@@ -579,21 +777,23 @@ class DrillShaftAnalysis:
 
             if layer.soil_type == "cohesive":
                 if self.alpha_method == "rational":
-                    # GEC-10 Chen-2011 alpha on the CIUC-equivalent strength.
-                    su_ciuc = su_to_ciuc(layer.cu, sigma_v, self.su_test_type)
-                    alpha = alpha_cohesive_rational(su_ciuc, self.pa)
-                    Qs_layer = side_resistance_cohesive(
-                        su_ciuc, shaft.perimeter, effective_thickness, alpha
-                    )
-                    fs = alpha * su_ciuc
+                    # GEC-10 (2018) Eq. 10-18 on su(CIUC), a UC or UU
+                    # strength transformed by Eq. 10-16 or 10-17 (p. 10-16)
+                    su = su_to_ciuc(layer.cu, sigma_v, self.su_test_type)
+                    alpha = alpha_cohesive_rational(su, self.pa)
                     method_used = f"alpha={alpha:.3f} (rational)"
                 else:
+                    su = layer.cu
                     alpha = alpha_cohesive(layer.cu)
-                    Qs_layer = side_resistance_cohesive(
-                        layer.cu, shaft.perimeter, effective_thickness, alpha
-                    )
-                    fs = alpha * layer.cu
                     method_used = f"alpha={alpha:.3f}"
+                Qs_layer = side_resistance_cohesive(
+                    su, shaft.perimeter, effective_thickness, alpha)
+                fs = alpha * su
+                alpha_steps = {"alpha_method": self.alpha_method,
+                               "su_kPa": layer.cu, "su_used_kPa": su,
+                               "su_over_pa": su / self.pa, "alpha": alpha}
+                if self.alpha_method == "rational":
+                    alpha_steps["su_test_type"] = self.su_test_type
                 Qs_clay += Qs_layer
 
             elif layer.soil_type == "cohesionless":
@@ -644,9 +844,9 @@ class DrillShaftAnalysis:
                 "sigma_v_kPa": round(sigma_v, 1),
             }
             if steps is not None:
-                row["beta_steps"] = {
-                    k: (round(v, 3) if isinstance(v, float) else v)
-                    for k, v in steps.items()}
+                row["beta_steps"] = _rounded(steps)
+            if layer.soil_type == "cohesive":
+                row["alpha_steps"] = _rounded(alpha_steps)
             layer_results.append(row)
 
         # End bearing. Large-base reductions are governed by the bearing
@@ -659,16 +859,28 @@ class DrillShaftAnalysis:
         base_D = shaft.base_diameter(tip_in_rock)
         base_area = shaft.base_area(tip_in_rock)
 
+        # Each step of the unit base resistance, for the result and the
+        # calc package (GM-148, GM-244)
         if tip_layer.soil_type == "cohesive":
-            Qt = end_bearing_cohesive(
-                tip_layer.cu, base_area, L_over_D,
-                base_diameter=base_D, shaft_length=L,
-            )
+            su_b, su_from = self._base_su(tip_layer, layer_results)
+            u = unit_end_bearing_cohesive(
+                su_b, L_over_D, base_diameter=base_D,
+                shaft_length=L, method=self.clay_base_method,
+                large_base_reduction=self.large_base_reduction)
         elif tip_layer.soil_type == "cohesionless":
             N60 = require_tip_N60(tip_layer, L)
-            Qt = end_bearing_cohesionless(N60, base_area, base_D)
+            u = unit_end_bearing_cohesionless(N60, base_D,
+                                              self.large_base_reduction)
         else:  # rock
-            Qt = end_bearing_rock(tip_layer.qu, base_area, tip_layer.RQD)
+            factor = rock_base_factor(tip_layer.RQD, self.rock_base_method)
+            u = {"method": self.rock_base_method, "qu_kPa": tip_layer.qu,
+                 "RQD": tip_layer.RQD, "factor": factor,
+                 "qb": factor * tip_layer.qu}
+        base_steps = {"soil_type": tip_layer.soil_type,
+                      "base_diameter_m": base_D, **u}
+        if tip_layer.soil_type == "cohesive":
+            base_steps.update(su_kPa=su_b, su_from=su_from)
+        Qt = u["qb"] * base_area
 
         Q_ultimate = total_Qs + Qt
         Q_allowable = Q_ultimate / self.factor_of_safety
@@ -677,10 +889,13 @@ class DrillShaftAnalysis:
         if report:
             choices = (
                 self._side_choices(layer_results, Qs_sand, Q_ultimate)
+                + self._clay_side_choices(layer_results, Qs_clay,
+                                          Q_ultimate)
                 + ([side_n60_choice(no_n60)] if no_n60 else [])
                 + ([fractured_rock_choice(shaft, self.soil)]
                    if in_rock or shaft.fractured_rock_thickness else [])
-                + ([rock_side_choice(self.rock_side_C)] if in_rock else []))
+                + ([rock_side_choice(self.rock_side_C)] if in_rock else [])
+                + self._base_choices(tip_layer, base_steps, Qt, Q_ultimate))
 
         return DrillShaftResult(
             Q_ultimate=Q_ultimate,
@@ -698,16 +913,20 @@ class DrillShaftAnalysis:
             method="GEC-10",
             layer_breakdown=layer_results,
             sigma_v_tip=sigma_v_tip,
+            base_steps=_rounded(base_steps),
             choices=choices,
         )
 
     def _alternative(self, sublayer: Optional[float] = None,
-                     correlation: Optional[str] = None, **changes) -> str:
-        """The side resistance in cohesionless soil and the ultimate
-        capacity with ``changes`` to this analysis, in words; or why it
-        is refused. ``correlation`` gives every cohesionless layer that
-        takes sigma'p from N60 that ``sigma_p_correlation``."""
-        soil = self.soil
+                     correlation: Optional[str] = None,
+                     part: str = "sand", soil=None, **changes) -> str:
+        """The ``part`` of the capacity (:data:`_PARTS`, side resistance
+        in cohesionless soil by default) and the ultimate capacity with
+        ``changes`` to this analysis, in words; or why it is refused.
+        ``correlation`` gives every cohesionless layer that takes sigma'p
+        from N60 that ``sigma_p_correlation``; ``soil`` replaces the
+        profile."""
+        soil = self.soil if soil is None else soil
         if correlation is not None:
             soil = replace(soil, layers=[
                 replace(lay, sigma_p_correlation=correlation)
@@ -720,14 +939,14 @@ class DrillShaftAnalysis:
                     sublayer=sublayer, report=False)
         except ValueError as exc:
             return f"refused: {exc}"
-        return _side_values(r.Q_side_sand, r.Q_ultimate)
+        return _values(r, part)
 
     def _top_zone_choice(self, layer_results) -> Optional[dict]:
         """The choice made for side resistance near the ground surface
         (GM-241), or None where it changes nothing: with top_exclusion
-        left out, cohesionless soil in the top 1.5 m below the casing
-        keeps its side resistance; given, the top zone takes the layers it
-        reaches below the casing."""
+        left out, cohesionless soil and rock in the top 1.5 m below the
+        casing keep their side resistance (GM-244); given, the top zone
+        takes the layers it reaches below the casing."""
         from geotech_common.choices import choice, how_given
         casing = self.shaft.casing_depth
 
@@ -743,23 +962,27 @@ class DrillShaftAnalysis:
                              for lb in rows)
 
         if self.top_exclusion is None:
-            sand = [lb for lb in layer_results
-                    if lb["soil_type"] == "cohesionless"
+            kept = [lb for lb in layer_results
+                    if lb["soil_type"] != "cohesive"
                     and reached(lb, TOP_EXCLUSION)]
-            if not sand:
+            if not kept:
                 return None
             others = [lb for lb in layer_results
-                      if lb["soil_type"] != "cohesionless"
+                      if lb["soil_type"] == "cohesive"
                       and reached(lb, TOP_EXCLUSION)]
-            chosen = (f"side resistance taken in cohesionless soil within "
-                      f"the top {TOP_EXCLUSION:g} m ({spans(sand, TOP_EXCLUSION)})")
+            kinds = " and ".join(dict.fromkeys(
+                "rock" if lb["soil_type"] == "rock" else "cohesionless soil"
+                for lb in kept))
+            chosen = (f"side resistance taken in {kinds} within the top "
+                      f"{TOP_EXCLUSION:g} m ({spans(kept, TOP_EXCLUSION)})")
             if others:
-                chosen += (f"; none in cohesive soil or rock there "
+                chosen += (f"; none in cohesive soil there "
                            f"({spans(others, TOP_EXCLUSION)})")
             alternatives = [
                 f"top_exclusion {TOP_EXCLUSION:g}, the top 5 ft of p. 10-17 "
                 "left out in every layer: "
-                + self._alternative(top_exclusion=TOP_EXCLUSION),
+                + self._alternative(top_exclusion=TOP_EXCLUSION,
+                                    part="side"),
                 "top_exclusion the depth of seasonal moisture change or of "
                 "frost, where deeper (p. 10-17)"]
         else:
@@ -769,13 +992,12 @@ class DrillShaftAnalysis:
                 return None
             chosen = (f"none over the top {self.top_exclusion:g} m, in "
                       f"every layer ({spans(cut, self.top_exclusion)})")
-            left_out = self._alternative(top_exclusion=None)
+            left_out = self._alternative(top_exclusion=None, part="side")
             alternatives = [
                 f"top_exclusion left out: none over the top "
-                f"{TOP_EXCLUSION:g} m in cohesive soil and rock, side "
-                "resistance from the ground surface in cohesionless soil: "
-                + left_out]
-            zero = self._alternative(top_exclusion=0.0)
+                f"{TOP_EXCLUSION:g} m in cohesive soil, side resistance "
+                "from the top in cohesionless soil and rock: " + left_out]
+            zero = self._alternative(top_exclusion=0.0, part="side")
             if self.top_exclusion != 0 and zero != left_out:
                 alternatives.append(
                     "top_exclusion 0, side resistance from the ground "
@@ -842,6 +1064,9 @@ class DrillShaftAnalysis:
             how_given(k, 1.0, name="K_over_Ko"),
             basis=K_OVER_KO_BASIS, alternatives=k_alts))
         steps = [lb["beta_steps"] for lb in sand]
+        phi = self._phi_choice(sand, steps)
+        if phi:
+            out.append(phi)
         from_n60 = [(lb, s) for lb, s in zip(sand, steps)
                     if s["OCR_from"] != "OCR"]
         if from_n60:
@@ -901,6 +1126,331 @@ class DrillShaftAnalysis:
                     f"depth beta: Q_s in cohesionless soil about "
                     f"{capped:,.0f} kN, Q_ult about "
                     f"{Q_ultimate - Qs_sand + capped:,.0f} kN"]))
+        return out
+
+    def _base_su(self, tip_layer, layer_results):
+        """su (kPa) for the base in cohesive soil and where it came from:
+        under GEC-10's base and alpha with cu a UC or UU strength, the tip
+        layer's su(CIUC) as its side resistance took it ("su_ciuc";
+        Example 10-3, p. 10-20, applies N*c to Example 10-2's su(CIUC));
+        else the tip layer's cu as given ("cu")."""
+        if (self.clay_base_method != "gec10"
+                or self.alpha_method != "rational"
+                or self.su_test_type == "ciuc"):
+            return tip_layer.cu, "cu"
+        row = layer_results[-1]
+        if row["method"] != "excluded":
+            z = (row["effective_top_m"] + row["effective_bottom_m"]) / 2
+        else:
+            z = (row["depth_top_m"] + row["depth_bottom_m"]) / 2
+        sigma_v = self.soil.effective_stress_at_depth(z)
+        return su_to_ciuc(tip_layer.cu, sigma_v, self.su_test_type), \
+            "su_ciuc"
+
+    def _phi_choice(self, sand, steps) -> Optional[dict]:
+        """The choice made for phi' of the cohesionless layers under the
+        GEC-10 beta (GM-244), where a layer gives (N1)60: a phi' given
+        wins, the correlation only where none is. None where no layer
+        gives (N1)60."""
+        from geotech_common.choices import choice, how_given
+        both = [(lb, st) for lb, st in zip(sand, steps)
+                if "phi_from_N1_60_deg" in st]
+        corr = [(lb, st) for lb, st in zip(sand, steps)
+                if st["phi_from"] == "N1_60"]
+        if not both and not corr:
+            return None
+        given = [(lb, st) for lb, st in zip(sand, steps)
+                 if st["phi_from"] == "phi"]
+        parts = []
+        if given:
+            parts.append("the layer's phi' as given (" + ", ".join(
+                f"{lb['depth_top_m']:g}-{lb['depth_bottom_m']:g} m: "
+                f"{st['phi_deg']:g} deg" for lb, st in given) + ")")
+        if corr:
+            parts.append("27.5 + 9.2 log (N1)60 where no phi' is given ("
+                         + ", ".join(
+                             f"{lb['depth_top_m']:g}-{lb['depth_bottom_m']:g}"
+                             f" m: {st['phi_deg']:.1f} deg"
+                             for lb, st in corr) + ")")
+        alternatives = []
+        if both:
+            soil = replace(self.soil, layers=[
+                replace(lay, phi=0.0)
+                if lay.soil_type == "cohesionless" and lay.phi > 0
+                and lay.N1_60 > 0 else lay for lay in self.soil.layers])
+            alternatives.append(
+                "phi' from (N1)60 in the layers that give both ("
+                + ", ".join(f"{lb['depth_top_m']:g}-{lb['depth_bottom_m']:g}"
+                            f" m: {st['phi_from_N1_60_deg']:.1f} deg"
+                            for lb, st in both)
+                + "): " + self._alternative(soil=soil))
+        phis = tuple(st["phi_deg"] if st["phi_from"] == "phi" else 0.0
+                     for st in steps)
+        return choice("phi' of cohesionless soil", "; ".join(parts),
+                      how_given(phis, (0.0,) * len(phis), within="layers"),
+                      basis=PHI_BASIS, alternatives=alternatives)
+
+    def _clay_side_choices(self, layer_results, Qs_clay: float,
+                           Q_ultimate: float) -> List[dict]:
+        """The choices made for side resistance in cohesive soil (GM-244):
+        the alpha method, under GEC-10's the test each cu stands for, and
+        the zone above the base. Each lists its alternatives with their
+        values."""
+        from geotech_common.choices import choice, how_given
+        out = []
+        bottom = self._bottom_zone_choice(layer_results)
+        clay = [lb for lb in layer_results
+                if lb["soil_type"] == "cohesive"
+                and lb["method"] != "excluded"]
+        if not clay:
+            return [bottom] if bottom else []
+        here = (f"Q_s in cohesive soil {Qs_clay:,.0f} kN, Q_ult "
+                f"{Q_ultimate:,.0f} kN")
+        how = how_given(self.alpha_method, "rational", name="alpha_method")
+        each = "; ".join(
+            f"{lb['effective_top_m']:g}-{lb['effective_bottom_m']:g} m: "
+            f"su/pa {lb['alpha_steps']['su_over_pa']:.3g}, alpha "
+            f"{lb['alpha_steps']['alpha']:.3f}" for lb in clay)
+        if self.alpha_method == "rational":
+            basis = ALPHA_BASIS
+            outside = [lb for lb in clay
+                       if not 0.25 <= lb["alpha_steps"]["su_over_pa"] <= 5]
+            if outside:
+                basis += (
+                    ". Fig. 10-6 draws Eq. 10-18 over su(CIUC)/pa from about "
+                    "0.25 (alpha 1.0) to 5; at " + _spans(outside)
+                    + " su(CIUC)/pa is outside it, and alpha is the "
+                    "equation's beyond the data: the engineer's judgment")
+            out.append(choice(
+                "side resistance in cohesive soil",
+                f"GEC-10 (2018) alpha, Eq. 10-18, on su(CIUC) ({each}): "
+                + here, how, basis=basis,
+                alternatives=[
+                    "alpha_method 'aashto', O'Neill and Reese (1999) as FHWA "
+                    "NHI-06-089 prints it (Eqs. 9-37a, 9-37b, p. 9-129), "
+                    "alpha = 0.55 for su/pa <= 1.5: "
+                    + self._alternative(alpha_method="aashto", part="clay")]))
+            out.append(self._su_test_choice(clay))
+        else:
+            basis = AASHTO_ALPHA_BASIS
+            past = [lb for lb in clay
+                    if lb["alpha_steps"]["su_over_pa"] > 2.5]
+            if past:
+                basis += (". At " + _spans(past) + " su/pa is above 2.5, "
+                          "where NHI-06-089 prints no alpha")
+            out.append(choice(
+                "side resistance in cohesive soil",
+                "alpha of O'Neill and Reese (1999), FHWA NHI-06-089 Eqs. "
+                f"9-37a, 9-37b ({each}): " + here, how, basis=basis,
+                alternatives=[
+                    "alpha_method 'rational', GEC-10 (2018) Eq. 10-18 on "
+                    "su(CIUC) (su_test_type for a UC or UU strength): "
+                    + self._alternative(alpha_method="rational",
+                                        part="clay")]))
+        if bottom:
+            out.append(bottom)
+        return out
+
+    def _su_test_choice(self, clay) -> dict:
+        """The choice made for the strength in GEC-10's Eq. 10-18: which
+        test each cu stands for (GM-244)."""
+        from geotech_common.choices import choice, how_given
+        named = {"ciuc": "su(CIUC), untransformed",
+                 "uc": "UC, transformed to su(CIUC) by Eq. 10-16",
+                 "uu": "UU, transformed to su(CIUC) by Eq. 10-17"}
+        tt = self.su_test_type
+        chosen = "each layer's cu taken as " + named[tt]
+        if tt != "ciuc":
+            chosen += " (" + "; ".join(
+                f"{lb['effective_top_m']:g}-{lb['effective_bottom_m']:g} m: "
+                f"{lb['alpha_steps']['su_kPa']:.1f} to "
+                f"{lb['alpha_steps']['su_used_kPa']:.1f} kPa"
+                for lb in clay) + ")"
+        return choice(
+            "strength su in Eq. 10-18 (the test each cu came from)", chosen,
+            how_given(tt, "ciuc", name="su_test_type"),
+            basis=SU_TEST_BASIS,
+            alternatives=[
+                f"su_test_type '{t}', {named[t]}: "
+                + self._alternative(su_test_type=t, part="clay")
+                for t in named if t != tt])
+
+    def _bottom_zone_choice(self, layer_results) -> Optional[dict]:
+        """The choice made for side resistance near the base in cohesive
+        soil (GM-244), or None where no cohesive layer reaches within one
+        diameter of the base (or within bottom_exclusion, where given)."""
+        from geotech_common.choices import choice, how_given
+        L, D = self.shaft.length, self.shaft.diameter
+        z = self.bottom_exclusion
+        reach = z if z > 0 else D
+        rows = [lb for lb in layer_results
+                if lb["soil_type"] == "cohesive"
+                and lb["depth_bottom_m"] > L - reach + 1e-9]
+        if not rows:
+            return None
+        where = ", ".join(f"{max(lb['depth_top_m'], L - reach):g}-"
+                          f"{lb['depth_bottom_m']:g} m" for lb in rows)
+        one_d = (f"bottom_exclusion {D:g}, the bottom one diameter of FHWA "
+                 "NHI-06-089 Fig. 9-49 (p. 9-129; FHWA 1999): "
+                 + self._alternative(bottom_exclusion=D, part="clay"))
+        five_ft = ("bottom_exclusion 1.524, the bottom 5 ft of NHI-06-089's "
+                   "text (p. 9-129): "
+                   + self._alternative(bottom_exclusion=1.524, part="clay"))
+        if z == 0:
+            chosen = (f"taken to the base: the bottom {D:g} m (one "
+                      f"diameter) carries side resistance ({where})")
+            alternatives = [one_d] + ([five_ft] if abs(D - 1.524) > 1e-3
+                                      else [])
+        else:
+            chosen = f"none over the bottom {z:g} m ({where})"
+            alternatives = [
+                "bottom_exclusion 0, side resistance to the base as GEC-10 "
+                "(2018) takes it (Example 10-2, p. 10-18): "
+                + self._alternative(bottom_exclusion=0.0, part="clay")]
+            if abs(z - D) > 1e-9:
+                alternatives.append(one_d)
+            if abs(z - 1.524) > 1e-3:
+                alternatives.append(five_ft)
+        return choice("side resistance near the base in cohesive soil",
+                      chosen, how_given(z, 0.0, name="bottom_exclusion"),
+                      basis=BOTTOM_ZONE_BASIS, alternatives=alternatives)
+
+    def _base_choices(self, tip_layer, base_steps: dict, Qt: float,
+                      Q_ultimate: float) -> List[dict]:
+        """The choices made for the base resistance (GM-244): the method
+        in cohesive soil or rock, and the reduction for a large base. Each
+        lists its alternatives with their values."""
+        from geotech_common.choices import choice, how_given
+        out = []
+        here = f"Q_b {Qt:,.0f} kN, Q_ult {Q_ultimate:,.0f} kN"
+        kind = base_steps["soil_type"]
+        B = base_steps["base_diameter_m"]
+        if kind == "cohesive":
+            how = how_given(self.clay_base_method, "gec10",
+                            name="clay_base_method")
+            Nc = base_steps["Nc"]
+            if self.clay_base_method == "gec10":
+                eq = base_steps["equation"]
+                factor = ("" if eq == "10-19"
+                          else f"{base_steps['depth_factor']:.3f} x ")
+                su_words = (
+                    "the tip layer's su(CIUC), as its side resistance took "
+                    "it" if base_steps["su_from"] == "su_ciuc"
+                    else "the tip layer's cu")
+                chosen = (f"GEC-10 (2018) Eq. {eq}, q_BN = {factor}N*c su, "
+                          f"su = {base_steps['su_kPa']:.1f} kPa ({su_words}), "
+                          f"N*c = {Nc:.2f} (Table 10-2 at "
+                          f"{base_steps['su_psf']:,.0f} psf): " + here)
+                basis = CLAY_BASE_BASIS
+                alternatives = [
+                    "clay_base_method 'oneill_reese', O'Neill and Reese "
+                    "(1999) as FHWA NHI-06-089 prints it (Eqs. 9-39, 9-40, "
+                    "p. 9-131): Nc = 6[1 + 0.2 z/D] <= 9, x 0.67 where su < "
+                    "0.5 ksf, q_t <= 80 ksf: "
+                    + self._alternative(clay_base_method="oneill_reese",
+                                        part="base")]
+                if base_steps["below_table"]:
+                    line = nc_below_table_10_2(base_steps["su_kPa"])
+                    Qb = Qt * line / Nc
+                    basis += (
+                        f". Table 10-2 starts at 500 psf; su = "
+                        f"{base_steps['su_psf']:,.0f} psf is below it, and "
+                        "N*c is held at 6.5, the table's first row. Below "
+                        "500 psf N*c is the engineer's judgment: GEC-10 "
+                        "gives no value")
+                    alternatives.append(
+                        f"N*c = {line:.2f} on the line through Table 10-2's "
+                        "first two rows, which GEC-10 does not print: Q_b "
+                        f"{Qb:,.0f} kN, Q_ult {Q_ultimate - Qt + Qb:,.0f} kN")
+                if base_steps["su_from"] == "su_ciuc":
+                    basis += (
+                        ". Example 10-3 (p. 10-20) applies N*c to the "
+                        "su(CIUC) of Example 10-2, transformed from the UU "
+                        "strength; here the tip layer's, on sigma'vo at the "
+                        "middle of the length that carries side resistance")
+                    plain_u = unit_end_bearing_cohesive(
+                        tip_layer.cu, self.shaft.length / self.shaft.diameter,
+                        base_diameter=B, shaft_length=self.shaft.length,
+                        large_base_reduction=self.large_base_reduction)
+                    Qb = Qt * plain_u["qb"] / base_steps["qb"]
+                    alternatives.append(
+                        f"su = cu as given, {tip_layer.cu:.1f} kPa, "
+                        f"untransformed: Q_b {Qb:,.0f} kN, Q_ult "
+                        f"{Q_ultimate - Qt + Qb:,.0f} kN")
+                if eq == "10-20" and self.shaft.bell_diameter is not None:
+                    basis += (". Eq. 10-20 is taken with B the bell's "
+                              "diameter, on which the base bears")
+            else:
+                notes = ""
+                if base_steps["soft_clay"]:
+                    notes += " (x 0.67, su < 0.5 ksf)"
+                if base_steps["capped"]:
+                    notes += ", q_t limited to 80 ksf"
+                chosen = ("O'Neill and Reese (1999), FHWA NHI-06-089 Eqs. "
+                          f"9-39, 9-40: Nc = {Nc:.2f}{notes}: " + here)
+                basis = ONEILL_REESE_CLAY_BASE_BASIS
+                alternatives = [
+                    "clay_base_method 'gec10', GEC-10 (2018) Eqs. 10-19, "
+                    "10-20 with Table 10-2: "
+                    + self._alternative(clay_base_method="gec10",
+                                        part="base")]
+            out.append(choice("base resistance in cohesive soil", chosen,
+                              how, basis=basis, alternatives=alternatives))
+        elif kind == "rock":
+            how = how_given(self.rock_base_method, "gec10",
+                            name="rock_base_method")
+            RQD = base_steps["RQD"]
+            if self.rock_base_method == "gec10":
+                chosen = "GEC-10 (2018) Eq. 10-23, q_BN = 2.5 qu: " + here
+                basis = ROCK_BASE_BASIS
+                if RQD < 100:
+                    basis += f"; the tip rock's RQD is given as {RQD:g} %"
+                alternatives = [
+                    f"rock_base_method 'rqd', q_b/q_u = "
+                    f"{rock_base_factor(RQD, 'rqd'):.2f} at RQD {RQD:g} %: "
+                    + self._alternative(rock_base_method="rqd",
+                                        part="base"),
+                    "the Hoek-Brown base of a fractured rock mass, GEC-10 "
+                    "Eqs. 10-24 to 10-29 (pp. 10-23, 10-24), from GSI and "
+                    "m_i: not computed by this tool"]
+            else:
+                chosen = (f"q_b/q_u = {base_steps['factor']:.2f} at RQD "
+                          f"{RQD:g} %: " + here)
+                basis = RQD_BASE_BASIS
+                alternatives = [
+                    "rock_base_method 'gec10', GEC-10 (2018) Eq. 10-23, "
+                    "N*cr = 2.5: "
+                    + self._alternative(rock_base_method="gec10",
+                                        part="base")]
+            out.append(choice("base resistance in rock", chosen, how,
+                              basis=basis, alternatives=alternatives))
+        limit = {"cohesive": LARGE_BASE_DIAMETER,
+                 "cohesionless": LARGE_BASE_DIAMETER_SAND}.get(kind)
+        if limit is not None and B > limit:
+            name = "1.27/B" if kind == "cohesionless" else "F_r"
+            how = how_given(self.large_base_reduction, False,
+                            name="large_base_reduction")
+            if self.large_base_reduction:
+                factor = (base_steps["reduction"] if kind == "cohesionless"
+                          else base_steps["Fr"])
+                chosen = (f"{name} = {factor:.3f} on the {B:g} m base "
+                          "(O'Neill and Reese 1999): " + here)
+                alternatives = [
+                    "large_base_reduction false, none, as GEC-10 (2018) "
+                    "prints it: "
+                    + self._alternative(large_base_reduction=False,
+                                        part="base")]
+            else:
+                chosen = (f"none on the {B:g} m base, as GEC-10 (2018) "
+                          "prints it: " + here)
+                alternatives = [
+                    f"large_base_reduction true, O'Neill and Reese's (1999) "
+                    f"{name} for a base wider than {limit:g} m: "
+                    + self._alternative(large_base_reduction=True,
+                                        part="base")]
+            out.append(choice("reduction of base resistance for a large "
+                              "base", chosen, how, basis=LARGE_BASE_BASIS,
+                              alternatives=alternatives))
         return out
 
     def capacity_vs_depth(self, depth_min: float = 3.0,
