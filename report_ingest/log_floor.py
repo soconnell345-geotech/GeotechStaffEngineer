@@ -1208,6 +1208,15 @@ def _same_blows(a: Sequence[Any], b: Sequence[Any]) -> Optional[bool]:
     return all(abs(x - y) <= 1e-9 for x, y in zip(left, right))
 
 
+def _same_drives(a: Sequence[Any], b: Sequence[Any]) -> Optional[bool]:
+    """Per-drive lengths agree: same count, each within 4 mm."""
+    if not a or not b:
+        return None
+    if len(a) != len(b):
+        return False
+    return all(same_depth(x, y, 0.004) is not False for x, y in zip(a, b))
+
+
 class _Merger:
     """Folds one model investigation onto one floor investigation."""
 
@@ -1299,6 +1308,8 @@ class _Merger:
                         else fold(fv) == fold(mv))
             elif kind == "blows":
                 same = _same_blows(fv, mv)
+            elif kind == "drives":
+                same = _same_drives(fv, mv)
             elif kind == "kind":
                 # The floor's sampler is a guess from a type code and the
                 # model's from the symbol; 'other' on either side is not an
@@ -1315,10 +1326,10 @@ class _Merger:
                 continue
             else:
                 same = None
-            if kind == "blows" and (not fv and not mv):
+            if kind in ("blows", "drives") and (not fv and not mv):
                 setattr(merged, name, [])
                 continue
-            if kind == "blows":
+            if kind in ("blows", "drives"):
                 fv = fv or None
                 mv = mv or None
             if kind in ("text", "exact_text"):
@@ -1331,8 +1342,9 @@ class _Merger:
                 value = "other"
             if kind == "when" and value is None:
                 value = "unknown"
-            if kind in ("text", "exact_text", "blows") and value is None:
-                value = "" if kind != "blows" else []
+            if (kind in ("text", "exact_text", "blows", "drives")
+                    and value is None):
+                value = "" if kind in ("text", "exact_text") else []
             if isinstance(value, Quantity):
                 value = value.model_copy(deep=True)
                 if value.prov is None:
@@ -1422,7 +1434,8 @@ class _Merger:
             out.append(self.merge_pair(
                 f"{base}[{show(f.depth_top)}]", what, f, m,
                 specs=[("depth_bottom", "depth"), ("blows", "blows"),
-                       ("n", "exact"), ("refusal", "flag"),
+                       ("n", "exact"), ("n_printed", "exact_text"),
+                       ("increments", "drives"), ("refusal", "flag"),
                        ("sample_id", "exact_text"),
                        ("depth_top", "depth")],
                 model_only=["hammer", "increment"]))
