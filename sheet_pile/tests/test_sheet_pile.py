@@ -400,39 +400,62 @@ class TestCaquotKeriselKp:
 
 
 class TestLogSpiralSource:
-    """GM-183: the printed source of the log-spiral passive Kp; the default
-    (Caquot-Kerisel 1948) runs as before."""
+    """GM-183: the printed source of the log-spiral passive Kp; GM-232: by
+    default UFC 3-220-20's for the geometry, Eq. 4-12 for a sheet pile (a
+    vertical face, level ground in front)."""
 
     def _layers(self, ratio):
         return [WallSoilLayer(thickness=15.0, unit_weight=18.0,
                               friction_angle=30.0,
                               wall_friction_deg=ratio * 30.0)]
 
-    def test_default_source_is_the_1948_chart(self):
+    def test_default_source_is_ufc_eq_4_12(self):
         a = analyze_cantilever(4.0, self._layers(0.5),
                                pressure_method="log_spiral")
         b = analyze_cantilever(4.0, self._layers(0.5),
                                pressure_method="log_spiral",
-                               log_spiral_source="caquot_kerisel_1948")
+                               log_spiral_source="dm7_2_eq_4_12")
         assert a.embedment_depth == b.embedment_depth
+        (c,) = a.choices
+        assert c["chosen"] == "ufc_3_220_20" and c["how"] == "default"
+        assert "Eq. 4-12" in c["basis"] and "Kp 4.46" in c["basis"]
+        assert c["alternatives"][0].startswith("Caquot-Kerisel 1948")
+        assert "Kp 4.7" in c["alternatives"][0]
+        assert a.to_dict()["choices"] == a.choices
+        plain = analyze_cantilever(4.0, self._layers(0.5))
+        assert plain.choices == [] and "choices" not in plain.to_dict()
 
     def test_dm7_2_sources_change_the_embedment(self):
         ck = analyze_cantilever(4.0, self._layers(0.66),
-                                pressure_method="log_spiral")
+                                pressure_method="log_spiral",
+                                log_spiral_source="caquot_kerisel_1948")
         fig = analyze_cantilever(4.0, self._layers(0.66),
                                  pressure_method="log_spiral",
                                  log_spiral_source="dm7_2_fig_4_13")
         eq = analyze_cantilever(4.0, self._layers(0.66),
-                                pressure_method="log_spiral",
-                                log_spiral_source="dm7_2_eq_4_12")
+                                pressure_method="log_spiral")
         # Kp 5.36 (1948), 5.30 (Fig. 4-13), 5.06 (Eq. 4-12)
         assert ck.embedment_depth < fig.embedment_depth < eq.embedment_depth
         a = analyze_anchored(6.0, 1.5, self._layers(0.66),
-                             pressure_method="log_spiral",
-                             log_spiral_source="dm7_2_eq_4_12")
-        b = analyze_anchored(6.0, 1.5, self._layers(0.66),
                              pressure_method="log_spiral")
+        b = analyze_anchored(6.0, 1.5, self._layers(0.66),
+                             pressure_method="log_spiral",
+                             log_spiral_source="caquot_kerisel_1948")
         assert a.embedment_depth > b.embedment_depth
+        # a tied-back wall: UFC 3-220-20 p. 260 points to Fig. 4-12
+        assert "p. 260" in a.choices[0]["basis"]
+        assert "p. 260" in b.choices[0]["basis"]
+        assert "p. 260" not in eq.choices[0]["basis"]
+
+    def test_only_the_passive_side_layers_are_listed(self):
+        layers = [WallSoilLayer(thickness=3.0, unit_weight=18.0,
+                                friction_angle=34.0, wall_friction_deg=17.0),
+                  WallSoilLayer(thickness=12.0, unit_weight=18.0,
+                                friction_angle=30.0, wall_friction_deg=15.0)]
+        r = analyze_cantilever(4.0, layers, pressure_method="log_spiral")
+        basis = r.choices[0]["basis"]
+        assert "layer 2 (phi' 30, delta 15) Kp 4.46" in basis
+        assert "layer 1" not in basis
 
     def test_fig_4_13_refuses_another_wall_friction(self):
         with pytest.raises(ValueError, match="0.66 only"):

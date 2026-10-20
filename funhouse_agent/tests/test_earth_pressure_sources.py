@@ -1,6 +1,7 @@
 """GM-183 and GM-210 through the tools: the printed sources of the
 log-spiral passive Kp, the sloping-ground at-rest K0, and the passive
-resistance on a shear key."""
+resistance on a shear key; GM-232: the UFC 3-220-20 source by the wall's
+geometry as the log-spiral default."""
 
 import pytest
 
@@ -17,21 +18,71 @@ def _ck(**params):
               state="passive", **params)
 
 
-def test_log_spiral_default_unchanged_and_listed():
+def test_log_spiral_default_is_ufc_by_geometry_and_listed():
+    """GM-232: a vertical face and level ground take UFC 3-220-20 Eq. 4-12
+    (p. 191), at 0.66 phi' when no wall friction is given; the choices say
+    so and give every other source's Kp."""
     r = _ck()
-    assert r["K"] == 6.3 and r["delta_deg"] == 30.0
-    assert r["log_spiral_source"] == "caquot_kerisel_1948"
-    assert r["defaults_used"]["log_spiral_source"] == "caquot_kerisel_1948"
-    (c,) = r["choices"]
-    assert c["chosen"] == "caquot_kerisel_1948" and c["how"] == "default"
-    assert set(c["alternatives"]) == {"dm7_2_fig_4_13", "dm7_2_eq_4_12"}
-    assert "Fig. 4-20" in c["basis"]
+    assert r["K"] == pytest.approx(5.062, abs=0.001)
+    assert r["delta_deg"] == pytest.approx(19.8)
+    assert r["log_spiral_source"] == "ufc_3_220_20"
+    assert r["log_spiral_route"] == "dm7_2_eq_4_12"
+    assert r["defaults_used"]["log_spiral_source"] == "ufc_3_220_20"
+    c, d = r["choices"]
+    assert c["chosen"] == "ufc_3_220_20" and c["how"] == "default"
+    assert "Eq. 4-12 (p. 191)" in c["basis"]
+    assert c["alternatives"] == [
+        "Caquot-Kerisel 1948, Caltrans T&S Fig. 4-20 (log_spiral_source "
+        "'caquot_kerisel_1948'): Kp 5.36",
+        "UFC 3-220-20 Fig. 4-12 (log_spiral_source 'dm7_2_fig_4_12'): "
+        "Kp 5.3",
+        "UFC 3-220-20 Fig. 4-13 (log_spiral_source 'dm7_2_fig_4_13'): "
+        "Kp 5.3"]
+    assert d["what"] == "Wall friction delta" and d["how"] == "default"
+    assert "common assumption" in d["basis"]
+    # wall friction given: Eq. 4-12 at it, no wall-friction choice
+    r = _ck(delta_deg=15.0)
+    assert r["K"] == pytest.approx(4.459, abs=0.001)
+    assert len(r["choices"]) == 1
+    assert "Kp 4.7" in r["choices"][0]["alternatives"][0]
+
+
+def test_battered_face_reads_fig_4_12():
+    """GM-232: theta, the face's angle from vertical (UFC 3-220-20 Figs.
+    4-7, 4-12), routes to Fig. 4-12 (p. 192) at delta/phi' = 0.66."""
+    r = _ck(theta_deg=10.0)
+    assert r["K"] == pytest.approx(4.10, abs=0.01)
+    assert r["log_spiral_route"] == "dm7_2_fig_4_12"
+    assert r["theta_deg"] == 10.0
+    assert "Fig. 4-12 (p. 192)" in r["choices"][0]["basis"]
+    assert _ck(theta=-10.0)["K"] == pytest.approx(6.60, abs=0.01)  # alias
+    # theta = 90 - alpha: a face battered 10 deg reads lower than vertical
+    assert r["K"] < _ck()["K"]
+
+
+@pytest.mark.parametrize("params, words", [
+    ({"theta_deg": 10.0, "beta_deg": 5.0}, "prints no log-spiral Kp"),
+    ({"theta_deg": 10.0, "delta_deg": 15.0}, "0.66 only"),
+    ({"beta_deg": 10.0, "delta_deg": 15.0}, "'caquot_kerisel_1948'"),
+    ({"theta_deg": 10.0, "log_spiral_source": "caquot_kerisel_1948"},
+     "vertical wall face"),
+    ({"alpha_deg": 80.0}, "theta_deg = 90 - alpha_deg"),
+])
+def test_the_default_refuses_what_ufc_does_not_print(params, words):
+    assert words in _ck(**params)["error"]
 
 
 def test_caquot_kerisel_takes_sloping_ground():
-    """Caltrans T&S p. 4-29: phi 32, beta 27, delta 14 gives Kp' = 13."""
-    r = _ck(phi_deg=32.0, beta_deg=27.0, delta_deg=14.0)
+    """Caltrans T&S p. 4-29: phi 32, beta 27, delta 14 gives Kp' = 13 on
+    the 1948 chart; UFC 3-220-20 prints no sloping-ground Kp at that wall
+    friction, so the default refuses and names the 1948 chart."""
+    r = _ck(phi_deg=32.0, beta_deg=27.0, delta_deg=14.0,
+            log_spiral_source="caquot_kerisel_1948")
     assert "error" not in r and round(r["K"]) == 13
+    r = _ck(phi_deg=32.0, beta_deg=27.0, delta_deg=14.0)
+    assert "'caquot_kerisel_1948'" in r["error"]
+    r = _ck(phi_deg=32.0, beta_deg=27.0)            # 0.66 phi': Fig. 4-13
+    assert r["log_spiral_route"] == "dm7_2_fig_4_13"
 
 
 def test_dm7_2_sources():
@@ -112,15 +163,35 @@ def _wall(**params):
 
 
 def test_sheet_pile_log_spiral_source():
-    ck = _wall(delta=19.8, pressure_method="log_spiral")
-    assert ck["defaults_used"]["log_spiral_source"] == "caquot_kerisel_1948"
+    ufc = _wall(delta=19.8, pressure_method="log_spiral")
+    assert ufc["defaults_used"]["log_spiral_source"] == "ufc_3_220_20"
+    (c,) = ufc["choices"]
+    assert c["how"] == "default" and "Eq. 4-12" in c["basis"]
+    assert "layer 1 (phi' 30, delta 19.8) Kp 5.06" in c["basis"]
+    ck = _wall(delta=19.8, pressure_method="log_spiral",
+               log_spiral_source="caquot_kerisel_1948")
     fig = _wall(delta=19.8, pressure_method="log_spiral",
                 log_spiral_source="dm7_2_fig_4_13")
-    assert fig["embedment_depth_m"] > ck["embedment_depth_m"]
-    off = _wall(delta=0.0, pressure_method="log_spiral",
-                log_spiral_source="dm7_2_fig_4_13")
-    assert "layers [0]" in off["error"]
+    # Kp 5.06 (Eq. 4-12) < 5.30 (Fig. 4-13) < 5.36 (1948)
+    assert ufc["embedment_depth_m"] > fig["embedment_depth_m"]         > ck["embedment_depth_m"]
+    for source in ("dm7_2_fig_4_13", "dm7_2_fig_4_12"):
+        off = _wall(delta=0.0, pressure_method="log_spiral",
+                    log_spiral_source=source)
+        assert "layers [0]" in off["error"]
     assert "log_spiral_source" not in (_wall().get("defaults_used") or {})
+    assert "choices" not in _wall()
+
+
+def test_anchored_sheet_pile_states_ufc_p_260():
+    layers = [{"thickness": 15.0, "unit_weight": 18.0,
+               "friction_angle": 30.0, "wall_friction_deg": 15.0}]
+    r = D.call_agent("sheet_pile", "anchored_wall",
+                     {"excavation_depth": 5.0, "anchor_depth": 1.0,
+                      "layers": layers, "pressure_method": "log_spiral"})
+    (c,) = r["choices"]
+    assert "p. 260" in c["basis"] and "Figure 4-12" in c["basis"]
+    assert "Kp 4.46" in c["basis"]                 # Eq. 4-12 at 0.5
+    assert any("Kp 4.7" in a for a in c["alternatives"])
 
 
 def test_cantilever_wall_key_passive_over_the_key_depth():

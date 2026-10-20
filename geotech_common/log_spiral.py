@@ -1,8 +1,28 @@
 """Log-spiral passive earth-pressure coefficient Kp, as the references print it.
 
-Three printed sources, offered side by side (BACKLOG GM-21, GM-183):
+The default, ``ufc_3_220_20`` (BACKLOG GM-232, owner OWN-66), takes the UFC
+3-220-20 (DM 7.2, 2025) source the wall's geometry calls for, as its p. 191
+describes them:
 
-``caquot_kerisel_1948`` (the default)
+* a vertical face and level ground (theta = 0, beta = 0): Eq. 4-12, "for
+  conditions with theta = 0 deg and beta = 0 deg", at any wall friction;
+* a battered face with level ground (theta not 0): Fig. 4-12, "for walls with
+  a sloping face and delta/phi' = 0.66";
+* a vertical face with sloping ground (beta not 0): Fig. 4-13, "a similar
+  chart for vertical-faced walls having a sloping backfill".
+
+theta is the wall face's angle from vertical as UFC Figs. 4-7 and 4-12 draw
+it: positive when the face slopes down into the soil it bears on, so the soil
+overhangs it (Kp falls), negative the other way (Kp rises); theta = 90 deg
+minus Coulomb's wall angle from horizontal. UFC prints nothing for a battered
+face with sloping ground together, nor for a battered face or sloping ground
+at a wall friction other than 0.66 phi': the route refuses those and says so,
+as each chart here refuses a case off its page, and names the Caquot-Kerisel
+(1948) chart (``caquot_kerisel_1948``), which takes a vertical wall with
+sloping ground at any wall friction. Each printed source can also be named
+directly:
+
+``caquot_kerisel_1948``
     The Caquot and Kerisel (1948) chart as printed in the Caltrans Trenching
     and Shoring Manual (2025), Figure 4-20, p. 4-30 (the same chart: FHWA
     NHI-06-089 Figure 10-10, p. 10-22): Kp at delta = phi for a vertical
@@ -10,7 +30,18 @@ Three printed sources, offered side by side (BACKLOG GM-21, GM-183):
     reduction factor R(delta/phi) printed on the same figure. The manual's
     example on p. 4-29 reads it for sloping ground: phi = 32, beta = 27
     (beta/phi = 0.84), "Kp ~= 19" at delta = phi, R = 0.679 at delta/phi =
-    0.44, Kp' = 0.679 x 19 = 13.
+    0.44, Kp' = 0.679 x 19 = 13. The 1948 chart is for a vertical wall.
+``dm7_2_eq_4_12``
+    UFC 3-220-20 Eq. 4-12, p. 191, "for conditions with theta = 0 deg and
+    beta = 0 deg": ln Kp = ln[(1 + sin phi')/(1 - sin phi')] x
+    [1.443 (delta/phi') sin phi' + 1], for any wall friction ("while
+    delta/phi' = 0.66 is a common assumption, this type of design may require
+    Kp for a different value of wall friction").
+``dm7_2_fig_4_12``
+    UFC 3-220-20 Figure 4-12, p. 192, after Kerisel and Absi (1990): a
+    battered face with level ground (beta = 0), one curve per theta from -30
+    to +40 deg, drawn for delta/phi' = 0.66 only; the chart stops at Kp = 15,
+    and its theta = +40 deg curve starts at Kp = 1 at phi' = 15 deg.
 ``dm7_2_fig_4_13``
     UFC 3-220-20 (DM 7.2, 2025) Figure 4-13, p. 193, after Kerisel and Absi
     (1990): a vertical wall with sloping ground, beta/phi' from -0.6 to +1,
@@ -18,22 +49,24 @@ Three printed sources, offered side by side (BACKLOG GM-21, GM-183):
     Kp = 20. Footnote 21 (p. 191): the 1982 DM 7.2 charts "used delta/phi'
     = 1 along with reduction ratios", which "were averages that introduced
     substantial inaccuracy for some cases"; the 1948 chart takes that form.
-``dm7_2_eq_4_12``
-    UFC 3-220-20 Eq. 4-12, p. 191, "for conditions with theta = 0 deg and
-    beta = 0 deg": ln Kp = ln[(1 + sin phi')/(1 - sin phi')] x
-    [1.443 (delta/phi') sin phi' + 1], for any wall friction ("while
-    delta/phi' = 0.66 is a common assumption, this type of design may require
-    Kp for a different value of wall friction").
 
-Both charts are printed only as graphs. Their values here were read off the
-rendered pages (2026-10-19): each curve traced pixel by pixel on the scanned
-figure, calibrated on its printed grid lines, and the reads drawn back over
-the figure to check they sit on the curves. Where a curve's label covers it,
-the curve is fitted between the traced part and where it meets the top of
-the chart. Values between the tabulated nodes are interpolated with log Kp
-linear in phi (and in beta/phi), as the charts are drawn on a log scale:
-linear interpolation in Kp between 5 degree nodes overstated the chart by
-up to 6 % (level ground) and 17 % (beta = phi).
+At delta/phi' = 0.66 Eq. 4-12 reads 2 to 7 % below the theta = 0 curve of
+Fig. 4-12 and the beta = 0 curve of Fig. 4-13 over phi' 10 to 40 deg (5.06
+against 5.30 at phi' 30); the route follows p. 191 and takes Eq. 4-12 for theta = 0 and beta = 0.
+UFC 3-220-20 p. 260 (tied-back walls) allows delta/phi' of 0.5 to 1.0 and
+says "KP should be obtained from Figure 4-12", which is drawn for 0.66 only
+(:data:`TIED_BACK_NOTE`).
+
+The three charts are printed only as graphs. Their values here were read
+off the rendered pages (Fig. 4-13 and the 1948 chart 2026-10-19, Fig. 4-12
+2026-10-20): each curve traced pixel by pixel on the scanned figure,
+calibrated on its printed grid lines, and the reads drawn back over the
+figure to check they sit on the curves. Where a curve's label covers it, the
+curve is fitted between the traced part and where it meets the frame of the
+chart. Values between the tabulated nodes are interpolated with log Kp
+linear in phi (and in beta/phi, or in theta), as the charts are drawn on a
+log scale: linear interpolation in Kp between 5 degree nodes overstated the
+chart by up to 6 % (level ground) and 17 % (beta = phi).
 
 UFC 3-220-20 Table 4-2 (p. 194) is not used (GM-212, :data:`TABLE_4_2_NOTE`):
 its row headed delta/phi' = 0.5 prints Fig. 4-13's values for delta/phi' =
@@ -46,8 +79,33 @@ from __future__ import annotations
 
 import math
 
-SOURCES = ("caquot_kerisel_1948", "dm7_2_fig_4_13", "dm7_2_eq_4_12")
-DEFAULT_SOURCE = "caquot_kerisel_1948"
+SOURCES = ("ufc_3_220_20", "caquot_kerisel_1948", "dm7_2_eq_4_12",
+           "dm7_2_fig_4_12", "dm7_2_fig_4_13")
+DEFAULT_SOURCE = "ufc_3_220_20"
+#: The UFC 3-220-20 sources the default chooses between, by geometry.
+UFC_ROUTES = ("dm7_2_eq_4_12", "dm7_2_fig_4_12", "dm7_2_fig_4_13")
+
+#: UFC 3-220-20 p. 260 on tied-back walls, for a result's choices (GM-232).
+TIED_BACK_QUOTE = (
+    "UFC 3-220-20 p. 260 (tied-back walls): 'A delta/phi' ratio equal to "
+    "0.5 to 1.0 can be used in the passive resistance calculation. Table "
+    "4-1 should be consulted for the value of delta. KP should be obtained "
+    "from Figure 4-12.'")
+TIED_BACK_NOTE = (
+    TIED_BACK_QUOTE + " Fig. 4-12 is drawn for delta/phi' = 0.66 only; for "
+    "a vertical face with level ground its theta = 0 curve is the case Eq. "
+    "4-12 (p. 191) gives at any wall friction, so the route takes Eq. 4-12 "
+    "at the wall friction given (at 0.66 it reads 2 to 7 % below the "
+    "chart; log_spiral_source 'dm7_2_fig_4_12' reads the chart)")
+
+#: The level-ground comparison (GM-232), for a result's choices.
+EQ_VS_CHARTS_NOTE = (
+    "UFC 3-220-20 p. 191 gives Eq. 4-12 to approximate Kp 'for conditions "
+    "with theta = 0 deg and beta = 0 deg', at any wall friction, and the "
+    "route takes it there. At delta/phi' = 0.66 it reads 2 to 7 % below the "
+    "theta = 0 curve of Fig. 4-12 and the beta = 0 curve of Fig. 4-13 over "
+    "phi' 10 to 40 deg (5.06 against 5.30 at phi' 30); log_spiral_source "
+    "'dm7_2_fig_4_12' or 'dm7_2_fig_4_13' reads the charts")
 
 #: Why UFC 3-220-20 Table 4-2 is not one of the sources (GM-212), for a
 #: result's choices and the tools' descriptions. Read on the rendered page
@@ -64,11 +122,21 @@ TABLE_4_2_NOTE = (
 
 #: What each source is, in the references' words, for a result's choices.
 SOURCE_BASIS = {
+    "ufc_3_220_20": (
+        "UFC 3-220-20 (DM 7.2), the source the wall's geometry calls for "
+        "(pp. 191-193): Eq. 4-12 for a vertical face and level ground at any "
+        "wall friction, Fig. 4-12 for a battered face with level ground and "
+        "Fig. 4-13 for a vertical face with sloping ground, both drawn for "
+        "delta/phi' = 0.66"),
     "caquot_kerisel_1948": (
         "Caquot and Kerisel (1948) log-spiral chart, Kp at delta = phi times "
         "the reduction factor R(delta/phi), as printed in the Caltrans "
         "Trenching and Shoring Manual Fig. 4-20 (p. 4-30) and FHWA "
-        "NHI-06-089 Fig. 10-10"),
+        "NHI-06-089 Fig. 10-10, for a vertical wall"),
+    "dm7_2_fig_4_12": (
+        "UFC 3-220-20 (DM 7.2) Fig. 4-12 (p. 192), log spiral after Kerisel "
+        "and Absi (1990), a wall face at theta -30 to +40 deg from vertical "
+        "with level ground, drawn for delta/phi' = 0.66"),
     "dm7_2_fig_4_13": (
         "UFC 3-220-20 (DM 7.2) Fig. 4-13 (p. 193), log spiral after Kerisel "
         "and Absi (1990), vertical wall with sloping ground, drawn for "
@@ -185,8 +253,55 @@ _DM_ROWS = {
            17.5: 1.63, 20: 1.76, 22.5: 1.90, 25: 2.05, 27.5: 2.22, 30: 2.40,
            32.5: 2.58, 35: 2.80, 37.5: 3.08, 40: 3.40, 42.5: 3.74, 45: 4.06},
 }
-DM_DELTA_RATIO = 0.66      # the one wall friction Fig. 4-13 is drawn for
+DM_DELTA_RATIO = 0.66      # the one wall friction Figs. 4-12, 4-13 are drawn for
 _DM_DELTA_TOL = 0.01
+
+# ---------------------------------------------------------------------------
+# Kerisel and Absi (1990): UFC 3-220-20 Fig. 4-12, p. 192
+# ---------------------------------------------------------------------------
+
+# Kp at delta/phi' = 0.66, beta = 0, by theta (deg), at phi' nodes (deg).
+# Traced 2026-10-20 off the figure's raster (1430 x 1869 px, about 222 dpi)
+# on its own frame and grid lines (residuals under 0.4 px). Each curve's
+# label is set in the curve, so the curve was traced on both sides of it and
+# fitted across; the theta = -30 to 0 curves end where they meet the top of
+# the chart (Kp = 15), the others at phi' = 45. Checked against the printed
+# grid lines where 45 crossings were read with only the two grid lines
+# either side of each: within 0.3 %, and 0.6 % on the theta = -20 curve
+# next to its label. The theta = 0 row agrees with the beta = 0 row of Fig.
+# 4-13 (traced separately, above) within 1 % everywhere.
+_FIG_4_12_TOP = 15.0
+_FIG_4_12_ROWS = {
+    -30: {0: 1.0, 2.5: 1.13, 5: 1.30, 7.5: 1.50, 10: 1.76, 12.5: 2.13,
+          15: 2.60, 17.5: 3.22, 20: 4.00, 22.5: 5.00, 25: 6.31, 27.5: 8.13,
+          30: 10.5, 32.5: 14.0, 33.09: _FIG_4_12_TOP},
+    -20: {0: 1.0, 2.5: 1.13, 5: 1.30, 7.5: 1.50, 10: 1.76, 12.5: 2.06,
+          15: 2.45, 17.5: 2.96, 20: 3.60, 22.5: 4.41, 25: 5.40, 27.5: 6.70,
+          30: 8.41, 32.5: 10.6, 35: 14.0, 35.62: _FIG_4_12_TOP},
+    -10: {0: 1.0, 2.5: 1.13, 5: 1.28, 7.5: 1.47, 10: 1.70, 12.5: 1.98,
+          15: 2.30, 17.5: 2.66, 20: 3.10, 22.5: 3.72, 25: 4.50, 27.5: 5.43,
+          30: 6.60, 32.5: 8.27, 35: 10.5, 37.5: 13.5, 38.54: _FIG_4_12_TOP},
+    0: {0: 1.0, 2.5: 1.13, 5: 1.25, 7.5: 1.41, 10: 1.59, 12.5: 1.80,
+        15: 2.05, 17.5: 2.37, 20: 2.75, 22.5: 3.18, 25: 3.70, 27.5: 4.39,
+        30: 5.30, 32.5: 6.52, 35: 8.00, 37.5: 9.74, 40: 12.0,
+        42.26: _FIG_4_12_TOP},
+    10: {0: 1.0, 2.5: 1.09, 5: 1.20, 7.5: 1.32, 10: 1.47, 12.5: 1.65,
+         15: 1.84, 17.5: 2.06, 20: 2.30, 22.5: 2.61, 25: 3.00, 27.5: 3.50,
+         30: 4.10, 32.5: 4.81, 35: 5.70, 37.5: 6.91, 40: 8.50, 42.5: 10.5,
+         45: 13.1},
+    20: {0: 1.0, 2.5: 1.05, 5: 1.12, 7.5: 1.21, 10: 1.31, 12.5: 1.44,
+         15: 1.58, 17.5: 1.74, 20: 1.93, 22.5: 2.17, 25: 2.45, 27.5: 2.75,
+         30: 3.10, 32.5: 3.59, 35: 4.20, 37.5: 4.92, 40: 5.80, 42.5: 6.95,
+         45: 8.42},
+    30: {0: 1.0, 2.5: 1.02, 5: 1.04, 7.5: 1.08, 10: 1.14, 12.5: 1.22,
+         15: 1.32, 17.5: 1.44, 20: 1.57, 22.5: 1.73, 25: 1.90, 27.5: 2.08,
+         30: 2.30, 32.5: 2.59, 35: 2.95, 37.5: 3.38, 40: 3.90, 42.5: 4.52,
+         45: 5.33},
+    40: {15: 1.0, 17.5: 1.08, 20: 1.16, 22.5: 1.25, 25: 1.36, 27.5: 1.48,
+         30: 1.62, 32.5: 1.79, 35: 2.00, 37.5: 2.25, 40: 2.55, 42.5: 2.88,
+         45: 3.31},
+}
+FIG_4_12_THETA = (-30.0, 40.0)     # the curves drawn, theta from vertical
 
 
 def _rankine_Kp(phi_deg: float) -> float:
@@ -218,23 +333,24 @@ def _row_at(row: dict, phi: float, clamp: bool = False):
     return math.exp(_lininterp(phi, xs, logs))
 
 
-def _across_rows(rows: dict, phi: float, ratio: float, what: str):
-    """Kp between the two rows that bracket beta/phi = ``ratio``, log Kp
-    linear in beta/phi."""
+def _across_rows(rows: dict, phi: float, ratio: float, what: str,
+                 label: str = "beta/phi"):
+    """Kp between the two rows that bracket ``ratio`` (beta/phi, or theta
+    for Fig. 4-12, named by ``label``), log Kp linear in it."""
     keys = sorted(rows)
+    off = (f"{what}: phi {phi:g} deg with {label} {ratio:.3g} is off the "
+           "chart")
     for k in keys:
         if abs(ratio - k) < 1e-9:
             value = _row_at(rows[k], phi)
             if value is None:
-                raise ValueError(f"{what}: phi {phi:g} deg with beta/phi "
-                                 f"{ratio:.3g} is off the chart")
+                raise ValueError(off)
             return value
     lo = max(k for k in keys if k < ratio)
     hi = min(k for k in keys if k > ratio)
     a, b = _row_at(rows[lo], phi), _row_at(rows[hi], phi)
     if a is None or b is None:
-        raise ValueError(f"{what}: phi {phi:g} deg with beta/phi "
-                         f"{ratio:.3g} is off the chart")
+        raise ValueError(off)
     t = (ratio - lo) / (hi - lo)
     return math.exp(math.log(a) + t * (math.log(b) - math.log(a)))
 
@@ -345,10 +461,149 @@ def dm7_2_fig_4_13_Kp(phi_deg: float, beta_deg: float = 0.0,
     return value
 
 
+def dm7_2_fig_4_12_Kp(phi_deg: float, theta_deg: float = 0.0,
+                      delta_deg: float = None) -> float:
+    """Kp off UFC 3-220-20 Fig. 4-12 (p. 192; Kerisel and Absi 1990): level
+    ground (beta = 0), delta/phi' = 0.66 (``delta_deg`` None means 0.66
+    phi'; another value is refused), the wall face at theta from -30 to +40
+    deg from vertical (see the module docstring for its sign), Kp up to
+    15."""
+    what = "UFC 3-220-20 Fig. 4-12"
+    if phi_deg < 0 or phi_deg > 45:
+        raise ValueError(f"{what}: phi' runs 0 to 45 deg, got {phi_deg:g}")
+    theta = float(theta_deg or 0.0)
+    lo, hi = FIG_4_12_THETA
+    if theta < lo - 1e-9 or theta > hi + 1e-9:
+        raise ValueError(f"{what}: its curves run from theta = {lo:g} to "
+                         f"{hi:+g} deg, got theta {theta:g} deg")
+    if phi_deg > 0 and delta_deg is not None and abs(
+            delta_deg / phi_deg - DM_DELTA_RATIO) > _DM_DELTA_TOL:
+        raise ValueError(
+            f"{what} is drawn for delta/phi' = 0.66 only, got delta "
+            f"{delta_deg:g} on phi' {phi_deg:g} ({delta_deg / phi_deg:.3g})")
+    if phi_deg == 0 and theta <= 30.0:
+        return 1.0
+    value = _across_rows(_FIG_4_12_ROWS, phi_deg, theta, what,
+                         label="theta")
+    if value > _FIG_4_12_TOP * (1 + 1e-9):
+        raise ValueError(f"{what}: Kp above 15 is off the chart")
+    return value
+
+
+def _vertical_wall_only(source: str, theta_deg: float):
+    if theta_deg:
+        raise ValueError(
+            f"log_spiral_source {source!r} is for a vertical wall face "
+            f"(theta = 0), got theta {theta_deg:g} deg; UFC 3-220-20 Fig. "
+            "4-12 (log_spiral_source 'dm7_2_fig_4_12', or the default "
+            "'ufc_3_220_20') takes a battered face with level ground")
+
+
+def _ratio(phi_deg: float, delta_deg: float) -> float:
+    return delta_deg / phi_deg if phi_deg > 0 else 0.0
+
+
+def ufc_3_220_20_route(phi_deg: float, delta_deg: float = None,
+                       beta_deg: float = 0.0, theta_deg: float = 0.0) -> dict:
+    """The UFC 3-220-20 log-spiral Kp, from the source the wall's geometry
+    calls for (pp. 191-193; the module docstring).
+
+    ``delta_deg`` None means delta/phi' = 0.66, "a common assumption" (p.
+    191) and the one the charts are drawn for. Returns ``route`` (the source
+    used, one of :data:`UFC_ROUTES`), ``Kp``, ``delta_deg`` (the wall
+    friction used), ``delta_given`` and ``where`` (the equation or figure,
+    its page and the case, in words). A case UFC does not print is refused
+    with a ValueError that says so and names what covers it."""
+    beta = float(beta_deg or 0.0)
+    theta = float(theta_deg or 0.0)
+    given = delta_deg is not None
+    delta = float(delta_deg) if given else DM_DELTA_RATIO * phi_deg
+    ratio = _ratio(phi_deg, delta)
+    off_066 = phi_deg > 0 and abs(ratio - DM_DELTA_RATIO) > _DM_DELTA_TOL
+    ck = ("the Caquot-Kerisel (1948) chart (log_spiral_source "
+          "'caquot_kerisel_1948', Caltrans Trenching and Shoring Manual Fig. "
+          "4-20: a vertical wall, beta/phi -0.9 to +1, any wall friction)")
+    if theta and beta:
+        raise ValueError(
+            "UFC 3-220-20 prints no log-spiral Kp for a battered face "
+            f"(theta {theta:g} deg) with sloping ground (beta {beta:g} "
+            "deg) together: Fig. 4-12 (p. 192) is for a battered face with "
+            "level ground, Fig. 4-13 (p. 193) for a vertical face with "
+            "sloping ground, Eq. 4-12 (p. 191) for neither. The Caquot-"
+            "Kerisel (1948) chart here is for a vertical wall too. UFC p. "
+            "190: Caquot and Kerisel (1948) tabulate other wall geometries "
+            "(not held in this library); give the Kp from them, or run "
+            "with theta_deg 0 or beta_deg 0 and say which was left out")
+    if theta:
+        if off_066:
+            raise ValueError(
+                f"UFC 3-220-20 Fig. 4-12 (p. 192), its log-spiral chart for "
+                f"a battered face (theta {theta:g} deg), is drawn for "
+                f"delta/phi' = 0.66 only; got delta {delta:g} on phi' "
+                f"{phi_deg:g} ({ratio:.3g}). UFC prints no battered-face Kp "
+                "at another wall friction (p. 260 allows 0.5 to 1.0 for "
+                "tied-back walls and still points to Fig. 4-12). The "
+                "Caquot-Kerisel (1948) chart here is for a vertical wall. "
+                "Give delta_deg = 0.66 phi' to read Fig. 4-12")
+        try:
+            Kp = dm7_2_fig_4_12_Kp(phi_deg, theta, delta)
+        except ValueError as exc:
+            raise ValueError(f"{exc}; UFC 3-220-20 prints nothing beyond "
+                             "it, and the Caquot-Kerisel (1948) chart here "
+                             "is for a vertical wall") from None
+        return {"route": "dm7_2_fig_4_12", "Kp": Kp, "delta_deg": delta,
+                "delta_given": given,
+                "where": (f"UFC 3-220-20 Fig. 4-12 (p. 192): a battered "
+                          f"face (theta {theta:g} deg from vertical) with "
+                          "level ground, read at delta/phi' = 0.66, the "
+                          "wall friction it is drawn for")}
+    if beta:
+        if off_066:
+            raise ValueError(
+                f"UFC 3-220-20 Fig. 4-13 (p. 193), its log-spiral chart for "
+                f"sloping ground (beta {beta:g} deg), is drawn for "
+                f"delta/phi' = 0.66 only; got delta {delta:g} on phi' "
+                f"{phi_deg:g} ({ratio:.3g}). UFC prints no sloping-ground Kp "
+                f"at another wall friction; {ck} covers it. Or give "
+                "delta_deg = 0.66 phi' to read Fig. 4-13")
+        try:
+            Kp = dm7_2_fig_4_13_Kp(phi_deg, beta, delta)
+        except ValueError as exc:
+            raise ValueError(f"{exc}; UFC 3-220-20 prints nothing beyond "
+                             f"it, and {ck} may cover it") from None
+        return {"route": "dm7_2_fig_4_13", "Kp": Kp, "delta_deg": delta,
+                "delta_given": given,
+                "where": (f"UFC 3-220-20 Fig. 4-13 (p. 193): a vertical "
+                          f"face with sloping ground (beta {beta:g} deg, "
+                          f"beta/phi' {beta / phi_deg:.2f}), read at "
+                          "delta/phi' = 0.66, the wall friction it is "
+                          "drawn for")}
+    Kp = dm7_2_eq_4_12_Kp(phi_deg, delta)
+    return {"route": "dm7_2_eq_4_12", "Kp": Kp, "delta_deg": delta,
+            "delta_given": given,
+            "where": (f"UFC 3-220-20 Eq. 4-12 (p. 191): a vertical face and "
+                      f"level ground (theta = 0, beta = 0), at delta/phi' "
+                      f"{ratio:.2f}")}
+
+
 def log_spiral_Kp(phi_deg: float, delta_deg: float = None,
                   beta_deg: float = 0.0,
-                  source: str = DEFAULT_SOURCE) -> float:
-    """The log-spiral passive Kp from ``source`` (see :data:`SOURCES`)."""
+                  source: str = DEFAULT_SOURCE,
+                  theta_deg: float = 0.0) -> float:
+    """The log-spiral passive Kp from ``source`` (see :data:`SOURCES`);
+    ``theta_deg`` is the wall face's angle from vertical (the module
+    docstring), taken by ``ufc_3_220_20`` and ``dm7_2_fig_4_12``."""
+    if source == "ufc_3_220_20":
+        return ufc_3_220_20_route(phi_deg, delta_deg, beta_deg,
+                                  theta_deg)["Kp"]
+    if source == "dm7_2_fig_4_12":
+        if beta_deg:
+            raise ValueError(
+                "UFC 3-220-20 Fig. 4-12 is for level ground (beta = 0); its "
+                "Fig. 4-13 takes a slope on a vertical face")
+        return dm7_2_fig_4_12_Kp(phi_deg, theta_deg, delta_deg)
+    if source in ("caquot_kerisel_1948", "dm7_2_fig_4_13", "dm7_2_eq_4_12"):
+        _vertical_wall_only(source, theta_deg)
     if source == "caquot_kerisel_1948":
         return caquot_kerisel_1948_Kp(phi_deg, delta_deg, beta_deg=beta_deg)
     if source == "dm7_2_fig_4_13":
@@ -361,3 +616,61 @@ def log_spiral_Kp(phi_deg: float, delta_deg: float = None,
         return dm7_2_eq_4_12_Kp(phi_deg, delta_deg)
     raise ValueError(f"Unknown log-spiral source {source!r}; one of "
                      f"{list(SOURCES)}")
+
+
+#: What each source is called in a result's alternatives.
+_SOURCE_NAME = {
+    "ufc_3_220_20": "UFC 3-220-20 by geometry",
+    "caquot_kerisel_1948": "Caquot-Kerisel 1948, Caltrans T&S Fig. 4-20",
+    "dm7_2_eq_4_12": "UFC 3-220-20 Eq. 4-12",
+    "dm7_2_fig_4_12": "UFC 3-220-20 Fig. 4-12",
+    "dm7_2_fig_4_13": "UFC 3-220-20 Fig. 4-13",
+}
+
+
+def source_Kp(key: str, phi_deg: float, delta_deg: float,
+              beta_deg: float = 0.0, theta_deg: float = 0.0):
+    """``(Kp, None)`` from source ``key`` for the case, or ``(None, why)``
+    in a few words when the source gives none; ``delta_deg`` is the wall
+    friction used."""
+    off_066 = phi_deg > 0 and abs(_ratio(phi_deg, delta_deg)
+                                  - DM_DELTA_RATIO) > _DM_DELTA_TOL
+    why_not = {
+        "caquot_kerisel_1948": theta_deg and "for a vertical wall only",
+        "dm7_2_eq_4_12": (theta_deg or beta_deg) and (
+            "for theta = 0 and beta = 0 only"),
+        "dm7_2_fig_4_12": (beta_deg and "for level ground only") or (
+            off_066 and "drawn for delta/phi' = 0.66 only"),
+        "dm7_2_fig_4_13": (theta_deg and "for a vertical face only") or (
+            off_066 and "drawn for delta/phi' = 0.66 only"),
+    }.get(key)
+    if why_not:
+        return None, why_not
+    try:
+        return log_spiral_Kp(phi_deg, delta_deg, beta_deg, source=key,
+                             theta_deg=theta_deg), None
+    except ValueError:
+        return None, ("UFC prints none for this case"
+                      if key == "ufc_3_220_20" else "off its chart")
+
+
+def source_label(key: str) -> str:
+    """How a result's alternatives name source ``key``."""
+    return f"{_SOURCE_NAME[key]} (log_spiral_source '{key}')"
+
+
+def other_sources(phi_deg: float, delta_deg: float, beta_deg: float = 0.0,
+                  theta_deg: float = 0.0, used=()) -> list:
+    """Each source not in ``used`` with its Kp for the same case, or why it
+    does not give one, for a result's alternatives: "<name> (log_spiral_source
+    '<key>'): Kp 5.43" or "...: none here, <reason>". ``delta_deg`` is the
+    wall friction the result used."""
+    out = []
+    for key in SOURCES:
+        if key in used:
+            continue
+        value, reason = source_Kp(key, phi_deg, delta_deg, beta_deg,
+                                  theta_deg)
+        out.append(f"{source_label(key)}: none here, {reason}" if reason
+                   else f"{source_label(key)}: Kp {value:.3g}")
+    return out

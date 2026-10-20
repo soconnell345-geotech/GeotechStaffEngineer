@@ -4,10 +4,11 @@ pages (GM-183).
 * CT  -- Caltrans Trenching and Shoring Manual (2025): Fig. 4-20 (p. 4-30),
   the Caquot and Kerisel (1948) chart with its R table; Matrix 4-1 and the
   sloping-ground example on p. 4-29.
-* DM  -- UFC 3-220-20 (DM 7.2, 2025): Fig. 4-13 (p. 193), Kerisel and Absi
-  (1990) at delta/phi' = 0.66; Eq. 4-12 (p. 191).
+* DM  -- UFC 3-220-20 (DM 7.2, 2025): Figs. 4-12 (p. 192) and 4-13 (p. 193),
+  Kerisel and Absi (1990) at delta/phi' = 0.66; Eq. 4-12 (p. 191); the
+  default route between them by the wall's geometry (GM-232).
 
-Both figures are printed only as charts; the module's tables are pixel reads
+The figures are printed only as charts; the module's tables are pixel reads
 of the rendered pages. The pins below are what the manuals print (the
 example, Matrix 4-1) and reads of the charts at angles between the tabulated
 nodes, which check the interpolation.
@@ -184,8 +185,131 @@ def test_eq_4_12_needs_delta_and_level_ground():
 
 
 def test_dispatch_by_source():
-    assert LS.log_spiral_Kp(30.0, 15.0) == LS.caquot_kerisel_1948_Kp(30.0, 15.0)
+    # the default (GM-232): UFC 3-220-20 by geometry, Eq. 4-12 here
+    assert LS.DEFAULT_SOURCE == "ufc_3_220_20"
+    assert LS.log_spiral_Kp(30.0, 15.0) == LS.dm7_2_eq_4_12_Kp(30.0, 15.0)
+    assert LS.log_spiral_Kp(30.0, 15.0, source="caquot_kerisel_1948")         == LS.caquot_kerisel_1948_Kp(30.0, 15.0)
+    assert LS.log_spiral_Kp(30.0, None, source="dm7_2_fig_4_12",
+                            theta_deg=10.0) == LS.dm7_2_fig_4_12_Kp(30.0, 10.0)
     assert LS.log_spiral_Kp(30.0, None, 6.0, source="dm7_2_fig_4_13") \
         == LS.dm7_2_fig_4_13_Kp(30.0, 6.0)
     with pytest.raises(ValueError, match="Unknown"):
         LS.log_spiral_Kp(30.0, source="dm7_2")
+
+
+# --- UFC 3-220-20 Fig. 4-12 (p. 192) and the default route (GM-232) ---------
+
+# Where each curve crosses a printed grid line, read on the page with only
+# the two grid lines either side (theta, phi', Kp).
+_FIG_4_12_CROSSINGS = [
+    (-30, 15.0, 2.60), (-30, 20.0, 4.00), (-20, 21.31, 4.0), (-20, 25.0, 5.40),
+    (-10, 15.0, 2.30), (-10, 25.0, 4.50), (0, 15.0, 2.05), (0, 25.0, 3.70),
+    (10, 16.90, 2.0), (10, 40.0, 8.50), (20, 30.0, 3.10), (20, 37.73, 5.0),
+    (30, 30.0, 2.30), (30, 35.30, 3.0), (40, 34.99, 2.0), (40, 30.0, 1.62),
+]
+
+
+@pytest.mark.parametrize("theta, phi, kp", _FIG_4_12_CROSSINGS)
+def test_fig_4_12_reads_its_printed_grid(theta, phi, kp):
+    assert LS.dm7_2_fig_4_12_Kp(phi, theta) == pytest.approx(kp, rel=0.006)
+
+
+def test_fig_4_12_theta_0_is_fig_4_13_level_ground():
+    """The two charts' vertical-face, level-ground curves, traced apart,
+    agree within 1 %."""
+    for phi in range(5, 41):
+        assert LS.dm7_2_fig_4_12_Kp(phi, 0.0) == pytest.approx(
+            LS.dm7_2_fig_4_13_Kp(phi, 0.0), rel=0.01)
+
+
+def test_fig_4_12_falls_as_the_face_overhangs():
+    for phi in (20.0, 30.0):
+        kps = [LS.dm7_2_fig_4_12_Kp(phi, t) for t in range(-30, 41, 5)]
+        assert all(b < a for a, b in zip(kps, kps[1:]))
+
+
+@pytest.mark.parametrize("args, words", [
+    ((30.0, 10.0, 15.0), "0.66 only"),
+    ((30.0, -35.0), "-30"),
+    ((30.0, 45.0), r"\+40"),
+    ((35.0, -30.0), "off the chart"),          # Kp past 15
+    ((10.0, 40.0), "off the chart"),           # the curve starts at phi' 15
+    ((46.0, 0.0), "0 to 45"),
+])
+def test_fig_4_12_refuses_what_it_does_not_print(args, words):
+    with pytest.raises(ValueError, match=words):
+        LS.dm7_2_fig_4_12_Kp(*args)
+
+
+@pytest.mark.parametrize("kwargs, route, kp, delta", [
+    ({}, "dm7_2_eq_4_12", 5.062, 19.8),
+    ({"delta_deg": 15.0}, "dm7_2_eq_4_12", 4.459, 15.0),
+    ({"delta_deg": 30.0}, "dm7_2_eq_4_12", 6.633, 30.0),
+    ({"theta_deg": 10.0}, "dm7_2_fig_4_12", 4.10, 19.8),
+    ({"theta_deg": -20.0}, "dm7_2_fig_4_12", 8.41, 19.8),
+    ({"beta_deg": -12.0}, "dm7_2_fig_4_13", 3.20, 19.8),
+])
+def test_the_default_routes_by_geometry(kwargs, route, kp, delta):
+    r = LS.ufc_3_220_20_route(30.0, **kwargs)
+    assert r["route"] == route
+    assert r["Kp"] == pytest.approx(kp, rel=0.01)
+    assert r["delta_deg"] == pytest.approx(delta)
+    assert LS.log_spiral_Kp(30.0, **kwargs) == r["Kp"]
+
+
+@pytest.mark.parametrize("kwargs, words", [
+    # UFC prints no battered face with sloping ground
+    ({"theta_deg": 10.0, "beta_deg": 5.0}, "prints no log-spiral Kp"),
+    ({"theta_deg": 10.0, "beta_deg": 5.0}, r"Caquot and Kerisel \(1948\)"),
+    # nor either chart at another wall friction
+    ({"theta_deg": 10.0, "delta_deg": 15.0}, "0.66 only"),
+    ({"beta_deg": 10.0, "delta_deg": 15.0}, "'caquot_kerisel_1948'"),
+    # off Fig. 4-13: the 1948 chart named
+    ({"beta_deg": 30.0, "phi_deg": 35.0}, "'caquot_kerisel_1948'"),
+    ({"theta_deg": -30.0, "phi_deg": 35.0}, "off the chart"),
+])
+def test_the_default_says_where_ufc_prints_nothing(kwargs, words):
+    kwargs = {"phi_deg": 30.0, **kwargs}
+    with pytest.raises(ValueError, match=words):
+        LS.ufc_3_220_20_route(**kwargs)
+
+
+def test_vertical_wall_sources_refuse_a_battered_face():
+    for source in ("caquot_kerisel_1948", "dm7_2_eq_4_12", "dm7_2_fig_4_13"):
+        with pytest.raises(ValueError, match="vertical wall face"):
+            LS.log_spiral_Kp(30.0, 19.8, source=source, theta_deg=10.0)
+    with pytest.raises(ValueError, match="level ground"):
+        LS.log_spiral_Kp(30.0, None, 5.0, source="dm7_2_fig_4_12")
+
+
+def test_level_ground_eq_4_12_against_the_1948_chart():
+    """The release note's comparison (GM-232): a vertical wall, level
+    ground, Eq. 4-12 and the Caquot-Kerisel (1948) chart at phi' 30, 35,
+    40 and delta/phi' 0.5, 0.66 and 1."""
+    eq = {(p, r): round(LS.dm7_2_eq_4_12_Kp(p, r * p), 2)
+          for p in (30, 35, 40) for r in (0.5, 0.66, 1.0)}
+    assert eq == {(30, 0.5): 4.46, (30, 0.66): 5.06, (30, 1.0): 6.63,
+                  (35, 0.5): 6.33, (35, 0.66): 7.53, (35, 1.0): 10.87,
+                  (40, 0.5): 9.33, (40, 0.66): 11.7, (40, 1.0): 18.94}
+    ck = {(p, r): round(LS.caquot_kerisel_1948_Kp(p, r * p), 2)
+          for p in (30, 35, 40) for r in (0.5, 0.66, 1.0)}
+    # Eq. 4-12 reads 5 to 11 % below the 1948 chart at delta/phi' 0.5 and
+    # 0.66, 5 to 7 % above it at full wall friction
+    assert ck == {(30, 0.5): 4.7, (30, 0.66): 5.36, (30, 1.0): 6.3,
+                  (35, 0.5): 6.87, (35, 0.66): 8.18, (35, 1.0): 10.2,
+                  (40, 0.5): 10.48, (40, 0.66): 13.14, (40, 1.0): 17.7}
+
+
+def test_other_sources_give_each_value_or_why_not():
+    alts = LS.other_sources(30.0, 19.8, used=("ufc_3_220_20",
+                                              "dm7_2_eq_4_12"))
+    assert alts == [
+        "Caquot-Kerisel 1948, Caltrans T&S Fig. 4-20 (log_spiral_source "
+        "'caquot_kerisel_1948'): Kp 5.36",
+        "UFC 3-220-20 Fig. 4-12 (log_spiral_source 'dm7_2_fig_4_12'): "
+        "Kp 5.3",
+        "UFC 3-220-20 Fig. 4-13 (log_spiral_source 'dm7_2_fig_4_13'): "
+        "Kp 5.3"]
+    battered = LS.other_sources(30.0, 19.8, theta_deg=10.0,
+                                used=("ufc_3_220_20", "dm7_2_fig_4_12"))
+    assert all("none here" in a for a in battered)
