@@ -328,8 +328,10 @@ def _extract_model_params(model) -> str:
         parts.append(f"\u03b3={model.gamma:.1f} kN/m\u00b3")
     if hasattr(model, 'eps50'):
         parts.append(f"\u03b550={model.eps50}")
-    if hasattr(model, 'k'):
-        parts.append(f"k={model.k:.0f} kN/m\u00b3")
+    if getattr(model, 'k', None) is not None:
+        name = ('ks' if getattr(model, 'ks', None) is not None else
+                'kc' if getattr(model, 'kc', None) is not None else 'k')
+        parts.append(f"{name}={model.k:.0f} kN/m\u00b3")
     if hasattr(model, 'J'):
         parts.append(f"J={model.J}")
     if hasattr(model, 'qu'):

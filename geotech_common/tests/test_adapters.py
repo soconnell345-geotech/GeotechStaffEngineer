@@ -261,6 +261,21 @@ class TestLateralPileAdapter:
         # Part above GWT should get StiffClayAboveWT? No — single layer, midpoint checked
         # Actually the whole layer 0-10, mid = 5 > gwt=3 -> below GWT
         assert layers[0]["py_model_type"] == "StiffClayBelowWT"
+        assert layers[0]["py_model_params"]["ks"] == 271_400.0
+
+    def test_stiff_clay_below_gwt_cyclic_takes_kc(self):
+        """Cyclic loading gives the layer kc, not ks (COM624P Table 3.2;
+        the p-y model refuses ks with cyclic loading), and the model
+        builds from the parameters handed back (GM-208)."""
+        from lateral_pile.py_curves import StiffClayBelowWT
+        profile = _clay_only_profile()
+        result = profile.to_lateral_pile_input(pile_length=10.0,
+                                               pile_diameter=0.6,
+                                               loading="cyclic")
+        params = result["layers"][0]["py_model_params"]
+        assert params["kc"] == 108_600.0 and "ks" not in params
+        model = StiffClayBelowWT(**params)
+        assert model.k == 108_600.0
 
     def test_rock_gets_weakrock(self):
         profile = _profile_with_rock()
@@ -468,12 +483,25 @@ class TestHelperFunctions:
         assert k == 50000.0
 
     def test_k_stiff_clay_moderate(self):
+        # COM624P Table 3.2: 1-2 ton/ft^2 (95.8-191.5 kPa), ks 1,000 lb/in^3
         k = _estimate_k_stiff_clay(150)
-        assert k == 135_000.0
+        assert k == 271_400.0
 
     def test_k_stiff_clay_very_stiff(self):
+        # past the table's 4 ton/ft^2: its last column, ks 2,000 lb/in^3
         k = _estimate_k_stiff_clay(500)
-        assert k == 540_000.0
+        assert k == 542_900.0
+
+    def test_k_stiff_clay_bands_and_cyclic(self):
+        """COM624P Table 3.2 (GEC 9 Table A-1): ks 500 / 1,000 / 2,000 and
+        kc 200 / 400 / 800 lb/in^3 for 0.5-1 / 1-2 / 2-4 ton/ft^2 (GM-208;
+        before, the bands were one column low and cyclic took ks)."""
+        for cu, ks, kc in ((80, 135_700.0, 54_300.0),
+                           (100, 271_400.0, 108_600.0),
+                           (190, 271_400.0, 108_600.0),
+                           (200, 542_900.0, 217_200.0)):
+            assert _estimate_k_stiff_clay(cu) == ks
+            assert _estimate_k_stiff_clay(cu, "cyclic") == kc
 
 
 # ── TestDrilledShaftAdapter ─────────────────────────────────────────

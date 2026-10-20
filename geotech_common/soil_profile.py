@@ -1160,13 +1160,19 @@ class SoilProfile:
                                "loading": loading},
                 }
             else:
-                # Stiff clay
-                k_py = layer.k_py if layer.k_py is not None else _estimate_k_stiff_clay(layer.cu)
+                # Stiff clay. Below the water table the initial line
+                # p = (k x) y takes ks for static loading and kc for cyclic
+                # (COM624P Table 3.2; GEC 9 Table A-1), each refused with
+                # the other loading (GM-208); a given k_py is the k for the
+                # loading asked for.
                 if below_gwt:
+                    k_py = (layer.k_py if layer.k_py is not None
+                            else _estimate_k_stiff_clay(layer.cu, loading))
+                    k_name = "kc" if loading == "cyclic" else "ks"
                     return {
                         "type": "StiffClayBelowWT",
                         "params": {"c": layer.cu, "gamma": gamma_eff,
-                                   "eps50": eps50, "ks": k_py,
+                                   "eps50": eps50, k_name: k_py,
                                    "loading": loading},
                     }
                 else:
@@ -2148,17 +2154,34 @@ def _estimate_k_sand(phi: float, below_gwt: bool) -> float:
             return 56800.0
 
 
-def _estimate_k_stiff_clay(cu: float) -> float:
-    """Estimate initial modulus of subgrade reaction for stiff clay (kN/m3).
+#: COM624P Table 3.2 (FHWA-SA-91-048 p. 331; GEC 9 Table A-1), Reese,
+#: Cox & Koop (1975): representative k for stiff clays by the average
+#: undrained shear strength, 0.5-1, 1-2 and 2-4 ton/ft^2 (upper bounds
+#: 95.8, 191.5 kPa): ks 500 / 1,000 / 2,000 and kc 200 / 400 / 800
+#: lb/in^3, in kN/m^3 (1 lb/in^3 = 271.447 kN/m^3).
+_STIFF_CLAY_K = {"static": (135_700.0, 271_400.0, 542_900.0),
+                 "cyclic": (54_300.0, 108_600.0, 217_200.0)}
 
-    Based on Reese et al. (1975) recommendations:
-        cu 100-200 kPa: ks ~ 135,000 kN/m3
-        cu 200-400 kPa: ks ~ 270,000 kN/m3
-        cu > 400 kPa:   ks ~ 540,000 kN/m3
+
+def _estimate_k_stiff_clay(cu: float, loading: str = "static") -> float:
+    """k of the initial line p = (k x) y for stiff clay below the water
+    table (kN/m3): ks for static loading, kc for cyclic, from COM624P
+    Table 3.2 (GEC 9 Table A-1) by the undrained shear strength:
+
+        cu below 95.8 kPa (0.5-1 ton/ft^2):  ks 135,700, kc 54,300
+        cu 95.8-191.5 kPa (1-2 ton/ft^2):    ks 271,400, kc 108,600
+        cu 191.5 kPa and up (2-4 ton/ft^2):  ks 542,900, kc 217,200
+
+    The table's strength is the average to five pile diameters; the
+    layer's cu stands for it here. The table stops at 4 ton/ft^2
+    (383 kPa); stronger clay takes its last column. Before GM-208 the
+    bands were one column low (cu 100-200 kPa took 135,000) and cyclic
+    loading took ks.
     """
-    if cu < 200:
-        return 135_000.0
-    elif cu < 400:
-        return 270_000.0
+    ks_or_kc = _STIFF_CLAY_K["cyclic" if loading == "cyclic" else "static"]
+    if cu < 95.8:
+        return ks_or_kc[0]
+    elif cu < 191.5:
+        return ks_or_kc[1]
     else:
-        return 540_000.0
+        return ks_or_kc[2]

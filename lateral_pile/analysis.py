@@ -22,7 +22,9 @@ from typing import List, Optional
 import numpy as np
 
 from lateral_pile.pile import Pile
-from lateral_pile.py_curves import WeakRock
+from lateral_pile.py_curves import (
+    STIFF_CLAY_K_TABLE, StiffClayBelowWT, WeakRock,
+)
 from lateral_pile.soil import SoilLayer, get_layer_at_depth, validate_layers
 from lateral_pile.solver import solve_lateral_pile
 from lateral_pile.results import Results
@@ -31,9 +33,16 @@ from lateral_pile.results import Results
 #: Each p-y model's source, as its class docstring cites it, for a result's
 #: ``choices`` (GM-115), and the models offered for the same ground.
 _PY_SOURCE = {
-    "SoftClayMatlock": "Matlock (1970), OTC 1204, soft clay",
+    "SoftClayMatlock": "Matlock (1970), OTC 1204, soft clay, as printed "
+                       "in COM624P (FHWA-SA-91-048) pp. 323-327 and GEC 9 "
+                       "App. A.1",
     "StiffClayBelowWT": "Reese, Cox & Koop (1975), OTC 2312, stiff clay "
-                        "below the water table",
+                        "below the water table, as printed in COM624P "
+                        "(FHWA-SA-91-048) pp. 328-335 and GEC 9 App. A.2; "
+                        "GEC 9 p. 219: for stiff clay with free water at "
+                        "or near the ground surface; with the groundwater "
+                        "at depth, Welch & Reese (StiffClayAboveWT) is "
+                        "more appropriate, even below it",
     "StiffClayAboveWT": "Welch & Reese (1972), Report 89-10, stiff clay "
                         "above the water table, as printed in COM624P "
                         "(FHWA-SA-91-048) pp. 336-340 and GEC 9 App. A.3",
@@ -92,6 +101,8 @@ def py_choices(layers, within: str = "layers") -> list:
             out += _weak_rock_choices(model, layer, within)
         if getattr(model, "n_cycles", None) is not None:
             out.append(_cycles_choice(model, layer, within))
+        if isinstance(model, StiffClayBelowWT):
+            out.append(_stiff_clay_k_choice(model, layer, within))
         load = getattr(model, "loading", None)
         if load is not None:
             if how_given(load, _field_default(model, "loading")) != DEFAULT:
@@ -147,6 +158,26 @@ def _cycles_choice(model, layer, within: str = "layers") -> dict:
         ["N = 1: the static curve, the stiffest"]
         + [text for n_alt, text in others if abs(n_alt - n) > 1e-9]
         + ["more cycles: a softer curve, more deflection and moment"])
+
+
+def _stiff_clay_k_choice(model, layer, within: str = "layers") -> dict:
+    """The k of a stiff-clay layer below the water table (GM-208): ks for
+    static loading, kc for cyclic, always given (COM624P Table 3.2)."""
+    from geotech_common.choices import choice, how_given
+    name = "ks" if model.loading == "static" else "kc"
+    rows = STIFF_CLAY_K_TABLE[name]
+    return choice(
+        f"k of the initial line, {name}, {layer.top:g}-{layer.bottom:g} m",
+        f"{model.k:g} kN/m3",
+        how_given(model.k, None, within=within),
+        f"the initial line p = ({name} x) y up to the "
+        f"{model.loading} curve (Reese, Cox & Koop 1975; COM624P Eq. 3.16 "
+        "and Table 3.2, GEC 9 Eq. A-9 and Table A-1), by the average "
+        "undrained shear strength to five pile diameters",
+        [f"{k:,.0f} kN/m3 for {lo:g}-{hi:g} kPa" for lo, hi, k in rows
+         if abs(k - model.k) > 0.5]
+        + ["a smaller k: a softer start to the curve, more deflection at "
+           "small loads"])
 
 
 def _weak_rock_choices(model, layer, within: str = "layers") -> list:
@@ -253,7 +284,7 @@ class LateralPileAnalysis:
         rotational_stiffness: float = 0.0,
         n_elements: int = 100,
         tolerance: float = 1e-5,
-        max_iterations: int = 100,
+        max_iterations: int = 500,
         ei_tolerance: float = 1e-3,
         max_ei_iterations: int = 20,
         stickup: float = 0.0,
@@ -283,7 +314,12 @@ class LateralPileAnalysis:
         tolerance : float
             Convergence tolerance on deflection. Default 1e-5.
         max_iterations : int
-            Maximum number of solver iterations. Default 100.
+            Maximum number of solver iterations. Default 500 (100 before
+            GM-208; softening p-y curves take more near their peak). When
+            the iteration does not converge and the soil cannot resist the
+            load, ``lateral_pile.solver.SoilResistanceExceeded`` is raised
+            (no solution); when it can, the result has ``converged``
+            False and a ``message``.
         ei_tolerance : float
             Convergence tolerance on EI for cracked concrete sections.
             Default 1e-3.
@@ -360,6 +396,7 @@ class LateralPileAnalysis:
                 Es=solver_result.Es,
                 iterations=solver_result.iterations,
                 converged=solver_result.converged,
+                message=solver_result.message,
                 pile_length=self.pile.length,
                 pile_diameter=self.pile.diameter,
                 Vt=Vt, Mt=Mt, Q=Q,
@@ -423,6 +460,7 @@ class LateralPileAnalysis:
             tolerance=tolerance,
             max_iterations=max_iterations,
             pile_diameter=self.pile.diameter,
+            stickup=stickup,
         )
 
         return Results(
@@ -435,6 +473,7 @@ class LateralPileAnalysis:
             Es=solver_result.Es,
             iterations=solver_result.iterations,
             converged=solver_result.converged,
+            message=solver_result.message,
             pile_length=self.pile.length,
             pile_diameter=self.pile.diameter,
             Vt=Vt, Mt=Mt, Q=Q,
