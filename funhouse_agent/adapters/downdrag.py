@@ -3,6 +3,8 @@ CGPR #56 method family (Greenfield & Filz 2009): Endo, Poulos, the report's
 Fellenius formulation, PILENEG, pile-group methods, and a comparison runner;
 and post-liquefaction downdrag (FHWA GEC-10 §10.7)."""
 
+import json
+
 from downdrag import (
     DowndragSoilLayer, DowndragSoilProfile, DowndragAnalysis,
     endo_method, poulos_method, fellenius_method_cgpr56, pileneg_procedure,
@@ -151,7 +153,7 @@ def _basis_first(d: dict) -> dict:
 _POST_LIQUEFACTION_PARAMS = _VALID_PARAMS + (
     "liquefied_layers", "liquefaction_result", "volumetric_strain",
     "fs_liq_threshold", "liquefied_side_resistance",
-    "liquefied_side_resistance_ratio",
+    "liquefied_side_resistance_ratio", "detail",
 )
 _LIQUEFIED_KEY_HINTS = {
     "strain": ("volumetric_strain",), "ev": ("volumetric_strain",),
@@ -187,7 +189,136 @@ def _run_post_liquefaction(params):
         )
     except ValueError as exc:
         raise ValueError(f"{method}: {exc}") from None
-    return clean_result(result.to_dict())
+    return _fitted(clean_result(result.to_dict()), params.get("detail"))
+
+
+#: What a post_liquefaction_downdrag result is fitted to, in JSON
+#: characters (GM-207): with room for what dispatch adds
+#: (``defaults_used``), under the 32,000 characters of the largest
+#: tool-result cap the deep agent sets (``deep.tools.
+#: DEFAULT_VISION_RESULT_CHARS``, the tools whose result is a report). A
+#: result with one liquefied zone is about 30,000 and comes back whole; a
+#: noisy 25 m CPT gave 20 zones, most a few readings thick, and 44,000.
+RESULT_BUDGET_CHARS = 31_000
+
+#: The zone table's columns: every number of a zone's record, then where
+#: it lies.
+_ZONE_COLUMNS = ("top_m", "bottom_m", "thickness_m", "volumetric_strain",
+                 "reconsolidation_settlement_mm", "fs_liq_min",
+                 "side_resistance_before_kN", "side_resistance_after_kN",
+                 "position")
+
+#: The "after" result's depth profiles.
+_PROFILE_KEYS = ("z_m", "axial_load_kN", "soil_settlement_mm",
+                 "unit_skin_friction_kPa")
+
+
+def _size(d: dict) -> int:
+    return len(json.dumps(d, default=str))
+
+
+def _zones_as_table(out: dict, after: dict) -> str:
+    zones = out.get("liquefied_zones")
+    if not isinstance(zones, list) or len(zones) < 2:
+        return ""
+    rows = []
+    for z in zones:
+        where = str(z.get("position", ""))
+        if not where.startswith("below the pile toe"):
+            where = where.split(" ", 1)[0]      # above / across / below
+        rows.append([z.get(c) for c in _ZONE_COLUMNS[:-1]] + [where])
+    out["liquefied_zones"] = {"columns": list(_ZONE_COLUMNS), "rows": rows}
+    return (
+        f"liquefied_zones as one table, one row a zone ({len(zones)} "
+        f"zones), the same numbers: position is against the headline "
+        f"neutral plane before the earthquake "
+        f"({out.get('neutral_plane_before_m', 0.0):.2f} m), and a zone lies "
+        f"below a method's plane before the earthquake where its top_m is "
+        f"at or below that method's neutral_plane_before_m in by_method "
+        f"(a zone below the pile toe lies below none)")
+
+
+def _profiles_rounded(out: dict, after: dict) -> str:
+    keys = [k for k in _PROFILE_KEYS if isinstance(after.get(k), list)]
+    if not keys:
+        return ""
+    for k in keys:
+        after[k] = [round(v, 3) if isinstance(v, float) else v
+                    for v in after[k]]
+    return "the after profiles " + ", ".join(keys) + " to 3 decimals"
+
+
+def _after_warnings_once(out: dict, after: dict) -> str:
+    if not after.get("warnings"):
+        return ""
+    del after["warnings"]
+    return ("after.warnings left out: each is in warnings, after 'After "
+            "liquefaction:'")
+
+
+def _method_sources_left_out(out: dict, after: dict) -> str:
+    rows = after.get("neutral_plane_comparison")
+    if not rows or not any("source" in r or "assumptions" in r
+                           for r in rows):
+        return ""
+    after["neutral_plane_comparison"] = [
+        {k: v for k, v in r.items() if k not in ("source", "assumptions")}
+        for r in rows]
+    return ("each method's source and assumptions left out of "
+            "after.neutral_plane_comparison (downdrag_analysis on the same "
+            "inputs gives them)")
+
+
+def _profiles_left_out(out: dict, after: dict) -> str:
+    keys = [k for k in _PROFILE_KEYS if k in after]
+    if not keys:
+        return ""
+    n = len(after[keys[0]]) if isinstance(after[keys[0]], list) else 0
+    for k in keys:
+        del after[k]
+    return f"the after profiles left out ({n} depths)"
+
+
+#: How a result over the budget is shortened, in this order, until it fits:
+#: the lossless steps first.
+_FIT_STEPS = (_zones_as_table, _profiles_rounded, _after_warnings_once,
+              _method_sources_left_out, _profiles_left_out)
+
+
+def _fitted(d: dict, detail=None) -> dict:
+    """``d`` within :data:`RESULT_BUDGET_CHARS` (GM-207), shortened by
+    :data:`_FIT_STEPS` until it fits, with ``result_note`` after the
+    warnings saying what was done; ``d`` itself when it fits or
+    ``detail='full'``. Every number of the headline, ``by_method`` (each
+    method before and after) and ``side_resistance_comparison`` is kept."""
+    size = _size(d)
+    if detail == "full" or size <= RESULT_BUDGET_CHARS:
+        return d
+    out = dict(d)
+    after = dict(out.get("after") or {})
+    out["after"] = after
+    done, fitted = [], d
+    for step in _FIT_STEPS:
+        said = step(out, after)
+        if not said:
+            continue
+        done.append(said)
+        fitted = _with_note(out, size, done)
+        if _size(fitted) <= RESULT_BUDGET_CHARS:
+            break
+    return fitted
+
+
+def _with_note(out: dict, size: int, done: list) -> dict:
+    """``out`` with ``result_note``, saying what was shortened, after the
+    warnings."""
+    note = (f"The whole result is {size:,} characters, over the "
+            f"{RESULT_BUDGET_CHARS:,}-character limit, so it was shortened: "
+            + "; ".join(done) + ". detail='full' returns it whole.")
+    keys = list(out)
+    at = keys.index("warnings") + 1 if "warnings" in keys else len(keys)
+    return {**{k: out[k] for k in keys[:at]}, "result_note": note,
+            **{k: out[k] for k in keys[at:]}}
 
 
 # ── CGPR #56 method family (Greenfield & Filz 2009) ──────────────────────
@@ -640,6 +771,7 @@ METHOD_INFO["post_liquefaction_downdrag"] = {
         "fs_liq_threshold": {"type": "float", "required": False, "default": 1.0, "description": "A reading of liquefaction_result liquefies where FOS_liq <= this. 1.0 = GEC-10 9.4.2.2 ('layers predicted to undergo liquefaction (FSliq <= 1.0)'); 1.0 < FSliq <= about 1.5 generates excess pore pressure."},
         "liquefied_side_resistance": {"type": "string", "required": False, "default": "half_pre_earthquake", "description": "Unit side resistance of the liquefied layers after reconsolidation, as drag above the neutral plane and resistance below it, for the headline numbers; every option that can be evaluated is reported in side_resistance_comparison whatever is chosen. 'half_pre_earthquake' (default) = 50 percent of the pre-earthquake (static) side resistance, GEC-10 10.7 p. 10-52 (Rollins et al. 2018); 'zero' = none, GEC-10 p. 10-51 and UFC 3-220-20 Table 6-49 (the state while liquefied); 'residual_strength' = su_r, the lower bound of GEC-10 p. 10-51 and GEC-12 7.4.2.2 (needs su_r or N1_60 for each layer; never more than the static value); 'ratio' = liquefied_side_resistance_ratio x the static value. The other layers keep their static side resistance.", "allowed_values": list(LIQUEFIED_SIDE_RESISTANCE)},
         "liquefied_side_resistance_ratio": {"type": "float", "required": False, "description": "Fraction (0-1) of the pre-earthquake unit side resistance the liquefied layers carry. Required when liquefied_side_resistance='ratio'; given with another option, it adds a 'ratio' row to side_resistance_comparison."},
+        "detail": {"type": "string", "required": False, "description": "'full' = the whole result, however long. Left out: a result over 31,000 characters (many liquefied zones: a noisy CPT gives many thin ones) comes back shortened until it fits, the liquefied zones as one table first, and result_note says what was shortened; the headline, by_method and side_resistance_comparison numbers are always whole.", "allowed_values": ["full"]},
     },
     "returns": {
         "post_liquefaction_basis": "What was done and on what basis (GEC-10 10.7, GEC-12 7.4.2.2 quoted). Report it.",
@@ -650,14 +782,15 @@ METHOD_INFO["post_liquefaction_downdrag"] = {
         "max_pile_load_before_kN / max_pile_load_after_kN": "Q_np, the maximum axial load (kN).",
         "pile_settlement_before_mm / pile_settlement_after_mm": "Pile head settlement (mm).",
         "reconsolidation_settlement_mm": "Reconsolidation settlement of all the liquefied layers (mm): what the ground surface settles by.",
-        "liquefied_zones": "Each contiguous liquefied zone: top, bottom, strain, settlement, side resistance before and after (kN), its position against the headline neutral plane before the earthquake, and below_the_plane_before_of (the methods whose plane before lies above it). Present it as a table.",
+        "liquefied_zones": "Each contiguous liquefied zone: top, bottom, strain, settlement, side resistance before and after (kN), its position against the headline neutral plane before the earthquake, and below_the_plane_before_of (the methods whose plane before lies above it). In a shortened result one table {columns, rows}, the same numbers, read as result_note says. Present it as a table.",
+        "result_note": "Present only when the result was shortened to fit: what was shortened and how to get it whole (detail='full'). Tell the user.",
         "side_resistance_comparison": "Each side-resistance option (headline method): name, source, assumptions, applies, used, neutral plane, drag force, pile settlement. Present it as a table.",
         "by_method": "Every neutral-plane method before and after: neutral plane, drag force, pile settlement in each state. Present it as a table.",
         "limit_states_note": "The limit states GEC-10 10.7 checks the drag at (structural strength and service; AASHTO's Extreme Event I with load factor 1.0 noted). Report it.",
         "structural_ok / structural_demand_kN": "1.25 Q_dead + 1.10 DF after liquefaction <= structural_capacity (when given).",
         "choices": "Each choice the run made, given or default, with its basis.",
         "before": "The static analysis's headline: neutral plane, method, basis, drag force, warnings.",
-        "after": "The full downdrag_analysis result after liquefaction (neutral_plane_comparison, profiles z_m / axial_load_kN / soil_settlement_mm / unit_skin_friction_kPa, below_toe).",
+        "after": "The full downdrag_analysis result after liquefaction (neutral_plane_comparison, profiles z_m / axial_load_kN / soil_settlement_mm / unit_skin_friction_kPa, below_toe); in a shortened result, as result_note says.",
     },
 }
 

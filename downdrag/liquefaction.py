@@ -1149,13 +1149,21 @@ def post_liquefaction_downdrag(
                     + (f" (before {b0:.0f} kN)" if b0 is not None
                        else " (none before)"))
         planes = dict(planes_before)
+        # One sentence for the zones below the same planes (GM-207: a
+        # noisy CPT gives twenty zones, most of them below the same ones).
+        groups: dict = {}
+        for z in under:
+            groups.setdefault(tuple(z["below_the_plane_before_of"]),
+                              []).append(z)
         text = "; ".join(
-            f"The liquefied zone {z['top_m']:g}-{z['bottom_m']:g} m lies "
-            f"below the neutral plane these methods give before the "
-            f"earthquake: "
-            + ", ".join(f"{n} ({planes[n]:.2f} m)"
-                        for n in z["below_the_plane_before_of"])
-            for z in under) + "."
+            ("The liquefied zone " if len(zs) == 1
+             else "The liquefied zones ")
+            + ", ".join(f"{z['top_m']:g}-{z['bottom_m']:g}" for z in zs)
+            + (" m lies" if len(zs) == 1 else " m lie")
+            + " below the neutral plane these methods give before the "
+            "earthquake: "
+            + ", ".join(f"{n} ({planes[n]:.2f} m)" for n in names)
+            for names, zs in groups.items()) + "."
         text += (
             f" FHWA GEC-12 §7.4.2.2 "
             f"(Fellenius and Siegel 2008): liquefaction there 'will "

@@ -358,6 +358,22 @@ class TestBelowTheStaticNeutralPlane:
         assert "The methods whose drag force rises" in w
         assert "Neutral plane at the bearing layer" in w
 
+    def test_zones_below_the_same_planes_share_one_sentence(self):
+        # GM-207: a noisy CPT gives many zones below the same planes; the
+        # warning names them once, not one sentence a zone
+        r = post_liquefaction_downdrag(_hand_check(), liquefied_layers=[
+            {"top": 3.0, "bottom": 4.0, "volumetric_strain": 0.02},
+            {"top": 6.0, "bottom": 10.0, "volumetric_strain": 0.03},
+            {"top": 14.0, "bottom": 15.0, "volumetric_strain": 0.02}])
+        w = next(w for w in r.warnings if "GEC-12 §7.4.2.2" in w)
+        first, second = (z["below_the_plane_before_of"]
+                         for z in r.liquefied_zones[1:])
+        assert r.liquefied_zones[0]["below_the_plane_before_of"] == first
+        assert first != second
+        assert "The liquefied zones 3-4, 6-10 m lie below" in w
+        assert "The liquefied zone 14-15 m lies below" in w
+        assert w.count(" below the neutral plane these methods give") == 2
+
     def test_fill_settlement_and_reconsolidation_add(self):
         r = self._case()
         z = r.after.z

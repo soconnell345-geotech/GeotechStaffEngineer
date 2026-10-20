@@ -118,3 +118,103 @@ class TestTheDescriptionsSayIt:
                                           "post_liquefaction_downdrag"))
         assert "depth_profile" in dd
         assert "returns only LPI/LSN/LDI" not in dd
+
+
+#: The largest tool-result cap the deep agent sets
+#: (deep.tools.DEFAULT_VISION_RESULT_CHARS); a post-liquefaction result is
+#: fitted under it (GM-207).
+LARGEST_CAP = 32000
+
+
+def _noisy_cpt(seed=7):
+    """A real-looking noisy 25 m CPT read every 2 cm: loose sand from 3 to
+    16 m between denser sand, the cone resistance scattered about each
+    layer's mean, so FS_liq crosses 1.0 again and again (GM-207)."""
+    rng = np.random.default_rng(seed)
+    z = np.round(np.arange(1, 1251) * 0.02, 4)
+    mean = np.where(z < 3.0, 8000.0, np.where(z < 16.0, 5500.0, 20000.0))
+    q_c = mean * np.exp(rng.normal(0.0, 0.35, z.size))
+    f_s = q_c * np.clip(0.008 + rng.normal(0.0, 0.002, z.size), 0.002, None)
+    return D.call_agent("liquefaction", "liquefaction_analysis", {
+        "depth": z.tolist(), "q_c": q_c.tolist(), "f_s": f_s.tolist(),
+        "gwt_depth": 1.0, "amax_g": 0.3})
+
+
+def _post(**params):
+    return D.call_agent("downdrag", "post_liquefaction_downdrag",
+                        {**_STATIC, **params})
+
+
+#: The numbers a user checks the drag force and the neutral plane by.
+_HEADLINE = ("neutral_plane_before_m", "neutral_plane_after_m",
+             "drag_force_before_kN", "drag_force_after_kN",
+             "max_pile_load_before_kN", "max_pile_load_after_kN",
+             "dragload_after_kN", "pile_settlement_before_mm",
+             "pile_settlement_after_mm", "reconsolidation_settlement_mm",
+             "reconsolidation_below_toe_mm", "methods_range_after",
+             "by_method", "side_resistance_comparison", "warnings",
+             "choices", "before")
+
+
+@needs_liquepy
+class TestANoisyCpt:
+    """GM-207: twenty thin liquefied zones gave a 44,000-character
+    result; it is fitted under the cap and says what was shortened."""
+
+    def test_the_result_fits_and_keeps_every_number_to_check(self):
+        liq = _noisy_cpt()
+        r = _post(gwt_depth=1.0, liquefaction_result=liq)
+        full = _post(gwt_depth=1.0, liquefaction_result=liq, detail="full")
+        assert "error" not in r, r
+        assert len(json.dumps(full)) > LARGEST_CAP
+        assert len(json.dumps(r)) < LARGEST_CAP
+        assert len(full["liquefied_zones"]) >= 10
+        for key in _HEADLINE:
+            assert r[key] == full[key], key
+        note = r["result_note"]
+        assert list(r).index("result_note") == list(r).index("warnings") + 1
+        assert "over the 31,000-character limit" in note
+        assert "liquefied_zones as one table" in note
+        assert "detail='full' returns it whole" in note
+        assert "result_note" not in full
+
+    def test_the_zone_table_holds_every_zone_number(self):
+        liq = _noisy_cpt()
+        table = _post(gwt_depth=1.0,
+                      liquefaction_result=liq)["liquefied_zones"]
+        full = _post(gwt_depth=1.0, liquefaction_result=liq, detail="full")
+        records = full["liquefied_zones"]
+        assert len(table["rows"]) == len(records)
+        cols = table["columns"]
+        for row, rec in zip(table["rows"], records):
+            for col, value in zip(cols, row):
+                if col == "position":
+                    assert rec["position"].startswith(value)
+                else:
+                    assert value == rec[col], col
+            # below_the_plane_before_of, read as the note says
+            top = row[cols.index("top_m")]
+            below = {m["name"] for m in full["by_method"]
+                     if m["applies_before"] and top < 20.0
+                     and top >= m["neutral_plane_before_m"] - 1e-6}
+            assert below == set(rec["below_the_plane_before_of"])
+
+    @pytest.mark.parametrize("seed", [3, 11])
+    def test_other_noisy_profiles_fit(self, seed):
+        r = _post(gwt_depth=1.0, liquefaction_result=_noisy_cpt(seed))
+        assert "error" not in r, r
+        assert len(json.dumps(r)) < LARGEST_CAP
+
+
+def test_a_one_zone_result_is_whole():
+    r = _post(liquefied_layers=[{"top": 6, "bottom": 10,
+                                 "volumetric_strain": 0.03}])
+    full = _post(liquefied_layers=[{"top": 6, "bottom": 10,
+                                    "volumetric_strain": 0.03}],
+                 detail="full")
+    assert r == full
+    assert "result_note" not in r
+    assert isinstance(r["liquefied_zones"], list)
+    assert set(r["liquefied_zones"][0]) >= {
+        "top_m", "bottom_m", "position", "below_the_plane_before_of"}
+    assert "detail" not in r.get("defaults_used", {})
