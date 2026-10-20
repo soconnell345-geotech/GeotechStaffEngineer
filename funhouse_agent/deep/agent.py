@@ -956,6 +956,16 @@ def _merge_tools(*groups):
     return out or None
 
 
+def _save_tool(tools):
+    """The ``save_file`` tool among ``tools``, or ``None``: a helper's
+    scratch guard saves its ``.json`` ``write_file`` calls with it (BACKLOG
+    RI-31)."""
+    for t in tools or ():
+        if getattr(t, "name", None) == "save_file":
+            return t
+    return None
+
+
 def _join_prompts(*parts):
     return "\n\n".join(p for p in parts if p) or None
 
@@ -1677,8 +1687,13 @@ def build_deep_agent(
         if notes:
             spec["middleware"] = [m for m in spec["middleware"]
                                   if m not in notes]
+        # A helper's .json write_file is saved on the real disk with its
+        # own save_file, where write_diggs can read it (RI-31); a helper
+        # without "tools" has the primary's.
         extra_mw = [DeliveredToolResults(), *notes, ToolErrorGuard(),
-                    LargeResultKeyMap(), ScratchFilesystemGuard()]
+                    LargeResultKeyMap(),
+                    ScratchFilesystemGuard(_save_tool(
+                        spec["tools"] if "tools" in spec else tools))]
         if "runnable" not in spec and not any(
                 isinstance(m, HideTools) and UNRUNNABLE_TOOLS <= m.hidden
                 for m in spec.get("middleware") or []):
@@ -1724,7 +1739,7 @@ def build_deep_agent(
                              DeliveredToolResults(),
                              ToolErrorGuard(),
                              LargeResultKeyMap(),
-                             ScratchFilesystemGuard(),
+                             ScratchFilesystemGuard(_save_tool(tools)),
                              HideTools(UNRUNNABLE_TOOLS)]       # GM-176
                           + ([UnknownToolHint(allowed_agents)]
                              if allowed_agents else [])

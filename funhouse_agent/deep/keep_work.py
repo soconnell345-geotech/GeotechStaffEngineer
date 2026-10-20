@@ -25,6 +25,12 @@ helper did:
   ``kept/helper_<what>_<id>.md`` in the conversation's working folder, and
   the primary is told the file name and given a one-paragraph summary made in
   code (no model call: the usual reason a helper stopped is a busy model).
+  The boring-log and lab records such a helper held and had not saved --
+  in its answer or one of its calls, found by their shape
+  (:mod:`funhouse_agent.deep.held_records`) -- go to
+  ``kept/helper_<what>_<id>_records.json`` beside it, named in the same
+  note, so the primary passes that file to ``write_diggs`` instead of
+  retyping them (BACKLOG RI-31).
   It also caps the helpers that run at once in one conversation
   (:func:`max_helpers`; BACKLOG TA-22).
 
@@ -458,11 +464,15 @@ def _slug(text: str, words: int = 6, room: int = 40) -> str:
 def kept_folder() -> str:
     """The folder kept work goes into: ``kept/`` in the working folder the
     host bound to this turn, else in the temp folder (a library caller
-    with no working folder)."""
+    with no working folder). On a shared host with no folder bound it
+    raises :class:`~funhouse_agent._fileio.UnboundWorkingDir`, and nothing
+    is kept: the temp folder is every user's (the callers catch it)."""
+    from funhouse_agent._fileio import UnboundWorkingDir, host_output_dir
     base = None
     try:
-        from funhouse_agent._fileio import host_output_dir
         base = host_output_dir()
+    except UnboundWorkingDir:
+        raise
     except Exception:  # noqa: BLE001
         base = None
     if not base:
@@ -484,16 +494,36 @@ def _relative(path: str) -> str:
     return path
 
 
+def _stem(rec: HelperRecord) -> str:
+    """The kept files' common name for this helper, ``helper_<what>_<id>``
+    (made once, so its ``.md`` and its records file match)."""
+    stem = getattr(rec, "_kept_stem", None)
+    if not stem:
+        tail = re.sub(r"[^A-Za-z0-9]", "", rec.task_id)[-6:] or \
+            str(int(time.time()))[-6:]
+        stem = f"helper_{_slug(rec.brief)}_{tail}"
+        rec._kept_stem = stem
+    return stem
+
+
 def helper_file_text(rec: HelperRecord, why: str,
-                     answer: Optional[str] = None) -> str:
+                     answer: Optional[str] = None,
+                     records: Optional[dict] = None) -> str:
     """The kept file: what the helper was asked, why it was kept, the
     summary, its answer, an index of its calls with where each result
-    starts in the file, then every step in full."""
+    starts in the file, then every step in full. ``records``: the records
+    file saved beside it (:func:`save_held_records`), named at the top."""
     head = [
         "# What a helper read and wrote before it stopped",
         "",
         f"Helper: {rec.subagent} (task call {rec.task_id or 'unknown'})",
         f"Kept because: {why}.",
+    ]
+    if records:
+        from funhouse_agent.deep.held_records import describe
+        head.append(f"Records it held ({describe(records)}) are saved as "
+                    f"'{records['name']}': pass that file to write_diggs.")
+    head += [
         "",
         "## What it was asked",
         rec.brief.strip() or "(no brief recorded)",
@@ -556,40 +586,85 @@ def helper_file_text(rec: HelperRecord, why: str,
     return head_text + index(offset) + body_text
 
 
+def _write_kept(path: str, text: str) -> str:
+    tmp = path + ".part"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    os.replace(tmp, path)
+    scope = current_turn()
+    if scope is not None:
+        scope.note_kept_file(path)
+    return path
+
+
 def write_helper_file(rec: HelperRecord, why: str,
-                      answer: Optional[str] = None) -> Optional[str]:
+                      answer: Optional[str] = None,
+                      records: Optional[dict] = None) -> Optional[str]:
     """Write the kept file; its absolute path, or ``None`` if it could not
     be written."""
     try:
         folder = kept_folder()
         os.makedirs(folder, exist_ok=True)
-        tail = re.sub(r"[^A-Za-z0-9]", "", rec.task_id)[-6:] or \
-            str(int(time.time()))[-6:]
-        path = os.path.join(folder,
-                            f"helper_{_slug(rec.brief)}_{tail}.md")
-        text = helper_file_text(rec, why, answer)
-        tmp = path + ".part"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            fh.write(text)
-        os.replace(tmp, path)
-        scope = current_turn()
-        if scope is not None:
-            scope.note_kept_file(path)
-        return path
+        path = os.path.join(folder, f"{_stem(rec)}.md")
+        return _write_kept(path, helper_file_text(rec, why, answer, records))
     except Exception:  # noqa: BLE001 - keeping never fails the call
         return None
 
 
-def kept_note(rec: HelperRecord, path: str, why: str) -> str:
+def save_held_records(rec: HelperRecord,
+                      answer: Optional[str] = None) -> Optional[dict]:
+    """Save the records a stopped helper held and had not saved (BACKLOG
+    RI-31; :func:`funhouse_agent.deep.held_records.held_records`) as
+    ``kept/<stem>_records.json``, in the shape write_diggs reads.
+    ``{"path", "name", "investigations", "lab_tests", "source"}``, or
+    ``None`` when it held none or the file could not be written."""
+    try:
+        from funhouse_agent.deep.held_records import (file_content,
+                                                      held_records)
+        held = held_records(rec, answer)
+        if not held:
+            return None
+        folder = kept_folder()
+        os.makedirs(folder, exist_ok=True)
+        path = _write_kept(os.path.join(folder, f"{_stem(rec)}_records.json"),
+                           file_content(held))
+        out = {**held, "path": path, "name": _relative(path)}
+        _event("helper_records_kept", {
+            "task_id": rec.task_id, "subagent": rec.subagent,
+            "path": out["name"], "source": held.get("source"),
+            "investigations": len(held.get("investigations") or ()),
+            "lab_tests": len(held.get("lab_tests") or ())})
+        return out
+    except Exception:  # noqa: BLE001 - keeping never fails the call
+        return None
+
+
+def kept_note(rec: HelperRecord, path: str, why: str,
+              records: Optional[dict] = None) -> str:
     """What the primary is told about a kept file, after the helper's own
-    answer."""
-    return (f"[Kept: {why}. Everything this helper read and wrote "
+    answer (and the records file saved beside it, when there is one)."""
+    note = (f"[Kept: {why}. Everything this helper read and wrote "
             f"({rec.n_results} tool results, {rec.read_chars:,} characters) "
             f"is in the file '{_relative(path)}' in the working folder. Read "
             "it with read_text_file -- its index gives the offset of each "
             "result -- or name it in the next helper's brief, instead of "
             "reading the same pages again.]\n"
             f"Summary: {summary_paragraph(rec, why)}")
+    if records:
+        note += "\n" + _records_note(records)
+    return note
+
+
+def _records_note(records: dict) -> str:
+    """What the primary is told about a records file; a plainer line if
+    the full note cannot be made (keeping never fails the call)."""
+    try:
+        from funhouse_agent.deep.held_records import records_note
+        return records_note(records["name"], records)
+    except Exception:  # noqa: BLE001
+        return (f"[Records this helper held are saved as "
+                f"'{records.get('name')}' in the working folder: pass that "
+                "file to write_diggs -- never retype them.]")
 
 
 # ---------------------------------------------------------------------------
@@ -711,9 +786,15 @@ class KeepWork(AgentMiddleware):
         call = getattr(request, "tool_call", None) or {}
         out = {"error": f"task failed: the {rec.subagent} helper stopped "
                         f"on an error: {error_line(exc)}"}
+        # The records it held go to a file of their own, whatever it read
+        # (BACKLOG RI-31).
+        records = save_held_records(rec)
+        if records:
+            out["records_file"] = records["name"]
+            out["records"] = _records_note(records)
         if rec.read_chars >= KEEP_MIN_READ_CHARS or rec.arg_chars >= 2_000:
             why = f"it stopped on an error ({error_line(exc, 160)})"
-            path = write_helper_file(rec, why)
+            path = write_helper_file(rec, why, records=records)
             if path:
                 out["kept"] = _relative(path)
                 out["summary"] = summary_paragraph(rec, why)
@@ -754,14 +835,16 @@ class KeepWork(AgentMiddleware):
             # code, whether or not its reply named them (RI-31).
             files = saved_files(rec)
             return _with_note(result, saved_note(files)) if files else result
-        path = write_helper_file(rec, why, answer)
+        records = save_held_records(rec, answer)
+        path = write_helper_file(rec, why, answer, records)
         if not path:
-            return result
+            return (_with_note(result, _records_note(records)) if records
+                    else result)
         _event("helper_kept", {"task_id": rec.task_id,
                                "subagent": rec.subagent,
                                "path": _relative(path), "why": why,
                                "read_chars": rec.read_chars})
-        note = kept_note(rec, path, why)
+        note = kept_note(rec, path, why, records)
         return _with_note(result, note)
 
     # -- the wrapper ------------------------------------------------------
@@ -857,7 +940,7 @@ def _with_note(result, note: str):
 __all__ = ["TurnScope", "turn_scope", "current_turn", "HelperRecord",
            "current_helper", "HelperRecorder", "KeepWork",
            "note_budget_reached", "gave_up", "summary_paragraph",
-           "saved_files", "saved_note",
+           "saved_files", "saved_note", "save_held_records",
            "helper_file_text", "write_helper_file", "kept_note",
            "kept_folder", "max_helpers", "KEPT_DIR", "KEEP_ON_GIVE_UP",
            "KEEP_MIN_READ_CHARS", "SHORT_ANSWER_CHARS",

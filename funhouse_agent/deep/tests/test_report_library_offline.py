@@ -180,8 +180,10 @@ class TestARunThroughTheTool:
             AIMessage(content="", tool_calls=[
                 {"name": "compare", "args": {"field": "siteClass"},
                  "id": "c1"}]),
-            AIMessage(content="L01 is Site Class D (L01, p4) and L02 is Site "
-                              "Class C (L02, p4)."),
+            # the library cites the page a PDF viewer opens, from 1 (RI-01):
+            # the records' page 4 reads as p5
+            AIMessage(content="L01 is Site Class D (L01, p5) and L02 is Site "
+                              "Class C (L02, p5)."),
         ])
         (tool,) = make_report_library_tool(model=model,
                                            library_root=library_root)
@@ -189,7 +191,7 @@ class TestARunThroughTheTool:
             {"question": "What site class did each report give?"}))
 
         assert answer["answer"].startswith("L01 is Site Class D")
-        assert {"report": "L01", "page": 4} in answer["citations"]
+        assert {"report": "L01", "page": 5} in answer["citations"]
         assert "L05" in answer["reports_consulted"]
         assert len(json.dumps(answer)) < 4000   # a paragraph, not a table
 
