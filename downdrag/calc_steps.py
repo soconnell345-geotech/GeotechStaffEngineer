@@ -667,6 +667,9 @@ def get_figures(result, analysis) -> List[FigureData]:
     list of FigureData
     """
     figures = []
+    # the captions name the neutral plane as the figures' axis does: its
+    # elevation where one was given, else its depth (GM-216 review)
+    at_np = _vertical(result, analysis)[2](result.neutral_plane_depth)
 
     try:
         import matplotlib
@@ -682,7 +685,7 @@ def get_figures(result, analysis) -> List[FigureData]:
             image_base64=b64_1,
             caption=(
                 f"Figure 1: Axial load distribution along the pile. "
-                f"Neutral plane at z = {result.neutral_plane_depth:.2f} m "
+                f"Neutral plane at {at_np} "
                 f"(Q_max = {result.max_pile_load:.1f} kN)."
             ),
             width_percent=65,
@@ -697,7 +700,7 @@ def get_figures(result, analysis) -> List[FigureData]:
             image_base64=b64_2,
             caption=(
                 f"Figure 2: Unit skin friction along the pile. "
-                f"Negative above NP ({result.neutral_plane_depth:.2f} m), "
+                f"Negative above NP ({at_np}), "
                 f"positive below."
             ),
             width_percent=65,
@@ -711,7 +714,7 @@ def get_figures(result, analysis) -> List[FigureData]:
             title="Soil Settlement Profile",
             image_base64=b64_3,
             caption=(
-                f"Figure 3: Soil settlement profile along the pile depth. "
+                f"Figure 3: Soil settlement profile along the pile. "
                 f"Soil settlement at NP = {result.soil_settlement_at_np * 1000:.2f} mm, "
                 f"pile settlement = {result.pile_settlement * 1000:.2f} mm."
             ),

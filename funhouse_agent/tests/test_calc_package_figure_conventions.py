@@ -293,7 +293,7 @@ def test_downdrag_profiles_on_elevation_when_given(built, fill, ground):
     )
     params = {"pile_length": 20.0, "pile_diameter": 0.3, "Q_dead": 500.0,
               "fill_thickness": fill, "layers": _DD_LAYERS}
-    plain, _ = built("downdrag_package", params)
+    plain, plain_analysis = built("downdrag_package", params)
     r, analysis = built("downdrag_package",
                         {**params, "ground_elevation": 102.5})
     assert r.neutral_plane_depth == plain.neutral_plane_depth
@@ -314,6 +314,14 @@ def test_downdrag_profiles_on_elevation_when_given(built, fill, ground):
         assert f"El. {np_el:.2f} m" in texts
         assert "Depth" not in texts
         assert _layout_hits(fig) == {}
+    # and the captions name the plane as the axes do (GM-216 review: they
+    # read "z = 7.99 m" under an elevation axis)
+    from downdrag.calc_steps import get_figures
+    for caps, named in ((get_figures(r, analysis), f"El. {np_el:.2f} m"),
+                        (get_figures(plain, plain_analysis),
+                         f"z = {plain.neutral_plane_depth:.2f} m")):
+        caps = [f.caption for f in caps]
+        assert named in caps[0] and named in caps[1], caps
 
 
 @pytest.mark.parametrize("elevation, label", [
