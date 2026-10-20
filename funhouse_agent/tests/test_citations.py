@@ -395,43 +395,8 @@ REFERENCE_GAPS = {
     ("gec_9", "table", "A-1"): "Appendix A, p. 222",
     ("gec_9", "table", "A-2"): "Appendix A, p. 222",
     ("gec_10", "eq", "9-13"): "p. 9-43",
-    ("gec_10", "eq", "10-2"): "p. 10-9",
-    ("gec_10", "eq", "10-5"): "p. 10-10 (side resistance in cohesionless "
-                              "soil, GM-241)",
-    ("gec_10", "eq", "10-6"): "p. 10-10",
-    ("gec_10", "eq", "10-7"): "p. 10-10",
-    ("gec_10", "eq", "10-8"): "p. 10-11",
-    ("gec_10", "eq", "10-9"): "p. 10-11",
-    ("gec_10", "eq", "10-10"): "p. 10-11",
-    ("gec_10", "eq", "10-11"): "p. 10-11",
-    ("gec_10", "eq", "10-12"): "p. 10-11",
-    ("gec_10", "eq", "10-13"): "p. 10-11",
-    ("gec_10", "eq", "10-14"): "p. 10-14 (base resistance in cohesionless "
-                               "soil)",
-    ("gec_10", "eq", "10-15"): "p. 10-15 (side resistance in cohesive "
-                               "soil, GM-244)",
-    ("gec_10", "eq", "10-16"): "p. 10-16 (UC to CIUC strength)",
-    ("gec_10", "eq", "10-17"): "p. 10-16 (UU to CIUC strength)",
-    ("gec_10", "eq", "10-18"): "p. 10-16 (alpha by su(CIUC)/pa)",
-    ("gec_10", "eq", "10-19"): "p. 10-19 (base resistance in cohesive "
-                               "soil, GM-244)",
-    ("gec_10", "eq", "10-20"): "p. 10-19 (the same, base depth under 3B)",
-    ("gec_10", "table", "10-2"): "p. 10-19 (N*c by su)",
-    ("gec_10", "eq", "10-21"): "p. 10-20 (rock side resistance)",
-    ("gec_10", "eq", "10-22"): "p. 10-21 (rock side resistance where "
-                               "caving is anticipated)",
-    ("gec_10", "eq", "10-23"): "p. 10-22 (base resistance in rock)",
-    ("gec_10", "eq", "10-24"): "p. 10-23 (Hoek-Brown base in fractured "
-                               "rock, named as not built, GM-244)",
-    ("gec_10", "eq", "10-25"): "p. 10-24",
-    ("gec_10", "eq", "10-26"): "p. 10-24",
-    ("gec_10", "eq", "10-27"): "p. 10-24",
-    ("gec_10", "eq", "10-28"): "p. 10-24",
-    ("gec_10", "eq", "10-29"): "p. 10-24",
     ("gec_10", "eq", "A-2"): "Appendix A, p. A-8 (phi' from (N1)60, "
                              "GM-241)",
-    ("gec_10", "table", "8-4"): "p. 8-14 (resistance factors)",
-    ("gec_10", "table", "10-3"): "p. 10-21 (alpha_E for caving rock)",
     ("gec_11", "eq", "4-21"): "Vol I p. 4-28",
     ("gec_11", "eq", "4-22"): "Vol I p. 4-28",
     ("gec_11", "eq", "4-23"): "Vol I p. 4-30",
