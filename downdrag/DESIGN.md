@@ -538,7 +538,8 @@ the fill's stress, which for a wide fill does not decay with depth.
    §6-5.8.4.3 is the section that sets the equivalent footing below the
    neutral plane; GEC-12's rule is the option (owner's rule: cited options,
    never one silent basis). The other criterion's depth and settlement are
-   always reported beside it (`below_toe["other_criterion"]`).
+   always reported beside it (`below_toe["other_criterion"]`; since GM-228
+   the whole analysis run with it, below).
 2. In each sublayer of that zone the toe load adds the compression under the
    toe load + the fill / drawdown less the compression under the fill /
    drawdown alone (it acts on the stress the fill leaves). Any layer with a
@@ -589,6 +590,89 @@ The neutral planes do not move in these cases: the fill's compression below
 the toe moves the soil and the pile alike, and the toe penetration changes
 only with the toe-load zone. Pinned by
 `tests/test_downdrag.py::TestSettlementBelowTheToe`.
+
+### When the two rules disagree (GM-228, 2026-10-20)
+
+The owner's answer (OWN-62, 2026-10-20): keep both rules, UFC's the default,
+and warn when they differ by more than a set amount.
+
+**What runs.** `compute()` runs the analysis twice, once with each
+`influence_depth_criterion` (a few milliseconds each). The rule asked for
+gives every headline number; the other run fills
+`below_toe["other_criterion"]`: its toe force, how deep and to what depth it
+counted the toe load and why it stopped, its settlement below the toe, and
+its neutral plane, pile head settlement and drag force. Before GM-228
+`other_criterion` held the other rule at the same toe force; the whole run is
+what the other rule gives, and where the neutral plane follows the toe
+penetration (settlement compatibility) the toe force moves with the rule.
+`below_toe["basis"]` ends with one sentence saying it.
+
+**What is compared.** The two runs' pile head settlement and drag force: the
+numbers a design is checked with. The settlement below the toe is not
+compared by itself: where the soil at the neutral plane settles more than the
+pile can follow, the pile head settles with the soil, and neither rule
+changes it. The warning names it all the same.
+
+**When it warns.** When the pile head settlements, or the drag forces, differ
+by more than `influence_depth_warning_percent` (default 25) of the larger of
+the two, or of `allowable_settlement` / `structural_capacity` where the
+engineer gave one (UFC 3-220-20 §6-5.8, p. 438: "Limits on settlement should
+be established considering the amount of total and differential settlement
+that can be tolerated by the structure supported by the foundation"); and
+whenever the settlement check or the structural check (Eq 6-80) passes with
+one rule and fails with the other. Differences smaller than the result
+prints (0.05 mm, 0.05 kN) count as none. `below_toe["rules_disagree"]`
+says whether it warned (true / false), so a caller need not read the
+warning to know.
+
+**Where 25 % comes from.** Nowhere printed: neither UFC 3-220-20 nor FHWA
+GEC-12 says how far two settlement estimates may differ before it matters.
+UFC p. 438 leaves settlement limits to what the structure tolerates, and
+GEC-12 Vol I §7.3.1 (p. 309) notes that "Agencies often limit tolerable
+vertical deformations to restrictive values such as 1 inch or less without a
+rational basis"; neither is a tolerance between two methods. So 25 % is a
+round figure, the engineer's call and the engineer's to change; `choices`
+says so ("The engineer's call, not a reference's figure"), and the rule
+used is never changed. The module's output does not use the word
+"judgment" (`TestMethodsSideBySide.COINED`).
+
+**The warning** names both rules with their sources and pages, gives both
+pile head settlements (or drag forces) and their difference, how deep below
+the toe each counted the toe load and its settlement below the toe (with each
+neutral plane and toe force when they differ), which rule gives more, any
+check that flips, which rule the result used, and that the choice is the
+engineer's. The `_sand_below` case (toe 2 m into sand with E_s = 50 MPa,
+503 kN on the toe, no fill):
+
+> The UFC 3-220-20 and FHWA GEC-12 rules for how deep below the toe the toe
+> load is counted give pile head settlements of 13.0 mm (UFC) and 17.6 mm
+> (GEC-12), 4.6 mm apart (26 % of the larger). UFC 3-220-20 §6-5.8.4.3 (p.
+> 449) counts it to where its stress increase falls below 10% of the bearing
+> stress of the equivalent footing (0.86 m below the toe, to 12.86 m;
+> settlement below the toe 12.7 mm); FHWA GEC-12 Vol I §7.3.5.3 step 1c (p.
+> 324) to where it falls below 10% of the existing vertical effective stress
+> (5.40 m below the toe, to 17.40 m; settlement below the toe 17.4 mm).
+> GEC-12's rule gives more settlement. This result uses UFC's rule, the
+> module's default (influence_depth_criterion 'bearing_stress'); which rule
+> to design with is the engineer's choice. Warned when the two differ by
+> more than 25 % (influence_depth_warning_percent).
+
+It does not fire for the floating pile above (34 kN on the toe: 353.9 mm by
+both rules, the soil at the plane governing) or the deep clay (885.0 mm by
+both). In the cases tried the rule moved the drag force by 2 % at most: the
+toe penetration it changes moves a settlement-compatible neutral plane
+little. `post_liquefaction_downdrag` carries the warning through its
+before / after warnings.
+
+**`choices`** (new on the static result): the rule for the depth below the
+toe (given or default, the reference quoted, the other rule as the
+alternative) and the warning threshold (the engineer's call above).
+`post_liquefaction_downdrag` adds both to its own where the rule moves a
+pile head settlement or drag force before or after the earthquake: its
+result is held to its size (GM-207, about 1,000 characters for the two),
+and where both rules give the same numbers the choice changed nothing. The
+calc package prints both in its Method Choices table and the threshold in
+its inputs.
 
 ## Stress Changes from Loading
 
@@ -874,12 +958,13 @@ method's `neutral_plane_before_m`) and `after`. Past `MAX_ZONES_LISTED` (6)
 zones it gives their number, total thickness and side resistance before and
 after, the three with the largest reconsolidation settlement in full and
 the depth ranges of the rest. Sizes with `defaults_used`, against
-`RESULT_BUDGET_CHARS` = 10,500:
+`RESULT_BUDGET_CHARS` = 10,500 (GM-228 added about 40 to each, its input
+in `defaults_used`):
 
 | Case | Before GM-207 | Returned | `detail='full'` |
 |---|---|---|---|
-| HC-1, one zone | 29,315 | 7,814 (under the 8,000 general cap) | 20,251 |
-| Noisy 25 m CPT, 20 zones (`_noisy_cpt`, seeds 1-8, 11, 21) | 43,928 (seed 7) | 9,680-10,400 | 29,700-32,300 |
+| HC-1, one zone | 29,315 | 7,855 (under the 8,000 general cap) | 20,251 |
+| Noisy 25 m CPT, 20 zones (`_noisy_cpt`, seeds 1-8, 11, 21) | 43,928 (seed 7) | 9,720-10,440 | 29,700-32,300 |
 
 The noisy CPT cannot reach 8,000 without losing what only it has: the
 warnings on a toe in a liquefied layer, readings left out and load and

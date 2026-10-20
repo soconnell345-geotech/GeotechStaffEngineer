@@ -10,6 +10,7 @@ from downdrag import (
     downdrag_method_comparison, post_liquefaction_downdrag,
     LIQUEFIED_SIDE_RESISTANCE,
 )
+from downdrag.analysis import INFLUENCE_DEPTH_WARNING_PERCENT
 from downdrag.liquefaction import (
     LIQUEFIED_LAYER_KEYS, MAX_ZONES_LISTED, SIDE_RESISTANCE_CITES,
 )
@@ -56,7 +57,7 @@ _VALID_PARAMS = (
     "allowable_settlement", "fill_thickness", "fill_unit_weight", "gw_drawdown", "Nt", "n_sublayers",
     "neutral_plane_method", "toe_mobilization", "endo_bearing_condition",
     "skin_friction_stress", "include_pile_weight",
-    "influence_depth_criterion",
+    "influence_depth_criterion", "influence_depth_warning_percent",
 )
 
 
@@ -128,6 +129,9 @@ def _build_analysis(params, method, valid):
         skin_friction_stress=params.get("skin_friction_stress", "final"),
         influence_depth_criterion=params.get("influence_depth_criterion",
                                              "bearing_stress"),
+        influence_depth_warning_percent=params.get(
+            "influence_depth_warning_percent",
+            INFLUENCE_DEPTH_WARNING_PERCENT),
         ground_elevation=params.get("ground_elevation"),
     )
     return analysis
@@ -142,7 +146,7 @@ def _run_downdrag_analysis(params):
 _BASIS_KEYS = ("neutral_plane_depth_m", "neutral_plane_method",
                "headline_method", "neutral_plane_basis", "methods_range",
                "warnings", "neutral_plane_comparison", "pile_weight_basis",
-               "below_toe")
+               "below_toe", "choices")
 
 
 def _basis_first(d: dict) -> dict:
@@ -202,8 +206,8 @@ def _run_post_liquefaction(params):
 #: What a post_liquefaction_downdrag result is held to, in JSON characters
 #: with what dispatch adds (``defaults_used``) (GM-207; the tests hold it):
 #: the result as returned (:func:`_compact`) for one liquefied zone and for
-#: a noisy 25 m CPT that gives twenty. One zone (HC-1) is about 7,800, under
-#: the 8,000-character general cap; the noisy CPT 9,700 to 10,400: its
+#: a noisy 25 m CPT that gives twenty. One zone (HC-1) is about 7,850, under
+#: the 8,000-character general cap; the noisy CPT 9,700 to 10,450: its
 #: warnings and choices (a toe in a liquefied layer, readings left out,
 #: curves that do not meet, the CPT's strain) are its own, not repeats.
 #: detail='full' gives about 20,000 and 30,000 to 32,000 (DESIGN.md "What
@@ -593,6 +597,7 @@ METHOD_INFO = {
             "endo_bearing_condition": {"type": "string", "required": False, "description": "CGPR #56 Table 3.1 condition for Endo et al. (1969).", "allowed_values": ["floating", "stiff_flexible", "end_bearing"]},
             "skin_friction_stress": {"type": "string", "required": False, "default": "final", "description": "Effective stress for beta-method skin friction and the sand toe: 'final' (default; sigma'v0 + fill/drawdown change, as UFC 3-220-20 6-7.4 step 2 requires) or 'initial' (sigma'v0).", "allowed_values": ["final", "initial"]},
             "influence_depth_criterion": {"type": "string", "required": False, "default": "bearing_stress", "description": "How deep below the toe the toe load is counted in the settlement (toe force spread 2V:1H from an equivalent footing as wide as the pile): to where its stress increase falls below 'bearing_stress' (default) = 10% of the bearing stress of the equivalent footing (UFC 3-220-20 6-5.8.4.3; 2.16 pile widths for a single pile) or 'effective_stress' = 10% of the existing vertical effective stress (FHWA GEC-12 7.3.5.3; deeper for a loaded toe in soft soil). Either way the fill / drawdown, which does not decay with depth, compresses the settling layers below the toe down to the bottom of the soil profile; give the profile down to the base of the compressible soil.", "allowed_values": ["bearing_stress", "effective_stress"]},
+            "influence_depth_warning_percent": {"type": "float", "required": False, "default": 25.0, "description": "The result warns when the two influence_depth_criterion rules (UFC 3-220-20 6-5.8.4.3 and FHWA GEC-12 7.3.5.3) give pile head settlements or drag forces that differ by more than this percentage of the larger of the two (of allowable_settlement / structural_capacity where given), and whenever a settlement or structural check passes with one rule and fails with the other. The rule used is not changed. Default 25 %: the engineer's call, not a reference's figure; neither reference says how far two settlement estimates may differ before it matters."},
         },
         "returns": {
             "neutral_plane_depth_m": "Neutral plane depth (m) of the headline method.",
@@ -601,7 +606,7 @@ METHOD_INFO = {
             "neutral_plane_basis": "How the headline neutral plane was located, with its source (starts 'UFC 3-220-20 6-7.4 procedure' by default). Report it with the result.",
             "methods_range": "One sentence giving the spread of neutral plane and drag force over the methods that apply. Report it.",
             "neutral_plane_comparison": "Every method on the same inputs, one row each, named as its reference names it (neutral plane at 100/50/0% toe mobilization, toe resistance compatible with the toe penetration, neutral plane at the bearing layer, at the pile toe, Endo et al. 1969): source, assumptions, applies, used (the headline row), reason, neutral_plane_depth_m, max_pile_load_kN, dragload_kN, drag_force_kN, toe_force_kN, soil/pile settlement at the plane (mm), elastic_compression_above_np_mm, pile_settlement_mm (head). Present it as a table.",
-            "warnings": "What the engineer must know about the result (e.g. curves that do not intersect, the upper-bound drag, an overloaded pile). Report every one.",
+            "warnings": "What the engineer must know about the result (e.g. curves that do not intersect, the upper-bound drag, an overloaded pile, the UFC and GEC-12 rules for the depth below the toe giving settlements or drag forces more than influence_depth_warning_percent apart). Report every one.",
             "dragload_kN": "Drag load: negative skin friction above the neutral plane (kN; UFC 3-220-20 6-7.4 step 4).",
             "drag_force_kN": "Drag force DF = Q_np - Q_dead (kN; UFC 3-220-20 Eq 6-80, GEC-12 Eq 7-70); includes the pile weight above the plane only when include_pile_weight is true.",
             "include_pile_weight": "Whether the load curve carried the pile's own weight (false by default, as UFC 3-220-20 Fig 6-26 and GEC-12 7.3.6.1).",
@@ -612,11 +617,12 @@ METHOD_INFO = {
             "positive_skin_friction_kN": "Positive shaft resistance below the neutral plane (kN).",
             "total_resistance_kN": "Toe + positive shaft resistance (kN).",
             "pile_settlement_m": "Pile head settlement (m): settlement at the neutral plane + elastic compression above it (UFC 3-220-20 Fig 6-19).",
-            "below_toe": "How deep the settlement below the toe was counted and why it stopped: the toe load to toe_load_counted_to_m (toe_load_stopped_by 'criterion', 'profile_end' or 'no_toe_load'), the fill / drawdown to fill_counted_to_m (the bottom of the soil profile), the settlement of each (mm), what the other influence_depth_criterion gives (other_criterion), and basis, one paragraph saying it. Report the basis.",
+            "below_toe": "How deep the settlement below the toe was counted and why it stopped: the toe load to toe_load_counted_to_m (toe_load_stopped_by 'criterion', 'profile_end' or 'no_toe_load'), the fill / drawdown to fill_counted_to_m (the bottom of the soil profile), the settlement of each (mm), what the other influence_depth_criterion gives (other_criterion: the analysis run with it, so its toe force, depth and settlement below the toe, neutral plane, pile_settlement_mm and drag_force_kN), rules_disagree (true when the two rules' pile head settlements or drag forces differ by more than influence_depth_warning_percent, or one passes a check the other fails; warnings then says how), and basis, one paragraph saying it. Report the basis.",
             "soil_settlement_at_np_m": "Soil settlement at the neutral plane (m), from the original ground.",
             "geotechnical_ok": "Q_dead <= total resistance (when checked).",
             "structural_ok": "LRFD demand <= structural_capacity (when given).",
             "z_m": "Depth profile (m); with axial_load_kN, soil_settlement_mm and unit_skin_friction_kPa at the same depths.",
+            "choices": "The choices the run made, given or default, with their basis: the rule for the depth below the toe (UFC 3-220-20 by default, GEC-12 the option) and influence_depth_warning_percent, the engineer's call. Report them.",
         },
     },
     "endo_downdrag": {
@@ -781,7 +787,7 @@ METHOD_INFO["post_liquefaction_downdrag"] = {
         "side_resistance_comparison": "One table {columns, rows}, a row a side-resistance option for the liquefied layers (the headline method): option, source, neutral plane, drag force, pile settlement, note (why it was not evaluated). liquefied_side_resistance is the one used. detail='full': each option's quoted source and assumptions, Q_np (and dragload_kN with include_pile_weight) and the soil settlement at the plane. Present it as a table.",
         "by_method": "One table {columns, rows}, a row a neutral-plane method: neutral plane, drag force and pile settlement before and after, and a note (why it gives no plane, before / after). The headline row is headline_method_before / headline_method_after. Q_np = Q_dead + drag force. detail='full': each method's source and assumptions, Q_np (and dragload_before_kN / dragload_after_kN with include_pile_weight), and after liquefaction its toe force and settlement parts. Present it as a table.",
         "structural_ok / structural_demand_kN": "1.25 Q_dead + 1.10 DF after liquefaction <= structural_capacity (when given).",
-        "choices": "Each choice the run made, given or default, with its basis; the limit states GEC-10 10.7 checks the drag at (structural strength and service), with AASHTO's Extreme Event I (load factor 1.0) as the alternative. Report them.",
+        "choices": "Each choice the run made, given or default, with its basis; the limit states GEC-10 10.7 checks the drag at (structural strength and service), with AASHTO's Extreme Event I (load factor 1.0) as the alternative; and, where the rule for the depth below the toe moves a pile head settlement or drag force, that rule (influence_depth_criterion) and influence_depth_warning_percent, the engineer's call. Report them.",
         "neutral_plane_basis / after": "detail='full' only: the headline method's basis (neutral_plane_basis_before when it differs before the earthquake); after = the resistance below the plane, below_toe and the depth profiles z_m / axial_load_kN / soil_settlement_mm / unit_skin_friction_kPa after liquefaction.",
     },
 }

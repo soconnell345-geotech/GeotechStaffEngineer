@@ -139,6 +139,13 @@ def get_input_summary(result, analysis) -> List[InputItem]:
         "3-220-20 §6-5.8.4.3)" if crit == "bearing_stress" else
         "10% of the existing vertical effective stress (FHWA GEC-12 "
         "§7.3.5.3)", ""))
+    pct = getattr(analysis, "influence_depth_warning_percent", None)
+    if pct is not None:
+        items.append(InputItem(
+            "Δ_rules", "Difference between the UFC and GEC-12 rules' pile "
+            "head settlements or drag forces that is warned about (the "
+            "engineer's call)",
+            f"{pct:g}", "%"))
 
     return items
 

@@ -2050,6 +2050,179 @@ class TestSettlementBelowTheToe:
             self._deep_clay(influence_depth_criterion="3B")
 
 
+
+class TestWhenTheTwoRulesDisagree:
+    """GM-228 (owner's answer OWN-62): the analysis runs with both rules
+    for how deep below the toe the toe load is counted, UFC 3-220-20
+    §6-5.8.4.3 (default) and FHWA GEC-12 §7.3.5.3 step 1c, and warns when
+    their pile head settlements or drag forces differ by more than
+    ``influence_depth_warning_percent`` (default 25, the engineer's call) or a
+    check passes with one and fails with the other. The rule used, and so
+    every headline number, is unchanged."""
+
+    _sand_below = staticmethod(TestSettlementBelowTheToe._sand_below)
+    _deep_clay = staticmethod(TestSettlementBelowTheToe._deep_clay)
+
+    @staticmethod
+    def _rule_warnings(r):
+        return [w for w in r.warnings if w.startswith(
+            "The UFC 3-220-20 and FHWA GEC-12 rules")]
+
+    @staticmethod
+    def _settling_clay(**kw):
+        """14 m pile in 10 m of settling clay over stiffer clay, 2 m of
+        fill, settlement compatibility: the toe force, and so the neutral
+        plane and the drag force, move with the rule."""
+        soil = DowndragSoilProfile(layers=[
+            DowndragSoilLayer(thickness=10.0, soil_type="cohesive",
+                              unit_weight=17.0, cu=25.0, settling=True,
+                              Cc=0.35, e0=1.1),
+            DowndragSoilLayer(thickness=20.0, soil_type="cohesive",
+                              unit_weight=18.0, cu=60.0, Cc=0.3, e0=0.9),
+        ], gwt_depth=1.0)
+        args = dict(soil=soil, pile_length=14.0, pile_diameter=0.4,
+                    Q_dead=100.0, fill_thickness=2.0,
+                    neutral_plane_method="settlement_compatibility")
+        args.update(kw)
+        return DowndragAnalysis(**args)
+
+    def test_warns_when_the_pile_head_settlements_differ(self):
+        """Toe 2 m into sand, 503 kN on the toe: 13.0 mm by UFC's rule
+        (0.86 m below the toe), 17.6 mm by GEC-12's (5.40 m), 26 % of the
+        larger."""
+        r = self._sand_below().compute()
+        g = self._sand_below(influence_depth_criterion="effective_stress"
+                             ).compute()
+        assert r.influence_depth_criterion == "bearing_stress"
+        assert r.pile_settlement * 1000 == pytest.approx(12.99, abs=0.01)
+        assert g.pile_settlement * 1000 == pytest.approx(17.60, abs=0.01)
+        (w,) = self._rule_warnings(r)
+        for text in ("pile head settlements of 13.0 mm (UFC) and 17.6 mm "
+                     "(GEC-12), 4.6 mm apart (26 % of the larger)",
+                     "UFC 3-220-20 §6-5.8.4.3 (p. 449)",
+                     "10% of the bearing stress of the equivalent footing "
+                     "(0.86 m below the toe, to 12.86 m; settlement below "
+                     "the toe 12.7 mm)",
+                     "FHWA GEC-12 Vol I §7.3.5.3 step 1c (p. 324)",
+                     "10% of the existing vertical effective stress (5.40 "
+                     "m below the toe, to 17.40 m; settlement below the toe "
+                     "17.4 mm)",
+                     "GEC-12's rule gives more settlement.",
+                     "This result uses UFC's rule, the module's default",
+                     "which rule to design with is the engineer's choice",
+                     "more than 25 % (influence_depth_warning_percent)"):
+            assert text in w, text
+        assert "drag force" not in w           # the same by both rules
+        assert r.below_toe["rules_disagree"] is True
+        # the other run is the analysis with GEC-12's rule, whole
+        o = r.below_toe["other_criterion"]
+        assert o["pile_settlement_mm"] == pytest.approx(
+            g.pile_settlement * 1000, rel=1e-12)
+        assert o["drag_force_kN"] == pytest.approx(g.drag_force, rel=1e-12)
+        assert o["neutral_plane_depth_m"] == pytest.approx(
+            g.neutral_plane_depth, rel=1e-12)
+        assert o["toe_load_counted_to_m"] == pytest.approx(17.397, abs=1e-3)
+        assert "pile head settlement 17.6 mm against 13.0 mm" in \
+            r.below_toe["basis"]
+        # the GEC-12 run warns the same, saying which rule it used
+        (wg,) = self._rule_warnings(g)
+        assert wg.split(" This result uses")[0] == \
+            w.split(" This result uses")[0]
+        assert "This result uses GEC-12's rule (UFC's is the module's " \
+            "default)" in wg
+
+    def test_silent_below_the_threshold_or_when_the_soil_governs(self):
+        r = self._sand_below(influence_depth_warning_percent=30).compute()
+        assert not self._rule_warnings(r)
+        assert r.below_toe["rules_disagree"] is False
+        assert r.below_toe["other_criterion"]["pile_settlement_mm"] == \
+            pytest.approx(17.60, abs=0.01)
+        # deep clay under a wide fill: the soil at the plane settles more
+        # than the pile can follow, 885.0 mm by either rule
+        r = self._deep_clay().compute()
+        assert r.pile_settlement * 1000 == pytest.approx(885.0, abs=0.1)
+        assert r.below_toe["other_criterion"]["pile_settlement_mm"] == \
+            pytest.approx(885.0, abs=0.1)
+        assert not self._rule_warnings(r)
+
+    def test_measured_against_the_allowable_settlement_when_given(self):
+        """4.6 mm apart is 9 % of a 50 mm allowable settlement: silent;
+        31 % of 15 mm, where the check also flips: warned."""
+        r = self._sand_below(allowable_settlement=0.050).compute()
+        assert r.settlement_ok is True
+        assert not self._rule_warnings(r)
+        r = self._sand_below(allowable_settlement=0.015).compute()
+        (w,) = self._rule_warnings(r)
+        assert "(31 % of the allowable settlement 15.0 mm)" in w
+        assert ("The settlement check (allowable 15.0 mm) passes with "
+                "UFC's rule (13.0 mm) and fails with GEC-12's (17.6 mm)."
+                in w)
+
+    def test_a_check_that_flips_is_warned_whatever_the_threshold(self):
+        r = self._sand_below(allowable_settlement=0.015,
+                             influence_depth_warning_percent=100).compute()
+        (w,) = self._rule_warnings(r)
+        assert "give different verdicts" in w
+        assert "fails with GEC-12's (17.6 mm)" in w
+        # the structural check (Eq 6-80) with the drag forces 283.6 kN
+        # (UFC) and 280.9 kN (GEC-12): 437.0 and 434.0 kN against 435 kN
+        r = self._settling_clay(structural_capacity=435.0,
+                                influence_depth_warning_percent=100
+                                ).compute()
+        (w,) = self._rule_warnings(r)
+        assert ("The structural check (UFC 3-220-20 Eq 6-80 against 435.0 "
+                "kN) passes with GEC-12's rule (demand 434.0 kN) and fails "
+                "with UFC's (437.0 kN)." in w)
+        assert r.structural_ok is False         # UFC's rule, unchanged
+
+    def test_the_neutral_plane_moves_with_the_rule(self):
+        """Settlement compatibility: GEC-12's deeper zone lets the toe
+        penetrate more, so less toe force, a shallower plane and a smaller
+        drag force; each is named."""
+        r = self._settling_clay(influence_depth_warning_percent=5).compute()
+        (w,) = self._rule_warnings(r)
+        assert "28.0 mm (UFC) and 30.6 mm (GEC-12)" in w
+        assert "(neutral plane 9.03 m, toe force 51.5 kN; 0.86 m below" in w
+        assert "(neutral plane 8.94 m, toe force 46.1 kN; 1.51 m below" in w
+        assert "GEC-12's rule gives more settlement, UFC's a larger drag " \
+            "force." in w
+        o = r.below_toe["other_criterion"]
+        assert o["drag_force_kN"] == pytest.approx(280.90, abs=0.01)
+        assert r.drag_force == pytest.approx(283.61, abs=0.01)
+        # 1 % apart: a 0.5 % threshold names the drag forces too
+        (w,) = self._rule_warnings(self._settling_clay(
+            influence_depth_warning_percent=0.5).compute())
+        assert "drag forces of 283.6 kN (UFC) and 280.9 kN (GEC-12)" in w
+
+    def test_choices_dict_and_summary(self):
+        r = self._sand_below().compute()
+        rule, limit = r.choices
+        assert rule["what"] == ("depth below the toe the toe load is "
+                                "counted to")
+        assert rule["how"] == limit["how"] == "default"
+        assert "p. 449" in rule["chosen"] and "p. 324" in \
+            rule["alternatives"][0]
+        assert limit["chosen"].startswith("more than 25 % of the larger")
+        assert limit["basis"].startswith("The engineer's call, not a ")
+        r = self._sand_below(influence_depth_criterion="effective_stress",
+                             influence_depth_warning_percent=10).compute()
+        rule, limit = r.choices
+        assert rule["how"] == limit["how"] == "given"
+        assert "p. 324" in rule["chosen"]
+        d = r.to_dict()
+        assert d["influence_depth_warning_percent"] == 10.0
+        assert [c["what"] for c in d["choices"]] == [
+            c["what"] for c in r.choices]
+        assert "more than 10 % of the larger pile head settlement" in \
+            r.summary()
+
+    @pytest.mark.parametrize("bad", [-1, "x", None, True, float("nan")])
+    def test_a_bad_threshold_is_rejected(self, bad):
+        with pytest.raises(ValueError,
+                           match="influence_depth_warning_percent"):
+            self._sand_below(influence_depth_warning_percent=bad)
+
+
 class TestBelowTheToeFollowUps:
     """GM-49 review follow-ups: a non-settling clay given Cc and e0 is
     compressed by the toe load; a missing recompression index is named; no

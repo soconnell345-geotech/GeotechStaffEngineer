@@ -29,7 +29,7 @@ References
 
 import math
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional, List
 
 import numpy as np
@@ -88,6 +88,18 @@ _INFLUENCE = {
     "effective_stress": ("10% of the existing vertical effective stress",
                          "FHWA GEC-12 §7.3.5.3 step 1c, p. 324"),
 }
+
+#: Default of ``influence_depth_warning_percent`` (GM-228): how far apart
+#: the two rules' pile head settlements or drag forces may be before the
+#: result warns. The engineer's call, not a reference's figure: neither UFC
+#: 3-220-20 nor FHWA GEC-12 says how far two settlement estimates may
+#: differ before it matters (DESIGN.md "When the two rules disagree").
+INFLUENCE_DEPTH_WARNING_PERCENT = 25.0
+
+#: Differences smaller than the result prints (0.1 mm, 0.1 kN) count as
+#: none, as ``_below_toe_info`` already treats them.
+_SAME_MM = 0.05
+_SAME_KN = 0.05
 
 #: Thickest sublayer below the toe (m), as along the shaft.
 _SUBLAYER = 0.25
@@ -216,7 +228,18 @@ class DowndragAnalysis:
         decay with depth, compresses the settling layers below the toe down
         to the bottom of the soil profile. The result's ``below_toe`` says
         how deep each was counted, why it stopped, and what the other
-        criterion gives.
+        criterion gives (``other_criterion``: the whole analysis run with
+        it, so its neutral plane, pile head settlement and drag force).
+    influence_depth_warning_percent : float
+        The result warns when the two ``influence_depth_criterion`` rules
+        give pile head settlements, or drag forces, that differ by more
+        than this percentage of the larger of the two (of
+        ``allowable_settlement`` / ``structural_capacity`` where given), or
+        a settlement or structural check that passes with one rule and
+        fails with the other. Default 25: the engineer's call, not a
+        reference's figure; neither UFC 3-220-20 nor FHWA GEC-12 says how
+        far two settlement estimates may differ before it matters. The rule
+        used is not changed.
     ground_elevation : float, optional
         Elevation of the ground surface the depths are measured from (m):
         the top of the soil layers, where the pile head is taken (the
@@ -266,6 +289,7 @@ class DowndragAnalysis:
     skin_friction_stress: str = "final"
     include_pile_weight: bool = False
     influence_depth_criterion: str = "bearing_stress"
+    influence_depth_warning_percent: float = INFLUENCE_DEPTH_WARNING_PERCENT
     ground_elevation: Optional[float] = None
 
     def __post_init__(self):
@@ -330,6 +354,17 @@ class DowndragAnalysis:
                 f"{list(INFLUENCE_DEPTH_CRITERIA)} ('bearing_stress': UFC "
                 f"3-220-20 §6-5.8.4.3; 'effective_stress': FHWA GEC-12 "
                 f"§7.3.5.3), got '{self.influence_depth_criterion}'")
+        pct = self.influence_depth_warning_percent
+        try:
+            value = float(pct)
+        except (TypeError, ValueError):
+            value = float("nan")
+        if isinstance(pct, bool) or not math.isfinite(value) or value < 0:
+            raise ValueError(
+                f"influence_depth_warning_percent must be a percentage, 0 "
+                f"or more (the difference between the UFC and GEC-12 "
+                f"results below the toe that is warned about), got {pct!r}")
+        self.influence_depth_warning_percent = value
         if self.ground_elevation is not None:
             try:
                 elevation = float(self.ground_elevation)
@@ -371,12 +406,27 @@ class DowndragAnalysis:
         ``"auto"``: UFC 3-220-20's §6-7.4 procedure) gives the headline
         numbers, and ``methods_range`` states the spread of the others.
 
+        The analysis is also run with the other ``influence_depth_criterion``
+        (GM-228): ``below_toe["other_criterion"]`` carries what it gives,
+        and the result warns when the two differ by more than
+        ``influence_depth_warning_percent``. ``choices`` states the rule
+        and that threshold.
+
         Returns
         -------
         DowndragResult
             Analysis results including neutral plane depth, dragload,
             settlement, and limit state checks.
         """
+        result = self._compute()
+        other = replace(self, influence_depth_criterion=self._other_rule()
+                        )._compute()
+        self._compare_rules(result, other)
+        result.choices = self._choices()
+        return result
+
+    def _compute(self) -> DowndragResult:
+        """The analysis with this ``influence_depth_criterion`` alone."""
         S = self._state()
         z_nodes, dz, fs = S["z"], S["dz"], S["fs"]
         R = S["R_toe"]
@@ -558,6 +608,8 @@ class DowndragAnalysis:
             headline_method=(used["name"] if used is not None
                              else "no neutral plane"),
             influence_depth_criterion=self.influence_depth_criterion,
+            influence_depth_warning_percent=(
+                self.influence_depth_warning_percent),
             below_toe=below_toe,
             ground_elevation=self.ground_elevation,
             fill_thickness=self.fill_thickness,
@@ -1645,8 +1697,8 @@ class DowndragAnalysis:
     def _below_toe_info(self, toe_force: float, s_fill: float,
                         s_toe: float) -> dict:
         """How deep the settlement below the toe was counted and why it
-        stopped (the result's ``below_toe``), with what the other criterion
-        gives for the same toe force."""
+        stopped (the result's ``below_toe``); :meth:`_compare_rules` adds
+        what the other criterion gives."""
         L = float(self.pile_length)
         bottom = float(self.soil.total_depth)
         B = float(self.pile_diameter)
@@ -1708,24 +1760,6 @@ class DowndragAnalysis:
                          f"soil profile, {bottom:.2f} m: "
                          f"{s_fill * 1000:.1f} mm under the fill / drawdown "
                          f"alone.")
-        other = next(c for c in INFLUENCE_DEPTH_CRITERIA if c != crit)
-        o_what, o_src = _INFLUENCE[other]
-        o_depth = (self._toe_load_depth(toe_force, other)
-                   if toe_force > 0 else 0.0)
-        o_toe = self._toe_load_compression(toe_force, other)
-        other_text = ""
-        if toe_force > 0:
-            other_text = (
-                f" With {o_what} instead ({o_src}; influence_depth_criterion"
-                f"='{other}') the toe force is counted {o_depth:.2f} m below "
-                f"the toe: ")
-            if abs(o_toe - s_toe) < 5e-5:
-                other_text += (f"the same settlement below the toe, "
-                               f"{(s_fill + s_toe) * 1000:.1f} mm.")
-            else:
-                other_text += (f"settlement below the toe "
-                               f"{(s_fill + o_toe) * 1000:.1f} mm against "
-                               f"{(s_fill + s_toe) * 1000:.1f} mm.")
         return {
             "influence_depth_criterion": crit,
             "criterion": f"{what} ({src})",
@@ -1740,14 +1774,232 @@ class DowndragAnalysis:
             "toe_load_compression_mm": s_toe * 1000.0,
             "settlement_below_toe_mm": (s_fill + s_toe) * 1000.0,
             "depth_m": max(toe_to, fill_to if fill_to is not None else L),
-            "other_criterion": {
-                "influence_depth_criterion": other,
-                "criterion": f"{o_what} ({o_src})",
-                "toe_load_depth_below_toe_m": o_depth,
-                "settlement_below_toe_mm": (s_fill + o_toe) * 1000.0,
-            },
-            "basis": f"{toe_text} {fill_text}{other_text}",
+            "basis": f"{toe_text} {fill_text}",
         }
+
+    # ── The two rules for the depth below the toe (GM-228) ───────────────
+
+    def _other_rule(self) -> str:
+        """The ``influence_depth_criterion`` this analysis does not use."""
+        return next(c for c in INFLUENCE_DEPTH_CRITERIA
+                    if c != self.influence_depth_criterion)
+
+    def _compare_rules(self, result: DowndragResult,
+                       other: DowndragResult) -> None:
+        """Put what the other rule gives (``other``: this analysis run with
+        it) into ``result.below_toe["other_criterion"]`` and its basis, and
+        warn when the two rules' pile head settlements or drag forces differ
+        by more than ``influence_depth_warning_percent`` or one passes a
+        check the other fails (the owner's answer, OWN-62)."""
+        o_crit = other.influence_depth_criterion
+        o_what, o_src = _INFLUENCE[o_crit]
+        bt, obt = result.below_toe, other.below_toe
+        bt["other_criterion"] = {
+            "influence_depth_criterion": o_crit,
+            "criterion": f"{o_what} ({o_src})",
+            "toe_force_kN": obt["toe_force_kN"],
+            "toe_load_depth_below_toe_m": obt["toe_load_depth_below_toe_m"],
+            "toe_load_counted_to_m": obt["toe_load_counted_to_m"],
+            "toe_load_stopped_by": obt["toe_load_stopped_by"],
+            "settlement_below_toe_mm": obt["settlement_below_toe_mm"],
+            "neutral_plane_depth_m": float(other.neutral_plane_depth),
+            "pile_settlement_mm": float(other.pile_settlement) * 1000.0,
+            "drag_force_kN": float(other.drag_force),
+        }
+        if bt["toe_force_kN"] > 0 or obt["toe_force_kN"] > 0:
+            bt["basis"] += self._other_rule_text(result, other)
+        warning = self._rules_warning(result, other)
+        bt["rules_disagree"] = warning is not None
+        if warning:
+            result.warnings.append(warning)
+
+    @staticmethod
+    def _other_rule_text(result: DowndragResult,
+                         other: DowndragResult) -> str:
+        """One sentence for ``below_toe["basis"]``: what the other rule
+        gives."""
+        bt, obt = result.below_toe, other.below_toe
+        o_crit = other.influence_depth_criterion
+        o_what, o_src = _INFLUENCE[o_crit]
+        same_toe = abs(obt["toe_force_kN"] - bt["toe_force_kN"]) < _SAME_KN
+        text = (f" With {o_what} instead ({o_src}; influence_depth_criterion"
+                f"='{o_crit}') ")
+        if not same_toe:
+            text += (f"the neutral plane is at "
+                     f"{other.neutral_plane_depth:.2f} m and the toe force "
+                     f"{obt['toe_force_kN']:.1f} kN, ")
+        text += (f"the toe force is counted "
+                 f"{obt['toe_load_depth_below_toe_m']:.2f} m below the toe: "
+                 if same_toe else
+                 f"counted {obt['toe_load_depth_below_toe_m']:.2f} m below "
+                 f"the toe: ")
+        s, o = bt["settlement_below_toe_mm"], obt["settlement_below_toe_mm"]
+        if abs(o - s) < _SAME_MM:
+            text += f"the same settlement below the toe, {s:.1f} mm"
+        else:
+            text += f"settlement below the toe {o:.1f} mm against {s:.1f} mm"
+        head, o_head = (result.pile_settlement * 1000.0,
+                        other.pile_settlement * 1000.0)
+        if abs(o_head - head) >= _SAME_MM:
+            text += (f", pile head settlement {o_head:.1f} mm against "
+                     f"{head:.1f} mm")
+        return text + "."
+
+    def _rules_warning(self, result: DowndragResult,
+                       other: DowndragResult) -> Optional[str]:
+        """The warning when the UFC and GEC-12 rules disagree by more than
+        ``influence_depth_warning_percent``, or None."""
+        pct = self.influence_depth_warning_percent
+        runs = {result.influence_depth_criterion: result,
+                other.influence_depth_criterion: other}
+        ufc, gec = runs["bearing_stress"], runs["effective_stress"]
+        allow = self.allowable_settlement
+        capacity = self.structural_capacity
+
+        def apart(a, b, limit, same, unit, what, fmt):
+            """The phrase for two values more than ``pct`` apart, or None:
+            measured against ``limit`` where given, else the larger."""
+            d = abs(a - b)
+            if d < same:
+                return None
+            if limit is not None and limit > 0:
+                share = 100.0 * d / limit
+                of = f"the {what} {limit:{fmt}} {unit}"
+            else:
+                share, of = 100.0 * d / max(abs(a), abs(b)), "the larger"
+            if share <= pct:
+                return None
+            return (f"{a:{fmt}} {unit} (UFC) and {b:{fmt}} {unit} (GEC-12), "
+                    f"{d:{fmt}} {unit} apart ({share:.0f} % of {of})")
+
+        s_u, s_g = ufc.pile_settlement * 1000.0, gec.pile_settlement * 1000.0
+        f_u, f_g = ufc.drag_force, gec.drag_force
+        parts = []
+        settle = apart(s_u, s_g, None if allow is None else allow * 1000.0,
+                       _SAME_MM, "mm", "allowable settlement", ".1f")
+        if settle:
+            parts.append("pile head settlements of " + settle)
+        drag = apart(f_u, f_g, capacity, _SAME_KN, "kN",
+                     "structural resistance", ".1f")
+        if drag:
+            parts.append("drag forces of " + drag)
+        checks = []
+        if ufc.settlement_ok is not None \
+                and ufc.settlement_ok != gec.settlement_ok:
+            # the settlement checked: the larger of the pile head's and the
+            # soil's at the plane, as in _compute
+            c_u, c_g = (max(r.pile_settlement, r.soil_settlement_at_np)
+                        * 1000.0 for r in (ufc, gec))
+            passes, fails = ((("UFC", c_u), ("GEC-12", c_g))
+                             if ufc.settlement_ok else
+                             (("GEC-12", c_g), ("UFC", c_u)))
+            checks.append(
+                f"The settlement check (allowable {allow * 1000:.1f} mm) "
+                f"passes with {passes[0]}'s rule ({passes[1]:.1f} mm) and "
+                f"fails with {fails[0]}'s ({fails[1]:.1f} mm).")
+        if ufc.structural_ok is not None \
+                and ufc.structural_ok != gec.structural_ok:
+            d_u, d_g = ufc.structural_demand, gec.structural_demand
+            passes, fails = ((("UFC", d_u), ("GEC-12", d_g))
+                             if ufc.structural_ok else
+                             (("GEC-12", d_g), ("UFC", d_u)))
+            checks.append(
+                f"The structural check (UFC 3-220-20 Eq 6-80 against "
+                f"{capacity:.1f} kN) passes with {passes[0]}'s rule (demand "
+                f"{passes[1]:.1f} kN) and fails with {fails[0]}'s "
+                f"({fails[1]:.1f} kN).")
+        if not parts and not checks:
+            return None
+
+        if parts:
+            text = ("The UFC 3-220-20 and FHWA GEC-12 rules for how deep "
+                    "below the toe the toe load is counted give "
+                    + " and ".join(parts) + ". ")
+        else:
+            text = ("The UFC 3-220-20 and FHWA GEC-12 rules for how deep "
+                    "below the toe the toe load is counted give different "
+                    "verdicts. ")
+        moved = abs(ufc.neutral_plane_depth - gec.neutral_plane_depth) > 1e-6
+
+        def counted(r):
+            b = r.below_toe
+            where = (f"{b['toe_load_depth_below_toe_m']:.2f} m below the "
+                     f"toe, to {b['toe_load_counted_to_m']:.2f} m")
+            if b["toe_load_stopped_by"] == "profile_end":
+                where += ", the bottom of the soil profile"
+            elif b["toe_load_stopped_by"] == "no_toe_load":
+                where = "the toe carries no load"
+            plane = (f"neutral plane {r.neutral_plane_depth:.2f} m, toe "
+                     f"force {b['toe_force_kN']:.1f} kN; " if moved else "")
+            return (f"{plane}{where}; settlement below the toe "
+                    f"{b['settlement_below_toe_mm']:.1f} mm")
+
+        text += (f"UFC 3-220-20 §6-5.8.4.3 (p. 449) counts it to where its "
+                 f"stress increase falls below 10% of the bearing stress of "
+                 f"the equivalent footing ({counted(ufc)}); FHWA GEC-12 Vol "
+                 f"I §7.3.5.3 step 1c (p. 324) to where it falls below 10% "
+                 f"of the existing vertical effective stress "
+                 f"({counted(gec)}). ")
+        by_settle = (("GEC-12" if s_g > s_u else "UFC")
+                     if abs(s_u - s_g) >= _SAME_MM else None)
+        by_drag = (("GEC-12" if f_g > f_u else "UFC")
+                   if abs(f_u - f_g) >= _SAME_KN else None)
+        if by_settle and by_drag == by_settle:
+            text += (f"{by_settle}'s rule gives more settlement and a larger "
+                     f"drag force. ")
+        elif by_settle and by_drag:
+            text += (f"{by_settle}'s rule gives more settlement, {by_drag}'s "
+                     f"a larger drag force. ")
+        elif by_settle:
+            text += f"{by_settle}'s rule gives more settlement. "
+        elif by_drag:
+            text += f"{by_drag}'s rule gives a larger drag force. "
+        text += " ".join(checks) + (" " if checks else "")
+        crit = self.influence_depth_criterion
+        used = (f"UFC's rule, the module's default"
+                if crit == "bearing_stress" else
+                f"GEC-12's rule (UFC's is the module's default)")
+        text += (f"This result uses {used} (influence_depth_criterion "
+                 f"'{crit}'); which rule to design with is the engineer's "
+                 f"choice. Warned when the two differ by more than {pct:g} % "
+                 f"(influence_depth_warning_percent).")
+        return text
+
+    def _choices(self) -> list:
+        """The result's ``choices``: the rule for the depth below the toe
+        and the difference between the two rules that is warned about."""
+        from geotech_common.choices import choice, how_given
+        crit = self.influence_depth_criterion
+        what, src = _INFLUENCE[crit]
+        o_what, o_src = _INFLUENCE[self._other_rule()]
+        pct = self.influence_depth_warning_percent
+        limits = (self.allowable_settlement is not None
+                  or self.structural_capacity is not None)
+        return [
+            choice("depth below the toe the toe load is counted to",
+                   f"{what} ({src})",
+                   how_given(crit, "bearing_stress",
+                             name="influence_depth_criterion"),
+                   ("The module's default: its headline procedure is UFC "
+                    "3-220-20's. " if crit == "bearing_stress" else "")
+                   + "The other rule's results are reported beside it "
+                   "(below_toe, other_criterion).",
+                   [f"{o_what} ({o_src})"]),
+            choice("difference between the two rules' results that is "
+                   "warned about",
+                   f"more than {pct:g} % of the larger pile head settlement "
+                   f"or drag force"
+                   + (" (of the allowable settlement or structural "
+                      "resistance given)" if limits else ""),
+                   how_given(pct, INFLUENCE_DEPTH_WARNING_PERCENT,
+                             name="influence_depth_warning_percent"),
+                   "The engineer's call, not a reference's figure: neither "
+                   "UFC 3-220-20 nor FHWA GEC-12 says how far two "
+                   "settlement estimates may differ before it matters (the "
+                   "default, 25 %, is a round figure). A check that passes "
+                   "with one rule and fails with the other is always warned "
+                   "about; the rule used is not changed."),
+        ]
 
     def _unrated_below_toe(self, toe_force: float) -> List[tuple]:
         """``(top, bottom, soil type)`` of the soil below the toe that has

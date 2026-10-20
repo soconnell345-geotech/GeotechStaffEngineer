@@ -900,6 +900,17 @@ def _numbers_out(text: str) -> str:
     return re.sub(r"\d+(\.\d+)?", "#", text)
 
 
+def _rule_moved(result: DowndragResult) -> bool:
+    """Whether the other rule for the depth below the toe gives another
+    pile head settlement or drag force (to 0.1 mm / 0.1 kN)."""
+    other = result.below_toe.get("other_criterion") or {}
+    if not other:
+        return False
+    return (abs(other["pile_settlement_mm"]
+                - result.pile_settlement * 1000.0) >= 0.05
+            or abs(other["drag_force_kN"] - result.drag_force) >= 0.05)
+
+
 def _state_warnings(before: DowndragResult, after: DowndragResult,
                     said_after: bool) -> list:
     """The static analysis's warnings in each state, each once: one the
@@ -1349,6 +1360,12 @@ def post_liquefaction_downdrag(
         "states'; checked after liquefaction: structural (UFC 3-220-20 "
         "Eq 6-80), geotechnical without the drag, settlement",
         ["AASHTO (2017) Extreme Event I, load factor 1.0 on the drag"]))
+    # the static analysis's own (GM-228): the rule for the depth below the
+    # toe and the difference between the two rules that is warned about,
+    # where the rule moved a pile head settlement or drag force (the
+    # result is held to its size; DESIGN.md "When the two rules disagree")
+    if any(_rule_moved(r) for r in (before, after)):
+        out_choices += after.choices
 
     after.below_toe = dict(after.below_toe)
     if below_toe > 0:
