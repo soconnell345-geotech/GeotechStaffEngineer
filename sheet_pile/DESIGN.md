@@ -74,17 +74,30 @@ Piling Design Manual Table 4 (p. 13; its procedures take "delta from Table
 4", pp. 23 and 29) and UFC 3-220-20 Table 4-1 (p. 184) print for steel sheet
 piles: `interface_soil` 'clean_gravel' 22, 'clean_sand' 17, 'silty_sand' 14,
 'fine_sandy_silt' 11 deg, at most the layer's phi'; a row or a given delta is
-used on both sides. Left out, with "log_spiral" a layer takes the clean sand
-row (17 deg) on the passive side when it has no cohesion and none on the
-active side or with cohesion, as UFC 3-220-20 p. 238 does on its anchored
-bulkhead design scenarios ("The effects of interface friction between the
-wall and soil are only considered for passive pressure in granular soils.
-Wall friction is ignored in all other cases."); with "coulomb" it takes
-none (the Caltrans T&S Manual Sec. 4-6, p. 4-28: Coulomb's passive "gives
-increasingly erroneous values ... as the wall friction (delta) increases").
-`choices` carry the wall friction per layer with its basis and each layer's
-Kp at delta 0, at each row, at 0.66 phi' (UFC p. 191, Fig. 4-43 p. 245) and
-at 0.54 phi (EM 1110-2-2504 Table 3-2, steel). The probe, 4 m cantilever in
+used on both sides (as EM 1110-2-2504 and the USS manual take it; the
+Caltrans T&S Manual Table 4-2, p. 4-15, prints the same rows). Left out,
+with "log_spiral" a layer takes the clean sand row (17 deg) on the passive
+side when it has no cohesion and none on the active side or with cohesion:
+UFC 3-220-20's anchored bulkhead procedure, Fig. 4-37 step 1 (p. 237):
+"Passive pressures for clean coarse grained soils include wall friction
+(see Table 4-1). For active or passive pressures in all other soil types,
+ignore wall friction" (repeated p. 238); the USS manual's cantilever example
+in sand (Design Example No. 1, p. 86) takes delta/phi = 0.5 on the passive
+side with the log-spiral Kp of its Fig. 5(a). Judgment (listed for the
+owner, GM-242 review): a layer with no cohesion is read as a clean
+coarse-grained soil and takes the smaller of the two clean rows; in a silty
+sand or silt UFC ignores wall friction. With "coulomb" it takes none, so
+Coulomb's Kp is Rankine's. That is a judgment too: EM 1110-2-2504 (p. 4-3)
+and the USS manual (pp. 23 and 29) take the table's delta with Coulomb's
+Ka and Kp, but UFC 3-220-20 p. 190 says passive pressure "should be
+calculated using the log spiral method and not the Coulomb method", the USS
+manual (p. 9) that Coulomb's passive error "is always on the unsafe side"
+and the Caltrans manual (p. 4-16) recommends "not to use Coulomb for the
+passive earth pressure". `choices` carry the wall friction per layer with
+its basis and each layer's Kp at delta 0, at each row, at 0.66 phi' (UFC p.
+191, Fig. 4-43 p. 245) and at 0.54 phi (EM 1110-2-2504 Table 3-2, steel),
+and where a layer took the clean sand row by default the embedment with no
+wall friction there (`smooth_where_left_out`). The probe, 4 m cantilever in
 sand, phi' 32, water at the excavation level: Rankine's Kp 3.25, D 7.21 m,
 M 252 kN-m/m before; the clean sand row, Kp 5.26, D 5.06 m, M 174 kN-m/m
 now. The chart sources (Figs. 4-12, 4-13) still refuse a delta other than

@@ -14,7 +14,7 @@ References:
 
 import math
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import List, Optional
 
 import numpy as np
@@ -32,7 +32,11 @@ _LOG_SPIRAL = ("log_spiral", "caquot_kerisel", "logspiral")
 #: (GM-242): {interface_soil: (delta deg, the row as printed)}. One table,
 #: printed in EM 1110-2-2504 Table 3-3 (p. 3-4, after U.S. Department of
 #: the Navy 1982), the USS Steel Sheet Piling Design Manual Table 4 (p. 13,
-#: after Navdocks) and UFC 3-220-20 Table 4-1 (p. 184).
+#: after Navdocks), UFC 3-220-20 Table 4-1 (p. 184) and the Caltrans T&S
+#: Manual Table 4-2 (p. 4-15, after AASHTO). It is a table of interface
+#: friction, not of one side: UFC's anchored bulkhead procedure takes it on
+#: the passive side only (Fig. 4-37 step 1, p. 237), EM 1110-2-2504 and the
+#: USS manual on both.
 STEEL_SHEET_PILE_DELTA = {
     "clean_gravel": (22.0, "clean gravel, gravel-sand mixtures, "
                            "well-graded rock fill with spalls"),
@@ -43,34 +47,55 @@ STEEL_SHEET_PILE_DELTA = {
     "fine_sandy_silt": (11.0, "fine sandy silt, nonplastic silt"),
 }
 #: The row a cohesionless layer naming none takes on the passive side of
-#: the log-spiral method (GM-242; a judgment the owner was asked about).
+#: the log-spiral method (GM-242; a judgment listed for the owner: the
+#: smaller of the two clean rows, UFC Fig. 4-37 step 1 taking wall friction
+#: in clean coarse-grained soils only).
 DEFAULT_INTERFACE_SOIL = "clean_sand"
 
-#: Where the table is printed and what the tool takes from it (GM-242),
-#: for the wall friction choice.
+#: Where the table is printed (GM-242), for the wall friction choice.
 WALL_FRICTION_TABLE = (
-    "EM 1110-2-2504 Table 3-3 (p. 3-4, after Navy 1982), the USS Steel "
-    "Sheet Piling Design Manual Table 4 (p. 13; its cantilever and "
-    "anchored procedures take 'delta from Table 4', pp. 23 and 29) and UFC "
-    "3-220-20 Table 4-1 (p. 184) print one table of delta for steel sheet "
-    "piles against: " + "; ".join(
+    "UFC 3-220-20 Table 4-1 (p. 184), EM 1110-2-2504 Table 3-3 (p. 3-4), "
+    "the USS Steel Sheet Piling Design Manual Table 4 (p. 13) and the "
+    "Caltrans T&S Manual Table 4-2 (p. 4-15) print one table of wall "
+    "friction delta for steel sheet piles against: " + "; ".join(
         f"{text} {delta:g} deg (interface_soil '{key}')"
         for key, (delta, text) in STEEL_SHEET_PILE_DELTA.items()))
-#: What a layer that names no row takes, and why (GM-242).
-WALL_FRICTION_LEFT_OUT = (
-    "A layer giving neither wall_friction_deg nor interface_soil takes, "
-    "with pressure_method 'log_spiral', the clean sand row (17 deg, at most "
-    "its phi') on the passive side when it has no cohesion, and no wall "
-    "friction on the active side or in a layer with cohesion: UFC 3-220-20 "
-    "p. 238, on its anchored bulkhead design scenarios (Fig. 4-37): 'The "
-    "effects of interface friction between the wall and soil are only "
-    "considered for passive pressure in granular soils. Wall friction is "
-    "ignored in all other cases.' With "
-    "pressure_method 'coulomb' it takes none: the Caltrans Trenching and "
-    "Shoring Manual (Sec. 4-6, p. 4-28) says Coulomb's theory 'gives "
-    "increasingly erroneous values of passive earth pressure as the wall "
-    "friction (delta) increases'. Name the row (interface_soil) or give "
-    "wall_friction_deg, used on both sides")
+#: What a layer naming no wall friction takes with the log-spiral passive
+#: Kp, and why (GM-242).
+LOG_SPIRAL_FRICTION_LEFT_OUT = (
+    "Left out, a layer without cohesion takes the clean sand row, 17 deg "
+    "(at most its phi'), on the passive side; a layer with cohesion, and "
+    "the active side, take none. This is UFC 3-220-20's anchored bulkhead "
+    "procedure, Fig. 4-37 step 1 (p. 237): 'Passive pressures for clean "
+    "coarse grained soils include wall friction (see Table 4-1). For "
+    "active or passive pressures in all other soil types, ignore wall "
+    "friction' (repeated on p. 238). The USS manual's cantilever example "
+    "in sand (Design Example No. 1, p. 86) likewise takes delta/phi = 0.5 "
+    "on the passive side with the log-spiral Kp. Judgment, for the "
+    "engineer to confirm: the tool reads a layer with no cohesion as a "
+    "clean coarse-grained soil and takes the smaller of the two clean rows "
+    "(clean gravel is 22 deg); in a silty sand or a silt Fig. 4-37 ignores "
+    "wall friction, so give wall_friction_deg 0 there. A row named "
+    "(interface_soil) or a wall_friction_deg given is used on both sides, "
+    "as EM 1110-2-2504 and the USS manual do")
+#: What a layer naming no wall friction takes with Coulomb's theory, and
+#: why (GM-242).
+COULOMB_FRICTION_LEFT_OUT = (
+    "Left out, a layer takes no wall friction with Coulomb's theory, so "
+    "its Kp is Rankine's. EM 1110-2-2504 (p. 4-3: 'The Coulomb theory for "
+    "lateral earth pressure will be used for the design of sheet pile "
+    "walls', with delta from Table 3-3) and the USS manual (pp. 23 and 29: "
+    "delta from Table 4, Ka and Kp from its Coulomb chart, Fig. 3(a)) take "
+    "the table's delta with Coulomb's theory. The tool does not by default "
+    "because Coulomb's passive Kp grows too large with wall friction: UFC "
+    "3-220-20 p. 190, 'passive pressure should be calculated using the log "
+    "spiral method and not the Coulomb method'; the USS manual p. 9, the "
+    "error 'is always on the unsafe side'; the Caltrans T&S Manual p. "
+    "4-16, 'it is also recommended not to use Coulomb for the passive "
+    "earth pressure'. Judgment, for the engineer to confirm: name the row "
+    "(interface_soil) or give wall_friction_deg to take the table's delta "
+    "with Coulomb's theory, on both sides, or use pressure_method "
+    "'log_spiral'")
 
 
 def wall_friction(layer, side: str, pressure_method: str) -> tuple:
@@ -79,7 +104,8 @@ def wall_friction(layer, side: str, pressure_method: str) -> tuple:
     "given" (wall_friction_deg), "row" (interface_soil, the table's delta
     at most phi'), "default_row" (the clean sand row, on the passive side
     of the log-spiral method, for a layer with no cohesion) or "none" (0).
-    See :data:`WALL_FRICTION_LEFT_OUT` (GM-242)."""
+    See :data:`LOG_SPIRAL_FRICTION_LEFT_OUT` and
+    :data:`COULOMB_FRICTION_LEFT_OUT` (GM-242)."""
     phi = layer.friction_angle
     given = getattr(layer, "wall_friction_deg", None)
     row = getattr(layer, "interface_soil", None)
@@ -94,6 +120,21 @@ def wall_friction(layer, side: str, pressure_method: str) -> tuple:
         return (min(STEEL_SHEET_PILE_DELTA[DEFAULT_INTERFACE_SOIL][0], phi),
                 "default_row")
     return 0.0, "none"
+
+
+def smooth_where_left_out(soil_layers, pressure_method: str):
+    """The layers with no wall friction in place of the clean sand row a
+    layer took by default (GM-242), or None when none took it: the wall
+    whose embedment the wall friction choice gives beside the one
+    taken."""
+    if not pressure_method.startswith("log_spiral:"):
+        return None
+    took = [wall_friction(layer, "passive", pressure_method)[1]
+            == "default_row" for layer in soil_layers]
+    if not any(took):
+        return None
+    return [replace(layer, wall_friction_deg=0.0) if t else layer
+            for layer, t in zip(soil_layers, took)]
 
 
 def _layer_Ka_Kp(layer, pressure_method: str):
@@ -136,17 +177,19 @@ def _passive_layers(soil_layers, excavation_depth):
 
 
 def _log_spiral_choices(pressure_method: str, soil_layers, excavation_depth,
-                        *, tied_back: bool = False) -> list:
+                        *, tied_back: bool = False,
+                        smooth_embedment: Optional[float] = None) -> list:
     """The result's ``choices`` for the passive side (GM-232, GM-242): with
     the log-spiral method the printed source and, by default, the UFC
     3-220-20 route, with each passive-side friction layer's Kp from it and
     from every other source; with it or Coulomb's, the wall friction each
-    layer took (:func:`_wall_friction_choice`). A sheet pile wall has a
-    vertical face and the module takes level ground in front of it, so the
-    UFC route is always Eq. 4-12. ``tied_back`` adds UFC 3-220-20 p.
-    260."""
+    layer took (:func:`_wall_friction_choice`, with ``smooth_embedment``,
+    the embedment with no wall friction where it was left out). A sheet
+    pile wall has a vertical face and the module takes level ground in
+    front of it, so the UFC route is always Eq. 4-12. ``tied_back`` adds
+    UFC 3-220-20 p. 260."""
     friction = _wall_friction_choice(pressure_method, soil_layers,
-                                     excavation_depth)
+                                     excavation_depth, smooth_embedment)
     if not pressure_method.startswith("log_spiral:"):
         return friction
     from geotech_common.choices import choice, how_given
@@ -199,13 +242,16 @@ def _log_spiral_choices(pressure_method: str, soil_layers, excavation_depth,
 
 
 def _wall_friction_choice(pressure_method: str, soil_layers,
-                          excavation_depth) -> list:
+                          excavation_depth,
+                          smooth_embedment: Optional[float] = None) -> list:
     """The wall friction each passive-side friction layer took with the
     log-spiral or Coulomb method, as a list of at most one entry of a
     result's ``choices`` (GM-242): the steel sheet pile table's row, given
-    or taken (:data:`WALL_FRICTION_LEFT_OUT`), with the layers' Kp at
-    delta = 0 (Rankine's), at each other row and at the ratios UFC
-    3-220-20 p. 191 and EM 1110-2-2504 Table 3-2 print."""
+    or taken (:data:`LOG_SPIRAL_FRICTION_LEFT_OUT`,
+    :data:`COULOMB_FRICTION_LEFT_OUT`), with the layers' Kp at delta = 0
+    (Rankine's; with ``smooth_embedment``, the embedment there), at each
+    other row and at the ratios UFC 3-220-20 p. 191 and EM 1110-2-2504
+    Table 3-2 print."""
     log_spiral = pressure_method.startswith("log_spiral:")
     if not (log_spiral or pressure_method == "coulomb"):
         return []
@@ -238,14 +284,20 @@ def _wall_friction_choice(pressure_method: str, soil_layers,
         left_out = left_out or came in ("default_row", "none")
         how = {"given": "wall_friction_deg",
                "row": f"interface_soil '{layer.interface_soil}'",
-               "default_row": f"the {DEFAULT_INTERFACE_SOIL} row, taken",
-               "none": ("taken, the layer has cohesion" if layer.cohesion
-                        and log_spiral else "taken")}[came]
+               "default_row": "the clean sand row, taken when the layer "
+                              "gives none",
+               "none": ("none with cohesion, taken when the layer gives "
+                        "none" if layer.cohesion and log_spiral
+                        else "taken when the layer gives none")}[came]
         said.append(f"layer {i}: {delta:g} deg ({how})")
     rows = [f"the {row} row ({d:g} deg): {kps(lambda phi, d=d: d)}"
             for row, (d, _) in STEEL_SHEET_PILE_DELTA.items()]
+    smooth = f"delta = 0, a smooth wall (Rankine's Kp): {kps(lambda phi: 0.0)}"
+    if smooth_embedment is not None:
+        smooth += (f"; with no wall friction in the layers that gave none, "
+                   f"the embedment is {smooth_embedment:.2f} m")
     alternatives = [
-        f"delta = 0, a smooth wall (Rankine's Kp): {kps(lambda phi: 0.0)}",
+        smooth,
         *rows,
         "delta/phi' = 0.66, UFC 3-220-20 p. 191 ('a common assumption'; "
         "0.67 in its cantilever example, Fig. 4-43, p. 245): "
@@ -259,11 +311,13 @@ def _wall_friction_choice(pressure_method: str, soil_layers,
         f"Wall friction delta in {method} (wall_friction_deg, "
         "interface_soil)", "; ".join(said),
         DEFAULT if left_out else how_given(True, None, within="layers"),
-        WALL_FRICTION_TABLE + ". " + WALL_FRICTION_LEFT_OUT + ". "
-        + _log_spiral.wall_friction_note(
-            source or _log_spiral.DEFAULT_SOURCE,
-            left_out="The steel sheet pile row is the one this tool "
-                     "takes."),
+        WALL_FRICTION_TABLE + ". " + (LOG_SPIRAL_FRICTION_LEFT_OUT
+                                      if log_spiral
+                                      else COULOMB_FRICTION_LEFT_OUT)
+        + ". UFC 3-220-20 gives other values for other walls: delta/phi' "
+        "of 0.5 to 1.0 on the passive side of a tied-back wall (p. 260), "
+        "and for soldier piles in coarse-grained soil KP 'determined "
+        "without wall friction' (p. 249)",
         alternatives)]
 
 
@@ -600,6 +654,14 @@ def analyze_cantilever(
         profile=profile,
     )
 
+    # the embedment with no wall friction where it was left out (GM-242),
+    # for the wall friction choice
+    smooth = smooth_where_left_out(soil_layers, pressure_method)
+    smooth_D = None if smooth is None else embedment_increase * \
+        _find_embedment(excavation_depth, smooth, gwt_depth_active,
+                        gwt_depth_passive, surcharge, FOS_passive, gamma_w,
+                        pressure_method, n_points=500)
+
     return CantileverWallResult(
         embedment_depth=D_design,
         total_wall_length=total_wall,
@@ -611,7 +673,8 @@ def analyze_cantilever(
         embedment_increase=embedment_increase,
         profile=profile,
         choices=_log_spiral_choices(pressure_method, soil_layers,
-                                    excavation_depth),
+                                    excavation_depth,
+                                    smooth_embedment=smooth_D),
     )
 
 

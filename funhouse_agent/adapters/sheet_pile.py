@@ -188,9 +188,9 @@ _LAYERS = {
         "default 30; alias phi), cohesion (kPa, default 0), "
         "wall_friction_deg (deg, 0 to friction_angle; alias delta), "
         "interface_soil (the soil against the steel, a row of the steel "
-        "sheet pile wall friction table printed in EM 1110-2-2504 Table "
-        "3-3, p. 3-4, the USS Steel Sheet Piling Design Manual Table 4, p. "
-        "13, and UFC 3-220-20 Table 4-1, p. 184: 'clean_gravel' 22 deg "
+        "sheet pile wall friction table printed in UFC 3-220-20 Table 4-1, "
+        "p. 184, EM 1110-2-2504 Table 3-3, p. 3-4, and the USS Steel Sheet "
+        "Piling Design Manual Table 4, p. 13: 'clean_gravel' 22 deg "
         "(clean gravel, gravel-sand mixtures, well-graded rock fill with "
         "spalls), 'clean_sand' 17 (clean sand, silty sand-gravel mixture, "
         "single size hard rock fill), 'silty_sand' 14 (silty sand, gravel "
@@ -201,12 +201,15 @@ _LAYERS = {
         "layer giving neither takes, with 'log_spiral', the clean_sand row "
         "(17 deg, at most its phi') on the passive side when it has no "
         "cohesion and no wall friction on the active side or in a layer "
-        "with cohesion (UFC 3-220-20 p. 238: interface friction is 'only "
-        "considered for passive pressure in granular soils'); with "
-        "'coulomb' none (Caltrans T&S Manual p. 4-28: Coulomb's passive "
-        "pressure grows 'increasingly erroneous' with wall friction). The "
-        "result's choices give each layer's wall friction and its Kp at "
-        "the other rows and at delta = 0."),
+        "with cohesion (UFC 3-220-20 Fig. 4-37 step 1, p. 237: 'Passive "
+        "pressures for clean coarse grained soils include wall friction "
+        "(see Table 4-1)'; it ignores wall friction in other soils, so give "
+        "wall_friction_deg 0 in a silty sand or silt); with 'coulomb' none "
+        "(UFC 3-220-20 p. 190: passive pressure 'should be calculated using "
+        "the log spiral method and not the Coulomb method'). The result's "
+        "choices give each layer's wall friction and its Kp at the other "
+        "rows and at delta = 0, and where a layer took the clean sand row "
+        "by default the embedment with none."),
 }
 
 METHOD_INFO = {

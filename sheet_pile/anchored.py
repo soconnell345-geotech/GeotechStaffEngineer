@@ -23,7 +23,7 @@ from sheet_pile.earth_pressure import rankine_Ka, rankine_Kp  # kept for backwar
 from sheet_pile.cantilever import (
     WallSoilLayer, _get_soil_at_depth, _cumulative_stress,
     _cumulative_stress_passive, _effective_gamma, _layer_Ka_Kp,
-    _with_log_spiral_source, _log_spiral_choices,
+    _with_log_spiral_source, _log_spiral_choices, smooth_where_left_out,
 )
 from geotech_common.water import GAMMA_W
 
@@ -360,6 +360,14 @@ def analyze_anchored(
             max_moment_depth = z
         profile.append([z, pa, pp_reduced, water, net_p, shear, moment])
 
+    # the embedment with no wall friction where it was left out (GM-242),
+    # for the wall friction choice
+    smooth = smooth_where_left_out(soil_layers, pressure_method)
+    smooth_D = None if smooth is None else analyze_anchored(
+        H, anchor_depth, smooth, gwt_depth_active, gwt_depth_passive,
+        surcharge, FOS_passive, gamma_w, "log_spiral",
+        pressure_method.split(":", 1)[1]).embedment_depth
+
     return AnchoredWallResult(
         embedment_depth=D_design,
         total_wall_length=total_wall,
@@ -371,5 +379,6 @@ def analyze_anchored(
         FOS_passive=FOS_passive,
         profile=profile,
         choices=_log_spiral_choices(pressure_method, soil_layers, H,
-                                    tied_back=True),
+                                    tied_back=True,
+                                    smooth_embedment=smooth_D),
     )
