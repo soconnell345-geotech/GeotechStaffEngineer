@@ -2646,7 +2646,10 @@ class TestBetaInClay:
          ("does not take beta", "alpha x cu", "skin_friction_method 'beta'",
           "Table 7-9")),
         (dict(soil_type="cohesive", cu=25.0, phi=25.0),
-         ("does not take phi", "Leave phi out")),
+         ("does not take phi", "Leave phi out",
+          # what a drained clay takes instead (GM-249 review)
+          "long-term, drained", "skin_friction_method 'beta'",
+          "for phi' 25-30 deg", "Table 6-15")),
         (dict(soil_type="cohesive", skin_friction_method="beta", beta=0.25,
               alpha=1.0), ("does not take alpha", "beta x sigma'v")),
         (dict(soil_type="cohesive", cu=25.0, skin_friction_method="beta"),

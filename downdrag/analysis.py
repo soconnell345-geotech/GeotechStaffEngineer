@@ -2242,7 +2242,8 @@ class DowndragAnalysis:
                     "For long-term, drained conditions (" + BETA_IN_CLAY_CITE
                     + "; GEC-10 p. 10-48 on drag: 'effective stress analysis "
                     "for long-term conditions in cohesive soils, where "
-                    "appropriate'). Beta as given (GEC-12 Step 2, p. 257: "
+                    "appropriate'). Beta as given (GEC-12 §7.2.1.3.4 Step "
+                    "2, p. 257: "
                     + BETA_IN_CLAY_VALUES + f"); sigma'v "
                     f"{self.skin_friction_stress} (skin_friction_stress). "
                     + _EITHER_IN_DRAG)

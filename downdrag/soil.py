@@ -32,8 +32,9 @@ SKIN_FRICTION_METHODS = ("alpha", "beta")
 #: conditions), and its values in clay.
 BETA_IN_CLAY_CITE = "UFC 3-220-20 §6-5.4.1, p. 411; FHWA GEC-12 §7.2.1.3.4, p. 255"
 BETA_IN_CLAY_VALUES = (
-    "from local experience, else GEC-12 Table 7-9, p. 256 (after Fellenius "
-    "2014): clay 0.15-0.35; UFC 3-220-20 Table 6-15, p. 414, the same")
+    "from local experience, else from phi' by GEC-12 Table 7-9, p. 256 "
+    "(after Fellenius 2014): clay 0.15-0.35 for phi' 25-30 deg; UFC "
+    "3-220-20 Table 6-15, p. 414, the same for driven piles in clay")
 
 
 @dataclass
@@ -162,7 +163,10 @@ class DowndragSoilLayer:
                 "alpha x cu (the Alpha method, the default), or beta x "
                 "sigma'v with skin_friction_method 'beta' and beta given, "
                 "and a toe in it takes Nt x cu (9 cu unless Nt is given). "
-                "Leave phi out.")
+                "For a clay in long-term, drained conditions, give "
+                "skin_friction_method 'beta' and the beta for its phi' "
+                f"({BETA_IN_CLAY_VALUES}); the module does not work beta "
+                "out from phi' in clay. Leave phi out.")
         if self.fs_method == "alpha":
             if self.beta is not None:
                 raise ValueError(

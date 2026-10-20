@@ -459,7 +459,20 @@ effect (GM-179 wording, "does not take"): `beta` on a clay with the α
 method; `alpha` on a sand or on a β clay; `phi` on a clay (nothing uses it:
 its toe is Nt x cu, 9 cu by default; until GM-249 a φ on a clay toe gave
 Nt from φ times cu); `skin_friction_method="alpha"` on a sand. A β clay
-needs `cu` only if the pile toe sits in it.
+needs `cu` only if the pile toe sits in it. The `phi` refusal says what a
+drained clay takes instead: `skin_friction_method="beta"` and the β for its
+φ' (Table 7-9; UFC Table 6-15, p. 414, prints the same 0.15 at 25° to 0.35
+at 30° for driven piles in clay).
+
+The toe in clay stays 9 cu whatever the method above it: Nc "usually taken
+as 9 for deep foundations" (GEC-12 Eq. 7-11, p. 248) and N*c = 9 for Z/b
+of at least 2.5 (UFC 3-220-20 Eq 6-22, p. 424, after Brinch Hansen). The
+effective-stress toe, Nt · σ'p (GEC-12 Eq. 7-20, Table 7-9 clay Nt 3-30;
+UFC Eq 6-21, N*q · σ'm, for drained conditions), is not offered: GEC-12
+p. 256 notes that Fellenius' Nt of 3 in clay gives about the toe
+resistance of the undrained analysis and recommends a low Nt there, and a
+given `Nt` multiplies cu in a clay toe (its description says so). Offering
+the drained toe in a β clay is an owner's call (GM-249 review).
 
 `choices` carries one entry per method and how it was set ("skin friction
 method in the cohesive soil, <depths>"): the method and equation, α or β,
