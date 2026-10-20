@@ -206,9 +206,9 @@ configured the sidebar shows a single **"Model RID or API name"** input with a
 references in banners or the diagnostics report. Local/dev behaviour is
 unchanged.
 
-## Troubleshooting a live deployment (learned 2026-07-17/18, State gov enclave)
+## Troubleshooting a live deployment (learned 2026-07-17/18, a government enclave)
 
-Field notes from the first real publish (PDCS Sandbox, stateobo.palantirgov.com):
+Field notes from the first real publish (a sandbox project on `<your-enclave>.palantirgov.com`):
 
 - **Upgrade recipe** (the only steps that matter):
   `maestro env pip install "geotech-staff-engineer==X.Y.Z"` in the workspace

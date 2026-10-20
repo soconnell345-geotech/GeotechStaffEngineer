@@ -387,9 +387,9 @@ def test_run_on_databricks_unknown_host_leaves_url_none():
 def test_proxy_url_gov_cloud_uses_dp_host():
     """Azure Gov driver proxy lives on the adb-dp- host (SDK examples force
     this rewrite); other clouds untouched."""
-    url = dl.proxy_url("https://adb-429679569790375.3.databricks.azure.us",
+    url = dl.proxy_url("https://adb-1234567890123456.7.databricks.azure.us",
                        "/driver-proxy/o/O/C/8501")
-    assert url.startswith("https://adb-dp-429679569790375.3.databricks.azure.us/")
+    assert url.startswith("https://adb-dp-1234567890123456.7.databricks.azure.us/")
     # Already-dp stays; commercial Azure and AWS untouched.
     assert dl.proxy_url("https://adb-dp-9.3.databricks.azure.us", "/p"
                         ).count("adb-dp-") == 1
