@@ -145,6 +145,54 @@ def test_the_switch_is_on_by_default_and_has_arms(monkeypatch):
         assert review_flags.judgment_calls() is False, value
 
 
+def test_only_the_three_ruled_switches_are_on_by_default(monkeypatch):
+    """GM-226/GM-227: the owner ruled three switches on; every other review
+    switch still waits for the suite and is OFF with its variable unset,
+    and an empty value counts as unset."""
+    assert set(review_flags.DEFAULT_ON_ENVS) == {
+        "GEOTECH_JUDGMENT_CALLS", "GEOTECH_FIGURE_HELPER",
+        "GEOTECH_PLOT_CODE"}
+    readers = {
+        review_flags.AGENT_ENV: lambda: (review_flags.lean_agent()
+                                         or review_flags.minimal_agent()),
+        review_flags.VISION_TEXT_ENV: review_flags.vision_text_context,
+        review_flags.VISION_STRUCTURED_ENV: review_flags.vision_structured,
+        review_flags.VISION_INLINE_ENV: review_flags.vision_inline,
+        review_flags.SWEEP_ENV: review_flags.sweep,
+        review_flags.FINDINGS_ENV: review_flags.findings,
+        review_flags.OVERVIEW_ENV: review_flags.overview,
+        review_flags.GEOMETRY_ENV: review_flags.geometry,
+        review_flags.DIGEST_ENV: review_flags.digest,
+        review_flags.COVERAGE_ENV: review_flags.coverage,
+        review_flags.CHECKLIST_ENV: review_flags.checklist,
+        review_flags.VISION_TURN_RETRY_ENV: review_flags.vision_turn_retry,
+        review_flags.KEPT_READINGS_ENV:
+            review_flags.kept_readings_on_review_page,
+        review_flags.CITED_PAGES_ENV:
+            lambda: review_flags.cited_pages() != "off",
+        review_flags.CITED_DOCUMENTS_ENV:
+            lambda: review_flags.cited_documents() != "off",
+        review_flags.STEP_CAP_ANSWER_ENV: review_flags.step_cap_answer,
+        review_flags.FIGURE_HELPER_ENV: review_flags.figure_helper,
+        review_flags.PLOT_CODE_ENV: review_flags.plot_code,
+        review_flags.JUDGMENT_CALLS_ENV: review_flags.judgment_calls,
+    }
+    assert set(readers) == set(review_flags.ALL_ENVS)
+    for unset in (None, "", "  "):
+        for env in review_flags.ALL_ENVS:
+            if unset is None:
+                monkeypatch.delenv(env, raising=False)
+            else:
+                monkeypatch.setenv(env, unset)
+        for env, read in readers.items():
+            assert bool(read()) is (env in review_flags.DEFAULT_ON_ENVS), \
+                (env, unset)
+    described = review_flags.describe()
+    for env in review_flags.ALL_ENVS:
+        assert (f"{env}=1 (default)" in described) is (
+            env in review_flags.DEFAULT_ON_ENVS), env
+
+
 def test_the_default_build_states_its_judgment_calls(monkeypatch):
     """No variable set at all: the geotech build is the switch-on build,
     and its record says the switch is on by default."""

@@ -719,9 +719,15 @@ with st.sidebar:
         _refs_on = st.checkbox(
             "Consult references", value=(_b["references"] != "off"),
             key=f"refs_{ss.thread_id}",
-            help="When on, the agent can consult the reference library (DM7 / GEC "
-                 "/ UFC …) through a scoped sub-agent. Turn off for pure-calc "
-                 "sessions to save tokens.") \
+            help="When on, the agent can look things up in the reference "
+                 "library (DM7, GEC, UFC and others) through a references "
+                 "helper; when an answer ends with its judgment calls, the "
+                 "agent asks that helper once for the source of each call "
+                 "no tool gave a basis for. "
+                 "Turn off to stop these look-ups, which also lowers the "
+                 "cost of each turn: the judgment calls are still "
+                 "listed, each with the basis a tool gave or a plain "
+                 "\"rests on judgment\".") \
             if _geo else (_b["references"] != "off")
         _depth = st.select_slider(
             "Analysis depth", options=list(core.ANALYSIS_DEPTHS),
@@ -757,8 +763,11 @@ with st.sidebar:
                 "Reference consult budget (model calls)", min_value=1,
                 max_value=40, value=int(_b["ref_max_calls"]), step=1,
                 key=f"refcalls_{ss.thread_id}",
-                help="Max model calls the reference consultant spends per consult "
-                     "before it must summarize and answer.") \
+                help="The most model calls the references helper may spend "
+                     "on one look-up before it must answer from what it "
+                     "found; the look-up for the judgment calls stays within "
+                     "it too. Lower it to cut the cost of each look-up; turn "
+                     "\"Consult references\" off to stop them.") \
                 if _geo else int(_b["ref_max_calls"])
             _rlim = st.number_input(
                 "Primary step cap (recursion limit)", min_value=5, max_value=200,

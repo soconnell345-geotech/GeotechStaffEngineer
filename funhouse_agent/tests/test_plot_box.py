@@ -852,3 +852,50 @@ def test_on_by_default_offered_to_both_helpers_and_0_turns_it_off(
     if fig is not None:
         assert "plot_code" in names(fig)
         assert fig["system_prompt"].endswith(PLOT_CODE_STEP)
+
+
+def test_a_host_without_the_box_builds_both_pages_without_it(monkeypatch):
+    """GM-227: on by default, so a host where the box cannot run (no
+    matplotlib, or the child file missing) must still build both pages,
+    with the figure helper on plot_data alone and no plot_code anywhere."""
+    pytest.importorskip("deepagents")
+    from langchain_core.language_models.chat_models import BaseChatModel
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, ChatResult
+    from funhouse_agent.deep import agent as agent_mod
+    from webapp.profiles import DOCUMENT_REVIEW
+
+    class _Quiet(BaseChatModel):
+        @property
+        def _llm_type(self) -> str:
+            return "quiet"
+
+        def bind_tools(self, tools, **kw):
+            return self
+
+        def _generate(self, messages, stop=None, run_manager=None, **kw):
+            return ChatResult(generations=[ChatGeneration(
+                message=AIMessage(content="done"))])
+
+    for env in review_flags.ALL_ENVS:
+        monkeypatch.delenv(env, raising=False)
+    monkeypatch.setattr(plot_box, "available", lambda: False)
+    builds = []
+    real = agent_mod.create_deep_agent
+
+    def spy(**k):
+        builds.append(k)
+        return real(**k)
+    monkeypatch.setattr(agent_mod, "create_deep_agent", spy)
+    agent_mod.build_deep_agent(model=_Quiet(), enable_calc_subagent=True)
+    agent_mod.build_deep_agent(model=_Quiet(),
+                               **DOCUMENT_REVIEW.build_kwargs())
+    assert len(builds) == 2
+    for k in builds:
+        helpers = {s.get("name"): s for s in k["subagents"]}
+        assert "figure" in helpers
+        assert "plot_code" not in {getattr(t, "name", None)
+                                   for t in k["tools"]}
+        for spec in helpers.values():
+            assert "plot_code" not in {getattr(t, "name", None)
+                                       for t in spec.get("tools") or []}
