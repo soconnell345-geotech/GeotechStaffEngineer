@@ -710,6 +710,34 @@ def test_a_table_a_little_too_wide_is_compacted_not_reflowed():
     assert latex_renderer._reflow_tables(small, _WHERE) == small
 
 
+def _numeric_html(columns: int, rows: int, digits: int) -> str:
+    """A calculation table: ``rows`` rows of ``columns`` numbers."""
+    from calc_package.template import CALC_PACKAGE_CSS
+    head = "".join(f"<th>Value {j} (kPa)</th>" for j in range(columns))
+    body = "".join(
+        "<tr>" + "".join(f"<td>{(i + 1) * (j + 1) * 1.25:.{digits}f}</td>"
+                         for j in range(columns)) + "</tr>"
+        for i in range(rows))
+    return (f"<html><head><style>{CALC_PACKAGE_CSS}</style>"
+            f"{latex_renderer._PDF_STORY_CSS}</head><body>"
+            f'<table class="data-table"><thead><tr>{head}</tr></thead>'
+            f"<tbody>{body}</tbody></table></body></html>")
+
+
+def test_a_long_numeric_table_stays_a_table():
+    """Only a single row taller than a third of a page makes blocks; a
+    calculation table is never reflowed for being long."""
+    html = _numeric_html(6, 200, 3)
+    assert latex_renderer._reflow_tables(html, _WHERE) == html
+
+
+def test_a_ten_column_numeric_table_is_compacted_not_reflowed():
+    html = _numeric_html(10, 30, 4)
+    out = latex_renderer._reflow_tables(html, _WHERE)
+    assert 'class="wide-pdf-table data-table"' in out
+    assert 'class="pdf-rows"' not in out
+
+
 def test_a_table_as_blocks_keeps_every_heading_and_cell():
     table = ("<table><caption>Layers</caption><thead>"
              "<tr><th rowspan=2>Layer</th><th colspan=2>Strength</th></tr>"
