@@ -361,6 +361,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
 
             else:  # rock
                 socket_perim = shaft.socket_perimeter
+                qu = soil.layer_at_depth(0.5 * (z_top + z_bot)).qu
                 layer_items.append(CalcStep(
                     title=f"Layer {i}: {desc} ({z_top:.1f}-{z_bot:.1f} m) -- Rock Socket",
                     equation=(
@@ -369,7 +370,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
                     ),
                     substitution=(
                         f"f_s = {analysis.rock_side_C:g} \u00d7 "
-                        f"\u221a(q_u \u00d7 {_PA:g}) = {fs:.1f} kPa\n"
+                        f"\u221a({qu:,.0f} \u00d7 {_PA:g}) = {fs:.1f} kPa\n"
                         f"Q_s = {fs:.1f} \u00d7 {socket_perim:.3f} "
                         f"\u00d7 {eff_thickness:.2f}"
                     ),

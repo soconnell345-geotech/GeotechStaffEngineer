@@ -94,6 +94,13 @@ def test_the_priebe_default_is_still_the_formula_and_says_so():
     what = {c["what"]: c["how"] for c in r["choices"]}
     assert what == {"Priebe improvement factor": "default",
                     "column friction angle phi_c": "default"}
+    # the default angle's basis is said plainly, with the printed curve's
+    # angle and what the formula gives at it
+    (phi,) = [c for c in r["choices"] if c["what"].startswith("column")]
+    assert "GEC-13 prints no column friction angle" in phi["basis"]
+    assert phi["alternatives"] == [
+        "phi_column 37.5: the angle of GEC-13's printed curve, n0 = 2.58 "
+        "here"]
 
 
 def test_the_pier_package_cites_the_stress_reduction_method(tmp_path,

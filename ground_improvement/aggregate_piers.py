@@ -144,8 +144,9 @@ def priebe_basic_improvement_factor(as_ratio: float,
     as_ratio : float
         Area replacement ratio as = Ac / A (0 < as < 1).
     phi_column : float, optional
-        Friction angle of the column material (degrees). Default 42.5
-        (Priebe's design-chart value for compacted stone).
+        Friction angle of the column material (degrees). Default 42.5,
+        the module's; GEC-13 prints no friction angle for this formula
+        (its Priebe curve, Fig. 5-21 curve (4), is drawn for 37.5).
     nu_soil : float, optional
         Poisson's ratio of the surrounding soil. Default 1/3.
 
@@ -214,6 +215,7 @@ def priebe_choices(method: str, as_ratio: float, n0: float,
             f"phi = 37.5 deg: {at}", how, PRIEBE_BASIS["fig_5_21"],
             ["method 'formula': Priebe's basic n0 from phi_column and "
              "nu_soil"])]
+    at_37 = priebe_basic_improvement_factor(as_ratio, 37.5, nu_soil)
     return [
         choice("Priebe improvement factor",
                f"Priebe's basic n0, nu = {nu_soil:.3g}: {at}", how,
@@ -222,10 +224,14 @@ def priebe_choices(method: str, as_ratio: float, n0: float,
                 "phi = 37.5 deg (p. 5-36; Example 2, p. 5-49)"]),
         choice("column friction angle phi_c", f"{phi_column:g} deg",
                how_given(phi_column, 42.5, name="phi_column"),
-               "the tool's default is 42.5 deg; GEC-13's printed Priebe "
+               "42.5 deg is the module's default; GEC-13 prints no column "
+               "friction angle for Priebe's formula. Its printed Priebe "
                "curve, Fig. 5-21 curve (4), is drawn for phi = 37.5 deg "
-               "(p. 5-36)",
-               ["phi_column 37.5: the angle of GEC-13's printed curve"]),
+               "(p. 5-36), and p. 5-37: 'the Priebe curve may be used to "
+               "evaluate the upper bound effectiveness'. n0 rises with "
+               "phi_c",
+               [f"phi_column 37.5: the angle of GEC-13's printed curve, "
+                f"n0 = {at_37:.2f} here"]),
     ]
 
 

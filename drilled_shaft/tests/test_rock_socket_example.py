@@ -119,7 +119,7 @@ def test_the_calc_steps_print_the_socket_base_and_c():
     assert "D_sock" in tip.equation and "Example 10-4" in tip.reference
     assert float(tip.result_value) == pytest.approx(r.base_area, abs=1e-4)
     rock = [s for s in steps if s.title.endswith("Rock Socket")][0]
-    assert rock.substitution.startswith("f_s = 1 ×")
+    assert rock.substitution.startswith("f_s = 1 × √(17,237 × 101.325)")
     method = [s for s in steps if s.title == "Rock Socket Method"][0]
     assert "C = 1 (rock_side_C)" in method.equation
     a_tip = [i for i in get_input_summary(r, a) if i.name == "A_tip"][0]
