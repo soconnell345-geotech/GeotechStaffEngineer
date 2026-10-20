@@ -600,7 +600,7 @@
       "other_arguments": [],
       "subagents": [
        {
-        "description": "1d337d586b84cbbd",
+        "description": "24b508e4bcab41df",
         "middleware": [
          {
           "class": "ModelCallBudgetMiddleware",
@@ -729,7 +729,7 @@
          }
         ],
         "name": "general-purpose",
-        "system_prompt": "25d3658d43067116",
+        "system_prompt": "94ac4edf7c074b92",
         "tools": {
          "analyze_image": {
           "args": "63cf273a21391067",
@@ -758,8 +758,8 @@
         }
        }
       ],
-      "system_prompt": "28599f20eac0f9d7",
-      "system_prompt_chars": 9845,
+      "system_prompt": "67d3097de34b1443",
+      "system_prompt_chars": 9839,
       "tools": {
        "analyze_image": {
         "args": "63cf273a21391067",
@@ -786,8 +786,8 @@
         "description": "74e9d3bddb45285e"
        },
        "plot_data": {
-        "args": "c0f32511cefd9e88",
-        "description": "fadb58e2f6e2531b"
+        "args": "09d5ac130924f6e2",
+        "description": "0fe78d52c2e95a18"
        },
        "read_pdf_text": {
         "args": "77c7dbbf83562c31",
@@ -863,8 +863,8 @@
        }
       ],
       "other_arguments": [],
-      "system_prompt": "1a802e539e0fb543",
-      "system_prompt_chars": 8805,
+      "system_prompt": "b1f3dcf8f17669f3",
+      "system_prompt_chars": 8799,
       "tools": {
        "analyze_image": {
         "args": "ffc62362df657ea4",
@@ -887,8 +887,8 @@
         "description": "74e9d3bddb45285e"
        },
        "plot_data": {
-        "args": "59302748a3702f70",
-        "description": "0974e1d6396776ff"
+        "args": "cae31df9394f236f",
+        "description": "9ae908c67b01d372"
        },
        "read_text_file": {
         "args": "38bb764f5dde0d41",
@@ -949,8 +949,8 @@
        }
       ],
       "other_arguments": [],
-      "system_prompt": "25d3658d43067116",
-      "system_prompt_chars": 5603,
+      "system_prompt": "94ac4edf7c074b92",
+      "system_prompt_chars": 5597,
       "tools": {
        "analyze_image": {
         "args": "ffc62362df657ea4",
@@ -1183,13 +1183,9 @@
          "args": "622c49e76114bb80",
          "description": "97e383198864374b"
         },
-        "log_grid": {
-         "args": "e86123cad76c24ec",
-         "description": "c3b1ef0000fad549"
-        },
         "measure": {
-         "args": "2d8ae460f3762cd2",
-         "description": "e03ebc1cf5774758"
+         "args": "7dc6558fc93b2776",
+         "description": "62bc800c36aac2c1"
         },
         "open_document": {
          "args": "178a4b401ed2c071",
@@ -1200,12 +1196,12 @@
          "description": "04758e899cfdcd4d"
         },
         "render_page_thumbnails": {
-         "args": "ed9d08a4314dfa0c",
-         "description": "ad7e23a3446f7810"
+         "args": "68484b680da324a6",
+         "description": "276bf6dfafb5d4c5"
         },
         "search_document": {
-         "args": "f9b0c511f1cf1f5d",
-         "description": "15f55d293fd7a36b"
+         "args": "3522b8922be2c55e",
+         "description": "411e70e9762d01ac"
         }
        }
       },
@@ -1230,13 +1226,9 @@
         "args": "622c49e76114bb80",
         "description": "97e383198864374b"
        },
-       "log_grid": {
-        "args": "e86123cad76c24ec",
-        "description": "c3b1ef0000fad549"
-       },
        "measure": {
-        "args": "2d8ae460f3762cd2",
-        "description": "e03ebc1cf5774758"
+        "args": "7dc6558fc93b2776",
+        "description": "62bc800c36aac2c1"
        },
        "open_document": {
         "args": "178a4b401ed2c071",
@@ -1247,12 +1239,12 @@
         "description": "04758e899cfdcd4d"
        },
        "render_page_thumbnails": {
-        "args": "ed9d08a4314dfa0c",
-        "description": "ad7e23a3446f7810"
+        "args": "68484b680da324a6",
+        "description": "276bf6dfafb5d4c5"
        },
        "search_document": {
-        "args": "f9b0c511f1cf1f5d",
-        "description": "15f55d293fd7a36b"
+        "args": "3522b8922be2c55e",
+        "description": "411e70e9762d01ac"
        }
       }
      }
@@ -1282,13 +1274,9 @@
         "args": "622c49e76114bb80",
         "description": "97e383198864374b"
        },
-       "log_grid": {
-        "args": "e86123cad76c24ec",
-        "description": "c3b1ef0000fad549"
-       },
        "measure": {
-        "args": "2d8ae460f3762cd2",
-        "description": "e03ebc1cf5774758"
+        "args": "7dc6558fc93b2776",
+        "description": "62bc800c36aac2c1"
        },
        "open_document": {
         "args": "178a4b401ed2c071",
@@ -1299,12 +1287,12 @@
         "description": "04758e899cfdcd4d"
        },
        "render_page_thumbnails": {
-        "args": "ed9d08a4314dfa0c",
-        "description": "ad7e23a3446f7810"
+        "args": "68484b680da324a6",
+        "description": "276bf6dfafb5d4c5"
        },
        "search_document": {
-        "args": "f9b0c511f1cf1f5d",
-        "description": "15f55d293fd7a36b"
+        "args": "3522b8922be2c55e",
+        "description": "411e70e9762d01ac"
        }
       }
      },
@@ -1328,13 +1316,9 @@
         "args": "622c49e76114bb80",
         "description": "97e383198864374b"
        },
-       "log_grid": {
-        "args": "e86123cad76c24ec",
-        "description": "c3b1ef0000fad549"
-       },
        "measure": {
-        "args": "2d8ae460f3762cd2",
-        "description": "e03ebc1cf5774758"
+        "args": "7dc6558fc93b2776",
+        "description": "62bc800c36aac2c1"
        },
        "open_document": {
         "args": "178a4b401ed2c071",
@@ -1345,12 +1329,12 @@
         "description": "04758e899cfdcd4d"
        },
        "render_page_thumbnails": {
-        "args": "ed9d08a4314dfa0c",
-        "description": "ad7e23a3446f7810"
+        "args": "68484b680da324a6",
+        "description": "276bf6dfafb5d4c5"
        },
        "search_document": {
-        "args": "f9b0c511f1cf1f5d",
-        "description": "15f55d293fd7a36b"
+        "args": "3522b8922be2c55e",
+        "description": "411e70e9762d01ac"
        }
       }
      }
@@ -1452,13 +1436,9 @@
          "args": "622c49e76114bb80",
          "description": "97e383198864374b"
         },
-        "log_grid": {
-         "args": "b698f6bb0904fb0d",
-         "description": "d23ffbf062522815"
-        },
         "measure": {
-         "args": "2d8ae460f3762cd2",
-         "description": "e03ebc1cf5774758"
+         "args": "7dc6558fc93b2776",
+         "description": "62bc800c36aac2c1"
         },
         "open_document": {
          "args": "178a4b401ed2c071",
@@ -1469,12 +1449,12 @@
          "description": "04758e899cfdcd4d"
         },
         "render_page_thumbnails": {
-         "args": "ed9d08a4314dfa0c",
-         "description": "ad7e23a3446f7810"
+         "args": "68484b680da324a6",
+         "description": "276bf6dfafb5d4c5"
         },
         "search_document": {
-         "args": "f9b0c511f1cf1f5d",
-         "description": "15f55d293fd7a36b"
+         "args": "3522b8922be2c55e",
+         "description": "411e70e9762d01ac"
         }
        }
       },
@@ -1499,13 +1479,9 @@
         "args": "622c49e76114bb80",
         "description": "97e383198864374b"
        },
-       "log_grid": {
-        "args": "b698f6bb0904fb0d",
-        "description": "d23ffbf062522815"
-       },
        "measure": {
-        "args": "2d8ae460f3762cd2",
-        "description": "e03ebc1cf5774758"
+        "args": "7dc6558fc93b2776",
+        "description": "62bc800c36aac2c1"
        },
        "open_document": {
         "args": "178a4b401ed2c071",
@@ -1516,12 +1492,12 @@
         "description": "04758e899cfdcd4d"
        },
        "render_page_thumbnails": {
-        "args": "ed9d08a4314dfa0c",
-        "description": "ad7e23a3446f7810"
+        "args": "68484b680da324a6",
+        "description": "276bf6dfafb5d4c5"
        },
        "search_document": {
-        "args": "f9b0c511f1cf1f5d",
-        "description": "15f55d293fd7a36b"
+        "args": "3522b8922be2c55e",
+        "description": "411e70e9762d01ac"
        }
       }
      }
@@ -1551,13 +1527,9 @@
         "args": "622c49e76114bb80",
         "description": "97e383198864374b"
        },
-       "log_grid": {
-        "args": "b698f6bb0904fb0d",
-        "description": "d23ffbf062522815"
-       },
        "measure": {
-        "args": "2d8ae460f3762cd2",
-        "description": "e03ebc1cf5774758"
+        "args": "7dc6558fc93b2776",
+        "description": "62bc800c36aac2c1"
        },
        "open_document": {
         "args": "178a4b401ed2c071",
@@ -1568,12 +1540,12 @@
         "description": "04758e899cfdcd4d"
        },
        "render_page_thumbnails": {
-        "args": "ed9d08a4314dfa0c",
-        "description": "ad7e23a3446f7810"
+        "args": "68484b680da324a6",
+        "description": "276bf6dfafb5d4c5"
        },
        "search_document": {
-        "args": "f9b0c511f1cf1f5d",
-        "description": "15f55d293fd7a36b"
+        "args": "3522b8922be2c55e",
+        "description": "411e70e9762d01ac"
        }
       }
      },
@@ -1597,13 +1569,9 @@
         "args": "622c49e76114bb80",
         "description": "97e383198864374b"
        },
-       "log_grid": {
-        "args": "b698f6bb0904fb0d",
-        "description": "d23ffbf062522815"
-       },
        "measure": {
-        "args": "2d8ae460f3762cd2",
-        "description": "e03ebc1cf5774758"
+        "args": "7dc6558fc93b2776",
+        "description": "62bc800c36aac2c1"
        },
        "open_document": {
         "args": "178a4b401ed2c071",
@@ -1614,12 +1582,12 @@
         "description": "04758e899cfdcd4d"
        },
        "render_page_thumbnails": {
-        "args": "ed9d08a4314dfa0c",
-        "description": "ad7e23a3446f7810"
+        "args": "68484b680da324a6",
+        "description": "276bf6dfafb5d4c5"
        },
        "search_document": {
-        "args": "f9b0c511f1cf1f5d",
-        "description": "15f55d293fd7a36b"
+        "args": "3522b8922be2c55e",
+        "description": "411e70e9762d01ac"
        }
       }
      }
