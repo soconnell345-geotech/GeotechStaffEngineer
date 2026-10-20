@@ -23,9 +23,11 @@ REFERENCE holds the port's numbers (openseespy 3.8.0, Python 3.12, WSL,
 2026-10-15; regenerate with ``opensees_wiki_free_field.reference_numbers``):
 5 %-damped spectral accelerations at PERIODS_S and the amplification
 spectrum (surface / input Sa), three ways: as written, linear elastic,
-and with the three inputs analyze_site_response cannot set as the Tcl does
-(Poisson's ratio, the Rayleigh frequencies, the peak shear strain) set as
-the module sets them.
+and with the three inputs analyze_site_response could not set as the Tcl
+does (Poisson's ratio, the Rayleigh frequencies, the peak shear strain) set
+as the module sets them; and (GM-79, which made the first two inputs) as
+written but for the peak shear strain, which the module given the Tcl's own
+Poisson's ratio and Rayleigh damping reproduces.
 
 What to expect, and why (measured on the 20 s record):
 
@@ -87,6 +89,15 @@ REFERENCE = {
                  0.3885],
         "amplification": [0.8809, 0.7688, 0.7592, 0.6863, 0.6491, 1.0456,
                           1.5085, 1.7520]},
+    # The port as written but for the peak shear strain (0.1), which is
+    # all the module cannot set since GM-79 (openseespy 3.8.0, WSL,
+    # 2026-10-20; wiki.OWN_INPUTS).
+    "own_inputs": {
+        "pga_g": 0.3500, "pga_time_s": 4.430,
+        "sa_g": [0.9418, 0.7630, 1.0897, 1.3666, 0.7923, 0.3865, 0.4179,
+                 0.3637],
+        "amplification": [0.8824, 0.7838, 0.7723, 0.6887, 0.6611, 0.9410,
+                          1.3470, 1.6402]},
 }
 
 
@@ -226,3 +237,26 @@ class TestAgainstTheOpenSeesWikiExample:
         assert got["pga_g"] == pytest.approx(ref["pga_g"], rel=0.05)
         _assert_spectrum(got["amplification"], ref["amplification"], 0.03,
                          "amplification")
+
+    @requires_opensees
+    def test_nonlinear_column_with_the_examples_own_inputs(self):
+        """GM-79: with the Tcl's own Poisson's ratio (0) and Rayleigh
+        damping (2 % at 0.2 and 20 Hz) given through ``layers[i]['nu']``
+        and ``rayleigh_freqs_hz``, against the port with only the peak
+        shear strain at the module's 0.1: the same model, so amplification
+        within 3 % from 0.1 to 1.5 s and PGA within 5 %. Measured
+        2026-10-20: amplification within 0.03 %, PGA -0.05 %; against the
+        port as written (peak strain 0.05) PGA -0.9 %."""
+        from opensees_agent.site_response import analyze_site_response
+        accel, dt = wiki.load_record()
+        r = analyze_site_response(accel_history=accel, dt=dt,
+                                  time_limit_s=TEST_TIME_LIMIT_S,
+                                  **wiki.own_api_inputs())
+        got = wiki.summarize(r.surface_accel_g, accel, dt)
+        ref = REFERENCE["own_inputs"]
+        assert got["pga_g"] == pytest.approx(ref["pga_g"], rel=0.05)
+        _assert_spectrum(got["amplification"], ref["amplification"], 0.03,
+                         "amplification")
+        assert r.rayleigh_freqs_hz == [0.2, 20.0]
+        (nu,) = [c for c in r.choices if c["what"].endswith("Poisson's ratio")]
+        assert nu["chosen"] == 0.0 and nu["how"] == "given"

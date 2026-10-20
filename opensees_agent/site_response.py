@@ -101,7 +101,8 @@ _DYNAMIC_SUBSTEPS = 10
 
 def _validate_site_response_inputs(layers, gwt_depth, bedrock_Vs,
                                    bedrock_density, damping,
-                                   scale_factor, n_elem_per_layer):
+                                   scale_factor, n_elem_per_layer,
+                                   rayleigh_freqs_hz=None):
     """Validate all site response inputs, raising ValueError for bad values."""
     # -- layers --
     if not isinstance(layers, list) or len(layers) == 0:
@@ -149,6 +150,7 @@ def _validate_site_response_inputs(layers, gwt_depth, bedrock_Vs,
             if layer["su"] <= 0:
                 raise ValueError(
                     f"layers[{i}]['su'] must be positive, got {layer['su']}")
+        _validate_layer_options(i, layer, mat)
 
     # -- scalar params --
     if gwt_depth < 0:
@@ -166,6 +168,99 @@ def _validate_site_response_inputs(layers, gwt_depth, bedrock_Vs,
     if n_elem_per_layer < 1:
         raise ValueError(
             f"n_elem_per_layer must be >= 1, got {n_elem_per_layer}")
+    if rayleigh_freqs_hz is not None:
+        try:
+            f1, f2 = (float(f) for f in rayleigh_freqs_hz)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"rayleigh_freqs_hz must be two frequencies [f1, f2] in Hz, "
+                f"got {rayleigh_freqs_hz!r}") from None
+        if not (0 < f1 < f2):
+            raise ValueError(
+                f"rayleigh_freqs_hz must be two positive frequencies with "
+                f"f1 < f2, got {rayleigh_freqs_hz!r}")
+
+
+# Sand constants a layer may set (GM-79), each defaulting to the Dr = 40 %
+# column of PDMY02_DR40, and the keys each curve reads (GM-80).
+SAND_CONSTANTS = ("contrac1", "contrac2", "contrac3", "dilat1", "dilat2",
+                  "dilat3", "liquefac1", "liquefac2")
+CURVE_KEYS = {
+    "opensees": (),
+    "darendeli": ("plas_index", "ocr", "freq_hz", "n_cycles"),
+    "menq": ("uniformity_coeff", "diam_mean", "n_cycles"),
+    "user": ("G_Gmax_curve", "damping_curve"),
+}
+# Poisson's ratio of each material's skeleton when a layer gives none:
+# drained sand 0.3, and clay 0.495 (nearly incompressible, undrained).
+DEFAULT_NU = {"sand": 0.3, "clay": 0.495}
+# Darendeli's optional inputs and their defaults, in darendeli_params'
+# order: non-plastic, normally consolidated, and his base case of 1 Hz
+# and 10 cycles (the last two set only the reported damping).
+DARENDELI_DEFAULTS = {"plas_index": 0.0, "ocr": 1.0, "freq_hz": 1.0,
+                      "n_cycles": 10.0}
+
+
+def _validate_layer_options(i, layer, mat):
+    """The GM-79 / GM-80 layer options: curve and its keys, n_elem, nu,
+    the sand constants."""
+    label = f"layers[{i}]"
+    from opensees_agent.curves import CURVES, table, table_ggmax
+    curve = str(layer.get("curve", "opensees")).lower().strip()
+    if curve not in CURVES:
+        raise ValueError(f"{label}['curve'] must be one of {CURVES}, got "
+                         f"{layer.get('curve')!r}")
+    for other, keys in CURVE_KEYS.items():
+        if other == curve:
+            continue
+        stray = [k for k in keys if k in layer
+                 and k not in CURVE_KEYS[curve]]
+        if stray:
+            raise ValueError(
+                f"{label} gives {stray}, which the '{other}' curve reads, "
+                f"but its curve is '{curve}': set curve='{other}' or "
+                f"leave them out")
+    if curve == "menq":
+        for key in ("uniformity_coeff", "diam_mean"):
+            if key not in layer:
+                raise ValueError(
+                    f"{label} (curve 'menq') requires '{key}' "
+                    f"({'Cu' if key == 'uniformity_coeff' else 'D50, mm'})")
+    if curve == "user":
+        if "G_Gmax_curve" not in layer:
+            raise ValueError(
+                f"{label} (curve 'user') requires 'G_Gmax_curve': "
+                f"{{'strain_pct': [...], 'G_Gmax': [...]}}")
+        table_ggmax(layer["G_Gmax_curve"], label + "['G_Gmax_curve']")
+        if layer.get("damping_curve") is not None:
+            table(layer["damping_curve"], "damping_pct",
+                  label + "['damping_curve']")
+    for key in ("plas_index",):
+        if key in layer and layer[key] < 0:
+            raise ValueError(f"{label}['{key}'] must be >= 0")
+    for key in ("ocr", "freq_hz", "n_cycles", "uniformity_coeff",
+                "diam_mean"):
+        if key in layer and not layer[key] > 0:
+            raise ValueError(f"{label}['{key}'] must be positive, got "
+                             f"{layer[key]!r}")
+    if "n_elem" in layer:
+        n = layer["n_elem"]
+        if isinstance(n, bool) or not isinstance(n, int) or n < 1:
+            raise ValueError(f"{label}['n_elem'] must be a whole number "
+                             f">= 1, got {n!r}")
+    if "nu" in layer and not (0.0 <= layer["nu"] < 0.5):
+        raise ValueError(f"{label}['nu'] must be in [0, 0.5), got "
+                         f"{layer['nu']!r}")
+    if mat == "clay":
+        given = [k for k in SAND_CONSTANTS if k in layer]
+        if given:
+            raise ValueError(f"{label} is clay: {given} are sand "
+                             f"(PressureDependMultiYield02) constants")
+    for key in SAND_CONSTANTS:
+        if key in layer and (not isinstance(layer[key], (int, float))
+                             or layer[key] < 0):
+            raise ValueError(f"{label}['{key}'] must be a number >= 0, got "
+                             f"{layer[key]!r}")
 
 
 # ===========================================================================
@@ -186,6 +281,7 @@ def analyze_site_response(
     n_elem_per_layer=4,
     linear_elastic=False,
     time_limit_s=DEFAULT_TIME_LIMIT_S,
+    rayleigh_freqs_hz=None,
 ):
     """Run 1D effective-stress site response analysis.
 
@@ -206,7 +302,26 @@ def analyze_site_response(
         shear (the column shears in simple shear; the model's peak
         stress there equals su).
         Optional for all: ``n_surf`` (default 20), ``e_init`` (void
-        ratio; default 0.77 sand, 0.85 clay).
+        ratio; default 0.77 sand, 0.85 clay), ``n_elem`` (this layer's
+        element count; default ``n_elem_per_layer``), ``nu`` (Poisson's
+        ratio of the skeleton; default 0.3 sand, 0.495 clay).
+        Sand optional: the PressureDependMultiYield02 constants
+        ``contrac1``, ``contrac2``, ``contrac3``, ``dilat1``, ``dilat2``,
+        ``dilat3``, ``liquefac1``, ``liquefac2`` (default the OpenSees
+        wiki's Dr = 40 % column, PDMY02_DR40, and the command's defaults).
+        Stress-strain curve (GM-80), ``curve``: 'opensees' (default: the
+        material's own hyperbolic backbone to its strength at 10 % strain),
+        'darendeli' (Darendeli 2001; optional ``plas_index`` default 0,
+        ``ocr`` 1, ``freq_hz`` 1, ``n_cycles`` 10), 'menq' (Menq 2003;
+        requires ``uniformity_coeff`` Cu and ``diam_mean`` D50 in mm;
+        optional ``n_cycles`` 10) or 'user' (requires ``G_Gmax_curve``
+        ``{"strain_pct": [...], "G_Gmax": [...]}``; optional
+        ``damping_curve`` ``{"strain_pct": [...], "damping_pct": [...]}``).
+        A chosen curve is evaluated at the layer's mid-depth mean
+        effective stress and becomes the material's user-defined backbone,
+        followed to the layer's strength (phi or su) and cut there; its
+        damping is reported, not imposed (the material damps on Masing's
+        rules; see opensees_agent/curves.py).
     motion : str, optional
         Built-in motion name (e.g. 'synthetic_pulse'). The motion is
         taken as a ROCK OUTCROP motion.
@@ -226,8 +341,8 @@ def analyze_site_response(
     bedrock_density : float
         Bedrock mass density (Mg/m3). Default 2.4.
     damping : float
-        Target Rayleigh damping ratio, matched at the site frequency
-        Vs/(4H) and five times it (a little less between). Default 0.02.
+        Target Rayleigh damping ratio, matched at the two Rayleigh
+        frequencies (a little less between). Default 0.02.
     scale_factor : float
         Scale factor applied to input acceleration. Default 1.0.
     n_elem_per_layer : int
@@ -245,6 +360,10 @@ def analyze_site_response(
         wiki example's 160-element column through 4,000 steps takes
         about 9 s). None runs it in this process with no limit. Default
         600.
+    rayleigh_freqs_hz : [f1, f2] or None
+        The two frequencies (Hz) at which the Rayleigh damping equals
+        ``damping``. Default None: the site frequency Vs/(4H) and five
+        times it.
 
     Returns
     -------
@@ -263,7 +382,7 @@ def analyze_site_response(
     """
     _validate_site_response_inputs(
         layers, gwt_depth, bedrock_Vs, bedrock_density,
-        damping, scale_factor, n_elem_per_layer)
+        damping, scale_factor, n_elem_per_layer, rayleigh_freqs_hz)
     if time_limit_s is not None and not (
             isinstance(time_limit_s, (int, float))
             and math.isfinite(time_limit_s) and time_limit_s > 0):
@@ -277,9 +396,16 @@ def analyze_site_response(
         motion, accel_history, dt, target_pga_g=target_pga_g)
 
     motion_name = motion_label(motion, target_pga_g)
+    plans = _layer_plans(layers, gwt_depth, n_elem_per_layer)
+    choices = _site_response_choices(
+        plans, damping, rayleigh_freqs_hz, n_elem_per_layer,
+        linear_elastic)
 
     job = dict(
         layers=[dict(L) for L in layers],
+        plans=plans,
+        rayleigh_freqs_hz=(None if rayleigh_freqs_hz is None
+                           else [float(f) for f in rayleigh_freqs_hz]),
         accel_g=np.asarray(accel_g, dtype=float),
         dt_motion=float(dt_motion),
         gwt_depth=float(gwt_depth),
@@ -292,8 +418,12 @@ def analyze_site_response(
         linear_elastic=bool(linear_elastic),
     )
     if time_limit_s is None:
-        return _run_job(job)
-    return _run_job_in_child(job, float(time_limit_s))
+        result = _run_job(job)
+    else:
+        result = _run_job_in_child(job, float(time_limit_s))
+    result.choices = choices
+    result.layer_curves = [p["report"] for p in plans]
+    return result
 
 
 # ===========================================================================
@@ -385,7 +515,8 @@ def _run_job_in_child(job, time_limit_s):
 def _run_site_response_model(ops, layers, accel_g, dt_motion,
                              gwt_depth, bedrock_Vs, bedrock_density,
                              damping, scale_factor, n_elem_per_layer,
-                             motion_name, linear_elastic=False):
+                             motion_name, linear_elastic=False,
+                             plans=None, rayleigh_freqs_hz=None):
     """Build model, run gravity + dynamic, extract results."""
     g_accel = 9.81  # m/s^2
     col_width = 1.0  # m (plane-strain unit width)
@@ -395,13 +526,16 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
     # 1. Mesh generation: compute element layout bottom-to-top
     # ------------------------------------------------------------------
     # Layers are given top-to-bottom; we reverse for building bottom-up
+    if plans is None:
+        plans = _layer_plans(layers, gwt_depth, n_elem_per_layer)
     layer_elems = []  # (layer_dict, elem_height, n_elems) per layer
-    for L in reversed(layers):
-        n_e = n_elem_per_layer
+    for L, plan in zip(reversed(layers), reversed(plans)):
+        n_e = plan["n_elem"]
         h = L["thickness"] / n_e
         layer_elems.append((L, h, n_e))
+    plans_bottom_up = list(reversed(plans))
 
-    n_elem_total = n_elem_per_layer * len(layers)
+    n_elem_total = sum(n_e for _, _, n_e in layer_elems)
     n_nodes_col = n_elem_total + 1  # nodes per column (left or right)
 
     # Node tag helpers (1-indexed)
@@ -469,28 +603,12 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
     perms = []  # permeability per layer
     e_inits = []  # void ratio per layer
     mat_tag = 1
-    depth_bottom = 0.0  # building bottom-up
-    for L_dict, h_elem, n_e in layer_elems:
-        thickness = L_dict["thickness"]
-        depth_top = depth_bottom
-        depth_mid = depth_bottom + thickness / 2.0
-        depth_bottom_layer = depth_bottom + thickness
-
-        # Depth from surface for stress calculation
-        depth_from_surface_mid = total_depth - depth_mid
-        # Vertical effective stress at mid-layer: the weight of every
-        # layer above plus half this one, less hydrostatic pore pressure
-        sigma_v_eff_mid = _sigma_v_eff(layers, depth_from_surface_mid,
-                                       gwt_depth, g_accel)
-
-        mat_type = L_dict["material_type"].lower().strip()
-
+    for (L_dict, h_elem, n_e), plan in zip(layer_elems, plans_bottom_up):
+        mat_type = plan["material"]
         if mat_type == "sand":
-            perm = _create_sand_material(
-                ops, mat_tag, L_dict, sigma_v_eff_mid)
+            perm = _create_sand_material(ops, mat_tag, L_dict, plan)
         else:
-            perm = _create_clay_material(
-                ops, mat_tag, L_dict, sigma_v_eff_mid)
+            perm = _create_clay_material(ops, mat_tag, L_dict, plan)
 
         e_init = L_dict.get(
             "e_init", PDMY02_DR40["e"] if mat_type == "sand" else 0.85)
@@ -499,7 +617,6 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
         perms.append(perm)
         e_inits.append(e_init)
         mat_tag += 1
-        depth_bottom = depth_bottom_layer
 
     # ------------------------------------------------------------------
     # 5. Create elements (SSPquadUP)
@@ -648,8 +765,11 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
     Vs_avg = total_depth / sum(
         L["thickness"] / L["Vs"] for L in layers)
     T1 = 4.0 * total_depth / Vs_avg  # site period 4H/Vs
-    f1 = 1.0 / T1
-    f2 = 5.0 * f1  # second target: five times the site frequency
+    if rayleigh_freqs_hz is None:
+        f1 = 1.0 / T1
+        f2 = 5.0 * f1  # second target: five times the site frequency
+    else:
+        f1, f2 = rayleigh_freqs_hz
     omega1 = 2.0 * math.pi * f1
     omega2 = 2.0 * math.pi * f2
     a0_ray = 2.0 * damping * omega1 * omega2 / (omega1 + omega2)
@@ -678,17 +798,25 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
     max_ru = np.zeros(n_elem_total)
 
     surface_node = left_node(top_idx)
+    # How each step converged (GM-79): Newton, a fallback algorithm at the
+    # full step, or substeps (which can move the peak, -6 to -20 % on the
+    # OpenSees wiki column's PGA spike).
+    algo_counts = {name: 0 for name, _ in _DYNAMIC_ALGORITHMS}
+    substep_steps = []
 
     for step in range(1, n_steps):
         t_target = step * dt_motion
-        ok = _dynamic_step(ops, dt_motion)
-        if ok != 0:
+        ok, used = _dynamic_step(ops, dt_motion)
+        if ok == 0:
+            algo_counts[used] += 1
+        else:
+            substep_steps.append(step)
             # Fallback: substeps up to the same target time, each tried
             # with every algorithm in turn
             while ops.getTime() < t_target - 1.0e-9 * dt_motion:
                 dt_sub = min(dt_motion / _DYNAMIC_SUBSTEPS,
                              t_target - ops.getTime())
-                ok = _dynamic_step(ops, dt_sub)
+                ok, _ = _dynamic_step(ops, dt_sub)
                 if ok != 0:
                     break
         if ok != 0:
@@ -776,6 +904,10 @@ def _run_site_response_model(ops, layers, accel_g, dt_motion,
                        else "nonlinear effective stress"),
         site_period_s=T1,
         initial_sigma_v_eff_kPa=initial_sigma_v,
+        solver_steps=_solver_steps(algo_counts, substep_steps, n_steps,
+                                   dt_motion),
+        rayleigh_freqs_hz=[float(f1), float(f2)],
+        n_elements=n_elem_total,
     )
 
 
@@ -810,7 +942,8 @@ def _dynamic_step(ops, dt):
     """One dynamic step of ``dt``: Newton first, then each fallback with
     its own test (_DYNAMIC_ALGORITHMS). Newton and its test are restored
     after a fallback. Returns 0 when a step converged, else the last
-    nonzero code from ops.analyze."""
+    nonzero code from ops.analyze, with the algorithm that converged (or
+    the last one tried)."""
     ok = -1
     for k, (algorithm, test) in enumerate(_DYNAMIC_ALGORITHMS):
         if k > 0:
@@ -823,7 +956,7 @@ def _dynamic_step(ops, dt):
         first_algorithm, first_test = _DYNAMIC_ALGORITHMS[0]
         ops.test(*first_test)
         ops.algorithm(first_algorithm)
-    return ok
+    return ok, algorithm
 
 
 # ===========================================================================
@@ -866,91 +999,337 @@ def _sigma_v_eff(layers, depth, gwt_depth, g_accel=9.81):
     return sigma_v - u
 
 
-def _create_sand_material(ops, mat_tag, layer, sigma_v_eff):
-    """Create PressureDependMultiYield02 material for a sand layer.
+# Strains (%) at which a layer's curve is reported.
+_REPORT_STRAINS_PCT = (0.001, 0.01, 0.1, 1.0)
 
-    ``sigma_v_eff`` is the vertical effective stress at mid-layer (kPa);
-    the reference shear modulus rho*Vs^2 is taken at the mean effective
-    stress there, so the layer's Vs holds at its mid-depth.
+
+def _layer_plans(layers, gwt_depth, n_elem_per_layer, g_accel=9.81):
+    """What each layer's material will be, top to bottom: the stresses,
+    moduli, constants and backbone (GM-79, GM-80). Computed before the
+    model so the result can report it whichever process runs the model."""
+    from opensees_agent import curves as C
+    plans = []
+    top = 0.0
+    for L in layers:
+        mat = L["material_type"].lower().strip()
+        thickness = L["thickness"]
+        # Vertical effective stress at mid-layer: the weight of every
+        # layer above plus half this one, less hydrostatic pore pressure
+        sigma_v_eff = _sigma_v_eff(layers, top + thickness / 2.0,
+                                   gwt_depth, g_accel)
+        top += thickness
+        g_max = L["density"] * L["Vs"] ** 2
+        nu = float(L.get("nu", DEFAULT_NU[mat]))
+        b_max = 2.0 * g_max * (1.0 + nu) / (3.0 * (1.0 - 2.0 * nu))
+        if mat == "sand":
+            k0 = L.get("K0", 1.0 - math.sin(math.radians(L["phi"])))
+            # Reference confining pressure: mean effective stress there,
+            # so the layer's Vs holds at its mid-depth
+            p_ref = max(sigma_v_eff * (1.0 + 2.0 * k0) / 3.0, 5.0)
+            tau_f = C.sand_strength(L["phi"], p_ref)
+            constants = {k: float(L.get(k, PDMY02_DR40[k]))
+                         for k in SAND_CONSTANTS}
+        else:
+            # Cap to prevent numerical issues (nu above about 0.495)
+            b_max = min(b_max, g_max * 100.0)
+            p_ref = max(sigma_v_eff * 0.67, 5.0)
+            tau_f = float(L["su"])
+            constants = {}
+        # The Poisson's ratio the moduli give, after the clay's cap
+        nu_used = (3.0 * b_max - 2.0 * g_max) / (2.0 * (3.0 * b_max + g_max))
+        curve = str(L.get("curve", "opensees")).lower().strip()
+        damping_fn = None
+        report = {"curve": curve}
+        curve_params = {}
+        if curve == "darendeli":
+            curve_params = {k: float(L.get(k, d)) for k, d in
+                            DARENDELI_DEFAULTS.items()}
+            prm = C.darendeli_params(p_ref, *curve_params.values())
+            ggmax_fn = (lambda g, prm=prm:
+                        C.modified_hyperbolic(g, *prm)[0])
+            damping_fn = (lambda g, prm=prm:
+                          C.modified_hyperbolic(g, *prm)[1])
+            report.update(reference_strain_pct=round(prm[0] * 100, 5),
+                          curvature=round(prm[1], 4),
+                          min_damping_pct=round(prm[2] * 100, 3))
+        elif curve == "menq":
+            curve_params = {"uniformity_coeff": float(L["uniformity_coeff"]),
+                            "diam_mean": float(L["diam_mean"]),
+                            "n_cycles": float(L.get("n_cycles", 10.0))}
+            prm = C.menq_params(p_ref, *curve_params.values())
+            ggmax_fn = (lambda g, prm=prm:
+                        C.modified_hyperbolic(g, *prm)[0])
+            damping_fn = (lambda g, prm=prm:
+                          C.modified_hyperbolic(g, *prm)[1])
+            report.update(reference_strain_pct=round(prm[0] * 100, 5),
+                          curvature=round(prm[1], 4),
+                          min_damping_pct=round(prm[2] * 100, 3))
+        elif curve == "user":
+            cs, cv = C.table_ggmax(L["G_Gmax_curve"], "G_Gmax_curve")
+            ggmax_fn = (lambda g, cs=cs, cv=cv: C.ggmax_at(g, cs, cv))
+            if L.get("damping_curve") is not None:
+                ds, dv = C.table(L["damping_curve"], "damping_pct",
+                                 "damping_curve")
+                damping_fn = (lambda g, ds=ds, dv=dv: np.interp(
+                    np.log(g), np.log(ds), dv) / 100.0)
+        else:
+            ggmax_fn = C.hyperbolic_ggmax(g_max, tau_f)
+        pairs = None
+        if curve != "opensees":
+            pairs, info = C.fit_backbone(ggmax_fn, g_max, tau_f)
+            report.update(info)
+        report["mean_effective_stress_kPa"] = round(p_ref, 2)
+        report["strength_kPa"] = round(tau_f, 2)
+        strains = np.array(_REPORT_STRAINS_PCT) / 100.0
+        report["strain_pct"] = list(_REPORT_STRAINS_PCT)
+        report["G_Gmax"] = [round(float(v), 4) for v in ggmax_fn(strains)]
+        if damping_fn is not None:
+            report["damping_pct"] = [round(float(v) * 100, 3)
+                                     for v in damping_fn(strains)]
+        if pairs is not None:
+            # The damping the material will give: Masing loops on the
+            # fitted backbone (it takes no damping curve)
+            report["backbone_masing_damping_pct"] = [
+                round(float(v) * 100, 3)
+                for v in C.masing_damping(pairs, g_max, strains)]
+        plans.append(dict(
+            material=mat, n_elem=int(L.get("n_elem", n_elem_per_layer)),
+            nu=nu, nu_used=nu_used, g_max=g_max, b_max=b_max, p_ref=p_ref,
+            tau_f=tau_f, constants=constants, curve=curve,
+            curve_params=curve_params, pairs=pairs, report=report,
+            _given=tuple(sorted(L))))
+    return plans
+
+
+_CURVE_BASIS = {
+    "opensees": ("the material's own hyperbolic backbone, reaching the "
+                 "layer's strength at the peak shear strain of 10 %; much "
+                 "stiffer than laboratory curves in sand (GM-80)"),
+    "darendeli": ("Darendeli (2001) modified hyperbolic curve at the "
+                  "layer's mid-depth mean effective stress, the material's "
+                  "user-defined backbone to the layer's strength"),
+    "menq": ("Menq (2003) modified hyperbolic curve for sands and gravels "
+             "at the layer's mid-depth mean effective stress, the "
+             "material's user-defined backbone to the layer's strength"),
+    "user": ("the G/Gmax table given, the material's user-defined "
+             "backbone to the layer's strength"),
+}
+
+
+def _site_response_choices(plans, damping, rayleigh_freqs_hz,
+                           n_elem_per_layer, linear_elastic):
+    """The result's ``choices`` (GM-115): what the column was built with,
+    each with its basis and alternatives."""
+    from geotech_common.choices import MODULE, choice, how_given
+    from opensees_agent.curves import CURVES
+    out = []
+    for i, plan in enumerate(plans):
+        label = f"layers[{i}] ({plan['material']})"
+        curve = plan["curve"]
+        out.append(choice(
+            f"{label} stress-strain curve", curve,
+            _layer_how(plans, i, "curve"),
+            _CURVE_BASIS[curve] + (
+                "; not used: the column stays linear elastic"
+                if linear_elastic else ""),
+            CURVES))
+        if plan["curve_params"]:
+            out.append(_curve_params_choice(plans, i, label))
+        if plan["pairs"] is not None and not linear_elastic:
+            out.append(_backbone_strength_choice(plan, label, MODULE))
+        nu_basis = ("drained sand skeleton" if plan["material"] == "sand"
+                    else "nearly incompressible undrained clay (the "
+                    "OpenSees wiki total-stress example uses 0.0)")
+        if abs(plan["nu_used"] - plan["nu"]) > 5e-5:
+            nu_basis += (f"; {plan['nu']:g} given, but the clay's bulk "
+                         f"modulus is capped at 100 Gmax, which is "
+                         f"{plan['nu_used']:.4f}")
+        out.append(choice(
+            f"{label} Poisson's ratio", round(plan["nu_used"], 4),
+            _layer_how(plans, i, "nu"), nu_basis,
+            ("any value in [0, 0.5) as layers[i]['nu']",)))
+        out.append(choice(
+            f"{label} element count", plan["n_elem"],
+            _layer_how(plans, i, "n_elem") if _layer_has(plans, i, "n_elem")
+            else how_given(n_elem_per_layer, 4, name="n_elem_per_layer"),
+            "layers[i]['n_elem'], else n_elem_per_layer",
+            ("layers[i]['n_elem']",)))
+        if plan["material"] == "sand":
+            given = sorted(k for k in plan["constants"]
+                           if _layer_has(plans, i, k))
+            out.append(choice(
+                f"{label} contraction / dilation constants",
+                ", ".join(f"{k} {v:g}" for k, v in plan["constants"].items()),
+                _layer_how(plans, i, *plan["constants"]),
+                "the OpenSees wiki's suggested PressureDependMultiYield02 "
+                "parameters, Dr = 40 % column, and the command's defaults"
+                + (f"; given: {', '.join(given)}" if given else
+                   "; a dense layer with these liquefies like Dr = 40 %"),
+                ("contrac1..3, dilat1..3, liquefac1..2 per layer",)))
+    f_how = how_given(rayleigh_freqs_hz, None, name="rayleigh_freqs_hz")
+    out.append(choice(
+        "Rayleigh damping frequencies",
+        ("site frequency Vs/(4H) and 5 times it"
+         if rayleigh_freqs_hz is None else
+         f"{rayleigh_freqs_hz[0]:g} and {rayleigh_freqs_hz[1]:g} Hz"),
+        f_how,
+        f"damping {damping:g} at both, a little less between",
+        ("rayleigh_freqs_hz=[f1, f2]",)))
+    out.append(choice(
+        "hysteretic damping", "Masing loops on the backbone", MODULE,
+        "the multi-yield materials damp by hysteresis on Masing's rules "
+        "and take no damping curve; a curve's damping is reported beside "
+        "the backbone's Masing damping (layer_curves)"))
+    return out
+
+
+def _layer_has(plans, i, key):
+    """Whether layer i was given ``key`` (read off its plan's source)."""
+    return key in plans[i].get("_given", ())
+
+
+def _layer_how(plans, i, *keys):
+    """'default' when layer i gives none of ``keys``; otherwise 'given',
+    or 'assumed' when the call said its layers are not the user's
+    (geotech_common.choices.how_given, GM-180)."""
+    from geotech_common.choices import DEFAULT, how_given
+    if not any(_layer_has(plans, i, k) for k in keys):
+        return DEFAULT
+    return how_given(True, None, within="layers")
+
+
+_CURVE_PARAM_TEXT = {"plas_index": "PI {:g}", "ocr": "OCR {:g}",
+                     "freq_hz": "{:g} Hz", "n_cycles": "{:g} cycles",
+                     "uniformity_coeff": "Cu {:g}",
+                     "diam_mean": "D50 {:g} mm"}
+
+
+def _curve_params_choice(plans, i, label):
+    """The Darendeli or Menq inputs a layer's curve used, and which were
+    left at their defaults."""
+    from geotech_common.choices import choice
+    plan = plans[i]
+    params = plan["curve_params"]
+    defaulted = [k for k in params if not _layer_has(plans, i, k)]
+    if plan["curve"] == "darendeli":
+        basis = ("PI and OCR set the reference strain; the frequency and "
+                 "the number of cycles set only the reported damping")
+    else:
+        basis = ("Cu sets the reference strain; D50 and the number of "
+                 "cycles set only the reported damping")
+    if defaulted:
+        basis += "; left at default: " + ", ".join(
+            _CURVE_PARAM_TEXT[k].format(params[k]) for k in defaulted)
+    return choice(
+        f"{label} {plan['curve']} curve inputs",
+        ", ".join(_CURVE_PARAM_TEXT[k].format(v) for k, v in params.items()),
+        _layer_how(plans, i, *(k for k in params if k not in defaulted)),
+        basis)
+
+
+def _backbone_strength_choice(plan, label, how):
+    """How the fitted backbone meets the layer's strength (GM-80)."""
+    from geotech_common.choices import choice
+    pairs = plan["pairs"]
+    strains, ratios = pairs[0::2], pairs[1::2]
+    if plan["report"]["how"] == "the curve reaches the strength":
+        chosen = (f"the curve to the layer's strength "
+                  f"({plan['tau_f']:.1f} kPa) at {strains[-1] * 100:.3g} % "
+                  f"strain")
+    else:
+        taus = [plan["g_max"] * s * r for s, r in zip(strains, ratios)]
+        stiffer = len(taus) > 2 and (
+            (taus[-1] - taus[-2]) / (strains[-1] - strains[-2])
+            > (taus[-2] - taus[-3]) / (strains[-2] - strains[-3]))
+        chosen = (f"the curve to {strains[-2] * 100:.3g} % strain "
+                  f"({taus[-2]:.1f} kPa), then a straight "
+                  f"{'stiffer ' if stiffer else ''}segment to the layer's "
+                  f"strength ({plan['tau_f']:.1f} kPa) at 10 %")
+    return choice(
+        f"{label} backbone at large strain", chosen, how,
+        "the material takes its friction angle (sand) or cohesion (clay) "
+        "from the last pair (OpenSees source, setUpSurfaces), so the last "
+        "pair sits at the layer's strength; a curve whose stress stays "
+        "below it to 10 % implies a lower strength than the layer's")
+
+
+def _solver_steps(algo_counts, substep_steps, n_steps, dt):
+    """How the dynamic steps converged (GM-79)."""
+    out = {"n_steps": n_steps - 1,
+           "by_algorithm": dict(algo_counts),
+           "fallback_steps": sum(v for k, v in algo_counts.items()
+                                 if k != _DYNAMIC_ALGORITHMS[0][0]),
+           "substepped_steps": len(substep_steps)}
+    if substep_steps:
+        out["substepped_times_s"] = [round(k * dt, 4)
+                                     for k in substep_steps[:20]]
+        out["note"] = (
+            f"{len(substep_steps)} step(s) converged only in "
+            f"{_DYNAMIC_SUBSTEPS} substeps; substeps can move a peak "
+            f"(-6 to -20 % on the OpenSees wiki column's PGA spike).")
+    return out
+
+
+def _create_sand_material(ops, mat_tag, layer, plan):
+    """Create PressureDependMultiYield02 material for a sand layer from
+    its plan (_layer_plans): the reference shear modulus rho*Vs^2 at the
+    mid-layer mean effective stress, and either the material's own
+    backbone (noYieldSurf > 0) or the fitted user-defined one
+    (noYieldSurf < 0 followed by strain, G/Gmax pairs).
 
     Returns permeability (m/s) for use in element creation.
     """
-    Vs = layer["Vs"]
-    rho = layer["density"]
     phi = layer["phi"]
-    K0 = layer.get("K0", 1.0 - math.sin(math.radians(phi)))
     n_surf = int(layer.get("n_surf", 20))
     e_init = layer.get("e_init", PDMY02_DR40["e"])
     # Phase transformation cannot exceed the friction angle (at phi it
     # means no dilation, the table's loosest column).
     pt_ang = min(float(layer.get("PTAng", PDMY02_DR40["PTAng"])), phi)
-
-    # Gmax = rho * Vs^2 (kPa)
-    Gmax = rho * Vs ** 2
-    # Bulk modulus (drained nu ~ 0.3)
-    nu_drain = 0.3
-    Bmax = 2.0 * Gmax * (1.0 + nu_drain) / (3.0 * (1.0 - 2.0 * nu_drain))
-
-    # Reference confining pressure: mean effective stress at mid-layer
-    sigma_mean = max(sigma_v_eff * (1.0 + 2.0 * K0) / 3.0, 5.0)
-
     gamma_max = 0.1  # 10% peak shear strain
     p = PDMY02_DR40
-
+    c = plan["constants"]
     perm = 1.0e-4  # m/s (sand)
+    if plan["pairs"] is None:
+        surfaces = [n_surf]
+    else:
+        surfaces = [-(len(plan["pairs"]) // 2)] + list(plan["pairs"])
 
     # Argument order as documented (OpenSees wiki, PressureDependMultiYield02
     # Material; OpenSeesPy docs): tag nd rho refShearModul refBulkModul
     # frictionAng peakShearStra refPress pressDependCoe PTAng contrac1
-    # contrac3 dilat1 dilat3 noYieldSurf contrac2 dilat2 liquefac1
-    # liquefac2 e cs1 cs2 cs3 pa. (Until GM-77 PTAng was left out, so
-    # every later value sat one slot off: 20 surfaces read as PTAng, 0.27
-    # as the number of yield surfaces, the void ratio and the critical
-    # state constants as 0.)
+    # contrac3 dilat1 dilat3 noYieldSurf [r/Gs pairs] contrac2 dilat2
+    # liquefac1 liquefac2 e cs1 cs2 cs3 pa. (Until GM-77 PTAng was left
+    # out, so every later value sat one slot off.)
     ops.nDMaterial('PressureDependMultiYield02', mat_tag,
                    2,              # nd
-                   rho,            # saturated mass density (Mg/m3)
-                   Gmax,           # refShearModul at refPress (kPa)
-                   Bmax,           # refBulkModul at refPress (kPa)
+                   layer["density"],  # saturated mass density (Mg/m3)
+                   plan["g_max"],  # refShearModul at refPress (kPa)
+                   plan["b_max"],  # refBulkModul at refPress (kPa)
                    phi,            # frictionAng (degrees)
                    gamma_max,      # peakShearStra
-                   sigma_mean,     # refPress (kPa)
+                   plan["p_ref"],  # refPress (kPa)
                    0.5,            # pressDependCoe
                    pt_ang,         # PTAng (degrees)
-                   p["contrac1"], p["contrac3"],
-                   p["dilat1"], p["dilat3"],
-                   n_surf,         # noYieldSurf (> 0: no r/Gs pairs follow)
-                   p["contrac2"], p["dilat2"],
-                   p["liquefac1"], p["liquefac2"],
+                   c["contrac1"], c["contrac3"],
+                   c["dilat1"], c["dilat3"],
+                   *surfaces,      # noYieldSurf (and the user pairs)
+                   c["contrac2"], c["dilat2"],
+                   c["liquefac1"], c["liquefac2"],
                    e_init,         # e (void ratio)
                    p["cs1"], p["cs2"], p["cs3"], p["pa"])
 
     return perm
 
 
-def _create_clay_material(ops, mat_tag, layer, sigma_v_eff):
-    """Create PressureIndependMultiYield material for a clay layer.
-
-    ``sigma_v_eff`` is the vertical effective stress at mid-layer (kPa);
-    with a pressure dependence coefficient of 0 it only sets refPress.
+def _create_clay_material(ops, mat_tag, layer, plan):
+    """Create PressureIndependMultiYield material for a clay layer from
+    its plan (_layer_plans); with a pressure dependence coefficient of 0
+    the reference pressure changes nothing in the backbone.
 
     Returns permeability (m/s) for use in element creation.
     """
-    Vs = layer["Vs"]
-    rho = layer["density"]
-    su = layer["su"]
     n_surf = int(layer.get("n_surf", 20))
-
-    Gmax = rho * Vs ** 2
-    # Nearly incompressible for undrained clay
-    nu_undrained = 0.495
-    Bmax = 2.0 * Gmax * (1.0 + nu_undrained) / (3.0 * (1.0 - 2.0 * nu_undrained))
-    # Cap to prevent numerical issues
-    Bmax = min(Bmax, Gmax * 100.0)
-
     gamma_max = 0.1  # 10%
-    sigma_mean = max(sigma_v_eff * 0.67, 5.0)
-
     perm = 1.0e-7  # m/s (clay, effectively undrained)
 
     # PIMY with phi = 0 is von Mises: its strength in simple shear (how a
@@ -959,19 +1338,25 @@ def _create_clay_material(ops, mat_tag, layer, sigma_v_eff):
     # for the peak shear stress sigma_m of a user-defined backbone; the
     # same relation makes the column's simple-shear strength equal su.
     # Checked on one SSPquad element in simple shear: peak tau = 1.1547c.
-    # (Until GM-77 su went in as c, so the clay was 15 % too strong.)
-    cohesion = math.sqrt(3.0) / 2.0 * su
+    # (Until GM-77 su went in as c, so the clay was 15 % too strong.) With
+    # a user-defined backbone the material sets c from its last pair the
+    # same way, and the fit ends that pair at su.
+    cohesion = math.sqrt(3.0) / 2.0 * layer["su"]
+    if plan["pairs"] is None:
+        surfaces = [n_surf]
+    else:
+        surfaces = [-(len(plan["pairs"]) // 2)] + list(plan["pairs"])
 
     ops.nDMaterial('PressureIndependMultiYield', mat_tag,
                    2,            # ndm
-                   rho,          # mass density
-                   Gmax,         # reference shear modulus (kPa)
-                   Bmax,         # reference bulk modulus (kPa)
+                   layer["density"],  # mass density
+                   plan["g_max"],  # reference shear modulus (kPa)
+                   plan["b_max"],  # reference bulk modulus (kPa)
                    cohesion,     # cohesi: simple-shear strength = su (kPa)
                    gamma_max,    # peak shear strain
                    0.0,          # friction angle (0 for total stress)
-                   sigma_mean,   # reference pressure (kPa)
+                   plan["p_ref"],  # reference pressure (kPa)
                    0.0,          # pressure dependence coefficient
-                   n_surf)       # number of yield surfaces
+                   *surfaces)    # number of yield surfaces (and pairs)
 
     return perm
