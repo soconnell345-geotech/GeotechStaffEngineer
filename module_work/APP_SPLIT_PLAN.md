@@ -20,8 +20,9 @@ the owner, GSE's only user.
 - Document Review installs on Tiny Apps without any geotechnical code. The
   testers' install drops about a dozen packages (OpenSees, pyStrata, PyNite
   and its numba chain, GSTools, SALib, pystra, liquepy, the signal tools,
-  SciPy, the reference library): fewer for the Nexus quarantine to catch, a
-  faster start, nothing tied to the pandas pin.
+  the reference library): fewer for the Nexus quarantine to catch, a
+  faster start, nothing tied to the pandas pin. It keeps the figure helper
+  and plotting code, which you ruled on everywhere (GM-92).
 - GeotechStaffEngineer becomes one page, the geotech one, on Foundry with
   Claude. Nothing it does today is lost.
 - Each app can change without the other's users feeling it. A test that
@@ -37,9 +38,12 @@ paths change once (step 16).
 - **CfA's answer to open question 6**: may Tiny Apps install a wheel kept in
   the wrapper repo instead of one from Nexus? Until CfA answers, testers keep
   today's package from Nexus, which carries both pages. Nothing is lost.
-- **Nine decisions of yours** (section 7). Four shape the plan and are best
-  answered first: the names, where the shared code lives, the Tiny Apps
-  route, and whether the geotech page leaves Tiny Apps.
+- **Seven decisions left for you** (section 7). Of the nine, you answered
+  D4 on 2026-10-20 (the geotech page leaves Tiny Apps for Foundry), and the
+  lead has taken D5 (testers keep today's agent; you can overrule). Five of
+  the seven are best answered before files start to move: the names (D1),
+  where the shared code lives (D2), the Tiny Apps route (D3), releasing the
+  waiting train first (D6), and where the figure helper goes (D8).
 
 **The recommendation, in short.** Three packages of our own, built from
 this one repository (working names, OWN-72):
@@ -61,9 +65,9 @@ private.
 |---|---|---|---|---|---|
 | `planlens` / `planlens` | The document layer: reading PDFs and DXFs, page maps, markups, render budgets. No model calls. | Both apps | numpy, PyMuPDF, ezdxf, opencv-headless, rapidfuzz | PyPI (Nexus mirrors it) | yes, unchanged |
 | `geotech-references` / `geotech_references` | The cited reference library and chart catalogs | GSE only (today Document Review installs it too) | numpy | PyPI | yes, unchanged |
-| **`docreview-core` / `docreview_core`** (NEW, working name) | What both apps run: the Streamlit chat shell and its turn jobs, the activity record, model engines (Prompter key, Foundry proxy and SDK, Funhouse, Anthropic), identity, SharePoint storage, the document, vision and markup tools, Word/Excel/chart output, the agent guards, the switches, the eval framework | Both apps, every host | planlens, deepagents/langchain/langgraph (same caps as today), openai <3, langchain-openai, streamlit, matplotlib, plotly, python-docx, markdown-it-py, openpyxl, numpy; `[anthropic]` extra = langchain-anthropic | PyPI for GSE; a vendored wheel for Tiny Apps (1.3) | yes (decision D2) |
+| **`docreview-core` / `docreview_core`** (NEW, working name) | What both apps run: the Streamlit chat shell and its turn jobs, the activity record, model engines (Prompter key, Foundry proxy and SDK, Funhouse, Anthropic), identity, SharePoint storage, the document, vision and markup tools, Word/Excel/chart output, the figure helper and its plotting box (D8), the agent guards, the switches, the eval framework | Both apps, every host | planlens, deepagents/langchain/langgraph (same caps as today), openai <3, langchain-openai, streamlit, matplotlib, plotly, python-docx, markdown-it-py, openpyxl, numpy, scipy (the plotting box lets code import it); `[anthropic]` extra = langchain-anthropic | PyPI for GSE; a vendored wheel for Tiny Apps (1.3) | yes (decision D2) |
 | **`de-docreview` / `de_docreview`** (NEW, name OWN-72) | The Document Review app: its page, prompt, agent builds (today's agent plus `lean` and `minimal` behind their switches), reading helper, review-only tools (findings, digest, geometry, sweep), review digest, its 38 suite tasks, the Tiny Apps entry | Testers on Tiny Apps; the owner on Funhouse; the suite on Foundry | docreview-core (exact version), planlens | A wheel: vendored in the Tiny Apps wrapper repo (pending CfA), uploaded on Foundry and Funhouse | **no** (classifier `Private :: Do Not Upload`, which PyPI refuses) |
-| `geotech-staff-engineer` / `funhouse_agent`, `webapp`, the module packages | The geotech app: 33 modules, dispatch, the geotech agent and its helpers (calc, references, figure, setup, reviewers), report_ingest, the Foundry entry | The owner on Foundry (Funhouse as backup) | docreview-core[anthropic] (exact version), geotech-references, planlens, the analysis back ends as today | PyPI (Foundry's Libraries panel) or uploaded wheels | yes, unchanged |
+| `geotech-staff-engineer` / `funhouse_agent`, `webapp`, the module packages | The geotech app: 33 modules, dispatch, the geotech agent and its helpers (calc, references, setup, reviewers), the chart lines it hands the figure helper, report_ingest, the Foundry entry | The owner on Foundry (Funhouse as backup) | docreview-core[anthropic] (exact version), geotech-references, planlens, the analysis back ends as today | PyPI (Foundry's Libraries panel) or uploaded wheels | yes, unchanged |
 
 How they depend on each other:
 
@@ -151,22 +155,28 @@ response) are unchanged.
 
 An import graph of every first-party import in `funhouse_agent/`, `webapp/`,
 `calc_package/` and `report_ingest/`, including imports inside functions,
-with line numbers. On top of that, two probes on master (ac94ba5):
+with line numbers. On top of that, two probes:
 
-- **Importing** `funhouse_agent.deep.review_agent` loads 37 `funhouse_agent`
-  modules. Twelve of them are geotech: `agent`, `dispatch`, `adapters`,
-  `system_prompt`, `reviewers`, `reviewer`, `review_checklists`, `engine`,
-  `deep.agent`, `deep.eval_harness`, `deep.setup_agent` and
-  `deep.setup_tools`. Two `geo_project` modules come with them.
-- **Building** the Document Review agent (today's build and `lean`, offline,
-  with a fake model) loads 19 modules from four geotech packages:
-  `geo_project`, `geotech_common`, `geotech_references` (`chart_lines`)
-  and `profile_figure`.
+- **Importing** `funhouse_agent.deep.review_agent` (ac94ba5) loads 37
+  `funhouse_agent` modules. Twelve of them are geotech: `agent`,
+  `dispatch`, `adapters`, `system_prompt`, `reviewers`, `reviewer`,
+  `review_checklists`, `engine`, `deep.agent`, `deep.eval_harness`,
+  `deep.setup_agent` and `deep.setup_tools`. Two `geo_project` modules come
+  with them.
+- **Building** the Document Review agent offline with a fake model (re-run
+  on 8ca1694, after GM-227 turned the figure helper and plotting code on):
+  today's build loads 51 `funhouse_agent` modules, among them
+  `deep.figure_helper` and `plot_box` (three modules), and 20 modules from
+  four geotech packages: `geo_project`, `geotech_common` (including
+  `layout_ink`, through the plotting box), `geotech_references`
+  (`chart_lines`) and `profile_figure`. The `lean` build (47 modules) has
+  no figure helper and loads 19.
 
-Of the non-test Python files in `funhouse_agent/` and `webapp/`, 58 (30,057
-lines) go to the core whole, 12 (6,107) to de-docreview whole, 34 (about
-16,000) plus the 71 adapters stay in GSE, and 17 (21,366) split, mostly to
-the core. Result: a core of about 42,000 lines, de-docreview about 10,000.
+Of the non-test Python files in `funhouse_agent/` and `webapp/`, 62 (33,685
+lines) go to the core whole, 12 (6,107) to de-docreview whole, 30 (about
+12,000) plus the 71 adapters stay in GSE, and 17 (21,366) split, mostly to
+the core. Result: a core of about 46,000 lines (with the chart stack and the
+figure examples), de-docreview about 10,000.
 
 ### 2.2 Moves to de-docreview
 
@@ -183,7 +193,7 @@ the core. Result: a core of about 42,000 lines, de-docreview about 10,000.
 | `webapp/tinyapps_entry.py` | 84 | Becomes de-docreview's one-page Tiny Apps entry |
 | From `funhouse_agent/deep/prompt.py` | ~190 of 542 | `_REVIEW_*` texts, `DOCUMENT_REVIEW_PROMPT(_LEAN)`, `DOCUMENT_REVIEW_READER_PROMPT`, `build_document_review_prompt` (lines 352-536) |
 | From `webapp/profiles.py` | ~150 of 283 | `DOCUMENT_REVIEW`, the orientation requests, `orientation_request_for`, `orient_on_upload`, `pdf_page_count`, `IMAGE_SUFFIXES` |
-| From `funhouse_agent/deep/agent.py` | ~250 of 1,936 | Today's review-page build: the `review_page` paths (lines 983-1030 and 1325-1345, the drop at 1380-1385, the reader at 1582-1586, the hide-filesystem and page-budget middleware at 1732-1755), extracted as `de_docreview/legacy_build.py` (step 8) |
+| From `funhouse_agent/deep/agent.py` | ~270 of 1,939 | Today's review-page build: the `review_page` paths (lines 983-1030 and 1325-1345, the drop at 1380-1385, the reader at 1585-1588, the hide-filesystem and page-budget middleware at 1735-1758; the figure helper it now carries, 1508-1534 and 1729-1731), extracted in step 8 as `review_build.py` |
 | From `funhouse_agent/review_eval/tasks.py` | 38 of 42 tasks | The review tasks (meck, set, ufc, calc, fixture, produce, scale-plan-distance) |
 | `tinyapps/TINYAPPS.md`, `tinyapps/wrapper_repo/` | | Become the de-docreview wrapper template (step 14). The gitignored `tinyapps/reference/` stays local, never committed. |
 
@@ -251,6 +261,13 @@ aliases; about 30 GSE module files import `layout_ink` or
 `geotech_common.plotting`. The `reference_chart` option (geotech chart
 lines) stays in GSE.
 
+**The figure helper and its plotting box** (on by default on both pages
+since GM-227; not in the `lean` build; D8 (a), see 2.8):
+`funhouse_agent/deep/figure_helper.py` (899; its `FigureLooks`, the calc
+helper's, stays in GSE), `plot_box/__init__.py` (932), `child.py` (1,189),
+`figures.py` (608), and the nine worked examples
+`profile_figure/figure_examples.py` (994; matplotlib and numpy only).
+
 **Checks, records and switches** (`funhouse_agent/`): `cited_pages.py`
 (1,443), `cited_documents.py` (1,482), `coverage.py` (1,240),
 `progress_notes.py` (46), `answer_sections.py` (114), `error_text.py`
@@ -277,12 +294,12 @@ still measure its own document questions.
 `report_review_checklist.json` (to report_ingest by RI-34),
 `geotech_test_suite.json`, `test_scenarios.json`,
 `test_scenarios_notebook.ipynb`, `eval_samples/` (5 files), `adapters/`
-(all 71 files, less the two helpers in 2.3), `plot_box/` (3 files).
+(all 71 files, less the two helpers in 2.3).
 
 **`funhouse_agent/deep/`:** `__init__.py`, `agent.py` (the geotech build),
 `prompt.py` (domain, judgment-call and ingest texts), `tools.py`
 (`make_core_tools`, the report-ingest and library tools), `fit_results.py`,
-`setup_agent.py`, `setup_tools.py`, `figure_helper.py`, `unknown_tool.py`,
+`setup_agent.py`, `setup_tools.py`, `unknown_tool.py`,
 `eval_harness.py`, `selfcheck.py`, `rc_wheel_check.py`, `run_live.py`,
 `notebook.py` (`DeepNotebookChat`).
 
@@ -333,7 +350,7 @@ page (`tasks.py:1014`, `1073`).
 | Markup check (`markup_check.py`) | docreview-core | `annotate_document` is on both pages. |
 | `write_docx` / `write_xlsx` | docreview-core (the Word renderer leaves `calc_package`) | Standalone; only the shared tools call it. |
 | `plot_data` chart stack | docreview-core | It is on the review page by default (live wave 1, A12). The alternatives: a copy (geotech figure fixes would stop reaching it) or dropping it. GSE's figure conventions (GM-97) then also apply to Document Review's charts; the full CI job runs both apps' tests on every change. |
-| Figure helper, `plot_code` box | GSE | Tied to `profile_figure.figure_examples`, `geotech_common.layout_ink` and the reference chart lines. Both switches are OFF on the review page (GM-92 undecided). See D8. |
+| Figure helper and `plot_code` box | docreview-core (D8 (a)) | On for both pages since GM-227 (owner on GM-92: "on everywhere"). General machinery; GSE hands in the chart lines; the examples stay with it for now. Options measured in 2.8. |
 | Coverage, cited pages and cited documents | docreview-core | Both pages. Their geotech touches become hooks: `coverage.py:818` counts `write_diggs` records and `cited_documents.py:951` names reference modules, both through `try`. |
 | Switches (`review_flags.py`) | docreview-core | A leaf module that both read. |
 
@@ -343,8 +360,8 @@ page (`tasks.py:1014`, `1073`).
 
 1. **`webapp/core.py:739`**: every Document Review agent is built by GSE's
    `funhouse_agent.deep.agent.build_deep_agent`. Today's review build lives
-   inside it (`deep/agent.py:1325-1345`, `1377-1385`, `1582-1586`,
-   `1732-1755`), and `lean` and `minimal` are reached from it.
+   inside it (`deep/agent.py:1325-1345`, `1377-1385`, `1585-1588`,
+   `1735-1758`), and `lean` and `minimal` are reached from it.
 2. **`funhouse_agent/deep/tools.py:40`**: the review tools' factory
    `make_vision_tools` sits in the module that imports geotech dispatch on
    load. `deep/review_agent.py:56` and `deep/minimal_agent.py:43` import it.
@@ -374,9 +391,19 @@ review page shows GSE's geotechnical disclaimer); `webapp/profiles.py:178`
 `review_eval/documents.py:155`, `160` (the GSE reference fetcher);
 `webapp/diagnostics.py:303`, `319`, `369`, `385` (reference library).
 
+The figure helper and plotting box, on the review page since GM-227:
+`deep/figure_helper.py:339` (`deep.agent.DEFAULT_MAX_RESULT_CHARS`),
+`:342` (`deep.tools.make_vision_tools`), `:210`, `221`, `249`, `433`,
+`464` (`profile_figure.figure_examples`), and `:813`
+(`dispatch.parameters_object`, inside `FigureLooks`, which only the calc
+helper uses, so it stays in GSE); `plot_box/child.py:686-693`, `959-966`
+(`geotech_common.layout_ink` and `plan_furniture`, loaded by file).
+
 Soft couplings (inside `try`; the review page works without them but
 behaves differently): `vision_tools.py:482`, `4626` (`geotech_references`),
-`coverage.py:818`, `cited_documents.py:951`.
+`coverage.py:818`, `cited_documents.py:951`, `plot_box/__init__.py:821` and
+`plot_box/child.py:980-989` (the box's `chart_lines`, from
+`geotech_references`).
 
 **Geotech code into review code** (steps 8 and 15 cut these):
 `deep/agent.py:987`, `1003-1004`, `1026`, `1336` and `1750` import
@@ -385,6 +412,34 @@ behaves differently): `vision_tools.py:482`, `4626` (`geotech_references`),
 GSE's navigation; `webapp/databricks_launcher.py:516-520` boots the
 two-page entry by default; `review_eval/runner.py:83-96` builds GSE's pages
 through `webapp.core`.
+
+### 2.8 The figure helper and plotting box: three options measured (D8)
+
+Since GM-227 (b4b9a08) `GEOTECH_FIGURE_HELPER` and `GEOTECH_PLOT_CODE` are
+on by default on both pages (the owner on GM-92: "on everywhere"). The
+machinery is general (draw with `plot_data` or code in the locked box, look
+at the picture, redraw to a checklist). Its geotech content: the standard
+chart lines from the reference library, nine worked examples (a boring
+plan, an SPT profile, wall pressures and the like), and a few checklist
+lines (elevation axis, kPa and kN, "the FIGURE HELPER of a geotechnical
+agent").
+
+| | (a) To the core; GSE hands in the chart lines | (b) As (a), then Document Review's own examples | (c) Document Review drops both |
+|---|---|---|---|
+| Files to the core | `deep/figure_helper.py` (899, less `FigureLooks` at 784-899, the calc helper's, which stays in GSE), `plot_box/__init__.py` (932), `child.py` (1,189), `figures.py` (608), `profile_figure/figure_examples.py` (994): about 4,500 lines | The same | None; all stay in GSE |
+| Imports cut | `figure_helper.py:339` → `deep/limits.py`; `:342` → the vision kit (step 4); `:210-464` → the core's examples; `child.py:686-693`, `959-966` → the core's chart folder (step 6); `plot_box/__init__.py:817-864`, `child.py:975-990` → a chart-lines source GSE registers; `FigureLooks` and its `dispatch` import (`:813`) stay in GSE | The same, plus an examples-and-checklist registration each app fills | The review build leaves out the helper (`deep/agent.py:1508-1534`), its main-agent middleware `FigureTasks` (`:1729-1731`) and `plot_data_replaces` (`:925`) |
+| New code | One hook (the chart lines) | The hook, a de-docreview examples file and checklist lines, a suite task, a live wave | None |
+| Document Review's fingerprint | Unchanged, except the box's chart-lines note goes when the reference library does (step 12) | Changes (helper prompt and examples): measured on the suite | Loses the figure helper and `plot_code` |
+| Install | The core keeps SciPy: the box lets code import it (`child.py:61-67`) | The same | SciPy can go |
+| Owner | Fits GM-92 | Fits GM-92 | Reverses GM-92 |
+
+**Recommendation: (a) during the split, (b) after it** as its own item
+(the lead files the ID): one change at a time, as with D5. Before
+GM-227 this plan assumed both switches were off: it left both helpers in
+GSE (2.4, 2.6, D8) and dropped SciPy from the testers' install. Those are
+corrected, and the switches' effect is now carried in 1.1 (the core's
+contents, SciPy), 2.1 (the build probe), 2.3, 2.7, steps 5, 6, 8, 11 and
+12, and the test table in section 5.
 
 ## 3. The repo question
 
@@ -449,9 +504,9 @@ step (BACKLOG, HANDOFF, CLAUDE.md state clause, memory, desk).
   aliases come out in step 16, one release later.
 
 ### Step 0. Decisions and preconditions (no code)
-- The owner answers D1-D4 (names, where shared code lives, the Tiny Apps
-  route, the geotech page leaving Tiny Apps). D5-D9 can follow. CfA gets
-  questions 6a-6d.
+- The owner answers D1-D3 (names, where shared code lives, the Tiny Apps
+  route), D6 and D8; D7 and D9 can follow. D4 is answered (2026-10-20) and
+  D5 is the lead's default. CfA gets questions 6a-6d.
 - RI-34 is merged: the checklist and its tool are in report_ingest.
 - The waiting train is released (OWN-55, D6) before step 9, so there is a
   clean fallback version and the pandas-3 fix is on Nexus for testers.
@@ -500,18 +555,21 @@ step (BACKLOG, HANDOFF, CLAUDE.md state clause, memory, desk).
   `funhouse_agent/tests/test_vision_*`, `test_find_like_*`.
 - **Exit:** all four fingerprints identical; coupling 2 is gone.
 
-### Step 5. Four small helpers to neutral modules (no behaviour change)
+### Step 5. Small helpers to neutral modules (no behaviour change)
 - **Change:** `check_nested_keys` → `funhouse_agent/arg_checks.py` (the
   adapters import it from there); `_compile_g` → `funhouse_agent/safe_expr.py`
   (the reliability adapter and `calculate` import it);
   `calc_package/docx_renderer.py` → `funhouse_agent/docx_renderer.py` and
   `report_ingest/mirror.py` → `funhouse_agent/run_mirror.py` (the old paths
-  alias them).
+  alias them); `DEFAULT_MAX_RESULT_CHARS` → `deep/limits.py` (the figure
+  helper reads it, `figure_helper.py:339`); `FigureLooks` and
+  `CALC_REDRAW_NOTE` (the calc helper's) out of `figure_helper.py` into a
+  GSE module.
 - **Tests:** `funhouse_agent/adapters` tests for reliability; `deep/tests`
   for `calculate`; `funhouse_agent/tests/test_read_office_files.py`; the
   `write_docx` tests; `report_ingest/tests` for the mirror;
   `review_eval/tests`.
-- **Exit:** fingerprints identical; those four couplings are gone.
+- **Exit:** fingerprints identical; those couplings are gone.
 
 ### Step 6. The chart stack to a neutral package (no behaviour change)
 - **Change:** a new `funhouse_agent/charts/` package holds `data_plot.py`,
@@ -519,13 +577,18 @@ step (BACKLOG, HANDOFF, CLAUDE.md state clause, memory, desk).
   with aliases at `profile_figure.data_plot`, `geotech_common.layout_ink`,
   `geotech_common.plan_furniture` and `geotech_common.plotting`.
   `reference_chart` stays in the GSE adapter, which wraps the chart
-  function. `plot_box/child.py:680-690` loads `layout_ink` from a file path
-  and follows the move.
+  function. The figure helper's worked examples
+  (`profile_figure/figure_examples.py`) join the package (D8 (a)). The
+  plotting box loads `layout_ink` and `plan_furniture` by file
+  (`plot_box/child.py:680-700`, `955-970`) and follows the move; its chart
+  lines (`child.py:975-990`, `plot_box/__init__.py:817-864`) come from a
+  source GSE registers instead of a look for `geotech_references`.
 - **Tests:** `profile_figure`, `geotech_common` and every module whose
   figure tests import `layout_ink`, run in chunks;
-  `deep/tests/test_figure_*`; `webapp/tests/test_figure_code_cards.py`.
+  `deep/tests/test_figure_*`; `funhouse_agent/tests/test_plot_box.py`;
+  `webapp/tests/test_figure_code_cards.py`.
 - **Exit:** fingerprints identical; coupling 4 is gone except
-  `reference_chart` (a GSE option).
+  `reference_chart` and the box's chart lines (GSE's).
 
 ### Step 7. The shell asks the page, not geotech (no behaviour change)
 - **Change:** `AppProfile` gains hooks: `disclaimer`, `placeholder`,
@@ -550,8 +613,9 @@ step (BACKLOG, HANDOFF, CLAUDE.md state clause, memory, desk).
   into `funhouse_agent/review_build.py` (`build_review_page_agent`); the
   assembly it shares with the geotech build moves to
   `funhouse_agent/deep/assembly.py`. The review profile's builder and
-  `review_eval.runner.build_page_agent` call it. `build_deep_agent` loses its
-  `review_page` branches and its imports of `review_agent` and
+  `review_eval.runner.build_page_agent` call it. It carries the figure
+  helper and its main-agent middleware as today (`deep/agent.py:1508-1534`,
+  `1729-1731`). `build_deep_agent` loses its `review_page` branches and its imports of `review_agent` and
   `minimal_agent`; `review_page=True` delegates for one release, for old
   callers.
 - **Tests:** the fingerprints (this is the step they exist for); `deep/tests`;
@@ -590,8 +654,9 @@ step (BACKLOG, HANDOFF, CLAUDE.md state clause, memory, desk).
 ### Step 11. Tools, vision and plumbing move to the core
 - **Change:** the `funhouse_agent/` and `deep/` files of 2.3 move, with
   `vision_kit.py`, `arg_checks`, `safe_expr`, `docx_renderer`, `run_mirror`,
-  `charts/` and the eval framework. Two merges: (a) `deep/` plumbing and
-  engines; (b) tools, vision, checks, charts and the eval framework.
+  `charts/`, the figure helper, `plot_box/` and the eval framework. Two
+  merges: (a) `deep/` plumbing and engines; (b) tools, vision, checks,
+  charts, the figure helper and plotting box, and the eval framework.
 - **Tests:** `funhouse_agent/tests`, `deep/tests`, `review_eval/tests`,
   `review_digest/tests`, the module suites that import the charts.
 - **Exit:** the full gate; a fresh venv with only `docreview-core` and
@@ -618,7 +683,8 @@ step (BACKLOG, HANDOFF, CLAUDE.md state clause, memory, desk).
 
 **The one deliberate fingerprint change.** It comes here, when Document
 Review stops installing geotech-references: `plot_data` loses its
-`reference_chart` argument (standard geotech chart lines).
+`reference_chart` argument, and `plot_code` loses `chart_lines()` and its
+note in the description (both are the standard geotech chart lines).
 
 ### Step 13. The suite moves with the page
 - **Change:** `score_review_suite` and the task list live in de-docreview,
@@ -693,9 +759,9 @@ page's agent goes to de-docreview.
 
 | Today | To the core | To de-docreview | Stays in GSE |
 |---|---|---|---|
-| `webapp/tests` (54 files) | Most: activity log, turn jobs, cards, sharepoint, identity, engines, launcher, upload, version guard, diagnostics base | `test_tinyapps_entry`, `test_orientation_overview`, the review half of `test_app_profiles` | Repository gates (`test_backlog`, `test_docs_currency`, `test_public_text`, `test_wheels`, the boundary and fingerprint tests); `test_figure_code_cards`; `test_judgment_check_turn`; the geotech half of `test_app_profiles` |
-| `funhouse_agent/tests` (104 files) | Vision, find_like, cited pages and documents, coverage, office files, markup, measure, scales, DXF notes, xlsx | Findings ledger tests | Dispatch, adapters, reviewers, worked examples, system prompt, disclaimer, chart reading, v1 agent |
-| `funhouse_agent/deep/tests` (65 files) | Busy ladder, pacing, keep-work, limits, guards, vision engine, strict args, inline images, calculate | `test_review_harness_offline`, `test_review_m1_offline`, `test_review_minimal_offline`, `test_review_geometry_offline`, `test_review_digest_tools_offline`, `test_review_prompt_rules` | The geotech build, calc / references / figure / setup helpers, eval harness, coverage gate on the geotech page |
+| `webapp/tests` (54 files) | Most: activity log, turn jobs, cards, sharepoint, identity, engines, launcher, upload, version guard, diagnostics base, `test_figure_code_cards` (both pages show figure code) | `test_tinyapps_entry`, `test_orientation_overview`, the review half of `test_app_profiles` | Repository gates (`test_backlog`, `test_docs_currency`, `test_public_text`, `test_wheels`, the boundary and fingerprint tests); `test_judgment_check_turn`; the geotech half of `test_app_profiles` |
+| `funhouse_agent/tests` (104 files) | Vision, find_like, cited pages and documents, coverage, office files, markup, measure, scales, DXF notes, xlsx, the plotting box (`test_plot_box`, `test_plot_box_drafts`) | Findings ledger tests | Dispatch, adapters, reviewers, worked examples, system prompt, disclaimer, chart reading, v1 agent |
+| `funhouse_agent/deep/tests` (65 files) | Busy ladder, pacing, keep-work, limits, guards, vision engine, strict args, inline images, calculate, the figure helper (`test_figure_helper`, `test_figure_runs`, `test_figure_turn`) | `test_review_harness_offline`, `test_review_m1_offline`, `test_review_minimal_offline`, `test_review_geometry_offline`, `test_review_digest_tools_offline`, `test_review_prompt_rules` | The geotech build, calc / references / setup helpers (with `test_deep_calc_figures_offline`), eval harness, coverage gate on the geotech page |
 | `review_eval/tests` (4 files) | Framework parts | Task parts | Geotech-task parts |
 | `review_digest/tests` (1 file) | | all | |
 
@@ -761,27 +827,24 @@ wrapper installs de-docreview: one page, no geotech packages.
 | TA-09, TA-15 (email tool, old live checks) | Already proposed for dropping (OWN-69) |
 | TA-11 (Plotly PNG twin for `subsurface.plot_*`) | GSE |
 | Document Review items (DR-*) | de-docreview, except: DR-11 (recompute from a report needs the modules) → GSE; DR-20, DR-21, DR-22 → report_ingest with RI-34; DR-23 splits (core coverage; its report_ingest part → GSE) |
+| Open GM-* items on the figure helper and plotting box | The core; their chart-lines parts GSE |
 | VIS-* | The core, except VIS-06, VIS-10 and VIS-17 (reference chart reading and catalogs) → GSE |
 | EV-* (suite measurement) | de-docreview, except the geotech-task arms |
 
-The CfA approval path is affected too.
-- The SIA covers the app's code and its connections. The connections are
-  unchanged (Prompter, Key Vault, SharePoint by app registration), and the
-  dependency tree shrinks by about a dozen packages. Ask CfA whether a
-  wrapper change from "one package from Nexus" to "our wheel in the repo"
-  needs a new SIA, or only a PCR.
-- The App Services team's sync is unchanged: push, then ask for a sync.
+The CfA approval path: the SIA covers the code and its connections; the
+connections are unchanged (Prompter, Key Vault, SharePoint by app
+registration) and the dependencies shrink. Ask CfA whether "our wheel in
+the repo" instead of "one package from Nexus" needs a new SIA or only a
+PCR. The App Services sync is unchanged: push, then ask for a sync.
 
 ### Foundry (INF-25 and after)
 
 - **The GSE app on Foundry is the geotech page alone, as it already is**
-  (`webapp.foundry_entry` runs the shell with the geotech profile). The split
-  changes its imports, not its behaviour. The geotech fingerprint guards
-  that at every step.
+  (`webapp.foundry_entry`). The split changes its imports, not its
+  behaviour; the geotech fingerprint guards that at every step.
 - **Install:** PyPI brings docreview-core automatically. The INF-25
-  test-wheel route uploads one more file (four wheels, one command).
-  INF-25's own result (whether Foundry takes uploaded wheel files at all)
-  tells us if the test route needs the AI FDE.
+  test-wheel route uploads one more file (four wheels, one command); INF-25's
+  own result says whether Foundry takes uploaded wheels at all.
 - **INF-27** (a Claude leg for `palantir_models`) is work in the core's
   `palantir_sdk_engine.py`; Document Review's suite runs on Foundry gain it
   too.
@@ -808,14 +871,15 @@ The CfA approval path is affected too.
 | GSE and the core released out of step | Exact `==` pins between the three during the monorepo phase; `version_guard` names all three; the release order is fixed (planlens, core, GSE, de-docreview) |
 | Department material in a public package | `test_public_text` over all three packages and their docs; deployment values only in the GHE wrapper |
 | CfA refuses vendored wheels | Routes B-D (1.3); testers stay on the two-page GSE from Nexus meanwhile |
-| Charts change for one app because of the other's needs | One copy, both apps' tests on every change; geotech conventions passed as arguments where they differ (step 6) |
+| Charts or the figure helper change for one app because of the other's needs | One copy, both apps' tests on every change; geotech content (chart lines, later the examples, D8 (b)) handed in by the app that owns it (steps 6, 11) |
 | Old paths in notes, notebooks, the Harness Map and helper prompts | Aliases for one release; the notebook cell given anew in step 16; docs swept in step 16 |
 | Session limits during the large moves (steps 10-11) | One package family per merge; helpers in worktrees; targeted tests per helper, the full gate in chunks by the lead |
 | Existing conversations lost | Same data root, same folder layout, same SharePoint base folder (1.2) |
 
 ### The owner's decisions
 
-Each can become a desk card, and each says when it is needed.
+Each can become a desk card, and each says when it is needed. Seven are
+left for the owner: D1, D2, D3, D6, D7, D8 and D9.
 
 **D1. The names.** What are the two new packages called? Python's
 convention is a lower-case install name with hyphens and an import name
@@ -828,7 +892,8 @@ with underscores.
 - Needed before step 9.
 
 **D2. Where the code both apps use lives.** Both apps run the same chat page,
-document and vision tools and model connections, about 42,000 lines. It
+document and vision tools, figure helper and model connections, about
+46,000 lines. It
 has to be somewhere both can install.
 - (a) Its own public package on PyPI, like planlens; GSE stays on PyPI, so
   Foundry's Libraries panel keeps working.
@@ -847,22 +912,20 @@ repository on CfA's Nexus; (D) PyPI, through Nexus.
   waiting.
 - Needed before step 14.
 
-**D4. Does the geotech page leave Tiny Apps?**
-- (a) Yes: testers get Document Review only, and GSE runs on Foundry
-  (Funhouse as backup).
-- (b) No: Tiny Apps keeps both pages, and the testers' install keeps every
-  geotech package.
-- **Recommendation: (a).** It is the reason for the split, and it drops the
-  Tiny Apps resource question about large meshes and Monte Carlo runs.
-- Needed before step 12.
+**D4. Does the geotech page leave Tiny Apps? DECIDED: (a), yes.** The
+owner on the desk, 2026-10-20 08:33: "GeotechStaffEngineer running in
+Palantir Foundry as an app, and DE_DocReview being a wheel that I pull into
+TinyApps", and "now that I have foundry, I'll just go that route". Testers
+get Document Review only; GSE runs on Foundry, with Funhouse as backup. It
+also drops the Tiny Apps resource question about large meshes and Monte
+Carlo runs.
 
-**D5. Which Document Review agent goes into the new package?**
-- (a) The one testers get today, unchanged and proven by the fingerprint,
-  with `lean` and `minimal` behind their switches as now.
-- (b) Switch testers to `lean` as part of the split.
-- **Recommendation: (a).** One change at a time; DR-05 (`lean` measured at
-  full resolution on GPT) decides the default afterwards, on the suite.
-- Needed before step 8.
+**D5. Which Document Review agent goes into the new package? DECIDED by
+the lead: (a)**, the one testers get today, unchanged and proven by the
+fingerprint, with `lean` and `minimal` behind their switches as now. One
+change at a time; DR-05 (`lean` measured at full resolution on GPT) decides
+the default afterwards, on the suite. The owner can overrule (the other
+choice: switch testers to `lean` as part of the split).
 
 **D6. Release what is waiting before files move?** Master carries a train
 you are holding (OWN-55), including the fix that lets the testers' package
@@ -883,16 +946,24 @@ PyPI does not make it private.
   Moving later is a short, mechanical step.
 - Needed by step 16.
 
-**D8. Two switched-off helpers stay with GSE.** The figure helper
-(`GEOTECH_FIGURE_HELPER`) and plotting code in the locked box
-(`GEOTECH_PLOT_CODE`) are both OFF and both your call (GM-92). They depend
-on geotech figure examples and chart lines. `plot_data` stays on Document
-Review but loses its geotech chart-lines option (`reference_chart`).
-- (a) Let both helpers go with GSE.
-- (b) Build a general figure helper for Document Review later, if testers
-  ask.
-- **Recommendation: (a) now, (b) only on demand.**
-- Needed before step 12.
+**D8. Where the figure helper and plotting code go.** Since 2026-10-20 both
+are on for both pages, by your ruling on GM-92 ("on everywhere"). Most of
+them is general (draw, look at the picture, redraw to a checklist). The
+geotech part is small: standard chart lines from the reference library, nine
+worked examples (a boring plan, an SPT profile, wall pressures and the
+like), and a few checklist lines. Costs measured in 2.8.
+- (a) Both go into the shared package, so both apps keep them. GSE hands in
+  the chart lines (only it has the reference library). The examples go
+  with them for now, so Document Review keeps exactly what it has.
+- (b) As (a), then Document Review gets its own general examples
+  (drawings, schedules, quantities) instead of the geotech ones: new work,
+  measured on the suite, after the split.
+- (c) Document Review drops both. The least code to move, but it reverses
+  your GM-92 ruling and takes figures drawn in code away from testers.
+- **Recommendation: (a) during the split, (b) after it.** The shared
+  package grows by about 4,500 lines and keeps SciPy, which the plotting
+  box lets code use.
+- Needed before step 6.
 
 **D9. What testers see named.** The Document Review page shows GSE's
 geotechnical professional-use disclaimer today.
