@@ -3,8 +3,8 @@
   "status": "DRAFT",
   "status_note": "First draft, written by the lead from the 2026-10-06 field session and set down in module_work/SCALES_COVERAGE_CROSSCHECKS.md (W4 b) for the owner to mark up. Not yet approved: add, cut or reword items, and say which [judge] items code should learn to check.",
   "version": "2026-10-08 draft 1",
-  "how_it_is_used": "One file, used two ways. Items with mode 'code' are checked by the app (funhouse_agent/report_checklist.py) from its own records: the coverage ledger of what was read, the text layer of the report, and the cross-checks subsurface.write_diggs runs on the data it is given. Items with mode 'judge' are handed to the agent by the report_checklist tool, to work through and report against. A 'code' item whose check cannot run in a conversation (for example no data has been written yet) goes to the agent as a judgement item, so nothing on the list is silently dropped.",
-  "how_to_edit": "Edit the 'text' of an item freely. 'mode' is 'code' or 'judge'. A 'code' item names its 'check' (one of the checks in funhouse_agent/report_checklist.py: logs_and_lab_read, explorations_vs_logs, lab_ids_vs_logs, summary_and_sheets, cross_checks, values_cite_pages) and may narrow cross_checks with 'kinds' (the reconciler's: conflict, disagreement, partial, unconverted, count_mismatch) or 'where'. Keep the 'id' of an item that stays, so results can be compared between versions.",
+  "how_it_is_used": "One file, used two ways. Items with mode 'code' are checked by code (report_ingest/checklist.py) from the record report ingest wrote of the report (report.record.json): what each page was labelled, the explorations and laboratory tests read, the narrative's answers, and the reconciler's QA entries. Items with mode 'judge' are handed to the agent on the GeotechStaffEngineer page by the report_checklist tool, to work through and report against. A 'code' item whose check cannot run on the record it is given (no record yet, no page labels) goes to the agent as a judgement item, so nothing on the list is silently dropped.",
+  "how_to_edit": "Edit the 'text' of an item freely. 'mode' is 'code' or 'judge'. A 'code' item names its 'check' (one of the checks in report_ingest/checklist.py: logs_and_lab_read, explorations_vs_logs, lab_ids_vs_logs, summary_and_sheets, cross_checks, values_cite_pages) and may narrow cross_checks with 'kinds' (the reconciler's: conflict, disagreement, partial, unconverted, count_mismatch) or 'where'. Keep the 'id' of an item that stays, so results can be compared between versions.",
   "items": [
     {"id": "completeness.explorations_have_logs", "section": "Completeness", "mode": "code",
      "check": "explorations_vs_logs",
@@ -23,7 +23,7 @@
      "text": "Locations, elevations and their datum are stated."},
 
     {"id": "consistency.summary_vs_sheets", "section": "Consistency", "mode": "code",
-     "check": "cross_checks", "kinds": ["disagreement", "conflict"],
+     "check": "cross_checks", "kinds": ["disagreement", "conflict"], "where": "lab_tests.",
      "text": "Summary-table values match the individual sheets (the reconciler)."},
     {"id": "consistency.lab_ids_on_logs", "section": "Consistency", "mode": "code",
      "check": "lab_ids_vs_logs",

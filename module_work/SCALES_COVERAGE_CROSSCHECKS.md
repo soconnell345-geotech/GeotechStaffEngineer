@@ -141,7 +141,7 @@ In each item, [code] means a check code can run; [judge] means the agent works t
 | Next | The brief 4 fix list (TRACE_REVIEW §7, A–M) comes first, then W3's app side, then Foundry brief 5. 5.32.1 itself is being released from a4ef417 (planlens 0.12.0 is live). |
 
 **W4 in brief.**
-- **Switches:** `GEOTECH_COVERAGE` turns on the ledger, `document_coverage` and the gate; `GEOTECH_REVIEW_CHECKLIST` turns on `report_checklist`.
+- **Switches:** `GEOTECH_COVERAGE` turns on the ledger, `document_coverage` and the gate; `GEOTECH_REVIEW_CHECKLIST` turns on `report_checklist` (the geotech page only, run on report ingest's record, since BACKLOG RI-34).
 - **Suite arms:** `coverage` and `checklist`.
 - **Three new suite tasks** run on a 30-page synthetic report: vector new logs, scanned old ones, and a lab appendix with one LL/PL swap planted.
 - **Not yet measured:** run `arms=("baseline", "coverage", "checklist")` on Foundry or Funhouse and read every run in full before either switch goes on.

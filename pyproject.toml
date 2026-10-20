@@ -301,17 +301,18 @@ webapp = ["ws_upload_component/*.html"]
 # Ship the eval question set so funhouse_agent.deep.eval_harness works from an
 # installed wheel (the v5.0 A/B self-test). Tests themselves are not shipped.
 funhouse_agent = ["geotech_test_suite.json", "eval_samples/*",
-                  "worked_examples.json",
-                  # The report-review checklist (DRAFT, plan W4): DATA the
-                  # report_checklist tool reads; without it the tool fails.
-                  "report_review_checklist.json"]
+                  "worked_examples.json"]
 # Two EXAMPLE files that document the shape of a private file the cluster run
 # reads. The REAL ones travel with the truth folder and are never committed,
 # because this repo is public and a fingerprint names a firm and a question
 # names a corpus report. The log-template fingerprints arrived with 5.24.0;
 # the library questions with 5.25.0. Both carry invented firms and places.
 report_ingest = ["templates.json.EXAMPLE",
-                 "library_questions.EXAMPLE.json"]
+                 "library_questions.EXAMPLE.json",
+                 # The geotechnical report review checklist (DRAFT, OWN-31;
+                 # moved here from funhouse_agent with RI-34): DATA the
+                 # report_checklist tool reads; without it the tool fails.
+                 "report_review_checklist.json"]
 # The DIGGS 2.6 schema (unmodified, MPL-2.0, zipped) so a DIGGS file can be
 # schema-checked on every host without the optional pydiggs (2026-10-08).
 subsurface_characterization = ["formats/schemas/*.zip",

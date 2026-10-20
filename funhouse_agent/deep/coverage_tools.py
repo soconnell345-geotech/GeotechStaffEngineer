@@ -1,8 +1,10 @@
-"""Coverage in code: the recorder, the gate and the tools (switch-gated).
+"""Coverage in code: the recorder, the gate and the tool (switch-gated).
 
-Behind ``GEOTECH_COVERAGE`` (and ``GEOTECH_REVIEW_CHECKLIST`` for the
-checklist tool), both OFF by default (:mod:`funhouse_agent.review_flags`).
-The ledger itself, with no LangChain in it, is :mod:`funhouse_agent.coverage`.
+Behind ``GEOTECH_COVERAGE``, OFF by default
+(:mod:`funhouse_agent.review_flags`). The ledger itself, with no LangChain
+in it, is :mod:`funhouse_agent.coverage`. The report-review checklist that
+used to sit beside it moved to :mod:`report_ingest.checklist` (BACKLOG
+RI-34) and is offered on the GeotechStaffEngineer page only.
 
 * :class:`CoverageRecorder` - a middleware on the primary agent AND every
   helper. After each tool call it hands the call's name, arguments and
@@ -17,8 +19,10 @@ The ledger itself, with no LangChain in it, is :mod:`funhouse_agent.coverage`.
   turn took data out of a document - it opened a coverage task with
   ``document_coverage`` or wrote a data file with ``write_diggs`` (then every
   page but the cover, contents and tabs counts), or read pages of a data
-  group (then every log, lab and field-test page counts) - and such pages
-  nobody read remain, the model is told ONCE, with the list, and goes on: it
+  group (then every log, lab and field-test page counts; the geotech page
+  only: on the Document Review page only a declared task holds a turn) -
+  and such pages nobody read remain, the model is told ONCE, with the
+  list, and goes on: it
   may read them, mark them skipped with a reason, or say why not. Its reply
   is held back (taken out of the conversation) and the reply it writes after
   the note is the answer, whole - never the two glued together. It never
@@ -27,8 +31,8 @@ The ledger itself, with no LangChain in it, is :mod:`funhouse_agent.coverage`.
   or model calls, so it can never cost a turn its answer. The precedent is
   :class:`funhouse_agent.deep.limits.ModelCallBudgetMiddleware`, which acts at
   the end in the same way.
-* ``document_coverage`` and ``report_checklist`` - the tools. The agent learns
-  them from their own descriptions; no prompt rule names them.
+* ``document_coverage`` - the tool. The agent learns it from its own
+  description; no prompt rule names it.
 """
 
 from __future__ import annotations
@@ -112,17 +116,30 @@ DOCUMENT_COVERAGE_DESCRIPTION = (
     "'40-75'. Pages are 0-based, as in every tool; the *_pdf lists are what "
     "a reader cites.")
 
-REPORT_CHECKLIST_DESCRIPTION = (
-    "The report-review checklist for a geotechnical report (a DRAFT the "
-    "owner is still marking up). It runs the checks the app can make itself "
-    "- coverage of the logs and laboratory sheets, the explorations named in "
-    "the text against the logs, the laboratory sheets against the logs, and "
-    "the cross-checks of data written out as DIGGS - and returns the items "
-    "that need your judgement: campaigns and dates, groundwater, locations "
-    "and datum, consistency, currency of the codes cited, plausibility, "
-    "recommendations. Use it when reviewing a report or checking data taken "
-    "out of one, and report against every item. `source`: the document's "
-    "handle, attachment key or path.")
+#: ``document_coverage`` on the Document Review page: the same tool for any
+#: document, in words that name no kind of report (BACKLOG RI-34).
+DOCUMENT_COVERAGE_DESCRIPTION_REVIEW = (
+    "Coverage of one document, for a task that takes the data out of many of "
+    "its pages: every sheet of a drawing set into a list, every table of an "
+    "appendix or every item of a schedule. It lists the document's pages by "
+    "what they are (drawings and figures, tables, forms, text...), read from "
+    "the document's own structure, and from then on the app records every "
+    "page any tool or helper reads or looks at. What it costs: calling it "
+    "opens a coverage task over its `pages` (default: the whole document), "
+    "and before your answer goes out the app lists every page of the task "
+    "nobody has read; you then read or look at each one, or mark it skipped "
+    "with a reason, or say why it was not needed. On a long document that is "
+    "a great many reads. A question answered from a few pages, a search or a "
+    "list of titles does not need it. Call it again to mark pages "
+    "`extracted` (their data is in your output) or `skipped` with a "
+    "`reason` - marking does not change the task's pages - and before you "
+    "answer, for the coverage to state as counts ('drawings 10 of 23 read; "
+    "not read: PDF pages 96-103'). A page with no text layer counts as read "
+    "only once it has been looked at. `source`: the document's handle, "
+    "attachment key or path. `pages`: the part of the document the task "
+    "covers when it is not all of it (one appendix, one chapter), e.g. "
+    "'40-75'. Pages are 0-based, as in every tool; the *_pdf lists are what "
+    "a reader cites.")
 
 
 def _text(msg: Any) -> str:
@@ -236,11 +253,10 @@ class CoverageGate(CoverageRecorder):
     """The recorder, plus the once-per-turn gate (primary agent only)."""
 
     def __init__(self, ledger: "_cov.CoverageLedger", agent: str = "primary",
-                 *, budget: Optional[int] = None, checklist: bool = False,
+                 *, budget: Optional[int] = None,
                  min_steps: int = MIN_STEPS_FOR_GATE):
         super().__init__(ledger, agent)
         self.budget = budget
-        self.checklist = checklist
         self.min_steps = int(min_steps)
         #: User turns that called an extraction tool (EXTRACTION_TOOLS).
         self._extraction_turns: set = set()
@@ -311,23 +327,6 @@ class CoverageGate(CoverageRecorder):
     async def abefore_agent(self, state, runtime):
         return self.before_agent(state, runtime)
 
-    def _extra(self, key: str) -> List[str]:
-        if not self.checklist:
-            return []
-        try:
-            from funhouse_agent import report_checklist
-            lines: List[str] = []
-            for doc_key in self.ledger.armed(key):
-                found = report_checklist.failed_lines(self.ledger, doc_key)
-                if found:
-                    lines.append(f"Checks the app ran on "
-                                 f"{self.ledger.docs[doc_key]['name']} "
-                                 "(report checklist, DRAFT) that failed:")
-                    lines += found
-            return lines
-        except Exception:  # noqa: BLE001 - the checklist is extra
-            return []
-
     def _gate(self, state) -> Optional[Dict[str, Any]]:
         try:
             msgs = state.get("messages") or []
@@ -342,8 +341,7 @@ class CoverageGate(CoverageRecorder):
                 used = int(state.get("run_model_call_count", 0) or 0)
                 if used >= self.budget - 1:
                     return None      # the budget's forced last answer
-            note = self.ledger.gate_note(key, answer=_text(last),
-                                         extra=self._extra(key))
+            note = self.ledger.gate_note(key, answer=_text(last))
             if not note:
                 return None
             room = _steps_left()
@@ -412,8 +410,11 @@ def _fit(out: Dict[str, Any], max_chars: int) -> str:
 
 
 def make_coverage_tool(ledger: "_cov.CoverageLedger",
-                       max_result_chars: int = 8000):
-    """The ``document_coverage`` tool over ``ledger``."""
+                       max_result_chars: int = 8000,
+                       description: str = DOCUMENT_COVERAGE_DESCRIPTION):
+    """The ``document_coverage`` tool over ``ledger`` (``description``: the
+    page's wording, :data:`DOCUMENT_COVERAGE_DESCRIPTION_REVIEW` on the
+    Document Review page)."""
     from langchain_core.tools import StructuredTool
 
     def _given(value: Any) -> bool:
@@ -483,40 +484,7 @@ def make_coverage_tool(ledger: "_cov.CoverageLedger",
 
     return StructuredTool.from_function(
         document_coverage, name="document_coverage",
-        description=DOCUMENT_COVERAGE_DESCRIPTION)
-
-
-def make_checklist_tool(ledger: "_cov.CoverageLedger",
-                        max_result_chars: int = 16000):
-    """The ``report_checklist`` tool over ``ledger``."""
-    from langchain_core.tools import StructuredTool
-
-    def report_checklist(source: str) -> str:
-        from funhouse_agent import report_checklist as _rc
-        try:
-            key = ledger.resolve(_ref(source))
-        except Exception as exc:  # noqa: BLE001
-            return json.dumps({"error": f"could not open '{source}': "
-                                        f"{type(exc).__name__}: {exc}"})
-        if key is None:
-            return json.dumps({"error": f"'{source}' is not an open document "
-                                        "handle, an attachment key or a "
-                                        "readable path"})
-        try:
-            out = _rc.run_checklist(ledger, key)
-        except Exception as exc:  # noqa: BLE001
-            return json.dumps({"error": f"the checklist failed: "
-                                        f"{type(exc).__name__}: {exc}"})
-        text = json.dumps(out, ensure_ascii=False)
-        if max_result_chars > 0 and len(text) > max_result_chars:
-            for row in out.get("code_checks") or []:
-                row.pop("entries", None)
-            text = json.dumps(out, ensure_ascii=False)[:max_result_chars]
-        return text
-
-    return StructuredTool.from_function(
-        report_checklist, name="report_checklist",
-        description=REPORT_CHECKLIST_DESCRIPTION)
+        description=description)
 
 
 # ---------------------------------------------------------------------------
@@ -524,16 +492,15 @@ def make_checklist_tool(ledger: "_cov.CoverageLedger",
 # ---------------------------------------------------------------------------
 
 class CoverageKit:
-    """Everything one agent build needs, or nothing when both switches are
-    off: ``tools`` for the primary, ``gate`` (or a plain recorder) for the
+    """Everything one agent build needs, or nothing when the switch is off:
+    ``tools`` for the primary, ``gate`` (or a plain recorder) for the
     primary's middleware, and :meth:`recorder` for each helper."""
 
     def __init__(self, ledger: Optional["_cov.CoverageLedger"],
-                 tools: List[Any], gate_on: bool, checklist_on: bool):
+                 tools: List[Any], gate_on: bool):
         self.ledger = ledger
         self.tools = tools
         self.gate_on = gate_on
-        self.checklist_on = checklist_on
 
     @property
     def on(self) -> bool:
@@ -543,8 +510,7 @@ class CoverageKit:
         if self.ledger is None:
             return None
         if self.gate_on:
-            return CoverageGate(self.ledger, "primary", budget=budget,
-                                checklist=self.checklist_on)
+            return CoverageGate(self.ledger, "primary", budget=budget)
         return CoverageRecorder(self.ledger, "primary")
 
     def recorder(self, agent: str):
@@ -555,30 +521,33 @@ class CoverageKit:
 
 def coverage_kit(attachments: Optional[Dict[str, bytes]] = None,
                  folder: Optional[str] = None,
-                 max_result_chars: int = 8000) -> CoverageKit:
-    """Read the switches and build the kit (an empty kit when both are off).
+                 max_result_chars: int = 8000,
+                 review_page: bool = False) -> CoverageKit:
+    """Read the switch and build the kit (an empty kit when it is off).
 
     ``folder`` is the conversation's folder: the ledger is kept there as
     ``coverage.json`` and picked up again when the agent is rebuilt.
+    ``review_page``: the Document Review page, where the tool is described
+    for any document and only a declared coverage task holds a turn to its
+    pages (reading some data pages does not; BACKLOG RI-34).
     """
-    gate_on = review_flags.coverage()
-    checklist_on = review_flags.checklist()
-    if not (gate_on or checklist_on):
-        return CoverageKit(None, [], False, False)
+    if not review_flags.coverage():
+        return CoverageKit(None, [], False)
     ledger = _cov.CoverageLedger(path=_cov.ledger_path(folder),
-                                 attachments=attachments)
+                                 attachments=attachments,
+                                 declared_only=review_page)
     cap = max_result_chars if max_result_chars > 0 else 0
-    tools: List[Any] = []
-    if gate_on:
-        tools.append(make_coverage_tool(ledger, max(cap, 8000) if cap else 0))
-    if checklist_on:
-        tools.append(make_checklist_tool(ledger, max(cap, 16000) if cap else 0))
-    return CoverageKit(ledger, tools, gate_on, checklist_on)
+    description = (DOCUMENT_COVERAGE_DESCRIPTION_REVIEW if review_page
+                   else DOCUMENT_COVERAGE_DESCRIPTION)
+    tools = [make_coverage_tool(ledger, max(cap, 8000) if cap else 0,
+                                description=description)]
+    return CoverageKit(ledger, tools, True)
 
 
 __all__ = ["CoverageRecorder", "CoverageGate", "CoverageKit", "coverage_kit",
-           "make_coverage_tool", "make_checklist_tool", "turn_key",
-           "DOCUMENT_COVERAGE_DESCRIPTION", "REPORT_CHECKLIST_DESCRIPTION",
+           "make_coverage_tool", "turn_key",
+           "DOCUMENT_COVERAGE_DESCRIPTION",
+           "DOCUMENT_COVERAGE_DESCRIPTION_REVIEW",
            "MIN_STEPS_FOR_GATE", "COVERAGE_STEP_FLOOR",
            "EXTRACTION_STEP_LIMIT", "ALLOWANCE_KEY", "ALLOWANCE_NUDGE",
            "EXTRACTION_TOOLS"]

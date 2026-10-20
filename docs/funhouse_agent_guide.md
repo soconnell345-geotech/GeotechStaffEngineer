@@ -297,8 +297,10 @@ tenth, `log_grid`, which returns one boring log as columns, a fitted depth
 ruler, every cell placed at a depth, its layers and its header fields.
 `document_roles` is not on this app's tool surface directly; it is what the
 `report_ingest` sub-agent reads. `log_grid` is, since 5.33.0, an agent tool
-of its own on the geotech page and the Document Review page (with
-`measure`). With the planlens release after 0.13.0 it also reads each
+of its own on the geotech page. It was on the Document Review page too (with
+`measure`) until BACKLOG RI-34 (on master after 5.33.0) took it off: a
+boring log is a geotechnical report's page, and those are not that page's
+documents; `measure` stays there. With the planlens release after 0.13.0 it also reads each
 sample's interval off the boxes drawn across the sample columns and returns
 compact rows by default, so a whole log fits one result (`row_detail`;
 feature-detected, so an older planlens is not sent it).

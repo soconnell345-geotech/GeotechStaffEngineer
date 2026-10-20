@@ -45,7 +45,7 @@ from __future__ import annotations
 
 import os
 import threading
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from funhouse_agent import review_flags
 from funhouse_agent.deep.limits import ModelCallBudgetMiddleware
@@ -70,9 +70,11 @@ REVIEW_TOOLS = (
     "render_page_thumbnails", "find_quantities", "annotate_document",
     "analyze_pdf_page", "render_region", "analyze_image", "find_like",
     "write_docx", "save_file", "list_files", "read_text_file",
-    # Visual scales: read-only, so the reading helper gets them too. Owner,
+    # Visual scales: read-only, so the reading helper gets it too. Owner,
     # 2026-10-08: on the legacy and lean builds, NOT the minimal one.
-    "measure", "log_grid",
+    # log_grid (a boring or test-pit log read as its grid) is the geotech
+    # page's alone since BACKLOG RI-34.
+    "measure",
     # A chart and a spreadsheet, as on the legacy build (live smoke wave 1,
     # A12); each is built only where its library imports.
     "plot_data", "write_xlsx",
@@ -151,6 +153,49 @@ REVIEW_DESCRIPTIONS: Dict[str, str] = {
         "![alt](figure.png) for a figure already in the working folder; --- "
         "is a page break. A figure that is not found is reported in warnings "
         "and the document is still written."),
+}
+
+#: Phrases swapped inside descriptions built elsewhere (planlens' own, the
+#: measure tool's, plot_data's from profile_figure), so this page's examples
+#: name no kind of geotechnical report (BACKLOG RI-34: geotech reports are
+#: not this page's documents; the geotech page keeps the original wording).
+#: A phrase that no longer matches leaves the original in place, and
+#: ``test_review_page_names_no_geotech_report_things`` then fails.
+REVIEW_REWRITES: Dict[str, Tuple[Tuple[str, str], ...]] = {
+    "search_document": (
+        ("a value, a boring or sheet id", "a value, an item or sheet id"),),
+    "render_page_thumbnails": (
+        ("spot the plan, the logs, the tables",
+         "spot the plans, the drawings, the tables"),),
+    "measure": (
+        ("a log's depth or elevation ruler, a plot's axes",
+         "a section's depth or elevation ruler, a plot's axes"),
+        ("e.g. all layer boundaries in a log's description column",
+         "e.g. all the boundaries drawn across a column"),),
+    "plot_data": (
+        ("an SPT or CPT profile against elevation, settlement vs time, load "
+         "vs displacement, a parameter sweep or method comparison, the cases "
+         "of a sensitivity study, a plan view of borings and a footprint "
+         "drawn to scale",
+         "quantities read from a document, values against date or "
+         "elevation, a comparison of options or cases, a site plan or a "
+         "footprint drawn to scale"),
+        ("(cases, scenarios, borings)", "(cases, scenarios, items)"),
+        ("borings start at different ground levels",
+         "points along a section start at different levels"),
+        ("(boring-log convention)", "(the depth convention)"),
+        ("as a boring log reads", "as a depth profile reads"),),
+}
+
+#: The same for a helper's description in the ``task`` tool: the figure
+#: helper (on by default since GM-227) is described by its examples. Its own
+#: prompt and worked examples stay as they are (INF-26 plan, D8).
+REVIEW_HELPER_REWRITES: Dict[str, Tuple[Tuple[str, str], ...]] = {
+    "figure": (
+        ("a plan of borings and a footprint, a profile (SPT, CPT, su, water "
+         "content against elevation)",
+         "a site plan and a footprint, a profile of values against "
+         "elevation"),),
 }
 
 #: With GEOTECH_VISION_INLINE the page and region tools show YOU the image
@@ -393,7 +438,9 @@ def build_review_agent(model, *, engine=None,
             markup_author=markup_author,
             description_overrides=descriptions,
             inline_images=inline_images,
-            inline_image_files=inline_image_files)
+            inline_image_files=inline_image_files,
+            description_rewrites=REVIEW_REWRITES,
+            plot_reference_charts=False)
 
     kept = ((KEPT_READINGS_TOOL,)
             if review_flags.kept_readings_on_review_page() else ())
@@ -411,11 +458,12 @@ def build_review_agent(model, *, engine=None,
         tools += make_digest_tools(attachments, working_dir=working_dir)
         reader_tools += make_digest_tools(attachments,
                                           working_dir=working_dir)
-    # Coverage (GEOTECH_COVERAGE / GEOTECH_REVIEW_CHECKLIST, OFF by default):
-    # the gate on this agent, a recorder on its reading helper.
+    # Coverage (GEOTECH_COVERAGE, OFF by default): the gate on this agent, a
+    # recorder on its reading helper; held only to a declared task here.
     from funhouse_agent.deep.coverage_tools import coverage_kit
     coverage = coverage_kit(attachments=attachments, folder=coverage_dir,
-                            max_result_chars=max_result_chars)
+                            max_result_chars=max_result_chars,
+                            review_page=True)
     tools += list(coverage.tools)
     tools.append(make_reader_tool(
         model, reader_tools,
@@ -489,5 +537,7 @@ def build_review_agent(model, *, engine=None,
 
 
 __all__ = ["build_review_agent", "make_reader_tool", "REVIEW_TOOLS",
-           "READER_TOOLS", "REVIEW_DESCRIPTIONS", "max_model_calls",
+           "READER_TOOLS", "REVIEW_DESCRIPTIONS", "REVIEW_REWRITES",
+           "REVIEW_HELPER_REWRITES",
+           "max_model_calls",
            "DEFAULT_MAX_MODEL_CALLS", "MAX_MODEL_CALLS_ENV"]

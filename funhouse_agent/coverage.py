@@ -570,9 +570,14 @@ class CoverageLedger:
     """
 
     def __init__(self, path: Optional[str] = None,
-                 attachments: Optional[Dict[str, bytes]] = None):
+                 attachments: Optional[Dict[str, bytes]] = None,
+                 declared_only: bool = False):
         self.path = path
         self.attachments = attachments if attachments is not None else {}
+        #: Hold a turn only to a declared coverage task (the Document Review
+        #: page, BACKLOG RI-34): reading data pages or writing a data file
+        #: does not arm it there.
+        self.declared_only = bool(declared_only)
         self._lock = threading.RLock()
         self.seq = 0
         #: doc_key -> {"name", "inventory", "reads", "marks", "declared",
@@ -1104,6 +1109,8 @@ class CoverageLedger:
           read old logs and some lab sheets and missed the newest logs and
           the rest of the sheets, which are the other pages of exactly
           these groups.
+
+        With ``declared_only`` (the Document Review page) only the first.
         """
         start = self.turn_starts.get(turn_key, 0)
         wrote = any(o.get("seq", 0) >= start for o in self.outputs)
@@ -1118,6 +1125,8 @@ class CoverageLedger:
                 declared = d.get("declared")
                 if declared is not None and int(declared) >= start:
                     out[key] = (TARGET_GROUPS, "declared")
+                elif self.declared_only:
+                    continue
                 elif wrote and touched:
                     out[key] = (TARGET_GROUPS, "output")
                 else:
@@ -1139,7 +1148,7 @@ class CoverageLedger:
         It is given when a document the turn is held to (:meth:`armed`) has
         pages nobody read; or, for a declared or written-out extraction with
         everything read, when the answer does not state coverage as counts;
-        or when ``extra`` (failed checklist checks) has anything in it.
+        or when ``extra`` (lines a caller adds) has anything in it.
 
         The note goes to the model INSTEAD of its answer: the gate holds the
         reply back (:class:`funhouse_agent.deep.coverage_tools.CoverageGate`)

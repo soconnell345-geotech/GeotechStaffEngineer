@@ -370,7 +370,7 @@ _REVIEW_HOW_YOU_READ = """\
   document as contact sheets — look at them with `analyze_image` to take a
   long document in at a glance before reading.
 - **Decide which pages the question covers, then LOOK at every one of
-  them.** A drawing, a scan, a figure, a plotted log, a plan or a section is
+  them.** A drawing, a scan, a figure, a chart, a plan or a section is
   a PICTURE with labels on it, and its transcript is not the page. A
   question about what pages SHOW — symbols, tags, callouts, details,
   dimensions, routing, what a sheet contains, how many of something there

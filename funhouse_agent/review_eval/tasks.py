@@ -32,7 +32,12 @@ document and the source is recorded in the task's ``truth`` note:
   was read can only be scored on a report whose every page is known by
   construction, and no public report the suite may carry has the shape that
   was lost (new logs as vector pages, old ones as scans, a long laboratory
-  appendix). Its three tasks run on both pages (``Task.page``);
+  appendix). Its three tasks are asked on the GeotechStaffEngineer page
+  (``Task.page``): since BACKLOG RI-34 (2026-10-20) a geotechnical report is
+  not the Document Review page's document. Two of them were asked on the
+  review page until then and were measured there (Foundry brief 5,
+  ``module_work/review_eval_results/2026-10-08_foundry_5.33.0rc1/``); those
+  results stay the review page's record;
 * two SYNTHETIC pages with known scales (``planlens.testing.
   visual_scale_fixtures``, 2026-10-08) for the measuring tasks: how far a
   measured depth or distance is from the truth can only be scored where the
@@ -973,6 +978,8 @@ OPEN_TASKS: List[Task] = [
                   "laboratory test result (boring, sample, depth, test, "
                   "values)."),
         documents=["fixture_report"], category="extract", doc_type="report",
+        # the geotech page since RI-34 (asked on the review page until then)
+        page="geotech",
         checks=[
             {"type": "pages_covered", "pages": list(_RF.TARGET_PAGES),
              "look_pages": list(_RF.SCANNED_LOG_PAGES), "min_fraction": 1.0,
@@ -1039,6 +1046,8 @@ OPEN_TASKS: List[Task] = [
                   "sample where they differ, with both values and the "
                   "pages."),
         documents=["fixture_report"], category="check", doc_type="report",
+        # the geotech page since RI-34 (asked on the review page until then)
+        page="geotech",
         checks=[
             {"type": "contains_all",
              "terms": ["B-2", "S-3", _num("32"), _num("20")],
