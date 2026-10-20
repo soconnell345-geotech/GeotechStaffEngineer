@@ -665,7 +665,28 @@ class TestGroundImprovementPackage:
         assert su["surcharge_kPa"] == 50 and "time_to_target_years" in su
         for r in (wick, ap, su):
             assert len(json.dumps(r)) < 8000
-            assert "choices" not in r
+        # the choices the agent states travel with every method's numbers
+        vb = gen({"method": "vibro", "fines_content": 8, "N1_before": 12,
+                  "target_N_spt": 25, "output_path": str(tmp_path / "v.html")})
+        for r in (wick, ap, su, vb):
+            assert len(json.dumps(r)) < 8000
+        assert ap.get("choices"), "aggregate piers' choices were dropped"
+
+    def test_choices_survive_thinning(self):
+        """A result with choices and long curves keeps every choice."""
+        from funhouse_agent.adapters.calc_package import _vibro_numbers
+
+        class R:
+            def to_dict(self):
+                return {"time_settlement_curve": [
+                            {"time_years": i, "settlement_mm": i * 2.0}
+                            for i in range(400)],
+                        "choices": [{"name": f"c{i}", "basis": "x" * 150}
+                                    for i in range(10)]}
+        for method in ("wick_drains", "aggregate_piers", "surcharge", "vibro"):
+            out = _vibro_numbers(method, R())
+            assert len(out["choices"]) == 10
+            assert len(out["time_settlement_curve"]) < 400
 
 
 class TestPlotDataScaleUnits:

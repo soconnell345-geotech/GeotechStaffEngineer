@@ -21,6 +21,7 @@ logic, adapted to the funhouse adapter pattern (METHOD_REGISTRY + METHOD_INFO).
 import base64
 import contextvars
 import math
+import json
 import os
 import re
 from datetime import datetime
@@ -1793,28 +1794,36 @@ def _vibro_numbers(method: str, result) -> dict:
     feasibility, the aggregate piers' replacement ratio, composite modulus,
     bearing and settlement, the wick drains' spacing and degrees of
     consolidation, the surcharge's time to the target and settlements. The
-    time curves (and the choices, which the PDF lists) are thinned or left
-    out for the 8000-char limit; the PDF and its CSV have every point."""
+    time curves are thinned for the 8000-char limit (the PDF and its CSV
+    have every point); the choices stay, the agent cannot read the PDF and
+    states them to the user, so a response over the limit loses curve
+    points and the wick drain details before it loses a choice."""
     out = result.to_dict()
-    out.pop("choices", None)
     _thin_curves(out)
+    for points in (_MAX_LISTED_POINTS, 10, 5):
+        if len(json.dumps(out, default=str)) < 6000:
+            break
+        _thin_curves(out, points)
+    if len(json.dumps(out, default=str)) >= 6000:
+        out.pop("wick_drain_details", None)
     return out
 
 
-def _thin_curves(d: dict) -> None:
+def _thin_curves(d: dict, limit: int = None) -> None:
     """Thin every ``time_settlement_curve`` in ``d`` (and the wick drain
     details inside it) to at most ``_MAX_LISTED_POINTS`` points, ends kept."""
+    limit = limit or _MAX_LISTED_POINTS
     curve = d.get("time_settlement_curve")
-    if isinstance(curve, list) and len(curve) > _MAX_LISTED_POINTS:
+    if isinstance(curve, list) and len(curve) > limit:
         n = len(curve)
-        keep = sorted({round(i * (n - 1) / (_MAX_LISTED_POINTS - 1))
-                       for i in range(_MAX_LISTED_POINTS)})
+        keep = sorted({round(i * (n - 1) / (limit - 1))
+                       for i in range(limit)})
         d["time_settlement_curve"] = [curve[i] for i in keep]
         d["time_settlement_curve_note"] = (
             f"{len(keep)} of the {n} points, evenly spaced with both ends; "
             "the PDF and its CSV table have all of them")
     if isinstance(d.get("wick_drain_details"), dict):
-        _thin_curves(d["wick_drain_details"])
+        _thin_curves(d["wick_drain_details"], limit)
 
 
 # ---------------------------------------------------------------------------
