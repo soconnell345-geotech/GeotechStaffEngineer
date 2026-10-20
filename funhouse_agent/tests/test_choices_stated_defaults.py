@@ -69,10 +69,10 @@ def test_aggregate_piers_state_n_and_the_moduli():
     n = c["stress concentration ratio n"]
     assert n["chosen"] == "5" and n["how"] == "default"
     assert "GEC-13" in n["basis"]
-    assert "not used in the calculation" in c["column modulus E_c"]["basis"]
+    assert "column modulus E_c" not in c            # GM-179: refused
     assert c["soil modulus E_s"]["how"] == "default"
     # the defaults the choices call "default" are among defaults_used
-    for name in ("n", "E_soil", "E_column", "pattern"):
+    for name in ("n", "E_soil", "pattern"):
         assert name in r["defaults_used"]
     r = D.call_agent("ground_improvement", "aggregate_piers",
                      {"column_diameter": 0.6, "spacing": 1.8, "n": 5.0})

@@ -1477,6 +1477,53 @@ class TestMSELRFDBearingNotChecked:
         assert r["bearing"]["passes"] is False
         assert r["passes"] is False
 
+    def test_the_foundation_unit_weight_works_the_resistance_out(self):
+        # GM-179: GEC-11 Eq. 4-22 over each combination's L', qR = 0.65 qn
+        from retaining_walls.mse import (
+            bearing_factors, check_external_stability_lrfd)
+        r = check_external_stability_lrfd(self._geom(), 19.0, 34.0, 30.0,
+                                          gamma_foundation=18.0,
+                                          c_foundation=5.0)
+        b = r["bearing"]
+        f = bearing_factors(30.0)
+        qn = 5.0 * f["Nc"] + 0.5 * b["B_eff_strength_max_m"] * 18.0 * f[
+            "Ngamma"]
+        assert b["qn_strength_max_kPa"] == pytest.approx(qn, abs=0.01)
+        assert b["qR_strength_max_kPa"] == pytest.approx(0.65 * qn, abs=0.01)
+        assert b["CDR_strength"] == pytest.approx(
+            0.65 * qn / b["sigma_v_strength_max_kPa"], abs=0.002)
+        qn_c = 5.0 * f["Nc"] + 0.5 * b["B_eff_critical_m"] * 18.0 * f[
+            "Ngamma"]
+        assert b["CDR_critical"] == pytest.approx(
+            0.65 * qn_c / b["sigma_v_critical_kPa"], abs=0.002)
+        # Strength I ran; Service I still needs its own resistance
+        assert r["checks_not_run"] == ["bearing (Service I)"]
+        assert b["checked"] is True
+
+    def test_an_effective_width_is_at_most_l(self):
+        # p. 4-28: L' = L when eB is negative
+        from retaining_walls.mse import check_external_stability_lrfd
+        g = MSEWallGeometry(wall_height=3.0, reinforcement_length=6.0)
+        b = check_external_stability_lrfd(g, 19.0, 34.0, 30.0,
+                                          gamma_foundation=18.0)["bearing"]
+        assert b["B_eff_critical_m"] <= 6.0
+
+    def test_the_two_ways_to_give_the_resistance_are_refused_together(self):
+        from retaining_walls.mse import check_external_stability_lrfd
+        with pytest.raises(ValueError, match="not both"):
+            check_external_stability_lrfd(
+                self._geom(), 19.0, 34.0, 30.0, gamma_foundation=18.0,
+                bearing_resistance_strength=500.0)
+
+    def test_analyze_mse_wall_takes_it_on_the_lrfd_path(self):
+        r = analyze_mse_wall(self._geom(), 19.0, 34.0, GEOGRID_UX1600,
+                             gamma_foundation=18.0, lrfd_external=True)
+        assert r.external_lrfd["bearing"]["CDR_strength"] is not None
+        given = analyze_mse_wall(self._geom(), 19.0, 34.0, GEOGRID_UX1600,
+                                 gamma_foundation=18.0, lrfd_external=True,
+                                 bearing_resistance_strength=500.0)
+        assert "qn_strength_max_kPa" not in given.external_lrfd["bearing"]
+
 
 def test_a_resultant_beyond_the_middle_third_on_the_heel_side_bears_under_the_heel(
         monkeypatch):

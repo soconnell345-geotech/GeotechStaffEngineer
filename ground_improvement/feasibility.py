@@ -16,6 +16,18 @@ from typing import Any, Dict, List, Optional
 
 from ground_improvement.results import FeasibilityResult
 
+_FT = 0.3048
+#: GEC-13 (FHWA-NHI-16-027) p. 5-9, item 7: "Typically, the maximum
+#: practical depth of stone columns and rammed aggregate piers is 100 feet
+#: and 35 feet respectively."
+STONE_COLUMN_MAX_DEPTH_M = 100 * _FT
+RAMMED_PIER_MAX_DEPTH_M = 35 * _FT
+#: GEC-13 p. 4-65: vibro-compaction "allows maximum improvement of granular
+#: soils to a depth of about 165 feet, with generally recommended depth of
+#: about 100 feet."
+VIBRO_MAX_DEPTH_M = 165 * _FT
+VIBRO_RECOMMENDED_DEPTH_M = 100 * _FT
+
 
 def evaluate_feasibility(
     soil_type: str,
@@ -48,7 +60,12 @@ def evaluate_feasibility(
     thickness_m : float
         Thickness of the compressible / treatable layer (m).
     depth_to_top_m : float
-        Depth to top of the treatable layer (m).
+        Depth to top of the treatable layer (m). The treatment reaches
+        depth_to_top_m + thickness_m, which is held against GEC-13's
+        printed depths (GM-179): aggregate columns to 100 ft (30.5 m) as
+        stone columns, 35 ft (10.7 m) as rammed aggregate piers (p. 5-9);
+        vibro-compaction to about 165 ft (50 m), about 100 ft (30.5 m)
+        generally recommended (p. 4-65).
     required_bearing_kPa : float
         Required bearing capacity (kPa). 0 = not a bearing problem.
     current_bearing_kPa : float
@@ -64,7 +81,10 @@ def evaluate_feasibility(
     Hdr_m : float, optional
         Vertical drainage path length (m).
     gwt_depth_m : float, optional
-        Depth to groundwater table (m).
+        Depth to groundwater table (m). Not used by the screening (GM-179):
+        GEC-13 finds vibro-compaction "effective both above and below the
+        natural groundwater level" (p. 4-65), and no other screen here
+        reads it. Kept so that older calls still run.
 
     Returns
     -------
@@ -113,7 +133,7 @@ def evaluate_feasibility(
 
     # ---- Aggregate Piers ----
     _eval_aggregate_piers(
-        is_clay, is_organic, cu_kPa, N_spt, thickness_m,
+        is_clay, is_organic, cu_kPa, N_spt, thickness_m, depth_to_top_m,
         settlement_problem, predicted_settlement_mm, allowable_settlement_mm,
         bearing_problem, required_bearing_kPa, current_bearing_kPa,
         applicable, not_applicable, recommendations, sizing,
@@ -135,7 +155,7 @@ def evaluate_feasibility(
 
     # ---- Vibro-Compaction ----
     _eval_vibro(
-        is_sand, soil_type, fines_content, N_spt, gwt_depth_m,
+        is_sand, soil_type, fines_content, N_spt, thickness_m, depth_to_top_m,
         applicable, not_applicable, recommendations, sizing,
     )
 
@@ -156,8 +176,15 @@ def evaluate_feasibility(
     )
 
 
+def _treatment_depth(depth_to_top_m, thickness_m):
+    """The depth the treatment reaches, and how it was made up."""
+    bottom = depth_to_top_m + thickness_m
+    return bottom, (f"{bottom:.1f} m ({depth_to_top_m:.1f} m to the top of "
+                    f"the layer + {thickness_m:.1f} m thick)")
+
+
 def _eval_aggregate_piers(
-    is_clay, is_organic, cu_kPa, N_spt, thickness_m,
+    is_clay, is_organic, cu_kPa, N_spt, thickness_m, depth_to_top_m,
     settlement_problem, predicted_settlement_mm, allowable_settlement_mm,
     bearing_problem, required_bearing_kPa, current_bearing_kPa,
     applicable, not_applicable, recommendations, sizing,
@@ -174,11 +201,14 @@ def _eval_aggregate_piers(
         })
         return
 
-    if thickness_m > 12:
+    bottom, reaches = _treatment_depth(depth_to_top_m, thickness_m)
+    if bottom > STONE_COLUMN_MAX_DEPTH_M:
         not_applicable.append({
             "method": method,
-            "reason": f"Treatment depth ({thickness_m:.1f}m) exceeds practical "
-                      "limit (~10-12 m) for aggregate piers"
+            "reason": f"Treatment to {reaches} is beyond the maximum "
+                      "practical depth of stone columns, 100 ft (30.5 m), "
+                      "and of rammed aggregate piers, 35 ft (10.7 m) "
+                      "(GEC-13 p. 5-9)"
         })
         return
 
@@ -206,6 +236,14 @@ def _eval_aggregate_piers(
         "typical_spacing": "1.5 - 3.0 m (triangular)",
         "typical_n": "3-8 (stress concentration ratio)",
     }
+    if bottom > RAMMED_PIER_MAX_DEPTH_M:
+        pier_sizing["column_type"] = "stone columns"
+        recommendations.append(
+            f"Aggregate piers: treatment to {reaches} is beyond the maximum "
+            "practical depth of rammed aggregate piers, 35 ft (10.7 m), and "
+            "within that of stone columns, 100 ft (30.5 m) (GEC-13 p. 5-9): "
+            "stone columns"
+        )
 
     if settlement_problem and predicted_settlement_mm > 0:
         required_SRF = allowable_settlement_mm / predicted_settlement_mm
@@ -341,7 +379,7 @@ def _eval_surcharge(
 
 
 def _eval_vibro(
-    is_sand, soil_type, fines_content, N_spt, gwt_depth_m,
+    is_sand, soil_type, fines_content, N_spt, thickness_m, depth_to_top_m,
     applicable, not_applicable, recommendations, sizing,
 ):
     """Evaluate vibro-compaction feasibility."""
@@ -376,6 +414,16 @@ def _eval_vibro(
         })
         return
 
+    bottom, reaches = _treatment_depth(depth_to_top_m, thickness_m)
+    if bottom > VIBRO_MAX_DEPTH_M:
+        not_applicable.append({
+            "method": method,
+            "reason": f"Treatment to {reaches} is beyond the depth to which "
+                      "vibro-compaction improves granular soils, about "
+                      "165 ft (50 m) (GEC-13 p. 4-65)"
+        })
+        return
+
     # Marginal check
     marginal = False
     if fines_content is not None and fines_content > 15:
@@ -397,6 +445,13 @@ def _eval_vibro(
         fc_str = f" (fines={fines_content:.0f}%)" if fines_content is not None else ""
         recommendations.append(
             f"Vibro-compaction is well-suited for this loose sand{fc_str}"
+        )
+
+    if bottom > VIBRO_RECOMMENDED_DEPTH_M:
+        recommendations.append(
+            f"Vibro-compaction: treatment to {reaches} is beyond the "
+            "generally recommended depth of about 100 ft (30.5 m), within "
+            "the maximum of about 165 ft (50 m) (GEC-13 p. 4-65)"
         )
 
     if N_spt is not None:

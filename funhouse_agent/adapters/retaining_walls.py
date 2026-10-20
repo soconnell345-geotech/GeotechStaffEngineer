@@ -210,7 +210,7 @@ def run_mse_wall(params, *, method="mse_wall"):
          "reinforcement_name", "reinforcement_type",
          "reinforcement_Tallowable", "reinforcement_width",
          "reinforcement_Fy", "reinforcement_thickness",
-         "reinforcement_transverse_spacing", "gamma_foundation",
+         "reinforcement_transverse_spacing",
          "phi_foundation", "c_foundation", "q_allowable",
          "phi_retained", "gamma_retained", "traffic_vertical_resists",
          "live_load_resists", "surcharge_in_bearing"),
@@ -230,7 +230,6 @@ def run_mse_wall(params, *, method="mse_wall"):
         "geom": geom, "reinforcement": reinforcement,
         "gamma_backfill": params["gamma_backfill"],
         "phi_backfill": params["phi_backfill"],
-        "gamma_foundation": params.get("gamma_foundation"),
         "phi_foundation": params.get("phi_foundation"),
         "c_foundation": params.get("c_foundation", 0.0),
         "q_allowable": params.get("q_allowable"),
@@ -245,7 +244,6 @@ def run_mse_wall(params, *, method="mse_wall"):
     result = analyze_mse_wall(
         geom, gamma_backfill=used["gamma_backfill"],
         phi_backfill=used["phi_backfill"], reinforcement=reinforcement,
-        gamma_foundation=used["gamma_foundation"],
         phi_foundation=used["phi_foundation"],
         c_foundation=used["c_foundation"], q_allowable=used["q_allowable"],
         phi_retained=used["phi_retained"],
@@ -279,6 +277,7 @@ def _run_mse_lrfd_external_stability(params):
          "gamma_backfill", "phi_backfill",
          "phi_foundation", "phi_retained", "gamma_retained", "live_load",
          "bearing_resistance_strength", "bearing_resistance_service",
+         "gamma_foundation", "phi_bearing",
          "c_foundation", "gamma_EV_max", "gamma_EV_min", "gamma_EH_max",
          "gamma_EH_min", "gamma_LL", "phi_sliding", "ecc_limit_ratio",
          "traffic_vertical_resists"),
@@ -295,7 +294,8 @@ def _run_mse_lrfd_external_stability(params):
     # Only forward load/resistance factors the caller actually set (so the
     # GEC-11 defaults live in one place — the module function).
     factor_keys = ("gamma_EV_max", "gamma_EV_min", "gamma_EH_max",
-                   "gamma_EH_min", "gamma_LL", "phi_sliding", "ecc_limit_ratio")
+                   "gamma_EH_min", "gamma_LL", "phi_sliding", "ecc_limit_ratio",
+                   "phi_bearing")
     factors = {k: params[k] for k in factor_keys if k in params}
     result = check_external_stability_lrfd(
         geom, gamma_backfill=params["gamma_backfill"],
@@ -307,6 +307,7 @@ def _run_mse_lrfd_external_stability(params):
         c_foundation=params.get("c_foundation", 0.0),
         bearing_resistance_strength=params.get("bearing_resistance_strength"),
         bearing_resistance_service=params.get("bearing_resistance_service"),
+        gamma_foundation=params.get("gamma_foundation"),
         traffic_vertical_resists=bool(
             params.get("traffic_vertical_resists", False)),
         **factors,
@@ -658,7 +659,6 @@ METHOD_INFO = {
             "traffic_vertical_resists": {"type": "bool", "required": False, "default": False, "description": "Broken backslope with traffic (surcharge) behind the crest only: count the traffic thrust's vertical component F2*sin(I) as sliding and eccentricity resistance, as GEC-11 Example E1 does (Vol II pp. E1-7 to E1-9). Default false: the GEC-11 text counts loads that increase sliding resistance 'only if those loads are permanent' (Vol I p. 4-22). Bearing counts it either way (p. 4-26). The result's backslope.traffic_basis says which was used."},
             "live_load_resists": {"type": "bool", "required": False, "default": False, "description": "Count the live-load surcharge over the reinforced zone (q*L; behind the crest of a broken backslope, q over the level ground on the zone) as resisting weight in sliding and overturning. Default false: GEC-11 Vol I p. 4-19, 'The live load surcharge is not considered as a stabilizing force when checking sliding'; p. 4-21 (Eq. 4-12), 'the live load is excluded since it increases sliding stability'; p. 4-22, loads that increase sliding resistance only 'if those loads are permanent', and the eccentricity (overturning) check 'only applies the live load above the retained backfill' (Fig. 4-2). true = the free body with the load over the zone, W = gamma*H*L + q*L. The result's choices say which was used."},
             "surcharge_in_bearing": {"type": "bool", "required": False, "default": True, "description": "Count the live-load surcharge over the reinforced zone in the bearing pressure sigma_v and its eccentricity. Default true: GEC-11 Vol I p. 4-26, 'The bearing check applies live load above both the reinforced zone and the retained backfill' (Fig. 4-2; Eqs. 4-19, 4-20). false = the live load taken as not over the zone."},
-            "gamma_foundation": {"type": "float", "required": False, "description": "Foundation soil unit weight (kN/m3). Not used by these checks: bearing compares the Meyerhof pressure with q_allowable (no bearing capacity is computed) and no passive resistance is counted."},
             "phi_foundation": {"type": "float", "required": False, "description": "Foundation soil friction angle (deg)."},
             "c_foundation": {"type": "float", "required": False, "default": 0.0, "description": "Foundation soil cohesion (kPa)."},
             "q_allowable": {"type": "float", "required": False, "description": "Allowable bearing pressure (kPa). Without it the external bearing check is NOT RUN (FOS_bearing null, checks_not_run lists 'bearing'); sigma_v is still reported."},
@@ -681,9 +681,11 @@ METHOD_INFO = {
             "phi_retained": {"type": "float", "required": False, "description": "Retained (behind-mass) fill friction angle (deg) for the external active thrust. Defaults to phi_backfill."},
             "gamma_retained": {"type": "float", "required": False, "description": "Retained fill unit weight (kN/m3). Defaults to gamma_backfill."},
             "live_load": {"type": "float", "required": False, "description": "Live-load surcharge q (kPa) if different from `surcharge`."},
-            "bearing_resistance_strength": {"type": "float", "required": False, "description": "Factored bearing resistance qR at the strength limit (kPa) = phi_b*qn; enables the strength/critical bearing CDR = qR/sigma_v."},
+            "bearing_resistance_strength": {"type": "float", "required": False, "description": "Factored bearing resistance qR at the strength limit (kPa) = phi_b*qn; enables the strength/critical bearing CDR = qR/sigma_v. Give it or gamma_foundation, not both."},
+            "gamma_foundation": {"type": "float", "required": False, "description": "Foundation soil unit weight (kN/m3). Given in place of bearing_resistance_strength, it works the strength bearing resistance out for each Strength I combination, as GEC-11 Vol II Example E2 does: qn = c_foundation*Nc + 0.5*L'*gamma_foundation*Ngamma (GEC-11 Vol I Eq. 4-22; Nc, Ngamma from Table 4-6 for phi_foundation) over that combination's L' = L - 2eB (L' = L when eB < 0), for a level grade in front of the wall and no groundwater influence, the wall's embedment neglected (p. 4-28); qR = phi_bearing*qn (Eq. 4-23). For a slope in front of the wall or a high water table work qn out by AASHTO 10.6.3.1.2 and give bearing_resistance_strength."},
+            "phi_bearing": {"type": "float", "required": False, "default": 0.65, "description": "Bearing resistance factor phi_b for the qn worked out from gamma_foundation (GEC-11 Table 4-5: 0.65)."},
             "bearing_resistance_service": {"type": "float", "required": False, "description": "Service bearing resistance (kPa); enables the Service I bearing CDR."},
-            "c_foundation": {"type": "float", "required": False, "default": 0.0, "description": "Foundation cohesion (kPa) for sliding adhesion (2/3 c)."},
+            "c_foundation": {"type": "float", "required": False, "default": 0.0, "description": "Foundation cohesion (kPa) for sliding adhesion (2/3 c), and c_f in qn when gamma_foundation is given."},
             "gamma_EV_max": {"type": "float", "required": False, "default": 1.35, "description": "Max vertical-earth (EV) load factor (AASHTO Strength I)."},
             "gamma_EV_min": {"type": "float", "required": False, "default": 1.00, "description": "Min vertical-earth (EV) load factor."},
             "gamma_EH_max": {"type": "float", "required": False, "default": 1.50, "description": "Max horizontal-earth (EH) load factor."},
@@ -692,7 +694,7 @@ METHOD_INFO = {
             "phi_sliding": {"type": "float", "required": False, "default": 1.0, "description": "Sliding resistance factor (AASHTO 11.10.5.3)."},
             "ecc_limit_ratio": {"type": "float", "required": False, "default": 0.25, "description": "Limiting-eccentricity ratio e_max/L (0.25 = L/4 for MSE on soil; use 1/6 on rock)."},
         },
-        "returns": {"sliding": "Sliding CDRs (strength max/min, critical, governing).", "eccentricity": "eL (strength max, critical) vs e_limit.", "bearing": "sigma_v (strength/critical/service) + bearing CDRs; checked false and passes null when no bearing resistance was given.", "passes": "true only when every check ran and passed; false when one failed; null when none failed but one was not run.", "checks_failed": "Checks that failed. Report every one.", "checks_not_run": "Checks not run for want of a bearing resistance: 'bearing (Strength I)', 'bearing (Service I)'. Say so.", "backslope": "With a sloping backfill only: the GEC-11 basis used (Kab, interface angle, h, F_T and its components, the slope fill weight V2)."},
+        "returns": {"sliding": "Sliding CDRs (strength max/min, critical, governing).", "eccentricity": "eL (strength max, critical) vs e_limit.", "bearing": "sigma_v (strength/critical/service) + bearing CDRs; checked false and passes null when no bearing resistance was given. With gamma_foundation: qn and qR for Strength I max and the critical combination, Nc, Ngamma, phi_bearing and resistance_basis (GEC-11 Eq. 4-22).", "passes": "true only when every check ran and passed; false when one failed; null when none failed but one was not run.", "checks_failed": "Checks that failed. Report every one.", "checks_not_run": "Checks not run for want of a bearing resistance: 'bearing (Strength I)', 'bearing (Service I)'. Say so.", "backslope": "With a sloping backfill only: the GEC-11 basis used (Kab, interface angle, h, F_T and its components, the slope fill weight V2)."},
     },
     "list_reinforcement": {
         "category": "MSE Wall",
@@ -717,6 +719,15 @@ METHOD_INFO["mse_lrfd_external_stability"]["refused_parameters"] = {
     "reinforcement_spacing": (
         "external stability does not depend on it; mse_wall's internal "
         "checks use it")}
+# GM-179: taken and not used before; mse_lrfd_external_stability uses it.
+METHOD_INFO["mse_wall"]["refused_parameters"] = {
+    "gamma_foundation": (
+        "mse_wall does not use the foundation soil's unit weight: its "
+        "bearing check compares the bearing pressure with q_allowable (it "
+        "works no bearing resistance out) and it counts no passive "
+        "resistance. Give q_allowable, or run mse_lrfd_external_stability "
+        "with gamma_foundation (and phi_foundation, c_foundation) to work "
+        "the bearing resistance out by GEC-11 Eq. 4-22")}
 
 # When each default applies (GM-119): the key depth to a wall with a shear
 # key, the custom reinforcement's properties to a custom reinforcement (a
@@ -765,12 +776,13 @@ declare_applies_when(METHOD_INFO, {
                      "reinforcement_transverse_spacing")}, **_TRAFFIC,
         "live_load_resists": {"surcharge": "set"},
         "surcharge_in_bearing": {"surcharge": "set"},
-        "broken_backslope_height": {"backfill_slope": "set"},
-        # taken and not used (GM-184): no MSE check here needs it
-        "gamma_foundation": False},
+        "broken_backslope_height": {"backfill_slope": "set"}},
     "mse_lrfd_external_stability": {
         **_TRAFFIC,
-        "broken_backslope_height": {"backfill_slope": "set"}},
+        "broken_backslope_height": {"backfill_slope": "set"},
+        # GM-179: the resistance is given or worked out, one or the other
+        "phi_bearing": {"gamma_foundation": "set"},
+        "bearing_resistance_strength": {"gamma_foundation": "unset"}},
 })
 
 # What a left-out input with no default stands for (GM-165): a part the
@@ -811,7 +823,6 @@ declare_when_absent(METHOD_INFO, {
         "phi_retained": "phi_backfill",
         "gamma_retained": "gamma_backfill",
         "broken_backslope_height": _SLOPE_CONTINUES,
-        "gamma_foundation": "gamma_backfill",
         "phi_foundation": "phi_backfill",
         "q_allowable": ("bearing not checked",
                         "with no allowable bearing pressure the external "
@@ -827,8 +838,9 @@ declare_when_absent(METHOD_INFO, {
         "live_load": "surcharge",
         "bearing_resistance_strength": (
             "bearing not checked at the strength limit",
-            "with no factored bearing resistance qR the Strength I bearing "
-            "CDR is not computed (checks_not_run lists it)"),
+            "with no factored bearing resistance qR and no gamma_foundation "
+            "to work it out the Strength I bearing CDR is not computed "
+            "(checks_not_run lists it)"),
         "bearing_resistance_service": (
             "bearing not checked at the service limit",
             "with no service bearing resistance the Service I bearing CDR "

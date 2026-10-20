@@ -1596,7 +1596,6 @@
       "column_diameter": 0.76,
       "spacing": 1.5,
       "pattern": "triangular",
-      "E_column": 40000.0,
       "E_soil": 8000.0,
       "S_unreinforced": 100.0,
       "q_unreinforced": 150.0

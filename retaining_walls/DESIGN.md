@@ -60,6 +60,21 @@ Two external-stability paths are available; both are default-preserving.
     (FHWA-NHI-10-025) in `validation_examples/test_published_v009_v011.py`:
     sliding 1.85/2.08/1.37, eL 2.87/3.87 ft (< L/4 = 4.50), bearing σ_v 6.70 ksf
     / CDR 1.57, Service σ_v 4.66 ksf — all reproduced through the high-level path.
+  - **Bearing resistance worked out (GM-179, 2026-10-19).** Given
+    `gamma_foundation` in place of `bearing_resistance_strength`, qR is worked
+    out for each Strength I combination: qn = c_f·Nc + 0.5·L'·γ_f·Nγ (GEC-11
+    Vol I Eq. 4-22, "for a level grade in front of a MSE wall and no
+    groundwater influence", the embedment neglected, p. 4-28) over that
+    combination's L' = L − 2eB (L' = L when eB < 0); Nc, Nγ from Table 4-6
+    by its own equations (Prandtl Nc, Vesic Nγ; within 0.1 of the table);
+    qR = φb·qn, φb = 0.65 (Table 4-5, Eq. 4-23). Reproduces Vol II Example E2
+    on Example E1's wall: L' = 12.46 ft, qn = 17.44 ksf, qR = 11.34 ksf
+    (`test_v057_e2_nominal_bearing_resistance`). Service I keeps its given
+    resistance (a settlement criterion). Giving both is refused. The ASD
+    `mse_wall` tool refuses `gamma_foundation`: its bearing check compares
+    with `q_allowable` and it counts no passive resistance, so the input
+    changed nothing (GM-184); the library function keeps it and passes it to
+    the LRFD path only.
 
 ## Wall height, checks not run and failed checks (GM-100, 2026-10-15)
 

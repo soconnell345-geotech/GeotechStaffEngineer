@@ -28,7 +28,8 @@ def test_aggregate_pier_choices_state_n_and_its_basis():
     assert not any("Eq. 5-17" in a for a in n["alternatives"])
     assert c["soil modulus E_s"]["chosen"] == "5000 kPa"
     assert "composite modulus" in c["soil modulus E_s"]["basis"]
-    assert "not used in the calculation" in c["column modulus E_c"]["basis"]
+    # GM-179: E_column changes no result, so it is not a choice
+    assert "column modulus E_c" not in c
     assert c["column pattern"]["chosen"] == "triangular"
     assert r.to_dict()["choices"] == r.choices
     assert "stress concentration ratio n" in r.summary()

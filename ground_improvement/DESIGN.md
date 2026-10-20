@@ -40,7 +40,19 @@ evaluate_feasibility(soil_type, fines_content, ...) -> FeasibilityResult
 - Aggregate piers state their choices (GM-142, 2026-10-18): n (default
   5.0; GEC-13: "between 2.0 and 5.0" for stone columns, Sec. 4.1.2.4; for
   rammed aggregate piers "4 to 45 for rigid footings" and 5 to 10 under
-  embankments, p. 5-45; taken as given, not worked out from the moduli), E_soil (used only for the composite modulus), E_column (used only
-  in a warning when below E_soil) and the pattern. The calc package no
-  longer prints E_column as an input.
+  embankments, p. 5-45; taken as given, not worked out from the moduli), E_soil (used only for the composite modulus) and the pattern. The calc
+  package no longer prints E_column as an input. Since GM-179 the tool
+  refuses E_column (and its other names column_modulus, E_pier): it
+  changed no result, only a warning below E_soil; the library function
+  keeps it for that warning, out of the choices.
+- Feasibility screening (GM-179): the depth to the bottom of the
+  treatment, depth_to_top_m + thickness_m, is held against GEC-13's
+  printed depth limits: aggregate columns "Typically, the maximum
+  practical depth of stone columns and rammed aggregate piers is 100 feet
+  and 35 feet respectively" (p. 5-9, item 7; 30.5 m and 10.7 m), which
+  replaces an uncited 12 m thickness limit; vibro-compaction "a depth of
+  about 165 feet, with generally recommended depth of about 100 feet"
+  (p. 4-65; 50 m and 30.5 m). The water table is refused: no screen here
+  uses it, and GEC-13 finds vibro-compaction "effective both above and
+  below the natural groundwater level" (p. 4-65).
 - Tests in tests/test_ground_improvement.py

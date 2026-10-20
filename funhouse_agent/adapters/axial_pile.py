@@ -26,6 +26,9 @@ _CUSTOM_SECTION = ("pile_area", "pile_perimeter", "pile_tip_area",
 # Pile-geometry params (incl. the accepted aliases width/thickness/diameter).
 _PILE_PARAMS = ("pile_type", "diameter", "wall_thickness", "width",
                 "thickness", "designation", "E") + _CUSTOM_SECTION
+# The capacity methods take the section without its modulus (GM-179): no
+# static capacity method of GEC-12 here uses it.
+_CAPACITY_PILE_PARAMS = tuple(k for k in _PILE_PARAMS if k != "E")
 _SOIL_PARAMS = ("layers", "gwt_depth")
 # The GEC-12 limits and judgments AxialPileAnalysis takes (GM-121), each
 # with the module's own default.
@@ -215,7 +218,7 @@ def run_axial_pile_capacity(params, *, method="axial_pile_capacity"):
     ``method`` names the caller in error messages."""
     reject_unknown_params(
         params,
-        _PILE_PARAMS + _SOIL_PARAMS + (
+        _CAPACITY_PILE_PARAMS + _SOIL_PARAMS + (
             "pile_length", "method", "factor_of_safety", "include_uplift",
             "cohesive_phi", "uplift_skin_fraction", "pile_weight", "head_depth")
         + tuple(_GEC12_OPTIONS),
@@ -249,7 +252,7 @@ def _run_axial_pile_capacity(params):
 def _run_capacity_vs_depth(params):
     reject_unknown_params(
         params,
-        _PILE_PARAMS + _SOIL_PARAMS + (
+        _CAPACITY_PILE_PARAMS + _SOIL_PARAMS + (
             "pile_length", "method", "depth_min", "depth_max", "n_points",
             "head_depth", "cohesive_phi") + tuple(_GEC12_OPTIONS),
         method="capacity_vs_depth")
@@ -333,7 +336,6 @@ METHOD_INFO = {
             "wall_thickness": {"type": "float", "required": False, "description": "Pipe wall thickness (m)."},
             "width": {"type": "float", "required": False, "description": "Side dimension (m) for concrete piles."},
             "designation": {"type": "str", "required": False, "description": "H-pile designation (e.g., 'HP14x117')."},
-            "E": {"type": "float", "required": False, "description": "Pile elastic modulus (kPa). Defaults: steel 200e6, concrete 25e6."},
             "pile_length": {"type": "float", "required": True, "description": "Embedded pile length from the pile head to the tip (m)."},
             "layers": {"type": "array", "required": True, "description": _LAYERS_DOC},
 
@@ -366,7 +368,6 @@ METHOD_INFO = {
             "wall_thickness": {"type": "float", "required": False, "description": "Pipe wall thickness (m)."},
             "width": {"type": "float", "required": False, "description": "Side dimension (m) for concrete piles."},
             "designation": {"type": "str", "required": False, "description": "H-pile designation (e.g., 'HP14x117')."},
-            "E": {"type": "float", "required": False, "description": "Pile elastic modulus (kPa). Defaults: steel 200e6, concrete 25e6."},
             "layers": {"type": "array", "required": True, "description": _LAYERS_DOC},
             "gwt_depth": {"type": "float", "required": False, "description": "Groundwater depth (m)."},
             "head_depth": {"type": "float", "required": False, "default": 0.0, "description": "Depth of the pile head below the ground surface (m). Default 0 = head at the ground surface (see axial_pile_capacity)."},
@@ -462,5 +463,12 @@ declare_when_absent(METHOD_INFO, {
                         "soil profile given")},
     "make_pile_section": {"E": _E},
 })
+# The modulus was taken and not used by the capacity methods (GM-184);
+# refused since GM-179. make_pile_section reports it.
+_NO_E = ("the static capacity does not use the pile's elastic modulus: "
+         "Nordlund's, Tomlinson's and the beta method's side and toe "
+         "resistances (GEC-12 Ch. 7) depend on the section's area, "
+         "perimeter and toe area, not its stiffness. Leave E out; "
+         "make_pile_section reports a section's modulus")
 for _m in ("axial_pile_capacity", "capacity_vs_depth"):
-    METHOD_INFO[_m]["parameters"]["E"]["applies_when"] = False
+    METHOD_INFO[_m]["refused_parameters"] = {"E": _NO_E}
