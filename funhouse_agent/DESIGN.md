@@ -394,19 +394,26 @@ the eyes). What changed on master after 5.33.0, in short:
   deliverable's figures, gets `analyze_image` to look at them. `save_file`
   adds a `chart_note` when it writes a `*.plotly.json` by hand
   (`vision_tools.HAND_CHART_NOTE`): no PNG of that figure exists, and a PNG
-  beside it is now a different figure. Behind `GEOTECH_FIGURE_HELPER` (OFF;
-  arm `figure_helper`): a `figure` helper (`deep/figure_helper.py`) with an
+  beside it is now a different figure. Behind `GEOTECH_FIGURE_HELPER` (ON
+  by default since 2026-10-20, the owner's "on everywhere" of GM-92,
+  BACKLOG GM-227; `=0` with `GEOTECH_PLOT_CODE=0` leaves it out; arms
+  `figure_helper`, `figure_helper_off`): a `figure` helper (`deep/figure_helper.py`) with an
   eleven-item figure checklist after Tufte, six worked examples
   (`figure_examples`, from `profile_figure/figure_examples.py`), `plot_data`,
   `analyze_image`, `calculate` and a 14-call budget; both pages, not the
-  lean review agent. The checklist, `plot_data`'s `depth_axis` and
+  lean review agent. On the Document Review page it has every tool it
+  needs (`plot_data`, `analyze_image`, `list_files`, `read_text_file` and,
+  with `plot_code`, the box all serve that page), so "everywhere" holds
+  there too; the lean review agent (its own OFF switch) builds no figure
+  helper. The checklist, `plot_data`'s `depth_axis` and
   `plot_code`'s description carry the owner's conventions (GM-97): elevation
   up a profile by default, kPa and kN, test points against an assumed
   design line, the wall drawn; with `plot_code` the examples tool also lists
   three worked `plot_code` scripts and says which kind each example is.
 - **Plotting code in a locked box** (GM-98; 2026-10-15; `plot_box/`):
-  behind `GEOTECH_PLOT_CODE` (OFF; arm `plot_code`; it brings the figure
-  helper with it) the figure helper and the `calc` helper get
+  behind `GEOTECH_PLOT_CODE` (ON by default since 2026-10-20, GM-92 /
+  GM-227; `=0` turns it off; arms `plot_code`, `plot_code_off`; it brings
+  the figure helper with it) the figure helper and the `calc` helper get
   `plot_code`, which runs matplotlib or Plotly code the model writes in a
   fresh Python process (`python -I -B plot_box/child.py`). The layers, in
   order: a static check of the code (imports only from numpy, pandas,
@@ -566,8 +573,21 @@ the eyes). What changed on master after 5.33.0, in short:
   (`adapters/reliability_adapter._MATH_FUNCS`), so `reliability`'s
   expressions have them too.
 - **Judgment calls** (GM-116; 2026-10-16; the owner: "User's judgement is
-  the one that matters"). Behind `GEOTECH_JUDGMENT_CALLS` (OFF; arm
-  `judgment_calls`), on the geotech page only. The main prompt gets a
+  the one that matters"). Behind `GEOTECH_JUDGMENT_CALLS`, on the geotech
+  page only: ON by default since 2026-10-20 (owner, OWN-65: "This cost
+  ($0.2 to 0.53) is low compared to the added quality. There is a switch
+  already in the chat that the user can click to lower (or eliminate) the
+  amount of reference calls"; BACKLOG GM-226), `=0` turns it off; arms
+  `judgment_calls`, `judgment_calls_off`. Every turn, chat answers
+  included. The chat's control is Behavior's "Consult references" (and
+  "Reference consult budget" under Advanced caps;
+  `webapp/core.behavior_build_kwargs`): with references off no
+  `references` helper is built, the section names none (each call cites a
+  `choices` basis or says it rests on judgment, no reference cited), the
+  delegation nudge asks for no consult citations, and the turn-end check
+  never acts (`judgment_check.mode_for`); a lower budget caps the consult
+  (it is `min(the user's, 6)`) (`webapp/tests/test_judgment_check_turn.py`).
+  The main prompt gets a
   "Judgment Calls" section (`deep/prompt.judgment_calls_section`, 963
   characters; 897 without the clause naming the `references` helper when
   that helper is not built): make each call as an experienced engineer
@@ -676,7 +696,11 @@ the eyes). What changed on master after 5.33.0, in short:
   the helper's prompt and budget are as before.
 
 Every switch and its default: `review_flags.py` and
-`module_work/REVIEW_HARNESS.md`.
+`module_work/REVIEW_HARNESS.md`. Three are ON by default by the owner's
+ruling of 2026-10-20 (`review_flags.DEFAULT_ON_ENVS`: the figure helper,
+plotting code and judgment calls; `0` turns each off); the build record
+(`agent.geotech_build["switches"]`, `review_flags.describe`) names each
+as `=1 (default)` while unset.
 
 ## Notebook Chat (notebook.py, deep/notebook.py)
 

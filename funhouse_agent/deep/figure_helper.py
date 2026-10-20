@@ -31,8 +31,9 @@ main agent to hand figures to the helper and not to look again at what it
 looked at (live wave w9, ``module_work/live_smoke/runs/w9-figures/
 TRACE_REVIEW.md`` §2.6, §2.9).
 
-It is OFF until switched on (``GEOTECH_FIGURE_HELPER=1``; owner rule: new
-agent behaviour waits behind a switch until it is measured).
+It is ON by default since 2026-10-20 (the owner, GM-92: "on everywhere";
+BACKLOG GM-227); ``GEOTECH_FIGURE_HELPER=0`` with ``GEOTECH_PLOT_CODE=0``
+leaves it out.
 """
 
 from __future__ import annotations

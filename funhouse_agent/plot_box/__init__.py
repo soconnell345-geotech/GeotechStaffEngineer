@@ -23,9 +23,9 @@ much, I want it to cook when we have some complicated things to visualize."
 Standard library only: ``subprocess`` without a shell, ``resource`` limits
 on Linux, a job object on Windows; nothing is installed.
 
-OFF until switched on (``GEOTECH_PLOT_CODE=1``; owner rule: new agent
-behaviour waits behind a switch until measured). Offered to the figure
-helper and the ``calc`` helper. Settings:
+ON by default since 2026-10-20 (the owner, GM-92: "on everywhere";
+BACKLOG GM-227); ``GEOTECH_PLOT_CODE=0`` turns it off. Offered to the
+figure helper and the ``calc`` helper. Settings:
 
 ``GEOTECH_PLOT_CODE_SECONDS``
     the time limit a call gets when it names none (600);
