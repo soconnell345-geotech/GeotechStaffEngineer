@@ -145,7 +145,9 @@ def _package_of(match):
     for i, (_, pkg) in enumerate(MANUALS):
         if match.group(f"m{i}") is not None:
             if pkg is None:
-                return f"gec_{int(re.search(r'\d+', match.group(0)).group())}"
+                # No backslash inside the f-string: Python 3.10/3.11 refuse it.
+                n = int(re.search(r"\d+", match.group(0)).group())
+                return f"gec_{n}"
             return pkg
     return None
 
@@ -183,7 +185,28 @@ def citations_in(text):
 
 # --- the reference library --------------------------------------------
 
-REF_ROOT = os.path.join(ROOT, "geotech-references", "geotech_references")
+def _ref_root():
+    """The reference library's package folder: the submodule's (the pinned
+    version CI checks out), else the installed package's (a worktree with
+    the submodule not checked out), else None."""
+    sub = os.path.join(ROOT, "geotech-references", "geotech_references")
+    if glob.glob(os.path.join(sub, "gec_6", "text", "*.json")):
+        return sub
+    try:
+        import geotech_references
+    except ImportError:
+        return None
+    pkg = os.path.dirname(os.path.abspath(geotech_references.__file__))
+    if glob.glob(os.path.join(pkg, "gec_6", "text", "*.json")):
+        return pkg
+    return None
+
+
+REF_ROOT = _ref_root()
+if REF_ROOT is None:
+    pytest.skip("the reference library's chapter text is not here (no "
+                "geotech-references submodule or package)",
+                allow_module_level=True)
 
 _LISTED = re.compile(
     rf"^\s*(?P<k>Eq(?:uation)?s?\.?|Tables?|Fig(?:ure)?s?\.?)\s*(?P<n>{NUM})")
@@ -381,6 +404,7 @@ REFERENCE_GAPS = {
     ("gec_10", "eq", "10-11"): "p. 10-11",
     ("gec_10", "eq", "10-12"): "p. 10-11",
     ("gec_10", "eq", "10-13"): "p. 10-11",
+    ("gec_10", "eq", "10-21"): "p. 10-20 (rock side resistance)",
     ("gec_11", "eq", "4-21"): "Vol I p. 4-28",
     ("gec_11", "eq", "4-22"): "Vol I p. 4-28",
     ("gec_11", "eq", "4-23"): "Vol I p. 4-30",
