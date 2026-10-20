@@ -30,9 +30,31 @@ References
 
 import warnings
 from dataclasses import dataclass
+from typing import Optional
 
 import numpy as np
 from scipy.linalg import solve_banded
+
+
+class SoilResistanceExceeded(ValueError):
+    """The head load is more than the pile and soil carry: under the p-y
+    curves no deflection of the pile balances it, so there is no solution
+    to report.
+
+    Attributes
+    ----------
+    load_factor : float
+        The largest multiple of the applied head loads the pile and soil
+        carry (below 1).
+    head_deflection : float
+        The head deflection (m) at which they carry it.
+    """
+
+    def __init__(self, message: str, load_factor: float,
+                 head_deflection: float):
+        super().__init__(message)
+        self.load_factor = load_factor
+        self.head_deflection = head_deflection
 
 
 @dataclass
@@ -60,6 +82,9 @@ class SolverResult:
         Number of iterations to converge.
     converged : bool
         True if solution converged within tolerance.
+    message : str, optional
+        Why the iteration stopped without converging, in plain words
+        (None when it converged).
     """
     z: np.ndarray
     y: np.ndarray
@@ -70,6 +95,7 @@ class SolverResult:
     Es: np.ndarray
     iterations: int
     converged: bool
+    message: Optional[str] = None
 
 
 def solve_lateral_pile(
@@ -83,7 +109,7 @@ def solve_lateral_pile(
     rotational_stiffness: float = 0.0,
     n_elements: int = 100,
     tolerance: float = 1e-5,
-    max_iterations: int = 100,
+    max_iterations: int = 500,
     pile_diameter: float = 1.0,
     stickup: float = 0.0,
 ) -> SolverResult:
@@ -122,7 +148,9 @@ def solve_lateral_pile(
     tolerance : float
         Convergence tolerance on deflection. Default 1e-5.
     max_iterations : int
-        Maximum number of iterations. Default 100.
+        Maximum number of iterations. Default 500 (100 before GM-208:
+        softening p-y curves, such as stiff clay below the water table,
+        take 120-140 near their peak).
     pile_diameter : float
         Pile diameter (m). Passed to p-y functions.
     stickup : float
@@ -142,6 +170,16 @@ def solve_lateral_pile(
     SolverResult
         Solution containing deflection, moment, shear, slope, and soil reaction.
         The depth array spans [-stickup, pile_length].
+
+    Raises
+    ------
+    SoilResistanceExceeded
+        When the iteration does not converge (or runs away to deflections
+        larger than the pile's length) and a push of the pile head
+        (``_head_load_capacity``) finds the pile and soil carry less than
+        the applied load: there is no solution. When they carry it, the
+        result comes back with ``converged`` False and a ``message``
+        saying it is the iteration that stopped.
     """
     if stickup < 0:
         raise ValueError(f"stickup must be >= 0, got {stickup}")
@@ -210,15 +248,8 @@ def solve_lateral_pile(
         y_new = Y_full[2:n + 3]
 
         # Update Es from p-y curves (above-grade nodes keep Es = 0)
-        Es_new = np.zeros(n_nodes)
-        for i in range(n_nodes):
-            if not embedded[i]:
-                continue
-            if abs(y_new[i]) > 1e-12:
-                p_val = py_functions[i](y_new[i], z[i], pile_diameter)
-                Es_new[i] = abs(p_val / y_new[i])
-            else:
-                Es_new[i] = Es[i]
+        Es_new = _secant_moduli(py_functions, z, embedded, y_new, Es,
+                                pile_diameter)
 
         # Check convergence (skip first iteration)
         if iteration > 0:
@@ -238,6 +269,34 @@ def solve_lateral_pile(
         y_prev = y_new.copy()
 
     y = y_new
+
+    # A run that stops short, or that "converges" only once the pile has
+    # run away (deflections beyond its length, where every secant
+    # modulus is tiny and the change per step falls below the tolerance
+    # in round-off), is either an iteration that needs more steps or a
+    # load the soil cannot resist. A push of the head (displacement
+    # control) tells them apart (GM-208).
+    message = None
+    runaway = (not np.all(np.isfinite(y))
+               or np.max(np.abs(y)) > total_length)
+    if (not converged or runaway) and (Vt != 0.0 or Mt != 0.0):
+        lam, s_peak = _head_load_capacity(
+            n, h, EI, soil_weight, Q, Vt, Mt, head_condition,
+            rotational_stiffness, py_functions, z, embedded,
+            pile_diameter, total_length)
+        if lam < 1.0:
+            raise SoilResistanceExceeded(
+                _no_solution_text(lam, s_peak, Vt, Mt, head_condition),
+                lam, s_peak)
+        if not converged:
+            message = (
+                f"The p-y iteration did not converge in {max_iterations} "
+                f"iterations (last relative change {diff:.1e}). The soil "
+                f"can resist this load (the pile and soil carry up to "
+                f"about {lam:.2f} times it), so it is the iteration that "
+                f"stopped, not the soil: raise max_iterations. The "
+                f"deflections and moments are the last iterate, not a "
+                f"solution.")
 
     # ---- Compute derived quantities from full Y array ----
     # Slope: dy/dz using central differences (fictitious nodes for boundaries)
@@ -267,18 +326,128 @@ def solve_lateral_pile(
         for i in range(n_nodes)
     ])
 
-    if not converged:
-        warnings.warn(
-            f"Solver did not converge after {max_iterations} iterations. "
-            f"Last relative change: {diff:.2e}. Try increasing max_iterations "
-            f"or n_elements."
-        )
+    if message is not None:
+        warnings.warn(message)
 
     return SolverResult(
         z=z, y=y, slope=slope, moment=moment, shear=shear,
         soil_reaction=soil_reaction, Es=Es,
-        iterations=iterations, converged=converged,
+        iterations=iterations, converged=converged, message=message,
     )
+
+
+def _secant_moduli(py_functions, z, embedded, y, Es_prev, pile_diameter):
+    """Es = |p / y| at every embedded node from its p-y curve (zero above
+    grade; ``Es_prev`` kept where the deflection is zero)."""
+    Es = np.zeros(len(z))
+    for i in range(len(z)):
+        if not embedded[i]:
+            continue
+        if abs(y[i]) > 1e-12:
+            p_val = py_functions[i](y[i], z[i], pile_diameter)
+            Es[i] = abs(p_val / y[i])
+        else:
+            Es[i] = Es_prev[i]
+    return Es
+
+
+def _head_load_capacity(n, h, EI, soil_weight, Q, Vt, Mt, head_condition,
+                        rotational_stiffness, py_functions, z, embedded,
+                        pile_diameter, total_length):
+    """The most the pile and soil carry: the largest multiple ``lam`` of the
+    applied head loads (Vt, Mt) for which some deflection of the pile is
+    in equilibrium with its p-y curves, and the head deflection there.
+
+    The head is pushed to deflections s from 0.001 b to the larger of
+    10 b and the pile's length (displacement control: at each s the load
+    factor is lam = s / y_head of the unit-load solve with the current
+    secant moduli, iterated to agreement, starting from the previous s),
+    and the peak is refined between its neighbours. Unlike load control,
+    this follows the curve past its peak, so it finds the peak of a pile
+    in softening soil (stiff clay below the water table, cyclic) and the
+    plateau of one whose curves do not soften (then the deflection
+    returned is infinite). The axial load Q is held, not scaled."""
+    n_nodes = n + 1
+
+    def factor(s, Es):
+        lam_prev = None
+        for it in range(300):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                Y = _assemble_and_solve(n, h, EI, Es * soil_weight, Q, Vt,
+                                        Mt, head_condition,
+                                        rotational_stiffness)
+            y_unit = Y[2:n + 3]
+            if not np.all(np.isfinite(y_unit)) or y_unit[0] == 0.0:
+                return 0.0, Es
+            # the head is pushed the way the load pushes it
+            lam = abs(s / y_unit[0])
+            Es_new = _secant_moduli(py_functions, z, embedded, lam * y_unit,
+                                    Es, pile_diameter)
+            if (lam_prev is not None
+                    and abs(lam - lam_prev) <= 1e-6 * lam
+                    and np.max(np.abs(Es_new - Es))
+                    <= 1e-6 * max(np.max(Es), 1e-12)):
+                return lam, Es_new
+            Es = Es_new if it < 3 else 0.5 * Es + 0.5 * Es_new
+            lam_prev = lam
+        return lam, Es
+
+    b = pile_diameter
+    s_grid = np.geomspace(1e-3 * b, max(10.0 * b, total_length), 37)
+    Es = _secant_moduli(py_functions, z, embedded,
+                        np.full(n_nodes, s_grid[0]), np.zeros(n_nodes),
+                        pile_diameter)
+    lams, states = [], []
+    for s in s_grid:
+        lam, Es = factor(s, Es)
+        lams.append(lam)
+        states.append(Es)
+    k = int(np.argmax(lams))
+    best_lam, best_s = lams[k], s_grid[k]
+    if k == len(s_grid) - 1:
+        # still rising at the largest push: curves that do not soften,
+        # whose resistance is approached as the pile moves without bound
+        return float(best_lam), float("inf")
+    if k > 0:
+        # golden-section search on log s between the neighbours
+        lo, hi = np.log(s_grid[k - 1]), np.log(s_grid[k + 1])
+        g = (np.sqrt(5.0) - 1.0) / 2.0
+        Es = states[k]
+        for _ in range(12):
+            a, c = hi - g * (hi - lo), lo + g * (hi - lo)
+            fa, Es = factor(np.exp(a), Es)
+            fc, Es = factor(np.exp(c), Es)
+            for f, ls in ((fa, a), (fc, c)):
+                if f > best_lam:
+                    best_lam, best_s = f, float(np.exp(ls))
+            if fa >= fc:
+                hi = c
+            else:
+                lo = a
+    return float(best_lam), float(best_s)
+
+
+def _no_solution_text(lam, s_peak, Vt, Mt, head_condition):
+    """What a user reads when the load is beyond what the soil can resist."""
+    if Mt == 0.0 or head_condition != 'free':
+        most = (f"a head load of about {lam * abs(Vt):.0f} kN (applied: "
+                f"{abs(Vt):g} kN)")
+    else:
+        most = (f"about {lam:.2f} times the applied head loads (Vt "
+                f"{Vt:g} kN, Mt {Mt:g} kN-m)")
+    if np.isfinite(s_peak):
+        where = (f", at a head deflection of about {s_peak * 1000:.0f} mm; "
+                 f"past that the soil resistance falls off")
+    else:
+        where = (", approached only as the pile moves without bound; the "
+                 "soil resistance is used up")
+    return (
+        f"No solution: the soil cannot resist this load. Under these p-y "
+        f"curves the most the pile and soil carry is {most}{where}, and no "
+        f"deflection of the pile balances the load. No deflections or "
+        f"moments are reported. Reduce the load, or use a longer, wider or "
+        f"stiffer pile, or check the soil inputs.")
 
 
 def _assemble_and_solve(
