@@ -776,6 +776,10 @@ MODULE_REGISTRY = {
         "adapter": "funhouse_agent.adapters.fhwa_pavements_adapter",
         "brief": "FHWA-NHI-05-037 Geotechnical Aspects of Pavements: Mr from CBR/R/DCP, drainage, frost, swell, stabilization (US)",
     },
+    "fhwa_soils_foundations": {
+        "adapter": "funhouse_agent.adapters.fhwa_soils_foundations_adapter",
+        "brief": "FHWA NHI-06-088/089 Soils and Foundations manual text: soils, slopes (Taylor/Janbu charts), settlement, footings, piles, shafts, walls",
+    },
     "eurocode_7_1": {
         "adapter": "funhouse_agent.adapters.eurocode_7_1_adapter",
         "brief": "EN 1997-1: partial factors + DA1-DA3; earth pressure, bearing, PMT, settlement, rock, movement. SI",
