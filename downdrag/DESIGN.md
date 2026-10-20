@@ -536,7 +536,7 @@ GM-240):
   could also be used."
 - §7.3.5.2 "Group Settlement in Cohesionless Soils" (pp. 317-320: Hough,
   Eq 7-49, and Meyerhof's SPT and CPT methods, N or qc within a depth B
-  below the equivalent footing) prints no depth to stop at.
+  below the pile toe) prints no depth to stop at.
 
 So the rule is worded the same for sand as for clay, and no number changes
 with the soil.
@@ -549,7 +549,7 @@ counting the toe load, within the profile (`DowndragAnalysis.gec12_step`):
 | Soil from the toe to that depth | Cited |
 |---|---|
 | all cohesive | §7.3.5.3 step 1c, p. 324 |
-| all cohesionless | §7.3.5.6 step 1c, p. 332: the step that covers sand (§7.3.5.2 prints no depth; §7.3.5.7 sends the soil below the neutral plane to §7.3.5.6) |
+| all cohesionless | §7.3.5.6 step 1c, p. 332: the step that covers sand (§7.3.5.2 prints no depth; §7.3.5.7 sends the soil below the neutral plane to §7.3.5.6). Its Eq 7-61 (p. 330, j = 1), strain = stress increase / E_s, is how this module settles sand below the toe |
 | both | §7.3.5.5 step 1c, p. 327: GEC-12's step for a layered profile |
 
 For layered soil the other choices were to cite each step that applies or
@@ -1085,7 +1085,11 @@ elsewhere in the result:
   compatibility's where no soil settles ("so this gives no drag; UFC
   §6-5.7 (FHWA 2016): the pile-soil stiffness contrast alone gives some
   drag force"), which the warning on why the methods differ says for the
-  state before the earthquake. Why a method gives no plane stays.
+  state before the earthquake. It stays on the headline method's row
+  (GM-240 review), where it bears on the drag force the result leads with:
+  a toe resistance larger than all the pile can deliver to its toe leaves
+  the curves apart before the earthquake, and settlement compatibility
+  then leads with no drag. Why a method gives no plane stays.
 
 Every neutral plane, drag force and pile settlement stays. Sizes with
 `defaults_used` (`influence_depth_criterion` and
@@ -1096,10 +1100,11 @@ Every neutral plane, drag force and pile settlement stays. Sizes with
 |---|---|---|---|---|
 | HC-1, one zone | 29,315 | 7,855 | 7,589 (under the 8,000 general cap) | 20,497 |
 | HC-1, E_s = 30 MPa below 10 m (the two rules warned) | | 9,206 | 7,995 | 21,909 |
-| Noisy 25 m CPT, 20 zones (`_noisy_cpt`, seeds 1-8, 11, 21) | 43,928 (seed 7) | 9,720-10,440 | 9,298-10,012 | 29,963-32,499 |
-| The same, E_s = 30 MPa below 10 m (the two rules warned before the earthquake) | | 11,378-11,758 (seeds 3, 7, 11) | 9,971-10,357 | 31,680-34,004 |
+| Noisy 25 m CPT, 20 zones (`_noisy_cpt`, seeds 1-30) | 43,928 (seed 7) | 9,720-10,440 (seeds 1-8, 11, 21) | 9,296-10,041 | 29,963-32,499 (seeds 1-8, 11, 21) |
+| The same, E_s = 10 to 80 MPa below 10 m (the two rules warned before the earthquake, every seed) | | 11,378-11,758 (seeds 3, 7, 11, 30 MPa) | 9,967-10,393 | 31,680-34,004 (seeds 1-8, 11, 21) |
 
-E_s from 10 to 80 MPa gives the same within 15 characters. The noisy CPT
+The largest, 10,393, is seed 30 with E_s = 10 MPa, 107 under the budget;
+the size test runs it with seeds 3, 7 and 11 at 30 MPa. The noisy CPT
 cannot reach 8,000 without losing what only it has: the warnings on a toe
 in a liquefied layer, readings left out and load and resistance curves
 that do not meet, and the choice of the CPT's strain.

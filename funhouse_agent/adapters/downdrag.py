@@ -211,8 +211,8 @@ def _run_post_liquefaction(params):
 #: with what dispatch adds (``defaults_used``) (GM-207; the tests hold it):
 #: the result as returned (:func:`_compact`) for one liquefied zone and for
 #: a noisy 25 m CPT that gives twenty. One zone (HC-1) is about 7,600, under
-#: the 8,000-character general cap; the noisy CPT 9,300 to 10,000, and
-#: 10,000 to 10,370 with a modulus in the sand below the toe, where the
+#: the 8,000-character general cap; the noisy CPT 9,300 to 10,050, and
+#: 9,970 to 10,390 with a modulus in the sand below the toe, where the
 #: warning that the two rules for the depth below the toe disagree fires
 #: (GM-240; 11,380 to 11,760 before the choices it states were left to
 #: detail='full'): its warnings and choices (a toe in a liquefied layer,
@@ -290,13 +290,16 @@ def _zones_compact(zones: list):
     }
 
 
-def _reasons(row: dict) -> str:
+def _reasons(row: dict, headline: dict) -> str:
     """Why a method gives no plane, before and after: once where the two
     are the same. A note on a plane the method does give is one of its
     assumptions (settlement compatibility's drag where no soil settles),
-    left to detail='full' with the others (GM-240)."""
+    left to detail='full' with the others (GM-240), except on the headline
+    method's plane (``headline``: the method's name by state), whose drag
+    force the result leads with."""
     b, a = (row.get(f"reason_{state}", "")
-            if row.get(f"neutral_plane_{state}_m") is None else ""
+            if row.get(f"neutral_plane_{state}_m") is None
+            or row.get("name") == headline.get(state) else ""
             for state in ("before", "after"))
     if b == a:
         return b
@@ -340,8 +343,10 @@ def _compact(d: dict) -> dict:
                  r.get("pile_settlement_mm"), r.get("reason", "")]
                 for r in value])
         elif key == "by_method":
+            headline = {state: d.get(f"headline_method_{state}")
+                        for state in ("before", "after")}
             value = _table(_METHOD_COLUMNS, [
-                [r[c] for c in _METHOD_COLUMNS[:-1]] + [_reasons(r)]
+                [r[c] for c in _METHOD_COLUMNS[:-1]] + [_reasons(r, headline)]
                 for r in value])
         elif key == "choices" and stated:
             value = [c for c in value if c.get("what") not in stated]
@@ -819,7 +824,7 @@ METHOD_INFO["post_liquefaction_downdrag"] = {
         "liquefied_zones": "One table {columns, rows}, a row a contiguous liquefied zone: top_m, bottom_m, volumetric_strain, reconsolidation_settlement_mm, fs_liq_min, side resistance before and after (kN), position (above / across / below the headline neutral plane before the earthquake, or below the pile toe). More than 6 zones: {zones, thickness_m, side resistance totals, largest_settlement: the 3 with the largest reconsolidation settlement as that table, others_m: the rest as depth ranges}. A zone lies below a method's plane before the earthquake where its top_m is at or below that method's neutral_plane_before_m. detail='full': a record a zone with below_the_plane_before_of. Present it as a table.",
         "result_note": "What only detail='full' adds (and whether the zones were summarised). Tell the user the rest is there.",
         "side_resistance_comparison": "One table {columns, rows}, a row a side-resistance option for the liquefied layers (the headline method): option, source, neutral plane, drag force, pile settlement, note (why it was not evaluated). liquefied_side_resistance is the one used. detail='full': each option's quoted source and assumptions, Q_np (and dragload_kN with include_pile_weight) and the soil settlement at the plane. Present it as a table.",
-        "by_method": "One table {columns, rows}, a row a neutral-plane method: neutral plane, drag force and pile settlement before and after, and a note (why it gives no plane, before / after). The headline row is headline_method_before / headline_method_after. Q_np = Q_dead + drag force. detail='full': each method's source and assumptions, Q_np (and dragload_before_kN / dragload_after_kN with include_pile_weight), and after liquefaction its toe force and settlement parts. Present it as a table.",
+        "by_method": "One table {columns, rows}, a row a neutral-plane method: neutral plane, drag force and pile settlement before and after, and a note (why it gives no plane, before / after; on the headline method's row, what bears on its plane). The headline row is headline_method_before / headline_method_after. Q_np = Q_dead + drag force. detail='full': each method's source and assumptions, Q_np (and dragload_before_kN / dragload_after_kN with include_pile_weight), and after liquefaction its toe force and settlement parts. Present it as a table.",
         "structural_ok / structural_demand_kN": "1.25 Q_dead + 1.10 DF after liquefaction <= structural_capacity (when given).",
         "choices": "Each choice the run made, given or default, with its basis; the limit states GEC-10 10.7 checks the drag at (structural strength and service), with AASHTO's Extreme Event I (load factor 1.0) as the alternative; and, where the rule for the depth below the toe moves a pile head settlement or drag force, that rule (influence_depth_criterion) and influence_depth_warning_percent, the engineer's call. A choice a warning states is left to detail='full': that rule and threshold where the warning on the two rules is given, fs_liq_threshold where readings above it are left out. Report them.",
         "neutral_plane_basis / after": "detail='full' only: the headline method's basis (neutral_plane_basis_before when it differs before the earthquake); after = the resistance below the plane, below_toe and the depth profiles z_m / axial_load_kN / soil_settlement_mm / unit_skin_friction_kPa after liquefaction.",

@@ -206,7 +206,8 @@ def _choices_kept(r, full):
     assert r["choices"] == [c for c in full["choices"]
                             if c["what"] not in stated]
     left = stated & {c["what"] for c in full["choices"]}
-    assert ("the choices the warnings state" in r["result_note"]) ==         bool(left)
+    assert ("the choices the warnings state" in r["result_note"]) == \
+        bool(left)
 
 
 class TestOneZone:
@@ -307,16 +308,18 @@ class TestANoisyCpt:
         assert "error" not in r, r
         assert len(json.dumps(r)) < RESULT_BUDGET_CHARS
 
-    @pytest.mark.parametrize("seed", [3, 7, 11])
-    def test_the_warning_on_the_two_toe_rules_fits_whole(self, seed):
+    @pytest.mark.parametrize("seed, E_s", [(3, 30000.0), (7, 30000.0),
+                                           (11, 30000.0), (30, 10000.0)])
+    def test_the_warning_on_the_two_toe_rules_fits_whole(self, seed, E_s):
         """GM-240: with a modulus in the sand below the toe the two rules
         for the depth below the toe disagree before the earthquake (by
         about 27 %) and the warning that says so came to 11,380-11,760
         characters with the two choices it states. The warning stays whole;
         the choices it states and the one on fs_liq_threshold are left to
-        detail='full'."""
+        detail='full'. Seed 30 with E_s = 10 MPa is the largest of seeds
+        1-30 with E_s 10 to 80 MPa (10,393)."""
         layers = [dict(x) for x in _LAYERS]
-        layers[2]["E_s"] = 30000.0
+        layers[2]["E_s"] = E_s
         liq = _noisy_cpt(seed)
         r = _post(layers=layers, gwt_depth=1.0, liquefaction_result=liq)
         full = _post(layers=layers, gwt_depth=1.0, liquefaction_result=liq,
@@ -355,18 +358,47 @@ class TestANoisyCpt:
         full = _post(gwt_depth=1.0, liquefaction_result=liq, detail="full")
         assert "side_resistance_name" not in r
         assert full["side_resistance_name"] == r["choices"][0]["chosen"]
-        notes = {m["name"]: m.get("note", "") for m in _rows(r["by_method"])}
-        for rec in full["by_method"]:
-            for state in ("before", "after"):
-                why = rec.get(f"reason_{state}", "")
-                if not why:
-                    continue
-                if rec[f"neutral_plane_{state}_m"] is None:
-                    assert why.rstrip(".") in notes[rec["name"]], rec["name"]
-                else:
-                    assert why.rstrip(".") not in notes[rec["name"]]
+        _notes_kept(r, full)
         sc = next(m for m in full["by_method"]
                   if m["method"] == "settlement_compatibility")
         assert sc["reason_before"].startswith("no soil settles here")
+        assert r["headline_method_before"] != sc["name"]
         assert any("Before the earthquake no soil settles in this model"
                    in w for w in r["warnings"])
+
+
+def _notes_kept(r, full):
+    """GM-240: the by_method note keeps why a method gives no plane, and a
+    note on a plane a method does give only for the headline method."""
+    notes = {m["name"]: m.get("note", "") for m in _rows(r["by_method"])}
+    for rec in full["by_method"]:
+        for state in ("before", "after"):
+            why = rec.get(f"reason_{state}", "")
+            if not why:
+                continue
+            if (rec[f"neutral_plane_{state}_m"] is None
+                    or rec["name"] == full[f"headline_method_{state}"]):
+                assert why.rstrip(".") in notes[rec["name"]], rec["name"]
+            else:
+                assert why.rstrip(".") not in notes[rec["name"]]
+
+
+def test_the_headline_method_keeps_its_note():
+    """GM-240 review: with a toe resistance larger than all the pile can
+    deliver to its toe the curves do not meet before the earthquake and
+    settlement compatibility is the headline method, with no drag where
+    no soil settles. Its note (UFC 3-220-20 §6-5.7: the pile-soil
+    stiffness contrast alone gives some drag force) bears on the headline
+    drag force, so the result keeps it."""
+    r = _post(liquefied_layers=_HC1, Nt=200.0)
+    full = _post(liquefied_layers=_HC1, Nt=200.0, detail="full")
+    assert "error" not in r, r
+    sc = next(m for m in full["by_method"]
+              if m["method"] == "settlement_compatibility")
+    assert r["headline_method_before"] == sc["name"]
+    assert r["drag_force_before_kN"] == 0.0
+    note = next(m["note"] for m in _rows(r["by_method"])
+                if m["name"] == sc["name"])
+    assert "the pile-soil stiffness contrast alone gives some drag force" \
+        in note
+    _notes_kept(r, full)
