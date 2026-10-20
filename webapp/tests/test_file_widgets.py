@@ -154,6 +154,127 @@ def test_elsewhere_it_is_streamlits_own_button(monkeypatch):
                       "mime": "text/plain", "key": "k2"}
 
 
+# -- INF-44: large files on request, HTML in a sandbox --------------------
+
+
+def _buttons(monkeypatch, pressed):
+    """``st.button`` answering ``pressed`` (a list the test edits), with the
+    labels shown recorded; session state a plain dict."""
+    shown = []
+    monkeypatch.setattr(file_widgets.st, "session_state", {})
+    monkeypatch.setattr(file_widgets.st, "button",
+                        lambda label, **k: shown.append(label)
+                        or bool(pressed and pressed[0]))
+    return shown
+
+
+def test_on_foundry_a_large_file_waits_for_prepare(monkeypatch, tmp_path):
+    _foundry(monkeypatch)
+    monkeypatch.setenv(file_widgets.DOWNLOAD_INLINE_MB_ENV, "0.01")
+    seen = _record(monkeypatch)
+    pressed = [False]
+    shown = _buttons(monkeypatch, pressed)
+    reads = []
+    real = core.artifact_bytes
+    monkeypatch.setattr(core, "artifact_bytes",
+                        lambda p: reads.append(p) or real(p))
+    big = tmp_path / "model.csv"
+    big.write_bytes(b"1,2\n" * 5000)                       # 20 kB
+    small = tmp_path / "small.csv"
+    small.write_bytes(b"1,2\n")
+
+    def both():
+        file_widgets.download_file("Download", str(big), mime="text/csv",
+                                   key="card")
+        file_widgets.download_file("small.csv", str(small), key="side")
+
+    both()                       # the large one: a button, and not read
+    assert shown == ["Prepare download (0.0 MB)"]
+    assert reads == [str(small)] and len(seen["component"]) == 1
+    pressed[0] = True
+    both()                       # pressed: its bytes go into the page
+    assert reads[-2:] == [str(big), str(small)]
+    assert base64.b64encode(big.read_bytes()).decode() in seen["component"][1]
+    pressed[0] = False
+    shown.clear()
+    both()                       # a rerun keeps it, with no button
+    assert shown == [] and len(seen["component"]) == 5
+    file_widgets.forget_prepared()           # the conversation moved on
+    both()
+    assert shown == ["Prepare download (0.0 MB)"]
+
+
+def test_on_foundry_bytes_made_on_request_are_not_asked_again(monkeypatch):
+    _foundry(monkeypatch)
+    monkeypatch.setenv(file_widgets.DOWNLOAD_INLINE_MB_ENV, "0.001")
+    seen = _record(monkeypatch)
+    shown = _buttons(monkeypatch, [False])
+    file_widgets.download_button("Download chat.zip", b"z" * 5000,
+                                 file_name="chat.zip", prepare=False)
+    assert not shown and len(seen["component"]) == 1
+    file_widgets.download_button("chat.zip", b"z" * 5000,
+                                 file_name="chat.zip", key="k")
+    assert shown == ["Prepare chat.zip (0.0 MB)"]
+
+
+def test_elsewhere_a_file_is_streamlits_own_button(monkeypatch, tmp_path):
+    monkeypatch.delenv("GEOTECH_DEPLOYMENT", raising=False)
+    monkeypatch.setenv(file_widgets.DOWNLOAD_INLINE_MB_ENV, "0")
+    seen = _record(monkeypatch)
+    f = tmp_path / "a.txt"
+    f.write_bytes(b"abc")
+    file_widgets.download_file("a.txt", str(f), mime="text/plain", key="k")
+    (args, kwargs), = seen["native"]
+    assert kwargs == {"data": b"abc", "file_name": "a.txt",
+                      "mime": "text/plain", "key": "k"}
+    with pytest.raises(OSError):
+        file_widgets.download_file("x", str(tmp_path / "gone.txt"))
+
+
+def test_the_sandbox_never_allows_the_apps_origin():
+    flags = file_widgets.HTML_SANDBOX.split()
+    assert "allow-scripts" in flags
+    assert not {"allow-same-origin", "allow-top-navigation"} & set(flags)
+
+
+class _Frames:
+    def __init__(self, page):
+        from html.parser import HTMLParser
+        self.frames = []
+        outer = self
+
+        class P(HTMLParser):
+            def handle_starttag(self, tag, attrs):
+                if tag == "iframe":
+                    outer.frames.append(dict(attrs))
+        P().feed(page)
+
+
+@pytest.mark.parametrize("text", [
+    '<p onclick="x()">a & b</p><script>parent.document.title="x"</script>',
+    '"></iframe><script>alert(1)</script>',
+])
+def test_a_preview_page_is_the_html_in_a_sandboxed_frame(text):
+    page = file_widgets.sandboxed_html_page(text)
+    (frame,) = _Frames(page).frames
+    assert frame["sandbox"] == file_widgets.HTML_SANDBOX
+    assert frame["srcdoc"] == text           # all of it, and only in there
+    assert "<script" not in page
+
+
+def test_open_in_new_tab_frames_html_and_svg(monkeypatch):
+    page = file_widgets.browser_download_html(b"<p>x</p>", "r.html",
+                                              "text/html", "Download")
+    script = page.split("<script>", 1)[1]
+    sandbox = re.search(r"const SANDBOX = (.*);", script).group(1)
+    assert json.loads(sandbox) == file_widgets.HTML_SANDBOX
+    active = re.search(r"const ACTIVE = JSON.parse\((.*)\);", script).group(1)
+    assert set(json.loads(json.loads(active))) == {
+        "text/html", "application/xhtml+xml", "image/svg+xml"}
+    assert "window.open(openUrl()" in script
+    assert 'frame.setAttribute("sandbox", SANDBOX)' in script
+
+
 def _pdf(path, pages):
     doc = fitz.open()
     for i in range(pages):
@@ -245,3 +366,59 @@ def test_elsewhere_the_app_keeps_its_buttons_and_pdf_frame(monkeypatch,
     assert "Page 1 of 3" not in " ".join(str(i.proto)
                                          for i in at.get("image"))
     assert "data:application/pdf" in _all_protos(at)
+
+
+def _stream_html(_agent, _messages, thread_id, **_kw):
+    files = core.conversation_files_dir(thread_id)
+    with open(os.path.join(files, "report.html"), "w", encoding="utf-8") as fh:
+        fh.write("<h1>Report</h1><script>parent.document.title='x'</script>")
+    yield {"kind": "token", "text": "Done."}
+    yield {"kind": "turn_done", "answer": "Done.", "turn_tokens": 2}
+
+
+def test_foundry_app_prepares_large_files_until_the_next_turn(monkeypatch,
+                                                              tmp_path):
+    """The whole app on Foundry: the PDF over the inline size waits for its
+    Prepare button (sidebar and card alike), the small CSV is one click; a
+    press puts the PDF in the page until the next turn."""
+    _foundry(monkeypatch)
+    monkeypatch.setenv(file_widgets.DOWNLOAD_INLINE_MB_ENV, "0.0001")
+    pages = []
+    monkeypatch.setattr(file_widgets, "_component",
+                        lambda page, height: pages.append(page))
+
+    def names():
+        out = {json.loads(re.search(r"const NAME = (.*);", p).group(1))
+               for p in pages}
+        pages.clear()
+        return out
+
+    at = _run_turn(monkeypatch, tmp_path)
+    assert names() == {"inputs.csv"}
+    prepare = [b for b in at.button if b.label.startswith("Prepare ")
+               and b.label.endswith(" MB)")]
+    assert {b.label.split(" (")[0] for b in prepare} == {
+        "Prepare download", "Prepare calc_package.pdf"}
+    (card,) = [b for b in prepare if b.label.startswith("Prepare download (")]
+    card.click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert names() == {"inputs.csv", "calc_package.pdf"}
+    at.run()                                       # kept on a rerun
+    assert names() == {"inputs.csv", "calc_package.pdf"}
+    at.chat_input[0].set_value("and again").run()  # the next turn drops it
+    assert not at.exception, [e.value for e in at.exception]
+    names()
+    at.run()
+    assert names() == {"inputs.csv"}
+
+
+def test_the_html_preview_is_sandboxed_on_every_host(monkeypatch, tmp_path):
+    monkeypatch.delenv("GEOTECH_DEPLOYMENT", raising=False)
+    at = _mk_at(monkeypatch, tmp_path, _stream_html).run()
+    at.chat_input[0].set_value("write a report").run()
+    assert not at.exception, [e.value for e in at.exception]
+    protos = _all_protos(at)
+    assert "<h1>Report</h1>" not in protos           # never the page itself
+    assert "&lt;h1&gt;Report&lt;/h1&gt;" in protos   # only inside srcdoc
+    assert f'sandbox=\\"{file_widgets.HTML_SANDBOX}\\"' in protos \
+        or f'sandbox="{file_widgets.HTML_SANDBOX}"' in protos
