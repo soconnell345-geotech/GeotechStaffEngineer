@@ -227,7 +227,13 @@ the eyes). What changed on master after 5.33.0, in short:
   budget (`GEOTECH_HELPER_MAX_MODEL_CALLS`) whose last call hands over what
   it gathered; a helper that stops writes what it read to
   `kept/helper_*.md`; a `task` result whose helper saved files names them,
-  so the primary passes the file instead of retyping it (RI-31).
+  so the primary passes the file instead of retyping it (RI-31). A helper
+  that stops also leaves the boring-log and lab records it held and had not
+  saved (in its answer or a call, found by the shape `write_diggs` takes,
+  `deep/held_records.py`; never other JSON) as
+  `kept/helper_*_records.json`, named in the same note; and a helper's
+  `.json` `write_file` is saved on the real disk with its own `save_file`
+  (`ScratchFilesystemGuard(json_saver=...)`), where `write_diggs` reads it.
 - **The `reviewer` helper** (TA-25) has a 10-call budget
   (`DEFAULT_REVIEWER_MAX_MODEL_CALLS`), its last call answering from what it
   has; its description says to use it only after a draft answer that

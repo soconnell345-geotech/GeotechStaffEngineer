@@ -38,10 +38,19 @@ GM-154). Live waves w12 and w13: a calc helper saved its report with
 a bare "File not found" each time; nothing said the file was real and
 unchanged. An ``edit_file`` or ``write_file`` now says "Nothing was changed"
 (or written) on a real path, and on a name the working folder holds.
+
+And, on a helper that has ``save_file``, a ``.json`` ``write_file`` is SAVED
+(BACKLOG RI-31). A helper told to save its records as a JSON file wrote it
+with ``write_file`` into the scratch space, which ``write_diggs`` (and every
+other real-disk tool) cannot read; the records reached nothing. Such a call
+now runs ``save_file`` with the same text, into the working folder under the
+same name, and its result says so. The primary's own ``write_file`` and a
+helper's other files are unchanged.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import posixpath
 import re
@@ -295,8 +304,108 @@ _EDIT_MISS_NOTE = (
     "by saving its whole new text with save_file.")
 
 
+#: A helper's ``write_file`` of one of these is saved on the real disk with
+#: its ``save_file`` instead (BACKLOG RI-31): a records file the tools that
+#: read records cannot find is no file at all.
+SAVED_SUFFIXES = (".json",)
+
+
+def _saved_name(path: str) -> str:
+    """The path ``save_file`` is given for a ``write_file`` path: a real
+    path as written (``save_file`` puts it in the working folder under its
+    own name); a scratch path relative to the working folder
+    ('/records/b-1.json' -> 'records/b-1.json')."""
+    if looks_real(path):
+        return path
+    return _virtual(path).lstrip("/")
+
+
+def _shown(saved: str) -> str:
+    """``saved`` as the agent names it: relative to the working folder."""
+    try:
+        from funhouse_agent._fileio import host_output_dir
+        base = host_output_dir()
+        if base:
+            rel = os.path.relpath(saved, base)
+            if not rel.startswith(".."):
+                return rel.replace(os.sep, "/")
+    except Exception:  # noqa: BLE001 - another drive, no host
+        pass
+    return saved
+
+
+def _redirect_note(name: str) -> str:
+    return (f"write_file writes only scratch notes, which no other tool can "
+            f"read, so this .json was saved in the working folder with "
+            f"save_file instead, as '{name}'. Give that name to the tool "
+            "that reads it (write_diggs takes records files as "
+            "investigations_file / lab_tests_file) and name it in your "
+            "reply; read it back with read_text_file.")
+
+
 class ScratchFilesystemGuard(AgentMiddleware):
-    """Answer scratch-filesystem calls on real paths with the right tool."""
+    """Answer scratch-filesystem calls on real paths with the right tool.
+
+    ``json_saver``: the agent's own ``save_file`` tool, given on a helper;
+    the helper's ``.json`` ``write_file`` calls are then saved with it on
+    the real disk (BACKLOG RI-31). ``None`` (the primary, a helper without
+    ``save_file``) saves nothing."""
+
+    def __init__(self, json_saver=None):
+        super().__init__()
+        self._json_saver = json_saver
+
+    def _json_redirect(self, request):
+        """The ``save_file`` request a helper's ``.json`` ``write_file``
+        becomes, or ``None``."""
+        if self._json_saver is None:
+            return None
+        call = getattr(request, "tool_call", None) or {}
+        if call.get("name") != "write_file":
+            return None
+        args = call.get("args") or {}
+        path, content = args.get("file_path"), args.get("content")
+        if not isinstance(path, str) or not isinstance(content, str):
+            return None
+        path = path.strip()
+        if not path.lower().endswith(SAVED_SUFFIXES):
+            return None
+        if not looks_real(path) and _is_scratch_area(path):
+            return None             # deepagents' own areas (/memories/ ...)
+        target = _saved_name(path)
+        if not target:
+            return None
+        new_call = {**call, "name": "save_file",
+                    "args": {"path": target, "content": content}}
+        if hasattr(request, "override"):
+            return request.override(tool_call=new_call, tool=self._json_saver)
+        import dataclasses
+        return dataclasses.replace(request, tool_call=new_call,
+                                   tool=self._json_saver)
+
+    @staticmethod
+    def _redirected(result):
+        """``save_file``'s result, as the answer to the ``write_file`` call:
+        the name it was saved under and how to use it."""
+        if not isinstance(result, ToolMessage):
+            return result
+        text = _text(result)
+        try:
+            data = json.loads(text)
+        except ValueError:
+            data = None
+        if isinstance(data, dict) and not data.get("error") \
+                and data.get("saved"):
+            note = _redirect_note(_shown(str(data["saved"])))
+            data["note"] = f"{data['note']} {note}" if data.get("note") \
+                else note
+            content = json.dumps(data)
+        else:
+            content = (f"{text.strip()} (This write_file was run as save_file: "
+                       "a .json is saved on the real disk, where the tools "
+                       "that read it look. The save failed as said.)")
+        return result.model_copy(update={"content": content,
+                                         "name": "write_file"})
 
     def _intercept(self, request) -> Optional[ToolMessage]:
         call = getattr(request, "tool_call", None) or {}
@@ -419,6 +528,9 @@ class ScratchFilesystemGuard(AgentMiddleware):
         return result
 
     def wrap_tool_call(self, request, handler):
+        saved = self._json_redirect(request)
+        if saved is not None:
+            return self._redirected(handler(saved))
         blocked = self._intercept(request)
         if blocked is not None:
             return blocked
@@ -438,6 +550,9 @@ class ScratchFilesystemGuard(AgentMiddleware):
         return self._explained(request, result, path, files)
 
     async def awrap_tool_call(self, request, handler):
+        saved = self._json_redirect(request)
+        if saved is not None:
+            return self._redirected(await handler(saved))
         blocked = self._intercept(request)
         if blocked is not None:
             return blocked
@@ -458,4 +573,5 @@ class ScratchFilesystemGuard(AgentMiddleware):
 
 
 __all__ = ["ScratchFilesystemGuard", "looks_real", "PATH_ARG", "REAL_ROOTS",
-           "LARGE_RESULTS", "SCRATCH_PREFIXES", "EMPTY_SCRATCH_NOTE"]
+           "LARGE_RESULTS", "SCRATCH_PREFIXES", "EMPTY_SCRATCH_NOTE",
+           "SAVED_SUFFIXES"]
