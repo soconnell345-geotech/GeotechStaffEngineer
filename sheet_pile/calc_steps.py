@@ -37,6 +37,40 @@ REFERENCES = [
     'Das, B.M. "Principles of Foundation Engineering", Chapter 9.',
 ]
 
+#: How the package names each printed source of the log-spiral passive Kp
+#: (GM-183, GM-232): the equation line and the reference.
+_EQ_4_12 = ("ln Kp = ln[(1 + sin \u03c6')/(1 - sin \u03c6')] "
+            "\u00d7 [1.443 (\u03b4/\u03c6') sin \u03c6' + 1]")
+_LOG_SPIRAL_KP = {
+    "ufc_3_220_20": (
+        _EQ_4_12,
+        "UFC 3-220-20 Eq. 4-12 (p. 191), the log-spiral Kp UFC gives for a "
+        "vertical face and level ground"),
+    "dm7_2_eq_4_12": (_EQ_4_12, "UFC 3-220-20 Eq. 4-12 (p. 191)"),
+    "caquot_kerisel_1948": (
+        "Kp = R(\u03b4/\u03c6) \u00d7 Kp(\u03b4 = \u03c6)",
+        "Caquot and Kerisel (1948), Caltrans Trenching and Shoring Manual "
+        "Fig. 4-20"),
+    "dm7_2_fig_4_12": (
+        "Kp read off the chart (\u03b8 = 0, \u03b4/\u03c6' = 0.66)",
+        "UFC 3-220-20 Fig. 4-12 (p. 192)"),
+    "dm7_2_fig_4_13": (
+        "Kp read off the chart (\u03b2 = 0, \u03b4/\u03c6' = 0.66)",
+        "UFC 3-220-20 Fig. 4-13 (p. 193)"),
+}
+
+
+def _pressure_method(analysis) -> str:
+    """The pressure method as the analysis ran it: 'log_spiral' carries
+    the printed source of its passive Kp ('log_spiral:<source>', GM-183),
+    so the package's Ka, Kp and pressures are the design's (GM-232: the
+    default source is now UFC 3-220-20's, not the 1948 chart)."""
+    from geotech_common.log_spiral import DEFAULT_SOURCE
+    from sheet_pile.cantilever import _with_log_spiral_source
+    method = str(analysis.get("pressure_method", "rankine")).lower()
+    return _with_log_spiral_source(
+        method, analysis.get("log_spiral_source") or DEFAULT_SOURCE)
+
 
 def get_input_summary(result, analysis) -> List[InputItem]:
     """Build input parameter table for sheet pile wall calc package.
@@ -80,6 +114,10 @@ def get_input_summary(result, analysis) -> List[InputItem]:
 
     # Pressure method
     method = analysis.get("pressure_method", "rankine").capitalize()
+    key = _pressure_method(analysis)
+    if key.startswith("log_spiral:"):
+        method = ("Coulomb active, log-spiral passive ("
+                  + _LOG_SPIRAL_KP[key.split(":", 1)[1]][1] + ")")
     items.append(InputItem("Method", "Earth pressure theory", method, ""))
 
     # Factor of safety on passive
@@ -143,6 +181,8 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     q = analysis.get("surcharge", 0.0)
     FOS = analysis.get("FOS_passive", result.FOS_passive)
     method = analysis.get("pressure_method", "rankine").lower()
+    key = _pressure_method(analysis)
+    source = key.split(":", 1)[1] if key.startswith("log_spiral:") else None
 
     # ── Section 1: Earth Pressure Coefficients ──────────────────
     ep_items = []
@@ -152,6 +192,14 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         ep_items.append(
             "Earth pressures computed using Coulomb (1776) theory, which "
             "accounts for wall-soil interface friction."
+        )
+    elif source:
+        ep_items.append(
+            "Active pressures computed using Coulomb (1776) theory with the "
+            "wall-soil interface friction; passive pressures by the log "
+            "spiral method, Kp from " + _LOG_SPIRAL_KP[source][1] + " (UFC "
+            "3-220-20 p. 190: the passive pressure 'should be calculated "
+            "using the log spiral method and not the Coulomb method')."
         )
     else:
         ep_items.append(
@@ -170,10 +218,13 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         # the analysis used, so the displayed Ka/Kp match the reported design.
         from sheet_pile.cantilever import _compute_Ka_Kp
         delta = getattr(layer, "wall_friction_deg", 0.0)
-        Ka, Kp = _compute_Ka_Kp(phi, method, delta)
+        Ka, Kp = _compute_Ka_Kp(phi, key, delta)
         if method == "coulomb":
             ka_eq = "Coulomb Ka"
             kp_eq = "Coulomb Kp"
+        elif source:
+            ka_eq = "Coulomb Ka"
+            kp_eq = _LOG_SPIRAL_KP[source][0]
         else:
             ka_eq = "tan\u00b2(45\u00b0 - \u03c6/2)"
             kp_eq = "tan\u00b2(45\u00b0 + \u03c6/2)"
@@ -203,14 +254,16 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             ))
             ep_items.append(CalcStep(
                 title=f"Passive Coefficient Kp (\u03c6 = {phi:.1f}\u00b0)",
-                equation=f"Kp = {kp_eq}",
+                equation=kp_eq if source else f"Kp = {kp_eq}",
                 substitution=f"Kp = tan\u00b2(45\u00b0 + {phi/2:.1f}\u00b0)"
                 if method == "rankine"
-                else f"Kp (Coulomb, \u03c6={phi:.1f}\u00b0, \u03b4={delta:.1f}\u00b0)",
+                else f"Kp ({'log spiral' if source else 'Coulomb'}, "
+                     f"\u03c6={phi:.1f}\u00b0, \u03b4={delta:.1f}\u00b0)",
                 result_name="Kp",
                 result_value=f"{Kp:.4f}",
-                reference=f"{'Rankine (1857)' if method == 'rankine' else 'Coulomb (1776)'}; "
-                          f"USACE EM 1110-2-2504",
+                reference=_LOG_SPIRAL_KP[source][1] if source
+                else f"{'Rankine (1857)' if method == 'rankine' else 'Coulomb (1776)'}; "
+                     f"USACE EM 1110-2-2504",
             ))
 
     # Summary table of layer properties and coefficients
@@ -242,7 +295,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         if layer.cohesion > 0:
             from sheet_pile.cantilever import _compute_Ka_Kp
             Ka, _ = _compute_Ka_Kp(
-                layer.friction_angle, method,
+                layer.friction_angle, key,
                 getattr(layer, "wall_friction_deg", 0.0))
             if Ka > 0 and layer.unit_weight > 0:
                 z_crack = (2.0 * layer.cohesion / math.sqrt(Ka) - q) / layer.unit_weight
@@ -591,7 +644,7 @@ def _compute_pressures(result, analysis, n_points=200):
     layers = analysis.get("soil_layers", [])
     q = analysis.get("surcharge", 0.0)
     FOS = analysis.get("FOS_passive", result.FOS_passive)
-    method = analysis.get("pressure_method", "rankine").lower()
+    method = _pressure_method(analysis)
     gwt_a = analysis.get("gwt_depth_active", None)
     gwt_p = analysis.get("gwt_depth_passive", None)
     gamma_w = analysis.get("gamma_w", GAMMA_W)

@@ -1624,5 +1624,40 @@
       "BACKLOG.md OWN-78",
       "module_work/APP_SPLIT_PLAN.md section 7 (D9)"
     ]
+  },
+  "OWN-79": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Passive coefficients: accept the small step between UFC's Eq. 4-12 and its charts?",
+    "why": "With your routing, a vertical wall with level ground uses Eq. 4-12, and a face battered by even 1 degree, or ground sloping by 1 degree, uses Fig. 4-12 or Fig. 4-13. The charts' vertical-and-level curve reads 1-5 % above Eq. 4-12 at delta/phi' 0.66 (5.30 against 5.06 at phi' 30), so Kp steps by about 2-7 % as the face or the ground leaves level.",
+    "background": "UFC 3-220-20 p. 191 prints Eq. 4-12 as an approximation for theta = 0 and beta = 0; Figs. 4-12 and 4-13 (pp. 192-193) are drawn at delta/phi' 0.66. Every result names the route it took and lists the other sources' values, so the step is visible.",
+    "parts": [
+      {
+        "label": "The step",
+        "options": [
+          {
+            "label": "Accept it, as UFC prints both",
+            "effect": "No change; each result names its route and gives the other sources' Kp."
+          },
+          {
+            "label": "Scale the chart so the route is continuous",
+            "effect": "No step, but the charted values are no longer as printed."
+          },
+          {
+            "label": "Use the charts' level, vertical curve at 0.66 too",
+            "effect": "Continuous at delta/phi' 0.66; Eq. 4-12 then only for other delta."
+          }
+        ]
+      }
+    ],
+    "recommendation": "Accept it: both are UFC's own, the difference is within what a chart reading carries, and the result shows both.",
+    "if_no_answer": "The step stays, and every result names its route.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [],
+    "sources": [
+      "BACKLOG.md OWN-79, GM-232",
+      "UFC 3-220-20 pp. 191-193"
+    ]
   }
 }

@@ -336,7 +336,55 @@ _K_ALIASES = {"phi": "phi_deg", "friction_angle": "phi_deg",
               "delta": "delta_deg", "wall_friction": "delta_deg",
               "beta": "beta_deg", "backfill_slope": "beta_deg",
               "slope_angle": "beta_deg",
-              "alpha": "alpha_deg", "wall_angle": "alpha_deg"}
+              "alpha": "alpha_deg", "wall_angle": "alpha_deg",
+              "theta": "theta_deg"}
+
+
+def _log_spiral_kp(p, phi, beta, source):
+    """The log-spiral passive Kp from ``source`` (GM-183, GM-232), with
+    the wall friction it used and its ``choices``: the route the UFC
+    3-220-20 default took by the wall's geometry, its equation or figure
+    and page, and every other printed source's Kp for the same case; and
+    the wall friction, given or left out, as the engineer's call."""
+    from geotech_common import log_spiral as _ls
+    from geotech_common.choices import choice, how_given
+    theta = p.get("theta_deg", 0.0) or 0.0
+    delta = p.get("delta_deg")
+    route = None
+    if source == "ufc_3_220_20":
+        r = _ls.ufc_3_220_20_route(phi, delta, beta, theta)
+        K, delta, route = r["Kp"], r["delta_deg"], r["route"]
+        basis = r["where"] + ". " + _ls.SOURCE_BASIS[source]
+        if route == "dm7_2_eq_4_12":
+            basis += ". " + _ls.EQ_VS_CHARTS_NOTE
+    else:
+        K = _ls.log_spiral_Kp(phi, delta, beta, source=source,
+                              theta_deg=theta)
+        if delta is None:
+            # the 1948 chart's Kp at full wall friction, the UFC charts'
+            # at the one they are drawn for
+            delta = phi if source == "caquot_kerisel_1948" \
+                else _ls.DM_DELTA_RATIO * phi
+        basis = _ls.SOURCE_BASIS[source]
+    if "dm7_2_eq_4_12" in (source, route) and _ls.above_the_charts(phi,
+                                                                   delta):
+        basis += ". " + _ls.HIGH_FRICTION_NOTE
+    choices = [choice(
+        "Log-spiral passive Kp (log_spiral_source)", source,
+        how_given(source, _ls.DEFAULT_SOURCE, name="log_spiral_source"),
+        basis + _LOG_SPIRAL_NOTE,
+        _ls.other_sources(phi, delta, beta, theta,
+                          used=(source, route)))]
+    # the wall friction, given or left out: the same words either way, the
+    # value it took in defaults_used when left out
+    chosen = f"{delta:.3g} deg" + (
+        f" (delta/phi' {delta / phi:.2f})" if phi else "")
+    choices.append(choice(
+        "Wall friction delta (delta_deg)", chosen,
+        how_given(p.get("delta_deg"), None, name="delta_deg",
+                  took=round(delta, 4)),
+        _ls.wall_friction_note(source)))
+    return K, delta, theta, route, choices
 
 
 def _run_earth_pressure_coefficient(params):
@@ -344,7 +392,8 @@ def _run_earth_pressure_coefficient(params):
     from geotech_common import log_spiral as _ls
     from geotech_common.choices import choice, how_given
     names = ("phi_deg", "theory", "state", "delta_deg", "beta_deg",
-             "alpha_deg", "log_spiral_source", "k0_sloping_ground")
+             "alpha_deg", "theta_deg", "log_spiral_source",
+             "k0_sloping_ground")
     p = apply_aliases(params, _K_ALIASES)
     reject_unknown_params(p, names, method="earth_pressure_coefficient")
     require_params(p, ["phi_deg"], method="earth_pressure_coefficient",
@@ -363,22 +412,21 @@ def _run_earth_pressure_coefficient(params):
     form = p.get("k0_sloping_ground")
     _refuse_unused_k_forms(p, theory, state, source, form, beta)
     choices = []
+    log_spiral = theory == "caquot_kerisel" and state == "passive"
 
     if theory == "caquot_kerisel":
         # Log-spiral PASSIVE coefficient Kp (v5.3), from the printed source
-        # log_spiral_source names (GM-183). Unlike Coulomb it does not
+        # log_spiral_source names (GM-183), by default UFC 3-220-20's for
+        # the wall's geometry (GM-232). Unlike Coulomb it does not
         # over-predict Kp at high wall friction delta/phi.
         if state != "passive":
             raise ValueError(
                 "theory 'caquot_kerisel' is a passive (Kp) log-spiral coefficient; "
                 "use state='passive' (it has no active/at-rest form).")
-        K, symbol = _ls.log_spiral_Kp(phi, p.get("delta_deg"), beta,
-                                      source=source), "Kp"
-        choices.append(choice(
-            "Log-spiral passive Kp (log_spiral_source)", source,
-            how_given(source, _ls.DEFAULT_SOURCE, name="log_spiral_source"),
-            _ls.SOURCE_BASIS[source] + _LOG_SPIRAL_NOTE,
-            [s for s in _ls.SOURCES if s != source]))
+        K, ls_delta, theta, route, ls_choices = _log_spiral_kp(
+            p, phi, beta, source)
+        symbol = "Kp"
+        choices.extend(ls_choices)
     elif state == "at_rest":
         K, symbol = _ep.K0(phi), "K0"
         if beta:
@@ -401,13 +449,12 @@ def _run_earth_pressure_coefficient(params):
         else:
             K, symbol = _ep.coulomb_Kp(phi, delta, alpha, beta), "Kp"
     delta = p.get("delta_deg")
-    if delta is None:
-        # the log-spiral Kp takes full wall friction when none is given,
-        # UFC 3-220-20 Fig. 4-13 the one it is drawn for
+    if log_spiral:
+        # the wall friction the log-spiral Kp used: given, or 0.66 phi'
+        # (UFC) or phi (the 1948 chart at R = 1) when left out
+        delta = round(ls_delta, 4)
+    elif delta is None:
         delta = 0.0
-        if theory == "caquot_kerisel" and state == "passive":
-            delta = (_ls.DM_DELTA_RATIO * phi if source == "dm7_2_fig_4_13"
-                     else phi)
     if state == "at_rest":
         name = form if beta else "jaky_at_rest"
     else:
@@ -422,21 +469,23 @@ def _run_earth_pressure_coefficient(params):
         "beta_deg": beta,
         "alpha_deg": p.get("alpha_deg", 90.0),
     }
-    if theory == "caquot_kerisel" and state == "passive":
+    if log_spiral:
+        out["theta_deg"] = theta
         out["log_spiral_source"] = source
+        if route:
+            out["log_spiral_route"] = route
     if choices:
         out["choices"] = choices
     return out
 
 
-# The log-spiral sources side by side (GM-183), for the choice's basis.
+# The log-spiral sources side by side (GM-183, GM-232), for the choice's
+# basis; each other source's Kp for the case is in the alternatives.
 _LOG_SPIRAL_NOTE = (
-    ". Caquot-Kerisel 1948 is the default (unchanged); the three differ: at "
-    "phi 30, delta/phi 0.66 on level ground they give 5.4, 5.3 and 5.1. UFC "
-    "3-220-20 footnote 21 (p. 191): the 1982 DM 7.2 charts 'used delta/phi' "
-    "= 1 along with reduction ratios', which 'were averages that introduced "
-    "substantial inaccuracy for some cases'; the 1948 chart takes that form. "
-    + _TABLE_4_2_NOTE)
+    ". UFC 3-220-20 footnote 21 (p. 191): the 1982 DM 7.2 charts 'used "
+    "delta/phi' = 1 along with reduction ratios', which 'were averages that "
+    "introduced substantial inaccuracy for some cases'; the Caquot-Kerisel "
+    "(1948) chart takes that form. " + _TABLE_4_2_NOTE)
 
 # The printed sloping-ground at-rest forms (GM-183). They disagree in sign,
 # so neither is a default: k0_sloping_ground is required with a slope. UFC
@@ -525,11 +574,13 @@ _K_TAKES = {
     ("rankine", "passive"): (),
     ("coulomb", "active"): ("delta_deg", "alpha_deg", "beta_deg"),
     ("coulomb", "passive"): ("delta_deg", "alpha_deg", "beta_deg"),
-    ("caquot_kerisel", "passive"): ("delta_deg", "beta_deg"),
+    ("caquot_kerisel", "passive"): ("delta_deg", "beta_deg", "theta_deg"),
 }
-_K_NEUTRAL = {"delta_deg": 0.0, "alpha_deg": 90.0, "beta_deg": 0.0}
+_K_NEUTRAL = {"delta_deg": 0.0, "alpha_deg": 90.0, "beta_deg": 0.0,
+              "theta_deg": 0.0}
 _K_SAYS = {"delta_deg": "wall friction", "alpha_deg": "a battered wall back",
-           "beta_deg": "a sloping backfill"}
+           "beta_deg": "a sloping backfill",
+           "theta_deg": "a battered wall face"}
 # What to use instead, by state and input. Caltrans Trenching and Shoring
 # Manual Sec. 4-3: Rankine passive "must NOT be used" for a sloping
 # backfill, Coulomb's passive form is not recommended either, and the
@@ -539,17 +590,37 @@ _CT = "the Caltrans Trenching and Shoring Manual"
 _K_INSTEAD = {
     ("active", "delta_deg"): "theory 'coulomb' takes wall friction",
     ("active", "alpha_deg"): "theory 'coulomb' takes a battered back",
+    ("active", "theta_deg"): (
+        "theory 'coulomb' takes a battered back as alpha_deg, its angle "
+        "from horizontal (alpha_deg = 90 - theta_deg)"),
     ("passive", "delta_deg"): (
         "theory 'caquot_kerisel' (the Log-Spiral Kp " + _CT + " Sec. 4-6 "
-        "recommends for passive pressure) or 'coulomb' takes wall friction"),
-    ("passive", "alpha_deg"): "theory 'coulomb' takes a battered back",
+        "recommends for passive pressure; UFC 3-220-20 p. 190: passive "
+        "pressure 'should be calculated using the log spiral method and not "
+        "the Coulomb method') or 'coulomb' takes wall friction"),
+    ("passive", "alpha_deg"): (
+        "theory 'coulomb' takes a battered back; theory 'caquot_kerisel' "
+        "(the log-spiral Kp, UFC 3-220-20 Fig. 4-12) takes it as theta_deg, "
+        "the face's angle from vertical (theta_deg = 90 - alpha_deg)"),
+    ("passive", "theta_deg"): (
+        "theory 'caquot_kerisel' (the log-spiral Kp, UFC 3-220-20 Fig. "
+        "4-12) takes a battered face; 'coulomb' takes it as alpha_deg = 90 "
+        "- theta_deg, though UFC 3-220-20 p. 190 says passive pressure "
+        "'should be calculated using the log spiral method and not the "
+        "Coulomb method'"),
     ("passive", "beta_deg"): (
         "Rankine's Kp is not for a sloping backfill (" + _CT + " Sec. 4-3: "
         "it gives the same Kp for +beta and -beta); theory 'caquot_kerisel' "
-        "takes a slope (the Log-Spiral Kp for sloping ground, its Sec. 4-6 "
-        "Fig. 4-20, or UFC 3-220-20 Fig. 4-13 with log_spiral_source "
-        "'dm7_2_fig_4_13'), and 'coulomb' does, though the manual does not "
-        "recommend Coulomb for passive pressure"),
+        "takes a slope (by default UFC 3-220-20 Fig. 4-13, the log-spiral "
+        "Kp for a vertical face with sloping ground; the Log-Spiral Kp for "
+        "sloping ground of its Sec. 4-6 Fig. 4-20, the Caquot-Kerisel (1948) "
+        "chart, with log_spiral_source 'caquot_kerisel_1948'), and 'coulomb' "
+        "does, though the manual does not recommend Coulomb for passive "
+        "pressure"),
+    ("caquot_kerisel", "passive", "alpha_deg"): (
+        "the log-spiral Kp takes a battered face as theta_deg, UFC "
+        "3-220-20's theta, the face's angle from vertical (theta_deg = 90 - "
+        "alpha_deg; Fig. 4-12)"),
 }
 _K_AT_REST_INSTEAD = (
     "the at-rest forms here (Jaky's, and for sloping ground " + _CT
@@ -639,18 +710,19 @@ METHOD_INFO = {
     },
     "earth_pressure_coefficient": {
         "category": "Earth Pressure",
-        "brief": "Lateral earth pressure coefficient Ka/Kp/K0 (Rankine, Coulomb, or the log-spiral passive Kp from Caquot-Kerisel 1948 or UFC 3-220-20; K0 also behind sloping ground).",
+        "brief": "Lateral earth pressure coefficient Ka/Kp/K0 (Rankine, Coulomb, or the log-spiral passive Kp: by default UFC 3-220-20's Eq. 4-12, Fig. 4-12 or Fig. 4-13 by wall geometry, or the Caquot-Kerisel 1948 chart; K0 also behind sloping ground).",
         "parameters": {
             "phi_deg": {"type": "float", "required": True, "description": "Soil friction angle (degrees). Alias: phi."},
-            "theory": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "caquot_kerisel"], "description": "Earth pressure theory. 'caquot_kerisel' = the log-spiral PASSIVE coefficient Kp (state must be 'passive'; does not over-predict Kp at high wall friction the way Coulomb does), from the printed source log_spiral_source names, Caquot-Kerisel (1948) by default. Theory is ignored for at_rest, which uses Jaky K0 = 1 - sin(phi), times the sloping-ground form k0_sloping_ground names when beta_deg is not 0."},
+            "theory": {"type": "str", "required": False, "default": "rankine", "allowed_values": ["rankine", "coulomb", "caquot_kerisel"], "description": "Earth pressure theory. 'caquot_kerisel' = the log-spiral PASSIVE coefficient Kp (state must be 'passive'; UFC 3-220-20 p. 190: passive pressure 'should be calculated using the log spiral method and not the Coulomb method', which over-predicts Kp at high wall friction), from the printed source log_spiral_source names: by default UFC 3-220-20's for the wall's geometry, 'caquot_kerisel_1948' for the Caquot-Kerisel (1948) chart. Theory is ignored for at_rest, which uses Jaky K0 = 1 - sin(phi), times the sloping-ground form k0_sloping_ground names when beta_deg is not 0."},
             "state": {"type": "str", "required": False, "default": "active", "allowed_values": ["active", "passive", "at_rest"], "description": "Pressure state: Ka (active), Kp (passive), or K0 (at rest). 'caquot_kerisel' requires 'passive'."},
-            "delta_deg": {"type": "float", "required": False, "default": 0.0, "description": "Wall friction angle (degrees): Coulomb and caquot_kerisel only; Rankine and K0 take none and refuse a non-zero value. Alias: delta. For caquot_kerisel, omitting it means delta = phi (full wall friction, R = 1) with log_spiral_source 'caquot_kerisel_1948', and 0.66 phi (the one value the chart is drawn for) with 'dm7_2_fig_4_13'; 'dm7_2_eq_4_12' needs it given."},
-            "beta_deg": {"type": "float", "required": False, "default": 0.0, "description": "Slope of the ground behind the wall (degrees, + rising away from the wall; for a passive Kp, the ground in front of the wall). Rankine active, Coulomb, caquot_kerisel (Caltrans T&S Fig. 4-20: beta/phi -0.9 to +1, phi 10 to 45 deg; UFC 3-220-20 Fig. 4-13: beta/phi' -0.6 to +1; Eq. 4-12 is for level ground) and at_rest with k0_sloping_ground (beta > 0). Rankine passive is for level ground and refuses a non-zero value. Aliases: beta, backfill_slope."},
-            "alpha_deg": {"type": "float", "required": False, "default": 90.0, "description": "Wall back face angle from horizontal (degrees, 90 = vertical). Coulomb only; the others take a vertical back and refuse another value. Alias: alpha."},
-            "log_spiral_source": {"type": "str", "required": False, "default": "caquot_kerisel_1948", "allowed_values": ["caquot_kerisel_1948", "dm7_2_fig_4_13", "dm7_2_eq_4_12"], "description": "With theory 'caquot_kerisel', the printed source of the log-spiral passive Kp. 'caquot_kerisel_1948' (default, as before): the Caquot and Kerisel (1948) chart, Kp at delta = phi times the printed reduction factor R(delta/phi), Caltrans Trenching and Shoring Manual Fig. 4-20 (p. 4-30), the method its Sec. 4-6 uses for passive pressure; level or sloping ground. 'dm7_2_fig_4_13': UFC 3-220-20 (DM 7.2) Fig. 4-13 (p. 193), Kerisel and Absi (1990), drawn for delta/phi' = 0.66 only (another delta_deg is refused), level or sloping ground, Kp up to 20. 'dm7_2_eq_4_12': UFC 3-220-20 Eq. 4-12 (p. 191), level ground, any wall friction. They differ: at phi 30, delta/phi 0.66 they give 5.4, 5.3 and 5.1. UFC 3-220-20 footnote 21 (p. 191): the 1982 DM 7.2 charts 'used delta/phi' = 1 along with reduction ratios', which 'were averages that introduced substantial inaccuracy for some cases'; the 1948 chart takes that form. UFC 3-220-20 Table 4-2 (p. 194) is not used: its row headed delta/phi' = 0.5 prints Fig. 4-13's values for 0.66 (5.3, 8.0, 12, 20 at phi' 30, 35, 40, 45) and Coulomb's Kp at 0.66 (6.1, 9.8, 18, 44); Eq. 4-12 at 0.5 gives 4.46, 6.33, 9.33, 14.3. The tool reads Fig. 4-13 at 0.66 and Eq. 4-12 at the delta_deg given; the result's choices say so."},
+            "delta_deg": {"type": "float", "required": False, "default": 0.0, "description": "Wall friction angle (degrees): Coulomb and caquot_kerisel only; Rankine and K0 take none and refuse a non-zero value. Alias: delta. For caquot_kerisel, omitting it means delta = 0.66 phi' with the UFC 3-220-20 sources (p. 191: 'a common assumption', and the one value its Figs. 4-12 and 4-13 are drawn for) and delta = phi (full wall friction, R = 1) with 'caquot_kerisel_1948'; 'dm7_2_eq_4_12' needs it given. With the default source, a battered face (theta_deg) or sloping ground (beta_deg) at another wall friction is refused: UFC prints none. The wall friction is the engineer's call (UFC 3-220-20 Table 4-1, p. 184, by wall material and soil); the result's choices give the delta used."},
+            "beta_deg": {"type": "float", "required": False, "default": 0.0, "description": "Slope of the ground behind the wall (degrees, + rising away from the wall; for a passive Kp, the ground in front of the wall). Rankine active, Coulomb, caquot_kerisel (by default UFC 3-220-20 Fig. 4-13: a vertical face, beta/phi' -0.6 to +1 at delta/phi' 0.66; the Caquot-Kerisel 1948 chart, Caltrans T&S Fig. 4-20: beta/phi -0.9 to +1, phi 10 to 45 deg, any wall friction; Eq. 4-12 and Fig. 4-12 are for level ground) and at_rest with k0_sloping_ground (beta > 0). Rankine passive is for level ground and refuses a non-zero value. Aliases: beta, backfill_slope."},
+            "alpha_deg": {"type": "float", "required": False, "default": 90.0, "description": "Wall back face angle from horizontal (degrees, 90 = vertical; below 90 when the soil overhangs the face, as UFC 3-220-20 Fig. 4-7 draws a gravity wall's back, where its theta = 90 - alpha_deg is positive). Coulomb only; the others take a vertical back and refuse another value (the log-spiral Kp takes a battered face as theta_deg = 90 - alpha_deg). Alias: alpha."},
+            "theta_deg": {"type": "float", "required": False, "default": 0.0, "description": "With theory 'caquot_kerisel' (passive): the wall face's angle from vertical (degrees), UFC 3-220-20's theta (Figs. 4-7, 4-12): positive when the face slopes down into the soil it bears on, so the soil overhangs it (Kp falls; Fig. 4-12 draws the toe of the face farther into the soil than its top), negative the other way (Kp rises); theta_deg = 90 - Coulomb's alpha_deg. A non-zero value reads UFC 3-220-20 Fig. 4-12 (p. 192): level ground only, theta -30 to +40 deg, delta/phi' 0.66 only, Kp up to 15. Alias: theta."},
+            "log_spiral_source": {"type": "str", "required": False, "default": "ufc_3_220_20", "allowed_values": ["ufc_3_220_20", "caquot_kerisel_1948", "dm7_2_eq_4_12", "dm7_2_fig_4_12", "dm7_2_fig_4_13"], "description": "With theory 'caquot_kerisel', the printed source of the log-spiral passive Kp. 'ufc_3_220_20' (default): UFC 3-220-20 (DM 7.2), the source the wall's geometry calls for (pp. 191-193): Eq. 4-12 (p. 191) for a vertical face and level ground, at any wall friction; Fig. 4-12 (p. 192) for a battered face (theta_deg) with level ground and Fig. 4-13 (p. 193) for a vertical face with sloping ground (beta_deg), both drawn for delta/phi' = 0.66 only. UFC prints nothing for a battered face with sloping ground, nor for those two charts at another wall friction: the default refuses those and names what covers them. 'caquot_kerisel_1948': the Caquot and Kerisel (1948) chart, Kp at delta = phi times the printed reduction factor R(delta/phi), Caltrans Trenching and Shoring Manual Fig. 4-20 (p. 4-30), the method its Sec. 4-6 uses for passive pressure; a vertical wall, level or sloping ground, any wall friction. 'dm7_2_eq_4_12', 'dm7_2_fig_4_12', 'dm7_2_fig_4_13': each UFC source on its own. They differ: at phi 30, delta/phi 0.66 on level ground the 1948 chart gives 5.4, Figs. 4-12 and 4-13 5.3, Eq. 4-12 5.1. UFC 3-220-20 footnote 21 (p. 191): the 1982 DM 7.2 charts 'used delta/phi' = 1 along with reduction ratios', which 'were averages that introduced substantial inaccuracy for some cases'; the 1948 chart takes that form. UFC 3-220-20 Table 4-2 (p. 194) is not used: its row headed delta/phi' = 0.5 prints Fig. 4-13's values for 0.66 (5.3, 8.0, 12, 20 at phi' 30, 35, 40, 45) and Coulomb's Kp at 0.66 (6.1, 9.8, 18, 44); Eq. 4-12 at 0.5 gives 4.46, 6.33, 9.33, 14.3. The result's choices give the route taken and each other source's Kp."},
             "k0_sloping_ground": {"type": "str", "required": False, "allowed_values": ["caltrans_eq_4_3_14", "en_1997_1_eq_9_2"], "description": "The at-rest K0 behind ground rising from the wall: required when state is 'at_rest' and beta_deg is not 0, and there is no default because the printed forms disagree in sign. 'caltrans_eq_4_3_14': K0 = (1 - sin phi)(1 - sin beta), Caltrans Trenching and Shoring Manual Eq. 4-3-14 (p. 4-9), lower than on level ground. 'en_1997_1_eq_9_2': K0;beta = K0 (1 + sin beta), EN 1997-1:2004 Sec. 9.5.2(4) Eq. 9.2, for beta <= phi', the resulting force parallel to the ground surface, higher. UFC 3-220-20 Table 4-3 (p. 195, after Kim et al. 1991) also gives a higher K0 behind a 2H:1V slope than behind level ground (loose sand 0.55 against 0.45)."},
         },
-        "returns": {"K": "Earth pressure coefficient value.", "coefficient": "Ka, Kp, or K0.", "theory": "Theory used: for at_rest 'jaky_at_rest' on level ground, else the sloping-ground form.", "log_spiral_source": "With caquot_kerisel: the printed source of the Kp.", "choices": "The log-spiral source or the sloping-ground K0 form used, with its basis and the other options. Tell the user."},
+        "returns": {"K": "Earth pressure coefficient value.", "coefficient": "Ka, Kp, or K0.", "theory": "Theory used: for at_rest 'jaky_at_rest' on level ground, else the sloping-ground form.", "delta_deg": "The wall friction used (for caquot_kerisel left out: 0.66 phi' with the UFC sources, phi with the 1948 chart).", "theta_deg": "With caquot_kerisel: the wall face angle from vertical used.", "log_spiral_source": "With caquot_kerisel: the printed source of the Kp.", "log_spiral_route": "With the default 'ufc_3_220_20': the UFC source the geometry called for ('dm7_2_eq_4_12', 'dm7_2_fig_4_12' or 'dm7_2_fig_4_13').", "choices": "The log-spiral source and route or the sloping-ground K0 form used, with its basis and each other source's Kp for the case. Tell the user."},
     },
     "mse_wall": {
         "category": "MSE Wall",
@@ -772,6 +844,7 @@ declare_applies_when(METHOD_INFO, {
                      {"theory": _COULOMB, "state": _ACTIVE_PASSIVE},
                      {"theory": ["caquot_kerisel"], "state": ["passive"]},
                      {"state": ["at_rest"]}],
+        "theta_deg": {"theory": ["caquot_kerisel"], "state": ["passive"]},
         "log_spiral_source": {"theory": ["caquot_kerisel"],
                               "state": ["passive"]}},
     "cantilever_wall": {

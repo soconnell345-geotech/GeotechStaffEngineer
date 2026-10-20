@@ -524,6 +524,16 @@ step (BACKLOG, HANDOFF, CLAUDE.md state clause, memory, desk).
 - **Tests:** the two new files; `webapp/tests/test_app_profiles.py`;
   `funhouse_agent/deep/tests/test_review_harness_offline.py`.
 - **Exit:** both pass on master; the known-couplings list matches 2.7.
+- **Refreshing the fingerprints** (for everyone, from here on): a split step
+  never re-records them, except the one change step 12 names; it finds what
+  moved instead. Any other deliberate change to a prompt, a tool's
+  description or schema, a helper or a budget re-records in a commit of its
+  own that says why, from the repository root:
+  `python -m webapp.tests.page_builds record`. The planlens-served tools
+  are recorded per planlens (CI's PyPI release and planlens main side by
+  side; `record` keeps the other entries), and CI fails on a planlens with
+  no entry. The rule is also the test's docstring
+  (`webapp/tests/test_page_fingerprints.py`).
 
 ### Step 2. Lazy package doors (no behaviour change)
 - **Change:** `funhouse_agent/__init__.py` and `deep/__init__.py` load their

@@ -420,16 +420,23 @@ class TestEarthPressureCoefficient:
         assert r["delta_deg"] == 20.0
 
     def test_caquot_kerisel_log_spiral_kp(self):
-        # Caquot-Kerisel (1948) log-spiral passive Kp. phi=35, delta=23.33
-        # (delta/phi=2/3) -> Kp0 10.2 x R 0.808 = 8.24 (Caltrans T&S Fig
-        # 4-20, p. 4-30; was 7.2 on the old Kp0 of 9.2, GM-21); DM 7.2 Fig
-        # 4-13 (p. 193, delta/phi 0.66) reads 8.0. delta omitted -> R=1.
+        # The log-spiral passive Kp, phi=35, delta=23.33 (delta/phi=2/3).
+        # By default (GM-232) UFC 3-220-20 Eq. 4-12 (p. 191), a vertical
+        # face and level ground: 7.58. The Caquot-Kerisel (1948) chart by
+        # name: Kp0 10.2 x R 0.808 = 8.24 (Caltrans T&S Fig 4-20, p. 4-30;
+        # was 7.2 on the old Kp0 of 9.2, GM-21); DM 7.2 Fig 4-13 (p. 193,
+        # delta/phi 0.66) reads 8.0. delta omitted -> R=1 on the 1948 chart.
         r = self._run({"phi_deg": 35.0, "state": "passive",
                        "theory": "caquot_kerisel", "delta_deg": 23.33})
         assert r["coefficient"] == "Kp"
-        assert r["K"] == pytest.approx(8.24, abs=0.05)
+        assert r["K"] == pytest.approx(7.58, abs=0.01)
+        ck = self._run({"phi_deg": 35.0, "state": "passive",
+                        "theory": "caquot_kerisel", "delta_deg": 23.33,
+                        "log_spiral_source": "caquot_kerisel_1948"})
+        assert ck["K"] == pytest.approx(8.24, abs=0.05)
         full = self._run({"phi_deg": 30.0, "state": "passive",
-                          "theory": "caquot_kerisel"})["K"]
+                          "theory": "caquot_kerisel",
+                          "log_spiral_source": "caquot_kerisel_1948"})["K"]
         assert full == pytest.approx(6.3, abs=0.1)   # delta=phi anchor
 
     @pytest.mark.parametrize("params, says", [
@@ -458,9 +465,14 @@ class TestEarthPressureCoefficient:
         assert r["K"] == pytest.approx(1.0 / 3.0, abs=1e-3)
 
     def test_caquot_kerisel_echoes_the_wall_friction_it_used(self):
-        # GM-184: delta left out is full wall friction, delta = phi
+        # GM-184: delta left out is full wall friction, delta = phi, on the
+        # 1948 chart; 0.66 phi' (UFC 3-220-20 p. 191) by default (GM-232)
         r = self._run({"phi_deg": 30.0, "state": "passive",
                        "theory": "caquot_kerisel"})
+        assert r["delta_deg"] == pytest.approx(19.8)
+        r = self._run({"phi_deg": 30.0, "state": "passive",
+                       "theory": "caquot_kerisel",
+                       "log_spiral_source": "caquot_kerisel_1948"})
         assert r["delta_deg"] == 30.0
         assert self._run({"phi_deg": 30.0})["delta_deg"] == 0.0
 

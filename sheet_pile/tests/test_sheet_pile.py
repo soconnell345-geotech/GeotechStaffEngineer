@@ -400,39 +400,101 @@ class TestCaquotKeriselKp:
 
 
 class TestLogSpiralSource:
-    """GM-183: the printed source of the log-spiral passive Kp; the default
-    (Caquot-Kerisel 1948) runs as before."""
+    """GM-183: the printed source of the log-spiral passive Kp; GM-232: by
+    default UFC 3-220-20's for the geometry, Eq. 4-12 for a sheet pile (a
+    vertical face, level ground in front)."""
 
     def _layers(self, ratio):
         return [WallSoilLayer(thickness=15.0, unit_weight=18.0,
                               friction_angle=30.0,
                               wall_friction_deg=ratio * 30.0)]
 
-    def test_default_source_is_the_1948_chart(self):
+    def test_default_source_is_ufc_eq_4_12(self):
         a = analyze_cantilever(4.0, self._layers(0.5),
                                pressure_method="log_spiral")
         b = analyze_cantilever(4.0, self._layers(0.5),
                                pressure_method="log_spiral",
-                               log_spiral_source="caquot_kerisel_1948")
+                               log_spiral_source="dm7_2_eq_4_12")
         assert a.embedment_depth == b.embedment_depth
+        (c,) = a.choices
+        assert c["chosen"] == "ufc_3_220_20" and c["how"] == "default"
+        assert "Eq. 4-12" in c["basis"] and "Kp 4.46" in c["basis"]
+        assert c["alternatives"][0].startswith("Caquot-Kerisel 1948")
+        assert "Kp 4.7" in c["alternatives"][0]
+        assert a.to_dict()["choices"] == a.choices
+        plain = analyze_cantilever(4.0, self._layers(0.5))
+        assert plain.choices == [] and "choices" not in plain.to_dict()
 
     def test_dm7_2_sources_change_the_embedment(self):
         ck = analyze_cantilever(4.0, self._layers(0.66),
-                                pressure_method="log_spiral")
+                                pressure_method="log_spiral",
+                                log_spiral_source="caquot_kerisel_1948")
         fig = analyze_cantilever(4.0, self._layers(0.66),
                                  pressure_method="log_spiral",
                                  log_spiral_source="dm7_2_fig_4_13")
         eq = analyze_cantilever(4.0, self._layers(0.66),
-                                pressure_method="log_spiral",
-                                log_spiral_source="dm7_2_eq_4_12")
+                                pressure_method="log_spiral")
         # Kp 5.36 (1948), 5.30 (Fig. 4-13), 5.06 (Eq. 4-12)
         assert ck.embedment_depth < fig.embedment_depth < eq.embedment_depth
         a = analyze_anchored(6.0, 1.5, self._layers(0.66),
-                             pressure_method="log_spiral",
-                             log_spiral_source="dm7_2_eq_4_12")
-        b = analyze_anchored(6.0, 1.5, self._layers(0.66),
                              pressure_method="log_spiral")
+        b = analyze_anchored(6.0, 1.5, self._layers(0.66),
+                             pressure_method="log_spiral",
+                             log_spiral_source="caquot_kerisel_1948")
         assert a.embedment_depth > b.embedment_depth
+        # a tied-back wall: UFC 3-220-20 p. 260 points to Fig. 4-12, and
+        # p. 238 says when its anchored bulkheads take wall friction
+        for anchored in (a, b):
+            assert "should be obtained from Figure 4-12" \
+                in anchored.choices[0]["basis"]
+            assert "p. 238" in anchored.choices[0]["basis"]
+        assert "should be obtained from Figure 4-12" \
+            not in eq.choices[0]["basis"]
+        assert "p. 238" not in eq.choices[0]["basis"]
+        # every wall: the wall friction is the engineer's call
+        for r in (a, b, eq, ck, fig):
+            assert "engineer's call" in r.choices[0]["basis"]
+
+    def test_full_wall_friction_on_eq_4_12_is_noted(self):
+        """GM-232: a layer above delta/phi' = 0.66 on the UFC route takes
+        Eq. 4-12, which UFC bounds nowhere; the choice says so."""
+        from geotech_common.log_spiral import HIGH_FRICTION_NOTE
+        hi = analyze_cantilever(4.0, self._layers(1.0),
+                                pressure_method="log_spiral")
+        assert HIGH_FRICTION_NOTE in hi.choices[0]["basis"]
+        lo = analyze_cantilever(4.0, self._layers(0.66),
+                                pressure_method="log_spiral")
+        assert HIGH_FRICTION_NOTE not in lo.choices[0]["basis"]
+
+    def test_calc_package_shows_the_kp_the_design_used(self):
+        """GM-232: the calc package's Kp steps and pressure diagram take
+        the analysis's log-spiral source, so with the UFC default they show
+        Eq. 4-12's Kp (5.06 at phi' 30, delta/phi' 0.66), not the 1948
+        chart's (5.36)."""
+        from sheet_pile import calc_steps as cs
+        layers = self._layers(0.66)
+        for kw, kp in (({}, "5.0620"),
+                       ({"log_spiral_source": "caquot_kerisel_1948"},
+                        "5.3626")):
+            r = analyze_cantilever(4.0, layers, pressure_method="log_spiral",
+                                   **kw)
+            analysis = {"pressure_method": "log_spiral",
+                        "soil_layers": layers, "excavation_depth": 4.0,
+                        "wall_type": "cantilever", **kw}
+            (step,) = [i for i in cs.get_calc_steps(r, analysis)[0].items
+                       if getattr(i, "result_name", None) == "Kp"]
+            assert step.result_value == kp
+            assert not step.equation.startswith("Kp = ln")
+
+    def test_only_the_passive_side_layers_are_listed(self):
+        layers = [WallSoilLayer(thickness=3.0, unit_weight=18.0,
+                                friction_angle=34.0, wall_friction_deg=17.0),
+                  WallSoilLayer(thickness=12.0, unit_weight=18.0,
+                                friction_angle=30.0, wall_friction_deg=15.0)]
+        r = analyze_cantilever(4.0, layers, pressure_method="log_spiral")
+        basis = r.choices[0]["basis"]
+        assert "layer 2 (phi' 30, delta 15) Kp 4.46" in basis
+        assert "layer 1" not in basis
 
     def test_fig_4_13_refuses_another_wall_friction(self):
         with pytest.raises(ValueError, match="0.66 only"):

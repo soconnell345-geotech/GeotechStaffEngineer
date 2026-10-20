@@ -621,7 +621,9 @@ import funhouse_agent.deep   # auto-repairs the stale typing_extensions on impor
 ```
 
 - The `[deep]` extra is required for the v2 deepagents loop (`funhouse_agent.deep`);
-  without it you get `ModuleNotFoundError: No module named 'deepagents'`.
+  without it you get `ModuleNotFoundError: No module named 'deepagents'` the first
+  time a name is used (`from funhouse_agent.deep import build_deep_agent`); a bare
+  `import funhouse_agent.deep` loads its names on first use, so it succeeds.
   Add `[interactive]` for the plotly single-file viewers, `[plot]` for matplotlib figures.
 - **Full eval coverage (100 questions as of v5.4) needs the optional-dependency extras:** install
   `%pip install "/tmp/...whl[deep,full]"`. With `[deep]` alone, ~12 questions (the

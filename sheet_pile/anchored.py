@@ -23,7 +23,7 @@ from sheet_pile.earth_pressure import rankine_Ka, rankine_Kp  # kept for backwar
 from sheet_pile.cantilever import (
     WallSoilLayer, _get_soil_at_depth, _cumulative_stress,
     _cumulative_stress_passive, _effective_gamma, _compute_Ka_Kp,
-    _with_log_spiral_source,
+    _with_log_spiral_source, _log_spiral_choices,
 )
 from geotech_common.water import GAMMA_W
 
@@ -44,6 +44,9 @@ class AnchoredWallResult:
     #: (kPa, kN/m, kN-m/m), with T applied at the anchor. Not in to_dict;
     #: read by get_tables.
     profile: List[list] = field(default_factory=list, repr=False)
+    #: What the analysis chose (GM-232: the log-spiral passive Kp's source,
+    #: with UFC 3-220-20 p. 260 on tied-back walls).
+    choices: list = field(default_factory=list)
 
     def get_tables(self) -> list:
         """The pressure diagram along the wall with the shear and bending
@@ -129,6 +132,7 @@ class AnchoredWallResult:
             "max_moment_depth_m": round(self.max_moment_depth, 2),
             "anchor_depth_m": round(self.anchor_depth, 2),
             "FOS_passive": round(self.FOS_passive, 2),
+            **({"choices": self.choices} if self.choices else {}),
         }
 
 
@@ -142,7 +146,7 @@ def analyze_anchored(
     FOS_passive: float = 1.5,
     gamma_w: float = GAMMA_W,
     pressure_method: str = "rankine",
-    log_spiral_source: str = "caquot_kerisel_1948",
+    log_spiral_source: str = "ufc_3_220_20",
 ) -> AnchoredWallResult:
     """Analyze an anchored sheet pile wall (free earth support method).
 
@@ -366,4 +370,6 @@ def analyze_anchored(
         excavation_depth=H,
         FOS_passive=FOS_passive,
         profile=profile,
+        choices=_log_spiral_choices(pressure_method, soil_layers, H,
+                                    tied_back=True),
     )

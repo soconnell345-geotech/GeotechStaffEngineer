@@ -193,7 +193,8 @@ def test_composite_earthpressure_pdf_drawing_keys_reproduce():
         {"phi_deg": 32, "state": "passive", "theory": "rankine"})["K"])
     _check("EPC-3", "Kp", call_agent("retaining_walls", "earth_pressure_coefficient",
         {"phi_deg": 35, "state": "passive", "theory": "caquot_kerisel",
-         "delta_deg": 23.33})["K"])
+         "delta_deg": 23.33,
+         "log_spiral_source": "caquot_kerisel_1948"})["K"])
     mse = call_agent("retaining_walls", "mse_lrfd_external_stability",
         {"wall_height": 7.0, "gamma_backfill": 19.0, "phi_backfill": 34.0,
          "surcharge": 12.0})
