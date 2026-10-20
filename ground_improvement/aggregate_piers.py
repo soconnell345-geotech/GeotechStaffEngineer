@@ -269,8 +269,8 @@ def analyze_aggregate_piers(
     -------
     AggregatePierResult
         Complete analysis results, with its ``choices`` (GM-142): n, the
-        soil modulus and the pattern, each given or default, and what
-        E_column is used for.
+        soil modulus and the pattern, each given or default. E_column is
+        not among them: it changes no result (GM-179).
     """
     as_ratio = area_replacement_ratio(column_diameter, spacing, pattern)
 
@@ -308,12 +308,11 @@ def analyze_aggregate_piers(
         column_diameter_m=column_diameter,
         column_spacing_m=spacing,
         pattern=pattern,
-        choices=aggregate_pier_choices(n, E_soil, E_column, pattern),
+        choices=aggregate_pier_choices(n, E_soil, pattern),
     )
 
 
-def aggregate_pier_choices(n: float, E_soil: float, E_column: float,
-                           pattern: str) -> list:
+def aggregate_pier_choices(n: float, E_soil: float, pattern: str) -> list:
     """What :func:`analyze_aggregate_piers` chose (GM-142), as a result's
     ``choices`` (``geotech_common.choices``)."""
     from geotech_common.choices import choice, how_given
@@ -335,10 +334,6 @@ def aggregate_pier_choices(n: float, E_soil: float, E_column: float,
                how_given(E_soil, 5000.0, name="E_soil"),
                "used only for the composite modulus E_comp = "
                "E_s [1 + a_s (n - 1)]"),
-        choice("column modulus E_c", f"{E_column:g} kPa",
-               how_given(E_column, 80000.0, name="E_column"),
-               "not used in the calculation: only a warning when it is "
-               "below E_s (n sets the stress split)"),
         choice("column pattern", pattern,
                how_given(pattern, "triangular", name="pattern"),
                "unit cell of equal area: d_e = 1.05 S (triangular) or "

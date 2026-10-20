@@ -254,6 +254,32 @@ def test_v057_bearing():
     assert b["CDR_strength"] == pytest.approx(1.60, abs=0.005)
 
 
+def test_v057_e2_nominal_bearing_resistance():
+    """GEC-11 Vol II Example E2 (pp. E2-3 to E2-5) works the bearing
+    resistance under E1's wall: qn by Eq. 4-22 with Nγ from Table 4-6 for
+    φ'f = 30 deg, γf = 125 pcf, L' = 18 ft - 2 (2.77 ft) = 12.46 ft:
+    qn = 17.44 ksf; qR = 0.65 (17.44) = 11.34 ksf (Eq. 4-23). GM-179:
+    gamma_foundation given in place of bearing_resistance_strength."""
+    geom = MSEWallGeometry(wall_height=20 * FT, reinforcement_length=18 * FT,
+                           backfill_slope=BETA,
+                           broken_backslope_height=9 * FT,
+                           surcharge=0.25 * KSF)
+    b = check_external_stability_lrfd(
+        geom, GAMMA, 34.0, 30.0, phi_retained=30.0, gamma_foundation=GAMMA,
+        traffic_vertical_resists=True)["bearing"]
+    assert b["B_eff_strength_max_m"] / FT == pytest.approx(12.46, abs=0.01)
+    assert b["Ngamma"] == pytest.approx(22.4, abs=0.01)
+    assert b["qn_strength_max_kPa"] / KSF == pytest.approx(17.44, abs=0.01)
+    assert b["qR_strength_max_kPa"] / KSF == pytest.approx(11.34, abs=0.01)
+    # by hand: CDR = 11.34 / 6.55 = 1.73
+    assert b["CDR_strength"] == pytest.approx(1.73, abs=0.005)
+    assert "Eq. 4-22" in b["resistance_basis"]
+    with pytest.raises(ValueError, match="not both"):
+        check_external_stability_lrfd(
+            geom, GAMMA, 34.0, 30.0, gamma_foundation=GAMMA,
+            bearing_resistance_strength=10.5 * KSF)
+
+
 def test_v057_default_basis():
     """The module's default leaves FV2 (traffic) out of the sliding and
     eccentricity resistance: GEC-11 Vol I p. 4-22 includes loads that
