@@ -160,6 +160,60 @@ def test_the_record_alone_takes_the_deliverables_that_fit(monkeypatch,
     assert head == ["meta.json", "activity.jsonl"]
 
 
+def test_over_the_limit_nothing_past_it_is_held(monkeypatch, tmp_path):
+    # a file far over the limit stops the zip at the limit, not after it
+    tid, conv = _conversation(monkeypatch, tmp_path)
+    _write(os.path.join(conv, "files", "model_run.bin"), os.urandom(400_000))
+    sizes = []
+
+    class Spy(conversation_export._CappedBuffer):
+        def write(self, b):
+            n = super().write(b)
+            sizes.append(self.tell())
+            return n
+
+    monkeypatch.setattr(conversation_export, "_CappedBuffer", Spy)
+    x = conversation_export.build(tid, cap=50_000, when=WHEN)
+    assert x.data is None
+    assert sizes and max(sizes) <= 50_000
+
+
+def test_the_note_names_at_most_its_line_limit(monkeypatch, tmp_path):
+    tid, conv = _conversation(monkeypatch, tmp_path)
+    keys = [f"upload_{i:04d}.txt" for i in range(450)]
+    for key in keys:
+        _write(os.path.join(conv, "files", key), "x")
+    _write(os.path.join(conv, "attachments.json"), json.dumps(keys))
+    x = conversation_export.build(tid, cap=200_000, record_only=True,
+                                  when=WHEN)
+    assert x.data is not None and len(x.left_out) > 450
+    with zipfile.ZipFile(io.BytesIO(x.data)) as zf:
+        note = zf.read(f"{x.name[:-4]}/{conversation_export.NOTE_NAME}")
+    lines = note.decode().splitlines()
+    most = conversation_export.NOTE_MAX_LINES
+    assert sum(1 for ln in lines if ln.startswith("  ") and ": " in ln) \
+        == most
+    assert lines[-1] == f"  and {len(x.left_out) - most} more"
+
+
+@pytest.mark.skipif(os.sep == "\\", reason="a backslash is a separator here")
+def test_a_backslash_in_a_name_is_not_a_folder_in_the_zip(monkeypatch,
+                                                          tmp_path):
+    tid, conv = _conversation(monkeypatch, tmp_path)
+    _write(os.path.join(conv, "files", "a\\..\\..\\..\\x.txt"), "y")
+    x = conversation_export.build(tid, when=WHEN)
+    assert f"{x.name[:-4]}/files/a_.._.._.._x.txt" in _names(x.data)
+    assert not any("\\" in n for n in _names(x.data))
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no named pipes")
+def test_a_pipe_is_left_out_not_read(monkeypatch, tmp_path):
+    tid, conv = _conversation(monkeypatch, tmp_path)
+    os.mkfifo(os.path.join(conv, "files", "pipe"))
+    x = conversation_export.build(tid, when=WHEN)    # would hang reading it
+    assert dict(x.left_out)["files/pipe"] == "not a regular file"
+
+
 def test_the_limit_is_the_foundry_downloads_and_none_elsewhere(monkeypatch):
     monkeypatch.delenv("GEOTECH_DEPLOYMENT", raising=False)
     assert file_widgets.download_limit_bytes() is None
@@ -271,3 +325,20 @@ def test_on_foundry_over_the_limit_the_record_alone_is_offered(monkeypatch,
     assert any(".zip" in p for p in pages)
     captions = " ".join(c.value for c in at.caption)
     assert "LEFT_OUT.txt" in captions
+
+
+def test_on_foundry_a_record_alone_over_the_limit_says_so(monkeypatch,
+                                                          tmp_path):
+    monkeypatch.setenv("GEOTECH_DEPLOYMENT", "foundry")
+    monkeypatch.setattr(file_widgets, "_component", lambda page, height: None)
+    calls = []
+    at = _app_after_a_turn(monkeypatch, tmp_path, calls)
+    # a limit not even the note fits under
+    monkeypatch.setenv(file_widgets.DOWNLOAD_MAX_MB_ENV, "0.0001")
+    _button(at, "Prepare download").click().run()
+    _button(at, "Prepare the record alone").click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert calls[-1]["record_only"] is True
+    captions = " ".join(c.value for c in at.caption)
+    assert "Even the record alone zips to more than" in captions
+    assert not [b for b in at.button if b.label == "Prepare the record alone"]

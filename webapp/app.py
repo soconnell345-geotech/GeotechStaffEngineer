@@ -943,12 +943,15 @@ with st.sidebar:
     # figures, to keep where the conversations folder is not kept (inside a
     # published Foundry app's container). Built only when Prepare is pressed
     # -- on Foundry the bytes travel inside the page (INF-44) -- and dropped
-    # once the conversation moves on, when it is out of date.
+    # once the conversation moves on, when it is out of date (also when this
+    # block is not drawn, e.g. a new conversation not yet saved).
+    _zip_stamp = (ss.thread_id, len(ss.transcript))
+    if ss.get("conv_zip") and ss.conv_zip["stamp"] != _zip_stamp:
+        ss.pop("conv_zip", None)
     if _PROFILE.conversation_download and \
             core.load_meta(ss.thread_id) is not None:
         st.divider()
         st.subheader("Download this conversation")
-        _zip_stamp = (ss.thread_id, len(ss.transcript))
         _zip_cap = file_widgets.download_limit_bytes()
 
         def _prepare_zip(record_only: bool = False) -> None:
@@ -967,9 +970,6 @@ with st.sidebar:
                           "key, are left out), then shows the download."):
             _prepare_zip()
         _zip = ss.get("conv_zip")
-        if _zip and _zip["stamp"] != _zip_stamp:
-            ss.pop("conv_zip", None)
-            _zip = None
         if _zip:
             _x = _zip["export"]
             if _x.data is not None:
@@ -985,6 +985,13 @@ with st.sidebar:
                 else:
                     st.caption(f"{len(_x.files)} files, "
                                f"{_zip_size(_x.size)}.")
+            elif _x.record_only:
+                st.caption(
+                    "Even the record alone zips to more than the "
+                    f"{(_x.cap or 0) / 1048576:.3g} MB a download in the "
+                    "Foundry app can carry (raise "
+                    f"{file_widgets.DOWNLOAD_MAX_MB_ENV} in the app file to "
+                    "carry more).")
             else:
                 st.caption(
                     f"The whole conversation ({len(_x.files)} files, "

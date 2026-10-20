@@ -23,7 +23,8 @@ Left out:
 * anything that may hold a key: hidden files and folders (``.env``,
   ``.netrc``), key and certificate files (``*.pem``, ``*.key``, ``*.pfx``,
   ``*.p12``) and links. The app keeps no key in a conversation's folder;
-  this is for a file a user or a tool put there.
+  this is for a file a user or a tool put there;
+* anything that is not a regular file (a pipe would stop the zip).
 
 The zip is built only when asked for (:func:`build`): on Foundry its bytes
 travel inside the page, and putting them there on every rerun is heavy
@@ -73,6 +74,27 @@ _ENTRY_BYTES = 96
 _END_BYTES = 64
 #: Kept back from a record-only zip's budget for its note.
 _NOTE_RESERVE = 16 * 1024
+#: The most left-out paths the note names one by one (it then counts the
+#: rest), so the note stays inside its reserve.
+NOTE_MAX_LINES = 400
+
+
+class _OverCap(Exception):
+    """The zip passed the download limit while it was being written."""
+
+
+class _CappedBuffer(io.BytesIO):
+    """The zip in memory, refusing to grow past ``cap`` bytes: a file larger
+    than the limit is never deflated whole into memory only to be dropped."""
+
+    def __init__(self, cap: Optional[int]):
+        super().__init__()
+        self.cap = cap
+
+    def write(self, b) -> int:
+        if self.cap is not None and self.tell() + len(b) > self.cap:
+            raise _OverCap()
+        return super().write(b)
 
 
 @dataclass
@@ -133,6 +155,8 @@ def _file_reason(rel: str, path: str) -> Optional[str]:
         return "a key or certificate file"
     if os.path.islink(path):
         return "a link to a file outside the conversation"
+    if not os.path.isfile(path):
+        return "not a regular file"
     return None
 
 
@@ -173,6 +197,13 @@ def _size(path: str) -> int:
         return 0
 
 
+def _arcname(top: str, rel: str) -> str:
+    """``rel``'s name in the zip, under ``top/``. A backslash in a file name
+    (possible on Linux) becomes ``_``: an unzip on Windows would read it as
+    a folder separator."""
+    return f"{top}/{rel.replace(chr(92), '_')}"
+
+
 def _write_zip(top: str, entries: List[Tuple[str, str]],
                cap: Optional[int], left_out: List[Tuple[str, str]],
                note: Optional[str] = None
@@ -180,26 +211,24 @@ def _write_zip(top: str, entries: List[Tuple[str, str]],
     """The zip of ``entries`` under ``top/`` and the paths that went in, or
     ``(None, [])`` as soon as it passes ``cap``. A file that cannot be read
     is added to ``left_out``."""
-    buf = io.BytesIO()
+    buf = _CappedBuffer(cap)
     written: List[str] = []
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED,
-                         strict_timestamps=False) as zf:
-        for rel, path in entries:
-            try:
-                zf.write(path, f"{top}/{rel}")
-            except OSError as exc:
-                left_out.append((rel, f"could not be read "
-                                      f"({type(exc).__name__})"))
-                continue
-            written.append(rel)
-            if cap is not None and buf.tell() > cap:
-                return None, []
-        if note is not None:
-            zf.writestr(f"{top}/{NOTE_NAME}", note)
-    data = buf.getvalue()
-    if cap is not None and len(data) > cap:
+    try:
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED,
+                             strict_timestamps=False) as zf:
+            for rel, path in entries:
+                try:
+                    zf.write(path, _arcname(top, rel))
+                except OSError as exc:
+                    left_out.append((rel, f"could not be read "
+                                          f"({type(exc).__name__})"))
+                    continue
+                written.append(rel)
+            if note is not None:
+                zf.writestr(f"{top}/{NOTE_NAME}", note)
+    except _OverCap:
         return None, []
-    return data, written
+    return buf.getvalue(), written
 
 
 def _deflated_size(path: str) -> int:
@@ -225,8 +254,12 @@ def _inputs(conv_dir: str) -> dict:
     for key in keys if isinstance(keys, list) else []:
         out[f"files/{key}"] = "an upload (you have the original)"
     for entry in core.load_downloads(conv_dir):
-        rel = os.path.relpath(entry["local"], conv_dir).replace(os.sep, "/")
-        out[rel] = "fetched from SharePoint (it is still there)"
+        try:
+            rel = os.path.relpath(entry["local"], conv_dir)
+        except ValueError:          # another drive: not in this folder
+            continue
+        out[rel.replace(os.sep, "/")] = ("fetched from SharePoint (it is "
+                                         "still there)")
     return out
 
 
@@ -261,7 +294,7 @@ def _record_only(top: str, conv_dir: str,
         if budget is not None:
             try:
                 cost = (_deflated_size(path) + _ENTRY_BYTES
-                        + 2 * len(f"{top}/{rel}".encode("utf-8")))
+                        + 2 * len(_arcname(top, rel).encode("utf-8")))
             except OSError as exc:
                 left_out.append((rel, f"could not be read "
                                       f"({type(exc).__name__})"))
@@ -283,7 +316,9 @@ def _note(meta: dict, cap: Optional[int],
     lines = [f"This zip holds the record of \"{title}\" and the deliverables "
              f"that fit under {limit}. The whole conversation did not fit.",
              "", "Left out:"]
-    lines += [f"  {rel}: {why}" for rel, why in left_out]
+    lines += [f"  {rel}: {why}" for rel, why in left_out[:NOTE_MAX_LINES]]
+    if len(left_out) > NOTE_MAX_LINES:
+        lines.append(f"  and {len(left_out) - NOTE_MAX_LINES} more")
     return "\n".join(lines) + "\n"
 
 
@@ -315,4 +350,4 @@ def build(thread_id: str, *, cap: Optional[int] = None,
 
 
 __all__ = ["Export", "build", "collect", "zip_name", "RECORD_FIRST",
-           "KEY_SUFFIXES", "CACHE_FOLDERS", "NOTE_NAME"]
+           "KEY_SUFFIXES", "CACHE_FOLDERS", "NOTE_NAME", "NOTE_MAX_LINES"]
