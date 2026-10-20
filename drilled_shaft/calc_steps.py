@@ -248,14 +248,17 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         method_steps.append(CalcStep(
             title="Beta Method (Cohesionless Soils)",
             equation=(
-                "\u03b2 = 1.5 - 0.245\u00d7\u221a(z\u00d73.281), clamped to [0.25, 1.2]\n"
-                "f_s = \u03b2 \u00d7 \u03c3'_v, capped at 200 kPa\n"
+                "\u03b2 = 1.5 - 0.135\u00d7\u221a(z, ft) = 1.5 - 0.245\u00d7\u221a(z, m), "
+                "0.25 \u2264 \u03b2 \u2264 1.2, z the depth to the layer's centre\n"
+                "\u03b2 \u00d7 N_60/15 where N_60 < 15\n"
+                "f_s = \u03b2 \u00d7 \u03c3'_v (kPa), capped at 200 kPa\n"
                 "Q_s = f_s \u00d7 P \u00d7 \u0394z"
             ),
             substitution="",
             result_name="",
             result_value="",
-            reference="GEC-10 Section 13.3.3.3; Brown et al. (2010)",
+            reference=("FHWA NHI-06-089 Eqs. 9-41 to 9-43 (pp. 9-132, 9-133); "
+                       "O'Neill & Reese (1999) for the N_60/15 reduction"),
         ))
 
     if has_rock:

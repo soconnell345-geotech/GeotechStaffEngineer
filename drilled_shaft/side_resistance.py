@@ -277,7 +277,8 @@ def beta_cohesionless_rational(phi: float, OCR: float, delta: float = None,
     This is the Chen & Kulhawy / Mayne rational beta used in the GEC-10
     (FHWA-NHI-18-024) Appendix A example (phi'=40, OCR=1.65 -> Ko=0.49,
     beta=0.41). It is distinct from the depth-based O'Neill & Reese
-    ``beta_cohesionless`` (1.5 - 0.245*sqrt(z_ft), clamped to [0.25, 1.2]).
+    ``beta_cohesionless`` (1.5 - 0.135*sqrt(z, ft) = 1.5 - 0.245*sqrt(z, m),
+    clamped to [0.25, 1.2]).
 
     Parameters
     ----------

@@ -223,7 +223,8 @@ class DrillShaftAnalysis:
         Factor of safety. Default 2.5.
     beta_method : str, optional
         Cohesionless side-resistance method: "depth" (default, O'Neill & Reese
-        1.5-0.245*sqrt(z_ft)) or "rational" (GEC-10 Appendix A OCR/Ko chain, from
+        beta = 1.5 - 0.135*sqrt(z, ft) = 1.5 - 0.245*sqrt(z, m), 0.25 to 1.2)
+        or "rational" (GEC-10 Appendix A OCR/Ko chain, from
         per-layer N60/N1_60/sigma_v_ref). Default "depth" preserves prior results.
     alpha_method : str, optional
         Cohesive side-resistance method: "aashto" (default, piecewise 0.55) or
