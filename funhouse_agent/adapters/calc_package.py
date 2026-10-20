@@ -20,6 +20,7 @@ logic, adapted to the funhouse adapter pattern (METHOD_REGISTRY + METHOD_INFO).
 
 import base64
 import contextvars
+import math
 import os
 import re
 from datetime import datetime
@@ -520,9 +521,9 @@ _PACKAGE_TOOLS = {
             "type": "float", "required": False,
             "description": "Direction of north on the plan view, degrees "
                            "clockwise from the cap's +y axis (up on the "
-                           "plan), as the plan the layout came from shows "
-                           "it. Not given: north is drawn up and the "
-                           "figure says so."}},
+                           "plan), -360 to 360, as the plan the layout "
+                           "came from shows it. Not given: north is drawn "
+                           "up and the figure says so."}},
         "dropped": {"layout": {
             "reason": "the layout is rectangular when n_rows and n_cols "
                       "are given, else the piles list",
@@ -1625,9 +1626,29 @@ def _generate_wave_equation_package(params: dict) -> dict:
 # 12. Pile Group
 # ---------------------------------------------------------------------------
 
+def _north_deg(value):
+    """``north_deg`` as the plan draws it: a number of degrees, -360 to
+    360, else refused by name (a text, an infinite or a NaN angle drew no
+    north arrow, and 400 drew 40 degrees without a word; GM-200 review)."""
+    if value is None:
+        return None
+    try:
+        deg = float(value)
+    except (TypeError, ValueError):
+        deg = None
+    if isinstance(value, bool) or deg is None or not math.isfinite(deg) \
+            or abs(deg) > 360.0:
+        raise ValueError(
+            f"pile_group_package: north_deg must be the direction of north "
+            f"on the plan in degrees clockwise from up, -360 to 360; got "
+            f"{value!r}.")
+    return deg
+
+
 def _generate_pile_group_package(params: dict) -> dict:
     from funhouse_agent.adapters.pile_group import _run_group_efficiency
 
+    north = _north_deg(params.get("north_deg"))
     run = _run_tool("pile_group_package", params)
     result, used = run.out
     analysis = {**used, "method": "6dof" if run.value else "simple"}
@@ -1640,8 +1661,8 @@ def _generate_pile_group_package(params: dict) -> dict:
     sy = used.get("spacing_y", used.get("spacing"))
     spacing = min(sx, sy) if sx is not None and sy is not None else None
     extra = {"n_piles": result.n_piles, "group_efficiency": None}
-    if run.own.get("north_deg") is not None:
-        analysis["north_deg"] = float(run.own["north_deg"])
+    if north is not None:
+        analysis["north_deg"] = north
     if d is not None:
         analysis["pile_diameter"] = d
         if (used.get("n_rows") and used.get("n_cols")

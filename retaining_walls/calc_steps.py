@@ -1531,8 +1531,10 @@ def _plot_cantilever_section(result, analysis):
 
     ax.set_xlim(x_left, x_right)
     ax.set_ylim(y_bottom, max(H * 1.15, _backfill_surface(x_right) + 0.05 * H))
-    ax.set_xlabel('Distance (m)', fontsize=10)
-    ax.set_ylabel('Elevation (m)', fontsize=10)
+    # the wall's own frame, said as such: the inputs give no elevation
+    # (the axis read "Elevation" with 0 at the underside of the base)
+    ax.set_xlabel('Distance from the toe (m)', fontsize=10)
+    ax.set_ylabel('Height above the underside of the base (m)', fontsize=10)
     ax.set_title('Cantilever Retaining Wall Cross-Section', fontsize=11, fontweight='bold')
     ax.set_aspect('equal')
     ax.grid(True, alpha=0.15)

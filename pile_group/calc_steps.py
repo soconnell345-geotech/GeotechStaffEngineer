@@ -620,6 +620,8 @@ _PLAN_MIN_VIEW_PT = 170.0
 _PLAN_SYMBOL_PT = 5.0
 #: the names of the piles (pile and force), in points
 _PLAN_NAME_SIZE = 7.0
+#: a pile in tension (and its key): hatched as well as red
+_TENSION_HATCH = '////'
 
 
 def _plot_plan_view(pile_forces, result, analysis):
@@ -629,8 +631,9 @@ def _plot_plan_view(pile_forces, result, analysis):
     layout came from shows it), straight up when none is given, and the
     figure says so; the cap's x and y axes through its origin. A pile is
     a circle at its diameter when one is given, else a symbol not to
-    scale; its fill is blue in compression and red in tension, darker the
-    larger the axial force, and its name and force are written under it.
+    scale; its fill is blue in compression and red and hatched in
+    tension, darker the larger the axial force, and its name and force
+    are written under it.
     Circles sized by the force read as the piles' size against a scale
     bar and covered the names (GM-206). Where the names cannot all be
     written clear of each other and of the piles, the forces are left to the
@@ -692,22 +695,29 @@ def _plot_plan_view(pile_forces, result, analysis):
                     textcoords='offset points', ha='center', va='bottom',
                     fontsize=8, style='italic', color='#555555')]
 
-    # The piles: blue in compression, red in tension, darker the larger
-    # the force
+    # The piles: blue in compression, red and hatched in tension, darker
+    # the larger the force. The hatch tells tension from compression in
+    # grey print, where the two colours print alike and the forces may be
+    # left to the table (GM-200 review)
     f_max = max(max(abs(f) for f in forces), 1e-9)
     fills = [(0.15, 0.39, 0.92, 0.25 + 0.65 * abs(f) / f_max) if f >= 0
              else (0.86, 0.20, 0.16, 0.25 + 0.65 * abs(f) / f_max)
              for f in forces]
     piles = []
     if r > 0:
-        for x, y, c in zip(xs, ys, fills):
+        for x, y, c, f in zip(xs, ys, fills, forces):
             piles.append(ax.add_patch(mpatches.Circle(
                 (x, y), r, facecolor=c, edgecolor='#333333', linewidth=0.9,
-                zorder=4)))
+                hatch=_TENSION_HATCH if f < 0 else None, zorder=4)))
     else:
-        piles.append(ax.scatter(xs, ys, s=(2 * _PLAN_SYMBOL_PT) ** 2,
-                                c=fills, edgecolors='#333333',
-                                linewidths=0.9, zorder=4))
+        for tension in (False, True):
+            at = [i for i, f in enumerate(forces) if (f < 0) == tension]
+            if at:
+                ax.scatter([xs[i] for i in at], [ys[i] for i in at],
+                           s=(2 * _PLAN_SYMBOL_PT) ** 2,
+                           c=[fills[i] for i in at], edgecolors='#333333',
+                           linewidths=0.9, zorder=4,
+                           hatch=_TENSION_HATCH if tension else None)
 
     # The names under the piles, set off from each pile's edge in points
     names = []
@@ -743,7 +753,7 @@ def _plot_plan_view(pile_forces, result, analysis):
     # the key's lines no wider than the figure prints (a wider key keeps
     # the figure from being drawn at its printed size)
     notes = ["Axial force at each pile head (kN): + compression, "
-             "− tension;",
+             "− tension (hatched);",
              "the darker the fill, the larger the force."]
     if written != "all":
         notes += [("Too many piles to write each force at this scale:"
@@ -760,7 +770,9 @@ def _plot_plan_view(pile_forces, result, analysis):
         handles.append(mpatches.Patch(color=(0.15, 0.39, 0.92, 0.8),
                                       label='Compression (+)'))
     if any(f < 0 for f in forces):
-        handles.append(mpatches.Patch(color=(0.86, 0.20, 0.16, 0.8),
+        handles.append(mpatches.Patch(facecolor=(0.86, 0.20, 0.16, 0.8),
+                                      edgecolor='#333333', linewidth=0.9,
+                                      hatch=_TENSION_HATCH,
                                       label='Tension (−)'))
     key_under_axes(fig, ax, handles=handles, note="\n".join(notes),
                    fontsize=8)

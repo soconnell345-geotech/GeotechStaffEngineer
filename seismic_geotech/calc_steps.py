@@ -874,7 +874,7 @@ def _figures_earth_pressure(result, analysis) -> List[FigureData]:
                     f"Figure 1: Static active earth pressure (kPa) and the "
                     f"seismic increment \u0394PAE = {r.delta_PAE:.1f} kN/m "
                     f"applied at {r.height_of_application:.2f} m above the "
-                    f"base (0.6H, Seed & Whitman); "
+                    f"base (0.6H, Seed & Whitman 1970); "
                     f"PAE = {r.PAE_total:.1f} kN/m."
                 ),
                 width_percent=75,

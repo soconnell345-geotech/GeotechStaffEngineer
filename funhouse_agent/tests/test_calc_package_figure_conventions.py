@@ -96,6 +96,10 @@ def test_cantilever_toe_ground_is_at_the_top_of_the_base(built, params):
                 if max(ln.get_xdata()) <= 0.0]
     assert len(toe_side) == 1
     assert set(toe_side[0].get_ydata()) == {geom.base_thickness}
+    # no elevation is given: the axes say what they measure from
+    assert fig.axes[0].get_ylabel() == (
+        "Height above the underside of the base (m)")
+    assert fig.axes[0].get_xlabel() == "Distance from the toe (m)"
     assert _layout_hits(fig) == {}
 
 
@@ -186,3 +190,37 @@ def test_large_pile_group_leaves_the_forces_to_the_table(built):
     assert _layout_hits(fig) == {}
     r, _ = built("pile_group_package", params)
     assert _layout_hits(_plot_pile_load_bar(_get(r, "pile_forces"), r)) == {}
+
+
+def test_tension_piles_are_hatched_for_grey_print(built):
+    # Blue and red print as the same grey, and a large group leaves the
+    # signed forces to the table: tension piles and their key are hatched
+    # as well as red (GM-200 review)
+    from matplotlib.patches import Patch
+    fig, _ = _plan(built, {"n_rows": 6, "n_cols": 6, "spacing": 1.2,
+                           "Vz": 2000.0, "My": 9000.0,
+                           "pile_diameter": 0.4})
+    ax = fig.axes[0]
+    circles = [p for p in ax.patches if isinstance(p, Circle)]
+    hatched = [p for p in circles if p.get_hatch()]
+    assert 0 < len(hatched) < len(circles)
+    assert all(p.get_facecolor()[0] > 0.5 for p in hatched)    # the red
+    keyed = [h for lg in fig.legends + ([ax.get_legend()]
+                                        if ax.get_legend() else [])
+             for h in lg.legend_handles if isinstance(h, Patch)]
+    assert any(h.get_hatch() for h in keyed)
+    assert "− tension (hatched)" in "\n".join(_texts(fig))
+    assert _layout_hits(fig) == {}
+
+
+@pytest.mark.parametrize("north", [400.0, -361.0, "nan", "inf", "north",
+                                   True])
+def test_north_deg_out_of_range_is_refused_by_name(north, tmp_path,
+                                                   monkeypatch):
+    import funhouse_agent.dispatch as D
+    monkeypatch.chdir(tmp_path)
+    r = D.call_agent("calc_package", "pile_group_package", {
+        "n_rows": 2, "n_cols": 2, "spacing": 1.5, "Vz": 1000.0,
+        "north_deg": north})
+    assert "north_deg" in r.get("error", ""), r
+    assert "-360 to 360" in r["error"]
