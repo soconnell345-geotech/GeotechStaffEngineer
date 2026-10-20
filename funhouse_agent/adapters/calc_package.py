@@ -2304,6 +2304,14 @@ def _generate_html_to_pdf(params: dict) -> dict:
     missing = figures_not_printed_warning(rendered)
     if missing:
         response.setdefault("renderer_warnings", []).append(missing)
+    if rendered.get("fills_not_drawn"):
+        response["fills_not_drawn"] = (
+            f"{rendered['fills_not_drawn']} background fill(s) set in the "
+            "HTML were not drawn (the PDF engine repeats a fill as a bar on "
+            "every later page): shading, tinted boxes and cell colours are "
+            "gone and near-white text prints black. Anything shown only by "
+            "a fill (a colour key, a coloured cell or table) is not in the "
+            "PDF: mark it with a word, a border or coloured text instead.")
     if problem:
         response["status"] = "error"
         response["error"] = (f"PDF was generated but {problem}."
@@ -2538,7 +2546,8 @@ METHOD_INFO = {
                  "data URI) and pass it here. Figures it cannot embed are a hard ERROR, "
                  "never a silent blank. A figure that does not fit what is left of a "
                  "page starts the next page at its full size; one taller than a page is "
-                 "scaled to fit a page. Pure-Python (PyMuPDF Story engine).",
+                 "scaled to fit a page. Backgrounds are not drawn: set things off with "
+                 "borders, bold or coloured text. Pure-Python (PyMuPDF Story engine).",
         "parameters": {
             "html": {"type": "str", "required": False,
                      "description": "Self-contained HTML content to render: the "
@@ -2605,6 +2614,9 @@ METHOD_INFO = {
                                "user).",
             "unembeddable": "On error (or with allow_unembeddable=true): each figure "
                             "reference that cannot be embedded, and why.",
+            "fills_not_drawn": "Present when the HTML sets background fills: "
+                               "none is drawn. Redo anything shown only by a "
+                               "fill before handing the PDF over.",
         },
     },
     "bearing_capacity_package": {
