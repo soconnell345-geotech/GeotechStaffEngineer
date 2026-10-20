@@ -202,6 +202,32 @@ class LithologyInterval:
 # ---------------------------------------------------------------------------
 
 @dataclass
+class Refusal:
+    """A driven test that ended in refusal, with the N the log PRINTS.
+
+    ``printed`` is the log's own text (">50", "50/3\"", "R"): there is no
+    number to put on an N axis, so a plot marks the depth and shows the
+    text as printed (GM-76).
+    """
+
+    depth_m: float = 0.0
+    printed: str = ""
+    test_type: str = "SPT"
+    sample_id: str = ""
+
+    def to_dict(self) -> dict:
+        return {"depth_m": round(self.depth_m, 3), "printed": self.printed,
+                "test_type": self.test_type, "sample_id": self.sample_id}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Refusal":
+        return cls(depth_m=float(data.get("depth_m", 0)),
+                   printed=str(data.get("printed", "")),
+                   test_type=str(data.get("test_type", "SPT")),
+                   sample_id=str(data.get("sample_id", "")))
+
+
+@dataclass
 class Investigation:
     """Single subsurface investigation location (boring, CPT, test pit, etc.).
 
@@ -258,6 +284,7 @@ class Investigation:
     lithology: List[LithologyInterval] = field(default_factory=list)
     measurements: List[PointMeasurement] = field(default_factory=list)
     notes: str = ""
+    refusals: List[Refusal] = field(default_factory=list)
 
     def get_measurements(self, parameter: str) -> List[PointMeasurement]:
         """Get all measurements for a parameter, sorted by depth."""
@@ -410,6 +437,8 @@ class Investigation:
             "lithology": [l.to_dict() for l in self.lithology],
             "measurements": [m.to_dict() for m in self.measurements],
             "notes": self.notes,
+            **({"refusals": [r.to_dict() for r in self.refusals]}
+               if self.refusals else {}),
         }
 
     @classmethod
@@ -417,7 +446,9 @@ class Investigation:
         """Create from dict."""
         lith = [LithologyInterval.from_dict(l) for l in data.get("lithology", [])]
         meas = [PointMeasurement.from_dict(m) for m in data.get("measurements", [])]
+        refusals = [Refusal.from_dict(r) for r in data.get("refusals", [])]
         return cls(
+            refusals=refusals,
             investigation_id=str(data.get("investigation_id", "")),
             investigation_type=str(data.get("investigation_type", "boring")),
             x=optional_float(data.get("x")),

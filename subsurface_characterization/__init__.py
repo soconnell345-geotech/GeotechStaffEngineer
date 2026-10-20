@@ -57,6 +57,7 @@ from subsurface_characterization.site_model import (
     SiteModel,
     Investigation,
     PointMeasurement,
+    Refusal,
     LithologyInterval,
     STANDARD_PARAMETERS,
 )
@@ -115,6 +116,7 @@ __all__ = [
     "SiteModel",
     "Investigation",
     "PointMeasurement",
+    "Refusal",
     "LithologyInterval",
     "STANDARD_PARAMETERS",
     # Loaders

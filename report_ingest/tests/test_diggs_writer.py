@@ -1046,3 +1046,12 @@ class TestFloorKeepsAPrintedN:
         for text in ("N=>50", "N = 50+", "N: R", "N=Refusal"):
             assert _N_PRINTED.search(text), text
         assert not _N_PRINTED.search("N=12")
+
+
+class TestAPrintedRefusalReadsBackAsARefusal:
+    def test_n_printed_reaches_the_site_model_as_a_refusal(self):
+        hole = _hole(spt=[SPT(depth_top=_m(3.0), refusal=True,
+                              n_printed=">50")])
+        back = _read_back(write_diggs([hole]))["B-1"]
+        assert [(r.depth_m, r.printed) for r in back.refusals] == [(3.0, ">50")]
+        assert not back.get_measurements("N_spt")

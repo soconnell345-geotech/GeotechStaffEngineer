@@ -42,6 +42,48 @@ def _off_axis(inv, use_elevation: bool, skipped: List[str]) -> bool:
     return True
 
 
+#: Where a refusal sits on the N axis when no test gave a larger N: the
+#: standard cut-off of 50 blows.
+_REFUSAL_N = 50.0
+
+
+def _add_refusals(fig, site, use_elevation: bool, skipped: List[str],
+                  inv_ids: set) -> int:
+    """Mark each refusal at its depth, labelled as the log printed it.
+
+    A refusal has no N, so it is not a number on the N axis: one marker
+    kind (a cross), at the right-hand edge of the plotted N values, each
+    carrying the log's own text (">50", "50/3\"", "R"). The legend names
+    the marker and says where it sits. Returns how many were drawn.
+    """
+    go = get_plotly()
+    xs, ys, labels, hovers = [], [], [], []
+    drawn = [m.value for inv in site.investigations
+             for m in inv.get_measurements("N_spt")]
+    edge = max(drawn + [_REFUSAL_N])
+    for inv in site.investigations:
+        if not getattr(inv, "refusals", None)                 or _off_axis(inv, use_elevation, skipped):
+            continue
+        inv_ids.add(inv.investigation_id)
+        for r in inv.refusals:
+            xs.append(edge)
+            ys.append(inv.elevation_m - r.depth_m if use_elevation
+                      else r.depth_m)
+            labels.append(r.printed)
+            hovers.append(f"{inv.investigation_id}<br>Depth: "
+                          f"{r.depth_m:.1f}m<br>N as printed: {r.printed}")
+    if not xs:
+        return 0
+    fig.add_trace(go.Scatter(
+        x=xs, y=ys, mode="markers+text", text=labels,
+        textposition="middle left",
+        marker=dict(size=9, symbol="x", color="#444444",
+                    line=dict(width=1.5)),
+        name="Refusal (N as printed; drawn at the right edge)",
+        hovertext=hovers, hoverinfo="text"))
+    return len(xs)
+
+
 def plot_parameter_vs_depth(
     site: SiteModel,
     parameter: str,
@@ -183,6 +225,9 @@ def plot_parameter_vs_depth(
             hovertext=all_hover,
             hoverinfo="text",
         ))
+
+    if parameter == "N_spt":
+        n_points += _add_refusals(fig, site, use_elevation, skipped, inv_ids)
 
     # Trend line and bands
     trend_results = []
