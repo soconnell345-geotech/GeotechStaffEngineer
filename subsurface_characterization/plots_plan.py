@@ -35,6 +35,85 @@ def _depth(value) -> str:
     return "not given" if value is None else f"{value:.1f}m"
 
 
+_NUM = r"(\d+(?:\.\d+)?)"
+#: "+y is N 116 E", "y axis N 30 W": the bearing of +y, east or west of north.
+_Y_BEARING = re.compile(
+    r"\+?\s*y(?:\s*[- ]?axis)?\s*(?:is|=|:|points|at)?\s*(?:a\s+bearing\s+of\s+)?"
+    r"N\s*" + _NUM + r"\s*(?:°|deg(?:rees?)?)?\s*([EW])\b", re.I)
+#: "+y is 116 deg from north", "grid north is 116 deg east of true north":
+#: how far +y (grid north) is turned from true north.
+_Y_FROM_NORTH = re.compile(
+    r"(?:\+?\s*y(?:\s*[- ]?axis)?|grid\s+north)\s*(?:is|=|:|points|at|rotated)?"
+    r"[^.;,\d]{0,12}" + _NUM + r"\s*(?:°|deg(?:rees?)?)\s*"
+    r"(?:(east|west|clockwise|counter-?clockwise|ccw|cw)\s+)?"
+    r"(?:of|from)\s+(?:true\s+|geographic\s+)?north", re.I)
+#: "rotation 116 deg", "rotated 116 deg": the same, with nothing said of
+#: which way it runs.
+_ROTATION = re.compile(r"\brotat(?:ion|ed)\b\D{0,15}" + _NUM +
+                       r"\s*(?:°|deg(?:rees?)?)", re.I)
+#: "north is 116 deg clockwise from +y": north's angle on the grid sheet.
+_NORTH_FROM_Y = re.compile(
+    r"\bnorth\b\s*(?:is|=|:|lies)?[^.;,\d]{0,12}" + _NUM +
+    r"\s*(?:°|deg(?:rees?)?)\s*(clockwise|counter-?clockwise|ccw|cw)?"
+    r"\s*(?:of|from)\s+\+?\s*y\b", re.I)
+
+
+def north_from_coordinate_system(coordinate_system: str):
+    """``(north_deg, how)`` from a coordinate system's own words, else None.
+
+    ``north_deg`` is the direction of true north on the page, degrees
+    clockwise from straight up, with +y drawn up. Only clear statements are
+    read: the bearing of +y (``+y is N 116 E``), how far grid north is turned
+    from true north (``grid north 116 deg from true north``), a rotation, or
+    north's own angle from +y. An angle with no stated way round is taken
+    clockwise from north, which ``how`` says. Anything else returns None.
+    """
+    text = coordinate_system or ""
+    m = _Y_BEARING.search(text)
+    if m:
+        bearing = float(m.group(1)) * (1 if m.group(2).upper() == "E" else -1)
+        return ((-bearing) % 360.0,
+                f"stated: +y is N {m.group(1)} deg {m.group(2).upper()}")
+    m = _NORTH_FROM_Y.search(text)
+    if m:
+        sign = -1 if (m.group(2) or "").lower().startswith(("counter", "ccw")) \
+            else 1
+        way = "counter-clockwise" if sign < 0 else "clockwise"
+        return ((sign * float(m.group(1))) % 360.0,
+                f"stated: north is {m.group(1)} deg {way} from +y")
+    m = _Y_FROM_NORTH.search(text)
+    if m:
+        way = (m.group(2) or "").lower()
+        sign = -1 if way.startswith(("west", "counter", "ccw")) else 1
+        shown = {"": "clockwise (taken as clockwise: the sense is not stated)"
+                 }.get(way, way)
+        return ((-sign * float(m.group(1))) % 360.0,
+                f"stated: +y is {m.group(1)} deg from north, {shown}")
+    m = _ROTATION.search(text)
+    if m:
+        return ((-float(m.group(1))) % 360.0,
+                f"stated: grid rotation {m.group(1)} deg, taken clockwise "
+                f"from north (the sense is not stated)")
+    return None
+
+
+def north_for_plan(coordinate_system: str):
+    """``(north_deg, note)`` for a plan: where north is drawn and why.
+
+    A stated rotation is drawn at its angle. Geographic coordinates have
+    north up. Otherwise north is drawn straight up and the note says it is
+    assumed, since nothing on the record states where north is (the plan the
+    data came from, or the project's other plans, may show it).
+    """
+    found = north_from_coordinate_system(coordinate_system)
+    if found is not None:
+        return found
+    if _GEOGRAPHIC.search(coordinate_system or ""):
+        return 0.0, "geographic coordinates: north is up"
+    return 0.0, ("north assumed up: no rotation is stated for this grid "
+                 "(give north_deg from a plan of the site if one shows it)")
+
+
 def axis_titles(coordinate_system: str):
     """(x title, y title, note) for a plan in ``coordinate_system``.
 
@@ -119,16 +198,20 @@ def plot_plan_view(
                 font=dict(size=10),
             )
 
-    x_title, y_title, note = axis_titles(site.coordinate_system or next(
+    cs = site.coordinate_system or next(
         (inv.coordinate_system for inv in placed if inv.coordinate_system),
-        ""))
+        "")
+    x_title, y_title, note = axis_titles(cs)
+    north_deg, north_note = north_for_plan(cs)
     if note:
         title = f"{title}<br><sup>{note}</sup>"
+    title += f"<br><sup>N arrow: {north_note}</sup>"
     fig.update_layout(
         xaxis=dict(title=x_title, scaleanchor="y", scaleratio=1),
         yaxis=dict(title=y_title),
     )
     apply_standard_layout(fig, title=title)
+    _draw_north(fig, placed, north_deg)
 
     return PlotResult(
         plot_type="plan_view",
@@ -138,7 +221,26 @@ def plot_plan_view(
         parameters=[parameter_for_color] if parameter_for_color else [],
         figure=fig,
         skipped=skipped,
+        north_deg=north_deg,
+        north_note=north_note,
     )
+
+
+def _draw_north(fig, placed, north_deg: float) -> None:
+    """One small north arrow with its N, in the upper right of the plan, in
+    the margin the axes are padded by so it covers no exploration."""
+    from geotech_common.plan_furniture import plotly_north_arrow
+
+    xs = [inv.x for inv in placed]
+    ys = [inv.y for inv in placed]
+    if not xs:
+        return
+    span = max(max(xs) - min(xs), max(ys) - min(ys)) or 1.0
+    pad = 0.18 * span
+    x0, x1 = min(xs) - pad, max(xs) + pad
+    y0, y1 = min(ys) - pad, max(ys) + pad
+    fig.update_layout(xaxis=dict(range=[x0, x1]), yaxis=dict(range=[y0, y1]))
+    plotly_north_arrow(fig, (x1 - 0.5 * pad, y1 - 0.5 * pad), north_deg)
 
 
 def _metres(value) -> str:

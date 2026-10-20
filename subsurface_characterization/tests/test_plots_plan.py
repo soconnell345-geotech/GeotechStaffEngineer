@@ -101,3 +101,46 @@ def test_no_stated_system_is_plain_x_and_y():
     assert site.coordinate_system == ""
     fig = plot_plan_view(site).figure
     assert fig.layout.xaxis.title.text == "x"
+
+
+class TestNorthArrow:
+    """GM-76: one north arrow, from the grid's own words, else up and said."""
+
+    def test_stated_rotations(self):
+        from subsurface_characterization.plots_plan import (
+            north_from_coordinate_system as f)
+        assert f("local grid, +y is N 116 E")[0] == pytest.approx(244.0)
+        assert f("+y is N 30 W")[0] == pytest.approx(30.0)
+        assert f("grid north 116 deg from true north")[0] == pytest.approx(244.0)
+        assert f("grid north 20 deg west of true north")[0] == pytest.approx(20.0)
+        assert f("rotation 116 deg")[0] == pytest.approx(244.0)
+        assert f("north is 116 deg clockwise from +y")[0] == pytest.approx(116.0)
+        assert f("north is 40 deg counterclockwise from +y")[0] == pytest.approx(320.0)
+        assert "not stated" in f("grid north 116 deg from true north")[1]
+        assert f("local grid") is None and f("") is None
+        assert f("State Plane zone 6") is None
+
+    def _site(self, cs):
+        from subsurface_characterization import (
+            SiteModel, Investigation)
+        return SiteModel(project_name="t", coordinate_system=cs, investigations=[
+            Investigation(investigation_id="B-1", x=0.0, y=0.0),
+            Investigation(investigation_id="B-2", x=50.0, y=30.0)])
+
+    def test_the_arrow_is_drawn_once_with_its_source(self):
+        from subsurface_characterization.plots_plan import plot_plan_view
+        res = plot_plan_view(self._site("local grid, +y is N 116 E"))
+        assert res.north_deg == pytest.approx(244.0)
+        assert "stated" in res.north_note and "N arrow" in res.title
+        notes = [a.text for a in res.figure.layout.annotations]
+        assert notes.count("N") == 1
+
+    def test_nothing_stated_is_up_and_says_assumed(self):
+        from subsurface_characterization.plots_plan import plot_plan_view
+        res = plot_plan_view(self._site("local grid"))
+        assert res.north_deg == 0.0 and "assumed up" in res.north_note
+
+    def test_geographic_is_plainly_up(self):
+        from subsurface_characterization.plots_plan import plot_plan_view
+        res = plot_plan_view(self._site("EPSG:4326"))
+        assert res.north_deg == 0.0 and "geographic" in res.north_note
