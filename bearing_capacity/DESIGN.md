@@ -62,6 +62,10 @@ wraps it).
   metre for a strip and the effective area otherwise (a strip took
   B × 1e6 m², so its inclination factors were 1). H is taken along B
   (m = m_B). The result's `choices` state the factors and what they took.
+  For φ = 0 the module keeps Vesic's i_c = 1 − m H/(A' c N_c), which EN
+  1997-1 does not print: its D.3 (p. 158) and UFC 3-220-20 Table 5-7
+  (p. 295) give i_c = [1 + √(1 − H/(A' c))]/2, listed with its value in
+  the choices' alternatives.
 - Depth factors (GM-197), `depth_factor_method`: "hansen" (default)
   takes Brinch Hansen's k = Df/B for Df/B < 1 and arctan(Df/B) from 1
   (UFC 3-220-20 Tables 5-7 and 5-8 note B, pp. 295-296; GEC-6 Table 5-4

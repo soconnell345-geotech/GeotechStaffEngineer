@@ -284,6 +284,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_name="i_c, i_q, i_\u03b3",
             result_value=f"{r.ic:.4f}, {r.iq:.4f}, {r.igamma:.4f}",
             reference=("Meyerhof; UFC 3-220-20 Table 5-6" if meyerhof
+                       else "Vesic (1975)" if phi_deg == 0
                        else "Vesic (1975); EN 1997-1:2004 Annex D.4"),
         ))
 

@@ -763,6 +763,12 @@ class TestInclinationFactors:
                                     vertical_load=500.0).compute()
         H = 500.0 * math.tan(math.radians(5.0))
         assert r.ic == pytest.approx(1 - 1.5 * H / (4 * 50 * 5.14), rel=1e-9)
+        # EN 1997-1 does not print this form; its D.3 one is the
+        # alternative, [1 + sqrt(1 - 43.74/200)]/2 = 0.942
+        i = [c for c in r.choices
+             if c["what"] == "load inclination factors"][0]
+        assert "Annex D.4" not in i["basis"]
+        assert "0.942, EN 1997-1:2004 D.3" in i["alternatives"][0]
 
     def test_a_load_that_slides_is_refused(self):
         from bearing_capacity.factors import inclination_factors

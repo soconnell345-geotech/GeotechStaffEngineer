@@ -394,20 +394,39 @@ class BearingCapacityAnalysis:
                       f"A' = {self._inclination_area():.2f} m2{per}; {i}")
         mic, miq, mig = _meyerhof_inclination_factors(
             layer.friction_angle, beta)
+        alternatives = [
+            f"Meyerhof's angle-only factors, UFC 3-220-20 Table 5-6 (p. "
+            f"294): i_c = i_q = {mic:.3f}, i_gamma = {mig:.3f} "
+            "(factor_method 'meyerhof', with its shape factors 1 under "
+            "an inclined load)",
+            "none, with sliding checked against the horizontal load: GEC-6 "
+            "Sec. 5.2.3.7 (p. 62) (load_inclination 0)"]
+        if layer.friction_angle == 0:
+            # Vesic's phi = 0 form is not the one EN 1997-1 prints (GM-203)
+            basis = ("Vesic (1975) for phi = 0: i_c = 1 - m H/(A' c N_c), "
+                     "m = (2 + B'/L')/(1 + B'/L') for H along B; GEC-6 Sec. "
+                     "5.2.3.7 (p. 62) omits load inclination factors where "
+                     "sliding is checked separately")
+            H = self.vertical_load * math.tan(math.radians(beta))
+            Ac = self._inclination_area() * layer.cohesion
+            alternatives.insert(0, (
+                "i_c = [1 + sqrt(1 - H/(A' c))]/2 = "
+                + (f"{0.5 * (1.0 + math.sqrt(1.0 - H / Ac)):.3f}"
+                   if H <= Ac else "undefined (H > A' c)")
+                + ", EN 1997-1:2004 D.3 (p. 158); UFC 3-220-20 Table 5-7 "
+                "(p. 295) prints the same in its additive form (not an "
+                "option of this tool)"))
+        else:
+            basis = ("Vesic (1975) as EN 1997-1:2004 Annex D.4 (p. 159) "
+                     "prints it: i_q = [1 - H/(V + A' c cot phi)]^m, "
+                     "i_gamma = [...]^(m+1), i_c = i_q - (1 - i_q)/(N_c tan "
+                     "phi), m = (2 + B'/L')/(1 + B'/L') for H along B; "
+                     "GEC-6 Sec. 5.2.3.7 (p. 62) omits load inclination "
+                     "factors where sliding is checked separately")
         return choice(
             "load inclination factors", chosen,
             how_given(self.factor_method, "vesic", name="factor_method"),
-            "Vesic (1975) as EN 1997-1:2004 Annex D.4 (p. 159) prints it: "
-            "i_q = [1 - H/(V + A' c cot phi)]^m, i_gamma = [...]^(m+1), "
-            "i_c = i_q - (1 - i_q)/(N_c tan phi), m = (2 + B'/L')/(1 + "
-            "B'/L') for H along B; GEC-6 Sec. 5.2.3.7 (p. 62) omits load "
-            "inclination factors where sliding is checked separately",
-            [f"Meyerhof's angle-only factors, UFC 3-220-20 Table 5-6 (p. "
-             f"294): i_c = i_q = {mic:.3f}, i_gamma = {mig:.3f} "
-             "(factor_method 'meyerhof', with its shape factors 1 under "
-             "an inclined load)",
-             "none, with sliding checked against the horizontal load: GEC-6 "
-             "Sec. 5.2.3.7 (p. 62) (load_inclination 0)"])
+            basis, alternatives)
 
     def _inclination_area(self) -> float:
         """A' in Vesic's adhesion term: B' per metre for a strip (whose L is

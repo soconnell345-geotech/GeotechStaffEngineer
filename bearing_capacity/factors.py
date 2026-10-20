@@ -434,8 +434,10 @@ def inclination_factors(phi_deg: float, beta_deg: float, c: float,
     Vesic (1975), as EN 1997-1:2004 Annex D.4 (p. 159) prints it:
         iq = [1 - H/(V + A' c cot phi)]^m, ig = [...]^(m+1),
         ic = iq - (1 - iq)/(Nc tan phi),
-        m = mB = (2 + B'/L')/(1 + B'/L') (H along B);
-        phi = 0: ic = 1 - m H/(A' c Nc).
+        m = mB = (2 + B'/L')/(1 + B'/L') (H along B).
+    phi = 0: ic = 1 - m H/(A' c Nc), Vesic (1975). EN 1997-1 does not
+        print it: its D.3 (p. 158) gives ic = [1 + sqrt(1 - H/(A' c))]/2,
+        as UFC 3-220-20 Table 5-7 (p. 295) does in its additive form.
     GEC-6 Sec. 5.2.3.7 (p. 62) omits load inclination factors where
     sliding is checked separately.
     Meyerhof (1963), UFC 3-220-20 Table 5-6 (p. 294):
@@ -458,7 +460,8 @@ def inclination_factors(phi_deg: float, beta_deg: float, c: float,
             if V is None or V <= 0:
                 raise ValueError(
                     "Vesic's load inclination factors take H/(V + A' c cot "
-                    "phi) (EN 1997-1 Annex D.4), so with cohesion they need "
+                    "phi) (EN 1997-1 Annex D.4), or H/(A' c N_c) at phi = "
+                    "0, so with cohesion they need "
                     f"the vertical load V; got V = {V}. Give vertical_load "
                     "(kN; kN/m for a strip), or factor_method 'meyerhof' for "
                     "the angle-only factors of UFC 3-220-20 Table 5-6.")
