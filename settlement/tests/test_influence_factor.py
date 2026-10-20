@@ -99,3 +99,24 @@ def test_the_tool_states_iw_and_the_tables_other_points():
                        {"q_net": 100.0, "B": 2.0, "Es": 15000.0, "Iw": 1.0})
     assert given["choices"][0]["how"] == "given"
     assert given["immediate_settlement_mm"] == pytest.approx(12.13, abs=0.01)
+
+
+def test_the_rigid_square_is_used_as_printed_and_the_basis_says_why():
+    """GM-214: the table's rigid square (0.99) is above the flexible
+    square's average (0.95), where its rigid circle (0.79) is below the
+    flexible circle's (0.85). NHI-06-089 Table 8-13 prints the same 0.99
+    and no other reference in the library prints a rigid square, so it is
+    kept, and a square's basis says so; a circle's does not."""
+    from funhouse_agent.dispatch import call_agent
+    assert gec6_influence_factor("square", "rigid")[0] == 0.99
+    for kw in ({"rigidity": "rigid"}, {}):
+        out = call_agent("settlement", "elastic_settlement",
+                         {"q_net": 200.0, "B": 2.5, "Es": 25000.0, **kw})
+        basis = out["choices"][0]["basis"]
+        assert "NHI-06-089 Table 8-13" in basis
+        assert "above the flexible square's average (0.95)" in basis
+        assert "so 0.99 is used as printed" in basis
+    out = call_agent("settlement", "elastic_settlement",
+                     {"q_net": 200.0, "B": 2.5, "Es": 25000.0,
+                      "shape": "circular"})
+    assert "0.99 is used" not in out["choices"][0]["basis"]

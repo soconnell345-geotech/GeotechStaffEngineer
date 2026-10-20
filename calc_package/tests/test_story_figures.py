@@ -631,3 +631,180 @@ def test_a_figure_that_still_does_not_print_is_said(tmp_path, monkeypatch):
     assert "did not print" in warning and "Tell the user" in warning
     assert latex_renderer.figures_not_printed_warning(
         {"figures": []}) is None
+
+
+# ── tables the engine does not print whole (GM-213) ───────────────────
+
+def _choices_html(words: int, ident: str = "every_slice") -> str:
+    """A package's "Choices made" table: five columns, the middle row's
+    basis ``words`` numbered words long, each other-options cell ending
+    in a long unbroken name."""
+    from calc_package.template import CALC_PACKAGE_CSS
+    rows = "".join(
+        f"<tr><td>choice {i}</td><td>used {i}</td><td>default</td><td>"
+        + " ".join(f"b{i}w{k}" for k in range(words if i == 2 else 12))
+        + f"</td><td>other{i} (m_alpha_rule='{ident}')</td></tr>"
+        for i in range(5))
+    return (f"<html><head><style>{CALC_PACKAGE_CSS}</style></head><body>"
+            "<p>Choices made.</p><table class=\"data-table\"><thead><tr>"
+            "<th>Choice</th><th>Used</th><th>How</th><th>Basis</th>"
+            f"<th>Other options</th></tr></thead><tbody>{rows}</tbody>"
+            "</table><p>References follow.</p></body></html>")
+
+
+def _placed(path) -> list:
+    """``(word, rect)`` as printed, page by page."""
+    with fitz.open(path) as doc:
+        return [(w[4], fitz.Rect(w[:4])) for page in doc
+                for w in page.get_text("words")]
+
+
+def test_the_engine_cuts_off_a_row_taller_than_a_page():
+    """Left as a table, most of the tall cell is lost: the engine never
+    splits a row across pages (master lost 18 and 43 words of two
+    packages' choices tables)."""
+    pdf, _at = latex_renderer._story_pass(_choices_html(1500), _LETTER,
+                                          _WHERE)
+    printed = set(re.findall(r"b2w\d+", " ".join(_texts(pdf))))
+    assert len(printed) < 1500
+
+
+def test_a_cell_taller_than_a_page_prints_every_word(tmp_path):
+    out = render_html_pdf_story(_choices_html(1500),
+                                str(tmp_path / "tall.pdf"))
+    placed = _placed(out["path"])
+    assert [w for w, _r in placed if w.startswith("b2w")] == [
+        f"b2w{k}" for k in range(1500)]
+    margins = _WHERE + (-1, -1, 1, 1)
+    assert all(margins.contains(r) for _w, r in placed)
+    words = [w for w, _r in placed]
+    # a block per row: the first cell, then each other one under its heading
+    assert words[words.index("Choice:"):][:8] == [
+        "Choice:", "choice", "0", "Used:", "used", "0", "How:", "default"]
+    assert words.index("References") > words.index("other4")
+
+
+def test_a_table_too_wide_for_the_page_stays_inside_it(tmp_path):
+    """Long unbroken names in five columns: no column is narrower than its
+    longest word, so the table ran past the right margin."""
+    out = render_html_pdf_story(_choices_html(20, "x" * 60),
+                                str(tmp_path / "wide.pdf"))
+    placed = _placed(out["path"])
+    margins = _WHERE + (-1, -1, 1, 1)
+    assert all(margins.contains(r) for _w, r in placed)
+    assert sum(w.startswith("b2w") for w, _r in placed) == 20
+
+
+def test_a_table_a_little_too_wide_is_compacted_not_reflowed():
+    from calc_package.template import CALC_PACKAGE_CSS
+    rows = "".join("<tr>" + "".join(f"<td>{'v' * 16}{i}{j}</td>"
+                                    for j in range(4)) + "</tr>"
+                   for i in range(3))
+    html = (f"<html><head><style>{CALC_PACKAGE_CSS}</style>"
+            f"{latex_renderer._PDF_STORY_CSS}</head><body>"
+            f'<table class="data-table">{rows}</table></body></html>')
+    out = latex_renderer._reflow_tables(html, _WHERE)
+    assert 'class="wide-pdf-table data-table"' in out
+    assert "<table" in out and 'class="pdf-rows"' not in out
+    small = html.replace("v" * 16, "v")
+    assert latex_renderer._reflow_tables(small, _WHERE) == small
+
+
+def _numeric_html(columns: int, rows: int, digits: int) -> str:
+    """A calculation table: ``rows`` rows of ``columns`` numbers."""
+    from calc_package.template import CALC_PACKAGE_CSS
+    head = "".join(f"<th>Value {j} (kPa)</th>" for j in range(columns))
+    body = "".join(
+        "<tr>" + "".join(f"<td>{(i + 1) * (j + 1) * 1.25:.{digits}f}</td>"
+                         for j in range(columns)) + "</tr>"
+        for i in range(rows))
+    return (f"<html><head><style>{CALC_PACKAGE_CSS}</style>"
+            f"{latex_renderer._PDF_STORY_CSS}</head><body>"
+            f'<table class="data-table"><thead><tr>{head}</tr></thead>'
+            f"<tbody>{body}</tbody></table></body></html>")
+
+
+def test_a_long_numeric_table_stays_a_table():
+    """Only a single row taller than a third of a page makes blocks; a
+    calculation table is never reflowed for being long."""
+    html = _numeric_html(6, 200, 3)
+    assert latex_renderer._reflow_tables(html, _WHERE) == html
+
+
+def test_a_ten_column_numeric_table_is_compacted_not_reflowed():
+    html = _numeric_html(10, 30, 4)
+    out = latex_renderer._reflow_tables(html, _WHERE)
+    assert 'class="wide-pdf-table data-table"' in out
+    assert 'class="pdf-rows"' not in out
+
+
+def test_a_table_as_blocks_keeps_every_heading_and_cell():
+    table = ("<table><caption>Layers</caption><thead>"
+             "<tr><th rowspan=2>Layer</th><th colspan=2>Strength</th></tr>"
+             "<tr><th>phi</th><th>c</th></tr></thead><tbody>"
+             "<tr><td>clay</td><td>28</td><td>5 kPa</td></tr>"
+             "<tr><th colspan=3>Below the water table</th></tr>"
+             "<tr><td>sand<td><td>0</table>")
+    text = re.sub(r"<[^>]+>", " ", latex_renderer._table_as_blocks(table))
+    assert text.split() == (
+        "Layers Layer: clay Strength phi: 28 Strength c: 5 kPa "
+        "Below the water table Layer: sand Strength c: 0").split()
+    assert latex_renderer._table_as_blocks(
+        "<table><tr><th>A</th></tr></table>") is None
+
+
+def _foot_table_html(margin_pt: float) -> str:
+    """Thirty rows under a paragraph ``margin_pt`` down the first page:
+    from about 156 to 188 pt the table ends at the foot of the second page,
+    and the engine lays out that page's rows again on every page after it
+    (GM-213)."""
+    from calc_package.template import CALC_PACKAGE_CSS
+    rows = "".join(f"<tr><td>Row {i} " + "word " * 12
+                   + f"</td><td>{i}.5</td></tr>" for i in range(30))
+    return (f"<html><head><style>{CALC_PACKAGE_CSS}</style></head><body>"
+            f'<p style="margin-top:{margin_pt}pt">Before the table.</p>'
+            '<table class="data-table"><thead><tr><th>Item</th>'
+            f"<th>Value</th></tr></thead><tbody>{rows}</tbody></table>"
+            "<p>References follow.</p></body></html>")
+
+
+@pytest.mark.parametrize("margin_pt", [156, 172, 188])
+def test_a_table_that_ends_at_a_page_foot_prints(tmp_path, margin_pt):
+    html = _foot_table_html(margin_pt)
+    with pytest.raises(latex_renderer._StoryLoop):        # the engine's trap
+        latex_renderer._story_pass(html, _LETTER, _WHERE, 60,
+                                   loop_early=True)
+    out = render_html_pdf_story(html, str(tmp_path / "foot.pdf"))
+    with fitz.open(out["path"]) as doc:
+        pages = [page.get_text() for page in doc]
+    assert re.findall(r"Row \d+", " ".join(pages)) == [
+        f"Row {i}" for i in range(30)]
+    last = next(p for p in pages if "Row 29" in p)
+    assert last.index("Item") < last.index("Row 29")       # under its heading
+    assert "References follow." in pages[-1]
+
+
+def test_a_loop_is_stopped_by_closing_the_table_before_its_last_row():
+    html = _foot_table_html(172)
+    with pytest.raises(latex_renderer._StoryLoop):
+        latex_renderer._unlooped(html, _LETTER, _WHERE, 60, fixes=0,
+                                 last_word=False)
+    text, _pdf, at, edits = latex_renderer._unlooped(html, _LETTER, _WHERE,
+                                                     60)
+    (pos, n), = edits
+    assert text[:pos] + text[pos + n:] == html
+    assert text[pos:pos + n].startswith(
+        "</table>" + latex_renderer._PAGE_BREAK + '<table class="data-table">'
+        "<thead>")
+    assert text[pos + n:].startswith("<tr><td>Row 29 ")
+
+
+def test_a_table_started_again_keeps_its_heading():
+    restart = latex_renderer._table_restart
+    html = ('<table id="b3" class="data-table"><thead id="b4"><tr><th>A'
+            "</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>")
+    assert restart(html, 0) == (
+        '<table class="data-table"><thead><tr><th>A</th></tr></thead>')
+    html = "<table><tr><th>A</th><th>B</th></tr><tr><td>1</td></tr></table>"
+    assert restart(html, 0) == "<table><tr><th>A</th><th>B</th></tr>"
+    assert restart("<table><tr><td>1</td></tr></table>", 0) == "<table>"

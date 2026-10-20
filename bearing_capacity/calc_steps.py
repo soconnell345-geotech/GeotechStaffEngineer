@@ -667,8 +667,12 @@ def _depth_factor_reference(analysis) -> str:
     if analysis.factor_method == "meyerhof":
         return ("Meyerhof; UFC 3-220-20 Table 5-6; k beyond D_f/B = 1, "
                 "Brinch Hansen (1970), Table 5-8 note B")
-    return ("Brinch Hansen (1970); UFC 3-220-20 Tables 5-7, 5-8; "
-            "FHWA GEC-6 Table 5-4")
+    if analysis.soil.layer1.friction_angle == 0:
+        return ("Brinch Hansen (1970); UFC 3-220-20 Tables 5-7, 5-8; "
+                "FHWA GEC-6 Table 5-4")
+    # GM-214: Table 5-8's printed d_c is half its note C formula's
+    return ("Brinch Hansen (1970); UFC 3-220-20 Tables 5-7, 5-8 (d_c by "
+            "its note C; the table prints half); FHWA GEC-6 Table 5-4")
 
 
 def _inclination_factor_equation(analysis, phi_deg: float) -> str:
@@ -676,7 +680,7 @@ def _inclination_factor_equation(analysis, phi_deg: float) -> str:
     :func:`bearing_capacity.factors.inclination_factors` works them out."""
     if analysis.factor_method == "meyerhof":
         return ("i_c = i_q = (1 - \u03b2/90)\u00b2,  "
-                "i_\u03b3 = (1 - \u03b2/\u03c6)\u00b2")
+                "i_\u03b3 = (1 - \u03b2/\u03c6)\u00b2,  \u03b2 < \u03c6")
     m = "m = (2 + B/L)/(1 + B/L)"
     if phi_deg == 0:
         return f"i_c = 1 - m\u00d7H/(A'\u00d7c\u00d7N_c),  H = V\u00d7tan(\u03b2),  {m}"

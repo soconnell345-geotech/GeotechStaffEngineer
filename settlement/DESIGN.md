@@ -68,6 +68,15 @@ analyze_consolidation(layers, delta_sigma, ...) -> ConsolidationResult
   (0.95), where the rigid circle (0.79) is below the flexible circle's
   (0.85). `SettlementAnalysis` keeps Schleicher's closed form for the
   centre of a flexible footing (1.122 for a square).
+- **The rigid square, 0.99 (GM-214, 2026-10-19).** Kept as printed. The
+  library was searched for another printed value: FHWA NHI-06-089 Table
+  8-13 (p. 8-59) prints the same Winterkorn & Fang table with 0.99; UFC
+  3-220-10 (2026) / DM 7.1 give the elastic method through Christian &
+  Carrier's mu_0 and mu_1 (Fig. 5-6) with no rigid factor; UFC 3-220-20,
+  NHI-06-088 and EN 1997-1 and -2 print none. Bowles-type tables are not
+  in the library. So there is no cited alternative to offer; a square's
+  `choices` basis carries the note (`immediate.GEC6_RIGID_SQUARE_NOTE`)
+  and says to give Iw for another value. No number changes.
 
 ## The values the analysis used (GM-143)
 
