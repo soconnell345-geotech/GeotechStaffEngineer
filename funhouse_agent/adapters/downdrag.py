@@ -62,6 +62,7 @@ _VALID_PARAMS = (
     "neutral_plane_method", "toe_mobilization", "endo_bearing_condition",
     "skin_friction_stress", "include_pile_weight",
     "influence_depth_criterion", "influence_depth_warning_percent",
+    "alpha_chart", "fig_7_17_curve", "alpha_transition_zone",
 )
 
 
@@ -139,6 +140,9 @@ def _build_analysis(params, method, valid):
             "influence_depth_warning_percent",
             INFLUENCE_DEPTH_WARNING_PERCENT),
         ground_elevation=params.get("ground_elevation"),
+        alpha_chart=params.get("alpha_chart", "ufc_fig_6_14"),
+        fig_7_17_curve=params.get("fig_7_17_curve"),
+        alpha_transition_zone=params.get("alpha_transition_zone"),
     )
     return analysis
 
@@ -640,7 +644,7 @@ METHOD_INFO = {
         "parameters": {
             "pile_length": {"type": "float", "required": True, "description": "Pile length (m)."},
             "pile_diameter": {"type": "float", "required": True, "description": "Pile diameter (m)."},
-            "layers": {"type": "array", "required": True, "description": "Array of {thickness, soil_type, unit_weight, phi, cu, beta, alpha, skin_friction_method, settling, description} dicts. soil_type must be 'cohesionless' or 'cohesive' (NOT 'sand'/'clay'/'settling_fill'). Skin friction: cohesionless = beta x sigma'v (Beta method, UFC 3-220-20 Eq 6-7), beta given or from phi; cohesive = alpha x cu (Alpha method, Eq 6-8, the default; alpha 1.0 unless given), or with skin_friction_method 'beta' beta x sigma'v for long-term, drained conditions (UFC 3-220-20 6-5.4.1; GEC-12 7.2.1.3.4), beta required (GEC-12 Table 7-9: clay 0.15-0.35; cu then only for a toe in the layer). A cohesive layer takes no phi, and beta only with skin_friction_method 'beta'; a cohesionless layer takes no alpha. Mark settling layers with settling=True; a settling layer also needs its compressibility: cohesionless -> E_s (elastic modulus, kPa, > 0) and optional nu_s; cohesive -> Cc and e0 (optional Cr, sigma_p kPa) or C_ec/C_er."},
+            "layers": {"type": "array", "required": True, "description": "Array of {thickness, soil_type, unit_weight, phi, cu, beta, alpha, skin_friction_method, settling, description} dicts. soil_type must be 'cohesionless' or 'cohesive' (NOT 'sand'/'clay'/'settling_fill'). Skin friction: cohesionless = beta x sigma'v (Beta method, UFC 3-220-20 Eq 6-7), beta given or from phi; cohesive = alpha x cu (Alpha method, Eq 6-8, the default; alpha as given, else read off alpha_chart: UFC 3-220-20 Table 6-16 and Fig 6-14 by default), or with skin_friction_method 'beta' beta x sigma'v for long-term, drained conditions (UFC 3-220-20 6-5.4.1; GEC-12 7.2.1.3.4), beta required (GEC-12 Table 7-9: clay 0.15-0.35; cu then only for a toe in the layer). A cohesive layer takes no phi, and beta only with skin_friction_method 'beta'; a cohesionless layer takes no alpha. Mark settling layers with settling=True; a settling layer also needs its compressibility: cohesionless -> E_s (elastic modulus, kPa, > 0) and optional nu_s; cohesive -> Cc and e0 (optional Cr, sigma_p kPa) or C_ec/C_er."},
             "Q_dead": {"type": "float", "required": False, "default": 0.0, "description": "Dead load at pile top (kN)."},
             "fill_thickness": {"type": "float", "required": False, "default": 0.0, "description": "Fill thickness causing downdrag (m)."},
             "fill_unit_weight": {"type": "float", "required": False, "default": 19.0, "description": "Fill unit weight (kN/m3)."},
@@ -661,6 +665,9 @@ METHOD_INFO = {
             "skin_friction_stress": {"type": "string", "required": False, "default": "final", "description": "Effective stress for Beta-method skin friction (sand, and clay with skin_friction_method 'beta') and the sand toe: 'final' (default; sigma'v0 + fill/drawdown change, as UFC 3-220-20 6-7.4 step 2 requires) or 'initial' (sigma'v0).", "allowed_values": ["final", "initial"]},
             "influence_depth_criterion": {"type": "string", "required": False, "default": "bearing_stress", "description": "How deep below the toe the toe load is counted in the settlement (toe force spread 2V:1H from an equivalent footing as wide as the pile): to where its stress increase falls below 'bearing_stress' (default) = 10% of the bearing stress of the equivalent footing (UFC 3-220-20 6-5.8.4.3; 2.16 pile widths for a single pile) or 'effective_stress' = 10% of the existing vertical effective stress (FHWA GEC-12 Vol I step 1c: 7.3.5.3 for clay below the toe, 7.3.5.6 for sand, 7.3.5.5 for both; deeper for a loaded toe in soft soil). Either way the fill / drawdown, which does not decay with depth, compresses the settling layers below the toe down to the bottom of the soil profile; give the profile down to the base of the compressible soil.", "allowed_values": ["bearing_stress", "effective_stress"]},
             "influence_depth_warning_percent": {"type": "float", "required": False, "default": 25.0, "description": "The result warns when the two influence_depth_criterion rules (UFC 3-220-20 6-5.8.4.3 and FHWA GEC-12 step 1c) give pile head settlements or drag forces that differ by more than this percentage of the larger of the two (of allowable_settlement / structural_capacity where given), and whenever a settlement or structural check passes with one rule and fails with the other. The rule used is not changed. Default 25 %: the engineer's call, not a reference's figure; neither reference says how far two settlement estimates may differ before it matters."},
+            "alpha_chart": {"type": "string", "required": False, "default": "ufc_fig_6_14", "allowed_values": ["ufc_fig_6_14", "gec12_fig_7_17"], "description": "Where a cohesive layer's alpha comes from when the layer leaves it out (a given alpha is kept). 'ufc_fig_6_14' (default; UFC 3-220-20 6-5.4.2, pp. 415-417, as its drag example App. B-5.4 reads it): soft clay (su below 800 psf) alpha 1 by Table 6-16; firm to very stiff clay off Fig 6-14 by su/Pa, curve A at Z of 40b or more, curve B at Z = 10b, linear between, Z from the ground surface to the clay's base or the pile toe and b = pile_diameter. 'gec12_fig_7_17': FHWA GEC-12 7.2.1.3.2 Step 1, Ca off Fig. 7-17 by su, D/b and fig_7_17_curve, as drawn (Ca may exceed su). choices states each clay's alpha and where it came from."},
+            "fig_7_17_curve": {"type": "string", "required": False, "allowed_values": ["concrete_timber_corrugated", "smooth_steel"], "description": "With alpha_chart 'gec12_fig_7_17' only, and then required where a clay leaves alpha out: the Fig. 7-17 curves for the pile, 'concrete_timber_corrugated' (concrete, timber or corrugated steel; an H-pile takes the corrugated curve, GEC-12 p. 247) or 'smooth_steel'."},
+            "alpha_transition_zone": {"type": "bool", "required": False, "description": "Whether the top 10 pile widths of a stiff or very stiff clay (su 1500 psf or more) directly under soft clay take UFC 3-220-20 Eq 6-9, alpha = 0.28 (su/Pa)^-0.44 with the unit side resistance at least the soft clay's, and under sand alpha 1.0 (pp. 416-417, as App. B-5.4 does). Left out: true with alpha_chart 'ufc_fig_6_14', false with 'gec12_fig_7_17'. Applies only where the stiff clay's alpha is left out."},
         },
         "returns": {
             "neutral_plane_depth_m": "Neutral plane depth (m) of the headline method.",
@@ -685,7 +692,7 @@ METHOD_INFO = {
             "geotechnical_ok": "Q_dead <= total resistance (when checked).",
             "structural_ok": "LRFD demand <= structural_capacity (when given).",
             "z_m": "Depth profile (m); with axial_load_kN, soil_settlement_mm and unit_skin_friction_kPa at the same depths.",
-            "choices": "The choices the run made, given or default, with their basis: the rule for the depth below the toe (UFC 3-220-20 by default, GEC-12 the option), influence_depth_warning_percent, the engineer's call, and the skin friction method of the cohesive layers (Alpha by default, Beta the option) with their depths and alpha or beta. Report them.",
+            "choices": "The choices the run made, given or default, with their basis: the rule for the depth below the toe (UFC 3-220-20 by default, GEC-12 the option), influence_depth_warning_percent, the engineer's call, and the skin friction method of the cohesive layers (Alpha by default, Beta the option) with their depths and beta, and the alpha of the Alpha-method clays, as given or read off alpha_chart, with each reading's source. Report them.",
         },
     },
     "endo_downdrag": {
@@ -850,7 +857,7 @@ METHOD_INFO["post_liquefaction_downdrag"] = {
         "side_resistance_comparison": "One table {columns, rows}, a row a side-resistance option for the liquefied layers (the headline method): option, source, neutral plane, drag force, pile settlement, note (why it was not evaluated). liquefied_side_resistance is the one used. detail='full': each option's quoted source and assumptions, Q_np (and dragload_kN with include_pile_weight) and the soil settlement at the plane. Present it as a table.",
         "by_method": "One table {columns, rows}, a row a neutral-plane method: neutral plane, drag force and pile settlement before and after, and a note (why it gives no plane, before / after; on the headline method's row, what bears on its plane). The headline row is headline_method_before / headline_method_after. Q_np = Q_dead + drag force. detail='full': each method's source and assumptions, Q_np (and dragload_before_kN / dragload_after_kN with include_pile_weight), and after liquefaction its toe force and settlement parts. Present it as a table.",
         "structural_ok / structural_demand_kN": "1.25 Q_dead + 1.10 DF after liquefaction <= structural_capacity (when given).",
-        "choices": "Each choice the run made, given or default, with its basis; the limit states GEC-10 10.7 checks the drag at (structural strength and service), with AASHTO's Extreme Event I (load factor 1.0) as the alternative; the skin friction method of the cohesive layers (Alpha by default, Beta the option); and, where the rule for the depth below the toe moves a pile head settlement or drag force, that rule (influence_depth_criterion) and influence_depth_warning_percent, the engineer's call. A choice a warning states is left to detail='full': that rule and threshold where the warning on the two rules is given, fs_liq_threshold where readings above it are left out. Report them.",
+        "choices": "Each choice the run made, given or default, with its basis; the limit states GEC-10 10.7 checks the drag at (structural strength and service), with AASHTO's Extreme Event I (load factor 1.0) as the alternative; the skin friction method of the cohesive layers (Alpha by default, Beta the option) and the alpha of the Alpha-method clays, with each reading's source; and, where the rule for the depth below the toe moves a pile head settlement or drag force, that rule (influence_depth_criterion) and influence_depth_warning_percent, the engineer's call. A choice a warning states is left to detail='full': that rule and threshold where the warning on the two rules is given, fs_liq_threshold where readings above it are left out. Report them.",
         "neutral_plane_basis / after": "detail='full' only: the headline method's basis (neutral_plane_basis_before when it differs before the earthquake); after = the resistance below the plane, below_toe and the depth profiles z_m / axial_load_kN / soil_settlement_mm / unit_skin_friction_kPa after liquefaction.",
     },
 }
@@ -884,16 +891,20 @@ _NP_METHOD["description"] = _NP_METHOD["description"].replace(
 # comes from consolidation parameters (cgpr56.fellenius_method_cgpr56),
 # and the bearing layer's Poisson's ratio only to the PILENEG row, which
 # runs with pile_width, bearing_E and a free-field settlement profile; the
-# FS_liq threshold only for a liquefaction result.
+# FS_liq threshold only for a liquefaction result. The alpha chart
+# (GM-255) only where a clay's alpha is read off it, which the module
+# reports in its choices (a condition on the layers cannot be declared).
 _EQ_FOOTING = {"consolidation": "set"}
 declare_applies_when(METHOD_INFO, {
     "downdrag_analysis": {
         "pile_unit_weight": {"include_pile_weight": [True]},
-        "fill_unit_weight": {"fill_thickness": "set"}},
+        "fill_unit_weight": {"fill_thickness": "set"},
+        "alpha_chart": False},
     "post_liquefaction_downdrag": {
         "pile_unit_weight": {"include_pile_weight": [True]},
         "fill_unit_weight": {"fill_thickness": "set"},
-        "fs_liq_threshold": {"liquefaction_result": "set"}},
+        "fs_liq_threshold": {"liquefaction_result": "set"},
+        "alpha_chart": False},
     "fellenius_cgpr56": {"eq_footing_load": _EQ_FOOTING,
                          "eq_footing_length": _EQ_FOOTING},
     "downdrag_method_comparison": {
