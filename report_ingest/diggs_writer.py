@@ -678,6 +678,7 @@ class _Writer:
         # gives a linear exploration that is not a pit.
         element = "TrialPit" if inv.kind == "test_pit" else "Borehole"
         depth = _si(inv.total_depth)
+        self._note_unmeasured_depth(inv, "total depth", inv.total_depth)
         elev = _si(inv.elevation)
         if inv.elevation is not None and elev is None:
             self.notes.skipped.append(
@@ -739,12 +740,26 @@ class _Writer:
             self.out("</locality>", 3)
         self.out("<referencePoint>", 3)
         self.out(f'<PointLocation gml:id={quoteattr(gml_id + "_rp")}>', 4)
+        said: List[str] = []
         if missing:
-            self.text_element(
-                "gml:description",
+            said.append(
                 f"{_axes(missing)} not given in the source: written as NaN "
                 f"because DIGGS requires a reference point. Unknown, not "
-                f"zero.", 5)
+                f"zero.")
+        if re.search(r"\bnorth\b|\brotat|\bazimuth\b",
+                     inv.coordinate_system, re.I):
+            # A local grid whose text states where north is: DIGGS has no
+            # element for a grid's rotation, so the text travels in the
+            # point's description (the one it allows) and in the notes.
+            said.append(f"coordinate system as printed: "
+                        f"{inv.coordinate_system.strip()}")
+            self.notes.assumed.append(
+                f"{inv.investigation_id}: the coordinate system states where "
+                f"north is ({inv.coordinate_system.strip()!r}); DIGGS has no "
+                f"element for a grid rotation, so it is written as text in "
+                f"the reference point's description")
+        if said:
+            self.text_element("gml:description", " ".join(said), 5)
         srs = (f' srsName={quoteattr(inv.coordinate_system)}'
                if inv.coordinate_system.strip() else "")
         point = (f"{_coord_or_unknown(x)} {_coord_or_unknown(y)} "
@@ -775,6 +790,23 @@ class _Writer:
         self.out(f"</{element}>", 2)
         self.out("</samplingFeature>", 1)
         self.notes.investigations += 1
+
+    def _note_unmeasured_depth(self, inv: Investigation, what: str,
+                               q: Optional[Quantity]) -> None:
+        """Say so when a depth was taken from a legend or a plan.
+
+        ``totalMeasuredDepth`` reads as a depth measured in the hole. A
+        record whose provenance says the value came off a legend or a plan
+        sheet is not that, and the file's notes name it.
+        """
+        if q is None or q.prov is None:
+            return
+        note = (q.prov.note or "").lower()
+        if re.search(r"\b(legend|plan|plan view|site plan|key)\b", note):
+            self.notes.assumed.append(
+                f"{inv.investigation_id}: {what} {q.value:g} {q.unit} was "
+                f"taken from a legend or plan ({q.prov.note.strip()}), not "
+                f"measured on the log")
 
     def _position_placeholder(self, inv: Investigation,
                               missing: Sequence[str]) -> None:
@@ -1057,6 +1089,7 @@ class _Writer:
                     f"{ly.top.unit!r} -- unit not in the conversion table")
         if not layers:
             return
+        layers = self._resolve_dittos(inv, layers)
         sys_id = self.uid(f"litho_{_ncname(gml_id)}")
         self.out("<observation>", 1)
         self.out(f"<LithologySystem gml:id={quoteattr(sys_id)}>", 2)
@@ -1070,6 +1103,32 @@ class _Writer:
             self.lithology_observation(layer, gml_id, sys_id, n)
         self.out("</LithologySystem>", 2)
         self.out("</observation>", 1)
+
+    def _resolve_dittos(self, inv: Investigation,
+                        layers: List[Layer]) -> List[Layer]:
+        """A description that is only a ditto mark (``"``, ``do.``,
+        ``ditto``) means "as above": it is written as the description of the
+        layer above it, and each one is named in the write notes. Written as
+        the bare mark it would read, in the file, as a description of a
+        quote character. The first layer has nothing above it and keeps the
+        mark, named."""
+        out: List[Layer] = []
+        for ly in layers:
+            if ly.description.strip().lower() in _DITTO_MARKS:
+                above = out[-1].description if out else ""
+                if above.strip():
+                    ly = ly.model_copy(update={"description": above})
+                    self.notes.assumed.append(
+                        f"{inv.investigation_id}: the description at "
+                        f"{ly.top.value:g} {ly.top.unit} is a ditto mark; "
+                        f"written as the description of the layer above")
+                else:
+                    self.notes.skipped.append(
+                        f"{inv.investigation_id}: the description at "
+                        f"{ly.top.value:g} {ly.top.unit} is a ditto mark "
+                        f"with no layer above it; kept as printed")
+            out.append(ly)
+        return out
 
     def lithology_observation(self, layer: Layer, gml_id: str, sys_id: str,
                               n: int) -> None:
@@ -2498,6 +2557,9 @@ class _Values:
         self.number(name, klass, float(value), "", dictionary)
 
 
+#: What a log prints for "same as the description above".
+_DITTO_MARKS = ('"', "”", "''", "〃", "do", "do.", "ditto")
+
 #: Words a log prints for a drive that went by weight alone: the weight of
 #: hammer (WOH) or of the rods (WOR). Zero blows, as DIGGS counts them.
 _WEIGHT_ONLY = ("WOH", "WOR")
@@ -2519,9 +2581,17 @@ def _drive_sets(record: SPT, assumed: Optional[List[str]] = None,
     """
     default = 0.1524
     increment = record.increment.to_si() if record.increment else None
-    step = increment.value if increment is not None else default
+    base_step = increment.value if increment is not None else default
+    # Unequal drives (20, 15, 15 cm): one length per entry of ``blows``, in
+    # order. An entry it does not reach, or whose length will not convert,
+    # takes the record's single increment.
+    each: List[Optional[float]] = []
+    for q in record.increments or []:
+        got = q.to_si()
+        each.append(got.value if got is not None else None)
     out: List[Tuple[int, float]] = []
-    for entry in record.blows:
+    for index, entry in enumerate(record.blows):
+        step = each[index] if index < len(each) and each[index] is not None             else base_step
         if isinstance(entry, (int, float)):
             out.append((int(entry), step))
             continue
