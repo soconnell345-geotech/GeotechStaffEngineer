@@ -1069,7 +1069,11 @@ class TestWallChecksReported:
         assert next(iter(out)) == "verdict"
         # the base friction (GM-173), then how the surcharge over the heel
         # was counted, as defaults the run lists (GM-157)
-        friction, live, bearing = out["choices"]
+        # (plus how a pavement or slab is modelled, GM-231)
+        friction, live, bearing = [c for c in out["choices"]
+                                   if c["what"] != "pavement or slab over the backfill"]
+        assert any(c["what"] == "pavement or slab over the backfill"
+                   for c in out["choices"])
         assert friction["what"] == "base friction delta_b (sliding)"
         assert friction["how"] == "default"
         assert "delta_base" in out["defaults_used"]
