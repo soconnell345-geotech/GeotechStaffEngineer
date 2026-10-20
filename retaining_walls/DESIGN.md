@@ -477,6 +477,27 @@ no live load on the zone and does not move. Tests:
     "F* = tan φ at a depth of 20 ft (6 m) and below"). Until GM-112's review
     (2026-10-16) the strip curves ran over 0–6.0 m, the rounded metric value;
     on GEC-11 Example E3 that left F* 0.6 % low.
+    **The top value is 1.2 + log Cu, 2.0 maximum (GM-246, 2026-10-20).**
+    GEC-11 Vol I Eq. 3-4 (p. 3-20) gives F* = 1.2 + log Cu at the top of
+    the structure, Cu the backfill's uniformity coefficient D60/D10, and
+    says "If the specific Cu for the wall backfill is unknown at design
+    time, a Cu = 4 should be assumed (i.e., F* = 1.8 at the top of the
+    wall) for reinforced fills meeting the requirements of Section 3.1".
+    Every strip took 2.0 before, the value a backfill reaches only at Cu
+    6.3 or more (Vol II Examples E3 and E5, Cu 7.0, take it: 1.2 + log 7.0
+    = 2.045, use 2.000). `mse_wall` takes `Cu_backfill` (aliases `Cu`,
+    `uniformity_coefficient`); left out, Cu = 4, and the result's choices
+    say so, quote the page and give FOS_pullout at the top level and the
+    lowest at the other reading (Cu 6.3 or more, or Cu 4 when one was
+    given). It is refused where the F* takes no Cu (a steel grid given its
+    t/St, a geosynthetic, and `mse_lrfd_external_stability`). At phi 34,
+    F* at 0, 3 and 6 m: 2.000, 1.348, 0.695 before; 1.802, 1.247, 0.692
+    now; unchanged at 6.096 m and below (tan 34 = 0.675). On a 9 m wall
+    the top level's pullout falls 10 % (123.7 to 111.8 kN/m at 0.38 m)
+    and the levels below 6.1 m do not change, so the lowest FOS_pullout
+    there is the same. The library's `F_star_metallic` takes `Cu` too. The
+    reference library's GEC-11 Table 3-6 rows still give tan phi at the
+    top (BACKLOG REF-42); the module does not read them.
   - steel bar-mat / welded-grid ("bar_mat"/"welded_grid"/"metallic_grid"):
     Kr/Ka 2.5→1.2 over 0–20 ft (6.096 m); F* 20(t/St)→10(t/St) over 0–20 ft,
     where t = transverse-bar diameter and St = transverse-bar spacing
@@ -486,7 +507,7 @@ no live load on the zone and does not move. Tests:
   - geosynthetic ("geosynthetic"): Kr/Ka 1.0; F* 0.67·tan(φ).
   `check_internal_stability` auto-selects the bar-mat curves for a
   `metallic_grid` reinforcement (e.g. `WELDED_WIRE_GRID_W11`). Q4 left the
-  strip default unchanged.
+  strip default unchanged; GM-246 changed its top value (above).
   - **Source basis (built-in reinforcement products).** The product constants
     (the `WELDED_WIRE_GRID_W11` grid geometry, the 75x4 mm ribbed-strip
     `T_allowable`, etc.) are **representative values typical of the reinforcement

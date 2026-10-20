@@ -32,6 +32,9 @@ _WALL_ALIASES = {"phi": "phi_backfill", "gamma": "gamma_backfill",
 # not alias c/cohesion to c_backfill (the reject message would name a key the
 # caller never sent).
 _MSE_ALIASES = {k: v for k, v in _WALL_ALIASES.items() if v != "c_backfill"}
+# mse_wall alone takes the backfill's uniformity coefficient (GM-246)
+_MSE_WALL_ALIASES = {**_MSE_ALIASES, "Cu": "Cu_backfill",
+                     "uniformity_coefficient": "Cu_backfill"}
 
 _REINFORCEMENT_DB = {
     "ribbed_steel_strip_75x4": RIBBED_STEEL_STRIP_75x4,
@@ -234,7 +237,7 @@ def run_mse_wall(params, *, method="mse_wall"):
     in force are the geometry (``geom``), the reinforcement and each input
     given or defaulted, by the tool's names. ``method`` names the caller in
     error messages."""
-    params = apply_aliases(params, _MSE_ALIASES)
+    params = apply_aliases(params, _MSE_WALL_ALIASES)
     reject_unknown_params(
         params,
         ("wall_height", "reinforcement_length", "reinforcement_spacing",
@@ -246,7 +249,7 @@ def run_mse_wall(params, *, method="mse_wall"):
          "reinforcement_transverse_spacing",
          "phi_foundation", "c_foundation", "q_allowable",
          "phi_retained", "gamma_retained", "traffic_vertical_resists",
-         "live_load_resists", "surcharge_in_bearing"),
+         "live_load_resists", "surcharge_in_bearing", "Cu_backfill"),
         method=method)
     require_params(params, ["wall_height", "gamma_backfill", "phi_backfill"],
                    method=method)
@@ -273,6 +276,7 @@ def run_mse_wall(params, *, method="mse_wall"):
         "live_load_resists": bool(params.get("live_load_resists", False)),
         "surcharge_in_bearing": bool(params.get("surcharge_in_bearing",
                                                 True)),
+        "Cu_backfill": params.get("Cu_backfill"),
     }
     result = analyze_mse_wall(
         geom, gamma_backfill=used["gamma_backfill"],
@@ -284,6 +288,7 @@ def run_mse_wall(params, *, method="mse_wall"):
         traffic_vertical_resists=used["traffic_vertical_resists"],
         live_load_resists=used["live_load_resists"],
         surcharge_in_bearing=used["surcharge_in_bearing"],
+        Cu_backfill=used["Cu_backfill"],
     )
     return result, used
 
@@ -850,7 +855,8 @@ METHOD_INFO = {
             "gamma_backfill": {"type": "float", "required": True, "description": "Backfill unit weight (kN/m3)."},
             "phi_backfill": {"type": "float", "required": True, "description": "Backfill friction angle (degrees)."},
             "reinforcement_name": {"type": "str", "required": False, "description": "Built-in reinforcement name (use list_reinforcement to see options), or omit and define a custom reinforcement via reinforcement_type + reinforcement_Tallowable."},
-            "reinforcement_type": {"type": "str", "required": False, "default": "geosynthetic", "allowed_values": ["metallic_strip", "metallic_grid", "bar_mat", "welded_grid", "geosynthetic"], "description": "Custom reinforcement type. Drives the internal-stability lateral-stress-ratio Kr/Ka and pullout F* curves: ribbed STRIP (metallic_strip: Kr/Ka 1.7->1.2, F* 2.0->tan-phi), steel bar mat / welded grid (metallic_grid / bar_mat / welded_grid: Kr/Ka 2.5->1.2, F* 20(t/St)->10(t/St) — supply reinforcement_thickness=t and reinforcement_transverse_spacing=St), or geosynthetic (Kr/Ka 1.0)."},
+            "Cu_backfill": {"type": "float", "required": False, "default": 4.0, "description": "Uniformity coefficient Cu = D60/D10 of the reinforced backfill, for the pullout resistance factor of ribbed steel strips: F* = 1.2 + log Cu at the top of the wall, 2.0 maximum, falling linearly to tan phi_backfill at 20 ft (6 m) and below (GEC-11 Vol I Eqs. 3-4 and 3-5, p. 3-20). Left out, Cu = 4 (F* 1.8 at the top): p. 3-20, 'If the specific Cu for the wall backfill is unknown at design time, a Cu = 4 should be assumed' for fills meeting its Sec. 3.1. Ribbed strips only; a steel grid given t/St and a geosynthetic take no Cu and refuse it. The result's choices give the F* used and FOS_pullout at the top level and the lowest at the other reading. Aliases: Cu, uniformity_coefficient."},
+            "reinforcement_type": {"type": "str", "required": False, "default": "geosynthetic", "allowed_values": ["metallic_strip", "metallic_grid", "bar_mat", "welded_grid", "geosynthetic"], "description": "Custom reinforcement type. Drives the internal-stability lateral-stress-ratio Kr/Ka and pullout F* curves: ribbed STRIP (metallic_strip: Kr/Ka 1.7->1.2, F* 1.2 + log Cu (2.0 at most; Cu_backfill) -> tan-phi), steel bar mat / welded grid (metallic_grid / bar_mat / welded_grid: Kr/Ka 2.5->1.2, F* 20(t/St)->10(t/St) — supply reinforcement_thickness=t and reinforcement_transverse_spacing=St), or geosynthetic (Kr/Ka 1.0)."},
             "reinforcement_Tallowable": {"type": "float", "required": False, "description": "Allowable tensile strength (kN/m) for a custom reinforcement. Required when reinforcement_name is not a built-in."},
             "reinforcement_length": {"type": "float", "required": False, "description": "Reinforcement length (m). Auto-sized (0.7H minimum) if omitted."},
             "reinforcement_spacing": {"type": "float", "required": False, "default": 0.6, "description": "Vertical reinforcement spacing (m)."},
@@ -870,7 +876,7 @@ METHOD_INFO = {
             "c_foundation": {"type": "float", "required": False, "default": 0.0, "description": "Foundation soil cohesion (kPa)."},
             "q_allowable": {"type": "float", "required": False, "description": "Allowable bearing pressure (kPa). Without it the external bearing check is NOT RUN (FOS_bearing null, checks_not_run lists 'bearing'); sigma_v is still reported."},
         },
-        "returns": {"verdict": "The result in plain words: failed checks first, then those not checked. Report it to the user.", "choices": "How a live-load surcharge over the reinforced zone was counted in sliding / overturning and in bearing, with the basis and the other reading. Tell the user.", "checks_failed": "Checks run and failed: sliding, overturning, bearing, internal (pullout or rupture at some level).", "checks_not_run": "Checks not run ('bearing' when no q_allowable).", "all_checks_pass": "true only when every check ran and passed; false when one failed; null when none failed but a check was not run.", "FOS_sliding": "Sliding FOS.", "FOS_overturning": "Overturning FOS.", "FOS_bearing": "Bearing FOS q_allowable / sigma_v; null when not checked.", "passes_external": "true / false, or null when nothing failed but bearing was not checked.", "backslope": "With a sloping backfill only: the GEC-11 basis used (Kab, interface angle, h, F_T and its components, the slope fill weight V2; S_eq, sigma_2 and H1 for internal stability). Each internal level then also gives Zp_m, the depth below the slope used for pullout."},
+        "returns": {"verdict": "The result in plain words: failed checks first, then those not checked. Report it to the user.", "choices": "How a live-load surcharge over the reinforced zone was counted in sliding / overturning and in bearing, and for ribbed steel strips the pullout factor F* at the top of the wall (Cu_backfill, given or the Cu = 4 GEC-11 p. 3-20 takes when unknown); each with the basis and the other reading. Tell the user.", "checks_failed": "Checks run and failed: sliding, overturning, bearing, internal (pullout or rupture at some level).", "checks_not_run": "Checks not run ('bearing' when no q_allowable).", "all_checks_pass": "true only when every check ran and passed; false when one failed; null when none failed but a check was not run.", "FOS_sliding": "Sliding FOS.", "FOS_overturning": "Overturning FOS.", "FOS_bearing": "Bearing FOS q_allowable / sigma_v; null when not checked.", "passes_external": "true / false, or null when nothing failed but bearing was not checked.", "backslope": "With a sloping backfill only: the GEC-11 basis used (Kab, interface angle, h, F_T and its components, the slope fill weight V2; S_eq, sigma_2 and H1 for internal stability). Each internal level then also gives Zp_m, the depth below the slope used for pullout."},
     },
     "mse_lrfd_external_stability": {
         "category": "MSE Wall",
@@ -913,7 +919,7 @@ METHOD_INFO = {
 
 declare_aliases(METHOD_INFO, {
     "cantilever_wall": _WALL_ALIASES,
-    "mse_wall": _MSE_ALIASES,
+    "mse_wall": _MSE_WALL_ALIASES,
     "mse_lrfd_external_stability": _MSE_ALIASES,
     "earth_pressure_coefficient": _K_ALIASES,
 })
@@ -926,6 +932,10 @@ METHOD_INFO["mse_lrfd_external_stability"]["refused_parameters"] = {
     "reinforcement_spacing": (
         "external stability does not depend on it; mse_wall's internal "
         "checks use it")}
+METHOD_INFO["mse_lrfd_external_stability"]["refused_parameters"][
+    "Cu_backfill"] = (
+        "external stability does not depend on it; mse_wall's pullout "
+        "check uses it (the ribbed steel strip F*, GEC-11 Eq. 3-4)")
 # GM-179: taken and not used before; mse_lrfd_external_stability uses it.
 METHOD_INFO["mse_wall"]["refused_parameters"] = {
     "gamma_foundation": (
@@ -1007,7 +1017,14 @@ declare_applies_when(METHOD_INFO, {
                      "reinforcement_transverse_spacing")}, **_TRAFFIC,
         "live_load_resists": {"surcharge": "set"},
         "surcharge_in_bearing": {"surcharge": "set"},
-        "broken_backslope_height": {"backfill_slope": "set"}},
+        "broken_backslope_height": {"backfill_slope": "set"},
+        # GM-246: the ribbed steel strip F*; a steel grid given no t/St
+        # falls back to it, and the choices then report the Cu it took
+        "Cu_backfill": [
+            {"reinforcement_name": ["ribbed_steel_strip_75x4"]},
+            {"reinforcement_Tallowable": "set", "reinforcement_name": "unset",
+             "reinforcement_type": ["metallic_strip", "strip",
+                                    "ribbed_strip"]}]},
     "mse_lrfd_external_stability": {
         **_TRAFFIC,
         "broken_backslope_height": {"backfill_slope": "set"},

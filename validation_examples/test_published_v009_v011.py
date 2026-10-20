@@ -335,13 +335,15 @@ def _f_star_barmat(z_ft, t_over_St):
 def test_v010_module_curves_now_include_barmat_branch():
     """PASS (coverage closed, v5.2 Q4): the module's built-in `Kr_Ka_ratio` and
     `F_star_metallic` now carry BOTH the ribbed-metallic-STRIP curves (Kr/Ka
-    1.7->1.2; F* 2.0->tan-phi) AND the steel-bar-mat curves this example uses
-    (Kr/Ka 2.5->1.2; F* 20(t/St)->10(t/St)), selected by reinforcement_type.
-    The strip default is unchanged; the bar-mat branch matches GEC-11 Fig E4-5."""
-    # ribbed strip (default / "metallic") — unchanged
+    1.7->1.2; F* 1.2 + log Cu->tan-phi) AND the steel-bar-mat curves this
+    example uses (Kr/Ka 2.5->1.2; F* 20(t/St)->10(t/St)), selected by
+    reinforcement_type. The bar-mat branch matches GEC-11 Fig E4-5."""
+    # ribbed strip (default / "metallic")
     assert Kr_Ka_ratio(0.0, "metallic") == pytest.approx(1.7)      # strip top
     assert Kr_Ka_ratio(0.0) == pytest.approx(1.7)                  # default == strip
-    assert F_star_metallic(0.0, PHI_R) == pytest.approx(2.0)
+    # GEC-11 Vol I Eq. 3-4: Cu 4 when unknown (F* 1.8), 2.0 at most (GM-246)
+    assert F_star_metallic(0.0, PHI_R) == pytest.approx(1.8, abs=0.003)
+    assert F_star_metallic(0.0, PHI_R, Cu=7.0) == pytest.approx(2.0)
     # steel bar mat / welded grid — the new branch
     assert Kr_Ka_ratio(0.0, "metallic_grid") == pytest.approx(2.5)   # bar-mat top
     assert Kr_Ka_ratio(0.0, "bar_mat") == pytest.approx(2.5)

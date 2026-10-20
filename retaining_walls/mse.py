@@ -57,6 +57,26 @@ from retaining_walls.results import MSEWallResult
 # constant for inextensible (metallic) reinforcement.
 _Z20_FT_M = 20.0 * 0.3048  # 6.096 m
 
+# GEC-11 Vol I (FHWA-NHI-10-024) p. 3-20, Eq. 3-4: for ribbed steel strips
+# F* = 1.2 + log Cu at the top of the structure, 2.0 maximum, Cu the
+# backfill's uniformity coefficient D60/D10; "If the specific Cu for the
+# wall backfill is unknown at design time, a Cu = 4 should be assumed
+# (i.e., F* = 1.8 at the top of the wall)" (GM-246).
+CU_UNKNOWN = 4.0
+F_STAR_STRIP_MAX = 2.0
+
+F_STAR_STRIP_BASIS = (
+    "GEC-11 Vol I (FHWA-NHI-10-024) p. 3-20, for steel ribbed "
+    "reinforcement: Eq. 3-4, F* = 1.2 + log Cu at the top of the "
+    "structure, 2.0 maximum; Eq. 3-5, F* = tan phi at a depth of 20 ft "
+    "(6 m) and below; Cu is the uniformity coefficient of the backfill "
+    "(D60/D10). 'If the specific Cu for the wall backfill is unknown at "
+    "design time, a Cu = 4 should be assumed (i.e., F* = 1.8 at the top of "
+    "the wall) for reinforced fills meeting the requirements of Section "
+    "3.1 of this chapter.' F* is taken linearly between, as Vol II "
+    "Examples E3 and E5 interpolate it, over the same depths as Kr/Ka "
+    "(p. 4-49)")
+
 
 def Kr_Ka_ratio(z: float, reinforcement_type: str = "metallic") -> float:
     """Ratio Kr/Ka as a function of depth per GEC-11 / AASHTO.
@@ -111,17 +131,33 @@ def Kr_Ka_ratio(z: float, reinforcement_type: str = "metallic") -> float:
         return 1.7 - (0.5 / _Z20_FT_M) * z
 
 
+def F_star_strip_top(Cu: float = None) -> float:
+    """F* of ribbed steel strips at the top of the wall, GEC-11 Vol I Eq.
+    3-4 (p. 3-20): 1.2 + log10(Cu), 2.0 at most. ``Cu`` None takes the
+    Cu = 4 that page gives for a backfill whose Cu is not known (F* 1.8).
+    """
+    if Cu is None:
+        Cu = CU_UNKNOWN
+    if not Cu >= 1.0:
+        raise ValueError(
+            f"Cu_backfill is the backfill's uniformity coefficient D60/D10, "
+            f"1 or more; got {Cu:g}")
+    return min(1.2 + math.log10(Cu), F_STAR_STRIP_MAX)
+
+
 def F_star_metallic(z: float, phi_backfill: float = 34.0,
                     reinforcement_type: str = "metallic",
-                    t_over_St: float = None) -> float:
+                    t_over_St: float = None, Cu: float = None) -> float:
     """Pullout friction-bearing factor F* for inextensible reinforcement.
 
-    Two curves per GEC-11 Figure 4-11 / E4-5:
+    Two curves:
 
     - ribbed metallic STRIP ("metallic" / "metallic_strip", DEFAULT):
-      F* = 2.0 at z=0 -> tan(phi) at z>=20 ft (6.096 m), linear between
-      (GEC-11 Eqs. 3-4/3-5, p. 3-20: "tan phi at a depth of 20 ft (6 m) and
-      below").
+      F* = 1.2 + log10(Cu), 2.0 at most, at z=0 -> tan(phi) at z>=20 ft
+      (6.096 m), linear between (GEC-11 Vol I Eqs. 3-4/3-5, p. 3-20; Vol II
+      Examples E3 and E5 interpolate linearly). ``Cu`` left out takes 4,
+      F* 1.8 at the top, as p. 3-20 says to when the backfill's Cu is
+      unknown (GM-246; 2.0 whatever the backfill before).
     - steel bar-mat / welded-grid ("bar_mat" / "welded_grid" /
       "metallic_grid"): F* = 20·(t/St) at z=0 -> 10·(t/St) at z>=20 ft
       (6.096 m), where t = transverse-bar diameter and St = transverse-bar
@@ -139,6 +175,9 @@ def F_star_metallic(z: float, phi_backfill: float = 34.0,
     t_over_St : float, optional
         Transverse-bar diameter / spacing ratio (unit-free) for the steel-grid
         curve. Required when ``reinforcement_type`` is a grid type.
+    Cu : float, optional
+        Uniformity coefficient D60/D10 of the backfill (strip curve only).
+        Default None: 4 (:data:`CU_UNKNOWN`).
 
     Returns
     -------
@@ -147,7 +186,8 @@ def F_star_metallic(z: float, phi_backfill: float = 34.0,
 
     References
     ----------
-    FHWA GEC-11, Figure 4-11 (ribbed steel strips) and Figure E4-5 (bar mats)
+    FHWA GEC-11 Vol I Eqs. 3-4 and 3-5 (ribbed steel strips) and Figure
+    E4-5 (bar mats)
     """
     if reinforcement_type in ("bar_mat", "welded_grid", "metallic_grid"):
         if t_over_St is None:
@@ -164,7 +204,7 @@ def F_star_metallic(z: float, phi_backfill: float = 34.0,
         else:
             return F_deep + (_Z20_FT_M - z) * (F_surface - F_deep) / _Z20_FT_M
 
-    F_star_surface = 2.0
+    F_star_surface = F_star_strip_top(Cu)
     # At depth >= 20 ft (6.096 m), F* = tan(phi) for ribbed metallic strips
     # (GEC-11 Eq. 3-5)
     F_star_deep = math.tan(math.radians(phi_backfill))
@@ -515,6 +555,72 @@ def _backslope_summary(ld: Dict[str, Any],
     return out
 
 
+def uses_strip_F_star(reinforcement: Reinforcement) -> bool:
+    """Whether the pullout check takes the ribbed steel strip F* curve,
+    which the backfill's Cu sets: a metallic strip, or a steel grid given
+    no transverse-bar geometry (t/St), which falls back to it."""
+    return reinforcement.is_metallic and not (
+        reinforcement.is_grid and reinforcement.t_over_St is not None)
+
+
+def pullout_factor_choices(geom: MSEWallGeometry, gamma_backfill: float,
+                           phi_backfill: float, reinforcement: Reinforcement,
+                           Cu_backfill: float = None,
+                           internal: Optional[List[Dict[str, Any]]] = None
+                           ) -> list:
+    """The ribbed steel strip F* at the top of the wall (GM-246), as a
+    result's ``choices`` (``geotech_common.choices``): the Cu it took,
+    given or the Cu = 4 GEC-11 Vol I p. 3-20 takes when the backfill's is
+    unknown, with FOS_pullout at the top level and the lowest at the other
+    reading (Cu = 4, or a Cu of 6.3 or more, where F* reaches its 2.0
+    maximum). None for a
+    reinforcement whose F* takes no Cu."""
+    from geotech_common.choices import choice, how_given
+    if not uses_strip_F_star(reinforcement):
+        return []
+    Cu = CU_UNKNOWN if Cu_backfill is None else Cu_backfill
+    top = F_star_strip_top(Cu)
+    capped = 1.2 + math.log10(Cu) > F_STAR_STRIP_MAX
+    chosen = (f"F* {top:.2f} at the top of the wall (Cu {Cu:g}"
+              + (": 1.2 + log Cu is above the 2.0 maximum" if capped else "")
+              + f"), linear to tan phi' = "
+              f"{math.tan(math.radians(phi_backfill)):.3f} at 20 ft "
+              f"(6.1 m) and below")
+    if internal is None:
+        internal = check_internal_stability(
+            geom, gamma_backfill, phi_backfill, reinforcement,
+            Cu_backfill=Cu)
+
+    def lowest(levels):
+        return min(lv["FOS_pullout"] for lv in levels)
+
+    if Cu == CU_UNKNOWN:
+        alt_cu = 10.0 ** (F_STAR_STRIP_MAX - 1.2)    # 6.31: F* 2.0
+        alt = ("a Cu of 6.3 or more, measured on the wall's backfill: F* "
+               "2.0 at the top, the maximum (GEC-11 Vol II Examples E3 and "
+               "E5 take it for a backfill with Cu 7.0)")
+    else:
+        alt_cu = CU_UNKNOWN
+        alt = ("Cu 4, which GEC-11 Vol I p. 3-20 says to assume when the "
+               "backfill's Cu is unknown: F* 1.8 at the top")
+    other = check_internal_stability(
+        geom, gamma_backfill, phi_backfill, reinforcement,
+        Cu_backfill=alt_cu)
+    if internal and other:
+        alt += (f"; FOS_pullout {other[0]['FOS_pullout']:.3g} at the top "
+                f"level, {other[0]['depth_m']:g} m (here "
+                f"{internal[0]['FOS_pullout']:.3g}), lowest "
+                f"{lowest(other):.3g} (here {lowest(internal):.3g})")
+    basis = F_STAR_STRIP_BASIS
+    if reinforcement.is_grid:
+        basis += (". This steel grid was given no transverse-bar geometry "
+                  "(t/St), so its pullout takes the ribbed strip curve")
+    return [choice(
+        "Pullout resistance factor F* of ribbed steel strips, from the "
+        "backfill's uniformity coefficient (Cu_backfill)", chosen,
+        how_given(Cu, CU_UNKNOWN, name="Cu_backfill"), basis, [alt])]
+
+
 def check_internal_stability(
     geom: MSEWallGeometry,
     gamma_backfill: float,
@@ -522,6 +628,7 @@ def check_internal_stability(
     reinforcement: Reinforcement,
     FOS_pullout: float = 1.5,
     FOS_rupture: float = 1.0,
+    Cu_backfill: float = None,
 ) -> List[Dict[str, Any]]:
     """Check internal stability at each reinforcement level.
 
@@ -539,6 +646,11 @@ def check_internal_stability(
         Required FOS for pullout. Default 1.5.
     FOS_rupture : float, optional
         Required FOS for rupture. Default 1.0.
+    Cu_backfill : float, optional
+        Uniformity coefficient D60/D10 of the reinforced backfill, for the
+        ribbed steel strip F* (:func:`F_star_strip_top`). Default None: 4,
+        as GEC-11 Vol I p. 3-20 takes when it is unknown. Refused with a
+        reinforcement whose F* takes none (:func:`uses_strip_F_star`).
 
     Returns
     -------
@@ -577,7 +689,7 @@ def check_internal_stability(
     #  - steel bar mat / welded grid -> bar-mat curves (Kr/Ka 2.5->1.2,
     #    F* 20(t/St)->10(t/St))
     #  - ribbed metallic strip       -> strip curves (Kr/Ka 1.7->1.2,
-    #    F* 2.0->tan-phi)  [unchanged default]
+    #    F* 1.2 + log Cu (2.0 at most) -> tan-phi)  [the default]
     #  - geosynthetic                -> Kr/Ka 1.0, F* 0.67*tan-phi
     if reinforcement.is_grid:
         r_type = "metallic_grid"
@@ -586,6 +698,15 @@ def check_internal_stability(
     else:
         r_type = "geosynthetic"
     t_over_St = reinforcement.t_over_St if reinforcement.is_grid else None
+    if Cu_backfill is not None and not uses_strip_F_star(reinforcement):
+        raise ValueError(
+            f"Cu_backfill sets the ribbed steel strip F* at the top of the "
+            f"wall (GEC-11 Vol I Eq. 3-4, p. 3-20); "
+            + ("a steel grid given its transverse-bar geometry takes F* "
+               "from it, 20 t/St to 10 t/St (GEC-11 Fig. E4-5)"
+               if reinforcement.is_metallic else
+               "a geosynthetic's F* here is 0.67 tan phi_backfill")
+            + ", which takes no Cu. Leave Cu_backfill out")
 
     results = []
     for z in geom.reinforcement_depths:
@@ -624,9 +745,9 @@ def check_internal_stability(
             # Steel bar-mat / welded-grid F* = 20(t/St) -> 10(t/St)
             F_star = F_star_metallic(z, phi_backfill, "metallic_grid", t_over_St)
         elif reinforcement.is_metallic:
-            # Ribbed strip F* = 2.0 -> tan(phi) (also the fallback for a grid
-            # whose transverse geometry t/St was not supplied)
-            F_star = F_star_metallic(z, phi_backfill)
+            # Ribbed strip F* = 1.2 + log Cu -> tan(phi) (also the fallback
+            # for a grid whose transverse geometry t/St was not supplied)
+            F_star = F_star_metallic(z, phi_backfill, Cu=Cu_backfill)
         else:
             F_star = 0.67 * math.tan(math.radians(phi_backfill))
 
@@ -1519,6 +1640,7 @@ def analyze_mse_wall(
     traffic_vertical_resists: bool = False,
     live_load_resists: bool = False,
     surcharge_in_bearing: bool = True,
+    Cu_backfill: float = None,
 ) -> MSEWallResult:
     """Run complete MSE wall analysis.
 
@@ -1573,6 +1695,11 @@ def analyze_mse_wall(
     surcharge_in_bearing : bool, optional
         ASD path: count that surcharge in the bearing pressure. Default
         True (:data:`BEARING_BASIS`).
+    Cu_backfill : float, optional
+        Uniformity coefficient D60/D10 of the reinforced backfill, for the
+        ribbed steel strip F* (GEC-11 Vol I Eq. 3-4). Default None: 4, as
+        GEC-11 p. 3-20 takes when it is unknown (F* 1.8 at the top). See
+        :func:`check_internal_stability`.
 
     Returns
     -------
@@ -1582,7 +1709,9 @@ def analyze_mse_wall(
         see ``check_external_stability`` and ``check_internal_stability``.
         ``external_terms`` holds the ASD terms as the checks used them
         (:func:`_external_terms`) and ``choices`` how a live load over the
-        reinforced zone was counted (:func:`live_load_choices`).
+        reinforced zone was counted (:func:`live_load_choices`), and for
+        ribbed steel strips the F* at the top of the wall
+        (:func:`pullout_factor_choices`).
     """
     if (lrfd_external and gamma_foundation is not None
             and bearing_resistance_strength is None and phi_foundation is None):
@@ -1601,6 +1730,7 @@ def analyze_mse_wall(
 
     internal = check_internal_stability(
         geom, gamma_backfill, phi_backfill, reinforcement,
+        Cu_backfill=Cu_backfill,
     )
 
     all_pass_internal = all(r["passes"] for r in internal)
@@ -1647,5 +1777,7 @@ def analyze_mse_wall(
         backslope=backslope,
         external_terms=terms,
         choices=live_load_choices(geom, live_load_resists,
-                                  surcharge_in_bearing),
+                                  surcharge_in_bearing)
+        + pullout_factor_choices(geom, gamma_backfill, phi_backfill,
+                                 reinforcement, Cu_backfill, internal),
     )
