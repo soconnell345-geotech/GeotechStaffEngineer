@@ -1115,6 +1115,34 @@ def _calc_steps_mse(result, analysis) -> List[CalcSection]:
         reference="GEC-11, Eq. 4-10",
     ))
 
+    from retaining_walls import mse as _mse
+    if reinforcement is not None and _mse.uses_strip_F_star(reinforcement):
+        # GM-246: the ribbed steel strip F*, from the backfill's Cu
+        cu_given = _get(analysis, "Cu_backfill")
+        cu = _mse.CU_UNKNOWN if cu_given is None else cu_given
+        phi_b = _get(analysis, "phi_backfill", 34.0)
+        f_top = _mse.F_star_strip_top(cu)
+        f_deep = math.tan(math.radians(phi_b))
+        int_items.append(CalcStep(
+            title="Pullout Resistance Factor F* (ribbed steel strips)",
+            equation=("F* = 1.2 + log C_u ≤ 2.0 at the top of the "
+                      "wall; F* = tan φ at 20 ft (6 m) and below; "
+                      "linear between"),
+            substitution=(
+                f"C_u = {cu:g}"
+                + (" (not given: GEC-11 p. 3-20 says to assume C_u = 4 "
+                   "when the backfill's is unknown)" if cu_given is None
+                   else "")
+                + (" (below 4: GEC-11 Table 3-6 note (i), 'For fill "
+                   "outside these limits, tests must be run')"
+                   if cu < _mse.CU_UNKNOWN else "")
+                + f": F* = {f_top:.2f} at z = 0; tan {phi_b:.1f}° = "
+                f"{f_deep:.3f} at z ≥ 6.10 m"),
+            result_name="F*",
+            result_value=f"{f_top:.2f} → {f_deep:.3f}",
+            reference="GEC-11 Vol I Eqs. 3-4, 3-5 (p. 3-20)",
+        ))
+
     int_items.append(CalcStep(
         title="Pullout Resistance",
         equation="P_r = F* \u00d7 \u03b1 \u00d7 \u03c3_v' \u00d7 L_e \u00d7 C",

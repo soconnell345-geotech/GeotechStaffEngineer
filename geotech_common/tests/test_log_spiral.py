@@ -297,7 +297,15 @@ def test_wall_friction_note_says_what_each_source_takes():
     for note in (ufc, ck):
         assert "engineer's call" in note and "Table 4-1 (p. 184" in note
         assert "(p. 260)" in note and "(p. 249)" in note
-    assert "0.66, for which" in ufc and "delta = phi'" in ck
+    assert "0.66, for which" in ufc and "refused" in ck  # GM-253
+    for note in (ufc, ck):
+        assert "1/2 phi'" in note and "(p. 10-17)" in note
+        # the same page's zero-friction case (GM-253 review)
+        assert "significant vibration" in note
+        assert "'delta should be assumed to be zero'" in note
+    refused = LS.LEVEL_FRONT_NEEDS_DELTA["caquot_kerisel_1948"]
+    assert "the tool takes delta/phi' = 0.66" in refused
+    assert "'a common assumption'" in refused
     assert "smooth" in LS.wall_friction_note("ufc_3_220_20",
                                              left_out="A smooth wall.")
     # "" where the caller has said what is taken

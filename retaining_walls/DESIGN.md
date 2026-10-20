@@ -477,6 +477,34 @@ no live load on the zone and does not move. Tests:
     "F* = tan φ at a depth of 20 ft (6 m) and below"). Until GM-112's review
     (2026-10-16) the strip curves ran over 0–6.0 m, the rounded metric value;
     on GEC-11 Example E3 that left F* 0.6 % low.
+    **The top value is 1.2 + log Cu, 2.0 maximum (GM-246, 2026-10-20).**
+    GEC-11 Vol I Eq. 3-4 (p. 3-20) gives F* = 1.2 + log Cu at the top of
+    the structure, Cu the backfill's uniformity coefficient D60/D10, and
+    says "If the specific Cu for the wall backfill is unknown at design
+    time, a Cu = 4 should be assumed (i.e., F* = 1.8 at the top of the
+    wall) for reinforced fills meeting the requirements of Section 3.1".
+    Table 3-6 note (i) (p. 3-17) accepts these empirical values only for
+    Table 3-1 granular fill with Cu >= 4: "For fill outside these limits,
+    tests must be run". A Cu below 4 is computed, and the choice says so.
+    Every strip took 2.0 before, the value a backfill reaches only at Cu
+    6.3 or more (Vol II Examples E3 and E5, Cu 7.0, take it: 1.2 + log 7.0
+    = 2.045, use 2.000). `mse_wall` takes `Cu_backfill` (aliases `Cu`,
+    `uniformity_coefficient`); left out, Cu = 4, and the result's choices
+    say so, quote the page and give FOS_pullout at the top level and the
+    lowest at the other reading (Cu 6.3 or more, or Cu 4 when one was
+    given). A steel grid given its t/St and a geosynthetic keep their own
+    F*, which takes no Cu; a Cu given with them is checked against note
+    (i) only, since that note covers every empirical F* in Table 3-6, and
+    the choice says whether it is within it (it was refused at first; the
+    GM-246 review kept it, as refusing it dropped the only check the page
+    makes with it). `mse_lrfd_external_stability` refuses it. At phi 34,
+    F* at 0, 3 and 6 m: 2.000, 1.348, 0.695 before; 1.802, 1.247, 0.692
+    now; unchanged at 6.096 m and below (tan 34 = 0.675). On a 9 m wall
+    the top level's pullout falls 10 % (123.7 to 111.8 kN/m at 0.38 m)
+    and the levels below 6.1 m do not change, so the lowest FOS_pullout
+    there is the same. The library's `F_star_metallic` takes `Cu` too. The
+    reference library's GEC-11 Table 3-6 rows still give tan phi at the
+    top (BACKLOG REF-42); the module does not read them.
   - steel bar-mat / welded-grid ("bar_mat"/"welded_grid"/"metallic_grid"):
     Kr/Ka 2.5→1.2 over 0–20 ft (6.096 m); F* 20(t/St)→10(t/St) over 0–20 ft,
     where t = transverse-bar diameter and St = transverse-bar spacing
@@ -486,7 +514,7 @@ no live load on the zone and does not move. Tests:
   - geosynthetic ("geosynthetic"): Kr/Ka 1.0; F* 0.67·tan(φ).
   `check_internal_stability` auto-selects the bar-mat curves for a
   `metallic_grid` reinforcement (e.g. `WELDED_WIRE_GRID_W11`). Q4 left the
-  strip default unchanged.
+  strip default unchanged; GM-246 changed its top value (above).
   - **Source basis (built-in reinforcement products).** The product constants
     (the `WELDED_WIRE_GRID_W11` grid geometry, the 75x4 mm ribbed-strip
     `T_allowable`, etc.) are **representative values typical of the reinforcement
@@ -589,6 +617,32 @@ the source and the wall friction. `sliding_basis` gives `passive_theory`
 and `Kp`. Wall 5 m, B 3.5 m, toe 1 m, t 0.6 m, phi 32, gamma 19:
 FOS_sliding 1.53 (Rankine, Kp 3.25), 1.65 (log spiral, Kp 5.90 at delta
 21.1), 1.37 with no passive.
+
+**The coefficient tool's wall friction (GM-253, 2026-10-20).**
+`earth_pressure_coefficient` with theory 'caquot_kerisel' takes no wall
+friction that no source prints. Left out, the UFC 3-220-20 sources take
+delta/phi' = 0.66: Figs. 4-12 and 4-13 (pp. 192-193) are drawn for that
+value only, their headers print it, and p. 191 calls it "a common
+assumption" beside Eq. 4-12. The Caquot-Kerisel (1948) chart and Eq. 4-12
+by name print no value: the Caltrans T&S procedure for the chart (Sec.
+4-6, p. 4-29) begins "Given delta, beta, and phi". So a call that leaves
+`delta_deg` out with them is refused and names it, as `soe` and the wall
+toe refuse it (GM-242). Before, the 1948 chart took delta = phi, its
+largest Kp: 6.30 at phi 30, against 5.06 by default. The refusal gives
+the printed guidance: Caltrans Table 4-2 (p. 4-15), UFC Table 4-1 (p.
+184), and FHWA NHI-06-089 (p. 10-17), which gives delta = 1/2 phi' as
+"the maximum wall friction suggested for design" on the passive side, and
+zero for walls retaining soft cohesive soils or granular soils "that will
+be subjected to significant vibration", and prints the same chart as its
+Fig. 10-10. Every log-spiral result's wall
+friction choice gives the Kp at delta = 0 beside the delta used:
+- Rankine's Kp before a vertical face with level ground, which Eq. 4-12
+  gives at delta = 0;
+- the 1948 chart with R from its delta/phi = 0 column for sloping ground;
+- Coulomb's Kp at alpha = 90 - theta for a battered face, as no log-spiral
+  chart here gives one at delta = 0 (NHI-06-089 p. 10-19 calls Coulomb's
+  passive results "unreliable" for wall friction "greater than phi'/3",
+  and the failure surface "almost linear" when delta is small).
 
 ## The foundation cohesion in sliding (GM-212, 2026-10-20)
 
