@@ -236,6 +236,7 @@ MODULE_DOCUMENTS: Dict[str, Set[str]] = {
     "fema_p2192": {"fema-p-2192"},
     "california_trenching": {"caltrans-trenching-shoring"},
     "fhwa_pavements": {"fhwa-nhi-05-037"},
+    "fhwa_soils_foundations": {"fhwa-nhi-06-088", "fhwa-nhi-06-089"},
     "eurocode_7_1": {"en-1997-1"},
     "eurocode_7_2": {"en-1997-2"},
     "aashto_1993": {"aashto-1993"},
@@ -458,7 +459,8 @@ _PTI = re.compile(r"(?<![\w-])PTI[ \t-]*(?P<n>DC[ \t]?\d{2}(?:\.\d)?)")
 #: (sources only: nobody cites "gec_11" in prose).
 _INTERNAL = re.compile(
     r"(?<![\w-])(dm7_[12]|gec_\d{1,2}|ufc_[a-z]+(?:_[a-z]+)*|fema_p2082|"
-    r"fema_p2192|california_trenching|fhwa_pavements|eurocode_7_[12]|"
+    r"fema_p2192|california_trenching|fhwa_pavements|fhwa_soils_foundations|"
+    r"eurocode_7_[12]|"
     r"aashto_1993|em_210[47]|gsa_collapse|wood_handbook)(?![\w])")
 
 
