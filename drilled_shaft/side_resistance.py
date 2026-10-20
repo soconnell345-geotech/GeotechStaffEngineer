@@ -358,10 +358,16 @@ def side_resistance_rock(qu: float, shaft_perimeter: float,
     segment_thickness : float
         Socket segment height (m).
     C : float, optional
-        Socket roughness/fitting coefficient. Default 0.65
-        (Horvath & Kenney base coefficient per GEC-10).
+        Coefficient on pa sqrt(qu / pa). Default 0.65: GEC-10
+        (FHWA-NHI-18-024) Eq. 10-22, the O'Neill and Reese (1999)
+        expression for sockets where caving is anticipated (p. 10-21).
+        GEC-10 Eq. 10-21 takes C = 1.0 for a "normal" socket, recommended
+        for routine design (pp. 10-21, 10-22; Example 10-4, p. 10-28),
+        and C = 1.9 for roughened sockets, to be verified by load tests or
+        local experience (p. 10-22).
     alpha_E : float, optional
-        Rock mass reduction factor for jointing. Default 1.0 (intact).
+        Joint modification factor of GEC-10 Eq. 10-22 (Table 10-3, by RQD
+        and joint condition). Default 1.0.
 
     Returns
     -------
@@ -370,8 +376,8 @@ def side_resistance_rock(qu: float, shaft_perimeter: float,
 
     References
     ----------
-    Horvath & Kenney (1979); GEC-10 Section 13.3.3.4 (Eq. 13-15);
-    AASHTO LRFD Section 10.8.3.5.4b-1
+    GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.3, Eqs. 10-21 and 10-22, pp.
+    10-20 to 10-22; O'Neill & Reese (1999)
     """
     fs = C * alpha_E * math.sqrt(qu * PA)
     return fs * shaft_perimeter * segment_thickness
