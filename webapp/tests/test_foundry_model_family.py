@@ -86,6 +86,22 @@ class TestFamilyParsing:
     def test_openai(self, mid):
         assert model_family(mid) == "openai"
 
+    @pytest.mark.parametrize("mid", [
+        # A Claude word inside a random chunk of the model's name...
+        "ri.language-model-service..language-model.x7opus3k",
+        "ri.language-model-service..language-model.magnumopus-2",
+        "ri.language-model-service..language-model.gpt-5-fabled",
+        # ...or outside the model's name (a RID's other fields).
+        "ri.language-model-service.sonnet-stack.language-model.gpt-5-2"])
+    def test_auto_reads_whole_words_of_the_name(self, mid):
+        assert model_family(mid) == "openai"
+
+    @pytest.mark.parametrize("mid", [
+        "ri.language-model-service..language-model.opus4",
+        "claude3-haiku", "ri.x.anthropic..language-model.lm-1"])
+    def test_auto_word_edges(self, mid):
+        assert model_family(mid) == "anthropic"
+
     def test_rid_detected_with_a_family(self):
         assert engine_config.is_foundry_model_id(f"anthropic:{PLAIN_RID}")
         assert not engine_config.is_foundry_model_id("anthropic:Claude_5")
@@ -145,6 +161,29 @@ class TestRouting:
         res = engine_config.resolve_engine(model_id=core.default_model_id())
         assert type(res.model).__name__ == "ChatAnthropic", res.message
 
+    def test_claude_api_name_without_token_says_so(self, foundry):
+        foundry.delenv("FOUNDRY_TOKEN")
+        res = engine_config.resolve_engine(model_id="Claude_Opus_5_5")
+        assert res.source == "error"
+        assert "Claude model" in res.message
+        assert "looks like a Foundry RID" not in res.message
+        assert "ANTHROPIC_API_KEY" not in res.message
+
+    def test_builder_gets_the_bare_id(self, monkeypatch):
+        for env in _CLEAR:
+            monkeypatch.delenv(env, raising=False)
+        got = []
+
+        def builder(model_id):
+            got.append(model_id)
+            return object()
+
+        monkeypatch.setattr(engine_config, "_MODEL_BUILDER", builder)
+        res = engine_config.resolve_engine(
+            model_id="anthropic:funhouse-gpt-high")
+        assert got == ["funhouse-gpt-high"]
+        assert res.model_name == "funhouse-gpt-high"
+
     def test_key_path_strips_a_family(self, monkeypatch):
         for env in _CLEAR:
             monkeypatch.delenv(env, raising=False)
@@ -173,9 +212,14 @@ class _FakeProxy(BaseHTTPRequestHandler):
     def do_POST(self):                                  # noqa: N802
         body = json.loads(self.rfile.read(
             int(self.headers.get("Content-Length") or 0)) or b"{}")
+        images = [b["source"] for m in body.get("messages") or []
+                  if isinstance(m.get("content"), list)
+                  for b in m["content"] if b.get("type") == "image"]
         type(self).seen.append({"path": self.path,
                                 "auth": self.headers.get("Authorization"),
                                 "model": body.get("model"),
+                                "max_tokens": body.get("max_tokens"),
+                                "images": images,
                                 "stream": bool(body.get("stream")),
                                 "tools": [t.get("name")
                                           for t in body.get("tools") or []]})
@@ -281,3 +325,25 @@ def test_sidebar_family_choice_reaches_the_proxy(fake_proxy):
     assert "Anthropic proxy" in at.session_state["engine"].message
     texts = " | ".join(str(e.value) for e in at.success)
     assert "Anthropic proxy" in texts, texts
+
+
+@needs_anthropic
+def test_vision_side_call_reaches_the_proxy_as_an_anthropic_image(
+        fake_proxy, monkeypatch):
+    """A page image the vision tools send (``analyze_image`` and friends,
+    an OpenAI-shaped ``image_url`` data URI) reaches the Anthropic proxy as
+    an Anthropic base64 image block, with the bare RID and a max_tokens."""
+    import base64
+    from funhouse_agent.deep.inline_images import _probe_png
+    from funhouse_agent.deep.vision_engine import LangChainVisionEngine
+    monkeypatch.setenv("GEOTECH_VISION_PROBE", "0")   # the one call only
+    res = engine_config.resolve_engine(model_id=f"anthropic:{PLAIN_RID}")
+    png = _probe_png()
+    text = LangChainVisionEngine(res.model).analyze_image(
+        png, "What colour is the square?", max_output_tokens=2000)
+    assert text == "OK from the fake proxy"
+    req = fake_proxy[-1]
+    assert req["model"] == PLAIN_RID and req["auth"] == "Bearer tok-123"
+    assert req["max_tokens"] == 2000
+    assert req["images"] == [{"type": "base64", "media_type": "image/png",
+                              "data": base64.b64encode(png).decode()}]

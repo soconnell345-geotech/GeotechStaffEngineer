@@ -28,6 +28,7 @@ caught and surfaced as ``source="error"`` with a readable message.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -142,8 +143,25 @@ def foundry_base_url() -> Optional[str]:
 MODEL_FAMILIES = ("anthropic", "openai")
 
 #: Words in a model id that mean a Claude model when no family is stated.
+#: ``anthropic`` counts anywhere in the id (the rule before INF-25); the
+#: others count only as words of the model's name (:func:`_model_name_part`),
+#: with no letter or digit before and no letter after -- "claude-opus-5-5",
+#: "Claude_Opus_5_5" and "opus4" are Claude; "x7opus3k" (a random chunk of
+#: an OpenAI RID) and "magnumopus" are not.
 ANTHROPIC_ID_WORDS = ("anthropic", "claude", "opus", "sonnet", "haiku",
                       "fable")
+_CLAUDE_NAME_WORD = re.compile(
+    r"(?<![a-z0-9])(?:" + "|".join(ANTHROPIC_ID_WORDS[1:]) + r")(?![a-z])")
+
+
+def _model_name_part(bare_id: str) -> str:
+    """The part of an id that names the model: a Foundry RID's last field
+    (``ri.<service>.<instance>.<type>.<name>``), else the whole id."""
+    if bare_id.startswith("ri."):
+        parts = bare_id.split(".", 4)
+        if len(parts) == 5:
+            return parts[4]
+    return bare_id
 
 
 def split_model_family(model_id: Optional[str]) -> "tuple[str, str]":
@@ -175,8 +193,9 @@ def model_family(model_id: Optional[str]) -> str:
     if fam != "auto":
         return fam
     low = bare.lower()
-    return ("anthropic" if any(w in low for w in ANTHROPIC_ID_WORDS)
-            else "openai")
+    if "anthropic" in low or _CLAUDE_NAME_WORD.search(_model_name_part(low)):
+        return "anthropic"
+    return "openai"
 
 
 def is_foundry_model_id(model_id: Optional[str]) -> bool:
@@ -245,9 +264,11 @@ def _resolve_foundry(model_id: str) -> "EngineResolution":
             missing.append("token (GEOTECH_FOUNDRY_TOKEN or FOUNDRY_TOKEN)")
         if not base:
             missing.append("host (GEOTECH_FOUNDRY_HOST or FOUNDRY_HOSTNAME)")
+        what = ("looks like a Foundry RID" if model_id.startswith("ri.")
+                else "is a Claude model, served by the Foundry Anthropic proxy")
         return EngineResolution(
             None, "error", model_id,
-            f"Model id '{model_id}' looks like a Foundry RID, but the Foundry "
+            f"Model id '{model_id}' {what}, but the Foundry "
             f"{' and '.join(missing)} env var(s) are not set. See docs/FOUNDRY.md.")
 
     if family == "anthropic":
@@ -444,7 +465,8 @@ def resolve_engine(model_id: Optional[str] = None,
     #    an argument gets the picker selection (Prompter model switching); a
     #    zero-arg builder keeps the model deployment-fixed.
     if _MODEL_BUILDER is not None:
-        _picked = model_id or None
+        # A family prefix means nothing to a deployment's own builder.
+        _picked = split_model_family(model_id)[1] or None
         _kw = ({"identity": identity}
                if identity is not None and _builder_takes_identity(_MODEL_BUILDER)
                else {})

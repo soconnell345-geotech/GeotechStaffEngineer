@@ -59,9 +59,13 @@ The family is the one the id states, else read off the id:
   beside the "Model RID or API name" box in the sidebar. The proxy is sent
   the id without the prefix. Use this whenever a Claude RID does not say
   what it is.
-- **Read off the id** (Model family: Auto): an id containing `anthropic`,
-  `claude`, `opus`, `sonnet`, `haiku` or `fable` is a Claude model; anything
-  else is OpenAI-shaped. (Before the INF-25 wheel only `anthropic` counted.)
+- **Read off the id** (Model family: Auto): an id containing `anthropic`
+  anywhere, or naming `claude`, `opus`, `sonnet`, `haiku` or `fable` as a
+  word of the model's name (a RID's last field; `claude-opus-5-5`,
+  `Claude_Opus_5_5`, `opus4`), is a Claude model; anything else is
+  OpenAI-shaped, so a random chunk such as `x7opus3k` stays OpenAI. (Before
+  the INF-25 wheel only `anthropic` counted; the INF-25 test wheel of
+  2026-10-20 matched the words anywhere in the id.)
 
 The sidebar's success line names the route and how the family was decided,
 e.g. "Using the Foundry Anthropic proxy (ri.…; family chosen)", and so does
@@ -85,6 +89,12 @@ Anthropic-messages proxy (`/api/v2/llm/proxy/anthropic/v1/messages`) with
 a RID goes there too, because the `palantir_models` engine below is
 GPT-only. If the proxy refuses (401/403), see the troubleshooting entry
 below; there is no in-platform Claude engine in the app yet.
+
+Page images go the same way: the vision tools send each image as a base64
+data URI, which `langchain-anthropic` turns into an Anthropic `image` block
+(`source.type: base64`), with the bare RID and a `max_tokens` on every
+request. Checked against a stand-in proxy on the laptop
+(`webapp/tests/test_foundry_model_family.py`), not yet on Foundry.
 
 ### 3b. Alternative engine: the in-platform `palantir_models` SDK (no proxy, no token)
 

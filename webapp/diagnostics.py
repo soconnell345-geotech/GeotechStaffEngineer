@@ -59,9 +59,11 @@ def _versions_check() -> dict:
     import importlib.metadata as md
     import sys
     parts = [f"python {sys.version.split()[0]}"]
-    for pkg in ("geotech-staff-engineer", "geotech-references", "streamlit",
-                "langchain", "langchain-openai", "langchain-anthropic",
-                "deepagents", "websockets"):
+    # numpy: the app needs 2.x (np.trapezoid); Foundry's transforms repo
+    # ran 1.26.4 (INF-25).
+    for pkg in ("geotech-staff-engineer", "geotech-references", "planlens",
+                "numpy", "streamlit", "langchain", "langchain-openai",
+                "langchain-anthropic", "deepagents", "websockets"):
         try:
             parts.append(f"{pkg} {md.version(pkg)}")
         except Exception:
