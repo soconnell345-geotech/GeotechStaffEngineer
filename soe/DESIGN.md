@@ -401,6 +401,32 @@ anchor head). At phi 33 and 15 deg: H 10 m, anchor 2.5 m deep 5.72 ->
 5.74 m; H 12 m, 3 m deep 6.56 -> 6.88 m; H 10 m, 6.25 m deep, bar 4.50 ->
 3.90 m (strand stays 4.50 m).
 
+### The ground of a given load transfer (GM-199, 2026-10-20)
+A given `bond_stress_kPa` or `load_transfer_kN_per_m` replaces the row's
+load transfer, but the ground (soil or rock) still sets FOS_bond's default
+and the minimum bond length, and the value does not say it: GEC-4 Table 7
+(p. 73) prints bond stresses of 0.15 to 3.1 MPa in rock and 0.03 to 1.38
+MPa in soil, and Tables 6 and 8 overlap at 150 to 290 kN/m. So beside a
+given one `soil_type` is not defaulted: the call names a row, or the ground
+alone, `soil_type="soil"` or `"rock"` (which have no load transfer of their
+own and are refused without one). A given one with no `soil_type` is
+refused with the question. `ground` on the result says which was used.
+
+**Release note (GM-199):** a call that gives `bond_stress_kPa` or
+`load_transfer_kN_per_m` must now also give `soil_type` (a row, or "soil" or
+"rock"). Until now it took the default `sand_medium`'s soil: a 1,000 kPa
+rock bond stress over a 150 mm hole (471 kN/m) at DL 1,000 kN got FS 2.0 and
+4.50 m (the soil minimum; 2 x 1,000 / 471 = 4.24 m); with `soil_type="rock"`
+it gets FS 3.0 and 6.37 m.
+
+**GEC-4 design example 1 (App. A, pp. A-7 to A-9, Figure A-3; worked
+example WE-SOE-2):** DL 445 kN, `sand_silt_medium` 100 kN/m, FS 2.0: bond
+8.90 m (printed 8.9 m); unbonded 5.74 m at 2.5 m deep and 3.90 m at 6.25 m
+deep for bar anchors (printed 5.7 and 3.9 m), 4.50 m for strand at 6.25 m
+(the printed footnote: "Minimum unbonded length for strand anchor is
+4.5 m"). The example's limit line is 2 m beyond the critical failure
+surface; the module's is the greater of 1.5 m and H/5, also 2 m at H = 10 m.
+
 Tendon limits (GM-160, 2026-10-19): GEC-4 Sec. 5.3.8 (p. 77) - design load
 <= 0.60 SMTS (`max_load_pct`), lock-off <= 0.70 SMTS, maximum test load <=
 0.80 SMTS; `tendon.governed_by` names the limit that sized it. Bars were

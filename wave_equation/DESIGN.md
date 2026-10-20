@@ -13,11 +13,13 @@ Produces bearing graphs (capacity vs blow count) and drivability analyses.
 governing algebra (Smith spring-dashpot, `R = R_static·(1 + J·v)`) is coded from
 the equation (text). The DEFAULT numeric quake values (~2.5 mm shaft,
 2.5–5 mm toe) and Smith damping factors J are transcribed standard values
-(Smith 1960 / GRLWEAP defaults, restated in GEC-12 Table 12-3); authoring-time
-in-hand status was not recorded. They are user-overridable inputs, not fixed
-results, and are anchored by the drivability/bearing-graph behavior checks.
-**Candidate for wiki verification against FHWA GEC-12 (FHWA-NHI-16-009)
-Table 12-3** for the exact default quake/damping values by soil type.
+(Smith 1960 / GRLWEAP defaults). Checked 2026-10-20 (GM-178) against FHWA
+GEC-12 (FHWA-NHI-16-009) Vol II Sec. 12.6.7, p. 211: shaft damping 0.05 s/ft
+non-cohesive (0.16 s/m), 0.20 s/ft cohesive (0.66 s/m), toe about 0.15 s/ft
+(0.49 s/m), shaft quake 0.10 in (2.5 mm). GEC-12 (2016) Table 12-3 is an
+example's output table (p. 190), not these values; the code no longer cites
+it. They are user-overridable inputs, anchored by the drivability and
+bearing-graph behavior checks.
 
 ## Files
 - `hammer.py` — 14 built-in hammers (diesel, hydraulic, air/steam)

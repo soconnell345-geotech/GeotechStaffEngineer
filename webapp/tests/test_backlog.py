@@ -12,6 +12,12 @@ that the structure the next session relies on is intact:
 - every item has a unique ID and a tier;
 - every ID cited in the backlog or in HANDOFF §0a-current exists;
 - CLAUDE.md and HANDOFF still send a session to the backlog.
+
+Closed items leave in two steps: "Done since the last sweep" at the foot of
+``BACKLOG.md``, then, at a sweep, ``BACKLOG_DONE.md`` (the archive,
+``module_work/backlog_dashboard/sweep_done.py``). An ID closed in either
+place still counts as defined when an open item cites it, and is never
+reused.
 """
 
 import pathlib
@@ -19,6 +25,7 @@ import re
 
 ROOT = pathlib.Path(__file__).parents[2]
 BACKLOG = ROOT / "BACKLOG.md"
+ARCHIVE = ROOT / "BACKLOG_DONE.md"
 
 PREFIXES = ("OWN", "DR", "VIS", "TA", "PL", "RI", "GM", "REF", "EV", "INF",
             "LT", "DOC")
@@ -71,9 +78,12 @@ _DONE_ITEM = re.compile(r"^- \*\*([A-Z]{2,3}-\d{2,3})\*\*", re.M)
 
 
 def _done_ids():
-    """IDs closed since the last sweep (bold at the start of a Done bullet)."""
+    """Closed IDs (bold at the start of a bullet): BACKLOG.md's Done list
+    plus every earlier sweep in the archive."""
     text = BACKLOG.read_text(encoding="utf-8")
     done = text.split(_DONE, 1)[1] if _DONE in text else ""
+    if ARCHIVE.exists():
+        done += "\n" + ARCHIVE.read_text(encoding="utf-8")
     return set(_DONE_ITEM.findall(done))
 
 
@@ -90,8 +100,99 @@ def test_ids_cited_in_the_backlog_exist():
 def test_closed_ids_are_not_reused():
     reused = sorted(_done_ids() & {i for i, _ in _items()})
     assert not reused, (
-        f"{reused} are listed as done AND as open items; a closed ID is never "
-        "reused, take the next free number")
+        f"{reused} are listed as done (BACKLOG.md or BACKLOG_DONE.md) AND as "
+        "open items; a closed ID is never reused, take the next free number "
+        "(sweep_done.py --next PREFIX)")
+
+
+def test_archive_holds_only_swept_entries():
+    """The archive is sweeps of Done entries, nothing open."""
+    if not ARCHIVE.exists():
+        return
+    text = ARCHIVE.read_text(encoding="utf-8")
+    assert "## Swept " in text, (
+        "BACKLOG_DONE.md has no '## Swept <date>' heading; write it with "
+        "module_work/backlog_dashboard/sweep_done.py, not by hand")
+    tiered = re.findall(r"^- \*\*([A-Z]{2,3}-\d{2,3})\*\* \[(?:"
+                        + "|".join(TIERS) + r")\]", text, re.M)
+    assert not tiered, (
+        f"{tiered} sit in BACKLOG_DONE.md as tiered open items; open work "
+        "lives only in BACKLOG.md")
+
+
+def test_sweep_keeps_every_closed_id_and_open_item(tmp_path):
+    """A sweep of today's files (on copies) loses no closed ID or open item."""
+    import importlib.util
+    import shutil
+    spec = importlib.util.spec_from_file_location(
+        "sweep_done", ROOT / "module_work" / "backlog_dashboard" / "sweep_done.py")
+    sweep_done = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sweep_done)
+    shutil.copy(BACKLOG, tmp_path / "BACKLOG.md")
+    if ARCHIVE.exists():
+        shutil.copy(ARCHIVE, tmp_path / "BACKLOG_DONE.md")
+    before = _done_ids()
+    open_before = _items()
+    sweep_done.sweep(tmp_path / "BACKLOG.md", tmp_path / "BACKLOG_DONE.md",
+                     "2000-01-01")
+    swept = (tmp_path / "BACKLOG.md").read_text(encoding="utf-8")
+    archive = (tmp_path / "BACKLOG_DONE.md")
+    after = set(_DONE_ITEM.findall(swept.split(_DONE, 1)[1]))
+    if archive.exists():
+        after |= set(_DONE_ITEM.findall(archive.read_text(encoding="utf-8")))
+    assert after == before
+    assert [(m.group(1), m.group(2)) for m in map(_ITEM.match, swept.splitlines())
+            if m] == open_before
+    assert sweep_done.next_id("GM", tmp_path / "BACKLOG.md", archive) == (
+        sweep_done.next_id("GM", BACKLOG, ARCHIVE))
+
+
+def test_apply_triage_moves_merged_and_closed_items_to_done(tmp_path):
+    """A triage's merges and closes leave the open list as Done entries, so
+    every ID the backlog cites stays defined."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "apply_triage", ROOT / "module_work" / "backlog_dashboard" / "apply_triage.py")
+    apply_triage = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(apply_triage)
+    backlog = tmp_path / "BACKLOG.md"
+    backlog.write_text(
+        "# Backlog\n\n## 7. Modules (GM-nn)\n\n"
+        "- **GM-01** [Later] **One**: text. *Src:* a\n"
+        "- **GM-02** [Later] **Two**: see GM-01.\n"
+        "- **GM-03** [Later] **Three**: text.\n"
+        "- **GM-04** [Later] **Four**: text.\n\n"
+        f"{_DONE}\n\nIntro.\n\n- **GM-05** closed. Commit `abc1234`.\n",
+        encoding="utf-8")
+    rows = [
+        {"id": "GM-01", "action": "MERGE", "target": "GM-03", "reason": "same",
+         "evidence": "", "merge_text": "one's text."},
+        {"id": "GM-02", "action": "CLOSE-COVERED", "target": "",
+         "reason": "built", "evidence": "commit abc1234"},
+        {"id": "GM-04", "action": "DROP?", "target": "", "reason": "low",
+         "evidence": ""},
+    ]
+    assert apply_triage.apply(backlog, rows, "2000-01-01") == 0
+    text = backlog.read_text(encoding="utf-8")
+    open_part, done = text.split(_DONE, 1)
+    assert re.findall(r"^- \*\*(GM-\d+)\*\*", open_part, re.M) == ["GM-03", "GM-04"]
+    assert "Also (was GM-01, merged 2000-01-01): one's text." in open_part
+    assert _DONE_ITEM.findall(done) == ["GM-01", "GM-02", "GM-05"]
+    # the owner's drops later, from the same file: applied rows are skipped
+    assert apply_triage.apply(backlog, rows, "2000-01-02", drop=["GM-04"]) == 0
+    text = backlog.read_text(encoding="utf-8")
+    open_part, done = text.split(_DONE, 1)
+    assert re.findall(r"^- \*\*(GM-\d+)\*\*", open_part, re.M) == ["GM-03"]
+    assert _DONE_ITEM.findall(done) == ["GM-04", "GM-01", "GM-02", "GM-05"]
+    # a merge target that is not open refuses, changing nothing
+    backlog.write_text(text.replace("- **GM-03** [Later]",
+                                    "- **GM-03** [Later] see\n- **GM-06** [Later]"),
+                       encoding="utf-8")
+    before = backlog.read_text(encoding="utf-8")
+    bad = {"id": "GM-06", "action": "MERGE", "target": "GM-09",
+           "reason": "", "evidence": "", "merge_text": "x"}
+    assert apply_triage.apply(backlog, [bad], "2000-01-03") == 1
+    assert backlog.read_text(encoding="utf-8") == before
 
 
 def test_handoff_slice_cites_only_existing_ids():

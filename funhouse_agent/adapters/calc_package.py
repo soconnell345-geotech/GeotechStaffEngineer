@@ -472,6 +472,39 @@ _PACKAGE_TOOLS = {
                      "run the mse_wall tool."),
         "tools": {"cantilever": "cantilever_wall"},
         "selector_values": {"cantilever_wall": "cantilever"},
+        # Where the shear key is drawn (GM-216): the sliding check takes
+        # its passive on the plane below the toe over the key's depth,
+        # wherever the key is, so its place is the figure's only
+        "own": {"key_distance_from_toe": {
+            "type": "float", "required": False,
+            "description": "Distance from the toe to the front face of the "
+                           "shear key (m), for the wall section figure "
+                           "only: the sliding check takes the passive "
+                           "resistance on the plane below the toe over the "
+                           "key's depth, wherever the key is. Not given: "
+                           "the key is drawn under the stem, as UFC "
+                           "3-220-20 Fig. 4-29 and GEC-6 Fig. 5-22 draw "
+                           "it, and the figure says so.",
+            "applies_when": {"has_shear_key": [True], "key_depth": "set"},
+            "when_absent": {
+                "case": "under the stem",
+                "basis": "no key position given: the wall section draws "
+                         "the key's front face under the stem's, as UFC "
+                         "3-220-20 Fig. 4-29 and GEC-6 Fig. 5-22 draw it, "
+                         "and says so"}},
+            "key_width": {
+                "type": "float", "required": False,
+                "description": "Width of the shear key (m), for the wall "
+                               "section figure only. Not given: the "
+                               "stem's thickness at its base, as UFC "
+                               "3-220-20 Fig. 4-29 draws it.",
+                "applies_when": {"has_shear_key": [True],
+                                 "key_depth": "set"},
+                "when_absent": {
+                    "case": "the stem's thickness at its base",
+                    "basis": "no key width given: the wall section draws "
+                             "the key as wide as the stem, as UFC "
+                             "3-220-20 Fig. 4-29 draws it"}}},
         "not_packaged": {"mse": (
             "the MSE steps work the earth pressure out again from "
             "phi_backfill, level backfill only, where the mse_wall tool "
@@ -518,14 +551,46 @@ _PACKAGE_TOOLS = {
                            "and spacing, the package adds the "
                            "Converse-Labarre group efficiency, as the "
                            "group_efficiency tool works it out. The plan "
-                           "view draws the piles to scale at it."},
+                           "view draws the piles to scale at it.",
+            "when_absent": {
+                "case": "no diameter",
+                "basis": "the plan view draws the piles as symbols, not "
+                         "to scale, and says so; no group efficiency"}},
                 "north_deg": {
             "type": "float", "required": False,
             "description": "Direction of north on the plan view, degrees "
                            "clockwise from the cap's +y axis (up on the "
                            "plan), -360 to 360, as the plan the layout "
                            "came from shows it. Not given: north is drawn "
-                           "up and the figure says so."}},
+                           "up and the figure says so.",
+            "when_absent": {
+                "case": "north drawn up",
+                "basis": "no north given: the plan view draws north "
+                         "straight up and says so"}},
+                "cap_outline": {
+            "type": "array", "required": False,
+            "description": "The pile cap's outline on the plan view: its "
+                           "corners [[x, y], ...] in the cap's x, y axes "
+                           "(m, the axes the pile coordinates use), at "
+                           "least three, drawn closed. For the figure "
+                           "only. Not given: no cap is drawn and the "
+                           "figure says so.",
+            "when_absent": {
+                "case": "not drawn",
+                "basis": "no cap outline given: the plan view shows the "
+                         "piles and the cap's axes, and says so"}},
+                "property_line": {
+            "type": "array", "required": False,
+            "description": "The property line on the plan view: its points "
+                           "[[x, y], ...] in the cap's x, y axes (m), at "
+                           "least two, drawn dash-dot as given (repeat the "
+                           "first point last to close it). For the figure "
+                           "only. Not given: none is drawn and the figure "
+                           "says so.",
+            "when_absent": {
+                "case": "not drawn",
+                "basis": "no property line given: the plan view draws "
+                         "none, and says so"}}},
         "dropped": {"layout": {
             "reason": "the layout is rectangular when n_rows and n_cols "
                       "are given, else the piles list",
@@ -1053,8 +1118,34 @@ def _run_tool(package: str, params: dict) -> _ToolRun:
     if "selector" in spec and spec["selector"][0] not in params:
         used[spec["selector"][0]] = spec["selector"][1]
     used.update(_defaults_used(mod, tool, given, p, inputs.reported))
+    used.update(_own_defaults_used(spec.get("own", {}), own, p, declared))
     return _ToolRun(value, tool, p, out, own, used,
                     declared=declared, package=package)
+
+
+def _own_defaults_used(own_specs: dict, own: dict, params: dict,
+                       declared: dict) -> dict:
+    """The package's own inputs (``own``: not its tool's, such as the plan
+    view's ``north_deg``) that the call left out, as ``defaults_used``
+    gives the tool's (GM-218): name -> its default, or the case a left-out
+    input with no default stands for (``when_absent``), where its
+    ``applies_when`` holds for the call (the tool's inputs in force, then
+    the package's own)."""
+    from funhouse_agent.dispatch import (
+        _values_in_force, absent_case, applies)
+    every = {**declared, **own_specs}
+    values = _values_in_force(every, {}, {**params, **own})
+    out = {}
+    for name, spec in own_specs.items():
+        if name in own:
+            continue
+        value = spec.get("default")
+        if value is None:
+            value = absent_case(spec, every) or None
+        if value not in (None, "") and applies(spec.get("applies_when"),
+                                               values):
+            out[name] = value
+    return out
 
 
 def _when(condition, selector: str, value):
@@ -1569,6 +1660,7 @@ def _generate_retaining_wall_package(params: dict) -> dict:
     run = _run_tool("retaining_wall_package", params)
     result, used = run.out
     analysis = {**used, "wall_type": run.value}
+    analysis.update(_shear_key_place(run.own, used.get("geom")))
 
     def _r2(x):
         return None if x is None else round(x, 2)
@@ -1589,6 +1681,47 @@ def _generate_retaining_wall_package(params: dict) -> dict:
         analysis_type="Retaining Wall",
         extra=extra,
     )
+
+
+def _shear_key_place(own: dict, geom) -> dict:
+    """The shear key's place for the wall section (GM-216): the given
+    ``key_distance_from_toe`` and ``key_width``, each a number, the key
+    under the base; refused by name otherwise. Left out, the figure draws
+    it under the stem and says so."""
+    out = {}
+    for name in ("key_distance_from_toe", "key_width"):
+        value = own.get(name)
+        if value is None:
+            continue
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            number = None
+        if isinstance(value, bool) or number is None \
+                or not math.isfinite(number) \
+                or number < 0 or (name == "key_width" and number == 0):
+            raise ValueError(
+                f"retaining_wall_package: {name} must be a length in m, "
+                f"{'above' if name == 'key_width' else 'at or above'} 0; "
+                f"got {value!r}.")
+        out[name] = number
+    if not out or geom is None:
+        return out
+    if not (geom.has_shear_key and geom.key_depth > 0):
+        names = " and ".join(sorted(out))
+        raise ValueError(
+            f"retaining_wall_package: the wall has no shear key for "
+            f"{names}: give has_shear_key=true and key_depth, or leave "
+            f"{names} out.")
+    x0 = out.get("key_distance_from_toe", geom.toe_length)
+    width = out.get("key_width", geom.stem_thickness_base)
+    if x0 + width > geom.base_width + 1e-9:
+        raise ValueError(
+            f"retaining_wall_package: the shear key ({width:g} m wide, its "
+            f"front face {x0:g} m from the toe) runs past the back of the "
+            f"base (B = {geom.base_width:g} m); give key_distance_from_toe "
+            f"+ key_width up to B.")
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1647,13 +1780,41 @@ def _north_deg(value):
     return deg
 
 
+def _plan_points(value, name: str, least: int) -> list:
+    """A line on the pile group's plan (GM-216: ``cap_outline``,
+    ``property_line``) as ``[[x, y], ...]`` floats in the cap's axes, at
+    least ``least`` points, each a finite pair; else refused by name."""
+    points = []
+    ok = isinstance(value, (list, tuple)) and len(value) >= least
+    for p in (value if ok else []):
+        try:
+            x, y = (float(v) for v in p)
+        except (TypeError, ValueError):
+            ok = False
+            break
+        if any(isinstance(v, bool) for v in p) \
+                or not (math.isfinite(x) and math.isfinite(y)):
+            ok = False
+            break
+        points.append([x, y])
+    if not ok:
+        raise ValueError(
+            f"pile_group_package: {name} must be [[x, y], ...], at least "
+            f"{least} points in the cap's x, y axes (m); got {value!r}.")
+    return points
+
+
 def _generate_pile_group_package(params: dict) -> dict:
     from funhouse_agent.adapters.pile_group import _run_group_efficiency
 
     north = _north_deg(params.get("north_deg"))
+    drawn = {name: _plan_points(params.get(name), name, least)
+             for name, least in (("cap_outline", 3), ("property_line", 2))
+             if params.get(name) is not None}
     run = _run_tool("pile_group_package", params)
     result, used = run.out
-    analysis = {**used, "method": "6dof" if run.value else "simple"}
+    analysis = {**used, "method": "6dof" if run.value else "simple",
+                **drawn}
     # The Converse-Labarre efficiency, as the group_efficiency tool works
     # it out from the layout run and the diameter given. It takes one
     # spacing: where the rows and columns are spaced differently, the
