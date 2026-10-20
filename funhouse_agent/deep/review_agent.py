@@ -187,6 +187,17 @@ REVIEW_REWRITES: Dict[str, Tuple[Tuple[str, str], ...]] = {
         ("as a boring log reads", "as a depth profile reads"),),
 }
 
+#: The same for a helper's description in the ``task`` tool: the figure
+#: helper (on by default since GM-227) is described by its examples. Its own
+#: prompt and worked examples stay as they are (INF-26 plan, D8).
+REVIEW_HELPER_REWRITES: Dict[str, Tuple[Tuple[str, str], ...]] = {
+    "figure": (
+        ("a plan of borings and a footprint, a profile (SPT, CPT, su, water "
+         "content against elevation)",
+         "a site plan and a footprint, a profile of values against "
+         "elevation"),),
+}
+
 #: With GEOTECH_VISION_INLINE the page and region tools show YOU the image
 #: (no separate vision call answers a prompt), so they are described that way.
 #: ``analyze_image``'s entry applies only when image FILES are shown too
@@ -527,5 +538,6 @@ def build_review_agent(model, *, engine=None,
 
 __all__ = ["build_review_agent", "make_reader_tool", "REVIEW_TOOLS",
            "READER_TOOLS", "REVIEW_DESCRIPTIONS", "REVIEW_REWRITES",
+           "REVIEW_HELPER_REWRITES",
            "max_model_calls",
            "DEFAULT_MAX_MODEL_CALLS", "MAX_MODEL_CALLS_ENV"]

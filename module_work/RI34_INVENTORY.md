@@ -30,7 +30,7 @@ Destinations:
 | report_ingest (moves now) | 3 | 1, 2, 3 |
 | report_ingest (already there) | 4 | 10, 11, 12, 21 |
 | geotech page | 9 | 4, 5, 8, 9, 13, 20, 22, 23, 24 |
-| generic, wording neutralized for Document Review | 7 | 6, 7, 14, 15, 16, 17, 18 |
+| generic, wording neutralized for Document Review | 8 | 6, 7, 14, 15, 16, 17, 18, 32 |
 | generic, unchanged | 8 | 19, 25, 26, 27, 28, 29, 30, 31 |
 
 The Document Review page loses two tools (`report_checklist`, which it had
@@ -74,6 +74,7 @@ tool descriptions.
 | 29 | Arms `coverage` and `checklist` | `funhouse_agent/review_flags.py:387-388` | generic (Document Review) | Unchanged; their report tasks are now asked on the geotech page. |
 | 30 | The review digest counts planlens' page roles | `funhouse_agent/review_digest/build.py:634` | generic (Document Review) | Unchanged: it reports whatever roles a document has. |
 | 31 | The Document Review page's orientation turn and upload note | `webapp/profiles.py:31-90`; `webapp/core.py:172` | generic (Document Review) | Unchanged; no report wording. |
+| 32 | The figure helper's description in the `task` tool ("a plan of borings ..., a profile (SPT, CPT, su, water content against elevation)"); on both pages since GM-227, found after merging master | `funhouse_agent/deep/figure_helper.py:59-75` | generic (Document Review) | A phrase swap on the review page (`review_agent.REVIEW_HELPER_REWRITES`). The helper's own prompt, `figure_examples` and its `plot_data` keep their geotech examples: that is the INF-26 plan's D8 (b), its own item. |
 
 ## What the record cannot answer yet (the checklist's code items)
 

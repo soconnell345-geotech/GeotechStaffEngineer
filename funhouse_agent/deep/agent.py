@@ -1553,6 +1553,12 @@ def build_deep_agent(
             reference_result_chars=reference_result_chars,
             extra_tools=subagent_extra_tools,
             extra_system_prompt=subagent_extra_system_prompt)
+        if _fig is not None and review_page:
+            # RI-34: the task tool names no kind of geotechnical report here
+            from funhouse_agent.deep.review_agent import (
+                REVIEW_HELPER_REWRITES)
+            for old, new in REVIEW_HELPER_REWRITES["figure"]:
+                _fig["description"] = _fig["description"].replace(old, new)
         if _fig is not None:
             subagents.append(_fig)
             # The main agent hands figures to it and does not look again

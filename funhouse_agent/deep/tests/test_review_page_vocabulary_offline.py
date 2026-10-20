@@ -46,7 +46,8 @@ class _Model(FakeMessagesListChatModel):
 #: The builds, each with every review switch off and with the switches on.
 _ON = {RF.COVERAGE_ENV: "1", RF.CHECKLIST_ENV: "1", RF.DIGEST_ENV: "1",
        RF.GEOMETRY_ENV: "1", RF.FINDINGS_ENV: "1", RF.SWEEP_ENV: "1",
-       RF.OVERVIEW_ENV: "1", RF.KEPT_READINGS_ENV: "1"}
+       RF.OVERVIEW_ENV: "1", RF.KEPT_READINGS_ENV: "1",
+       RF.FIGURE_HELPER_ENV: "1"}
 BUILDS = {
     "legacy": {},
     "lean": {RF.AGENT_ENV: "lean"},
@@ -115,6 +116,13 @@ def test_every_phrase_swap_still_matches_the_geotech_wording():
             continue
         for old, _new in swaps:
             assert old in tools[name], (name, old)
+
+
+def test_the_figure_helper_swap_still_matches_its_description():
+    from funhouse_agent.deep.figure_helper import FIGURE_HELPER_DESCRIPTION
+    from funhouse_agent.deep.review_agent import REVIEW_HELPER_REWRITES
+    for old, _new in REVIEW_HELPER_REWRITES["figure"]:
+        assert old in FIGURE_HELPER_DESCRIPTION, old
 
 
 def test_the_geotech_page_keeps_its_wording(tmp_path):

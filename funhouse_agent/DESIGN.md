@@ -290,7 +290,9 @@ the eyes). What changed on master after 5.33.0, in short:
   review only: no `log_grid` (legacy, lean or the reading helper), no
   `plot_data` `reference_chart`, and its own wording for `measure`,
   `plot_data`, `search_document`, `render_page_thumbnails`
-  (`review_agent.REVIEW_REWRITES`, phrase swaps on both builds) and
+  (`review_agent.REVIEW_REWRITES`, phrase swaps on both builds),
+  the figure helper's line in `task` (`REVIEW_HELPER_REWRITES`; its own
+  prompt and examples are the split plan's D8 (b)) and
   `document_coverage` (`DOCUMENT_COVERAGE_DESCRIPTION_REVIEW`); there a
   coverage task holds a turn only when declared (`CoverageLedger(
   declared_only=True)`), not when some log or laboratory pages were read.
