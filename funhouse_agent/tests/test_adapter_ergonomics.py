@@ -1002,7 +1002,16 @@ class TestWallSlidingBasis:
         out = _run_cantilever_wall(p)
         basis = out["sliding_basis"]
         assert basis["delta_base_deg"] == pytest.approx(22.0, abs=0.01)
-        assert basis["base_adhesion_kPa"] == pytest.approx(10.0 / 3.0, abs=0.01)
+        # GM-212: drained by default, the cohesion not counted (it was
+        # 2/3 c = 3.33 kPa); the UFC rule counts Table 4-1's Ca on Be
+        assert basis["sliding_cohesion"] == "drained"
+        assert basis["base_adhesion_kPa"] == 0.0
+        out = _run_cantilever_wall(
+            {**p, "sliding_cohesion": "friction_plus_adhesion"})
+        basis = out["sliding_basis"]
+        assert basis["base_adhesion_kPa"] == pytest.approx(5.0, abs=0.01)
+        assert 0.0 < basis["adhesion_width_m"] < out["geometry"][
+            "base_width_m"]
 
     def test_delta_base_override_and_alias(self):
         from funhouse_agent.adapters.retaining_walls import _run_cantilever_wall

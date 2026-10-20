@@ -34,6 +34,12 @@ the chart. Values between the tabulated nodes are interpolated with log Kp
 linear in phi (and in beta/phi), as the charts are drawn on a log scale:
 linear interpolation in Kp between 5 degree nodes overstated the chart by
 up to 6 % (level ground) and 17 % (beta = phi).
+
+UFC 3-220-20 Table 4-2 (p. 194) is not used (GM-212, :data:`TABLE_4_2_NOTE`):
+its row headed delta/phi' = 0.5 prints Fig. 4-13's values for delta/phi' =
+0.66 (5.3, 8.0, 12, 20 at phi' = 30, 35, 40, 45), with Coulomb's Kp at
+delta = 0.66 phi' beside them (6.1, 9.8, 18, 44). Its delta/phi' = 1 row
+agrees with Eq. 4-12 (6.5, 10.5, 18, 35 against 6.63, 10.87, 18.94, 35.21).
 """
 
 from __future__ import annotations
@@ -42,6 +48,19 @@ import math
 
 SOURCES = ("caquot_kerisel_1948", "dm7_2_fig_4_13", "dm7_2_eq_4_12")
 DEFAULT_SOURCE = "caquot_kerisel_1948"
+
+#: Why UFC 3-220-20 Table 4-2 is not one of the sources (GM-212), for a
+#: result's choices and the tools' descriptions. Read on the rendered page
+#: (p. 194) beside Fig. 4-13 (p. 193) and Eq. 4-12 (p. 191).
+TABLE_4_2_NOTE = (
+    "UFC 3-220-20 Table 4-2 (p. 194) is not used: the log-spiral Kp in its "
+    "row headed delta/phi' = 0.5, 5.3, 8.0, 12 and 20 at phi' = 30, 35, 40 "
+    "and 45, are Fig. 4-13's values, drawn for delta/phi' = 0.66 (5.30, "
+    "8.00, 12.0, 20), and the Coulomb Kp printed beside them, 6.1, 9.8, 18 "
+    "and 44, are Coulomb's at delta = 0.66 phi' (at 0.5 it gives 5.0, 7.4, "
+    "11.8 and 21.4). Eq. 4-12 at delta/phi' = 0.5 gives 4.46, 6.33, 9.33 "
+    "and 14.3. The tool reads Fig. 4-13 at the 0.66 it is drawn for and "
+    "Eq. 4-12 at the wall friction given")
 
 #: What each source is, in the references' words, for a result's choices.
 SOURCE_BASIS = {

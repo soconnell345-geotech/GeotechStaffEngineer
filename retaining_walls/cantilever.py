@@ -119,6 +119,94 @@ BASE_FRICTION_BASIS = {
         "cast-in-situ concrete foundations"),
 }
 
+#: How the sliding check counts the foundation soil's cohesion (GM-212),
+#: by ``sliding_cohesion``: the rules the references print. GEC-6 and
+#: EN 1997-1 keep the drained (friction) and undrained (adhesion)
+#: resistances apart; UFC 3-220-20 and FHWA NHI-06-089 (after NAVFAC
+#: 1986b) add them.
+SLIDING_COHESION = ("drained", "undrained", "friction_plus_adhesion")
+SLIDING_COHESION_BASIS = {
+    "drained": (
+        "friction alone, R = V tan delta_b, the cohesion not counted: GEC-6 "
+        "Sec. 5.4 (p. 100) Eq. 5-38, FR = (W + Pv) tan delta 'for footings "
+        "with planar bearing surfaces on frictional (drained) materials', "
+        "and 'Because drained and undrained conditions will not occur "
+        "simultaneously, Equations 5-38 and 5-39 should not be combined "
+        "for use at the same time'; EN 1997-1 Sec. 6.5.3(8) and (10) "
+        "(p. 64), drained Rd = V'd tan delta_d (Eq. 6.3a): 'Any effective "
+        "cohesion c' should be neglected'"),
+    "undrained": (
+        "adhesion alone, R = ca B, no friction, ca the undrained shear "
+        "strength cu (c_foundation): GEC-6 Sec. 5.4 (p. 100) Eq. 5-39, "
+        "FR = ca Bf 'for footings with planar bearing surfaces on cohesive "
+        "(undrained) materials', 'In practice, ca is typically taken as "
+        "equal to the undrained shear strength (cohesion, cu) of the "
+        "clay', and not combined with Eq. 5-38; EN 1997-1 Sec. 6.5.3(11) "
+        "(p. 64), Rd = A cu;d (Eq. 6.4a), and (12)P (p. 65): 'If it is "
+        "possible for water or air to reach the interface between a "
+        "foundation and an undrained clay subgrade', Rd <= 0.4 Vd "
+        "(Eq. 6.5), which this check does not apply"),
+    "friction_plus_adhesion": (
+        "friction and adhesion added, R = V tan delta_b + Ca Be: UFC "
+        "3-220-20 Fig. 4-27 (p. 220), T = (W + Pv) tan delta + Ca Be, and "
+        "Sec. 4-5.1.3 (p. 223): 'The resisting force is a combination of "
+        "the frictional resistance at the base of the wall and the "
+        "adhesion between the base of the wall and the soil foundation. "
+        "For sliding resistance on fine-grained soils, the adhesion should "
+        "be multiplied by the effective width of the base (Be) found using "
+        "the uniform bearing pressure method' (Be = B - 2e), and 'Minimum "
+        "FSL may also need to be increased when base adhesion is included "
+        "in the resistance'; Ca from Table 4-1 (p. 184) by the undrained "
+        "shear strength (c_foundation). FHWA NHI-06-089 Fig. 10-17 "
+        "(p. 10-39, after NAVFAC 1986b) prints the same sum with the full "
+        "base width B and ca from its Table 10-1 (p. 10-18)"),
+}
+
+#: UFC 3-220-20 Table 4-1 (p. 184), "Interface with Clayey Soils
+#: (Undrained shear strength)": (undrained shear strength, adhesion Ca),
+#: psf, the ends of each printed row's ranges (very soft 0-250 -> 0-250,
+#: soft 250-500 -> 250-500, medium stiff 500-1000 -> 500-750, stiff
+#: 1000-2000 -> 750-950, very stiff 2000-4000 -> 950-1300). FHWA
+#: NHI-06-089 Table 10-1 (p. 10-18) prints the same rows in kPa.
+UFC_TABLE_4_1_ADHESION_PSF = ((0.0, 0.0), (250.0, 250.0), (500.0, 500.0),
+                              (1000.0, 750.0), (2000.0, 950.0),
+                              (4000.0, 1300.0))
+_KPA_PER_PSF = 0.04788026
+
+
+def adhesion_ufc_table_4_1(su_kPa: float) -> float:
+    """The base adhesion Ca (kPa) UFC 3-220-20 Table 4-1 (p. 184) gives for
+    an undrained shear strength ``su_kPa``, read linearly within the row
+    the strength falls in (:data:`UFC_TABLE_4_1_ADHESION_PSF`). The table
+    stops at 4000 psf (191.5 kPa); above it there is no printed value and
+    this raises."""
+    su = su_kPa / _KPA_PER_PSF
+    rows = UFC_TABLE_4_1_ADHESION_PSF
+    if su < 0:
+        raise ValueError(f"undrained shear strength {su_kPa} kPa < 0")
+    if su > rows[-1][0] + 1e-6:
+        raise ValueError(
+            f"c_foundation {su_kPa:g} kPa is above UFC 3-220-20 Table 4-1 "
+            f"(p. 184), which stops at very stiff fine-grained soil, "
+            f"{rows[-1][0]:.0f} psf ({rows[-1][0] * _KPA_PER_PSF:.1f} kPa, "
+            f"adhesion {rows[-1][1]:.0f} psf); give base_adhesion")
+    for (s0, c0), (s1, c1) in zip(rows, rows[1:]):
+        if su <= s1:
+            return (c0 + (c1 - c0) * (su - s0) / (s1 - s0)) * _KPA_PER_PSF
+    return rows[-1][1] * _KPA_PER_PSF
+
+
+def default_sliding_cohesion(phi_foundation: Optional[float]) -> str:
+    """The sliding check's rule for the foundation cohesion when
+    ``sliding_cohesion`` is not given (GM-212): ``"undrained"`` for a
+    foundation soil given with phi_foundation = 0 (an undrained strength,
+    c_foundation = cu: GEC-6 Eq. 5-39 is for 'cohesive (undrained)
+    materials'), else ``"drained"`` (GEC-6 Eq. 5-38, EN 1997-1
+    6.5.3(10)). A phi_foundation not given takes the drained rule."""
+    if phi_foundation is not None and phi_foundation == 0:
+        return "undrained"
+    return "drained"
+
 
 def _active_thrust_terms(geom: CantileverWallGeometry,
                          gamma_backfill: float, phi_backfill: float,
@@ -327,6 +415,39 @@ def _sum(items: List[Dict[str, Any]], key: str, flag: str) -> float:
     return sum(i[key] for i in items if i[flag])
 
 
+def _refuse_unused_interface(rule: str, c_foundation: float,
+                             delta_base: Optional[float],
+                             base_adhesion: Optional[float]) -> None:
+    """An interface input the chosen rule for the foundation cohesion does
+    not count is refused with the rules that do (GM-212), never taken and
+    left out of the resistance; and the undrained rule needs an undrained
+    strength."""
+    if rule == "drained" and base_adhesion:
+        raise ValueError(
+            f"base_adhesion {base_adhesion:g} kPa: the drained sliding "
+            "resistance counts no adhesion (GEC-6 Eq. 5-38; EN 1997-1 "
+            "6.5.3(10): 'Any effective cohesion c' should be neglected'). "
+            "To count it give sliding_cohesion 'friction_plus_adhesion' "
+            "(UFC 3-220-20 Fig. 4-27: V tan delta + Ca Be) or 'undrained' "
+            "(GEC-6 Eq. 5-39: ca B alone, not combined with friction).")
+    if rule == "undrained" and delta_base is not None:
+        raise ValueError(
+            f"delta_base {delta_base:g} deg: the undrained sliding "
+            "resistance is the adhesion ca B alone (GEC-6 Eq. 5-39; "
+            "'Equations 5-38 and 5-39 should not be combined'), with no "
+            "base friction. Leave delta_base out, or give sliding_cohesion "
+            "'friction_plus_adhesion' (UFC 3-220-20 Fig. 4-27) or "
+            "'drained'.")
+    if rule == "undrained" and base_adhesion is None \
+            and not (c_foundation and c_foundation > 0):
+        raise ValueError(
+            "the undrained sliding resistance (sliding_cohesion "
+            "'undrained', GEC-6 Eq. 5-39: ca B, ca typically the undrained "
+            "shear strength cu) needs c_foundation = cu > 0, or "
+            "base_adhesion. It is the rule taken when phi_foundation is 0; "
+            "for a drained strength give phi_foundation > 0.")
+
+
 def _sliding_terms(geom: CantileverWallGeometry,
                    gamma_backfill: float, phi_backfill: float,
                    c_backfill: float = 0.0,
@@ -339,18 +460,32 @@ def _sliding_terms(geom: CantileverWallGeometry,
                    delta_base: float = None,
                    base_adhesion: float = None,
                    live_load_resists: bool = False,
-                   dead_load_resists: bool = False) -> Dict[str, Any]:
+                   dead_load_resists: bool = False,
+                   sliding_cohesion: str = None) -> Dict[str, Any]:
     """The sliding check's terms, unrounded (GM-143): ``V`` and its parts
     (``V_weights``, ``V_surcharge`` the surcharge over the heel counted,
     ``Pv_counted`` the part of the thrust's vertical component ``Pv``
     counted), ``V_left_out`` (the surcharge over the heel and the live
     load's share of Pv not counted, GM-157), the base interface
-    ``delta_b`` (deg) and ``ca`` (kPa) with whether each was given,
-    ``Kp``, ``D_passive`` and ``Pp`` (None / 0 without passive; with a
-    shear key Pp acts over the depth of the key only, from
-    ``D_passive_top`` = the base thickness down to ``D_passive``, GM-210),
-    ``resisting``, ``driving`` (= Ph) and ``FOS`` (None with no driving
-    force)."""
+    ``delta_b`` (deg, None when no friction is counted) and ``ca`` (kPa)
+    with whether each was given, the rule for the foundation cohesion
+    ``sliding_cohesion`` (GM-212, :data:`SLIDING_COHESION_BASIS`) with
+    ``c_foundation``, where ca came from (``ca_from``), the width it acts
+    on (``adhesion_width``: B, or Be = B - 2e for
+    "friction_plus_adhesion", with ``eccentricity``) and the two parts
+    ``R_friction`` and ``R_adhesion``; ``Kp``, ``D_passive`` and ``Pp``
+    (None / 0 without passive; with a shear key Pp acts over the depth of
+    the key only, from ``D_passive_top`` = the base thickness down to
+    ``D_passive``, GM-210), ``resisting``, ``driving`` (= Ph) and ``FOS``
+    (None with no driving force)."""
+    if sliding_cohesion is None:
+        sliding_cohesion = default_sliding_cohesion(phi_foundation)
+    if sliding_cohesion not in SLIDING_COHESION:
+        raise ValueError(f"sliding_cohesion must be one of "
+                         f"{list(SLIDING_COHESION)}, got "
+                         f"{sliding_cohesion!r}")
+    _refuse_unused_interface(sliding_cohesion, c_foundation, delta_base,
+                             base_adhesion)
     if phi_foundation is None:
         phi_foundation = phi_backfill
     if gamma_foundation is None:
@@ -377,12 +512,38 @@ def _sliding_terms(geom: CantileverWallGeometry,
                      if i["kind"] == "thrust" and i["resists"])
     V_left_out = sum(i["W"] for i in items if not i["resists"])
 
-    # Base interface: default delta_b = 2/3 * phi_foundation and
-    # ca = 2/3 * c_foundation; explicit overrides bypass the 2/3 factors.
-    delta_b = delta_base if delta_base is not None else 2.0 / 3.0 * phi_foundation
-    ca = base_adhesion if base_adhesion is not None else 2.0 / 3.0 * c_foundation
+    # Base interface (GM-212): the friction and the adhesion the printed
+    # rule for the foundation cohesion counts. delta_b = 2/3 phi_foundation
+    # by default (GM-173), delta_base used directly. The adhesion: none
+    # (drained, GEC-6 Eq. 5-38; EN 1997-1 6.5.3(10)), cu on B alone
+    # (undrained, GEC-6 Eq. 5-39), or UFC Table 4-1's Ca on Be added to the
+    # friction (UFC 3-220-20 Fig. 4-27); base_adhesion used directly.
+    delta_b = None
+    R_friction = 0.0
+    if sliding_cohesion != "undrained":
+        delta_b = (delta_base if delta_base is not None
+                   else 2.0 / 3.0 * phi_foundation)
+        R_friction = V * math.tan(math.radians(delta_b))
+    ca, ca_from, width, e = 0.0, None, None, None
+    if sliding_cohesion == "undrained":
+        ca, ca_from = ((base_adhesion, "base_adhesion")
+                       if base_adhesion is not None
+                       else (c_foundation, "c_foundation"))
+        width = B
+    elif sliding_cohesion == "friction_plus_adhesion":
+        ca, ca_from = ((base_adhesion, "base_adhesion")
+                       if base_adhesion is not None
+                       else (adhesion_ufc_table_4_1(c_foundation),
+                             "ufc_table_4_1"))
+        # Be by the uniform bearing pressure method, on the loads this
+        # check counts (Pp left out, as UFC Fig. 4-27's resultant is)
+        M = (_sum(items, "M", "resists")
+             - thrust["Ph"] * thrust["z_Pa"])
+        e = B / 2.0 - (M / V if V > 0 else B / 2.0)
+        width = max(B - 2.0 * abs(e), 0.0)
+    R_adhesion = ca * width if width is not None else 0.0
 
-    resisting = V * math.tan(math.radians(delta_b)) + ca * B
+    resisting = R_friction + R_adhesion
 
     # Passive resistance (optional), with the soil in front taken up to the
     # top of the base
@@ -421,6 +582,10 @@ def _sliding_terms(geom: CantileverWallGeometry,
             "phi_foundation": phi_foundation,
             "delta_b": delta_b, "delta_b_given": delta_base is not None,
             "ca": ca, "ca_given": base_adhesion is not None,
+            "sliding_cohesion": sliding_cohesion,
+            "c_foundation": c_foundation, "ca_from": ca_from,
+            "adhesion_width": width, "eccentricity": e,
+            "R_friction": R_friction, "R_adhesion": R_adhesion,
             "Kp": Kp, "D_passive": D, "D_passive_top": D_top,
             "gamma_foundation": gamma_foundation,
             "Pp": Pp, "resisting": resisting, "driving": driving,
@@ -440,8 +605,12 @@ def _sliding_dict(t: Dict[str, Any], FOS_required: float) -> Dict[str, Any]:
         "Pa_kN_per_m": round(t["Pa"], 1),
         "Pa_vertical_kN_per_m": round(t["Pv"], 1),
         "thrust_inclination_deg": round(t["delta_deg"], 2),
-        "delta_base_deg": round(t["delta_b"], 2),
+        "sliding_cohesion": t["sliding_cohesion"],
+        "delta_base_deg": (None if t["delta_b"] is None
+                           else round(t["delta_b"], 2)),
         "base_adhesion_kPa": round(t["ca"], 2),
+        "adhesion_width_m": (None if t["adhesion_width"] is None
+                             else round(t["adhesion_width"], 3)),
         "passes": True if FOS is None else FOS >= FOS_required,
     }
 
@@ -459,24 +628,38 @@ def check_sliding(geom: CantileverWallGeometry,
                   delta_base: float = None,
                   base_adhesion: float = None,
                   live_load_resists: bool = False,
-                  dead_load_resists: bool = False) -> Dict[str, Any]:
+                  dead_load_resists: bool = False,
+                  sliding_cohesion: str = None) -> Dict[str, Any]:
     """Check sliding stability.
 
-    FOS_sliding = (V * tan(delta_b) + ca * B + Pp) / (Pa * cos(delta))
+    FOS_sliding = (R_friction + R_adhesion + Pp) / (Pa * cos(delta))
 
     V counts the surcharge over the heel only as ``live_load_resists`` and
     ``dead_load_resists`` say (default: neither, GM-157; the module
     docstring gives the basis); both surcharges' thrust drives it.
 
-    By DEFAULT the base interface parameters are derived from the foundation
-    soil: ``delta_b = (2/3)*phi_foundation`` and ``ca = (2/3)*c_foundation``
-    (Das Ch. 13 / GEC-11 practice for a footing cast against soil with a
-    reduced interface). Pass the FULL foundation soil strengths — do NOT
-    pre-reduce them, or the 2/3 factor is applied twice (owner wall session
-    2026-07-14: phi_foundation=22 intended as "delta_b = 22 deg" produced
-    delta_b = 14.7 deg). To set the interface directly (e.g. delta_b = phi
-    for cast-in-place concrete failing soil-on-soil, or a measured adhesion),
-    use ``delta_base`` / ``base_adhesion``, which BYPASS the 2/3 factors.
+    The foundation soil's cohesion enters by the printed rule
+    ``sliding_cohesion`` names (GM-212, :data:`SLIDING_COHESION_BASIS`):
+
+    * ``"drained"``: R = V tan(delta_b), the cohesion not counted (GEC-6
+      Eq. 5-38; EN 1997-1 6.5.3(10), "Any effective cohesion c' should be
+      neglected"). The default, unless phi_foundation is 0.
+    * ``"undrained"``: R = ca B alone, ca = c_foundation taken as the
+      undrained shear strength cu (GEC-6 Eq. 5-39; "Equations 5-38 and
+      5-39 should not be combined"). The default when phi_foundation is 0.
+    * ``"friction_plus_adhesion"``: R = V tan(delta_b) + Ca Be, Ca from UFC
+      3-220-20 Table 4-1 at c_foundation taken as the undrained shear
+      strength, Be = B - 2e (UFC 3-220-20 Fig. 4-27, Sec. 4-5.1.3).
+
+    The base friction is ``delta_b = (2/3)*phi_foundation`` by default
+    (GM-173: :data:`BASE_FRICTION_BASIS`). Pass the FULL foundation soil
+    strengths: do NOT pre-reduce them, or the 2/3 factor is applied twice
+    (owner wall session 2026-07-14: phi_foundation=22 intended as "delta_b
+    = 22 deg" produced delta_b = 14.7 deg). To set the interface directly
+    (e.g. delta_b = phi for concrete cast against the ground, or a measured
+    adhesion), use ``delta_base`` / ``base_adhesion``. An input the rule
+    does not count is refused (base_adhesion with the drained rule,
+    delta_base with the undrained one).
 
     The active thrust is decomposed per the chosen earth-pressure method
     (RW-1): only the horizontal component Pa*cos(delta) drives sliding, and
@@ -513,8 +696,9 @@ def check_sliding(geom: CantileverWallGeometry,
         Base interface friction angle (degrees), used DIRECTLY (no 2/3
         factor). If None (default), delta_b = (2/3)*phi_foundation.
     base_adhesion : float, optional
-        Base adhesion ca (kPa), used DIRECTLY (no 2/3 factor). If None
-        (default), ca = (2/3)*c_foundation.
+        Base adhesion ca (kPa), used DIRECTLY, with the "undrained" or
+        "friction_plus_adhesion" rule. If None (default), cu
+        (c_foundation) or UFC 3-220-20 Table 4-1's Ca at c_foundation.
     live_load_resists : bool, optional
         Count the live-load surcharge (``geom.surcharge``) over the heel,
         and its share of the thrust's vertical component, as resisting
@@ -523,13 +707,17 @@ def check_sliding(geom: CantileverWallGeometry,
         Count the dead-load surcharge (``geom.dead_load_surcharge``) over
         the heel as resisting weight. Default False
         (:data:`DEAD_LOAD_BASIS`).
+    sliding_cohesion : str, optional
+        "drained", "undrained" or "friction_plus_adhesion" (above). None
+        (default): :func:`default_sliding_cohesion`.
 
     Returns
     -------
     dict
         FOS_sliding, driving_force, resisting_force, Pp_kN_per_m, passes,
-        plus the interface values actually used (delta_base_deg,
-        base_adhesion_kPa). With no driving force (the active thrust is
+        plus the interface values actually used (sliding_cohesion,
+        delta_base_deg (None when no friction is counted),
+        base_adhesion_kPa, adhesion_width_m). With no driving force (the active thrust is
         zero, e.g. cancelled by backfill cohesion) nothing pushes the wall:
         ``passes`` is True, ``no_driving_force`` is True and ``FOS_sliding``
         is None rather than a placeholder number.
@@ -538,7 +726,7 @@ def check_sliding(geom: CantileverWallGeometry,
         geom, gamma_backfill, phi_backfill, c_backfill, phi_foundation,
         c_foundation, gamma_concrete, pressure_method, include_passive,
         gamma_foundation, delta_base, base_adhesion, live_load_resists,
-        dead_load_resists), FOS_required)
+        dead_load_resists, sliding_cohesion), FOS_required)
 
 
 def _overturning_terms(geom: CantileverWallGeometry,
@@ -836,7 +1024,8 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
                             base_adhesion: float = None,
                             live_load_resists: bool = False,
                             dead_load_resists: bool = False,
-                            surcharge_in_bearing: bool = True
+                            surcharge_in_bearing: bool = True,
+                            sliding_cohesion: str = None
                             ) -> CantileverWallResult:
     """Run complete cantilever wall stability analysis.
 
@@ -853,7 +1042,9 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
     phi_foundation : float, optional
         Foundation soil friction angle. If None, uses phi_backfill.
     c_foundation : float, optional
-        Foundation cohesion (kPa). Default 0.
+        Foundation cohesion (kPa). Default 0. The sliding check counts it
+        by ``sliding_cohesion``: not at all (drained), or as the undrained
+        shear strength cu.
     q_allowable : float, optional
         Allowable bearing pressure (kPa). Without it the bearing check is
         NOT RUN: the result's FOS_bearing and passes_bearing are None, its
@@ -874,10 +1065,13 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
         Foundation soil unit weight (kN/m³). If None, uses gamma_backfill.
     delta_base : float, optional
         Base interface friction angle (degrees), used DIRECTLY in the sliding
-        check (no 2/3 factor). Default None → (2/3)*phi_foundation.
+        check (no 2/3 factor). Default None → (2/3)*phi_foundation. Refused
+        with the undrained rule, which counts no friction.
     base_adhesion : float, optional
-        Base adhesion ca (kPa), used DIRECTLY (no 2/3 factor). Default
-        None → (2/3)*c_foundation.
+        Base adhesion ca (kPa), used DIRECTLY with the "undrained" or
+        "friction_plus_adhesion" rule. Default None → cu (c_foundation),
+        or UFC 3-220-20 Table 4-1's Ca at c_foundation. Refused with the
+        drained rule, which counts no adhesion.
     live_load_resists : bool, optional
         Count the live-load surcharge (``geom.surcharge``) over the heel,
         and its share of the thrust's vertical component, as a resisting
@@ -889,6 +1083,12 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
     surcharge_in_bearing : bool, optional
         Count the surcharges over the heel in the bearing pressures
         (q_toe, q_heel, FOS_bearing). Default True (:data:`BEARING_BASIS`).
+    sliding_cohesion : str, optional
+        How the sliding check counts the foundation cohesion (GM-212,
+        :func:`check_sliding`): "drained", "undrained" or
+        "friction_plus_adhesion". None (default):
+        :func:`default_sliding_cohesion` ("undrained" when phi_foundation
+        is 0, else "drained").
 
     Returns
     -------
@@ -897,19 +1097,39 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
         ``vertical_forces``, ``sliding_terms``, ``overturning_terms`` and
         ``bearing_terms``; ``eccentricity`` / ``in_middle_third`` are the
         eccentricity check's (on the overturning check's loads), q_toe /
-        q_heel the bearing check's; and ``choices``: the base friction
-        delta_b (GM-173) and how the surcharges over the heel were counted
-        when there are any (GM-157).
+        q_heel the bearing check's; and ``choices``: the rule for the
+        foundation cohesion in sliding when there is any (GM-212), the base
+        friction delta_b when friction is counted (GM-173) and how the
+        surcharges over the heel were counted when there are any (GM-157).
     """
-    s_terms = _sliding_terms(
-        geom, gamma_backfill, phi_backfill, c_backfill,
-        phi_foundation, c_foundation, gamma_concrete,
-        pressure_method, include_passive, gamma_foundation,
-        delta_base=delta_base, base_adhesion=base_adhesion,
-        live_load_resists=live_load_resists,
-        dead_load_resists=dead_load_resists,
-    )
+    rule_default = default_sliding_cohesion(phi_foundation)
+
+    def slide(rule, delta_base=delta_base, base_adhesion=base_adhesion):
+        return _sliding_terms(
+            geom, gamma_backfill, phi_backfill, c_backfill,
+            phi_foundation, c_foundation, gamma_concrete,
+            pressure_method, include_passive, gamma_foundation,
+            delta_base=delta_base, base_adhesion=base_adhesion,
+            live_load_resists=live_load_resists,
+            dead_load_resists=dead_load_resists, sliding_cohesion=rule)
+
+    s_terms = slide(sliding_cohesion)
     sliding = _sliding_dict(s_terms, FOS_sliding)
+
+    # The other printed rules on the same wall (GM-212), each without the
+    # input it does not count, for the choice
+    others = {}
+    for rule in SLIDING_COHESION:
+        if rule == s_terms["sliding_cohesion"]:
+            continue
+        try:
+            t = slide(rule,
+                      delta_base=None if rule == "undrained" else delta_base,
+                      base_adhesion=(None if rule == "drained"
+                                     else base_adhesion))
+            others[rule] = t["FOS"]
+        except ValueError as exc:
+            others[rule] = str(exc)
 
     o_terms = _overturning_terms(
         geom, gamma_backfill, phi_backfill, c_backfill,
@@ -952,10 +1172,74 @@ def analyze_cantilever_wall(geom: CantileverWallGeometry,
         sliding_terms=s_terms,
         overturning_terms=o_terms,
         bearing_terms=b_terms,
-        choices=[base_friction_choice(s_terms)]
+        choices=sliding_cohesion_choice(s_terms, rule_default, others)
+        + ([base_friction_choice(s_terms)]
+           if s_terms["delta_b"] is not None else [])
         + heel_surcharge_choices(geom, live_load_resists,
                                  dead_load_resists, surcharge_in_bearing),
     )
+
+
+#: Each rule for the foundation cohesion in sliding in a line (GM-212),
+#: for the choice's alternatives; :data:`SLIDING_COHESION_BASIS` quotes them.
+SLIDING_COHESION_SHORT = {
+    "drained": ("R = V tan delta_b, the cohesion not counted (GEC-6 "
+                "Eq. 5-38; EN 1997-1 6.5.3(10))"),
+    "undrained": ("R = ca B alone, ca = cu, no friction (GEC-6 Eq. 5-39, "
+                  "not combined with Eq. 5-38)"),
+    "friction_plus_adhesion": (
+        "R = V tan delta_b + Ca Be (UFC 3-220-20 Fig. 4-27, Ca from its "
+        "Table 4-1 at c_foundation as the undrained shear strength)"),
+}
+
+
+def sliding_cohesion_choice(terms: Dict[str, Any], rule_default: str,
+                            others: Dict[str, Any]) -> list:
+    """How the sliding check counted the foundation cohesion (GM-212), as
+    a list of at most one entry of a result's ``choices``: none when there
+    is no cohesion or adhesion to count and the drained rule was the one
+    in force by default. ``terms`` are the sliding check's
+    (:func:`_sliding_terms`), ``rule_default`` the rule taken when none is
+    given (:func:`default_sliding_cohesion`) and ``others`` the sliding FOS
+    each other rule gives on the same wall (None: no driving force), or
+    why it did not run."""
+    from geotech_common.choices import choice, how_given
+    rule, c_f, ca = (terms["sliding_cohesion"], terms["c_foundation"],
+                     terms["ca"])
+    if rule == "drained" and not c_f and not terms["ca_given"] \
+            and rule == rule_default:
+        return []
+    if rule == "drained":
+        chosen = "drained: R = V tan delta_b" + (
+            f", c_foundation = {c_f:g} kPa not counted" if c_f else "")
+    else:
+        source = {"base_adhesion": "base_adhesion",
+                  "c_foundation": "c_foundation, as cu",
+                  "ufc_table_4_1": (f"UFC 3-220-20 Table 4-1 at c_foundation "
+                                    f"= {c_f:g} kPa")}[terms["ca_from"]]
+        width = terms["adhesion_width"]
+        chosen = (f"undrained: R = ca B = {ca:.1f} kPa x {width:.2f} m, ca "
+                  f"from {source}, no friction" if rule == "undrained" else
+                  f"friction_plus_adhesion: R = V tan delta_b + Ca Be, Ca = "
+                  f"{ca:.1f} kPa from {source}, Be = B - 2e = {width:.2f} m")
+    basis = SLIDING_COHESION_BASIS[rule]
+    if rule == "undrained" and rule == rule_default:
+        basis = ("phi_foundation 0 is an undrained strength, so "
+                 "c_foundation is cu: " + basis)
+
+    def other(name):
+        fos = others.get(name)
+        if isinstance(fos, str):
+            return (f"{name}: not run here ({fos}). "
+                    + SLIDING_COHESION_SHORT[name])
+        said = ("no driving force" if fos is None
+                else f"FOS_sliding {fos:.3f}")
+        return f"{name} ({said}): {SLIDING_COHESION_SHORT[name]}"
+
+    return [choice(
+        "foundation cohesion in the sliding resistance (sliding_cohesion)",
+        chosen, how_given(rule, rule_default, name="sliding_cohesion"),
+        basis, [other(name) for name in SLIDING_COHESION if name != rule])]
 
 
 def base_friction_choice(terms: Dict[str, Any]) -> dict:

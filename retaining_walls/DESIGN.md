@@ -571,3 +571,73 @@ counts it over the key depth only, so a key shallower than about 0.41 t
 counts less passive than the no-key option. The check's surface is the top
 of the base; UFC adds "it is also prudent to consider some amount of future
 excavation in front of the wall". `sliding_basis` reports the Pp counted.
+
+## The foundation cohesion in sliding (GM-212, 2026-10-20)
+
+Before, the sliding check added ca = 2/3 c_foundation on B to the friction
+V tan delta_b. None of the references prints that rule. They print three
+rules. `sliding_cohesion` offers each one, and the result's `choices` give
+its basis and each other rule's FOS_sliding on the same wall:
+
+- `drained`: R = V tan delta_b, and the cohesion is not counted.
+  - GEC-6 Sec. 5.4 (p. 100), Eq. 5-38, "for footings with planar bearing
+    surfaces on frictional (drained) materials".
+  - GEC-6 again: "Because drained and undrained conditions will not occur
+    simultaneously, Equations 5-38 and 5-39 should not be combined for use
+    at the same time".
+  - EN 1997-1 Sec. 6.5.3(10) (p. 64): "Any effective cohesion c' should be
+    neglected".
+- `undrained`: R = ca B alone, with no friction.
+  - GEC-6 Eq. 5-39: "In practice, ca is typically taken as equal to the
+    undrained shear strength (cohesion, cu) of the clay".
+  - EN 1997-1 6.5.3(11) Eq. 6.4a.
+  - EN 6.5.3(12)P limits Rd to 0.4 Vd "if it is possible for water or air
+    to reach the interface". That limit is not applied, and the basis says
+    so.
+- `friction_plus_adhesion`: R = V tan delta_b + Ca Be.
+  - UFC 3-220-20 Fig. 4-27 (p. 220) and Sec. 4-5.1.3 (p. 223).
+  - Ca is from UFC Table 4-1 (p. 184) by the undrained shear strength,
+    read linearly within its rows. The table stops at 4000 psf (191.5 kPa);
+    above that the rule refuses and asks for `base_adhesion`.
+  - Be = B - 2e, by the uniform bearing pressure method, with e taken on
+    the loads the check counts.
+  - UFC adds that the minimum FS "may also need to be increased when base
+    adhesion is included".
+  - FHWA NHI-06-089 Fig. 10-17 (after NAVFAC 1986b) prints the same sum
+    with the full B.
+
+Answers to the three questions:
+
+1. Does any reference say not to combine adhesion and friction? Yes:
+   GEC-6.
+2. Does any reference reduce the adhesion? Only UFC and NHI, through their
+   adhesion tables (Ca below su above about 24 kPa). None uses 2/3.
+3. Does any reference say to ignore cohesion for drained sliding? Yes:
+   EN 1997-1. GEC-6 does the same by not combining the two equations.
+
+NHI p. 10-17 is about wall-back adhesion (cw = 0.5 c', "no wall adhesion
+be allowed"), not the base.
+
+The default depends on phi_foundation:
+
+- phi_foundation = 0 gives `undrained`. A clay layer from
+  `SoilProfile.to_retaining_wall_input` gives phi_foundation 0 and
+  c_foundation = cu.
+- Anything else gives `drained`.
+
+An input the rule does not count is refused:
+
+- `base_adhesion` with `drained`;
+- `delta_base` with `undrained`.
+
+`sliding_basis` reports `sliding_cohesion` and `adhesion_width_m`.
+
+Before and after, on a wall with H 5 m, B 3.0 m, backfill gamma 19 and phi
+32, and foundation c' 10 kPa and phi' 28:
+
+| | Resisting R (kN/m) | FOS_sliding | Result |
+|---|---|---|---|
+| Before (90.0 friction + 6.67 x 3.0 adhesion) | 110.0 | 1.507 | passes |
+| Default `drained` now | 90.0 | 1.233 | fails |
+| `friction_plus_adhesion` (Ca 10 kPa on Be 2.33 m) | 113.3 | 1.553 | passes |
+
