@@ -1415,20 +1415,30 @@ def _plot_cantilever_section(result, analysis):
     ]
     ax.fill(stem_x, stem_y, facecolor='#94a3b8', edgecolor='#1a1a1a', linewidth=1.5)
 
-    # Backfill behind stem (to the right of stem, above base)
-    backfill_x = [
-        t_toe + t_stem_b, B, B, t_toe + t_stem_b,
-    ]
-    backfill_y = [
-        t_base, t_base, t_base + h_stem, t_base + h_stem,
-    ]
-    ax.fill(backfill_x, backfill_y, facecolor='#f5e6c8', edgecolor='none', alpha=0.7)
+    # The ground on each side, as the analysis has it (GM-200: the toe
+    # side's ground was drawn at H, level with the backfill). Behind the
+    # wall the backfill meets the stem at its top and rises at the
+    # backfill slope; in front, the ground is at the top of the base: H is
+    # measured from the underside of the base, the wall retains H less the
+    # base thickness above the top of the footing, and passive resistance
+    # is taken on the base's embedment (``cantilever._sliding_terms``).
+    x_left, x_right = -B * 0.4, B * 1.4
+    slope = math.tan(math.radians(geom.backfill_slope or 0.0))
+    x_back_top = t_toe + t_stem_t
 
-    # Soil below base
-    ax.add_patch(patches.Rectangle(
-        (-B * 0.3, -B * 0.3), B * 1.6, B * 0.3,
-        facecolor='#e8dcc8', edgecolor='none', alpha=0.5,
-    ))
+    def _backfill_surface(x):
+        return H + (x - x_back_top) * slope
+
+    backfill_x = [t_toe + t_stem_b, B, B, x_right, x_right, x_back_top]
+    backfill_y = [t_base, t_base, 0.0, 0.0, _backfill_surface(x_right), H]
+    ax.fill(backfill_x, backfill_y, facecolor='#f5e6c8', edgecolor='none',
+            alpha=0.7, zorder=0)
+
+    # Foundation soil under the base and the soil in front of the toe
+    y_bottom = -B * 0.45
+    ax.fill([x_left, x_right, x_right, 0.0, 0.0, x_left],
+            [y_bottom, y_bottom, 0.0, 0.0, t_base, t_base],
+            facecolor='#e8dcc8', edgecolor='none', alpha=0.5, zorder=0)
 
     # Earth pressure diagram (triangular, on back of wall), with the Ka
     # and the thrust the analysis used (GM-143)
@@ -1447,12 +1457,14 @@ def _plot_cantilever_section(result, analysis):
         [t_base, t_base, H],
         facecolor='#fca5a5', edgecolor='#dc2626', linewidth=1.5, alpha=0.5,
     )
-    # P_a beside the diagram's base corner: written inside the triangle
-    # it ran across its edge at the printed width (GM-194)
+    # P_a beside the diagram's sloping edge, at its mid-height, in the
+    # backfill: written inside the triangle it ran across its edge at the
+    # printed width (GM-194), and beside the base corner it ran past the
+    # frame when a backfill slope made the view taller (GM-200)
     ax.annotate(
         f'P_a = {ep["Pa"]:.0f} kN/m',
-        xy=(press_x_base + sigma_base * p_scale, t_base), xytext=(4, 4),
-        textcoords='offset points', va='bottom',
+        xy=(press_x_base + 0.5 * sigma_base * p_scale, 0.5 * (t_base + H)),
+        xytext=(6, 0), textcoords='offset points', va='center',
         fontsize=8, ha='left', color='#dc2626', fontweight='bold',
     )
 
@@ -1487,9 +1499,11 @@ def _plot_cantilever_section(result, analysis):
                    color='#666', lw=0.8)
     _dimension(0, B, 20, f'B = {B:.2f} m', fontsize=9, fontweight='bold')
 
-    # Ground surface line
-    ax.plot([-B * 0.3, t_toe], [H, H], 'g-', linewidth=2)
-    ax.plot([t_toe, t_toe], [H, t_base + h_stem], 'g-', linewidth=1)
+    # Ground surface lines: the backfill behind the stem, the ground in
+    # front at the top of the base
+    ax.plot([x_back_top, x_right], [H, _backfill_surface(x_right)], 'g-',
+            linewidth=2)
+    ax.plot([x_left, 0.0], [t_base, t_base], 'g-', linewidth=2)
 
     # Resultant location marker, its point on the base's underside, and
     # its label beside it inside the base (under the base it ran into B)
@@ -1515,10 +1529,12 @@ def _plot_cantilever_section(result, analysis):
         f"FOS_brg = {_fos_text(result.FOS_bearing, 'not checked')}"
     )
 
-    ax.set_xlim(-B * 0.4, B * 1.4)
-    ax.set_ylim(-B * 0.45, H * 1.15)
-    ax.set_xlabel('Distance (m)', fontsize=10)
-    ax.set_ylabel('Elevation (m)', fontsize=10)
+    ax.set_xlim(x_left, x_right)
+    ax.set_ylim(y_bottom, max(H * 1.15, _backfill_surface(x_right) + 0.05 * H))
+    # the wall's own frame, said as such: the inputs give no elevation
+    # (the axis read "Elevation" with 0 at the underside of the base)
+    ax.set_xlabel('Distance from the toe (m)', fontsize=10)
+    ax.set_ylabel('Height above the underside of the base (m)', fontsize=10)
     ax.set_title('Cantilever Retaining Wall Cross-Section', fontsize=11, fontweight='bold')
     ax.set_aspect('equal')
     ax.grid(True, alpha=0.15)

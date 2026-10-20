@@ -719,7 +719,7 @@ class TestPileGroupPackage:
         assert len(pictures) == 2
         plan_page = pictures[0][1]
         assert "8. FIGURES" in plan_page.upper()
-        assert "Figure 1: Plan view of pile group layout" in plan_page
+        assert "Figure 1: Plan of the pile group" in plan_page
         assert not any("did not print" in w
                        for w in result.get("renderer_warnings", []))
 

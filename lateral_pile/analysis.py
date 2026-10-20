@@ -45,7 +45,12 @@ _PY_SOURCE = {
                         "more appropriate, even below it",
     "StiffClayAboveWT": "Welch & Reese (1972), Report 89-10, stiff clay "
                         "above the water table, as printed in COM624P "
-                        "(FHWA-SA-91-048) pp. 336-340 and GEC 9 App. A.3",
+                        "(FHWA-SA-91-048) pp. 336-340 and GEC 9 App. A.3 "
+                        "(\"stiff clay with no free water\"); GEC 9 p. 219: "
+                        "more appropriate than Reese et al. (1975) even "
+                        "below the water table where the groundwater is at "
+                        "depth and free water is not at or near the ground "
+                        "surface",
     "SoftClayJeanjean": "Jeanjean (2009), OTC-20158-MS, soft clay",
     "SandReese": "Reese, Cox & Koop (1974), OTC 2080, sand",
     "SandAPI": "API RP2A-WSD (2000) / O'Neill & Murchison (1983), sand",

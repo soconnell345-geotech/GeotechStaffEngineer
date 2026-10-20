@@ -24,7 +24,7 @@ Each returns plain dicts (no circular imports):
 - `to_bearing_capacity_input(footing_depth)`
 - `to_settlement_input(footing_depth, B, L)`
 - `to_axial_pile_input(pile_length)`
-- `to_lateral_pile_input(pile_length, pile_diameter, loading)`
+- `to_lateral_pile_input(pile_length, pile_diameter, loading, n_cycles, free_water_at_surface)` — returns `layers` and `choices`. Stiff clay (cu 100 kPa and up) takes Reese et al. (1975) only with free water at the ground surface, Welch & Reese otherwise, below the water table too (GEC 9 p. 219; `free_water_at_surface` overrides; GM-215); `n_cycles` (N) reaches every cyclic Welch & Reese layer, which fails without it (GM-209); an estimated eps50 or k is listed with its table (COM624P Tables 3.2, 3.3, edges at 0.5/1/2 ton/ft^2)
 - `to_sheet_pile_input(excavation_depth)`
 - `to_soe_input(excavation_depth, support_depths, support_type, support_spacing, surcharge)`
 - `to_pile_group_input(pile_length, pile_diameter)`

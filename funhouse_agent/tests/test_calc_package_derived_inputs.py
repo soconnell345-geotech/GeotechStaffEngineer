@@ -142,8 +142,8 @@ def test_pressure_figure_labels_the_ka_used(built, monkeypatch):
     for params in (_MO, {**_MO, "KA": 0.30}):
         _, r, analysis = built("seismic_package", params)
         calc_steps._plot_pressure_diagram(r, analysis)
-    assert "Static PA (Ka=0.283)" in labels
-    assert "Static PA (Ka=0.300)" in labels
+    assert "Static active pressure (K_A = 0.283)" in labels
+    assert "Static active pressure (K_A = 0.300)" in labels
 
 
 def test_ka_has_no_declared_default():
