@@ -5,7 +5,7 @@ Provides input summaries, step-by-step equation output, and figures
 for Mathcad-style calc package generation.
 
 References:
-    FHWA GEC-6 (FHWA-IF-02-054), Chapter 8
+    FHWA GEC-6 (FHWA-SA-02-054), Sec. 5.3 (Settlement Estimation)
     Terzaghi, K. (1925) — Theory of 1-D consolidation
     Schmertmann, J.H. et al. (1978) — Improved strain influence factors
     Timoshenko & Goodier — Elastic settlement theory
@@ -23,7 +23,7 @@ from calc_package.renderer import figure_to_base64
 DISPLAY_NAME = "Settlement Analysis"
 
 REFERENCES = [
-    "FHWA GEC-6 (FHWA-IF-02-054): Shallow Foundations, Chapter 8.",
+    "FHWA GEC-6 (FHWA-SA-02-054): Shallow Foundations, Sec. 5.3.",
     'Terzaghi, K. (1925). "Erdbaumechanik auf Bodenphysikalischer Grundlage." '
     "Deuticke, Vienna.",
     'Schmertmann, J.H. et al. (1978). "Improved Strain Influence Factor '
@@ -227,7 +227,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_name="S_c",
             result_value=f"{result.consolidation * 1000:.2f}",
             result_unit="mm",
-            reference="Terzaghi (1925); FHWA GEC-6, Eqs. 8-5 through 8-7",
+            reference="Terzaghi (1925); FHWA GEC-6, Eqs. 5-20 and 5-22",
         ))
 
         # Stress distribution note
@@ -297,7 +297,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_name="S_s",
             result_value=f"{result.secondary * 1000:.2f}",
             result_unit="mm",
-            reference="Mesri (1973); FHWA GEC-6, Eq. 8-20",
+            reference="Mesri (1973)",
             notes="t_1 = time at end of primary consolidation, "
                   "t_2 = t_1 + t_secondary. "
                   + ("t_1 estimated as t₉₅ from c_v with the whole "
@@ -700,7 +700,7 @@ def _consolidation_layer_step(layer, used) -> CalcStep:
         result_name="S_c",
         result_value=f"{used['Sc'] * 1000:.2f}",
         result_unit="mm",
-        reference="FHWA GEC-6, Eqs. 8-5 through 8-7",
+        reference="FHWA GEC-6, Eqs. 5-20 and 5-22",
     )
 
 

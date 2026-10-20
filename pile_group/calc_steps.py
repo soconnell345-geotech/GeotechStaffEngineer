@@ -7,7 +7,7 @@ for Mathcad-style calc package generation.
 References:
     CPGA User's Guide (USACE ITL-89-4, Hartman et al., 1989)
     USACE EM 1110-2-2906: Design of Pile Foundations
-    FHWA GEC-12 (FHWA-NHI-16-009), Chapter 9 — Group Effects
+    FHWA GEC-12 (FHWA-NHI-16-009), Secs. 7.2.2 and 7.3 (pile groups)
     Converse, F.J. (1962). "Foundations Subjected to Dynamic Forces."
 """
 
@@ -23,7 +23,8 @@ DISPLAY_NAME = "Pile Group Analysis"
 
 REFERENCES = [
     'FHWA GEC-12 (FHWA-NHI-16-009): Design and Construction of Driven '
-    'Pile Foundations, Volumes I & II, Chapter 9 — Group Effects.',
+    'Pile Foundations, Volume I, Sec. 7.2.2 (pile groups in axial '
+    'compression) and Sec. 7.3 (group settlement).',
     'USACE EM 1110-2-2906: Design of Pile Foundations.',
     'CPGA User\'s Guide (USACE ITL-89-4, Hartman et al., 1989). '
     'Computer Program for the Analysis of Pile Groups with Rigid Caps.',
@@ -308,7 +309,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             result_name="E_g",
             result_value=f"{Eg:.3f}",
             result_unit="",
-            reference="FHWA GEC-12, Eq. 9-1",
+            reference="Converse-Labarre formula (Converse 1962)",
             notes=(
                 spacing_note +
                 f"D = {pile_diameter:.3f} m, s = {spacing:.3f} m, "

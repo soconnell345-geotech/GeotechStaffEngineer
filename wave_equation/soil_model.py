@@ -28,7 +28,7 @@ All units are SI: kN, m, seconds.
 References:
     Smith, E.A.L. (1960) "Bearing Capacity of Piles"
     WEAP87 Manual, Chapter 4
-    FHWA GEC-12, Table 12-3 (typical parameters)
+    FHWA GEC-12, Sec. 12.6.7, p. 211 (typical parameters)
     GRLWEAP Manual — damping model options (Smith vs Smith-viscous)
 """
 
