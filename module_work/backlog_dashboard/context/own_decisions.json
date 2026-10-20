@@ -1145,5 +1145,71 @@
    "BACKLOG.md OWN-65, GM-155",
    "module_work/live_smoke/runs/w14-judgment/TRACE_REVIEW.md §3, §8"
   ]
- }
+ },
+  "OWN-66": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "Which printed passive earth pressure coefficients (log spiral) should the tools use by default?",
+    "why": "The tools now offer two printed sources for log-spiral passive pressure. They agree at low friction angles but differ by 10-13 % above 40 degrees, and the default decides how much passive resistance a wall or sheet pile gets unless the user picks.",
+    "background": "Caquot-Kerisel 1948 as the Caltrans Trenching and Shoring Manual prints it (Fig 4-20) is today's default. UFC 3-220-20 (current DoD criteria, the DM 7.2 successor) prints Fig 4-13 and Eq 4-12. The 1948 chart gives 1-4 % more passive up to 35 degrees and 10-13 % more at 40-45 (13.14 against 12.0 at 40 degrees). UFC footnote 21 says the 1948 reduction-factor approach used averages that introduced substantial inaccuracy. A sheet pile sized with UFC values would be embedded a little deeper.",
+    "parts": [
+      {
+        "label": "Default source",
+        "options": [
+          {
+            "label": "Keep Caquot-Kerisel 1948 (Caltrans)",
+            "effect": "No result changes; more passive resistance above 35 degrees."
+          },
+          {
+            "label": "UFC 3-220-20 (Fig 4-13 at wall friction 0.66 phi, Eq 4-12 otherwise)",
+            "effect": "Lower passive above 35 degrees, deeper embedment; 1948 stays as an option."
+          }
+        ]
+      }
+    ],
+    "recommendation": "UFC 3-220-20: it is the current criteria and gives the lower (safer) passive resistance at high friction angles; keep 1948 as a named option.",
+    "if_no_answer": "The default stays Caquot-Kerisel 1948; both are offered and the result names the source used.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "GM-183"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-66, GM-183",
+      "Caltrans T&S Fig 4-20 p. 4-30; UFC 3-220-20 Fig 4-13 p. 193, Eq 4-12 and fn 21 p. 191"
+    ]
+  },
+  "OWN-67": {
+    "kind": "decision",
+    "ask_who": null,
+    "question": "At-rest earth pressure behind a slope: which printed formula should the tools use by default?",
+    "why": "The two references the tools can use for at-rest pressure behind sloping ground give opposite answers: one lowers it, the other raises it. Today the tool asks the user to pick.",
+    "background": "Caltrans Eq 4-3-14 prints K0 = (1 - sin phi)(1 - sin beta). EN 1997-1 Eq 9.2 prints K0 (1 + sin beta) for ground rising from the wall. Caltrans's own Fig 4-7 draws beta positive for rising ground, so this is not a sign convention. At phi 30 the Caltrans form falls below Caltrans's own active Rankine value above about a 16 degree slope, and UFC Table 4-3 also raises K0 behind a 2H:1V slope, so the Caltrans form is most likely a printing error.",
+    "parts": [
+      {
+        "label": "Default",
+        "options": [
+          {
+            "label": "EN 1997-1 Eq 9.2 by default; Caltrans as an option with a warning",
+            "effect": "At-rest pressure behind rising ground goes up, as UFC also shows."
+          },
+          {
+            "label": "Keep asking the user each time",
+            "effect": "No default; the call is refused until a form is named."
+          }
+        ]
+      }
+    ],
+    "recommendation": "EN 1997-1 Eq 9.2 by default, with the Caltrans form kept as an option that carries the warning.",
+    "if_no_answer": "The tool keeps asking which form to use.",
+    "message_to_send": null,
+    "steps": [],
+    "unblocks": [
+      "GM-183"
+    ],
+    "sources": [
+      "BACKLOG.md OWN-67, GM-183",
+      "Caltrans T&S Eq 4-3-14 p. 4-9, Fig 4-7; EN 1997-1 9.5.2(4) Eq 9.2; UFC 3-220-20 Table 4-3 p. 195"
+    ]
+  }
 }
