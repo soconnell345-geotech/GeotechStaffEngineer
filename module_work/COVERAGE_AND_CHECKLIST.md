@@ -15,8 +15,10 @@ changes for users until the review suite has measured it and you say so.
 
 **Since 2026-10-20 (BACKLOG RI-34) the checklist is report_ingest's.** The
 owner: "move all questions related to geotech reports to report_ingest". The
-data file is `report_ingest/report_review_checklist.json` (items unchanged,
-still DRAFT) and the checks are `report_ingest/checklist.py`, run on the
+data file is `report_ingest/report_review_checklist.json` (items and wording
+unchanged, still DRAFT; the summary-against-sheets item reads only the
+laboratory entries, `where: "lab_tests."`, because the record holds every
+reader's) and the checks are `report_ingest/checklist.py`, run on the
 record report ingest writes, not on the ledger, the text layer or
 `write_diggs`' cross-checks. `report_checklist(record)` is on the geotech page
 only; the gate no longer adds failed checks to its note; on the Document

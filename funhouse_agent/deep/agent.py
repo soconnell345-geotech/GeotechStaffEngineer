@@ -1136,10 +1136,11 @@ def build_deep_agent(
     """Construct the deepagents port of the geotech agent.
 
     ``coverage_dir`` is the conversation's folder, where the coverage ledger
-    (``coverage.json``) is kept when ``GEOTECH_COVERAGE`` or
-    ``GEOTECH_REVIEW_CHECKLIST`` is on (:mod:`funhouse_agent.deep.
-    coverage_tools`); ``None`` keeps it in memory. With both switches off
-    (the default) it is unused and the build is unchanged.
+    (``coverage.json``) is kept when ``GEOTECH_COVERAGE`` is on
+    (:mod:`funhouse_agent.deep.coverage_tools`); ``None`` keeps it in
+    memory. With the switch off (the default) it is unused and the build is
+    unchanged. ``GEOTECH_REVIEW_CHECKLIST`` keeps no ledger since RI-34: its
+    checks read report ingest's record (:mod:`report_ingest.checklist`).
 
     ``review_page=True`` marks the Document Review page's build: with
     ``GEOTECH_REVIEW_AGENT=lean`` it is handed to
