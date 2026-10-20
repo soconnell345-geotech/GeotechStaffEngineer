@@ -555,7 +555,10 @@ class TestTheFloor:
         a top, a bottom and, where the log prints none, the sample id; a
         grid with no samples seeds exactly as before."""
         doc, _gt = imperial
-        from planlens.document.loggrid import Sample, log_grid
+        from planlens.document import loggrid
+        if not hasattr(loggrid, "Sample"):
+            pytest.skip("planlens without PL-24's Sample (released after 0.13.0)")
+        Sample, log_grid = loggrid.Sample, loggrid.log_grid
         grid = log_grid(doc, [0])
         before = seed_from_grid(grid, [0], "RXX")
         grid.samples = [
