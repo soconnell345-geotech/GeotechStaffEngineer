@@ -56,6 +56,17 @@ def require_tip_N60(tip_layer: ShaftSoilLayer, depth: float) -> float:
         "blow count corrected to 60 % energy at the tip)")
 
 
+def skipped_depths_note(skipped, n_points: int) -> str:
+    """One sentence naming the trial lengths a capacity-against-length
+    sweep left out and why (GM-203)."""
+    shown = "; ".join(f"L = {m['depth_m']:g} m ({m['reason']})"
+                      for m in skipped[:3])
+    more = (f"; and {len(skipped) - 3} more" if len(skipped) > 3 else "")
+    return (f"The analysis refused {len(skipped)} of the {n_points} trial "
+            f"shaft lengths, which the capacity against length leaves out: "
+            f"{shown}{more}")
+
+
 def side_n60_choice(spans) -> dict:
     """The choice made for cohesionless side layers given no N60 under the
     depth beta (GM-148): beta unreduced, as for N60 >= 15. ``spans`` are
@@ -326,7 +337,8 @@ class DrillShaftAnalysis:
 
     def capacity_vs_depth(self, depth_min: float = 3.0,
                           depth_max: float = None,
-                          n_points: int = 20) -> List[dict]:
+                          n_points: int = 20,
+                          skipped: Optional[list] = None) -> List[dict]:
         """Compute capacity at multiple shaft lengths for optimization.
 
         Parameters
@@ -337,6 +349,11 @@ class DrillShaftAnalysis:
             Maximum shaft length (m). Default: soil profile depth.
         n_points : int, optional
             Number of evaluation points. Default 20.
+        skipped : list, optional
+            Receives a ``{'depth_m', 'reason'}`` dict for each trial length
+            the analysis refused, which the curve leaves out. Not given, a
+            warning names them (GM-203: they were dropped without a word).
+            With every length refused the call is refused.
 
         Returns
         -------
@@ -359,6 +376,7 @@ class DrillShaftAnalysis:
 
         # Use a copy of the shaft per trial depth rather than temporarily
         # mutating the shared shaft.length (re-entrant / thread-safe).
+        missed = []
         for d in depths:
             try:
                 trial_shaft = replace(self.shaft, length=float(d))
@@ -376,6 +394,14 @@ class DrillShaftAnalysis:
                     "Q_tip_kN": round(r.Q_tip, 1),
                     "Q_allowable_kN": round(r.Q_allowable, 1),
                 })
-            except Exception:
-                pass
+            except Exception as exc:
+                missed.append({"depth_m": round(float(d), 2),
+                               "reason": f"{type(exc).__name__}: {exc}"})
+        if missed and not results:
+            raise ValueError(skipped_depths_note(missed, len(depths)))
+        if missed:
+            if skipped is not None:
+                skipped.extend(missed)
+            else:
+                warnings.warn(skipped_depths_note(missed, len(depths)))
         return results

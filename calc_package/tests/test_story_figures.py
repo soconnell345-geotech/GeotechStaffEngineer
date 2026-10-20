@@ -6,6 +6,7 @@ width; one taller than a page starts a page and is scaled to fit it.
 
 import base64
 import io
+import re
 
 import pytest
 
@@ -271,7 +272,7 @@ def test_no_text_is_lost_after_figures_at_a_page_foot(tmp_path):
             'style="width:100%"><p>Figure 2: Base pressure</p>'
             "<h2>Conclusions</h2><p>The wall is adequate.</p>"
             "</body></html>")
-    master = latex_renderer._story_bytes(
+    master, _at = latex_renderer._story_pass(
         html, fitz.paper_rect("letter"),
         fitz.paper_rect("letter") + (54, 54, -54, -54))
     with fitz.open("pdf", master) as doc:
@@ -395,3 +396,238 @@ def test_a_tall_package_figure_keeps_the_text_width(tmp_path):
     printed, = out["figures"]
     assert printed["width_in"] >= FIGURE_PRINT_WIDTH_IN - 0.05
     assert printed["lettering_pt"] >= MIN_PRINT_PT
+
+
+
+def _foot_html(margin_pt: float) -> str:
+    """A package's figures section after text that ends ``margin_pt`` down
+    the first page, in the package template's own CSS: at 583 pt the
+    engine leaves out the first figure, with its heading (GM-198)."""
+    from calc_package.template import CALC_PACKAGE_CSS
+    figures = (f'<div class="section"><h2>8. Figures</h2>'
+               f'{_figure(_png(5, 5), "Figure 1: Plan view")}'
+               f'{_figure(_png(5, 3), "Figure 2: Pile forces")}</div>')
+    return (f"<html><head><style>{CALC_PACKAGE_CSS}</style></head><body>"
+            f'<p style="margin-top:{margin_pt}pt">The last step.</p>'
+            f"{figures}</body></html>")
+
+
+def _steps_html(margin_pt: float) -> str:
+    """Fourteen lines, a paragraph ``margin_pt`` below them, then a section
+    of two calculation steps and a closing paragraph: at 40 pt the engine
+    leaves out the closing paragraph, at 198 pt the steps under the
+    section heading (GM-198)."""
+    from calc_package.template import CALC_PACKAGE_CSS
+    step = ('<div class="calc-step"><div class="step-title">Maximum shear'
+            '</div><div class="result">V = 136.2 kN/m</div></div>')
+    return (f"<html><head><style>{CALC_PACKAGE_CSS}</style></head><body>"
+            + "".join(f"<p>Line {i}.</p>" for i in range(14))
+            + f'<p style="margin-top:{margin_pt}pt">The last step.</p>'
+            f'<div class="section"><h2>6. Wall Demands</h2>{step}{step}'
+            "</div><p>References follow.</p></body></html>")
+
+
+_LETTER = fitz.paper_rect("letter")
+_WHERE = _LETTER + (54, 54, -54, -54)
+
+
+def _texts(pdf: bytes) -> list:
+    with fitz.open("pdf", pdf) as doc:
+        return [page.get_text() for page in doc]
+
+
+@pytest.mark.parametrize("case, margin_pt", [
+    ("figures", 583), ("steps", 40), ("steps", 198)])
+def test_the_engine_drops_what_it_opens_past_a_page_foot(case, margin_pt):
+    """The engine on its own: each case loses something, and the layout
+    finds where."""
+    html = (_foot_html if case == "figures" else _steps_html)(margin_pt)
+    pdf, at = latex_renderer._story_pass(html, _LETTER, _WHERE)
+    text = " ".join(_texts(pdf))
+    lost = (len(latex_renderer._story_images(pdf)) < html.count("<img")
+            or text.count("Maximum shear") < 2
+            and "Wall Demands" in html
+            or "References follow." not in text and "References" in html)
+    if not lost:
+        pytest.skip("this PyMuPDF prints it all on its own")
+    assert at is not None and html[at] == "<"
+
+
+def test_a_dropped_figure_prints_on_the_next_page(tmp_path):
+    """GM-198: every figure prints, the first under its heading and over
+    its caption, and the figures are reported."""
+    out = render_html_pdf_story(_foot_html(583), str(tmp_path / "foot.pdf"))
+    assert out["figures"] is not None and len(out["figures"]) == 2
+    assert "figures_not_printed" not in out
+    first, second = out["figures"]
+    assert first["scaled"] is None
+    with fitz.open(out["path"]) as doc:
+        assert sum(len(page.get_image_info()) for page in doc) == 2
+        text = doc[first["pdf_page"] - 1].get_text()
+    assert "8. FIGURES" in text.upper() and "Figure 1: Plan view" in text
+
+
+@pytest.mark.parametrize("margin_pt", [40, 198])
+def test_dropped_steps_print_on_the_next_page_under_their_heading(
+        margin_pt):
+    """GM-198, the same for text: every step and the closing paragraph
+    print, and a heading starts the page its steps do."""
+    pages = _texts(latex_renderer._story_bytes(
+        _steps_html(margin_pt), _LETTER, _WHERE))
+    text = " ".join(pages)
+    assert text.count("Maximum shear") == 2 and "References follow." in text
+    heading = next(p for p in pages if "Wall Demands" in p)
+    assert "Maximum shear" in heading
+
+
+def test_block_elements_get_an_id_to_find_them_by():
+    html = ('<div id="a"><p>x</p><div id="a"></div>'
+            '<h2 class="z">h</h2><span>s</span></div>')
+    tagged, starts = latex_renderer._tag_blocks(html)
+    assert tagged.count(' id="gse-block-') == 2           # p and h2
+    assert "a" not in starts                               # used twice
+    assert sorted(html[at:at + 3] for at in starts.values()) == ["<h2", "<p>"]
+
+
+def _cells_html(margin_pt: float) -> str:
+    """Thirty table rows with a paragraph in each first cell, after a
+    paragraph ``margin_pt`` down the page, then a closing paragraph: the
+    engine leaves out the rows it opens past a page foot (at 12 pt, rows
+    10 to 20), and at 188 pt the closing paragraph after the table's last
+    row too, once the rows are moved."""
+    from calc_package.template import CALC_PACKAGE_CSS
+    rows = "".join(f"<tr><td><p>Row {i} " + "word " * 12 + "</p></td>"
+                   f"<td><div>{i}.5 kPa</div></td></tr>" for i in range(30))
+    return (f"<html><head><style>{CALC_PACKAGE_CSS}</style></head><body>"
+            f'<p style="margin-top:{margin_pt}pt">Before the table.</p>'
+            f"<table>{rows}</table><p>References follow.</p></body></html>")
+
+
+def _items_html(margin_pt: float) -> str:
+    """Twelve list items of 26 words after a paragraph ``margin_pt`` down
+    the page: the engine leaves out the lines of an item it runs past a
+    page foot, and the items after it."""
+    from calc_package.template import CALC_PACKAGE_CSS
+    items = "".join(f"<li>Item {i} " + "word " * 25 + "</li>"
+                    for i in range(12))
+    return (f"<html><head><style>{CALC_PACKAGE_CSS}</style></head><body>"
+            f'<p style="margin-top:{margin_pt}pt">Before the list.</p>'
+            f"<ul>{items}</ul><p>References follow.</p></body></html>")
+
+
+def _numbered(text: str, word: str) -> set:
+    return {int(n) for n in re.findall(rf"\b{word} (\d+)\b", text)}
+
+
+@pytest.mark.parametrize("margin_pt", [12, 188, 424])
+def test_table_rows_opened_past_a_page_foot_print(margin_pt):
+    """GM-198 for table rows: the table ends before the row and starts
+    again on the next page (or before the row above it, or its last row
+    goes with the paragraph after it), and every row prints."""
+    html = _cells_html(margin_pt)
+    raw = " ".join(_texts(latex_renderer._story_pass(html, _LETTER,
+                                                     _WHERE)[0]))
+    if len(_numbered(raw, "Row")) == 30:
+        pytest.skip("this PyMuPDF prints every row on its own")
+    text = " ".join(_texts(latex_renderer._story_bytes(html, _LETTER,
+                                                       _WHERE)))
+    assert _numbered(text, "Row") == set(range(30))
+    assert text.count("word") == 360 and "References follow." in text
+
+
+@pytest.mark.parametrize("margin_pt", [124, 388])
+def test_list_items_run_past_a_page_foot_print(margin_pt):
+    """GM-198 for list items: one opened or run past the foot goes to the
+    next page, with every line of it."""
+    html = _items_html(margin_pt)
+    raw = " ".join(_texts(latex_renderer._story_pass(html, _LETTER,
+                                                     _WHERE)[0]))
+    if raw.count("word") == 300:
+        pytest.skip("this PyMuPDF prints every item on its own")
+    text = " ".join(_texts(latex_renderer._story_bytes(html, _LETTER,
+                                                       _WHERE)))
+    assert _numbered(text, "Item") == set(range(12))
+    assert text.count("word") == 300 and "References follow." in text
+
+
+def test_one_that_no_break_moves_is_left_and_the_next_is_moved(monkeypatch):
+    """An element no break moves (a row taller than a page) is left as it
+    is, with everything in it, and the ones after it are still moved."""
+    html = _cells_html(12)
+    raw = " ".join(_texts(latex_renderer._story_pass(html, _LETTER,
+                                                     _WHERE)[0]))
+    if 10 in _numbered(raw, "Row"):
+        pytest.skip("this PyMuPDF prints row 10 on its own")
+    real, seen = latex_renderer._foot_breaks, []
+
+    def first_unmovable(text, at):
+        seen.append(text[at:at + 18])
+        return [] if len(seen) == 1 else real(text, at)
+    monkeypatch.setattr(latex_renderer, "_foot_breaks", first_unmovable)
+    text = " ".join(_texts(latex_renderer._story_bytes(html, _LETTER,
+                                                       _WHERE)))
+    assert seen[0].startswith("<tr><td><p>Row 10")
+    assert not any("Row 10 " in s for s in seen[1:])   # nor what is in it
+    # (moving the next one can bring it back too)
+    assert _numbered(text, "Row") >= set(range(30)) - {10}
+    assert "References follow." in text
+
+
+def test_a_table_row_is_found_with_the_body_rows_before_it():
+    html = ("<p>x</p><table><thead><tr><th>A</th></tr></thead>"
+            "<tr><td>1</td></tr><tr><td><table><tr><td>in</td></tr></table>"
+            "</td></tr><tr><td>3</td></tr></table>")
+    rows = [m.start() for m in re.finditer("<tr><td>", html)]
+    table = html.find("<table>")
+    assert latex_renderer._table_row(html, 0) is None
+    assert latex_renderer._table_row(html, rows[0]) == (table, rows[0], [])
+    assert latex_renderer._table_row(html, rows[3]) == (
+        table, rows[3], [rows[0], rows[1]])               # not the inner row
+    inner = html.find("<table>", table + 1)
+    assert latex_renderer._table_row(html, rows[2]) == (inner, rows[2], [])
+    end = latex_renderer._element_end(html, table)
+    assert html[:end].endswith("</table>") and end == len(html)
+
+
+def test_the_breaks_tried_for_a_row_and_for_a_step_result():
+    br = latex_renderer._PAGE_BREAK
+    rows = "".join(f"<tr><td>{i}</td></tr>" for i in range(4))
+    html = f"<h2>T</h2><table>{rows}</table><p>After.</p>"
+    starts = [m.start() for m in re.finditer("<tr>", html)]
+    table, again = html.find("<table>"), "</table>" + br + "<table>"
+    # the third row: before it, before the row above it, then the table
+    # under its heading
+    assert latex_renderer._foot_breaks(html, starts[2])[:4] == [
+        (starts[2], again), (starts[1], again), (0, br), (table, br)]
+    # the first body row goes with the table
+    assert latex_renderer._foot_breaks(html, starts[0])[:2] == [
+        (0, br), (table, br)]
+    # after a table: the paragraph, then with the table's last row
+    after = html.find("<p>After")
+    assert latex_renderer._foot_breaks(html, after)[:2] == [
+        (after, br), (starts[3], again)]
+    step = ('<div class="calc-step"><div class="step-title">T</div>'
+            '<div class="result">R</div></div>')
+    result = step.find('<div class="result">')
+    previous, holding = latex_renderer._blocks_before(step, result)
+    assert step[previous:].startswith('<div class="step-title">')
+    assert holding == [0]
+    assert latex_renderer._foot_breaks(step, result) == [
+        (result, br), (previous, br), (0, br)]
+
+
+def test_a_figure_that_still_does_not_print_is_said(tmp_path, monkeypatch):
+    """Should the restore fail, the result says how many figures are
+    missing, and the warning says so plainly."""
+    html = _foot_html(583)
+    raw, _at = latex_renderer._story_pass(html, _LETTER, _WHERE)
+    if len(latex_renderer._story_images(raw)) == 2:
+        pytest.skip("this PyMuPDF prints both figures on its own")
+    monkeypatch.setattr(latex_renderer, "_lay_out_figures",
+                        lambda *a: (raw, None))
+    out = render_html_pdf_story(html, str(tmp_path / "missing.pdf"))
+    assert out["figures"] is None and out["figures_not_printed"] >= 1
+    warning = latex_renderer.figures_not_printed_warning(out)
+    assert "did not print" in warning and "Tell the user" in warning
+    assert latex_renderer.figures_not_printed_warning(
+        {"figures": []}) is None

@@ -696,6 +696,33 @@ class TestPileGroupPackage:
         assert result["n_piles"] == 9
         assert os.path.exists(outfile)
 
+    def test_with_loads_the_pdf_prints_both_figures(self, tmp_path):
+        """GM-198: with Vz, Mx and My the load steps ran to 6 pt above a
+        page foot and the Story engine left out "8. Figures", the plan view
+        and its caption; the package said nothing. Both figures print, the
+        plan view under its heading and over its caption."""
+        import shutil
+        fitz = pytest.importorskip("fitz")
+        if shutil.which("pdflatex"):
+            pytest.skip("pdflatex renders the PDF; this is the Story path")
+        from funhouse_agent.adapters.calc_package import _generate_pile_group_package
+        outfile = str(tmp_path / "pg_loads.pdf")
+        result = _generate_pile_group_package({
+            "n_rows": 3, "n_cols": 3, "spacing": 1.5,
+            "Vz": 3000.0, "Mx": 400.0, "My": 200.0,
+            "format": "pdf", "output_path": outfile,
+        })
+        assert result["status"] == "success"
+        with fitz.open(outfile) as doc:
+            pictures = [(page.number, page.get_text())
+                        for page in doc for _ in page.get_image_info()]
+        assert len(pictures) == 2
+        plan_page = pictures[0][1]
+        assert "8. FIGURES" in plan_page.upper()
+        assert "Figure 1: Plan view of pile group layout" in plan_page
+        assert not any("did not print" in w
+                       for w in result.get("renderer_warnings", []))
+
 
 class TestSheetPilePackage:
     def test_cantilever(self, tmp_path):

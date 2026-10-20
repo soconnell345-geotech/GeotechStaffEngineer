@@ -43,6 +43,7 @@ from funhouse_agent.dispatch import (
     describe_method as _describe_method,
     list_agents as _list_agents,
     list_methods as _list_methods,
+    parameters_object as _parameters_object,
     # Resolution primitives (underscore-prefixed but importable). Used to make
     # describe_method redirect a guessed method name the same way call_agent
     # already does, instead of bouncing with a bare "Unknown method".
@@ -661,13 +662,21 @@ class _CallAgentArgs(BaseModel):
     field), so we declare the schema explicitly and let pydantic keep the
     extras — they flow into the function's ``**extra`` and get auto-nested,
     mirroring ``native_tools.dispatch_native_tool``.
+
+    ``parameters`` is shown to the model as an object but validated as
+    anything (GM-189): a string reaches ``call_agent``, which reads a JSON
+    object out of it or refuses it with the shape expected and the
+    method's parameter names. Pydantic's own refusal ("Input should be a
+    valid dictionary", with the whole argument echoed back) said neither.
     """
 
     model_config = ConfigDict(extra="allow")
 
     agent_name: str = Field(description="Module name.")
     method: str = Field(description="Method name.")
-    parameters: Optional[Dict[str, Any]] = Field(
+    parameters: Annotated[Any, WithJsonSchema({
+        "anyOf": [{"additionalProperties": True, "type": "object"},
+                  {"type": "null"}]})] = Field(
         default=None,
         description=(
             "Nested dict of method-specific inputs (all SI units). Example: "
@@ -812,11 +821,12 @@ def make_core_tools(
         """
         # LLMs sometimes flatten method parameters to the top level instead of
         # nesting them under "parameters". Auto-nest any extra keys — mirrors
-        # native_tools.dispatch_native_tool's call_agent handling.
-        params = dict(parameters or {})
+        # native_tools.dispatch_native_tool's call_agent handling. Any shape
+        # but an object is left for the dispatcher to refuse (GM-189).
+        params = _parameters_object(parameters)
         extras = {k: v for k, v in extra.items() if k not in _CALL_AGENT_KEYS}
-        if extras:
-            params.update(extras)
+        if extras and isinstance(params, dict):
+            params = {**params, **extras}
         # Smart per-tool budget: reference modules get the LARGER reference
         # cap (their text is the payload); calc modules are uncapped (tiny).
         cap = _result_cap_for_module(agent_name, max_result_chars,
