@@ -125,14 +125,16 @@ def test_past_the_chart_the_line_is_the_engineers():
     with pytest.raises(JudgmentNeeded) as e:
         AxialPileAnalysis(pile=pile, soil=_stiff(), pile_length=15).compute()
     msg = str(e.value)
-    assert msg.startswith("alpha method (GEC-12 Sec. 7.2.1.3.2)")
-    for text in ("su = 4.00 ksf", "Fig. 7-17's curves (3.05 ksf)",
-                 "engineer's judgment", "highly_overconsolidated_su_ratio",
-                 "'chart_end' or 'api'", "p. 247", "Step 1, p. 250"):
+    assert msg.startswith("alpha method (GEC-12 Sec. 7.2.1.3.2), Step 1 "
+                          "(p. 250)")
+    for text in ("su = 4.00 ksf", "Fig. 7-17's curves end at 3.05 ksf",
+                 "GEC-12 prints no su / sigma'vo", "engineer's judgment",
+                 "highly_overconsolidated_su_ratio", "'chart_end'", "'api'",
+                 "p. 247", "API method (API RP 2A, Sec. 7.2.1.3.3"):
         assert text in msg, text
     # su / sigma'vo at the middle of the 15 m pile, given back in the error
     sv = _stiff().effective_stress_at_depth(7.5)
-    assert f"su / sigma'vo is {4.0 * KSF / sv:.2f}" in msg
+    assert f"su / sigma'vo = {4.0 * KSF / sv:.2f}" in msg
     # a pile that stays within the chart needs no line
     soft = AxialSoilProfile(layers=[
         AxialSoilLayer(30, "cohesive", 19.0, cohesion=60)], gwt_depth=1.0)
@@ -142,6 +144,60 @@ def test_past_the_chart_the_line_is_the_engineers():
     with pytest.raises(JudgmentNeeded):
         AxialPileAnalysis(pile=pile, soil=_stiff(),
                           pile_length=15).capacity_vs_depth(n_points=3)
+
+
+def test_the_refusal_names_every_layer_and_only_where_the_line_matters():
+    """GM-229 review: one refusal names every clay layer past the curves
+    with its su / sigma'vo, so the engineer can place one line; a layer
+    whose Ca the line would not change (inside a shrink-swell zone, or
+    where Fig. 7-18 governs either way under adhesion_chart 'smaller')
+    needs no line."""
+    from axial_pile.capacity import JudgmentNeeded
+    pile = make_pipe_pile(0.4064, 0.0127, closed_end=True)
+
+    def profile(su_top, su_bottom, gwt=1.0):
+        return AxialSoilProfile(layers=[
+            AxialSoilLayer(8, "cohesive", 19.0, cohesion=su_top * KSF),
+            AxialSoilLayer(22, "cohesive", 19.0, cohesion=su_bottom * KSF)],
+            gwt_depth=gwt)
+
+    with pytest.raises(JudgmentNeeded) as e:
+        AxialPileAnalysis(pile=pile, soil=profile(4.0, 4.5),
+                          pile_length=20).compute()
+    msg = str(e.value)
+    soil = profile(4.0, 4.5)
+    for top, bottom, su in ((0, 8, 4.0), (8, 20, 4.5)):
+        sv = soil.effective_stress_at_depth((top + bottom) / 2)
+        assert (f"{top:.2f}-{bottom:.2f} m: su = {su:.2f} ksf" in msg
+                and f"su / sigma'vo = {su * KSF / sv:.2f}" in msg), (top, msg)
+    # capacity_vs_depth names both too (its deepest refusal)
+    with pytest.raises(JudgmentNeeded, match="8.00-20.00 m"):
+        AxialPileAnalysis(pile=pile, soil=profile(4.0, 4.5),
+                          pile_length=20).capacity_vs_depth(n_points=3)
+    # the stiff crust lies wholly in the shrink-swell zone: no Ca counts
+    r = AxialPileAnalysis(pile=pile, soil=profile(4.0, 1.0), pile_length=20,
+                          shrink_swell_depth=8.0).compute()
+    side = _by_what(r)["su past Fig. 7-17 (alpha method)"]
+    assert side["chosen"].startswith("Ca held at the curve's end: no highly "
+                                     "overconsolidated line was given")
+    assert not any("highly_overconsolidated" in lb
+                   for lb in r.layer_breakdown)
+    # 'smaller': Fig. 7-18 governs whichever way the line puts the clay
+    one = AxialSoilProfile(layers=[
+        AxialSoilLayer(30, "cohesive", 19.0, cohesion=4.0 * KSF)],
+        gwt_depth=0.0)
+    runs = {m: AxialPileAnalysis(pile=pile, soil=one, pile_length=20,
+                                 adhesion_chart="smaller",
+                                 adhesion_beyond_chart=m).compute()
+            for m in ("chart_end", "api")}
+    assert runs["chart_end"].Q_skin == runs["api"].Q_skin
+    r = AxialPileAnalysis(pile=pile, soil=one, pile_length=20,
+                          adhesion_chart="smaller").compute()
+    assert r.Q_skin == runs["api"].Q_skin
+    # ... but not on a shorter pile, where the line changes Ca
+    with pytest.raises(JudgmentNeeded):
+        AxialPileAnalysis(pile=pile, soil=one, pile_length=12,
+                          adhesion_chart="smaller").compute()
 
 
 @pytest.mark.parametrize("line, high", [(2.0, True), (3.0, False)])
