@@ -762,6 +762,8 @@ class PostLiquefactionResult:
             "max_pile_load_after_kN": round(a.max_pile_load, 1),
             "pile_settlement_before_mm": round(b.pile_settlement * 1000.0, 2),
             "pile_settlement_after_mm": round(a.pile_settlement * 1000.0, 2),
+            "toe_settlement_before_mm": round(b.toe_settlement * 1000.0, 2),
+            "toe_settlement_after_mm": round(a.toe_settlement * 1000.0, 2),
             "reconsolidation_settlement_mm":
                 round(self.reconsolidation_settlement * 1000.0, 2),
             "reconsolidation_below_toe_mm":
@@ -793,7 +795,6 @@ class PostLiquefactionResult:
         }
         if a.include_pile_weight:
             after["pile_weight_to_np_kN"] = round(a.pile_weight_to_np, 1)
-        after["toe_settlement_mm"] = round(a.toe_settlement * 1000.0, 2)
         after["below_toe"] = a.below_toe_rounded()
         for key, values in (("z_m", a.z),
                             ("axial_load_kN", a.axial_load),
@@ -1077,6 +1078,9 @@ def post_liquefaction_downdrag(
             "soil_settlement_at_np_mm":
                 round(res.soil_settlement_at_np * 1000.0, 2),
         })
+        if res.include_pile_weight:
+            # the drag force carries the pile weight above the plane
+            row["dragload_kN"] = round(res.dragload, 1)
     after_analysis, after = runs[chosen]
 
     # The liquefied zones: settlement, side resistance before and after,
@@ -1122,7 +1126,6 @@ def post_liquefaction_downdrag(
     recon_total = float(sum(s.settlement for s in layers))
     below_toe = after_analysis.reconsolidation_below_toe()
 
-    # Every neutral-plane method, before and after
     # Every neutral-plane method, before and after: one row a method, its
     # source and assumptions once (GM-207: no second table in "after")
     by_method = []
@@ -1139,6 +1142,8 @@ def post_liquefaction_downdrag(
         for state, src in (("before", o), ("after", r)):
             for key, name in _BY_METHOD_KEYS:
                 entry[name.format(state)] = src.get(key)
+            if after.include_pile_weight:
+                entry[f"dragload_{state}_kN"] = src.get("dragload_kN")
             if src.get("reason"):
                 entry[f"reason_{state}"] = src["reason"]
         for key, name in _AFTER_ONLY_KEYS:
@@ -1224,8 +1229,12 @@ def post_liquefaction_downdrag(
             text = f"All {len(zones)} liquefied zones lie"
         else:
             text = f"{len(under)} of the {len(zones)} liquefied zones lie"
+        # not every zone lies below every one of these planes
+        some = any(set(z["below_the_plane_before_of"]) != set(names)
+                   for z in under)
         text += (
             " below the neutral plane before the earthquake of "
+            + ("one or more of " if some else "")
             + "; ".join(names)
             + ". FHWA GEC-12 §7.4.2.2 (post_liquefaction_basis): "
             "liquefaction there adds axial load and pile settlement. The "

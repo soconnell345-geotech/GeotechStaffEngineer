@@ -153,6 +153,7 @@ _HEADLINE = ("neutral_plane_before_m", "neutral_plane_after_m",
              "drag_force_before_kN", "drag_force_after_kN",
              "max_pile_load_before_kN", "max_pile_load_after_kN",
              "pile_settlement_before_mm", "pile_settlement_after_mm",
+             "toe_settlement_before_mm", "toe_settlement_after_mm",
              "reconsolidation_settlement_mm", "reconsolidation_below_toe_mm",
              "methods_range_after", "warnings", "choices")
 

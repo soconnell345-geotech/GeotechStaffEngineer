@@ -197,11 +197,11 @@ def _run_post_liquefaction(params):
 #: with what dispatch adds (``defaults_used``) (GM-207; the tests hold it):
 #: the result as returned (:func:`_compact`) for one liquefied zone and for
 #: a noisy 25 m CPT that gives twenty. One zone (HC-1) is about 7,800, under
-#: the 8,000-character general cap; the noisy CPT 9,600 to 10,300: its
+#: the 8,000-character general cap; the noisy CPT 9,700 to 10,400: its
 #: warnings and choices (a toe in a liquefied layer, readings left out,
 #: curves that do not meet, the CPT's strain) are its own, not repeats.
-#: detail='full' gives about 20,000 and 31,000 (DESIGN.md "What the result
-#: holds").
+#: detail='full' gives about 20,000 and 30,000 to 32,000 (DESIGN.md "What
+#: the result holds").
 RESULT_BUDGET_CHARS = 10_500
 
 #: How many of more than MAX_ZONES_LISTED zones are listed in full: those
@@ -767,14 +767,16 @@ METHOD_INFO["post_liquefaction_downdrag"] = {
         "drag_force_before_kN / drag_force_after_kN": "Drag force Q_np - Q_dead (kN; UFC 3-220-20 Eq 6-80) before and after.",
         "max_pile_load_before_kN / max_pile_load_after_kN": "Q_np, the maximum axial load (kN).",
         "pile_settlement_before_mm / pile_settlement_after_mm": "Pile head settlement (mm).",
+        "toe_settlement_before_mm / toe_settlement_after_mm": "Pile toe settlement (mm) of the headline method; after liquefaction it includes the reconsolidation settlement of liquefied soil below the toe (reconsolidation_below_toe_mm).",
+        "dragload_before_kN / dragload_after_kN": "With include_pile_weight only: the negative skin friction above the plane without the pile weight (drag force = dragload + the pile weight above the plane).",
         "reconsolidation_settlement_mm": "Reconsolidation settlement of all the liquefied layers (mm): what the ground surface settles by.",
         "liquefied_zones": "One table {columns, rows}, a row a contiguous liquefied zone: top_m, bottom_m, volumetric_strain, reconsolidation_settlement_mm, fs_liq_min, side resistance before and after (kN), position (above / across / below the headline neutral plane before the earthquake, or below the pile toe). More than 6 zones: {zones, thickness_m, side resistance totals, largest_settlement: the 3 with the largest reconsolidation settlement as that table, others_m: the rest as depth ranges}. A zone lies below a method's plane before the earthquake where its top_m is at or below that method's neutral_plane_before_m. detail='full': a record a zone with below_the_plane_before_of. Present it as a table.",
         "result_note": "What only detail='full' adds (and whether the zones were summarised). Tell the user the rest is there.",
-        "side_resistance_comparison": "One table {columns, rows}, a row a side-resistance option for the liquefied layers (the headline method): option, source, neutral plane, drag force, pile settlement, note (why it was not evaluated). liquefied_side_resistance is the one used. detail='full': each option's quoted source and assumptions, Q_np and the soil settlement at the plane. Present it as a table.",
-        "by_method": "One table {columns, rows}, a row a neutral-plane method: neutral plane, drag force and pile settlement before and after, and a note (why it gives no plane, before / after). The headline row is headline_method_before / headline_method_after. Q_np = Q_dead + drag force. detail='full': each method's source and assumptions, Q_np, and after liquefaction its toe force and settlement parts. Present it as a table.",
+        "side_resistance_comparison": "One table {columns, rows}, a row a side-resistance option for the liquefied layers (the headline method): option, source, neutral plane, drag force, pile settlement, note (why it was not evaluated). liquefied_side_resistance is the one used. detail='full': each option's quoted source and assumptions, Q_np (and dragload_kN with include_pile_weight) and the soil settlement at the plane. Present it as a table.",
+        "by_method": "One table {columns, rows}, a row a neutral-plane method: neutral plane, drag force and pile settlement before and after, and a note (why it gives no plane, before / after). The headline row is headline_method_before / headline_method_after. Q_np = Q_dead + drag force. detail='full': each method's source and assumptions, Q_np (and dragload_before_kN / dragload_after_kN with include_pile_weight), and after liquefaction its toe force and settlement parts. Present it as a table.",
         "structural_ok / structural_demand_kN": "1.25 Q_dead + 1.10 DF after liquefaction <= structural_capacity (when given).",
         "choices": "Each choice the run made, given or default, with its basis; the limit states GEC-10 10.7 checks the drag at (structural strength and service), with AASHTO's Extreme Event I (load factor 1.0) as the alternative. Report them.",
-        "neutral_plane_basis / after": "detail='full' only: the headline method's basis (neutral_plane_basis_before when it differs before the earthquake); after = the resistance below the plane, toe settlement, below_toe and the depth profiles z_m / axial_load_kN / soil_settlement_mm / unit_skin_friction_kPa after liquefaction.",
+        "neutral_plane_basis / after": "detail='full' only: the headline method's basis (neutral_plane_basis_before when it differs before the earthquake); after = the resistance below the plane, below_toe and the depth profiles z_m / axial_load_kN / soil_settlement_mm / unit_skin_friction_kPa after liquefaction.",
     },
 }
 

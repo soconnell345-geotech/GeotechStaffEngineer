@@ -854,13 +854,13 @@ each number once:
 
 | Where | What |
 |---|---|
-| top level | the headline before and after (neutral plane, drag force, Q_np, pile settlement, rounded to 1 mm / 0.1 kN / 0.01 mm), the reconsolidation settlement, the limit-state checks, `methods_range_after`, `neutral_plane_basis` |
+| top level | the headline before and after (neutral plane, drag force, Q_np, pile settlement at the head and the toe, rounded to 1 mm / 0.1 kN / 0.01 mm), with `include_pile_weight` the dragload apart from the drag force, the reconsolidation settlement, the limit-state checks, `methods_range_after`, `neutral_plane_basis` |
 | `warnings` | the post-liquefaction warnings, then the static analysis's warnings once: unprefixed where both states give the same one, "Before and after liquefaction (the numbers after):" where only its numbers differ, else prefixed with the one state; the static warning on the force-equilibrium plane below the settling soil is left out when the why-note says it |
 | `liquefied_zones` | a record a zone; `position` is above / across / below the headline plane before the earthquake (`neutral_plane_before_m`) or below the pile toe |
-| `side_resistance_comparison` | a row an option: its quoted source and assumptions (the basis and the choice cite it), neutral plane, drag force, Q_np, pile settlement, soil settlement at the plane |
-| `by_method` | the one methods table: a row a method, its source and assumptions, neutral plane, drag force, Q_np and pile settlement before and after, why it gives no plane, and after liquefaction its toe force and settlement parts |
+| `side_resistance_comparison` | a row an option: its quoted source and assumptions (the basis and the choice cite it), neutral plane, drag force, Q_np (and the dragload with `include_pile_weight`), pile settlement, soil settlement at the plane |
+| `by_method` | the one methods table: a row a method, its source and assumptions, neutral plane, drag force, Q_np (and the dragload with `include_pile_weight`) and pile settlement before and after, why it gives no plane, and after liquefaction its toe force and settlement parts |
 | `choices` | as before; the limit-state choice carries what `limit_states_note` said |
-| `after` | only what the headline after liquefaction alone has: the resistance below the plane, the toe settlement, `below_toe` and the depth profiles |
+| `after` | only what the headline after liquefaction alone has: the resistance below the plane, `below_toe` and the depth profiles |
 
 The tool (`funhouse_agent/adapters/downdrag.py`, `_compact`) returns, unless
 `detail='full'`, every neutral plane, drag force and pile settlement (the
@@ -878,8 +878,8 @@ the depth ranges of the rest. Sizes with `defaults_used`, against
 
 | Case | Before GM-207 | Returned | `detail='full'` |
 |---|---|---|---|
-| HC-1, one zone | 29,315 | 7,757 (under the 8,000 general cap) | 20,220 |
-| Noisy 25 m CPT, 20 zones (`_noisy_cpt`, seeds 1-8, 11, 21) | 43,928 (seed 7) | 9,600-10,350 | 30,300-31,100 |
+| HC-1, one zone | 29,315 | 7,814 (under the 8,000 general cap) | 20,251 |
+| Noisy 25 m CPT, 20 zones (`_noisy_cpt`, seeds 1-8, 11, 21) | 43,928 (seed 7) | 9,680-10,400 | 29,700-32,300 |
 
 The noisy CPT cannot reach 8,000 without losing what only it has: the
 warnings on a toe in a liquefied layer, readings left out and load and

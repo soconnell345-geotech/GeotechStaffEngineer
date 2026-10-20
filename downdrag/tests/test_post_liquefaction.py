@@ -384,7 +384,7 @@ class TestBelowTheStaticNeutralPlane:
         lead = w.split(". ")[0]
         assert lead.startswith("The liquefied zones 3-4, 6-10, 14-15 m lie "
                                "below the neutral plane before the "
-                               "earthquake of ")
+                               "earthquake of one or more of ")
         named = {n for z in r.liquefied_zones
                  for n in z["below_the_plane_before_of"]}
         assert named and all(lead.count(n) == 1 for n in named)
@@ -679,8 +679,16 @@ class TestReporting:
         # is in its row, the choice and the basis cite it
         assert set(d["after"]) == {
             "positive_skin_friction_kN", "toe_resistance_kN",
-            "total_resistance_kN", "toe_settlement_mm", "below_toe", "z_m",
+            "total_resistance_kN", "below_toe", "z_m",
             "axial_load_kN", "soil_settlement_mm", "unit_skin_friction_kPa"}
+        # the toe settlement beside the head settlement, both states
+        assert d["toe_settlement_before_mm"] == pytest.approx(
+            r.before.toe_settlement * 1000.0, abs=0.005)
+        assert d["toe_settlement_after_mm"] == pytest.approx(
+            r.after.toe_settlement * 1000.0, abs=0.005)
+        # dragload apart from the drag force only with the pile's weight
+        assert "dragload_after_kN" not in d
+        assert "dragload_after_kN" not in d["by_method"][0]
         assert "before" not in d and "limit_states_note" not in d
         row = d["by_method"][0]
         assert row["used"] and row["toe_force_after_kN"] == pytest.approx(
@@ -697,3 +705,20 @@ class TestReporting:
         assert "Post-Liquefaction Downdrag" in text
         assert "Every neutral-plane method, before -> after" in text
         assert "Choices:" in text
+
+    def test_with_the_pile_weight_each_dragload_is_kept(self):
+        # the drag force carries the pile weight above the plane, so the
+        # dragload (friction only) differs from it: each method's and each
+        # option's dragload stays in the result
+        r = post_liquefaction_downdrag(
+            _hand_check(include_pile_weight=True),
+            liquefied_layers=_HC1_ZONE)
+        d = r.to_dict()
+        assert d["dragload_after_kN"] == pytest.approx(r.after.dragload,
+                                                       abs=0.05)
+        row = d["by_method"][0]
+        assert row["dragload_after_kN"] < row["drag_force_after_kN"]
+        assert row["dragload_before_kN"] < row["drag_force_before_kN"]
+        half = d["side_resistance_comparison"][0]
+        assert half["dragload_kN"] == pytest.approx(r.after.dragload,
+                                                    abs=0.05)
