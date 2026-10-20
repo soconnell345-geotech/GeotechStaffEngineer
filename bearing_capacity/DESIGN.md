@@ -52,8 +52,27 @@ wraps it).
 - GWT handling: overburden uses effective stress above the base; the
   self-weight (Nγ) term averages the effective unit weight over depth B
   below the base, so a GWT inside the bearing wedge is captured (BC-3)
-- Vesic inclination factors fall back to angle-based Meyerhof factors with
-  a UserWarning when `vertical_load` is not supplied (BC-2)
+- Vesic load inclination factors (Vesic 1975, as EN 1997-1:2004 Annex D.4
+  p. 159 prints them; GEC-6 Sec. 5.2.3.7 omits inclination factors where
+  sliding is checked separately) take H/(V + A' c cot φ). With c = 0 that
+  is H/V = tan β and V cancels, so the angle alone gives them. With
+  cohesion (or φ = 0) an inclined load needs `vertical_load` (kN; kN/m for
+  a strip) and the analysis raises without it (GM-203; before, it fell
+  back to Meyerhof's angle-only factors with a warning, BC-2). A' is B' per
+  metre for a strip and the effective area otherwise (a strip took
+  B × 1e6 m², so its inclination factors were 1). H is taken along B
+  (m = m_B). The result's `choices` state the factors and what they took.
+- Depth factors (GM-197), `depth_factor_method`: "hansen" (default)
+  takes Brinch Hansen's k = Df/B for Df/B < 1 and arctan(Df/B) from 1
+  (UFC 3-220-20 Tables 5-7 and 5-8 note B, pp. 295-296; GEC-6 Table 5-4
+  prints d_q at Df/B = 1 from the arctan too; until GM-197 the Vesic
+  factors took k = 1 there); Meyerhof's factors take k = Df/B up to and at
+  Df/B = 1 as UFC Table 5-6 prints it, Hansen's arctan beyond. "gec6"
+  (Vesic only) is GEC-6 Eq. 5-14 and Table 5-4: d_q alone, from the
+  arctan for Df/B ≥ 1 (all 12 printed cells to their 0.05 rounding),
+  1.0 below (the worked example on p. B-67). "none" uses no depth factors
+  (GEC-6 Sec. 5.2.3.3 and Table 5-4 note). The result's `choices` state
+  the factors and what the other options give.
 - `BearingSoilProfile.effective_unit_weight()` was removed (BC-6, unused);
   use `geotech_common.water.effective_unit_weight` or
   `gamma_below_footing()` instead

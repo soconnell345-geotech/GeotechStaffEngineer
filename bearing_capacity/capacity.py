@@ -7,7 +7,7 @@ bearing capacity equation (Vesic/Meyerhof/Hansen forms), or Terzaghi's
 systems.
 
 References:
-    FHWA GEC-6 (FHWA-IF-02-054), Chapter 6
+    FHWA GEC-6 (FHWA-IF-02-054), Chapter 5
     FHWA-SA-94-034 (CBEAR User's Guide)
     NAVFAC DM-7.01 Ch. 4 / Bowles 5th ed. Sec. 4-7 — Two-layer load-spread method
     Meyerhof & Hanna (1978) — Two-layer punching shear (recognized alternative)
@@ -24,7 +24,12 @@ from bearing_capacity.factors import (
     all_N_factors,
     shape_factors,
     depth_factors,
+    depth_parameter_k,
+    DEPTH_FACTOR_METHODS,
+    DEPTH_FACTOR_BASIS,
     inclination_factors,
+    vesic_inclination_needs_V,
+    _meyerhof_inclination_factors,
     base_inclination_factors,
     ground_inclination_factors,
     bearing_capacity_Nc,
@@ -89,8 +94,11 @@ class BearingCapacityAnalysis:
     ground_slope : float, optional
         Ground surface slope angle (degrees). Default 0.
     vertical_load : float, optional
-        Total vertical load on footing (kN). Needed for Vesic inclination
-        factors. Default 0 (factors computed without V).
+        Total vertical load V on the footing (kN; kN/m for a strip). Vesic's
+        load inclination factors take H/(V + A' c cot phi), so with
+        cohesion (or phi = 0) an inclined load needs it, and the analysis
+        raises without it (GM-203: it fell back to Meyerhof's factors with
+        a warning). With c = 0, H/V = tan(load_inclination) and V cancels.
     factor_of_safety : float, optional
         Required factor of safety. Default 3.0.
     ngamma_method : str, optional
@@ -110,6 +118,12 @@ class BearingCapacityAnalysis:
     failure_mode : str, optional
         "general" (default) or, with ``factor_method="terzaghi"``, "local":
         Terzaghi's local-shear reduction c* = 2/3 c, tan(phi*) = 2/3 tan(phi).
+    depth_factor_method : str, optional
+        How the depth factors are worked out (GM-197;
+        ``factors.DEPTH_FACTOR_BASIS``): "hansen" (default), Brinch
+        Hansen's depth parameter k in the method's factors; "gec6"
+        (``factor_method="vesic"`` only), GEC-6's d_q of Table 5-4 on the
+        surcharge term alone, 1.0 below Df/B = 1; "none", no depth factors.
 
     Examples
     --------
@@ -126,11 +140,12 @@ class BearingCapacityAnalysis:
     soil: BearingSoilProfile = None
     load_inclination: float = 0.0
     ground_slope: float = 0.0
-    vertical_load: float = 0.0
+    vertical_load: Optional[float] = None
     factor_of_safety: float = 3.0
     ngamma_method: Optional[str] = None
     factor_method: str = "vesic"
     failure_mode: str = "general"
+    depth_factor_method: str = "hansen"
 
     def __post_init__(self):
         if self.footing is None:
@@ -169,6 +184,19 @@ class BearingCapacityAnalysis:
                 "failure_mode='local' is Terzaghi's local-shear reduction "
                 "(c* = 2/3 c, tan phi* = 2/3 tan phi); use it with "
                 "factor_method='terzaghi'.")
+        self.depth_factor_method = str(
+            self.depth_factor_method).strip().lower()
+        if self.depth_factor_method not in DEPTH_FACTOR_METHODS:
+            raise ValueError(
+                f"depth_factor_method must be one of "
+                f"{list(DEPTH_FACTOR_METHODS)}, got "
+                f"'{self.depth_factor_method}'")
+        if self.depth_factor_method == "gec6" \
+                and self.factor_method != "vesic":
+            raise ValueError(
+                "depth_factor_method='gec6' is GEC-6's depth factor (Eq. "
+                "5-14, Table 5-4), which goes with GEC-6's own factors: "
+                "factor_method='vesic'.")
         if terzaghi:
             bad = [name for name, v in (
                 ("load_inclination", self.load_inclination),
@@ -207,8 +235,9 @@ class BearingCapacityAnalysis:
     def _choices(self, r: BearingCapacityResult) -> list:
         """What the analysis chose (GM-188, ``geotech_common.choices``):
         the method, its N-gamma, the shear mode and the allowable pressure's
-        basis; for Meyerhof, the depth parameter beyond Df/B = 1 and the
-        shape factors under an inclined load."""
+        basis; for an embedded footing the depth factors (GM-197); under an
+        inclined load Vesic's inclination factors (GM-203) or Meyerhof's
+        shape factors."""
         from geotech_common.choices import MODULE, choice, how_given
         name = {"vesic": "Vesic (1973)", "meyerhof": "Meyerhof (1963)",
                 "terzaghi": "Terzaghi (1943)"}
@@ -280,17 +309,10 @@ class BearingCapacityAnalysis:
             ["net: q_all,net = q_ult / FS - q (UFC 3-220-20 Eq. 5-14), "
              "set against the structural load over the area (Eq. 5-3)"]))
 
-        df_b = self.footing.depth / self.footing.B_for_factors
-        if fm == "meyerhof" and df_b > 1.0:
-            out.append(choice(
-                "depth parameter k (Meyerhof depth factors)",
-                f"k = arctan(Df/B) = {math.atan(df_b):.3f} at Df/B = "
-                f"{df_b:.2f}",
-                MODULE,
-                "Hansen's (1970) bound beyond Df/B = 1, applied to both "
-                "factor sets: the smaller depth factors",
-                [f"k = Df/B = {df_b:.2f}, as UFC 3-220-20 Table 5-6 "
-                 "(p. 294) prints for Meyerhof (larger depth factors)"]))
+        if fm != "terzaghi" and self.footing.depth > 0:
+            out.append(self._depth_choice(r))
+        if fm == "vesic" and self.load_inclination:
+            out.append(self._inclination_choice(r))
         if fm == "meyerhof" and self.load_inclination:
             out.append(choice(
                 "shape factors under inclined load", "sc = sq = sgamma = 1",
@@ -298,6 +320,101 @@ class BearingCapacityAnalysis:
                 "UFC 3-220-20 Sec. 5-3.3.2 and Table 5-6 note A (p. 294): "
                 "'Do not combine factors for shape and inclined load'"))
         return out
+
+    def _depth_choice(self, r: BearingCapacityResult) -> dict:
+        """The depth factors, how they were worked out and what the other
+        depth_factor_method values give (GM-197)."""
+        from geotech_common.choices import choice, how_given
+        fm, dm = self.factor_method, self.depth_factor_method
+        phi = self.soil.layer1.friction_angle
+        Df, B = self.footing.depth, self.footing.B_for_factors
+        df_b = Df / B
+
+        def factors(d):
+            return ", ".join(f"{v:.3f}" for v in d)
+
+        if dm == "none":
+            chosen = "none: d_c = d_q = d_gamma = 1"
+        elif dm == "gec6":
+            chosen = (f"GEC-6: d_q = {r.dq:.3f} on the surcharge term "
+                      f"alone at Df/B = {df_b:.2f}"
+                      + (" (1.0 below Df/B = 1)" if df_b < 1.0 else
+                         " (Table 5-4)"))
+        else:
+            k = depth_parameter_k(Df, B, fm)
+            form = "Df/B" if k == df_b else "arctan(Df/B)"
+            chosen = (f"k = {form} = {k:.3f} at Df/B = {df_b:.2f}: d_c, "
+                      f"d_q, d_gamma = {r.dc:.3f}, {r.dq:.3f}, "
+                      f"{r.dgamma:.3f}")
+        chosen += f" (depth_factor_method '{dm}')"
+        if fm == "meyerhof" and dm == "hansen":
+            basis = ("Meyerhof's depth factors, UFC 3-220-20 Table 5-6 (p. "
+                     "294), with k = Df/B as that table prints it up to "
+                     "Df/B = 1 and Brinch Hansen's k = arctan(Df/B) beyond "
+                     "it (Tables 5-7 and 5-8 note B), the smaller factors")
+        else:
+            basis = DEPTH_FACTOR_BASIS[dm]
+        alternatives = []
+        for other in DEPTH_FACTOR_METHODS:
+            if other == dm or (other == "gec6" and fm != "vesic"):
+                continue
+            d = depth_factors(phi, Df, B, fm, other)
+            alternatives.append(
+                f"d_c, d_q, d_gamma = {factors(d)} (depth_factor_method "
+                f"'{other}'): {DEPTH_FACTOR_BASIS[other]}")
+        if fm == "meyerhof" and df_b > 1.0:
+            alternatives.append(
+                f"k = Df/B = {df_b:.2f}, as UFC 3-220-20 Table 5-6 (p. 294) "
+                "prints for Meyerhof at any depth (larger depth factors; "
+                "not an option of this tool)")
+        return choice(
+            "depth factors", chosen,
+            how_given(dm, "hansen", name="depth_factor_method"), basis,
+            alternatives)
+
+    def _inclination_choice(self, r: BearingCapacityResult) -> dict:
+        """Vesic's load inclination factors, and what they took (GM-203:
+        with no V they had fallen back to Meyerhof's with a warning)."""
+        from geotech_common.choices import choice, how_given
+        layer = self.soil.layer1
+        beta = self.load_inclination
+        B, L = self.footing.B_for_factors, self.footing.L_for_factors
+        m = (2.0 + B / L) / (1.0 + B / L)
+        i = f"i_c, i_q, i_gamma = {r.ic:.3f}, {r.iq:.3f}, {r.igamma:.3f}"
+        if not vesic_inclination_needs_V(layer.friction_angle,
+                                         layer.cohesion):
+            chosen = (f"Vesic (1975), H along B (m = {m:.2f}): with c = 0, "
+                      f"H/V = tan({beta:g} deg) and V cancels; {i}")
+        else:
+            per = " per metre" if self.footing.shape == "strip" else ""
+            chosen = (f"Vesic (1975), H along B (m = {m:.2f}): H = V "
+                      f"tan({beta:g} deg) = "
+                      f"{self.vertical_load * math.tan(math.radians(beta)):.1f}"
+                      f" kN{per} with V = {self.vertical_load:g} kN{per}, "
+                      f"A' = {self._inclination_area():.2f} m2{per}; {i}")
+        mic, miq, mig = _meyerhof_inclination_factors(
+            layer.friction_angle, beta)
+        return choice(
+            "load inclination factors", chosen,
+            how_given(self.factor_method, "vesic", name="factor_method"),
+            "Vesic (1975) as EN 1997-1:2004 Annex D.4 (p. 159) prints it: "
+            "i_q = [1 - H/(V + A' c cot phi)]^m, i_gamma = [...]^(m+1), "
+            "i_c = i_q - (1 - i_q)/(N_c tan phi), m = (2 + B'/L')/(1 + "
+            "B'/L') for H along B; GEC-6 Sec. 5.2.3.7 (p. 62) omits load "
+            "inclination factors where sliding is checked separately",
+            [f"Meyerhof's angle-only factors, UFC 3-220-20 Table 5-6 (p. "
+             f"294): i_c = i_q = {mic:.3f}, i_gamma = {mig:.3f} "
+             "(factor_method 'meyerhof', with its shape factors 1 under "
+             "an inclined load)",
+             "none, with sliding checked against the horizontal load: GEC-6 "
+             "Sec. 5.2.3.7 (p. 62) (load_inclination 0)"])
+
+    def _inclination_area(self) -> float:
+        """A' in Vesic's adhesion term: B' per metre for a strip (whose L is
+        taken as infinite), else the effective area (GM-203: a strip took
+        B x 1e6 m)."""
+        f = self.footing
+        return f.B_for_factors if f.shape == "strip" else f.A_eff
 
     def _compute_single_layer(self) -> BearingCapacityResult:
         """Compute bearing capacity for a single-layer soil profile.
@@ -328,12 +445,14 @@ class BearingCapacityAnalysis:
             sc = sq = sg = 1.0
 
         # Depth factors
-        dc, dq, dg = depth_factors(phi, Df, B, self.factor_method)
+        dc, dq, dg = depth_factors(phi, Df, B, self.factor_method,
+                                   self.depth_factor_method)
 
         # Inclination factors
         ic, iq, ig = inclination_factors(
             phi, self.load_inclination, c, B, L,
-            self.vertical_load, self.factor_method
+            self.vertical_load, self.factor_method,
+            A=self._inclination_area()
         )
 
         # Base inclination factors
@@ -532,6 +651,7 @@ class BearingCapacityAnalysis:
             ngamma_method=self.ngamma_method,
             factor_method=self.factor_method,
             failure_mode=self.failure_mode,
+            depth_factor_method=self.depth_factor_method,
         )._compute_single_layer()
         qb = result_bottom.q_ultimate
 

@@ -201,7 +201,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         substitution=nq_sub,
         result_name="N_q",
         result_value=f"{r.Nq:.2f}",
-        reference="Reissner (1924); FHWA GEC-6 Eq. 6-2",
+        reference="Reissner (1924); FHWA GEC-6 Eq. 5-2",
     ))
 
     # Nc
@@ -217,7 +217,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         substitution=nc_sub,
         result_name="N_c",
         result_value=f"{r.Nc:.2f}",
-        reference="Prandtl (1921); FHWA GEC-6 Eq. 6-1",
+        reference="Prandtl (1921); FHWA GEC-6 Eqs. 5-3, 5-4",
     ))
 
     # Ngamma
@@ -225,7 +225,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
     if method == "vesic":
         ng_eq = "N_\u03b3 = 2 \u00d7 (N_q + 1) \u00d7 tan(\u03c6)"
         ng_sub = f"N_\u03b3 = 2 \u00d7 ({r.Nq:.2f} + 1) \u00d7 tan({phi_deg:.1f}\u00b0)"
-        ng_ref = "Vesic (1973); FHWA GEC-6 Table 6-1"
+        ng_ref = "Vesic (1973); FHWA GEC-6 Eq. 5-8, Table 5-1"
     elif method == "meyerhof":
         ng_eq = "N_\u03b3 = (N_q - 1) \u00d7 tan(1.4\u03c6)"
         ng_sub = f"N_\u03b3 = ({r.Nq:.2f} - 1) \u00d7 tan(1.4 \u00d7 {phi_deg:.1f}\u00b0)"
@@ -261,29 +261,30 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         result_name="s_c, s_q, s_\u03b3",
         result_value=f"{r.sc:.4f}, {r.sq:.4f}, {r.sgamma:.4f}",
         reference=("Meyerhof; UFC 3-220-20 Table 5-6" if meyerhof
-                   else f"{factor_method}; FHWA GEC-6 Table 6-2"),
+                   else f"{factor_method}; FHWA GEC-6 Table 5-2"),
     ))
 
     # Depth factors
     cf_items.append(CalcStep(
         title="Depth Factors",
-        equation=_depth_factor_equation(analysis.factor_method, phi_deg),
+        equation=_depth_factor_equation(analysis.factor_method, phi_deg,
+                                        analysis.depth_factor_method),
         substitution="",
         result_name="d_c, d_q, d_\u03b3",
         result_value=f"{r.dc:.4f}, {r.dq:.4f}, {r.dgamma:.4f}",
-        reference=("Meyerhof; UFC 3-220-20 Table 5-6" if meyerhof
-                   else f"{factor_method}; FHWA GEC-6 Table 6-3"),
+        reference=_depth_factor_reference(analysis),
     ))
 
     # Only show inclination, base, and ground factors if non-unity
     if analysis.load_inclination != 0:
         cf_items.append(CalcStep(
             title="Inclination Factors",
-            equation="(load inclined from vertical)",
+            equation=_inclination_factor_equation(analysis, phi_deg),
             substitution=f"\u03b2 = {analysis.load_inclination:.1f}\u00b0",
             result_name="i_c, i_q, i_\u03b3",
             result_value=f"{r.ic:.4f}, {r.iq:.4f}, {r.igamma:.4f}",
-            reference=f"{factor_method}; FHWA GEC-6 Table 6-4",
+            reference=("Meyerhof; UFC 3-220-20 Table 5-6" if meyerhof
+                       else "Vesic (1975); EN 1997-1:2004 Annex D.4"),
         ))
 
     if f.base_tilt != 0:
@@ -293,7 +294,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             substitution=f"\u03b1 = {f.base_tilt:.1f}\u00b0",
             result_name="b_c, b_q, b_\u03b3",
             result_value=f"{r.bc:.4f}, {r.bq:.4f}, {r.bgamma:.4f}",
-            reference="Hansen (1970); FHWA GEC-6 Table 6-5",
+            reference="Hansen (1970); FHWA GEC-6 Table 5-5",
         ))
 
     if analysis.ground_slope != 0:
@@ -303,7 +304,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
             substitution=f"\u03c9 = {analysis.ground_slope:.1f}\u00b0",
             result_name="g_c, g_q, g_\u03b3",
             result_value=f"{r.gc:.4f}, {r.gq:.4f}, {r.ggamma:.4f}",
-            reference="Hansen (1970); FHWA GEC-6 Table 6-6",
+            reference="Vesic (1975)",
         ))
 
     # Summary table of all factors
@@ -336,7 +337,7 @@ def get_calc_steps(result, analysis) -> List[CalcSection]:
         result_name="q_ult",
         result_value=f"{r.q_ultimate:,.1f}",
         result_unit="kPa",
-        reference="FHWA GEC-6, Eq. 6-1",
+        reference="Vesic (1975); cf. FHWA GEC-6 Eq. 5-14",
     ))
 
     # Term breakdown
@@ -655,25 +656,66 @@ def _shape_factor_equation(method: str, phi_deg: float) -> str:
     )
 
 
-def _depth_factor_equation(method: str, phi_deg: float) -> str:
+def _depth_factor_reference(analysis) -> str:
+    """Where the depth factors used are printed (GM-197)."""
+    dm = analysis.depth_factor_method
+    if dm == "none":
+        return "None used; FHWA GEC-6 Sec. 5.2.3.3, Table 5-4 note"
+    if dm == "gec6":
+        return "FHWA GEC-6 Eq. 5-14, Table 5-4 (Brinch Hansen 1970)"
+    if analysis.factor_method == "meyerhof":
+        return ("Meyerhof; UFC 3-220-20 Table 5-6; k beyond D_f/B = 1, "
+                "Brinch Hansen (1970), Table 5-8 note B")
+    return ("Brinch Hansen (1970); UFC 3-220-20 Tables 5-7, 5-8; "
+            "FHWA GEC-6 Table 5-4")
+
+
+def _inclination_factor_equation(analysis, phi_deg: float) -> str:
+    """The load inclination factors as text, as
+    :func:`bearing_capacity.factors.inclination_factors` works them out."""
+    if analysis.factor_method == "meyerhof":
+        return ("i_c = i_q = (1 - \u03b2/90)\u00b2,  "
+                "i_\u03b3 = (1 - \u03b2/\u03c6)\u00b2")
+    m = "m = (2 + B/L)/(1 + B/L)"
+    if phi_deg == 0:
+        return f"i_c = 1 - m\u00d7H/(A'\u00d7c\u00d7N_c),  H = V\u00d7tan(\u03b2),  {m}"
+    if analysis.soil.layer1.cohesion == 0:
+        return ("i_q = (1 - tan(\u03b2))^m,  i_\u03b3 = (1 - tan(\u03b2))^(m+1)"
+                "  [c = 0: H/V = tan(\u03b2)],  "
+                f"i_c = i_q - (1-i_q)/(N_c\u00d7tan(\u03c6)),  {m}")
+    return ("i_q = [1 - H/(V + A'\u00d7c\u00d7cot(\u03c6))]^m,  "
+            "i_\u03b3 = [...]^(m+1),  i_c = i_q - (1-i_q)/(N_c\u00d7tan(\u03c6)),"
+            f"  H = V\u00d7tan(\u03b2),  {m}")
+
+
+def _depth_factor_equation(method: str, phi_deg: float,
+                           depth_method: str = "hansen") -> str:
     """Return the depth factor equation as text.
 
     Mirrors :func:`bearing_capacity.factors.depth_factors`, including the
     d_c formula and the phi = 0 special forms, so the displayed equation
     matches the computed values (BC-9).
     """
+    if depth_method == "none":
+        return "d_c = d_q = d_\u03b3 = 1.0  (no depth factors)"
+    if depth_method == "gec6":
+        return (
+            "d_q = 1 + 2\u00d7tan(\u03c6)\u00d7(1-sin(\u03c6))\u00b2\u00d7"
+            "arctan(D_f/B) for D_f/B \u2265 1, 1.0 below,  "
+            "d_c = d_\u03b3 = 1.0"
+        )
     if method.lower() == "vesic":
         if phi_deg == 0:
             return (
                 "d_c = 1 + 0.4\u00d7k  [\u03c6 = 0],  "
                 "d_q = 1.0,  d_\u03b3 = 1.0,  "
-                "k = D_f/B if D_f/B \u2264 1 else arctan(D_f/B)"
+                "k = D_f/B if D_f/B < 1 else arctan(D_f/B)"
             )
         return (
             "d_q = 1 + 2\u00d7tan(\u03c6)\u00d7(1-sin(\u03c6))\u00b2\u00d7k,  "
             "d_c = d_q - (1-d_q)/(N_c\u00d7tan(\u03c6)),  "
             "d_\u03b3 = 1.0,  "
-            "k = D_f/B if D_f/B \u2264 1 else arctan(D_f/B)"
+            "k = D_f/B if D_f/B < 1 else arctan(D_f/B)"
         )
     # Meyerhof
     if phi_deg <= 10:

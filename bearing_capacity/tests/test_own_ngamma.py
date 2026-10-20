@@ -102,8 +102,7 @@ def test_meyerhof_shape_factors_are_one_under_an_inclined_load():
 
 
 def test_vesic_shape_factors_stay_under_an_inclined_load():
-    with pytest.warns(UserWarning):
-        r = _analysis("vesic", load_inclination=10.0).compute()
+    r = _analysis("vesic", load_inclination=10.0).compute()
     assert r.sc > 1.0
     assert not [c for c in r.choices
                 if c["what"] == "shape factors under inclined load"]
@@ -115,7 +114,7 @@ def test_the_result_states_method_ngamma_shear_mode_and_basis():
     r = _analysis("meyerhof").compute()
     assert [c["what"] for c in r.choices] == [
         "bearing capacity method", "N-gamma", "shear mode",
-        "allowable bearing pressure"]
+        "allowable bearing pressure", "depth factors"]
     method = _choice(r, "bearing capacity method")
     assert "Meyerhof (1963)" in method["chosen"]
     assert "Table 5-6 (p. 294)" in method["basis"]
@@ -146,13 +145,16 @@ def test_terzaghi_states_its_ngamma_source_and_local_shear():
     assert shear["how"] == "given"
 
 
-def test_meyerhof_below_df_b_one_states_the_depth_parameter():
-    assert not [c for c in _analysis("meyerhof").compute().choices
-                if c["what"].startswith("depth parameter")]
+def test_meyerhof_states_the_depth_parameter():
+    k = _choice(_analysis("meyerhof").compute(), "depth factors")
+    assert k["chosen"].startswith("k = Df/B = 0.500")
     r = _analysis("meyerhof", footing=dict(depth=3.0)).compute()
-    k = _choice(r, "depth parameter k (Meyerhof depth factors)")
-    assert "arctan(Df/B)" in k["chosen"]
-    assert "k = Df/B = 1.50" in k["alternatives"][0]
+    k = _choice(r, "depth factors")
+    assert "arctan(Df/B)" in k["chosen"] and k["how"] == "default"
+    assert "Table 5-6" in k["basis"]
+    assert "k = Df/B = 1.50" in k["alternatives"][-1]
+    # GEC-6's d_q goes with GEC-6's own (Vesic) factors only
+    assert not [a for a in k["alternatives"] if "'gec6'" in a]
 
 
 def test_the_calc_steps_cite_meyerhof_from_ufc_table_5_6():

@@ -32,7 +32,7 @@ from bearing_capacity.results import BearingCapacityResult
 class TestBearingCapacityFactors:
     """Verify Nc, Nq, Ngamma against published tables.
 
-    Reference values from FHWA GEC-6 Table 6-1 and Das Table 3.4.
+    Reference values from FHWA GEC-6 Table 5-1 and Das Table 3.4.
     """
 
     def test_phi_0_factors(self):
@@ -141,10 +141,12 @@ class TestCorrectionFactors:
     def test_depth_factors_embedded(self):
         """Embedded footing phi=30, Df/B=1: check Vesic depth factors."""
         dc, dq, dg = depth_factors(30, Df=2.0, B=2.0, method="vesic")
-        # k = Df/B = 1.0 (since Df/B <= 1)
-        # dq = 1 + 2*tan(30)*(1-sin(30))^2 * 1.0
-        #    = 1 + 2*0.5774*(0.5)^2 = 1 + 2*0.5774*0.25 = 1.289
-        assert dq == pytest.approx(1.289, rel=0.01)
+        # k = arctan(Df/B) = arctan(1) = 0.7854 at Df/B = 1 (UFC 3-220-20
+        # Table 5-8 note B: arctan for Df/B >= 1; GEC-6 Table 5-4 prints
+        # its Df/B = 1 cells from it; GM-197, was k = 1, dq 1.289)
+        # dq = 1 + 2*tan(30)*(1-sin(30))^2 * 0.7854
+        #    = 1 + 2*0.5774*0.25*0.7854 = 1.2267
+        assert dq == pytest.approx(1.2267, abs=1e-4)
         assert dg == 1.0
 
     def test_depth_factors_deep(self):
@@ -691,34 +693,81 @@ class TestMethodComparison:
 # ═══════════════════════════════════════════════════════════════════════
 
 class TestInclinationFactors:
-    """A specified load inclination must reduce capacity even when no explicit
-    vertical load is supplied (regression for BC-2: Vesic i-factors used to
-    silently vanish at vertical_load=0)."""
+    """A specified load inclination must reduce capacity (BC-2: Vesic
+    i-factors used to silently vanish at vertical_load=0). Vesic's factors
+    take H/(V + A' c cot phi) (EN 1997-1:2004 Annex D.4): with c = 0 the
+    angle alone gives them; with cohesion they need V, and the analysis
+    refuses without it rather than use Meyerhof's (GM-203)."""
 
-    def test_inclination_without_V_warns_and_reduces(self):
+    def test_inclination_without_V_on_sand_is_vesic_from_the_angle(self):
+        import warnings
         footing = Footing(width=2.0, depth=1.0, shape="square")
         soil = BearingSoilProfile(layer1=SoilLayer(friction_angle=30, unit_weight=18.0))
         vertical = BearingCapacityAnalysis(footing=footing, soil=soil).compute()
-        with pytest.warns(UserWarning):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
             inclined = BearingCapacityAnalysis(
                 footing=footing, soil=soil, load_inclination=15.0
             ).compute()
         assert inclined.q_ultimate < vertical.q_ultimate
-        assert inclined.ic < 1.0
-        assert inclined.igamma < 1.0
+        # m = (2 + 1)/(1 + 1) = 1.5; 1 - tan 15 = 0.73205
+        assert inclined.iq == pytest.approx(0.73205 ** 1.5, rel=1e-4)
+        assert inclined.igamma == pytest.approx(0.73205 ** 2.5, rel=1e-4)
+        # GM-203 before/after: Meyerhof's (1 - 15/90)^2 = 0.694 and
+        # (1 - 15/30)^2 = 0.25 were used; q_ult 475.67 -> 485.40 kPa
+        assert inclined.q_ultimate == pytest.approx(485.40, abs=0.01)
 
-    def test_inclination_factors_fall_back_to_meyerhof_when_no_V(self):
-        from bearing_capacity.factors import (
-            inclination_factors, _meyerhof_inclination_factors,
-        )
-        with pytest.warns(UserWarning):
-            ic, iq, ig = inclination_factors(
-                30, 15, c=0.0, B=2.0, L=2.0, V=0.0, method="vesic"
-            )
-        mic, miq, mig = _meyerhof_inclination_factors(30, 15)
-        assert ic == pytest.approx(mic)
-        assert iq == pytest.approx(miq)
-        assert ig == pytest.approx(mig)
+    def test_on_sand_V_cancels(self):
+        from bearing_capacity.factors import inclination_factors
+        no_v = inclination_factors(30, 15, c=0.0, B=2.0, L=2.0, V=None)
+        with_v = inclination_factors(30, 15, c=0.0, B=2.0, L=2.0, V=800.0)
+        assert no_v == pytest.approx(with_v)
+
+    @pytest.mark.parametrize("c, phi", [(10.0, 30.0), (50.0, 0.0)])
+    def test_with_cohesion_and_no_V_it_refuses(self, c, phi):
+        from bearing_capacity.factors import inclination_factors
+        with pytest.raises(ValueError, match="need the vertical load V"):
+            inclination_factors(phi, 5, c=c, B=2.0, L=2.0, V=0.0)
+        footing = Footing(width=2.0, depth=1.0, shape="square")
+        soil = BearingSoilProfile(layer1=SoilLayer(
+            cohesion=c, friction_angle=phi, unit_weight=18.0))
+        with pytest.raises(ValueError, match="vertical_load"):
+            BearingCapacityAnalysis(footing=footing, soil=soil,
+                                    load_inclination=5.0).compute()
+
+    def test_a_strip_takes_its_area_per_metre(self):
+        # V = 300 kN/m on a 2 m strip, c = 10 kPa, phi = 30, beta = 10:
+        # A' = 2 m2/m, H = 300 tan 10 = 52.90, V + A'c cot(phi) = 334.64,
+        # m = 2: iq = (1 - 52.90/334.64)^2 = 0.70884. The strip took
+        # A' = 2 x 1e6 m2, so i = 1 (GM-203: q_ult 1129.67 -> 749.76 kPa).
+        footing = Footing(width=2.0, depth=1.0, shape="strip")
+        soil = BearingSoilProfile(layer1=SoilLayer(
+            cohesion=10.0, friction_angle=30.0, unit_weight=18.0))
+        r = BearingCapacityAnalysis(footing=footing, soil=soil,
+                                    load_inclination=10.0,
+                                    vertical_load=300.0).compute()
+        H = 300.0 * math.tan(math.radians(10.0))
+        base = 300.0 + 2.0 * 10.0 / math.tan(math.radians(30.0))
+        assert r.iq == pytest.approx((1 - H / base) ** 2, rel=1e-6)
+        assert r.iq == pytest.approx(0.70884, abs=1e-5)
+        assert r.q_ultimate == pytest.approx(749.76, abs=0.01)
+
+    def test_phi_zero_takes_vesic_ic(self):
+        # ic = 1 - m H/(A' c Nc): square 2 m, V 500, beta 5, c 50:
+        # H = 43.74, m = 1.5, A' = 4: 1 - 1.5 x 43.74/(4 x 50 x 5.14)
+        footing = Footing(width=2.0, depth=1.0, shape="square")
+        soil = BearingSoilProfile(layer1=SoilLayer(
+            cohesion=50.0, friction_angle=0.0, unit_weight=18.0))
+        r = BearingCapacityAnalysis(footing=footing, soil=soil,
+                                    load_inclination=5.0,
+                                    vertical_load=500.0).compute()
+        H = 500.0 * math.tan(math.radians(5.0))
+        assert r.ic == pytest.approx(1 - 1.5 * H / (4 * 50 * 5.14), rel=1e-9)
+
+    def test_a_load_that_slides_is_refused(self):
+        from bearing_capacity.factors import inclination_factors
+        with pytest.raises(ValueError, match="check sliding"):
+            inclination_factors(40, 50, c=0.0, B=2.0, L=2.0, V=None)
 
     def test_vesic_inclination_with_vertical_load(self):
         """With V>0 the full Vesic formulation runs and reduces capacity."""
