@@ -649,7 +649,8 @@ def test_diagnostics_name_each_agents_model(two_models):
     by_name = {c["name"]: c for c in checks}
     agents = by_name["agent models"]
     assert agents["status"] == "pass", agents
-    assert f"main agent: Opus 5.5 (anthropic:{OPUS_X})" in agents["detail"]
+    assert (f"main agent: Opus 5.5 (anthropic:{OPUS_X}; this host's "
+            "default)") in agents["detail"]
     assert (f"references: Sonnet 5.5 (anthropic:{SONNET_X}; this host's "
             "default)") in agents["detail"]
     assert "every other helper: the main agent's model" in agents["detail"]
@@ -658,6 +659,32 @@ def test_diagnostics_name_each_agents_model(two_models):
         assert by_name[name]["status"] == "pass", by_name[name]
     assert {r["model"] for r in two_models} == {OPUS_X, SONNET_X}
     assert all(r["refused"] is None for r in two_models)
+
+
+@needs_anthropic
+def test_opus_listed_second_is_still_the_main_default(proxy_route, foundry):
+    """The main agent's Foundry default is the list's Opus 5.5, wherever it
+    is listed; the diagnostics line says where each model came from."""
+    from webapp import diagnostics
+    foundry.setenv(core.FOUNDRY_MODELS_ENV,
+                   f"Sonnet 5.5=anthropic:{SONNET_X},"
+                   f"Opus 5.5=anthropic:{OPUS_X}")
+    main = core.default_model_id()
+    assert main == f"anthropic:{OPUS_X}"
+    detail = {c["name"]: c for c in diagnostics.run_diagnostics(main)}[
+        "agent models"]["detail"]
+    assert (f"main agent: Opus 5.5 (anthropic:{OPUS_X}; this host's "
+            "default)") in detail
+    assert (f"references: Sonnet 5.5 (anthropic:{SONNET_X}; this host's "
+            "default)") in detail
+    # both picked in the sidebar: Sonnet for the main agent, and the
+    # references helper on the main model
+    detail = {c["name"]: c for c in diagnostics.run_diagnostics(
+        f"anthropic:{SONNET_X}", helper_models={"references": "main"})}[
+        "agent models"]["detail"]
+    assert (f"main agent: Sonnet 5.5 (anthropic:{SONNET_X}; the sidebar)"
+            in detail)
+    assert "references: the main agent's model (the sidebar)" in detail
 
 
 @needs_anthropic

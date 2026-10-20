@@ -1,4 +1,5 @@
-"""Which model each helper (sub-agent) runs on (BACKLOG INF-41).
+"""Which model the main agent and each helper (sub-agent) run on
+(BACKLOG INF-41).
 
 The deep agent's helpers (the references librarian, the calculation,
 figure and reviewer helpers, deepagents' general-purpose one) ran on the
@@ -6,6 +7,10 @@ main agent's model. On Foundry the owner wants the references helper on
 Claude Sonnet 5.5 and the main agent and every other helper on Opus 5.5
 (2026-10-20). So:
 
+* The main agent's default on a host is :data:`HOST_MAIN_DEFAULTS` (on
+  Foundry the model list's "Opus 5.5" entry), else the list's first entry
+  (``webapp.core.default_model``); ``GEOTECH_WEBAPP_MODEL`` and the
+  sidebar's Model picker override it.
 * ``build_deep_agent(subagent_models={name: chat model})`` gives a named
   helper a model of its own; a helper not named runs on the main model, as
   before (:mod:`funhouse_agent.deep.agent`).
@@ -21,9 +26,6 @@ Claude Sonnet 5.5 and the main agent and every other helper on Opus 5.5
 * Each helper model is built by ``engine_config.resolve_engine``, exactly
   as the main model is: on Foundry the same proxy route, TLS and request-field
   sanitizer.
-
-The main agent's model is unchanged: the sidebar's Model picker, whose
-default is the first entry of the model list (put Opus 5.5 first).
 """
 
 from __future__ import annotations
@@ -47,6 +49,10 @@ MAIN = "main"
 HOST_DEFAULTS: Dict[str, Dict[str, str]] = {
     "foundry": {"references": "Sonnet 5.5"},
 }
+
+#: Each host's main-agent default, by deployment: a label in the model list.
+#: Foundry: the owner's choice of 2026-10-20 (INF-41).
+HOST_MAIN_DEFAULTS: Dict[str, str] = {"foundry": "Opus 5.5"}
 
 #: Where a setting came from, as the sidebar and diagnostics say it.
 SOURCE_HOST = "this host's default"
@@ -74,6 +80,24 @@ def deployment() -> str:
     if engine_config.is_tinyapps_deployment():
         return "tinyapps"
     return ""
+
+
+def host_main_choice(choices: List[dict]) -> Optional[dict]:
+    """The entry of ``choices`` this host's main default names, else
+    ``None``."""
+    label = HOST_MAIN_DEFAULTS.get(deployment())
+    if not label:
+        return None
+    return next((c for c in choices if _key(c["label"]) == _key(label)),
+                None)
+
+
+def main_source(model_id: Optional[str]) -> str:
+    """Where the main agent's model came from: the default's own source
+    when ``model_id`` is the default, else the sidebar."""
+    from webapp import core
+    default, source = core.default_model()
+    return source if model_id == default else SOURCE_SIDEBAR
 
 
 def parse(text: Optional[str]) -> Dict[str, str]:
@@ -205,6 +229,7 @@ def summary(main_label: str, helpers: List[HelperModel]) -> str:
     return "; ".join(parts)
 
 
-__all__ = ["ENV", "MAIN", "HOST_DEFAULTS", "HELPER_LABELS", "HelperModel",
-           "helper_label", "deployment", "parse", "settings", "lookup",
+__all__ = ["ENV", "MAIN", "HOST_DEFAULTS", "HOST_MAIN_DEFAULTS",
+           "HELPER_LABELS", "HelperModel", "helper_label", "deployment",
+           "host_main_choice", "main_source", "parse", "settings", "lookup",
            "resolve", "build_kwargs", "summary"]

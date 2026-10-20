@@ -115,3 +115,28 @@ def test_a_helper_model_that_does_not_resolve_falls_back(foundry):
     ref = _by_name(helper_models.resolve(OPUS))["references"]
     assert not ref.own_model and ref.note.startswith(
         "its model did not resolve")
+
+
+def test_on_foundry_the_main_default_is_opus_wherever_it_is_listed(foundry):
+    foundry.setenv(core.FOUNDRY_MODELS_ENV,
+                   f"Sonnet 5.5={SONNET},Opus 5.5={OPUS}")
+    assert core.default_model() == (OPUS, helper_models.SOURCE_HOST)
+    assert core.default_model_id() == OPUS
+    assert helper_models.main_source(OPUS) == "this host's default"
+    assert helper_models.main_source(SONNET) == "the sidebar"
+    # no Opus 5.5 in the list: its first entry, as before
+    foundry.setenv(core.FOUNDRY_MODELS_ENV,
+                   f"Sonnet 5.5={SONNET},GPT 5.2=ri.language-model-service.."
+                   "language-model.gpt-5-2")
+    assert core.default_model() == (SONNET, "first in GEOTECH_FOUNDRY_MODELS")
+    # the app's own setting wins
+    foundry.setenv("GEOTECH_WEBAPP_MODEL", OPUS)
+    assert core.default_model() == (OPUS, "GEOTECH_WEBAPP_MODEL")
+
+
+def test_elsewhere_the_list_order_decides(monkeypatch):
+    for name in ENVS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(core.FOUNDRY_MODELS_ENV,
+                       f"Sonnet 5.5={SONNET},Opus 5.5={OPUS}")
+    assert core.default_model() == (SONNET, "first in GEOTECH_FOUNDRY_MODELS")

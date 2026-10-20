@@ -1696,27 +1696,40 @@ def model_choices(env_model: Optional[str] = None) -> List[dict]:
 
 def default_model_id(env_model: Optional[str] = None) -> str:
     """The default selected model id: ``GEOTECH_WEBAPP_MODEL`` if set (whether
-    or not it is already curated), else the first ``GEOTECH_FOUNDRY_MODELS``
-    entry (a Foundry deployment defaults to its own models), else the first
-    curated choice."""
+    or not it is already curated), else, from ``GEOTECH_FOUNDRY_MODELS``,
+    this host's main default (on Foundry the entry labelled "Opus 5.5",
+    BACKLOG INF-41) or the list's first entry (a Foundry deployment defaults
+    to its own models), else the first curated choice."""
+    return default_model(env_model)[0]
+
+
+def default_model(env_model: Optional[str] = None) -> "tuple[str, str]":
+    """``(default model id, where it came from)``: see
+    :func:`default_model_id`. The source is said as Connection diagnostics
+    say it (``GEOTECH_WEBAPP_MODEL``, "this host's default", "first in
+    GEOTECH_FOUNDRY_MODELS", ...)."""
     envm = (env_model if env_model is not None
             else os.environ.get("GEOTECH_WEBAPP_MODEL"))
     if envm:
-        return envm
+        return envm, "GEOTECH_WEBAPP_MODEL"
     from webapp import engine_config
     if engine_config.has_model_builder():
         pm = prompter_model_choices()
         if pm:
-            return pm[0]["id"]
+            return pm[0]["id"], f"first in {PROMPTER_MODELS_ENV}"
     fm = foundry_model_choices()
     if fm:
-        return fm[0]["id"]
+        from webapp import helper_models
+        main = helper_models.host_main_choice(fm)
+        if main is not None:
+            return main["id"], helper_models.SOURCE_HOST
+        return fm[0]["id"], f"first in {FOUNDRY_MODELS_ENV}"
     # Foundry deployment with nothing configured: no default model exists —
     # the app boots engineless and offers the RID input only. Same on Tiny
     # Apps: no Prompter settings, no model.
     if engine_config.is_keyless_deployment():
-        return ""
-    return MODEL_CHOICES[0]["id"]
+        return "", ""
+    return MODEL_CHOICES[0]["id"], "the app's default"
 
 
 def model_label(model_id: Optional[str]) -> str:

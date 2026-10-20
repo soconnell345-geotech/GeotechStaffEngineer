@@ -484,8 +484,11 @@ def _helper_models(model_id: Optional[str], identity: Any,
     if not helpers:
         return None, []
     main = core.model_label(model_id) or str(model_id or "")
+    source = helper_models.main_source(model_id)
     if main != model_id and model_id:
-        main = f"{main} ({model_id})"
+        main = f"{main} ({model_id}; {source})"
+    else:
+        main = f"{main} ({source})"
     status = WARN if any(h.note for h in helpers) else PASS
     return (_check("agent models", status,
                    helper_models.summary(main, helpers)), helpers)

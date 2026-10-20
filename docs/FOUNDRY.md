@@ -102,13 +102,15 @@ from webapp.foundry_entry import main
 main()
 ```
 
-The first entry is the default; the sidebar picker switches between them.
+On Foundry the main agent defaults to the entry labelled `Opus 5.5`, else
+the list's first entry (`GEOTECH_WEBAPP_MODEL` overrides both); the sidebar
+picker switches between them.
 
 **The references helper runs on Sonnet 5.5** (the owner, 2026-10-20; BACKLOG
 INF-41). On Foundry the helper that searches and reads the reference library
 defaults to the model list's `Sonnet 5.5` entry; the main agent and every
 other helper (calculations, figures, the reviewer, page reading) run on the
-main model, the list's first entry, so put Opus 5.5 first. The sidebar shows
+main model, Opus 5.5 by default. The sidebar shows
 a **References helper model** picker under **Model** ("Same as the main
 model" keeps it on the main model), and `GEOTECH_HELPER_MODELS` sets any
 helper by name: `references=Sonnet 5.5`, `calc=main`, or a RID
@@ -118,7 +120,8 @@ as the main one, through the same proxy address and request fixes (§3a,
 §3c). If `Sonnet 5.5` is not in the list, the helper stays on the main model
 and the sidebar says so. **Connection diagnostics** print an `agent models`
 line (the main agent, each helper with a model of its own, and "every other
-helper: the main agent's model") and send a plain and a tool-calling request
+helper: the main agent's model", each with where it came from: this host's
+default, `GEOTECH_HELPER_MODELS`, `GEOTECH_WEBAPP_MODEL` or the sidebar) and send a plain and a tool-calling request
 to each helper model; each turn's `activity.jsonl` names the model on every
 `model_start` beside the agent that made the call, and `meta.json`'s engine
 record lists `helper_models`. Other hosts have no helper defaults.
