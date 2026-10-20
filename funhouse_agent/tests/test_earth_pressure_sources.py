@@ -331,8 +331,15 @@ def test_sheet_pile_wall_friction_rows():
     left_out = D.call_agent("sheet_pile", "cantilever_wall",
                             {**args, "layers": layers})
     friction = left_out["choices"][-1]
-    assert friction["chosen"] == "layer 1: 17 deg (the clean_sand row, taken)"
+    assert friction["chosen"] == ("layer 1: 17 deg (the clean sand row, "
+                                  "taken when the layer gives none)")
     assert friction["how"] == "default"
+    # the GM-242 review: the embedment with no wall friction beside it
+    smooth = D.call_agent("sheet_pile", "cantilever_wall", {
+        **args, "layers": [{**layers[0], "wall_friction_deg": 0.0}]})
+    said = friction["alternatives"][0].rsplit("the embedment is ", 1)[1]
+    assert float(said.removesuffix(" m")) == pytest.approx(
+        smooth["embedment_depth_m"], abs=0.006)
     silty = D.call_agent("sheet_pile", "cantilever_wall", {
         **args, "layers": [{**layers[0], "interface_soil": "silty_sand"}]})
     assert silty["choices"][-1]["chosen"] == (
