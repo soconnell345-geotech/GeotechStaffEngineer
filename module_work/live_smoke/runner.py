@@ -1,7 +1,7 @@
 """Run scenarios (flows, geotech questions, suite tasks) and write the record.
 
-One :class:`Wave` = one model, one cap, one output folder
-``runs/<wave>/``. Scenarios run strictly one at a time. After every turn the
+One :class:`Wave` = one model (or, for an arms wave, BACKLOG EV-33, the
+models its arms use), one cap, one output folder ``runs/<wave>/``. Scenarios run strictly one at a time. After every turn the
 detectors run (:mod:`live_smoke.detectors`); after every scenario the spend
 is printed and the scenario's folder is written:
 
@@ -156,7 +156,8 @@ class Wave:
                  ledger_path: Optional[str] = None, fake: bool = False,
                  fake_policy=None, prices: Optional[dict] = None,
                  runs_dir: str = RUNS, keep_sandbox: bool = False,
-                 redo: bool = False, verbose: bool = True):
+                 redo: bool = False, verbose: bool = True,
+                 extra_models: Optional[List[str]] = None):
         from live_smoke import models
         self.name = name
         self.mode = mode
@@ -173,9 +174,10 @@ class Wave:
             # cap unless one is given.
             ledger_path = ledger_path or os.path.join(self.dir,
                                                       "dry_ledger.json")
-            prices = prices or {model_id: {"input": 0.0, "output": 0.0,
-                                           "cache_read": 0.0,
-                                           "cache_write": 0.0}}
+            prices = prices or {m: {"input": 0.0, "output": 0.0,
+                                    "cache_read": 0.0, "cache_write": 0.0}
+                                for m in [model_id] + list(extra_models
+                                                           or [])}
             if self.cap <= 0:
                 self.cap = 1e9
             self.ledger = SpendLedger(ledger_path, hard_total=float("inf"))
@@ -188,11 +190,25 @@ class Wave:
             from live_smoke.dryrun import FAKE_USAGE
             self.model = models.scripted_model(fake_policy,
                                                usage=dict(FAKE_USAGE),
-                                               callbacks=[self.meter])
+                                               callbacks=[self.meter],
+                                               model=model_id)
             self.model_id_label = f"{model_id} (scripted fake)"
         else:
             self.model = models.build_claude(model_id, self.meter)
             self.model_id_label = model_id
+        #: Every model of the wave by id, each metered on this wave's meter
+        #: at its own price (an arms wave hands a helper its own model).
+        self.models: Dict[str, Any] = {model_id: self.model}
+        for mid in extra_models or []:
+            if mid in self.models:
+                continue
+            m_meter = self.meter.for_model(mid)
+            if fake:
+                self.models[mid] = models.scripted_model(
+                    fake_policy, usage=dict(FAKE_USAGE),
+                    callbacks=[m_meter], model=mid)
+            else:
+                self.models[mid] = models.build_claude(mid, m_meter)
         self.summaries: List[dict] = []
         self.stopped: Optional[str] = None
         self.code: dict = {}
@@ -235,7 +251,8 @@ class Wave:
 
     def _write_meta(self) -> None:
         meta = {"wave": self.name, "mode": self.mode,
-                "model": self.model_id_label, "cap_usd": self.cap,
+                "model": self.model_id_label, "models": sorted(self.models),
+                "cap_usd": self.cap,
                 "fake": self.fake, "stopped": self.stopped,
                 "code": self.code, "code_earlier": self.code_earlier,
                 "updated": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -319,8 +336,13 @@ class Wave:
         sessions: Dict[str, Session] = {}
         retired: List[Session] = []
         note = None
+        wiring: Dict[str, Any] = {}
+        main_id = flow.get("main_model") or self.model_id
         try:
-            with AppEnv(sandbox, self.model, model_id=self.model_id,
+            from live_smoke import arms
+            with AppEnv(sandbox, self.models.get(main_id, self.model),
+                        model_id=main_id, models=self.models,
+                        labels=arms.MODEL_LABELS,
                         sharepoint=flow.get("sharepoint", True),
                         extra_env=flow.get("env")) as env:
                 env.turn_hooks.append(TurnWatch(env, self.meter))
@@ -339,11 +361,24 @@ class Wave:
                                                           "document_review"))
                         s = Session(env, page, user, label=label)
                         sessions[label] = s
+                        if flow.get("behavior"):
+                            # the flow's own Behavior settings (GM-239),
+                            # as the sidebar sets them
+                            s.set_behavior(flow["behavior"])
                         if s.ss.agent_error:
                             scen_findings.append(det.finding(
                                 "e_health", "agent_build_failed", "high",
                                 f"the agent failed to build for {label}: "
                                 f"{s.ss.agent_error}"))
+                        if flow.get("arm"):
+                            # EV-33: the arm's models, checked before any
+                            # model call; a mismatch ends the scenario
+                            wiring[label] = arms.wiring_record(s)
+                            bad = arms.wiring_findings(s, flow["arm"])
+                            if bad:
+                                scen_findings.extend(bad)
+                                raise arms.ArmWiringError(
+                                    "; ".join(f["message"] for f in bad))
                     return sessions[label]
 
                 for i, step in enumerate(flow.get("steps") or []):
@@ -379,9 +414,21 @@ class Wave:
             shutil.rmtree(sandbox, ignore_errors=True)
         summary = self._summary(sid, flow.get("title", ""), "flow", turns,
                                 scen_findings, mark, t0, note)
+        if flow.get("arm"):
+            summary.update(flow=flow.get("flow"), arm=flow["arm"],
+                           model=(f"{main_id} (scripted fake)" if self.fake
+                                  else main_id),
+                           wiring=wiring.get("main")
+                           or next(iter(wiring.values()), None))
         self._write_json(os.path.join(scen_dir, "summary.json"), summary)
         self._after_scenario(summary)
         return summary
+
+    def run_arm(self, flow: dict, arm: str) -> dict:
+        """One flow in one arm (BACKLOG EV-33): the scenario
+        ``<flow>@<arm>``, on the arm's models (:mod:`live_smoke.arms`)."""
+        from live_smoke import arms
+        return self.run_flow(arms.arm_flow(flow, arm))
 
     def _do_step(self, env, s: Session, step: dict, sessions, retired,
                  scen_findings) -> List[dict]:
@@ -517,12 +564,13 @@ class Wave:
                 "unmetered": tot["unmetered"],
                 "seconds": round(time.time() - t0, 1),
                 "severity": det.severity_counts(allf), "by_code": by_code,
+                "by_agent": self.meter.by_agent(calls),
                 "note": note, "stopped": self.meter.stopped,
                 "incomplete": bool(
                     (note and "stopped" in str(note))
                     or any("WaveCapReached" in str(t.get("error") or "")
                            for t in turns)
-                    or any(f["code"] == "scenario_crashed"
+                    or any(f["code"] in ("scenario_crashed", "arm_wiring")
                            for f in scen_findings)),
                 "rate_limited": any(t.get("rate_limited") for t in turns)}
 

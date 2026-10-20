@@ -107,11 +107,15 @@ def _scripted_class():
 
 
 def scripted_model(policy: Optional[Callable] = None, *,
-                   usage: Optional[dict] = None, callbacks=None):
-    """A :class:`ScriptedChatModel` (see :func:`_scripted_class`)."""
+                   usage: Optional[dict] = None, callbacks=None,
+                   model: Optional[str] = None):
+    """A :class:`ScriptedChatModel` (see :func:`_scripted_class`); ``model``
+    is the name it reports (an arms dry run names each fake after the
+    model it stands in for, so the wiring check can tell them apart)."""
     cls = _scripted_class()
+    kw = {"model": model} if model else {}
     return cls(policy=policy, usage=usage, calls=[],
-               callbacks=list(callbacks or []))
+               callbacks=list(callbacks or []), **kw)
 
 
 def _is_vision_call(messages) -> bool:

@@ -20,17 +20,28 @@ Modes
 ``dry-run``  the $0 scripted-fake scenario that does the bad things on
              purpose (saves to temp, links a missing file, fails a tool) and
              prints which detectors fired. Never touches the spend ledger.
+             With ``--arms``: the $0 arms wave (EV-33) on scripted fakes
+             named after the arms' models, end to end to ``RESULTS.md``.
 ``report``   re-render ``runs/<wave>/REPORT.md`` from disk.
 ``recheck``  detectors (e) health, (k) figure cards, (l) judgment-call
              check and (m) answer numbers, and the flow expectations,
              again over a recorded wave, with today's ``flows.json`` and
              detectors ($0, no model). ``--looks`` asks for a look at
              every figure card.
+``arms``     BACKLOG EV-33, the Foundry model split: each flow in
+             ``--ids`` once per arm in ``--arms`` (default
+             ``opus_all,split``; ``live_smoke/arms.py``), as the scenario
+             ``<flow>@<arm>``, the arms in turn and reversed on every other
+             flow. Each scenario checks the arm's models before any model
+             call. Writes ``runs/<wave>/RESULTS.md`` and ``results.json``.
+             Resume with the same ``--wave``.
 ``estimate`` what a flow wave should cost on ``--model``, from the meter's
              record of earlier runs (``runs/*/*/summary.json``), and a
              suggested cap. ``--ids`` picks as ``flow`` does (by prefix),
              so the same ids give the same flows; an id matching no flow
-             (one not written yet) is estimated from its other arm.
+             (one not written yet) is estimated from its other arm. With
+             ``--arms``: what an arms wave of those flows should cost, from
+             the w11-w14 Sonnet runs, and the flows to cut to fit ``--cap``.
 ``ledger``   print the spend ledger.
 ``list``     list flows, geotech question ids and suite task ids.
 
@@ -49,6 +60,8 @@ Examples::
     run.py flow --wave fake-all --cap 0 --fake
     run.py recheck --wave w9-figures
     run.py estimate --model claude-sonnet-5-5 --ids F56,F57,F60,F18
+    run.py estimate --arms opus_all,split --cap 30 --ids F67,F68,F69,F70,F71,F72,F73,F74
+    run.py arms --wave w15-model-split --cap 30 --ids F67,F68,F69,F70,F71,F72,F73,F74
 """
 
 from __future__ import annotations
@@ -86,7 +99,7 @@ def main(argv=None) -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("mode", choices=("flow", "geotech", "suite", "dry-run",
                                      "report", "recheck", "estimate",
-                                     "ledger", "list"))
+                                     "ledger", "list", "arms"))
     ap.add_argument("--wave", help="wave name (its folder under runs/)")
     ap.add_argument("--cap", type=float, help="wave cap in USD")
     ap.add_argument("--model", default="claude-haiku-5-5",
@@ -102,6 +115,9 @@ def main(argv=None) -> int:
     ap.add_argument("--keep-sandbox", action="store_true",
                     help="keep runs/<wave>/_sandbox (data root, cwd, library)")
     ap.add_argument("--arm", default="baseline", help="suite: arm name")
+    ap.add_argument("--arms", default=None,
+                    help="arms / estimate: comma-separated arms of "
+                         "live_smoke/arms.py (default opus_all,split)")
     ap.add_argument("--orientation", action="store_true",
                     help="suite: send the orientation turn first")
     ap.add_argument("--docs-dir", default=None, help="suite: docs folder")
@@ -131,9 +147,22 @@ def main(argv=None) -> int:
             ap.error("report needs --wave")
         from live_smoke import report
         led = spend.SpendLedger(args.ledger or spend.DEFAULT_LEDGER)
-        print(report.write_report(os.path.join(runner.RUNS, args.wave),
-                                  ledger=led, wave=args.wave))
+        wdir = os.path.join(runner.RUNS, args.wave)
+        print(report.write_report(wdir, ledger=led, wave=args.wave))
+        from live_smoke import arms
+        fids, arm_names = arms.wave_arms(wdir)
+        if fids:
+            flows = {f["id"]: f for f in runner.load_flows()}
+            print(arms.write_results(wdir, [flows.get(i) or {"id": i}
+                                            for i in fids], arm_names))
         return 0
+    if args.mode == "dry-run" and args.arms is not None:
+        from live_smoke import dryrun
+        res = dryrun.run_arms(wave=args.wave or "dry-arms", verbose=True,
+                              arms_names=_ids(args.arms) or None)
+        print(json.dumps({k: res[k] for k in ("ok", "problems", "results",
+                                              "arms")}, indent=1))
+        return 0 if res["ok"] else 1
     if args.mode == "dry-run":
         from live_smoke import dryrun
         res = dryrun.run(wave=args.wave or "dry-run", verbose=True)
@@ -155,6 +184,27 @@ def main(argv=None) -> int:
                 print(f"  flow: {f['severity']} {f['detector']}/"
                       f"{f['code']}: {f['message']}")
         return 0
+    if args.mode == "estimate" and args.arms is not None:
+        from live_smoke import arms
+        flows = _pick(runner.load_flows(), _ids(args.ids))
+        est = arms.estimate(flows, _ids(args.arms) or arms.DEFAULT_ARMS,
+                            runner.RUNS, cap=args.cap)
+        for r in est["rows"]:
+            print(f"{r['flow'] + '@' + r['arm']:<48} ${r['usd']:.4f}  "
+                  f"(Sonnet basis ${r['sonnet_basis_usd']:.4f}, references "
+                  f"share {r['references_share']:.2f}: {r['basis']})")
+        b = est["basis"]
+        print(f"basis: {b['runs']} recorded w11-w14 Sonnet runs; "
+              f"{b['with_references']} used the references helper (mean "
+              f"${b['mean_usd_with_references']:.4f}, mean helper share "
+              f"{b['references_share']:.2f}); {b['no_helper']} used no "
+              f"helper (mean ${b['mean_usd_no_helper']:.4f})")
+        print(f"{'total':<48} ${est['total_usd']:.4f}; suggested cap "
+              f"${est['suggested_cap_usd']:.2f}"
+              + ("" if args.cap is None else
+                 f"; fits the ${args.cap:.2f} cap" if est["fits"] else
+                 f"; OVER the ${args.cap:.2f} cap: cut {est['cut']}"))
+        return 0
     if args.mode == "estimate":
         flows = runner.load_flows()
         picked = []
@@ -172,9 +222,19 @@ def main(argv=None) -> int:
 
     if not args.wave or args.cap is None:
         ap.error(f"{args.mode} needs --wave and --cap")
-    wave = runner.Wave(args.wave, mode=args.mode, model_id=args.model,
+    arm_names, models = [], [args.model]
+    if args.mode == "arms":
+        from live_smoke import arms
+        arm_names = _ids(args.arms) or list(arms.DEFAULT_ARMS)
+        for a in arm_names:
+            arms.arm(a)
+        models = arms.arm_models(arm_names)
+        if not _ids(args.ids):
+            ap.error("arms needs --ids (the flows to run in each arm)")
+    wave = runner.Wave(args.wave, mode=args.mode, model_id=models[0],
                        cap=args.cap, ledger_path=args.ledger, fake=args.fake,
-                       keep_sandbox=args.keep_sandbox, redo=args.redo)
+                       keep_sandbox=args.keep_sandbox, redo=args.redo,
+                       extra_models=models[1:])
     try:
         wave.start()
     except spend.RefuseToStart as exc:
@@ -182,7 +242,14 @@ def main(argv=None) -> int:
         return 2
     ids = _ids(args.ids)
     try:
-        if args.mode == "flow":
+        if args.mode == "arms":
+            from live_smoke import arms
+            picked = _pick(runner.load_flows(), ids)
+            for f, a in arms.order(picked, arm_names):
+                if not wave.can_continue():
+                    break
+                wave.run_arm(f, a)
+        elif args.mode == "flow":
             flows = [f for f in _pick(runner.load_flows(), ids)
                      if COST_ORDER.get(f.get("cost", "medium"), 1)
                      <= COST_ORDER[args.max_cost]]
@@ -209,6 +276,10 @@ def main(argv=None) -> int:
         print("[wave] interrupted")
     finally:
         wave.finish()
+        if args.mode == "arms":
+            from live_smoke import arms
+            print("[wave] results: " + arms.write_results(
+                wave.dir, _pick(runner.load_flows(), ids), arm_names))
     return 0
 
 
