@@ -12,6 +12,12 @@ that the structure the next session relies on is intact:
 - every item has a unique ID and a tier;
 - every ID cited in the backlog or in HANDOFF §0a-current exists;
 - CLAUDE.md and HANDOFF still send a session to the backlog.
+
+Closed items leave in two steps: "Done since the last sweep" at the foot of
+``BACKLOG.md``, then, at a sweep, ``BACKLOG_DONE.md`` (the archive,
+``module_work/backlog_dashboard/sweep_done.py``). An ID closed in either
+place still counts as defined when an open item cites it, and is never
+reused.
 """
 
 import pathlib
@@ -19,6 +25,7 @@ import re
 
 ROOT = pathlib.Path(__file__).parents[2]
 BACKLOG = ROOT / "BACKLOG.md"
+ARCHIVE = ROOT / "BACKLOG_DONE.md"
 
 PREFIXES = ("OWN", "DR", "VIS", "TA", "PL", "RI", "GM", "REF", "EV", "INF",
             "LT", "DOC")
@@ -71,9 +78,12 @@ _DONE_ITEM = re.compile(r"^- \*\*([A-Z]{2,3}-\d{2,3})\*\*", re.M)
 
 
 def _done_ids():
-    """IDs closed since the last sweep (bold at the start of a Done bullet)."""
+    """Closed IDs (bold at the start of a bullet): BACKLOG.md's Done list
+    plus every earlier sweep in the archive."""
     text = BACKLOG.read_text(encoding="utf-8")
     done = text.split(_DONE, 1)[1] if _DONE in text else ""
+    if ARCHIVE.exists():
+        done += "\n" + ARCHIVE.read_text(encoding="utf-8")
     return set(_DONE_ITEM.findall(done))
 
 
@@ -90,8 +100,51 @@ def test_ids_cited_in_the_backlog_exist():
 def test_closed_ids_are_not_reused():
     reused = sorted(_done_ids() & {i for i, _ in _items()})
     assert not reused, (
-        f"{reused} are listed as done AND as open items; a closed ID is never "
-        "reused, take the next free number")
+        f"{reused} are listed as done (BACKLOG.md or BACKLOG_DONE.md) AND as "
+        "open items; a closed ID is never reused, take the next free number "
+        "(sweep_done.py --next PREFIX)")
+
+
+def test_archive_holds_only_swept_entries():
+    """The archive is sweeps of Done entries, nothing open."""
+    if not ARCHIVE.exists():
+        return
+    text = ARCHIVE.read_text(encoding="utf-8")
+    assert "## Swept " in text, (
+        "BACKLOG_DONE.md has no '## Swept <date>' heading; write it with "
+        "module_work/backlog_dashboard/sweep_done.py, not by hand")
+    tiered = re.findall(r"^- \*\*([A-Z]{2,3}-\d{2,3})\*\* \[(?:"
+                        + "|".join(TIERS) + r")\]", text, re.M)
+    assert not tiered, (
+        f"{tiered} sit in BACKLOG_DONE.md as tiered open items; open work "
+        "lives only in BACKLOG.md")
+
+
+def test_sweep_keeps_every_closed_id_and_open_item(tmp_path):
+    """A sweep of today's files (on copies) loses no closed ID or open item."""
+    import importlib.util
+    import shutil
+    spec = importlib.util.spec_from_file_location(
+        "sweep_done", ROOT / "module_work" / "backlog_dashboard" / "sweep_done.py")
+    sweep_done = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sweep_done)
+    shutil.copy(BACKLOG, tmp_path / "BACKLOG.md")
+    if ARCHIVE.exists():
+        shutil.copy(ARCHIVE, tmp_path / "BACKLOG_DONE.md")
+    before = _done_ids()
+    open_before = _items()
+    sweep_done.sweep(tmp_path / "BACKLOG.md", tmp_path / "BACKLOG_DONE.md",
+                     "2000-01-01")
+    swept = (tmp_path / "BACKLOG.md").read_text(encoding="utf-8")
+    archive = (tmp_path / "BACKLOG_DONE.md")
+    after = set(_DONE_ITEM.findall(swept.split(_DONE, 1)[1]))
+    if archive.exists():
+        after |= set(_DONE_ITEM.findall(archive.read_text(encoding="utf-8")))
+    assert after == before
+    assert [(m.group(1), m.group(2)) for m in map(_ITEM.match, swept.splitlines())
+            if m] == open_before
+    assert sweep_done.next_id("GM", tmp_path / "BACKLOG.md", archive) == (
+        sweep_done.next_id("GM", BACKLOG, ARCHIVE))
 
 
 def test_handoff_slice_cites_only_existing_ids():

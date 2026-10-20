@@ -2,8 +2,10 @@
 
     .venv/Scripts/python module_work/backlog_dashboard/build.py
 
-Reads ``BACKLOG.md`` (the one list of open work) and ``context/*.json``
-(plain-English cards for the items that need the owner). Writes
+Reads ``BACKLOG.md`` (the one list of open work), ``BACKLOG_DONE.md`` (the
+archive of earlier sweeps; only its IDs and sweep dates) and
+``context/*.json`` (plain-English cards for the items that need the
+owner). Writes
 ``out/backlog_desk.html``, which a session publishes as a private
 claude.ai artifact. See README.md beside this file for the artifact's URL
 and how answers come back.
@@ -19,6 +21,7 @@ from datetime import date
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 BACKLOG = ROOT / "BACKLOG.md"
+ARCHIVE = ROOT / "BACKLOG_DONE.md"
 TEMPLATE = HERE / "template.html"
 OUT = HERE / "out" / "backlog_desk.html"
 
@@ -107,6 +110,22 @@ def parse_backlog(text: str) -> dict:
     return data
 
 
+def archive_summary(path=ARCHIVE) -> dict:
+    """The archive's closed IDs, entry count and sweep dates (newest first).
+
+    The page does not carry the archived entries themselves (about 160 KB
+    at the first sweep); the Done tab names the file and the count.
+    """
+    if not path.exists():
+        return {"path": path.name, "entries": 0, "sweeps": [], "ids": []}
+    text = path.read_text(encoding="utf-8")
+    return {"path": path.name,
+            "entries": len(re.findall(r"^- ", text, re.M)),
+            "sweeps": re.findall(r"^## Swept (\S+)", text, re.M),
+            "ids": sorted(set(re.findall(
+                r"^- \*\*([A-Z]{2,3}-\d{2,3})\b", text, re.M)))}
+
+
 def load_context() -> dict:
     ctx = {}
     for p in sorted((HERE / "context").glob("*.json")):
@@ -122,14 +141,22 @@ def main() -> int:
     data = parse_backlog(BACKLOG.read_text(encoding="utf-8"))
     ids = {i["id"] for i in data["items"]}
     ctx = load_context()
+    archive = archive_summary()
+    closed = {re.match(r"\*\*([A-Z]{2,3}-\d{2,3})\b", d) for d in data["done"]}
+    closed = {m.group(1) for m in closed if m} | set(archive.pop("ids"))
     unknown = sorted(set(ctx) - ids)
     owner_ids = {i["id"] for i in data["items"] if i["owner"]}
     missing = sorted(owner_ids - set(ctx))
-    if unknown:
-        print(f"note: cards for IDs not in the backlog (closed?): {unknown}")
+    if set(unknown) & closed:
+        print("note: cards for closed IDs (Done or the archive): "
+              f"{sorted(set(unknown) & closed)}")
+    if set(unknown) - closed:
+        print("note: cards for IDs found nowhere in BACKLOG.md or "
+              f"{archive['path']}: {sorted(set(unknown) - closed)}")
     if missing:
         print(f"note: owner items without a card yet: {missing}")
     data["cards"] = {k: v for k, v in ctx.items() if k in ids}
+    data["archive"] = archive
     try:
         commit = subprocess.run(["git", "-C", str(ROOT), "log", "-1",
                                  "--format=%h", "--", "BACKLOG.md"],
