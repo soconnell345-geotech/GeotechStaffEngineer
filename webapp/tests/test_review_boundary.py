@@ -63,10 +63,7 @@ KNOWN_COUPLINGS = {
     "funhouse_agent.plot_box.child -> geotech_common": "2.7 figure, step 6",
     "funhouse_agent.plot_box.child -> geotech_common.layout_ink":
         "2.7 figure, step 6",
-    # 5. The review prompt's module is GSE's (step 3).
-    "funhouse_agent.deep.review_agent -> funhouse_agent.deep.prompt":
-        "2.7 #5, step 3",
-    "webapp.profiles -> funhouse_agent.deep.prompt": "2.7 #5, step 3",
+    # 5. (The review prompt's module was GSE's: gone at step 3.)
     # Further couplings (step 5).
     "funhouse_agent.deep.calculate_tool -> "
     "funhouse_agent.adapters.reliability_adapter": "2.7 further, step 5",
@@ -99,6 +96,11 @@ KNOWN_REVERSE_COUPLINGS = {
         "the review build inside GSE's builder, step 8",
     "funhouse_agent.deep.agent -> funhouse_agent.deep.minimal_agent":
         "the review build inside GSE's builder, step 8",
+    "funhouse_agent.deep.agent -> funhouse_agent.review_prompt":
+        "the review build inside GSE's builder, step 8",
+    # The old import path of the review prompt (step 3), re-exported.
+    "funhouse_agent.deep.prompt -> funhouse_agent.review_prompt":
+        "re-export for the old import path, step 15",
 }
 
 

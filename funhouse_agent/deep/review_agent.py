@@ -49,7 +49,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from funhouse_agent import review_flags
 from funhouse_agent.deep.limits import ModelCallBudgetMiddleware
-from funhouse_agent.deep.prompt import (
+from funhouse_agent.review_prompt import (
     DOCUMENT_REVIEW_READER_PROMPT,
     build_document_review_prompt,
 )

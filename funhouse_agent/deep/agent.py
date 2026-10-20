@@ -1019,7 +1019,7 @@ def _review_reader_subagent(primary_tools) -> Optional[dict]:
     """
     if _GENERAL_PURPOSE_SPEC is None:
         return None
-    from funhouse_agent.deep.prompt import DOCUMENT_REVIEW_READER_PROMPT
+    from funhouse_agent.review_prompt import DOCUMENT_REVIEW_READER_PROMPT
     from funhouse_agent.deep.review_agent import (
         READER_EXHAUSTED, READER_MAX_MODEL_CALLS, READER_NUDGE, READER_TOOLS)
     wanted = set(READER_TOOLS)
@@ -1185,7 +1185,7 @@ def build_deep_agent(
     system_prompt : str, optional
         REPLACES the geotechnical domain prompt outright (``extra_system_prompt``
         still appends to it). The document-review page passes
-        :func:`~funhouse_agent.deep.prompt.build_document_review_prompt` here
+        :func:`~funhouse_agent.review_prompt.build_document_review_prompt` here
         with ``allowed_agents=()`` and ``reference_mode="off"`` — a different
         agent over the same document, vision and file tools. Default ``None``
         keeps the geotechnical prompt.

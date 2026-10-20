@@ -539,7 +539,7 @@ REVIEW_MODULES = frozenset({
     "funhouse_agent.deep.sweep", "funhouse_agent.deep.findings_tools",
     "funhouse_agent.review_findings", "funhouse_agent.deep.geometry_tools",
     "funhouse_agent.deep.digest_tools", "funhouse_agent.review_digest",
-    "webapp.tinyapps_entry",
+    "funhouse_agent.review_prompt", "webapp.tinyapps_entry",
 })
 
 
