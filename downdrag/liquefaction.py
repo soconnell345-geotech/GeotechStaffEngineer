@@ -62,6 +62,14 @@ DEFAULT_SIDE_RESISTANCE = "half_pre_earthquake"
 #: (FSliq <= 1.0)".
 DEFAULT_FS_LIQ_THRESHOLD = 1.0
 
+#: The choice of fs_liq_threshold, and the words of the warning on the
+#: readings above it that states it (its value, its name and GEC-10
+#: §9.4.2.2): a compact result that carries the warning need not repeat the
+#: choice (GM-240).
+FS_LIQ_CHOICE = "FS_liq at or below which a reading liquefies"
+READINGS_LEFT_OUT = ("left out here: only the readings at or below "
+                     "fs_liq_threshold count as liquefied")
+
 #: Up to this many liquefied zones are named one by one in the warnings and
 #: the choices (and listed in full in the tool's result); more are counted
 #: (GM-207: a noisy CPT gives twenty, most a few readings thick).
@@ -1287,8 +1295,7 @@ def post_liquefaction_downdrag(
         warnings.append(
             f"The liquefaction result gives {left_out * 1000:.1f} mm of "
             f"reconsolidation settlement at readings with FS_liq above "
-            f"{threshold:g}, left out here: only the readings at or below "
-            f"fs_liq_threshold count as liquefied. GEC-10 §9.4.2.2 (p. "
+            f"{threshold:g}, {READINGS_LEFT_OUT}. GEC-10 §9.4.2.2 (p. "
             f"9-42) treats 1.0 < FSliq ≲ 1.5 as generating excess pore "
             f"pressure.")
     warnings += _state_warnings(before, after, said_after)
@@ -1318,7 +1325,7 @@ def post_liquefaction_downdrag(
             f"neighbours, below the water table ({analysis.soil.gwt_depth:g} "
             f"m)"))
         out_choices.append(choice(
-            "FS_liq at or below which a reading liquefies", threshold,
+            FS_LIQ_CHOICE, threshold,
             how_given(threshold, DEFAULT_FS_LIQ_THRESHOLD,
                       name="fs_liq_threshold"),
             "GEC-10 §9.4.2.2, p. 9-42: 'layers predicted to undergo "

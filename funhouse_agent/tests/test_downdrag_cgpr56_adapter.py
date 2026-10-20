@@ -391,6 +391,8 @@ class TestDowndragBelowTheToe:
             assert c["allowed_values"] == ["bearing_stress",
                                            "effective_stress"]
             assert "UFC 3-220-20 6-5.8.4.3" in c["description"]
-            assert "GEC-12 7.3.5.3" in c["description"]
+            for text in ("GEC-12 Vol I step 1c", "7.3.5.3 for clay",
+                         "7.3.5.6 for sand", "7.3.5.5 for both"):
+                assert text in c["description"], text
         assert "below_toe" in describe_method(
             "downdrag", "downdrag_analysis")["returns"]

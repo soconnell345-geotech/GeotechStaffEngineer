@@ -9,7 +9,12 @@ import numpy as np
 import pytest
 
 from funhouse_agent import dispatch as D
-from downdrag.liquefaction import MAX_ZONES_LISTED
+from downdrag.analysis import (
+    RULE_CHOICE, RULES_WARNING_LEAD, THRESHOLD_CHOICE,
+)
+from downdrag.liquefaction import (
+    FS_LIQ_CHOICE, MAX_ZONES_LISTED, READINGS_LEFT_OUT,
+)
 from funhouse_agent.adapters import MODULE_REGISTRY
 from funhouse_agent.adapters.downdrag import RESULT_BUDGET_CHARS
 from liquepy_agent import has_liquepy
@@ -155,7 +160,7 @@ _HEADLINE = ("neutral_plane_before_m", "neutral_plane_after_m",
              "pile_settlement_before_mm", "pile_settlement_after_mm",
              "toe_settlement_before_mm", "toe_settlement_after_mm",
              "reconsolidation_settlement_mm", "reconsolidation_below_toe_mm",
-             "methods_range_after", "warnings", "choices")
+             "methods_range_after", "warnings")
 
 
 def _rows(table):
@@ -168,6 +173,7 @@ def _every_number_kept(r, full):
     after, each side-resistance option."""
     for key in _HEADLINE:
         assert r[key] == full[key], key
+    _choices_kept(r, full)
     methods = _rows(r["by_method"])
     assert [m["name"] for m in methods] == \
         [m["name"] for m in full["by_method"]]
@@ -184,6 +190,23 @@ def _every_number_kept(r, full):
         assert got.get("neutral_plane_m") == rec["neutral_plane_depth_m"]
         assert got.get("drag_force_kN") == rec["drag_force_kN"]
         assert got.get("pile_settlement_mm") == rec["pile_settlement_mm"]
+
+
+def _choices_kept(r, full):
+    """GM-240: every choice of the whole result is in the result but one a
+    warning in it states: the rule for the depth below the toe and its
+    warning threshold (the warning that the two rules disagree), and
+    fs_liq_threshold (the warning on readings above it). The note says
+    so."""
+    stated = set()
+    if any(RULES_WARNING_LEAD in w for w in r["warnings"]):
+        stated |= {RULE_CHOICE, THRESHOLD_CHOICE}
+    if any(READINGS_LEFT_OUT in w for w in r["warnings"]):
+        stated.add(FS_LIQ_CHOICE)
+    assert r["choices"] == [c for c in full["choices"]
+                            if c["what"] not in stated]
+    left = stated & {c["what"] for c in full["choices"]}
+    assert ("the choices the warnings state" in r["result_note"]) ==         bool(left)
 
 
 class TestOneZone:
@@ -283,3 +306,67 @@ class TestANoisyCpt:
         r = _post(gwt_depth=1.0, liquefaction_result=_noisy_cpt(seed))
         assert "error" not in r, r
         assert len(json.dumps(r)) < RESULT_BUDGET_CHARS
+
+    @pytest.mark.parametrize("seed", [3, 7, 11])
+    def test_the_warning_on_the_two_toe_rules_fits_whole(self, seed):
+        """GM-240: with a modulus in the sand below the toe the two rules
+        for the depth below the toe disagree before the earthquake (by
+        about 27 %) and the warning that says so came to 11,380-11,760
+        characters with the two choices it states. The warning stays whole;
+        the choices it states and the one on fs_liq_threshold are left to
+        detail='full'."""
+        layers = [dict(x) for x in _LAYERS]
+        layers[2]["E_s"] = 30000.0
+        liq = _noisy_cpt(seed)
+        r = _post(layers=layers, gwt_depth=1.0, liquefaction_result=liq)
+        full = _post(layers=layers, gwt_depth=1.0, liquefaction_result=liq,
+                     detail="full")
+        assert "error" not in r, r
+        assert len(json.dumps(r)) < RESULT_BUDGET_CHARS
+        _every_number_kept(r, full)
+        (w,) = [x for x in r["warnings"] if RULES_WARNING_LEAD in x]
+        assert w.startswith("Before the earthquake: ")
+        for text in ("This result uses UFC's rule, the module's default "
+                     "(influence_depth_criterion 'bearing_stress')",
+                     "UFC 3-220-20 §6-5.8.4.3 (p. 449)",
+                     "FHWA GEC-12 Vol I §7.3.5.6 step 1c (p. 332)",
+                     "The warning is set at 25 % "
+                     "(influence_depth_warning_percent), the engineer's "
+                     "figure"):
+            assert text in w, text
+        whats = [c["what"] for c in full["choices"]]
+        assert {RULE_CHOICE, THRESHOLD_CHOICE, FS_LIQ_CHOICE} <= set(whats)
+        assert not {RULE_CHOICE, THRESHOLD_CHOICE, FS_LIQ_CHOICE} & {
+            c["what"] for c in r["choices"]}
+        for name in ("influence_depth_criterion",
+                     "influence_depth_warning_percent", "fs_liq_threshold"):
+            assert name in r["defaults_used"], name
+        assert r["result_note"].endswith(
+            "and the choices the warnings state.")
+
+    def test_what_else_is_left_to_the_whole_result(self):
+        """GM-240: side_resistance_name repeats the first choice; a note on
+        a plane a method does give is an assumption (here settlement
+        compatibility's drag where no soil settles, which the warning on
+        why the methods differ says for the state before the earthquake),
+        left with the others; why a method gives no plane stays."""
+        liq = _noisy_cpt(3)
+        r = _post(gwt_depth=1.0, liquefaction_result=liq)
+        full = _post(gwt_depth=1.0, liquefaction_result=liq, detail="full")
+        assert "side_resistance_name" not in r
+        assert full["side_resistance_name"] == r["choices"][0]["chosen"]
+        notes = {m["name"]: m.get("note", "") for m in _rows(r["by_method"])}
+        for rec in full["by_method"]:
+            for state in ("before", "after"):
+                why = rec.get(f"reason_{state}", "")
+                if not why:
+                    continue
+                if rec[f"neutral_plane_{state}_m"] is None:
+                    assert why.rstrip(".") in notes[rec["name"]], rec["name"]
+                else:
+                    assert why.rstrip(".") not in notes[rec["name"]]
+        sc = next(m for m in full["by_method"]
+                  if m["method"] == "settlement_compatibility")
+        assert sc["reason_before"].startswith("no soil settles here")
+        assert any("Before the earthquake no soil settles in this model"
+                   in w for w in r["warnings"])

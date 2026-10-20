@@ -1843,9 +1843,10 @@ class TestSettlementBelowTheToe:
     """GM-49: how deep the settlement below the toe is counted. UFC
     3-220-20 §6-5.8.4.3 (p. 449): the toe load to where "the change in
     stress is less than 10% of the bearing stress of the equivalent
-    footing" (the default); FHWA GEC-12 §7.3.5.3 step 1c (p. 324): to where
-    it "is less than 10% of existing vertical effective stress at that
-    depth" (``influence_depth_criterion='effective_stress'``). A wide fill's
+    footing" (the default); FHWA GEC-12 Vol I step 1c (§7.3.5.3, p. 324,
+    for clay below the toe; §7.3.5.6, p. 332, for sand): to where it "is
+    less than 10% of existing vertical effective stress at that depth"
+    (``influence_depth_criterion='effective_stress'``). A wide fill's
     stress increase does not decay with depth, so the settling layers below
     the toe count down to the bottom of the soil profile. Before, both were
     cut off 3 B' below the toe."""
@@ -1966,8 +1967,9 @@ class TestSettlementBelowTheToe:
             bt["basis"])
 
     def test_toe_load_to_10_percent_of_the_effective_stress(self):
-        """FHWA GEC-12 §7.3.5.3 step 1c as the option: the toe load goes
-        down to where Q / (B' + z')^2 = 0.1 sigma'v0, here 5.40 m."""
+        """FHWA GEC-12's step 1c as the option (for the sand below this
+        toe §7.3.5.6, p. 332): the toe load goes down to where
+        Q / (B' + z')^2 = 0.1 sigma'v0, here 5.40 m."""
         a = self._sand_below(influence_depth_criterion="effective_stress")
         r = a.compute()
         bt = r.below_toe
@@ -1979,13 +1981,71 @@ class TestSettlementBelowTheToe:
         exact = Q * self.ELASTIC / 50000.0 * (1 / B - 1 / (B + zq))
         assert r.toe_settlement == pytest.approx(exact, rel=5e-3)
         assert r.influence_depth_criterion == "effective_stress"
-        assert "GEC-12 §7.3.5.3" in bt["criterion"]
+        assert "GEC-12 §7.3.5.6 step 1c, p. 332" in bt["criterion"]
         # the default run reports the same as its other criterion
         d = self._sand_below().compute().below_toe["other_criterion"]
         assert d["influence_depth_criterion"] == "effective_stress"
         assert d["toe_load_depth_below_toe_m"] == pytest.approx(zq)
         assert d["settlement_below_toe_mm"] == pytest.approx(
             r.toe_settlement * 1000, abs=0.01)
+
+    def test_gec12_step_follows_the_soil_below_the_toe(self):
+        """GM-240: GEC-12 Vol I prints its 10 % rule as step 1c of the
+        procedure for the soil: §7.3.5.3 (p. 324) for cohesive soil,
+        §7.3.5.6 (p. 332, Janbu) for sand, §7.3.5.5 (p. 327) for layered
+        soil. The soil is the soil from the toe to where the rule stops
+        counting the toe load (17.40 m here)."""
+        def cited(r):
+            gec = (r.below_toe if r.influence_depth_criterion
+                   == "effective_stress" else
+                   r.below_toe["other_criterion"])
+            return gec["criterion"]
+
+        # sand from 10 to 20 m: the toe (12 m) and 17.40 m both in sand
+        r = self._sand_below().compute()
+        assert "§7.3.5.6 step 1c, p. 332" in cited(r)
+        # clay from 4 to 30 m around a 15 m toe
+        r = self._deep_clay().compute()
+        assert "§7.3.5.3 step 1c, p. 324" in cited(r)
+        assert "p. 324" in r.choices[0]["alternatives"][0]
+
+        def sand_over_clay(sand_thickness, **kw):
+            return DowndragAnalysis(soil=DowndragSoilProfile(layers=[
+                DowndragSoilLayer(thickness=10.0, soil_type="cohesive",
+                                  unit_weight=17.0, cu=30.0, alpha=0.5),
+                DowndragSoilLayer(thickness=sand_thickness,
+                                  soil_type="cohesionless", unit_weight=19.0,
+                                  phi=36.0, E_s=50000.0),
+                DowndragSoilLayer(thickness=4.0, soil_type="cohesive",
+                                  unit_weight=17.0, cu=30.0, alpha=0.5),
+            ], gwt_depth=1.0), pile_length=12.0, pile_diameter=0.4,
+                Q_dead=400.0, Nt=40.0, **kw).compute()
+
+        # clay from 16 m: inside the depth counted, so the layered step
+        r = sand_over_clay(6.0)
+        assert "§7.3.5.5 step 1c, p. 327" in cited(r)
+        # clay from 18 m: below where the rule stops, so the sand's step
+        r = sand_over_clay(8.0)
+        assert "§7.3.5.6 step 1c, p. 332" in cited(r)
+        # the warning that the rules disagree cites the same step
+        warned = TestWhenTheTwoRulesDisagree._rule_warnings
+        (w,) = warned(self._sand_below(
+            influence_depth_warning_percent=5).compute())
+        assert "FHWA GEC-12 Vol I §7.3.5.6 step 1c (p. 332)" in w
+        (w,) = warned(sand_over_clay(6.0, influence_depth_warning_percent=5))
+        assert "FHWA GEC-12 Vol I §7.3.5.5 step 1c (p. 327)" in w
+
+    def test_gec12_step_with_no_toe_load_or_no_soil_below(self):
+        """No toe load: the soil just below the toe. A profile that ends
+        at the toe: the layer the toe is in."""
+        a = self._sand_below()
+        assert a.gec12_step(0.0) == ("7.3.5.6", 332)
+        a = self._sand_below(pile_length=10.0)     # toe on the sand
+        assert a.gec12_step(0.0) == ("7.3.5.6", 332)
+        a = self._sand_below(pile_length=20.0)     # toe at the bottom
+        assert a.gec12_step(500.0) == ("7.3.5.6", 332)
+        a = self._deep_clay(pile_length=30.0)
+        assert a.gec12_step(100.0) == ("7.3.5.3", 324)
 
     def test_compressible_soil_inside_the_zone_is_unchanged(self):
         """A 0.5 m sand lens under the toe, nothing compressible below it,
@@ -2025,7 +2085,7 @@ class TestSettlementBelowTheToe:
         assert bt["toe_load_counted_to_m"] == pytest.approx(14.0)
         w = [x for x in r.warnings if "below the pile toe" in x]
         assert w and "not in the soil profile" in w[0]
-        assert "17.40 m" in w[0] and "GEC-12 §7.3.5.3" in w[0]
+        assert "17.40 m" in w[0] and "GEC-12 §7.3.5.6" in w[0]
 
     def test_a_layer_not_marked_settling_is_not_settled_by_the_fill(self):
         """As along the shaft: the fill compresses only the settling layers
@@ -2054,7 +2114,7 @@ class TestSettlementBelowTheToe:
 class TestWhenTheTwoRulesDisagree:
     """GM-228 (owner's answer OWN-62): the analysis runs with both rules
     for how deep below the toe the toe load is counted, UFC 3-220-20
-    §6-5.8.4.3 (default) and FHWA GEC-12 §7.3.5.3 step 1c, and warns when
+    §6-5.8.4.3 (default) and FHWA GEC-12's step 1c, and warns when
     their pile head settlements or drag forces differ by more than
     ``influence_depth_warning_percent`` (default 25, the engineer's call) or a
     check passes with one and fails with the other. The rule used, and so
@@ -2103,7 +2163,7 @@ class TestWhenTheTwoRulesDisagree:
                      "10% of the bearing stress of the equivalent footing "
                      "(0.86 m below the toe, to 12.86 m; settlement below "
                      "the toe 12.7 mm)",
-                     "FHWA GEC-12 Vol I §7.3.5.3 step 1c (p. 324)",
+                     "FHWA GEC-12 Vol I §7.3.5.6 step 1c (p. 332)",
                      "10% of the existing vertical effective stress (5.40 "
                      "m below the toe, to 17.40 m; settlement below the toe "
                      "17.4 mm)",
@@ -2236,7 +2296,7 @@ class TestWhenTheTwoRulesDisagree:
         assert ("counted to the bottom of the soil profile, 14.00 m, short "
                 "of 17.40 m" in bt["basis"])
         (w,) = [x for x in r.warnings if "compared only to the bottom" in x]
-        assert w.startswith("FHWA GEC-12 Vol I §7.3.5.3 step 1c (p. 324) "
+        assert w.startswith("FHWA GEC-12 Vol I §7.3.5.6 step 1c (p. 332) "
                             "takes the settlement below the toe to 17.40 m, "
                             "below the bottom of the soil profile (14.00 m)")
         assert "13.0 mm by UFC 3-220-20's and at least 15.8 mm by FHWA " \
@@ -2270,7 +2330,7 @@ class TestWhenTheTwoRulesDisagree:
         assert r.below_toe["rules_disagree"] is None
         (w,) = [x for x in r.warnings if "gives no result" in x]
         assert "FHWA GEC-12's depth for the settlement below the toe " \
-            "(Vol I §7.3.5.3 step 1c (p. 324)) gives no result (no neutral " \
+            "(Vol I §7.3.5.6 step 1c (p. 332)) gives no result (no neutral " \
             "plane), so the two depths are not compared; this result uses " \
             "UFC 3-220-20's." in w
         assert [c["what"] for c in r.choices][0] == (
@@ -2336,7 +2396,7 @@ class TestWhenTheTwoRulesDisagree:
         assert rule["what"] == ("depth to which the settlement below the "
                                 "toe is computed")
         assert rule["how"] == limit["how"] == "default"
-        assert "p. 449" in rule["chosen"] and "p. 324" in \
+        assert "p. 449" in rule["chosen"] and "p. 332" in \
             rule["alternatives"][0]
         assert limit["chosen"] == ("pile head settlements or drag forces "
                                    "more than 25 % apart: of the larger of "
@@ -2355,7 +2415,7 @@ class TestWhenTheTwoRulesDisagree:
                              influence_depth_warning_percent=10).compute()
         rule, limit = r.choices
         assert rule["how"] == limit["how"] == "given"
-        assert "p. 324" in rule["chosen"]
+        assert "p. 332" in rule["chosen"]
         d = r.to_dict()
         assert d["influence_depth_warning_percent"] == 10.0
         assert [c["what"] for c in d["choices"]] == [
