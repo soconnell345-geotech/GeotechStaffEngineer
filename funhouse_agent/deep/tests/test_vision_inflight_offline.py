@@ -52,8 +52,26 @@ def test_default_cap_is_eight(monkeypatch):
 
 def test_zero_means_no_cap(monkeypatch):
     monkeypatch.setenv(vision_engine.INFLIGHT_ENV, "0")
-    model = _CountingModel()
+    # Decided by events, not timing: every call holds its slot until a ninth
+    # call is inside too. With a cap of 8 the ninth never enters, so the wait
+    # times out (the generous timeout only runs out on a failure).
+    over_cap = threading.Event()
+
+    class _WaitsForNinth(_CountingModel):
+        def invoke(self, messages):
+            with self.lock:
+                self.now += 1
+                self.peak = max(self.peak, self.now)
+                if self.now > 8:
+                    over_cap.set()
+            over_cap.wait(timeout=30)
+            with self.lock:
+                self.now -= 1
+            return AIMessage(content="ok")
+
+    model = _WaitsForNinth()
     _fan_out(LangChainVisionEngine(model, detail=""))
+    assert over_cap.is_set()
     assert model.peak > 8
 
 
