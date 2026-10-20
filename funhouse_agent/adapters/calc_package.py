@@ -838,19 +838,77 @@ def _package_aliases(package: str) -> dict:
                 or {})
 
 
+#: Capitalised acronyms a description may carry; every OTHER word of four
+#: letters or more written in capitals is emphasis ("TOTAL", "UNDERSIDE").
+_ACRONYMS = frozenset({
+    "AASHTO", "ASCE", "USCS", "ASTM", "NCEER", "FHWA", "USACE", "GEC",
+    "UFC", "SPT", "CPT", "DCP", "LRFD", "ASD", "LRFD", "ACI", "AISC",
+    "PGA", "MSE", "FOSM", "FORM", "RQD", "GWT", "OCR", "NAVFAC", "SHANSEP",
+    "COM624P", "PYWALL", "SLIDE2", "FLAC"})
+
+#: A units bracket: "(m)", "(kN/m3)", "(m2/yr)", "(degrees)", "(%)".
+_UNIT_PAREN = re.compile(
+    r"\((?:%|(?:deg(?:rees?)?|[kMG]?Pa|k?N|kips?|psf|psi|pcf|ksf|tsf|ft|in|"
+    r"mm|cm|m|g|years?|days?|s|hr)(?:[-*/^]?(?:m|ft|yr|day|s|hr|Pa|N)?\d?)*)"
+    r"\)")
+
+#: Condition prefixes the merged descriptions of a package's tools carry:
+#: "Required when X is Y.", "Default: ... .", "method=wick_drains: ".
+_COND_PREFIX = re.compile(
+    r"^\s*(?:Required when .*?(?:\.(?=\s)|$)|Default:.*?(?:\.(?=\s)|$)|"
+    r"[A-Za-z_][A-Za-z_0-9]*=\S+(?: or [A-Za-z_0-9]+)*:)\s*")
+
+
+def _plain_label(desc: str) -> str:
+    """The quantity's plain name and units from a description (GM-166).
+
+    The rule: the first alternative of a merged description; its condition
+    prefixes ("Required when ...", "Default: ...", "method=x:") dropped; its
+    first sentence; cut before the first explanatory clause (a dash, a
+    semicolon, "e.g.", a quoted list of values, or whatever follows a units
+    bracket); the description's emphasis capitals (TOTAL, UNDERSIDE) put in
+    sentence case with acronyms kept; and a capital first letter.
+    """
+    text = desc.split(" | ")[0].strip()
+    while True:
+        stripped = _COND_PREFIX.sub("", text, count=1)
+        if stripped == text:
+            break
+        text = stripped
+    first = re.match(r"(.+?[^A-Z]\.)\s+(?=[A-Z'])", text)
+    text = (first.group(1) if first else text).rstrip(".").strip()
+    text = re.split(
+        r" \u2014 |; |,? e\.g\.|,? \(e\.g\.|:\s+'| \('|:\s*[{\[]|\s\[?\{"
+        r"|\s\((?:use|see|omit|or|else|overrides?|default|typically|required"
+        r"|give|set|with|when|if|for|alternative|instead)\b", text)[0]
+    unit = _UNIT_PAREN.search(text)
+    if unit and unit.end() < len(text):
+        text = text[:unit.end()]
+    text = text.split(" -> ")[0].strip().rstrip(",:").strip()
+    if text.count("(") > text.count(")"):      # a cut inside a bracket
+        text = text[:text.rindex("(")].strip().rstrip(",:").strip()
+    if re.search(r"\b(?:of|and|or|to|for|with)$", text):
+        return ""                              # nothing left but a stem
+    text = re.sub(
+        r"\b[A-Z]{4,}\b",
+        lambda m: m.group(0) if m.group(0) in _ACRONYMS
+        else m.group(0).lower(), text)
+    if len(text) > 80:
+        text = text[:77].rsplit(" ", 1)[0]
+        if text.count("(") > text.count(")"):
+            text = text[:text.rindex("(")].rstrip(" ,:")
+        text += "..."
+    return text[:1].upper() + text[1:]
+
+
 def _input_words(name: str, declared: dict) -> str:
-    """An input as the package prints it: the first sentence of its
-    description (plain words, as the Method Choices table prints them),
+    """An input as the package prints it: the quantity's plain name and its
+    units (:func:`_plain_label`, as the Method Choices table prints them),
     else its name."""
     desc = str((declared.get(name) or {}).get("description") or "").strip()
     if not desc:
         return name
-    first = re.match(r"(.+?[^A-Z]\.)\s+(?=[A-Z])", desc)
-    text = (first.group(1) if first else desc).rstrip(".").strip()
-    text = re.split(r" — |; |,? e\.g\.|,? \(e\.g\.", text)[0].strip()
-    if len(text) > 80:
-        text = text[:77].rsplit(" ", 1)[0] + "..."
-    return text
+    return _plain_label(desc) or name
 
 
 def _package_declared(package: str = None, run: "_ToolRun" = None) -> dict:
@@ -884,12 +942,10 @@ def _passed_inputs(params: dict, run: "_ToolRun" = None,
     if selector and selector in params:
         passed[selector] = params[selector]
         if declared is not None:
-            # "The wall to analyse and report: 'cantilever' (...)": the
-            # words before the list of tools, where they make a phrase
-            words = _input_words(selector, declared)
-            head = words.split(": ", 1)[0]
-            declared[selector] = {"description": head if head != words
-                                  and len(head.split()) >= 3 else selector}
+            # the selector row is the tool pick itself: its name in words
+            # ("Wall type"), the value beside it ("cantilever")
+            declared[selector] = {
+                "description": selector.replace("_", " ").capitalize()}
     passed.update(run.own)
     passed.update(run.params)
     return passed

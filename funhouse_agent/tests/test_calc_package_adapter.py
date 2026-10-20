@@ -1202,3 +1202,53 @@ class TestCalcTables:
         assert "CSV" in json.dumps(cat["calc_package"]
                                    if isinstance(cat, dict) else cat)
         assert len(json.dumps(cat)) < 7500
+
+
+class TestInputLabelsArePlainNames:
+    """GM-166: a Given Inputs label is the quantity's plain name and units,
+    by a rule, not copied from the description."""
+
+    @pytest.mark.parametrize("desc, label", [
+        ("TOTAL wall height H (m), measured from the UNDERSIDE of the base "
+         "slab. A longer sentence follows.", "Total wall height H (m)"),
+        ("Foundation soil friction angle (deg), FULL value",
+         "Foundation soil friction angle (deg)"),
+        ("Required when method is wick_drains. method=wick_drains: "
+         "Horizontal coefficient of consolidation (m2/yr). | method=x: y",
+         "Horizontal coefficient of consolidation (m2/yr)"),
+        ("Default: cantilever 10.0; braced 10.0 (wall_type). "
+         "wall_type=cantilever: Surface surcharge (kPa).",
+         "Surface surcharge (kPa)"),
+        ("Uniform DEAD-load (permanent) surcharge on the backfill (kPa), "
+         "a permanent load", "Uniform dead-load (permanent) surcharge on "
+                              "the backfill (kPa)"),
+        ("SPT blow counts per USCS layer (use list_x)",
+         "SPT blow counts per USCS layer"),
+    ])
+    def test_the_rule(self, desc, label):
+        from funhouse_agent.adapters.calc_package import _input_words
+        assert _input_words("x", {"x": {"description": desc}}) == label
+
+    def test_a_label_with_nothing_but_a_condition_is_the_name(self):
+        from funhouse_agent.adapters.calc_package import _input_words
+        assert _input_words("layers", {"layers": {
+            "description": "Array of {thickness (m, required), cu}"}}) \
+            == "layers"
+        assert _input_words("w18", {"w18": {
+            "description": "Required when design_type is flexible"}}) == "w18"
+
+    def test_the_selector_row_is_the_name_of_the_pick(self):
+        from funhouse_agent.adapters.calc_package import (
+            _given_inputs, _run_tool)
+        params = {"wall_type": "cantilever", "wall_height": 5.0,
+                  "gamma_backfill": 18.0, "phi_backfill": 30.0,
+                  "base_width": 3.0, "toe_length": 0.8,
+                  "stem_thickness_top": 0.3, "stem_thickness_base": 0.5,
+                  "base_thickness": 0.5, "phi_foundation": 28.0,
+                  "gamma_foundation": 18.0,
+                  "given": ["wall_type", "wall_height"]}
+        run = _run_tool("retaining_wall_package", dict(params))
+        rows = {r["input"]: r["value"]
+                for r in _given_inputs(params, run, "retaining_wall_package")}
+        assert rows.get("Wall type") == "cantilever"
+        assert "Total wall height H (m)" in rows
