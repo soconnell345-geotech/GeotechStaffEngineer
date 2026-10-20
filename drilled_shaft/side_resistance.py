@@ -3,7 +3,9 @@ Side resistance methods for drilled shafts.
 
 Implements:
 - Alpha method for cohesive soils (O'Neill & Reese 1999, Brown et al. 2010)
-- Beta method for cohesionless soils (Brown et al. 2010)
+- Beta method for cohesionless soils: GEC-10 (2018) Eq. 10-13
+  (``beta_gec10``), and the depth beta of O'Neill & Reese (1999)
+  (``beta_cohesionless``)
 - Rock socket method (Horvath & Kenney, O'Neill et al. 1996)
 
 All units are SI: kPa, kN, meters.
@@ -254,6 +256,88 @@ def preconsolidation_stress(N60: float, pa: float = PA, m: float = 0.6) -> float
     if N60 <= 0:
         raise ValueError(f"N60 must be positive, got {N60}")
     return pa * 0.47 * N60 ** m
+
+
+#: How GEC-10 (FHWA-NHI-18-024) p. 10-11 estimates sigma'p from N60, by
+#: soil: Eq. 10-11 (Mayne 2007) with m = 0.6 for clean quartzitic sands and
+#: m = 0.8 for silty sands to sandy silts, and Eq. 10-12 (Kulhawy and Chen
+#: 2007) for gravelly soils.
+SIGMA_P_CORRELATIONS = {
+    "clean_sand": "Eq. 10-11, sigma'p/pa = 0.47 N60^m with m = 0.6 (clean "
+                  "quartzitic sands)",
+    "silty_sand": "Eq. 10-11, sigma'p/pa = 0.47 N60^m with m = 0.8 (silty "
+                  "sands to sandy silts)",
+    "gravel": "Eq. 10-12, sigma'p/pa = 0.15 N60 (gravelly soils)",
+}
+
+
+def preconsolidation_stress_gec10(N60: float, correlation: str = "clean_sand",
+                                  pa: float = PA) -> float:
+    """sigma'p (kPa) from N60 by GEC-10 (2018) Eq. 10-11 or 10-12.
+
+    Parameters
+    ----------
+    N60 : float
+        The layer's SPT N60 (blows/0.3 m). Must be > 0.
+    correlation : str, optional
+        A key of :data:`SIGMA_P_CORRELATIONS`: ``"clean_sand"`` (default,
+        m = 0.6), ``"silty_sand"`` (m = 0.8) or ``"gravel"`` (Eq. 10-12).
+    pa : float, optional
+        Atmospheric pressure (kPa). Default 101.325.
+
+    References
+    ----------
+    GEC-10 (FHWA-NHI-18-024) Eqs. 10-11 and 10-12, p. 10-11.
+    """
+    if correlation == "gravel":
+        if N60 <= 0:
+            raise ValueError(f"N60 must be positive, got {N60}")
+        return pa * 0.15 * N60
+    if correlation == "silty_sand":
+        return preconsolidation_stress(N60, pa, m=0.8)
+    if correlation == "clean_sand":
+        return preconsolidation_stress(N60, pa, m=0.6)
+    raise ValueError(
+        f"sigma_p_correlation must be one of {sorted(SIGMA_P_CORRELATIONS)}, "
+        f"got {correlation!r}")
+
+
+def beta_gec10(phi: float, OCR: float, K_over_Ko: float = 1.0) -> dict:
+    """GEC-10 (2018) beta for cohesionless soil, step by step (Eq. 10-13).
+
+        Ko = (1 - sin phi') OCR^(sin phi') <= Kp     (Eqs. 10-8, 10-10)
+        K = (K/Ko) Ko,  delta = phi'
+        beta = K tan(delta)                          (Eq. 10-6)
+
+    With K/Ko = 1 this is Eq. 10-13, beta ~ (1 - sin phi')(sigma'p/
+    sigma'v)^(sin phi') tan phi' <= Kp tan phi'.
+
+    Parameters
+    ----------
+    phi : float
+        Effective friction angle phi' (degrees).
+    OCR : float
+        sigma'p / sigma'v (Eq. 10-9). Must be > 0.
+    K_over_Ko : float, optional
+        K/Ko, 1 by GEC-10's 'rational first-order approximation' (p.
+        10-11); K 'can be reduced to 2/3' of Ko where construction quality
+        is not controlled (p. 10-12).
+
+    Returns
+    -------
+    dict
+        ``Ko`` (before the Kp limit), ``Kp``, ``K`` and ``beta``.
+
+    References
+    ----------
+    GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.1, Eqs. 10-6 and 10-8 to 10-13,
+    pp. 10-10 to 10-12; Mayne and Kulhawy (1982).
+    """
+    Ko = k0_from_ocr(phi, OCR)
+    Kp = math.tan(math.radians(45.0 + phi / 2.0)) ** 2
+    K = K_over_Ko * min(Ko, Kp)
+    return {"Ko": Ko, "Kp": Kp, "K": K,
+            "beta": K * math.tan(math.radians(phi))}
 
 
 def k0_from_ocr(phi: float, OCR: float) -> float:

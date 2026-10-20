@@ -482,8 +482,9 @@ MODULE_NARRATIVE: dict[str, dict] = {
         "methods": [
             "**&alpha;-method** side resistance in clay (AASHTO 0.55 default, or the GEC-10 **Chen (2011)** "
             "rational &alpha; with the UU/UC&rarr;CIUC s<sub>u</sub> transform).",
-            "**&beta;-method** side resistance in sand (O&rsquo;Neill&ndash;Reese depth default, or the "
-            "GEC-10 rational OCR/K<sub>o</sub> chain).",
+            "**&beta;-method** side resistance in sand (GEC-10 (2018) Eq. 10-13 by default: K<sub>o</sub> "
+            "from the OCR, &sigma;&prime;<sub>p</sub> from each layer&rsquo;s N<sub>60</sub>; or the "
+            "O&rsquo;Neill&ndash;Reese depth &beta; by name).",
             "Base resistance in sand (0.60&middot;N<sub>60</sub> with the large-diameter reduction) and "
             "clay (N<sub>c</sub>&middot;s<sub>u</sub> cap); rock-socket side + base; permanent-casing and "
             "top/bottom exclusion zones.",

@@ -3,12 +3,13 @@
 Source: GEC-10 (FHWA-NHI-18-024) Appendix A design example, Steps 11.5-11.6.
 See validation_examples/INVENTORY.md entries V-006/007/008 and RESULTS.md.
 
-v5.3 coverage Batch 2: the `drilled_shaft` module now offers the GEC-10 RATIONAL
-side-resistance chains as opt-in, default-preserving methods —
-`beta_method="rational"` (cohesionless OCR/Ko chain) and `alpha_method="rational"`
-(cohesive Chen-2011 alpha with the UU/UC->CIUC transform) — so V-006 and V-007 run
-through the HIGH-LEVEL `DrillShaftAnalysis` path with the built-in chains (no
-hand-fed coefficients). The base-resistance unit formula (V-008) already matches.
+v5.3 coverage Batch 2: the `drilled_shaft` module offers the GEC-10 RATIONAL
+side-resistance chains — `beta_method="rational"` (cohesionless OCR/Ko chain,
+GEC-10 Eq. 10-13; the default since GM-241) and `alpha_method="rational"`
+(cohesive Chen-2011 alpha with the UU/UC->CIUC transform, opt-in) — so V-006 and
+V-007 run through the HIGH-LEVEL `DrillShaftAnalysis` path with the built-in
+chains (no hand-fed coefficients). The base-resistance unit formula (V-008)
+already matches.
 
 Units: example is US customary; modules are SI. 1 ft=0.3048 m, 1 kip=4.448 kN,
 1 ksf=47.88 kPa, 1 tsf=95.76 kPa, 1 psf=0.04788 kPa.
@@ -119,8 +120,9 @@ def test_v006_high_level_rational_beta():
     assert sand["side_resistance_kN"] / KIP == pytest.approx(470.7, rel=0.07)  # RSN
 
 
-def test_v006_default_beta_still_depth_based():
-    """Default beta_method='depth' follows the CORRECTED metric O'Neill-Reese
+def test_v006_depth_beta_is_the_corrected_metric_formula():
+    """beta_method='depth' (the default until GM-241) follows the CORRECTED
+    metric O'Neill-Reese
     decay beta = 1.5 - 0.245*sqrt(z_m) (5.9.1 unit-mixing fix, verified vs
     NHI Ex 9-5): the 0.25 floor is reached at z ~ 26 m (~85 ft), NOT by 40 ft
     as the pre-fix feet-based decay implied (this test previously pinned that

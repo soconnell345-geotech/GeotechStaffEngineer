@@ -13,10 +13,11 @@ from drilled_shaft.capacity import skipped_depths_note
 _SHAFT_PARAMS = ("diameter", "shaft_length", "socket_diameter",
                  "bell_diameter", "casing_depth", "fractured_rock_thickness")
 _SOIL_PARAMS = ("layers", "gwt_depth")
-# GEC-10 rational side-resistance method selectors (opt-in; defaults preserve
-# the AASHTO / depth-based behavior), and the rock side resistance's C.
+# Side-resistance method selectors and settings: the beta in sand (GEC-10
+# 2018 Eq. 10-13 by default since GM-241) and its K/Ko, the alpha in clay,
+# the rock side resistance's C, and the top zone with no side resistance.
 _RATIONAL_PARAMS = ("beta_method", "alpha_method", "su_test_type", "pa",
-                    "rock_side_C")
+                    "rock_side_C", "K_over_Ko", "top_exclusion")
 # 'length' is a common guess for the shaft length.
 _SHAFT_ALIASES = {"length": "shaft_length", "pile_length": "shaft_length"}
 
@@ -51,7 +52,7 @@ def _build_soil_profile(params):
     for l in params["layers"]:
         require_keys(l, ["thickness", "soil_type", "unit_weight"],
                      method="drilled_shaft", item_label="layers[]")
-        # Optional rational-beta inputs (used only when beta_method="rational").
+        # Inputs of the GEC-10 beta (beta_method 'rational', the default).
         n1_60 = l.get("N1_60", l.get("N160", 0.0))
         sigma_v_ref = l.get("sigma_v_ref", l.get("sigma_v_preload", 0.0))
         layers.append(ShaftSoilLayer(
@@ -59,26 +60,17 @@ def _build_soil_profile(params):
             cu=l.get("cu", 0.0), phi=l.get("phi", 0.0), N60=l.get("N60", 0.0),
             qu=l.get("qu", 0.0), RQD=l.get("RQD", 100.0),
             N1_60=n1_60 or 0.0, sigma_v_ref=sigma_v_ref or 0.0, OCR=l.get("OCR", 0.0),
+            sigma_p_correlation=l.get("sigma_p_correlation", "clean_sand"),
             description=l.get("description", ""),
         ))
     return ShaftSoilProfile(layers=layers, gwt_depth=params.get("gwt_depth"))
 
 
 def _rational_kwargs(params):
-    """Collect the opt-in GEC-10 rational method selectors for the analysis."""
-    kw = {}
-    if "beta_method" in params:
-        kw["beta_method"] = params["beta_method"]
-    if "alpha_method" in params:
-        kw["alpha_method"] = params["alpha_method"]
-    if "su_test_type" in params:
-        kw["su_test_type"] = params["su_test_type"]
-    if "pa" in params:
-        kw["pa"] = params["pa"]
-    # GEC-10 Eq. 10-21's C for the rock side resistance (GM-221)
-    if "rock_side_C" in params:
-        kw["rock_side_C"] = params["rock_side_C"]
-    return kw
+    """The side-resistance selectors and settings the call gave, for the
+    analysis: GEC-10 Eq. 10-21's C for the rock side resistance (GM-221);
+    K/Ko of the GEC-10 beta and the top zone (GM-241)."""
+    return {k: params[k] for k in _RATIONAL_PARAMS if k in params}
 
 
 def run_drilled_shaft_capacity(params, *, method="drilled_shaft_capacity"):
@@ -160,12 +152,14 @@ METHOD_REGISTRY = {
 # documents them identically (with allowed_values), so capacity_vs_depth and
 # lrfd_capacity stay in lockstep with drilled_shaft_capacity instead of drifting.
 _INFO_DIAMETER = {"type": "float", "required": True, "description": "Shaft diameter (m)."}
-_INFO_LAYERS = {"type": "array", "required": True, "description": "Array of {thickness, soil_type, unit_weight, cu, phi, N60, qu, RQD} dicts. soil_type: cohesive/cohesionless/rock. A cohesionless layer at the shaft tip needs its N60 (end bearing q_b = 57.5*N60 kPa, N60 capped at 50); without it the call is refused. For beta_method='rational' each cohesionless layer also takes N1_60 (overburden-corrected SPT, seeds phi'=27.5+9.2*log10[(N1)60]) and optionally sigma_v_ref (kPa, pre-scour effective stress for OCR; default = current sigma'v) or a direct OCR."}
+_INFO_LAYERS = {"type": "array", "required": True, "description": "Array of {thickness, soil_type, unit_weight, cu, phi, N60, qu, RQD} dicts. soil_type: cohesive/cohesionless/rock. A cohesionless layer at the shaft tip needs its N60 (end bearing q_b = 57.5*N60 kPa, N60 capped at 50); without it the call is refused. Under beta_method 'rational' (the default, GEC-10 2018 Eq. 10-13) each cohesionless layer the shaft passes through needs its N60 (sigma'p by Eq. 10-11 or 10-12) or a direct OCR, else the call is refused; it also takes N1_60 (overburden-corrected SPT; phi' = 27.5+9.2*log10[(N1)60], GEC-10 Eq. A-2, in place of phi), sigma_p_correlation ('clean_sand' default: Eq. 10-11 with m = 0.6, clean quartzitic sands; 'silty_sand': m = 0.8, silty sands to sandy silts; 'gravel': Eq. 10-12, sigma'p/pa = 0.15*N60, gravelly soils; GEC-10 p. 10-11) and sigma_v_ref (kPa, pre-scour effective stress for the OCR; default the layer's own sigma'v)."}
 _INFO_GWT = {"type": "float", "required": False, "description": "Groundwater depth (m)."}
 _INFO_FOS = {"type": "float", "required": False, "default": 2.5, "description": "Factor of safety."}
-# GEC-10 rational side-resistance selectors (opt-in; defaults preserve AASHTO/depth).
+# Side-resistance selectors and settings (GEC-10 2018 beta by default since GM-241).
 _INFO_RATIONAL = {
-    "beta_method": {"type": "str", "required": False, "default": "depth", "allowed_values": ["depth", "rational"], "description": "Cohesionless side resistance. 'depth' = O'Neill & Reese beta = 1.5-0.135*sqrt(z, ft) = 1.5-0.245*sqrt(z, m), 0.25-1.2 (default). 'rational' = GEC-10 Appendix A OCR/Ko chain: beta=Ko*tan(phi'), Ko=(1-sin phi')*OCR^(sin phi'), OCR=sigma'p/sigma_v_ref, sigma'p=0.47*pa*N60^0.6 (needs per-layer N60/N1_60)."},
+    "beta_method": {"type": "str", "required": False, "default": "rational", "allowed_values": ["rational", "depth"], "description": "Cohesionless side resistance. 'rational' (default) = GEC-10 (2018) Sec. 10.3.5.1, Eqs. 10-5 to 10-13 (pp. 10-10 to 10-12): f_SN = beta*sigma'v on each layer's average sigma'v, beta = (K/Ko)*Ko*tan(phi'), Ko = (1-sin phi')*OCR^(sin phi') <= Kp, OCR = sigma'p/sigma'v, sigma'p from the layer's N60 (Eq. 10-11 or 10-12), beta limited to its value at 7.5 ft, no limit on f_SN; needs each cohesionless layer's N60 or OCR. 'depth' = O'Neill & Reese (1999) beta = 1.5-0.135*sqrt(z, ft) = 1.5-0.245*sqrt(z, m), 0.25-1.2, x N60/15 where N60 < 15, f_s <= 200 kPa (FHWA NHI-06-089 Eqs. 9-41 to 9-43), which GEC-10 (2018) does not print; the default until GM-241."},
+    "K_over_Ko": {"type": "float", "required": False, "default": 1.0, "description": "K/Ko in the GEC-10 beta (beta_method 'rational'): 1 = 'a rational first-order approximation', no stress change from construction (GEC-10 p. 10-11); 2/3 or lower 'when these aspects of construction quality are not controlled properly' or soil caving is allowed (p. 10-12). 0 < K_over_Ko <= 1."},
+    "top_exclusion": {"type": "float", "required": False, "default": 1.5, "description": "Side resistance left out over the top of the shaft (m), in every layer. Default 1.5 = GEC-10's 'top 5 ft' (p. 10-17), 'or to the depth of seasonal moisture change', 'subject to modification based on local experience and judgment of the designer'; it is printed for cohesive soils, and Example 10-1 (sand) takes side resistance from the ground surface (0). casing_depth, where deeper, takes its place."},
     "alpha_method": {"type": "str", "required": False, "default": "aashto", "allowed_values": ["aashto", "rational"], "description": "Cohesive side resistance. 'aashto' = piecewise 0.55 (default). 'rational' = GEC-10 Chen-2011 alpha=0.30+0.17/(su_CIUC/pa), applied to the CIUC-equivalent strength (fs=alpha*su_CIUC)."},
     "su_test_type": {"type": "str", "required": False, "default": "ciuc", "allowed_values": ["ciuc", "uc", "uu"], "description": "For alpha_method='rational': the lab test the layer cu represents, for the UU/UC->CIUC transform. 'ciuc' = no transform (default); 'uc'/'uu' = Chen & Kulhawy (1993) transform."},
     "pa": {"type": "float", "required": False, "default": 101.325, "description": "Atmospheric pressure (kPa) for the rational chains."},
@@ -258,11 +252,13 @@ declare_aliases(METHOD_INFO, {
                                 "lrfd_capacity")})
 
 # When each default applies (GM-119): the CIUC transform and the
-# atmospheric pressure go with GEC-10's rational chains only.
+# atmospheric pressure go with GEC-10's rational chains only, and K/Ko
+# with its beta (GM-241).
 declare_applies_when(METHOD_INFO, {
     m: {"su_test_type": {"alpha_method": ["rational"]},
         "pa": [{"alpha_method": ["rational"]},
-               {"beta_method": ["rational"]}]}
+               {"beta_method": ["rational"]}],
+        "K_over_Ko": {"beta_method": ["rational"]}}
     for m in ("drilled_shaft_capacity", "capacity_vs_depth",
               "lrfd_capacity")})
 

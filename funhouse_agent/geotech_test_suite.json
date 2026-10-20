@@ -195,11 +195,12 @@
       "values": [
         {
           "name": "Q_ult_kN",
-          "value": 2970,
+          "value": 4000,
           "rtol": 0.2
         }
       ],
-      "source": "v5.1 worktree ground truth, 2026-06-10 (drilled_shaft.drilled_shaft_capacity, GEC-10 beta)"
+      "source": "hand derivation 2026-10-20 (GM-241): GEC-10 (FHWA-NHI-18-024) Sec. 10.3.5.1, Eqs. 10-5 to 10-13 (pp. 10-10 to 10-12), and Eq. 10-14 (p. 10-14), as printed; drilled_shaft.drilled_shaft_capacity on wip/gm241 gives 3,998.1 kN. Replaces the 2026-06-10 module value (2,970 kN), which the depth beta gave before 5.9.1 with z in ft in the metric formula (beta held at 0.25)",
+      "notes": "Assumptions the question leaves open: N60 = 15 along the shaft and below the base as well as at the tip; clean sand, so m = 0.6 in Eq. 10-11; no water table, so sigma'v = 19 z; K/Ko = 1 (p. 10-11); the top 1.5 m (5 ft) carries no side resistance, the 'common design practice' of p. 10-17. Step 1 (Sec. 10.3.1): one sand layer, gamma = 19 kN/m3. Step 3 (Table 10-1, p. 10-6): phi' = 34 deg as given, N60 = 15. Step 5, side (Sec. 10.3.5.1): dz = 1.5 to 15 m = 13.5 m; average sigma'v = 19 x 8.25 = 156.8 kPa (Eq. 10-5); sigma'p = 0.47 x 101.3 x 15^0.6 = 241.8 kPa (Eq. 10-11); OCR = 241.8 / 156.8 = 1.543 (Eq. 10-9); the 7.5 ft limit on beta (pp. 10-11, 10-12) does not bind at 8.25 m; Ko = (1 - sin 34) x 1.543^(sin 34) = 0.441 x 1.274 = 0.562, less than Kp = tan^2(62) = 3.54 (Eqs. 10-8, 10-10); beta = 0.562 x tan 34 = 0.379 (Eq. 10-13); f_SN = 0.379 x 156.8 = 59.4 kPa (Eq. 10-7); R_SN = pi x 1.2 x 13.5 x 59.4 = 3,023 kN (Eq. 10-5). Step 5, base (Eq. 10-14, p. 10-14): q_BN = 0.60 x 15 = 9.0 tsf = 862 kPa, under 30 tsf; A = pi x 1.2^2 / 4 = 1.131 m2; R_BN = 975 kN (no large-diameter reduction at B = 1.2 m). Rn = 3,023 + 975 = 3,998, about 4,000 kN. Alternatives the question leaves open: side resistance from the ground surface, as Example 10-1 (pp. 10-12 to 10-14) takes it in sand, 4,196 kN; each layer in 0.1 m sub-layers, 3,890 kN; m = 0.8 (silty sand), 5,067 kN; K/Ko = 2/3 (construction quality not controlled, p. 10-12), 2,991 kN; the depth beta of O'Neill and Reese (1999), FHWA NHI-06-089 Eqs. 9-41 to 9-43, which GEC-10 (2018) does not print, 7,328 kN. The last three fall outside the tolerance: an answer there must name its basis."
     }
   },
   {
