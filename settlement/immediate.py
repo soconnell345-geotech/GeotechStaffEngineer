@@ -24,11 +24,129 @@ from typing import List, Optional
 import numpy as np
 
 
+#: GEC-6 Table 5-12 (p. 97): shape and rigidity factors C_d for points on
+#: loaded areas at the surface of an elastic half space of infinite depth
+#: (after Winterkorn & Fang, 1975), as printed. The points: centre, corner,
+#: middle of the short side, middle of the long side, and the average.
+GEC6_TABLE_5_12_POINTS = ("center", "corner", "mid_short", "mid_long",
+                          "average")
+#: Circle, flexible: centre, average, and the edge, printed 0.64 under the
+#: corner and both middle-of-side columns. Rigid footings settle the same at
+#: every point.
+_CD_CIRCLE = {"center": 1.00, "average": 0.85, "edge": 0.64,
+              "corner": 0.64, "mid_short": 0.64, "mid_long": 0.64}
+_CD_RIGID = {"circular": 0.79, "square": 0.99}
+#: Flexible square (L/B = 1) and rectangles by length/width, in the order of
+#: GEC6_TABLE_5_12_POINTS.
+_CD_RECT_LB = (1.0, 1.5, 2.0, 3.0, 5.0, 10.0, 100.0, 1000.0, 10000.0)
+_CD_RECT = (
+    (1.12, 0.56, 0.76, 0.76, 0.95),
+    (1.36, 0.67, 0.89, 0.97, 1.15),
+    (1.52, 0.76, 0.98, 1.12, 1.30),
+    (1.78, 0.88, 1.11, 1.35, 1.52),
+    (2.10, 1.05, 1.27, 1.68, 1.83),
+    (2.53, 1.26, 1.49, 2.12, 2.25),
+    (4.00, 2.00, 2.20, 3.60, 3.70),
+    (5.47, 2.75, 2.94, 5.03, 5.15),
+    (6.90, 3.50, 3.70, 6.50, 6.60),
+)
+GEC6_TABLE_5_12_BASIS = (
+    "GEC-6 Table 5-12 (p. 97), shape and rigidity factors C_d for points "
+    "at the surface of an elastic half space of infinite depth (after "
+    "Winterkorn & Fang 1975), used as Iw in Se = q B (1 - nu^2) Iw / Es "
+    "(GEC-6 Eq. 5-36, p. 96)")
+
+
+def gec6_influence_factor(shape: str = "square", rigidity: str = "flexible",
+                          point: str = "center", B: float = None,
+                          L: float = None):
+    """``(Iw, where)``: the influence factor C_d of GEC-6 Table 5-12 for a
+    footing's shape, rigidity and point, and the table row and column it
+    came from (GM-203: ``elastic_settlement`` took Iw = 1.0 for every
+    footing, which matches no printed point).
+
+    ``shape``: "square", "circular" or "rectangular" (needs ``B`` and
+    ``L``; between the printed length/width rows the factor is
+    interpolated in log(L/B), as Schleicher's closed form for the centre
+    runs). ``rigidity``: "flexible" or "rigid" (the table prints a rigid
+    circle and square only, the same at every point). ``point``: one of
+    :data:`GEC6_TABLE_5_12_POINTS`, or for a circle also "edge" (the
+    table prints 0.64 under the corner and both middle-of-side columns).
+    A strip has no factor: it grows without limit with L/B.
+    """
+    shape = str(shape or "square").strip().lower()
+    rigidity = str(rigidity or "flexible").strip().lower()
+    point = str(point or "center").strip().lower()
+    if rigidity not in ("flexible", "rigid"):
+        raise ValueError(f"rigidity must be 'flexible' or 'rigid', got "
+                         f"'{rigidity}'")
+    if shape in ("circle", "circular"):
+        shape = "circular"
+    elif shape == "strip":
+        raise ValueError(
+            "A strip has no shape and rigidity factor: GEC-6 Table 5-12's "
+            "C_d grows without limit with L/B (6.90 at the centre at L/B = "
+            "10,000). Give Iw, or the footing's length with shape "
+            "'rectangular'.")
+    elif shape not in ("square", "rectangular", "rectangle"):
+        raise ValueError(f"shape must be 'square', 'rectangular' or "
+                         f"'circular', got '{shape}'")
+    lb = 1.0
+    if shape in ("rectangular", "rectangle"):
+        if L is None or B is None or B <= 0:
+            raise ValueError("A rectangular footing needs its length L and "
+                             "width B for GEC-6 Table 5-12's factor.")
+        lb = max(L, B) / min(L, B)
+        if lb > _CD_RECT_LB[-1]:
+            raise ValueError(f"L/B = {lb:g} is beyond GEC-6 Table 5-12 "
+                             "(10,000); give Iw.")
+        shape = "square" if lb == 1.0 else "rectangular"
+    elif shape == "square" and L is not None and B is not None \
+            and abs(L - B) > 1e-9 * B:
+        raise ValueError(f"A square footing has L = B; got L = {L}, B = "
+                         f"{B}. Use shape 'rectangular'.")
+    if rigidity == "rigid":
+        if shape not in _CD_RIGID:
+            raise ValueError(
+                "GEC-6 Table 5-12 prints a rigid circle (0.79) and a rigid "
+                "square (0.99) only, no rigid rectangle: give Iw.")
+        return _CD_RIGID[shape], (f"{shape} (rigid), the same at every "
+                                  "point")
+    if shape == "circular":
+        if point not in _CD_CIRCLE:
+            raise ValueError(f"A circle's points in GEC-6 Table 5-12 are "
+                             f"{list(_CD_CIRCLE)}, got '{point}'")
+        return _CD_CIRCLE[point], f"circle (flexible), {point}"
+    if point == "edge":
+        raise ValueError("'edge' is a circle's point; a square or "
+                         "rectangle has corner, mid_short and mid_long.")
+    if point not in GEC6_TABLE_5_12_POINTS:
+        raise ValueError(f"point must be one of "
+                         f"{list(GEC6_TABLE_5_12_POINTS)}, got '{point}'")
+    col = GEC6_TABLE_5_12_POINTS.index(point)
+    for i, x in enumerate(_CD_RECT_LB):
+        if lb == x:
+            row = "square" if x == 1.0 else f"rectangle L/B = {x:g}"
+            return _CD_RECT[i][col], f"{row} (flexible), {point}"
+        if lb < x:
+            x0, y0, y1 = _CD_RECT_LB[i - 1], _CD_RECT[i - 1][col], \
+                _CD_RECT[i][col]
+            t = math.log(lb / x0) / math.log(x / x0)
+            return y0 + t * (y1 - y0), (
+                f"rectangle L/B = {lb:.3g} (flexible), {point}: between "
+                f"the rows L/B = {x0:g} ({y0:.2f}) and {x:g} ({y1:.2f}), "
+                "interpolated in log(L/B)")
+    raise AssertionError("unreachable")
+
+
 def elastic_settlement(q: float, B: float, Es: float,
                        nu: float = 0.3,
-                       Iw: float = 1.0,
-                       shape: str = "square") -> float:
-    """Elastic (immediate) settlement using Timoshenko & Goodier.
+                       Iw: Optional[float] = None,
+                       shape: str = "square",
+                       L: Optional[float] = None,
+                       rigidity: str = "flexible",
+                       point: str = "center") -> float:
+    """Elastic (immediate) settlement of a footing on an elastic half space.
 
     Se = q * B * (1 - nu²) / Es * Iw
 
@@ -43,10 +161,14 @@ def elastic_settlement(q: float, B: float, Es: float,
     nu : float, optional
         Poisson's ratio. Default 0.3.
     Iw : float, optional
-        Influence factor (depends on shape, flexibility, depth).
-        Default 1.0. For rigid circular: Iw=0.79, rigid square: Iw=0.82.
-    shape : str, optional
-        Not directly used if Iw is provided. For reference only.
+        Influence factor. Not given: GEC-6 Table 5-12's C_d for ``shape``,
+        ``rigidity`` and ``point`` (:func:`gec6_influence_factor`), by
+        default the centre of a flexible square, 1.12 (GM-203: the default
+        was 1.0, which matches no printed point). Rigid: circle 0.79,
+        square 0.99 as printed.
+    shape, L, rigidity, point : optional
+        The footing and the point, for the table; not used when Iw is
+        given. ``L`` for a rectangle.
 
     Returns
     -------
@@ -56,10 +178,12 @@ def elastic_settlement(q: float, B: float, Es: float,
     References
     ----------
     Timoshenko & Goodier, "Theory of Elasticity".
-    FHWA GEC-6, Eq 8-1.
+    FHWA GEC-6 Eq. 5-36 (p. 96) and Table 5-12 (p. 97).
     """
     if Es <= 0:
         raise ValueError(f"Elastic modulus must be positive, got {Es}")
+    if Iw is None:
+        Iw = gec6_influence_factor(shape, rigidity, point, B=B, L=L)[0]
     return q * B * (1.0 - nu**2) / Es * Iw
 
 
@@ -72,10 +196,10 @@ def elastic_influence_factor(shape: str = "square",
 
         Iw = (2/pi) * [ m*ln((1+sqrt(1+m^2))/m) + ln(m+sqrt(1+m^2)) ],  m = L/B
 
-    This gives Iw = 1.12 for a square (verified) and grows with L/B (~2.5 at
-    L/B = 10). A circular footing uses Iw = 1.0. Rigid footings settle roughly
-    7-15% less than the flexible center; supply an explicit Iw if a rigid value
-    is required.
+    This gives Iw = 1.122 for a square (GEC-6 Table 5-12 prints 1.12) and
+    grows with L/B (2.54 at L/B = 10; printed 2.53). A circular footing
+    uses Iw = 1.0. For a rigid footing, or another point, see
+    :func:`gec6_influence_factor`.
 
     Parameters
     ----------

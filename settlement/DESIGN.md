@@ -55,6 +55,19 @@ analyze_consolidation(layers, delta_sigma, ...) -> ConsolidationResult
 - **The consolidation tool** needs `q_net` and `B` when no `delta_sigma` is
   given (it took B = 1.0 m and q_net = 0).
 - Each choice is in the result's `choices` with given / default / module.
+- **The elastic method's Iw (GM-203, 2026-10-19).** `elastic_settlement`
+  took Iw = 1.0 for every footing, which is no printed point of a square.
+  Not given, Iw is now GEC-6 Table 5-12's C_d (p. 97, after Winterkorn &
+  Fang 1975) for `shape`, `rigidity` and `point`
+  (`immediate.gec6_influence_factor`): every printed cell, a rectangle
+  between the printed L/B rows interpolated in log(L/B); a strip, a rigid
+  rectangle (not printed) and a point the shape lacks are refused. Default:
+  the centre of a flexible square, 1.12 (before: 1.0, so +12 %). The tool
+  states the value and the table's other points in `choices`. Note the
+  table prints a rigid square (0.99) above the flexible square's average
+  (0.95), where the rigid circle (0.79) is below the flexible circle's
+  (0.85). `SettlementAnalysis` keeps Schleicher's closed form for the
+  centre of a flexible footing (1.122 for a square).
 
 ## The values the analysis used (GM-143)
 

@@ -154,6 +154,15 @@ def suggest_params(unknown: str, valid, n: int = 2) -> list:
     # function takes 'phi_deg' where the analysis modules take 'phi'.
     bare = [v for v in valid
             if _param_key(_without_unit(v, _SUBSCRIPT_SUFFIXES)) in keys]
+    # A one-letter tail taken for a unit may be a subscript: 'gamma' matched
+    # 'gamma_m' with its 'm' read as metres, and the tool's other unit
+    # weight is 'gamma_b'. Offer each name with the same stem and a
+    # one-letter tail beside it (GM-197).
+    stems = {_param_key(v.rsplit("_", 1)[0]) for v in bare
+             if "_" in v and len(v.rsplit("_", 1)[1]) == 1}
+    bare += [v for v in valid if v not in bare and "_" in v
+             and len(v.rsplit("_", 1)[1]) == 1
+             and _param_key(v.rsplit("_", 1)[0]) in stems]
     if bare:
         return bare[:n]
     # Spelling slips only ('unit_wieght'): a looser cutoff starts offering

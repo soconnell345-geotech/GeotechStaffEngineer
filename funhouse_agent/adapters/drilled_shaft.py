@@ -7,6 +7,7 @@ from funhouse_agent.adapters import (
 )
 from drilled_shaft import DrillShaft, ShaftSoilLayer, ShaftSoilProfile, DrillShaftAnalysis
 from drilled_shaft.lrfd import apply_lrfd, RESISTANCE_FACTORS
+from drilled_shaft.capacity import skipped_depths_note
 
 # Shaft + soil params shared by every method below.
 _SHAFT_PARAMS = ("diameter", "shaft_length", "socket_diameter",
@@ -106,9 +107,17 @@ def _run_capacity_vs_depth(params):
     analysis = DrillShaftAnalysis(shaft=shaft, soil=soil,
                                   factor_of_safety=params.get("factor_of_safety", 2.5),
                                   **_rational_kwargs(params))
+    skipped = []
+    n_points = params.get("n_points", 20)
     curve = analysis.capacity_vs_depth(depth_min=params.get("depth_min", 3.0),
-                                        depth_max=params.get("depth_max"), n_points=params.get("n_points", 20))
-    return {"capacity_vs_depth": curve}
+                                        depth_max=params.get("depth_max"), n_points=n_points,
+                                        skipped=skipped)
+    out = {"capacity_vs_depth": curve}
+    if skipped:
+        # GM-203: a refused trial length was dropped without a word
+        out["skipped_depths"] = skipped
+        out["warning"] = skipped_depths_note(skipped, n_points)
+    return out
 
 
 def _run_lrfd_capacity(params):
@@ -193,7 +202,9 @@ METHOD_INFO = {
             "depth_max": {"type": "float", "required": False, "description": "Maximum trial shaft length (m). Default: min(shaft_length, soil profile depth)."},
             "n_points": {"type": "int", "required": False, "default": 20, "description": "Number of trial lengths in the sweep."},
         },
-        "returns": {"capacity_vs_depth": "List of {depth_m, Q_ultimate_kN, Q_skin_kN, Q_tip_kN, Q_allowable_kN} dicts; Q_allowable_kN = Q_ultimate_kN / factor_of_safety."},
+        "returns": {"capacity_vs_depth": "List of {depth_m, Q_ultimate_kN, Q_skin_kN, Q_tip_kN, Q_allowable_kN} dicts; Q_allowable_kN = Q_ultimate_kN / factor_of_safety.",
+                    "skipped_depths": "Only when the analysis refused some trial lengths: {depth_m, reason} for each, left out of the curve.",
+                    "warning": "Only with skipped_depths: one sentence naming them. Tell the user."},
     },
     "lrfd_capacity": {
         "category": "Drilled Shaft",
