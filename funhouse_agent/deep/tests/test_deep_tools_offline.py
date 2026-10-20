@@ -351,8 +351,10 @@ def test_write_docx_is_hidden_when_python_docx_is_missing(monkeypatch):
     """Absence is handled the way the document tools handle it: the tool is
     never advertised, rather than offered and then failing on the user."""
     from funhouse_agent.deep import tools as deep_tools
+    from funhouse_agent.deep import vision_kit
 
-    monkeypatch.setattr(deep_tools, "_docx_available", lambda: False)
+    # the kit reads it (INF-30 step 4)
+    monkeypatch.setattr(vision_kit, "_docx_available", lambda: False)
     assert "write_docx" not in {t.name for t in
                                 deep_tools.make_vision_tools(engine=None)}
     # Even when a caller asks for it by name.
@@ -617,7 +619,8 @@ def test_a_look_names_no_zoom_tool_the_agent_lacks(monkeypatch):
         "tiling": ("read in 2x2 tiles. Each tile's boxes are on that tile's "
                    "own 0-999 grid: pass them with the TILE's view to zoom "
                    "with render_region. More text.")})
-    monkeypatch.setattr(T, "_dispatch_extended_tool", lambda **k: canned)
+    import funhouse_agent.deep.vision_kit as K     # the kit calls it
+    monkeypatch.setattr(K, "_dispatch_extended_tool", lambda **k: canned)
     (look,) = T.make_vision_tools(include={"analyze_image"})
     out = _json.loads(look.invoke({"attachment_key": "x.txt"}))
     assert "zoom_hint" not in out and "render_region" not in out["tiling"]

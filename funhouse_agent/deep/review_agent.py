@@ -53,7 +53,7 @@ from funhouse_agent.review_prompt import (
     DOCUMENT_REVIEW_READER_PROMPT,
     build_document_review_prompt,
 )
-from funhouse_agent.deep.tools import (
+from funhouse_agent.deep.vision_kit import (
     DEFAULT_MAX_RESULT_CHARS,
     DEFAULT_VISION_RESULT_CHARS,
     _find_like_available,

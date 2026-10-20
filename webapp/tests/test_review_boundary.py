@@ -49,17 +49,22 @@ KNOWN_COUPLINGS = {
     "webapp.core -> funhouse_agent.deep.agent": "2.7 #1, step 8",
     "funhouse_agent.deep.review_agent -> funhouse_agent.deep.agent":
         "2.7 #1, step 8",
-    # 2. The review tools' factory sits in GSE's tools module (step 4).
-    "funhouse_agent.deep.review_agent -> funhouse_agent.deep.tools":
-        "2.7 #2, step 4",
-    "funhouse_agent.deep.minimal_agent -> funhouse_agent.deep.tools":
-        "2.7 #2, step 4",
+    # 2. (The review tools' factory sat in GSE's tools module: gone at
+    # step 4, now the vision kit.)
     # 3. The package door shows GSE's first-import disclaimer notice, inside
     # a ``try`` (so soft); its other names load on first use since step 2
     # (the disclaimer goes with the package, steps 10-15).
     "funhouse_agent -> funhouse_agent._disclaimer":
         "2.7 #3, soft, step 10",
     # 4. The chart stack behind plot_data and the plotting box (step 6).
+    # The vision kit's plot_data still draws through GSE's dispatch (which
+    # adds defaults_used and the output note) and reads the adapter's
+    # description: there before step 4 too, hidden in GSE's tools module.
+    "funhouse_agent.deep.vision_kit -> funhouse_agent.dispatch":
+        "2.7 #4, step 6",
+    "funhouse_agent.deep.vision_kit -> "
+    "funhouse_agent.adapters.profile_figure_adapter": "2.7 #4, step 6",
+    "funhouse_agent.deep.vision_kit -> profile_figure": "2.7 #4, step 6",
     "funhouse_agent.plot_box.child -> geotech_common": "2.7 figure, step 6",
     "funhouse_agent.plot_box.child -> geotech_common.layout_ink":
         "2.7 figure, step 6",
@@ -72,8 +77,6 @@ KNOWN_COUPLINGS = {
     # The figure helper on the review page (GM-227; steps 6 and 8).
     "funhouse_agent.deep.figure_helper -> funhouse_agent.deep.agent":
         "2.7 figure, step 8",
-    "funhouse_agent.deep.figure_helper -> funhouse_agent.deep.tools":
-        "2.7 figure, step 4",
     # Soft: inside ``try``, the page works without them (hooks, step 11).
     "funhouse_agent.plot_box -> geotech_references.chart_lines":
         "2.7 soft, step 12",

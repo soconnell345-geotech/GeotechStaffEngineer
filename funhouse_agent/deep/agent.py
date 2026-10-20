@@ -87,6 +87,7 @@ from funhouse_agent.deep.prompt import (
 from funhouse_agent.deep.setup_agent import build_setup_subagent
 from funhouse_agent.deep.tools import (
     DEFAULT_MAX_RESULT_CHARS,
+    GEOTECH_VISION_TOOLS,
     make_core_tools,
     make_vision_tools,
 )
@@ -880,6 +881,7 @@ def build_primary_tools(
     description_overrides: Optional[dict] = None,
     description_rewrites: Optional[dict] = None,
     plot_reference_charts: bool = True,
+    geotech_vision_tools: bool = True,
 ) -> list:
     """Build the primary agent's tool list.
 
@@ -905,6 +907,10 @@ def build_primary_tools(
         descriptions, and whether ``plot_data`` offers the
         soil-classification charts (the Document Review page: no; BACKLOG
         RI-34).
+    geotech_vision_tools : bool, optional
+        Whether the geotech page's two reference readers
+        (:data:`~funhouse_agent.deep.tools.GEOTECH_VISION_TOOLS`) are added
+        to the vision kit's tools (the Document Review page: no; DR-04).
     """
     if allowed_agents is None:
         allowed_agents = ANALYSIS_MODULES
@@ -929,6 +935,7 @@ def build_primary_tools(
         description_overrides=description_overrides,
         description_rewrites=description_rewrites,
         plot_reference_charts=plot_reference_charts,
+        added_tools=GEOTECH_VISION_TOOLS if geotech_vision_tools else None,
         # behind the figure switches the main agent's own redraw can retire
         # a figure any helper drew this turn (GM-151)
         plot_data_replaces=_flags.figure_helper() or _flags.plot_code(),
@@ -987,9 +994,10 @@ REVIEW_READER_DESCRIPTION = (
 #: the review page has neither the library nor the examples (DR-04; the
 #: review of 2026-09-26). The lean build never had them. ``log_grid`` reads a
 #: boring or test-pit log as its grid: a geotechnical report's page, which
-#: is not this page's document (BACKLOG RI-34).
-GEOTECH_ONLY_TOOLS = ("read_reference_figure", "view_worked_example_source",
-                      "log_grid")
+#: is not this page's document (BACKLOG RI-34). Since INF-30 step 4 the page
+#: is built without the first two (:data:`GEOTECH_VISION_TOOLS`, which GSE
+#: adds to the vision kit) and drops only ``log_grid``, a planlens tool.
+GEOTECH_ONLY_TOOLS = tuple(GEOTECH_VISION_TOOLS) + ("log_grid",)
 
 
 def _review_page_descriptions() -> dict:
@@ -1398,11 +1406,13 @@ def build_deep_agent(
                                else None),
         description_rewrites=_review_page_rewrites() if review_page else None,
         plot_reference_charts=not review_page,
+        geotech_vision_tools=not review_page,
     )
     if review_page:
         from funhouse_agent import review_flags as _rf
-        # kept_readings (TA-28) waits for the suite on the testers' page.
-        _drop = GEOTECH_ONLY_TOOLS + (
+        # kept_readings (TA-28) waits for the suite on the testers' page;
+        # log_grid is a geotechnical report's (GEOTECH_ONLY_TOOLS).
+        _drop = ("log_grid",) + (
             () if _rf.kept_readings_on_review_page() else ("kept_readings",))
         tools = [t for t in tools if getattr(t, "name", None) not in _drop]
     if extra_tools:

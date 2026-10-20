@@ -339,7 +339,7 @@ def build_figure_subagent(
     from funhouse_agent.deep.agent import DEFAULT_MAX_RESULT_CHARS
     from funhouse_agent.deep.calculate_tool import make_calculate_tool
     from funhouse_agent.deep.limits import ModelCallBudgetMiddleware
-    from funhouse_agent.deep.tools import make_vision_tools
+    from funhouse_agent.deep.vision_kit import make_vision_tools
 
     tools = make_vision_tools(
         engine=engine, attachments=attachments, save_fn=save_fn,

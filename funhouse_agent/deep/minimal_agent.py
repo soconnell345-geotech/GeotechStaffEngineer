@@ -40,7 +40,8 @@ from funhouse_agent.deep.review_agent import (
     READER_NUDGE, _busy_retry, _final_text, _patch_tool_calls, _summarizer,
     max_model_calls,
 )
-from funhouse_agent.deep.tools import DEFAULT_MAX_RESULT_CHARS, make_vision_tools
+from funhouse_agent.deep.vision_kit import (DEFAULT_MAX_RESULT_CHARS,
+                                           make_vision_tools)
 from funhouse_agent.vision_tools import IMAGE_MARKUP_NOTE
 
 MINIMAL_PROMPT = """\
