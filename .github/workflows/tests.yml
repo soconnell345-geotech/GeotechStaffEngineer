@@ -28,6 +28,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.12", "3.13"]
+        dist: [loadfile, worksteal]   # EXPERIMENT (ci/speed only)
 
     steps:
       - uses: actions/checkout@v5
@@ -46,7 +47,7 @@ jobs:
           pip install --upgrade pip
           pip install -e .
           pip install -e geotech-references/
-          pip install pytest
+          pip install pytest pytest-xdist
 
       - name: Install optional dependencies
         # Install what we can; some packages may fail on certain platforms.
@@ -68,5 +69,14 @@ jobs:
           pip install "PyMuPDF<2" || true   # planlens 0.13 (PyPI) misreads tables on 2.0; lift with planlens>=0.14 (INF-18)
           pip install pyproj || true   # foundry tier3 needs it
 
+      - name: Runner
+        run: |
+          nproc; lscpu | grep -E "Model name|^CPU\(s\)"; free -m
+          python -c "import sys; print(sys.version)"
+
       - name: Run tests
-        run: pytest -q --tb=short
+        run: pytest -n auto --dist ${{ matrix.dist }} -q --tb=short --durations=40
+
+      - name: Files the suite left in the checkout
+        if: always()
+        run: git status --porcelain --untracked-files=all
