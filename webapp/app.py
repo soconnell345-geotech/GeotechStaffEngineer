@@ -1195,6 +1195,81 @@ with st.sidebar:
                     st.warning("Looks like an expired token — re-run "
                                "`stage_sharepoint(...)` in the notebook.")
 
+    # Restore a downloaded conversation (INF-45): the zip from "Download
+    # this conversation" back into this person's conversations, under its
+    # own thread id. On Foundry it is the way back after a container
+    # rebuild. The zip is restored once per file (and Replace setting), then
+    # the uploader is cleared and the conversation opens.
+    if _PROFILE.conversation_download:
+        with st.expander("Restore a downloaded conversation",
+                         expanded=False):
+            st.caption("A zip from **Download this conversation** comes "
+                       "back into your conversations and opens.")
+            _replace = st.checkbox(
+                "Replace the existing copy", key="restore_replace",
+                help="If this conversation is already here, the zip's copy "
+                     "takes its place (the copy here goes to the trash "
+                     "folder, as a delete does).")
+            _rkey = f"restore_zip_{ss.get('restore_epoch', 0)}"
+            _rzip = None                      # (name, bytes or file, id)
+            if ws_upload.upload_mode() == "ws":
+                # A file left in the websocket uploader is sent again on
+                # every rerun (the Attachments box above), so the zip is
+                # taken out at once and held here until it is restored.
+                try:
+                    _rpairs, _rerrs = ws_upload.ws_file_uploader(
+                        ["zip"], key=_rkey)
+                except Exception as exc:      # noqa: BLE001
+                    _rpairs, _rerrs = [], [f"uploader unavailable "
+                                           f"({type(exc).__name__})"]
+                for _e in _rerrs:
+                    st.caption(f"⚠️ {_e}")
+                if _rpairs:
+                    import hashlib as _hashlib
+                    _rn, _rd = _rpairs[0]
+                    ss.restore_held = (_rn, _rd,
+                                       _hashlib.sha1(_rd).hexdigest())
+                    ss.restore_epoch = ss.get("restore_epoch", 0) + 1
+                    st.rerun()
+                _rzip = ss.get("restore_held")
+            else:
+                _rf = st.file_uploader("Conversation zip", type=["zip"],
+                                       key=_rkey)
+                if _rf is not None:
+                    _rzip = (_rf.name, _rf, getattr(_rf, "file_id", None)
+                             or f"{_rf.name}:{_rf.size}")
+            if _rzip is not None and \
+                    ss.get("restore_sig") != (_rzip[2], bool(_replace)):
+                ss.restore_sig = (_rzip[2], bool(_replace))
+                from webapp import conversation_restore as _cr
+                with st.spinner("Restoring the conversation…"):
+                    _res = _cr.restore(
+                        _rzip[1], root=_ROOT, replace=bool(_replace),
+                        zip_name=_rzip[0], page=_PROFILE.name,
+                        owner=(_IDENT.key if _IDENT.multi_user else None),
+                        owner_name=(_IDENT.display_name if _IDENT.multi_user
+                                    else None),
+                        busy=lambda t: turn_jobs.get_turn_job(t) is not None)
+                ss.restore_result = {"status": _res.status,
+                                     "message": _res.message,
+                                     "thread_id": _res.thread_id}
+                if _res.status == "restored":
+                    _open_conversation(_res.thread_id)
+                    if _res.agent_note():
+                        ss.pending_notes = [_res.agent_note()]
+                    ss.restore_epoch = ss.get("restore_epoch", 0) + 1
+                    ss.pop("restore_sig", None)
+                    ss.pop("restore_held", None)
+                    st.rerun()
+            # A refusal shows while its zip is in the box; a restore while
+            # the restored conversation is the open one.
+            _rres = ss.get("restore_result")
+            if _rres and (_rres.get("thread_id") == ss.thread_id
+                          if _rres["status"] == "restored"
+                          else _rzip is not None):
+                {"restored": st.success, "exists": st.info}.get(
+                    _rres["status"], st.error)(_rres["message"])
+
     st.divider()
     st.caption(core.token_line(ss.last_turn_tokens, ss.total_tokens))
     # AI budget line (Funhouse metered spend vs the monthly cap) — rendered
