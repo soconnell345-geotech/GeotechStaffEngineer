@@ -445,6 +445,11 @@ Field notes from the first real publish (a sandbox project on `<your-enclave>.pa
   in the sidebar: **Prepare download** zips its record (`meta.json`,
   `activity.jsonl`, transcript), files and figures, leaving out caches and
   anything that may hold a key; over the 20 MB download limit (§4a) it
-  offers the record alone, with the deliverables that fit.
+  offers the record alone, with the deliverables that fit. **Restore a
+  downloaded conversation** in the sidebar takes that zip back (up to 200 MB
+  unpacked, `GEOTECH_RESTORE_MAX_MB`): the conversation returns under its own
+  id and opens, a record-alone zip says in the conversation what it left
+  out, and one already here is replaced only when **Replace the existing
+  copy** is ticked (BACKLOG INF-45).
 - The old `foundry/` wrapper files (tools for the prepackaged AIP agent) are
   RETIRED and unrelated to this deployment.
