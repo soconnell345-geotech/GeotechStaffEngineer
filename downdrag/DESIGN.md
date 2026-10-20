@@ -792,17 +792,17 @@ resistance, as GEC-10 says for the layers above.
    plane at the bearing layer) are the ones whose drag rises when the
    liquefied zone is below the plane before the earthquake: when a zone
    lies below the plane some method gives before the earthquake and the
-   headline drag force does not rise, a warning quotes GEC-12 §7.4.2.2 and
-   names those methods and their numbers. Nothing is chosen for the
-   engineer.
-   Two more warnings say in plain words why the methods differ so much
-   (HC-1 below): when no soil settles before the earthquake, the methods
-   that do not follow the settlement (force equilibrium, the plane at the
-   pile toe, Endo) still give a drag force, so before and after are
-   compared within one method; and when the headline plane after lies
-   below the depth where the soil settles less than the pile, the warning
-   gives that length, the headline drag force and the drag force of the
-   methods that follow the settlement.
+   headline drag force does not rise, a warning cites GEC-12 §7.4.2.2 and
+   names those methods, in one sentence for all the zones (a noisy CPT
+   gives twenty). Nothing is chosen for the engineer.
+   One more warning says in plain words why the methods differ so much
+   (HC-1 below): the methods that do not follow the settlement (force
+   equilibrium, the plane at the pile toe, Endo) count drag whether the
+   soil settles or not, so when no soil settles before the earthquake they
+   still give a drag force, and before and after are compared within one
+   method; when the headline plane after lies below the depth where the
+   soil settles less than the pile, it gives that length. The warnings
+   name methods and depths; their numbers are in `by_method`.
 4. **Inputs**: `liquefied_layers` (top, bottom, `volumetric_strain` or
    `settlement`; optional `su_r`, `N1_60`, `fs_liq`), or a
    `liquefaction_result` — the `liquefaction` tool's SPT `layer_results`
@@ -839,8 +839,52 @@ resistance, as GEC-10 says for the layers above.
    water table is warned, not clipped, when given directly.
 6. **Limit states**: the structural check (UFC Eq 6-80 / GEC-12 Eq 7-70),
    the geotechnical check without the drag and the settlement check run on
-   the state after, as GEC-10 §10.7 says (strength and service); the result
-   notes AASHTO's Extreme Event I with a load factor of 1.0 on the drag.
+   the state after, as GEC-10 §10.7 says (strength and service); the
+   choice that says so gives AASHTO's Extreme Event I with a load factor of
+   1.0 on the drag as the alternative.
+
+### What the result holds: each number once (GM-207, 2026-10-19)
+
+A noisy CPT gave twenty thin liquefied zones and a 44,000-character tool
+result, and one zone gave 29,000: the methods table came twice (`by_method`
+and `after.neutral_plane_comparison`), each option's source three times (its
+row, the basis, the choice), the static analysis's warnings twice, and the
+four depth profiles in full. `PostLiquefactionResult.to_dict()` now gives
+each number once:
+
+| Where | What |
+|---|---|
+| top level | the headline before and after (neutral plane, drag force, Q_np, pile settlement, rounded to 1 mm / 0.1 kN / 0.01 mm), the reconsolidation settlement, the limit-state checks, `methods_range_after`, `neutral_plane_basis` |
+| `warnings` | the post-liquefaction warnings, then the static analysis's warnings once: unprefixed where both states give the same one, "Before and after liquefaction (the numbers after):" where only its numbers differ, else prefixed with the one state; the static warning on the force-equilibrium plane below the settling soil is left out when the why-note says it |
+| `liquefied_zones` | a record a zone; `position` is above / across / below the headline plane before the earthquake (`neutral_plane_before_m`) or below the pile toe |
+| `side_resistance_comparison` | a row an option: its quoted source and assumptions (the basis and the choice cite it), neutral plane, drag force, Q_np, pile settlement, soil settlement at the plane |
+| `by_method` | the one methods table: a row a method, its source and assumptions, neutral plane, drag force, Q_np and pile settlement before and after, why it gives no plane, and after liquefaction its toe force and settlement parts |
+| `choices` | as before; the limit-state choice carries what `limit_states_note` said |
+| `after` | only what the headline after liquefaction alone has: the resistance below the plane, the toe settlement, `below_toe` and the depth profiles |
+
+The tool (`funhouse_agent/adapters/downdrag.py`, `_compact`) returns, unless
+`detail='full'`, every neutral plane, drag force and pile settlement (the
+headline; each method before and after; each side-resistance option) with
+the tables as `{columns, rows}`, and leaves out what `result_note` lists:
+the sources and assumptions (the options keep a short citation),
+`neutral_plane_basis`, each Q_np (= Q_dead + drag force), the toe forces
+and settlement parts, the methods each zone lies below (a zone lies below a
+method's plane before the earthquake where its `top_m` is at or below that
+method's `neutral_plane_before_m`) and `after`. Past `MAX_ZONES_LISTED` (6)
+zones it gives their number, total thickness and side resistance before and
+after, the three with the largest reconsolidation settlement in full and
+the depth ranges of the rest. Sizes with `defaults_used`, against
+`RESULT_BUDGET_CHARS` = 10,500:
+
+| Case | Before GM-207 | Returned | `detail='full'` |
+|---|---|---|---|
+| HC-1, one zone | 29,315 | 7,757 (under the 8,000 general cap) | 20,220 |
+| Noisy 25 m CPT, 20 zones (`_noisy_cpt`, seeds 1-8, 11, 21) | 43,928 (seed 7) | 9,600-10,350 | 30,300-31,100 |
+
+The noisy CPT cannot reach 8,000 without losing what only it has: the
+warnings on a toe in a liquefied layer, readings left out and load and
+resistance curves that do not meet, and the choices of the CPT's strain and
+the FS_liq threshold. None of them repeats another.
 
 ### Hand check HC-1 (a hand check from the printed equations, NOT a published anchor)
 
