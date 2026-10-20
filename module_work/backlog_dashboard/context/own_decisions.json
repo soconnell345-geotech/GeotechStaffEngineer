@@ -1817,5 +1817,41 @@
    "Caltrans T&S pp. 4-16, 4-28, 4-29",
    "NHI-06-089 p. 10-17"
   ]
+ },
+ "OWN-83": {
+  "kind": "decision",
+  "ask_who": null,
+  "question": "Downdrag: a clay's alpha when none is given, UFC's chart or 1.0?",
+  "why": "The alpha a clay takes sets both the drag above the neutral plane and the resistance below it. A chart value below 1.0 on a stiff clay lowers the drag force a lot (a soft-over-stiff case 1,148 -> 789 kN), and UFC itself notes that a higher alpha is conservative for drag.",
+  "background": "UFC 3-220-20's drag procedure (Sec. 6-7.4, p. 476) and GEC-12's (Sec. 7.3.6.1, p. 342) name no alpha chart. UFC's alpha method (Sec. 6-5.4.2, pp. 414-417) gives Table 6-16 (soft clay, alpha 1), Fig. 6-14 for firm to very stiff clay, and Eq. 6-9 for the top ten pile widths of a stiff clay under soft clay. UFC's own drag example (App. B-5.4, p. 636) uses those values; with them the tool now reproduces its printed 52 ft and 133 kips (it gave 56.6 ft and 224 kips with alpha 1.0).",
+  "parts": [
+   {
+    "label": "Default alpha for a clay in a downdrag run",
+    "options": [
+     {
+      "label": "UFC's chart and transition zone (now)",
+      "effect": "Follows UFC's method and reproduces its drag example; stiff clays carry less drag; the result states each alpha and its source."
+     },
+     {
+      "label": "Alpha 1.0, the chart's value shown beside it",
+      "effect": "The conservative drag UFC p. 476 mentions; the example's printed numbers are not reproduced by default."
+     },
+     {
+      "label": "Ask the user every time",
+      "effect": "The tool refuses a clay layer with no alpha and names both choices."
+     }
+    ]
+   }
+  ],
+  "recommendation": "Keep UFC's chart, which is UFC's own method and example, and show the drag at alpha 1.0 beside it in the result.",
+  "if_no_answer": "The default stays UFC's chart with the transition zone; a given alpha is always kept.",
+  "message_to_send": null,
+  "steps": [],
+  "unblocks": [],
+  "sources": [
+   "BACKLOG.md OWN-83, GM-255",
+   "UFC 3-220-20 pp. 414-417, 476, 636",
+   "GEC-12 pp. 246, 248, 342"
+  ]
  }
 }
