@@ -13,6 +13,26 @@ from typing import Optional
 import numpy as np
 
 
+def vertical_axis(ground_elevation=None, fill_thickness=0.0):
+    """``(y, label, at)`` of a downdrag profile's vertical axis. The
+    owner's default is elevation, never depth and elevation together
+    (GM-97): with a ground elevation the profiles are drawn against
+    elevation, ``y(z)`` being that elevation less the depth z; without one
+    against the depth below the ground the pile head is at (the original
+    ground under a fill: the fill is a load on it), and the axis says no
+    elevation was given (GM-200, GM-216). ``at(z)`` names a depth as the
+    axis reads it. The results stay in depth either way."""
+    if ground_elevation is not None:
+        e = float(ground_elevation)
+        return ((lambda z: e - np.asarray(z, dtype=float)),
+                "Elevation (m)",
+                lambda z: f"El. {e - z:.2f} m")
+    ground = "original ground" if (fill_thickness or 0) > 0 else "ground"
+    return ((lambda z: np.asarray(z, dtype=float)),
+            f"Depth below {ground} (m), no elevation given",
+            lambda z: f"z = {z:.2f} m")
+
+
 @dataclass
 class DowndragResult:
     """Container for downdrag analysis results.
@@ -113,6 +133,13 @@ class DowndragResult:
         over the methods that apply.
     headline_method : str
         Name of the row that gave the headline numbers.
+    ground_elevation : float or None
+        Elevation of the ground surface the depths are measured from (m),
+        as given; None when none was. Only the ``plot_*`` methods use it:
+        they plot elevation, else depth below the ground.
+    fill_thickness : float
+        The fill placed on the ground (m), for the plots' depth axis: under
+        a fill the depths are below the original ground.
     influence_depth_criterion : str
         ``"bearing_stress"`` (UFC 3-220-20 §6-5.8.4.3, default) or
         ``"effective_stress"`` (FHWA GEC-12 §7.3.5.3): where the toe load
@@ -164,6 +191,8 @@ class DowndragResult:
     include_pile_weight: bool = False
     influence_depth_criterion: str = "bearing_stress"
     below_toe: dict = field(default_factory=dict)
+    ground_elevation: Optional[float] = None
+    fill_thickness: float = 0.0
 
     @property
     def drag_force(self) -> float:
@@ -390,6 +419,8 @@ class DowndragResult:
         d['include_pile_weight'] = self.include_pile_weight
         d['pile_weight_basis'] = self.pile_weight_basis
         d['influence_depth_criterion'] = self.influence_depth_criterion
+        if self.ground_elevation is not None:
+            d['ground_elevation_m'] = self.ground_elevation
         return d
 
     def get_tables(self) -> list:
@@ -480,8 +511,17 @@ class DowndragResult:
         ))
         return tables
 
+    def _set_vertical(self, ax, label):
+        """Depth runs down the axis (once: the two plots of
+        :meth:`plot_neutral_plane` share it, and inverting it twice drew
+        depth upward); elevation runs up it."""
+        if self.ground_elevation is None and not ax.yaxis_inverted():
+            ax.invert_yaxis()
+        ax.set_ylabel(label)
+
     def plot_axial_load(self, ax=None, show=True, **kwargs):
-        """Plot axial load Q(z) vs depth with neutral plane.
+        """Plot axial load Q(z) against elevation (or depth, when no
+        ``ground_elevation`` was given) with the neutral plane.
 
         Returns
         -------
@@ -491,13 +531,15 @@ class DowndragResult:
         plt = get_pyplot()
         if ax is None:
             fig, ax = plt.subplots(figsize=(6, 8))
-        ax.plot(self.axial_load, self.z, 'b-', linewidth=2, **kwargs)
-        ax.axhline(y=self.neutral_plane_depth, color='r', linestyle='--',
-                   linewidth=1.5,
-                   label=f'Neutral Plane ({self.neutral_plane_depth:.1f} m)')
-        ax.invert_yaxis()
+        y, label, at = vertical_axis(self.ground_elevation,
+                                     self.fill_thickness)
+        ax.plot(self.axial_load, y(self.z), 'b-', linewidth=2, **kwargs)
+        ax.axhline(y=float(y(self.neutral_plane_depth)), color='r',
+                   linestyle='--', linewidth=1.5,
+                   label=f'Neutral Plane ({at(self.neutral_plane_depth)})')
         setup_engineering_plot(ax, "Axial Load Distribution",
-                              "Axial Load Q(z) (kN)", "Depth (m)")
+                              "Axial Load Q(z) (kN)", label)
+        self._set_vertical(ax, label)
         ax.legend()
         if show:
             plt.tight_layout()
@@ -505,7 +547,8 @@ class DowndragResult:
         return ax
 
     def plot_settlement(self, ax=None, show=True, **kwargs):
-        """Plot soil settlement profile vs depth with pile settlement.
+        """Plot the soil settlement profile against elevation (or depth,
+        when no ``ground_elevation`` was given) with the pile settlement.
 
         Returns
         -------
@@ -515,16 +558,18 @@ class DowndragResult:
         plt = get_pyplot()
         if ax is None:
             fig, ax = plt.subplots(figsize=(6, 8))
-        ax.plot(self.soil_settlement_profile * 1000, self.z, 'g-',
+        y, label, _ = vertical_axis(self.ground_elevation,
+                                    self.fill_thickness)
+        ax.plot(self.soil_settlement_profile * 1000, y(self.z), 'g-',
                 linewidth=2, label='Soil settlement', **kwargs)
         ax.axvline(x=self.pile_settlement * 1000, color='b', linestyle='--',
                    linewidth=1.5,
                    label=f'Pile settlement ({self.pile_settlement*1000:.1f} mm)')
-        ax.axhline(y=self.neutral_plane_depth, color='r', linestyle=':',
-                   linewidth=1, label='Neutral Plane')
-        ax.invert_yaxis()
+        ax.axhline(y=float(y(self.neutral_plane_depth)), color='r',
+                   linestyle=':', linewidth=1, label='Neutral Plane')
         setup_engineering_plot(ax, "Settlement Profile",
-                              "Settlement (mm)", "Depth (m)")
+                              "Settlement (mm)", label)
+        self._set_vertical(ax, label)
         ax.legend(fontsize=8)
         if show:
             plt.tight_layout()

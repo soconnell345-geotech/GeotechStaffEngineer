@@ -195,6 +195,11 @@ NOT_REACHED = {
     ("calc_package|downdrag_package", "n_sublayers"): _GRID,
     ("calc_package|downdrag_package", "influence_depth_criterion"):
         "the probe's soil below the toe is marked as not settling",
+    # GM-216: the same probe with a ground elevation
+    ("calc_package|downdrag_package#elevation", "n_sublayers"): _GRID,
+    ("calc_package|downdrag_package#elevation",
+     "influence_depth_criterion"):
+        "the probe's soil below the toe is marked as not settling",
     **{("ground_improvement|feasibility", n):
        "a bearing problem needs both the required and current bearing"
        for n in ("required_bearing_kPa", "current_bearing_kPa")},
