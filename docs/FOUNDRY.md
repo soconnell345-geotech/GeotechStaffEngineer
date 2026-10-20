@@ -67,6 +67,7 @@ set environment variables for the workspace/app:
 | `GEOTECH_FOUNDRY_HOST` | only to override the route on purpose, e.g. the stack host `yourstack.palantirfoundry.com` an admin names | Where the proxy lives (§3c) |
 | `GEOTECH_WEBAPP_DATA` | a durable writable folder, e.g. a path under the workspace files | Saved conversations survive restarts |
 | `GEOTECH_REFERENCES_DOCS` | folder of reference PDFs (optional; §3d) | Enables figure read-off and worked-example pages, same as Databricks |
+| `GEOTECH_HELPER_MODELS` | optional, e.g. `references=Sonnet 5.5,calc=main` | A helper's own model (§3a); on Foundry the references helper defaults to `Sonnet 5.5` |
 
 Any model id starting with `ri.` routes through the Foundry LLM proxy
 automatically, by **model family**: a Claude model uses the
@@ -102,6 +103,25 @@ main()
 ```
 
 The first entry is the default; the sidebar picker switches between them.
+
+**The references helper runs on Sonnet 5.5** (the owner, 2026-10-20; BACKLOG
+INF-41). On Foundry the helper that searches and reads the reference library
+defaults to the model list's `Sonnet 5.5` entry; the main agent and every
+other helper (calculations, figures, the reviewer, page reading) run on the
+main model, the list's first entry, so put Opus 5.5 first. The sidebar shows
+a **References helper model** picker under **Model** ("Same as the main
+model" keeps it on the main model), and `GEOTECH_HELPER_MODELS` sets any
+helper by name: `references=Sonnet 5.5`, `calc=main`, or a RID
+(`references=anthropic:<RID>`). A model is named by its label in
+`GEOTECH_FOUNDRY_MODELS` or by its id. The helper's model is built exactly
+as the main one, through the same proxy address and request fixes (§3a,
+§3c). If `Sonnet 5.5` is not in the list, the helper stays on the main model
+and the sidebar says so. **Connection diagnostics** print an `agent models`
+line (the main agent, each helper with a model of its own, and "every other
+helper: the main agent's model") and send a plain and a tool-calling request
+to each helper model; each turn's `activity.jsonl` names the model on every
+`model_start` beside the agent that made the call, and `meta.json`'s engine
+record lists `helper_models`. Other hosts have no helper defaults.
 Or leave the env line out and type the RID in the sidebar with Model family
 **Anthropic (Claude)**, then **Use this model**. Claude goes through the
 Anthropic-messages proxy (§3c says which address) with `FOUNDRY_TOKEN` as
@@ -146,48 +166,6 @@ repeated prompt did not always read from the cache; a miss costs tokens,
 not answers. Checked
 offline against a stand-in proxy that refuses those fields
 (`webapp/tests/test_foundry_model_family.py`).
-
-### 3c. Which proxy address the app uses
-
-The first that is set wins:
-
-1. `GEOTECH_FOUNDRY_HOST` + `/api/v2/llm/proxy/anthropic` (or
-   `/openai/v1`): the app's own setting, for a route an admin names on
-   purpose. Leave it unset otherwise.
-2. `ANTHROPIC_BASE_URL` (Claude) or `OPENAI_BASE_URL` (GPT): some Foundry
-   containers are given these ready-made.
-3. `https://` + `FOUNDRY_PROXY_URL` + `/language-model-service/api/proxy/anthropic`
-   (or `/openai/v1`): every Code Workspace and published app seen so far
-   carries `FOUNDRY_PROXY_URL`, so this is the usual route.
-4. `FOUNDRY_HOSTNAME` (or `FOUNDRY_URL`) + `/api/v2/llm/proxy/...`: the route
-   before the release after 5.33.0. In a Code Workspace and a published app
-   `FOUNDRY_HOSTNAME` is a local data sidecar (`localhost:8080`) that answers
-   every LLM-proxy path with 401 and an empty body, so this works only where
-   it is the real stack host.
-
-The sidebar's success line names the route (`route: FOUNDRY_PROXY_URL`,
-`route: the base URL the container provides`, ...), and **Connection
-diagnostics** print the setting and the URL (never the token). TLS is checked
-against the first of `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE` and
-`MAESTRO_CERT_PEM_PATH` that names a file (the line then says "CA bundle
-set"), else the SDK's own default.
-
-### 3d. Reference PDFs on Foundry
-
-There is no SharePoint on Foundry, so the reference PDFs (chart read-offs,
-worked-example source pages) sit in a folder committed beside the app file,
-under the same file names as the SharePoint `primary_references` folder
-(Connection diagnostics list the names it looks for), and the app file points
-at it:
-
-```python
-import os
-os.environ.setdefault("GEOTECH_REFERENCES_DOCS", os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "references"))
-```
-
-Where the PDFs should live for good (a media set or a dataset, with a fetcher
-like the SharePoint one) is BACKLOG INF-39 (e) and OWN-80.
 
 ### 3b. Alternative engine: the in-platform `palantir_models` SDK (no proxy, no token)
 
@@ -241,6 +219,48 @@ r = m.create_chat_completion(v3.GptChatCompletionRequest(
     [base.ChatMessage(base.ChatMessageRole.USER, "Say OK")], max_tokens=20))
 print(r.choices[0].message.content)
 ```
+
+### 3c. Which proxy address the app uses
+
+The first that is set wins:
+
+1. `GEOTECH_FOUNDRY_HOST` + `/api/v2/llm/proxy/anthropic` (or
+   `/openai/v1`): the app's own setting, for a route an admin names on
+   purpose. Leave it unset otherwise.
+2. `ANTHROPIC_BASE_URL` (Claude) or `OPENAI_BASE_URL` (GPT): some Foundry
+   containers are given these ready-made.
+3. `https://` + `FOUNDRY_PROXY_URL` + `/language-model-service/api/proxy/anthropic`
+   (or `/openai/v1`): every Code Workspace and published app seen so far
+   carries `FOUNDRY_PROXY_URL`, so this is the usual route.
+4. `FOUNDRY_HOSTNAME` (or `FOUNDRY_URL`) + `/api/v2/llm/proxy/...`: the route
+   before the release after 5.33.0. In a Code Workspace and a published app
+   `FOUNDRY_HOSTNAME` is a local data sidecar (`localhost:8080`) that answers
+   every LLM-proxy path with 401 and an empty body, so this works only where
+   it is the real stack host.
+
+The sidebar's success line names the route (`route: FOUNDRY_PROXY_URL`,
+`route: the base URL the container provides`, ...), and **Connection
+diagnostics** print the setting and the URL (never the token). TLS is checked
+against the first of `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE` and
+`MAESTRO_CERT_PEM_PATH` that names a file (the line then says "CA bundle
+set"), else the SDK's own default.
+
+### 3d. Reference PDFs on Foundry
+
+There is no SharePoint on Foundry, so the reference PDFs (chart read-offs,
+worked-example source pages) sit in a folder committed beside the app file,
+under the same file names as the SharePoint `primary_references` folder
+(Connection diagnostics list the names it looks for), and the app file points
+at it:
+
+```python
+import os
+os.environ.setdefault("GEOTECH_REFERENCES_DOCS", os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "references"))
+```
+
+Where the PDFs should live for good (a media set or a dataset, with a fetcher
+like the SharePoint one) is BACKLOG INF-39 (e) and OWN-80.
 
 ## 4. The 30-second proxy smoke test ("one curl")
 

@@ -38,7 +38,7 @@ _CLEAR = ("ANTHROPIC_API_KEY", "GEOTECH_FOUNDRY_MODELS", "GEOTECH_WEBAPP_MODEL",
           "FOUNDRY_HOSTNAME", "FOUNDRY_URL", "GEOTECH_DEPLOYMENT",
           "ANTHROPIC_BASE_URL", "OPENAI_BASE_URL", "FOUNDRY_PROXY_URL",
           "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "MAESTRO_CERT_PEM_PATH",
-          "GEOTECH_FOUNDRY_PROMPT_CACHE")
+          "GEOTECH_FOUNDRY_PROMPT_CACHE", "GEOTECH_HELPER_MODELS")
 
 
 @pytest.fixture
@@ -281,7 +281,14 @@ class _FakeProxy(BaseHTTPRequestHandler):
                 "parameters": {"unsafeParams": refused}}).encode())
             return
         last = json.dumps(body.get("messages", [])[-1:])
-        if body.get("tools") and "Call the tool" in last:
+        names = [t.get("name") for t in body.get("tools") or []]
+        if "task" in names and "Ask the librarian" in last:
+            # the main agent hands a question to its references helper
+            block = {"type": "tool_use", "id": "toolu_task", "name": "task",
+                     "input": {"description": "Find Nq at phi' 30 in DM7.",
+                               "subagent_type": "references"}}
+            stop = "tool_use"
+        elif body.get("tools") and "Call the tool" in last:
             block = {"type": "tool_use", "id": "toolu_1",
                      "name": body["tools"][0]["name"],
                      "input": {"a": 2, "b": 3}}
@@ -615,3 +622,101 @@ def test_the_sanitizer_on_a_payload():
         with pytest.raises(engine_config.FoundryProxyLimit):
             engine_config.sanitize_foundry_anthropic_payload(
                 {"tool_choice": choice})
+
+
+# ---------------------------------------------------------------------------
+# INF-41: the references helper on Sonnet 5.5, the rest on Opus 5.5
+# ---------------------------------------------------------------------------
+
+OPUS_X = "ri.language-model-service..language-model.lm-1a2b3c"
+SONNET_X = "ri.language-model-service..language-model.lm-4d5e6f"
+
+
+@pytest.fixture
+def two_models(proxy_route, foundry):
+    """The owner's model list: Opus first (the main agent's default), then
+    Sonnet, by RIDs that do not say Claude."""
+    foundry.setenv(core.FOUNDRY_MODELS_ENV,
+                   f"Opus 5.5=anthropic:{OPUS_X},"
+                   f"Sonnet 5.5=anthropic:{SONNET_X}")
+    return proxy_route
+
+
+@needs_anthropic
+def test_diagnostics_name_each_agents_model(two_models):
+    from webapp import diagnostics
+    checks = diagnostics.run_diagnostics(core.default_model_id())
+    by_name = {c["name"]: c for c in checks}
+    agents = by_name["agent models"]
+    assert agents["status"] == "pass", agents
+    assert f"main agent: Opus 5.5 (anthropic:{OPUS_X})" in agents["detail"]
+    assert (f"references: Sonnet 5.5 (anthropic:{SONNET_X}; this host's "
+            "default)") in agents["detail"]
+    assert "every other helper: the main agent's model" in agents["detail"]
+    for name in ("plain request (invoke) (references helper)",
+                 "tool-calling request (references helper)"):
+        assert by_name[name]["status"] == "pass", by_name[name]
+    assert {r["model"] for r in two_models} == {OPUS_X, SONNET_X}
+    assert all(r["refused"] is None for r in two_models)
+
+
+@needs_anthropic
+def test_the_references_helper_asks_sonnet_and_the_record_says_so(two_models):
+    """The app's build, one turn through the stand-in: the main agent on
+    Opus hands a question to the references helper, which asks Sonnet by
+    the same route with the same field fixes; activity.jsonl and the
+    turn's engine record name each agent's model."""
+    from webapp import helper_models
+    from webapp.activity_log import ActivityLogger
+    main_id = core.default_model_id()
+    assert main_id == f"anthropic:{OPUS_X}"
+    res = engine_config.resolve_engine(model_id=main_id)
+    helpers = helper_models.resolve(main_id)
+    kw = core.behavior_build_kwargs(None)
+    kw.update(helper_models.build_kwargs(helpers))
+    thread = core.new_thread_id()
+    files = core.conversation_files_dir(thread)
+    agent = core.build_agent(res.model, {}, files, [], **kw)
+    log = ActivityLogger(os.path.dirname(files), turn=1)
+    agent.invoke({"messages": [{"role": "user",
+                                "content": "Ask the librarian for Nq."}]},
+                 config={"callbacks": [log], "recursion_limit": 60})
+    asked = {}
+    for req in two_models:
+        asked.setdefault(req["model"], []).append(req)
+    assert len(asked[SONNET_X]) == 1 and len(asked[OPUS_X]) == 2
+    for req in two_models:
+        assert req["path"] == ("/fp/language-model-service/api/proxy/"
+                               "anthropic/v1/messages")
+        assert req["refused"] is None and not req["tool_cache"]
+        assert req["auth"] == "Bearer tok-123"
+    with open(os.path.join(os.path.dirname(files), "activity.jsonl"),
+              encoding="utf-8") as fh:
+        records = [json.loads(line) for line in fh if line.strip()]
+    starts = {(r["agent"], r.get("model")) for r in records
+              if r.get("event") == "model_start"}
+    assert ("references", SONNET_X) in starts
+    assert ("primary", OPUS_X) in starts
+    assert core.engine_record(agent)["build"]["helper_models"] == {
+        "references": SONNET_X}
+
+
+@needs_anthropic
+def test_the_sidebar_sets_the_references_helper(two_models):
+    """The sidebar's References helper picker, on the app: Sonnet by default
+    on Foundry; Same as the main model rebuilds with no helper model."""
+    pytest.importorskip("streamlit")
+    from streamlit.testing.v1 import AppTest
+    from webapp import helper_models
+    at = AppTest.from_file(os.path.join(os.path.dirname(core.__file__),
+                                        "app.py"), default_timeout=120)
+    at.run()
+    pick = at.selectbox(key="helper_model_references")
+    assert pick.value == f"anthropic:{SONNET_X}"
+    assert pick.label == "References helper model"
+    assert at.session_state["agent"].geotech_build["helper_models"] == {
+        "references": SONNET_X}
+    pick.set_value(helper_models.MAIN).run()
+    assert at.session_state["helper_models"] == {
+        "references": helper_models.MAIN}
+    assert "helper_models" not in at.session_state["agent"].geotech_build
